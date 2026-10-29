@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
 import { STATUS_SYSTEM } from '../hooks/model-text'
-import { parseStatus } from '../hooks/status'
+import { parseStatus, upgradeStatus } from '../hooks/status'
 import { STATUS_RECORD_VERSION } from '../hooks/session-host'
 import type { StatusRecord } from '../hooks/session-host'
 import type { SessionStatus } from '../types'
@@ -40,7 +40,9 @@ if (record.version !== STATUS_RECORD_VERSION) {
 const yesNo = (b: boolean) => (b ? 'yes' : 'no')
 const when = (at: number) => new Date(at).toISOString().replace('T', ' ').slice(0, 19)
 
-function statusText(o: SessionStatus | null): string {
+/** A record's Status as text. An earlier build's record holds that build's shape, so it is upgraded first. */
+function statusText(saved: SessionStatus | null): string {
+  const o = upgradeStatus(saved)
   if (!o) return '(none)'
   const names = new Map(o.subjects.map(s => [s.id, s.name]))
   const subjects = o.subjects.map(
@@ -56,7 +58,7 @@ function statusText(o: SessionStatus | null): string {
   )
 
   return [
-    `Goal: ${o.goal || '(none)'}`,
+    `Head: ${o.head ? `${o.head.title} | ${o.head.description || '(no description)'}` : '(none)'}`,
     ...(subjects.length > 0 ? ['Subjects:', ...subjects] : []),
     ...(children.length > 0 ? ['Children:', ...children] : []),
     ...(holds.length > 0 ? ['Asks:', ...holds] : []),

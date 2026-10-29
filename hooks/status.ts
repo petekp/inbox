@@ -1,15 +1,15 @@
-import type { Child, ChildKind, Item, SessionStatus, Subject, SubjectStatus } from '../types'
+import type { Child, ChildKind, DelegateState, Item, SessionStatus, StatusHead, Subject, SubjectStatus } from '../types'
 
-/** The most words the call may write in a subject's name, where it stands, and the goal. */
+/** The most words the call may write in a subject's name and where it stands, and in the head's description. The head's title is a name. */
 export const NAME_WORDS = 3
 export const TEXT_WORDS = 4
-export const GOAL_WORDS = 8
+export const DESCRIPTION_WORDS = 8
 /** The most open subjects the call keeps. */
 export const OPEN_SUBJECTS = 6
 /** Limits code holds an answer to when the call writes past the words it was asked for. */
 const NAME_KEPT = 20
 const TEXT_KEPT = 12
-const GOAL_KEPT = 14
+const DESCRIPTION_KEPT = 14
 /** The words of each ask the call reads. */
 const ASK_READ_WORDS = 30
 /** Finished subjects the call reads, so it does not add one again. */
@@ -41,8 +41,7 @@ const STOP_WORDS = new Set([
 const NL = '\n'
 
 export const EMPTY_SESSION_STATUS: SessionStatus = {
-  role: 'session',
-  goal: '',
+  head: null,
   subjects: [],
   children: [],
   askSubjects: {},
@@ -57,6 +56,7 @@ export type OpenStatus = Exclude<SubjectStatus, 'done' | 'dropped'>
 const OPEN_STATUSES: readonly OpenStatus[] = ['working', 'queued', 'waits-on-other']
 const STATUSES: readonly SubjectStatus[] = [...OPEN_STATUSES, 'done', 'dropped']
 const CHILD_KINDS: readonly ChildKind[] = ['subagent', 'background', 'workflow', 'delegate']
+const DELEGATE_STATES: readonly DelegateState[] = ['working', 'blocked', 'finished']
 
 /** One line of the Status call's answer. */
 export type Op =
@@ -66,15 +66,14 @@ export type Op =
   | { kind: 'done'; ref: string; text: string }
   | { kind: 'drop'; ref: string; why: string; into: string | null }
   | { kind: 'was'; ref: string; text: string }
-  | { kind: 'role'; role: SessionStatus['role'] }
-  | { kind: 'goal'; text: string }
+  | { kind: 'head'; title: string; description: string }
   /** `ref` is a running child's id or an open ask's id. */
   | { kind: 'link'; ref: string; subject: string }
 
 /** What the Status call answered: nothing to change, or the changes to make. */
 export type StatusAnswer = { kind: 'unchanged' } | { kind: 'ops'; ops: Op[] }
 
-const LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|ROLE|GOAL|LINK)\s*(?::\s*(.*))?$/i
+const LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i
 
 /** The first `limit` words of `text`, with an ellipsis when words were cut. */
 export function clipWords(text: string, limit: number): string {
@@ -112,12 +111,7 @@ function opOf(key: string, f: string[]): Op | null {
     return f[0] ? { kind: 'drop', ref: f[0], why: f[1] ?? '', into: into || null } : null
   }
   if (key === 'WAS') return f[0] && f[1] ? { kind: 'was', ref: f[0], text: f[1] } : null
-  if (key === 'ROLE') {
-    const role = f[0]?.toLowerCase()
-
-    return role === 'coordinator' || role === 'session' ? { kind: 'role', role } : null
-  }
-  if (key === 'GOAL') return f[0] ? { kind: 'goal', text: f[0] } : null
+  if (key === 'HEAD') return f[0] ? { kind: 'head', title: f[0], description: f[1] ?? '' } : null
   if (key === 'LINK') return f[0] && f[1] ? { kind: 'link', ref: f[0], subject: f[1] } : null
 
   return null
@@ -176,11 +170,80 @@ export function isOpen(s: Pick<Subject, 'status'>): boolean {
   return s.status !== 'done' && s.status !== 'dropped'
 }
 
-/** Subject changes first, then reversals, then links, so a WAS or LINK can name a subject the same answer added. */
+function isUnderWay(s: Pick<Subject, 'status'>): boolean {
+  return s.status === 'working' || s.status === 'waits-on-other'
+}
+
+/** What an answer did to the work, read once its subject changes have applied at `now`. */
+type AnswerWork = {
+  /** The answer finished work that was under way before it, and finished none that it started. */
+  isEarlierWorkFinished: boolean
+  /** Work is under way after the answer: a subject is working, or the answer set one waiting. */
+  isWorkUnderWay: boolean
+  /** Whether `description` names a subject the answer closed, by every content word of its name. */
+  namesClosed(description: string): boolean
+}
+
+function answerWork(before: readonly Subject[], o: SessionStatus, now: number): AnswerWork {
+  const was = new Map(before.map(s => [s.id, s]))
+  const closed = o.subjects.filter(s => {
+    const earlier = was.get(s.id)
+    return !isOpen(s) && s.closedAt === now && (earlier === undefined || isOpen(earlier))
+  })
+  const isClosedWorkNew = closed.some(s => !was.has(s.id))
+  const isUnderWayWorkClosed = closed.some(s => {
+    const earlier = was.get(s.id)
+    return earlier !== undefined && isUnderWay(earlier)
+  })
+
+  return {
+    isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
+    isWorkUnderWay: o.subjects.some(
+      s => s.status === 'working' || (s.status === 'waits-on-other' && s.changedAt === now),
+    ),
+    namesClosed: description => {
+      const said = words(description)
+      return closed.some(s => {
+        const name = [...words(s.name)]
+        return name.length > 0 && name.every(w => said.has(w))
+      })
+    },
+  }
+}
+
+/**
+ * Whether a head's description names work the answer finished while other work goes on, as "Fixing the sync bug, then
+ * shipping 2.5" once the sync bug is done and 2.5 is under way.
+ */
+function isDescriptionStale(head: StatusHead | null, work: AnswerWork): boolean {
+  return head !== null && head.description !== '' && work.isWorkUnderWay && work.namesClosed(head.description)
+}
+
+/**
+ * The head after a HEAD line, read once the answer's subject changes have applied. A head with a description holds
+ * when the line keeps its title, since the call rewrites the description to track the current piece of the focus,
+ * unless the description names work the answer finished. It also holds when the answer finished work that was under
+ * way before it, started none it finished, and left none under way, since the call reads queued work as the next focus. A head with no description
+ * always takes the line.
+ */
+function headAfter(last: StatusHead | null, op: Extract<Op, { kind: 'head' }>, work: AnswerWork): StatusHead {
+  const isComplete = last !== null && last.description !== ''
+  const isSameTitle = last !== null && hasSameWords(last.title, op.title)
+  const isStale = isDescriptionStale(last, work)
+  const isHeld = isComplete && ((isSameTitle && !isStale) || (work.isEarlierWorkFinished && !work.isWorkUnderWay))
+
+  return isHeld
+    ? last!
+    : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) }
+}
+
+/**
+ * Subject changes first, then reversals and the head, then links, so a WAS or LINK can name a subject the same answer
+ * added, and the head reads the subjects as the answer left them.
+ */
 const OP_ORDER: Record<Op['kind'], number> = {
   none: 0,
-  role: 0,
-  goal: 0,
+  head: 1,
   new: 0,
   set: 0,
   done: 0,
@@ -229,8 +292,7 @@ export function applyOps(
   const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
   for (const { op } of ordered) {
     if (op.kind === 'none') continue
-    if (op.kind === 'role') o.role = op.role
-    else if (op.kind === 'goal') o.goal = clipWords(op.text, GOAL_KEPT)
+    if (op.kind === 'head') o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now))
     else if (op.kind === 'link') {
       const child = o.children.find(c => c.id === op.ref)
       const subject = find(op.subject)
@@ -285,6 +347,9 @@ export function applyOps(
       }
     }
   }
+  const isHeadKept = o.head === (last?.head ?? null)
+  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
+    o = { ...o, head: { ...o.head, description: '' } }
 
   return o
 }
@@ -303,8 +368,8 @@ export function isChildRunning(c: Pick<Child, 'startedAt' | 'endedAt'>, now: num
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now)
 }
 
-/** What a host reports about a child: everything but the id and the link, which the Status owns. */
-export type ChildReport = Omit<Child, 'id' | 'subjectId'>
+/** What a host reports about a child: everything but the id and the link, which the Status owns. A delegate's state is null until reported. */
+export type ChildReport = Omit<Child, 'id' | 'subjectId' | 'delegateState'> & Partial<Pick<Child, 'delegateState'>>
 
 /**
  * Adds a child the host reports, or updates the one it holds with the same `ref`. A delegate prompted again keeps its
@@ -319,7 +384,7 @@ export function withChild(last: SessionStatus | null, c: ChildReport, now: numbe
   return {
     ...o,
     nextChildId: o.nextChildId + 1,
-    children: [...kept, { ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT),
+    children: [...kept, { delegateState: null, ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT),
   }
 }
 
@@ -338,6 +403,18 @@ function changedChild(
 /** The child with `ref` ended at `at`. */
 export function childEnded(o: SessionStatus | null, ref: string, at: number): SessionStatus | null {
   return changedChild(o, ref, c => ({ endedAt: c.endedAt ?? at }))
+}
+
+/**
+ * The subject with `id` changed at `at`, as when a child under it finished, so it shows above the look line again. Its
+ * was and merged lines go once the person has seen them, as for a change the Status call makes.
+ */
+export function subjectTouched(o: SessionStatus, id: string | null, at: number): SessionStatus {
+  const isSeen = (s: Subject) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt
+  const touched = (s: Subject): Subject =>
+    isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at }
+
+  return id === null ? o : { ...o, subjects: o.subjects.map(s => (s.id === id ? touched(s) : s)) }
 }
 
 /** The child with `ref` did something at `at`. Only a kind the host reports activity for has a time to move. */
@@ -441,6 +518,7 @@ function childOf(saved: unknown): Child | null {
     startedAt,
     endedAt: time(c.endedAt),
     lastActivityAt: time(c.lastActivityAt),
+    delegateState: DELEGATE_STATES.find(state => state === c.delegateState) ?? null,
   }
 }
 
@@ -456,10 +534,24 @@ const OLD_STATUS: Record<string, OpenStatus | null> = {
   'ruled-out': null,
 }
 
+/** A goal an earlier build saved, as a head with no description. The next Status call writes the description. */
+function headOfGoal(goal: unknown): StatusHead | null {
+  const title = clipWords(text(goal), DESCRIPTION_KEPT)
+
+  return title === '' ? null : { title, description: '' }
+}
+
+function headOf(saved: unknown): StatusHead | null {
+  const h = saved as Partial<Record<keyof StatusHead, unknown>> | null | undefined
+  const title = text(h?.title)
+
+  return title === '' ? null : { title, description: text(h?.description) }
+}
+
 /**
  * A Status saved before subjects, as subjects. Its streams, work and problems that were still open become subjects
  * dated at the last look, since the person saw them then. With no look there is no honest time to give them, and the
- * person never read that page, so only the headline carries over, as the goal.
+ * person never read that page, so only the headline carries over, as the head.
  */
 function fromLists(o: Record<string, unknown>): SessionStatus {
   const lastLookAt = time(o.lastLookAt)
@@ -491,8 +583,7 @@ function fromLists(o: Record<string, unknown>): SessionStatus {
 
   return {
     ...EMPTY_SESSION_STATUS,
-    role: o.isCoordinator === true ? 'coordinator' : 'session',
-    goal: clipWords(text(o.headline), GOAL_KEPT),
+    head: headOfGoal(o.headline),
     subjects,
     nextId: subjects.length + 1,
     lastLookAt,
@@ -513,8 +604,7 @@ export function upgradeStatus(saved: unknown): SessionStatus | null {
   const lookAt = time(look?.startedAt)
 
   return {
-    role: o.role === 'coordinator' ? 'coordinator' : 'session',
-    goal: text(o.goal),
+    head: 'head' in o ? headOf(o.head) : headOfGoal(o.goal),
     subjects,
     children,
     askSubjects,

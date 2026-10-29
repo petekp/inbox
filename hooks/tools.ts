@@ -1,5 +1,6 @@
 import { addAgentItem, addFinding, closeByAgent, recommendedOption, stepHelp } from './ledger'
 import type { Host } from './model-text'
+import { linkedPrs, MAX_ORDERED_PRS } from './pr-tab'
 import type { Closed, Help, Ledger } from '../types'
 
 const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'
@@ -71,6 +72,24 @@ const CLOSE_SCHEMA = {
   required: ['id'],
 }
 
+const ORDER_SCHEMA = {
+  type: 'object',
+  properties: {
+    repo: { type: 'string', description: 'The repository, as owner/name.' },
+    numbers: {
+      type: 'array',
+      items: { type: 'integer' },
+      description: `The PR numbers, first to last, at most ${MAX_ORDERED_PRS}. Give an empty list to clear the order.`,
+    },
+    label: { type: 'string', description: 'What the order is, in at most 4 words, such as "Merge order".' },
+  },
+  required: ['numbers'],
+}
+
+function orderDescription(host: Host): string {
+  return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`
+}
+
 function recordDescription(host: Host): string {
   return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing.
 - question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
@@ -81,14 +100,39 @@ Do not record rhetorical questions, offers to continue when continuing is the de
 
 const CLOSE_DESCRIPTION = `Close an open item or finding by its id, such as i35 or f12, as listed in the latest "inbox:" text beside the user's prompt. Pass the user's answer when their message answered it, and a reason otherwise.`
 
-/** The tools the agent calls. A host registers these through its own API and answers each call itself. */
+export type AgentTool = 'record' | 'close' | 'order_prs'
+
+/** The tools the agent calls. A host registers these through its own API and answers each call with `toolAnswer`. */
 export function agentTools(
   host: Host,
-): { name: 'record' | 'close'; description: string; inputSchema: Record<string, unknown> }[] {
+): { name: AgentTool; description: string; inputSchema: Record<string, unknown> }[] {
   return [
     { name: 'record', description: recordDescription(host), inputSchema: RECORD_SCHEMA },
     { name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA },
+    { name: 'order_prs', description: orderDescription(host), inputSchema: ORDER_SCHEMA },
   ]
+}
+
+export function isAgentTool(name: string): name is AgentTool {
+  return name === 'record' || name === 'close' || name === 'order_prs'
+}
+
+/** The answer to a call of one of `agentTools`. */
+export function toolAnswer(
+  host: Host,
+  ledger: Ledger,
+  tool: AgentTool,
+  input: Record<string, unknown>,
+  now: number,
+): ToolAnswer {
+  switch (tool) {
+    case 'record':
+      return recordItem(host, ledger, input, now)
+    case 'close':
+      return recordClose(host, ledger, input, now)
+    case 'order_prs':
+      return orderPrs(host, ledger, input, now)
+  }
 }
 
 function cut(value: unknown, max: number): string {
@@ -236,4 +280,51 @@ export function recordClose(host: Host, ledger: Ledger, input: Record<string, un
     ledger,
     `Not closed: no open item or finding has the id ${id}. The open ones are listed beside the user's latest message.`,
   )
+}
+
+const REPO = /^[\w.-]+\/[\w.-]+$/
+const MAX_ORDER_LABEL = 40
+
+/** A PR number as the agent gave it, as 3401 or "#3401", or null when it is not one. */
+function prNumber(value: unknown): number | null {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.trim().replace(/^#/, '')) : NaN
+
+  return Number.isInteger(n) && n > 0 ? n : null
+}
+
+/**
+ * Sets the PRs tab's order from an `order_prs` call, and links each PR it names that the session does not, so the tab
+ * fetches it. An empty list clears the order.
+ */
+export function orderPrs(host: Host, ledger: Ledger, input: Record<string, unknown>, now: number): ToolAnswer {
+  if (!Array.isArray(input.numbers)) return unchanged(ledger, 'Not set: numbers must be a list of PR numbers.')
+  if (input.numbers.length === 0) {
+    if (ledger.prOrder === null) return unchanged(ledger, 'No order was set.')
+
+    return {
+      ledger: { ...ledger, prOrder: null },
+      result: `Cleared. The PRs show in their usual order in ${host.prsIn}.`,
+      personLine: 'PR order cleared',
+    }
+  }
+  const numbers = input.numbers.map(prNumber)
+  if (numbers.includes(null)) return unchanged(ledger, 'Not set: numbers must be PR numbers, such as 3401.')
+  const repo = cut(input.repo, 200)
+  if (!REPO.test(repo)) return unchanged(ledger, 'Not set: give repo as owner/name.')
+  const refs = [...new Set(numbers.map(n => `${repo}#${n}`))]
+  if (refs.length > MAX_ORDERED_PRS) return unchanged(ledger, `Not set: an order ranks at most ${MAX_ORDERED_PRS} PRs.`)
+  const label = cut(input.label, MAX_ORDER_LABEL) || null
+  const added = refs.filter(ref => !ledger.prs.includes(ref))
+  const addedText =
+    added.length === 0
+      ? ''
+      : added.length === 1
+        ? " 1 of them was not in the tab yet. It shows after the tab's next refresh, if the user wrote it and it is open."
+        : ` ${added.length} of them were not in the tab yet. They show after the tab's next refresh, if the user wrote them and they are open.`
+
+  return {
+    ledger: { ...ledger, prs: linkedPrs(ledger.prs, added), prOrder: { refs, label, by: host.agent, at: now } },
+    result: `Set. These ${refs.length} PRs show first in ${host.prsIn}, in this order.${addedText}`,
+    personLine: `PR order: ${label ? `${label}, ` : ''}${refs.length} ${refs.length === 1 ? 'PR' : 'PRs'}`,
+  }
 }

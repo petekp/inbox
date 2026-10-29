@@ -265,6 +265,7 @@ The public docs describe "three tabs: **Chat** for conversations, **Cowork** for
   - Write each call in full, as `$.ns.method`.
   - Pass `$` only to a function declared at the top level of the same file. The `calls:` line then shows `(via fn)`. "Passing `$` to a method, a function defined inside the hook, or a function you import from another of your files fails validation." `$.state`'s `read` and `update` are the imports that can take it.
     - Live, 2026-10-28, Claude Code 2.1.312: `claude plugin validate` passes a module that passes `$` to functions imported from another of its files, with or without `--profile directory`. Its `calls:` line names those functions with `(via fn)`. The plugin directory's scan refuses the same code with `MOD_CAPABILITY_USE_NOT_PLAIN`, as `docs/plans/directory-submission.md` records.
+    - The plugin directory's scan of 0.2.14 (`main` at `2d613e90`): passing `$` only to the file's own top-level functions was not enough. It refused calls to a top-level function whose name the file also bound as a parameter elsewhere. It also refused `$` passed on from inside a function that another function returns. `docs/plans/directory-submission.md` records both. The second cause is inferred.
   - "Don't assign `$` or one of its namespaces to a variable, destructure it, or index it with a computed name. `const ui = $.ui` fails with `$.ui is used as a value`."
   - Event names must be string literals: "`the event name passed to on() is not a string literal`".
   - Don't shadow `on`: "`\"on\" is declared again (shadowed)`".
@@ -754,7 +755,7 @@ Sources: [R#render-sites; IF#change-what-claude-code-already-draws; T: render-si
 | `pane:close` | ctrl+x x (also in `PaneField`) |
 
 - "`ctrl+x b`, `ctrl+x ctrl+a`, and `ctrl+x tab` require v2.1.260 or later." Chord keys must come within 3 seconds. Reserved: ctrl+c, ctrl+d, ctrl+m, ctrl+[, ctrl+i, ctrl+h, Caps Lock. [KB#unbind-default-shortcuts; KB#chords; KB#reserved-shortcuts]
-- Inference: users can rebind these keys, so the inbox's key-help text ("ctrl+x tab", `hooks/register.tsx:keyList`) can go stale. Whether desktop reads `keybindings.json` is undocumented.
+- Inference: users can rebind these keys, so the inbox's Help text ("ctrl+x tab", `hooks/view.ts:helpKeys`) can go stale. Whether desktop reads `keybindings.json` is undocumented.
 - The pane's hotkeys: 1, 2, 3, j, k, v, a, t, e, x, o, r, d (repo). Tab, arrows, Enter and Esc belong to the engine.
 
 ## Settings hooks and `classic.*` events

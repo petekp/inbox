@@ -1,3 +1,4 @@
+import { HERDR_CHECK_MS } from '../../hooks/herdr'
 import { pressRowId } from '../../hooks/pr-tab'
 import type { PrPress } from '../../hooks/pr-tab'
 import { isPressConfirmed } from '../../hooks/presses'
@@ -32,6 +33,8 @@ export type PanelSource = {
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
   resume(): Promise<string | null>
   fetchPrsWhenDue(): void
+  /** Asks Herdr about the running delegates, when a check is due. */
+  checkDelegatesWhenDue(): void
   /**
    * Tells the session which tab the panel shows, for the inbox model's note on what the person sees, and what the
    * panel holds in place, from when it began showing that tab.
@@ -159,7 +162,7 @@ export function createPanel(deps: PanelDeps): Panel {
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight)
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity))
       heldHeight = Math.max(heldHeight, drawn.lines.length)
-      ui = { ...ui, pageTop: drawn.pageTop }
+      ui = { ...ui, pageTop: drawn.pageTop, pageReveal: null }
 
       return drawn.lines
     },
@@ -177,6 +180,10 @@ export function createPanel(deps: PanelDeps): Panel {
       stops.push(source.onChange(() => void refresh()))
       const prs = timers.every(() => source.fetchPrsWhenDue(), PRS_CHECK_MS)
       stops.push(() => timers.stop(prs))
+      const delegates = timers.every(() => {
+        if (ui.tab === 'overview') source.checkDelegatesWhenDue()
+      }, HERDR_CHECK_MS)
+      stops.push(() => timers.stop(delegates))
       await refresh()
     },
     dispose() {

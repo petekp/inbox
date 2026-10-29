@@ -98,9 +98,11 @@ async function updateWithStatus(answer: string | null) {
 }
 
 test('a reply’s Status comes from the separate Status call, after the ledger update', async () => {
-  const { state, systems } = await updateWithStatus('GOAL: Building the deploy script')
+  const { state, systems } = await updateWithStatus(
+    'HEAD: Building the deploy script | Writing a script that deploys the app',
+  )
 
-  assert.equal(state.ledger.overview?.goal, 'Building the deploy script')
+  assert.equal(state.ledger.overview?.head?.title, 'Building the deploy script')
   assert.deepEqual(
     state.ledger.items.map(i => i.ask),
     ['Deploy now?'],
@@ -171,10 +173,10 @@ test('a ledger update shows before its Status call returns', async () => {
   assert.equal(shown.ledger.closed[0]?.outcome, 'MIT')
   assert.equal(shown.presence.isUpdating, false)
   assert.ok(statusPrompt.includes('<subjects>'))
-  release('GOAL: Adding a license')
+  release('HEAD: Adding a license | Adding a license file to the repo')
   await running
 
-  assert.equal((await readState(dir, 's1')).ledger.overview?.goal, 'Adding a license')
+  assert.equal((await readState(dir, 's1')).ledger.overview?.head?.title, 'Adding a license')
 })
 
 test('a ledger call with no answer runs no Status call', async () => {
@@ -190,7 +192,9 @@ test('a ledger call with no answer runs no Status call', async () => {
     async (_prompt, system) => {
       systems.push(system)
 
-      return system === STATUS_SYSTEM ? 'GOAL: Building the deploy script' : null
+      return system === STATUS_SYSTEM
+        ? 'HEAD: Building the deploy script | Writing a script that deploys the app'
+        : null
     },
     () => 5,
   )
@@ -226,10 +230,10 @@ test('Status calls run one after another, and the second reads the first one’s
       if (statusPrompts.length === 1) {
         await held
 
-        return 'GOAL: Deploy script built'
+        return 'HEAD: Deploy script built | Deploying the app with one script'
       }
 
-      return 'GOAL: Rollback script built'
+      return 'HEAD: Rollback script built | Rolling back a bad deploy'
     },
     () => 5,
   )
@@ -245,7 +249,7 @@ test('Status calls run one after another, and the second reads the first one’s
 
   assert.equal(statusPrompts.length, 2)
   assert.ok((statusPrompts[1] ?? '').includes('Deploy script built'))
-  assert.equal((await readState(dir, 's1')).ledger.overview?.goal, 'Rollback script built')
+  assert.equal((await readState(dir, 's1')).ledger.overview?.head?.title, 'Rollback script built')
 })
 
 test('three Status calls write in the order their updates landed', async () => {
@@ -271,7 +275,7 @@ test('three Status calls write in the order their updates landed', async () => {
       const mine = statusCalls
       if (mine === 1) await held
 
-      return `GOAL: Script ${mine} built`
+      return `HEAD: Script ${mine} built | Writing script ${mine}`
     },
     () => 5,
   )
@@ -284,7 +288,7 @@ test('three Status calls write in the order their updates landed', async () => {
   release()
   await running
 
-  assert.equal((await readState(dir, 's1')).ledger.overview?.goal, 'Script 3 built')
+  assert.equal((await readState(dir, 's1')).ledger.overview?.head?.title, 'Script 3 built')
 })
 
 test('an update’s Status call waits while another process holds the Status calls’ lock, then reads that process’s Status and writes last', async t => {
@@ -305,7 +309,7 @@ test('an update’s Status call waits while another process holds the Status cal
         if (system !== STATUS_SYSTEM) return 'NEW: do | - | Roll back | - | -'
         statusPrompts.push(prompt)
 
-        return 'GOAL: Rollback script built'
+        return 'HEAD: Rollback script built | Rolling back a bad deploy'
       },
       () => 5,
     )
@@ -320,13 +324,15 @@ test('an update’s Status call waits while another process holds the Status cal
       ['Roll back'],
     )
     assert.equal(statusPrompts.length, 0)
-    await updateState(dir, 's1', s => appliedStatus(s, parseStatus('GOAL: Deploy script built')!, 1, 4))
+    await updateState(dir, 's1', s =>
+      appliedStatus(s, parseStatus('HEAD: Deploy script built | Deploying the app with one script')!, 1, 4),
+    )
   })
   await running
 
   assert.equal(statusPrompts.length, 1)
   assert.ok((statusPrompts[0] ?? '').includes('Deploy script built'))
-  assert.equal((await readState(dir, 's1')).ledger.overview?.goal, 'Rollback script built')
+  assert.equal((await readState(dir, 's1')).ledger.overview?.head?.title, 'Rollback script built')
 })
 
 test('pending exchanges reach the ledger in order, a failed one waits for the next update, and a second failure drops it', async () => {
@@ -454,7 +460,10 @@ test('a reply with a NUL byte reaches codex on stdin, and both calls of its upda
   const cli = join(bin, 'codex')
   const prompts = join(bin, 'prompts.jsonl')
   const answers = join(bin, 'answers.json')
-  writeFileSync(answers, JSON.stringify({ [STATUS_SYSTEM]: 'GOAL: Building the deploy script' }))
+  writeFileSync(
+    answers,
+    JSON.stringify({ [STATUS_SYSTEM]: 'HEAD: Building the deploy script | Writing a script that deploys the app' }),
+  )
   writeFileSync(
     cli,
     [
@@ -492,7 +501,7 @@ test('a reply with a NUL byte reaches codex on stdin, and both calls of its upda
     s.ledger.items.map(i => i.ask),
     ['Deploy now?'],
   )
-  assert.equal(s.ledger.overview?.goal, 'Building the deploy script')
+  assert.equal(s.ledger.overview?.head?.title, 'Building the deploy script')
   assert.equal(s.lastModelFailure, null)
   assert.equal(received.length, 2)
   assert.ok(received.every(prompt => prompt.includes(reply)))

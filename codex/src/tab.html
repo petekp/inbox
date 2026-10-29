@@ -64,7 +64,7 @@
         user-select: none;
       }
       /* Text a person may copy: what an item, PR or Status line says, an error, and the reply field. */
-      .status-goal,
+      .status-head,
       .status-page .content,
       .earlier,
       .body,
@@ -235,8 +235,23 @@
       .group-title {
         padding: 0 14px 6px var(--text-x);
       }
+      .group-title {
+        position: relative;
+      }
       .group-title b {
         font-weight: 600;
+      }
+      .group-mark {
+        position: absolute;
+        left: var(--mark-x);
+        width: calc(var(--text-x) - var(--mark-x) - 8px);
+        text-align: center;
+      }
+      .group-mark.done {
+        color: var(--done);
+      }
+      .group-mark.issue {
+        color: var(--issue);
       }
       .group-title .count {
         color: var(--muted);
@@ -253,6 +268,7 @@
       .pr-head {
         font-weight: 600;
       }
+      .pr-head .rank,
       .pr-head .num,
       .pr-head .pr-verdict {
         font-weight: 400;
@@ -301,6 +317,11 @@
       .mark.done {
         color: var(--done);
       }
+      .mark-shape {
+        width: 8px;
+        height: 8px;
+        overflow: visible;
+      }
       .mark.issue {
         color: var(--issue);
       }
@@ -316,6 +337,7 @@
         text-align: right;
       }
       .mark.tone-needsYou,
+      .mark.needsYou,
       .side.tone-needsYou {
         color: var(--needs-you);
       }
@@ -724,20 +746,32 @@
       .version {
         color: color-mix(in srgb, var(--muted) 50%, var(--bg));
       }
-      .demo-toggle {
+      .demo-toggle,
+      .help-toggle {
         padding: 0 6px;
         border-radius: 5px;
         color: var(--muted);
       }
-      .demo-toggle:hover {
+      .demo-toggle:hover,
+      .help-toggle:hover {
         color: var(--text);
         background: var(--hover);
+      }
+      /* The keys start under the group title, and every description lines up after the widest key. */
+      .help-keys {
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: 4px 12px;
+        padding: var(--row-pad) 14px var(--row-pad) var(--text-x);
+      }
+      .help-keys b {
+        white-space: nowrap;
       }
       .earlier {
         padding: 2px 14px 2px var(--text-x);
       }
-      /* The goal starts where the list's marks do. */
-      .status-goal {
+      /* The head starts where the list's marks do. */
+      .status-head {
         padding: 0 14px 0 var(--mark-x);
         overflow-wrap: anywhere;
       }
@@ -748,7 +782,7 @@
       .status-page .mark {
         text-align: left;
       }
-      .status-page .mark.running {
+      .mark.running {
         animation: running-pulse var(--pulse) ease-in-out infinite;
       }
       @keyframes running-pulse {
@@ -761,6 +795,9 @@
       }
       .status-page .row.child {
         padding-left: var(--text-x);
+      }
+      .status-page .content > .actions {
+        margin-top: 6px;
       }
       .status-page .clamp {
         display: -webkit-box;
@@ -812,7 +849,11 @@
         width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
         border-top: 1px solid var(--tree-line);
       }
-      /* "Seen" in the middle of a rule that runs from the mark column to the end of the row. */
+      /* "Last seen" in the middle of a rule that spans what the rule above a row spans: from the text column to the tab's edge. */
+      .status-page .row.look-line {
+        padding-left: 0;
+        padding-right: 0;
+      }
       .status-page .look-rule {
         grid-column: 1 / -1;
         display: flex;
@@ -823,20 +864,26 @@
       }
       .status-page .status-rule {
         height: 1px;
-        margin-left: var(--text-x);
         background: var(--soft);
+      }
+      .status-page .status-rule,
+      .status-page .look-rule {
+        margin-left: var(--text-x);
       }
       .status-page .look-rule::before,
       .status-page .look-rule::after {
         content: '';
         flex: 1;
-        border-top: 1px solid color-mix(in oklab, var(--text) 15%, transparent);
+        border-top: 1px solid var(--soft);
       }
-      .status-goal {
+      .status-head h1 {
         margin: 0;
         font-size: 15px;
         line-height: 22px;
         font-weight: 600;
+      }
+      .status-head p {
+        margin: 0;
       }
       .banner,
       .empty,
@@ -855,7 +902,7 @@
         }
         .time-left,
         .key.undo.undoing .icon,
-        .status-page .mark.running {
+        .mark.running {
           animation: none;
         }
       }

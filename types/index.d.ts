@@ -34,15 +34,30 @@ export type Child = {
   subjectId: string | null
   startedAt: number
   endedAt: number | null
-  /** When it last did anything. Null when the host reports no activity for its kind, so it never reads quiet. */
+  /** When it last did anything. Null when the host reports no activity for its kind. */
   lastActivityAt: number | null
+  /**
+   * What a delegate does: `working` once this session prompted it or Herdr showed it working, `blocked` while Herdr
+   * shows it at a question or an approval, and `finished` once Herdr shows it ready after it worked. Null for other
+   * kinds, and for a delegate nothing has shown working yet.
+   */
+  delegateState: DelegateState | null
 }
+
+/** The top of the Status page: what the session is focused on now. */
+export type StatusHead = {
+  /** A short name for the focus, like a subject's name. */
+  title: string
+  /** One line on what the session is doing about it. Empty until the Status call writes one. */
+  description: string
+}
+
+export type DelegateState = 'working' | 'blocked' | 'finished'
 
 /** The Status tab's list. The Status call changes it by id; code keeps the order and every time. */
 export type SessionStatus = {
-  role: 'coordinator' | 'session'
-  /** What the session is for, in the person's words; empty until the call writes it. */
-  goal: string
+  /** Null until the Status call writes it. */
+  head: StatusHead | null
   subjects: Subject[]
   children: Child[]
   /** The subject each ask holds up, by the ask's item id, as the Status call linked them. */
@@ -288,7 +303,15 @@ export type PrView = {
   wasSeenOpen: boolean
   /** Why the last fetch failed; the rest is from the fetch before. */
   error: string | null
+  /** When a fetch last read the PR's state from GitHub. Absent on a view saved before the inbox kept it. */
+  fetchedAt?: number
 }
+
+/**
+ * The PRs an agent ranked, first to last, as "owner/repo#123", with its short name for the order, the agent's name, as
+ * "Claude", and when it set it.
+ */
+export type PrOrder = { refs: string[]; label: string | null; by: string; at: number }
 
 export type Ledger = {
   /** The session's Status page; null until the Status call writes one. Saved as `overview`, the tab's earlier name. */
@@ -300,6 +323,8 @@ export type Ledger = {
   closedFindings: ClosedFinding[]
   /** PRs this session created or linked, as "owner/repo#123", until the person dismisses one. The PRs tab leaves out those `isLeftOut` names. */
   prs: string[]
+  /** The order the agent set for the PRs tab with `order_prs`, or null for the tab's own order. */
+  prOrder: PrOrder | null
   nextId: number
   /** How many prompts the person has sent this session. */
   turn: number
@@ -500,6 +525,13 @@ export type Session = {
 }
 
 declare module 'claude-code' {
+  /**
+   * The inbox's `order_prs` call, as `hooks/tools.ts:ORDER_SCHEMA` gives it. A session writes the MCP tool types only
+   * for the tools it had connected, so an older build's session leaves this one out.
+   */
+  interface McpToolInputs {
+    mcp__inbox__order_prs: { repo?: string; numbers: number[]; label?: string }
+  }
   interface PluginState {
     inbox: {
       /** The Claude Code theme in use, such as `dark` or `light-ansi`; '' until read. */
@@ -511,6 +543,8 @@ declare module 'claude-code' {
       /** The page tab shown in place of `tab`, or null while a row tab shows. */
       page: PageTab | null
       selection: Record<Tab, Cursor>
+      /** The Status row whose keys work, by id. Null until j or k moves it. */
+      statusSelection: string | null
       dialogs: Dialog[]
       /** The row whose free-text field is open, if any. */
       typing: string | null
@@ -530,7 +564,8 @@ declare module 'claude-code' {
       foldHover: FoldKind | null
       /** The questions whose every option shows, by the row's id. */
       optionsShown: string[]
-      isKeyListShown: boolean
+      /** Whether the pane shows its Help page in place of the shown tab's body. */
+      isHelpShown: boolean
       /** The sample entries the band and pane show instead of the session's own, while `/inbox demo` is on. */
       demo: DemoCopy | null
       /** Whether `/inbox demo recording` started the demo, which then leaves out the notices that mark its samples. */
@@ -541,7 +576,7 @@ declare module 'claude-code' {
       redraw: number
       /** A fresh value redraws only the pane, for the next frame of a running mark. */
       runningFrame: number
-      /** The line the person sees under each `record` or `close` call that has one, by the call's `tool_use_id`. */
+      /** The line the person sees under each inbox tool call that has one, by the call's `tool_use_id`. */
       personLines: Record<string, string>
       /** Builds before the shared session kept the session in these fields. `upgradeDrawn` moves them into `session`. */
       ledger: Ledger

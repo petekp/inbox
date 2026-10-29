@@ -197,11 +197,11 @@ function tasksText(tasks) {
 // ../hooks/status.ts
 var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
-var GOAL_WORDS = 8;
+var DESCRIPTION_WORDS = 8;
 var OPEN_SUBJECTS = 6;
 var NAME_KEPT = 20;
 var TEXT_KEPT = 12;
-var GOAL_KEPT = 14;
+var DESCRIPTION_KEPT = 14;
 var ASK_READ_WORDS = 30;
 var FINISHED_READ = 10;
 var CHILD_KEPT_MS = 24 * 60 * 60000;
@@ -229,8 +229,7 @@ var STOP_WORDS = new Set([
 var NL4 = `
 `;
 var EMPTY_SESSION_STATUS = {
-  role: "session",
-  goal: "",
+  head: null,
   subjects: [],
   children: [],
   askSubjects: {},
@@ -242,7 +241,8 @@ var EMPTY_SESSION_STATUS = {
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES2 = [...OPEN_STATUSES, "done", "dropped"];
 var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
-var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|ROLE|GOAL|LINK)\s*(?::\s*(.*))?$/i;
+var DELEGATE_STATES = ["working", "blocked", "finished"];
+var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i;
 function clipWords(text, limit) {
   const words = text.trim().split(/\s+/).filter(Boolean);
   return words.length <= limit ? words.join(" ") : `${words.slice(0, limit).join(" ")}\u2026`;
@@ -275,12 +275,8 @@ function opOf(key, f) {
   }
   if (key === "WAS")
     return f[0] && f[1] ? { kind: "was", ref: f[0], text: f[1] } : null;
-  if (key === "ROLE") {
-    const role = f[0]?.toLowerCase();
-    return role === "coordinator" || role === "session" ? { kind: "role", role } : null;
-  }
-  if (key === "GOAL")
-    return f[0] ? { kind: "goal", text: f[0] } : null;
+  if (key === "HEAD")
+    return f[0] ? { kind: "head", title: f[0], description: f[1] ?? "" } : null;
   if (key === "LINK")
     return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
   return null;
@@ -320,10 +316,45 @@ function nameKey(name) {
 function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
+function isUnderWay(s) {
+  return s.status === "working" || s.status === "waits-on-other";
+}
+function answerWork(before, o, now) {
+  const was = new Map(before.map((s) => [s.id, s]));
+  const closed = o.subjects.filter((s) => {
+    const earlier = was.get(s.id);
+    return !isOpen(s) && s.closedAt === now && (earlier === undefined || isOpen(earlier));
+  });
+  const isClosedWorkNew = closed.some((s) => !was.has(s.id));
+  const isUnderWayWorkClosed = closed.some((s) => {
+    const earlier = was.get(s.id);
+    return earlier !== undefined && isUnderWay(earlier);
+  });
+  return {
+    isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
+    isWorkUnderWay: o.subjects.some((s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now),
+    namesClosed: (description) => {
+      const said = words(description);
+      return closed.some((s) => {
+        const name = [...words(s.name)];
+        return name.length > 0 && name.every((w) => said.has(w));
+      });
+    }
+  };
+}
+function isDescriptionStale(head, work) {
+  return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
+}
+function headAfter(last, op, work) {
+  const isComplete = last !== null && last.description !== "";
+  const isSameTitle = last !== null && hasSameWords(last.title, op.title);
+  const isStale = isDescriptionStale(last, work);
+  const isHeld = isComplete && (isSameTitle && !isStale || work.isEarlierWorkFinished && !work.isWorkUnderWay);
+  return isHeld ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
+}
 var OP_ORDER = {
   none: 0,
-  role: 0,
-  goal: 0,
+  head: 1,
   new: 0,
   set: 0,
   done: 0,
@@ -362,10 +393,8 @@ function applyOps(last, ops, now, askIds) {
   for (const { op } of ordered) {
     if (op.kind === "none")
       continue;
-    if (op.kind === "role")
-      o.role = op.role;
-    else if (op.kind === "goal")
-      o.goal = clipWords(op.text, GOAL_KEPT);
+    if (op.kind === "head")
+      o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
     else if (op.kind === "link") {
       const child = o.children.find((c) => c.id === op.ref);
       const subject = find(op.subject);
@@ -427,6 +456,9 @@ function applyOps(last, ops, now, askIds) {
       }
     }
   }
+  const isHeadKept = o.head === (last?.head ?? null);
+  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
+    o = { ...o, head: { ...o.head, description: "" } };
   return o;
 }
 function applyStatus(last, answer, now, askIds) {
@@ -444,7 +476,7 @@ function withChild(last, c, now) {
   return {
     ...o,
     nextChildId: o.nextChildId + 1,
-    children: [...kept, { ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
+    children: [...kept, { delegateState: null, ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
   };
 }
 function changedChild(o, ref, change) {
@@ -455,6 +487,11 @@ function changedChild(o, ref, change) {
 }
 function childEnded(o, ref, at) {
   return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
+}
+function subjectTouched(o, id, at) {
+  const isSeen = (s) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
+  const touched = (s) => isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
+  return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
 }
 function childActive(o, ref, at) {
   return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
@@ -527,7 +564,8 @@ function childOf(saved) {
     subjectId: typeof c.subjectId === "string" ? c.subjectId : null,
     startedAt,
     endedAt: time(c.endedAt),
-    lastActivityAt: time(c.lastActivityAt)
+    lastActivityAt: time(c.lastActivityAt),
+    delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null
   };
 }
 var OLD_STATUS = {
@@ -540,6 +578,15 @@ var OLD_STATUS = {
   done: null,
   "ruled-out": null
 };
+function headOfGoal(goal) {
+  const title = clipWords(text(goal), DESCRIPTION_KEPT);
+  return title === "" ? null : { title, description: "" };
+}
+function headOf(saved) {
+  const h = saved;
+  const title = text(h?.title);
+  return title === "" ? null : { title, description: text(h?.description) };
+}
 function fromLists(o) {
   const lastLookAt = time(o.lastLookAt);
   const items = lastLookAt === null ? [] : ["workstreams", "queue", "open"].flatMap((k) => Array.isArray(o[k]) ? o[k] : []);
@@ -564,8 +611,7 @@ function fromLists(o) {
   }));
   return {
     ...EMPTY_SESSION_STATUS,
-    role: o.isCoordinator === true ? "coordinator" : "session",
-    goal: clipWords(text(o.headline), GOAL_KEPT),
+    head: headOfGoal(o.headline),
     subjects,
     nextId: subjects.length + 1,
     lastLookAt
@@ -586,8 +632,7 @@ function upgradeStatus(saved) {
   const look = o.look;
   const lookAt = time(look?.startedAt);
   return {
-    role: o.role === "coordinator" ? "coordinator" : "session",
-    goal: text(o.goal),
+    head: "head" in o ? headOf(o.head) : headOfGoal(o.goal),
     subjects,
     children,
     askSubjects,
@@ -607,13 +652,14 @@ var EMPTY = {
   findings: [],
   closedFindings: [],
   prs: [],
+  prOrder: null,
   nextId: 1,
   turn: 0,
   batchTurn: 0,
   updates: 0
 };
 function isBlankLedger(ledger) {
-  const isStatusBlank = !ledger.overview || ledger.overview.goal === "" && ledger.overview.subjects.length === 0;
+  const isStatusBlank = !ledger.overview || ledger.overview.head === null && ledger.overview.subjects.length === 0;
   return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0;
 }
 var NL5 = `
@@ -639,6 +685,7 @@ function upgradeLedger(ledger) {
   const updates = typeof rest.updates === "number" ? rest.updates : card ? 1 : 0;
   return {
     ...rest,
+    prOrder: rest.prOrder ?? null,
     updates,
     overview: upgradeStatus(rest.overview),
     findings: [...rest.findings ?? [], ...notes ?? []],
@@ -1467,7 +1514,7 @@ var STATUS_SYSTEM = `You keep the Overview of a coding session: one list of the 
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
 Input:
-- <goal>: the session's goal. Do not restate it.
+- <head>: the top of the page, as title | description: what the session is focused on now. Never write it into a subject.
 - <subjects>: the open subjects, one per line: id | status | name | where it stands
 - <finished>: subjects already done or dropped. Do not add them again.
 - <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
@@ -1477,7 +1524,7 @@ Input:
 - <activity>: what the agent did this turn
 - <reply>: the agent's final reply
 
-Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, answer with the one line NO CHANGE. Most exchanges change nothing.
+Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, and the head still holds, answer with the one line NO CHANGE. Most exchanges change nothing.
 
 Otherwise write only the lines that apply:
 NEW: status | name | where it stands
@@ -1487,12 +1534,13 @@ DROP: id or name | why
 DROP: id or name | why | INTO id or name
 WAS: id or name | the plan it replaces
 LINK: running or ask id | subject id or name
-ROLE: coordinator or session
-GOAL: the goal in the person's words, at most ${GOAL_WORDS} words
+HEAD: title | description
 
 A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
 
 The name is a label of at most ${NAME_WORDS} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
+
+The head says what the session is focused on now: the work the person would name if asked what this session is doing. It may cover several subjects. Its title is a label of at most ${NAME_WORDS} words, like a subject's name, such as "Offline sync" or "2.5 release". Its description is at most ${DESCRIPTION_WORDS} words on what the session is doing about that focus, such as "Adding offline sync to the notes app" or "Fixing the sync bug, then shipping 2.5". The description never repeats the title, and never says where one piece stands, such as "PR ready for review". The head follows the same rules on time words as where it stands.
 
 Status is one of: working, queued, waits-on-other.
 - working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask. When the work stopped for another reason, it is queued, waits on something, or is done.
@@ -1504,18 +1552,24 @@ Rules:
 - When work started and finished in this exchange, write NEW for it, then DONE with its name.
 - Write SET only when where a subject stands changed. Never reword a subject that did not change.
 - Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
+- When the person files a piece for later, out of this session's plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
 - Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
 - Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
-- Write ROLE coordinator when the session hands out work and reviews what comes back instead of doing the work itself. Write ROLE only when it changes.
-- Write GOAL only when <goal> is empty, when the person states a new goal, or when the work moves to a different task.`;
+- Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.
+- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.`;
+function headText(o) {
+  if (!o?.head)
+    return "(none yet)";
+  return `${o.head.title} | ${o.head.description || "(no description yet)"}`;
+}
 function statusBlocks({ last, asks, tasks, now }) {
   const { open, finished } = subjectsText(last);
   const running = runningText(last, now);
   const held = asksText(last, asks);
   const list = tasksText(tasks);
   return [
-    `<goal>${NL6}${last?.goal || "(none yet)"}${NL6}</goal>`,
+    `<head>${NL6}${headText(last)}${NL6}</head>`,
     `<subjects>${NL6}${open}${NL6}</subjects>`,
     ...finished === "" ? [] : [`<finished>${NL6}${finished}${NL6}</finished>`],
     ...running === "" ? [] : [`<running>${NL6}${running}${NL6}</running>`],
@@ -1797,11 +1851,14 @@ function ghIn(exec, bin, cwd, onUnstartable) {
 // ../hooks/children.ts
 var ACTIVITY_SAVE_MS = 30000;
 var NAME_CHARS = 80;
-function childStarted(o, { ref, kind, name }, at, { reportsActivity = true } = {}) {
+function childStarted(o, { ref, kind, name }, at, {
+  reportsActivity = true,
+  delegateState = null
+} = {}) {
   const line = name.trim().split(`
 `)[0] ?? "";
   const lastActivityAt = reportsActivity ? at : null;
-  return withChild(o, { ref, kind, name: clipLabel(line, NAME_CHARS), startedAt: at, endedAt: null, lastActivityAt }, at);
+  return withChild(o, { ref, kind, name: clipLabel(line, NAME_CHARS), startedAt: at, endedAt: null, lastActivityAt, delegateState }, at);
 }
 function childWorked(o, ref, at) {
   const saved = o?.children.find((c) => c.ref === ref)?.lastActivityAt ?? null;
@@ -1819,18 +1876,29 @@ var HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^
 function delegateSteps(command) {
   return [...command.matchAll(HERDR)].map(([, verb, name, args]) => ({
     name,
+    isPrompt: verb === "prompt",
     isWaitForEnd: verb === "wait" && !/--until working/.test(args ?? "")
   }));
 }
 var delegateRef = (name) => `herdr:${name}`;
-function delegateRunning(o, name, at) {
-  const ref = delegateRef(name);
+function delegateRunning(o, step, at) {
+  const ref = delegateRef(step.name);
   const known = o?.children.find((c) => c.ref === ref);
   const isRunning = known !== undefined && known.endedAt === null;
-  return isRunning ? childActive(o, ref, at) : childStarted(o, { ref, kind: "delegate", name }, at);
+  if (!isRunning)
+    return childStarted(o, { ref, kind: "delegate", name: step.name }, at, {
+      delegateState: step.isPrompt ? "working" : null
+    });
+  const active = childActive(o, ref, at);
+  return step.isPrompt ? delegateStateSet(active, ref, "working") : active;
+}
+function delegateStateSet(o, ref, delegateState) {
+  if (!o?.children.some((c) => c.ref === ref && c.delegateState !== delegateState))
+    return o;
+  return { ...o, children: o.children.map((c) => c.ref === ref ? { ...c, delegateState } : c) };
 }
 function delegatesStarted(o, command, at) {
-  return delegateSteps(command).reduce((x, step) => delegateRunning(x, step.name, at), o);
+  return delegateSteps(command).reduce((x, step) => delegateRunning(x, step, at), o);
 }
 function delegateWaitsEnded(o, command, at) {
   return delegateSteps(command).filter((step) => step.isWaitForEnd).reduce((x, step) => childEnded(x, delegateRef(step.name), at), o);
@@ -1839,10 +1907,29 @@ var HERDR_PROMPT_SETTLE_MS = 15000;
 function hasRunningDelegate(o) {
   return o?.children.some((c) => c.kind === "delegate" && c.endedAt === null) ?? false;
 }
-function delegatesSettled(o, running, at) {
-  const refs = new Set([...running].map(delegateRef));
-  const isGone = (c) => c.kind === "delegate" && !refs.has(c.ref) && at - (c.lastActivityAt ?? c.startedAt) >= HERDR_PROMPT_SETTLE_MS;
-  return childrenEnded(o, isGone, at);
+function delegatesSettled(o, states, at) {
+  if (!o)
+    return o;
+  const byRef = new Map([...states].map(([name, status]) => [delegateRef(name), status]));
+  const settled = (c) => {
+    if (c.kind !== "delegate" || c.endedAt !== null)
+      return c;
+    const status = byRef.get(c.ref);
+    const isShownWorking = status === "working" || status === "blocked";
+    if (isShownWorking)
+      return c.delegateState === status ? c : { ...c, delegateState: status };
+    const isSettling = at - (c.lastActivityAt ?? c.startedAt) < HERDR_PROMPT_SETTLE_MS;
+    if (status === "unknown" || isSettling)
+      return c;
+    const isReady = status === "idle" || status === "done";
+    const hasFinished = isReady && c.delegateState !== null;
+    return { ...c, endedAt: at, delegateState: hasFinished ? "finished" : c.delegateState };
+  };
+  const children = o.children.map(settled);
+  if (children.every((c, n) => c === o.children[n]))
+    return o;
+  const finished = children.filter((c, n) => c.delegateState === "finished" && o.children[n].delegateState !== "finished");
+  return finished.reduce((x, c) => subjectTouched(x, c.subjectId, at), { ...o, children });
 }
 function activityGate() {
   const saved = new Map;
@@ -1911,12 +1998,29 @@ function bucket(e) {
     return "pending";
   return "fail";
 }
+function runStart(e) {
+  const isWaiting = !!e.status && e.status.toUpperCase() !== "COMPLETED";
+  return msOf(e.startedAt) ?? (isWaiting ? Infinity : undefined);
+}
+function latestRuns(rollup) {
+  const latest = new Map;
+  for (const e of rollup) {
+    const key = JSON.stringify([e.workflowName ?? "", e.name ?? e.context ?? ""]);
+    const kept = latest.get(key);
+    const keptStart = kept && runStart(kept);
+    const start = runStart(e);
+    const isOlder = start !== undefined && keptStart !== undefined && start < keptStart;
+    if (!isOlder)
+      latest.set(key, e);
+  }
+  return [...latest.values()];
+}
 function readView(ref, json) {
   try {
     const v = JSON.parse(json);
     if (typeof v.number !== "number")
       return null;
-    const rollup = Array.isArray(v.statusCheckRollup) ? v.statusCheckRollup : [];
+    const rollup = latestRuns(Array.isArray(v.statusCheckRollup) ? v.statusCheckRollup : []);
     return {
       ref,
       number: v.number,
@@ -2044,9 +2148,18 @@ function readiness(pr, isSent = () => false) {
   return result("ready", "Ready to merge", [...isApproved ? ["approved"] : [], "checks pass", "no threads waiting on you"], isApproved ? ": " : ", ");
 }
 var STATUS_ORDER = { blocked: 0, ready: 1, draft: 2, waiting: 3, merged: 4, closed: 5 };
-function inPrOrder(prs) {
-  const rank = new Map(prs.map((pr) => [pr, STATUS_ORDER[readiness(pr).status]]));
-  return [...prs].sort((a, b) => rank.get(a) - rank.get(b) || b.number - a.number || a.ref.localeCompare(b.ref));
+function rankOf(pr, ranked) {
+  const at = ranked.indexOf(pr.ref);
+  return at === -1 || pr.state !== "OPEN" ? null : at;
+}
+function inPrOrder(prs, ranked = []) {
+  const place = (pr) => rankOf(pr, ranked) ?? Infinity;
+  const status = new Map(prs.map((pr) => [pr, STATUS_ORDER[readiness(pr).status]]));
+  const byPlace = (a, b) => {
+    const [x, y] = [place(a), place(b)];
+    return x === y ? 0 : x < y ? -1 : 1;
+  };
+  return [...prs].sort((a, b) => byPlace(a, b) || status.get(a) - status.get(b) || b.number - a.number || a.ref.localeCompare(b.ref));
 }
 var HTML_TAG = /<\/?(?:a|b|br|code|details|div|em|h[1-6]|hr|i|img|kbd|li|ol|p|pre|span|strong|sub|summary|sup|table|tbody|td|th|thead|tr|ul)\b[^>]*>/g;
 function readableComment(body) {
@@ -2692,9 +2805,103 @@ var NEEDS_YOU_GROUPS = [
   { kind: "question", title: "Questions", list: "questions" },
   { kind: "task", title: "Tasks", list: "tasks" }
 ];
-var CLOSED_MARKS = { handled: "\u2713", dismissed: "\u2715", lapsed: "" };
+var SUBJECT_MARKS = {
+  working: { mark: "\u25CF", tone: null },
+  queued: { mark: "\u25CB", tone: null },
+  "waits-on-other": { mark: "\u25CC", tone: null },
+  done: { mark: "\u2713", tone: "done" },
+  dropped: { mark: "\u2717", tone: null }
+};
+var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
+var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
+var RUNNING_MARK = RUNNING_FRAMES[0];
+var CLOSED_MARKS = {
+  handled: SUBJECT_MARKS.done.mark,
+  dismissed: "\u2715",
+  lapsed: SUBJECT_MARKS.dropped.mark
+};
+var PR_MARKS = {
+  waiting: { text: HELD_MARK.mark, tone: "needsYou" },
+  sent: { text: SUBJECT_MARKS.done.mark, tone: "done" },
+  failing: { text: FINDING_GROUPS.issue.mark, tone: "error" }
+};
+var MARK_LEGEND = [
+  {
+    mark: RUNNING_MARK,
+    tone: null,
+    isRunning: true,
+    words: "Working. It moves while the work runs or your message is on its way."
+  },
+  { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: "Queued: not started yet" },
+  {
+    mark: SUBJECT_MARKS["waits-on-other"].mark,
+    tone: null,
+    isRunning: false,
+    words: "Waits on something other than you, such as a build or a review"
+  },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
+  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: "Dropped before it was done" },
+  { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: "Dismissed by you" },
+  {
+    mark: FINDING_GROUPS.issue.mark,
+    tone: FINDING_GROUPS.issue.tone,
+    isRunning: false,
+    words: "Something is wrong: an issue or a failing check"
+  },
+  {
+    mark: FINDING_GROUPS.opportunity.mark,
+    tone: FINDING_GROUPS.opportunity.tone,
+    isRunning: false,
+    words: "Opportunity: something that could be better"
+  }
+];
+var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks" };
+function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
+  const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
+  const hasRows = isRowTab(tab);
+  const selectsStatusRows = tab === "overview" && hasStatusButtons;
+  const switchTabs = { keys: tabKeys, does: "Switch tabs" };
+  switch (look) {
+    case "desktop":
+      return [];
+    case "terminal":
+      return [
+        switchTabs,
+        ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
+        { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
+      ];
+    case "codex":
+      return [
+        switchTabs,
+        ...hasRows ? [{ keys: "j k \u2191 \u2193", does: "Select the next or previous row" }] : [],
+        { keys: "?", does: "Open or close help" },
+        { keys: "esc", does: "Close help, or leave a reply field" }
+      ];
+    case "omp":
+      return [
+        { keys: `tab ${tabKeys}`, does: "Switch tabs" },
+        ...hasRows ? [
+          { keys: "\u2191 \u2193 j k", does: "Move between rows" },
+          { keys: "\u2190 \u2192", does: "Pick a button" },
+          { keys: "\u21B5", does: "Press the picked button" },
+          { keys: "r", does: "Reply to the selected row" },
+          { keys: "u", does: "Undo the last close" }
+        ] : [
+          ...selectsStatusRows ? [
+            { keys: "j k", does: "Select the next or previous row with a button" },
+            { keys: "\u21B5", does: "Press the selected row's button" }
+          ] : [],
+          { keys: "\u2191 \u2193", does: "Scroll the page" }
+        ],
+        { keys: "?", does: "Open or close help" },
+        { keys: "esc", does: "Close help, then the panel" }
+      ];
+  }
+}
 var CLOSED_SHOWN = 3;
 var SETTLED_MS = 5120;
+var PRESS_GUARD_MS = 400;
 var QUEUED_AFTER_MS = 1000;
 var COMPARE_LIMIT_MS = 30 * 60000;
 function compareEndsAt(lastActions, now) {
@@ -2710,6 +2917,9 @@ function pendingDeliveryAt(last, now) {
   if (last?.delivery?.state !== "queued")
     return null;
   return isQueuedAt(last, now) ? "queued" : "sending";
+}
+function isGuarded(openedAt, now) {
+  return openedAt > 0 && now - openedAt < PRESS_GUARD_MS;
 }
 var NO_HOLDS = { replies: {}, discarded: {}, shownSince: null };
 function isShownSince(at, shownSince) {
@@ -2741,7 +2951,7 @@ function closedRowState(closed, at, now, settleWindowMs, delivery) {
     at,
     canUndo: canUndoClose(closed, at, now, settleWindowMs),
     offersUndo: offersUndo(closed),
-    isLapsed: isLapsed(closed),
+    closedAs: closedState(closed),
     delivery
   };
 }
@@ -2766,14 +2976,11 @@ function optionDescriptionsOf(item, actions) {
     return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
   });
 }
-function rowMark(row, look) {
-  if (row.state.is === "handedOff" && row.feedback?.is !== "unconfirmed")
-    return { text: "\u2713", tone: "done" };
-  if (row.finding) {
-    const group = FINDING_GROUPS[row.finding.kind];
-    return { text: group.mark, tone: group.tone };
-  }
-  return { text: isTerminalLike(look) ? row.handle : "" };
+function rowHandle(row) {
+  return row.number === null ? "\u2022" : `${row.number})`;
+}
+function rowTitle(row, look) {
+  return isTerminalLike(look) && row.number !== null ? `${rowHandle(row)} ${row.title}` : row.title;
 }
 function replyHint(row, agent) {
   return row.replyKind === "answer" ? "Your answer" : `Your reply to ${agent}`;
@@ -2795,10 +3002,35 @@ function markedFeedbackText(f, isMarkDone, look) {
 }
 function rowFeedbackText(row, look) {
   const f = row.feedback;
-  return f ? f.is === "done" && row.state.is === "handedOff" ? f.label : feedbackText(f, look) : null;
+  if (!f)
+    return null;
+  if (!isHandedOffDone(row))
+    return feedbackText(f, look);
+  return f.is === "done" ? f.label : feedbackText(f, look).replace(/^\u2713 /, "");
+}
+function isHandedOffDone(row) {
+  const f = row.feedback;
+  return row.state.is === "handedOff" && (f?.is === "done" || f?.is === "local" && f.result.state === "done");
+}
+var RUNNING_RESULT = { text: RUNNING_MARK, isRunning: true };
+function rowResultMark(row) {
+  if (row.state.is === "settled")
+    return settledMark(row.state);
+  const f = row.feedback;
+  if (row.state.is !== "handedOff" || !f)
+    return null;
+  if (f.is === "sending" || f.is === "queued")
+    return RUNNING_RESULT;
+  return isHandedOffDone(row) ? { text: SUBJECT_MARKS.done.mark, isRunning: false, tone: "done" } : { text: "", isRunning: false };
+}
+function isSendMoving(delivery) {
+  return delivery === "sending" || delivery === "queued";
 }
 function allRows(v) {
   return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
+}
+function settledRowIds(rows) {
+  return rows.filter((r) => r.state.is === "settled").map((r) => r.id);
 }
 function closedShown(closed, drawnSettled) {
   return closed.filter((d) => !drawnSettled.has(d.id)).slice(0, CLOSED_SHOWN);
@@ -2811,10 +3043,6 @@ function foldLabel(total) {
 }
 function earlierLabel(total, shown) {
   return total > shown ? `${total - shown} earlier` : null;
-}
-function shortAgo(ms) {
-  const age = ago(ms);
-  return age === "just now" ? "now" : age.replace(/ ago$/, "");
 }
 function groupEmptyText(title) {
   return `No open ${title.toLowerCase()}`;
@@ -3042,17 +3270,25 @@ function feedbackText(f, look) {
 function deliveryLabel(state, label) {
   return state === "queued" ? `Queued: ${label}` : `Not confirmed: ${label}`;
 }
-function settledMark(delivery) {
-  return delivery === null ? "\u2713" : "";
+function settledMark(state) {
+  return closedMark(state.closedAs, state.delivery);
 }
 function closedMark(state, delivery) {
-  return delivery === null ? CLOSED_MARKS[state] : "";
+  if (isSendMoving(delivery))
+    return RUNNING_RESULT;
+  return { text: delivery === null ? CLOSED_MARKS[state] : "", isRunning: false };
+}
+function isRowTabRunning(v, tab, isUnfolded) {
+  const rows = tab === "needsYou" ? [...v.needsYou.questions, ...v.needsYou.tasks] : v.findings.rows;
+  const settled = new Set(settledRowIds(rows));
+  const closed = tab === "needsYou" ? NEEDS_YOU_GROUPS.flatMap((g) => isUnfolded(g.kind) ? closedShown(v.needsYou.closed[g.list], settled) : []) : Object.keys(FINDING_GROUPS).flatMap((kind) => isUnfolded(kind) ? closedShown(v.findings.closed.filter((f) => f.kind === kind), settled) : []);
+  return rows.some((r) => rowResultMark(r)?.isRunning) || closed.some((d) => closedMark(closedState(d), d.delivery).isRunning);
 }
 function canUndoRefused(delivery) {
   return delivery !== null && typeof delivery === "object" && delivery.canUndo;
 }
 function settledTone(state) {
-  return state.delivery === null && !state.isLapsed ? "done" : "muted";
+  return state.delivery === null && state.closedAs === "handled" ? "done" : "muted";
 }
 function settledLabel(label, delivery) {
   if (delivery && typeof delivery === "object")
@@ -3102,28 +3338,25 @@ function screenTabOf(tab) {
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
-var LOOK_TEXT = "Seen";
+var LOOK_TEXT = "Last seen";
 var WAS_PREFIX = "was: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " \xB7 ";
 var STATUS_TEXT_LINES = 3;
 var CHILD_ROWS = 3;
-var STALL_MS = 15 * 60000;
 var NEW_CLOSED_ROWS = 2;
 var OPEN_ROWS = 7;
-var SUBJECT_MARKS = {
-  working: { mark: "\u25CF", tone: null },
-  queued: { mark: "\u25CB", tone: null },
-  "waits-on-other": { mark: "\u25CC", tone: null },
-  done: { mark: "\u2713", tone: "done" },
-  dropped: { mark: "\u2717", tone: null }
-};
-var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
-var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
+var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
+var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 function mergedLine(merged, fits) {
   return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
+}
+function nameBeforeStall(name, fits) {
+  const words = name.split(" ");
+  const cuts = words.map((_, n) => n === 0 ? name : `${words.slice(0, words.length - n).join(" ")}\u2026`);
+  return cuts.find(fits) ?? cuts.at(-1);
 }
 function hasRunningMark(page) {
   return page.rows.some((r) => (r.kind === "subject" || r.kind === "child") && r.isRunning);
@@ -3135,25 +3368,28 @@ function isItemAfterItem(row, prev) {
   const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
   return prev !== undefined && prev.kind !== "look" && row.kind !== "look" && !isUnderSubject;
 }
-function idleOf(c, now) {
-  return c.lastActivityAt === null ? null : now - c.lastActivityAt;
+function isFinishedUnseen(c, lastLookAt) {
+  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
 }
-function isQuiet(c, now) {
-  const idle = idleOf(c, now);
-  return idle !== null && idle >= STALL_MS;
+function isChildWorking(c) {
+  return c.endedAt === null && c.delegateState !== "blocked";
 }
-function isChildWorking(c, now) {
-  return now - (c.lastActivityAt ?? c.startedAt) < STALL_MS;
+function childStall(c) {
+  if (c.delegateState === "finished")
+    return { text: "finished", tone: "done" };
+  if (c.delegateState === "blocked")
+    return { text: "waiting", tone: "needsYou" };
+  return null;
 }
-function childRow(c, now, branch) {
-  const idle = idleOf(c, now);
+function childRow(c, branch) {
+  const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
   return {
     kind: "child",
     id: c.id,
-    mark: "\u25CF",
-    isRunning: isChildWorking(c, now),
+    ...marks,
+    isRunning: isChildWorking(c),
     name: c.name,
-    stall: idle !== null && isQuiet(c, now) ? `quiet ${shortAgo(idle)}` : null,
+    stall: childStall(c),
     branch
   };
 }
@@ -3164,24 +3400,24 @@ function statusPage(s, now) {
   const isNew = (x) => look === null || x.changedAt > look;
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const waitingSince = (x) => {
-    const asked = s.ledger.items.filter((i) => o?.askSubjects[i.id] === x.id).flatMap((i) => i.at ?? []);
-    return asked.length > 0 ? Math.min(...asked) : x.changedAt;
+  const oldestAskOf = (x) => {
+    if (!isHeld(x))
+      return null;
+    const oldest = s.ledger.items.filter((i) => o?.askSubjects[i.id] === x.id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+    return oldest ? { id: oldest.id, kind: oldest.kind } : null;
   };
-  const stallOf = (x) => {
-    const isWaiting = isHeld(x) || isOpen(x) && x.status === "waits-on-other";
-    const waited = now - waitingSince(x);
-    return isWaiting && waited >= STALL_MS ? `waiting ${shortAgo(waited)}` : null;
-  };
+  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
+  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
+  const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const open = subjects.filter(isOpen);
   const queuedOver = Math.max(0, open.length - OPEN_ROWS);
-  const hiddenQueued = new Set(open.filter((x) => x.status === "queued" && !isHeld(x)).sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id));
-  const shown = [...open.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort((x, y) => y.changedAt - x.changedAt);
+  const hiddenQueued = new Set(open.filter((x) => placeOf(x) === "queued").sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id));
+  const shown = [...open.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort(pageOrder);
   const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
-  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const shownIds = new Set(shown.map((x) => x.id));
-  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, null));
+  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null));
   const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
   const firstSeen = shown.findIndex((x) => !isNew(x));
   for (const [i, x] of shown.entries()) {
@@ -3195,20 +3431,23 @@ function statusPage(s, now) {
       kind: "subject",
       id: x.id,
       ...isHeld(x) ? HELD_MARK : SUBJECT_MARKS[x.status],
-      isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some((c) => isChildWorking(c, now))),
+      isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some(isChildWorking)),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       stall: stallOf(x),
       merged: isNew(x) ? x.merged : null,
       was: isNew(x) ? x.was : null,
-      hasChildren: under.length > 0
+      hasChildren: under.length > 0,
+      ask: oldestAskOf(x)
     });
-    rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
+    rows.push(...shownUnder.map((c, n) => childRow(c, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
+    const hidden = under.slice(CHILD_ROWS);
+    const isEveryHiddenRunning = hidden.every((c) => c.delegateState !== "finished");
     if (isMore)
       rows.push({
         kind: "more",
         id: `${x.id}-more`,
-        text: `+ ${under.length - CHILD_ROWS} more running`,
+        text: `+ ${hidden.length} more${isEveryHiddenRunning ? " running" : ""}`,
         branch: "last"
       });
   }
@@ -3219,7 +3458,7 @@ function statusPage(s, now) {
     rows.push({
       kind: "fold",
       id: "queued",
-      mark: "\u25CB",
+      mark: SUBJECT_MARKS.queued.mark,
       tone: null,
       text: `${hiddenQueued.size} more queued`
     });
@@ -3228,15 +3467,15 @@ function statusPage(s, now) {
     rows.push({
       kind: "fold",
       id: "done",
-      mark: "\u2713",
+      mark: SUBJECT_MARKS.done.mark,
       tone: "done",
       text: `${folded.length}${isMore ? " more" : ""} done`
     });
   }
-  const goal = o?.goal || null;
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
-    isEmpty: goal === null && rows.length === 0,
-    goal,
+    isEmpty: head === null && rows.length === 0,
+    head,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
@@ -3308,7 +3547,8 @@ function actionsOf(row, last, state, feedback) {
       ...stepActions,
       action({ action: "done", id }, "Done", "mark"),
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
-      action({ action: "explain", id }, "Explain", "talk")
+      action({ action: "explain", id }, "Explain", "talk"),
+      action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
   const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
@@ -3368,6 +3608,26 @@ function rowKeyPlan(r, isAllShown) {
       });
   }
   return { keys, more };
+}
+var VIEW_ASK_LABELS = { question: "View question", task: "View task" };
+function statusKeyPlan(row) {
+  if (row.kind !== "subject" || row.ask === null)
+    return [];
+  return [
+    {
+      press: { action: "show-ask", askId: row.ask.id },
+      label: VIEW_ASK_LABELS[row.ask.kind],
+      hotkey: "v",
+      kind: "view"
+    }
+  ];
+}
+function statusKeyRows(page) {
+  return page.rows.filter((r) => statusKeyPlan(r).length > 0);
+}
+function statusSelected(page, selectedId) {
+  const rows = statusKeyRows(page);
+  return rows.find((r) => r.id === selectedId) ?? rows[0] ?? null;
 }
 function actionLines(keys, more, { width, gap, separator }) {
   const lines = [];
@@ -3451,7 +3711,7 @@ function inboxView({
           canUndo: false,
           offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
-          isLapsed: false
+          closedAs: closedState(closed)
         };
       if (isHeld(closed))
         return { is: "held", label: heldLabel(closed), at };
@@ -3467,7 +3727,7 @@ function inboxView({
         canUndo: isUndoLeft(last.at, now, settleWindowMs),
         offersUndo: true,
         delivery: pendingDeliveryAt(last, now),
-        isLapsed: false
+        closedAs: "handled"
       };
     return isHandedOff(last, turns) ? { is: "handedOff" } : { is: "open" };
   };
@@ -3491,7 +3751,7 @@ function inboxView({
     return rowOf({
       id: item.id,
       type: item.kind,
-      handle: n === undefined ? "\u2022" : `${n})`,
+      number: n ?? null,
       title: item.ask,
       at: item.at,
       detail: null,
@@ -3510,7 +3770,7 @@ function inboxView({
   const findingRows = [...placed.findings].filter((f) => !isFixSettled(f.id)).reverse().sort(byGroup).map((finding) => rowOf({
     id: finding.id,
     type: "finding",
-    handle: "\u2022",
+    number: null,
     title: finding.title,
     at: finding.at,
     detail: finding.detail,
@@ -3589,22 +3849,34 @@ var COUNT_TOKENS = {
 var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null]));
 var HERDR_TIMEOUT_MS = 5000;
 var HERDR_AGENT_LIST = ["herdr", "agent", "list"];
-var HERDR_RUNNING = new Set(["working", "unknown"]);
+var HERDR_STATUSES = ["idle", "working", "blocked", "done", "unknown"];
+var HERDR_CHECK_MS = 30000;
 async function delegatesInHerdr(o, run) {
   if (!hasRunningDelegate(o))
     return null;
   const r = await run(HERDR_AGENT_LIST, { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS });
-  return r.code === 0 ? herdrRunning(r.stdout) : null;
+  return r.code === 0 ? herdrStatuses(r.stdout) : null;
 }
-function herdrRunning(stdout) {
+function herdrStatuses(stdout) {
   try {
     const agents = JSON.parse(stdout)?.result?.agents;
     if (!Array.isArray(agents))
       return null;
-    return new Set(agents.filter((a) => typeof a?.name === "string" && HERDR_RUNNING.has(a?.agent_status)).map((a) => a.name));
+    const statusOf = (a) => HERDR_STATUSES.find((s) => s === a?.agent_status) ?? "unknown";
+    return new Map(agents.filter((a) => typeof a?.name === "string").map((a) => [a.name, statusOf(a)]));
   } catch {
     return null;
   }
+}
+function herdrCheckGate() {
+  const checked = new Map;
+  return (session, now) => {
+    const last = checked.get(session);
+    if (last !== undefined && now - last < HERDR_CHECK_MS)
+      return false;
+    checked.set(session, now);
+    return true;
+  };
 }
 function stopLine(stop) {
   switch (stop.kind) {
@@ -3627,18 +3899,21 @@ function statusLine(stop, dialogs, input) {
   const dialog = dialogs[0];
   if (dialog)
     return dialogText(dialog);
-  const { firstAsk, asks, findings, goal } = input;
+  const { firstAsk, asks, findings, focus } = input;
   if (firstAsk !== null)
     return asks > 1 ? `${asks} \xB7 ${firstAsk}` : firstAsk;
   const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? "" : "s"}`;
-  return [goal, findingsText].filter(Boolean).join(" \xB7 ");
+  return [focus, findingsText].filter(Boolean).join(" \xB7 ");
+}
+function focusOf(head) {
+  return head ? head.description || head.title : null;
 }
 function herdrTokens(ledger, stop, view, dialogs) {
   const input = {
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
-    goal: ledger.overview?.goal || null
+    focus: focusOf(ledger.overview?.head ?? null)
   };
   const counts = ROW_TABS.map((t) => {
     const count = view[t.id].count;
@@ -3688,6 +3963,8 @@ function herdrReporter() {
 
 // ../hooks/pr-tab.ts
 var MAX_PRS = 12;
+var MAX_ORDERED_PRS = 30;
+var GH_RUNS_AT_ONCE = 8;
 var GH_SIGN_IN_CODE = 4;
 function asksForSignIn(r) {
   return r.exitCode === GH_SIGN_IN_CODE || r.exitCode !== 0 && /\bHTTP 401\b/.test(r.stderr);
@@ -3703,32 +3980,36 @@ function isLeftOut(prState, ref) {
   const view = prState.views[ref];
   return view !== undefined && !isKeptPr(view);
 }
-function splitLinked(prState, linked) {
-  const shown = linked.filter((ref) => !isLeftOut(prState, ref));
-  return { tracked: shown.slice(-MAX_PRS), older: shown.slice(0, Math.max(0, shown.length - MAX_PRS)) };
+function splitLinked(prState, links) {
+  const ranked = new Set(links.prOrder?.refs ?? []);
+  const shown = links.prs.filter((ref) => !isLeftOut(prState, ref));
+  const unranked = shown.filter((ref) => !ranked.has(ref));
+  const older = unranked.slice(0, Math.max(0, unranked.length - MAX_PRS));
+  return { tracked: shown.filter((ref) => !older.includes(ref)), older };
 }
-function olderPrsText(prState, linked) {
-  const { older } = splitLinked(prState, linked);
+function olderPrsText(prState, links) {
+  const { older } = splitLinked(prState, links);
   if (older.length === 0)
     return null;
   const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
   return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
 }
-async function fetchTracked(run, state, linked, findsBranchPr) {
+async function fetchTracked(run, state, links, findsBranchPr, now) {
   let isGhSignedOut = null;
+  const runs = limitedTo(GH_RUNS_AT_ONCE);
   const gh = async (args) => {
-    const r = await run(args);
+    const r = await runs(() => run(args));
     const isAnswer = r.exitCode !== UNSTARTABLE_CODE && r.exitCode !== TIMED_OUT_CODE;
     if (isAnswer)
       isGhSignedOut = isGhSignedOut === true || asksForSignIn(r);
     return r;
   };
-  const { tracked } = splitLinked(state, linked);
+  const { tracked } = splitLinked(state, links);
   const branchTarget = findsBranchPr ? null : state.branchRef;
   const isBranchLinked = branchTarget !== null && tracked.includes(branchTarget);
   const [branch, ...rest] = await Promise.all([
-    findsBranchPr || branchTarget && !isBranchLinked ? fetchPr(gh, branchTarget, state.views, state.branchRef) : null,
-    ...tracked.map((ref) => fetchPr(gh, ref, state.views, null))
+    findsBranchPr || branchTarget && !isBranchLinked ? fetchPr(gh, branchTarget, state.views, state.branchRef, now) : null,
+    ...tracked.map((ref) => fetchPr(gh, ref, state.views, null, now))
   ]);
   const views = {};
   for (const v of [...rest, branch])
@@ -3736,7 +4017,7 @@ async function fetchTracked(run, state, linked, findsBranchPr) {
       views[v.ref] = v;
   return { views, branchRef: findsBranchPr ? branch?.ref ?? null : state.branchRef, isGhSignedOut };
 }
-async function fetchPr(gh, target, views, knownBranchRef) {
+async function fetchPr(gh, target, views, knownBranchRef, now) {
   const threadsOf = (ref) => {
     const r = parseRef(ref);
     return gh([
@@ -3757,6 +4038,7 @@ async function fetchPr(gh, target, views, knownBranchRef) {
     gh(["pr", "view", ...t ? [t.number, "-R", t.repo] : [], "--json", VIEW_FIELDS]),
     target ? threadsOf(target) : null
   ]);
+  const fetchedAt = await now();
   const hasNoPr = view.exitCode !== 0 && /no pull requests found/i.test(view.stderr);
   const ref = target ?? (view.exitCode === 0 ? urlRef(view.stdout) : hasNoPr ? null : knownBranchRef);
   if (!ref)
@@ -3777,7 +4059,8 @@ async function fetchPr(gh, target, views, knownBranchRef) {
     threads: answer?.threads ?? previous?.threads ?? [],
     isYours: answer?.isYours ?? previous?.isYours ?? null,
     wasSeenOpen: base.state === "OPEN" || previous?.wasSeenOpen === true,
-    error: answer ? null : "could not read review threads"
+    error: answer ? null : "could not read review threads",
+    fetchedAt
   };
 }
 function urlRef(json) {
@@ -3827,13 +4110,14 @@ function prRefreshFailedText(error) {
 var PR_REFRESH_LABEL = "Refresh PRs";
 var PR_REFRESH = { kind: "refresh-prs", name: "PRs" };
 var PR_DISMISSED_LABEL = "Dismissed";
+var DISMISS_MERGED_LABEL = "Dismiss merged";
+var DISMISS_MERGED_ID = "pr:merged";
 var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks" };
 function threadRowText(pr, t, lastActions) {
   const isSent = threadSentIn(lastActions)(pr, t);
   const isChanged = !isSent && t.isLinesChanged;
-  const showsCheck = threadShowsCheckIn(lastActions)(pr, t);
   return {
-    mark: showsCheck ? { text: "\u2713", tone: "done", isDone: true } : { text: "\u25E6", tone: null, isDone: false },
+    mark: threadMark(isSent ? lastActions[prThreadId(pr, t)]?.delivery : null),
     fold: isSent || isChanged ? t.isLinesChanged ? { note: `Lines changed since this comment${DOT}still open on GitHub` } : {} : null,
     title: clipLabel(commentParts(t.body).head, THREAD_TITLE_CHARS),
     meta: [
@@ -3843,9 +4127,18 @@ function threadRowText(pr, t, lastActions) {
     ].filter(Boolean).join(DOT)
   };
 }
+function threadMark(delivery) {
+  if (delivery === null)
+    return { ...PR_MARKS.waiting, isDone: false, isRunning: false };
+  if (delivery?.state === "queued")
+    return { text: RUNNING_MARK, tone: null, isDone: false, isRunning: true };
+  if (delivery?.state === "unconfirmed")
+    return { text: "", tone: null, isDone: false, isRunning: false };
+  return { ...PR_MARKS.sent, isDone: true, isRunning: false };
+}
 function checkRowText(c) {
   return {
-    mark: { text: "\u2717", tone: "error", isDone: false },
+    mark: { ...PR_MARKS.failing, isDone: false, isRunning: false },
     lead: c.workflow || null,
     title: c.name,
     meta: checkRunText(c)
@@ -3860,12 +4153,8 @@ function threadSentIn(lastActions) {
     return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
   };
 }
-function threadShowsCheckIn(lastActions) {
-  const isSent = threadSentIn(lastActions);
-  return (pr, t) => {
-    const delivery = lastActions[prThreadId(pr, t)]?.delivery;
-    return isSent(pr, t) && delivery?.state !== "unconfirmed";
-  };
+function isPrTabRunning(prs, lastActions) {
+  return prs.some((pr) => waitingThreads(pr).some((t) => threadRowText(pr, t, lastActions).mark.isRunning));
 }
 function prRowWaits(prs, lastActions) {
   const isSent = threadSentIn(lastActions);
@@ -3878,11 +4167,11 @@ function prRowWaits(prs, lastActions) {
     })
   ]);
 }
-function isTracked(prState, linked, ref) {
-  return splitLinked(prState, linked).tracked.includes(ref) || prState.branchRef === ref;
+function isTracked(prState, links, ref) {
+  return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
 }
-function keepsView(prState, linked, ref) {
-  return isTracked(prState, linked, ref) || linked.includes(ref) && isLeftOut(prState, ref);
+function keepsView(prState, links, ref) {
+  return isTracked(prState, links, ref) || links.prs.includes(ref) && isLeftOut(prState, ref);
 }
 function dismissedAt(lastActions, ref) {
   const mark = lastActions[prMarkId(ref)];
@@ -3891,14 +4180,15 @@ function dismissedAt(lastActions, ref) {
 function isDismissed(lastActions, ref) {
   return dismissedAt(lastActions, ref) !== null;
 }
-function isViewKept(prState, linked, lastActions, ref, shownSince) {
+function isViewKept(prState, links, lastActions, ref, shownSince) {
   const at = dismissedAt(lastActions, ref);
-  return keepsView(prState, linked, ref) || at !== null && isShownSince(at, shownSince);
+  return keepsView(prState, links, ref) || at !== null && isShownSince(at, shownSince);
 }
 var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
-function drawnPrs(prState, linked, lastActions, now, settleWindowMs, placing) {
-  return inPrOrder(Object.values(prState.views)).flatMap((pr) => {
-    if (isTracked(prState, linked, pr.ref))
+function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
+  const ranked = links.prOrder?.refs ?? [];
+  const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr) => {
+    if (isTracked(prState, links, pr.ref))
       return [{ pr, state: { is: "open" } }];
     const at = dismissedAt(lastActions, pr.ref);
     if (at === null)
@@ -3906,6 +4196,32 @@ function drawnPrs(prState, linked, lastActions, now, settleWindowMs, placing) {
     const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null);
     return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
   });
+  let rank = 0;
+  return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
+}
+function prRankText(rank) {
+  return `${rank}.\u2002`;
+}
+function prOrderText(order, drawn, now) {
+  const isRanking = drawn.some((d) => d.rank !== null);
+  if (!order || !isRanking)
+    return null;
+  return `${order.label ?? "Order"}${DOT}set by ${order.by} ${ago(now - order.at)}`;
+}
+function limitedTo(limit) {
+  let running = 0;
+  const waiting = [];
+  return async (call) => {
+    if (running >= limit)
+      await new Promise((go) => waiting.push(go));
+    running += 1;
+    try {
+      return await call();
+    } finally {
+      running -= 1;
+      waiting.shift()?.();
+    }
+  };
 }
 var PR_TONES = {
   ready: "done",
@@ -3915,6 +4231,9 @@ var PR_TONES = {
   merged: "findings",
   closed: "error"
 };
+function isPrPress(p) {
+  return "ref" in p || p.action === "pr-dismiss-merged";
+}
 function commentEffect(pr, t) {
   return { kind: "open", target: t.reply?.url || t.url || pr.url, name: "the comment" };
 }
@@ -3924,7 +4243,15 @@ function prPageEffect(pr) {
 function logEffect(pr, check) {
   return { kind: "open", target: check.url ?? pr.url, name: check.url ? "the log" : `PR #${pr.number}` };
 }
+function isPrFixPress(p) {
+  return p.action === "pr-conflicts" || p.action === "check-fix";
+}
+function fixCheckEffect(pr) {
+  return { kind: "refresh-prs", name: `PR #${pr.number}` };
+}
 function prRowId(p) {
+  if (p.action === "pr-dismiss-merged")
+    return DISMISS_MERGED_ID;
   if ("check" in p)
     return checkRowId(p.ref, p.check);
   if ("thread" in p)
@@ -3932,7 +4259,7 @@ function prRowId(p) {
   return prMarkId(p.ref);
 }
 function pressRowId(p) {
-  return "ref" in p ? prRowId(p) : p.id;
+  return isPrPress(p) ? prRowId(p) : p.id;
 }
 function prRetryOf(last, ref, thread, check = null) {
   if (last?.delivery?.state !== "failed")
@@ -4069,21 +4396,49 @@ function prBlockActions(pr, isThreadSent, branchRef, presses) {
     ]
   ]);
 }
+function isDismissedByMerged(pr, branchRef) {
+  return pr.state === "MERGED" && pr.ref !== branchRef;
+}
+function prTabActions(drawn, branchRef) {
+  const hasMerged = drawn.some((d) => d.state.is === "open" && isDismissedByMerged(d.pr, branchRef));
+  return hasMerged ? [
+    {
+      press: { action: "pr-dismiss-merged" },
+      label: DISMISS_MERGED_LABEL,
+      kind: "mark",
+      emphasis: "normal",
+      hotkey: "m",
+      isOut: false
+    }
+  ] : [];
+}
 function applyPrPress(ledger, prState, lastActions, p, ctx) {
   const stale = { stale: true };
-  const pr = prState.views[p.ref];
-  const markId = prMarkId(p.ref);
   const applied = (a) => {
     const effects = a.effects ?? [];
     const lasts = Object.fromEntries(Object.entries(a.lasts ?? {}).map(([id, l]) => [id, withQueued(l, effects)]));
     return { ledger, drop: [], ...a, lasts, effects };
   };
+  if (p.action === "pr-dismiss-merged") {
+    const refs = Object.values(prState.views).filter((pr) => isTracked(prState, ledger, pr.ref) && isDismissedByMerged(pr, prState.branchRef)).map((pr) => pr.ref);
+    if (refs.length === 0)
+      return stale;
+    return applied({
+      ledger: { ...ledger, prs: ledger.prs.filter((r) => !refs.includes(r)) },
+      lasts: Object.fromEntries(refs.map((ref) => {
+        const id = prMarkId(ref);
+        return [id, recordPress("mark", "pr-dismiss", PR_DISMISSED_LABEL, ctx, lastActions[id])];
+      }))
+    });
+  }
+  const pr = prState.views[p.ref];
+  const markId = prMarkId(p.ref);
   if (p.action === "pr-undo") {
-    if (!pr || isTracked(prState, ledger.prs, p.ref) || lastActions[markId]?.action !== "pr-dismiss")
+    if (!pr || isTracked(prState, ledger, p.ref) || lastActions[markId]?.action !== "pr-dismiss")
       return stale;
     return applied({ ledger: { ...ledger, prs: [...ledger.prs, p.ref] }, drop: [markId] });
   }
-  if (!pr || !isTracked(prState, ledger.prs, p.ref))
+  if (!pr || !isTracked(prState, ledger, p.ref))
     return stale;
   const record = (rowId, kind, action, text) => recordPress(kind, action, text, ctx, lastActions[rowId]);
   const send = (text) => ({ kind: "send", text, by: null });
@@ -4241,6 +4596,22 @@ var CLOSE_SCHEMA = {
   },
   required: ["id"]
 };
+var ORDER_SCHEMA = {
+  type: "object",
+  properties: {
+    repo: { type: "string", description: "The repository, as owner/name." },
+    numbers: {
+      type: "array",
+      items: { type: "integer" },
+      description: `The PR numbers, first to last, at most ${MAX_ORDERED_PRS}. Give an empty list to clear the order.`
+    },
+    label: { type: "string", description: 'What the order is, in at most 4 words, such as "Merge order".' }
+  },
+  required: ["numbers"]
+};
+function orderDescription(host) {
+  return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`;
+}
 function recordDescription(host) {
   return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing.
 - question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
@@ -4252,8 +4623,19 @@ var CLOSE_DESCRIPTION = `Close an open item or finding by its id, such as i35 or
 function agentTools(host) {
   return [
     { name: "record", description: recordDescription(host), inputSchema: RECORD_SCHEMA },
-    { name: "close", description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA }
+    { name: "close", description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA },
+    { name: "order_prs", description: orderDescription(host), inputSchema: ORDER_SCHEMA }
   ];
+}
+function toolAnswer(host, ledger, tool, input, now) {
+  switch (tool) {
+    case "record":
+      return recordItem(host, ledger, input, now);
+    case "close":
+      return recordClose(host, ledger, input, now);
+    case "order_prs":
+      return orderPrs(host, ledger, input, now);
+  }
 }
 function cut(value, max) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -4363,6 +4745,42 @@ function recordClose(host, ledger, input, now) {
   if (earlier)
     return unchanged(ledger, `Already closed: ${closedHow(earlier)}.`);
   return unchanged(ledger, `Not closed: no open item or finding has the id ${id}. The open ones are listed beside the user's latest message.`);
+}
+var REPO = /^[\w.-]+\/[\w.-]+$/;
+var MAX_ORDER_LABEL = 40;
+function prNumber(value) {
+  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim().replace(/^#/, "")) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+function orderPrs(host, ledger, input, now) {
+  if (!Array.isArray(input.numbers))
+    return unchanged(ledger, "Not set: numbers must be a list of PR numbers.");
+  if (input.numbers.length === 0) {
+    if (ledger.prOrder === null)
+      return unchanged(ledger, "No order was set.");
+    return {
+      ledger: { ...ledger, prOrder: null },
+      result: `Cleared. The PRs show in their usual order in ${host.prsIn}.`,
+      personLine: "PR order cleared"
+    };
+  }
+  const numbers = input.numbers.map(prNumber);
+  if (numbers.includes(null))
+    return unchanged(ledger, "Not set: numbers must be PR numbers, such as 3401.");
+  const repo = cut(input.repo, 200);
+  if (!REPO.test(repo))
+    return unchanged(ledger, "Not set: give repo as owner/name.");
+  const refs = [...new Set(numbers.map((n) => `${repo}#${n}`))];
+  if (refs.length > MAX_ORDERED_PRS)
+    return unchanged(ledger, `Not set: an order ranks at most ${MAX_ORDERED_PRS} PRs.`);
+  const label = cut(input.label, MAX_ORDER_LABEL) || null;
+  const added = refs.filter((ref) => !ledger.prs.includes(ref));
+  const addedText = added.length === 0 ? "" : added.length === 1 ? " 1 of them was not in the tab yet. It shows after the tab's next refresh, if the user wrote it and it is open." : ` ${added.length} of them were not in the tab yet. They show after the tab's next refresh, if the user wrote them and they are open.`;
+  return {
+    ledger: { ...ledger, prs: linkedPrs(ledger.prs, added), prOrder: { refs, label, by: host.agent, at: now } },
+    result: `Set. These ${refs.length} PRs show first in ${host.prsIn}, in this order.${addedText}`,
+    personLine: `PR order: ${label ? `${label}, ` : ""}${refs.length} ${refs.length === 1 ? "PR" : "PRs"}`
+  };
 }
 
 // ../hooks/session.ts
@@ -4688,7 +5106,7 @@ function pressOn(s, p, at, drawn, texts, localPressId) {
   if (isRepeatWhileOut(s, p, at, drawn))
     return { ledger: s.ledger, lasts: {}, drop: [], effects: [] };
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId };
-  if ("ref" in p)
+  if (isPrPress(p))
     return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx);
   const item = s.ledger.items.find((i) => i.id === p.id);
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
@@ -4736,7 +5154,7 @@ function completedAttempt(state, deliveryId, outcome) {
   };
 }
 function recorded(host, s, tool, args, now) {
-  const r = (tool === "close" ? recordClose : recordItem)(host, s.ledger, args, now);
+  const r = toolAnswer(host, s.ledger, tool, args, now);
   return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result, personLine: r.personLine };
 }
 function withHolds(s, holds) {
@@ -4747,7 +5165,7 @@ function pruned(s) {
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
-  const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince)));
+  const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)));
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return {
     ...s,
@@ -4805,7 +5223,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
   };
 }
 function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, settleWindowMs, {
+  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, now, settleWindowMs, {
     shownSince,
     lastTypedMessageAt: s.presence.lastTypedMessageAt
   });
@@ -4814,7 +5232,8 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
     drawn,
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
-    olderText: olderPrsText(s.prViews, s.ledger.prs),
+    olderText: olderPrsText(s.prViews, s.ledger),
+    orderText: prOrderText(s.ledger.prOrder, drawn, now),
     isGhSignedOut: s.prViews.isGhSignedOut === true
   };
 }
@@ -5115,6 +5534,50 @@ async function wakeForDone(host, current) {
     return outcome.state === "rejected" ? { ...after, ledger: refuseDoneNotification(after.ledger, sending.deliveryId, outcome.reason) } : after;
   });
 }
+var FIX_LABELS = { "pr-conflicts": "Resolve conflicts", "check-fix": "Fix" };
+function withoutCheck(s, check) {
+  const result = check ? s.lastActions[check.rowId]?.result : undefined;
+  if (!check || result?.at !== check.pendingAt || result.pressId !== check.pressId)
+    return s;
+  const { [check.rowId]: _check, ...rest } = s.lastActions;
+  return { ...s, lastActions: check.before ? { ...rest, [check.rowId]: check.before } : rest };
+}
+async function checkPrFirst(host, p, rowId, pressId, holds) {
+  const checking = {};
+  await host.update(async (saved) => {
+    delete checking.check;
+    const s = withHolds(saved, holds);
+    const at = await host.now();
+    const pr = s.prViews.views[p.ref];
+    if (!pr || "stale" in pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, host))
+      return s;
+    const before = s.lastActions[rowId];
+    const pending = pendingResult([fixCheckEffect(pr)], at, pressId);
+    checking.check = { rowId, before, pendingAt: at, pressId };
+    return {
+      ...s,
+      lastActions: {
+        ...s.lastActions,
+        [rowId]: localLast(before, { action: p.action, text: FIX_LABELS[p.action] }, pending)
+      }
+    };
+  });
+  const check = checking.check;
+  if (!check)
+    return "stale";
+  await host.refreshPrs();
+  let isRead = false;
+  await host.update(async (s) => {
+    const pr = s.prViews.views[p.ref];
+    isRead = pr?.fetchedAt !== undefined && pr.fetchedAt >= check.pendingAt;
+    const pending = s.lastActions[rowId]?.result;
+    if (isRead || !pending)
+      return s;
+    const failed = finishedResult(pending, [pr?.error ?? "gh could not read it"], await host.now());
+    return { ...s, lastActions: withResult(s.lastActions, rowId, check.pendingAt, failed) };
+  });
+  return isRead ? check : "unread";
+}
 async function startPress(host, p, isStale, holds) {
   const rowId = pressRowId(p);
   const localPressId = host.newId();
@@ -5150,10 +5613,26 @@ async function startPress(host, p, isStale, holds) {
       await host.update((s) => ({ ...s, ledger: f(s.ledger) }));
     }
   };
+  const check = "ref" in p && isPrFixPress(p) && !isStale ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err) => {
+    error = `Not sent: ${err instanceof Error ? err.message : String(err)}`;
+    return "unread";
+  }) : null;
+  if (check === "stale" || check === "unread")
+    return {
+      effects: null,
+      finish: async () => ({
+        copy,
+        error,
+        note: check === "stale" ? "stale" : null,
+        isUnconfirmed,
+        isRowFailed,
+        wakesForDone: false
+      })
+    };
   await host.update(async (saved) => {
     note = isStale ? "stale" : null;
     Object.assign(pressed, { r: undefined, at: undefined, deliveryId: undefined });
-    const s = withHolds(saved, holds);
+    const s = withoutCheck(withHolds(saved, holds), check);
     if (note)
       return s;
     const at = await host.now();
@@ -5229,11 +5708,13 @@ var NEW_PR_FETCH_MS = 15000;
 function isPrFetchDue(s, lastFetchedAt, now) {
   if (lastFetchedAt === undefined)
     return true;
-  const hasNewPr = splitLinked(s.prViews, s.ledger.prs).tracked.some((ref) => !(ref in s.prViews.views));
-  return now - lastFetchedAt >= PRS_REFRESH_MS || hasNewPr && now - lastFetchedAt >= NEW_PR_FETCH_MS;
+  const hasNewPr = splitLinked(s.prViews, s.ledger).tracked.some((ref) => !(ref in s.prViews.views));
+  const hasReplySince = (s.presence.lastReplyAt ?? 0) > lastFetchedAt;
+  return now - lastFetchedAt >= PRS_REFRESH_MS || (hasNewPr || hasReplySince) && now - lastFetchedAt >= NEW_PR_FETCH_MS;
 }
 function prFetchTracker(now) {
   const running = new Map;
+  const following = new Map;
   const endedAt = new Map;
   const start = (id, fetch) => {
     const run = fetch().catch(() => {
@@ -5248,7 +5729,17 @@ function prFetchTracker(now) {
   return {
     isFetching: (id) => running.has(id),
     fetchWhenDue: (id, s, fetch) => running.has(id) || !isPrFetchDue(s, endedAt.get(id), now()) ? null : start(id, fetch),
-    fetchNow: (id, fetch) => running.get(id) ?? start(id, fetch)
+    fetchNow: (id, fetch) => {
+      const current = running.get(id);
+      if (!current)
+        return start(id, fetch);
+      const next = following.get(id) ?? current.then(() => {
+        following.delete(id);
+        return running.get(id) ?? start(id, fetch);
+      });
+      following.set(id, next);
+      return next;
+    }
   };
 }
 async function fetchPrs(host, findsBranchPr) {
@@ -5260,7 +5751,7 @@ async function fetchPrs(host, findsBranchPr) {
   let sawUnstartable = false;
   const fetchWith = (path) => fetchTracked(host.gh.run(s, path, () => {
     sawUnstartable = true;
-  }), s.prViews, s.ledger.prs, findsBranchPr);
+  }), s.prViews, s.ledger, findsBranchPr, () => host.now());
   let fetch = await fetchWith(bin);
   if (sawUnstartable) {
     host.gh.forget();
@@ -5319,7 +5810,7 @@ function openTarget2(run, target, root, home) {
   }, target, root, home);
 }
 // package.json
-var version = "0.2.13";
+var version = "0.2.14";
 
 // ../hooks/arrivals.ts
 function recordRows(seen, listed) {
@@ -5385,7 +5876,10 @@ var INITIAL_UI = {
   resuming: null,
   opened: null,
   pageTop: 0,
-  shownSince: 0
+  pageReveal: null,
+  openedAt: 0,
+  shownSince: 0,
+  isHelpShown: false
 };
 function holdsOf(ui) {
   return { replies: heldReplies(ui.typing, ui.drafts), discarded: ui.discarded, shownSince: ui.shownSince };
@@ -5393,11 +5887,14 @@ function holdsOf(ui) {
 var AGENT = "omp";
 var REPLY_KEY = "r";
 var INDENT = 7;
+var UNLED_INDENT = INDENT - 3;
 var STOP_ID = "stop";
 var blankLine = (id) => ({
   id,
   depth: 0,
   lead: { text: "", tone: null },
+  rank: null,
+  mark: null,
   title: "",
   isDim: false,
   status: null,
@@ -5412,7 +5909,8 @@ var blankLine = (id) => ({
   isStatic: false,
   isWaiting: true,
   isDetailShown: false,
-  isFolded: false
+  isFolded: false,
+  isTabButtons: false
 });
 var wrapIndex = (i, n) => (i % n + n) % n;
 function feedbackTone(f) {
@@ -5454,24 +5952,16 @@ function prButtons(actions) {
     isOut: a.isOut
   }));
 }
-function leadOf(row) {
-  const mark = rowMark(row, AGENT);
-  if (mark.tone === "done")
-    return { text: mark.text, tone: "done" };
-  if (mark.tone === "issue")
-    return { text: mark.text, tone: "issue" };
-  return { text: mark.text, tone: mark.text === "\u2022" ? "sep" : null };
-}
 function lineOfRow(row) {
   const feedbackLabel = rowFeedbackText(row, AGENT);
   const f = row.feedback;
   const state = row.state;
   const undo = row.actions.find((a) => a.press.action === "undo");
-  const settledLead = state.is === "settled" ? { text: settledMark(state.delivery) || " ", tone: "sep" } : null;
   return {
     ...blankLine(row.id),
-    lead: settledLead ?? leadOf(row),
-    title: row.title,
+    lead: null,
+    mark: rowResultMark(row),
+    title: rowTitle(row, AGENT),
     isDim: state.is === "settled",
     age: f?.is === "done" ? f.at : row.at,
     detail: row.detail,
@@ -5504,7 +5994,8 @@ function closedLines(d) {
   return {
     ...blankLine(closedId(d.id)),
     depth: 1,
-    lead: { text: closedMark(closedState(d), d.delivery), tone: null },
+    lead: null,
+    mark: closedMark(closedState(d), d.delivery),
     title: d.title,
     isDim: true,
     age: d.at,
@@ -5517,7 +6008,9 @@ function closedLines(d) {
 function groupEntries(g, unfolded) {
   const settled = settledIn(g);
   const total = closedTotal(g.closed, settled);
-  const out = [{ kind: "heading", text: g.title, count: waitingCount(g.rows) }];
+  const out = [
+    { kind: "heading", text: g.title, count: waitingCount(g.rows), ...g.mark ? { mark: g.mark } : {} }
+  ];
   out.push(...g.rows.map((row) => ({ kind: "row", line: lineOfRow(row) })));
   if (g.rows.length === 0)
     out.push({ kind: "note", text: groupEmptyText(g.title), indent: 3 });
@@ -5541,7 +6034,7 @@ function groupEntries(g, unfolded) {
   out.push(...shown.map((d) => ({ kind: "row", line: closedLines(d) })));
   const earlier = earlierLabel(total, shown.length);
   if (earlier)
-    out.push({ kind: "note", text: earlier, indent: 7 });
+    out.push({ kind: "note", text: earlier, indent: 5 });
   return out;
 }
 function stopEntries(screen, ui) {
@@ -5586,6 +6079,7 @@ function rowEntries(screen, ui, tab) {
   })) : Object.keys(FINDING_GROUPS).map((kind) => ({
     kind,
     title: FINDING_GROUPS[kind].title,
+    mark: { text: FINDING_GROUPS[kind].mark, tone: FINDING_GROUPS[kind].tone },
     rows: view.findings.rows.filter((r) => r.finding?.kind === kind && isDrawnInPlace(r, ui.shownSince)),
     closed: view.findings.closed.filter((f) => f.kind === kind).map((f) => ({ ...f, at: f.closedAt }))
   }));
@@ -5605,7 +6099,10 @@ function prEntries(screen, ui, now) {
   const presses = { lastActions, turns, now };
   const waits = prRowWaits(prs.drawn.filter((d) => d.state.is === "open").map((d) => d.pr), lastActions);
   const isWaiting = (id) => waits.some((w) => w.id === id && w.isWaiting);
-  const markLead = (mark) => ({ text: mark.text, tone: mark.tone ?? "sep" });
+  const markLead = (mark) => ({
+    text: mark.isRunning ? runningMark(now) : mark.text,
+    tone: mark.tone ?? "sep"
+  });
   const out = [];
   const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut };
   if (prs.drawn.length === 0) {
@@ -5618,6 +6115,8 @@ function prEntries(screen, ui, now) {
   const ghNotice = ghNoticeOf(ghState);
   if (ghNotice)
     out.push({ kind: "banner", banner: bannerOf(ghNotice.kind, ghNotice.text) });
+  if (prs.orderText)
+    out.push({ kind: "note", text: prs.orderText });
   for (const d of prs.drawn) {
     const { pr, state } = d;
     const markId = prMarkId(pr.ref);
@@ -5630,6 +6129,7 @@ function prEntries(screen, ui, now) {
         line: {
           ...blankLine(markId),
           lead,
+          mark: settledMark(state),
           title: pr.title,
           isDim: true,
           settled: {
@@ -5648,6 +6148,7 @@ function prEntries(screen, ui, now) {
       line: {
         ...blankLine(markId),
         lead,
+        rank: d.rank === null ? null : prRankText(d.rank),
         title: pr.title,
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map((r) => ` \xB7 ${r}`).join("") },
         age: doneAt(f),
@@ -5704,6 +6205,12 @@ function prEntries(screen, ui, now) {
       });
     }
   }
+  const tabButtons = prButtons(prTabActions(prs.drawn.filter((d) => isDrawnInPlace(d, ui.shownSince)), prs.branchRef));
+  if (tabButtons.length > 0)
+    out.push({
+      kind: "row",
+      line: { ...blankLine(DISMISS_MERGED_ID), buttons: tabButtons, isWaiting: false, isTabButtons: true }
+    });
   if (prs.olderText)
     out.push({ kind: "note", text: prs.olderText });
   return out;
@@ -5726,11 +6233,28 @@ function pageEntries(page) {
       { kind: "note", text: page.empty.title, isStrong: true },
       { kind: "note", text: page.empty.hint, isWhole: true }
     ];
-  const head = page.goal ? [{ kind: "note", text: page.goal, isStrong: true, indent: PAGE_MARK_AT }] : [];
+  const description = page.head?.description;
+  const head = page.head ? [
+    { kind: "note", text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
+    ...description ? [{ kind: "note", text: description, indent: PAGE_MARK_AT }] : []
+  ] : [];
   const rows = page.rows.map((row) => ({ kind: "page", row }));
   return head.length > 0 && rows.length > 0 ? [...head, { kind: "note", text: "" }, ...rows] : [...head, ...rows];
 }
+function helpEntries(screen, tab) {
+  const keys = helpKeys("omp", screen.isNextBuild === true, tab, statusKeyRows(screen.view.statusPage).length > 0);
+  const column = Math.max(...keys.map((k) => cellWidth(k.keys))) + 2;
+  return [
+    { kind: "heading", text: HELP_COPY.keys },
+    ...keys.map((key) => ({ kind: "key", key, column })),
+    { kind: "note", text: "" },
+    { kind: "heading", text: HELP_COPY.marks },
+    ...MARK_LEGEND.map((entry) => ({ kind: "legend", entry }))
+  ];
+}
 function entriesOf(screen, ui, tab, now) {
+  if (ui.isHelpShown && tab === ui.tab)
+    return helpEntries(screen, tab);
   if (!isRowTab(tab))
     return pageEntries(screen.view.statusPage);
   return tab === "prs" ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab);
@@ -5751,15 +6275,16 @@ function resolveSelected(lines, selectedId) {
 function defaultFocus(line) {
   return Math.max(0, line.buttons.findIndex((b) => b.isRecommended));
 }
-var focusOf = (line, ui) => ui.focus?.rowId === line.id ? Math.min(ui.focus.index, line.buttons.length - 1) : defaultFocus(line);
+var focusOf2 = (line, ui) => ui.focus?.rowId === line.id ? Math.min(ui.focus.index, line.buttons.length - 1) : defaultFocus(line);
 function withSelection(ui, id) {
-  return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null };
+  return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null, openedAt: 0 };
 }
 var withTab = (ui, tab, now) => ({
   ...withSelection(ui, null),
   tab,
   pageTop: 0,
-  shownSince: tab === ui.tab ? ui.shownSince : now
+  shownSince: tab === ui.tab ? ui.shownSince : now,
+  isHelpShown: false
 });
 function isLineWaiting(screen, ui, id, now) {
   return waitsOf(linesOf(entriesOf(screen, ui, ui.tab, now))).some((w) => w.id === id && w.isWaiting);
@@ -5817,13 +6342,25 @@ function typingKey(ui, id, key, now, text) {
 function handleKey(screen, ui, key, now, text) {
   const lines = linesOf(entriesOf(screen, ui, ui.tab, now));
   const selected = resolveSelected(lines, ui.selectedId);
-  const base = { ...ui, selectedId: selected?.id ?? null };
+  const isPage = !isRowTab(ui.tab);
+  const base = isPage ? ui : { ...ui, selectedId: selected?.id ?? null };
   if (base.typing !== null)
     return typingKey(base, base.typing, key, now, text);
+  const shown = shownTabs(screen.isNextBuild === true);
+  const isTabKey = key === "tab" || key === "shift+tab" || shown.some((t) => t.hotkey === key);
+  if (key === "?" || base.isHelpShown && key === "escape")
+    return { ui: { ...base, isHelpShown: key === "?" && !base.isHelpShown, pageTop: 0 } };
   if (key === "escape")
     return { ui: base, close: true };
+  if (isPage && !base.isHelpShown) {
+    const page = pageKey(screen, base, key, now);
+    if (page)
+      return page;
+  }
   const isUp = key === "up" || key === "k";
-  if (!isRowTab(base.tab) && (isUp || key === "down" || key === "j"))
+  if (base.isHelpShown && !isTabKey && !isUp && key !== "down" && key !== "j")
+    return { ui: base };
+  if ((base.isHelpShown || isPage) && (isUp || key === "down" || key === "j"))
     return { ui: { ...base, pageTop: Math.max(0, base.pageTop + (isUp ? -1 : 1)) } };
   const selectable = lines.filter(isSelectable);
   const at = selectable.findIndex((l) => l.id === selected?.id);
@@ -5831,7 +6368,6 @@ function handleKey(screen, ui, key, now, text) {
     const step = key === "up" || key === "k" ? -1 : 1;
     return { ui: withSelection(base, selectable[wrapIndex(Math.max(0, at) + step, selectable.length)].id) };
   }
-  const shown = shownTabs(screen.isNextBuild === true);
   const tabs = shown.map((t) => t.id);
   const pickedTab = shown.find((t) => t.hotkey === key);
   if (key === "tab" || key === "shift+tab") {
@@ -5847,6 +6383,10 @@ function handleKey(screen, ui, key, now, text) {
       return { ui: withSelection(base, undoable.id), press };
     return { ui: base };
   }
+  const tabLine = lines.find((l) => l.isTabButtons);
+  const tabButton = tabLine?.buttons.find((b) => b.key === key);
+  if (tabLine && tabButton)
+    return activate(screen, base, tabLine, tabButton, now);
   if (selected?.fold && key === "enter") {
     const kind = selected.fold;
     const unfolded = base.unfolded.includes(kind) ? base.unfolded.filter((k) => k !== kind) : [...base.unfolded, kind];
@@ -5854,14 +6394,35 @@ function handleKey(screen, ui, key, now, text) {
   }
   if (selected && isShut(selected, base))
     return key === "enter" ? { ui: { ...base, opened: selected.id } } : { ui: base };
-  if (!selected || selected.buttons.length === 0)
+  if (!selected || selected.buttons.length === 0 || isGuarded(base.openedAt, now))
     return { ui: base };
   if (key === "left" || key === "right") {
-    const index = wrapIndex(focusOf(selected, base) + (key === "left" ? -1 : 1), selected.buttons.length);
+    const index = wrapIndex(focusOf2(selected, base) + (key === "left" ? -1 : 1), selected.buttons.length);
     return { ui: { ...base, focus: { rowId: selected.id, index } } };
   }
-  const button = key === "enter" ? selected.buttons[focusOf(selected, base)] : selected.buttons.find((b) => b.key === key);
+  const button = key === "enter" ? selected.buttons[focusOf2(selected, base)] : selected.buttons.find((b) => b.key === key);
   return button ? activate(screen, base, selected, button, now) : { ui: base };
+}
+function pageKey(screen, ui, key, now) {
+  const page = screen.view.statusPage;
+  const rows = statusKeyRows(page);
+  const row = statusSelected(page, ui.selectedId);
+  if (!row)
+    return null;
+  if (key === "j" || key === "k") {
+    const at = rows.findIndex((r) => r.id === row.id);
+    const to = rows[wrapIndex(at + (key === "k" ? -1 : 1), rows.length)].id;
+    return { ui: { ...ui, selectedId: to, focus: null, pageReveal: to } };
+  }
+  const keys = statusKeyPlan(row);
+  if (key === "left" || key === "right") {
+    const index = wrapIndex(pageFocus(row, ui) + (key === "left" ? -1 : 1), keys.length);
+    return { ui: { ...ui, selectedId: row.id, focus: { rowId: row.id, index } } };
+  }
+  const pressed = key === "enter" ? keys[pageFocus(row, ui)] : keys.find((k) => k.hotkey === key);
+  if (!pressed)
+    return null;
+  return { ui: { ...withTab(ui, "needsYou", now), selectedId: pressed.press.askId, openedAt: now } };
 }
 function tabRows(screen) {
   const { view } = screen;
@@ -5905,7 +6466,13 @@ function isAnimating(screen, ui, now) {
   return rows.some((r) => r.state.is === "settled" && r.state.canUndo) || view.prs.drawn.some((p) => p.state.is === "settled" && p.state.canUndo) || isPressMoving || isNoticeShown;
 }
 function isRunningMarkShown(screen, ui) {
-  return !isRowTab(ui.tab) && hasRunningMark(screen.view.statusPage);
+  if (ui.isHelpShown)
+    return MARK_LEGEND.some((m) => m.isRunning);
+  if (!isRowTab(ui.tab))
+    return hasRunningMark(screen.view.statusPage);
+  if (ui.tab === "prs")
+    return isPrTabRunning(screen.view.prs.drawn.filter((d) => d.state.is === "open").map((d) => d.pr), screen.view.lastActions);
+  return isRowTabRunning(screen.view, ui.tab, (kind) => ui.unfolded.includes(kind));
 }
 function noticeFor(outcome, now) {
   const text = outcome.error ?? (outcome.note ? noteText() : null);
@@ -5930,6 +6497,11 @@ function fit(s, width) {
     n += cells;
   }
   return out;
+}
+var MARKED_TITLE_CELLS = 12;
+function cutTitle(title, room) {
+  const cells = Math.max(MARKED_TITLE_CELLS, room);
+  return cellWidth(title) <= cells ? title : `${cutToCells(title, cells - 1)}\u2026`;
 }
 function spread(left, right, width) {
   const gap = width - visibleLength(left) - visibleLength(right);
@@ -5997,10 +6569,12 @@ function labelMark(b, room, s) {
   return actionLabel({ label: b.label, isPrimary: b.isRecommended }, fits).slice(b.label.length);
 }
 function buttonLines(line, ui, indent, width, s) {
-  const focused = focusOf(line, ui);
-  const cells = line.buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)));
+  return faceLines(line.buttons, focusOf2(line, ui), indent, width, s);
+}
+function faceLines(buttons, focused, indent, width, s) {
+  const cells = buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)));
   const sizes = cells.map(visibleLength);
-  const firstFollowUp = line.buttons.findIndex((b) => b.isFollowUp);
+  const firstFollowUp = buttons.findIndex((b) => b.isFollowUp);
   const keyCount = firstFollowUp < 0 ? cells.length : firstFollowUp;
   const { lines } = actionLines(sizes.slice(0, keyCount), sizes.slice(keyCount), {
     width: width - indent,
@@ -6010,29 +6584,45 @@ function buttonLines(line, ui, indent, width, s) {
   return lines.map((at) => " ".repeat(indent) + at.map((i) => cells[i]).join(""));
 }
 function leadText(lead, s) {
+  if (lead === null)
+    return "";
   const padded = lead.text.padEnd(2);
-  return lead.tone ? s.tone(lead.tone, padded) : padded;
+  return `${lead.tone ? s.tone(lead.tone, padded) : padded} `;
+}
+function markText(mark, now, s) {
+  if (mark === null)
+    return "";
+  const glyph = mark.isRunning ? runningMark(now) : mark.text || " ";
+  return `${mark.tone ? s.tone(mark.tone, glyph) : s.dim(glyph)} `;
 }
 function feedbackPaint(tone, s) {
   return (text) => tone ? s.tone(tone, text) : s.dim(text);
 }
 function drawLine(line, isSelected, d) {
   const { ui, width, now, style: s } = d;
+  if (line.isTabButtons) {
+    const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
+    const cells = line.buttons.map((b, i) => buttonCell(b, isSelected && i === focusOf2(line, ui), s));
+    return [fit(` ${cursor} ${cells.join("")}`, width)];
+  }
   const pad = line.depth * 2;
   const out = [];
   const status = line.status ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}` : "";
   const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isSelected) ? line.feedback : null;
-  const after = line.settled ? `  ${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim("u Undo")}` : ""}` : line.feedback && !statusUnder ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
-  const title = line.isDim ? s.dim(line.title) : isSelected ? s.bold(line.title) : line.title;
+  const mark = markText(line.mark, now, s);
+  const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim("u Undo")}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
+  const head = ` ${" ".repeat(pad)}${cursor} ${line.rank ? s.dim(line.rank) : ""}${leadText(line.lead, s)}`;
+  const shownTitle = line.mark ? cutTitle(line.title, width - visibleLength(head) - visibleLength(status) - visibleLength(after)) : line.title;
+  const title = line.isDim ? s.dim(shownTitle) : isSelected ? s.bold(shownTitle) : shownTitle;
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
-  out.push(spread(` ${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)} ${title}${status}${after}`, `${age} `, width));
+  out.push(spread(`${head}${title}${status}${after}`, `${age} `, width));
   if (line.settled || isShut(line, ui))
     return out;
-  const indent = INDENT + pad;
+  const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
   const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null;
   if (holdsUp)
-    out.push(fit(" ".repeat(indent) + s.dim(holdsUp), width));
+    out.push(fit(`${" ".repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width));
   if (line.detail && (isSelected || line.isDetailShown))
     out.push(...indented(line.detail, indent, width, 4, s.dim));
   if (!isSelected)
@@ -6050,73 +6640,91 @@ function drawLine(line, isSelected, d) {
     const field = wrapText(`${text}\x00`, Math.max(10, width - indent - 1));
     out.push(...field.map((l) => " ".repeat(indent) + l.replace("\x00", s.inverse(" "))));
   }
-  if (statusUnder)
-    out.push(...indented(statusUnder.text, indent, width, 4, feedbackPaint(statusUnder.tone, s)));
+  if (statusUnder) {
+    const markCells = mark ? 2 : 0;
+    const [first, ...rest] = indented(statusUnder.text, indent + markCells, width, 4, feedbackPaint(statusUnder.tone, s));
+    if (first !== undefined)
+      out.push(" ".repeat(indent) + mark + first.slice(indent + markCells), ...rest);
+  }
   return out;
 }
-var UNBROKEN_SPACE = "\uE000";
 var pageRoom = (indent, width) => Math.max(10, width - indent - 2 - 1);
-function pageText(text, room, maxLines, first, firstCells = Infinity, rest = first) {
+function pageText(text, room, maxLines, paint) {
   const wrapped = wrapText(text, room);
   const lines = wrapped.slice(0, maxLines);
   if (wrapped.length > lines.length)
     lines[lines.length - 1] = `${cutForEllipsis(lines.at(-1), (t) => cellWidth(t) <= room)}\u2026`;
-  let firstLeft = firstCells;
-  return lines.map((l) => {
-    const head = cutToCells(l, Math.max(0, firstLeft));
-    firstLeft -= cellWidth(l) + 1;
-    return first(head) + (head.length < l.length ? rest(l.slice(head.length)) : "");
-  });
+  return lines.map(paint);
 }
-function pageLine(d, indent, mark, name, namePaint, second = { text: null, stall: null }) {
+var GLUE = "\uE000";
+function pageLine(d, indent, mark, name, namePaint, { stall = null, text = null } = {}) {
   const { width, style: s } = d;
   const textAt = indent + 2;
   const room = pageRoom(indent, width);
-  const names = pageText(name, room, STATUS_TEXT_LINES, namePaint);
-  const stall = second.stall?.replaceAll(" ", UNBROKEN_SPACE) ?? null;
-  const secondText = [second.text, stall].filter(Boolean).join(STALL_GAP);
-  const dimCells = second.text ? cellWidth(second.text) + (stall ? cellWidth(STALL_GAP) : 0) : 0;
-  const seconds = secondText ? pageText(secondText, room, STATUS_TEXT_LINES, s.dim, dimCells, (t) => s.tone("needsYou", t)).map((l) => l.replaceAll(UNBROKEN_SPACE, " ")) : [];
+  const names = stall ? stalledName(name, stall, room, namePaint, s) : pageText(name, room, STATUS_TEXT_LINES, namePaint);
+  const seconds = text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : [];
   return [
     `${" ".repeat(indent)}${mark} ${names[0] ?? ""}`,
     ...[...names.slice(1), ...seconds].map((l) => " ".repeat(textAt) + l)
   ];
 }
+function stalledName(name, stall, room, namePaint, s) {
+  const tail = `${STALL_GAP}${stall.text}`.replaceAll(" ", GLUE);
+  const wrapped = (shown) => wrapText(`${shown}${tail}`, room);
+  const lines = wrapped(nameBeforeStall(name, (shown) => wrapped(shown).length <= STATUS_TEXT_LINES));
+  const words = s.tone(stall.tone, stall.text);
+  return lines.map((l) => l.endsWith(tail) ? namePaint(l.slice(0, -tail.length)) + s.dim(STALL_GAP) + words : namePaint(l.replaceAll(GLUE, " ")));
+}
 function withTree(lines, first, rest, s) {
   const drawn = (line, glyph) => glyph.trim() === "" ? line : line.slice(0, PAGE_MARK_AT) + s.dim(glyph) + line.slice(PAGE_MARK_AT + glyph.length);
   return lines.map((l, n) => n === 0 ? first ? drawn(l, first) : l : drawn(l, rest));
 }
-function drawPageRow(row, d) {
+function pageRule(width, s, label = null) {
+  const cells = Math.max(0, width - PAGE_TEXT_AT - 1);
+  if (label === null)
+    return `${" ".repeat(PAGE_TEXT_AT)}${s.dim("\u2500".repeat(cells))}`;
+  const text = ` ${label} `;
+  const fill = Math.max(4, cells - cellWidth(text));
+  const before = Math.floor(fill / 2);
+  return `${" ".repeat(PAGE_TEXT_AT)}${s.dim(`${"\u2500".repeat(before)}${text}${"\u2500".repeat(fill - before)}`)}`;
+}
+function pageButtonLines(row, d, isSelected) {
+  const faces = statusKeyPlan(row).map((k) => ({
+    label: k.label,
+    key: isSelected ? k.hotkey : null,
+    isRecommended: false,
+    isFollowUp: false
+  }));
+  const focused = isSelected ? pageFocus(row, d.ui) : -1;
+  return faces.length > 0 ? faceLines(faces, focused, PAGE_TEXT_AT - 1, d.width, d.style) : [];
+}
+var pageFocus = (row, ui) => ui.focus?.rowId === row.id ? Math.min(ui.focus.index, statusKeyPlan(row).length - 1) : 0;
+function drawPageRow(row, d, isSelected = false) {
   const { width, now, style: s } = d;
   if (row.kind === "subject") {
     const glyph = row.isRunning ? runningMark(now) : row.mark;
     const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph);
-    const out = pageLine(d, PAGE_MARK_AT, mark, row.name, (t) => t, { text: row.text, stall: row.stall });
+    const out = pageLine(d, PAGE_MARK_AT, mark, row.name, (t) => t, { stall: row.stall, text: row.text });
     const room = pageRoom(PAGE_MARK_AT, width);
     if (row.merged)
       out.push(...indented(mergedLine(row.merged, (t) => cellWidth(t) <= room), PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim));
     if (row.was)
       out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim));
+    out.push(...pageButtonLines(row, d, isSelected));
     return row.hasChildren ? withTree(out, null, "\u2502", s) : out;
   }
   if (row.kind === "child") {
-    const mark = s.dim(row.isRunning ? runningMark(now) : row.mark);
-    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, {
-      text: null,
-      stall: row.stall
-    });
+    const glyph = row.isRunning ? runningMark(now) : row.mark;
+    const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph);
+    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, { stall: row.stall });
     return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out;
   }
   if (row.kind === "more") {
     const arm = TREE_ARMS[row.branch];
     return withTree([" ".repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s);
   }
-  if (row.kind === "look") {
-    const label = ` ${row.text} `;
-    const fill = Math.max(4, width - 1 - PAGE_MARK_AT - cellWidth(label));
-    const before = Math.floor(fill / 2);
-    return [`${" ".repeat(PAGE_MARK_AT)}${s.dim(`${"\u2500".repeat(before)}${label}${"\u2500".repeat(fill - before)}`)}`];
-  }
+  if (row.kind === "look")
+    return [pageRule(width, s, row.text)];
   const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark);
   return pageLine(d, PAGE_MARK_AT, mark, row.text, s.dim);
 }
@@ -6144,7 +6752,7 @@ function tabBar(d) {
   }));
   const lineOf = (naming, form) => ` ${tabs.map((t) => tabCell(t, tabName(t, naming), form, s)).join(" ")}`;
   const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => visibleLength(lineOf(naming, form)) <= width);
-  return spread(lineOf(naming, layout), s.dim("esc to close "), width);
+  return spread(lineOf(naming, layout), ui.isHelpShown ? "" : s.dim("esc to close "), width);
 }
 function footer(d, isPageScrolling) {
   const { screen, ui, width, now, style: s } = d;
@@ -6152,7 +6760,12 @@ function footer(d, isPageScrolling) {
   const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.statusPage.error);
   if (status.text)
     out.push(` ${s.dim(status.text)}`);
-  const hints = ui.typing !== null ? [`\u21B5 ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch"] : isPageScrolling ? ["\u2191\u2193 scroll", "tab switch"] : ["tab switch"];
+  const hints = ui.typing !== null ? [`\u21B5 ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch", "? help"] : [
+    ...statusKeyRows(screen.view.statusPage).length > 0 ? ["j k select", "\u21B5 press"] : [],
+    ...isPageScrolling ? ["\u2191\u2193 scroll"] : [],
+    "tab switch",
+    "? help"
+  ];
   const model = `${screen.modelName ? `inbox model ${screen.modelName}` : "no inbox model: set @inbox"}  ${versionLabel(version, screen.isNextBuild === true)} `;
   const hintLine = ` ${hints.map((h) => s.dim(h)).join(` ${s.tone("sep", "\xB7")} `)}`;
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2;
@@ -6177,17 +6790,30 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
     rule,
     ...banners.flatMap((b) => bannerLines(b, width, style))
   ];
-  const pageRule = `${" ".repeat(PAGE_TEXT_AT)}${style.dim("\u2500".repeat(Math.max(0, width - PAGE_TEXT_AT - 1)))}`;
   const body = [];
   let selectedAt = [0, 0];
+  const pageSelected = isRowTab(ui.tab) ? null : statusSelected(screen.view.statusPage, ui.selectedId);
+  let pageSelectedAt = null;
   for (const e of entries) {
     if (e.kind === "heading")
-      body.push(` ${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
-    else if (e.kind === "page")
-      body.push(...e.row.isRuledAbove ? [pageRule] : [], ...drawPageRow(e.row, d));
-    else if (e.kind === "banner")
+      body.push(` ${e.mark ? `${e.mark.tone ? style.tone(e.mark.tone, e.mark.text) : e.mark.text} ` : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
+    else if (e.kind === "page") {
+      if (e.row.isRuledAbove)
+        body.push(pageRule(width, style));
+      const start = body.length;
+      const isSelected = e.row.id === pageSelected?.id;
+      body.push(...drawPageRow(e.row, d, isSelected));
+      if (isSelected)
+        pageSelectedAt = [start, body.length - 1];
+    } else if (e.kind === "banner")
       body.push(...bannerLines(e.banner, width, style));
-    else if (e.kind === "note")
+    else if (e.kind === "key")
+      body.push(...indented(e.key.does, 1 + e.column, width, Infinity, style.dim).map((l, n) => n === 0 ? ` ${style.bold(e.key.keys.padEnd(e.column))}${l.trimStart()}` : l));
+    else if (e.kind === "legend") {
+      const glyph = e.entry.isRunning ? runningMark(now) : e.entry.mark;
+      const mark = e.entry.tone ? style.tone(e.entry.tone, glyph) : style.dim(glyph);
+      body.push(...indented(e.entry.words, PAGE_TEXT_AT, width, Infinity, style.dim).map((l, n) => n === 0 ? `${" ".repeat(PAGE_MARK_AT)}${mark} ${l.trimStart()}` : l));
+    } else if (e.kind === "note")
       body.push(...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : style.dim));
     else {
       const isSelected = e.line.id === selected?.id;
@@ -6201,13 +6827,15 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
     }
   }
   const roomBeside = (foot) => height === undefined ? Infinity : Math.max(6, height - head.length - foot.length);
-  const isPage = !isRowTab(ui.tab);
+  const isPage = ui.isHelpShown || !isRowTab(ui.tab);
   const isPageTaller = isPage && body.length > roomBeside(footer(d, false));
   const foot = footer(d, isPageTaller);
   const room = roomBeside(foot);
   const blanks = (shown) => Array(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill("");
   const isOverflowing = body.length > room;
-  const pageTop = isPage ? Math.min(Math.max(0, ui.pageTop), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop;
+  const [first = 0, last = 0] = pageSelectedAt ?? [];
+  const top = pageSelectedAt && ui.pageReveal === pageSelected?.id ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop;
+  const pageTop = isPage ? Math.min(Math.max(0, top), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop;
   const shown = !isOverflowing ? body : isPage ? pageWindow(body, pageTop, room, style) : scrolled(body, selectedAt, room, style);
   return { lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)), pageTop };
 }
@@ -6341,7 +6969,7 @@ function createPanel(deps) {
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight);
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity));
       heldHeight = Math.max(heldHeight, drawn.lines.length);
-      ui = { ...ui, pageTop: drawn.pageTop };
+      ui = { ...ui, pageTop: drawn.pageTop, pageReveal: null };
       return drawn.lines;
     },
     handleInput(key, text) {
@@ -6362,6 +6990,11 @@ function createPanel(deps) {
       stops.push(source.onChange(() => void refresh()));
       const prs = timers.every(() => source.fetchPrsWhenDue(), PRS_CHECK_MS);
       stops.push(() => timers.stop(prs));
+      const delegates = timers.every(() => {
+        if (ui.tab === "overview")
+          source.checkDelegatesWhenDue();
+      }, HERDR_CHECK_MS);
+      stops.push(() => timers.stop(delegates));
       await refresh();
     },
     dispose() {
@@ -6383,7 +7016,7 @@ function createPanel(deps) {
 
 // ../hooks/demo.ts
 var MIN = 60000;
-var REPO = "https://github.com/acme/visor";
+var REPO2 = "https://github.com/acme/visor";
 var DEMO_PLACE = { folder: "/Users/you/code/visor", branch: "pinch-dismiss" };
 function withDemoPresence(s, now) {
   return {
@@ -6423,8 +7056,7 @@ function demoView(now, agent) {
   return {
     ledger: {
       overview: {
-        role: "session",
-        goal: "Pinch to dismiss glances",
+        head: { title: "Pinch to dismiss", description: "Adding a pinch that dismisses glances" },
         subjects: [
           subject("s1", "working", "Dismiss gesture", "pinch fades the glance", now - 2 * MIN),
           subject("s2", "working", "Glasses pairing", "needs this Mac paired", now - 12 * MIN),
@@ -6432,7 +7064,7 @@ function demoView(now, agent) {
             was: "flick and pinch both"
           }),
           subject("s4", "done", "Fade-out", "dismissed glances fade", now - 25 * MIN),
-          subject("s5", "queued", "Glasses trial", "after pairing", now - 3 * 60 * MIN),
+          subject("s5", "waits-on-other", "Glasses trial", "lenses ship Friday", now - 3 * 60 * MIN),
           subject("s6", "done", "Glance hit test", "finds the glance you look at", now - 5 * 60 * MIN),
           subject("s7", "done", "Settings toggle", "pinch can be turned off", now - 6 * 60 * MIN)
         ],
@@ -6445,7 +7077,8 @@ function demoView(now, agent) {
             subjectId: "s1",
             startedAt: now - 4 * MIN,
             endedAt: null,
-            lastActivityAt: now - MIN
+            lastActivityAt: now - MIN,
+            delegateState: null
           },
           {
             id: "c2",
@@ -6455,7 +7088,8 @@ function demoView(now, agent) {
             subjectId: "s2",
             startedAt: now - 50 * MIN,
             endedAt: null,
-            lastActivityAt: now - 40 * MIN
+            lastActivityAt: null,
+            delegateState: null
           },
           {
             id: "c3",
@@ -6465,12 +7099,35 @@ function demoView(now, agent) {
             subjectId: "s1",
             startedAt: now - 9 * MIN,
             endedAt: null,
-            lastActivityAt: null
+            lastActivityAt: null,
+            delegateState: "blocked"
+          },
+          {
+            id: "c4",
+            ref: "demo-fade-timing",
+            kind: "delegate",
+            name: "Time the fade-out",
+            subjectId: "s1",
+            startedAt: now - 30 * MIN,
+            endedAt: now - 3 * MIN,
+            lastActivityAt: now - 30 * MIN,
+            delegateState: "finished"
+          },
+          {
+            id: "c5",
+            ref: "demo-pairing-errors",
+            kind: "subagent",
+            name: "Search the pairing errors",
+            subjectId: "s2",
+            startedAt: now - 25 * MIN,
+            endedAt: null,
+            lastActivityAt: now - 20 * MIN,
+            delegateState: null
           }
         ],
-        askSubjects: { d11: "s3", d14: "s2" },
+        askSubjects: { d11: "s3", d14: "s2", d17: "s2" },
         nextId: 8,
-        nextChildId: 4,
+        nextChildId: 6,
         lastLookAt: now - 30 * MIN,
         look: null
       },
@@ -6683,6 +7340,7 @@ function demoView(now, agent) {
         }
       ],
       prs: ["acme/visor#31", "acme/visor#29", "acme/visor#33"],
+      prOrder: null,
       nextId: 24,
       turn: 14,
       batchTurn: 14,
@@ -6697,7 +7355,7 @@ function demoView(now, agent) {
           ref: "acme/visor#31",
           number: 31,
           title: "Add pinch-to-dismiss to glances",
-          url: `${REPO}/pull/31`,
+          url: `${REPO2}/pull/31`,
           isDraft: false,
           state: "OPEN",
           base: "main",
@@ -6707,7 +7365,7 @@ function demoView(now, agent) {
             {
               name: "format",
               bucket: "pass",
-              url: `${REPO}/actions/runs/1`,
+              url: `${REPO2}/actions/runs/1`,
               workflow: "CI",
               startedAt: now - 16 * MIN,
               finishedAt: now - 16 * MIN + 19000
@@ -6715,7 +7373,7 @@ function demoView(now, agent) {
             {
               name: "unit tests",
               bucket: "fail",
-              url: `${REPO}/actions/runs/2`,
+              url: `${REPO2}/actions/runs/2`,
               workflow: "CI",
               startedAt: now - 16 * MIN,
               finishedAt: now - 12 * MIN - 8000
@@ -6723,7 +7381,7 @@ function demoView(now, agent) {
             {
               name: "lint",
               bucket: "fail",
-              url: `${REPO}/actions/runs/3`,
+              url: `${REPO2}/actions/runs/3`,
               workflow: "CI",
               startedAt: now - 16 * MIN,
               finishedAt: now - 15 * MIN - 19000
@@ -6741,7 +7399,7 @@ function demoView(now, agent) {
               path: "src/view/Glance.tsx",
               line: 47,
               body: "A glance flickers for one frame before it fades out. Can it wait for the fade?",
-              url: `${REPO}/pull/31#discussion_r1`,
+              url: `${REPO2}/pull/31#discussion_r1`,
               at: now - 3 * 60 * MIN
             },
             {
@@ -6750,7 +7408,7 @@ function demoView(now, agent) {
               reply: {
                 author: "robin",
                 body: "Agreed, the glance you look at is the one you mean.",
-                url: `${REPO}/pull/31#discussion_r3`,
+                url: `${REPO2}/pull/31#discussion_r3`,
                 at: now - 5 * 60 * MIN
               },
               isWaiting: true,
@@ -6759,7 +7417,7 @@ function demoView(now, agent) {
               path: "src/input/gestures.ts",
               line: 87,
               body: "Should a pinch dismiss only the glance you look at?",
-              url: `${REPO}/pull/31#discussion_r2`,
+              url: `${REPO2}/pull/31#discussion_r2`,
               at: now - 26 * 60 * MIN
             },
             {
@@ -6768,7 +7426,7 @@ function demoView(now, agent) {
               reply: {
                 author: "you",
                 body: "Done in the latest push.",
-                url: `${REPO}/pull/31#discussion_r5`,
+                url: `${REPO2}/pull/31#discussion_r5`,
                 at: now - 2 * 60 * MIN
               },
               isWaiting: false,
@@ -6777,7 +7435,7 @@ function demoView(now, agent) {
               path: "src/view/glances.ts",
               line: 112,
               body: "Can the angle come from gaze.ts instead of being computed again here?",
-              url: `${REPO}/pull/31#discussion_r4`,
+              url: `${REPO2}/pull/31#discussion_r4`,
               at: now - 26 * 60 * MIN
             },
             {
@@ -6790,7 +7448,7 @@ function demoView(now, agent) {
               path: "src/input/gestures.ts",
               line: 114,
               body: "A dismissed glance still takes pinches.",
-              url: `${REPO}/pull/31#discussion_r6`,
+              url: `${REPO2}/pull/31#discussion_r6`,
               at: now - 50 * MIN
             }
           ],
@@ -6802,7 +7460,7 @@ function demoView(now, agent) {
           ref: "acme/visor#29",
           number: 29,
           title: "Show the battery level as a glance",
-          url: `${REPO}/pull/29`,
+          url: `${REPO2}/pull/29`,
           isDraft: false,
           state: "OPEN",
           base: "main",
@@ -6821,7 +7479,7 @@ function demoView(now, agent) {
           ref: "acme/visor#33",
           number: 33,
           title: "Remember where each glance was pinned",
-          url: `${REPO}/pull/33`,
+          url: `${REPO2}/pull/33`,
           isDraft: true,
           state: "OPEN",
           base: "main",
@@ -6949,9 +7607,15 @@ var OMP = {
   surface: "the /inbox panel",
   band: "a band above their prompt",
   findingsIn: "the Finds tab of the /inbox panel",
+  prsIn: "the PRs tab of the /inbox panel",
   recordTool: "record",
   closeTool: "close",
   intro: "The inbox extension shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox panel, and your findings, in the panel's Finds tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings."
+};
+var TOOL_LABELS = {
+  record: "Inbox record",
+  close: "Inbox close",
+  order_prs: "Inbox PR order"
 };
 
 // src/demo.ts
@@ -6996,6 +7660,7 @@ function demoSource(deps) {
     },
     resume: async () => null,
     fetchPrsWhenDue: () => {},
+    checkDelegatesWhenDue: () => {},
     shown: () => {},
     onChange: (listener) => {
       listeners.add(listener);
@@ -7367,6 +8032,17 @@ function createInbox(pi, deps = defaultDeps) {
     deps.background(reconcileUpdateStatus(hostFor(ctx)));
     deps.background(pruneSessions(dir, id));
   }
+  const isHerdrCheckDue = herdrCheckGate();
+  function checkDelegatesWhenDue(ctx) {
+    const id = sessionIdOf(ctx);
+    if (!isHerdrCheckDue(id, deps.now()))
+      return;
+    deps.background((async () => {
+      const states = await delegatesInHerdr((await readState(dir, id)).ledger.overview, run);
+      if (states)
+        await change(id, (s) => statusChanged(s, (o) => delegatesSettled(o, states, deps.now())));
+    })());
+  }
   function fetchPrsWhenDue(ctx) {
     const id = sessionIdOf(ctx);
     if (prFetches.isFetching(id))
@@ -7661,7 +8337,7 @@ function createInbox(pi, deps = defaultDeps) {
   const tool = (name, description, parameters) => {
     pi.registerTool({
       name,
-      label: name === "record" ? "Inbox record" : "Inbox close",
+      label: TOOL_LABELS[name],
       description,
       parameters,
       loadMode: "essential",
@@ -7728,6 +8404,8 @@ function createInbox(pi, deps = defaultDeps) {
       const now = deps.now();
       if (isChanged)
         deps.background(change(id, (s) => withHolds(withLook(s, tab === "overview", now), holds)));
+      if (isChanged && tab === "overview")
+        checkDelegatesWhenDue(ctx);
     },
     closePanel: (ctx) => {
       const id = sessionIdOf(ctx);
@@ -7735,6 +8413,7 @@ function createInbox(pi, deps = defaultDeps) {
       deps.background(change(id, (s) => ({ ...lookEndedOn(s, deps.now()), shownSince: null })));
     },
     fetchPrsWhenDue,
+    checkDelegatesWhenDue,
     onChange: (ctx, listener) => {
       const id = sessionIdOf(ctx);
       const set = listeners.get(id) ?? new Set;
@@ -7758,6 +8437,7 @@ function createInbox(pi, deps = defaultDeps) {
     },
     resume: async () => inbox.resume(ctx),
     fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),
+    checkDelegatesWhenDue: () => inbox.checkDelegatesWhenDue(ctx),
     shown: (tab, holds) => inbox.showTab(ctx, tab, holds),
     onChange: (listener) => inbox.onChange(ctx, listener)
   });

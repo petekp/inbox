@@ -26,46 +26,14 @@ import { access, stat as stat2 } from "node:fs/promises";
 import { homedir as homedir2 } from "node:os";
 import { isAbsolute as isAbsolute2 } from "node:path";
 
-// ../hooks/gh.ts
-var CANDIDATES = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
-var GH_TIMEOUT_MS = 2e4;
-var UNSTARTABLE_CODE = -1;
-var TIMED_OUT_CODE = -2;
-function ghFinder(exec) {
-  let found = null;
-  return {
-    find: async () => {
-      if (found) return found;
-      for (const candidate of CANDIDATES) {
-        const r = await exec([candidate, "--version"], { cwd: "/", timeoutMs: 5e3 });
-        if (r.code !== UNSTARTABLE_CODE) {
-          found = candidate;
-          return found;
-        }
-      }
-      return null;
-    },
-    forget: () => {
-      found = null;
-    }
-  };
-}
-function ghIn(exec, bin, cwd, onUnstartable) {
-  return async (args) => {
-    const r = await exec([bin, ...args], { cwd: cwd || "/", timeoutMs: GH_TIMEOUT_MS });
-    if (r.code === UNSTARTABLE_CODE) onUnstartable();
-    return { exitCode: r.code, stdout: r.stdout, stderr: r.stderr };
-  };
-}
-
 // ../hooks/status.ts
 var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
-var GOAL_WORDS = 8;
+var DESCRIPTION_WORDS = 8;
 var OPEN_SUBJECTS = 6;
 var NAME_KEPT = 20;
 var TEXT_KEPT = 12;
-var GOAL_KEPT = 14;
+var DESCRIPTION_KEPT = 14;
 var CHILD_KEPT_MS = 24 * 60 * 6e4;
 var STOP_WORDS = /* @__PURE__ */ new Set([
   "a",
@@ -88,8 +56,7 @@ var STOP_WORDS = /* @__PURE__ */ new Set([
   "with"
 ]);
 var EMPTY_SESSION_STATUS = {
-  role: "session",
-  goal: "",
+  head: null,
   subjects: [],
   children: [],
   askSubjects: {},
@@ -101,6 +68,7 @@ var EMPTY_SESSION_STATUS = {
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
 var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
+var DELEGATE_STATES = ["working", "blocked", "finished"];
 function clipWords(text3, limit) {
   const words3 = text3.trim().split(/\s+/).filter(Boolean);
   return words3.length <= limit ? words3.join(" ") : `${words3.slice(0, limit).join(" ")}\u2026`;
@@ -116,6 +84,11 @@ function isOpen(s) {
 }
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+}
+function subjectTouched(o, id, at) {
+  const isSeen = (s) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
+  const touched = (s) => isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
+  return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
 }
 function lookStarted(o, now) {
   return o === null || o.look !== null ? o : { ...o, look: { startedAt: now } };
@@ -169,7 +142,8 @@ function childOf(saved) {
     subjectId: typeof c.subjectId === "string" ? c.subjectId : null,
     startedAt,
     endedAt: time(c.endedAt),
-    lastActivityAt: time(c.lastActivityAt)
+    lastActivityAt: time(c.lastActivityAt),
+    delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null
   };
 }
 var OLD_STATUS = {
@@ -182,6 +156,15 @@ var OLD_STATUS = {
   done: null,
   "ruled-out": null
 };
+function headOfGoal(goal) {
+  const title = clipWords(text(goal), DESCRIPTION_KEPT);
+  return title === "" ? null : { title, description: "" };
+}
+function headOf(saved) {
+  const h = saved;
+  const title = text(h?.title);
+  return title === "" ? null : { title, description: text(h?.description) };
+}
 function fromLists(o) {
   const lastLookAt = time(o.lastLookAt);
   const items = lastLookAt === null ? [] : ["workstreams", "queue", "open"].flatMap((k) => Array.isArray(o[k]) ? o[k] : []);
@@ -205,8 +188,7 @@ function fromLists(o) {
   }));
   return {
     ...EMPTY_SESSION_STATUS,
-    role: o.isCoordinator === true ? "coordinator" : "session",
-    goal: clipWords(text(o.headline), GOAL_KEPT),
+    head: headOfGoal(o.headline),
     subjects,
     nextId: subjects.length + 1,
     lastLookAt
@@ -224,8 +206,7 @@ function upgradeStatus(saved) {
   const look = o.look;
   const lookAt = time(look?.startedAt);
   return {
-    role: o.role === "coordinator" ? "coordinator" : "session",
-    goal: text(o.goal),
+    head: "head" in o ? headOf(o.head) : headOfGoal(o.goal),
     subjects,
     children,
     askSubjects,
@@ -254,6 +235,66 @@ function ago(ms) {
   return `${Math.round(h / 24)}d ago`;
 }
 
+// ../hooks/children.ts
+var delegateRef = (name) => `herdr:${name}`;
+var HERDR_PROMPT_SETTLE_MS = 15e3;
+function hasRunningDelegate(o) {
+  return o?.children.some((c) => c.kind === "delegate" && c.endedAt === null) ?? false;
+}
+function delegatesSettled(o, states, at) {
+  if (!o) return o;
+  const byRef = new Map([...states].map(([name, status]) => [delegateRef(name), status]));
+  const settled = (c) => {
+    if (c.kind !== "delegate" || c.endedAt !== null) return c;
+    const status = byRef.get(c.ref);
+    const isShownWorking = status === "working" || status === "blocked";
+    if (isShownWorking) return c.delegateState === status ? c : { ...c, delegateState: status };
+    const isSettling = at - (c.lastActivityAt ?? c.startedAt) < HERDR_PROMPT_SETTLE_MS;
+    if (status === "unknown" || isSettling) return c;
+    const isReady = status === "idle" || status === "done";
+    const hasFinished = isReady && c.delegateState !== null;
+    return { ...c, endedAt: at, delegateState: hasFinished ? "finished" : c.delegateState };
+  };
+  const children = o.children.map(settled);
+  if (children.every((c, n) => c === o.children[n])) return o;
+  const finished = children.filter(
+    (c, n) => c.delegateState === "finished" && o.children[n].delegateState !== "finished"
+  );
+  return finished.reduce((x, c) => subjectTouched(x, c.subjectId, at), { ...o, children });
+}
+
+// ../hooks/gh.ts
+var CANDIDATES = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
+var GH_TIMEOUT_MS = 2e4;
+var UNSTARTABLE_CODE = -1;
+var TIMED_OUT_CODE = -2;
+function ghFinder(exec) {
+  let found = null;
+  return {
+    find: async () => {
+      if (found) return found;
+      for (const candidate of CANDIDATES) {
+        const r = await exec([candidate, "--version"], { cwd: "/", timeoutMs: 5e3 });
+        if (r.code !== UNSTARTABLE_CODE) {
+          found = candidate;
+          return found;
+        }
+      }
+      return null;
+    },
+    forget: () => {
+      found = null;
+    }
+  };
+}
+function ghIn(exec, bin, cwd, onUnstartable) {
+  return async (args) => {
+    const r = await exec([bin, ...args], { cwd: cwd || "/", timeoutMs: GH_TIMEOUT_MS });
+    if (r.code === UNSTARTABLE_CODE) onUnstartable();
+    return { exitCode: r.code, stdout: r.stdout, stderr: r.stderr };
+  };
+}
+
 // ../hooks/ledger.ts
 var KEPT_SESSIONS = 40;
 var EMPTY = {
@@ -263,13 +304,14 @@ var EMPTY = {
   findings: [],
   closedFindings: [],
   prs: [],
+  prOrder: null,
   nextId: 1,
   turn: 0,
   batchTurn: 0,
   updates: 0
 };
 function isBlankLedger(ledger) {
-  const isStatusBlank = !ledger.overview || ledger.overview.goal === "" && ledger.overview.subjects.length === 0;
+  const isStatusBlank = !ledger.overview || ledger.overview.head === null && ledger.overview.subjects.length === 0;
   return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0;
 }
 var MAX_OPEN = 20;
@@ -291,6 +333,7 @@ function upgradeLedger(ledger) {
   const updates = typeof rest.updates === "number" ? rest.updates : card ? 1 : 0;
   return {
     ...rest,
+    prOrder: rest.prOrder ?? null,
     updates,
     overview: upgradeStatus(rest.overview),
     findings: [...rest.findings ?? [], ...notes ?? []],
@@ -669,6 +712,194 @@ function isLapsed(d) {
   return closedState(d) !== "handled";
 }
 
+// ../hooks/host-tasks.ts
+var STATUSES2 = {
+  pending: "pending",
+  in_progress: "in-progress",
+  "in-progress": "in-progress",
+  completed: "done",
+  done: "done",
+  abandoned: "dropped",
+  blocked: "blocked"
+};
+var statusOf = (raw) => STATUSES2[String(raw)] ?? "pending";
+var textOf = (raw) => typeof raw === "string" ? raw.trim() : "";
+var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+function numberedTasks(rows, textKey) {
+  return rows.map(recordOf).map((row, n) => ({ id: String(n + 1), text: textOf(row[textKey]), status: statusOf(row.status) })).filter((t) => t.text !== "");
+}
+function codexPlanOf(args) {
+  const parsed = typeof args === "string" ? safeJson(args) : args;
+  const plan = recordOf(parsed).plan;
+  if (!Array.isArray(plan)) return null;
+  return numberedTasks(plan, "step");
+}
+function safeJson(text3) {
+  try {
+    return JSON.parse(text3);
+  } catch {
+    return null;
+  }
+}
+function upgradeHostTasks(saved) {
+  if (!Array.isArray(saved)) return [];
+  return saved.flatMap((raw) => {
+    const t = recordOf(raw);
+    const status = STATUSES2[String(t.status)];
+    return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
+  });
+}
+
+// ../hooks/model-text.ts
+var MAX_ACTIVITY = 40;
+function addActivity(activity, line) {
+  return !line || activity.length >= MAX_ACTIVITY || activity.includes(line) ? activity : [...activity, line];
+}
+function toolActivity(tool, input) {
+  const text3 = (key) => typeof input[key] === "string" ? input[key] : "";
+  switch (tool) {
+    case "Bash":
+      return `${input.run_in_background ? "started in background" : "ran"}: ${text3("command").slice(0, 140)}`;
+    case "Edit":
+    case "Write":
+      return `edited ${text3("file_path")}`;
+    case "Skill":
+      return `used skill ${text3("skill")}`;
+    case "Agent":
+      return `started agent: ${text3("description")}`;
+  }
+  return tool.startsWith("mcp__") ? `called ${tool.slice(5)}` : null;
+}
+var DIALOG_QUESTIONS_SHOWN = 3;
+var DIALOG_QUESTION_MAX = 200;
+var DIALOG_OPTIONS_SHOWN = 6;
+var DIALOG_OPTION_MAX = 60;
+var DIALOG_ANSWER_MAX = 400;
+var RECOMMENDED_SUFFIX = /\s*\(recommended\)\s*$/i;
+function dialogQuestions(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((q) => {
+    const fields = q ?? {};
+    const text3 = [fields.question, fields.title].find((v) => typeof v === "string" && v.trim() !== "");
+    if (!text3) return [];
+    const options = (Array.isArray(fields.options) ? fields.options : []).flatMap((o) => {
+      const option = typeof o === "string" ? { label: o } : o ?? {};
+      const label = typeof option.label === "string" ? option.label.trim() : "";
+      const description = typeof option.description === "string" ? option.description.trim() : "";
+      return label === "" ? [] : [{ label, description }];
+    });
+    return [
+      {
+        question: text3.trim(),
+        options: options.map((o) => o.label),
+        descriptions: Object.fromEntries(options.filter((o) => o.description !== "").map((o) => [o.label, o.description]))
+      }
+    ];
+  });
+}
+function dialogQuestionText(q) {
+  const shown = q.options.slice(0, DIALOG_OPTIONS_SHOWN).map((label) => {
+    const plain = label.replace(RECOMMENDED_SUFFIX, "");
+    const text3 = clip(plain, DIALOG_OPTION_MAX);
+    return plain === label ? text3 : `${text3} (recommended)`;
+  });
+  const more = q.options.length > shown.length ? ` / and ${q.options.length - shown.length} more` : "";
+  const options = shown.length > 0 ? ` (options: ${shown.join(" / ")}${more})` : "";
+  return `"${clip(q.question.replaceAll('"', "'"), DIALOG_QUESTION_MAX)}"${options}`;
+}
+function dialogActivity(questions, outcome) {
+  const shown = questions.slice(0, DIALOG_QUESTIONS_SHOWN).map(dialogQuestionText);
+  const more = questions.length - shown.length;
+  const asked = shown.length > 0 ? `: ${shown.join("; ")}${more > 0 ? `; and ${more} more` : ""}` : "";
+  const head = `asked the user in a dialog${asked}`;
+  switch (outcome.kind) {
+    case "answered":
+      return `${head}; answer: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
+    case "timed-out":
+      return `${head}; it timed out while the user was away, so the user did not answer; it went on with: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
+    case "dismissed":
+      return `${head}; the user dismissed it without answering`;
+    case "open":
+      return `${head}; still open, waiting on the user's answer`;
+  }
+}
+var STATUS_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
+
+You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
+
+Input:
+- <head>: the top of the page, as title | description: what the session is focused on now. Never write it into a subject.
+- <subjects>: the open subjects, one per line: id | status | name | where it stands
+- <finished>: subjects already done or dropped. Do not add them again.
+- <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
+- <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subject it holds up, or - when it has none yet
+- <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
+- <person>: what the person just sent
+- <activity>: what the agent did this turn
+- <reply>: the agent's final reply
+
+Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, and the head still holds, answer with the one line NO CHANGE. Most exchanges change nothing.
+
+Otherwise write only the lines that apply:
+NEW: status | name | where it stands
+SET: id or name | status | where it stands
+DONE: id or name | where it ended
+DROP: id or name | why
+DROP: id or name | why | INTO id or name
+WAS: id or name | the plan it replaces
+LINK: running or ask id | subject id or name
+HEAD: title | description
+
+A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
+
+The name is a label of at most ${NAME_WORDS} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
+
+The head says what the session is focused on now: the work the person would name if asked what this session is doing. It may cover several subjects. Its title is a label of at most ${NAME_WORDS} words, like a subject's name, such as "Offline sync" or "2.5 release". Its description is at most ${DESCRIPTION_WORDS} words on what the session is doing about that focus, such as "Adding offline sync to the notes app" or "Fixing the sync bug, then shipping 2.5". The description never repeats the title, and never says where one piece stands, such as "PR ready for review". The head follows the same rules on time words as where it stands.
+
+Status is one of: working, queued, waits-on-other.
+- working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask. When the work stopped for another reason, it is queued, waits on something, or is done.
+- queued: planned, not started.
+- waits-on-other: it waits on something other than the person, such as a build, a review or another session.
+
+Rules:
+- Change a subject by its id. Write NEW only when no subject in <subjects> covers it.
+- When work started and finished in this exchange, write NEW for it, then DONE with its name.
+- Write SET only when where a subject stands changed. Never reword a subject that did not change.
+- Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
+- When the person files a piece for later, out of this session's plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.
+- When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
+- Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
+- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
+- Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.
+- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.`;
+function latestBatch(ledger) {
+  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
+}
+function numberOf(label) {
+  const m = label?.match(/(?:^|[^A-Za-z\d])(?:[QqDd#]\s?)?(\d{1,2})(?!\d)/);
+  return m ? Number(m[1]) : null;
+}
+function answerableBatch(ledger, promptTurn) {
+  return ledger.batchTurn === promptTurn - 1 ? latestBatch(ledger) : [];
+}
+function batchNumbers(batch) {
+  const hasLabels = batch.some((i) => numberOf(i.label) !== null);
+  const byNumber = /* @__PURE__ */ new Map();
+  batch.forEach((item, at) => {
+    const n = hasLabels ? numberOf(item.label) : at + 1;
+    if (n !== null && !byNumber.has(n)) byNumber.set(n, item);
+  });
+  return byNumber;
+}
+function questionNumbers(ledger, promptTurn) {
+  const numbers = /* @__PURE__ */ new Map();
+  for (const [n, item] of batchNumbers(answerableBatch(ledger, promptTurn)))
+    if (item.kind === "question") numbers.set(item.id, n);
+  return numbers;
+}
+var CLOSE_ID_RULE = "A close id is only for the close tool. Never write one in a reply.";
+var TOLD_NOTHING = { inbox: null, closed: [] };
+
 // ../hooks/prs.ts
 var NL = "\n";
 var PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
@@ -717,11 +948,27 @@ function bucket(e) {
   if (["PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", ""].includes(result)) return "pending";
   return "fail";
 }
+function runStart(e) {
+  const isWaiting = !!e.status && e.status.toUpperCase() !== "COMPLETED";
+  return msOf(e.startedAt) ?? (isWaiting ? Infinity : void 0);
+}
+function latestRuns(rollup) {
+  const latest = /* @__PURE__ */ new Map();
+  for (const e of rollup) {
+    const key = JSON.stringify([e.workflowName ?? "", e.name ?? e.context ?? ""]);
+    const kept = latest.get(key);
+    const keptStart = kept && runStart(kept);
+    const start = runStart(e);
+    const isOlder = start !== void 0 && keptStart !== void 0 && start < keptStart;
+    if (!isOlder) latest.set(key, e);
+  }
+  return [...latest.values()];
+}
 function readView(ref, json) {
   try {
     const v = JSON.parse(json);
     if (typeof v.number !== "number") return null;
-    const rollup = Array.isArray(v.statusCheckRollup) ? v.statusCheckRollup : [];
+    const rollup = latestRuns(Array.isArray(v.statusCheckRollup) ? v.statusCheckRollup : []);
     return {
       ref,
       number: v.number,
@@ -848,9 +1095,20 @@ function readiness(pr, isSent2 = () => false) {
   );
 }
 var STATUS_ORDER = { blocked: 0, ready: 1, draft: 2, waiting: 3, merged: 4, closed: 5 };
-function inPrOrder(prs) {
-  const rank = new Map(prs.map((pr) => [pr, STATUS_ORDER[readiness(pr).status]]));
-  return [...prs].sort((a, b) => rank.get(a) - rank.get(b) || b.number - a.number || a.ref.localeCompare(b.ref));
+function rankOf(pr, ranked) {
+  const at = ranked.indexOf(pr.ref);
+  return at === -1 || pr.state !== "OPEN" ? null : at;
+}
+function inPrOrder(prs, ranked = []) {
+  const place = (pr) => rankOf(pr, ranked) ?? Infinity;
+  const status = new Map(prs.map((pr) => [pr, STATUS_ORDER[readiness(pr).status]]));
+  const byPlace = (a, b) => {
+    const [x, y] = [place(a), place(b)];
+    return x === y ? 0 : x < y ? -1 : 1;
+  };
+  return [...prs].sort(
+    (a, b) => byPlace(a, b) || status.get(a) - status.get(b) || b.number - a.number || a.ref.localeCompare(b.ref)
+  );
 }
 function threadWhere(t, path = t.path) {
   return `${path}${t.line ? `:${t.line}` : ""}`;
@@ -1459,451 +1717,66 @@ ${asks.map((a) => `- ${a}`).join("\n")}`,
   }
 };
 
-// ../hooks/tools.ts
-var NAME_BY_CONTENT = "Name it by what it says, never by its id.";
-var RECORD_SCHEMA = {
-  type: "object",
-  properties: {
-    kind: {
-      type: "string",
-      enum: ["question", "task", "finding"],
-      description: "question: a decision only the user can make. task: a step only the user can do. finding: something outside the current task that deserves their attention."
-    },
-    ask: {
-      type: "string",
-      description: "For a question or task: what you need from the user, in at most 12 plain words, readable without your reply."
-    },
-    options: {
-      type: "array",
-      items: { type: "string" },
-      description: "For a question: the answers the user can pick, at most 5 words each. Give at least one."
-    },
-    rec: {
-      type: "string",
-      description: "For a question: the option you recommend, copied from options. Leave it out when you recommend none."
-    },
-    steps: {
-      type: "array",
-      items: { type: "string" },
-      description: "For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path."
-    },
-    design_choice: {
-      type: "boolean",
-      description: "For a question: true when its options are designs or approaches you could try and show side by side, such as two layouts or two ways to build a feature. The user can then ask you to compare them. Leave it out for a fact, an approval or a preference."
-    },
-    finding_kind: {
-      type: "string",
-      enum: ["issue", "opportunity"],
-      description: "For a finding. issue: something wrong or risky. opportunity: something that could be better."
-    },
-    title: { type: "string", description: "For a finding: what it is, in at most 12 plain words." },
-    detail: {
-      type: "string",
-      description: "For a finding: why it matters and what you would do, in one or two sentences."
-    },
-    path: { type: "string", description: "For a finding: the file it is about, if one." }
-  },
-  required: ["kind"]
-};
-var CLOSE_SCHEMA = {
-  type: "object",
-  properties: {
-    id: { type: "string", description: "The id of the open item or finding, such as i35 or f32." },
-    answer: {
-      type: "string",
-      description: `The user's answer, at most 8 words, when their own message answered it. Use their words, but when they picked by position or pointing, as "the second one", give the option they picked.`
-    },
-    reason: {
-      type: "string",
-      description: 'Otherwise, why it is closed, in at most 8 words, such as "no longer applies: Inbox kept".'
-    }
-  },
-  required: ["id"]
-};
-function recordDescription(host) {
-  return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing.
-- question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
-- task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
-- finding: something outside the current task that deserves their attention. It waits in ${host.findingsIn} until it is closed, and the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, once you have checked it. Leave out style nits, anything the user already decided, todos or ideas the user mentioned, problems in your own change, progress, and anything only the user can do or decide: handle those in your reply, or record them as a question or task.
-Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.`;
-}
-var CLOSE_DESCRIPTION = `Close an open item or finding by its id, such as i35 or f12, as listed in the latest "inbox:" text beside the user's prompt. Pass the user's answer when their message answered it, and a reason otherwise.`;
-function agentTools(host) {
-  return [
-    { name: "record", description: recordDescription(host), inputSchema: RECORD_SCHEMA },
-    { name: "close", description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA }
-  ];
-}
-function cut(value, max) {
-  return typeof value === "string" ? value.trim().slice(0, max) : "";
-}
-var MAX_ASK = 200;
-var MAX_OPTION = 60;
-var MAX_OPTIONS = 8;
-var MAX_STEPS = 3;
-function list(value, max, each) {
-  return Array.isArray(value) ? value.map((v) => cut(v, each)).filter(Boolean).slice(0, max) : [];
-}
-function unchanged(ledger, result) {
-  return { ledger, result, personLine: null };
-}
-function recordItem(host, ledger, input, now) {
-  if (input.kind === "finding") return recordFinding(host, ledger, input, now);
-  if (input.kind !== "question" && input.kind !== "task")
-    return unchanged(ledger, "Not recorded: kind must be question, task or finding.");
-  const ask = cut(input.ask, MAX_ASK);
-  if (ask === "") return unchanged(ledger, `Not recorded: a ${input.kind} needs an ask.`);
-  const options = input.kind === "question" ? list(input.options, MAX_OPTIONS, MAX_OPTION) : [];
-  if (input.kind === "question" && options.length === 0)
-    return unchanged(ledger, "Not recorded: a question needs at least one option.");
-  const recInput = input.kind === "question" ? cut(input.rec, MAX_OPTION) : "";
-  const rec = recInput === "" ? null : recommendedOption(options, recInput);
-  if (recInput !== "" && rec === null) return unchanged(ledger, "Not recorded: rec must be one of the options.");
-  const steps2 = list(input.steps, MAX_STEPS + 3, 4e3);
-  const isUsable = (h) => input.kind === "task" || h.kind === "open" || h.kind === "link";
-  const helps = steps2.flatMap((step) => stepHelp(step) ?? []).filter(isUsable).slice(0, MAX_STEPS);
-  const leftOut = helps.length < steps2.length ? input.kind === "task" ? " Some steps were not a command, a file path or a link, so they are left out." : " Some steps were not an absolute file path or a link, so they are left out." : "";
-  const isDesignChoice = input.kind === "question" && input.design_choice === true;
-  const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps, isDesignChoice }, now);
-  if (r.is === "open") {
-    const changes = [
-      ...r.addedSteps > 0 ? ["added its new steps"] : [],
-      ...r.isNewlyMarked ? ["marked it as a design choice"] : [],
-      ...r.newRec ? [`changed its recommendation to ${r.newRec}`] : []
-    ];
-    const updated = changes.length > 0 ? ` and ${changes.join(" and ")}` : "";
-    return unchanged(r.ledger, `Already open, so this record updated it${updated}.${leftOut}`);
-  }
-  if (r.is === "closed")
-    return unchanged(ledger, `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`);
-  return {
-    ledger: r.ledger,
-    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ""),
-    personLine: `${input.kind === "question" ? "Question" : "Task"}: ${ask}`
-  };
-}
-function recordFinding(host, ledger, input, now) {
-  const title = cut(input.title, 120);
-  const detail = cut(input.detail, 600);
-  if (title === "" || detail === "") return unchanged(ledger, "Not recorded: a finding needs a title and a detail.");
-  const path = cut(input.path, 300);
-  const kind = input.finding_kind === "opportunity" ? "opportunity" : "issue";
-  const r = addFinding(ledger, { kind, title, detail, path: path || null, at: now });
-  if (r.dismissed)
-    return unchanged(
-      ledger,
-      `Not recorded: the user already closed this (${r.dismissed.outcome}). Record it again only if they bring it up.`
-    );
-  if (!r.isAdded) return unchanged(r.ledger, "Already recorded.");
-  return {
-    ledger: r.ledger,
-    result: `Recorded. The user sees it in ${host.findingsIn}.` + (r.expired ? ` The list was full, so the oldest finding closed: ${r.expired.title}.` : ""),
-    personLine: `${kind === "opportunity" ? "Opportunity" : "Issue"}: ${title}`
-  };
-}
-function closedHow(c) {
-  switch (c.how) {
-    case "answered":
-      return `the user answered it (${c.outcome})`;
-    case "done":
-      return "the user marked it done";
-    case "dismissed":
-      return "the user dismissed it";
-    case "expired":
-      return "it expired";
-    case "claude":
-      return "you closed it earlier";
-    case "update":
-      return `the inbox closed it (${c.outcome})`;
-  }
-}
-function recordClose(host, ledger, input, now) {
-  const id = cut(input.id, 80).replace(/^\[|\]$/g, "");
-  const answer = cut(input.answer, 80);
-  const reason = cut(input.reason, 80);
-  if (id === "" || answer === "" && reason === "")
-    return unchanged(ledger, "Not closed: give the id, and the user's answer or a reason.");
-  const r = closeByAgent(host, ledger, id, answer ? { answer } : { reason }, now);
-  if (r.closed && "item" in r.closed)
-    return {
-      ledger: r.ledger,
-      result: `Closed. The user sees it in ${host.surface} with its outcome. ${NAME_BY_CONTENT}`,
-      personLine: `Closed: ${r.closed.item.ask}`
-    };
-  if (r.closed)
-    return {
-      ledger: r.ledger,
-      result: `Closed the finding. ${NAME_BY_CONTENT}`,
-      personLine: `Closed: ${r.closed.finding.title}`
-    };
-  const earlier = [...ledger.closed, ...ledger.closedFindings].findLast((c) => c.id === id);
-  if (earlier) return unchanged(ledger, `Already closed: ${closedHow(earlier)}.`);
-  return unchanged(
-    ledger,
-    `Not closed: no open item or finding has the id ${id}. The open ones are listed beside the user's latest message.`
-  );
-}
-
-// ../hooks/host-tasks.ts
-var STATUSES2 = {
-  pending: "pending",
-  in_progress: "in-progress",
-  "in-progress": "in-progress",
-  completed: "done",
-  done: "done",
-  abandoned: "dropped",
-  blocked: "blocked"
-};
-var statusOf = (raw) => STATUSES2[String(raw)] ?? "pending";
-var textOf = (raw) => typeof raw === "string" ? raw.trim() : "";
-var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
-function numberedTasks(rows, textKey) {
-  return rows.map(recordOf).map((row, n) => ({ id: String(n + 1), text: textOf(row[textKey]), status: statusOf(row.status) })).filter((t) => t.text !== "");
-}
-function codexPlanOf(args) {
-  const parsed = typeof args === "string" ? safeJson(args) : args;
-  const plan = recordOf(parsed).plan;
-  if (!Array.isArray(plan)) return null;
-  return numberedTasks(plan, "step");
-}
-function safeJson(text3) {
-  try {
-    return JSON.parse(text3);
-  } catch {
-    return null;
-  }
-}
-function upgradeHostTasks(saved) {
-  if (!Array.isArray(saved)) return [];
-  return saved.flatMap((raw) => {
-    const t = recordOf(raw);
-    const status = STATUSES2[String(t.status)];
-    return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
-  });
-}
-
-// ../hooks/model-text.ts
-var MAX_ACTIVITY = 40;
-function addActivity(activity, line) {
-  return !line || activity.length >= MAX_ACTIVITY || activity.includes(line) ? activity : [...activity, line];
-}
-function toolActivity(tool, input) {
-  const text3 = (key) => typeof input[key] === "string" ? input[key] : "";
-  switch (tool) {
-    case "Bash":
-      return `${input.run_in_background ? "started in background" : "ran"}: ${text3("command").slice(0, 140)}`;
-    case "Edit":
-    case "Write":
-      return `edited ${text3("file_path")}`;
-    case "Skill":
-      return `used skill ${text3("skill")}`;
-    case "Agent":
-      return `started agent: ${text3("description")}`;
-  }
-  return tool.startsWith("mcp__") ? `called ${tool.slice(5)}` : null;
-}
-var DIALOG_QUESTIONS_SHOWN = 3;
-var DIALOG_QUESTION_MAX = 200;
-var DIALOG_OPTIONS_SHOWN = 6;
-var DIALOG_OPTION_MAX = 60;
-var DIALOG_ANSWER_MAX = 400;
-var RECOMMENDED_SUFFIX = /\s*\(recommended\)\s*$/i;
-function dialogQuestions(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw.flatMap((q) => {
-    const fields = q ?? {};
-    const text3 = [fields.question, fields.title].find((v) => typeof v === "string" && v.trim() !== "");
-    if (!text3) return [];
-    const options = (Array.isArray(fields.options) ? fields.options : []).flatMap((o) => {
-      const option = typeof o === "string" ? { label: o } : o ?? {};
-      const label = typeof option.label === "string" ? option.label.trim() : "";
-      const description = typeof option.description === "string" ? option.description.trim() : "";
-      return label === "" ? [] : [{ label, description }];
-    });
-    return [
-      {
-        question: text3.trim(),
-        options: options.map((o) => o.label),
-        descriptions: Object.fromEntries(options.filter((o) => o.description !== "").map((o) => [o.label, o.description]))
-      }
-    ];
-  });
-}
-function dialogQuestionText(q) {
-  const shown = q.options.slice(0, DIALOG_OPTIONS_SHOWN).map((label) => {
-    const plain = label.replace(RECOMMENDED_SUFFIX, "");
-    const text3 = clip(plain, DIALOG_OPTION_MAX);
-    return plain === label ? text3 : `${text3} (recommended)`;
-  });
-  const more = q.options.length > shown.length ? ` / and ${q.options.length - shown.length} more` : "";
-  const options = shown.length > 0 ? ` (options: ${shown.join(" / ")}${more})` : "";
-  return `"${clip(q.question.replaceAll('"', "'"), DIALOG_QUESTION_MAX)}"${options}`;
-}
-function dialogActivity(questions, outcome) {
-  const shown = questions.slice(0, DIALOG_QUESTIONS_SHOWN).map(dialogQuestionText);
-  const more = questions.length - shown.length;
-  const asked = shown.length > 0 ? `: ${shown.join("; ")}${more > 0 ? `; and ${more} more` : ""}` : "";
-  const head = `asked the user in a dialog${asked}`;
-  switch (outcome.kind) {
-    case "answered":
-      return `${head}; answer: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
-    case "timed-out":
-      return `${head}; it timed out while the user was away, so the user did not answer; it went on with: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
-    case "dismissed":
-      return `${head}; the user dismissed it without answering`;
-    case "open":
-      return `${head}; still open, waiting on the user's answer`;
-  }
-}
-var STATUS_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
-
-You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
-
-Input:
-- <goal>: the session's goal. Do not restate it.
-- <subjects>: the open subjects, one per line: id | status | name | where it stands
-- <finished>: subjects already done or dropped. Do not add them again.
-- <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
-- <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subject it holds up, or - when it has none yet
-- <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
-- <person>: what the person just sent
-- <activity>: what the agent did this turn
-- <reply>: the agent's final reply
-
-Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, answer with the one line NO CHANGE. Most exchanges change nothing.
-
-Otherwise write only the lines that apply:
-NEW: status | name | where it stands
-SET: id or name | status | where it stands
-DONE: id or name | where it ended
-DROP: id or name | why
-DROP: id or name | why | INTO id or name
-WAS: id or name | the plan it replaces
-LINK: running or ask id | subject id or name
-ROLE: coordinator or session
-GOAL: the goal in the person's words, at most ${GOAL_WORDS} words
-
-A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
-
-The name is a label of at most ${NAME_WORDS} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
-
-Status is one of: working, queued, waits-on-other.
-- working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask. When the work stopped for another reason, it is queued, waits on something, or is done.
-- queued: planned, not started.
-- waits-on-other: it waits on something other than the person, such as a build, a review or another session.
-
-Rules:
-- Change a subject by its id. Write NEW only when no subject in <subjects> covers it.
-- When work started and finished in this exchange, write NEW for it, then DONE with its name.
-- Write SET only when where a subject stands changed. Never reword a subject that did not change.
-- Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
-- When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
-- Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
-- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
-- Write ROLE coordinator when the session hands out work and reviews what comes back instead of doing the work itself. Write ROLE only when it changes.
-- Write GOAL only when <goal> is empty, when the person states a new goal, or when the work moves to a different task.`;
-function latestBatch(ledger) {
-  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
-}
-function numberOf(label) {
-  const m = label?.match(/(?:^|[^A-Za-z\d])(?:[QqDd#]\s?)?(\d{1,2})(?!\d)/);
-  return m ? Number(m[1]) : null;
-}
-function answerableBatch(ledger, promptTurn) {
-  return ledger.batchTurn === promptTurn - 1 ? latestBatch(ledger) : [];
-}
-function batchNumbers(batch) {
-  const hasLabels = batch.some((i) => numberOf(i.label) !== null);
-  const byNumber = /* @__PURE__ */ new Map();
-  batch.forEach((item, at) => {
-    const n = hasLabels ? numberOf(item.label) : at + 1;
-    if (n !== null && !byNumber.has(n)) byNumber.set(n, item);
-  });
-  return byNumber;
-}
-function questionNumbers(ledger, promptTurn) {
-  const numbers = /* @__PURE__ */ new Map();
-  for (const [n, item] of batchNumbers(answerableBatch(ledger, promptTurn)))
-    if (item.kind === "question") numbers.set(item.id, n);
-  return numbers;
-}
-var CLOSE_ID_RULE = "A close id is only for the close tool. Never write one in a reply.";
-var TOLD_NOTHING = { inbox: null, closed: [] };
-
-// ../hooks/dialogs.ts
-function optionKey(option) {
-  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
-}
-function optionsKey(options) {
-  return options.map(optionKey).sort().join("\n");
-}
-function hasSameOptions(item, q) {
-  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
-}
-function copyOf(q, items, questions) {
-  const byOptions = items.filter((i) => hasSameOptions(i, q));
-  const [only] = byOptions;
-  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
-  const pool = byOptions.length > 0 ? byOptions : items;
-  const byAsk = pool.filter((i) => restates(i.ask, q.question));
-  const [asked] = byAsk;
-  if (!asked || byAsk.length !== 1) return null;
-  const restated = questions.filter((o) => restates(asked.ask, o.question));
-  return restated.length === 1 ? asked : null;
-}
-function descriptionsFor(options, descriptions) {
-  const byKey = new Map(Object.entries(descriptions).map(([label, text3]) => [optionKey(label), text3]));
-  const matched = options.flatMap((o) => {
-    const text3 = byKey.get(optionKey(o));
-    return text3 === void 0 ? [] : [[o, text3]];
-  });
-  return matched.length > 0 ? Object.fromEntries(matched) : null;
-}
-function asCopyOf(item, q) {
-  const descriptions = descriptionsFor(item.options, q.descriptions);
-  return {
-    ...item,
-    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
-    ...descriptions ? { optionDescriptions: descriptions } : {}
-  };
-}
-function linkDialogs(s) {
-  if (s.dialogQuestions.length === 0) return s;
-  let items = s.ledger.items;
-  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
-  const questions = s.dialogQuestions.map((q) => {
-    if (q.itemId !== null) return q;
-    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
-    const copy = copyOf(
-      q,
-      turnItems,
-      s.dialogQuestions.filter((o) => o.turn === q.turn)
-    );
-    if (!copy || copy.dialog || linked.has(copy.id)) return q;
-    linked.add(copy.id);
-    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
-    return { ...q, itemId: copy.id };
-  });
-  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
-  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
-}
-function noteDialog(s, callId, questions) {
-  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
-  const added = questions.flatMap(
-    (q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]
-  );
-  if (added.length === 0) return s;
-  return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
-}
-
 // ../hooks/view.ts
 var OPTIONS_FOLD_AT = 5;
 var OPTION_LABEL_CHARS = 32;
 var CHOICE_KEYS = [..."abcfghilm"];
+var DOT = "\u2007\xB7\u2002";
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" }
 };
+var SUBJECT_MARKS = {
+  working: { mark: "\u25CF", tone: null },
+  queued: { mark: "\u25CB", tone: null },
+  "waits-on-other": { mark: "\u25CC", tone: null },
+  done: { mark: "\u2713", tone: "done" },
+  dropped: { mark: "\u2717", tone: null }
+};
+var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
+var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
+var RUNNING_MARK = RUNNING_FRAMES[0];
+var CLOSED_MARKS = {
+  handled: SUBJECT_MARKS.done.mark,
+  dismissed: "\u2715",
+  lapsed: SUBJECT_MARKS.dropped.mark
+};
+var PR_MARKS = {
+  waiting: { text: HELD_MARK.mark, tone: "needsYou" },
+  sent: { text: SUBJECT_MARKS.done.mark, tone: "done" },
+  failing: { text: FINDING_GROUPS.issue.mark, tone: "error" }
+};
+var MARK_LEGEND = [
+  {
+    mark: RUNNING_MARK,
+    tone: null,
+    isRunning: true,
+    words: "Working. It moves while the work runs or your message is on its way."
+  },
+  { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: "Queued: not started yet" },
+  {
+    mark: SUBJECT_MARKS["waits-on-other"].mark,
+    tone: null,
+    isRunning: false,
+    words: "Waits on something other than you, such as a build or a review"
+  },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
+  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: "Dropped before it was done" },
+  { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: "Dismissed by you" },
+  {
+    mark: FINDING_GROUPS.issue.mark,
+    tone: FINDING_GROUPS.issue.tone,
+    isRunning: false,
+    words: "Something is wrong: an issue or a failing check"
+  },
+  {
+    mark: FINDING_GROUPS.opportunity.mark,
+    tone: FINDING_GROUPS.opportunity.tone,
+    isRunning: false,
+    words: "Opportunity: something that could be better"
+  }
+];
 var SETTLED_MS = 5120;
 var QUEUED_AFTER_MS = 1e3;
 var COMPARE_LIMIT_MS = 30 * 6e4;
@@ -1936,7 +1809,7 @@ function closedRowState(closed, at, now, settleWindowMs, delivery) {
     at,
     canUndo: canUndoClose(closed, at, now, settleWindowMs),
     offersUndo: offersUndo(closed),
-    isLapsed: isLapsed(closed),
+    closedAs: closedState(closed),
     delivery
   };
 }
@@ -1958,15 +1831,14 @@ function optionDescriptionsOf(item, actions) {
     return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
   });
 }
+function rowHandle(row) {
+  return row.number === null ? "\u2022" : `${row.number})`;
+}
 function isWaitingRow(row) {
   return row.state.is === "open";
 }
 function allRows(v) {
   return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
-}
-function shortAgo(ms) {
-  const age = ago(ms);
-  return age === "just now" ? "now" : age.replace(/ ago$/, "");
 }
 var NEXT_BUILD_MARK = ".next-build";
 var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
@@ -2087,45 +1959,38 @@ function isShownTab(raw) {
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
-var LOOK_TEXT = "Seen";
+var LOOK_TEXT = "Last seen";
 var CHILD_ROWS = 3;
-var STALL_MS = 15 * 6e4;
 var NEW_CLOSED_ROWS = 2;
 var OPEN_ROWS = 7;
-var SUBJECT_MARKS = {
-  working: { mark: "\u25CF", tone: null },
-  queued: { mark: "\u25CB", tone: null },
-  "waits-on-other": { mark: "\u25CC", tone: null },
-  done: { mark: "\u2713", tone: "done" },
-  dropped: { mark: "\u2717", tone: null }
-};
-var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
-var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
+var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
+var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 function isItemAfterItem(row, prev) {
   const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
   return prev !== void 0 && prev.kind !== "look" && row.kind !== "look" && !isUnderSubject;
 }
-function idleOf(c, now) {
-  return c.lastActivityAt === null ? null : now - c.lastActivityAt;
+function isFinishedUnseen(c, lastLookAt) {
+  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
 }
-function isQuiet(c, now) {
-  const idle = idleOf(c, now);
-  return idle !== null && idle >= STALL_MS;
+function isChildWorking(c) {
+  return c.endedAt === null && c.delegateState !== "blocked";
 }
-function isChildWorking(c, now) {
-  return now - (c.lastActivityAt ?? c.startedAt) < STALL_MS;
+function childStall(c) {
+  if (c.delegateState === "finished") return { text: "finished", tone: "done" };
+  if (c.delegateState === "blocked") return { text: "waiting", tone: "needsYou" };
+  return null;
 }
-function childRow(c, now, branch) {
-  const idle = idleOf(c, now);
+function childRow(c, branch) {
+  const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
   return {
     kind: "child",
     id: c.id,
-    mark: "\u25CF",
-    isRunning: isChildWorking(c, now),
+    ...marks,
+    isRunning: isChildWorking(c),
     name: c.name,
-    stall: idle !== null && isQuiet(c, now) ? `quiet ${shortAgo(idle)}` : null,
+    stall: childStall(c),
     branch
   };
 }
@@ -2136,26 +2001,25 @@ function statusPage(s, now) {
   const isNew = (x) => look === null || x.changedAt > look;
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const waitingSince = (x) => {
-    const asked = s.ledger.items.filter((i) => o?.askSubjects[i.id] === x.id).flatMap((i) => i.at ?? []);
-    return asked.length > 0 ? Math.min(...asked) : x.changedAt;
+  const oldestAskOf = (x) => {
+    if (!isHeld(x)) return null;
+    const oldest = s.ledger.items.filter((i) => o?.askSubjects[i.id] === x.id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+    return oldest ? { id: oldest.id, kind: oldest.kind } : null;
   };
-  const stallOf = (x) => {
-    const isWaiting = isHeld(x) || isOpen(x) && x.status === "waits-on-other";
-    const waited = now - waitingSince(x);
-    return isWaiting && waited >= STALL_MS ? `waiting ${shortAgo(waited)}` : null;
-  };
+  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
+  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
+  const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const open2 = subjects.filter(isOpen);
   const queuedOver = Math.max(0, open2.length - OPEN_ROWS);
   const hiddenQueued = new Set(
-    open2.filter((x) => x.status === "queued" && !isHeld(x)).sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id)
+    open2.filter((x) => placeOf(x) === "queued").sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id)
   );
-  const shown = [...open2.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort((x, y) => y.changedAt - x.changedAt);
+  const shown = [...open2.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort(pageOrder);
   const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
-  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const shownIds = new Set(shown.map((x) => x.id));
-  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, null));
+  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null));
   const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
   const firstSeen = shown.findIndex((x) => !isNew(x));
   for (const [i, x] of shown.entries()) {
@@ -2168,20 +2032,23 @@ function statusPage(s, now) {
       kind: "subject",
       id: x.id,
       ...isHeld(x) ? HELD_MARK : SUBJECT_MARKS[x.status],
-      isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some((c) => isChildWorking(c, now))),
+      isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some(isChildWorking)),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       stall: stallOf(x),
       merged: isNew(x) ? x.merged : null,
       was: isNew(x) ? x.was : null,
-      hasChildren: under.length > 0
+      hasChildren: under.length > 0,
+      ask: oldestAskOf(x)
     });
-    rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
+    rows.push(...shownUnder.map((c, n) => childRow(c, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
+    const hidden = under.slice(CHILD_ROWS);
+    const isEveryHiddenRunning = hidden.every((c) => c.delegateState !== "finished");
     if (isMore)
       rows.push({
         kind: "more",
         id: `${x.id}-more`,
-        text: `+ ${under.length - CHILD_ROWS} more running`,
+        text: `+ ${hidden.length} more${isEveryHiddenRunning ? " running" : ""}`,
         branch: "last"
       });
   }
@@ -2191,7 +2058,7 @@ function statusPage(s, now) {
     rows.push({
       kind: "fold",
       id: "queued",
-      mark: "\u25CB",
+      mark: SUBJECT_MARKS.queued.mark,
       tone: null,
       text: `${hiddenQueued.size} more queued`
     });
@@ -2200,15 +2067,15 @@ function statusPage(s, now) {
     rows.push({
       kind: "fold",
       id: "done",
-      mark: "\u2713",
+      mark: SUBJECT_MARKS.done.mark,
       tone: "done",
       text: `${folded.length}${isMore ? " more" : ""} done`
     });
   }
-  const goal = o?.goal || null;
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
-    isEmpty: goal === null && rows.length === 0,
-    goal,
+    isEmpty: head === null && rows.length === 0,
+    head,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
@@ -2276,7 +2143,8 @@ function actionsOf(row, last, state, feedback) {
       ...stepActions,
       action({ action: "done", id }, "Done", "mark"),
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
-      action({ action: "explain", id }, "Explain", "talk")
+      action({ action: "explain", id }, "Explain", "talk"),
+      action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
   const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
@@ -2355,7 +2223,7 @@ function inboxView({
           canUndo: false,
           offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
-          isLapsed: false
+          closedAs: closedState(closed2)
         };
       if (isHeld(closed2)) return { is: "held", label: heldLabel(closed2), at };
       return closedRowState(
@@ -2376,7 +2244,7 @@ function inboxView({
         canUndo: isUndoLeft(last.at, now, settleWindowMs),
         offersUndo: true,
         delivery: pendingDeliveryAt(last, now),
-        isLapsed: false
+        closedAs: "handled"
       };
     return isHandedOff(last, turns) ? { is: "handedOff" } : { is: "open" };
   };
@@ -2400,7 +2268,7 @@ function inboxView({
     return rowOf({
       id: item.id,
       type: item.kind,
-      handle: n === void 0 ? "\u2022" : `${n})`,
+      number: n ?? null,
       title: item.ask,
       at: item.at,
       detail: null,
@@ -2420,7 +2288,7 @@ function inboxView({
     (finding) => rowOf({
       id: finding.id,
       type: "finding",
-      handle: "\u2022",
+      number: null,
       title: finding.title,
       at: finding.at,
       detail: finding.detail,
@@ -2480,11 +2348,56 @@ function perTurnStatus(update) {
   };
 }
 
+// ../hooks/herdr.ts
+var STATUS_TOKEN = "inbox";
+var STOP_TOKEN = "inbox-stop";
+var COUNT_TOKENS = {
+  needsYou: "inbox-needs-you",
+  findings: "inbox-findings",
+  prs: "inbox-prs"
+};
+var CLEARED_TOKENS = Object.fromEntries(
+  [STATUS_TOKEN, STOP_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null])
+);
+var HERDR_TIMEOUT_MS = 5e3;
+var HERDR_AGENT_LIST = ["herdr", "agent", "list"];
+var HERDR_STATUSES = ["idle", "working", "blocked", "done", "unknown"];
+var HERDR_CHECK_MS = 3e4;
+async function delegatesInHerdr(o, run2) {
+  if (!hasRunningDelegate(o)) return null;
+  const r = await run2(HERDR_AGENT_LIST, { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS });
+  return r.code === 0 ? herdrStatuses(r.stdout) : null;
+}
+function herdrStatuses(stdout) {
+  try {
+    const agents = JSON.parse(stdout)?.result?.agents;
+    if (!Array.isArray(agents)) return null;
+    const statusOf2 = (a) => HERDR_STATUSES.find((s) => s === a?.agent_status) ?? "unknown";
+    return new Map(agents.filter((a) => typeof a?.name === "string").map((a) => [a.name, statusOf2(a)]));
+  } catch {
+    return null;
+  }
+}
+function herdrCheckGate() {
+  const checked = /* @__PURE__ */ new Map();
+  return (session, now) => {
+    const last = checked.get(session);
+    if (last !== void 0 && now - last < HERDR_CHECK_MS) return false;
+    checked.set(session, now);
+    return true;
+  };
+}
+
 // ../hooks/pr-tab.ts
 var MAX_PRS = 12;
+var MAX_ORDERED_PRS = 30;
+var GH_RUNS_AT_ONCE = 8;
 var GH_SIGN_IN_CODE = 4;
 function asksForSignIn(r) {
   return r.exitCode === GH_SIGN_IN_CODE || r.exitCode !== 0 && /\bHTTP 401\b/.test(r.stderr);
+}
+function linkedPrs(prs, refs) {
+  return [...prs.filter((r) => !refs.includes(r)), ...refs];
 }
 function itemPrSteps(item, prState, linked) {
   const refs = prState.branchRef ? [...linked, prState.branchRef] : linked;
@@ -2497,36 +2410,40 @@ function isLeftOut(prState, ref) {
   const view = prState.views[ref];
   return view !== void 0 && !isKeptPr(view);
 }
-function splitLinked(prState, linked) {
-  const shown = linked.filter((ref) => !isLeftOut(prState, ref));
-  return { tracked: shown.slice(-MAX_PRS), older: shown.slice(0, Math.max(0, shown.length - MAX_PRS)) };
+function splitLinked(prState, links) {
+  const ranked = new Set(links.prOrder?.refs ?? []);
+  const shown = links.prs.filter((ref) => !isLeftOut(prState, ref));
+  const unranked = shown.filter((ref) => !ranked.has(ref));
+  const older = unranked.slice(0, Math.max(0, unranked.length - MAX_PRS));
+  return { tracked: shown.filter((ref) => !older.includes(ref)), older };
 }
-function olderPrsText(prState, linked) {
-  const { older } = splitLinked(prState, linked);
+function olderPrsText(prState, links) {
+  const { older } = splitLinked(prState, links);
   if (older.length === 0) return null;
   const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
   return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
 }
-async function fetchTracked(run2, state, linked, findsBranchPr) {
+async function fetchTracked(run2, state, links, findsBranchPr, now) {
   let isGhSignedOut = null;
+  const runs = limitedTo(GH_RUNS_AT_ONCE);
   const gh = async (args) => {
-    const r = await run2(args);
+    const r = await runs(() => run2(args));
     const isAnswer = r.exitCode !== UNSTARTABLE_CODE && r.exitCode !== TIMED_OUT_CODE;
     if (isAnswer) isGhSignedOut = isGhSignedOut === true || asksForSignIn(r);
     return r;
   };
-  const { tracked } = splitLinked(state, linked);
+  const { tracked } = splitLinked(state, links);
   const branchTarget = findsBranchPr ? null : state.branchRef;
   const isBranchLinked = branchTarget !== null && tracked.includes(branchTarget);
   const [branch, ...rest] = await Promise.all([
-    findsBranchPr || branchTarget && !isBranchLinked ? fetchPr(gh, branchTarget, state.views, state.branchRef) : null,
-    ...tracked.map((ref) => fetchPr(gh, ref, state.views, null))
+    findsBranchPr || branchTarget && !isBranchLinked ? fetchPr(gh, branchTarget, state.views, state.branchRef, now) : null,
+    ...tracked.map((ref) => fetchPr(gh, ref, state.views, null, now))
   ]);
   const views = {};
   for (const v of [...rest, branch]) if (v) views[v.ref] = v;
   return { views, branchRef: findsBranchPr ? branch?.ref ?? null : state.branchRef, isGhSignedOut };
 }
-async function fetchPr(gh, target, views, knownBranchRef) {
+async function fetchPr(gh, target, views, knownBranchRef, now) {
   const threadsOf = (ref2) => {
     const r = parseRef(ref2);
     return gh([
@@ -2547,6 +2464,7 @@ async function fetchPr(gh, target, views, knownBranchRef) {
     gh(["pr", "view", ...t ? [t.number, "-R", t.repo] : [], "--json", VIEW_FIELDS]),
     target ? threadsOf(target) : null
   ]);
+  const fetchedAt = await now();
   const hasNoPr = view.exitCode !== 0 && /no pull requests found/i.test(view.stderr);
   const ref = target ?? (view.exitCode === 0 ? urlRef(view.stdout) : hasNoPr ? null : knownBranchRef);
   if (!ref) return null;
@@ -2564,7 +2482,8 @@ async function fetchPr(gh, target, views, knownBranchRef) {
     threads: answer?.threads ?? previous?.threads ?? [],
     isYours: answer?.isYours ?? previous?.isYours ?? null,
     wasSeenOpen: base.state === "OPEN" || previous?.wasSeenOpen === true,
-    error: answer ? null : "could not read review threads"
+    error: answer ? null : "could not read review threads",
+    fetchedAt
   };
 }
 function urlRef(json) {
@@ -2593,35 +2512,61 @@ var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds
 var PR_REFRESH_LABEL = "Refresh PRs";
 var PR_REFRESH = { kind: "refresh-prs", name: "PRs" };
 var PR_DISMISSED_LABEL = "Dismissed";
+var DISMISS_MERGED_ID = "pr:merged";
 function threadSentIn(lastActions) {
   return (pr, t) => {
     const last = lastActions[prThreadId(pr, t)];
     return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
   };
 }
-function isTracked(prState, linked, ref) {
-  return splitLinked(prState, linked).tracked.includes(ref) || prState.branchRef === ref;
+function isTracked(prState, links, ref) {
+  return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
 }
-function keepsView(prState, linked, ref) {
-  return isTracked(prState, linked, ref) || linked.includes(ref) && isLeftOut(prState, ref);
+function keepsView(prState, links, ref) {
+  return isTracked(prState, links, ref) || links.prs.includes(ref) && isLeftOut(prState, ref);
 }
 function dismissedAt(lastActions, ref) {
   const mark = lastActions[prMarkId(ref)];
   return mark?.action === "pr-dismiss" ? mark.at : null;
 }
-function isViewKept(prState, linked, lastActions, ref, shownSince) {
+function isViewKept(prState, links, lastActions, ref, shownSince) {
   const at = dismissedAt(lastActions, ref);
-  return keepsView(prState, linked, ref) || at !== null && isShownSince(at, shownSince);
+  return keepsView(prState, links, ref) || at !== null && isShownSince(at, shownSince);
 }
 var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
-function drawnPrs(prState, linked, lastActions, now, settleWindowMs, placing) {
-  return inPrOrder(Object.values(prState.views)).flatMap((pr) => {
-    if (isTracked(prState, linked, pr.ref)) return [{ pr, state: { is: "open" } }];
+function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
+  const ranked = links.prOrder?.refs ?? [];
+  const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr) => {
+    if (isTracked(prState, links, pr.ref)) return [{ pr, state: { is: "open" } }];
     const at = dismissedAt(lastActions, pr.ref);
     if (at === null) return [];
     const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null);
     return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
   });
+  let rank = 0;
+  return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
+}
+function prOrderText(order, drawn, now) {
+  const isRanking = drawn.some((d) => d.rank !== null);
+  if (!order || !isRanking) return null;
+  return `${order.label ?? "Order"}${DOT}set by ${order.by} ${ago(now - order.at)}`;
+}
+function limitedTo(limit) {
+  let running = 0;
+  const waiting = [];
+  return async (call) => {
+    if (running >= limit) await new Promise((go) => waiting.push(go));
+    running += 1;
+    try {
+      return await call();
+    } finally {
+      running -= 1;
+      waiting.shift()?.();
+    }
+  };
+}
+function isPrPress(p) {
+  return "ref" in p || p.action === "pr-dismiss-merged";
 }
 function commentEffect(pr, t) {
   return { kind: "open", target: t.reply?.url || t.url || pr.url, name: "the comment" };
@@ -2632,28 +2577,51 @@ function prPageEffect(pr) {
 function logEffect(pr, check) {
   return { kind: "open", target: check.url ?? pr.url, name: check.url ? "the log" : `PR #${pr.number}` };
 }
+function isPrFixPress(p) {
+  return p.action === "pr-conflicts" || p.action === "check-fix";
+}
+function fixCheckEffect(pr) {
+  return { kind: "refresh-prs", name: `PR #${pr.number}` };
+}
 function prRowId(p) {
+  if (p.action === "pr-dismiss-merged") return DISMISS_MERGED_ID;
   if ("check" in p) return checkRowId(p.ref, p.check);
   if ("thread" in p) return threadRowId(p.ref, p.thread);
   return prMarkId(p.ref);
 }
 function pressRowId(p) {
-  return "ref" in p ? prRowId(p) : p.id;
+  return isPrPress(p) ? prRowId(p) : p.id;
+}
+function isDismissedByMerged(pr, branchRef) {
+  return pr.state === "MERGED" && pr.ref !== branchRef;
 }
 function applyPrPress(ledger, prState, lastActions, p, ctx) {
   const stale = { stale: true };
-  const pr = prState.views[p.ref];
-  const markId = prMarkId(p.ref);
   const applied2 = (a) => {
     const effects = a.effects ?? [];
     const lasts = Object.fromEntries(Object.entries(a.lasts ?? {}).map(([id, l]) => [id, withQueued(l, effects)]));
     return { ledger, drop: [], ...a, lasts, effects };
   };
+  if (p.action === "pr-dismiss-merged") {
+    const refs = Object.values(prState.views).filter((pr2) => isTracked(prState, ledger, pr2.ref) && isDismissedByMerged(pr2, prState.branchRef)).map((pr2) => pr2.ref);
+    if (refs.length === 0) return stale;
+    return applied2({
+      ledger: { ...ledger, prs: ledger.prs.filter((r) => !refs.includes(r)) },
+      lasts: Object.fromEntries(
+        refs.map((ref) => {
+          const id = prMarkId(ref);
+          return [id, recordPress("mark", "pr-dismiss", PR_DISMISSED_LABEL, ctx, lastActions[id])];
+        })
+      )
+    });
+  }
+  const pr = prState.views[p.ref];
+  const markId = prMarkId(p.ref);
   if (p.action === "pr-undo") {
-    if (!pr || isTracked(prState, ledger.prs, p.ref) || lastActions[markId]?.action !== "pr-dismiss") return stale;
+    if (!pr || isTracked(prState, ledger, p.ref) || lastActions[markId]?.action !== "pr-dismiss") return stale;
     return applied2({ ledger: { ...ledger, prs: [...ledger.prs, p.ref] }, drop: [markId] });
   }
-  if (!pr || !isTracked(prState, ledger.prs, p.ref)) return stale;
+  if (!pr || !isTracked(prState, ledger, p.ref)) return stale;
   const record2 = (rowId, kind, action, text3) => recordPress(kind, action, text3, ctx, lastActions[rowId]);
   const send = (text3) => ({ kind: "send", text: text3, by: null });
   const local = (rowId, text3, effect) => {
@@ -2738,6 +2706,315 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
       return local(prCheckId(pr, check), "Open log", logEffect(pr, check));
     }
   }
+}
+
+// ../hooks/tools.ts
+var NAME_BY_CONTENT = "Name it by what it says, never by its id.";
+var RECORD_SCHEMA = {
+  type: "object",
+  properties: {
+    kind: {
+      type: "string",
+      enum: ["question", "task", "finding"],
+      description: "question: a decision only the user can make. task: a step only the user can do. finding: something outside the current task that deserves their attention."
+    },
+    ask: {
+      type: "string",
+      description: "For a question or task: what you need from the user, in at most 12 plain words, readable without your reply."
+    },
+    options: {
+      type: "array",
+      items: { type: "string" },
+      description: "For a question: the answers the user can pick, at most 5 words each. Give at least one."
+    },
+    rec: {
+      type: "string",
+      description: "For a question: the option you recommend, copied from options. Leave it out when you recommend none."
+    },
+    steps: {
+      type: "array",
+      items: { type: "string" },
+      description: "For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path."
+    },
+    design_choice: {
+      type: "boolean",
+      description: "For a question: true when its options are designs or approaches you could try and show side by side, such as two layouts or two ways to build a feature. The user can then ask you to compare them. Leave it out for a fact, an approval or a preference."
+    },
+    finding_kind: {
+      type: "string",
+      enum: ["issue", "opportunity"],
+      description: "For a finding. issue: something wrong or risky. opportunity: something that could be better."
+    },
+    title: { type: "string", description: "For a finding: what it is, in at most 12 plain words." },
+    detail: {
+      type: "string",
+      description: "For a finding: why it matters and what you would do, in one or two sentences."
+    },
+    path: { type: "string", description: "For a finding: the file it is about, if one." }
+  },
+  required: ["kind"]
+};
+var CLOSE_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string", description: "The id of the open item or finding, such as i35 or f32." },
+    answer: {
+      type: "string",
+      description: `The user's answer, at most 8 words, when their own message answered it. Use their words, but when they picked by position or pointing, as "the second one", give the option they picked.`
+    },
+    reason: {
+      type: "string",
+      description: 'Otherwise, why it is closed, in at most 8 words, such as "no longer applies: Inbox kept".'
+    }
+  },
+  required: ["id"]
+};
+var ORDER_SCHEMA = {
+  type: "object",
+  properties: {
+    repo: { type: "string", description: "The repository, as owner/name." },
+    numbers: {
+      type: "array",
+      items: { type: "integer" },
+      description: `The PR numbers, first to last, at most ${MAX_ORDERED_PRS}. Give an empty list to clear the order.`
+    },
+    label: { type: "string", description: 'What the order is, in at most 4 words, such as "Merge order".' }
+  },
+  required: ["numbers"]
+};
+function orderDescription(host) {
+  return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`;
+}
+function recordDescription(host) {
+  return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing.
+- question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
+- task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
+- finding: something outside the current task that deserves their attention. It waits in ${host.findingsIn} until it is closed, and the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, once you have checked it. Leave out style nits, anything the user already decided, todos or ideas the user mentioned, problems in your own change, progress, and anything only the user can do or decide: handle those in your reply, or record them as a question or task.
+Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.`;
+}
+var CLOSE_DESCRIPTION = `Close an open item or finding by its id, such as i35 or f12, as listed in the latest "inbox:" text beside the user's prompt. Pass the user's answer when their message answered it, and a reason otherwise.`;
+function agentTools(host) {
+  return [
+    { name: "record", description: recordDescription(host), inputSchema: RECORD_SCHEMA },
+    { name: "close", description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA },
+    { name: "order_prs", description: orderDescription(host), inputSchema: ORDER_SCHEMA }
+  ];
+}
+function toolAnswer(host, ledger, tool, input, now) {
+  switch (tool) {
+    case "record":
+      return recordItem(host, ledger, input, now);
+    case "close":
+      return recordClose(host, ledger, input, now);
+    case "order_prs":
+      return orderPrs(host, ledger, input, now);
+  }
+}
+function cut(value, max) {
+  return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+var MAX_ASK = 200;
+var MAX_OPTION = 60;
+var MAX_OPTIONS = 8;
+var MAX_STEPS = 3;
+function list(value, max, each) {
+  return Array.isArray(value) ? value.map((v) => cut(v, each)).filter(Boolean).slice(0, max) : [];
+}
+function unchanged(ledger, result) {
+  return { ledger, result, personLine: null };
+}
+function recordItem(host, ledger, input, now) {
+  if (input.kind === "finding") return recordFinding(host, ledger, input, now);
+  if (input.kind !== "question" && input.kind !== "task")
+    return unchanged(ledger, "Not recorded: kind must be question, task or finding.");
+  const ask = cut(input.ask, MAX_ASK);
+  if (ask === "") return unchanged(ledger, `Not recorded: a ${input.kind} needs an ask.`);
+  const options = input.kind === "question" ? list(input.options, MAX_OPTIONS, MAX_OPTION) : [];
+  if (input.kind === "question" && options.length === 0)
+    return unchanged(ledger, "Not recorded: a question needs at least one option.");
+  const recInput = input.kind === "question" ? cut(input.rec, MAX_OPTION) : "";
+  const rec = recInput === "" ? null : recommendedOption(options, recInput);
+  if (recInput !== "" && rec === null) return unchanged(ledger, "Not recorded: rec must be one of the options.");
+  const steps2 = list(input.steps, MAX_STEPS + 3, 4e3);
+  const isUsable = (h) => input.kind === "task" || h.kind === "open" || h.kind === "link";
+  const helps = steps2.flatMap((step) => stepHelp(step) ?? []).filter(isUsable).slice(0, MAX_STEPS);
+  const leftOut = helps.length < steps2.length ? input.kind === "task" ? " Some steps were not a command, a file path or a link, so they are left out." : " Some steps were not an absolute file path or a link, so they are left out." : "";
+  const isDesignChoice = input.kind === "question" && input.design_choice === true;
+  const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps, isDesignChoice }, now);
+  if (r.is === "open") {
+    const changes = [
+      ...r.addedSteps > 0 ? ["added its new steps"] : [],
+      ...r.isNewlyMarked ? ["marked it as a design choice"] : [],
+      ...r.newRec ? [`changed its recommendation to ${r.newRec}`] : []
+    ];
+    const updated = changes.length > 0 ? ` and ${changes.join(" and ")}` : "";
+    return unchanged(r.ledger, `Already open, so this record updated it${updated}.${leftOut}`);
+  }
+  if (r.is === "closed")
+    return unchanged(ledger, `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`);
+  return {
+    ledger: r.ledger,
+    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ""),
+    personLine: `${input.kind === "question" ? "Question" : "Task"}: ${ask}`
+  };
+}
+function recordFinding(host, ledger, input, now) {
+  const title = cut(input.title, 120);
+  const detail = cut(input.detail, 600);
+  if (title === "" || detail === "") return unchanged(ledger, "Not recorded: a finding needs a title and a detail.");
+  const path = cut(input.path, 300);
+  const kind = input.finding_kind === "opportunity" ? "opportunity" : "issue";
+  const r = addFinding(ledger, { kind, title, detail, path: path || null, at: now });
+  if (r.dismissed)
+    return unchanged(
+      ledger,
+      `Not recorded: the user already closed this (${r.dismissed.outcome}). Record it again only if they bring it up.`
+    );
+  if (!r.isAdded) return unchanged(r.ledger, "Already recorded.");
+  return {
+    ledger: r.ledger,
+    result: `Recorded. The user sees it in ${host.findingsIn}.` + (r.expired ? ` The list was full, so the oldest finding closed: ${r.expired.title}.` : ""),
+    personLine: `${kind === "opportunity" ? "Opportunity" : "Issue"}: ${title}`
+  };
+}
+function closedHow(c) {
+  switch (c.how) {
+    case "answered":
+      return `the user answered it (${c.outcome})`;
+    case "done":
+      return "the user marked it done";
+    case "dismissed":
+      return "the user dismissed it";
+    case "expired":
+      return "it expired";
+    case "claude":
+      return "you closed it earlier";
+    case "update":
+      return `the inbox closed it (${c.outcome})`;
+  }
+}
+function recordClose(host, ledger, input, now) {
+  const id = cut(input.id, 80).replace(/^\[|\]$/g, "");
+  const answer = cut(input.answer, 80);
+  const reason = cut(input.reason, 80);
+  if (id === "" || answer === "" && reason === "")
+    return unchanged(ledger, "Not closed: give the id, and the user's answer or a reason.");
+  const r = closeByAgent(host, ledger, id, answer ? { answer } : { reason }, now);
+  if (r.closed && "item" in r.closed)
+    return {
+      ledger: r.ledger,
+      result: `Closed. The user sees it in ${host.surface} with its outcome. ${NAME_BY_CONTENT}`,
+      personLine: `Closed: ${r.closed.item.ask}`
+    };
+  if (r.closed)
+    return {
+      ledger: r.ledger,
+      result: `Closed the finding. ${NAME_BY_CONTENT}`,
+      personLine: `Closed: ${r.closed.finding.title}`
+    };
+  const earlier = [...ledger.closed, ...ledger.closedFindings].findLast((c) => c.id === id);
+  if (earlier) return unchanged(ledger, `Already closed: ${closedHow(earlier)}.`);
+  return unchanged(
+    ledger,
+    `Not closed: no open item or finding has the id ${id}. The open ones are listed beside the user's latest message.`
+  );
+}
+var REPO = /^[\w.-]+\/[\w.-]+$/;
+var MAX_ORDER_LABEL = 40;
+function prNumber(value) {
+  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim().replace(/^#/, "")) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+function orderPrs(host, ledger, input, now) {
+  if (!Array.isArray(input.numbers)) return unchanged(ledger, "Not set: numbers must be a list of PR numbers.");
+  if (input.numbers.length === 0) {
+    if (ledger.prOrder === null) return unchanged(ledger, "No order was set.");
+    return {
+      ledger: { ...ledger, prOrder: null },
+      result: `Cleared. The PRs show in their usual order in ${host.prsIn}.`,
+      personLine: "PR order cleared"
+    };
+  }
+  const numbers = input.numbers.map(prNumber);
+  if (numbers.includes(null)) return unchanged(ledger, "Not set: numbers must be PR numbers, such as 3401.");
+  const repo = cut(input.repo, 200);
+  if (!REPO.test(repo)) return unchanged(ledger, "Not set: give repo as owner/name.");
+  const refs = [...new Set(numbers.map((n) => `${repo}#${n}`))];
+  if (refs.length > MAX_ORDERED_PRS) return unchanged(ledger, `Not set: an order ranks at most ${MAX_ORDERED_PRS} PRs.`);
+  const label = cut(input.label, MAX_ORDER_LABEL) || null;
+  const added = refs.filter((ref) => !ledger.prs.includes(ref));
+  const addedText = added.length === 0 ? "" : added.length === 1 ? " 1 of them was not in the tab yet. It shows after the tab's next refresh, if the user wrote it and it is open." : ` ${added.length} of them were not in the tab yet. They show after the tab's next refresh, if the user wrote them and they are open.`;
+  return {
+    ledger: { ...ledger, prs: linkedPrs(ledger.prs, added), prOrder: { refs, label, by: host.agent, at: now } },
+    result: `Set. These ${refs.length} PRs show first in ${host.prsIn}, in this order.${addedText}`,
+    personLine: `PR order: ${label ? `${label}, ` : ""}${refs.length} ${refs.length === 1 ? "PR" : "PRs"}`
+  };
+}
+
+// ../hooks/dialogs.ts
+function optionKey(option) {
+  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
+}
+function optionsKey(options) {
+  return options.map(optionKey).sort().join("\n");
+}
+function hasSameOptions(item, q) {
+  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
+}
+function copyOf(q, items, questions) {
+  const byOptions = items.filter((i) => hasSameOptions(i, q));
+  const [only] = byOptions;
+  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
+  const pool = byOptions.length > 0 ? byOptions : items;
+  const byAsk = pool.filter((i) => restates(i.ask, q.question));
+  const [asked] = byAsk;
+  if (!asked || byAsk.length !== 1) return null;
+  const restated = questions.filter((o) => restates(asked.ask, o.question));
+  return restated.length === 1 ? asked : null;
+}
+function descriptionsFor(options, descriptions) {
+  const byKey = new Map(Object.entries(descriptions).map(([label, text3]) => [optionKey(label), text3]));
+  const matched = options.flatMap((o) => {
+    const text3 = byKey.get(optionKey(o));
+    return text3 === void 0 ? [] : [[o, text3]];
+  });
+  return matched.length > 0 ? Object.fromEntries(matched) : null;
+}
+function asCopyOf(item, q) {
+  const descriptions = descriptionsFor(item.options, q.descriptions);
+  return {
+    ...item,
+    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
+    ...descriptions ? { optionDescriptions: descriptions } : {}
+  };
+}
+function linkDialogs(s) {
+  if (s.dialogQuestions.length === 0) return s;
+  let items = s.ledger.items;
+  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
+  const questions = s.dialogQuestions.map((q) => {
+    if (q.itemId !== null) return q;
+    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
+    const copy = copyOf(
+      q,
+      turnItems,
+      s.dialogQuestions.filter((o) => o.turn === q.turn)
+    );
+    if (!copy || copy.dialog || linked.has(copy.id)) return q;
+    linked.add(copy.id);
+    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
+    return { ...q, itemId: copy.id };
+  });
+  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
+  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+}
+function noteDialog(s, callId, questions) {
+  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
+  const added = questions.flatMap(
+    (q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]
+  );
+  if (added.length === 0) return s;
+  return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
 }
 
 // ../hooks/session.ts
@@ -2888,7 +3165,7 @@ function isRepeatWhileOut(s, p, at, drawn) {
 function pressOn(s, p, at, drawn, texts, localPressId) {
   if (isRepeatWhileOut(s, p, at, drawn)) return { ledger: s.ledger, lasts: {}, drop: [], effects: [] };
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId };
-  if ("ref" in p) return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx);
+  if (isPrPress(p)) return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx);
   const item = s.ledger.items.find((i) => i.id === p.id);
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
@@ -2938,7 +3215,7 @@ function completedAttempt(state, deliveryId, outcome) {
   };
 }
 function recorded(host, s, tool, args, now) {
-  const r = (tool === "close" ? recordClose : recordItem)(host, s.ledger, args, now);
+  const r = toolAnswer(host, s.ledger, tool, args, now);
   return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result, personLine: r.personLine };
 }
 function withHolds(s, holds) {
@@ -2951,7 +3228,7 @@ function pruned(s) {
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(
-      ([ref]) => isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince)
+      ([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)
     )
   );
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
@@ -3010,7 +3287,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
   };
 }
 function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, settleWindowMs, {
+  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, now, settleWindowMs, {
     shownSince,
     lastTypedMessageAt: s.presence.lastTypedMessageAt
   });
@@ -3019,7 +3296,8 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
     drawn,
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent2)).length,
-    olderText: olderPrsText(s.prViews, s.ledger.prs),
+    olderText: olderPrsText(s.prViews, s.ledger),
+    orderText: prOrderText(s.ledger.prOrder, drawn, now),
     isGhSignedOut: s.prViews.isGhSignedOut === true
   };
 }
@@ -3034,6 +3312,7 @@ var CODEX = {
   surface: "the Inbox tab",
   band: null,
   findingsIn: "the Finds section of the Inbox tab",
+  prsIn: "the PRs section of the Inbox tab",
   recordTool: "mcp__inbox__record",
   closeTool: "mcp__inbox__close",
   intro: "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, and your findings, in the Inbox tab beside the conversation."
@@ -3064,11 +3343,11 @@ function inboxToolText(v) {
   return out.join("\n");
 }
 function rowLine(r) {
-  if (r.finding) return `${r.handle} ${r.finding.kind}: ${r.title} (close id: ${r.id})`;
+  if (r.finding) return `${rowHandle(r)} ${r.finding.kind}: ${r.title} (close id: ${r.id})`;
   const item = r.item;
   const options = item && item.options.length > 0 ? `; options: ${item.options.join(" / ")}` : "";
   const rec = item?.rec ? `; recommended: ${item.rec}` : "";
-  return `${r.handle} "${r.title}"${options}${rec} (close id: ${r.id})`;
+  return `${rowHandle(r)} "${r.title}"${options}${rec} (close id: ${r.id})`;
 }
 
 // src/core.ts
@@ -3110,7 +3389,7 @@ function viewOf(s, now, holds = NO_HOLDS) {
 
 // ../hooks/demo.ts
 var MIN = 6e4;
-var REPO = "https://github.com/acme/visor";
+var REPO2 = "https://github.com/acme/visor";
 var DEMO_PLACE = { folder: "/Users/you/code/visor", branch: "pinch-dismiss" };
 function withDemoPresence(s, now) {
   return {
@@ -3153,8 +3432,7 @@ function demoView(now, agent) {
   return {
     ledger: {
       overview: {
-        role: "session",
-        goal: "Pinch to dismiss glances",
+        head: { title: "Pinch to dismiss", description: "Adding a pinch that dismisses glances" },
         subjects: [
           subject("s1", "working", "Dismiss gesture", "pinch fades the glance", now - 2 * MIN),
           subject("s2", "working", "Glasses pairing", "needs this Mac paired", now - 12 * MIN),
@@ -3162,7 +3440,7 @@ function demoView(now, agent) {
             was: "flick and pinch both"
           }),
           subject("s4", "done", "Fade-out", "dismissed glances fade", now - 25 * MIN),
-          subject("s5", "queued", "Glasses trial", "after pairing", now - 3 * 60 * MIN),
+          subject("s5", "waits-on-other", "Glasses trial", "lenses ship Friday", now - 3 * 60 * MIN),
           subject("s6", "done", "Glance hit test", "finds the glance you look at", now - 5 * 60 * MIN),
           subject("s7", "done", "Settings toggle", "pinch can be turned off", now - 6 * 60 * MIN)
         ],
@@ -3175,7 +3453,8 @@ function demoView(now, agent) {
             subjectId: "s1",
             startedAt: now - 4 * MIN,
             endedAt: null,
-            lastActivityAt: now - MIN
+            lastActivityAt: now - MIN,
+            delegateState: null
           },
           {
             id: "c2",
@@ -3185,7 +3464,8 @@ function demoView(now, agent) {
             subjectId: "s2",
             startedAt: now - 50 * MIN,
             endedAt: null,
-            lastActivityAt: now - 40 * MIN
+            lastActivityAt: null,
+            delegateState: null
           },
           {
             id: "c3",
@@ -3195,12 +3475,35 @@ function demoView(now, agent) {
             subjectId: "s1",
             startedAt: now - 9 * MIN,
             endedAt: null,
-            lastActivityAt: null
+            lastActivityAt: null,
+            delegateState: "blocked"
+          },
+          {
+            id: "c4",
+            ref: "demo-fade-timing",
+            kind: "delegate",
+            name: "Time the fade-out",
+            subjectId: "s1",
+            startedAt: now - 30 * MIN,
+            endedAt: now - 3 * MIN,
+            lastActivityAt: now - 30 * MIN,
+            delegateState: "finished"
+          },
+          {
+            id: "c5",
+            ref: "demo-pairing-errors",
+            kind: "subagent",
+            name: "Search the pairing errors",
+            subjectId: "s2",
+            startedAt: now - 25 * MIN,
+            endedAt: null,
+            lastActivityAt: now - 20 * MIN,
+            delegateState: null
           }
         ],
-        askSubjects: { d11: "s3", d14: "s2" },
+        askSubjects: { d11: "s3", d14: "s2", d17: "s2" },
         nextId: 8,
-        nextChildId: 4,
+        nextChildId: 6,
         lastLookAt: now - 30 * MIN,
         look: null
       },
@@ -3413,6 +3716,7 @@ function demoView(now, agent) {
         }
       ],
       prs: ["acme/visor#31", "acme/visor#29", "acme/visor#33"],
+      prOrder: null,
       nextId: 24,
       turn: 14,
       batchTurn: 14,
@@ -3427,7 +3731,7 @@ function demoView(now, agent) {
           ref: "acme/visor#31",
           number: 31,
           title: "Add pinch-to-dismiss to glances",
-          url: `${REPO}/pull/31`,
+          url: `${REPO2}/pull/31`,
           isDraft: false,
           state: "OPEN",
           base: "main",
@@ -3437,7 +3741,7 @@ function demoView(now, agent) {
             {
               name: "format",
               bucket: "pass",
-              url: `${REPO}/actions/runs/1`,
+              url: `${REPO2}/actions/runs/1`,
               workflow: "CI",
               startedAt: now - 16 * MIN,
               finishedAt: now - 16 * MIN + 19e3
@@ -3445,7 +3749,7 @@ function demoView(now, agent) {
             {
               name: "unit tests",
               bucket: "fail",
-              url: `${REPO}/actions/runs/2`,
+              url: `${REPO2}/actions/runs/2`,
               workflow: "CI",
               startedAt: now - 16 * MIN,
               finishedAt: now - 12 * MIN - 8e3
@@ -3453,7 +3757,7 @@ function demoView(now, agent) {
             {
               name: "lint",
               bucket: "fail",
-              url: `${REPO}/actions/runs/3`,
+              url: `${REPO2}/actions/runs/3`,
               workflow: "CI",
               startedAt: now - 16 * MIN,
               finishedAt: now - 15 * MIN - 19e3
@@ -3471,7 +3775,7 @@ function demoView(now, agent) {
               path: "src/view/Glance.tsx",
               line: 47,
               body: "A glance flickers for one frame before it fades out. Can it wait for the fade?",
-              url: `${REPO}/pull/31#discussion_r1`,
+              url: `${REPO2}/pull/31#discussion_r1`,
               at: now - 3 * 60 * MIN
             },
             {
@@ -3480,7 +3784,7 @@ function demoView(now, agent) {
               reply: {
                 author: "robin",
                 body: "Agreed, the glance you look at is the one you mean.",
-                url: `${REPO}/pull/31#discussion_r3`,
+                url: `${REPO2}/pull/31#discussion_r3`,
                 at: now - 5 * 60 * MIN
               },
               isWaiting: true,
@@ -3489,7 +3793,7 @@ function demoView(now, agent) {
               path: "src/input/gestures.ts",
               line: 87,
               body: "Should a pinch dismiss only the glance you look at?",
-              url: `${REPO}/pull/31#discussion_r2`,
+              url: `${REPO2}/pull/31#discussion_r2`,
               at: now - 26 * 60 * MIN
             },
             {
@@ -3498,7 +3802,7 @@ function demoView(now, agent) {
               reply: {
                 author: "you",
                 body: "Done in the latest push.",
-                url: `${REPO}/pull/31#discussion_r5`,
+                url: `${REPO2}/pull/31#discussion_r5`,
                 at: now - 2 * 60 * MIN
               },
               isWaiting: false,
@@ -3507,7 +3811,7 @@ function demoView(now, agent) {
               path: "src/view/glances.ts",
               line: 112,
               body: "Can the angle come from gaze.ts instead of being computed again here?",
-              url: `${REPO}/pull/31#discussion_r4`,
+              url: `${REPO2}/pull/31#discussion_r4`,
               at: now - 26 * 60 * MIN
             },
             {
@@ -3520,7 +3824,7 @@ function demoView(now, agent) {
               path: "src/input/gestures.ts",
               line: 114,
               body: "A dismissed glance still takes pinches.",
-              url: `${REPO}/pull/31#discussion_r6`,
+              url: `${REPO2}/pull/31#discussion_r6`,
               at: now - 50 * MIN
             }
           ],
@@ -3532,7 +3836,7 @@ function demoView(now, agent) {
           ref: "acme/visor#29",
           number: 29,
           title: "Show the battery level as a glance",
-          url: `${REPO}/pull/29`,
+          url: `${REPO2}/pull/29`,
           isDraft: false,
           state: "OPEN",
           base: "main",
@@ -3551,7 +3855,7 @@ function demoView(now, agent) {
           ref: "acme/visor#33",
           number: 33,
           title: "Remember where each glance was pinned",
-          url: `${REPO}/pull/33`,
+          url: `${REPO2}/pull/33`,
           isDraft: true,
           state: "OPEN",
           base: "main",
@@ -3913,18 +4217,6 @@ async function withEarlierHistory(s, history) {
   return { state: { ...covered, presence: { ...covered.presence, ledgerState: "behind" } }, isBehind: true };
 }
 
-// ../hooks/herdr.ts
-var STATUS_TOKEN = "inbox";
-var STOP_TOKEN = "inbox-stop";
-var COUNT_TOKENS = {
-  needsYou: "inbox-needs-you",
-  findings: "inbox-findings",
-  prs: "inbox-prs"
-};
-var CLEARED_TOKENS = Object.fromEntries(
-  [STATUS_TOKEN, STOP_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null])
-);
-
 // src/host.ts
 function codexStore(dir, sessionId, now, onWrite = async () => {
 }) {
@@ -4027,6 +4319,46 @@ async function wakeForDone(host, current) {
     return outcome.state === "rejected" ? { ...after, ledger: refuseDoneNotification(after.ledger, sending.deliveryId, outcome.reason) } : after;
   });
 }
+var FIX_LABELS = { "pr-conflicts": "Resolve conflicts", "check-fix": "Fix" };
+function withoutCheck(s, check) {
+  const result = check ? s.lastActions[check.rowId]?.result : void 0;
+  if (!check || result?.at !== check.pendingAt || result.pressId !== check.pressId) return s;
+  const { [check.rowId]: _check, ...rest } = s.lastActions;
+  return { ...s, lastActions: check.before ? { ...rest, [check.rowId]: check.before } : rest };
+}
+async function checkPrFirst(host, p, rowId, pressId, holds) {
+  const checking = {};
+  await host.update(async (saved) => {
+    delete checking.check;
+    const s = withHolds(saved, holds);
+    const at = await host.now();
+    const pr = s.prViews.views[p.ref];
+    if (!pr || "stale" in pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, host)) return s;
+    const before = s.lastActions[rowId];
+    const pending = pendingResult([fixCheckEffect(pr)], at, pressId);
+    checking.check = { rowId, before, pendingAt: at, pressId };
+    return {
+      ...s,
+      lastActions: {
+        ...s.lastActions,
+        [rowId]: localLast(before, { action: p.action, text: FIX_LABELS[p.action] }, pending)
+      }
+    };
+  });
+  const check = checking.check;
+  if (!check) return "stale";
+  await host.refreshPrs();
+  let isRead = false;
+  await host.update(async (s) => {
+    const pr = s.prViews.views[p.ref];
+    isRead = pr?.fetchedAt !== void 0 && pr.fetchedAt >= check.pendingAt;
+    const pending = s.lastActions[rowId]?.result;
+    if (isRead || !pending) return s;
+    const failed = finishedResult(pending, [pr?.error ?? "gh could not read it"], await host.now());
+    return { ...s, lastActions: withResult(s.lastActions, rowId, check.pendingAt, failed) };
+  });
+  return isRead ? check : "unread";
+}
 async function startPress(host, p, isStale, holds) {
   const rowId = pressRowId(p);
   const localPressId = host.newId();
@@ -4061,10 +4393,26 @@ async function startPress(host, p, isStale, holds) {
       await host.update((s) => ({ ...s, ledger: f(s.ledger) }));
     }
   };
+  const check = "ref" in p && isPrFixPress(p) && !isStale ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err) => {
+    error = `Not sent: ${err instanceof Error ? err.message : String(err)}`;
+    return "unread";
+  }) : null;
+  if (check === "stale" || check === "unread")
+    return {
+      effects: null,
+      finish: async () => ({
+        copy,
+        error,
+        note: check === "stale" ? "stale" : null,
+        isUnconfirmed,
+        isRowFailed,
+        wakesForDone: false
+      })
+    };
   await host.update(async (saved) => {
     note = isStale ? "stale" : null;
     Object.assign(pressed2, { r: void 0, at: void 0, deliveryId: void 0 });
-    const s = withHolds(saved, holds);
+    const s = withoutCheck(withHolds(saved, holds), check);
     if (note) return s;
     const at2 = await host.now();
     const r2 = pressOn(s, p, at2, { settleWindowMs: host.settleWindowMs, holds }, host, localPressId);
@@ -4136,11 +4484,13 @@ var PRS_REFRESH_MS = 12e4;
 var NEW_PR_FETCH_MS = 15e3;
 function isPrFetchDue(s, lastFetchedAt, now) {
   if (lastFetchedAt === void 0) return true;
-  const hasNewPr = splitLinked(s.prViews, s.ledger.prs).tracked.some((ref) => !(ref in s.prViews.views));
-  return now - lastFetchedAt >= PRS_REFRESH_MS || hasNewPr && now - lastFetchedAt >= NEW_PR_FETCH_MS;
+  const hasNewPr = splitLinked(s.prViews, s.ledger).tracked.some((ref) => !(ref in s.prViews.views));
+  const hasReplySince = (s.presence.lastReplyAt ?? 0) > lastFetchedAt;
+  return now - lastFetchedAt >= PRS_REFRESH_MS || (hasNewPr || hasReplySince) && now - lastFetchedAt >= NEW_PR_FETCH_MS;
 }
 function prFetchTracker(now) {
   const running = /* @__PURE__ */ new Map();
+  const following = /* @__PURE__ */ new Map();
   const endedAt = /* @__PURE__ */ new Map();
   const start = (id, fetch) => {
     const run2 = fetch().catch(() => void 0).finally(() => {
@@ -4153,7 +4503,16 @@ function prFetchTracker(now) {
   return {
     isFetching: (id) => running.has(id),
     fetchWhenDue: (id, s, fetch) => running.has(id) || !isPrFetchDue(s, endedAt.get(id), now()) ? null : start(id, fetch),
-    fetchNow: (id, fetch) => running.get(id) ?? start(id, fetch)
+    fetchNow: (id, fetch) => {
+      const current = running.get(id);
+      if (!current) return start(id, fetch);
+      const next = following.get(id) ?? current.then(() => {
+        following.delete(id);
+        return running.get(id) ?? start(id, fetch);
+      });
+      following.set(id, next);
+      return next;
+    }
   };
 }
 async function fetchPrs(host, findsBranchPr) {
@@ -4167,8 +4526,9 @@ async function fetchPrs(host, findsBranchPr) {
       sawUnstartable = true;
     }),
     s.prViews,
-    s.ledger.prs,
-    findsBranchPr
+    s.ledger,
+    findsBranchPr,
+    () => host.now()
   );
   let fetch = await fetchWith(bin);
   if (sawUnstartable) {
@@ -4817,6 +5177,13 @@ function makeServer(deps) {
   function fetchPrsWhenDue(id, s) {
     void prFetches.fetchWhenDue(id, s, () => fetchPrs(hostFor(id), true));
   }
+  const isHerdrCheckDue = herdrCheckGate();
+  function checkDelegatesWhenDue(id, s) {
+    if (s.shownTab !== "overview" || !isHerdrCheckDue(id, now())) return;
+    void delegatesInHerdr(s.ledger.overview, deps.exec).then((states) => {
+      if (states) return updateState(dir, id, (x) => statusChanged(x, (o) => delegatesSettled(o, states, now())));
+    }).catch(() => void 0);
+  }
   const served = async (s, id, isDemo = false, holds = NO_HOLDS) => {
     const loadError = deps.loadError?.();
     const current = !isDemo && s.presence.isUpdating ? await reconcileUpdateStatus2(dir, id) : s;
@@ -4906,7 +5273,8 @@ function makeServer(deps) {
     const heard = (s) => turn === void 0 ? s : noteToolCall(s, turn, now());
     switch (name) {
       case "record":
-      case "close": {
+      case "close":
+      case "order_prs": {
         let result = "";
         await updateState(dir, id, (s) => {
           const r = recorded(CODEX, s, name, args, now());
@@ -4931,6 +5299,7 @@ function makeServer(deps) {
           return { ...withHolds(lookOnView(s2, shownTab, now()), holds), tabSeenAt: now(), shownTab };
         });
         fetchPrsWhenDue(id, s);
+        checkDelegatesWhenDue(id, s);
         return { ...text2("Inbox view"), structuredContent: await served(s, id, false, holds) };
       }
       case "inbox_tab_page":
@@ -4952,7 +5321,7 @@ function makeServer(deps) {
         return ok({
           protocolVersion: params?.protocolVersion ?? "2025-06-18",
           capabilities: { tools: {}, resources: {} },
-          serverInfo: { name: "inbox", version: "0.2.13" }
+          serverInfo: { name: "inbox", version: "0.2.14" }
         });
       case "tools/list":
         return ok({ tools: TOOLS });
@@ -5010,7 +5379,7 @@ async function devBuild(dir) {
 }
 
 // src/tab.html
-var tab_default = '<!doctype html>\n<html lang="en">\n  <head>\n    <meta charset="utf-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1" />\n    <meta name="inbox-handoff" content="1" />\n    <title>Inbox</title>\n    <style id="inbox-style">\n      /* The host\'s variables when Codex passes them; otherwise the pane\'s own colors. */\n      :root {\n        color-scheme: light;\n        --bg: var(--color-background-primary, #ffffff);\n        --text: var(--color-text-primary, #1f1f1f);\n        --muted: var(--color-text-secondary, #595959);\n        --key: #243bf5; --amber: #745417; --findings: #7b00e8; --prs: #006363; --done: #25652f; --error: #a5293d; --error-mark: #a5293d;\n        --needs-you: var(--amber);\n        --issue: var(--amber);\n        --sans: var(--font-sans, -apple-system, system-ui, sans-serif);\n        --mono: var(--font-mono, ui-monospace, \'SF Mono\', Menlo, monospace);\n        --raised: color-mix(in srgb, var(--text) 9%, var(--bg));\n        --selected: color-mix(in srgb, var(--text) 6%, var(--bg));\n        --age: color-mix(in srgb, var(--muted) 90%, var(--bg));\n        --hover: color-mix(in srgb, var(--key) 14%, transparent);\n        --soft: color-mix(in oklab, var(--text) 8%, transparent);\n        --soft-hover: color-mix(in oklab, var(--text) 10%, transparent);\n        --row-hover: color-mix(in oklab, var(--soft) 50%, transparent);\n        --quick: 150ms ease;\n        --mark-x: 18px;\n        --text-x: 44px;\n      }\n      @media (prefers-color-scheme: dark) {\n        :root:not([data-theme=\'light\']) {\n          color-scheme: dark;\n          --bg: var(--color-background-primary, #171717);\n          --text: var(--color-text-primary, #ececec);\n          --muted: var(--color-text-secondary, #a8a8a8);\n          --key: #b1b9f9; --amber: #ffc107; --findings: #cab0ff; --prs: #8cc8c0; --done: #7ecd8f; --error: #ffa3b0; --error-mark: #ff6b80;\n          --raised: color-mix(in srgb, var(--text) 11%, var(--bg));\n          --selected: color-mix(in srgb, var(--text) 8%, var(--bg));\n          --age: color-mix(in srgb, var(--muted) 85%, var(--bg));\n          --soft: color-mix(in oklab, var(--text) 12%, transparent);\n          --soft-hover: color-mix(in oklab, var(--text) 14%, transparent);\n        }\n      }\n      :root[data-theme=\'dark\'] {\n        color-scheme: dark;\n        --key: #b1b9f9; --amber: #ffc107; --findings: #cab0ff; --prs: #8cc8c0; --done: #7ecd8f; --error: #ffa3b0; --error-mark: #ff6b80;\n        --raised: color-mix(in srgb, var(--text) 11%, var(--bg));\n        --selected: color-mix(in srgb, var(--text) 8%, var(--bg));\n        --age: color-mix(in srgb, var(--muted) 85%, var(--bg));\n        --soft: color-mix(in oklab, var(--text) 12%, transparent);\n        --soft-hover: color-mix(in oklab, var(--text) 14%, transparent);\n      }\n      * {\n        box-sizing: border-box;\n      }\n      body {\n        margin: 0;\n        background: var(--bg);\n        color: var(--text);\n        font: 13px/20px var(--sans);\n        -webkit-font-smoothing: antialiased;\n        cursor: default;\n        user-select: none;\n      }\n      /* Text a person may copy: what an item, PR or Status line says, an error, and the reply field. */\n      .status-goal,\n      .status-page .content,\n      .earlier,\n      .body,\n      .panel .muted,\n      .settled-line .what,\n      .pr-head,\n      .tone-error,\n      input,\n      textarea {\n        cursor: auto;\n        user-select: text;\n      }\n      button {\n        font: inherit;\n        color: inherit;\n        background: none;\n        border: none;\n        padding: 0;\n        text-align: left;\n      }\n      :focus-visible {\n        outline: 1.5px solid var(--key);\n        outline-offset: 1px;\n        border-radius: 4px;\n      }\n      .muted {\n        color: var(--muted);\n      }\n      .tone-needsYou {\n        color: var(--needs-you);\n      }\n      .tone-findings {\n        color: var(--findings);\n      }\n      .tone-prs {\n        color: var(--prs);\n      }\n      .tone-done {\n        color: var(--done);\n      }\n      .tone-error {\n        color: var(--error);\n      }\n      .notice {\n        padding: 10px 16px;\n        overflow-wrap: anywhere;\n      }\n      /* A message about the inbox\'s own state, in the tone of what it says. */\n      .banner {\n        --tone: var(--error);\n        display: flex;\n        align-items: center;\n        justify-content: space-between;\n        gap: 12px;\n        flex-basis: 100%;\n        padding: var(--banner-pad-y) 12px;\n        border: 1px solid color-mix(in srgb, var(--tone) 30%, var(--bg));\n        border-radius: 10px;\n        background: color-mix(in srgb, var(--tone) 9%, var(--bg));\n        color: var(--text);\n        line-height: 19px;\n        overflow-wrap: anywhere;\n        cursor: auto;\n        user-select: text;\n      }\n      .banner-warning {\n        --tone: var(--needs-you);\n      }\n      /* --muted is see-through in the Codex app, so a notice mixes from the text color. */\n      .banner-notice {\n        --tone: var(--text);\n      }\n      .banner .lead {\n        font-weight: 600;\n        color: var(--tone);\n      }\n      /* The tab bar\'s rows sit 4px apart. */\n      nav > .banner {\n        margin-top: calc(var(--banner-gap) - 4px);\n      }\n      #app > .banner {\n        margin: 12px 12px 0;\n      }\n      .banner-place {\n        padding: 12px 12px 0;\n      }\n      .banner .key {\n        flex: none;\n        white-space: nowrap;\n        color: var(--text);\n        cursor: default;\n        user-select: none;\n      }\n\n      nav {\n        container: tab-bar / inline-size;\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        gap: 4px 16px;\n        padding: 12px 12px 0;\n      }\n      .tabs {\n        display: flex;\n        flex-wrap: wrap;\n        gap: 4px;\n      }\n      .tab {\n        position: relative;\n        white-space: nowrap;\n        padding: 6px 12px;\n        border-radius: 6px;\n        color: var(--muted);\n      }\n      .tab:hover {\n        color: var(--text);\n      }\n      .tab.shown {\n        background: var(--raised);\n        color: var(--text);\n        font-weight: 600;\n      }\n      .tab .count {\n        font-weight: 600;\n        margin-left: 6px;\n      }\n      /* --muted is see-through in the Codex app, and a color emoji takes its color\'s transparency. */\n      .tab-symbol {\n        display: none;\n        color: var(--text);\n      }\n      @container tab-bar (width < 316px) {\n        .tab-symbol {\n          display: inline;\n        }\n        .tab-word {\n          position: absolute;\n          width: 1px;\n          height: 1px;\n          overflow: hidden;\n          clip-path: inset(50%);\n        }\n      }\n      .status {\n        margin-left: auto;\n        color: var(--muted);\n        font-size: 12px;\n      }\n\n      main {\n        display: flex;\n        flex-direction: column;\n        padding: 8px 0 4px;\n      }\n      section {\n        position: relative;\n        padding: 10px 0;\n      }\n      section + section::before {\n        content: \'\';\n        position: absolute;\n        top: 0;\n        left: var(--text-x);\n        right: 0;\n        height: 1px;\n        background: var(--soft);\n      }\n      .group-title {\n        padding: 0 14px 6px var(--text-x);\n      }\n      .group-title b {\n        font-weight: 600;\n      }\n      .group-title .count {\n        color: var(--muted);\n        white-space: pre;\n      }\n\n      .pr-head,\n      .pr-status,\n      .pr-actions,\n      .pr-last {\n        padding: 0 14px 0 var(--text-x);\n        overflow-wrap: anywhere;\n      }\n      .pr-head {\n        font-weight: 600;\n      }\n      .pr-head .num,\n      .pr-head .pr-verdict {\n        font-weight: 400;\n      }\n      .pr-actions {\n        margin-top: 8px;\n      }\n      .pr-last {\n        margin-top: 6px;\n      }\n      .pr-groups {\n        margin-top: 12px;\n      }\n      .pr-groups .list {\n        --mark-x: 41px;\n        --text-x: 67px;\n      }\n      .pr-groups .group-title + .list {\n        margin-bottom: 6px;\n      }\n      .link {\n        padding: 0;\n        text-align: left;\n        text-decoration: underline;\n        text-decoration-color: color-mix(in oklab, var(--text) 30%, transparent);\n        text-underline-offset: 2px;\n      }\n      .link:hover {\n        text-decoration-color: currentColor;\n      }\n\n      .row {\n        display: grid;\n        grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr) auto;\n        padding: var(--row-pad) 14px var(--row-pad) var(--mark-x);\n      }\n      .row.selected {\n        background-color: var(--selected);\n      }\n      .mark {\n        align-self: start;\n        padding-right: 8px;\n        text-align: center;\n        color: var(--muted);\n      }\n      .mark.done {\n        color: var(--done);\n      }\n      .mark.issue {\n        color: var(--issue);\n      }\n      .mark.error {\n        color: var(--error-mark);\n      }\n      .side {\n        align-self: start;\n        margin-left: 12px;\n        color: var(--age);\n        font-variant-numeric: tabular-nums;\n        white-space: nowrap;\n        text-align: right;\n      }\n      .mark.tone-needsYou,\n      .side.tone-needsYou {\n        color: var(--needs-you);\n      }\n      .side[data-room]::after {\n        content: attr(data-room);\n        display: block;\n        height: 0;\n        overflow: hidden;\n        visibility: hidden;\n      }\n      .side-label {\n        display: inline-block;\n        max-width: 11em;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        vertical-align: bottom;\n        margin-right: 4px;\n      }\n      .row.collapsed:hover .side {\n        color: var(--muted);\n      }\n      .content {\n        min-width: 0;\n        display: flex;\n        flex-direction: column;\n      }\n      /* Its space above is padding, not a gap, so the row\'s height grows smoothly when the panel mounts. */\n      .panel {\n        display: flex;\n        flex-direction: column;\n        gap: 8px;\n        padding: 8px 0 2px;\n      }\n      .row > .panel {\n        grid-column: 2 / -1;\n      }\n      .content.tight {\n        display: flex;\n        flex-direction: column;\n        gap: 0;\n      }\n      .line {\n        display: flex;\n        flex-direction: column;\n        width: 100%;\n        min-width: 0;\n      }\n      .line .text {\n        min-width: 0;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        display: -webkit-box;\n        -webkit-line-clamp: 2;\n        -webkit-box-orient: vertical;\n      }\n      .line .after {\n        color: var(--muted);\n      }\n      .row.collapsed .line .after:not(.tone-error) {\n        color: var(--age);\n      }\n      .row.collapsed:hover .line .after:not(.tone-error) {\n        color: var(--muted);\n      }\n      .line .after.tone-error {\n        color: var(--error);\n      }\n      .row.selected .line,\n      .row.closing .line {\n        display: block;\n      }\n      .row.selected .line .text,\n      .row.closing .line .text {\n        display: inline;\n        font-weight: 600;\n      }\n      .row.selected .line .after,\n      .row.closing .line .after {\n        white-space: normal;\n        font-weight: 400;\n      }\n      .line .lead {\n        color: var(--muted);\n        font-weight: 400;\n      }\n      .line .meta {\n        display: block;\n        color: var(--muted);\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n      }\n      .row.collapsed:not(:hover) .line .meta {\n        color: var(--age);\n      }\n      .line .holds-up {\n        display: block;\n        color: var(--muted);\n        font-weight: 400;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n      }\n      .row.selected .line .meta {\n        display: none;\n      }\n      .quote {\n        white-space: pre-line;\n      }\n      .row.collapsed:hover {\n        background-color: var(--row-hover);\n      }\n      .still .row.collapsed:not(:active):hover {\n        background-color: transparent;\n      }\n      .still .fold:not(:active):hover {\n        color: var(--muted);\n      }\n      .title {\n        font-weight: 600;\n      }\n      .body {\n        overflow-wrap: anywhere;\n      }\n      .body p {\n        margin: 0;\n      }\n      .body p + p {\n        margin-top: 4px;\n      }\n      .body .option-description {\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n      }\n      .body .option-description + .option-description {\n        margin-top: 0;\n      }\n      code {\n        padding: 1px 4px;\n        border-radius: 4px;\n        background: var(--soft);\n        font-family: var(--mono);\n      }\n      .keys {\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        gap: 6px;\n      }\n      .follow-ups {\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        gap: 6px;\n        max-width: 100%;\n      }\n      .key {\n        display: inline-flex;\n        align-items: center;\n        justify-content: center;\n        gap: 5px;\n        min-height: 26px;\n        padding: 3px 11px;\n        border: 1px solid color-mix(in oklab, var(--text) 28%, transparent);\n        border-radius: 13px;\n        background: transparent;\n        font-weight: 400;\n        text-align: center;\n        max-width: 100%;\n        white-space: normal;\n        overflow-wrap: anywhere;\n      }\n      .key:not(:disabled):hover {\n        background: var(--soft);\n      }\n      .key:focus-visible {\n        outline-width: 2px;\n        outline-offset: 2px;\n        border-radius: 13px;\n      }\n      .key.primary {\n        border-color: transparent;\n        background: var(--text);\n        color: var(--bg);\n      }\n      .key.primary:not(:disabled):hover {\n        background: color-mix(in srgb, var(--text) 82%, var(--bg));\n      }\n      .key .icon {\n        flex: none;\n        width: 14px;\n        height: 14px;\n      }\n      .key.ghost {\n        padding: 0 4px;\n        border-color: transparent;\n        background: none;\n        color: var(--muted);\n      }\n      .key.ghost:not(:disabled):hover {\n        background: none;\n        color: var(--text);\n      }\n      .key.out {\n        opacity: 0.4;\n        transition: opacity var(--quick);\n      }\n      .actions {\n        display: flex;\n        flex-direction: column;\n        gap: 4px;\n      }\n      form {\n        display: flex;\n        align-items: center;\n        gap: 6px;\n      }\n      input {\n        flex: 1;\n        min-width: 0;\n        min-height: 28px;\n        font: inherit;\n        color: inherit;\n        background: transparent;\n        border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);\n        border-radius: 10px;\n        padding: 4px 10px;\n      }\n      input::placeholder {\n        color: var(--muted);\n      }\n      /* The radius again, since :focus-visible sets 4px. */\n      input:focus,\n      textarea:focus {\n        outline: none;\n        border-color: color-mix(in oklab, var(--text) 32%, transparent);\n        border-radius: 10px;\n      }\n      textarea {\n        width: 100%;\n        font: 12px var(--mono);\n        color: inherit;\n        background: transparent;\n        border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);\n        border-radius: 10px;\n      }\n\n      .group-end {\n        display: flex;\n        flex-direction: column;\n        justify-content: flex-end;\n      }\n      /* Keeps the fold\'s margin inside, so its height is the whole end\'s content height. */\n      .group-end-content {\n        display: flow-root;\n        position: relative;\n      }\n      .group-empty {\n        padding: var(--row-pad) 14px var(--row-pad) var(--text-x);\n        color: var(--muted);\n      }\n      .group-empty.leaving {\n        position: absolute;\n        inset: auto 0 100% 0;\n        pointer-events: none;\n        animation: fade-out var(--enter) forwards;\n      }\n      @keyframes fade-out {\n        to {\n          opacity: 0;\n        }\n      }\n      .fold {\n        display: block;\n        margin: 8px 0 0 calc(var(--mark-x) - 1px);\n        padding: 1px 4px;\n        border-radius: 5px;\n        color: var(--muted);\n      }\n      .fold:hover {\n        color: var(--text);\n      }\n      .fold .icon {\n        width: 12px;\n        height: 12px;\n        margin-right: calc(var(--text-x) - var(--mark-x) - 15px);\n        vertical-align: -1px;\n      }\n      .closed-list {\n        --mark-x: 41px;\n        --text-x: 67px;\n      }\n      /* The gap above a Closed list\'s rows is content, not padding, so the list opens from and closes to 0. */\n      .closed-list::before {\n        content: \'\';\n        display: block;\n        height: 4px;\n      }\n      .closed-list .row {\n        padding-top: calc(var(--row-pad) / 2);\n        padding-bottom: calc(var(--row-pad) / 2);\n      }\n      .outcome {\n        color: var(--age);\n      }\n      .settled-head {\n        display: flex;\n        align-items: center;\n        min-width: 0;\n      }\n      .row.settled.was-open {\n        transition: background-color var(--move);\n        @starting-style {\n          background-color: var(--selected);\n        }\n      }\n      .settled-line {\n        flex: 1;\n        min-width: 0;\n        overflow-wrap: anywhere;\n      }\n      .settled .outcome-label {\n        color: var(--muted);\n      }\n      /* The pill keeps the line\'s height, so the row does not grow. */\n      .key.undo {\n        flex: none;\n        white-space: nowrap;\n        border-color: transparent;\n        position: relative;\n        isolation: isolate;\n        overflow: hidden;\n        margin: -3px 0 -3px 12px;\n        background: color-mix(in oklab, var(--soft) 45%, transparent);\n      }\n      .key.undo.undoing {\n        color: var(--muted);\n      }\n      .key.undo.spent {\n        visibility: hidden;\n      }\n      .key.undo.undoing .icon {\n        animation: undo-turn 900ms linear infinite;\n      }\n      @keyframes undo-turn {\n        to {\n          transform: rotate(-360deg);\n        }\n      }\n      .time-left {\n        position: absolute;\n        inset: 0;\n        z-index: -1;\n        background: var(--soft);\n        transform-origin: left;\n        animation-name: empty;\n        animation-timing-function: linear;\n        animation-fill-mode: forwards;\n      }\n      .key.undo:not(:disabled):hover .time-left {\n        background: var(--soft-hover);\n      }\n      .time-left.paused {\n        animation-play-state: paused;\n      }\n      @keyframes empty {\n        from {\n          transform: scaleX(1);\n        }\n        to {\n          transform: scaleX(0);\n        }\n      }\n      #app {\n        display: flex;\n        flex-direction: column;\n        min-height: 100vh;\n      }\n      .empty {\n        flex: 1;\n        display: flex;\n        flex-direction: column;\n        justify-content: center;\n        padding: 32px;\n        text-align: center;\n      }\n      .empty .title {\n        margin-bottom: 4px;\n      }\n      footer {\n        margin-top: auto;\n        display: flex;\n        flex-wrap: wrap;\n        justify-content: space-between;\n        gap: 4px 16px;\n        padding: 8px 16px 16px;\n        color: var(--muted);\n        font-size: 12px;\n      }\n      .footer-end {\n        display: flex;\n        gap: 16px;\n        margin-left: auto;\n      }\n      .version {\n        color: color-mix(in srgb, var(--muted) 50%, var(--bg));\n      }\n      .demo-toggle {\n        padding: 0 6px;\n        border-radius: 5px;\n        color: var(--muted);\n      }\n      .demo-toggle:hover {\n        color: var(--text);\n        background: var(--hover);\n      }\n      .earlier {\n        padding: 2px 14px 2px var(--text-x);\n      }\n      /* The goal starts where the list\'s marks do. */\n      .status-goal {\n        padding: 0 14px 0 var(--mark-x);\n        overflow-wrap: anywhere;\n      }\n      .status-page .row {\n        padding-top: var(--status-row-pad);\n        padding-bottom: var(--status-row-pad);\n      }\n      .status-page .mark {\n        text-align: left;\n      }\n      .status-page .mark.running {\n        animation: running-pulse var(--pulse) ease-in-out infinite;\n      }\n      @keyframes running-pulse {\n        50% {\n          opacity: 0.3;\n        }\n      }\n      .status-page .content {\n        overflow-wrap: anywhere;\n      }\n      .status-page .row.child {\n        padding-left: var(--text-x);\n      }\n      .status-page .clamp {\n        display: -webkit-box;\n        -webkit-box-orient: vertical;\n        -webkit-line-clamp: var(--lines);\n        overflow: hidden;\n      }\n      .status-page .unbroken {\n        white-space: nowrap;\n      }\n      /* The tree line runs under the middle of a subject\'s mark, and its arm reaches to a child\'s mark. */\n      .status-page .list {\n        --mark-middle: 6px;\n        --arm-gap: 2px;\n        --tree-x: calc(var(--mark-x) + var(--mark-middle));\n        --tree-line: color-mix(in oklab, var(--text) 15%, transparent);\n      }\n      .status-page .row.has-children,\n      .status-page .row.branch-mid,\n      .status-page .row.branch-last {\n        position: relative;\n      }\n      .status-page .row.has-children::before,\n      .status-page .row.branch-mid::before,\n      .status-page .row.branch-last::before {\n        content: \'\';\n        position: absolute;\n        left: var(--tree-x);\n        border-left: 1px solid var(--tree-line);\n      }\n      .status-page .row.has-children::before {\n        top: calc(var(--status-row-pad) + 1lh);\n        bottom: 0;\n      }\n      .status-page .row.branch-mid::before {\n        top: 0;\n        bottom: 0;\n      }\n      .status-page .row.branch-last::before {\n        top: 0;\n        height: calc(var(--status-row-pad) + 0.5lh);\n      }\n      .status-page .row.branch-mid::after,\n      .status-page .row.branch-last::after {\n        content: \'\';\n        position: absolute;\n        left: var(--tree-x);\n        top: calc(var(--status-row-pad) + 0.5lh);\n        width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));\n        border-top: 1px solid var(--tree-line);\n      }\n      /* "Seen" in the middle of a rule that runs from the mark column to the end of the row. */\n      .status-page .look-rule {\n        grid-column: 1 / -1;\n        display: flex;\n        flex-direction: row;\n        align-items: center;\n        gap: 8px;\n        color: var(--muted);\n      }\n      .status-page .status-rule {\n        height: 1px;\n        margin-left: var(--text-x);\n        background: var(--soft);\n      }\n      .status-page .look-rule::before,\n      .status-page .look-rule::after {\n        content: \'\';\n        flex: 1;\n        border-top: 1px solid color-mix(in oklab, var(--text) 15%, transparent);\n      }\n      .status-goal {\n        margin: 0;\n        font-size: 15px;\n        line-height: 22px;\n        font-weight: 600;\n      }\n      .banner,\n      .empty,\n      main,\n      form {\n        transition: opacity var(--quick);\n        @starting-style {\n          opacity: 0;\n        }\n      }\n      @media (prefers-reduced-motion: reduce) {\n        *,\n        *::before,\n        *::after {\n          transition-duration: 0s !important;\n        }\n        .time-left,\n        .key.undo.undoing .icon,\n        .status-page .mark.running {\n          animation: none;\n        }\n      }\n    </style>\n  </head>\n  <body>\n    <div id="app"></div>\n    <script id="inbox-script">\n      "use strict";(()=>{var st,S,as,Fi,z,ss,ls,ds,Ut,ze,Ee,us,Wt,Ht,Vt,Mi,et={},tt=[],ji=/acit|ex(?:s|g|n|p|$)|rph|grid|ows|mnc|ntw|ine[ch]|zoo|^ord|itera/i,ot=Array.isArray;function G(e,t){for(var n in t)e[n]=t[n];return e}function qt(e){e&&e.parentNode&&e.parentNode.removeChild(e)}function Ui(e,t,n){var s,o,i,r={};for(i in t)i=="key"?s=t[i]:i=="ref"?o=t[i]:r[i]=t[i];if(arguments.length>2&&(r.children=arguments.length>3?st.call(arguments,2):n),typeof e=="function"&&e.defaultProps!=null)for(i in e.defaultProps)r[i]===void 0&&(r[i]=e.defaultProps[i]);return Je(e,r,s,o,null)}function Je(e,t,n,s,o){var i={type:e,props:t,key:n,ref:s,__k:null,__:null,__b:0,__e:null,__c:null,constructor:void 0,__v:o??++as,__i:-1,__u:0};return o==null&&S.vnode!=null&&S.vnode(i),i}function C(e){return e.children}function Ze(e,t){this.props=e,this.context=t}function le(e,t){if(t==null)return e.__?le(e.__,e.__i+1):null;for(var n;t<e.__k.length;t++)if((n=e.__k[t])!=null&&n.__e!=null)return n.__e;return typeof e.type=="function"?le(e):null}function Hi(e){if(e.__P&&e.__d){var t=e.__v,n=t.__e,s=[],o=[],i=G({},t);i.__v=t.__v+1,S.vnode&&S.vnode(i),Kt(e.__P,i,t,e.__n,e.__P.namespaceURI,32&t.__u?[n]:null,s,n??le(t),!!(32&t.__u),o),i.__v=t.__v,i.__.__k[i.__i]=i,gs(s,i,o),t.__e=t.__=null,i.__e!=n&&cs(i)}}function cs(e){if((e=e.__)!=null&&e.__c!=null)return e.__e=e.__c.base=null,e.__k.some(function(t){if(t!=null&&t.__e!=null)return e.__e=e.__c.base=t.__e}),cs(e)}function os(e){(!e.__d&&(e.__d=!0)&&z.push(e)&&!nt.__r++||ss!=S.debounceRendering)&&((ss=S.debounceRendering)||ls)(nt)}function nt(){try{for(var e,t=1;z.length;)z.length>t&&z.sort(ds),e=z.shift(),t=z.length,Hi(e)}finally{z.length=nt.__r=0}}function ps(e,t,n,s,o,i,r,l,c,d,p){var h,u,f,m,g,y,b=s&&s.__k||tt,w=t.length;for(c=Vi(n,t,b,c,w),h=0;h<w;h++)(f=n.__k[h])!=null&&(u=f.__i!=-1&&b[f.__i]||et,f.__i=h,y=Kt(e,f,u,o,i,r,l,c,d,p),m=f.__e,f.ref&&u.ref!=f.ref&&(u.ref&&Bt(u.ref,null,f),p.push(f.ref,f.__c||m,f)),g==null&&m!=null&&(g=m),4&f.__u?(c=fs(f,c,e),u.__e&&(u.__e=null)):typeof f.type=="function"&&y!==void 0?c=y:m&&(c=m.nextSibling),f.__u&=-7);return n.__e=g,c}function Vi(e,t,n,s,o){var i,r,l,c,d,p=n.length,h=p,u=0;for(e.__k=new Array(o),i=0;i<o;i++)(r=t[i])!=null&&typeof r!="boolean"&&typeof r!="function"?(typeof r=="string"||typeof r=="number"||typeof r=="bigint"||r.constructor==String?r=e.__k[i]=Je(null,r,null,null,null):ot(r)?r=e.__k[i]=Je(C,{children:r},null,null,null):r.constructor===void 0&&r.__b>0?r=e.__k[i]=Je(r.type,r.props,r.key,r.ref?r.ref:null,r.__v):e.__k[i]=r,c=i+u,r.__=e,r.__b=e.__b+1,l=null,(d=r.__i=Wi(r,n,c,h))!=-1&&(h--,(l=n[d])&&(l.__u|=2)),l==null||l.__v==null?(d==-1&&(o>p?u--:o<p&&u++),typeof r.type!="function"&&(r.__u|=4)):d!=c&&(d==c-1?u--:d==c+1?u++:(d>c?u--:u++,r.__u|=4))):e.__k[i]=null;if(h)for(i=0;i<p;i++)(l=n[i])!=null&&(2&l.__u)==0&&(l.__e==s&&(s=le(l)),ws(l,l));return s}function fs(e,t,n){var s,o;if(typeof e.type=="function"){for(s=e.__k,o=0;s&&o<s.length;o++)s[o]&&(s[o].__=e,t=fs(s[o],t,n));return t}e.__e!=t&&(t&&e.type&&!t.parentNode&&(t=le(e)),t=n.insertBefore(e.__e,t||null));do t=t&&t.nextSibling;while(t!=null&&t.nodeType==8);return t}function Wi(e,t,n,s){var o,i,r,l=e.key,c=e.type,d=t[n],p=d!=null&&(2&d.__u)==0;if(d===null&&l==null||p&&l==d.key&&c==d.type)return n;if(s>(p?1:0)){for(o=n-1,i=n+1;o>=0||i<t.length;)if((d=t[r=o>=0?o--:i++])!=null&&(2&d.__u)==0&&l==d.key&&c==d.type)return r}return-1}function is(e,t,n){t[0]=="-"?e.setProperty(t,n??""):e[t]=n==null?"":typeof n!="number"||ji.test(t)?n:n+"px"}function Qe(e,t,n,s,o){var i,r;e:if(t=="style")if(typeof n=="string")e.style.cssText=n;else{if(typeof s=="string"&&(e.style.cssText=s=""),s)for(t in s)n&&t in n||is(e.style,t,"");if(n)for(t in n)s&&n[t]==s[t]||is(e.style,t,n[t])}else if(t[0]=="o"&&t[1]=="n")i=t!=(t=t.replace(us,"$1")),r=t.toLowerCase(),t=r in e||t=="onFocusOut"||t=="onFocusIn"?r.slice(2):t.slice(2),e.l||(e.l={}),e.l[t+i]=n,n?s?n[Ee]=s[Ee]:(n[Ee]=Wt,e.addEventListener(t,i?Vt:Ht,i)):e.removeEventListener(t,i?Vt:Ht,i);else{if(o=="http://www.w3.org/2000/svg")t=t.replace(/xlink(H|:h)/,"h").replace(/sName$/,"s");else if(t!="width"&&t!="height"&&t!="href"&&t!="list"&&t!="form"&&t!="tabIndex"&&t!="download"&&t!="rowSpan"&&t!="colSpan"&&t!="role"&&t!="popover"&&t in e)try{e[t]=n??"";break e}catch{}typeof n=="function"||(n==null||n===!1&&t[4]!="-"?e.removeAttribute(t):e.setAttribute(t,t=="popover"&&n==1?"":n))}}function rs(e){return function(t){if(this.l){var n=this.l[t.type+e];if(t[ze]==null)t[ze]=Wt++;else if(t[ze]<n[Ee])return;return n(S.event?S.event(t):t)}}}function Kt(e,t,n,s,o,i,r,l,c,d){var p,h,u,f,m,g,y,b,w,v,B,F,T,Xe,be,ye,E=t.type;if(t.constructor!==void 0)return null;128&n.__u&&(c=!!(32&n.__u),i=[l=t.__e=n.__e]),(p=S.__b)&&p(t);e:if(typeof E=="function"){h=r.length;try{if(w=t.props,v=E.prototype&&E.prototype.render,B=(p=E.contextType)&&s[p.__c],F=p?B?B.props.value:p.__:s,n.__c?b=(u=t.__c=n.__c).__=u.__E:(v?t.__c=u=new E(w,F):(t.__c=u=new Ze(w,F),u.constructor=E,u.render=Ki),B&&B.sub(u),u.state||(u.state={}),u.__n=s,f=u.__d=!0,u.__h=[],u._sb=[]),v&&u.__s==null&&(u.__s=u.state),v&&E.getDerivedStateFromProps!=null&&(u.__s==u.state&&(u.__s=G({},u.__s)),G(u.__s,E.getDerivedStateFromProps(w,u.__s))),m=u.props,g=u.state,u.__v=t,f)v&&E.getDerivedStateFromProps==null&&u.componentWillMount!=null&&u.componentWillMount(),v&&u.componentDidMount!=null&&u.__h.push(u.componentDidMount);else{if(v&&E.getDerivedStateFromProps==null&&w!==m&&u.componentWillReceiveProps!=null&&u.componentWillReceiveProps(w,F),t.__v==n.__v||!u.__e&&u.shouldComponentUpdate!=null&&u.shouldComponentUpdate(w,u.__s,F)===!1){t.__v!=n.__v&&(u.props=w,u.state=u.__s,u.__d=!1),t.__e=n.__e,t.__k=n.__k,t.__k.some(function(V){V&&(V.__=t)}),tt.push.apply(u.__h,u._sb),u._sb=[],u.__h.length&&r.push(u),l=le(n);break e}u.componentWillUpdate!=null&&u.componentWillUpdate(w,u.__s,F),v&&u.componentDidUpdate!=null&&u.__h.push(function(){u.componentDidUpdate(m,g,y)})}if(u.context=F,u.props=w,u.__P=e,u.__e=!1,T=S.__r,Xe=0,v)u.state=u.__s,u.__d=!1,T&&T(t),p=u.render(u.props,u.state,u.context),tt.push.apply(u.__h,u._sb),u._sb=[];else do u.__d=!1,T&&T(t),p=u.render(u.props,u.state,u.context),u.state=u.__s;while(u.__d&&++Xe<25);u.state=u.__s,u.getChildContext!=null&&(s=G(G({},s),u.getChildContext())),v&&!f&&u.getSnapshotBeforeUpdate!=null&&(y=u.getSnapshotBeforeUpdate(m,g)),be=p!=null&&p.type===C&&p.key==null?ms(p.props.children):p,l=ps(e,ot(be)?be:[be],t,n,s,o,i,r,l,c,d),u.base=t.__e,t.__u&=-161,u.__h.length&&r.push(u),b&&(u.__E=u.__=null)}catch(V){if(r.length=h,t.__v=null,c||i!=null){if(V.then){for(t.__u|=c?160:128;l&&l.nodeType==8&&l.nextSibling;)l=l.nextSibling;i!=null&&(i[i.indexOf(l)]=null),t.__e=l}else if(i!=null)for(ye=i.length;ye--;)qt(i[ye])}else t.__e=n.__e;t.__k==null&&(t.__k=n.__k||[]),V.then||hs(t),S.__e(V,t,n)}}else i==null&&t.__v==n.__v?(t.__k=n.__k,t.__e=n.__e):l=t.__e=qi(n.__e,t,n,s,o,i,r,c,d);return(p=S.diffed)&&p(t),128&t.__u?void 0:l}function hs(e){e&&(e.__c&&(e.__c.__e=!0),e.__k&&e.__k.some(hs))}function gs(e,t,n){for(var s=0;s<n.length;s++)Bt(n[s],n[++s],n[++s]);S.__c&&S.__c(t,e),e.some(function(o){try{e=o.__h,o.__h=[],e.some(function(i){i.call(o)})}catch(i){S.__e(i,o.__v)}})}function ms(e){return typeof e!="object"||e==null||e.__b>0?e:ot(e)?e.map(ms):e.constructor!==void 0?null:G({},e)}function qi(e,t,n,s,o,i,r,l,c){var d,p,h,u,f,m,g,y=n.props||et,b=t.props,w=t.type;if(w=="svg"?o="http://www.w3.org/2000/svg":w=="math"?o="http://www.w3.org/1998/Math/MathML":o||(o="http://www.w3.org/1999/xhtml"),i!=null){for(d=0;d<i.length;d++)if((f=i[d])&&"setAttribute"in f==!!w&&(w?f.localName==w:f.nodeType==3)){e=f,i[d]=null;break}}if(e==null){if(w==null)return document.createTextNode(b);e=document.createElementNS(o,w,b.is&&b),l&&(S.__m&&S.__m(t,i),l=!1),i=null}if(w==null)y===b||l&&e.data==b||(e.data=b);else{if(i=w=="textarea"&&b.defaultValue!=null?null:i&&st.call(e.childNodes),!l&&i!=null)for(y={},d=0;d<e.attributes.length;d++)y[(f=e.attributes[d]).name]=f.value;for(d in y)f=y[d],d=="dangerouslySetInnerHTML"?h=f:d=="children"||d in b||d=="value"&&"defaultValue"in b||d=="checked"&&"defaultChecked"in b||Qe(e,d,null,f,o);for(d in b)f=b[d],d=="children"?u=f:d=="dangerouslySetInnerHTML"?p=f:d=="value"?m=f:d=="checked"?g=f:l&&typeof f!="function"||y[d]===f||Qe(e,d,f,y[d],o);if(p)l||h&&(p.__html==h.__html||p.__html==e.innerHTML)||(e.innerHTML=p.__html),t.__k=[];else if(h&&(e.innerHTML=""),ps(t.type=="template"?e.content:e,ot(u)?u:[u],t,n,s,w=="foreignObject"?"http://www.w3.org/1999/xhtml":o,i,r,i?i[0]:n.__k&&le(n,0),l,c),i!=null)for(d=i.length;d--;)qt(i[d]);l&&w!="textarea"||(d="value",w=="progress"&&m==null?e.removeAttribute("value"):m!=null&&(m!==e[d]||w=="progress"&&!m||w=="option"&&m!=y[d])&&Qe(e,d,m,y[d],o),d="checked",g!=null&&g!=e[d]&&Qe(e,d,g,y[d],o))}return e}function Bt(e,t,n){try{if(typeof e=="function"){var s=typeof e.__u=="function";s&&e.__u(),s&&t==null||(e.__u=e(t))}else e.current=t}catch(o){S.__e(o,n)}}function ws(e,t,n){var s,o;if(S.unmount&&S.unmount(e),(s=e.ref)&&(s.current&&s.current!=e.__e||Bt(s,null,t)),(s=e.__c)!=null){if(s.componentWillUnmount)try{s.componentWillUnmount()}catch(i){S.__e(i,t)}s.base=s.__P=s.__n=null}if(s=e.__k)for(o=0;o<s.length;o++)s[o]&&ws(s[o],t,n||typeof e.type!="function");n||qt(e.__e),e.__c=e.__=e.__e=void 0}function Ki(e,t,n){return this.constructor(e,n)}function Gt(e,t,n){var s,o,i,r;t==document&&(t=document.documentElement),S.__&&S.__(e,t),o=(s=typeof n=="function")?null:n&&n.__k||t.__k,i=[],r=[],Kt(t,e=(!s&&n||t).__k=Ui(C,null,[e]),o||et,et,t.namespaceURI,!s&&n?[n]:o?null:t.firstChild?st.call(t.childNodes):null,i,!s&&n?n:o?o.__e:t.firstChild,s,r),gs(i,e,r),e.props.children=null}st=tt.slice,S={__e:function(e,t,n,s){for(var o,i,r;t=t.__;)if((o=t.__c)&&!o.__)try{if((i=o.constructor)&&i.getDerivedStateFromError!=null&&(o.setState(i.getDerivedStateFromError(e)),r=o.__d),o.componentDidCatch!=null&&(o.componentDidCatch(e,s||{}),r=o.__d),r)return o.__E=o}catch(l){e=l}throw e}},as=0,Fi=function(e){return e!=null&&e.constructor===void 0},Ze.prototype.setState=function(e,t){var n;n=this.__s!=null&&this.__s!=this.state?this.__s:this.__s=G({},this.state),typeof e=="function"&&(e=e(G({},n),this.props)),e&&G(n,e),e!=null&&this.__v&&(t&&this._sb.push(t),os(this))},Ze.prototype.forceUpdate=function(e){this.__v&&(this.__e=!0,e&&this.__h.push(e),os(this))},Ze.prototype.render=C,z=[],ls=typeof Promise=="function"?Promise.prototype.then.bind(Promise.resolve()):setTimeout,ds=function(e,t){return e.__v.__b-t.__v.__b},nt.__r=0,Ut=Math.random().toString(8),ze="__d"+Ut,Ee="__a"+Ut,us=/(PointerCapture)$|Capture$/i,Wt=0,Ht=rs(!1),Vt=rs(!0),Mi=0;var bs={name:"inbox",version:"0.2.13",description:"Collects what waits on you in a Codex session: questions, tasks, findings and PRs, in a tab beside the conversation",author:{name:"Pete Petrash"},repository:"https://github.com/petekp/inbox",license:"MIT",mcpServers:"./.mcp.json",hooks:"./hooks/hooks.json",interface:{displayName:"Inbox",shortDescription:"What waits on you in this conversation",developerName:"Pete Petrash",category:"Developer Tools",capabilities:["Interactive"]}};var Gi=["working","queued","waits-on-other"],Za=[...Gi,"done","dropped"];function Y(e,t){return e.length>t?`${e.slice(0,t-1)}\\u2026`:e}var Yi=/[,;](?=\\s)|\\s(?=and\\s)/g;function ys(e,t){if(t(e))return e;let n=[...e.matchAll(Yi)].map(s=>`${e.slice(0,s.index).replace(/[\\s.,;:]+$/,"")}\\u2026`);return n.findLast(t)??n[0]??e}var tl=new Intl.Segmenter(void 0,{granularity:"grapheme"});var nl=new RegExp("\\\\p{Emoji_Presentation}|\\\\uFE0F","u");function Le(e){let t=Math.round(e/6e4);if(t<1)return"just now";if(t<60)return`${t}m ago`;let n=Math.round(t/60);return n<48?`${n}h ago`:`${Math.round(n/24)}d ago`}var ks="no longer applies|replaced|superseded|moot",Xi=new RegExp(`^(?:closed by \\\\w+: )?(?:${ks})`,"i"),dl=new RegExp(`^\\\\s*(?:done\\\\s*:|(?:${ks}|no longer relevant|dealt with)\\\\b)`,"i");function Yt(e){if(e.how==="dismissed")return"dismissed";if(e.how==="expired")return"lapsed";let t=Xi.test(e.outcome);return(e.how==="claude"||e.how==="update")&&t?"lapsed":"handled"}function J(e){return e.threads.filter(t=>t.isWaiting)}function Qt(e,t){return J(e).filter(n=>!n.isLinesChanged&&!t(e,n))}function zi(e){let t={pass:0,fail:0,pending:0,skip:0};for(let n of e.checks)t[n.bucket]+=1;return t}function Ji(e){return`${e} ${e===1?"thread":"threads"} waiting on you`}function Xt(e,t,n){return`${e} ${e===1?t:n}`}function it(e,t=()=>!1){let n=(g,y,b=[],w=": ")=>{let v=b.join(", "),B=g==="ready"?[]:b.filter(F=>!s.includes(F));return{status:g,text:v?`${y}${w}${v}`:y,head:y,unlisted:B}},s=[];if(e.state==="MERGED")return n("merged","Merged");if(e.state!=="OPEN")return n("closed","Closed");let{fail:o,pending:i}=zi(e),r=J(e),l=Qt(e,t).length,c=r.filter(g=>t(e,g)).length,d=r.filter(g=>g.isLinesChanged&&!t(e,g)).length,p=g=>g!==null,h=g=>(g===null||s.push(g),g),u=[e.mergeable==="CONFLICTING"?`conflicts with ${e.base}`:null,h(o>0?Xt(o,"failing check","failing checks"):null),e.reviewDecision==="CHANGES_REQUESTED"?"changes requested":null,h(l>0?Ji(l):null)].filter(p),f=[h(c>0?`${Xt(c,"thread","threads")} sent to Claude`:null),h(d>0?`${Xt(d,"thread","threads")} on changed lines`:null),e.reviewDecision==="REVIEW_REQUIRED"?"needs approval":null,i>0?`${i} ${i===1?"check":"checks"} running`:null].filter(p);if(e.isDraft)return n("draft","Draft",[...u,...f]);if(u.length>0)return n("blocked","Blocked",u);if(f.length>0)return n("waiting","Waiting",f);let m=e.reviewDecision==="APPROVED";return n("ready","Ready to merge",[...m?["approved"]:[],"checks pass","no threads waiting on you"],m?": ":", ")}var Zi=/<\\/?(?:a|b|br|code|details|div|em|h[1-6]|hr|i|img|kbd|li|ol|p|pre|span|strong|sub|summary|sup|table|tbody|td|th|thead|tr|ul)\\b[^>]*>/g;function rt(e){return e.replace(/<!--[\\s\\S]*?-->/g,"").replace(Zi,"").replace(/^[^\\S\\n]*Useful\\?[^\\S\\n]+React[^\\S\\n]+with[^\\S\\n]+\u{1F44D}[^\\S\\n]*\\/[^\\S\\n]*\u{1F44E}\\.?[^\\S\\n]*$/gmu,"").replace(/!\\[([^\\]]*)\\]\\([^)]*\\)/g,(t,n)=>n.replace(/\\s*badge$/i,"")).trim()}function zt(e){return rt(e).replace(/\\[([^\\]]*)\\]\\([^)]*\\)/g,"$1").replace(/^\\s*(?:#{1,6}|>)\\s*/gm,"").replace(/\\*\\*|__|`/g,"").replace(/\\s+/g," ")}var Jt=120;function at(e){let t=rt(e),[n="",...s]=t.split(`\n`),o=zt(n).trim();return{head:o,rest:o.length>Jt?t:s.join(`\n`).trim()}}function lt(e,t=e.path){return`${t}${e.line?`:${e.line}`:""}`}function Ss(e){let t=Math.max(0,Math.round(e/1e3));return t<60?`${t}s`:`${Math.floor(t/60)}m ${t%60}s`}function ke(e){return e.checks.filter(t=>t.bucket==="fail")}function dt(e){return e.replace(/\\/+$/,"").split("/").pop()??e}function Ts(e,t){let n=e?.delivery?.state!=="failed"?e?.turnsStarted:void 0;return n!==void 0&&n<=t.turnsStarted&&t.turnsApplied<=n}function Rs(e){return e.startsWith("pr:")||e.includes(" ")}function ut(e,t){return!e.startsWith("pr:")&&t?.kind==="handoff"&&t.action!=="address"}function Z(e){return e.action==="step"?`step-${e.step}`:e.action}function Zt(e){return e.charAt(0).toUpperCase()+e.slice(1)}var or="This changed before your press. Nothing was sent.";function Oe(){return or}function vs(e){return e.error===null&&e.note===null&&!e.isUnconfirmed}function ir(e,t){switch(t.kind){case"run":return{kind:"send",text:lr.run(e,t.command),by:{id:e.id,action:"run"}};case"open":return{kind:"open",target:t.path,name:dt(t.path)};case"link":return{kind:"open",target:t.url,name:t.name??t.url};case"copy":return{kind:"copy",text:t.text,name:t.name??"snippet",isCommand:!1};case"terminal":return{kind:"copy",text:t.command,name:t.name??Y(t.command,32),isCommand:!0}}}function As(e,t){return t.step.map(n=>ir(e,n))}function ct(e,t,n){return{state:"pending",parts:e.flatMap(s=>s.kind==="send"?[]:[{kind:s.kind,name:s.name,isCommand:s.kind==="copy"&&s.isCommand,error:null}]),at:t,...n?{pressId:n}:{}}}function Ps(e,t){if(!/^[if]\\d+$/.test(e))return null;let n=/^step-(\\d+)$/.exec(t.action);if(n)return{action:"step",id:e,step:Number(n[1]),label:t.text};switch(t.action){case"answer":return{action:"answer",id:e,option:t.text};case"explain":case"compare":case"address":case"issue":case"discuss":return{action:t.action,id:e};default:return null}}function Es(e,t){return e?.action===t&&e.kind!=="local"&&e.delivery?.state!=="failed"}function rr(e){return[`${e.kind==="issue"?"Issue":"Opportunity"}: ${e.title}`,e.detail,...e.path?[`File: ${e.path}`]:[]]}var xs="Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.";var ar=e=>["Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.","For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session\'s data outside this repo.",`Then make a page from the inbox\'s comparison template. Write the comparison as JSON in the shape the comment at the top of the template shows, with the few measures that tell the choices apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Build the page with: cat "${e}" <your JSON file> > <your page>.html`,"When the comparison is done, reply without a table, since the page holds the measures. Give your pick and say whether it changed, your reason in one line, one line on anything you did not expect, and the page\'s absolute path.","Also call the inbox\'s record tool yourself with this question\'s ask and options as listed below, and the page\'s absolute path in steps. That marks it compared. Call each choice by its name as listed."].join(`\n\n`);function _s(e){return`"${e.ask}"${e.options.length>0?`\nOptions: ${e.options.join(" / ")}`:""}`}var lr={answer:(e,t)=>`Re "${e.ask}": ${t}`,explain:e=>`Remind me what ${e.kind==="task"?"this task you left for me is about: why it came up, and what doing it involves":"this question you asked me is about: why it came up, what each choice would do, and which you would pick"}. ${xs} Don\'t act on it yet.\n${_s(e)}`,compare:(e,t)=>`${ar(t)}\n${_s(e)}`,run:(e,t)=>`For "${e.ask}", run this:\n\\`\\`\\`\n${t}\n\\`\\`\\``,taskReply:(e,t)=>`Re the task you left for me, "${e.ask}": ${t}`,done:e=>e.length===1?`Done: ${e[0]}`:`Done:\n${e.map(t=>`- ${t}`).join(`\n`)}`,finding:(e,t,n="")=>[t==="address"?"Please address this finding you recorded:":t==="issue"?"Please file an issue for this finding you recorded, in the issue tracker you have tools for. First check whether one already exists, and if it does, use it instead of filing a duplicate. Then close the finding with the issue\'s key or number as the reason, and give me its link. If you have no tools for an issue tracker, say so and leave the finding open.":t==="explain"?`Remind me what this finding you recorded is about: why it matters, what fixing it would involve, and whether you would fix it now. ${xs} Don\'t act on it yet.`:t==="discuss"?"Let\'s talk through this finding you recorded before changing anything:":"About this finding you recorded:",...rr(e),...t==="typed"?["",n]:[]].join(`\n`)};var $l=`You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.\n\nYou read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.\n\nInput:\n- <goal>: the session\'s goal. Do not restate it.\n- <subjects>: the open subjects, one per line: id | status | name | where it stands\n- <finished>: subjects already done or dropped. Do not add them again.\n- <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet\n- <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subject it holds up, or - when it has none yet\n- <tasks>: the agent\'s own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.\n- <person>: what the person just sent\n- <activity>: what the agent did this turn\n- <reply>: the agent\'s final reply\n\nAnswer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, answer with the one line NO CHANGE. Most exchanges change nothing.\n\nOtherwise write only the lines that apply:\nNEW: status | name | where it stands\nSET: id or name | status | where it stands\nDONE: id or name | where it ended\nDROP: id or name | why\nDROP: id or name | why | INTO id or name\nWAS: id or name | the plan it replaces\nLINK: running or ask id | subject id or name\nROLE: coordinator or session\nGOAL: the goal in the person\'s words, at most ${8} words\n\nA subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${6} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.\n\nThe name is a label of at most ${3} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${4} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.\n\nStatus is one of: working, queued, waits-on-other.\n- working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask. When the work stopped for another reason, it is queued, waits on something, or is done.\n- queued: planned, not started.\n- waits-on-other: it waits on something other than the person, such as a build, a review or another session.\n\nRules:\n- Change a subject by its id. Write NEW only when no subject in <subjects> covers it.\n- When work started and finished in this exchange, write NEW for it, then DONE with its name.\n- Write SET only when where a subject stands changed. Never reword a subject that did not change.\n- Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.\n- When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.\n- Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.\n- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject\'s text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.\n- Write ROLE coordinator when the session hands out work and reviews what comes back instead of doing the work itself. Write ROLE only when it changes.\n- Write GOAL only when <goal> is empty, when the person states a new goal, or when the work moves to a different task.`;var Ls=[..."abcfghilm"],P="\\u2007\\xB7\\u2002",Ce={issue:{title:"Issues",mark:"\\u25B2",tone:"issue"},opportunity:{title:"Opportunities",mark:"\\u2726",tone:"done"}},Cs=[{kind:"question",title:"Questions",list:"questions"},{kind:"task",title:"Tasks",list:"tasks"}],gr={handled:"\\u2713",dismissed:"\\u2715",lapsed:""},mr=3,L=5120;var sn=400,wr=1e3,br=30*6e4;function yr(e,t){return e?.delivery?.state==="queued"&&t-e.at>=wr}function kr(e,t){return e?.delivery?.state==="unconfirmed"?"unconfirmed":e?.delivery?.state!=="queued"?null:yr(e,t)?"queued":"sending"}function $s(e,t){return e>0&&t-e<sn}function pt(e,t){return t!==null&&e>=t}function ft(e,t){return e.state.is!=="settled"||pt(e.state.at,t)}function Is(e,t){return Object.fromEntries(Object.entries(e).filter(([,n])=>pt(n,t)))}function Ds(e,t){return Object.fromEntries(Object.entries(t).flatMap(([n,s])=>n===e||s.text.trim()!==""?[[n,s.since]]:[]))}var Ns=e=>e==="terminal"||e==="omp",ee={retry:"Try again",send:"Send",cancel:"Cancel",discard:"Discard",clickField:"Click the field to type",relevantFile:"Relevant file: ",allOptions:e=>`All ${e} options`};function Fs(e,t){return e.optionDescriptions.filter(n=>t||!n.isFolded)}function on(e,t){if(e.state.is==="handedOff"&&e.feedback?.is!=="unconfirmed")return{text:"\\u2713",tone:"done"};if(e.finding){let n=Ce[e.finding.kind];return{text:n.mark,tone:n.tone}}return{text:Ns(t)?e.handle:""}}function rn(e,t){return e.replyKind==="answer"?"Your answer":`Your reply to ${t}`}function Ms(e,t){if(!e.isPrimary)return e.label;let n=`${e.label} (recommended)`;return t&&!t(n)?e.label:n}function an(e){return e.state.is==="held"?"discard":"cancel"}function js(e){return e.state.is==="open"}function ln(e){return e.filter(t=>t!==void 0&&js(t)).length}function Us(e,t,n){return e.is==="done"&&t?e.label:xe(e,n)}function Hs(e,t){let n=e.feedback;return n?n.is==="done"&&e.state.is==="handedOff"?n.label:xe(n,t):null}function de(e){return[...e.needsYou.questions,...e.needsYou.tasks,...e.findings.rows]}function Vs(e){return e.filter(t=>t.state.is==="settled").map(t=>t.id)}function dn(e,t){return e.filter(n=>!t.has(n.id)).slice(0,mr)}function ht(e,t){return e.filter(n=>!t.has(n.id)).length}function Ws(e){return`${e} closed`}function qs(e,t){return e>t?`${e-t} earlier`:null}function ue(e){let t=Le(e);return t==="just now"?"now":t.replace(/ ago$/,"")}function Ks(e){return`No open ${e.toLowerCase()}`}var Sr={demo:"notice","update-failed":"warning","tools-refused":"error","read-failed":"error",stopped:"error","gh-missing":"warning","gh-signed-out":"warning","press-note":"notice","press-failed":"error","hooks-trust":"error","server-gone":"error","server-load-failed":"error","server-builds-differ":"warning","tab-update-failed":"warning"};function X(e,t){let n=t.indexOf(". "),s=n<0?t:t.slice(0,n+1),o=n<0?null:t.slice(n+2);return{kind:e,tone:Sr[e],lead:s,body:o}}function Bs(e,t,n){return[...e,...t?[X("update-failed",t)]:[],...n?[X(n.isError?"press-failed":"press-note",n.text)]:[]]}var Gs="Sample entries. Buttons here send nothing.",Ys="Reading the inbox\\u2026";function Xs(e,t){return t?`v${e} \\xB7 next`:`v${e}`}function Se(e,t,n,s,o,i){let r=t?.result;if(n&&o-n.at<L&&n.at>=Math.max(t?.at??0,r?.at??0))return{is:"note",note:n.note,at:n.at};if(r&&(r.state!=="done"||o-r.at<L))return{is:"local",result:r};if(!t||t.kind==="local")return null;let l=t.delivery,c=kr(t,o);if(c==="queued"||c==="unconfirmed")return{is:c,label:t.text,at:t.at};if(l?.state==="failed")return{is:"notSent",reason:l.reason,retry:Ps(e,t)};let d=Ts(t,s),p=t.action==="compare"&&!(i!==void 0&&i>=t.at),h=o-t.at>=br,u=_r[t.action];if(t.kind==="talk"&&u&&(d||p&&!h))return{is:"working",label:u,at:t.at};if(c==="sending")return{is:"sending",label:t.text,at:t.at};if(p)return{is:"noComparison",at:t.at};if(!d&&!Rs(e)&&ut(e,t))return{is:"stillOpen",at:t.at};let f=t.kind==="handoff"&&t.action.startsWith("step-");return{is:"done",label:Tr[t.action]?.(t.text)??t.text,at:t.at,...f?{isHandedStep:!0}:{},...Rr.has(t.action)?{isStillWaiting:!0}:{}}}function xr(e,t,n,s,o,i,r){if(t.is==="settled")return null;let l=Se(e,n,s,o,i,r);if(t.is!=="held")return l;let c=l?.is==="notSent"&&n?.action==="type"&&n.at>=t.at;return l?.is==="note"||c?l:{is:"closed",label:t.label,at:t.at}}function un(e,t,n,s,o,i){return xr(e,t,n,void 0,s,o,i)}var _r={explain:"Explaining\\u2026",compare:"Comparing\\u2026",discuss:"Discussing\\u2026","thread-discuss":"Discussing\\u2026","thread-draft":"Drafting a reply\\u2026"},Tr={address:()=>"Handed off",issue:()=>"Asked to file",discuss:()=>"Discussed",explain:()=>"Explained",compare:()=>"Compared",dismiss:()=>"Dismissed",type:()=>"Replied","thread-address":()=>"Addressed","thread-discuss":()=>"Discussed","thread-draft":()=>"Drafted a reply","pr-conflicts":()=>"Asked to resolve conflicts","pr-merge":()=>"Asked to merge","pr-address-all":e=>e.replace(/^Address\\b/,"Addressed"),"check-fix":()=>"Asked to fix"},Rr=new Set(["check-fix"]);function cn(e){return e?.is==="notSent"||e?.is==="local"&&e.result.state==="failed"}function pn(e){return e.is==="done"||e.is==="working"||e.is==="stillOpen"||e.is==="noComparison"||e.is==="sending"||e.is==="queued"||e.is==="unconfirmed"||e.is==="closed"}function Qs(e){return e?.is==="working"||e?.is==="sending"||e?.is==="queued"||e?.is==="unconfirmed"||e?.is==="local"&&e.result.state==="pending"}function fn(e,t){return Qs(t)?(t?.is==="local"?t.result.action:e?.action)??null:null}function hn(e,t){let n=t?.is==="unconfirmed"?null:fn(e,t);return n==="type"?null:n}function zs(e,t,n){return Es(e,t)&&(!n||e?.isRepeat===!0)}function Js(e,t){let n=e?.is==="done"&&e.isStillWaiting===!0;return t&&(Qs(e)||n)}var vr=e=>Ns(e)?"Run it in a terminal, or type ! and paste.":"Run it in Terminal.",en={open:{pending:"Opening",done:"Opened",failed:"open"},copy:{pending:"Copying",done:"Copied",failed:"copy"},"refresh-prs":{pending:"Refreshing",done:"Refreshed",failed:"refresh"}};function Ar(e,t){let s=e.parts.length>1&&e.parts.every(r=>r.kind==="open"&&r.error===null&&/^PR #\\d+$/.test(r.name))?[{...e.parts[0],name:`${e.parts.length} PRs`}]:e.parts;if(e.state==="pending")return`${s.map(r=>`${en[r.kind].pending} ${r.name}`).join(P)}\\u2026`;let o=s.map(r=>r.error===null?`${en[r.kind].done} ${r.name}`:`Could not ${en[r.kind].failed} ${r.name}: ${r.error}`).join(P);if(e.state==="failed")return o;let i=s.some(r=>r.kind==="copy"&&r.isCommand);return`\\u2713 ${o}${i?`. ${vr(t)}`:""}`}function xe(e,t){switch(e.is){case"note":return Oe();case"local":return Ar(e.result,t);case"sending":return e.label;case"queued":return nn(e.is,e.label);case"unconfirmed":return nn(e.is,e.label);case"notSent":return`Not sent: ${e.reason}`;case"done":return e.isHandedStep?`\\u2713 Handed off: ${e.label}`:`\\u2713 ${e.label}`;case"working":return e.label;case"stillOpen":return"Still open";case"noComparison":return"No comparison came back";case"closed":return e.label}}function nn(e,t){return e==="queued"?`Queued: ${t}`:`Not confirmed: ${t}`}function Zs(e){return e===null?"\\u2713":""}function eo(e,t){return t===null?gr[e]:""}function to(e){return e!==null&&typeof e=="object"&&e.canUndo}function gt(e,t){return t&&typeof t=="object"?`${e} \\xB7 Not sent: ${t.error}`:t===null||t==="sending"?e:nn(t,e)}var $e=[{id:"overview",label:"Status",symbol:"\\u{1F9ED}"},{id:"needsYou",label:"Asks",symbol:"\\u{1F64B}"},{id:"findings",label:"Finds",symbol:"\\u{1F50D}"},{id:"prs",label:"PRs",symbol:"\\u{1F500}"}],no=e=>e.map((t,n)=>({...t,hotkey:String(n+1)})),Pr=no($e),Er=no($e.filter(e=>e.id!=="overview"));function mt(e){return e?Pr:Er}function so(e,t){let n=mt(t);return n.some(s=>s.id===e)?e:n[0].id}function oo(e,t){return $(e)&&t[e]>0?String(t[e]):null}function gn(e){return e==="needsYou"||e==="findings"}function $(e){return e!=="overview"}function io(e){return $e.some(t=>t.id===e)}var ro=$e.filter(e=>$(e.id)),mn=$e.filter(e=>gn(e.id));var ao="was: ",Os="merged in: ",lo=" \\xB7 ",_e=3;var Ql=15*6e4;var Lr=["\\u25CF","\\u25C9","\\u25CE","\\u25C9"],Or=300,uo=Lr.length*Or;function co(e,t){return`${Os}${ys(e,n=>t(`${Os}${n}`))}`}function Ie(e,t){return e==="needsYou"?{title:"Nothing needed",hint:`${t}\'s questions and the tasks only you can do show up here.`}:{title:"No findings yet",hint:`${t} flags issues and opportunities it spots beyond your task.`}}function wn(e,t,n){let s=c=>c.flatMap(d=>{if(d.state.is==="settled")return t(d.id)?[{settled:d,state:d.state}]:[];let p=n(d);return p===null?[]:[{row:p}]}),o=s(e.needsYou.questions),i=s(e.needsYou.tasks),r=Object.keys(Ce).map(c=>({kind:c,title:Ce[c].title,entries:s(e.findings.rows.filter(d=>d.finding?.kind===c))})),l=r.flatMap(c=>c.entries);return{questions:o,tasks:i,findings:l,findingGroups:r,byTab:{needsYou:[...tn(o),...tn(i)],findings:tn(l)}}}function ce(e){return"row"in e?e.row.id:e.settled.id}function po(e){let t=wn(e,()=>!0,s=>s),n=s=>s.map(o=>"row"in o?{id:o.row.id,isWaiting:js(o.row)}:{id:o.settled.id,isWaiting:!1});return{needsYou:n([...t.questions,...t.tasks]),findings:n(t.findings)}}function bn(e){return e.find(t=>t.isWaiting)?.id??null}function fo(e,t){return bn(e.filter(n=>!t.includes(n.id)))}function ho(e,t){let n=e.findIndex(s=>s.id===t);return n<0?null:(e.slice(n+1).find(s=>s.isWaiting)??e.slice(0,n).reverse().find(s=>s.isWaiting))?.id??null}function tn(e){return e.flatMap(t=>"row"in t?[t.row]:[])}function wt(e){return new Set(e.flatMap(t=>"settled"in t?[t.settled.id]:[]))}function go(e,t){let n=e.actions.filter(d=>t||!d.isFolded),s=e.actions.length-n.length,o=n.map(d=>d.press.action).lastIndexOf("answer"),i=[],r=[],l=e.feedback?.is==="notSent"?e.feedback.retry:null;if(l){let d=e.actions.find(p=>Z(p.press)===Z(l))?.kind??"talk";i.push({slot:"retry",press:l,kind:d,label:ee.retry,emphasis:"normal",icon:"retry"})}let c=0;for(let[d,p]of n.entries()){let{press:h}=p;if(h.action==="answer"||h.action==="step"){let u=c<Ls.length?{hotkey:Ls[c++]}:{};i.push({slot:"choice",action:{...p,press:h},...u}),d===o&&s>0&&i.push({slot:"allOptions",count:e.actions.filter(f=>f.press.action==="answer").length,label:ee.allOptions(e.actions.filter(f=>f.press.action==="answer").length),emphasis:"quiet"})}else p.hotkey&&(p.isFollowUp?r:i).push({slot:"action",action:p,hotkey:p.hotkey})}return{keys:i,more:r}}var Cr="Updating\\u2026",$r="Refreshing PRs\\u2026";function mo(e,t,n,s){if(e==="prs")return{text:n.isFetching&&n.hasPrs?$r:null,error:null};let o=(e==="overview"?s:null)??t.error;return{text:t.isUpdating?Cr:null,error:o}}var Ir=0;function a(e,t,n,s,o,i){t||(t={});var r,l,c=t;if("ref"in c)for(l in c={},t)l=="ref"?r=t[l]:c[l]=t[l];var d={type:e,props:c,key:n,ref:r,__k:null,__:null,__b:0,__e:null,__c:null,constructor:void 0,__v:--Ir,__i:-1,__u:0,__source:o,__self:i};if(typeof e=="function"&&(r=e.defaultProps))for(l in r)c[l]===void 0&&(c[l]=r[l]);return S.vnode&&S.vnode(d),d}var Dr={check:"M20 6 9 17l-5-5",play:"M7 4.5v15l12-7.5z",copy:"M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1",open:"M7 17 17 7M8 7h9v9",retry:"M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5",undo:"M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11",right:"m9 18 6-6-6-6",down:"m6 9 6 6 6-6"},Nr={done:"check",retry:"retry",open:"open",copy:"copy",run:"play"};function De({name:e}){return a("svg",{class:"icon",viewBox:"0 0 24 24",fill:"none",stroke:"currentColor","stroke-width":"2","stroke-linecap":"round","stroke-linejoin":"round","aria-hidden":"true",children:a("path",{d:Dr[e]})})}function wo(e,t,n,s){let o=go(e,t),i=r=>{if(r.slot==="retry")return{label:r.label,emphasis:r.emphasis,icon:r.icon,run:()=>s.press(r.press)};if(r.slot==="allOptions")return{label:r.label,emphasis:r.emphasis,run:s.showOptions};let l=r.action;return{label:Ms(l),emphasis:l.emphasis,...r.hotkey?{hotkey:r.hotkey}:{},...l.icon?{icon:Nr[l.icon]}:{},...l.press.action==="dismiss"?{isDismiss:!0}:{},...l.isOut||Z(l.press)===n?{isOut:!0}:{},run:l.press.action==="type"?s.reply:l.press.action==="discard"?s.discard:()=>s.press(l.press)}};return{keys:o.keys.map(i),more:o.more.map(i)}}function bt({action:e,isBlocked:t}){return a("button",{type:"button",class:`${e.emphasis==="primary"?"key primary":e.emphasis==="quiet"?"key ghost":"key"}${e.isDismiss?" dismiss":""}${e.isOut?" out":""}`,disabled:t()||e.isOut===!0,onClick:()=>{!t()&&!e.isOut&&e.run()},children:[e.icon?a(De,{name:e.icon}):null,e.label]})}function bo({keys:e,more:t,reply:n,isBlocked:s}){return n?a("div",{class:"actions",children:a("form",{onSubmit:o=>{o.preventDefault();let i=n.draft().trim();i&&n.send(i)},children:[a("input",{id:`type-${n.id}`,value:n.draft(),placeholder:n.hint,"aria-label":n.hint,onInput:o=>n.onDraft(o.currentTarget.value)}),a("button",{type:"submit",class:"key primary",children:ee.send}),a("button",{type:"button",class:"key ghost",onClick:n.onExit,children:ee[n.exit]})]})}):a("div",{class:"actions",children:e.length+t.length>0?a("div",{class:"keys",children:[e.map(o=>a(bt,{action:o,isBlocked:s})),t.length>0?a("div",{class:"follow-ups",children:t.map(o=>a(bt,{action:o,isBlocked:s}))}):null]}):null})}function fe(e,t){return yo(e.ref,t.id)}function Ne(e,t){return ko(e.ref,t.name)}function yo(e,t){return`${e} thread ${t}`}function ko(e,t){return`${e} check ${t}`}function I(e){return`pr:${e}`}var jr="The inbox could not find gh. It needs gh to read your PRs.",Ad=`gh did not answer within ${2e4/1e3} seconds`,Ur="gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.";function yn(e){return e.isGhMissing?{kind:"gh-missing",text:jr}:e.isGhSignedOut?{kind:"gh-signed-out",text:Ur}:null}function Hr(e){return`Your PRs show here when this ${e} opens or links one, or when your branch has one.`}function So(e,t){return{title:e.isFetching?"Checking for PRs\\u2026":"No PRs",hint:yn(e)?.text??Hr(t)}}function xo(e){return`Last refresh failed: ${e}`}var Vr="Refresh PRs",Wr={kind:"refresh-prs",name:"PRs"};var kn={threads:"Review threads",checks:"Failing checks"};function _o(e,t,n){let s=Te(n)(e,t),o=!s&&t.isLinesChanged;return{mark:Kr(n)(e,t)?{text:"\\u2713",tone:"done",isDone:!0}:{text:"\\u25E6",tone:null,isDone:!1},fold:s||o?t.isLinesChanged?{note:`Lines changed since this comment${P}still open on GitHub`}:{}:null,title:Y(at(t.body).head,Jt),meta:[lt(t,dt(t.path)),o?"Lines changed":"",t.reply?`@${t.reply.author}: ${zt(t.reply.body)}`:`@${t.author}`].filter(Boolean).join(P)}}function To(e){return{mark:{text:"\\u2717",tone:"error",isDone:!1},lead:e.workflow||null,title:e.name,meta:qr(e)}}var Sn=1200;function Ro(e){return{keys:e.filter(t=>!t.isFollowUp),more:e.filter(t=>t.isFollowUp)}}function qr(e){return e.startedAt!==void 0&&e.finishedAt!==void 0?`Failed after ${Ss(e.finishedAt-e.startedAt)}`:"Failed"}function Te(e){return(t,n)=>{let s=e[fe(t,n)];return s?.kind==="handoff"&&s.delivery?.state!=="failed"&&s.at>((n.reply??n).at??0)}}function Kr(e){let t=Te(e);return(n,s)=>{let o=e[fe(n,s)]?.delivery;return t(n,s)&&o?.state!=="unconfirmed"}}function vo(e,t){let n=Te(t);return e.flatMap(s=>[...J(s).map(o=>({id:fe(s,o),isWaiting:!n(s,o)})),...ke(s).map(o=>{let i=Ne(s,o),r=t[i];return{id:i,isWaiting:!ut(i,r)||r?.delivery?.state==="failed"}})])}function Br(e,t){let n=e[I(t)];return n?.action==="pr-dismiss"?n.at:null}function Ao(e,t){return Br(e,t)!==null}var Po={ready:"done",blocked:"needsYou",waiting:null,draft:null,merged:"findings",closed:"error"};function Gr(e,t){return{kind:"open",target:t.reply?.url||t.url||e.url,name:"the comment"}}function Yr(e){return{kind:"open",target:e.url,name:`PR #${e.number}`}}function Xr(e,t){return{kind:"open",target:t.url??e.url,name:t.url?"the log":`PR #${e.number}`}}function xn(e,t){switch(t.action){case"thread-open":{let n=e.threads.find(s=>s.id===t.thread);return n?Gr(e,n):null}case"pr-open":return Yr(e);case"pr-refresh":return Wr;case"log":{let n=e.checks.find(s=>s.name===t.check);return n?Xr(e,n):null}default:return null}}function _n(e,t,n,s=null){if(e?.delivery?.state!=="failed")return null;let o=e.action;return s!==null?o==="check-fix"?{press:{action:o,ref:t,check:s},kind:e.kind}:null:n!==null&&(o==="thread-address"||o==="thread-draft"||o==="thread-discuss")?{press:{action:o,ref:t,thread:n},kind:e.kind}:n===null&&(o==="pr-conflicts"||o==="pr-address-all"||o==="pr-merge")?{press:{action:o,ref:t},kind:e.kind}:null}function Tn(e,t){let n=e.lastActions[t],s=un(t,{is:"open"},n,e.turns,e.now);return{last:n,pressing:fn(n,s),out:hn(n,s)}}function pe(e,t,n){return zs(e.last,t,e.pressing===t)?`${n} again`:n}function Rn(e,t){return t.map(n=>({...n,isOut:n.press.action===e.out}))}function vn(e){return e?[{press:e.press,label:"Try again",kind:e.kind,emphasis:"normal",icon:"retry",isRetry:!0}]:[]}function Eo(e,t,n){let s=Tn(n,yo(e.ref,t.id)),o={ref:e.ref,thread:t.id};return Rn(s,[...vn(_n(s.last,e.ref,t.id)),{press:{action:"thread-address",...o},label:pe(s,"thread-address","Address"),kind:"handoff",emphasis:"primary",hotkey:"a"},{press:{action:"thread-draft",...o},label:pe(s,"thread-draft","Draft reply"),kind:"talk",emphasis:"normal",hotkey:"r"},{press:{action:"thread-open",...o},label:"Open comment",kind:"local",emphasis:"normal",icon:"open",hotkey:"o"},{press:{action:"thread-discuss",...o},label:pe(s,"thread-discuss","Discuss"),kind:"talk",emphasis:"quiet",hotkey:"d",isFollowUp:!0}])}function Lo(e,t,n){let s=Tn(n,ko(e.ref,t.name)),o={ref:e.ref,check:t.name};return Rn(s,[...vn(_n(s.last,e.ref,null,t.name)),{press:{action:"check-fix",...o},label:pe(s,"check-fix","Fix"),kind:"handoff",emphasis:"primary",hotkey:"a"},{press:{action:"log",...o},label:"Open log",kind:"local",emphasis:"normal",icon:"open",hotkey:"o"}])}function Oo(e,t,n,s){let o=Tn(s,I(e.ref)),{status:i}=it(e,t),r=Qt(e,t).length,l=[...i==="ready"?[{press:{action:"pr-merge",ref:e.ref},label:pe(o,"pr-merge","Merge"),kind:"handoff"}]:[],...e.state==="OPEN"&&e.mergeable==="CONFLICTING"?[{press:{action:"pr-conflicts",ref:e.ref},label:pe(o,"pr-conflicts","Resolve conflicts"),kind:"handoff"}]:[],...r>1?[{press:{action:"pr-address-all",ref:e.ref},label:pe(o,"pr-address-all",`Address all ${r} threads`),kind:"handoff"}]:[]];return Rn(o,[...e.error?[{press:{action:"pr-refresh",ref:e.ref},label:Vr,kind:"local",emphasis:"normal",icon:"retry"}]:[],...vn(_n(o.last,e.ref,null)),...l.map((c,d)=>({...c,emphasis:d===0?"primary":"normal"})),{press:{action:"pr-open",ref:e.ref},label:"Open PR",kind:"local",emphasis:"normal",icon:"open"},...e.ref===n?[]:[{press:{action:"pr-dismiss",ref:e.ref},label:"Dismiss",kind:"mark",emphasis:"quiet"}]])}function Co(e,t){let n={...e},s={};for(let o of Object.keys(t)){let i=t[o],r=e[o];s[o]=i&&r?i.filter(l=>!r.has(l)):[],i&&(n[o]=new Set(i))}return{seen:n,added:s}}var An=ro.map(e=>e.id);function $o(e){return{needsYou:[...e.needsYou.questions,...e.needsYou.tasks].map(t=>t.id),findings:e.findings.rows.map(t=>t.id)}}function Io(e){let t=n=>n.filter(s=>s.state.is!=="settled").map(s=>s.id);return{needsYou:t([...e.needsYou.questions,...e.needsYou.tasks]),findings:t(e.findings.rows)}}function Do(e,t,n){return t==="findings"?Object.keys(Ce).map(s=>({isUnfolded:n(s),rows:e.findings.closed.filter(o=>o.kind===s)})):Cs.map(s=>({isUnfolded:n(s.kind),rows:e.needsYou.closed[s.list]}))}function No({rows:e,settled:t,closed:n,hasBlocker:s}){return!s&&!e.some(o=>o.state.is!=="settled"||t.has(o.id))&&!n.some(o=>o.isUnfolded&&o.rows.some(i=>!t.has(i.id)))}function Fo(e,t,n,s){return n?e.find(o=>o!==t&&s[o].length>0)??null:null}function Mo(e){return e.flatMap(({pr:t,state:n})=>[I(t.ref),...n.is==="settled"?[]:[...J(t).map(s=>fe(t,s)),...ke(t).map(s=>Ne(t,s))]])}function jo(e,t){return e===0&&!t}var Qr=/`([^`\\n]+)`|\\*\\*(?=\\S)(.+?)(?<=\\S)\\*\\*(?!\\*)|~~(?=\\S)(.+?)(?<=\\S)~~|(?<![\\w*])\\*(?=\\S)([^*\\n]+?)(?<=\\S)\\*(?![\\w*])|(?<!\\w)_(?=\\S)([^_\\n]+?)(?<=\\S)_(?!\\w)|\\[([^\\]\\n]+)\\]\\((https:\\/\\/[^\\s)]+)\\)/g;function yt(e,t={}){let n=[],s=0;for(let o of e.matchAll(Qr)){o.index>s&&n.push({...t,text:e.slice(s,o.index)});let[,i,r,l,c,d,p,h]=o;i!==void 0?n.push({...t,text:i,code:!0}):r!==void 0?n.push(...yt(r,{...t,bold:!0})):l!==void 0?n.push(...yt(l,{...t,strike:!0})):c!==void 0||d!==void 0?n.push({...t,text:c??d??"",italic:!0}):n.push({...t,text:p??"",link:h}),s=o.index+o[0].length}return s<e.length&&n.push({...t,text:e.slice(s)}),n}var kt={question:"needsYou",task:"needsYou",finding:"findings"};function Uo(e){return{...Io(e),prs:[]}}function Ho(e,t,n){return Co(e,{...$o(t),prs:n?null:Mo(t.prs.drawn)})}function Vo(e,t,n,s,o){return t==="prs"?jo(e.prs.drawn.length,o):No({rows:t==="findings"?e.findings.rows:[...e.needsYou.questions,...e.needsYou.tasks],settled:n,closed:Do(e,t,i=>s.has(i)),hasBlocker:t==="needsYou"&&e.heard!=="heard"})}var St={entering:300,opening:200,closing:200,settling:200,leaving:200,closed:0,open:0,settled:0,undoing:0};function xt(e){return St[e]>0}function qo(e,t,n,s=!1,o=!1){let i=t==="undoing"?"settled":t;if(!e)return s&&!o&&(i==="closed"||i==="open")?{state:"entering",since:n,hasPanel:i==="open"}:Wo(void 0,i,t,n);let r=zr(e)===i?e:Jr(e,i,n);return xt(r.state)&&!o&&n-r.since<St[r.state]?r:Wo(r,i,t,n)}function zr({state:e,hasPanel:t}){switch(e){case"entering":return t?"open":"closed";case"opening":case"open":return"open";case"closing":case"closed":return"closed";case"settling":case"settled":case"undoing":return"settled";case"leaving":return"gone"}}function Jr(e,t,n){switch(t){case"open":return{state:"opening",since:n,hasPanel:!0};case"closed":return e.state==="leaving"?{state:"entering",since:n,hasPanel:!1}:{state:"closing",since:n,hasPanel:e.hasPanel};case"settled":return{state:"settling",since:n,hasPanel:e.hasPanel};case"gone":return{state:"leaving",since:n,hasPanel:e.hasPanel}}}function Wo(e,t,n,s){if(t==="gone")return null;let o=n==="undoing"?"undoing":t;return e?.state===o?e:{state:o,since:s,hasPanel:o==="open"}}var Pn=6e4;var qu=10*6e4;var _t=3e3,Yu=L+2*_t;function Ko(e){return[...Vs(de(e)),...e.prs.drawn.flatMap(t=>t.state.is==="settled"?[I(t.pr.ref)]:[])]}function Bo(e,t,n){return new Map(t.map(s=>[s,e.get(s)??n]))}function Go(e,t,n=new Set){return new Set(de(e).filter(s=>s.state.is==="settled"&&(n.has(s.id)||ft(s,t))).map(s=>s.id))}function En(e,t){return t-e<L}var _=null,ie=!1,re=null,Rt=null,ii=!1,Pt=!1,Fe=null,Yo=!1,ri={},Cn={},Nt=0,ai=0,me="needsYou",ae=Date.now();function Vn(e){e!==me&&(ae=Date.now()),me=e}function K(){let e=so(me,_?.isNextBuild===!0);return e==="overview"&&!_?.statusPage?"needsYou":e}var A={needsYou:null,findings:null,prs:null},R=null,Et=!1,D=new Map,je={},Ue=new Set,te=new Set,j=new Map,$n="Sending\\u2026",U=new Map,In=new Map,He=new Map,ve=null,ne=new Map,vt={},Ae=new Set,H=new Set,At=new Set,O=new Map,Lt=null,Wn=0,Ve=0,We=0,se=0,Xo="inbox-tab-kept",M=window,Q=M.__inboxHandoff??null,W=Q?.root??document.getElementById("app"),Be=new AbortController,qe=new Set,Ot=new Set,ge=new Map,x=!1,N=Q===null;Q&&(Q.dispose=qn);function q(e,t){if(x)return 0;let n=window.setTimeout(()=>{qe.delete(n),x||e()},t);return qe.add(n),n}function Ct(e){e!==void 0&&(window.clearTimeout(e),qe.delete(e))}function qn(){if(!x){x=!0,Be.abort();for(let e of qe)window.clearTimeout(e);qe.clear();for(let e of Ot)e.onfinish=null,e.oncancel=null,e.cancel();Ot.clear();for(let e of ge.values())e.reject(new Error("Inbox page replaced"));ge.clear(),Gt(null,W),N&&document.body.classList.remove("still")}}function sa(){return{version:$(me)?1:2,isDemo:ie,tab:me,selection:{needsYou:A.needsYou?.id??null,findings:A.findings?.id??null,prs:A.prs?.id??null},typing:R,drafts:[...D],optionsShown:[...Ue],unfolded:[...te],shownSince:ae}}function li(e){let t=e??M.__inboxKept??null;if(!e){delete M.__inboxKept;try{let n=sessionStorage.getItem(Xo);sessionStorage.removeItem(Xo),t??=n?JSON.parse(n):null}catch{}}if(!(t?.version!==1&&t?.version!==2)){ie=t.isDemo,io(t.tab)&&(me=t.tab),typeof t.shownSince=="number"&&(ae=t.shownSince);for(let n of An){let s=t.selection[n];A[n]=s?{id:s,openedAt:0}:null}R=t.typing,Et=R!==null;for(let[n,s]of t.drafts)D.set(n,typeof s=="string"?{text:s,since:Date.now()}:s);for(let n of t.optionsShown)Ue.add(n);for(let n of t.unfolded)for(let s of n==="finding"?["issue","opportunity"]:[n])te.add(s)}}function di(e,t,n){return x?Promise.reject(new Error("Inbox page replaced")):new Promise((s,o)=>{let i=M.__inboxRequestId=(M.__inboxRequestId??Date.now())+1,r=n===void 0?void 0:q(()=>{ge.delete(i)&&o(new Error(`The inbox did not answer in ${Math.round(n/1e3)} s`))},n);ge.set(i,{resolve:s,reject:o,timer:r}),parent.postMessage({jsonrpc:"2.0",id:i,method:e,params:t},"*")})}window.addEventListener("message",e=>{if(x)return;let t=e.data;if(!(!t||t.jsonrpc!=="2.0")){if(t.id!=null&&!t.method&&ge.has(t.id)){let n=ge.get(t.id);ge.delete(t.id),Ct(n.timer),t.error?n.reject(t.error):n.resolve(t.result);return}t.method==="ui/notifications/host-context-changed"&&(N?Dn(t.params??{}):Cn=oa(Cn,t.params??{})),N&&t.id!=null&&t.method&&parent.postMessage({jsonrpc:"2.0",id:t.id,result:{}},"*")}},{signal:Be.signal});function Dn(e){if(!(x||!N)){e.theme&&(document.documentElement.dataset.theme=e.theme);for(let[t,n]of Object.entries(e.styles?.variables??{}))document.documentElement.style.setProperty(t,n)}}function oa(e,t){return{...e,...t,styles:{...e.styles,...t.styles,variables:{...e.styles?.variables,...t.styles?.variables}}}}async function Kn(e,t={},n){let s=await di("tools/call",{name:e,arguments:t},n);if(x)throw new Error("Inbox page replaced");if(!s||s.isError||s.structuredContent===void 0)throw new Error(s?.isError&&s.content?.[0]?.text||"The answer had nothing to show");return s.structuredContent}function ui(e,t){if(x||t<Ve)return;Ve=t,re=null,Nt=0,ai=Date.now();let n=ne;ne=Bo(ne,Ko(e),Date.now()),[...ne.keys()].some(r=>!n.has(r))&&Ke(L),_=e;let s=mn.every(r=>vt[r.id]===void 0),o=Ho(vt,e,e.isFetchingPrs);vt=o.seen;let i=[...o.added.needsYou,...o.added.findings];for(let r of i)Ae.add(r);for(let{id:r}of mn){let l=!A[r]&&o.added[r].length>0?fo(Ft(e,r),o.added[r]):null;l&&(A[r]={id:l,openedAt:0})}ia(e,s?Uo(e):o.added),k()}function ia(e,t){let n=K();if(!$(n))return;let s=Yn(e),o=Fo(An,n,Vo(e,n,s,te,e.isFetchingPrs),t);o&&(Vn(o),A[o]=null)}var ra=300,aa=2e3,$t=3*_t;async function Ge(){let e=se,t=++Wn;try{let n=await Kn("inbox_view",{demo:ie,tab:me,...hi()},$t);if(e!==se||t<Ve)return;he=n.devPage,oe?.page!==he&&(oe=null);let s=he!==ci;s&&!oe&&pi(he),Rt=n.isPluginFolderGone?{text:"Quit and reopen Codex to load the installed inbox. Its files were moved or removed, so it still runs the version Codex started with.",kind:"server-gone"}:n.serverLoadError?{text:`The inbox server could not load its new build, so it still runs the last one. ${n.serverLoadError}`,kind:"server-load-failed"}:n.serverBuild!=="c4f1cd751a80"&&!s?{text:"This tab and the inbox server are from different builds.",kind:"server-builds-differ"}:null,ui(n,t)}catch(n){if(x||e!==se||t<Ve)return;_?Nt++:re=la(n),k()}}function la(e){let t=typeof e=="object"&&e!==null&&typeof e.message=="string"?e.message:String(e),n=Y(t.replace(/^(Failed|Not done): /,"").replace(/\\s+/g," ").trim(),120)||"No reason given";return Zt(/[.!?\u2026]$/.test(n)?n:`${n}.`)}var ci=Q?.page??M.__inboxPage,Ln=!1,he=null,oe=null;async function pi(e){if(Ln||x||e===ci)return;Ln=!0;let t=null,n=null,s=!1;try{let{html:o}=await Kn("inbox_tab_page",{},$t);if(x||he!==e)return;if(!/<\\/html>\\s*$/i.test(o))throw new Error("The new page is incomplete.");let i=new DOMParser().parseFromString(o,"text/html"),r=i.getElementById("app"),l=i.getElementById("inbox-style")??i.head.querySelector("style"),c=i.getElementById("inbox-script")??i.body.querySelector("script"),d=[...i.head.querySelectorAll("script")].map(T=>T.textContent?.match(/^\\s*window\\.__inboxPage\\s*=\\s*("[^"\\n]+")\\s*;?\\s*$/)?.[1]).find(T=>T!==void 0),p=d?JSON.parse(d):null,h=i.querySelector(\'meta[name="inbox-handoff"]\')?.getAttribute("content")==="1",u=document.getElementById("inbox-style"),f=document.getElementById("inbox-script");if(!(r instanceof HTMLDivElement)||r.childNodes.length>0||!(l instanceof HTMLStyleElement)||!l.textContent||!(c instanceof HTMLScriptElement)||c.src||!c.textContent||typeof p!="string"||p!==e||!/^ui:\\/\\/inbox\\/tab-[a-f0-9]{12}$/.test(p)||!h||!(u instanceof HTMLStyleElement)||!(f instanceof HTMLScriptElement))throw new Error("The new page is incomplete.");let m=document.createElement("div");m.id="app";let g=document.createElement("style");g.id="inbox-style",g.textContent=l.textContent,n=document.createElement("script"),n.id="inbox-script-candidate",n.textContent=c.textContent;let y,b=new Promise(T=>y=T);t={page:p,root:m,aborted:!1,ready:T=>{!t?.aborted&&M.__inboxHandoff===t&&y(T)}},M.__inboxHandoff=t,document.body.append(n);let w=(T,Xe)=>new Promise((be,ye)=>{let E=q(()=>ye(new Error("The new page did not start.")),Xe);T.then(V=>{Ct(E),be(V)},V=>{Ct(E),ye(V)})}),v=await w(b,aa);if(!await w(v.initialize(),$t))throw new Error("The new page could not connect.");let B=Date.now()+Pn;for(;We>0&&Date.now()<B;)await new Promise(T=>q(T,30));if(We>0)throw new Error("The current press is still running.");if(x||he!==e||t.aborted)return;let F=sa();W.replaceWith(m);try{u.replaceWith(g),v.activate(F),v.start()}catch(T){throw m.isConnected&&m.replaceWith(W),g.isConnected&&g.replaceWith(u),ns(),T}qn(),f.remove(),n.id="inbox-script",M.__inboxPage=p,s=!0}catch{!x&&he===e&&(oe={page:e,text:"Could not load the inbox update."},k())}finally{if(t&&(t.aborted=!0,M.__inboxHandoff===t&&delete M.__inboxHandoff,!s))try{t.dispose?.()}catch{}s||n?.remove(),Ln=!1}}async function fi(){We===0&&await Ge(),q(fi,_t)}function da(e,t){return de(e).some(n=>n.id===t&&n.state.is!=="settled")||ki(e).some(n=>n.id===t)||e.prs.drawn.some(n=>I(n.pr.ref)===t)}function ua(e,t){return de(e).some(n=>n.id===t&&n.feedback?.is==="notSent")||Se(t,e.lastActions[t],void 0,e.turns,e.at)?.is==="notSent"}async function we(e,t,n,s=null){if(x)return;let o=se,i=++Wn,r=()=>j.get(e)?.seq===i;t.action!=="undo"&&!e.startsWith("pr:")&&_i(e);let l=K(),c=!!_&&$(l)&&Ft(_,l).some(d=>d.id===e&&d.isWaiting);j.set(e,{seq:i,pending:s,action:t.action==="type"?null:Z(t)}),U.delete(e),In.delete(e),He.delete(e),k(),We++;try{let d=await Kn("inbox_press",{press:t,thread:_?.thread,demo:ie,...hi()},Pn);if(x||o!==se||(d.copy&&await pa(e,d.copy,r),x||o!==se||!r()))return;d.view&&ui(d.view,i),d.error&&!(_&&ua(_,e))&&U.set(e,d.error);let p=vs({error:d.error,note:d.note,isUnconfirmed:d.delivery==="unconfirmed"});p&&n?.(),p&&d.view&&c&&R!==e&&ca(d.view,e);let{note:h}=d;h&&_&&da(_,e)?(In.set(e,{text:Oe(),at:Date.now()}),Ke(L),h==="stale"&&t.action==="type"&&(R=e)):h&&(ve={text:Oe(),at:Date.now()},Ke(L))}catch{if(x||o!==se||!r())return;U.set(e,"Not confirmed: the inbox did not answer.")}finally{We--,r()&&(j.delete(e),k())}}function Ft(e,t){return t==="prs"?vo(e.prs.drawn.filter(n=>n.state.is==="open").map(n=>n.pr),e.lastActions):po(e)[t]}function ca(e,t){let n=K();if(!$(n)||A[n]?.id!==t)return;let s=Ft(e,n);if(s.find(r=>r.id===t)?.isWaiting)return;let o=ho(s,t),i=o===null?-1:Si(e,n).findIndex(r=>r.id===o);if(o===null||i<0){A[n]=null;return}Mt(n,o,i),q(Ii,0)}async function pa(e,t,n){try{await navigator.clipboard.writeText(t.text)}catch{if(!n())return;U.set(e,`Could not copy ${t.name}: this tab has no clipboard access`),He.set(e,t)}}function Bn(){return Ds(R,Object.fromEntries(D))}function hi(){return je=Is(je,ae),{replies:Bn(),discarded:je,shownSince:ae}}function gi(e,t){let n=D.get(e);we(e,{action:"type",id:e,text:t},()=>{D.get(e)===n&&D.delete(e)})}function fa(e){_i(e);let t=e in Bn();D.has(e)||D.set(e,{text:"",since:_?.at??Date.now()}),R=e,Et=!0,k(),!t&&(Ve=++Wn,Ge())}function mi(e){je={...je,[e]:Date.now()},D.delete(e),R===e&&(R=null),k(),Ge()}function wi(e){return wo(e,Ue.has(e.id),j.get(e.id)?.action??null,{press:n=>{let s=n.action==="step"?e.steps[n.step]:void 0,i=e.actions.find(r=>r.press.action==="step"&&n.action==="step"&&r.press.step===n.step)?.kind==="local"&&e.item&&s?{is:"local",result:ct(As(e.item,s),Date.now())}:null;we(e.id,n,void 0,i)},reply:()=>fa(e.id),discard:()=>mi(e.id),showOptions:()=>{Ue.add(e.id),k()}})}function ha(e,t){let n=on(t,"codex"),s=t.state.is==="handedOff",o=t.id,i=Fs(t,Ue.has(o));return{id:o,view:t,handle:n.text,handleTone:n.tone,...s?{fold:{}}:{},title:t.title,...e.isNextBuild===!0&&t.holdsUpLine?{holdsUp:t.holdsUpLine}:{},age:t.at===null?void 0:ue(e.at-t.at),...i.length>0?{body:a("div",{children:i.map(r=>a("p",{class:"option-description",title:`${r.label}: ${r.description}`,children:[r.label,a("span",{class:"muted",children:[": ",r.description]})]}))})}:{},...wi(t),typing:{hint:rn(t,"Codex"),send:r=>gi(o,r)},feedback:t.feedback}}function ga(e,t,n){let s=t.state.is==="handedOff",o=t.id,i=on(t,"codex");return{id:o,view:t,handle:i.text,handleTone:i.tone,kind:n.kind,...s?{fold:{}}:{},title:t.title,age:t.at===null?void 0:ue(e.at-t.at),body:a("div",{children:[a("p",{style:{whiteSpace:"pre-line"},children:Mn(t.detail??"")}),n.path?a("p",{children:[a("span",{class:"muted",children:ee.relevantFile}),a("code",{title:n.path,children:t.fileName})]}):null]}),...wi(t),typing:{hint:rn(t,"Codex"),send:r=>gi(o,r)},feedback:t.feedback}}var Gn=e=>({lastActions:e.lastActions,turns:e.turns,now:e.at});function It(e,t,n){let s=n.kind==="local"?xn(t,n.press):null,o=s?bi(s):null;return{...n.hotkey?{hotkey:n.hotkey}:{},label:n.label,emphasis:n.emphasis,...n.icon?{icon:n.icon}:{},...n.press.action==="pr-dismiss"?{isDismiss:!0}:{},...n.isOut||j.get(e)?.action===n.press.action?{isOut:!0}:{},run:()=>{we(e,n.press,void 0,o)}}}function bi(e){return{is:"local",result:ct([e],Date.now())}}function ma(e,t,n){let s=fe(t,n),o=_o(t,n,e.lastActions),i=(p,h=null)=>()=>{we(s,{action:p,ref:t.ref,thread:n.id},void 0,h)},r=lt(n),{rest:l}=at(n.body),c=Ro(Eo(t,n,Gn(e))),d=xn(t,{action:"thread-open",ref:t.ref,thread:n.id});return{id:s,handle:o.mark.text,handleTone:o.mark.tone??void 0,isMarkDone:o.mark.isDone,...o.fold?{fold:o.fold}:{},title:o.title,meta:o.meta,age:n.at===null?void 0:ue(e.at-n.at),body:a("div",{children:[l?a("p",{class:"quote",children:Mn(Y(l,Sn))}):null,a("p",{class:"muted",children:[a("button",{type:"button",class:"link",onClick:i("thread-open",d&&bi(d)),children:r}),`${P}@${n.author}`]}),n.reply?a("p",{class:"quote",children:[a("b",{children:["@",n.reply.author,":"]})," ",Mn(Y(rt(n.reply.body),Sn))]}):null]}),keys:c.keys.map(p=>It(s,t,p)),more:c.more.map(p=>It(s,t,p)),feedback:Se(s,e.lastActions[s],void 0,e.turns,e.at)}}function wa(e,t,n){let s=Ne(t,n),o=To(n),i=o.meta;return{id:s,handle:o.mark.text,handleTone:o.mark.tone??void 0,isMarkDone:o.mark.isDone,...o.lead?{lead:`${o.lead} /`}:{},title:o.title,meta:i,age:n.finishedAt===void 0?void 0:ue(e.at-n.finishedAt),body:a("div",{class:"muted",children:i}),keys:Lo(t,n,Gn(e)).map(r=>It(s,t,r)),more:[],feedback:Se(s,e.lastActions[s],void 0,e.turns,e.at)}}function yi(e){let t=[];for(let n of e.prs.drawn)!ft(n,ae)&&!H.has(I(n.pr.ref))||t.push(n.state.is==="settled"?{...n,threads:[],checks:[]}:{...n,threads:J(n.pr).map(s=>ma(e,n.pr,s)),checks:ke(n.pr).map(s=>wa(e,n.pr,s))});return{blocks:t,rows:t.flatMap(n=>[...n.threads,...n.checks])}}function ki(e){return yi(e).rows}function Si(e,t){return t==="prs"?ki(e):xi(e,Yn(e)).byTab[t]}function xi(e,t){let n=Bn();return wn(e,s=>t.has(s),s=>s.state.is==="held"&&!(s.id in n)?null:s.item?ha(e,s):s.finding?ga(e,s,s.finding):null)}function Yn(e){return Go(e,ae,H)}var Tt={question:"questions",task:"tasks",finding:"findings"};function ba(e){let t=Date.now(),n=xi(e,Yn(e)),s=K(),o=gn(s)?n.byTab[s]:[],i=$(s)?o[Xn(o,s,e)]?.id:void 0,r=new Set,l=new Set;for(let c of Object.keys(Tt).filter(d=>kt[d]===s)){let d=n[Tt[c]],p=new Set(d.map(ce)),h=[...d];for(let[f,m]of(Lt?.[Tt[c]]??[]).entries()){let g=ce(m);!p.has(g)&&O.has(g)&&h.splice(Math.min(f,h.length),0,m)}let u=[];for(let f of h){let m=ce(f),g=O.get(m),y=p.has(m)?"settled"in f?H.has(m)?"undoing":"settled":m===i?"open":"closed":"gone",b=qo(g?.track,y,t,Ae.has(m),jt.matches);if(!b)continue;b!==g?.track&&r.add(m);let w=b.hasPanel?"row"in f&&p.has(m)?f.row:g?.openRow:void 0;O.set(m,{track:b,openRow:w}),l.add(m),u.push(f)}n[Tt[c]]=u}n.findingGroups=n.findingGroups.map(c=>({...c,entries:n.findings.filter(d=>("row"in d?d.row.kind:d.settled.finding?.kind)===c.kind)}));for(let c of[...O.keys()])l.has(c)||O.delete(c);return{lists:n,changed:r}}async function ya(e){if(H.has(e.id))return;let t=kt[e.type];H.add(e.id);try{await we(e.id,{action:"undo",id:e.id},()=>Mt(t,e.id))}finally{H.delete(e.id);let n=ne.get(e.id),s=n!==void 0&&En(n,Date.now()),o=U.get(e.id);o&&!s&&(ve={text:o,at:Date.now(),isError:!0},Ke(L)),k()}}function Xn(e,t,n){let s=A[t];if(s){let i=e.findIndex(l=>l.id===s.id);if(i>=0||O.has(s.id)||e.length===0)return i;let r=Math.min(s.index??0,e.length-1);return Mt(t,e[r].id,r),r}let o=bn(Ft(n,t));return o?e.findIndex(i=>i.id===o):-1}function Mt(e,t,n){A[e]={id:t,openedAt:Date.now(),...n===void 0?{}:{index:n}},R!==t&&(R=null),Ke(sn)}function Qn(e,t,n){let s=t[n];s&&(Mt(e,s.id,n),k())}function _i(e){let t=K();$(t)&&!A[t]&&(A[t]={id:e,openedAt:0})}function ka(){let e=K();return $(e)&&$s(A[e]?.openedAt??0,Date.now())}function Ti(e){return e.typing&&R===e.id?{keys:[],more:[]}:{keys:e.keys,more:e.more}}function Sa({k:e}){return a(bt,{action:e,isBlocked:()=>!1})}function xa(e){let t=e.feedback;return t?e.view?Hs(e.view,"codex"):Us(t,e.isMarkDone??!1,"codex"):null}function zn(e){let t=In.get(e);return t&&Date.now()-t.at<L?t.text:null}function _a(e){return!U.has(e.id)&&zn(e.id)===null&&!He.has(e.id)}function Ri({row:e,track:t,onSelect:n,now:s}){let o=t.hasPanel&&(t.state==="closing"||t.state==="leaving"),i=t.hasPanel&&!o,r=a("span",{class:`mark ${e.handleTone??""}`,children:e.handle}),l=j.has(e.id),c=j.get(e.id)?.pending??null,d=l&&c===null,p=_a(e)?e.feedback:null,h=d?null:c?xe(c,"codex"):p?xa(e):null,u=!l&&p&&pn(p)?p.at:null,f=u!==null&&!i&&!o&&p?.is!=="queued"&&p?.is!=="unconfirmed",m=!d&&Js(c??p,i||o)?h:null,g=f||m?null:h,y=d?$n:u!==null?ue(s-u):g?null:e.age,b=!l&&cn(e.feedback)?"error":void 0;return a("div",{class:`row ${i?"selected":"collapsed"}${o?" closing":""}`,onClick:i?void 0:n,children:[r,a("div",{class:"content",children:a("button",{type:"button",class:"line",...i?{tabIndex:-1,"aria-disabled":!0}:{"aria-expanded":!1},children:[a("span",{class:"text",children:[e.lead?a(C,{children:[a("span",{class:"lead",children:e.lead})," "]}):null,e.title]}),e.meta?a("span",{class:"meta",children:e.meta}):null,g?a("span",{class:`after ${b?`tone-${b}`:""}`,children:i||o?`${P}${g}`:g}):null,e.holdsUp?a("span",{class:"holds-up",children:e.holdsUp}):null]})}),a("span",{class:"side","data-room":$n,children:[f?a("span",{class:"side-label",children:h}):null,y]}),i||o?a(vi,{row:e,isClosing:o,status:m}):null]})}function vi({row:e,isClosing:t,status:n}){let{keys:s,more:o}=Ti(e),i=He.get(e.id),r=zn(e.id),l=!!e.typing&&R===e.id,c=[e.fold?.note?a("div",{class:"muted",children:e.fold.note}):null,r?a("div",{class:"muted",children:r}):null,U.has(e.id)?a("div",{class:"tone-error",children:U.get(e.id)}):null].filter(Boolean);return a("div",{class:t?"panel closing":"panel",inert:t,children:[e.body?a("div",{class:"body",children:e.body}):null,c.length>0?a("div",{children:c}):null,a(bo,{keys:s,more:o,reply:l?{id:e.id,hint:e.typing.hint,draft:()=>D.get(e.id)?.text??"",onDraft:d=>D.set(e.id,{text:d,since:D.get(e.id)?.since??_?.at??Date.now()}),send:d=>{R=null,e.typing.send(d)},exit:e.view?an(e.view):"cancel",onExit:()=>{e.view&&an(e.view)==="discard"?mi(e.id):(R=null,k())}}:null,isBlocked:ka}),n?a("div",{class:"muted",children:n}):null,i?a("div",{children:[a("div",{class:"muted",children:["Copy ",i.name," from here:"]}),a("textarea",{rows:3,readOnly:!0,value:i.text,onFocus:d=>d.currentTarget.select()}),a("button",{type:"button",class:"key",onClick:()=>{He.delete(e.id),k()},children:"Close"})]}):null]})}function Ta({settled:e,panel:t}){let{state:n}=e;if(n.is!=="settled")return null;let s=ne.get(e.id)??Date.now(),o=U.get(e.id);return a("div",{class:t?"row settled was-open":"row settled",children:[a("span",{class:"mark",children:Zs(n.delivery)}),a("div",{class:"content",children:[a("div",{class:"settled-head",children:[a("div",{class:"settled-line",children:[a("span",{class:"what",children:e.title}),a("span",{class:"outcome-label",children:[P,gt(n.label,n.delivery)]}),o?a("span",{class:"tone-error",children:[P,o]}):null]}),a(Li,{start:s,isUndoing:H.has(e.id),canUndo:n.canUndo,offersUndo:n.offersUndo,onUndo:()=>{ya(e)}})]}),t?a(vi,{row:t,isClosing:!0}):null]})]})}function Ai({entries:e,group:t,all:n,now:s}){let o=kt[t];return e.length===0?null:a("div",{class:"list",children:e.map(i=>{let r=ce(i),l=O.get(r);return a("div",{class:"entry","data-motion":r,children:"row"in i?a(Ri,{row:i.row,track:l.track,now:s,onSelect:()=>Qn(o,n,n.indexOf(i.row))}):a(Ta,{settled:i.settled,panel:l.openRow})},r)})})}function Qo(e){for(let t of e?.getAnimations?.()??[])t.startTime=0}var Ra={needsYou:"tone-needsYou",done:"done"};function On(e,t){return["mark",e?Ra[e]:null,t?"running":null].filter(Boolean).join(" ")}var zo;function va(e,t){if(!e)return;zo??=document.createElement("canvas").getContext("2d");let n=zo;n&&(n.font=getComputedStyle(e).font),e.textContent=co(t,s=>!n||n.measureText(s).width<=e.clientWidth)}function Jo({text:e,stall:t}){return!e&&!t?null:a("div",{class:"muted clamp",style:{"--lines":_e},children:[e,e&&t?lo:null,t?a("span",{class:"tone-needsYou unbroken",children:t}):null]})}function Aa({row:e}){if(e.kind==="subject"){let t=e.merged;return a("div",{class:e.hasChildren?"row has-children":"row",children:[a("span",{class:On(e.tone,e.isRunning),ref:e.isRunning?Qo:void 0,children:e.mark}),a("div",{class:"content tight",children:[a("div",{class:"clamp",style:{"--lines":_e},children:e.name}),a(Jo,{text:e.text,stall:e.stall}),t?a("div",{class:"outcome muted clamp",style:{"--lines":_e},ref:n=>va(n,t)}):null,e.was?a("div",{class:"outcome muted clamp",style:{"--lines":_e},children:[ao,e.was]}):null]})]})}return e.kind==="child"?a("div",{class:e.branch?`row child branch-${e.branch}`:"row",children:[a("span",{class:On(null,e.isRunning),ref:e.isRunning?Qo:void 0,children:e.mark}),a("div",{class:"content tight muted",children:[a("div",{class:"clamp",style:{"--lines":_e},children:e.name}),a(Jo,{text:null,stall:e.stall})]})]}):e.kind==="more"?a("div",{class:`row child branch-${e.branch}`,children:[a("span",{class:"mark"}),a("div",{class:"content tight muted",children:e.text})]}):e.kind==="look"?a("div",{class:"row look-line",children:a("div",{class:"look-rule",children:e.text})}):a("div",{class:"row",children:[a("span",{class:On(e.tone,!1),children:e.mark}),a("div",{class:"content tight muted",children:e.text})]})}function Pa({page:e}){return e.isEmpty?a("div",{class:"empty",children:[a("div",{class:"title",children:e.empty.title}),a("div",{class:"muted",children:e.empty.hint})]}):a("main",{class:"status-page",children:[e.goal?a("section",{children:a("h1",{class:"status-goal",children:e.goal})}):null,e.rows.length>0?a("section",{children:a("div",{class:"list",children:e.rows.flatMap(t=>[...t.isRuledAbove?[a("div",{class:"status-rule"},`rule-${t.id}`)]:[],a(Aa,{row:t},t.id)])})}):null]})}function Jn({title:e,count:t}){return a("div",{class:"group-title",children:[a("b",{children:e}),t>0?a("span",{class:"count",children:[P,t]}):null]})}function Nn(e,t,n){return dn(e.needsYou.closed[t==="question"?"questions":"tasks"],wt(n)).map(s=>({id:s.id,ask:s.ask,outcomeLabel:s.outcomeLabel,state:Yt(s),at:s.at,delivery:s.delivery}))}function Zo({v:e,kind:t,entries:n,all:s,now:o}){let i=t==="question"?"Questions":"Tasks",r=Fn(n),l=Nn(e,t,r),c=r.flatMap(d=>"row"in d?[d.row]:[]);return a("section",{children:[a(Jn,{title:i,count:ln(c.map(d=>d.view))}),a(Ai,{entries:n,group:t,all:s,now:o}),a(Ei,{group:t,empty:Pi(i,r),closed:l,total:ht(e.needsYou.closed[t==="question"?"questions":"tasks"],wt(r)),now:o})]})}function Fn(e){return e.filter(t=>O.get(ce(t))?.track.state!=="leaving")}function Pi(e,t){let n=t.every(s=>O.get(ce(s))?.track.state==="entering");return t.length===0||n?{text:Ks(e),isLeaving:t.length>0}:null}function Mn(e){return yt(e).map(t=>{let n=t.code?a("code",{children:t.text}):t.text;return t.italic&&(n=a("i",{children:n})),t.bold&&(n=a("b",{children:n})),t.strike&&(n=a("s",{children:n})),t.link?a(C,{children:[a("u",{children:n}),a("span",{class:"muted",children:[" ",t.link]})]}):n})}function Ei({group:e,empty:t,closed:n,total:s,now:o}){let i=qs(s,n.length),r=te.has(e),l=s>0&&(r||At.has(e));return a(C,{children:[a("div",{class:"group-end","data-motion":`end-${e}`,children:a("div",{class:"group-end-content",children:[t?a("div",{class:t.isLeaving?"group-empty leaving":"group-empty","aria-hidden":t.isLeaving,children:t.text}):null,s>0?a("button",{type:"button",class:"fold","data-fold":e,onClick:()=>Ya(e),children:[a(De,{name:r?"down":"right"}),Ws(s)]}):null]})}),l?a("div",{class:"list closed-list","data-motion":`closed-${e}`,children:[n.map(c=>a("div",{class:"entry",children:a("div",{class:"row",children:[a("span",{class:"mark",children:eo(c.state,c.delivery)}),a("div",{class:"content tight",children:[a("div",{class:"muted",children:c.ask}),a("div",{class:"outcome",children:gt(c.outcomeLabel,c.delivery)}),to(c.delivery)?a("button",{type:"button",disabled:j.has(c.id),onClick:()=>we(c.id,{id:c.id,action:"undo"}),children:"Undo"}):null]}),a("span",{class:"side",children:ue(o-c.at)})]})},`closed-${c.id}`)),i?a("div",{class:"earlier muted",children:i}):null]}):null]})}var Ea={untrusted:"Codex is not running the inbox\\u2019s hooks, so the inbox is not reading Codex\\u2019s replies. Click the hook icon beside the approval setting, then Allow all. If the icon isn\\u2019t there, open Settings, then Hooks, then Inbox, then Trust all.",modified:"Codex stopped the inbox\\u2019s hooks when the inbox updated, so the inbox is not reading Codex\\u2019s replies. To trust them again, click the hook icon beside the approval setting, then Allow all. If the icon isn\\u2019t there, open Settings, then Hooks, then Inbox, then Trust all."};function La(e){return e.heard==="heard"||e.hooksTrust?null:e.heard==="none"?["The inbox starts with your next message."]:["Items from Codex\\u2019s replies are missing.","The inbox has not heard from this chat\\u2019s hooks."]}function Oa({v:e,lists:t,now:n}){let s=t.byTab.needsYou,o=t.questions.length===0&&t.tasks.length===0,i=Nn(e,"question",t.questions).length>0||Nn(e,"task",t.tasks).length>0,r=La(e);return o&&!i?r?a("div",{class:"empty",children:[a("div",{class:"title",children:r[0]}),r[1]?a("div",{class:"muted",children:r[1]}):null]}):a("div",{class:"empty",children:[a("div",{class:"title",children:Ie("needsYou","Codex").title}),a("div",{class:"muted",children:Ie("needsYou","Codex").hint})]}):a("main",{children:[r?a("section",{children:a("div",{class:"group-title",children:[r[0],r[1]?a("div",{class:"muted",children:r[1]}):null]})}):null,a(Zo,{v:e,kind:"question",entries:t.questions,all:s,now:n}),a(Zo,{v:e,kind:"task",entries:t.tasks,all:s,now:n})]})}function Ca({v:e,lists:t,now:n}){let s=wt(Fn(t.findings)),o=l=>e.findings.closed.filter(c=>c.kind===l),i=l=>dn(o(l),s).map(c=>({id:c.id,ask:c.title,outcomeLabel:c.outcomeLabel,state:Yt(c),at:c.closedAt,delivery:c.delivery}));return t.findings.length===0&&ht(e.findings.closed,s)===0?a("div",{class:"empty",children:[a("div",{class:"title",children:Ie("findings","Codex").title}),a("div",{class:"muted",children:Ie("findings","Codex").hint})]}):a("main",{children:t.findingGroups.map(l=>{let c=Fn(l.entries),d=c.flatMap(p=>"row"in p?[p.row]:[]);return a("section",{children:[a(Jn,{title:l.title,count:ln(d.map(p=>p.view))}),a(Ai,{entries:l.entries,group:"finding",all:t.byTab.findings,now:n}),a(Ei,{group:l.kind,empty:Pi(l.title,c),closed:i(l.kind),total:ht(o(l.kind),s),now:n})]})})})}function $a({pr:e,state:t}){let n=I(e.ref),s=ne.get(n)??Date.now(),o=U.get(n);return a("div",{class:"row settled",children:[a("span",{class:"mark",children:"\\u2713"}),a("div",{class:"content",children:a("div",{class:"settled-head",children:[a("div",{class:"settled-line",children:[a("span",{class:"what",children:[a("span",{class:"tone-prs",children:["#",e.number]})," ",e.title]}),a("span",{class:"outcome-label",children:`${P}${gt(t.label,t.delivery)}`}),o?a("span",{class:"tone-error",children:`${P}${o}`}):null]}),a(Li,{start:s,isUndoing:H.has(n),canUndo:t.canUndo,offersUndo:t.offersUndo,onUndo:()=>{Ia(n,e.ref)}})]})})]})}function Li({start:e,isUndoing:t,canUndo:n,offersUndo:s,onUndo:o}){return n&&(t||En(e,Date.now()))?a("button",{type:"button",class:t?"key undo undoing":"key undo",disabled:t,onClick:o,children:[a("span",{class:t?"time-left paused":"time-left",style:{animationDuration:`${L}ms`},ref:r=>{r&&!r.style.animationDelay&&(r.style.animationDelay=`-${Math.max(0,Date.now()-e)}ms`)}},e),a(De,{name:"undo"}),"Undo"]}):s?a("button",{type:"button",class:"key undo spent",disabled:!0,tabIndex:-1,"aria-hidden":"true",children:[a(De,{name:"undo"}),"Undo"]}):null}async function Ia(e,t){if(!H.has(e)){H.add(e);try{await we(e,{action:"pr-undo",ref:t})}finally{H.delete(e),k()}}}function Da(e,t){let n=I(t);if(j.has(n)){let l=j.get(n)?.pending;return{text:l?xe(l,"codex"):$n,isError:!1}}let s=U.get(n);if(s)return{text:s,isError:!0};let o=zn(n);if(o)return{text:o,isError:!1};let i=Ao(e.lastActions,t)?null:Se(n,e.lastActions[n],void 0,e.turns,e.at);if(!i)return null;let r=xe(i,"codex");return{text:pn(i)?`${r}${P}${Le(e.at-i.at)}`:r,isError:cn(i)}}function Na({v:e,pr:t,threads:n,checks:s,openId:o,all:i,now:r}){let l=Te(e.lastActions),{status:c,head:d,unlisted:p}=it(t,l),h=Po[c],u=I(t.ref),f=Oo(t,l,e.prs.branchRef,Gn(e)).map(g=>It(u,t,g)),m=Da(e,t.ref);return a("section",{children:[a("div",{class:"pr-head",children:[a("span",{class:"tone-prs num",children:["#",t.number]})," ",t.title," ",a("span",{class:h?`pr-verdict tone-${h}`:"pr-verdict muted",children:d}),a("span",{class:"pr-verdict muted",children:p.map(g=>`${P}${g}`).join("")})]}),t.error?a("div",{class:"pr-status tone-error",children:xo(t.error)}):null,a("div",{class:"pr-actions keys",children:f.map(g=>a(Sa,{k:g}))}),m?a("div",{class:m.isError?"pr-last tone-error":"pr-last muted",children:m.text}):null,a("div",{class:"pr-groups",children:[a(ei,{title:kn.threads,rows:n,all:i,openId:o,now:r}),a(ei,{title:kn.checks,rows:s,all:i,openId:o,now:r})]})]})}function ei({title:e,rows:t,all:n,openId:s,now:o}){return t.length===0?null:a(C,{children:[a(Jn,{title:e,count:t.length}),a("div",{class:"list",children:t.map(i=>{let r=i.id===s;return a("div",{class:"entry",children:a(Ri,{row:i,track:{state:r?"open":"closed",since:0,hasPanel:r},now:o,onSelect:()=>Qn("prs",n,n.indexOf(i))})},i.id)})})]})}function Fa({v:e,now:t}){let{blocks:n,rows:s}=yi(e),o={isGhMissing:e.isGhMissing,isGhSignedOut:e.prs.isGhSignedOut},i=yn(o),r=So({isFetching:e.isFetchingPrs,...o},"chat");if(n.length===0)return a("div",{class:"empty",children:[a("div",{class:"title",children:r.title}),a("div",{class:"muted",children:r.hint})]});let l=s[Xn(s,"prs",e)]?.id;return a("main",{children:[i?a("div",{class:"banner-place",children:a(Pe,{banner:X(i.kind,i.text)})}):null,n.map(c=>c.state.is==="settled"?a("section",{children:a($a,{pr:c.pr,state:c.state})}):a(Na,{...c,v:e,openId:l,all:s,now:t})),e.prs.olderText?a("section",{children:a("div",{class:"group-title muted",children:e.prs.olderText})}):null]})}var Ma=6e4;function Oi(e){return mo(K(),e.status,{isFetching:e.isFetchingPrs,hasPrs:e.prs.drawn.length>0},e.statusPage?.error??null)}function ja({v:e}){let t=Date.now()-ai,n=Nt>=2?a("span",{class:t>Ma?"tone-error":void 0,children:["Last read ",Le(t),P,"retrying"]}):Oi(e).text;return a("div",{class:"status",children:n})}function Ua({v:e}){let t={needsYou:e.needsYou.count,findings:e.findings.count,prs:e.prs.count},n=i=>oo(i,t),{error:s}=Oi(e),o=K();return a("nav",{children:[a("div",{class:"tabs",children:mt(e.isNextBuild===!0).map(i=>a("button",{type:"button",class:`tab ${o===i.id?"shown":""}`,title:i.label,onClick:()=>{Vn(i.id),k()},children:[a("span",{class:"tab-symbol","aria-hidden":"true",children:i.symbol}),a("span",{class:"tab-word",children:i.label}),n(i.id)===null?null:a("span",{class:$(i.id)?`count tone-${i.id}`:"count",children:n(i.id)})]}))}),Bs([...Rt?[X(Rt.kind,Rt.text)]:[],...e.hooksTrust?[X("hooks-trust",Ea[e.hooksTrust])]:[],...oe?[X("tab-update-failed",oe.text)]:[]],s,ve&&Date.now()-ve.at<L?{text:ve.text,isError:ve.isError===!0}:null).map(i=>i.kind==="server-builds-differ"?a(Pe,{banner:i,label:"Reload",press:()=>location.reload()}):i.kind==="tab-update-failed"?a(Pe,{banner:i,label:ee.retry,press:()=>{let r=oe?.page;oe=null,k(),r&&pi(r)}}):a(Pe,{banner:i}))]})}async function Ha(){se++,ie=!ie,ae=Date.now(),re=null,Nt=0,_=null,ne=new Map,vt={},O.clear(),Lt=null,A.needsYou=null,A.findings=null,A.prs=null,R=null,k(),await Ge()}function Pe({banner:e,label:t,press:n}){return a("div",{class:`banner banner-${e.tone}`,role:e.tone==="notice"?"status":"alert",children:[a("span",{children:[a("strong",{class:"lead",children:e.lead}),e.body?` ${e.body}`:null]}),t&&n?a("button",{type:"button",class:"key",onClick:n,children:t}):null]})}function Va({lists:e}){if(!_||!e)return re!==null?a(Pe,{banner:X("read-failed",`Could not read the inbox. ${re}`),label:"Reload",press:()=>{Pt?Ge():Un()}}):ii?a("div",{class:"notice muted",children:Ys}):null;let t=_,n=t.at,s=K();return a(C,{children:[ie?a("div",{class:"banner-place",children:a(Pe,{banner:X("demo",Gs),label:"Hide demo",press:()=>{Ha()}})}):null,a(Ua,{v:t}),s==="needsYou"?a(Oa,{v:t,lists:e,now:n}):s==="findings"?a(Ca,{v:t,lists:e,now:n}):s==="prs"?a(Fa,{v:t,now:n}):a(Pa,{page:t.statusPage}),a("footer",{children:[null,a("div",{class:"footer-end",children:[a(ja,{v:t}),a("span",{class:"version",children:Xs(bs.version,t.isNextBuild===!0)})]})]})]})}var Zn={duration:300,easing:"cubic-bezier(.19, 1, .22, 1)"},Dt={duration:200,easing:"cubic-bezier(.65, 0, .35, 1)"},es={duration:200,easing:"cubic-bezier(.8, 0, .4, 1)",fill:"forwards"},jt=matchMedia("(prefers-reduced-motion: reduce)");function Wa(){let e=new Map;for(let t of W.querySelectorAll("[data-motion]"))e.set(t.dataset.motion,{el:t,height:t.getBoundingClientRect().height});return e}function qa(e,t,n,s){e.style.overflow="hidden",e.dataset.to=String(s);let o=e.animate(t,n);Ot.add(o);let i=()=>{Ot.delete(o),!x&&e.getAnimations().length===0&&Ci(e)};o.onfinish=i,o.oncancel=i}function jn(e){for(let t of e.getAnimations())t.cancel();Ci(e)}function Ci(e){e.style.overflow="",delete e.dataset.to}function ts(e){return[...e.children].reduce((t,n)=>t+n.getBoundingClientRect().height,0)}function Ye(e,t,n,s){let o=i=>({height:`${i.height}px`,opacity:i.opacity});qa(e,[o(t),o(n)],s,n.height)}function $i(e,t){Ye(e,{height:0,opacity:0},{height:t,opacity:1},Zn)}function Ka(e,t){if(jt.matches){Ae.clear();return}let n=new Set([...t].map(o=>O.get(o)?.track.state)),s=n.has("leaving")?{...es,fill:"none"}:n.has("entering")?Zn:Dt;for(let o of W.querySelectorAll("[data-motion]")){let i=o.dataset.motion,r=e.get(i);if(o.dataset.closing)continue;let l=O.get(i)?.track.state,c=!r||r.el!==o,d=()=>o.getAnimations().length>0||c?o.getBoundingClientRect().height:r.height;if(l&&t.has(i)&&Ba(o,l,d)||l==="closing"||l==="settling"||l==="leaving")continue;if(l&&!xt(l)&&!j.has(i)){jn(o);continue}let p=l||o.classList.contains("group-end")?ts(o):o.scrollHeight;if(c){!l&&Ae.delete(i)&&$i(o,p);continue}let h=o.getAnimations();if(h.length>0&&Math.abs(Number(o.dataset.to)-p)<1)continue;let u=d(),f=h.length>0?Number(getComputedStyle(o).opacity):1;for(let m of h)m.cancel();Math.abs(u-p)<1&&f>.99||Ye(o,{height:u,opacity:f},{height:p,opacity:1},l?Dt:s)}Ae.clear()}function Ba(e,t,n){switch(t){case"opening":return!1;case"entering":return jn(e),$i(e,ts(e)),!0;case"closing":case"settling":return Ga(e,ti(e,n)),!0;case"leaving":{let s=ti(e,n);for(let o of e.getAnimations())o.cancel();return Ye(e,s,{height:0,opacity:0},es),!0}default:return jn(e),!0}}function ti(e,t){return{height:t(),opacity:Number(getComputedStyle(e).opacity)}}function Ga(e,t){let n=e.querySelector(".panel.closing"),s=e.querySelector(".row.closing");s?.classList.remove("closing"),n&&(n.style.display="none");let o=ts(e);n&&(n.style.display=""),s?.classList.add("closing");for(let i of e.getAnimations())i.cancel();Ye(e,t,{height:o,opacity:1},{...Dt,fill:"forwards"})}function Ya(e){let t=W.querySelector(`[data-motion="closed-${e}"]`);if(!te.has(e)){te.add(e),At.delete(e)&&t?delete t.dataset.closing:Ae.add(`closed-${e}`),k();return}if(te.delete(e),!t||jt.matches){k();return}At.add(e),k(),t.dataset.closing="1";let n=t.getBoundingClientRect().height;for(let s of t.getAnimations())s.cancel();Ye(t,{height:n,opacity:1},{height:0,opacity:0},es),q(()=>{te.has(e)||!At.delete(e)||k()},200)}function Ii(){x||(W.querySelector(".row.selected")?.scrollIntoView({block:"nearest"}),jt.matches||q(()=>W.querySelector(".row.selected")?.scrollIntoView({block:"nearest"}),220))}function ns(){document.documentElement.style.setProperty("--row-pad",`${8}px`),document.documentElement.style.setProperty("--status-row-pad",`${4.75}px`),document.documentElement.style.setProperty("--banner-pad-y",`${8}px`),document.documentElement.style.setProperty("--banner-gap",`${8}px`),document.documentElement.style.setProperty("--pulse",`${uo}ms`),document.documentElement.style.setProperty("--move",`${200}ms ${Dt.easing}`),document.documentElement.style.setProperty("--enter",`${300}ms ${Zn.easing}`)}var Di=50;function Ke(e){q(k,e+Di)}var Re=null;function Xa(){let e=Date.now(),t=[...O.values()].flatMap(({track:s})=>xt(s.state)?[s.since+St[s.state]]:[]);if(t.length===0)return;let n=Math.min(...t)+Di;Re&&Re.at<=n||(Re&&Ct(Re.timer),Re={at:n,timer:q(()=>{Re=null,k()},n-e)})}function k(){if(x||!N)return;let e=Wa(),t=_?ba(_):null;Lt=t?.lists??null,Xa(),Gt(a(Va,{lists:Lt}),W),Ka(e,t?.changed??new Set);let n=Et&&R?document.getElementById(`type-${R}`):null;n&&(Et=!1,n.focus())}var Me=null;document.addEventListener("pointerdown",e=>{N&&(!(e.target instanceof Element)||!W.contains(e.target)||!e.target.closest(".list, .fold")||(Me={x:e.clientX,y:e.clientY},document.body.classList.add("still")))},{signal:Be.signal});document.addEventListener("pointermove",e=>{N&&(!Me||Math.hypot(e.clientX-Me.x,e.clientY-Me.y)<3||(Me=null,document.body.classList.remove("still")))},{signal:Be.signal});document.addEventListener("keydown",e=>{if(!N||e.metaKey||e.ctrlKey||e.altKey||!_)return;let t=e.target;if(t?.closest("input, textarea")){e.key==="Escape"&&t.tagName==="INPUT"&&(R=null,k());return}let n=mt(_.isNextBuild===!0).find(h=>h.hotkey===e.key);if(n){Vn(n.id),k();return}let s=K();if(!$(s))return;let o=Si(_,s),i=Xn(o,s,_),r=e.key==="j"||e.key==="ArrowDown"?1:e.key==="k"||e.key==="ArrowUp"?-1:0;if(r!==0){e.preventDefault(),Qn(s,o,Math.max(0,Math.min(o.length-1,i+r))),Ii();return}let l=o[i];if(!l)return;let{keys:c,more:d}=Ti(l),p=[...c,...d].find(h=>h.hotkey===e.key);p&&(e.preventDefault(),p.isOut||p.run())},{signal:Be.signal});function Ni(){x||!N||!Pt||Yo||(Yo=!0,Dn(ri),Dn(Cn),parent.postMessage({jsonrpc:"2.0",method:"ui/notifications/initialized",params:{}},"*"),fi())}function Un(){return x?Promise.resolve(!1):Pt?Promise.resolve(!0):Fe||(re=null,N&&k(),Fe=di("ui/initialize",{protocolVersion:"2026-01-26",appInfo:{name:"inbox",version:"0.2.13"},appCapabilities:{tools:{}}},$t).then(e=>x?!1:(ri=e?.hostContext??{},Pt=!0,Ni(),!0)).catch(()=>(N&&!x&&(re="The inbox could not connect to Codex.",k()),!1)).finally(()=>{Fe=null}),Fe)}function ni(){Ni(),q(()=>{ii=!0,!_&&re===null&&k()},ra)}function Qa(e){if(x||!Q||Q.aborted)throw new Error("The new page stopped.");li(e),N=!0,ns(),k()}Q?Q.ready({initialize:Un,activate:Qa,start:ni,dispose:qn}):(ns(),li(),Un(),ni());})();\n\n    </script>\n  </body>\n</html>\n';
+var tab_default = '<!doctype html>\n<html lang="en">\n  <head>\n    <meta charset="utf-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1" />\n    <meta name="inbox-handoff" content="1" />\n    <title>Inbox</title>\n    <style id="inbox-style">\n      /* The host\'s variables when Codex passes them; otherwise the pane\'s own colors. */\n      :root {\n        color-scheme: light;\n        --bg: var(--color-background-primary, #ffffff);\n        --text: var(--color-text-primary, #1f1f1f);\n        --muted: var(--color-text-secondary, #595959);\n        --key: #243bf5; --amber: #745417; --findings: #7b00e8; --prs: #006363; --done: #25652f; --error: #a5293d; --error-mark: #a5293d;\n        --needs-you: var(--amber);\n        --issue: var(--amber);\n        --sans: var(--font-sans, -apple-system, system-ui, sans-serif);\n        --mono: var(--font-mono, ui-monospace, \'SF Mono\', Menlo, monospace);\n        --raised: color-mix(in srgb, var(--text) 9%, var(--bg));\n        --selected: color-mix(in srgb, var(--text) 6%, var(--bg));\n        --age: color-mix(in srgb, var(--muted) 90%, var(--bg));\n        --hover: color-mix(in srgb, var(--key) 14%, transparent);\n        --soft: color-mix(in oklab, var(--text) 8%, transparent);\n        --soft-hover: color-mix(in oklab, var(--text) 10%, transparent);\n        --row-hover: color-mix(in oklab, var(--soft) 50%, transparent);\n        --quick: 150ms ease;\n        --mark-x: 18px;\n        --text-x: 44px;\n      }\n      @media (prefers-color-scheme: dark) {\n        :root:not([data-theme=\'light\']) {\n          color-scheme: dark;\n          --bg: var(--color-background-primary, #171717);\n          --text: var(--color-text-primary, #ececec);\n          --muted: var(--color-text-secondary, #a8a8a8);\n          --key: #b1b9f9; --amber: #ffc107; --findings: #cab0ff; --prs: #8cc8c0; --done: #7ecd8f; --error: #ffa3b0; --error-mark: #ff6b80;\n          --raised: color-mix(in srgb, var(--text) 11%, var(--bg));\n          --selected: color-mix(in srgb, var(--text) 8%, var(--bg));\n          --age: color-mix(in srgb, var(--muted) 85%, var(--bg));\n          --soft: color-mix(in oklab, var(--text) 12%, transparent);\n          --soft-hover: color-mix(in oklab, var(--text) 14%, transparent);\n        }\n      }\n      :root[data-theme=\'dark\'] {\n        color-scheme: dark;\n        --key: #b1b9f9; --amber: #ffc107; --findings: #cab0ff; --prs: #8cc8c0; --done: #7ecd8f; --error: #ffa3b0; --error-mark: #ff6b80;\n        --raised: color-mix(in srgb, var(--text) 11%, var(--bg));\n        --selected: color-mix(in srgb, var(--text) 8%, var(--bg));\n        --age: color-mix(in srgb, var(--muted) 85%, var(--bg));\n        --soft: color-mix(in oklab, var(--text) 12%, transparent);\n        --soft-hover: color-mix(in oklab, var(--text) 14%, transparent);\n      }\n      * {\n        box-sizing: border-box;\n      }\n      body {\n        margin: 0;\n        background: var(--bg);\n        color: var(--text);\n        font: 13px/20px var(--sans);\n        -webkit-font-smoothing: antialiased;\n        cursor: default;\n        user-select: none;\n      }\n      /* Text a person may copy: what an item, PR or Status line says, an error, and the reply field. */\n      .status-head,\n      .status-page .content,\n      .earlier,\n      .body,\n      .panel .muted,\n      .settled-line .what,\n      .pr-head,\n      .tone-error,\n      input,\n      textarea {\n        cursor: auto;\n        user-select: text;\n      }\n      button {\n        font: inherit;\n        color: inherit;\n        background: none;\n        border: none;\n        padding: 0;\n        text-align: left;\n      }\n      :focus-visible {\n        outline: 1.5px solid var(--key);\n        outline-offset: 1px;\n        border-radius: 4px;\n      }\n      .muted {\n        color: var(--muted);\n      }\n      .tone-needsYou {\n        color: var(--needs-you);\n      }\n      .tone-findings {\n        color: var(--findings);\n      }\n      .tone-prs {\n        color: var(--prs);\n      }\n      .tone-done {\n        color: var(--done);\n      }\n      .tone-error {\n        color: var(--error);\n      }\n      .notice {\n        padding: 10px 16px;\n        overflow-wrap: anywhere;\n      }\n      /* A message about the inbox\'s own state, in the tone of what it says. */\n      .banner {\n        --tone: var(--error);\n        display: flex;\n        align-items: center;\n        justify-content: space-between;\n        gap: 12px;\n        flex-basis: 100%;\n        padding: var(--banner-pad-y) 12px;\n        border: 1px solid color-mix(in srgb, var(--tone) 30%, var(--bg));\n        border-radius: 10px;\n        background: color-mix(in srgb, var(--tone) 9%, var(--bg));\n        color: var(--text);\n        line-height: 19px;\n        overflow-wrap: anywhere;\n        cursor: auto;\n        user-select: text;\n      }\n      .banner-warning {\n        --tone: var(--needs-you);\n      }\n      /* --muted is see-through in the Codex app, so a notice mixes from the text color. */\n      .banner-notice {\n        --tone: var(--text);\n      }\n      .banner .lead {\n        font-weight: 600;\n        color: var(--tone);\n      }\n      /* The tab bar\'s rows sit 4px apart. */\n      nav > .banner {\n        margin-top: calc(var(--banner-gap) - 4px);\n      }\n      #app > .banner {\n        margin: 12px 12px 0;\n      }\n      .banner-place {\n        padding: 12px 12px 0;\n      }\n      .banner .key {\n        flex: none;\n        white-space: nowrap;\n        color: var(--text);\n        cursor: default;\n        user-select: none;\n      }\n\n      nav {\n        container: tab-bar / inline-size;\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        gap: 4px 16px;\n        padding: 12px 12px 0;\n      }\n      .tabs {\n        display: flex;\n        flex-wrap: wrap;\n        gap: 4px;\n      }\n      .tab {\n        position: relative;\n        white-space: nowrap;\n        padding: 6px 12px;\n        border-radius: 6px;\n        color: var(--muted);\n      }\n      .tab:hover {\n        color: var(--text);\n      }\n      .tab.shown {\n        background: var(--raised);\n        color: var(--text);\n        font-weight: 600;\n      }\n      .tab .count {\n        font-weight: 600;\n        margin-left: 6px;\n      }\n      /* --muted is see-through in the Codex app, and a color emoji takes its color\'s transparency. */\n      .tab-symbol {\n        display: none;\n        color: var(--text);\n      }\n      @container tab-bar (width < 316px) {\n        .tab-symbol {\n          display: inline;\n        }\n        .tab-word {\n          position: absolute;\n          width: 1px;\n          height: 1px;\n          overflow: hidden;\n          clip-path: inset(50%);\n        }\n      }\n      .status {\n        margin-left: auto;\n        color: var(--muted);\n        font-size: 12px;\n      }\n\n      main {\n        display: flex;\n        flex-direction: column;\n        padding: 8px 0 4px;\n      }\n      section {\n        position: relative;\n        padding: 10px 0;\n      }\n      section + section::before {\n        content: \'\';\n        position: absolute;\n        top: 0;\n        left: var(--text-x);\n        right: 0;\n        height: 1px;\n        background: var(--soft);\n      }\n      .group-title {\n        padding: 0 14px 6px var(--text-x);\n      }\n      .group-title {\n        position: relative;\n      }\n      .group-title b {\n        font-weight: 600;\n      }\n      .group-mark {\n        position: absolute;\n        left: var(--mark-x);\n        width: calc(var(--text-x) - var(--mark-x) - 8px);\n        text-align: center;\n      }\n      .group-mark.done {\n        color: var(--done);\n      }\n      .group-mark.issue {\n        color: var(--issue);\n      }\n      .group-title .count {\n        color: var(--muted);\n        white-space: pre;\n      }\n\n      .pr-head,\n      .pr-status,\n      .pr-actions,\n      .pr-last {\n        padding: 0 14px 0 var(--text-x);\n        overflow-wrap: anywhere;\n      }\n      .pr-head {\n        font-weight: 600;\n      }\n      .pr-head .rank,\n      .pr-head .num,\n      .pr-head .pr-verdict {\n        font-weight: 400;\n      }\n      .pr-actions {\n        margin-top: 8px;\n      }\n      .pr-last {\n        margin-top: 6px;\n      }\n      .pr-groups {\n        margin-top: 12px;\n      }\n      .pr-groups .list {\n        --mark-x: 41px;\n        --text-x: 67px;\n      }\n      .pr-groups .group-title + .list {\n        margin-bottom: 6px;\n      }\n      .link {\n        padding: 0;\n        text-align: left;\n        text-decoration: underline;\n        text-decoration-color: color-mix(in oklab, var(--text) 30%, transparent);\n        text-underline-offset: 2px;\n      }\n      .link:hover {\n        text-decoration-color: currentColor;\n      }\n\n      .row {\n        display: grid;\n        grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr) auto;\n        padding: var(--row-pad) 14px var(--row-pad) var(--mark-x);\n      }\n      .row.selected {\n        background-color: var(--selected);\n      }\n      .mark {\n        align-self: start;\n        padding-right: 8px;\n        text-align: center;\n        color: var(--muted);\n      }\n      .mark.done {\n        color: var(--done);\n      }\n      .mark-shape {\n        width: 8px;\n        height: 8px;\n        overflow: visible;\n      }\n      .mark.issue {\n        color: var(--issue);\n      }\n      .mark.error {\n        color: var(--error-mark);\n      }\n      .side {\n        align-self: start;\n        margin-left: 12px;\n        color: var(--age);\n        font-variant-numeric: tabular-nums;\n        white-space: nowrap;\n        text-align: right;\n      }\n      .mark.tone-needsYou,\n      .mark.needsYou,\n      .side.tone-needsYou {\n        color: var(--needs-you);\n      }\n      .side[data-room]::after {\n        content: attr(data-room);\n        display: block;\n        height: 0;\n        overflow: hidden;\n        visibility: hidden;\n      }\n      .side-label {\n        display: inline-block;\n        max-width: 11em;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        vertical-align: bottom;\n        margin-right: 4px;\n      }\n      .row.collapsed:hover .side {\n        color: var(--muted);\n      }\n      .content {\n        min-width: 0;\n        display: flex;\n        flex-direction: column;\n      }\n      /* Its space above is padding, not a gap, so the row\'s height grows smoothly when the panel mounts. */\n      .panel {\n        display: flex;\n        flex-direction: column;\n        gap: 8px;\n        padding: 8px 0 2px;\n      }\n      .row > .panel {\n        grid-column: 2 / -1;\n      }\n      .content.tight {\n        display: flex;\n        flex-direction: column;\n        gap: 0;\n      }\n      .line {\n        display: flex;\n        flex-direction: column;\n        width: 100%;\n        min-width: 0;\n      }\n      .line .text {\n        min-width: 0;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        display: -webkit-box;\n        -webkit-line-clamp: 2;\n        -webkit-box-orient: vertical;\n      }\n      .line .after {\n        color: var(--muted);\n      }\n      .row.collapsed .line .after:not(.tone-error) {\n        color: var(--age);\n      }\n      .row.collapsed:hover .line .after:not(.tone-error) {\n        color: var(--muted);\n      }\n      .line .after.tone-error {\n        color: var(--error);\n      }\n      .row.selected .line,\n      .row.closing .line {\n        display: block;\n      }\n      .row.selected .line .text,\n      .row.closing .line .text {\n        display: inline;\n        font-weight: 600;\n      }\n      .row.selected .line .after,\n      .row.closing .line .after {\n        white-space: normal;\n        font-weight: 400;\n      }\n      .line .lead {\n        color: var(--muted);\n        font-weight: 400;\n      }\n      .line .meta {\n        display: block;\n        color: var(--muted);\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n      }\n      .row.collapsed:not(:hover) .line .meta {\n        color: var(--age);\n      }\n      .line .holds-up {\n        display: block;\n        color: var(--muted);\n        font-weight: 400;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n      }\n      .row.selected .line .meta {\n        display: none;\n      }\n      .quote {\n        white-space: pre-line;\n      }\n      .row.collapsed:hover {\n        background-color: var(--row-hover);\n      }\n      .still .row.collapsed:not(:active):hover {\n        background-color: transparent;\n      }\n      .still .fold:not(:active):hover {\n        color: var(--muted);\n      }\n      .title {\n        font-weight: 600;\n      }\n      .body {\n        overflow-wrap: anywhere;\n      }\n      .body p {\n        margin: 0;\n      }\n      .body p + p {\n        margin-top: 4px;\n      }\n      .body .option-description {\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n      }\n      .body .option-description + .option-description {\n        margin-top: 0;\n      }\n      code {\n        padding: 1px 4px;\n        border-radius: 4px;\n        background: var(--soft);\n        font-family: var(--mono);\n      }\n      .keys {\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        gap: 6px;\n      }\n      .follow-ups {\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        gap: 6px;\n        max-width: 100%;\n      }\n      .key {\n        display: inline-flex;\n        align-items: center;\n        justify-content: center;\n        gap: 5px;\n        min-height: 26px;\n        padding: 3px 11px;\n        border: 1px solid color-mix(in oklab, var(--text) 28%, transparent);\n        border-radius: 13px;\n        background: transparent;\n        font-weight: 400;\n        text-align: center;\n        max-width: 100%;\n        white-space: normal;\n        overflow-wrap: anywhere;\n      }\n      .key:not(:disabled):hover {\n        background: var(--soft);\n      }\n      .key:focus-visible {\n        outline-width: 2px;\n        outline-offset: 2px;\n        border-radius: 13px;\n      }\n      .key.primary {\n        border-color: transparent;\n        background: var(--text);\n        color: var(--bg);\n      }\n      .key.primary:not(:disabled):hover {\n        background: color-mix(in srgb, var(--text) 82%, var(--bg));\n      }\n      .key .icon {\n        flex: none;\n        width: 14px;\n        height: 14px;\n      }\n      .key.ghost {\n        padding: 0 4px;\n        border-color: transparent;\n        background: none;\n        color: var(--muted);\n      }\n      .key.ghost:not(:disabled):hover {\n        background: none;\n        color: var(--text);\n      }\n      .key.out {\n        opacity: 0.4;\n        transition: opacity var(--quick);\n      }\n      .actions {\n        display: flex;\n        flex-direction: column;\n        gap: 4px;\n      }\n      form {\n        display: flex;\n        align-items: center;\n        gap: 6px;\n      }\n      input {\n        flex: 1;\n        min-width: 0;\n        min-height: 28px;\n        font: inherit;\n        color: inherit;\n        background: transparent;\n        border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);\n        border-radius: 10px;\n        padding: 4px 10px;\n      }\n      input::placeholder {\n        color: var(--muted);\n      }\n      /* The radius again, since :focus-visible sets 4px. */\n      input:focus,\n      textarea:focus {\n        outline: none;\n        border-color: color-mix(in oklab, var(--text) 32%, transparent);\n        border-radius: 10px;\n      }\n      textarea {\n        width: 100%;\n        font: 12px var(--mono);\n        color: inherit;\n        background: transparent;\n        border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);\n        border-radius: 10px;\n      }\n\n      .group-end {\n        display: flex;\n        flex-direction: column;\n        justify-content: flex-end;\n      }\n      /* Keeps the fold\'s margin inside, so its height is the whole end\'s content height. */\n      .group-end-content {\n        display: flow-root;\n        position: relative;\n      }\n      .group-empty {\n        padding: var(--row-pad) 14px var(--row-pad) var(--text-x);\n        color: var(--muted);\n      }\n      .group-empty.leaving {\n        position: absolute;\n        inset: auto 0 100% 0;\n        pointer-events: none;\n        animation: fade-out var(--enter) forwards;\n      }\n      @keyframes fade-out {\n        to {\n          opacity: 0;\n        }\n      }\n      .fold {\n        display: block;\n        margin: 8px 0 0 calc(var(--mark-x) - 1px);\n        padding: 1px 4px;\n        border-radius: 5px;\n        color: var(--muted);\n      }\n      .fold:hover {\n        color: var(--text);\n      }\n      .fold .icon {\n        width: 12px;\n        height: 12px;\n        margin-right: calc(var(--text-x) - var(--mark-x) - 15px);\n        vertical-align: -1px;\n      }\n      .closed-list {\n        --mark-x: 41px;\n        --text-x: 67px;\n      }\n      /* The gap above a Closed list\'s rows is content, not padding, so the list opens from and closes to 0. */\n      .closed-list::before {\n        content: \'\';\n        display: block;\n        height: 4px;\n      }\n      .closed-list .row {\n        padding-top: calc(var(--row-pad) / 2);\n        padding-bottom: calc(var(--row-pad) / 2);\n      }\n      .outcome {\n        color: var(--age);\n      }\n      .settled-head {\n        display: flex;\n        align-items: center;\n        min-width: 0;\n      }\n      .row.settled.was-open {\n        transition: background-color var(--move);\n        @starting-style {\n          background-color: var(--selected);\n        }\n      }\n      .settled-line {\n        flex: 1;\n        min-width: 0;\n        overflow-wrap: anywhere;\n      }\n      .settled .outcome-label {\n        color: var(--muted);\n      }\n      /* The pill keeps the line\'s height, so the row does not grow. */\n      .key.undo {\n        flex: none;\n        white-space: nowrap;\n        border-color: transparent;\n        position: relative;\n        isolation: isolate;\n        overflow: hidden;\n        margin: -3px 0 -3px 12px;\n        background: color-mix(in oklab, var(--soft) 45%, transparent);\n      }\n      .key.undo.undoing {\n        color: var(--muted);\n      }\n      .key.undo.spent {\n        visibility: hidden;\n      }\n      .key.undo.undoing .icon {\n        animation: undo-turn 900ms linear infinite;\n      }\n      @keyframes undo-turn {\n        to {\n          transform: rotate(-360deg);\n        }\n      }\n      .time-left {\n        position: absolute;\n        inset: 0;\n        z-index: -1;\n        background: var(--soft);\n        transform-origin: left;\n        animation-name: empty;\n        animation-timing-function: linear;\n        animation-fill-mode: forwards;\n      }\n      .key.undo:not(:disabled):hover .time-left {\n        background: var(--soft-hover);\n      }\n      .time-left.paused {\n        animation-play-state: paused;\n      }\n      @keyframes empty {\n        from {\n          transform: scaleX(1);\n        }\n        to {\n          transform: scaleX(0);\n        }\n      }\n      #app {\n        display: flex;\n        flex-direction: column;\n        min-height: 100vh;\n      }\n      .empty {\n        flex: 1;\n        display: flex;\n        flex-direction: column;\n        justify-content: center;\n        padding: 32px;\n        text-align: center;\n      }\n      .empty .title {\n        margin-bottom: 4px;\n      }\n      footer {\n        margin-top: auto;\n        display: flex;\n        flex-wrap: wrap;\n        justify-content: space-between;\n        gap: 4px 16px;\n        padding: 8px 16px 16px;\n        color: var(--muted);\n        font-size: 12px;\n      }\n      .footer-end {\n        display: flex;\n        gap: 16px;\n        margin-left: auto;\n      }\n      .version {\n        color: color-mix(in srgb, var(--muted) 50%, var(--bg));\n      }\n      .demo-toggle,\n      .help-toggle {\n        padding: 0 6px;\n        border-radius: 5px;\n        color: var(--muted);\n      }\n      .demo-toggle:hover,\n      .help-toggle:hover {\n        color: var(--text);\n        background: var(--hover);\n      }\n      /* The keys start under the group title, and every description lines up after the widest key. */\n      .help-keys {\n        display: grid;\n        grid-template-columns: max-content minmax(0, 1fr);\n        gap: 4px 12px;\n        padding: var(--row-pad) 14px var(--row-pad) var(--text-x);\n      }\n      .help-keys b {\n        white-space: nowrap;\n      }\n      .earlier {\n        padding: 2px 14px 2px var(--text-x);\n      }\n      /* The head starts where the list\'s marks do. */\n      .status-head {\n        padding: 0 14px 0 var(--mark-x);\n        overflow-wrap: anywhere;\n      }\n      .status-page .row {\n        padding-top: var(--status-row-pad);\n        padding-bottom: var(--status-row-pad);\n      }\n      .status-page .mark {\n        text-align: left;\n      }\n      .mark.running {\n        animation: running-pulse var(--pulse) ease-in-out infinite;\n      }\n      @keyframes running-pulse {\n        50% {\n          opacity: 0.3;\n        }\n      }\n      .status-page .content {\n        overflow-wrap: anywhere;\n      }\n      .status-page .row.child {\n        padding-left: var(--text-x);\n      }\n      .status-page .content > .actions {\n        margin-top: 6px;\n      }\n      .status-page .clamp {\n        display: -webkit-box;\n        -webkit-box-orient: vertical;\n        -webkit-line-clamp: var(--lines);\n        overflow: hidden;\n      }\n      .status-page .unbroken {\n        white-space: nowrap;\n      }\n      /* The tree line runs under the middle of a subject\'s mark, and its arm reaches to a child\'s mark. */\n      .status-page .list {\n        --mark-middle: 6px;\n        --arm-gap: 2px;\n        --tree-x: calc(var(--mark-x) + var(--mark-middle));\n        --tree-line: color-mix(in oklab, var(--text) 15%, transparent);\n      }\n      .status-page .row.has-children,\n      .status-page .row.branch-mid,\n      .status-page .row.branch-last {\n        position: relative;\n      }\n      .status-page .row.has-children::before,\n      .status-page .row.branch-mid::before,\n      .status-page .row.branch-last::before {\n        content: \'\';\n        position: absolute;\n        left: var(--tree-x);\n        border-left: 1px solid var(--tree-line);\n      }\n      .status-page .row.has-children::before {\n        top: calc(var(--status-row-pad) + 1lh);\n        bottom: 0;\n      }\n      .status-page .row.branch-mid::before {\n        top: 0;\n        bottom: 0;\n      }\n      .status-page .row.branch-last::before {\n        top: 0;\n        height: calc(var(--status-row-pad) + 0.5lh);\n      }\n      .status-page .row.branch-mid::after,\n      .status-page .row.branch-last::after {\n        content: \'\';\n        position: absolute;\n        left: var(--tree-x);\n        top: calc(var(--status-row-pad) + 0.5lh);\n        width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));\n        border-top: 1px solid var(--tree-line);\n      }\n      /* "Last seen" in the middle of a rule that spans what the rule above a row spans: from the text column to the tab\'s edge. */\n      .status-page .row.look-line {\n        padding-left: 0;\n        padding-right: 0;\n      }\n      .status-page .look-rule {\n        grid-column: 1 / -1;\n        display: flex;\n        flex-direction: row;\n        align-items: center;\n        gap: 8px;\n        color: var(--muted);\n      }\n      .status-page .status-rule {\n        height: 1px;\n        background: var(--soft);\n      }\n      .status-page .status-rule,\n      .status-page .look-rule {\n        margin-left: var(--text-x);\n      }\n      .status-page .look-rule::before,\n      .status-page .look-rule::after {\n        content: \'\';\n        flex: 1;\n        border-top: 1px solid var(--soft);\n      }\n      .status-head h1 {\n        margin: 0;\n        font-size: 15px;\n        line-height: 22px;\n        font-weight: 600;\n      }\n      .status-head p {\n        margin: 0;\n      }\n      .banner,\n      .empty,\n      main,\n      form {\n        transition: opacity var(--quick);\n        @starting-style {\n          opacity: 0;\n        }\n      }\n      @media (prefers-reduced-motion: reduce) {\n        *,\n        *::before,\n        *::after {\n          transition-duration: 0s !important;\n        }\n        .time-left,\n        .key.undo.undoing .icon,\n        .mark.running {\n          animation: none;\n        }\n      }\n    </style>\n  </head>\n  <body>\n    <div id="app"></div>\n    <script id="inbox-script">\n      "use strict";(()=>{var ct,S,xs,dr,ee,bs,Rs,_s,Jt,it,Ie,Ts,tn,Zt,en,ur,lt={},dt=[],cr=/acit|ex(?:s|g|n|p|$)|rph|grid|ows|mnc|ntw|ine[ch]|zoo|^ord|itera/i,pt=Array.isArray;function X(e,t){for(var n in t)e[n]=t[n];return e}function nn(e){e&&e.parentNode&&e.parentNode.removeChild(e)}function pr(e,t,n){var s,o,i,a={};for(i in t)i=="key"?s=t[i]:i=="ref"?o=t[i]:a[i]=t[i];if(arguments.length>2&&(a.children=arguments.length>3?ct.call(arguments,2):n),typeof e=="function"&&e.defaultProps!=null)for(i in e.defaultProps)a[i]===void 0&&(a[i]=e.defaultProps[i]);return rt(e,a,s,o,null)}function rt(e,t,n,s,o){var i={type:e,props:t,key:n,ref:s,__k:null,__:null,__b:0,__e:null,__c:null,constructor:void 0,__v:o??++xs,__i:-1,__u:0};return o==null&&S.vnode!=null&&S.vnode(i),i}function L(e){return e.children}function at(e,t){this.props=e,this.context=t}function pe(e,t){if(t==null)return e.__?pe(e.__,e.__i+1):null;for(var n;t<e.__k.length;t++)if((n=e.__k[t])!=null&&n.__e!=null)return n.__e;return typeof e.type=="function"?pe(e):null}function fr(e){if(e.__P&&e.__d){var t=e.__v,n=t.__e,s=[],o=[],i=X({},t);i.__v=t.__v+1,S.vnode&&S.vnode(i),sn(e.__P,i,t,e.__n,e.__P.namespaceURI,32&t.__u?[n]:null,s,n??pe(t),!!(32&t.__u),o),i.__v=t.__v,i.__.__k[i.__i]=i,Ls(s,i,o),t.__e=t.__=null,i.__e!=n&&As(i)}}function As(e){if((e=e.__)!=null&&e.__c!=null)return e.__e=e.__c.base=null,e.__k.some(function(t){if(t!=null&&t.__e!=null)return e.__e=e.__c.base=t.__e}),As(e)}function ys(e){(!e.__d&&(e.__d=!0)&&ee.push(e)&&!ut.__r++||bs!=S.debounceRendering)&&((bs=S.debounceRendering)||Rs)(ut)}function ut(){try{for(var e,t=1;ee.length;)ee.length>t&&ee.sort(_s),e=ee.shift(),t=ee.length,fr(e)}finally{ee.length=ut.__r=0}}function vs(e,t,n,s,o,i,a,l,c,d,p){var h,u,f,m,g,b,y=s&&s.__k||dt,w=t.length;for(c=hr(n,t,y,c,w),h=0;h<w;h++)(f=n.__k[h])!=null&&(u=f.__i!=-1&&y[f.__i]||lt,f.__i=h,b=sn(e,f,u,o,i,a,l,c,d,p),m=f.__e,f.ref&&u.ref!=f.ref&&(u.ref&&on(u.ref,null,f),p.push(f.ref,f.__c||m,f)),g==null&&m!=null&&(g=m),4&f.__u?(c=Ps(f,c,e),u.__e&&(u.__e=null)):typeof f.type=="function"&&b!==void 0?c=b:m&&(c=m.nextSibling),f.__u&=-7);return n.__e=g,c}function hr(e,t,n,s,o){var i,a,l,c,d,p=n.length,h=p,u=0;for(e.__k=new Array(o),i=0;i<o;i++)(a=t[i])!=null&&typeof a!="boolean"&&typeof a!="function"?(typeof a=="string"||typeof a=="number"||typeof a=="bigint"||a.constructor==String?a=e.__k[i]=rt(null,a,null,null,null):pt(a)?a=e.__k[i]=rt(L,{children:a},null,null,null):a.constructor===void 0&&a.__b>0?a=e.__k[i]=rt(a.type,a.props,a.key,a.ref?a.ref:null,a.__v):e.__k[i]=a,c=i+u,a.__=e,a.__b=e.__b+1,l=null,(d=a.__i=gr(a,n,c,h))!=-1&&(h--,(l=n[d])&&(l.__u|=2)),l==null||l.__v==null?(d==-1&&(o>p?u--:o<p&&u++),typeof a.type!="function"&&(a.__u|=4)):d!=c&&(d==c-1?u--:d==c+1?u++:(d>c?u--:u++,a.__u|=4))):e.__k[i]=null;if(h)for(i=0;i<p;i++)(l=n[i])!=null&&(2&l.__u)==0&&(l.__e==s&&(s=pe(l)),$s(l,l));return s}function Ps(e,t,n){var s,o;if(typeof e.type=="function"){for(s=e.__k,o=0;s&&o<s.length;o++)s[o]&&(s[o].__=e,t=Ps(s[o],t,n));return t}e.__e!=t&&(t&&e.type&&!t.parentNode&&(t=pe(e)),t=n.insertBefore(e.__e,t||null));do t=t&&t.nextSibling;while(t!=null&&t.nodeType==8);return t}function gr(e,t,n,s){var o,i,a,l=e.key,c=e.type,d=t[n],p=d!=null&&(2&d.__u)==0;if(d===null&&l==null||p&&l==d.key&&c==d.type)return n;if(s>(p?1:0)){for(o=n-1,i=n+1;o>=0||i<t.length;)if((d=t[a=o>=0?o--:i++])!=null&&(2&d.__u)==0&&l==d.key&&c==d.type)return a}return-1}function ks(e,t,n){t[0]=="-"?e.setProperty(t,n??""):e[t]=n==null?"":typeof n!="number"||cr.test(t)?n:n+"px"}function ot(e,t,n,s,o){var i,a;e:if(t=="style")if(typeof n=="string")e.style.cssText=n;else{if(typeof s=="string"&&(e.style.cssText=s=""),s)for(t in s)n&&t in n||ks(e.style,t,"");if(n)for(t in n)s&&n[t]==s[t]||ks(e.style,t,n[t])}else if(t[0]=="o"&&t[1]=="n")i=t!=(t=t.replace(Ts,"$1")),a=t.toLowerCase(),t=a in e||t=="onFocusOut"||t=="onFocusIn"?a.slice(2):t.slice(2),e.l||(e.l={}),e.l[t+i]=n,n?s?n[Ie]=s[Ie]:(n[Ie]=tn,e.addEventListener(t,i?en:Zt,i)):e.removeEventListener(t,i?en:Zt,i);else{if(o=="http://www.w3.org/2000/svg")t=t.replace(/xlink(H|:h)/,"h").replace(/sName$/,"s");else if(t!="width"&&t!="height"&&t!="href"&&t!="list"&&t!="form"&&t!="tabIndex"&&t!="download"&&t!="rowSpan"&&t!="colSpan"&&t!="role"&&t!="popover"&&t in e)try{e[t]=n??"";break e}catch{}typeof n=="function"||(n==null||n===!1&&t[4]!="-"?e.removeAttribute(t):e.setAttribute(t,t=="popover"&&n==1?"":n))}}function Ss(e){return function(t){if(this.l){var n=this.l[t.type+e];if(t[it]==null)t[it]=tn++;else if(t[it]<n[Ie])return;return n(S.event?S.event(t):t)}}}function sn(e,t,n,s,o,i,a,l,c,d){var p,h,u,f,m,g,b,y,w,A,Y,F,_,st,xe,Re,E=t.type;if(t.constructor!==void 0)return null;128&n.__u&&(c=!!(32&n.__u),i=[l=t.__e=n.__e]),(p=S.__b)&&p(t);e:if(typeof E=="function"){h=a.length;try{if(w=t.props,A=E.prototype&&E.prototype.render,Y=(p=E.contextType)&&s[p.__c],F=p?Y?Y.props.value:p.__:s,n.__c?y=(u=t.__c=n.__c).__=u.__E:(A?t.__c=u=new E(w,F):(t.__c=u=new at(w,F),u.constructor=E,u.render=wr),Y&&Y.sub(u),u.state||(u.state={}),u.__n=s,f=u.__d=!0,u.__h=[],u._sb=[]),A&&u.__s==null&&(u.__s=u.state),A&&E.getDerivedStateFromProps!=null&&(u.__s==u.state&&(u.__s=X({},u.__s)),X(u.__s,E.getDerivedStateFromProps(w,u.__s))),m=u.props,g=u.state,u.__v=t,f)A&&E.getDerivedStateFromProps==null&&u.componentWillMount!=null&&u.componentWillMount(),A&&u.componentDidMount!=null&&u.__h.push(u.componentDidMount);else{if(A&&E.getDerivedStateFromProps==null&&w!==m&&u.componentWillReceiveProps!=null&&u.componentWillReceiveProps(w,F),t.__v==n.__v||!u.__e&&u.shouldComponentUpdate!=null&&u.shouldComponentUpdate(w,u.__s,F)===!1){t.__v!=n.__v&&(u.props=w,u.state=u.__s,u.__d=!1),t.__e=n.__e,t.__k=n.__k,t.__k.some(function(q){q&&(q.__=t)}),dt.push.apply(u.__h,u._sb),u._sb=[],u.__h.length&&a.push(u),l=pe(n);break e}u.componentWillUpdate!=null&&u.componentWillUpdate(w,u.__s,F),A&&u.componentDidUpdate!=null&&u.__h.push(function(){u.componentDidUpdate(m,g,b)})}if(u.context=F,u.props=w,u.__P=e,u.__e=!1,_=S.__r,st=0,A)u.state=u.__s,u.__d=!1,_&&_(t),p=u.render(u.props,u.state,u.context),dt.push.apply(u.__h,u._sb),u._sb=[];else do u.__d=!1,_&&_(t),p=u.render(u.props,u.state,u.context),u.state=u.__s;while(u.__d&&++st<25);u.state=u.__s,u.getChildContext!=null&&(s=X(X({},s),u.getChildContext())),A&&!f&&u.getSnapshotBeforeUpdate!=null&&(b=u.getSnapshotBeforeUpdate(m,g)),xe=p!=null&&p.type===L&&p.key==null?Os(p.props.children):p,l=vs(e,pt(xe)?xe:[xe],t,n,s,o,i,a,l,c,d),u.base=t.__e,t.__u&=-161,u.__h.length&&a.push(u),y&&(u.__E=u.__=null)}catch(q){if(a.length=h,t.__v=null,c||i!=null){if(q.then){for(t.__u|=c?160:128;l&&l.nodeType==8&&l.nextSibling;)l=l.nextSibling;i!=null&&(i[i.indexOf(l)]=null),t.__e=l}else if(i!=null)for(Re=i.length;Re--;)nn(i[Re])}else t.__e=n.__e;t.__k==null&&(t.__k=n.__k||[]),q.then||Es(t),S.__e(q,t,n)}}else i==null&&t.__v==n.__v?(t.__k=n.__k,t.__e=n.__e):l=t.__e=mr(n.__e,t,n,s,o,i,a,c,d);return(p=S.diffed)&&p(t),128&t.__u?void 0:l}function Es(e){e&&(e.__c&&(e.__c.__e=!0),e.__k&&e.__k.some(Es))}function Ls(e,t,n){for(var s=0;s<n.length;s++)on(n[s],n[++s],n[++s]);S.__c&&S.__c(t,e),e.some(function(o){try{e=o.__h,o.__h=[],e.some(function(i){i.call(o)})}catch(i){S.__e(i,o.__v)}})}function Os(e){return typeof e!="object"||e==null||e.__b>0?e:pt(e)?e.map(Os):e.constructor!==void 0?null:X({},e)}function mr(e,t,n,s,o,i,a,l,c){var d,p,h,u,f,m,g,b=n.props||lt,y=t.props,w=t.type;if(w=="svg"?o="http://www.w3.org/2000/svg":w=="math"?o="http://www.w3.org/1998/Math/MathML":o||(o="http://www.w3.org/1999/xhtml"),i!=null){for(d=0;d<i.length;d++)if((f=i[d])&&"setAttribute"in f==!!w&&(w?f.localName==w:f.nodeType==3)){e=f,i[d]=null;break}}if(e==null){if(w==null)return document.createTextNode(y);e=document.createElementNS(o,w,y.is&&y),l&&(S.__m&&S.__m(t,i),l=!1),i=null}if(w==null)b===y||l&&e.data==y||(e.data=y);else{if(i=w=="textarea"&&y.defaultValue!=null?null:i&&ct.call(e.childNodes),!l&&i!=null)for(b={},d=0;d<e.attributes.length;d++)b[(f=e.attributes[d]).name]=f.value;for(d in b)f=b[d],d=="dangerouslySetInnerHTML"?h=f:d=="children"||d in y||d=="value"&&"defaultValue"in y||d=="checked"&&"defaultChecked"in y||ot(e,d,null,f,o);for(d in y)f=y[d],d=="children"?u=f:d=="dangerouslySetInnerHTML"?p=f:d=="value"?m=f:d=="checked"?g=f:l&&typeof f!="function"||b[d]===f||ot(e,d,f,b[d],o);if(p)l||h&&(p.__html==h.__html||p.__html==e.innerHTML)||(e.innerHTML=p.__html),t.__k=[];else if(h&&(e.innerHTML=""),vs(t.type=="template"?e.content:e,pt(u)?u:[u],t,n,s,w=="foreignObject"?"http://www.w3.org/1999/xhtml":o,i,a,i?i[0]:n.__k&&pe(n,0),l,c),i!=null)for(d=i.length;d--;)nn(i[d]);l&&w!="textarea"||(d="value",w=="progress"&&m==null?e.removeAttribute("value"):m!=null&&(m!==e[d]||w=="progress"&&!m||w=="option"&&m!=b[d])&&ot(e,d,m,b[d],o),d="checked",g!=null&&g!=e[d]&&ot(e,d,g,b[d],o))}return e}function on(e,t,n){try{if(typeof e=="function"){var s=typeof e.__u=="function";s&&e.__u(),s&&t==null||(e.__u=e(t))}else e.current=t}catch(o){S.__e(o,n)}}function $s(e,t,n){var s,o;if(S.unmount&&S.unmount(e),(s=e.ref)&&(s.current&&s.current!=e.__e||on(s,null,t)),(s=e.__c)!=null){if(s.componentWillUnmount)try{s.componentWillUnmount()}catch(i){S.__e(i,t)}s.base=s.__P=s.__n=null}if(s=e.__k)for(o=0;o<s.length;o++)s[o]&&$s(s[o],t,n||typeof e.type!="function");n||nn(e.__e),e.__c=e.__=e.__e=void 0}function wr(e,t,n){return this.constructor(e,n)}function rn(e,t,n){var s,o,i,a;t==document&&(t=document.documentElement),S.__&&S.__(e,t),o=(s=typeof n=="function")?null:n&&n.__k||t.__k,i=[],a=[],sn(t,e=(!s&&n||t).__k=pr(L,null,[e]),o||lt,lt,t.namespaceURI,!s&&n?[n]:o?null:t.firstChild?ct.call(t.childNodes):null,i,!s&&n?n:o?o.__e:t.firstChild,s,a),Ls(i,e,a),e.props.children=null}ct=dt.slice,S={__e:function(e,t,n,s){for(var o,i,a;t=t.__;)if((o=t.__c)&&!o.__)try{if((i=o.constructor)&&i.getDerivedStateFromError!=null&&(o.setState(i.getDerivedStateFromError(e)),a=o.__d),o.componentDidCatch!=null&&(o.componentDidCatch(e,s||{}),a=o.__d),a)return o.__E=o}catch(l){e=l}throw e}},xs=0,dr=function(e){return e!=null&&e.constructor===void 0},at.prototype.setState=function(e,t){var n;n=this.__s!=null&&this.__s!=this.state?this.__s:this.__s=X({},this.state),typeof e=="function"&&(e=e(X({},n),this.props)),e&&X(n,e),e!=null&&this.__v&&(t&&this._sb.push(t),ys(this))},at.prototype.forceUpdate=function(e){this.__v&&(this.__e=!0,e&&this.__h.push(e),ys(this))},at.prototype.render=L,ee=[],Rs=typeof Promise=="function"?Promise.prototype.then.bind(Promise.resolve()):setTimeout,_s=function(e,t){return e.__v.__b-t.__v.__b},ut.__r=0,Jt=Math.random().toString(8),it="__d"+Jt,Ie="__a"+Jt,Ts=/(PointerCapture)$|Capture$/i,tn=0,Zt=Ss(!1),en=Ss(!0),ur=0;var Is={name:"inbox",version:"0.2.14",description:"Collects what waits on you in a Codex session: questions, tasks, findings and PRs, in a tab beside the conversation",author:{name:"Pete Petrash"},repository:"https://github.com/petekp/inbox",license:"MIT",mcpServers:"./.mcp.json",hooks:"./hooks/hooks.json",interface:{displayName:"Inbox",shortDescription:"What waits on you in this conversation",developerName:"Pete Petrash",category:"Developer Tools",capabilities:["Interactive"]}};var yr=["working","queued","waits-on-other"],Cl=[...yr,"done","dropped"];function Q(e,t){return e.length>t?`${e.slice(0,t-1)}\\u2026`:e}var kr=/[,;](?=\\s)|\\s(?=and\\s)/g;function Cs(e,t){if(t(e))return e;let n=[...e.matchAll(kr)].map(s=>`${e.slice(0,s.index).replace(/[\\s.,;:]+$/,"")}\\u2026`);return n.findLast(t)??n[0]??e}var Nl=new Intl.Segmenter(void 0,{granularity:"grapheme"});var Ml=new RegExp("\\\\p{Emoji_Presentation}|\\\\uFE0F","u");function _e(e){let t=Math.round(e/6e4);if(t<1)return"just now";if(t<60)return`${t}m ago`;let n=Math.round(t/60);return n<48?`${n}h ago`:`${Math.round(n/24)}d ago`}var Ds="no longer applies|replaced|superseded|moot",Sr=new RegExp(`^(?:closed by \\\\w+: )?(?:${Ds})`,"i"),ql=new RegExp(`^\\\\s*(?:done\\\\s*:|(?:${Ds}|no longer relevant|dealt with)\\\\b)`,"i");function ft(e){if(e.how==="dismissed")return"dismissed";if(e.how==="expired")return"lapsed";let t=Sr.test(e.outcome);return(e.how==="claude"||e.how==="update")&&t?"lapsed":"handled"}function te(e){return e.threads.filter(t=>t.isWaiting)}function ln(e,t){return te(e).filter(n=>!n.isLinesChanged&&!t(e,n))}function Rr(e){let t={pass:0,fail:0,pending:0,skip:0};for(let n of e.checks)t[n.bucket]+=1;return t}function _r(e){return`${e} ${e===1?"thread":"threads"} waiting on you`}function an(e,t,n){return`${e} ${e===1?t:n}`}function ht(e,t=()=>!1){let n=(g,b,y=[],w=": ")=>{let A=y.join(", "),Y=g==="ready"?[]:y.filter(F=>!s.includes(F));return{status:g,text:A?`${b}${w}${A}`:b,head:b,unlisted:Y}},s=[];if(e.state==="MERGED")return n("merged","Merged");if(e.state!=="OPEN")return n("closed","Closed");let{fail:o,pending:i}=Rr(e),a=te(e),l=ln(e,t).length,c=a.filter(g=>t(e,g)).length,d=a.filter(g=>g.isLinesChanged&&!t(e,g)).length,p=g=>g!==null,h=g=>(g===null||s.push(g),g),u=[e.mergeable==="CONFLICTING"?`conflicts with ${e.base}`:null,h(o>0?an(o,"failing check","failing checks"):null),e.reviewDecision==="CHANGES_REQUESTED"?"changes requested":null,h(l>0?_r(l):null)].filter(p),f=[h(c>0?`${an(c,"thread","threads")} sent to Claude`:null),h(d>0?`${an(d,"thread","threads")} on changed lines`:null),e.reviewDecision==="REVIEW_REQUIRED"?"needs approval":null,i>0?`${i} ${i===1?"check":"checks"} running`:null].filter(p);if(e.isDraft)return n("draft","Draft",[...u,...f]);if(u.length>0)return n("blocked","Blocked",u);if(f.length>0)return n("waiting","Waiting",f);let m=e.reviewDecision==="APPROVED";return n("ready","Ready to merge",[...m?["approved"]:[],"checks pass","no threads waiting on you"],m?": ":", ")}var Tr=/<\\/?(?:a|b|br|code|details|div|em|h[1-6]|hr|i|img|kbd|li|ol|p|pre|span|strong|sub|summary|sup|table|tbody|td|th|thead|tr|ul)\\b[^>]*>/g;function gt(e){return e.replace(/<!--[\\s\\S]*?-->/g,"").replace(Tr,"").replace(/^[^\\S\\n]*Useful\\?[^\\S\\n]+React[^\\S\\n]+with[^\\S\\n]+\u{1F44D}[^\\S\\n]*\\/[^\\S\\n]*\u{1F44E}\\.?[^\\S\\n]*$/gmu,"").replace(/!\\[([^\\]]*)\\]\\([^)]*\\)/g,(t,n)=>n.replace(/\\s*badge$/i,"")).trim()}function dn(e){return gt(e).replace(/\\[([^\\]]*)\\]\\([^)]*\\)/g,"$1").replace(/^\\s*(?:#{1,6}|>)\\s*/gm,"").replace(/\\*\\*|__|`/g,"").replace(/\\s+/g," ")}var un=120;function mt(e){let t=gt(e),[n="",...s]=t.split(`\n`),o=dn(n).trim();return{head:o,rest:o.length>un?t:s.join(`\n`).trim()}}function wt(e,t=e.path){return`${t}${e.line?`:${e.line}`:""}`}function Ns(e){let t=Math.max(0,Math.round(e/1e3));return t<60?`${t}s`:`${Math.floor(t/60)}m ${t%60}s`}function Te(e){return e.checks.filter(t=>t.bucket==="fail")}function bt(e){return e.replace(/\\/+$/,"").split("/").pop()??e}function js(e,t){let n=e?.delivery?.state!=="failed"?e?.turnsStarted:void 0;return n!==void 0&&n<=t.turnsStarted&&t.turnsApplied<=n}function Hs(e){return e.startsWith("pr:")||e.includes(" ")}function yt(e,t){return!e.startsWith("pr:")&&t?.kind==="handoff"&&t.action!=="address"}function ne(e){return e.action==="step"?`step-${e.step}`:e.action}function cn(e){return e.charAt(0).toUpperCase()+e.slice(1)}var Lr="This changed before your press. Nothing was sent.";function Ce(){return Lr}function Us(e){return e.error===null&&e.note===null&&!e.isUnconfirmed}function Or(e,t){switch(t.kind){case"run":return{kind:"send",text:Cr.run(e,t.command),by:{id:e.id,action:"run"}};case"open":return{kind:"open",target:t.path,name:bt(t.path)};case"link":return{kind:"open",target:t.url,name:t.name??t.url};case"copy":return{kind:"copy",text:t.text,name:t.name??"snippet",isCommand:!1};case"terminal":return{kind:"copy",text:t.command,name:t.name??Q(t.command,32),isCommand:!0}}}function Vs(e,t){return t.step.map(n=>Or(e,n))}function kt(e,t,n){return{state:"pending",parts:e.flatMap(s=>s.kind==="send"?[]:[{kind:s.kind,name:s.name,isCommand:s.kind==="copy"&&s.isCommand,error:null}]),at:t,...n?{pressId:n}:{}}}function Ws(e,t){if(!/^[if]\\d+$/.test(e))return null;let n=/^step-(\\d+)$/.exec(t.action);if(n)return{action:"step",id:e,step:Number(n[1]),label:t.text};switch(t.action){case"answer":return{action:"answer",id:e,option:t.text};case"explain":case"compare":case"address":case"issue":case"discuss":return{action:t.action,id:e};default:return null}}function qs(e,t){return e?.action===t&&e.kind!=="local"&&e.delivery?.state!=="failed"}function $r(e){return[`${e.kind==="issue"?"Issue":"Opportunity"}: ${e.title}`,e.detail,...e.path?[`File: ${e.path}`]:[]]}var Ms="Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.";var Ir=e=>["Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.","For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session\'s data outside this repo.",`Then make a page from the inbox\'s comparison template. Write the comparison as JSON in the shape the comment at the top of the template shows, with the few measures that tell the choices apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Build the page with: cat "${e}" <your JSON file> > <your page>.html`,"When the comparison is done, reply without a table, since the page holds the measures. Give your pick and say whether it changed, your reason in one line, one line on anything you did not expect, and the page\'s absolute path.","Also call the inbox\'s record tool yourself with this question\'s ask and options as listed below, and the page\'s absolute path in steps. That marks it compared. Call each choice by its name as listed."].join(`\n\n`);function Fs(e){return`"${e.ask}"${e.options.length>0?`\nOptions: ${e.options.join(" / ")}`:""}`}var Cr={answer:(e,t)=>`Re "${e.ask}": ${t}`,explain:e=>`Remind me what ${e.kind==="task"?"this task you left for me is about: why it came up, and what doing it involves":"this question you asked me is about: why it came up, what each choice would do, and which you would pick"}. ${Ms} Don\'t act on it yet.\n${Fs(e)}`,compare:(e,t)=>`${Ir(t)}\n${Fs(e)}`,run:(e,t)=>`For "${e.ask}", run this:\n\\`\\`\\`\n${t}\n\\`\\`\\``,taskReply:(e,t)=>`Re the task you left for me, "${e.ask}": ${t}`,done:e=>e.length===1?`Done: ${e[0]}`:`Done:\n${e.map(t=>`- ${t}`).join(`\n`)}`,finding:(e,t,n="")=>[t==="address"?"Please address this finding you recorded:":t==="issue"?"Please file an issue for this finding you recorded, in the issue tracker you have tools for. First check whether one already exists, and if it does, use it instead of filing a duplicate. Then close the finding with the issue\'s key or number as the reason, and give me its link. If you have no tools for an issue tracker, say so and leave the finding open.":t==="explain"?`Remind me what this finding you recorded is about: why it matters, what fixing it would involve, and whether you would fix it now. ${Ms} Don\'t act on it yet.`:t==="discuss"?"Let\'s talk through this finding you recorded before changing anything:":"About this finding you recorded:",...$r(e),...t==="typed"?["",n]:[]].join(`\n`)};var hd=`You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.\n\nYou read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.\n\nInput:\n- <head>: the top of the page, as title | description: what the session is focused on now. Never write it into a subject.\n- <subjects>: the open subjects, one per line: id | status | name | where it stands\n- <finished>: subjects already done or dropped. Do not add them again.\n- <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet\n- <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subject it holds up, or - when it has none yet\n- <tasks>: the agent\'s own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.\n- <person>: what the person just sent\n- <activity>: what the agent did this turn\n- <reply>: the agent\'s final reply\n\nAnswer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, and the head still holds, answer with the one line NO CHANGE. Most exchanges change nothing.\n\nOtherwise write only the lines that apply:\nNEW: status | name | where it stands\nSET: id or name | status | where it stands\nDONE: id or name | where it ended\nDROP: id or name | why\nDROP: id or name | why | INTO id or name\nWAS: id or name | the plan it replaces\nLINK: running or ask id | subject id or name\nHEAD: title | description\n\nA subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${6} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.\n\nThe name is a label of at most ${3} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${4} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.\n\nThe head says what the session is focused on now: the work the person would name if asked what this session is doing. It may cover several subjects. Its title is a label of at most ${3} words, like a subject\'s name, such as "Offline sync" or "2.5 release". Its description is at most ${8} words on what the session is doing about that focus, such as "Adding offline sync to the notes app" or "Fixing the sync bug, then shipping 2.5". The description never repeats the title, and never says where one piece stands, such as "PR ready for review". The head follows the same rules on time words as where it stands.\n\nStatus is one of: working, queued, waits-on-other.\n- working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask. When the work stopped for another reason, it is queued, waits on something, or is done.\n- queued: planned, not started.\n- waits-on-other: it waits on something other than the person, such as a build, a review or another session.\n\nRules:\n- Change a subject by its id. Write NEW only when no subject in <subjects> covers it.\n- When work started and finished in this exchange, write NEW for it, then DONE with its name.\n- Write SET only when where a subject stands changed. Never reword a subject that did not change.\n- Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.\n- When the person files a piece for later, out of this session\'s plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.\n- When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.\n- Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.\n- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject\'s text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.\n- Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.\n- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.`;var Bs=[..."abcfghilm"],P="\\u2007\\xB7\\u2002",j={issue:{title:"Issues",mark:"\\u25B2",tone:"issue"},opportunity:{title:"Opportunities",mark:"\\u2726",tone:"done"}},Ys=[{kind:"question",title:"Questions",list:"questions"},{kind:"task",title:"Tasks",list:"tasks"}],z={working:{mark:"\\u25CF",tone:null},queued:{mark:"\\u25CB",tone:null},"waits-on-other":{mark:"\\u25CC",tone:null},done:{mark:"\\u2713",tone:"done"},dropped:{mark:"\\u2717",tone:null}},De={mark:"\\u25C6",tone:"needsYou"},Xs=["\\u25CF","\\u25C9","\\u25CE","\\u25C9"],St=Xs[0],xt={handled:z.done.mark,dismissed:"\\u2715",lapsed:z.dropped.mark},Rt={waiting:{text:De.mark,tone:"needsYou"},sent:{text:z.done.mark,tone:"done"},failing:{text:j.issue.mark,tone:"error"}},Qs=[{mark:St,tone:null,isRunning:!0,words:"Working. It moves while the work runs or your message is on its way."},{mark:z.queued.mark,tone:null,isRunning:!1,words:"Queued: not started yet"},{mark:z["waits-on-other"].mark,tone:null,isRunning:!1,words:"Waits on something other than you, such as a build or a review"},{mark:De.mark,tone:De.tone,isRunning:!1,words:"Waits on you"},{mark:z.done.mark,tone:"done",isRunning:!1,words:"Done, or handed to the agent"},{mark:z.dropped.mark,tone:null,isRunning:!1,words:"Dropped before it was done"},{mark:xt.dismissed,tone:null,isRunning:!1,words:"Dismissed by you"},{mark:j.issue.mark,tone:j.issue.tone,isRunning:!1,words:"Something is wrong: an issue or a failing check"},{mark:j.opportunity.mark,tone:j.opportunity.tone,isRunning:!1,words:"Opportunity: something that could be better"}],Ae={open:"Help",close:"\\u2715 Close help",keys:"Keys",marks:"Marks"};function zs(e,t,n,s){let o=Me(t).map(c=>c.hotkey).join(" "),i=$(n),a=n==="overview"&&s,l={keys:o,does:"Switch tabs"};switch(e){case"desktop":return[];case"terminal":return[l,...i||a?[{keys:"j k",does:"Select the next or previous row"}]:[],{keys:"ctrl+x tab",does:"Move focus to the line above the prompt, then the pane, then the prompt"}];case"codex":return[l,...i?[{keys:"j k \\u2191 \\u2193",does:"Select the next or previous row"}]:[],{keys:"?",does:"Open or close help"},{keys:"esc",does:"Close help, or leave a reply field"}];case"omp":return[{keys:`tab ${o}`,does:"Switch tabs"},...i?[{keys:"\\u2191 \\u2193 j k",does:"Move between rows"},{keys:"\\u2190 \\u2192",does:"Pick a button"},{keys:"\\u21B5",does:"Press the picked button"},{keys:"r",does:"Reply to the selected row"},{keys:"u",does:"Undo the last close"}]:[...a?[{keys:"j k",does:"Select the next or previous row with a button"},{keys:"\\u21B5",does:"Press the selected row\'s button"}]:[],{keys:"\\u2191 \\u2193",does:"Scroll the page"}],{keys:"?",does:"Open or close help"},{keys:"esc",does:"Close help, then the panel"}]}}var Hr=3,O=5120;var gn=400,Ur=1e3,Vr=30*6e4;function Wr(e,t){return e?.delivery?.state==="queued"&&t-e.at>=Ur}function qr(e,t){return e?.delivery?.state==="unconfirmed"?"unconfirmed":e?.delivery?.state!=="queued"?null:Wr(e,t)?"queued":"sending"}function Js(e,t){return e>0&&t-e<gn}function _t(e,t){return t!==null&&e>=t}function Tt(e,t){return e.state.is!=="settled"||_t(e.state.at,t)}function Zs(e,t){return Object.fromEntries(Object.entries(e).filter(([,n])=>_t(n,t)))}function eo(e,t){return Object.fromEntries(Object.entries(t).flatMap(([n,s])=>n===e||s.text.trim()!==""?[[n,s.since]]:[]))}var Kr=e=>e==="terminal"||e==="omp",se={retry:"Try again",send:"Send",cancel:"Cancel",discard:"Discard",clickField:"Click the field to type",relevantFile:"Relevant file: ",allOptions:e=>`All ${e} options`};function to(e,t){return e.optionDescriptions.filter(n=>t||!n.isFolded)}function mn(e,t){return e.replyKind==="answer"?"Your answer":`Your reply to ${t}`}function no(e,t){if(!e.isPrimary)return e.label;let n=`${e.label} (recommended)`;return t&&!t(n)?e.label:n}function wn(e){return e.state.is==="held"?"discard":"cancel"}function so(e){return e.state.is==="open"}function bn(e){return e.filter(t=>t!==void 0&&so(t)).length}function oo(e,t,n){return e.is==="done"&&t?e.label:fe(e,n)}function io(e,t){let n=e.feedback;return n?ro(e)?n.is==="done"?n.label:fe(n,t).replace(/^\u2713 /,""):fe(n,t):null}function ro(e){let t=e.feedback;return e.state.is==="handedOff"&&(t?.is==="done"||t?.is==="local"&&t.result.state==="done")}var ao={text:St,isRunning:!0};function lo(e){if(e.state.is==="settled")return vt(e.state);let t=e.feedback;return e.state.is!=="handedOff"||!t?null:t.is==="sending"||t.is==="queued"?ao:ro(e)?{text:z.done.mark,isRunning:!1,tone:"done"}:{text:"",isRunning:!1}}function Br(e){return e==="sending"||e==="queued"}function he(e){return[...e.needsYou.questions,...e.needsYou.tasks,...e.findings.rows]}function uo(e){return e.filter(t=>t.state.is==="settled").map(t=>t.id)}function yn(e,t){return e.filter(n=>!t.has(n.id)).slice(0,Hr)}function At(e,t){return e.filter(n=>!t.has(n.id)).length}function co(e){return`${e} closed`}function po(e,t){return e>t?`${e-t} earlier`:null}function ge(e){let t=_e(e);return t==="just now"?"now":t.replace(/ ago$/,"")}function fo(e){return`No open ${e.toLowerCase()}`}var Gr={demo:"notice","update-failed":"warning","tools-refused":"error","read-failed":"error",stopped:"error","gh-missing":"warning","gh-signed-out":"warning","press-note":"notice","press-failed":"error","hooks-trust":"error","server-gone":"error","server-load-failed":"error","server-builds-differ":"warning","tab-update-failed":"warning"};function J(e,t){let n=t.indexOf(". "),s=n<0?t:t.slice(0,n+1),o=n<0?null:t.slice(n+2);return{kind:e,tone:Gr[e],lead:s,body:o}}function ho(e,t,n){return[...e,...t?[J("update-failed",t)]:[],...n?[J(n.isError?"press-failed":"press-note",n.text)]:[]]}var go="Sample entries. Buttons here send nothing.",mo="Reading the inbox\\u2026";function wo(e,t){return t?`v${e} \\xB7 next`:`v${e}`}function ve(e,t,n,s,o,i){let a=t?.result;if(n&&o-n.at<O&&n.at>=Math.max(t?.at??0,a?.at??0))return{is:"note",note:n.note,at:n.at};if(a&&(a.state!=="done"||o-a.at<O))return{is:"local",result:a};if(!t||t.kind==="local")return null;let l=t.delivery,c=qr(t,o);if(c==="queued"||c==="unconfirmed")return{is:c,label:t.text,at:t.at};if(l?.state==="failed")return{is:"notSent",reason:l.reason,retry:Ws(e,t)};let d=js(t,s),p=t.action==="compare"&&!(i!==void 0&&i>=t.at),h=o-t.at>=Vr,u=Xr[t.action];if(t.kind==="talk"&&u&&(d||p&&!h))return{is:"working",label:u,at:t.at};if(c==="sending")return{is:"sending",label:t.text,at:t.at};if(p)return{is:"noComparison",at:t.at};if(!d&&!Hs(e)&&yt(e,t))return{is:"stillOpen",at:t.at};let f=t.kind==="handoff"&&t.action.startsWith("step-");return{is:"done",label:Qr[t.action]?.(t.text)??t.text,at:t.at,...f?{isHandedStep:!0}:{},...zr.has(t.action)?{isStillWaiting:!0}:{}}}function Yr(e,t,n,s,o,i,a){if(t.is==="settled")return null;let l=ve(e,n,s,o,i,a);if(t.is!=="held")return l;let c=l?.is==="notSent"&&n?.action==="type"&&n.at>=t.at;return l?.is==="note"||c?l:{is:"closed",label:t.label,at:t.at}}function kn(e,t,n,s,o,i){return Yr(e,t,n,void 0,s,o,i)}var Xr={explain:"Explaining\\u2026",compare:"Comparing\\u2026",discuss:"Discussing\\u2026","thread-discuss":"Discussing\\u2026","thread-draft":"Drafting a reply\\u2026"},Qr={address:()=>"Handed off",issue:()=>"Asked to file",discuss:()=>"Discussed",explain:()=>"Explained",compare:()=>"Compared",dismiss:()=>"Dismissed",type:()=>"Replied","thread-address":()=>"Addressed","thread-discuss":()=>"Discussed","thread-draft":()=>"Drafted a reply","pr-conflicts":()=>"Asked to resolve conflicts","pr-merge":()=>"Asked to merge","pr-address-all":e=>e.replace(/^Address\\b/,"Addressed"),"check-fix":()=>"Asked to fix"},zr=new Set(["check-fix"]);function Sn(e){return e?.is==="notSent"||e?.is==="local"&&e.result.state==="failed"}function xn(e){return e.is==="done"||e.is==="working"||e.is==="stillOpen"||e.is==="noComparison"||e.is==="sending"||e.is==="queued"||e.is==="unconfirmed"||e.is==="closed"}function bo(e){return e?.is==="working"||e?.is==="sending"||e?.is==="queued"||e?.is==="unconfirmed"||e?.is==="local"&&e.result.state==="pending"}function Rn(e,t){return bo(t)?(t?.is==="local"?t.result.action:e?.action)??null:null}function _n(e,t){let n=t?.is==="unconfirmed"?null:Rn(e,t);return n==="type"?null:n}function yo(e,t,n){return qs(e,t)&&(!n||e?.isRepeat===!0)}function ko(e,t){let n=e?.is==="done"&&e.isStillWaiting===!0;return t&&(bo(e)||n)}var Jr=e=>Kr(e)?"Run it in a terminal, or type ! and paste.":"Run it in Terminal.",pn={open:{pending:"Opening",done:"Opened",failed:"open"},copy:{pending:"Copying",done:"Copied",failed:"copy"},"refresh-prs":{pending:"Refreshing",done:"Refreshed",failed:"refresh"}};function Zr(e,t){let s=e.parts.length>1&&e.parts.every(a=>a.kind==="open"&&a.error===null&&/^PR #\\d+$/.test(a.name))?[{...e.parts[0],name:`${e.parts.length} PRs`}]:e.parts;if(e.state==="pending")return`${s.map(a=>`${pn[a.kind].pending} ${a.name}`).join(P)}\\u2026`;let o=s.map(a=>a.error===null?`${pn[a.kind].done} ${a.name}`:`Could not ${pn[a.kind].failed} ${a.name}: ${a.error}`).join(P);if(e.state==="failed")return o;let i=s.some(a=>a.kind==="copy"&&a.isCommand);return`\\u2713 ${o}${i?`. ${Jr(t)}`:""}`}function fe(e,t){switch(e.is){case"note":return Ce();case"local":return Zr(e.result,t);case"sending":return e.label;case"queued":return hn(e.is,e.label);case"unconfirmed":return hn(e.is,e.label);case"notSent":return`Not sent: ${e.reason}`;case"done":return e.isHandedStep?`\\u2713 Handed off: ${e.label}`:`\\u2713 ${e.label}`;case"working":return e.label;case"stillOpen":return"Still open";case"noComparison":return"No comparison came back";case"closed":return e.label}}function hn(e,t){return e==="queued"?`Queued: ${t}`:`Not confirmed: ${t}`}function vt(e){return Tn(e.closedAs,e.delivery)}function Tn(e,t){return Br(t)?ao:{text:t===null?xt[e]:"",isRunning:!1}}function So(e){return e!==null&&typeof e=="object"&&e.canUndo}function Pt(e,t){return t&&typeof t=="object"?`${e} \\xB7 Not sent: ${t.error}`:t===null||t==="sending"?e:hn(t,e)}var Ne=[{id:"overview",label:"Status",symbol:"\\u{1F9ED}"},{id:"needsYou",label:"Asks",symbol:"\\u{1F64B}"},{id:"findings",label:"Finds",symbol:"\\u{1F50D}"},{id:"prs",label:"PRs",symbol:"\\u{1F500}"}],xo=e=>e.map((t,n)=>({...t,hotkey:String(n+1)})),ea=xo(Ne),ta=xo(Ne.filter(e=>e.id!=="overview"));function Me(e){return e?ea:ta}function Ro(e,t){let n=Me(t);return n.some(s=>s.id===e)?e:n[0].id}function _o(e,t){return $(e)&&t[e]>0?String(t[e]):null}function An(e){return e==="needsYou"||e==="findings"}function $(e){return e!=="overview"}function To(e){return Ne.some(t=>t.id===e)}var Ao=Ne.filter(e=>$(e.id)),vn=Ne.filter(e=>An(e.id));var vo="was: ",Gs="merged in: ",Po=" \\xB7 ",Pe=3;var Ld={mark:z.working.mark,tone:null};var na=300,Eo=Xs.length*na;function Lo(e,t){return`${Gs}${Cs(e,n=>t(`${Gs}${n}`))}`}function Oo(e,t){let n=e.split(" "),s=n.map((o,i)=>i===0?e:`${n.slice(0,n.length-i).join(" ")}\\u2026`);return s.find(t)??s.at(-1)}function Fe(e,t){return e==="needsYou"?{title:"Nothing needed",hint:`${t}\'s questions and the tasks only you can do show up here.`}:{title:"No findings yet",hint:`${t} flags issues and opportunities it spots beyond your task.`}}function Pn(e,t,n){let s=c=>c.flatMap(d=>{if(d.state.is==="settled")return t(d.id)?[{settled:d,state:d.state}]:[];let p=n(d);return p===null?[]:[{row:p}]}),o=s(e.needsYou.questions),i=s(e.needsYou.tasks),a=Object.keys(j).map(c=>({kind:c,title:j[c].title,entries:s(e.findings.rows.filter(d=>d.finding?.kind===c))})),l=a.flatMap(c=>c.entries);return{questions:o,tasks:i,findings:l,findingGroups:a,byTab:{needsYou:[...fn(o),...fn(i)],findings:fn(l)}}}function me(e){return"row"in e?e.row.id:e.settled.id}function $o(e){let t=Pn(e,()=>!0,s=>s),n=s=>s.map(o=>"row"in o?{id:o.row.id,isWaiting:so(o.row)}:{id:o.settled.id,isWaiting:!1});return{needsYou:n([...t.questions,...t.tasks]),findings:n(t.findings)}}function En(e){return e.find(t=>t.isWaiting)?.id??null}function Io(e,t){return En(e.filter(n=>!t.includes(n.id)))}function Co(e,t){let n=e.findIndex(s=>s.id===t);return n<0?null:(e.slice(n+1).find(s=>s.isWaiting)??e.slice(0,n).reverse().find(s=>s.isWaiting))?.id??null}function fn(e){return e.flatMap(t=>"row"in t?[t.row]:[])}function Et(e){return new Set(e.flatMap(t=>"settled"in t?[t.settled.id]:[]))}function Do(e,t){let n=e.actions.filter(d=>t||!d.isFolded),s=e.actions.length-n.length,o=n.map(d=>d.press.action).lastIndexOf("answer"),i=[],a=[],l=e.feedback?.is==="notSent"?e.feedback.retry:null;if(l){let d=e.actions.find(p=>ne(p.press)===ne(l))?.kind??"talk";i.push({slot:"retry",press:l,kind:d,label:se.retry,emphasis:"normal",icon:"retry"})}let c=0;for(let[d,p]of n.entries()){let{press:h}=p;if(h.action==="answer"||h.action==="step"){let u=c<Bs.length?{hotkey:Bs[c++]}:{};i.push({slot:"choice",action:{...p,press:h},...u}),d===o&&s>0&&i.push({slot:"allOptions",count:e.actions.filter(f=>f.press.action==="answer").length,label:se.allOptions(e.actions.filter(f=>f.press.action==="answer").length),emphasis:"quiet"})}else p.hotkey&&(p.isFollowUp?a:i).push({slot:"action",action:p,hotkey:p.hotkey})}return{keys:i,more:a}}var sa={question:"View question",task:"View task"};function No(e){return e.kind!=="subject"||e.ask===null?[]:[{press:{action:"show-ask",askId:e.ask.id},label:sa[e.ask.kind],hotkey:"v",kind:"view"}]}var oa="Updating\\u2026",ia="Refreshing PRs\\u2026";function Mo(e,t,n,s){if(e==="prs")return{text:n.isFetching&&n.hasPrs?ia:null,error:null};let o=(e==="overview"?s:null)??t.error;return{text:t.isUpdating?oa:null,error:o}}var ra=0;function r(e,t,n,s,o,i){t||(t={});var a,l,c=t;if("ref"in c)for(l in c={},t)l=="ref"?a=t[l]:c[l]=t[l];var d={type:e,props:c,key:n,ref:a,__k:null,__:null,__b:0,__e:null,__c:null,constructor:void 0,__v:--ra,__i:-1,__u:0,__source:o,__self:i};if(typeof e=="function"&&(a=e.defaultProps))for(l in a)c[l]===void 0&&(c[l]=a[l]);return S.vnode&&S.vnode(d),d}var aa={check:"M20 6 9 17l-5-5",play:"M7 4.5v15l12-7.5z",copy:"M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1",open:"M7 17 17 7M8 7h9v9",retry:"M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5",undo:"M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11",right:"m9 18 6-6-6-6",down:"m6 9 6 6 6-6"},la={done:"check",retry:"retry",open:"open",copy:"copy",run:"play"};function je({name:e}){return r("svg",{class:"icon",viewBox:"0 0 24 24",fill:"none",stroke:"currentColor","stroke-width":"2","stroke-linecap":"round","stroke-linejoin":"round","aria-hidden":"true",children:r("path",{d:aa[e]})})}function Fo(e,t,n,s){let o=Do(e,t),i=a=>{if(a.slot==="retry")return{label:a.label,emphasis:a.emphasis,icon:a.icon,run:()=>s.press(a.press)};if(a.slot==="allOptions")return{label:a.label,emphasis:a.emphasis,run:s.showOptions};let l=a.action;return{label:no(l),emphasis:l.emphasis,...a.hotkey?{hotkey:a.hotkey}:{},...l.icon?{icon:la[l.icon]}:{},...l.press.action==="dismiss"?{isDismiss:!0}:{},...l.isOut||ne(l.press)===n?{isOut:!0}:{},run:l.press.action==="type"?s.reply:l.press.action==="discard"?s.discard:()=>s.press(l.press)}};return{keys:o.keys.map(i),more:o.more.map(i)}}function Lt({action:e,isBlocked:t}){return r("button",{type:"button",class:`${e.emphasis==="primary"?"key primary":e.emphasis==="quiet"?"key ghost":"key"}${e.isDismiss?" dismiss":""}${e.isOut?" out":""}`,disabled:t()||e.isOut===!0,onClick:()=>{!t()&&!e.isOut&&e.run()},children:[e.icon?r(je,{name:e.icon}):null,e.label]})}function Ln({keys:e,more:t,reply:n,isBlocked:s}){return n?r("div",{class:"actions",children:r("form",{onSubmit:o=>{o.preventDefault();let i=n.draft().trim();i&&n.send(i)},children:[r("input",{id:`type-${n.id}`,value:n.draft(),placeholder:n.hint,"aria-label":n.hint,onInput:o=>n.onDraft(o.currentTarget.value)}),r("button",{type:"submit",class:"key primary",children:se.send}),r("button",{type:"button",class:"key ghost",onClick:n.onExit,children:se[n.exit]})]})}):r("div",{class:"actions",children:e.length+t.length>0?r("div",{class:"keys",children:[e.map(o=>r(Lt,{action:o,isBlocked:s})),t.length>0?r("div",{class:"follow-ups",children:t.map(o=>r(Lt,{action:o,isBlocked:s}))}):null]}):null})}var jo=\'fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"\';function Ho(e){let t=e-4;return`<path d="M1.2,${t+8.2} Q3.4,${t+4.4} 7.4,${t-.2}" ${jo} stroke-width="1.9"/><path d="M2.2,${t+1.4} Q3.8,${t+4.4} 5.6,${t+7.4}" ${jo} stroke-width="1.6"/>`}var Uo=30;function be(e,t){return Vo(e.ref,t.id)}function He(e,t){return Wo(e.ref,t.name)}function Vo(e,t){return`${e} thread ${t}`}function Wo(e,t){return`${e} check ${t}`}function C(e){return`pr:${e}`}var ca="The inbox could not find gh. It needs gh to read your PRs.",du=`gh did not answer within ${2e4/1e3} seconds`,pa="gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.";function On(e){return e.isGhMissing?{kind:"gh-missing",text:ca}:e.isGhSignedOut?{kind:"gh-signed-out",text:pa}:null}function fa(e){return`Your PRs show here when this ${e} opens or links one, or when your branch has one.`}function qo(e,t){return{title:e.isFetching?"Checking for PRs\\u2026":"No PRs",hint:On(e)?.text??fa(t)}}function Ko(e){return`Last refresh failed: ${e}`}var ha="Refresh PRs",ga={kind:"refresh-prs",name:"PRs"};var ma="Dismiss merged",$n="pr:merged",In={threads:"Review threads",checks:"Failing checks"};function Bo(e,t,n){let s=Ue(n)(e,t),o=!s&&t.isLinesChanged;return{mark:wa(s?n[be(e,t)]?.delivery:null),fold:s||o?t.isLinesChanged?{note:`Lines changed since this comment${P}still open on GitHub`}:{}:null,title:Q(mt(t.body).head,un),meta:[wt(t,bt(t.path)),o?"Lines changed":"",t.reply?`@${t.reply.author}: ${dn(t.reply.body)}`:`@${t.author}`].filter(Boolean).join(P)}}function wa(e){return e===null?{...Rt.waiting,isDone:!1,isRunning:!1}:e?.state==="queued"?{text:St,tone:null,isDone:!1,isRunning:!0}:e?.state==="unconfirmed"?{text:"",tone:null,isDone:!1,isRunning:!1}:{...Rt.sent,isDone:!0,isRunning:!1}}function Go(e){return{mark:{...Rt.failing,isDone:!1,isRunning:!1},lead:e.workflow||null,title:e.name,meta:ba(e)}}var Cn=1200;function Yo(e){return{keys:e.filter(t=>!t.isFollowUp),more:e.filter(t=>t.isFollowUp)}}function ba(e){return e.startedAt!==void 0&&e.finishedAt!==void 0?`Failed after ${Ns(e.finishedAt-e.startedAt)}`:"Failed"}function Ue(e){return(t,n)=>{let s=e[be(t,n)];return s?.kind==="handoff"&&s.delivery?.state!=="failed"&&s.at>((n.reply??n).at??0)}}function Xo(e,t){let n=Ue(t);return e.flatMap(s=>[...te(s).map(o=>({id:be(s,o),isWaiting:!n(s,o)})),...Te(s).map(o=>{let i=He(s,o),a=t[i];return{id:i,isWaiting:!yt(i,a)||a?.delivery?.state==="failed"}})])}function ya(e,t){let n=e[C(t)];return n?.action==="pr-dismiss"?n.at:null}function Qo(e,t){return ya(e,t)!==null}function zo(e){return`${e}.\\u2002`}var Jo={ready:"done",blocked:"needsYou",waiting:null,draft:null,merged:"findings",closed:"error"};function ka(e,t){return{kind:"open",target:t.reply?.url||t.url||e.url,name:"the comment"}}function Sa(e){return{kind:"open",target:e.url,name:`PR #${e.number}`}}function xa(e,t){return{kind:"open",target:t.url??e.url,name:t.url?"the log":`PR #${e.number}`}}function Ra(e){return e.action==="pr-conflicts"||e.action==="check-fix"}function _a(e){return{kind:"refresh-prs",name:`PR #${e.number}`}}function Dn(e,t){if(Ra(t))return _a(e);switch(t.action){case"thread-open":{let n=e.threads.find(s=>s.id===t.thread);return n?ka(e,n):null}case"pr-open":return Sa(e);case"pr-refresh":return ga;case"log":{let n=e.checks.find(s=>s.name===t.check);return n?xa(e,n):null}default:return null}}function Nn(e,t,n,s=null){if(e?.delivery?.state!=="failed")return null;let o=e.action;return s!==null?o==="check-fix"?{press:{action:o,ref:t,check:s},kind:e.kind}:null:n!==null&&(o==="thread-address"||o==="thread-draft"||o==="thread-discuss")?{press:{action:o,ref:t,thread:n},kind:e.kind}:n===null&&(o==="pr-conflicts"||o==="pr-address-all"||o==="pr-merge")?{press:{action:o,ref:t},kind:e.kind}:null}function Mn(e,t){let n=e.lastActions[t],s=kn(t,{is:"open"},n,e.turns,e.now);return{last:n,pressing:Rn(n,s),out:_n(n,s)}}function we(e,t,n){return yo(e.last,t,e.pressing===t)?`${n} again`:n}function Fn(e,t){return t.map(n=>({...n,isOut:n.press.action===e.out}))}function jn(e){return e?[{press:e.press,label:"Try again",kind:e.kind,emphasis:"normal",icon:"retry",isRetry:!0}]:[]}function Zo(e,t,n){let s=Mn(n,Vo(e.ref,t.id)),o={ref:e.ref,thread:t.id};return Fn(s,[...jn(Nn(s.last,e.ref,t.id)),{press:{action:"thread-address",...o},label:we(s,"thread-address","Address"),kind:"handoff",emphasis:"primary",hotkey:"a"},{press:{action:"thread-draft",...o},label:we(s,"thread-draft","Draft reply"),kind:"talk",emphasis:"normal",hotkey:"r"},{press:{action:"thread-open",...o},label:"Open comment",kind:"local",emphasis:"normal",icon:"open",hotkey:"o"},{press:{action:"thread-discuss",...o},label:we(s,"thread-discuss","Discuss"),kind:"talk",emphasis:"quiet",hotkey:"d",isFollowUp:!0}])}function ei(e,t,n){let s=Mn(n,Wo(e.ref,t.name)),o={ref:e.ref,check:t.name};return Fn(s,[...jn(Nn(s.last,e.ref,null,t.name)),{press:{action:"check-fix",...o},label:we(s,"check-fix","Fix"),kind:"handoff",emphasis:"primary",hotkey:"a"},{press:{action:"log",...o},label:"Open log",kind:"local",emphasis:"normal",icon:"open",hotkey:"o"}])}function ti(e,t,n,s){let o=Mn(s,C(e.ref)),{status:i}=ht(e,t),a=ln(e,t).length,l=[...i==="ready"?[{press:{action:"pr-merge",ref:e.ref},label:we(o,"pr-merge","Merge"),kind:"handoff"}]:[],...e.state==="OPEN"&&e.mergeable==="CONFLICTING"?[{press:{action:"pr-conflicts",ref:e.ref},label:we(o,"pr-conflicts","Resolve conflicts"),kind:"handoff"}]:[],...a>1?[{press:{action:"pr-address-all",ref:e.ref},label:we(o,"pr-address-all",`Address all ${a} threads`),kind:"handoff"}]:[]];return Fn(o,[...e.error?[{press:{action:"pr-refresh",ref:e.ref},label:ha,kind:"local",emphasis:"normal",icon:"retry"}]:[],...jn(Nn(o.last,e.ref,null)),...l.map((c,d)=>({...c,emphasis:d===0?"primary":"normal"})),{press:{action:"pr-open",ref:e.ref},label:"Open PR",kind:"local",emphasis:"normal",icon:"open"},...e.ref===n?[]:[{press:{action:"pr-dismiss",ref:e.ref},label:"Dismiss",kind:"mark",emphasis:"quiet"}]])}function Ta(e,t){return e.state==="MERGED"&&e.ref!==t}function ni(e,t){return e.some(s=>s.state.is==="open"&&Ta(s.pr,t))?[{press:{action:"pr-dismiss-merged"},label:ma,kind:"mark",emphasis:"normal",hotkey:"m",isOut:!1}]:[]}function si(e,t){let n={...e},s={};for(let o of Object.keys(t)){let i=t[o],a=e[o];s[o]=i&&a?i.filter(l=>!a.has(l)):[],i&&(n[o]=new Set(i))}return{seen:n,added:s}}var Hn=Ao.map(e=>e.id);function oi(e){return{needsYou:[...e.needsYou.questions,...e.needsYou.tasks].map(t=>t.id),findings:e.findings.rows.map(t=>t.id)}}function ii(e){let t=n=>n.filter(s=>s.state.is!=="settled").map(s=>s.id);return{needsYou:t([...e.needsYou.questions,...e.needsYou.tasks]),findings:t(e.findings.rows)}}function ri(e,t,n){return t==="findings"?Object.keys(j).map(s=>({isUnfolded:n(s),rows:e.findings.closed.filter(o=>o.kind===s)})):Ys.map(s=>({isUnfolded:n(s.kind),rows:e.needsYou.closed[s.list]}))}function ai({rows:e,settled:t,closed:n,hasBlocker:s}){return!s&&!e.some(o=>o.state.is!=="settled"||t.has(o.id))&&!n.some(o=>o.isUnfolded&&o.rows.some(i=>!t.has(i.id)))}function li(e,t,n,s){return n?e.find(o=>o!==t&&s[o].length>0)??null:null}function di(e){return e.flatMap(({pr:t,state:n})=>[C(t.ref),...n.is==="settled"?[]:[...te(t).map(s=>be(t,s)),...Te(t).map(s=>He(t,s))]])}function ui(e,t){return e===0&&!t}var Aa=/`([^`\\n]+)`|\\*\\*(?=\\S)(.+?)(?<=\\S)\\*\\*(?!\\*)|~~(?=\\S)(.+?)(?<=\\S)~~|(?<![\\w*])\\*(?=\\S)([^*\\n]+?)(?<=\\S)\\*(?![\\w*])|(?<!\\w)_(?=\\S)([^_\\n]+?)(?<=\\S)_(?!\\w)|\\[([^\\]\\n]+)\\]\\((https:\\/\\/[^\\s)]+)\\)/g;function Ot(e,t={}){let n=[],s=0;for(let o of e.matchAll(Aa)){o.index>s&&n.push({...t,text:e.slice(s,o.index)});let[,i,a,l,c,d,p,h]=o;i!==void 0?n.push({...t,text:i,code:!0}):a!==void 0?n.push(...Ot(a,{...t,bold:!0})):l!==void 0?n.push(...Ot(l,{...t,strike:!0})):c!==void 0||d!==void 0?n.push({...t,text:c??d??"",italic:!0}):n.push({...t,text:p??"",link:h}),s=o.index+o[0].length}return s<e.length&&n.push({...t,text:e.slice(s)}),n}var $t={question:"needsYou",task:"needsYou",finding:"findings"};function ci(e){return{...ii(e),prs:[]}}function pi(e,t,n){return si(e,{...oi(t),prs:n?null:di(t.prs.drawn)})}function fi(e,t,n,s,o){return t==="prs"?ui(e.prs.drawn.length,o):ai({rows:t==="findings"?e.findings.rows:[...e.needsYou.questions,...e.needsYou.tasks],settled:n,closed:ri(e,t,i=>s.has(i)),hasBlocker:t==="needsYou"&&e.heard!=="heard"})}var It={entering:300,opening:200,closing:200,settling:200,leaving:200,closed:0,open:0,settled:0,undoing:0};function Ct(e){return It[e]>0}function gi(e,t,n,s=!1,o=!1){let i=t==="undoing"?"settled":t;if(!e)return s&&!o&&(i==="closed"||i==="open")?{state:"entering",since:n,hasPanel:i==="open"}:hi(void 0,i,t,n);let a=va(e)===i?e:Pa(e,i,n);return Ct(a.state)&&!o&&n-a.since<It[a.state]?a:hi(a,i,t,n)}function va({state:e,hasPanel:t}){switch(e){case"entering":return t?"open":"closed";case"opening":case"open":return"open";case"closing":case"closed":return"closed";case"settling":case"settled":case"undoing":return"settled";case"leaving":return"gone"}}function Pa(e,t,n){switch(t){case"open":return{state:"opening",since:n,hasPanel:!0};case"closed":return e.state==="leaving"?{state:"entering",since:n,hasPanel:!1}:{state:"closing",since:n,hasPanel:e.hasPanel};case"settled":return{state:"settling",since:n,hasPanel:e.hasPanel};case"gone":return{state:"leaving",since:n,hasPanel:e.hasPanel}}}function hi(e,t,n,s){if(t==="gone")return null;let o=n==="undoing"?"undoing":t;return e?.state===o?e:{state:o,since:s,hasPanel:o==="open"}}var Ou={type:"object",properties:{repo:{type:"string",description:"The repository, as owner/name."},numbers:{type:"array",items:{type:"integer"},description:`The PR numbers, first to last, at most ${Uo}. Give an empty list to clear the order.`},label:{type:"string",description:\'What the order is, in at most 4 words, such as "Merge order".\'}},required:["numbers"]};var Un=6e4;var Pc=10*6e4;var Dt=3e3,$c=O+2*Dt;function mi(e){return[...uo(he(e)),...e.prs.drawn.flatMap(t=>t.state.is==="settled"?[C(t.pr.ref)]:[])]}function wi(e,t,n){return new Map(t.map(s=>[s,e.get(s)??n]))}function bi(e,t,n=new Set){return new Set(he(e).filter(s=>s.state.is==="settled"&&(n.has(s.id)||Tt(s,t))).map(s=>s.id))}function Vn(e,t){return t-e<O}var x=null,le=!1,de=null,Mt=null,Ei=!1,Ht=!1,Ve=null,yi=!1,Li={},Kn={},Yt=0,Oi=0,Se="needsYou",ue=Date.now(),K=!1;function Xt(e){e!==Se&&(ue=Date.now()),Se=e,K=!1}function W(){let e=Ro(Se,x?.isNextBuild===!0);return e==="overview"&&!x?.statusPage?"needsYou":e}var v={needsYou:null,findings:null,prs:null},T=null,Ut=!1,D=new Map,qe={},Ke=new Set,oe=new Set,N=new Map,Bn="Sending\\u2026",U=new Map,Gn=new Map,Be=new Map,Le=null,ie=new Map,Ft={},Oe=new Set,V=new Set,jt=new Set,I=new Map,Vt=null,ts=0,Ge=0,Ye=0,re=0,ki="inbox-tab-kept",H=window,Z=H.__inboxHandoff??null,B=Z?.root??document.getElementById("app"),Ze=new AbortController,Xe=new Set,Wt=new Set,ke=new Map,R=!1,M=Z===null;Z&&(Z.dispose=ns);function G(e,t){if(R)return 0;let n=window.setTimeout(()=>{Xe.delete(n),R||e()},t);return Xe.add(n),n}function qt(e){e!==void 0&&(window.clearTimeout(e),Xe.delete(e))}function ns(){if(!R){R=!0,Ze.abort();for(let e of Xe)window.clearTimeout(e);Xe.clear();for(let e of Wt)e.onfinish=null,e.oncancel=null,e.cancel();Wt.clear();for(let e of ke.values())e.reject(new Error("Inbox page replaced"));ke.clear(),rn(null,B),M&&document.body.classList.remove("still")}}function Ca(){return{version:$(Se)?1:2,isDemo:le,tab:Se,selection:{needsYou:v.needsYou?.id??null,findings:v.findings?.id??null,prs:v.prs?.id??null},typing:T,drafts:[...D],optionsShown:[...Ke],unfolded:[...oe],shownSince:ue}}function $i(e){let t=e??H.__inboxKept??null;if(!e){delete H.__inboxKept;try{let n=sessionStorage.getItem(ki);sessionStorage.removeItem(ki),t??=n?JSON.parse(n):null}catch{}}if(!(t?.version!==1&&t?.version!==2)){le=t.isDemo,To(t.tab)&&(Se=t.tab),typeof t.shownSince=="number"&&(ue=t.shownSince);for(let n of Hn){let s=t.selection[n];v[n]=s?{id:s,openedAt:0}:null}T=t.typing,Ut=T!==null;for(let[n,s]of t.drafts)D.set(n,typeof s=="string"?{text:s,since:Date.now()}:s);for(let n of t.optionsShown)Ke.add(n);for(let n of t.unfolded)for(let s of n==="finding"?["issue","opportunity"]:[n])oe.add(s)}}function Ii(e,t,n){return R?Promise.reject(new Error("Inbox page replaced")):new Promise((s,o)=>{let i=H.__inboxRequestId=(H.__inboxRequestId??Date.now())+1,a=n===void 0?void 0:G(()=>{ke.delete(i)&&o(new Error(`The inbox did not answer in ${Math.round(n/1e3)} s`))},n);ke.set(i,{resolve:s,reject:o,timer:a}),parent.postMessage({jsonrpc:"2.0",id:i,method:e,params:t},"*")})}window.addEventListener("message",e=>{if(R)return;let t=e.data;if(!(!t||t.jsonrpc!=="2.0")){if(t.id!=null&&!t.method&&ke.has(t.id)){let n=ke.get(t.id);ke.delete(t.id),qt(n.timer),t.error?n.reject(t.error):n.resolve(t.result);return}t.method==="ui/notifications/host-context-changed"&&(M?Yn(t.params??{}):Kn=Da(Kn,t.params??{})),M&&t.id!=null&&t.method&&parent.postMessage({jsonrpc:"2.0",id:t.id,result:{}},"*")}},{signal:Ze.signal});function Yn(e){if(!(R||!M)){e.theme&&(document.documentElement.dataset.theme=e.theme);for(let[t,n]of Object.entries(e.styles?.variables??{}))document.documentElement.style.setProperty(t,n)}}function Da(e,t){return{...e,...t,styles:{...e.styles,...t.styles,variables:{...e.styles?.variables,...t.styles?.variables}}}}async function ss(e,t={},n){let s=await Ii("tools/call",{name:e,arguments:t},n);if(R)throw new Error("Inbox page replaced");if(!s||s.isError||s.structuredContent===void 0)throw new Error(s?.isError&&s.content?.[0]?.text||"The answer had nothing to show");return s.structuredContent}function Ci(e,t){if(R||t<Ge)return;Ge=t,de=null,Yt=0,Oi=Date.now();let n=ie;ie=wi(ie,mi(e),Date.now()),[...ie.keys()].some(a=>!n.has(a))&&Je(O),x=e;let s=vn.every(a=>Ft[a.id]===void 0),o=pi(Ft,e,e.isFetchingPrs);Ft=o.seen;let i=[...o.added.needsYou,...o.added.findings];for(let a of i)Oe.add(a);for(let{id:a}of vn){let l=!v[a]&&o.added[a].length>0?Io(Qt(e,a),o.added[a]):null;l&&(v[a]={id:l,openedAt:0})}Na(e,s?ci(e):o.added),k()}function Na(e,t){let n=W();if(!$(n))return;let s=ls(e),o=li(Hn,n,fi(e,n,s,oe,e.isFetchingPrs),t);o&&(Xt(o),v[o]=null)}var Ma=300,Fa=2e3,Kt=3*Dt;async function et(){let e=re,t=++ts;try{let n=await ss("inbox_view",{demo:le,tab:Se,...Fi()},Kt);if(e!==re||t<Ge)return;ye=n.devPage,ae?.page!==ye&&(ae=null);let s=ye!==Di;s&&!ae&&Ni(ye),Mt=n.isPluginFolderGone?{text:"Quit and reopen Codex to load the installed inbox. Its files were moved or removed, so it still runs the version Codex started with.",kind:"server-gone"}:n.serverLoadError?{text:`The inbox server could not load its new build, so it still runs the last one. ${n.serverLoadError}`,kind:"server-load-failed"}:n.serverBuild!=="f3fc0ed522ad"&&!s?{text:"This tab and the inbox server are from different builds.",kind:"server-builds-differ"}:null,Ci(n,t)}catch(n){if(R||e!==re||t<Ge)return;x?Yt++:de=ja(n),k()}}function ja(e){let t=typeof e=="object"&&e!==null&&typeof e.message=="string"?e.message:String(e),n=Q(t.replace(/^(Failed|Not done): /,"").replace(/\\s+/g," ").trim(),120)||"No reason given";return cn(/[.!?\u2026]$/.test(n)?n:`${n}.`)}var Di=Z?.page??H.__inboxPage,Wn=!1,ye=null,ae=null;async function Ni(e){if(Wn||R||e===Di)return;Wn=!0;let t=null,n=null,s=!1;try{let{html:o}=await ss("inbox_tab_page",{},Kt);if(R||ye!==e)return;if(!/<\\/html>\\s*$/i.test(o))throw new Error("The new page is incomplete.");let i=new DOMParser().parseFromString(o,"text/html"),a=i.getElementById("app"),l=i.getElementById("inbox-style")??i.head.querySelector("style"),c=i.getElementById("inbox-script")??i.body.querySelector("script"),d=[...i.head.querySelectorAll("script")].map(_=>_.textContent?.match(/^\\s*window\\.__inboxPage\\s*=\\s*("[^"\\n]+")\\s*;?\\s*$/)?.[1]).find(_=>_!==void 0),p=d?JSON.parse(d):null,h=i.querySelector(\'meta[name="inbox-handoff"]\')?.getAttribute("content")==="1",u=document.getElementById("inbox-style"),f=document.getElementById("inbox-script");if(!(a instanceof HTMLDivElement)||a.childNodes.length>0||!(l instanceof HTMLStyleElement)||!l.textContent||!(c instanceof HTMLScriptElement)||c.src||!c.textContent||typeof p!="string"||p!==e||!/^ui:\\/\\/inbox\\/tab-[a-f0-9]{12}$/.test(p)||!h||!(u instanceof HTMLStyleElement)||!(f instanceof HTMLScriptElement))throw new Error("The new page is incomplete.");let m=document.createElement("div");m.id="app";let g=document.createElement("style");g.id="inbox-style",g.textContent=l.textContent,n=document.createElement("script"),n.id="inbox-script-candidate",n.textContent=c.textContent;let b,y=new Promise(_=>b=_);t={page:p,root:m,aborted:!1,ready:_=>{!t?.aborted&&H.__inboxHandoff===t&&b(_)}},H.__inboxHandoff=t,document.body.append(n);let w=(_,st)=>new Promise((xe,Re)=>{let E=G(()=>Re(new Error("The new page did not start.")),st);_.then(q=>{qt(E),xe(q)},q=>{qt(E),Re(q)})}),A=await w(y,Fa);if(!await w(A.initialize(),Kt))throw new Error("The new page could not connect.");let Y=Date.now()+Un;for(;Ye>0&&Date.now()<Y;)await new Promise(_=>G(_,30));if(Ye>0)throw new Error("The current press is still running.");if(R||ye!==e||t.aborted)return;let F=Ca();B.replaceWith(m);try{u.replaceWith(g),A.activate(F),A.start()}catch(_){throw m.isConnected&&m.replaceWith(B),g.isConnected&&g.replaceWith(u),ws(),_}ns(),f.remove(),n.id="inbox-script",H.__inboxPage=p,s=!0}catch{!R&&ye===e&&(ae={page:e,text:"Could not load the inbox update."},k())}finally{if(t&&(t.aborted=!0,H.__inboxHandoff===t&&delete H.__inboxHandoff,!s))try{t.dispose?.()}catch{}s||n?.remove(),Wn=!1}}async function Mi(){Ye===0&&await et(),G(Mi,Dt)}function Ha(e,t){return he(e).some(n=>n.id===t&&n.state.is!=="settled")||Ki(e).some(n=>n.id===t)||e.prs.drawn.some(n=>C(n.pr.ref)===t)}function Ua(e,t){return he(e).some(n=>n.id===t&&n.feedback?.is==="notSent")||ve(t,e.lastActions[t],void 0,e.turns,e.at)?.is==="notSent"}async function ce(e,t,n,s=null){if(R)return;let o=re,i=++ts,a=()=>N.get(e)?.seq===i;t.action!=="undo"&&!e.startsWith("pr:")&&Gi(e);let l=W(),c=!!x&&$(l)&&Qt(x,l).some(d=>d.id===e&&d.isWaiting);N.set(e,{seq:i,pending:s,action:t.action==="type"?null:ne(t)}),U.delete(e),Gn.delete(e),Be.delete(e),k(),Ye++;try{let d=await ss("inbox_press",{press:t,thread:x?.thread,demo:le,...Fi()},Un);if(R||o!==re||(d.copy&&await Wa(e,d.copy,a),R||o!==re||!a()))return;d.view&&Ci(d.view,i),d.error&&!(x&&Ua(x,e))&&U.set(e,d.error);let p=Us({error:d.error,note:d.note,isUnconfirmed:d.delivery==="unconfirmed"});p&&n?.(),p&&d.view&&c&&T!==e&&Va(d.view,e);let{note:h}=d;h&&x&&Ha(x,e)?(Gn.set(e,{text:Ce(),at:Date.now()}),Je(O),h==="stale"&&t.action==="type"&&(T=e)):h&&(Le={text:Ce(),at:Date.now()},Je(O))}catch{if(R||o!==re||!a())return;U.set(e,"Not confirmed: the inbox did not answer.")}finally{Ye--,a()&&(N.delete(e),k())}}function Qt(e,t){return t==="prs"?Xo(e.prs.drawn.filter(n=>n.state.is==="open").map(n=>n.pr),e.lastActions):$o(e)[t]}function Va(e,t){let n=W();if(!$(n)||v[n]?.id!==t)return;let s=Qt(e,n);if(s.find(a=>a.id===t)?.isWaiting)return;let o=Co(s,t),i=o===null?-1:as(e,n).findIndex(a=>a.id===o);if(o===null||i<0){v[n]=null;return}tt(n,o,i),G(ms,0)}async function Wa(e,t,n){try{await navigator.clipboard.writeText(t.text)}catch{if(!n())return;U.set(e,`Could not copy ${t.name}: this tab has no clipboard access`),Be.set(e,t)}}function os(){return eo(T,Object.fromEntries(D))}function Fi(){return qe=Zs(qe,ue),{replies:os(),discarded:qe,shownSince:ue}}function ji(e,t){let n=D.get(e);ce(e,{action:"type",id:e,text:t},()=>{D.get(e)===n&&D.delete(e)})}function qa(e){Gi(e);let t=e in os();D.has(e)||D.set(e,{text:"",since:x?.at??Date.now()}),T=e,Ut=!0,k(),!t&&(Ge=++ts,et())}function Hi(e){qe={...qe,[e]:Date.now()},D.delete(e),T===e&&(T=null),k(),et()}function Ui(e){return Fo(e,Ke.has(e.id),N.get(e.id)?.action??null,{press:n=>{let s=n.action==="step"?e.steps[n.step]:void 0,i=e.actions.find(a=>a.press.action==="step"&&n.action==="step"&&a.press.step===n.step)?.kind==="local"&&e.item&&s?{is:"local",result:kt(Vs(e.item,s),Date.now())}:null;ce(e.id,n,void 0,i)},reply:()=>qa(e.id),discard:()=>Hi(e.id),showOptions:()=>{Ke.add(e.id),k()}})}function Vi(e){let t=lo(e);return t?{handle:t.text,isHandleRunning:t.isRunning,...t.tone?{handleTone:t.tone}:{}}:{handle:""}}function Ka(e,t){let n=t.state.is==="handedOff",s=t.id,o=to(t,Ke.has(s));return{id:s,view:t,...Vi(t),...n?{fold:{}}:{},title:t.title,...e.isNextBuild===!0&&t.holdsUpLine?{holdsUp:t.holdsUpLine}:{},age:t.at===null?void 0:ge(e.at-t.at),...o.length>0?{body:r("div",{children:o.map(i=>r("p",{class:"option-description",title:`${i.label}: ${i.description}`,children:[i.label,r("span",{class:"muted",children:[": ",i.description]})]}))})}:{},...Ui(t),typing:{hint:mn(t,"Codex"),send:i=>ji(s,i)},feedback:t.feedback}}function Ba(e,t,n){let s=t.state.is==="handedOff",o=t.id;return{id:o,view:t,...Vi(t),kind:n.kind,...s?{fold:{}}:{},title:t.title,age:t.at===null?void 0:ge(e.at-t.at),body:r("div",{children:[r("p",{style:{whiteSpace:"pre-line"},children:zn(t.detail??"")}),n.path?r("p",{children:[r("span",{class:"muted",children:se.relevantFile}),r("code",{title:n.path,children:t.fileName})]}):null]}),...Ui(t),typing:{hint:mn(t,"Codex"),send:i=>ji(o,i)},feedback:t.feedback}}var is=e=>({lastActions:e.lastActions,turns:e.turns,now:e.at});function Bt(e,t,n){let s=Dn(t,n.press),o=s?qi(s):null;return{...n.hotkey?{hotkey:n.hotkey}:{},label:n.label,emphasis:n.emphasis,...n.icon?{icon:n.icon}:{},...n.press.action==="pr-dismiss"?{isDismiss:!0}:{},...n.isOut||N.get(e)?.action===n.press.action?{isOut:!0}:{},run:()=>{ce(e,n.press,void 0,o)}}}function Wi(e){return ni(rs(e).blocks,e.prs.branchRef).map(t=>({...t.hotkey?{hotkey:t.hotkey}:{},label:t.label,emphasis:t.emphasis,...t.isOut||N.get($n)?.action===t.press.action?{isOut:!0}:{},run:()=>{ce($n,t.press)}}))}function qi(e){return{is:"local",result:kt([e],Date.now())}}function Ga(e,t,n){let s=be(t,n),o=Bo(t,n,e.lastActions),i=(p,h=null)=>()=>{ce(s,{action:p,ref:t.ref,thread:n.id},void 0,h)},a=wt(n),{rest:l}=mt(n.body),c=Yo(Zo(t,n,is(e))),d=Dn(t,{action:"thread-open",ref:t.ref,thread:n.id});return{id:s,handle:o.mark.text,handleTone:o.mark.tone??void 0,...o.mark.isRunning?{isHandleRunning:!0}:{},isMarkDone:o.mark.isDone,...o.fold?{fold:o.fold}:{},title:o.title,meta:o.meta,age:n.at===null?void 0:ge(e.at-n.at),body:r("div",{children:[l?r("p",{class:"quote",children:zn(Q(l,Cn))}):null,r("p",{class:"muted",children:[r("button",{type:"button",class:"link",onClick:i("thread-open",d&&qi(d)),children:a}),`${P}@${n.author}`]}),n.reply?r("p",{class:"quote",children:[r("b",{children:["@",n.reply.author,":"]})," ",zn(Q(gt(n.reply.body),Cn))]}):null]}),keys:c.keys.map(p=>Bt(s,t,p)),more:c.more.map(p=>Bt(s,t,p)),feedback:ve(s,e.lastActions[s],void 0,e.turns,e.at)}}function Ya(e,t,n){let s=He(t,n),o=Go(n),i=o.meta;return{id:s,handle:o.mark.text,handleTone:o.mark.tone??void 0,isMarkDone:o.mark.isDone,...o.lead?{lead:`${o.lead} /`}:{},title:o.title,meta:i,age:n.finishedAt===void 0?void 0:ge(e.at-n.finishedAt),body:r("div",{class:"muted",children:i}),keys:ei(t,n,is(e)).map(a=>Bt(s,t,a)),more:[],feedback:ve(s,e.lastActions[s],void 0,e.turns,e.at)}}function rs(e){let t=[];for(let n of e.prs.drawn)!Tt(n,ue)&&!V.has(C(n.pr.ref))||t.push(n.state.is==="settled"?{...n,threads:[],checks:[]}:{...n,threads:te(n.pr).map(s=>Ga(e,n.pr,s)),checks:Te(n.pr).map(s=>Ya(e,n.pr,s))});return{blocks:t,rows:t.flatMap(n=>[...n.threads,...n.checks])}}function Ki(e){return rs(e).rows}function as(e,t){return t==="prs"?Ki(e):Bi(e,ls(e)).byTab[t]}function Bi(e,t){let n=os();return Pn(e,s=>t.has(s),s=>s.state.is==="held"&&!(s.id in n)?null:s.item?Ka(e,s):s.finding?Ba(e,s,s.finding):null)}function ls(e){return bi(e,ue,V)}var Nt={question:"questions",task:"tasks",finding:"findings"};function Xa(e){let t=Date.now(),n=Bi(e,ls(e)),s=W(),o=An(s)?n.byTab[s]:[],i=$(s)?o[ds(o,s,e)]?.id:void 0,a=new Set,l=new Set;for(let c of Object.keys(Nt).filter(d=>$t[d]===s)){let d=n[Nt[c]],p=new Set(d.map(me)),h=[...d];for(let[f,m]of(Vt?.[Nt[c]]??[]).entries()){let g=me(m);!p.has(g)&&I.has(g)&&h.splice(Math.min(f,h.length),0,m)}let u=[];for(let f of h){let m=me(f),g=I.get(m),b=p.has(m)?"settled"in f?V.has(m)?"undoing":"settled":m===i?"open":"closed":"gone",y=gi(g?.track,b,t,Oe.has(m),zt.matches);if(!y)continue;y!==g?.track&&a.add(m);let w=y.hasPanel?"row"in f&&p.has(m)?f.row:g?.openRow:void 0;I.set(m,{track:y,openRow:w}),l.add(m),u.push(f)}n[Nt[c]]=u}n.findingGroups=n.findingGroups.map(c=>({...c,entries:n.findings.filter(d=>("row"in d?d.row.kind:d.settled.finding?.kind)===c.kind)}));for(let c of[...I.keys()])l.has(c)||I.delete(c);return{lists:n,changed:a}}async function Qa(e){if(V.has(e.id))return;let t=$t[e.type];V.add(e.id);try{await ce(e.id,{action:"undo",id:e.id},()=>tt(t,e.id))}finally{V.delete(e.id);let n=ie.get(e.id),s=n!==void 0&&Vn(n,Date.now()),o=U.get(e.id);o&&!s&&(Le={text:o,at:Date.now(),isError:!0},Je(O)),k()}}function ds(e,t,n){let s=v[t];if(s){let i=e.findIndex(l=>l.id===s.id);if(i>=0||I.has(s.id)||e.length===0)return i;let a=Math.min(s.index??0,e.length-1);return tt(t,e[a].id,a),a}let o=En(Qt(n,t));return o?e.findIndex(i=>i.id===o):-1}function tt(e,t,n){v[e]={id:t,openedAt:Date.now(),...n===void 0?{}:{index:n}},T!==t&&(T=null),Je(gn)}function us(e,t,n){let s=t[n];s&&(tt(e,s.id,n),k())}function Gi(e){let t=W();$(t)&&!v[t]&&(v[t]={id:e,openedAt:0})}function za(){let e=W();return $(e)&&Js(v[e]?.openedAt??0,Date.now())}function Yi(e){return e.typing&&T===e.id?{keys:[],more:[]}:{keys:e.keys,more:e.more}}function Xi({k:e}){return r(Lt,{action:e,isBlocked:()=>!1})}function Ja(e){let t=e.feedback;return t?e.view?io(e.view,"codex"):oo(t,e.isMarkDone??!1,"codex"):null}function cs(e){let t=Gn.get(e);return t&&Date.now()-t.at<O?t.text:null}function Za(e){return!U.has(e.id)&&cs(e.id)===null&&!Be.has(e.id)}function Qi({row:e,track:t,onSelect:n,now:s}){let o=t.hasPanel&&(t.state==="closing"||t.state==="leaving"),i=t.hasPanel&&!o,a=r("span",{class:`mark ${e.handleTone??""}${e.isHandleRunning?" running":""}`,ref:e.isHandleRunning?Qe:void 0,children:e.handle}),l=N.has(e.id),c=N.get(e.id)?.pending??null,d=l&&c===null,p=Za(e)?e.feedback:null,h=d?null:c?fe(c,"codex"):p?Ja(e):null,u=!l&&p&&xn(p)?p.at:null,f=u!==null&&!i&&!o&&p?.is!=="queued"&&p?.is!=="unconfirmed",m=!d&&ko(c??p,i||o)?h:null,g=f||m?null:h,b=d?Bn:u!==null?ge(s-u):g?null:e.age,y=!l&&Sn(e.feedback)?"error":void 0;return r("div",{class:`row ${i?"selected":"collapsed"}${o?" closing":""}`,onClick:i?void 0:n,children:[a,r("div",{class:"content",children:r("button",{type:"button",class:"line",...i?{tabIndex:-1,"aria-disabled":!0}:{"aria-expanded":!1},children:[r("span",{class:"text",children:[e.lead?r(L,{children:[r("span",{class:"lead",children:e.lead})," "]}):null,e.title]}),e.meta?r("span",{class:"meta",children:e.meta}):null,g?r("span",{class:`after ${y?`tone-${y}`:""}`,children:i||o?`${P}${g}`:g}):null,e.holdsUp?r("span",{class:"holds-up",children:[r("span",{class:"tone-needsYou",children:De.mark})," ",e.holdsUp]}):null]})}),r("span",{class:"side","data-room":Bn,children:[f?r("span",{class:"side-label",children:h}):null,b]}),i||o?r(zi,{row:e,isClosing:o,status:m}):null]})}function zi({row:e,isClosing:t,status:n}){let{keys:s,more:o}=Yi(e),i=Be.get(e.id),a=cs(e.id),l=!!e.typing&&T===e.id,c=[e.fold?.note?r("div",{class:"muted",children:e.fold.note}):null,a?r("div",{class:"muted",children:a}):null,U.has(e.id)?r("div",{class:"tone-error",children:U.get(e.id)}):null].filter(Boolean);return r("div",{class:t?"panel closing":"panel",inert:t,children:[e.body?r("div",{class:"body",children:e.body}):null,c.length>0?r("div",{children:c}):null,r(Ln,{keys:s,more:o,reply:l?{id:e.id,hint:e.typing.hint,draft:()=>D.get(e.id)?.text??"",onDraft:d=>D.set(e.id,{text:d,since:D.get(e.id)?.since??x?.at??Date.now()}),send:d=>{T=null,e.typing.send(d)},exit:e.view?wn(e.view):"cancel",onExit:()=>{e.view&&wn(e.view)==="discard"?Hi(e.id):(T=null,k())}}:null,isBlocked:za}),n?r("div",{class:"muted",children:n}):null,i?r("div",{children:[r("div",{class:"muted",children:["Copy ",i.name," from here:"]}),r("textarea",{rows:3,readOnly:!0,value:i.text,onFocus:d=>d.currentTarget.select()}),r("button",{type:"button",class:"key",onClick:()=>{Be.delete(e.id),k()},children:"Close"})]}):null]})}function el({settled:e,panel:t}){let{state:n}=e;if(n.is!=="settled")return null;let s=ie.get(e.id)??Date.now(),o=U.get(e.id);return r("div",{class:t?"row settled was-open":"row settled",children:[r(ps,{mark:vt(n)}),r("div",{class:"content",children:[r("div",{class:"settled-head",children:[r("div",{class:"settled-line",children:[r("span",{class:"what",children:e.title}),r("span",{class:"outcome-label",children:[P,Pt(n.label,n.delivery)]}),o?r("span",{class:"tone-error",children:[P,o]}):null]}),r(sr,{start:s,isUndoing:V.has(e.id),canUndo:n.canUndo,offersUndo:n.offersUndo,onUndo:()=>{Qa(e)}})]}),t?r(zi,{row:t,isClosing:!0}):null]})]})}function Ji({entries:e,group:t,all:n,now:s}){let o=$t[t];return e.length===0?null:r("div",{class:"list",children:e.map(i=>{let a=me(i),l=I.get(a);return r("div",{class:"entry","data-motion":a,children:"row"in i?r(Qi,{row:i.row,track:l.track,now:s,onSelect:()=>us(o,n,n.indexOf(i.row))}):r(el,{settled:i.settled,panel:l.openRow})},a)})})}function Qe(e){for(let t of e?.getAnimations?.()??[])t.startTime=0}var tl={needsYou:"tone-needsYou",done:"done"};function qn(e,t){return["mark",e?tl[e]:null,t?"running":null].filter(Boolean).join(" ")}var Si;function nl(e,t){if(!e)return;Si??=document.createElement("canvas").getContext("2d");let n=Si;n&&(n.font=getComputedStyle(e).font),e.textContent=Lo(t,s=>!n||n.measureText(s).width<=e.clientWidth)}var sl={needsYou:"tone-needsYou",done:"tone-done"};function Zi(e){let t=e.lastIndexOf(" ");return t<0?{head:"",last:e}:{head:e.slice(0,t+1),last:e.slice(t+1)}}function ol(e,t){let n=e?.querySelector(".flow"),s=e?.querySelector(".head"),o=e?.querySelector(".last");if(!n||!s||!o)return;let i=c=>{let{head:d,last:p}=Zi(c);s.textContent=d,o.textContent=p},a=document.createRange();a.selectNodeContents(n);let l=()=>new Set([...a.getClientRects()].map(c=>Math.round(c.top))).size;i(Oo(t,c=>(i(c),l()<=Pe)))}function xi({name:e,stall:t}){if(!t)return r("div",{class:"clamp",style:{"--lines":Pe},children:e});let{head:n,last:s}=Zi(e);return r("div",{ref:o=>ol(o,e),children:r("span",{class:"flow",children:[r("span",{class:"head",children:n}),r("span",{class:"unbroken",children:[r("span",{class:"last",children:s}),r("span",{class:"muted",children:Po}),r("span",{class:sl[t.tone],children:t.text})]})]})})}function il(e){Xt("needsYou");let t=x?as(x,"needsYou").findIndex(n=>n.id===e):-1;tt("needsYou",e,t<0?void 0:t),k(),ms()}function rl({row:e}){if(e.kind==="subject"){let t=e.merged,n=No(e).map(s=>({label:s.label,emphasis:"normal",run:()=>il(s.press.askId)}));return r("div",{class:e.hasChildren?"row has-children":"row",children:[r("span",{class:qn(e.tone,e.isRunning),ref:e.isRunning?Qe:void 0,children:e.mark}),r("div",{class:"content tight",children:[r(xi,{name:e.name,stall:e.stall}),e.text?r("div",{class:"muted clamp",style:{"--lines":Pe},children:e.text}):null,t?r("div",{class:"outcome muted clamp",style:{"--lines":Pe},ref:s=>nl(s,t)}):null,e.was?r("div",{class:"outcome muted clamp",style:{"--lines":Pe},children:[vo,e.was]}):null,n.length>0?r(Ln,{keys:n,more:[],reply:null,isBlocked:()=>!1}):null]})]})}return e.kind==="child"?r("div",{class:e.branch?`row child branch-${e.branch}`:"row",children:[r("span",{class:qn(e.tone,e.isRunning),ref:e.isRunning?Qe:void 0,children:e.mark}),r("div",{class:"content tight muted",children:r(xi,{name:e.name,stall:e.stall})})]}):e.kind==="more"?r("div",{class:`row child branch-${e.branch}`,children:[r("span",{class:"mark"}),r("div",{class:"content tight muted",children:e.text})]}):e.kind==="look"?r("div",{class:"row look-line",children:r("div",{class:"look-rule",children:e.text})}):r("div",{class:"row",children:[r("span",{class:qn(e.tone,!1),children:e.mark}),r("div",{class:"content tight muted",children:e.text})]})}function al({page:e}){return e.isEmpty?r("div",{class:"empty",children:[r("div",{class:"title",children:e.empty.title}),r("div",{class:"muted",children:e.empty.hint})]}):r("main",{class:"status-page",children:[e.head?r("section",{children:r("div",{class:"status-head",children:[r("h1",{children:e.head.title}),e.head.description?r("p",{class:"muted",children:e.head.description}):null]})}):null,e.rows.length>0?r("section",{children:r("div",{class:"list",children:e.rows.flatMap(t=>[...t.isRuledAbove?[r("div",{class:"status-rule"},`rule-${t.id}`)]:[],r(rl,{row:t},t.id)])})}):null]})}function er({text:e}){let t=e===xt.lapsed?Ho(4):null;return t===null?r(L,{children:e}):r("svg",{class:"mark-shape",viewBox:"0 0 8 8",role:"img","aria-label":e,dangerouslySetInnerHTML:{__html:t}})}function ps({mark:e}){return r("span",{class:e.isRunning?"mark running":"mark",ref:e.isRunning?Qe:void 0,children:r(er,{text:e.text})})}function ll(e){return["mark",e.tone==="needsYou"?"tone-needsYou":e.tone,e.isRunning?"running":null].filter(Boolean).join(" ")}function dl({v:e}){let t=zs("codex",e.isNextBuild===!0,W(),!1);return r("main",{class:"status-page help",children:[r("section",{children:[r(ze,{title:Ae.keys,count:0}),r("div",{class:"help-keys",children:t.flatMap(n=>[r("b",{children:n.keys},`${n.keys}-keys`),r("span",{class:"muted",children:n.does},`${n.keys}-does`)])})]}),r("section",{children:[r(ze,{title:Ae.marks,count:0}),r("div",{class:"list",children:Qs.map(n=>r("div",{class:"row",children:[r("span",{class:ll(n),ref:n.isRunning?Qe:void 0,children:r(er,{text:n.mark})}),r("div",{class:"content tight muted",children:n.words})]},n.mark))})]})]})}function ze({title:e,count:t,mark:n}){return r("div",{class:"group-title",children:[n?r("span",{class:`group-mark ${n.tone}`,children:n.mark}):null,r("b",{children:e}),t>0?r("span",{class:"count",children:[P,t]}):null]})}function Xn(e,t,n){return yn(e.needsYou.closed[t==="question"?"questions":"tasks"],Et(n)).map(s=>({id:s.id,ask:s.ask,outcomeLabel:s.outcomeLabel,state:ft(s),at:s.at,delivery:s.delivery}))}function Ri({v:e,kind:t,entries:n,all:s,now:o}){let i=t==="question"?"Questions":"Tasks",a=Qn(n),l=Xn(e,t,a),c=a.flatMap(d=>"row"in d?[d.row]:[]);return r("section",{children:[r(ze,{title:i,count:bn(c.map(d=>d.view))}),r(Ji,{entries:n,group:t,all:s,now:o}),r(nr,{group:t,empty:tr(i,a),closed:l,total:At(e.needsYou.closed[t==="question"?"questions":"tasks"],Et(a)),now:o})]})}function Qn(e){return e.filter(t=>I.get(me(t))?.track.state!=="leaving")}function tr(e,t){let n=t.every(s=>I.get(me(s))?.track.state==="entering");return t.length===0||n?{text:fo(e),isLeaving:t.length>0}:null}function zn(e){return Ot(e).map(t=>{let n=t.code?r("code",{children:t.text}):t.text;return t.italic&&(n=r("i",{children:n})),t.bold&&(n=r("b",{children:n})),t.strike&&(n=r("s",{children:n})),t.link?r(L,{children:[r("u",{children:n}),r("span",{class:"muted",children:[" ",t.link]})]}):n})}function nr({group:e,empty:t,closed:n,total:s,now:o}){let i=po(s,n.length),a=oe.has(e),l=s>0&&(a||jt.has(e));return r(L,{children:[r("div",{class:"group-end","data-motion":`end-${e}`,children:r("div",{class:"group-end-content",children:[t?r("div",{class:t.isLeaving?"group-empty leaving":"group-empty","aria-hidden":t.isLeaving,children:t.text}):null,s>0?r("button",{type:"button",class:"fold","data-fold":e,onClick:()=>El(e),children:[r(je,{name:a?"down":"right"}),co(s)]}):null]})}),l?r("div",{class:"list closed-list","data-motion":`closed-${e}`,children:[n.map(c=>r("div",{class:"entry",children:r("div",{class:"row",children:[r(ps,{mark:Tn(c.state,c.delivery)}),r("div",{class:"content tight",children:[r("div",{class:"muted",children:c.ask}),r("div",{class:"outcome",children:Pt(c.outcomeLabel,c.delivery)}),So(c.delivery)?r("button",{type:"button",disabled:N.has(c.id),onClick:()=>ce(c.id,{id:c.id,action:"undo"}),children:"Undo"}):null]}),r("span",{class:"side",children:ge(o-c.at)})]})},`closed-${c.id}`)),i?r("div",{class:"earlier muted",children:i}):null]}):null]})}var ul={untrusted:"Codex is not running the inbox\\u2019s hooks, so the inbox is not reading Codex\\u2019s replies. Click the hook icon beside the approval setting, then Allow all. If the icon isn\\u2019t there, open Settings, then Hooks, then Inbox, then Trust all.",modified:"Codex stopped the inbox\\u2019s hooks when the inbox updated, so the inbox is not reading Codex\\u2019s replies. To trust them again, click the hook icon beside the approval setting, then Allow all. If the icon isn\\u2019t there, open Settings, then Hooks, then Inbox, then Trust all."};function cl(e){return e.heard==="heard"||e.hooksTrust?null:e.heard==="none"?["The inbox starts with your next message."]:["Items from Codex\\u2019s replies are missing.","The inbox has not heard from this chat\\u2019s hooks."]}function pl({v:e,lists:t,now:n}){let s=t.byTab.needsYou,o=t.questions.length===0&&t.tasks.length===0,i=Xn(e,"question",t.questions).length>0||Xn(e,"task",t.tasks).length>0,a=cl(e);return o&&!i?a?r("div",{class:"empty",children:[r("div",{class:"title",children:a[0]}),a[1]?r("div",{class:"muted",children:a[1]}):null]}):r("div",{class:"empty",children:[r("div",{class:"title",children:Fe("needsYou","Codex").title}),r("div",{class:"muted",children:Fe("needsYou","Codex").hint})]}):r("main",{children:[a?r("section",{children:r("div",{class:"group-title",children:[a[0],a[1]?r("div",{class:"muted",children:a[1]}):null]})}):null,r(Ri,{v:e,kind:"question",entries:t.questions,all:s,now:n}),r(Ri,{v:e,kind:"task",entries:t.tasks,all:s,now:n})]})}function fl({v:e,lists:t,now:n}){let s=Et(Qn(t.findings)),o=l=>e.findings.closed.filter(c=>c.kind===l),i=l=>yn(o(l),s).map(c=>({id:c.id,ask:c.title,outcomeLabel:c.outcomeLabel,state:ft(c),at:c.closedAt,delivery:c.delivery}));return t.findings.length===0&&At(e.findings.closed,s)===0?r("div",{class:"empty",children:[r("div",{class:"title",children:Fe("findings","Codex").title}),r("div",{class:"muted",children:Fe("findings","Codex").hint})]}):r("main",{children:t.findingGroups.map(l=>{let c=Qn(l.entries),d=c.flatMap(p=>"row"in p?[p.row]:[]);return r("section",{children:[r(ze,{title:l.title,count:bn(d.map(p=>p.view)),mark:j[l.kind]}),r(Ji,{entries:l.entries,group:"finding",all:t.byTab.findings,now:n}),r(nr,{group:l.kind,empty:tr(l.title,c),closed:i(l.kind),total:At(o(l.kind),s),now:n})]})})})}function hl({pr:e,state:t}){let n=C(e.ref),s=ie.get(n)??Date.now(),o=U.get(n);return r("div",{class:"row settled",children:[r(ps,{mark:vt(t)}),r("div",{class:"content",children:r("div",{class:"settled-head",children:[r("div",{class:"settled-line",children:[r("span",{class:"what",children:[r("span",{class:"tone-prs",children:["#",e.number]})," ",e.title]}),r("span",{class:"outcome-label",children:`${P}${Pt(t.label,t.delivery)}`}),o?r("span",{class:"tone-error",children:`${P}${o}`}):null]}),r(sr,{start:s,isUndoing:V.has(n),canUndo:t.canUndo,offersUndo:t.offersUndo,onUndo:()=>{gl(n,e.ref)}})]})})]})}function sr({start:e,isUndoing:t,canUndo:n,offersUndo:s,onUndo:o}){return n&&(t||Vn(e,Date.now()))?r("button",{type:"button",class:t?"key undo undoing":"key undo",disabled:t,onClick:o,children:[r("span",{class:t?"time-left paused":"time-left",style:{animationDuration:`${O}ms`},ref:a=>{a&&!a.style.animationDelay&&(a.style.animationDelay=`-${Math.max(0,Date.now()-e)}ms`)}},e),r(je,{name:"undo"}),"Undo"]}):s?r("button",{type:"button",class:"key undo spent",disabled:!0,tabIndex:-1,"aria-hidden":"true",children:[r(je,{name:"undo"}),"Undo"]}):null}async function gl(e,t){if(!V.has(e)){V.add(e);try{await ce(e,{action:"pr-undo",ref:t})}finally{V.delete(e),k()}}}function ml(e,t){let n=C(t);if(N.has(n)){let l=N.get(n)?.pending;return{text:l?fe(l,"codex"):Bn,isError:!1}}let s=U.get(n);if(s)return{text:s,isError:!0};let o=cs(n);if(o)return{text:o,isError:!1};let i=Qo(e.lastActions,t)?null:ve(n,e.lastActions[n],void 0,e.turns,e.at);if(!i)return null;let a=fe(i,"codex");return{text:xn(i)?`${a}${P}${_e(e.at-i.at)}`:a,isError:Sn(i)}}function wl({v:e,pr:t,threads:n,checks:s,rank:o,openId:i,all:a,now:l}){let c=Ue(e.lastActions),{status:d,head:p,unlisted:h}=ht(t,c),u=Jo[d],f=C(t.ref),m=ti(t,c,e.prs.branchRef,is(e)).map(b=>Bt(f,t,b)),g=ml(e,t.ref);return r("section",{children:[r("div",{class:"pr-head",children:[o===null?null:r("span",{class:"rank muted",children:zo(o)}),r("span",{class:"tone-prs num",children:["#",t.number]})," ",t.title," ",r("span",{class:u?`pr-verdict tone-${u}`:"pr-verdict muted",children:p}),r("span",{class:"pr-verdict muted",children:h.map(b=>`${P}${b}`).join("")})]}),t.error?r("div",{class:"pr-status tone-error",children:Ko(t.error)}):null,r("div",{class:"pr-actions keys",children:m.map(b=>r(Xi,{k:b}))}),g?r("div",{class:g.isError?"pr-last tone-error":"pr-last muted",children:g.text}):null,r("div",{class:"pr-groups",children:[r(_i,{title:In.threads,rows:n,all:a,openId:i,now:l}),r(_i,{title:In.checks,rows:s,all:a,openId:i,now:l})]})]})}function _i({title:e,rows:t,all:n,openId:s,now:o}){return t.length===0?null:r(L,{children:[r(ze,{title:e,count:t.length}),r("div",{class:"list",children:t.map(i=>{let a=i.id===s;return r("div",{class:"entry",children:r(Qi,{row:i,track:{state:a?"open":"closed",since:0,hasPanel:a},now:o,onSelect:()=>us("prs",n,n.indexOf(i))})},i.id)})})]})}function bl({v:e,now:t}){let{blocks:n,rows:s}=rs(e),o={isGhMissing:e.isGhMissing,isGhSignedOut:e.prs.isGhSignedOut},i=On(o),a=qo({isFetching:e.isFetchingPrs,...o},"chat");if(n.length===0)return r("div",{class:"empty",children:[r("div",{class:"title",children:a.title}),r("div",{class:"muted",children:a.hint})]});let l=s[ds(s,"prs",e)]?.id,c=Wi(e);return r("main",{children:[i?r("div",{class:"banner-place",children:r($e,{banner:J(i.kind,i.text)})}):null,e.prs.orderText?r("section",{children:r("div",{class:"group-title muted",children:e.prs.orderText})}):null,n.map(d=>d.state.is==="settled"?r("section",{children:r(hl,{pr:d.pr,state:d.state})}):r(wl,{...d,v:e,openId:l,all:s,now:t})),c.length>0?r("section",{children:r("div",{class:"pr-actions keys",children:c.map(d=>r(Xi,{k:d}))})}):null,e.prs.olderText?r("section",{children:r("div",{class:"group-title muted",children:e.prs.olderText})}):null]})}var yl=6e4;function or(e){return Mo(W(),e.status,{isFetching:e.isFetchingPrs,hasPrs:e.prs.drawn.length>0},e.statusPage?.error??null)}function kl({v:e}){let t=Date.now()-Oi,n=Yt>=2?r("span",{class:t>yl?"tone-error":void 0,children:["Last read ",_e(t),P,"retrying"]}):or(e).text;return r("div",{class:"status",children:n})}function Sl({v:e}){let t={needsYou:e.needsYou.count,findings:e.findings.count,prs:e.prs.count},n=i=>_o(i,t),{error:s}=or(e),o=W();return r("nav",{children:[r("div",{class:"tabs",children:Me(e.isNextBuild===!0).map(i=>r("button",{type:"button",class:`tab ${o===i.id?"shown":""}`,title:i.label,onClick:()=>{Xt(i.id),k()},children:[r("span",{class:"tab-symbol","aria-hidden":"true",children:i.symbol}),r("span",{class:"tab-word",children:i.label}),n(i.id)===null?null:r("span",{class:$(i.id)?`count tone-${i.id}`:"count",children:n(i.id)})]}))}),ho([...Mt?[J(Mt.kind,Mt.text)]:[],...e.hooksTrust?[J("hooks-trust",ul[e.hooksTrust])]:[],...ae?[J("tab-update-failed",ae.text)]:[]],s,Le&&Date.now()-Le.at<O?{text:Le.text,isError:Le.isError===!0}:null).map(i=>i.kind==="server-builds-differ"?r($e,{banner:i,label:"Reload",press:()=>location.reload()}):i.kind==="tab-update-failed"?r($e,{banner:i,label:se.retry,press:()=>{let a=ae?.page;ae=null,k(),a&&Ni(a)}}):r($e,{banner:i}))]})}async function xl(){re++,le=!le,ue=Date.now(),de=null,Yt=0,x=null,ie=new Map,Ft={},I.clear(),Vt=null,v.needsYou=null,v.findings=null,v.prs=null,T=null,k(),await et()}function $e({banner:e,label:t,press:n}){return r("div",{class:`banner banner-${e.tone}`,role:e.tone==="notice"?"status":"alert",children:[r("span",{children:[r("strong",{class:"lead",children:e.lead}),e.body?` ${e.body}`:null]}),t&&n?r("button",{type:"button",class:"key",onClick:n,children:t}):null]})}function Rl({lists:e}){if(!x||!e)return de!==null?r($e,{banner:J("read-failed",`Could not read the inbox. ${de}`),label:"Reload",press:()=>{Ht?et():Zn()}}):Ei?r("div",{class:"notice muted",children:mo}):null;let t=x,n=t.at,s=W();return r(L,{children:[le?r("div",{class:"banner-place",children:r($e,{banner:J("demo",go),label:"Hide demo",press:()=>{xl()}})}):null,r(Sl,{v:t}),K?r(dl,{v:t}):s==="needsYou"?r(pl,{v:t,lists:e,now:n}):s==="findings"?r(fl,{v:t,lists:e,now:n}):s==="prs"?r(bl,{v:t,now:n}):r(al,{page:t.statusPage}),r("footer",{children:[r("button",{type:"button",class:"help-toggle",title:`${Ae.open} (?)`,"aria-pressed":K,onClick:()=>{K=!K,k()},children:K?Ae.close:Ae.open}),null,r("div",{class:"footer-end",children:[r(kl,{v:t}),r("span",{class:"version",children:wo(Is.version,t.isNextBuild===!0)})]})]})]})}var fs={duration:300,easing:"cubic-bezier(.19, 1, .22, 1)"},Gt={duration:200,easing:"cubic-bezier(.65, 0, .35, 1)"},hs={duration:200,easing:"cubic-bezier(.8, 0, .4, 1)",fill:"forwards"},zt=matchMedia("(prefers-reduced-motion: reduce)");function _l(){let e=new Map;for(let t of B.querySelectorAll("[data-motion]"))e.set(t.dataset.motion,{el:t,height:t.getBoundingClientRect().height});return e}function Tl(e,t,n,s){e.style.overflow="hidden",e.dataset.to=String(s);let o=e.animate(t,n);Wt.add(o);let i=()=>{Wt.delete(o),!R&&e.getAnimations().length===0&&ir(e)};o.onfinish=i,o.oncancel=i}function Jn(e){for(let t of e.getAnimations())t.cancel();ir(e)}function ir(e){e.style.overflow="",delete e.dataset.to}function gs(e){return[...e.children].reduce((t,n)=>t+n.getBoundingClientRect().height,0)}function nt(e,t,n,s){let o=i=>({height:`${i.height}px`,opacity:i.opacity});Tl(e,[o(t),o(n)],s,n.height)}function rr(e,t){nt(e,{height:0,opacity:0},{height:t,opacity:1},fs)}function Al(e,t){if(zt.matches){Oe.clear();return}let n=new Set([...t].map(o=>I.get(o)?.track.state)),s=n.has("leaving")?{...hs,fill:"none"}:n.has("entering")?fs:Gt;for(let o of B.querySelectorAll("[data-motion]")){let i=o.dataset.motion,a=e.get(i);if(o.dataset.closing)continue;let l=I.get(i)?.track.state,c=!a||a.el!==o,d=()=>o.getAnimations().length>0||c?o.getBoundingClientRect().height:a.height;if(l&&t.has(i)&&vl(o,l,d)||l==="closing"||l==="settling"||l==="leaving")continue;if(l&&!Ct(l)&&!N.has(i)){Jn(o);continue}let p=l||o.classList.contains("group-end")?gs(o):o.scrollHeight;if(c){!l&&Oe.delete(i)&&rr(o,p);continue}let h=o.getAnimations();if(h.length>0&&Math.abs(Number(o.dataset.to)-p)<1)continue;let u=d(),f=h.length>0?Number(getComputedStyle(o).opacity):1;for(let m of h)m.cancel();Math.abs(u-p)<1&&f>.99||nt(o,{height:u,opacity:f},{height:p,opacity:1},l?Gt:s)}Oe.clear()}function vl(e,t,n){switch(t){case"opening":return!1;case"entering":return Jn(e),rr(e,gs(e)),!0;case"closing":case"settling":return Pl(e,Ti(e,n)),!0;case"leaving":{let s=Ti(e,n);for(let o of e.getAnimations())o.cancel();return nt(e,s,{height:0,opacity:0},hs),!0}default:return Jn(e),!0}}function Ti(e,t){return{height:t(),opacity:Number(getComputedStyle(e).opacity)}}function Pl(e,t){let n=e.querySelector(".panel.closing"),s=e.querySelector(".row.closing");s?.classList.remove("closing"),n&&(n.style.display="none");let o=gs(e);n&&(n.style.display=""),s?.classList.add("closing");for(let i of e.getAnimations())i.cancel();nt(e,t,{height:o,opacity:1},{...Gt,fill:"forwards"})}function El(e){let t=B.querySelector(`[data-motion="closed-${e}"]`);if(!oe.has(e)){oe.add(e),jt.delete(e)&&t?delete t.dataset.closing:Oe.add(`closed-${e}`),k();return}if(oe.delete(e),!t||zt.matches){k();return}jt.add(e),k(),t.dataset.closing="1";let n=t.getBoundingClientRect().height;for(let s of t.getAnimations())s.cancel();nt(t,{height:n,opacity:1},{height:0,opacity:0},hs),G(()=>{oe.has(e)||!jt.delete(e)||k()},200)}function ms(){R||(B.querySelector(".row.selected")?.scrollIntoView({block:"nearest"}),zt.matches||G(()=>B.querySelector(".row.selected")?.scrollIntoView({block:"nearest"}),220))}function ws(){document.documentElement.style.setProperty("--row-pad",`${8}px`),document.documentElement.style.setProperty("--status-row-pad",`${4.75}px`),document.documentElement.style.setProperty("--banner-pad-y",`${8}px`),document.documentElement.style.setProperty("--banner-gap",`${8}px`),document.documentElement.style.setProperty("--pulse",`${Eo}ms`),document.documentElement.style.setProperty("--move",`${200}ms ${Gt.easing}`),document.documentElement.style.setProperty("--enter",`${300}ms ${fs.easing}`)}var ar=50;function Je(e){G(k,e+ar)}var Ee=null;function Ll(){let e=Date.now(),t=[...I.values()].flatMap(({track:s})=>Ct(s.state)?[s.since+It[s.state]]:[]);if(t.length===0)return;let n=Math.min(...t)+ar;Ee&&Ee.at<=n||(Ee&&qt(Ee.timer),Ee={at:n,timer:G(()=>{Ee=null,k()},n-e)})}function k(){if(R||!M)return;let e=_l(),t=x?Xa(x):null;Vt=t?.lists??null,Ll(),rn(r(Rl,{lists:Vt}),B),Al(e,t?.changed??new Set);let n=Ut&&T?document.getElementById(`type-${T}`):null;n&&(Ut=!1,n.focus())}var We=null;document.addEventListener("pointerdown",e=>{M&&(!(e.target instanceof Element)||!B.contains(e.target)||!e.target.closest(".list, .fold")||(We={x:e.clientX,y:e.clientY},document.body.classList.add("still")))},{signal:Ze.signal});document.addEventListener("pointermove",e=>{M&&(!We||Math.hypot(e.clientX-We.x,e.clientY-We.y)<3||(We=null,document.body.classList.remove("still")))},{signal:Ze.signal});document.addEventListener("keydown",e=>{if(!M||e.metaKey||e.ctrlKey||e.altKey||!x)return;let t=e.target;if(t?.closest("input, textarea")){e.key==="Escape"&&t.tagName==="INPUT"&&(T=null,k());return}if(e.key==="?"||e.key==="Escape"&&K){e.preventDefault(),K=e.key==="?"&&!K,k();return}let n=Me(x.isNextBuild===!0).find(u=>u.hotkey===e.key);if(n){Xt(n.id),k();return}let s=W();if(K||!$(s))return;let o=s==="prs"?Wi(x).find(u=>u.hotkey===e.key):void 0;if(o){e.preventDefault(),o.isOut||o.run();return}let i=as(x,s),a=ds(i,s,x),l=e.key==="j"||e.key==="ArrowDown"?1:e.key==="k"||e.key==="ArrowUp"?-1:0;if(l!==0){e.preventDefault(),us(s,i,Math.max(0,Math.min(i.length-1,a+l))),ms();return}let c=i[a];if(!c)return;let{keys:d,more:p}=Yi(c),h=[...d,...p].find(u=>u.hotkey===e.key);h&&(e.preventDefault(),h.isOut||h.run())},{signal:Ze.signal});function lr(){R||!M||!Ht||yi||(yi=!0,Yn(Li),Yn(Kn),parent.postMessage({jsonrpc:"2.0",method:"ui/notifications/initialized",params:{}},"*"),Mi())}function Zn(){return R?Promise.resolve(!1):Ht?Promise.resolve(!0):Ve||(de=null,M&&k(),Ve=Ii("ui/initialize",{protocolVersion:"2026-01-26",appInfo:{name:"inbox",version:"0.2.14"},appCapabilities:{tools:{}}},Kt).then(e=>R?!1:(Li=e?.hostContext??{},Ht=!0,lr(),!0)).catch(()=>(M&&!R&&(de="The inbox could not connect to Codex.",k()),!1)).finally(()=>{Ve=null}),Ve)}function Ai(){lr(),G(()=>{Ei=!0,!x&&de===null&&k()},Ma)}function Ol(e){if(R||!Z||Z.aborted)throw new Error("The new page stopped.");$i(e),M=!0,ws(),k()}Z?Z.ready({initialize:Zn,activate:Ol,start:Ai,dispose:ns}):(ws(),$i(),Zn(),Ai());})();\n\n    </script>\n  </body>\n</html>\n';
 
 // src/run.ts
 import { execFile } from "node:child_process";
@@ -5124,7 +5493,7 @@ function createHandler(dir, loadError = () => null, isPluginFolderGone = () => f
     fallbackCli: () => findCli(process.env, run, process.ppid),
     hooksTrust: listHooksTrust,
     devPage: devPageIn(dir),
-    build: "c4f1cd751a80",
+    build: "f3fc0ed522ad",
     loadError,
     isPluginFolderGone,
     isNextBuild: existsSync(join4(dirname3(dirname3(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),

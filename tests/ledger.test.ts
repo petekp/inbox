@@ -973,6 +973,13 @@ describe('upgradeLedger', () => {
     expect(upgradeLedger({ ...base, updates: 4 } as never).updates).toBe(4)
   })
 
+  test('a ledger saved before PR orders loads with no order, and one with an order keeps it', () => {
+    const { prOrder: _prOrder, ...old } = EMPTY
+    const order = { refs: ['acme/greet#12'], label: 'Merge order', by: 'Claude', at: 5 }
+    expect(upgradeLedger(old as never).prOrder).toBeNull()
+    expect(upgradeLedger({ ...EMPTY, prOrder: order }).prOrder).toEqual(order)
+  })
+
   test('converts a ledger saved with `decided` and the kinds decide and do', () => {
     const item = { id: 'i1', label: null, ask: 'Push?', options: [], rec: null, helps: [], turn: 1, at: 5 }
     const record = { id: 'i3', ask: 'Login', outcome: 'done', how: 'done', at: 9 }
@@ -1140,13 +1147,16 @@ describe('the Herdr status line', () => {
   const statusOf = (ledger: Ledger, stop: Stop | null, dialogs: Dialog[]) =>
     herdrTokens(ledger, stop, sessionView({ ...emptySession(), ledger }, 3, 0, false), dialogs).inbox ?? ''
 
-  test('names the first waiting item after the count, and the session’s goal when nothing waits', () => {
+  test('names the first waiting item after the count, and what the session is focused on when nothing waits', () => {
     const waiting = applyUpdate(EMPTY, parseReply(REPLY)!, 1, 1)
     expect(statusOf(waiting, null, [])).toBe('3 · Rename greet.mjs to hello.mjs?')
     const settled = applyUpdate(waiting, parseReply('CLOSED: i1 | yes\nCLOSED: i2 | no\nCLOSED: i3 | done')!, 2, 2)
     expect(statusOf(settled, null, [])).toBe('')
-    const described = { ...settled, overview: { ...EMPTY_SESSION_STATUS, goal: 'Merge the reducer' } }
-    expect(statusOf(described, null, [])).toBe('Merge the reducer')
+    const head = { title: 'Reducer merge', description: 'Merging the reducer into the store' }
+    const described = { ...settled, overview: { ...EMPTY_SESSION_STATUS, head } }
+    expect(statusOf(described, null, [])).toBe('Merging the reducer into the store')
+    const titled = { ...settled, overview: { ...EMPTY_SESSION_STATUS, head: { ...head, description: '' } } }
+    expect(statusOf(titled, null, [])).toBe('Reducer merge')
     expect(statusOf(EMPTY, null, [])).toBe('')
   })
 

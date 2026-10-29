@@ -230,9 +230,9 @@ test('a prompt with nothing to tell the agent returns no message', async () => {
   expect(first.message).toBeUndefined()
 })
 
-test('record and close are registered with the shared schemas and stay in the tool list', () => {
+test('record, close and order_prs are registered with the shared schemas and stay in the tool list', () => {
   createInbox(pi(), deps())
-  expect([...tools.keys()]).toEqual(['record', 'close'])
+  expect([...tools.keys()]).toEqual(['record', 'close', 'order_prs'])
   expect(tools.get('record')).toMatchObject({ loadMode: 'essential', approval: 'read' })
   expect(tools.get('record').parameters.properties.kind.enum).toEqual(['question', 'task', 'finding'])
 })
@@ -325,11 +325,11 @@ test('a turn that ends queues the exchange and the inbox model fills the ledger'
 
 test('a reply’s Status comes from the separate Status call, after the ledger update', async () => {
   createInbox(pi(), deps())
-  statusReply = 'GOAL: Adding a greeting CLI'
+  statusReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name'
   await prompt('Add a greeting CLI')
   await endAgent('Plan written. Which runtime?')
   await settle()
-  expect(state().ledger.overview.goal).toBe('Adding a greeting CLI')
+  expect(state().ledger.overview.head?.title).toBe('Adding a greeting CLI')
   expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Use Node or Python?'])
   expect(statusCompletions).toHaveLength(1)
   expect(statusCompletions[0]!.prompt).toContain('Plan written. Which runtime?')
@@ -337,7 +337,7 @@ test('a reply’s Status comes from the separate Status call, after the ledger u
 
 test('a run past the wait runs the Status call on its work so far at its next tool start, once', async () => {
   createInbox(pi(), deps())
-  statusReply = 'GOAL: Adding caching'
+  statusReply = 'HEAD: Adding caching | Caching answers to cut load'
   const bash = (command: string) => call('tool_execution_start', { toolName: 'bash', args: { command } })
   await prompt('Add caching')
   await call('agent_start', { type: 'agent_start' })
@@ -351,11 +351,11 @@ test('a run past the wait runs the Status call on its work so far at its next to
   expect(statusCompletions).toHaveLength(1)
   expect(statusCompletions[0]!.prompt).toContain('ran: npm test')
   expect(statusCompletions[0]!.prompt).not.toContain('<reply>')
-  expect(state().ledger.overview.goal).toBe('Adding caching')
+  expect(state().ledger.overview.head?.title).toBe('Adding caching')
 })
 
 test('a next build keeps a record of each Status call beside the saved sessions, and a release build keeps none', async () => {
-  statusReply = 'GOAL: Adding a greeting CLI'
+  statusReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name'
   createInbox(pi(), deps())
   await prompt('Add a greeting CLI')
   await endAgent('Plan written. Which runtime?')
@@ -381,7 +381,7 @@ test('a next build keeps a record of each Status call beside the saved sessions,
   })
   expect(record.prompt).toBe(statusCompletions.at(-1)!.prompt)
   expect(record.attempts.map((a: { model: string }) => a.model)).toEqual([`${sonnet.provider}/${sonnet.id}`])
-  expect(record.after.goal).toBe('Adding a greeting CLI')
+  expect(record.after.head?.title).toBe('Adding a greeting CLI')
 })
 
 test('a failed Status call leaves the ledger update applied with no Status', async () => {
@@ -404,7 +404,7 @@ test('a ledger update shows before its Status call returns', async () => {
   await settle()
   let release: () => void = () => undefined
   statusHold = new Promise<void>(resolve => (release = resolve))
-  statusReply = 'GOAL: Scaffolding the command'
+  statusReply = 'HEAD: Scaffolding the command | Laying out the greet command'
   reply = 'CLOSED: i1 | Node chosen'
   await prompt('Use Node')
   await endAgent('Scaffolded the command with Node.')
@@ -415,13 +415,13 @@ test('a ledger update shows before its Status call returns', async () => {
   expect(state().ledger.overview).toBeNull()
   release()
   await settle()
-  expect(state().ledger.overview.goal).toBe('Scaffolding the command')
+  expect(state().ledger.overview.head?.title).toBe('Scaffolding the command')
 })
 
 test('a ledger call that fails runs no Status call', async () => {
   createInbox(pi(), deps())
   reply = new Error('overloaded')
-  statusReply = 'GOAL: Adding a greeting CLI'
+  statusReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name'
   await prompt('Add a greeting CLI')
   await endAgent('Plan written. Which runtime?')
   await settle()
@@ -433,7 +433,7 @@ test('the next ledger update does not wait for an earlier Status call, and Statu
   createInbox(pi(), deps())
   let release: () => void = () => undefined
   statusHold = new Promise<void>(resolve => (release = resolve))
-  statusReply = 'GOAL: Scaffolding the command'
+  statusReply = 'HEAD: Scaffolding the command | Laying out the greet command'
   reply = 'NEW: do | - | Water the plants | - | -'
   await prompt('Add a greeting CLI')
   await endAgent('Plan written.')
@@ -452,7 +452,9 @@ test('the next ledger update does not wait for an earlier Status call, and Statu
   for (let waited = 0; statusCompletions.length < 2 && waited < 200; waited += 1)
     await new Promise(resolve => setTimeout(resolve, 10))
   expect(statusCompletions).toHaveLength(2)
-  expect(statusCompletions[1]!.prompt).toContain('<goal>\nScaffolding the command\n</goal>')
+  expect(statusCompletions[1]!.prompt).toContain(
+    '<head>\nScaffolding the command | Laying out the greet command\n</head>',
+  )
 })
 
 test('a settle that will continue does not end the turn', async () => {
@@ -1378,11 +1380,8 @@ test('a look starts when the panel shows the Status and ends on another tab or w
   const inbox = createInbox(pi(), deps())
   await prompt('hello')
   const saved = state()
-  const described = { ...EMPTY_SESSION_STATUS, goal: 'Ship it' }
-  writeFileSync(
-    join(dir, 'sessions', 's1.json'),
-    JSON.stringify({ ...saved, ledger: { ...saved.ledger, overview: described } }),
-  )
+  const overview = { ...EMPTY_SESSION_STATUS, head: { title: 'Ship it', description: 'Shipping the first version' } }
+  writeFileSync(join(dir, 'sessions', 's1.json'), JSON.stringify({ ...saved, ledger: { ...saved.ledger, overview } }))
   await inbox.openPanel(makeCtx(), clock)
   inbox.showTab(makeCtx(), 'overview', { ...NO_HOLDS, shownSince: 1234 })
   await settle()

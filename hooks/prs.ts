@@ -80,15 +80,41 @@ function bucket(e: RollupEntry): PrCheck['bucket'] {
   return 'fail'
 }
 
+/** When a run started, in ms. A run waiting to start has no time yet and is newer than any that started. */
+function runStart(e: RollupEntry): number | undefined {
+  const isWaiting = !!e.status && e.status.toUpperCase() !== 'COMPLETED'
+
+  return msOf(e.startedAt) ?? (isWaiting ? Infinity : undefined)
+}
+
+/**
+ * The rollup lists every run of a check on the head commit, such as a cancelled run and the run that replaced it.
+ * Keeps the latest run of each check, by workflow and name, in the place of the check's first run. A run is
+ * later when it started later, or, when either has no start time, when it comes later in the rollup.
+ */
+function latestRuns(rollup: RollupEntry[]): RollupEntry[] {
+  const latest = new Map<string, RollupEntry>()
+  for (const e of rollup) {
+    const key = JSON.stringify([e.workflowName ?? '', e.name ?? e.context ?? ''])
+    const kept = latest.get(key)
+    const keptStart = kept && runStart(kept)
+    const start = runStart(e)
+    const isOlder = start !== undefined && keptStart !== undefined && start < keptStart
+    if (!isOlder) latest.set(key, e)
+  }
+
+  return [...latest.values()]
+}
+
 /** Reads `gh pr view --json VIEW_FIELDS` output; null when it is not that. */
 export function readView(
   ref: string,
   json: string,
-): Omit<PrView, 'threads' | 'isYours' | 'wasSeenOpen' | 'error'> | null {
+): Omit<PrView, 'threads' | 'isYours' | 'wasSeenOpen' | 'error' | 'fetchedAt'> | null {
   try {
     const v = JSON.parse(json) as Record<string, unknown>
     if (typeof v.number !== 'number') return null
-    const rollup = Array.isArray(v.statusCheckRollup) ? (v.statusCheckRollup as RollupEntry[]) : []
+    const rollup = latestRuns(Array.isArray(v.statusCheckRollup) ? (v.statusCheckRollup as RollupEntry[]) : [])
 
     return {
       ref,
@@ -291,14 +317,30 @@ export function readiness(
 
 const STATUS_ORDER: Record<PrStatus, number> = { blocked: 0, ready: 1, draft: 2, waiting: 3, merged: 4, closed: 5 }
 
-/**
- * The status is read without sent threads, so
- * sending a thread to the agent does not move its PR while the press shows; only a fetch from GitHub can.
- */
-export function inPrOrder(prs: PrView[]): PrView[] {
-  const rank = new Map(prs.map(pr => [pr, STATUS_ORDER[readiness(pr).status]]))
+/** A PR's place in the agent's order, or null when the order leaves it out or the PR is no longer open. */
+export function rankOf(pr: PrView, ranked: string[]): number | null {
+  const at = ranked.indexOf(pr.ref)
 
-  return [...prs].sort((a, b) => rank.get(a)! - rank.get(b)! || b.number - a.number || a.ref.localeCompare(b.ref))
+  return at === -1 || pr.state !== 'OPEN' ? null : at
+}
+
+/**
+ * The open PRs of `ranked` come first, in its order. The rest follow by status, then newest first. The status is
+ * read without sent threads, so sending a thread to the agent does not move its PR while the press shows; only a
+ * fetch from GitHub can.
+ */
+export function inPrOrder(prs: PrView[], ranked: string[] = []): PrView[] {
+  const place = (pr: PrView) => rankOf(pr, ranked) ?? Infinity
+  const status = new Map(prs.map(pr => [pr, STATUS_ORDER[readiness(pr).status]]))
+  const byPlace = (a: PrView, b: PrView) => {
+    const [x, y] = [place(a), place(b)]
+
+    return x === y ? 0 : x < y ? -1 : 1
+  }
+
+  return [...prs].sort(
+    (a, b) => byPlace(a, b) || status.get(a)! - status.get(b)! || b.number - a.number || a.ref.localeCompare(b.ref),
+  )
 }
 
 /**

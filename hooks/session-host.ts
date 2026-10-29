@@ -10,17 +10,21 @@ import {
   transcriptCatchUpPrompt,
 } from './model-text'
 import type { Host, StatusCallInput } from './model-text'
-import { fetchTracked, pressRowId, splitLinked } from './pr-tab'
-import type { GhRun, PrPress } from './pr-tab'
+import { fetchTracked, fixCheckEffect, isPrFixPress, pressRowId, splitLinked } from './pr-tab'
+import type { GhRun, PrFixPress, PrPress } from './pr-tab'
 import {
   doneWake,
+  finishedResult,
+  localLast,
   markSentToAgent,
+  pendingResult,
   recordPress,
   refuseDoneNotification,
   runLocalEffects,
   runSends,
   withDeliveryId,
   withLasts,
+  withResult,
   withUnconfirmed,
 } from './presses'
 import type { AnswerMessage, Effect, EffectHost, RowPress } from './presses'
@@ -39,7 +43,7 @@ import {
 import type { Pressed, SendOutcome, Session } from './session'
 import type { Holds } from './view'
 import type { ClientId } from './clients'
-import type { Exchange, HostTask, SessionStatus, RowNote } from '../types'
+import type { Exchange, HostTask, LastAction, SessionStatus, RowNote } from '../types'
 
 export type Exclusive<T> = { acquired: true; value: T } | { acquired: false }
 
@@ -595,6 +599,68 @@ type PressHost<S extends Session> = Pick<
   | 'settleWindowMs'
 >
 
+const FIX_LABELS: Record<PrFixPress['action'], string> = { 'pr-conflicts': 'Resolve conflicts', 'check-fix': 'Fix' }
+
+/** A fix press's check of the PR: the row's last press before it, and when its "Refreshing" result began. */
+type PrFixCheck = { rowId: string; before: LastAction | undefined; pendingAt: number; pressId: string }
+
+/** The row's last press as it was before the check, while the row still holds the check's result. */
+function withoutCheck<S extends Session>(s: S, check: PrFixCheck | null): S {
+  const result = check ? s.lastActions[check.rowId]?.result : undefined
+  if (!check || result?.at !== check.pendingAt || result.pressId !== check.pressId) return s
+  const { [check.rowId]: _check, ...rest } = s.lastActions
+
+  return { ...s, lastActions: check.before ? { ...rest, [check.rowId]: check.before } : rest }
+}
+
+/**
+ * Reads the PR from GitHub before a fix press sends, while the row reads "Refreshing PR #12…". `stale` when the saved
+ * view already shows no problem. `unread` when the refresh did not read the PR, which the row's result then says.
+ * Otherwise the check, for the press to apply on the refreshed view.
+ */
+async function checkPrFirst<S extends Session>(
+  host: PressHost<S>,
+  p: PrFixPress,
+  rowId: string,
+  pressId: string,
+  holds: Holds,
+): Promise<'stale' | 'unread' | PrFixCheck> {
+  const checking: { check?: PrFixCheck } = {}
+  await host.update(async saved => {
+    delete checking.check
+    const s = withHolds(saved, holds)
+    const at = await host.now()
+    const pr = s.prViews.views[p.ref]
+    if (!pr || 'stale' in pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, host)) return s
+    const before = s.lastActions[rowId]
+    const pending = pendingResult([fixCheckEffect(pr)], at, pressId)
+    checking.check = { rowId, before, pendingAt: at, pressId }
+
+    return {
+      ...s,
+      lastActions: {
+        ...s.lastActions,
+        [rowId]: localLast(before, { action: p.action, text: FIX_LABELS[p.action] }, pending),
+      },
+    }
+  })
+  const check = checking.check
+  if (!check) return 'stale'
+  await host.refreshPrs()
+  let isRead = false
+  await host.update(async s => {
+    const pr = s.prViews.views[p.ref]
+    isRead = pr?.fetchedAt !== undefined && pr.fetchedAt >= check.pendingAt
+    const pending = s.lastActions[rowId]?.result
+    if (isRead || !pending) return s
+    const failed = finishedResult(pending, [pr?.error ?? 'gh could not read it'], await host.now())
+
+    return { ...s, lastActions: withResult(s.lastActions, rowId, check.pendingAt, failed) }
+  })
+
+  return isRead ? check : 'unread'
+}
+
 /** A press that is saved, with what it still runs. */
 export type StartedPress = {
   /** The effects the press runs. Null when it was stale or could not be saved, so it runs nothing. */
@@ -647,12 +713,31 @@ export async function startPress<S extends Session>(
       await host.update(s => ({ ...s, ledger: f(s.ledger) }))
     },
   }
+  const check =
+    'ref' in p && isPrFixPress(p) && !isStale
+      ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err: unknown) => {
+          error = `Not sent: ${err instanceof Error ? err.message : String(err)}`
+          return 'unread' as const
+        })
+      : null
+  if (check === 'stale' || check === 'unread')
+    return {
+      effects: null,
+      finish: async () => ({
+        copy,
+        error,
+        note: check === 'stale' ? 'stale' : null,
+        isUnconfirmed,
+        isRowFailed,
+        wakesForDone: false,
+      }),
+    }
   await host
     .update(async saved => {
       // A host may run the change again on a newer session, where the press can be stale.
       note = isStale ? 'stale' : null
       Object.assign(pressed, { r: undefined, at: undefined, deliveryId: undefined })
-      const s = withHolds(saved, holds)
+      const s = withoutCheck(withHolds(saved, holds), check)
       if (note) return s
       // Read under the lock, so the press is timed after every write that landed before it.
       const at = await host.now()
@@ -741,12 +826,18 @@ export async function press<S extends Session>(
 const PRS_REFRESH_MS = 120_000
 const NEW_PR_FETCH_MS = 15_000
 
-/** True when the PRs are due for a fetch: none was fetched yet, the last is old, or a new tracked PR waits for its first. */
+/**
+ * True when the PRs are due for a fetch: none was fetched yet, the last is old, or, once `NEW_PR_FETCH_MS` has passed
+ * since the last, a new tracked PR waits for its first or the agent replied since, as after a push that fixed a PR.
+ */
 export function isPrFetchDue(s: Session, lastFetchedAt: number | undefined, now: number): boolean {
   if (lastFetchedAt === undefined) return true
-  const hasNewPr = splitLinked(s.prViews, s.ledger.prs).tracked.some(ref => !(ref in s.prViews.views))
+  const hasNewPr = splitLinked(s.prViews, s.ledger).tracked.some(ref => !(ref in s.prViews.views))
+  const hasReplySince = (s.presence.lastReplyAt ?? 0) > lastFetchedAt
 
-  return now - lastFetchedAt >= PRS_REFRESH_MS || (hasNewPr && now - lastFetchedAt >= NEW_PR_FETCH_MS)
+  return (
+    now - lastFetchedAt >= PRS_REFRESH_MS || ((hasNewPr || hasReplySince) && now - lastFetchedAt >= NEW_PR_FETCH_MS)
+  )
 }
 
 /** Which sessions have a PR fetch running, and when each last ended. */
@@ -757,10 +848,14 @@ export function prFetchTracker(now: () => number): {
    * never rejects, or null when nothing started.
    */
   fetchWhenDue(id: string, s: Session, fetch: () => Promise<void>): Promise<void> | null
-  /** Runs `fetch` now, as a press asks, unless a fetch for `id` already runs. Returns the run, which never rejects. */
+  /**
+   * Runs `fetch` as a press asks: now, or once the fetch running for `id` ends, since that fetch may have read the PRs
+   * before the press. Presses during one running fetch share the fetch after it. Returns the run, which never rejects.
+   */
   fetchNow(id: string, fetch: () => Promise<void>): Promise<void>
 } {
   const running = new Map<string, Promise<void>>()
+  const following = new Map<string, Promise<void>>()
   const endedAt = new Map<string, number>()
   const start = (id: string, fetch: () => Promise<void>) => {
     const run = fetch()
@@ -778,7 +873,19 @@ export function prFetchTracker(now: () => number): {
     isFetching: id => running.has(id),
     fetchWhenDue: (id, s, fetch) =>
       running.has(id) || !isPrFetchDue(s, endedAt.get(id), now()) ? null : start(id, fetch),
-    fetchNow: (id, fetch) => running.get(id) ?? start(id, fetch),
+    fetchNow: (id, fetch) => {
+      const current = running.get(id)
+      if (!current) return start(id, fetch)
+      const next =
+        following.get(id) ??
+        current.then(() => {
+          following.delete(id)
+          return running.get(id) ?? start(id, fetch)
+        })
+      following.set(id, next)
+
+      return next
+    },
   }
 }
 
@@ -801,8 +908,9 @@ export async function fetchPrs<S extends Session>(
         sawUnstartable = true
       }),
       s.prViews,
-      s.ledger.prs,
+      s.ledger,
       findsBranchPr,
+      () => host.now(),
     )
   let fetch = await fetchWith(bin)
   if (sawUnstartable) {

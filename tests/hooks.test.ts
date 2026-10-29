@@ -12,8 +12,9 @@ import type { Item, Session } from '../types'
 import { demoView } from '../hooks/demo'
 import { GH_TIMEOUT_MS } from '../hooks/gh'
 import { STATUS_SYSTEM } from '../hooks/model-text'
+import { HERDR_CHECK_MS } from '../hooks/herdr'
 import { LOOK_MIN_MS } from '../hooks/status'
-import { STATUS_REFRESH_MS } from '../hooks/session'
+import { emptySession, STATUS_REFRESH_MS } from '../hooks/session'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
 import { failingChecks, waitingThreads } from '../hooks/prs'
 import {
@@ -25,6 +26,7 @@ import {
   STATUS_TEXT_LINES,
   perTurnStatus,
   statusPage,
+  statusKeyPlan,
   rowKeyPlan,
   actionLines,
   RUNNING_FRAME_MS,
@@ -135,6 +137,14 @@ let commandRefusal: string | undefined
 let panesOpened: string[] = []
 let paneOpens: PaneOpenArgs[] = []
 let paneState: { isShown: boolean; isFocused: boolean } | null = null
+
+/** Selects a terminal row by its title, which is a button only while the row is not selected. */
+async function selectRow(
+  pane: { find(q: { key: string }): Promise<unknown>; press(q: { key: string }): Promise<unknown> },
+  id: string,
+) {
+  if (await pane.find({ key: `title-${id}` })) await pane.press({ key: `title-${id}` })
+}
 
 async function runBeforeAct() {
   const act = beforeAct
@@ -524,7 +534,7 @@ test('a dialog reaches the model with its questions, whether answered or dismiss
   const deployItem = itemAsking('Deploy to staging?')
   expect(deployItem?.optionDescriptions).toEqual({ Deploy: 'Runs the staging pipeline', Hold: 'Waits for the review' })
   const pane = await $.ui.mount(PANE)
-  await pane.press({ key: `select-${deployItem?.id}` })
+  await selectRow(pane, `${deployItem?.id}`)
   await clock.settle()
   const texts = (await pane.findAll({ type: 'Text' })).map(t => t.text ?? '')
   expect(texts).toContain('Deploy: Runs the staging pipeline')
@@ -598,23 +608,23 @@ test('a question’s handle is the number a typed answer reaches, and the band c
 
   const pane = await $.ui.mount(PANE)
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  const handle = async (id: string) => (await pane.find({ key: `select-${id}` }))?.props.label
+  const handle = async (id: string) => {
+    const label = (await pane.find({ key: `title-${id}` }))?.props.label
+    return typeof label === 'string' ? (label.match(/^(\d+\)) /)?.[1] ?? null) : undefined
+  }
   expect(await pane.find({ key: 'explain-i3-key' })).toBeDefined()
-  expect([await handle('i3'), await handle('i5'), await handle('i1'), await handle('i2')]).toEqual([
-    '1)',
-    '2)',
-    '•',
-    '•',
-  ])
+  expect([await handle('i5'), await handle('i1'), await handle('i2')]).toEqual(['2)', null, null])
+  expect(await pane.find({ text: /^1\) Add a --loud flag\?/ })).toBeDefined()
   expect(await band.find({ text: /Asks 6/ })).toBeDefined()
   expect(await pane.find({ text: /^ 6$/ })).toBeDefined()
   expect(sidebarTokens()).toMatchObject({ ...NO_COUNTS, 'inbox-needs-you': '6' })
 
   const answered = await $.prompt.submit({ text: '1. yes', wait: false, origin: { kind: 'composer' } })
   expect(answered.context?.join('\n')).toContain('1 → "Add a --loud flag?"')
-  expect(await handle('i3')).toBe('•')
+  expect(await pane.find({ text: /^1\) Add a --loud flag\?/ })).toBeUndefined()
+  expect(await pane.find({ text: /^Add a --loud flag\?/ })).toBeDefined()
 
-  await pane.press({ key: 'select-i4' })
+  await selectRow(pane, 'i4')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'help-i4-0' })
   await clock.settle()
@@ -667,7 +677,7 @@ test('Done on a task Claude just left tells Claude once Undo ends, and a task fr
   await reply('publish it', 'Sign in to npm and approve the deploy, then I publish.', 't2')
   const pane = await $.ui.mount(PANE)
   const done = async (id: string) => {
-    await pane.press({ key: `select-${id}` })
+    await selectRow(pane, `${id}`)
     await clock.advance(PRESS_GUARD_MS)
     await pane.press({ key: `done-${id}` })
     await clock.settle()
@@ -712,7 +722,7 @@ test('a Done message that waits for its prompt to run reads Queued instead of No
   })
   await clock.settle()
   const pane = await $.ui.mount(PANE)
-  await pane.press({ key: 'select-i1' })
+  await selectRow(pane, 'i1')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'done-i1' })
   await clock.settle()
@@ -749,7 +759,7 @@ const doneWakeAfterRewrite = async ($: Engine, on: On, isMatched: boolean) => {
     inFlight.push(pane.press({ key: 'explain-i1-key' }))
     await clock.settle()
   }
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'done-i2' })
   await clock.settle()
@@ -794,7 +804,7 @@ test('a turn runs from the main agent’s turn.start to its turn.complete, not f
   expect(await now()).toBe(null)
 
   const pane = await $.ui.mount(PANE)
-  await pane.press({ key: 'select-i1' })
+  await selectRow(pane, 'i1')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'done-i1' })
   await $.turn.start({ text: 'Look around the repo', turnId: 's1', agentId: 'a1' })
@@ -835,7 +845,7 @@ for (const switchAt of [null, 'before-submit', 'during-submit'] as const)
     await clock.settle()
     const pane = await $.ui.mount(PANE)
     for (const id of ['i1', 'i2']) {
-      await pane.press({ key: `select-${id}` })
+      await selectRow(pane, `${id}`)
       await clock.advance(PRESS_GUARD_MS)
       await pane.press({ key: `done-${id}` })
       await clock.settle()
@@ -930,7 +940,8 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   ).toBeDefined()
   await pane.press({ key: 'help-i1-2' })
   await clock.settle()
-  const red = (await pane.find({ type: 'Text', text: 'Could not open load.md: it no longer exists' }))?.props.color
+  const red = (await pane.find({ type: 'Text', text: /^\s*Could not open load\.md: it no longer exists$/ }))?.props
+    .color
   expect(red).toBeDefined()
   expect(toasts).toEqual([])
   expect(await band.find({ text: /Asks 1/ })).toBeDefined()
@@ -938,7 +949,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   expect(await pane.find({ text: 'Could not open load.md: it no longer exists' })).toBeDefined()
 
   files = ['/tmp/project/.env.local']
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'help-i2-0' })
   await clock.settle()
@@ -1138,7 +1149,7 @@ test('last actions an earlier build saved convert once by the table, and a task 
   expect((await pane.find({ key: 'fold-issue' }))?.props.label).toBe('▾ 1 closed')
 })
 
-test('the guidance reaches Claude in the close tool’s description and nowhere else', async ($, on) => {
+test('the guidance reaches Claude in the close tool’s description and nowhere else, and every inbox tool loads with the session', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('tool.describe', ($, e) => ({ description: e.description }))
@@ -1149,6 +1160,8 @@ test('the guidance reaches Claude in the close tool’s description and nowhere 
   expect(close.description).toContain('Close an item.')
   expect(close.description).toContain('# Inbox')
   expect(record.description).toBe('Record an item.')
+  const order = await $.tool.describe({ tool: 'mcp__inbox__order_prs', description: 'Order PRs.', provider })
+  expect([close, record, order].map(d => d.isDeferred)).toEqual([false, false, false])
 })
 
 test('the band is [Open inbox] and the counts with full-brightness labels, the same while working and after 15 idle minutes', async ($, on) => {
@@ -1186,7 +1199,7 @@ test('the band is [Open inbox] and the counts with full-brightness labels, the s
   expect(await standing.find({ text: /Plan written|last active/ })).toBeUndefined()
 
   const pane = await $.ui.mount(PANE)
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await pane.press({ key: 'tab-findings' })
   panesOpened = []
   await standing.press({ key: 'open-inbox' })
@@ -1246,9 +1259,13 @@ const replyWithStatus = async ($: Engine, on: On, answer: string | null | string
 }
 
 test('a reply’s Status comes from the separate Status call, after the ledger update', async ($, on) => {
-  const { ledger } = await replyWithStatus($, on, 'GOAL: Adding a greeting CLI\nNEW: working | Plan | Planning')
+  const { ledger } = await replyWithStatus(
+    $,
+    on,
+    'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Plan | Planning',
+  )
 
-  expect(ledger.overview?.goal).toBe('Adding a greeting CLI')
+  expect(ledger.overview?.head?.title).toBe('Adding a greeting CLI')
   expect(ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?', 'Name the command greet?'])
   expect(statusPrompts).toHaveLength(1)
 })
@@ -1264,12 +1281,12 @@ test('a failed Status call leaves the ledger update applied and no Status, and s
 
 test('a Status answer that holds prose is asked once more, and the second answer applies', async ($, on) => {
   const { ledger, overviewFailure } = await replyWithStatus($, on, [
-    'The person wants a CLI.\nGOAL: Adding a greeting CLI',
-    'GOAL: Adding a greeting CLI',
+    'The person wants a CLI.\nHEAD: Adding a greeting CLI | Building a CLI that greets by name',
+    'HEAD: Adding a greeting CLI | Building a CLI that greets by name',
   ])
 
   expect(statusPrompts).toHaveLength(2)
-  expect(ledger.overview?.goal).toBe('Adding a greeting CLI')
+  expect(ledger.overview?.head?.title).toBe('Adding a greeting CLI')
   expect(overviewFailure).toBeNull()
 })
 
@@ -1290,7 +1307,8 @@ test('a Status answer of UNCHANGED leaves the last Status as it was', async ($, 
 test('a ledger update shows before its Status call returns', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  let session: { ledger: { overview: { goal: string } | null; items: { id: string }[] } } | null = null
+  let session: { ledger: { overview: { head: { title: string } | null } | null; items: { id: string }[] } } | null =
+    null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
     session = e.value as never
     return next(e)
@@ -1307,7 +1325,7 @@ test('a ledger update shows before its Status call returns', async ($, on) => {
 
   let release: () => void = () => undefined
   statusHold = new Promise<void>(resolve => (release = resolve))
-  statusReply = 'GOAL: Scaffolding the command'
+  statusReply = 'HEAD: Scaffolding the command | Laying out the greet command'
   ledgerReply = 'CLOSED: i1 | Node chosen'
   await reply('use node', 't2')
 
@@ -1316,14 +1334,14 @@ test('a ledger update shows before its Status call returns', async ($, on) => {
   expect(statusPrompts.at(-1)).not.toContain('Use Node or Python?')
   release()
   await clock.settle()
-  expect(session!.ledger.overview?.goal).toBe('Scaffolding the command')
+  expect(session!.ledger.overview?.head?.title).toBe('Scaffolding the command')
 })
 
 test('a turn past the wait runs the Status call on its work so far at its next tool call, once, and no ledger call until the reply', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
   world($, on, prompts)
-  statusReply = 'GOAL: Adding a greeting CLI'
+  statusReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name'
   let session: Pick<Session, 'ledger'> | null = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
     session = e.value as never
@@ -1344,11 +1362,16 @@ test('a turn past the wait runs the Status call on its work so far at its next t
   expect(statusPrompts[0]).toContain('npm test')
   expect(statusPrompts[0]).not.toContain('<reply>')
   expect(prompts).toEqual([])
-  expect(session!.ledger.overview?.goal).toBe('Adding a greeting CLI')
+  expect(session!.ledger.overview?.head?.title).toBe('Adding a greeting CLI')
 })
 
 test('a ledger call that gives no usable answer runs no Status call', async ($, on) => {
-  const { ledger } = await replyWithStatus($, on, 'GOAL: Adding a greeting CLI', 'not a ledger')
+  const { ledger } = await replyWithStatus(
+    $,
+    on,
+    'HEAD: Adding a greeting CLI | Building a CLI that greets by name',
+    'not a ledger',
+  )
 
   expect(statusPrompts).toEqual([])
   expect(ledger.overview).toBeNull()
@@ -1357,7 +1380,8 @@ test('a ledger call that gives no usable answer runs no Status call', async ($, 
 test('the next ledger update does not wait for an earlier Status call, and Status calls run one at a time', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  let session: { ledger: { overview: { goal: string } | null; items: { ask: string }[] } } | null = null
+  let session: { ledger: { overview: { head: { title: string } | null } | null; items: { ask: string }[] } } | null =
+    null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
     session = e.value as never
     return next(e)
@@ -1371,7 +1395,7 @@ test('the next ledger update does not wait for an earlier Status call, and Statu
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   let release: () => void = () => undefined
   statusHold = new Promise<void>(resolve => (release = resolve))
-  statusReply = 'GOAL: Scaffolding the command'
+  statusReply = 'HEAD: Scaffolding the command | Laying out the greet command'
   ledgerReply = 'NEW: do | - | Water the plants | - | -'
   await reply('add a greeting cli', 't1')
   ledgerReply = 'NEW: do | - | Feed the cat | - | -'
@@ -1382,7 +1406,7 @@ test('the next ledger update does not wait for an earlier Status call, and Statu
   release()
   await clock.settle()
   expect(statusPrompts).toHaveLength(2)
-  expect(statusPrompts[1]).toContain('<goal>\nScaffolding the command\n</goal>')
+  expect(statusPrompts[1]).toContain('<head>\nScaffolding the command | Laying out the greet command\n</head>')
 })
 
 test('a mid-turn Status call still out when its turn ends writes first, and the reply’s Status call reads that write and writes last', async ($, on) => {
@@ -1399,7 +1423,10 @@ test('a mid-turn Status call still out when its turn ends writes first, and the 
   await clock.advance(STATUS_REFRESH_MS)
   let release: () => void = () => undefined
   statusHold = new Promise<void>(resolve => (release = resolve))
-  statusReply = ['GOAL: Planning the CLI', 'GOAL: Building the CLI']
+  statusReply = [
+    'HEAD: Planning the CLI | Planning a CLI that greets by name',
+    'HEAD: Building the CLI | Building a CLI that greets by name',
+  ]
   await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'npm test' } as never)
   await clock.settle()
   expect(statusPrompts).toHaveLength(1)
@@ -1413,8 +1440,8 @@ test('a mid-turn Status call still out when its turn ends writes first, and the 
 
   expect(statusPrompts).toHaveLength(2)
   expect(statusPrompts[1]).toContain('<reply>')
-  expect(statusPrompts[1]).toContain('<goal>\nPlanning the CLI\n</goal>')
-  expect(session!.ledger.overview?.goal).toBe('Building the CLI')
+  expect(statusPrompts[1]).toContain('<head>\nPlanning the CLI | Planning a CLI that greets by name\n</head>')
+  expect(session!.ledger.overview?.head?.title).toBe('Building the CLI')
 })
 
 test('a Status answer that lands after /clear goes to the conversation it was for, and the new conversation keeps an empty Status', async ($, on) => {
@@ -1428,7 +1455,7 @@ test('a Status answer that lands after /clear goes to the conversation it was fo
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   let release: () => void = () => undefined
   statusHold = new Promise<void>(resolve => (release = resolve))
-  statusReply = 'GOAL: Adding a greeting CLI\nNEW: working | Plan | being written'
+  statusReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Plan | being written'
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
   await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
@@ -1442,7 +1469,7 @@ test('a Status answer that lands after /clear goes to the conversation it was fo
 
   expect(session!.ledger.overview).toBeNull()
   expect(stored.has('s:session-2')).toBe(false)
-  expect(JSON.parse(stored.get('s:session-1') ?? '{}').ledger.overview?.goal).toBe('Adding a greeting CLI')
+  expect(JSON.parse(stored.get('s:session-1') ?? '{}').ledger.overview?.head?.title).toBe('Adding a greeting CLI')
 })
 
 test('resumed into a conversation it cannot fork yet, it catches up from the transcript before any reply', async ($, on) => {
@@ -1472,9 +1499,10 @@ test('resumed into a conversation it cannot fork yet, it catches up from the tra
 test('a catch-up writes its Status with a separate call over the transcript', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  statusReply = 'GOAL: Adding a greeting CLI\nNEW: queued | Command | named greet'
-  let session: { ledger: { overview: { goal: string; subjects: { name: string; status: string }[] } | null } } | null =
-    null
+  statusReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: queued | Command | named greet'
+  let session: {
+    ledger: { overview: { head: { title: string } | null; subjects: { name: string; status: string }[] } | null }
+  } | null = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
     session = e.value as never
     return next(e)
@@ -1494,7 +1522,7 @@ test('a catch-up writes its Status with a separate call over the transcript', as
   await clock.settle()
 
   expect(session!.ledger.overview).toMatchObject({
-    goal: 'Adding a greeting CLI',
+    head: { title: 'Adding a greeting CLI' },
     subjects: [{ name: 'Command', status: 'queued' }],
   })
   expect(statusPrompts.at(-1)).toContain('<conversation>\nPerson: Add a greeting CLI.')
@@ -1528,7 +1556,11 @@ test('a catch-up’s Status call waits for a failing Status call still out, and 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   let release: () => void = () => undefined
   statusHold = new Promise<void>(resolve => (release = resolve))
-  statusReply = ['The plan is written.', 'Still prose.', 'GOAL: Adding a greeting CLI']
+  statusReply = [
+    'The plan is written.',
+    'Still prose.',
+    'HEAD: Adding a greeting CLI | Building a CLI that greets by name',
+  ]
   await reply('Plan ready.', 't1')
   ledgerReply = 'not a ledger'
   await reply('Using Node.', 't2')
@@ -1541,7 +1573,7 @@ test('a catch-up’s Status call waits for a failing Status call still out, and 
   expect(statusPrompts[2]).toContain('<conversation>\nPerson: Add a greeting CLI.')
   expect(failureCauses).toContain('refused')
   expect(failureCauses.at(-1)).toBeNull()
-  expect(session!.ledger.overview?.goal).toBe('Adding a greeting CLI')
+  expect(session!.ledger.overview?.head?.title).toBe('Adding a greeting CLI')
 })
 
 test('after a failed update, the next reply catches up over the whole conversation', async ($, on) => {
@@ -1889,14 +1921,14 @@ test('t opens a field for the person’s own words: a question’s words go to C
   await pane.press({ key: 'cancel-i1' })
   expect(await replyField(pane, 'i1')).toBeUndefined()
   expect(sent).toEqual([])
-  await pane.press({ key: 'select-i2' })
-  await pane.press({ key: 'select-i1' })
+  await selectRow(pane, 'i2')
+  await selectRow(pane, 'i1')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i1' })
   expect((await replyField(pane, 'i1'))?.props.value).toBe('Deno, actually')
   await pane.press({ key: 'send-i1' })
   expect(sent.at(-1)).toBe('Re "Use Node or Python?": Deno, actually')
-  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/^✓Use Node or Python\?\s·\sReplied/)
+  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/^Use Node or Python\?\s·\s✓ Replied/)
   await $.tool.call({ tool: 'mcp__inbox__close', id: 'i1', answer: 'Deno' } as never)
   await clock.settle()
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
@@ -2022,16 +2054,18 @@ test('a question Claude closes while the person types an answer stays in place w
   await clock.settle()
   const pane = await $.ui.mount(PANE)
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
   await pane.input({ key: await replyKey(pane, 'i2'), text: 'Call it hello', kind: 'change' })
-  await $.tool.call({ tool: 'mcp__inbox__close', id: 'i2', reason: 'settled in chat' } as never)
+  await $.tool.call({ tool: 'mcp__inbox__close', id: 'i2', reason: 'no longer applies: settled in chat' } as never)
   await clock.settle()
   await clock.advance(9000)
 
   expect(await replyField(pane, 'i2')).toBeDefined()
-  expect((await pane.find({ key: 'row-i2' }))?.text).toMatch(/Closed\sby\sClaude:\ssettled\sin\schat/)
+  expect((await pane.find({ key: 'row-i2' }))?.text).toMatch(
+    /Closed\sby\sClaude:\sno\slonger\sapplies:\ssettled\sin\schat/,
+  )
   expect(await pane.find({ key: 'discard-i2' })).toBeDefined()
   expect(await pane.find({ key: 'cancel-i2' })).toBeUndefined()
   expect(await band.find({ text: /Asks 1/ })).toBeDefined()
@@ -2043,6 +2077,7 @@ test('a question Claude closes while the person types an answer stays in place w
   expect(await replyField(pane, 'i2')).toBeUndefined()
   expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
   expect(await pane.find({ text: /^Replied$/ })).toBeDefined()
+  expect((await pane.find({ key: 'settled-i2' }))?.text).toMatch(/✗\s*Replied/)
   await clock.advance(9000)
   expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
   await $.prompt.submit({ text: 'what is next?', wait: false, origin: { kind: 'composer' } })
@@ -2050,6 +2085,8 @@ test('a question Claude closes while the person types an answer stays in place w
   expect(await pane.find({ key: 'row-i2' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-i2' })).toBeUndefined()
   expect(await pane.find({ text: /1 closed/ })).toBeDefined()
+  await pane.press({ key: 'fold-question' })
+  expect((await pane.find({ key: 'closed-i2' }))?.text).toMatch(/✗\s*Closed\sby\sClaude/)
 })
 
 test('a held row and the rows that closed while the tab shows stay in place, and the reply still sends, after more items close than the Closed list keeps', async ($, on) => {
@@ -2090,7 +2127,7 @@ test('a held row and the rows that closed while the tab shows stay in place, and
   })
   await clock.settle()
   const pane = await $.ui.mount(PANE)
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
   await pane.input({ key: await replyKey(pane, 'i2'), text: 'Call it hello', kind: 'change' })
@@ -2138,7 +2175,7 @@ test('Discard ends a held row’s reply and folds it into Closed at once, and a 
   await pane.press({ key: 'typekey-i1' })
   await pane.input({ key: await replyKey(pane, 'i1'), text: 'Deno, actually', kind: 'change' })
   await pane.press({ key: 'cancel-i1' })
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
   await pane.input({ key: await replyKey(pane, 'i2'), text: 'Call it hello', kind: 'change' })
@@ -2157,7 +2194,7 @@ test('Discard ends a held row’s reply and folds it into Closed at once, and a 
   expect(await pane.find({ text: /1 closed/ })).toBeDefined()
   expect(sent).toEqual([])
 
-  await pane.press({ key: 'select-i1' })
+  await selectRow(pane, 'i1')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'dismiss-i1' })
   await clock.settle()
@@ -2230,7 +2267,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
   await clock.advance(QUEUED_AFTER_MS)
   expect(await pane.find({ text: /^Queued:\sExplain$/ })).toBeDefined()
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
   inFlight.push(pane.input({ key: await replyKey(pane, 'i2'), text: 'yes' }))
@@ -2239,12 +2276,12 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   expect(await pane.find({ text: /Queued:\sReply/ })).toBeDefined()
   await arrive($)
   await clock.settle()
-  await pane.press({ key: 'select-i1' })
+  await selectRow(pane, 'i1')
   expect(await pane.find({ text: /^Explaining…$/ })).toBeDefined()
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
 
   submitAnswer = { drop: 'a hook refused it' }
-  await pane.press({ key: 'select-i1' })
+  await selectRow(pane, 'i1')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i1' })
   await pane.input({ key: await replyKey(pane, 'i1'), text: 'Deno, actually' })
@@ -2298,7 +2335,7 @@ test('a reply another plugin rewrote to the text of a pending press reads Not co
   submitAnswer = 'hold'
   inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.settle()
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
   submitAnswer = { rewrite: held[0]!.text }
@@ -2590,7 +2627,7 @@ test('Dismiss settles a question in place with Undo, which brings it back open a
   await start()
   await clock.settle()
   expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await pane.press({ key: 'undo-i1' })
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
@@ -2882,6 +2919,92 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   expect(sidebarTokens()['inbox-prs']).toBe('1')
 })
 
+test('Resolve conflicts reads the PR from GitHub before it sends: it reads Refreshing while gh answers, sends while the conflicts remain, and sends nothing once a push resolved them', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let mergeable = 'CONFLICTING'
+  let release: (() => void) | null = null
+  let isHeld = false
+  ghAnswers.push(
+    {
+      match: argv => argv.includes('view') && argv.includes('12'),
+      get stdout() {
+        return JSON.stringify({
+          number: 12,
+          title: 'Add a greeting CLI',
+          url: 'https://github.com/acme/greet/pull/12',
+          isDraft: false,
+          state: 'OPEN',
+          baseRefName: 'main',
+          mergeable,
+          reviewDecision: 'APPROVED',
+          statusCheckRollup: [
+            {
+              __typename: 'CheckRun',
+              name: 'test',
+              workflowName: 'CI',
+              status: 'COMPLETED',
+              conclusion: 'CANCELLED',
+              startedAt: '2026-10-08T09:00:00Z',
+            },
+            {
+              __typename: 'CheckRun',
+              name: 'test',
+              workflowName: 'CI',
+              status: 'COMPLETED',
+              conclusion: 'SUCCESS',
+              startedAt: '2026-10-08T09:05:00Z',
+            },
+          ],
+        })
+      },
+      hold: () => (isHeld ? new Promise<void>(r => (release = r)) : Promise.resolve()),
+    },
+    {
+      match: argv => argv.includes('graphql'),
+      stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+    },
+  )
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'open the PR', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Opened https://github.com/acme/greet/pull/12.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-prs' })
+  await clock.settle()
+  expect(await pane.find({ text: /^ ·\sconflicts with main$/ })).toBeDefined()
+  expect(await pane.find({ key: 'fix-acme/greet#12-test-key' })).toBeUndefined()
+
+  isHeld = true
+  const first = pane.press({ key: 'resolve-acme/greet#12' })
+  await clock.settle()
+  expect(await pane.find({ text: /Refreshing PR #12…/ })).toBeDefined()
+  expect(sent).toEqual([])
+  release!()
+  await first
+  await clock.settle()
+  expect(sent.at(-1)).toContain('PR #12 (https://github.com/acme/greet/pull/12) conflicts with main.')
+  expect(await pane.find({ text: /✓ Asked to resolve conflicts ·/ })).toBeDefined()
+
+  isHeld = false
+  mergeable = 'MERGEABLE'
+  await clock.advance(PRESS_GUARD_MS)
+  expect((await pane.find({ key: 'resolve-acme/greet#12' }))?.props.label).toBe('Resolve conflicts again')
+  const sends = sent.length
+  await pane.press({ key: 'resolve-acme/greet#12' })
+  await clock.settle()
+  expect(sent.length).toBe(sends)
+  expect(await pane.find({ key: 'resolve-acme/greet#12' })).toBeUndefined()
+  expect(await pane.find({ text: /^This changed before your press\. Nothing was sent\.$/ })).toBeDefined()
+})
+
 test('opening the PRs tab while another PR fetch runs still finds the branch’s PR', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
@@ -3089,6 +3212,190 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await clock.settle()
     expect(await pane.find({ text: /No PRs/ })).toBeDefined()
     expect(await pane.find({ text: notice })).toBeUndefined()
+  })
+}
+
+for (const look of ['terminal', 'desktop'] as const) {
+  test(`in the ${look} look, Dismiss merged draws after the PR blocks while a merged PR shows, and settles each merged PR with its own Undo`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    const states: Record<number, string> = { 12: 'OPEN', 14: 'OPEN', 15: 'OPEN' }
+    const view = (number: number) =>
+      JSON.stringify({
+        number,
+        title: `Work ${number}`,
+        url: `https://github.com/acme/greet/pull/${number}`,
+        isDraft: false,
+        state: states[number],
+        baseRefName: 'main',
+        mergeable: 'MERGEABLE',
+        reviewDecision: '',
+        statusCheckRollup: [],
+      })
+    ghAnswers.push(
+      ...[12, 14, 15].map(n => ({
+        match: (argv: readonly string[]) => argv.includes('view') && argv.includes(String(n)),
+        get stdout() {
+          return view(n)
+        },
+      })),
+      {
+        match: argv => argv.includes('graphql'),
+        stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+      },
+    )
+    await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+    await $.prompt.submit({ text: 'open the PRs', wait: false, origin: { kind: 'composer' } })
+    await $.turn.complete({
+      answer:
+        'Opened https://github.com/acme/greet/pull/12, https://github.com/acme/greet/pull/14 and https://github.com/acme/greet/pull/15.',
+      durationMs: 5,
+      isAborted: false,
+      turnId: 't1',
+      reason: 'answer',
+    })
+    await clock.settle()
+    states[12] = 'MERGED'
+    states[14] = 'MERGED'
+    await clock.advance(3 * 60_000)
+    await $.command.run({ command: 'inbox', args: '' } as never)
+    await clock.settle()
+    paneState = { isShown: true, isFocused: true }
+    const pane =
+      look === 'terminal'
+        ? await $.ui.mount(PANE)
+        : await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 120 } })
+    if (look === 'terminal') await pane.press({ key: 'tab-prs' })
+    else {
+      const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+      const x = bar
+        .slice(
+          0,
+          bar.findIndex(t => t.id === 'prs'),
+        )
+        .reduce((sum, t) => sum + t.width + gap, 0)
+      await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+    }
+    await clock.settle()
+    const buttonKeys = async () =>
+      (await pane.findAll({ type: 'Button' })).map(b => b.key ?? '').filter(k => !k.endsWith('-key'))
+    const keys = await buttonKeys()
+    expect(keys.filter(k => k === 'dismiss-merged-tab')).toHaveLength(1)
+    expect(keys.indexOf('dismiss-merged-tab')).toBeGreaterThan(
+      Math.max(...keys.flatMap((k, n) => (/-acme\/greet#\d+$/.test(k) ? [n] : []))),
+    )
+    const linked = () => (JSON.parse(stored.get('s:session-1') ?? '{}') as { ledger?: { prs: string[] } }).ledger?.prs
+
+    await clock.advance(PRESS_GUARD_MS)
+    await pane.press({ key: 'dismiss-merged-tab' })
+    await clock.settle()
+    expect(linked()).toEqual(['acme/greet#15'])
+    expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
+    expect(await pane.find({ key: 'settled-pr:acme/greet#14' })).toBeDefined()
+    expect(await buttonKeys()).not.toContain('dismiss-merged-tab')
+    if (look === 'desktop') return
+    await pane.press({ key: 'undo-pr:acme/greet#12' })
+    await clock.settle()
+    expect(linked()).toEqual(['acme/greet#15', 'acme/greet#12'])
+    expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeUndefined()
+    expect(await pane.find({ key: 'settled-pr:acme/greet#14' })).toBeDefined()
+    expect(await buttonKeys()).toContain('dismiss-merged-tab')
+  })
+}
+
+for (const look of ['terminal', 'desktop'] as const) {
+  test(`in the ${look} look, an order_prs call draws its order's line and a rank before each ranked PR, ahead of the rest, and a merge, a later link, Dismiss, Undo and a clear each redraw it`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    const states: Record<number, string> = { 12: 'OPEN', 14: 'OPEN', 15: 'OPEN', 16: 'OPEN' }
+    const view = (number: number) =>
+      JSON.stringify({
+        number,
+        title: `Work ${number}`,
+        url: `https://github.com/acme/greet/pull/${number}`,
+        isDraft: false,
+        state: states[number],
+        baseRefName: 'main',
+        mergeable: 'MERGEABLE',
+        reviewDecision: '',
+        statusCheckRollup: [],
+      })
+    ghAnswers.push(
+      ...[12, 14, 15, 16].map(n => ({
+        match: (argv: readonly string[]) => argv.includes('view') && argv.includes(String(n)),
+        get stdout() {
+          return view(n)
+        },
+      })),
+      {
+        match: argv => argv.includes('graphql'),
+        stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+      },
+    )
+    const reply = async (answer: string, turnId: string) => {
+      await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
+      await $.turn.complete({ answer, durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+      await clock.settle()
+    }
+    await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+    await reply('Opened https://github.com/acme/greet/pull/12 and https://github.com/acme/greet/pull/14.', 't1')
+    await $.tool.call({
+      tool: 'mcp__inbox__order_prs',
+      repo: 'acme/greet',
+      numbers: [14, 15, 12],
+      label: 'Merge order',
+    })
+    await clock.advance(3 * 60_000)
+    await $.command.run({ command: 'inbox', args: '' } as never)
+    await clock.settle()
+    paneState = { isShown: true, isFocused: true }
+    const pane =
+      look === 'terminal'
+        ? await $.ui.mount(PANE)
+        : await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 120 } })
+    if (look === 'terminal') await pane.press({ key: 'tab-prs' })
+    else {
+      const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+      const x = bar
+        .slice(
+          0,
+          bar.findIndex(t => t.id === 'prs'),
+        )
+        .reduce((sum, t) => sum + t.width + gap, 0)
+      await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+    }
+    await clock.settle()
+    const heads = async () =>
+      (await pane.findAll({ type: 'Text', text: /^(\d+\. )?#\d+ Work/ })).map(t =>
+        (t.text ?? '').replace(/ Work[\s\S]*/, '').replace(' ', ' '),
+      )
+    const orderLine = () => pane.find({ type: 'Text', text: /^Merge order · set by Claude/ })
+
+    expect(await orderLine()).toBeDefined()
+    expect(await heads()).toEqual(['1. #14', '2. #15', '3. #12'])
+
+    await reply('Opened https://github.com/acme/greet/pull/16.', 't2')
+    await clock.advance(3 * 60_000)
+    expect(await heads()).toEqual(['1. #14', '2. #15', '3. #12', '#16'])
+
+    states[14] = 'MERGED'
+    await clock.advance(3 * 60_000)
+    expect(await heads()).toEqual(['1. #15', '2. #12', '#16', '#14'])
+
+    await pane.press({ key: 'dismiss-pr-acme/greet#15' })
+    await clock.settle()
+    expect(await pane.find({ key: 'settled-pr:acme/greet#15' })).toBeDefined()
+    expect(await heads()).toEqual(['2. #12', '#16', '#14'])
+    if (look === 'terminal') {
+      await pane.press({ key: 'undo-pr:acme/greet#15' })
+      await clock.settle()
+      expect(await heads()).toEqual(['1. #15', '2. #12', '#16', '#14'])
+    }
+
+    await $.tool.call({ tool: 'mcp__inbox__order_prs', numbers: [] })
+    await clock.settle()
+    expect(await orderLine()).toBeUndefined()
+    expect((await heads()).every(h => h.startsWith('#'))).toBe(true)
   })
 }
 
@@ -3801,7 +4108,7 @@ test('where classic.SessionStart is skipped, the first prompt after /clear, /res
   world($, on, [])
   const turn = async (text: string, reply: string, goal: string) => {
     ledgerReply = reply
-    statusReply = `GOAL: ${goal}\nNEW: queued | Answer | Waiting on an answer`
+    statusReply = `HEAD: ${goal} | Answering the question\nNEW: queued | Answer | Waiting on an answer`
     await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
     await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: text, reason: 'answer' })
     await clock.settle()
@@ -3936,7 +4243,7 @@ test('a session saved mid-turn by a process that ended loads with no turn runnin
   await clock.settle()
   expect(session!.presence.isTurnRunning).toBe(false)
   const pane = await $.ui.mount(PANE)
-  await pane.press({ key: 'select-i1' })
+  await selectRow(pane, 'i1')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'done-i1' })
   await clock.advance(SETTLED_MS)
@@ -4443,7 +4750,7 @@ test('the desktop pane draws each action as one button and the tabs as one click
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
   const buttons = await pane.findAll({ type: 'Button' })
   expect(buttons.filter(b => b.props.hotkey !== undefined || String(b.props.label).startsWith(': '))).toEqual([])
-  expect(buttons.map(b => b.key ?? '').filter(k => /-key$|^tab-key-|^next$|^previous$|^key-list$/.test(k))).toEqual([])
+  expect(buttons.map(b => b.key ?? '').filter(k => /-key$|^tab-key-|^next$|^previous$/.test(k))).toEqual([])
   expect(buttons.map(b => b.key ?? '').filter(k => k.startsWith('tab-'))).toEqual([])
   const recommended = await pane.find({ key: 'answer-i1-0' })
   expect([recommended?.props.label, recommended?.props.variant]).toEqual(['Node (recommended)', 'primary'])
@@ -4742,9 +5049,10 @@ for (const isNextBuild of [false, true])
       let checked = 0
       for (const row of prRows) {
         await clock.advance(PRESS_GUARD_MS)
-        if (!(await pane.find({ key: `select-${row.id}` }))) continue
-        if (look === 'terminal') await pane.press({ key: `select-${row.id}` })
-        else await pane.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: `select-${row.id}` })
+        const selectKey = look === 'terminal' ? `title-${row.id}` : `select-${row.id}`
+        if (!(await pane.find({ key: selectKey }))) continue
+        if (look === 'terminal') await pane.press({ key: selectKey })
+        else await pane.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: selectKey })
         await clock.settle()
         const { controls } = await drawn()
         const labels = [...row.labels.filter(a => !a.isFollowUp), ...row.labels.filter(a => a.isFollowUp)].map(
@@ -4754,6 +5062,31 @@ for (const isNextBuild of [false, true])
         checked++
       }
       expect(checked, `${look} PR rows checked`).toBeGreaterThan(1)
+      if (!isNextBuild) continue
+
+      if (look === 'terminal') await pane.press({ key: 'tab-overview' })
+      else {
+        const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+        const x = bar
+          .slice(
+            0,
+            bar.findIndex(t => t.id === 'overview'),
+          )
+          .reduce((sum, t) => sum + t.width + gap, 0)
+        await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+      }
+      await clock.settle()
+      const page = statusPage({ ledger, presence: emptySession().presence }, 1_000_000)
+      const planned = page.rows.flatMap(r => statusKeyPlan(r).map(k => `${r.id} ${k.label}`))
+      expect(planned, 'the demo’s Status has rows with buttons').not.toEqual([])
+      const statusButtons = (await drawn()).buttons
+        .filter(b => b.key.startsWith('show-ask-'))
+        .map(b => `${b.key.slice('show-ask-'.length)} ${b.label}`)
+      expect(statusButtons, `${look} Status buttons`).toEqual(planned)
+      await pane.press({ key: `show-ask-${page.rows.find(r => statusKeyPlan(r).length > 0)!.id}` })
+      await clock.settle()
+      expect(await pane.find({ key: 'status-head' }), `${look} View leaves the Status`).toBeUndefined()
+      expect(await pane.find({ key: 'view-d17' }), `${look} View selects the oldest ask`).toBeDefined()
     }
   })
 
@@ -4843,9 +5176,10 @@ test('in the terminal and desktop looks, an open row’s follow-ups are never sp
     }
     await clock.settle()
     await clock.advance(PRESS_GUARD_MS)
-    if (await pane.find({ key: `select-${row.id}` }))
-      if (look === 'terminal') await pane.press({ key: `select-${row.id}` })
-      else await pane.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: `select-${row.id}` })
+    const selectKey = look === 'terminal' ? `title-${row.id}` : `select-${row.id}`
+    if (await pane.find({ key: selectKey }))
+      if (look === 'terminal') await pane.press({ key: selectKey })
+      else await pane.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: selectKey })
     await clock.settle()
 
     const forms = new Set<string>()
@@ -4923,14 +5257,125 @@ test('a forked conversation keeps the parent’s findings and closed records, an
   expect(await contextOf()).toContain('- issue: Retry loop never backs off (close id: f1)')
 })
 
+test('an answer on its way runs its mark each frame in the terminal and as an Svg on desktop, and shows ✓ once it arrives', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('ui.focus', () => ({}))
+  paneState = { isShown: true, isFocused: true }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await clock.settle()
+  submitAnswer = 'hold'
+  inFlight.push(pane.press({ key: 'answer-i1-0' }))
+  await clock.settle()
+  const markOf = async () =>
+    [...((await pane.find({ key: 'settled-i1' }))?.text ?? '')].filter(c => RUNNING_FRAMES.some(f => f === c)).join('')
+  const drawn: string[] = []
+  const moving: string[] = []
+  for (let n = 0; n < RUNNING_FRAMES.length; n++) {
+    drawn.push(await markOf())
+    moving.push(runningMark(clock.now()))
+    await clock.advance(RUNNING_FRAME_MS)
+  }
+  expect(new Set(moving).size).toBeGreaterThan(1)
+  expect(drawn).toEqual(moving)
+
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+  await clock.settle()
+  expect((await desktop.find({ key: 'settled-i1-mark' }))?.text ?? null).not.toBeNull()
+
+  await arrive($)
+  await clock.settle()
+  expect(await markOf()).toBe('')
+  expect((await pane.find({ key: 'settled-i1' }))?.text).toMatch(/✓\s*Node/)
+})
+
+test('in a theme without tone colors, a replied question’s ✓ takes the done color whether its row is selected or not', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('ui.focus', () => ({}))
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await selectRow(pane, 'i1')
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'typekey-i1' })
+  await pane.input({ key: await replyKey(pane, 'i1'), text: 'Deno', kind: 'change' })
+  await pane.press({ key: 'send-i1' })
+  await clock.settle()
+  type Drawn = { type: string; props: Record<string, unknown>; children?: unknown[] }
+  const markIn = (el: Drawn | undefined): Drawn | undefined =>
+    el?.type === 'Text' && el.children?.join('') === '✓'
+      ? el
+      : (el?.children ?? [])
+          .filter((c): c is Drawn => typeof c === 'object')
+          .reduce<Drawn | undefined>((found, c) => found ?? markIn(c), undefined)
+  const doneMark = async () => markIn(await pane.find({ key: 'row-i1' }))?.props.color
+  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/✓ Replied/)
+  expect(await doneMark()).toBe('success')
+
+  await selectRow(pane, 'i2')
+  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/✓ Replied/)
+  expect(await doneMark()).toBe('success')
+})
+
+test('on desktop, a cancelled question’s ✗ is drawn as a shape and a dismissed one’s ✕ as text, so the two read apart', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  paneState = { isShown: true, isFocused: true }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const ask = (text: string) =>
+    $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask: text, options: ['Yes', 'No'] })
+  await ask('Add a gaze-only mode too?')
+  await ask('Fall back to voice when your hands are busy?')
+  const pane = await $.ui.mount(PANE)
+  await clock.settle()
+  await selectRow(pane, 'i1')
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'dismiss-i1' })
+  await $.tool.call({
+    tool: 'mcp__inbox__close',
+    id: 'i2',
+    reason: 'no longer applies: voice already takes over',
+  } as never)
+  await clock.advance(SETTLED_MS)
+  await leaveAndReturn(pane, clock, 'needsYou')
+
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+  await clock.settle()
+  await desktop.post({ isUnfolded: true }, { in: 'fold-question' })
+  await clock.settle()
+  const cancelledMark = (await desktop.find({ key: 'closed-i2-mark' }))?.children.find(
+    c => typeof c === 'object' && (c as { type?: string }).type === 'Svg',
+  ) as { props: { alt?: string } } | undefined
+  expect(cancelledMark?.props.alt).toBe('✗')
+  expect((await desktop.find({ key: 'closed-i1' }))?.text).toMatch(/✕/)
+  expect(await desktop.find({ key: 'closed-i1-mark' })).toBeUndefined()
+})
+
 test('a working subject’s mark on the Status moves each frame only while a turn runs, and a queued subject’s never does', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
   paneState = { isShown: true, isFocused: true }
   statusReply = [
-    'ROLE: coordinator',
-    'GOAL: Adding a greeting CLI',
+    'HEAD: Adding a greeting CLI | Building a CLI that greets by name',
     'NEW: working | Help text | being written',
     'NEW: queued | Loud flag | after the help text',
   ].join('\n')
@@ -4981,13 +5426,13 @@ test('a working subject’s mark on the Status moves each frame only while a tur
   expect(ended.working).toEqual(ended.still)
 })
 
-test('on a next build, a look starts when the Status page shows, the page shows the goal and the subjects in place of rows, leaves the row keys idle, a row tab shows its rows again, and an ask names the subject it holds up', async ($, on) => {
+test('on a next build, a look starts when the Status page shows, the page shows the head and the subjects in place of rows, binds only the held subject’s View key, View shows Asks with its ask selected, and an ask names the subject it holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
   paneState = { isShown: true, isFocused: true }
   statusReply =
-    'GOAL: Adding a greeting CLI\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime\nNEW: working | Plan | being written\nDONE: s2 | written'
+    'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime\nNEW: working | Plan | being written\nDONE: s2 | written'
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
@@ -5005,8 +5450,10 @@ test('on a next build, a look starts when the Status page shows, the page shows 
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
   expect(lookOf()).not.toBeNull()
-  expect((await pane.find({ key: 'status-goal' }))?.text).toBe('Adding a greeting CLI')
-  expect((await pane.find({ key: 'status-s1-name' }))?.text).toBe('Runtime')
+  expect((await pane.find({ key: 'status-head' }))?.text).toBe(
+    'Adding a greeting CLIBuilding a CLI that greets by name',
+  )
+  expect((await pane.find({ key: 'status-s1-name' }))?.text).toBe('Runtime · waiting')
   expect((await pane.find({ key: 'status-s1-text' }))?.text).toBe('Node or Python')
   expect((await pane.find({ key: 'status-s1' }))?.text).toContain('◆')
   expect((await pane.find({ key: 'status-s2-text' }))?.text).toBe('written')
@@ -5015,7 +5462,9 @@ test('on a next build, a look starts when the Status page shows, the page shows 
     (await pane.findAll({ type: 'Button' }))
       .map(b => b.key ?? '')
       .filter(k => k.endsWith('-key') && !k.startsWith('tab-'))
-  expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
+  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key'])
+  expect((await pane.find({ key: 'show-ask-s1' }))?.text).toBe('v: View question')
+  expect(await pane.find({ key: 'show-ask-s2' })).toBeUndefined()
   await pane.press({ key: 'next' })
   await pane.press({ key: 'no-row-d-key' })
   await $.tool.call({
@@ -5026,16 +5475,24 @@ test('on a next build, a look starts when the Status page shows, the page shows 
     detail: 'Only tests run.',
   })
   await clock.settle()
-  expect(await pane.find({ key: 'status-goal' })).toBeDefined()
-  expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
+  expect(await pane.find({ key: 'status-head' })).toBeDefined()
+  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key'])
 
-  await pane.press({ key: 'tab-key-needsYou' })
+  await pane.press({ key: 'show-ask-s1-key' })
   await clock.settle()
   expect(lookOf()).toBeNull()
-  expect(await pane.find({ key: 'status-goal' })).toBeUndefined()
+  expect(await pane.find({ key: 'status-head' })).toBeUndefined()
+  expect(await pane.find({ key: 'view-i1' })).toBeDefined()
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
   await pane.press({ key: 'tab-findings' })
   expect(await pane.find({ key: 'address-f3' })).toBeDefined()
+
+  await $.tool.call({ tool: 'mcp__inbox__close', id: 'i1', answer: 'Node' })
+  await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  expect((await pane.find({ key: 'status-s1' }))?.text).not.toContain('◆')
+  expect(await pane.find({ key: 'show-ask-s1' })).toBeUndefined()
+  expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
 })
 
 test('on a next build, a look at the Status that ends while a Status call is out keeps its Seen line, and the answer that lands after it shows above the line', async ($, on) => {
@@ -5054,7 +5511,7 @@ test('on a next build, a look at the Status that ends while a Status call is out
     await clock.settle()
   }
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  statusReply = 'GOAL: Adding a greeting CLI\nNEW: working | Plan | being written'
+  statusReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Plan | being written'
   await reply('add a greeting cli', 't1')
   const pane = await $.ui.mount(PANE)
   let release: () => void = () => undefined
@@ -5084,7 +5541,8 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Status page s
   const prompts: string[] = []
   world($, on, prompts)
   paneState = { isShown: true, isFocused: true }
-  statusReply = 'GOAL: Adding a greeting CLI\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime'
+  statusReply =
+    'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime'
   let page: { value: unknown; version: number } = { value: 'overview', version: 1 }
   on('state.get', { plugin: 'inbox', key: 'page' } as const, () => ({ value: page as never }))
   on('state.set', { plugin: 'inbox', key: 'page' } as const, ($, e) => {
@@ -5099,7 +5557,7 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Status page s
   const pane = await $.ui.mount(PANE)
   await clock.settle()
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
-  expect(await pane.find({ key: 'status-goal' })).toBeUndefined()
+  expect(await pane.find({ key: 'status-head' })).toBeUndefined()
   expect(await pane.find({ text: /Holds up/ })).toBeUndefined()
   const tabKeys = (await pane.findAll({ type: 'Button' }))
     .filter(b => (b.key ?? '').startsWith('tab-key-'))
@@ -5147,8 +5605,13 @@ test('Claude Code task calls build the agent task list the Status call reads', a
 
 const childrenOf = (stored: Map<string, string>) => {
   const saved = [...stored].find(([k]) => k.startsWith('s:'))
-  const children: { kind: string; name: string; endedAt: number | null; lastActivityAt: number | null }[] =
-    (saved && JSON.parse(saved[1]).ledger.overview?.children) ?? []
+  const children: {
+    kind: string
+    name: string
+    endedAt: number | null
+    lastActivityAt: number | null
+    delegateState: string | null
+  }[] = (saved && JSON.parse(saved[1]).ledger.overview?.children) ?? []
 
   return children
 }
@@ -5278,7 +5741,7 @@ test('a subagent that runs inside its Agent call ends at the call’s result, an
   expect(running()).toEqual([])
 })
 
-test('a Herdr delegate runs as a child from the command that starts it until a wait on it ends, keeps its id when prompted again, and ends at a turn’s end once Herdr shows it no longer working', async ($, on) => {
+test('a Herdr delegate runs as a child from the command that starts it until a wait on it ends, keeps its id when prompted again, and at a turn’s end takes the state Herdr shows: blocked keeps it running, and ready ends it, finished once it had worked', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   const delegates = () => childrenOf(stored).map(c => [c.kind, c.name, c.endedAt === null])
@@ -5323,6 +5786,63 @@ test('a Herdr delegate runs as a child from the command that starts it until a w
     ['delegate', 'helper', true],
     ['delegate', 'scout', true],
   ])
+
+  await clock.advance(60_000)
+  const later = [
+    { name: 'helper', agent_status: 'blocked' },
+    { name: 'scout', agent_status: 'done' },
+  ]
+  ghAnswers.unshift({
+    match: argv => argv.join(' ') === 'herdr agent list',
+    stdout: JSON.stringify({ id: 'q', result: { type: 'agent_list', agents: later } }),
+  })
+  await $.turn.complete({ answer: 'Still on it.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  expect(childrenOf(stored).map(c => [c.name, c.endedAt === null, c.delegateState])).toEqual([
+    ['fixer', false, 'working'],
+    ['reviewer', false, null],
+    ['helper', true, 'blocked'],
+    ['scout', false, 'finished'],
+  ])
+})
+
+test('while the Status shows a running delegate, the inbox asks Herdr each HERDR_CHECK_MS, with no turn ending, and stops once the Status hides', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  files = ['/.next-build']
+  const herdrAsks = () => ran.filter(argv => argv.join(' ') === 'herdr agent list').length
+  const answer = (agent_status: string) =>
+    ghAnswers.unshift({
+      match: argv => argv.join(' ') === 'herdr agent list',
+      stdout: JSON.stringify({ id: 'q', result: { type: 'agent_list', agents: [{ name: 'fixer', agent_status }] } }),
+    })
+
+  paneState = { isShown: true, isFocused: true }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'hand it off', wait: false, origin: { kind: 'composer' } })
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent prompt fixer "fix it"' })
+  await clock.advance(HERDR_CHECK_MS)
+  answer('working')
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  const asked = herdrAsks()
+  expect(asked).toBeGreaterThan(0)
+
+  answer('blocked')
+  await clock.advance(HERDR_CHECK_MS)
+  await clock.settle()
+  expect(childrenOf(stored).map(c => [c.endedAt === null, c.delegateState])).toEqual([[true, 'blocked']])
+  expect(await pane.find({ text: /· waiting/ })).toBeDefined()
+
+  await pane.press({ key: 'tab-key-needsYou' })
+  await clock.advance(HERDR_CHECK_MS)
+  await clock.settle()
+  const afterHidden = herdrAsks()
+  await clock.advance(3 * HERDR_CHECK_MS)
+  await clock.settle()
+  expect(herdrAsks()).toBe(afterHidden)
 })
 
 test('the Status page says what it is for before the session has any work', async ($, on) => {
@@ -5343,7 +5863,7 @@ test('on a next build, at 20 desktop columns the tabs show their symbols with th
   world($, on, [])
   files = ['/.next-build']
   statusReply =
-    'GOAL: Adding a greeting CLI\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime\nNEW: working | Plan | being written\nDONE: s2 | written'
+    'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime\nNEW: working | Plan | being written\nDONE: s2 | written'
   surfaces = ['desktop']
 
   await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
@@ -5374,7 +5894,9 @@ test('on a next build, at 20 desktop columns the tabs show their symbols with th
   await pane.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('overview')
-  expect((await pane.find({ key: 'status-goal' }))?.text).toBe('Adding a greeting CLI')
+  expect((await pane.find({ key: 'status-head' }))?.text).toBe(
+    'Adding a greeting CLIBuilding a CLI that greets by name',
+  )
   expect((await pane.find({ key: 'status-s2-text' }))?.text).toBe('written')
   expect(await pane.find({ key: 'select-f3' })).toBeUndefined()
 })
@@ -5387,7 +5909,7 @@ test('on the Status, where a subject stands goes under its name, wraps to three 
   const name = 'Help text for every greeting command'
   const text = 'being written with examples, defaults, descriptions, environment variables, configuration precedence'
   statusReply = [
-    'GOAL: Adding a greeting CLI',
+    'HEAD: Adding a greeting CLI | Building a CLI that greets by name',
     `NEW: working | ${name} | ${text}`,
     'NEW: queued | Loud flag | after help',
     'NEW: working | Sync retry, backoff, and jitter | drafted',
@@ -5441,12 +5963,13 @@ test('on the Status in the terminal, the rows under a subject hang from its mark
 
   expect(await tree('s1')).toEqual(['│', '│', '│'])
   expect(await tree('c1')).toEqual(['├─', '│', '│'])
-  expect(await tree('c3')).toEqual(['└─', ' ', ' '])
+  expect(await tree('c3')).toEqual(['├─', '│', '│'])
+  expect(await tree('c4')).toEqual(['└─', ' ', ' '])
   expect(await tree('c2')).toEqual(['└─', ' ', ' '])
   expect(await tree('s3')).toBeUndefined()
   expect((await textLines('c3')).length).toBeGreaterThan(1)
   await pane.redraw({ ...PANE.props, bodyColumns: 120 })
-  expect(await textLines('c3')).toEqual(['Tune how hard a pinch must be'])
+  expect(await textLines('c3')).toEqual(['Tune how hard a pinch must be · waiting'])
 })
 
 test('on the Status, a rule sets each item apart in the docked terminal and on desktop, with none inside a subject’s tree or beside the look line, and the inline pane draws none', async ($, on) => {
@@ -5463,13 +5986,13 @@ test('on the Status, a rule sets each item apart in the docked terminal and on d
   const docked = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
   await docked.press({ key: 'tab-key-overview' })
   await clock.settle()
-  expect(await ruledAbove(docked)).toEqual(['s2', 's3', 's4', 'done'])
+  expect(await ruledAbove(docked)).toEqual(['s3', 's1', 's4', 'done'])
   await docked.unmount()
 
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
   await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
-  expect(await ruledAbove(desktop)).toEqual(['s2', 's3', 's4', 'done'])
+  expect(await ruledAbove(desktop)).toEqual(['s3', 's1', 's4', 'done'])
   await desktop.unmount()
 
   const inline = await $.ui.mount({ ...PANE, props: { ...PANE.props, placement: 'inline', bodyColumns: 90 } })

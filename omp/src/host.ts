@@ -16,7 +16,7 @@ import type { DialogOutcome, ScreenTab } from '../../hooks/model-text'
 import type { PrPress } from '../../hooks/pr-tab'
 import { noteDialog } from '../../hooks/dialogs'
 import { branchIn, ghFinder, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
-import { CLEARED_TOKENS, delegatesInHerdr, herdrReporter, herdrTokens } from '../../hooks/herdr'
+import { CLEARED_TOKENS, delegatesInHerdr, herdrCheckGate, herdrReporter, herdrTokens } from '../../hooks/herdr'
 import type { Run } from '../../hooks/gh'
 import { COMPARE_PAGE_FILE } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
@@ -67,7 +67,7 @@ import {
 } from '../../hooks/session-host'
 import type { StatusRecords, PressOutcome, RecordFiles, SessionHost, UpdateHost } from '../../hooks/session-host'
 import { agentTools } from '../../hooks/tools'
-import type { ToolAnswer } from '../../hooks/tools'
+import type { AgentTool, ToolAnswer } from '../../hooks/tools'
 import { DARK_BANNER_TINTS, DARK_TONES, LIGHT_BANNER_TINTS, LIGHT_TONES } from '../../hooks/tones'
 import { clip } from '../../hooks/text'
 import { NEXT_BUILD_MARK, NO_HOLDS, RESUME_TEXT, SETTLED_MS, inboxCommandText, screenTabOf } from '../../hooks/view'
@@ -80,7 +80,7 @@ import { bandLines, wrapText } from './panel'
 import type { Style, Tone } from './panel'
 import { exclusiveRun, pruneSessions, readState, updateState } from './state'
 import type { OmpState } from './state'
-import { OMP } from './texts'
+import { OMP, TOOL_LABELS } from './texts'
 import type { Stop } from '../../types'
 
 const INBOX_MODEL_TIMEOUT_MS = 120_000
@@ -141,6 +141,11 @@ export type Inbox = {
   showTab(ctx: ExtensionContext, tab: ShownTab, holds: Holds): void
   closePanel(ctx: ExtensionContext): void
   fetchPrsWhenDue(ctx: ExtensionContext): void
+  /**
+   * Asks Herdr about the running delegates at most each `HERDR_CHECK_MS`, so a delegate's row follows Herdr while the
+   * session waits. The panel asks while it shows the Status.
+   */
+  checkDelegatesWhenDue(ctx: ExtensionContext): void
   /** Calls `listener` after the session's saved state changes. Returns how to stop. */
   onChange(ctx: ExtensionContext, listener: () => void): () => void
   /** Applies a press for the session. */
@@ -698,6 +703,19 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     deps.background(pruneSessions(dir, id))
   }
 
+  const isHerdrCheckDue = herdrCheckGate()
+
+  function checkDelegatesWhenDue(ctx: ExtensionContext): void {
+    const id = sessionIdOf(ctx)
+    if (!isHerdrCheckDue(id, deps.now())) return
+    deps.background(
+      (async () => {
+        const states = await delegatesInHerdr((await readState(dir, id)).ledger.overview, run)
+        if (states) await change(id, s => statusChanged(s, o => delegatesSettled(o, states, deps.now())))
+      })(),
+    )
+  }
+
   function fetchPrsWhenDue(ctx: ExtensionContext): void {
     const id = sessionIdOf(ctx)
     if (prFetches.isFetching(id)) return
@@ -1009,10 +1027,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     deps.background(wakeForDone(host))
   })
 
-  const tool = (name: 'record' | 'close', description: string, parameters: object) => {
+  const tool = (name: AgentTool, description: string, parameters: object) => {
     pi.registerTool({
       name,
-      label: name === 'record' ? 'Inbox record' : 'Inbox close',
+      label: TOOL_LABELS[name],
       description,
       parameters: parameters as never,
       loadMode: 'essential',
@@ -1081,6 +1099,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       openPanels.set(id, tab)
       const now = deps.now()
       if (isChanged) deps.background(change(id, s => withHolds(withLook(s, tab === 'overview', now), holds)))
+      if (isChanged && tab === 'overview') checkDelegatesWhenDue(ctx)
     },
     closePanel: ctx => {
       const id = sessionIdOf(ctx)
@@ -1088,6 +1107,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       deps.background(change(id, s => ({ ...lookEndedOn(s, deps.now()), shownSince: null })))
     },
     fetchPrsWhenDue,
+    checkDelegatesWhenDue,
     onChange: (ctx, listener) => {
       const id = sessionIdOf(ctx)
       const set = listeners.get(id) ?? new Set()
@@ -1114,6 +1134,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     },
     resume: async () => inbox.resume(ctx),
     fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),
+    checkDelegatesWhenDue: () => inbox.checkDelegatesWhenDue(ctx),
     shown: (tab, holds) => inbox.showTab(ctx, tab, holds),
     onChange: listener => inbox.onChange(ctx, listener),
   })

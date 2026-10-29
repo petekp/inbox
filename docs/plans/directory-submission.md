@@ -1,6 +1,6 @@
 # Submitting the inbox to the Claude Code plugin directory
 
-Status: built. The directory's scan of 0.2.13 on `main` reported two blocks. Both are fixed for 0.2.14, as the last two rows of Fixes say. Only the directory's scan of `main` after that release confirms the fixes.
+Status: built. The directory's scan of 0.2.14 on `main` reported one block. It is fixed for the next release, as the last row of Fixes says. Only the directory's scan of `main` after that release confirms the fix.
 
 The directory scans a submitted plugin and reports findings at four levels
 ([pre-submission checklist](https://claude.com/docs/plugins/pre-submission-checklist)):
@@ -11,6 +11,8 @@ The directory scans a submitted plugin and reports findings at four levels
 - **Note**: information only.
 
 `claude plugin validate` does not run the directory's rules, so only a resubmit confirms a fix.
+
+`./scripts/check.sh` checks each hooks module that `hooks/hooks.json` names against the rules behind the blocks so far. They cover where `$` may be passed, what a permission hook may return, and which names may be bound more than once: `e`, `next`, `h`, and the name of a top-level function that takes `$`. A failure prints the directory's code, the line and what to change. A block from any other rule still shows up only in the directory's scan.
 
 ## Fixes
 
@@ -24,6 +26,7 @@ The directory scans a submitted plugin and reports findings at four levels
 | No `version` in plugin.json | Add a version that matches the Codex plugin's, now `0.2.5`. Installs update only when the version goes up, so each release raises it in both manifests. |
 | On 0.2.13: `$` passed to functions imported from `claude-host.ts` (`MOD_CAPABILITY_USE_NOT_PLAIN`, 3) | The directory allows `$` only as a whole argument to a function declared at the top of the same file. `hooks/register.tsx` passed `$` to 13 functions from `claude-host.ts`, which held the mod's storage and `SessionHost`, at 22 places. The scan flagged the first three in file order, lines 882, 933 and 1038, and reported that its validation did not finish. It left the same call, `processRun($)`, unflagged at lines 2590 and 3070, so it stopped early and the rest fail too. Every function that takes `$` moved from `claude-host.ts` into `hooks/register.tsx`, and `claude-host.ts` is gone. The moved code's `next` and `e` bindings were renamed, as the `PermissionRequest` row above requires. `readIsNextBuild`, a top-level `const` arrow that takes `$`, became a function declaration. |
 | On 0.2.13: directory couldn't confirm the `tool.check` hook leaves the decision with the user (`MOD_PERMISSION_ANSWER_UNREAD`) | The hook awaited `next(e)`, read whether the verdict was an ask, and returned the verdict by name. The directory accepts a permission hook that returns `next(e)` as written, or a fixed `deny` or `ask` written in the return. The hook now starts `waitForPermission` and returns `next(e)`. `waitForPermission` gets the verdict from a `$.tool.check` query, which runs no tool, opens no dialog and skips the inbox's own hook. Two `e =>` parameters elsewhere in `hooks/register.tsx` became `effect =>`, so `e` names only a hook's event. |
+| On 0.2.14: `$` passed in ways the directory couldn't follow (`MOD_CAPABILITY_USE_NOT_PLAIN`, 3) | The scan flagged lines 1515, 1820 and 1835 of `hooks/register.tsx` at `2d613e90`. Lines 1820 and 1835 call the top-level function `later($, …)`. The same file also binds `later` as a `.reduce` parameter, in code moved there from `claude-host.ts`. The scan reads a file's names without scopes, as it does for `e`, `next` and `h`, so it couldn't tell which `later` the calls meant. All 13 `later($` calls fail, and the scan stops after 3 findings. The parameter is now `laterSend`. Line 1515 passed `$` to `askLedgerModel` inside the function that `modelAsk` returned. That this shape is the cause is inferred: it is the only place where a returned function passes `$` on. Before line 1835 the scan accepted `$` passed on from a callback given as an argument, from a function in an object literal that a function returns, and from a function called where it is written. It also accepted `processRun`'s returned function, which uses `$` only in `$.ns.method(...)` calls. No scan has shown whether a function that an arrow returns as its body fails too, as in `(p) => (press) => runPress($, …)`. `hooks/register.tsx` has such arrows, and the check does not flag them. `modelAsk` is gone. `sessionHost` and a new `catchUpStatus` each return their `ask` function in an object literal. Each `ask` passes `$` to the top-level function `askInboxModel`. |
 
 ## Disclose in the README
 
@@ -44,7 +47,7 @@ Each of these is a policy hold. The README's "What it runs, sends and changes" s
 
 ## Decisions
 
-1. **Blocks.** The scan of 0.2.13 had two, fixed in the last two rows of Fixes. The holds and warnings left are listed above.
+1. **Blocks.** The scan of 0.2.14 had one, fixed in the last row of Fixes. The holds and warnings left are listed above.
 2. **Icon.** `.claude-plugin/icon.png`, 1024 px square: a white Geist Mono `i` and a block cursor as tall as the `i`, on a dark background with an indigo glow, after the launch video's end card. The directory takes the icon only the first time the plugin is saved or submitted.
 3. **Name.** `inbox` may be confused with other listings (4 holds). Pete chose to keep `inbox` for now. A later rename can change `displayName` alone, which changes only what people see. Changing `name` also changes the install command, the tool names Claude calls, and the key the saved state is stored under.
 4. **Data questions.** Personal data: reads and stores. Sends data to another service: yes, listed in the README. Retention by our service: not retained. For users under 18: no.

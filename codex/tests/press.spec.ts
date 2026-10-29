@@ -25,7 +25,8 @@ import {
   QUEUED_AFTER_MS,
   rowAfterClose,
   NO_HOLDS,
-  rowMark,
+  rowHandle,
+  rowResultMark,
   SETTLED_MS,
   settledLabel,
   settledMark,
@@ -202,6 +203,41 @@ test('a review thread that stopped waiting rejects a stale Address press', () =>
   )
 })
 
+test('Dismiss merged dismisses every merged PR but the branch’s own, each with its own Undo, and is stale once none is left', () => {
+  const d = demoView(100, 'Codex')
+  const views = d.prViews.views
+  const open = { ...views['acme/visor#33']!, ref: 'acme/visor#35', number: 35 }
+  const asMerged = (ref: string) => ({ ...views[ref]!, state: 'MERGED' as const })
+  const prViews = {
+    ...d.prViews,
+    views: {
+      'acme/visor#31': asMerged('acme/visor#31'),
+      'acme/visor#29': asMerged('acme/visor#29'),
+      'acme/visor#33': asMerged('acme/visor#33'),
+      [open.ref]: open,
+    },
+  }
+  const ledger = { ...d.ledger, prs: [...d.ledger.prs, open.ref] }
+  const ctx = { now: 200, turnsStarted: 0 }
+
+  const r = applyPrPress(ledger, prViews, {}, { action: 'pr-dismiss-merged' }, ctx)
+  assert.ok(!('stale' in r))
+  assert.deepEqual(r.ledger.prs, ['acme/visor#31', 'acme/visor#35'])
+  assert.deepEqual(
+    Object.entries(r.lasts).map(([id, l]) => [id, l.kind, l.action, l.text]),
+    [
+      ['pr:acme/visor#29', 'mark', 'pr-dismiss', 'Dismissed'],
+      ['pr:acme/visor#33', 'mark', 'pr-dismiss', 'Dismissed'],
+    ],
+  )
+  assert.deepEqual(r.effects, [])
+
+  const undone = applyPrPress(r.ledger, prViews, r.lasts, { action: 'pr-undo', ref: 'acme/visor#29' }, ctx)
+  assert.ok(!('stale' in undone))
+  assert.deepEqual(undone.ledger.prs, ['acme/visor#31', 'acme/visor#35', 'acme/visor#29'])
+  assert.deepEqual(applyPrPress(r.ledger, prViews, r.lasts, { action: 'pr-dismiss-merged' }, ctx), { stale: true })
+})
+
 test('a delayed older press cannot replace a newer same-time last action', () => {
   const action = (id: string, pressOrder: number): LastAction => ({
     kind: 'talk',
@@ -267,7 +303,7 @@ test('a run step hands the task to Codex: it folds until the turn it started is 
     label: 'Run seed script',
     at: 50,
   })
-  assert.equal(rowMark(folded.needsYou.tasks[0]!, 'codex').text, '✓')
+  assert.deepEqual(rowResultMark(folded.needsYou.tasks[0]!), { text: '●', isRunning: true })
   assert.equal(folded.needsYou.count, 1)
 
   const message = r.effects[0]
@@ -285,8 +321,7 @@ test('a run step hands the task to Codex: it folds until the turn it started is 
   const unknown = viewOf(unconfirmed, 60).needsYou.tasks[0]!
   assert.equal(unknown.state.is, 'handedOff')
   assert.equal(unknown.feedback?.is, 'unconfirmed')
-  assert.equal(rowMark(unknown, 'codex').text, '')
-  assert.equal(rowMark(unknown, 'terminal').text, '•')
+  assert.deepEqual(rowResultMark(unknown), { text: '', isRunning: false })
 
   const started = notePrompt(s, 'For "Sign in to npm", run this:', 70).state
   const summarized = { ...started, presence: { ...started.presence, turnsApplied: started.presence.turnsStarted } }
@@ -453,7 +488,7 @@ test('the tab lists Asks in the mod’s order, numbers only the questions a type
     presence: { ...s.presence, turnsStarted: 2, turnsApplied: 2 },
   }
   const v = viewOf(state, 10)
-  const rows = (list: RowView[]) => list.map(r => [r.id, r.handle, r.state.is])
+  const rows = (list: RowView[]) => list.map(r => [r.id, rowHandle(r), r.state.is])
   assert.deepEqual(rows(v.needsYou.questions), [
     ['i3', '1)', 'open'],
     ['i5', '3)', 'open'],
@@ -468,7 +503,7 @@ test('the tab lists Asks in the mod’s order, numbers only the questions a type
 
   const after = viewOf(notePrompt(state, 'thanks', 20).state, 30)
   assert.deepEqual(
-    after.needsYou.questions.map(r => r.handle),
+    after.needsYou.questions.map(r => rowHandle(r)),
     ['•', '•', '•'],
   )
 })
@@ -556,10 +591,12 @@ test('Fix hands a finding off and settles it as the choice made, each press with
     const row = viewOf(state, at, SHOWN).findings.rows[0]
     assert.ok(row?.state.is === 'settled')
 
-    return [settledMark(row.state.delivery), settledLabel(row.state.label, row.state.delivery)]
+    const mark = settledMark(row.state)
+
+    return [mark.isRunning ? 'running' : mark.text, settledLabel(row.state.label, row.state.delivery)]
   }
-  assert.deepEqual(drawnAt(sent, 60), ['', 'Fix'])
-  assert.deepEqual(drawnAt(sent, 50 + QUEUED_AFTER_MS), ['', 'Queued: Fix'])
+  assert.deepEqual(drawnAt(sent, 60), ['running', 'Fix'])
+  assert.deepEqual(drawnAt(sent, 50 + QUEUED_AFTER_MS), ['running', 'Queued: Fix'])
   const message = r.effects[0]?.kind === 'send' ? r.effects[0].text : ''
   assert.deepEqual(drawnAt({ ...sent, lastActions: withArrival(sent.lastActions, message) }, 80), ['✓', 'Fix'])
   const started = notePrompt(sent, 'Please address this finding you recorded:', 70).state
@@ -632,7 +669,7 @@ test('Fix hands a finding off and settles it as the choice made, each press with
           canUndo: false,
           offersUndo: false,
           delivery: null,
-          isLapsed: false,
+          closedAs: 'handled',
         },
         [],
       ],
@@ -662,7 +699,15 @@ test('Dismiss settles a row in place with Undo, and Undo puts it back open where
     [
       [
         'i1',
-        { is: 'settled', label: 'Dismissed', at: 50, canUndo: true, offersUndo: true, delivery: null, isLapsed: true },
+        {
+          is: 'settled',
+          label: 'Dismissed',
+          at: 50,
+          canUndo: true,
+          offersUndo: true,
+          delivery: null,
+          closedAs: 'dismissed',
+        },
         [{ action: 'undo', id: 'i1' }],
       ],
     ],
@@ -672,7 +717,7 @@ test('Dismiss settles a row in place with Undo, and Undo puts it back open where
   const undone = after(dismissed, { action: 'undo', id: 'i1' })
   const back = viewOf(undone, 70).needsYou
   assert.deepEqual(
-    back.questions.map(r => [r.id, r.state.is, r.handle, r.item?.options]),
+    back.questions.map(r => [r.id, r.state.is, rowHandle(r), r.item?.options]),
     [['i1', 'open', '1)', ['Fix add.js', 'Change test']]],
   )
   assert.equal(back.count, 2)
@@ -792,7 +837,7 @@ test('a row Codex closes while the person types a reply stays held in place, out
       canUndo: false,
       offersUndo: false,
       delivery: 'queued',
-      isLapsed: false,
+      closedAs: 'handled',
     },
   )
   const later = 70 + SETTLE_WINDOW_MS
@@ -952,7 +997,10 @@ test('a new PR counts as a new row, moves an empty tab to PRs, and counts nothin
   const withPrs = (refs: string[]) => {
     const v = viewOf(s, 10)
 
-    return { ...v, prs: { ...v.prs, drawn: refs.map(ref => ({ pr: pr(ref), state: { is: 'open' as const } })) } }
+    return {
+      ...v,
+      prs: { ...v.prs, drawn: refs.map(ref => ({ pr: pr(ref), state: { is: 'open' as const }, rank: null })) },
+    }
   }
   const first = newRows({}, withPrs([]), false)
   const loading = newRows(first.seen, withPrs(['a/b#1']), true)

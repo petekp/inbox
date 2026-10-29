@@ -27,6 +27,9 @@ import {
   isRowTab,
   STATUS_TEXT_LINES,
   rowKeyPlan,
+  statusKeyPlan,
+  statusKeyRows,
+  PRESS_GUARD_MS,
 } from '../../hooks/view'
 import type { StatusRow, RowView } from '../../hooks/view'
 import { sessionView } from '../../hooks/session'
@@ -346,10 +349,12 @@ test('a row closed with Done shows its label and Undo, u returns the undo press,
   const demo = await afterPresses({ action: 'done', id: 'd14' })
   const screen = await demo.screen()
   const out = text(screen, INITIAL_UI)
-  expect(out).toMatch(/Put on the glasses and pair them with this Mac\s+Done\s+u Undo/)
+  expect(out).toMatch(/Put on the glasses and pair them with this Mac\s+✓ Done\s+u Undo/)
+  for (const width of [30, 46])
+    expect(text(screen, INITIAL_UI, width), `at ${width} columns`).toMatch(/Put on the .*… {2}✓ Do/)
   expect(handleKey(screen, INITIAL_UI, 'u', NOW).press).toEqual({ action: 'undo', id: 'd14' })
   const later = await demo.advance()
-  expect(text(later, INITIAL_UI)).toMatch(/Put on the glasses and pair them with this Mac\s+Done/)
+  expect(text(later, INITIAL_UI)).toMatch(/Put on the glasses and pair them with this Mac\s+✓ Done/)
   expect(text(later, INITIAL_UI)).not.toContain('u Undo')
   expect(text(later, INITIAL_UI)).toContain('1 closed')
   const ownKey = shownTabs(later.isNextBuild === true).find(t => t.id === INITIAL_UI.tab)!.hotkey
@@ -381,8 +386,24 @@ test('after the replies to two presses, the row handed off reads Still open, the
   const out = text(await demo.advance(), INITIAL_UI)
   expect(out).toMatch(/Calibrate eye tracking for the new lenses\s+Still open/)
   expect(out).toMatch(/Dismiss a glance with a pinch, or a flick of the wrist\?\s+✓ Explained/)
-  expect(out).toMatch(/✓\s+Run the gesture tests and send back the failures\s+Run gesture tests/)
+  expect(out).toMatch(/Run the gesture tests and send back the failures\s+✓ Run gesture tests/)
   expect(out).toContain('Asks 7')
+})
+
+test('an opened handed-off row whose reply is on its way starts the status under its buttons with the running mark', () => {
+  const base = screenOf()
+  const row = firstQuestion(base)
+  const handedOff: RowView = {
+    ...row,
+    state: { is: 'handedOff' },
+    feedback: { is: 'queued', label: 'go with B', at: NOW },
+  }
+  const questions = base.view.needsYou.questions.map(r => (r.id === row.id ? handedOff : r))
+  const screen = { ...base, view: { ...base.view, needsYou: { ...base.view.needsYou, questions } } }
+  const lines = text(screen, { ...onRow(row), opened: row.id }).split('\n')
+  const status = lines.findIndex(l => l.includes('Queued: go with B'))
+  expect(lines[status]).toMatch(/[●◉◎] Queued: go with B/)
+  expect(status).toBeGreaterThan(lines.findIndex(l => l.includes('↵ ')))
 })
 
 async function afterReply() {
@@ -396,7 +417,7 @@ test('a reply folds its row to one line with its mark and label, and the selecti
   const { row, screen } = await afterReply()
   const lines = text(screen, onRow(row)).split('\n')
   const at = lines.findIndex(l => l.includes(row.title))
-  expect(lines[at]).toMatch(/❯ ✓ .*Replied/)
+  expect(lines[at]).toMatch(/❯ .*✓ Replied/)
   expect(lines[at + 1]).not.toContain('↵')
 
   const moved = afterHandOff(screen, onRow(row), row.id, NOW)
@@ -417,9 +438,61 @@ test('a dismissed PR shows its label dim, as a dismissed row does, with Undo, an
   const demo = await afterPresses({ action: 'pr-dismiss', ref: 'acme/visor#29' })
   const screen = await demo.screen()
   const ui = { ...INITIAL_UI, tab: 'prs' as const }
-  expect(text(screen, ui)).toMatch(/#29 Show the battery level as a glance\s+Dismissed\s+u Undo/)
+  expect(text(screen, ui)).toMatch(/#29 Show the battery level as a glance\s+✕ Dismissed\s+u Undo/)
   expect(drawn(screen, ui).join('\n')).toContain(`${ESC}2mDismissed${ESC}22m`)
   expect(handleKey(screen, ui, 'u', NOW).press).toEqual({ action: 'pr-undo', ref: 'acme/visor#29' })
+})
+
+function withMerged(refs: string[]): PanelScreen {
+  const s = demoState(NOW)
+  const views = Object.fromEntries(
+    Object.entries(s.prViews.views).map(([ref, v]) => [
+      ref,
+      refs.includes(ref) ? { ...v, state: 'MERGED' as const } : v,
+    ]),
+  )
+
+  return screenOf({ view: sessionView({ ...s, prViews: { ...s.prViews, views } }, NOW, SETTLED_MS, true, NO_HOLDS) })
+}
+
+test('an order draws its line above the PR blocks and a dim rank before each ranked PR, ahead of the rest', () => {
+  const s = demoState(NOW)
+  const prOrder = { refs: ['acme/visor#29', 'acme/visor#33'], label: 'Merge order', by: 'omp', at: NOW - 2 * 60_000 }
+  const ordered = { ...s, ledger: { ...s.ledger, prOrder } }
+  const screen = screenOf({ view: sessionView(ordered, NOW, SETTLED_MS, true, NO_HOLDS) })
+  const ui = { ...INITIAL_UI, tab: 'prs' as const }
+  const lines = text(screen, ui).split('\n')
+  const heads = lines.flatMap(l => l.match(/(?:\d+\. )?#\d+ /) ?? []).map(h => h.trim())
+
+  expect(lines.findIndex(l => l.includes('Merge order · set by omp 2m ago'))).toBeLessThan(
+    lines.findIndex(l => /#\d+ /.test(l)),
+  )
+  expect(heads).toEqual(['1. #29', '2. #33', '#31'])
+  expect(drawn(screen, ui).join('\n')).toContain(`${ESC}2m1. ${ESC}22m`)
+  expect(text(screenOf(), ui)).not.toContain('Merge order')
+})
+
+test('Dismiss merged draws after the PR blocks, and m from any row or Enter on it returns the press', () => {
+  const screen = withMerged(['acme/visor#29', 'acme/visor#33'])
+  const ui = { ...INITIAL_UI, tab: 'prs' as const }
+  const lines = text(screen, ui).split('\n')
+  const at = lines.findIndex(l => l.includes('m Dismiss merged'))
+  expect(at).toBeGreaterThan(lines.findLastIndex(l => /#(29|31|33) /.test(l)))
+  const onThread = {
+    ...ui,
+    selectedId: screen.view.prs.drawn.flatMap(d => waitingThreads(d.pr).map(t => `${d.pr.ref} thread ${t.id}`))[0]!,
+  }
+  expect(handleKey(screen, onThread, 'm', NOW).press).toEqual({ action: 'pr-dismiss-merged' })
+  expect(handleKey(screen, { ...ui, selectedId: 'pr:merged' }, 'enter', NOW).press).toEqual({
+    action: 'pr-dismiss-merged',
+  })
+})
+
+test('Dismiss merged does not show when the only merged PR is the branch’s own', () => {
+  const screen = withMerged(['acme/visor#31'])
+  const ui = { ...INITIAL_UI, tab: 'prs' as const }
+  expect(text(screen, ui)).not.toContain('Dismiss merged')
+  expect(handleKey(screen, ui, 'm', NOW).press).toBeUndefined()
 })
 
 function withLast(screen: PanelScreen, id: string, last: LastAction): PanelScreen {
@@ -744,25 +817,26 @@ const tabLine = (screen: PanelScreen, ui: PanelUi, width: number) =>
 
 const labelOf = (row: StatusRow) => (row.kind === 'subject' || row.kind === 'child' ? row.name : row.text)
 
-test('the Status page shows the goal, then its rows in order, each subject’s marks in the goal’s column, where it stands under its name and its was line under that, and Seen in the middle of its rule', () => {
+test('the Status page shows the head’s title and description, then its rows in order, each subject’s marks in the head’s column, where it stands under its name and its was line under that, and Last seen in the middle of its rule', () => {
   const screen = screenOf()
   const page = screen.view.statusPage
   const lines = text(screen, onPage).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
-  const order = [page.goal!, ...page.rows.map(labelOf)].map(at)
+  const order = [page.head!.title, page.head!.description!, ...page.rows.map(labelOf)].map(at)
   expect(order.every(n => n >= 0)).toBe(true)
   expect(order).toEqual([...order].sort((a, b) => a - b))
-  const goalAt = lines[at(page.goal!)]!.search(/\S/)
+  const headAt = lines[at(page.head!.title)]!.search(/\S/)
+  expect(lines[at(page.head!.description!)]!.search(/\S/)).toBe(headAt)
   const subjects = page.rows.flatMap(r => (r.kind === 'subject' ? [r] : []))
-  for (const row of subjects) expect(lines[at(row.name)]!.search(/\S/)).toBe(goalAt)
+  for (const row of subjects) expect(lines[at(row.name)]!.search(/\S/)).toBe(headAt)
   const withWas = subjects.filter(r => r.was !== null && r.text !== null)
   expect(withWas.length).toBeGreaterThan(0)
   for (const row of withWas) {
     expect(lines[at(row.name) + 1]).toContain(row.text!)
     expect(lines[at(row.name) + 2]).toContain(`was: ${row.was}`)
   }
-  const seen = lines[at(' Seen ')]!.trim()
-  const [left, right] = seen.split(' Seen ')
+  const seen = lines[at(' Last seen ')]!.trim()
+  const [left, right] = seen.split(' Last seen ')
   expect(left!.length - right!.length).toBeLessThanOrEqual(1)
   expect(left).toMatch(/^─+$/)
 })
@@ -770,20 +844,36 @@ test('the Status page shows the goal, then its rows in order, each subject’s m
 test('on the Status page, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', () => {
   const lines = text(screenOf(), onPage, 28).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
-  const [subject, mid, last, next] = [
+  const [subject, first, mid, last, next] = [
     at('Dismiss gesture'),
     at('Review the'),
     at('Tune how hard'),
-    at('Glasses pairing'),
+    at('Time the'),
+    at('Fade-out'),
   ]
   const col = lines[subject]!.search(/\S/)
   const glyphs = (from: number, to: number) => lines.slice(from, to).map(l => l.slice(col, col + 2))
 
-  expect(subject).toBeLessThan(mid)
-  expect(glyphs(subject + 1, mid).every(g => g.startsWith('│'))).toBe(true)
+  expect(subject).toBeLessThan(first)
+  expect(glyphs(subject + 1, first).every(g => g.startsWith('│'))).toBe(true)
+  expect(glyphs(first, mid)).toEqual(['├─', ...Array<string>(mid - first - 1).fill('│ ')])
   expect(glyphs(mid, last)).toEqual(['├─', ...Array<string>(last - mid - 1).fill('│ ')])
   expect(last - mid).toBeGreaterThan(1)
   expect(glyphs(last, next)).toEqual(['└─', ...Array<string>(next - last - 1).fill('  ')])
+})
+
+test('on the Status page, a row’s stall word follows its name on the line of its last word, at every width, and running work and work waiting on someone else show none', () => {
+  const wide = text(screenOf(), onPage, 80).split('\n')
+  expect(wide.some(l => l.includes('Tune how hard a pinch must be · waiting'))).toBe(true)
+  expect(wide.some(l => l.includes('Time the fade-out · finished'))).toBe(true)
+  expect(wide.some(l => l.includes('Watch the pairing log') && !l.includes(' · '))).toBe(true)
+  expect(wide.some(l => l.includes('Glasses trial') && !l.includes(' · '))).toBe(true)
+
+  for (const width of [26, 28, 30, 34, 40, 50]) {
+    const lines = text(screenOf(), onPage, width).split('\n')
+    for (const word of ['waiting', 'finished'])
+      expect(lines.filter(l => l.includes(` ${word}`) && !l.includes('waits')).every(l => /\S · /.test(l))).toBe(true)
+  }
 })
 
 test('on the Status page, a rule from the text column sets each item apart, with none inside a subject’s tree or beside the look line', () => {
@@ -793,7 +883,7 @@ test('on the Status page, a rule from the text column sets each item apart, with
   const rowsAfterRules = lines.flatMap((l, n) => (rule.test(l) ? [lines[n + 1]!] : []))
 
   expect(rowsAfterRules).toHaveLength(4)
-  for (const [n, row] of ['Glasses pairing', 'Flick option', 'Fade-out', 'more done'].entries())
+  for (const [n, row] of ['Flick option', 'Dismiss gesture', 'Fade-out', 'more done'].entries())
     expect(rowsAfterRules[n]).toContain(row)
 })
 
@@ -842,8 +932,16 @@ test('a Status page with nothing yet reads its empty text', () => {
   expect(text(screen, onPage)).toContain(empty.hint)
 })
 
-test('keys on the Status page select nothing and press nothing, and the footer offers only tab', () => {
-  const screen = screenOf()
+/** The demo with no ask linked to a subject, so no Status row has a button. */
+const unheldScreen = () => {
+  const s = demoState(NOW)
+  const ledger = { ...s.ledger, overview: { ...s.ledger.overview!, askSubjects: {} } }
+
+  return screenOf({ view: sessionView({ ...s, ledger }, NOW, SETTLED_MS, true, NO_HOLDS) })
+}
+
+test('keys on an Status page with no buttons select nothing and press nothing, and the footer offers only tab', () => {
+  const screen = unheldScreen()
   for (const key of ['up', 'down', 'j', 'k', 'left', 'right', 'enter', 'u', 'r', 'd', 'x', 'a']) {
     const result = handleKey(screen, onPage, key, NOW)
     expect(result.press).toBeUndefined()
@@ -878,11 +976,94 @@ test('on a Status page taller than the panel, each ↑↓ or j/k press shows one
     const lines = shown(top).filter(l => !/^ {2}[↑↓] \d+ more line/.test(l))
     expect(page[room - 2 + top]).toBe(lines.at(-1))
   }
-  expect(drawnAt(0).lines.map(strip).at(-1)).toContain('↑↓ scroll')
-  const down = keys(screen, onPage, 'down', 'j')
+  expect(drawnAt(0).lines.map(strip).slice(-2).join('\n')).toContain('↑↓ scroll')
+  const down = keys(screen, onPage, 'down', 'down')
   expect(down.pageTop).toBe(2)
-  expect(keys(screen, down, 'k').pageTop).toBe(1)
+  expect(keys(screen, down, 'up').pageTop).toBe(1)
   expect(keys(screen, down, 'up', 'up', 'up').pageTop).toBe(0)
+  const unheld = unheldScreen()
+  expect(keys(unheld, onPage, 'j', 'j').pageTop).toBe(2)
+  expect(keys(unheld, keys(unheld, onPage, 'j', 'j'), 'k').pageTop).toBe(1)
+})
+
+test('on the Status page, a subject an open ask holds up draws View, named for the ask’s kind, under its text in the plan’s order, and only the selected row draws it focused and keyed', () => {
+  const screen = screenOf()
+  const page = screen.view.statusPage
+  const held = statusKeyRows(page)
+  expect(held.map(r => r.id)).toEqual(['s2', 's3'])
+  const lines = text(screen, onPage).split('\n')
+  const nameAt = (row: StatusRow) => lines.findIndex(l => l.includes(labelOf(row)))
+  const buttonAt = (row: StatusRow) => lines.findIndex((l, n) => n > nameAt(row) && l.includes('View '))
+  expect(held.map(row => statusKeyPlan(row).map(k => k.label))).toEqual([['View task'], ['View question']])
+  for (const row of held) {
+    const at = buttonAt(row)
+    const next = page.rows[page.rows.indexOf(row) + 1]
+    expect(at).toBeGreaterThan(nameAt(row))
+    if (next) expect(at).toBeLessThan(nameAt(next))
+    const textAt = lines[nameAt(row)]!.indexOf(labelOf(row))
+    expect(lines[at]!.slice(0, textAt).replace('│', '').trim()).toBe('')
+    expect(lines[at]![textAt]).not.toBe(' ')
+  }
+  expect(lines[buttonAt(held[0]!)]).toContain('↵ View task')
+  expect(lines[buttonAt(held[1]!)]).not.toContain('↵')
+  expect(lines[buttonAt(held[1]!)]).not.toContain('v View question')
+  const second = keys(screen, onPage, 'j')
+  const moved = text(screen, second).split('\n')
+  expect(moved[buttonAt(held[0]!)]).not.toContain('↵')
+  expect(moved[buttonAt(held[1]!)]).toContain('↵ View question')
+  expect(keys(screen, second, 'j').selectedId).toBe('s2')
+  expect(keys(screen, onPage, 'k').selectedId).toBe('s3')
+  expect(text(screen, onPage).split('\n').at(-1)).toContain('j k select')
+  expect(text(unheldScreen(), onPage)).not.toContain('View ')
+})
+
+test('View on an Status row shows Asks with the oldest ask that holds it up selected, by its key or Enter, sends nothing, and holds the ask’s buttons through a second Enter', () => {
+  const screen = screenOf()
+  for (const key of ['v', 'enter']) {
+    const result = handleKey(screen, onPage, key, NOW)
+    expect(result.press).toBeUndefined()
+    expect(result.ui).toMatchObject({ tab: 'needsYou', selectedId: 'd17', shownSince: NOW })
+    expect(handleKey(screen, result.ui, 'noop', NOW).ui.selectedId).toBe('d17')
+  }
+  const onS3 = keys(screen, onPage, 'j')
+  const onAsk = handleKey(screen, onS3, 'enter', NOW).ui
+  expect(onAsk).toMatchObject({ tab: 'needsYou', selectedId: 'd11' })
+  expect(handleKey(screen, onAsk, 'enter', NOW + PRESS_GUARD_MS - 1).press).toBeUndefined()
+  expect(handleKey(screen, onAsk, 'enter', NOW + PRESS_GUARD_MS).press).toMatchObject({ action: 'answer', id: 'd11' })
+})
+
+test('an Status row’s View leaves once its asks close, and the selection moves to the row that still has one', () => {
+  const s = demoState(NOW)
+  const items = s.ledger.items.filter(i => i.id !== 'd11')
+  const screen = screenOf({
+    view: sessionView({ ...s, ledger: { ...s.ledger, items } }, NOW, SETTLED_MS, true, NO_HOLDS),
+  })
+  const onS3 = { ...onPage, selectedId: 's3' }
+  const lines = text(screen, onS3).split('\n')
+  const s3 = screen.view.statusPage.rows.find(r => r.id === 's3')!
+  expect(s3).toMatchObject({ ask: null, mark: '○' })
+  expect(lines.filter(l => l.includes('View '))).toHaveLength(1)
+  expect(lines.find(l => l.includes('View '))).toContain('↵ View task')
+  expect(handleKey(screen, onS3, 'v', NOW).ui.selectedId).toBe('d17')
+})
+
+test('on an Status page taller than the panel, j and k scroll the newly selected row into view', () => {
+  const screen = screenOf()
+  const height = 14
+  const drawnFor = (ui: PanelUi) => drawPanel(screen, ui, 80, NOW, style, height)
+  const isFocusShown = (ui: PanelUi) =>
+    drawnFor(ui)
+      .lines.map(strip)
+      .some(l => l.includes('↵ View'))
+  expect(isFocusShown(onPage)).toBe(true)
+  const onS3 = keys(screen, onPage, 'j')
+  expect(isFocusShown({ ...onS3, pageReveal: null })).toBe(false)
+  expect(isFocusShown(onS3)).toBe(true)
+  const scrolled = { ...onS3, pageTop: drawnFor(onS3).pageTop, pageReveal: null }
+  expect(scrolled.pageTop).toBeGreaterThan(0)
+  const back = keys(screen, scrolled, 'k')
+  expect(isFocusShown({ ...back, pageReveal: null })).toBe(false)
+  expect(isFocusShown(back)).toBe(true)
 })
 
 test('changing the shown tab starts the Status page at its top', () => {

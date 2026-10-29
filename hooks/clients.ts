@@ -35,6 +35,7 @@ export type FeatureId =
   | 'compare-in-background'
   | 'compare-page'
   | 'running-marks'
+  | 'pending-answer-mark'
   | 'tab-symbols'
   | 'dim-pressed-button'
   | 'herdr-sidebar'
@@ -46,6 +47,10 @@ export type FeatureId =
   | 'status-mid-turn-refresh'
   | 'tool-result-line'
   | 'status-call-records'
+  | 'dismiss-merged-prs'
+  | 'pr-order'
+  | 'help-page'
+  | 'status-view-ask'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -86,6 +91,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'compare-in-background': { kind: 'full' },
       'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
+      'pending-answer-mark': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
       'dim-pressed-button': {
         kind: 'different',
@@ -101,6 +107,14 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-mid-turn-refresh': { kind: 'full' },
       'tool-result-line': { kind: 'full' },
       'status-call-records': { kind: 'full' },
+      'dismiss-merged-prs': { kind: 'full' },
+      'pr-order': { kind: 'full' },
+      'help-page': {
+        kind: 'different',
+        reason:
+          "The engine binds only a digit or a lowercase letter as a Button's hotkey, so no key opens the terminal's Help. The desktop pane takes no keys, so its Help lists only the marks.",
+      },
+      'status-view-ask': { kind: 'full' },
     },
   },
   codex: {
@@ -179,6 +193,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
+      'pending-answer-mark': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
       'dim-pressed-button': { kind: 'full' },
       'herdr-sidebar': {
@@ -202,6 +217,14 @@ export const CLIENTS: Record<ClientId, Client> = {
           "Codex draws an MCP tool call's result from its content, which is the text the model reads. structuredContent reaches the model too, and _meta reaches only an MCP App view, so a result has no field for the person alone.",
       },
       'status-call-records': { kind: 'full' },
+      'dismiss-merged-prs': { kind: 'full' },
+      'pr-order': { kind: 'full' },
+      'help-page': { kind: 'full' },
+      'status-view-ask': {
+        kind: 'different',
+        reason:
+          "Pete's choice: View takes clicks only, with no key. The Codex Status has no row selection and is used by clicking.",
+      },
     },
   },
   omp: {
@@ -253,6 +276,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'compare-in-background': { kind: 'full' },
       'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
+      'pending-answer-mark': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
       'dim-pressed-button': {
         kind: 'different',
@@ -272,6 +296,13 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-mid-turn-refresh': { kind: 'full' },
       'tool-result-line': { kind: 'full' },
       'status-call-records': { kind: 'full' },
+      'dismiss-merged-prs': { kind: 'full' },
+      'pr-order': { kind: 'full' },
+      'help-page': {
+        kind: 'different',
+        reason: 'The panel takes keys only, so `?` opens Help, and no button does.',
+      },
+      'status-view-ask': { kind: 'full' },
     },
   },
 }

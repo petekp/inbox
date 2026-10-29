@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { Window } from 'happy-dom'
-import { EMPTY } from '../../hooks/ledger'
+import { closeItem, EMPTY } from '../../hooks/ledger'
 import { applyStatus, LOOK_MIN_MS, parseStatus } from '../../hooks/status'
 import { recordItem } from '../../hooks/tools'
 import { shownTabs } from '../../hooks/view'
@@ -15,7 +15,7 @@ const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Status page from a next build’s view, and new rows, j and k leave it in place, while a release build’s view draws Asks for it, and only a next build names on an Asks row the subject it holds up', async () => {
+test('the Codex tab draws the Status page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes, while a release build’s view draws Asks for it, and only a next build names on an Asks row the subject it holds up', async () => {
   const now = Date.now()
   const state = emptyState('overview')
   state.heard.startAt = 1
@@ -30,7 +30,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
       null,
       parseStatus(
         [
-          'GOAL: Shipping the Status tab',
+          'HEAD: Shipping the Status tab | Drawing the Status in the Codex tab',
           'NEW: working | omp panel | reading the draw code',
           'NEW: working | Label | pick one',
           `LINK: ${asked.items[0]!.id} | Label`,
@@ -128,7 +128,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
   const key = (k: string) => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }))
   try {
     await import('../src/tab')
-    await until(() => root.querySelector('.status-goal') !== null)
+    await until(() => root.querySelector('.status-head') !== null)
     assert.deepEqual(tabLabels(), ['Status', 'Asks1', 'Finds', 'PRs'])
     assert.deepEqual(
       [...root.querySelectorAll('.tab')].map(b => [
@@ -139,7 +139,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     )
     assert.equal(shownTab(), 'Status')
     assert.equal(sentTabs[0], 'overview')
-    assert.equal(root.querySelector('.status-goal')?.textContent, 'Shipping the Status tab')
+    assert.equal(root.querySelector('.status-head h1')?.textContent, 'Shipping the Status tab')
     assert.deepEqual(
       [...root.querySelectorAll('main .row')].map(r => [
         r.querySelector('.mark')?.className,
@@ -147,15 +147,19 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
         [...(r.querySelector('.content')?.children ?? [])].map(line => line.textContent),
       ]),
       [
+        ['mark tone-needsYou', '◆', ['Label · waiting', 'pick one', 'View question']],
         ['mark running', '●', ['omp panel', 'reading the draw code']],
-        ['mark tone-needsYou', '◆', ['Label', 'pick one']],
         ['mark done', '✓', ['Page', 'built']],
       ],
     )
-    assert.equal(root.querySelectorAll('main button').length, 0)
+    assert.deepEqual(
+      [...root.querySelectorAll('main button')].map(b => b.textContent),
+      ['View question'],
+    )
 
     key('j')
     key('k')
+    key('v')
     state.ledger = recordItem(
       CODEX,
       state.ledger,
@@ -172,22 +176,27 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.match(root.textContent ?? '', /The bar wraps at 320 px/)
     key('1')
     assert.equal(shownTab(), 'Status')
-    assert.ok(root.querySelector('.status-goal'))
+    assert.ok(root.querySelector('.status-head'))
     key('2')
     assert.equal(shownTab(), 'Asks1')
-    assert.equal(root.querySelector('main .holds-up')?.textContent, 'Holds up Label')
+    assert.equal(root.querySelector('main .holds-up')?.textContent, '◆ Holds up Label')
+    key('1')
+    assert.equal(shownTab(), 'Status')
+    ;(root.querySelector('main.status-page .actions button') as HTMLElement).click()
+    assert.equal(shownTab(), 'Asks1')
+    assert.match(root.querySelector('.row.selected')?.textContent ?? '', /Which label\?/)
     key('1')
     assert.equal(shownTab(), 'Status')
 
     isOlderServer = true
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
     assert.equal(shownTab(), 'Asks1')
-    assert.equal(root.querySelector('.status-goal'), null)
+    assert.equal(root.querySelector('.status-head'), null)
     assert.equal(sentTabs.at(-1), 'overview')
     isOlderServer = false
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
     assert.equal(shownTab(), 'Status')
-    assert.ok(root.querySelector('.status-goal'))
+    assert.ok(root.querySelector('.status-head'))
 
     isNextBuild = false
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
@@ -197,7 +206,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
       shownTabs(false).map(t => t.label),
     )
     assert.equal(shownTab(), 'Asks1')
-    assert.equal(root.querySelector('.status-goal'), null)
+    assert.equal(root.querySelector('.status-head'), null)
     assert.equal(root.querySelector('main .holds-up'), null)
     key('4')
     assert.equal(shownTab(), 'Asks1')
@@ -210,6 +219,15 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.equal(shownTab(), 'PRs')
     key('1')
     assert.equal(shownTab(), 'Asks1')
+
+    isNextBuild = true
+    state.ledger = closeItem(state.ledger, asked.items[0]!.id, { how: 'claude', outcome: 'answered in chat' }, now)
+    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
+    key('1')
+    assert.equal(shownTab(), 'Status')
+    assert.ok(root.querySelector('.status-head'))
+    assert.ok(![...root.querySelectorAll('main .mark')].some(m => m.textContent === '◆'))
+    assert.equal(root.querySelectorAll('main button').length, 0)
   } finally {
     await window.happyDOM.abort()
     for (const [key, descriptor] of previous) {
@@ -223,7 +241,12 @@ test('a look starts when the tab shows the Status, ends when it shows another ta
   const state = emptyState('look')
   state.ledger = {
     ...EMPTY,
-    overview: applyStatus(null, parseStatus('GOAL: Ship it\nNEW: queued | Docs | after the code')!, 500, new Set()),
+    overview: applyStatus(
+      null,
+      parseStatus('HEAD: Ship it | Shipping the first version\nNEW: queued | Docs | after the code')!,
+      500,
+      new Set(),
+    ),
   }
   state.tabSeenAt = 1000
   const open = lookOnView(state, 'overview', 2000)

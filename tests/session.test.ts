@@ -28,12 +28,15 @@ import {
   turnEnded,
   turnStarted,
   upgradeSession,
+  withFetchedPrs,
 } from '../hooks/session'
 import type { Session } from '../hooks/session'
-import type { Item, RowNote } from '../types'
+import type { Item, PrView, RowNote } from '../types'
 import {
+  isPrFetchDue,
   STATUS_RECORD_VERSION,
   statusCallPrompt,
+  prFetchTracker,
   RECORDS_KEPT_MS,
   RECORDS_PER_SESSION,
   press,
@@ -44,8 +47,8 @@ import {
   writeStatusRecord,
 } from '../hooks/session-host'
 import type { CatchUpReply, StatusCall, StatusRecord, RecordFiles } from '../hooks/session-host'
-import { allRows, COMPARE_LIMIT_MS, feedbackText, footerStatus, NO_HOLDS } from '../hooks/view'
-import { prMarkId } from '../hooks/pr-tab'
+import { allRows, COMPARE_LIMIT_MS, DOT, feedbackOf, feedbackText, footerStatus, NO_HOLDS } from '../hooks/view'
+import { applyPrPress, checkRowId, fetchTracked, GH_RUNS_AT_ONCE, MAX_PRS, prMarkId } from '../hooks/pr-tab'
 import { demoSession, demoView, isDemoCopy } from '../hooks/demo'
 import { fakeHost } from './session-fake-host'
 import { runSessionScript } from './session-script'
@@ -303,7 +306,9 @@ test('the conversation keeps its newest lines when it is too long, and leaves ou
   expect(text).not.toContain('inbox: nothing waits')
 })
 
-const answer = parseStatus('GOAL: Work offline\nNEW: working | Offline mode | queue built')!
+const answer = parseStatus(
+  'HEAD: Work offline | Letting the app work without a connection\nNEW: working | Offline mode | queue built',
+)!
 
 const withStatus = (s: Session): Session => ({
   ...s,
@@ -316,7 +321,7 @@ test('a Status answer is written to the ledger after later updates and clears a 
 
   expect(failed.overviewFailure).toEqual({ at: 900, cause: 'refused', answer: 'The person wants a CLI.' })
   expect(failedStatus(later, null, 3, 900).overviewFailure).toEqual({ at: 900, cause: 'no-answer', answer: null })
-  expect(appliedStatus(failed, answer, 3, 1000).ledger.overview?.goal).toBe('Work offline')
+  expect(appliedStatus(failed, answer, 3, 1000).ledger.overview?.head?.title).toBe('Work offline')
   expect(appliedStatus(failed, answer, 3, 1000).overviewFailure).toBeNull()
   expect(appliedStatus(emptySession(), answer, 3, 1000).ledger.overview).toBeNull()
   expect(failedStatus(emptySession(), null, 3, 900).overviewFailure).toBeNull()
@@ -340,14 +345,14 @@ test('a session whose only record is a Status has a ledger, is not unseen, is co
   expect(cleared(parent).ledger.overview).toBeNull()
 })
 
-test('the Status page is empty for a new session, and while its first turn runs, until the Status has a goal', () => {
+test('the Status page is empty for a new session, and while its first turn runs, until the Status has a head', () => {
   const view = (s: Session) => sessionView(s, 10_000, 1000, true, NO_HOLDS).statusPage
   const idle = emptySession()
 
   expect(view(idle).isEmpty).toBe(true)
   expect(view(turnStarted(idle, 9_000)).isEmpty).toBe(true)
   expect(view(withStatus(turnStarted(idle, 9_000))).isEmpty).toBe(false)
-  expect(view(withStatus(idle)).goal).toBe('Work offline')
+  expect(view(withStatus(idle)).head?.title).toBe('Work offline')
   expect(view(idle).error).toBeNull()
 })
 
@@ -367,7 +372,7 @@ test('a claimed Status call reads the running turn’s work with no reply and wr
   const prompts: string[] = []
   const { host } = fakeHost(async prompt => {
     prompts.push(prompt)
-    return 'GOAL: Work offline\nNEW: working | Offline mode | queue built'
+    return 'HEAD: Work offline | Letting the app work without a connection\nNEW: working | Offline mode | queue built'
   })
   await host.update(s => noteActivity(notePrompt(CLAUDE_CODE, turnStarted(s, 0), 'go', false).state, 'edited sync.ts'))
   await refreshStatus(host)
@@ -376,7 +381,7 @@ test('a claimed Status call reads the running turn’s work with no reply and wr
   expect(prompts).toHaveLength(1)
   expect(prompts[0]).toContain('<activity>\nedited sync.ts\n</activity>')
   expect(prompts[0]).not.toContain('<reply>')
-  expect(written.ledger.overview?.goal).toBe('Work offline')
+  expect(written.ledger.overview?.head?.title).toBe('Work offline')
   expect(written.lastOverviewCallAt).not.toBeNull()
   await host.update(s => turnEnded(s, 1))
   await refreshStatus(host)
@@ -405,7 +410,7 @@ test('a next build records a Status call in a file of its own: the exact prompt 
   const statusPrompts: string[] = []
   const answers = [
     'The list gains a runtime subject.',
-    'GOAL: Pick a runtime\nNEW: working | Runtime choice | comparing two',
+    'HEAD: Pick a runtime | Choosing between Node and Python\nNEW: working | Runtime choice | comparing two',
   ]
   const { host } = fakeHost(async (prompt, system) => {
     if (system !== STATUS_SYSTEM) return LEDGER_REPLY
@@ -438,11 +443,11 @@ test('a next build records a Status call in a file of its own: the exact prompt 
   expect(statusCallPrompt(record.input, record.exchange)).toBe(record.prompt)
   expect(record.attempts.map(a => a.answer)).toEqual([
     'The list gains a runtime subject.',
-    'GOAL: Pick a runtime\nNEW: working | Runtime choice | comparing two',
+    'HEAD: Pick a runtime | Choosing between Node and Python\nNEW: working | Runtime choice | comparing two',
   ])
   expect(record.input.asks.map(i => i.ask)).toEqual(['Use Node or Python?'])
-  expect(record.after?.goal).toBe('Pick a runtime')
-  expect((await host.read()).ledger.overview?.goal).toBe('Pick a runtime')
+  expect(record.after?.head?.title).toBe('Pick a runtime')
+  expect((await host.read()).ledger.overview?.head?.title).toBe('Pick a runtime')
 })
 
 test('a failed Status call’s record holds the error the host reported, and a record that cannot be written leaves the update in place', async () => {
@@ -562,10 +567,10 @@ test('the Status page draws each status with its mark and tone, and ◆ on a sub
   )
 
   expect(rows).toEqual([
-    ['Part 0', '✓', 'done'],
-    ['Part 1', '○', null],
-    ['Part 2', '◌', null],
     ['Part 3', '◆', 'needsYou'],
+    ['Part 2', '◌', null],
+    ['Part 1', '○', null],
+    ['Part 0', '✓', 'done'],
   ])
   expect(allRows(sessionView(held, 3000, 1000, true, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBe(
     'Holds up Part 3',
@@ -601,14 +606,16 @@ test('a sample saved without a Status is replaced, and the sample session carrie
   expect(isDemoCopy({ ...old, presence: { isTurnRunning: false } })).toBe(true)
   expect(isDemoCopy({ ...old, ledger: { ...old.ledger, overview: undefined } })).toBe(false)
   const page = sessionView(demoSession(1_000_000, 'Claude'), 1_000_000, 1000, true, NO_HOLDS).statusPage
-  expect(page.goal).toBe('Pinch to dismiss glances')
+  expect(page.head?.title).toBe('Pinch to dismiss')
   expect(page.rows.map(r => r.kind)).toEqual([
     'subject',
     'child',
     'child',
     'subject',
-    'child',
     'subject',
+    'child',
+    'child',
+    'child',
     'subject',
     'look',
     'subject',
@@ -616,11 +623,11 @@ test('a sample saved without a Status is replaced, and the sample session carrie
   ])
 })
 
-test('a conversation start carries the goal and where each open subject stands, not on a resume the guidance, and nothing for an empty session', () => {
+test('a conversation start carries the head and where each open subject stands, not on a resume the guidance, and nothing for an empty session', () => {
   const described = emptySession()
   const ledger = { ...described.ledger, overview: applyStatus(null, answer, 1000, new Set()) }
   const carried = startContext(CLAUDE_CODE, { ...described, ledger }, 'resume')
-  expect(carried).toContain('Working on: Work offline')
+  expect(carried).toContain('Working on: Work offline: Letting the app work without a connection')
   expect(carried).toContain('- Offline mode: queue built (working)')
   expect(startContext(CLAUDE_CODE, { ...described, ledger }, 'startup')).toContain('Working on: Work offline')
   expect(startContext(CLAUDE_CODE, described, 'resume')).toBeNull()
@@ -661,4 +668,222 @@ test('a prune keeps the closed records of held rows and of rows closed since the
   const left = pruned({ ...s, shownSince: null })
   expect(closedIds(left)).toEqual(ids.slice(2))
   expect(Object.keys(left.prViews.views)).toEqual([linked])
+})
+
+const FIX_REF = 'acme/app#12'
+
+const BLOCKED_PR: PrView = {
+  ref: FIX_REF,
+  number: 12,
+  title: 'Add a CLI',
+  url: 'https://github.com/acme/app/pull/12',
+  isDraft: false,
+  state: 'OPEN',
+  base: 'main',
+  mergeable: 'CONFLICTING',
+  reviewDecision: '',
+  checks: [{ name: 'test', bucket: 'fail', url: null }],
+  threads: [],
+  isYours: true,
+  wasSeenOpen: true,
+  error: null,
+  fetchedAt: 1,
+}
+
+async function blockedPrHost(refreshed: (pr: PrView, at: number) => PrView) {
+  const { host, delivered } = fakeHost(async () => null)
+  await host.update(s => ({
+    ...s,
+    ledger: { ...s.ledger, prs: [FIX_REF] },
+    prViews: { ...s.prViews, views: { [FIX_REF]: BLOCKED_PR } },
+  }))
+  const shownWhileRefreshing: string[] = []
+  const shownOn = async (rowId: string) => {
+    const s = await host.read()
+    const f = feedbackOf(rowId, s.lastActions[rowId], undefined, s.presence, await host.now())
+    return f ? feedbackText(f, 'terminal') : null
+  }
+  host.refreshPrs = async () => {
+    for (const id of [prMarkId(FIX_REF), checkRowId(FIX_REF, 'test')]) {
+      const text = await shownOn(id)
+      if (text) shownWhileRefreshing.push(text)
+    }
+    const at = await host.now()
+    await host.update(s => withFetchedPrs(s, { [FIX_REF]: refreshed(s.prViews.views[FIX_REF]!, at) }, null, false))
+  }
+
+  return { host, delivered, shownWhileRefreshing, shownOn }
+}
+
+test('Resolve conflicts and Fix check the PR on GitHub first, reading Refreshing at once, and send nothing once the problem is gone', async () => {
+  const resolved = await blockedPrHost((pr, at) => ({ ...pr, mergeable: 'MERGEABLE', fetchedAt: at }))
+  const conflicts = await press(resolved.host, { action: 'pr-conflicts', ref: FIX_REF }, false, NO_HOLDS)
+  expect(resolved.shownWhileRefreshing).toEqual(['Refreshing PR #12…'])
+  expect(conflicts.note).toBe('stale')
+  expect(resolved.delivered).toEqual([])
+
+  const passed = await blockedPrHost((pr, at) => ({
+    ...pr,
+    checks: [{ name: 'test', bucket: 'pass', url: null }],
+    fetchedAt: at,
+  }))
+  const fix = await press(passed.host, { action: 'check-fix', ref: FIX_REF, check: 'test' }, false, NO_HOLDS)
+  expect(passed.shownWhileRefreshing).toEqual(['Refreshing PR #12…'])
+  expect(fix.note).toBe('stale')
+  expect(passed.delivered).toEqual([])
+})
+
+test('Resolve conflicts and Fix send their message when the PR on GitHub still has the problem, after an earlier press of the same fix', async () => {
+  const still = await blockedPrHost((pr, at) => ({ ...pr, fetchedAt: at }))
+  for (const round of [1, 2]) {
+    const conflicts = await press(still.host, { action: 'pr-conflicts', ref: FIX_REF }, false, NO_HOLDS)
+    const fix = await press(still.host, { action: 'check-fix', ref: FIX_REF, check: 'test' }, false, NO_HOLDS)
+    expect([conflicts.note, fix.note]).toEqual([null, null])
+    expect(still.delivered.length).toBe(2 * round)
+    for (const text of still.delivered.slice(-2))
+      await still.host.update(s => endTurn(CLAUDE_CODE, notePrompt(CLAUDE_CODE, s, text, false).state, 'Done.', false))
+  }
+  expect(still.delivered[2]).toContain('PR #12 (https://github.com/acme/app/pull/12) conflicts with main.')
+  expect(still.delivered[3]).toContain('The test check failed on PR #12')
+  expect(await still.shownOn(prMarkId(FIX_REF))).toBe('✓ Asked to resolve conflicts')
+})
+
+test('a fix press whose check of the PR fails sends nothing and says why on its row', async () => {
+  const unread = await blockedPrHost(pr => ({ ...pr, error: 'HTTP 502' }))
+  const conflicts = await press(unread.host, { action: 'pr-conflicts', ref: FIX_REF }, false, NO_HOLDS)
+  expect(conflicts.note).toBe(null)
+  expect(unread.delivered).toEqual([])
+  expect(await unread.shownOn(prMarkId(FIX_REF))).toBe('Could not refresh PR #12: HTTP 502')
+})
+
+const openPr = (number: number): PrView => ({
+  ...BLOCKED_PR,
+  ref: `acme/app#${number}`,
+  number,
+  title: `Work ${number}`,
+  url: `https://github.com/acme/app/pull/${number}`,
+  mergeable: 'MERGEABLE',
+  checks: [],
+})
+
+test('an order_prs call ranks its PRs above the rest, links one the session lacks past the PR limit, ranks a merged PR no longer, keeps a dismissed PR’s place for Undo, and an empty call clears it', () => {
+  const linked = Array.from({ length: MAX_PRS + 3 }, (_, n) => n + 1)
+  const base = emptySession()
+  const s: Session = {
+    ...base,
+    ledger: { ...base.ledger, prs: linked.map(n => `acme/app#${n}`) },
+    prViews: { ...base.prViews, views: Object.fromEntries(linked.map(n => [`acme/app#${n}`, openPr(n)])) },
+  }
+  const at = 1_000_000
+  const order = recorded(
+    CLAUDE_CODE,
+    s,
+    'order_prs',
+    { repo: 'acme/app', numbers: [3, 20, 1], label: 'Merge order' },
+    at,
+  )
+  expect(order.personLine).toBe('PR order: Merge order, 3 PRs')
+  expect(order.result).toContain('1 of them was not in the tab yet')
+  expect(order.state.ledger.prs.at(-1)).toBe('acme/app#20')
+  const fetched = withFetchedPrs(order.state, { 'acme/app#20': openPr(20) }, null, false)
+  const tab = (x: Session) => sessionView(x, at + 2 * 60_000, 1000, true, NO_HOLDS).prs
+  const ranks = (x: Session) => tab(x).drawn.map(d => [d.pr.number, d.rank])
+
+  expect(ranks(fetched).slice(0, 4)).toEqual([
+    [3, 1],
+    [20, 2],
+    [1, 3],
+    [15, null],
+  ])
+  expect(tab(fetched).drawn).toHaveLength(MAX_PRS + 3)
+  expect(tab(fetched).olderText).toBe('1 older PR not shown: #2')
+  expect(tab(fetched).orderText).toBe(`Merge order${DOT}set by Claude 2m ago`)
+
+  const merged = withFetchedPrs(fetched, { 'acme/app#3': { ...openPr(3), state: 'MERGED' } }, null, false)
+  expect(ranks(merged).slice(0, 2)).toEqual([
+    [20, 1],
+    [1, 2],
+  ])
+  expect(ranks(merged).at(-1)).toEqual([3, null])
+
+  const press = (x: Session, p: Parameters<typeof applyPrPress>[3]) => {
+    const r = applyPrPress(x.ledger, x.prViews, x.lastActions, p, { now: at, turnsStarted: 0 })
+    if ('stale' in r) throw new Error('stale press')
+    return { ...x, ledger: r.ledger, lastActions: { ...x.lastActions, ...r.lasts } }
+  }
+  const dismissed = press(fetched, { action: 'pr-dismiss', ref: 'acme/app#20' })
+  expect(dismissed.ledger.prOrder?.refs).toEqual(['acme/app#3', 'acme/app#20', 'acme/app#1'])
+  expect(ranks(dismissed).slice(0, 2)).toEqual([
+    [3, 1],
+    [1, 2],
+  ])
+  const undone = press(dismissed, { action: 'pr-undo', ref: 'acme/app#20' })
+  expect(ranks(undone).slice(0, 3)).toEqual(ranks(fetched).slice(0, 3))
+  const onlyRanked = recorded(CLAUDE_CODE, fetched, 'order_prs', { repo: 'acme/app', numbers: [20] }, at).state
+  const showing = { ...NO_HOLDS, shownSince: at - 1 }
+  const settling = press(onlyRanked, { action: 'pr-dismiss', ref: 'acme/app#20' })
+  expect(sessionView(settling, at + 1000, 60_000, true, showing).prs.orderText).toBe(
+    `Order${DOT}set by Claude just now`,
+  )
+
+  const cleared = recorded(CLAUDE_CODE, fetched, 'order_prs', { numbers: [] }, at)
+  expect(cleared.state.ledger.prOrder).toBeNull()
+  expect(cleared.personLine).toBe('PR order cleared')
+  expect(tab(cleared.state).orderText).toBeNull()
+  expect(ranks(cleared.state).every(([, rank]) => rank === null)).toBe(true)
+  expect(recorded(CLAUDE_CODE, s, 'order_prs', { numbers: [3] }, at).result).toBe('Not set: give repo as owner/name.')
+})
+
+test('a fetch of many PRs runs at most GH_RUNS_AT_ONCE gh runs at once, and reads every PR', async () => {
+  let running = 0
+  let most = 0
+  const run = async (args: string[]) => {
+    running += 1
+    most = Math.max(most, running)
+    for (let n = 0; n < 3; n++) await Promise.resolve()
+    running -= 1
+    const number = Number(args[2])
+    const view = { number, title: `Work ${number}`, url: `https://github.com/acme/app/pull/${number}`, state: 'OPEN' }
+
+    return { exitCode: 0, stdout: args[0] === 'pr' ? JSON.stringify(view) : '{"data":{}}', stderr: '' }
+  }
+  const refs = Array.from({ length: 20 }, (_, n) => `acme/app#${n + 1}`)
+  const order = { refs, label: null, by: 'Claude', at: 0 }
+  const state = { views: {}, branchRef: null, isFetching: false }
+  const fetched = await fetchTracked(run, state, { prs: refs, prOrder: order }, false, () => 5)
+
+  expect(Object.keys(fetched.views)).toHaveLength(20)
+  expect(most).toBe(GH_RUNS_AT_ONCE)
+})
+
+test('PRs are due for a fetch 15 seconds after the last once the agent replied since it, and otherwise after 2 minutes', () => {
+  const s = {
+    ...emptySession(),
+    ledger: { ...emptySession().ledger, prs: [FIX_REF] },
+    prViews: { ...emptySession().prViews, views: { [FIX_REF]: BLOCKED_PR } },
+  }
+  const repliedAt = (at: number | null) => ({ ...s, presence: { ...s.presence, lastReplyAt: at } })
+  expect(isPrFetchDue(repliedAt(1_005_000), 1_000_000, 1_015_000)).toBe(true)
+  expect(isPrFetchDue(repliedAt(1_005_000), 1_000_000, 1_014_000)).toBe(false)
+  expect(isPrFetchDue(repliedAt(999_000), 1_000_000, 1_015_000)).toBe(false)
+  expect(isPrFetchDue(repliedAt(null), 1_000_000, 1_120_000)).toBe(true)
+})
+
+test('a fetch a press asks for while another runs starts once that one ends, and presses during one fetch share the next', async () => {
+  const tracker = prFetchTracker(() => 1)
+  const started: string[] = []
+  let endFirst = () => {}
+  const first = tracker.fetchNow('s1', () => {
+    started.push('first')
+    return new Promise<void>(resolve => (endFirst = resolve))
+  })
+  const pressed = () =>
+    tracker.fetchNow('s1', async () => {
+      started.push('after')
+    })
+  const both = [pressed(), pressed()]
+  expect(started).toEqual(['first'])
+  endFirst()
+  await Promise.all([first, ...both])
+  expect(started).toEqual(['first', 'after'])
 })

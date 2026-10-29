@@ -997,11 +997,13 @@ const GH_THREADS = JSON.stringify({
 type PrView = {
   prs: {
     drawn: {
-      pr: { ref: string; threads: unknown[]; error?: string | null }
+      pr: { ref: string; number: number; threads: unknown[]; error?: string | null }
       state: { is: string; canUndo?: boolean }
+      rank: number | null
     }[]
     count: number
     isGhSignedOut: boolean
+    orderText: string | null
   }
   isFetchingPrs: boolean
   isGhMissing: boolean
@@ -1351,12 +1353,21 @@ test('tracked PR steps are drawn and open the same linked and branch PRs without
 })
 
 test('a PR press with an unknown queue outcome keeps its receipt and unconfirmed feedback', async () => {
-  const { dir, call } = await prServer(args =>
-    args[1] === 'queue' ? { code: 1, stdout: '', stderr: 'no such thread' } : ghAnswer(args),
-  )
   const d = demoView(100, 'Codex')
+  const conflicting = Object.values(d.prViews.views).find(v => v.mergeable === 'CONFLICTING')!
+  const ref = conflicting.ref
+  const conflictingView = JSON.stringify({
+    ...conflicting,
+    baseRefName: conflicting.base,
+    statusCheckRollup: [],
+  })
+  const { dir, call } = await prServer(args => {
+    if (args[1] === 'queue') return { code: 1, stdout: '', stderr: 'no such thread' }
+    if (args[1] === 'pr' && args.includes(String(conflicting.number)))
+      return { code: 0, stdout: conflictingView, stderr: '' }
+    return ghAnswer(args)
+  })
   await updateState(dir, 's1', s => ({ ...s, ledger: { ...s.ledger, prs: d.ledger.prs }, prViews: d.prViews }))
-  const ref = Object.values(d.prViews.views).find(v => v.mergeable === 'CONFLICTING')!.ref
   const r = await call('inbox_press', { press: { action: 'pr-conflicts', ref }, thread: 's1' })
   assert.equal(r.result.structuredContent.error, null)
   assert.equal((r.result.structuredContent as unknown as { delivery: string }).delivery, 'unconfirmed')
@@ -1401,7 +1412,7 @@ test('dismissing a linked PR unlinks it and settles its block as a dismissed row
     at: 100,
     canUndo: true,
     offersUndo: true,
-    isLapsed: true,
+    closedAs: 'dismissed',
     delivery: null,
   })
   assert.equal((await readState(dir, 's1')).ledger.prs.includes(ref), false)
@@ -1415,6 +1426,76 @@ test('dismissing a linked PR unlinks it and settles its block as a dismissed row
   const switched = await call('inbox_view', { shownSince: t })
   assert.equal(drawn(switched.result.structuredContent).includes(ref), false)
   assert.equal(ref in (await readState(dir, 's1')).prViews.views, false)
+})
+
+test('an order_prs call links the PRs it names, and the next view ranks them first under the order’s line', async () => {
+  const view = (number: number) =>
+    JSON.stringify({ ...JSON.parse(GH_VIEW), number, url: `https://github.com/acme/app/pull/${number}` })
+  const { dir, call } = await prServer(args => {
+    const named = args[0] === 'gh' && args[1] === 'pr' ? args.find(a => /^\d+$/.test(a)) : undefined
+    return named ? { code: 0, stdout: view(Number(named)), stderr: '' } : ghAnswer(args)
+  })
+  const set = (await call('order_prs', { repo: 'acme/app', numbers: [9, 7], label: 'Merge order' })) as unknown as {
+    result: { content: { text: string }[] }
+  }
+  assert.match(set.result.content[0]!.text, /^Set\. These 2 PRs show first in the PRs section of the Inbox tab/)
+  assert.deepEqual((await readState(dir, 's1')).ledger.prs, ['acme/app#9', 'acme/app#7'])
+  const { prs } = (await viewAfterFetch(call)).result.structuredContent
+  assert.deepEqual(
+    prs.drawn.map(d => [d.pr.number, d.rank]),
+    [
+      [9, 1],
+      [7, 2],
+    ],
+  )
+  assert.match(prs.orderText ?? '', /^Merge order · set by Codex/)
+})
+
+test('Dismiss merged unlinks the merged PRs and settles each block with its own Undo', async () => {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
+  const runner = fakeRunner(() => ({ code: -1, stdout: '', stderr: '' }))
+  const handle = makeServer({
+    dir,
+    now: () => 100,
+    exec: runner.exec,
+    tabHtml: '',
+    fallbackCli: async () => 'codex',
+    comparePage: '/plugin/dist/compare-page.html',
+  })
+  const d = demoView(100, 'Codex')
+  const merged = d.ledger.prs.filter(r => r !== d.prViews.branchRef)
+  const views = Object.fromEntries(
+    Object.entries(d.prViews.views).map(([ref, v]) => [ref, merged.includes(ref) ? { ...v, state: 'MERGED' } : v]),
+  )
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: { ...s.ledger, prs: d.ledger.prs },
+    prViews: { ...d.prViews, views } as typeof d.prViews,
+  }))
+  const r = (await handle({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'tools/call',
+    params: {
+      name: 'inbox_press',
+      arguments: { press: { action: 'pr-dismiss-merged' }, thread: 's1', shownSince: 0 },
+      _meta: { thread_id: 's1' },
+    },
+  })) as PrReply
+  const states = r.result.structuredContent.view.prs.drawn.map(x => [
+    x.pr.ref,
+    x.state.is,
+    x.state.is === 'settled' ? x.state.canUndo : null,
+  ])
+  assert.deepEqual(
+    states.filter(([ref]) => merged.includes(ref as string)).map(([, is, canUndo]) => [is, canUndo]),
+    [
+      ['settled', true],
+      ['settled', true],
+    ],
+  )
+  assert.deepEqual((await readState(dir, 's1')).ledger.prs, [d.prViews.branchRef])
 })
 
 for (const failure of ['none', 'checkpoint', 'completion', 'queue', 'lookup'] as const) {

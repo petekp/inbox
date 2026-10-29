@@ -7,11 +7,19 @@ import type { IconName } from './row-actions'
 import { closedState } from '../../hooks/ledger'
 import { ago, clipLabel } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
+import { cancelledMarkShape } from '../../hooks/marks'
 import {
   canUndoRefused,
+  CLOSED_MARKS,
+  HELD_MARK,
+  HELP_COPY,
+  helpKeys,
+  MARK_LEGEND,
   closedMark,
   mergedLine,
+  nameBeforeStall,
   STATUS_TEXT_LINES,
+  statusKeyPlan,
   settledMark,
   STALL_GAP,
   versionLabel,
@@ -58,7 +66,8 @@ import {
   PRESS_GUARD_MS,
   rowAfterClose,
   replyHint,
-  rowMark,
+  rowResultMark,
+  FINDING_GROUPS,
   rowFeedbackText,
   RUNNING_PULSE_MS,
   settledLabel,
@@ -79,9 +88,12 @@ import type {
   Feedback,
   StatusPage,
   StatusRow,
+  StatusStall,
   StatusTone,
   PressState,
   Holds,
+  ResultMark,
+  LegendEntry,
   RowView,
   RowWait,
   SettledState,
@@ -90,6 +102,7 @@ import type {
 import {
   checkActions,
   checkRowText,
+  DISMISS_MERGED_ID,
   PR_QUOTE_CHARS,
   splitFollowUps,
   ghNoticeOf,
@@ -102,6 +115,8 @@ import {
   prRowWaits,
   prsEmptyText,
   prPressEffect,
+  prTabActions,
+  prRankText,
   prRefreshFailedText,
   prThreadId,
   threadActions,
@@ -141,6 +156,8 @@ type Row = {
   view?: RowView
   handle: string
   handleTone?: Tone
+  /** The mark is a running mark, which fades while what the row sent is on its way. */
+  isHandleRunning?: boolean
   /** A PR row's mark says its work is done. */
   isMarkDone?: boolean
   kind?: Finding['kind']
@@ -177,9 +194,13 @@ let tab: ShownTab = 'needsYou'
 /** When this page began showing `tab`. A row that closes since then stays in place no longer than that, as `isSettledInPlace` says. */
 let shownSince = Date.now()
 
+/** Whether Help shows in place of the tab's body. Switching tabs closes it. */
+let isHelpShown = false
+
 function switchTab(to: ShownTab) {
   if (to !== tab) shownSince = Date.now()
   tab = to
+  isHelpShown = false
 }
 
 /** The tab drawn: the shown tab when the view's build draws it, else the build's first tab, and Asks while the view has no Status page, as from an older server. */
@@ -789,8 +810,16 @@ function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
   return actions
 }
 
+/** An Asks or Finds row's mark: its result's, in the mark column. An open row has none. */
+function resultHandle(r: RowView): Pick<Row, 'handle' | 'handleTone' | 'isHandleRunning'> {
+  const mark = rowResultMark(r)
+
+  return mark
+    ? { handle: mark.text, isHandleRunning: mark.isRunning, ...(mark.tone ? { handleTone: mark.tone } : {}) }
+    : { handle: '' }
+}
+
 function itemRow(v: View, r: RowView): Row {
-  const mark = rowMark(r, 'codex')
   const isHandedOff = r.state.is === 'handedOff'
   const id = r.id
   const described = shownOptionDescriptions(r, optionsShown.has(id))
@@ -798,8 +827,7 @@ function itemRow(v: View, r: RowView): Row {
   return {
     id,
     view: r,
-    handle: mark.text,
-    handleTone: mark.tone,
+    ...resultHandle(r),
     ...(isHandedOff ? { fold: {} } : {}),
     title: r.title,
     // A next build draws the Status, so only it names the subject an ask holds up.
@@ -831,13 +859,11 @@ function itemRow(v: View, r: RowView): Row {
 function findingRow(v: View, r: RowView, f: Finding): Row {
   const isHandedOff = r.state.is === 'handedOff'
   const id = r.id
-  const mark = rowMark(r, 'codex')
 
   return {
     id,
     view: r,
-    handle: mark.text,
-    handleTone: mark.tone,
+    ...resultHandle(r),
     kind: f.kind,
     ...(isHandedOff ? { fold: {} } : {}),
     title: r.title,
@@ -865,7 +891,7 @@ function findingRow(v: View, r: RowView, f: Finding): Row {
 const pressesOf = (v: View): PressState => ({ lastActions: v.lastActions, turns: v.turns, now: v.at })
 
 function prKey(rowId: string, pr: PrView, a: PrAction): Key {
-  const effect = a.kind === 'local' ? prPressEffect(pr, a.press) : null
+  const effect = prPressEffect(pr, a.press)
   const pending = effect ? pendingLocal(effect) : null
 
   return {
@@ -877,6 +903,17 @@ function prKey(rowId: string, pr: PrView, a: PrAction): Key {
     ...(a.isOut || sending.get(rowId)?.action === a.press.action ? { isOut: true } : {}),
     run: () => void act(rowId, a.press, undefined, pending),
   }
+}
+
+/** The PRs tab's own buttons, drawn after its PR blocks. */
+function prTabKeys(v: View): Key[] {
+  return prTabActions(prPlan(v).blocks, v.prs.branchRef).map(a => ({
+    ...(a.hotkey ? { hotkey: a.hotkey } : {}),
+    label: a.label,
+    emphasis: a.emphasis,
+    ...(a.isOut || sending.get(DISMISS_MERGED_ID)?.action === a.press.action ? { isOut: true } : {}),
+    run: () => void act(DISMISS_MERGED_ID, a.press),
+  }))
 }
 
 function pendingLocal(effect: Effect): Feedback {
@@ -899,6 +936,7 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
     id,
     handle: text.mark.text,
     handleTone: text.mark.tone ?? undefined,
+    ...(text.mark.isRunning ? { isHandleRunning: true } : {}),
     isMarkDone: text.mark.isDone,
     ...(text.fold ? { fold: text.fold } : {}),
     title: text.title,
@@ -1134,7 +1172,14 @@ function isFeedbackShown(row: Row): boolean {
 function ListRow({ row, track, onSelect, now }: { row: Row; track: RowTrack; onSelect: () => void; now: number }) {
   const isClosing = track.hasPanel && (track.state === 'closing' || track.state === 'leaving')
   const isSelected = track.hasPanel && !isClosing
-  const handle = <span class={`mark ${row.handleTone ?? ''}`}>{row.handle}</span>
+  const handle = (
+    <span
+      class={`mark ${row.handleTone ?? ''}${row.isHandleRunning ? ' running' : ''}`}
+      ref={row.isHandleRunning ? pulseInStep : undefined}
+    >
+      {row.handle}
+    </span>
+  )
 
   const isPressing = sending.has(row.id)
   const pending = sending.get(row.id)?.pending ?? null
@@ -1174,7 +1219,11 @@ function ListRow({ row, track, onSelect, now }: { row: Row; track: RowTrack; onS
               {isSelected || isClosing ? `${DOT}${last}` : last}
             </span>
           ) : null}
-          {row.holdsUp ? <span class="holds-up">{row.holdsUp}</span> : null}
+          {row.holdsUp ? (
+            <span class="holds-up">
+              <span class="tone-needsYou">{HELD_MARK.mark}</span> {row.holdsUp}
+            </span>
+          ) : null}
         </button>
       </div>
       <span class="side" data-room={SENDING}>
@@ -1258,7 +1307,7 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
 
   return (
     <div class={panel ? 'row settled was-open' : 'row settled'}>
-      <span class="mark">{settledMark(state.delivery)}</span>
+      <ResultMarkView mark={settledMark(state)} />
       <div class="content">
         <div class="settled-head">
           <div class="settled-line">
@@ -1338,22 +1387,84 @@ function fitMergedLine(el: HTMLElement | null, merged: string) {
   el.textContent = mergedLine(merged, text => !measure || measure.measureText(text).width <= el.clientWidth)
 }
 
-/** A row's second line: where it stands, muted, then its stall words in the needs-you tone. */
-function SecondLine({ text, stall }: { text: string | null; stall: string | null }) {
-  if (!text && !stall) return null
+const STALL_CLASS: Record<StatusStall['tone'], string> = {
+  needsYou: 'tone-needsYou',
+  done: 'tone-done',
+}
+
+/** A name's words before its last, with the space after them, and its last word, which stays with the stall word. */
+function nameParts(name: string): { head: string; last: string } {
+  const at = name.lastIndexOf(' ')
+
+  return at < 0 ? { head: '', last: name } : { head: name.slice(0, at + 1), last: name.slice(at + 1) }
+}
+
+/** Writes into a name line the name `nameBeforeStall` cuts so the line takes at most `STATUS_TEXT_LINES` lines. */
+function fitNameLine(el: HTMLElement | null, name: string) {
+  const flowEl = el?.querySelector<HTMLElement>('.flow')
+  const headEl = el?.querySelector<HTMLElement>('.head')
+  const lastEl = el?.querySelector<HTMLElement>('.last')
+  if (!flowEl || !headEl || !lastEl) return
+  const write = (shown: string) => {
+    const { head, last } = nameParts(shown)
+    headEl.textContent = head
+    lastEl.textContent = last
+  }
+  const range = document.createRange()
+  range.selectNodeContents(flowEl)
+  const lineCount = () => new Set([...range.getClientRects()].map(r => Math.round(r.top))).size
+  write(
+    nameBeforeStall(name, shown => {
+      write(shown)
+      return lineCount() <= STATUS_TEXT_LINES
+    }),
+  )
+}
+
+/**
+ * A row's name with its stall word after `STALL_GAP` in the stall's tone, on the line of the name's last word, which a
+ * wrap never splits from them.
+ */
+function NameLine({ name, stall }: { name: string; stall: StatusStall | null }) {
+  if (!stall)
+    return (
+      <div class="clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
+        {name}
+      </div>
+    )
+  const { head, last } = nameParts(name)
 
   return (
-    <div class="muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
-      {text}
-      {text && stall ? STALL_GAP : null}
-      {stall ? <span class="tone-needsYou unbroken">{stall}</span> : null}
+    <div ref={el => fitNameLine(el, name)}>
+      <span class="flow">
+        <span class="head">{head}</span>
+        <span class="unbroken">
+          <span class="last">{last}</span>
+          <span class="muted">{STALL_GAP}</span>
+          <span class={STALL_CLASS[stall.tone]}>{stall.text}</span>
+        </span>
+      </span>
     </div>
   )
+}
+
+/** An Status row's View press: Asks shows with the ask selected and in view. */
+function showAsk(askId: string) {
+  switchTab('needsYou')
+  const index = view ? tabRows(view, 'needsYou').findIndex(r => r.id === askId) : -1
+  open('needsYou', askId, index < 0 ? undefined : index)
+  draw()
+  revealSelected()
 }
 
 function StatusLine({ row }: { row: StatusRow }) {
   if (row.kind === 'subject') {
     const merged = row.merged
+    const keys = statusKeyPlan(row).map((k): Key => ({
+      label: k.label,
+      emphasis: 'normal',
+      run: () => showAsk(k.press.askId),
+    }))
 
     return (
       <div class={row.hasChildren ? 'row has-children' : 'row'}>
@@ -1361,10 +1472,12 @@ function StatusLine({ row }: { row: StatusRow }) {
           {row.mark}
         </span>
         <div class="content tight">
-          <div class="clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
-            {row.name}
-          </div>
-          <SecondLine text={row.text} stall={row.stall} />
+          <NameLine name={row.name} stall={row.stall} />
+          {row.text ? (
+            <div class="muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
+              {row.text}
+            </div>
+          ) : null}
           {merged ? (
             <div
               class="outcome muted clamp"
@@ -1378,6 +1491,7 @@ function StatusLine({ row }: { row: StatusRow }) {
               {row.was}
             </div>
           ) : null}
+          {keys.length > 0 ? <RowActions keys={keys} more={[]} reply={null} isBlocked={() => false} /> : null}
         </div>
       </div>
     )
@@ -1385,14 +1499,11 @@ function StatusLine({ row }: { row: StatusRow }) {
   if (row.kind === 'child')
     return (
       <div class={row.branch ? `row child branch-${row.branch}` : 'row'}>
-        <span class={markClassOf(null, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
+        <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
           {row.mark}
         </span>
         <div class="content tight muted">
-          <div class="clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
-            {row.name}
-          </div>
-          <SecondLine text={null} stall={row.stall} />
+          <NameLine name={row.name} stall={row.stall} />
         </div>
       </div>
     )
@@ -1429,9 +1540,12 @@ function StatusTab({ page }: { page: StatusPage }) {
 
   return (
     <main class="status-page">
-      {page.goal ? (
+      {page.head ? (
         <section>
-          <h1 class="status-goal">{page.goal}</h1>
+          <div class="status-head">
+            <h1>{page.head.title}</h1>
+            {page.head.description ? <p class="muted">{page.head.description}</p> : null}
+          </div>
         </section>
       ) : null}
       {page.rows.length > 0 ? (
@@ -1448,9 +1562,75 @@ function StatusTab({ page }: { page: StatusPage }) {
   )
 }
 
-function GroupTitle({ title, count }: { title: string; count: number }) {
+/** A mark's text, or its shape where the system font draws it like another mark. */
+function MarkGlyph({ text }: { text: string }) {
+  const shape = text === CLOSED_MARKS.lapsed ? cancelledMarkShape(4) : null
+
+  return shape === null ? (
+    <>{text}</>
+  ) : (
+    <svg
+      class="mark-shape"
+      viewBox="0 0 8 8"
+      role="img"
+      aria-label={text}
+      dangerouslySetInnerHTML={{ __html: shape }}
+    />
+  )
+}
+
+function ResultMarkView({ mark }: { mark: ResultMark }) {
+  return (
+    <span class={mark.isRunning ? 'mark running' : 'mark'} ref={mark.isRunning ? pulseInStep : undefined}>
+      <MarkGlyph text={mark.text} />
+    </span>
+  )
+}
+
+function legendMarkClass(m: LegendEntry): string {
+  const tone = m.tone === 'needsYou' ? 'tone-needsYou' : m.tone
+  return ['mark', tone, m.isRunning ? 'running' : null].filter(Boolean).join(' ')
+}
+
+/** Help in place of the tab's body: the keys this tab takes, then what each mark means. */
+function HelpPage({ v }: { v: View }) {
+  const keys = helpKeys('codex', v.isNextBuild === true, drawnTab(), false)
+
+  return (
+    <main class="status-page help">
+      <section>
+        <GroupTitle title={HELP_COPY.keys} count={0} />
+        <div class="help-keys">
+          {keys.flatMap(k => [
+            <b key={`${k.keys}-keys`}>{k.keys}</b>,
+            <span key={`${k.keys}-does`} class="muted">
+              {k.does}
+            </span>,
+          ])}
+        </div>
+      </section>
+      <section>
+        <GroupTitle title={HELP_COPY.marks} count={0} />
+        <div class="list">
+          {MARK_LEGEND.map(m => (
+            <div key={m.mark} class="row">
+              <span class={legendMarkClass(m)} ref={m.isRunning ? pulseInStep : undefined}>
+                <MarkGlyph text={m.mark} />
+              </span>
+              <div class="content tight muted">{m.words}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </main>
+  )
+}
+
+/** A Finds group's title hangs its kind's mark in the mark column, since its rows draw none. */
+function GroupTitle({ title, count, mark }: { title: string; count: number; mark?: { mark: string; tone: Tone } }) {
   return (
     <div class="group-title">
+      {mark ? <span class={`group-mark ${mark.tone}`}>{mark.mark}</span> : null}
       <b>{title}</b>
       {count > 0 ? (
         <span class="count">
@@ -1584,7 +1764,7 @@ function GroupEnd({
           {closed.map(d => (
             <div class="entry" key={`closed-${d.id}`}>
               <div class="row">
-                <span class="mark">{closedMark(d.state, d.delivery)}</span>
+                <ResultMarkView mark={closedMark(d.state, d.delivery)} />
                 <div class="content tight">
                   <div class="muted">{d.ask}</div>
                   <div class="outcome">{settledLabel(d.outcomeLabel, d.delivery)}</div>
@@ -1687,7 +1867,7 @@ function Findings({ v, lists, now }: { v: View; lists: Lists; now: number }) {
         const rows = rest.flatMap(x => ('row' in x ? [x.row] : []))
         return (
           <section>
-            <GroupTitle title={g.title} count={waitingCount(rows.map(r => r.view))} />
+            <GroupTitle title={g.title} count={waitingCount(rows.map(r => r.view))} mark={FINDING_GROUPS[g.kind]} />
             <Entries entries={g.entries} group="finding" all={lists.byTab.findings} now={now} />
             <GroupEnd
               group={g.kind}
@@ -1710,7 +1890,7 @@ function SettledPr({ pr, state }: { pr: PrView; state: SettledState }) {
 
   return (
     <div class="row settled">
-      <span class="mark">✓</span>
+      <ResultMarkView mark={settledMark(state)} />
       <div class="content">
         <div class="settled-head">
           <div class="settled-line">
@@ -1809,6 +1989,7 @@ function PrBlock({
   pr,
   threads,
   checks,
+  rank,
   openId,
   all,
   now,
@@ -1823,6 +2004,7 @@ function PrBlock({
   return (
     <section>
       <div class="pr-head">
+        {rank === null ? null : <span class="rank muted">{prRankText(rank)}</span>}
         <span class="tone-prs num">#{pr.number}</span> {pr.title}{' '}
         <span class={tone ? `pr-verdict tone-${tone}` : 'pr-verdict muted'}>{head}</span>
         <span class="pr-verdict muted">{unlisted.map(r => `${DOT}${r}`).join('')}</span>
@@ -1889,6 +2071,7 @@ function Prs({ v, now }: { v: View; now: number }) {
       </div>
     )
   const openId = rows[selectedIndex(rows, 'prs', v)]?.id
+  const tabKeys = prTabKeys(v)
 
   return (
     <main>
@@ -1896,6 +2079,11 @@ function Prs({ v, now }: { v: View; now: number }) {
         <div class="banner-place">
           <Banner banner={bannerOf(ghNotice.kind, ghNotice.text)} />
         </div>
+      ) : null}
+      {v.prs.orderText ? (
+        <section>
+          <div class="group-title muted">{v.prs.orderText}</div>
+        </section>
       ) : null}
       {blocks.map(b =>
         b.state.is === 'settled' ? (
@@ -1906,6 +2094,15 @@ function Prs({ v, now }: { v: View; now: number }) {
           <PrBlock {...b} v={v} openId={openId} all={rows} now={now} />
         ),
       )}
+      {tabKeys.length > 0 ? (
+        <section>
+          <div class="pr-actions keys">
+            {tabKeys.map(k => (
+              <KeyButton k={k} />
+            ))}
+          </div>
+        </section>
+      ) : null}
       {v.prs.olderText ? (
         <section>
           <div class="group-title muted">{v.prs.olderText}</div>
@@ -2061,7 +2258,9 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
         </div>
       ) : null}
       <TabBar v={v} />
-      {shown === 'needsYou' ? (
+      {isHelpShown ? (
+        <HelpPage v={v} />
+      ) : shown === 'needsYou' ? (
         <NeedsYou v={v} lists={lists} now={now} />
       ) : shown === 'findings' ? (
         <Findings v={v} lists={lists} now={now} />
@@ -2071,6 +2270,18 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
         <StatusTab page={v.statusPage} />
       )}
       <footer>
+        <button
+          type="button"
+          class="help-toggle"
+          title={`${HELP_COPY.open} (?)`}
+          aria-pressed={isHelpShown}
+          onClick={() => {
+            isHelpShown = !isHelpShown
+            draw()
+          }}
+        >
+          {isHelpShown ? HELP_COPY.close : HELP_COPY.open}
+        </button>
         {isDemo || !DEMO_BUTTON ? null : (
           <button type="button" class="demo-toggle" onClick={() => void toggleDemo()}>
             Show demo
@@ -2345,6 +2556,12 @@ document.addEventListener(
       }
       return
     }
+    if (e.key === '?' || (e.key === 'Escape' && isHelpShown)) {
+      e.preventDefault()
+      isHelpShown = e.key === '?' && !isHelpShown
+      draw()
+      return
+    }
     const switched = shownTabs(view.isNextBuild === true).find(t => t.hotkey === e.key)
     if (switched) {
       switchTab(switched.id)
@@ -2352,7 +2569,13 @@ document.addEventListener(
       return
     }
     const t = drawnTab()
-    if (!isRowTab(t)) return
+    if (isHelpShown || !isRowTab(t)) return
+    const tabKey = t === 'prs' ? prTabKeys(view).find(x => x.hotkey === e.key) : undefined
+    if (tabKey) {
+      e.preventDefault()
+      if (!tabKey.isOut) tabKey.run()
+      return
+    }
     const rows = tabRows(view, t)
     const at = selectedIndex(rows, t, view)
     const move = e.key === 'j' || e.key === 'ArrowDown' ? 1 : e.key === 'k' || e.key === 'ArrowUp' ? -1 : 0
@@ -2393,7 +2616,7 @@ function initialize(): Promise<boolean> {
     'ui/initialize',
     {
       protocolVersion: '2026-01-26',
-      appInfo: { name: 'inbox', version: '0.2.13' },
+      appInfo: { name: 'inbox', version: '0.2.14' },
       appCapabilities: { tools: {} },
     },
     READ_TIMEOUT_MS,

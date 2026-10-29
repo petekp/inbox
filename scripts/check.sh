@@ -1,7 +1,8 @@
 #!/bin/sh
 # Checks the mod: formatting with Prettier, its plugin structure with
 # `claude plugin validate`, the imports and docs that keep the three looks in
-# step with scripts/check-structure.mjs, its types with tsc, and its tests with
+# step, and the plugin directory's rules for the hooks module, with
+# scripts/check-structure.mjs, its types with tsc, and its tests with
 # `claude plugin test`. Then the Codex plugin in codex/ and the omp extension in
 # omp/. Exits 1 on any failure, and when a check cannot run.
 #

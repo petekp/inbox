@@ -2,6 +2,7 @@ import type {
   Closed,
   ClosedFinding,
   Draft,
+  FoldKind,
   Finding,
   Item,
   LastAction,
@@ -19,7 +20,7 @@ import type {
   Tab,
   Turns,
 } from '../types'
-import { closedAt, isLapsed, reopenFinding, reopenItem } from './ledger'
+import { closedAt, closedState, reopenFinding, reopenItem } from './ledger'
 import { isChildRunning, isOpen } from './status'
 import { ago, clipLabel, cutAtPhrase } from './text'
 import { questionNumbers } from './model-text'
@@ -45,7 +46,7 @@ import {
   stepsOf,
 } from './presses'
 import type { HelpStep, RowPress } from './presses'
-import type { BannerTone } from './tones'
+import type { BannerTone, ToneName } from './tones'
 
 const OPTIONS_FOLD_AT = 5
 const OPTION_LABEL_CHARS = 32
@@ -68,7 +69,128 @@ export const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; list: 'quest
   { kind: 'task', title: 'Tasks', list: 'tasks' },
 ]
 
-export const CLOSED_MARKS: Record<ClosedState, string> = { handled: '✓', dismissed: '✕', lapsed: '' }
+export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: StatusTone }> = {
+  working: { mark: '●', tone: null },
+  queued: { mark: '○', tone: null },
+  'waits-on-other': { mark: '◌', tone: null },
+  done: { mark: '✓', tone: 'done' },
+  dropped: { mark: '✗', tone: null },
+}
+/** The mark of an open subject that an open ask holds up, in place of its status's mark, and of a delegate that waits for the person. */
+export const HELD_MARK: { mark: string; tone: 'needsYou' } = { mark: '◆', tone: 'needsYou' }
+
+/** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
+export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
+
+/** The running mark's first frame, the one a look draws still. */
+export const RUNNING_MARK = RUNNING_FRAMES[0]
+
+export const CLOSED_MARKS: Record<ClosedState, string> = {
+  handled: SUBJECT_MARKS.done.mark,
+  dismissed: '✕',
+  lapsed: SUBJECT_MARKS.dropped.mark,
+}
+
+/** A PR row's mark: a review thread that waits on the person, one sent to the agent, and a failing check. */
+export const PR_MARKS = {
+  waiting: { text: HELD_MARK.mark, tone: 'needsYou' },
+  sent: { text: SUBJECT_MARKS.done.mark, tone: 'done' },
+  failing: { text: FINDING_GROUPS.issue.mark, tone: 'error' },
+} as const
+
+/** One mark the legend explains. `isRunning` draws it as the running mark. */
+export type LegendEntry = { mark: string; tone: ToneName | null; isRunning: boolean; words: string }
+
+/** Every mark a look draws on a row or a group title, once each, with what it means wherever it appears. */
+export const MARK_LEGEND: readonly LegendEntry[] = [
+  {
+    mark: RUNNING_MARK,
+    tone: null,
+    isRunning: true,
+    words: 'Working. It moves while the work runs or your message is on its way.',
+  },
+  { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: 'Queued: not started yet' },
+  {
+    mark: SUBJECT_MARKS['waits-on-other'].mark,
+    tone: null,
+    isRunning: false,
+    words: 'Waits on something other than you, such as a build or a review',
+  },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: 'Waits on you' },
+  { mark: SUBJECT_MARKS.done.mark, tone: 'done', isRunning: false, words: 'Done, or handed to the agent' },
+  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: 'Dropped before it was done' },
+  { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: 'Dismissed by you' },
+  {
+    mark: FINDING_GROUPS.issue.mark,
+    tone: FINDING_GROUPS.issue.tone,
+    isRunning: false,
+    words: 'Something is wrong: an issue or a failing check',
+  },
+  {
+    mark: FINDING_GROUPS.opportunity.mark,
+    tone: FINDING_GROUPS.opportunity.tone,
+    isRunning: false,
+    words: 'Opportunity: something that could be better',
+  },
+]
+
+export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', marks: 'Marks' } as const
+
+export type HelpKey = { keys: string; does: string }
+
+/**
+ * The keys a look's Help lists, for the tab Help opened over. `hasStatusButtons` says the Status has a row with a
+ * button, which the terminal and omp select with j and k. Desktop takes no keys, so its Help lists marks only. Each
+ * look binds these keys in its own adapter.
+ */
+export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasStatusButtons: boolean): HelpKey[] {
+  const tabKeys = shownTabs(isNextBuild)
+    .map(t => t.hotkey)
+    .join(' ')
+  const hasRows = isRowTab(tab)
+  const selectsStatusRows = tab === 'overview' && hasStatusButtons
+  const switchTabs = { keys: tabKeys, does: 'Switch tabs' }
+  switch (look) {
+    case 'desktop':
+      return []
+    case 'terminal':
+      return [
+        switchTabs,
+        ...(hasRows || selectsStatusRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
+        { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
+      ]
+    case 'codex':
+      return [
+        switchTabs,
+        ...(hasRows ? [{ keys: 'j k ↑ ↓', does: 'Select the next or previous row' }] : []),
+        { keys: '?', does: 'Open or close help' },
+        { keys: 'esc', does: 'Close help, or leave a reply field' },
+      ]
+    case 'omp':
+      return [
+        { keys: `tab ${tabKeys}`, does: 'Switch tabs' },
+        ...(hasRows
+          ? [
+              { keys: '↑ ↓ j k', does: 'Move between rows' },
+              { keys: '← →', does: 'Pick a button' },
+              { keys: '↵', does: 'Press the picked button' },
+              { keys: 'r', does: 'Reply to the selected row' },
+              { keys: 'u', does: 'Undo the last close' },
+            ]
+          : [
+              ...(selectsStatusRows
+                ? [
+                    { keys: 'j k', does: 'Select the next or previous row with a button' },
+                    { keys: '↵', does: "Press the selected row's button" },
+                  ]
+                : []),
+              { keys: '↑ ↓', does: 'Scroll the page' },
+            ]),
+        { keys: '?', does: 'Open or close help' },
+        { keys: 'esc', does: 'Close help, then the panel' },
+      ]
+  }
+}
 
 export const CLOSED_SHOWN = 3
 /** How long Undo can take back a close or a press. Once it passes, Done tells the agent. */
@@ -196,7 +318,7 @@ export type RowState =
       /** Whether this kind of close offers Undo while Undo lasts. `canUndo` is whether Undo is on offer now. */
       offersUndo: boolean
       delivery: ClosedDelivery
-      isLapsed: boolean
+      closedAs: ClosedState
     }
 
 export type SettledState = Extract<RowState, { is: 'settled' }>
@@ -229,7 +351,7 @@ export function closedRowState(
     at,
     canUndo: canUndoClose(closed, at, now, settleWindowMs),
     offersUndo: offersUndo(closed),
-    isLapsed: isLapsed(closed),
+    closedAs: closedState(closed),
     delivery,
   }
 }
@@ -282,7 +404,8 @@ export type ActionView = {
 export type RowView = {
   id: string
   type: 'question' | 'task' | 'finding'
-  handle: string
+  /** The question's number in the batch the person can answer by number, as the agent's message numbers it. */
+  number: number | null
   title: string
   at: number | null
   detail: string | null
@@ -322,13 +445,14 @@ export function shownOptionDescriptions(row: RowView, isShowingAll: boolean): Op
   return row.optionDescriptions.filter(o => isShowingAll || !o.isFolded)
 }
 
-export function rowMark(row: RowView, look: Look): { text: string; tone?: 'done' | 'issue' } {
-  if (row.state.is === 'handedOff' && row.feedback?.is !== 'unconfirmed') return { text: '✓', tone: 'done' }
-  if (row.finding) {
-    const group = FINDING_GROUPS[row.finding.kind]
-    return { text: group.mark, tone: group.tone }
-  }
-  return { text: isTerminalLike(look) ? row.handle : '' }
+/** A row's handle in text the agent reads: its number, as "1)", or "•". */
+export function rowHandle(row: Pick<RowView, 'number'>): string {
+  return row.number === null ? '•' : `${row.number})`
+}
+
+/** A row's title as a look draws it. The terminal and omp start a numbered question's title with its number. */
+export function rowTitle(row: Pick<RowView, 'number' | 'title'>, look: Look): string {
+  return isTerminalLike(look) && row.number !== null ? `${rowHandle(row)} ${row.title}` : row.title
 }
 
 export function replyHint(row: RowView, agent: string): string {
@@ -367,9 +491,49 @@ export function markedFeedbackText(f: Feedback, isMarkDone: boolean, look: Look)
   return f.is === 'done' && isMarkDone ? f.label : feedbackText(f, look)
 }
 
+/** A handed-off row's ✓ leads its result line, so its result reads without its own ✓. */
 export function rowFeedbackText(row: RowView, look: Look): string | null {
   const f = row.feedback
-  return f ? (f.is === 'done' && row.state.is === 'handedOff' ? f.label : feedbackText(f, look)) : null
+  if (!f) return null
+  if (!isHandedOffDone(row)) return feedbackText(f, look)
+
+  return f.is === 'done' ? f.label : feedbackText(f, look).replace(/^✓ /, '')
+}
+
+/** Whether a handed-off row's last press is done: its send arrived, or its open or copy worked. */
+function isHandedOffDone(row: Pick<RowView, 'state' | 'feedback'>): boolean {
+  const f = row.feedback
+
+  return row.state.is === 'handedOff' && (f?.is === 'done' || (f?.is === 'local' && f.result.state === 'done'))
+}
+
+/**
+ * The mark of a row's result: what came of it. The terminal and omp draw it before the result, and desktop and Codex
+ * in the row's mark column. `isRunning` says the look draws its running mark in place of `text`, as on the Status,
+ * while what the row sent is on its way.
+ */
+export type ResultMark = { text: string; isRunning: boolean; tone?: 'done' }
+
+const RUNNING_RESULT: ResultMark = { text: RUNNING_MARK, isRunning: true }
+
+/**
+ * A row's result mark: a settled row's, or a handed-off row's, which runs while its message is on its way and is ✓
+ * once its press is done. It is blank otherwise, as while the message is unconfirmed, and keeps its place, so the
+ * result does not move when its mark arrives. Null on an open row.
+ */
+export function rowResultMark(row: Pick<RowView, 'state' | 'feedback'>): ResultMark | null {
+  if (row.state.is === 'settled') return settledMark(row.state)
+  const f = row.feedback
+  if (row.state.is !== 'handedOff' || !f) return null
+  if (f.is === 'sending' || f.is === 'queued') return RUNNING_RESULT
+  return isHandedOffDone(row)
+    ? { text: SUBJECT_MARKS.done.mark, isRunning: false, tone: 'done' }
+    : { text: '', isRunning: false }
+}
+
+/** Whether what a row sent is still on its way to the agent: `unconfirmed` and a refused send are not. */
+function isSendMoving(delivery: ClosedDelivery): boolean {
+  return delivery === 'sending' || delivery === 'queued'
 }
 
 export type InboxView = {
@@ -805,14 +969,39 @@ function deliveryLabel(state: 'queued' | 'unconfirmed', label: string): string {
   return state === 'queued' ? `Queued: ${label}` : `Not confirmed: ${label}`
 }
 
-/** A settled row's mark: ✓ once nothing it sent is on its way, else blank. */
-export function settledMark(delivery: ClosedDelivery): string {
-  return delivery === null ? '✓' : ''
+/** A settled row's mark: the one its line in the Closed list draws, so a row keeps its mark when it folds. */
+export function settledMark(state: Pick<SettledState, 'delivery' | 'closedAs'>): ResultMark {
+  return closedMark(state.closedAs, state.delivery)
 }
 
-/** A closed row's mark: blank while what it sent is on its way. */
-export function closedMark(state: ClosedState, delivery: ClosedDelivery): string {
-  return delivery === null ? CLOSED_MARKS[state] : ''
+/** A closed row's mark, as `CLOSED_MARKS` gives it: running while what it sent is on its way, else blank until it arrives. */
+export function closedMark(state: ClosedState, delivery: ClosedDelivery): ResultMark {
+  if (isSendMoving(delivery)) return RUNNING_RESULT
+  return { text: delivery === null ? CLOSED_MARKS[state] : '', isRunning: false }
+}
+
+/**
+ * Whether a row tab draws a running mark, so the terminal and omp keep their frame timer going: a row whose answer is
+ * on its way, or such a line in a Closed list the look shows unfolded.
+ */
+export function isRowTabRunning(v: InboxView, tab: ListedTab, isUnfolded: (kind: FoldKind) => boolean): boolean {
+  const rows = tab === 'needsYou' ? [...v.needsYou.questions, ...v.needsYou.tasks] : v.findings.rows
+  const settled = new Set(settledRowIds(rows))
+  const closed =
+    tab === 'needsYou'
+      ? NEEDS_YOU_GROUPS.flatMap(g => (isUnfolded(g.kind) ? closedShown(v.needsYou.closed[g.list], settled) : []))
+      : (Object.keys(FINDING_GROUPS) as Finding['kind'][]).flatMap(kind =>
+          isUnfolded(kind)
+            ? closedShown(
+                v.findings.closed.filter(f => f.kind === kind),
+                settled,
+              )
+            : [],
+        )
+
+  return (
+    rows.some(r => rowResultMark(r)?.isRunning) || closed.some(d => closedMark(closedState(d), d.delivery).isRunning)
+  )
 }
 
 /** Whether a closed row offers Undo after its notification was refused. */
@@ -825,8 +1014,8 @@ export function canUndoRefused(delivery: ClosedDelivery): boolean {
  * "Not sent" or unconfirmed result never reads as success. A look that draws the label as muted text after the
  * title draws it muted either way.
  */
-export function settledTone(state: { delivery: ClosedDelivery; isLapsed: boolean }): 'done' | 'muted' {
-  return state.delivery === null && !state.isLapsed ? 'done' : 'muted'
+export function settledTone(state: Pick<SettledState, 'delivery' | 'closedAs'>): 'done' | 'muted' {
+  return state.delivery === null && state.closedAs === 'handled' ? 'done' : 'muted'
 }
 
 export function settledLabel(label: string, delivery: ClosedDelivery): string {
@@ -941,10 +1130,13 @@ export type StatusTone = 'needsYou' | 'done' | null
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
 export type StatusBranch = 'mid' | 'last'
 
+/** The word after a row's name: "waiting" in the needs-you tone while it waits on the person, or "finished". */
+export type StatusStall = { text: string; tone: 'needsYou' | 'done' }
+
 /**
- * One line of the Status tab's list, in the order to draw it. Each look lays out the parts; none chooses them. A subject
- * or child draws its name, then a second line of where it stands and its stall words, the stall words after
- * `STALL_GAP` and in the needs-you tone.
+ * One line of the Status's list, in the order to draw it. Each look lays out the parts; none chooses them. A subject
+ * or child draws its name with its stall word after it, past `STALL_GAP`, in the stall's tone. A subject draws where it
+ * stands on the line under its name.
  */
 export type StatusRow = StatusRowParts & {
   /** Whether a rule sets it apart from the row above. A subject and the rows under it are one item, and the look line is a rule already. */
@@ -962,31 +1154,31 @@ type StatusRowParts =
       name: string
       /** Where it stands. Null for a finished row below the look line, which the person has seen. */
       text: string | null
-      /** How long it has waited, as "waiting 2h", once it waits on someone for `STALL_MS`. */
-      stall: string | null
+      /** "waiting" while an open ask holds it up. */
+      stall: StatusStall | null
       /** The names of the subjects merged into it, while the person has not seen them. */
       merged: string | null
       /** The plan a reversal replaced, while the person has not seen it. */
       was: string | null
       /** Whether rows of its children follow, so its tree line runs down from its mark. */
       hasChildren: boolean
+      /** The oldest open ask that holds it up, which its View button opens. Null while no open ask holds it up. */
+      ask: { id: string; kind: Item['kind'] } | null
     }
   | {
       kind: 'child'
       id: string
       mark: string
-      /**
-       * Whether it did anything in the last `STALL_MS`, or, when its host reports no activity, started less than
-       * `STALL_MS` ago. A look animates the mark while it is set.
-       */
+      tone: StatusTone
+      /** Whether its work shows under way, as `isChildWorking` says. A look animates the mark while it is set. */
       isRunning: boolean
       name: string
-      /** How long it has done nothing, as "quiet 40m", once that passes `STALL_MS`, since a quiet child may be stuck. */
-      stall: string | null
+      /** What its work does, as `childStall` says. */
+      stall: StatusStall | null
       /** Its place under its subject. Null when it is linked to no subject the list shows, so it sits at the top of the list. */
       branch: StatusBranch | null
     }
-  /** The children of a subject past `CHILD_ROWS`, as "+ 2 more running". It is always the last row under its subject. */
+  /** The children of a subject past `CHILD_ROWS`, as "+ 2 more running", or "+ 2 more" when one finished. It is always the last row under its subject. */
   | { kind: 'more'; id: string; text: string; branch: 'last' }
   /** Where the person last looked: rows above it changed since. */
   | { kind: 'look'; id: string; text: string }
@@ -996,43 +1188,36 @@ type StatusRowParts =
 /** What the Status page shows. Every look draws it as it is. */
 export type StatusPage = {
   isEmpty: boolean
-  goal: string | null
+  /** What the session is focused on now. The description is null until the Status call writes one. */
+  head: { title: string; description: string | null } | null
   rows: StatusRow[]
   /** The status line's error while the last Status call wrote nothing. */
   error: string | null
   empty: { title: string; hint: string }
 }
 
-export const LOOK_TEXT = 'Seen'
+export const LOOK_TEXT = 'Last seen'
 /** What a subject's was line starts with, before the plan it replaces. */
 export const WAS_PREFIX = 'was: '
 const MERGED_PREFIX = 'merged in: '
-/** What separates where a row stands from its stall words. */
+/** What separates a row's name from its stall word. */
 export const STALL_GAP = ' · '
 
 /** The most lines each text on a Status row wraps to: a name, where it stands, a was line. A look cuts past them with an ellipsis. */
 export const STATUS_TEXT_LINES = 3
 /** The most children drawn under one subject; the rest fold into "+ N more running". */
 export const CHILD_ROWS = 3
-/** How long work goes before it has stalled: a child with no activity reads quiet, and a waiting subject says how long it has waited. */
-export const STALL_MS = 15 * 60_000
 /** Finished rows drawn above the look line; older ones fold into the count. */
 const NEW_CLOSED_ROWS = 2
 /** Open rows drawn before the oldest queued ones fold into a count. */
 const OPEN_ROWS = 7
 
-export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: StatusTone }> = {
-  working: { mark: '●', tone: null },
-  queued: { mark: '○', tone: null },
-  'waits-on-other': { mark: '◌', tone: null },
-  done: { mark: '✓', tone: 'done' },
-  dropped: { mark: '✗', tone: null },
-}
-/** The mark of an open subject that an open ask holds up, in place of its status's mark. */
-const HELD_MARK: { mark: string; tone: StatusTone } = { mark: '◆', tone: 'needsYou' }
+const CHILD_MARK: { mark: string; tone: StatusTone } = { mark: SUBJECT_MARKS.working.mark, tone: null }
 
-/** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
-export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
+/** The order of subjects on each side of the look line, from what needs the person to what is finished. */
+const STATUS_PLACES = ['held', 'working', 'waits-on-other', 'queued', 'closed'] as const
+
+type StatusPlace = (typeof STATUS_PLACES)[number]
 
 export const RUNNING_FRAME_MS = 300
 
@@ -1045,6 +1230,18 @@ export const RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS
  */
 export function mergedLine(merged: string, fits: (text: string) => boolean): string {
   return `${MERGED_PREFIX}${cutAtPhrase(merged, names => fits(`${MERGED_PREFIX}${names}`))}`
+}
+
+/**
+ * A row's name as it shows before its stall word, which stays on the line of its last word. Whole when `fits` says the
+ * name and the stall word fit in `STATUS_TEXT_LINES` lines, else cut at a word with an ellipsis until they do. The
+ * stall word is never cut. When no cut fits, the name keeps its first word.
+ */
+export function nameBeforeStall(name: string, fits: (shown: string) => boolean): string {
+  const words = name.split(' ')
+  const cuts = words.map((_, n) => (n === 0 ? name : `${words.slice(0, words.length - n).join(' ')}…`))
+
+  return cuts.find(fits) ?? cuts.at(-1)!
 }
 
 export function hasRunningMark(page: StatusPage): boolean {
@@ -1063,35 +1260,38 @@ function isItemAfterItem(row: StatusRowParts, prev: StatusRowParts | undefined):
   return prev !== undefined && prev.kind !== 'look' && row.kind !== 'look' && !isUnderSubject
 }
 
-/** How long ago `c` last did anything, or null when its host reports no activity. */
-function idleOf(c: Child, now: number): number | null {
-  return c.lastActivityAt === null ? null : now - c.lastActivityAt
+/** Whether `c` is a delegate that finished after the person last looked, so the page still shows it. */
+function isFinishedUnseen(c: Child, lastLookAt: number | null): boolean {
+  return c.delegateState === 'finished' && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt)
 }
 
-function isQuiet(c: Child, now: number): boolean {
-  const idle = idleOf(c, now)
-
-  return idle !== null && idle >= STALL_MS
+/** Whether `c` runs and waits on no one: not a delegate at a question or an approval, and not one that finished. */
+function isChildWorking(c: Child): boolean {
+  return c.endedAt === null && c.delegateState !== 'blocked'
 }
 
 /**
- * Whether `c` shows work under way: it did something in the last `STALL_MS`, or its host reports no activity and it
- * started less than `STALL_MS` ago.
+ * A delegate's stall word, from what Herdr shows: "waiting" at a question or an approval, in the needs-you tone, and
+ * "finished", in the done tone. Other work shows none, since its moving mark shows it runs.
  */
-function isChildWorking(c: Child, now: number): boolean {
-  return now - (c.lastActivityAt ?? c.startedAt) < STALL_MS
+function childStall(c: Child): StatusStall | null {
+  if (c.delegateState === 'finished') return { text: 'finished', tone: 'done' }
+  if (c.delegateState === 'blocked') return { text: 'waiting', tone: 'needsYou' }
+
+  return null
 }
 
-function childRow(c: Child, now: number, branch: StatusBranch | null): StatusRowParts {
-  const idle = idleOf(c, now)
+function childRow(c: Child, branch: StatusBranch | null): StatusRowParts {
+  const marks =
+    c.delegateState === 'finished' ? SUBJECT_MARKS.done : c.delegateState === 'blocked' ? HELD_MARK : CHILD_MARK
 
   return {
     kind: 'child',
     id: c.id,
-    mark: '●',
-    isRunning: isChildWorking(c, now),
+    ...marks,
+    isRunning: isChildWorking(c),
     name: c.name,
-    stall: idle !== null && isQuiet(c, now) ? `quiet ${shortAgo(idle)}` : null,
+    stall: childStall(c),
     branch,
   }
 }
@@ -1110,18 +1310,21 @@ export function statusPage(
   const isNew = (x: Subject) => look === null || x.changedAt > look
   const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
   const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
-  /** When `x` began to wait: when the oldest open ask holding it up was asked, or when it last changed. */
-  const waitingSince = (x: Subject) => {
-    const asked = s.ledger.items.filter(i => o?.askSubjects[i.id] === x.id).flatMap(i => i.at ?? [])
+  const oldestAskOf = (x: Subject): { id: string; kind: Item['kind'] } | null => {
+    if (!isHeld(x)) return null
+    const oldest = s.ledger.items
+      .filter(i => o?.askSubjects[i.id] === x.id)
+      .sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0]
 
-    return asked.length > 0 ? Math.min(...asked) : x.changedAt
+    return oldest ? { id: oldest.id, kind: oldest.kind } : null
   }
-  const stallOf = (x: Subject) => {
-    const isWaiting = isHeld(x) || (isOpen(x) && x.status === 'waits-on-other')
-    const waited = now - waitingSince(x)
-
-    return isWaiting && waited >= STALL_MS ? `waiting ${shortAgo(waited)}` : null
-  }
+  const placeOf = (x: Subject): StatusPlace =>
+    isHeld(x) ? 'held' : x.status === 'done' || x.status === 'dropped' ? 'closed' : x.status
+  const pageOrder = (x: Subject, y: Subject) =>
+    Number(isNew(y)) - Number(isNew(x)) ||
+    STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) ||
+    y.changedAt - x.changedAt
+  const stallOf = (x: Subject): StatusStall | null => (isHeld(x) ? { text: 'waiting', tone: 'needsYou' } : null)
   const newClosed = subjects
     .filter(x => !isOpen(x) && isNew(x))
     .sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0))
@@ -1130,20 +1333,20 @@ export function statusPage(
   const queuedOver = Math.max(0, open.length - OPEN_ROWS)
   const hiddenQueued = new Set(
     open
-      .filter(x => x.status === 'queued' && !isHeld(x))
+      .filter(x => placeOf(x) === 'queued')
       .sort((x, y) => x.changedAt - y.changedAt)
       .slice(0, queuedOver)
       .map(x => x.id),
   )
-  const shown = [...open.filter(x => !hiddenQueued.has(x.id)), ...newClosed].sort((x, y) => y.changedAt - x.changedAt)
+  const shown = [...open.filter(x => !hiddenQueued.has(x.id)), ...newClosed].sort(pageOrder)
   const folded = subjects.filter(x => x.status === 'done' && !newClosed.includes(x))
   const running = (o?.children ?? [])
-    .filter(c => isChildRunning(c, now))
+    .filter(c => isChildRunning(c, now) || isFinishedUnseen(c, look))
     .sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt))
   const shownIds = new Set(shown.map(x => x.id))
   const rows: StatusRowParts[] = running
     .filter(c => c.subjectId === null || !shownIds.has(c.subjectId))
-    .map(c => childRow(c, now, null))
+    .map(c => childRow(c, null))
   const lookRow: StatusRowParts | null = look === null ? null : { kind: 'look', id: 'look', text: LOOK_TEXT }
   const firstSeen = shown.findIndex(x => !isNew(x))
   for (const [i, x] of shown.entries()) {
@@ -1156,21 +1359,23 @@ export function statusPage(
       kind: 'subject',
       id: x.id,
       ...(isHeld(x) ? HELD_MARK : SUBJECT_MARKS[x.status]),
-      isRunning:
-        x.status === 'working' && !isHeld(x) && (s.presence.isTurnRunning || under.some(c => isChildWorking(c, now))),
+      isRunning: x.status === 'working' && !isHeld(x) && (s.presence.isTurnRunning || under.some(isChildWorking)),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       stall: stallOf(x),
       merged: isNew(x) ? x.merged : null,
       was: isNew(x) ? x.was : null,
       hasChildren: under.length > 0,
+      ask: oldestAskOf(x),
     })
-    rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid')))
+    rows.push(...shownUnder.map((c, n) => childRow(c, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid')))
+    const hidden = under.slice(CHILD_ROWS)
+    const isEveryHiddenRunning = hidden.every(c => c.delegateState !== 'finished')
     if (isMore)
       rows.push({
         kind: 'more',
         id: `${x.id}-more`,
-        text: `+ ${under.length - CHILD_ROWS} more running`,
+        text: `+ ${hidden.length} more${isEveryHiddenRunning ? ' running' : ''}`,
         branch: 'last',
       })
   }
@@ -1180,7 +1385,7 @@ export function statusPage(
     rows.push({
       kind: 'fold',
       id: 'queued',
-      mark: '○',
+      mark: SUBJECT_MARKS.queued.mark,
       tone: null,
       text: `${hiddenQueued.size} more queued`,
     })
@@ -1189,16 +1394,16 @@ export function statusPage(
     rows.push({
       kind: 'fold',
       id: 'done',
-      mark: '✓',
+      mark: SUBJECT_MARKS.done.mark,
       tone: 'done',
       text: `${folded.length}${isMore ? ' more' : ''} done`,
     })
   }
-  const goal = o?.goal || null
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null
 
   return {
-    isEmpty: goal === null && rows.length === 0,
-    goal,
+    isEmpty: head === null && rows.length === 0,
+    head,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
@@ -1299,6 +1504,7 @@ function actionsOf(
       action({ action: 'done', id }, 'Done', 'mark'),
       action({ action: 'type', id, text: '' }, 'Reply', 'handoff'),
       action({ action: 'explain', id }, 'Explain', 'talk'),
+      action({ action: 'dismiss', id }, 'Dismiss', 'mark'),
     ]
   const isFolding = item.options.length > OPTIONS_FOLD_AT
   const options =
@@ -1456,6 +1662,40 @@ export function rowKeyPlan(r: RowView, isAllShown: boolean): { keys: PlannedKey[
   return { keys, more }
 }
 
+/** A press on an Status row. `show-ask` opens Asks with that ask selected, and sends nothing. */
+export type StatusPress = { action: 'show-ask'; askId: string }
+
+export type StatusKey = { press: StatusPress; label: string; hotkey: string; kind: PressKind }
+
+/** The View button's label, by the kind of ask it opens. */
+export const VIEW_ASK_LABELS: Record<Item['kind'], string> = { question: 'View question', task: 'View task' }
+
+/** An Status row's buttons, in the order every look draws them. A row with none takes no press. */
+export function statusKeyPlan(row: StatusRow): StatusKey[] {
+  if (row.kind !== 'subject' || row.ask === null) return []
+
+  return [
+    {
+      press: { action: 'show-ask', askId: row.ask.id },
+      label: VIEW_ASK_LABELS[row.ask.kind],
+      hotkey: 'v',
+      kind: 'view',
+    },
+  ]
+}
+
+/** The Status rows that have buttons, in page order: the rows j and k move between. */
+export function statusKeyRows(page: StatusPage): StatusRow[] {
+  return page.rows.filter(r => statusKeyPlan(r).length > 0)
+}
+
+/** The Status row whose keys work: the selected row while it still has buttons, else the first row that has. */
+export function statusSelected(page: StatusPage, selectedId: string | null): StatusRow | null {
+  const rows = statusKeyRows(page)
+
+  return rows.find(r => r.id === selectedId) ?? rows[0] ?? null
+}
+
 /** Widths in a look's own unit. `separator` is the extra room a look draws between the buttons and the follow-ups when they share a line. */
 export type ActionSpacing = { width: number; gap: number; separator: number }
 
@@ -1574,7 +1814,7 @@ export function inboxView({
           canUndo: false,
           offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
-          isLapsed: false,
+          closedAs: closedState(closed),
         }
       if (isHeld(closed)) return { is: 'held', label: heldLabel(closed), at }
 
@@ -1601,7 +1841,7 @@ export function inboxView({
         canUndo: isUndoLeft(last.at, now, settleWindowMs),
         offersUndo: true,
         delivery: pendingDeliveryAt(last, now),
-        isLapsed: false,
+        closedAs: 'handled',
       }
 
     return isHandedOff(last, turns) ? { is: 'handedOff' } : { is: 'open' }
@@ -1632,7 +1872,7 @@ export function inboxView({
     return rowOf({
       id: item.id,
       type: item.kind,
-      handle: n === undefined ? '•' : `${n})`,
+      number: n ?? null,
       title: item.ask,
       at: item.at,
       detail: null,
@@ -1656,7 +1896,7 @@ export function inboxView({
       rowOf({
         id: finding.id,
         type: 'finding',
-        handle: '•',
+        number: null,
         title: finding.title,
         at: finding.at,
         detail: finding.detail,

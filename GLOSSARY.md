@@ -53,6 +53,16 @@ folds into the Closed fold or leaves the list. A message a press sent does not
 fold it. Where its press allows Undo, it offers Undo for `SETTLED_MS` after
 the close, and stays through a typed message until Undo ends.
 
+**Mark**:
+The glyph before a row or a group title that says where its work stands or what
+kind it is, such as ◆, waits on you. Each glyph means one thing wherever a look
+draws it. `MARK_LEGEND` in `hooks/view.ts` lists them all.
+
+**Result mark**:
+The mark of what came of a row: ✓ when handled, ✕ when dismissed, ✗ when it
+lapsed, as when the agent closed it because the work overtook it. It runs, as
+an Status mark does, while what the row sent is on its way to the agent.
+
 **Finding**:
 An issue or opportunity the agent noticed outside the current task.
 _Avoid_: note
@@ -65,7 +75,7 @@ _Avoid_: Findings, as the tab's name. A find, for one finding.
 
 **Status (the tab)**:
 The first tab on a next build: what the session's work is for, and where each
-part of it stands, newest first, with how long ago each changed. A release
+part of it stands, from what needs the person to what is finished. A release
 build does not draw it. The inbox model updates it after each reply, in a
 second call after the one that updates the rows. It is not a list of events.
 Its id is `overview`, the name it had before it was called Status. The saved
@@ -74,10 +84,13 @@ state keeps that id and the fields `overview`, `overviewFailure` and
 the tab's data `SessionStatus`.
 _Avoid_: Overview, as the tab's name. "Status" alone for a subject's status.
 
-**Goal**:
-The session's aim in a few words, on the Status tab's second line. The inbox
-model sets it, and changes it only when the person states a new goal or the
-work moves to a different task.
+**Head**:
+The top of the Status: a title of a few words, like a subject's name, for
+what the session is focused on now, and one line under it on what the session
+is doing about it. The inbox model writes it, and checks it at each update
+against the open and finished subjects, so it moves on when the work does,
+even across many small exchanges. When the work it names is done and nothing
+else is working, it stays.
 
 **Subject**:
 One part of the session's work on the Status, such as a feature, a fix or a
@@ -87,25 +100,29 @@ working, queued, waits on others, done and dropped. The inbox model adds and cha
 times. The inbox model also links an open question or task to the subject it
 holds up. While that item is open, the subject's mark reads ◆ in place of its
 status's mark, and the item's Asks row reads "Holds up" and the subject's name.
+Its row then has a View question or View task button, which opens Asks with
+the oldest of those items selected.
 _Avoid_: workstream, stream, item (an item is a question or task)
 
 **Child**:
 Work that runs apart from the session's turn: a subagent, a background command
 or task, a workflow run, or a Herdr delegate. It shows under its subject while
-it runs, and leaves when it ends. Code follows it from the host's events. The
-inbox model only links it to a subject.
+it runs, and leaves when it ends. A delegate that finished stays, reading
+"finished", until the person has seen the Status. Code follows it from the
+host's events and from Herdr. The inbox model only links it to a subject.
 _Avoid_: subitem, job
 
 **Stall words**:
-The words on a Status row's second line that say how long its work has
-stalled: "quiet 40m" on a child that has done nothing for 15 minutes, and
-"waiting 2h" on an open subject that has waited 15 minutes on someone else or on
-an open question or task. A row whose work moves shows none. The code calls them
-`stall`.
+The word after an Status row's name when its work waits on the person or has
+finished. A subject held by an open question or task reads "waiting", in the
+needs-you tone, and so does a delegate while Herdr shows it at a question or an
+approval. A finished delegate reads "finished". A row waiting on someone else
+and a row whose work moves show no word. No row shows a time. The code calls
+them `stall`.
 _Avoid_: age
 
 **Seen line**:
-The rule labeled "Seen" on the Status, at the time the person last left the
+The rule labeled "Last seen" on the Status, at the time the person last left the
 page after it showed for at least five seconds. A shorter pass through the tab
 leaves the line where it was. A row above it changed since then. Every open row
 shows where it stands, above or below the line. A row below it leaves out its
@@ -128,6 +145,12 @@ inbox cannot do its job until something changes; warning, part of it is
 missing or out of date; notice, a fact. A row's own result is not a banner.
 `BannerView` in `hooks/view.ts`.
 _Avoid_: alert, error strip, status line
+
+**Help**:
+The page a look shows in place of the shown tab's body: the keys the look
+takes, then what each mark means. Desktop lists only the marks. The footer's
+Help button opens it, and so does `?` in Codex and omp. Switching tabs or
+closing the inbox closes it.
 
 **Person's line**:
 The line the conversation shows under the agent's `record` or `close` call,
@@ -161,6 +184,13 @@ handed to the agent that its reply left open reads "Still open". Each
 keeps only its latest. The pressed button reads "… again", as in "Explain
 again", once the press is no longer queued, unconfirmed or waiting on the
 agent. Until then it keeps its label, so its width holds.
+
+**PR order**:
+The order an agent set for the PRs tab with `order_prs`, first to last, such as
+a merge ranking. Its open PRs draw first, each with its rank, under a line that
+names the order and the agent that set it. The other PRs follow in the tab's
+own order. The conversation saves it as `Ledger.prOrder`.
+_Avoid_: ranking, as the stored thing
 
 ### Looks and hosts
 

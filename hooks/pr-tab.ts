@@ -1,8 +1,8 @@
-import type { Item, LastAction, Ledger, PressKind, PrCheck, PrThread, PrView, PrViews } from '../types'
+import type { Delivery, Item, LastAction, Ledger, PressKind, PrCheck, PrThread, PrView, PrViews } from '../types'
 import { GH_TIMEOUT_MS, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import { baseName, isFoldingPress, localLast, pendingResult, prSteps, recordPress, withQueued } from './presses'
 import type { Effect, HelpStep, PrActionId, RowPress } from './presses'
-import { clipLabel } from './text'
+import { ago, clipLabel } from './text'
 import {
   commentLine,
   commentParts,
@@ -12,6 +12,7 @@ import {
   parseRef,
   prompts,
   prRefs,
+  rankOf,
   readiness,
   readThreadsAnswer,
   readView,
@@ -33,10 +34,21 @@ import {
   outAction,
   pressFeedbackIn,
   pressOutAction,
+  PR_MARKS,
+  RUNNING_MARK,
 } from './view'
 import type { ActionEmphasis, BannerKind, PressState, RowWait, SettledState, ViewInput } from './view'
 
 export const MAX_PRS = 12
+
+/** The most PRs an agent's order can rank. They are tracked beyond `MAX_PRS`. */
+export const MAX_ORDERED_PRS = 30
+
+/** How many gh runs a fetch has going at once. */
+export const GH_RUNS_AT_ONCE = 8
+
+/** The ledger's PR links, and the agent's order of them. */
+export type PrLinks = Pick<Ledger, 'prs' | 'prOrder'>
 
 /** Runs gh with these arguments in the session's folder. A run that cannot start or does not finish ends with code -1. */
 export type GhRun = (args: string[]) => Promise<{ exitCode: number; stdout: string; stderr: string }>
@@ -75,14 +87,21 @@ export function isLeftOut(prState: PrViews, ref: string): boolean {
   return view !== undefined && !isKeptPr(view)
 }
 
-export function splitLinked(prState: PrViews, linked: string[]): { tracked: string[]; older: string[] } {
-  const shown = linked.filter(ref => !isLeftOut(prState, ref))
+/**
+ * The linked PRs the tab tracks: those the agent's order ranks, and the newest `MAX_PRS` of the rest. `older` names
+ * the rest, which the tab does not show.
+ */
+export function splitLinked(prState: PrViews, links: PrLinks): { tracked: string[]; older: string[] } {
+  const ranked = new Set(links.prOrder?.refs ?? [])
+  const shown = links.prs.filter(ref => !isLeftOut(prState, ref))
+  const unranked = shown.filter(ref => !ranked.has(ref))
+  const older = unranked.slice(0, Math.max(0, unranked.length - MAX_PRS))
 
-  return { tracked: shown.slice(-MAX_PRS), older: shown.slice(0, Math.max(0, shown.length - MAX_PRS)) }
+  return { tracked: shown.filter(ref => !older.includes(ref)), older }
 }
 
-export function olderPrsText(prState: PrViews, linked: string[]): string | null {
-  const { older } = splitLinked(prState, linked)
+export function olderPrsText(prState: PrViews, links: PrLinks): string | null {
+  const { older } = splitLinked(prState, links)
   if (older.length === 0) return null
   const numbers = older.map(ref => `#${parseRef(ref).number}`).reverse()
 
@@ -96,23 +115,27 @@ export function olderPrsText(prState: PrViews, linked: string[]): string | null 
 export async function fetchTracked(
   run: GhRun,
   state: PrViews,
-  linked: string[],
+  links: PrLinks,
   findsBranchPr: boolean,
+  now: () => number | Promise<number>,
 ): Promise<{ views: Record<string, PrView>; branchRef: string | null; isGhSignedOut: boolean | null }> {
   let isGhSignedOut: boolean | null = null
+  const runs = limitedTo(GH_RUNS_AT_ONCE)
   const gh: GhRun = async args => {
-    const r = await run(args)
+    const r = await runs(() => run(args))
     const isAnswer = r.exitCode !== UNSTARTABLE_CODE && r.exitCode !== TIMED_OUT_CODE
     if (isAnswer) isGhSignedOut = isGhSignedOut === true || asksForSignIn(r)
 
     return r
   }
-  const { tracked } = splitLinked(state, linked)
+  const { tracked } = splitLinked(state, links)
   const branchTarget = findsBranchPr ? null : state.branchRef
   const isBranchLinked = branchTarget !== null && tracked.includes(branchTarget)
   const [branch, ...rest] = await Promise.all([
-    findsBranchPr || (branchTarget && !isBranchLinked) ? fetchPr(gh, branchTarget, state.views, state.branchRef) : null,
-    ...tracked.map(ref => fetchPr(gh, ref, state.views, null)),
+    findsBranchPr || (branchTarget && !isBranchLinked)
+      ? fetchPr(gh, branchTarget, state.views, state.branchRef, now)
+      : null,
+    ...tracked.map(ref => fetchPr(gh, ref, state.views, null, now)),
   ])
   const views: Record<string, PrView> = {}
   for (const v of [...rest, branch]) if (v) views[v.ref] = v
@@ -126,13 +149,14 @@ export async function fetchTracked(
  * `knownBranchRef` is the branch's PR as of the last fetch: it stays the
  * branch's PR when the lookup fails for any reason but "no pull requests found".
  * A PR that gh could not read because it asked for a sign-in keeps its last view, since the PRs tab's sign-in notice
- * says why.
+ * says why. A view's `fetchedAt` is the time `now` reads once gh answers.
  */
 export async function fetchPr(
   gh: GhRun,
   target: string | null,
   views: Record<string, PrView>,
   knownBranchRef: string | null,
+  now: () => number | Promise<number>,
 ): Promise<PrView | null> {
   const threadsOf = (ref: string) => {
     const r = parseRef(ref)
@@ -154,6 +178,7 @@ export async function fetchPr(
     gh(['pr', 'view', ...(t ? [t.number, '-R', t.repo] : []), '--json', VIEW_FIELDS]),
     target ? threadsOf(target) : null,
   ])
+  const fetchedAt = await now()
   const hasNoPr = view.exitCode !== 0 && /no pull requests found/i.test(view.stderr)
   const ref = target ?? (view.exitCode === 0 ? urlRef(view.stdout) : hasNoPr ? null : knownBranchRef)
   if (!ref) return null
@@ -178,6 +203,7 @@ export async function fetchPr(
     isYours: answer?.isYours ?? previous?.isYours ?? null,
     wasSeenOpen: base.state === 'OPEN' || previous?.wasSeenOpen === true,
     error: answer ? null : 'could not read review threads',
+    fetchedAt,
   }
 }
 
@@ -258,14 +284,27 @@ export const PR_REFRESH: Effect = { kind: 'refresh-prs', name: 'PRs' }
 /** The label of a dismissed PR's block while its Undo lasts. */
 export const PR_DISMISSED_LABEL = 'Dismissed'
 
+export const DISMISS_MERGED_LABEL = 'Dismiss merged'
+
+/** The row id of the PRs tab's Dismiss merged press. It starts with `pr:`, as a PR's mark id does, so no host takes it for an Asks row. */
+export const DISMISS_MERGED_ID = 'pr:merged'
+
 export const PR_GROUP_TITLES = { threads: 'Review threads', checks: 'Failing checks' }
 
-/** The mark before a PR row's title, its tone, and whether it says the row's work is done. */
-export type PrRowMark = { text: string; tone: 'done' | 'error' | null; isDone: boolean }
+/**
+ * The mark before a PR row's title, its tone, and whether it says the row's work is done. `isRunning` says the look
+ * draws its running mark in place of `text`, while what the row sent is on its way.
+ */
+export type PrRowMark = {
+  text: string
+  tone: 'done' | 'error' | 'needsYou' | null
+  isDone: boolean
+  isRunning: boolean
+}
 
 /** What a review thread's row says, for each look to draw in its own controls. */
 export type ThreadRowText = {
-  /** ✓ once the agent has the thread and its message arrived, else ◦. */
+  /** ◆ while the thread waits on the person, running while its message is on its way, then ✓. Blank while unconfirmed. */
   mark: PrRowMark
   /** Set when the row folds to one line: the agent has the thread, or its lines changed since the comment. */
   fold: { note?: string } | null
@@ -277,10 +316,8 @@ export function threadRowText(pr: PrView, t: PrThread, lastActions: Record<strin
   const isSent = threadSentIn(lastActions)(pr, t)
   const isChanged = !isSent && t.isLinesChanged
 
-  const showsCheck = threadShowsCheckIn(lastActions)(pr, t)
-
   return {
-    mark: showsCheck ? { text: '✓', tone: 'done', isDone: true } : { text: '◦', tone: null, isDone: false },
+    mark: threadMark(isSent ? lastActions[prThreadId(pr, t)]?.delivery : null),
     fold:
       isSent || isChanged
         ? t.isLinesChanged
@@ -298,10 +335,18 @@ export function threadRowText(pr: PrView, t: PrThread, lastActions: Record<strin
   }
 }
 
+/** A thread's mark from the delivery of its hand-off, or null while it waits on the person. */
+function threadMark(delivery: Delivery | null | undefined): PrRowMark {
+  if (delivery === null) return { ...PR_MARKS.waiting, isDone: false, isRunning: false }
+  if (delivery?.state === 'queued') return { text: RUNNING_MARK, tone: null, isDone: false, isRunning: true }
+  if (delivery?.state === 'unconfirmed') return { text: '', tone: null, isDone: false, isRunning: false }
+  return { ...PR_MARKS.sent, isDone: true, isRunning: false }
+}
+
 /** What a failing check's row says. `lead` names its workflow, drawn before the check's name. */
 export function checkRowText(c: PrCheck): { mark: PrRowMark; lead: string | null; title: string; meta: string } {
   return {
-    mark: { text: '✗', tone: 'error', isDone: false },
+    mark: { ...PR_MARKS.failing, isDone: false, isRunning: false },
     lead: c.workflow || null,
     title: c.name,
     meta: checkRunText(c),
@@ -334,12 +379,9 @@ export function threadSentIn(lastActions: Record<string, LastAction>): IsThreadS
   }
 }
 
-export function threadShowsCheckIn(lastActions: Record<string, LastAction>): IsThreadSent {
-  const isSent = threadSentIn(lastActions)
-  return (pr, t) => {
-    const delivery = lastActions[prThreadId(pr, t)]?.delivery
-    return isSent(pr, t) && delivery?.state !== 'unconfirmed'
-  }
+/** Whether a PR block draws a running mark, so the terminal and omp keep their frame timer going. */
+export function isPrTabRunning(prs: PrView[], lastActions: Record<string, LastAction>): boolean {
+  return prs.some(pr => waitingThreads(pr).some(t => threadRowText(pr, t, lastActions).mark.isRunning))
 }
 
 /**
@@ -360,13 +402,13 @@ export function prRowWaits(prs: PrView[], lastActions: Record<string, LastAction
   ])
 }
 
-export function isTracked(prState: PrViews, linked: string[], ref: string): boolean {
-  return splitLinked(prState, linked).tracked.includes(ref) || prState.branchRef === ref
+export function isTracked(prState: PrViews, links: PrLinks, ref: string): boolean {
+  return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref
 }
 
 /** Whether the session keeps a PR's view: the tab tracks the PR, or it is linked and left out, which keeps a fetch from reading it again. */
-function keepsView(prState: PrViews, linked: string[], ref: string): boolean {
-  return isTracked(prState, linked, ref) || (linked.includes(ref) && isLeftOut(prState, ref))
+function keepsView(prState: PrViews, links: PrLinks, ref: string): boolean {
+  return isTracked(prState, links, ref) || (links.prs.includes(ref) && isLeftOut(prState, ref))
 }
 
 /** When the PR was dismissed, or null when its last press did not dismiss it. */
@@ -386,21 +428,22 @@ export function isDismissed(lastActions: Record<string, LastAction>, ref: string
  */
 export function isViewKept(
   prState: PrViews,
-  linked: string[],
+  links: PrLinks,
   lastActions: Record<string, LastAction>,
   ref: string,
   shownSince: number | null,
 ): boolean {
   const at = dismissedAt(lastActions, ref)
 
-  return keepsView(prState, linked, ref) || (at !== null && isShownSince(at, shownSince))
+  return keepsView(prState, links, ref) || (at !== null && isShownSince(at, shownSince))
 }
 
 /**
  * A PR block a look draws: a tracked PR, which is open, or a PR dismissed while the look shows the PRs tab, which
- * settles in place as a dismissed row does.
+ * settles in place as a dismissed row does. `rank` is its number in the agent's order, from 1, or null when the order
+ * does not rank it. A look draws it before an open block's title.
  */
-export type DrawnPr = { pr: PrView; state: { is: 'open' } | SettledState }
+export type DrawnPr = { pr: PrView; state: { is: 'open' } | SettledState; rank: number | null }
 
 const DISMISSED_PR = { how: 'dismissed', outcome: PR_DISMISSED_LABEL } as const
 
@@ -410,20 +453,57 @@ const DISMISSED_PR = { how: 'dismissed', outcome: PR_DISMISSED_LABEL } as const
  */
 export function drawnPrs(
   prState: PrViews,
-  linked: string[],
+  links: PrLinks,
   lastActions: Record<string, LastAction>,
   now: number,
   settleWindowMs: number,
   placing: Pick<ViewInput, 'shownSince' | 'lastTypedMessageAt'>,
 ): DrawnPr[] {
-  return inPrOrder(Object.values(prState.views)).flatMap((pr): DrawnPr[] => {
-    if (isTracked(prState, linked, pr.ref)) return [{ pr, state: { is: 'open' } }]
+  const ranked = links.prOrder?.refs ?? []
+  const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr): Omit<DrawnPr, 'rank'>[] => {
+    if (isTracked(prState, links, pr.ref)) return [{ pr, state: { is: 'open' } }]
     const at = dismissedAt(lastActions, pr.ref)
     if (at === null) return []
     const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null)
 
     return isSettledInPlace(state, placing) ? [{ pr, state }] : []
   })
+  let rank = 0
+
+  return drawn.map(d => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }))
+}
+
+/** A ranked PR's number in the agent's order, as a look draws it before the PR's title: "1. ". */
+export function prRankText(rank: number): string {
+  return `${rank}.\u2002`
+}
+
+/**
+ * The line above the PR blocks while the agent's order ranks a block the tab draws, open or settling, as "Merge order ·
+ * set by Claude 2m ago". Null otherwise.
+ */
+export function prOrderText(order: PrLinks['prOrder'], drawn: DrawnPr[], now: number): string | null {
+  const isRanking = drawn.some(d => d.rank !== null)
+  if (!order || !isRanking) return null
+
+  return `${order.label ?? 'Order'}${DOT}set by ${order.by} ${ago(now - order.at)}`
+}
+
+/** Runs at most `limit` of the calls it is given at once, starting each in the order it was given. */
+function limitedTo(limit: number): <T>(call: () => Promise<T>) => Promise<T> {
+  let running = 0
+  const waiting: (() => void)[] = []
+
+  return async call => {
+    if (running >= limit) await new Promise<void>(go => waiting.push(go))
+    running += 1
+    try {
+      return await call()
+    } finally {
+      running -= 1
+      waiting.shift()?.()
+    }
+  }
 }
 
 export const PR_TONES: Record<PrStatus, 'needsYou' | 'done' | 'findings' | 'error' | null> = {
@@ -442,6 +522,11 @@ export type PrPress =
       ref: string
     }
   | { action: 'check-fix' | 'log'; ref: string; check: string }
+  | { action: 'pr-dismiss-merged' }
+
+export function isPrPress(p: RowPress | PrPress): p is PrPress {
+  return 'ref' in p || p.action === 'pr-dismiss-merged'
+}
 
 /**
  * A press's outcome as the runner applies it: the ledger after it, the last
@@ -464,8 +549,24 @@ function logEffect(pr: PrView, check: PrCheck): Effect {
   return { kind: 'open', target: check.url ?? pr.url, name: check.url ? 'the log' : `PR #${pr.number}` }
 }
 
-/** The open or refresh a Local PR press runs. Null for a press that sends or marks, or whose row is gone. */
+/** A PR press that hands off a fix. The saved view can predate a push, so the press reads the PR from GitHub first. */
+export type PrFixPress = { action: 'pr-conflicts'; ref: string } | { action: 'check-fix'; ref: string; check: string }
+
+export function isPrFixPress(p: PrPress): p is PrFixPress {
+  return p.action === 'pr-conflicts' || p.action === 'check-fix'
+}
+
+/** The refresh a fix press runs before it sends, so its row reads "Refreshing PR #12…". */
+export function fixCheckEffect(pr: PrView): Effect {
+  return { kind: 'refresh-prs', name: `PR #${pr.number}` }
+}
+
+/**
+ * The open or refresh a PR press runs before any message: a Local press's open or refresh, or a fix press's
+ * `fixCheckEffect`. Null for a press that only sends or marks, or whose row is gone.
+ */
 export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
+  if (isPrFixPress(p)) return fixCheckEffect(pr)
   switch (p.action) {
     case 'thread-open': {
       const t = pr.threads.find(x => x.id === p.thread)
@@ -485,6 +586,7 @@ export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
 }
 
 export function prRowId(p: PrPress): string {
+  if (p.action === 'pr-dismiss-merged') return DISMISS_MERGED_ID
   if ('check' in p) return checkRowId(p.ref, p.check)
   if ('thread' in p) return threadRowId(p.ref, p.thread)
 
@@ -492,7 +594,7 @@ export function prRowId(p: PrPress): string {
 }
 
 export function pressRowId(p: RowPress | PrPress): string {
-  return 'ref' in p ? prRowId(p) : p.id
+  return isPrPress(p) ? prRowId(p) : p.id
 }
 
 function prRetryOf(
@@ -691,11 +793,38 @@ export function prBlockActions(
   ])
 }
 
+/** Whether Dismiss merged dismisses the PR. The branch's own PR has no Dismiss, so it is left. */
+function isDismissedByMerged(pr: PrView, branchRef: string | null): boolean {
+  return pr.state === 'MERGED' && pr.ref !== branchRef
+}
+
+/**
+ * The PRs tab's own buttons, drawn after its PR blocks: Dismiss merged, while the tab draws a merged PR it can
+ * dismiss. It dismisses each as the PR's own Dismiss does, so each settles with its own Undo.
+ */
+export function prTabActions(drawn: DrawnPr[], branchRef: string | null): PrAction[] {
+  const hasMerged = drawn.some(d => d.state.is === 'open' && isDismissedByMerged(d.pr, branchRef))
+
+  return hasMerged
+    ? [
+        {
+          press: { action: 'pr-dismiss-merged' },
+          label: DISMISS_MERGED_LABEL,
+          kind: 'mark',
+          emphasis: 'normal',
+          hotkey: 'm',
+          isOut: false,
+        },
+      ]
+    : []
+}
+
 /**
  * Pure. Stale when the PR
  * is no longer tracked or drawn, its thread or check is gone, or what the
  * press acts on is over: the PR no longer conflicts, or no thread waits on the
- * person. Undo is stale unless the PR's block still holds its Dismiss.
+ * person. Undo is stale unless the PR's block still holds its Dismiss. Dismiss merged is stale when no PR it dismisses
+ * is left.
  */
 export function applyPrPress(
   ledger: Ledger,
@@ -705,20 +834,35 @@ export function applyPrPress(
   ctx: { now: number; turnsStarted: number; localPressId?: string },
 ): Applied {
   const stale = { stale: true as const }
-  const pr = prState.views[p.ref]
-  const markId = prMarkId(p.ref)
   const applied = (a: Partial<Exclude<Applied, { stale: true }>>): Applied => {
     const effects = a.effects ?? []
     const lasts = Object.fromEntries(Object.entries(a.lasts ?? {}).map(([id, l]) => [id, withQueued(l, effects)]))
 
     return { ledger, drop: [], ...a, lasts, effects }
   }
+  if (p.action === 'pr-dismiss-merged') {
+    const refs = Object.values(prState.views)
+      .filter(pr => isTracked(prState, ledger, pr.ref) && isDismissedByMerged(pr, prState.branchRef))
+      .map(pr => pr.ref)
+    if (refs.length === 0) return stale
+    return applied({
+      ledger: { ...ledger, prs: ledger.prs.filter(r => !refs.includes(r)) },
+      lasts: Object.fromEntries(
+        refs.map(ref => {
+          const id = prMarkId(ref)
+          return [id, recordPress('mark', 'pr-dismiss', PR_DISMISSED_LABEL, ctx, lastActions[id])]
+        }),
+      ),
+    })
+  }
+  const pr = prState.views[p.ref]
+  const markId = prMarkId(p.ref)
   if (p.action === 'pr-undo') {
     // Like an item's Undo, it does not check SETTLED_MS, so a press just after its button goes still lands.
-    if (!pr || isTracked(prState, ledger.prs, p.ref) || lastActions[markId]?.action !== 'pr-dismiss') return stale
+    if (!pr || isTracked(prState, ledger, p.ref) || lastActions[markId]?.action !== 'pr-dismiss') return stale
     return applied({ ledger: { ...ledger, prs: [...ledger.prs, p.ref] }, drop: [markId] })
   }
-  if (!pr || !isTracked(prState, ledger.prs, p.ref)) return stale
+  if (!pr || !isTracked(prState, ledger, p.ref)) return stale
   const record = (rowId: string, kind: 'talk' | 'handoff' | 'mark', action: PrActionId, text: string) =>
     recordPress(kind, action, text, ctx, lastActions[rowId])
   const send = (text: string): Effect => ({ kind: 'send', text, by: null })

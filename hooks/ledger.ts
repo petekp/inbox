@@ -15,6 +15,7 @@ export const EMPTY: Ledger = {
   findings: [],
   closedFindings: [],
   prs: [],
+  prOrder: null,
   nextId: 1,
   turn: 0,
   batchTurn: 0,
@@ -23,7 +24,7 @@ export const EMPTY: Ledger = {
 
 /** Whether nothing has been recorded: no model answer applied, no Status, no item and no finding. */
 export function isBlankLedger(ledger: Ledger): boolean {
-  const isStatusBlank = !ledger.overview || (ledger.overview.goal === '' && ledger.overview.subjects.length === 0)
+  const isStatusBlank = !ledger.overview || (ledger.overview.head === null && ledger.overview.subjects.length === 0)
 
   return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0
 }
@@ -71,6 +72,7 @@ export function upgradeLedger(ledger: Ledger): Ledger {
 
   return {
     ...rest,
+    prOrder: rest.prOrder ?? null,
     updates,
     overview: upgradeStatus(rest.overview),
     findings: [...(rest.findings ?? []), ...(notes ?? [])],

@@ -79,6 +79,7 @@ import type { SavedSession, SendOutcome, SentBy, Session, SessionView } from './
 import {
   exclusiveKeys,
   fetchPrs as fetchSessionPrs,
+  isPrFetchDue,
   orderedKeys,
   refreshStatus,
   runUpdates,
@@ -98,17 +99,22 @@ import {
   splitFollowUps,
   fetchTracked,
   isDismissed,
+  isPrPress,
   olderPrsText,
+  prRankText,
   PR_GROUP_TITLES,
   PR_TONES,
   prBlockActions,
   prCheckId,
+  prTabActions,
+  DISMISS_MERGED_ID,
   prMarkId,
   pressRowId,
   prRowWaits,
   prThreadId,
   threadActions,
   threadRowText,
+  isPrTabRunning,
   threadSentIn,
   ghNoticeOf,
   prsEmptyText,
@@ -168,7 +174,7 @@ import {
 } from './claude'
 import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
-import { CLEARED_TOKENS, delegatesInHerdr, herdrReporter, herdrTokens } from './herdr'
+import { CLEARED_TOKENS, delegatesInHerdr, HERDR_CHECK_MS, herdrCheckGate, herdrReporter, herdrTokens } from './herdr'
 import { ago, cellWidth, clipLabel, cutForEllipsis } from './text'
 import {
   applyPress,
@@ -213,6 +219,7 @@ import {
   tabBadge,
   tabName,
   canUndoRefused,
+  CLOSED_MARKS,
   closedMark,
   settledMark,
   settledTone,
@@ -223,7 +230,6 @@ import {
   groupEmptyText,
   closedTotal,
   earlierLabel,
-  entryId,
   foldLabel,
   feedbackOf,
   feedbackText,
@@ -235,17 +241,23 @@ import {
   isFailure,
   isStatusUnderActions,
   waitingCount,
+  FINDING_GROUPS,
   isGuarded,
   PERMISSION_FALLBACK_DELAY_MS,
   PRESS_GUARD_MS,
   QUEUED_AFTER_MS,
   compareEndsAt,
   rowKeyPlan,
+  statusKeyPlan,
+  statusKeyRows,
+  statusSelected,
   actionLines,
   settledLabel,
   actionLabel,
   replyHint,
-  rowMark,
+  rowTitle,
+  rowResultMark,
+  isRowTabRunning,
   rowFeedbackText,
   ROW_COPY,
   READING_TEXT,
@@ -253,12 +265,17 @@ import {
   hasRunningMark,
   LOOK_TEXT,
   mergedLine,
+  nameBeforeStall,
   STALL_GAP,
   WAS_PREFIX,
   inboxCommandText,
   RUNNING_FRAME_MS,
   RUNNING_PULSE_MS,
   runningMark,
+  MARK_LEGEND,
+  HELD_MARK,
+  HELP_COPY,
+  helpKeys,
   SETTLED_MS,
   settledIn,
   settledRowIds,
@@ -285,14 +302,19 @@ import type {
   ModLook,
   PlannedKey,
   StatusBranch,
+  StatusPage,
   StatusRow,
+  StatusStall,
   RowView,
+  ResultMark,
+  LegendEntry,
   RowWait,
   SettledState,
   ShownTab,
   TabNaming,
 } from './view'
-import { agentTools, recordClose, recordItem } from './tools'
+import { agentTools } from './tools'
+import type { AgentTool } from './tools'
 import type { ToolAnswer } from './tools'
 import type { UndoProps } from './undo-client'
 import {
@@ -310,6 +332,7 @@ import { parseInline } from './inline'
 import type { Span } from './inline'
 import type { RowRecord } from './arrivals'
 import { BANNER_GAP_PT, BANNER_PAD_Y_PT, STATUS_ROW_PAD_PT, ROW_PAD_PT } from './layout'
+import { cancelledMarkShape, markShape } from './marks'
 import {
   DARK_BANNER_TINTS,
   DARK_DALTONIZED_TONES,
@@ -346,6 +369,8 @@ const PAGE = atom({ plugin: 'inbox', key: 'page' } as const, null as PageTab | n
 const NO_CURSOR: Cursor = { id: null, index: 0, openedAt: 0 }
 const NO_SELECTION: Record<Tab, Cursor> = { needsYou: NO_CURSOR, findings: NO_CURSOR, prs: NO_CURSOR }
 const SELECTION = atom({ plugin: 'inbox', key: 'selection' } as const, NO_SELECTION)
+/** The Status row whose keys work, by id, as `statusSelected` resolves it. */
+const STATUS_SELECTION = atom({ plugin: 'inbox', key: 'statusSelection' } as const, null as string | null)
 const THEME = atom({ plugin: 'inbox', key: 'theme' } as const, '')
 const DIALOGS = atom({ plugin: 'inbox', key: 'dialogs' } as const, [] as Dialog[])
 const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string | null)
@@ -362,7 +387,8 @@ const UNREADABLE = atom({ plugin: 'inbox', key: 'unreadable' } as const, null as
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as FoldKind[])
 const FOLD_HOVER = atom({ plugin: 'inbox', key: 'foldHover' } as const, null as FoldKind | null)
 const OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
-const IS_KEY_LIST_SHOWN = atom({ plugin: 'inbox', key: 'isKeyListShown' } as const, false)
+/** Switching tabs or closing the pane closes Help. */
+const IS_HELP_SHOWN = atom({ plugin: 'inbox', key: 'isHelpShown' } as const, false)
 /** How many times the terminal pane redraws while Undo's fill drains, two for each cell of the fill. */
 const UNDO_REDRAW_STEPS = 24
 const RESIZE_SCROLL_MS = 100
@@ -377,6 +403,7 @@ const PR_POLL_MS = 2 * 60_000
 
 const RECORD_TOOL = 'mcp__inbox__record'
 const CLOSE_TOOL = 'mcp__inbox__close'
+const ORDER_TOOL = 'mcp__inbox__order_prs'
 /**
  * The person's line for each `record` or `close` call that has one, by `tool_use_id`. It lives as long as the
  * process, so a call from before it draws nothing under its row.
@@ -482,10 +509,17 @@ function undoSvg(fraction: number, leftMs: number): string {
 function toneSvg(tone: ToneName, mark: string): string {
   const { light, dark } = toneColors(tone)
   // A marker needs only 3:1, so an error mark takes a stronger red than text could.
-  const [lightMark, darkMark] = tone === 'error' ? [LIGHT_TONES.errorMark, DARK_TONES.errorMark] : [light, dark]
+  const shape = markShape(mark, DESKTOP_LINE_PT / 2)
+  return tone === 'error'
+    ? markSvg(mark, shape, LIGHT_TONES.errorMark, DARK_TONES.errorMark)
+    : markSvg(mark, shape, light, dark)
+}
+/** A muted mark's color in an Svg, in the light and dark appearances. */
+const MUTED_MARK = { light: '#595959', dark: '#a8a8a8' }
+/** A mark in an Svg: its `shape` when it has one, else its text. */
+function markSvg(mark: string, shape: string | null, lightMark: string, darkMark: string): string {
   const width = DESKTOP_CELL_PT
   const height = DESKTOP_LINE_PT
-  const shape = markShape(mark, height / 2)
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
     `<style>text{font-family:-apple-system,system-ui,sans-serif;font-size:14px;fill:currentColor}` +
@@ -501,6 +535,8 @@ function toneSvg(tone: ToneName, mark: string): string {
 const MARK_GLYPH_PT = 11
 const MARK_GLYPH_MID_PT = 6.55
 const RUNNING_SVG_CELLS = 2
+/** A result mark and the space after it, as wide as a running mark's Svg on desktop. */
+const RESULT_MARK_CELLS = RUNNING_SVG_CELLS
 /**
  * A running mark on desktop: a dot that fades and returns. SMIL runs it, since a pane redraw loop stops clicks there.
  * Each pane redraw starts the animation again, so it begins at the clock's point in the pulse.
@@ -510,34 +546,11 @@ function runningSvg(now: number): string {
   const height = DESKTOP_LINE_PT
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    `<style>.mark{fill:#595959}@media (prefers-color-scheme: dark){.mark{fill:#a8a8a8}}</style>` +
+    `<style>.mark{fill:${MUTED_MARK.light}}@media (prefers-color-scheme: dark){.mark{fill:${MUTED_MARK.dark}}}</style>` +
     `<circle class="mark" cx="${MARK_GLYPH_MID_PT}" cy="${height / 2}" r="${MARK_GLYPH_PT / 2}">` +
     `<animate attributeName="opacity" values="1;0.3;1" dur="${RUNNING_PULSE_MS}ms" begin="-${now % RUNNING_PULSE_MS}ms" repeatCount="indefinite"/>` +
     `</circle></svg>`
   )
-}
-/**
- * The app's own font cannot load in an Svg, and the system font's ✓ is a thin "v".
- */
-function markShape(mark: string, midY: number): string | null {
-  const t = midY - 4
-  const stroke = 'fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"'
-  switch (mark) {
-    case '✓':
-      return `<polyline points="0.6,${t + 4.4} 3,${t + 6.8} 7.4,${t + 1.4}" ${stroke}/>`
-    case '✕':
-    case '✗':
-      return `<path d="M1,${t + 1} L7,${t + 7} M7,${t + 1} L1,${t + 7}" ${stroke}/>`
-    case '▲':
-      return `<polygon points="4,${t + 0.6} 7.8,${t + 7.4} 0.2,${t + 7.4}" fill="currentColor"/>`
-    case '✦':
-      return (
-        `<path d="M4,${t} Q4.6,${t + 3.4} 8,${t + 4} Q4.6,${t + 4.6} 4,${t + 8} ` +
-        `Q3.4,${t + 4.6} 0,${t + 4} Q3.4,${t + 3.4} 4,${t} Z" fill="currentColor"/>`
-      )
-    default:
-      return null
-  }
 }
 function escapeXml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -810,6 +823,7 @@ const workflowTasks = new Map<string, string>()
 const delegateWaits = new Map<string, string>()
 let fetchingPrs: Promise<void> = Promise.resolve()
 let nextFetchFindsBranchPr: boolean | null = null
+let prFetchEndedAt: number | undefined
 let recordedRows: { isDemo: boolean; ids: RowRecord<Tab> } | null = null
 let isInlinePane = false
 let isInlineTerminalPane = false
@@ -1425,7 +1439,7 @@ function arrived(s: Session, text: string, count: number): { state: Session; sen
     .slice(index + 1)
     .filter(x => x.text === text && x.row !== null)
     .reduce(
-      (actions, later) => withUnconfirmed(actions, text, later.pressedAt ?? undefined, later.deliveryId),
+      (actions, laterSend) => withUnconfirmed(actions, text, laterSend.pressedAt ?? undefined, laterSend.deliveryId),
       match.row === null
         ? s.lastActions
         : withArrival(s.lastActions, text, match.pressedAt ?? undefined, match.deliveryId),
@@ -1501,13 +1515,17 @@ function callReport(r: ModelResult): CallReport {
   return { model: MODEL, error }
 }
 
-/** Calls the inbox model as `askLedgerModel` does, waiting up to `timeoutMs`. */
-function modelAsk($: EngineInterface, timeoutMs: number): Ask {
-  return async (prompt, system, report) => {
-    const r = await askLedgerModel($, prompt, system, timeoutMs)
-    report?.(callReport(r))
-    return r.isAnswered ? r.text : null
-  }
+/** Calls the inbox model as `askLedgerModel` does, reports the call, and returns the answer. */
+async function askInboxModel(
+  $: EngineInterface,
+  prompt: string,
+  system: string,
+  timeoutMs: number,
+  report: Parameters<Ask>[2],
+): Promise<string | null> {
+  const r = await askLedgerModel($, prompt, system, timeoutMs)
+  report?.(callReport(r))
+  return r.isAnswered ? r.text : null
 }
 
 /** The engine has no call that removes a file, so removing runs `rm` and `rmdir`. */
@@ -1669,7 +1687,7 @@ function sessionHost(
     },
     update: opts.update,
     exclusive: fn => updating.run(owner.id, fn),
-    ask: modelAsk($, 45_000),
+    ask: (prompt, system, report) => askInboxModel($, prompt, system, 45_000, report),
     deliver: (_s, text, deliveryId) => deliver($, owner, text, deliveryId),
     isDeliveryHeldUntilRun: true,
     perform: async (_s, effect) => (opts.surface ? perform($, effect, opts.surface) : COPY_FAILURES['no-surface']),
@@ -1829,6 +1847,14 @@ async function redrawAfterReload($: EngineInterface) {
   await redrawAtCompareEnd($)
 }
 
+/** The Status call after a catch-up, over the whole transcript. */
+function catchUpStatus($: EngineInterface, owner: Owner, transcript: string): StatusCall {
+  return {
+    exchange: { kind: 'catch-up', conversation: transcript },
+    ask: async (prompt, system, report) => (isCurrent(owner) ? askInboxModel($, prompt, system, 90_000, report) : null),
+  }
+}
+
 /**
  * The model's answer to a catch-up over the whole conversation: from a fork of it, or from the transcript when there
  * is nothing to fork.
@@ -1841,13 +1867,7 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
     $.session.messages().then(transcriptText),
   ])
   // The Status call reads the transcript.
-  const askLong = modelAsk($, 90_000)
-  const statusCall: StatusCall | null = transcript
-    ? {
-        exchange: { kind: 'catch-up', conversation: transcript },
-        ask: async (prompt, system, report) => (isCurrent(owner) ? askLong(prompt, system, report) : null),
-      }
-    : null
+  const statusCall = transcript ? catchUpStatus($, owner, transcript) : null
   const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
   if (!isCurrent(owner)) return { kind: 'failed' }
   if (forked.isAnswered) return { kind: 'reply', text: forked.text, source: null, statusCall }
@@ -1994,7 +2014,7 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
 
 async function runTool(
   $: EngineInterface,
-  tool: 'record' | 'close',
+  tool: AgentTool,
   input: Record<string, unknown>,
   toolUseId: string | undefined,
 ): Promise<string> {
@@ -2050,6 +2070,41 @@ async function syncLook($: EngineInterface, isOpen?: boolean) {
   const [page, isPaneOpen, now] = await Promise.all([readPage($), isOpen ?? isPaneShown($), $.clock.now()])
   const isShown = isPaneOpen && page === 'overview'
   await commit($, currentOwner(), s => withLook(s, isShown, now)).catch(() => undefined)
+  followDelegates($, isShown)
+}
+
+const isHerdrCheckDue = herdrCheckGate()
+let herdrCheckTimer: Timer | null = null
+
+/**
+ * Asks Herdr about the running delegates each `HERDR_CHECK_MS` while the Status shows, and once as it starts to
+ * show, so a delegate's row follows Herdr while this session waits. The first tick after the Status stops showing
+ * stops the timer.
+ */
+function followDelegates($: EngineInterface, isShown: boolean) {
+  if (!isShown) {
+    herdrCheckTimer?.cancel()
+    herdrCheckTimer = null
+    return
+  }
+  void checkDelegates($).catch(() => undefined)
+  herdrCheckTimer ??= $.clock.every(HERDR_CHECK_MS, () => {
+    void (async () => {
+      const isStillShown = (await readPage($)) === 'overview' && (await isPaneShown($))
+      if (isStillShown && !(await read($, DEMO))) return checkDelegates($)
+      herdrCheckTimer?.cancel()
+      herdrCheckTimer = null
+    })().catch(() => undefined)
+  })
+}
+
+async function checkDelegates($: EngineInterface) {
+  const owner = currentOwner()
+  if (!isHerdrCheckDue(owner.id, await $.clock.now())) return
+  const states = await read($, SESSION).then(s => delegatesInHerdr(upgradeSession(s).ledger.overview, processRun($)))
+  if (!states) return
+  const at = await $.clock.now()
+  await commit($, owner, s => statusChanged(s, o => delegatesSettled(o, states, at)))
 }
 
 /**
@@ -2216,6 +2271,7 @@ async function readRowTab($: EngineInterface): Promise<Tab | null> {
 
 async function showTab($: EngineInterface, tab: ShownTab) {
   cancelUndoScroll()
+  await update($, IS_HELP_SHOWN, () => false)
   if (!isRowTab(tab)) {
     await update($, PAGE, () => tab)
     await syncShown($)
@@ -2242,7 +2298,7 @@ function lineCount(text: string, width: number): number {
   return wrapped(text, width).length
 }
 
-type TerminalSpan = Span & { isLinkAddress?: true; isMuted?: true; isNeedsYou?: true; isUnbroken?: true }
+type TerminalSpan = Span & { isLinkAddress?: true; isMuted?: true; isNeedsYou?: true; isDone?: true; isUnbroken?: true }
 
 function terminalTextLines(text: string, width: number, limit = Infinity): TerminalSpan[][] {
   if (!text) return []
@@ -2376,6 +2432,11 @@ async function scrollToKey(
     await $.clock.sleep(retryMs)
   }
   return false
+}
+
+async function selectStatusRow($: EngineInterface, id: string) {
+  await update($, STATUS_SELECTION, () => id)
+  await scrollToKey($, `status-${id}`, 'nearest')
 }
 
 async function scrollToRow($: EngineInterface, id: string) {
@@ -2520,6 +2581,18 @@ async function selectClicked($: EngineInterface, id: string) {
   focusedKey = `select-${id}`
   focusHint = null
   await select($, tab, id, index)
+}
+
+/** An Status row's View press: Asks shows with the ask selected and in view. */
+async function showAsk($: EngineInterface, askId: string) {
+  const { view } = await drawnState($)
+  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
+  const index = Math.max(0, tabRowIds(view, prViews).needsYou.indexOf(askId))
+  focusedKey = `select-${askId}`
+  focusHint = null
+  await select($, 'needsYou', askId, index, false)
+  await showTab($, 'needsYou')
+  await scrollToRow($, askId)
 }
 
 /**
@@ -2734,6 +2807,7 @@ async function fetchPrsNow($: EngineInterface, findsBranchPr: boolean) {
   try {
     await fetchSessionPrs(hostOf($, owner), findsBranchPr)
   } finally {
+    prFetchEndedAt = await $.clock.now()
     // Fetches run one at a time across conversations, so the drawn session reads whether one still runs.
     await markFetching($, nextFetchFindsBranchPr !== null)
   }
@@ -2757,8 +2831,9 @@ async function wakeForDone($: EngineInterface) {
 }
 
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
-  const mayStayOnRow =
-    'ref' in p ? ['pr-open', 'pr-refresh', 'thread-open', 'log'].includes(p.action) : p.action === 'step'
+  const mayStayOnRow = isPrPress(p)
+    ? ['pr-open', 'pr-refresh', 'thread-open', 'log'].includes(p.action)
+    : p.action === 'step'
   const undoRevision = mayStayOnRow ? suspendUndoReveal() : cancelUndoScroll()
   const rowId = pressRowId(p)
   if (p.action !== 'undo' && !rowId.startsWith('pr:')) await keepPressedOpen($, rowId)
@@ -2838,7 +2913,11 @@ async function undoKeyAfterPress(
 ): Promise<string | null> {
   if (surface !== 'terminal' || !isInlineTerminalPane) return null
   const { ledger, prViews, lastActions, view, now } = await drawnState($)
-  if ('ref' in p) {
+  if (isPrPress(p)) {
+    if (p.action === 'pr-dismiss-merged') {
+      const nearest = view.prs.drawn.filter(x => x.state.is === 'settled' && x.state.canUndo).at(-1)
+      return nearest ? `undo-${prMarkId(nearest.pr.ref)}` : null
+    }
     if (p.action !== 'pr-dismiss') return null
     return view.prs.drawn.some(x => x.pr.ref === p.ref && x.state.is === 'settled') ? `undo-${pressRowId(p)}` : null
   }
@@ -2985,6 +3064,7 @@ const PR_KEYS: Record<PrPress['action'], string> = {
   'pr-refresh': 'refresh',
   'pr-dismiss': 'dismiss-pr',
   'pr-undo': 'undo-pr',
+  'pr-dismiss-merged': 'dismiss-merged',
   'check-fix': 'fix',
   log: 'log',
 }
@@ -3633,6 +3713,10 @@ export const register: Register = on => {
   on('tool.call', { tool: CLOSE_TOOL }, async ($, e) => ({
     result: await runTool($, 'close', e as unknown as Record<string, unknown>, e.tool_use_id),
   }))
+  on('tool.describe', { tool: ORDER_TOOL }, async ($, e, next) => ({ ...(await next(e)), isDeferred: false }))
+  on('tool.call', { tool: ORDER_TOOL }, async ($, e) => ({
+    result: await runTool($, 'order_prs', e as unknown as Record<string, unknown>, e.tool_use_id),
+  }))
 
   on('tool.call', async ($, e, next) => {
     if (!isOn) return next(e)
@@ -3818,7 +3902,10 @@ export const register: Register = on => {
     await update($, AWAY, a => ({ ...a, lastActiveAt: now }))
     await commit($, currentOwner(), s => endTurn(CLAUDE_CODE, s, reply, isShown, { tab: screenTab, queuesEmptyReply }))
     updateLedger($)
-    if (prRefs(reply).some(ref => !before.ledger.prs.includes(ref))) void fetchPrs($, await isPrsTabShown($))
+    const after = await read($, SESSION)
+    const linksNewPr = prRefs(reply).some(ref => !before.ledger.prs.includes(ref))
+    const tracksPrs = after.ledger.prs.length > 0 || after.prViews.branchRef !== null
+    if (linksNewPr || (tracksPrs && isPrFetchDue(after, prFetchEndedAt, now))) void fetchPrs($, await isPrsTabShown($))
 
     return r
   })
@@ -3935,6 +4022,7 @@ export const register: Register = on => {
     paneHasKeys.clear()
     await update($, TYPING, () => null)
     await update($, FOLD_HOVER, () => null)
+    await update($, IS_HELP_SHOWN, () => false)
 
     return r
   })
@@ -3957,7 +4045,7 @@ export const register: Register = on => {
 
   // The ctrl+o transcript draws the text the agent read.
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
-    const isInboxTool = e.props.tool === RECORD_TOOL || e.props.tool === CLOSE_TOOL
+    const isInboxTool = [RECORD_TOOL, CLOSE_TOOL, ORDER_TOOL].includes(e.props.tool)
     if (!isOn || !isInboxTool || e.props.isExpanded || e.props.isErrored) return next(e)
     const line = (await read($, PERSON_LINES))[e.props.tool_use_id]
     if (line === undefined) {
@@ -4103,9 +4191,10 @@ export const register: Register = on => {
       typing,
       unfolded,
       foldHover,
-      isKeyListShown,
+      isHelpShown,
       optionsShown,
       termProgram,
+      statusSelection,
     ] = await Promise.all([
       drawnState($),
       read($, TAB),
@@ -4115,16 +4204,26 @@ export const register: Register = on => {
       read($, TYPING),
       read($, UNFOLDED),
       read($, FOLD_HOVER),
-      read($, IS_KEY_LIST_SHOWN),
+      read($, IS_HELP_SHOWN),
       read($, OPTIONS_SHOWN),
       $.env.get('TERM_PROGRAM'),
+      read($, STATUS_SELECTION),
       read($, RUNNING_FRAME),
     ])
     const tab: Tab = isShownTab(savedTab) && isRowTab(savedTab) ? savedTab : 'needsYou'
     const isStatusShown = savedPage === 'overview'
     const shownTab: ShownTab = isStatusShown ? 'overview' : tab
     const tabList = shownTabs(isNextBuild)
-    const isRunningMarkShown = isStatusShown && hasRunningMark(view.statusPage)
+    const isRunningMarkShown = isHelpShown
+      ? MARK_LEGEND.some(m => m.isRunning)
+      : isStatusShown
+        ? hasRunningMark(view.statusPage)
+        : tab === 'prs'
+          ? isPrTabRunning(
+              view.prs.drawn.flatMap(d => (d.state.is === 'settled' ? [] : [d.pr])),
+              lastActions,
+            )
+          : isRowTabRunning(view, tab, kind => unfolded.includes(kind))
     if (look === 'terminal') animateRunningMarks($, isRunningMarkShown)
     const undoEnd = lastUndoEnd(view)
     if (undoEnd !== null) redrawWhileUndoLasts($, undoEnd)
@@ -4176,11 +4275,13 @@ export const register: Register = on => {
             color={
               span.isNeedsYou
                 ? (pal.tone.needsYou ?? pal.mark.needsYou)
-                : span.isLinkAddress || span.isMuted
-                  ? pal.muted
-                  : span.code
-                    ? 'permission'
-                    : undefined
+                : span.isDone
+                  ? (pal.tone.done ?? pal.mark.done)
+                  : span.isLinkAddress || span.isMuted
+                    ? pal.muted
+                    : span.code
+                      ? 'permission'
+                      : undefined
             }
           >
             {span.text}
@@ -4198,9 +4299,16 @@ export const register: Register = on => {
     type Row = {
       id: string
       view?: RowView
+      /**
+       * An Asks or Finds row. The terminal draws it with no mark column, so its text starts at the tree's arm, and its
+       * result mark before its result. Desktop draws its result mark in the mark column.
+       */
+      isUnmarked?: true
       handle: string
       /** A Button takes no color, so this handle is Text and only the row's text selects it. */
       handleTone?: Tone
+      /** Desktop draws its running dot in place of `handle`. The terminal's `handle` is already the frame. */
+      isHandleRunning?: boolean
       /** A PR row's mark says its work is done. */
       isMarkDone?: boolean
       title: string
@@ -4220,23 +4328,23 @@ export const register: Register = on => {
     const holdsUpLineOf = (r: RowView | undefined) => (isNextBuild ? (r?.holdsUpLine ?? null) : null)
     const itemRow = (r: RowView): Row => {
       const asked = r.at === null ? undefined : `${DOT}${ago(now - r.at)}`
-      const mark = rowMark(r, look)
       const isHandedOff = r.state.is === 'handedOff'
       const holdsUpLine = holdsUpLineOf(r)
 
       return {
         id: r.id,
         view: r,
-        handle: mark.text,
-        handleTone: mark.tone,
+        isUnmarked: true,
+        handle: '',
         ...(isHandedOff ? { fold: {} } : {}),
-        title: r.title,
+        title: rowTitle(r, look),
         titleAfter: asked,
         ...(r.at === null ? {} : { at: r.at }),
         ...(holdsUpLine
           ? {
               subtitle: (
                 <Text color={pal.muted} wrap="wrap">
+                  <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
                   {holdsUpLine}
                 </Text>
               ),
@@ -4264,8 +4372,8 @@ export const register: Register = on => {
       id: r.id,
       view: r,
       at: r.at ?? undefined,
-      handle: rowMark(r, look).text,
-      handleTone: rowMark(r, look).tone,
+      isUnmarked: true,
+      handle: '',
       ...(r.state.is === 'handedOff' ? { fold: {} } : {}),
       title: r.title,
       titleAfter: `${DOT}${ago(now - (r.at ?? now))}`,
@@ -4363,8 +4471,9 @@ export const register: Register = on => {
 
       return {
         id,
-        handle: text.mark.text,
+        handle: text.mark.isRunning && look !== 'desktop' ? runningMark(now) : text.mark.text,
         handleTone: text.mark.tone ?? undefined,
+        ...(text.mark.isRunning ? { isHandleRunning: true } : {}),
         isMarkDone: text.mark.isDone,
         ...(text.fold ? { fold: text.fold } : {}),
         title: text.title,
@@ -4397,6 +4506,8 @@ export const register: Register = on => {
         threads: d.state.is === 'settled' ? [] : waitingThreads(d.pr).map(t => threadRow(d.pr, t)),
       }))
       .map(g => ({ ...g, rows: [...g.threads, ...g.checks] }))
+    const prTabKeys =
+      prGroups.length === 0 ? [] : prTabActions(prGroups, prState.branchRef).map(a => prKeyAction(a, 'tab'))
     const rows: Record<Tab, Row[]> = {
       needsYou: lists.byTab.needsYou,
       findings: lists.byTab.findings,
@@ -4428,21 +4539,22 @@ export const register: Register = on => {
           ),
         )
     const at = selectedIndex(ids, cursor, top, id => settledIds.has(id))
-    const isOpenGuarded = isGuarded(cursor.openedAt, now)
+    const isOpenGuarded = !isStatusShown && isGuarded(cursor.openedAt, now)
+    const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection) : null
+    const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage) : []
 
     const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
       actionLabel({ label: a.label, isPrimary: a.variant === 'primary' })
     const desktopTextColumns = (markCells: number) => listColumns - markCells - DESKTOP_SIDE_CELLS - 1
     // A desktop text column after `markCells`, less a cell, since the measured column ran up to 10 pt narrower than this.
     const desktopColumnPt = (markCells: number) => desktopTextColumns(markCells) * DESKTOP_CELL_PT - 2 * FRAME_INSET_PT
-    const rowMarkCells = (rowId: string) => DESKTOP_MARK_CELLS + markExtra(rowId)
-    const desktopRowTextPt = (rowId: string) => desktopColumnPt(rowMarkCells(rowId))
+    const desktopRowTextPt = desktopColumnPt(DESKTOP_MARK_CELLS)
     const desktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) =>
       a.icon ? `${a.icon} ${shownLabel(a)}` : shownLabel(a)
     // A native Button cuts a label wider than its row.
     const fittedDesktopLabel = (rowId: string, a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) => {
       const icon = a.icon ? `${a.icon} ` : ''
-      const fits = (label: string) => desktopTextPt(icon + label) + DESKTOP_BUTTON_EXTRA_PT <= desktopRowTextPt(rowId)
+      const fits = (label: string) => desktopTextPt(icon + label) + DESKTOP_BUTTON_EXTRA_PT <= desktopRowTextPt
 
       return icon + actionLabel({ label: a.label, isPrimary: a.variant === 'primary' }, fits)
     }
@@ -4495,7 +4607,7 @@ export const register: Register = on => {
           }
         }),
         gap: DESKTOP_LINK_GAP_CELLS,
-        fallbackColumns: desktopTextColumns(rowMarkCells(rowId)),
+        fallbackColumns: desktopTextColumns(DESKTOP_MARK_CELLS),
         isGuarded: isOpenGuarded,
         colors: { muted: pal.muted, hover: null },
       }
@@ -4581,16 +4693,26 @@ export const register: Register = on => {
     const feedbackLabel = (id: string, row?: Row) => {
       const f = row?.view ? row.view.feedback : feedbackOf(id, lastActions[id], notes[id], turns, now)
       if (!f) return null
+      const mark = look === 'terminal' && row?.view ? rowResultMark(row.view) : null
+      const lead = mark === null ? '' : `${mark.isRunning ? runningMark(now) : mark.text || ' '} `
 
       return hasAge(f)
         ? {
-            text: row?.view ? rowFeedbackText(row.view, look)! : markedFeedbackText(f, row?.isMarkDone ?? false, look),
+            text: `${lead}${row?.view ? rowFeedbackText(row.view, look)! : markedFeedbackText(f, row?.isMarkDone ?? false, look)}`,
             age: ago(now - f.at),
             isAfterTitle: true,
             isFailure: false,
+            doneMark: mark?.tone === 'done' ? mark.text : null,
             feedback: f,
           }
-        : { text: feedbackText(f, look), age: '', isAfterTitle: isAfterTitle(f), isFailure: isFailure(f), feedback: f }
+        : {
+            text: `${lead}${row?.view ? rowFeedbackText(row.view, look)! : feedbackText(f, look)}`,
+            age: '',
+            isAfterTitle: isAfterTitle(f),
+            isFailure: isFailure(f),
+            doneMark: null,
+            feedback: f,
+          }
     }
     const lastActionText = (id: string) => {
       const f = feedbackLabel(id)
@@ -4624,14 +4746,10 @@ export const register: Register = on => {
         {...box}
       />
     )
-    const columnsFor = (extra = 0) => {
+    const columnsFor = (row: Pick<Row, 'isUnmarked'>) => {
       const base = look === 'desktop' ? ROW_COLUMNS.desktop : ROW_COLUMNS.tree
-      return { ...base, textAt: base.textAt + extra }
+      return row.isUnmarked && look === 'terminal' ? { ...base, textAt: base.handleAt } : base
     }
-    const wideQuestions = view.needsYou.questions.some(r => r.handle.length > 2)
-      ? new Set(view.needsYou.questions.map(r => r.id))
-      : new Set<string>()
-    const markExtra = (id: string) => (wideQuestions.has(id) ? 1 : 0)
     const markColumns = look === 'desktop' ? ROW_COLUMNS.desktop : ROW_COLUMNS.tree
     const markWidth = markColumns.textAt - markColumns.handleAt
     const treeRow = (
@@ -4662,17 +4780,17 @@ export const register: Register = on => {
     )
     // Desktop draws text in a proportional font, where a run of ─ sized in cells overflows the
     // row and wraps into a second line, so there the rows sit flush and each pads itself.
-    const divided = (rowEls: JSX.Element[], group: string, extra = 0) =>
+    const divided = (rowEls: JSX.Element[], group: string, textAt: number = ROW_COLUMNS.tree.textAt) =>
       rowEls.flatMap((el, n) =>
         n === 0 || isInline || look === 'desktop'
           ? [el]
           : [
               <Box key={`divider-${group}-${n}`} flexDirection="row">
                 <Box width={TREE_LINE_AT} flexShrink={0} />
-                <Box width={ROW_COLUMNS.tree.textAt - TREE_LINE_AT + extra} flexShrink={0}>
+                <Box width={textAt - TREE_LINE_AT} flexShrink={0}>
                   <Text color={pal.line}>│</Text>
                 </Box>
-                {rule(ROW_COLUMNS.tree.textAt + 2 + extra)}
+                {rule(textAt + 2)}
               </Box>,
               el,
             ],
@@ -4686,9 +4804,27 @@ export const register: Register = on => {
           ...plain,
           after: `${DOT}${[f.text, isAgeDropped ? '' : f.age].filter(Boolean).join(' ')}`,
           afterTone: f.isFailure ? ('error' as const) : undefined,
+          afterDoneMark: f.doneMark,
         }
 
-      return { ...plain, after: [plain.after, isAgeDropped ? '' : plain.age].filter(Boolean).join('') || undefined }
+      return {
+        ...plain,
+        after: [plain.after, isAgeDropped ? '' : plain.age].filter(Boolean).join('') || undefined,
+        afterDoneMark: null,
+      }
+    }
+    /** A feedback text with its done mark in the done mark's color, which every palette defines. */
+    const withDoneMark = (text: string, doneMark: string | null | undefined) => {
+      const at = doneMark ? text.indexOf(doneMark) : -1
+      if (!doneMark || at < 0) return text
+
+      return [
+        text.slice(0, at),
+        <Text key="done" color={pal.mark.done}>
+          {doneMark}
+        </Text>,
+        text.slice(at + doneMark.length),
+      ]
     }
     const unselectedLine = (row: Row, onPress: (press: UiPressArgument) => void, inset: number) => {
       const line = closedLine(row)
@@ -4732,7 +4868,7 @@ export const register: Register = on => {
             </Box>
             {after ? (
               <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
-                {after}
+                {withDoneMark(after, line.afterDoneMark)}
               </Text>
             ) : null}
           </Box>
@@ -4743,19 +4879,55 @@ export const register: Register = on => {
           ) : null}
           {meta ? (
             <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
-              {meta}
+              {withDoneMark(meta, line.afterDoneMark)}
             </Text>
           ) : null}
           {holdsUpLine ? (
             <Box paddingLeft={line.before?.length ?? 0}>
-              <Text color={pal.muted}>{clipLabel(holdsUpLine, Math.max(12, width))}</Text>
+              <Text color={pal.muted}>
+                <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
+                {clipLabel(holdsUpLine, Math.max(12, width - 2))}
+              </Text>
             </Box>
           ) : null}
         </Box>
       )
     }
     const ToneSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
+    /** An Asks or Finds row's result mark in the desktop mark column, or null when it has none. */
+    const gutterMark = (row: Row) => {
+      const mark = look === 'desktop' && row.isUnmarked && row.view ? rowResultMark(row.view) : null
+      if (mark?.tone && ToneSvg)
+        return (
+          <Box width={1} height={1} flexShrink={0}>
+            <ToneSvg
+              source={toneSvg(mark.tone, mark.text)}
+              alt={mark.text}
+              width={DESKTOP_CELL_PT}
+              height={DESKTOP_LINE_PT}
+            />
+          </Box>
+        )
+      return mark ? markGlyph(mark, `gutter-${row.id}`, mark.tone ? pal.mark[mark.tone] : pal.muted) : null
+    }
+    const runningDot = (id: string, glyph: string, color: string) => {
+      const RunningSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
+
+      return RunningSvg ? (
+        <Box key={`${id}-mark`} width={RUNNING_SVG_CELLS} height={1} flexShrink={0}>
+          <RunningSvg
+            source={runningSvg(now)}
+            alt={glyph}
+            width={RUNNING_SVG_CELLS * DESKTOP_CELL_PT}
+            height={DESKTOP_LINE_PT}
+          />
+        </Box>
+      ) : (
+        <Text color={color}>{look === 'terminal' ? runningMark(now) : glyph}</Text>
+      )
+    }
     const toned = (row: Row) => {
+      if (look === 'desktop' && row.isHandleRunning) return runningDot(`handle-${row.id}`, row.handle, pal.muted)
       if (ToneSvg === null || !row.handle || !row.handleTone) return null
       return (
         <Box width={1} height={1} flexShrink={0}>
@@ -4778,12 +4950,13 @@ export const register: Register = on => {
       const text = row.line?.text ?? row.title
 
       return {
-        markCells: DESKTOP_MARK_CELLS + markExtra(row.id),
+        markCells: DESKTOP_MARK_CELLS,
         sideCells: DESKTOP_SIDE_CELLS,
         before: row.line?.before ?? '',
         title: text.trim(),
         after: f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim(),
         note: holdsUpLineOf(row.view) ?? '',
+        noteMark: holdsUpLineOf(row.view) ? { text: HELD_MARK.mark, color: pal.mark[HELD_MARK.tone] } : null,
         side: sideAge(row),
         padY: DESKTOP_ROW_PAD,
         maxLines: row.hasSecondLine ? 4 : 2,
@@ -4806,7 +4979,7 @@ export const register: Register = on => {
       side = null,
       fill,
       padY = space.rowPad,
-      isCentered = false,
+      isSideCentered = false,
       indent = 0,
       isMarkHung = true,
       markCells = DESKTOP_MARK_CELLS,
@@ -4824,30 +4997,17 @@ export const register: Register = on => {
       tree?: JSX.Element | null
       fill?: string | undefined
       padY?: number
-      isCentered?: boolean
+      /** Centers the side and the mark with its text on each other, for a side taller than a line of text, as Undo is. */
+      isSideCentered?: boolean
       indent?: number
       isMarkHung?: boolean
       markCells?: number
       /** Space above and below the frame, in the hooks tree's half lines. */
       gapY?: number
       children: JSX.Element | (JSX.Element | null)[]
-    }) => (
-      <Box
-        key={key}
-        flexDirection="row"
-        alignItems={isCentered ? 'center' : tree ? 'stretch' : 'flex-start'}
-        marginY={gapY}
-        borderStyle="single"
-        borderColor="#0000"
-        paddingY={padY}
-        {...(fill ? { backgroundColor: fill } : {})}
-      >
-        <Box
-          width={indent + markCells + (isMarkHung ? 0 : 1)}
-          {...(isCentered ? { height: 1 } : {})}
-          flexShrink={0}
-          paddingLeft={indent}
-        >
+    }) => {
+      const markColumn = (
+        <Box key="mark" width={indent + markCells + (isMarkHung ? 0 : 1)} flexShrink={0} paddingLeft={indent}>
           {tree}
           {mark ? (
             <Box position="absolute" top={0} left={isMarkHung ? indent - 1 : indent}>
@@ -4855,23 +5015,46 @@ export const register: Register = on => {
             </Box>
           ) : null}
         </Box>
-        <Box flexDirection="column" flexShrink={1} flexGrow={1} minWidth={0}>
+      )
+      const textColumn = (
+        <Box key="text" flexDirection="column" flexShrink={1} flexGrow={1} minWidth={0}>
           {children}
         </Box>
-        {hasSide ? (
-          <Box
-            minWidth={DESKTOP_SIDE_CELLS}
-            flexShrink={0}
-            flexDirection="row"
-            justifyContent="flex-end"
-            alignItems="flex-start"
-            paddingLeft={1}
-          >
-            {side}
-          </Box>
-        ) : null}
-      </Box>
-    )
+      )
+      return (
+        <Box
+          key={key}
+          flexDirection="row"
+          alignItems={isSideCentered ? 'center' : tree ? 'stretch' : 'flex-start'}
+          marginY={gapY}
+          borderStyle="single"
+          borderColor="#0000"
+          paddingY={padY}
+          {...(fill ? { backgroundColor: fill } : {})}
+        >
+          {isSideCentered ? (
+            <Box flexDirection="row" alignItems="flex-start" flexShrink={1} flexGrow={1} minWidth={0}>
+              {markColumn}
+              {textColumn}
+            </Box>
+          ) : (
+            [markColumn, textColumn]
+          )}
+          {hasSide ? (
+            <Box
+              minWidth={DESKTOP_SIDE_CELLS}
+              flexShrink={0}
+              flexDirection="row"
+              justifyContent="flex-end"
+              alignItems="flex-start"
+              paddingLeft={1}
+            >
+              {side}
+            </Box>
+          ) : null}
+        </Box>
+      )
+    }
     const withSideAge = (row: Row, line: JSX.Element) =>
       isAgeInSide ? (
         <Box flexDirection="row">
@@ -4886,14 +5069,14 @@ export const register: Register = on => {
         line
       )
     const listRow = (row: Row, tree: TreePos) => {
-      const columns = columnsFor(markExtra(row.id))
+      const columns = columnsFor(row)
       const index = indexOf.get(row.id) ?? -1
       const isSelected = index === at
       // On desktop a Client takes a click on every cell of the row, where a Button takes one only on its label.
       if (!isSelected && hasClient)
         return (
           <Box key={`row-${row.id}`} flexDirection="row" overflow="hidden">
-            {row.handle ? (
+            {row.handle || gutterMark(row) ? (
               <Box
                 position="absolute"
                 top={0}
@@ -4901,7 +5084,9 @@ export const register: Register = on => {
                 paddingLeft={(FRAME_INSET_PT - DESKTOP_CELL_PT) / DESKTOP_CELL_PT}
                 paddingTop={space.rowPad}
               >
-                {toned(row) ?? <Text color={row.handleTone ? pal.mark[row.handleTone] : undefined}>{row.handle}</Text>}
+                {gutterMark(row) ?? toned(row) ?? (
+                  <Text color={row.handleTone ? pal.mark[row.handleTone] : undefined}>{row.handle}</Text>
+                )}
               </Box>
             ) : null}
             <Box position="relative" width="100%">
@@ -4943,7 +5128,7 @@ export const register: Register = on => {
       const textWidth = listColumns - 1 - columns.textAt
       const titleWidth = textWidth - TERMINAL_SIDE_CELLS
       const fitsTitleLine = (text: string) =>
-        look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt(row.id) : text.length <= titleWidth
+        look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt : text.length <= titleWidth
       const shownAfter = titleAfter ? unbroken(titleAfter, row.title, fitsTitleLine) : ''
       const bodyLines =
         isSelected && isInline && look === 'terminal' && row.clippedBody
@@ -4993,7 +5178,7 @@ export const register: Register = on => {
           )}
           {isStatusUnder ? (
             <Text color={pal.muted} wrap="wrap">
-              {f.text}
+              {withDoneMark(f.text, f.doneMark)}
             </Text>
           ) : null}
         </Box>
@@ -5003,10 +5188,15 @@ export const register: Register = on => {
       if (look === 'desktop' && isSelected)
         return desktopFrame({
           key: `row-${row.id}`,
-          markCells: DESKTOP_MARK_CELLS + markExtra(row.id),
-          mark:
-            toned(row) ??
-            (row.handleTone ? <Text color={pal.mark[row.handleTone]}>{row.handle}</Text> : <Text>{row.handle}</Text>),
+          markCells: DESKTOP_MARK_CELLS,
+          mark: row.isUnmarked
+            ? gutterMark(row)
+            : (toned(row) ??
+              (row.handleTone ? (
+                <Text color={pal.mark[row.handleTone]}>{row.handle}</Text>
+              ) : (
+                <Text>{row.handle}</Text>
+              ))),
           side: <Text color={pal.age}>{sideAge(row)}</Text>,
           fill: pal.selection,
           gapY: (2 * SELECTED_GAP_PT) / DESKTOP_LINE_PT,
@@ -5043,32 +5233,36 @@ export const register: Register = on => {
           backgroundColor={isSelected ? pal.selection : undefined}
         >
           <Box width={columns.lead} flexShrink={0} />
-          <Box
-            width={columns.textAt - columns.lead}
-            flexShrink={0}
-            paddingLeft={columns.handleAt - columns.lead}
-            paddingY={isSelected ? space.rowPad : 0}
-          >
-            {row.handleTone ? (
-              <Text color={pal.mark[row.handleTone]}>{row.handle}</Text>
-            ) : look === 'desktop' ? (
-              <Text>{row.handle}</Text>
-            ) : (
-              <Button
-                plain
-                key={`select-${row.id}`}
-                label={row.handle}
-                onPress={() => void select($, tab, row.id, index)}
-              />
-            )}
-          </Box>
+          {row.isUnmarked && look === 'terminal' ? null : (
+            <Box
+              width={columns.textAt - columns.lead}
+              flexShrink={0}
+              paddingLeft={columns.handleAt - columns.lead}
+              paddingY={isSelected ? space.rowPad : 0}
+            >
+              {row.handleTone ? (
+                <Text color={pal.mark[row.handleTone]}>{row.handle}</Text>
+              ) : look === 'desktop' ? (
+                (gutterMark(row) ?? <Text>{row.handle}</Text>)
+              ) : (
+                <Button
+                  plain
+                  key={`select-${row.id}`}
+                  label={row.handle || ' '}
+                  onPress={() => void select($, tab, row.id, index)}
+                />
+              )}
+            </Box>
+          )}
           {isSelected ? (
             <Box flexDirection="column" flexShrink={1} flexGrow={1} paddingRight={1} paddingY={space.rowPad}>
               {withSideAge(
                 row,
                 <Text wrap="wrap">
                   <Text bold>{row.title}</Text>
-                  {titleAfter ? <Text color={pal.muted}>{shownAfter}</Text> : null}
+                  {titleAfter ? (
+                    <Text color={pal.muted}>{withDoneMark(shownAfter, isStatusUnder ? null : f?.doneMark)}</Text>
+                  ) : null}
                 </Text>,
               )}
               {row.subtitle}
@@ -5181,12 +5375,8 @@ export const register: Register = on => {
       .map(([, n]) => n)
       .sort((a, b) => b.at - a.at)[0]
 
-    const keyList = [
-      { keys: tabList.map(t => t.hotkey).join(' '), does: 'Switch tabs' },
-      ...(isStatusShown ? [] : [{ keys: 'j k', does: 'Select the next or previous row' }]),
-      { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
-    ]
-    const keyColumn = Math.max(...keyList.map(k => k.keys.length)) + 2
+    const keyList = helpKeys(look, isNextBuild, shownTab, statusPressRows.length > 0)
+    const keyColumn = Math.max(0, ...keyList.map(k => cellWidth(k.keys))) + 2
 
     const tabColumns = e.props.bodyColumns - 2
     const tabSizes = desktopTabSizes(
@@ -5487,46 +5677,18 @@ export const register: Register = on => {
     const footer = (
       <Box flexDirection="column" paddingX={1} paddingTop={blankLine}>
         <Box flexDirection="row" paddingX={1} justifyContent="space-between" columnGap={3}>
-          {look === 'desktop' ? (
-            <Box />
-          ) : (
-            <Button
-              plain
-              dimColor
-              key="key-list"
-              label={isKeyListShown ? '▾ Keys' : '▴ Keys'}
-              onPress={() => void update($, IS_KEY_LIST_SHOWN, shown => !shown)}
-            />
-          )}
+          {/* The same key in both states, so a desktop pane keeps its focus on the Button. */}
+          <Button
+            plain
+            dimColor={look !== 'desktop'}
+            key="help"
+            label={isHelpShown ? HELP_COPY.close : HELP_COPY.open}
+            onPress={() => void update($, IS_HELP_SHOWN, shown => !shown)}
+          />
           <Box flexDirection="row" columnGap={2}>
             {statusText}
             {versionText}
           </Box>
-          {look !== 'desktop' && isKeyListShown ? (
-            <Box
-              position="absolute"
-              bottom={1}
-              left={-1}
-              right={-1}
-              flexDirection="column"
-              paddingX={2}
-              paddingY={1}
-              backgroundColor={pal.raised}
-            >
-              {keyList.map(k => (
-                <Box key={`key-list-${k.keys}`} flexDirection="row">
-                  <Box width={keyColumn} flexShrink={0}>
-                    <Text bold color={pal.raisedText}>
-                      {k.keys}
-                    </Text>
-                  </Box>
-                  <Text color={pal.raisedText ?? pal.muted} wrap="wrap">
-                    {k.does}
-                  </Text>
-                </Box>
-              ))}
-            </Box>
-          ) : null}
         </Box>
       </Box>
     )
@@ -5538,25 +5700,43 @@ export const register: Register = on => {
             children: <Text color={pal.muted}>{groupEmptyText(title)}</Text>,
           })
         : treeRow('last', null, <Text color={pal.muted}>{`  ${groupEmptyText(title)}`}</Text>, `empty-${title}`)
-    const groupTitle = (title: string, count: number) =>
-      look === 'desktop' ? (
-        desktopFrame({
-          padY: 0,
-          children: (
-            <Text>
-              <Text bold>{title}</Text>
-              {count > 0 ? <Text color={pal.muted}>{`${DOT}${count}`}</Text> : null}
-            </Text>
-          ),
-        })
-      ) : (
-        <Box paddingLeft={TREE_LINE_AT}>
-          <Text>
-            <Text bold>{title}</Text>
-            {count > 0 ? <Text color={pal.muted}>{`${DOT}${count}`}</Text> : null}
-          </Text>
-        </Box>
+    /** A Finds group's title leads with its kind's mark, since its rows draw none. */
+    const groupTitle = (title: string, count: number, mark?: { mark: string; tone: Tone }) => {
+      const words = (
+        <Text>
+          <Text bold>{title}</Text>
+          {count > 0 ? <Text color={pal.muted}>{`${DOT}${count}`}</Text> : null}
+        </Text>
       )
+      const lead = mark ? (
+        <Box width={RESULT_MARK_CELLS} flexShrink={0}>
+          {ToneSvg ? (
+            <ToneSvg
+              source={toneSvg(mark.tone, mark.mark)}
+              alt={mark.mark}
+              width={DESKTOP_CELL_PT}
+              height={DESKTOP_LINE_PT}
+            />
+          ) : (
+            <Text color={pal.mark[mark.tone]}>{mark.mark}</Text>
+          )}
+        </Box>
+      ) : null
+      const line = lead ? (
+        <Box flexDirection="row">
+          {lead}
+          {words}
+        </Box>
+      ) : (
+        words
+      )
+
+      return look === 'desktop' ? (
+        desktopFrame({ padY: 0, mark: lead, children: words })
+      ) : (
+        <Box paddingLeft={TREE_LINE_AT}>{line}</Box>
+      )
+    }
     const section = (children: JSX.Element | JSX.Element[]) =>
       look === 'desktop' ? (
         <Box flexDirection="column" paddingTop={blankLine}>
@@ -5593,6 +5773,39 @@ export const register: Register = on => {
                 <Text color={pal.line}>{hasChildren ? '│' : ' '}</Text>
               </Box>,
             ]
+    const markGlyph = (mark: ResultMark, key: string, color: string) => {
+      if (mark.isRunning) return runningDot(key, mark.text, color)
+      if (mark.text === CLOSED_MARKS.lapsed && ToneSvg) {
+        // An Svg cannot read a theme key, so one takes the muted mark's colors.
+        const { light, dark } = color.startsWith('#') ? { light: color, dark: color } : MUTED_MARK
+        return (
+          <Box key={`${key}-mark`} width={1} height={1} flexShrink={0}>
+            <ToneSvg
+              source={markSvg(mark.text, cancelledMarkShape(DESKTOP_LINE_PT / 2), light, dark)}
+              alt={mark.text}
+              width={DESKTOP_CELL_PT}
+              height={DESKTOP_LINE_PT}
+            />
+          </Box>
+        )
+      }
+      return <Text color={color}>{mark.text || ' '}</Text>
+    }
+    /** A result mark and the space after it, before its label. A blank mark keeps its place, so the label stays put. */
+    const resultLead = (mark: ResultMark, key: string, color: string) => (
+      <Box key={`${key}-lead`} width={RESULT_MARK_CELLS} flexShrink={0}>
+        {markGlyph(mark, key, color)}
+      </Box>
+    )
+    const resultLine = (mark: ResultMark | null, key: string, markColor: string, label: JSX.Element) =>
+      mark ? (
+        <Box flexDirection="row" flexShrink={1}>
+          {resultLead(mark, key, markColor)}
+          {label}
+        </Box>
+      ) : (
+        label
+      )
     const refusedUndo = (d: ClosedLine) =>
       canUndoRefused(d.delivery) ? undoButton({ id: d.id, action: 'undo' }, null) : null
     const closedRow = (d: ClosedLine, pos: TreePos) =>
@@ -5602,7 +5815,7 @@ export const register: Register = on => {
             indent: DESKTOP_MARK_CELLS,
             isMarkHung: false,
             padY: space.rowPad / 2,
-            mark: <Text color={pal.age}>{closedMark(closedState(d), d.delivery) || ' '}</Text>,
+            mark: markGlyph(closedMark(closedState(d), d.delivery), `closed-${d.id}`, pal.age),
             side: <Text color={pal.age}>{shortAgo(now - d.at)}</Text>,
             children: [
               <Text wrap="wrap" color={pal.muted}>
@@ -5616,15 +5829,20 @@ export const register: Register = on => {
           })
         : treeRow(
             pos,
-            <Text color={pal.muted}>{closedMark(closedState(d), d.delivery) || ' '}</Text>,
+            null,
             <Box flexDirection="row">
               <Box flexDirection="column" flexGrow={1} flexShrink={1}>
                 <Text wrap="wrap" color={pal.muted}>
                   {d.ask}
                 </Text>
-                <Text wrap="wrap" color={pal.age}>
-                  {settledLabel(d.outcomeLabel, d.delivery)}
-                </Text>
+                {resultLine(
+                  closedMark(closedState(d), d.delivery),
+                  `closed-${d.id}`,
+                  pal.muted,
+                  <Text wrap="wrap" color={pal.age}>
+                    {settledLabel(d.outcomeLabel, d.delivery)}
+                  </Text>,
+                )}
                 {refusedUndo(d)}
               </Box>
               <Box width={TERMINAL_SIDE_CELLS - 1} flexShrink={0} justifyContent="flex-end">
@@ -5712,7 +5930,7 @@ export const register: Register = on => {
                       })
                     : treeRow(
                         childPos(closed.length, closed.length + 1),
-                        <Text> </Text>,
+                        null,
                         <Text color={pal.age}>{earlier}</Text>,
                         `earlier-${kind}`,
                         1,
@@ -5771,8 +5989,9 @@ export const register: Register = on => {
       ) : null
     const settledContent = (
       what: string,
-      { label, at, delivery, isLapsed }: SettledState,
+      { label, at, delivery, closedAs }: SettledState,
       undo: RowPress | PrPress | null,
+      mark: ResultMark | null,
     ) => (
       <Box flexDirection="column">
         <Text wrap="truncate-end" color={pal.muted}>
@@ -5789,37 +6008,39 @@ export const register: Register = on => {
               width={1}
             />
           ) : null}
-          <Text wrap="wrap" color={settledTone({ delivery, isLapsed }) === 'done' ? pal.tone.done : pal.muted}>
-            {settledLabel(label, delivery)}
-          </Text>
+          {resultLine(
+            mark,
+            `settled-${what}`,
+            pal.muted,
+            <Text wrap="wrap" color={settledTone({ delivery, closedAs }) === 'done' ? pal.tone.done : pal.muted}>
+              {settledLabel(label, delivery)}
+            </Text>,
+          )}
           {undo ? undoButton(undo, at) : null}
         </Box>
       </Box>
     )
     const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos: TreePos) => {
       const undo = r.actions.find(a => a.press.action === 'undo')?.press ?? null
-      if (look === 'desktop') {
-        const after = `${DOT}${settledLabel(state.label, state.delivery)}`
+      const mark = settledMark(state)
+      if (look === 'desktop')
         return desktopFrame({
           key: `settled-${r.id}`,
-          markCells: DESKTOP_MARK_CELLS + markExtra(r.id),
-          mark: settledMark(state.delivery) ? <Text color={pal.muted}>{settledMark(state.delivery)}</Text> : null,
+          markCells: DESKTOP_MARK_CELLS,
+          mark: markGlyph(mark, `settled-${r.id}`, pal.muted),
           side: undoPlace(r.id, undo, state.at, state.offersUndo),
           padY: space.settledPad,
-          isCentered: true,
+          isSideCentered: true,
           children: [
             <Text wrap="wrap">
               {r.title}
-              <Text color={pal.muted}>{after}</Text>
+              <Text color={pal.muted}>{`${DOT}${settledLabel(state.label, state.delivery)}`}</Text>
             </Text>,
           ],
         })
-      }
-      const content = settledContent(r.title, state, undo)
-      const mark = <Text color={pal.muted}>{settledMark(state.delivery) || ' '}</Text>
       return (
         <Box key={`settled-${r.id}`} flexDirection="column" paddingY={space.settledPad}>
-          {treeRow(pos, mark, content, undefined, 0, undefined, markExtra(r.id))}
+          {treeRow(pos, null, settledContent(rowTitle(r, look), state, undo, mark))}
         </Box>
       )
     }
@@ -5834,7 +6055,7 @@ export const register: Register = on => {
             'row' in x ? listRow(x.row, childPos(n, entries.length)) : settledRow(x, childPos(n, entries.length)),
           ),
           g.kind,
-          Math.max(0, ...entries.map(x => markExtra(entryId(x)))),
+          ROW_COLUMNS.tree.handleAt,
         )
         const tail = closedFold(
           g.kind,
@@ -5909,7 +6130,7 @@ export const register: Register = on => {
           delivery: f.delivery,
         }))
         return section([
-          groupTitle(g.title, waitingCount(rowsIn(g.entries).map(r => r.view))),
+          groupTitle(g.title, waitingCount(rowsIn(g.entries).map(r => r.view)), FINDING_GROUPS[g.kind]),
           ...titleGap(),
           ...(g.entries.length === 0 ? [groupEmpty(g.title)] : []),
           ...divided(
@@ -5917,6 +6138,7 @@ export const register: Register = on => {
               'row' in x ? listRow(x.row, childPos(n, g.entries.length)) : settledRow(x, childPos(n, g.entries.length)),
             ),
             g.kind,
+            ROW_COLUMNS.tree.handleAt,
           ),
           ...closedFold(g.kind, closed, closedTotal(closedOf, settled), unfolded.includes(g.kind)),
         ])
@@ -5947,10 +6169,12 @@ export const register: Register = on => {
             </Box>
           </Box>
         ) : (
-          settledContent(what, state, undo)
+          settledContent(what, state, undo, null)
         )
 
-      return section([treeRow(null, <Text color={pal.muted}>✓</Text>, content, `settled-pr:${pr.ref}`)])
+      const mark = markGlyph(settledMark(state), `settled-pr:${pr.ref}`, pal.muted)
+
+      return section([treeRow(null, mark, content, `settled-pr:${pr.ref}`)])
     }
     const prRowGroup = (title: string, group: Row[], key: string) =>
       group.length === 0
@@ -5975,6 +6199,7 @@ export const register: Register = on => {
 
       const titleLine = (
         <Text wrap="wrap">
+          {b.rank === null ? null : <Text color={pal.muted}>{prRankText(b.rank)}</Text>}
           <Text color={look === 'desktop' ? pal.mark.prs : pal.tone.prs}>{`#${pr.number}\u2002`}</Text>
           <Text bold>{pr.title}</Text>
           <Text color={tone ? (pal.tone[tone] ?? pal.mark[tone]) : pal.muted}>{`\u2002${statusHead}`}</Text>
@@ -6037,7 +6262,7 @@ export const register: Register = on => {
     const ghState = { isGhMissing: Boolean(prState.isGhMissing), isGhSignedOut: Boolean(prState.isGhSignedOut) }
     const ghNotice = ghNoticeOf(ghState)
     const olderPrs = () => {
-      const text = olderPrsText(prState, ledger.prs)
+      const text = olderPrsText(prState, ledger)
       if (!text) return []
       const line = (
         <Text color={pal.muted} wrap="wrap">
@@ -6055,6 +6280,39 @@ export const register: Register = on => {
         ),
       ]
     }
+    const prOrderLine = () => {
+      const text = view.prs.orderText
+      if (!text) return []
+      const line = (
+        <Text color={pal.muted} wrap="wrap">
+          {text}
+        </Text>
+      )
+
+      return [
+        section(
+          look === 'desktop' ? (
+            desktopFrame({ key: 'pr-order', padY: 0, children: line })
+          ) : (
+            <Box paddingLeft={1}>{line}</Box>
+          ),
+        ),
+      ]
+    }
+    const prTabButtons = () => {
+      if (prTabKeys.length === 0) return []
+      const buttons = keyRow(DISMISS_MERGED_ID, prTabKeys)
+
+      return [
+        section(
+          look === 'desktop' ? (
+            desktopFrame({ key: 'pr-tab-actions', padY: 0, children: buttons })
+          ) : (
+            <Box paddingLeft={1}>{buttons}</Box>
+          ),
+        ),
+      ]
+    }
     const prsView = () =>
       prGroups.length === 0 ? (
         <Box flexDirection="column" flexGrow={1}>
@@ -6064,45 +6322,39 @@ export const register: Register = on => {
         sections(
           [
             ...(ghNotice ? [section(banner(bannerOf(ghNotice.kind, ghNotice.text)))] : []),
+            ...prOrderLine(),
             ...prGroups.map(prBlock),
+            ...prTabButtons(),
             ...olderPrs(),
           ],
           2,
         )
       )
 
-    const statusGoal = (goal: string) => {
-      const line = (
-        <Text wrap="wrap" bold>
-          {goal}
-        </Text>
+    /** The head reads like a row: its title in bold, and its description muted on the line under it. */
+    const statusHead = (head: NonNullable<StatusPage['head']>) => {
+      const lines = (
+        <Box flexDirection="column">
+          <Text wrap="wrap" bold>
+            {head.title}
+          </Text>
+          {head.description ? (
+            <Text wrap="wrap" color={pal.muted}>
+              {head.description}
+            </Text>
+          ) : null}
+        </Box>
       )
 
       return look === 'desktop' ? (
-        desktopFrame({ key: 'status-goal', padY: 0, markCells: 0, hasSide: false, children: line })
+        desktopFrame({ key: 'status-head', padY: 0, markCells: 0, hasSide: false, children: lines })
       ) : (
-        <Box key="status-goal" paddingLeft={TREE_LINE_AT}>
-          {line}
+        <Box key="status-head" paddingLeft={TREE_LINE_AT}>
+          {lines}
         </Box>
       )
     }
-    const runningDot = (id: string, glyph: string, color: string) => {
-      const RunningSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
-
-      return RunningSvg ? (
-        <Box key={`${id}-mark`} width={RUNNING_SVG_CELLS} height={1} flexShrink={0}>
-          <RunningSvg
-            source={runningSvg(now)}
-            alt={glyph}
-            width={RUNNING_SVG_CELLS * DESKTOP_CELL_PT}
-            height={DESKTOP_LINE_PT}
-          />
-        </Box>
-      ) : (
-        <Text color={color}>{look === 'terminal' ? runningMark(now) : glyph}</Text>
-      )
-    }
-    /** Where a Status row's mark sits in the terminal: in the goal's column, so the list lines up with it. */
+    /** Where an Status row's mark sits in the terminal: in the head's column, so the list lines up with it. */
     const statusMarkAt = TREE_LINE_AT
     /** The text column of a Status line at `depth`, in cells on the terminal and in points on desktop. */
     const statusTextWidth = (depth: number) =>
@@ -6123,17 +6375,47 @@ export const register: Register = on => {
         </Text>
       </Box>
     )
-    /** A row's second line: where it stands, muted, then its stall words in the needs-you tone, never split by a wrap. */
-    const statusSecondLine = (key: string, text: string | null, stall: string | null, depth: number) => {
-      const unbroken = (words: string) => (look === 'desktop' ? words.replaceAll(' ', '\u00a0') : words)
-      const spans: TerminalSpan[] = [
-        ...(text ? [{ text, isMuted: true as const }] : []),
-        ...(text && stall ? [{ text: STALL_GAP, isMuted: true as const }] : []),
-        ...(stall ? [{ text: unbroken(stall), isNeedsYou: true as const, isUnbroken: true as const }] : []),
-      ]
+    /** A row's stall word in the stall's tone, never split by a wrap. */
+    const stallSpan = (stall: StatusStall): TerminalSpan => {
+      const text = look === 'desktop' ? stall.text.replaceAll(' ', '\u00a0') : stall.text
+      const tone = stall.tone === 'needsYou' ? { isNeedsYou: true as const } : { isDone: true as const }
 
-      return spans.length > 0 ? [statusPageText(key, spans, depth)] : []
+      return { text, isUnbroken: true, ...tone }
     }
+    /**
+     * A row's name with its stall word after `STALL_GAP`, on the line of the name's last word, which a wrap never
+     * splits from them. `nameBeforeStall` cuts the name so the line fits `STATUS_TEXT_LINES`.
+     */
+    const statusNameLine = (key: string, name: TerminalSpan, stall: StatusStall | null, depth: number) => {
+      if (!stall) return statusPageText(key, [name], depth)
+      const width = statusTextWidth(depth)
+      const gap = look === 'desktop' ? STALL_GAP.replaceAll(' ', '\u00a0') : STALL_GAP
+      const spans = (shown: string): TerminalSpan[] => [
+        { ...name, text: shown },
+        { text: gap, isMuted: true, isUnbroken: true },
+        stallSpan(stall),
+      ]
+      const lineCount = (shown: string) =>
+        look === 'desktop'
+          ? desktopLines(
+              spans(shown)
+                .map(s => s.text)
+                .join(''),
+              width,
+            ).length
+          : terminalSpanLines(spans(shown), width).length
+      const shown = nameBeforeStall(name.text, x => lineCount(x) <= STATUS_TEXT_LINES)
+
+      return (
+        <Box key={key}>
+          <Text wrap="wrap">
+            {terminalText(look === 'desktop' ? [spans(shown)] : terminalSpanLines(spans(shown), width))}
+          </Text>
+        </Box>
+      )
+    }
+    /** An Status row frame's padding and 1 pt border above or below its text on desktop, in half lines. */
+    const statusFrameEdge = STATUS_PAD_Y + 2 * DESKTOP_HAIR_LINES
     /**
      * The line that ties the rows under a subject to it, in the subject's mark column. `down` runs from under the
      * subject's mark to the end of its row. `mid` and `last` reach across to a child's mark, and `mid` runs on to the
@@ -6145,8 +6427,8 @@ export const register: Register = on => {
           ? branch('pass', 0, statusMarkAt, pal.line, 1, key)
           : branch(shape, 0, statusMarkAt, pal.line, 0, key)
       // The line spans the mark column, which spans the frame's content. To meet the next row's line, each end reaches
-      // over the frame's padding and its 1 pt border, in margins, which count half lines.
-      const reach = -(STATUS_PAD_Y + 2 * DESKTOP_HAIR_LINES)
+      // over the frame's padding and its border.
+      const reach = -statusFrameEdge
       const firstLineMiddle = 0.5
       const hair = (key: string, grow: boolean, ends: { marginTop?: number; marginBottom?: number }) => (
         <Box key={key} flexDirection="row" {...(grow ? { flexGrow: 1 } : { height: firstLineMiddle })}>
@@ -6172,47 +6454,51 @@ export const register: Register = on => {
         </Box>
       )
     }
-    /** The rule above a Status row that starts an item. It starts at the text column, as the rules between sections and between Asks rows do. */
+    // An Status rule starts at the text column, as the rules between sections and between Asks rows do. In the
+    // terminal it stops at the end of the list's columns. On desktop it runs to the pane's edge.
+    const statusRuleAt = statusMarkAt + markWidth
+    const statusRuleCells = Math.max(0, listColumns - statusRuleAt)
+    const desktopStatusRuleLeft = FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS
+    /** The rule above an Status row that starts an item. */
     const statusRule = (id: string) =>
       look === 'desktop' ? (
-        desktopHairline(`status-rule-${id}`, 'across', {
-          marginLeft: FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS,
-        })
+        desktopHairline(`status-rule-${id}`, 'across', { marginLeft: desktopStatusRuleLeft })
       ) : (
         <Box key={`status-rule-${id}`} flexDirection="row">
-          <Box width={statusMarkAt + markWidth} flexShrink={0} />
-          {rule(statusMarkAt + markWidth + 2)}
+          <Box width={statusRuleAt} flexShrink={0} />
+          <Text color={pal.divider}>{'─'.repeat(statusRuleCells)}</Text>
         </Box>
       )
-    /** The look line: "Seen" in the middle of a rule that runs from the mark column to the end of the row. */
+    /** The look line: "Last seen" in the middle of a rule that spans what the rule above a row spans. */
     const statusLookLine = (text: string) => {
+      // Outside a frame, whose border would inset the rule's right end, so the padding stands in for the frame's.
       if (look === 'desktop')
-        return desktopFrame({
-          key: 'status-look',
-          padY: STATUS_PAD_Y,
-          markCells: 0,
-          hasSide: false,
-          children: (
-            <Box flexDirection="row" alignItems="center">
-              <Box flexGrow={1} flexDirection="column">
-                {desktopHairline('look-before', 'across')}
-              </Box>
-              <Box flexShrink={0} paddingX={1}>
-                <Text color={pal.muted}>{text}</Text>
-              </Box>
-              <Box flexGrow={1} flexDirection="column">
-                {desktopHairline('look-after', 'across')}
-              </Box>
+        return (
+          <Box
+            key="status-look"
+            flexDirection="row"
+            alignItems="center"
+            marginLeft={desktopStatusRuleLeft}
+            paddingY={statusFrameEdge}
+          >
+            <Box flexGrow={1} flexDirection="column">
+              {desktopHairline('look-before', 'across')}
             </Box>
-          ),
-        })
+            <Box flexShrink={0} paddingX={1}>
+              <Text color={pal.muted}>{text}</Text>
+            </Box>
+            <Box flexGrow={1} flexDirection="column">
+              {desktopHairline('look-after', 'across')}
+            </Box>
+          </Box>
+        )
       const label = ` ${text} `
-      const fill = Math.max(4, listColumns - 1 - statusMarkAt - cellWidth(label))
+      const fill = Math.max(4, statusRuleCells - cellWidth(label))
       const before = Math.floor(fill / 2)
 
       return (
         <Box key="status-look" flexDirection="row">
-          <Box width={statusMarkAt} flexShrink={0} />
+          <Box width={statusRuleAt} flexShrink={0} />
           <Text color={pal.divider}>{`${'─'.repeat(before)}${label}${'─'.repeat(fill - before)}`}</Text>
         </Box>
       )
@@ -6224,12 +6510,15 @@ export const register: Register = on => {
       mark,
       content,
       tree = null,
+      isSelected = false,
     }: {
       key: string
       depth?: number
       mark: JSX.Element | null
       content: JSX.Element | JSX.Element[]
       tree?: JSX.Element | null
+      /** The row whose keys work, which the terminal marks with the selection bar, as on a row tab. */
+      isSelected?: boolean
     }) =>
       look === 'desktop' ? (
         desktopFrame({
@@ -6243,7 +6532,13 @@ export const register: Register = on => {
           children: Array.isArray(content) ? content : [content],
         })
       ) : (
-        <Box key={key} flexDirection="row" alignItems="flex-start" overflow="hidden">
+        <Box
+          key={key}
+          flexDirection="row"
+          alignItems="flex-start"
+          overflow="hidden"
+          backgroundColor={isSelected ? pal.selection : undefined}
+        >
           <Box width={statusMarkAt + markWidth * depth} flexShrink={0} />
           <Box width={markWidth} flexShrink={0}>
             {mark}
@@ -6252,15 +6547,30 @@ export const register: Register = on => {
             {content}
           </Box>
           {tree}
+          {isSelected ? (
+            <Box position="absolute" top={0} bottom={0} left={0} width={1}>
+              {pal.selection ? null : <Text color={pal.key}>{SELECTION_BAR}</Text>}
+            </Box>
+          ) : null}
         </Box>
       )
+    /** An Status row's buttons from its plan. Only the selected row's key presses it, so only that row names its key. */
+    const statusKeys = (r: StatusRow): KeyAction[] =>
+      statusKeyPlan(r).map(k => ({
+        key: `${k.press.action}-${r.id}`,
+        label: k.label,
+        kind: k.kind,
+        ...(r.id === statusKeyRow?.id ? { hotkey: k.hotkey } : {}),
+        onPress: () => showAsk($, k.press.askId),
+      }))
     const statusRow = (r: StatusRow) => {
       if (r.kind === 'subject') {
+        const keys = statusKeys(r)
         const color = r.tone ? pal.mark[r.tone] : pal.muted
         const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
         const content = [
-          statusPageText(`status-${r.id}-name`, [{ text: r.name }], 0),
-          ...statusSecondLine(`status-${r.id}-text`, r.text, r.stall, 0),
+          statusNameLine(`status-${r.id}-name`, { text: r.name }, r.stall, 0),
+          ...(r.text ? [statusPageText(`status-${r.id}-text`, [{ text: r.text, isMuted: true }], 0)] : []),
           ...(r.merged
             ? [
                 statusPageText(
@@ -6273,6 +6583,7 @@ export const register: Register = on => {
           ...(r.was
             ? [statusPageText(`status-${r.id}-was`, [{ text: `${WAS_PREFIX}${r.was}`, isMuted: true }], 0)]
             : []),
+          ...(keys.length > 0 ? [<Box key={`status-${r.id}-keys`}>{keyRow(r.id, keys)}</Box>] : []),
         ]
 
         return statusRowLine({
@@ -6280,20 +6591,19 @@ export const register: Register = on => {
           mark,
           content,
           tree: r.hasChildren ? statusTree(`status-${r.id}-tree`, 'down') : null,
+          isSelected: look === 'terminal' && r.id === statusKeyRow?.id,
         })
       }
       if (r.kind === 'child') {
-        const mark = r.isRunning ? runningDot(r.id, r.mark, pal.muted) : <Text color={pal.muted}>{r.mark}</Text>
+        const color = r.tone ? pal.mark[r.tone] : pal.muted
+        const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
         const depth = r.branch === null ? 0 : 1
 
         return statusRowLine({
           key: `status-${r.id}`,
           depth,
           mark,
-          content: [
-            statusPageText(`status-${r.id}-name`, [{ text: r.name, isMuted: true }], depth),
-            ...statusSecondLine(`status-${r.id}-text`, null, r.stall, depth),
-          ],
+          content: statusNameLine(`status-${r.id}-name`, { text: r.name, isMuted: true }, r.stall, depth),
           tree: r.branch ? statusTree(`status-${r.id}-tree`, r.branch) : null,
         })
       }
@@ -6323,7 +6633,7 @@ export const register: Register = on => {
         )
 
       return sections([
-        ...(page.goal ? [statusGoal(page.goal)] : []),
+        ...(page.head ? [statusHead(page.head)] : []),
         ...(page.rows.length > 0
           ? [
               section(
@@ -6338,22 +6648,96 @@ export const register: Register = on => {
       ])
     }
 
+    /** A legend mark, drawn as rows draw it: the running mark moves, and desktop draws a shape where it has one. */
+    const legendMark = (m: LegendEntry) => {
+      const color = m.tone ? pal.mark[m.tone] : pal.muted
+      if (m.isRunning) return runningDot(`legend-${m.mark}`, m.mark, color)
+      const shape =
+        m.mark === CLOSED_MARKS.lapsed
+          ? cancelledMarkShape(DESKTOP_LINE_PT / 2)
+          : m.tone
+            ? markShape(m.mark, DESKTOP_LINE_PT / 2)
+            : null
+      if (ToneSvg && shape !== null)
+        return (
+          <Box width={1} height={1} flexShrink={0}>
+            <ToneSvg
+              source={m.tone ? toneSvg(m.tone, m.mark) : markSvg(m.mark, shape, MUTED_MARK.light, MUTED_MARK.dark)}
+              alt={m.mark}
+              width={DESKTOP_CELL_PT}
+              height={DESKTOP_LINE_PT}
+            />
+          </Box>
+        )
+
+      return <Text color={color}>{m.mark}</Text>
+    }
+    const helpKeysSection = () =>
+      section([
+        groupTitle(HELP_COPY.keys, 0),
+        ...keyList.map(k => (
+          <Box key={`help-key-${k.keys}`} flexDirection="row" paddingLeft={TREE_LINE_AT}>
+            <Box width={keyColumn} flexShrink={0}>
+              <Text bold>{k.keys}</Text>
+            </Box>
+            <Box flexShrink={1}>
+              <Text color={pal.muted} wrap="wrap">
+                {k.does}
+              </Text>
+            </Box>
+          </Box>
+        )),
+      ])
+    const helpMarksSection = () =>
+      section([
+        groupTitle(HELP_COPY.marks, 0),
+        ...MARK_LEGEND.map(m =>
+          statusRowLine({
+            key: `help-mark-${m.mark}`,
+            mark: legendMark(m),
+            content: (
+              <Text color={pal.muted} wrap="wrap">
+                {m.words}
+              </Text>
+            ),
+          }),
+        ),
+      ])
+    /** Help in place of the tab's body: the keys where keys work, then the legend. A wide inline pane sets them side by side. */
+    const helpView = () => {
+      if (keyList.length === 0) return sections([helpMarksSection()])
+      if (hasRail)
+        return (
+          <Box flexDirection="row" columnGap={4} flexGrow={1}>
+            <Box flexDirection="column" width="50%" flexShrink={1}>
+              {helpKeysSection()}
+            </Box>
+            <Box flexDirection="column" width="50%" flexShrink={1}>
+              {helpMarksSection()}
+            </Box>
+          </Box>
+        )
+
+      return sections([helpKeysSection(), helpMarksSection()])
+    }
+
     const move = (step: number) => {
       const to = Math.min(Math.max(at + step, 0), ids.length - 1)
       void select($, tab, ids[to] ?? '', to)
     }
-    const canMove = !isStatusShown && (ids.length > 1 || (at < 0 && ids.length > 0))
+    const canMove = !isStatusShown && !isHelpShown && (ids.length > 1 || (at < 0 && ids.length > 0))
+    const moveStatus = (step: number) => {
+      const from = statusPressRows.findIndex(r => r.id === statusKeyRow?.id)
+      const to = statusPressRows[Math.min(Math.max(from + step, 0), statusPressRows.length - 1)]
+      if (to) void selectStatusRow($, to.id)
+    }
+    const moveBy = (by: number) =>
+      isHelpShown ? undefined : isStatusShown ? moveStatus(by) : canMove ? move(by) : undefined
     // Claude Code sends a key no Button binds to the prompt and gives it the keyboard, so the keys
     // stay bound when there is nothing to move to or close.
     const moveKeys: KeyAction[] = [
-      { key: 'next', label: 'Next', hotkey: 'j', kind: 'view', onPress: () => (canMove ? move(1) : undefined) },
-      {
-        key: 'previous',
-        label: 'Previous',
-        hotkey: 'k',
-        kind: 'view',
-        onPress: () => (canMove ? move(-1) : undefined),
-      },
+      { key: 'next', label: 'Next', hotkey: 'j', kind: 'view', onPress: () => moveBy(1) },
+      { key: 'previous', label: 'Previous', hotkey: 'k', kind: 'view', onPress: () => moveBy(-1) },
     ]
     const tabKeys: KeyAction[] = tabList.map(({ id, label, hotkey }) => ({
       key: `tab-key-${id}`,
@@ -6363,7 +6747,7 @@ export const register: Register = on => {
       onPress: () => void showTab($, id),
     }))
 
-    const selectedRow = isStatusShown ? undefined : rows[tab][at]
+    const selectedRow = isStatusShown || isHelpShown ? undefined : rows[tab][at]
     const selectedActions = selectedRow ? rowActions(selectedRow) : null
     const closeKeysWithoutRow: KeyAction[] = ['d', 'x'].map(hotkey => ({
       key: `no-row-${hotkey}`,
@@ -6372,18 +6756,24 @@ export const register: Register = on => {
       kind: 'view',
       onPress: () => undefined,
     }))
-    const rowKeys = selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow
+    const rowKeys = [
+      ...(statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []),
+      ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow),
+      ...(tab === 'prs' && !isHelpShown ? prTabKeys : []),
+    ]
 
     // A pane takes a key
     // only as a Button's hotkey, so the tab keys, j, k and the selected row's keys
     // are Buttons in a hidden Box.
-    const tabView = isStatusShown
-      ? statusView()
-      : tab === 'findings'
-        ? findingsView()
-        : tab === 'prs'
-          ? prsView()
-          : needsYouView()
+    const tabView = isHelpShown
+      ? helpView()
+      : isStatusShown
+        ? statusView()
+        : tab === 'findings'
+          ? findingsView()
+          : tab === 'prs'
+            ? prsView()
+            : needsYouView()
     const drawn = (
       <Box flexDirection="column" minHeight={e.props.scroll.bodyRows} backgroundColor={pal.body}>
         {showsDemoNotices ? (

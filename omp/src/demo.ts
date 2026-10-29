@@ -62,6 +62,7 @@ export function demoSource(deps: {
     },
     resume: async () => null,
     fetchPrsWhenDue: () => {},
+    checkDelegatesWhenDue: () => {},
     shown: () => {},
     onChange: listener => {
       listeners.add(listener)
