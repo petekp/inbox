@@ -941,10 +941,13 @@ export type OverviewTone = 'needsYou' | 'done' | null
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
 export type OverviewBranch = 'mid' | 'last'
 
+/** The word after a row's name: "waiting" in the needs-you tone while it waits on the person, or "finished". */
+export type OverviewStall = { text: string; tone: 'needsYou' | 'done' }
+
 /**
  * One line of the Overview's list, in the order to draw it. Each look lays out the parts; none chooses them. A subject
- * or child draws its name, then a second line of where it stands and its stall words, the stall words after
- * `STALL_GAP` and in the needs-you tone.
+ * or child draws its name with its stall word after it, past `STALL_GAP`, in the stall's tone. A subject draws where it
+ * stands on the line under its name.
  */
 export type OverviewRow = OverviewRowParts & {
   /** Whether a rule sets it apart from the row above. A subject and the rows under it are one item, and the look line is a rule already. */
@@ -962,8 +965,8 @@ type OverviewRowParts =
       name: string
       /** Where it stands. Null for a finished row below the look line, which the person has seen. */
       text: string | null
-      /** How long it has waited, as "waiting 2h", once it waits on someone for `STALL_MS`. */
-      stall: string | null
+      /** "waiting" while an open ask holds it up. */
+      stall: OverviewStall | null
       /** The names of the subjects merged into it, while the person has not seen them. */
       merged: string | null
       /** The plan a reversal replaced, while the person has not seen it. */
@@ -975,18 +978,16 @@ type OverviewRowParts =
       kind: 'child'
       id: string
       mark: string
-      /**
-       * Whether it did anything in the last `STALL_MS`, or, when its host reports no activity, started less than
-       * `STALL_MS` ago. A look animates the mark while it is set.
-       */
+      tone: OverviewTone
+      /** Whether its work shows under way, as `isChildWorking` says. A look animates the mark while it is set. */
       isRunning: boolean
       name: string
-      /** How long it has done nothing, as "quiet 40m", once that passes `STALL_MS`, since a quiet child may be stuck. */
-      stall: string | null
+      /** What its work does, as `childStall` says. */
+      stall: OverviewStall | null
       /** Its place under its subject. Null when it is linked to no subject the list shows, so it sits at the top of the list. */
       branch: OverviewBranch | null
     }
-  /** The children of a subject past `CHILD_ROWS`, as "+ 2 more running". It is always the last row under its subject. */
+  /** The children of a subject past `CHILD_ROWS`, as "+ 2 more running", or "+ 2 more" when one finished. It is always the last row under its subject. */
   | { kind: 'more'; id: string; text: string; branch: 'last' }
   /** Where the person last looked: rows above it changed since. */
   | { kind: 'look'; id: string; text: string }
@@ -996,26 +997,25 @@ type OverviewRowParts =
 /** What the Overview page shows. Every look draws it as it is. */
 export type OverviewPage = {
   isEmpty: boolean
-  goal: string | null
+  /** What the session is focused on now. The description is null until the Overview call writes one. */
+  head: { title: string; description: string | null } | null
   rows: OverviewRow[]
   /** The status line's error while the last Overview call wrote nothing. */
   error: string | null
   empty: { title: string; hint: string }
 }
 
-export const LOOK_TEXT = 'Seen'
+export const LOOK_TEXT = 'Last seen'
 /** What a subject's was line starts with, before the plan it replaces. */
 export const WAS_PREFIX = 'was: '
 const MERGED_PREFIX = 'merged in: '
-/** What separates where a row stands from its stall words. */
+/** What separates a row's name from its stall word. */
 export const STALL_GAP = ' · '
 
 /** The most lines each text on an Overview row wraps to: a name, where it stands, a was line. A look cuts past them with an ellipsis. */
 export const OVERVIEW_TEXT_LINES = 3
 /** The most children drawn under one subject; the rest fold into "+ N more running". */
 export const CHILD_ROWS = 3
-/** How long work goes before it has stalled: a child with no activity reads quiet, and a waiting subject says how long it has waited. */
-export const STALL_MS = 15 * 60_000
 /** Finished rows drawn above the look line; older ones fold into the count. */
 const NEW_CLOSED_ROWS = 2
 /** Open rows drawn before the oldest queued ones fold into a count. */
@@ -1028,8 +1028,15 @@ export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: Overview
   done: { mark: '✓', tone: 'done' },
   dropped: { mark: '✗', tone: null },
 }
-/** The mark of an open subject that an open ask holds up, in place of its status's mark. */
+/** The mark of an open subject that an open ask holds up, in place of its status's mark, and of a delegate that waits for the person. */
 const HELD_MARK: { mark: string; tone: OverviewTone } = { mark: '◆', tone: 'needsYou' }
+const CHILD_MARK: { mark: string; tone: OverviewTone } = { mark: '●', tone: null }
+const FINISHED_MARK: { mark: string; tone: OverviewTone } = { mark: '✓', tone: 'done' }
+
+/** The order of subjects on each side of the look line, from what needs the person to what is finished. */
+const OVERVIEW_PLACES = ['held', 'working', 'waits-on-other', 'queued', 'closed'] as const
+
+type OverviewPlace = (typeof OVERVIEW_PLACES)[number]
 
 /** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
 export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
@@ -1045,6 +1052,18 @@ export const RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS
  */
 export function mergedLine(merged: string, fits: (text: string) => boolean): string {
   return `${MERGED_PREFIX}${cutAtPhrase(merged, names => fits(`${MERGED_PREFIX}${names}`))}`
+}
+
+/**
+ * A row's name as it shows before its stall word, which stays on the line of its last word. Whole when `fits` says the
+ * name and the stall word fit in `OVERVIEW_TEXT_LINES` lines, else cut at a word with an ellipsis until they do. The
+ * stall word is never cut. When no cut fits, the name keeps its first word.
+ */
+export function nameBeforeStall(name: string, fits: (shown: string) => boolean): string {
+  const words = name.split(' ')
+  const cuts = words.map((_, n) => (n === 0 ? name : `${words.slice(0, words.length - n).join(' ')}…`))
+
+  return cuts.find(fits) ?? cuts.at(-1)!
 }
 
 export function hasRunningMark(page: OverviewPage): boolean {
@@ -1063,35 +1082,37 @@ function isItemAfterItem(row: OverviewRowParts, prev: OverviewRowParts | undefin
   return prev !== undefined && prev.kind !== 'look' && row.kind !== 'look' && !isUnderSubject
 }
 
-/** How long ago `c` last did anything, or null when its host reports no activity. */
-function idleOf(c: Child, now: number): number | null {
-  return c.lastActivityAt === null ? null : now - c.lastActivityAt
+/** Whether `c` is a delegate that finished after the person last looked, so the page still shows it. */
+function isFinishedUnseen(c: Child, lastLookAt: number | null): boolean {
+  return c.delegateState === 'finished' && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt)
 }
 
-function isQuiet(c: Child, now: number): boolean {
-  const idle = idleOf(c, now)
-
-  return idle !== null && idle >= STALL_MS
+/** Whether `c` runs and waits on no one: not a delegate at a question or an approval, and not one that finished. */
+function isChildWorking(c: Child): boolean {
+  return c.endedAt === null && c.delegateState !== 'blocked'
 }
 
 /**
- * Whether `c` shows work under way: it did something in the last `STALL_MS`, or its host reports no activity and it
- * started less than `STALL_MS` ago.
+ * A delegate's stall word, from what Herdr shows: "waiting" at a question or an approval, in the needs-you tone, and
+ * "finished", in the done tone. Other work shows none, since its moving mark shows it runs.
  */
-function isChildWorking(c: Child, now: number): boolean {
-  return now - (c.lastActivityAt ?? c.startedAt) < STALL_MS
+function childStall(c: Child): OverviewStall | null {
+  if (c.delegateState === 'finished') return { text: 'finished', tone: 'done' }
+  if (c.delegateState === 'blocked') return { text: 'waiting', tone: 'needsYou' }
+
+  return null
 }
 
-function childRow(c: Child, now: number, branch: OverviewBranch | null): OverviewRowParts {
-  const idle = idleOf(c, now)
+function childRow(c: Child, branch: OverviewBranch | null): OverviewRowParts {
+  const marks = c.delegateState === 'finished' ? FINISHED_MARK : c.delegateState === 'blocked' ? HELD_MARK : CHILD_MARK
 
   return {
     kind: 'child',
     id: c.id,
-    mark: '●',
-    isRunning: isChildWorking(c, now),
+    ...marks,
+    isRunning: isChildWorking(c),
     name: c.name,
-    stall: idle !== null && isQuiet(c, now) ? `quiet ${shortAgo(idle)}` : null,
+    stall: childStall(c),
     branch,
   }
 }
@@ -1110,18 +1131,13 @@ export function overviewPage(
   const isNew = (x: Subject) => look === null || x.changedAt > look
   const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
   const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
-  /** When `x` began to wait: when the oldest open ask holding it up was asked, or when it last changed. */
-  const waitingSince = (x: Subject) => {
-    const asked = s.ledger.items.filter(i => o?.askSubjects[i.id] === x.id).flatMap(i => i.at ?? [])
-
-    return asked.length > 0 ? Math.min(...asked) : x.changedAt
-  }
-  const stallOf = (x: Subject) => {
-    const isWaiting = isHeld(x) || (isOpen(x) && x.status === 'waits-on-other')
-    const waited = now - waitingSince(x)
-
-    return isWaiting && waited >= STALL_MS ? `waiting ${shortAgo(waited)}` : null
-  }
+  const placeOf = (x: Subject): OverviewPlace =>
+    isHeld(x) ? 'held' : x.status === 'done' || x.status === 'dropped' ? 'closed' : x.status
+  const pageOrder = (x: Subject, y: Subject) =>
+    Number(isNew(y)) - Number(isNew(x)) ||
+    OVERVIEW_PLACES.indexOf(placeOf(x)) - OVERVIEW_PLACES.indexOf(placeOf(y)) ||
+    y.changedAt - x.changedAt
+  const stallOf = (x: Subject): OverviewStall | null => (isHeld(x) ? { text: 'waiting', tone: 'needsYou' } : null)
   const newClosed = subjects
     .filter(x => !isOpen(x) && isNew(x))
     .sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0))
@@ -1130,20 +1146,20 @@ export function overviewPage(
   const queuedOver = Math.max(0, open.length - OPEN_ROWS)
   const hiddenQueued = new Set(
     open
-      .filter(x => x.status === 'queued' && !isHeld(x))
+      .filter(x => placeOf(x) === 'queued')
       .sort((x, y) => x.changedAt - y.changedAt)
       .slice(0, queuedOver)
       .map(x => x.id),
   )
-  const shown = [...open.filter(x => !hiddenQueued.has(x.id)), ...newClosed].sort((x, y) => y.changedAt - x.changedAt)
+  const shown = [...open.filter(x => !hiddenQueued.has(x.id)), ...newClosed].sort(pageOrder)
   const folded = subjects.filter(x => x.status === 'done' && !newClosed.includes(x))
   const running = (o?.children ?? [])
-    .filter(c => isChildRunning(c, now))
+    .filter(c => isChildRunning(c, now) || isFinishedUnseen(c, look))
     .sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt))
   const shownIds = new Set(shown.map(x => x.id))
   const rows: OverviewRowParts[] = running
     .filter(c => c.subjectId === null || !shownIds.has(c.subjectId))
-    .map(c => childRow(c, now, null))
+    .map(c => childRow(c, null))
   const lookRow: OverviewRowParts | null = look === null ? null : { kind: 'look', id: 'look', text: LOOK_TEXT }
   const firstSeen = shown.findIndex(x => !isNew(x))
   for (const [i, x] of shown.entries()) {
@@ -1156,8 +1172,7 @@ export function overviewPage(
       kind: 'subject',
       id: x.id,
       ...(isHeld(x) ? HELD_MARK : SUBJECT_MARKS[x.status]),
-      isRunning:
-        x.status === 'working' && !isHeld(x) && (s.presence.isTurnRunning || under.some(c => isChildWorking(c, now))),
+      isRunning: x.status === 'working' && !isHeld(x) && (s.presence.isTurnRunning || under.some(isChildWorking)),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       stall: stallOf(x),
@@ -1165,12 +1180,14 @@ export function overviewPage(
       was: isNew(x) ? x.was : null,
       hasChildren: under.length > 0,
     })
-    rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid')))
+    rows.push(...shownUnder.map((c, n) => childRow(c, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid')))
+    const hidden = under.slice(CHILD_ROWS)
+    const isEveryHiddenRunning = hidden.every(c => c.delegateState !== 'finished')
     if (isMore)
       rows.push({
         kind: 'more',
         id: `${x.id}-more`,
-        text: `+ ${under.length - CHILD_ROWS} more running`,
+        text: `+ ${hidden.length} more${isEveryHiddenRunning ? ' running' : ''}`,
         branch: 'last',
       })
   }
@@ -1194,11 +1211,11 @@ export function overviewPage(
       text: `${folded.length}${isMore ? ' more' : ''} done`,
     })
   }
-  const goal = o?.goal || null
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null
 
   return {
-    isEmpty: goal === null && rows.length === 0,
-    goal,
+    isEmpty: head === null && rows.length === 0,
+    head,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {
@@ -1299,6 +1316,7 @@ function actionsOf(
       action({ action: 'done', id }, 'Done', 'mark'),
       action({ action: 'type', id, text: '' }, 'Reply', 'handoff'),
       action({ action: 'explain', id }, 'Explain', 'talk'),
+      action({ action: 'dismiss', id }, 'Dismiss', 'mark'),
     ]
   const isFolding = item.options.length > OPTIONS_FOLD_AT
   const options =

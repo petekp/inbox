@@ -1,4 +1,4 @@
-import type { Dialog, Ledger, Overview, Stop, Tab } from '../types'
+import type { Dialog, Ledger, Overview, OverviewHead, Stop, Tab } from '../types'
 import { hasRunningDelegate } from './children'
 import type { Run } from './gh'
 import type { SessionView } from './session'
@@ -11,7 +11,7 @@ import { isWaitingRow, ROW_TABS } from './view'
  */
 export type HerdrTokens = Record<string, string | null>
 
-/** What waits on the person, in one line: a stop, a dialog, the first item's ask, or the session's goal. */
+/** What waits on the person, in one line: a stop, a dialog, the first item's ask, or the session's focus from the Overview head. */
 const STATUS_TOKEN = 'inbox'
 
 const STOP_TOKEN = 'inbox-stop'
@@ -33,32 +33,55 @@ const HERDR_TIMEOUT_MS = 5000
 /** Lists the agents of the Herdr session the host runs in, as JSON. */
 const HERDR_AGENT_LIST = ['herdr', 'agent', 'list']
 
-/** Herdr states in which an agent still runs. `unknown` does not show that its turn ended. */
-const HERDR_RUNNING = new Set(['working', 'unknown'])
+/**
+ * What Herdr says an agent does. `blocked` is a question or an approval it shows. `idle` and `done` are both ready for
+ * input, and differ only in whether someone focused the agent since it finished. `unknown` does not show that its turn ended.
+ */
+export type HerdrStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown'
+
+const HERDR_STATUSES: readonly HerdrStatus[] = ['idle', 'working', 'blocked', 'done', 'unknown']
+
+/** How often a host asks Herdr about running delegates while its Overview shows. */
+export const HERDR_CHECK_MS = 30_000
 
 /**
- * The delegates Herdr shows running, asked only while `o` holds a running one. Null when none runs, or Herdr gave no
- * answer. Herdr finds its session from the pane's environment, not the folder, so the command runs in `/`, which
- * always exists.
+ * What Herdr shows each named agent doing, asked only while `o` holds a running delegate. Null when none runs, or
+ * Herdr gave no answer. Herdr finds its session from the pane's environment, not the folder, so the command runs in
+ * `/`, which always exists.
  */
-export async function delegatesInHerdr(o: Overview | null, run: Run): Promise<Set<string> | null> {
+export async function delegatesInHerdr(o: Overview | null, run: Run): Promise<Map<string, HerdrStatus> | null> {
   if (!hasRunningDelegate(o)) return null
   const r = await run(HERDR_AGENT_LIST, { cwd: '/', timeoutMs: HERDR_TIMEOUT_MS })
 
-  return r.code === 0 ? herdrRunning(r.stdout) : null
+  return r.code === 0 ? herdrStatuses(r.stdout) : null
 }
 
-/** The names of the agents `herdr agent list` shows running. Null when its output cannot be read. */
-function herdrRunning(stdout: string): Set<string> | null {
+/** Each named agent's status in what `herdr agent list` printed. Null when its output cannot be read. */
+function herdrStatuses(stdout: string): Map<string, HerdrStatus> | null {
   try {
     const agents: unknown = JSON.parse(stdout)?.result?.agents
     if (!Array.isArray(agents)) return null
+    const statusOf = (a: { agent_status?: unknown }) => HERDR_STATUSES.find(s => s === a?.agent_status) ?? 'unknown'
 
-    return new Set(
-      agents.filter(a => typeof a?.name === 'string' && HERDR_RUNNING.has(a?.agent_status)).map(a => a.name as string),
-    )
+    return new Map(agents.filter(a => typeof a?.name === 'string').map(a => [a.name as string, statusOf(a)]))
   } catch {
     return null
+  }
+}
+
+/**
+ * Lets a host ask Herdr at most once each `HERDR_CHECK_MS` for each session. Answers true when a check is due at
+ * `now`, and counts it as made.
+ */
+export function herdrCheckGate(): (session: string, now: number) => boolean {
+  const checked = new Map<string, number>()
+
+  return (session, now) => {
+    const last = checked.get(session)
+    if (last !== undefined && now - last < HERDR_CHECK_MS) return false
+    checked.set(session, now)
+
+    return true
   }
 }
 
@@ -81,19 +104,24 @@ function dialogText(dialog: Dialog): string {
 
 /**
  * What the status line reads when no stop or dialog leads it: the first ask that waits, how many asks and findings
- * wait, and the session's goal.
+ * wait, and what the session is focused on.
  */
-export type StatusInput = { firstAsk: string | null; asks: number; findings: number; goal: string | null }
+export type StatusInput = { firstAsk: string | null; asks: number; findings: number; focus: string | null }
 
 export function statusLine(stop: Stop | null, dialogs: readonly Dialog[], input: StatusInput): string {
   if (stop) return stopLine(stop)
   const dialog = dialogs[0]
   if (dialog) return dialogText(dialog)
-  const { firstAsk, asks, findings, goal } = input
+  const { firstAsk, asks, findings, focus } = input
   if (firstAsk !== null) return asks > 1 ? `${asks} · ${firstAsk}` : firstAsk
   const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? '' : 's'}`
 
-  return [goal, findingsText].filter(Boolean).join(' · ')
+  return [focus, findingsText].filter(Boolean).join(' · ')
+}
+
+/** The head's description, which says what the session does, or its title when it has none. */
+function focusOf(head: OverviewHead | null): string | null {
+  return head ? head.description || head.title : null
 }
 
 /**
@@ -111,7 +139,7 @@ export function herdrTokens(
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
-    goal: ledger.overview?.goal || null,
+    focus: focusOf(ledger.overview?.head ?? null),
   }
   const counts = ROW_TABS.map(t => {
     const count = view[t.id].count

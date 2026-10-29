@@ -178,9 +178,9 @@ import {
   TURN_BOX_TOOL,
   turnBoxText,
 } from './claude'
-import { branchIn } from './gh'
+import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
-import { CLEARED_TOKENS, delegatesInHerdr, herdrReporter, herdrTokens } from './herdr'
+import { CLEARED_TOKENS, delegatesInHerdr, HERDR_CHECK_MS, herdrCheckGate, herdrReporter, herdrTokens } from './herdr'
 import { ago, cellWidth, clipLabel, cutForEllipsis } from './text'
 import {
   applyPress,
@@ -265,6 +265,7 @@ import {
   hasRunningMark,
   LOOK_TEXT,
   mergedLine,
+  nameBeforeStall,
   STALL_GAP,
   WAS_PREFIX,
   inboxCommandText,
@@ -297,7 +298,9 @@ import type {
   ModLook,
   PlannedKey,
   OverviewBranch,
+  OverviewPage,
   OverviewRow,
+  OverviewStall,
   RowView,
   RowWait,
   SettledState,
@@ -1587,31 +1590,34 @@ async function perform(
   }
 }
 
-function gh($: EngineInterface, args: string[]) {
-  return $.process.run(['gh', ...args], { cwd: conversation.root, timeoutMs: 20_000 })
-}
-
-/** `$.process.run` as the shared `Run`: a run that rejects, because it could not start or outlived its timeout, ends with code -1. */
-function processRun($: EngineInterface): Run {
-  return (args, { cwd, timeoutMs, env }) =>
-    $.process.run(args, { cwd, timeoutMs, env }).then(
-      r => ({ code: r.exitCode, stdout: r.stdout, stderr: r.stderr }),
-      (err: unknown) => ({ code: -1, stdout: '', stderr: err instanceof Error ? err.message : String(err) }),
-    )
-}
-
 /**
- * `$.process.run` rejects when the command cannot start, and also when it is still running at the timeout. Asking
- * for `gh --version` tells them apart: only a gh that cannot start makes this reject too.
+ * `$.process.run` as the shared `Run`. It rejects when the command cannot start, and also when it is still running at
+ * the timeout, with no code to tell them apart. A rejection that comes `timeoutMs` or more after the call is the
+ * timeout's; one that comes sooner is a command that could not start.
  */
-async function isGhUnstartable($: EngineInterface): Promise<boolean> {
-  try {
-    await gh($, ['--version'])
+function processRun($: EngineInterface): Run {
+  return async (args, { cwd, timeoutMs, env }) => {
+    const startedAt = await $.clock.now()
+    try {
+      const r = await $.process.run(args, { cwd, timeoutMs, env })
 
-    return false
-  } catch {
-    return true
+      return { code: r.exitCode, stdout: r.stdout, stderr: r.stderr }
+    } catch (err) {
+      const isTimedOut = (await $.clock.now()) - startedAt >= timeoutMs
+
+      return {
+        code: isTimedOut ? TIMED_OUT_CODE : UNSTARTABLE_CODE,
+        stdout: '',
+        stderr: err instanceof Error ? err.message : String(err),
+      }
+    }
   }
+}
+
+async function isGhUnstartable($: EngineInterface): Promise<boolean> {
+  const r = await processRun($)(['gh', '--version'], { cwd: conversation.root, timeoutMs: GH_TIMEOUT_MS })
+
+  return r.code === UNSTARTABLE_CODE
 }
 
 /**
@@ -1692,14 +1698,7 @@ function sessionHost(
       forget: () => {
         ghFound = undefined
       },
-      run: (_s, _bin, onUnstartable) => async args => {
-        try {
-          return await gh($, args)
-        } catch (err) {
-          onUnstartable()
-          return { exitCode: -1, stdout: '', stderr: err instanceof Error ? err.message : String(err) }
-        }
-      },
+      run: (_s, _bin, onUnstartable) => ghIn(processRun($), 'gh', conversation.root, onUnstartable),
       noteMissing: opts.onGhMissing,
     },
     settleWindowMs: opts.settleWindowMs,
@@ -2067,6 +2066,41 @@ async function syncLook($: EngineInterface, isOpen?: boolean) {
   const [page, isPaneOpen, now] = await Promise.all([readPage($), isOpen ?? isPaneShown($), $.clock.now()])
   const isShown = isPaneOpen && page === 'overview'
   await commit($, currentOwner(), s => withLook(s, isShown, now)).catch(() => undefined)
+  followDelegates($, isShown)
+}
+
+const isHerdrCheckDue = herdrCheckGate()
+let herdrCheckTimer: Timer | null = null
+
+/**
+ * Asks Herdr about the running delegates each `HERDR_CHECK_MS` while the Overview shows, and once as it starts to
+ * show, so a delegate's row follows Herdr while this session waits. The first tick after the Overview stops showing
+ * stops the timer.
+ */
+function followDelegates($: EngineInterface, isShown: boolean) {
+  if (!isShown) {
+    herdrCheckTimer?.cancel()
+    herdrCheckTimer = null
+    return
+  }
+  void checkDelegates($).catch(() => undefined)
+  herdrCheckTimer ??= $.clock.every(HERDR_CHECK_MS, () => {
+    void (async () => {
+      const isStillShown = (await readPage($)) === 'overview' && (await isPaneShown($))
+      if (isStillShown && !(await read($, DEMO))) return checkDelegates($)
+      herdrCheckTimer?.cancel()
+      herdrCheckTimer = null
+    })().catch(() => undefined)
+  })
+}
+
+async function checkDelegates($: EngineInterface) {
+  const owner = currentOwner()
+  if (!isHerdrCheckDue(owner.id, await $.clock.now())) return
+  const states = await read($, SESSION).then(s => delegatesInHerdr(upgradeSession(s).ledger.overview, processRun($)))
+  if (!states) return
+  const at = await $.clock.now()
+  await commit($, owner, s => overviewChanged(s, o => delegatesSettled(o, states, at)))
 }
 
 /**
@@ -2259,7 +2293,7 @@ function lineCount(text: string, width: number): number {
   return wrapped(text, width).length
 }
 
-type TerminalSpan = Span & { isLinkAddress?: true; isMuted?: true; isNeedsYou?: true; isUnbroken?: true }
+type TerminalSpan = Span & { isLinkAddress?: true; isMuted?: true; isNeedsYou?: true; isDone?: true; isUnbroken?: true }
 
 function terminalTextLines(text: string, width: number, limit = Infinity): TerminalSpan[][] {
   if (!text) return []
@@ -4203,11 +4237,13 @@ export const register: Register = on => {
             color={
               span.isNeedsYou
                 ? (pal.tone.needsYou ?? pal.mark.needsYou)
-                : span.isLinkAddress || span.isMuted
-                  ? pal.muted
-                  : span.code
-                    ? 'permission'
-                    : undefined
+                : span.isDone
+                  ? (pal.tone.done ?? pal.mark.done)
+                  : span.isLinkAddress || span.isMuted
+                    ? pal.muted
+                    : span.code
+                      ? 'permission'
+                      : undefined
             }
           >
             {span.text}
@@ -6115,18 +6151,26 @@ export const register: Register = on => {
         )
       )
 
-    const overviewGoal = (goal: string) => {
-      const line = (
-        <Text wrap="wrap" bold>
-          {goal}
-        </Text>
+    /** The head reads like a row: its title in bold, and its description muted on the line under it. */
+    const overviewHead = (head: NonNullable<OverviewPage['head']>) => {
+      const lines = (
+        <Box flexDirection="column">
+          <Text wrap="wrap" bold>
+            {head.title}
+          </Text>
+          {head.description ? (
+            <Text wrap="wrap" color={pal.muted}>
+              {head.description}
+            </Text>
+          ) : null}
+        </Box>
       )
 
       return look === 'desktop' ? (
-        desktopFrame({ key: 'overview-goal', padY: 0, markCells: 0, hasSide: false, children: line })
+        desktopFrame({ key: 'overview-head', padY: 0, markCells: 0, hasSide: false, children: lines })
       ) : (
-        <Box key="overview-goal" paddingLeft={TREE_LINE_AT}>
-          {line}
+        <Box key="overview-head" paddingLeft={TREE_LINE_AT}>
+          {lines}
         </Box>
       )
     }
@@ -6146,7 +6190,7 @@ export const register: Register = on => {
         <Text color={color}>{look === 'terminal' ? runningMark(now) : glyph}</Text>
       )
     }
-    /** Where an Overview row's mark sits in the terminal: in the goal's column, so the list lines up with it. */
+    /** Where an Overview row's mark sits in the terminal: in the head's column, so the list lines up with it. */
     const overviewMarkAt = TREE_LINE_AT
     /** The text column of an Overview line at `depth`, in cells on the terminal and in points on desktop. */
     const overviewTextWidth = (depth: number) =>
@@ -6167,17 +6211,47 @@ export const register: Register = on => {
         </Text>
       </Box>
     )
-    /** A row's second line: where it stands, muted, then its stall words in the needs-you tone, never split by a wrap. */
-    const overviewSecondLine = (key: string, text: string | null, stall: string | null, depth: number) => {
-      const unbroken = (words: string) => (look === 'desktop' ? words.replaceAll(' ', '\u00a0') : words)
-      const spans: TerminalSpan[] = [
-        ...(text ? [{ text, isMuted: true as const }] : []),
-        ...(text && stall ? [{ text: STALL_GAP, isMuted: true as const }] : []),
-        ...(stall ? [{ text: unbroken(stall), isNeedsYou: true as const, isUnbroken: true as const }] : []),
-      ]
+    /** A row's stall word in the stall's tone, never split by a wrap. */
+    const stallSpan = (stall: OverviewStall): TerminalSpan => {
+      const text = look === 'desktop' ? stall.text.replaceAll(' ', '\u00a0') : stall.text
+      const tone = stall.tone === 'needsYou' ? { isNeedsYou: true as const } : { isDone: true as const }
 
-      return spans.length > 0 ? [overviewText(key, spans, depth)] : []
+      return { text, isUnbroken: true, ...tone }
     }
+    /**
+     * A row's name with its stall word after `STALL_GAP`, on the line of the name's last word, which a wrap never
+     * splits from them. `nameBeforeStall` cuts the name so the line fits `OVERVIEW_TEXT_LINES`.
+     */
+    const overviewNameLine = (key: string, name: TerminalSpan, stall: OverviewStall | null, depth: number) => {
+      if (!stall) return overviewText(key, [name], depth)
+      const width = overviewTextWidth(depth)
+      const gap = look === 'desktop' ? STALL_GAP.replaceAll(' ', '\u00a0') : STALL_GAP
+      const spans = (shown: string): TerminalSpan[] => [
+        { ...name, text: shown },
+        { text: gap, isMuted: true, isUnbroken: true },
+        stallSpan(stall),
+      ]
+      const lineCount = (shown: string) =>
+        look === 'desktop'
+          ? desktopLines(
+              spans(shown)
+                .map(s => s.text)
+                .join(''),
+              width,
+            ).length
+          : terminalSpanLines(spans(shown), width).length
+      const shown = nameBeforeStall(name.text, x => lineCount(x) <= OVERVIEW_TEXT_LINES)
+
+      return (
+        <Box key={key}>
+          <Text wrap="wrap">
+            {terminalText(look === 'desktop' ? [spans(shown)] : terminalSpanLines(spans(shown), width))}
+          </Text>
+        </Box>
+      )
+    }
+    /** An Overview row frame's padding and 1 pt border above or below its text on desktop, in half lines. */
+    const overviewFrameEdge = OVERVIEW_PAD_Y + 2 * DESKTOP_HAIR_LINES
     /**
      * The line that ties the rows under a subject to it, in the subject's mark column. `down` runs from under the
      * subject's mark to the end of its row. `mid` and `last` reach across to a child's mark, and `mid` runs on to the
@@ -6189,8 +6263,8 @@ export const register: Register = on => {
           ? branch('pass', 0, overviewMarkAt, pal.line, 1, key)
           : branch(shape, 0, overviewMarkAt, pal.line, 0, key)
       // The line spans the mark column, which spans the frame's content. To meet the next row's line, each end reaches
-      // over the frame's padding and its 1 pt border, in margins, which count half lines.
-      const reach = -(OVERVIEW_PAD_Y + 2 * DESKTOP_HAIR_LINES)
+      // over the frame's padding and its border.
+      const reach = -overviewFrameEdge
       const firstLineMiddle = 0.5
       const hair = (key: string, grow: boolean, ends: { marginTop?: number; marginBottom?: number }) => (
         <Box key={key} flexDirection="row" {...(grow ? { flexGrow: 1 } : { height: firstLineMiddle })}>
@@ -6216,47 +6290,51 @@ export const register: Register = on => {
         </Box>
       )
     }
-    /** The rule above an Overview row that starts an item. It starts at the text column, as the rules between sections and between Asks rows do. */
+    // An Overview rule starts at the text column, as the rules between sections and between Asks rows do. In the
+    // terminal it stops at the end of the list's columns. On desktop it runs to the pane's edge.
+    const overviewRuleAt = overviewMarkAt + markWidth
+    const overviewRuleCells = Math.max(0, listColumns - overviewRuleAt)
+    const desktopOverviewRuleLeft = FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS
+    /** The rule above an Overview row that starts an item. */
     const overviewRule = (id: string) =>
       look === 'desktop' ? (
-        desktopHairline(`overview-rule-${id}`, 'across', {
-          marginLeft: FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS,
-        })
+        desktopHairline(`overview-rule-${id}`, 'across', { marginLeft: desktopOverviewRuleLeft })
       ) : (
         <Box key={`overview-rule-${id}`} flexDirection="row">
-          <Box width={overviewMarkAt + markWidth} flexShrink={0} />
-          {rule(overviewMarkAt + markWidth + 2)}
+          <Box width={overviewRuleAt} flexShrink={0} />
+          <Text color={pal.divider}>{'─'.repeat(overviewRuleCells)}</Text>
         </Box>
       )
-    /** The look line: "Seen" in the middle of a rule that runs from the mark column to the end of the row. */
+    /** The look line: "Last seen" in the middle of a rule that spans what the rule above a row spans. */
     const overviewLookLine = (text: string) => {
+      // Outside a frame, whose border would inset the rule's right end, so the padding stands in for the frame's.
       if (look === 'desktop')
-        return desktopFrame({
-          key: 'overview-look',
-          padY: OVERVIEW_PAD_Y,
-          markCells: 0,
-          hasSide: false,
-          children: (
-            <Box flexDirection="row" alignItems="center">
-              <Box flexGrow={1} flexDirection="column">
-                {desktopHairline('look-before', 'across')}
-              </Box>
-              <Box flexShrink={0} paddingX={1}>
-                <Text color={pal.muted}>{text}</Text>
-              </Box>
-              <Box flexGrow={1} flexDirection="column">
-                {desktopHairline('look-after', 'across')}
-              </Box>
+        return (
+          <Box
+            key="overview-look"
+            flexDirection="row"
+            alignItems="center"
+            marginLeft={desktopOverviewRuleLeft}
+            paddingY={overviewFrameEdge}
+          >
+            <Box flexGrow={1} flexDirection="column">
+              {desktopHairline('look-before', 'across')}
             </Box>
-          ),
-        })
+            <Box flexShrink={0} paddingX={1}>
+              <Text color={pal.muted}>{text}</Text>
+            </Box>
+            <Box flexGrow={1} flexDirection="column">
+              {desktopHairline('look-after', 'across')}
+            </Box>
+          </Box>
+        )
       const label = ` ${text} `
-      const fill = Math.max(4, listColumns - 1 - overviewMarkAt - cellWidth(label))
+      const fill = Math.max(4, overviewRuleCells - cellWidth(label))
       const before = Math.floor(fill / 2)
 
       return (
         <Box key="overview-look" flexDirection="row">
-          <Box width={overviewMarkAt} flexShrink={0} />
+          <Box width={overviewRuleAt} flexShrink={0} />
           <Text color={pal.divider}>{`${'─'.repeat(before)}${label}${'─'.repeat(fill - before)}`}</Text>
         </Box>
       )
@@ -6303,8 +6381,8 @@ export const register: Register = on => {
         const color = r.tone ? pal.mark[r.tone] : pal.muted
         const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
         const content = [
-          overviewText(`overview-${r.id}-name`, [{ text: r.name }], 0),
-          ...overviewSecondLine(`overview-${r.id}-text`, r.text, r.stall, 0),
+          overviewNameLine(`overview-${r.id}-name`, { text: r.name }, r.stall, 0),
+          ...(r.text ? [overviewText(`overview-${r.id}-text`, [{ text: r.text, isMuted: true }], 0)] : []),
           ...(r.merged
             ? [
                 overviewText(
@@ -6327,17 +6405,15 @@ export const register: Register = on => {
         })
       }
       if (r.kind === 'child') {
-        const mark = r.isRunning ? runningDot(r.id, r.mark, pal.muted) : <Text color={pal.muted}>{r.mark}</Text>
+        const color = r.tone ? pal.mark[r.tone] : pal.muted
+        const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
         const depth = r.branch === null ? 0 : 1
 
         return overviewLine({
           key: `overview-${r.id}`,
           depth,
           mark,
-          content: [
-            overviewText(`overview-${r.id}-name`, [{ text: r.name, isMuted: true }], depth),
-            ...overviewSecondLine(`overview-${r.id}-text`, null, r.stall, depth),
-          ],
+          content: overviewNameLine(`overview-${r.id}-name`, { text: r.name, isMuted: true }, r.stall, depth),
           tree: r.branch ? overviewTree(`overview-${r.id}-tree`, r.branch) : null,
         })
       }
@@ -6367,7 +6443,7 @@ export const register: Register = on => {
         )
 
       return sections([
-        ...(page.goal ? [overviewGoal(page.goal)] : []),
+        ...(page.head ? [overviewHead(page.head)] : []),
         ...(page.rows.length > 0
           ? [
               section(

@@ -11,6 +11,7 @@ import {
   canUndoRefused,
   closedMark,
   mergedLine,
+  nameBeforeStall,
   OVERVIEW_TEXT_LINES,
   settledMark,
   STALL_GAP,
@@ -79,6 +80,7 @@ import type {
   Feedback,
   OverviewPage,
   OverviewRow,
+  OverviewStall,
   OverviewTone,
   PressState,
   Holds,
@@ -1351,15 +1353,63 @@ function fitMergedLine(el: HTMLElement | null, merged: string) {
   el.textContent = mergedLine(merged, text => !measure || measure.measureText(text).width <= el.clientWidth)
 }
 
-/** A row's second line: where it stands, muted, then its stall words in the needs-you tone. */
-function SecondLine({ text, stall }: { text: string | null; stall: string | null }) {
-  if (!text && !stall) return null
+const STALL_CLASS: Record<OverviewStall['tone'], string> = {
+  needsYou: 'tone-needsYou',
+  done: 'tone-done',
+}
+
+/** A name's words before its last, with the space after them, and its last word, which stays with the stall word. */
+function nameParts(name: string): { head: string; last: string } {
+  const at = name.lastIndexOf(' ')
+
+  return at < 0 ? { head: '', last: name } : { head: name.slice(0, at + 1), last: name.slice(at + 1) }
+}
+
+/** Writes into a name line the name `nameBeforeStall` cuts so the line takes at most `OVERVIEW_TEXT_LINES` lines. */
+function fitNameLine(el: HTMLElement | null, name: string) {
+  const flowEl = el?.querySelector<HTMLElement>('.flow')
+  const headEl = el?.querySelector<HTMLElement>('.head')
+  const lastEl = el?.querySelector<HTMLElement>('.last')
+  if (!flowEl || !headEl || !lastEl) return
+  const write = (shown: string) => {
+    const { head, last } = nameParts(shown)
+    headEl.textContent = head
+    lastEl.textContent = last
+  }
+  const range = document.createRange()
+  range.selectNodeContents(flowEl)
+  const lineCount = () => new Set([...range.getClientRects()].map(r => Math.round(r.top))).size
+  write(
+    nameBeforeStall(name, shown => {
+      write(shown)
+      return lineCount() <= OVERVIEW_TEXT_LINES
+    }),
+  )
+}
+
+/**
+ * A row's name with its stall word after `STALL_GAP` in the stall's tone, on the line of the name's last word, which a
+ * wrap never splits from them.
+ */
+function NameLine({ name, stall }: { name: string; stall: OverviewStall | null }) {
+  if (!stall)
+    return (
+      <div class="clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
+        {name}
+      </div>
+    )
+  const { head, last } = nameParts(name)
 
   return (
-    <div class="muted clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
-      {text}
-      {text && stall ? STALL_GAP : null}
-      {stall ? <span class="tone-needsYou unbroken">{stall}</span> : null}
+    <div ref={el => fitNameLine(el, name)}>
+      <span class="flow">
+        <span class="head">{head}</span>
+        <span class="unbroken">
+          <span class="last">{last}</span>
+          <span class="muted">{STALL_GAP}</span>
+          <span class={STALL_CLASS[stall.tone]}>{stall.text}</span>
+        </span>
+      </span>
     </div>
   )
 }
@@ -1374,10 +1424,12 @@ function OverviewLine({ row }: { row: OverviewRow }) {
           {row.mark}
         </span>
         <div class="content tight">
-          <div class="clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
-            {row.name}
-          </div>
-          <SecondLine text={row.text} stall={row.stall} />
+          <NameLine name={row.name} stall={row.stall} />
+          {row.text ? (
+            <div class="muted clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
+              {row.text}
+            </div>
+          ) : null}
           {merged ? (
             <div
               class="outcome muted clamp"
@@ -1398,14 +1450,11 @@ function OverviewLine({ row }: { row: OverviewRow }) {
   if (row.kind === 'child')
     return (
       <div class={row.branch ? `row child branch-${row.branch}` : 'row'}>
-        <span class={markClassOf(null, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
+        <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
           {row.mark}
         </span>
         <div class="content tight muted">
-          <div class="clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
-            {row.name}
-          </div>
-          <SecondLine text={null} stall={row.stall} />
+          <NameLine name={row.name} stall={row.stall} />
         </div>
       </div>
     )
@@ -1442,9 +1491,12 @@ function OverviewTab({ page }: { page: OverviewPage }) {
 
   return (
     <main class="overview">
-      {page.goal ? (
+      {page.head ? (
         <section>
-          <h1 class="overview-goal">{page.goal}</h1>
+          <div class="overview-head">
+            <h1>{page.head.title}</h1>
+            {page.head.description ? <p class="muted">{page.head.description}</p> : null}
+          </div>
         </section>
       ) : null}
       {page.rows.length > 0 ? (
@@ -2422,7 +2474,7 @@ function initialize(): Promise<boolean> {
     'ui/initialize',
     {
       protocolVersion: '2026-01-26',
-      appInfo: { name: 'inbox', version: '0.2.13' },
+      appInfo: { name: 'inbox', version: '0.2.14' },
       appCapabilities: { tools: {} },
     },
     READ_TIMEOUT_MS,

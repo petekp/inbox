@@ -65,14 +65,17 @@ _Avoid_: Findings, as the tab's name. A find, for one finding.
 
 **Overview**:
 The first tab on a next build: what the session's work is for, and where each
-part of it stands, newest first, with how long ago each changed. A release
+part of it stands, from what needs the person to what is finished. A release
 build does not draw it. The inbox model updates it after each reply, in a
 second call after the one that updates the rows. It is not a list of events.
 
-**Goal**:
-The session's aim in a few words, on the Overview's second line. The inbox
-model sets it, and changes it only when the person states a new goal or the
-work moves to a different task.
+**Head**:
+The top of the Overview: a title of a few words, like a subject's name, for
+what the session is focused on now, and one line under it on what the session
+is doing about it. The inbox model writes it, and checks it at each update
+against the open and finished subjects, so it moves on when the work does,
+even across many small exchanges. When the work it names is done and nothing
+else is working, it stays.
 
 **Subject**:
 One part of the session's work on the Overview, such as a feature, a fix or a
@@ -87,20 +90,22 @@ _Avoid_: workstream, stream, item (an item is a question or task)
 **Child**:
 Work that runs apart from the session's turn: a subagent, a background command
 or task, a workflow run, or a Herdr delegate. It shows under its subject while
-it runs, and leaves when it ends. Code follows it from the host's events. The
-inbox model only links it to a subject.
+it runs, and leaves when it ends. A delegate that finished stays, reading
+"finished", until the person has seen the Overview. Code follows it from the
+host's events and from Herdr. The inbox model only links it to a subject.
 _Avoid_: subitem, job
 
 **Stall words**:
-The words on an Overview row's second line that say how long its work has
-stalled: "quiet 40m" on a child that has done nothing for 15 minutes, and
-"waiting 2h" on an open subject that has waited 15 minutes on someone else or on
-an open question or task. A row whose work moves shows none. The code calls them
-`stall`.
+The word after an Overview row's name when its work waits on the person or has
+finished. A subject held by an open question or task reads "waiting", in the
+needs-you tone, and so does a delegate while Herdr shows it at a question or an
+approval. A finished delegate reads "finished". A row waiting on someone else
+and a row whose work moves show no word. No row shows a time. The code calls
+them `stall`.
 _Avoid_: age
 
 **Seen line**:
-The rule labeled "Seen" on the Overview, at the time the person last left the
+The rule labeled "Last seen" on the Overview, at the time the person last left the
 page after it showed for at least five seconds. A shorter pass through the tab
 leaves the line where it was. A row above it changed since then. Every open row
 shows where it stands, above or below the line. A row below it leaves out its
