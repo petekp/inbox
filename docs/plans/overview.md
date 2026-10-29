@@ -34,6 +34,7 @@ The page fails when it reads as a log, when it copies Asks or Finds, or when it 
    - This replaces the rule that the Overview call reads no inbox text. It now reads each open ask's id and first words, so it can link the ask. It never restates one.
 7. **Work filed for later closes with a mark of its own, not ✓.**
    - Reason: filing a piece does not finish it. ✓ and the done count mean work that was delivered.
+   - Until #137 builds the mark, the Overview call closes a piece the person files out of the session's plan with DONE and the text "filed for later". A piece set aside to come back to in the session stays queued.
 8. **No buttons that act on an ask or a finding.**
    - Reason: an Answer or Fix button on a row would make the Overview a weaker copy of Asks and Finds, with less context.
 9. **Code follows running work from host events, and draws each as a child row under its subject.** The model only links a child to a subject.
