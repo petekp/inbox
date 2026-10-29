@@ -47,6 +47,7 @@ export type FeatureId =
   | 'overview-mid-turn-refresh'
   | 'tool-result-line'
   | 'overview-call-records'
+  | 'help-page'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -103,6 +104,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'overview-mid-turn-refresh': { kind: 'full' },
       'tool-result-line': { kind: 'full' },
       'overview-call-records': { kind: 'full' },
+      'help-page': {
+        kind: 'different',
+        reason:
+          "The engine binds only a digit or a lowercase letter as a Button's hotkey, so no key opens the terminal's Help. The desktop pane takes no keys, so its Help lists only the marks.",
+      },
     },
   },
   codex: {
@@ -205,6 +211,7 @@ export const CLIENTS: Record<ClientId, Client> = {
           "Codex draws an MCP tool call's result from its content, which is the text the model reads. structuredContent reaches the model too, and _meta reaches only an MCP App view, so a result has no field for the person alone.",
       },
       'overview-call-records': { kind: 'full' },
+      'help-page': { kind: 'full' },
     },
   },
   omp: {
@@ -276,6 +283,10 @@ export const CLIENTS: Record<ClientId, Client> = {
       'overview-mid-turn-refresh': { kind: 'full' },
       'tool-result-line': { kind: 'full' },
       'overview-call-records': { kind: 'full' },
+      'help-page': {
+        kind: 'different',
+        reason: 'The panel takes keys only, so `?` opens Help, and no button does.',
+      },
     },
   },
 }

@@ -530,7 +530,8 @@ declare module 'claude-code' {
       foldHover: FoldKind | null
       /** The questions whose every option shows, by the row's id. */
       optionsShown: string[]
-      isKeyListShown: boolean
+      /** Whether the pane shows its Help page in place of the shown tab's body. */
+      isHelpShown: boolean
       /** The sample entries the band and pane show instead of the session's own, while `/inbox demo` is on. */
       demo: DemoCopy | null
       /** Whether `/inbox demo recording` started the demo, which then leaves out the notices that mark its samples. */

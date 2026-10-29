@@ -30,6 +30,7 @@ import {
   threadActions,
   threadRowText,
   threadSentIn,
+  isPrTabRunning,
 } from '../../hooks/pr-tab'
 import type { PrAction, PrPress, PrRowMark } from '../../hooks/pr-tab'
 import { failingChecks, readiness, waitingThreads } from '../../hooks/prs'
@@ -91,6 +92,10 @@ import {
   STALL_GAP,
   WAS_PREFIX,
   runningMark,
+  HELD_MARK,
+  HELP_COPY,
+  helpKeys,
+  MARK_LEGEND,
   settledLabel,
   stopFix,
   stopText,
@@ -108,6 +113,8 @@ import type {
   ShownTab,
   TabNaming,
   ResultMark,
+  HelpKey,
+  LegendEntry,
 } from '../../hooks/view'
 
 export type ResumePress = { action: 'resume' }
@@ -162,6 +169,8 @@ export type PanelUi = {
   pageTop: number
   /** When the panel opened or last switched tab. A row that closes since then stays in place until the next of either. */
   shownSince: number
+  /** Whether Help shows in place of the tab's lines. It scrolls with `pageTop`, and switching tabs closes it. */
+  isHelpShown: boolean
 }
 
 export const INITIAL_UI: PanelUi = {
@@ -177,6 +186,7 @@ export const INITIAL_UI: PanelUi = {
   opened: null,
   pageTop: 0,
   shownSince: 0,
+  isHelpShown: false,
 }
 
 export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded' | 'shownSince'>): Holds {
@@ -242,6 +252,9 @@ type Entry =
   | { kind: 'row'; line: Line }
   | { kind: 'page'; row: OverviewRow }
   | { kind: 'banner'; banner: BannerView }
+  /** A key Help lists, its keys padded to `column`. */
+  | { kind: 'key'; key: HelpKey; column: number }
+  | { kind: 'legend'; entry: LegendEntry }
 
 const blankLine = (id: string): Line => ({
   id,
@@ -489,7 +502,10 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
     lastActions,
   )
   const isWaiting = (id: string) => waits.some(w => w.id === id && w.isWaiting)
-  const markLead = (mark: PrRowMark): Lead => ({ text: mark.text, tone: mark.tone ?? 'sep' })
+  const markLead = (mark: PrRowMark): Lead => ({
+    text: mark.isRunning ? runningMark(now) : mark.text,
+    tone: mark.tone ?? 'sep',
+  })
   const out: Entry[] = []
   const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut }
   if (prs.drawn.length === 0) {
@@ -619,7 +635,22 @@ function pageEntries(page: OverviewPage): Entry[] {
   return head.length > 0 && rows.length > 0 ? [...head, { kind: 'note', text: '' }, ...rows] : [...head, ...rows]
 }
 
+/** Help in place of the tab's lines: the keys the panel takes, then what each mark means. */
+function helpEntries(screen: PanelScreen, tab: ShownTab): Entry[] {
+  const keys = helpKeys('omp', screen.isNextBuild === true, tab)
+  const column = Math.max(...keys.map(k => cellWidth(k.keys))) + 2
+
+  return [
+    { kind: 'heading', text: HELP_COPY.keys },
+    ...keys.map((key): Entry => ({ kind: 'key', key, column })),
+    { kind: 'note', text: '' },
+    { kind: 'heading', text: HELP_COPY.marks },
+    ...MARK_LEGEND.map((entry): Entry => ({ kind: 'legend', entry })),
+  ]
+}
+
 function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: number): Entry[] {
+  if (ui.isHelpShown && tab === ui.tab) return helpEntries(screen, tab)
   if (!isRowTab(tab)) return pageEntries(screen.view.overviewPage)
 
   return tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab)
@@ -663,6 +694,7 @@ const withTab = (ui: PanelUi, tab: ShownTab, now: number): PanelUi => ({
   tab,
   pageTop: 0,
   shownSince: tab === ui.tab ? ui.shownSince : now,
+  isHelpShown: false,
 })
 
 /** Whether the line `id` on the shown tab waits on the person. */
@@ -735,9 +767,14 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   const selected = resolveSelected(lines, ui.selectedId)
   const base: PanelUi = { ...ui, selectedId: selected?.id ?? null }
   if (base.typing !== null) return typingKey(base, base.typing, key, now, text)
+  const shown = shownTabs(screen.isNextBuild === true)
+  const isTabKey = key === 'tab' || key === 'shift+tab' || shown.some(t => t.hotkey === key)
+  if (key === '?' || (base.isHelpShown && key === 'escape'))
+    return { ui: { ...base, isHelpShown: key === '?' && !base.isHelpShown, pageTop: 0 } }
   if (key === 'escape') return { ui: base, close: true }
   const isUp = key === 'up' || key === 'k'
-  if (!isRowTab(base.tab) && (isUp || key === 'down' || key === 'j'))
+  if (base.isHelpShown && !isTabKey && !isUp && key !== 'down' && key !== 'j') return { ui: base }
+  if ((base.isHelpShown || !isRowTab(base.tab)) && (isUp || key === 'down' || key === 'j'))
     return { ui: { ...base, pageTop: Math.max(0, base.pageTop + (isUp ? -1 : 1)) } }
   const selectable = lines.filter(isSelectable)
   const at = selectable.findIndex(l => l.id === selected?.id)
@@ -746,7 +783,6 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
 
     return { ui: withSelection(base, selectable[wrapIndex(Math.max(0, at) + step, selectable.length)]!.id) }
   }
-  const shown = shownTabs(screen.isNextBuild === true)
   const tabs = shown.map(t => t.id)
   const pickedTab = shown.find(t => t.hotkey === key)
   if (key === 'tab' || key === 'shift+tab') {
@@ -854,9 +890,15 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
 
 /** Whether the panel shows a running mark, whose frame moves with the clock: on the Overview, or on a row tab. */
 export function isRunningMarkShown(screen: PanelScreen, ui: PanelUi): boolean {
+  if (ui.isHelpShown) return MARK_LEGEND.some(m => m.isRunning)
   if (!isRowTab(ui.tab)) return hasRunningMark(screen.view.overviewPage)
+  if (ui.tab === 'prs')
+    return isPrTabRunning(
+      screen.view.prs.drawn.filter(d => d.state.is === 'open').map(d => d.pr),
+      screen.view.lastActions,
+    )
 
-  return ui.tab !== 'prs' && isRowTabRunning(screen.view, ui.tab, kind => ui.unfolded.includes(kind))
+  return isRowTabRunning(screen.view, ui.tab, kind => ui.unfolded.includes(kind))
 }
 
 /** The notice for a press the row cannot show: a failed send, or a press whose row had changed. */
@@ -1056,7 +1098,7 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
   // A next build draws the Overview, so only it names the subject an ask holds up.
   const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null
-  if (holdsUp) out.push(fit(' '.repeat(indent) + s.dim(holdsUp), width))
+  if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width))
   if (line.detail && (isSelected || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
   if (!isSelected) return out
   if (line.file) out.push(' '.repeat(indent) + s.tone('accent', line.file))
@@ -1241,7 +1283,7 @@ function tabBar(d: Draw): string {
     ` ${tabs.map(t => tabCell(t, tabName(t, naming), form, s)).join(' ')}`
   const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => visibleLength(lineOf(naming, form)) <= width)
 
-  return spread(lineOf(naming, layout), s.dim('esc to close '), width)
+  return spread(lineOf(naming, layout), ui.isHelpShown ? '' : s.dim('esc to close '), width)
 }
 
 function footer(d: Draw, isPageScrolling: boolean): string[] {
@@ -1257,11 +1299,13 @@ function footer(d: Draw, isPageScrolling: boolean): string[] {
   const hints =
     ui.typing !== null
       ? [`↵ ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`]
-      : isRowTab(ui.tab)
-        ? ['←→ pick', '↵ press', '↑↓ move', 'tab switch']
-        : isPageScrolling
-          ? ['↑↓ scroll', 'tab switch']
-          : ['tab switch']
+      : ui.isHelpShown
+        ? [...(isPageScrolling ? ['↑↓ scroll'] : []), 'esc close help']
+        : isRowTab(ui.tab)
+          ? ['←→ pick', '↵ press', '↑↓ move', 'tab switch', '? help']
+          : isPageScrolling
+            ? ['↑↓ scroll', 'tab switch', '? help']
+            : ['tab switch', '? help']
   const model = `${screen.modelName ? `inbox model ${screen.modelName}` : 'no inbox model: set @inbox'}  ${versionLabel(version, screen.isNextBuild === true)} `
   const hintLine = ` ${hints.map(h => s.dim(h)).join(` ${s.tone('sep', '·')} `)}`
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2
@@ -1325,7 +1369,21 @@ export function drawPanel(
       )
     else if (e.kind === 'page') body.push(...(e.row.isRuledAbove ? [pageRule] : []), ...drawPageRow(e.row, d))
     else if (e.kind === 'banner') body.push(...bannerLines(e.banner, width, style))
-    else if (e.kind === 'note')
+    else if (e.kind === 'key')
+      body.push(
+        ...indented(e.key.does, 1 + e.column, width, Infinity, style.dim).map((l, n) =>
+          n === 0 ? ` ${style.bold(e.key.keys.padEnd(e.column))}${l.trimStart()}` : l,
+        ),
+      )
+    else if (e.kind === 'legend') {
+      const glyph = e.entry.isRunning ? runningMark(now) : e.entry.mark
+      const mark = e.entry.tone ? style.tone(e.entry.tone, glyph) : style.dim(glyph)
+      body.push(
+        ...indented(e.entry.words, PAGE_TEXT_AT, width, Infinity, style.dim).map((l, n) =>
+          n === 0 ? `${' '.repeat(PAGE_MARK_AT)}${mark} ${l.trimStart()}` : l,
+        ),
+      )
+    } else if (e.kind === 'note')
       body.push(
         ...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : style.dim),
       )
@@ -1348,7 +1406,7 @@ export function drawPanel(
   }
   const roomBeside = (foot: string[]) =>
     height === undefined ? Infinity : Math.max(6, height - head.length - foot.length)
-  const isPage = !isRowTab(ui.tab)
+  const isPage = ui.isHelpShown || !isRowTab(ui.tab)
   const isPageTaller = isPage && body.length > roomBeside(footer(d, false))
   const foot = footer(d, isPageTaller)
   const room = roomBeside(foot)

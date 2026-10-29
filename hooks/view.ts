@@ -46,7 +46,7 @@ import {
   stepsOf,
 } from './presses'
 import type { HelpStep, RowPress } from './presses'
-import type { BannerTone } from './tones'
+import type { BannerTone, ToneName } from './tones'
 
 const OPTIONS_FOLD_AT = 5
 const OPTION_LABEL_CHARS = 32
@@ -69,7 +69,113 @@ export const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; list: 'quest
   { kind: 'task', title: 'Tasks', list: 'tasks' },
 ]
 
-export const CLOSED_MARKS: Record<ClosedState, string> = { handled: '✓', dismissed: '✕', lapsed: '✗' }
+export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: OverviewTone }> = {
+  working: { mark: '●', tone: null },
+  queued: { mark: '○', tone: null },
+  'waits-on-other': { mark: '◌', tone: null },
+  done: { mark: '✓', tone: 'done' },
+  dropped: { mark: '✗', tone: null },
+}
+/** The mark of an open subject that an open ask holds up, in place of its status's mark. */
+export const HELD_MARK: { mark: string; tone: 'needsYou' } = { mark: '◆', tone: 'needsYou' }
+
+/** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
+export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
+
+/** The running mark's first frame, the one a look draws still. */
+export const RUNNING_MARK = RUNNING_FRAMES[0]
+
+export const CLOSED_MARKS: Record<ClosedState, string> = {
+  handled: SUBJECT_MARKS.done.mark,
+  dismissed: '✕',
+  lapsed: SUBJECT_MARKS.dropped.mark,
+}
+
+/** A PR row's mark: a review thread that waits on the person, one sent to the agent, and a failing check. */
+export const PR_MARKS = {
+  waiting: { text: HELD_MARK.mark, tone: 'needsYou' },
+  sent: { text: SUBJECT_MARKS.done.mark, tone: 'done' },
+  failing: { text: FINDING_GROUPS.issue.mark, tone: 'error' },
+} as const
+
+/** One mark the legend explains. `isRunning` draws it as the running mark. */
+export type LegendEntry = { mark: string; tone: ToneName | null; isRunning: boolean; words: string }
+
+/** Every mark a look draws on a row or a group title, once each, with what it means wherever it appears. */
+export const MARK_LEGEND: readonly LegendEntry[] = [
+  {
+    mark: RUNNING_MARK,
+    tone: null,
+    isRunning: true,
+    words: 'Working. It moves while the work runs or your message is on its way.',
+  },
+  { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: 'Queued: not started yet' },
+  { mark: SUBJECT_MARKS['waits-on-other'].mark, tone: null, isRunning: false, words: 'Waits on someone else' },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: 'Waits on you' },
+  { mark: SUBJECT_MARKS.done.mark, tone: 'done', isRunning: false, words: 'Done, or handed to the agent' },
+  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: 'Dropped before it was done' },
+  { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: 'Dismissed by you' },
+  {
+    mark: FINDING_GROUPS.issue.mark,
+    tone: FINDING_GROUPS.issue.tone,
+    isRunning: false,
+    words: 'Something is wrong: an issue or a failing check',
+  },
+  {
+    mark: FINDING_GROUPS.opportunity.mark,
+    tone: FINDING_GROUPS.opportunity.tone,
+    isRunning: false,
+    words: 'Opportunity: something that could be better',
+  },
+]
+
+export const HELP_COPY = { open: 'Help', close: 'Close help', keys: 'Keys', marks: 'Marks' } as const
+
+export type HelpKey = { keys: string; does: string }
+
+/**
+ * The keys a look's Help lists, for the tab Help opened over. Desktop takes no keys, so its Help lists marks only.
+ * Each look binds these keys in its own adapter.
+ */
+export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab): HelpKey[] {
+  const tabKeys = shownTabs(isNextBuild)
+    .map(t => t.hotkey)
+    .join(' ')
+  const hasRows = isRowTab(tab)
+  const switchTabs = { keys: tabKeys, does: 'Switch tabs' }
+  switch (look) {
+    case 'desktop':
+      return []
+    case 'terminal':
+      return [
+        switchTabs,
+        ...(hasRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
+        { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
+      ]
+    case 'codex':
+      return [
+        switchTabs,
+        ...(hasRows ? [{ keys: 'j k ↑ ↓', does: 'Select the next or previous row' }] : []),
+        { keys: '?', does: 'Open or close help' },
+        { keys: 'esc', does: 'Close help, or leave a reply field' },
+      ]
+    case 'omp':
+      return [
+        { keys: `tab ${tabKeys}`, does: 'Switch tabs' },
+        ...(hasRows
+          ? [
+              { keys: '↑ ↓ j k', does: 'Move between rows' },
+              { keys: '← →', does: 'Pick a button' },
+              { keys: '↵', does: 'Press the picked button' },
+              { keys: 'r', does: 'Reply to the selected row' },
+              { keys: 'u', does: 'Undo the last close' },
+            ]
+          : [{ keys: '↑ ↓', does: 'Scroll the page' }]),
+        { keys: '?', does: 'Open or close help' },
+        { keys: 'esc', does: 'Close help, then the panel' },
+      ]
+  }
+}
 
 export const CLOSED_SHOWN = 3
 /** How long Undo can take back a close or a press. Once it passes, Done tells the agent. */
@@ -387,7 +493,7 @@ function isHandedOffDone(row: Pick<RowView, 'state' | 'feedback'>): boolean {
  */
 export type ResultMark = { text: string; isRunning: boolean; tone?: 'done' }
 
-const RUNNING_RESULT: ResultMark = { text: '●', isRunning: true }
+const RUNNING_RESULT: ResultMark = { text: RUNNING_MARK, isRunning: true }
 
 /**
  * A row's result mark: a settled row's, or a handed-off row's, which runs while its message is on its way and is ✓
@@ -399,7 +505,9 @@ export function rowResultMark(row: Pick<RowView, 'state' | 'feedback'>): ResultM
   const f = row.feedback
   if (row.state.is !== 'handedOff' || !f) return null
   if (f.is === 'sending' || f.is === 'queued') return RUNNING_RESULT
-  return f.is === 'done' ? { text: '✓', isRunning: false, tone: 'done' } : { text: '', isRunning: false }
+  return f.is === 'done'
+    ? { text: SUBJECT_MARKS.done.mark, isRunning: false, tone: 'done' }
+    : { text: '', isRunning: false }
 }
 
 /** Whether what a row sent is still on its way to the agent: `unconfirmed` and a refused send are not. */
@@ -1081,19 +1189,6 @@ const NEW_CLOSED_ROWS = 2
 /** Open rows drawn before the oldest queued ones fold into a count. */
 const OPEN_ROWS = 7
 
-export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: OverviewTone }> = {
-  working: { mark: '●', tone: null },
-  queued: { mark: '○', tone: null },
-  'waits-on-other': { mark: '◌', tone: null },
-  done: { mark: '✓', tone: 'done' },
-  dropped: { mark: '✗', tone: null },
-}
-/** The mark of an open subject that an open ask holds up, in place of its status's mark. */
-const HELD_MARK: { mark: string; tone: OverviewTone } = { mark: '◆', tone: 'needsYou' }
-
-/** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
-export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
-
 export const RUNNING_FRAME_MS = 300
 
 /** One pulse of a running mark, which the Codex tab and the desktop pane draw as a fade. */
@@ -1148,7 +1243,7 @@ function childRow(c: Child, now: number, branch: OverviewBranch | null): Overvie
   return {
     kind: 'child',
     id: c.id,
-    mark: '●',
+    mark: SUBJECT_MARKS.working.mark,
     isRunning: isChildWorking(c, now),
     name: c.name,
     stall: idle !== null && isQuiet(c, now) ? `quiet ${shortAgo(idle)}` : null,
@@ -1240,7 +1335,7 @@ export function overviewPage(
     rows.push({
       kind: 'fold',
       id: 'queued',
-      mark: '○',
+      mark: SUBJECT_MARKS.queued.mark,
       tone: null,
       text: `${hiddenQueued.size} more queued`,
     })
@@ -1249,7 +1344,7 @@ export function overviewPage(
     rows.push({
       kind: 'fold',
       id: 'done',
-      mark: '✓',
+      mark: SUBJECT_MARKS.done.mark,
       tone: 'done',
       text: `${folded.length}${isMore ? ' more' : ''} done`,
     })

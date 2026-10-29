@@ -175,7 +175,7 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
     assert.ok(root.querySelector('.overview-goal'))
     key('2')
     assert.equal(shownTab(), 'Asks1')
-    assert.equal(root.querySelector('main .holds-up')?.textContent, 'Holds up Label')
+    assert.equal(root.querySelector('main .holds-up')?.textContent, '◆ Holds up Label')
     key('1')
     assert.equal(shownTab(), 'Overview')
 

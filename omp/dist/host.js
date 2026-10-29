@@ -2691,7 +2691,88 @@ var NEEDS_YOU_GROUPS = [
   { kind: "question", title: "Questions", list: "questions" },
   { kind: "task", title: "Tasks", list: "tasks" }
 ];
-var CLOSED_MARKS = { handled: "\u2713", dismissed: "\u2715", lapsed: "\u2717" };
+var SUBJECT_MARKS = {
+  working: { mark: "\u25CF", tone: null },
+  queued: { mark: "\u25CB", tone: null },
+  "waits-on-other": { mark: "\u25CC", tone: null },
+  done: { mark: "\u2713", tone: "done" },
+  dropped: { mark: "\u2717", tone: null }
+};
+var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
+var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
+var RUNNING_MARK = RUNNING_FRAMES[0];
+var CLOSED_MARKS = {
+  handled: SUBJECT_MARKS.done.mark,
+  dismissed: "\u2715",
+  lapsed: SUBJECT_MARKS.dropped.mark
+};
+var PR_MARKS = {
+  waiting: { text: HELD_MARK.mark, tone: "needsYou" },
+  sent: { text: SUBJECT_MARKS.done.mark, tone: "done" },
+  failing: { text: FINDING_GROUPS.issue.mark, tone: "error" }
+};
+var MARK_LEGEND = [
+  {
+    mark: RUNNING_MARK,
+    tone: null,
+    isRunning: true,
+    words: "Working. It moves while the work runs or your message is on its way."
+  },
+  { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: "Queued: not started yet" },
+  { mark: SUBJECT_MARKS["waits-on-other"].mark, tone: null, isRunning: false, words: "Waits on someone else" },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
+  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: "Dropped before it was done" },
+  { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: "Dismissed by you" },
+  {
+    mark: FINDING_GROUPS.issue.mark,
+    tone: FINDING_GROUPS.issue.tone,
+    isRunning: false,
+    words: "Something is wrong: an issue or a failing check"
+  },
+  {
+    mark: FINDING_GROUPS.opportunity.mark,
+    tone: FINDING_GROUPS.opportunity.tone,
+    isRunning: false,
+    words: "Opportunity: something that could be better"
+  }
+];
+var HELP_COPY = { open: "Help", close: "Close help", keys: "Keys", marks: "Marks" };
+function helpKeys(look, isNextBuild, tab) {
+  const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
+  const hasRows = isRowTab(tab);
+  const switchTabs = { keys: tabKeys, does: "Switch tabs" };
+  switch (look) {
+    case "desktop":
+      return [];
+    case "terminal":
+      return [
+        switchTabs,
+        ...hasRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
+        { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
+      ];
+    case "codex":
+      return [
+        switchTabs,
+        ...hasRows ? [{ keys: "j k \u2191 \u2193", does: "Select the next or previous row" }] : [],
+        { keys: "?", does: "Open or close help" },
+        { keys: "esc", does: "Close help, or leave a reply field" }
+      ];
+    case "omp":
+      return [
+        { keys: `tab ${tabKeys}`, does: "Switch tabs" },
+        ...hasRows ? [
+          { keys: "\u2191 \u2193 j k", does: "Move between rows" },
+          { keys: "\u2190 \u2192", does: "Pick a button" },
+          { keys: "\u21B5", does: "Press the picked button" },
+          { keys: "r", does: "Reply to the selected row" },
+          { keys: "u", does: "Undo the last close" }
+        ] : [{ keys: "\u2191 \u2193", does: "Scroll the page" }],
+        { keys: "?", does: "Open or close help" },
+        { keys: "esc", does: "Close help, then the panel" }
+      ];
+  }
+}
 var CLOSED_SHOWN = 3;
 var SETTLED_MS = 5120;
 var QUEUED_AFTER_MS = 1000;
@@ -2796,7 +2877,7 @@ function rowFeedbackText(row, look) {
 function isHandedOffDone(row) {
   return row.state.is === "handedOff" && row.feedback?.is === "done";
 }
-var RUNNING_RESULT = { text: "\u25CF", isRunning: true };
+var RUNNING_RESULT = { text: RUNNING_MARK, isRunning: true };
 function rowResultMark(row) {
   if (row.state.is === "settled")
     return settledMark(row.state);
@@ -2805,7 +2886,7 @@ function rowResultMark(row) {
     return null;
   if (f.is === "sending" || f.is === "queued")
     return RUNNING_RESULT;
-  return f.is === "done" ? { text: "\u2713", isRunning: false, tone: "done" } : { text: "", isRunning: false };
+  return f.is === "done" ? { text: SUBJECT_MARKS.done.mark, isRunning: false, tone: "done" } : { text: "", isRunning: false };
 }
 function isSendMoving(delivery) {
   return delivery === "sending" || delivery === "queued";
@@ -3135,15 +3216,6 @@ var CHILD_ROWS = 3;
 var STALL_MS = 15 * 60000;
 var NEW_CLOSED_ROWS = 2;
 var OPEN_ROWS = 7;
-var SUBJECT_MARKS = {
-  working: { mark: "\u25CF", tone: null },
-  queued: { mark: "\u25CB", tone: null },
-  "waits-on-other": { mark: "\u25CC", tone: null },
-  done: { mark: "\u2713", tone: "done" },
-  dropped: { mark: "\u2717", tone: null }
-};
-var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
-var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 function mergedLine(merged, fits) {
@@ -3174,7 +3246,7 @@ function childRow(c, now, branch) {
   return {
     kind: "child",
     id: c.id,
-    mark: "\u25CF",
+    mark: SUBJECT_MARKS.working.mark,
     isRunning: isChildWorking(c, now),
     name: c.name,
     stall: idle !== null && isQuiet(c, now) ? `quiet ${shortAgo(idle)}` : null,
@@ -3243,7 +3315,7 @@ function overviewPage(s, now) {
     rows.push({
       kind: "fold",
       id: "queued",
-      mark: "\u25CB",
+      mark: SUBJECT_MARKS.queued.mark,
       tone: null,
       text: `${hiddenQueued.size} more queued`
     });
@@ -3252,7 +3324,7 @@ function overviewPage(s, now) {
     rows.push({
       kind: "fold",
       id: "done",
-      mark: "\u2713",
+      mark: SUBJECT_MARKS.done.mark,
       tone: "done",
       text: `${folded.length}${isMore ? " more" : ""} done`
     });
@@ -3852,9 +3924,8 @@ var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks" };
 function threadRowText(pr, t, lastActions) {
   const isSent = threadSentIn(lastActions)(pr, t);
   const isChanged = !isSent && t.isLinesChanged;
-  const showsCheck = threadShowsCheckIn(lastActions)(pr, t);
   return {
-    mark: showsCheck ? { text: "\u2713", tone: "done", isDone: true } : { text: "\u25E6", tone: null, isDone: false },
+    mark: threadMark(isSent ? lastActions[prThreadId(pr, t)]?.delivery : null),
     fold: isSent || isChanged ? t.isLinesChanged ? { note: `Lines changed since this comment${DOT}still open on GitHub` } : {} : null,
     title: clipLabel(commentParts(t.body).head, THREAD_TITLE_CHARS),
     meta: [
@@ -3864,9 +3935,18 @@ function threadRowText(pr, t, lastActions) {
     ].filter(Boolean).join(DOT)
   };
 }
+function threadMark(delivery) {
+  if (delivery === null)
+    return { ...PR_MARKS.waiting, isDone: false, isRunning: false };
+  if (delivery?.state === "queued")
+    return { text: RUNNING_MARK, tone: null, isDone: false, isRunning: true };
+  if (delivery?.state === "unconfirmed")
+    return { text: "", tone: null, isDone: false, isRunning: false };
+  return { ...PR_MARKS.sent, isDone: true, isRunning: false };
+}
 function checkRowText(c) {
   return {
-    mark: { text: "\u2717", tone: "error", isDone: false },
+    mark: { ...PR_MARKS.failing, isDone: false, isRunning: false },
     lead: c.workflow || null,
     title: c.name,
     meta: checkRunText(c)
@@ -3881,12 +3961,8 @@ function threadSentIn(lastActions) {
     return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
   };
 }
-function threadShowsCheckIn(lastActions) {
-  const isSent = threadSentIn(lastActions);
-  return (pr, t) => {
-    const delivery = lastActions[prThreadId(pr, t)]?.delivery;
-    return isSent(pr, t) && delivery?.state !== "unconfirmed";
-  };
+function isPrTabRunning(prs, lastActions) {
+  return prs.some((pr) => waitingThreads(pr).some((t) => threadRowText(pr, t, lastActions).mark.isRunning));
 }
 function prRowWaits(prs, lastActions) {
   const isSent = threadSentIn(lastActions);
@@ -5406,7 +5482,8 @@ var INITIAL_UI = {
   resuming: null,
   opened: null,
   pageTop: 0,
-  shownSince: 0
+  shownSince: 0,
+  isHelpShown: false
 };
 function holdsOf(ui) {
   return { replies: heldReplies(ui.typing, ui.drafts), discarded: ui.discarded, shownSince: ui.shownSince };
@@ -5624,7 +5701,10 @@ function prEntries(screen, ui, now) {
   const presses = { lastActions, turns, now };
   const waits = prRowWaits(prs.drawn.filter((d) => d.state.is === "open").map((d) => d.pr), lastActions);
   const isWaiting = (id) => waits.some((w) => w.id === id && w.isWaiting);
-  const markLead = (mark) => ({ text: mark.text, tone: mark.tone ?? "sep" });
+  const markLead = (mark) => ({
+    text: mark.isRunning ? runningMark(now) : mark.text,
+    tone: mark.tone ?? "sep"
+  });
   const out = [];
   const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut };
   if (prs.drawn.length === 0) {
@@ -5749,7 +5829,20 @@ function pageEntries(page) {
   const rows = page.rows.map((row) => ({ kind: "page", row }));
   return head.length > 0 && rows.length > 0 ? [...head, { kind: "note", text: "" }, ...rows] : [...head, ...rows];
 }
+function helpEntries(screen, tab) {
+  const keys = helpKeys("omp", screen.isNextBuild === true, tab);
+  const column = Math.max(...keys.map((k) => cellWidth(k.keys))) + 2;
+  return [
+    { kind: "heading", text: HELP_COPY.keys },
+    ...keys.map((key) => ({ kind: "key", key, column })),
+    { kind: "note", text: "" },
+    { kind: "heading", text: HELP_COPY.marks },
+    ...MARK_LEGEND.map((entry) => ({ kind: "legend", entry }))
+  ];
+}
 function entriesOf(screen, ui, tab, now) {
+  if (ui.isHelpShown && tab === ui.tab)
+    return helpEntries(screen, tab);
   if (!isRowTab(tab))
     return pageEntries(screen.view.overviewPage);
   return tab === "prs" ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab);
@@ -5778,7 +5871,8 @@ var withTab = (ui, tab, now) => ({
   ...withSelection(ui, null),
   tab,
   pageTop: 0,
-  shownSince: tab === ui.tab ? ui.shownSince : now
+  shownSince: tab === ui.tab ? ui.shownSince : now,
+  isHelpShown: false
 });
 function isLineWaiting(screen, ui, id, now) {
   return waitsOf(linesOf(entriesOf(screen, ui, ui.tab, now))).some((w) => w.id === id && w.isWaiting);
@@ -5839,10 +5933,16 @@ function handleKey(screen, ui, key, now, text) {
   const base = { ...ui, selectedId: selected?.id ?? null };
   if (base.typing !== null)
     return typingKey(base, base.typing, key, now, text);
+  const shown = shownTabs(screen.isNextBuild === true);
+  const isTabKey = key === "tab" || key === "shift+tab" || shown.some((t) => t.hotkey === key);
+  if (key === "?" || base.isHelpShown && key === "escape")
+    return { ui: { ...base, isHelpShown: key === "?" && !base.isHelpShown, pageTop: 0 } };
   if (key === "escape")
     return { ui: base, close: true };
   const isUp = key === "up" || key === "k";
-  if (!isRowTab(base.tab) && (isUp || key === "down" || key === "j"))
+  if (base.isHelpShown && !isTabKey && !isUp && key !== "down" && key !== "j")
+    return { ui: base };
+  if ((base.isHelpShown || !isRowTab(base.tab)) && (isUp || key === "down" || key === "j"))
     return { ui: { ...base, pageTop: Math.max(0, base.pageTop + (isUp ? -1 : 1)) } };
   const selectable = lines.filter(isSelectable);
   const at = selectable.findIndex((l) => l.id === selected?.id);
@@ -5850,7 +5950,6 @@ function handleKey(screen, ui, key, now, text) {
     const step = key === "up" || key === "k" ? -1 : 1;
     return { ui: withSelection(base, selectable[wrapIndex(Math.max(0, at) + step, selectable.length)].id) };
   }
-  const shown = shownTabs(screen.isNextBuild === true);
   const tabs = shown.map((t) => t.id);
   const pickedTab = shown.find((t) => t.hotkey === key);
   if (key === "tab" || key === "shift+tab") {
@@ -5924,9 +6023,13 @@ function isAnimating(screen, ui, now) {
   return rows.some((r) => r.state.is === "settled" && r.state.canUndo) || view.prs.drawn.some((p) => p.state.is === "settled" && p.state.canUndo) || isPressMoving || isNoticeShown;
 }
 function isRunningMarkShown(screen, ui) {
+  if (ui.isHelpShown)
+    return MARK_LEGEND.some((m) => m.isRunning);
   if (!isRowTab(ui.tab))
     return hasRunningMark(screen.view.overviewPage);
-  return ui.tab !== "prs" && isRowTabRunning(screen.view, ui.tab, (kind) => ui.unfolded.includes(kind));
+  if (ui.tab === "prs")
+    return isPrTabRunning(screen.view.prs.drawn.filter((d) => d.state.is === "open").map((d) => d.pr), screen.view.lastActions);
+  return isRowTabRunning(screen.view, ui.tab, (kind) => ui.unfolded.includes(kind));
 }
 function noticeFor(outcome, now) {
   const text = outcome.error ?? (outcome.note ? noteText() : null);
@@ -6069,7 +6172,7 @@ function drawLine(line, isSelected, d) {
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
   const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null;
   if (holdsUp)
-    out.push(fit(" ".repeat(indent) + s.dim(holdsUp), width));
+    out.push(fit(`${" ".repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width));
   if (line.detail && (isSelected || line.isDetailShown))
     out.push(...indented(line.detail, indent, width, 4, s.dim));
   if (!isSelected)
@@ -6181,7 +6284,7 @@ function tabBar(d) {
   }));
   const lineOf = (naming, form) => ` ${tabs.map((t) => tabCell(t, tabName(t, naming), form, s)).join(" ")}`;
   const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => visibleLength(lineOf(naming, form)) <= width);
-  return spread(lineOf(naming, layout), s.dim("esc to close "), width);
+  return spread(lineOf(naming, layout), ui.isHelpShown ? "" : s.dim("esc to close "), width);
 }
 function footer(d, isPageScrolling) {
   const { screen, ui, width, now, style: s } = d;
@@ -6189,7 +6292,7 @@ function footer(d, isPageScrolling) {
   const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.overviewPage.error);
   if (status.text)
     out.push(` ${s.dim(status.text)}`);
-  const hints = ui.typing !== null ? [`\u21B5 ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch"] : isPageScrolling ? ["\u2191\u2193 scroll", "tab switch"] : ["tab switch"];
+  const hints = ui.typing !== null ? [`\u21B5 ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch", "? help"] : isPageScrolling ? ["\u2191\u2193 scroll", "tab switch", "? help"] : ["tab switch", "? help"];
   const model = `${screen.modelName ? `inbox model ${screen.modelName}` : "no inbox model: set @inbox"}  ${versionLabel(version, screen.isNextBuild === true)} `;
   const hintLine = ` ${hints.map((h) => s.dim(h)).join(` ${s.tone("sep", "\xB7")} `)}`;
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2;
@@ -6224,7 +6327,13 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
       body.push(...e.row.isRuledAbove ? [pageRule] : [], ...drawPageRow(e.row, d));
     else if (e.kind === "banner")
       body.push(...bannerLines(e.banner, width, style));
-    else if (e.kind === "note")
+    else if (e.kind === "key")
+      body.push(...indented(e.key.does, 1 + e.column, width, Infinity, style.dim).map((l, n) => n === 0 ? ` ${style.bold(e.key.keys.padEnd(e.column))}${l.trimStart()}` : l));
+    else if (e.kind === "legend") {
+      const glyph = e.entry.isRunning ? runningMark(now) : e.entry.mark;
+      const mark = e.entry.tone ? style.tone(e.entry.tone, glyph) : style.dim(glyph);
+      body.push(...indented(e.entry.words, PAGE_TEXT_AT, width, Infinity, style.dim).map((l, n) => n === 0 ? `${" ".repeat(PAGE_MARK_AT)}${mark} ${l.trimStart()}` : l));
+    } else if (e.kind === "note")
       body.push(...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : style.dim));
     else {
       const isSelected = e.line.id === selected?.id;
@@ -6238,7 +6347,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
     }
   }
   const roomBeside = (foot) => height === undefined ? Infinity : Math.max(6, height - head.length - foot.length);
-  const isPage = !isRowTab(ui.tab);
+  const isPage = ui.isHelpShown || !isRowTab(ui.tab);
   const isPageTaller = isPage && body.length > roomBeside(footer(d, false));
   const foot = footer(d, isPageTaller);
   const room = roomBeside(foot);
