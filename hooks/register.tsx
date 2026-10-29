@@ -100,6 +100,7 @@ import {
   fetchTracked,
   isDismissed,
   isPrPress,
+  openPrViews,
   olderPrsText,
   prRankText,
   PR_GROUP_TITLES,
@@ -136,7 +137,6 @@ import {
   KEPT_SESSIONS,
   applyExchangeUpdate,
   closeItem,
-  closedState,
   isBlankLedger,
   readKind,
   tasksRunBy,
@@ -219,7 +219,6 @@ import {
   tabName,
   canUndoRefused,
   CLOSED_MARKS,
-  closedMark,
   settledMark,
   settledTone,
   DEMO_NOTICE,
@@ -255,6 +254,7 @@ import {
   actionLabel,
   replyHint,
   rowTitle,
+  resultGlyph,
   rowResultMark,
   isRowTabRunning,
   rowFeedbackText,
@@ -2167,7 +2167,7 @@ async function matchPaneEscape($: EngineInterface) {
 async function openTopRow($: EngineInterface) {
   const [{ view, ledger, prViews: prState, lastActions, now }, tab] = await Promise.all([drawnState($), readRowTab($)])
   if (tab === null) return
-  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
+  const prViews = openPrViews(view.prs.drawn)
   const ids = tabRowIds(view, prViews)[tab]
   const top = firstWaiting(tabWaits(tab, view, prViews, lastActions))
   if (top === null) await update($, SELECTION, s => ({ ...s, [tab]: NO_CURSOR }))
@@ -2519,16 +2519,7 @@ async function finishPendingUndoScroll($: EngineInterface) {
     const prs = drawn.view.prs.drawn
     const openId =
       cursor.id ??
-      (cursor.openedAt === 0
-        ? firstWaiting(
-            tabWaits(
-              tab,
-              drawn.view,
-              prs.filter(x => x.state.is === 'open').map(x => x.pr),
-              drawn.lastActions,
-            ),
-          )
-        : null)
+      (cursor.openedAt === 0 ? firstWaiting(tabWaits(tab, drawn.view, openPrViews(prs), drawn.lastActions)) : null)
     const isSettling = drawn.now < pending.expiresAt
     const baseKey = isSettling && pending.revealUndo ? pending.key : openId ? `view-${openId}` : null
     const block = isSettling && pending.revealUndo ? pending.block : 'start'
@@ -2553,7 +2544,7 @@ async function scrollToOpenRow($: EngineInterface, tab: Tab, surface?: RenderSur
       read($, SELECTION),
       drawnState($),
     ])
-    const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
+    const prViews = openPrViews(view.prs.drawn)
     const cursor = selection[tab]
     const id = cursor.id ?? (cursor.openedAt === 0 ? firstWaiting(tabWaits(tab, view, prViews, lastActions)) : null)
     if (revision !== undoScrollRevision) return
@@ -2573,7 +2564,7 @@ async function selectClicked($: EngineInterface, id: string) {
     read($, SELECTION),
   ])
   if (tab === null) return
-  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
+  const prViews = openPrViews(view.prs.drawn)
   const index = tabRowIds(view, prViews)[tab].indexOf(id)
   if (index < 0 || isGuarded(selection[tab].openedAt, now)) return
   // The Client leaves the drawing as its row opens, so the focus repair moves the focus to the row's first action.
@@ -2585,7 +2576,7 @@ async function selectClicked($: EngineInterface, id: string) {
 /** An Status row's View press: Asks shows with the ask selected and in view. */
 async function showAsk($: EngineInterface, askId: string) {
   const { view } = await drawnState($)
-  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
+  const prViews = openPrViews(view.prs.drawn)
   const index = Math.max(0, tabRowIds(view, prViews).needsYou.indexOf(askId))
   focusedKey = `select-${askId}`
   focusHint = null
@@ -2624,7 +2615,7 @@ function selectedIndex(ids: string[], cursor: Cursor, top: string | null, isSett
 
 async function openLeftRows($: EngineInterface) {
   const { view, now } = await drawnState($)
-  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
+  const prViews = openPrViews(view.prs.drawn)
   const ids = tabRowIds(view, prViews)
   const settled = new Set(settledRowIds(allRows(view)))
   let isMoved = false
@@ -2701,7 +2692,7 @@ async function followNewRows($: EngineInterface, isOpening = false) {
   ])
   const { prViews: prState, lastActions, stop, isDemo, isUnread, view } = drawn
   const prs = view.prs.drawn
-  const prViews = prs.filter(x => x.state.is === 'open').map(x => x.pr)
+  const prViews = openPrViews(prs)
   const ids = tabRowIds(view, prViews)
   if (isOpening) recordedRows = null
   const added = newRows(isDemo, {
@@ -2839,12 +2830,12 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   const wasWaiting = (await shownWaits($)).rows.some(r => r.id === rowId && r.isWaiting)
   if (await read($, DEMO)) return runDemoPress($, p, wasWaiting, undoRevision, surface)
   const now = await $.clock.now()
-  const draft = !('ref' in p) && p.action === 'type' ? (await read($, DRAFTS))[p.id] : undefined
+  const draft = !isPrPress(p) && p.action === 'type' ? (await read($, DRAFTS))[p.id] : undefined
   const keepReply = () =>
-    !('ref' in p) && p.action === 'type'
+    !isPrPress(p) && p.action === 'type'
       ? update($, DRAFTS, d => (d[p.id] ? d : { ...d, [p.id]: { text: p.text, since: draft?.since ?? now } }))
       : undefined
-  if (!('ref' in p) && p.action === 'type') {
+  if (!isPrPress(p) && p.action === 'type') {
     // A held row stays drawn by its draft's words once its field closes, until the press records its reply.
     await update($, DRAFTS, d => {
       const typed = d[p.id]
@@ -2887,9 +2878,9 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   const canRevealUndo = undoKey !== null && undoRevision === undoScrollRevision
   const { isMoved, undoBlock } = await openAfterClose($, rowId, wasWaiting, canRevealUndo)
   if (canRevealUndo) await keepUndoVisible($, undoKey, undoBlock, now, undoRevision)
-  if (!('ref' in p) && p.action === 'done') later($, SETTLED_MS, () => wakeForDone($))
-  if (!('ref' in p) && p.action === 'compare') void redrawAtCompareEnd($).catch(() => undefined)
-  if (!('ref' in p) && p.action === 'undo') await selectRestored($, p.id)
+  if (!isPrPress(p) && p.action === 'done') later($, SETTLED_MS, () => wakeForDone($))
+  if (!isPrPress(p) && p.action === 'compare') void redrawAtCompareEnd($).catch(() => undefined)
+  if (!isPrPress(p) && p.action === 'undo') await selectRestored($, p.id)
   // A success note clears SETTLED_MS after its effects finish, when its result is stamped, and a message still on its
   // way after QUEUED_AFTER_MS reads Queued from then. A fresh value is what redraws the pane at each.
   if (sends) later($, QUEUED_AFTER_MS, () => redraw($))
@@ -2928,7 +2919,7 @@ async function undoKeyAfterPress(
 
 async function shownWaits($: EngineInterface) {
   const [{ ledger, prViews: prState, lastActions, view, now }, tab] = await Promise.all([drawnState($), readRowTab($)])
-  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
+  const prViews = openPrViews(view.prs.drawn)
   if (tab === null) return { tab, rows: [], ids: [] }
 
   return {
@@ -2985,7 +2976,7 @@ async function runDemoPress(
 ) {
   const now = await $.clock.now()
   const rowId = pressRowId(p)
-  if (!('ref' in p) && p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
+  if (!isPrPress(p) && p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
   let applied = { stale: true } as Applied
   let sent = null as DemoSent | null
   const holds = await readHolds($)
@@ -3016,13 +3007,13 @@ async function runDemoPress(
   })
   const pressed = applied
   const reply = sent
-  if (!('ref' in p) && p.action === 'type')
+  if (!isPrPress(p) && p.action === 'type')
     await update($, DRAFTS, d => {
       if ('stale' in pressed) return { ...d, [p.id]: { text: p.text, since: d[p.id]?.since ?? now } }
       const { [p.id]: _sent, ...rest } = d
       return rest
     })
-  if (!('stale' in pressed) && !('ref' in p) && p.action === 'undo') await selectRestored($, p.id)
+  if (!('stale' in pressed) && !isPrPress(p) && p.action === 'undo') await selectRestored($, p.id)
   if (!('stale' in pressed)) {
     const undoKey = await undoKeyAfterPress($, p, surface)
     const canRevealUndo = undoKey !== null && undoRevision === undoScrollRevision
@@ -3147,9 +3138,10 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
   return { keys: keys.map(keyAction), more: more.map(keyAction) }
 }
 
-type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at' | 'how' | 'outcome'> & {
+type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at'> & {
   outcomeLabel: string
   delivery: Parameters<typeof settledLabel>[1]
+  mark: ResultMark
 }
 
 function desktopTabSizes(
@@ -4218,10 +4210,7 @@ export const register: Register = on => {
       : isStatusShown
         ? hasRunningMark(view.statusPage)
         : tab === 'prs'
-          ? isPrTabRunning(
-              view.prs.drawn.flatMap(d => (d.state.is === 'settled' ? [] : [d.pr])),
-              lastActions,
-            )
+          ? isPrTabRunning(openPrViews(view.prs.drawn), lastActions)
           : isRowTabRunning(view, tab, kind => unfolded.includes(kind))
     if (look === 'terminal') animateRunningMarks($, isRunningMarkShown)
     const undoEnd = lastUndoEnd(view)
@@ -4523,16 +4512,7 @@ export const register: Register = on => {
     const indexOf = new Map(ids.map((id, n) => [id, n]))
     const cursor = selection[tab]
     const settledIds = new Set(isStatusShown ? [] : settledRowIds(allRows(view)))
-    const top = isStatusShown
-      ? null
-      : firstWaiting(
-          tabWaits(
-            tab,
-            view,
-            shownPrs.filter(x => x.state.is === 'open').map(x => x.pr),
-            lastActions,
-          ),
-        )
+    const top = isStatusShown ? null : firstWaiting(tabWaits(tab, view, openPrViews(shownPrs), lastActions))
     const at = selectedIndex(ids, cursor, top, id => settledIds.has(id))
     const isOpenGuarded = !isStatusShown && isGuarded(cursor.openedAt, now)
     const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection) : null
@@ -4689,7 +4669,7 @@ export const register: Register = on => {
       const f = row?.view ? row.view.feedback : feedbackOf(id, lastActions[id], notes[id], turns, now)
       if (!f) return null
       const mark = look === 'terminal' && row?.view ? rowResultMark(row.view) : null
-      const lead = mark === null ? '' : `${mark.isRunning ? runningMark(now) : mark.text || ' '} `
+      const lead = mark === null ? '' : `${resultGlyph(mark, now)} `
 
       return hasAge(f)
         ? {
@@ -5811,7 +5791,7 @@ export const register: Register = on => {
             indent: DESKTOP_MARK_CELLS,
             isMarkHung: false,
             padY: space.rowPad / 2,
-            mark: markGlyph(closedMark(closedState(d), d.delivery), `closed-${d.id}`, pal.age),
+            mark: markGlyph(d.mark, `closed-${d.id}`, pal.age),
             side: <Text color={pal.age}>{shortAgo(now - d.at)}</Text>,
             children: [
               <Text wrap="wrap" color={pal.muted}>
@@ -5832,7 +5812,7 @@ export const register: Register = on => {
                   {d.ask}
                 </Text>
                 {resultLine(
-                  closedMark(closedState(d), d.delivery),
+                  d.mark,
                   `closed-${d.id}`,
                   pal.muted,
                   <Text wrap="wrap" color={pal.age}>
@@ -6120,10 +6100,9 @@ export const register: Register = on => {
           id: f.id,
           ask: f.title,
           at: f.closedAt,
-          how: f.how,
-          outcome: f.outcome,
           outcomeLabel: f.outcomeLabel,
           delivery: f.delivery,
+          mark: f.mark,
         }))
         return section([
           groupTitle(g.title, waitingCount(rowsIn(g.entries).map(r => r.view)), FINDING_GROUPS[g.kind]),

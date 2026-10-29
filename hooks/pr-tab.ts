@@ -445,6 +445,11 @@ export function isViewKept(
  */
 export type DrawnPr = { pr: PrView; state: { is: 'open' } | SettledState; rank: number | null }
 
+/** The PRs of the drawn blocks that are not settled. */
+export function openPrViews(drawn: DrawnPr[]): PrView[] {
+  return drawn.filter(d => d.state.is === 'open').map(d => d.pr)
+}
+
 const DISMISSED_PR = { how: 'dismissed', outcome: PR_DISMISSED_LABEL } as const
 
 /**
@@ -551,6 +556,12 @@ function logEffect(pr: PrView, check: PrCheck): Effect {
 
 /** A PR press that hands off a fix. The saved view can predate a push, so the press reads the PR from GitHub first. */
 export type PrFixPress = { action: 'pr-conflicts'; ref: string } | { action: 'check-fix'; ref: string; check: string }
+
+/** The labels of the buttons that hand a PR's fix to the agent. */
+export const PR_FIX_LABELS: Record<PrFixPress['action'], string> = {
+  'pr-conflicts': 'Resolve conflicts',
+  'check-fix': 'Fix',
+}
 
 export function isPrFixPress(p: PrPress): p is PrFixPress {
   return p.action === 'pr-conflicts' || p.action === 'check-fix'
@@ -707,7 +718,7 @@ export function checkActions(pr: PrView, c: PrCheck, presses: PressState): PrAct
     ...retryAction(prRetryOf(row.last, pr.ref, null, c.name)),
     {
       press: { action: 'check-fix', ...on },
-      label: again(row, 'check-fix', 'Fix'),
+      label: again(row, 'check-fix', PR_FIX_LABELS['check-fix']),
       kind: 'handoff',
       emphasis: 'primary',
       hotkey: 'a',
@@ -749,7 +760,7 @@ export function prBlockActions(
       ? [
           {
             press: { action: 'pr-conflicts' as const, ref: pr.ref },
-            label: again(row, 'pr-conflicts', 'Resolve conflicts'),
+            label: again(row, 'pr-conflicts', PR_FIX_LABELS['pr-conflicts']),
             kind: 'handoff' as const,
           },
         ]
@@ -900,7 +911,7 @@ export function applyPrPress(
     case 'pr-conflicts':
       if (pr.state !== 'OPEN' || pr.mergeable !== 'CONFLICTING') return stale
       return applied({
-        lasts: { [markId]: record(markId, 'handoff', p.action, 'Resolve conflicts') },
+        lasts: { [markId]: record(markId, 'handoff', p.action, PR_FIX_LABELS[p.action]) },
         effects: [send(prompts.resolve(pr))],
       })
     case 'pr-address-all': {
@@ -939,7 +950,7 @@ export function applyPrPress(
       if (!check) return stale
       const id = prCheckId(pr, check)
       return applied({
-        lasts: { [id]: record(id, 'handoff', p.action, 'Fix') },
+        lasts: { [id]: record(id, 'handoff', p.action, PR_FIX_LABELS[p.action]) },
         effects: [send(prompts.fixCheck(pr, check))],
       })
     }

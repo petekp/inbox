@@ -1,4 +1,4 @@
-import type { Closed, Draft, FoldKind, Stop, Tab } from '../../types'
+import type { Draft, FoldKind, Stop, Tab } from '../../types'
 import { version } from '../package.json'
 import {
   ARRIVAL_TABS,
@@ -12,7 +12,6 @@ import {
   recordRows,
 } from '../../hooks/arrivals'
 import type { RowRecord } from '../../hooks/arrivals'
-import { closedState } from '../../hooks/ledger'
 import {
   ghNoticeOf,
   isDismissed,
@@ -32,7 +31,9 @@ import {
   threadActions,
   threadRowText,
   threadSentIn,
+  isPrPress,
   isPrTabRunning,
+  openPrViews,
 } from '../../hooks/pr-tab'
 import type { PrAction, PrPress, PrRowMark } from '../../hooks/pr-tab'
 import { failingChecks, readiness, waitingThreads } from '../../hooks/prs'
@@ -43,7 +44,6 @@ import type { BannerTone, ToneName } from '../../hooks/tones'
 import { ago, cellWidth, cutForEllipsis, cutToCells } from '../../hooks/text'
 import {
   canUndoRefused,
-  closedMark,
   settledTone,
   DEMO_NOTICE,
   bannerOf,
@@ -86,6 +86,7 @@ import {
   rowFeedbackText,
   rowKeyPlan,
   rowTitle,
+  resultGlyph,
   rowResultMark,
   settledMark,
   isRowTabRunning,
@@ -385,10 +386,9 @@ type ClosedLine = {
   id: string
   title: string
   at: number
-  how: Closed['how']
-  outcome: string
   outcomeLabel: string
   delivery: ClosedDelivery
+  mark: ResultMark
 }
 
 type Group = { kind: FoldKind; title: string; mark?: Lead; rows: RowView[]; closed: ClosedLine[] }
@@ -413,7 +413,7 @@ function closedLines(d: ClosedLine): Line {
     ...blankLine(closedId(d.id)),
     depth: 1,
     lead: null,
-    mark: closedMark(closedState(d), d.delivery),
+    mark: d.mark,
     title: d.title,
     isDim: true,
     age: d.at,
@@ -524,10 +524,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
   const { prs, lastActions, turns } = screen.view
   const isSent = threadSentIn(lastActions)
   const presses = { lastActions, turns, now }
-  const waits = prRowWaits(
-    prs.drawn.filter(d => d.state.is === 'open').map(d => d.pr),
-    lastActions,
-  )
+  const waits = prRowWaits(openPrViews(prs.drawn), lastActions)
   const isWaiting = (id: string) => waits.some(w => w.id === id && w.isWaiting)
   const markLead = (mark: PrRowMark): Lead => ({
     text: mark.isRunning ? runningMark(now) : mark.text,
@@ -768,12 +765,12 @@ function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button, 
 
     return { ui: { ...ui, focus: null, resuming: { stopAt: stop.at, is: 'sending' } }, press }
   }
-  if (!('ref' in press) && press.action === 'type') {
+  if (!isPrPress(press) && press.action === 'type') {
     const draft = ui.drafts[line.id] ?? { text: '', since: now }
 
     return { ui: { ...ui, typing: line.id, focus: null, drafts: { ...ui.drafts, [line.id]: draft } } }
   }
-  if (!('ref' in press) && press.action === 'discard') {
+  if (!isPrPress(press) && press.action === 'discard') {
     const { [line.id]: _discarded, ...drafts } = ui.drafts
     const discarded = { ...keptDiscards(ui.discarded, ui.shownSince), [line.id]: now }
 
@@ -970,11 +967,7 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
 export function isRunningMarkShown(screen: PanelScreen, ui: PanelUi): boolean {
   if (ui.isHelpShown) return MARK_LEGEND.some(m => m.isRunning)
   if (!isRowTab(ui.tab)) return hasRunningMark(screen.view.statusPage)
-  if (ui.tab === 'prs')
-    return isPrTabRunning(
-      screen.view.prs.drawn.filter(d => d.state.is === 'open').map(d => d.pr),
-      screen.view.lastActions,
-    )
+  if (ui.tab === 'prs') return isPrTabRunning(openPrViews(screen.view.prs.drawn), screen.view.lastActions)
 
   return isRowTabRunning(screen.view, ui.tab, kind => ui.unfolded.includes(kind))
 }
@@ -1134,11 +1127,11 @@ function leadText(lead: Lead | null, s: Style): string {
   return `${lead.tone ? s.tone(lead.tone, padded) : padded} `
 }
 
-/** A result mark and the space after it. A blank mark keeps its place, so the result stays put when its mark arrives. */
+/** A result mark and the space after it. */
 function markText(mark: ResultMark | null, now: number, s: Style): string {
   if (mark === null) return ''
 
-  const glyph = mark.isRunning ? runningMark(now) : mark.text || ' '
+  const glyph = resultGlyph(mark, now)
 
   return `${mark.tone ? s.tone(mark.tone, glyph) : s.dim(glyph)} `
 }

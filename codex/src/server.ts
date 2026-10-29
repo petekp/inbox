@@ -8,6 +8,7 @@ import { delegatesSettled } from '../../hooks/children'
 import { ghFinder, ghIn } from '../../hooks/gh'
 import { delegatesInHerdr, herdrCheckGate } from '../../hooks/herdr'
 import type { Run } from '../../hooks/gh'
+import { isPrPress } from '../../hooks/pr-tab'
 import type { PrPress } from '../../hooks/pr-tab'
 import { demoAfterPress, demoReplied, demoSent, noteText, openTarget } from '../../hooks/presses'
 import type { PathProbe, RowPress } from '../../hooks/presses'
@@ -410,7 +411,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
 
   async function onPress(id: string, p: RowPress | PrPress, thread: unknown, holds: Holds): Promise<PressReply> {
     await syncTurn(id).catch(() => undefined)
-    if (!('ref' in p) && (p.action === 'answer' || p.action === 'type'))
+    if (!isPrPress(p) && (p.action === 'answer' || p.action === 'type'))
       await linkRunningDialogs(id, p.id).catch(() => undefined)
     const outcome = await press(hostFor(id), p, thread !== id, holds)
     if (outcome.wakesForDone) setTimeout(() => void wakeForDone(id).catch(() => undefined), SETTLE_WINDOW_MS).unref()

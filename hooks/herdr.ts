@@ -1,5 +1,5 @@
 import type { Dialog, Ledger, SessionStatus, StatusHead, Stop, Tab } from '../types'
-import { hasRunningDelegate } from './children'
+import { hasRunningDelegate, onceEvery } from './children'
 import type { Run } from './gh'
 import type { SessionView } from './session'
 import { isWaitingRow, ROW_TABS } from './view'
@@ -74,15 +74,7 @@ function herdrStatuses(stdout: string): Map<string, HerdrStatus> | null {
  * `now`, and counts it as made.
  */
 export function herdrCheckGate(): (session: string, now: number) => boolean {
-  const checked = new Map<string, number>()
-
-  return (session, now) => {
-    const last = checked.get(session)
-    if (last !== undefined && now - last < HERDR_CHECK_MS) return false
-    checked.set(session, now)
-
-    return true
-  }
+  return onceEvery(HERDR_CHECK_MS)
 }
 
 function stopLine(stop: Stop): string {

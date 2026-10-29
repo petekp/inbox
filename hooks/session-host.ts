@@ -10,7 +10,7 @@ import {
   transcriptCatchUpPrompt,
 } from './model-text'
 import type { Host, StatusCallInput } from './model-text'
-import { fetchTracked, fixCheckEffect, isPrFixPress, pressRowId, splitLinked } from './pr-tab'
+import { fetchTracked, fixCheckEffect, isPrFixPress, isPrPress, pressRowId, PR_FIX_LABELS, splitLinked } from './pr-tab'
 import type { GhRun, PrFixPress, PrPress } from './pr-tab'
 import {
   doneWake,
@@ -599,8 +599,6 @@ type PressHost<S extends Session> = Pick<
   | 'settleWindowMs'
 >
 
-const FIX_LABELS: Record<PrFixPress['action'], string> = { 'pr-conflicts': 'Resolve conflicts', 'check-fix': 'Fix' }
-
 /** A fix press's check of the PR: the row's last press before it, and when its "Refreshing" result began. */
 type PrFixCheck = { rowId: string; before: LastAction | undefined; pendingAt: number; pressId: string }
 
@@ -640,7 +638,7 @@ async function checkPrFirst<S extends Session>(
       ...s,
       lastActions: {
         ...s.lastActions,
-        [rowId]: localLast(before, { action: p.action, text: FIX_LABELS[p.action] }, pending),
+        [rowId]: localLast(before, { action: p.action, text: PR_FIX_LABELS[p.action] }, pending),
       },
     }
   })
@@ -714,7 +712,7 @@ export async function startPress<S extends Session>(
     },
   }
   const check =
-    'ref' in p && isPrFixPress(p) && !isStale
+    isPrPress(p) && isPrFixPress(p) && !isStale
       ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err: unknown) => {
           error = `Not sent: ${err instanceof Error ? err.message : String(err)}`
           return 'unread' as const
@@ -808,7 +806,7 @@ export async function startPress<S extends Session>(
       }
       await runLocalEffects(effectHost, r.effects, rowId, r.lasts[rowId]?.result)
 
-      return { copy, error, note, isUnconfirmed, isRowFailed, wakesForDone: !('ref' in p) && p.action === 'done' }
+      return { copy, error, note, isUnconfirmed, isRowFailed, wakesForDone: !isPrPress(p) && p.action === 'done' }
     },
   }
 }
