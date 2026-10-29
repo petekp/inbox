@@ -1584,20 +1584,26 @@ async function perform(
 
 /**
  * `$.process.run` as the shared `Run`. It rejects when the command cannot start, and also when it is still running at
- * the timeout. The rejection carries no code, so only its message, "… still running after <N>ms", tells a timeout
- * apart. Any other rejection ends with code -1.
+ * the timeout, with no code to tell them apart. A rejection that comes `timeoutMs` or more after the call is the
+ * timeout's; one that comes sooner is a command that could not start.
  */
 function processRun($: EngineInterface): Run {
-  return (args, { cwd, timeoutMs, env }) =>
-    $.process.run(args, { cwd, timeoutMs, env }).then(
-      r => ({ code: r.exitCode, stdout: r.stdout, stderr: r.stderr }),
-      (err: unknown) => {
-        const message = err instanceof Error ? err.message : String(err)
-        const isTimedOut = /still running after/.test(message)
+  return async (args, { cwd, timeoutMs, env }) => {
+    const startedAt = await $.clock.now()
+    try {
+      const r = await $.process.run(args, { cwd, timeoutMs, env })
 
-        return { code: isTimedOut ? TIMED_OUT_CODE : UNSTARTABLE_CODE, stdout: '', stderr: message }
-      },
-    )
+      return { code: r.exitCode, stdout: r.stdout, stderr: r.stderr }
+    } catch (err) {
+      const isTimedOut = (await $.clock.now()) - startedAt >= timeoutMs
+
+      return {
+        code: isTimedOut ? TIMED_OUT_CODE : UNSTARTABLE_CODE,
+        stdout: '',
+        stderr: err instanceof Error ? err.message : String(err),
+      }
+    }
+  }
 }
 
 async function isGhUnstartable($: EngineInterface): Promise<boolean> {
