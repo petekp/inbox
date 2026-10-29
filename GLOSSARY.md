@@ -65,9 +65,9 @@ _Avoid_: Findings, as the tab's name. A find, for one finding.
 
 **Overview**:
 The first tab on a next build: what the session's work is for, and where each
-part of it stands, newest first, with how long ago each changed. A release
-build does not draw it. The inbox model updates it after each reply, in a
-second call after the one that updates the rows. It is not a list of events.
+part of it stands, the most recently changed first. A release build does not
+draw it. The inbox model updates it after each reply, in a second call after the
+one that updates the rows. It is not a list of events.
 
 **Goal**:
 The session's aim in a few words, on the Overview's second line. The inbox
@@ -93,13 +93,12 @@ host's events and from Herdr. The inbox model only links it to a subject.
 _Avoid_: subitem, job
 
 **Stall words**:
-The word after an Overview row's name that says its work has stopped. A
-subject held by an open question or task reads "waiting", in the needs-you
-tone. One waiting on someone else also reads "waiting", muted. A delegate
-reads "waiting" while Herdr shows it at a question or an approval, and
-"finished" once it stops. The row's mark says whose turn it is. Work that
-runs, and a subject that moves, show no word, and no row shows a time. The
-code calls them `stall`.
+The word after an Overview row's name that says its work has stopped. A subject
+held by an open question or task reads "waiting", in the needs-you tone. One
+waiting on someone else also reads "waiting", muted. A delegate reads "waiting"
+while Herdr shows it at a question or an approval, and "finished" once it stops.
+The row's mark says whose turn it is. A row whose work moves shows no word, and
+no row shows a time. The code calls them `stall`.
 _Avoid_: age
 
 **Seen line**:
