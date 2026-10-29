@@ -385,7 +385,7 @@ function isHandedOffDone(row: Pick<RowView, 'state' | 'feedback'>): boolean {
  * in the row's mark column. `isRunning` says the look draws its running mark in place of `text`, as on the Overview,
  * while what the row sent is on its way.
  */
-export type ResultMark = { text: string; isRunning: boolean }
+export type ResultMark = { text: string; isRunning: boolean; tone?: 'done' }
 
 const RUNNING_RESULT: ResultMark = { text: '●', isRunning: true }
 
@@ -399,7 +399,7 @@ export function rowResultMark(row: Pick<RowView, 'state' | 'feedback'>): ResultM
   const f = row.feedback
   if (row.state.is !== 'handedOff' || !f) return null
   if (f.is === 'sending' || f.is === 'queued') return RUNNING_RESULT
-  return { text: f.is === 'done' ? '✓' : '', isRunning: false }
+  return f.is === 'done' ? { text: '✓', isRunning: false, tone: 'done' } : { text: '', isRunning: false }
 }
 
 /** Whether what a row sent is still on its way to the agent: `unconfirmed` and a refused send are not. */

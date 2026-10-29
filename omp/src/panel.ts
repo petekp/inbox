@@ -1014,7 +1014,9 @@ function leadText(lead: Lead | null, s: Style): string {
 function markText(mark: ResultMark | null, now: number, s: Style): string {
   if (mark === null) return ''
 
-  return `${s.dim(mark.isRunning ? runningMark(now) : mark.text || ' ')} `
+  const glyph = mark.isRunning ? runningMark(now) : mark.text || ' '
+
+  return `${mark.tone ? s.tone(mark.tone, glyph) : s.dim(glyph)} `
 }
 
 function feedbackPaint(tone: Tone | null, s: Style) {

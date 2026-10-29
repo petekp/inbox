@@ -2805,7 +2805,7 @@ function rowResultMark(row) {
     return null;
   if (f.is === "sending" || f.is === "queued")
     return RUNNING_RESULT;
-  return { text: f.is === "done" ? "\u2713" : "", isRunning: false };
+  return f.is === "done" ? { text: "\u2713", isRunning: false, tone: "done" } : { text: "", isRunning: false };
 }
 function isSendMoving(delivery) {
   return delivery === "sending" || delivery === "queued";
@@ -6044,7 +6044,8 @@ function leadText(lead, s) {
 function markText(mark, now, s) {
   if (mark === null)
     return "";
-  return `${s.dim(mark.isRunning ? runningMark(now) : mark.text || " ")} `;
+  const glyph = mark.isRunning ? runningMark(now) : mark.text || " ";
+  return `${mark.tone ? s.tone(mark.tone, glyph) : s.dim(glyph)} `;
 }
 function feedbackPaint(tone, s) {
   return (text) => tone ? s.tone(tone, text) : s.dim(text);

@@ -4612,6 +4612,7 @@ export const register: Register = on => {
             age: ago(now - f.at),
             isAfterTitle: true,
             isFailure: false,
+            isDone: mark?.tone === 'done',
             feedback: f,
           }
         : {
@@ -4619,6 +4620,7 @@ export const register: Register = on => {
             age: '',
             isAfterTitle: isAfterTitle(f),
             isFailure: isFailure(f),
+            isDone: false,
             feedback: f,
           }
     }
@@ -4711,7 +4713,7 @@ export const register: Register = on => {
         return {
           ...plain,
           after: `${DOT}${[f.text, isAgeDropped ? '' : f.age].filter(Boolean).join(' ')}`,
-          afterTone: f.isFailure ? ('error' as const) : undefined,
+          afterTone: f.isFailure ? ('error' as const) : f.isDone ? ('done' as const) : undefined,
         }
 
       return { ...plain, after: [plain.after, isAgeDropped ? '' : plain.age].filter(Boolean).join('') || undefined }
@@ -4784,7 +4786,18 @@ export const register: Register = on => {
     /** An Asks or Finds row's result mark in the desktop mark column, or null when it has none. */
     const gutterMark = (row: Row) => {
       const mark = look === 'desktop' && row.isUnmarked && row.view ? rowResultMark(row.view) : null
-      return mark ? markGlyph(mark, `gutter-${row.id}`, pal.muted) : null
+      if (mark?.tone && ToneSvg)
+        return (
+          <Box width={1} height={1} flexShrink={0}>
+            <ToneSvg
+              source={toneSvg(mark.tone, mark.text)}
+              alt={mark.text}
+              width={DESKTOP_CELL_PT}
+              height={DESKTOP_LINE_PT}
+            />
+          </Box>
+        )
+      return mark ? markGlyph(mark, `gutter-${row.id}`, mark.tone ? pal.mark[mark.tone] : pal.muted) : null
     }
     const toned = (row: Row) => {
       if (ToneSvg === null || !row.handle || !row.handleTone) return null

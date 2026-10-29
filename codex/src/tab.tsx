@@ -794,10 +794,12 @@ function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
 }
 
 /** An Asks or Finds row's mark: its result's, in the mark column. An open row has none. */
-function resultHandle(r: RowView): Pick<Row, 'handle' | 'isHandleRunning'> {
+function resultHandle(r: RowView): Pick<Row, 'handle' | 'handleTone' | 'isHandleRunning'> {
   const mark = rowResultMark(r)
 
-  return mark ? { handle: mark.text, isHandleRunning: mark.isRunning } : { handle: '' }
+  return mark
+    ? { handle: mark.text, isHandleRunning: mark.isRunning, ...(mark.tone ? { handleTone: mark.tone } : {}) }
+    : { handle: '' }
 }
 
 function itemRow(v: View, r: RowView): Row {
