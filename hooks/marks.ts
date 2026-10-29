@@ -1,7 +1,7 @@
 /**
- * Marks the desktop pane and the Codex tab draw as shapes in an 8-point box. Neither can choose a font that draws
- * them well: the desktop pane's Svg cannot load the app's own font, and the system font draws ✓ as a thin "v" and ✗
- * the same as ✕. `midY` is the box's middle on the line.
+ * Marks drawn as shapes in an 8-point box: every mark here in a desktop Svg, and ✗ in the Codex tab. Neither can
+ * choose a font that draws them well: the desktop pane's Svg cannot load the app's own font, and the system font draws
+ * ✓ as a thin "v" and ✗ the same as ✕. `midY` is the box's middle on the line.
  */
 export function markShape(mark: string, midY: number): string | null {
   const t = midY - 4
