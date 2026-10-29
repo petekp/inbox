@@ -6,11 +6,13 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { demoView } from '../../hooks/demo'
+import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
 import { applyUpdate, parseReply } from '../../hooks/ledger'
 import { EMPTY_OVERVIEW } from '../../hooks/overview'
 import { feedbackOf, feedbackText, NO_HOLDS, QUEUED_AFTER_MS, screenTabOf, SETTLED_MS } from '../../hooks/view'
 import type { Feedback } from '../../hooks/view'
 import { screenText } from '../../hooks/model-text'
+import { GH_TIMED_OUT_TEXT } from '../../hooks/pr-tab'
 import { noteHook, notePrompt, viewOf } from '../src/core'
 import { CODEX } from '../src/texts'
 import type { View } from '../src/core'
@@ -20,6 +22,7 @@ import { POLL_MS, SETTLE_WINDOW_MS } from '../src/settle'
 import { readState, statePath, updateState } from '../src/state'
 import { handleHook } from '../src/hook'
 import { findCli } from '../src/cli'
+import { run } from '../src/run'
 import { fakeRunner, hookDeps, input, rolloutAt, tempDir, turnRow } from './helpers'
 
 async function setup(queueCode: number, now = () => 100, fallbackCli = async () => 'codex', isNextBuild = false) {
@@ -1099,6 +1102,29 @@ test('a view says gh was not found when gh worked once and then stops starting',
   assert.equal(next.result.structuredContent.isGhMissing, true)
   assert.equal(next.result.structuredContent.prs.drawn.length, 1)
   assert.equal(next.result.structuredContent.prs.drawn[0]?.pr.error ?? null, null)
+})
+
+test('a view keeps the PR with a failed refresh, and does not say gh was not found, when gh worked once and then times out', async () => {
+  let at = 100
+  let isSlow = false
+  const { call } = await prServer(
+    args => (isSlow && args[0] !== 'codex' ? { code: TIMED_OUT_CODE, stdout: '', stderr: '' } : ghAnswer(args)),
+    () => at,
+  )
+  await viewAfterFetch(call)
+  isSlow = true
+  at += PRS_STALE_MS
+  const next = await viewAfterFetch(call)
+  assert.equal(next.result.structuredContent.isGhMissing, false)
+  assert.equal(next.result.structuredContent.prs.drawn.length, 1)
+  assert.equal(next.result.structuredContent.prs.drawn[0]?.pr.error, GH_TIMED_OUT_TEXT)
+})
+
+test('run ends a command killed at its timeout with the timed-out code, and one that cannot start with the unstartable code', async () => {
+  const slow = await run(['sleep', '5'], { cwd: '/', timeoutMs: 100 })
+  const missing = await run(['/no/such/gh', '--version'], { cwd: '/', timeoutMs: 100 })
+  assert.equal(slow.code, TIMED_OUT_CODE)
+  assert.equal(missing.code, UNSTARTABLE_CODE)
 })
 
 test('a view says gh is not signed in once GitHub refuses its token, keeps the PR as it was, and clears when gh answers again', async () => {
