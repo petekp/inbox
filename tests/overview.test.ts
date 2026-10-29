@@ -96,8 +96,7 @@ test('reads each operation, tolerating bullets, and takes SET with done as DONE'
         'WAS: s1 | sync on launch',
         'LINK: c1 | Offline mode',
         'LINK: i3 | s1',
-        'ROLE: coordinator',
-        'GOAL: Work offline',
+        'HEAD: Work offline | Letting the app work without a connection',
       ].join('\n'),
     ),
   ).toEqual([
@@ -110,18 +109,31 @@ test('reads each operation, tolerating bullets, and takes SET with done as DONE'
     { kind: 'was', ref: 's1', text: 'sync on launch' },
     { kind: 'link', ref: 'c1', subject: 'Offline mode' },
     { kind: 'link', ref: 'i3', subject: 's1' },
-    { kind: 'role', role: 'coordinator' },
-    { kind: 'goal', text: 'Work offline' },
+    { kind: 'head', title: 'Work offline', description: 'Letting the app work without a connection' },
   ])
+  expect(parseOverview('HEAD: Work offline')).toBeNull()
 })
 
 test('code dates each change, and a NEW for an open subject changes that subject instead', () => {
-  const one = after(null, 'GOAL: Work offline\nNEW: working | Offline mode | sync queue built', 100)
+  const one = after(
+    null,
+    'HEAD: Work offline | Letting the app work without a connection\nNEW: working | Offline mode | sync queue built',
+    100,
+  )
   const two = applyOps(one, opsOf('NEW: waits-on-other | offline mode | needs a sync review'), 200, NO_ASKS)
 
   expect(two.subjects).toHaveLength(1)
   expect(two.subjects[0]).toMatchObject({ status: 'waits-on-other', text: 'needs a sync review', changedAt: 200 })
-  expect(two.goal).toBe('Work offline')
+  expect(two.head?.title).toBe('Work offline')
+})
+
+test('a HEAD keeps the head when its content words are the same, and replaces it when they differ', () => {
+  const one = after(null, 'HEAD: Offline sync | Adding offline sync to the notes app', 100)
+  const reworded = applyOps(one, opsOf('HEAD: offline sync | adding offline sync to notes app'), 200, NO_ASKS)
+  const moved = applyOps(one, opsOf('HEAD: 2.5 release | Shipping 2.5 to the stores'), 200, NO_ASKS)
+
+  expect(reworded.head).toEqual(one.head)
+  expect(moved.head).toEqual({ title: '2.5 release', description: 'Shipping 2.5 to the stores' })
 })
 
 test('a SET that keeps the status keeps the old text and age only when its content words are the same', () => {
@@ -262,7 +274,7 @@ test('the page lists subjects newest first, and an open row below the look line 
   const o = after(
     after(
       null,
-      'GOAL: Work offline\nNEW: queued | Docs | outline ready\nNEW: working | Offline mode | queue built',
+      'HEAD: Work offline | Letting the app work without a connection\nNEW: queued | Docs | outline ready\nNEW: working | Offline mode | queue built',
       10 * MIN,
     ),
     'SET: s2 | working | needs a sync pick\nLINK: i1 | s2',
@@ -271,7 +283,7 @@ test('the page lists subjects newest first, and an open row below the look line 
   )
   const p = page({ ...o, lastLookAt: 50 * MIN }, now, { lastReplyAt: now - 2 * MIN }, [askItem('i1')])
 
-  expect(p.goal).toBe('Work offline')
+  expect(p.head?.title).toBe('Work offline')
   expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick', '-- Seen', '○ Docs: outline ready'])
   const seenAt = { ...after(o, 'WAS: s2 | sync on every save', 90 * MIN, new Set(['i1'])), lastLookAt: 95 * MIN }
   const seen = page(seenAt, now, {}, [askItem('i1')]).rows
@@ -328,9 +340,9 @@ test('with no look yet every row is new, so the page draws no look line and show
   expect(shape(page(o, 12 * MIN).rows)).toEqual(['● Offline mode: queue built'])
 })
 
-test('a page with no goal and no rows shows its empty state, even while a turn runs', () => {
+test('a page with no head and no rows shows its empty state, even while a turn runs', () => {
   expect(page(null, 3 * MIN, { isTurnRunning: true, turnStartedAt: 0 }).isEmpty).toBe(true)
-  expect(page({ ...EMPTY_OVERVIEW, goal: 'Ship 0.3' }, 3 * MIN).isEmpty).toBe(false)
+  expect(page({ ...EMPTY_OVERVIEW, head: { title: '0.3 release', description: '' } }, 3 * MIN).isEmpty).toBe(false)
 })
 
 test('finished work folds into a count once seen, keeping at most two new finished rows', () => {
@@ -475,7 +487,7 @@ test('open subjects past seven fold their oldest queued ones into a count', () =
   expect(heldOldest.at(-1)).toMatchObject({ kind: 'fold', text: '2 more queued' })
 })
 
-test('an Overview saved before subjects keeps its open work, dated at the last look, and its headline as the goal', () => {
+test('an Overview saved before subjects keeps its open work, dated at the last look, and its headline as the head', () => {
   const old = {
     isCoordinator: true,
     headline: 'Releasing 0.2.11',
@@ -490,8 +502,7 @@ test('an Overview saved before subjects keeps its open work, dated at the last l
 
   expect(upgradeOverview(old)).toEqual({
     ...EMPTY_OVERVIEW,
-    role: 'coordinator',
-    goal: 'Releasing 0.2.11',
+    head: { title: 'Releasing 0.2.11', description: '' },
     subjects: [
       {
         id: 's1',
@@ -534,7 +545,18 @@ test('an Overview saved before subjects keeps its open work, dated at the last l
     lastLookAt: 5000,
   })
   expect(upgradeOverview({ ...old, lastLookAt: null })?.subjects).toEqual([])
-  expect(upgradeOverview({ headline: 'x', lastLookAt: null })?.goal).toBe('x')
+  expect(upgradeOverview({ headline: 'x', lastLookAt: null })?.head?.title).toBe('x')
+})
+
+test('a saved goal becomes the head with no description, and a saved head keeps both lines', () => {
+  const head = { title: 'Offline sync', description: 'Adding offline sync to the notes app' }
+
+  expect(upgradeOverview({ role: 'coordinator', goal: 'Ship notes 2.4', subjects: [] })?.head).toEqual({
+    title: 'Ship notes 2.4',
+    description: '',
+  })
+  expect(upgradeOverview({ goal: '', subjects: [] })?.head).toBeNull()
+  expect(upgradeOverview({ head, subjects: [] })?.head).toEqual(head)
 })
 
 test('a saved Overview drops subjects and children it cannot read, and nothing else is an Overview', () => {

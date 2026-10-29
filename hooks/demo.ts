@@ -77,8 +77,7 @@ export function demoView(now: number, agent: string): DemoCopy {
   return {
     ledger: {
       overview: {
-        role: 'session',
-        goal: 'Pinch to dismiss glances',
+        head: { title: 'Pinch to dismiss', description: 'Adding a pinch that dismisses glances' },
         subjects: [
           subject('s1', 'working', 'Dismiss gesture', 'pinch fades the glance', now - 2 * MIN),
           subject('s2', 'working', 'Glasses pairing', 'needs this Mac paired', now - 12 * MIN),

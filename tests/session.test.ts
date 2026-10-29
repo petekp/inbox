@@ -303,7 +303,9 @@ test('the conversation keeps its newest lines when it is too long, and leaves ou
   expect(text).not.toContain('inbox: nothing waits')
 })
 
-const answer = parseOverview('GOAL: Work offline\nNEW: working | Offline mode | queue built')!
+const answer = parseOverview(
+  'HEAD: Work offline | Letting the app work without a connection\nNEW: working | Offline mode | queue built',
+)!
 
 const withOverview = (s: Session): Session => ({
   ...s,
@@ -316,7 +318,7 @@ test('an Overview answer is written to the ledger after later updates and clears
 
   expect(failed.overviewFailure).toEqual({ at: 900, cause: 'refused', answer: 'The person wants a CLI.' })
   expect(failedOverview(later, null, 3, 900).overviewFailure).toEqual({ at: 900, cause: 'no-answer', answer: null })
-  expect(appliedOverview(failed, answer, 3, 1000).ledger.overview?.goal).toBe('Work offline')
+  expect(appliedOverview(failed, answer, 3, 1000).ledger.overview?.head?.title).toBe('Work offline')
   expect(appliedOverview(failed, answer, 3, 1000).overviewFailure).toBeNull()
   expect(appliedOverview(emptySession(), answer, 3, 1000).ledger.overview).toBeNull()
   expect(failedOverview(emptySession(), null, 3, 900).overviewFailure).toBeNull()
@@ -340,14 +342,14 @@ test('a session whose only record is an Overview has a ledger, is not unseen, is
   expect(cleared(parent).ledger.overview).toBeNull()
 })
 
-test('the Overview page is empty for a new session, and while its first turn runs, until the Overview has a goal', () => {
+test('the Overview page is empty for a new session, and while its first turn runs, until the Overview has a head', () => {
   const view = (s: Session) => sessionView(s, 10_000, 1000, true, NO_HOLDS).overviewPage
   const idle = emptySession()
 
   expect(view(idle).isEmpty).toBe(true)
   expect(view(turnStarted(idle, 9_000)).isEmpty).toBe(true)
   expect(view(withOverview(turnStarted(idle, 9_000))).isEmpty).toBe(false)
-  expect(view(withOverview(idle)).goal).toBe('Work offline')
+  expect(view(withOverview(idle)).head?.title).toBe('Work offline')
   expect(view(idle).error).toBeNull()
 })
 
@@ -367,7 +369,7 @@ test('a claimed Overview call reads the running turn’s work with no reply and 
   const prompts: string[] = []
   const { host } = fakeHost(async prompt => {
     prompts.push(prompt)
-    return 'GOAL: Work offline\nNEW: working | Offline mode | queue built'
+    return 'HEAD: Work offline | Letting the app work without a connection\nNEW: working | Offline mode | queue built'
   })
   await host.update(s => noteActivity(notePrompt(CLAUDE_CODE, turnStarted(s, 0), 'go', false).state, 'edited sync.ts'))
   await refreshOverview(host)
@@ -376,7 +378,7 @@ test('a claimed Overview call reads the running turn’s work with no reply and 
   expect(prompts).toHaveLength(1)
   expect(prompts[0]).toContain('<activity>\nedited sync.ts\n</activity>')
   expect(prompts[0]).not.toContain('<reply>')
-  expect(written.ledger.overview?.goal).toBe('Work offline')
+  expect(written.ledger.overview?.head?.title).toBe('Work offline')
   expect(written.lastOverviewCallAt).not.toBeNull()
   await host.update(s => turnEnded(s, 1))
   await refreshOverview(host)
@@ -405,7 +407,7 @@ test('a next build records an Overview call in a file of its own: the exact prom
   const overviewPrompts: string[] = []
   const answers = [
     'The list gains a runtime subject.',
-    'GOAL: Pick a runtime\nNEW: working | Runtime choice | comparing two',
+    'HEAD: Pick a runtime | Choosing between Node and Python\nNEW: working | Runtime choice | comparing two',
   ]
   const { host } = fakeHost(async (prompt, system) => {
     if (system !== OVERVIEW_SYSTEM) return LEDGER_REPLY
@@ -438,11 +440,11 @@ test('a next build records an Overview call in a file of its own: the exact prom
   expect(overviewCallPrompt(record.input, record.exchange)).toBe(record.prompt)
   expect(record.attempts.map(a => a.answer)).toEqual([
     'The list gains a runtime subject.',
-    'GOAL: Pick a runtime\nNEW: working | Runtime choice | comparing two',
+    'HEAD: Pick a runtime | Choosing between Node and Python\nNEW: working | Runtime choice | comparing two',
   ])
   expect(record.input.asks.map(i => i.ask)).toEqual(['Use Node or Python?'])
-  expect(record.after?.goal).toBe('Pick a runtime')
-  expect((await host.read()).ledger.overview?.goal).toBe('Pick a runtime')
+  expect(record.after?.head?.title).toBe('Pick a runtime')
+  expect((await host.read()).ledger.overview?.head?.title).toBe('Pick a runtime')
 })
 
 test('a failed Overview call’s record holds the error the host reported, and a record that cannot be written leaves the update in place', async () => {
@@ -601,7 +603,7 @@ test('a sample saved without an Overview is replaced, and the sample session car
   expect(isDemoCopy({ ...old, presence: { isTurnRunning: false } })).toBe(true)
   expect(isDemoCopy({ ...old, ledger: { ...old.ledger, overview: undefined } })).toBe(false)
   const page = sessionView(demoSession(1_000_000, 'Claude'), 1_000_000, 1000, true, NO_HOLDS).overviewPage
-  expect(page.goal).toBe('Pinch to dismiss glances')
+  expect(page.head?.title).toBe('Pinch to dismiss')
   expect(page.rows.map(r => r.kind)).toEqual([
     'subject',
     'child',
@@ -616,11 +618,11 @@ test('a sample saved without an Overview is replaced, and the sample session car
   ])
 })
 
-test('a conversation start carries the goal and where each open subject stands, not on a resume the guidance, and nothing for an empty session', () => {
+test('a conversation start carries the head and where each open subject stands, not on a resume the guidance, and nothing for an empty session', () => {
   const described = emptySession()
   const ledger = { ...described.ledger, overview: applyOverview(null, answer, 1000, new Set()) }
   const carried = startContext(CLAUDE_CODE, { ...described, ledger }, 'resume')
-  expect(carried).toContain('Working on: Work offline')
+  expect(carried).toContain('Working on: Work offline: Letting the app work without a connection')
   expect(carried).toContain('- Offline mode: queue built (working)')
   expect(startContext(CLAUDE_CODE, { ...described, ledger }, 'startup')).toContain('Working on: Work offline')
   expect(startContext(CLAUDE_CODE, described, 'resume')).toBeNull()

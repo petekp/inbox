@@ -744,17 +744,18 @@ const tabLine = (screen: PanelScreen, ui: PanelUi, width: number) =>
 
 const labelOf = (row: OverviewRow) => (row.kind === 'subject' || row.kind === 'child' ? row.name : row.text)
 
-test('the Overview page shows the goal, then its rows in order, each subject’s marks in the goal’s column, where it stands under its name and its was line under that, and Seen in the middle of its rule', () => {
+test('the Overview page shows the head’s title and description, then its rows in order, each subject’s marks in the head’s column, where it stands under its name and its was line under that, and Seen in the middle of its rule', () => {
   const screen = screenOf()
   const page = screen.view.overviewPage
   const lines = text(screen, onPage).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
-  const order = [page.goal!, ...page.rows.map(labelOf)].map(at)
+  const order = [page.head!.title, page.head!.description!, ...page.rows.map(labelOf)].map(at)
   expect(order.every(n => n >= 0)).toBe(true)
   expect(order).toEqual([...order].sort((a, b) => a - b))
-  const goalAt = lines[at(page.goal!)]!.search(/\S/)
+  const headAt = lines[at(page.head!.title)]!.search(/\S/)
+  expect(lines[at(page.head!.description!)]!.search(/\S/)).toBe(headAt)
   const subjects = page.rows.flatMap(r => (r.kind === 'subject' ? [r] : []))
-  for (const row of subjects) expect(lines[at(row.name)]!.search(/\S/)).toBe(goalAt)
+  for (const row of subjects) expect(lines[at(row.name)]!.search(/\S/)).toBe(headAt)
   const withWas = subjects.filter(r => r.was !== null && r.text !== null)
   expect(withWas.length).toBeGreaterThan(0)
   for (const row of withWas) {

@@ -41,11 +41,11 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 // ../hooks/overview.ts
 var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
-var GOAL_WORDS = 8;
+var DESCRIPTION_WORDS = 8;
 var OPEN_SUBJECTS = 6;
 var NAME_KEPT = 20;
 var TEXT_KEPT = 12;
-var GOAL_KEPT = 14;
+var DESCRIPTION_KEPT = 14;
 var CHILD_KEPT_MS = 24 * 60 * 6e4;
 var CHILDREN_KEPT = 50;
 var STOP_WORDS = /* @__PURE__ */ new Set([
@@ -69,8 +69,7 @@ var STOP_WORDS = /* @__PURE__ */ new Set([
   "with"
 ]);
 var EMPTY_OVERVIEW = {
-  role: "session",
-  goal: "",
+  head: null,
   subjects: [],
   children: [],
   askSubjects: {},
@@ -176,6 +175,15 @@ var OLD_STATUS = {
   done: null,
   "ruled-out": null
 };
+function headOfGoal(goal) {
+  const title = clipWords(text(goal), DESCRIPTION_KEPT);
+  return title === "" ? null : { title, description: "" };
+}
+function headOf(saved) {
+  const h = saved;
+  const title = text(h?.title);
+  return title === "" ? null : { title, description: text(h?.description) };
+}
 function fromLists(o) {
   const lastLookAt = time(o.lastLookAt);
   const items = lastLookAt === null ? [] : ["workstreams", "queue", "open"].flatMap((k) => Array.isArray(o[k]) ? o[k] : []);
@@ -199,8 +207,7 @@ function fromLists(o) {
   }));
   return {
     ...EMPTY_OVERVIEW,
-    role: o.isCoordinator === true ? "coordinator" : "session",
-    goal: clipWords(text(o.headline), GOAL_KEPT),
+    head: headOfGoal(o.headline),
     subjects,
     nextId: subjects.length + 1,
     lastLookAt
@@ -218,8 +225,7 @@ function upgradeOverview(saved) {
   const look = o.look;
   const lookAt = time(look?.startedAt);
   return {
-    role: o.role === "coordinator" ? "coordinator" : "session",
-    goal: text(o.goal),
+    head: "head" in o ? headOf(o.head) : headOfGoal(o.goal),
     subjects,
     children,
     askSubjects,
@@ -262,7 +268,7 @@ var EMPTY = {
   updates: 0
 };
 function isBlankLedger(ledger) {
-  const isOverviewBlank = !ledger.overview || ledger.overview.goal === "" && ledger.overview.subjects.length === 0;
+  const isOverviewBlank = !ledger.overview || ledger.overview.head === null && ledger.overview.subjects.length === 0;
   return ledger.updates === 0 && isOverviewBlank && ledger.items.length === 0 && ledger.findings.length === 0;
 }
 var MAX_CLOSED = 12;
@@ -552,7 +558,7 @@ var OVERVIEW_SYSTEM = `You keep the Overview of a coding session: one list of th
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
 Input:
-- <goal>: the session's goal. Do not restate it.
+- <head>: the top of the page, as title | description: what the session is focused on now. Never write it into a subject.
 - <subjects>: the open subjects, one per line: id | status | name | where it stands
 - <finished>: subjects already done or dropped. Do not add them again.
 - <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
@@ -562,7 +568,7 @@ Input:
 - <activity>: what the agent did this turn
 - <reply>: the agent's final reply
 
-Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, answer with the one line NO CHANGE. Most exchanges change nothing.
+Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, and the head still holds, answer with the one line NO CHANGE. Most exchanges change nothing.
 
 Otherwise write only the lines that apply:
 NEW: status | name | where it stands
@@ -572,12 +578,13 @@ DROP: id or name | why
 DROP: id or name | why | INTO id or name
 WAS: id or name | the plan it replaces
 LINK: running or ask id | subject id or name
-ROLE: coordinator or session
-GOAL: the goal in the person's words, at most ${GOAL_WORDS} words
+HEAD: title | description
 
 A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
 
 The name is a label of at most ${NAME_WORDS} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
+
+The head says what the session is focused on now: the work the person would name if asked what this session is doing. It may cover several subjects. Its title is a label of at most ${NAME_WORDS} words, like a subject's name, such as "Offline sync" or "2.5 release". Its description is at most ${DESCRIPTION_WORDS} words on what the session is doing about that focus, such as "Adding offline sync to the notes app" or "Fixing the sync bug, then shipping 2.5". The description never repeats the title, and never says where one piece stands, such as "PR ready for review". The head follows the same rules on time words as where it stands.
 
 Status is one of: working, queued, waits-on-other.
 - working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask. When the work stopped for another reason, it is queued, waits on something, or is done.
@@ -592,8 +599,8 @@ Rules:
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
 - Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
 - Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
-- Write ROLE coordinator when the session hands out work and reviews what comes back instead of doing the work itself. Write ROLE only when it changes.
-- Write GOAL only when <goal> is empty, when the person states a new goal, or when the work moves to a different task.`;
+- Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for other work, when the work the head names is finished or dropped while other work goes on, or when the working subjects are no longer part of what the head names.
+- Keep the head while the working subjects are parts of what it names, and when the work it names finished and nothing else is working. Never reword a head that still holds.`;
 function surfaceAtStart(host) {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
 }
@@ -672,10 +679,11 @@ function findingLine(finding) {
   return `- ${finding.kind}: ${finding.title} (close id: ${finding.id})`;
 }
 function overviewLines(ledger) {
-  const goal = ledger.overview?.goal ?? "";
+  const head = ledger.overview?.head ?? null;
+  const focus = head ? [head.title, head.description].filter(Boolean).join(": ") : "";
   const open2 = (ledger.overview?.subjects ?? []).filter(isOpen);
   return [
-    ...goal ? [`Working on: ${goal}`] : [],
+    ...focus ? [`Working on: ${focus}`] : [],
     ...open2.length > 0 ? ["Where it stands:", ...open2.map((s) => `- ${s.name}: ${s.text || "-"} (${s.status})`)] : []
   ];
 }
@@ -1360,10 +1368,10 @@ function overviewPage(s, now) {
       text: `${folded.length}${isMore ? " more" : ""} done`
     });
   }
-  const goal = o?.goal || null;
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
-    isEmpty: goal === null && rows.length === 0,
-    goal,
+    isEmpty: head === null && rows.length === 0,
+    head,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {
@@ -2415,17 +2423,20 @@ function statusLine(stop, dialogs, input) {
   if (stop) return stopLine(stop);
   const dialog = dialogs[0];
   if (dialog) return dialogText(dialog);
-  const { firstAsk, asks, findings, goal } = input;
+  const { firstAsk, asks, findings, focus } = input;
   if (firstAsk !== null) return asks > 1 ? `${asks} \xB7 ${firstAsk}` : firstAsk;
   const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? "" : "s"}`;
-  return [goal, findingsText].filter(Boolean).join(" \xB7 ");
+  return [focus, findingsText].filter(Boolean).join(" \xB7 ");
+}
+function focusOf(head) {
+  return head ? head.description || head.title : null;
 }
 function herdrTokens(ledger, stop, view, dialogs) {
   const input = {
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
-    goal: ledger.overview?.goal || null
+    focus: focusOf(ledger.overview?.head ?? null)
   };
   const counts = ROW_TABS.map((t) => {
     const count = view[t.id].count;

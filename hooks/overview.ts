@@ -1,15 +1,15 @@
-import type { Child, ChildKind, Item, Overview, Subject, SubjectStatus } from '../types'
+import type { Child, ChildKind, Item, Overview, OverviewHead, Subject, SubjectStatus } from '../types'
 
-/** The most words the call may write in a subject's name, where it stands, and the goal. */
+/** The most words the call may write in a subject's name and where it stands, and in the head's description. The head's title is a name. */
 export const NAME_WORDS = 3
 export const TEXT_WORDS = 4
-export const GOAL_WORDS = 8
+export const DESCRIPTION_WORDS = 8
 /** The most open subjects the call keeps. */
 export const OPEN_SUBJECTS = 6
 /** Limits code holds an answer to when the call writes past the words it was asked for. */
 const NAME_KEPT = 20
 const TEXT_KEPT = 12
-const GOAL_KEPT = 14
+const DESCRIPTION_KEPT = 14
 /** The words of each ask the call reads. */
 const ASK_READ_WORDS = 30
 /** Finished subjects the call reads, so it does not add one again. */
@@ -41,8 +41,7 @@ const STOP_WORDS = new Set([
 const NL = '\n'
 
 export const EMPTY_OVERVIEW: Overview = {
-  role: 'session',
-  goal: '',
+  head: null,
   subjects: [],
   children: [],
   askSubjects: {},
@@ -66,15 +65,14 @@ export type Op =
   | { kind: 'done'; ref: string; text: string }
   | { kind: 'drop'; ref: string; why: string; into: string | null }
   | { kind: 'was'; ref: string; text: string }
-  | { kind: 'role'; role: Overview['role'] }
-  | { kind: 'goal'; text: string }
+  | { kind: 'head'; title: string; description: string }
   /** `ref` is a running child's id or an open ask's id. */
   | { kind: 'link'; ref: string; subject: string }
 
 /** What the Overview call answered: nothing to change, or the changes to make. */
 export type OverviewAnswer = { kind: 'unchanged' } | { kind: 'ops'; ops: Op[] }
 
-const LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|ROLE|GOAL|LINK)\s*(?::\s*(.*))?$/i
+const LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i
 
 /** The first `limit` words of `text`, with an ellipsis when words were cut. */
 export function clipWords(text: string, limit: number): string {
@@ -112,12 +110,7 @@ function opOf(key: string, f: string[]): Op | null {
     return f[0] ? { kind: 'drop', ref: f[0], why: f[1] ?? '', into: into || null } : null
   }
   if (key === 'WAS') return f[0] && f[1] ? { kind: 'was', ref: f[0], text: f[1] } : null
-  if (key === 'ROLE') {
-    const role = f[0]?.toLowerCase()
-
-    return role === 'coordinator' || role === 'session' ? { kind: 'role', role } : null
-  }
-  if (key === 'GOAL') return f[0] ? { kind: 'goal', text: f[0] } : null
+  if (key === 'HEAD') return f[0] && f[1] ? { kind: 'head', title: f[0], description: f[1] } : null
   if (key === 'LINK') return f[0] && f[1] ? { kind: 'link', ref: f[0], subject: f[1] } : null
 
   return null
@@ -176,11 +169,20 @@ export function isOpen(s: Pick<Subject, 'status'>): boolean {
   return s.status !== 'done' && s.status !== 'dropped'
 }
 
+/** The head a HEAD line writes. One with the same content words as the head it would replace keeps that head. */
+function headAfter(last: OverviewHead | null, op: Extract<Op, { kind: 'head' }>): OverviewHead {
+  const isReworded =
+    last !== null && hasSameWords(last.title, op.title) && hasSameWords(last.description, op.description)
+
+  return isReworded
+    ? last
+    : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) }
+}
+
 /** Subject changes first, then reversals, then links, so a WAS or LINK can name a subject the same answer added. */
 const OP_ORDER: Record<Op['kind'], number> = {
   none: 0,
-  role: 0,
-  goal: 0,
+  head: 0,
   new: 0,
   set: 0,
   done: 0,
@@ -224,8 +226,7 @@ export function applyOps(last: Overview | null, ops: Op[], now: number, askIds: 
   const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
   for (const { op } of ordered) {
     if (op.kind === 'none') continue
-    if (op.kind === 'role') o.role = op.role
-    else if (op.kind === 'goal') o.goal = clipWords(op.text, GOAL_KEPT)
+    if (op.kind === 'head') o.head = headAfter(o.head, op)
     else if (op.kind === 'link') {
       const child = o.children.find(c => c.id === op.ref)
       const subject = find(op.subject)
@@ -447,10 +448,24 @@ const OLD_STATUS: Record<string, OpenStatus | null> = {
   'ruled-out': null,
 }
 
+/** A goal an earlier build saved, as a head with no description. The next Overview call writes the description. */
+function headOfGoal(goal: unknown): OverviewHead | null {
+  const title = clipWords(text(goal), DESCRIPTION_KEPT)
+
+  return title === '' ? null : { title, description: '' }
+}
+
+function headOf(saved: unknown): OverviewHead | null {
+  const h = saved as Partial<Record<keyof OverviewHead, unknown>> | null | undefined
+  const title = text(h?.title)
+
+  return title === '' ? null : { title, description: text(h?.description) }
+}
+
 /**
  * An Overview saved before subjects, as subjects. Its streams, work and problems that were still open become subjects
  * dated at the last look, since the person saw them then. With no look there is no honest time to give them, and the
- * person never read that page, so only the headline carries over, as the goal.
+ * person never read that page, so only the headline carries over, as the head.
  */
 function fromLists(o: Record<string, unknown>): Overview {
   const lastLookAt = time(o.lastLookAt)
@@ -482,8 +497,7 @@ function fromLists(o: Record<string, unknown>): Overview {
 
   return {
     ...EMPTY_OVERVIEW,
-    role: o.isCoordinator === true ? 'coordinator' : 'session',
-    goal: clipWords(text(o.headline), GOAL_KEPT),
+    head: headOfGoal(o.headline),
     subjects,
     nextId: subjects.length + 1,
     lastLookAt,
@@ -504,8 +518,7 @@ export function upgradeOverview(saved: unknown): Overview | null {
   const lookAt = time(look?.startedAt)
 
   return {
-    role: o.role === 'coordinator' ? 'coordinator' : 'session',
-    goal: text(o.goal),
+    head: 'head' in o ? headOf(o.head) : headOfGoal(o.goal),
     subjects,
     children,
     askSubjects,

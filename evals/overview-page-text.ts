@@ -42,7 +42,7 @@ export function pageText(page: OverviewPage): string {
   if (page.isEmpty) return `${page.empty.title}\n${page.empty.hint}`
 
   return [
-    ...(page.goal ? [page.goal] : []),
+    ...(page.head ? [page.head.title, ...(page.head.description ? [page.head.description] : [])] : []),
     '',
     ...page.rows.flatMap(rowText),
     ...(page.error ? ['', page.error] : []),

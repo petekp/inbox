@@ -293,6 +293,7 @@ import type {
   ModLook,
   PlannedKey,
   OverviewBranch,
+  OverviewPage,
   OverviewRow,
   RowView,
   RowWait,
@@ -6083,18 +6084,26 @@ export const register: Register = on => {
         )
       )
 
-    const overviewGoal = (goal: string) => {
-      const line = (
-        <Text wrap="wrap" bold>
-          {goal}
-        </Text>
+    /** The head reads like a row: its title in bold, and its description muted on the line under it. */
+    const overviewHead = (head: NonNullable<OverviewPage['head']>) => {
+      const lines = (
+        <Box flexDirection="column">
+          <Text wrap="wrap" bold>
+            {head.title}
+          </Text>
+          {head.description ? (
+            <Text wrap="wrap" color={pal.muted}>
+              {head.description}
+            </Text>
+          ) : null}
+        </Box>
       )
 
       return look === 'desktop' ? (
-        desktopFrame({ key: 'overview-goal', padY: 0, markCells: 0, hasSide: false, children: line })
+        desktopFrame({ key: 'overview-head', padY: 0, markCells: 0, hasSide: false, children: lines })
       ) : (
-        <Box key="overview-goal" paddingLeft={TREE_LINE_AT}>
-          {line}
+        <Box key="overview-head" paddingLeft={TREE_LINE_AT}>
+          {lines}
         </Box>
       )
     }
@@ -6335,7 +6344,7 @@ export const register: Register = on => {
         )
 
       return sections([
-        ...(page.goal ? [overviewGoal(page.goal)] : []),
+        ...(page.head ? [overviewHead(page.head)] : []),
         ...(page.rows.length > 0
           ? [
               section(

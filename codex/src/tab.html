@@ -64,7 +64,7 @@
         user-select: none;
       }
       /* Text a person may copy: what an item, PR or Overview line says, an error, and the reply field. */
-      .overview-goal,
+      .overview-head,
       .overview .content,
       .earlier,
       .body,
@@ -736,8 +736,8 @@
       .earlier {
         padding: 2px 14px 2px var(--text-x);
       }
-      /* The goal starts where the list's marks do. */
-      .overview-goal {
+      /* The head starts where the list's marks do. */
+      .overview-head {
         padding: 0 14px 0 var(--mark-x);
         overflow-wrap: anywhere;
       }
@@ -832,11 +832,14 @@
         flex: 1;
         border-top: 1px solid color-mix(in oklab, var(--text) 15%, transparent);
       }
-      .overview-goal {
+      .overview-head h1 {
         margin: 0;
         font-size: 15px;
         line-height: 22px;
         font-weight: 600;
+      }
+      .overview-head p {
+        margin: 0;
       }
       .banner,
       .empty,

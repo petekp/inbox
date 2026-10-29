@@ -69,10 +69,13 @@ part of it stands, newest first, with how long ago each changed. A release
 build does not draw it. The inbox model updates it after each reply, in a
 second call after the one that updates the rows. It is not a list of events.
 
-**Goal**:
-The session's aim in a few words, on the Overview's second line. The inbox
-model sets it, and changes it only when the person states a new goal or the
-work moves to a different task.
+**Head**:
+The top of the Overview: a title of a few words, like a subject's name, for
+what the session is focused on now, and one line under it on what the session
+is doing about it. The inbox model writes it, and checks it at each update
+against the open and finished subjects, so it moves on when the work does,
+even across many small exchanges. When the work it names is done and nothing
+else is working, it stays.
 
 **Subject**:
 One part of the session's work on the Overview, such as a feature, a fix or a
