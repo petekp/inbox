@@ -812,7 +812,11 @@
         width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
         border-top: 1px solid var(--tree-line);
       }
-      /* "Seen" in the middle of a rule that runs from the mark column to the end of the row. */
+      /* "Last seen" in the middle of a rule that spans what the rule above a row spans: from the text column to the tab's edge. */
+      .overview .row.look-line {
+        padding-left: 0;
+        padding-right: 0;
+      }
       .overview .look-rule {
         grid-column: 1 / -1;
         display: flex;
@@ -823,14 +827,17 @@
       }
       .overview .overview-rule {
         height: 1px;
-        margin-left: var(--text-x);
         background: var(--soft);
+      }
+      .overview .overview-rule,
+      .overview .look-rule {
+        margin-left: var(--text-x);
       }
       .overview .look-rule::before,
       .overview .look-rule::after {
         content: '';
         flex: 1;
-        border-top: 1px solid color-mix(in oklab, var(--text) 15%, transparent);
+        border-top: 1px solid var(--soft);
       }
       .overview-head h1 {
         margin: 0;

@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { Engine, Mounted } from 'claude-code/testing'
+import type { Engine, MockClock, Mounted } from 'claude-code/testing'
 import type { On, PaneOpenArgs, PromptOrigin, RenderSurface } from 'claude-code'
 
 import type { FoldProps } from '../hooks/fold-client'
@@ -10,7 +10,9 @@ import { cellWidth } from '../hooks/text'
 import { DARK_TONES } from '../hooks/tones'
 import type { Item, Session } from '../types'
 import { demoView } from '../hooks/demo'
+import { GH_TIMEOUT_MS } from '../hooks/gh'
 import { OVERVIEW_SYSTEM } from '../hooks/model-text'
+import { HERDR_CHECK_MS } from '../hooks/herdr'
 import { LOOK_MIN_MS } from '../hooks/overview'
 import { OVERVIEW_REFRESH_MS } from '../hooks/session'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
@@ -74,6 +76,7 @@ let spawnedAgentId = 'a1'
 let listedAgents: { id: string; status: string }[] = []
 
 let isGhMissing = false
+let slowGhClock: MockClock | null = null
 
 let ghAnswers: {
   match: (argv: readonly string[]) => boolean
@@ -192,6 +195,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   listedAgents = []
   ghAnswers = []
   isGhMissing = false
+  slowGhClock = null
   ledgerReply = LEDGER_REPLY
   overviewReply = 'UNCHANGED'
   overviewPrompts = []
@@ -278,6 +282,10 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   on('process.run', async ($, e) => {
     ran.push([...e.argv])
     if (isGhMissing && e.argv[0] === 'gh') throw new Error('spawn gh ENOENT')
+    if (slowGhClock && e.argv[0] === 'gh') {
+      await slowGhClock.sleep(GH_TIMEOUT_MS)
+      return { deny: 'killed at the timeout' }
+    }
     await ghAnswers.find(a => a.match(e.argv))?.hold?.()
     return { value: gh(e.argv) }
   })
@@ -2901,6 +2909,92 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   expect(sidebarTokens()['inbox-prs']).toBe('1')
 })
 
+test('Resolve conflicts reads the PR from GitHub before it sends: it reads Refreshing while gh answers, sends while the conflicts remain, and sends nothing once a push resolved them', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let mergeable = 'CONFLICTING'
+  let release: (() => void) | null = null
+  let isHeld = false
+  ghAnswers.push(
+    {
+      match: argv => argv.includes('view') && argv.includes('12'),
+      get stdout() {
+        return JSON.stringify({
+          number: 12,
+          title: 'Add a greeting CLI',
+          url: 'https://github.com/acme/greet/pull/12',
+          isDraft: false,
+          state: 'OPEN',
+          baseRefName: 'main',
+          mergeable,
+          reviewDecision: 'APPROVED',
+          statusCheckRollup: [
+            {
+              __typename: 'CheckRun',
+              name: 'test',
+              workflowName: 'CI',
+              status: 'COMPLETED',
+              conclusion: 'CANCELLED',
+              startedAt: '2026-10-08T09:00:00Z',
+            },
+            {
+              __typename: 'CheckRun',
+              name: 'test',
+              workflowName: 'CI',
+              status: 'COMPLETED',
+              conclusion: 'SUCCESS',
+              startedAt: '2026-10-08T09:05:00Z',
+            },
+          ],
+        })
+      },
+      hold: () => (isHeld ? new Promise<void>(r => (release = r)) : Promise.resolve()),
+    },
+    {
+      match: argv => argv.includes('graphql'),
+      stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+    },
+  )
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'open the PR', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Opened https://github.com/acme/greet/pull/12.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-prs' })
+  await clock.settle()
+  expect(await pane.find({ text: /^ ·\sconflicts with main$/ })).toBeDefined()
+  expect(await pane.find({ key: 'fix-acme/greet#12-test-key' })).toBeUndefined()
+
+  isHeld = true
+  const first = pane.press({ key: 'resolve-acme/greet#12' })
+  await clock.settle()
+  expect(await pane.find({ text: /Refreshing PR #12…/ })).toBeDefined()
+  expect(sent).toEqual([])
+  release!()
+  await first
+  await clock.settle()
+  expect(sent.at(-1)).toContain('PR #12 (https://github.com/acme/greet/pull/12) conflicts with main.')
+  expect(await pane.find({ text: /✓ Asked to resolve conflicts ·/ })).toBeDefined()
+
+  isHeld = false
+  mergeable = 'MERGEABLE'
+  await clock.advance(PRESS_GUARD_MS)
+  expect((await pane.find({ key: 'resolve-acme/greet#12' }))?.props.label).toBe('Resolve conflicts again')
+  const sends = sent.length
+  await pane.press({ key: 'resolve-acme/greet#12' })
+  await clock.settle()
+  expect(sent.length).toBe(sends)
+  expect(await pane.find({ key: 'resolve-acme/greet#12' })).toBeUndefined()
+  expect(await pane.find({ text: /^This changed before your press\. Nothing was sent\.$/ })).toBeDefined()
+})
+
 test('opening the PRs tab while another PR fetch runs still finds the branch’s PR', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
@@ -3044,6 +3138,31 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await clock.settle()
     expect(await pane.find({ text: /No PRs/ })).toBeDefined()
     expect(await pane.find({ text: notice })).toBeUndefined()
+  })
+
+  test(`the ${surface} PRs tab does not say gh is missing when every gh run times out`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    slowGhClock = clock
+
+    await $.session.start({ cwd: '/tmp/project', surface, isInteractive: true })
+    const pane = await $.ui.mount({ ...PANE, surface })
+    if (surface === 'terminal') await pane.press({ key: 'tab-prs' })
+    else {
+      const { tabs, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+      const x = tabs
+        .slice(
+          0,
+          tabs.findIndex(t => t.id === 'prs'),
+        )
+        .reduce((sum, t) => sum + t.width + gap, 0)
+      await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+    }
+    await clock.settle()
+    await clock.advance(GH_TIMEOUT_MS)
+    expect(ran.some(argv => argv[0] === 'gh' && argv[1] === 'pr')).toBe(true)
+    expect(await pane.find({ text: /No PRs/ })).toBeDefined()
+    expect(await pane.find({ text: /could not find gh/ })).toBeUndefined()
   })
 
   test(`the ${surface} PRs tab says gh is not signed in until gh answers without asking for a sign-in`, async ($, on) => {
@@ -5001,7 +5120,7 @@ test('on a next build, a look starts when the Overview page shows, the page show
   expect((await pane.find({ key: 'overview-head' }))?.text).toBe(
     'Adding a greeting CLIBuilding a CLI that greets by name',
   )
-  expect((await pane.find({ key: 'overview-s1-name' }))?.text).toBe('Runtime')
+  expect((await pane.find({ key: 'overview-s1-name' }))?.text).toBe('Runtime · waiting')
   expect((await pane.find({ key: 'overview-s1-text' }))?.text).toBe('Node or Python')
   expect((await pane.find({ key: 'overview-s1' }))?.text).toContain('◆')
   expect((await pane.find({ key: 'overview-s2-text' }))?.text).toBe('written')
@@ -5144,8 +5263,13 @@ test('Claude Code task calls build the agent task list the Overview call reads',
 
 const childrenOf = (stored: Map<string, string>) => {
   const saved = [...stored].find(([k]) => k.startsWith('s:'))
-  const children: { kind: string; name: string; endedAt: number | null; lastActivityAt: number | null }[] =
-    (saved && JSON.parse(saved[1]).ledger.overview?.children) ?? []
+  const children: {
+    kind: string
+    name: string
+    endedAt: number | null
+    lastActivityAt: number | null
+    delegateState: string | null
+  }[] = (saved && JSON.parse(saved[1]).ledger.overview?.children) ?? []
 
   return children
 }
@@ -5275,7 +5399,7 @@ test('a subagent that runs inside its Agent call ends at the call’s result, an
   expect(running()).toEqual([])
 })
 
-test('a Herdr delegate runs as a child from the command that starts it until a wait on it ends, keeps its id when prompted again, and ends at a turn’s end once Herdr shows it no longer working', async ($, on) => {
+test('a Herdr delegate runs as a child from the command that starts it until a wait on it ends, keeps its id when prompted again, and at a turn’s end takes the state Herdr shows: blocked keeps it running, and ready ends it, finished once it had worked', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   const delegates = () => childrenOf(stored).map(c => [c.kind, c.name, c.endedAt === null])
@@ -5320,6 +5444,63 @@ test('a Herdr delegate runs as a child from the command that starts it until a w
     ['delegate', 'helper', true],
     ['delegate', 'scout', true],
   ])
+
+  await clock.advance(60_000)
+  const later = [
+    { name: 'helper', agent_status: 'blocked' },
+    { name: 'scout', agent_status: 'done' },
+  ]
+  ghAnswers.unshift({
+    match: argv => argv.join(' ') === 'herdr agent list',
+    stdout: JSON.stringify({ id: 'q', result: { type: 'agent_list', agents: later } }),
+  })
+  await $.turn.complete({ answer: 'Still on it.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  expect(childrenOf(stored).map(c => [c.name, c.endedAt === null, c.delegateState])).toEqual([
+    ['fixer', false, 'working'],
+    ['reviewer', false, null],
+    ['helper', true, 'blocked'],
+    ['scout', false, 'finished'],
+  ])
+})
+
+test('while the Overview shows a running delegate, the inbox asks Herdr each HERDR_CHECK_MS, with no turn ending, and stops once the Overview hides', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  files = ['/.next-build']
+  const herdrAsks = () => ran.filter(argv => argv.join(' ') === 'herdr agent list').length
+  const answer = (agent_status: string) =>
+    ghAnswers.unshift({
+      match: argv => argv.join(' ') === 'herdr agent list',
+      stdout: JSON.stringify({ id: 'q', result: { type: 'agent_list', agents: [{ name: 'fixer', agent_status }] } }),
+    })
+
+  paneState = { isShown: true, isFocused: true }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'hand it off', wait: false, origin: { kind: 'composer' } })
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent prompt fixer "fix it"' })
+  await clock.advance(HERDR_CHECK_MS)
+  answer('working')
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  const asked = herdrAsks()
+  expect(asked).toBeGreaterThan(0)
+
+  answer('blocked')
+  await clock.advance(HERDR_CHECK_MS)
+  await clock.settle()
+  expect(childrenOf(stored).map(c => [c.endedAt === null, c.delegateState])).toEqual([[true, 'blocked']])
+  expect(await pane.find({ text: /· waiting/ })).toBeDefined()
+
+  await pane.press({ key: 'tab-key-needsYou' })
+  await clock.advance(HERDR_CHECK_MS)
+  await clock.settle()
+  const afterHidden = herdrAsks()
+  await clock.advance(3 * HERDR_CHECK_MS)
+  await clock.settle()
+  expect(herdrAsks()).toBe(afterHidden)
 })
 
 test('the Overview page says what it is for before the session has any work', async ($, on) => {
@@ -5440,12 +5621,13 @@ test('on the Overview in the terminal, the rows under a subject hang from its ma
 
   expect(await tree('s1')).toEqual(['│', '│', '│'])
   expect(await tree('c1')).toEqual(['├─', '│', '│'])
-  expect(await tree('c3')).toEqual(['└─', ' ', ' '])
+  expect(await tree('c3')).toEqual(['├─', '│', '│'])
+  expect(await tree('c4')).toEqual(['└─', ' ', ' '])
   expect(await tree('c2')).toEqual(['└─', ' ', ' '])
   expect(await tree('s3')).toBeUndefined()
   expect((await textLines('c3')).length).toBeGreaterThan(1)
   await pane.redraw({ ...PANE.props, bodyColumns: 120 })
-  expect(await textLines('c3')).toEqual(['Tune how hard a pinch must be'])
+  expect(await textLines('c3')).toEqual(['Tune how hard a pinch must be · waiting'])
 })
 
 test('on the Overview, a rule sets each item apart in the docked terminal and on desktop, with none inside a subject’s tree or beside the look line, and the inline pane draws none', async ($, on) => {
@@ -5462,13 +5644,13 @@ test('on the Overview, a rule sets each item apart in the docked terminal and on
   const docked = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
   await docked.press({ key: 'tab-key-overview' })
   await clock.settle()
-  expect(await ruledAbove(docked)).toEqual(['s2', 's3', 's4', 'done'])
+  expect(await ruledAbove(docked)).toEqual(['s3', 's1', 's4', 'done'])
   await docked.unmount()
 
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
   await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
-  expect(await ruledAbove(desktop)).toEqual(['s2', 's3', 's4', 'done'])
+  expect(await ruledAbove(desktop)).toEqual(['s3', 's1', 's4', 'done'])
   await desktop.unmount()
 
   const inline = await $.ui.mount({ ...PANE, props: { ...PANE.props, placement: 'inline', bodyColumns: 90 } })

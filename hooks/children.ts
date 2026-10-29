@@ -1,5 +1,6 @@
-import type { Child, Overview } from '../types'
-import { childActive, childEnded, withChild } from './overview'
+import type { Child, DelegateState, Overview } from '../types'
+import { childActive, childEnded, subjectTouched, withChild } from './overview'
+import type { HerdrStatus } from './herdr'
 import { clipLabel } from './text'
 
 /** How long a child's newer activity waits before it is saved again. The page shows ages in whole minutes. */
@@ -10,20 +11,23 @@ const NAME_CHARS = 80
 
 /**
  * The child starts at `at`, named by the first line of `name`. A child whose activity the host does not report, such
- * as a background command, starts with no activity time, so it never reads quiet.
+ * as a background command, starts with no activity time.
  */
 export function childStarted(
   o: Overview | null,
   { ref, kind, name }: Pick<Child, 'ref' | 'kind' | 'name'>,
   at: number,
-  { reportsActivity = true } = {},
+  {
+    reportsActivity = true,
+    delegateState = null,
+  }: { reportsActivity?: boolean; delegateState?: DelegateState | null } = {},
 ): Overview {
   const line = name.trim().split('\n')[0] ?? ''
   const lastActivityAt = reportsActivity ? at : null
 
   return withChild(
     o,
-    { ref, kind, name: clipLabel(line, NAME_CHARS), startedAt: at, endedAt: null, lastActivityAt },
+    { ref, kind, name: clipLabel(line, NAME_CHARS), startedAt: at, endedAt: null, lastActivityAt, delegateState },
     at,
   )
 }
@@ -72,7 +76,7 @@ export function noticeApplied(o: Overview | null, notice: TaskNotice, at: number
 }
 
 /** One `herdr agent` command a session ran on a delegate. */
-export type DelegateStep = { name: string; isWaitForEnd: boolean }
+export type DelegateStep = { name: string; isPrompt: boolean; isWaitForEnd: boolean }
 
 const HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g
 
@@ -83,24 +87,39 @@ const HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)(
 export function delegateSteps(command: string): DelegateStep[] {
   return [...command.matchAll(HERDR)].map(([, verb, name, args]) => ({
     name: name!,
+    isPrompt: verb === 'prompt',
     isWaitForEnd: verb === 'wait' && !/--until working/.test(args ?? ''),
   }))
 }
 
 export const delegateRef = (name: string) => `herdr:${name}`
 
-/** The delegate named `name` runs from `at`. A delegate prompted again keeps its id and link, and a new run starts its age over. */
-function delegateRunning(o: Overview | null, name: string, at: number): Overview | null {
-  const ref = delegateRef(name)
+/**
+ * The delegate a step names runs from `at`. A delegate prompted again keeps its id and link, and a new run starts its
+ * age over. A prompt shows it working, so it can read finished once Herdr shows it ready.
+ */
+function delegateRunning(o: Overview | null, step: DelegateStep, at: number): Overview | null {
+  const ref = delegateRef(step.name)
   const known = o?.children.find(c => c.ref === ref)
   const isRunning = known !== undefined && known.endedAt === null
+  if (!isRunning)
+    return childStarted(o, { ref, kind: 'delegate', name: step.name }, at, {
+      delegateState: step.isPrompt ? 'working' : null,
+    })
+  const active = childActive(o, ref, at)
 
-  return isRunning ? childActive(o, ref, at) : childStarted(o, { ref, kind: 'delegate', name }, at)
+  return step.isPrompt ? delegateStateSet(active, ref, 'working') : active
+}
+
+function delegateStateSet(o: Overview | null, ref: string, delegateState: DelegateState): Overview | null {
+  if (!o?.children.some(c => c.ref === ref && c.delegateState !== delegateState)) return o
+
+  return { ...o, children: o.children.map(c => (c.ref === ref ? { ...c, delegateState } : c)) }
 }
 
 /** Every delegate `command` starts, prompts or waits on runs from `at`, as the command starts. */
 export function delegatesStarted(o: Overview | null, command: string, at: number): Overview | null {
-  return delegateSteps(command).reduce((x, step) => delegateRunning(x, step.name, at), o)
+  return delegateSteps(command).reduce((x, step) => delegateRunning(x, step, at), o)
 }
 
 /** Every delegate `command` waits on until its turn settles ended at `at`, once the command returned. */
@@ -118,13 +137,38 @@ export function hasRunningDelegate(o: Overview | null): boolean {
   return o?.children.some(c => c.kind === 'delegate' && c.endedAt === null) ?? false
 }
 
-/** Every running delegate that `running`, read from Herdr at `at`, does not name ended then. */
-export function delegatesSettled(o: Overview | null, running: ReadonlySet<string>, at: number): Overview | null {
-  const refs = new Set([...running].map(delegateRef))
-  const isGone = (c: Child) =>
-    c.kind === 'delegate' && !refs.has(c.ref) && at - (c.lastActivityAt ?? c.startedAt) >= HERDR_PROMPT_SETTLE_MS
+/**
+ * Each running delegate after Herdr's `states`, read at `at`, by agent name. A delegate Herdr shows working or blocked
+ * takes that state. One Herdr shows ready, or no longer lists, ended then. One that is ready after it worked finished,
+ * and its subject changed then, so the subject shows above the look line. Herdr's `unknown` changes nothing.
+ */
+export function delegatesSettled(
+  o: Overview | null,
+  states: ReadonlyMap<string, HerdrStatus>,
+  at: number,
+): Overview | null {
+  if (!o) return o
+  const byRef = new Map([...states].map(([name, status]) => [delegateRef(name), status]))
+  const settled = (c: Child): Child => {
+    if (c.kind !== 'delegate' || c.endedAt !== null) return c
+    const status = byRef.get(c.ref)
+    const isShownWorking = status === 'working' || status === 'blocked'
+    if (isShownWorking) return c.delegateState === status ? c : { ...c, delegateState: status }
+    const isSettling = at - (c.lastActivityAt ?? c.startedAt) < HERDR_PROMPT_SETTLE_MS
+    if (status === 'unknown' || isSettling) return c
 
-  return childrenEnded(o, isGone, at)
+    const isReady = status === 'idle' || status === 'done'
+    const hasFinished = isReady && c.delegateState !== null
+
+    return { ...c, endedAt: at, delegateState: hasFinished ? 'finished' : c.delegateState }
+  }
+  const children = o.children.map(settled)
+  if (children.every((c, n) => c === o.children[n])) return o
+  const finished = children.filter(
+    (c, n) => c.delegateState === 'finished' && o.children[n]!.delegateState !== 'finished',
+  )
+
+  return finished.reduce((x, c) => subjectTouched(x, c.subjectId, at), { ...o, children })
 }
 
 /**
