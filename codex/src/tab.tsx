@@ -865,7 +865,7 @@ function findingRow(v: View, r: RowView, f: Finding): Row {
 const pressesOf = (v: View): PressState => ({ lastActions: v.lastActions, turns: v.turns, now: v.at })
 
 function prKey(rowId: string, pr: PrView, a: PrAction): Key {
-  const effect = a.kind === 'local' ? prPressEffect(pr, a.press) : null
+  const effect = prPressEffect(pr, a.press)
   const pending = effect ? pendingLocal(effect) : null
 
   return {
@@ -2393,7 +2393,7 @@ function initialize(): Promise<boolean> {
     'ui/initialize',
     {
       protocolVersion: '2026-01-26',
-      appInfo: { name: 'inbox', version: '0.2.13' },
+      appInfo: { name: 'inbox', version: '0.2.14' },
       appCapabilities: { tools: {} },
     },
     READ_TIMEOUT_MS,

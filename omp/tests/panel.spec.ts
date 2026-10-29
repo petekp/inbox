@@ -744,7 +744,7 @@ const tabLine = (screen: PanelScreen, ui: PanelUi, width: number) =>
 
 const labelOf = (row: OverviewRow) => (row.kind === 'subject' || row.kind === 'child' ? row.name : row.text)
 
-test('the Overview page shows the goal, then its rows in order, each subject’s marks in the goal’s column, where it stands under its name and its was line under that, and Seen in the middle of its rule', () => {
+test('the Overview page shows the goal, then its rows in order, each subject’s marks in the goal’s column, where it stands under its name and its was line under that, and Last seen in the middle of its rule', () => {
   const screen = screenOf()
   const page = screen.view.overviewPage
   const lines = text(screen, onPage).split('\n')
@@ -761,8 +761,8 @@ test('the Overview page shows the goal, then its rows in order, each subject’s
     expect(lines[at(row.name) + 1]).toContain(row.text!)
     expect(lines[at(row.name) + 2]).toContain(`was: ${row.was}`)
   }
-  const seen = lines[at(' Seen ')]!.trim()
-  const [left, right] = seen.split(' Seen ')
+  const seen = lines[at(' Last seen ')]!.trim()
+  const [left, right] = seen.split(' Last seen ')
   expect(left!.length - right!.length).toBeLessThanOrEqual(1)
   expect(left).toMatch(/^─+$/)
 })

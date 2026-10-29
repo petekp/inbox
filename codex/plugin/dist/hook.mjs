@@ -810,6 +810,9 @@ function noteDialog(s, callId, questions) {
 }
 
 // ../hooks/gh.ts
+var GH_TIMEOUT_MS = 2e4;
+var UNSTARTABLE_CODE = -1;
+var TIMED_OUT_CODE = -2;
 var GIT_TIMEOUT_MS = 5e3;
 async function branchIn(run2, folder) {
   const r = await run2(["git", "branch", "--show-current"], { cwd: folder, timeoutMs: GIT_TIMEOUT_MS });
@@ -1242,7 +1245,7 @@ function screenTabOf(tab) {
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
-var LOOK_TEXT = "Seen";
+var LOOK_TEXT = "Last seen";
 var CHILD_ROWS = 3;
 var STALL_MS = 15 * 6e4;
 var NEW_CLOSED_ROWS = 2;
@@ -1434,7 +1437,8 @@ function actionsOf(row, last, state, feedback) {
       ...stepActions,
       action({ action: "done", id }, "Done", "mark"),
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
-      action({ action: "explain", id }, "Explain", "talk")
+      action({ action: "explain", id }, "Explain", "talk"),
+      action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
   const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
@@ -1673,6 +1677,7 @@ function threadRowId(ref, thread) {
 function prMarkId(ref) {
   return `pr:${ref}`;
 }
+var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds`;
 var PR_DISMISSED_LABEL = "Dismissed";
 function threadSentIn(lastActions) {
   return (pr, t) => {
@@ -3137,17 +3142,21 @@ var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve4) => {
       rest,
       { cwd, env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, encoding: "utf8" },
       (err, stdout, stderr) => {
-        const code = err ? typeof err.code === "number" ? err.code : -1 : 0;
-        resolve4({ code, stdout: String(stdout), stderr: String(stderr) });
+        resolve4({ code: exitCodeOf(err), stdout: String(stdout), stderr: String(stderr) });
       }
     );
     child.stdin?.on("error", () => {
     });
     child.stdin?.end(input);
   } catch (err) {
-    resolve4({ code: -1, stdout: "", stderr: err instanceof Error ? err.message : String(err) });
+    resolve4({ code: UNSTARTABLE_CODE, stdout: "", stderr: err instanceof Error ? err.message : String(err) });
   }
 });
+function exitCodeOf(err) {
+  if (!err) return 0;
+  if (err.killed) return TIMED_OUT_CODE;
+  return typeof err.code === "number" ? err.code : UNSTARTABLE_CODE;
+}
 
 // src/hook-main.ts
 async function main() {

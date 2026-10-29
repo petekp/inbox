@@ -288,6 +288,8 @@ export type PrView = {
   wasSeenOpen: boolean
   /** Why the last fetch failed; the rest is from the fetch before. */
   error: string | null
+  /** When a fetch last read the PR's state from GitHub. Absent on a view saved before the inbox kept it. */
+  fetchedAt?: number
 }
 
 export type Ledger = {

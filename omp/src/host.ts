@@ -15,7 +15,7 @@ import { dialogActivity, dialogQuestions, guidanceText, screenText, toolActivity
 import type { DialogOutcome, ScreenTab } from '../../hooks/model-text'
 import type { PrPress } from '../../hooks/pr-tab'
 import { noteDialog } from '../../hooks/dialogs'
-import { branchIn, ghFinder, ghIn } from '../../hooks/gh'
+import { branchIn, ghFinder, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
 import { CLEARED_TOKENS, delegatesInHerdr, herdrReporter, herdrTokens } from '../../hooks/herdr'
 import type { Run } from '../../hooks/gh'
 import { COMPARE_PAGE_FILE } from '../../hooks/presses'
@@ -520,9 +520,9 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     try {
       const r = await pi.exec(file, rest, { cwd, timeout: timeoutMs })
 
-      return { code: r.killed ? -1 : r.code, stdout: r.stdout, stderr: r.stderr }
+      return { code: r.killed ? TIMED_OUT_CODE : r.code, stdout: r.stdout, stderr: r.stderr }
     } catch (err) {
-      return { code: -1, stdout: '', stderr: messageOf(err) }
+      return { code: UNSTARTABLE_CODE, stdout: '', stderr: messageOf(err) }
     }
   }
   const gh = ghFinder(run)

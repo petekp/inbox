@@ -272,7 +272,7 @@ test('an open row below the look line keeps where it stands but not its was line
   const p = page({ ...o, lastLookAt: 50 * MIN }, now, { lastReplyAt: now - 2 * MIN }, [askItem('i1')])
 
   expect(p.goal).toBe('Work offline')
-  expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick', '-- Seen', '○ Docs: outline ready'])
+  expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick', '-- Last seen', '○ Docs: outline ready'])
   const seenAt = { ...after(o, 'WAS: s2 | sync on every save', 90 * MIN, new Set(['i1'])), lastLookAt: 95 * MIN }
   const seen = page(seenAt, now, {}, [askItem('i1')]).rows
   expect(shape(seen)).toEqual(['◆ Offline mode: needs a sync pick', '○ Docs: outline ready'])
@@ -380,7 +380,7 @@ test('finished work folds into a count once seen, keeping at most two new finish
   expect(shape(page({ ...fresh, lastLookAt: 60 * MIN }, now).rows)).toEqual([
     '✓ Four: done d',
     '✓ Three: done c',
-    '-- Seen',
+    '-- Last seen',
     '✓ 2 more done',
   ])
 })
@@ -461,7 +461,7 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
     '── ● Offline mode: queue built ┐',
     '├ ● Review r1',
     '└ ● Review r2',
-    '-- Seen',
+    '-- Last seen',
     '○ Docs: outline ready',
     '── ✓ 1 done',
   ])

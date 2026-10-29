@@ -1003,7 +1003,7 @@ export type OverviewPage = {
   empty: { title: string; hint: string }
 }
 
-export const LOOK_TEXT = 'Seen'
+export const LOOK_TEXT = 'Last seen'
 /** What a subject's was line starts with, before the plan it replaces. */
 export const WAS_PREFIX = 'was: '
 const MERGED_PREFIX = 'merged in: '
@@ -1310,6 +1310,7 @@ function actionsOf(
       action({ action: 'done', id }, 'Done', 'mark'),
       action({ action: 'type', id, text: '' }, 'Reply', 'handoff'),
       action({ action: 'explain', id }, 'Explain', 'talk'),
+      action({ action: 'dismiss', id }, 'Dismiss', 'mark'),
     ]
   const isFolding = item.options.length > OPTIONS_FOLD_AT
   const options =
