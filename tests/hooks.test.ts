@@ -74,6 +74,7 @@ let spawnedAgentId = 'a1'
 let listedAgents: { id: string; status: string }[] = []
 
 let isGhMissing = false
+let isGhSlow = false
 
 let ghAnswers: {
   match: (argv: readonly string[]) => boolean
@@ -192,6 +193,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   listedAgents = []
   ghAnswers = []
   isGhMissing = false
+  isGhSlow = false
   ledgerReply = LEDGER_REPLY
   overviewReply = 'UNCHANGED'
   overviewPrompts = []
@@ -278,6 +280,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   on('process.run', async ($, e) => {
     ran.push([...e.argv])
     if (isGhMissing && e.argv[0] === 'gh') throw new Error('spawn gh ENOENT')
+    if (isGhSlow && e.argv[0] === 'gh') return { deny: 'aborted: still running after 20000ms' }
     await ghAnswers.find(a => a.match(e.argv))?.hold?.()
     return { value: gh(e.argv) }
   })
@@ -3023,6 +3026,30 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await clock.settle()
     expect(await pane.find({ text: /No PRs/ })).toBeDefined()
     expect(await pane.find({ text: notice })).toBeUndefined()
+  })
+
+  test(`the ${surface} PRs tab does not say gh is missing when every gh run times out`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    isGhSlow = true
+
+    await $.session.start({ cwd: '/tmp/project', surface, isInteractive: true })
+    const pane = await $.ui.mount({ ...PANE, surface })
+    if (surface === 'terminal') await pane.press({ key: 'tab-prs' })
+    else {
+      const { tabs, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+      const x = tabs
+        .slice(
+          0,
+          tabs.findIndex(t => t.id === 'prs'),
+        )
+        .reduce((sum, t) => sum + t.width + gap, 0)
+      await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+    }
+    await clock.settle()
+    expect(ran.some(argv => argv[0] === 'gh' && argv[1] === 'pr')).toBe(true)
+    expect(await pane.find({ text: /No PRs/ })).toBeDefined()
+    expect(await pane.find({ text: /could not find gh/ })).toBeUndefined()
   })
 
   test(`the ${surface} PRs tab says gh is not signed in until gh answers without asking for a sign-in`, async ($, on) => {

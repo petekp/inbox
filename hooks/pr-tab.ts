@@ -1,5 +1,5 @@
 import type { Item, LastAction, Ledger, PressKind, PrCheck, PrThread, PrView, PrViews } from '../types'
-import { UNSTARTABLE_CODE } from './gh'
+import { GH_TIMEOUT_MS, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import { baseName, isFoldingPress, localLast, pendingResult, prSteps, recordPress, withQueued } from './presses'
 import type { Effect, HelpStep, PrActionId, RowPress } from './presses'
 import { clipLabel } from './text'
@@ -102,7 +102,8 @@ export async function fetchTracked(
   let isGhSignedOut: boolean | null = null
   const gh: GhRun = async args => {
     const r = await run(args)
-    if (r.exitCode !== UNSTARTABLE_CODE) isGhSignedOut = isGhSignedOut === true || asksForSignIn(r)
+    const isAnswer = r.exitCode !== UNSTARTABLE_CODE && r.exitCode !== TIMED_OUT_CODE
+    if (isAnswer) isGhSignedOut = isGhSignedOut === true || asksForSignIn(r)
 
     return r
   }
@@ -161,7 +162,12 @@ export async function fetchPr(
   if (!base) {
     if (!previous || asksForSignIn(view)) return previous ?? null
 
-    return { ...previous, error: view.stderr.trim().split('\n')[0] || 'gh could not read the PR' }
+    const error =
+      view.exitCode === TIMED_OUT_CODE
+        ? GH_TIMED_OUT_TEXT
+        : view.stderr.trim().split('\n')[0] || 'gh could not read the PR'
+
+    return { ...previous, error }
   }
   const threads = early ?? (await threadsOf(ref))
   const answer = threads.exitCode === 0 ? readThreadsAnswer(threads.stdout) : null
@@ -204,6 +210,8 @@ export function prMarkId(ref: string): string {
 }
 
 export const GH_MISSING_TEXT = 'The inbox could not find gh. It needs gh to read your PRs.'
+
+export const GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} seconds`
 
 export const GH_SIGNED_OUT_TEXT = 'gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.'
 
