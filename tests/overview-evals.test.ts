@@ -97,6 +97,7 @@ function baseScene(): Scene {
           startedAt: minutes(5),
           endedAt: null,
           lastActivityAt: minutes(9),
+          delegateState: null,
         },
       ],
     },

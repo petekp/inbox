@@ -1,11 +1,9 @@
 import { LOOK_TEXT, mergedLine, STALL_GAP, WAS_PREFIX } from '../hooks/view'
-import type { OverviewPage, OverviewRow } from '../hooks/view'
+import type { OverviewPage, OverviewRow, OverviewStall } from '../hooks/view'
 
-/** A row's second line: where it stands, then its stall words. */
-function secondLine(text: string | null, stall: string | null): string | null {
-  const parts = [text, stall].filter((p): p is string => p !== null)
-
-  return parts.length > 0 ? parts.join(STALL_GAP) : null
+/** A row's name, with its stall word after it. */
+function nameLine(name: string, stall: OverviewStall | null): string {
+  return stall ? `${name}${STALL_GAP}${stall.text}` : name
 }
 
 /**
@@ -15,18 +13,16 @@ function secondLine(text: string | null, stall: string | null): string | null {
 function rowText(r: OverviewRow): string[] {
   switch (r.kind) {
     case 'subject': {
-      const second = secondLine(r.text, r.stall)
       return [
-        `${r.mark} ${r.name}`,
-        ...(second ? [`  ${second}`] : []),
+        `${r.mark} ${nameLine(r.name, r.stall)}`,
+        ...(r.text ? [`  ${r.text}`] : []),
         ...(r.merged ? [`  ${mergedLine(r.merged, () => true)}`] : []),
         ...(r.was ? [`  ${WAS_PREFIX}${r.was}`] : []),
       ]
     }
     case 'child': {
       const branch = r.branch === null ? '  ' : r.branch === 'last' ? '  └ ' : '  ├ '
-      const under = r.branch === null ? '    ' : '      '
-      return [`${branch}${r.mark} ${r.name}`, ...(r.stall ? [`${under}${r.stall}`] : [])]
+      return [`${branch}${r.mark} ${nameLine(r.name, r.stall)}`]
     }
     case 'more':
       return [`  └ ${r.text}`]

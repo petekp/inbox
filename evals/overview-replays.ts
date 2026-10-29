@@ -31,6 +31,7 @@ function delegate(id: string, name: string, subjectId: string, startedAt: number
     startedAt: minutes(startedAt),
     endedAt: null,
     lastActivityAt: minutes(-5),
+    delegateState: 'working',
   }
 }
 

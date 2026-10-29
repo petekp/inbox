@@ -770,15 +770,36 @@ test('the Overview page shows the goal, then its rows in order, each subject’s
 test('on the Overview page, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', () => {
   const lines = text(screenOf(), onPage, 28).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
-  const [subject, mid, last, next] = [at('Dismiss gesture'), at('Review the'), at('Tune how hard'), at('Fade-out')]
+  const [subject, first, mid, last, next] = [
+    at('Dismiss gesture'),
+    at('Review the'),
+    at('Tune how hard'),
+    at('Time the'),
+    at('Fade-out'),
+  ]
   const col = lines[subject]!.search(/\S/)
   const glyphs = (from: number, to: number) => lines.slice(from, to).map(l => l.slice(col, col + 2))
 
-  expect(subject).toBeLessThan(mid)
-  expect(glyphs(subject + 1, mid).every(g => g.startsWith('│'))).toBe(true)
+  expect(subject).toBeLessThan(first)
+  expect(glyphs(subject + 1, first).every(g => g.startsWith('│'))).toBe(true)
+  expect(glyphs(first, mid)).toEqual(['├─', ...Array<string>(mid - first - 1).fill('│ ')])
   expect(glyphs(mid, last)).toEqual(['├─', ...Array<string>(last - mid - 1).fill('│ ')])
   expect(last - mid).toBeGreaterThan(1)
   expect(glyphs(last, next)).toEqual(['└─', ...Array<string>(next - last - 1).fill('  ')])
+})
+
+test('on the Overview page, a row’s stall word follows its name on the line of its last word, at every width, and running work and work waiting on someone else show none', () => {
+  const wide = text(screenOf(), onPage, 80).split('\n')
+  expect(wide.some(l => l.includes('Tune how hard a pinch must be · waiting'))).toBe(true)
+  expect(wide.some(l => l.includes('Time the fade-out · finished'))).toBe(true)
+  expect(wide.some(l => l.includes('Watch the pairing log') && !l.includes(' · '))).toBe(true)
+  expect(wide.some(l => l.includes('Glasses trial') && !l.includes(' · '))).toBe(true)
+
+  for (const width of [26, 28, 30, 34, 40, 50]) {
+    const lines = text(screenOf(), onPage, width).split('\n')
+    for (const word of ['waiting', 'finished'])
+      expect(lines.filter(l => l.includes(` ${word}`) && !l.includes('waits')).every(l => /\S · /.test(l))).toBe(true)
+  }
 })
 
 test('on the Overview page, a rule from the text column sets each item apart, with none inside a subject’s tree or beside the look line', () => {

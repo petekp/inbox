@@ -1,4 +1,4 @@
-import type { Child, ChildKind, Item, Overview, Subject, SubjectStatus } from '../types'
+import type { Child, ChildKind, DelegateState, Item, Overview, Subject, SubjectStatus } from '../types'
 
 /** The most words the call may write in a subject's name, where it stands, and the goal. */
 export const NAME_WORDS = 3
@@ -57,6 +57,7 @@ export type OpenStatus = Exclude<SubjectStatus, 'done' | 'dropped'>
 const OPEN_STATUSES: readonly OpenStatus[] = ['working', 'queued', 'waits-on-other']
 const STATUSES: readonly SubjectStatus[] = [...OPEN_STATUSES, 'done', 'dropped']
 const CHILD_KINDS: readonly ChildKind[] = ['subagent', 'background', 'workflow', 'delegate']
+const DELEGATE_STATES: readonly DelegateState[] = ['working', 'blocked', 'finished']
 
 /** One line of the Overview call's answer. */
 export type Op =
@@ -298,8 +299,8 @@ export function isChildRunning(c: Pick<Child, 'startedAt' | 'endedAt'>, now: num
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now)
 }
 
-/** What a host reports about a child: everything but the id and the link, which the Overview owns. */
-export type ChildReport = Omit<Child, 'id' | 'subjectId'>
+/** What a host reports about a child: everything but the id and the link, which the Overview owns. A delegate's state is null until reported. */
+export type ChildReport = Omit<Child, 'id' | 'subjectId' | 'delegateState'> & Partial<Pick<Child, 'delegateState'>>
 
 /**
  * Adds a child the host reports, or updates the one it holds with the same `ref`. A delegate prompted again keeps its
@@ -314,7 +315,7 @@ export function withChild(last: Overview | null, c: ChildReport, now: number): O
   return {
     ...o,
     nextChildId: o.nextChildId + 1,
-    children: [...kept, { ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT),
+    children: [...kept, { delegateState: null, ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT),
   }
 }
 
@@ -329,6 +330,18 @@ function changedChild(o: Overview | null, ref: string, change: (c: Child) => Par
 /** The child with `ref` ended at `at`. */
 export function childEnded(o: Overview | null, ref: string, at: number): Overview | null {
   return changedChild(o, ref, c => ({ endedAt: c.endedAt ?? at }))
+}
+
+/**
+ * The subject with `id` changed at `at`, as when a child under it finished, so it shows above the look line again. Its
+ * was and merged lines go once the person has seen them, as for a change the Overview call makes.
+ */
+export function subjectTouched(o: Overview, id: string | null, at: number): Overview {
+  const isSeen = (s: Subject) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt
+  const touched = (s: Subject): Subject =>
+    isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at }
+
+  return id === null ? o : { ...o, subjects: o.subjects.map(s => (s.id === id ? touched(s) : s)) }
 }
 
 /** The child with `ref` did something at `at`. Only a kind the host reports activity for has a time to move. */
@@ -432,6 +445,7 @@ function childOf(saved: unknown): Child | null {
     startedAt,
     endedAt: time(c.endedAt),
     lastActivityAt: time(c.lastActivityAt),
+    delegateState: DELEGATE_STATES.find(state => state === c.delegateState) ?? null,
   }
 }
 

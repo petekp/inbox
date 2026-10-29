@@ -608,8 +608,10 @@ test('a sample saved without an Overview is replaced, and the sample session car
   expect(page.rows.map(r => r.kind)).toEqual([
     'subject',
     'child',
+    'child',
     'subject',
     'subject',
+    'child',
     'child',
     'child',
     'subject',

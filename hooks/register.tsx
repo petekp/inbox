@@ -177,7 +177,7 @@ import {
 } from './claude'
 import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
-import { CLEARED_TOKENS, delegatesInHerdr, herdrReporter, herdrTokens } from './herdr'
+import { CLEARED_TOKENS, delegatesInHerdr, HERDR_CHECK_MS, herdrCheckGate, herdrReporter, herdrTokens } from './herdr'
 import { ago, cellWidth, clipLabel, cutForEllipsis } from './text'
 import {
   applyPress,
@@ -262,6 +262,7 @@ import {
   hasRunningMark,
   LOOK_TEXT,
   mergedLine,
+  nameBeforeStall,
   STALL_GAP,
   WAS_PREFIX,
   inboxCommandText,
@@ -295,6 +296,7 @@ import type {
   PlannedKey,
   OverviewBranch,
   OverviewRow,
+  OverviewStall,
   RowView,
   RowWait,
   SettledState,
@@ -2060,6 +2062,41 @@ async function syncLook($: EngineInterface, isOpen?: boolean) {
   const [page, isPaneOpen, now] = await Promise.all([readPage($), isOpen ?? isPaneShown($), $.clock.now()])
   const isShown = isPaneOpen && page === 'overview'
   await commit($, currentOwner(), s => withLook(s, isShown, now)).catch(() => undefined)
+  followDelegates($, isShown)
+}
+
+const isHerdrCheckDue = herdrCheckGate()
+let herdrCheckTimer: Timer | null = null
+
+/**
+ * Asks Herdr about the running delegates each `HERDR_CHECK_MS` while the Overview shows, and once as it starts to
+ * show, so a delegate's row follows Herdr while this session waits. The first tick after the Overview stops showing
+ * stops the timer.
+ */
+function followDelegates($: EngineInterface, isShown: boolean) {
+  if (!isShown) {
+    herdrCheckTimer?.cancel()
+    herdrCheckTimer = null
+    return
+  }
+  void checkDelegates($).catch(() => undefined)
+  herdrCheckTimer ??= $.clock.every(HERDR_CHECK_MS, () => {
+    void (async () => {
+      const isStillShown = (await readPage($)) === 'overview' && (await isPaneShown($))
+      if (isStillShown && !(await read($, DEMO))) return checkDelegates($)
+      herdrCheckTimer?.cancel()
+      herdrCheckTimer = null
+    })().catch(() => undefined)
+  })
+}
+
+async function checkDelegates($: EngineInterface) {
+  const owner = currentOwner()
+  if (!isHerdrCheckDue(owner.id, await $.clock.now())) return
+  const states = await read($, SESSION).then(s => delegatesInHerdr(upgradeSession(s).ledger.overview, processRun($)))
+  if (!states) return
+  const at = await $.clock.now()
+  await commit($, owner, s => overviewChanged(s, o => delegatesSettled(o, states, at)))
 }
 
 /**
@@ -2252,7 +2289,7 @@ function lineCount(text: string, width: number): number {
   return wrapped(text, width).length
 }
 
-type TerminalSpan = Span & { isLinkAddress?: true; isMuted?: true; isNeedsYou?: true; isUnbroken?: true }
+type TerminalSpan = Span & { isLinkAddress?: true; isMuted?: true; isNeedsYou?: true; isDone?: true; isUnbroken?: true }
 
 function terminalTextLines(text: string, width: number, limit = Infinity): TerminalSpan[][] {
   if (!text) return []
@@ -4190,11 +4227,13 @@ export const register: Register = on => {
             color={
               span.isNeedsYou
                 ? (pal.tone.needsYou ?? pal.mark.needsYou)
-                : span.isLinkAddress || span.isMuted
-                  ? pal.muted
-                  : span.code
-                    ? 'permission'
-                    : undefined
+                : span.isDone
+                  ? (pal.tone.done ?? pal.mark.done)
+                  : span.isLinkAddress || span.isMuted
+                    ? pal.muted
+                    : span.code
+                      ? 'permission'
+                      : undefined
             }
           >
             {span.text}
@@ -6137,16 +6176,44 @@ export const register: Register = on => {
         </Text>
       </Box>
     )
-    /** A row's second line: where it stands, muted, then its stall words in the needs-you tone, never split by a wrap. */
-    const overviewSecondLine = (key: string, text: string | null, stall: string | null, depth: number) => {
-      const unbroken = (words: string) => (look === 'desktop' ? words.replaceAll(' ', '\u00a0') : words)
-      const spans: TerminalSpan[] = [
-        ...(text ? [{ text, isMuted: true as const }] : []),
-        ...(text && stall ? [{ text: STALL_GAP, isMuted: true as const }] : []),
-        ...(stall ? [{ text: unbroken(stall), isNeedsYou: true as const, isUnbroken: true as const }] : []),
-      ]
+    /** A row's stall word in the stall's tone, never split by a wrap. */
+    const stallSpan = (stall: OverviewStall): TerminalSpan => {
+      const text = look === 'desktop' ? stall.text.replaceAll(' ', '\u00a0') : stall.text
+      const tone = stall.tone === 'needsYou' ? { isNeedsYou: true as const } : { isDone: true as const }
 
-      return spans.length > 0 ? [overviewText(key, spans, depth)] : []
+      return { text, isUnbroken: true, ...tone }
+    }
+    /**
+     * A row's name with its stall word after `STALL_GAP`, on the line of the name's last word, which a wrap never
+     * splits from them. `nameBeforeStall` cuts the name so the line fits `OVERVIEW_TEXT_LINES`.
+     */
+    const overviewNameLine = (key: string, name: TerminalSpan, stall: OverviewStall | null, depth: number) => {
+      if (!stall) return overviewText(key, [name], depth)
+      const width = overviewTextWidth(depth)
+      const gap = look === 'desktop' ? STALL_GAP.replaceAll(' ', '\u00a0') : STALL_GAP
+      const spans = (shown: string): TerminalSpan[] => [
+        { ...name, text: shown },
+        { text: gap, isMuted: true, isUnbroken: true },
+        stallSpan(stall),
+      ]
+      const lineCount = (shown: string) =>
+        look === 'desktop'
+          ? desktopLines(
+              spans(shown)
+                .map(s => s.text)
+                .join(''),
+              width,
+            ).length
+          : terminalSpanLines(spans(shown), width).length
+      const shown = nameBeforeStall(name.text, x => lineCount(x) <= OVERVIEW_TEXT_LINES)
+
+      return (
+        <Box key={key}>
+          <Text wrap="wrap">
+            {terminalText(look === 'desktop' ? [spans(shown)] : terminalSpanLines(spans(shown), width))}
+          </Text>
+        </Box>
+      )
     }
     /** An Overview row frame's padding and 1 pt border above or below its text on desktop, in half lines. */
     const overviewFrameEdge = OVERVIEW_PAD_Y + 2 * DESKTOP_HAIR_LINES
@@ -6279,8 +6346,8 @@ export const register: Register = on => {
         const color = r.tone ? pal.mark[r.tone] : pal.muted
         const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
         const content = [
-          overviewText(`overview-${r.id}-name`, [{ text: r.name }], 0),
-          ...overviewSecondLine(`overview-${r.id}-text`, r.text, r.stall, 0),
+          overviewNameLine(`overview-${r.id}-name`, { text: r.name }, r.stall, 0),
+          ...(r.text ? [overviewText(`overview-${r.id}-text`, [{ text: r.text, isMuted: true }], 0)] : []),
           ...(r.merged
             ? [
                 overviewText(
@@ -6303,17 +6370,15 @@ export const register: Register = on => {
         })
       }
       if (r.kind === 'child') {
-        const mark = r.isRunning ? runningDot(r.id, r.mark, pal.muted) : <Text color={pal.muted}>{r.mark}</Text>
+        const color = r.tone ? pal.mark[r.tone] : pal.muted
+        const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
         const depth = r.branch === null ? 0 : 1
 
         return overviewLine({
           key: `overview-${r.id}`,
           depth,
           mark,
-          content: [
-            overviewText(`overview-${r.id}-name`, [{ text: r.name, isMuted: true }], depth),
-            ...overviewSecondLine(`overview-${r.id}-text`, null, r.stall, depth),
-          ],
+          content: overviewNameLine(`overview-${r.id}-name`, { text: r.name, isMuted: true }, r.stall, depth),
           tree: r.branch ? overviewTree(`overview-${r.id}-tree`, r.branch) : null,
         })
       }

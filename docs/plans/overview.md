@@ -25,9 +25,10 @@ The page fails when it reads as a log, when it copies Asks or Finds, or when it 
 2. **The inbox model edits subjects by id. Code applies each edit.**
    - Reason: a model that rewrites the whole page from the last page drifts toward the newest exchange. In a replay of one real session, 33 of 35 replies rewrote the page.
 3. **Code writes every time and the order. The model never writes a time.**
-   - Reason: a time word in model text freezes when it is written, so "merged today" reads wrong the next day. How long work has stalled carries meaning, so the times must be true.
-4. **Time shows only on work that has stalled. Rows have no age column.** A subject held by an ask, or waiting on something outside the session, reads how long it has waited on its second line, as `waiting 2h`, once that passes 15 minutes. A child with no activity for 15 minutes reads `quiet 40m`. Among rows of the same status, a row's place follows when its work last changed, not when the page last checked it.
-   - Reason: an age on every row was hard to read and said little. A time matters when work has stopped moving. A row that rose because the page checked it would claim a change that did not happen.
+   - Reason: a time word in model text freezes when it is written, so "merged today" reads wrong the next day.
+4. **Only a row that waits on the person says `waiting`, and rows show no times.** A row's stall word follows its name on the same line. A subject that an ask holds up reads `waiting` in the needs-you tone, and so does a Herdr delegate at a question or an approval. A finished delegate reads `finished` until the person has seen the Overview. A row waiting on someone else shows no word: its ◌ mark and where it stands say what it waits on. Running work shows no word, since its moving mark says it runs. Among rows of the same status, a row's place follows when its work last changed, not when the page last checked it.
+   - Reason: a person read a muted `waiting` as work waiting on them. The word now appears only when it is true for the person, and a time on a waiting row added words they did not need.
+   - Reason: an age on every row was hard to read and said little. A row that rose because the page checked it would claim a change that did not happen.
 5. **A changed state always reaches the page.** Code keeps the old text and place only when the new text has the same content words, in any order.
    - Reason: "manual merge ready" becoming "manual merge broken" is a change, though half the words match.
 6. **◆ comes from a link between an open ask and the subjects it holds up.** The Overview call writes the link. Code draws ◆ while the ask is open and clears it when the ask closes. One ask can hold up several subjects. There is no "waits on you" status and no "problem" status.
@@ -92,9 +93,9 @@ From top to bottom:
 | Part | What it shows | Who writes it |
 | --- | --- | --- |
 | Goal | What the session's work is for. The call is asked for at most 8 words, and code clips it at 14. | Model |
-| Subject rows | A mark and a short name, with a few words on where it stands on the line under the name, and stall words once the work has stalled. The call is asked for a name of at most 3 words and a text of at most 4. Code clips them at 20 and 12. | The model writes the status, name and text. Code draws the mark and the stall words, and orders the rows by status, then by last change. |
+| Subject rows | A mark and a short name, with `waiting` after the name while it waits on the person, and a few words on where it stands on the line under the name. The call is asked for a name of at most 3 words and a text of at most 4. Code clips them at 20 and 12. | The model writes the status, name and text. Code draws the mark and the stall word, and orders the rows by status, then by last change. |
 | Was line | The plan a change replaced, as "was: last-write-wins", or the pieces merged into this one, as "merged in: Banner on hover", until the person has seen it | The model writes it. Code shows it only until the person has looked. |
-| Child rows | Running work under its subject, named by the first line of the name its host gives it. After 15 minutes with no activity, its stall words read "quiet 40m". | Code, from host events. The model writes the link. |
+| Child rows | Running work under its subject, named by the first line of the name its host gives it. A delegate shows what Herdr shows: `◆ … · waiting` at a question or an approval, and `✓ … · finished` once it stops, until the person has seen the Overview. Running work shows no word. | Code, from host events and from Herdr. The model writes the link. |
 | Seen line | Where the person last looked. Rows above it changed since. It is left out when nothing changed. | Code |
 | Folds | "○ N more queued" past 7 open rows. "✓ N done" for the done subjects not drawn as a row, or "✓ N more done" when a done row shows above it. | Code |
 | Status line | "Last Overview update failed. Changes from that reply may be missing." while the last call wrote nothing | Code |
@@ -164,20 +165,21 @@ A good page after the person was away two hours, drawn as decided:
 Offline sync
 Adding offline sync to the notes app
 
-◆ Sync conflicts
-  merge logic ready · waiting 40m
+◆ Sync conflicts · waiting
+  merge logic ready
+● Export button
+  works on web
+  ├ ◆ Lay out the PDF export · waiting
+  └ ✓ Check the print styles · finished
 ✓ Sync engine
   syncs on reconnect
 ── Last seen ─────────────────────────
-● Export button
-  works on web
-  └ ● Lay out the PDF export  quiet 40m
-○ 2.4 release
-  after export
+◌ 2.4 release
+  in store review
 ✓ 2 more done
 ```
 
-The question "Which conflict rule ships?" has waited in Asks for 40 minutes, and its row there reads "Holds up Sync conflicts".
+The question "Which conflict rule ships?" waits in Asks, and its row there reads "Holds up Sync conflicts".
 
 To keep them short, the examples below write a row on one line, as `Name: where it stands`.
 
@@ -198,7 +200,7 @@ A judge or a rule judges a page against the facts up to that point in the sessio
 | 10. Changes shown | What was on screen at the last look, and which pieces changed since |
 | 11. Nothing moves | The page before the exchange, and whether the exchange changed any piece |
 | 12. Changes of plan | The plan before and after, and which pieces merged into which |
-| 13. How current | When each Overview call ran and whether it failed, when the activity happened, and how long each held or waiting piece and each quiet child has waited |
+| 13. How current | When each Overview call ran and whether it failed, when the activity happened, and which pieces and children wait |
 
 ### What is this session's work?
 
@@ -267,12 +269,12 @@ A few words on what works, what is left or what it waits on, in the work's own t
 
 #### 7. Running work shows under the piece it serves, in plain words
 
-A delegate, subagent, background command or workflow run shows under the subject it works on while it runs. It says in a few plain words what it does. A delegate shows the focus its own session's Overview publishes, and other running work shows the description it was started with. After 15 minutes with no activity, it says how long it has been quiet.
+A delegate, subagent, background command or workflow run shows under the subject it works on while it runs. It says in a few plain words what it does. A delegate shows the focus its own session's Overview publishes, and other running work shows the description it was started with. A delegate says when it waits at a question or has finished. Other running work shows no word, since its moving mark says it runs.
 
 Until decision 21 is built, a delegate shows its Herdr name, and a delegate whose name is an id fails this property. That is a known failing case for #149.
 
 - **Good:** `● Export button` with `└ ● Lay out the PDF export` under it.
-- **Good:** the same delegate, idle for 40 minutes, reads `quiet 40m`.
+- **Good:** the same delegate, at an approval prompt, reads `◆ Lay out the PDF export · waiting`.
 - **Good:** a review subagent started as "Review the sync engine diff" reads `Review the sync engine diff`.
 - **Bad:** `└ ● pdfx2`. An agent made up that name, and it says nothing about the work.
 - **Bad:** the PDF layout delegate under `Sync conflicts`.
@@ -327,13 +329,13 @@ When the session drops one approach for another, the person sees both until they
 
 #### 13. The page is current, and says when it is not
 
-The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. When an update fails, the page says so. The only times on the page are stall words, and code writes each one. A row's place follows its status and when its work last changed, so on a current page a row that did not change stays where it was.
+The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. When an update fails, the page says so. The page shows no times, so none goes stale. A row's place follows its status and when its work last changed, so on a current page a row that did not change stays where it was.
 
 - **Good:** three hours into a turn, `● Sync conflicts: cause unknown` stays where it was, because the last update found nothing new.
-- **Good:** `◌ 2.4 release: in store review · waiting 2h`, two hours after the build went to review.
+- **Good:** `◌ 2.4 release: in store review`, while the build waits for review.
 - **Good:** "Last Overview update failed. Changes from that reply may be missing."
 - **Bad:** the agent finished the conflicts work two hours into a three-hour turn, and the row still reads ●, since no update ran during the turn.
-- **Bad:** `● Export button: works on web  2h`. The export has not stalled, so it shows no time.
+- **Bad:** `● Export button: works on web  2h`. No row shows a time.
 - **Bad:** `2.4 release: goes out tomorrow`, read two days later.
 
 ## How the Overview is judged
