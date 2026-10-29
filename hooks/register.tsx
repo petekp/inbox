@@ -174,7 +174,7 @@ import {
   TURN_BOX_TOOL,
   turnBoxText,
 } from './claude'
-import { branchIn } from './gh'
+import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
 import { CLEARED_TOKENS, delegatesInHerdr, herdrReporter, herdrTokens } from './herdr'
 import { ago, cellWidth, clipLabel, cutForEllipsis } from './text'
@@ -1582,31 +1582,34 @@ async function perform(
   }
 }
 
-function gh($: EngineInterface, args: string[]) {
-  return $.process.run(['gh', ...args], { cwd: conversation.root, timeoutMs: 20_000 })
-}
-
-/** `$.process.run` as the shared `Run`: a run that rejects, because it could not start or outlived its timeout, ends with code -1. */
-function processRun($: EngineInterface): Run {
-  return (args, { cwd, timeoutMs, env }) =>
-    $.process.run(args, { cwd, timeoutMs, env }).then(
-      r => ({ code: r.exitCode, stdout: r.stdout, stderr: r.stderr }),
-      (err: unknown) => ({ code: -1, stdout: '', stderr: err instanceof Error ? err.message : String(err) }),
-    )
-}
-
 /**
- * `$.process.run` rejects when the command cannot start, and also when it is still running at the timeout. Asking
- * for `gh --version` tells them apart: only a gh that cannot start makes this reject too.
+ * `$.process.run` as the shared `Run`. It rejects when the command cannot start, and also when it is still running at
+ * the timeout, with no code to tell them apart. A rejection that comes `timeoutMs` or more after the call is the
+ * timeout's; one that comes sooner is a command that could not start.
  */
-async function isGhUnstartable($: EngineInterface): Promise<boolean> {
-  try {
-    await gh($, ['--version'])
+function processRun($: EngineInterface): Run {
+  return async (args, { cwd, timeoutMs, env }) => {
+    const startedAt = await $.clock.now()
+    try {
+      const r = await $.process.run(args, { cwd, timeoutMs, env })
 
-    return false
-  } catch {
-    return true
+      return { code: r.exitCode, stdout: r.stdout, stderr: r.stderr }
+    } catch (err) {
+      const isTimedOut = (await $.clock.now()) - startedAt >= timeoutMs
+
+      return {
+        code: isTimedOut ? TIMED_OUT_CODE : UNSTARTABLE_CODE,
+        stdout: '',
+        stderr: err instanceof Error ? err.message : String(err),
+      }
+    }
   }
+}
+
+async function isGhUnstartable($: EngineInterface): Promise<boolean> {
+  const r = await processRun($)(['gh', '--version'], { cwd: conversation.root, timeoutMs: GH_TIMEOUT_MS })
+
+  return r.code === UNSTARTABLE_CODE
 }
 
 /**
@@ -1687,14 +1690,7 @@ function sessionHost(
       forget: () => {
         ghFound = undefined
       },
-      run: (_s, _bin, onUnstartable) => async args => {
-        try {
-          return await gh($, args)
-        } catch (err) {
-          onUnstartable()
-          return { exitCode: -1, stdout: '', stderr: err instanceof Error ? err.message : String(err) }
-        }
-      },
+      run: (_s, _bin, onUnstartable) => ghIn(processRun($), 'gh', conversation.root, onUnstartable),
       noteMissing: opts.onGhMissing,
     },
     settleWindowMs: opts.settleWindowMs,
