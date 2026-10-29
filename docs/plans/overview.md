@@ -11,7 +11,7 @@ The Overview is the inbox's first tab on a next build. It is about the session's
 - **Which pieces wait on me?**
 - **What moved since I last looked?**
 
-The page is one list of subjects, newest change first. A subject is one piece of the work, such as a feature, a fix or a release. Each row shows a status mark, a short name and a few words on where the work stands. A Seen line marks where the person last looked. Every row above it changed since then. The inbox model adds, updates and closes subjects. Code owns every time, the order, the Seen line, the folds and the rows of running work.
+The page is one list of subjects. A subject is one piece of the work, such as a feature, a fix or a release. Each row shows a status mark, a short name and a few words on where the work stands. A Seen line marks where the person last looked. Every row above it changed since then. On each side of the line, rows run from what needs the person to what is finished. Within each status, the newest change comes first. The inbox model adds, updates and closes subjects. Code owns every time, the order, the Seen line, the folds and the rows of running work.
 
 All four looks draw the same page from one shared view: the Claude Code terminal, the Claude desktop app's pane, the Codex tab and the omp panel. `docs/looks.md` says where they differ.
 
@@ -19,13 +19,14 @@ The page fails when it reads as a log, when it copies Asks or Finds, or when it 
 
 ## Decisions
 
-1. **One list of subjects, newest change first, with no sections.**
-   - Reason: each piece of work shows once, with its change attached, and the order reads down the page as a timeline. The earlier six-section page showed one subject in up to six places.
+1. **One list of subjects, with no sections. On each side of the Seen line, rows are ordered by status, then newest change first.** The order is: held by an open ask (◆), working (●), waits on something other than the person (◌), queued (○), then done (✓) and dropped (✗).
+   - Reason: each piece of work shows once, with its change attached. The earlier six-section page showed one subject in up to six places. Each part reads from what needs the person to what is finished.
+   - This replaces ordering each side of the line by last change alone. That put a queued row whose text had just changed above work that had finished, so the marks ran out of order down the page.
 2. **The inbox model edits subjects by id. Code applies each edit.**
    - Reason: a model that rewrites the whole page from the last page drifts toward the newest exchange. In a replay of one real session, 33 of 35 replies rewrote the page.
 3. **Code writes every time and the order. The model never writes a time.**
    - Reason: a time word in model text freezes when it is written, so "merged today" reads wrong the next day. How long work has stalled carries meaning, so the times must be true.
-4. **Time shows only on work that has stalled. Rows have no age column.** A subject held by an ask, or waiting on something outside the session, reads how long it has waited on its second line, as `waiting 2h`, once that passes 15 minutes. A child with no activity for 15 minutes reads `quiet 40m`. A row's place follows when its work last changed, not when the page last checked it.
+4. **Time shows only on work that has stalled. Rows have no age column.** A subject held by an ask, or waiting on something outside the session, reads how long it has waited on its second line, as `waiting 2h`, once that passes 15 minutes. A child with no activity for 15 minutes reads `quiet 40m`. Among rows of the same status, a row's place follows when its work last changed, not when the page last checked it.
    - Reason: an age on every row was hard to read and said little. A time matters when work has stopped moving. A row that rose because the page checked it would claim a change that did not happen.
 5. **A changed state always reaches the page.** Code keeps the old text and place only when the new text has the same content words, in any order.
    - Reason: "manual merge ready" becoming "manual merge broken" is a change, though half the words match.
@@ -75,7 +76,7 @@ From `GLOSSARY.md`: Overview, Goal, Subject, Child, Stall words, Seen line, Look
 - **Was line:** a line under a subject that names the plan a change replaced, as "was: last-write-wins", or a piece merged into it, as "merged in: Banner on hover".
 - **Link:** the Overview call's tie from an open ask or a child to the subject it belongs to.
 - **Fold:** one line that stands for several rows: "✓ 3 done" or "○ 2 more queued".
-- **Last changed:** when a subject's status or meaning last changed. A row's place in the list follows it.
+- **Last changed:** when a subject's status or meaning last changed. It sets which side of the Seen line a row sits on, and its place among rows of the same status.
 - **Last checked:** when an Overview call last read the work, whatever it answered.
 - **Property:** something true of a good Overview that a person can check by reading the page, knowing what happened in the session.
 - **Fact list:** what really happened in an eval case, written by the case's author: each piece of work, its state at each step, the asks and the pieces each holds up, and what is not work.
@@ -91,7 +92,7 @@ From top to bottom:
 | Part | What it shows | Who writes it |
 | --- | --- | --- |
 | Goal | What the session's work is for. The call is asked for at most 8 words, and code clips it at 14. | Model |
-| Subject rows | A mark and a short name, with a few words on where it stands on the line under the name, and stall words once the work has stalled. The call is asked for a name of at most 3 words and a text of at most 4. Code clips them at 20 and 12. | The model writes the status, name and text. Code draws the mark and the stall words, and orders the rows by last change. |
+| Subject rows | A mark and a short name, with a few words on where it stands on the line under the name, and stall words once the work has stalled. The call is asked for a name of at most 3 words and a text of at most 4. Code clips them at 20 and 12. | The model writes the status, name and text. Code draws the mark and the stall words, and orders the rows by status, then by last change. |
 | Was line | The plan a change replaced, as "was: last-write-wins", or the pieces merged into this one, as "merged in: Banner on hover", until the person has seen it | The model writes it. Code shows it only until the person has looked. |
 | Child rows | Running work under its subject, named by the first line of the name its host gives it. After 15 minutes with no activity, its stall words read "quiet 40m". | Code, from host events. The model writes the link. |
 | Seen line | Where the person last looked. Rows above it changed since. It is left out when nothing changed. | Code |
@@ -118,6 +119,7 @@ The marks:
 More rules of the drawn page, all in `hooks/view.ts:overviewPage`:
 
 - A subject's text wraps to at most 3 lines.
+- On each side of the Seen line, rows run ◆, ●, ◌, ○, then ✓ and ✗ together, each group newest change first.
 - At most 2 finished rows show, both changed since the last look. The rest fold into the count. Property 10 asks for more; see "Not built yet".
 - Below the Seen line, an open row keeps where it stands, and drops its was line.
 - At most 3 children show under one subject. The rest read "+ 2 more running".
@@ -311,7 +313,7 @@ A reply that changed nothing about the work leaves every row and the Seen line w
 
 - **Good:** the agent explains how export picks a file name, and nothing is decided. The page stays as it was.
 - **Good:** the person picks "Save as PDF" as the export button's label. The export row says so, and moves above the Seen line.
-- **Bad:** `Export button: works on web, iOS left` becomes `web done, iOS remaining`, and moves to the top, above the Seen line.
+- **Bad:** `Export button: works on web, iOS left` becomes `web done, iOS remaining`, and moves above the Seen line.
 
 #### 12. A change of plan says what it replaced
 
@@ -325,7 +327,7 @@ When the session drops one approach for another, the person sees both until they
 
 #### 13. The page is current, and says when it is not
 
-The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. When an update fails, the page says so. The only times on the page are stall words, and code writes each one. A row's place follows when its work last changed, so on a current page a row that did not change stays where it was.
+The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. When an update fails, the page says so. The only times on the page are stall words, and code writes each one. A row's place follows its status and when its work last changed, so on a current page a row that did not change stays where it was.
 
 - **Good:** three hours into a turn, `● Sync conflicts: cause unknown` stays where it was, because the last update found nothing new.
 - **Good:** `◌ 2.4 release: in store review · waiting 2h`, two hours after the build went to review.

@@ -565,10 +565,10 @@ test('the Overview page draws each status with its mark and tone, and ◆ on a s
   )
 
   expect(rows).toEqual([
-    ['Part 0', '✓', 'done'],
-    ['Part 1', '○', null],
-    ['Part 2', '◌', null],
     ['Part 3', '◆', 'needsYou'],
+    ['Part 2', '◌', null],
+    ['Part 1', '○', null],
+    ['Part 0', '✓', 'done'],
   ])
   expect(allRows(sessionView(held, 3000, 1000, true, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBe(
     'Holds up Part 3',
@@ -608,10 +608,10 @@ test('a sample saved without an Overview is replaced, and the sample session car
   expect(page.rows.map(r => r.kind)).toEqual([
     'subject',
     'child',
-    'child',
+    'subject',
     'subject',
     'child',
-    'subject',
+    'child',
     'subject',
     'look',
     'subject',

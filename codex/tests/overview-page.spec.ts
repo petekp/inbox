@@ -147,8 +147,8 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
         [...(r.querySelector('.content')?.children ?? [])].map(line => line.textContent),
       ]),
       [
-        ['mark running', '●', ['omp panel', 'reading the draw code']],
         ['mark tone-needsYou', '◆', ['Label', 'pick one']],
+        ['mark running', '●', ['omp panel', 'reading the draw code']],
         ['mark done', '✓', ['Page', 'built']],
       ],
     )

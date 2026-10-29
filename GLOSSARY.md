@@ -65,7 +65,7 @@ _Avoid_: Findings, as the tab's name. A find, for one finding.
 
 **Overview**:
 The first tab on a next build: what the session's work is for, and where each
-part of it stands, newest first, with how long ago each changed. A release
+part of it stands, from what needs the person to what is finished. A release
 build does not draw it. The inbox model updates it after each reply, in a
 second call after the one that updates the rows. It is not a list of events.
 
