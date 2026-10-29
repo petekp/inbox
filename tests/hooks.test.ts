@@ -4944,6 +4944,42 @@ test('an answer on its way runs its mark each frame in the terminal and as an Sv
   expect((await pane.find({ key: 'settled-i1' }))?.text).toMatch(/✓\s*Node/)
 })
 
+test('on desktop, a cancelled question’s ✗ is drawn as a shape and a dismissed one’s ✕ as text, so the two read apart', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  paneState = { isShown: true, isFocused: true }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const ask = (text: string) =>
+    $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask: text, options: ['Yes', 'No'] })
+  await ask('Add a gaze-only mode too?')
+  await ask('Fall back to voice when your hands are busy?')
+  const pane = await $.ui.mount(PANE)
+  await clock.settle()
+  await selectRow(pane, 'i1')
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'dismiss-i1' })
+  await $.tool.call({
+    tool: 'mcp__inbox__close',
+    id: 'i2',
+    reason: 'no longer applies: voice already takes over',
+  } as never)
+  await clock.advance(SETTLED_MS)
+  await leaveAndReturn(pane, clock, 'needsYou')
+
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+  await clock.settle()
+  await desktop.post({ isUnfolded: true }, { in: 'fold-question' })
+  await clock.settle()
+  const cancelledMark = (await desktop.find({ key: 'closed-i2-mark' }))?.children.find(
+    c => typeof c === 'object' && (c as { type?: string }).type === 'Svg',
+  ) as { props: { alt?: string } } | undefined
+  expect(cancelledMark?.props.alt).toBe('✗')
+  expect((await desktop.find({ key: 'closed-i1' }))?.text).toMatch(/✕/)
+  expect(await desktop.find({ key: 'closed-i1-mark' })).toBeUndefined()
+})
+
 test('a working subject’s mark on the Overview moves each frame only while a turn runs, and a queued subject’s never does', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])

@@ -221,6 +221,7 @@ import {
   tabBadge,
   tabName,
   canUndoRefused,
+  CLOSED_MARKS,
   closedMark,
   settledMark,
   settledTone,
@@ -321,6 +322,7 @@ import { parseInline } from './inline'
 import type { Span } from './inline'
 import type { RowRecord } from './arrivals'
 import { BANNER_GAP_PT, BANNER_PAD_Y_PT, OVERVIEW_ROW_PAD_PT, ROW_PAD_PT } from './layout'
+import { markShape } from './marks'
 import {
   DARK_BANNER_TINTS,
   DARK_DALTONIZED_TONES,
@@ -493,7 +495,11 @@ function undoSvg(fraction: number, leftMs: number): string {
 function toneSvg(tone: ToneName, mark: string): string {
   const { light, dark } = toneColors(tone)
   // A marker needs only 3:1, so an error mark takes a stronger red than text could.
-  const [lightMark, darkMark] = tone === 'error' ? [LIGHT_TONES.errorMark, DARK_TONES.errorMark] : [light, dark]
+  return tone === 'error' ? markSvg(mark, LIGHT_TONES.errorMark, DARK_TONES.errorMark) : markSvg(mark, light, dark)
+}
+/** A muted mark's color in an Svg, in the light and dark appearances. */
+const MUTED_MARK = { light: '#595959', dark: '#a8a8a8' }
+function markSvg(mark: string, lightMark: string, darkMark: string): string {
   const width = DESKTOP_CELL_PT
   const height = DESKTOP_LINE_PT
   const shape = markShape(mark, height / 2)
@@ -523,34 +529,11 @@ function runningSvg(now: number): string {
   const height = DESKTOP_LINE_PT
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    `<style>.mark{fill:#595959}@media (prefers-color-scheme: dark){.mark{fill:#a8a8a8}}</style>` +
+    `<style>.mark{fill:${MUTED_MARK.light}}@media (prefers-color-scheme: dark){.mark{fill:${MUTED_MARK.dark}}}</style>` +
     `<circle class="mark" cx="${MARK_GLYPH_MID_PT}" cy="${height / 2}" r="${MARK_GLYPH_PT / 2}">` +
     `<animate attributeName="opacity" values="1;0.3;1" dur="${RUNNING_PULSE_MS}ms" begin="-${now % RUNNING_PULSE_MS}ms" repeatCount="indefinite"/>` +
     `</circle></svg>`
   )
-}
-/**
- * The app's own font cannot load in an Svg, and the system font's ✓ is a thin "v".
- */
-function markShape(mark: string, midY: number): string | null {
-  const t = midY - 4
-  const stroke = 'fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"'
-  switch (mark) {
-    case '✓':
-      return `<polyline points="0.6,${t + 4.4} 3,${t + 6.8} 7.4,${t + 1.4}" ${stroke}/>`
-    case '✕':
-    case '✗':
-      return `<path d="M1,${t + 1} L7,${t + 7} M7,${t + 1} L1,${t + 7}" ${stroke}/>`
-    case '▲':
-      return `<polygon points="4,${t + 0.6} 7.8,${t + 7.4} 0.2,${t + 7.4}" fill="currentColor"/>`
-    case '✦':
-      return (
-        `<path d="M4,${t} Q4.6,${t + 3.4} 8,${t + 4} Q4.6,${t + 4.6} 4,${t + 8} ` +
-        `Q3.4,${t + 4.6} 0,${t + 4} Q3.4,${t + 3.4} 4,${t} Z" fill="currentColor"/>`
-      )
-    default:
-      return null
-  }
 }
 function escapeXml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -5664,8 +5647,24 @@ export const register: Register = on => {
                 <Text color={pal.line}>{hasChildren ? '│' : ' '}</Text>
               </Box>,
             ]
-    const markGlyph = (mark: ResultMark, key: string, color: string) =>
-      mark.isRunning ? runningDot(key, mark.text, color) : <Text color={color}>{mark.text || ' '}</Text>
+    const markGlyph = (mark: ResultMark, key: string, color: string) => {
+      if (mark.isRunning) return runningDot(key, mark.text, color)
+      if (mark.text === CLOSED_MARKS.lapsed && ToneSvg) {
+        // An Svg cannot read a theme key, so one takes the muted mark's colors.
+        const { light, dark } = color.startsWith('#') ? { light: color, dark: color } : MUTED_MARK
+        return (
+          <Box key={`${key}-mark`} width={1} height={1} flexShrink={0}>
+            <ToneSvg
+              source={markSvg(mark.text, light, dark)}
+              alt={mark.text}
+              width={DESKTOP_CELL_PT}
+              height={DESKTOP_LINE_PT}
+            />
+          </Box>
+        )
+      }
+      return <Text color={color}>{mark.text || ' '}</Text>
+    }
     /** A result mark and the space after it, before its label. A blank mark keeps its place, so the label stays put. */
     const resultLead = (mark: ResultMark, key: string, color: string) => (
       <Box key={`${key}-lead`} width={RESULT_MARK_CELLS} flexShrink={0}>

@@ -7,8 +7,10 @@ import type { IconName } from './row-actions'
 import { closedState } from '../../hooks/ledger'
 import { ago, clipLabel } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
+import { markShape } from '../../hooks/marks'
 import {
   canUndoRefused,
+  CLOSED_MARKS,
   closedMark,
   mergedLine,
   OVERVIEW_TEXT_LINES,
@@ -1465,9 +1467,21 @@ function OverviewTab({ page }: { page: OverviewPage }) {
 }
 
 function ResultMarkView({ mark }: { mark: ResultMark }) {
+  const shape = mark.text === CLOSED_MARKS.lapsed ? markShape(mark.text, 4) : null
+
   return (
     <span class={mark.isRunning ? 'mark running' : 'mark'} ref={mark.isRunning ? pulseInStep : undefined}>
-      {mark.text}
+      {shape === null ? (
+        mark.text
+      ) : (
+        <svg
+          class="mark-shape"
+          viewBox="0 0 8 8"
+          role="img"
+          aria-label={mark.text}
+          dangerouslySetInnerHTML={{ __html: shape }}
+        />
+      )}
     </span>
   )
 }
