@@ -274,7 +274,11 @@ test('an open row below the look line keeps where it stands but not its was line
   const p = page({ ...o, lastLookAt: 50 * MIN }, now, { lastReplyAt: now - 2 * MIN }, [askItem('i1')])
 
   expect(p.goal).toBe('Work offline')
-  expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick · waiting', '-- Last seen', '○ Docs: outline ready'])
+  expect(shape(p.rows)).toEqual([
+    '◆ Offline mode: needs a sync pick · waiting',
+    '-- Last seen',
+    '○ Docs: outline ready',
+  ])
   const seenAt = { ...after(o, 'WAS: s2 | sync on every save', 90 * MIN, new Set(['i1'])), lastLookAt: 95 * MIN }
   const seen = page(seenAt, now, {}, [askItem('i1')]).rows
   expect(shape(seen)).toEqual(['◆ Offline mode: needs a sync pick · waiting', '○ Docs: outline ready'])
@@ -540,7 +544,7 @@ test('open subjects past seven fold their oldest queued ones into a count', () =
   expect(rows.filter(r => r.kind === 'subject')).toHaveLength(7)
   expect(rows.at(-1)).toMatchObject({ kind: 'fold', text: '2 more queued' })
   expect(shape(heldOldest)).toEqual([
-    '◆ Part 0: step 0',
+    '◆ Part 0: step 0 · waiting',
     ...[3, 4, 5, 6, 7, 8].map(n => `● Part ${n}: step ${n}`),
     '○ 2 more queued',
   ])
