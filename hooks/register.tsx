@@ -2858,6 +2858,10 @@ async function undoKeyAfterPress(
   if (surface !== 'terminal' || !isInlineTerminalPane) return null
   const { ledger, prViews, lastActions, view, now } = await drawnState($)
   if (isPrPress(p)) {
+    if (p.action === 'pr-dismiss-merged') {
+      const nearest = view.prs.drawn.filter(x => x.state.is === 'settled' && x.state.canUndo).at(-1)
+      return nearest ? `undo-${prMarkId(nearest.pr.ref)}` : null
+    }
     if (p.action !== 'pr-dismiss') return null
     return view.prs.drawn.some(x => x.pr.ref === p.ref && x.state.is === 'settled') ? `undo-${pressRowId(p)}` : null
   }
