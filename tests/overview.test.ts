@@ -20,7 +20,7 @@ import type { Op } from '../hooks/overview'
 import { delegatesSettled, delegatesStarted } from '../hooks/children'
 import type { HerdrStatus } from '../hooks/herdr'
 import { emptySession } from '../hooks/session'
-import { CHILD_ROWS, mergedLine, nameBeforeStall, overviewPage } from '../hooks/view'
+import { CHILD_ROWS, mergedLine, nameBeforeStall, overviewKeyPlan, overviewPage } from '../hooks/view'
 import type { OverviewRow } from '../hooks/view'
 import type { Item, Overview, Session } from '../types'
 
@@ -458,6 +458,27 @@ test('an open ask linked to an open subject marks it ◆ and stops its running m
   expect(page(after(o, 'DONE: s1 | works offline', MIN), MIN, {}, [askItem('i1')]).rows[0]).toMatchObject({
     mark: '✓',
   })
+})
+
+test('a subject that open asks hold up offers View on the oldest ask, named for its kind, an ask with no time counting as oldest, and no button once the asks close', () => {
+  const o = after(
+    null,
+    'NEW: working | Offline mode | queue built\nNEW: working | Docs | outline ready\nLINK: i1 | s1\nLINK: i2 | s1\nLINK: i3 | s1',
+    0,
+    new Set(['i1', 'i2', 'i3']),
+  )
+  const asks = {
+    i1: { ...askItem('i1'), at: 5 * MIN },
+    i2: { ...askItem('i2'), kind: 'task' as const, at: 2 * MIN },
+    i3: askItem('i3'),
+  }
+  const viewOf = (items: Item[]) =>
+    page(o, 10 * MIN, {}, items).rows.map(r => overviewKeyPlan(r).map(k => `${r.id} ${k.label} ${k.press.askId}`))
+
+  expect(viewOf([asks.i1, asks.i2])).toEqual([['s1 View task i2'], []])
+  expect(viewOf([asks.i1, asks.i2, asks.i3])).toEqual([['s1 View question i3'], []])
+  expect(viewOf([asks.i1])).toEqual([['s1 View question i1'], []])
+  expect(viewOf([])).toEqual([[], []])
 })
 
 test('with no look yet every row is new, so the page draws no look line and shows where each stands', () => {

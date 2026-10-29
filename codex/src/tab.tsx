@@ -15,6 +15,7 @@ import {
   mergedLine,
   nameBeforeStall,
   OVERVIEW_TEXT_LINES,
+  overviewKeyPlan,
   settledMark,
   STALL_GAP,
   versionLabel,
@@ -1432,9 +1433,23 @@ function NameLine({ name, stall }: { name: string; stall: OverviewStall | null }
   )
 }
 
+/** An Overview row's View press: Asks shows with the ask selected and in view. */
+function showAsk(askId: string) {
+  switchTab('needsYou')
+  const index = view ? tabRows(view, 'needsYou').findIndex(r => r.id === askId) : -1
+  open('needsYou', askId, index < 0 ? undefined : index)
+  draw()
+  revealSelected()
+}
+
 function OverviewLine({ row }: { row: OverviewRow }) {
   if (row.kind === 'subject') {
     const merged = row.merged
+    const keys = overviewKeyPlan(row).map((k): Key => ({
+      label: k.label,
+      emphasis: 'normal',
+      run: () => showAsk(k.press.askId),
+    }))
 
     return (
       <div class={row.hasChildren ? 'row has-children' : 'row'}>
@@ -1461,6 +1476,7 @@ function OverviewLine({ row }: { row: OverviewRow }) {
               {row.was}
             </div>
           ) : null}
+          {keys.length > 0 ? <RowActions keys={keys} more={[]} reply={null} isBlocked={() => false} /> : null}
         </div>
       </div>
     )

@@ -162,7 +162,7 @@ export function createPanel(deps: PanelDeps): Panel {
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight)
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity))
       heldHeight = Math.max(heldHeight, drawn.lines.length)
-      ui = { ...ui, pageTop: drawn.pageTop }
+      ui = { ...ui, pageTop: drawn.pageTop, pageReveal: null }
 
       return drawn.lines
     },

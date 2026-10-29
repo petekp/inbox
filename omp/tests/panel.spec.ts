@@ -27,6 +27,9 @@ import {
   isRowTab,
   OVERVIEW_TEXT_LINES,
   rowKeyPlan,
+  overviewKeyPlan,
+  overviewKeyRows,
+  PRESS_GUARD_MS,
 } from '../../hooks/view'
 import type { OverviewRow, RowView } from '../../hooks/view'
 import { sessionView } from '../../hooks/session'
@@ -912,8 +915,16 @@ test('an Overview page with nothing yet reads its empty text', () => {
   expect(text(screen, onPage)).toContain(empty.hint)
 })
 
-test('keys on the Overview page select nothing and press nothing, and the footer offers only tab', () => {
-  const screen = screenOf()
+/** The demo with no ask linked to a subject, so no Overview row has a button. */
+const unheldScreen = () => {
+  const s = demoState(NOW)
+  const ledger = { ...s.ledger, overview: { ...s.ledger.overview!, askSubjects: {} } }
+
+  return screenOf({ view: sessionView({ ...s, ledger }, NOW, SETTLED_MS, true, NO_HOLDS) })
+}
+
+test('keys on an Overview page with no buttons select nothing and press nothing, and the footer offers only tab', () => {
+  const screen = unheldScreen()
   for (const key of ['up', 'down', 'j', 'k', 'left', 'right', 'enter', 'u', 'r', 'd', 'x', 'a']) {
     const result = handleKey(screen, onPage, key, NOW)
     expect(result.press).toBeUndefined()
@@ -948,11 +959,94 @@ test('on a Overview page taller than the panel, each ↑↓ or j/k press shows o
     const lines = shown(top).filter(l => !/^ {2}[↑↓] \d+ more line/.test(l))
     expect(page[room - 2 + top]).toBe(lines.at(-1))
   }
-  expect(drawnAt(0).lines.map(strip).at(-1)).toContain('↑↓ scroll')
-  const down = keys(screen, onPage, 'down', 'j')
+  expect(drawnAt(0).lines.map(strip).slice(-2).join('\n')).toContain('↑↓ scroll')
+  const down = keys(screen, onPage, 'down', 'down')
   expect(down.pageTop).toBe(2)
-  expect(keys(screen, down, 'k').pageTop).toBe(1)
+  expect(keys(screen, down, 'up').pageTop).toBe(1)
   expect(keys(screen, down, 'up', 'up', 'up').pageTop).toBe(0)
+  const unheld = unheldScreen()
+  expect(keys(unheld, onPage, 'j', 'j').pageTop).toBe(2)
+  expect(keys(unheld, keys(unheld, onPage, 'j', 'j'), 'k').pageTop).toBe(1)
+})
+
+test('on the Overview page, a subject an open ask holds up draws View, named for the ask’s kind, under its text in the plan’s order, and only the selected row draws it focused and keyed', () => {
+  const screen = screenOf()
+  const page = screen.view.overviewPage
+  const held = overviewKeyRows(page)
+  expect(held.map(r => r.id)).toEqual(['s2', 's3'])
+  const lines = text(screen, onPage).split('\n')
+  const nameAt = (row: OverviewRow) => lines.findIndex(l => l.includes(labelOf(row)))
+  const buttonAt = (row: OverviewRow) => lines.findIndex((l, n) => n > nameAt(row) && l.includes('View '))
+  expect(held.map(row => overviewKeyPlan(row).map(k => k.label))).toEqual([['View task'], ['View question']])
+  for (const row of held) {
+    const at = buttonAt(row)
+    const next = page.rows[page.rows.indexOf(row) + 1]
+    expect(at).toBeGreaterThan(nameAt(row))
+    if (next) expect(at).toBeLessThan(nameAt(next))
+    const textAt = lines[nameAt(row)]!.indexOf(labelOf(row))
+    expect(lines[at]!.slice(0, textAt).replace('│', '').trim()).toBe('')
+    expect(lines[at]![textAt]).not.toBe(' ')
+  }
+  expect(lines[buttonAt(held[0]!)]).toContain('↵ View task')
+  expect(lines[buttonAt(held[1]!)]).not.toContain('↵')
+  expect(lines[buttonAt(held[1]!)]).not.toContain('v View question')
+  const second = keys(screen, onPage, 'j')
+  const moved = text(screen, second).split('\n')
+  expect(moved[buttonAt(held[0]!)]).not.toContain('↵')
+  expect(moved[buttonAt(held[1]!)]).toContain('↵ View question')
+  expect(keys(screen, second, 'j').selectedId).toBe('s2')
+  expect(keys(screen, onPage, 'k').selectedId).toBe('s3')
+  expect(text(screen, onPage).split('\n').at(-1)).toContain('j k select')
+  expect(text(unheldScreen(), onPage)).not.toContain('View ')
+})
+
+test('View on an Overview row shows Asks with the oldest ask that holds it up selected, by its key or Enter, sends nothing, and holds the ask’s buttons through a second Enter', () => {
+  const screen = screenOf()
+  for (const key of ['v', 'enter']) {
+    const result = handleKey(screen, onPage, key, NOW)
+    expect(result.press).toBeUndefined()
+    expect(result.ui).toMatchObject({ tab: 'needsYou', selectedId: 'd17', shownSince: NOW })
+    expect(handleKey(screen, result.ui, 'noop', NOW).ui.selectedId).toBe('d17')
+  }
+  const onS3 = keys(screen, onPage, 'j')
+  const onAsk = handleKey(screen, onS3, 'enter', NOW).ui
+  expect(onAsk).toMatchObject({ tab: 'needsYou', selectedId: 'd11' })
+  expect(handleKey(screen, onAsk, 'enter', NOW + PRESS_GUARD_MS - 1).press).toBeUndefined()
+  expect(handleKey(screen, onAsk, 'enter', NOW + PRESS_GUARD_MS).press).toMatchObject({ action: 'answer', id: 'd11' })
+})
+
+test('an Overview row’s View leaves once its asks close, and the selection moves to the row that still has one', () => {
+  const s = demoState(NOW)
+  const items = s.ledger.items.filter(i => i.id !== 'd11')
+  const screen = screenOf({
+    view: sessionView({ ...s, ledger: { ...s.ledger, items } }, NOW, SETTLED_MS, true, NO_HOLDS),
+  })
+  const onS3 = { ...onPage, selectedId: 's3' }
+  const lines = text(screen, onS3).split('\n')
+  const s3 = screen.view.overviewPage.rows.find(r => r.id === 's3')!
+  expect(s3).toMatchObject({ ask: null, mark: '○' })
+  expect(lines.filter(l => l.includes('View '))).toHaveLength(1)
+  expect(lines.find(l => l.includes('View '))).toContain('↵ View task')
+  expect(handleKey(screen, onS3, 'v', NOW).ui.selectedId).toBe('d17')
+})
+
+test('on an Overview page taller than the panel, j and k scroll the newly selected row into view', () => {
+  const screen = screenOf()
+  const height = 14
+  const drawnFor = (ui: PanelUi) => drawPanel(screen, ui, 80, NOW, style, height)
+  const isFocusShown = (ui: PanelUi) =>
+    drawnFor(ui)
+      .lines.map(strip)
+      .some(l => l.includes('↵ View'))
+  expect(isFocusShown(onPage)).toBe(true)
+  const onS3 = keys(screen, onPage, 'j')
+  expect(isFocusShown({ ...onS3, pageReveal: null })).toBe(false)
+  expect(isFocusShown(onS3)).toBe(true)
+  const scrolled = { ...onS3, pageTop: drawnFor(onS3).pageTop, pageReveal: null }
+  expect(scrolled.pageTop).toBeGreaterThan(0)
+  const back = keys(screen, scrolled, 'k')
+  expect(isFocusShown({ ...back, pageReveal: null })).toBe(false)
+  expect(isFocusShown(back)).toBe(true)
 })
 
 test('changing the shown tab starts the Overview page at its top', () => {

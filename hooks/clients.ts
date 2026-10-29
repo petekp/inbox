@@ -48,6 +48,7 @@ export type FeatureId =
   | 'tool-result-line'
   | 'overview-call-records'
   | 'dismiss-merged-prs'
+  | 'overview-view-ask'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -105,6 +106,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'tool-result-line': { kind: 'full' },
       'overview-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
+      'overview-view-ask': { kind: 'full' },
     },
   },
   codex: {
@@ -208,6 +210,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'overview-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
+      'overview-view-ask': {
+        kind: 'different',
+        reason:
+          "Pete's choice: View takes clicks only, with no key. The Codex Overview has no row selection and is used by clicking.",
+      },
     },
   },
   omp: {
@@ -280,6 +287,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'tool-result-line': { kind: 'full' },
       'overview-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
+      'overview-view-ask': { kind: 'full' },
     },
   },
 }

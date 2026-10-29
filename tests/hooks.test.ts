@@ -14,7 +14,7 @@ import { GH_TIMEOUT_MS } from '../hooks/gh'
 import { OVERVIEW_SYSTEM } from '../hooks/model-text'
 import { HERDR_CHECK_MS } from '../hooks/herdr'
 import { LOOK_MIN_MS } from '../hooks/overview'
-import { OVERVIEW_REFRESH_MS } from '../hooks/session'
+import { emptySession, OVERVIEW_REFRESH_MS } from '../hooks/session'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
 import { failingChecks, waitingThreads } from '../hooks/prs'
 import {
@@ -26,6 +26,7 @@ import {
   OVERVIEW_TEXT_LINES,
   perTurnStatus,
   overviewPage,
+  overviewKeyPlan,
   rowKeyPlan,
   actionLines,
   RUNNING_FRAME_MS,
@@ -4970,6 +4971,31 @@ for (const isNextBuild of [false, true])
         checked++
       }
       expect(checked, `${look} PR rows checked`).toBeGreaterThan(1)
+      if (!isNextBuild) continue
+
+      if (look === 'terminal') await pane.press({ key: 'tab-overview' })
+      else {
+        const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+        const x = bar
+          .slice(
+            0,
+            bar.findIndex(t => t.id === 'overview'),
+          )
+          .reduce((sum, t) => sum + t.width + gap, 0)
+        await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+      }
+      await clock.settle()
+      const page = overviewPage({ ledger, presence: emptySession().presence }, 1_000_000)
+      const planned = page.rows.flatMap(r => overviewKeyPlan(r).map(k => `${r.id} ${k.label}`))
+      expect(planned, 'the demo’s Overview has rows with buttons').not.toEqual([])
+      const overviewButtons = (await drawn()).buttons
+        .filter(b => b.key.startsWith('show-ask-'))
+        .map(b => `${b.key.slice('show-ask-'.length)} ${b.label}`)
+      expect(overviewButtons, `${look} Overview buttons`).toEqual(planned)
+      await pane.press({ key: `show-ask-${page.rows.find(r => overviewKeyPlan(r).length > 0)!.id}` })
+      await clock.settle()
+      expect(await pane.find({ key: 'overview-head' }), `${look} View leaves the Overview`).toBeUndefined()
+      expect(await pane.find({ key: 'view-d17' }), `${look} View selects the oldest ask`).toBeDefined()
     }
   })
 
@@ -5309,7 +5335,7 @@ test('a working subject’s mark on the Overview moves each frame only while a t
   expect(ended.working).toEqual(ended.still)
 })
 
-test('on a next build, a look starts when the Overview page shows, the page shows the head and the subjects in place of rows, leaves the row keys idle, a row tab shows its rows again, and an ask names the subject it holds up', async ($, on) => {
+test('on a next build, a look starts when the Overview page shows, the page shows the head and the subjects in place of rows, binds only the held subject’s View key, View shows Asks with its ask selected, and an ask names the subject it holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
@@ -5345,7 +5371,9 @@ test('on a next build, a look starts when the Overview page shows, the page show
     (await pane.findAll({ type: 'Button' }))
       .map(b => b.key ?? '')
       .filter(k => k.endsWith('-key') && !k.startsWith('tab-'))
-  expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
+  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key'])
+  expect((await pane.find({ key: 'show-ask-s1' }))?.text).toBe('v: View question')
+  expect(await pane.find({ key: 'show-ask-s2' })).toBeUndefined()
   await pane.press({ key: 'next' })
   await pane.press({ key: 'no-row-d-key' })
   await $.tool.call({
@@ -5357,15 +5385,23 @@ test('on a next build, a look starts when the Overview page shows, the page show
   })
   await clock.settle()
   expect(await pane.find({ key: 'overview-head' })).toBeDefined()
-  expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
+  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key'])
 
-  await pane.press({ key: 'tab-key-needsYou' })
+  await pane.press({ key: 'show-ask-s1-key' })
   await clock.settle()
   expect(lookOf()).toBeNull()
   expect(await pane.find({ key: 'overview-head' })).toBeUndefined()
+  expect(await pane.find({ key: 'view-i1' })).toBeDefined()
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
   await pane.press({ key: 'tab-findings' })
   expect(await pane.find({ key: 'address-f3' })).toBeDefined()
+
+  await $.tool.call({ tool: 'mcp__inbox__close', id: 'i1', answer: 'Node' })
+  await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  expect((await pane.find({ key: 'overview-s1' }))?.text).not.toContain('◆')
+  expect(await pane.find({ key: 'show-ask-s1' })).toBeUndefined()
+  expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
 })
 
 test('on a next build, a look at the Overview that ends while an Overview call is out keeps its Seen line, and the answer that lands after it shows above the line', async ($, on) => {
