@@ -6137,7 +6137,9 @@ export const register: Register = on => {
           settledContent(what, state, undo, null)
         )
 
-      return section([treeRow(null, <Text color={pal.muted}>✓</Text>, content, `settled-pr:${pr.ref}`)])
+      const mark = markGlyph(settledMark(state), `settled-pr:${pr.ref}`, pal.muted)
+
+      return section([treeRow(null, mark, content, `settled-pr:${pr.ref}`)])
     }
     const prRowGroup = (title: string, group: Row[], key: string) =>
       group.length === 0

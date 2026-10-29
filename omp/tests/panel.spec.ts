@@ -435,7 +435,7 @@ test('a dismissed PR shows its label dim, as a dismissed row does, with Undo, an
   const demo = await afterPresses({ action: 'pr-dismiss', ref: 'acme/visor#29' })
   const screen = await demo.screen()
   const ui = { ...INITIAL_UI, tab: 'prs' as const }
-  expect(text(screen, ui)).toMatch(/#29 Show the battery level as a glance\s+Dismissed\s+u Undo/)
+  expect(text(screen, ui)).toMatch(/#29 Show the battery level as a glance\s+✕ Dismissed\s+u Undo/)
   expect(drawn(screen, ui).join('\n')).toContain(`${ESC}2mDismissed${ESC}22m`)
   expect(handleKey(screen, ui, 'u', NOW).press).toEqual({ action: 'pr-undo', ref: 'acme/visor#29' })
 })

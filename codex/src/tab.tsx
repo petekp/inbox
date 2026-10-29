@@ -1873,7 +1873,7 @@ function SettledPr({ pr, state }: { pr: PrView; state: SettledState }) {
 
   return (
     <div class="row settled">
-      <span class="mark">✓</span>
+      <ResultMarkView mark={settledMark(state)} />
       <div class="content">
         <div class="settled-head">
           <div class="settled-line">

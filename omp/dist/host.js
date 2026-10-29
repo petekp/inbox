@@ -5973,6 +5973,7 @@ function prEntries(screen, ui, now) {
         line: {
           ...blankLine(markId),
           lead,
+          mark: settledMark(state),
           title: pr.title,
           isDim: true,
           settled: {

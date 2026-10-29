@@ -87,6 +87,7 @@ import {
   rowKeyPlan,
   rowTitle,
   rowResultMark,
+  settledMark,
   isRowTabRunning,
   hasRunningMark,
   mergedLine,
@@ -535,6 +536,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
         line: {
           ...blankLine(markId),
           lead,
+          mark: settledMark(state),
           title: pr.title,
           isDim: true,
           settled: {
