@@ -3842,6 +3842,8 @@ function prRefreshFailedText(error) {
 var PR_REFRESH_LABEL = "Refresh PRs";
 var PR_REFRESH = { kind: "refresh-prs", name: "PRs" };
 var PR_DISMISSED_LABEL = "Dismissed";
+var DISMISS_MERGED_LABEL = "Dismiss merged";
+var DISMISS_MERGED_ID = "pr:merged";
 var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks" };
 function threadRowText(pr, t, lastActions) {
   const isSent = threadSentIn(lastActions)(pr, t);
@@ -3930,6 +3932,9 @@ var PR_TONES = {
   merged: "findings",
   closed: "error"
 };
+function isPrPress(p) {
+  return "ref" in p || p.action === "pr-dismiss-merged";
+}
 function commentEffect(pr, t) {
   return { kind: "open", target: t.reply?.url || t.url || pr.url, name: "the comment" };
 }
@@ -3946,6 +3951,8 @@ function fixCheckEffect(pr) {
   return { kind: "refresh-prs", name: `PR #${pr.number}` };
 }
 function prRowId(p) {
+  if (p.action === "pr-dismiss-merged")
+    return DISMISS_MERGED_ID;
   if ("check" in p)
     return checkRowId(p.ref, p.check);
   if ("thread" in p)
@@ -3953,7 +3960,7 @@ function prRowId(p) {
   return prMarkId(p.ref);
 }
 function pressRowId(p) {
-  return "ref" in p ? prRowId(p) : p.id;
+  return isPrPress(p) ? prRowId(p) : p.id;
 }
 function prRetryOf(last, ref, thread, check = null) {
   if (last?.delivery?.state !== "failed")
@@ -4090,15 +4097,43 @@ function prBlockActions(pr, isThreadSent, branchRef, presses) {
     ]
   ]);
 }
+function isDismissedByMerged(pr, branchRef) {
+  return pr.state === "MERGED" && pr.ref !== branchRef;
+}
+function prTabActions(drawn, branchRef) {
+  const hasMerged = drawn.some((d) => d.state.is === "open" && isDismissedByMerged(d.pr, branchRef));
+  return hasMerged ? [
+    {
+      press: { action: "pr-dismiss-merged" },
+      label: DISMISS_MERGED_LABEL,
+      kind: "mark",
+      emphasis: "normal",
+      hotkey: "m",
+      isOut: false
+    }
+  ] : [];
+}
 function applyPrPress(ledger, prState, lastActions, p, ctx) {
   const stale = { stale: true };
-  const pr = prState.views[p.ref];
-  const markId = prMarkId(p.ref);
   const applied = (a) => {
     const effects = a.effects ?? [];
     const lasts = Object.fromEntries(Object.entries(a.lasts ?? {}).map(([id, l]) => [id, withQueued(l, effects)]));
     return { ledger, drop: [], ...a, lasts, effects };
   };
+  if (p.action === "pr-dismiss-merged") {
+    const refs = Object.values(prState.views).filter((pr) => isTracked(prState, ledger.prs, pr.ref) && isDismissedByMerged(pr, prState.branchRef)).map((pr) => pr.ref);
+    if (refs.length === 0)
+      return stale;
+    return applied({
+      ledger: { ...ledger, prs: ledger.prs.filter((r) => !refs.includes(r)) },
+      lasts: Object.fromEntries(refs.map((ref) => {
+        const id = prMarkId(ref);
+        return [id, recordPress("mark", "pr-dismiss", PR_DISMISSED_LABEL, ctx, lastActions[id])];
+      }))
+    });
+  }
+  const pr = prState.views[p.ref];
+  const markId = prMarkId(p.ref);
   if (p.action === "pr-undo") {
     if (!pr || isTracked(prState, ledger.prs, p.ref) || lastActions[markId]?.action !== "pr-dismiss")
       return stale;
@@ -4709,7 +4744,7 @@ function pressOn(s, p, at, drawn, texts, localPressId) {
   if (isRepeatWhileOut(s, p, at, drawn))
     return { ledger: s.ledger, lasts: {}, drop: [], effects: [] };
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId };
-  if ("ref" in p)
+  if (isPrPress(p))
     return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx);
   const item = s.ledger.items.find((i) => i.id === p.id);
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
@@ -5505,7 +5540,8 @@ var blankLine = (id) => ({
   isStatic: false,
   isWaiting: true,
   isDetailShown: false,
-  isFolded: false
+  isFolded: false,
+  isTabButtons: false
 });
 var wrapIndex = (i, n) => (i % n + n) % n;
 function feedbackTone(f) {
@@ -5797,6 +5833,12 @@ function prEntries(screen, ui, now) {
       });
     }
   }
+  const tabButtons = prButtons(prTabActions(prs.drawn.filter((d) => isDrawnInPlace(d, ui.shownSince)), prs.branchRef));
+  if (tabButtons.length > 0)
+    out.push({
+      kind: "row",
+      line: { ...blankLine(DISMISS_MERGED_ID), buttons: tabButtons, isWaiting: false, isTabButtons: true }
+    });
   if (prs.olderText)
     out.push({ kind: "note", text: prs.olderText });
   return out;
@@ -5940,6 +5982,10 @@ function handleKey(screen, ui, key, now, text) {
       return { ui: withSelection(base, undoable.id), press };
     return { ui: base };
   }
+  const tabLine = lines.find((l) => l.isTabButtons);
+  const tabButton = tabLine?.buttons.find((b) => b.key === key);
+  if (tabLine && tabButton)
+    return activate(screen, base, tabLine, tabButton, now);
   if (selected?.fold && key === "enter") {
     const kind = selected.fold;
     const unfolded = base.unfolded.includes(kind) ? base.unfolded.filter((k) => k !== kind) : [...base.unfolded, kind];
@@ -6111,6 +6157,11 @@ function feedbackPaint(tone, s) {
 }
 function drawLine(line, isSelected, d) {
   const { ui, width, now, style: s } = d;
+  if (line.isTabButtons) {
+    const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
+    const cells = line.buttons.map((b, i) => buttonCell(b, isSelected && i === focusOf(line, ui), s));
+    return [fit(` ${cursor} ${cells.join("")}`, width)];
+  }
   const pad = line.depth * 2;
   const out = [];
   const status = line.status ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}` : "";

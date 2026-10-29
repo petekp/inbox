@@ -22,10 +22,12 @@ import {
   PR_TONES,
   checkActions,
   checkRowText,
+  DISMISS_MERGED_ID,
   prBlockActions,
   prCheckId,
   prMarkId,
   prRowWaits,
+  prTabActions,
   prThreadId,
   threadActions,
   threadRowText,
@@ -225,6 +227,8 @@ type Line = {
   isDetailShown: boolean
   /** A handed-off row, drawn as its one line until the person opens it. */
   isFolded: boolean
+  /** The PRs tab's own buttons, drawn as their button line alone. Their keys work from any row of the tab. */
+  isTabButtons: boolean
 }
 
 type Entry =
@@ -254,6 +258,7 @@ const blankLine = (id: string): Line => ({
   isWaiting: true,
   isDetailShown: false,
   isFolded: false,
+  isTabButtons: false,
 })
 
 const wrapIndex = (i: number, n: number) => ((i % n) + n) % n
@@ -581,6 +586,17 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       })
     }
   }
+  const tabButtons = prButtons(
+    prTabActions(
+      prs.drawn.filter(d => isDrawnInPlace(d, ui.shownSince)),
+      prs.branchRef,
+    ),
+  )
+  if (tabButtons.length > 0)
+    out.push({
+      kind: 'row',
+      line: { ...blankLine(DISMISS_MERGED_ID), buttons: tabButtons, isWaiting: false, isTabButtons: true },
+    })
   if (prs.olderText) out.push({ kind: 'note', text: prs.olderText })
 
   return out
@@ -759,6 +775,9 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
 
     return { ui: base }
   }
+  const tabLine = lines.find(l => l.isTabButtons)
+  const tabButton = tabLine?.buttons.find(b => b.key === key)
+  if (tabLine && tabButton) return activate(screen, base, tabLine, tabButton, now)
   if (selected?.fold && key === 'enter') {
     const kind = selected.fold
     const unfolded = base.unfolded.includes(kind) ? base.unfolded.filter(k => k !== kind) : [...base.unfolded, kind]
@@ -999,6 +1018,12 @@ function feedbackPaint(tone: Tone | null, s: Style) {
 
 function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const { ui, width, now, style: s } = d
+  if (line.isTabButtons) {
+    const cursor = isSelected ? s.tone('accent', '❯') : ' '
+    const cells = line.buttons.map((b, i) => buttonCell(b, isSelected && i === focusOf(line, ui), s))
+
+    return [fit(` ${cursor} ${cells.join('')}`, width)]
+  }
   const pad = line.depth * 2
   const out: string[] = []
   const status = line.status

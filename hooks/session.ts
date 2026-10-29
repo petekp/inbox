@@ -16,6 +16,7 @@ import type { Host, ScreenTab, Told } from './model-text'
 import {
   applyPrPress,
   drawnPrs,
+  isPrPress,
   isViewKept,
   itemPrSteps,
   olderPrsText,
@@ -670,7 +671,7 @@ export function pressOn(
 ): Pressed | { stale: true } {
   if (isRepeatWhileOut(s, p, at, drawn)) return { ledger: s.ledger, lasts: {}, drop: [], effects: [] }
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId }
-  if ('ref' in p) return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx)
+  if (isPrPress(p)) return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx)
   const item = s.ledger.items.find(i => i.id === p.id)
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,

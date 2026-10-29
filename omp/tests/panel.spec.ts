@@ -422,6 +422,41 @@ test('a dismissed PR shows its label dim, as a dismissed row does, with Undo, an
   expect(handleKey(screen, ui, 'u', NOW).press).toEqual({ action: 'pr-undo', ref: 'acme/visor#29' })
 })
 
+function withMerged(refs: string[]): PanelScreen {
+  const s = demoState(NOW)
+  const views = Object.fromEntries(
+    Object.entries(s.prViews.views).map(([ref, v]) => [
+      ref,
+      refs.includes(ref) ? { ...v, state: 'MERGED' as const } : v,
+    ]),
+  )
+
+  return screenOf({ view: sessionView({ ...s, prViews: { ...s.prViews, views } }, NOW, SETTLED_MS, true, NO_HOLDS) })
+}
+
+test('Dismiss merged draws after the PR blocks, and m from any row or Enter on it returns the press', () => {
+  const screen = withMerged(['acme/visor#29', 'acme/visor#33'])
+  const ui = { ...INITIAL_UI, tab: 'prs' as const }
+  const lines = text(screen, ui).split('\n')
+  const at = lines.findIndex(l => l.includes('m Dismiss merged'))
+  expect(at).toBeGreaterThan(lines.findLastIndex(l => /#(29|31|33) /.test(l)))
+  const onThread = {
+    ...ui,
+    selectedId: screen.view.prs.drawn.flatMap(d => waitingThreads(d.pr).map(t => `${d.pr.ref} thread ${t.id}`))[0]!,
+  }
+  expect(handleKey(screen, onThread, 'm', NOW).press).toEqual({ action: 'pr-dismiss-merged' })
+  expect(handleKey(screen, { ...ui, selectedId: 'pr:merged' }, 'enter', NOW).press).toEqual({
+    action: 'pr-dismiss-merged',
+  })
+})
+
+test('Dismiss merged does not show when the only merged PR is the branch’s own', () => {
+  const screen = withMerged(['acme/visor#31'])
+  const ui = { ...INITIAL_UI, tab: 'prs' as const }
+  expect(text(screen, ui)).not.toContain('Dismiss merged')
+  expect(handleKey(screen, ui, 'm', NOW).press).toBeUndefined()
+})
+
 function withLast(screen: PanelScreen, id: string, last: LastAction): PanelScreen {
   return { ...screen, view: { ...screen.view, lastActions: { ...screen.view.lastActions, [id]: last } } }
 }

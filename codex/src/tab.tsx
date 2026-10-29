@@ -90,6 +90,7 @@ import type {
 import {
   checkActions,
   checkRowText,
+  DISMISS_MERGED_ID,
   PR_QUOTE_CHARS,
   splitFollowUps,
   ghNoticeOf,
@@ -102,6 +103,7 @@ import {
   prRowWaits,
   prsEmptyText,
   prPressEffect,
+  prTabActions,
   prRefreshFailedText,
   prThreadId,
   threadActions,
@@ -877,6 +879,17 @@ function prKey(rowId: string, pr: PrView, a: PrAction): Key {
     ...(a.isOut || sending.get(rowId)?.action === a.press.action ? { isOut: true } : {}),
     run: () => void act(rowId, a.press, undefined, pending),
   }
+}
+
+/** The PRs tab's own buttons, drawn after its PR blocks. */
+function prTabKeys(v: View): Key[] {
+  return prTabActions(prPlan(v).blocks, v.prs.branchRef).map(a => ({
+    ...(a.hotkey ? { hotkey: a.hotkey } : {}),
+    label: a.label,
+    emphasis: a.emphasis,
+    ...(a.isOut || sending.get(DISMISS_MERGED_ID)?.action === a.press.action ? { isOut: true } : {}),
+    run: () => void act(DISMISS_MERGED_ID, a.press),
+  }))
 }
 
 function pendingLocal(effect: Effect): Feedback {
@@ -1889,6 +1902,7 @@ function Prs({ v, now }: { v: View; now: number }) {
       </div>
     )
   const openId = rows[selectedIndex(rows, 'prs', v)]?.id
+  const tabKeys = prTabKeys(v)
 
   return (
     <main>
@@ -1906,6 +1920,15 @@ function Prs({ v, now }: { v: View; now: number }) {
           <PrBlock {...b} v={v} openId={openId} all={rows} now={now} />
         ),
       )}
+      {tabKeys.length > 0 ? (
+        <section>
+          <div class="pr-actions keys">
+            {tabKeys.map(k => (
+              <KeyButton k={k} />
+            ))}
+          </div>
+        </section>
+      ) : null}
       {v.prs.olderText ? (
         <section>
           <div class="group-title muted">{v.prs.olderText}</div>
@@ -2353,6 +2376,12 @@ document.addEventListener(
     }
     const t = drawnTab()
     if (!isRowTab(t)) return
+    const tabKey = t === 'prs' ? prTabKeys(view).find(x => x.hotkey === e.key) : undefined
+    if (tabKey) {
+      e.preventDefault()
+      if (!tabKey.isOut) tabKey.run()
+      return
+    }
     const rows = tabRows(view, t)
     const at = selectedIndex(rows, t, view)
     const move = e.key === 'j' || e.key === 'ArrowDown' ? 1 : e.key === 'k' || e.key === 'ArrowUp' ? -1 : 0
