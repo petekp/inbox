@@ -996,7 +996,7 @@ type OverviewRowParts =
 /** What the Overview page shows. Every look draws it as it is. */
 export type OverviewPage = {
   isEmpty: boolean
-  /** What the session is focused on now. The description is null for a head saved before it had one. */
+  /** What the session is focused on now. The description is null until the Overview call writes one. */
   head: { title: string; description: string | null } | null
   rows: OverviewRow[]
   /** The status line's error while the last Overview call wrote nothing. */
