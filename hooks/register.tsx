@@ -6100,31 +6100,30 @@ export const register: Register = on => {
     const settledPrBlock = (pr: PrView, state: SettledState) => {
       const what = `#${pr.number} ${pr.title}`
       const undo: PrPress | null = state.canUndo ? { action: 'pr-undo', ref: pr.ref } : null
-      const side = look === 'desktop' ? undoPlace(prMarkId(pr.ref), undo, state.at, state.offersUndo) : null
-      const content =
-        look === 'desktop' ? (
-          <Box flexDirection="column">
-            <Box flexDirection="row" alignItems="center">
-              <Box flexGrow={1} flexShrink={1}>
-                <Text wrap="wrap">
-                  {what}
-                  <Text color={pal.muted}>{`${DOT}${settledLabel(state.label, state.delivery)}`}</Text>
-                </Text>
-              </Box>
-              {side ? (
-                <Box flexShrink={0} paddingLeft={1}>
-                  {side}
-                </Box>
-              ) : null}
-            </Box>
-          </Box>
-        ) : (
-          settledContent(what, state, undo, null)
+      const key = `settled-pr:${pr.ref}`
+      const mark = settledMark(state)
+      if (look === 'desktop')
+        return section(
+          desktopFrame({
+            key,
+            mark: markGlyph(mark, key, pal.muted),
+            side: undoPlace(prMarkId(pr.ref), undo, state.at, state.offersUndo),
+            padY: 0,
+            isSideCentered: true,
+            children: [
+              <Text wrap="wrap">
+                {what}
+                <Text color={pal.muted}>{`${DOT}${settledLabel(state.label, state.delivery)}`}</Text>
+              </Text>,
+            ],
+          }),
         )
 
-      const mark = markGlyph(settledMark(state), `settled-pr:${pr.ref}`, pal.muted)
-
-      return section([treeRow(null, mark, content, `settled-pr:${pr.ref}`)])
+      return section(
+        <Box key={key} paddingLeft={1}>
+          {settledContent(what, state, undo, mark)}
+        </Box>,
+      )
     }
     const prRowGroup = (title: string, group: Row[], key: string) =>
       group.length === 0
