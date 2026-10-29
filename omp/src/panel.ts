@@ -1119,13 +1119,16 @@ function leadText(lead: Lead | null, s: Style): string {
 function markText(mark: ResultMark | null, now: number, s: Style): string {
   if (mark === null) return ''
 
-  const glyph = resultGlyph(mark, now)
-
-  return `${mark.tone ? s.tone(mark.tone, glyph) : s.dim(glyph)} `
+  return `${feedbackPaint(mark.tone ?? null, s)(resultGlyph(mark, now))} `
 }
 
 function feedbackPaint(tone: Tone | null, s: Style) {
   return (text: string) => (tone ? s.tone(tone, text) : s.dim(text))
+}
+
+/** A Status row's or legend entry's mark. A running mark draws the frame at `now`. */
+function paintMark(m: { mark: string; tone: Tone | null; isRunning: boolean }, now: number, s: Style): string {
+  return feedbackPaint(m.tone, s)(m.isRunning ? runningMark(now) : m.mark)
 }
 
 function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
@@ -1301,8 +1304,7 @@ const pageFocus = (row: StatusRow, ui: PanelUi): number =>
 function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string[] {
   const { width, now, style: s } = d
   if (row.kind === 'subject') {
-    const glyph = row.isRunning ? runningMark(now) : row.mark
-    const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph)
+    const mark = paintMark(row, now, s)
     const out = pageLine(d, PAGE_MARK_AT, mark, row.name, t => t, { stall: row.stall, text: row.text })
     const room = pageRoom(PAGE_MARK_AT, width)
     if (row.merged)
@@ -1321,8 +1323,7 @@ function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string[] {
     return row.hasChildren ? withTree(out, null, '│', s) : out
   }
   if (row.kind === 'child') {
-    const glyph = row.isRunning ? runningMark(now) : row.mark
-    const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph)
+    const mark = paintMark(row, now, s)
     const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, { stall: row.stall })
 
     return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out
@@ -1333,9 +1334,7 @@ function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string[] {
     return withTree([' '.repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s)
   }
   if (row.kind === 'look') return [pageRule(width, s, row.text)]
-  const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark)
-
-  return pageLine(d, PAGE_MARK_AT, mark, row.text, s.dim)
+  return pageLine(d, PAGE_MARK_AT, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim)
 }
 
 type TabCell = {
@@ -1486,8 +1485,7 @@ export function drawPanel(
         ),
       )
     else if (e.kind === 'legend') {
-      const glyph = e.entry.isRunning ? runningMark(now) : e.entry.mark
-      const mark = e.entry.tone ? style.tone(e.entry.tone, glyph) : style.dim(glyph)
+      const mark = paintMark(e.entry, now, style)
       body.push(
         ...indented(e.entry.words, PAGE_TEXT_AT, width, Infinity, style.dim).map((l, n) =>
           n === 0 ? `${' '.repeat(PAGE_MARK_AT)}${mark} ${l.trimStart()}` : l,

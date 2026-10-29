@@ -102,7 +102,6 @@ import {
   isDismissed,
   isPrPress,
   openPrViews,
-  olderPrsText,
   prRankText,
   PR_GROUP_TITLES,
   PR_TONES,
@@ -4864,28 +4863,23 @@ export const register: Register = on => {
       )
     }
     const ToneSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
+    /** A desktop mark drawn as an Svg in one cell, or null outside desktop. */
+    const svgCell = (source: string, alt: string, key?: string) =>
+      ToneSvg ? (
+        <Box key={key} width={1} height={1} flexShrink={0}>
+          <ToneSvg source={source} alt={alt} width={DESKTOP_CELL_PT} height={DESKTOP_LINE_PT} />
+        </Box>
+      ) : null
     /** An Asks or Finds row's result mark in the desktop mark column, or null when it has none. */
     const gutterMark = (row: Row) => {
       const mark = look === 'desktop' && row.view ? rowResultMark(row.view) : null
-      if (mark?.tone && ToneSvg)
-        return (
-          <Box width={1} height={1} flexShrink={0}>
-            <ToneSvg
-              source={toneSvg(mark.tone, mark.text)}
-              alt={mark.text}
-              width={DESKTOP_CELL_PT}
-              height={DESKTOP_LINE_PT}
-            />
-          </Box>
-        )
+      if (mark?.tone && ToneSvg) return svgCell(toneSvg(mark.tone, mark.text), mark.text)
       return mark ? markGlyph(mark, `gutter-${row.id}`, mark.tone ? pal.mark[mark.tone] : pal.muted) : null
     }
-    const runningDot = (id: string, glyph: string, color: string) => {
-      const RunningSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
-
-      return RunningSvg ? (
+    const runningDot = (id: string, glyph: string, color: string) =>
+      ToneSvg ? (
         <Box key={`${id}-mark`} width={RUNNING_SVG_CELLS} height={1} flexShrink={0}>
-          <RunningSvg
+          <ToneSvg
             source={runningSvg(now)}
             alt={glyph}
             width={RUNNING_SVG_CELLS * DESKTOP_CELL_PT}
@@ -4895,20 +4889,10 @@ export const register: Register = on => {
       ) : (
         <Text color={color}>{look === 'terminal' ? runningMark(now) : glyph}</Text>
       )
-    }
     const toned = (row: Row) => {
       if (look === 'desktop' && row.isHandleRunning) return runningDot(`handle-${row.id}`, row.handle, pal.muted)
       if (ToneSvg === null || !row.handle || !row.handleTone) return null
-      return (
-        <Box width={1} height={1} flexShrink={0}>
-          <ToneSvg
-            source={toneSvg(row.handleTone, row.handle)}
-            alt={row.handle}
-            width={DESKTOP_CELL_PT}
-            height={DESKTOP_LINE_PT}
-          />
-        </Box>
-      )
+      return svgCell(toneSvg(row.handleTone, row.handle), row.handle)
     }
     const sideAge = (row: Row) => {
       const f = row.view ? row.view.feedback : feedbackOf(row.id, lastActions[row.id], notes[row.id], turns, now)
@@ -5750,15 +5734,10 @@ export const register: Register = on => {
       if (mark.text === CLOSED_MARKS.lapsed && ToneSvg) {
         // An Svg cannot read a theme key, so one takes the muted mark's colors.
         const { light, dark } = color.startsWith('#') ? { light: color, dark: color } : MUTED_MARK
-        return (
-          <Box key={`${key}-mark`} width={1} height={1} flexShrink={0}>
-            <ToneSvg
-              source={markSvg(mark.text, cancelledMarkShape(DESKTOP_LINE_PT / 2), light, dark)}
-              alt={mark.text}
-              width={DESKTOP_CELL_PT}
-              height={DESKTOP_LINE_PT}
-            />
-          </Box>
+        return svgCell(
+          markSvg(mark.text, cancelledMarkShape(DESKTOP_LINE_PT / 2), light, dark),
+          mark.text,
+          `${key}-mark`,
         )
       }
       return <Text color={color}>{mark.text || ' '}</Text>
@@ -6232,58 +6211,20 @@ export const register: Register = on => {
     }
     const ghState = { isGhMissing: Boolean(prState.isGhMissing), isGhSignedOut: Boolean(prState.isGhSignedOut) }
     const ghNotice = ghNoticeOf(ghState)
-    const olderPrs = () => {
-      const text = olderPrsText(prState, ledger)
-      if (!text) return []
-      const line = (
-        <Text color={pal.muted} wrap="wrap">
-          {text}
-        </Text>
-      )
-
-      return [
-        section(
-          look === 'desktop' ? (
-            desktopFrame({ key: 'older-prs', padY: 0, children: line })
-          ) : (
-            <Box paddingLeft={1}>{line}</Box>
-          ),
-        ),
-      ]
-    }
-    const prOrderLine = () => {
-      const text = view.prs.orderText
-      if (!text) return []
-      const line = (
-        <Text color={pal.muted} wrap="wrap">
-          {text}
-        </Text>
-      )
-
-      return [
-        section(
-          look === 'desktop' ? (
-            desktopFrame({ key: 'pr-order', padY: 0, children: line })
-          ) : (
-            <Box paddingLeft={1}>{line}</Box>
-          ),
-        ),
-      ]
-    }
-    const prTabButtons = () => {
-      if (prTabKeys.length === 0) return []
-      const buttons = keyRow(DISMISS_MERGED_ID, prTabKeys)
-
-      return [
-        section(
-          look === 'desktop' ? (
-            desktopFrame({ key: 'pr-tab-actions', padY: 0, children: buttons })
-          ) : (
-            <Box paddingLeft={1}>{buttons}</Box>
-          ),
-        ),
-      ]
-    }
+    const prTabLine = (key: string, content: JSX.Element) => [
+      section(
+        look === 'desktop' ? desktopFrame({ key, padY: 0, children: content }) : <Box paddingLeft={1}>{content}</Box>,
+      ),
+    ]
+    const mutedLine = (text: string) => (
+      <Text color={pal.muted} wrap="wrap">
+        {text}
+      </Text>
+    )
+    const olderPrs = () => (view.prs.olderText ? prTabLine('older-prs', mutedLine(view.prs.olderText)) : [])
+    const prOrderLine = () => (view.prs.orderText ? prTabLine('pr-order', mutedLine(view.prs.orderText)) : [])
+    const prTabButtons = () =>
+      prTabKeys.length === 0 ? [] : prTabLine('pr-tab-actions', keyRow(DISMISS_MERGED_ID, prTabKeys))
     const prsView = () =>
       prGroups.length === 0 ? (
         <Box flexDirection="column" flexGrow={1}>
@@ -6534,11 +6475,14 @@ export const register: Register = on => {
         ...(r.id === statusKeyRow?.id ? { hotkey: k.hotkey } : {}),
         onPress: () => showAsk($, k.press.askId),
       }))
+    const statusMark = (r: Pick<StatusRow & { kind: 'subject' }, 'id' | 'mark' | 'tone' | 'isRunning'>) => {
+      const color = r.tone ? pal.mark[r.tone] : pal.muted
+      return r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
+    }
     const statusRow = (r: StatusRow) => {
       if (r.kind === 'subject') {
         const keys = statusKeys(r)
-        const color = r.tone ? pal.mark[r.tone] : pal.muted
-        const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
+        const mark = statusMark(r)
         const content = [
           statusNameLine(`status-${r.id}-name`, { text: r.name }, r.stall, 0),
           ...(r.text ? [statusPageText(`status-${r.id}-text`, [{ text: r.text, isMuted: true }], 0)] : []),
@@ -6566,8 +6510,7 @@ export const register: Register = on => {
         })
       }
       if (r.kind === 'child') {
-        const color = r.tone ? pal.mark[r.tone] : pal.muted
-        const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
+        const mark = statusMark(r)
         const depth = r.branch === null ? 0 : 1
 
         return statusRowLine({
@@ -6630,15 +6573,9 @@ export const register: Register = on => {
             ? markShape(m.mark, DESKTOP_LINE_PT / 2)
             : null
       if (ToneSvg && shape !== null)
-        return (
-          <Box width={1} height={1} flexShrink={0}>
-            <ToneSvg
-              source={m.tone ? toneSvg(m.tone, m.mark) : markSvg(m.mark, shape, MUTED_MARK.light, MUTED_MARK.dark)}
-              alt={m.mark}
-              width={DESKTOP_CELL_PT}
-              height={DESKTOP_LINE_PT}
-            />
-          </Box>
+        return svgCell(
+          m.tone ? toneSvg(m.tone, m.mark) : markSvg(m.mark, shape, MUTED_MARK.light, MUTED_MARK.dark),
+          m.mark,
         )
 
       return <Text color={color}>{m.mark}</Text>
