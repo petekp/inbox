@@ -28,10 +28,12 @@ import {
   turnEnded,
   turnStarted,
   upgradeSession,
+  withFetchedPrs,
 } from '../hooks/session'
 import type { Session } from '../hooks/session'
-import type { Item, RowNote } from '../types'
+import type { Item, PrView, RowNote } from '../types'
 import {
+  isPrFetchDue,
   OVERVIEW_RECORD_VERSION,
   overviewCallPrompt,
   RECORDS_KEPT_MS,
@@ -44,8 +46,8 @@ import {
   writeOverviewRecord,
 } from '../hooks/session-host'
 import type { CatchUpReply, OverviewCall, OverviewRecord, RecordFiles } from '../hooks/session-host'
-import { allRows, COMPARE_LIMIT_MS, feedbackText, footerStatus, NO_HOLDS } from '../hooks/view'
-import { prMarkId } from '../hooks/pr-tab'
+import { allRows, COMPARE_LIMIT_MS, feedbackOf, feedbackText, footerStatus, NO_HOLDS } from '../hooks/view'
+import { checkRowId, prMarkId } from '../hooks/pr-tab'
 import { demoSession, demoView, isDemoCopy } from '../hooks/demo'
 import { fakeHost } from './session-fake-host'
 import { runSessionScript } from './session-script'
@@ -661,4 +663,103 @@ test('a prune keeps the closed records of held rows and of rows closed since the
   const left = pruned({ ...s, shownSince: null })
   expect(closedIds(left)).toEqual(ids.slice(2))
   expect(Object.keys(left.prViews.views)).toEqual([linked])
+})
+
+const FIX_REF = 'acme/app#12'
+
+const BLOCKED_PR: PrView = {
+  ref: FIX_REF,
+  number: 12,
+  title: 'Add a CLI',
+  url: 'https://github.com/acme/app/pull/12',
+  isDraft: false,
+  state: 'OPEN',
+  base: 'main',
+  mergeable: 'CONFLICTING',
+  reviewDecision: '',
+  checks: [{ name: 'test', bucket: 'fail', url: null }],
+  threads: [],
+  isYours: true,
+  wasSeenOpen: true,
+  error: null,
+  fetchedAt: 1,
+}
+
+async function blockedPrHost(refreshed: (pr: PrView, at: number) => PrView) {
+  const { host, delivered } = fakeHost(async () => null)
+  await host.update(s => ({
+    ...s,
+    ledger: { ...s.ledger, prs: [FIX_REF] },
+    prViews: { ...s.prViews, views: { [FIX_REF]: BLOCKED_PR } },
+  }))
+  const shownWhileRefreshing: string[] = []
+  const shownOn = async (rowId: string) => {
+    const s = await host.read()
+    const f = feedbackOf(rowId, s.lastActions[rowId], undefined, s.presence, await host.now())
+    return f ? feedbackText(f, 'terminal') : null
+  }
+  host.refreshPrs = async () => {
+    for (const id of [prMarkId(FIX_REF), checkRowId(FIX_REF, 'test')]) {
+      const text = await shownOn(id)
+      if (text) shownWhileRefreshing.push(text)
+    }
+    const at = await host.now()
+    await host.update(s => withFetchedPrs(s, { [FIX_REF]: refreshed(s.prViews.views[FIX_REF]!, at) }, null, false))
+  }
+
+  return { host, delivered, shownWhileRefreshing, shownOn }
+}
+
+test('Resolve conflicts and Fix check the PR on GitHub first, reading Refreshing at once, and send nothing once the problem is gone', async () => {
+  const resolved = await blockedPrHost((pr, at) => ({ ...pr, mergeable: 'MERGEABLE', fetchedAt: at }))
+  const conflicts = await press(resolved.host, { action: 'pr-conflicts', ref: FIX_REF }, false, NO_HOLDS)
+  expect(resolved.shownWhileRefreshing).toEqual(['Refreshing PR #12…'])
+  expect(conflicts.note).toBe('stale')
+  expect(resolved.delivered).toEqual([])
+
+  const passed = await blockedPrHost((pr, at) => ({
+    ...pr,
+    checks: [{ name: 'test', bucket: 'pass', url: null }],
+    fetchedAt: at,
+  }))
+  const fix = await press(passed.host, { action: 'check-fix', ref: FIX_REF, check: 'test' }, false, NO_HOLDS)
+  expect(passed.shownWhileRefreshing).toEqual(['Refreshing PR #12…'])
+  expect(fix.note).toBe('stale')
+  expect(passed.delivered).toEqual([])
+})
+
+test('Resolve conflicts and Fix send their message when the PR on GitHub still has the problem, after an earlier press of the same fix', async () => {
+  const still = await blockedPrHost((pr, at) => ({ ...pr, fetchedAt: at }))
+  for (const round of [1, 2]) {
+    const conflicts = await press(still.host, { action: 'pr-conflicts', ref: FIX_REF }, false, NO_HOLDS)
+    const fix = await press(still.host, { action: 'check-fix', ref: FIX_REF, check: 'test' }, false, NO_HOLDS)
+    expect([conflicts.note, fix.note]).toEqual([null, null])
+    expect(still.delivered.length).toBe(2 * round)
+    for (const text of still.delivered.slice(-2))
+      await still.host.update(s => endTurn(CLAUDE_CODE, notePrompt(CLAUDE_CODE, s, text, false).state, 'Done.', false))
+  }
+  expect(still.delivered[2]).toContain('PR #12 (https://github.com/acme/app/pull/12) conflicts with main.')
+  expect(still.delivered[3]).toContain('The test check failed on PR #12')
+  expect(await still.shownOn(prMarkId(FIX_REF))).toBe('✓ Asked to resolve conflicts')
+})
+
+test('a fix press whose check of the PR fails sends nothing and says why on its row', async () => {
+  const unread = await blockedPrHost(pr => ({ ...pr, error: 'HTTP 502' }))
+  const conflicts = await press(unread.host, { action: 'pr-conflicts', ref: FIX_REF }, false, NO_HOLDS)
+  expect(conflicts.note).toBe(null)
+  expect(unread.delivered).toEqual([])
+  expect(await unread.shownOn(prMarkId(FIX_REF))).toBe('Could not refresh PR #12: HTTP 502')
+})
+
+test('PRs are due for a fetch 15 seconds after the last once the agent replied since it, and otherwise after 2 minutes', () => {
+  const s = {
+    ...emptySession(),
+    ledger: { ...emptySession().ledger, prs: [FIX_REF] },
+    prViews: { ...emptySession().prViews, views: { [FIX_REF]: BLOCKED_PR } },
+  }
+  const repliedAt = (at: number | null) => ({ ...s, presence: { ...s.presence, lastReplyAt: at } })
+  expect(isPrFetchDue(repliedAt(1_005_000), 1_000_000, 1_015_000)).toBe(true)
+  expect(isPrFetchDue(repliedAt(1_005_000), 1_000_000, 1_014_000)).toBe(false)
+  expect(isPrFetchDue(repliedAt(999_000), 1_000_000, 1_015_000)).toBe(false)
+  expect(isPrFetchDue(repliedAt(null), 1_000_000, 1_120_000)).toBe(true)
 })

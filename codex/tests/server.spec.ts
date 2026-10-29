@@ -1325,12 +1325,21 @@ test('tracked PR steps are drawn and open the same linked and branch PRs without
 })
 
 test('a PR press with an unknown queue outcome keeps its receipt and unconfirmed feedback', async () => {
-  const { dir, call } = await prServer(args =>
-    args[1] === 'queue' ? { code: 1, stdout: '', stderr: 'no such thread' } : ghAnswer(args),
-  )
   const d = demoView(100, 'Codex')
+  const conflicting = Object.values(d.prViews.views).find(v => v.mergeable === 'CONFLICTING')!
+  const ref = conflicting.ref
+  const conflictingView = JSON.stringify({
+    ...conflicting,
+    baseRefName: conflicting.base,
+    statusCheckRollup: [],
+  })
+  const { dir, call } = await prServer(args => {
+    if (args[1] === 'queue') return { code: 1, stdout: '', stderr: 'no such thread' }
+    if (args[1] === 'pr' && args.includes(String(conflicting.number)))
+      return { code: 0, stdout: conflictingView, stderr: '' }
+    return ghAnswer(args)
+  })
   await updateState(dir, 's1', s => ({ ...s, ledger: { ...s.ledger, prs: d.ledger.prs }, prViews: d.prViews }))
-  const ref = Object.values(d.prViews.views).find(v => v.mergeable === 'CONFLICTING')!.ref
   const r = await call('inbox_press', { press: { action: 'pr-conflicts', ref }, thread: 's1' })
   assert.equal(r.result.structuredContent.error, null)
   assert.equal((r.result.structuredContent as unknown as { delivery: string }).delivery, 'unconfirmed')
