@@ -1364,10 +1364,13 @@ function fitNameLine(el: HTMLElement | null, name: string) {
     headEl.textContent = head
     lastEl.textContent = last
   }
+  const range = document.createRange()
+  range.selectNodeContents(flowEl)
+  const lineCount = () => new Set([...range.getClientRects()].map(r => Math.round(r.top))).size
   write(
     nameBeforeStall(name, shown => {
       write(shown)
-      return flowEl.getClientRects().length <= OVERVIEW_TEXT_LINES
+      return lineCount() <= OVERVIEW_TEXT_LINES
     }),
   )
 }
