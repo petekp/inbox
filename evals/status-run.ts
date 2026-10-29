@@ -3,7 +3,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { CLAUDE_CODE, OVERVIEW_SYSTEM, systemText } from '../hooks/model-text'
+import { CLAUDE_CODE, STATUS_SYSTEM, systemText } from '../hooks/model-text'
 import { CODEX } from '../codex/src/texts'
 import { run } from '../codex/src/run'
 import { codexAsk, MODEL } from '../codex/src/update'
@@ -11,14 +11,14 @@ import { claude, CLAUDE_MODEL } from './claude-model'
 import { codexCli } from './codex-cli'
 import { provenance, resultsPath, runCount, runJobs, writeResults } from './harness'
 import type { Job, Run } from './harness'
-import { factsText } from './overview-facts'
-import { JUDGE_CHECKS, judgePrompt, mistakeKind, pageMistakes, parseJudgeAnswer } from './overview-judge'
-import type { JudgeCheckId, JudgePageSet, JudgeVerdict } from './overview-judge'
-import { LIMITS, runReplay } from './overview-replay'
-import type { Agent, ModelCall, Replay, StepResult } from './overview-replay'
-import { REPLAYS } from './overview-replays'
-import { gradeReplay, RULES } from './overview-rules'
-import type { RuleResult } from './overview-rules'
+import { factsText } from './status-facts'
+import { JUDGE_CHECKS, judgePrompt, mistakeKind, pageMistakes, parseJudgeAnswer } from './status-judge'
+import type { JudgeCheckId, JudgePageSet, JudgeVerdict } from './status-judge'
+import { LIMITS, runReplay } from './status-replay'
+import type { Agent, ModelCall, Replay, StepResult } from './status-replay'
+import { REPLAYS } from './status-replays'
+import { gradeReplay, RULES } from './status-rules'
+import type { RuleResult } from './status-rules'
 
 const ROOT = process.env.INBOX_EVAL_ROOT ?? process.cwd()
 const JUDGE_MODEL = 'opus'
@@ -49,20 +49,20 @@ const judgeSets = values['judge-set'] === undefined ? [1, 2] : [Number(values['j
 if (!judgeSets.every(n => n === 1 || n === 2))
   throw new Error(`Unknown --judge-set ${values['judge-set']}. Use 1 or 2.`)
 
-const judgeFile = readFileSync(join(ROOT, 'evals', 'overview-judge.md'), 'utf8')
+const judgeFile = readFileSync(join(ROOT, 'evals', 'status-judge.md'), 'utf8')
 const JUDGE_SEPARATOR = '\n---\n'
 const separatorAt = judgeFile.indexOf(JUDGE_SEPARATOR)
 const judgeSystem = separatorAt === -1 ? '' : judgeFile.slice(separatorAt + JUDGE_SEPARATOR.length).trim()
 const isJudgeWritten = judgeSystem !== '' && !judgeSystem.startsWith('PLACEHOLDER')
 const isJudging = values.judge || values['judge-pages'] !== undefined
 if (isJudging && !isJudgeWritten)
-  throw new Error("The judge's instructions in evals/overview-judge.md are still a placeholder.")
+  throw new Error("The judge's instructions in evals/status-judge.md are still a placeholder.")
 
 const about = provenance(
-  values['judge-pages'] !== undefined ? 'overview-judge' : 'overview',
+  values['judge-pages'] !== undefined ? 'status-judge' : 'status',
   { claude: 'claude', codex: codexCli },
   {
-    'overview systemText': OVERVIEW_SYSTEM,
+    'status systemText': STATUS_SYSTEM,
     'systemText claude': systemText(CLAUDE_CODE),
     'systemText codex': systemText(CODEX),
     judge: judgeSystem,
@@ -158,7 +158,7 @@ type StepRecord = {
   label: string
   page: string
   calls: StepResult['calls']
-  isOverviewFailed: boolean
+  isStatusFailed: boolean
   rules: RuleResult[]
   judge?: { answer: string | null; verdicts: JudgeVerdict[] | null }
 }
@@ -166,7 +166,7 @@ type StepRecord = {
 type ReplayRun = Run & { steps: StepRecord[] }
 
 /**
- * A step as the replay tables in `docs/plans/overview.md` name it: by its call's number, or by its label when it
+ * A step as the replay tables in `docs/plans/status.md` name it: by its call's number, or by its label when it
  * makes no call.
  */
 function stepName(replay: Replay, i: number): string {
@@ -185,7 +185,7 @@ async function once(agent: Agent, replay: Replay, n: number): Promise<ReplayRun>
       label: s.label,
       page: s.text,
       calls: s.calls,
-      isOverviewFailed: s.isOverviewFailed,
+      isStatusFailed: s.isStatusFailed,
       rules: graded[i]!,
     }
     if (values.judge && replay.steps[i]!.checkpoint) {

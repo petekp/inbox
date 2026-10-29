@@ -1,24 +1,24 @@
 import { expect, test } from 'claude-code/testing'
 
 import { childStarted } from '../hooks/children'
-import { applyOps, EMPTY_OVERVIEW, lookEnded, lookStarted, parseOverview } from '../hooks/overview'
-import type { Op } from '../hooks/overview'
+import { applyOps, EMPTY_SESSION_STATUS, lookEnded, lookStarted, parseStatus } from '../hooks/status'
+import type { Op } from '../hooks/status'
 import { emptySession } from '../hooks/session'
 import type { Session } from '../hooks/session'
-import { overviewCallPrompt } from '../hooks/session-host'
-import type { OverviewExchange } from '../hooks/session-host'
-import { overviewPage } from '../hooks/view'
-import type { OverviewPage } from '../hooks/view'
-import type { Item, Overview, Subject, SubjectStatus } from '../types'
-import { factsAfter, factsText } from '../evals/overview-facts'
-import type { Facts } from '../evals/overview-facts'
-import { JUDGE_CHECKS, pageMistakes, parseJudgeAnswer } from '../evals/overview-judge'
-import type { JudgePage } from '../evals/overview-judge'
-import { minutes, replayFromRecord, runReplay } from '../evals/overview-replay'
-import type { ModelCall, Replay, Step, StepResult } from '../evals/overview-replay'
-import { REPLAYS } from '../evals/overview-replays'
-import { blockingFailures, gradeReplay, gradeStep, RULES } from '../evals/overview-rules'
-import type { RuleContext } from '../evals/overview-rules'
+import { statusCallPrompt } from '../hooks/session-host'
+import type { StatusExchange } from '../hooks/session-host'
+import { statusPage } from '../hooks/view'
+import type { StatusPage } from '../hooks/view'
+import type { Item, SessionStatus, Subject, SubjectStatus } from '../types'
+import { factsAfter, factsText } from '../evals/status-facts'
+import type { Facts } from '../evals/status-facts'
+import { JUDGE_CHECKS, pageMistakes, parseJudgeAnswer } from '../evals/status-judge'
+import type { JudgePage } from '../evals/status-judge'
+import { minutes, replayFromRecord, runReplay } from '../evals/status-replay'
+import type { ModelCall, Replay, Step, StepResult } from '../evals/status-replay'
+import { REPLAYS } from '../evals/status-replays'
+import { blockingFailures, gradeReplay, gradeStep, RULES } from '../evals/status-rules'
+import type { RuleContext } from '../evals/status-rules'
 
 function subject(id: string, status: SubjectStatus, name: string, text: string, changedAt: number): Subject {
   const isClosed = status === 'done' || status === 'dropped'
@@ -36,11 +36,11 @@ function subject(id: string, status: SubjectStatus, name: string, text: string, 
   }
 }
 
-function overviewOf(subjects: Subject[], more: Partial<Overview> = {}): Overview {
-  return { ...EMPTY_OVERVIEW, goal: 'Add offline sync', subjects, nextId: subjects.length + 1, ...more }
+function statusOf(subjects: Subject[], more: Partial<SessionStatus> = {}): SessionStatus {
+  return { ...EMPTY_SESSION_STATUS, goal: 'Add offline sync', subjects, nextId: subjects.length + 1, ...more }
 }
 
-function sessionOf(o: Overview, items: Item[], at: number): Session {
+function sessionOf(o: SessionStatus, items: Item[], at: number): Session {
   const base = emptySession()
   return {
     ...base,
@@ -65,21 +65,21 @@ function ask(id: string, text: string): Item {
 }
 
 type Scene = {
-  before: Overview
-  after: Overview
+  before: SessionStatus
+  after: SessionStatus
   items: Item[]
   facts: Facts
   step: Step
-  isOverviewFailed: boolean
-  page?: (p: OverviewPage) => OverviewPage
+  isStatusFailed: boolean
+  page?: (p: StatusPage) => StatusPage
 }
 
 function baseScene(): Scene {
-  const before = overviewOf([
+  const before = statusOf([
     subject('s1', 'working', 'Sync engine', 'queues edits offline', 0),
     subject('s2', 'queued', 'Sync conflicts', 'not started', 0),
   ])
-  const after = overviewOf(
+  const after = statusOf(
     [
       subject('s1', 'working', 'Sync engine', 'syncs on reconnect', 10),
       subject('s2', 'queued', 'Sync conflicts', 'not started', 0),
@@ -119,12 +119,12 @@ function baseScene(): Scene {
     call: { kind: 'reply', person: null, activity: [], reply: '' },
   }
 
-  return { before, after, items: [ask('i1', 'Last-write-wins or manual merge?')], facts, step, isOverviewFailed: false }
+  return { before, after, items: [ask('i1', 'Last-write-wins or manual merge?')], facts, step, isStatusFailed: false }
 }
 
 function contextOf(scene: Scene): RuleContext {
   const session = sessionOf(scene.after, scene.items, 10)
-  const drawn = overviewPage(session, minutes(10))
+  const drawn = statusPage(session, minutes(10))
   const page = scene.page ? scene.page(drawn) : drawn
   const result: StepResult = {
     index: 0,
@@ -135,7 +135,7 @@ function contextOf(scene: Scene): RuleContext {
     text: '',
     facts: scene.facts,
     calls: [],
-    isOverviewFailed: scene.isOverviewFailed,
+    isStatusFailed: scene.isStatusFailed,
   }
   const beforeFacts = { ...scene.facts, changed: [] }
 
@@ -171,9 +171,9 @@ const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene) => voi
   'changes-move': { bad: s => (s1Of(s).changedAt = minutes(0)) },
   'was-on-reversal': { bad: s => (s.step.facts = { pieces: [{ id: 'conflicts', was: 'manual merge' }] }) },
   'was-not-cut': { bad: s => (s2Of(s).was = 'Show the banner on hover and keep…') },
-  'failure-shown': { bad: s => (s.isOverviewFailed = true) },
+  'failure-shown': { bad: s => (s.isStatusFailed = true) },
   'head-title': {
-    good: s => (s.page = p => ({ ...p, title: 'Offline sync', description: 'Adding offline sync' }) as OverviewPage),
+    good: s => (s.page = p => ({ ...p, title: 'Offline sync', description: 'Adding offline sync' }) as StatusPage),
     bad: () => undefined,
   },
   'filed-mark': {
@@ -384,8 +384,8 @@ test('every replay is well formed: times rise, facts name known pieces, asks ope
 })
 
 test('a replay from a call record sends the prompt the record holds, at the time it ran', async () => {
-  const last = overviewOf([subject('s1', 'working', 'Sync engine', 'queues edits offline', 0)])
-  const exchange: OverviewExchange = {
+  const last = statusOf([subject('s1', 'working', 'Sync engine', 'queues edits offline', 0)])
+  const exchange: StatusExchange = {
     kind: 'reply',
     exchange: {
       person: 'Go on',
@@ -412,7 +412,7 @@ test('a replay from a call record sends the prompt the record holds, at the time
     },
   })
 
-  expect(prompts).toEqual([overviewCallPrompt(input, exchange)])
+  expect(prompts).toEqual([statusCallPrompt(input, exchange)])
   expect(step!.session.ledger.overview!.subjects[0]).toMatchObject({ text: 'syncs on reconnect', changedAt: input.now })
 })
 
@@ -424,7 +424,7 @@ test('an answer past the host limit is dropped as the host drops it, and the pag
     { agent: 'claude', ask: async () => ({ text: 'UNCHANGED', outputTokens: 2000 }), clock: () => (t += 1000) },
   )
 
-  expect(step!.isOverviewFailed).toBe(true)
+  expect(step!.isStatusFailed).toBe(true)
   expect(step!.page.error).not.toBeNull()
   expect(step!.calls[0]!.overLimit).toMatch(/2000 tokens/)
 })
@@ -470,15 +470,15 @@ function knownFailing(name: string, until: string, body: () => void) {
 }
 
 const opsOf = (text: string): Op[] => {
-  const answer = parseOverview(text)
+  const answer = parseStatus(text)
   return answer?.kind === 'ops' ? answer.ops : []
 }
 
 knownFailing('#137: work filed for later draws its own mark and folds apart from the done count', '#137', () => {
-  const o = overviewOf([subject('s1', 'filed' as SubjectStatus, 'Dark mode', 'filed for later', 10)], {
+  const o = statusOf([subject('s1', 'filed' as SubjectStatus, 'Dark mode', 'filed for later', 10)], {
     lastLookAt: minutes(0),
   })
-  const row = overviewPage(sessionOf(o, [], 10), minutes(10)).rows.find(r => r.kind === 'subject')
+  const row = statusPage(sessionOf(o, [], 10), minutes(10)).rows.find(r => r.kind === 'subject')
 
   expect(row?.kind === 'subject' && row.mark).toBeTruthy()
   expect(['✓', '✗', '●', '○', '◌']).not.toContain(row?.kind === 'subject' ? row.mark : '✓')
@@ -486,23 +486,23 @@ knownFailing('#137: work filed for later draws its own mark and folds apart from
 
 knownFailing('#138: every piece finished since the last look is drawn as a row', '#138', () => {
   const done = ['Login timeout', 'Crash on launch', 'Backup restore', '2.4 release', 'Sync merge', 'Search speed']
-  const o = overviewOf(
+  const o = statusOf(
     done.map((name, n) => subject(`s${n + 1}`, 'done', name, 'finished', 10 + n)),
     { lastLookAt: minutes(0) },
   )
-  const drawn = overviewPage(sessionOf(o, [], 30), minutes(30)).rows.filter(r => r.kind === 'subject')
+  const drawn = statusPage(sessionOf(o, [], 30), minutes(30)).rows.filter(r => r.kind === 'subject')
 
   expect(drawn.length).toBe(6)
 })
 
 knownFailing('#139: a look marks as seen only the rows that were on screen', '#139', () => {
-  const o = overviewOf([
+  const o = statusOf([
     subject('s1', 'working', 'Sync engine', 'syncs', 10),
     subject('s2', 'working', 'Search speed', 'faster', 10),
   ])
-  const endLook = lookEnded as (o: Overview | null, at: number, shown: string[]) => Overview | null
+  const endLook = lookEnded as (o: SessionStatus | null, at: number, shown: string[]) => SessionStatus | null
   const looked = endLook(lookStarted(o, minutes(20)), minutes(21), ['s1'])
-  const page = overviewPage(sessionOf(looked!, [], 22), minutes(22))
+  const page = statusPage(sessionOf(looked!, [], 22), minutes(22))
   const names = page.rows.map(r => (r.kind === 'subject' ? r.name : r.kind))
 
   expect(names.indexOf('Search speed')).toBeLessThan(names.indexOf('look'))
@@ -510,7 +510,7 @@ knownFailing('#139: a look marks as seen only the rows that were on screen', '#1
 
 knownFailing('#140: one ask holds up two subjects, and both show ◆', '#140', () => {
   const o = applyOps(
-    overviewOf([
+    statusOf([
       subject('s1', 'working', '2.4 release', 'build signed', 0),
       subject('s2', 'working', 'Hotfix release', 'build signed', 0),
     ]),
@@ -518,7 +518,7 @@ knownFailing('#140: one ask holds up two subjects, and both show ◆', '#140', (
     minutes(5),
     new Set(['i1']),
   )
-  const marks = overviewPage(sessionOf(o, [ask('i1', 'Sign in to the app store')], 5), minutes(5)).rows.flatMap(r =>
+  const marks = statusPage(sessionOf(o, [ask('i1', 'Sign in to the app store')], 5), minutes(5)).rows.flatMap(r =>
     r.kind === 'subject' ? [r.mark] : [],
   )
 
@@ -526,10 +526,7 @@ knownFailing('#140: one ask holds up two subjects, and both show ◆', '#140', (
 })
 
 knownFailing('#148: the head is a title and a one-line description', '#148', () => {
-  const page = overviewPage(
-    sessionOf(overviewOf([subject('s1', 'working', 'Sync engine', 'syncs', 0)]), [], 5),
-    minutes(5),
-  )
+  const page = statusPage(sessionOf(statusOf([subject('s1', 'working', 'Sync engine', 'syncs', 0)]), [], 5), minutes(5))
   const head = page as unknown as { title?: unknown; description?: unknown }
 
   expect(typeof head.title).toBe('string')
@@ -537,8 +534,8 @@ knownFailing('#148: the head is a title and a one-line description', '#148', () 
 })
 
 knownFailing('#149: a delegate with no published focus shows its name in words', '#149', () => {
-  const o = childStarted(overviewOf([]), { ref: 'herdr:pdf-layout', kind: 'delegate', name: 'pdf-layout' }, minutes(1))
-  const row = overviewPage(sessionOf(o, [], 2), minutes(2)).rows.find(r => r.kind === 'child')
+  const o = childStarted(statusOf([]), { ref: 'herdr:pdf-layout', kind: 'delegate', name: 'pdf-layout' }, minutes(1))
+  const row = statusPage(sessionOf(o, [], 2), minutes(2)).rows.find(r => r.kind === 'child')
 
   expect(row?.kind === 'child' ? row.name : '').toMatch(/^pdf layout$/i)
 })

@@ -1,15 +1,15 @@
-import { isOpen, NAME_WORDS } from '../hooks/overview'
-import type { Overview, Subject } from '../types'
-import { isOpenPiece, rightStatuses } from './overview-facts'
-import type { Facts, Piece } from './overview-facts'
-import { startSession } from './overview-replay'
-import type { Replay, Step, StepResult } from './overview-replay'
+import { isOpen, NAME_WORDS } from '../hooks/status'
+import type { SessionStatus, Subject } from '../types'
+import { isOpenPiece, rightStatuses } from './status-facts'
+import type { Facts, Piece } from './status-facts'
+import { startSession } from './status-replay'
+import type { Replay, Step, StepResult } from './status-replay'
 
 /** What a rule reads: the step, the state it left, and the state before it. */
 export type RuleContext = {
   step: Step
   result: StepResult
-  before: { overview: Overview | null; facts: Facts }
+  before: { overview: SessionStatus | null; facts: Facts }
 }
 
 export type Rule = {
@@ -47,9 +47,9 @@ const OVER_WORDS = /\b(published|merged|shipped|released|done)\b/i
 const DECISION_WORDS = /\b(needs? your|your (call|decision|answer|input)|decide|waiting on you|awaiting)\b/i
 const NUMBERED = /#\d+\b/g
 
-const shownOf = (o: Overview | null) => (o?.subjects ?? []).filter(s => s.into === null)
+const shownOf = (o: SessionStatus | null) => (o?.subjects ?? []).filter(s => s.into === null)
 
-const subjectsFor = (p: Pick<Piece, 'match'>, o: Overview | null) =>
+const subjectsFor = (p: Pick<Piece, 'match'>, o: SessionStatus | null) =>
   shownOf(o).filter(s => new RegExp(p.match, 'i').test(s.name))
 
 const label = (s: Subject) => `"${s.name}: ${s.text}"`
@@ -74,7 +74,7 @@ export function restatesText(text: string, other: string): boolean {
   return theirs.length >= 3 && theirs.filter(w => mine.has(w)).length / theirs.length >= 0.7
 }
 
-function modelTexts(o: Overview | null): string[] {
+function modelTexts(o: SessionStatus | null): string[] {
   return [o?.goal ?? '', ...shownOf(o).flatMap(s => [s.name, s.text, s.was ?? ''])].filter(Boolean)
 }
 
@@ -356,9 +356,9 @@ export const RULES: Rule[] = [
   {
     id: 'failure-shown',
     property: 13,
-    text: 'While the last Overview call wrote nothing, the status line says so.',
+    text: 'While the last Status call wrote nothing, the status line says so.',
     failures: ({ result }) =>
-      result.isOverviewFailed && result.page.error === null ? ['the call failed, and the page does not say so'] : [],
+      result.isStatusFailed && result.page.error === null ? ['the call failed, and the page does not say so'] : [],
   },
   {
     id: 'head-title',

@@ -2,30 +2,30 @@ import { expect, test } from 'claude-code/testing'
 
 import {
   applyOps,
-  applyOverview,
+  applyStatus,
   asksText,
   childActive,
   childEnded,
-  EMPTY_OVERVIEW,
+  EMPTY_SESSION_STATUS,
   lookEnded,
   lookStarted,
   LOOK_MIN_MS,
-  parseOverview,
+  parseStatus,
   runningText,
   subjectsText,
-  upgradeOverview,
+  upgradeStatus,
   withChild,
-} from '../hooks/overview'
-import type { Op } from '../hooks/overview'
+} from '../hooks/status'
+import type { Op } from '../hooks/status'
 import { emptySession } from '../hooks/session'
-import { CHILD_ROWS, mergedLine, overviewPage, STALL_MS } from '../hooks/view'
-import type { OverviewRow } from '../hooks/view'
-import type { Item, Overview, Session } from '../types'
+import { CHILD_ROWS, mergedLine, statusPage, STALL_MS } from '../hooks/view'
+import type { StatusRow } from '../hooks/view'
+import type { Item, SessionStatus, Session } from '../types'
 
 const MIN = 60_000
 
 const opsOf = (text: string): Op[] => {
-  const answer = parseOverview(text)
+  const answer = parseStatus(text)
   if (answer?.kind !== 'ops') throw new Error(`not ops: ${text}`)
 
   return answer.ops
@@ -33,7 +33,7 @@ const opsOf = (text: string): Op[] => {
 
 const NO_ASKS: ReadonlySet<string> = new Set()
 
-const after = (last: Overview | null, text: string, now: number, askIds = NO_ASKS) =>
+const after = (last: SessionStatus | null, text: string, now: number, askIds = NO_ASKS) =>
   applyOps(last, opsOf(text), now, askIds)
 
 const askItem = (id: string): Item => ({
@@ -54,12 +54,16 @@ const presence = (over: Partial<Session['presence']> = {}): Session['presence'] 
   ...over,
 })
 
-const page = (overview: Overview | null, now: number, over: Partial<Session['presence']> = {}, items: Item[] = []) =>
-  overviewPage({ ledger: { overview, items }, presence: presence(over) }, now)
+const page = (
+  sessionStatus: SessionStatus | null,
+  now: number,
+  over: Partial<Session['presence']> = {},
+  items: Item[] = [],
+) => statusPage({ ledger: { overview: sessionStatus, items }, presence: presence(over) }, now)
 
 const ARMS = { mid: '├ ', last: '└ ' } as const
 
-const shape = (rows: OverviewRow[]) =>
+const shape = (rows: StatusRow[]) =>
   rows.map(r =>
     r.kind === 'subject'
       ? `${r.mark} ${r.name}${r.text ? `: ${r.text}` : ''}${r.stall ? ` · ${r.stall}` : ''}${r.hasChildren ? ' ┐' : ''}`
@@ -75,12 +79,12 @@ const shape = (rows: OverviewRow[]) =>
 test('NO CHANGE keeps the list, and an empty answer or one holding prose cannot be read', () => {
   const last = after(null, 'NEW: working | Offline mode | sync queue built', 0)
 
-  expect(applyOverview(last, parseOverview('NO CHANGE')!, 5, NO_ASKS)).toBe(last)
-  expect(parseOverview('UNCHANGED')).toEqual({ kind: 'unchanged' })
-  expect(parseOverview(null)).toBeNull()
-  expect(parseOverview('')).toBeNull()
-  expect(parseOverview('SET: s1 | done | built\nCorrection: the status was wrong.\nDONE: s1 | built')).toBeNull()
-  expect(parseOverview('SET: s1 | finished | built')).toBeNull()
+  expect(applyStatus(last, parseStatus('NO CHANGE')!, 5, NO_ASKS)).toBe(last)
+  expect(parseStatus('UNCHANGED')).toEqual({ kind: 'unchanged' })
+  expect(parseStatus(null)).toBeNull()
+  expect(parseStatus('')).toBeNull()
+  expect(parseStatus('SET: s1 | done | built\nCorrection: the status was wrong.\nDONE: s1 | built')).toBeNull()
+  expect(parseStatus('SET: s1 | finished | built')).toBeNull()
 })
 
 test('reads each operation, tolerating bullets, and takes SET with done as DONE', () => {
@@ -246,7 +250,7 @@ test('a child the host reports again keeps its id and link, and old ended childr
   expect(later.children.map(c => c.ref)).toEqual(['t9'])
 })
 
-test('a look keeps the look line where it was until the look ends, and counts only once the Overview showed for five seconds', () => {
+test('a look keeps the look line where it was until the look ends, and counts only once the Status showed for five seconds', () => {
   const o = { ...after(null, 'NEW: working | Offline mode | queue built', 100), lastLookAt: 50 }
   const looking = lookStarted(o, 200)!
 
@@ -330,7 +334,7 @@ test('with no look yet every row is new, so the page draws no look line and show
 
 test('a page with no goal and no rows shows its empty state, even while a turn runs', () => {
   expect(page(null, 3 * MIN, { isTurnRunning: true, turnStartedAt: 0 }).isEmpty).toBe(true)
-  expect(page({ ...EMPTY_OVERVIEW, goal: 'Ship 0.3' }, 3 * MIN).isEmpty).toBe(false)
+  expect(page({ ...EMPTY_SESSION_STATUS, goal: 'Ship 0.3' }, 3 * MIN).isEmpty).toBe(false)
 })
 
 test('finished work folds into a count once seen, keeping at most two new finished rows', () => {
@@ -383,7 +387,7 @@ test('running children sit under their subject, at most three, each tied to it a
     '├ ● Review 2',
     `└ + 2 more running`,
   ])
-  const two = ['t2', 't3', 't4'].reduce<Overview | null>((x, ref) => childEnded(x, ref, now - MIN), o)
+  const two = ['t2', 't3', 't4'].reduce<SessionStatus | null>((x, ref) => childEnded(x, ref, now - MIN), o)
   expect(shape(page(two, now).rows)).toEqual(['● Offline mode: queue built ┐', '├ ● Review 0', '└ ● Review 1'])
   expect(rows.filter(r => r.kind === 'child')).toHaveLength(CHILD_ROWS)
   expect(rows[0]).toMatchObject({ kind: 'subject', isRunning: true })
@@ -475,7 +479,7 @@ test('open subjects past seven fold their oldest queued ones into a count', () =
   expect(heldOldest.at(-1)).toMatchObject({ kind: 'fold', text: '2 more queued' })
 })
 
-test('an Overview saved before subjects keeps its open work, dated at the last look, and its headline as the goal', () => {
+test('a Status saved before subjects keeps its open work, dated at the last look, and its headline as the goal', () => {
   const old = {
     isCoordinator: true,
     headline: 'Releasing 0.2.11',
@@ -488,8 +492,8 @@ test('an Overview saved before subjects keeps its open work, dated at the last l
     lastLookAt: 5000,
   }
 
-  expect(upgradeOverview(old)).toEqual({
-    ...EMPTY_OVERVIEW,
+  expect(upgradeStatus(old)).toEqual({
+    ...EMPTY_SESSION_STATUS,
     role: 'coordinator',
     goal: 'Releasing 0.2.11',
     subjects: [
@@ -533,13 +537,13 @@ test('an Overview saved before subjects keeps its open work, dated at the last l
     nextId: 4,
     lastLookAt: 5000,
   })
-  expect(upgradeOverview({ ...old, lastLookAt: null })?.subjects).toEqual([])
-  expect(upgradeOverview({ headline: 'x', lastLookAt: null })?.goal).toBe('x')
+  expect(upgradeStatus({ ...old, lastLookAt: null })?.subjects).toEqual([])
+  expect(upgradeStatus({ headline: 'x', lastLookAt: null })?.goal).toBe('x')
 })
 
-test('a saved Overview drops subjects and children it cannot read, and nothing else is an Overview', () => {
+test('a saved Status drops subjects and children it cannot read, and nothing else is a Status', () => {
   const saved = {
-    ...EMPTY_OVERVIEW,
+    ...EMPTY_SESSION_STATUS,
     subjects: [
       { id: 's1', name: 'A', status: 'working', text: 'b', changedAt: 5, was: 'E folded in; was: two steps' },
       { id: 's2', status: 'odd' },
@@ -553,7 +557,7 @@ test('a saved Overview drops subjects and children it cannot read, and nothing e
     ],
     look: { startedAt: 'soon' },
   }
-  const o = upgradeOverview(saved)!
+  const o = upgradeStatus(saved)!
 
   expect(o.subjects).toEqual([
     {
@@ -607,7 +611,7 @@ test('a saved Overview drops subjects and children it cannot read, and nothing e
     },
   ])
   expect(o.look).toBeNull()
-  expect(upgradeOverview(null)).toBeNull()
-  expect(upgradeOverview('x')).toBeNull()
-  expect(upgradeOverview({ role: 'session' })).toBeNull()
+  expect(upgradeStatus(null)).toBeNull()
+  expect(upgradeStatus('x')).toBeNull()
+  expect(upgradeStatus({ role: 'session' })).toBeNull()
 })

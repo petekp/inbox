@@ -24,7 +24,7 @@ export type Subject = {
 /** What kind of work runs apart from the session's own turn. */
 export type ChildKind = 'subagent' | 'background' | 'workflow' | 'delegate'
 
-/** Work that runs apart from the turn. Code sets every field from the host's events except `subjectId`, which the Overview call links. */
+/** Work that runs apart from the turn. Code sets every field from the host's events except `subjectId`, which the Status call links. */
 export type Child = {
   id: string
   /** The host's handle for it: a tool call id, a task id or a delegate's Herdr name. */
@@ -38,20 +38,20 @@ export type Child = {
   lastActivityAt: number | null
 }
 
-/** The Overview tab's list. The Overview call changes it by id; code keeps the order and every time. */
-export type Overview = {
+/** The Status tab's list. The Status call changes it by id; code keeps the order and every time. */
+export type SessionStatus = {
   role: 'coordinator' | 'session'
   /** What the session is for, in the person's words; empty until the call writes it. */
   goal: string
   subjects: Subject[]
   children: Child[]
-  /** The subject each ask holds up, by the ask's item id, as the Overview call linked them. */
+  /** The subject each ask holds up, by the ask's item id, as the Status call linked them. */
   askSubjects: Record<string, string>
   nextId: number
   nextChildId: number
   /** When the person last looked: the last time a look ended. Null before the first look. */
   lastLookAt: number | null
-  /** The look in progress, while the Overview tab is shown. Null otherwise. */
+  /** The look in progress, while the Status tab is shown. Null otherwise. */
   look: { startedAt: number } | null
 }
 
@@ -291,8 +291,8 @@ export type PrView = {
 }
 
 export type Ledger = {
-  /** The session's Overview page; null until the Overview call writes one. */
-  overview: Overview | null
+  /** The session's Status page; null until the Status call writes one. Saved as `overview`, the tab's earlier name. */
+  overview: SessionStatus | null
   items: Item[]
   closed: Closed[]
   findings: Finding[]
@@ -343,7 +343,7 @@ export type OldPresence = Away & {
 
 export type Tab = 'needsYou' | 'findings' | 'prs'
 
-/** A tab that shows a page instead of rows. */
+/** A tab that shows a page instead of rows. `'overview'` is the Status tab, under the id it was saved with. */
 export type PageTab = 'overview'
 
 /**
@@ -409,10 +409,10 @@ export type HostTaskStatus = 'pending' | 'in-progress' | 'done' | 'dropped' | 'b
 export type HostTask = { id: string; text: string; status: HostTaskStatus }
 
 /**
- * Why an Overview call wrote nothing. `no-answer`: the call gave no text. `refused`: it answered twice with text the
+ * Why a Status call wrote nothing. `no-answer`: the call gave no text. `refused`: it answered twice with text the
  * parser refused, and `answer` holds the start of the second answer.
  */
-export type OverviewFailure = { at: number; cause: 'no-answer' | 'refused'; answer: string | null }
+export type StatusFailure = { at: number; cause: 'no-answer' | 'refused'; answer: string | null }
 
 /** One conversation's inbox: what every host saves and the shared session functions change. */
 export type Session = {
@@ -486,9 +486,9 @@ export type Session = {
   prViews: PrViews
   /** Why the last turn stopped, until the next turn starts. */
   stop: Stop | null
-  /** The last Overview call that wrote nothing, until a later one writes. */
-  overviewFailure: OverviewFailure | null
-  /** When an Overview call last wrote, or failed, or started while a turn ran. Null before the first. */
+  /** The last Status call that wrote nothing, until a later one writes. Saved under the tab's earlier name. */
+  overviewFailure: StatusFailure | null
+  /** When a Status call last wrote, or failed, or started while a turn ran. Null before the first. Saved under the tab's earlier name. */
   lastOverviewCallAt: number | null
   /** The agent's own task list, when its host reports one. Empty when the agent keeps none. */
   hostTasks: HostTask[]

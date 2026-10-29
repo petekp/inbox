@@ -1,4 +1,4 @@
-import type { Closed, DialogQuestion, Finding, HostTask, Item, Ledger, Overview, Session, Told } from '../types'
+import type { Closed, DialogQuestion, Finding, HostTask, Item, Ledger, SessionStatus, Session, Told } from '../types'
 
 export type { Told } from '../types'
 import type { Exchange } from './ledger'
@@ -12,7 +12,7 @@ import {
   runningText,
   subjectsText,
   TEXT_WORDS,
-} from './overview'
+} from './status'
 import { tasksText } from './host-tasks'
 import { clip, clipMiddle, numberBlocks } from './text'
 
@@ -286,8 +286,8 @@ export const CLAUDE_CODE: Host = {
     "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox pane, and your findings, in the pane's Finds tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings.",
 }
 
-/** The system text of the call that changes the Overview's list, apart from the ledger call. */
-export const OVERVIEW_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
+/** The system text of the call that changes the Status tab's list, apart from the ledger call. */
+export const STATUS_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
 
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
@@ -336,12 +336,12 @@ Rules:
 - Write GOAL only when <goal> is empty, when the person states a new goal, or when the work moves to a different task.`
 
 /**
- * What the Overview call reads besides the exchange: the Overview before it, the open asks, the agent's task list, and
+ * What the Status call reads besides the exchange: the Status before it, the open asks, the agent's task list, and
  * the time the running children are read at.
  */
-export type OverviewInput = { last: Overview | null; asks: readonly Item[]; tasks: HostTask[]; now: number }
+export type StatusCallInput = { last: SessionStatus | null; asks: readonly Item[]; tasks: HostTask[]; now: number }
 
-function overviewBlocks({ last, asks, tasks, now }: OverviewInput): string[] {
+function statusBlocks({ last, asks, tasks, now }: StatusCallInput): string[] {
   const { open, finished } = subjectsText(last)
   const running = runningText(last, now)
   const held = asksText(last, asks)
@@ -361,34 +361,34 @@ function personText(person: string | null, trigger: string | null): string {
   return person ?? `(The person sent nothing. The turn was started by: ${trigger ?? 'unknown'}.)`
 }
 
-export function overviewPrompt(input: OverviewInput, ex: Exchange): string {
+export function statusPrompt(input: StatusCallInput, ex: Exchange): string {
   const person = personText(ex.person, ex.trigger)
 
   return [
-    ...overviewBlocks(input),
+    ...statusBlocks(input),
     `<person>${NL}${clipMiddle(person, 4000, 1500)}${NL}</person>`,
     `<activity>${NL}${clipMiddle(ex.activity.join(NL), 2500, 500)}${NL}</activity>`,
     `<reply>${NL}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL}</reply>`,
   ].join(NL)
 }
 
-/** The Overview call for a turn that is still running: what the person sent, and the work so far. */
-export function overviewMidTurnPrompt(
-  input: OverviewInput,
+/** The Status call for a turn that is still running: what the person sent, and the work so far. */
+export function statusMidTurnPrompt(
+  input: StatusCallInput,
   turn: Pick<Session['turn'], 'person' | 'trigger' | 'activity'>,
 ): string {
   return [
     'The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes.',
-    ...overviewBlocks(input),
+    ...statusBlocks(input),
     `<person>${NL}${clipMiddle(personText(turn.person, turn.trigger), 4000, 1500)}${NL}</person>`,
     `<activity>${NL}${clipMiddle(turn.activity.join(NL), 2500, 500)}${NL}</activity>`,
   ].join(NL)
 }
 
-export function overviewCatchUpPrompt(input: OverviewInput, transcript: string): string {
+export function statusCatchUpPrompt(input: StatusCallInput, transcript: string): string {
   return [
     'Treat the conversation in <conversation> as the exchange. Its start may be cut. Answer with the changes that bring the list to where the conversation ends.',
-    ...overviewBlocks(input),
+    ...statusBlocks(input),
     `<conversation>${NL}${numberBlocks(transcript)}${NL}</conversation>`,
   ].join(NL)
 }
@@ -498,8 +498,8 @@ function findingLine(finding: Finding): string {
   return `- ${finding.kind}: ${finding.title} (close id: ${finding.id})`
 }
 
-/** What the Overview says the session is doing and how it is going. */
-function overviewLines(ledger: Ledger): string[] {
+/** What the Status says the session is doing and how it is going. */
+function statusSummaryLines(ledger: Ledger): string[] {
   const goal = ledger.overview?.goal ?? ''
   const open = (ledger.overview?.subjects ?? []).filter(isOpen)
 
@@ -513,15 +513,15 @@ export const CARRY_TITLE =
   'inbox: where the work stood at the last reply. The "inbox:" text beside this prompt lists what waits on the user and what was closed.'
 
 /** The mod's carry at a conversation's first prompt. The `inbox:` text beside that prompt already lists the open items and the closed ones. */
-export function overviewCarryText(ledger: Ledger): string | null {
-  const lines = overviewLines(ledger)
+export function statusCarryText(ledger: Ledger): string | null {
+  const lines = statusSummaryLines(ledger)
 
   return lines.length === 0 ? null : [CARRY_TITLE, ...lines].join(NL)
 }
 
 export function carryText(ledger: Ledger, title: string): string | null {
   const findings = ledger.findings
-  const lines = overviewLines(ledger)
+  const lines = statusSummaryLines(ledger)
   if (lines.length === 0 && ledger.items.length === 0 && findings.length === 0) return null
   const out = [title, ...lines]
   if (ledger.items.length > 0) {

@@ -1,20 +1,20 @@
-# The Overview judge's instructions
+# The Status judge's instructions
 
-The judge's author replaces the placeholder below the line. Everything below the line becomes the judge's system text. The author writes from `docs/plans/overview.md` alone, and never sees the judge's page sets.
+The judge's author replaces the placeholder below the line. Everything below the line becomes the judge's system text. The author writes from `docs/plans/status.md` alone, and never sees the judge's page sets.
 
 ## What the harness sends
 
-The judge runs on Claude Opus. Its prompt is built by `judgePrompt` in `evals/overview-judge.ts`:
+The judge runs on Claude Opus. Its prompt is built by `judgePrompt` in `evals/status-judge.ts`:
 
 ```text
 <page>
-The drawn Overview page as plain text, from `pageText` in `evals/overview-page-text.ts`.
+The drawn Status page as plain text, from `pageText` in `evals/status-page-text.ts`.
 </page>
 <previous>
 The page at the last checkpoint, or (none).
 </previous>
 <facts>
-What really happened up to this point, from `factsText` in `evals/overview-facts.ts`.
+What really happened up to this point, from `factsText` in `evals/status-facts.ts`.
 </facts>
 <checks>
 One line per check: its id, a colon, and what it asks. The ids are in `JUDGE_CHECKS`.
@@ -36,7 +36,7 @@ One line per check, in any order:
 
 ---
 
-You judge one page of the inbox's Overview tab. The Overview is a page that a model writes for a person after each reply in a coding session. It says what the session is focused on. Then it lists the pieces of the session's work, each with a mark and a few words on where it stands. You read the page and a list of what really happened. For each of eight checks, you say whether the page passes, and you name the fact your verdict rests on.
+You judge one page of the inbox's Status tab. The Status is a page that a model writes for a person after each reply in a coding session. It says what the session is focused on. Then it lists the pieces of the session's work, each with a mark and a few words on where it stands. You read the page and a list of what really happened. For each of eight checks, you say whether the page passes, and you name the fact your verdict rests on.
 
 ## What you get
 
@@ -75,11 +75,11 @@ A model writes the head's words, and each row's name, status, where it stands an
 4. **Child rows:** running work, which code draws from the host's events. A child under a subject row starts with `├` or `└`, then `●`, then the child's label. Stall words such as `quiet 40m`, on the indented line under it, say how long the child has done nothing. A child linked to no row on the page sits at the top of the list, indented, with no `├` or `└`. The line `└ + 2 more running` stands for children that are not drawn.
 5. **The Seen line:** `── Seen`. The rows above it changed since the person last looked.
 6. **Folds:** `○ 3 more queued` counts open rows that are not drawn. `✓ 4 done` or `✓ 4 more done` counts delivered pieces that are not drawn.
-7. **The status line:** after a blank line at the end, `Last Overview update failed. Changes from that reply may be missing.`
+7. **The status line:** after a blank line at the end, `Last Status update failed. Changes from that reply may be missing.`
 
 Below the Seen line, a finished row shows only its mark and its name, and no row shows its was line. That is how the page is drawn, and it is not a failure.
 
-A page that reads only `Overview` and `What this session's work is for, where each part stands, and what changed. It fills in once the work starts.` is the empty page. It has no head and no rows.
+A page that reads only `Status` and `What this session's work is for, where each part stands, and what changed. It fills in once the work starts.` is the empty page. It has no head and no rows.
 
 The marks on subject rows, and the states each one fits:
 
@@ -283,7 +283,7 @@ Examples:
 
 ### no-restating
 
-Asks and Finds are the person's to-dos, in tabs of their own. The Overview shows the work. A row that an ask holds up says where its work stands. It does not repeat the ask.
+Asks and Finds are the person's to-dos, in tabs of their own. The Status shows the work. A row that an ask holds up says where its work stands. It does not repeat the ask.
 
 Compare the words of each row's text and was line with each quoted ask under `Open asks`, and with each `finding` under `Not work`.
 

@@ -86,7 +86,7 @@ import {
   rowMark,
   hasRunningMark,
   mergedLine,
-  OVERVIEW_TEXT_LINES,
+  STATUS_TEXT_LINES,
   STALL_GAP,
   WAS_PREFIX,
   runningMark,
@@ -99,9 +99,9 @@ import type {
   BannerView,
   ClosedDelivery,
   Feedback,
-  OverviewBranch,
-  OverviewPage,
-  OverviewRow,
+  StatusBranch,
+  StatusPage,
+  StatusRow,
   Holds,
   RowView,
   ShownTab,
@@ -156,7 +156,7 @@ export type PanelUi = {
   resuming: { stopAt: number; is: 'sending' } | { stopAt: number; is: 'refused'; why: string } | null
   /** A handed-off row the person opened again with Enter. Moving the selection off it folds it again. */
   opened: string | null
-  /** How many lines of the Overview page are scrolled above the panel. Drawing clamps it to the page's end. */
+  /** How many lines of the Status page are scrolled above the panel. Drawing clamps it to the page's end. */
   pageTop: number
   /** When the panel opened or last switched tab. A row that closes since then stays in place until the next of either. */
   shownSince: number
@@ -232,7 +232,7 @@ type Entry =
   /** A note stops at 3 lines. One with `isWhole`, such as an empty page's hint, is the page's content and wraps in full. */
   | { kind: 'note'; text: string; isStrong?: boolean; indent?: number; isWhole?: boolean }
   | { kind: 'row'; line: Line }
-  | { kind: 'page'; row: OverviewRow }
+  | { kind: 'page'; row: StatusRow }
   | { kind: 'banner'; banner: BannerView }
 
 const blankLine = (id: string): Line => ({
@@ -594,17 +594,17 @@ function pressFeedback(screen: PanelScreen, id: string, now: number, isMarkDone 
 
 const doneAt = (f: Line['feedback']): number | null => (f?.source?.is === 'done' ? f.source.at : null)
 
-/** Where an Overview row's mark sits: in the goal's column, so the list lines up with it. A subject's text starts at `PAGE_TEXT_AT`. */
+/** Where a Status row's mark sits: in the goal's column, so the list lines up with it. A subject's text starts at `PAGE_TEXT_AT`. */
 const PAGE_MARK_AT = 1
 const PAGE_TEXT_AT = PAGE_MARK_AT + 2
 /** Where the mark of a child under a subject sits: after the tree's arm, which starts under the subject's mark. */
 const PAGE_CHILD_AT = PAGE_MARK_AT + 3
-const TREE_ARMS: Record<OverviewBranch, { first: string; rest: string }> = {
+const TREE_ARMS: Record<StatusBranch, { first: string; rest: string }> = {
   mid: { first: '├─', rest: '│' },
   last: { first: '└─', rest: ' ' },
 }
 
-function pageEntries(page: OverviewPage): Entry[] {
+function pageEntries(page: StatusPage): Entry[] {
   if (page.isEmpty)
     return [
       { kind: 'note', text: page.empty.title, isStrong: true },
@@ -617,7 +617,7 @@ function pageEntries(page: OverviewPage): Entry[] {
 }
 
 function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: number): Entry[] {
-  if (!isRowTab(tab)) return pageEntries(screen.view.overviewPage)
+  if (!isRowTab(tab)) return pageEntries(screen.view.statusPage)
 
   return tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab)
 }
@@ -849,9 +849,9 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
   )
 }
 
-/** Whether the Overview is shown with a running mark, whose frame moves with the clock. */
+/** Whether the Status is shown with a running mark, whose frame moves with the clock. */
 export function isRunningMarkShown(screen: PanelScreen, ui: PanelUi): boolean {
-  return !isRowTab(ui.tab) && hasRunningMark(screen.view.overviewPage)
+  return !isRowTab(ui.tab) && hasRunningMark(screen.view.statusPage)
 }
 
 /** The notice for a press the row cannot show: a failed send, or a press whose row had changed. */
@@ -1023,7 +1023,7 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   out.push(spread(` ${' '.repeat(pad)}${cursor} ${leadText(line.lead, s)} ${title}${status}${after}`, `${age} `, width))
   if (line.settled || isShut(line, ui)) return out
   const indent = INDENT + pad
-  // A next build draws the Overview, so only it names the subject an ask holds up.
+  // A next build draws the Status, so only it names the subject an ask holds up.
   const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null
   if (holdsUp) out.push(fit(' '.repeat(indent) + s.dim(holdsUp), width))
   if (line.detail && (isSelected || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
@@ -1048,7 +1048,7 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
 /** Stands in for each space of the stall words while they wrap, so a wrap never splits them. */
 const UNBROKEN_SPACE = '\uE000'
 
-/** The room for an Overview text after a mark at `indent`. */
+/** The room for a Status text after a mark at `indent`. */
 const pageRoom = (indent: number, width: number) => Math.max(10, width - indent - 2 - 1)
 
 /**
@@ -1078,7 +1078,7 @@ function pageText(
 }
 
 /**
- * One row of the Overview's list: a mark and its name wrapped after it, then its second line of where it stands, dim,
+ * One row of the Status tab's list: a mark and its name wrapped after it, then its second line of where it stands, dim,
  * and its stall words in the needs-you tone.
  */
 function pageLine(
@@ -1092,12 +1092,12 @@ function pageLine(
   const { width, style: s } = d
   const textAt = indent + 2
   const room = pageRoom(indent, width)
-  const names = pageText(name, room, OVERVIEW_TEXT_LINES, namePaint)
+  const names = pageText(name, room, STATUS_TEXT_LINES, namePaint)
   const stall = second.stall?.replaceAll(' ', UNBROKEN_SPACE) ?? null
   const secondText = [second.text, stall].filter(Boolean).join(STALL_GAP)
   const dimCells = second.text ? cellWidth(second.text) + (stall ? cellWidth(STALL_GAP) : 0) : 0
   const seconds = secondText
-    ? pageText(secondText, room, OVERVIEW_TEXT_LINES, s.dim, dimCells, t => s.tone('needsYou', t)).map(l =>
+    ? pageText(secondText, room, STATUS_TEXT_LINES, s.dim, dimCells, t => s.tone('needsYou', t)).map(l =>
         l.replaceAll(UNBROKEN_SPACE, ' '),
       )
     : []
@@ -1116,8 +1116,8 @@ function withTree(lines: string[], first: string | null, rest: string, s: Style)
   return lines.map((l, n) => (n === 0 ? (first ? drawn(l, first) : l) : drawn(l, rest)))
 }
 
-/** A line on the Overview page, laid out as the shared row says. */
-function drawPageRow(row: OverviewRow, d: Draw): string[] {
+/** A line on the Status page, laid out as the shared row says. */
+function drawPageRow(row: StatusRow, d: Draw): string[] {
   const { width, now, style: s } = d
   if (row.kind === 'subject') {
     const glyph = row.isRunning ? runningMark(now) : row.mark
@@ -1130,11 +1130,11 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
           mergedLine(row.merged, t => cellWidth(t) <= room),
           PAGE_TEXT_AT,
           width,
-          OVERVIEW_TEXT_LINES,
+          STATUS_TEXT_LINES,
           s.dim,
         ),
       )
-    if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim))
+    if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim))
 
     return row.hasChildren ? withTree(out, null, '│', s) : out
   }
@@ -1220,7 +1220,7 @@ function footer(d: Draw, isPageScrolling: boolean): string[] {
     ui.tab,
     screen.view.status,
     { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 },
-    screen.view.overviewPage.error,
+    screen.view.statusPage.error,
   )
   if (status.text) out.push(` ${s.dim(status.text)}`)
   const hints =
@@ -1253,7 +1253,7 @@ export function render(
 }
 
 /**
- * The panel's lines, and the Overview page's scroll clamped to what the panel can show. With `minHeight`, blank lines
+ * The panel's lines, and the Status page's scroll clamped to what the panel can show. With `minHeight`, blank lines
  * above the footer make the panel at least that tall.
  */
 export function drawPanel(
@@ -1273,7 +1273,7 @@ export function drawPanel(
     ui.tab,
     screen.view.status,
     { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 },
-    screen.view.overviewPage.error,
+    screen.view.statusPage.error,
   )
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
   const banners = tabBarBanners([], status.error, isNoticeShown ? ui.notice : null)

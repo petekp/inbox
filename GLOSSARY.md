@@ -63,22 +63,27 @@ _Avoid_: Findings, as the tab's name. A find, for one finding.
 
 ### Surfaces
 
-**Overview**:
+**Status (the tab)**:
 The first tab on a next build: what the session's work is for, and where each
 part of it stands, newest first, with how long ago each changed. A release
 build does not draw it. The inbox model updates it after each reply, in a
 second call after the one that updates the rows. It is not a list of events.
+Its id is `overview`, the name it had before it was called Status. The saved
+state keeps that id and the fields `overview`, `overviewFailure` and
+`lastOverviewCallAt`, so builds before the rename still read it. The code calls
+the tab's data `SessionStatus`.
+_Avoid_: Overview, as the tab's name. "Status" alone for a subject's status.
 
 **Goal**:
-The session's aim in a few words, on the Overview's second line. The inbox
+The session's aim in a few words, on the Status tab's second line. The inbox
 model sets it, and changes it only when the person states a new goal or the
 work moves to a different task.
 
 **Subject**:
-One part of the session's work on the Overview, such as a feature, a fix or a
+One part of the session's work on the Status, such as a feature, a fix or a
 release. It has a name, a status, a few words on where it stands, and the time
-it last changed. The statuses are working, queued, waits on others, done and
-dropped. The inbox model adds and changes subjects by id, and code keeps their
+it last changed. Its status (a subject's status, not the Status tab) is one of
+working, queued, waits on others, done and dropped. The inbox model adds and changes subjects by id, and code keeps their
 times. The inbox model also links an open question or task to the subject it
 holds up. While that item is open, the subject's mark reads ◆ in place of its
 status's mark, and the item's Asks row reads "Holds up" and the subject's name.
@@ -92,7 +97,7 @@ inbox model only links it to a subject.
 _Avoid_: subitem, job
 
 **Stall words**:
-The words on an Overview row's second line that say how long its work has
+The words on a Status row's second line that say how long its work has
 stalled: "quiet 40m" on a child that has done nothing for 15 minutes, and
 "waiting 2h" on an open subject that has waited 15 minutes on someone else or on
 an open question or task. A row whose work moves shows none. The code calls them
@@ -100,7 +105,7 @@ an open question or task. A row whose work moves shows none. The code calls them
 _Avoid_: age
 
 **Seen line**:
-The rule labeled "Seen" on the Overview, at the time the person last left the
+The rule labeled "Seen" on the Status, at the time the person last left the
 page after it showed for at least five seconds. A shorter pass through the tab
 leaves the line where it was. A row above it changed since then. Every open row
 shows where it stands, above or below the line. A row below it leaves out its
@@ -133,7 +138,7 @@ call, which Codex shows in place of the line. `personLine` in
 
 **Pane**:
 The `/inbox` panel beside the conversation in Claude Code, with its Asks,
-Finds and PRs tabs, and an Overview tab before them on a next build. Codex shows the same tabs in its Inbox tab. omp
+Finds and PRs tabs, and a Status tab before them on a next build. Codex shows the same tabs in its Inbox tab. omp
 shows them in an overlay that `/inbox` opens.
 
 **Tab symbol**:
@@ -202,7 +207,7 @@ warning stays until a clear.
 **Next build**:
 A checkout that follows the `next` branch and holds `NEXT_BUILD_MARK`, a file
 Git ignores, in each folder a host loads or installs. Each look's version label
-adds "next" on one, and only a next build draws the Overview tab.
+adds "next" on one, and only a next build draws the Status tab.
 `hooks/view.ts:versionLabel`, `hooks/view.ts:shownTabs`.
 
 **Parity record**:

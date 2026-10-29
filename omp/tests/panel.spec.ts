@@ -15,7 +15,7 @@ import { version } from '../package.json'
 import { failingChecks, waitingThreads } from '../../hooks/prs'
 import type { LastAction, Stop } from '../../types'
 import { closeItem } from '../../hooks/ledger'
-import { applyOverview, parseOverview } from '../../hooks/overview'
+import { applyStatus, parseStatus } from '../../hooks/status'
 import {
   CLOSED_SHOWN,
   SETTLED_MS,
@@ -25,10 +25,10 @@ import {
   earlierLabel,
   foldLabel,
   isRowTab,
-  OVERVIEW_TEXT_LINES,
+  STATUS_TEXT_LINES,
   rowKeyPlan,
 } from '../../hooks/view'
-import type { OverviewRow, RowView } from '../../hooks/view'
+import type { StatusRow, RowView } from '../../hooks/view'
 import { sessionView } from '../../hooks/session'
 import { cellWidth } from '../../hooks/text'
 import { demoSource, demoState } from '../src/demo'
@@ -742,11 +742,11 @@ const tabLine = (screen: PanelScreen, ui: PanelUi, width: number) =>
     .replace(/esc to close\s*$/, '')
     .trimEnd()
 
-const labelOf = (row: OverviewRow) => (row.kind === 'subject' || row.kind === 'child' ? row.name : row.text)
+const labelOf = (row: StatusRow) => (row.kind === 'subject' || row.kind === 'child' ? row.name : row.text)
 
-test('the Overview page shows the goal, then its rows in order, each subject’s marks in the goal’s column, where it stands under its name and its was line under that, and Seen in the middle of its rule', () => {
+test('the Status page shows the goal, then its rows in order, each subject’s marks in the goal’s column, where it stands under its name and its was line under that, and Seen in the middle of its rule', () => {
   const screen = screenOf()
-  const page = screen.view.overviewPage
+  const page = screen.view.statusPage
   const lines = text(screen, onPage).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
   const order = [page.goal!, ...page.rows.map(labelOf)].map(at)
@@ -767,7 +767,7 @@ test('the Overview page shows the goal, then its rows in order, each subject’s
   expect(left).toMatch(/^─+$/)
 })
 
-test('on the Overview page, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', () => {
+test('on the Status page, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', () => {
   const lines = text(screenOf(), onPage, 28).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
   const [subject, mid, last, next] = [
@@ -786,7 +786,7 @@ test('on the Overview page, the rows under a subject hang from its mark, ├─ 
   expect(glyphs(last, next)).toEqual(['└─', ...Array<string>(next - last - 1).fill('  ')])
 })
 
-test('on the Overview page, a rule from the text column sets each item apart, with none inside a subject’s tree or beside the look line', () => {
+test('on the Status page, a rule from the text column sets each item apart, with none inside a subject’s tree or beside the look line', () => {
   const lines = text(screenOf(), onPage, 40).split('\n')
   const subject = lines.find(l => l.includes('Dismiss gesture'))!
   const rule = new RegExp(`^ {${subject.indexOf('Dismiss')}}─+$`)
@@ -797,26 +797,26 @@ test('on the Overview page, a rule from the text column sets each item apart, wi
     expect(rowsAfterRules[n]).toContain(row)
 })
 
-test('on the Overview page, a subject’s name stays plain, and where it stands goes dim under it, wrapped to three lines and cut with an ellipsis past them', () => {
+test('on the Status page, a subject’s name stays plain, and where it stands goes dim under it, wrapped to three lines and cut with an ellipsis past them', () => {
   const name = 'Help text for every greeting command'
   const where = 'being written with examples, defaults, descriptions, environment variables, configuration precedence'
   const state = emptyState('s1')
   state.ledger = {
     ...state.ledger,
-    overview: applyOverview(null, parseOverview(`NEW: working | ${name} | ${where}`)!, NOW, new Set()),
+    overview: applyStatus(null, parseStatus(`NEW: working | ${name} | ${where}`)!, NOW, new Set()),
   }
   const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, true, NO_HOLDS) })
   const raw = drawn(screen, onPage, 34)
   const first = raw.findIndex(l => strip(l).includes('Help text'))
-  const subject = raw.slice(first, first + 2 + OVERVIEW_TEXT_LINES + 1).map(strip)
+  const subject = raw.slice(first, first + 2 + STATUS_TEXT_LINES + 1).map(strip)
 
   expect(subject.slice(0, 3)).toEqual([
     ' ● Help text for every greeting',
     '   command',
     '   being written with examples,',
   ])
-  expect(subject[1 + OVERVIEW_TEXT_LINES]).toMatch(/…$/)
-  expect(subject[2 + OVERVIEW_TEXT_LINES]?.trim() ?? '').not.toMatch(/^[a-z]/)
+  expect(subject[1 + STATUS_TEXT_LINES]).toMatch(/…$/)
+  expect(subject[2 + STATUS_TEXT_LINES]?.trim() ?? '').not.toMatch(/^[a-z]/)
   expect(raw[first + 1]).not.toContain(ESC)
   expect(raw[first + 2]).toContain(`${ESC}2mbeing`)
   const wide = text(screen, onPage, 200).split('\n')
@@ -825,7 +825,7 @@ test('on the Overview page, a subject’s name stays plain, and where it stands 
 
 test('each subject’s mark takes its tone, and a mark with no tone is muted', () => {
   const screen = screenOf()
-  const subjects = screen.view.overviewPage.rows.flatMap(r => (r.kind === 'subject' ? [r] : []))
+  const subjects = screen.view.statusPage.rows.flatMap(r => (r.kind === 'subject' ? [r] : []))
   const lines = render(screen, onPage, 200, NOW, toneNamed)
   const lineOf = (s: string) => lines.find(l => l.includes(s))!
   for (const row of subjects.filter(r => r.tone !== null))
@@ -834,15 +834,15 @@ test('each subject’s mark takes its tone, and a mark with no tone is muted', (
   expect(lineOf(muted.name)).toContain(`${ESC}2m${muted.mark}${ESC}22m `)
 })
 
-test('an Overview page with nothing yet reads its empty text', () => {
+test('a Status page with nothing yet reads its empty text', () => {
   const screen = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
-  const { empty } = screen.view.overviewPage
-  expect(screen.view.overviewPage.isEmpty).toBe(true)
+  const { empty } = screen.view.statusPage
+  expect(screen.view.statusPage.isEmpty).toBe(true)
   expect(text(screen, onPage)).toContain(empty.title)
   expect(text(screen, onPage)).toContain(empty.hint)
 })
 
-test('keys on the Overview page select nothing and press nothing, and the footer offers only tab', () => {
+test('keys on the Status page select nothing and press nothing, and the footer offers only tab', () => {
   const screen = screenOf()
   for (const key of ['up', 'down', 'j', 'k', 'left', 'right', 'enter', 'u', 'r', 'd', 'x', 'a']) {
     const result = handleKey(screen, onPage, key, NOW)
@@ -855,7 +855,7 @@ test('keys on the Overview page select nothing and press nothing, and the footer
   expect(footer).not.toContain('scroll')
 })
 
-test('on a Overview page taller than the panel, each ↑↓ or j/k press shows one more or one fewer line, up to its last line', () => {
+test('on a Status page taller than the panel, each ↑↓ or j/k press shows one more or one fewer line, up to its last line', () => {
   const screen = screenOf()
   const height = 14
   const bodyOf = (lines: string[]) => {
@@ -885,14 +885,14 @@ test('on a Overview page taller than the panel, each ↑↓ or j/k press shows o
   expect(keys(screen, down, 'up', 'up', 'up').pageTop).toBe(0)
 })
 
-test('changing the shown tab starts the Overview page at its top', () => {
+test('changing the shown tab starts the Status page at its top', () => {
   const screen = screenOf({ isNextBuild: true })
   const scrolled = { ...onPage, pageTop: 3 }
   for (const key of ['tab', 'shift+tab', ...shownTabs(true).map(t => t.hotkey)])
     expect(keys(screen, scrolled, key).pageTop).toBe(0)
 })
 
-test('rows that arrive while the Overview page shows leave the panel on the page', () => {
+test('rows that arrive while the Status page shows leave the panel on the page', () => {
   const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
   const opened = followRows(empty, onPage, {}, true, NOW)
   expect(opened.ui).toEqual(onPage)
@@ -924,7 +924,7 @@ for (const isNextBuild of [false, true])
             expect(line).not.toContain(t.label)
           }
         }
-        expect(tabLine(screen, ui, 200)).not.toContain(isNextBuild ? '[5]' : 'Overview')
+        expect(tabLine(screen, ui, 200)).not.toContain(isNextBuild ? '[5]' : 'Status')
       }
   })
 
@@ -938,7 +938,7 @@ test('the tab line counts each symbol as two cells, so it fits the panel and kee
       }
 })
 
-test('no line on the Overview page is wider than the panel', () => {
+test('no line on the Status page is wider than the panel', () => {
   const screen = screenOf()
   for (const width of [30, 50, 60, 80, 120])
     for (const line of drawn(screen, onPage, width)) expect(cellWidth(strip(line))).toBeLessThanOrEqual(width)

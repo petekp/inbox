@@ -1,10 +1,10 @@
-# The Overview tab
+# The Status tab
 
-Status: built, on next builds only. Release builds leave the tab out. "Not built yet" lists the decided changes still to build. The evals that judge the tab are in "How the Overview is judged".
+Status: built, on next builds only. Release builds leave the tab out. "Not built yet" lists the decided changes still to build. The evals that judge the tab are in "How the Status is judged".
 
 ## Summary
 
-The Overview is the inbox's first tab on a next build. It is about the session's work. Asks and Finds are about what the person has to do. As of the agent's last reply, it answers four questions:
+The Status is the inbox's first tab on a next build. It is about the session's work. Asks and Finds are about what the person has to do. As of the agent's last reply, it answers four questions:
 
 - **What is this session's work?**
 - **Where does each piece of it stand?**
@@ -29,13 +29,13 @@ The page fails when it reads as a log, when it copies Asks or Finds, or when it 
    - Reason: an age on every row was hard to read and said little. A time matters when work has stopped moving. A row that rose because the page checked it would claim a change that did not happen.
 5. **A changed state always reaches the page.** Code keeps the old text and place only when the new text has the same content words, in any order.
    - Reason: "manual merge ready" becoming "manual merge broken" is a change, though half the words match.
-6. **◆ comes from a link between an open ask and the subjects it holds up.** The Overview call writes the link. Code draws ◆ while the ask is open and clears it when the ask closes. One ask can hold up several subjects. There is no "waits on you" status and no "problem" status.
+6. **◆ comes from a link between an open ask and the subjects it holds up.** The Status call writes the link. Code draws ◆ while the ask is open and clears it when the ask closes. One ask can hold up several subjects. There is no "waits on you" status and no "problem" status.
    - Reason: a ◆ set by the model could not see Asks, so it went stale and could disagree with Asks. A problem nobody is fixing is a to-do for the person, so it belongs in Asks, or in Finds when it is outside the task.
-   - This replaces the rule that the Overview call reads no inbox text. It now reads each open ask's id and first words, so it can link the ask. It never restates one.
+   - This replaces the rule that the Status call reads no inbox text. It now reads each open ask's id and first words, so it can link the ask. It never restates one.
 7. **Work filed for later closes with a mark of its own, not ✓.**
    - Reason: filing a piece does not finish it. ✓ and the done count mean work that was delivered.
 8. **No buttons that act on an ask or a finding.**
-   - Reason: an Answer or Fix button on a row would make the Overview a weaker copy of Asks and Finds, with less context.
+   - Reason: an Answer or Fix button on a row would make the Status a weaker copy of Asks and Finds, with less context.
 9. **Code follows running work from host events, and draws each as a child row under its subject.** The model only links a child to a subject.
    - Reason: code knows when a subagent, background command, workflow run or delegate starts and ends. The person wants delegated work shown under the piece it serves.
    - This replaces the decision to have no subagent rows.
@@ -51,35 +51,35 @@ The page fails when it reads as a log, when it copies Asks or Finds, or when it 
     - Reason: one form keeps the page the same shape wherever the person opens it.
 15. **The job is the four questions above.** The page shows no reason for a decision, and has no separate "next" part.
     - Reason: reasons need a line of prose under each decision, which brings back sections. ○ rows already say what comes next.
-16. **Evals are a cheap check that a failure seen in real use does not come back.** They run at each release, within about 200 Overview calls. Fixed rules check what code can measure. A model judge checks what only reading can tell. The judge is first checked against hand-written good and bad pages that the author of its instructions never sees.
-    - Reason: the person's daily use of next builds and reports from users are the main signal. The evals only keep a fixed failure fixed. The old Overview cases passed 42 of 42 while a live Overview kept a goal about a release that had shipped, and listed one piece of work under two names. Each case checked one rule of the Overview prompt, most of them in a single exchange.
+16. **Evals are a cheap check that a failure seen in real use does not come back.** They run at each release, within about 200 Status calls. Fixed rules check what code can measure. A model judge checks what only reading can tell. The judge is first checked against hand-written good and bad pages that the author of its instructions never sees.
+    - Reason: the person's daily use of next builds and reports from users are the main signal. The evals only keep a fixed failure fixed. The old Status cases passed 42 of 42 while a live Status kept a goal about a release that had shipped, and listed one piece of work under two names. Each case checked one rule of the Status prompt, most of them in a single exchange.
     - This reverses the decision to check the tab with fixed rules only.
 17. **Only next builds draw the tab.**
-    - Reason: it is not ready to release. A release build treats a saved Overview tab as unknown and shows its first tab.
+    - Reason: it is not ready to release. A release build treats a saved Status tab as unknown and shows its first tab.
 18. **The page has no identity line.**
     - Reason: the line takes space without telling sessions apart. Folder, branch and role are often the same across sessions, and each host already names the session in its own window, tab or title.
 19. **The head is a title and a one-line description of what the session is focused on now.** The title is short, like a row's name. The page has no live line.
     - Reason: the head then reads like a row. The person scans the title, and reads the description for what the session is doing now. Each host already shows whether its agent is working, and a ● mark moves while a turn runs.
 20. **By default, a row draws where it stands on its own line, under its name.**
     - Reason: the names line up down the page, so the person can scan them.
-21. **A child row says in a few plain words what its work does, never an id.** A Herdr delegate shows what its own session's Overview says it is focused on, which the inbox publishes to Herdr: today its goal, and once decision 19 is built, its head's description. Without one, it shows its name turned into words. A subagent, background command or workflow run shows the description it was started with.
+21. **A child row says in a few plain words what its work does, never an id.** A Herdr delegate shows what its own session's Status says it is focused on, which the inbox publishes to Herdr: today its goal, and once decision 19 is built, its head's description. Without one, it shows its name turned into words. A subagent, background command or workflow run shows the description it was started with.
     - Reason: a name an agent made up for a delegate tells the person nothing about the work.
 
 ## Terms
 
-From `GLOSSARY.md`: Overview, Goal, Subject, Child, Stall words, Seen line, Look, Host and Catch-up. The new terms:
+From `GLOSSARY.md`: SessionStatus, Goal, Subject, Child, Stall words, Seen line, Look, Host and Catch-up. The new terms:
 
-- **Overview call:** the inbox model call after the ledger call. It reads the open subjects and the new exchange, and answers with edits.
+- **Status call:** the inbox model call after the ledger call. It reads the open subjects and the new exchange, and answers with edits.
 - **Head:** the top of the page. Today it is the goal. Decision 19 makes it a title and a one-line description.
 - **Where it stands:** the few words on the line under a subject's name.
 - **Was line:** a line under a subject that names the plan a change replaced, as "was: last-write-wins", or a piece merged into it, as "merged in: Banner on hover".
-- **Link:** the Overview call's tie from an open ask or a child to the subject it belongs to.
+- **Link:** the Status call's tie from an open ask or a child to the subject it belongs to.
 - **Fold:** one line that stands for several rows: "✓ 3 done" or "○ 2 more queued".
 - **Last changed:** when a subject's status or meaning last changed. A row's place in the list follows it.
-- **Last checked:** when an Overview call last read the work, whatever it answered.
-- **Property:** something true of a good Overview that a person can check by reading the page, knowing what happened in the session.
+- **Last checked:** when a Status call last read the work, whatever it answered.
+- **Property:** something true of a good Status that a person can check by reading the page, knowing what happened in the session.
 - **Fact list:** what really happened in an eval case, written by the case's author: each piece of work, its state at each step, the asks and the pieces each holds up, and what is not work.
-- **Rule:** a check written in code, run on the saved Overview, the drawn page and the fact list.
+- **Rule:** a check written in code, run on the saved Status, the drawn page and the fact list.
 - **Judge:** a model that reads a drawn page and the fact list, and says whether each of its checks holds.
 - **Replay:** an eval case of many steps, in which each answer is applied before the next step, as a host would.
 - **Known failing case:** a check of a failure that code owns. It stays in the suite, marked as expected to fail, until the code is fixed.
@@ -96,7 +96,7 @@ From top to bottom:
 | Child rows | Running work under its subject, named by the first line of the name its host gives it. After 15 minutes with no activity, its stall words read "quiet 40m". | Code, from host events. The model writes the link. |
 | Seen line | Where the person last looked. Rows above it changed since. It is left out when nothing changed. | Code |
 | Folds | "○ N more queued" past 7 open rows. "✓ N done" for the done subjects not drawn as a row, or "✓ N more done" when a done row shows above it. | Code |
-| Status line | "Last Overview update failed. Changes from that reply may be missing." while the last call wrote nothing | Code |
+| Status line | "Last Status update failed. Changes from that reply may be missing." while the last call wrote nothing | Code |
 
 Decided changes to this table, both in "Not built yet":
 
@@ -115,7 +115,7 @@ The marks:
 | A mark of its own, proposed `→` | Filed for later. The session will not do it. | A new closed status, not built yet |
 | ◆ | Held up by an open ask. It replaces the status's mark until the ask closes. | Code, from the link |
 
-More rules of the drawn page, all in `hooks/view.ts:overviewPage`:
+More rules of the drawn page, all in `hooks/view.ts:statusPage`:
 
 - A subject's text wraps to at most 3 lines.
 - At most 2 finished rows show, both changed since the last look. The rest fold into the count. Property 10 asks for more; see "Not built yet".
@@ -129,8 +129,8 @@ Before any work, the page reads: "What this session's work is for, where each pa
 
 ### How it updates
 
-- **After each reply.** The ledger call runs first, then the Overview call. A failed ledger call skips it.
-- **What the Overview call reads:**
+- **After each reply.** The ledger call runs first, then the Status call. A failed ledger call skips it.
+- **What the Status call reads:**
   - the goal;
   - the open subjects, each with its id, status, name and text;
   - the names of the last 10 finished subjects, so it does not add one again;
@@ -138,19 +138,19 @@ Before any work, the page reads: "What this session's work is for, where each pa
   - the running children;
   - the host's task list, where there is one;
   - the person's message, the agent's tool activity and the reply.
-- **What it answers:** edits by id, one per line: add a subject, update one, finish one, drop one or drop it into another, write a was line, link an ask or a child, set the goal. Or `UNCHANGED`. `hooks/overview.ts` parses and applies the answer.
+- **What it answers:** edits by id, one per line: add a subject, update one, finish one, drop one or drop it into another, write a was line, link an ask or a child, set the goal. Or `UNCHANGED`. `hooks/status.ts` parses and applies the answer.
 - **What code does with it:**
   - A new subject whose name holds the same key words as an open one updates that one.
   - An update that keeps the status and has the same content words, in any order, keeps the old text and its place.
   - An answer that holds any line that is not an edit is asked once more. If that fails too, the page stays as it was and the status line says so.
-- **During a long turn.** The main agent's next tool call, once 10 minutes have passed since the turn began and since the last Overview call, starts an Overview call. That call reads the person's message and the turn's activity so far.
+- **During a long turn.** The main agent's next tool call, once 10 minutes have passed since the turn began and since the last Status call, starts a Status call. That call reads the person's message and the turn's activity so far.
 - **On a catch-up.** The call reads the whole conversation and edits the current subjects.
 
-`hooks/overview.ts` owns the saved Overview, the parser and how an answer applies. `hooks/view.ts` owns the drawn page. `hooks/model-text.ts` owns the call's prompts. `docs/looks.md` names the owner of every other rule.
+`hooks/status.ts` owns the saved Status, the parser and how an answer applies. `hooks/view.ts` owns the drawn page. `hooks/model-text.ts` owns the call's prompts. `docs/looks.md` names the owner of every other rule.
 
-## What a good Overview is
+## What a good Status is
 
-Each property below says what the person needs from the page, and is tied to one of the four questions. A person who knows what happened in the session can check each one by reading the page. Evals check these properties. They do not check the wording of the Overview prompt.
+Each property below says what the person needs from the page, and is tied to one of the four questions. A person who knows what happened in the session can check each one by reading the page. Evals check these properties. They do not check the wording of the Status prompt.
 
 The numbers stay fixed, so references to them stay valid. Number 2 is unused.
 
@@ -196,7 +196,7 @@ A judge or a rule judges a page against the facts up to that point in the sessio
 | 10. Changes shown | What was on screen at the last look, and which pieces changed since |
 | 11. Nothing moves | The page before the exchange, and whether the exchange changed any piece |
 | 12. Changes of plan | The plan before and after, and which pieces merged into which |
-| 13. How current | When each Overview call ran and whether it failed, when the activity happened, and how long each held or waiting piece and each quiet child has waited |
+| 13. How current | When each Status call ran and whether it failed, when the activity happened, and how long each held or waiting piece and each quiet child has waited |
 
 ### What is this session's work?
 
@@ -265,7 +265,7 @@ A few words on what works, what is left or what it waits on, in the work's own t
 
 #### 7. Running work shows under the piece it serves, in plain words
 
-A delegate, subagent, background command or workflow run shows under the subject it works on while it runs. It says in a few plain words what it does. A delegate shows the focus its own session's Overview publishes, and other running work shows the description it was started with. After 15 minutes with no activity, it says how long it has been quiet.
+A delegate, subagent, background command or workflow run shows under the subject it works on while it runs. It says in a few plain words what it does. A delegate shows the focus its own session's Status publishes, and other running work shows the description it was started with. After 15 minutes with no activity, it says how long it has been quiet.
 
 Until decision 21 is built, a delegate shows its Herdr name, and a delegate whose name is an id fails this property. That is a known failing case for #149.
 
@@ -288,7 +288,7 @@ From the page alone, the person sees which pieces cannot move until they act. Th
 
 #### 9. The page points to Asks and never repeats them
 
-The Overview shows the work. Asks and Finds show the person's to-dos. A row held up by an ask says where its work stands.
+The Status shows the work. Asks and Finds show the person's to-dos. A row held up by an ask says where its work stands.
 
 - **Good:** `◆ Sync conflicts: merge logic ready`.
 - **Bad:** `◆ Sync conflicts: needs your decision`. ◆ and the band already say so.
@@ -329,31 +329,31 @@ The page covers the work up to the last reply, or up to about 10 minutes ago dur
 
 - **Good:** three hours into a turn, `● Sync conflicts: cause unknown` stays where it was, because the last update found nothing new.
 - **Good:** `◌ 2.4 release: in store review · waiting 2h`, two hours after the build went to review.
-- **Good:** "Last Overview update failed. Changes from that reply may be missing."
+- **Good:** "Last Status update failed. Changes from that reply may be missing."
 - **Bad:** the agent finished the conflicts work two hours into a three-hour turn, and the row still reads ●, since no update ran during the turn.
 - **Bad:** `● Export button: works on web  2h`. The export has not stalled, so it shows no time.
 - **Bad:** `2.4 release: goes out tomorrow`, read two days later.
 
-## How the Overview is judged
+## How the Status is judged
 
-Decision 16 sets the method. The evals run at each release, and after a change to the Overview call's text or to the code that applies its answer.
+Decision 16 sets the method. The evals run at each release, and after a change to the Status call's text or to the code that applies its answer.
 
-`./scripts/eval.sh --suite overview` runs them. These files hold them:
+`./scripts/eval.sh --suite status` runs them. These files hold them:
 
 | File | What it holds |
 | --- | --- |
-| `evals/overview-replays.ts` | The replays and the short case, with their facts |
-| `evals/overview-replay.ts` | How a replay runs each step through the hosts' own code |
-| `evals/overview-facts.ts` | The fact list, and the text of it the judge reads |
-| `evals/overview-rules.ts` | The fixed rules |
-| `evals/overview-judge.ts` | The judge's checks, its prompt, and how its answer is read |
-| `evals/overview-judge.md` | The judge's instructions |
-| `evals/overview-run.ts` | The runner, its report and its results file |
-| `tests/overview-evals.test.ts` | The checks with no model calls |
+| `evals/status-replays.ts` | The replays and the short case, with their facts |
+| `evals/status-replay.ts` | How a replay runs each step through the hosts' own code |
+| `evals/status-facts.ts` | The fact list, and the text of it the judge reads |
+| `evals/status-rules.ts` | The fixed rules |
+| `evals/status-judge.ts` | The judge's checks, its prompt, and how its answer is read |
+| `evals/status-judge.md` | The judge's instructions |
+| `evals/status-run.ts` | The runner, its report and its results file |
+| `tests/status-evals.test.ts` | The checks with no model calls |
 
 ### What goes in the suite
 
-- **A case comes from a real failure.** The sources are the failures seen in real sessions, what the person hits in use, and the record of Overview calls once a next build keeps one.
+- **A case comes from a real failure.** The sources are the failures seen in real sessions, what the person hits in use, and the record of Status calls once a next build keeps one.
 - **A case joins when it reproduces its failure.** A short case must fail on today's prompt at the step and property it targets. A replay targets a failure at each step, and joins when at least one step fails as targeted. A step that does not reproduce its failure stays as a check, marked as not reproduced. A failure owned by code joins as a known failing case.
 - **A failure counts only when the property it targets fails.** An answer that is unreadable, or that breaks another property, is reported but does not count as reproducing the failure.
 
@@ -361,7 +361,7 @@ Decision 16 sets the method. The evals run at each release, and after a change t
 
 A case is a starting state, then steps, with the fact list beside them.
 
-- **The starting state:** a saved ledger, with its Overview, open asks and findings, and the session's presence.
+- **The starting state:** a saved ledger, with its Status, open asks and findings, and the session's presence.
 - **A step** has a time, and runs in this order:
   - host events: a child starts, acts or ends, or the person looks at the page for some seconds;
   - fixture events, in a replay that skips the ledger call: an ask opens or closes;
@@ -371,13 +371,13 @@ A case is a starting state, then steps, with the fact list beside them.
 
 Host events run through the hosts' own reducers, such as `childStarted` and `lookEnded`. Links and ids stay as the run made them, so a fixture never corrects a wrong link the run made. The expected links live only in the fact list, for grading.
 
-A next build's record of an Overview call holds the call's input as data: the Overview before, with its running children, the open asks, the host's task list, and the exchange. `replayFromRecord` turns a record into a one-step replay at the time the call ran, which builds the prompt again with today's code. The case's author adds the facts. The record's own prompt and answer show the failure that was seen.
+A next build's record of a Status call holds the call's input as data: the Status before, with its running children, the open asks, the host's task list, and the exchange. `replayFromRecord` turns a record into a one-step replay at the time the call ran, which builds the prompt again with today's code. The case's author adds the facts. The record's own prompt and answer show the failure that was seen.
 
 ### The replays
 
 Three replays, each run 3 times on Sonnet and on Codex. Fixed rules check the page after every step. The judge reads a few checkpoints. Each call has its host's limits: 45 seconds and 1600 output tokens for Claude, 120 seconds for Codex. A call past its limit fails, as it would in the host: the page stays as it was, and the status line says so.
 
-**Replay A: a coordinator's day.** Overview calls only. The fixture opens and closes the asks. It starts from a busy page: a head about shipping notes 2.4, seven open pieces, three done, two running delegates and one open ask, last seen two hours earlier. One delegate's Herdr name is an id, and its session publishes a goal.
+**Replay A: a coordinator's day.** Status calls only. The fixture opens and closes the asks. It starts from a busy page: a head about shipping notes 2.4, seven open pieces, three done, two running delegates and one open ask, last seen two hours earlier. One delegate's Herdr name is an id, and its session publishes a goal.
 
 | Step | What happens | What it checks |
 | --- | --- | --- |
@@ -398,7 +398,7 @@ Three replays, each run 3 times on Sonnet and on Codex. Fixed rules check the pa
 
 At every step, the pieces set aside or waiting on a vendor stay on the page.
 
-**Replay B: one task, with both calls.** Each reply runs the ledger call, then the Overview call, as the product does. So an ask is born, answered and dismissed by the ledger, and the Overview sees each change. It starts empty.
+**Replay B: one task, with both calls.** Each reply runs the ledger call, then the Status call, as the product does. So an ask is born, answered and dismissed by the ledger, and the Status sees each change. It starts empty.
 
 | Step | What happens | What it checks |
 | --- | --- | --- |
@@ -411,7 +411,7 @@ At every step, the pieces set aside or waiting on a vendor stay on the page.
 | 7 | The banner shows on phones, and the agent asks whether it shows on web too | ◆ on the banner, from the ledger's new ask |
 | 8 | The person dismisses the question and asks for device tests. Android syncs, and iOS loses edits after a crash. | The ask closes as dismissed, and ◆ clears. The banner closes as ✓. The engine row keeps both states, or splits. |
 
-**Replay C: a long turn and a catch-up.** Overview calls only.
+**Replay C: a long turn and a catch-up.** Status calls only.
 
 | Step | What happens | What it checks |
 | --- | --- | --- |
@@ -422,36 +422,36 @@ At every step, the pieces set aside or waiting on a vendor stay on the page.
 
 **One short case** stays outside the replays: a catch-up of a conversation the inbox never saw, from an empty page. One feature is half done: images attach, and PDFs wait on a question. The page may draw it as one row with both parts, or give the finished part a ✓ row of its own. The case checks that the question links to the feature, and that a finished part drawn as its own row is not ●. Finished work marked ● after a catch-up was a real failure, and Replay C's catch-up starts from a page that already holds the work.
 
-The 20 single-exchange Overview cases left `evals/cases.json`. Each one's scenario is a step above, and their checks run at every step. `overview-shown-records-question` checks only the ledger, so it stays in the ledger suite. `catch-up-records-open-question-and-result` keeps its ledger check, and the short case above checks its Overview.
+The 20 single-exchange Status cases left `evals/cases.json`. Each one's scenario is a step above, and their checks run at every step. `status-shown-records-question` checks only the ledger, so it stays in the ledger suite. `catch-up-records-open-question-and-result` keeps its ledger check, and the short case above checks its Status.
 
 | Case | Replay step |
 | --- | --- |
-| `overview-feature-level` | A 9, and the text rule at every step |
-| `overview-direction-change` | B 4 |
-| `overview-plain-progress-no-course` | B 2 |
-| `overview-coordinator` | A 3, for the delegate's link |
-| `overview-single-task-not-coordinator` | B 2, for a piece that finishes in one exchange |
-| `overview-coordinator-update` | A 1 and A 10 |
-| `overview-ask-not-restated` | B 2 |
-| `overview-ask-links-right-subject` | A 5 |
-| `overview-problem-outside-task-not-subject` | A 8 |
-| `overview-long-name` | A 11 |
-| `overview-mid-turn-moves-on` | C 1 |
-| `overview-new-goal` | A 3 |
-| `overview-nothing-changes` | A 7 |
-| `overview-reversal-then-progress` | B 5 |
-| `overview-reversal-explained-again` | B 6 |
-| `overview-host-tasks` | C 1 |
-| `overview-long-session` | A, from its busy start |
-| `overview-child-linked` | A 9 |
-| `overview-reword-only` | A 7 |
-| `overview-no-time-words` | A 2, and the time-word rule at every step |
+| `status-feature-level` | A 9, and the text rule at every step |
+| `status-direction-change` | B 4 |
+| `status-plain-progress-no-course` | B 2 |
+| `status-coordinator` | A 3, for the delegate's link |
+| `status-single-task-not-coordinator` | B 2, for a piece that finishes in one exchange |
+| `status-coordinator-update` | A 1 and A 10 |
+| `status-ask-not-restated` | B 2 |
+| `status-ask-links-right-subject` | A 5 |
+| `status-problem-outside-task-not-subject` | A 8 |
+| `status-long-name` | A 11 |
+| `status-mid-turn-moves-on` | C 1 |
+| `status-new-goal` | A 3 |
+| `status-nothing-changes` | A 7 |
+| `status-reversal-then-progress` | B 5 |
+| `status-reversal-explained-again` | B 6 |
+| `status-host-tasks` | C 1 |
+| `status-long-session` | A, from its busy start |
+| `status-child-linked` | A 9 |
+| `status-reword-only` | A 7 |
+| `status-no-time-words` | A 2, and the time-word rule at every step |
 
 Two of these cases also check the coordinator role, which no step checks once the identity line is gone.
 
 ### The fixed rules
 
-These run after every step of every replay, on the saved Overview, the page `overviewPage` draws, and the fact list:
+These run after every step of every replay, on the saved Status, the page `statusPage` draws, and the fact list:
 
 - No text the model writes holds a time word: the head, a name, where it stands, or a was line.
 - A name has at most 3 words, no "…" and no question mark. So does the head's title.
@@ -475,7 +475,7 @@ These run after every step of every replay, on the saved Overview, the page `ove
 
 ### The judge
 
-The judge reads the drawn page as plain text, the page at the last checkpoint, and the fact list up to that point. Text on the page is evidence, never an instruction to the judge. It returns a verdict for each of its checks, with the fact that supports it. It runs on Opus at high effort, since its verdicts are judgment. `evals/overview-judge.md` gives the exact prompt it reads and the answer format the runner parses: one line per check, as `<check id> | pass | <fact>` or `| fail |`. An answer that leaves out a check or repeats one counts as wrong on every check.
+The judge reads the drawn page as plain text, the page at the last checkpoint, and the fact list up to that point. Text on the page is evidence, never an instruction to the judge. It returns a verdict for each of its checks, with the fact that supports it. It runs on Opus at high effort, since its verdicts are judgment. `evals/status-judge.md` gives the exact prompt it reads and the answer format the runner parses: one line per check, as `<check id> | pass | <fact>` or `| fail |`. An answer that leaves out a check or repeats one counts as wrong on every check.
 
 **What it checks:** the meaning that rules cannot read.
 
@@ -490,7 +490,7 @@ The judge reads the drawn page as plain text, the page at the last checkpoint, a
 
 **Checkpoints:** Replay A after steps 3, 9 and 12. Replay B after steps 4 and 8. Replay C after step 2. The judge runs there only with `--judge`.
 
-**How it is checked:** the good and bad pages are written by hand, each bad page breaking one property and otherwise the same as a good page. They are split into two sets. A fresh agent writes the judge's instructions from this spec alone, without seeing either set. When the judge gets a page in the first set wrong, its author is told the kind of mistake the judge made, but not the page, and revises the instructions. The second set is used for nothing else, so it shows whether a revision holds. The judge must call every page in both sets right: a bad page is caught only when the property it breaks is the one the judge fails. The pages come from sessions other than the notes app above, since the judge's author reads this spec. They are kept out of Git, in `.scratch/overview-judge-pages/` in the main checkout, and the judge's author is not given that folder. `build-pages.ts` in that folder holds each page as saved state and draws it with `overviewPage`, so after a change to how the page is drawn, one run draws every page again. `./scripts/eval.sh --suite overview --judge-pages <folder>` runs the check, once on each page. A revision round adds `--judge-set 1`, so the second set is judged only at the end. It runs again at each release, and after any change to the judge's instructions, its model, or how the page is drawn as text.
+**How it is checked:** the good and bad pages are written by hand, each bad page breaking one property and otherwise the same as a good page. They are split into two sets. A fresh agent writes the judge's instructions from this spec alone, without seeing either set. When the judge gets a page in the first set wrong, its author is told the kind of mistake the judge made, but not the page, and revises the instructions. The second set is used for nothing else, so it shows whether a revision holds. The judge must call every page in both sets right: a bad page is caught only when the property it breaks is the one the judge fails. The pages come from sessions other than the notes app above, since the judge's author reads this spec. They are kept out of Git, in `.scratch/status-judge-pages/` in the main checkout, and the judge's author is not given that folder. `build-pages.ts` in that folder holds each page as saved state and draws it with `statusPage`, so after a change to how the page is drawn, one run draws every page again. `./scripts/eval.sh --suite status --judge-pages <folder>` runs the check, once on each page. A revision round adds `--judge-set 1`, so the second set is judged only at the end. It runs again at each release, and after any change to the judge's instructions, its model, or how the page is drawn as text.
 
 ### The pass bar
 
@@ -502,11 +502,11 @@ The report also lists, for each step, the targets that failed in at least 2 of 3
 
 These make no model calls.
 
-- **Saved ledgers load.** Every case's ledger in both suites loads through `upgradeLedger` and keeps its items, findings and Overview.
+- **Saved ledgers load.** Every case's ledger in both suites loads through `upgradeLedger` and keeps its items, findings and Status.
 - **Compare keeps its question open.** Each agent case after a Compare press checks that the agent makes no `close` call. `evals/check-cases.ts` checks both.
 - **The rules catch what they claim.** Each fixed rule runs on a hand-written good page and a bad one.
 - **The replay harness grades a known run.** A recorded good run of each replay passes every rule. A recorded bad run fails at the step and property it was written to break.
-- **Schedules the hosts allow.** With fixed answers, through the real update path: replies that overlap, a Codex update whose Overview call waits on another update process, a mid-turn call that overlaps the turn's end, a look during a call, a clear during a call, and a failed call followed by a catch-up. Two Codex schedules have no passing test, because Codex gets them wrong today. An Overview answer that lands after a clear writes into the cleared session: #152. When two update processes run their Overview calls newer-first, the older answer overwrites the newer one: #153.
+- **Schedules the hosts allow.** With fixed answers, through the real update path: replies that overlap, a Codex update whose Status call waits on another update process, a mid-turn call that overlaps the turn's end, a look during a call, a clear during a call, and a failed call followed by a catch-up. Two Codex schedules have no passing test, because Codex gets them wrong today. A Status answer that lands after a clear writes into the cleared session: #152. When two update processes run their Status calls newer-first, the older answer overwrites the newer one: #153.
 - **Known failing cases.** Each failure that code owns is a test marked as expected to fail, so `check.sh` stays green and turns red when the fix lands:
   - work filed for later closes with its own mark, #137;
   - the fold names every finished piece the person has not seen, #138;
@@ -519,7 +519,7 @@ These make no model calls.
 
 ### Calls for one release run
 
-| Part | Overview calls | Ledger calls | Judge calls |
+| Part | Status calls | Ledger calls | Judge calls |
 | --- | --- | --- | --- |
 | Replay A, 12 calls in 14 steps, 3 runs, 2 models | 72 | 0 | 18 |
 | Replay B, 8 steps, both calls | 48 | 48 | 12 |
@@ -528,7 +528,7 @@ These make no model calls.
 | The judge's check on both page sets, 24 pages | 0 | 0 | 24 |
 | **Total** | **150** | **48** | **60** |
 
-An answer that holds prose is asked once more, so the Overview calls can reach about 165. That leaves room for about five new short cases, from use or from the call record, at 6 calls each, within the 200.
+An answer that holds prose is asked once more, so the Status calls can reach about 165. That leaves room for about five new short cases, from use or from the call record, at 6 calls each, within the 200.
 
 ## Risks
 
@@ -546,11 +546,11 @@ Decided, and still to build:
 - The page names every piece finished since the person last saw it: #138.
 - A look marks as seen only the rows that were on screen: #139.
 - One ask holds up several subjects: #140.
-- The head is a title and a one-line description: #148. The Overview call stops writing the coordinator role in the same change.
+- The head is a title and a one-line description: #148. The Status call stops writing the coordinator role in the same change.
 - A child row says in plain words what its work does: #149.
-- In Codex, an Overview answer from before a clear stays out of the cleared session: #152.
-- An older Overview answer never overwrites a newer one: #153.
-- The judge's instructions, in `evals/overview-judge.md`.
+- In Codex, a Status answer from before a clear stays out of the cleared session: #152.
+- An older Status answer never overwrites a newer one: #153.
+- The judge's instructions, in `evals/status-judge.md`.
 
 ## Left out
 

@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 // src/detached-update.ts
 import { spawn } from "node:child_process";
-var OVERVIEW_REFRESH = "overview-refresh";
+var STATUS_REFRESH = "status-refresh";
 function detachedUpdate(dir, env, script) {
   return (sessionId, mode) => {
     const child = spawn(process.execPath, [script, sessionId, ...mode ? [mode] : []], {
@@ -38,7 +38,7 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
-// ../hooks/overview.ts
+// ../hooks/status.ts
 var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
 var GOAL_WORDS = 8;
@@ -68,7 +68,7 @@ var STOP_WORDS = /* @__PURE__ */ new Set([
   "at",
   "with"
 ]);
-var EMPTY_OVERVIEW = {
+var EMPTY_SESSION_STATUS = {
   role: "session",
   goal: "",
   subjects: [],
@@ -99,7 +99,7 @@ function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
 }
 function withChild(last, c, now) {
-  const o = last ?? EMPTY_OVERVIEW;
+  const o = last ?? EMPTY_SESSION_STATUS;
   const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
   const known = kept.find((x) => x.ref === c.ref);
   if (known) return { ...o, children: kept.map((x) => x === known ? { ...x, ...c } : x) };
@@ -198,7 +198,7 @@ function fromLists(o) {
     into: null
   }));
   return {
-    ...EMPTY_OVERVIEW,
+    ...EMPTY_SESSION_STATUS,
     role: o.isCoordinator === true ? "coordinator" : "session",
     goal: clipWords(text(o.headline), GOAL_KEPT),
     subjects,
@@ -206,7 +206,7 @@ function fromLists(o) {
     lastLookAt
   };
 }
-function upgradeOverview(saved) {
+function upgradeStatus(saved) {
   const o = saved;
   if (typeof o !== "object" || o === null) return null;
   if (typeof o.headline === "string") return fromLists(o);
@@ -262,8 +262,8 @@ var EMPTY = {
   updates: 0
 };
 function isBlankLedger(ledger) {
-  const isOverviewBlank = !ledger.overview || ledger.overview.goal === "" && ledger.overview.subjects.length === 0;
-  return ledger.updates === 0 && isOverviewBlank && ledger.items.length === 0 && ledger.findings.length === 0;
+  const isStatusBlank = !ledger.overview || ledger.overview.goal === "" && ledger.overview.subjects.length === 0;
+  return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0;
 }
 var MAX_CLOSED = 12;
 var EXPIRED = "expired, unanswered";
@@ -282,7 +282,7 @@ function upgradeLedger(ledger) {
   return {
     ...rest,
     updates,
-    overview: upgradeOverview(rest.overview),
+    overview: upgradeStatus(rest.overview),
     findings: [...rest.findings ?? [], ...notes ?? []],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
@@ -547,7 +547,7 @@ function dialogActivity(questions, outcome) {
       return `${head}; still open, waiting on the user's answer`;
   }
 }
-var OVERVIEW_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
+var STATUS_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
 
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
@@ -671,7 +671,7 @@ function itemLine(item) {
 function findingLine(finding) {
   return `- ${finding.kind}: ${finding.title} (close id: ${finding.id})`;
 }
-function overviewLines(ledger) {
+function statusSummaryLines(ledger) {
   const goal = ledger.overview?.goal ?? "";
   const open2 = (ledger.overview?.subjects ?? []).filter(isOpen);
   return [
@@ -681,7 +681,7 @@ function overviewLines(ledger) {
 }
 function carryText(ledger, title) {
   const findings = ledger.findings;
-  const lines = overviewLines(ledger);
+  const lines = statusSummaryLines(ledger);
   if (lines.length === 0 && ledger.items.length === 0 && findings.length === 0) return null;
   const out = [title, ...lines];
   if (ledger.items.length > 0) {
@@ -1133,7 +1133,7 @@ function shortAgo(ms) {
 }
 var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
 var HOLDS_UP_TEXT = "Holds up";
-var OVERVIEW_FAILED = "Last Overview update failed. Changes from that reply may be missing.";
+var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
 var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
@@ -1223,7 +1223,7 @@ function stepKind(step) {
   return step.step.some((h) => h.kind === "run") ? "handoff" : "local";
 }
 var TAB_NAMES = [
-  { id: "overview", label: "Overview", symbol: "\u{1F9ED}" },
+  { id: "overview", label: "Status", symbol: "\u{1F9ED}" },
   { id: "needsYou", label: "Asks", symbol: "\u{1F64B}" },
   { id: "findings", label: "Finds", symbol: "\u{1F50D}" },
   { id: "prs", label: "PRs", symbol: "\u{1F500}" }
@@ -1287,7 +1287,7 @@ function childRow(c, now, branch) {
     branch
   };
 }
-function overviewPage(s, now) {
+function statusPage(s, now) {
   const o = s.ledger.overview;
   const look = o?.lastLookAt ?? null;
   const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
@@ -1368,9 +1368,9 @@ function overviewPage(s, now) {
     isEmpty: goal === null && rows.length === 0,
     goal,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
-    error: s.overviewFailure ? OVERVIEW_FAILED : null,
+    error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
-      title: "Overview",
+      title: "Status",
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
     }
   };
@@ -1935,17 +1935,17 @@ function endTurn(host, s, reply, isOpen2, { tab = null, queuesEmptyReply = false
   };
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] };
 }
-var OVERVIEW_REFRESH_MS = 10 * 6e4;
-function claimedOverviewRefresh(s, now) {
+var STATUS_REFRESH_MS = 10 * 6e4;
+function claimedStatusRefresh(s, now) {
   const { isTurnRunning, turnStartedAt } = s.presence;
   const times = [s.lastOverviewCallAt, turnStartedAt].filter((t) => t !== null);
-  const isDue = isTurnRunning && times.length > 0 && now - Math.max(...times) >= OVERVIEW_REFRESH_MS;
+  const isDue = isTurnRunning && times.length > 0 && now - Math.max(...times) >= STATUS_REFRESH_MS;
   return isDue ? { ...s, lastOverviewCallAt: now } : s;
 }
 function needsUpdate(s) {
   return s.pending.length > 0 || s.presence.ledgerState !== "current";
 }
-function overviewChanged(s, change) {
+function statusChanged(s, change) {
   const overview = change(s.ledger.overview);
   return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } };
 }
@@ -2010,7 +2010,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now, holds.shownSince, settleWindowMs),
-    overviewPage: overviewPage(s, now)
+    statusPage: statusPage(s, now)
   };
 }
 function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
@@ -3010,7 +3010,7 @@ async function handleHook(input, deps) {
   switch (input.hook_event_name) {
     case "SessionStart": {
       const root = input.cwd ?? "";
-      const endsTurn = (s2) => input.source === "compact" ? s2 : overviewChanged(turnEnded(s2, null), (o) => childrenCutOff(o, now()));
+      const endsTurn = (s2) => input.source === "compact" ? s2 : statusChanged(turnEnded(s2, null), (o) => childrenCutOff(o, now()));
       const folder = rolloutPath === null ? null : meta.folder;
       const [branch, withHistory] = await Promise.all([
         folder === null ? null : branchIn(deps.run, folder),
@@ -3054,30 +3054,30 @@ async function handleHook(input, deps) {
       const line = activityOf(tool, toolInput);
       const agentId = input.agent_id;
       const isDelegateCommand = agentId === void 0 && delegateSteps(command).length > 0;
-      const withWork = (s) => overviewChanged(s, (o) => agentId ? childWorked(o, agentId, now()) : delegatesStarted(o, command, now()));
+      const withWork = (s) => statusChanged(s, (o) => agentId ? childWorked(o, agentId, now()) : delegatesStarted(o, command, now()));
       const hasWork = line !== null || agentId !== void 0 || isDelegateCommand;
       const isMainActivity = line !== null && agentId === void 0;
       let isClaimed = false;
       if (hasWork)
         await write((s) => {
           const worked = withWork(line ? noteActivity(withRollout(s), line) : withRollout(s));
-          const claimed = isMainActivity ? claimedOverviewRefresh(worked, now()) : worked;
+          const claimed = isMainActivity ? claimedStatusRefresh(worked, now()) : worked;
           isClaimed = claimed !== worked;
           return claimed;
         });
-      if (isClaimed) deps.startOverviewRefresh(id);
+      if (isClaimed) deps.startStatusRefresh(id);
       return null;
     }
     case "SubagentStart": {
       const ref = input.agent_id;
       if (!ref) return null;
       const name = input.agent_type || "subagent";
-      await write((s) => overviewChanged(s, (o) => childStarted(o, { ref, kind: "subagent", name }, now())));
+      await write((s) => statusChanged(s, (o) => childStarted(o, { ref, kind: "subagent", name }, now())));
       return null;
     }
     case "SubagentStop": {
       const ref = input.agent_id;
-      if (ref) await write((s) => overviewChanged(s, (o) => childEnded(o, ref, now())));
+      if (ref) await write((s) => statusChanged(s, (o) => childEnded(o, ref, now())));
       return null;
     }
     case "Stop": {
@@ -3101,11 +3101,11 @@ async function handleHook(input, deps) {
           noteDialogs(withHost(await withHistory(s)), dialogs)
         );
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines);
-        const waited = overviewChanged(
+        const waited = statusChanged(
           withOutput,
           (o) => commands.reduce((x, c) => delegateWaitsEnded(x, c.command, now()), o)
         );
-        const withDelegates = inHerdr ? overviewChanged(waited, (o) => delegatesSettled(o, inHerdr, now())) : waited;
+        const withDelegates = inHerdr ? statusChanged(waited, (o) => delegatesSettled(o, inHerdr, now())) : waited;
         const withPlace = folder ? placed(withDelegates, folder, branch) : withDelegates;
         const ended = withCoveredTurn(noteHook(turnEnded(endTurn2(withPlace, reply, now()), now()), "stop", now()));
         return plan === null ? ended : { ...ended, hostTasks: plan };
@@ -3166,7 +3166,7 @@ async function main() {
     env: process.env,
     now: Date.now,
     startUpdate: (id) => startUpdate(id),
-    startOverviewRefresh: (id) => startUpdate(id, OVERVIEW_REFRESH),
+    startStatusRefresh: (id) => startUpdate(id, STATUS_REFRESH),
     onWrite: herdrOnWrite(process.env, run, dir, Date.now),
     run
   });

@@ -6,8 +6,8 @@ import { test } from 'node:test'
 import { linkDialogs } from '../../hooks/dialogs'
 import { addAgentItem, EMPTY } from '../../hooks/ledger'
 import { inboxText } from '../../hooks/model-text'
-import { applyOverview, parseOverview } from '../../hooks/overview'
-import { applied, OVERVIEW_REFRESH_MS, parsedReply } from '../../hooks/session'
+import { applyStatus, parseStatus } from '../../hooks/status'
+import { applied, STATUS_REFRESH_MS, parsedReply } from '../../hooks/session'
 import { feedbackText } from '../../hooks/view'
 import { notePrompt, noteToolCall, viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
@@ -129,7 +129,7 @@ test('a Stop notes the dialogs the agent opened in the ending turn as open, and 
   assert.deepEqual((await readState(dir, 's1')).pending[1]?.ex.activity, [])
 })
 
-test('a start after compaction carries the Overview goal and where each open subject stands', async () => {
+test('a start after compaction carries the Status goal and where each open subject stands', async () => {
   const dir = tempDir()
   const deps = hookDeps(dir)
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
@@ -138,9 +138,9 @@ test('a start after compaction carries the Overview goal and where each open sub
     ledger: {
       ...s.ledger,
       updates: 1,
-      overview: applyOverview(
+      overview: applyStatus(
         null,
-        parseOverview('GOAL: Adding caching\nNEW: queued | Cache | Redis or memory')!,
+        parseStatus('GOAL: Adding caching\nNEW: queued | Cache | Redis or memory')!,
         1,
         new Set(),
       )!,
@@ -757,7 +757,7 @@ test('a session resumed with earlier turns is marked behind at its first hook an
   assert.equal(new Set(seqs).size, seqs.length)
 })
 
-test('the main agent’s tool call starts the Overview call once the running turn is due one, and only once, and a subagent’s never does', async () => {
+test('the main agent’s tool call starts the Status call once the running turn is due one, and only once, and a subagent’s never does', async () => {
   const dir = tempDir()
   let clock = 1000
   const deps = hookDeps(dir, () => clock)
@@ -768,13 +768,13 @@ test('the main agent’s tool call starts the Overview call once the running tur
   await handleHook(input('UserPromptSubmit', { prompt: 'add caching', turn_id: 't1' }), deps)
   await handleHook(bash('ls'), deps)
   assert.deepEqual(deps.refreshes, [])
-  clock = 1000 + OVERVIEW_REFRESH_MS
+  clock = 1000 + STATUS_REFRESH_MS
   await handleHook(bash('npm test', { agent_id: 'sub1' }), deps)
   assert.deepEqual(deps.refreshes, [])
   await handleHook(bash('npm test'), deps)
   await handleHook(bash('npm run build'), deps)
   assert.deepEqual(deps.refreshes, ['s1'])
-  assert.equal((await readState(dir, 's1')).lastOverviewCallAt, 1000 + OVERVIEW_REFRESH_MS)
+  assert.equal((await readState(dir, 's1')).lastOverviewCallAt, 1000 + STATUS_REFRESH_MS)
 })
 
 test('a hook in a new process sends no Herdr report that would change nothing, and reports a change the MCP server made', async () => {

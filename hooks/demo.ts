@@ -12,10 +12,10 @@ export function isDemoCopy(saved: unknown): saved is DemoCopy {
   if (!saved || typeof saved !== 'object') return false
   const d = saved as Record<string, unknown>
 
-  const hasOverview = typeof (d.ledger as { overview?: unknown } | null)?.overview === 'object'
+  const hasStatus = typeof (d.ledger as { overview?: unknown } | null)?.overview === 'object'
 
   return (
-    hasOverview &&
+    hasStatus &&
     ['ledger', 'prViews', 'lastActions', 'notes', 'turns'].every(k => d[k] !== null && typeof d[k] === 'object')
   )
 }

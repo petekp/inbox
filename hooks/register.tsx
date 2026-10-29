@@ -28,7 +28,7 @@ import type {
   PrView,
   PrViews,
   LastAction,
-  Overview,
+  SessionStatus,
   PressKind,
   PageTab,
   RowNote,
@@ -36,9 +36,9 @@ import type {
   Stop,
   Tab,
 } from '../types'
-import { childEnded } from './overview'
+import { childEnded } from './status'
 import {
-  claimedOverviewRefresh,
+  claimedStatusRefresh,
   cleared,
   commandFindings,
   emptySession,
@@ -57,7 +57,7 @@ import {
   pruned,
   upgradeSession,
   cutOffTurn,
-  overviewChanged,
+  statusChanged,
   withLook,
   withNewPrRefs,
 } from './session'
@@ -80,20 +80,12 @@ import {
   exclusiveKeys,
   fetchPrs as fetchSessionPrs,
   orderedKeys,
-  refreshOverview,
+  refreshStatus,
   runUpdates,
   startPress,
   wakeForDone as wakeSessionForDone,
 } from './session-host'
-import type {
-  Ask,
-  CallReport,
-  CatchUpReply,
-  OverviewCall,
-  OverviewRecords,
-  RecordFiles,
-  SessionHost,
-} from './session-host'
+import type { Ask, CallReport, CatchUpReply, StatusCall, StatusRecords, RecordFiles, SessionHost } from './session-host'
 import { demoView, isDemoCopy, withDemoPresence } from './demo'
 import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
@@ -148,7 +140,7 @@ import {
 import {
   addActivity,
   buildPrompt,
-  overviewCarryText,
+  statusCarryText,
   catchUpPrompt,
   CLAUDE_CODE,
   dialogActivity,
@@ -278,7 +270,7 @@ import {
   keptOpen,
   listWaits,
   NEXT_BUILD_MARK,
-  OVERVIEW_TEXT_LINES,
+  STATUS_TEXT_LINES,
   rowAfterClose,
   shortAgo,
   shownOptionDescriptions,
@@ -292,8 +284,8 @@ import type {
   InboxView,
   ModLook,
   PlannedKey,
-  OverviewBranch,
-  OverviewRow,
+  StatusBranch,
+  StatusRow,
   RowView,
   RowWait,
   SettledState,
@@ -317,7 +309,7 @@ import {
 import { parseInline } from './inline'
 import type { Span } from './inline'
 import type { RowRecord } from './arrivals'
-import { BANNER_GAP_PT, BANNER_PAD_Y_PT, OVERVIEW_ROW_PAD_PT, ROW_PAD_PT } from './layout'
+import { BANNER_GAP_PT, BANNER_PAD_Y_PT, STATUS_ROW_PAD_PT, ROW_PAD_PT } from './layout'
 import {
   DARK_BANNER_TINTS,
   DARK_DALTONIZED_TONES,
@@ -584,13 +576,13 @@ const DESKTOP_MARK_CELLS = 1
 const DESKTOP_HAIR_CELLS = 1 / DESKTOP_CELL_PT
 const DESKTOP_HAIR_LINES = 1 / DESKTOP_LINE_PT
 /**
- * Where the Overview's tree line runs on desktop, in cells from a row's mark column: under the middle of a subject's
+ * Where the Status tab's tree line runs on desktop, in cells from a row's mark column: under the middle of a subject's
  * mark, which the Claude app 3.6556 draws 6.4 pt into the column, where a cell is 8.8 pt.
  */
 const DESKTOP_TREE_AT = 0.73
 /** The room the tree's arm leaves before a child's mark on desktop, in cells. */
 const DESKTOP_ARM_GAP = 0.4
-const OVERVIEW_PAD_Y = OVERVIEW_ROW_PAD_PT / DESKTOP_LINE_PT
+const STATUS_PAD_Y = STATUS_ROW_PAD_PT / DESKTOP_LINE_PT
 // How far a row frame's transparent border insets its content, in points.
 const FRAME_INSET_PT = 13.2
 const DESKTOP_SIDE_CELLS = 5
@@ -789,7 +781,7 @@ const RAIL_GUTTER = 2
 const FOLD_KINDS: FoldKind[] = [...NEEDS_YOU_GROUPS.map(g => g.kind), 'issue', 'opportunity']
 const AWAY_MS = 15 * 60_000
 
-/** The conversation whose first prompt has had the Overview's headline and status carried beside it. */
+/** The conversation whose first prompt has had the Status tab's headline and status carried beside it. */
 let carriedFor: string | null = null
 /** Why the last conversation ended, until the next conversation loads. */
 let endReason: string | null = null
@@ -845,7 +837,7 @@ function suspendUndoReveal(): number {
 let loadRevision = 0
 let applyingConversation: Promise<void> = Promise.resolve()
 let queue: Promise<void> = Promise.resolve()
-/** The conversations whose Overview calls run one after another. They do not hold `queue`, so a ledger call never waits for one. */
+/** The conversations whose Status calls run one after another. They do not hold `queue`, so a ledger call never waits for one. */
 const resultsOrder = orderedKeys()
 const reportToHerdr = herdrReporter()
 let shellCommand: string | null = null
@@ -853,8 +845,8 @@ let toolsRefused = false
 let isReadingAgain = false
 let version: string | null = null
 let isNextBuild = false
-/** Where a next build keeps its Overview call records, or null on a release build. */
-let overviewRecordsFolder: string | null = null
+/** Where a next build keeps its Status call records, or null on a release build. */
+let statusRecordsFolder: string | null = null
 /**
  * The desktop app takes the focus off the pane when the Button holding it leaves the drawing, and
  * the next click there only brings it back (anthropics/claude-code#100874).
@@ -908,19 +900,19 @@ function notePerson($: EngineInterface, line: string) {
   }))
 }
 
-/** Notes the main agent's activity, and runs the Overview call when the running turn is due one. */
+/** Notes the main agent's activity, and runs the Status call when the running turn is due one. */
 async function noteActivity($: EngineInterface, line: string) {
   const owner = currentOwner()
   const now = await $.clock.now()
   let isClaimed = false
   await commit($, owner, s => {
     const noted = noteTurnActivity(s, line)
-    const claimed = claimedOverviewRefresh(noted, now)
+    const claimed = claimedStatusRefresh(noted, now)
     isClaimed = claimed !== noted
     return claimed
   }).catch(() => undefined)
   if (isClaimed)
-    void refreshOverview({
+    void refreshStatus({
       ...hostOf($, owner),
       inOrder: fn => resultsOrder.run(owner.id, fn),
       records: recordsOf($, owner),
@@ -1528,7 +1520,7 @@ function recordFiles($: EngineInterface): RecordFiles {
   }
 }
 
-/** The folder a next build keeps its Overview call records in, under Claude Code's configuration folder. */
+/** The folder a next build keeps its Status call records in, under Claude Code's configuration folder. */
 async function recordsFolder($: EngineInterface): Promise<string | null> {
   const home = await $.env.get('HOME')
   const config = (await $.env.get('CLAUDE_CONFIG_DIR')) || (home ? `${home}/.claude` : null)
@@ -1536,7 +1528,7 @@ async function recordsFolder($: EngineInterface): Promise<string | null> {
   return config ? `${config}/plugins/data/inbox/overview-calls` : null
 }
 
-function overviewRecords($: EngineInterface, folder: string, owner: Owner): OverviewRecords {
+function statusRecords($: EngineInterface, folder: string, owner: Owner): StatusRecords {
   return { host: 'claude-code', folder, session: owner.id, files: recordFiles($) }
 }
 
@@ -1786,7 +1778,7 @@ let isRunningMarkDrawn = false
 
 /**
  * Redraws the terminal pane each frame while it shows a running mark. A tick that follows no such drawing stops the
- * timer, as when the pane closed or left the Overview. Desktop runs no loop, as `redrawWhileUndoLasts` says why.
+ * timer, as when the pane closed or left the Status. Desktop runs no loop, as `redrawWhileUndoLasts` says why.
  */
 function animateRunningMarks($: EngineInterface, isDrawn: boolean) {
   isRunningMarkDrawn = isDrawn
@@ -1848,9 +1840,9 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
     screen($),
     $.session.messages().then(transcriptText),
   ])
-  // The Overview call reads the transcript.
+  // The Status call reads the transcript.
   const askLong = modelAsk($, 90_000)
-  const overview: OverviewCall | null = transcript
+  const statusCall: StatusCall | null = transcript
     ? {
         exchange: { kind: 'catch-up', conversation: transcript },
         ask: async (prompt, system, report) => (isCurrent(owner) ? askLong(prompt, system, report) : null),
@@ -1858,7 +1850,7 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
     : null
   const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
   if (!isCurrent(owner)) return { kind: 'failed' }
-  if (forked.isAnswered) return { kind: 'reply', text: forked.text, source: null, overview }
+  if (forked.isAnswered) return { kind: 'reply', text: forked.text, source: null, statusCall }
   // A fork has nothing to read until this process sends its first request,
   // as after a resume. The model then reads the transcript instead, uncached.
   if (forked.reason !== 'nothing-to-fork') return { kind: 'failed' }
@@ -1866,7 +1858,7 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
   const r = await askLedgerModel($, transcriptCatchUpPrompt(ledger, shown, transcript), systemText(CLAUDE_CODE), 90_000)
   if (!isCurrent(owner)) return { kind: 'failed' }
 
-  return r.isAnswered ? { kind: 'reply', text: r.text, source: transcript, overview } : { kind: 'failed' }
+  return r.isAnswered ? { kind: 'reply', text: r.text, source: transcript, statusCall } : { kind: 'failed' }
 }
 
 /**
@@ -1893,7 +1885,7 @@ function updateLedger($: EngineInterface) {
       names: CLAUDE_CODE,
       catchUp: () => catchUpReply($, owner),
       inOrder: fn => resultsOrder.run(owner.id, fn),
-      background: overviews => void overviews,
+      background: statuses => void statuses,
       records: recordsOf($, owner),
     })
     if (isCurrent(owner)) void publishStatus($)
@@ -1902,8 +1894,8 @@ function updateLedger($: EngineInterface) {
   queue = queue.catch(() => undefined)
 }
 
-function recordsOf($: EngineInterface, owner: Owner): OverviewRecords | undefined {
-  return overviewRecordsFolder === null ? undefined : overviewRecords($, overviewRecordsFolder, owner)
+function recordsOf($: EngineInterface, owner: Owner): StatusRecords | undefined {
+  return statusRecordsFolder === null ? undefined : statusRecords($, statusRecordsFolder, owner)
 }
 
 /** The mod's SessionHost for `owner`'s conversation. A press passes its surface, which copies go to. */
@@ -2049,7 +2041,7 @@ function openPane($: EngineInterface, isFieldOpen = false) {
 }
 
 /**
- * Starts a look while the Overview shows in the pane, and ends it when it stops showing there. Both are
+ * Starts a look while the Status shows in the pane, and ends it when it stops showing there. Both are
  * idempotent, so every place that opens, closes or changes the pane's page can call it, after `syncShown`. The sample
  * leaves the real session's look alone. `isOpen` is whether the pane shows, when the caller knows.
  */
@@ -2215,7 +2207,7 @@ async function readPage($: EngineInterface): Promise<PageTab | null> {
   return page !== null && drawnTabOf(page, isNextBuild) === page ? page : null
 }
 
-/** The shown row tab; null while the Overview page shows, where no row is drawn, selected or scrolled to. */
+/** The shown row tab; null while the Status page shows, where no row is drawn, selected or scrolled to. */
 async function readRowTab($: EngineInterface): Promise<Tab | null> {
   const [page, tab] = await Promise.all([readPage($), read($, TAB)])
 
@@ -3224,7 +3216,7 @@ async function readVersion($: EngineInterface) {
     version = null
   }
   isNextBuild = await readIsNextBuild($)
-  overviewRecordsFolder = isNextBuild ? await recordsFolder($).catch(() => null) : null
+  statusRecordsFolder = isNextBuild ? await recordsFolder($).catch(() => null) : null
 }
 
 async function initializeInbox($: EngineInterface) {
@@ -3291,12 +3283,12 @@ function toolRecord<Name extends string>(_tool: Name, result: unknown): ToolResu
 
 async function noteChild(
   $: EngineInterface,
-  change: (o: Overview | null, at: number) => Overview | null,
+  change: (o: SessionStatus | null, at: number) => SessionStatus | null,
   isWorthSaving: (at: number) => boolean = () => true,
 ) {
   const at = await $.clock.now()
   if (!isWorthSaving(at)) return
-  await commit($, currentOwner(), s => overviewChanged(s, o => change(o, at))).catch(() => undefined)
+  await commit($, currentOwner(), s => statusChanged(s, o => change(o, at))).catch(() => undefined)
 }
 
 /** The child an agent's work belongs to: the subagent itself, or the workflow or subagent that spawned it. */
@@ -3349,7 +3341,7 @@ async function applyConversation(
   const loadedAt = await $.clock.now()
   // The pane now shows another conversation, so it starts a new showing.
   await syncShown($, { since: loadedAt })
-  await replaceDrawn($, s => overviewChanged(cutOffTurn(cutOffUpdate(s)), o => childrenCutOff(o, loadedAt)))
+  await replaceDrawn($, s => statusChanged(cutOffTurn(cutOffUpdate(s)), o => childrenCutOff(o, loadedAt)))
   if (revision !== loadRevision) return
   void notePlace($)
   const isFresh = isBlankLedger(current)
@@ -3583,7 +3575,7 @@ export const register: Register = on => {
     const notes = await notePrompt($, e.text, { isTyped })
     if (carriedFor !== conversation.id) {
       carriedFor = conversation.id
-      const carry = overviewCarryText((await read($, SESSION)).ledger)
+      const carry = statusCarryText((await read($, SESSION)).ledger)
       if (carry) notes.unshift(carry)
     }
 
@@ -3801,9 +3793,9 @@ export const register: Register = on => {
       listed && new Set(listed.filter(a => a.status === 'running' || a.status === 'pending').map(a => a.id))
     await commit($, currentOwner(), s => {
       const ended = turnEnded(s, endedAt)
-      const withSubagents = running ? overviewChanged(ended, o => subagentsSettled(o, running, endedAt)) : ended
+      const withSubagents = running ? statusChanged(ended, o => subagentsSettled(o, running, endedAt)) : ended
       const withDelegates = inHerdr
-        ? overviewChanged(withSubagents, o => delegatesSettled(o, inHerdr, endedAt))
+        ? statusChanged(withSubagents, o => delegatesSettled(o, inHerdr, endedAt))
         : withSubagents
       return root ? placed(withDelegates, root, branch) : withDelegates
     })
@@ -4129,10 +4121,10 @@ export const register: Register = on => {
       read($, RUNNING_FRAME),
     ])
     const tab: Tab = isShownTab(savedTab) && isRowTab(savedTab) ? savedTab : 'needsYou'
-    const isOverviewShown = savedPage === 'overview'
-    const shownTab: ShownTab = isOverviewShown ? 'overview' : tab
+    const isStatusShown = savedPage === 'overview'
+    const shownTab: ShownTab = isStatusShown ? 'overview' : tab
     const tabList = shownTabs(isNextBuild)
-    const isRunningMarkShown = isOverviewShown && hasRunningMark(view.overviewPage)
+    const isRunningMarkShown = isStatusShown && hasRunningMark(view.statusPage)
     if (look === 'terminal') animateRunningMarks($, isRunningMarkShown)
     const undoEnd = lastUndoEnd(view)
     if (undoEnd !== null) redrawWhileUndoLasts($, undoEnd)
@@ -4148,7 +4140,7 @@ export const register: Register = on => {
     if (size !== null && inlineSize !== null && size !== inlineSize) {
       const revision = undoScrollRevision
       later($, RESIZE_SCROLL_MS, () =>
-        revision === undoScrollRevision && !isOverviewShown ? scrollToOpenRow($, tab, e.surface) : undefined,
+        revision === undoScrollRevision && !isStatusShown ? scrollToOpenRow($, tab, e.surface) : undefined,
       )
     }
     inlineSize = size
@@ -4224,7 +4216,7 @@ export const register: Register = on => {
       typeHint?: string
       fold?: { note?: string }
     }
-    /** A next build draws the Overview, so only it names the subject an ask holds up. */
+    /** A next build draws the Status, so only it names the subject an ask holds up. */
     const holdsUpLineOf = (r: RowView | undefined) => (isNextBuild ? (r?.holdsUpLine ?? null) : null)
     const itemRow = (r: RowView): Row => {
       const asked = r.at === null ? undefined : `${DOT}${ago(now - r.at)}`
@@ -4390,15 +4382,15 @@ export const register: Register = on => {
     }
 
     type Entry = DrawnEntry<Row>
-    // The Overview draws no rows, so none are built while it shows.
+    // The Status draws no rows, so none are built while it shows.
     const lists = drawnLists(
       view,
       () => true,
-      r => (isOverviewShown ? null : r.item ? itemRow(r) : r.finding ? findingRow(r) : null),
+      r => (isStatusShown ? null : r.item ? itemRow(r) : r.finding ? findingRow(r) : null),
     )
     const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({ ...g, entries: lists[g.list], rows: rowsIn(lists[g.list]) }))
     const findingEntries = lists.findings
-    const prGroups = (isOverviewShown ? [] : shownPrs)
+    const prGroups = (isStatusShown ? [] : shownPrs)
       .map(d => ({
         ...d,
         checks: d.state.is === 'settled' ? [] : failingChecks(d.pr).map(c => checkRow(d.pr, c)),
@@ -4424,8 +4416,8 @@ export const register: Register = on => {
     const ids = rows[tab].map(r => r.id)
     const indexOf = new Map(ids.map((id, n) => [id, n]))
     const cursor = selection[tab]
-    const settledIds = new Set(isOverviewShown ? [] : settledRowIds(allRows(view)))
-    const top = isOverviewShown
+    const settledIds = new Set(isStatusShown ? [] : settledRowIds(allRows(view)))
+    const top = isStatusShown
       ? null
       : firstWaiting(
           tabWaits(
@@ -5178,7 +5170,7 @@ export const register: Register = on => {
       shownTab,
       view.status,
       { isFetching: prState.isFetching, hasPrs: prViews.length > 0 },
-      view.overviewPage.error,
+      view.statusPage.error,
     )
     const status = shownStatus.text ?? ''
 
@@ -5191,7 +5183,7 @@ export const register: Register = on => {
 
     const keyList = [
       { keys: tabList.map(t => t.hotkey).join(' '), does: 'Switch tabs' },
-      ...(isOverviewShown ? [] : [{ keys: 'j k', does: 'Select the next or previous row' }]),
+      ...(isStatusShown ? [] : [{ keys: 'j k', does: 'Select the next or previous row' }]),
       { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
     ]
     const keyColumn = Math.max(...keyList.map(k => k.keys.length)) + 2
@@ -6079,7 +6071,7 @@ export const register: Register = on => {
         )
       )
 
-    const overviewGoal = (goal: string) => {
+    const statusGoal = (goal: string) => {
       const line = (
         <Text wrap="wrap" bold>
           {goal}
@@ -6087,9 +6079,9 @@ export const register: Register = on => {
       )
 
       return look === 'desktop' ? (
-        desktopFrame({ key: 'overview-goal', padY: 0, markCells: 0, hasSide: false, children: line })
+        desktopFrame({ key: 'status-goal', padY: 0, markCells: 0, hasSide: false, children: line })
       ) : (
-        <Box key="overview-goal" paddingLeft={TREE_LINE_AT}>
+        <Box key="status-goal" paddingLeft={TREE_LINE_AT}>
           {line}
         </Box>
       )
@@ -6110,29 +6102,29 @@ export const register: Register = on => {
         <Text color={color}>{look === 'terminal' ? runningMark(now) : glyph}</Text>
       )
     }
-    /** Where an Overview row's mark sits in the terminal: in the goal's column, so the list lines up with it. */
-    const overviewMarkAt = TREE_LINE_AT
-    /** The text column of an Overview line at `depth`, in cells on the terminal and in points on desktop. */
-    const overviewTextWidth = (depth: number) =>
+    /** Where a Status row's mark sits in the terminal: in the goal's column, so the list lines up with it. */
+    const statusMarkAt = TREE_LINE_AT
+    /** The text column of a Status line at `depth`, in cells on the terminal and in points on desktop. */
+    const statusTextWidth = (depth: number) =>
       look === 'desktop'
         ? desktopColumnPt(1 + DESKTOP_MARK_CELLS * (depth * 2 + 1)) + DESKTOP_SIDE_CELLS * DESKTOP_CELL_PT
-        : listColumns - 1 - overviewMarkAt - markWidth * (depth + 1)
-    const fitsOverviewLine = (depth: number) => (text: string) =>
-      look === 'desktop' ? desktopTextPt(text) <= overviewTextWidth(depth) : cellWidth(text) <= overviewTextWidth(depth)
-    /** One text of an Overview line, wrapped to at most `limit` lines and cut with an ellipsis past them. */
-    const overviewText = (key: string, spans: TerminalSpan[], depth: number, limit = OVERVIEW_TEXT_LINES) => (
+        : listColumns - 1 - statusMarkAt - markWidth * (depth + 1)
+    const fitsStatusLine = (depth: number) => (text: string) =>
+      look === 'desktop' ? desktopTextPt(text) <= statusTextWidth(depth) : cellWidth(text) <= statusTextWidth(depth)
+    /** One text of a Status line, wrapped to at most `limit` lines and cut with an ellipsis past them. */
+    const statusPageText = (key: string, spans: TerminalSpan[], depth: number, limit = STATUS_TEXT_LINES) => (
       <Box key={key}>
         <Text wrap="wrap">
           {terminalText(
             look === 'desktop'
-              ? [desktopSpanLines(spans, overviewTextWidth(depth), limit)]
-              : terminalSpanLines(spans, overviewTextWidth(depth), limit),
+              ? [desktopSpanLines(spans, statusTextWidth(depth), limit)]
+              : terminalSpanLines(spans, statusTextWidth(depth), limit),
           )}
         </Text>
       </Box>
     )
     /** A row's second line: where it stands, muted, then its stall words in the needs-you tone, never split by a wrap. */
-    const overviewSecondLine = (key: string, text: string | null, stall: string | null, depth: number) => {
+    const statusSecondLine = (key: string, text: string | null, stall: string | null, depth: number) => {
       const unbroken = (words: string) => (look === 'desktop' ? words.replaceAll(' ', '\u00a0') : words)
       const spans: TerminalSpan[] = [
         ...(text ? [{ text, isMuted: true as const }] : []),
@@ -6140,21 +6132,21 @@ export const register: Register = on => {
         ...(stall ? [{ text: unbroken(stall), isNeedsYou: true as const, isUnbroken: true as const }] : []),
       ]
 
-      return spans.length > 0 ? [overviewText(key, spans, depth)] : []
+      return spans.length > 0 ? [statusPageText(key, spans, depth)] : []
     }
     /**
      * The line that ties the rows under a subject to it, in the subject's mark column. `down` runs from under the
      * subject's mark to the end of its row. `mid` and `last` reach across to a child's mark, and `mid` runs on to the
      * next row, so a row that wraps keeps the line beside each of its lines.
      */
-    const overviewTree = (key: string, shape: 'down' | OverviewBranch) => {
+    const statusTree = (key: string, shape: 'down' | StatusBranch) => {
       if (look === 'terminal')
         return shape === 'down'
-          ? branch('pass', 0, overviewMarkAt, pal.line, 1, key)
-          : branch(shape, 0, overviewMarkAt, pal.line, 0, key)
+          ? branch('pass', 0, statusMarkAt, pal.line, 1, key)
+          : branch(shape, 0, statusMarkAt, pal.line, 0, key)
       // The line spans the mark column, which spans the frame's content. To meet the next row's line, each end reaches
       // over the frame's padding and its 1 pt border, in margins, which count half lines.
-      const reach = -(OVERVIEW_PAD_Y + 2 * DESKTOP_HAIR_LINES)
+      const reach = -(STATUS_PAD_Y + 2 * DESKTOP_HAIR_LINES)
       const firstLineMiddle = 0.5
       const hair = (key: string, grow: boolean, ends: { marginTop?: number; marginBottom?: number }) => (
         <Box key={key} flexDirection="row" {...(grow ? { flexGrow: 1 } : { height: firstLineMiddle })}>
@@ -6180,24 +6172,24 @@ export const register: Register = on => {
         </Box>
       )
     }
-    /** The rule above an Overview row that starts an item. It starts at the text column, as the rules between sections and between Asks rows do. */
-    const overviewRule = (id: string) =>
+    /** The rule above a Status row that starts an item. It starts at the text column, as the rules between sections and between Asks rows do. */
+    const statusRule = (id: string) =>
       look === 'desktop' ? (
-        desktopHairline(`overview-rule-${id}`, 'across', {
+        desktopHairline(`status-rule-${id}`, 'across', {
           marginLeft: FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS,
         })
       ) : (
-        <Box key={`overview-rule-${id}`} flexDirection="row">
-          <Box width={overviewMarkAt + markWidth} flexShrink={0} />
-          {rule(overviewMarkAt + markWidth + 2)}
+        <Box key={`status-rule-${id}`} flexDirection="row">
+          <Box width={statusMarkAt + markWidth} flexShrink={0} />
+          {rule(statusMarkAt + markWidth + 2)}
         </Box>
       )
     /** The look line: "Seen" in the middle of a rule that runs from the mark column to the end of the row. */
-    const overviewLookLine = (text: string) => {
+    const statusLookLine = (text: string) => {
       if (look === 'desktop')
         return desktopFrame({
-          key: 'overview-look',
-          padY: OVERVIEW_PAD_Y,
+          key: 'status-look',
+          padY: STATUS_PAD_Y,
           markCells: 0,
           hasSide: false,
           children: (
@@ -6215,18 +6207,18 @@ export const register: Register = on => {
           ),
         })
       const label = ` ${text} `
-      const fill = Math.max(4, listColumns - 1 - overviewMarkAt - cellWidth(label))
+      const fill = Math.max(4, listColumns - 1 - statusMarkAt - cellWidth(label))
       const before = Math.floor(fill / 2)
 
       return (
-        <Box key="overview-look" flexDirection="row">
-          <Box width={overviewMarkAt} flexShrink={0} />
+        <Box key="status-look" flexDirection="row">
+          <Box width={statusMarkAt} flexShrink={0} />
           <Text color={pal.divider}>{`${'─'.repeat(before)}${label}${'─'.repeat(fill - before)}`}</Text>
         </Box>
       )
     }
-    /** One line of the Overview's list: a mark and its text. `depth` 1 sits under a subject's text. */
-    const overviewLine = ({
+    /** One line of the Status tab's list: a mark and its text. `depth` 1 sits under a subject's text. */
+    const statusRowLine = ({
       key,
       depth = 0,
       mark,
@@ -6244,7 +6236,7 @@ export const register: Register = on => {
           key,
           indent: DESKTOP_MARK_CELLS * (depth * 2),
           isMarkHung: false,
-          padY: OVERVIEW_PAD_Y,
+          padY: STATUS_PAD_Y,
           hasSide: false,
           mark,
           tree,
@@ -6252,7 +6244,7 @@ export const register: Register = on => {
         })
       ) : (
         <Box key={key} flexDirection="row" alignItems="flex-start" overflow="hidden">
-          <Box width={overviewMarkAt + markWidth * depth} flexShrink={0} />
+          <Box width={statusMarkAt + markWidth * depth} flexShrink={0} />
           <Box width={markWidth} flexShrink={0}>
             {mark}
           </Box>
@@ -6262,67 +6254,67 @@ export const register: Register = on => {
           {tree}
         </Box>
       )
-    const overviewRow = (r: OverviewRow) => {
+    const statusRow = (r: StatusRow) => {
       if (r.kind === 'subject') {
         const color = r.tone ? pal.mark[r.tone] : pal.muted
         const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
         const content = [
-          overviewText(`overview-${r.id}-name`, [{ text: r.name }], 0),
-          ...overviewSecondLine(`overview-${r.id}-text`, r.text, r.stall, 0),
+          statusPageText(`status-${r.id}-name`, [{ text: r.name }], 0),
+          ...statusSecondLine(`status-${r.id}-text`, r.text, r.stall, 0),
           ...(r.merged
             ? [
-                overviewText(
-                  `overview-${r.id}-merged`,
-                  [{ text: mergedLine(r.merged, fitsOverviewLine(0)), isMuted: true }],
+                statusPageText(
+                  `status-${r.id}-merged`,
+                  [{ text: mergedLine(r.merged, fitsStatusLine(0)), isMuted: true }],
                   0,
                 ),
               ]
             : []),
           ...(r.was
-            ? [overviewText(`overview-${r.id}-was`, [{ text: `${WAS_PREFIX}${r.was}`, isMuted: true }], 0)]
+            ? [statusPageText(`status-${r.id}-was`, [{ text: `${WAS_PREFIX}${r.was}`, isMuted: true }], 0)]
             : []),
         ]
 
-        return overviewLine({
-          key: `overview-${r.id}`,
+        return statusRowLine({
+          key: `status-${r.id}`,
           mark,
           content,
-          tree: r.hasChildren ? overviewTree(`overview-${r.id}-tree`, 'down') : null,
+          tree: r.hasChildren ? statusTree(`status-${r.id}-tree`, 'down') : null,
         })
       }
       if (r.kind === 'child') {
         const mark = r.isRunning ? runningDot(r.id, r.mark, pal.muted) : <Text color={pal.muted}>{r.mark}</Text>
         const depth = r.branch === null ? 0 : 1
 
-        return overviewLine({
-          key: `overview-${r.id}`,
+        return statusRowLine({
+          key: `status-${r.id}`,
           depth,
           mark,
           content: [
-            overviewText(`overview-${r.id}-name`, [{ text: r.name, isMuted: true }], depth),
-            ...overviewSecondLine(`overview-${r.id}-text`, null, r.stall, depth),
+            statusPageText(`status-${r.id}-name`, [{ text: r.name, isMuted: true }], depth),
+            ...statusSecondLine(`status-${r.id}-text`, null, r.stall, depth),
           ],
-          tree: r.branch ? overviewTree(`overview-${r.id}-tree`, r.branch) : null,
+          tree: r.branch ? statusTree(`status-${r.id}-tree`, r.branch) : null,
         })
       }
       if (r.kind === 'more')
-        return overviewLine({
-          key: `overview-${r.id}`,
+        return statusRowLine({
+          key: `status-${r.id}`,
           depth: 1,
           mark: null,
           content: <Text color={pal.muted}>{r.text}</Text>,
-          tree: overviewTree(`overview-${r.id}-tree`, r.branch),
+          tree: statusTree(`status-${r.id}-tree`, r.branch),
         })
-      if (r.kind === 'look') return overviewLookLine(r.text)
+      if (r.kind === 'look') return statusLookLine(r.text)
 
-      return overviewLine({
-        key: `overview-${r.id}`,
+      return statusRowLine({
+        key: `status-${r.id}`,
         mark: <Text color={r.tone ? pal.mark[r.tone] : pal.muted}>{r.mark}</Text>,
         content: <Text color={pal.muted}>{r.text}</Text>,
       })
     }
-    const overviewView = () => {
-      const page = view.overviewPage
+    const statusView = () => {
+      const page = view.statusPage
       if (page.isEmpty)
         return (
           <Box flexDirection="column" flexGrow={1}>
@@ -6331,14 +6323,14 @@ export const register: Register = on => {
         )
 
       return sections([
-        ...(page.goal ? [overviewGoal(page.goal)] : []),
+        ...(page.goal ? [statusGoal(page.goal)] : []),
         ...(page.rows.length > 0
           ? [
               section(
                 page.rows.flatMap(r => {
                   const isRuleDrawn = r.isRuledAbove && !isInline
 
-                  return isRuleDrawn ? [overviewRule(r.id), overviewRow(r)] : [overviewRow(r)]
+                  return isRuleDrawn ? [statusRule(r.id), statusRow(r)] : [statusRow(r)]
                 }),
               ),
             ]
@@ -6350,7 +6342,7 @@ export const register: Register = on => {
       const to = Math.min(Math.max(at + step, 0), ids.length - 1)
       void select($, tab, ids[to] ?? '', to)
     }
-    const canMove = !isOverviewShown && (ids.length > 1 || (at < 0 && ids.length > 0))
+    const canMove = !isStatusShown && (ids.length > 1 || (at < 0 && ids.length > 0))
     // Claude Code sends a key no Button binds to the prompt and gives it the keyboard, so the keys
     // stay bound when there is nothing to move to or close.
     const moveKeys: KeyAction[] = [
@@ -6371,7 +6363,7 @@ export const register: Register = on => {
       onPress: () => void showTab($, id),
     }))
 
-    const selectedRow = isOverviewShown ? undefined : rows[tab][at]
+    const selectedRow = isStatusShown ? undefined : rows[tab][at]
     const selectedActions = selectedRow ? rowActions(selectedRow) : null
     const closeKeysWithoutRow: KeyAction[] = ['d', 'x'].map(hotkey => ({
       key: `no-row-${hotkey}`,
@@ -6385,8 +6377,8 @@ export const register: Register = on => {
     // A pane takes a key
     // only as a Button's hotkey, so the tab keys, j, k and the selected row's keys
     // are Buttons in a hidden Box.
-    const tabView = isOverviewShown
-      ? overviewView()
+    const tabView = isStatusShown
+      ? statusView()
       : tab === 'findings'
         ? findingsView()
         : tab === 'prs'

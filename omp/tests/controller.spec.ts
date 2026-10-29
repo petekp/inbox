@@ -166,7 +166,7 @@ test('the open panel keeps its line count through tab switches, presses and a cl
   expect(panel.render(100)).toHaveLength(withField)
 })
 
-test('the frame timer runs while the Overview shows a running mark, re-renders without reading the session, and stops on another tab and on dispose', async () => {
+test('the frame timer runs while the Status shows a running mark, re-renders without reading the session, and stops on another tab and on dispose', async () => {
   const demo = demoSource({
     modelName: 'Claude Sonnet 5.5',
     now: () => 0,

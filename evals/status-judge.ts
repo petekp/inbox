@@ -1,4 +1,4 @@
-/** What the judge checks on a page, each tied to a property of a good Overview in `docs/plans/overview.md`. */
+/** What the judge checks on a page, each tied to a property of a good Status in `docs/plans/status.md`. */
 export const JUDGE_CHECKS = [
   {
     id: 'head',
@@ -48,7 +48,7 @@ export type JudgeInput = {
   facts: string
 }
 
-/** The prompt the judge reads. Its system text is the instructions in `evals/overview-judge.md`. */
+/** The prompt the judge reads. Its system text is the instructions in `evals/status-judge.md`. */
 export function judgePrompt(input: JudgeInput): string {
   return [
     '<page>',

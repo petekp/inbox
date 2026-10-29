@@ -1,4 +1,4 @@
-import type { Dialog, Ledger, Overview, Stop, Tab } from '../types'
+import type { Dialog, Ledger, SessionStatus, Stop, Tab } from '../types'
 import { hasRunningDelegate } from './children'
 import type { Run } from './gh'
 import type { SessionView } from './session'
@@ -41,7 +41,7 @@ const HERDR_RUNNING = new Set(['working', 'unknown'])
  * answer. Herdr finds its session from the pane's environment, not the folder, so the command runs in `/`, which
  * always exists.
  */
-export async function delegatesInHerdr(o: Overview | null, run: Run): Promise<Set<string> | null> {
+export async function delegatesInHerdr(o: SessionStatus | null, run: Run): Promise<Set<string> | null> {
   if (!hasRunningDelegate(o)) return null
   const r = await run(HERDR_AGENT_LIST, { cwd: '/', timeoutMs: HERDR_TIMEOUT_MS })
 

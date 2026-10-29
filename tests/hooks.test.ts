@@ -11,9 +11,9 @@ import { DARK_TONES } from '../hooks/tones'
 import type { Item, Session } from '../types'
 import { demoView } from '../hooks/demo'
 import { GH_TIMEOUT_MS } from '../hooks/gh'
-import { OVERVIEW_SYSTEM } from '../hooks/model-text'
-import { LOOK_MIN_MS } from '../hooks/overview'
-import { OVERVIEW_REFRESH_MS } from '../hooks/session'
+import { STATUS_SYSTEM } from '../hooks/model-text'
+import { LOOK_MIN_MS } from '../hooks/status'
+import { STATUS_REFRESH_MS } from '../hooks/session'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
 import { failingChecks, waitingThreads } from '../hooks/prs'
 import {
@@ -22,9 +22,9 @@ import {
   QUEUED_AFTER_MS,
   SETTLED_MS,
   inboxView,
-  OVERVIEW_TEXT_LINES,
+  STATUS_TEXT_LINES,
   perTurnStatus,
-  overviewPage,
+  statusPage,
   rowKeyPlan,
   actionLines,
   RUNNING_FRAME_MS,
@@ -50,9 +50,9 @@ const BAND = {
 }
 
 let ledgerReply = LEDGER_REPLY
-let overviewReply: string | null | string[] = 'UNCHANGED'
-let overviewPrompts: string[] = []
-let overviewHold: Promise<void> | null = null
+let statusReply: string | null | string[] = 'UNCHANGED'
+let statusPrompts: string[] = []
+let statusHold: Promise<void> | null = null
 let sessionId = 'session-1'
 
 let sent: string[] = []
@@ -196,9 +196,9 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   isGhMissing = false
   slowGhClock = null
   ledgerReply = LEDGER_REPLY
-  overviewReply = 'UNCHANGED'
-  overviewPrompts = []
-  overviewHold = null
+  statusReply = 'UNCHANGED'
+  statusPrompts = []
+  statusHold = null
   sessionId = 'session-1'
   surfaces = []
   files = []
@@ -289,22 +289,22 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     return { value: gh(e.argv) }
   })
   on('model.complete', async ($, e) => {
-    const isOverview =
-      (e.systemBlocks ?? []).some(block => block.text === OVERVIEW_SYSTEM) || e.system === OVERVIEW_SYSTEM
-    if (isOverview) overviewPrompts.push(e.prompt)
+    const isStatusCall =
+      (e.systemBlocks ?? []).some(block => block.text === STATUS_SYSTEM) || e.system === STATUS_SYSTEM
+    if (isStatusCall) statusPrompts.push(e.prompt)
     else prompts.push(e.prompt)
-    if (isOverview) await overviewHold
-    const overviewText = !isOverview
+    if (isStatusCall) await statusHold
+    const statusText = !isStatusCall
       ? null
-      : Array.isArray(overviewReply)
-        ? (overviewReply.shift() ?? 'UNCHANGED')
-        : overviewReply
-    if (isOverview && overviewText === null) return { deny: 'the Overview call failed' }
+      : Array.isArray(statusReply)
+        ? (statusReply.shift() ?? 'UNCHANGED')
+        : statusReply
+    if (isStatusCall && statusText === null) return { deny: 'the Status call failed' }
 
     return {
       value: {
         isAnswered: true,
-        text: isOverview ? overviewText! : ledgerReply,
+        text: isStatusCall ? statusText! : ledgerReply,
         usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
       },
     }
@@ -777,7 +777,7 @@ test('a Done message another plugin rewrote to text a pending press also sent re
 test('a turn runs from the main agent’s turn.start to its turn.complete, not for a subagent’s turn, a Done message waits for an interrupted turn to end, and a reload clears it', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  let session: Parameters<typeof overviewPage>[0] | null = null
+  let session: Parameters<typeof statusPage>[0] | null = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
     session = e.value as never
     return next(e)
@@ -1221,15 +1221,10 @@ test('the band keeps what the mods after the inbox draw there, with its counts a
   }
 })
 
-const replyWithOverview = async (
-  $: Engine,
-  on: On,
-  overview: string | null | string[],
-  ledgerAnswer = LEDGER_REPLY,
-) => {
+const replyWithStatus = async ($: Engine, on: On, answer: string | null | string[], ledgerAnswer = LEDGER_REPLY) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  overviewReply = overview
+  statusReply = answer
   ledgerReply = ledgerAnswer
   let session: Pick<Session, 'ledger' | 'overviewFailure'> | null = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
@@ -1250,49 +1245,49 @@ const replyWithOverview = async (
   return session!
 }
 
-test('a reply’s Overview comes from the separate Overview call, after the ledger update', async ($, on) => {
-  const { ledger } = await replyWithOverview($, on, 'GOAL: Adding a greeting CLI\nNEW: working | Plan | Planning')
+test('a reply’s Status comes from the separate Status call, after the ledger update', async ($, on) => {
+  const { ledger } = await replyWithStatus($, on, 'GOAL: Adding a greeting CLI\nNEW: working | Plan | Planning')
 
   expect(ledger.overview?.goal).toBe('Adding a greeting CLI')
   expect(ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?', 'Name the command greet?'])
-  expect(overviewPrompts).toHaveLength(1)
+  expect(statusPrompts).toHaveLength(1)
 })
 
-test('a failed Overview call leaves the ledger update applied and no Overview, and saves that it gave no answer', async ($, on) => {
-  const { ledger, overviewFailure } = await replyWithOverview($, on, null)
+test('a failed Status call leaves the ledger update applied and no Status, and saves that it gave no answer', async ($, on) => {
+  const { ledger, overviewFailure } = await replyWithStatus($, on, null)
 
   expect(ledger.overview).toBeNull()
   expect(ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?', 'Name the command greet?'])
-  expect(overviewPrompts).toHaveLength(1)
+  expect(statusPrompts).toHaveLength(1)
   expect(overviewFailure).toMatchObject({ cause: 'no-answer', answer: null })
 })
 
-test('an Overview answer that holds prose is asked once more, and the second answer applies', async ($, on) => {
-  const { ledger, overviewFailure } = await replyWithOverview($, on, [
+test('a Status answer that holds prose is asked once more, and the second answer applies', async ($, on) => {
+  const { ledger, overviewFailure } = await replyWithStatus($, on, [
     'The person wants a CLI.\nGOAL: Adding a greeting CLI',
     'GOAL: Adding a greeting CLI',
   ])
 
-  expect(overviewPrompts).toHaveLength(2)
+  expect(statusPrompts).toHaveLength(2)
   expect(ledger.overview?.goal).toBe('Adding a greeting CLI')
   expect(overviewFailure).toBeNull()
 })
 
-test('an Overview call that answers with prose twice writes nothing and saves its second answer', async ($, on) => {
-  const { ledger, overviewFailure } = await replyWithOverview($, on, ['The person wants a CLI.', 'Still prose.'])
+test('a Status call that answers with prose twice writes nothing and saves its second answer', async ($, on) => {
+  const { ledger, overviewFailure } = await replyWithStatus($, on, ['The person wants a CLI.', 'Still prose.'])
 
-  expect(overviewPrompts).toHaveLength(2)
+  expect(statusPrompts).toHaveLength(2)
   expect(ledger.overview).toBeNull()
   expect(overviewFailure).toMatchObject({ cause: 'refused', answer: 'Still prose.' })
 })
 
-test('an Overview answer of UNCHANGED leaves the last Overview as it was', async ($, on) => {
-  const { ledger } = await replyWithOverview($, on, 'UNCHANGED')
+test('a Status answer of UNCHANGED leaves the last Status as it was', async ($, on) => {
+  const { ledger } = await replyWithStatus($, on, 'UNCHANGED')
 
   expect(ledger.overview).toBeNull()
 })
 
-test('a ledger update shows before its Overview call returns', async ($, on) => {
+test('a ledger update shows before its Status call returns', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let session: { ledger: { overview: { goal: string } | null; items: { id: string }[] } } | null = null
@@ -1311,24 +1306,24 @@ test('a ledger update shows before its Overview call returns', async ($, on) => 
   await reply('add a greeting cli', 't1')
 
   let release: () => void = () => undefined
-  overviewHold = new Promise<void>(resolve => (release = resolve))
-  overviewReply = 'GOAL: Scaffolding the command'
+  statusHold = new Promise<void>(resolve => (release = resolve))
+  statusReply = 'GOAL: Scaffolding the command'
   ledgerReply = 'CLOSED: i1 | Node chosen'
   await reply('use node', 't2')
 
   expect(session!.ledger.items).toEqual([])
   expect(session!.ledger.overview).toBeNull()
-  expect(overviewPrompts.at(-1)).not.toContain('Use Node or Python?')
+  expect(statusPrompts.at(-1)).not.toContain('Use Node or Python?')
   release()
   await clock.settle()
   expect(session!.ledger.overview?.goal).toBe('Scaffolding the command')
 })
 
-test('a turn past the wait runs the Overview call on its work so far at its next tool call, once, and no ledger call until the reply', async ($, on) => {
+test('a turn past the wait runs the Status call on its work so far at its next tool call, once, and no ledger call until the reply', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
   world($, on, prompts)
-  overviewReply = 'GOAL: Adding a greeting CLI'
+  statusReply = 'GOAL: Adding a greeting CLI'
   let session: Pick<Session, 'ledger'> | null = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
     session = e.value as never
@@ -1339,27 +1334,27 @@ test('a turn past the wait runs the Overview call on its work so far at its next
   await $.turn.start({ text: 'add a greeting cli', turnId: 't1' })
   await $.tool.call({ tool: 'Bash', command: 'ls', description: 'ls' } as never)
   await clock.settle()
-  expect(overviewPrompts).toEqual([])
+  expect(statusPrompts).toEqual([])
 
-  await clock.advance(OVERVIEW_REFRESH_MS)
+  await clock.advance(STATUS_REFRESH_MS)
   await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'npm test' } as never)
   await $.tool.call({ tool: 'Bash', command: 'npm run build', description: 'build' } as never)
   await clock.settle()
-  expect(overviewPrompts).toHaveLength(1)
-  expect(overviewPrompts[0]).toContain('npm test')
-  expect(overviewPrompts[0]).not.toContain('<reply>')
+  expect(statusPrompts).toHaveLength(1)
+  expect(statusPrompts[0]).toContain('npm test')
+  expect(statusPrompts[0]).not.toContain('<reply>')
   expect(prompts).toEqual([])
   expect(session!.ledger.overview?.goal).toBe('Adding a greeting CLI')
 })
 
-test('a ledger call that gives no usable answer runs no Overview call', async ($, on) => {
-  const { ledger } = await replyWithOverview($, on, 'GOAL: Adding a greeting CLI', 'not a ledger')
+test('a ledger call that gives no usable answer runs no Status call', async ($, on) => {
+  const { ledger } = await replyWithStatus($, on, 'GOAL: Adding a greeting CLI', 'not a ledger')
 
-  expect(overviewPrompts).toEqual([])
+  expect(statusPrompts).toEqual([])
   expect(ledger.overview).toBeNull()
 })
 
-test('the next ledger update does not wait for an earlier Overview call, and Overview calls run one at a time', async ($, on) => {
+test('the next ledger update does not wait for an earlier Status call, and Status calls run one at a time', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let session: { ledger: { overview: { goal: string } | null; items: { ask: string }[] } } | null = null
@@ -1375,22 +1370,22 @@ test('the next ledger update does not wait for an earlier Overview call, and Ove
   }
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   let release: () => void = () => undefined
-  overviewHold = new Promise<void>(resolve => (release = resolve))
-  overviewReply = 'GOAL: Scaffolding the command'
+  statusHold = new Promise<void>(resolve => (release = resolve))
+  statusReply = 'GOAL: Scaffolding the command'
   ledgerReply = 'NEW: do | - | Water the plants | - | -'
   await reply('add a greeting cli', 't1')
   ledgerReply = 'NEW: do | - | Feed the cat | - | -'
   await reply('and a name', 't2')
 
   expect(session!.ledger.items.map(i => i.ask)).toEqual(['Water the plants', 'Feed the cat'])
-  expect(overviewPrompts).toHaveLength(1)
+  expect(statusPrompts).toHaveLength(1)
   release()
   await clock.settle()
-  expect(overviewPrompts).toHaveLength(2)
-  expect(overviewPrompts[1]).toContain('<goal>\nScaffolding the command\n</goal>')
+  expect(statusPrompts).toHaveLength(2)
+  expect(statusPrompts[1]).toContain('<goal>\nScaffolding the command\n</goal>')
 })
 
-test('a mid-turn Overview call still out when its turn ends writes first, and the reply’s Overview call reads that write and writes last', async ($, on) => {
+test('a mid-turn Status call still out when its turn ends writes first, and the reply’s Status call reads that write and writes last', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let session: Pick<Session, 'ledger'> | null = null
@@ -1401,28 +1396,28 @@ test('a mid-turn Overview call still out when its turn ends writes first, and th
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
   await $.turn.start({ text: 'add a greeting cli', turnId: 't1' })
-  await clock.advance(OVERVIEW_REFRESH_MS)
+  await clock.advance(STATUS_REFRESH_MS)
   let release: () => void = () => undefined
-  overviewHold = new Promise<void>(resolve => (release = resolve))
-  overviewReply = ['GOAL: Planning the CLI', 'GOAL: Building the CLI']
+  statusHold = new Promise<void>(resolve => (release = resolve))
+  statusReply = ['GOAL: Planning the CLI', 'GOAL: Building the CLI']
   await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'npm test' } as never)
   await clock.settle()
-  expect(overviewPrompts).toHaveLength(1)
+  expect(statusPrompts).toHaveLength(1)
 
   await $.turn.complete({ answer: 'Built it.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
   expect(session!.ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?', 'Name the command greet?'])
-  expect(overviewPrompts).toHaveLength(1)
+  expect(statusPrompts).toHaveLength(1)
   release()
   await clock.settle()
 
-  expect(overviewPrompts).toHaveLength(2)
-  expect(overviewPrompts[1]).toContain('<reply>')
-  expect(overviewPrompts[1]).toContain('<goal>\nPlanning the CLI\n</goal>')
+  expect(statusPrompts).toHaveLength(2)
+  expect(statusPrompts[1]).toContain('<reply>')
+  expect(statusPrompts[1]).toContain('<goal>\nPlanning the CLI\n</goal>')
   expect(session!.ledger.overview?.goal).toBe('Building the CLI')
 })
 
-test('an Overview answer that lands after /clear goes to the conversation it was for, and the new conversation keeps an empty Overview', async ($, on) => {
+test('a Status answer that lands after /clear goes to the conversation it was for, and the new conversation keeps an empty Status', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let session: Pick<Session, 'ledger'> | null = null
@@ -1432,12 +1427,12 @@ test('an Overview answer that lands after /clear goes to the conversation it was
   })
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   let release: () => void = () => undefined
-  overviewHold = new Promise<void>(resolve => (release = resolve))
-  overviewReply = 'GOAL: Adding a greeting CLI\nNEW: working | Plan | being written'
+  statusHold = new Promise<void>(resolve => (release = resolve))
+  statusReply = 'GOAL: Adding a greeting CLI\nNEW: working | Plan | being written'
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
   await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
-  expect(overviewPrompts).toHaveLength(1)
+  expect(statusPrompts).toHaveLength(1)
 
   await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
   await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })
@@ -1474,10 +1469,10 @@ test('resumed into a conversation it cannot fork yet, it catches up from the tra
   expect(await pane.find({ text: /update failed/ })).toBeUndefined()
 })
 
-test('a catch-up writes its Overview with a separate call over the transcript', async ($, on) => {
+test('a catch-up writes its Status with a separate call over the transcript', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  overviewReply = 'GOAL: Adding a greeting CLI\nNEW: queued | Command | named greet'
+  statusReply = 'GOAL: Adding a greeting CLI\nNEW: queued | Command | named greet'
   let session: { ledger: { overview: { goal: string; subjects: { name: string; status: string }[] } | null } } | null =
     null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
@@ -1502,10 +1497,10 @@ test('a catch-up writes its Overview with a separate call over the transcript', 
     goal: 'Adding a greeting CLI',
     subjects: [{ name: 'Command', status: 'queued' }],
   })
-  expect(overviewPrompts.at(-1)).toContain('<conversation>\nPerson: Add a greeting CLI.')
+  expect(statusPrompts.at(-1)).toContain('<conversation>\nPerson: Add a greeting CLI.')
 })
 
-test('a catch-up’s Overview call waits for a failing Overview call still out, and its answer clears the failure that call saved', async ($, on) => {
+test('a catch-up’s Status call waits for a failing Status call still out, and its answer clears the failure that call saved', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   const failureCauses: (string | null)[] = []
@@ -1532,18 +1527,18 @@ test('a catch-up’s Overview call waits for a failing Overview call still out, 
   }
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   let release: () => void = () => undefined
-  overviewHold = new Promise<void>(resolve => (release = resolve))
-  overviewReply = ['The plan is written.', 'Still prose.', 'GOAL: Adding a greeting CLI']
+  statusHold = new Promise<void>(resolve => (release = resolve))
+  statusReply = ['The plan is written.', 'Still prose.', 'GOAL: Adding a greeting CLI']
   await reply('Plan ready.', 't1')
   ledgerReply = 'not a ledger'
   await reply('Using Node.', 't2')
   await reply('Named it greet.', 't3')
-  expect(overviewPrompts).toHaveLength(1)
+  expect(statusPrompts).toHaveLength(1)
 
   release()
   await clock.settle()
-  expect(overviewPrompts).toHaveLength(3)
-  expect(overviewPrompts[2]).toContain('<conversation>\nPerson: Add a greeting CLI.')
+  expect(statusPrompts).toHaveLength(3)
+  expect(statusPrompts[2]).toContain('<conversation>\nPerson: Add a greeting CLI.')
   expect(failureCauses).toContain('refused')
   expect(failureCauses.at(-1)).toBeNull()
   expect(session!.ledger.overview?.goal).toBe('Adding a greeting CLI')
@@ -3806,7 +3801,7 @@ test('where classic.SessionStart is skipped, the first prompt after /clear, /res
   world($, on, [])
   const turn = async (text: string, reply: string, goal: string) => {
     ledgerReply = reply
-    overviewReply = `GOAL: ${goal}\nNEW: queued | Answer | Waiting on an answer`
+    statusReply = `GOAL: ${goal}\nNEW: queued | Answer | Waiting on an answer`
     await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
     await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: text, reason: 'answer' })
     await clock.settle()
@@ -3915,7 +3910,7 @@ test('a failed first save keeps the prior saved session intact', async ($, on) =
 test('a session saved mid-turn by a process that ended loads with no turn running, and its Done message goes', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  let session: Parameters<typeof overviewPage>[0] | null = null
+  let session: Parameters<typeof statusPage>[0] | null = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
     session = e.value as never
     return next(e)
@@ -4928,12 +4923,12 @@ test('a forked conversation keeps the parent’s findings and closed records, an
   expect(await contextOf()).toContain('- issue: Retry loop never backs off (close id: f1)')
 })
 
-test('a working subject’s mark on the Overview moves each frame only while a turn runs, and a queued subject’s never does', async ($, on) => {
+test('a working subject’s mark on the Status moves each frame only while a turn runs, and a queued subject’s never does', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
   paneState = { isShown: true, isFocused: true }
-  overviewReply = [
+  statusReply = [
     'ROLE: coordinator',
     'GOAL: Adding a greeting CLI',
     'NEW: working | Help text | being written',
@@ -4954,8 +4949,8 @@ test('a working subject’s mark on the Overview moves each frame only while a t
     const queued: string[] = []
     const moving: string[] = []
     for (let n = 0; n < RUNNING_FRAMES.length; n++) {
-      working.push(await markOf('overview-s1'))
-      queued.push(await markOf('overview-s2'))
+      working.push(await markOf('status-s1'))
+      queued.push(await markOf('status-s2'))
       moving.push(runningMark(clock.now()))
       await clock.advance(RUNNING_FRAME_MS)
     }
@@ -4986,12 +4981,12 @@ test('a working subject’s mark on the Overview moves each frame only while a t
   expect(ended.working).toEqual(ended.still)
 })
 
-test('on a next build, a look starts when the Overview page shows, the page shows the goal and the subjects in place of rows, leaves the row keys idle, a row tab shows its rows again, and an ask names the subject it holds up', async ($, on) => {
+test('on a next build, a look starts when the Status page shows, the page shows the goal and the subjects in place of rows, leaves the row keys idle, a row tab shows its rows again, and an ask names the subject it holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
   paneState = { isShown: true, isFocused: true }
-  overviewReply =
+  statusReply =
     'GOAL: Adding a greeting CLI\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime\nNEW: working | Plan | being written\nDONE: s2 | written'
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
@@ -5010,11 +5005,11 @@ test('on a next build, a look starts when the Overview page shows, the page show
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
   expect(lookOf()).not.toBeNull()
-  expect((await pane.find({ key: 'overview-goal' }))?.text).toBe('Adding a greeting CLI')
-  expect((await pane.find({ key: 'overview-s1-name' }))?.text).toBe('Runtime')
-  expect((await pane.find({ key: 'overview-s1-text' }))?.text).toBe('Node or Python')
-  expect((await pane.find({ key: 'overview-s1' }))?.text).toContain('◆')
-  expect((await pane.find({ key: 'overview-s2-text' }))?.text).toBe('written')
+  expect((await pane.find({ key: 'status-goal' }))?.text).toBe('Adding a greeting CLI')
+  expect((await pane.find({ key: 'status-s1-name' }))?.text).toBe('Runtime')
+  expect((await pane.find({ key: 'status-s1-text' }))?.text).toBe('Node or Python')
+  expect((await pane.find({ key: 'status-s1' }))?.text).toContain('◆')
+  expect((await pane.find({ key: 'status-s2-text' }))?.text).toBe('written')
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
   const rowKeys = async () =>
     (await pane.findAll({ type: 'Button' }))
@@ -5031,24 +5026,24 @@ test('on a next build, a look starts when the Overview page shows, the page show
     detail: 'Only tests run.',
   })
   await clock.settle()
-  expect(await pane.find({ key: 'overview-goal' })).toBeDefined()
+  expect(await pane.find({ key: 'status-goal' })).toBeDefined()
   expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
 
   await pane.press({ key: 'tab-key-needsYou' })
   await clock.settle()
   expect(lookOf()).toBeNull()
-  expect(await pane.find({ key: 'overview-goal' })).toBeUndefined()
+  expect(await pane.find({ key: 'status-goal' })).toBeUndefined()
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
   await pane.press({ key: 'tab-findings' })
   expect(await pane.find({ key: 'address-f3' })).toBeDefined()
 })
 
-test('on a next build, a look at the Overview that ends while an Overview call is out keeps its Seen line, and the answer that lands after it shows above the line', async ($, on) => {
+test('on a next build, a look at the Status that ends while a Status call is out keeps its Seen line, and the answer that lands after it shows above the line', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
   paneState = { isShown: true, isFocused: true }
-  let session: Parameters<typeof overviewPage>[0] | null = null
+  let session: Parameters<typeof statusPage>[0] | null = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
     session = e.value as never
     return next(e)
@@ -5059,14 +5054,14 @@ test('on a next build, a look at the Overview that ends while an Overview call i
     await clock.settle()
   }
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  overviewReply = 'GOAL: Adding a greeting CLI\nNEW: working | Plan | being written'
+  statusReply = 'GOAL: Adding a greeting CLI\nNEW: working | Plan | being written'
   await reply('add a greeting cli', 't1')
   const pane = await $.ui.mount(PANE)
   let release: () => void = () => undefined
-  overviewHold = new Promise<void>(resolve => (release = resolve))
-  overviewReply = 'NEW: working | Command | named greet'
+  statusHold = new Promise<void>(resolve => (release = resolve))
+  statusReply = 'NEW: working | Command | named greet'
   await reply('name it greet', 't2')
-  expect(overviewPrompts).toHaveLength(2)
+  expect(statusPrompts).toHaveLength(2)
 
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
@@ -5080,16 +5075,16 @@ test('on a next build, a look at the Overview that ends while an Overview call i
   await clock.settle()
 
   expect(session!.ledger.overview).toMatchObject({ lastLookAt: seenAt, look: null })
-  const rows = overviewPage(session!, clock.now()).rows
+  const rows = statusPage(session!, clock.now()).rows
   expect(rows.map(r => (r.kind === 'subject' ? r.name : r.kind))).toEqual(['Command', 'look', 'Plan'])
 })
 
-test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Overview page shows Asks, tells Claude so, starts no look, stays saved, and names no subject an ask holds up', async ($, on) => {
+test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Status page shows Asks, tells Claude so, starts no look, stays saved, and names no subject an ask holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
   world($, on, prompts)
   paneState = { isShown: true, isFocused: true }
-  overviewReply = 'GOAL: Adding a greeting CLI\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime'
+  statusReply = 'GOAL: Adding a greeting CLI\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime'
   let page: { value: unknown; version: number } = { value: 'overview', version: 1 }
   on('state.get', { plugin: 'inbox', key: 'page' } as const, () => ({ value: page as never }))
   on('state.set', { plugin: 'inbox', key: 'page' } as const, ($, e) => {
@@ -5104,7 +5099,7 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Overview page
   const pane = await $.ui.mount(PANE)
   await clock.settle()
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
-  expect(await pane.find({ key: 'overview-goal' })).toBeUndefined()
+  expect(await pane.find({ key: 'status-goal' })).toBeUndefined()
   expect(await pane.find({ text: /Holds up/ })).toBeUndefined()
   const tabKeys = (await pane.findAll({ type: 'Button' }))
     .filter(b => (b.key ?? '').startsWith('tab-key-'))
@@ -5125,7 +5120,7 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Overview page
   expect(page.value).toBeNull()
 })
 
-test('Claude Code task calls build the agent task list the Overview call reads', async ($, on) => {
+test('Claude Code task calls build the agent task list the Status call reads', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
 
@@ -5160,7 +5155,7 @@ const childrenOf = (stored: Map<string, string>) => {
 const notice = (id: string, status: string) =>
   `<task-notification>\n<task-id>${id}</task-id>\n<status>${status}</status>\n<summary>Done</summary>\n</task-notification>`
 
-test('a subagent, a background command, a Monitor and a Workflow each run as a child on the Overview until their result or notice ends them', async ($, on) => {
+test('a subagent, a background command, a Monitor and a Workflow each run as a child on the Status until their result or notice ends them', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   const running = () =>
@@ -5330,7 +5325,7 @@ test('a Herdr delegate runs as a child from the command that starts it until a w
   ])
 })
 
-test('the Overview page says what it is for before the session has any work', async ($, on) => {
+test('the Status page says what it is for before the session has any work', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
@@ -5343,11 +5338,11 @@ test('the Overview page says what it is for before the session has any work', as
   expect(await desktop.find({ text: /once the work starts\./ })).toBeDefined()
 })
 
-test('on a next build, at 31 desktop columns the tabs show their symbols with their counts, at 69 their words, and the Overview page draws there', async ($, on) => {
+test('on a next build, at 20 desktop columns the tabs show their symbols with their counts, at 69 their words, and the Status page draws there', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
-  overviewReply =
+  statusReply =
     'GOAL: Adding a greeting CLI\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime\nNEW: working | Plan | being written\nDONE: s2 | written'
   surfaces = ['desktop']
 
@@ -5363,7 +5358,7 @@ test('on a next build, at 31 desktop columns the tabs show their symbols with th
     detail: 'Only tests run.',
   })
   await clock.settle()
-  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 31 } })
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 20 } })
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   expect((await tabBar()).tabs.map(t => [t.id, t.label, t.badge])).toEqual(
     shownTabs(true).map(t => [t.id, t.symbol, t.id === 'needsYou' ? '2' : t.id === 'findings' ? '1' : null]),
@@ -5379,19 +5374,19 @@ test('on a next build, at 31 desktop columns the tabs show their symbols with th
   await pane.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('overview')
-  expect((await pane.find({ key: 'overview-goal' }))?.text).toBe('Adding a greeting CLI')
-  expect((await pane.find({ key: 'overview-s2-text' }))?.text).toBe('written')
+  expect((await pane.find({ key: 'status-goal' }))?.text).toBe('Adding a greeting CLI')
+  expect((await pane.find({ key: 'status-s2-text' }))?.text).toBe('written')
   expect(await pane.find({ key: 'select-f3' })).toBeUndefined()
 })
 
-test('on the Overview, where a subject stands goes under its name, wraps to three lines at the docked width and is cut with an ellipsis past them, and a merged line is cut to one line at a phrase, in the terminal and on desktop', async ($, on) => {
+test('on the Status, where a subject stands goes under its name, wraps to three lines at the docked width and is cut with an ellipsis past them, and a merged line is cut to one line at a phrase, in the terminal and on desktop', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
   paneState = { isShown: true, isFocused: true }
   const name = 'Help text for every greeting command'
   const text = 'being written with examples, defaults, descriptions, environment variables, configuration precedence'
-  overviewReply = [
+  statusReply = [
     'GOAL: Adding a greeting CLI',
     `NEW: working | ${name} | ${text}`,
     'NEW: queued | Loud flag | after help',
@@ -5407,31 +5402,31 @@ test('on the Overview, where a subject stands goes under its name, wraps to thre
   await terminal.press({ key: 'tab-key-overview' })
   await clock.settle()
   const textOf = async (pane: Pick<Mounted, 'find'>, key: string) => (await pane.find({ key }))?.text
-  const lines = (await textOf(terminal, 'overview-s1-text'))!.split('\n')
-  expect(await textOf(terminal, 'overview-s1-name')).toBe('Help text for every greeting\ncommand')
-  expect(lines).toHaveLength(OVERVIEW_TEXT_LINES)
+  const lines = (await textOf(terminal, 'status-s1-text'))!.split('\n')
+  expect(await textOf(terminal, 'status-s1-name')).toBe('Help text for every greeting\ncommand')
+  expect(lines).toHaveLength(STATUS_TEXT_LINES)
   expect(lines[0]).toBe('being written with examples,')
   expect(lines.at(-1)).toMatch(/…$/)
-  expect(await textOf(terminal, 'overview-s1-merged')).toBe('merged in: Sync retry, backoff…')
-  expect(await textOf(terminal, 'overview-s2-name')).toBe('Loud flag')
-  expect(await textOf(terminal, 'overview-s2-text')).toBe('after help')
+  expect(await textOf(terminal, 'status-s1-merged')).toBe('merged in: Sync retry, backoff…')
+  expect(await textOf(terminal, 'status-s2-name')).toBe('Loud flag')
+  expect(await textOf(terminal, 'status-s2-text')).toBe('after help')
   await terminal.redraw({ ...PANE.props, bodyColumns: 120 })
-  expect(await textOf(terminal, 'overview-s1-text')).toBe(text)
-  expect(await textOf(terminal, 'overview-s1-merged')).toBe('merged in: Sync retry, backoff, and jitter')
+  expect(await textOf(terminal, 'status-s1-text')).toBe(text)
+  expect(await textOf(terminal, 'status-s1-merged')).toBe('merged in: Sync retry, backoff, and jitter')
 
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
   await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
-  const shown = (await textOf(desktop, 'overview-s1-text'))!
+  const shown = (await textOf(desktop, 'status-s1-text'))!
   expect(shown).toMatch(/^being written with .+…$/)
   expect(shown.length).toBeLessThan(text.length)
-  expect(await textOf(desktop, 'overview-s1-merged')).toMatch(/^merged in: Sync retry(, backoff)?…$/)
+  expect(await textOf(desktop, 'status-s1-merged')).toMatch(/^merged in: Sync retry(, backoff)?…$/)
   await desktop.redraw({ ...PANE.props, bodyColumns: 120 })
-  expect(await textOf(desktop, 'overview-s1-text')).toBe(text)
-  expect(await textOf(desktop, 'overview-s1-merged')).toBe('merged in: Sync retry, backoff, and jitter')
+  expect(await textOf(desktop, 'status-s1-text')).toBe(text)
+  expect(await textOf(desktop, 'status-s1-merged')).toBe('merged in: Sync retry, backoff, and jitter')
 })
 
-test('on the Overview in the terminal, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', async ($, on) => {
+test('on the Status in the terminal, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
@@ -5441,8 +5436,8 @@ test('on the Overview in the terminal, the rows under a subject hang from its ma
   const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 34 } })
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
-  const tree = async (id: string) => (await pane.find({ key: `overview-${id}-tree` }))?.text.split('\n').slice(0, 3)
-  const textLines = async (id: string) => (await pane.find({ key: `overview-${id}-name` }))!.text.split('\n')
+  const tree = async (id: string) => (await pane.find({ key: `status-${id}-tree` }))?.text.split('\n').slice(0, 3)
+  const textLines = async (id: string) => (await pane.find({ key: `status-${id}-name` }))!.text.split('\n')
 
   expect(await tree('s1')).toEqual(['│', '│', '│'])
   expect(await tree('c1')).toEqual(['├─', '│', '│'])
@@ -5454,7 +5449,7 @@ test('on the Overview in the terminal, the rows under a subject hang from its ma
   expect(await textLines('c3')).toEqual(['Tune how hard a pinch must be'])
 })
 
-test('on the Overview, a rule sets each item apart in the docked terminal and on desktop, with none inside a subject’s tree or beside the look line, and the inline pane draws none', async ($, on) => {
+test('on the Status, a rule sets each item apart in the docked terminal and on desktop, with none inside a subject’s tree or beside the look line, and the inline pane draws none', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
@@ -5463,7 +5458,7 @@ test('on the Overview, a rule sets each item apart in the docked terminal and on
   await $.command.run({ command: 'inbox', args: 'demo' } as never)
   const ruledAbove = async (pane: Pick<Mounted, 'findAll'>) =>
     (await pane.findAll({ type: 'Box' })).flatMap(b =>
-      b.key?.startsWith('overview-rule-') ? [b.key.slice('overview-rule-'.length)] : [],
+      b.key?.startsWith('status-rule-') ? [b.key.slice('status-rule-'.length)] : [],
     )
   const docked = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
   await docked.press({ key: 'tab-key-overview' })
@@ -5480,7 +5475,7 @@ test('on the Overview, a rule sets each item apart in the docked terminal and on
   const inline = await $.ui.mount({ ...PANE, props: { ...PANE.props, placement: 'inline', bodyColumns: 90 } })
   await inline.press({ key: 'tab-key-overview' })
   await clock.settle()
-  expect(await inline.find({ key: 'overview-s1' })).toBeDefined()
+  expect(await inline.find({ key: 'status-s1' })).toBeDefined()
   expect(await ruledAbove(inline)).toEqual([])
 })
 
@@ -5578,7 +5573,7 @@ test('a PR that arrives while the Asks tab is empty moves the pane to the PRs ta
 })
 
 for (const isNextBuild of [false, true])
-  test(`on a ${isNextBuild ? 'next' : 'release'} build, the desktop tabs fit one line at the narrowest dock, by their symbols on a next build, and narrower still they wrap, each line within the pane, and a tab on the second line takes its click`, async ($, on) => {
+  test(`on a ${isNextBuild ? 'next' : 'release'} build, the desktop tabs fit one line at the narrowest dock, by their words, and narrower still they wrap, each line within the pane, and a tab on the second line takes its click`, async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
     world($, on, [])
     files = isNextBuild ? ['/.next-build'] : []
@@ -5588,7 +5583,7 @@ for (const isNextBuild of [false, true])
     const tabBar = async () => await pane.find({ key: 'tabs' })
     const narrowest = (await tabBar())?.props.props as TabsProps
     expect(narrowest.tabs.map(t => t.id)).toEqual(shownTabs(isNextBuild).map(t => t.id))
-    if (isNextBuild) expect(narrowest.tabs.map(t => t.label)).toEqual(shownTabs(true).map(t => t.symbol))
+    if (isNextBuild) expect(narrowest.tabs.map(t => t.label)).toEqual(shownTabs(true).map(t => t.label))
     expect(tabLines(narrowest.tabs, narrowest.gap, narrowest.columns)).toHaveLength(1)
     await pane.redraw({ ...PANE.props, bodyColumns: 12 })
     const { tabs, gap, columns } = (await tabBar())?.props.props as TabsProps

@@ -9,15 +9,15 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import type { Exchange } from '../../hooks/ledger'
-import { parseOverview } from '../../hooks/overview'
-import { appliedOverview, noteActivity } from '../../hooks/session'
+import { parseStatus } from '../../hooks/status'
+import { appliedStatus, noteActivity } from '../../hooks/session'
 import { endTurn, notePrompt, viewOf } from '../src/core'
 import { readState, statePath, updateState, withLock } from '../src/state'
 import { codexAsk, recordModelFailure, runUpdates as runBothCalls } from '../src/update'
 import { findCli } from '../src/cli'
 import { run } from '../src/run'
 import { makeServer } from '../src/server'
-import { OVERVIEW_SYSTEM } from '../../hooks/model-text'
+import { STATUS_SYSTEM } from '../../hooks/model-text'
 import { fakeRunner, ledgerOnly, tempDir } from './helpers'
 
 const runUpdates = (dir: string, id: string, ask: (prompt: string) => Promise<string | null>, now: () => number) =>
@@ -76,7 +76,7 @@ test('a killed update worker leaves pending exchanges recoverable', async t => {
 
 const LEDGER_ANSWER = 'NEW: decide | - | Deploy now? | Yes / No | Yes'
 
-async function updateWithOverview(overview: string | null) {
+async function updateWithStatus(answer: string | null) {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({
     ...s,
@@ -89,7 +89,7 @@ async function updateWithOverview(overview: string | null) {
     async (_prompt, system) => {
       systems.push(system)
 
-      return system === OVERVIEW_SYSTEM ? overview : LEDGER_ANSWER
+      return system === STATUS_SYSTEM ? answer : LEDGER_ANSWER
     },
     () => 5,
   )
@@ -97,8 +97,8 @@ async function updateWithOverview(overview: string | null) {
   return { state: await readState(dir, 's1'), systems }
 }
 
-test('a reply’s Overview comes from the separate Overview call, after the ledger update', async () => {
-  const { state, systems } = await updateWithOverview('GOAL: Building the deploy script')
+test('a reply’s Status comes from the separate Status call, after the ledger update', async () => {
+  const { state, systems } = await updateWithStatus('GOAL: Building the deploy script')
 
   assert.equal(state.ledger.overview?.goal, 'Building the deploy script')
   assert.deepEqual(
@@ -106,11 +106,11 @@ test('a reply’s Overview comes from the separate Overview call, after the ledg
     ['Deploy now?'],
   )
   assert.equal(systems.length, 2)
-  assert.ok(systems.includes(OVERVIEW_SYSTEM))
+  assert.ok(systems.includes(STATUS_SYSTEM))
 })
 
-test('a failed Overview call leaves the ledger update applied with no Overview', async () => {
-  const { state } = await updateWithOverview(null)
+test('a failed Status call leaves the ledger update applied with no Status', async () => {
+  const { state } = await updateWithStatus(null)
 
   assert.equal(state.ledger.overview, null)
   assert.deepEqual(
@@ -120,7 +120,7 @@ test('a failed Overview call leaves the ledger update applied with no Overview',
   assert.deepEqual(state.pending, [])
 })
 
-test('a ledger update shows before its Overview call returns', async () => {
+test('a ledger update shows before its Status call returns', async () => {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({
     ...s,
@@ -143,24 +143,24 @@ test('a ledger update shows before its Overview call returns', async () => {
     },
     pending: [{ ex: { ...ex(2, 'Added the MIT license.'), person: 'MIT' }, turnsStarted: 2 }],
   }))
-  let overviewPrompt = ''
+  let statusPrompt = ''
   let release: (text: string) => void = () => undefined
   const held = new Promise<string>(resolve => (release = resolve))
   let asked: () => void = () => undefined
-  const overviewAsked = new Promise<void>(resolve => (asked = resolve))
+  const statusAsked = new Promise<void>(resolve => (asked = resolve))
   const running = runBothCalls(
     dir,
     's1',
     async (prompt, system) => {
-      if (system !== OVERVIEW_SYSTEM) return 'CLOSED: i2 | MIT'
-      overviewPrompt = prompt
+      if (system !== STATUS_SYSTEM) return 'CLOSED: i2 | MIT'
+      statusPrompt = prompt
       asked()
 
       return held
     },
     () => 5,
   )
-  await overviewAsked
+  await statusAsked
   let shown = await readState(dir, 's1')
   for (let waited = 0; shown.presence.isUpdating && waited < 200; waited += 1) {
     await new Promise(resolve => setTimeout(resolve, 10))
@@ -170,14 +170,14 @@ test('a ledger update shows before its Overview call returns', async () => {
   assert.deepEqual(shown.ledger.items, [])
   assert.equal(shown.ledger.closed[0]?.outcome, 'MIT')
   assert.equal(shown.presence.isUpdating, false)
-  assert.ok(overviewPrompt.includes('<subjects>'))
+  assert.ok(statusPrompt.includes('<subjects>'))
   release('GOAL: Adding a license')
   await running
 
   assert.equal((await readState(dir, 's1')).ledger.overview?.goal, 'Adding a license')
 })
 
-test('a ledger call with no answer runs no Overview call', async () => {
+test('a ledger call with no answer runs no Status call', async () => {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({
     ...s,
@@ -190,16 +190,16 @@ test('a ledger call with no answer runs no Overview call', async () => {
     async (_prompt, system) => {
       systems.push(system)
 
-      return system === OVERVIEW_SYSTEM ? 'GOAL: Building the deploy script' : null
+      return system === STATUS_SYSTEM ? 'GOAL: Building the deploy script' : null
     },
     () => 5,
   )
 
-  assert.equal(systems.includes(OVERVIEW_SYSTEM), false)
+  assert.equal(systems.includes(STATUS_SYSTEM), false)
   assert.equal((await readState(dir, 's1')).ledger.overview, null)
 })
 
-test('Overview calls run one after another, and the second reads the first one’s Overview', async () => {
+test('Status calls run one after another, and the second reads the first one’s Status', async () => {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({
     ...s,
@@ -209,7 +209,7 @@ test('Overview calls run one after another, and the second reads the first one�
       { ex: ex(2, 'Built the rollback script.'), turnsStarted: 2 },
     ],
   }))
-  const overviewPrompts: string[] = []
+  const statusPrompts: string[] = []
   let release: () => void = () => undefined
   const held = new Promise<void>(resolve => (release = resolve))
   let ledgerCalls = 0
@@ -217,13 +217,13 @@ test('Overview calls run one after another, and the second reads the first one�
     dir,
     's1',
     async (prompt, system) => {
-      if (system !== OVERVIEW_SYSTEM) {
+      if (system !== STATUS_SYSTEM) {
         ledgerCalls += 1
 
         return `NEW: do | - | Task ${ledgerCalls} | - | -`
       }
-      overviewPrompts.push(prompt)
-      if (overviewPrompts.length === 1) {
+      statusPrompts.push(prompt)
+      if (statusPrompts.length === 1) {
         await held
 
         return 'GOAL: Deploy script built'
@@ -239,16 +239,16 @@ test('Overview calls run one after another, and the second reads the first one�
     shown = await readState(dir, 's1')
   }
   assert.equal(shown.pending.length, 0)
-  assert.equal(overviewPrompts.length, 1)
+  assert.equal(statusPrompts.length, 1)
   release()
   await running
 
-  assert.equal(overviewPrompts.length, 2)
-  assert.ok((overviewPrompts[1] ?? '').includes('Deploy script built'))
+  assert.equal(statusPrompts.length, 2)
+  assert.ok((statusPrompts[1] ?? '').includes('Deploy script built'))
   assert.equal((await readState(dir, 's1')).ledger.overview?.goal, 'Rollback script built')
 })
 
-test('three Overview calls write in the order their updates landed', async () => {
+test('three Status calls write in the order their updates landed', async () => {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({
     ...s,
@@ -261,14 +261,14 @@ test('three Overview calls write in the order their updates landed', async () =>
   }))
   let release: () => void = () => undefined
   const held = new Promise<void>(resolve => (release = resolve))
-  let overviewCalls = 0
+  let statusCalls = 0
   const running = runBothCalls(
     dir,
     's1',
     async (_prompt, system) => {
-      if (system !== OVERVIEW_SYSTEM) return 'NONE'
-      overviewCalls += 1
-      const mine = overviewCalls
+      if (system !== STATUS_SYSTEM) return 'NONE'
+      statusCalls += 1
+      const mine = statusCalls
       if (mine === 1) await held
 
       return `GOAL: Script ${mine} built`
@@ -287,7 +287,7 @@ test('three Overview calls write in the order their updates landed', async () =>
   assert.equal((await readState(dir, 's1')).ledger.overview?.goal, 'Script 3 built')
 })
 
-test('an update’s Overview call waits while another process holds the Overview calls’ lock, then reads that process’s Overview and writes last', async t => {
+test('an update’s Status call waits while another process holds the Status calls’ lock, then reads that process’s Status and writes last', async t => {
   const dir = tempDir()
   t.after(() => rm(dir, { recursive: true, force: true }))
   await updateState(dir, 's1', s => ({
@@ -295,15 +295,15 @@ test('an update’s Overview call waits while another process holds the Overview
     presence: { ...s.presence, turnsStarted: 2, turnsApplied: 1 },
     pending: [{ ex: ex(2, 'Built the rollback script.'), turnsStarted: 2 }],
   }))
-  const overviewPrompts: string[] = []
+  const statusPrompts: string[] = []
   let running: Promise<void> = Promise.resolve()
   await withLock(`${statePath(dir, 's1')}.results`, async () => {
     running = runBothCalls(
       dir,
       's1',
       async (prompt, system) => {
-        if (system !== OVERVIEW_SYSTEM) return 'NEW: do | - | Roll back | - | -'
-        overviewPrompts.push(prompt)
+        if (system !== STATUS_SYSTEM) return 'NEW: do | - | Roll back | - | -'
+        statusPrompts.push(prompt)
 
         return 'GOAL: Rollback script built'
       },
@@ -319,13 +319,13 @@ test('an update’s Overview call waits while another process holds the Overview
       shown.ledger.items.map(i => i.ask),
       ['Roll back'],
     )
-    assert.equal(overviewPrompts.length, 0)
-    await updateState(dir, 's1', s => appliedOverview(s, parseOverview('GOAL: Deploy script built')!, 1, 4))
+    assert.equal(statusPrompts.length, 0)
+    await updateState(dir, 's1', s => appliedStatus(s, parseStatus('GOAL: Deploy script built')!, 1, 4))
   })
   await running
 
-  assert.equal(overviewPrompts.length, 1)
-  assert.ok((overviewPrompts[0] ?? '').includes('Deploy script built'))
+  assert.equal(statusPrompts.length, 1)
+  assert.ok((statusPrompts[0] ?? '').includes('Deploy script built'))
   assert.equal((await readState(dir, 's1')).ledger.overview?.goal, 'Rollback script built')
 })
 
@@ -454,7 +454,7 @@ test('a reply with a NUL byte reaches codex on stdin, and both calls of its upda
   const cli = join(bin, 'codex')
   const prompts = join(bin, 'prompts.jsonl')
   const answers = join(bin, 'answers.json')
-  writeFileSync(answers, JSON.stringify({ [OVERVIEW_SYSTEM]: 'GOAL: Building the deploy script' }))
+  writeFileSync(answers, JSON.stringify({ [STATUS_SYSTEM]: 'GOAL: Building the deploy script' }))
   writeFileSync(
     cli,
     [

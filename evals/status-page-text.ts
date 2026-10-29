@@ -1,5 +1,5 @@
 import { LOOK_TEXT, mergedLine, STALL_GAP, WAS_PREFIX } from '../hooks/view'
-import type { OverviewPage, OverviewRow } from '../hooks/view'
+import type { StatusPage, StatusRow } from '../hooks/view'
 
 /** A row's second line: where it stands, then its stall words. */
 function secondLine(text: string | null, stall: string | null): string | null {
@@ -12,7 +12,7 @@ function secondLine(text: string | null, stall: string | null): string | null {
  * A child linked to no row on the page is indented with no branch, so the judge can tell it from a subject row. The
  * looks draw it at a subject's depth.
  */
-function rowText(r: OverviewRow): string[] {
+function rowText(r: StatusRow): string[] {
   switch (r.kind) {
     case 'subject': {
       const second = secondLine(r.text, r.stall)
@@ -37,8 +37,8 @@ function rowText(r: OverviewRow): string[] {
   }
 }
 
-/** The Overview page as plain text, in the order every look draws it, with no styling. */
-export function pageText(page: OverviewPage): string {
+/** The Status page as plain text, in the order every look draws it, with no styling. */
+export function pageText(page: StatusPage): string {
   if (page.isEmpty) return `${page.empty.title}\n${page.empty.hint}`
 
   return [

@@ -1,7 +1,7 @@
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { detachedUpdate, OVERVIEW_REFRESH } from './detached-update'
+import { detachedUpdate, STATUS_REFRESH } from './detached-update'
 import { herdrOnWrite } from './host'
 import { handleHook } from './hook'
 import type { HookInput } from './hook'
@@ -19,7 +19,7 @@ async function main() {
     env: process.env,
     now: Date.now,
     startUpdate: id => startUpdate(id),
-    startOverviewRefresh: id => startUpdate(id, OVERVIEW_REFRESH),
+    startStatusRefresh: id => startUpdate(id, STATUS_REFRESH),
     onWrite: herdrOnWrite(process.env, run, dir, Date.now),
     run,
   })

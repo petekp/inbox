@@ -19,7 +19,7 @@ const SHARED = [
   'layout',
   'ledger',
   'host-tasks',
-  'overview',
+  'status',
   'model-text',
   'pr-tab',
   'presses',

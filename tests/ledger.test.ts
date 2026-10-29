@@ -28,7 +28,7 @@ import {
 import { readCommandRow, resetTime, stopKindOf } from '../hooks/claude'
 import { herdrTokens } from '../hooks/herdr'
 import { parseInline } from '../hooks/inline'
-import { EMPTY_OVERVIEW } from '../hooks/overview'
+import { EMPTY_SESSION_STATUS } from '../hooks/status'
 import { applyPress } from '../hooks/presses'
 import { emptySession, sessionView } from '../hooks/session'
 import { agentTools, recordClose, recordItem } from '../hooks/tools'
@@ -1145,7 +1145,7 @@ describe('the Herdr status line', () => {
     expect(statusOf(waiting, null, [])).toBe('3 · Rename greet.mjs to hello.mjs?')
     const settled = applyUpdate(waiting, parseReply('CLOSED: i1 | yes\nCLOSED: i2 | no\nCLOSED: i3 | done')!, 2, 2)
     expect(statusOf(settled, null, [])).toBe('')
-    const described = { ...settled, overview: { ...EMPTY_OVERVIEW, goal: 'Merge the reducer' } }
+    const described = { ...settled, overview: { ...EMPTY_SESSION_STATUS, goal: 'Merge the reducer' } }
     expect(statusOf(described, null, [])).toBe('Merge the reducer')
     expect(statusOf(EMPTY, null, [])).toBe('')
   })

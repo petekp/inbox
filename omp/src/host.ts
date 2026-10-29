@@ -21,7 +21,7 @@ import type { Run } from '../../hooks/gh'
 import { COMPARE_PAGE_FILE } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import {
-  claimedOverviewRefresh,
+  claimedStatusRefresh,
   endTurn,
   forkedFrom,
   hasLedger,
@@ -38,7 +38,7 @@ import {
   turnStarted,
   placed,
   cutOffTurn,
-  overviewChanged,
+  statusChanged,
   withHolds,
   withLook,
 } from '../../hooks/session'
@@ -52,7 +52,7 @@ import {
   delegateSteps,
   delegateWaitsEnded,
 } from '../../hooks/children'
-import { childEnded } from '../../hooks/overview'
+import { childEnded } from '../../hooks/status'
 import type { SessionView } from '../../hooks/session'
 import {
   askOverConversation,
@@ -61,11 +61,11 @@ import {
   press,
   orderedKeys,
   reconcileUpdateStatus,
-  refreshOverview,
+  refreshStatus,
   runUpdates,
   wakeForDone,
 } from '../../hooks/session-host'
-import type { OverviewRecords, PressOutcome, RecordFiles, SessionHost, UpdateHost } from '../../hooks/session-host'
+import type { StatusRecords, PressOutcome, RecordFiles, SessionHost, UpdateHost } from '../../hooks/session-host'
 import { agentTools } from '../../hooks/tools'
 import type { ToolAnswer } from '../../hooks/tools'
 import { DARK_BANNER_TINTS, DARK_TONES, LIGHT_BANNER_TINTS, LIGHT_TONES } from '../../hooks/tones'
@@ -237,8 +237,8 @@ const recordFiles: RecordFiles = {
   removeFolder: path => rmdir(path),
 }
 
-/** A next build's Overview call records for the session, beside the inbox's saved sessions. */
-export const overviewRecords = (dir: string, sessionId: string): OverviewRecords => ({
+/** A next build's Status call records for the session, beside the inbox's saved sessions. */
+export const statusRecords = (dir: string, sessionId: string): StatusRecords => ({
   host: 'omp',
   folder: join(dir, 'overview-calls'),
   session: sessionId,
@@ -648,7 +648,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       names: OMP,
       inOrder: fn => resultsOrder.run(id, fn),
       background: results => deps.background(results),
-      ...(deps.isNextBuild ? { records: overviewRecords(dir, id) } : {}),
+      ...(deps.isNextBuild ? { records: statusRecords(dir, id) } : {}),
       catchUp: s =>
         askOverConversation(
           host.ask,
@@ -677,7 +677,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   /**
-   * A forked session continues its parent's ledger, as the mod's fork does, when the parent saved one. The Overview, items,
+   * A forked session continues its parent's ledger, as the mod's fork does, when the parent saved one. The Status, items,
    * the task list and closed records carry over, so the fork's catch-up does not offer back what the person already closed.
    * A parent with no saved ledger leaves the fork to catch up over its branch.
    */
@@ -771,7 +771,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const saved = await readState(dir, id).catch(() => null)
     const isCutOff = saved?.presence.isTurnRunning || saved?.ledger.overview?.children.some(c => c.endedAt === null)
     if (isCutOff)
-      await change(id, s => overviewChanged(cutOffTurn(s), o => childrenCutOff(o, deps.now()))).catch(() => undefined)
+      await change(id, s => statusChanged(cutOffTurn(s), o => childrenCutOff(o, deps.now()))).catch(() => undefined)
     prepare(ctx)
     showBand(ctx)
     deps.background(
@@ -800,7 +800,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const label = typeof frame.description === 'string' && frame.description ? frame.description : frame.agent
     const name = typeof label === 'string' ? label : 'subagent'
     await change(id, s =>
-      overviewChanged(s, o =>
+      statusChanged(s, o =>
         frame.status === 'started' ? childStarted(o, { ref, kind: 'subagent', name }, at) : childEnded(o, ref, at),
       ),
     ).catch(() => undefined)
@@ -810,7 +810,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const id = framesFor
     const at = deps.now()
     if (!id || typeof ref !== 'string' || !isActivityWorthSaving(ref, at)) return
-    await change(id, s => overviewChanged(s, o => childWorked(o, ref, at))).catch(() => undefined)
+    await change(id, s => statusChanged(s, o => childWorked(o, ref, at))).catch(() => undefined)
   })
   pi.on('session_start', (_event, ctx) => start(ctx))
   pi.on('session_switch', (event, ctx) => start(ctx, event.reason === 'fork' ? event.previousSessionFile : undefined))
@@ -881,7 +881,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   })
 
   /**
-   * Notes the main agent's activity, and runs the Overview call when the running turn is due one. Activity notes are
+   * Notes the main agent's activity, and runs the Status call when the running turn is due one. Activity notes are
    * best effort, so a failed write never surfaces as an extension error.
    */
   const noteQuietly = async (ctx: ExtensionContext, line: string | null) => {
@@ -890,14 +890,14 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     try {
       await change(sessionIdOf(ctx), s => {
         const noted = noteActivity(s, line)
-        const claimed = claimedOverviewRefresh(noted, deps.now())
+        const claimed = claimedStatusRefresh(noted, deps.now())
         isClaimed = claimed !== noted
         return claimed
       })
     } catch {
       return
     }
-    if (isClaimed) deps.background(refreshOverview(updateHostFor(ctx)))
+    if (isClaimed) deps.background(refreshStatus(updateHostFor(ctx)))
   }
 
   // Noted as the tool starts, not in tool_call, which omp waits on before every tool runs.
@@ -908,9 +908,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const command = event.toolName === 'bash' && typeof args.command === 'string' ? args.command : ''
     if (delegateSteps(command).length === 0) return
     const at = deps.now()
-    await change(sessionIdOf(ctx), s => overviewChanged(s, o => delegatesStarted(o, command, at))).catch(
-      () => undefined,
-    )
+    await change(sessionIdOf(ctx), s => statusChanged(s, o => delegatesStarted(o, command, at))).catch(() => undefined)
   })
 
   pi.on('tool_result', async (event, ctx) => {
@@ -924,7 +922,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         await change(sessionIdOf(ctx), s => {
           const after = noteCommandOutput(s, command, textOfBlocks(event.content))
           isLinked = after.ledger !== s.ledger
-          return overviewChanged(after, o => delegateWaitsEnded(o, command, at))
+          return statusChanged(after, o => delegateWaitsEnded(o, command, at))
         })
       } catch {
         return
@@ -1001,7 +999,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const endedAt = deps.now()
     const written = await change(id, s => {
       const ended = endedTurn(id, s, reply, endedAt, { hostTasks, queuesEmptyReply: isDialogDismissed })
-      const settled = inHerdr ? overviewChanged(ended, o => delegatesSettled(o, inHerdr, endedAt)) : ended
+      const settled = inHerdr ? statusChanged(ended, o => delegatesSettled(o, inHerdr, endedAt)) : ended
 
       return { ...placed(settled, ctx.cwd, branch), stop }
     }).catch(() => null)

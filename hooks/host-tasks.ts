@@ -149,7 +149,7 @@ function keptTasks(tasks: HostTask[]): HostTask[] {
   return kept.slice(-TASKS_KEPT)
 }
 
-/** The agent's task list as the lines the Overview call reads. Empty when the agent keeps none. */
+/** The agent's task list as the lines the Status call reads. Empty when the agent keeps none. */
 export function tasksText(tasks: HostTask[]): string {
   return keptTasks(tasks)
     .map(t => `TASK: ${t.status} | ${t.text}`)

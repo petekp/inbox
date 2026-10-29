@@ -101,7 +101,7 @@ As in the launch video, no beat changes on a hard cut:
 
 The take is `videos/takes/omp/session.term.jsonl`, which Git ignores. `session.build.txt` beside it records the build.
 
-- **Build.** #126's head at `31322f3`: next at `da0f863` with #126 merged in. Next at `5698261`, where #126 landed, holds the same code. The take ran in a worktree at `31322f3`. The version was set to 0.2.13 there in the five places `docs/release.md` lists, and `omp/dist/host.js` rebuilt, none of it committed, so the footer reads "v0.2.13" ahead of the release. The rebuilt bundle differs from the committed one only in its version line, and `npm --prefix omp run check` confirmed it matches its sources. It has no `.next-build` mark, so it runs as a release build, with no Overview tab. omp was 18.12.3.
+- **Build.** #126's head at `31322f3`: next at `da0f863` with #126 merged in. Next at `5698261`, where #126 landed, holds the same code. The take ran in a worktree at `31322f3`. The version was set to 0.2.13 there in the five places `docs/release.md` lists, and `omp/dist/host.js` rebuilt, none of it committed, so the footer reads "v0.2.13" ahead of the release. The rebuilt bundle differs from the committed one only in its version line, and `npm --prefix omp run check` confirmed it matches its sources. It has no `.next-build` mark, so it runs as a release build, with no Status tab. omp was 18.12.3.
 - **No screen.** `videos/record/term.py` ran omp in a private tmux server that draws nowhere. A driver script read the take's log as it was written, and fed keys to `term.py`'s stdin as each screen was ready:
   1. The prompt, a letter at a time, then Enter.
   2. After the agent's turn ended, 35 s for the inbox model to finish.
@@ -121,7 +121,7 @@ The take is `videos/takes/omp/session.term.jsonl`, which Git ignores. `session.b
 What it took:
 
 1. With omp's Ask tool on, the agent asked in an omp dialog as well as the inbox, and the dialog blocked the turn. The config turns the tool off, as the launch video's take turned off Claude Code's question dialog.
-2. Some takes ask the question but record no finding. The first version took three such takes on Sonnet 5.5 before one on Opus 5.5 worked. This version's take worked on the first try. It made 11 model calls: 9 requests to Opus 5.5 over three turns, the last cut off by the stop, and a ledger call and an Overview call to Sonnet 5.5 after the first turn.
+2. Some takes ask the question but record no finding. The first version took three such takes on Sonnet 5.5 before one on Opus 5.5 worked. This version's take worked on the first try. It made 11 model calls: 9 requests to Opus 5.5 over three turns, the last cut off by the stop, and a ledger call and a Status call to Sonnet 5.5 after the first turn.
 
 ## Music
 

@@ -1,4 +1,4 @@
-import type { Child, ChildKind, Item, Overview, Subject, SubjectStatus } from '../types'
+import type { Child, ChildKind, Item, SessionStatus, Subject, SubjectStatus } from '../types'
 
 /** The most words the call may write in a subject's name, where it stands, and the goal. */
 export const NAME_WORDS = 3
@@ -40,7 +40,7 @@ const STOP_WORDS = new Set([
 
 const NL = '\n'
 
-export const EMPTY_OVERVIEW: Overview = {
+export const EMPTY_SESSION_STATUS: SessionStatus = {
   role: 'session',
   goal: '',
   subjects: [],
@@ -58,7 +58,7 @@ const OPEN_STATUSES: readonly OpenStatus[] = ['working', 'queued', 'waits-on-oth
 const STATUSES: readonly SubjectStatus[] = [...OPEN_STATUSES, 'done', 'dropped']
 const CHILD_KINDS: readonly ChildKind[] = ['subagent', 'background', 'workflow', 'delegate']
 
-/** One line of the Overview call's answer. */
+/** One line of the Status call's answer. */
 export type Op =
   | { kind: 'none' }
   | { kind: 'new'; status: OpenStatus; name: string; text: string }
@@ -66,13 +66,13 @@ export type Op =
   | { kind: 'done'; ref: string; text: string }
   | { kind: 'drop'; ref: string; why: string; into: string | null }
   | { kind: 'was'; ref: string; text: string }
-  | { kind: 'role'; role: Overview['role'] }
+  | { kind: 'role'; role: SessionStatus['role'] }
   | { kind: 'goal'; text: string }
   /** `ref` is a running child's id or an open ask's id. */
   | { kind: 'link'; ref: string; subject: string }
 
-/** What the Overview call answered: nothing to change, or the changes to make. */
-export type OverviewAnswer = { kind: 'unchanged' } | { kind: 'ops'; ops: Op[] }
+/** What the Status call answered: nothing to change, or the changes to make. */
+export type StatusAnswer = { kind: 'unchanged' } | { kind: 'ops'; ops: Op[] }
 
 const LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|ROLE|GOAL|LINK)\s*(?::\s*(.*))?$/i
 
@@ -124,10 +124,10 @@ function opOf(key: string, f: string[]): Op | null {
 }
 
 /**
- * Parses the Overview call's answer. Null when it is empty, or when any line is not an operation: an answer that
+ * Parses the Status call's answer. Null when it is empty, or when any line is not an operation: an answer that
  * holds prose has more than once corrected itself partway, and applying any of it could apply the wrong half.
  */
-export function parseOverview(text: string | null): OverviewAnswer | null {
+export function parseStatus(text: string | null): StatusAnswer | null {
   const ops: Op[] = []
   for (const raw of (text ?? '').split(NL)) {
     const line = raw.trim()
@@ -143,15 +143,15 @@ export function parseOverview(text: string | null): OverviewAnswer | null {
 }
 
 /**
- * Asks the Overview call through `ask`, and once more when the answer holds prose, as `parseOverview` refuses it. A
+ * Asks the Status call through `ask`, and once more when the answer holds prose, as `parseStatus` refuses it. A
  * call that gives no text is not asked again. Returns the first answer and the one to apply, which are the same when
  * the call was asked once.
  */
-export async function askOverview<T extends { text: string | null }>(
+export async function askStatus<T extends { text: string | null }>(
   ask: () => Promise<T>,
 ): Promise<{ first: T; last: T }> {
   const first = await ask()
-  const holdsProse = first.text !== null && parseOverview(first.text) === null
+  const holdsProse = first.text !== null && parseStatus(first.text) === null
 
   return { first, last: holdsProse ? await ask() : first }
 }
@@ -193,9 +193,14 @@ const OP_ORDER: Record<Op['kind'], number> = {
  * The list after `ops`, applied at `now`. `askIds` are the open asks: a LINK may name one, and the links of the others
  * go. A line that names an id or a name the list does not hold, or an ask that is not open, changes nothing.
  */
-export function applyOps(last: Overview | null, ops: Op[], now: number, askIds: ReadonlySet<string>): Overview {
-  let o: Overview = {
-    ...(last ?? EMPTY_OVERVIEW),
+export function applyOps(
+  last: SessionStatus | null,
+  ops: Op[],
+  now: number,
+  askIds: ReadonlySet<string>,
+): SessionStatus {
+  let o: SessionStatus = {
+    ...(last ?? EMPTY_SESSION_STATUS),
     subjects: (last?.subjects ?? []).map(s => ({ ...s })),
     children: (last?.children ?? []).map(c => ({ ...c })),
     askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask))),
@@ -284,13 +289,13 @@ export function applyOps(last: Overview | null, ops: Op[], now: number, askIds: 
   return o
 }
 
-/** The Overview after an answer, applied at `now`. `askIds` are the open asks. */
-export function applyOverview(
-  last: Overview | null,
-  answer: OverviewAnswer,
+/** The Status after an answer, applied at `now`. `askIds` are the open asks. */
+export function applyStatus(
+  last: SessionStatus | null,
+  answer: StatusAnswer,
   now: number,
   askIds: ReadonlySet<string>,
-): Overview | null {
+): SessionStatus | null {
   return answer.kind === 'unchanged' ? last : applyOps(last, answer.ops, now, askIds)
 }
 
@@ -298,15 +303,15 @@ export function isChildRunning(c: Pick<Child, 'startedAt' | 'endedAt'>, now: num
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now)
 }
 
-/** What a host reports about a child: everything but the id and the link, which the Overview owns. */
+/** What a host reports about a child: everything but the id and the link, which the Status owns. */
 export type ChildReport = Omit<Child, 'id' | 'subjectId'>
 
 /**
  * Adds a child the host reports, or updates the one it holds with the same `ref`. A delegate prompted again keeps its
  * id and link. Children that ended more than `CHILD_KEPT_MS` before `now` are let go.
  */
-export function withChild(last: Overview | null, c: ChildReport, now: number): Overview {
-  const o = last ?? EMPTY_OVERVIEW
+export function withChild(last: SessionStatus | null, c: ChildReport, now: number): SessionStatus {
+  const o = last ?? EMPTY_SESSION_STATUS
   const kept = o.children.filter(x => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS)
   const known = kept.find(x => x.ref === c.ref)
   if (known) return { ...o, children: kept.map(x => (x === known ? { ...x, ...c } : x)) }
@@ -318,8 +323,12 @@ export function withChild(last: Overview | null, c: ChildReport, now: number): O
   }
 }
 
-/** The child with `ref` after `change`, or the Overview unchanged when it holds none. */
-function changedChild(o: Overview | null, ref: string, change: (c: Child) => Partial<ChildReport>): Overview | null {
+/** The child with `ref` after `change`, or the Status unchanged when it holds none. */
+function changedChild(
+  o: SessionStatus | null,
+  ref: string,
+  change: (c: Child) => Partial<ChildReport>,
+): SessionStatus | null {
   const known = o?.children.find(c => c.ref === ref)
   if (!o || !known) return o
 
@@ -327,17 +336,17 @@ function changedChild(o: Overview | null, ref: string, change: (c: Child) => Par
 }
 
 /** The child with `ref` ended at `at`. */
-export function childEnded(o: Overview | null, ref: string, at: number): Overview | null {
+export function childEnded(o: SessionStatus | null, ref: string, at: number): SessionStatus | null {
   return changedChild(o, ref, c => ({ endedAt: c.endedAt ?? at }))
 }
 
 /** The child with `ref` did something at `at`. Only a kind the host reports activity for has a time to move. */
-export function childActive(o: Overview | null, ref: string, at: number): Overview | null {
+export function childActive(o: SessionStatus | null, ref: string, at: number): SessionStatus | null {
   return changedChild(o, ref, c => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }))
 }
 
 /** The subjects as the call reads them: open ones with ids, and finished names it must not add again. */
-export function subjectsText(o: Overview | null): { open: string; finished: string } {
+export function subjectsText(o: SessionStatus | null): { open: string; finished: string } {
   const subjects = o?.subjects ?? []
   const open = subjects.filter(isOpen).map(s => `${s.id} | ${s.status} | ${s.name} | ${s.text || '-'}`)
   const finished = subjects
@@ -349,28 +358,28 @@ export function subjectsText(o: Overview | null): { open: string; finished: stri
 }
 
 /** The open asks as the call reads them, each with the subject it holds up. */
-export function asksText(o: Overview | null, asks: readonly Pick<Item, 'id' | 'ask'>[]): string {
+export function asksText(o: SessionStatus | null, asks: readonly Pick<Item, 'id' | 'ask'>[]): string {
   return asks.map(a => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id] ?? '-'}`).join(NL)
 }
 
 /** The running children as the call reads them. */
-export function runningText(o: Overview | null, now: number): string {
+export function runningText(o: SessionStatus | null, now: number): string {
   return (o?.children ?? [])
     .filter(c => isChildRunning(c, now))
     .map(c => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? '-'}`)
     .join(NL)
 }
 
-/** The Overview tab is shown. The look line stays where it was until the look ends, so the page keeps its order. */
-export function lookStarted(o: Overview | null, now: number): Overview | null {
+/** The Status tab is shown. The look line stays where it was until the look ends, so the page keeps its order. */
+export function lookStarted(o: SessionStatus | null, now: number): SessionStatus | null {
   return o === null || o.look !== null ? o : { ...o, look: { startedAt: now } }
 }
 
-/** How long the Overview must show before it counts as a look, so a pass through the tab keeps the look line. */
+/** How long the Status must show before it counts as a look, so a pass through the tab keeps the look line. */
 export const LOOK_MIN_MS = 5_000
 
-/** The Overview tab is no longer shown, at `at`. A look shorter than `LOOK_MIN_MS` leaves the look line where it was. */
-export function lookEnded(o: Overview | null, at: number): Overview | null {
+/** The Status tab is no longer shown, at `at`. A look shorter than `LOOK_MIN_MS` leaves the look line where it was. */
+export function lookEnded(o: SessionStatus | null, at: number): SessionStatus | null {
   if (o === null || o.look === null) return o
   const isLongEnough = at - o.look.startedAt >= LOOK_MIN_MS
 
@@ -435,7 +444,7 @@ function childOf(saved: unknown): Child | null {
   }
 }
 
-/** The statuses an Overview saved before subjects had, as a subject's status; null for one that closed. */
+/** The statuses a Status saved before subjects had, as a subject's status; null for one that closed. */
 const OLD_STATUS: Record<string, OpenStatus | null> = {
   working: 'working',
   queued: 'queued',
@@ -448,11 +457,11 @@ const OLD_STATUS: Record<string, OpenStatus | null> = {
 }
 
 /**
- * An Overview saved before subjects, as subjects. Its streams, work and problems that were still open become subjects
+ * A Status saved before subjects, as subjects. Its streams, work and problems that were still open become subjects
  * dated at the last look, since the person saw them then. With no look there is no honest time to give them, and the
  * person never read that page, so only the headline carries over, as the goal.
  */
-function fromLists(o: Record<string, unknown>): Overview {
+function fromLists(o: Record<string, unknown>): SessionStatus {
   const lastLookAt = time(o.lastLookAt)
   const items =
     lastLookAt === null ? [] : ['workstreams', 'queue', 'open'].flatMap(k => (Array.isArray(o[k]) ? o[k] : []))
@@ -481,7 +490,7 @@ function fromLists(o: Record<string, unknown>): Overview {
     }))
 
   return {
-    ...EMPTY_OVERVIEW,
+    ...EMPTY_SESSION_STATUS,
     role: o.isCoordinator === true ? 'coordinator' : 'session',
     goal: clipWords(text(o.headline), GOAL_KEPT),
     subjects,
@@ -490,8 +499,8 @@ function fromLists(o: Record<string, unknown>): Overview {
   }
 }
 
-/** A saved Overview, from this build or an earlier one, with anything wrongly shaped left out. Null for none. */
-export function upgradeOverview(saved: unknown): Overview | null {
+/** A saved Status, from this build or an earlier one, with anything wrongly shaped left out. Null for none. */
+export function upgradeStatus(saved: unknown): SessionStatus | null {
   const o = saved as Record<string, unknown> | null | undefined
   if (typeof o !== 'object' || o === null) return null
   if (typeof o.headline === 'string') return fromLists(o)

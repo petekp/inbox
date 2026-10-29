@@ -1,6 +1,6 @@
 # Agent task lists
 
-Checked on 2026-10-23. This file records whether each host shows the agent's own task list to the inbox, with the source or live run behind each fact. The Overview tab's work queue depends on it (`docs/plans/overview.md`).
+Checked on 2026-10-23. This file records whether each host shows the agent's own task list to the inbox, with the source or live run behind each fact. The Status tab's work queue depends on it (`docs/plans/status.md`).
 
 Tags: **[source]** read in code or a binary. **[live]** seen in a run, with its log under `.scratch/ov/`. **[unknown]** not settled.
 
@@ -12,7 +12,7 @@ Tags: **[source]** read in code or a binary. **[live]** seen in a run, with its 
 | Codex | `update_plan` | No, with the default model in `codex exec`. The app is [unknown] | The rollout, at Stop |
 | omp | `todo` | Yes | The session branch's entries, read at each reply and at a session start |
 
-Only omp offers a list by default. The queue therefore cannot depend on one. The Overview call writes the queue from the exchange in every host, and reads a host's list as extra input where one exists.
+Only omp offers a list by default. The queue therefore cannot depend on one. The Status call writes the queue from the exchange in every host, and reads a host's list as extra input where one exists.
 
 ## Claude Code
 

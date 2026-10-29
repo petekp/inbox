@@ -63,9 +63,9 @@
         cursor: default;
         user-select: none;
       }
-      /* Text a person may copy: what an item, PR or Overview line says, an error, and the reply field. */
-      .overview-goal,
-      .overview .content,
+      /* Text a person may copy: what an item, PR or Status line says, an error, and the reply field. */
+      .status-goal,
+      .status-page .content,
       .earlier,
       .body,
       .panel .muted,
@@ -737,18 +737,18 @@
         padding: 2px 14px 2px var(--text-x);
       }
       /* The goal starts where the list's marks do. */
-      .overview-goal {
+      .status-goal {
         padding: 0 14px 0 var(--mark-x);
         overflow-wrap: anywhere;
       }
-      .overview .row {
-        padding-top: var(--overview-row-pad);
-        padding-bottom: var(--overview-row-pad);
+      .status-page .row {
+        padding-top: var(--status-row-pad);
+        padding-bottom: var(--status-row-pad);
       }
-      .overview .mark {
+      .status-page .mark {
         text-align: left;
       }
-      .overview .mark.running {
+      .status-page .mark.running {
         animation: running-pulse var(--pulse) ease-in-out infinite;
       }
       @keyframes running-pulse {
@@ -756,64 +756,64 @@
           opacity: 0.3;
         }
       }
-      .overview .content {
+      .status-page .content {
         overflow-wrap: anywhere;
       }
-      .overview .row.child {
+      .status-page .row.child {
         padding-left: var(--text-x);
       }
-      .overview .clamp {
+      .status-page .clamp {
         display: -webkit-box;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: var(--lines);
         overflow: hidden;
       }
-      .overview .unbroken {
+      .status-page .unbroken {
         white-space: nowrap;
       }
       /* The tree line runs under the middle of a subject's mark, and its arm reaches to a child's mark. */
-      .overview .list {
+      .status-page .list {
         --mark-middle: 6px;
         --arm-gap: 2px;
         --tree-x: calc(var(--mark-x) + var(--mark-middle));
         --tree-line: color-mix(in oklab, var(--text) 15%, transparent);
       }
-      .overview .row.has-children,
-      .overview .row.branch-mid,
-      .overview .row.branch-last {
+      .status-page .row.has-children,
+      .status-page .row.branch-mid,
+      .status-page .row.branch-last {
         position: relative;
       }
-      .overview .row.has-children::before,
-      .overview .row.branch-mid::before,
-      .overview .row.branch-last::before {
+      .status-page .row.has-children::before,
+      .status-page .row.branch-mid::before,
+      .status-page .row.branch-last::before {
         content: '';
         position: absolute;
         left: var(--tree-x);
         border-left: 1px solid var(--tree-line);
       }
-      .overview .row.has-children::before {
-        top: calc(var(--overview-row-pad) + 1lh);
+      .status-page .row.has-children::before {
+        top: calc(var(--status-row-pad) + 1lh);
         bottom: 0;
       }
-      .overview .row.branch-mid::before {
+      .status-page .row.branch-mid::before {
         top: 0;
         bottom: 0;
       }
-      .overview .row.branch-last::before {
+      .status-page .row.branch-last::before {
         top: 0;
-        height: calc(var(--overview-row-pad) + 0.5lh);
+        height: calc(var(--status-row-pad) + 0.5lh);
       }
-      .overview .row.branch-mid::after,
-      .overview .row.branch-last::after {
+      .status-page .row.branch-mid::after,
+      .status-page .row.branch-last::after {
         content: '';
         position: absolute;
         left: var(--tree-x);
-        top: calc(var(--overview-row-pad) + 0.5lh);
+        top: calc(var(--status-row-pad) + 0.5lh);
         width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
         border-top: 1px solid var(--tree-line);
       }
       /* "Seen" in the middle of a rule that runs from the mark column to the end of the row. */
-      .overview .look-rule {
+      .status-page .look-rule {
         grid-column: 1 / -1;
         display: flex;
         flex-direction: row;
@@ -821,18 +821,18 @@
         gap: 8px;
         color: var(--muted);
       }
-      .overview .overview-rule {
+      .status-page .status-rule {
         height: 1px;
         margin-left: var(--text-x);
         background: var(--soft);
       }
-      .overview .look-rule::before,
-      .overview .look-rule::after {
+      .status-page .look-rule::before,
+      .status-page .look-rule::after {
         content: '';
         flex: 1;
         border-top: 1px solid color-mix(in oklab, var(--text) 15%, transparent);
       }
-      .overview-goal {
+      .status-goal {
         margin: 0;
         font-size: 15px;
         line-height: 22px;
@@ -855,7 +855,7 @@
         }
         .time-left,
         .key.undo.undoing .icon,
-        .overview .mark.running {
+        .status-page .mark.running {
           animation: none;
         }
       }
