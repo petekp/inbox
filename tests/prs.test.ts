@@ -174,6 +174,45 @@ describe('prs', () => {
     )
   })
 
+  test('a check run again on the same commit reads as its latest run, so a passing re-run clears an earlier failure and a failing re-run keeps it', () => {
+    const run = (name: string, conclusion: string, startedAt?: string, workflowName = 'CI') => ({
+      __typename: 'CheckRun',
+      name,
+      workflowName,
+      status: conclusion === '' ? 'QUEUED' : 'COMPLETED',
+      conclusion,
+      ...(startedAt ? { startedAt, completedAt: startedAt } : {}),
+      detailsUrl: `https://github.com/acme/greet/actions/runs/${name}-${conclusion}`,
+    })
+    const viewWith = (rollup: object[]) =>
+      readView('acme/greet#12', JSON.stringify({ ...JSON.parse(VIEW), statusCheckRollup: rollup }))!
+    const checks = (rollup: object[]) => viewWith(rollup).checks.map(c => [c.workflow, c.name, c.bucket])
+
+    expect(
+      checks([
+        run('lint', 'CANCELLED', '2026-10-08T09:00:00Z'),
+        run('lint', 'SUCCESS', '2026-10-08T09:05:00Z'),
+        run('test', 'SUCCESS', '2026-10-08T09:01:00Z'),
+        run('test', 'FAILURE', '2026-10-08T09:06:00Z'),
+        run('lint', 'FAILURE', '2026-10-08T09:02:00Z', 'Nightly'),
+      ]),
+    ).toEqual([
+      ['CI', 'lint', 'pass'],
+      ['CI', 'test', 'fail'],
+      ['Nightly', 'lint', 'fail'],
+    ])
+    expect(checks([run('lint', 'FAILURE', '2026-10-08T09:00:00Z'), run('lint', '')])).toEqual([
+      ['CI', 'lint', 'pending'],
+    ])
+    const rerunPassed = viewWith([
+      run('lint', 'FAILURE', '2026-10-08T09:00:00Z'),
+      run('lint', 'SUCCESS', '2026-10-08T09:05:00Z'),
+    ])
+    expect(readiness({ ...rerunPassed, threads: [], isYours: true, wasSeenOpen: true, error: null }).text).toBe(
+      'Blocked: changes requested',
+    )
+  })
+
   test('an outdated thread waits again when someone replies after the latest commit', () => {
     const outdated = (replyAt: string) =>
       JSON.stringify({
