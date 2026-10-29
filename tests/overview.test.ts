@@ -127,13 +127,43 @@ test('code dates each change, and a NEW for an open subject changes that subject
   expect(two.head?.title).toBe('Work offline')
 })
 
-test('a HEAD keeps the head when its content words are the same, and replaces it when they differ', () => {
-  const one = after(null, 'HEAD: Offline sync | Adding offline sync to the notes app', 100)
-  const reworded = applyOps(one, opsOf('HEAD: offline sync | adding offline sync to notes app'), 200, NO_ASKS)
+test('a HEAD that keeps the title, or that comes with finished work and none under way, keeps the head', () => {
+  const one = after(
+    null,
+    'HEAD: Offline sync | Adding offline sync to the notes app\nNEW: working | Sync engine | queue built',
+    100,
+  )
+  const retitled = applyOps(one, opsOf('HEAD: offline sync | Wiring the settings toggle'), 200, NO_ASKS)
   const moved = applyOps(one, opsOf('HEAD: 2.5 release | Shipping 2.5 to the stores'), 200, NO_ASKS)
+  const finished = applyOps(
+    one,
+    opsOf(
+      'DONE: s1 | syncs on reconnect\nNEW: queued | Export button | not started\nHEAD: Export button | Adding export',
+    ),
+    200,
+    NO_ASKS,
+  )
+  const handedOn = applyOps(
+    one,
+    opsOf(
+      'DONE: s1 | syncs on reconnect\nNEW: waits-on-other | 2.5 release | in store review\nHEAD: 2.5 release | Shipping 2.5',
+    ),
+    200,
+    NO_ASKS,
+  )
+  const saved = { ...one, head: { title: 'Ship offline sync', description: '' } }
+  const described = applyOps(
+    saved,
+    opsOf('HEAD: Ship offline sync | Adding offline sync to the notes app'),
+    200,
+    NO_ASKS,
+  )
 
-  expect(reworded.head).toEqual(one.head)
+  expect(retitled.head).toEqual(one.head)
   expect(moved.head).toEqual({ title: '2.5 release', description: 'Shipping 2.5 to the stores' })
+  expect(finished.head).toEqual(one.head)
+  expect(handedOn.head).toEqual({ title: '2.5 release', description: 'Shipping 2.5' })
+  expect(described.head).toEqual({ title: 'Ship offline sync', description: 'Adding offline sync to the notes app' })
 })
 
 test('a SET that keeps the status keeps the old text and age only when its content words are the same', () => {

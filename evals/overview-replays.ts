@@ -670,7 +670,7 @@ const longTurn: Replay = {
     ledger: {
       turn: 3,
       overview: overview({
-        head: { title: 'Note search', description: 'Speeding up search on large libraries' },
+        head: { title: 'Note search', description: 'Speeding up note search' },
         subjects: [
           subject('s1', 'working', 'Search index', 'slow on large libraries', -5),
           subject('s2', 'queued', 'Recency ranking', 'not started', -5),

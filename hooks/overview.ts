@@ -169,20 +169,34 @@ export function isOpen(s: Pick<Subject, 'status'>): boolean {
   return s.status !== 'done' && s.status !== 'dropped'
 }
 
-/** The head a HEAD line writes. One with the same content words as the head it would replace keeps that head. */
-function headAfter(last: OverviewHead | null, op: Extract<Op, { kind: 'head' }>): OverviewHead {
-  const isReworded =
-    last !== null && hasSameWords(last.title, op.title) && hasSameWords(last.description, op.description)
+/**
+ * The head after a HEAD line, read once the answer's subject changes have applied. A head with a description holds
+ * when the line keeps its title, since the call rewrites the description to track the current piece of the focus. It
+ * also holds when the answer finished work and left none under way, since the call reads queued work as the next
+ * focus. A head with no description, saved by an earlier build, always takes the line.
+ */
+function headAfter(o: Overview, op: Extract<Op, { kind: 'head' }>, ops: Op[], now: number): OverviewHead | null {
+  const last = o.head
+  const isComplete = last !== null && last.description !== ''
+  const isSameTitle = last !== null && hasSameWords(last.title, op.title)
+  const isWorkFinished = ops.some(x => x.kind === 'done' || x.kind === 'drop')
+  const isWorkUnderWay = o.subjects.some(
+    s => s.status === 'working' || (s.status === 'waits-on-other' && s.changedAt === now),
+  )
+  const isHeld = isComplete && (isSameTitle || (isWorkFinished && !isWorkUnderWay))
 
-  return isReworded
+  return isHeld
     ? last
     : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) }
 }
 
-/** Subject changes first, then reversals, then links, so a WAS or LINK can name a subject the same answer added. */
+/**
+ * Subject changes first, then reversals and the head, then links, so a WAS or LINK can name a subject the same answer
+ * added, and the head reads the subjects as the answer left them.
+ */
 const OP_ORDER: Record<Op['kind'], number> = {
   none: 0,
-  head: 0,
+  head: 1,
   new: 0,
   set: 0,
   done: 0,
@@ -226,7 +240,7 @@ export function applyOps(last: Overview | null, ops: Op[], now: number, askIds: 
   const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
   for (const { op } of ordered) {
     if (op.kind === 'none') continue
-    if (op.kind === 'head') o.head = headAfter(o.head, op)
+    if (op.kind === 'head') o.head = headAfter(o, op, ops, now)
     else if (op.kind === 'link') {
       const child = o.children.find(c => c.id === op.ref)
       const subject = find(op.subject)

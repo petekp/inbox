@@ -315,13 +315,18 @@ function nameKey(name) {
 function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
-function headAfter(last, op) {
-  const isReworded = last !== null && hasSameWords(last.title, op.title) && hasSameWords(last.description, op.description);
-  return isReworded ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
+function headAfter(o, op, ops, now) {
+  const last = o.head;
+  const isComplete = last !== null && last.description !== "";
+  const isSameTitle = last !== null && hasSameWords(last.title, op.title);
+  const isWorkFinished = ops.some((x) => x.kind === "done" || x.kind === "drop");
+  const isWorkUnderWay = o.subjects.some((s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now);
+  const isHeld = isComplete && (isSameTitle || isWorkFinished && !isWorkUnderWay);
+  return isHeld ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
 }
 var OP_ORDER = {
   none: 0,
-  head: 0,
+  head: 1,
   new: 0,
   set: 0,
   done: 0,
@@ -361,7 +366,7 @@ function applyOps(last, ops, now, askIds) {
     if (op.kind === "none")
       continue;
     if (op.kind === "head")
-      o.head = headAfter(o.head, op);
+      o.head = headAfter(o, op, ops, now);
     else if (op.kind === "link") {
       const child = o.children.find((c) => c.id === op.ref);
       const subject = find(op.subject);
@@ -1511,8 +1516,8 @@ Rules:
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
 - Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
 - Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
-- Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for other work, when the work the head names is finished or dropped while other work goes on, or when the working subjects are no longer part of what the head names.
-- Keep the head while the working subjects are parts of what it names, and when the work it names finished and nothing else is working. Never reword a head that still holds.`;
+- Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for other work, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.
+- The head names the whole focus, which often spans several subjects. One of them finishing, or the next one starting, does not change the focus. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.`;
 function headText(o) {
   if (!o?.head)
     return "(none yet)";
