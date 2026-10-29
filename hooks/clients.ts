@@ -35,6 +35,7 @@ export type FeatureId =
   | 'compare-in-background'
   | 'compare-page'
   | 'running-marks'
+  | 'pending-answer-mark'
   | 'tab-symbols'
   | 'dim-pressed-button'
   | 'herdr-sidebar'
@@ -88,6 +89,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'compare-in-background': { kind: 'full' },
       'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
+      'pending-answer-mark': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
       'dim-pressed-button': {
         kind: 'different',
@@ -183,6 +185,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
+      'pending-answer-mark': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
       'dim-pressed-button': { kind: 'full' },
       'herdr-sidebar': {
@@ -263,6 +266,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'compare-in-background': { kind: 'full' },
       'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
+      'pending-answer-mark': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
       'dim-pressed-button': {
         kind: 'different',

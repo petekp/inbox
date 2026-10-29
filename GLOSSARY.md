@@ -53,6 +53,11 @@ folds into the Closed fold or leaves the list. A message a press sent does not
 fold it. Where its press allows Undo, it offers Undo for `SETTLED_MS` after
 the close, and stays through a typed message until Undo ends.
 
+**Result mark**:
+The mark of what came of a row: ✓ when handled, ✕ when dismissed, ✗ when it
+lapsed, as when the agent closed it because the work overtook it. It runs, as
+an Overview mark does, while what the row sent is on its way to the agent.
+
 **Finding**:
 An issue or opportunity the agent noticed outside the current task.
 _Avoid_: note

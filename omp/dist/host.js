@@ -2794,7 +2794,7 @@ var NEEDS_YOU_GROUPS = [
   { kind: "question", title: "Questions", list: "questions" },
   { kind: "task", title: "Tasks", list: "tasks" }
 ];
-var CLOSED_MARKS = { handled: "\u2713", dismissed: "\u2715", lapsed: "" };
+var CLOSED_MARKS = { handled: "\u2713", dismissed: "\u2715", lapsed: "\u2717" };
 var CLOSED_SHOWN = 3;
 var SETTLED_MS = 5120;
 var PRESS_GUARD_MS = 400;
@@ -2847,7 +2847,7 @@ function closedRowState(closed, at, now, settleWindowMs, delivery) {
     at,
     canUndo: canUndoClose(closed, at, now, settleWindowMs),
     offersUndo: offersUndo(closed),
-    isLapsed: isLapsed(closed),
+    closedAs: closedState(closed),
     delivery
   };
 }
@@ -2872,14 +2872,11 @@ function optionDescriptionsOf(item, actions) {
     return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
   });
 }
-function rowMark(row, look) {
-  if (row.state.is === "handedOff" && row.feedback?.is !== "unconfirmed")
-    return { text: "\u2713", tone: "done" };
-  if (row.finding) {
-    const group = FINDING_GROUPS[row.finding.kind];
-    return { text: group.mark, tone: group.tone };
-  }
-  return { text: isTerminalLike(look) ? row.handle : "" };
+function rowHandle(row) {
+  return row.number === null ? "\u2022" : `${row.number})`;
+}
+function rowTitle(row, look) {
+  return isTerminalLike(look) && row.number !== null ? `${rowHandle(row)} ${row.title}` : row.title;
 }
 function replyHint(row, agent) {
   return row.replyKind === "answer" ? "Your answer" : `Your reply to ${agent}`;
@@ -2901,10 +2898,35 @@ function markedFeedbackText(f, isMarkDone, look) {
 }
 function rowFeedbackText(row, look) {
   const f = row.feedback;
-  return f ? f.is === "done" && row.state.is === "handedOff" ? f.label : feedbackText(f, look) : null;
+  if (!f)
+    return null;
+  if (!isHandedOffDone(row))
+    return feedbackText(f, look);
+  return f.is === "done" ? f.label : feedbackText(f, look).replace(/^\u2713 /, "");
+}
+function isHandedOffDone(row) {
+  const f = row.feedback;
+  return row.state.is === "handedOff" && (f?.is === "done" || f?.is === "local" && f.result.state === "done");
+}
+var RUNNING_RESULT = { text: "\u25CF", isRunning: true };
+function rowResultMark(row) {
+  if (row.state.is === "settled")
+    return settledMark(row.state);
+  const f = row.feedback;
+  if (row.state.is !== "handedOff" || !f)
+    return null;
+  if (f.is === "sending" || f.is === "queued")
+    return RUNNING_RESULT;
+  return isHandedOffDone(row) ? { text: "\u2713", isRunning: false, tone: "done" } : { text: "", isRunning: false };
+}
+function isSendMoving(delivery) {
+  return delivery === "sending" || delivery === "queued";
 }
 function allRows(v) {
   return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
+}
+function settledRowIds(rows) {
+  return rows.filter((r) => r.state.is === "settled").map((r) => r.id);
 }
 function closedShown(closed, drawnSettled) {
   return closed.filter((d) => !drawnSettled.has(d.id)).slice(0, CLOSED_SHOWN);
@@ -3144,17 +3166,25 @@ function feedbackText(f, look) {
 function deliveryLabel(state, label) {
   return state === "queued" ? `Queued: ${label}` : `Not confirmed: ${label}`;
 }
-function settledMark(delivery) {
-  return delivery === null ? "\u2713" : "";
+function settledMark(state) {
+  return closedMark(state.closedAs, state.delivery);
 }
 function closedMark(state, delivery) {
-  return delivery === null ? CLOSED_MARKS[state] : "";
+  if (isSendMoving(delivery))
+    return RUNNING_RESULT;
+  return { text: delivery === null ? CLOSED_MARKS[state] : "", isRunning: false };
+}
+function isRowTabRunning(v, tab, isUnfolded) {
+  const rows = tab === "needsYou" ? [...v.needsYou.questions, ...v.needsYou.tasks] : v.findings.rows;
+  const settled = new Set(settledRowIds(rows));
+  const closed = tab === "needsYou" ? NEEDS_YOU_GROUPS.flatMap((g) => isUnfolded(g.kind) ? closedShown(v.needsYou.closed[g.list], settled) : []) : Object.keys(FINDING_GROUPS).flatMap((kind) => isUnfolded(kind) ? closedShown(v.findings.closed.filter((f) => f.kind === kind), settled) : []);
+  return rows.some((r) => rowResultMark(r)?.isRunning) || closed.some((d) => closedMark(closedState(d), d.delivery).isRunning);
 }
 function canUndoRefused(delivery) {
   return delivery !== null && typeof delivery === "object" && delivery.canUndo;
 }
 function settledTone(state) {
-  return state.delivery === null && !state.isLapsed ? "done" : "muted";
+  return state.delivery === null && state.closedAs === "handled" ? "done" : "muted";
 }
 function settledLabel(label, delivery) {
   if (delivery && typeof delivery === "object")
@@ -3587,7 +3617,7 @@ function inboxView({
           canUndo: false,
           offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
-          isLapsed: false
+          closedAs: closedState(closed)
         };
       if (isHeld(closed))
         return { is: "held", label: heldLabel(closed), at };
@@ -3603,7 +3633,7 @@ function inboxView({
         canUndo: isUndoLeft(last.at, now, settleWindowMs),
         offersUndo: true,
         delivery: pendingDeliveryAt(last, now),
-        isLapsed: false
+        closedAs: "handled"
       };
     return isHandedOff(last, turns) ? { is: "handedOff" } : { is: "open" };
   };
@@ -3627,7 +3657,7 @@ function inboxView({
     return rowOf({
       id: item.id,
       type: item.kind,
-      handle: n === undefined ? "\u2022" : `${n})`,
+      number: n ?? null,
       title: item.ask,
       at: item.at,
       detail: null,
@@ -3646,7 +3676,7 @@ function inboxView({
   const findingRows = [...placed.findings].filter((f) => !isFixSettled(f.id)).reverse().sort(byGroup).map((finding) => rowOf({
     id: finding.id,
     type: "finding",
-    handle: "\u2022",
+    number: null,
     title: finding.title,
     at: finding.at,
     detail: finding.detail,
@@ -5661,11 +5691,13 @@ function holdsOf(ui) {
 var AGENT = "omp";
 var REPLY_KEY = "r";
 var INDENT = 7;
+var UNLED_INDENT = INDENT - 3;
 var STOP_ID = "stop";
 var blankLine = (id) => ({
   id,
   depth: 0,
   lead: { text: "", tone: null },
+  mark: null,
   title: "",
   isDim: false,
   status: null,
@@ -5723,24 +5755,16 @@ function prButtons(actions) {
     isOut: a.isOut
   }));
 }
-function leadOf(row) {
-  const mark = rowMark(row, AGENT);
-  if (mark.tone === "done")
-    return { text: mark.text, tone: "done" };
-  if (mark.tone === "issue")
-    return { text: mark.text, tone: "issue" };
-  return { text: mark.text, tone: mark.text === "\u2022" ? "sep" : null };
-}
 function lineOfRow(row) {
   const feedbackLabel = rowFeedbackText(row, AGENT);
   const f = row.feedback;
   const state = row.state;
   const undo = row.actions.find((a) => a.press.action === "undo");
-  const settledLead = state.is === "settled" ? { text: settledMark(state.delivery) || " ", tone: "sep" } : null;
   return {
     ...blankLine(row.id),
-    lead: settledLead ?? leadOf(row),
-    title: row.title,
+    lead: null,
+    mark: rowResultMark(row),
+    title: rowTitle(row, AGENT),
     isDim: state.is === "settled",
     age: f?.is === "done" ? f.at : row.at,
     detail: row.detail,
@@ -5773,7 +5797,8 @@ function closedLines(d) {
   return {
     ...blankLine(closedId(d.id)),
     depth: 1,
-    lead: { text: closedMark(closedState(d), d.delivery), tone: null },
+    lead: null,
+    mark: closedMark(closedState(d), d.delivery),
     title: d.title,
     isDim: true,
     age: d.at,
@@ -5786,7 +5811,9 @@ function closedLines(d) {
 function groupEntries(g, unfolded) {
   const settled = settledIn(g);
   const total = closedTotal(g.closed, settled);
-  const out = [{ kind: "heading", text: g.title, count: waitingCount(g.rows) }];
+  const out = [
+    { kind: "heading", text: g.title, count: waitingCount(g.rows), ...g.mark ? { mark: g.mark } : {} }
+  ];
   out.push(...g.rows.map((row) => ({ kind: "row", line: lineOfRow(row) })));
   if (g.rows.length === 0)
     out.push({ kind: "note", text: groupEmptyText(g.title), indent: 3 });
@@ -5810,7 +5837,7 @@ function groupEntries(g, unfolded) {
   out.push(...shown.map((d) => ({ kind: "row", line: closedLines(d) })));
   const earlier = earlierLabel(total, shown.length);
   if (earlier)
-    out.push({ kind: "note", text: earlier, indent: 7 });
+    out.push({ kind: "note", text: earlier, indent: 5 });
   return out;
 }
 function stopEntries(screen, ui) {
@@ -5855,6 +5882,7 @@ function rowEntries(screen, ui, tab) {
   })) : Object.keys(FINDING_GROUPS).map((kind) => ({
     kind,
     title: FINDING_GROUPS[kind].title,
+    mark: { text: FINDING_GROUPS[kind].mark, tone: FINDING_GROUPS[kind].tone },
     rows: view.findings.rows.filter((r) => r.finding?.kind === kind && isDrawnInPlace(r, ui.shownSince)),
     closed: view.findings.closed.filter((f) => f.kind === kind).map((f) => ({ ...f, at: f.closedAt }))
   }));
@@ -6215,7 +6243,9 @@ function isAnimating(screen, ui, now) {
   return rows.some((r) => r.state.is === "settled" && r.state.canUndo) || view.prs.drawn.some((p) => p.state.is === "settled" && p.state.canUndo) || isPressMoving || isNoticeShown;
 }
 function isRunningMarkShown(screen, ui) {
-  return !isRowTab(ui.tab) && hasRunningMark(screen.view.overviewPage);
+  if (!isRowTab(ui.tab))
+    return hasRunningMark(screen.view.overviewPage);
+  return ui.tab !== "prs" && isRowTabRunning(screen.view, ui.tab, (kind) => ui.unfolded.includes(kind));
 }
 function noticeFor(outcome, now) {
   const text = outcome.error ?? (outcome.note ? noteText() : null);
@@ -6240,6 +6270,11 @@ function fit(s, width) {
     n += cells;
   }
   return out;
+}
+var MARKED_TITLE_CELLS = 12;
+function cutTitle(title, room) {
+  const cells = Math.max(MARKED_TITLE_CELLS, room);
+  return cellWidth(title) <= cells ? title : `${cutToCells(title, cells - 1)}\u2026`;
 }
 function spread(left, right, width) {
   const gap = width - visibleLength(left) - visibleLength(right);
@@ -6322,8 +6357,16 @@ function faceLines(buttons, focused, indent, width, s) {
   return lines.map((at) => " ".repeat(indent) + at.map((i) => cells[i]).join(""));
 }
 function leadText(lead, s) {
+  if (lead === null)
+    return "";
   const padded = lead.text.padEnd(2);
-  return lead.tone ? s.tone(lead.tone, padded) : padded;
+  return `${lead.tone ? s.tone(lead.tone, padded) : padded} `;
+}
+function markText(mark, now, s) {
+  if (mark === null)
+    return "";
+  const glyph = mark.isRunning ? runningMark(now) : mark.text || " ";
+  return `${mark.tone ? s.tone(mark.tone, glyph) : s.dim(glyph)} `;
 }
 function feedbackPaint(tone, s) {
   return (text) => tone ? s.tone(tone, text) : s.dim(text);
@@ -6339,14 +6382,17 @@ function drawLine(line, isSelected, d) {
   const out = [];
   const status = line.status ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}` : "";
   const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isSelected) ? line.feedback : null;
-  const after = line.settled ? `  ${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim("u Undo")}` : ""}` : line.feedback && !statusUnder ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
-  const title = line.isDim ? s.dim(line.title) : isSelected ? s.bold(line.title) : line.title;
+  const mark = markText(line.mark, now, s);
+  const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim("u Undo")}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
+  const head = ` ${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)}`;
+  const shownTitle = line.mark ? cutTitle(line.title, width - visibleLength(head) - visibleLength(status) - visibleLength(after)) : line.title;
+  const title = line.isDim ? s.dim(shownTitle) : isSelected ? s.bold(shownTitle) : shownTitle;
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
-  out.push(spread(` ${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)} ${title}${status}${after}`, `${age} `, width));
+  out.push(spread(`${head}${title}${status}${after}`, `${age} `, width));
   if (line.settled || isShut(line, ui))
     return out;
-  const indent = INDENT + pad;
+  const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
   const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null;
   if (holdsUp)
     out.push(fit(" ".repeat(indent) + s.dim(holdsUp), width));
@@ -6367,8 +6413,12 @@ function drawLine(line, isSelected, d) {
     const field = wrapText(`${text}\x00`, Math.max(10, width - indent - 1));
     out.push(...field.map((l) => " ".repeat(indent) + l.replace("\x00", s.inverse(" "))));
   }
-  if (statusUnder)
-    out.push(...indented(statusUnder.text, indent, width, 4, feedbackPaint(statusUnder.tone, s)));
+  if (statusUnder) {
+    const markCells = mark ? 2 : 0;
+    const [first, ...rest] = indented(statusUnder.text, indent + markCells, width, 4, feedbackPaint(statusUnder.tone, s));
+    if (first !== undefined)
+      out.push(" ".repeat(indent) + mark + first.slice(indent + markCells), ...rest);
+  }
   return out;
 }
 var pageRoom = (indent, width) => Math.max(10, width - indent - 2 - 1);
@@ -6518,7 +6568,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   let pageSelectedAt = null;
   for (const e of entries) {
     if (e.kind === "heading")
-      body.push(` ${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
+      body.push(` ${e.mark ? `${e.mark.tone ? style.tone(e.mark.tone, e.mark.text) : e.mark.text} ` : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
     else if (e.kind === "page") {
       if (e.row.isRuledAbove)
         body.push(pageRule(width, style));
