@@ -1,4 +1,4 @@
-import type { Dialog, Ledger, Overview, OverviewHead, Stop, Tab } from '../types'
+import type { Dialog, Ledger, SessionStatus, StatusHead, Stop, Tab } from '../types'
 import { hasRunningDelegate } from './children'
 import type { Run } from './gh'
 import type { SessionView } from './session'
@@ -11,7 +11,7 @@ import { isWaitingRow, ROW_TABS } from './view'
  */
 export type HerdrTokens = Record<string, string | null>
 
-/** What waits on the person, in one line: a stop, a dialog, the first item's ask, or the session's focus from the Overview head. */
+/** What waits on the person, in one line: a stop, a dialog, the first item's ask, or the session's focus from the Status head. */
 const STATUS_TOKEN = 'inbox'
 
 const STOP_TOKEN = 'inbox-stop'
@@ -41,7 +41,7 @@ export type HerdrStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown'
 
 const HERDR_STATUSES: readonly HerdrStatus[] = ['idle', 'working', 'blocked', 'done', 'unknown']
 
-/** How often a host asks Herdr about running delegates while its Overview shows. */
+/** How often a host asks Herdr about running delegates while its Status shows. */
 export const HERDR_CHECK_MS = 30_000
 
 /**
@@ -49,7 +49,7 @@ export const HERDR_CHECK_MS = 30_000
  * Herdr gave no answer. Herdr finds its session from the pane's environment, not the folder, so the command runs in
  * `/`, which always exists.
  */
-export async function delegatesInHerdr(o: Overview | null, run: Run): Promise<Map<string, HerdrStatus> | null> {
+export async function delegatesInHerdr(o: SessionStatus | null, run: Run): Promise<Map<string, HerdrStatus> | null> {
   if (!hasRunningDelegate(o)) return null
   const r = await run(HERDR_AGENT_LIST, { cwd: '/', timeoutMs: HERDR_TIMEOUT_MS })
 
@@ -120,7 +120,7 @@ export function statusLine(stop: Stop | null, dialogs: readonly Dialog[], input:
 }
 
 /** The head's description, which says what the session does, or its title when it has none. */
-function focusOf(head: OverviewHead | null): string | null {
+function focusOf(head: StatusHead | null): string | null {
   return head ? head.description || head.title : null
 }
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { Window } from 'happy-dom'
 import { closeItem, EMPTY } from '../../hooks/ledger'
-import { applyOverview, LOOK_MIN_MS, parseOverview } from '../../hooks/overview'
+import { applyStatus, LOOK_MIN_MS, parseStatus } from '../../hooks/status'
 import { recordItem } from '../../hooks/tools'
 import { shownTabs } from '../../hooks/view'
 import { CODEX } from '../src/texts'
@@ -15,7 +15,7 @@ const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Overview page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes, while a release build’s view draws Asks for it, and only a next build names on an Asks row the subject it holds up', async () => {
+test('the Codex tab draws the Status page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes, while a release build’s view draws Asks for it, and only a next build names on an Asks row the subject it holds up', async () => {
   const now = Date.now()
   const state = emptyState('overview')
   state.heard.startAt = 1
@@ -25,12 +25,12 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
     { kind: 'question', ask: 'Which label?', options: ['Tab', 'Page'] },
     now,
   ).ledger
-  const shownOverview = {
-    ...applyOverview(
+  const shownStatus = {
+    ...applyStatus(
       null,
-      parseOverview(
+      parseStatus(
         [
-          'HEAD: Shipping the Overview tab | Drawing the Overview in the Codex tab',
+          'HEAD: Shipping the Status tab | Drawing the Status in the Codex tab',
           'NEW: working | omp panel | reading the draw code',
           'NEW: working | Label | pick one',
           `LINK: ${asked.items[0]!.id} | Label`,
@@ -43,10 +43,10 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
     )!,
     look: { startedAt: now },
   }
-  state.ledger = { ...asked, overview: shownOverview }
+  state.ledger = { ...asked, overview: shownStatus }
   state.presence = { ...state.presence, isTurnRunning: true }
   document.body.innerHTML = '<div id="app"></div>'
-  Object.defineProperty(window, '__inboxPage', { value: 'overview-page', configurable: true })
+  Object.defineProperty(window, '__inboxPage', { value: 'status-page', configurable: true })
   Object.defineProperty(window, '__inboxKept', {
     value: {
       version: 2,
@@ -96,13 +96,13 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
       const view: TabView = {
         ...viewOf(state, Date.now()),
         thread: state.sessionId,
-        devPage: 'overview-page',
+        devPage: 'status-page',
         serverBuild: SERVER_BUILD,
         isFetchingPrs: false,
         isGhMissing: false,
         ...(isNextBuild ? { isNextBuild: true } : {}),
       }
-      if (isOlderServer) Reflect.deleteProperty(view, 'overviewPage')
+      if (isOlderServer) Reflect.deleteProperty(view, 'statusPage')
       result = { structuredContent: view }
     } else throw new Error(`Unexpected request: ${request.method} ${request.params?.name ?? ''}`)
     queueMicrotask(() =>
@@ -128,8 +128,8 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
   const key = (k: string) => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }))
   try {
     await import('../src/tab')
-    await until(() => root.querySelector('.overview-head') !== null)
-    assert.deepEqual(tabLabels(), ['Overview', 'Asks1', 'Finds', 'PRs'])
+    await until(() => root.querySelector('.status-head') !== null)
+    assert.deepEqual(tabLabels(), ['Status', 'Asks1', 'Finds', 'PRs'])
     assert.deepEqual(
       [...root.querySelectorAll('.tab')].map(b => [
         b.getAttribute('title'),
@@ -137,9 +137,9 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
       ]),
       shownTabs(true).map(t => [t.label, t.symbol]),
     )
-    assert.equal(shownTab(), 'Overview')
+    assert.equal(shownTab(), 'Status')
     assert.equal(sentTabs[0], 'overview')
-    assert.equal(root.querySelector('.overview-head h1')?.textContent, 'Shipping the Overview tab')
+    assert.equal(root.querySelector('.status-head h1')?.textContent, 'Shipping the Status tab')
     assert.deepEqual(
       [...root.querySelectorAll('main .row')].map(r => [
         r.querySelector('.mark')?.className,
@@ -167,36 +167,36 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
       Date.now(),
     ).ledger
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
-    assert.equal(shownTab(), 'Overview')
+    assert.equal(shownTab(), 'Status')
     assert.equal(root.querySelector('.row.selected'), null)
-    assert.deepEqual(tabLabels(), ['Overview', 'Asks1', 'Finds1', 'PRs'])
+    assert.deepEqual(tabLabels(), ['Status', 'Asks1', 'Finds1', 'PRs'])
 
     key('3')
     assert.equal(shownTab(), 'Finds1')
     assert.match(root.textContent ?? '', /The bar wraps at 320 px/)
     key('1')
-    assert.equal(shownTab(), 'Overview')
-    assert.ok(root.querySelector('.overview-head'))
+    assert.equal(shownTab(), 'Status')
+    assert.ok(root.querySelector('.status-head'))
     key('2')
     assert.equal(shownTab(), 'Asks1')
     assert.equal(root.querySelector('main .holds-up')?.textContent, '◆ Holds up Label')
     key('1')
-    assert.equal(shownTab(), 'Overview')
-    ;(root.querySelector('main.overview .actions button') as HTMLElement).click()
+    assert.equal(shownTab(), 'Status')
+    ;(root.querySelector('main.status-page .actions button') as HTMLElement).click()
     assert.equal(shownTab(), 'Asks1')
     assert.match(root.querySelector('.row.selected')?.textContent ?? '', /Which label\?/)
     key('1')
-    assert.equal(shownTab(), 'Overview')
+    assert.equal(shownTab(), 'Status')
 
     isOlderServer = true
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
     assert.equal(shownTab(), 'Asks1')
-    assert.equal(root.querySelector('.overview-head'), null)
+    assert.equal(root.querySelector('.status-head'), null)
     assert.equal(sentTabs.at(-1), 'overview')
     isOlderServer = false
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
-    assert.equal(shownTab(), 'Overview')
-    assert.ok(root.querySelector('.overview-head'))
+    assert.equal(shownTab(), 'Status')
+    assert.ok(root.querySelector('.status-head'))
 
     isNextBuild = false
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
@@ -206,13 +206,13 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
       shownTabs(false).map(t => t.label),
     )
     assert.equal(shownTab(), 'Asks1')
-    assert.equal(root.querySelector('.overview-head'), null)
+    assert.equal(root.querySelector('.status-head'), null)
     assert.equal(root.querySelector('main .holds-up'), null)
     key('4')
     assert.equal(shownTab(), 'Asks1')
     isNextBuild = true
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
-    assert.equal(shownTab(), 'Overview')
+    assert.equal(shownTab(), 'Status')
     isNextBuild = false
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
     key('3')
@@ -224,8 +224,8 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
     state.ledger = closeItem(state.ledger, asked.items[0]!.id, { how: 'claude', outcome: 'answered in chat' }, now)
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
     key('1')
-    assert.equal(shownTab(), 'Overview')
-    assert.ok(root.querySelector('.overview-head'))
+    assert.equal(shownTab(), 'Status')
+    assert.ok(root.querySelector('.status-head'))
     assert.ok(![...root.querySelectorAll('main .mark')].some(m => m.textContent === '◆'))
     assert.equal(root.querySelectorAll('main button').length, 0)
   } finally {
@@ -237,13 +237,13 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
   }
 })
 
-test('a look starts when the tab shows the Overview, ends when it shows another tab, ends at the last request when the pane closed, and counts once it lasted five seconds', () => {
+test('a look starts when the tab shows the Status, ends when it shows another tab, ends at the last request when the pane closed, and counts once it lasted five seconds', () => {
   const state = emptyState('look')
   state.ledger = {
     ...EMPTY,
-    overview: applyOverview(
+    overview: applyStatus(
       null,
-      parseOverview('HEAD: Ship it | Shipping the first version\nNEW: queued | Docs | after the code')!,
+      parseStatus('HEAD: Ship it | Shipping the first version\nNEW: queued | Docs | after the code')!,
       500,
       new Set(),
     ),

@@ -91,13 +91,13 @@ import {
   settledMark,
   isRowTabRunning,
   hasRunningMark,
-  overviewKeyPlan,
-  overviewKeyRows,
-  overviewSelected,
+  statusKeyPlan,
+  statusKeyRows,
+  statusSelected,
   isGuarded,
   mergedLine,
   nameBeforeStall,
-  OVERVIEW_TEXT_LINES,
+  STATUS_TEXT_LINES,
   STALL_GAP,
   WAS_PREFIX,
   runningMark,
@@ -114,10 +114,10 @@ import type {
   BannerView,
   ClosedDelivery,
   Feedback,
-  OverviewBranch,
-  OverviewPage,
-  OverviewRow,
-  OverviewStall,
+  StatusBranch,
+  StatusPage,
+  StatusRow,
+  StatusStall,
   Holds,
   RowView,
   ShownTab,
@@ -175,12 +175,12 @@ export type PanelUi = {
   resuming: { stopAt: number; is: 'sending' } | { stopAt: number; is: 'refused'; why: string } | null
   /** A handed-off row the person opened again with Enter. Moving the selection off it folds it again. */
   opened: string | null
-  /** How many lines of the Overview page are scrolled above the panel. Drawing clamps it to the page's end. */
+  /** How many lines of the Status page are scrolled above the panel. Drawing clamps it to the page's end. */
   pageTop: number
-  /** The Overview row the next draw scrolls into view, after j or k selects it. */
+  /** The Status row the next draw scrolls into view, after j or k selects it. */
   pageReveal: string | null
   /**
-   * When an Overview press selected the shown row, as View does. The row's buttons ignore keys until
+   * When an Status press selected the shown row, as View does. The row's buttons ignore keys until
    * `PRESS_GUARD_MS` has passed, so a second Enter does not press the row it opened.
    */
   openedAt: number
@@ -229,7 +229,7 @@ type Button = {
   isOut?: boolean
 }
 
-/** What a button draws. An Overview button presses nothing the host runs, so it has a face and no `press`. */
+/** What a button draws. An Status button presses nothing the host runs, so it has a face and no `press`. */
 type ButtonFace = Omit<Button, 'press'>
 
 type Lead = { text: string; tone: Tone | null }
@@ -276,7 +276,7 @@ type Entry =
   /** A note stops at 3 lines. One with `isWhole`, such as an empty page's hint, is the page's content and wraps in full. */
   | { kind: 'note'; text: string; isStrong?: boolean; indent?: number; isWhole?: boolean }
   | { kind: 'row'; line: Line }
-  | { kind: 'page'; row: OverviewRow }
+  | { kind: 'page'; row: StatusRow }
   | { kind: 'banner'; banner: BannerView }
   /** A key Help lists, its keys padded to `column`. */
   | { kind: 'key'; key: HelpKey; column: number }
@@ -655,17 +655,17 @@ function pressFeedback(screen: PanelScreen, id: string, now: number, isMarkDone 
 
 const doneAt = (f: Line['feedback']): number | null => (f?.source?.is === 'done' ? f.source.at : null)
 
-/** Where an Overview row's mark sits: in the head's column, so the list lines up with it. A subject's text starts at `PAGE_TEXT_AT`. */
+/** Where an Status row's mark sits: in the head's column, so the list lines up with it. A subject's text starts at `PAGE_TEXT_AT`. */
 const PAGE_MARK_AT = 1
 const PAGE_TEXT_AT = PAGE_MARK_AT + 2
 /** Where the mark of a child under a subject sits: after the tree's arm, which starts under the subject's mark. */
 const PAGE_CHILD_AT = PAGE_MARK_AT + 3
-const TREE_ARMS: Record<OverviewBranch, { first: string; rest: string }> = {
+const TREE_ARMS: Record<StatusBranch, { first: string; rest: string }> = {
   mid: { first: '├─', rest: '│' },
   last: { first: '└─', rest: ' ' },
 }
 
-function pageEntries(page: OverviewPage): Entry[] {
+function pageEntries(page: StatusPage): Entry[] {
   if (page.isEmpty)
     return [
       { kind: 'note', text: page.empty.title, isStrong: true },
@@ -685,7 +685,7 @@ function pageEntries(page: OverviewPage): Entry[] {
 
 /** Help in place of the tab's lines: the keys the panel takes, then what each mark means. */
 function helpEntries(screen: PanelScreen, tab: ShownTab): Entry[] {
-  const keys = helpKeys('omp', screen.isNextBuild === true, tab, overviewKeyRows(screen.view.overviewPage).length > 0)
+  const keys = helpKeys('omp', screen.isNextBuild === true, tab, statusKeyRows(screen.view.statusPage).length > 0)
   const column = Math.max(...keys.map(k => cellWidth(k.keys))) + 2
 
   return [
@@ -699,7 +699,7 @@ function helpEntries(screen: PanelScreen, tab: ShownTab): Entry[] {
 
 function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: number): Entry[] {
   if (ui.isHelpShown && tab === ui.tab) return helpEntries(screen, tab)
-  if (!isRowTab(tab)) return pageEntries(screen.view.overviewPage)
+  if (!isRowTab(tab)) return pageEntries(screen.view.statusPage)
 
   return tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab)
 }
@@ -814,7 +814,7 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   const lines = linesOf(entriesOf(screen, ui, ui.tab, now))
   const selected = resolveSelected(lines, ui.selectedId)
   const isPage = !isRowTab(ui.tab)
-  // The Overview lists no lines, and its selection is an Overview row's id.
+  // The Status lists no lines, and its selection is an Status row's id.
   const base: PanelUi = isPage ? ui : { ...ui, selectedId: selected?.id ?? null }
   if (base.typing !== null) return typingKey(base, base.typing, key, now, text)
   const shown = shownTabs(screen.isNextBuild === true)
@@ -875,13 +875,13 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
 }
 
 /**
- * A key on the Overview page, or null when the page leaves it to the panel. While a row has buttons, j and k move the
+ * A key on the Status page, or null when the page leaves it to the panel. While a row has buttons, j and k move the
  * selection between those rows and up and down still scroll. Enter and the buttons' keys press the selected row's.
  */
 function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): KeyResult | null {
-  const page = screen.view.overviewPage
-  const rows = overviewKeyRows(page)
-  const row = overviewSelected(page, ui.selectedId)
+  const page = screen.view.statusPage
+  const rows = statusKeyRows(page)
+  const row = statusSelected(page, ui.selectedId)
   if (!row) return null
   if (key === 'j' || key === 'k') {
     const at = rows.findIndex(r => r.id === row.id)
@@ -889,7 +889,7 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
 
     return { ui: { ...ui, selectedId: to, focus: null, pageReveal: to } }
   }
-  const keys = overviewKeyPlan(row)
+  const keys = statusKeyPlan(row)
   if (key === 'left' || key === 'right') {
     const index = wrapIndex(pageFocus(row, ui) + (key === 'left' ? -1 : 1), keys.length)
 
@@ -972,10 +972,10 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
   )
 }
 
-/** Whether the panel shows a running mark, whose frame moves with the clock: on the Overview, or on a row tab. */
+/** Whether the panel shows a running mark, whose frame moves with the clock: on the Status, or on a row tab. */
 export function isRunningMarkShown(screen: PanelScreen, ui: PanelUi): boolean {
   if (ui.isHelpShown) return MARK_LEGEND.some(m => m.isRunning)
-  if (!isRowTab(ui.tab)) return hasRunningMark(screen.view.overviewPage)
+  if (!isRowTab(ui.tab)) return hasRunningMark(screen.view.statusPage)
   if (ui.tab === 'prs')
     return isPrTabRunning(
       screen.view.prs.drawn.filter(d => d.state.is === 'open').map(d => d.pr),
@@ -1190,7 +1190,7 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   out.push(spread(`${head}${title}${status}${after}`, `${age} `, width))
   if (line.settled || isShut(line, ui)) return out
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
-  // A next build draws the Overview, so only it names the subject an ask holds up.
+  // A next build draws the Status, so only it names the subject an ask holds up.
   const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null
   if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width))
   if (line.detail && (isSelected || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
@@ -1222,7 +1222,7 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   return out
 }
 
-/** The room for an Overview text after a mark at `indent`. */
+/** The room for an Status text after a mark at `indent`. */
 const pageRoom = (indent: number, width: number) => Math.max(10, width - indent - 2 - 1)
 
 /** `text` wrapped to `room` cells, at most `maxLines` lines and cut with an ellipsis past them, each line painted. */
@@ -1239,7 +1239,7 @@ function pageText(text: string, room: number, maxLines: number, paint: (t: strin
 const GLUE = '\uE000'
 
 /**
- * One row of the Overview's list: a mark and its name wrapped after it, with its stall word after `STALL_GAP` in the
+ * One row of the Status's list: a mark and its name wrapped after it, with its stall word after `STALL_GAP` in the
  * stall's tone on the line of the name's last word. Then where it stands, dim.
  */
 function pageLine(
@@ -1248,15 +1248,15 @@ function pageLine(
   mark: string,
   name: string,
   namePaint: (t: string) => string,
-  { stall = null, text = null }: { stall?: OverviewStall | null; text?: string | null } = {},
+  { stall = null, text = null }: { stall?: StatusStall | null; text?: string | null } = {},
 ): string[] {
   const { width, style: s } = d
   const textAt = indent + 2
   const room = pageRoom(indent, width)
   const names = stall
     ? stalledName(name, stall, room, namePaint, s)
-    : pageText(name, room, OVERVIEW_TEXT_LINES, namePaint)
-  const seconds = text ? pageText(text, room, OVERVIEW_TEXT_LINES, s.dim) : []
+    : pageText(name, room, STATUS_TEXT_LINES, namePaint)
+  const seconds = text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : []
 
   return [
     `${' '.repeat(indent)}${mark} ${names[0] ?? ''}`,
@@ -1267,14 +1267,14 @@ function pageLine(
 /** A name and its stall word wrapped to `room` cells, the name cut by `nameBeforeStall`, each part painted. */
 function stalledName(
   name: string,
-  stall: OverviewStall,
+  stall: StatusStall,
   room: number,
   namePaint: (t: string) => string,
   s: Style,
 ): string[] {
   const tail = `${STALL_GAP}${stall.text}`.replaceAll(' ', GLUE)
   const wrapped = (shown: string) => wrapText(`${shown}${tail}`, room)
-  const lines = wrapped(nameBeforeStall(name, shown => wrapped(shown).length <= OVERVIEW_TEXT_LINES))
+  const lines = wrapped(nameBeforeStall(name, shown => wrapped(shown).length <= STATUS_TEXT_LINES))
   const words = s.tone(stall.tone, stall.text)
 
   return lines.map(l =>
@@ -1292,7 +1292,7 @@ function withTree(lines: string[], first: string | null, rest: string, s: Style)
   return lines.map((l, n) => (n === 0 ? (first ? drawn(l, first) : l) : drawn(l, rest)))
 }
 
-/** The rule above an Overview row that starts an item, from the text column to the end of the row, with `label` in its middle. */
+/** The rule above an Status row that starts an item, from the text column to the end of the row, with `label` in its middle. */
 function pageRule(width: number, s: Style, label: string | null = null): string {
   const cells = Math.max(0, width - PAGE_TEXT_AT - 1)
   if (label === null) return `${' '.repeat(PAGE_TEXT_AT)}${s.dim('─'.repeat(cells))}`
@@ -1303,13 +1303,13 @@ function pageRule(width: number, s: Style, label: string | null = null): string 
   return `${' '.repeat(PAGE_TEXT_AT)}${s.dim(`${'─'.repeat(before)}${text}${'─'.repeat(fill - before)}`)}`
 }
 
-/** A line on the Overview page, laid out as the shared row says. */
+/** A line on the Status page, laid out as the shared row says. */
 /**
- * An Overview row's buttons from its plan, under its text. The selected row's focused button takes Enter, and its other
+ * An Status row's buttons from its plan, under its text. The selected row's focused button takes Enter, and its other
  * buttons their keys, so only that row draws them focused or with keys.
  */
-function pageButtonLines(row: OverviewRow, d: Draw, isSelected: boolean): string[] {
-  const faces = overviewKeyPlan(row).map((k): ButtonFace => ({
+function pageButtonLines(row: StatusRow, d: Draw, isSelected: boolean): string[] {
+  const faces = statusKeyPlan(row).map((k): ButtonFace => ({
     label: k.label,
     key: isSelected ? k.hotkey : null,
     isRecommended: false,
@@ -1320,10 +1320,10 @@ function pageButtonLines(row: OverviewRow, d: Draw, isSelected: boolean): string
   return faces.length > 0 ? faceLines(faces, focused, PAGE_TEXT_AT - 1, d.width, d.style) : []
 }
 
-const pageFocus = (row: OverviewRow, ui: PanelUi): number =>
-  ui.focus?.rowId === row.id ? Math.min(ui.focus.index, overviewKeyPlan(row).length - 1) : 0
+const pageFocus = (row: StatusRow, ui: PanelUi): number =>
+  ui.focus?.rowId === row.id ? Math.min(ui.focus.index, statusKeyPlan(row).length - 1) : 0
 
-function drawPageRow(row: OverviewRow, d: Draw, isSelected = false): string[] {
+function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string[] {
   const { width, now, style: s } = d
   if (row.kind === 'subject') {
     const glyph = row.isRunning ? runningMark(now) : row.mark
@@ -1336,11 +1336,11 @@ function drawPageRow(row: OverviewRow, d: Draw, isSelected = false): string[] {
           mergedLine(row.merged, t => cellWidth(t) <= room),
           PAGE_TEXT_AT,
           width,
-          OVERVIEW_TEXT_LINES,
+          STATUS_TEXT_LINES,
           s.dim,
         ),
       )
-    if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim))
+    if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim))
     out.push(...pageButtonLines(row, d, isSelected))
 
     return row.hasChildren ? withTree(out, null, '│', s) : out
@@ -1419,7 +1419,7 @@ function footer(d: Draw, isPageScrolling: boolean): string[] {
     ui.tab,
     screen.view.status,
     { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 },
-    screen.view.overviewPage.error,
+    screen.view.statusPage.error,
   )
   if (status.text) out.push(` ${s.dim(status.text)}`)
   const hints =
@@ -1430,7 +1430,7 @@ function footer(d: Draw, isPageScrolling: boolean): string[] {
         : isRowTab(ui.tab)
           ? ['←→ pick', '↵ press', '↑↓ move', 'tab switch', '? help']
           : [
-              ...(overviewKeyRows(screen.view.overviewPage).length > 0 ? ['j k select', '↵ press'] : []),
+              ...(statusKeyRows(screen.view.statusPage).length > 0 ? ['j k select', '↵ press'] : []),
               ...(isPageScrolling ? ['↑↓ scroll'] : []),
               'tab switch',
               '? help',
@@ -1457,7 +1457,7 @@ export function render(
 }
 
 /**
- * The panel's lines, and the Overview page's scroll clamped to what the panel can show. With `minHeight`, blank lines
+ * The panel's lines, and the Status page's scroll clamped to what the panel can show. With `minHeight`, blank lines
  * above the footer make the panel at least that tall.
  */
 export function drawPanel(
@@ -1477,7 +1477,7 @@ export function drawPanel(
     ui.tab,
     screen.view.status,
     { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 },
-    screen.view.overviewPage.error,
+    screen.view.statusPage.error,
   )
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
   const banners = tabBarBanners([], status.error, isNoticeShown ? ui.notice : null)
@@ -1490,7 +1490,7 @@ export function drawPanel(
   ]
   const body: string[] = []
   let selectedAt = [0, 0]
-  const pageSelected = isRowTab(ui.tab) ? null : overviewSelected(screen.view.overviewPage, ui.selectedId)
+  const pageSelected = isRowTab(ui.tab) ? null : statusSelected(screen.view.statusPage, ui.selectedId)
   let pageSelectedAt: number[] | null = null
   for (const e of entries) {
     if (e.kind === 'heading')

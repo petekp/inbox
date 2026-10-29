@@ -2,7 +2,7 @@ import type { Closed, ClosedFinding, Exchange, Finding, Help, Item, Ledger, Pres
 
 export type { Exchange, Press } from '../types'
 import type { Host } from './model-text'
-import { upgradeOverview } from './overview'
+import { upgradeStatus } from './status'
 import { codeBlocks, dash } from './text'
 
 /** How many saved sessions each host keeps; the newest by save time. */
@@ -22,11 +22,11 @@ export const EMPTY: Ledger = {
   updates: 0,
 }
 
-/** Whether nothing has been recorded: no model answer applied, no Overview, no item and no finding. */
+/** Whether nothing has been recorded: no model answer applied, no Status, no item and no finding. */
 export function isBlankLedger(ledger: Ledger): boolean {
-  const isOverviewBlank = !ledger.overview || (ledger.overview.head === null && ledger.overview.subjects.length === 0)
+  const isStatusBlank = !ledger.overview || (ledger.overview.head === null && ledger.overview.subjects.length === 0)
 
-  return ledger.updates === 0 && isOverviewBlank && ledger.items.length === 0 && ledger.findings.length === 0
+  return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0
 }
 
 const NL = '\n'
@@ -74,7 +74,7 @@ export function upgradeLedger(ledger: Ledger): Ledger {
     ...rest,
     prOrder: rest.prOrder ?? null,
     updates,
-    overview: upgradeOverview(rest.overview),
+    overview: upgradeStatus(rest.overview),
     findings: [...(rest.findings ?? []), ...(notes ?? [])],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),

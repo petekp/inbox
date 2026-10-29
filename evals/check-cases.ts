@@ -6,7 +6,7 @@ import type { Ledger } from '../types'
 
 /**
  * Checks the eval case files with no model calls: every saved ledger loads through `upgradeLedger` with its items,
- * findings and Overview, and every agent case after a Compare press checks that the agent closes nothing. Prints each
+ * findings and Status, and every agent case after a Compare press checks that the agent closes nothing. Prints each
  * problem and exits 1 when there is one.
  */
 const root = process.argv[2] ?? process.cwd()
@@ -19,9 +19,9 @@ function checkLedger(where: string, saved: Partial<Ledger> | undefined) {
   const lost = [
     loaded.items.length !== (saved.items?.length ?? 0) ? 'items' : null,
     loaded.findings.length !== (saved.findings?.length ?? 0) ? 'findings' : null,
-    (saved.overview ?? null) !== null && loaded.overview === null ? 'Overview' : null,
+    (saved.overview ?? null) !== null && loaded.overview === null ? 'Status' : null,
     Array.isArray(saved.overview?.subjects) && loaded.overview?.subjects.length !== saved.overview.subjects.length
-      ? 'Overview subjects'
+      ? 'Status subjects'
       : null,
   ].filter(Boolean)
   if (lost.length > 0) problems.push(`${where}: loading its ledger changed its ${lost.join(', ')}`)

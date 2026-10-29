@@ -63,9 +63,9 @@
         cursor: default;
         user-select: none;
       }
-      /* Text a person may copy: what an item, PR or Overview line says, an error, and the reply field. */
-      .overview-head,
-      .overview .content,
+      /* Text a person may copy: what an item, PR or Status line says, an error, and the reply field. */
+      .status-head,
+      .status-page .content,
       .earlier,
       .body,
       .panel .muted,
@@ -771,15 +771,15 @@
         padding: 2px 14px 2px var(--text-x);
       }
       /* The head starts where the list's marks do. */
-      .overview-head {
+      .status-head {
         padding: 0 14px 0 var(--mark-x);
         overflow-wrap: anywhere;
       }
-      .overview .row {
-        padding-top: var(--overview-row-pad);
-        padding-bottom: var(--overview-row-pad);
+      .status-page .row {
+        padding-top: var(--status-row-pad);
+        padding-bottom: var(--status-row-pad);
       }
-      .overview .mark {
+      .status-page .mark {
         text-align: left;
       }
       .mark.running {
@@ -790,71 +790,71 @@
           opacity: 0.3;
         }
       }
-      .overview .content {
+      .status-page .content {
         overflow-wrap: anywhere;
       }
-      .overview .row.child {
+      .status-page .row.child {
         padding-left: var(--text-x);
       }
-      .overview .content > .actions {
+      .status-page .content > .actions {
         margin-top: 6px;
       }
-      .overview .clamp {
+      .status-page .clamp {
         display: -webkit-box;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: var(--lines);
         overflow: hidden;
       }
-      .overview .unbroken {
+      .status-page .unbroken {
         white-space: nowrap;
       }
       /* The tree line runs under the middle of a subject's mark, and its arm reaches to a child's mark. */
-      .overview .list {
+      .status-page .list {
         --mark-middle: 6px;
         --arm-gap: 2px;
         --tree-x: calc(var(--mark-x) + var(--mark-middle));
         --tree-line: color-mix(in oklab, var(--text) 15%, transparent);
       }
-      .overview .row.has-children,
-      .overview .row.branch-mid,
-      .overview .row.branch-last {
+      .status-page .row.has-children,
+      .status-page .row.branch-mid,
+      .status-page .row.branch-last {
         position: relative;
       }
-      .overview .row.has-children::before,
-      .overview .row.branch-mid::before,
-      .overview .row.branch-last::before {
+      .status-page .row.has-children::before,
+      .status-page .row.branch-mid::before,
+      .status-page .row.branch-last::before {
         content: '';
         position: absolute;
         left: var(--tree-x);
         border-left: 1px solid var(--tree-line);
       }
-      .overview .row.has-children::before {
-        top: calc(var(--overview-row-pad) + 1lh);
+      .status-page .row.has-children::before {
+        top: calc(var(--status-row-pad) + 1lh);
         bottom: 0;
       }
-      .overview .row.branch-mid::before {
+      .status-page .row.branch-mid::before {
         top: 0;
         bottom: 0;
       }
-      .overview .row.branch-last::before {
+      .status-page .row.branch-last::before {
         top: 0;
-        height: calc(var(--overview-row-pad) + 0.5lh);
+        height: calc(var(--status-row-pad) + 0.5lh);
       }
-      .overview .row.branch-mid::after,
-      .overview .row.branch-last::after {
+      .status-page .row.branch-mid::after,
+      .status-page .row.branch-last::after {
         content: '';
         position: absolute;
         left: var(--tree-x);
-        top: calc(var(--overview-row-pad) + 0.5lh);
+        top: calc(var(--status-row-pad) + 0.5lh);
         width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
         border-top: 1px solid var(--tree-line);
       }
       /* "Last seen" in the middle of a rule that spans what the rule above a row spans: from the text column to the tab's edge. */
-      .overview .row.look-line {
+      .status-page .row.look-line {
         padding-left: 0;
         padding-right: 0;
       }
-      .overview .look-rule {
+      .status-page .look-rule {
         grid-column: 1 / -1;
         display: flex;
         flex-direction: row;
@@ -862,27 +862,27 @@
         gap: 8px;
         color: var(--muted);
       }
-      .overview .overview-rule {
+      .status-page .status-rule {
         height: 1px;
         background: var(--soft);
       }
-      .overview .overview-rule,
-      .overview .look-rule {
+      .status-page .status-rule,
+      .status-page .look-rule {
         margin-left: var(--text-x);
       }
-      .overview .look-rule::before,
-      .overview .look-rule::after {
+      .status-page .look-rule::before,
+      .status-page .look-rule::after {
         content: '';
         flex: 1;
         border-top: 1px solid var(--soft);
       }
-      .overview-head h1 {
+      .status-head h1 {
         margin: 0;
         font-size: 15px;
         line-height: 22px;
         font-weight: 600;
       }
-      .overview-head p {
+      .status-head p {
         margin: 0;
       }
       .banner,

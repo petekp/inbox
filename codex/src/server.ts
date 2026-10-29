@@ -18,7 +18,7 @@ import { demoState } from './demo'
 import { answerMessage, noteDialogs } from './dialogs'
 import { withEarlierHistory } from './history'
 import { codexStore } from './host'
-import { isUnseen, overviewChanged, pressOn, recorded, turnEnded, turnStarted, withHolds } from '../../hooks/session'
+import { isUnseen, statusChanged, pressOn, recorded, turnEnded, turnStarted, withHolds } from '../../hooks/session'
 import type { SendOutcome } from '../../hooks/session'
 import { fetchPrs, prFetchTracker, press, wakeForDone as wakeSessionForDone } from '../../hooks/session-host'
 import type { SessionHost } from '../../hooks/session-host'
@@ -363,14 +363,14 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   const isHerdrCheckDue = herdrCheckGate()
 
   /**
-   * Asks Herdr about the running delegates at most each `HERDR_CHECK_MS` while the tab shows the Overview, so a
+   * Asks Herdr about the running delegates at most each `HERDR_CHECK_MS` while the tab shows the Status, so a
    * delegate's row follows Herdr while the session waits. The tab's next view shows the change.
    */
   function checkDelegatesWhenDue(id: string, s: SessionState) {
     if (s.shownTab !== 'overview' || !isHerdrCheckDue(id, now())) return
     void delegatesInHerdr(s.ledger.overview, deps.exec)
       .then(states => {
-        if (states) return updateState(dir, id, x => overviewChanged(x, o => delegatesSettled(o, states, now())))
+        if (states) return updateState(dir, id, x => statusChanged(x, o => delegatesSettled(o, states, now())))
       })
       .catch(() => undefined)
   }

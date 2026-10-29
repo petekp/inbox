@@ -586,8 +586,8 @@
     ]
   },
   {
-    "name": "carry-overview-answers-where-we-are",
-    "about": "The first prompt of a conversation carries the Overview's headline and status, and the agent answers from it. Only the mod carries it this way; Codex and omp carry it at session start.",
+    "name": "carry-status-answers-where-we-are",
+    "about": "The first prompt of a conversation carries the Status tab's headline and each subject's status, and the agent answers from it. Only the mod carries it this way; Codex and omp carry it at session start.",
     "ledger": {
       "nextId": 4,
       "overview": {

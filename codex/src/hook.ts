@@ -13,15 +13,15 @@ import { branchIn } from '../../hooks/gh'
 import type { Run } from '../../hooks/gh'
 import { delegatesInHerdr } from '../../hooks/herdr'
 import { dialogActivity } from '../../hooks/model-text'
-import { childEnded } from '../../hooks/overview'
+import { childEnded } from '../../hooks/status'
 import {
-  claimedOverviewRefresh,
+  claimedStatusRefresh,
   cleared,
   messageTyped,
   needsUpdate,
   noteActivity,
   noteCommandOutput,
-  overviewChanged,
+  statusChanged,
   placed,
   startContext,
   turnEnded,
@@ -59,8 +59,8 @@ export type HookDeps = {
   now: () => number
   run: Run
   startUpdate: (sessionId: string) => void
-  /** Starts the Overview call a hook claimed for the running turn, in a process of its own. */
-  startOverviewRefresh: (sessionId: string) => void
+  /** Starts the Status call a hook claimed for the running turn, in a process of its own. */
+  startStatusRefresh: (sessionId: string) => void
   onWrite: OnWrite
 }
 
@@ -121,7 +121,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const root = input.cwd ?? ''
       // Codex runs SessionStart after compacting too, in the middle of a turn.
       const endsTurn = (s: SessionState) =>
-        input.source === 'compact' ? s : overviewChanged(turnEnded(s, null), o => childrenCutOff(o, now()))
+        input.source === 'compact' ? s : statusChanged(turnEnded(s, null), o => childrenCutOff(o, now()))
       const folder = rolloutPath === null ? null : meta.folder
       const [branch, withHistory] = await Promise.all([
         folder === null ? null : branchIn(deps.run, folder),
@@ -174,19 +174,19 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const agentId = input.agent_id
       const isDelegateCommand = agentId === undefined && delegateSteps(command).length > 0
       const withWork = (s: SessionState) =>
-        overviewChanged(s, o => (agentId ? childWorked(o, agentId, now()) : delegatesStarted(o, command, now())))
+        statusChanged(s, o => (agentId ? childWorked(o, agentId, now()) : delegatesStarted(o, command, now())))
       const hasWork = line !== null || agentId !== undefined || isDelegateCommand
-      // Only the main agent's activity is what the Overview call reads mid-turn, so only it claims the call.
+      // Only the main agent's activity is what the Status call reads mid-turn, so only it claims the call.
       const isMainActivity = line !== null && agentId === undefined
       let isClaimed = false
       if (hasWork)
         await write(s => {
           const worked = withWork(line ? noteActivity(withRollout(s), line) : withRollout(s))
-          const claimed = isMainActivity ? claimedOverviewRefresh(worked, now()) : worked
+          const claimed = isMainActivity ? claimedStatusRefresh(worked, now()) : worked
           isClaimed = claimed !== worked
           return claimed
         })
-      if (isClaimed) deps.startOverviewRefresh(id)
+      if (isClaimed) deps.startStatusRefresh(id)
 
       return null
     }
@@ -194,13 +194,13 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const ref = input.agent_id
       if (!ref) return null
       const name = input.agent_type || 'subagent'
-      await write(s => overviewChanged(s, o => childStarted(o, { ref, kind: 'subagent', name }, now())))
+      await write(s => statusChanged(s, o => childStarted(o, { ref, kind: 'subagent', name }, now())))
 
       return null
     }
     case 'SubagentStop': {
       const ref = input.agent_id
-      if (ref) await write(s => overviewChanged(s, o => childEnded(o, ref, now())))
+      if (ref) await write(s => statusChanged(s, o => childEnded(o, ref, now())))
 
       return null
     }
@@ -228,10 +228,10 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         )
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines)
         // A wait on a delegate holds the turn, so the delegate's turn settled by Stop, where the turn's commands are read.
-        const waited = overviewChanged(withOutput, o =>
+        const waited = statusChanged(withOutput, o =>
           commands.reduce((x, c) => delegateWaitsEnded(x, c.command, now()), o),
         )
-        const withDelegates = inHerdr ? overviewChanged(waited, o => delegatesSettled(o, inHerdr, now())) : waited
+        const withDelegates = inHerdr ? statusChanged(waited, o => delegatesSettled(o, inHerdr, now())) : waited
         const withPlace = folder ? placed(withDelegates, folder, branch) : withDelegates
 
         const ended = withCoveredTurn(noteHook(turnEnded(endTurn(withPlace, reply, now()), now()), 'stop', now()))

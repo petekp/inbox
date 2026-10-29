@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 import type { HookDeps, HookInput } from '../src/hook'
 import type { Run } from '../../hooks/gh'
-import { OVERVIEW_SYSTEM } from '../../hooks/model-text'
+import { STATUS_SYSTEM } from '../../hooks/model-text'
 import type { Ask } from '../../hooks/session-host'
 
 export function tempDir(): string {
@@ -31,7 +31,7 @@ export function hookDeps(dir: string, now = () => 1000): HookDeps & { updates: s
     env: { CODEX_CLI_PATH: '/apps/codex' },
     now,
     startUpdate: id => updates.push(id),
-    startOverviewRefresh: id => refreshes.push(id),
+    startStatusRefresh: id => refreshes.push(id),
     onWrite: async () => {},
     run: async () => ({ code: 1, stdout: '', stderr: 'not in Herdr' }),
     updates,
@@ -77,5 +77,5 @@ export function rolloutAt(
 }
 
 export function ledgerOnly(ask: (prompt: string) => Promise<string | null>): Ask {
-  return (prompt, system) => (system === OVERVIEW_SYSTEM ? Promise.resolve(null) : ask(prompt))
+  return (prompt, system) => (system === STATUS_SYSTEM ? Promise.resolve(null) : ask(prompt))
 }

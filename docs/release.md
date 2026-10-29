@@ -13,8 +13,8 @@ Send each command's output to a log file and check its exit status. Each must ex
 | `./scripts/check.sh` | Formatting, plugin validation, structure, type checks, all test suites, and that the Codex and omp bundles match their sources. |
 | `./scripts/eval.sh` | The inbox model on every case in `evals/cases.json`, on Sonnet and on Codex. |
 | `./scripts/eval.sh --suite agent --agent all` | How Claude, Codex and omp use the `record` and `close` tools under the inbox's guidance, on every case in `evals/agent-cases.json`. The omp runs need a Claude sign-in in omp: run `omp`, then `/login`. |
-| `./scripts/eval.sh --suite overview --judge` | The Overview call on every replay in `evals/overview-replays.ts`, on Sonnet and on Codex, with the judge at its checkpoints. Known failing checks are listed apart and do not fail the run. |
-| `./scripts/eval.sh --suite overview --judge-pages <folder>` | The judge calls every hand-written page right. The pages are kept out of Git, in `.scratch/overview-judge-pages/` in the main checkout. |
+| `./scripts/eval.sh --suite status --judge` | The Status call on every replay in `evals/status-replays.ts`, on Sonnet and on Codex, with the judge at its checkpoints. Known failing checks are listed apart and do not fail the run. |
+| `./scripts/eval.sh --suite status --judge-pages <folder>` | The judge calls every hand-written page right. The pages are kept out of Git, in `.scratch/status-judge-pages/` in the main checkout. |
 
 The evals call models, so they take a while and use your plans.
 
@@ -49,7 +49,7 @@ Capture each result and read the capture. A row's Undo lasts a few seconds, so c
 | Finding | Point the agent at a bug outside its task. Press Explain, then Dismiss, then Undo. | A Finds row. Each press shows its result, and Undo brings the row back. |
 | Dialog | Have the agent ask two questions through its question dialog, in two separate dialogs. Answer the first, and dismiss the second: Escape in the terminal, the dialog's close button in Codex. In the desktop app, press Skip instead. Codex drops every answer in a dialog that is closed, so never answer and close in the same dialog there. | The answered question does not stay open. The dismissed one becomes an Asks row. Skip sends the agent "[No preference]", so it adds no row. |
 | Reply while closing | Start typing a reply on a row, and have the agent close that row. | The row stays in place until you send or discard the reply. |
-| Tabs | Open the inbox, then press 1, 2 and 3. | The tabs are Asks, Finds and PRs, on 1, 2 and 3. There is no Overview tab: only a next build draws it. |
+| Tabs | Open the inbox, then press 1, 2 and 3. | The tabs are Asks, Finds and PRs, on 1, 2 and 3. There is no Status tab: only a next build draws it. |
 | PRs | Open the PRs tab with `gh` signed in. Then rename the `gh` binary, reopen the tab, and rename it back. Taking `gh` off `PATH` is not enough, since the inbox also looks for `/opt/homebrew/bin/gh` and `/usr/local/bin/gh`. | Your PRs, then "The inbox could not find gh, so it cannot read your PRs." |
 | Resume | Resume the session in Claude Code, or reopen the thread in Codex. Then ask a new question. | The rows come back, and the agent can still record. |
 | Agent replies | Read the agent's replies throughout the pass. | No reply shows an inbox id, such as `i3` or `f4`. |

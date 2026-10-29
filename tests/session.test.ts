@@ -2,22 +2,22 @@ import { expect, test } from 'claude-code/testing'
 
 import { flattenConversation } from '../hooks/conversation'
 import { EMPTY, applyUpdate, parseReply, upgradeLedger } from '../hooks/ledger'
-import { applyOverview, parseOverview, withChild } from '../hooks/overview'
-import { CLAUDE_CODE, OVERVIEW_SYSTEM } from '../hooks/model-text'
+import { applyStatus, parseStatus, withChild } from '../hooks/status'
+import { CLAUDE_CODE, STATUS_SYSTEM } from '../hooks/model-text'
 import {
   appliedCatchUp,
-  appliedOverview,
+  appliedStatus,
   cleared,
-  claimedOverviewRefresh,
+  claimedStatusRefresh,
   emptySession,
   endTurn,
-  failedOverview,
+  failedStatus,
   forkedFrom,
   hasLedger,
   isUnseen,
   noteActivity,
   noteCommandOutput,
-  OVERVIEW_REFRESH_MS,
+  STATUS_REFRESH_MS,
   notePrompt,
   pressOn,
   pruned,
@@ -34,19 +34,19 @@ import type { Session } from '../hooks/session'
 import type { Item, PrView, RowNote } from '../types'
 import {
   isPrFetchDue,
-  OVERVIEW_RECORD_VERSION,
-  overviewCallPrompt,
+  STATUS_RECORD_VERSION,
+  statusCallPrompt,
   prFetchTracker,
   RECORDS_KEPT_MS,
   RECORDS_PER_SESSION,
   press,
   recordFileName,
-  refreshOverview,
+  refreshStatus,
   runUpdates,
   wakeForDone,
-  writeOverviewRecord,
+  writeStatusRecord,
 } from '../hooks/session-host'
-import type { CatchUpReply, OverviewCall, OverviewRecord, RecordFiles } from '../hooks/session-host'
+import type { CatchUpReply, StatusCall, StatusRecord, RecordFiles } from '../hooks/session-host'
 import { allRows, COMPARE_LIMIT_MS, DOT, feedbackOf, feedbackText, footerStatus, NO_HOLDS } from '../hooks/view'
 import { applyPrPress, checkRowId, fetchTracked, GH_RUNS_AT_ONCE, MAX_PRS, prMarkId } from '../hooks/pr-tab'
 import { demoSession, demoView, isDemoCopy } from '../hooks/demo'
@@ -193,7 +193,7 @@ const LEDGER_REPLY = 'NEW: decide | 1 | Use Node or Python? | Node / Python | No
 const finishTurn = (s: Session, reply: string) =>
   endTurn(CLAUDE_CODE, notePrompt(CLAUDE_CODE, s, 'go', false).state, reply, false)
 
-const UNANSWERED: OverviewCall = { exchange: { kind: 'catch-up', conversation: '' }, ask: async () => null }
+const UNANSWERED: StatusCall = { exchange: { kind: 'catch-up', conversation: '' }, ask: async () => null }
 
 const reading = (reply: CatchUpReply, calls: { catchUps: number; asks: number }) => ({
   ask: async () => (calls.asks++, null),
@@ -210,7 +210,7 @@ test('a failed update catches up over the whole conversation instead of retrying
   })
   await runUpdates({
     ...host,
-    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: 'Person: go', overview: UNANSWERED }, calls),
+    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: 'Person: go', statusCall: UNANSWERED }, calls),
   })
 
   const after = await host.read()
@@ -240,7 +240,7 @@ test('a catch-up that gets no usable answer ends the run, and the next update tr
   await host.update(s => ({ ...s, presence: { ...s.presence, ledgerState: 'behind' as const } }))
   await runUpdates({
     ...host,
-    ...reading({ kind: 'reply', text: 'not a ledger', source: null, overview: UNANSWERED }, calls),
+    ...reading({ kind: 'reply', text: 'not a ledger', source: null, statusCall: UNANSWERED }, calls),
   })
   expect(calls.catchUps).toBe(1)
   expect((await host.read()).presence.ledgerState).toBe('failed')
@@ -256,7 +256,7 @@ test('an exchange that ends during a catch-up is still run afterward', async () 
     ...host,
     catchUp: async () => {
       await host.update(s => finishTurn(s, 'Which runtime?'))
-      return { kind: 'reply', text: 'NONE', source: null, overview: UNANSWERED }
+      return { kind: 'reply', text: 'NONE', source: null, statusCall: UNANSWERED }
     },
   })
 
@@ -287,7 +287,7 @@ test('a dropped reply keeps the warning through later good updates, until a catc
 
   await runUpdates({
     ...host,
-    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: null, overview: UNANSWERED }, calls),
+    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: null, statusCall: UNANSWERED }, calls),
   })
   expect((await host.read()).presence).toMatchObject({ ledgerState: 'current', hasDroppedReply: false })
   expect(calls.catchUps).toBe(1)
@@ -306,30 +306,30 @@ test('the conversation keeps its newest lines when it is too long, and leaves ou
   expect(text).not.toContain('inbox: nothing waits')
 })
 
-const answer = parseOverview(
+const answer = parseStatus(
   'HEAD: Work offline | Letting the app work without a connection\nNEW: working | Offline mode | queue built',
 )!
 
-const withOverview = (s: Session): Session => ({
+const withStatus = (s: Session): Session => ({
   ...s,
-  ledger: { ...EMPTY, overview: applyOverview(null, answer, 1000, new Set()) },
+  ledger: { ...EMPTY, overview: applyStatus(null, answer, 1000, new Set()) },
 })
 
-test('an Overview answer is written to the ledger after later updates and clears a saved failure, and both are dropped when their update is gone', () => {
+test('a Status answer is written to the ledger after later updates and clears a saved failure, and both are dropped when their update is gone', () => {
   const later = { ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } }
-  const failed = failedOverview(later, 'The person wants a CLI.', 3, 900)
+  const failed = failedStatus(later, 'The person wants a CLI.', 3, 900)
 
   expect(failed.overviewFailure).toEqual({ at: 900, cause: 'refused', answer: 'The person wants a CLI.' })
-  expect(failedOverview(later, null, 3, 900).overviewFailure).toEqual({ at: 900, cause: 'no-answer', answer: null })
-  expect(appliedOverview(failed, answer, 3, 1000).ledger.overview?.head?.title).toBe('Work offline')
-  expect(appliedOverview(failed, answer, 3, 1000).overviewFailure).toBeNull()
-  expect(appliedOverview(emptySession(), answer, 3, 1000).ledger.overview).toBeNull()
-  expect(failedOverview(emptySession(), null, 3, 900).overviewFailure).toBeNull()
+  expect(failedStatus(later, null, 3, 900).overviewFailure).toEqual({ at: 900, cause: 'no-answer', answer: null })
+  expect(appliedStatus(failed, answer, 3, 1000).ledger.overview?.head?.title).toBe('Work offline')
+  expect(appliedStatus(failed, answer, 3, 1000).overviewFailure).toBeNull()
+  expect(appliedStatus(emptySession(), answer, 3, 1000).ledger.overview).toBeNull()
+  expect(failedStatus(emptySession(), null, 3, 900).overviewFailure).toBeNull()
   expect(cleared(failed).overviewFailure).toBeNull()
 })
 
-test('a session whose only record is an Overview has a ledger, is not unseen, is copied by a fork and is cleared', () => {
-  const parent = withOverview(emptySession())
+test('a session whose only record is a Status has a ledger, is not unseen, is copied by a fork and is cleared', () => {
+  const parent = withStatus(emptySession())
   const onlyChildren = withChild(
     null,
     { ref: 't1', kind: 'subagent', name: 'Review', startedAt: 1, endedAt: null, lastActivityAt: 1 },
@@ -345,37 +345,37 @@ test('a session whose only record is an Overview has a ledger, is not unseen, is
   expect(cleared(parent).ledger.overview).toBeNull()
 })
 
-test('the Overview page is empty for a new session, and while its first turn runs, until the Overview has a head', () => {
-  const view = (s: Session) => sessionView(s, 10_000, 1000, true, NO_HOLDS).overviewPage
+test('the Status page is empty for a new session, and while its first turn runs, until the Status has a head', () => {
+  const view = (s: Session) => sessionView(s, 10_000, 1000, true, NO_HOLDS).statusPage
   const idle = emptySession()
 
   expect(view(idle).isEmpty).toBe(true)
   expect(view(turnStarted(idle, 9_000)).isEmpty).toBe(true)
-  expect(view(withOverview(turnStarted(idle, 9_000))).isEmpty).toBe(false)
-  expect(view(withOverview(idle)).head?.title).toBe('Work offline')
+  expect(view(withStatus(turnStarted(idle, 9_000))).isEmpty).toBe(false)
+  expect(view(withStatus(idle)).head?.title).toBe('Work offline')
   expect(view(idle).error).toBeNull()
 })
 
-test('a running turn claims an Overview call once the wait has passed since it started and since the last call, claims it once, and an idle session never does', () => {
+test('a running turn claims a Status call once the wait has passed since it started and since the last call, claims it once, and an idle session never does', () => {
   const started = turnStarted(emptySession(), 0)
-  const claimed = claimedOverviewRefresh(started, OVERVIEW_REFRESH_MS)
+  const claimed = claimedStatusRefresh(started, STATUS_REFRESH_MS)
   const calledLater = { ...started, lastOverviewCallAt: 5 * 60_000 }
 
-  expect(claimedOverviewRefresh(started, OVERVIEW_REFRESH_MS - 1)).toBe(started)
-  expect(claimed.lastOverviewCallAt).toBe(OVERVIEW_REFRESH_MS)
-  expect(claimedOverviewRefresh(claimed, OVERVIEW_REFRESH_MS + 1)).toBe(claimed)
-  expect(claimedOverviewRefresh(calledLater, OVERVIEW_REFRESH_MS)).toBe(calledLater)
-  expect(claimedOverviewRefresh(turnEnded(started, 1), 2 * OVERVIEW_REFRESH_MS).lastOverviewCallAt).toBeNull()
+  expect(claimedStatusRefresh(started, STATUS_REFRESH_MS - 1)).toBe(started)
+  expect(claimed.lastOverviewCallAt).toBe(STATUS_REFRESH_MS)
+  expect(claimedStatusRefresh(claimed, STATUS_REFRESH_MS + 1)).toBe(claimed)
+  expect(claimedStatusRefresh(calledLater, STATUS_REFRESH_MS)).toBe(calledLater)
+  expect(claimedStatusRefresh(turnEnded(started, 1), 2 * STATUS_REFRESH_MS).lastOverviewCallAt).toBeNull()
 })
 
-test('a claimed Overview call reads the running turn’s work with no reply and writes its answer, and a turn that ended first is left to the call after its reply', async () => {
+test('a claimed Status call reads the running turn’s work with no reply and writes its answer, and a turn that ended first is left to the call after its reply', async () => {
   const prompts: string[] = []
   const { host } = fakeHost(async prompt => {
     prompts.push(prompt)
     return 'HEAD: Work offline | Letting the app work without a connection\nNEW: working | Offline mode | queue built'
   })
   await host.update(s => noteActivity(notePrompt(CLAUDE_CODE, turnStarted(s, 0), 'go', false).state, 'edited sync.ts'))
-  await refreshOverview(host)
+  await refreshStatus(host)
   const written = await host.read()
 
   expect(prompts).toHaveLength(1)
@@ -384,7 +384,7 @@ test('a claimed Overview call reads the running turn’s work with no reply and 
   expect(written.ledger.overview?.head?.title).toBe('Work offline')
   expect(written.lastOverviewCallAt).not.toBeNull()
   await host.update(s => turnEnded(s, 1))
-  await refreshOverview(host)
+  await refreshStatus(host)
   expect(prompts).toHaveLength(1)
 })
 
@@ -406,16 +406,16 @@ const writtenOnce = () => {
   return { writes, written, files }
 }
 
-test('a next build records an Overview call in a file of its own: the exact prompt and system text, each answer, and the Overview after', async () => {
-  const overviewPrompts: string[] = []
+test('a next build records a Status call in a file of its own: the exact prompt and system text, each answer, and the Status after', async () => {
+  const statusPrompts: string[] = []
   const answers = [
     'The list gains a runtime subject.',
     'HEAD: Pick a runtime | Choosing between Node and Python\nNEW: working | Runtime choice | comparing two',
   ]
   const { host } = fakeHost(async (prompt, system) => {
-    if (system !== OVERVIEW_SYSTEM) return LEDGER_REPLY
-    overviewPrompts.push(prompt)
-    return answers[overviewPrompts.length - 1] ?? null
+    if (system !== STATUS_SYSTEM) return LEDGER_REPLY
+    statusPrompts.push(prompt)
+    return answers[statusPrompts.length - 1] ?? null
   })
   const { writes, written, files } = writtenOnce()
   await host.update(s => finishTurn(s, 'Which runtime?'))
@@ -424,23 +424,23 @@ test('a next build records an Overview call in a file of its own: the exact prom
     records: { host: 'claude-code', folder: '/records', session: 'conv/1', files: files(false) },
   })
   await written
-  const record = JSON.parse(writes[0]!.text) as OverviewRecord
+  const record = JSON.parse(writes[0]!.text) as StatusRecord
 
   expect(writes).toHaveLength(1)
   expect(writes[0]!.path).toBe(`/records/conv_1/${recordFileName(record.at, 'reply')}`)
   expect(writes[0]!.text).toBe(`${JSON.stringify(record)}\n`)
   expect(record).toMatchObject({
-    version: OVERVIEW_RECORD_VERSION,
+    version: STATUS_RECORD_VERSION,
     host: 'claude-code',
     session: 'conv/1',
     exchange: { kind: 'reply', exchange: { person: 'go', reply: 'Which runtime?' } },
-    system: OVERVIEW_SYSTEM,
+    system: STATUS_SYSTEM,
     isParsed: true,
     isWritten: true,
     before: null,
   })
-  expect(overviewPrompts).toEqual([record.prompt, record.prompt])
-  expect(overviewCallPrompt(record.input, record.exchange)).toBe(record.prompt)
+  expect(statusPrompts).toEqual([record.prompt, record.prompt])
+  expect(statusCallPrompt(record.input, record.exchange)).toBe(record.prompt)
   expect(record.attempts.map(a => a.answer)).toEqual([
     'The list gains a runtime subject.',
     'HEAD: Pick a runtime | Choosing between Node and Python\nNEW: working | Runtime choice | comparing two',
@@ -450,17 +450,17 @@ test('a next build records an Overview call in a file of its own: the exact prom
   expect((await host.read()).ledger.overview?.head?.title).toBe('Pick a runtime')
 })
 
-test('a failed Overview call’s record holds the error the host reported, and a record that cannot be written leaves the update in place', async () => {
+test('a failed Status call’s record holds the error the host reported, and a record that cannot be written leaves the update in place', async () => {
   const { host } = fakeHost(async (_prompt, system, report) => {
-    if (system !== OVERVIEW_SYSTEM) return LEDGER_REPLY
+    if (system !== STATUS_SYSTEM) return LEDGER_REPLY
     report?.({ model: 'sonnet', error: 'api-error 529: overloaded' })
     return null
   })
   const { writes, written, files } = writtenOnce()
   await host.update(s => noteActivity(notePrompt(CLAUDE_CODE, turnStarted(s, 0), 'go', false).state, 'edited sync.ts'))
-  await refreshOverview({ ...host, records: { host: 'omp', folder: '/records', session: 's1', files: files(true) } })
+  await refreshStatus({ ...host, records: { host: 'omp', folder: '/records', session: 's1', files: files(true) } })
   await written
-  const record = JSON.parse(writes[0]!.text) as OverviewRecord
+  const record = JSON.parse(writes[0]!.text) as StatusRecord
 
   expect(record).toMatchObject({
     exchange: { kind: 'mid-turn', turn: { person: 'go', trigger: null, activity: ['edited sync.ts'] } },
@@ -470,11 +470,11 @@ test('a failed Overview call’s record holds the error the host reported, and a
   expect(record.attempts.map(a => [a.model, a.answeredBy, a.answer, a.error])).toEqual([
     ['sonnet', null, null, 'api-error 529: overloaded'],
   ])
-  expect(overviewCallPrompt(record.input, record.exchange)).toBe(record.prompt)
+  expect(statusCallPrompt(record.input, record.exchange)).toBe(record.prompt)
   expect((await host.read()).overviewFailure?.cause).toBe('no-answer')
 })
 
-test('a session keeps the records of its newest 100 Overview calls, and a session whose last call is 14 days old loses its records', async () => {
+test('a session keeps the records of its newest 100 Status calls, and a session whose last call is 14 days old loses its records', async () => {
   const saved = new Map<string, string>()
   const removedFolders: string[] = []
   const under = (folder: string) => [...saved.keys()].filter(p => p.startsWith(`${folder}/`))
@@ -489,10 +489,10 @@ test('a session keeps the records of its newest 100 Overview calls, and a sessio
   }
   const folder = '/capped-records'
   const write = (session: string, at: number) =>
-    writeOverviewRecord(
+    writeStatusRecord(
       { host: 'codex', folder, session, files },
       {
-        version: OVERVIEW_RECORD_VERSION,
+        version: STATUS_RECORD_VERSION,
         host: 'codex',
         session,
         at,
@@ -522,8 +522,8 @@ test('a session keeps the records of its newest 100 Overview calls, and a sessio
   expect(under(`${folder}/long`)).toHaveLength(RECORDS_PER_SESSION)
 })
 
-test('a failed Overview call shows in the status line on the Overview tab, in place of a failed update, and on no other tab', () => {
-  const failed = failedOverview(
+test('a failed Status call shows in the status line on the Status tab, in place of a failed update, and on no other tab', () => {
+  const failed = failedStatus(
     { ...emptySession(), presence: { ...emptySession().presence, ledgerState: 'failed' } },
     null,
     0,
@@ -532,10 +532,10 @@ test('a failed Overview call shows in the status line on the Overview tab, in pl
   const v = sessionView(failed, 1000, 1000, true, NO_HOLDS)
   const prs = { isFetching: false, hasPrs: false }
 
-  expect(v.overviewPage.error).not.toBeNull()
-  expect(footerStatus('overview', v.status, prs, v.overviewPage.error).error).toBe(v.overviewPage.error)
-  expect(footerStatus('needsYou', v.status, prs, v.overviewPage.error).error).toBe(v.status.error)
-  expect(footerStatus('prs', v.status, prs, v.overviewPage.error).error).toBeNull()
+  expect(v.statusPage.error).not.toBeNull()
+  expect(footerStatus('overview', v.status, prs, v.statusPage.error).error).toBe(v.statusPage.error)
+  expect(footerStatus('needsYou', v.status, prs, v.statusPage.error).error).toBe(v.status.error)
+  expect(footerStatus('prs', v.status, prs, v.statusPage.error).error).toBeNull()
 })
 
 const ITEM: Item = {
@@ -551,18 +551,18 @@ const ITEM: Item = {
   from: 'record',
 }
 
-test('the Overview page draws each status with its mark and tone, and ◆ on a subject an open ask holds up, whose Asks row names it until the subject closes', () => {
+test('the Status page draws each status with its mark and tone, and ◆ on a subject an open ask holds up, whose Asks row names it until the subject closes', () => {
   const statuses = ['working', 'queued', 'waits-on-other', 'queued'] as const
   const asks = new Set([ITEM.id])
-  const opened = applyOverview(
+  const opened = applyStatus(
     null,
-    parseOverview([...statuses.map((st, n) => `NEW: ${st} | Part ${n} | step`), `LINK: ${ITEM.id} | s4`].join('\n'))!,
+    parseStatus([...statuses.map((st, n) => `NEW: ${st} | Part ${n} | step`), `LINK: ${ITEM.id} | s4`].join('\n'))!,
     1000,
     asks,
   )
-  const closed = applyOverview(opened, parseOverview('DONE: s1 | built')!, 2000, asks)
+  const closed = applyStatus(opened, parseStatus('DONE: s1 | built')!, 2000, asks)
   const held = { ...emptySession(), ledger: { ...EMPTY, items: [ITEM], overview: closed } }
-  const rows = sessionView(held, 3000, 1000, true, NO_HOLDS).overviewPage.rows.flatMap(r =>
+  const rows = sessionView(held, 3000, 1000, true, NO_HOLDS).statusPage.rows.flatMap(r =>
     r.kind === 'subject' ? [[r.name, r.mark, r.tone]] : [],
   )
 
@@ -577,7 +577,7 @@ test('the Overview page draws each status with its mark and tone, and ◆ on a s
   )
   const heldDone = {
     ...held,
-    ledger: { ...held.ledger, overview: applyOverview(closed, parseOverview('DONE: s4 | built')!, 2500, asks) },
+    ledger: { ...held.ledger, overview: applyStatus(closed, parseStatus('DONE: s4 | built')!, 2500, asks) },
   }
   expect(allRows(sessionView(heldDone, 3000, 1000, true, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBeNull()
 })
@@ -599,13 +599,13 @@ test('a session saved by the Progress trial build loads without its results, sub
   expect(loaded.overviewFailure).toBeNull()
 })
 
-test('a sample saved without an Overview is replaced, and the sample session carries its own', () => {
+test('a sample saved without a Status is replaced, and the sample session carries its own', () => {
   const old = demoView(1_000_000, 'Claude')
 
   expect(isDemoCopy(old)).toBe(true)
   expect(isDemoCopy({ ...old, presence: { isTurnRunning: false } })).toBe(true)
   expect(isDemoCopy({ ...old, ledger: { ...old.ledger, overview: undefined } })).toBe(false)
-  const page = sessionView(demoSession(1_000_000, 'Claude'), 1_000_000, 1000, true, NO_HOLDS).overviewPage
+  const page = sessionView(demoSession(1_000_000, 'Claude'), 1_000_000, 1000, true, NO_HOLDS).statusPage
   expect(page.head?.title).toBe('Pinch to dismiss')
   expect(page.rows.map(r => r.kind)).toEqual([
     'subject',
@@ -625,7 +625,7 @@ test('a sample saved without an Overview is replaced, and the sample session car
 
 test('a conversation start carries the head and where each open subject stands, not on a resume the guidance, and nothing for an empty session', () => {
   const described = emptySession()
-  const ledger = { ...described.ledger, overview: applyOverview(null, answer, 1000, new Set()) }
+  const ledger = { ...described.ledger, overview: applyStatus(null, answer, 1000, new Set()) }
   const carried = startContext(CLAUDE_CODE, { ...described, ledger }, 'resume')
   expect(carried).toContain('Working on: Work offline: Letting the app work without a connection')
   expect(carried).toContain('- Offline mode: queue built (working)')

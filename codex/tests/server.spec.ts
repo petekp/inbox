@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import { demoView } from '../../hooks/demo'
 import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
 import { applyUpdate, parseReply } from '../../hooks/ledger'
-import { EMPTY_OVERVIEW } from '../../hooks/overview'
+import { EMPTY_SESSION_STATUS } from '../../hooks/status'
 import { feedbackOf, feedbackText, NO_HOLDS, QUEUED_AFTER_MS, screenTabOf, SETTLED_MS } from '../../hooks/view'
 import type { Feedback } from '../../hooks/view'
 import { screenText } from '../../hooks/model-text'
@@ -500,8 +500,8 @@ test('the view request saves the tab the page shows, ignores a name that is not 
   )
 })
 
-test('a release build saves its first tab for an Overview the page names, and starts no look, while a next build saves the Overview', async () => {
-  const withOverview = async (isNextBuild: boolean) => {
+test('a release build saves its first tab for a Status the page names, and starts no look, while a next build saves the Status', async () => {
+  const withStatus = async (isNextBuild: boolean) => {
     const server = await setup(
       0,
       () => 100,
@@ -510,17 +510,17 @@ test('a release build saves its first tab for an Overview the page names, and st
     )
     await updateState(server.dir, 's1', s => ({
       ...s,
-      ledger: { ...s.ledger, overview: { ...EMPTY_OVERVIEW, headline: 'h' } },
+      ledger: { ...s.ledger, overview: { ...EMPTY_SESSION_STATUS, headline: 'h' } },
     }))
     await server.call('inbox_view', { tab: 'overview' }, { thread_id: 's1' })
 
     return readState(server.dir, 's1')
   }
-  const release = await withOverview(false)
+  const release = await withStatus(false)
   assert.equal(release.shownTab, 'needsYou')
   assert.equal(release.ledger.overview?.look, null)
 
-  const next = await withOverview(true)
+  const next = await withStatus(true)
   assert.equal(next.shownTab, 'overview')
   assert.equal(next.ledger.overview?.look?.startedAt, 100)
 })

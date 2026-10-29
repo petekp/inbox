@@ -8,7 +8,7 @@ import type {
   LastAction,
   Ledger,
   LocalResult,
-  Overview,
+  SessionStatus,
   PressKind,
   RowNote,
   PageTab,
@@ -21,7 +21,7 @@ import type {
   Turns,
 } from '../types'
 import { closedAt, closedState, reopenFinding, reopenItem } from './ledger'
-import { isChildRunning, isOpen } from './overview'
+import { isChildRunning, isOpen } from './status'
 import { ago, clipLabel, cutAtPhrase } from './text'
 import { questionNumbers } from './model-text'
 import type { ScreenTab } from './model-text'
@@ -69,7 +69,7 @@ export const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; list: 'quest
   { kind: 'task', title: 'Tasks', list: 'tasks' },
 ]
 
-export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: OverviewTone }> = {
+export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: StatusTone }> = {
   working: { mark: '●', tone: null },
   queued: { mark: '○', tone: null },
   'waits-on-other': { mark: '◌', tone: null },
@@ -139,16 +139,16 @@ export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', 
 export type HelpKey = { keys: string; does: string }
 
 /**
- * The keys a look's Help lists, for the tab Help opened over. `hasOverviewButtons` says the Overview has a row with a
+ * The keys a look's Help lists, for the tab Help opened over. `hasStatusButtons` says the Status has a row with a
  * button, which the terminal and omp select with j and k. Desktop takes no keys, so its Help lists marks only. Each
  * look binds these keys in its own adapter.
  */
-export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasOverviewButtons: boolean): HelpKey[] {
+export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasStatusButtons: boolean): HelpKey[] {
   const tabKeys = shownTabs(isNextBuild)
     .map(t => t.hotkey)
     .join(' ')
   const hasRows = isRowTab(tab)
-  const selectsOverviewRows = tab === 'overview' && hasOverviewButtons
+  const selectsStatusRows = tab === 'overview' && hasStatusButtons
   const switchTabs = { keys: tabKeys, does: 'Switch tabs' }
   switch (look) {
     case 'desktop':
@@ -156,7 +156,7 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasOve
     case 'terminal':
       return [
         switchTabs,
-        ...(hasRows || selectsOverviewRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
+        ...(hasRows || selectsStatusRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
         { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
       ]
     case 'codex':
@@ -178,7 +178,7 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasOve
               { keys: 'u', does: 'Undo the last close' },
             ]
           : [
-              ...(selectsOverviewRows
+              ...(selectsStatusRows
                 ? [
                     { keys: 'j k', does: 'Select the next or previous row with a button' },
                     { keys: '↵', does: "Press the selected row's button" },
@@ -420,8 +420,8 @@ export type RowView = {
   /** The description of each answer button that has one, in button order. A folded button's is folded with it. */
   optionDescriptions: OptionDescription[]
   /**
-   * "Holds up" and the open subject's name, on an open ask the Overview call linked to an open subject. A look draws it
-   * on a next build, which draws the Overview.
+   * "Holds up" and the open subject's name, on an open ask the Status call linked to an open subject. A look draws it
+   * on a next build, which draws the Status.
    */
   holdsUpLine: string | null
 }
@@ -509,7 +509,7 @@ function isHandedOffDone(row: Pick<RowView, 'state' | 'feedback'>): boolean {
 
 /**
  * The mark of a row's result: what came of it. The terminal and omp draw it before the result, and desktop and Codex
- * in the row's mark column. `isRunning` says the look draws its running mark in place of `text`, as on the Overview,
+ * in the row's mark column. `isRunning` says the look draws its running mark in place of `text`, as on the Status,
  * while what the row sent is on its way.
  */
 export type ResultMark = { text: string; isRunning: boolean; tone?: 'done' }
@@ -714,7 +714,7 @@ export function versionLabel(version: string, isNextBuild: boolean): string {
 
 const UPDATE_FAILED = 'Last update failed. Items from that reply may be missing.'
 const HOLDS_UP_TEXT = 'Holds up'
-const OVERVIEW_FAILED = 'Last Overview update failed. Changes from that reply may be missing.'
+const STATUS_FAILED = 'Last Status update failed. Changes from that reply may be missing.'
 const UPDATE_RETRIES = ' It retries after your next message.'
 
 function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[] } {
@@ -1037,7 +1037,7 @@ type TabName = { id: ShownTab; label: string; symbol: string }
 type DrawnTab = TabName & { hotkey: string }
 
 const TAB_NAMES: readonly TabName[] = [
-  { id: 'overview', label: 'Overview', symbol: '\u{1F9ED}' },
+  { id: 'overview', label: 'Status', symbol: '\u{1F9ED}' },
   { id: 'needsYou', label: 'Asks', symbol: '\u{1F64B}' },
   { id: 'findings', label: 'Finds', symbol: '\u{1F50D}' },
   { id: 'prs', label: 'PRs', symbol: '\u{1F500}' },
@@ -1049,7 +1049,7 @@ const numbered = (tabs: readonly TabName[]): readonly DrawnTab[] =>
 const NEXT_BUILD_TABS = numbered(TAB_NAMES)
 const RELEASE_TABS = numbered(TAB_NAMES.filter(t => t.id !== 'overview'))
 
-/** The tabs a build draws, in order, each keyed by its place. Only a next build draws the Overview. */
+/** The tabs a build draws, in order, each keyed by its place. Only a next build draws the Status. */
 export function shownTabs(isNextBuild: boolean): readonly DrawnTab[] {
   return isNextBuild ? NEXT_BUILD_TABS : RELEASE_TABS
 }
@@ -1124,38 +1124,38 @@ export const ROW_TABS = TAB_NAMES.filter((t): t is TabName & { id: Tab } => isRo
 
 export const LISTED_TABS = TAB_NAMES.filter((t): t is TabName & { id: ListedTab } => isListedTab(t.id))
 
-/** A mark's tone on the Overview. Null draws it muted. */
-export type OverviewTone = 'needsYou' | 'done' | null
+/** A mark's tone on the Status. Null draws it muted. */
+export type StatusTone = 'needsYou' | 'done' | null
 
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
-export type OverviewBranch = 'mid' | 'last'
+export type StatusBranch = 'mid' | 'last'
 
 /** The word after a row's name: "waiting" in the needs-you tone while it waits on the person, or "finished". */
-export type OverviewStall = { text: string; tone: 'needsYou' | 'done' }
+export type StatusStall = { text: string; tone: 'needsYou' | 'done' }
 
 /**
- * One line of the Overview's list, in the order to draw it. Each look lays out the parts; none chooses them. A subject
+ * One line of the Status's list, in the order to draw it. Each look lays out the parts; none chooses them. A subject
  * or child draws its name with its stall word after it, past `STALL_GAP`, in the stall's tone. A subject draws where it
  * stands on the line under its name.
  */
-export type OverviewRow = OverviewRowParts & {
+export type StatusRow = StatusRowParts & {
   /** Whether a rule sets it apart from the row above. A subject and the rows under it are one item, and the look line is a rule already. */
   isRuledAbove: boolean
 }
 
-type OverviewRowParts =
+type StatusRowParts =
   | {
       kind: 'subject'
       id: string
       mark: string
-      tone: OverviewTone
+      tone: StatusTone
       /** Whether its work runs now, so a look animates the mark: this session's turn runs, or a child of it does. */
       isRunning: boolean
       name: string
       /** Where it stands. Null for a finished row below the look line, which the person has seen. */
       text: string | null
       /** "waiting" while an open ask holds it up. */
-      stall: OverviewStall | null
+      stall: StatusStall | null
       /** The names of the subjects merged into it, while the person has not seen them. */
       merged: string | null
       /** The plan a reversal replaced, while the person has not seen it. */
@@ -1169,29 +1169,29 @@ type OverviewRowParts =
       kind: 'child'
       id: string
       mark: string
-      tone: OverviewTone
+      tone: StatusTone
       /** Whether its work shows under way, as `isChildWorking` says. A look animates the mark while it is set. */
       isRunning: boolean
       name: string
       /** What its work does, as `childStall` says. */
-      stall: OverviewStall | null
+      stall: StatusStall | null
       /** Its place under its subject. Null when it is linked to no subject the list shows, so it sits at the top of the list. */
-      branch: OverviewBranch | null
+      branch: StatusBranch | null
     }
   /** The children of a subject past `CHILD_ROWS`, as "+ 2 more running", or "+ 2 more" when one finished. It is always the last row under its subject. */
   | { kind: 'more'; id: string; text: string; branch: 'last' }
   /** Where the person last looked: rows above it changed since. */
   | { kind: 'look'; id: string; text: string }
   /** Rows folded into a count, as "✓ 3 done" or "○ 2 more queued". */
-  | { kind: 'fold'; id: string; mark: string; tone: OverviewTone; text: string }
+  | { kind: 'fold'; id: string; mark: string; tone: StatusTone; text: string }
 
-/** What the Overview page shows. Every look draws it as it is. */
-export type OverviewPage = {
+/** What the Status page shows. Every look draws it as it is. */
+export type StatusPage = {
   isEmpty: boolean
-  /** What the session is focused on now. The description is null until the Overview call writes one. */
+  /** What the session is focused on now. The description is null until the Status call writes one. */
   head: { title: string; description: string | null } | null
-  rows: OverviewRow[]
-  /** The status line's error while the last Overview call wrote nothing. */
+  rows: StatusRow[]
+  /** The status line's error while the last Status call wrote nothing. */
   error: string | null
   empty: { title: string; hint: string }
 }
@@ -1203,8 +1203,8 @@ const MERGED_PREFIX = 'merged in: '
 /** What separates a row's name from its stall word. */
 export const STALL_GAP = ' · '
 
-/** The most lines each text on an Overview row wraps to: a name, where it stands, a was line. A look cuts past them with an ellipsis. */
-export const OVERVIEW_TEXT_LINES = 3
+/** The most lines each text on a Status row wraps to: a name, where it stands, a was line. A look cuts past them with an ellipsis. */
+export const STATUS_TEXT_LINES = 3
 /** The most children drawn under one subject; the rest fold into "+ N more running". */
 export const CHILD_ROWS = 3
 /** Finished rows drawn above the look line; older ones fold into the count. */
@@ -1212,12 +1212,12 @@ const NEW_CLOSED_ROWS = 2
 /** Open rows drawn before the oldest queued ones fold into a count. */
 const OPEN_ROWS = 7
 
-const CHILD_MARK: { mark: string; tone: OverviewTone } = { mark: SUBJECT_MARKS.working.mark, tone: null }
+const CHILD_MARK: { mark: string; tone: StatusTone } = { mark: SUBJECT_MARKS.working.mark, tone: null }
 
 /** The order of subjects on each side of the look line, from what needs the person to what is finished. */
-const OVERVIEW_PLACES = ['held', 'working', 'waits-on-other', 'queued', 'closed'] as const
+const STATUS_PLACES = ['held', 'working', 'waits-on-other', 'queued', 'closed'] as const
 
-type OverviewPlace = (typeof OVERVIEW_PLACES)[number]
+type StatusPlace = (typeof STATUS_PLACES)[number]
 
 export const RUNNING_FRAME_MS = 300
 
@@ -1234,7 +1234,7 @@ export function mergedLine(merged: string, fits: (text: string) => boolean): str
 
 /**
  * A row's name as it shows before its stall word, which stays on the line of its last word. Whole when `fits` says the
- * name and the stall word fit in `OVERVIEW_TEXT_LINES` lines, else cut at a word with an ellipsis until they do. The
+ * name and the stall word fit in `STATUS_TEXT_LINES` lines, else cut at a word with an ellipsis until they do. The
  * stall word is never cut. When no cut fits, the name keeps its first word.
  */
 export function nameBeforeStall(name: string, fits: (shown: string) => boolean): string {
@@ -1244,7 +1244,7 @@ export function nameBeforeStall(name: string, fits: (shown: string) => boolean):
   return cuts.find(fits) ?? cuts.at(-1)!
 }
 
-export function hasRunningMark(page: OverviewPage): boolean {
+export function hasRunningMark(page: StatusPage): boolean {
   return page.rows.some(r => (r.kind === 'subject' || r.kind === 'child') && r.isRunning)
 }
 
@@ -1254,7 +1254,7 @@ export function runningMark(now: number): string {
 }
 
 /** Whether `row` starts an item after another, with no look line between them. */
-function isItemAfterItem(row: OverviewRowParts, prev: OverviewRowParts | undefined): boolean {
+function isItemAfterItem(row: StatusRowParts, prev: StatusRowParts | undefined): boolean {
   const isUnderSubject = row.kind === 'more' || (row.kind === 'child' && row.branch !== null)
 
   return prev !== undefined && prev.kind !== 'look' && row.kind !== 'look' && !isUnderSubject
@@ -1274,14 +1274,14 @@ function isChildWorking(c: Child): boolean {
  * A delegate's stall word, from what Herdr shows: "waiting" at a question or an approval, in the needs-you tone, and
  * "finished", in the done tone. Other work shows none, since its moving mark shows it runs.
  */
-function childStall(c: Child): OverviewStall | null {
+function childStall(c: Child): StatusStall | null {
   if (c.delegateState === 'finished') return { text: 'finished', tone: 'done' }
   if (c.delegateState === 'blocked') return { text: 'waiting', tone: 'needsYou' }
 
   return null
 }
 
-function childRow(c: Child, branch: OverviewBranch | null): OverviewRowParts {
+function childRow(c: Child, branch: StatusBranch | null): StatusRowParts {
   const marks =
     c.delegateState === 'finished' ? SUBJECT_MARKS.done : c.delegateState === 'blocked' ? HELD_MARK : CHILD_MARK
 
@@ -1296,14 +1296,14 @@ function childRow(c: Child, branch: OverviewBranch | null): OverviewRowParts {
   }
 }
 
-export function overviewPage(
+export function statusPage(
   s: {
     ledger: Pick<Ledger, 'overview' | 'items'>
     presence: Session['presence']
     overviewFailure?: Session['overviewFailure']
   },
   now: number,
-): OverviewPage {
+): StatusPage {
   const o = s.ledger.overview
   const look = o?.lastLookAt ?? null
   const subjects = (o?.subjects ?? []).filter(x => x.into === null)
@@ -1318,13 +1318,13 @@ export function overviewPage(
 
     return oldest ? { id: oldest.id, kind: oldest.kind } : null
   }
-  const placeOf = (x: Subject): OverviewPlace =>
+  const placeOf = (x: Subject): StatusPlace =>
     isHeld(x) ? 'held' : x.status === 'done' || x.status === 'dropped' ? 'closed' : x.status
   const pageOrder = (x: Subject, y: Subject) =>
     Number(isNew(y)) - Number(isNew(x)) ||
-    OVERVIEW_PLACES.indexOf(placeOf(x)) - OVERVIEW_PLACES.indexOf(placeOf(y)) ||
+    STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) ||
     y.changedAt - x.changedAt
-  const stallOf = (x: Subject): OverviewStall | null => (isHeld(x) ? { text: 'waiting', tone: 'needsYou' } : null)
+  const stallOf = (x: Subject): StatusStall | null => (isHeld(x) ? { text: 'waiting', tone: 'needsYou' } : null)
   const newClosed = subjects
     .filter(x => !isOpen(x) && isNew(x))
     .sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0))
@@ -1344,10 +1344,10 @@ export function overviewPage(
     .filter(c => isChildRunning(c, now) || isFinishedUnseen(c, look))
     .sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt))
   const shownIds = new Set(shown.map(x => x.id))
-  const rows: OverviewRowParts[] = running
+  const rows: StatusRowParts[] = running
     .filter(c => c.subjectId === null || !shownIds.has(c.subjectId))
     .map(c => childRow(c, null))
-  const lookRow: OverviewRowParts | null = look === null ? null : { kind: 'look', id: 'look', text: LOOK_TEXT }
+  const lookRow: StatusRowParts | null = look === null ? null : { kind: 'look', id: 'look', text: LOOK_TEXT }
   const firstSeen = shown.findIndex(x => !isNew(x))
   for (const [i, x] of shown.entries()) {
     const hasNewAbove = i > 0
@@ -1405,9 +1405,9 @@ export function overviewPage(
     isEmpty: head === null && rows.length === 0,
     head,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
-    error: s.overviewFailure ? OVERVIEW_FAILED : null,
+    error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
-      title: 'Overview',
+      title: 'Status',
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts.",
     },
   }
@@ -1662,16 +1662,16 @@ export function rowKeyPlan(r: RowView, isAllShown: boolean): { keys: PlannedKey[
   return { keys, more }
 }
 
-/** A press on an Overview row. `show-ask` opens Asks with that ask selected, and sends nothing. */
-export type OverviewPress = { action: 'show-ask'; askId: string }
+/** A press on an Status row. `show-ask` opens Asks with that ask selected, and sends nothing. */
+export type StatusPress = { action: 'show-ask'; askId: string }
 
-export type OverviewKey = { press: OverviewPress; label: string; hotkey: string; kind: PressKind }
+export type StatusKey = { press: StatusPress; label: string; hotkey: string; kind: PressKind }
 
 /** The View button's label, by the kind of ask it opens. */
 export const VIEW_ASK_LABELS: Record<Item['kind'], string> = { question: 'View question', task: 'View task' }
 
-/** An Overview row's buttons, in the order every look draws them. A row with none takes no press. */
-export function overviewKeyPlan(row: OverviewRow): OverviewKey[] {
+/** An Status row's buttons, in the order every look draws them. A row with none takes no press. */
+export function statusKeyPlan(row: StatusRow): StatusKey[] {
   if (row.kind !== 'subject' || row.ask === null) return []
 
   return [
@@ -1684,14 +1684,14 @@ export function overviewKeyPlan(row: OverviewRow): OverviewKey[] {
   ]
 }
 
-/** The Overview rows that have buttons, in page order: the rows j and k move between. */
-export function overviewKeyRows(page: OverviewPage): OverviewRow[] {
-  return page.rows.filter(r => overviewKeyPlan(r).length > 0)
+/** The Status rows that have buttons, in page order: the rows j and k move between. */
+export function statusKeyRows(page: StatusPage): StatusRow[] {
+  return page.rows.filter(r => statusKeyPlan(r).length > 0)
 }
 
-/** The Overview row whose keys work: the selected row while it still has buttons, else the first row that has. */
-export function overviewSelected(page: OverviewPage, selectedId: string | null): OverviewRow | null {
-  const rows = overviewKeyRows(page)
+/** The Status row whose keys work: the selected row while it still has buttons, else the first row that has. */
+export function statusSelected(page: StatusPage, selectedId: string | null): StatusRow | null {
+  const rows = statusKeyRows(page)
 
   return rows.find(r => r.id === selectedId) ?? rows[0] ?? null
 }
@@ -1734,8 +1734,8 @@ export function actionLines(
   return { lines, isFollowUpLineNew }
 }
 
-/** The open subject the Overview call linked an ask to, by the ask's id. */
-function heldSubjectOf(o: Overview | null, askId: string): Subject | null {
+/** The open subject the Status call linked an ask to, by the ask's id. */
+function heldSubjectOf(o: SessionStatus | null, askId: string): Subject | null {
   const subjectId = o?.askSubjects[askId]
 
   return o?.subjects.find(s => s.id === subjectId && isOpen(s)) ?? null
@@ -1976,16 +1976,16 @@ const REFRESHING_PRS_TEXT = 'Refreshing PRs…'
 /**
  * The status line under the inbox for the shown tab. The PRs tab says when PRs refresh, and only once it lists some,
  * since an empty PRs tab already reads "Checking for PRs…". A failed ledger update is about rows, so it shows on every
- * tab but the PRs tab. On the Overview tab, `overviewError` shows in its place.
+ * tab but the PRs tab. On the Status tab, `statusPageError` shows in its place.
  */
 export function footerStatus(
   tab: ShownTab,
   status: ItemStatus,
   prs: { isFetching: boolean; hasPrs: boolean },
-  overviewError: string | null,
+  statusPageError: string | null,
 ): { text: string | null; error: string | null } {
   if (tab === 'prs') return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null }
-  const error = (tab === 'overview' ? overviewError : null) ?? status.error
+  const error = (tab === 'overview' ? statusPageError : null) ?? status.error
 
   return { text: status.isUpdating ? UPDATING_TEXT : null, error }
 }

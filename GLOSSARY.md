@@ -61,7 +61,7 @@ draws it. `MARK_LEGEND` in `hooks/view.ts` lists them all.
 **Result mark**:
 The mark of what came of a row: ✓ when handled, ✕ when dismissed, ✗ when it
 lapsed, as when the agent closed it because the work overtook it. It runs, as
-an Overview mark does, while what the row sent is on its way to the agent.
+an Status mark does, while what the row sent is on its way to the agent.
 
 **Finding**:
 An issue or opportunity the agent noticed outside the current task.
@@ -73,14 +73,19 @@ _Avoid_: Findings, as the tab's name. A find, for one finding.
 
 ### Surfaces
 
-**Overview**:
+**Status (the tab)**:
 The first tab on a next build: what the session's work is for, and where each
 part of it stands, from what needs the person to what is finished. A release
 build does not draw it. The inbox model updates it after each reply, in a
 second call after the one that updates the rows. It is not a list of events.
+Its id is `overview`, the name it had before it was called Status. The saved
+state keeps that id and the fields `overview`, `overviewFailure` and
+`lastOverviewCallAt`, so builds before the rename still read it. The code calls
+the tab's data `SessionStatus`.
+_Avoid_: Overview, as the tab's name. "Status" alone for a subject's status.
 
 **Head**:
-The top of the Overview: a title of a few words, like a subject's name, for
+The top of the Status: a title of a few words, like a subject's name, for
 what the session is focused on now, and one line under it on what the session
 is doing about it. The inbox model writes it, and checks it at each update
 against the open and finished subjects, so it moves on when the work does,
@@ -88,10 +93,10 @@ even across many small exchanges. When the work it names is done and nothing
 else is working, it stays.
 
 **Subject**:
-One part of the session's work on the Overview, such as a feature, a fix or a
+One part of the session's work on the Status, such as a feature, a fix or a
 release. It has a name, a status, a few words on where it stands, and the time
-it last changed. The statuses are working, queued, waits on others, done and
-dropped. The inbox model adds and changes subjects by id, and code keeps their
+it last changed. Its status (a subject's status, not the Status tab) is one of
+working, queued, waits on others, done and dropped. The inbox model adds and changes subjects by id, and code keeps their
 times. The inbox model also links an open question or task to the subject it
 holds up. While that item is open, the subject's mark reads ◆ in place of its
 status's mark, and the item's Asks row reads "Holds up" and the subject's name.
@@ -103,12 +108,12 @@ _Avoid_: workstream, stream, item (an item is a question or task)
 Work that runs apart from the session's turn: a subagent, a background command
 or task, a workflow run, or a Herdr delegate. It shows under its subject while
 it runs, and leaves when it ends. A delegate that finished stays, reading
-"finished", until the person has seen the Overview. Code follows it from the
+"finished", until the person has seen the Status. Code follows it from the
 host's events and from Herdr. The inbox model only links it to a subject.
 _Avoid_: subitem, job
 
 **Stall words**:
-The word after an Overview row's name when its work waits on the person or has
+The word after an Status row's name when its work waits on the person or has
 finished. A subject held by an open question or task reads "waiting", in the
 needs-you tone, and so does a delegate while Herdr shows it at a question or an
 approval. A finished delegate reads "finished". A row waiting on someone else
@@ -117,7 +122,7 @@ them `stall`.
 _Avoid_: age
 
 **Seen line**:
-The rule labeled "Last seen" on the Overview, at the time the person last left the
+The rule labeled "Last seen" on the Status, at the time the person last left the
 page after it showed for at least five seconds. A shorter pass through the tab
 leaves the line where it was. A row above it changed since then. Every open row
 shows where it stands, above or below the line. A row below it leaves out its
@@ -156,7 +161,7 @@ call, which Codex shows in place of the line. `personLine` in
 
 **Pane**:
 The `/inbox` panel beside the conversation in Claude Code, with its Asks,
-Finds and PRs tabs, and an Overview tab before them on a next build. Codex shows the same tabs in its Inbox tab. omp
+Finds and PRs tabs, and a Status tab before them on a next build. Codex shows the same tabs in its Inbox tab. omp
 shows them in an overlay that `/inbox` opens.
 
 **Tab symbol**:
@@ -232,7 +237,7 @@ warning stays until a clear.
 **Next build**:
 A checkout that follows the `next` branch and holds `NEXT_BUILD_MARK`, a file
 Git ignores, in each folder a host loads or installs. Each look's version label
-adds "next" on one, and only a next build draws the Overview tab.
+adds "next" on one, and only a next build draws the Status tab.
 `hooks/view.ts:versionLabel`, `hooks/view.ts:shownTabs`.
 
 **Parity record**:

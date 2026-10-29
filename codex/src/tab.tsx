@@ -18,8 +18,8 @@ import {
   closedMark,
   mergedLine,
   nameBeforeStall,
-  OVERVIEW_TEXT_LINES,
-  overviewKeyPlan,
+  STATUS_TEXT_LINES,
+  statusKeyPlan,
   settledMark,
   STALL_GAP,
   versionLabel,
@@ -79,17 +79,17 @@ import {
   shortAgo,
   shownOptionDescriptions,
 } from '../../hooks/view'
-import { BANNER_GAP_PT, BANNER_PAD_Y_PT, OVERVIEW_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
+import { BANNER_GAP_PT, BANNER_PAD_Y_PT, STATUS_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
 import type {
   ActionEmphasis,
   BannerView,
   DrawnEntry,
   DrawnLists,
   Feedback,
-  OverviewPage,
-  OverviewRow,
-  OverviewStall,
-  OverviewTone,
+  StatusPage,
+  StatusRow,
+  StatusStall,
+  StatusTone,
   PressState,
   Holds,
   ResultMark,
@@ -203,11 +203,11 @@ function switchTab(to: ShownTab) {
   isHelpShown = false
 }
 
-/** The tab drawn: the shown tab when the view's build draws it, else the build's first tab, and Asks while the view has no Overview page, as from an older server. */
+/** The tab drawn: the shown tab when the view's build draws it, else the build's first tab, and Asks while the view has no Status page, as from an older server. */
 function drawnTab(): ShownTab {
   const drawn = drawnTabOf(tab, view?.isNextBuild === true)
 
-  return drawn === 'overview' && !view?.overviewPage ? 'needsYou' : drawn
+  return drawn === 'overview' && !view?.statusPage ? 'needsYou' : drawn
 }
 
 const selection: Record<Tab, { id: string; openedAt: number; index?: number } | null> = {
@@ -830,7 +830,7 @@ function itemRow(v: View, r: RowView): Row {
     ...resultHandle(r),
     ...(isHandedOff ? { fold: {} } : {}),
     title: r.title,
-    // A next build draws the Overview, so only it names the subject an ask holds up.
+    // A next build draws the Status, so only it names the subject an ask holds up.
     ...(v.isNextBuild === true && r.holdsUpLine ? { holdsUp: r.holdsUpLine } : {}),
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
     ...(described.length > 0
@@ -1367,12 +1367,12 @@ function pulseInStep(el: HTMLElement | null) {
   for (const a of el?.getAnimations?.() ?? []) a.startTime = 0
 }
 
-const TONE_CLASS: Record<NonNullable<OverviewTone>, string> = {
+const TONE_CLASS: Record<NonNullable<StatusTone>, string> = {
   needsYou: 'tone-needsYou',
   done: 'done',
 }
 
-function markClassOf(tone: OverviewTone, isRunning: boolean): string {
+function markClassOf(tone: StatusTone, isRunning: boolean): string {
   return ['mark', tone ? TONE_CLASS[tone] : null, isRunning ? 'running' : null].filter(Boolean).join(' ')
 }
 
@@ -1387,7 +1387,7 @@ function fitMergedLine(el: HTMLElement | null, merged: string) {
   el.textContent = mergedLine(merged, text => !measure || measure.measureText(text).width <= el.clientWidth)
 }
 
-const STALL_CLASS: Record<OverviewStall['tone'], string> = {
+const STALL_CLASS: Record<StatusStall['tone'], string> = {
   needsYou: 'tone-needsYou',
   done: 'tone-done',
 }
@@ -1399,7 +1399,7 @@ function nameParts(name: string): { head: string; last: string } {
   return at < 0 ? { head: '', last: name } : { head: name.slice(0, at + 1), last: name.slice(at + 1) }
 }
 
-/** Writes into a name line the name `nameBeforeStall` cuts so the line takes at most `OVERVIEW_TEXT_LINES` lines. */
+/** Writes into a name line the name `nameBeforeStall` cuts so the line takes at most `STATUS_TEXT_LINES` lines. */
 function fitNameLine(el: HTMLElement | null, name: string) {
   const flowEl = el?.querySelector<HTMLElement>('.flow')
   const headEl = el?.querySelector<HTMLElement>('.head')
@@ -1416,7 +1416,7 @@ function fitNameLine(el: HTMLElement | null, name: string) {
   write(
     nameBeforeStall(name, shown => {
       write(shown)
-      return lineCount() <= OVERVIEW_TEXT_LINES
+      return lineCount() <= STATUS_TEXT_LINES
     }),
   )
 }
@@ -1425,10 +1425,10 @@ function fitNameLine(el: HTMLElement | null, name: string) {
  * A row's name with its stall word after `STALL_GAP` in the stall's tone, on the line of the name's last word, which a
  * wrap never splits from them.
  */
-function NameLine({ name, stall }: { name: string; stall: OverviewStall | null }) {
+function NameLine({ name, stall }: { name: string; stall: StatusStall | null }) {
   if (!stall)
     return (
-      <div class="clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
+      <div class="clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
         {name}
       </div>
     )
@@ -1448,7 +1448,7 @@ function NameLine({ name, stall }: { name: string; stall: OverviewStall | null }
   )
 }
 
-/** An Overview row's View press: Asks shows with the ask selected and in view. */
+/** An Status row's View press: Asks shows with the ask selected and in view. */
 function showAsk(askId: string) {
   switchTab('needsYou')
   const index = view ? tabRows(view, 'needsYou').findIndex(r => r.id === askId) : -1
@@ -1457,10 +1457,10 @@ function showAsk(askId: string) {
   revealSelected()
 }
 
-function OverviewLine({ row }: { row: OverviewRow }) {
+function StatusLine({ row }: { row: StatusRow }) {
   if (row.kind === 'subject') {
     const merged = row.merged
-    const keys = overviewKeyPlan(row).map((k): Key => ({
+    const keys = statusKeyPlan(row).map((k): Key => ({
       label: k.label,
       emphasis: 'normal',
       run: () => showAsk(k.press.askId),
@@ -1474,19 +1474,19 @@ function OverviewLine({ row }: { row: OverviewRow }) {
         <div class="content tight">
           <NameLine name={row.name} stall={row.stall} />
           {row.text ? (
-            <div class="muted clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
+            <div class="muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
               {row.text}
             </div>
           ) : null}
           {merged ? (
             <div
               class="outcome muted clamp"
-              style={{ '--lines': OVERVIEW_TEXT_LINES }}
+              style={{ '--lines': STATUS_TEXT_LINES }}
               ref={el => fitMergedLine(el, merged)}
             />
           ) : null}
           {row.was ? (
-            <div class="outcome muted clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
+            <div class="outcome muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
               {WAS_PREFIX}
               {row.was}
             </div>
@@ -1529,7 +1529,7 @@ function OverviewLine({ row }: { row: OverviewRow }) {
   )
 }
 
-function OverviewTab({ page }: { page: OverviewPage }) {
+function StatusTab({ page }: { page: StatusPage }) {
   if (page.isEmpty)
     return (
       <div class="empty">
@@ -1539,10 +1539,10 @@ function OverviewTab({ page }: { page: OverviewPage }) {
     )
 
   return (
-    <main class="overview">
+    <main class="status-page">
       {page.head ? (
         <section>
-          <div class="overview-head">
+          <div class="status-head">
             <h1>{page.head.title}</h1>
             {page.head.description ? <p class="muted">{page.head.description}</p> : null}
           </div>
@@ -1552,8 +1552,8 @@ function OverviewTab({ page }: { page: OverviewPage }) {
         <section>
           <div class="list">
             {page.rows.flatMap(r => [
-              ...(r.isRuledAbove ? [<div key={`rule-${r.id}`} class="overview-rule" />] : []),
-              <OverviewLine key={r.id} row={r} />,
+              ...(r.isRuledAbove ? [<div key={`rule-${r.id}`} class="status-rule" />] : []),
+              <StatusLine key={r.id} row={r} />,
             ])}
           </div>
         </section>
@@ -1597,7 +1597,7 @@ function HelpPage({ v }: { v: View }) {
   const keys = helpKeys('codex', v.isNextBuild === true, drawnTab(), false)
 
   return (
-    <main class="overview help">
+    <main class="status-page help">
       <section>
         <GroupTitle title={HELP_COPY.keys} count={0} />
         <div class="help-keys">
@@ -2119,7 +2119,7 @@ function footerOf(v: View) {
     drawnTab(),
     v.status,
     { isFetching: v.isFetchingPrs, hasPrs: v.prs.drawn.length > 0 },
-    v.overviewPage?.error ?? null,
+    v.statusPage?.error ?? null,
   )
 }
 
@@ -2267,7 +2267,7 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
       ) : shown === 'prs' ? (
         <Prs v={v} now={now} />
       ) : (
-        <OverviewTab page={v.overviewPage} />
+        <StatusTab page={v.statusPage} />
       )}
       <footer>
         <button
@@ -2472,7 +2472,7 @@ function revealSelected() {
 
 function applyPageVariables() {
   document.documentElement.style.setProperty('--row-pad', `${ROW_PAD_PT}px`)
-  document.documentElement.style.setProperty('--overview-row-pad', `${OVERVIEW_ROW_PAD_PT}px`)
+  document.documentElement.style.setProperty('--status-row-pad', `${STATUS_ROW_PAD_PT}px`)
   document.documentElement.style.setProperty('--banner-pad-y', `${BANNER_PAD_Y_PT}px`)
   document.documentElement.style.setProperty('--banner-gap', `${BANNER_GAP_PT}px`)
   document.documentElement.style.setProperty('--pulse', `${RUNNING_PULSE_MS}ms`)

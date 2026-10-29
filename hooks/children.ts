@@ -1,5 +1,5 @@
-import type { Child, DelegateState, Overview } from '../types'
-import { childActive, childEnded, subjectTouched, withChild } from './overview'
+import type { Child, DelegateState, SessionStatus } from '../types'
+import { childActive, childEnded, subjectTouched, withChild } from './status'
 import type { HerdrStatus } from './herdr'
 import { clipLabel } from './text'
 
@@ -14,14 +14,14 @@ const NAME_CHARS = 80
  * as a background command, starts with no activity time.
  */
 export function childStarted(
-  o: Overview | null,
+  o: SessionStatus | null,
   { ref, kind, name }: Pick<Child, 'ref' | 'kind' | 'name'>,
   at: number,
   {
     reportsActivity = true,
     delegateState = null,
   }: { reportsActivity?: boolean; delegateState?: DelegateState | null } = {},
-): Overview {
+): SessionStatus {
   const line = name.trim().split('\n')[0] ?? ''
   const lastActivityAt = reportsActivity ? at : null
 
@@ -36,7 +36,7 @@ export function childStarted(
  * The child with `ref` did something at `at`. Its saved time moves only once it is `ACTIVITY_SAVE_MS` old, so most of
  * a child's calls change nothing and a host writes nothing for them.
  */
-export function childWorked(o: Overview | null, ref: string, at: number): Overview | null {
+export function childWorked(o: SessionStatus | null, ref: string, at: number): SessionStatus | null {
   const saved = o?.children.find(c => c.ref === ref)?.lastActivityAt ?? null
   const isSavedRecently = saved !== null && at - saved < ACTIVITY_SAVE_MS
 
@@ -44,7 +44,7 @@ export function childWorked(o: Overview | null, ref: string, at: number): Overvi
 }
 
 /** Every running child that `isEnded` names ended at `at`. */
-function childrenEnded(o: Overview | null, isEnded: (c: Child) => boolean, at: number): Overview | null {
+function childrenEnded(o: SessionStatus | null, isEnded: (c: Child) => boolean, at: number): SessionStatus | null {
   const isEnding = (c: Child) => c.endedAt === null && isEnded(c)
   if (!o?.children.some(isEnding)) return o
 
@@ -68,7 +68,7 @@ export function taskNotice(text: string): TaskNotice | null {
 }
 
 /** The child a notice names ended, or did something, at `at`. */
-export function noticeApplied(o: Overview | null, notice: TaskNotice, at: number): Overview | null {
+export function noticeApplied(o: SessionStatus | null, notice: TaskNotice, at: number): SessionStatus | null {
   const ref = notice.ids.find(id => o?.children.some(c => c.ref === id))
   if (ref === undefined) return o
 
@@ -98,7 +98,7 @@ export const delegateRef = (name: string) => `herdr:${name}`
  * The delegate a step names runs from `at`. A delegate prompted again keeps its id and link, and a new run starts its
  * age over. A prompt shows it working, so it can read finished once Herdr shows it ready.
  */
-function delegateRunning(o: Overview | null, step: DelegateStep, at: number): Overview | null {
+function delegateRunning(o: SessionStatus | null, step: DelegateStep, at: number): SessionStatus | null {
   const ref = delegateRef(step.name)
   const known = o?.children.find(c => c.ref === ref)
   const isRunning = known !== undefined && known.endedAt === null
@@ -111,19 +111,19 @@ function delegateRunning(o: Overview | null, step: DelegateStep, at: number): Ov
   return step.isPrompt ? delegateStateSet(active, ref, 'working') : active
 }
 
-function delegateStateSet(o: Overview | null, ref: string, delegateState: DelegateState): Overview | null {
+function delegateStateSet(o: SessionStatus | null, ref: string, delegateState: DelegateState): SessionStatus | null {
   if (!o?.children.some(c => c.ref === ref && c.delegateState !== delegateState)) return o
 
   return { ...o, children: o.children.map(c => (c.ref === ref ? { ...c, delegateState } : c)) }
 }
 
 /** Every delegate `command` starts, prompts or waits on runs from `at`, as the command starts. */
-export function delegatesStarted(o: Overview | null, command: string, at: number): Overview | null {
+export function delegatesStarted(o: SessionStatus | null, command: string, at: number): SessionStatus | null {
   return delegateSteps(command).reduce((x, step) => delegateRunning(x, step, at), o)
 }
 
 /** Every delegate `command` waits on until its turn settles ended at `at`, once the command returned. */
-export function delegateWaitsEnded(o: Overview | null, command: string, at: number): Overview | null {
+export function delegateWaitsEnded(o: SessionStatus | null, command: string, at: number): SessionStatus | null {
   return delegateSteps(command)
     .filter(step => step.isWaitForEnd)
     .reduce((x, step) => childEnded(x, delegateRef(step.name), at), o)
@@ -133,7 +133,7 @@ export function delegateWaitsEnded(o: Overview | null, command: string, at: numb
 const HERDR_PROMPT_SETTLE_MS = 15_000
 
 /** Whether a delegate runs, so a host asks Herdr only then. */
-export function hasRunningDelegate(o: Overview | null): boolean {
+export function hasRunningDelegate(o: SessionStatus | null): boolean {
   return o?.children.some(c => c.kind === 'delegate' && c.endedAt === null) ?? false
 }
 
@@ -143,10 +143,10 @@ export function hasRunningDelegate(o: Overview | null): boolean {
  * and its subject changed then, so the subject shows above the look line. Herdr's `unknown` changes nothing.
  */
 export function delegatesSettled(
-  o: Overview | null,
+  o: SessionStatus | null,
   states: ReadonlyMap<string, HerdrStatus>,
   at: number,
-): Overview | null {
+): SessionStatus | null {
   if (!o) return o
   const byRef = new Map([...states].map(([name, status]) => [delegateRef(name), status]))
   const settled = (c: Child): Child => {
@@ -190,11 +190,15 @@ export function activityGate(): (ref: Child['ref'], at: number) => boolean {
 }
 
 /** Every running child but a delegate ended at `at`: a reload cut off the subagents and tasks the session ran. */
-export function childrenCutOff(o: Overview | null, at: number): Overview | null {
+export function childrenCutOff(o: SessionStatus | null, at: number): SessionStatus | null {
   return childrenEnded(o, c => c.kind !== 'delegate', at)
 }
 
 /** Every running subagent the host no longer lists ended at `at`. */
-export function subagentsSettled(o: Overview | null, listed: ReadonlySet<string>, at: number): Overview | null {
+export function subagentsSettled(
+  o: SessionStatus | null,
+  listed: ReadonlySet<string>,
+  at: number,
+): SessionStatus | null {
   return childrenEnded(o, c => c.kind === 'subagent' && !listed.has(c.ref), at)
 }

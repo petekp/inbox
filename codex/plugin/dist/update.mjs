@@ -49,7 +49,7 @@ import {
 import { homedir as homedir2 } from "node:os";
 import { basename, dirname, isAbsolute, join as join2, resolve } from "node:path";
 
-// ../hooks/overview.ts
+// ../hooks/status.ts
 var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
 var DESCRIPTION_WORDS = 8;
@@ -81,7 +81,7 @@ var STOP_WORDS = /* @__PURE__ */ new Set([
   "with"
 ]);
 var NL = "\n";
-var EMPTY_OVERVIEW = {
+var EMPTY_SESSION_STATUS = {
   head: null,
   subjects: [],
   children: [],
@@ -128,7 +128,7 @@ function opOf(key, f) {
   if (key === "LINK") return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
   return null;
 }
-function parseOverview(text2) {
+function parseStatus(text2) {
   const ops = [];
   for (const raw of (text2 ?? "").split(NL)) {
     const line = raw.trim();
@@ -141,9 +141,9 @@ function parseOverview(text2) {
   if (ops.length === 0) return null;
   return ops.every((o) => o.kind === "none") ? { kind: "unchanged" } : { kind: "ops", ops };
 }
-async function askOverview(ask) {
+async function askStatus(ask) {
   const first = await ask();
-  const holdsProse = first.text !== null && parseOverview(first.text) === null;
+  const holdsProse = first.text !== null && parseStatus(first.text) === null;
   return { first, last: holdsProse ? await ask() : first };
 }
 function words(text2) {
@@ -210,7 +210,7 @@ var OP_ORDER = {
 };
 function applyOps(last, ops, now, askIds) {
   let o = {
-    ...last ?? EMPTY_OVERVIEW,
+    ...last ?? EMPTY_SESSION_STATUS,
     subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
     children: (last?.children ?? []).map((c) => ({ ...c })),
     askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask)))
@@ -297,7 +297,7 @@ function applyOps(last, ops, now, askIds) {
     o = { ...o, head: { ...o.head, description: "" } };
   return o;
 }
-function applyOverview(last, answer, now, askIds) {
+function applyStatus(last, answer, now, askIds) {
   return answer.kind === "unchanged" ? last : applyOps(last, answer.ops, now, askIds);
 }
 function isChildRunning(c, now) {
@@ -403,14 +403,14 @@ function fromLists(o) {
     into: null
   }));
   return {
-    ...EMPTY_OVERVIEW,
+    ...EMPTY_SESSION_STATUS,
     head: headOfGoal(o.headline),
     subjects,
     nextId: subjects.length + 1,
     lastLookAt
   };
 }
-function upgradeOverview(saved) {
+function upgradeStatus(saved) {
   const o = saved;
   if (typeof o !== "object" || o === null) return null;
   if (typeof o.headline === "string") return fromLists(o);
@@ -505,7 +505,7 @@ function upgradeLedger(ledger) {
     ...rest,
     prOrder: rest.prOrder ?? null,
     updates,
-    overview: upgradeOverview(rest.overview),
+    overview: upgradeStatus(rest.overview),
     findings: [...rest.findings ?? [], ...notes ?? []],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
@@ -1232,7 +1232,7 @@ function buildPrompt(ledger, ex) {
     `<screen>${NL5}${ex.screen}${NL5}</screen>`
   ].join(NL5);
 }
-var OVERVIEW_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
+var STATUS_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
 
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
@@ -1285,7 +1285,7 @@ function headText(o) {
   if (!o?.head) return "(none yet)";
   return `${o.head.title} | ${o.head.description || "(no description yet)"}`;
 }
-function overviewBlocks({ last, asks, tasks, now }) {
+function statusBlocks({ last, asks, tasks, now }) {
   const { open: open2, finished } = subjectsText(last);
   const running = runningText(last, now);
   const held = asksText(last, asks);
@@ -1302,27 +1302,27 @@ function overviewBlocks({ last, asks, tasks, now }) {
 function personText(person, trigger) {
   return person ?? `(The person sent nothing. The turn was started by: ${trigger ?? "unknown"}.)`;
 }
-function overviewPrompt(input, ex) {
+function statusPrompt(input, ex) {
   const person = personText(ex.person, ex.trigger);
   return [
-    ...overviewBlocks(input),
+    ...statusBlocks(input),
     `<person>${NL5}${clipMiddle(person, 4e3, 1500)}${NL5}</person>`,
     `<activity>${NL5}${clipMiddle(ex.activity.join(NL5), 2500, 500)}${NL5}</activity>`,
     `<reply>${NL5}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL5}</reply>`
   ].join(NL5);
 }
-function overviewMidTurnPrompt(input, turn) {
+function statusMidTurnPrompt(input, turn) {
   return [
     "The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes.",
-    ...overviewBlocks(input),
+    ...statusBlocks(input),
     `<person>${NL5}${clipMiddle(personText(turn.person, turn.trigger), 4e3, 1500)}${NL5}</person>`,
     `<activity>${NL5}${clipMiddle(turn.activity.join(NL5), 2500, 500)}${NL5}</activity>`
   ].join(NL5);
 }
-function overviewCatchUpPrompt(input, transcript) {
+function statusCatchUpPrompt(input, transcript) {
   return [
     "Treat the conversation in <conversation> as the exchange. Its start may be cut. Answer with the changes that bring the list to where the conversation ends.",
-    ...overviewBlocks(input),
+    ...statusBlocks(input),
     `<conversation>${NL5}${numberBlocks(transcript)}${NL5}</conversation>`
   ].join(NL5);
 }
@@ -1778,7 +1778,7 @@ function isWaitingRow(row) {
 var NEXT_BUILD_MARK = ".next-build";
 var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
 var HOLDS_UP_TEXT = "Holds up";
-var OVERVIEW_FAILED = "Last Overview update failed. Changes from that reply may be missing.";
+var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
 var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
@@ -1868,7 +1868,7 @@ function stepKind(step) {
   return step.step.some((h) => h.kind === "run") ? "handoff" : "local";
 }
 var TAB_NAMES = [
-  { id: "overview", label: "Overview", symbol: "\u{1F9ED}" },
+  { id: "overview", label: "Status", symbol: "\u{1F9ED}" },
   { id: "needsYou", label: "Asks", symbol: "\u{1F64B}" },
   { id: "findings", label: "Finds", symbol: "\u{1F50D}" },
   { id: "prs", label: "PRs", symbol: "\u{1F500}" }
@@ -1895,7 +1895,7 @@ var CHILD_ROWS = 3;
 var NEW_CLOSED_ROWS = 2;
 var OPEN_ROWS = 7;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
-var OVERVIEW_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
+var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 function isItemAfterItem(row, prev) {
@@ -1925,7 +1925,7 @@ function childRow(c, branch) {
     branch
   };
 }
-function overviewPage(s, now) {
+function statusPage(s, now) {
   const o = s.ledger.overview;
   const look = o?.lastLookAt ?? null;
   const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
@@ -1938,7 +1938,7 @@ function overviewPage(s, now) {
     return oldest ? { id: oldest.id, kind: oldest.kind } : null;
   };
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
-  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || OVERVIEW_PLACES.indexOf(placeOf(x)) - OVERVIEW_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
+  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const open2 = subjects.filter(isOpen);
@@ -2008,9 +2008,9 @@ function overviewPage(s, now) {
     isEmpty: head === null && rows.length === 0,
     head,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
-    error: s.overviewFailure ? OVERVIEW_FAILED : null,
+    error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
-      title: "Overview",
+      title: "Status",
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
     }
   };
@@ -2495,25 +2495,25 @@ function applied(s, parsed, now, promptAt) {
     }
   });
 }
-function appliedOverview(s, answer, appliedAfter, now) {
+function appliedStatus(s, answer, appliedAfter, now) {
   if (s.presence.turnsApplied < appliedAfter) return s;
   return {
     ...s,
     ledger: {
       ...s.ledger,
-      overview: applyOverview(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)))
+      overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)))
     },
     overviewFailure: null,
     lastOverviewCallAt: now
   };
 }
 var REFUSED_ANSWER_CHARS = 500;
-function failedOverview(s, text2, appliedAfter, now) {
+function failedStatus(s, text2, appliedAfter, now) {
   if (s.presence.turnsApplied < appliedAfter) return s;
   const failure = text2 === null ? { at: now, cause: "no-answer", answer: null } : { at: now, cause: "refused", answer: text2.slice(0, REFUSED_ANSWER_CHARS) };
   return { ...s, overviewFailure: failure, lastOverviewCallAt: now };
 }
-var OVERVIEW_REFRESH_MS = 10 * 6e4;
+var STATUS_REFRESH_MS = 10 * 6e4;
 function needsCatchUp(s) {
   const { presence } = s;
   const hasUnappliedTurn = s.pending.length === 0 && s.turn.person === null && presence.turnsStarted > presence.turnsApplied;
@@ -2584,7 +2584,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now, holds.shownSince, settleWindowMs),
-    overviewPage: overviewPage(s, now)
+    statusPage: statusPage(s, now)
   };
 }
 function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
@@ -3048,17 +3048,17 @@ function orderedKeys() {
     }
   };
 }
-function overviewCallPrompt(input, read) {
+function statusCallPrompt(input, read) {
   switch (read.kind) {
     case "reply":
-      return overviewPrompt(input, read.exchange);
+      return statusPrompt(input, read.exchange);
     case "mid-turn":
-      return overviewMidTurnPrompt(input, read.turn);
+      return statusMidTurnPrompt(input, read.turn);
     case "catch-up":
-      return overviewCatchUpPrompt(input, read.conversation);
+      return statusCatchUpPrompt(input, read.conversation);
   }
 }
-var OVERVIEW_RECORD_VERSION = 1;
+var STATUS_RECORD_VERSION = 1;
 var RECORDS_PER_SESSION = 100;
 var RECORDS_KEPT_MS = 14 * 24 * 60 * 6e4;
 var RECORDS_SWEEP_MS = 60 * 6e4;
@@ -3070,7 +3070,7 @@ function recordsFolderName(session) {
 function recordFileName(at, kind) {
   return `${String(at).padStart(13, "0")}-${kind}.jsonl`;
 }
-async function writeOverviewRecord(records, record2) {
+async function writeStatusRecord(records, record2) {
   const { files, folder } = records;
   const own = `${folder}/${recordsFolderName(records.session)}`;
   await files.write(`${own}/${recordFileName(record2.at, record2.exchange.kind)}`, `${JSON.stringify(record2)}
@@ -3093,7 +3093,7 @@ async function writeOverviewRecord(records, record2) {
 async function attempt(host, ask, prompt) {
   const heard = {};
   const startedAt = await host.now();
-  const text2 = await ask(prompt, OVERVIEW_SYSTEM, (r) => heard.report = r).catch((err) => {
+  const text2 = await ask(prompt, STATUS_SYSTEM, (r) => heard.report = r).catch((err) => {
     heard.thrown = err instanceof Error ? err.message : String(err);
     return null;
   });
@@ -3106,31 +3106,31 @@ async function attempt(host, ask, prompt) {
     ms: await host.now() - startedAt
   };
 }
-async function askAndWriteOverview(host, s, call, tasks, appliedAfter) {
+async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() };
-  const prompt = overviewCallPrompt(input, call.exchange);
+  const prompt = statusCallPrompt(input, call.exchange);
   const attempts = [];
-  const { last } = await askOverview(async () => {
+  const { last } = await askStatus(async () => {
     const { text: text2, ...made } = await attempt(host, call.ask, prompt);
     attempts.push(made);
     return { text: text2 };
   });
-  const answer = last.text === null ? null : parseOverview(last.text);
+  const answer = last.text === null ? null : parseStatus(last.text);
   const now = await host.now();
   let before = null;
   let isWritten = false;
   const after = await host.update((x) => {
     before = x.ledger.overview;
     isWritten = x.presence.turnsApplied >= appliedAfter;
-    return answer === null ? failedOverview(x, last.text, appliedAfter, now) : appliedOverview(x, answer, appliedAfter, now);
+    return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now);
   });
   if (!host.records) return;
   const record2 = {
-    version: OVERVIEW_RECORD_VERSION,
+    version: STATUS_RECORD_VERSION,
     host: host.records.host,
     session: host.records.session,
     at: input.now,
-    system: OVERVIEW_SYSTEM,
+    system: STATUS_SYSTEM,
     prompt,
     input,
     exchange: call.exchange,
@@ -3140,15 +3140,15 @@ async function askAndWriteOverview(host, s, call, tasks, appliedAfter) {
     before,
     after: after.ledger.overview
   };
-  void writeOverviewRecord(host.records, record2).catch(() => void 0);
+  void writeStatusRecord(host.records, record2).catch(() => void 0);
 }
-function refreshOverview(host) {
+function refreshStatus(host) {
   return host.inOrder(async () => {
     const s = await host.read();
     if (!s.presence.isTurnRunning) return;
     const { person, trigger, activity } = s.turn;
     const call = { exchange: { kind: "mid-turn", turn: { person, trigger, activity } }, ask: host.ask };
-    await askAndWriteOverview(host, s, call, s.hostTasks, s.presence.turnsApplied);
+    await askAndWriteStatus(host, s, call, s.hostTasks, s.presence.turnsApplied);
   });
 }
 async function askOverConversation(ask, names, s, screen, conversation) {
@@ -3158,7 +3158,7 @@ async function askOverConversation(ask, names, s, screen, conversation) {
     kind: "reply",
     text: text2,
     source: conversation,
-    overview: { exchange: { kind: "catch-up", conversation }, ask }
+    statusCall: { exchange: { kind: "catch-up", conversation }, ask }
   };
 }
 async function runUpdates(host) {
@@ -3166,7 +3166,7 @@ async function runUpdates(host) {
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
-  const writeOverview = (after, call, tasks) => host.inOrder(async () => askAndWriteOverview(host, await host.read(), call, tasks, after.presence.turnsApplied));
+  const writeStatus = (after, call, tasks) => host.inOrder(async () => askAndWriteStatus(host, await host.read(), call, tasks, after.presence.turnsApplied));
   const followUp = (run2) => {
     const settled = run2.catch(() => void 0);
     if (host.background) host.background(settled);
@@ -3189,7 +3189,8 @@ async function runUpdates(host) {
               const at = await host.now();
               const after2 = await host.update((x) => appliedCatchUp(x, s, parsed2, at));
               if (!parsed2) return "stop";
-              if (reply2.kind === "reply" && reply2.overview) followUp(writeOverview(after2, reply2.overview, s.hostTasks));
+              if (reply2.kind === "reply" && reply2.statusCall)
+                followUp(writeStatus(after2, reply2.statusCall, s.hostTasks));
               continue;
             }
             const next = s.pending[0];
@@ -3205,7 +3206,7 @@ async function runUpdates(host) {
             });
             if (isApplied)
               followUp(
-                writeOverview(after, { exchange: { kind: "reply", exchange: next.ex }, ask: host.ask }, next.ex.tasks)
+                writeStatus(after, { exchange: { kind: "reply", exchange: next.ex }, ask: host.ask }, next.ex.tasks)
               );
             if (after.pending[0]?.failed && !next.failed) return "stop";
           }
@@ -3601,13 +3602,13 @@ var recordFiles = {
   removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm(p, { force: true }))),
   removeFolder: (path) => rmdir2(path)
 };
-var overviewRecords = (dir, sessionId) => ({
+var statusRecords = (dir, sessionId) => ({
   host: "codex",
   folder: join4(dir, "overview-calls"),
   session: sessionId,
   files: recordFiles
 });
-var refreshOverview2 = (dir, sessionId, ask, now, onWrite, records) => refreshOverview({
+var refreshStatus2 = (dir, sessionId, ask, now, onWrite, records) => refreshStatus({
   ...codexStore(dir, sessionId, now, onWrite),
   ask,
   inOrder: inOrderFor(dir, sessionId),
@@ -3629,12 +3630,12 @@ var runUpdates2 = (dir, sessionId, ask, now, onWrite, records) => runUpdates({
 });
 
 // src/detached-update.ts
-var OVERVIEW_REFRESH = "overview-refresh";
+var STATUS_REFRESH = "status-refresh";
 
 // src/update-main.ts
 async function main() {
   const sessionId = process.argv[2] ?? "";
-  const isOverviewRefresh = process.argv[3] === OVERVIEW_REFRESH;
+  const isStatusRefresh = process.argv[3] === STATUS_REFRESH;
   const pluginRoot = dirname4(dirname4(fileURLToPath(import.meta.url)));
   const dir = dataDir(process.env, pluginRoot);
   const { cliPath } = await readState(dir, sessionId);
@@ -3642,8 +3643,8 @@ async function main() {
   const personHome = process.env.CODEX_HOME || join5(homedir3(), ".codex");
   const ask = codexAsk(run, cli, dir, personHome, recordModelFailure(dir, sessionId, Date.now));
   const onWrite = herdrOnWrite(process.env, run, dir, Date.now);
-  const records = existsSync(join5(pluginRoot, NEXT_BUILD_MARK)) ? overviewRecords(dir, sessionId) : void 0;
-  if (isOverviewRefresh) await refreshOverview2(dir, sessionId, ask, Date.now, onWrite, records);
+  const records = existsSync(join5(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : void 0;
+  if (isStatusRefresh) await refreshStatus2(dir, sessionId, ask, Date.now, onWrite, records);
   else await runUpdates2(dir, sessionId, ask, Date.now, onWrite, records);
 }
 main().catch(() => process.exit(0));

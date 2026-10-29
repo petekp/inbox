@@ -2181,11 +2181,11 @@
     ]
   },
   {
-    "name": "overview-shown-records-question",
-    "about": "With the Overview page shown, a new question that waits on the person is still recorded.",
+    "name": "status-shown-records-question",
+    "about": "With the Status page shown, a new question that waits on the person is still recorded.",
     "screen": {
       "isOpen": true,
-      "tab": "Overview",
+      "tab": "Status",
       "isPage": true
     },
     "ledger": {

@@ -1,15 +1,15 @@
 import { parseReply } from './ledger'
-import { askOverview, parseOverview } from './overview'
+import { askStatus, parseStatus } from './status'
 import {
   buildPrompt,
-  OVERVIEW_SYSTEM,
-  overviewCatchUpPrompt,
-  overviewMidTurnPrompt,
-  overviewPrompt,
+  STATUS_SYSTEM,
+  statusCatchUpPrompt,
+  statusMidTurnPrompt,
+  statusPrompt,
   systemText,
   transcriptCatchUpPrompt,
 } from './model-text'
-import type { Host, OverviewInput } from './model-text'
+import type { Host, StatusCallInput } from './model-text'
 import { fetchTracked, fixCheckEffect, isPrFixPress, pressRowId, splitLinked } from './pr-tab'
 import type { GhRun, PrFixPress, PrPress } from './pr-tab'
 import {
@@ -32,9 +32,9 @@ import {
   applied,
   parsedReply,
   appliedCatchUp,
-  appliedOverview,
+  appliedStatus,
   completedAttempt,
-  failedOverview,
+  failedStatus,
   needsCatchUp,
   pressOn,
   withFetchedPrs,
@@ -43,7 +43,7 @@ import {
 import type { Pressed, SendOutcome, Session } from './session'
 import type { Holds } from './view'
 import type { ClientId } from './clients'
-import type { Exchange, HostTask, LastAction, Overview, RowNote } from '../types'
+import type { Exchange, HostTask, LastAction, SessionStatus, RowNote } from '../types'
 
 export type Exclusive<T> = { acquired: true; value: T } | { acquired: false }
 
@@ -104,7 +104,7 @@ export type SessionHost<S extends Session> = {
   update(change: (s: S) => S | Promise<S>): Promise<S>
   /** Runs `fn` unless another run holds the session's per-reply update. */
   exclusive<T>(fn: () => Promise<T>): Promise<Exclusive<T>>
-  /** Calls the inbox model, once for the ledger and once for the Overview. Null when a call fails. */
+  /** Calls the inbox model, once for the ledger and once for the Status. Null when a call fails. */
   ask: Ask
   /** Sends a message to the agent as if the person typed it. Runs outside a change, so it may change the session itself. */
   deliver(s: S, text: string, deliveryId: string): Promise<SendOutcome>
@@ -137,38 +137,38 @@ export type SessionHost<S extends Session> = {
 }
 
 /**
- * What an Overview call reads as its exchange: a reply's exchange, the running turn's work so far, or a whole
+ * What a Status call reads as its exchange: a reply's exchange, the running turn's work so far, or a whole
  * conversation for a catch-up.
  */
-export type OverviewExchange =
+export type StatusExchange =
   | { kind: 'reply'; exchange: Exchange }
   | { kind: 'mid-turn'; turn: Pick<Session['turn'], 'person' | 'trigger' | 'activity'> }
   | { kind: 'catch-up'; conversation: string }
 
-export type OverviewCallKind = OverviewExchange['kind']
+export type StatusCallKind = StatusExchange['kind']
 
-/** The prompt that asks for the changes `read` makes to the Overview, asks and task list in `input`. */
-export function overviewCallPrompt(input: OverviewInput, read: OverviewExchange): string {
+/** The prompt that asks for the changes `read` makes to the Status, asks and task list in `input`. */
+export function statusCallPrompt(input: StatusCallInput, read: StatusExchange): string {
   switch (read.kind) {
     case 'reply':
-      return overviewPrompt(input, read.exchange)
+      return statusPrompt(input, read.exchange)
     case 'mid-turn':
-      return overviewMidTurnPrompt(input, read.turn)
+      return statusMidTurnPrompt(input, read.turn)
     case 'catch-up':
-      return overviewCatchUpPrompt(input, read.conversation)
+      return statusCatchUpPrompt(input, read.conversation)
   }
 }
 
-/** An Overview call: what it reads as its exchange, and the model call that sends its prompt with `OVERVIEW_SYSTEM`. */
-export type OverviewCall = { exchange: OverviewExchange; ask: Ask }
+/** A Status call: what it reads as its exchange, and the model call that sends its prompt with `STATUS_SYSTEM`. */
+export type StatusCall = { exchange: StatusExchange; ask: Ask }
 
 /** What a host's catch-up found: the model's answer to apply, or why there is none. */
 export type CatchUpReply =
   /**
    * `source` is the text the answer may quote code blocks from, or null when the model read the conversation itself.
-   * `overview` is null when the host has nothing for the Overview call to read, so it writes no Overview.
+   * `statusCall` is null when the host has nothing for the Status call to read, so it writes no Status.
    */
-  | { kind: 'reply'; text: string; source: string | null; overview: OverviewCall | null }
+  | { kind: 'reply'; text: string; source: string | null; statusCall: StatusCall | null }
   /** The model gave no answer. */
   | { kind: 'failed' }
   /** There is no conversation to read, so the pending exchanges run instead. */
@@ -183,23 +183,23 @@ export type UpdateHost<S extends Session> = Pick<SessionHost<S>, 'now' | 'read' 
    */
   catchUp?(s: S): Promise<CatchUpReply>
   /**
-   * Runs `fn` once the session's earlier Overview calls have finished, so each reads the Overview the one before
-   * wrote. The wait is for Overview calls only: the lock and the ledger calls never queue behind it.
+   * Runs `fn` once the session's earlier Status calls have finished, so each reads the Status the one before
+   * wrote. The wait is for Status calls only: the lock and the ledger calls never queue behind it.
    */
   inOrder<T>(fn: () => Promise<T>): Promise<T>
   /**
-   * Keeps the Overview calls running after `runUpdates` returns, so the next update starts at once. Absent: `runUpdates`
+   * Keeps the Status calls running after `runUpdates` returns, so the next update starts at once. Absent: `runUpdates`
    * returns only once they have finished, as a Codex update process must stay alive until its calls end.
    */
-  background?(overviews: Promise<void>): void
-  /** Where a next build keeps a record of each Overview call. A release build passes none, and records nothing. */
-  records?: OverviewRecords
+  background?(statuses: Promise<void>): void
+  /** Where a next build keeps a record of each Status call. A release build passes none, and records nothing. */
+  records?: StatusRecords
 }
 
-type OverviewHost<S extends Session> = Pick<UpdateHost<S>, 'now' | 'read' | 'update' | 'ask' | 'inOrder' | 'records'>
+type StatusHost<S extends Session> = Pick<UpdateHost<S>, 'now' | 'read' | 'update' | 'ask' | 'inOrder' | 'records'>
 
-/** One model call of an Overview call. An answer that holds prose is asked once more, so a call makes one or two. */
-export type OverviewAttempt = {
+/** One model call of a Status call. An answer that holds prose is asked once more, so a call makes one or two. */
+export type StatusAttempt = {
   /** The model the host asked for, and the one that answered. Null when the host does not say. */
   model: string | null
   answeredBy: string | null
@@ -210,29 +210,29 @@ export type OverviewAttempt = {
 }
 
 /** A reader refuses a record of another version. */
-export const OVERVIEW_RECORD_VERSION = 1
+export const STATUS_RECORD_VERSION = 1
 
-/** A next build's record of one Overview call, so that an Overview can be traced to the call that wrote it. */
-export type OverviewRecord = {
-  version: typeof OVERVIEW_RECORD_VERSION
+/** A next build's record of one Status call, so that a Status can be traced to the call that wrote it. */
+export type StatusRecord = {
+  version: typeof STATUS_RECORD_VERSION
   host: ClientId
   session: string
   at: number
   system: string
   prompt: string
   /**
-   * What the prompt was built from, so `overviewCallPrompt` builds it again. `input.last` is the Overview the call
+   * What the prompt was built from, so `statusCallPrompt` builds it again. `input.last` is the Status the call
    * read, with its children, and `exchange.kind` says which call it was.
    */
-  input: OverviewInput
-  exchange: OverviewExchange
-  attempts: OverviewAttempt[]
+  input: StatusCallInput
+  exchange: StatusExchange
+  attempts: StatusAttempt[]
   isParsed: boolean
   /** False when the update the call followed was gone by the time it answered, so nothing was written. */
   isWritten: boolean
-  /** The saved Overview just before the answer was applied, and just after. */
-  before: Overview | null
-  after: Overview | null
+  /** The saved Status just before the answer was applied, and just after. */
+  before: SessionStatus | null
+  after: SessionStatus | null
 }
 
 /** The file calls a record needs. `list` gives a folder's entry names, and none when it is missing. */
@@ -244,11 +244,11 @@ export type RecordFiles = {
   removeFolder(path: string): Promise<void>
 }
 
-/** A next build's folder of Overview call records, one folder per session and one file per call. */
-export type OverviewRecords = { host: ClientId; folder: string; session: string; files: RecordFiles }
+/** A next build's folder of Status call records, one folder per session and one file per call. */
+export type StatusRecords = { host: ClientId; folder: string; session: string; files: RecordFiles }
 
 export const RECORDS_PER_SESSION = 100
-/** How long after its last Overview call a session's records are dropped. */
+/** How long after its last Status call a session's records are dropped. */
 export const RECORDS_KEPT_MS = 14 * 24 * 60 * 60_000
 /** How often a process looks for sessions whose records are past `RECORDS_KEPT_MS`. */
 const RECORDS_SWEEP_MS = 60 * 60_000
@@ -261,7 +261,7 @@ export function recordsFolderName(session: string): string {
 }
 
 /** A record's file name: the call's start time, which sorts the session's records oldest first, and its kind. */
-export function recordFileName(at: number, kind: OverviewCallKind): string {
+export function recordFileName(at: number, kind: StatusCallKind): string {
   return `${String(at).padStart(13, '0')}-${kind}.jsonl`
 }
 
@@ -269,7 +269,7 @@ export function recordFileName(at: number, kind: OverviewCallKind): string {
  * Writes `record` as one JSON line in a file of its own, then drops the session's oldest records past
  * `RECORDS_PER_SESSION`, and the records of sessions whose last call is older than `RECORDS_KEPT_MS`.
  */
-export async function writeOverviewRecord(records: OverviewRecords, record: OverviewRecord): Promise<void> {
+export async function writeStatusRecord(records: StatusRecords, record: StatusRecord): Promise<void> {
   const { files, folder } = records
   const own = `${folder}/${recordsFolderName(records.session)}`
   await files.write(`${own}/${recordFileName(record.at, record.exchange.kind)}`, `${JSON.stringify(record)}\n`)
@@ -291,13 +291,13 @@ export async function writeOverviewRecord(records: OverviewRecords, record: Over
 
 /** Sends `prompt` once, and notes what the host says of the call. */
 async function attempt(
-  host: Pick<OverviewHost<Session>, 'now'>,
+  host: Pick<StatusHost<Session>, 'now'>,
   ask: Ask,
   prompt: string,
-): Promise<OverviewAttempt & { text: string | null }> {
+): Promise<StatusAttempt & { text: string | null }> {
   const heard: { report?: CallReport; thrown?: string } = {}
   const startedAt = await host.now()
-  const text = await ask(prompt, OVERVIEW_SYSTEM, r => (heard.report = r)).catch((err: unknown) => {
+  const text = await ask(prompt, STATUS_SYSTEM, r => (heard.report = r)).catch((err: unknown) => {
     heard.thrown = err instanceof Error ? err.message : String(err)
     return null
   })
@@ -313,43 +313,41 @@ async function attempt(
 }
 
 /**
- * Runs the Overview call on the Overview and asks in `s`, and writes its answer, or saves why it wrote nothing. An
- * answer that holds prose is asked once more. `appliedAfter` drops the write as `appliedOverview` does. With
+ * Runs the Status call on the Status and asks in `s`, and writes its answer, or saves why it wrote nothing. An
+ * answer that holds prose is asked once more. `appliedAfter` drops the write as `appliedStatus` does. With
  * `records`, it then writes the call's record in the background, and drops a failed write.
  */
-async function askAndWriteOverview<S extends Session>(
-  host: Pick<OverviewHost<S>, 'now' | 'update' | 'records'>,
+async function askAndWriteStatus<S extends Session>(
+  host: Pick<StatusHost<S>, 'now' | 'update' | 'records'>,
   s: S,
-  call: OverviewCall,
+  call: StatusCall,
   tasks: HostTask[],
   appliedAfter: number,
 ): Promise<void> {
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() }
-  const prompt = overviewCallPrompt(input, call.exchange)
-  const attempts: OverviewAttempt[] = []
-  const { last } = await askOverview(async () => {
+  const prompt = statusCallPrompt(input, call.exchange)
+  const attempts: StatusAttempt[] = []
+  const { last } = await askStatus(async () => {
     const { text, ...made } = await attempt(host, call.ask, prompt)
     attempts.push(made)
     return { text }
   })
-  const answer = last.text === null ? null : parseOverview(last.text)
+  const answer = last.text === null ? null : parseStatus(last.text)
   const now = await host.now()
-  let before: Overview | null = null
+  let before: SessionStatus | null = null
   let isWritten = false
   const after = await host.update(x => {
     before = x.ledger.overview
     isWritten = x.presence.turnsApplied >= appliedAfter
-    return answer === null
-      ? failedOverview(x, last.text, appliedAfter, now)
-      : appliedOverview(x, answer, appliedAfter, now)
+    return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now)
   })
   if (!host.records) return
-  const record: OverviewRecord = {
-    version: OVERVIEW_RECORD_VERSION,
+  const record: StatusRecord = {
+    version: STATUS_RECORD_VERSION,
     host: host.records.host,
     session: host.records.session,
     at: input.now,
-    system: OVERVIEW_SYSTEM,
+    system: STATUS_SYSTEM,
     prompt,
     input,
     exchange: call.exchange,
@@ -359,21 +357,21 @@ async function askAndWriteOverview<S extends Session>(
     before,
     after: after.ledger.overview,
   }
-  void writeOverviewRecord(host.records, record).catch(() => undefined)
+  void writeStatusRecord(host.records, record).catch(() => undefined)
 }
 
 /**
- * Runs the Overview call on the running turn's work so far, once the session's earlier Overview calls have finished.
- * A host calls it after `claimedOverviewRefresh` claimed the call. A turn that ended meanwhile is left to the call after
+ * Runs the Status call on the running turn's work so far, once the session's earlier Status calls have finished.
+ * A host calls it after `claimedStatusRefresh` claimed the call. A turn that ended meanwhile is left to the call after
  * its reply.
  */
-export function refreshOverview<S extends Session>(host: OverviewHost<S>): Promise<void> {
+export function refreshStatus<S extends Session>(host: StatusHost<S>): Promise<void> {
   return host.inOrder(async () => {
     const s = await host.read()
     if (!s.presence.isTurnRunning) return
     const { person, trigger, activity } = s.turn
-    const call: OverviewCall = { exchange: { kind: 'mid-turn', turn: { person, trigger, activity } }, ask: host.ask }
-    await askAndWriteOverview(host, s, call, s.hostTasks, s.presence.turnsApplied)
+    const call: StatusCall = { exchange: { kind: 'mid-turn', turn: { person, trigger, activity } }, ask: host.ask }
+    await askAndWriteStatus(host, s, call, s.hostTasks, s.presence.turnsApplied)
   })
 }
 
@@ -397,7 +395,7 @@ export async function askOverConversation(
         kind: 'reply',
         text,
         source: conversation,
-        overview: { exchange: { kind: 'catch-up', conversation }, ask },
+        statusCall: { exchange: { kind: 'catch-up', conversation }, ask },
       }
 }
 
@@ -429,23 +427,23 @@ export async function reconcileUpdateStatus<S extends Session>(
  * pending exchanges, oldest first. An update started meanwhile finds the lock held and exits, so the work is read
  * again after the lock is released.
  *
- * Each update runs the ledger call first and applies its answer at once. Then the Overview call runs, with the
- * Overview as it stands once the earlier Overview calls have written theirs, and its answer is written in a second
- * change. Overview calls run one after another, apart from the lock and from `isUpdating`: no ledger call waits for
- * one. With `background`, `runUpdates` returns when the ledger work is done; without it, once every Overview call has
+ * Each update runs the ledger call first and applies its answer at once. Then the Status call runs, with the
+ * Status as it stands once the earlier Status calls have written theirs, and its answer is written in a second
+ * change. Status calls run one after another, apart from the lock and from `isUpdating`: no ledger call waits for
+ * one. With `background`, `runUpdates` returns when the ledger work is done; without it, once every Status call has
  * finished.
  *
  * A catch-up that fails ends the run, and the next update tries it again. A conversation that cannot be read is not
- * tried again in this run. A ledger call that fails skips the Overview call.
+ * tried again in this run. A ledger call that fails skips the Status call.
  */
 export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promise<void> {
   let canCatchUp = host.catchUp !== undefined
   const wantsCatchUp = (s: S) => canCatchUp && needsCatchUp(s)
   const hasWork = (s: S) => s.pending.length > 0 || wantsCatchUp(s)
   const writing: Promise<void>[] = []
-  /** Runs the Overview call for an applied update, once the session's earlier Overview calls have finished. */
-  const writeOverview = (after: S, call: OverviewCall, tasks: HostTask[]) =>
-    host.inOrder(async () => askAndWriteOverview(host, await host.read(), call, tasks, after.presence.turnsApplied))
+  /** Runs the Status call for an applied update, once the session's earlier Status calls have finished. */
+  const writeStatus = (after: S, call: StatusCall, tasks: HostTask[]) =>
+    host.inOrder(async () => askAndWriteStatus(host, await host.read(), call, tasks, after.presence.turnsApplied))
   const followUp = (run: Promise<void>) => {
     const settled = run.catch(() => undefined)
     if (host.background) host.background(settled)
@@ -468,7 +466,8 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
               const at = await host.now()
               const after = await host.update(x => appliedCatchUp(x, s, parsed, at))
               if (!parsed) return 'stop' as const
-              if (reply.kind === 'reply' && reply.overview) followUp(writeOverview(after, reply.overview, s.hostTasks))
+              if (reply.kind === 'reply' && reply.statusCall)
+                followUp(writeStatus(after, reply.statusCall, s.hostTasks))
               continue
             }
             const next = s.pending[0]!
@@ -485,7 +484,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
             })
             if (isApplied)
               followUp(
-                writeOverview(after, { exchange: { kind: 'reply', exchange: next.ex }, ask: host.ask }, next.ex.tasks),
+                writeStatus(after, { exchange: { kind: 'reply', exchange: next.ex }, ask: host.ask }, next.ex.tasks),
               )
             if (after.pending[0]?.failed && !next.failed) return 'stop' as const
           }

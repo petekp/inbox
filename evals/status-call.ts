@@ -3,11 +3,11 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { OVERVIEW_SYSTEM } from '../hooks/model-text'
-import { parseOverview, upgradeOverview } from '../hooks/overview'
-import { OVERVIEW_RECORD_VERSION } from '../hooks/session-host'
-import type { OverviewRecord } from '../hooks/session-host'
-import type { Overview } from '../types'
+import { STATUS_SYSTEM } from '../hooks/model-text'
+import { parseStatus, upgradeStatus } from '../hooks/status'
+import { STATUS_RECORD_VERSION } from '../hooks/session-host'
+import type { StatusRecord } from '../hooks/session-host'
+import type { SessionStatus } from '../types'
 import { run } from '../codex/src/run'
 import { codexAsk, MODEL } from '../codex/src/update'
 import { claude, CLAUDE_MODEL } from './claude-model'
@@ -19,7 +19,7 @@ const { values, positionals } = parseArgs({
 })
 const given = positionals[0]
 if (!given) {
-  console.error('Usage: scripts/overview-call.sh [--run] [--system] <record file or session folder>')
+  console.error('Usage: scripts/status-call.sh [--run] [--system] <record file or session folder>')
   process.exit(2)
 }
 const file = statSync(given).isDirectory()
@@ -31,20 +31,18 @@ const file = statSync(given).isDirectory()
         .at(-1) ?? '',
     )
   : given
-const record = JSON.parse(readFileSync(file, 'utf8')) as OverviewRecord
-if (record.version !== OVERVIEW_RECORD_VERSION) {
-  console.error(
-    `${file} is a version ${record.version} record. This checkout reads version ${OVERVIEW_RECORD_VERSION}.`,
-  )
+const record = JSON.parse(readFileSync(file, 'utf8')) as StatusRecord
+if (record.version !== STATUS_RECORD_VERSION) {
+  console.error(`${file} is a version ${record.version} record. This checkout reads version ${STATUS_RECORD_VERSION}.`)
   process.exit(2)
 }
 
 const yesNo = (b: boolean) => (b ? 'yes' : 'no')
 const when = (at: number) => new Date(at).toISOString().replace('T', ' ').slice(0, 19)
 
-/** A record's Overview as text. An earlier build's record holds that build's shape, so it is upgraded first. */
-function overviewText(saved: Overview | null): string {
-  const o = upgradeOverview(saved)
+/** A record's Status as text. An earlier build's record holds that build's shape, so it is upgraded first. */
+function statusText(saved: SessionStatus | null): string {
+  const o = upgradeStatus(saved)
   if (!o) return '(none)'
   const names = new Map(o.subjects.map(s => [s.id, s.name]))
   const subjects = o.subjects.map(
@@ -68,14 +66,12 @@ function overviewText(saved: Overview | null): string {
   ].join('\n')
 }
 
-const isShippedSystem = record.system === OVERVIEW_SYSTEM
-console.log(`Overview call: ${record.exchange.kind}, from ${record.host}, at ${when(record.at)}`)
+const isShippedSystem = record.system === STATUS_SYSTEM
+console.log(`Status call: ${record.exchange.kind}, from ${record.host}, at ${when(record.at)}`)
 console.log(`Session: ${record.session}`)
 console.log(`File: ${file}`)
 console.log(`Parsed: ${yesNo(record.isParsed)}. Written: ${yesNo(record.isWritten)}.`)
-console.log(
-  `System text: ${isShippedSystem ? "this checkout's OVERVIEW_SYSTEM" : "not this checkout's OVERVIEW_SYSTEM"}`,
-)
+console.log(`System text: ${isShippedSystem ? "this checkout's STATUS_SYSTEM" : "not this checkout's STATUS_SYSTEM"}`)
 record.attempts.forEach((a, n) => {
   const by = a.answeredBy ? `, answered by ${a.answeredBy}` : ''
   console.log(`\n== Attempt ${n + 1}: ${a.model ?? 'model not given'}${by}, ${(a.ms / 1000).toFixed(1)} s ==`)
@@ -83,8 +79,8 @@ record.attempts.forEach((a, n) => {
 })
 if (values.system || !isShippedSystem) console.log(`\n== System text ==\n${record.system}`)
 console.log(`\n== Prompt ==\n${record.prompt}`)
-console.log(`\n== Overview before ==\n${overviewText(record.before)}`)
-console.log(`\n== Overview after ==\n${overviewText(record.after)}`)
+console.log(`\n== Status before ==\n${statusText(record.before)}`)
+console.log(`\n== Status after ==\n${statusText(record.after)}`)
 
 /** The record's model as the eval harness calls it, or why it cannot be called from here. */
 function sender(): { model: string; send: (onError: (error: string) => void) => Promise<string | null> } | string {
@@ -93,7 +89,7 @@ function sender(): { model: string; send: (onError: (error: string) => void) => 
     const home = process.env.CODEX_HOME || join(homedir(), '.codex')
     // Without auth.json, codexAsk runs the model in the person's own Codex home, where it reads their AGENTS.md.
     if (!existsSync(join(home, 'auth.json'))) return `--run needs a Codex sign-in in ${join(home, 'auth.json')}`
-    const data = mkdtempSync(join(tmpdir(), 'inbox-overview-call-'))
+    const data = mkdtempSync(join(tmpdir(), 'inbox-status-call-'))
     const ask = codexAsk(run, codexCli, data, home)
 
     return {
@@ -121,6 +117,6 @@ if (values.run) {
   const answer = await s.send(e => (error = e))
   console.log(`\n== Sent again: ${s.model}, ${((Date.now() - startedAt) / 1000).toFixed(1)} s ==`)
   console.log(answer ?? `Error: ${error}`)
-  if (answer !== null) console.log(`\nParsed: ${yesNo(parseOverview(answer) !== null)}`)
+  if (answer !== null) console.log(`\nParsed: ${yesNo(parseStatus(answer) !== null)}`)
   process.exit(answer === null ? 1 : 0)
 }

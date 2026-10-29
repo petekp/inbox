@@ -21,10 +21,10 @@ import {
   askOverConversation,
   orderedKeys,
   reconcileUpdateStatus as reconcileStatus,
-  refreshOverview as refreshSessionOverview,
+  refreshStatus as refreshSessionStatus,
   runUpdates as runSessionUpdates,
 } from '../../hooks/session-host'
-import type { Ask, OverviewRecords, RecordFiles } from '../../hooks/session-host'
+import type { Ask, StatusRecords, RecordFiles } from '../../hooks/session-host'
 import { screenTabOf } from '../../hooks/view'
 import { isTabOpen } from './core'
 import { codexStore } from './host'
@@ -188,7 +188,7 @@ export const recordModelFailure =
 export const reconcileUpdateStatus = (dir: string, sessionId: string): Promise<SessionState> =>
   reconcileStatus(codexStore(dir, sessionId, Date.now))
 
-/** Runs `fn` once the session's earlier Overview calls have finished, in this process and in any other. */
+/** Runs `fn` once the session's earlier Status calls have finished, in this process and in any other. */
 const inOrderFor =
   (dir: string, sessionId: string) =>
   <T>(fn: () => Promise<T>): Promise<T> =>
@@ -206,24 +206,24 @@ const recordFiles: RecordFiles = {
   removeFolder: path => rmdir(path),
 }
 
-/** A next build's Overview call records for the session, in the plugin's data folder. */
-export const overviewRecords = (dir: string, sessionId: string): OverviewRecords => ({
+/** A next build's Status call records for the session, in the plugin's data folder. */
+export const statusRecords = (dir: string, sessionId: string): StatusRecords => ({
   host: 'codex',
   folder: join(dir, 'overview-calls'),
   session: sessionId,
   files: recordFiles,
 })
 
-/** Runs the Overview call that a hook claimed for the running turn. */
-export const refreshOverview = (
+/** Runs the Status call that a hook claimed for the running turn. */
+export const refreshStatus = (
   dir: string,
   sessionId: string,
   ask: Ask,
   now: () => number,
   onWrite?: OnWrite,
-  records?: OverviewRecords,
+  records?: StatusRecords,
 ): Promise<void> =>
-  refreshSessionOverview({
+  refreshSessionStatus({
     ...codexStore(dir, sessionId, now, onWrite),
     ask,
     inOrder: inOrderFor(dir, sessionId),
@@ -236,7 +236,7 @@ export const runUpdates = (
   ask: Ask,
   now: () => number,
   onWrite?: OnWrite,
-  records?: OverviewRecords,
+  records?: StatusRecords,
 ): Promise<void> =>
   runSessionUpdates({
     ...codexStore(dir, sessionId, now, onWrite),

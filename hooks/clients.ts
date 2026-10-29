@@ -28,7 +28,7 @@ export type FeatureId =
   | 'settle-window'
   | 'fold-on-typed-message'
   | 'version-label'
-  | 'overview-tab'
+  | 'status-tab'
   | 'turn-working'
   | 'host-task-list'
   | 'hooks-need-trust'
@@ -39,18 +39,18 @@ export type FeatureId =
   | 'tab-symbols'
   | 'dim-pressed-button'
   | 'herdr-sidebar'
-  | 'overview-children'
-  | 'overview-look-line'
-  | 'overview-row-rules'
-  | 'overview-failed-warning'
+  | 'status-children'
+  | 'status-look-line'
+  | 'status-row-rules'
+  | 'status-failed-warning'
   | 'asks-holds-up-line'
-  | 'overview-mid-turn-refresh'
+  | 'status-mid-turn-refresh'
   | 'tool-result-line'
-  | 'overview-call-records'
+  | 'status-call-records'
   | 'dismiss-merged-prs'
   | 'pr-order'
   | 'help-page'
-  | 'overview-view-ask'
+  | 'status-view-ask'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -81,7 +81,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'settle-window': { kind: 'full' },
       'fold-on-typed-message': { kind: 'full' },
       'version-label': { kind: 'full' },
-      'overview-tab': { kind: 'full' },
+      'status-tab': { kind: 'full' },
       'turn-working': { kind: 'full' },
       'host-task-list': { kind: 'full' },
       'hooks-need-trust': {
@@ -99,14 +99,14 @@ export const CLIENTS: Record<ClientId, Client> = {
           "The desktop app's Button has no disabled state. `dimColor` fades only its label, and a click still shows the native press highlight before the shared press path ignores it.",
       },
       'herdr-sidebar': { kind: 'full' },
-      'overview-children': { kind: 'full' },
-      'overview-look-line': { kind: 'full' },
-      'overview-row-rules': { kind: 'full' },
-      'overview-failed-warning': { kind: 'full' },
+      'status-children': { kind: 'full' },
+      'status-look-line': { kind: 'full' },
+      'status-row-rules': { kind: 'full' },
+      'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
-      'overview-mid-turn-refresh': { kind: 'full' },
+      'status-mid-turn-refresh': { kind: 'full' },
       'tool-result-line': { kind: 'full' },
-      'overview-call-records': { kind: 'full' },
+      'status-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'help-page': {
@@ -114,7 +114,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           "The engine binds only a digit or a lowercase letter as a Button's hotkey, so no key opens the terminal's Help. The desktop pane takes no keys, so its Help lists only the marks.",
       },
-      'overview-view-ask': { kind: 'full' },
+      'status-view-ask': { kind: 'full' },
     },
   },
   codex: {
@@ -174,7 +174,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'fold-on-typed-message': { kind: 'full' },
       'version-label': { kind: 'full' },
-      'overview-tab': { kind: 'full' },
+      'status-tab': { kind: 'full' },
       'turn-working': {
         kind: 'different',
         reason:
@@ -183,7 +183,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'host-task-list': {
         kind: 'different',
         reason:
-          "Codex runs no hook for `update_plan`, and the inbox's tool matcher cannot be widened without every person trusting the hook again. So the plan is read from the rollout when the turn stops, and shows from the next Overview call. The tool is not offered by default in `codex exec`, and the app is not checked.",
+          "Codex runs no hook for `update_plan`, and the inbox's tool matcher cannot be widened without every person trusting the hook again. So the plan is read from the rollout when the turn stops, and shows from the next Status call. The tool is not offered by default in `codex exec`, and the app is not checked.",
       },
       'hooks-need-trust': { kind: 'full' },
       'compare-in-background': {
@@ -201,29 +201,29 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           "Only Codex's hooks and the update a hook starts know the Herdr pane, so a record or close during a turn reaches the sidebar at the next hook. Codex finds no stops, and runs no hook when a session ends.",
       },
-      'overview-children': {
+      'status-children': {
         kind: 'different',
         reason:
           "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so background commands and workflows do not show. The end of a wait on a Herdr delegate is read at Stop.",
       },
-      'overview-look-line': { kind: 'full' },
-      'overview-row-rules': { kind: 'full' },
-      'overview-failed-warning': { kind: 'full' },
+      'status-look-line': { kind: 'full' },
+      'status-row-rules': { kind: 'full' },
+      'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
-      'overview-mid-turn-refresh': { kind: 'full' },
+      'status-mid-turn-refresh': { kind: 'full' },
       'tool-result-line': {
         kind: 'unsupported',
         reason:
           "Codex draws an MCP tool call's result from its content, which is the text the model reads. structuredContent reaches the model too, and _meta reaches only an MCP App view, so a result has no field for the person alone.",
       },
-      'overview-call-records': { kind: 'full' },
+      'status-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'help-page': { kind: 'full' },
-      'overview-view-ask': {
+      'status-view-ask': {
         kind: 'different',
         reason:
-          "Pete's choice: View takes clicks only, with no key. The Codex Overview has no row selection and is used by clicking.",
+          "Pete's choice: View takes clicks only, with no key. The Codex Status has no row selection and is used by clicking.",
       },
     },
   },
@@ -266,7 +266,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         kind: 'different',
         reason: "omp's panel footer ends with the inbox model's name, so the version follows it there.",
       },
-      'overview-tab': { kind: 'full' },
+      'status-tab': { kind: 'full' },
       'turn-working': { kind: 'full' },
       'host-task-list': { kind: 'full' },
       'hooks-need-trust': {
@@ -284,25 +284,25 @@ export const CLIENTS: Record<ClientId, Client> = {
           'The panel already draws a follow-up such as Discuss dim, and has no dimmer style, so an out follow-up looks as it does at rest until it is focused. Its key still does nothing.',
       },
       'herdr-sidebar': { kind: 'full' },
-      'overview-children': {
+      'status-children': {
         kind: 'different',
         reason:
           "omp's extension events report subagents and bash calls. omp's reference names no event for a background job or a workflow run, so those do not show.",
       },
-      'overview-look-line': { kind: 'full' },
-      'overview-row-rules': { kind: 'full' },
-      'overview-failed-warning': { kind: 'full' },
+      'status-look-line': { kind: 'full' },
+      'status-row-rules': { kind: 'full' },
+      'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
-      'overview-mid-turn-refresh': { kind: 'full' },
+      'status-mid-turn-refresh': { kind: 'full' },
       'tool-result-line': { kind: 'full' },
-      'overview-call-records': { kind: 'full' },
+      'status-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'help-page': {
         kind: 'different',
         reason: 'The panel takes keys only, so `?` opens Help, and no button does.',
       },
-      'overview-view-ask': { kind: 'full' },
+      'status-view-ask': { kind: 'full' },
     },
   },
 }

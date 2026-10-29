@@ -194,7 +194,7 @@ function tasksText(tasks) {
   return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL3);
 }
 
-// ../hooks/overview.ts
+// ../hooks/status.ts
 var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
 var DESCRIPTION_WORDS = 8;
@@ -228,7 +228,7 @@ var STOP_WORDS = new Set([
 ]);
 var NL4 = `
 `;
-var EMPTY_OVERVIEW = {
+var EMPTY_SESSION_STATUS = {
   head: null,
   subjects: [],
   children: [],
@@ -281,7 +281,7 @@ function opOf(key, f) {
     return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
   return null;
 }
-function parseOverview(text) {
+function parseStatus(text) {
   const ops = [];
   for (const raw of (text ?? "").split(NL4)) {
     const line = raw.trim();
@@ -297,9 +297,9 @@ function parseOverview(text) {
     return null;
   return ops.every((o) => o.kind === "none") ? { kind: "unchanged" } : { kind: "ops", ops };
 }
-async function askOverview(ask) {
+async function askStatus(ask) {
   const first = await ask();
-  const holdsProse = first.text !== null && parseOverview(first.text) === null;
+  const holdsProse = first.text !== null && parseStatus(first.text) === null;
   return { first, last: holdsProse ? await ask() : first };
 }
 function words(text) {
@@ -364,7 +364,7 @@ var OP_ORDER = {
 };
 function applyOps(last, ops, now, askIds) {
   let o = {
-    ...last ?? EMPTY_OVERVIEW,
+    ...last ?? EMPTY_SESSION_STATUS,
     subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
     children: (last?.children ?? []).map((c) => ({ ...c })),
     askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask)))
@@ -461,14 +461,14 @@ function applyOps(last, ops, now, askIds) {
     o = { ...o, head: { ...o.head, description: "" } };
   return o;
 }
-function applyOverview(last, answer, now, askIds) {
+function applyStatus(last, answer, now, askIds) {
   return answer.kind === "unchanged" ? last : applyOps(last, answer.ops, now, askIds);
 }
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
 }
 function withChild(last, c, now) {
-  const o = last ?? EMPTY_OVERVIEW;
+  const o = last ?? EMPTY_SESSION_STATUS;
   const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
   const known = kept.find((x) => x.ref === c.ref);
   if (known)
@@ -610,14 +610,14 @@ function fromLists(o) {
     into: null
   }));
   return {
-    ...EMPTY_OVERVIEW,
+    ...EMPTY_SESSION_STATUS,
     head: headOfGoal(o.headline),
     subjects,
     nextId: subjects.length + 1,
     lastLookAt
   };
 }
-function upgradeOverview(saved) {
+function upgradeStatus(saved) {
   const o = saved;
   if (typeof o !== "object" || o === null)
     return null;
@@ -659,8 +659,8 @@ var EMPTY = {
   updates: 0
 };
 function isBlankLedger(ledger) {
-  const isOverviewBlank = !ledger.overview || ledger.overview.head === null && ledger.overview.subjects.length === 0;
-  return ledger.updates === 0 && isOverviewBlank && ledger.items.length === 0 && ledger.findings.length === 0;
+  const isStatusBlank = !ledger.overview || ledger.overview.head === null && ledger.overview.subjects.length === 0;
+  return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0;
 }
 var NL5 = `
 `;
@@ -687,7 +687,7 @@ function upgradeLedger(ledger) {
     ...rest,
     prOrder: rest.prOrder ?? null,
     updates,
-    overview: upgradeOverview(rest.overview),
+    overview: upgradeStatus(rest.overview),
     findings: [...rest.findings ?? [], ...notes ?? []],
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
     items: rest.items.map(upgradeItem),
@@ -1509,7 +1509,7 @@ function buildPrompt(ledger, ex) {
     `<screen>${NL6}${ex.screen}${NL6}</screen>`
   ].join(NL6);
 }
-var OVERVIEW_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
+var STATUS_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
 
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
@@ -1563,7 +1563,7 @@ function headText(o) {
     return "(none yet)";
   return `${o.head.title} | ${o.head.description || "(no description yet)"}`;
 }
-function overviewBlocks({ last, asks, tasks, now }) {
+function statusBlocks({ last, asks, tasks, now }) {
   const { open, finished } = subjectsText(last);
   const running = runningText(last, now);
   const held = asksText(last, asks);
@@ -1580,27 +1580,27 @@ function overviewBlocks({ last, asks, tasks, now }) {
 function personText(person, trigger) {
   return person ?? `(The person sent nothing. The turn was started by: ${trigger ?? "unknown"}.)`;
 }
-function overviewPrompt(input, ex) {
+function statusPrompt(input, ex) {
   const person = personText(ex.person, ex.trigger);
   return [
-    ...overviewBlocks(input),
+    ...statusBlocks(input),
     `<person>${NL6}${clipMiddle(person, 4000, 1500)}${NL6}</person>`,
     `<activity>${NL6}${clipMiddle(ex.activity.join(NL6), 2500, 500)}${NL6}</activity>`,
     `<reply>${NL6}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL6}</reply>`
   ].join(NL6);
 }
-function overviewMidTurnPrompt(input, turn) {
+function statusMidTurnPrompt(input, turn) {
   return [
     "The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes.",
-    ...overviewBlocks(input),
+    ...statusBlocks(input),
     `<person>${NL6}${clipMiddle(personText(turn.person, turn.trigger), 4000, 1500)}${NL6}</person>`,
     `<activity>${NL6}${clipMiddle(turn.activity.join(NL6), 2500, 500)}${NL6}</activity>`
   ].join(NL6);
 }
-function overviewCatchUpPrompt(input, transcript) {
+function statusCatchUpPrompt(input, transcript) {
   return [
     "Treat the conversation in <conversation> as the exchange. Its start may be cut. Answer with the changes that bring the list to where the conversation ends.",
-    ...overviewBlocks(input),
+    ...statusBlocks(input),
     `<conversation>${NL6}${numberBlocks(transcript)}${NL6}</conversation>`
   ].join(NL6);
 }
@@ -2857,10 +2857,10 @@ var MARK_LEGEND = [
   }
 ];
 var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks" };
-function helpKeys(look, isNextBuild, tab, hasOverviewButtons) {
+function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
   const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
   const hasRows = isRowTab(tab);
-  const selectsOverviewRows = tab === "overview" && hasOverviewButtons;
+  const selectsStatusRows = tab === "overview" && hasStatusButtons;
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
   switch (look) {
     case "desktop":
@@ -2868,7 +2868,7 @@ function helpKeys(look, isNextBuild, tab, hasOverviewButtons) {
     case "terminal":
       return [
         switchTabs,
-        ...hasRows || selectsOverviewRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
+        ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
         { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
       ];
     case "codex":
@@ -2888,7 +2888,7 @@ function helpKeys(look, isNextBuild, tab, hasOverviewButtons) {
           { keys: "r", does: "Reply to the selected row" },
           { keys: "u", does: "Undo the last close" }
         ] : [
-          ...selectsOverviewRows ? [
+          ...selectsStatusRows ? [
             { keys: "j k", does: "Select the next or previous row with a button" },
             { keys: "\u21B5", does: "Press the selected row's button" }
           ] : [],
@@ -3121,7 +3121,7 @@ function versionLabel(version, isNextBuild) {
 }
 var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
 var HOLDS_UP_TEXT = "Holds up";
-var OVERVIEW_FAILED = "Last Overview update failed. Changes from that reply may be missing.";
+var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
 var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
@@ -3299,7 +3299,7 @@ function stepKind(step) {
   return step.step.some((h) => h.kind === "run") ? "handoff" : "local";
 }
 var TAB_NAMES = [
-  { id: "overview", label: "Overview", symbol: "\uD83E\uDDED" },
+  { id: "overview", label: "Status", symbol: "\uD83E\uDDED" },
   { id: "needsYou", label: "Asks", symbol: "\uD83D\uDE4B" },
   { id: "findings", label: "Finds", symbol: "\uD83D\uDD0D" },
   { id: "prs", label: "PRs", symbol: "\uD83D\uDD00" }
@@ -3342,12 +3342,12 @@ var LOOK_TEXT = "Last seen";
 var WAS_PREFIX = "was: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " \xB7 ";
-var OVERVIEW_TEXT_LINES = 3;
+var STATUS_TEXT_LINES = 3;
 var CHILD_ROWS = 3;
 var NEW_CLOSED_ROWS = 2;
 var OPEN_ROWS = 7;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
-var OVERVIEW_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
+var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 function mergedLine(merged, fits) {
@@ -3393,7 +3393,7 @@ function childRow(c, branch) {
     branch
   };
 }
-function overviewPage(s, now) {
+function statusPage(s, now) {
   const o = s.ledger.overview;
   const look = o?.lastLookAt ?? null;
   const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
@@ -3407,7 +3407,7 @@ function overviewPage(s, now) {
     return oldest ? { id: oldest.id, kind: oldest.kind } : null;
   };
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
-  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || OVERVIEW_PLACES.indexOf(placeOf(x)) - OVERVIEW_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
+  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const open = subjects.filter(isOpen);
@@ -3477,9 +3477,9 @@ function overviewPage(s, now) {
     isEmpty: head === null && rows.length === 0,
     head,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
-    error: s.overviewFailure ? OVERVIEW_FAILED : null,
+    error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
-      title: "Overview",
+      title: "Status",
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
     }
   };
@@ -3610,7 +3610,7 @@ function rowKeyPlan(r, isAllShown) {
   return { keys, more };
 }
 var VIEW_ASK_LABELS = { question: "View question", task: "View task" };
-function overviewKeyPlan(row) {
+function statusKeyPlan(row) {
   if (row.kind !== "subject" || row.ask === null)
     return [];
   return [
@@ -3622,11 +3622,11 @@ function overviewKeyPlan(row) {
     }
   ];
 }
-function overviewKeyRows(page) {
-  return page.rows.filter((r) => overviewKeyPlan(r).length > 0);
+function statusKeyRows(page) {
+  return page.rows.filter((r) => statusKeyPlan(r).length > 0);
 }
-function overviewSelected(page, selectedId) {
-  const rows = overviewKeyRows(page);
+function statusSelected(page, selectedId) {
+  const rows = statusKeyRows(page);
   return rows.find((r) => r.id === selectedId) ?? rows[0] ?? null;
 }
 function actionLines(keys, more, { width, gap, separator }) {
@@ -3825,10 +3825,10 @@ function heldLabel(c) {
 }
 var UPDATING_TEXT = "Updating\u2026";
 var REFRESHING_PRS_TEXT = "Refreshing PRs\u2026";
-function footerStatus(tab, status, prs, overviewError) {
+function footerStatus(tab, status, prs, statusPageError) {
   if (tab === "prs")
     return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null };
-  const error = (tab === "overview" ? overviewError : null) ?? status.error;
+  const error = (tab === "overview" ? statusPageError : null) ?? status.error;
   return { text: status.isUpdating ? UPDATING_TEXT : null, error };
 }
 function perTurnStatus(update) {
@@ -5018,31 +5018,31 @@ function applied(s, parsed, now, promptAt) {
     }
   });
 }
-function appliedOverview(s, answer, appliedAfter, now) {
+function appliedStatus(s, answer, appliedAfter, now) {
   if (s.presence.turnsApplied < appliedAfter)
     return s;
   return {
     ...s,
     ledger: {
       ...s.ledger,
-      overview: applyOverview(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)))
+      overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)))
     },
     overviewFailure: null,
     lastOverviewCallAt: now
   };
 }
 var REFUSED_ANSWER_CHARS = 500;
-function failedOverview(s, text, appliedAfter, now) {
+function failedStatus(s, text, appliedAfter, now) {
   if (s.presence.turnsApplied < appliedAfter)
     return s;
   const failure = text === null ? { at: now, cause: "no-answer", answer: null } : { at: now, cause: "refused", answer: text.slice(0, REFUSED_ANSWER_CHARS) };
   return { ...s, overviewFailure: failure, lastOverviewCallAt: now };
 }
-var OVERVIEW_REFRESH_MS = 10 * 60000;
-function claimedOverviewRefresh(s, now) {
+var STATUS_REFRESH_MS = 10 * 60000;
+function claimedStatusRefresh(s, now) {
   const { isTurnRunning, turnStartedAt } = s.presence;
   const times = [s.lastOverviewCallAt, turnStartedAt].filter((t) => t !== null);
-  const isDue = isTurnRunning && times.length > 0 && now - Math.max(...times) >= OVERVIEW_REFRESH_MS;
+  const isDue = isTurnRunning && times.length > 0 && now - Math.max(...times) >= STATUS_REFRESH_MS;
   return isDue ? { ...s, lastOverviewCallAt: now } : s;
 }
 function needsCatchUp(s) {
@@ -5054,17 +5054,17 @@ function needsUpdate(s) {
   return s.pending.length > 0 || s.presence.ledgerState !== "current";
 }
 function lookStartedOn(s, now) {
-  return overviewChanged(s, (o) => lookStarted(o, now));
+  return statusChanged(s, (o) => lookStarted(o, now));
 }
 function lookEndedOn(s, at) {
-  return overviewChanged(s, (o) => lookEnded(o, at));
+  return statusChanged(s, (o) => lookEnded(o, at));
 }
-function overviewChanged(s, change) {
+function statusChanged(s, change) {
   const overview = change(s.ledger.overview);
   return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } };
 }
-function withLook(s, isOverviewShown, now) {
-  return isOverviewShown ? lookStartedOn(s, now) : lookEndedOn(s, now);
+function withLook(s, isStatusShown, now) {
+  return isStatusShown ? lookStartedOn(s, now) : lookEndedOn(s, now);
 }
 function hasLedger(s) {
   return !isBlankLedger(s.ledger);
@@ -5219,7 +5219,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now, holds.shownSince, settleWindowMs),
-    overviewPage: overviewPage(s, now)
+    statusPage: statusPage(s, now)
   };
 }
 function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
@@ -5272,17 +5272,17 @@ function orderedKeys() {
     }
   };
 }
-function overviewCallPrompt(input, read) {
+function statusCallPrompt(input, read) {
   switch (read.kind) {
     case "reply":
-      return overviewPrompt(input, read.exchange);
+      return statusPrompt(input, read.exchange);
     case "mid-turn":
-      return overviewMidTurnPrompt(input, read.turn);
+      return statusMidTurnPrompt(input, read.turn);
     case "catch-up":
-      return overviewCatchUpPrompt(input, read.conversation);
+      return statusCatchUpPrompt(input, read.conversation);
   }
 }
-var OVERVIEW_RECORD_VERSION = 1;
+var STATUS_RECORD_VERSION = 1;
 var RECORDS_PER_SESSION = 100;
 var RECORDS_KEPT_MS = 14 * 24 * 60 * 60000;
 var RECORDS_SWEEP_MS = 60 * 60000;
@@ -5294,7 +5294,7 @@ function recordsFolderName(session) {
 function recordFileName(at, kind) {
   return `${String(at).padStart(13, "0")}-${kind}.jsonl`;
 }
-async function writeOverviewRecord(records, record) {
+async function writeStatusRecord(records, record) {
   const { files, folder } = records;
   const own = `${folder}/${recordsFolderName(records.session)}`;
   await files.write(`${own}/${recordFileName(record.at, record.exchange.kind)}`, `${JSON.stringify(record)}
@@ -5324,7 +5324,7 @@ async function writeOverviewRecord(records, record) {
 async function attempt(host, ask, prompt) {
   const heard = {};
   const startedAt = await host.now();
-  const text = await ask(prompt, OVERVIEW_SYSTEM, (r) => heard.report = r).catch((err) => {
+  const text = await ask(prompt, STATUS_SYSTEM, (r) => heard.report = r).catch((err) => {
     heard.thrown = err instanceof Error ? err.message : String(err);
     return null;
   });
@@ -5337,32 +5337,32 @@ async function attempt(host, ask, prompt) {
     ms: await host.now() - startedAt
   };
 }
-async function askAndWriteOverview(host, s, call, tasks, appliedAfter) {
+async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() };
-  const prompt = overviewCallPrompt(input, call.exchange);
+  const prompt = statusCallPrompt(input, call.exchange);
   const attempts = [];
-  const { last } = await askOverview(async () => {
+  const { last } = await askStatus(async () => {
     const { text, ...made } = await attempt(host, call.ask, prompt);
     attempts.push(made);
     return { text };
   });
-  const answer = last.text === null ? null : parseOverview(last.text);
+  const answer = last.text === null ? null : parseStatus(last.text);
   const now = await host.now();
   let before = null;
   let isWritten = false;
   const after = await host.update((x) => {
     before = x.ledger.overview;
     isWritten = x.presence.turnsApplied >= appliedAfter;
-    return answer === null ? failedOverview(x, last.text, appliedAfter, now) : appliedOverview(x, answer, appliedAfter, now);
+    return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now);
   });
   if (!host.records)
     return;
   const record = {
-    version: OVERVIEW_RECORD_VERSION,
+    version: STATUS_RECORD_VERSION,
     host: host.records.host,
     session: host.records.session,
     at: input.now,
-    system: OVERVIEW_SYSTEM,
+    system: STATUS_SYSTEM,
     prompt,
     input,
     exchange: call.exchange,
@@ -5372,18 +5372,18 @@ async function askAndWriteOverview(host, s, call, tasks, appliedAfter) {
     before,
     after: after.ledger.overview
   };
-  writeOverviewRecord(host.records, record).catch(() => {
+  writeStatusRecord(host.records, record).catch(() => {
     return;
   });
 }
-function refreshOverview(host) {
+function refreshStatus(host) {
   return host.inOrder(async () => {
     const s = await host.read();
     if (!s.presence.isTurnRunning)
       return;
     const { person, trigger, activity } = s.turn;
     const call = { exchange: { kind: "mid-turn", turn: { person, trigger, activity } }, ask: host.ask };
-    await askAndWriteOverview(host, s, call, s.hostTasks, s.presence.turnsApplied);
+    await askAndWriteStatus(host, s, call, s.hostTasks, s.presence.turnsApplied);
   });
 }
 async function askOverConversation(ask, names, s, screen, conversation) {
@@ -5394,7 +5394,7 @@ async function askOverConversation(ask, names, s, screen, conversation) {
     kind: "reply",
     text,
     source: conversation,
-    overview: { exchange: { kind: "catch-up", conversation }, ask }
+    statusCall: { exchange: { kind: "catch-up", conversation }, ask }
   };
 }
 async function reconcileUpdateStatus(host) {
@@ -5416,7 +5416,7 @@ async function runUpdates(host) {
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
-  const writeOverview = (after, call, tasks) => host.inOrder(async () => askAndWriteOverview(host, await host.read(), call, tasks, after.presence.turnsApplied));
+  const writeStatus = (after, call, tasks) => host.inOrder(async () => askAndWriteStatus(host, await host.read(), call, tasks, after.presence.turnsApplied));
   const followUp = (run) => {
     const settled = run.catch(() => {
       return;
@@ -5445,8 +5445,8 @@ async function runUpdates(host) {
               const after = await host.update((x) => appliedCatchUp(x, s, parsed, at));
               if (!parsed)
                 return "stop";
-              if (reply.kind === "reply" && reply.overview)
-                followUp(writeOverview(after, reply.overview, s.hostTasks));
+              if (reply.kind === "reply" && reply.statusCall)
+                followUp(writeStatus(after, reply.statusCall, s.hostTasks));
               continue;
             }
             const next = s.pending[0];
@@ -5462,7 +5462,7 @@ async function runUpdates(host) {
               return applied(x, parsed, await host.now(), promptAt);
             });
             if (isApplied)
-              followUp(writeOverview(after, { exchange: { kind: "reply", exchange: next.ex }, ask: host.ask }, next.ex.tasks));
+              followUp(writeStatus(after, { exchange: { kind: "reply", exchange: next.ex }, ask: host.ask }, next.ex.tasks));
             if (after.pending[0]?.failed && !next.failed)
               return "stop";
           }
@@ -6242,7 +6242,7 @@ function pageEntries(page) {
   return head.length > 0 && rows.length > 0 ? [...head, { kind: "note", text: "" }, ...rows] : [...head, ...rows];
 }
 function helpEntries(screen, tab) {
-  const keys = helpKeys("omp", screen.isNextBuild === true, tab, overviewKeyRows(screen.view.overviewPage).length > 0);
+  const keys = helpKeys("omp", screen.isNextBuild === true, tab, statusKeyRows(screen.view.statusPage).length > 0);
   const column = Math.max(...keys.map((k) => cellWidth(k.keys))) + 2;
   return [
     { kind: "heading", text: HELP_COPY.keys },
@@ -6256,7 +6256,7 @@ function entriesOf(screen, ui, tab, now) {
   if (ui.isHelpShown && tab === ui.tab)
     return helpEntries(screen, tab);
   if (!isRowTab(tab))
-    return pageEntries(screen.view.overviewPage);
+    return pageEntries(screen.view.statusPage);
   return tab === "prs" ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab);
 }
 var linesOf = (entries) => entries.flatMap((e) => e.kind === "row" ? [e.line] : []);
@@ -6404,9 +6404,9 @@ function handleKey(screen, ui, key, now, text) {
   return button ? activate(screen, base, selected, button, now) : { ui: base };
 }
 function pageKey(screen, ui, key, now) {
-  const page = screen.view.overviewPage;
-  const rows = overviewKeyRows(page);
-  const row = overviewSelected(page, ui.selectedId);
+  const page = screen.view.statusPage;
+  const rows = statusKeyRows(page);
+  const row = statusSelected(page, ui.selectedId);
   if (!row)
     return null;
   if (key === "j" || key === "k") {
@@ -6414,7 +6414,7 @@ function pageKey(screen, ui, key, now) {
     const to = rows[wrapIndex(at + (key === "k" ? -1 : 1), rows.length)].id;
     return { ui: { ...ui, selectedId: to, focus: null, pageReveal: to } };
   }
-  const keys = overviewKeyPlan(row);
+  const keys = statusKeyPlan(row);
   if (key === "left" || key === "right") {
     const index = wrapIndex(pageFocus(row, ui) + (key === "left" ? -1 : 1), keys.length);
     return { ui: { ...ui, selectedId: row.id, focus: { rowId: row.id, index } } };
@@ -6469,7 +6469,7 @@ function isRunningMarkShown(screen, ui) {
   if (ui.isHelpShown)
     return MARK_LEGEND.some((m) => m.isRunning);
   if (!isRowTab(ui.tab))
-    return hasRunningMark(screen.view.overviewPage);
+    return hasRunningMark(screen.view.statusPage);
   if (ui.tab === "prs")
     return isPrTabRunning(screen.view.prs.drawn.filter((d) => d.state.is === "open").map((d) => d.pr), screen.view.lastActions);
   return isRowTabRunning(screen.view, ui.tab, (kind) => ui.unfolded.includes(kind));
@@ -6661,8 +6661,8 @@ function pageLine(d, indent, mark, name, namePaint, { stall = null, text = null 
   const { width, style: s } = d;
   const textAt = indent + 2;
   const room = pageRoom(indent, width);
-  const names = stall ? stalledName(name, stall, room, namePaint, s) : pageText(name, room, OVERVIEW_TEXT_LINES, namePaint);
-  const seconds = text ? pageText(text, room, OVERVIEW_TEXT_LINES, s.dim) : [];
+  const names = stall ? stalledName(name, stall, room, namePaint, s) : pageText(name, room, STATUS_TEXT_LINES, namePaint);
+  const seconds = text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : [];
   return [
     `${" ".repeat(indent)}${mark} ${names[0] ?? ""}`,
     ...[...names.slice(1), ...seconds].map((l) => " ".repeat(textAt) + l)
@@ -6671,7 +6671,7 @@ function pageLine(d, indent, mark, name, namePaint, { stall = null, text = null 
 function stalledName(name, stall, room, namePaint, s) {
   const tail = `${STALL_GAP}${stall.text}`.replaceAll(" ", GLUE);
   const wrapped = (shown) => wrapText(`${shown}${tail}`, room);
-  const lines = wrapped(nameBeforeStall(name, (shown) => wrapped(shown).length <= OVERVIEW_TEXT_LINES));
+  const lines = wrapped(nameBeforeStall(name, (shown) => wrapped(shown).length <= STATUS_TEXT_LINES));
   const words = s.tone(stall.tone, stall.text);
   return lines.map((l) => l.endsWith(tail) ? namePaint(l.slice(0, -tail.length)) + s.dim(STALL_GAP) + words : namePaint(l.replaceAll(GLUE, " ")));
 }
@@ -6689,7 +6689,7 @@ function pageRule(width, s, label = null) {
   return `${" ".repeat(PAGE_TEXT_AT)}${s.dim(`${"\u2500".repeat(before)}${text}${"\u2500".repeat(fill - before)}`)}`;
 }
 function pageButtonLines(row, d, isSelected) {
-  const faces = overviewKeyPlan(row).map((k) => ({
+  const faces = statusKeyPlan(row).map((k) => ({
     label: k.label,
     key: isSelected ? k.hotkey : null,
     isRecommended: false,
@@ -6698,7 +6698,7 @@ function pageButtonLines(row, d, isSelected) {
   const focused = isSelected ? pageFocus(row, d.ui) : -1;
   return faces.length > 0 ? faceLines(faces, focused, PAGE_TEXT_AT - 1, d.width, d.style) : [];
 }
-var pageFocus = (row, ui) => ui.focus?.rowId === row.id ? Math.min(ui.focus.index, overviewKeyPlan(row).length - 1) : 0;
+var pageFocus = (row, ui) => ui.focus?.rowId === row.id ? Math.min(ui.focus.index, statusKeyPlan(row).length - 1) : 0;
 function drawPageRow(row, d, isSelected = false) {
   const { width, now, style: s } = d;
   if (row.kind === "subject") {
@@ -6707,9 +6707,9 @@ function drawPageRow(row, d, isSelected = false) {
     const out = pageLine(d, PAGE_MARK_AT, mark, row.name, (t) => t, { stall: row.stall, text: row.text });
     const room = pageRoom(PAGE_MARK_AT, width);
     if (row.merged)
-      out.push(...indented(mergedLine(row.merged, (t) => cellWidth(t) <= room), PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim));
+      out.push(...indented(mergedLine(row.merged, (t) => cellWidth(t) <= room), PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim));
     if (row.was)
-      out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim));
+      out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim));
     out.push(...pageButtonLines(row, d, isSelected));
     return row.hasChildren ? withTree(out, null, "\u2502", s) : out;
   }
@@ -6757,11 +6757,11 @@ function tabBar(d) {
 function footer(d, isPageScrolling) {
   const { screen, ui, width, now, style: s } = d;
   const out = [s.dim("\u2500".repeat(width))];
-  const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.overviewPage.error);
+  const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.statusPage.error);
   if (status.text)
     out.push(` ${s.dim(status.text)}`);
   const hints = ui.typing !== null ? [`\u21B5 ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch", "? help"] : [
-    ...overviewKeyRows(screen.view.overviewPage).length > 0 ? ["j k select", "\u21B5 press"] : [],
+    ...statusKeyRows(screen.view.statusPage).length > 0 ? ["j k select", "\u21B5 press"] : [],
     ...isPageScrolling ? ["\u2191\u2193 scroll"] : [],
     "tab switch",
     "? help"
@@ -6780,7 +6780,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const entries = entriesOf(screen, ui, ui.tab, now);
   const selected = resolveSelected(linesOf(entries), ui.selectedId);
   const rule = style.dim("\u2500".repeat(width));
-  const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.overviewPage.error);
+  const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.statusPage.error);
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS;
   const banners = tabBarBanners([], status.error, isNoticeShown ? ui.notice : null);
   const head = [
@@ -6792,7 +6792,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   ];
   const body = [];
   let selectedAt = [0, 0];
-  const pageSelected = isRowTab(ui.tab) ? null : overviewSelected(screen.view.overviewPage, ui.selectedId);
+  const pageSelected = isRowTab(ui.tab) ? null : statusSelected(screen.view.statusPage, ui.selectedId);
   let pageSelectedAt = null;
   for (const e of entries) {
     if (e.kind === "heading")
@@ -7735,7 +7735,7 @@ var recordFiles = {
   removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm(p, { force: true }))),
   removeFolder: (path) => rmdir(path)
 };
-var overviewRecords = (dir, sessionId) => ({
+var statusRecords = (dir, sessionId) => ({
   host: "omp",
   folder: join2(dir, "overview-calls"),
   session: sessionId,
@@ -7998,7 +7998,7 @@ function createInbox(pi, deps = defaultDeps) {
       names: OMP,
       inOrder: (fn) => resultsOrder.run(id, fn),
       background: (results) => deps.background(results),
-      ...deps.isNextBuild ? { records: overviewRecords(dir, id) } : {},
+      ...deps.isNextBuild ? { records: statusRecords(dir, id) } : {},
       catchUp: (s) => askOverConversation(host.ask, OMP, s, screenText(OMP, openPanels.has(id), panelScreenTab(id)), conversationText(ctx))
     };
   }
@@ -8040,7 +8040,7 @@ function createInbox(pi, deps = defaultDeps) {
     deps.background((async () => {
       const states = await delegatesInHerdr((await readState(dir, id)).ledger.overview, run);
       if (states)
-        await change(id, (s) => overviewChanged(s, (o) => delegatesSettled(o, states, deps.now())));
+        await change(id, (s) => statusChanged(s, (o) => delegatesSettled(o, states, deps.now())));
     })());
   }
   function fetchPrsWhenDue(ctx) {
@@ -8097,7 +8097,7 @@ function createInbox(pi, deps = defaultDeps) {
     const saved = await readState(dir, id).catch(() => null);
     const isCutOff = saved?.presence.isTurnRunning || saved?.ledger.overview?.children.some((c) => c.endedAt === null);
     if (isCutOff)
-      await change(id, (s) => overviewChanged(cutOffTurn(s), (o) => childrenCutOff(o, deps.now()))).catch(() => {
+      await change(id, (s) => statusChanged(cutOffTurn(s), (o) => childrenCutOff(o, deps.now()))).catch(() => {
         return;
       });
     prepare(ctx);
@@ -8123,7 +8123,7 @@ function createInbox(pi, deps = defaultDeps) {
     const at = deps.now();
     const label = typeof frame.description === "string" && frame.description ? frame.description : frame.agent;
     const name = typeof label === "string" ? label : "subagent";
-    await change(id, (s) => overviewChanged(s, (o) => frame.status === "started" ? childStarted(o, { ref, kind: "subagent", name }, at) : childEnded(o, ref, at))).catch(() => {
+    await change(id, (s) => statusChanged(s, (o) => frame.status === "started" ? childStarted(o, { ref, kind: "subagent", name }, at) : childEnded(o, ref, at))).catch(() => {
       return;
     });
   });
@@ -8133,7 +8133,7 @@ function createInbox(pi, deps = defaultDeps) {
     const at = deps.now();
     if (!id || typeof ref !== "string" || !isActivityWorthSaving(ref, at))
       return;
-    await change(id, (s) => overviewChanged(s, (o) => childWorked(o, ref, at))).catch(() => {
+    await change(id, (s) => statusChanged(s, (o) => childWorked(o, ref, at))).catch(() => {
       return;
     });
   });
@@ -8215,7 +8215,7 @@ function createInbox(pi, deps = defaultDeps) {
     try {
       await change(sessionIdOf(ctx), (s) => {
         const noted = noteActivity(s, line);
-        const claimed = claimedOverviewRefresh(noted, deps.now());
+        const claimed = claimedStatusRefresh(noted, deps.now());
         isClaimed = claimed !== noted;
         return claimed;
       });
@@ -8223,7 +8223,7 @@ function createInbox(pi, deps = defaultDeps) {
       return;
     }
     if (isClaimed)
-      deps.background(refreshOverview(updateHostFor(ctx)));
+      deps.background(refreshStatus(updateHostFor(ctx)));
   };
   pi.on("tool_execution_start", async (event, ctx) => {
     if (isUnattended(ctx))
@@ -8234,7 +8234,7 @@ function createInbox(pi, deps = defaultDeps) {
     if (delegateSteps(command).length === 0)
       return;
     const at = deps.now();
-    await change(sessionIdOf(ctx), (s) => overviewChanged(s, (o) => delegatesStarted(o, command, at))).catch(() => {
+    await change(sessionIdOf(ctx), (s) => statusChanged(s, (o) => delegatesStarted(o, command, at))).catch(() => {
       return;
     });
   });
@@ -8251,7 +8251,7 @@ function createInbox(pi, deps = defaultDeps) {
         await change(sessionIdOf(ctx), (s) => {
           const after = noteCommandOutput(s, command, textOfBlocks(event.content));
           isLinked = after.ledger !== s.ledger;
-          return overviewChanged(after, (o) => delegateWaitsEnded(o, command, at));
+          return statusChanged(after, (o) => delegateWaitsEnded(o, command, at));
         });
       } catch {
         return;
@@ -8324,7 +8324,7 @@ function createInbox(pi, deps = defaultDeps) {
     const endedAt = deps.now();
     const written = await change(id, (s) => {
       const ended = endedTurn(id, s, reply, endedAt, { hostTasks, queuesEmptyReply: isDialogDismissed });
-      const settled = inHerdr ? overviewChanged(ended, (o) => delegatesSettled(o, inHerdr, endedAt)) : ended;
+      const settled = inHerdr ? statusChanged(ended, (o) => delegatesSettled(o, inHerdr, endedAt)) : ended;
       return { ...placed(settled, ctx.cwd, branch), stop };
     }).catch(() => null);
     if (!written)
@@ -8533,8 +8533,8 @@ export {
   createInbox,
   host_default as default,
   inboxModel,
-  overviewRecords,
   sessionIdInFile,
+  statusRecords,
   stopOf,
   styleOf
 };

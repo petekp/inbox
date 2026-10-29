@@ -20,7 +20,7 @@ const SHARED = [
   'marks',
   'ledger',
   'host-tasks',
-  'overview',
+  'status',
   'model-text',
   'pr-tab',
   'presses',

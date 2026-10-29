@@ -23,7 +23,7 @@ export function isTabOpen(s: SessionState, now: number): boolean {
 /**
  * A view request from the Inbox tab, which names the tab it shows. A look ends when the tab shows another tab, and also
  * when requests stopped for a while, since the pane was closed: it then ended when the last request came. A look
- * starts when the tab shows the Overview.
+ * starts when the tab shows the Status.
  */
 export function lookOnView(s: SessionState, shownTab: SessionState['shownTab'], now: number): SessionState {
   const wasClosed = s.tabSeenAt > 0 && !isTabOpen(s, now)
