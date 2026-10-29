@@ -331,6 +331,24 @@ function refusedReceiver(project, source, callee) {
   return `passes \`$\` to \`${name}\`, which is not a top-level function declaration.`
 }
 
+const isFunctionExpression = node => ts.isArrowFunction(node) || ts.isFunctionExpression(node)
+
+/**
+ * The function expression around `node` that a `return` statement returns. The directory accepted a curried arrow,
+ * `(p) => (press) => runPress($, p, press.surface)`, so an arrow's expression body does not count.
+ */
+function returnedFunctionOf(node) {
+  for (let at = node.parent; at && !ts.isSourceFile(at); at = at.parent) {
+    if (!isFunctionExpression(at)) continue
+    if (parameterNames(at).includes('$')) return null
+    let outer = at.parent
+    while (outer && unwrapped(outer) !== outer) outer = outer.parent
+    if (ts.isReturnStatement(outer)) return at
+  }
+
+  return null
+}
+
 function answersOf(hook) {
   if (!ts.isBlock(hook.body)) return [{ at: hook.body, value: hook.body }]
   const found = []
@@ -397,9 +415,31 @@ function checkHooksModules() {
       }
       visit(source)
 
+      const topLevelFunctionNames = new Set(
+        source.statements.filter(node => ts.isFunctionDeclaration(node) && node.name).map(node => node.name),
+      )
+      const isTopLevelFunctionName = text => [...topLevelFunctionNames].some(name => name.text === text)
       for (const { node, argument } of apiArguments) {
-        const refusal = refusedReceiver(project, source, unwrapped(node.expression))
+        const callee = unwrapped(node.expression)
+        const refusal = refusedReceiver(project, source, callee)
         if (refusal) report(argument, 'MOD_CAPABILITY_USE_NOT_PLAIN', `${refusal} ${PLAIN_USE}`)
+        const rebinding =
+          !refusal && ts.isIdentifier(callee) && isTopLevelFunctionName(callee.text)
+            ? bindings.find(name => name.text === callee.text && !topLevelFunctionNames.has(name))
+            : null
+        if (rebinding)
+          report(
+            argument,
+            'MOD_CAPABILITY_USE_NOT_PLAIN',
+            `passes \`$\` to \`${callee.text}\`, and line ${lineOf(source, rebinding)} binds \`${callee.text}\` again. The directory reads the names in a file without scopes, so it cannot tell which \`${callee.text}\` this is. Rename that binding.`,
+          )
+        const returned = returnedFunctionOf(argument)
+        if (returned)
+          report(
+            argument,
+            'MOD_CAPABILITY_USE_NOT_PLAIN',
+            `passes \`$\` along inside the function that line ${lineOf(source, returned)} returns. The directory refuses that, and allows a returned function only plain \`$.ns.method(...)\` calls. Write the function where it is used, or return it in an object literal.`,
+          )
       }
 
       const hookParameters = new Set()
