@@ -5952,6 +5952,11 @@ function fit(s, width) {
   }
   return out;
 }
+var MARKED_TITLE_CELLS = 12;
+function cutTitle(title, room) {
+  const cells = Math.max(MARKED_TITLE_CELLS, room);
+  return cellWidth(title) <= cells ? title : `${cutToCells(title, cells - 1)}\u2026`;
+}
 function spread(left, right, width) {
   const gap = width - visibleLength(left) - visibleLength(right);
   return gap >= 2 ? left + " ".repeat(gap) + right : fit(left, width);
@@ -6039,7 +6044,7 @@ function leadText(lead, s) {
 function markText(mark, now, s) {
   if (mark === null)
     return "";
-  return `${s.tone("sep", mark.isRunning ? runningMark(now) : mark.text || " ")} `;
+  return `${s.dim(mark.isRunning ? runningMark(now) : mark.text || " ")} `;
 }
 function feedbackPaint(tone, s) {
   return (text) => tone ? s.tone(tone, text) : s.dim(text);
@@ -6052,10 +6057,12 @@ function drawLine(line, isSelected, d) {
   const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isSelected) ? line.feedback : null;
   const mark = markText(line.mark, now, s);
   const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim("u Undo")}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
-  const title = line.isDim ? s.dim(line.title) : isSelected ? s.bold(line.title) : line.title;
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
+  const head = ` ${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)}`;
+  const shownTitle = line.mark ? cutTitle(line.title, width - visibleLength(head) - visibleLength(status) - visibleLength(after)) : line.title;
+  const title = line.isDim ? s.dim(shownTitle) : isSelected ? s.bold(shownTitle) : shownTitle;
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
-  out.push(spread(` ${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)}${title}${status}${after}`, `${age} `, width));
+  out.push(spread(`${head}${title}${status}${after}`, `${age} `, width));
   if (line.settled || isShut(line, ui))
     return out;
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
@@ -6211,7 +6218,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   let selectedAt = [0, 0];
   for (const e of entries) {
     if (e.kind === "heading")
-      body.push(` ${e.mark ? leadText(e.mark, style) : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
+      body.push(` ${e.mark ? `${e.mark.tone ? style.tone(e.mark.tone, e.mark.text) : e.mark.text} ` : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
     else if (e.kind === "page")
       body.push(...e.row.isRuledAbove ? [pageRule] : [], ...drawPageRow(e.row, d));
     else if (e.kind === "banner")

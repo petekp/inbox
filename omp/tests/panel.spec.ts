@@ -347,6 +347,8 @@ test('a row closed with Done shows its label and Undo, u returns the undo press,
   const screen = await demo.screen()
   const out = text(screen, INITIAL_UI)
   expect(out).toMatch(/Put on the glasses and pair them with this Mac\s+✓ Done\s+u Undo/)
+  for (const width of [30, 46])
+    expect(text(screen, INITIAL_UI, width), `at ${width} columns`).toMatch(/Put on the .*… {2}✓ Do/)
   expect(handleKey(screen, INITIAL_UI, 'u', NOW).press).toEqual({ action: 'undo', id: 'd14' })
   const later = await demo.advance()
   expect(text(later, INITIAL_UI)).toMatch(/Put on the glasses and pair them with this Mac\s+✓ Done/)

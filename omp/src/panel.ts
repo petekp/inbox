@@ -887,6 +887,16 @@ function fit(s: string, width: number): string {
   return out
 }
 
+/** The fewest cells a title keeps when it is cut so the result mark after it stays in view. */
+const MARKED_TITLE_CELLS = 12
+
+/** A title cut to `room` cells, but never below `MARKED_TITLE_CELLS`, so a line's result mark is not cut off. */
+function cutTitle(title: string, room: number): string {
+  const cells = Math.max(MARKED_TITLE_CELLS, room)
+
+  return cellWidth(title) <= cells ? title : `${cutToCells(title, cells - 1)}…`
+}
+
 function spread(left: string, right: string, width: number): string {
   const gap = width - visibleLength(left) - visibleLength(right)
 
@@ -1004,7 +1014,7 @@ function leadText(lead: Lead | null, s: Style): string {
 function markText(mark: ResultMark | null, now: number, s: Style): string {
   if (mark === null) return ''
 
-  return `${s.tone('sep', mark.isRunning ? runningMark(now) : mark.text || ' ')} `
+  return `${s.dim(mark.isRunning ? runningMark(now) : mark.text || ' ')} `
 }
 
 function feedbackPaint(tone: Tone | null, s: Style) {
@@ -1031,11 +1041,15 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
     : line.feedback && !statusUnder
       ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}`
       : ''
-  const title = line.isDim ? s.dim(line.title) : isSelected ? s.bold(line.title) : line.title
   // omp marks a selected item with ❯, its `nav.cursor` symbol, and keeps ▸ and ▾ for expand and collapse.
   const cursor = isSelected ? s.tone('accent', '❯') : ' '
+  const head = ` ${' '.repeat(pad)}${cursor} ${leadText(line.lead, s)}`
+  const shownTitle = line.mark
+    ? cutTitle(line.title, width - visibleLength(head) - visibleLength(status) - visibleLength(after))
+    : line.title
+  const title = line.isDim ? s.dim(shownTitle) : isSelected ? s.bold(shownTitle) : shownTitle
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
-  out.push(spread(` ${' '.repeat(pad)}${cursor} ${leadText(line.lead, s)}${title}${status}${after}`, `${age} `, width))
+  out.push(spread(`${head}${title}${status}${after}`, `${age} `, width))
   if (line.settled || isShut(line, ui)) return out
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
   // A next build draws the Overview, so only it names the subject an ask holds up.
@@ -1305,7 +1319,7 @@ export function drawPanel(
   for (const e of entries) {
     if (e.kind === 'heading')
       body.push(
-        ` ${e.mark ? leadText(e.mark, style) : ''}${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`,
+        ` ${e.mark ? `${e.mark.tone ? style.tone(e.mark.tone, e.mark.text) : e.mark.text} ` : ''}${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`,
       )
     else if (e.kind === 'page') body.push(...(e.row.isRuledAbove ? [pageRule] : []), ...drawPageRow(e.row, d))
     else if (e.kind === 'banner') body.push(...bannerLines(e.banner, width, style))
