@@ -87,16 +87,20 @@ _Avoid_: workstream, stream, item (an item is a question or task)
 **Child**:
 Work that runs apart from the session's turn: a subagent, a background command
 or task, a workflow run, or a Herdr delegate. It shows under its subject while
-it runs, and leaves when it ends. Code follows it from the host's events. The
-inbox model only links it to a subject.
+it runs, and leaves when it ends. A delegate that finished stays, reading
+"finished", until the person has seen the Overview. Code follows it from the
+host's events and from Herdr. The inbox model only links it to a subject.
 _Avoid_: subitem, job
 
 **Stall words**:
-The words on an Overview row's second line that say how long its work has
-stalled: "quiet 40m" on a child that has done nothing for 15 minutes, and
-"waiting 2h" on an open subject that has waited 15 minutes on someone else or on
-an open question or task. A row whose work moves shows none. The code calls them
-`stall`.
+The words after an Overview row's name that say what its work waits on, or how
+long it has gone. A subject held by an open question or task reads "waiting for
+you 40m", and one waiting on someone else reads "waiting 2h", once it has waited
+15 minutes. A delegate reads what Herdr shows: "waiting for you" at a question
+or an approval, and "finished" once it stops. Other children read "last step
+40m ago" after 15 minutes with no activity, or "running 40m" when their host
+reports no activity. Their tone says whether the person acts. A row whose work
+moves shows none. The code calls them `stall`.
 _Avoid_: age
 
 **Seen line**:

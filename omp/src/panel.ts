@@ -102,6 +102,7 @@ import type {
   OverviewBranch,
   OverviewPage,
   OverviewRow,
+  OverviewStall,
   Holds,
   RowView,
   ShownTab,
@@ -1045,41 +1046,22 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   return out
 }
 
-/** Stands in for each space of the stall words while they wrap, so a wrap never splits them. */
-const UNBROKEN_SPACE = '\uE000'
-
 /** The room for an Overview text after a mark at `indent`. */
 const pageRoom = (indent: number, width: number) => Math.max(10, width - indent - 2 - 1)
 
-/**
- * `text` wrapped to `room` cells, at most `maxLines` lines and cut with an ellipsis past them. `first` paints its
- * first `firstCells` cells and `rest` the cells after.
- */
-function pageText(
-  text: string,
-  room: number,
-  maxLines: number,
-  first: (t: string) => string,
-  firstCells = Infinity,
-  rest = first,
-): string[] {
+/** `text` wrapped to `room` cells, at most `maxLines` lines and cut with an ellipsis past them, each line painted. */
+function pageText(text: string, room: number, maxLines: number, paint: (t: string) => string): string[] {
   const wrapped = wrapText(text, room)
   const lines = wrapped.slice(0, maxLines)
   if (wrapped.length > lines.length)
     lines[lines.length - 1] = `${cutForEllipsis(lines.at(-1)!, t => cellWidth(t) <= room)}…`
-  let firstLeft = firstCells
 
-  return lines.map(l => {
-    const head = cutToCells(l, Math.max(0, firstLeft))
-    firstLeft -= cellWidth(l) + 1
-
-    return first(head) + (head.length < l.length ? rest(l.slice(head.length)) : '')
-  })
+  return lines.map(paint)
 }
 
 /**
- * One row of the Overview's list: a mark and its name wrapped after it, then its second line of where it stands, dim,
- * and its stall words in the needs-you tone.
+ * One row of the Overview's list: a mark and its name wrapped after it, with its stall words after `STALL_GAP` in the
+ * stall's tone on the name's last line, or whole on the next line when they do not fit there. Then where it stands, dim.
  */
 function pageLine(
   d: Draw,
@@ -1087,24 +1069,24 @@ function pageLine(
   mark: string,
   name: string,
   namePaint: (t: string) => string,
-  second: { text: string | null; stall: string | null } = { text: null, stall: null },
+  { stall = null, text = null }: { stall?: OverviewStall | null; text?: string | null } = {},
 ): string[] {
   const { width, style: s } = d
   const textAt = indent + 2
   const room = pageRoom(indent, width)
-  const names = pageText(name, room, OVERVIEW_TEXT_LINES, namePaint)
-  const stall = second.stall?.replaceAll(' ', UNBROKEN_SPACE) ?? null
-  const secondText = [second.text, stall].filter(Boolean).join(STALL_GAP)
-  const dimCells = second.text ? cellWidth(second.text) + (stall ? cellWidth(STALL_GAP) : 0) : 0
-  const seconds = secondText
-    ? pageText(secondText, room, OVERVIEW_TEXT_LINES, s.dim, dimCells, t => s.tone('needsYou', t)).map(l =>
-        l.replaceAll(UNBROKEN_SPACE, ' '),
-      )
-    : []
+  const names = pageText(name, room, OVERVIEW_TEXT_LINES, t => t)
+  const painted = names.map(namePaint)
+  if (stall) {
+    const words = stall.tone ? s.tone(stall.tone, stall.text) : s.dim(stall.text)
+    const isRoomOnLast = cellWidth(`${names.at(-1) ?? ''}${STALL_GAP}${stall.text}`) <= room
+    if (isRoomOnLast) painted[painted.length - 1] += s.dim(STALL_GAP) + words
+    else painted.push(words)
+  }
+  const seconds = text ? pageText(text, room, OVERVIEW_TEXT_LINES, s.dim) : []
 
   return [
-    `${' '.repeat(indent)}${mark} ${names[0] ?? ''}`,
-    ...[...names.slice(1), ...seconds].map(l => ' '.repeat(textAt) + l),
+    `${' '.repeat(indent)}${mark} ${painted[0] ?? ''}`,
+    ...[...painted.slice(1), ...seconds].map(l => ' '.repeat(textAt) + l),
   ]
 }
 
@@ -1122,7 +1104,7 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
   if (row.kind === 'subject') {
     const glyph = row.isRunning ? runningMark(now) : row.mark
     const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph)
-    const out = pageLine(d, PAGE_MARK_AT, mark, row.name, t => t, { text: row.text, stall: row.stall })
+    const out = pageLine(d, PAGE_MARK_AT, mark, row.name, t => t, { stall: row.stall, text: row.text })
     const room = pageRoom(PAGE_MARK_AT, width)
     if (row.merged)
       out.push(
@@ -1139,11 +1121,9 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
     return row.hasChildren ? withTree(out, null, '│', s) : out
   }
   if (row.kind === 'child') {
-    const mark = s.dim(row.isRunning ? runningMark(now) : row.mark)
-    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, {
-      text: null,
-      stall: row.stall,
-    })
+    const glyph = row.isRunning ? runningMark(now) : row.mark
+    const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph)
+    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, { stall: row.stall })
 
     return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out
   }

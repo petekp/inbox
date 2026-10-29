@@ -943,9 +943,12 @@ export type OverviewBranch = 'mid' | 'last'
 
 /**
  * One line of the Overview's list, in the order to draw it. Each look lays out the parts; none chooses them. A subject
- * or child draws its name, then a second line of where it stands and its stall words, the stall words after
- * `STALL_GAP` and in the needs-you tone.
+ * or child draws its name with its stall words after it, past `STALL_GAP`, in the stall's tone. A subject draws where it
+ * stands on the line under its name.
  */
+/** Words on a row that say what its work waits on or how long it has gone, in the tone that says whether the person acts. */
+export type OverviewStall = { text: string; tone: OverviewTone }
+
 export type OverviewRow = OverviewRowParts & {
   /** Whether a rule sets it apart from the row above. A subject and the rows under it are one item, and the look line is a rule already. */
   isRuledAbove: boolean
@@ -962,8 +965,11 @@ type OverviewRowParts =
       name: string
       /** Where it stands. Null for a finished row below the look line, which the person has seen. */
       text: string | null
-      /** How long it has waited, as "waiting 2h", once it waits on someone for `STALL_MS`. */
-      stall: string | null
+      /**
+       * How long it has waited, once it waits on someone for `STALL_MS`: "waiting for you 40m" in the needs-you tone
+       * when an open ask holds it up, else "waiting 2h", muted.
+       */
+      stall: OverviewStall | null
       /** The names of the subjects merged into it, while the person has not seen them. */
       merged: string | null
       /** The plan a reversal replaced, while the person has not seen it. */
@@ -975,18 +981,16 @@ type OverviewRowParts =
       kind: 'child'
       id: string
       mark: string
-      /**
-       * Whether it did anything in the last `STALL_MS`, or, when its host reports no activity, started less than
-       * `STALL_MS` ago. A look animates the mark while it is set.
-       */
+      tone: OverviewTone
+      /** Whether its work shows under way, as `isChildWorking` says. A look animates the mark while it is set. */
       isRunning: boolean
       name: string
-      /** How long it has done nothing, as "quiet 40m", once that passes `STALL_MS`, since a quiet child may be stuck. */
-      stall: string | null
+      /** What its work does, as `childStall` says. */
+      stall: OverviewStall | null
       /** Its place under its subject. Null when it is linked to no subject the list shows, so it sits at the top of the list. */
       branch: OverviewBranch | null
     }
-  /** The children of a subject past `CHILD_ROWS`, as "+ 2 more running". It is always the last row under its subject. */
+  /** The children of a subject past `CHILD_ROWS`, as "+ 2 more running", or "+ 2 more" when one finished. It is always the last row under its subject. */
   | { kind: 'more'; id: string; text: string; branch: 'last' }
   /** Where the person last looked: rows above it changed since. */
   | { kind: 'look'; id: string; text: string }
@@ -1014,7 +1018,7 @@ export const STALL_GAP = ' · '
 export const OVERVIEW_TEXT_LINES = 3
 /** The most children drawn under one subject; the rest fold into "+ N more running". */
 export const CHILD_ROWS = 3
-/** How long work goes before it has stalled: a child with no activity reads quiet, and a waiting subject says how long it has waited. */
+/** How long work goes before its row says so: a waiting subject says how long it has waited, and a child how long it has gone. */
 export const STALL_MS = 15 * 60_000
 /** Finished rows drawn above the look line; older ones fold into the count. */
 const NEW_CLOSED_ROWS = 2
@@ -1028,8 +1032,10 @@ export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: Overview
   done: { mark: '✓', tone: 'done' },
   dropped: { mark: '✗', tone: null },
 }
-/** The mark of an open subject that an open ask holds up, in place of its status's mark. */
+/** The mark of an open subject that an open ask holds up, in place of its status's mark, and of a delegate that waits for the person. */
 const HELD_MARK: { mark: string; tone: OverviewTone } = { mark: '◆', tone: 'needsYou' }
+const CHILD_MARK: { mark: string; tone: OverviewTone } = { mark: '●', tone: null }
+const FINISHED_MARK: { mark: string; tone: OverviewTone } = { mark: '✓', tone: 'done' }
 
 /** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
 export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
@@ -1063,35 +1069,50 @@ function isItemAfterItem(row: OverviewRowParts, prev: OverviewRowParts | undefin
   return prev !== undefined && prev.kind !== 'look' && row.kind !== 'look' && !isUnderSubject
 }
 
-/** How long ago `c` last did anything, or null when its host reports no activity. */
-function idleOf(c: Child, now: number): number | null {
-  return c.lastActivityAt === null ? null : now - c.lastActivityAt
-}
-
-function isQuiet(c: Child, now: number): boolean {
-  const idle = idleOf(c, now)
-
-  return idle !== null && idle >= STALL_MS
+/** Whether `c` is a delegate that finished after the person last looked, so the page still shows it. */
+function isFinishedUnseen(c: Child, lastLookAt: number | null): boolean {
+  return c.delegateState === 'finished' && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt)
 }
 
 /**
- * Whether `c` shows work under way: it did something in the last `STALL_MS`, or its host reports no activity and it
- * started less than `STALL_MS` ago.
+ * Whether `c` shows work under way: Herdr or a prompt shows the delegate working, or it did something in the last
+ * `STALL_MS`, or its host reports no activity and it started less than `STALL_MS` ago.
  */
 function isChildWorking(c: Child, now: number): boolean {
-  return now - (c.lastActivityAt ?? c.startedAt) < STALL_MS
+  if (c.endedAt !== null || c.delegateState === 'blocked') return false
+
+  return c.delegateState === 'working' || now - (c.lastActivityAt ?? c.startedAt) < STALL_MS
+}
+
+/**
+ * What a child's work does, in words that say whether the person acts. A delegate says what Herdr shows: "waiting for
+ * you" at a question or an approval, in the needs-you tone, and "finished", in the done tone. Other work says how long
+ * it has gone, muted, once that passes `STALL_MS`: "last step 40m ago" since its last activity, or "running 40m" since
+ * it started when its host reports no activity.
+ */
+function childStall(c: Child, now: number): OverviewStall | null {
+  if (c.delegateState === 'finished') return { text: 'finished', tone: 'done' }
+  if (c.delegateState === 'blocked') return { text: 'waiting for you', tone: 'needsYou' }
+  if (c.kind === 'delegate') return null
+  const since = now - (c.lastActivityAt ?? c.startedAt)
+  if (since < STALL_MS) return null
+
+  return {
+    text: c.lastActivityAt === null ? `running ${shortAgo(since)}` : `last step ${shortAgo(since)} ago`,
+    tone: null,
+  }
 }
 
 function childRow(c: Child, now: number, branch: OverviewBranch | null): OverviewRowParts {
-  const idle = idleOf(c, now)
+  const marks = c.delegateState === 'finished' ? FINISHED_MARK : c.delegateState === 'blocked' ? HELD_MARK : CHILD_MARK
 
   return {
     kind: 'child',
     id: c.id,
-    mark: '●',
+    ...marks,
     isRunning: isChildWorking(c, now),
     name: c.name,
-    stall: idle !== null && isQuiet(c, now) ? `quiet ${shortAgo(idle)}` : null,
+    stall: childStall(c, now),
     branch,
   }
 }
@@ -1116,11 +1137,15 @@ export function overviewPage(
 
     return asked.length > 0 ? Math.min(...asked) : x.changedAt
   }
-  const stallOf = (x: Subject) => {
-    const isWaiting = isHeld(x) || (isOpen(x) && x.status === 'waits-on-other')
+  const stallOf = (x: Subject): OverviewStall | null => {
+    const isWaitingOnOther = isOpen(x) && x.status === 'waits-on-other'
+    const isWaiting = isHeld(x) || isWaitingOnOther
     const waited = now - waitingSince(x)
+    if (!isWaiting || waited < STALL_MS) return null
 
-    return isWaiting && waited >= STALL_MS ? `waiting ${shortAgo(waited)}` : null
+    return isHeld(x)
+      ? { text: `waiting for you ${shortAgo(waited)}`, tone: 'needsYou' }
+      : { text: `waiting ${shortAgo(waited)}`, tone: null }
   }
   const newClosed = subjects
     .filter(x => !isOpen(x) && isNew(x))
@@ -1138,7 +1163,7 @@ export function overviewPage(
   const shown = [...open.filter(x => !hiddenQueued.has(x.id)), ...newClosed].sort((x, y) => y.changedAt - x.changedAt)
   const folded = subjects.filter(x => x.status === 'done' && !newClosed.includes(x))
   const running = (o?.children ?? [])
-    .filter(c => isChildRunning(c, now))
+    .filter(c => isChildRunning(c, now) || isFinishedUnseen(c, look))
     .sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt))
   const shownIds = new Set(shown.map(x => x.id))
   const rows: OverviewRowParts[] = running
@@ -1166,11 +1191,13 @@ export function overviewPage(
       hasChildren: under.length > 0,
     })
     rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid')))
+    const hidden = under.slice(CHILD_ROWS)
+    const isEveryHiddenRunning = hidden.every(c => c.delegateState !== 'finished')
     if (isMore)
       rows.push({
         kind: 'more',
         id: `${x.id}-more`,
-        text: `+ ${under.length - CHILD_ROWS} more running`,
+        text: `+ ${hidden.length} more${isEveryHiddenRunning ? ' running' : ''}`,
         branch: 'last',
       })
   }

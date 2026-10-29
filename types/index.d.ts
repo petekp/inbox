@@ -34,9 +34,17 @@ export type Child = {
   subjectId: string | null
   startedAt: number
   endedAt: number | null
-  /** When it last did anything. Null when the host reports no activity for its kind, so it never reads quiet. */
+  /** When it last did anything. Null when the host reports no activity for its kind. */
   lastActivityAt: number | null
+  /**
+   * What a delegate does: `working` once this session prompted it or Herdr showed it working, `blocked` while Herdr
+   * shows it at a question or an approval, and `finished` once Herdr shows it ready after it worked. Null for other
+   * kinds, and for a delegate nothing has shown working yet.
+   */
+  delegateState: DelegateState | null
 }
+
+export type DelegateState = 'working' | 'blocked' | 'finished'
 
 /** The Overview tab's list. The Overview call changes it by id; code keeps the order and every time. */
 export type Overview = {

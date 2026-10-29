@@ -79,6 +79,7 @@ import type {
   Feedback,
   OverviewPage,
   OverviewRow,
+  OverviewStall,
   OverviewTone,
   PressState,
   Holds,
@@ -1338,15 +1339,52 @@ function fitMergedLine(el: HTMLElement | null, merged: string) {
   el.textContent = mergedLine(merged, text => !measure || measure.measureText(text).width <= el.clientWidth)
 }
 
-/** A row's second line: where it stands, muted, then its stall words in the needs-you tone. */
-function SecondLine({ text, stall }: { text: string | null; stall: string | null }) {
-  if (!text && !stall) return null
+const STALL_CLASS: Record<NonNullable<OverviewTone> | 'muted', string> = {
+  needsYou: 'tone-needsYou',
+  done: 'tone-done',
+  muted: 'muted',
+}
+
+/**
+ * Writes `name` into a name line's name span, cut at a word with an ellipsis to `OVERVIEW_TEXT_LINES` lines. Stall
+ * words that do not fit on the name's last line take the next line whole, and the gap before them goes.
+ */
+function fitNameLine(el: HTMLElement | null, name: string) {
+  const nameEl = el?.querySelector<HTMLElement>('.name')
+  const gapEl = el?.querySelector<HTMLElement>('.gap')
+  const stallEl = el?.querySelector<HTMLElement>('.stall')
+  if (!nameEl || !gapEl || !stallEl) return
+  nameEl.textContent = name
+  gapEl.textContent = STALL_GAP
+  gapEl.style.display = ''
+  let words = name.split(' ')
+  while (nameEl.getClientRects().length > OVERVIEW_TEXT_LINES && words.length > 1) {
+    words = words.slice(0, -1)
+    nameEl.textContent = `${words.join(' ')}…`
+  }
+  const lastNameLine = [...nameEl.getClientRects()].at(-1)
+  const stallLine = stallEl.getClientRects()[0]
+  const isStallBelow = lastNameLine !== undefined && stallLine !== undefined && stallLine.top >= lastNameLine.bottom
+  if (isStallBelow) {
+    gapEl.textContent = ''
+    gapEl.style.display = 'block'
+  }
+}
+
+/** A row's name, with its stall words after `STALL_GAP` in the stall's tone, kept whole. */
+function NameLine({ name, stall }: { name: string; stall: OverviewStall | null }) {
+  if (!stall)
+    return (
+      <div class="clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
+        {name}
+      </div>
+    )
 
   return (
-    <div class="muted clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
-      {text}
-      {text && stall ? STALL_GAP : null}
-      {stall ? <span class="tone-needsYou unbroken">{stall}</span> : null}
+    <div ref={el => fitNameLine(el, name)}>
+      <span class="name">{name}</span>
+      <span class="gap muted">{STALL_GAP}</span>
+      <span class={`stall unbroken ${STALL_CLASS[stall.tone ?? 'muted']}`}>{stall.text}</span>
     </div>
   )
 }
@@ -1361,10 +1399,12 @@ function OverviewLine({ row }: { row: OverviewRow }) {
           {row.mark}
         </span>
         <div class="content tight">
-          <div class="clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
-            {row.name}
-          </div>
-          <SecondLine text={row.text} stall={row.stall} />
+          <NameLine name={row.name} stall={row.stall} />
+          {row.text ? (
+            <div class="muted clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
+              {row.text}
+            </div>
+          ) : null}
           {merged ? (
             <div
               class="outcome muted clamp"
@@ -1385,14 +1425,11 @@ function OverviewLine({ row }: { row: OverviewRow }) {
   if (row.kind === 'child')
     return (
       <div class={row.branch ? `row child branch-${row.branch}` : 'row'}>
-        <span class={markClassOf(null, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
+        <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
           {row.mark}
         </span>
         <div class="content tight muted">
-          <div class="clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
-            {row.name}
-          </div>
-          <SecondLine text={null} stall={row.stall} />
+          <NameLine name={row.name} stall={row.stall} />
         </div>
       </div>
     )

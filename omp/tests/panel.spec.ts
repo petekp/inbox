@@ -770,20 +770,34 @@ test('the Overview page shows the goal, then its rows in order, each subject’s
 test('on the Overview page, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', () => {
   const lines = text(screenOf(), onPage, 28).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
-  const [subject, mid, last, next] = [
+  const [subject, first, mid, last, next] = [
     at('Dismiss gesture'),
     at('Review the'),
     at('Tune how hard'),
+    at('Time the fade'),
     at('Glasses pairing'),
   ]
   const col = lines[subject]!.search(/\S/)
   const glyphs = (from: number, to: number) => lines.slice(from, to).map(l => l.slice(col, col + 2))
 
-  expect(subject).toBeLessThan(mid)
-  expect(glyphs(subject + 1, mid).every(g => g.startsWith('│'))).toBe(true)
+  expect(subject).toBeLessThan(first)
+  expect(glyphs(subject + 1, first).every(g => g.startsWith('│'))).toBe(true)
+  expect(glyphs(first, mid)).toEqual(['├─', ...Array<string>(mid - first - 1).fill('│ ')])
   expect(glyphs(mid, last)).toEqual(['├─', ...Array<string>(last - mid - 1).fill('│ ')])
   expect(last - mid).toBeGreaterThan(1)
   expect(glyphs(last, next)).toEqual(['└─', ...Array<string>(next - last - 1).fill('  ')])
+})
+
+test('on the Overview page, a row’s stall words follow its name on the same line, and take the next line whole, without the gap, when the line has no room', () => {
+  const wide = text(screenOf(), onPage, 80).split('\n')
+  expect(wide.some(l => l.includes('Tune how hard a pinch must be · waiting for you'))).toBe(true)
+  expect(wide.some(l => l.includes('Time the fade-out · finished'))).toBe(true)
+  expect(wide.some(l => l.includes('Watch the pairing log · running 50m'))).toBe(true)
+
+  const narrow = text(screenOf(), onPage, 30).split('\n')
+  const stall = narrow.findIndex(l => l.includes('waiting for you'))
+  expect(narrow[stall]!.replace('│', '').trim()).toBe('waiting for you')
+  expect(narrow[stall - 1]).toContain('must be')
 })
 
 test('on the Overview page, a rule from the text column sets each item apart, with none inside a subject’s tree or beside the look line', () => {

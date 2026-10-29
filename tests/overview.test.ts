@@ -17,6 +17,8 @@ import {
   withChild,
 } from '../hooks/overview'
 import type { Op } from '../hooks/overview'
+import { delegatesSettled, delegatesStarted } from '../hooks/children'
+import type { HerdrStatus } from '../hooks/herdr'
 import { emptySession } from '../hooks/session'
 import { CHILD_ROWS, mergedLine, overviewPage, STALL_MS } from '../hooks/view'
 import type { OverviewRow } from '../hooks/view'
@@ -62,9 +64,9 @@ const ARMS = { mid: '├ ', last: '└ ' } as const
 const shape = (rows: OverviewRow[]) =>
   rows.map(r =>
     r.kind === 'subject'
-      ? `${r.mark} ${r.name}${r.text ? `: ${r.text}` : ''}${r.stall ? ` · ${r.stall}` : ''}${r.hasChildren ? ' ┐' : ''}`
+      ? `${r.mark} ${r.name}${r.text ? `: ${r.text}` : ''}${r.stall ? ` · ${r.stall.text}` : ''}${r.hasChildren ? ' ┐' : ''}`
       : r.kind === 'child'
-        ? `${r.branch ? ARMS[r.branch] : ''}● ${r.name}${r.stall ? ` · ${r.stall}` : ''}`
+        ? `${r.branch ? ARMS[r.branch] : ''}${r.mark} ${r.name}${r.stall ? ` · ${r.stall.text}` : ''}`
         : r.kind === 'look'
           ? `-- ${r.text}`
           : r.kind === 'more'
@@ -240,7 +242,7 @@ test('a child the host reports again keeps its id and link, and old ended childr
   const ended = childEnded(linked, 'herdr:docs', 40)!
   const again = withChild(ended, { ...report, startedAt: 50 }, 50)
 
-  expect(again.children).toEqual([{ ...report, id: 'c1', subjectId: 's1', startedAt: 50 }])
+  expect(again.children).toEqual([{ ...report, id: 'c1', subjectId: 's1', startedAt: 50, delegateState: null }])
   expect(childActive(again, 'herdr:docs', 60)!.children[0]?.lastActivityAt).toBe(60)
   const later = withChild(ended, { ...report, ref: 't9', name: 'npm test' }, 40 + 25 * 60 * MIN)
   expect(later.children.map(c => c.ref)).toEqual(['t9'])
@@ -279,7 +281,7 @@ test('the page lists subjects newest first, and an open row below the look line 
   expect(seen[0]).toMatchObject({ kind: 'subject', was: null })
 })
 
-test('a subject waiting on someone says for how long once that passes STALL_MS, from the oldest open ask holding it up, else from its last change', () => {
+test('a subject waiting on someone says for how long once that passes STALL_MS, from the oldest open ask holding it up, else from its last change, and says it waits for the person only when an ask holds it up', () => {
   const o = after(
     null,
     'NEW: waits-on-other | Review | sent for review\nNEW: working | Sync | needs a pick\nNEW: queued | Docs | not started\nLINK: i1 | s2\nLINK: i2 | s2',
@@ -293,7 +295,11 @@ test('a subject waiting on someone says for how long once that passes STALL_MS, 
   const stalls = (now: number) => page(o, now, {}, asks).rows.map(r => (r.kind === 'subject' ? r.stall : r.kind))
 
   expect(stalls(14 * MIN)).toEqual([null, null, null])
-  expect(stalls(10 * MIN + STALL_MS)).toEqual(['waiting 25m', 'waiting 15m', null])
+  expect(stalls(10 * MIN + STALL_MS)).toEqual([
+    { text: 'waiting 25m', tone: null },
+    { text: 'waiting for you 15m', tone: 'needsYou' },
+    null,
+  ])
   expect(shape(page(o, 2 * 60 * MIN, {}, asks).rows)[0]).toBe('◌ Review: sent for review · waiting 2h')
 })
 
@@ -357,7 +363,7 @@ test('finished work folds into a count once seen, keeping at most two new finish
   ])
 })
 
-test('running children sit under their subject, at most three, each tied to it and the last ending its tree, a quiet one says so, and a subject whose children are all quiet stops its mark', () => {
+test('running children sit under their subject, at most three, each tied to it and the last ending its tree, one with no activity for STALL_MS says how long since its last step, and a subject whose children all stopped stops its mark', () => {
   const now = 100 * MIN
   let o = after(null, 'NEW: working | Offline mode | queue built', 10 * MIN)
   for (const [n, idle] of [0, 1, 2, 3, 20].entries())
@@ -403,13 +409,51 @@ test('running children sit under their subject, at most three, each tied to it a
     kind: 'child',
     branch: null,
     isRunning: false,
-    stall: 'quiet 20m',
+    stall: { text: 'last step 20m ago', tone: null },
   })
   expect(page(after(quiet, 'LINK: c1 | s1', now), now).rows[0]).toMatchObject({
     kind: 'subject',
     isRunning: false,
     hasChildren: true,
   })
+})
+
+test('a delegate says what Herdr shows: nothing while it works, waiting for you while blocked, and finished from when it stops until the person has looked, its subject moved above the Seen line', () => {
+  let o: Overview | null = { ...after(null, 'NEW: working | Export | layout next', 10 * MIN), lastLookAt: 20 * MIN }
+  o = delegatesStarted(o, 'herdr agent prompt pdf "lay out the export"', 30 * MIN)
+  o = delegatesStarted(o, 'herdr agent start spare --cmd claude', 30 * MIN)
+  o = after(o, 'LINK: c1 | s1\nLINK: c2 | s1', 30 * MIN)
+  const herdr = (pdf: HerdrStatus) =>
+    new Map<string, HerdrStatus>([
+      ['pdf', pdf],
+      ['spare', 'idle'],
+    ])
+  const rows = (x: Overview | null, now: number) => shape(page(x, now).rows)
+
+  expect(rows(delegatesSettled(o, herdr('idle'), 30 * MIN + 10_000), 31 * MIN)).toEqual([
+    '● Export: layout next ┐',
+    '├ ● pdf',
+    '└ ● spare',
+  ])
+  const working = delegatesSettled(o, herdr('working'), 2 * 60 * MIN)
+  expect(rows(working, 2 * 60 * MIN)).toEqual(['● Export: layout next ┐', '└ ● pdf'])
+  expect(page(working, 2 * 60 * MIN).rows[1]).toMatchObject({ isRunning: true, stall: null })
+  expect(delegatesSettled(working, herdr('unknown'), 3 * 60 * MIN)).toBe(working)
+  const blocked = delegatesSettled(working, herdr('blocked'), 3 * 60 * MIN)
+  expect(page(blocked, 3 * 60 * MIN).rows[1]).toMatchObject({
+    mark: '◆',
+    tone: 'needsYou',
+    isRunning: false,
+    stall: { text: 'waiting for you', tone: 'needsYou' },
+  })
+  const finished = delegatesSettled(blocked, herdr('done'), 4 * 60 * MIN)
+  expect(page(finished, 4 * 60 * MIN).rows).toMatchObject([
+    { kind: 'subject', isRunning: false },
+    { kind: 'child', mark: '✓', tone: 'done', stall: { text: 'finished', tone: 'done' } },
+    { kind: 'look' },
+  ])
+  const looked = lookEnded(lookStarted(finished, 5 * 60 * MIN), 5 * 60 * MIN + LOOK_MIN_MS)
+  expect(rows(looked, 6 * 60 * MIN)).toEqual(['● Export: layout next'])
 })
 
 test('a rule sets each item on the page apart: a subject and the rows under it are one item, and the look line takes none beside it', () => {
@@ -429,7 +473,7 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
 
   expect(rows.map(r => `${r.isRuledAbove ? '── ' : ''}${shape([r])[0]}`)).toEqual([
     '● Review loose',
-    '── ◆ Sync: needs a pick · waiting 30m',
+    '── ◆ Sync: needs a pick · waiting for you 30m',
     '── ● Offline mode: queue built ┐',
     '├ ● Review r1',
     '└ ● Review r2',
@@ -439,23 +483,21 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
   ])
 })
 
-test('a child whose host reports no activity never reads quiet, and stops running STALL_MS after it started', () => {
+test('a child whose host reports no activity says how long it has run once that passes STALL_MS, and stops running then', () => {
   const now = 100 * MIN
   const o = withChild(
     null,
-    {
-      ref: 'herdr:docs',
-      kind: 'delegate',
-      name: 'delegate docs',
-      startedAt: 40 * MIN,
-      endedAt: null,
-      lastActivityAt: null,
-    },
+    { ref: 'bg', kind: 'background', name: 'npm test', startedAt: 40 * MIN, endedAt: null, lastActivityAt: null },
     now,
   )
 
   expect(page(o, 50 * MIN).rows[0]).toMatchObject({ kind: 'child', stall: null, isRunning: true })
-  expect(page(o, now).rows[0]).toMatchObject({ kind: 'child', stall: null, isRunning: false, branch: null })
+  expect(page(o, now).rows[0]).toMatchObject({
+    kind: 'child',
+    stall: { text: 'running 1h', tone: null },
+    isRunning: false,
+    branch: null,
+  })
 })
 
 test('open subjects past seven fold their oldest queued ones into a count', () => {
@@ -537,7 +579,7 @@ test('an Overview saved before subjects keeps its open work, dated at the last l
   expect(upgradeOverview({ headline: 'x', lastLookAt: null })?.goal).toBe('x')
 })
 
-test('a saved Overview drops subjects and children it cannot read, and nothing else is an Overview', () => {
+test('a saved Overview drops subjects and children it cannot read, reads a delegate state it does not know as none, and nothing else is an Overview', () => {
   const saved = {
     ...EMPTY_OVERVIEW,
     subjects: [
@@ -550,6 +592,8 @@ test('a saved Overview drops subjects and children it cannot read, and nothing e
     children: [
       { id: 'c1', ref: 'r', kind: 'subagent', name: 'n', startedAt: 1 },
       { id: 'c2', kind: 'robot' },
+      { id: 'c3', ref: 'herdr:a', kind: 'delegate', name: 'a', startedAt: 2, delegateState: 'blocked' },
+      { id: 'c4', ref: 'herdr:b', kind: 'delegate', name: 'b', startedAt: 3, delegateState: 'asleep' },
     ],
     look: { startedAt: 'soon' },
   }
@@ -604,7 +648,10 @@ test('a saved Overview drops subjects and children it cannot read, and nothing e
       startedAt: 1,
       endedAt: null,
       lastActivityAt: null,
+      delegateState: null,
     },
+    expect.objectContaining({ id: 'c3', delegateState: 'blocked' }),
+    expect.objectContaining({ id: 'c4', delegateState: null }),
   ])
   expect(o.look).toBeNull()
   expect(upgradeOverview(null)).toBeNull()
