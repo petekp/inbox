@@ -47,7 +47,7 @@ export type FeatureId =
   | 'tool-result-line'
   | 'overview-call-records'
   | 'dismiss-merged-prs'
-  | 'overview-answer'
+  | 'overview-view-ask'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -104,7 +104,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'tool-result-line': { kind: 'full' },
       'overview-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
-      'overview-answer': { kind: 'full' },
+      'overview-view-ask': { kind: 'full' },
     },
   },
   codex: {
@@ -207,10 +207,10 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'overview-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
-      'overview-answer': {
+      'overview-view-ask': {
         kind: 'different',
         reason:
-          'Answer takes clicks only. The Codex tab draws no key on a button and marks no selected row on the Overview, so a key would press a row the page does not mark as selected.',
+          'View takes clicks only. The Codex tab draws no key on a button and marks no selected row on the Overview, so a key would press a row the page does not mark as selected.',
       },
     },
   },
@@ -283,7 +283,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'tool-result-line': { kind: 'full' },
       'overview-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
-      'overview-answer': { kind: 'full' },
+      'overview-view-ask': { kind: 'full' },
     },
   },
 }

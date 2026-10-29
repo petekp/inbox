@@ -4979,8 +4979,8 @@ for (const isNextBuild of [false, true])
       expect(overviewButtons, `${look} Overview buttons`).toEqual(planned)
       await pane.press({ key: `show-ask-${page.rows.find(r => overviewKeyPlan(r).length > 0)!.id}` })
       await clock.settle()
-      expect(await pane.find({ key: 'overview-head' }), `${look} Answer leaves the Overview`).toBeUndefined()
-      expect(await pane.find({ key: 'view-d17' }), `${look} Answer selects the oldest ask`).toBeDefined()
+      expect(await pane.find({ key: 'overview-head' }), `${look} View leaves the Overview`).toBeUndefined()
+      expect(await pane.find({ key: 'view-d17' }), `${look} View selects the oldest ask`).toBeDefined()
     }
   })
 
@@ -5207,7 +5207,7 @@ test('a working subject’s mark on the Overview moves each frame only while a t
   expect(ended.working).toEqual(ended.still)
 })
 
-test('on a next build, a look starts when the Overview page shows, the page shows the head and the subjects in place of rows, binds only the held subject’s Answer key, Answer shows Asks with its ask selected, and an ask names the subject it holds up', async ($, on) => {
+test('on a next build, a look starts when the Overview page shows, the page shows the head and the subjects in place of rows, binds only the held subject’s View key, View shows Asks with its ask selected, and an ask names the subject it holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
@@ -5244,7 +5244,7 @@ test('on a next build, a look starts when the Overview page shows, the page show
       .map(b => b.key ?? '')
       .filter(k => k.endsWith('-key') && !k.startsWith('tab-'))
   expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key'])
-  expect((await pane.find({ key: 'show-ask-s1' }))?.text).toBe('a: Answer')
+  expect((await pane.find({ key: 'show-ask-s1' }))?.text).toBe('v: View question')
   expect(await pane.find({ key: 'show-ask-s2' })).toBeUndefined()
   await pane.press({ key: 'next' })
   await pane.press({ key: 'no-row-d-key' })

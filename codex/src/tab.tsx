@@ -1415,7 +1415,7 @@ function NameLine({ name, stall }: { name: string; stall: OverviewStall | null }
   )
 }
 
-/** An Overview row's Answer press: Asks shows with the ask selected and in view. */
+/** An Overview row's View press: Asks shows with the ask selected and in view. */
 function showAsk(askId: string) {
   switchTab('needsYou')
   const index = view ? tabRows(view, 'needsYou').findIndex(r => r.id === askId) : -1

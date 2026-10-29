@@ -951,17 +951,16 @@ test('on a Overview page taller than the panel, each ↑↓ or j/k press shows o
   expect(keys(unheld, keys(unheld, onPage, 'j', 'j'), 'k').pageTop).toBe(1)
 })
 
-test('on the Overview page, a subject an open ask holds up draws Answer under its text in the plan’s order, and only the selected row draws it focused and keyed', () => {
+test('on the Overview page, a subject an open ask holds up draws View, named for the ask’s kind, under its text in the plan’s order, and only the selected row draws it focused and keyed', () => {
   const screen = screenOf()
   const page = screen.view.overviewPage
   const held = overviewKeyRows(page)
   expect(held.map(r => r.id)).toEqual(['s2', 's3'])
   const lines = text(screen, onPage).split('\n')
   const nameAt = (row: OverviewRow) => lines.findIndex(l => l.includes(labelOf(row)))
-  const buttonAt = (row: OverviewRow) => lines.findIndex((l, n) => n > nameAt(row) && l.includes('Answer'))
+  const buttonAt = (row: OverviewRow) => lines.findIndex((l, n) => n > nameAt(row) && l.includes('View '))
+  expect(held.map(row => overviewKeyPlan(row).map(k => k.label))).toEqual([['View task'], ['View question']])
   for (const row of held) {
-    const labels = overviewKeyPlan(row).map(k => k.label)
-    expect(labels).toEqual(['Answer'])
     const at = buttonAt(row)
     const next = page.rows[page.rows.indexOf(row) + 1]
     expect(at).toBeGreaterThan(nameAt(row))
@@ -970,35 +969,35 @@ test('on the Overview page, a subject an open ask holds up draws Answer under it
     expect(lines[at]!.slice(0, textAt).replace('│', '').trim()).toBe('')
     expect(lines[at]![textAt]).not.toBe(' ')
   }
-  expect(lines[buttonAt(held[0]!)]).toContain('↵ Answer')
+  expect(lines[buttonAt(held[0]!)]).toContain('↵ View task')
   expect(lines[buttonAt(held[1]!)]).not.toContain('↵')
-  expect(lines[buttonAt(held[1]!)]).not.toContain('a Answer')
+  expect(lines[buttonAt(held[1]!)]).not.toContain('v View question')
   const second = keys(screen, onPage, 'j')
   const moved = text(screen, second).split('\n')
   expect(moved[buttonAt(held[0]!)]).not.toContain('↵')
-  expect(moved[buttonAt(held[1]!)]).toContain('↵ Answer')
+  expect(moved[buttonAt(held[1]!)]).toContain('↵ View question')
   expect(keys(screen, second, 'j').selectedId).toBe('s2')
   expect(keys(screen, onPage, 'k').selectedId).toBe('s3')
   expect(text(screen, onPage).split('\n').at(-1)).toContain('j k select')
-  expect(text(unheldScreen(), onPage)).not.toContain('Answer')
+  expect(text(unheldScreen(), onPage)).not.toContain('View ')
 })
 
-test('Answer on an Overview row shows Asks with the oldest ask that holds it up selected, by its key or Enter, and sends nothing', () => {
+test('View on an Overview row shows Asks with the oldest ask that holds it up selected, by its key or Enter, sends nothing, and holds the ask’s buttons through a second Enter', () => {
   const screen = screenOf()
-  for (const key of ['a', 'enter']) {
+  for (const key of ['v', 'enter']) {
     const result = handleKey(screen, onPage, key, NOW)
     expect(result.press).toBeUndefined()
     expect(result.ui).toMatchObject({ tab: 'needsYou', selectedId: 'd17', shownSince: NOW })
     expect(handleKey(screen, result.ui, 'noop', NOW).ui.selectedId).toBe('d17')
   }
   const onS3 = keys(screen, onPage, 'j')
-  const onAsk = handleKey(screen, onS3, 'a', NOW).ui
+  const onAsk = handleKey(screen, onS3, 'enter', NOW).ui
   expect(onAsk).toMatchObject({ tab: 'needsYou', selectedId: 'd11' })
-  expect(handleKey(screen, onAsk, 'a', NOW + PRESS_GUARD_MS - 1).press).toBeUndefined()
-  expect(handleKey(screen, onAsk, 'a', NOW + PRESS_GUARD_MS).press).toMatchObject({ action: 'answer', id: 'd11' })
+  expect(handleKey(screen, onAsk, 'enter', NOW + PRESS_GUARD_MS - 1).press).toBeUndefined()
+  expect(handleKey(screen, onAsk, 'enter', NOW + PRESS_GUARD_MS).press).toMatchObject({ action: 'answer', id: 'd11' })
 })
 
-test('an Overview row’s Answer leaves once its asks close, and the selection moves to the row that still has one', () => {
+test('an Overview row’s View leaves once its asks close, and the selection moves to the row that still has one', () => {
   const s = demoState(NOW)
   const items = s.ledger.items.filter(i => i.id !== 'd11')
   const screen = screenOf({
@@ -1007,10 +1006,10 @@ test('an Overview row’s Answer leaves once its asks close, and the selection m
   const onS3 = { ...onPage, selectedId: 's3' }
   const lines = text(screen, onS3).split('\n')
   const s3 = screen.view.overviewPage.rows.find(r => r.id === 's3')!
-  expect(s3).toMatchObject({ askId: null, mark: '○' })
-  expect(lines.filter(l => l.includes('Answer'))).toHaveLength(1)
-  expect(lines.find(l => l.includes('Answer'))).toContain('↵ Answer')
-  expect(handleKey(screen, onS3, 'a', NOW).ui.selectedId).toBe('d17')
+  expect(s3).toMatchObject({ ask: null, mark: '○' })
+  expect(lines.filter(l => l.includes('View '))).toHaveLength(1)
+  expect(lines.find(l => l.includes('View '))).toContain('↵ View task')
+  expect(handleKey(screen, onS3, 'v', NOW).ui.selectedId).toBe('d17')
 })
 
 test('on an Overview page taller than the panel, j and k scroll the newly selected row into view', () => {
@@ -1020,7 +1019,7 @@ test('on an Overview page taller than the panel, j and k scroll the newly select
   const isFocusShown = (ui: PanelUi) =>
     drawnFor(ui)
       .lines.map(strip)
-      .some(l => l.includes('↵ Answer'))
+      .some(l => l.includes('↵ View'))
   expect(isFocusShown(onPage)).toBe(true)
   const onS3 = keys(screen, onPage, 'j')
   expect(isFocusShown({ ...onS3, pageReveal: null })).toBe(false)

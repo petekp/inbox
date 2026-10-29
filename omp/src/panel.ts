@@ -169,8 +169,8 @@ export type PanelUi = {
   /** The Overview row the next draw scrolls into view, after j or k selects it. */
   pageReveal: string | null
   /**
-   * When an Overview press selected the shown row, as Answer does. The row's buttons ignore keys until
-   * `PRESS_GUARD_MS` has passed, so a second press of the same key does not press the row it opened.
+   * When an Overview press selected the shown row, as View does. The row's buttons ignore keys until
+   * `PRESS_GUARD_MS` has passed, so a second Enter does not press the row it opened.
    */
   openedAt: number
   /** When the panel opened or last switched tab. A row that closes since then stays in place until the next of either. */

@@ -15,7 +15,7 @@ const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Overview page from a next build’s view, and new rows and keys leave it in place, a held subject’s Answer shows Asks with its ask selected until the ask closes, while a release build’s view draws Asks for it, and only a next build names on an Asks row the subject it holds up', async () => {
+test('the Codex tab draws the Overview page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes, while a release build’s view draws Asks for it, and only a next build names on an Asks row the subject it holds up', async () => {
   const now = Date.now()
   const state = emptyState('overview')
   state.heard.startAt = 1
@@ -147,19 +147,19 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
         [...(r.querySelector('.content')?.children ?? [])].map(line => line.textContent),
       ]),
       [
-        ['mark tone-needsYou', '◆', ['Label · waiting', 'pick one', 'Answer']],
+        ['mark tone-needsYou', '◆', ['Label · waiting', 'pick one', 'View question']],
         ['mark running', '●', ['omp panel', 'reading the draw code']],
         ['mark done', '✓', ['Page', 'built']],
       ],
     )
     assert.deepEqual(
       [...root.querySelectorAll('main button')].map(b => b.textContent),
-      ['Answer'],
+      ['View question'],
     )
 
     key('j')
     key('k')
-    key('a')
+    key('v')
     state.ledger = recordItem(
       CODEX,
       state.ledger,

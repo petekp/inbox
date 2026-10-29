@@ -2589,7 +2589,7 @@ async function selectClicked($: EngineInterface, id: string) {
   await select($, tab, id, index)
 }
 
-/** An Overview row's Answer press: Asks shows with the ask selected and in view. */
+/** An Overview row's View press: Asks shows with the ask selected and in view. */
 async function showAsk($: EngineInterface, askId: string) {
   const { view } = await drawnState($)
   const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
