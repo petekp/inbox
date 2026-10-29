@@ -1031,6 +1031,11 @@ export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: Overview
 /** The mark of an open subject that an open ask holds up, in place of its status's mark. */
 const HELD_MARK: { mark: string; tone: OverviewTone } = { mark: '◆', tone: 'needsYou' }
 
+/** The order of subjects on each side of the look line, from what needs the person to what is finished. */
+const OVERVIEW_PLACES = ['held', 'working', 'waits-on-other', 'queued', 'closed'] as const
+
+type OverviewPlace = (typeof OVERVIEW_PLACES)[number]
+
 /** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
 export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
 
@@ -1110,6 +1115,12 @@ export function overviewPage(
   const isNew = (x: Subject) => look === null || x.changedAt > look
   const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
   const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
+  const placeOf = (x: Subject): OverviewPlace =>
+    isHeld(x) ? 'held' : x.status === 'done' || x.status === 'dropped' ? 'closed' : x.status
+  const pageOrder = (x: Subject, y: Subject) =>
+    Number(isNew(y)) - Number(isNew(x)) ||
+    OVERVIEW_PLACES.indexOf(placeOf(x)) - OVERVIEW_PLACES.indexOf(placeOf(y)) ||
+    y.changedAt - x.changedAt
   /** When `x` began to wait: when the oldest open ask holding it up was asked, or when it last changed. */
   const waitingSince = (x: Subject) => {
     const asked = s.ledger.items.filter(i => o?.askSubjects[i.id] === x.id).flatMap(i => i.at ?? [])
@@ -1130,12 +1141,12 @@ export function overviewPage(
   const queuedOver = Math.max(0, open.length - OPEN_ROWS)
   const hiddenQueued = new Set(
     open
-      .filter(x => x.status === 'queued' && !isHeld(x))
+      .filter(x => placeOf(x) === 'queued')
       .sort((x, y) => x.changedAt - y.changedAt)
       .slice(0, queuedOver)
       .map(x => x.id),
   )
-  const shown = [...open.filter(x => !hiddenQueued.has(x.id)), ...newClosed].sort((x, y) => y.changedAt - x.changedAt)
+  const shown = [...open.filter(x => !hiddenQueued.has(x.id)), ...newClosed].sort(pageOrder)
   const folded = subjects.filter(x => x.status === 'done' && !newClosed.includes(x))
   const running = (o?.children ?? [])
     .filter(c => isChildRunning(c, now))

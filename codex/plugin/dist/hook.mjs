@@ -1255,6 +1255,7 @@ var SUBJECT_MARKS = {
   dropped: { mark: "\u2717", tone: null }
 };
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
+var OVERVIEW_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
@@ -1291,6 +1292,8 @@ function overviewPage(s, now) {
   const isNew = (x) => look === null || x.changedAt > look;
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
+  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || OVERVIEW_PLACES.indexOf(placeOf(x)) - OVERVIEW_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const waitingSince = (x) => {
     const asked = s.ledger.items.filter((i) => o?.askSubjects[i.id] === x.id).flatMap((i) => i.at ?? []);
     return asked.length > 0 ? Math.min(...asked) : x.changedAt;
@@ -1304,9 +1307,9 @@ function overviewPage(s, now) {
   const open2 = subjects.filter(isOpen);
   const queuedOver = Math.max(0, open2.length - OPEN_ROWS);
   const hiddenQueued = new Set(
-    open2.filter((x) => x.status === "queued" && !isHeld(x)).sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id)
+    open2.filter((x) => placeOf(x) === "queued").sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id)
   );
-  const shown = [...open2.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort((x, y) => y.changedAt - x.changedAt);
+  const shown = [...open2.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort(pageOrder);
   const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const shownIds = new Set(shown.map((x) => x.id));

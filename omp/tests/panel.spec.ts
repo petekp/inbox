@@ -770,12 +770,7 @@ test('the Overview page shows the goal, then its rows in order, each subject’s
 test('on the Overview page, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', () => {
   const lines = text(screenOf(), onPage, 28).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
-  const [subject, mid, last, next] = [
-    at('Dismiss gesture'),
-    at('Review the'),
-    at('Tune how hard'),
-    at('Glasses pairing'),
-  ]
+  const [subject, mid, last, next] = [at('Dismiss gesture'), at('Review the'), at('Tune how hard'), at('Fade-out')]
   const col = lines[subject]!.search(/\S/)
   const glyphs = (from: number, to: number) => lines.slice(from, to).map(l => l.slice(col, col + 2))
 
@@ -793,7 +788,7 @@ test('on the Overview page, a rule from the text column sets each item apart, wi
   const rowsAfterRules = lines.flatMap((l, n) => (rule.test(l) ? [lines[n + 1]!] : []))
 
   expect(rowsAfterRules).toHaveLength(4)
-  for (const [n, row] of ['Glasses pairing', 'Flick option', 'Fade-out', 'more done'].entries())
+  for (const [n, row] of ['Flick option', 'Dismiss gesture', 'Fade-out', 'more done'].entries())
     expect(rowsAfterRules[n]).toContain(row)
 })
 
