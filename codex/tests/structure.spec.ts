@@ -330,3 +330,121 @@ for (const id of ['catchUp', 'catch_up', 'Catch-up', 'catch--up', 'catch-up-2'])
     assert.equal(result.status, 1, result.stdout + result.stderr)
     assert.ok(result.stdout.includes(`'${id}'`), result.stdout + result.stderr)
   })
+
+function hooksModule(body: string, top = '') {
+  return `import { read, update } from 'claude-code'
+import { value } from './view'
+${top}
+function save($: unknown) {
+  return update($, value)
+}
+export const register = (on: any) => {
+${body}
+}
+`
+}
+
+function writeHooksModule(f: ReturnType<typeof fixture>, text: string) {
+  f.write('hooks/hooks.json', '{ "modules": ["./register.tsx"] }\n')
+  f.write('hooks/register.tsx', text)
+}
+
+test('the structure gate accepts the hooks module shapes the plugin directory accepts', t => {
+  const f = fixture(t)
+  writeHooksModule(
+    f,
+    hooksModule(`  on('tool.check', async ($, e, next) => {
+    await save($)
+    await read($, 'key')
+    if (e.tool === 'Bash') return { decision: 'deny', reason: 'No shell.' }
+    return next(e)
+  })
+  on('tool.check', ($, e, next) => ({ decision: 'ask' }))
+  on('classic.PermissionRequest', async ($, e, next) => {
+    if (e.x) return { decision: { behavior: 'deny' } }
+    return next(e)
+  })
+  on('tool.call', async ($, e, next) => {
+    const width = [1].map(effect => effect)
+    return next(e)
+  })`),
+  )
+  const result = f.check()
+  assert.equal(result.status, 0, result.stdout + result.stderr)
+})
+
+const refusedHooksModules = [
+  {
+    name: '$ passed to an imported function',
+    text: hooksModule(`  on('tool.call', async ($, e, next) => {
+    value($)
+    return next(e)
+  })`),
+    at: 'value($)',
+    code: 'MOD_CAPABILITY_USE_NOT_PLAIN',
+  },
+  {
+    name: '$ passed to a top-level arrow',
+    text: hooksModule(
+      `  on('tool.call', async ($, e, next) => {
+    await saveLater($)
+    return next(e)
+  })`,
+      'const saveLater = async ($: unknown) => $',
+    ),
+    at: 'await saveLater($)',
+    code: 'MOD_CAPABILITY_USE_NOT_PLAIN',
+  },
+  {
+    name: 'a tool.check hook that returns the verdict by name',
+    text: hooksModule(`  on('tool.check', async ($, e, next) => {
+    const verdict = await next(e)
+    return verdict
+  })`),
+    at: 'return verdict',
+    code: 'MOD_PERMISSION_ANSWER_UNREAD',
+  },
+  {
+    name: 'a PermissionRequest hook with a fixed allow',
+    text: hooksModule(`  on('classic.PermissionRequest', async ($, e, next) => ({ decision: { behavior: 'allow' } }))`),
+    at: "behavior: 'allow'",
+    code: 'MOD_PERMISSION_ANSWER_UNREAD',
+  },
+  {
+    name: 'another binding of a permission hook parameter',
+    text: hooksModule(`  on('tool.check', async ($, e, next) => next(e))
+  on('tool.call', async ($, event, pass) => {
+    const ids = [1].map(e => e)
+    return pass(event)
+  })`),
+    at: 'const ids',
+    code: 'MOD_PERMISSION_ANSWER_UNREAD',
+  },
+  {
+    name: "a .catch on a permission hook's registration",
+    text: hooksModule(
+      `  on('classic.PermissionRequest', async ($, e, next) => next(e)).catch(($, e, next) => next(e))`,
+    ),
+    at: '.catch',
+    code: 'MOD_PERMISSION_ANSWER_UNREAD',
+  },
+  {
+    name: 'a binding named h',
+    text: hooksModule(`  on('tool.call', async ($, e, next) => {
+    const h = 1
+    return next(e)
+  })`),
+    at: 'const h',
+    code: 'MOD_CAPABILITY_USE_NOT_PLAIN',
+  },
+]
+
+for (const { name, text, at, code } of refusedHooksModules)
+  test(`the structure gate rejects ${name} in the hooks module`, t => {
+    const f = fixture(t)
+    writeHooksModule(f, text)
+    const line = text.split('\n').findIndex(l => l.includes(at)) + 1
+    const result = f.check()
+    assert.equal(result.status, 1, result.stdout + result.stderr)
+    assert.ok(result.stdout.includes(`hooks/register.tsx:${line} ${code}`), result.stdout + result.stderr)
+  })
