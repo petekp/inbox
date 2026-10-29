@@ -36,6 +36,7 @@ import {
   isPrFetchDue,
   OVERVIEW_RECORD_VERSION,
   overviewCallPrompt,
+  prFetchTracker,
   RECORDS_KEPT_MS,
   RECORDS_PER_SESSION,
   press,
@@ -762,4 +763,23 @@ test('PRs are due for a fetch 15 seconds after the last once the agent replied s
   expect(isPrFetchDue(repliedAt(1_005_000), 1_000_000, 1_014_000)).toBe(false)
   expect(isPrFetchDue(repliedAt(999_000), 1_000_000, 1_015_000)).toBe(false)
   expect(isPrFetchDue(repliedAt(null), 1_000_000, 1_120_000)).toBe(true)
+})
+
+test('a fetch a press asks for while another runs starts once that one ends, and presses during one fetch share the next', async () => {
+  const tracker = prFetchTracker(() => 1)
+  const started: string[] = []
+  let endFirst = () => {}
+  const first = tracker.fetchNow('s1', () => {
+    started.push('first')
+    return new Promise<void>(resolve => (endFirst = resolve))
+  })
+  const pressed = () =>
+    tracker.fetchNow('s1', async () => {
+      started.push('after')
+    })
+  const both = [pressed(), pressed()]
+  expect(started).toEqual(['first'])
+  endFirst()
+  await Promise.all([first, ...both])
+  expect(started).toEqual(['first', 'after'])
 })

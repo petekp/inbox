@@ -849,10 +849,14 @@ export function prFetchTracker(now: () => number): {
    * never rejects, or null when nothing started.
    */
   fetchWhenDue(id: string, s: Session, fetch: () => Promise<void>): Promise<void> | null
-  /** Runs `fetch` now, as a press asks, unless a fetch for `id` already runs. Returns the run, which never rejects. */
+  /**
+   * Runs `fetch` as a press asks: now, or once the fetch running for `id` ends, since that fetch may have read the PRs
+   * before the press. Presses during one running fetch share the fetch after it. Returns the run, which never rejects.
+   */
   fetchNow(id: string, fetch: () => Promise<void>): Promise<void>
 } {
   const running = new Map<string, Promise<void>>()
+  const following = new Map<string, Promise<void>>()
   const endedAt = new Map<string, number>()
   const start = (id: string, fetch: () => Promise<void>) => {
     const run = fetch()
@@ -870,7 +874,19 @@ export function prFetchTracker(now: () => number): {
     isFetching: id => running.has(id),
     fetchWhenDue: (id, s, fetch) =>
       running.has(id) || !isPrFetchDue(s, endedAt.get(id), now()) ? null : start(id, fetch),
-    fetchNow: (id, fetch) => running.get(id) ?? start(id, fetch),
+    fetchNow: (id, fetch) => {
+      const current = running.get(id)
+      if (!current) return start(id, fetch)
+      const next =
+        following.get(id) ??
+        current.then(() => {
+          following.delete(id)
+          return running.get(id) ?? start(id, fetch)
+        })
+      following.set(id, next)
+
+      return next
+    },
   }
 }
 

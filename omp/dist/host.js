@@ -5316,6 +5316,7 @@ function isPrFetchDue(s, lastFetchedAt, now) {
 }
 function prFetchTracker(now) {
   const running = new Map;
+  const following = new Map;
   const endedAt = new Map;
   const start = (id, fetch) => {
     const run = fetch().catch(() => {
@@ -5330,7 +5331,17 @@ function prFetchTracker(now) {
   return {
     isFetching: (id) => running.has(id),
     fetchWhenDue: (id, s, fetch) => running.has(id) || !isPrFetchDue(s, endedAt.get(id), now()) ? null : start(id, fetch),
-    fetchNow: (id, fetch) => running.get(id) ?? start(id, fetch)
+    fetchNow: (id, fetch) => {
+      const current = running.get(id);
+      if (!current)
+        return start(id, fetch);
+      const next = following.get(id) ?? current.then(() => {
+        following.delete(id);
+        return running.get(id) ?? start(id, fetch);
+      });
+      following.set(id, next);
+      return next;
+    }
   };
 }
 async function fetchPrs(host, findsBranchPr) {
