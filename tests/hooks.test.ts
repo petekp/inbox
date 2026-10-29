@@ -5181,7 +5181,7 @@ test('a working subject’s mark on the Overview moves each frame only while a t
   expect(ended.working).toEqual(ended.still)
 })
 
-test('on a next build, a look starts when the Overview page shows, the page shows the head and the subjects in place of rows, leaves the row keys idle, a row tab shows its rows again, and an ask names the subject it holds up', async ($, on) => {
+test('on a next build, a look starts when the Overview page shows, the page shows the head and the subjects in place of rows, binds only the held subject’s Answer key, Answer shows Asks with its ask selected, and an ask names the subject it holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
@@ -5217,7 +5217,9 @@ test('on a next build, a look starts when the Overview page shows, the page show
     (await pane.findAll({ type: 'Button' }))
       .map(b => b.key ?? '')
       .filter(k => k.endsWith('-key') && !k.startsWith('tab-'))
-  expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
+  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key'])
+  expect((await pane.find({ key: 'show-ask-s1' }))?.text).toBe('a: Answer')
+  expect(await pane.find({ key: 'show-ask-s2' })).toBeUndefined()
   await pane.press({ key: 'next' })
   await pane.press({ key: 'no-row-d-key' })
   await $.tool.call({
@@ -5229,15 +5231,23 @@ test('on a next build, a look starts when the Overview page shows, the page show
   })
   await clock.settle()
   expect(await pane.find({ key: 'overview-head' })).toBeDefined()
-  expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
+  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key'])
 
-  await pane.press({ key: 'tab-key-needsYou' })
+  await pane.press({ key: 'show-ask-s1-key' })
   await clock.settle()
   expect(lookOf()).toBeNull()
   expect(await pane.find({ key: 'overview-head' })).toBeUndefined()
+  expect(await pane.find({ key: 'view-i1' })).toBeDefined()
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
   await pane.press({ key: 'tab-findings' })
   expect(await pane.find({ key: 'address-f3' })).toBeDefined()
+
+  await $.tool.call({ tool: 'mcp__inbox__close', id: 'i1', answer: 'Node' })
+  await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  expect((await pane.find({ key: 'overview-s1' }))?.text).not.toContain('◆')
+  expect(await pane.find({ key: 'show-ask-s1' })).toBeUndefined()
+  expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
 })
 
 test('on a next build, a look at the Overview that ends while an Overview call is out keeps its Seen line, and the answer that lands after it shows above the line', async ($, on) => {

@@ -973,6 +973,8 @@ type OverviewRowParts =
       was: string | null
       /** Whether rows of its children follow, so its tree line runs down from its mark. */
       hasChildren: boolean
+      /** The oldest open ask that holds it up, which its Answer button opens. Null while no open ask holds it up. */
+      askId: string | null
     }
   | {
       kind: 'child'
@@ -1131,6 +1133,12 @@ export function overviewPage(
   const isNew = (x: Subject) => look === null || x.changedAt > look
   const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
   const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
+  const oldestAskOf = (x: Subject): string | null =>
+    isHeld(x)
+      ? (s.ledger.items
+          .filter(i => o?.askSubjects[i.id] === x.id)
+          .sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0]?.id ?? null)
+      : null
   const placeOf = (x: Subject): OverviewPlace =>
     isHeld(x) ? 'held' : x.status === 'done' || x.status === 'dropped' ? 'closed' : x.status
   const pageOrder = (x: Subject, y: Subject) =>
@@ -1179,6 +1187,7 @@ export function overviewPage(
       merged: isNew(x) ? x.merged : null,
       was: isNew(x) ? x.was : null,
       hasChildren: under.length > 0,
+      askId: oldestAskOf(x),
     })
     rows.push(...shownUnder.map((c, n) => childRow(c, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid')))
     const hidden = under.slice(CHILD_ROWS)
@@ -1472,6 +1481,32 @@ export function rowKeyPlan(r: RowView, isAllShown: boolean): { keys: PlannedKey[
   }
 
   return { keys, more }
+}
+
+/** A press on an Overview row. `show-ask` opens Asks with that ask selected, and sends nothing. */
+export type OverviewPress = { action: 'show-ask'; askId: string }
+
+export type OverviewKey = { press: OverviewPress; label: string; hotkey: string; kind: PressKind }
+
+export const OVERVIEW_COPY = { answer: 'Answer' } as const
+
+/** An Overview row's buttons, in the order every look draws them. A row with none takes no press. */
+export function overviewKeyPlan(row: OverviewRow): OverviewKey[] {
+  if (row.kind !== 'subject' || row.askId === null) return []
+
+  return [{ press: { action: 'show-ask', askId: row.askId }, label: OVERVIEW_COPY.answer, hotkey: 'a', kind: 'view' }]
+}
+
+/** The Overview rows that have buttons, in page order: the rows j and k move between. */
+export function overviewKeyRows(page: OverviewPage): OverviewRow[] {
+  return page.rows.filter(r => overviewKeyPlan(r).length > 0)
+}
+
+/** The Overview row whose keys work: the selected row while it still has buttons, else the first row that has. */
+export function overviewSelected(page: OverviewPage, selectedId: string | null): OverviewRow | null {
+  const rows = overviewKeyRows(page)
+
+  return rows.find(r => r.id === selectedId) ?? rows[0] ?? null
 }
 
 /** Widths in a look's own unit. `separator` is the extra room a look draws between the buttons and the follow-ups when they share a line. */

@@ -1301,6 +1301,7 @@ function overviewPage(s, now) {
   const isNew = (x) => look === null || x.changedAt > look;
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const oldestAskOf = (x) => isHeld(x) ? s.ledger.items.filter((i) => o?.askSubjects[i.id] === x.id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0]?.id ?? null : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
   const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || OVERVIEW_PLACES.indexOf(placeOf(x)) - OVERVIEW_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
@@ -1333,7 +1334,8 @@ function overviewPage(s, now) {
       stall: stallOf(x),
       merged: isNew(x) ? x.merged : null,
       was: isNew(x) ? x.was : null,
-      hasChildren: under.length > 0
+      hasChildren: under.length > 0,
+      askId: oldestAskOf(x)
     });
     rows.push(...shownUnder.map((c, n) => childRow(c, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
     const hidden = under.slice(CHILD_ROWS);
