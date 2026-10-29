@@ -1265,7 +1265,8 @@ function childStall(c: Child): OverviewStall | null {
 }
 
 function childRow(c: Child, branch: OverviewBranch | null): OverviewRowParts {
-  const marks = c.delegateState === 'finished' ? SUBJECT_MARKS.done : c.delegateState === 'blocked' ? HELD_MARK : CHILD_MARK
+  const marks =
+    c.delegateState === 'finished' ? SUBJECT_MARKS.done : c.delegateState === 'blocked' ? HELD_MARK : CHILD_MARK
 
   return {
     kind: 'child',
