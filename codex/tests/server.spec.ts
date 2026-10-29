@@ -1410,7 +1410,7 @@ test('dismissing a linked PR unlinks it and settles its block as a dismissed row
     at: 100,
     canUndo: true,
     offersUndo: true,
-    isLapsed: true,
+    closedAs: 'dismissed',
     delivery: null,
   })
   assert.equal((await readState(dir, 's1')).ledger.prs.includes(ref), false)

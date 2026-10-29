@@ -235,8 +235,23 @@
       .group-title {
         padding: 0 14px 6px var(--text-x);
       }
+      .group-title {
+        position: relative;
+      }
       .group-title b {
         font-weight: 600;
+      }
+      .group-mark {
+        position: absolute;
+        left: var(--mark-x);
+        width: calc(var(--text-x) - var(--mark-x) - 8px);
+        text-align: center;
+      }
+      .group-mark.done {
+        color: var(--done);
+      }
+      .group-mark.issue {
+        color: var(--issue);
       }
       .group-title .count {
         color: var(--muted);
@@ -300,6 +315,11 @@
       }
       .mark.done {
         color: var(--done);
+      }
+      .mark-shape {
+        width: 8px;
+        height: 8px;
+        overflow: visible;
       }
       .mark.issue {
         color: var(--issue);
@@ -748,7 +768,7 @@
       .overview .mark {
         text-align: left;
       }
-      .overview .mark.running {
+      .mark.running {
         animation: running-pulse var(--pulse) ease-in-out infinite;
       }
       @keyframes running-pulse {
@@ -865,7 +885,7 @@
         }
         .time-left,
         .key.undo.undoing .icon,
-        .overview .mark.running {
+        .mark.running {
           animation: none;
         }
       }

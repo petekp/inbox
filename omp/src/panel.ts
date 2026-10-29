@@ -43,7 +43,6 @@ import { ago, cellWidth, cutForEllipsis, cutToCells } from '../../hooks/text'
 import {
   canUndoRefused,
   closedMark,
-  settledMark,
   settledTone,
   DEMO_NOTICE,
   bannerOf,
@@ -85,7 +84,9 @@ import {
   rowAfterClose,
   rowFeedbackText,
   rowKeyPlan,
-  rowMark,
+  rowTitle,
+  rowResultMark,
+  isRowTabRunning,
   hasRunningMark,
   mergedLine,
   nameBeforeStall,
@@ -110,6 +111,7 @@ import type {
   RowView,
   ShownTab,
   TabNaming,
+  ResultMark,
 } from '../../hooks/view'
 
 export type ResumePress = { action: 'resume' }
@@ -188,6 +190,8 @@ export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded' | 's
 const AGENT = 'omp'
 const REPLY_KEY = 'r'
 const INDENT = 7
+/** Where a line with no lead indents its detail and buttons: one cell in from its title. */
+const UNLED_INDENT = INDENT - 3
 const STOP_ID = 'stop'
 
 type Button = {
@@ -206,7 +210,10 @@ type Line = {
   id: string
   /** Extra indent, for the rows under a PR. */
   depth: number
-  lead: Lead
+  /** The mark before the title. An Asks or Finds row has none, so its title starts in the mark's place. */
+  lead: Lead | null
+  /** The mark before the result: the settled label, a Closed line's outcome, or a handed-off row's feedback. */
+  mark: ResultMark | null
   title: string
   isDim: boolean
   /** The status words after a PR's title. */
@@ -234,7 +241,8 @@ type Line = {
 }
 
 type Entry =
-  | { kind: 'heading'; text: string; count?: number }
+  /** A Finds group's heading leads with its kind's mark, since its rows draw none. */
+  | { kind: 'heading'; text: string; count?: number; mark?: Lead }
   /** A note stops at 3 lines. One with `isWhole`, such as an empty page's hint, is the page's content and wraps in full. */
   | { kind: 'note'; text: string; isStrong?: boolean; indent?: number; isWhole?: boolean }
   | { kind: 'row'; line: Line }
@@ -245,6 +253,7 @@ const blankLine = (id: string): Line => ({
   id,
   depth: 0,
   lead: { text: '', tone: null },
+  mark: null,
   title: '',
   isDim: false,
   status: null,
@@ -307,27 +316,17 @@ function prButtons(actions: PrAction[]): Button[] {
   }))
 }
 
-function leadOf(row: RowView): Lead {
-  const mark = rowMark(row, AGENT)
-  if (mark.tone === 'done') return { text: mark.text, tone: 'done' }
-  if (mark.tone === 'issue') return { text: mark.text, tone: 'issue' }
-
-  return { text: mark.text, tone: mark.text === '•' ? 'sep' : null }
-}
-
 function lineOfRow(row: RowView): Line {
   const feedbackLabel = rowFeedbackText(row, AGENT)
   const f = row.feedback
   const state = row.state
   const undo = row.actions.find(a => a.press.action === 'undo')
 
-  const settledLead: Lead | null =
-    state.is === 'settled' ? { text: settledMark(state.delivery) || ' ', tone: 'sep' } : null
-
   return {
     ...blankLine(row.id),
-    lead: settledLead ?? leadOf(row),
-    title: row.title,
+    lead: null,
+    mark: rowResultMark(row),
+    title: rowTitle(row, AGENT),
     isDim: state.is === 'settled',
     // As in the terminal, a row a press finished reads the press's age.
     age: f?.is === 'done' ? f.at : row.at,
@@ -359,7 +358,7 @@ type ClosedLine = {
   delivery: ClosedDelivery
 }
 
-type Group = { kind: FoldKind; title: string; rows: RowView[]; closed: ClosedLine[] }
+type Group = { kind: FoldKind; title: string; mark?: Lead; rows: RowView[]; closed: ClosedLine[] }
 
 const settledIn = (g: Group) => new Set(g.rows.filter(r => r.state.is === 'settled').map(r => r.id))
 const isGroupEmpty = (g: Group) => g.rows.length === 0 && closedTotal(g.closed, settledIn(g)) === 0
@@ -380,7 +379,8 @@ function closedLines(d: ClosedLine): Line {
   return {
     ...blankLine(closedId(d.id)),
     depth: 1,
-    lead: { text: closedMark(closedState(d), d.delivery), tone: null },
+    lead: null,
+    mark: closedMark(closedState(d), d.delivery),
     title: d.title,
     isDim: true,
     age: d.at,
@@ -394,7 +394,9 @@ function closedLines(d: ClosedLine): Line {
 function groupEntries(g: Group, unfolded: readonly FoldKind[]): Entry[] {
   const settled = settledIn(g)
   const total = closedTotal(g.closed, settled)
-  const out: Entry[] = [{ kind: 'heading', text: g.title, count: waitingCount(g.rows) }]
+  const out: Entry[] = [
+    { kind: 'heading', text: g.title, count: waitingCount(g.rows), ...(g.mark ? { mark: g.mark } : {}) },
+  ]
   out.push(...g.rows.map((row): Entry => ({ kind: 'row', line: lineOfRow(row) })))
   if (g.rows.length === 0) out.push({ kind: 'note', text: groupEmptyText(g.title), indent: 3 })
   if (total === 0) return out
@@ -414,7 +416,7 @@ function groupEntries(g: Group, unfolded: readonly FoldKind[]): Entry[] {
   const shown = closedShown(g.closed, settled)
   out.push(...shown.map((d): Entry => ({ kind: 'row', line: closedLines(d) })))
   const earlier = earlierLabel(total, shown.length)
-  if (earlier) out.push({ kind: 'note', text: earlier, indent: 7 })
+  if (earlier) out.push({ kind: 'note', text: earlier, indent: 5 })
 
   return out
 }
@@ -466,6 +468,7 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
       : (Object.keys(FINDING_GROUPS) as (keyof typeof FINDING_GROUPS)[]).map(kind => ({
           kind,
           title: FINDING_GROUPS[kind].title,
+          mark: { text: FINDING_GROUPS[kind].mark, tone: FINDING_GROUPS[kind].tone },
           rows: view.findings.rows.filter(r => r.finding?.kind === kind && isDrawnInPlace(r, ui.shownSince)),
           closed: view.findings.closed.filter(f => f.kind === kind).map(f => ({ ...f, at: f.closedAt })),
         }))
@@ -876,9 +879,11 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
   )
 }
 
-/** Whether the Overview is shown with a running mark, whose frame moves with the clock. */
+/** Whether the panel shows a running mark, whose frame moves with the clock: on the Overview, or on a row tab. */
 export function isRunningMarkShown(screen: PanelScreen, ui: PanelUi): boolean {
-  return !isRowTab(ui.tab) && hasRunningMark(screen.view.overviewPage)
+  if (!isRowTab(ui.tab)) return hasRunningMark(screen.view.overviewPage)
+
+  return ui.tab !== 'prs' && isRowTabRunning(screen.view, ui.tab, kind => ui.unfolded.includes(kind))
 }
 
 /** The notice for a press the row cannot show: a failed send, or a press whose row had changed. */
@@ -907,6 +912,16 @@ function fit(s: string, width: number): string {
   }
 
   return out
+}
+
+/** The fewest cells a title keeps when it is cut so the result mark after it stays in view. */
+const MARKED_TITLE_CELLS = 12
+
+/** A title cut to `room` cells, but never below `MARKED_TITLE_CELLS`, so a line's result mark is not cut off. */
+function cutTitle(title: string, room: number): string {
+  const cells = Math.max(MARKED_TITLE_CELLS, room)
+
+  return cellWidth(title) <= cells ? title : `${cutToCells(title, cells - 1)}…`
 }
 
 function spread(left: string, right: string, width: number): string {
@@ -1014,10 +1029,21 @@ function buttonLines(line: Line, ui: PanelUi, indent: number, width: number, s: 
   return lines.map(at => ' '.repeat(indent) + at.map(i => cells[i]).join(''))
 }
 
-function leadText(lead: Lead, s: Style): string {
+/** A lead and the space after it, or nothing for a line with no lead. */
+function leadText(lead: Lead | null, s: Style): string {
+  if (lead === null) return ''
   const padded = lead.text.padEnd(2)
 
-  return lead.tone ? s.tone(lead.tone, padded) : padded
+  return `${lead.tone ? s.tone(lead.tone, padded) : padded} `
+}
+
+/** A result mark and the space after it. A blank mark keeps its place, so the result stays put when its mark arrives. */
+function markText(mark: ResultMark | null, now: number, s: Style): string {
+  if (mark === null) return ''
+
+  const glyph = mark.isRunning ? runningMark(now) : mark.text || ' '
+
+  return `${mark.tone ? s.tone(mark.tone, glyph) : s.dim(glyph)} `
 }
 
 function feedbackPaint(tone: Tone | null, s: Style) {
@@ -1044,18 +1070,23 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
     isStatusUnderActions(line.feedback.source, isSelected)
       ? line.feedback
       : null
+  const mark = markText(line.mark, now, s)
   const after = line.settled
-    ? `  ${line.settled.tone === 'done' ? s.tone('done', line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim('u Undo')}` : ''}`
+    ? `  ${mark}${line.settled.tone === 'done' ? s.tone('done', line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim('u Undo')}` : ''}`
     : line.feedback && !statusUnder
-      ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}`
+      ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}`
       : ''
-  const title = line.isDim ? s.dim(line.title) : isSelected ? s.bold(line.title) : line.title
   // omp marks a selected item with ❯, its `nav.cursor` symbol, and keeps ▸ and ▾ for expand and collapse.
   const cursor = isSelected ? s.tone('accent', '❯') : ' '
+  const head = ` ${' '.repeat(pad)}${cursor} ${leadText(line.lead, s)}`
+  const shownTitle = line.mark
+    ? cutTitle(line.title, width - visibleLength(head) - visibleLength(status) - visibleLength(after))
+    : line.title
+  const title = line.isDim ? s.dim(shownTitle) : isSelected ? s.bold(shownTitle) : shownTitle
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
-  out.push(spread(` ${' '.repeat(pad)}${cursor} ${leadText(line.lead, s)} ${title}${status}${after}`, `${age} `, width))
+  out.push(spread(`${head}${title}${status}${after}`, `${age} `, width))
   if (line.settled || isShut(line, ui)) return out
-  const indent = INDENT + pad
+  const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
   // A next build draws the Overview, so only it names the subject an ask holds up.
   const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null
   if (holdsUp) out.push(fit(' '.repeat(indent) + s.dim(holdsUp), width))
@@ -1073,7 +1104,17 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
     const field = wrapText(`${text}\u0000`, Math.max(10, width - indent - 1))
     out.push(...field.map(l => ' '.repeat(indent) + l.replace('\u0000', s.inverse(' '))))
   }
-  if (statusUnder) out.push(...indented(statusUnder.text, indent, width, 4, feedbackPaint(statusUnder.tone, s)))
+  if (statusUnder) {
+    const markCells = mark ? 2 : 0
+    const [first, ...rest] = indented(
+      statusUnder.text,
+      indent + markCells,
+      width,
+      4,
+      feedbackPaint(statusUnder.tone, s),
+    )
+    if (first !== undefined) out.push(' '.repeat(indent) + mark + first.slice(indent + markCells), ...rest)
+  }
 
   return out
 }
@@ -1322,7 +1363,10 @@ export function drawPanel(
   const body: string[] = []
   let selectedAt = [0, 0]
   for (const e of entries) {
-    if (e.kind === 'heading') body.push(` ${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`)
+    if (e.kind === 'heading')
+      body.push(
+        ` ${e.mark ? `${e.mark.tone ? style.tone(e.mark.tone, e.mark.text) : e.mark.text} ` : ''}${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`,
+      )
     else if (e.kind === 'page')
       body.push(...(e.row.isRuledAbove ? [pageRule(width, style)] : []), ...drawPageRow(e.row, d))
     else if (e.kind === 'banner') body.push(...bannerLines(e.banner, width, style))

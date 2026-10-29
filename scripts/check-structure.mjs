@@ -17,6 +17,7 @@ const SHARED = [
   'herdr',
   'inline',
   'layout',
+  'marks',
   'ledger',
   'host-tasks',
   'overview',

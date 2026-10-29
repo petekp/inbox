@@ -1,6 +1,7 @@
 import { CLOSE_ID_RULE } from '../../hooks/model-text'
 import type { Host } from '../../hooks/model-text'
 import type { InboxView, RowView } from '../../hooks/view'
+import { rowHandle } from '../../hooks/view'
 
 export const CODEX: Host = {
   agent: 'Codex',
@@ -45,10 +46,10 @@ export function inboxToolText(v: InboxView): string {
 }
 
 function rowLine(r: RowView): string {
-  if (r.finding) return `${r.handle} ${r.finding.kind}: ${r.title} (close id: ${r.id})`
+  if (r.finding) return `${rowHandle(r)} ${r.finding.kind}: ${r.title} (close id: ${r.id})`
   const item = r.item
   const options = item && item.options.length > 0 ? `; options: ${item.options.join(' / ')}` : ''
   const rec = item?.rec ? `; recommended: ${item.rec}` : ''
 
-  return `${r.handle} "${r.title}"${options}${rec} (close id: ${r.id})`
+  return `${rowHandle(r)} "${r.title}"${options}${rec} (close id: ${r.id})`
 }

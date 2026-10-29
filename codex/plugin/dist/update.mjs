@@ -1677,7 +1677,7 @@ function closedRowState(closed, at, now, settleWindowMs, delivery) {
     at,
     canUndo: canUndoClose(closed, at, now, settleWindowMs),
     offersUndo: offersUndo(closed),
-    isLapsed: isLapsed(closed),
+    closedAs: closedState(closed),
     delivery
   };
 }
@@ -2085,7 +2085,7 @@ function inboxView({
           canUndo: false,
           offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
-          isLapsed: false
+          closedAs: closedState(closed2)
         };
       if (isHeld(closed2)) return { is: "held", label: heldLabel(closed2), at };
       return closedRowState(
@@ -2106,7 +2106,7 @@ function inboxView({
         canUndo: isUndoLeft(last.at, now, settleWindowMs),
         offersUndo: true,
         delivery: pendingDeliveryAt(last, now),
-        isLapsed: false
+        closedAs: "handled"
       };
     return isHandedOff(last, turns) ? { is: "handedOff" } : { is: "open" };
   };
@@ -2130,7 +2130,7 @@ function inboxView({
     return rowOf({
       id: item.id,
       type: item.kind,
-      handle: n === void 0 ? "\u2022" : `${n})`,
+      number: n ?? null,
       title: item.ask,
       at: item.at,
       detail: null,
@@ -2150,7 +2150,7 @@ function inboxView({
     (finding) => rowOf({
       id: finding.id,
       type: "finding",
-      handle: "\u2022",
+      number: null,
       title: finding.title,
       at: finding.at,
       detail: finding.detail,
