@@ -1,3 +1,4 @@
+import { isRowTabRunning } from './arrivals'
 import { linkDialogs } from './dialogs'
 import {
   applyExchangeUpdate,
@@ -17,15 +18,18 @@ import {
   applyPrPress,
   drawnPrs,
   isPrPress,
+  isPrTabRunning,
   isViewKept,
   itemPrSteps,
   olderPrsText,
   linkedPrs,
+  openPrViews,
   pressRowId,
   prOrderText,
+  prTabActions,
   threadSentIn,
 } from './pr-tab'
-import type { Applied, DrawnPr, PrPress } from './pr-tab'
+import type { Applied, DrawnPr, PrAction, PrPress } from './pr-tab'
 import {
   actionId,
   applyPress,
@@ -45,16 +49,20 @@ import { applyStatus, lookEnded, lookStarted } from './status'
 import type { StatusAnswer } from './status'
 import {
   allRows,
+  hasRunningMark,
   inboxView,
+  isRowTab,
   isShownSince,
+  MARK_LEGEND,
   NO_HOLDS,
   outAction,
   statusPage,
   perTurnStatus,
   pressFeedbackIn,
 } from './view'
-import type { InboxView, StatusPage, Holds, RowState } from './view'
+import type { InboxView, StatusPage, Holds, RowState, ShownTab } from './view'
 import type {
+  FoldKind,
   LastAction,
   Ledger,
   SessionStatus,
@@ -815,6 +823,8 @@ type PrTab = {
   olderText: string | null
   /** Names the agent's order of the PRs above them, or null while it ranks no block the tab draws. `prOrderText`. */
   orderText: string | null
+  /** The tab's own buttons, drawn after its PR blocks. `prTabActions`. */
+  tabActions: PrAction[]
   /** Whether gh asked for a sign-in at the last fetch it answered. */
   isGhSignedOut: boolean
 }
@@ -882,6 +892,23 @@ export function sessionView(
   }
 }
 
+/**
+ * Whether a text look draws a running mark on `shown`, so the terminal and omp keep their frame timer going. Help always
+ * does, since the legend's first mark runs.
+ */
+export function showsRunningMark(
+  v: SessionView,
+  shown: ShownTab,
+  isHelpShown: boolean,
+  isUnfolded: (kind: FoldKind) => boolean,
+): boolean {
+  if (isHelpShown) return MARK_LEGEND.some(m => m.isRunning)
+  if (!isRowTab(shown)) return hasRunningMark(v.statusPage)
+  if (shown === 'prs') return isPrTabRunning(openPrViews(v.prs.drawn), v.lastActions)
+
+  return isRowTabRunning(v, shown, isUnfolded)
+}
+
 function prTabOf(
   s: Session,
   lastActions: Record<string, LastAction>,
@@ -901,6 +928,7 @@ function prTabOf(
     count: drawn.filter(d => d.state.is === 'open' && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger),
     orderText: prOrderText(s.ledger.prOrder, drawn, now),
+    tabActions: prTabActions(drawn, s.prViews.branchRef),
     isGhSignedOut: s.prViews.isGhSignedOut === true,
   }
 }

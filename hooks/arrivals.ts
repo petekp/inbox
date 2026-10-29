@@ -1,8 +1,8 @@
 import { failingChecks, waitingThreads } from './prs'
 import { prCheckId, prMarkId, prThreadId } from './pr-tab'
 import type { DrawnPr } from './pr-tab'
-import { FINDING_GROUPS, NEEDS_YOU_GROUPS, ROW_TABS } from './view'
-import type { InboxView, RowView } from './view'
+import { closedShown, FINDING_GROUPS, NEEDS_YOU_GROUPS, ROW_TABS, rowResultMark, settledRowIds } from './view'
+import type { InboxView, ResultMark, RowView } from './view'
 import type { Finding, FoldKind, PrView, Tab } from '../types'
 
 export type RowRecord<T extends string> = Partial<Record<T, ReadonlySet<string>>>
@@ -53,13 +53,22 @@ export function closedGroups(
   v: InboxView,
   tab: ListedTab,
   isUnfolded: (kind: FoldKind) => boolean,
-): { isUnfolded: boolean; rows: readonly { id: string }[] }[] {
+): { isUnfolded: boolean; rows: readonly { id: string; mark: ResultMark }[] }[] {
   return tab === 'findings'
     ? (Object.keys(FINDING_GROUPS) as Finding['kind'][]).map(kind => ({
         isUnfolded: isUnfolded(kind),
         rows: v.findings.closed.filter(f => f.kind === kind),
       }))
     : NEEDS_YOU_GROUPS.map(g => ({ isUnfolded: isUnfolded(g.kind), rows: v.needsYou.closed[g.list] }))
+}
+
+/** Whether a row tab draws a running mark: a row whose answer is on its way, or such a line in an unfolded Closed list. */
+export function isRowTabRunning(v: InboxView, tab: ListedTab, isUnfolded: (kind: FoldKind) => boolean): boolean {
+  const rows = tab === 'needsYou' ? [...v.needsYou.questions, ...v.needsYou.tasks] : v.findings.rows
+  const settled = new Set(settledRowIds(rows))
+  const closed = closedGroups(v, tab, isUnfolded).flatMap(g => (g.isUnfolded ? closedShown(g.rows, settled) : []))
+
+  return rows.some(r => rowResultMark(r)?.isRunning) || closed.some(d => d.mark.isRunning)
 }
 
 export function isTabEmpty({

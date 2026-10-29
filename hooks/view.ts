@@ -497,7 +497,7 @@ export function rowFeedbackText(row: RowView, look: Look): string | null {
   if (!f) return null
   if (!isHandedOffDone(row)) return feedbackText(f, look)
 
-  return f.is === 'done' ? f.label : feedbackText(f, look).replace(/^✓ /, '')
+  return f.is === 'done' ? f.label : f.is === 'local' ? localText(f.result, look) : feedbackText(f, look)
 }
 
 /** Whether a handed-off row's last press is done: its send arrived, or its open or copy worked. */
@@ -547,7 +547,8 @@ export type InboxView = {
   status: ItemStatus
 }
 
-export type ClosedView<T> = T & { delivery: ClosedDelivery; outcomeLabel: string }
+/** A closed entry as a look draws it. `mark` is `closedMark` of the entry and its delivery. */
+export type ClosedView<T> = T & { delivery: ClosedDelivery; outcomeLabel: string; mark: ResultMark }
 
 export function allRows(v: InboxView): RowView[] {
   return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows]
@@ -557,7 +558,7 @@ export function settledRowIds(rows: RowView[]): string[] {
   return rows.filter(r => r.state.is === 'settled').map(r => r.id)
 }
 
-export function closedShown<T extends { id: string }>(closed: T[], drawnSettled: ReadonlySet<string>): T[] {
+export function closedShown<T extends { id: string }>(closed: readonly T[], drawnSettled: ReadonlySet<string>): T[] {
   return closed.filter(d => !drawnSettled.has(d.id)).slice(0, CLOSED_SHOWN)
 }
 
@@ -935,7 +936,7 @@ function localText(r: LocalResult, look: Look): string {
   if (r.state === 'failed') return text
   const isCommand = parts.some(p => p.kind === 'copy' && p.isCommand)
 
-  return `✓ ${text}${isCommand ? `. ${runIt(look)}` : ''}`
+  return `${text}${isCommand ? `. ${runIt(look)}` : ''}`
 }
 
 export function feedbackText(f: Feedback, look: Look): string {
@@ -943,7 +944,7 @@ export function feedbackText(f: Feedback, look: Look): string {
     case 'note':
       return noteText()
     case 'local':
-      return localText(f.result, look)
+      return f.result.state === 'done' ? `✓ ${localText(f.result, look)}` : localText(f.result, look)
     case 'sending':
       return f.label
     case 'queued':
@@ -978,30 +979,6 @@ export function settledMark(state: Pick<SettledState, 'delivery' | 'closedAs'>):
 export function closedMark(state: ClosedState, delivery: ClosedDelivery): ResultMark {
   if (isSendMoving(delivery)) return RUNNING_RESULT
   return { text: delivery === null ? CLOSED_MARKS[state] : '', isRunning: false }
-}
-
-/**
- * Whether a row tab draws a running mark, so the terminal and omp keep their frame timer going: a row whose answer is
- * on its way, or such a line in a Closed list the look shows unfolded.
- */
-export function isRowTabRunning(v: InboxView, tab: ListedTab, isUnfolded: (kind: FoldKind) => boolean): boolean {
-  const rows = tab === 'needsYou' ? [...v.needsYou.questions, ...v.needsYou.tasks] : v.findings.rows
-  const settled = new Set(settledRowIds(rows))
-  const closed =
-    tab === 'needsYou'
-      ? NEEDS_YOU_GROUPS.flatMap(g => (isUnfolded(g.kind) ? closedShown(v.needsYou.closed[g.list], settled) : []))
-      : (Object.keys(FINDING_GROUPS) as Finding['kind'][]).flatMap(kind =>
-          isUnfolded(kind)
-            ? closedShown(
-                v.findings.closed.filter(f => f.kind === kind),
-                settled,
-              )
-            : [],
-        )
-
-  return (
-    rows.some(r => rowResultMark(r)?.isRunning) || closed.some(d => closedMark(closedState(d), d.delivery).isRunning)
-  )
 }
 
 /** Whether a closed row offers Undo after its notification was refused. */
@@ -1251,6 +1228,11 @@ export function hasRunningMark(page: StatusPage): boolean {
 /** A running row's mark at `now`. Every mark on a page takes its frame from the clock, so all of them move together. */
 export function runningMark(now: number): string {
   return RUNNING_FRAMES[Math.floor(now / RUNNING_FRAME_MS) % RUNNING_FRAMES.length]!
+}
+
+/** A result mark's glyph in the text looks at `now`. A blank mark keeps its place, so the result stays put when its mark arrives. */
+export function resultGlyph(mark: ResultMark, now: number): string {
+  return mark.isRunning ? runningMark(now) : mark.text || ' '
 }
 
 /** Whether `row` starts an item after another, with no look line between them. */
@@ -1911,22 +1893,23 @@ export function inboxView({
   const closed: ClosedView<Closed>[] = [...ledger.closed]
     .filter(d => !held.has(d.id))
     .reverse()
-    .map(d => ({
-      ...d,
-      outcomeLabel: outcomeLabel(d),
-      delivery:
+    .map(d => {
+      const delivery: ClosedDelivery =
         d.doneNotification?.error !== undefined
           ? { error: d.doneNotification.error, canUndo: isUndoable(d) }
           : (d.how === 'answered' || d.how === 'done') &&
               lastActions[d.id]?.kind === 'mark' &&
               lastActions[d.id]?.at === d.at
             ? pendingDeliveryAt(lastActions[d.id], now)
-            : null,
-    }))
+            : null
+
+      return { ...d, outcomeLabel: outcomeLabel(d), delivery, mark: closedMark(closedState(d), delivery) }
+    })
   const fixesSent: ClosedView<ClosedFinding>[] = ledger.findings
     .filter(f => isFixSent(lastActions[f.id]))
     .map(f => {
       const outcome = fixLabel(f)
+      const delivery = pendingDeliveryAt(lastActions[f.id], now)
 
       return {
         ...f,
@@ -1934,7 +1917,8 @@ export function inboxView({
         outcome,
         outcomeLabel: outcomeLabel({ ...f, outcome }),
         closedAt: lastActions[f.id]!.at,
-        delivery: pendingDeliveryAt(lastActions[f.id], now),
+        delivery,
+        mark: closedMark(closedState({ how: 'answered', outcome }), delivery),
       }
     })
 
@@ -1951,7 +1935,7 @@ export function inboxView({
       closed: [
         ...ledger.closedFindings
           .filter(f => !held.has(f.id))
-          .map(f => ({ ...f, outcomeLabel: outcomeLabel(f), delivery: null as null })),
+          .map(f => ({ ...f, outcomeLabel: outcomeLabel(f), delivery: null, mark: closedMark(closedState(f), null) })),
         ...fixesSent,
       ].sort((a, b) => b.closedAt - a.closedAt),
     },

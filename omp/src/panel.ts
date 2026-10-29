@@ -1,4 +1,4 @@
-import type { Closed, Draft, FoldKind, Stop, Tab } from '../../types'
+import type { Draft, FoldKind, Stop, Tab } from '../../types'
 import { version } from '../package.json'
 import {
   ARRIVAL_TABS,
@@ -12,7 +12,6 @@ import {
   recordRows,
 } from '../../hooks/arrivals'
 import type { RowRecord } from '../../hooks/arrivals'
-import { closedState } from '../../hooks/ledger'
 import {
   ghNoticeOf,
   isDismissed,
@@ -28,12 +27,12 @@ import {
   prCheckId,
   prMarkId,
   prRowWaits,
-  prTabActions,
   prThreadId,
   threadActions,
   threadRowText,
   threadSentIn,
-  isPrTabRunning,
+  isPrPress,
+  openPrViews,
 } from '../../hooks/pr-tab'
 import type { PrAction, PrPress, PrRowMark } from '../../hooks/pr-tab'
 import { failingChecks, readiness, waitingThreads } from '../../hooks/prs'
@@ -44,7 +43,6 @@ import type { BannerTone, ToneName } from '../../hooks/tones'
 import { ago, cellWidth, cutForEllipsis, cutToCells } from '../../hooks/text'
 import {
   canUndoRefused,
-  closedMark,
   settledTone,
   DEMO_NOTICE,
   bannerOf,
@@ -87,10 +85,9 @@ import {
   rowFeedbackText,
   rowKeyPlan,
   rowTitle,
+  resultGlyph,
   rowResultMark,
   settledMark,
-  isRowTabRunning,
-  hasRunningMark,
   statusKeyPlan,
   statusKeyRows,
   statusSelected,
@@ -386,10 +383,9 @@ type ClosedLine = {
   id: string
   title: string
   at: number
-  how: Closed['how']
-  outcome: string
   outcomeLabel: string
   delivery: ClosedDelivery
+  mark: ResultMark
 }
 
 type Group = { kind: FoldKind; title: string; mark?: Lead; rows: RowView[]; closed: ClosedLine[] }
@@ -414,7 +410,7 @@ function closedLines(d: ClosedLine): Line {
     ...blankLine(closedId(d.id)),
     depth: 1,
     lead: null,
-    mark: closedMark(closedState(d), d.delivery),
+    mark: d.mark,
     title: d.title,
     isDim: true,
     age: d.at,
@@ -525,10 +521,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
   const { prs, lastActions, turns } = screen.view
   const isSent = threadSentIn(lastActions)
   const presses = { lastActions, turns, now }
-  const waits = prRowWaits(
-    prs.drawn.filter(d => d.state.is === 'open').map(d => d.pr),
-    lastActions,
-  )
+  const waits = prRowWaits(openPrViews(prs.drawn), lastActions)
   const isWaiting = (id: string) => waits.some(w => w.id === id && w.isWaiting)
   const markLead = (mark: PrRowMark): Lead => ({
     text: mark.isRunning ? runningMark(now) : mark.text,
@@ -631,12 +624,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       })
     }
   }
-  const tabButtons = prButtons(
-    prTabActions(
-      prs.drawn.filter(d => isDrawnInPlace(d, ui.shownSince)),
-      prs.branchRef,
-    ),
-  )
+  const tabButtons = prButtons(prs.tabActions)
   if (tabButtons.length > 0)
     out.push({
       kind: 'row',
@@ -774,12 +762,12 @@ function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button, 
 
     return { ui: { ...ui, focus: null, resuming: { stopAt: stop.at, is: 'sending' } }, press }
   }
-  if (!('ref' in press) && press.action === 'type') {
+  if (!isPrPress(press) && press.action === 'type') {
     const draft = ui.drafts[line.id] ?? { text: '', since: now }
 
     return { ui: { ...ui, typing: line.id, focus: null, drafts: { ...ui.drafts, [line.id]: draft } } }
   }
-  if (!('ref' in press) && press.action === 'discard') {
+  if (!isPrPress(press) && press.action === 'discard') {
     const { [line.id]: _discarded, ...drafts } = ui.drafts
     const discarded = { ...keptDiscards(ui.discarded, ui.shownSince), [line.id]: now }
 
@@ -972,19 +960,6 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
   )
 }
 
-/** Whether the panel shows a running mark, whose frame moves with the clock: on the Status, or on a row tab. */
-export function isRunningMarkShown(screen: PanelScreen, ui: PanelUi): boolean {
-  if (ui.isHelpShown) return MARK_LEGEND.some(m => m.isRunning)
-  if (!isRowTab(ui.tab)) return hasRunningMark(screen.view.statusPage)
-  if (ui.tab === 'prs')
-    return isPrTabRunning(
-      screen.view.prs.drawn.filter(d => d.state.is === 'open').map(d => d.pr),
-      screen.view.lastActions,
-    )
-
-  return isRowTabRunning(screen.view, ui.tab, kind => ui.unfolded.includes(kind))
-}
-
 /** The notice for a press the row cannot show: a failed send, or a press whose row had changed. */
 export function noticeFor(outcome: { error: string | null; note: 'stale' | null }, now: number): PanelUi['notice'] {
   const text = outcome.error ?? (outcome.note ? noteText() : null)
@@ -1140,17 +1115,20 @@ function leadText(lead: Lead | null, s: Style): string {
   return `${lead.tone ? s.tone(lead.tone, padded) : padded} `
 }
 
-/** A result mark and the space after it. A blank mark keeps its place, so the result stays put when its mark arrives. */
+/** A result mark and the space after it. */
 function markText(mark: ResultMark | null, now: number, s: Style): string {
   if (mark === null) return ''
 
-  const glyph = mark.isRunning ? runningMark(now) : mark.text || ' '
-
-  return `${mark.tone ? s.tone(mark.tone, glyph) : s.dim(glyph)} `
+  return `${feedbackPaint(mark.tone ?? null, s)(resultGlyph(mark, now))} `
 }
 
 function feedbackPaint(tone: Tone | null, s: Style) {
   return (text: string) => (tone ? s.tone(tone, text) : s.dim(text))
+}
+
+/** A Status row's or legend entry's mark. A running mark draws the frame at `now`. */
+function paintMark(m: { mark: string; tone: Tone | null; isRunning: boolean }, now: number, s: Style): string {
+  return feedbackPaint(m.tone, s)(m.isRunning ? runningMark(now) : m.mark)
 }
 
 function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
@@ -1326,8 +1304,7 @@ const pageFocus = (row: StatusRow, ui: PanelUi): number =>
 function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string[] {
   const { width, now, style: s } = d
   if (row.kind === 'subject') {
-    const glyph = row.isRunning ? runningMark(now) : row.mark
-    const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph)
+    const mark = paintMark(row, now, s)
     const out = pageLine(d, PAGE_MARK_AT, mark, row.name, t => t, { stall: row.stall, text: row.text })
     const room = pageRoom(PAGE_MARK_AT, width)
     if (row.merged)
@@ -1346,8 +1323,7 @@ function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string[] {
     return row.hasChildren ? withTree(out, null, '│', s) : out
   }
   if (row.kind === 'child') {
-    const glyph = row.isRunning ? runningMark(now) : row.mark
-    const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph)
+    const mark = paintMark(row, now, s)
     const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, { stall: row.stall })
 
     return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out
@@ -1358,9 +1334,7 @@ function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string[] {
     return withTree([' '.repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s)
   }
   if (row.kind === 'look') return [pageRule(width, s, row.text)]
-  const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark)
-
-  return pageLine(d, PAGE_MARK_AT, mark, row.text, s.dim)
+  return pageLine(d, PAGE_MARK_AT, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim)
 }
 
 type TabCell = {
@@ -1511,8 +1485,7 @@ export function drawPanel(
         ),
       )
     else if (e.kind === 'legend') {
-      const glyph = e.entry.isRunning ? runningMark(now) : e.entry.mark
-      const mark = e.entry.tone ? style.tone(e.entry.tone, glyph) : style.dim(glyph)
+      const mark = paintMark(e.entry, now, style)
       body.push(
         ...indented(e.entry.words, PAGE_TEXT_AT, width, Infinity, style.dim).map((l, n) =>
           n === 0 ? `${' '.repeat(PAGE_MARK_AT)}${mark} ${l.trimStart()}` : l,

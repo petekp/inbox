@@ -4,9 +4,7 @@ import { ActionButton, RowActions, ledgerActions, Icon } from './row-actions'
 import type { ComponentChildren, JSX } from 'preact'
 import type { IconName } from './row-actions'
 
-import { closedState } from '../../hooks/ledger'
 import { ago, clipLabel } from '../../hooks/text'
-import type { ClosedState } from '../../hooks/ledger'
 import { cancelledMarkShape } from '../../hooks/marks'
 import {
   canUndoRefused,
@@ -15,7 +13,6 @@ import {
   HELP_COPY,
   helpKeys,
   MARK_LEGEND,
-  closedMark,
   mergedLine,
   nameBeforeStall,
   STATUS_TEXT_LINES,
@@ -115,13 +112,13 @@ import {
   prRowWaits,
   prsEmptyText,
   prPressEffect,
-  prTabActions,
   prRankText,
   prRefreshFailedText,
   prThreadId,
   threadActions,
   threadRowText,
   threadSentIn,
+  openPrViews,
 } from '../../hooks/pr-tab'
 import type { DrawnPr, PrAction, PrPress } from '../../hooks/pr-tab'
 import { commentParts, failingChecks, readableComment, readiness, threadWhere, waitingThreads } from '../../hooks/prs'
@@ -716,12 +713,7 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
 }
 
 function tabWaits(v: View, t: Tab): RowWait[] {
-  return t === 'prs'
-    ? prRowWaits(
-        v.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr),
-        v.lastActions,
-      )
-    : listWaits(v)[t]
+  return t === 'prs' ? prRowWaits(openPrViews(v.prs.drawn), v.lastActions) : listWaits(v)[t]
 }
 
 function openAfterClose(v: View, id: string) {
@@ -907,7 +899,7 @@ function prKey(rowId: string, pr: PrView, a: PrAction): Key {
 
 /** The PRs tab's own buttons, drawn after its PR blocks. */
 function prTabKeys(v: View): Key[] {
-  return prTabActions(prPlan(v).blocks, v.prs.branchRef).map(a => ({
+  return v.prs.tabActions.map(a => ({
     ...(a.hotkey ? { hotkey: a.hotkey } : {}),
     label: a.label,
     emphasis: a.emphasis,
@@ -1647,7 +1639,7 @@ function itemsClosed(v: View, kind: 'question' | 'task', entries: Entry[]): Clos
     id: d.id,
     ask: d.ask,
     outcomeLabel: d.outcomeLabel,
-    state: closedState(d),
+    mark: d.mark,
     at: d.at,
     delivery: d.delivery,
   }))
@@ -1702,7 +1694,7 @@ type ClosedLine = {
   id: string
   ask: string
   outcomeLabel: string
-  state: ClosedState
+  mark: ResultMark
   at: number
   delivery: Parameters<typeof settledLabel>[1]
 }
@@ -1764,7 +1756,7 @@ function GroupEnd({
           {closed.map(d => (
             <div class="entry" key={`closed-${d.id}`}>
               <div class="row">
-                <ResultMarkView mark={closedMark(d.state, d.delivery)} />
+                <ResultMarkView mark={d.mark} />
                 <div class="content tight">
                   <div class="muted">{d.ask}</div>
                   <div class="outcome">{settledLabel(d.outcomeLabel, d.delivery)}</div>
@@ -1847,7 +1839,7 @@ function Findings({ v, lists, now }: { v: View; lists: Lists; now: number }) {
       id: f.id,
       ask: f.title,
       outcomeLabel: f.outcomeLabel,
-      state: closedState(f),
+      mark: f.mark,
       at: f.closedAt,
       delivery: f.delivery,
     }))

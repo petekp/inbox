@@ -446,7 +446,7 @@ function checkHooksModules() {
       const hookParameters = new Set()
       const permissionNames = new Map()
       for (const { event, hook, registration } of registrations) {
-        const isInline = hook && (ts.isArrowFunction(hook) || ts.isFunctionExpression(hook))
+        const isInline = hook && isFunctionExpression(hook)
         if (isInline) for (const p of hook.parameters) hookParameters.add(p.name.getStart())
         if (!Object.hasOwn(PERMISSION_HOOKS, event)) continue
         if (!isInline) {

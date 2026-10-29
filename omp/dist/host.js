@@ -1932,12 +1932,15 @@ function delegatesSettled(o, states, at) {
   return finished.reduce((x, c) => subjectTouched(x, c.subjectId, at), { ...o, children });
 }
 function activityGate() {
-  const saved = new Map;
-  return (ref, at) => {
-    const last = saved.get(ref);
-    if (last !== undefined && at - last < ACTIVITY_SAVE_MS)
+  return onceEvery(ACTIVITY_SAVE_MS);
+}
+function onceEvery(ms) {
+  const passed = new Map;
+  return (key, at) => {
+    const last = passed.get(key);
+    if (last !== undefined && at - last < ms)
       return false;
-    saved.set(ref, at);
+    passed.set(key, at);
     return true;
   };
 }
@@ -3006,7 +3009,7 @@ function rowFeedbackText(row, look) {
     return null;
   if (!isHandedOffDone(row))
     return feedbackText(f, look);
-  return f.is === "done" ? f.label : feedbackText(f, look).replace(/^\u2713 /, "");
+  return f.is === "done" ? f.label : f.is === "local" ? localText(f.result, look) : feedbackText(f, look);
 }
 function isHandedOffDone(row) {
   const f = row.feedback;
@@ -3239,14 +3242,14 @@ function localText(r, look) {
   if (r.state === "failed")
     return text;
   const isCommand = parts.some((p) => p.kind === "copy" && p.isCommand);
-  return `\u2713 ${text}${isCommand ? `. ${runIt(look)}` : ""}`;
+  return `${text}${isCommand ? `. ${runIt(look)}` : ""}`;
 }
 function feedbackText(f, look) {
   switch (f.is) {
     case "note":
       return noteText();
     case "local":
-      return localText(f.result, look);
+      return f.result.state === "done" ? `\u2713 ${localText(f.result, look)}` : localText(f.result, look);
     case "sending":
       return f.label;
     case "queued":
@@ -3277,12 +3280,6 @@ function closedMark(state, delivery) {
   if (isSendMoving(delivery))
     return RUNNING_RESULT;
   return { text: delivery === null ? CLOSED_MARKS[state] : "", isRunning: false };
-}
-function isRowTabRunning(v, tab, isUnfolded) {
-  const rows = tab === "needsYou" ? [...v.needsYou.questions, ...v.needsYou.tasks] : v.findings.rows;
-  const settled = new Set(settledRowIds(rows));
-  const closed = tab === "needsYou" ? NEEDS_YOU_GROUPS.flatMap((g) => isUnfolded(g.kind) ? closedShown(v.needsYou.closed[g.list], settled) : []) : Object.keys(FINDING_GROUPS).flatMap((kind) => isUnfolded(kind) ? closedShown(v.findings.closed.filter((f) => f.kind === kind), settled) : []);
-  return rows.some((r) => rowResultMark(r)?.isRunning) || closed.some((d) => closedMark(closedState(d), d.delivery).isRunning);
 }
 function canUndoRefused(delivery) {
   return delivery !== null && typeof delivery === "object" && delivery.canUndo;
@@ -3363,6 +3360,9 @@ function hasRunningMark(page) {
 }
 function runningMark(now) {
   return RUNNING_FRAMES[Math.floor(now / RUNNING_FRAME_MS) % RUNNING_FRAMES.length];
+}
+function resultGlyph(mark, now) {
+  return mark.isRunning ? runningMark(now) : mark.text || " ";
 }
 function isItemAfterItem(row, prev) {
   const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
@@ -3781,20 +3781,21 @@ function inboxView({
     steps: []
   }));
   const held = new Set([...questionRows, ...taskRows, ...findingRows].filter((r) => r.state.is === "held").map((r) => r.id));
-  const closed = [...ledger.closed].filter((d) => !held.has(d.id)).reverse().map((d) => ({
-    ...d,
-    outcomeLabel: outcomeLabel(d),
-    delivery: d.doneNotification?.error !== undefined ? { error: d.doneNotification.error, canUndo: isUndoable(d) } : (d.how === "answered" || d.how === "done") && lastActions[d.id]?.kind === "mark" && lastActions[d.id]?.at === d.at ? pendingDeliveryAt(lastActions[d.id], now) : null
-  }));
+  const closed = [...ledger.closed].filter((d) => !held.has(d.id)).reverse().map((d) => {
+    const delivery = d.doneNotification?.error !== undefined ? { error: d.doneNotification.error, canUndo: isUndoable(d) } : (d.how === "answered" || d.how === "done") && lastActions[d.id]?.kind === "mark" && lastActions[d.id]?.at === d.at ? pendingDeliveryAt(lastActions[d.id], now) : null;
+    return { ...d, outcomeLabel: outcomeLabel(d), delivery, mark: closedMark(closedState(d), delivery) };
+  });
   const fixesSent = ledger.findings.filter((f) => isFixSent(lastActions[f.id])).map((f) => {
     const outcome = fixLabel(f);
+    const delivery = pendingDeliveryAt(lastActions[f.id], now);
     return {
       ...f,
       how: "answered",
       outcome,
       outcomeLabel: outcomeLabel({ ...f, outcome }),
       closedAt: lastActions[f.id].at,
-      delivery: pendingDeliveryAt(lastActions[f.id], now)
+      delivery,
+      mark: closedMark(closedState({ how: "answered", outcome }), delivery)
     };
   });
   return {
@@ -3808,7 +3809,7 @@ function inboxView({
       count: findingRows.filter(isWaitingRow).length,
       rows: findingRows,
       closed: [
-        ...ledger.closedFindings.filter((f) => !held.has(f.id)).map((f) => ({ ...f, outcomeLabel: outcomeLabel(f), delivery: null })),
+        ...ledger.closedFindings.filter((f) => !held.has(f.id)).map((f) => ({ ...f, outcomeLabel: outcomeLabel(f), delivery: null, mark: closedMark(closedState(f), null) })),
         ...fixesSent
       ].sort((a, b) => b.closedAt - a.closedAt)
     },
@@ -3869,14 +3870,7 @@ function herdrStatuses(stdout) {
   }
 }
 function herdrCheckGate() {
-  const checked = new Map;
-  return (session, now) => {
-    const last = checked.get(session);
-    if (last !== undefined && now - last < HERDR_CHECK_MS)
-      return false;
-    checked.set(session, now);
-    return true;
-  };
+  return onceEvery(HERDR_CHECK_MS);
 }
 function stopLine(stop) {
   switch (stop.kind) {
@@ -4184,6 +4178,9 @@ function isViewKept(prState, links, lastActions, ref, shownSince) {
   const at = dismissedAt(lastActions, ref);
   return keepsView(prState, links, ref) || at !== null && isShownSince(at, shownSince);
 }
+function openPrViews(drawn) {
+  return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
+}
 var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
 function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
   const ranked = links.prOrder?.refs ?? [];
@@ -4243,6 +4240,10 @@ function prPageEffect(pr) {
 function logEffect(pr, check) {
   return { kind: "open", target: check.url ?? pr.url, name: check.url ? "the log" : `PR #${pr.number}` };
 }
+var PR_FIX_LABELS = {
+  "pr-conflicts": "Resolve conflicts",
+  "check-fix": "Fix"
+};
 function isPrFixPress(p) {
   return p.action === "pr-conflicts" || p.action === "check-fix";
 }
@@ -4331,7 +4332,7 @@ function checkActions(pr, c, presses) {
     ...retryAction(prRetryOf(row.last, pr.ref, null, c.name)),
     {
       press: { action: "check-fix", ...on },
-      label: again(row, "check-fix", "Fix"),
+      label: again(row, "check-fix", PR_FIX_LABELS["check-fix"]),
       kind: "handoff",
       emphasis: "primary",
       hotkey: "a"
@@ -4361,7 +4362,7 @@ function prBlockActions(pr, isThreadSent, branchRef, presses) {
     ...pr.state === "OPEN" && pr.mergeable === "CONFLICTING" ? [
       {
         press: { action: "pr-conflicts", ref: pr.ref },
-        label: again(row, "pr-conflicts", "Resolve conflicts"),
+        label: again(row, "pr-conflicts", PR_FIX_LABELS["pr-conflicts"]),
         kind: "handoff"
       }
     ] : [],
@@ -4479,7 +4480,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
       if (pr.state !== "OPEN" || pr.mergeable !== "CONFLICTING")
         return stale;
       return applied({
-        lasts: { [markId]: record(markId, "handoff", p.action, "Resolve conflicts") },
+        lasts: { [markId]: record(markId, "handoff", p.action, PR_FIX_LABELS[p.action]) },
         effects: [send(prompts.resolve(pr))]
       });
     case "pr-address-all": {
@@ -4522,7 +4523,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
         return stale;
       const id = prCheckId(pr, check);
       return applied({
-        lasts: { [id]: record(id, "handoff", p.action, "Fix") },
+        lasts: { [id]: record(id, "handoff", p.action, PR_FIX_LABELS[p.action]) },
         effects: [send(prompts.fixCheck(pr, check))]
       });
     }
@@ -4533,6 +4534,63 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
       return local(prCheckId(pr, check), "Open log", logEffect(pr, check));
     }
   }
+}
+
+// ../hooks/arrivals.ts
+function recordRows(seen, listed) {
+  const next = { ...seen };
+  const added = {};
+  for (const tab of Object.keys(listed)) {
+    const ids = listed[tab];
+    const before = seen[tab];
+    added[tab] = ids && before ? ids.filter((id) => !before.has(id)) : [];
+    if (ids)
+      next[tab] = new Set(ids);
+  }
+  return { seen: next, added };
+}
+var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
+function listedRowIds(v) {
+  return {
+    needsYou: [...v.needsYou.questions, ...v.needsYou.tasks].map((r) => r.id),
+    findings: v.findings.rows.map((r) => r.id)
+  };
+}
+function openRowIds(v) {
+  const open = (rows) => rows.filter((r) => r.state.is !== "settled").map((r) => r.id);
+  return { needsYou: open([...v.needsYou.questions, ...v.needsYou.tasks]), findings: open(v.findings.rows) };
+}
+function closedGroups(v, tab, isUnfolded) {
+  return tab === "findings" ? Object.keys(FINDING_GROUPS).map((kind) => ({
+    isUnfolded: isUnfolded(kind),
+    rows: v.findings.closed.filter((f) => f.kind === kind)
+  })) : NEEDS_YOU_GROUPS.map((g) => ({ isUnfolded: isUnfolded(g.kind), rows: v.needsYou.closed[g.list] }));
+}
+function isRowTabRunning(v, tab, isUnfolded) {
+  const rows = tab === "needsYou" ? [...v.needsYou.questions, ...v.needsYou.tasks] : v.findings.rows;
+  const settled = new Set(settledRowIds(rows));
+  const closed = closedGroups(v, tab, isUnfolded).flatMap((g) => g.isUnfolded ? closedShown(g.rows, settled) : []);
+  return rows.some((r) => rowResultMark(r)?.isRunning) || closed.some((d) => d.mark.isRunning);
+}
+function isTabEmpty({
+  rows,
+  settled,
+  closed,
+  hasBlocker
+}) {
+  return !hasBlocker && !rows.some((r) => r.state.is !== "settled" || settled.has(r.id)) && !closed.some((g) => g.isUnfolded && g.rows.some((r) => !settled.has(r.id)));
+}
+function followTo(tabs, shown, isShownEmpty, rows) {
+  return isShownEmpty ? tabs.find((t) => t !== shown && rows[t].length > 0) ?? null : null;
+}
+function prRowIds(drawn) {
+  return drawn.flatMap(({ pr, state }) => [
+    prMarkId(pr.ref),
+    ...state.is === "settled" ? [] : [...waitingThreads(pr).map((t) => prThreadId(pr, t)), ...failingChecks(pr).map((c) => prCheckId(pr, c))]
+  ]);
+}
+function isPrsTabEmpty(drawnCount, isFetching) {
+  return drawnCount === 0 && !isFetching;
 }
 
 // ../hooks/tools.ts
@@ -5222,6 +5280,15 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     statusPage: statusPage(s, now)
   };
 }
+function showsRunningMark(v, shown, isHelpShown, isUnfolded) {
+  if (isHelpShown)
+    return MARK_LEGEND.some((m) => m.isRunning);
+  if (!isRowTab(shown))
+    return hasRunningMark(v.statusPage);
+  if (shown === "prs")
+    return isPrTabRunning(openPrViews(v.prs.drawn), v.lastActions);
+  return isRowTabRunning(v, shown, isUnfolded);
+}
 function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
   const drawn = drawnPrs(s.prViews, s.ledger, lastActions, now, settleWindowMs, {
     shownSince,
@@ -5234,6 +5301,7 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
     count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger),
     orderText: prOrderText(s.ledger.prOrder, drawn, now),
+    tabActions: prTabActions(drawn, s.prViews.branchRef),
     isGhSignedOut: s.prViews.isGhSignedOut === true
   };
 }
@@ -5534,7 +5602,6 @@ async function wakeForDone(host, current) {
     return outcome.state === "rejected" ? { ...after, ledger: refuseDoneNotification(after.ledger, sending.deliveryId, outcome.reason) } : after;
   });
 }
-var FIX_LABELS = { "pr-conflicts": "Resolve conflicts", "check-fix": "Fix" };
 function withoutCheck(s, check) {
   const result = check ? s.lastActions[check.rowId]?.result : undefined;
   if (!check || result?.at !== check.pendingAt || result.pressId !== check.pressId)
@@ -5558,7 +5625,7 @@ async function checkPrFirst(host, p, rowId, pressId, holds) {
       ...s,
       lastActions: {
         ...s.lastActions,
-        [rowId]: localLast(before, { action: p.action, text: FIX_LABELS[p.action] }, pending)
+        [rowId]: localLast(before, { action: p.action, text: PR_FIX_LABELS[p.action] }, pending)
       }
     };
   });
@@ -5613,7 +5680,7 @@ async function startPress(host, p, isStale, holds) {
       await host.update((s) => ({ ...s, ledger: f(s.ledger) }));
     }
   };
-  const check = "ref" in p && isPrFixPress(p) && !isStale ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err) => {
+  const check = isPrPress(p) && isPrFixPress(p) && !isStale ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err) => {
     error = `Not sent: ${err instanceof Error ? err.message : String(err)}`;
     return "unread";
   }) : null;
@@ -5696,7 +5763,7 @@ async function startPress(host, p, isStale, holds) {
         isUnconfirmed = true;
       }
       await runLocalEffects(effectHost, r.effects, rowId, r.lasts[rowId]?.result);
-      return { copy, error, note, isUnconfirmed, isRowFailed, wakesForDone: !("ref" in p) && p.action === "done" };
+      return { copy, error, note, isUnconfirmed, isRowFailed, wakesForDone: !isPrPress(p) && p.action === "done" };
     }
   };
 }
@@ -5811,57 +5878,6 @@ function openTarget2(run, target, root, home) {
 }
 // package.json
 var version = "0.2.14";
-
-// ../hooks/arrivals.ts
-function recordRows(seen, listed) {
-  const next = { ...seen };
-  const added = {};
-  for (const tab of Object.keys(listed)) {
-    const ids = listed[tab];
-    const before = seen[tab];
-    added[tab] = ids && before ? ids.filter((id) => !before.has(id)) : [];
-    if (ids)
-      next[tab] = new Set(ids);
-  }
-  return { seen: next, added };
-}
-var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
-function listedRowIds(v) {
-  return {
-    needsYou: [...v.needsYou.questions, ...v.needsYou.tasks].map((r) => r.id),
-    findings: v.findings.rows.map((r) => r.id)
-  };
-}
-function openRowIds(v) {
-  const open = (rows) => rows.filter((r) => r.state.is !== "settled").map((r) => r.id);
-  return { needsYou: open([...v.needsYou.questions, ...v.needsYou.tasks]), findings: open(v.findings.rows) };
-}
-function closedGroups(v, tab, isUnfolded) {
-  return tab === "findings" ? Object.keys(FINDING_GROUPS).map((kind) => ({
-    isUnfolded: isUnfolded(kind),
-    rows: v.findings.closed.filter((f) => f.kind === kind)
-  })) : NEEDS_YOU_GROUPS.map((g) => ({ isUnfolded: isUnfolded(g.kind), rows: v.needsYou.closed[g.list] }));
-}
-function isTabEmpty({
-  rows,
-  settled,
-  closed,
-  hasBlocker
-}) {
-  return !hasBlocker && !rows.some((r) => r.state.is !== "settled" || settled.has(r.id)) && !closed.some((g) => g.isUnfolded && g.rows.some((r) => !settled.has(r.id)));
-}
-function followTo(tabs, shown, isShownEmpty, rows) {
-  return isShownEmpty ? tabs.find((t) => t !== shown && rows[t].length > 0) ?? null : null;
-}
-function prRowIds(drawn) {
-  return drawn.flatMap(({ pr, state }) => [
-    prMarkId(pr.ref),
-    ...state.is === "settled" ? [] : [...waitingThreads(pr).map((t) => prThreadId(pr, t)), ...failingChecks(pr).map((c) => prCheckId(pr, c))]
-  ]);
-}
-function isPrsTabEmpty(drawnCount, isFetching) {
-  return drawnCount === 0 && !isFetching;
-}
 
 // src/panel.ts
 var INITIAL_UI = {
@@ -5995,7 +6011,7 @@ function closedLines(d) {
     ...blankLine(closedId(d.id)),
     depth: 1,
     lead: null,
-    mark: closedMark(closedState(d), d.delivery),
+    mark: d.mark,
     title: d.title,
     isDim: true,
     age: d.at,
@@ -6097,7 +6113,7 @@ function prEntries(screen, ui, now) {
   const { prs, lastActions, turns } = screen.view;
   const isSent = threadSentIn(lastActions);
   const presses = { lastActions, turns, now };
-  const waits = prRowWaits(prs.drawn.filter((d) => d.state.is === "open").map((d) => d.pr), lastActions);
+  const waits = prRowWaits(openPrViews(prs.drawn), lastActions);
   const isWaiting = (id) => waits.some((w) => w.id === id && w.isWaiting);
   const markLead = (mark) => ({
     text: mark.isRunning ? runningMark(now) : mark.text,
@@ -6205,7 +6221,7 @@ function prEntries(screen, ui, now) {
       });
     }
   }
-  const tabButtons = prButtons(prTabActions(prs.drawn.filter((d) => isDrawnInPlace(d, ui.shownSince)), prs.branchRef));
+  const tabButtons = prButtons(prs.tabActions);
   if (tabButtons.length > 0)
     out.push({
       kind: "row",
@@ -6310,11 +6326,11 @@ function activate(screen, ui, line, button, now) {
       return { ui };
     return { ui: { ...ui, focus: null, resuming: { stopAt: stop.at, is: "sending" } }, press };
   }
-  if (!("ref" in press) && press.action === "type") {
+  if (!isPrPress(press) && press.action === "type") {
     const draft = ui.drafts[line.id] ?? { text: "", since: now };
     return { ui: { ...ui, typing: line.id, focus: null, drafts: { ...ui.drafts, [line.id]: draft } } };
   }
-  if (!("ref" in press) && press.action === "discard") {
+  if (!isPrPress(press) && press.action === "discard") {
     const { [line.id]: _discarded, ...drafts } = ui.drafts;
     const discarded = { ...keptDiscards(ui.discarded, ui.shownSince), [line.id]: now };
     return { ui: { ...ui, focus: null, drafts, discarded } };
@@ -6465,15 +6481,6 @@ function isAnimating(screen, ui, now) {
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS;
   return rows.some((r) => r.state.is === "settled" && r.state.canUndo) || view.prs.drawn.some((p) => p.state.is === "settled" && p.state.canUndo) || isPressMoving || isNoticeShown;
 }
-function isRunningMarkShown(screen, ui) {
-  if (ui.isHelpShown)
-    return MARK_LEGEND.some((m) => m.isRunning);
-  if (!isRowTab(ui.tab))
-    return hasRunningMark(screen.view.statusPage);
-  if (ui.tab === "prs")
-    return isPrTabRunning(screen.view.prs.drawn.filter((d) => d.state.is === "open").map((d) => d.pr), screen.view.lastActions);
-  return isRowTabRunning(screen.view, ui.tab, (kind) => ui.unfolded.includes(kind));
-}
 function noticeFor(outcome, now) {
   const text = outcome.error ?? (outcome.note ? noteText() : null);
   return text === null ? null : { text, at: now, isError: outcome.error !== null };
@@ -6592,11 +6599,13 @@ function leadText(lead, s) {
 function markText(mark, now, s) {
   if (mark === null)
     return "";
-  const glyph = mark.isRunning ? runningMark(now) : mark.text || " ";
-  return `${mark.tone ? s.tone(mark.tone, glyph) : s.dim(glyph)} `;
+  return `${feedbackPaint(mark.tone ?? null, s)(resultGlyph(mark, now))} `;
 }
 function feedbackPaint(tone, s) {
   return (text) => tone ? s.tone(tone, text) : s.dim(text);
+}
+function paintMark(m, now, s) {
+  return feedbackPaint(m.tone, s)(m.isRunning ? runningMark(now) : m.mark);
 }
 function drawLine(line, isSelected, d) {
   const { ui, width, now, style: s } = d;
@@ -6702,8 +6711,7 @@ var pageFocus = (row, ui) => ui.focus?.rowId === row.id ? Math.min(ui.focus.inde
 function drawPageRow(row, d, isSelected = false) {
   const { width, now, style: s } = d;
   if (row.kind === "subject") {
-    const glyph = row.isRunning ? runningMark(now) : row.mark;
-    const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph);
+    const mark = paintMark(row, now, s);
     const out = pageLine(d, PAGE_MARK_AT, mark, row.name, (t) => t, { stall: row.stall, text: row.text });
     const room = pageRoom(PAGE_MARK_AT, width);
     if (row.merged)
@@ -6714,8 +6722,7 @@ function drawPageRow(row, d, isSelected = false) {
     return row.hasChildren ? withTree(out, null, "\u2502", s) : out;
   }
   if (row.kind === "child") {
-    const glyph = row.isRunning ? runningMark(now) : row.mark;
-    const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph);
+    const mark = paintMark(row, now, s);
     const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, { stall: row.stall });
     return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out;
   }
@@ -6725,8 +6732,7 @@ function drawPageRow(row, d, isSelected = false) {
   }
   if (row.kind === "look")
     return [pageRule(width, s, row.text)];
-  const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark);
-  return pageLine(d, PAGE_MARK_AT, mark, row.text, s.dim);
+  return pageLine(d, PAGE_MARK_AT, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim);
 }
 var TAB_FORMS = [{ isBracketed: true }, { isBracketed: false }];
 function tabCell(t, name, form, s) {
@@ -6810,8 +6816,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
     else if (e.kind === "key")
       body.push(...indented(e.key.does, 1 + e.column, width, Infinity, style.dim).map((l, n) => n === 0 ? ` ${style.bold(e.key.keys.padEnd(e.column))}${l.trimStart()}` : l));
     else if (e.kind === "legend") {
-      const glyph = e.entry.isRunning ? runningMark(now) : e.entry.mark;
-      const mark = e.entry.tone ? style.tone(e.entry.tone, glyph) : style.dim(glyph);
+      const mark = paintMark(e.entry, now, style);
       body.push(...indented(e.entry.words, PAGE_TEXT_AT, width, Infinity, style.dim).map((l, n) => n === 0 ? `${" ".repeat(PAGE_MARK_AT)}${mark} ${l.trimStart()}` : l));
     } else if (e.kind === "note")
       body.push(...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : style.dim));
@@ -6902,7 +6907,7 @@ function createPanel(deps) {
       timers.stop(animation);
       animation = null;
     }
-    const hasFrames = screen !== null && isRunningMarkShown(screen, ui);
+    const hasFrames = screen !== null && showsRunningMark(screen.view, ui.tab, ui.isHelpShown, (kind) => ui.unfolded.includes(kind));
     if (hasFrames && frames === null)
       frames = timers.every(() => deps.requestRender(), RUNNING_FRAME_MS);
     if (!hasFrames && frames !== null) {
@@ -6943,7 +6948,7 @@ function createPanel(deps) {
       return resume();
     const rowId = pressRowId(p);
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now());
-    const sentDraft = !("ref" in p) && p.action === "type" ? ui.drafts[p.id] : undefined;
+    const sentDraft = !isPrPress(p) && p.action === "type" ? ui.drafts[p.id] : undefined;
     const outcome = await source.press(p, holdsOf(ui)).catch((err) => ({
       error: err instanceof Error ? err.message : String(err),
       note: null,

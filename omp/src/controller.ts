@@ -1,8 +1,9 @@
 import { HERDR_CHECK_MS } from '../../hooks/herdr'
-import { pressRowId } from '../../hooks/pr-tab'
+import { isPrPress, pressRowId } from '../../hooks/pr-tab'
 import type { PrPress } from '../../hooks/pr-tab'
 import { isPressConfirmed } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
+import { showsRunningMark } from '../../hooks/session'
 import { READING_TEXT, compareEndsAt, RUNNING_FRAME_MS } from '../../hooks/view'
 import type { Holds, ShownTab } from '../../hooks/view'
 import {
@@ -14,7 +15,6 @@ import {
   holdsOf,
   isAnimating,
   isLineWaiting,
-  isRunningMarkShown,
   noticeFor,
   tallestTabHeight,
 } from './panel'
@@ -95,7 +95,8 @@ export function createPanel(deps: PanelDeps): Panel {
       timers.stop(animation)
       animation = null
     }
-    const hasFrames = screen !== null && isRunningMarkShown(screen, ui)
+    const hasFrames =
+      screen !== null && showsRunningMark(screen.view, ui.tab, ui.isHelpShown, kind => ui.unfolded.includes(kind))
     if (hasFrames && frames === null) frames = timers.every(() => deps.requestRender(), RUNNING_FRAME_MS)
     if (!hasFrames && frames !== null) {
       timers.stop(frames)
@@ -137,7 +138,7 @@ export function createPanel(deps: PanelDeps): Panel {
     if (p.action === 'resume') return resume()
     const rowId = pressRowId(p)
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now())
-    const sentDraft = !('ref' in p) && p.action === 'type' ? ui.drafts[p.id] : undefined
+    const sentDraft = !isPrPress(p) && p.action === 'type' ? ui.drafts[p.id] : undefined
     const outcome = await source.press(p, holdsOf(ui)).catch((err: unknown) => ({
       error: err instanceof Error ? err.message : String(err),
       note: null,

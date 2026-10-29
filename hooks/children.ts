@@ -178,12 +178,17 @@ export function delegatesSettled(
  * `childWorked` alone.
  */
 export function activityGate(): (ref: Child['ref'], at: number) => boolean {
-  const saved = new Map<string, number>()
+  return onceEvery(ACTIVITY_SAVE_MS)
+}
 
-  return (ref, at) => {
-    const last = saved.get(ref)
-    if (last !== undefined && at - last < ACTIVITY_SAVE_MS) return false
-    saved.set(ref, at)
+/** Answers true for a key at `at` when it is the key's first ask, or `ms` after the last one it let through. */
+export function onceEvery(ms: number): (key: string, at: number) => boolean {
+  const passed = new Map<string, number>()
+
+  return (key, at) => {
+    const last = passed.get(key)
+    if (last !== undefined && at - last < ms) return false
+    passed.set(key, at)
 
     return true
   }

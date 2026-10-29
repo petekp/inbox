@@ -60,6 +60,7 @@ import {
   statusChanged,
   withLook,
   withNewPrRefs,
+  showsRunningMark,
 } from './session'
 import {
   activityGate,
@@ -100,13 +101,12 @@ import {
   fetchTracked,
   isDismissed,
   isPrPress,
-  olderPrsText,
+  openPrViews,
   prRankText,
   PR_GROUP_TITLES,
   PR_TONES,
   prBlockActions,
   prCheckId,
-  prTabActions,
   DISMISS_MERGED_ID,
   prMarkId,
   pressRowId,
@@ -114,7 +114,6 @@ import {
   prThreadId,
   threadActions,
   threadRowText,
-  isPrTabRunning,
   threadSentIn,
   ghNoticeOf,
   prsEmptyText,
@@ -137,7 +136,6 @@ import {
   KEPT_SESSIONS,
   applyExchangeUpdate,
   closeItem,
-  closedState,
   isBlankLedger,
   readKind,
   tasksRunBy,
@@ -220,7 +218,6 @@ import {
   tabName,
   canUndoRefused,
   CLOSED_MARKS,
-  closedMark,
   settledMark,
   settledTone,
   DEMO_NOTICE,
@@ -256,13 +253,12 @@ import {
   actionLabel,
   replyHint,
   rowTitle,
+  resultGlyph,
   rowResultMark,
-  isRowTabRunning,
   rowFeedbackText,
   ROW_COPY,
   READING_TEXT,
   rowsIn,
-  hasRunningMark,
   LOOK_TEXT,
   mergedLine,
   nameBeforeStall,
@@ -2168,7 +2164,7 @@ async function matchPaneEscape($: EngineInterface) {
 async function openTopRow($: EngineInterface) {
   const [{ view, ledger, prViews: prState, lastActions, now }, tab] = await Promise.all([drawnState($), readRowTab($)])
   if (tab === null) return
-  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
+  const prViews = openPrViews(view.prs.drawn)
   const ids = tabRowIds(view, prViews)[tab]
   const top = firstWaiting(tabWaits(tab, view, prViews, lastActions))
   if (top === null) await update($, SELECTION, s => ({ ...s, [tab]: NO_CURSOR }))
@@ -2520,16 +2516,7 @@ async function finishPendingUndoScroll($: EngineInterface) {
     const prs = drawn.view.prs.drawn
     const openId =
       cursor.id ??
-      (cursor.openedAt === 0
-        ? firstWaiting(
-            tabWaits(
-              tab,
-              drawn.view,
-              prs.filter(x => x.state.is === 'open').map(x => x.pr),
-              drawn.lastActions,
-            ),
-          )
-        : null)
+      (cursor.openedAt === 0 ? firstWaiting(tabWaits(tab, drawn.view, openPrViews(prs), drawn.lastActions)) : null)
     const isSettling = drawn.now < pending.expiresAt
     const baseKey = isSettling && pending.revealUndo ? pending.key : openId ? `view-${openId}` : null
     const block = isSettling && pending.revealUndo ? pending.block : 'start'
@@ -2554,7 +2541,7 @@ async function scrollToOpenRow($: EngineInterface, tab: Tab, surface?: RenderSur
       read($, SELECTION),
       drawnState($),
     ])
-    const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
+    const prViews = openPrViews(view.prs.drawn)
     const cursor = selection[tab]
     const id = cursor.id ?? (cursor.openedAt === 0 ? firstWaiting(tabWaits(tab, view, prViews, lastActions)) : null)
     if (revision !== undoScrollRevision) return
@@ -2574,7 +2561,7 @@ async function selectClicked($: EngineInterface, id: string) {
     read($, SELECTION),
   ])
   if (tab === null) return
-  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
+  const prViews = openPrViews(view.prs.drawn)
   const index = tabRowIds(view, prViews)[tab].indexOf(id)
   if (index < 0 || isGuarded(selection[tab].openedAt, now)) return
   // The Client leaves the drawing as its row opens, so the focus repair moves the focus to the row's first action.
@@ -2586,7 +2573,7 @@ async function selectClicked($: EngineInterface, id: string) {
 /** An Status row's View press: Asks shows with the ask selected and in view. */
 async function showAsk($: EngineInterface, askId: string) {
   const { view } = await drawnState($)
-  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
+  const prViews = openPrViews(view.prs.drawn)
   const index = Math.max(0, tabRowIds(view, prViews).needsYou.indexOf(askId))
   focusedKey = `select-${askId}`
   focusHint = null
@@ -2625,7 +2612,7 @@ function selectedIndex(ids: string[], cursor: Cursor, top: string | null, isSett
 
 async function openLeftRows($: EngineInterface) {
   const { view, now } = await drawnState($)
-  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
+  const prViews = openPrViews(view.prs.drawn)
   const ids = tabRowIds(view, prViews)
   const settled = new Set(settledRowIds(allRows(view)))
   let isMoved = false
@@ -2702,7 +2689,7 @@ async function followNewRows($: EngineInterface, isOpening = false) {
   ])
   const { prViews: prState, lastActions, stop, isDemo, isUnread, view } = drawn
   const prs = view.prs.drawn
-  const prViews = prs.filter(x => x.state.is === 'open').map(x => x.pr)
+  const prViews = openPrViews(prs)
   const ids = tabRowIds(view, prViews)
   if (isOpening) recordedRows = null
   const added = newRows(isDemo, {
@@ -2840,12 +2827,12 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   const wasWaiting = (await shownWaits($)).rows.some(r => r.id === rowId && r.isWaiting)
   if (await read($, DEMO)) return runDemoPress($, p, wasWaiting, undoRevision, surface)
   const now = await $.clock.now()
-  const draft = !('ref' in p) && p.action === 'type' ? (await read($, DRAFTS))[p.id] : undefined
+  const draft = !isPrPress(p) && p.action === 'type' ? (await read($, DRAFTS))[p.id] : undefined
   const keepReply = () =>
-    !('ref' in p) && p.action === 'type'
+    !isPrPress(p) && p.action === 'type'
       ? update($, DRAFTS, d => (d[p.id] ? d : { ...d, [p.id]: { text: p.text, since: draft?.since ?? now } }))
       : undefined
-  if (!('ref' in p) && p.action === 'type') {
+  if (!isPrPress(p) && p.action === 'type') {
     // A held row stays drawn by its draft's words once its field closes, until the press records its reply.
     await update($, DRAFTS, d => {
       const typed = d[p.id]
@@ -2888,9 +2875,9 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   const canRevealUndo = undoKey !== null && undoRevision === undoScrollRevision
   const { isMoved, undoBlock } = await openAfterClose($, rowId, wasWaiting, canRevealUndo)
   if (canRevealUndo) await keepUndoVisible($, undoKey, undoBlock, now, undoRevision)
-  if (!('ref' in p) && p.action === 'done') later($, SETTLED_MS, () => wakeForDone($))
-  if (!('ref' in p) && p.action === 'compare') void redrawAtCompareEnd($).catch(() => undefined)
-  if (!('ref' in p) && p.action === 'undo') await selectRestored($, p.id)
+  if (!isPrPress(p) && p.action === 'done') later($, SETTLED_MS, () => wakeForDone($))
+  if (!isPrPress(p) && p.action === 'compare') void redrawAtCompareEnd($).catch(() => undefined)
+  if (!isPrPress(p) && p.action === 'undo') await selectRestored($, p.id)
   // A success note clears SETTLED_MS after its effects finish, when its result is stamped, and a message still on its
   // way after QUEUED_AFTER_MS reads Queued from then. A fresh value is what redraws the pane at each.
   if (sends) later($, QUEUED_AFTER_MS, () => redraw($))
@@ -2929,7 +2916,7 @@ async function undoKeyAfterPress(
 
 async function shownWaits($: EngineInterface) {
   const [{ ledger, prViews: prState, lastActions, view, now }, tab] = await Promise.all([drawnState($), readRowTab($)])
-  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
+  const prViews = openPrViews(view.prs.drawn)
   if (tab === null) return { tab, rows: [], ids: [] }
 
   return {
@@ -2986,7 +2973,7 @@ async function runDemoPress(
 ) {
   const now = await $.clock.now()
   const rowId = pressRowId(p)
-  if (!('ref' in p) && p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
+  if (!isPrPress(p) && p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
   let applied = { stale: true } as Applied
   let sent = null as DemoSent | null
   const holds = await readHolds($)
@@ -3017,13 +3004,13 @@ async function runDemoPress(
   })
   const pressed = applied
   const reply = sent
-  if (!('ref' in p) && p.action === 'type')
+  if (!isPrPress(p) && p.action === 'type')
     await update($, DRAFTS, d => {
       if ('stale' in pressed) return { ...d, [p.id]: { text: p.text, since: d[p.id]?.since ?? now } }
       const { [p.id]: _sent, ...rest } = d
       return rest
     })
-  if (!('stale' in pressed) && !('ref' in p) && p.action === 'undo') await selectRestored($, p.id)
+  if (!('stale' in pressed) && !isPrPress(p) && p.action === 'undo') await selectRestored($, p.id)
   if (!('stale' in pressed)) {
     const undoKey = await undoKeyAfterPress($, p, surface)
     const canRevealUndo = undoKey !== null && undoRevision === undoScrollRevision
@@ -3148,9 +3135,10 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
   return { keys: keys.map(keyAction), more: more.map(keyAction) }
 }
 
-type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at' | 'how' | 'outcome'> & {
+type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at'> & {
   outcomeLabel: string
   delivery: Parameters<typeof settledLabel>[1]
+  mark: ResultMark
 }
 
 function desktopTabSizes(
@@ -4214,17 +4202,11 @@ export const register: Register = on => {
     const isStatusShown = savedPage === 'overview'
     const shownTab: ShownTab = isStatusShown ? 'overview' : tab
     const tabList = shownTabs(isNextBuild)
-    const isRunningMarkShown = isHelpShown
-      ? MARK_LEGEND.some(m => m.isRunning)
-      : isStatusShown
-        ? hasRunningMark(view.statusPage)
-        : tab === 'prs'
-          ? isPrTabRunning(
-              view.prs.drawn.flatMap(d => (d.state.is === 'settled' ? [] : [d.pr])),
-              lastActions,
-            )
-          : isRowTabRunning(view, tab, kind => unfolded.includes(kind))
-    if (look === 'terminal') animateRunningMarks($, isRunningMarkShown)
+    if (look === 'terminal')
+      animateRunningMarks(
+        $,
+        showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)),
+      )
     const undoEnd = lastUndoEnd(view)
     if (undoEnd !== null) redrawWhileUndoLasts($, undoEnd)
     // A hot reload keeps TYPING but empties openFields, so an open field takes its key and seed again here.
@@ -4298,12 +4280,11 @@ export const register: Register = on => {
 
     type Row = {
       id: string
-      view?: RowView
       /**
-       * An Asks or Finds row. The terminal draws it with no mark column, so its text starts at the tree's arm, and its
-       * result mark before its result. Desktop draws its result mark in the mark column.
+       * Set on an Asks or Finds row. The terminal draws it with no mark column, so its text starts at the tree's arm, and
+       * its result mark before its result. Desktop draws its result mark in the mark column.
        */
-      isUnmarked?: true
+      view?: RowView
       handle: string
       /** A Button takes no color, so this handle is Text and only the row's text selects it. */
       handleTone?: Tone
@@ -4334,7 +4315,6 @@ export const register: Register = on => {
       return {
         id: r.id,
         view: r,
-        isUnmarked: true,
         handle: '',
         ...(isHandedOff ? { fold: {} } : {}),
         title: rowTitle(r, look),
@@ -4372,7 +4352,6 @@ export const register: Register = on => {
       id: r.id,
       view: r,
       at: r.at ?? undefined,
-      isUnmarked: true,
       handle: '',
       ...(r.state.is === 'handedOff' ? { fold: {} } : {}),
       title: r.title,
@@ -4491,23 +4470,23 @@ export const register: Register = on => {
     }
 
     type Entry = DrawnEntry<Row>
-    // The Status draws no rows, so none are built while it shows.
+    // The Status and Help draw no rows, so none are built while either shows.
+    const isListShown = !isStatusShown && !isHelpShown
     const lists = drawnLists(
       view,
       () => true,
-      r => (isStatusShown ? null : r.item ? itemRow(r) : r.finding ? findingRow(r) : null),
+      r => (!isListShown ? null : r.item ? itemRow(r) : r.finding ? findingRow(r) : null),
     )
     const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({ ...g, entries: lists[g.list], rows: rowsIn(lists[g.list]) }))
     const findingEntries = lists.findings
-    const prGroups = (isStatusShown ? [] : shownPrs)
+    const prGroups = (isListShown ? shownPrs : [])
       .map(d => ({
         ...d,
         checks: d.state.is === 'settled' ? [] : failingChecks(d.pr).map(c => checkRow(d.pr, c)),
         threads: d.state.is === 'settled' ? [] : waitingThreads(d.pr).map(t => threadRow(d.pr, t)),
       }))
       .map(g => ({ ...g, rows: [...g.threads, ...g.checks] }))
-    const prTabKeys =
-      prGroups.length === 0 ? [] : prTabActions(prGroups, prState.branchRef).map(a => prKeyAction(a, 'tab'))
+    const prTabKeys = view.prs.tabActions.map(a => prKeyAction(a, 'tab'))
     const rows: Record<Tab, Row[]> = {
       needsYou: lists.byTab.needsYou,
       findings: lists.byTab.findings,
@@ -4527,17 +4506,8 @@ export const register: Register = on => {
     const ids = rows[tab].map(r => r.id)
     const indexOf = new Map(ids.map((id, n) => [id, n]))
     const cursor = selection[tab]
-    const settledIds = new Set(isStatusShown ? [] : settledRowIds(allRows(view)))
-    const top = isStatusShown
-      ? null
-      : firstWaiting(
-          tabWaits(
-            tab,
-            view,
-            shownPrs.filter(x => x.state.is === 'open').map(x => x.pr),
-            lastActions,
-          ),
-        )
+    const settledIds = new Set(isListShown ? settledRowIds(allRows(view)) : [])
+    const top = isListShown ? firstWaiting(tabWaits(tab, view, openPrViews(shownPrs), lastActions)) : null
     const at = selectedIndex(ids, cursor, top, id => settledIds.has(id))
     const isOpenGuarded = !isStatusShown && isGuarded(cursor.openedAt, now)
     const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection) : null
@@ -4694,7 +4664,7 @@ export const register: Register = on => {
       const f = row?.view ? row.view.feedback : feedbackOf(id, lastActions[id], notes[id], turns, now)
       if (!f) return null
       const mark = look === 'terminal' && row?.view ? rowResultMark(row.view) : null
-      const lead = mark === null ? '' : `${mark.isRunning ? runningMark(now) : mark.text || ' '} `
+      const lead = mark === null ? '' : `${resultGlyph(mark, now)} `
 
       return hasAge(f)
         ? {
@@ -4746,9 +4716,9 @@ export const register: Register = on => {
         {...box}
       />
     )
-    const columnsFor = (row: Pick<Row, 'isUnmarked'>) => {
+    const columnsFor = (row: Pick<Row, 'view'>) => {
       const base = look === 'desktop' ? ROW_COLUMNS.desktop : ROW_COLUMNS.tree
-      return row.isUnmarked && look === 'terminal' ? { ...base, textAt: base.handleAt } : base
+      return row.view && look === 'terminal' ? { ...base, textAt: base.handleAt } : base
     }
     const markColumns = look === 'desktop' ? ROW_COLUMNS.desktop : ROW_COLUMNS.tree
     const markWidth = markColumns.textAt - markColumns.handleAt
@@ -4759,12 +4729,11 @@ export const register: Register = on => {
       key?: string,
       depth = 0,
       lead = markColumns.handleAt + markWidth * depth,
-      extra = 0,
     ) => (
       <Box key={key} flexDirection="row" alignItems="flex-start" overflow="hidden">
         <Box width={lead} flexShrink={0} />
         {marker ? (
-          <Box width={markWidth + extra} flexShrink={0}>
+          <Box width={markWidth} flexShrink={0}>
             {marker}
           </Box>
         ) : null}
@@ -4894,28 +4863,23 @@ export const register: Register = on => {
       )
     }
     const ToneSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
+    /** A desktop mark drawn as an Svg in one cell, or null outside desktop. */
+    const svgCell = (source: string, alt: string, key?: string) =>
+      ToneSvg ? (
+        <Box key={key} width={1} height={1} flexShrink={0}>
+          <ToneSvg source={source} alt={alt} width={DESKTOP_CELL_PT} height={DESKTOP_LINE_PT} />
+        </Box>
+      ) : null
     /** An Asks or Finds row's result mark in the desktop mark column, or null when it has none. */
     const gutterMark = (row: Row) => {
-      const mark = look === 'desktop' && row.isUnmarked && row.view ? rowResultMark(row.view) : null
-      if (mark?.tone && ToneSvg)
-        return (
-          <Box width={1} height={1} flexShrink={0}>
-            <ToneSvg
-              source={toneSvg(mark.tone, mark.text)}
-              alt={mark.text}
-              width={DESKTOP_CELL_PT}
-              height={DESKTOP_LINE_PT}
-            />
-          </Box>
-        )
+      const mark = look === 'desktop' && row.view ? rowResultMark(row.view) : null
+      if (mark?.tone && ToneSvg) return svgCell(toneSvg(mark.tone, mark.text), mark.text)
       return mark ? markGlyph(mark, `gutter-${row.id}`, mark.tone ? pal.mark[mark.tone] : pal.muted) : null
     }
-    const runningDot = (id: string, glyph: string, color: string) => {
-      const RunningSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
-
-      return RunningSvg ? (
+    const runningDot = (id: string, glyph: string, color: string) =>
+      ToneSvg ? (
         <Box key={`${id}-mark`} width={RUNNING_SVG_CELLS} height={1} flexShrink={0}>
-          <RunningSvg
+          <ToneSvg
             source={runningSvg(now)}
             alt={glyph}
             width={RUNNING_SVG_CELLS * DESKTOP_CELL_PT}
@@ -4925,20 +4889,10 @@ export const register: Register = on => {
       ) : (
         <Text color={color}>{look === 'terminal' ? runningMark(now) : glyph}</Text>
       )
-    }
     const toned = (row: Row) => {
       if (look === 'desktop' && row.isHandleRunning) return runningDot(`handle-${row.id}`, row.handle, pal.muted)
       if (ToneSvg === null || !row.handle || !row.handleTone) return null
-      return (
-        <Box width={1} height={1} flexShrink={0}>
-          <ToneSvg
-            source={toneSvg(row.handleTone, row.handle)}
-            alt={row.handle}
-            width={DESKTOP_CELL_PT}
-            height={DESKTOP_LINE_PT}
-          />
-        </Box>
-      )
+      return svgCell(toneSvg(row.handleTone, row.handle), row.handle)
     }
     const sideAge = (row: Row) => {
       const f = row.view ? row.view.feedback : feedbackOf(row.id, lastActions[row.id], notes[row.id], turns, now)
@@ -5073,10 +5027,11 @@ export const register: Register = on => {
       const index = indexOf.get(row.id) ?? -1
       const isSelected = index === at
       // On desktop a Client takes a click on every cell of the row, where a Button takes one only on its label.
-      if (!isSelected && hasClient)
+      if (!isSelected && hasClient) {
+        const gutter = gutterMark(row)
         return (
           <Box key={`row-${row.id}`} flexDirection="row" overflow="hidden">
-            {row.handle || gutterMark(row) ? (
+            {row.handle || gutter ? (
               <Box
                 position="absolute"
                 top={0}
@@ -5084,7 +5039,7 @@ export const register: Register = on => {
                 paddingLeft={(FRAME_INSET_PT - DESKTOP_CELL_PT) / DESKTOP_CELL_PT}
                 paddingTop={space.rowPad}
               >
-                {gutterMark(row) ?? toned(row) ?? (
+                {gutter ?? toned(row) ?? (
                   <Text color={row.handleTone ? pal.mark[row.handleTone] : undefined}>{row.handle}</Text>
                 )}
               </Box>
@@ -5099,6 +5054,7 @@ export const register: Register = on => {
             </Box>
           </Box>
         )
+      }
       const { keys, more } = isSelected ? rowActions(row) : { keys: [], more: [] }
       const isTyping = Input !== null && !!row.typeHint && typing === row.id
       const field =
@@ -5189,7 +5145,7 @@ export const register: Register = on => {
         return desktopFrame({
           key: `row-${row.id}`,
           markCells: DESKTOP_MARK_CELLS,
-          mark: row.isUnmarked
+          mark: row.view
             ? gutterMark(row)
             : (toned(row) ??
               (row.handleTone ? (
@@ -5233,7 +5189,7 @@ export const register: Register = on => {
           backgroundColor={isSelected ? pal.selection : undefined}
         >
           <Box width={columns.lead} flexShrink={0} />
-          {row.isUnmarked && look === 'terminal' ? null : (
+          {row.view && look === 'terminal' ? null : (
             <Box
               width={columns.textAt - columns.lead}
               flexShrink={0}
@@ -5778,15 +5734,10 @@ export const register: Register = on => {
       if (mark.text === CLOSED_MARKS.lapsed && ToneSvg) {
         // An Svg cannot read a theme key, so one takes the muted mark's colors.
         const { light, dark } = color.startsWith('#') ? { light: color, dark: color } : MUTED_MARK
-        return (
-          <Box key={`${key}-mark`} width={1} height={1} flexShrink={0}>
-            <ToneSvg
-              source={markSvg(mark.text, cancelledMarkShape(DESKTOP_LINE_PT / 2), light, dark)}
-              alt={mark.text}
-              width={DESKTOP_CELL_PT}
-              height={DESKTOP_LINE_PT}
-            />
-          </Box>
+        return svgCell(
+          markSvg(mark.text, cancelledMarkShape(DESKTOP_LINE_PT / 2), light, dark),
+          mark.text,
+          `${key}-mark`,
         )
       }
       return <Text color={color}>{mark.text || ' '}</Text>
@@ -5815,7 +5766,7 @@ export const register: Register = on => {
             indent: DESKTOP_MARK_CELLS,
             isMarkHung: false,
             padY: space.rowPad / 2,
-            mark: markGlyph(closedMark(closedState(d), d.delivery), `closed-${d.id}`, pal.age),
+            mark: markGlyph(d.mark, `closed-${d.id}`, pal.age),
             side: <Text color={pal.age}>{shortAgo(now - d.at)}</Text>,
             children: [
               <Text wrap="wrap" color={pal.muted}>
@@ -5836,7 +5787,7 @@ export const register: Register = on => {
                   {d.ask}
                 </Text>
                 {resultLine(
-                  closedMark(closedState(d), d.delivery),
+                  d.mark,
                   `closed-${d.id}`,
                   pal.muted,
                   <Text wrap="wrap" color={pal.age}>
@@ -6124,10 +6075,9 @@ export const register: Register = on => {
           id: f.id,
           ask: f.title,
           at: f.closedAt,
-          how: f.how,
-          outcome: f.outcome,
           outcomeLabel: f.outcomeLabel,
           delivery: f.delivery,
+          mark: f.mark,
         }))
         return section([
           groupTitle(g.title, waitingCount(rowsIn(g.entries).map(r => r.view)), FINDING_GROUPS[g.kind]),
@@ -6260,58 +6210,20 @@ export const register: Register = on => {
     }
     const ghState = { isGhMissing: Boolean(prState.isGhMissing), isGhSignedOut: Boolean(prState.isGhSignedOut) }
     const ghNotice = ghNoticeOf(ghState)
-    const olderPrs = () => {
-      const text = olderPrsText(prState, ledger)
-      if (!text) return []
-      const line = (
-        <Text color={pal.muted} wrap="wrap">
-          {text}
-        </Text>
-      )
-
-      return [
-        section(
-          look === 'desktop' ? (
-            desktopFrame({ key: 'older-prs', padY: 0, children: line })
-          ) : (
-            <Box paddingLeft={1}>{line}</Box>
-          ),
-        ),
-      ]
-    }
-    const prOrderLine = () => {
-      const text = view.prs.orderText
-      if (!text) return []
-      const line = (
-        <Text color={pal.muted} wrap="wrap">
-          {text}
-        </Text>
-      )
-
-      return [
-        section(
-          look === 'desktop' ? (
-            desktopFrame({ key: 'pr-order', padY: 0, children: line })
-          ) : (
-            <Box paddingLeft={1}>{line}</Box>
-          ),
-        ),
-      ]
-    }
-    const prTabButtons = () => {
-      if (prTabKeys.length === 0) return []
-      const buttons = keyRow(DISMISS_MERGED_ID, prTabKeys)
-
-      return [
-        section(
-          look === 'desktop' ? (
-            desktopFrame({ key: 'pr-tab-actions', padY: 0, children: buttons })
-          ) : (
-            <Box paddingLeft={1}>{buttons}</Box>
-          ),
-        ),
-      ]
-    }
+    const prTabLine = (key: string, content: JSX.Element) => [
+      section(
+        look === 'desktop' ? desktopFrame({ key, padY: 0, children: content }) : <Box paddingLeft={1}>{content}</Box>,
+      ),
+    ]
+    const mutedLine = (text: string) => (
+      <Text color={pal.muted} wrap="wrap">
+        {text}
+      </Text>
+    )
+    const olderPrs = () => (view.prs.olderText ? prTabLine('older-prs', mutedLine(view.prs.olderText)) : [])
+    const prOrderLine = () => (view.prs.orderText ? prTabLine('pr-order', mutedLine(view.prs.orderText)) : [])
+    const prTabButtons = () =>
+      prTabKeys.length === 0 ? [] : prTabLine('pr-tab-actions', keyRow(DISMISS_MERGED_ID, prTabKeys))
     const prsView = () =>
       prGroups.length === 0 ? (
         <Box flexDirection="column" flexGrow={1}>
@@ -6562,11 +6474,14 @@ export const register: Register = on => {
         ...(r.id === statusKeyRow?.id ? { hotkey: k.hotkey } : {}),
         onPress: () => showAsk($, k.press.askId),
       }))
+    const statusMark = (r: Pick<StatusRow & { kind: 'subject' }, 'id' | 'mark' | 'tone' | 'isRunning'>) => {
+      const color = r.tone ? pal.mark[r.tone] : pal.muted
+      return r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
+    }
     const statusRow = (r: StatusRow) => {
       if (r.kind === 'subject') {
         const keys = statusKeys(r)
-        const color = r.tone ? pal.mark[r.tone] : pal.muted
-        const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
+        const mark = statusMark(r)
         const content = [
           statusNameLine(`status-${r.id}-name`, { text: r.name }, r.stall, 0),
           ...(r.text ? [statusPageText(`status-${r.id}-text`, [{ text: r.text, isMuted: true }], 0)] : []),
@@ -6594,8 +6509,7 @@ export const register: Register = on => {
         })
       }
       if (r.kind === 'child') {
-        const color = r.tone ? pal.mark[r.tone] : pal.muted
-        const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
+        const mark = statusMark(r)
         const depth = r.branch === null ? 0 : 1
 
         return statusRowLine({
@@ -6658,15 +6572,9 @@ export const register: Register = on => {
             ? markShape(m.mark, DESKTOP_LINE_PT / 2)
             : null
       if (ToneSvg && shape !== null)
-        return (
-          <Box width={1} height={1} flexShrink={0}>
-            <ToneSvg
-              source={m.tone ? toneSvg(m.tone, m.mark) : markSvg(m.mark, shape, MUTED_MARK.light, MUTED_MARK.dark)}
-              alt={m.mark}
-              width={DESKTOP_CELL_PT}
-              height={DESKTOP_LINE_PT}
-            />
-          </Box>
+        return svgCell(
+          m.tone ? toneSvg(m.tone, m.mark) : markSvg(m.mark, shape, MUTED_MARK.light, MUTED_MARK.dark),
+          m.mark,
         )
 
       return <Text color={color}>{m.mark}</Text>
