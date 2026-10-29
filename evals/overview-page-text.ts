@@ -1,7 +1,7 @@
 import { LOOK_TEXT, mergedLine, STALL_GAP, WAS_PREFIX } from '../hooks/view'
 import type { OverviewPage, OverviewRow, OverviewStall } from '../hooks/view'
 
-/** A row's name, with its stall words after it. */
+/** A row's name, with its stall word after it. */
 function nameLine(name: string, stall: OverviewStall | null): string {
   return stall ? `${name}${STALL_GAP}${stall.text}` : name
 }

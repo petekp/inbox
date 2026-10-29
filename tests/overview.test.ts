@@ -20,7 +20,7 @@ import type { Op } from '../hooks/overview'
 import { delegatesSettled, delegatesStarted } from '../hooks/children'
 import type { HerdrStatus } from '../hooks/herdr'
 import { emptySession } from '../hooks/session'
-import { CHILD_ROWS, mergedLine, nameBeforeStall, overviewPage, STALL_MS } from '../hooks/view'
+import { CHILD_ROWS, mergedLine, nameBeforeStall, overviewPage } from '../hooks/view'
 import type { OverviewRow } from '../hooks/view'
 import type { Item, Overview, Session } from '../types'
 
@@ -274,14 +274,14 @@ test('the page lists subjects newest first, and an open row below the look line 
   const p = page({ ...o, lastLookAt: 50 * MIN }, now, { lastReplyAt: now - 2 * MIN }, [askItem('i1')])
 
   expect(p.goal).toBe('Work offline')
-  expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick', '-- Seen', '○ Docs: outline ready'])
+  expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick · waiting', '-- Seen', '○ Docs: outline ready'])
   const seenAt = { ...after(o, 'WAS: s2 | sync on every save', 90 * MIN, new Set(['i1'])), lastLookAt: 95 * MIN }
   const seen = page(seenAt, now, {}, [askItem('i1')]).rows
-  expect(shape(seen)).toEqual(['◆ Offline mode: needs a sync pick', '○ Docs: outline ready'])
+  expect(shape(seen)).toEqual(['◆ Offline mode: needs a sync pick · waiting', '○ Docs: outline ready'])
   expect(seen[0]).toMatchObject({ kind: 'subject', was: null })
 })
 
-test('a subject waiting on someone says for how long once that passes STALL_MS, from the oldest open ask holding it up, else from its last change, and says it waits for the person only when an ask holds it up', () => {
+test('a subject waiting on someone reads waiting, with no time, in the needs-you tone when an open ask holds it up and muted otherwise', () => {
   const o = after(
     null,
     'NEW: waits-on-other | Review | sent for review\nNEW: working | Sync | needs a pick\nNEW: queued | Docs | not started\nLINK: i1 | s2\nLINK: i2 | s2',
@@ -294,22 +294,19 @@ test('a subject waiting on someone says for how long once that passes STALL_MS, 
   ]
   const stalls = (now: number) => page(o, now, {}, asks).rows.map(r => (r.kind === 'subject' ? r.stall : r.kind))
 
-  expect(stalls(14 * MIN)).toEqual([null, null, null])
-  expect(stalls(10 * MIN + STALL_MS)).toEqual([
-    { text: 'waiting 25m', tone: null },
-    { text: 'waiting for you 15m', tone: 'needsYou' },
-    null,
-  ])
-  expect(shape(page(o, 2 * 60 * MIN, {}, asks).rows)[0]).toBe('◌ Review: sent for review · waiting 2h')
+  const waiting = [{ text: 'waiting', tone: null }, { text: 'waiting', tone: 'needsYou' }, null]
+  expect(stalls(20 * MIN)).toEqual(waiting)
+  expect(stalls(2 * 60 * MIN)).toEqual(waiting)
+  expect(shape(page(o, 2 * 60 * MIN, {}, asks).rows)[0]).toBe('◌ Review: sent for review · waiting')
 })
 
-test('a name before stall words is cut at a word with an ellipsis until both fit, and keeps its first word when nothing fits', () => {
-  const fitsIn = (cells: number) => (shown: string) => `${shown} · waiting for you`.length <= cells
+test('a name before its stall word is cut at a word with an ellipsis until both fit, and keeps its first word when nothing fits', () => {
+  const fitsIn = (cells: number) => (shown: string) => `${shown} · waiting`.length <= cells
 
   expect(nameBeforeStall('Tune how hard a pinch must be', fitsIn(60))).toBe('Tune how hard a pinch must be')
-  expect(nameBeforeStall('Tune how hard a pinch must be', fitsIn(36))).toBe('Tune how hard a…')
-  expect(nameBeforeStall('Tune how hard a pinch must be', fitsIn(10))).toBe('Tune…')
-  expect(nameBeforeStall('vn2', fitsIn(10))).toBe('vn2')
+  expect(nameBeforeStall('Tune how hard a pinch must be', fitsIn(28))).toBe('Tune how hard a…')
+  expect(nameBeforeStall('Tune how hard a pinch must be', fitsIn(8))).toBe('Tune…')
+  expect(nameBeforeStall('vn2', fitsIn(8))).toBe('vn2')
 })
 
 test('a merged line is cut at the last phrase that fits, and keeps its first phrase whole when none fits', () => {
@@ -372,7 +369,7 @@ test('finished work folds into a count once seen, keeping at most two new finish
   ])
 })
 
-test('running children sit under their subject, at most three, each tied to it and the last ending its tree, one with no activity for STALL_MS says how long since its last step, and a subject whose children all stopped stops its mark', () => {
+test('running children sit under their subject, at most three, each tied to it and the last ending its tree, and one with no recent activity still moves and shows no words, as its subject does', () => {
   const now = 100 * MIN
   let o = after(null, 'NEW: working | Offline mode | queue built', 10 * MIN)
   for (const [n, idle] of [0, 1, 2, 3, 20].entries())
@@ -410,24 +407,19 @@ test('running children sit under their subject, at most three, each tied to it a
       name: 'Tail the log',
       startedAt: 0,
       endedAt: null,
-      lastActivityAt: now - STALL_MS - 5 * MIN,
+      lastActivityAt: now - 2 * 60 * MIN,
     },
     now,
   )
-  expect(page(quiet, now).rows[0]).toMatchObject({
-    kind: 'child',
-    branch: null,
-    isRunning: false,
-    stall: { text: 'last step 20m ago', tone: null },
-  })
+  expect(page(quiet, now).rows[0]).toMatchObject({ kind: 'child', branch: null, isRunning: true, stall: null })
   expect(page(after(quiet, 'LINK: c1 | s1', now), now).rows[0]).toMatchObject({
     kind: 'subject',
-    isRunning: false,
+    isRunning: true,
     hasChildren: true,
   })
 })
 
-test('a delegate says what Herdr shows: nothing while it works, waiting for you while blocked, and finished from when it is ready until the person has looked, its subject moved above the Seen line, and one Herdr no longer lists leaves', () => {
+test('a delegate says what Herdr shows: nothing while it works, waiting while blocked, and finished from when it is ready until the person has looked, its subject moved above the Seen line, and one Herdr no longer lists leaves', () => {
   let o: Overview | null = { ...after(null, 'NEW: working | Export | layout next', 10 * MIN), lastLookAt: 20 * MIN }
   o = delegatesStarted(o, 'herdr agent prompt pdf "lay out the export"', 30 * MIN)
   o = delegatesStarted(o, 'herdr agent start spare --cmd claude', 30 * MIN)
@@ -453,7 +445,7 @@ test('a delegate says what Herdr shows: nothing while it works, waiting for you 
     mark: '◆',
     tone: 'needsYou',
     isRunning: false,
-    stall: { text: 'waiting for you', tone: 'needsYou' },
+    stall: { text: 'waiting', tone: 'needsYou' },
   })
   const finished = delegatesSettled(blocked, herdr('done'), 4 * 60 * MIN)
   expect(page(finished, 4 * 60 * MIN).rows).toMatchObject([
@@ -484,7 +476,7 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
 
   expect(rows.map(r => `${r.isRuledAbove ? '── ' : ''}${shape([r])[0]}`)).toEqual([
     '● Review loose',
-    '── ◆ Sync: needs a pick · waiting for you 30m',
+    '── ◆ Sync: needs a pick · waiting',
     '── ● Offline mode: queue built ┐',
     '├ ● Review r1',
     '└ ● Review r2',
@@ -494,7 +486,7 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
   ])
 })
 
-test('a child whose host reports no activity says how long it has run once that passes STALL_MS, and stops running then', () => {
+test('a child whose host reports no activity moves and shows no words for as long as it runs', () => {
   const now = 100 * MIN
   const o = withChild(
     null,
@@ -503,12 +495,7 @@ test('a child whose host reports no activity says how long it has run once that 
   )
 
   expect(page(o, 50 * MIN).rows[0]).toMatchObject({ kind: 'child', stall: null, isRunning: true })
-  expect(page(o, now).rows[0]).toMatchObject({
-    kind: 'child',
-    stall: { text: 'running 1h', tone: null },
-    isRunning: false,
-    branch: null,
-  })
+  expect(page(o, now).rows[0]).toMatchObject({ kind: 'child', stall: null, isRunning: true, branch: null })
 })
 
 test('open subjects past seven fold their oldest queued ones into a count', () => {

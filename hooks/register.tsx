@@ -6174,7 +6174,7 @@ export const register: Register = on => {
         </Text>
       </Box>
     )
-    /** A row's stall words in the stall's tone, never split by a wrap. */
+    /** A row's stall word in the stall's tone, never split by a wrap. */
     const stallSpan = (stall: OverviewStall): TerminalSpan => {
       const text = look === 'desktop' ? stall.text.replaceAll(' ', '\u00a0') : stall.text
       const tone =
@@ -6187,7 +6187,7 @@ export const register: Register = on => {
       return { text, isUnbroken: true, ...tone }
     }
     /**
-     * A row's name with its stall words after `STALL_GAP`, on the line of the name's last word, which a wrap never
+     * A row's name with its stall word after `STALL_GAP`, on the line of the name's last word, which a wrap never
      * splits from them. `nameBeforeStall` cuts the name so the line fits `OVERVIEW_TEXT_LINES`.
      */
     const overviewNameLine = (key: string, name: TerminalSpan, stall: OverviewStall | null, depth: number) => {

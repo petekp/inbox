@@ -1060,11 +1060,11 @@ function pageText(text: string, room: number, maxLines: number, paint: (t: strin
   return lines.map(paint)
 }
 
-/** Stands in for each space that joins a name's last word, `STALL_GAP` and the stall words, so a wrap never splits them. */
+/** Stands in for each space that joins a name's last word, `STALL_GAP` and the stall word, so a wrap never splits them. */
 const GLUE = '\uE000'
 
 /**
- * One row of the Overview's list: a mark and its name wrapped after it, with its stall words after `STALL_GAP` in the
+ * One row of the Overview's list: a mark and its name wrapped after it, with its stall word after `STALL_GAP` in the
  * stall's tone on the line of the name's last word. Then where it stands, dim.
  */
 function pageLine(
@@ -1089,7 +1089,7 @@ function pageLine(
   ]
 }
 
-/** A name and its stall words wrapped to `room` cells, the name cut by `nameBeforeStall`, each part painted. */
+/** A name and its stall word wrapped to `room` cells, the name cut by `nameBeforeStall`, each part painted. */
 function stalledName(
   name: string,
   stall: OverviewStall,

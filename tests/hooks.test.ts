@@ -4980,7 +4980,7 @@ test('on a next build, a look starts when the Overview page shows, the page show
   await clock.settle()
   expect(lookOf()).not.toBeNull()
   expect((await pane.find({ key: 'overview-goal' }))?.text).toBe('Adding a greeting CLI')
-  expect((await pane.find({ key: 'overview-s1-name' }))?.text).toBe('Runtime')
+  expect((await pane.find({ key: 'overview-s1-name' }))?.text).toBe('Runtime · waiting')
   expect((await pane.find({ key: 'overview-s1-text' }))?.text).toBe('Node or Python')
   expect((await pane.find({ key: 'overview-s1' }))?.text).toContain('◆')
   expect((await pane.find({ key: 'overview-s2-text' }))?.text).toBe('written')
@@ -5350,7 +5350,7 @@ test('while the Overview shows a running delegate, the inbox asks Herdr each HER
   await clock.advance(HERDR_CHECK_MS)
   await clock.settle()
   expect(childrenOf(stored).map(c => [c.endedAt === null, c.delegateState])).toEqual([[true, 'blocked']])
-  expect(await pane.find({ text: /waiting for you/ })).toBeDefined()
+  expect(await pane.find({ text: /· waiting/ })).toBeDefined()
 
   await pane.press({ key: 'tab-key-needsYou' })
   await clock.advance(HERDR_CHECK_MS)
@@ -5483,7 +5483,7 @@ test('on the Overview in the terminal, the rows under a subject hang from its ma
   expect(await tree('s3')).toBeUndefined()
   expect((await textLines('c3')).length).toBeGreaterThan(1)
   await pane.redraw({ ...PANE.props, bodyColumns: 120 })
-  expect(await textLines('c3')).toEqual(['Tune how hard a pinch must be · waiting for you'])
+  expect(await textLines('c3')).toEqual(['Tune how hard a pinch must be · waiting'])
 })
 
 test('on the Overview, a rule sets each item apart in the docked terminal and on desktop, with none inside a subject’s tree or beside the look line, and the inline pane draws none', async ($, on) => {

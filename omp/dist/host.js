@@ -2851,10 +2851,6 @@ function foldLabel(total) {
 function earlierLabel(total, shown) {
   return total > shown ? `${total - shown} earlier` : null;
 }
-function shortAgo(ms) {
-  const age = ago(ms);
-  return age === "just now" ? "now" : age.replace(/ ago$/, "");
-}
 function groupEmptyText(title) {
   return `No open ${title.toLowerCase()}`;
 }
@@ -3147,7 +3143,6 @@ var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " \xB7 ";
 var OVERVIEW_TEXT_LINES = 3;
 var CHILD_ROWS = 3;
-var STALL_MS = 15 * 60000;
 var NEW_CLOSED_ROWS = 2;
 var OPEN_ROWS = 7;
 var SUBJECT_MARKS = {
@@ -3184,35 +3179,25 @@ function isItemAfterItem(row, prev) {
 function isFinishedUnseen(c, lastLookAt) {
   return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
 }
-function isChildWorking(c, now) {
-  if (c.endedAt !== null || c.delegateState === "blocked")
-    return false;
-  return c.delegateState === "working" || now - (c.lastActivityAt ?? c.startedAt) < STALL_MS;
+function isChildWorking(c) {
+  return c.endedAt === null && c.delegateState !== "blocked";
 }
-function childStall(c, now) {
+function childStall(c) {
   if (c.delegateState === "finished")
     return { text: "finished", tone: "done" };
   if (c.delegateState === "blocked")
-    return { text: "waiting for you", tone: "needsYou" };
-  if (c.kind === "delegate")
-    return null;
-  const since = now - (c.lastActivityAt ?? c.startedAt);
-  if (since < STALL_MS)
-    return null;
-  return {
-    text: c.lastActivityAt === null ? `running ${shortAgo(since)}` : `last step ${shortAgo(since)} ago`,
-    tone: null
-  };
+    return { text: "waiting", tone: "needsYou" };
+  return null;
 }
-function childRow(c, now, branch) {
+function childRow(c, branch) {
   const marks = c.delegateState === "finished" ? FINISHED_MARK : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
   return {
     kind: "child",
     id: c.id,
     ...marks,
-    isRunning: isChildWorking(c, now),
+    isRunning: isChildWorking(c),
     name: c.name,
-    stall: childStall(c, now),
+    stall: childStall(c),
     branch
   };
 }
@@ -3223,17 +3208,11 @@ function overviewPage(s, now) {
   const isNew = (x) => look === null || x.changedAt > look;
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const waitingSince = (x) => {
-    const asked = s.ledger.items.filter((i) => o?.askSubjects[i.id] === x.id).flatMap((i) => i.at ?? []);
-    return asked.length > 0 ? Math.min(...asked) : x.changedAt;
-  };
   const stallOf = (x) => {
     const isWaitingOnOther = isOpen(x) && x.status === "waits-on-other";
-    const isWaiting = isHeld(x) || isWaitingOnOther;
-    const waited = now - waitingSince(x);
-    if (!isWaiting || waited < STALL_MS)
-      return null;
-    return isHeld(x) ? { text: `waiting for you ${shortAgo(waited)}`, tone: "needsYou" } : { text: `waiting ${shortAgo(waited)}`, tone: null };
+    if (isHeld(x))
+      return { text: "waiting", tone: "needsYou" };
+    return isWaitingOnOther ? { text: "waiting", tone: null } : null;
   };
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const open = subjects.filter(isOpen);
@@ -3243,7 +3222,7 @@ function overviewPage(s, now) {
   const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const shownIds = new Set(shown.map((x) => x.id));
-  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, null));
+  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null));
   const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
   const firstSeen = shown.findIndex((x) => !isNew(x));
   for (const [i, x] of shown.entries()) {
@@ -3257,7 +3236,7 @@ function overviewPage(s, now) {
       kind: "subject",
       id: x.id,
       ...isHeld(x) ? HELD_MARK : SUBJECT_MARKS[x.status],
-      isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some((c) => isChildWorking(c, now))),
+      isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some(isChildWorking)),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       stall: stallOf(x),
@@ -3265,7 +3244,7 @@ function overviewPage(s, now) {
       was: isNew(x) ? x.was : null,
       hasChildren: under.length > 0
     });
-    rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
+    rows.push(...shownUnder.map((c, n) => childRow(c, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
     const hidden = under.slice(CHILD_ROWS);
     const isEveryHiddenRunning = hidden.every((c) => c.delegateState !== "finished");
     if (isMore)

@@ -148,7 +148,7 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
       ]),
       [
         ['mark running', '●', ['omp panel', 'reading the draw code']],
-        ['mark tone-needsYou', '◆', ['Label', 'pick one']],
+        ['mark tone-needsYou', '◆', ['Label · waiting', 'pick one']],
         ['mark done', '✓', ['Page', 'built']],
       ],
     )
