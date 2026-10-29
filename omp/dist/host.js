@@ -275,7 +275,7 @@ function opOf(key, f) {
   if (key === "WAS")
     return f[0] && f[1] ? { kind: "was", ref: f[0], text: f[1] } : null;
   if (key === "HEAD")
-    return f[0] && f[1] ? { kind: "head", title: f[0], description: f[1] } : null;
+    return f[0] ? { kind: "head", title: f[0], description: f[1] ?? "" } : null;
   if (key === "LINK")
     return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
   return null;
@@ -315,13 +315,40 @@ function nameKey(name) {
 function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
-function headAfter(o, op, ops, now) {
-  const last = o.head;
+function isUnderWay(s) {
+  return s.status === "working" || s.status === "waits-on-other";
+}
+function answerWork(before, o, now) {
+  const was = new Map(before.map((s) => [s.id, s]));
+  const closed = o.subjects.filter((s) => {
+    const earlier = was.get(s.id);
+    return !isOpen(s) && s.closedAt === now && (earlier === undefined || isOpen(earlier));
+  });
+  const isClosedWorkNew = closed.some((s) => !was.has(s.id));
+  const isUnderWayWorkClosed = closed.some((s) => {
+    const earlier = was.get(s.id);
+    return earlier !== undefined && isUnderWay(earlier);
+  });
+  return {
+    isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
+    isWorkUnderWay: o.subjects.some((s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now),
+    namesClosed: (description) => {
+      const said = words(description);
+      return closed.some((s) => {
+        const name = [...words(s.name)];
+        return name.length > 0 && name.every((w) => said.has(w));
+      });
+    }
+  };
+}
+function isDescriptionStale(head, work) {
+  return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
+}
+function headAfter(last, op, work) {
   const isComplete = last !== null && last.description !== "";
   const isSameTitle = last !== null && hasSameWords(last.title, op.title);
-  const isWorkFinished = ops.some((x) => x.kind === "done" || x.kind === "drop");
-  const isWorkUnderWay = o.subjects.some((s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now);
-  const isHeld = isComplete && (isSameTitle || isWorkFinished && !isWorkUnderWay);
+  const isStale = isDescriptionStale(last, work);
+  const isHeld = isComplete && (isSameTitle && !isStale || work.isEarlierWorkFinished && !work.isWorkUnderWay);
   return isHeld ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
 }
 var OP_ORDER = {
@@ -366,7 +393,7 @@ function applyOps(last, ops, now, askIds) {
     if (op.kind === "none")
       continue;
     if (op.kind === "head")
-      o.head = headAfter(o, op, ops, now);
+      o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
     else if (op.kind === "link") {
       const child = o.children.find((c) => c.id === op.ref);
       const subject = find(op.subject);
@@ -428,6 +455,9 @@ function applyOps(last, ops, now, askIds) {
       }
     }
   }
+  const isHeadKept = o.head === (last?.head ?? null);
+  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
+    o = { ...o, head: { ...o.head, description: "" } };
   return o;
 }
 function applyOverview(last, answer, now, askIds) {

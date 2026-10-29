@@ -110,7 +110,7 @@ function opOf(key: string, f: string[]): Op | null {
     return f[0] ? { kind: 'drop', ref: f[0], why: f[1] ?? '', into: into || null } : null
   }
   if (key === 'WAS') return f[0] && f[1] ? { kind: 'was', ref: f[0], text: f[1] } : null
-  if (key === 'HEAD') return f[0] && f[1] ? { kind: 'head', title: f[0], description: f[1] } : null
+  if (key === 'HEAD') return f[0] ? { kind: 'head', title: f[0], description: f[1] ?? '' } : null
   if (key === 'LINK') return f[0] && f[1] ? { kind: 'link', ref: f[0], subject: f[1] } : null
 
   return null
@@ -169,24 +169,70 @@ export function isOpen(s: Pick<Subject, 'status'>): boolean {
   return s.status !== 'done' && s.status !== 'dropped'
 }
 
+function isUnderWay(s: Pick<Subject, 'status'>): boolean {
+  return s.status === 'working' || s.status === 'waits-on-other'
+}
+
+/** What an answer did to the work, read once its subject changes have applied at `now`. */
+type AnswerWork = {
+  /** The answer finished work that was under way before it, and finished none that it started. */
+  isEarlierWorkFinished: boolean
+  /** Work is under way after the answer: a subject is working, or the answer set one waiting. */
+  isWorkUnderWay: boolean
+  /** Whether `description` names a subject the answer closed, by every content word of its name. */
+  namesClosed(description: string): boolean
+}
+
+function answerWork(before: readonly Subject[], o: Overview, now: number): AnswerWork {
+  const was = new Map(before.map(s => [s.id, s]))
+  const closed = o.subjects.filter(s => {
+    const earlier = was.get(s.id)
+    return !isOpen(s) && s.closedAt === now && (earlier === undefined || isOpen(earlier))
+  })
+  const isClosedWorkNew = closed.some(s => !was.has(s.id))
+  const isUnderWayWorkClosed = closed.some(s => {
+    const earlier = was.get(s.id)
+    return earlier !== undefined && isUnderWay(earlier)
+  })
+
+  return {
+    isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
+    isWorkUnderWay: o.subjects.some(
+      s => s.status === 'working' || (s.status === 'waits-on-other' && s.changedAt === now),
+    ),
+    namesClosed: description => {
+      const said = words(description)
+      return closed.some(s => {
+        const name = [...words(s.name)]
+        return name.length > 0 && name.every(w => said.has(w))
+      })
+    },
+  }
+}
+
+/**
+ * Whether a head's description names work the answer finished while other work goes on, as "Fixing the sync bug, then
+ * shipping 2.5" once the sync bug is done and 2.5 is under way.
+ */
+function isDescriptionStale(head: OverviewHead | null, work: AnswerWork): boolean {
+  return head !== null && head.description !== '' && work.isWorkUnderWay && work.namesClosed(head.description)
+}
+
 /**
  * The head after a HEAD line, read once the answer's subject changes have applied. A head with a description holds
- * when the line keeps its title, since the call rewrites the description to track the current piece of the focus. It
- * also holds when the answer finished work and left none under way, since the call reads queued work as the next
- * focus. A head with no description, saved by an earlier build, always takes the line.
+ * when the line keeps its title, since the call rewrites the description to track the current piece of the focus,
+ * unless the description names work the answer finished. It also holds when the answer finished work that was under
+ * way before it, started none it finished, and left none under way, since the call reads queued work as the next focus. A head with no description
+ * always takes the line.
  */
-function headAfter(o: Overview, op: Extract<Op, { kind: 'head' }>, ops: Op[], now: number): OverviewHead | null {
-  const last = o.head
+function headAfter(last: OverviewHead | null, op: Extract<Op, { kind: 'head' }>, work: AnswerWork): OverviewHead {
   const isComplete = last !== null && last.description !== ''
   const isSameTitle = last !== null && hasSameWords(last.title, op.title)
-  const isWorkFinished = ops.some(x => x.kind === 'done' || x.kind === 'drop')
-  const isWorkUnderWay = o.subjects.some(
-    s => s.status === 'working' || (s.status === 'waits-on-other' && s.changedAt === now),
-  )
-  const isHeld = isComplete && (isSameTitle || (isWorkFinished && !isWorkUnderWay))
+  const isStale = isDescriptionStale(last, work)
+  const isHeld = isComplete && ((isSameTitle && !isStale) || (work.isEarlierWorkFinished && !work.isWorkUnderWay))
 
   return isHeld
-    ? last
+    ? last!
     : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) }
 }
 
@@ -240,7 +286,7 @@ export function applyOps(last: Overview | null, ops: Op[], now: number, askIds: 
   const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
   for (const { op } of ordered) {
     if (op.kind === 'none') continue
-    if (op.kind === 'head') o.head = headAfter(o, op, ops, now)
+    if (op.kind === 'head') o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now))
     else if (op.kind === 'link') {
       const child = o.children.find(c => c.id === op.ref)
       const subject = find(op.subject)
@@ -295,6 +341,9 @@ export function applyOps(last: Overview | null, ops: Op[], now: number, askIds: 
       }
     }
   }
+  const isHeadKept = o.head === (last?.head ?? null)
+  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
+    o = { ...o, head: { ...o.head, description: '' } }
 
   return o
 }

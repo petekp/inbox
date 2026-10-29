@@ -135,14 +135,18 @@ export const RULES: Rule[] = [
     text: 'The head names the focus in the facts, and its title no longer names finished work the focus moved on from. It changes where the focus moved, and holds where it did not.',
     failures: ({ result, before }) => {
       const now = result.session.ledger.overview?.head ?? null
+      const earlier = before.overview?.head ?? null
       const head = headWords(result.session.ledger.overview)
       const last = headWords(before.overview)
       const { focusMatch, pastMatch } = result.facts
       const isFocusSame = focusMatch === before.facts.focusMatch
+      const isDescriptionFilled = earlier?.description === '' && now?.title === earlier.title
       if (!new RegExp(focusMatch, 'i').test(head)) return [`the head "${head}" is not about /${focusMatch}/`]
       if (pastMatch && now && new RegExp(pastMatch, 'i').test(now.title))
         return [`the head's title "${now.title}" still names /${pastMatch}/`]
-      return isFocusSame && last !== '' && head !== last ? [`the head moved from "${last}" to "${head}"`] : []
+      return isFocusSame && last !== '' && head !== last && !isDescriptionFilled
+        ? [`the head moved from "${last}" to "${head}"`]
+        : []
     },
   },
   {
