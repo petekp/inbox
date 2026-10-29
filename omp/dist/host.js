@@ -3476,6 +3476,19 @@ function rowKeyPlan(r, isAllShown) {
   }
   return { keys, more };
 }
+var OVERVIEW_COPY = { answer: "Answer" };
+function overviewKeyPlan(row) {
+  if (row.kind !== "subject" || row.askId === null)
+    return [];
+  return [{ press: { action: "show-ask", askId: row.askId }, label: OVERVIEW_COPY.answer, hotkey: "a", kind: "view" }];
+}
+function overviewKeyRows(page) {
+  return page.rows.filter((r) => overviewKeyPlan(r).length > 0);
+}
+function overviewSelected(page, selectedId) {
+  const rows = overviewKeyRows(page);
+  return rows.find((r) => r.id === selectedId) ?? rows[0] ?? null;
+}
 function actionLines(keys, more, { width, gap, separator }) {
   const lines = [];
   let used = 0;
@@ -5622,6 +5635,7 @@ var INITIAL_UI = {
   resuming: null,
   opened: null,
   pageTop: 0,
+  pageReveal: null,
   shownSince: 0
 };
 function holdsOf(ui) {
@@ -6065,13 +6079,19 @@ function typingKey(ui, id, key, now, text) {
 function handleKey(screen, ui, key, now, text) {
   const lines = linesOf(entriesOf(screen, ui, ui.tab, now));
   const selected = resolveSelected(lines, ui.selectedId);
-  const base = { ...ui, selectedId: selected?.id ?? null };
+  const isPage = !isRowTab(ui.tab);
+  const base = isPage ? ui : { ...ui, selectedId: selected?.id ?? null };
   if (base.typing !== null)
     return typingKey(base, base.typing, key, now, text);
   if (key === "escape")
     return { ui: base, close: true };
+  if (isPage) {
+    const page = pageKey(screen, base, key, now);
+    if (page)
+      return page;
+  }
   const isUp = key === "up" || key === "k";
-  if (!isRowTab(base.tab) && (isUp || key === "down" || key === "j"))
+  if (isPage && (isUp || key === "down" || key === "j"))
     return { ui: { ...base, pageTop: Math.max(0, base.pageTop + (isUp ? -1 : 1)) } };
   const selectable = lines.filter(isSelectable);
   const at = selectable.findIndex((l) => l.id === selected?.id);
@@ -6114,6 +6134,27 @@ function handleKey(screen, ui, key, now, text) {
   }
   const button = key === "enter" ? selected.buttons[focusOf2(selected, base)] : selected.buttons.find((b) => b.key === key);
   return button ? activate(screen, base, selected, button, now) : { ui: base };
+}
+function pageKey(screen, ui, key, now) {
+  const page = screen.view.overviewPage;
+  const rows = overviewKeyRows(page);
+  const row = overviewSelected(page, ui.selectedId);
+  if (!row)
+    return null;
+  if (key === "j" || key === "k") {
+    const at = rows.findIndex((r) => r.id === row.id);
+    const to = rows[wrapIndex(at + (key === "k" ? -1 : 1), rows.length)].id;
+    return { ui: { ...ui, selectedId: to, focus: null, pageReveal: to } };
+  }
+  const keys = overviewKeyPlan(row);
+  if (key === "left" || key === "right") {
+    const index = wrapIndex(pageFocus(row, ui) + (key === "left" ? -1 : 1), keys.length);
+    return { ui: { ...ui, selectedId: row.id, focus: { rowId: row.id, index } } };
+  }
+  const pressed = key === "enter" ? keys[pageFocus(row, ui)] : keys.find((k) => k.hotkey === key);
+  if (!pressed)
+    return null;
+  return { ui: { ...withTab(ui, "needsYou", now), selectedId: pressed.press.askId } };
 }
 function tabRows(screen) {
   const { view } = screen;
@@ -6249,10 +6290,12 @@ function labelMark(b, room, s) {
   return actionLabel({ label: b.label, isPrimary: b.isRecommended }, fits).slice(b.label.length);
 }
 function buttonLines(line, ui, indent, width, s) {
-  const focused = focusOf2(line, ui);
-  const cells = line.buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)));
+  return faceLines(line.buttons, focusOf2(line, ui), indent, width, s);
+}
+function faceLines(buttons, focused, indent, width, s) {
+  const cells = buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)));
   const sizes = cells.map(visibleLength);
-  const firstFollowUp = line.buttons.findIndex((b) => b.isFollowUp);
+  const firstFollowUp = buttons.findIndex((b) => b.isFollowUp);
   const keyCount = firstFollowUp < 0 ? cells.length : firstFollowUp;
   const { lines } = actionLines(sizes.slice(0, keyCount), sizes.slice(keyCount), {
     width: width - indent,
@@ -6351,7 +6394,18 @@ function pageRule(width, s, label = null) {
   const before = Math.floor(fill / 2);
   return `${" ".repeat(PAGE_TEXT_AT)}${s.dim(`${"\u2500".repeat(before)}${text}${"\u2500".repeat(fill - before)}`)}`;
 }
-function drawPageRow(row, d) {
+function pageButtonLines(row, d, isSelected) {
+  const faces = overviewKeyPlan(row).map((k) => ({
+    label: k.label,
+    key: isSelected ? k.hotkey : null,
+    isRecommended: false,
+    isFollowUp: false
+  }));
+  const focused = isSelected ? pageFocus(row, d.ui) : -1;
+  return faces.length > 0 ? faceLines(faces, focused, PAGE_TEXT_AT - 1, d.width, d.style) : [];
+}
+var pageFocus = (row, ui) => ui.focus?.rowId === row.id ? Math.min(ui.focus.index, overviewKeyPlan(row).length - 1) : 0;
+function drawPageRow(row, d, isSelected = false) {
   const { width, now, style: s } = d;
   if (row.kind === "subject") {
     const glyph = row.isRunning ? runningMark(now) : row.mark;
@@ -6362,6 +6416,7 @@ function drawPageRow(row, d) {
       out.push(...indented(mergedLine(row.merged, (t) => cellWidth(t) <= room), PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim));
     if (row.was)
       out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim));
+    out.push(...pageButtonLines(row, d, isSelected));
     return row.hasChildren ? withTree(out, null, "\u2502", s) : out;
   }
   if (row.kind === "child") {
@@ -6411,7 +6466,11 @@ function footer(d, isPageScrolling) {
   const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.overviewPage.error);
   if (status.text)
     out.push(` ${s.dim(status.text)}`);
-  const hints = ui.typing !== null ? [`\u21B5 ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch"] : isPageScrolling ? ["\u2191\u2193 scroll", "tab switch"] : ["tab switch"];
+  const hints = ui.typing !== null ? [`\u21B5 ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch"] : [
+    ...overviewKeyRows(screen.view.overviewPage).length > 0 ? ["j k select", "\u21B5 press"] : [],
+    ...isPageScrolling ? ["\u2191\u2193 scroll"] : [],
+    "tab switch"
+  ];
   const model = `${screen.modelName ? `inbox model ${screen.modelName}` : "no inbox model: set @inbox"}  ${versionLabel(version, screen.isNextBuild === true)} `;
   const hintLine = ` ${hints.map((h) => s.dim(h)).join(` ${s.tone("sep", "\xB7")} `)}`;
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2;
@@ -6438,12 +6497,20 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   ];
   const body = [];
   let selectedAt = [0, 0];
+  const pageSelected = isRowTab(ui.tab) ? null : overviewSelected(screen.view.overviewPage, ui.selectedId);
+  let pageSelectedAt = null;
   for (const e of entries) {
     if (e.kind === "heading")
       body.push(` ${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
-    else if (e.kind === "page")
-      body.push(...e.row.isRuledAbove ? [pageRule(width, style)] : [], ...drawPageRow(e.row, d));
-    else if (e.kind === "banner")
+    else if (e.kind === "page") {
+      if (e.row.isRuledAbove)
+        body.push(pageRule(width, style));
+      const start = body.length;
+      const isSelected = e.row.id === pageSelected?.id;
+      body.push(...drawPageRow(e.row, d, isSelected));
+      if (isSelected)
+        pageSelectedAt = [start, body.length - 1];
+    } else if (e.kind === "banner")
       body.push(...bannerLines(e.banner, width, style));
     else if (e.kind === "note")
       body.push(...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : style.dim));
@@ -6465,7 +6532,9 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const room = roomBeside(foot);
   const blanks = (shown) => Array(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill("");
   const isOverflowing = body.length > room;
-  const pageTop = isPage ? Math.min(Math.max(0, ui.pageTop), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop;
+  const [first = 0, last = 0] = pageSelectedAt ?? [];
+  const top = pageSelectedAt && ui.pageReveal === pageSelected?.id ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop;
+  const pageTop = isPage ? Math.min(Math.max(0, top), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop;
   const shown = !isOverflowing ? body : isPage ? pageWindow(body, pageTop, room, style) : scrolled(body, selectedAt, room, style);
   return { lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)), pageTop };
 }
@@ -6599,7 +6668,7 @@ function createPanel(deps) {
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight);
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity));
       heldHeight = Math.max(heldHeight, drawn.lines.length);
-      ui = { ...ui, pageTop: drawn.pageTop };
+      ui = { ...ui, pageTop: drawn.pageTop, pageReveal: null };
       return drawn.lines;
     },
     handleInput(key, text) {

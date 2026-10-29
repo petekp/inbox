@@ -14,7 +14,7 @@ import { GH_TIMEOUT_MS } from '../hooks/gh'
 import { OVERVIEW_SYSTEM } from '../hooks/model-text'
 import { HERDR_CHECK_MS } from '../hooks/herdr'
 import { LOOK_MIN_MS } from '../hooks/overview'
-import { OVERVIEW_REFRESH_MS } from '../hooks/session'
+import { emptySession, OVERVIEW_REFRESH_MS } from '../hooks/session'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
 import { failingChecks, waitingThreads } from '../hooks/prs'
 import {
@@ -26,6 +26,7 @@ import {
   OVERVIEW_TEXT_LINES,
   perTurnStatus,
   overviewPage,
+  overviewKeyPlan,
   rowKeyPlan,
   actionLines,
   RUNNING_FRAME_MS,
@@ -4955,6 +4956,31 @@ for (const isNextBuild of [false, true])
         checked++
       }
       expect(checked, `${look} PR rows checked`).toBeGreaterThan(1)
+      if (!isNextBuild) continue
+
+      if (look === 'terminal') await pane.press({ key: 'tab-overview' })
+      else {
+        const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+        const x = bar
+          .slice(
+            0,
+            bar.findIndex(t => t.id === 'overview'),
+          )
+          .reduce((sum, t) => sum + t.width + gap, 0)
+        await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+      }
+      await clock.settle()
+      const page = overviewPage({ ledger, presence: emptySession().presence }, 1_000_000)
+      const planned = page.rows.flatMap(r => overviewKeyPlan(r).map(k => `${r.id} ${k.label}`))
+      expect(planned, 'the demo’s Overview has rows with buttons').not.toEqual([])
+      const overviewButtons = (await drawn()).buttons
+        .filter(b => b.key.startsWith('show-ask-'))
+        .map(b => `${b.key.slice('show-ask-'.length)} ${b.label}`)
+      expect(overviewButtons, `${look} Overview buttons`).toEqual(planned)
+      await pane.press({ key: `show-ask-${page.rows.find(r => overviewKeyPlan(r).length > 0)!.id}` })
+      await clock.settle()
+      expect(await pane.find({ key: 'overview-head' }), `${look} Answer leaves the Overview`).toBeUndefined()
+      expect(await pane.find({ key: 'view-d17' }), `${look} Answer selects the oldest ask`).toBeDefined()
     }
   })
 

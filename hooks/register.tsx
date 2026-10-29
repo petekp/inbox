@@ -6402,7 +6402,13 @@ export const register: Register = on => {
           children: Array.isArray(content) ? content : [content],
         })
       ) : (
-        <Box key={key} flexDirection="row" alignItems="flex-start" overflow="hidden">
+        <Box
+          key={key}
+          flexDirection="row"
+          alignItems="flex-start"
+          overflow="hidden"
+          backgroundColor={isSelected ? pal.selection : undefined}
+        >
           <Box width={overviewMarkAt + markWidth * depth} flexShrink={0} />
           <Box width={markWidth} flexShrink={0}>
             {mark}
