@@ -20,7 +20,20 @@ import type { Op } from '../hooks/overview'
 import { delegatesSettled, delegatesStarted } from '../hooks/children'
 import type { HerdrStatus } from '../hooks/herdr'
 import { emptySession } from '../hooks/session'
-import { CHILD_ROWS, mergedLine, nameBeforeStall, overviewKeyPlan, overviewPage } from '../hooks/view'
+import {
+  CHILD_ROWS,
+  CLOSED_MARKS,
+  FINDING_GROUPS,
+  HELD_MARK,
+  MARK_LEGEND,
+  mergedLine,
+  nameBeforeStall,
+  overviewKeyPlan,
+  overviewPage,
+  PR_MARKS,
+  RUNNING_FRAMES,
+  SUBJECT_MARKS,
+} from '../hooks/view'
 import type { OverviewRow } from '../hooks/view'
 import type { Item, Overview, Session } from '../types'
 
@@ -815,4 +828,19 @@ test('a saved Overview drops subjects and children it cannot read, reads a deleg
   expect(upgradeOverview(null)).toBeNull()
   expect(upgradeOverview('x')).toBeNull()
   expect(upgradeOverview({ role: 'session' })).toBeNull()
+})
+
+test('the Help legend explains every mark a row or group title draws, once each', () => {
+  const drawn = new Set([
+    ...Object.values(SUBJECT_MARKS).map(m => m.mark),
+    HELD_MARK.mark,
+    ...Object.values(CLOSED_MARKS),
+    ...Object.values(FINDING_GROUPS).map(g => g.mark),
+    ...Object.values(PR_MARKS).map(m => m.text),
+  ])
+  const explained = MARK_LEGEND.map(m => m.mark)
+
+  expect(new Set(explained).size).toBe(explained.length)
+  expect([...drawn].sort()).toEqual([...explained].sort())
+  expect(MARK_LEGEND.filter(m => m.isRunning).map(m => m.mark)).toEqual([RUNNING_FRAMES[0]])
 })

@@ -336,6 +336,7 @@
         text-align: right;
       }
       .mark.tone-needsYou,
+      .mark.needsYou,
       .side.tone-needsYou {
         color: var(--needs-you);
       }
@@ -744,14 +745,26 @@
       .version {
         color: color-mix(in srgb, var(--muted) 50%, var(--bg));
       }
-      .demo-toggle {
+      .demo-toggle,
+      .help-toggle {
         padding: 0 6px;
         border-radius: 5px;
         color: var(--muted);
       }
-      .demo-toggle:hover {
+      .demo-toggle:hover,
+      .help-toggle:hover {
         color: var(--text);
         background: var(--hover);
+      }
+      /* The keys start under the group title, and every description lines up after the widest key. */
+      .help-keys {
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: 4px 12px;
+        padding: var(--row-pad) 14px var(--row-pad) var(--text-x);
+      }
+      .help-keys b {
+        white-space: nowrap;
       }
       .earlier {
         padding: 2px 14px 2px var(--text-x);

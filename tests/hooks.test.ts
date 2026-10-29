@@ -4659,7 +4659,7 @@ test('the desktop pane draws each action as one button and the tabs as one click
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
   const buttons = await pane.findAll({ type: 'Button' })
   expect(buttons.filter(b => b.props.hotkey !== undefined || String(b.props.label).startsWith(': '))).toEqual([])
-  expect(buttons.map(b => b.key ?? '').filter(k => /-key$|^tab-key-|^next$|^previous$|^key-list$/.test(k))).toEqual([])
+  expect(buttons.map(b => b.key ?? '').filter(k => /-key$|^tab-key-|^next$|^previous$/.test(k))).toEqual([])
   expect(buttons.map(b => b.key ?? '').filter(k => k.startsWith('tab-'))).toEqual([])
   const recommended = await pane.find({ key: 'answer-i1-0' })
   expect([recommended?.props.label, recommended?.props.variant]).toEqual(['Node (recommended)', 'primary'])
