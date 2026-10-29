@@ -497,7 +497,7 @@ export function rowFeedbackText(row: RowView, look: Look): string | null {
   if (!f) return null
   if (!isHandedOffDone(row)) return feedbackText(f, look)
 
-  return f.is === 'done' ? f.label : feedbackText(f, look).replace(/^✓ /, '')
+  return f.is === 'done' ? f.label : f.is === 'local' ? localText(f.result, look) : feedbackText(f, look)
 }
 
 /** Whether a handed-off row's last press is done: its send arrived, or its open or copy worked. */
@@ -936,7 +936,7 @@ function localText(r: LocalResult, look: Look): string {
   if (r.state === 'failed') return text
   const isCommand = parts.some(p => p.kind === 'copy' && p.isCommand)
 
-  return `✓ ${text}${isCommand ? `. ${runIt(look)}` : ''}`
+  return `${text}${isCommand ? `. ${runIt(look)}` : ''}`
 }
 
 export function feedbackText(f: Feedback, look: Look): string {
@@ -944,7 +944,7 @@ export function feedbackText(f: Feedback, look: Look): string {
     case 'note':
       return noteText()
     case 'local':
-      return localText(f.result, look)
+      return f.result.state === 'done' ? `✓ ${localText(f.result, look)}` : localText(f.result, look)
     case 'sending':
       return f.label
     case 'queued':
