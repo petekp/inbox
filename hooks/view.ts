@@ -129,7 +129,7 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
   },
 ]
 
-export const HELP_COPY = { open: 'Help', close: 'Close help', keys: 'Keys', marks: 'Marks' } as const
+export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', marks: 'Marks' } as const
 
 export type HelpKey = { keys: string; does: string }
 

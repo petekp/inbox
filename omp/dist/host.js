@@ -2840,7 +2840,7 @@ var MARK_LEGEND = [
     words: "Opportunity: something that could be better"
   }
 ];
-var HELP_COPY = { open: "Help", close: "Close help", keys: "Keys", marks: "Marks" };
+var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks" };
 function helpKeys(look, isNextBuild, tab) {
   const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
   const hasRows = isRowTab(tab);
