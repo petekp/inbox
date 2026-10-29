@@ -100,7 +100,9 @@ Do not record rhetorical questions, offers to continue when continuing is the de
 
 const CLOSE_DESCRIPTION = `Close an open item or finding by its id, such as i35 or f12, as listed in the latest "inbox:" text beside the user's prompt. Pass the user's answer when their message answered it, and a reason otherwise.`
 
-export type AgentTool = 'record' | 'close' | 'order_prs'
+const AGENT_TOOLS = ['record', 'close', 'order_prs'] as const
+
+export type AgentTool = (typeof AGENT_TOOLS)[number]
 
 /** The tools the agent calls. A host registers these through its own API and answers each call with `toolAnswer`. */
 export function agentTools(
@@ -114,7 +116,7 @@ export function agentTools(
 }
 
 export function isAgentTool(name: string): name is AgentTool {
-  return name === 'record' || name === 'close' || name === 'order_prs'
+  return (AGENT_TOOLS as readonly string[]).includes(name)
 }
 
 /** The answer to a call of one of `agentTools`. */
@@ -296,7 +298,7 @@ function prNumber(value: unknown): number | null {
  * Sets the PRs tab's order from an `order_prs` call, and links each PR it names that the session does not, so the tab
  * fetches it. An empty list clears the order.
  */
-export function orderPrs(host: Host, ledger: Ledger, input: Record<string, unknown>, now: number): ToolAnswer {
+function orderPrs(host: Host, ledger: Ledger, input: Record<string, unknown>, now: number): ToolAnswer {
   if (!Array.isArray(input.numbers)) return unchanged(ledger, 'Not set: numbers must be a list of PR numbers.')
   if (input.numbers.length === 0) {
     if (ledger.prOrder === null) return unchanged(ledger, 'No order was set.')

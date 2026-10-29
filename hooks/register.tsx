@@ -4759,12 +4759,11 @@ export const register: Register = on => {
       key?: string,
       depth = 0,
       lead = markColumns.handleAt + markWidth * depth,
-      extra = 0,
     ) => (
       <Box key={key} flexDirection="row" alignItems="flex-start" overflow="hidden">
         <Box width={lead} flexShrink={0} />
         {marker ? (
-          <Box width={markWidth + extra} flexShrink={0}>
+          <Box width={markWidth} flexShrink={0}>
             {marker}
           </Box>
         ) : null}

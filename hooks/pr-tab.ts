@@ -284,7 +284,7 @@ export const PR_REFRESH: Effect = { kind: 'refresh-prs', name: 'PRs' }
 /** The label of a dismissed PR's block while its Undo lasts. */
 export const PR_DISMISSED_LABEL = 'Dismissed'
 
-export const DISMISS_MERGED_LABEL = 'Dismiss merged'
+const DISMISS_MERGED_LABEL = 'Dismiss merged'
 
 /** The row id of the PRs tab's Dismiss merged press. It starts with `pr:`, as a PR's mark id does, so no host takes it for an Asks row. */
 export const DISMISS_MERGED_ID = 'pr:merged'

@@ -9,9 +9,6 @@ export function markShape(mark: string, midY: number): string | null {
   switch (mark) {
     case '✓':
       return `<polyline points="0.6,${t + 4.4} 3,${t + 6.8} 7.4,${t + 1.4}" ${STROKE} stroke-width="1.4"/>`
-    case '✕':
-    case '✗':
-      return `<path d="M1,${t + 1} L7,${t + 7} M7,${t + 1} L1,${t + 7}" ${STROKE} stroke-width="1.4"/>`
     case '▲':
       return `<polygon points="4,${t + 0.6} 7.8,${t + 7.4} 0.2,${t + 7.4}" fill="currentColor"/>`
     case '✦':
