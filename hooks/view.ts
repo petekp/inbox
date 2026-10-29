@@ -1299,6 +1299,7 @@ function actionsOf(
       action({ action: 'done', id }, 'Done', 'mark'),
       action({ action: 'type', id, text: '' }, 'Reply', 'handoff'),
       action({ action: 'explain', id }, 'Explain', 'talk'),
+      action({ action: 'dismiss', id }, 'Dismiss', 'mark'),
     ]
   const isFolding = item.options.length > OPTIONS_FOLD_AT
   const options =
