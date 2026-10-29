@@ -79,6 +79,7 @@ import type { SavedSession, SendOutcome, SentBy, Session, SessionView } from './
 import {
   exclusiveKeys,
   fetchPrs as fetchSessionPrs,
+  isPrFetchDue,
   orderedKeys,
   refreshOverview,
   runUpdates,
@@ -818,6 +819,7 @@ const workflowTasks = new Map<string, string>()
 const delegateWaits = new Map<string, string>()
 let fetchingPrs: Promise<void> = Promise.resolve()
 let nextFetchFindsBranchPr: boolean | null = null
+let prFetchEndedAt: number | undefined
 let recordedRows: { isDemo: boolean; ids: RowRecord<Tab> } | null = null
 let isInlinePane = false
 let isInlineTerminalPane = false
@@ -2742,6 +2744,7 @@ async function fetchPrsNow($: EngineInterface, findsBranchPr: boolean) {
   try {
     await fetchSessionPrs(hostOf($, owner), findsBranchPr)
   } finally {
+    prFetchEndedAt = await $.clock.now()
     // Fetches run one at a time across conversations, so the drawn session reads whether one still runs.
     await markFetching($, nextFetchFindsBranchPr !== null)
   }
@@ -3826,7 +3829,10 @@ export const register: Register = on => {
     await update($, AWAY, a => ({ ...a, lastActiveAt: now }))
     await commit($, currentOwner(), s => endTurn(CLAUDE_CODE, s, reply, isShown, { tab: screenTab, queuesEmptyReply }))
     updateLedger($)
-    if (prRefs(reply).some(ref => !before.ledger.prs.includes(ref))) void fetchPrs($, await isPrsTabShown($))
+    const after = await read($, SESSION)
+    const linksNewPr = prRefs(reply).some(ref => !before.ledger.prs.includes(ref))
+    const tracksPrs = after.ledger.prs.length > 0 || after.prViews.branchRef !== null
+    if (linksNewPr || (tracksPrs && isPrFetchDue(after, prFetchEndedAt, now))) void fetchPrs($, await isPrsTabShown($))
 
     return r
   })

@@ -2887,6 +2887,92 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   expect(sidebarTokens()['inbox-prs']).toBe('1')
 })
 
+test('Resolve conflicts reads the PR from GitHub before it sends: it reads Refreshing while gh answers, sends while the conflicts remain, and sends nothing once a push resolved them', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let mergeable = 'CONFLICTING'
+  let release: (() => void) | null = null
+  let isHeld = false
+  ghAnswers.push(
+    {
+      match: argv => argv.includes('view') && argv.includes('12'),
+      get stdout() {
+        return JSON.stringify({
+          number: 12,
+          title: 'Add a greeting CLI',
+          url: 'https://github.com/acme/greet/pull/12',
+          isDraft: false,
+          state: 'OPEN',
+          baseRefName: 'main',
+          mergeable,
+          reviewDecision: 'APPROVED',
+          statusCheckRollup: [
+            {
+              __typename: 'CheckRun',
+              name: 'test',
+              workflowName: 'CI',
+              status: 'COMPLETED',
+              conclusion: 'CANCELLED',
+              startedAt: '2026-10-08T09:00:00Z',
+            },
+            {
+              __typename: 'CheckRun',
+              name: 'test',
+              workflowName: 'CI',
+              status: 'COMPLETED',
+              conclusion: 'SUCCESS',
+              startedAt: '2026-10-08T09:05:00Z',
+            },
+          ],
+        })
+      },
+      hold: () => (isHeld ? new Promise<void>(r => (release = r)) : Promise.resolve()),
+    },
+    {
+      match: argv => argv.includes('graphql'),
+      stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+    },
+  )
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'open the PR', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Opened https://github.com/acme/greet/pull/12.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-prs' })
+  await clock.settle()
+  expect(await pane.find({ text: /^ ·\sconflicts with main$/ })).toBeDefined()
+  expect(await pane.find({ key: 'fix-acme/greet#12-test-key' })).toBeUndefined()
+
+  isHeld = true
+  const first = pane.press({ key: 'resolve-acme/greet#12' })
+  await clock.settle()
+  expect(await pane.find({ text: /Refreshing PR #12…/ })).toBeDefined()
+  expect(sent).toEqual([])
+  release!()
+  await first
+  await clock.settle()
+  expect(sent.at(-1)).toContain('PR #12 (https://github.com/acme/greet/pull/12) conflicts with main.')
+  expect(await pane.find({ text: /✓ Asked to resolve conflicts ·/ })).toBeDefined()
+
+  isHeld = false
+  mergeable = 'MERGEABLE'
+  await clock.advance(PRESS_GUARD_MS)
+  expect((await pane.find({ key: 'resolve-acme/greet#12' }))?.props.label).toBe('Resolve conflicts again')
+  const sends = sent.length
+  await pane.press({ key: 'resolve-acme/greet#12' })
+  await clock.settle()
+  expect(sent.length).toBe(sends)
+  expect(await pane.find({ key: 'resolve-acme/greet#12' })).toBeUndefined()
+  expect(await pane.find({ text: /^This changed before your press\. Nothing was sent\.$/ })).toBeDefined()
+})
+
 test('opening the PRs tab while another PR fetch runs still finds the branch’s PR', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
