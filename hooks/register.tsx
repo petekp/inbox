@@ -6201,7 +6201,7 @@ export const register: Register = on => {
           <Text color={pal.divider}>{'─'.repeat(overviewRuleCells)}</Text>
         </Box>
       )
-    /** The look line: "Seen" in the middle of a rule that spans what the rule above a row spans. */
+    /** The look line: "Last seen" in the middle of a rule that spans what the rule above a row spans. */
     const overviewLookLine = (text: string) => {
       // Outside a frame, whose border would inset the rule's right end, so the padding stands in for the frame's.
       if (look === 'desktop')

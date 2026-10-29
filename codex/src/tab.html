@@ -812,7 +812,7 @@
         width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
         border-top: 1px solid var(--tree-line);
       }
-      /* "Seen" in the middle of a rule that spans what the rule above a row spans: from the text column to the tab's edge. */
+      /* "Last seen" in the middle of a rule that spans what the rule above a row spans: from the text column to the tab's edge. */
       .overview .row.look-line {
         padding-left: 0;
         padding-right: 0;
@@ -837,7 +837,7 @@
       .overview .look-rule::after {
         content: '';
         flex: 1;
-        border-top: 1px solid color-mix(in oklab, var(--text) 15%, transparent);
+        border-top: 1px solid var(--soft);
       }
       .overview-goal {
         margin: 0;

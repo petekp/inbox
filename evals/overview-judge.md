@@ -73,7 +73,7 @@ A model writes the head's words, and each row's name, status, where it stands an
 2. **Subject rows.** Each starts with a mark, then the row's name. Where it stands sits on its own indented line under the name. Stall words may end that line after ` · `, such as `waiting 2h`. Code writes them.
 3. **Was lines:** indented lines under a subject row. `was: <plan>` names a plan that a change replaced. `merged in: <names>` names the pieces merged into this one.
 4. **Child rows:** running work, which code draws from the host's events. A child under a subject row starts with `├` or `└`, then `●`, then the child's label. Stall words such as `quiet 40m`, on the indented line under it, say how long the child has done nothing. A child linked to no row on the page sits at the top of the list, indented, with no `├` or `└`. The line `└ + 2 more running` stands for children that are not drawn.
-5. **The Seen line:** `── Seen`. The rows above it changed since the person last looked.
+5. **The Seen line:** `── Last seen`. The rows above it changed since the person last looked.
 6. **Folds:** `○ 3 more queued` counts open rows that are not drawn. `✓ 4 done` or `✓ 4 more done` counts delivered pieces that are not drawn.
 7. **The status line:** after a blank line at the end, `Last Overview update failed. Changes from that reply may be missing.`
 

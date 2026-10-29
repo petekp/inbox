@@ -1003,7 +1003,7 @@ export type OverviewPage = {
   empty: { title: string; hint: string }
 }
 
-export const LOOK_TEXT = 'Seen'
+export const LOOK_TEXT = 'Last seen'
 /** What a subject's was line starts with, before the plan it replaces. */
 export const WAS_PREFIX = 'was: '
 const MERGED_PREFIX = 'merged in: '
