@@ -4,7 +4,9 @@ import { access, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute } from 'node:path'
 
+import { delegatesSettled } from '../../hooks/children'
 import { ghFinder, ghIn } from '../../hooks/gh'
+import { delegatesInHerdr, herdrCheckGate } from '../../hooks/herdr'
 import type { Run } from '../../hooks/gh'
 import type { PrPress } from '../../hooks/pr-tab'
 import { demoAfterPress, demoReplied, demoSent, noteText, openTarget } from '../../hooks/presses'
@@ -16,7 +18,7 @@ import { demoState } from './demo'
 import { answerMessage, noteDialogs } from './dialogs'
 import { withEarlierHistory } from './history'
 import { codexStore } from './host'
-import { isUnseen, pressOn, recorded, turnEnded, turnStarted, withHolds } from '../../hooks/session'
+import { isUnseen, overviewChanged, pressOn, recorded, turnEnded, turnStarted, withHolds } from '../../hooks/session'
 import type { SendOutcome } from '../../hooks/session'
 import { fetchPrs, prFetchTracker, press, wakeForDone as wakeSessionForDone } from '../../hooks/session-host'
 import type { SessionHost } from '../../hooks/session-host'
@@ -358,6 +360,21 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     void prFetches.fetchWhenDue(id, s, () => fetchPrs(hostFor(id), true))
   }
 
+  const isHerdrCheckDue = herdrCheckGate()
+
+  /**
+   * Asks Herdr about the running delegates at most each `HERDR_CHECK_MS` while the tab shows the Overview, so a
+   * delegate's row follows Herdr while the session waits. The tab's next view shows the change.
+   */
+  function checkDelegatesWhenDue(id: string, s: SessionState) {
+    if (s.shownTab !== 'overview' || !isHerdrCheckDue(id, now())) return
+    void delegatesInHerdr(s.ledger.overview, deps.exec)
+      .then(states => {
+        if (states) return updateState(dir, id, x => overviewChanged(x, o => delegatesSettled(o, states, now())))
+      })
+      .catch(() => undefined)
+  }
+
   const served = async (s: SessionState, id: string, isDemo = false, holds: Holds = NO_HOLDS): Promise<TabView> => {
     const loadError = deps.loadError?.()
     const current = !isDemo && s.presence.isUpdating ? await reconcileUpdateStatus(dir, id) : s
@@ -495,6 +512,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
           return { ...withHolds(lookOnView(s, shownTab, now()), holds), tabSeenAt: now(), shownTab }
         })
         fetchPrsWhenDue(id, s)
+        checkDelegatesWhenDue(id, s)
         return { ...text('Inbox view'), structuredContent: await served(s, id, false, holds) }
       }
       case 'inbox_tab_page':
@@ -520,7 +538,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         return ok({
           protocolVersion: (params?.protocolVersion as string) ?? '2025-06-18',
           capabilities: { tools: {}, resources: {} },
-          serverInfo: { name: 'inbox', version: '0.2.13' },
+          serverInfo: { name: 'inbox', version: '0.2.14' },
         })
       case 'tools/list':
         return ok({ tools: TOOLS })

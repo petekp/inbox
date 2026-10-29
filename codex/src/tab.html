@@ -64,7 +64,7 @@
         user-select: none;
       }
       /* Text a person may copy: what an item, PR or Overview line says, an error, and the reply field. */
-      .overview-goal,
+      .overview-head,
       .overview .content,
       .earlier,
       .body,
@@ -756,8 +756,8 @@
       .earlier {
         padding: 2px 14px 2px var(--text-x);
       }
-      /* The goal starts where the list's marks do. */
-      .overview-goal {
+      /* The head starts where the list's marks do. */
+      .overview-head {
         padding: 0 14px 0 var(--mark-x);
         overflow-wrap: anywhere;
       }
@@ -832,7 +832,11 @@
         width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
         border-top: 1px solid var(--tree-line);
       }
-      /* "Seen" in the middle of a rule that runs from the mark column to the end of the row. */
+      /* "Last seen" in the middle of a rule that spans what the rule above a row spans: from the text column to the tab's edge. */
+      .overview .row.look-line {
+        padding-left: 0;
+        padding-right: 0;
+      }
       .overview .look-rule {
         grid-column: 1 / -1;
         display: flex;
@@ -843,20 +847,26 @@
       }
       .overview .overview-rule {
         height: 1px;
-        margin-left: var(--text-x);
         background: var(--soft);
+      }
+      .overview .overview-rule,
+      .overview .look-rule {
+        margin-left: var(--text-x);
       }
       .overview .look-rule::before,
       .overview .look-rule::after {
         content: '';
         flex: 1;
-        border-top: 1px solid color-mix(in oklab, var(--text) 15%, transparent);
+        border-top: 1px solid var(--soft);
       }
-      .overview-goal {
+      .overview-head h1 {
         margin: 0;
         font-size: 15px;
         line-height: 22px;
         font-weight: 600;
+      }
+      .overview-head p {
+        margin: 0;
       }
       .banner,
       .empty,

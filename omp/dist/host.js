@@ -197,11 +197,11 @@ function tasksText(tasks) {
 // ../hooks/overview.ts
 var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
-var GOAL_WORDS = 8;
+var DESCRIPTION_WORDS = 8;
 var OPEN_SUBJECTS = 6;
 var NAME_KEPT = 20;
 var TEXT_KEPT = 12;
-var GOAL_KEPT = 14;
+var DESCRIPTION_KEPT = 14;
 var ASK_READ_WORDS = 30;
 var FINISHED_READ = 10;
 var CHILD_KEPT_MS = 24 * 60 * 60000;
@@ -229,8 +229,7 @@ var STOP_WORDS = new Set([
 var NL4 = `
 `;
 var EMPTY_OVERVIEW = {
-  role: "session",
-  goal: "",
+  head: null,
   subjects: [],
   children: [],
   askSubjects: {},
@@ -242,7 +241,8 @@ var EMPTY_OVERVIEW = {
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES2 = [...OPEN_STATUSES, "done", "dropped"];
 var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
-var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|ROLE|GOAL|LINK)\s*(?::\s*(.*))?$/i;
+var DELEGATE_STATES = ["working", "blocked", "finished"];
+var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i;
 function clipWords(text, limit) {
   const words = text.trim().split(/\s+/).filter(Boolean);
   return words.length <= limit ? words.join(" ") : `${words.slice(0, limit).join(" ")}\u2026`;
@@ -275,12 +275,8 @@ function opOf(key, f) {
   }
   if (key === "WAS")
     return f[0] && f[1] ? { kind: "was", ref: f[0], text: f[1] } : null;
-  if (key === "ROLE") {
-    const role = f[0]?.toLowerCase();
-    return role === "coordinator" || role === "session" ? { kind: "role", role } : null;
-  }
-  if (key === "GOAL")
-    return f[0] ? { kind: "goal", text: f[0] } : null;
+  if (key === "HEAD")
+    return f[0] ? { kind: "head", title: f[0], description: f[1] ?? "" } : null;
   if (key === "LINK")
     return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
   return null;
@@ -320,10 +316,45 @@ function nameKey(name) {
 function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
+function isUnderWay(s) {
+  return s.status === "working" || s.status === "waits-on-other";
+}
+function answerWork(before, o, now) {
+  const was = new Map(before.map((s) => [s.id, s]));
+  const closed = o.subjects.filter((s) => {
+    const earlier = was.get(s.id);
+    return !isOpen(s) && s.closedAt === now && (earlier === undefined || isOpen(earlier));
+  });
+  const isClosedWorkNew = closed.some((s) => !was.has(s.id));
+  const isUnderWayWorkClosed = closed.some((s) => {
+    const earlier = was.get(s.id);
+    return earlier !== undefined && isUnderWay(earlier);
+  });
+  return {
+    isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
+    isWorkUnderWay: o.subjects.some((s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now),
+    namesClosed: (description) => {
+      const said = words(description);
+      return closed.some((s) => {
+        const name = [...words(s.name)];
+        return name.length > 0 && name.every((w) => said.has(w));
+      });
+    }
+  };
+}
+function isDescriptionStale(head, work) {
+  return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
+}
+function headAfter(last, op, work) {
+  const isComplete = last !== null && last.description !== "";
+  const isSameTitle = last !== null && hasSameWords(last.title, op.title);
+  const isStale = isDescriptionStale(last, work);
+  const isHeld = isComplete && (isSameTitle && !isStale || work.isEarlierWorkFinished && !work.isWorkUnderWay);
+  return isHeld ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
+}
 var OP_ORDER = {
   none: 0,
-  role: 0,
-  goal: 0,
+  head: 1,
   new: 0,
   set: 0,
   done: 0,
@@ -362,10 +393,8 @@ function applyOps(last, ops, now, askIds) {
   for (const { op } of ordered) {
     if (op.kind === "none")
       continue;
-    if (op.kind === "role")
-      o.role = op.role;
-    else if (op.kind === "goal")
-      o.goal = clipWords(op.text, GOAL_KEPT);
+    if (op.kind === "head")
+      o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
     else if (op.kind === "link") {
       const child = o.children.find((c) => c.id === op.ref);
       const subject = find(op.subject);
@@ -427,6 +456,9 @@ function applyOps(last, ops, now, askIds) {
       }
     }
   }
+  const isHeadKept = o.head === (last?.head ?? null);
+  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
+    o = { ...o, head: { ...o.head, description: "" } };
   return o;
 }
 function applyOverview(last, answer, now, askIds) {
@@ -444,7 +476,7 @@ function withChild(last, c, now) {
   return {
     ...o,
     nextChildId: o.nextChildId + 1,
-    children: [...kept, { ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
+    children: [...kept, { delegateState: null, ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
   };
 }
 function changedChild(o, ref, change) {
@@ -455,6 +487,11 @@ function changedChild(o, ref, change) {
 }
 function childEnded(o, ref, at) {
   return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
+}
+function subjectTouched(o, id, at) {
+  const isSeen = (s) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
+  const touched = (s) => isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
+  return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
 }
 function childActive(o, ref, at) {
   return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
@@ -527,7 +564,8 @@ function childOf(saved) {
     subjectId: typeof c.subjectId === "string" ? c.subjectId : null,
     startedAt,
     endedAt: time(c.endedAt),
-    lastActivityAt: time(c.lastActivityAt)
+    lastActivityAt: time(c.lastActivityAt),
+    delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null
   };
 }
 var OLD_STATUS = {
@@ -540,6 +578,15 @@ var OLD_STATUS = {
   done: null,
   "ruled-out": null
 };
+function headOfGoal(goal) {
+  const title = clipWords(text(goal), DESCRIPTION_KEPT);
+  return title === "" ? null : { title, description: "" };
+}
+function headOf(saved) {
+  const h = saved;
+  const title = text(h?.title);
+  return title === "" ? null : { title, description: text(h?.description) };
+}
 function fromLists(o) {
   const lastLookAt = time(o.lastLookAt);
   const items = lastLookAt === null ? [] : ["workstreams", "queue", "open"].flatMap((k) => Array.isArray(o[k]) ? o[k] : []);
@@ -564,8 +611,7 @@ function fromLists(o) {
   }));
   return {
     ...EMPTY_OVERVIEW,
-    role: o.isCoordinator === true ? "coordinator" : "session",
-    goal: clipWords(text(o.headline), GOAL_KEPT),
+    head: headOfGoal(o.headline),
     subjects,
     nextId: subjects.length + 1,
     lastLookAt
@@ -586,8 +632,7 @@ function upgradeOverview(saved) {
   const look = o.look;
   const lookAt = time(look?.startedAt);
   return {
-    role: o.role === "coordinator" ? "coordinator" : "session",
-    goal: text(o.goal),
+    head: "head" in o ? headOf(o.head) : headOfGoal(o.goal),
     subjects,
     children,
     askSubjects,
@@ -613,7 +658,7 @@ var EMPTY = {
   updates: 0
 };
 function isBlankLedger(ledger) {
-  const isOverviewBlank = !ledger.overview || ledger.overview.goal === "" && ledger.overview.subjects.length === 0;
+  const isOverviewBlank = !ledger.overview || ledger.overview.head === null && ledger.overview.subjects.length === 0;
   return ledger.updates === 0 && isOverviewBlank && ledger.items.length === 0 && ledger.findings.length === 0;
 }
 var NL5 = `
@@ -1467,7 +1512,7 @@ var OVERVIEW_SYSTEM = `You keep the Overview of a coding session: one list of th
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
 Input:
-- <goal>: the session's goal. Do not restate it.
+- <head>: the top of the page, as title | description: what the session is focused on now. Never write it into a subject.
 - <subjects>: the open subjects, one per line: id | status | name | where it stands
 - <finished>: subjects already done or dropped. Do not add them again.
 - <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
@@ -1477,7 +1522,7 @@ Input:
 - <activity>: what the agent did this turn
 - <reply>: the agent's final reply
 
-Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, answer with the one line NO CHANGE. Most exchanges change nothing.
+Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, and the head still holds, answer with the one line NO CHANGE. Most exchanges change nothing.
 
 Otherwise write only the lines that apply:
 NEW: status | name | where it stands
@@ -1487,12 +1532,13 @@ DROP: id or name | why
 DROP: id or name | why | INTO id or name
 WAS: id or name | the plan it replaces
 LINK: running or ask id | subject id or name
-ROLE: coordinator or session
-GOAL: the goal in the person's words, at most ${GOAL_WORDS} words
+HEAD: title | description
 
 A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
 
 The name is a label of at most ${NAME_WORDS} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
+
+The head says what the session is focused on now: the work the person would name if asked what this session is doing. It may cover several subjects. Its title is a label of at most ${NAME_WORDS} words, like a subject's name, such as "Offline sync" or "2.5 release". Its description is at most ${DESCRIPTION_WORDS} words on what the session is doing about that focus, such as "Adding offline sync to the notes app" or "Fixing the sync bug, then shipping 2.5". The description never repeats the title, and never says where one piece stands, such as "PR ready for review". The head follows the same rules on time words as where it stands.
 
 Status is one of: working, queued, waits-on-other.
 - working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask. When the work stopped for another reason, it is queued, waits on something, or is done.
@@ -1504,18 +1550,24 @@ Rules:
 - When work started and finished in this exchange, write NEW for it, then DONE with its name.
 - Write SET only when where a subject stands changed. Never reword a subject that did not change.
 - Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
+- When the person files a piece for later, out of this session's plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
 - Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
 - Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
-- Write ROLE coordinator when the session hands out work and reviews what comes back instead of doing the work itself. Write ROLE only when it changes.
-- Write GOAL only when <goal> is empty, when the person states a new goal, or when the work moves to a different task.`;
+- Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.
+- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.`;
+function headText(o) {
+  if (!o?.head)
+    return "(none yet)";
+  return `${o.head.title} | ${o.head.description || "(no description yet)"}`;
+}
 function overviewBlocks({ last, asks, tasks, now }) {
   const { open, finished } = subjectsText(last);
   const running = runningText(last, now);
   const held = asksText(last, asks);
   const list = tasksText(tasks);
   return [
-    `<goal>${NL6}${last?.goal || "(none yet)"}${NL6}</goal>`,
+    `<head>${NL6}${headText(last)}${NL6}</head>`,
     `<subjects>${NL6}${open}${NL6}</subjects>`,
     ...finished === "" ? [] : [`<finished>${NL6}${finished}${NL6}</finished>`],
     ...running === "" ? [] : [`<running>${NL6}${running}${NL6}</running>`],
@@ -1759,6 +1811,7 @@ function noteDialog(s, callId, questions) {
 var CANDIDATES = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
 var GH_TIMEOUT_MS = 20000;
 var UNSTARTABLE_CODE = -1;
+var TIMED_OUT_CODE = -2;
 var GIT_TIMEOUT_MS = 5000;
 async function branchIn(run, folder) {
   const r = await run(["git", "branch", "--show-current"], { cwd: folder, timeoutMs: GIT_TIMEOUT_MS });
@@ -1796,11 +1849,14 @@ function ghIn(exec, bin, cwd, onUnstartable) {
 // ../hooks/children.ts
 var ACTIVITY_SAVE_MS = 30000;
 var NAME_CHARS = 80;
-function childStarted(o, { ref, kind, name }, at, { reportsActivity = true } = {}) {
+function childStarted(o, { ref, kind, name }, at, {
+  reportsActivity = true,
+  delegateState = null
+} = {}) {
   const line = name.trim().split(`
 `)[0] ?? "";
   const lastActivityAt = reportsActivity ? at : null;
-  return withChild(o, { ref, kind, name: clipLabel(line, NAME_CHARS), startedAt: at, endedAt: null, lastActivityAt }, at);
+  return withChild(o, { ref, kind, name: clipLabel(line, NAME_CHARS), startedAt: at, endedAt: null, lastActivityAt, delegateState }, at);
 }
 function childWorked(o, ref, at) {
   const saved = o?.children.find((c) => c.ref === ref)?.lastActivityAt ?? null;
@@ -1818,18 +1874,29 @@ var HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^
 function delegateSteps(command) {
   return [...command.matchAll(HERDR)].map(([, verb, name, args]) => ({
     name,
+    isPrompt: verb === "prompt",
     isWaitForEnd: verb === "wait" && !/--until working/.test(args ?? "")
   }));
 }
 var delegateRef = (name) => `herdr:${name}`;
-function delegateRunning(o, name, at) {
-  const ref = delegateRef(name);
+function delegateRunning(o, step, at) {
+  const ref = delegateRef(step.name);
   const known = o?.children.find((c) => c.ref === ref);
   const isRunning = known !== undefined && known.endedAt === null;
-  return isRunning ? childActive(o, ref, at) : childStarted(o, { ref, kind: "delegate", name }, at);
+  if (!isRunning)
+    return childStarted(o, { ref, kind: "delegate", name: step.name }, at, {
+      delegateState: step.isPrompt ? "working" : null
+    });
+  const active = childActive(o, ref, at);
+  return step.isPrompt ? delegateStateSet(active, ref, "working") : active;
+}
+function delegateStateSet(o, ref, delegateState) {
+  if (!o?.children.some((c) => c.ref === ref && c.delegateState !== delegateState))
+    return o;
+  return { ...o, children: o.children.map((c) => c.ref === ref ? { ...c, delegateState } : c) };
 }
 function delegatesStarted(o, command, at) {
-  return delegateSteps(command).reduce((x, step) => delegateRunning(x, step.name, at), o);
+  return delegateSteps(command).reduce((x, step) => delegateRunning(x, step, at), o);
 }
 function delegateWaitsEnded(o, command, at) {
   return delegateSteps(command).filter((step) => step.isWaitForEnd).reduce((x, step) => childEnded(x, delegateRef(step.name), at), o);
@@ -1838,10 +1905,29 @@ var HERDR_PROMPT_SETTLE_MS = 15000;
 function hasRunningDelegate(o) {
   return o?.children.some((c) => c.kind === "delegate" && c.endedAt === null) ?? false;
 }
-function delegatesSettled(o, running, at) {
-  const refs = new Set([...running].map(delegateRef));
-  const isGone = (c) => c.kind === "delegate" && !refs.has(c.ref) && at - (c.lastActivityAt ?? c.startedAt) >= HERDR_PROMPT_SETTLE_MS;
-  return childrenEnded(o, isGone, at);
+function delegatesSettled(o, states, at) {
+  if (!o)
+    return o;
+  const byRef = new Map([...states].map(([name, status]) => [delegateRef(name), status]));
+  const settled = (c) => {
+    if (c.kind !== "delegate" || c.endedAt !== null)
+      return c;
+    const status = byRef.get(c.ref);
+    const isShownWorking = status === "working" || status === "blocked";
+    if (isShownWorking)
+      return c.delegateState === status ? c : { ...c, delegateState: status };
+    const isSettling = at - (c.lastActivityAt ?? c.startedAt) < HERDR_PROMPT_SETTLE_MS;
+    if (status === "unknown" || isSettling)
+      return c;
+    const isReady = status === "idle" || status === "done";
+    const hasFinished = isReady && c.delegateState !== null;
+    return { ...c, endedAt: at, delegateState: hasFinished ? "finished" : c.delegateState };
+  };
+  const children = o.children.map(settled);
+  if (children.every((c, n) => c === o.children[n]))
+    return o;
+  const finished = children.filter((c, n) => c.delegateState === "finished" && o.children[n].delegateState !== "finished");
+  return finished.reduce((x, c) => subjectTouched(x, c.subjectId, at), { ...o, children });
 }
 function activityGate() {
   const saved = new Map;
@@ -1910,12 +1996,29 @@ function bucket(e) {
     return "pending";
   return "fail";
 }
+function runStart(e) {
+  const isWaiting = !!e.status && e.status.toUpperCase() !== "COMPLETED";
+  return msOf(e.startedAt) ?? (isWaiting ? Infinity : undefined);
+}
+function latestRuns(rollup) {
+  const latest = new Map;
+  for (const e of rollup) {
+    const key = JSON.stringify([e.workflowName ?? "", e.name ?? e.context ?? ""]);
+    const kept = latest.get(key);
+    const keptStart = kept && runStart(kept);
+    const start = runStart(e);
+    const isOlder = start !== undefined && keptStart !== undefined && start < keptStart;
+    if (!isOlder)
+      latest.set(key, e);
+  }
+  return [...latest.values()];
+}
 function readView(ref, json) {
   try {
     const v = JSON.parse(json);
     if (typeof v.number !== "number")
       return null;
-    const rollup = Array.isArray(v.statusCheckRollup) ? v.statusCheckRollup : [];
+    const rollup = latestRuns(Array.isArray(v.statusCheckRollup) ? v.statusCheckRollup : []);
     return {
       ref,
       number: v.number,
@@ -2833,10 +2936,6 @@ function foldLabel(total) {
 function earlierLabel(total, shown) {
   return total > shown ? `${total - shown} earlier` : null;
 }
-function shortAgo(ms) {
-  const age = ago(ms);
-  return age === "just now" ? "now" : age.replace(/ ago$/, "");
-}
 function groupEmptyText(title) {
   return `No open ${title.toLowerCase()}`;
 }
@@ -3131,13 +3230,12 @@ function screenTabOf(tab) {
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
-var LOOK_TEXT = "Seen";
+var LOOK_TEXT = "Last seen";
 var WAS_PREFIX = "was: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " \xB7 ";
 var OVERVIEW_TEXT_LINES = 3;
 var CHILD_ROWS = 3;
-var STALL_MS = 15 * 60000;
 var NEW_CLOSED_ROWS = 2;
 var OPEN_ROWS = 7;
 var SUBJECT_MARKS = {
@@ -3148,11 +3246,19 @@ var SUBJECT_MARKS = {
   dropped: { mark: "\u2717", tone: null }
 };
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
+var CHILD_MARK = { mark: "\u25CF", tone: null };
+var FINISHED_MARK = { mark: "\u2713", tone: "done" };
+var OVERVIEW_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 function mergedLine(merged, fits) {
   return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
+}
+function nameBeforeStall(name, fits) {
+  const words = name.split(" ");
+  const cuts = words.map((_, n) => n === 0 ? name : `${words.slice(0, words.length - n).join(" ")}\u2026`);
+  return cuts.find(fits) ?? cuts.at(-1);
 }
 function hasRunningMark(page) {
   return page.rows.some((r) => (r.kind === "subject" || r.kind === "child") && r.isRunning);
@@ -3164,25 +3270,28 @@ function isItemAfterItem(row, prev) {
   const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
   return prev !== undefined && prev.kind !== "look" && row.kind !== "look" && !isUnderSubject;
 }
-function idleOf(c, now) {
-  return c.lastActivityAt === null ? null : now - c.lastActivityAt;
+function isFinishedUnseen(c, lastLookAt) {
+  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
 }
-function isQuiet(c, now) {
-  const idle = idleOf(c, now);
-  return idle !== null && idle >= STALL_MS;
+function isChildWorking(c) {
+  return c.endedAt === null && c.delegateState !== "blocked";
 }
-function isChildWorking(c, now) {
-  return now - (c.lastActivityAt ?? c.startedAt) < STALL_MS;
+function childStall(c) {
+  if (c.delegateState === "finished")
+    return { text: "finished", tone: "done" };
+  if (c.delegateState === "blocked")
+    return { text: "waiting", tone: "needsYou" };
+  return null;
 }
-function childRow(c, now, branch) {
-  const idle = idleOf(c, now);
+function childRow(c, branch) {
+  const marks = c.delegateState === "finished" ? FINISHED_MARK : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
   return {
     kind: "child",
     id: c.id,
-    mark: "\u25CF",
-    isRunning: isChildWorking(c, now),
+    ...marks,
+    isRunning: isChildWorking(c),
     name: c.name,
-    stall: idle !== null && isQuiet(c, now) ? `quiet ${shortAgo(idle)}` : null,
+    stall: childStall(c),
     branch
   };
 }
@@ -3193,24 +3302,18 @@ function overviewPage(s, now) {
   const isNew = (x) => look === null || x.changedAt > look;
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const waitingSince = (x) => {
-    const asked = s.ledger.items.filter((i) => o?.askSubjects[i.id] === x.id).flatMap((i) => i.at ?? []);
-    return asked.length > 0 ? Math.min(...asked) : x.changedAt;
-  };
-  const stallOf = (x) => {
-    const isWaiting = isHeld(x) || isOpen(x) && x.status === "waits-on-other";
-    const waited = now - waitingSince(x);
-    return isWaiting && waited >= STALL_MS ? `waiting ${shortAgo(waited)}` : null;
-  };
+  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
+  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || OVERVIEW_PLACES.indexOf(placeOf(x)) - OVERVIEW_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
+  const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const open = subjects.filter(isOpen);
   const queuedOver = Math.max(0, open.length - OPEN_ROWS);
-  const hiddenQueued = new Set(open.filter((x) => x.status === "queued" && !isHeld(x)).sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id));
-  const shown = [...open.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort((x, y) => y.changedAt - x.changedAt);
+  const hiddenQueued = new Set(open.filter((x) => placeOf(x) === "queued").sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id));
+  const shown = [...open.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort(pageOrder);
   const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
-  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const shownIds = new Set(shown.map((x) => x.id));
-  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, null));
+  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null));
   const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
   const firstSeen = shown.findIndex((x) => !isNew(x));
   for (const [i, x] of shown.entries()) {
@@ -3224,7 +3327,7 @@ function overviewPage(s, now) {
       kind: "subject",
       id: x.id,
       ...isHeld(x) ? HELD_MARK : SUBJECT_MARKS[x.status],
-      isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some((c) => isChildWorking(c, now))),
+      isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some(isChildWorking)),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       stall: stallOf(x),
@@ -3232,12 +3335,14 @@ function overviewPage(s, now) {
       was: isNew(x) ? x.was : null,
       hasChildren: under.length > 0
     });
-    rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
+    rows.push(...shownUnder.map((c, n) => childRow(c, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
+    const hidden = under.slice(CHILD_ROWS);
+    const isEveryHiddenRunning = hidden.every((c) => c.delegateState !== "finished");
     if (isMore)
       rows.push({
         kind: "more",
         id: `${x.id}-more`,
-        text: `+ ${under.length - CHILD_ROWS} more running`,
+        text: `+ ${hidden.length} more${isEveryHiddenRunning ? " running" : ""}`,
         branch: "last"
       });
   }
@@ -3262,10 +3367,10 @@ function overviewPage(s, now) {
       text: `${folded.length}${isMore ? " more" : ""} done`
     });
   }
-  const goal = o?.goal || null;
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
-    isEmpty: goal === null && rows.length === 0,
-    goal,
+    isEmpty: head === null && rows.length === 0,
+    head,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {
@@ -3337,7 +3442,8 @@ function actionsOf(row, last, state, feedback) {
       ...stepActions,
       action({ action: "done", id }, "Done", "mark"),
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
-      action({ action: "explain", id }, "Explain", "talk")
+      action({ action: "explain", id }, "Explain", "talk"),
+      action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
   const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
@@ -3618,22 +3724,34 @@ var COUNT_TOKENS = {
 var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null]));
 var HERDR_TIMEOUT_MS = 5000;
 var HERDR_AGENT_LIST = ["herdr", "agent", "list"];
-var HERDR_RUNNING = new Set(["working", "unknown"]);
+var HERDR_STATUSES = ["idle", "working", "blocked", "done", "unknown"];
+var HERDR_CHECK_MS = 30000;
 async function delegatesInHerdr(o, run) {
   if (!hasRunningDelegate(o))
     return null;
   const r = await run(HERDR_AGENT_LIST, { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS });
-  return r.code === 0 ? herdrRunning(r.stdout) : null;
+  return r.code === 0 ? herdrStatuses(r.stdout) : null;
 }
-function herdrRunning(stdout) {
+function herdrStatuses(stdout) {
   try {
     const agents = JSON.parse(stdout)?.result?.agents;
     if (!Array.isArray(agents))
       return null;
-    return new Set(agents.filter((a) => typeof a?.name === "string" && HERDR_RUNNING.has(a?.agent_status)).map((a) => a.name));
+    const statusOf = (a) => HERDR_STATUSES.find((s) => s === a?.agent_status) ?? "unknown";
+    return new Map(agents.filter((a) => typeof a?.name === "string").map((a) => [a.name, statusOf(a)]));
   } catch {
     return null;
   }
+}
+function herdrCheckGate() {
+  const checked = new Map;
+  return (session, now) => {
+    const last = checked.get(session);
+    if (last !== undefined && now - last < HERDR_CHECK_MS)
+      return false;
+    checked.set(session, now);
+    return true;
+  };
 }
 function stopLine(stop) {
   switch (stop.kind) {
@@ -3656,18 +3774,21 @@ function statusLine(stop, dialogs, input) {
   const dialog = dialogs[0];
   if (dialog)
     return dialogText(dialog);
-  const { firstAsk, asks, findings, goal } = input;
+  const { firstAsk, asks, findings, focus } = input;
   if (firstAsk !== null)
     return asks > 1 ? `${asks} \xB7 ${firstAsk}` : firstAsk;
   const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? "" : "s"}`;
-  return [goal, findingsText].filter(Boolean).join(" \xB7 ");
+  return [focus, findingsText].filter(Boolean).join(" \xB7 ");
+}
+function focusOf(head) {
+  return head ? head.description || head.title : null;
 }
 function herdrTokens(ledger, stop, view, dialogs) {
   const input = {
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
-    goal: ledger.overview?.goal || null
+    focus: focusOf(ledger.overview?.head ?? null)
   };
   const counts = ROW_TABS.map((t) => {
     const count = view[t.id].count;
@@ -3743,11 +3864,12 @@ function olderPrsText(prState, linked) {
   const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
   return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
 }
-async function fetchTracked(run, state, linked, findsBranchPr) {
+async function fetchTracked(run, state, linked, findsBranchPr, now) {
   let isGhSignedOut = null;
   const gh = async (args) => {
     const r = await run(args);
-    if (r.exitCode !== UNSTARTABLE_CODE)
+    const isAnswer = r.exitCode !== UNSTARTABLE_CODE && r.exitCode !== TIMED_OUT_CODE;
+    if (isAnswer)
       isGhSignedOut = isGhSignedOut === true || asksForSignIn(r);
     return r;
   };
@@ -3755,8 +3877,8 @@ async function fetchTracked(run, state, linked, findsBranchPr) {
   const branchTarget = findsBranchPr ? null : state.branchRef;
   const isBranchLinked = branchTarget !== null && tracked.includes(branchTarget);
   const [branch, ...rest] = await Promise.all([
-    findsBranchPr || branchTarget && !isBranchLinked ? fetchPr(gh, branchTarget, state.views, state.branchRef) : null,
-    ...tracked.map((ref) => fetchPr(gh, ref, state.views, null))
+    findsBranchPr || branchTarget && !isBranchLinked ? fetchPr(gh, branchTarget, state.views, state.branchRef, now) : null,
+    ...tracked.map((ref) => fetchPr(gh, ref, state.views, null, now))
   ]);
   const views = {};
   for (const v of [...rest, branch])
@@ -3764,7 +3886,7 @@ async function fetchTracked(run, state, linked, findsBranchPr) {
       views[v.ref] = v;
   return { views, branchRef: findsBranchPr ? branch?.ref ?? null : state.branchRef, isGhSignedOut };
 }
-async function fetchPr(gh, target, views, knownBranchRef) {
+async function fetchPr(gh, target, views, knownBranchRef, now) {
   const threadsOf = (ref) => {
     const r = parseRef(ref);
     return gh([
@@ -3785,6 +3907,7 @@ async function fetchPr(gh, target, views, knownBranchRef) {
     gh(["pr", "view", ...t ? [t.number, "-R", t.repo] : [], "--json", VIEW_FIELDS]),
     target ? threadsOf(target) : null
   ]);
+  const fetchedAt = await now();
   const hasNoPr = view.exitCode !== 0 && /no pull requests found/i.test(view.stderr);
   const ref = target ?? (view.exitCode === 0 ? urlRef(view.stdout) : hasNoPr ? null : knownBranchRef);
   if (!ref)
@@ -3794,8 +3917,9 @@ async function fetchPr(gh, target, views, knownBranchRef) {
   if (!base) {
     if (!previous || asksForSignIn(view))
       return previous ?? null;
-    return { ...previous, error: view.stderr.trim().split(`
-`)[0] || "gh could not read the PR" };
+    const error = view.exitCode === TIMED_OUT_CODE ? GH_TIMED_OUT_TEXT : view.stderr.trim().split(`
+`)[0] || "gh could not read the PR";
+    return { ...previous, error };
   }
   const threads = early ?? await threadsOf(ref);
   const answer = threads.exitCode === 0 ? readThreadsAnswer(threads.stdout) : null;
@@ -3804,7 +3928,8 @@ async function fetchPr(gh, target, views, knownBranchRef) {
     threads: answer?.threads ?? previous?.threads ?? [],
     isYours: answer?.isYours ?? previous?.isYours ?? null,
     wasSeenOpen: base.state === "OPEN" || previous?.wasSeenOpen === true,
-    error: answer ? null : "could not read review threads"
+    error: answer ? null : "could not read review threads",
+    fetchedAt
   };
 }
 function urlRef(json) {
@@ -3830,6 +3955,7 @@ function prMarkId(ref) {
   return `pr:${ref}`;
 }
 var GH_MISSING_TEXT = "The inbox could not find gh. It needs gh to read your PRs.";
+var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} seconds`;
 var GH_SIGNED_OUT_TEXT = "gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.";
 function ghNoticeOf(gh) {
   if (gh.isGhMissing)
@@ -3949,6 +4075,12 @@ function prPageEffect(pr) {
 }
 function logEffect(pr, check) {
   return { kind: "open", target: check.url ?? pr.url, name: check.url ? "the log" : `PR #${pr.number}` };
+}
+function isPrFixPress(p) {
+  return p.action === "pr-conflicts" || p.action === "check-fix";
+}
+function fixCheckEffect(pr) {
+  return { kind: "refresh-prs", name: `PR #${pr.number}` };
 }
 function prRowId(p) {
   if ("check" in p)
@@ -5141,6 +5273,50 @@ async function wakeForDone(host, current) {
     return outcome.state === "rejected" ? { ...after, ledger: refuseDoneNotification(after.ledger, sending.deliveryId, outcome.reason) } : after;
   });
 }
+var FIX_LABELS = { "pr-conflicts": "Resolve conflicts", "check-fix": "Fix" };
+function withoutCheck(s, check) {
+  const result = check ? s.lastActions[check.rowId]?.result : undefined;
+  if (!check || result?.at !== check.pendingAt || result.pressId !== check.pressId)
+    return s;
+  const { [check.rowId]: _check, ...rest } = s.lastActions;
+  return { ...s, lastActions: check.before ? { ...rest, [check.rowId]: check.before } : rest };
+}
+async function checkPrFirst(host, p, rowId, pressId, holds) {
+  const checking = {};
+  await host.update(async (saved) => {
+    delete checking.check;
+    const s = withHolds(saved, holds);
+    const at = await host.now();
+    const pr = s.prViews.views[p.ref];
+    if (!pr || "stale" in pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, host))
+      return s;
+    const before = s.lastActions[rowId];
+    const pending = pendingResult([fixCheckEffect(pr)], at, pressId);
+    checking.check = { rowId, before, pendingAt: at, pressId };
+    return {
+      ...s,
+      lastActions: {
+        ...s.lastActions,
+        [rowId]: localLast(before, { action: p.action, text: FIX_LABELS[p.action] }, pending)
+      }
+    };
+  });
+  const check = checking.check;
+  if (!check)
+    return "stale";
+  await host.refreshPrs();
+  let isRead = false;
+  await host.update(async (s) => {
+    const pr = s.prViews.views[p.ref];
+    isRead = pr?.fetchedAt !== undefined && pr.fetchedAt >= check.pendingAt;
+    const pending = s.lastActions[rowId]?.result;
+    if (isRead || !pending)
+      return s;
+    const failed = finishedResult(pending, [pr?.error ?? "gh could not read it"], await host.now());
+    return { ...s, lastActions: withResult(s.lastActions, rowId, check.pendingAt, failed) };
+  });
+  return isRead ? check : "unread";
+}
 async function startPress(host, p, isStale, holds) {
   const rowId = pressRowId(p);
   const localPressId = host.newId();
@@ -5176,10 +5352,26 @@ async function startPress(host, p, isStale, holds) {
       await host.update((s) => ({ ...s, ledger: f(s.ledger) }));
     }
   };
+  const check = "ref" in p && isPrFixPress(p) && !isStale ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err) => {
+    error = `Not sent: ${err instanceof Error ? err.message : String(err)}`;
+    return "unread";
+  }) : null;
+  if (check === "stale" || check === "unread")
+    return {
+      effects: null,
+      finish: async () => ({
+        copy,
+        error,
+        note: check === "stale" ? "stale" : null,
+        isUnconfirmed,
+        isRowFailed,
+        wakesForDone: false
+      })
+    };
   await host.update(async (saved) => {
     note = isStale ? "stale" : null;
     Object.assign(pressed, { r: undefined, at: undefined, deliveryId: undefined });
-    const s = withHolds(saved, holds);
+    const s = withoutCheck(withHolds(saved, holds), check);
     if (note)
       return s;
     const at = await host.now();
@@ -5256,10 +5448,12 @@ function isPrFetchDue(s, lastFetchedAt, now) {
   if (lastFetchedAt === undefined)
     return true;
   const hasNewPr = splitLinked(s.prViews, s.ledger.prs).tracked.some((ref) => !(ref in s.prViews.views));
-  return now - lastFetchedAt >= PRS_REFRESH_MS || hasNewPr && now - lastFetchedAt >= NEW_PR_FETCH_MS;
+  const hasReplySince = (s.presence.lastReplyAt ?? 0) > lastFetchedAt;
+  return now - lastFetchedAt >= PRS_REFRESH_MS || (hasNewPr || hasReplySince) && now - lastFetchedAt >= NEW_PR_FETCH_MS;
 }
 function prFetchTracker(now) {
   const running = new Map;
+  const following = new Map;
   const endedAt = new Map;
   const start = (id, fetch) => {
     const run = fetch().catch(() => {
@@ -5274,7 +5468,17 @@ function prFetchTracker(now) {
   return {
     isFetching: (id) => running.has(id),
     fetchWhenDue: (id, s, fetch) => running.has(id) || !isPrFetchDue(s, endedAt.get(id), now()) ? null : start(id, fetch),
-    fetchNow: (id, fetch) => running.get(id) ?? start(id, fetch)
+    fetchNow: (id, fetch) => {
+      const current = running.get(id);
+      if (!current)
+        return start(id, fetch);
+      const next = following.get(id) ?? current.then(() => {
+        following.delete(id);
+        return running.get(id) ?? start(id, fetch);
+      });
+      following.set(id, next);
+      return next;
+    }
   };
 }
 async function fetchPrs(host, findsBranchPr) {
@@ -5286,7 +5490,7 @@ async function fetchPrs(host, findsBranchPr) {
   let sawUnstartable = false;
   const fetchWith = (path) => fetchTracked(host.gh.run(s, path, () => {
     sawUnstartable = true;
-  }), s.prViews, s.ledger.prs, findsBranchPr);
+  }), s.prViews, s.ledger.prs, findsBranchPr, () => host.now());
   let fetch = await fetchWith(bin);
   if (sawUnstartable) {
     host.gh.forget();
@@ -5345,7 +5549,7 @@ function openTarget2(run, target, root, home) {
   }, target, root, home);
 }
 // package.json
-var version = "0.2.13";
+var version = "0.2.14";
 
 // ../hooks/arrivals.ts
 function recordRows(seen, listed) {
@@ -5750,7 +5954,11 @@ function pageEntries(page) {
       { kind: "note", text: page.empty.title, isStrong: true },
       { kind: "note", text: page.empty.hint, isWhole: true }
     ];
-  const head = page.goal ? [{ kind: "note", text: page.goal, isStrong: true, indent: PAGE_MARK_AT }] : [];
+  const description = page.head?.description;
+  const head = page.head ? [
+    { kind: "note", text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
+    ...description ? [{ kind: "note", text: description, indent: PAGE_MARK_AT }] : []
+  ] : [];
   const rows = page.rows.map((row) => ({ kind: "page", row }));
   return head.length > 0 && rows.length > 0 ? [...head, { kind: "note", text: "" }, ...rows] : [...head, ...rows];
 }
@@ -5775,7 +5983,7 @@ function resolveSelected(lines, selectedId) {
 function defaultFocus(line) {
   return Math.max(0, line.buttons.findIndex((b) => b.isRecommended));
 }
-var focusOf = (line, ui) => ui.focus?.rowId === line.id ? Math.min(ui.focus.index, line.buttons.length - 1) : defaultFocus(line);
+var focusOf2 = (line, ui) => ui.focus?.rowId === line.id ? Math.min(ui.focus.index, line.buttons.length - 1) : defaultFocus(line);
 function withSelection(ui, id) {
   return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null };
 }
@@ -5881,10 +6089,10 @@ function handleKey(screen, ui, key, now, text) {
   if (!selected || selected.buttons.length === 0)
     return { ui: base };
   if (key === "left" || key === "right") {
-    const index = wrapIndex(focusOf(selected, base) + (key === "left" ? -1 : 1), selected.buttons.length);
+    const index = wrapIndex(focusOf2(selected, base) + (key === "left" ? -1 : 1), selected.buttons.length);
     return { ui: { ...base, focus: { rowId: selected.id, index } } };
   }
-  const button = key === "enter" ? selected.buttons[focusOf(selected, base)] : selected.buttons.find((b) => b.key === key);
+  const button = key === "enter" ? selected.buttons[focusOf2(selected, base)] : selected.buttons.find((b) => b.key === key);
   return button ? activate(screen, base, selected, button, now) : { ui: base };
 }
 function tabRows(screen) {
@@ -6028,7 +6236,7 @@ function labelMark(b, room, s) {
   return actionLabel({ label: b.label, isPrimary: b.isRecommended }, fits).slice(b.label.length);
 }
 function buttonLines(line, ui, indent, width, s) {
-  const focused = focusOf(line, ui);
+  const focused = focusOf2(line, ui);
   const cells = line.buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)));
   const sizes = cells.map(visibleLength);
   const firstFollowUp = line.buttons.findIndex((b) => b.isFollowUp);
@@ -6100,44 +6308,52 @@ function drawLine(line, isSelected, d) {
   }
   return out;
 }
-var UNBROKEN_SPACE = "\uE000";
 var pageRoom = (indent, width) => Math.max(10, width - indent - 2 - 1);
-function pageText(text, room, maxLines, first, firstCells = Infinity, rest = first) {
+function pageText(text, room, maxLines, paint) {
   const wrapped = wrapText(text, room);
   const lines = wrapped.slice(0, maxLines);
   if (wrapped.length > lines.length)
     lines[lines.length - 1] = `${cutForEllipsis(lines.at(-1), (t) => cellWidth(t) <= room)}\u2026`;
-  let firstLeft = firstCells;
-  return lines.map((l) => {
-    const head = cutToCells(l, Math.max(0, firstLeft));
-    firstLeft -= cellWidth(l) + 1;
-    return first(head) + (head.length < l.length ? rest(l.slice(head.length)) : "");
-  });
+  return lines.map(paint);
 }
-function pageLine(d, indent, mark, name, namePaint, second = { text: null, stall: null }) {
+var GLUE = "\uE000";
+function pageLine(d, indent, mark, name, namePaint, { stall = null, text = null } = {}) {
   const { width, style: s } = d;
   const textAt = indent + 2;
   const room = pageRoom(indent, width);
-  const names = pageText(name, room, OVERVIEW_TEXT_LINES, namePaint);
-  const stall = second.stall?.replaceAll(" ", UNBROKEN_SPACE) ?? null;
-  const secondText = [second.text, stall].filter(Boolean).join(STALL_GAP);
-  const dimCells = second.text ? cellWidth(second.text) + (stall ? cellWidth(STALL_GAP) : 0) : 0;
-  const seconds = secondText ? pageText(secondText, room, OVERVIEW_TEXT_LINES, s.dim, dimCells, (t) => s.tone("needsYou", t)).map((l) => l.replaceAll(UNBROKEN_SPACE, " ")) : [];
+  const names = stall ? stalledName(name, stall, room, namePaint, s) : pageText(name, room, OVERVIEW_TEXT_LINES, namePaint);
+  const seconds = text ? pageText(text, room, OVERVIEW_TEXT_LINES, s.dim) : [];
   return [
     `${" ".repeat(indent)}${mark} ${names[0] ?? ""}`,
     ...[...names.slice(1), ...seconds].map((l) => " ".repeat(textAt) + l)
   ];
 }
+function stalledName(name, stall, room, namePaint, s) {
+  const tail = `${STALL_GAP}${stall.text}`.replaceAll(" ", GLUE);
+  const wrapped = (shown) => wrapText(`${shown}${tail}`, room);
+  const lines = wrapped(nameBeforeStall(name, (shown) => wrapped(shown).length <= OVERVIEW_TEXT_LINES));
+  const words = s.tone(stall.tone, stall.text);
+  return lines.map((l) => l.endsWith(tail) ? namePaint(l.slice(0, -tail.length)) + s.dim(STALL_GAP) + words : namePaint(l.replaceAll(GLUE, " ")));
+}
 function withTree(lines, first, rest, s) {
   const drawn = (line, glyph) => glyph.trim() === "" ? line : line.slice(0, PAGE_MARK_AT) + s.dim(glyph) + line.slice(PAGE_MARK_AT + glyph.length);
   return lines.map((l, n) => n === 0 ? first ? drawn(l, first) : l : drawn(l, rest));
+}
+function pageRule(width, s, label = null) {
+  const cells = Math.max(0, width - PAGE_TEXT_AT - 1);
+  if (label === null)
+    return `${" ".repeat(PAGE_TEXT_AT)}${s.dim("\u2500".repeat(cells))}`;
+  const text = ` ${label} `;
+  const fill = Math.max(4, cells - cellWidth(text));
+  const before = Math.floor(fill / 2);
+  return `${" ".repeat(PAGE_TEXT_AT)}${s.dim(`${"\u2500".repeat(before)}${text}${"\u2500".repeat(fill - before)}`)}`;
 }
 function drawPageRow(row, d) {
   const { width, now, style: s } = d;
   if (row.kind === "subject") {
     const glyph = row.isRunning ? runningMark(now) : row.mark;
     const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph);
-    const out = pageLine(d, PAGE_MARK_AT, mark, row.name, (t) => t, { text: row.text, stall: row.stall });
+    const out = pageLine(d, PAGE_MARK_AT, mark, row.name, (t) => t, { stall: row.stall, text: row.text });
     const room = pageRoom(PAGE_MARK_AT, width);
     if (row.merged)
       out.push(...indented(mergedLine(row.merged, (t) => cellWidth(t) <= room), PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim));
@@ -6146,23 +6362,17 @@ function drawPageRow(row, d) {
     return row.hasChildren ? withTree(out, null, "\u2502", s) : out;
   }
   if (row.kind === "child") {
-    const mark = s.dim(row.isRunning ? runningMark(now) : row.mark);
-    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, {
-      text: null,
-      stall: row.stall
-    });
+    const glyph = row.isRunning ? runningMark(now) : row.mark;
+    const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph);
+    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, { stall: row.stall });
     return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out;
   }
   if (row.kind === "more") {
     const arm = TREE_ARMS[row.branch];
     return withTree([" ".repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s);
   }
-  if (row.kind === "look") {
-    const label = ` ${row.text} `;
-    const fill = Math.max(4, width - 1 - PAGE_MARK_AT - cellWidth(label));
-    const before = Math.floor(fill / 2);
-    return [`${" ".repeat(PAGE_MARK_AT)}${s.dim(`${"\u2500".repeat(before)}${label}${"\u2500".repeat(fill - before)}`)}`];
-  }
+  if (row.kind === "look")
+    return [pageRule(width, s, row.text)];
   const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark);
   return pageLine(d, PAGE_MARK_AT, mark, row.text, s.dim);
 }
@@ -6223,14 +6433,13 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
     rule,
     ...banners.flatMap((b) => bannerLines(b, width, style))
   ];
-  const pageRule = `${" ".repeat(PAGE_TEXT_AT)}${style.dim("\u2500".repeat(Math.max(0, width - PAGE_TEXT_AT - 1)))}`;
   const body = [];
   let selectedAt = [0, 0];
   for (const e of entries) {
     if (e.kind === "heading")
       body.push(` ${e.mark ? `${e.mark.tone ? style.tone(e.mark.tone, e.mark.text) : e.mark.text} ` : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
     else if (e.kind === "page")
-      body.push(...e.row.isRuledAbove ? [pageRule] : [], ...drawPageRow(e.row, d));
+      body.push(...e.row.isRuledAbove ? [pageRule(width, style)] : [], ...drawPageRow(e.row, d));
     else if (e.kind === "banner")
       body.push(...bannerLines(e.banner, width, style));
     else if (e.kind === "note")
@@ -6408,6 +6617,11 @@ function createPanel(deps) {
       stops.push(source.onChange(() => void refresh()));
       const prs = timers.every(() => source.fetchPrsWhenDue(), PRS_CHECK_MS);
       stops.push(() => timers.stop(prs));
+      const delegates = timers.every(() => {
+        if (ui.tab === "overview")
+          source.checkDelegatesWhenDue();
+      }, HERDR_CHECK_MS);
+      stops.push(() => timers.stop(delegates));
       await refresh();
     },
     dispose() {
@@ -6469,8 +6683,7 @@ function demoView(now, agent) {
   return {
     ledger: {
       overview: {
-        role: "session",
-        goal: "Pinch to dismiss glances",
+        head: { title: "Pinch to dismiss", description: "Adding a pinch that dismisses glances" },
         subjects: [
           subject("s1", "working", "Dismiss gesture", "pinch fades the glance", now - 2 * MIN),
           subject("s2", "working", "Glasses pairing", "needs this Mac paired", now - 12 * MIN),
@@ -6478,7 +6691,7 @@ function demoView(now, agent) {
             was: "flick and pinch both"
           }),
           subject("s4", "done", "Fade-out", "dismissed glances fade", now - 25 * MIN),
-          subject("s5", "queued", "Glasses trial", "after pairing", now - 3 * 60 * MIN),
+          subject("s5", "waits-on-other", "Glasses trial", "lenses ship Friday", now - 3 * 60 * MIN),
           subject("s6", "done", "Glance hit test", "finds the glance you look at", now - 5 * 60 * MIN),
           subject("s7", "done", "Settings toggle", "pinch can be turned off", now - 6 * 60 * MIN)
         ],
@@ -6491,7 +6704,8 @@ function demoView(now, agent) {
             subjectId: "s1",
             startedAt: now - 4 * MIN,
             endedAt: null,
-            lastActivityAt: now - MIN
+            lastActivityAt: now - MIN,
+            delegateState: null
           },
           {
             id: "c2",
@@ -6501,7 +6715,8 @@ function demoView(now, agent) {
             subjectId: "s2",
             startedAt: now - 50 * MIN,
             endedAt: null,
-            lastActivityAt: now - 40 * MIN
+            lastActivityAt: null,
+            delegateState: null
           },
           {
             id: "c3",
@@ -6511,12 +6726,35 @@ function demoView(now, agent) {
             subjectId: "s1",
             startedAt: now - 9 * MIN,
             endedAt: null,
-            lastActivityAt: null
+            lastActivityAt: null,
+            delegateState: "blocked"
+          },
+          {
+            id: "c4",
+            ref: "demo-fade-timing",
+            kind: "delegate",
+            name: "Time the fade-out",
+            subjectId: "s1",
+            startedAt: now - 30 * MIN,
+            endedAt: now - 3 * MIN,
+            lastActivityAt: now - 30 * MIN,
+            delegateState: "finished"
+          },
+          {
+            id: "c5",
+            ref: "demo-pairing-errors",
+            kind: "subagent",
+            name: "Search the pairing errors",
+            subjectId: "s2",
+            startedAt: now - 25 * MIN,
+            endedAt: null,
+            lastActivityAt: now - 20 * MIN,
+            delegateState: null
           }
         ],
-        askSubjects: { d11: "s3", d14: "s2" },
+        askSubjects: { d11: "s3", d14: "s2", d17: "s2" },
         nextId: 8,
-        nextChildId: 4,
+        nextChildId: 6,
         lastLookAt: now - 30 * MIN,
         look: null
       },
@@ -7042,6 +7280,7 @@ function demoSource(deps) {
     },
     resume: async () => null,
     fetchPrsWhenDue: () => {},
+    checkDelegatesWhenDue: () => {},
     shown: () => {},
     onChange: (listener) => {
       listeners.add(listener);
@@ -7277,9 +7516,9 @@ function createInbox(pi, deps = defaultDeps) {
     const [file = "", ...rest] = args;
     try {
       const r = await pi.exec(file, rest, { cwd, timeout: timeoutMs });
-      return { code: r.killed ? -1 : r.code, stdout: r.stdout, stderr: r.stderr };
+      return { code: r.killed ? TIMED_OUT_CODE : r.code, stdout: r.stdout, stderr: r.stderr };
     } catch (err) {
-      return { code: -1, stdout: "", stderr: messageOf(err) };
+      return { code: UNSTARTABLE_CODE, stdout: "", stderr: messageOf(err) };
     }
   };
   const gh = ghFinder(run);
@@ -7412,6 +7651,17 @@ function createInbox(pi, deps = defaultDeps) {
     prepared.add(id);
     deps.background(reconcileUpdateStatus(hostFor(ctx)));
     deps.background(pruneSessions(dir, id));
+  }
+  const isHerdrCheckDue = herdrCheckGate();
+  function checkDelegatesWhenDue(ctx) {
+    const id = sessionIdOf(ctx);
+    if (!isHerdrCheckDue(id, deps.now()))
+      return;
+    deps.background((async () => {
+      const states = await delegatesInHerdr((await readState(dir, id)).ledger.overview, run);
+      if (states)
+        await change(id, (s) => overviewChanged(s, (o) => delegatesSettled(o, states, deps.now())));
+    })());
   }
   function fetchPrsWhenDue(ctx) {
     const id = sessionIdOf(ctx);
@@ -7774,6 +8024,8 @@ function createInbox(pi, deps = defaultDeps) {
       const now = deps.now();
       if (isChanged)
         deps.background(change(id, (s) => withHolds(withLook(s, tab === "overview", now), holds)));
+      if (isChanged && tab === "overview")
+        checkDelegatesWhenDue(ctx);
     },
     closePanel: (ctx) => {
       const id = sessionIdOf(ctx);
@@ -7781,6 +8033,7 @@ function createInbox(pi, deps = defaultDeps) {
       deps.background(change(id, (s) => ({ ...lookEndedOn(s, deps.now()), shownSince: null })));
     },
     fetchPrsWhenDue,
+    checkDelegatesWhenDue,
     onChange: (ctx, listener) => {
       const id = sessionIdOf(ctx);
       const set = listeners.get(id) ?? new Set;
@@ -7804,6 +8057,7 @@ function createInbox(pi, deps = defaultDeps) {
     },
     resume: async () => inbox.resume(ctx),
     fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),
+    checkDelegatesWhenDue: () => inbox.checkDelegatesWhenDue(ctx),
     shown: (tab, holds) => inbox.showTab(ctx, tab, holds),
     onChange: (listener) => inbox.onChange(ctx, listener)
   });

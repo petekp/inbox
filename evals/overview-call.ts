@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
 import { OVERVIEW_SYSTEM } from '../hooks/model-text'
-import { parseOverview } from '../hooks/overview'
+import { parseOverview, upgradeOverview } from '../hooks/overview'
 import { OVERVIEW_RECORD_VERSION } from '../hooks/session-host'
 import type { OverviewRecord } from '../hooks/session-host'
 import type { Overview } from '../types'
@@ -42,7 +42,9 @@ if (record.version !== OVERVIEW_RECORD_VERSION) {
 const yesNo = (b: boolean) => (b ? 'yes' : 'no')
 const when = (at: number) => new Date(at).toISOString().replace('T', ' ').slice(0, 19)
 
-function overviewText(o: Overview | null): string {
+/** A record's Overview as text. An earlier build's record holds that build's shape, so it is upgraded first. */
+function overviewText(saved: Overview | null): string {
+  const o = upgradeOverview(saved)
   if (!o) return '(none)'
   const names = new Map(o.subjects.map(s => [s.id, s.name]))
   const subjects = o.subjects.map(
@@ -58,7 +60,7 @@ function overviewText(o: Overview | null): string {
   )
 
   return [
-    `Goal: ${o.goal || '(none)'}`,
+    `Head: ${o.head ? `${o.head.title} | ${o.head.description || '(no description)'}` : '(none)'}`,
     ...(subjects.length > 0 ? ['Subjects:', ...subjects] : []),
     ...(children.length > 0 ? ['Children:', ...children] : []),
     ...(holds.length > 0 ? ['Asks:', ...holds] : []),

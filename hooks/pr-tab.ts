@@ -1,5 +1,5 @@
 import type { Item, LastAction, Ledger, PressKind, PrCheck, PrThread, PrView, PrViews } from '../types'
-import { UNSTARTABLE_CODE } from './gh'
+import { GH_TIMEOUT_MS, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import { baseName, isFoldingPress, localLast, pendingResult, prSteps, recordPress, withQueued } from './presses'
 import type { Effect, HelpStep, PrActionId, RowPress } from './presses'
 import { clipLabel } from './text'
@@ -98,11 +98,13 @@ export async function fetchTracked(
   state: PrViews,
   linked: string[],
   findsBranchPr: boolean,
+  now: () => number | Promise<number>,
 ): Promise<{ views: Record<string, PrView>; branchRef: string | null; isGhSignedOut: boolean | null }> {
   let isGhSignedOut: boolean | null = null
   const gh: GhRun = async args => {
     const r = await run(args)
-    if (r.exitCode !== UNSTARTABLE_CODE) isGhSignedOut = isGhSignedOut === true || asksForSignIn(r)
+    const isAnswer = r.exitCode !== UNSTARTABLE_CODE && r.exitCode !== TIMED_OUT_CODE
+    if (isAnswer) isGhSignedOut = isGhSignedOut === true || asksForSignIn(r)
 
     return r
   }
@@ -110,8 +112,10 @@ export async function fetchTracked(
   const branchTarget = findsBranchPr ? null : state.branchRef
   const isBranchLinked = branchTarget !== null && tracked.includes(branchTarget)
   const [branch, ...rest] = await Promise.all([
-    findsBranchPr || (branchTarget && !isBranchLinked) ? fetchPr(gh, branchTarget, state.views, state.branchRef) : null,
-    ...tracked.map(ref => fetchPr(gh, ref, state.views, null)),
+    findsBranchPr || (branchTarget && !isBranchLinked)
+      ? fetchPr(gh, branchTarget, state.views, state.branchRef, now)
+      : null,
+    ...tracked.map(ref => fetchPr(gh, ref, state.views, null, now)),
   ])
   const views: Record<string, PrView> = {}
   for (const v of [...rest, branch]) if (v) views[v.ref] = v
@@ -125,13 +129,14 @@ export async function fetchTracked(
  * `knownBranchRef` is the branch's PR as of the last fetch: it stays the
  * branch's PR when the lookup fails for any reason but "no pull requests found".
  * A PR that gh could not read because it asked for a sign-in keeps its last view, since the PRs tab's sign-in notice
- * says why.
+ * says why. A view's `fetchedAt` is the time `now` reads once gh answers.
  */
 export async function fetchPr(
   gh: GhRun,
   target: string | null,
   views: Record<string, PrView>,
   knownBranchRef: string | null,
+  now: () => number | Promise<number>,
 ): Promise<PrView | null> {
   const threadsOf = (ref: string) => {
     const r = parseRef(ref)
@@ -153,6 +158,7 @@ export async function fetchPr(
     gh(['pr', 'view', ...(t ? [t.number, '-R', t.repo] : []), '--json', VIEW_FIELDS]),
     target ? threadsOf(target) : null,
   ])
+  const fetchedAt = await now()
   const hasNoPr = view.exitCode !== 0 && /no pull requests found/i.test(view.stderr)
   const ref = target ?? (view.exitCode === 0 ? urlRef(view.stdout) : hasNoPr ? null : knownBranchRef)
   if (!ref) return null
@@ -161,7 +167,12 @@ export async function fetchPr(
   if (!base) {
     if (!previous || asksForSignIn(view)) return previous ?? null
 
-    return { ...previous, error: view.stderr.trim().split('\n')[0] || 'gh could not read the PR' }
+    const error =
+      view.exitCode === TIMED_OUT_CODE
+        ? GH_TIMED_OUT_TEXT
+        : view.stderr.trim().split('\n')[0] || 'gh could not read the PR'
+
+    return { ...previous, error }
   }
   const threads = early ?? (await threadsOf(ref))
   const answer = threads.exitCode === 0 ? readThreadsAnswer(threads.stdout) : null
@@ -172,6 +183,7 @@ export async function fetchPr(
     isYours: answer?.isYours ?? previous?.isYours ?? null,
     wasSeenOpen: base.state === 'OPEN' || previous?.wasSeenOpen === true,
     error: answer ? null : 'could not read review threads',
+    fetchedAt,
   }
 }
 
@@ -204,6 +216,8 @@ export function prMarkId(ref: string): string {
 }
 
 export const GH_MISSING_TEXT = 'The inbox could not find gh. It needs gh to read your PRs.'
+
+export const GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} seconds`
 
 export const GH_SIGNED_OUT_TEXT = 'gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.'
 
@@ -456,8 +470,24 @@ function logEffect(pr: PrView, check: PrCheck): Effect {
   return { kind: 'open', target: check.url ?? pr.url, name: check.url ? 'the log' : `PR #${pr.number}` }
 }
 
-/** The open or refresh a Local PR press runs. Null for a press that sends or marks, or whose row is gone. */
+/** A PR press that hands off a fix. The saved view can predate a push, so the press reads the PR from GitHub first. */
+export type PrFixPress = { action: 'pr-conflicts'; ref: string } | { action: 'check-fix'; ref: string; check: string }
+
+export function isPrFixPress(p: PrPress): p is PrFixPress {
+  return p.action === 'pr-conflicts' || p.action === 'check-fix'
+}
+
+/** The refresh a fix press runs before it sends, so its row reads "Refreshing PR #12…". */
+export function fixCheckEffect(pr: PrView): Effect {
+  return { kind: 'refresh-prs', name: `PR #${pr.number}` }
+}
+
+/**
+ * The open or refresh a PR press runs before any message: a Local press's open or refresh, or a fix press's
+ * `fixCheckEffect`. Null for a press that only sends or marks, or whose row is gone.
+ */
 export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
+  if (isPrFixPress(p)) return fixCheckEffect(pr)
   switch (p.action) {
     case 'thread-open': {
       const t = pr.threads.find(x => x.id === p.thread)

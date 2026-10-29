@@ -38,6 +38,8 @@ export type Facts = {
   focus: string
   /** A case-insensitive pattern the head matches while `focus` holds. */
   focusMatch: string
+  /** A case-insensitive pattern for finished work the focus moved on from. The head's title no longer matches it. */
+  pastMatch?: string
   pieces: Piece[]
   asks: AskFact[]
   notWork: NotWork[]
@@ -50,6 +52,7 @@ export type Facts = {
 export type FactsChange = {
   focus?: string
   focusMatch?: string
+  pastMatch?: string
   pieces?: (Partial<Piece> & { id: string })[]
   /** The open asks after the step, in place of the ones before. */
   asks?: AskFact[]
@@ -80,6 +83,7 @@ export function factsAfter(before: Facts, change: FactsChange | undefined): Fact
   return {
     focus: change?.focus ?? before.focus,
     focusMatch: change?.focusMatch ?? before.focusMatch,
+    ...((change?.pastMatch ?? before.pastMatch) ? { pastMatch: change?.pastMatch ?? before.pastMatch } : {}),
     pieces,
     asks: change?.asks ?? before.asks,
     notWork: [...before.notWork, ...(change?.notWork ?? [])],
