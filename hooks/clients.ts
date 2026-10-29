@@ -49,6 +49,7 @@ export type FeatureId =
   | 'overview-call-records'
   | 'dismiss-merged-prs'
   | 'help-page'
+  | 'overview-view-ask'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -111,6 +112,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           "The engine binds only a digit or a lowercase letter as a Button's hotkey, so no key opens the terminal's Help. The desktop pane takes no keys, so its Help lists only the marks.",
       },
+      'overview-view-ask': { kind: 'full' },
     },
   },
   codex: {
@@ -215,6 +217,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'overview-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
       'help-page': { kind: 'full' },
+      'overview-view-ask': {
+        kind: 'different',
+        reason:
+          "Pete's choice: View takes clicks only, with no key. The Codex Overview has no row selection and is used by clicking.",
+      },
     },
   },
   omp: {
@@ -291,6 +298,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         kind: 'different',
         reason: 'The panel takes keys only, so `?` opens Help, and no button does.',
       },
+      'overview-view-ask': { kind: 'full' },
     },
   },
 }

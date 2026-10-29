@@ -255,6 +255,9 @@ import {
   QUEUED_AFTER_MS,
   compareEndsAt,
   rowKeyPlan,
+  overviewKeyPlan,
+  overviewKeyRows,
+  overviewSelected,
   actionLines,
   settledLabel,
   actionLabel,
@@ -372,6 +375,8 @@ const PAGE = atom({ plugin: 'inbox', key: 'page' } as const, null as PageTab | n
 const NO_CURSOR: Cursor = { id: null, index: 0, openedAt: 0 }
 const NO_SELECTION: Record<Tab, Cursor> = { needsYou: NO_CURSOR, findings: NO_CURSOR, prs: NO_CURSOR }
 const SELECTION = atom({ plugin: 'inbox', key: 'selection' } as const, NO_SELECTION)
+/** The Overview row whose keys work, by id, as `overviewSelected` resolves it. */
+const OVERVIEW_SELECTION = atom({ plugin: 'inbox', key: 'overviewSelection' } as const, null as string | null)
 const THEME = atom({ plugin: 'inbox', key: 'theme' } as const, '')
 const DIALOGS = atom({ plugin: 'inbox', key: 'dialogs' } as const, [] as Dialog[])
 const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string | null)
@@ -2434,6 +2439,11 @@ async function scrollToKey(
   return false
 }
 
+async function selectOverviewRow($: EngineInterface, id: string) {
+  await update($, OVERVIEW_SELECTION, () => id)
+  await scrollToKey($, `overview-${id}`, 'nearest')
+}
+
 async function scrollToRow($: EngineInterface, id: string) {
   await scrollToKey($, `view-${id}`, isInlinePane ? 'start' : 'nearest')
 }
@@ -2576,6 +2586,18 @@ async function selectClicked($: EngineInterface, id: string) {
   focusedKey = `select-${id}`
   focusHint = null
   await select($, tab, id, index)
+}
+
+/** An Overview row's View press: Asks shows with the ask selected and in view. */
+async function showAsk($: EngineInterface, askId: string) {
+  const { view } = await drawnState($)
+  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
+  const index = Math.max(0, tabRowIds(view, prViews).needsYou.indexOf(askId))
+  focusedKey = `select-${askId}`
+  focusHint = null
+  await select($, 'needsYou', askId, index, false)
+  await showTab($, 'needsYou')
+  await scrollToRow($, askId)
 }
 
 /**
@@ -4173,6 +4195,7 @@ export const register: Register = on => {
       isHelpShown,
       optionsShown,
       termProgram,
+      overviewSelection,
     ] = await Promise.all([
       drawnState($),
       read($, TAB),
@@ -4185,6 +4208,7 @@ export const register: Register = on => {
       read($, IS_HELP_SHOWN),
       read($, OPTIONS_SHOWN),
       $.env.get('TERM_PROGRAM'),
+      read($, OVERVIEW_SELECTION),
       read($, RUNNING_FRAME),
     ])
     const tab: Tab = isShownTab(savedTab) && isRowTab(savedTab) ? savedTab : 'needsYou'
@@ -4516,7 +4540,9 @@ export const register: Register = on => {
           ),
         )
     const at = selectedIndex(ids, cursor, top, id => settledIds.has(id))
-    const isOpenGuarded = isGuarded(cursor.openedAt, now)
+    const isOpenGuarded = !isOverviewShown && isGuarded(cursor.openedAt, now)
+    const overviewKeyRow = isOverviewShown ? overviewSelected(view.overviewPage, overviewSelection) : null
+    const overviewPressRows = isOverviewShown ? overviewKeyRows(view.overviewPage) : []
 
     const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
       actionLabel({ label: a.label, isPrimary: a.variant === 'primary' })
@@ -4954,7 +4980,7 @@ export const register: Register = on => {
       side = null,
       fill,
       padY = space.rowPad,
-      isCentered = false,
+      isSideCentered = false,
       indent = 0,
       isMarkHung = true,
       markCells = DESKTOP_MARK_CELLS,
@@ -4972,30 +4998,17 @@ export const register: Register = on => {
       tree?: JSX.Element | null
       fill?: string | undefined
       padY?: number
-      isCentered?: boolean
+      /** Centers the side and the mark with its text on each other, for a side taller than a line of text, as Undo is. */
+      isSideCentered?: boolean
       indent?: number
       isMarkHung?: boolean
       markCells?: number
       /** Space above and below the frame, in the hooks tree's half lines. */
       gapY?: number
       children: JSX.Element | (JSX.Element | null)[]
-    }) => (
-      <Box
-        key={key}
-        flexDirection="row"
-        alignItems={isCentered ? 'center' : tree ? 'stretch' : 'flex-start'}
-        marginY={gapY}
-        borderStyle="single"
-        borderColor="#0000"
-        paddingY={padY}
-        {...(fill ? { backgroundColor: fill } : {})}
-      >
-        <Box
-          width={indent + markCells + (isMarkHung ? 0 : 1)}
-          {...(isCentered ? { height: 1 } : {})}
-          flexShrink={0}
-          paddingLeft={indent}
-        >
+    }) => {
+      const markColumn = (
+        <Box key="mark" width={indent + markCells + (isMarkHung ? 0 : 1)} flexShrink={0} paddingLeft={indent}>
           {tree}
           {mark ? (
             <Box position="absolute" top={0} left={isMarkHung ? indent - 1 : indent}>
@@ -5003,23 +5016,46 @@ export const register: Register = on => {
             </Box>
           ) : null}
         </Box>
-        <Box flexDirection="column" flexShrink={1} flexGrow={1} minWidth={0}>
+      )
+      const textColumn = (
+        <Box key="text" flexDirection="column" flexShrink={1} flexGrow={1} minWidth={0}>
           {children}
         </Box>
-        {hasSide ? (
-          <Box
-            minWidth={DESKTOP_SIDE_CELLS}
-            flexShrink={0}
-            flexDirection="row"
-            justifyContent="flex-end"
-            alignItems="flex-start"
-            paddingLeft={1}
-          >
-            {side}
-          </Box>
-        ) : null}
-      </Box>
-    )
+      )
+      return (
+        <Box
+          key={key}
+          flexDirection="row"
+          alignItems={isSideCentered ? 'center' : tree ? 'stretch' : 'flex-start'}
+          marginY={gapY}
+          borderStyle="single"
+          borderColor="#0000"
+          paddingY={padY}
+          {...(fill ? { backgroundColor: fill } : {})}
+        >
+          {isSideCentered ? (
+            <Box flexDirection="row" alignItems="flex-start" flexShrink={1} flexGrow={1} minWidth={0}>
+              {markColumn}
+              {textColumn}
+            </Box>
+          ) : (
+            [markColumn, textColumn]
+          )}
+          {hasSide ? (
+            <Box
+              minWidth={DESKTOP_SIDE_CELLS}
+              flexShrink={0}
+              flexDirection="row"
+              justifyContent="flex-end"
+              alignItems="flex-start"
+              paddingLeft={1}
+            >
+              {side}
+            </Box>
+          ) : null}
+        </Box>
+      )
+    }
     const withSideAge = (row: Row, line: JSX.Element) =>
       isAgeInSide ? (
         <Box flexDirection="row">
@@ -5340,7 +5376,7 @@ export const register: Register = on => {
       .map(([, n]) => n)
       .sort((a, b) => b.at - a.at)[0]
 
-    const keyList = helpKeys(look, isNextBuild, shownTab)
+    const keyList = helpKeys(look, isNextBuild, shownTab, overviewPressRows.length > 0)
     const keyColumn = Math.max(0, ...keyList.map(k => cellWidth(k.keys))) + 2
 
     const tabColumns = e.props.bodyColumns - 2
@@ -5995,7 +6031,7 @@ export const register: Register = on => {
           mark: markGlyph(mark, `settled-${r.id}`, pal.muted),
           side: undoPlace(r.id, undo, state.at, state.offersUndo),
           padY: space.settledPad,
-          isCentered: true,
+          isSideCentered: true,
           children: [
             <Text wrap="wrap">
               {r.title}
@@ -6454,12 +6490,15 @@ export const register: Register = on => {
       mark,
       content,
       tree = null,
+      isSelected = false,
     }: {
       key: string
       depth?: number
       mark: JSX.Element | null
       content: JSX.Element | JSX.Element[]
       tree?: JSX.Element | null
+      /** The row whose keys work, which the terminal marks with the selection bar, as on a row tab. */
+      isSelected?: boolean
     }) =>
       look === 'desktop' ? (
         desktopFrame({
@@ -6473,7 +6512,13 @@ export const register: Register = on => {
           children: Array.isArray(content) ? content : [content],
         })
       ) : (
-        <Box key={key} flexDirection="row" alignItems="flex-start" overflow="hidden">
+        <Box
+          key={key}
+          flexDirection="row"
+          alignItems="flex-start"
+          overflow="hidden"
+          backgroundColor={isSelected ? pal.selection : undefined}
+        >
           <Box width={overviewMarkAt + markWidth * depth} flexShrink={0} />
           <Box width={markWidth} flexShrink={0}>
             {mark}
@@ -6482,10 +6527,25 @@ export const register: Register = on => {
             {content}
           </Box>
           {tree}
+          {isSelected ? (
+            <Box position="absolute" top={0} bottom={0} left={0} width={1}>
+              {pal.selection ? null : <Text color={pal.key}>{SELECTION_BAR}</Text>}
+            </Box>
+          ) : null}
         </Box>
       )
+    /** An Overview row's buttons from its plan. Only the selected row's key presses it, so only that row names its key. */
+    const overviewKeys = (r: OverviewRow): KeyAction[] =>
+      overviewKeyPlan(r).map(k => ({
+        key: `${k.press.action}-${r.id}`,
+        label: k.label,
+        kind: k.kind,
+        ...(r.id === overviewKeyRow?.id ? { hotkey: k.hotkey } : {}),
+        onPress: () => showAsk($, k.press.askId),
+      }))
     const overviewRow = (r: OverviewRow) => {
       if (r.kind === 'subject') {
+        const keys = overviewKeys(r)
         const color = r.tone ? pal.mark[r.tone] : pal.muted
         const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
         const content = [
@@ -6503,6 +6563,7 @@ export const register: Register = on => {
           ...(r.was
             ? [overviewText(`overview-${r.id}-was`, [{ text: `${WAS_PREFIX}${r.was}`, isMuted: true }], 0)]
             : []),
+          ...(keys.length > 0 ? [<Box key={`overview-${r.id}-keys`}>{keyRow(r.id, keys)}</Box>] : []),
         ]
 
         return overviewLine({
@@ -6510,6 +6571,7 @@ export const register: Register = on => {
           mark,
           content,
           tree: r.hasChildren ? overviewTree(`overview-${r.id}-tree`, 'down') : null,
+          isSelected: look === 'terminal' && r.id === overviewKeyRow?.id,
         })
       }
       if (r.kind === 'child') {
@@ -6644,17 +6706,18 @@ export const register: Register = on => {
       void select($, tab, ids[to] ?? '', to)
     }
     const canMove = !isOverviewShown && !isHelpShown && (ids.length > 1 || (at < 0 && ids.length > 0))
+    const moveOverview = (step: number) => {
+      const from = overviewPressRows.findIndex(r => r.id === overviewKeyRow?.id)
+      const to = overviewPressRows[Math.min(Math.max(from + step, 0), overviewPressRows.length - 1)]
+      if (to) void selectOverviewRow($, to.id)
+    }
+    const moveBy = (by: number) =>
+      isHelpShown ? undefined : isOverviewShown ? moveOverview(by) : canMove ? move(by) : undefined
     // Claude Code sends a key no Button binds to the prompt and gives it the keyboard, so the keys
     // stay bound when there is nothing to move to or close.
     const moveKeys: KeyAction[] = [
-      { key: 'next', label: 'Next', hotkey: 'j', kind: 'view', onPress: () => (canMove ? move(1) : undefined) },
-      {
-        key: 'previous',
-        label: 'Previous',
-        hotkey: 'k',
-        kind: 'view',
-        onPress: () => (canMove ? move(-1) : undefined),
-      },
+      { key: 'next', label: 'Next', hotkey: 'j', kind: 'view', onPress: () => moveBy(1) },
+      { key: 'previous', label: 'Previous', hotkey: 'k', kind: 'view', onPress: () => moveBy(-1) },
     ]
     const tabKeys: KeyAction[] = tabList.map(({ id, label, hotkey }) => ({
       key: `tab-key-${id}`,
@@ -6674,6 +6737,7 @@ export const register: Register = on => {
       onPress: () => undefined,
     }))
     const rowKeys = [
+      ...(overviewKeyRow && !isHelpShown ? overviewKeys(overviewKeyRow) : []),
       ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow),
       ...(tab === 'prs' && !isHelpShown ? prTabKeys : []),
     ]

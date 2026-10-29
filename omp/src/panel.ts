@@ -90,6 +90,10 @@ import {
   settledMark,
   isRowTabRunning,
   hasRunningMark,
+  overviewKeyPlan,
+  overviewKeyRows,
+  overviewSelected,
+  isGuarded,
   mergedLine,
   nameBeforeStall,
   OVERVIEW_TEXT_LINES,
@@ -172,6 +176,13 @@ export type PanelUi = {
   opened: string | null
   /** How many lines of the Overview page are scrolled above the panel. Drawing clamps it to the page's end. */
   pageTop: number
+  /** The Overview row the next draw scrolls into view, after j or k selects it. */
+  pageReveal: string | null
+  /**
+   * When an Overview press selected the shown row, as View does. The row's buttons ignore keys until
+   * `PRESS_GUARD_MS` has passed, so a second Enter does not press the row it opened.
+   */
+  openedAt: number
   /** When the panel opened or last switched tab. A row that closes since then stays in place until the next of either. */
   shownSince: number
   /** Whether Help shows in place of the tab's lines. It scrolls with `pageTop`, and switching tabs closes it. */
@@ -190,6 +201,8 @@ export const INITIAL_UI: PanelUi = {
   resuming: null,
   opened: null,
   pageTop: 0,
+  pageReveal: null,
+  openedAt: 0,
   shownSince: 0,
   isHelpShown: false,
 }
@@ -214,6 +227,9 @@ type Button = {
   /** Its press is out, so it draws dim and its key does nothing. */
   isOut?: boolean
 }
+
+/** What a button draws. An Overview button presses nothing the host runs, so it has a face and no `press`. */
+type ButtonFace = Omit<Button, 'press'>
 
 type Lead = { text: string; tone: Tone | null }
 
@@ -663,7 +679,7 @@ function pageEntries(page: OverviewPage): Entry[] {
 
 /** Help in place of the tab's lines: the keys the panel takes, then what each mark means. */
 function helpEntries(screen: PanelScreen, tab: ShownTab): Entry[] {
-  const keys = helpKeys('omp', screen.isNextBuild === true, tab)
+  const keys = helpKeys('omp', screen.isNextBuild === true, tab, overviewKeyRows(screen.view.overviewPage).length > 0)
   const column = Math.max(...keys.map(k => cellWidth(k.keys))) + 2
 
   return [
@@ -711,7 +727,7 @@ const focusOf = (line: Line, ui: PanelUi): number =>
 export type KeyResult = { ui: PanelUi; press?: PanelPress; close?: true }
 
 function withSelection(ui: PanelUi, id: string | null): PanelUi {
-  return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null }
+  return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null, openedAt: 0 }
 }
 
 /** Shows `tab`. Its showing starts at `now` unless it already shows, so its settled rows stay. */
@@ -791,16 +807,22 @@ function typingKey(ui: PanelUi, id: string, key: string, now: number, text: stri
 export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: number, text?: string): KeyResult {
   const lines = linesOf(entriesOf(screen, ui, ui.tab, now))
   const selected = resolveSelected(lines, ui.selectedId)
-  const base: PanelUi = { ...ui, selectedId: selected?.id ?? null }
+  const isPage = !isRowTab(ui.tab)
+  // The Overview lists no lines, and its selection is an Overview row's id.
+  const base: PanelUi = isPage ? ui : { ...ui, selectedId: selected?.id ?? null }
   if (base.typing !== null) return typingKey(base, base.typing, key, now, text)
   const shown = shownTabs(screen.isNextBuild === true)
   const isTabKey = key === 'tab' || key === 'shift+tab' || shown.some(t => t.hotkey === key)
   if (key === '?' || (base.isHelpShown && key === 'escape'))
     return { ui: { ...base, isHelpShown: key === '?' && !base.isHelpShown, pageTop: 0 } }
   if (key === 'escape') return { ui: base, close: true }
+  if (isPage && !base.isHelpShown) {
+    const page = pageKey(screen, base, key, now)
+    if (page) return page
+  }
   const isUp = key === 'up' || key === 'k'
   if (base.isHelpShown && !isTabKey && !isUp && key !== 'down' && key !== 'j') return { ui: base }
-  if ((base.isHelpShown || !isRowTab(base.tab)) && (isUp || key === 'down' || key === 'j'))
+  if ((base.isHelpShown || isPage) && (isUp || key === 'down' || key === 'j'))
     return { ui: { ...base, pageTop: Math.max(0, base.pageTop + (isUp ? -1 : 1)) } }
   const selectable = lines.filter(isSelectable)
   const at = selectable.findIndex(l => l.id === selected?.id)
@@ -835,7 +857,7 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   }
   if (selected && isShut(selected, base))
     return key === 'enter' ? { ui: { ...base, opened: selected.id } } : { ui: base }
-  if (!selected || selected.buttons.length === 0) return { ui: base }
+  if (!selected || selected.buttons.length === 0 || isGuarded(base.openedAt, now)) return { ui: base }
   if (key === 'left' || key === 'right') {
     const index = wrapIndex(focusOf(selected, base) + (key === 'left' ? -1 : 1), selected.buttons.length)
 
@@ -844,6 +866,33 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   const button = key === 'enter' ? selected.buttons[focusOf(selected, base)] : selected.buttons.find(b => b.key === key)
 
   return button ? activate(screen, base, selected, button, now) : { ui: base }
+}
+
+/**
+ * A key on the Overview page, or null when the page leaves it to the panel. While a row has buttons, j and k move the
+ * selection between those rows and up and down still scroll. Enter and the buttons' keys press the selected row's.
+ */
+function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): KeyResult | null {
+  const page = screen.view.overviewPage
+  const rows = overviewKeyRows(page)
+  const row = overviewSelected(page, ui.selectedId)
+  if (!row) return null
+  if (key === 'j' || key === 'k') {
+    const at = rows.findIndex(r => r.id === row.id)
+    const to = rows[wrapIndex(at + (key === 'k' ? -1 : 1), rows.length)]!.id
+
+    return { ui: { ...ui, selectedId: to, focus: null, pageReveal: to } }
+  }
+  const keys = overviewKeyPlan(row)
+  if (key === 'left' || key === 'right') {
+    const index = wrapIndex(pageFocus(row, ui) + (key === 'left' ? -1 : 1), keys.length)
+
+    return { ui: { ...ui, selectedId: row.id, focus: { rowId: row.id, index } } }
+  }
+  const pressed = key === 'enter' ? keys[pageFocus(row, ui)] : keys.find(k => k.hotkey === key)
+  if (!pressed) return null
+
+  return { ui: { ...withTab(ui, 'needsYou', now), selectedId: pressed.press.askId, openedAt: now } }
 }
 
 export type SeenRows = RowRecord<Tab>
@@ -1042,7 +1091,7 @@ function bannerLines(b: BannerView, width: number, s: Style): string[] {
   return boxed(lines, b.tone, width, s)
 }
 
-function buttonCell(b: Button, isFocused: boolean, s: Style, mark = ''): string {
+function buttonCell(b: ButtonFace, isFocused: boolean, s: Style, mark = ''): string {
   if (isFocused) return s.inverse(b.isOut ? s.dim(` ↵ ${b.label}${mark} `) : s.bold(` ↵ ${b.label}${mark} `))
   if (b.isOut && !b.isFollowUp) return s.dim(b.key ? ` ${b.key} ${b.label}${mark} ` : ` ${b.label}${mark} `)
   if (b.isFollowUp) return s.dim(b.key ? ` ${b.key} ${b.label} ` : ` ${b.label} `)
@@ -1052,17 +1101,21 @@ function buttonCell(b: Button, isFocused: boolean, s: Style, mark = ''): string 
 }
 
 /** What `actionLabel` adds to the label, measured on the focused cell, the widest form, alone on a line. */
-function labelMark(b: Button, room: number, s: Style): string {
+function labelMark(b: ButtonFace, room: number, s: Style): string {
   const fits = (label: string) => visibleLength(buttonCell({ ...b, label }, true, s)) <= room
 
   return actionLabel({ label: b.label, isPrimary: b.isRecommended }, fits).slice(b.label.length)
 }
 
 function buttonLines(line: Line, ui: PanelUi, indent: number, width: number, s: Style): string[] {
-  const focused = focusOf(line, ui)
-  const cells = line.buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)))
+  return faceLines(line.buttons, focusOf(line, ui), indent, width, s)
+}
+
+/** Buttons laid out in lines from `indent`, the one at `focused` drawn focused. -1 focuses none. */
+function faceLines(buttons: ButtonFace[], focused: number, indent: number, width: number, s: Style): string[] {
+  const cells = buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)))
   const sizes = cells.map(visibleLength)
-  const firstFollowUp = line.buttons.findIndex(b => b.isFollowUp)
+  const firstFollowUp = buttons.findIndex(b => b.isFollowUp)
   const keyCount = firstFollowUp < 0 ? cells.length : firstFollowUp
   const { lines } = actionLines(sizes.slice(0, keyCount), sizes.slice(keyCount), {
     width: width - indent,
@@ -1245,7 +1298,26 @@ function pageRule(width: number, s: Style, label: string | null = null): string 
 }
 
 /** A line on the Overview page, laid out as the shared row says. */
-function drawPageRow(row: OverviewRow, d: Draw): string[] {
+/**
+ * An Overview row's buttons from its plan, under its text. The selected row's focused button takes Enter, and its other
+ * buttons their keys, so only that row draws them focused or with keys.
+ */
+function pageButtonLines(row: OverviewRow, d: Draw, isSelected: boolean): string[] {
+  const faces = overviewKeyPlan(row).map((k): ButtonFace => ({
+    label: k.label,
+    key: isSelected ? k.hotkey : null,
+    isRecommended: false,
+    isFollowUp: false,
+  }))
+  const focused = isSelected ? pageFocus(row, d.ui) : -1
+
+  return faces.length > 0 ? faceLines(faces, focused, PAGE_TEXT_AT - 1, d.width, d.style) : []
+}
+
+const pageFocus = (row: OverviewRow, ui: PanelUi): number =>
+  ui.focus?.rowId === row.id ? Math.min(ui.focus.index, overviewKeyPlan(row).length - 1) : 0
+
+function drawPageRow(row: OverviewRow, d: Draw, isSelected = false): string[] {
   const { width, now, style: s } = d
   if (row.kind === 'subject') {
     const glyph = row.isRunning ? runningMark(now) : row.mark
@@ -1263,6 +1335,7 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
         ),
       )
     if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim))
+    out.push(...pageButtonLines(row, d, isSelected))
 
     return row.hasChildren ? withTree(out, null, '│', s) : out
   }
@@ -1350,9 +1423,12 @@ function footer(d: Draw, isPageScrolling: boolean): string[] {
         ? [...(isPageScrolling ? ['↑↓ scroll'] : []), 'esc close help']
         : isRowTab(ui.tab)
           ? ['←→ pick', '↵ press', '↑↓ move', 'tab switch', '? help']
-          : isPageScrolling
-            ? ['↑↓ scroll', 'tab switch', '? help']
-            : ['tab switch', '? help']
+          : [
+              ...(overviewKeyRows(screen.view.overviewPage).length > 0 ? ['j k select', '↵ press'] : []),
+              ...(isPageScrolling ? ['↑↓ scroll'] : []),
+              'tab switch',
+              '? help',
+            ]
   const model = `${screen.modelName ? `inbox model ${screen.modelName}` : 'no inbox model: set @inbox'}  ${versionLabel(version, screen.isNextBuild === true)} `
   const hintLine = ` ${hints.map(h => s.dim(h)).join(` ${s.tone('sep', '·')} `)}`
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2
@@ -1408,14 +1484,20 @@ export function drawPanel(
   ]
   const body: string[] = []
   let selectedAt = [0, 0]
+  const pageSelected = isRowTab(ui.tab) ? null : overviewSelected(screen.view.overviewPage, ui.selectedId)
+  let pageSelectedAt: number[] | null = null
   for (const e of entries) {
     if (e.kind === 'heading')
       body.push(
         ` ${e.mark ? `${e.mark.tone ? style.tone(e.mark.tone, e.mark.text) : e.mark.text} ` : ''}${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`,
       )
-    else if (e.kind === 'page')
-      body.push(...(e.row.isRuledAbove ? [pageRule(width, style)] : []), ...drawPageRow(e.row, d))
-    else if (e.kind === 'banner') body.push(...bannerLines(e.banner, width, style))
+    else if (e.kind === 'page') {
+      if (e.row.isRuledAbove) body.push(pageRule(width, style))
+      const start = body.length
+      const isSelected = e.row.id === pageSelected?.id
+      body.push(...drawPageRow(e.row, d, isSelected))
+      if (isSelected) pageSelectedAt = [start, body.length - 1]
+    } else if (e.kind === 'banner') body.push(...bannerLines(e.banner, width, style))
     else if (e.kind === 'key')
       body.push(
         ...indented(e.key.does, 1 + e.column, width, Infinity, style.dim).map((l, n) =>
@@ -1460,7 +1542,13 @@ export function drawPanel(
   const blanks = (shown: string[]) =>
     Array<string>(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill('')
   const isOverflowing = body.length > room
-  const pageTop = isPage ? Math.min(Math.max(0, ui.pageTop), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop
+  const [first = 0, last = 0] = pageSelectedAt ?? []
+  // In view between the ↑ line above and the ↓ line below, which `pageWindow` draws while the page runs past them.
+  const top =
+    pageSelectedAt && ui.pageReveal === pageSelected?.id
+      ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1))
+      : ui.pageTop
+  const pageTop = isPage ? Math.min(Math.max(0, top), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop
   const shown = !isOverflowing
     ? body
     : isPage

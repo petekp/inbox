@@ -2846,9 +2846,10 @@ var MARK_LEGEND = [
   }
 ];
 var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks" };
-function helpKeys(look, isNextBuild, tab) {
+function helpKeys(look, isNextBuild, tab, hasOverviewButtons) {
   const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
   const hasRows = isRowTab(tab);
+  const selectsOverviewRows = tab === "overview" && hasOverviewButtons;
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
   switch (look) {
     case "desktop":
@@ -2856,7 +2857,7 @@ function helpKeys(look, isNextBuild, tab) {
     case "terminal":
       return [
         switchTabs,
-        ...hasRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
+        ...hasRows || selectsOverviewRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
         { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
       ];
     case "codex":
@@ -2875,7 +2876,13 @@ function helpKeys(look, isNextBuild, tab) {
           { keys: "\u21B5", does: "Press the picked button" },
           { keys: "r", does: "Reply to the selected row" },
           { keys: "u", does: "Undo the last close" }
-        ] : [{ keys: "\u2191 \u2193", does: "Scroll the page" }],
+        ] : [
+          ...selectsOverviewRows ? [
+            { keys: "j k", does: "Select the next or previous row with a button" },
+            { keys: "\u21B5", does: "Press the selected row's button" }
+          ] : [],
+          { keys: "\u2191 \u2193", does: "Scroll the page" }
+        ],
         { keys: "?", does: "Open or close help" },
         { keys: "esc", does: "Close help, then the panel" }
       ];
@@ -2883,6 +2890,7 @@ function helpKeys(look, isNextBuild, tab) {
 }
 var CLOSED_SHOWN = 3;
 var SETTLED_MS = 5120;
+var PRESS_GUARD_MS = 400;
 var QUEUED_AFTER_MS = 1000;
 var COMPARE_LIMIT_MS = 30 * 60000;
 function compareEndsAt(lastActions, now) {
@@ -2898,6 +2906,9 @@ function pendingDeliveryAt(last, now) {
   if (last?.delivery?.state !== "queued")
     return null;
   return isQueuedAt(last, now) ? "queued" : "sending";
+}
+function isGuarded(openedAt, now) {
+  return openedAt > 0 && now - openedAt < PRESS_GUARD_MS;
 }
 var NO_HOLDS = { replies: {}, discarded: {}, shownSince: null };
 function isShownSince(at, shownSince) {
@@ -3378,6 +3389,12 @@ function overviewPage(s, now) {
   const isNew = (x) => look === null || x.changedAt > look;
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const oldestAskOf = (x) => {
+    if (!isHeld(x))
+      return null;
+    const oldest = s.ledger.items.filter((i) => o?.askSubjects[i.id] === x.id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+    return oldest ? { id: oldest.id, kind: oldest.kind } : null;
+  };
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
   const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || OVERVIEW_PLACES.indexOf(placeOf(x)) - OVERVIEW_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
@@ -3409,7 +3426,8 @@ function overviewPage(s, now) {
       stall: stallOf(x),
       merged: isNew(x) ? x.merged : null,
       was: isNew(x) ? x.was : null,
-      hasChildren: under.length > 0
+      hasChildren: under.length > 0,
+      ask: oldestAskOf(x)
     });
     rows.push(...shownUnder.map((c, n) => childRow(c, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
     const hidden = under.slice(CHILD_ROWS);
@@ -3579,6 +3597,26 @@ function rowKeyPlan(r, isAllShown) {
       });
   }
   return { keys, more };
+}
+var VIEW_ASK_LABELS = { question: "View question", task: "View task" };
+function overviewKeyPlan(row) {
+  if (row.kind !== "subject" || row.ask === null)
+    return [];
+  return [
+    {
+      press: { action: "show-ask", askId: row.ask.id },
+      label: VIEW_ASK_LABELS[row.ask.kind],
+      hotkey: "v",
+      kind: "view"
+    }
+  ];
+}
+function overviewKeyRows(page) {
+  return page.rows.filter((r) => overviewKeyPlan(r).length > 0);
+}
+function overviewSelected(page, selectedId) {
+  const rows = overviewKeyRows(page);
+  return rows.find((r) => r.id === selectedId) ?? rows[0] ?? null;
 }
 function actionLines(keys, more, { width, gap, separator }) {
   const lines = [];
@@ -5730,6 +5768,8 @@ var INITIAL_UI = {
   resuming: null,
   opened: null,
   pageTop: 0,
+  pageReveal: null,
+  openedAt: 0,
   shownSince: 0,
   isHelpShown: false
 };
@@ -6090,7 +6130,7 @@ function pageEntries(page) {
   return head.length > 0 && rows.length > 0 ? [...head, { kind: "note", text: "" }, ...rows] : [...head, ...rows];
 }
 function helpEntries(screen, tab) {
-  const keys = helpKeys("omp", screen.isNextBuild === true, tab);
+  const keys = helpKeys("omp", screen.isNextBuild === true, tab, overviewKeyRows(screen.view.overviewPage).length > 0);
   const column = Math.max(...keys.map((k) => cellWidth(k.keys))) + 2;
   return [
     { kind: "heading", text: HELP_COPY.keys },
@@ -6125,7 +6165,7 @@ function defaultFocus(line) {
 }
 var focusOf2 = (line, ui) => ui.focus?.rowId === line.id ? Math.min(ui.focus.index, line.buttons.length - 1) : defaultFocus(line);
 function withSelection(ui, id) {
-  return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null };
+  return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null, openedAt: 0 };
 }
 var withTab = (ui, tab, now) => ({
   ...withSelection(ui, null),
@@ -6190,7 +6230,8 @@ function typingKey(ui, id, key, now, text) {
 function handleKey(screen, ui, key, now, text) {
   const lines = linesOf(entriesOf(screen, ui, ui.tab, now));
   const selected = resolveSelected(lines, ui.selectedId);
-  const base = { ...ui, selectedId: selected?.id ?? null };
+  const isPage = !isRowTab(ui.tab);
+  const base = isPage ? ui : { ...ui, selectedId: selected?.id ?? null };
   if (base.typing !== null)
     return typingKey(base, base.typing, key, now, text);
   const shown = shownTabs(screen.isNextBuild === true);
@@ -6199,10 +6240,15 @@ function handleKey(screen, ui, key, now, text) {
     return { ui: { ...base, isHelpShown: key === "?" && !base.isHelpShown, pageTop: 0 } };
   if (key === "escape")
     return { ui: base, close: true };
+  if (isPage && !base.isHelpShown) {
+    const page = pageKey(screen, base, key, now);
+    if (page)
+      return page;
+  }
   const isUp = key === "up" || key === "k";
   if (base.isHelpShown && !isTabKey && !isUp && key !== "down" && key !== "j")
     return { ui: base };
-  if ((base.isHelpShown || !isRowTab(base.tab)) && (isUp || key === "down" || key === "j"))
+  if ((base.isHelpShown || isPage) && (isUp || key === "down" || key === "j"))
     return { ui: { ...base, pageTop: Math.max(0, base.pageTop + (isUp ? -1 : 1)) } };
   const selectable = lines.filter(isSelectable);
   const at = selectable.findIndex((l) => l.id === selected?.id);
@@ -6236,7 +6282,7 @@ function handleKey(screen, ui, key, now, text) {
   }
   if (selected && isShut(selected, base))
     return key === "enter" ? { ui: { ...base, opened: selected.id } } : { ui: base };
-  if (!selected || selected.buttons.length === 0)
+  if (!selected || selected.buttons.length === 0 || isGuarded(base.openedAt, now))
     return { ui: base };
   if (key === "left" || key === "right") {
     const index = wrapIndex(focusOf2(selected, base) + (key === "left" ? -1 : 1), selected.buttons.length);
@@ -6244,6 +6290,27 @@ function handleKey(screen, ui, key, now, text) {
   }
   const button = key === "enter" ? selected.buttons[focusOf2(selected, base)] : selected.buttons.find((b) => b.key === key);
   return button ? activate(screen, base, selected, button, now) : { ui: base };
+}
+function pageKey(screen, ui, key, now) {
+  const page = screen.view.overviewPage;
+  const rows = overviewKeyRows(page);
+  const row = overviewSelected(page, ui.selectedId);
+  if (!row)
+    return null;
+  if (key === "j" || key === "k") {
+    const at = rows.findIndex((r) => r.id === row.id);
+    const to = rows[wrapIndex(at + (key === "k" ? -1 : 1), rows.length)].id;
+    return { ui: { ...ui, selectedId: to, focus: null, pageReveal: to } };
+  }
+  const keys = overviewKeyPlan(row);
+  if (key === "left" || key === "right") {
+    const index = wrapIndex(pageFocus(row, ui) + (key === "left" ? -1 : 1), keys.length);
+    return { ui: { ...ui, selectedId: row.id, focus: { rowId: row.id, index } } };
+  }
+  const pressed = key === "enter" ? keys[pageFocus(row, ui)] : keys.find((k) => k.hotkey === key);
+  if (!pressed)
+    return null;
+  return { ui: { ...withTab(ui, "needsYou", now), selectedId: pressed.press.askId, openedAt: now } };
 }
 function tabRows(screen) {
   const { view } = screen;
@@ -6390,10 +6457,12 @@ function labelMark(b, room, s) {
   return actionLabel({ label: b.label, isPrimary: b.isRecommended }, fits).slice(b.label.length);
 }
 function buttonLines(line, ui, indent, width, s) {
-  const focused = focusOf2(line, ui);
-  const cells = line.buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)));
+  return faceLines(line.buttons, focusOf2(line, ui), indent, width, s);
+}
+function faceLines(buttons, focused, indent, width, s) {
+  const cells = buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)));
   const sizes = cells.map(visibleLength);
-  const firstFollowUp = line.buttons.findIndex((b) => b.isFollowUp);
+  const firstFollowUp = buttons.findIndex((b) => b.isFollowUp);
   const keyCount = firstFollowUp < 0 ? cells.length : firstFollowUp;
   const { lines } = actionLines(sizes.slice(0, keyCount), sizes.slice(keyCount), {
     width: width - indent,
@@ -6507,7 +6576,18 @@ function pageRule(width, s, label = null) {
   const before = Math.floor(fill / 2);
   return `${" ".repeat(PAGE_TEXT_AT)}${s.dim(`${"\u2500".repeat(before)}${text}${"\u2500".repeat(fill - before)}`)}`;
 }
-function drawPageRow(row, d) {
+function pageButtonLines(row, d, isSelected) {
+  const faces = overviewKeyPlan(row).map((k) => ({
+    label: k.label,
+    key: isSelected ? k.hotkey : null,
+    isRecommended: false,
+    isFollowUp: false
+  }));
+  const focused = isSelected ? pageFocus(row, d.ui) : -1;
+  return faces.length > 0 ? faceLines(faces, focused, PAGE_TEXT_AT - 1, d.width, d.style) : [];
+}
+var pageFocus = (row, ui) => ui.focus?.rowId === row.id ? Math.min(ui.focus.index, overviewKeyPlan(row).length - 1) : 0;
+function drawPageRow(row, d, isSelected = false) {
   const { width, now, style: s } = d;
   if (row.kind === "subject") {
     const glyph = row.isRunning ? runningMark(now) : row.mark;
@@ -6518,6 +6598,7 @@ function drawPageRow(row, d) {
       out.push(...indented(mergedLine(row.merged, (t) => cellWidth(t) <= room), PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim));
     if (row.was)
       out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim));
+    out.push(...pageButtonLines(row, d, isSelected));
     return row.hasChildren ? withTree(out, null, "\u2502", s) : out;
   }
   if (row.kind === "child") {
@@ -6567,7 +6648,12 @@ function footer(d, isPageScrolling) {
   const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.overviewPage.error);
   if (status.text)
     out.push(` ${s.dim(status.text)}`);
-  const hints = ui.typing !== null ? [`\u21B5 ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch", "? help"] : isPageScrolling ? ["\u2191\u2193 scroll", "tab switch", "? help"] : ["tab switch", "? help"];
+  const hints = ui.typing !== null ? [`\u21B5 ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch", "? help"] : [
+    ...overviewKeyRows(screen.view.overviewPage).length > 0 ? ["j k select", "\u21B5 press"] : [],
+    ...isPageScrolling ? ["\u2191\u2193 scroll"] : [],
+    "tab switch",
+    "? help"
+  ];
   const model = `${screen.modelName ? `inbox model ${screen.modelName}` : "no inbox model: set @inbox"}  ${versionLabel(version, screen.isNextBuild === true)} `;
   const hintLine = ` ${hints.map((h) => s.dim(h)).join(` ${s.tone("sep", "\xB7")} `)}`;
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2;
@@ -6594,12 +6680,20 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   ];
   const body = [];
   let selectedAt = [0, 0];
+  const pageSelected = isRowTab(ui.tab) ? null : overviewSelected(screen.view.overviewPage, ui.selectedId);
+  let pageSelectedAt = null;
   for (const e of entries) {
     if (e.kind === "heading")
       body.push(` ${e.mark ? `${e.mark.tone ? style.tone(e.mark.tone, e.mark.text) : e.mark.text} ` : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
-    else if (e.kind === "page")
-      body.push(...e.row.isRuledAbove ? [pageRule(width, style)] : [], ...drawPageRow(e.row, d));
-    else if (e.kind === "banner")
+    else if (e.kind === "page") {
+      if (e.row.isRuledAbove)
+        body.push(pageRule(width, style));
+      const start = body.length;
+      const isSelected = e.row.id === pageSelected?.id;
+      body.push(...drawPageRow(e.row, d, isSelected));
+      if (isSelected)
+        pageSelectedAt = [start, body.length - 1];
+    } else if (e.kind === "banner")
       body.push(...bannerLines(e.banner, width, style));
     else if (e.kind === "key")
       body.push(...indented(e.key.does, 1 + e.column, width, Infinity, style.dim).map((l, n) => n === 0 ? ` ${style.bold(e.key.keys.padEnd(e.column))}${l.trimStart()}` : l));
@@ -6627,7 +6721,9 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const room = roomBeside(foot);
   const blanks = (shown) => Array(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill("");
   const isOverflowing = body.length > room;
-  const pageTop = isPage ? Math.min(Math.max(0, ui.pageTop), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop;
+  const [first = 0, last = 0] = pageSelectedAt ?? [];
+  const top = pageSelectedAt && ui.pageReveal === pageSelected?.id ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop;
+  const pageTop = isPage ? Math.min(Math.max(0, top), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop;
   const shown = !isOverflowing ? body : isPage ? pageWindow(body, pageTop, room, style) : scrolled(body, selectedAt, room, style);
   return { lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)), pageTop };
 }
@@ -6761,7 +6857,7 @@ function createPanel(deps) {
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight);
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity));
       heldHeight = Math.max(heldHeight, drawn.lines.length);
-      ui = { ...ui, pageTop: drawn.pageTop };
+      ui = { ...ui, pageTop: drawn.pageTop, pageReveal: null };
       return drawn.lines;
     },
     handleInput(key, text) {

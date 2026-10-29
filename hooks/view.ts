@@ -139,14 +139,16 @@ export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', 
 export type HelpKey = { keys: string; does: string }
 
 /**
- * The keys a look's Help lists, for the tab Help opened over. Desktop takes no keys, so its Help lists marks only.
- * Each look binds these keys in its own adapter.
+ * The keys a look's Help lists, for the tab Help opened over. `hasOverviewButtons` says the Overview has a row with a
+ * button, which the terminal and omp select with j and k. Desktop takes no keys, so its Help lists marks only. Each
+ * look binds these keys in its own adapter.
  */
-export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab): HelpKey[] {
+export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasOverviewButtons: boolean): HelpKey[] {
   const tabKeys = shownTabs(isNextBuild)
     .map(t => t.hotkey)
     .join(' ')
   const hasRows = isRowTab(tab)
+  const selectsOverviewRows = tab === 'overview' && hasOverviewButtons
   const switchTabs = { keys: tabKeys, does: 'Switch tabs' }
   switch (look) {
     case 'desktop':
@@ -154,7 +156,7 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab): HelpK
     case 'terminal':
       return [
         switchTabs,
-        ...(hasRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
+        ...(hasRows || selectsOverviewRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
         { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
       ]
     case 'codex':
@@ -175,7 +177,15 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab): HelpK
               { keys: 'r', does: 'Reply to the selected row' },
               { keys: 'u', does: 'Undo the last close' },
             ]
-          : [{ keys: '↑ ↓', does: 'Scroll the page' }]),
+          : [
+              ...(selectsOverviewRows
+                ? [
+                    { keys: 'j k', does: 'Select the next or previous row with a button' },
+                    { keys: '↵', does: "Press the selected row's button" },
+                  ]
+                : []),
+              { keys: '↑ ↓', does: 'Scroll the page' },
+            ]),
         { keys: '?', does: 'Open or close help' },
         { keys: 'esc', does: 'Close help, then the panel' },
       ]
@@ -1152,6 +1162,8 @@ type OverviewRowParts =
       was: string | null
       /** Whether rows of its children follow, so its tree line runs down from its mark. */
       hasChildren: boolean
+      /** The oldest open ask that holds it up, which its View button opens. Null while no open ask holds it up. */
+      ask: { id: string; kind: Item['kind'] } | null
     }
   | {
       kind: 'child'
@@ -1298,6 +1310,14 @@ export function overviewPage(
   const isNew = (x: Subject) => look === null || x.changedAt > look
   const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
   const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
+  const oldestAskOf = (x: Subject): { id: string; kind: Item['kind'] } | null => {
+    if (!isHeld(x)) return null
+    const oldest = s.ledger.items
+      .filter(i => o?.askSubjects[i.id] === x.id)
+      .sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0]
+
+    return oldest ? { id: oldest.id, kind: oldest.kind } : null
+  }
   const placeOf = (x: Subject): OverviewPlace =>
     isHeld(x) ? 'held' : x.status === 'done' || x.status === 'dropped' ? 'closed' : x.status
   const pageOrder = (x: Subject, y: Subject) =>
@@ -1346,6 +1366,7 @@ export function overviewPage(
       merged: isNew(x) ? x.merged : null,
       was: isNew(x) ? x.was : null,
       hasChildren: under.length > 0,
+      ask: oldestAskOf(x),
     })
     rows.push(...shownUnder.map((c, n) => childRow(c, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid')))
     const hidden = under.slice(CHILD_ROWS)
@@ -1639,6 +1660,40 @@ export function rowKeyPlan(r: RowView, isAllShown: boolean): { keys: PlannedKey[
   }
 
   return { keys, more }
+}
+
+/** A press on an Overview row. `show-ask` opens Asks with that ask selected, and sends nothing. */
+export type OverviewPress = { action: 'show-ask'; askId: string }
+
+export type OverviewKey = { press: OverviewPress; label: string; hotkey: string; kind: PressKind }
+
+/** The View button's label, by the kind of ask it opens. */
+export const VIEW_ASK_LABELS: Record<Item['kind'], string> = { question: 'View question', task: 'View task' }
+
+/** An Overview row's buttons, in the order every look draws them. A row with none takes no press. */
+export function overviewKeyPlan(row: OverviewRow): OverviewKey[] {
+  if (row.kind !== 'subject' || row.ask === null) return []
+
+  return [
+    {
+      press: { action: 'show-ask', askId: row.ask.id },
+      label: VIEW_ASK_LABELS[row.ask.kind],
+      hotkey: 'v',
+      kind: 'view',
+    },
+  ]
+}
+
+/** The Overview rows that have buttons, in page order: the rows j and k move between. */
+export function overviewKeyRows(page: OverviewPage): OverviewRow[] {
+  return page.rows.filter(r => overviewKeyPlan(r).length > 0)
+}
+
+/** The Overview row whose keys work: the selected row while it still has buttons, else the first row that has. */
+export function overviewSelected(page: OverviewPage, selectedId: string | null): OverviewRow | null {
+  const rows = overviewKeyRows(page)
+
+  return rows.find(r => r.id === selectedId) ?? rows[0] ?? null
 }
 
 /** Widths in a look's own unit. `separator` is the extra room a look draws between the buttons and the follow-ups when they share a line. */

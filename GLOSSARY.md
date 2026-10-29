@@ -95,6 +95,8 @@ dropped. The inbox model adds and changes subjects by id, and code keeps their
 times. The inbox model also links an open question or task to the subject it
 holds up. While that item is open, the subject's mark reads ◆ in place of its
 status's mark, and the item's Asks row reads "Holds up" and the subject's name.
+Its row then has a View question or View task button, which opens Asks with
+the oldest of those items selected.
 _Avoid_: workstream, stream, item (an item is a question or task)
 
 **Child**:

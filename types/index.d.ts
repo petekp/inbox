@@ -528,6 +528,8 @@ declare module 'claude-code' {
       /** The page tab shown in place of `tab`, or null while a row tab shows. */
       page: PageTab | null
       selection: Record<Tab, Cursor>
+      /** The Overview row whose keys work, by id. Null until j or k moves it. */
+      overviewSelection: string | null
       dialogs: Dialog[]
       /** The row whose free-text field is open, if any. */
       typing: string | null
