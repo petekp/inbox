@@ -941,11 +941,8 @@ export type OverviewTone = 'needsYou' | 'done' | null
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
 export type OverviewBranch = 'mid' | 'last'
 
-/**
- * The word after a row's name that says its work stopped, "waiting" or "finished", in the tone that says whether the
- * person acts.
- */
-export type OverviewStall = { text: string; tone: OverviewTone }
+/** The word after a row's name: "waiting" in the needs-you tone while it waits on the person, or "finished". */
+export type OverviewStall = { text: string; tone: 'needsYou' | 'done' }
 
 /**
  * One line of the Overview's list, in the order to draw it. Each look lays out the parts; none chooses them. A subject
@@ -968,7 +965,7 @@ type OverviewRowParts =
       name: string
       /** Where it stands. Null for a finished row below the look line, which the person has seen. */
       text: string | null
-      /** "waiting" while it waits on someone: in the needs-you tone when an open ask holds it up, else muted. */
+      /** "waiting" while an open ask holds it up. */
       stall: OverviewStall | null
       /** The names of the subjects merged into it, while the person has not seen them. */
       merged: string | null
@@ -1128,12 +1125,7 @@ export function overviewPage(
   const isNew = (x: Subject) => look === null || x.changedAt > look
   const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
   const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
-  const stallOf = (x: Subject): OverviewStall | null => {
-    const isWaitingOnOther = isOpen(x) && x.status === 'waits-on-other'
-    if (isHeld(x)) return { text: 'waiting', tone: 'needsYou' }
-
-    return isWaitingOnOther ? { text: 'waiting', tone: null } : null
-  }
+  const stallOf = (x: Subject): OverviewStall | null => (isHeld(x) ? { text: 'waiting', tone: 'needsYou' } : null)
   const newClosed = subjects
     .filter(x => !isOpen(x) && isNew(x))
     .sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0))

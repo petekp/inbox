@@ -1340,10 +1340,9 @@ function fitMergedLine(el: HTMLElement | null, merged: string) {
   el.textContent = mergedLine(merged, text => !measure || measure.measureText(text).width <= el.clientWidth)
 }
 
-const STALL_CLASS: Record<NonNullable<OverviewTone> | 'muted', string> = {
+const STALL_CLASS: Record<OverviewStall['tone'], string> = {
   needsYou: 'tone-needsYou',
   done: 'tone-done',
-  muted: 'muted',
 }
 
 /** A name's words before its last, with the space after them, and its last word, which stays with the stall word. */
@@ -1395,7 +1394,7 @@ function NameLine({ name, stall }: { name: string; stall: OverviewStall | null }
         <span class="unbroken">
           <span class="last">{last}</span>
           <span class="muted">{STALL_GAP}</span>
-          <span class={STALL_CLASS[stall.tone ?? 'muted']}>{stall.text}</span>
+          <span class={STALL_CLASS[stall.tone]}>{stall.text}</span>
         </span>
       </span>
     </div>

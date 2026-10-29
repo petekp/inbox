@@ -1100,7 +1100,7 @@ function stalledName(
   const tail = `${STALL_GAP}${stall.text}`.replaceAll(' ', GLUE)
   const wrapped = (shown: string) => wrapText(`${shown}${tail}`, room)
   const lines = wrapped(nameBeforeStall(name, shown => wrapped(shown).length <= OVERVIEW_TEXT_LINES))
-  const words = stall.tone ? s.tone(stall.tone, stall.text) : s.dim(stall.text)
+  const words = s.tone(stall.tone, stall.text)
 
   return lines.map(l =>
     l.endsWith(tail)

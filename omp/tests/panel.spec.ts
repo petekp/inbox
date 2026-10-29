@@ -788,11 +788,12 @@ test('on the Overview page, the rows under a subject hang from its mark, ├─ 
   expect(glyphs(last, next)).toEqual(['└─', ...Array<string>(next - last - 1).fill('  ')])
 })
 
-test('on the Overview page, a row’s stall word follows its name on the line of its last word, at every width, and running work shows none', () => {
+test('on the Overview page, a row’s stall word follows its name on the line of its last word, at every width, and running work and work waiting on someone else show none', () => {
   const wide = text(screenOf(), onPage, 80).split('\n')
   expect(wide.some(l => l.includes('Tune how hard a pinch must be · waiting'))).toBe(true)
   expect(wide.some(l => l.includes('Time the fade-out · finished'))).toBe(true)
   expect(wide.some(l => l.includes('Watch the pairing log') && !l.includes(' · '))).toBe(true)
+  expect(wide.some(l => l.includes('Glasses trial') && !l.includes(' · '))).toBe(true)
 
   for (const width of [26, 28, 30, 34, 40, 50]) {
     const lines = text(screenOf(), onPage, width).split('\n')

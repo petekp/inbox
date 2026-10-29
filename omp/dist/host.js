@@ -3208,12 +3208,7 @@ function overviewPage(s, now) {
   const isNew = (x) => look === null || x.changedAt > look;
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const stallOf = (x) => {
-    const isWaitingOnOther = isOpen(x) && x.status === "waits-on-other";
-    if (isHeld(x))
-      return { text: "waiting", tone: "needsYou" };
-    return isWaitingOnOther ? { text: "waiting", tone: null } : null;
-  };
+  const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const open = subjects.filter(isOpen);
   const queuedOver = Math.max(0, open.length - OPEN_ROWS);
@@ -6130,7 +6125,7 @@ function stalledName(name, stall, room, namePaint, s) {
   const tail = `${STALL_GAP}${stall.text}`.replaceAll(" ", GLUE);
   const wrapped = (shown) => wrapText(`${shown}${tail}`, room);
   const lines = wrapped(nameBeforeStall(name, (shown) => wrapped(shown).length <= OVERVIEW_TEXT_LINES));
-  const words = stall.tone ? s.tone(stall.tone, stall.text) : s.dim(stall.text);
+  const words = s.tone(stall.tone, stall.text);
   return lines.map((l) => l.endsWith(tail) ? namePaint(l.slice(0, -tail.length)) + s.dim(STALL_GAP) + words : namePaint(l.replaceAll(GLUE, " ")));
 }
 function withTree(lines, first, rest, s) {

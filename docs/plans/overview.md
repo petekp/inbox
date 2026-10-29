@@ -25,8 +25,8 @@ The page fails when it reads as a log, when it copies Asks or Finds, or when it 
    - Reason: a model that rewrites the whole page from the last page drifts toward the newest exchange. In a replay of one real session, 33 of 35 replies rewrote the page.
 3. **Code writes every time and the order. The model never writes a time.**
    - Reason: a time word in model text freezes when it is written, so "merged today" reads wrong the next day.
-4. **Rows show no times.** A row's stall word follows its name on the same line. A subject that an ask holds up reads `waiting`, and so does one waiting on something outside the session. Its mark says whose turn it is: ◆ in the needs-you tone for the person, ◌ for someone else. A Herdr delegate reads `waiting` while it waits at a question or an approval, and `finished` once it stops, until the person has seen the Overview. Running work shows no word, since its moving mark says it runs. A row's place follows when its work last changed, not when the page last checked it.
-   - Reason: the mark and its color already say whose turn it is, so one word is enough. A time on a waiting row added words the person did not need.
+4. **Only a row that waits on the person says `waiting`, and rows show no times.** A row's stall word follows its name on the same line. A subject that an ask holds up reads `waiting` in the needs-you tone, and so does a Herdr delegate at a question or an approval. A finished delegate reads `finished` until the person has seen the Overview. A row waiting on someone else shows no word: its ◌ mark and where it stands say what it waits on. Running work shows no word, since its moving mark says it runs. A row's place follows when its work last changed, not when the page last checked it.
+   - Reason: a person read a muted `waiting` as work waiting on them. The word now appears only when it is true for the person, and a time on a waiting row added words they did not need.
    - Reason: an age on every row was hard to read and said little. A row that rose because the page checked it would claim a change that did not happen.
 5. **A changed state always reaches the page.** Code keeps the old text and place only when the new text has the same content words, in any order.
    - Reason: "manual merge ready" becoming "manual merge broken" is a change, though half the words match.
@@ -92,7 +92,7 @@ From top to bottom:
 | Part | What it shows | Who writes it |
 | --- | --- | --- |
 | Goal | What the session's work is for. The call is asked for at most 8 words, and code clips it at 14. | Model |
-| Subject rows | A mark and a short name, with `waiting` after the name while the work waits, and a few words on where it stands on the line under the name. The call is asked for a name of at most 3 words and a text of at most 4. Code clips them at 20 and 12. | The model writes the status, name and text. Code draws the mark and the stall word, and orders the rows by last change. |
+| Subject rows | A mark and a short name, with `waiting` after the name while it waits on the person, and a few words on where it stands on the line under the name. The call is asked for a name of at most 3 words and a text of at most 4. Code clips them at 20 and 12. | The model writes the status, name and text. Code draws the mark and the stall word, and orders the rows by last change. |
 | Was line | The plan a change replaced, as "was: last-write-wins", or the pieces merged into this one, as "merged in: Banner on hover", until the person has seen it | The model writes it. Code shows it only until the person has looked. |
 | Child rows | Running work under its subject, named by the first line of the name its host gives it. A delegate shows what Herdr shows: `◆ … · waiting` at a question or an approval, and `✓ … · finished` once it stops, until the person has seen the Overview. Running work shows no word. | Code, from host events and from Herdr. The model writes the link. |
 | Seen line | Where the person last looked. Rows above it changed since. It is left out when nothing changed. | Code |
@@ -172,7 +172,7 @@ Adding offline sync to the notes app
 ✓ Sync engine
   syncs on reconnect
 ── Seen ──────────────────────────────
-◌ 2.4 release · waiting
+◌ 2.4 release
   in store review
 ✓ 2 more done
 ```
@@ -330,7 +330,7 @@ When the session drops one approach for another, the person sees both until they
 The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. When an update fails, the page says so. The page shows no times, so none goes stale. A row's place follows when its work last changed, so on a current page a row that did not change stays where it was.
 
 - **Good:** three hours into a turn, `● Sync conflicts: cause unknown` stays where it was, because the last update found nothing new.
-- **Good:** `◌ 2.4 release: in store review · waiting`, while the build waits for review.
+- **Good:** `◌ 2.4 release: in store review`, while the build waits for review.
 - **Good:** "Last Overview update failed. Changes from that reply may be missing."
 - **Bad:** the agent finished the conflicts work two hours into a three-hour turn, and the row still reads ●, since no update ran during the turn.
 - **Bad:** `● Export button: works on web  2h`. No row shows a time.

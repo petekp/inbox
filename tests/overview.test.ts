@@ -281,7 +281,7 @@ test('the page lists subjects newest first, and an open row below the look line 
   expect(seen[0]).toMatchObject({ kind: 'subject', was: null })
 })
 
-test('a subject waiting on someone reads waiting, with no time, in the needs-you tone when an open ask holds it up and muted otherwise', () => {
+test('only a subject an open ask holds up reads waiting, in the needs-you tone, with no time, and one waiting on someone else shows no word', () => {
   const o = after(
     null,
     'NEW: waits-on-other | Review | sent for review\nNEW: working | Sync | needs a pick\nNEW: queued | Docs | not started\nLINK: i1 | s2\nLINK: i2 | s2',
@@ -294,10 +294,10 @@ test('a subject waiting on someone reads waiting, with no time, in the needs-you
   ]
   const stalls = (now: number) => page(o, now, {}, asks).rows.map(r => (r.kind === 'subject' ? r.stall : r.kind))
 
-  const waiting = [{ text: 'waiting', tone: null }, { text: 'waiting', tone: 'needsYou' }, null]
+  const waiting = [null, { text: 'waiting', tone: 'needsYou' }, null]
   expect(stalls(20 * MIN)).toEqual(waiting)
   expect(stalls(2 * 60 * MIN)).toEqual(waiting)
-  expect(shape(page(o, 2 * 60 * MIN, {}, asks).rows)[0]).toBe('◌ Review: sent for review · waiting')
+  expect(shape(page(o, 2 * 60 * MIN, {}, asks).rows)[0]).toBe('◌ Review: sent for review')
 })
 
 test('a name before its stall word is cut at a word with an ellipsis until both fit, and keeps its first word when nothing fits', () => {
