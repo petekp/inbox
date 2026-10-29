@@ -6,11 +6,13 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { demoView } from '../../hooks/demo'
+import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
 import { applyUpdate, parseReply } from '../../hooks/ledger'
 import { EMPTY_OVERVIEW } from '../../hooks/overview'
 import { feedbackOf, feedbackText, NO_HOLDS, QUEUED_AFTER_MS, screenTabOf, SETTLED_MS } from '../../hooks/view'
 import type { Feedback } from '../../hooks/view'
 import { screenText } from '../../hooks/model-text'
+import { GH_TIMED_OUT_TEXT } from '../../hooks/pr-tab'
 import { noteHook, notePrompt, viewOf } from '../src/core'
 import { CODEX } from '../src/texts'
 import type { View } from '../src/core'
@@ -20,6 +22,7 @@ import { POLL_MS, SETTLE_WINDOW_MS } from '../src/settle'
 import { readState, statePath, updateState } from '../src/state'
 import { handleHook } from '../src/hook'
 import { findCli } from '../src/cli'
+import { run } from '../src/run'
 import { fakeRunner, hookDeps, input, rolloutAt, tempDir, turnRow } from './helpers'
 
 async function setup(queueCode: number, now = () => 100, fallbackCli = async () => 'codex', isNextBuild = false) {
@@ -1101,6 +1104,29 @@ test('a view says gh was not found when gh worked once and then stops starting',
   assert.equal(next.result.structuredContent.prs.drawn[0]?.pr.error ?? null, null)
 })
 
+test('a view keeps the PR with a failed refresh, and does not say gh was not found, when gh worked once and then times out', async () => {
+  let at = 100
+  let isSlow = false
+  const { call } = await prServer(
+    args => (isSlow && args[0] !== 'codex' ? { code: TIMED_OUT_CODE, stdout: '', stderr: '' } : ghAnswer(args)),
+    () => at,
+  )
+  await viewAfterFetch(call)
+  isSlow = true
+  at += PRS_STALE_MS
+  const next = await viewAfterFetch(call)
+  assert.equal(next.result.structuredContent.isGhMissing, false)
+  assert.equal(next.result.structuredContent.prs.drawn.length, 1)
+  assert.equal(next.result.structuredContent.prs.drawn[0]?.pr.error, GH_TIMED_OUT_TEXT)
+})
+
+test('run ends a command killed at its timeout with the timed-out code, and one that cannot start with the unstartable code', async () => {
+  const slow = await run(['sleep', '5'], { cwd: '/', timeoutMs: 100 })
+  const missing = await run(['/no/such/gh', '--version'], { cwd: '/', timeoutMs: 100 })
+  assert.equal(slow.code, TIMED_OUT_CODE)
+  assert.equal(missing.code, UNSTARTABLE_CODE)
+})
+
 test('a view says gh is not signed in once GitHub refuses its token, keeps the PR as it was, and clears when gh answers again', async () => {
   let at = 100
   let isRefused = false
@@ -1325,12 +1351,21 @@ test('tracked PR steps are drawn and open the same linked and branch PRs without
 })
 
 test('a PR press with an unknown queue outcome keeps its receipt and unconfirmed feedback', async () => {
-  const { dir, call } = await prServer(args =>
-    args[1] === 'queue' ? { code: 1, stdout: '', stderr: 'no such thread' } : ghAnswer(args),
-  )
   const d = demoView(100, 'Codex')
+  const conflicting = Object.values(d.prViews.views).find(v => v.mergeable === 'CONFLICTING')!
+  const ref = conflicting.ref
+  const conflictingView = JSON.stringify({
+    ...conflicting,
+    baseRefName: conflicting.base,
+    statusCheckRollup: [],
+  })
+  const { dir, call } = await prServer(args => {
+    if (args[1] === 'queue') return { code: 1, stdout: '', stderr: 'no such thread' }
+    if (args[1] === 'pr' && args.includes(String(conflicting.number)))
+      return { code: 0, stdout: conflictingView, stderr: '' }
+    return ghAnswer(args)
+  })
   await updateState(dir, 's1', s => ({ ...s, ledger: { ...s.ledger, prs: d.ledger.prs }, prViews: d.prViews }))
-  const ref = Object.values(d.prViews.views).find(v => v.mergeable === 'CONFLICTING')!.ref
   const r = await call('inbox_press', { press: { action: 'pr-conflicts', ref }, thread: 's1' })
   assert.equal(r.result.structuredContent.error, null)
   assert.equal((r.result.structuredContent as unknown as { delivery: string }).delivery, 'unconfirmed')
@@ -1389,6 +1424,53 @@ test('dismissing a linked PR unlinks it and settles its block as a dismissed row
   const switched = await call('inbox_view', { shownSince: t })
   assert.equal(drawn(switched.result.structuredContent).includes(ref), false)
   assert.equal(ref in (await readState(dir, 's1')).prViews.views, false)
+})
+
+test('Dismiss merged unlinks the merged PRs and settles each block with its own Undo', async () => {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
+  const runner = fakeRunner(() => ({ code: -1, stdout: '', stderr: '' }))
+  const handle = makeServer({
+    dir,
+    now: () => 100,
+    exec: runner.exec,
+    tabHtml: '',
+    fallbackCli: async () => 'codex',
+    comparePage: '/plugin/dist/compare-page.html',
+  })
+  const d = demoView(100, 'Codex')
+  const merged = d.ledger.prs.filter(r => r !== d.prViews.branchRef)
+  const views = Object.fromEntries(
+    Object.entries(d.prViews.views).map(([ref, v]) => [ref, merged.includes(ref) ? { ...v, state: 'MERGED' } : v]),
+  )
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: { ...s.ledger, prs: d.ledger.prs },
+    prViews: { ...d.prViews, views } as typeof d.prViews,
+  }))
+  const r = (await handle({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'tools/call',
+    params: {
+      name: 'inbox_press',
+      arguments: { press: { action: 'pr-dismiss-merged' }, thread: 's1', shownSince: 0 },
+      _meta: { thread_id: 's1' },
+    },
+  })) as PrReply
+  const states = r.result.structuredContent.view.prs.drawn.map(x => [
+    x.pr.ref,
+    x.state.is,
+    x.state.is === 'settled' ? x.state.canUndo : null,
+  ])
+  assert.deepEqual(
+    states.filter(([ref]) => merged.includes(ref as string)).map(([, is, canUndo]) => [is, canUndo]),
+    [
+      ['settled', true],
+      ['settled', true],
+    ],
+  )
+  assert.deepEqual((await readState(dir, 's1')).ledger.prs, [d.prViews.branchRef])
 })
 
 for (const failure of ['none', 'checkpoint', 'completion', 'queue', 'lookup'] as const) {

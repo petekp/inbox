@@ -22,10 +22,12 @@ import {
   PR_TONES,
   checkActions,
   checkRowText,
+  DISMISS_MERGED_ID,
   prBlockActions,
   prCheckId,
   prMarkId,
   prRowWaits,
+  prTabActions,
   prThreadId,
   threadActions,
   threadRowText,
@@ -88,6 +90,7 @@ import {
   isRowTabRunning,
   hasRunningMark,
   mergedLine,
+  nameBeforeStall,
   OVERVIEW_TEXT_LINES,
   STALL_GAP,
   WAS_PREFIX,
@@ -108,6 +111,7 @@ import type {
   OverviewBranch,
   OverviewPage,
   OverviewRow,
+  OverviewStall,
   Holds,
   RowView,
   ShownTab,
@@ -242,6 +246,8 @@ type Line = {
   isDetailShown: boolean
   /** A handed-off row, drawn as its one line until the person opens it. */
   isFolded: boolean
+  /** The PRs tab's own buttons, drawn as their button line alone. Their keys work from any row of the tab. */
+  isTabButtons: boolean
 }
 
 type Entry =
@@ -276,6 +282,7 @@ const blankLine = (id: string): Line => ({
   isWaiting: true,
   isDetailShown: false,
   isFolded: false,
+  isTabButtons: false,
 })
 
 const wrapIndex = (i: number, n: number) => ((i % n) + n) % n
@@ -600,6 +607,17 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       })
     }
   }
+  const tabButtons = prButtons(
+    prTabActions(
+      prs.drawn.filter(d => isDrawnInPlace(d, ui.shownSince)),
+      prs.branchRef,
+    ),
+  )
+  if (tabButtons.length > 0)
+    out.push({
+      kind: 'row',
+      line: { ...blankLine(DISMISS_MERGED_ID), buttons: tabButtons, isWaiting: false, isTabButtons: true },
+    })
   if (prs.olderText) out.push({ kind: 'note', text: prs.olderText })
 
   return out
@@ -613,7 +631,7 @@ function pressFeedback(screen: PanelScreen, id: string, now: number, isMarkDone 
 
 const doneAt = (f: Line['feedback']): number | null => (f?.source?.is === 'done' ? f.source.at : null)
 
-/** Where an Overview row's mark sits: in the goal's column, so the list lines up with it. A subject's text starts at `PAGE_TEXT_AT`. */
+/** Where an Overview row's mark sits: in the head's column, so the list lines up with it. A subject's text starts at `PAGE_TEXT_AT`. */
 const PAGE_MARK_AT = 1
 const PAGE_TEXT_AT = PAGE_MARK_AT + 2
 /** Where the mark of a child under a subject sits: after the tree's arm, which starts under the subject's mark. */
@@ -629,7 +647,13 @@ function pageEntries(page: OverviewPage): Entry[] {
       { kind: 'note', text: page.empty.title, isStrong: true },
       { kind: 'note', text: page.empty.hint, isWhole: true },
     ]
-  const head: Entry[] = page.goal ? [{ kind: 'note', text: page.goal, isStrong: true, indent: PAGE_MARK_AT }] : []
+  const description = page.head?.description
+  const head: Entry[] = page.head
+    ? [
+        { kind: 'note', text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
+        ...(description ? [{ kind: 'note' as const, text: description, indent: PAGE_MARK_AT }] : []),
+      ]
+    : []
   const rows = page.rows.map((row): Entry => ({ kind: 'page', row }))
 
   return head.length > 0 && rows.length > 0 ? [...head, { kind: 'note', text: '' }, ...rows] : [...head, ...rows]
@@ -798,6 +822,9 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
 
     return { ui: base }
   }
+  const tabLine = lines.find(l => l.isTabButtons)
+  const tabButton = tabLine?.buttons.find(b => b.key === key)
+  if (tabLine && tabButton) return activate(screen, base, tabLine, tabButton, now)
   if (selected?.fold && key === 'enter') {
     const kind = selected.fold
     const unfolded = base.unfolded.includes(kind) ? base.unfolded.filter(k => k !== kind) : [...base.unfolded, kind]
@@ -1067,6 +1094,12 @@ function feedbackPaint(tone: Tone | null, s: Style) {
 
 function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const { ui, width, now, style: s } = d
+  if (line.isTabButtons) {
+    const cursor = isSelected ? s.tone('accent', '❯') : ' '
+    const cells = line.buttons.map((b, i) => buttonCell(b, isSelected && i === focusOf(line, ui), s))
+
+    return [fit(` ${cursor} ${cells.join('')}`, width)]
+  }
   const pad = line.depth * 2
   const out: string[] = []
   const status = line.status
@@ -1113,46 +1146,40 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
     const field = wrapText(`${text}\u0000`, Math.max(10, width - indent - 1))
     out.push(...field.map(l => ' '.repeat(indent) + l.replace('\u0000', s.inverse(' '))))
   }
-  if (statusUnder) out.push(...indented(statusUnder.text, indent, width, 4, feedbackPaint(statusUnder.tone, s)))
+  if (statusUnder) {
+    const markCells = mark ? 2 : 0
+    const [first, ...rest] = indented(
+      statusUnder.text,
+      indent + markCells,
+      width,
+      4,
+      feedbackPaint(statusUnder.tone, s),
+    )
+    if (first !== undefined) out.push(' '.repeat(indent) + mark + first.slice(indent + markCells), ...rest)
+  }
 
   return out
 }
 
-/** Stands in for each space of the stall words while they wrap, so a wrap never splits them. */
-const UNBROKEN_SPACE = '\uE000'
-
 /** The room for an Overview text after a mark at `indent`. */
 const pageRoom = (indent: number, width: number) => Math.max(10, width - indent - 2 - 1)
 
-/**
- * `text` wrapped to `room` cells, at most `maxLines` lines and cut with an ellipsis past them. `first` paints its
- * first `firstCells` cells and `rest` the cells after.
- */
-function pageText(
-  text: string,
-  room: number,
-  maxLines: number,
-  first: (t: string) => string,
-  firstCells = Infinity,
-  rest = first,
-): string[] {
+/** `text` wrapped to `room` cells, at most `maxLines` lines and cut with an ellipsis past them, each line painted. */
+function pageText(text: string, room: number, maxLines: number, paint: (t: string) => string): string[] {
   const wrapped = wrapText(text, room)
   const lines = wrapped.slice(0, maxLines)
   if (wrapped.length > lines.length)
     lines[lines.length - 1] = `${cutForEllipsis(lines.at(-1)!, t => cellWidth(t) <= room)}…`
-  let firstLeft = firstCells
 
-  return lines.map(l => {
-    const head = cutToCells(l, Math.max(0, firstLeft))
-    firstLeft -= cellWidth(l) + 1
-
-    return first(head) + (head.length < l.length ? rest(l.slice(head.length)) : '')
-  })
+  return lines.map(paint)
 }
 
+/** Stands in for each space that joins a name's last word, `STALL_GAP` and the stall word, so a wrap never splits them. */
+const GLUE = '\uE000'
+
 /**
- * One row of the Overview's list: a mark and its name wrapped after it, then its second line of where it stands, dim,
- * and its stall words in the needs-you tone.
+ * One row of the Overview's list: a mark and its name wrapped after it, with its stall word after `STALL_GAP` in the
+ * stall's tone on the line of the name's last word. Then where it stands, dim.
  */
 function pageLine(
   d: Draw,
@@ -1160,25 +1187,40 @@ function pageLine(
   mark: string,
   name: string,
   namePaint: (t: string) => string,
-  second: { text: string | null; stall: string | null } = { text: null, stall: null },
+  { stall = null, text = null }: { stall?: OverviewStall | null; text?: string | null } = {},
 ): string[] {
   const { width, style: s } = d
   const textAt = indent + 2
   const room = pageRoom(indent, width)
-  const names = pageText(name, room, OVERVIEW_TEXT_LINES, namePaint)
-  const stall = second.stall?.replaceAll(' ', UNBROKEN_SPACE) ?? null
-  const secondText = [second.text, stall].filter(Boolean).join(STALL_GAP)
-  const dimCells = second.text ? cellWidth(second.text) + (stall ? cellWidth(STALL_GAP) : 0) : 0
-  const seconds = secondText
-    ? pageText(secondText, room, OVERVIEW_TEXT_LINES, s.dim, dimCells, t => s.tone('needsYou', t)).map(l =>
-        l.replaceAll(UNBROKEN_SPACE, ' '),
-      )
-    : []
+  const names = stall
+    ? stalledName(name, stall, room, namePaint, s)
+    : pageText(name, room, OVERVIEW_TEXT_LINES, namePaint)
+  const seconds = text ? pageText(text, room, OVERVIEW_TEXT_LINES, s.dim) : []
 
   return [
     `${' '.repeat(indent)}${mark} ${names[0] ?? ''}`,
     ...[...names.slice(1), ...seconds].map(l => ' '.repeat(textAt) + l),
   ]
+}
+
+/** A name and its stall word wrapped to `room` cells, the name cut by `nameBeforeStall`, each part painted. */
+function stalledName(
+  name: string,
+  stall: OverviewStall,
+  room: number,
+  namePaint: (t: string) => string,
+  s: Style,
+): string[] {
+  const tail = `${STALL_GAP}${stall.text}`.replaceAll(' ', GLUE)
+  const wrapped = (shown: string) => wrapText(`${shown}${tail}`, room)
+  const lines = wrapped(nameBeforeStall(name, shown => wrapped(shown).length <= OVERVIEW_TEXT_LINES))
+  const words = s.tone(stall.tone, stall.text)
+
+  return lines.map(l =>
+    l.endsWith(tail)
+      ? namePaint(l.slice(0, -tail.length)) + s.dim(STALL_GAP) + words
+      : namePaint(l.replaceAll(GLUE, ' ')),
+  )
 }
 
 /** A row's lines with the tree line at `PAGE_MARK_AT`: `first` on its first line when given, and `rest` on each line after. */
@@ -1189,13 +1231,24 @@ function withTree(lines: string[], first: string | null, rest: string, s: Style)
   return lines.map((l, n) => (n === 0 ? (first ? drawn(l, first) : l) : drawn(l, rest)))
 }
 
+/** The rule above an Overview row that starts an item, from the text column to the end of the row, with `label` in its middle. */
+function pageRule(width: number, s: Style, label: string | null = null): string {
+  const cells = Math.max(0, width - PAGE_TEXT_AT - 1)
+  if (label === null) return `${' '.repeat(PAGE_TEXT_AT)}${s.dim('─'.repeat(cells))}`
+  const text = ` ${label} `
+  const fill = Math.max(4, cells - cellWidth(text))
+  const before = Math.floor(fill / 2)
+
+  return `${' '.repeat(PAGE_TEXT_AT)}${s.dim(`${'─'.repeat(before)}${text}${'─'.repeat(fill - before)}`)}`
+}
+
 /** A line on the Overview page, laid out as the shared row says. */
 function drawPageRow(row: OverviewRow, d: Draw): string[] {
   const { width, now, style: s } = d
   if (row.kind === 'subject') {
     const glyph = row.isRunning ? runningMark(now) : row.mark
     const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph)
-    const out = pageLine(d, PAGE_MARK_AT, mark, row.name, t => t, { text: row.text, stall: row.stall })
+    const out = pageLine(d, PAGE_MARK_AT, mark, row.name, t => t, { stall: row.stall, text: row.text })
     const room = pageRoom(PAGE_MARK_AT, width)
     if (row.merged)
       out.push(
@@ -1212,11 +1265,9 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
     return row.hasChildren ? withTree(out, null, '│', s) : out
   }
   if (row.kind === 'child') {
-    const mark = s.dim(row.isRunning ? runningMark(now) : row.mark)
-    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, {
-      text: null,
-      stall: row.stall,
-    })
+    const glyph = row.isRunning ? runningMark(now) : row.mark
+    const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph)
+    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, { stall: row.stall })
 
     return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out
   }
@@ -1225,13 +1276,7 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
 
     return withTree([' '.repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s)
   }
-  if (row.kind === 'look') {
-    const label = ` ${row.text} `
-    const fill = Math.max(4, width - 1 - PAGE_MARK_AT - cellWidth(label))
-    const before = Math.floor(fill / 2)
-
-    return [`${' '.repeat(PAGE_MARK_AT)}${s.dim(`${'─'.repeat(before)}${label}${'─'.repeat(fill - before)}`)}`]
-  }
+  if (row.kind === 'look') return [pageRule(width, s, row.text)]
   const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark)
 
   return pageLine(d, PAGE_MARK_AT, mark, row.text, s.dim)
@@ -1359,7 +1404,6 @@ export function drawPanel(
     rule,
     ...banners.flatMap(b => bannerLines(b, width, style)),
   ]
-  const pageRule = `${' '.repeat(PAGE_TEXT_AT)}${style.dim('─'.repeat(Math.max(0, width - PAGE_TEXT_AT - 1)))}`
   const body: string[] = []
   let selectedAt = [0, 0]
   for (const e of entries) {
@@ -1367,7 +1411,8 @@ export function drawPanel(
       body.push(
         ` ${e.mark ? `${e.mark.tone ? style.tone(e.mark.tone, e.mark.text) : e.mark.text} ` : ''}${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`,
       )
-    else if (e.kind === 'page') body.push(...(e.row.isRuledAbove ? [pageRule] : []), ...drawPageRow(e.row, d))
+    else if (e.kind === 'page')
+      body.push(...(e.row.isRuledAbove ? [pageRule(width, style)] : []), ...drawPageRow(e.row, d))
     else if (e.kind === 'banner') body.push(...bannerLines(e.banner, width, style))
     else if (e.kind === 'key')
       body.push(

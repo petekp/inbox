@@ -34,15 +34,30 @@ export type Child = {
   subjectId: string | null
   startedAt: number
   endedAt: number | null
-  /** When it last did anything. Null when the host reports no activity for its kind, so it never reads quiet. */
+  /** When it last did anything. Null when the host reports no activity for its kind. */
   lastActivityAt: number | null
+  /**
+   * What a delegate does: `working` once this session prompted it or Herdr showed it working, `blocked` while Herdr
+   * shows it at a question or an approval, and `finished` once Herdr shows it ready after it worked. Null for other
+   * kinds, and for a delegate nothing has shown working yet.
+   */
+  delegateState: DelegateState | null
 }
+
+/** The top of the Overview page: what the session is focused on now. */
+export type OverviewHead = {
+  /** A short name for the focus, like a subject's name. */
+  title: string
+  /** One line on what the session is doing about it. Empty until the Overview call writes one. */
+  description: string
+}
+
+export type DelegateState = 'working' | 'blocked' | 'finished'
 
 /** The Overview tab's list. The Overview call changes it by id; code keeps the order and every time. */
 export type Overview = {
-  role: 'coordinator' | 'session'
-  /** What the session is for, in the person's words; empty until the call writes it. */
-  goal: string
+  /** Null until the Overview call writes it. */
+  head: OverviewHead | null
   subjects: Subject[]
   children: Child[]
   /** The subject each ask holds up, by the ask's item id, as the Overview call linked them. */
@@ -288,6 +303,8 @@ export type PrView = {
   wasSeenOpen: boolean
   /** Why the last fetch failed; the rest is from the fetch before. */
   error: string | null
+  /** When a fetch last read the PR's state from GitHub. Absent on a view saved before the inbox kept it. */
+  fetchedAt?: number
 }
 
 export type Ledger = {

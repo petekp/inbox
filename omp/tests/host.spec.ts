@@ -325,11 +325,11 @@ test('a turn that ends queues the exchange and the inbox model fills the ledger'
 
 test('a reply’s Overview comes from the separate Overview call, after the ledger update', async () => {
   createInbox(pi(), deps())
-  overviewReply = 'GOAL: Adding a greeting CLI'
+  overviewReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name'
   await prompt('Add a greeting CLI')
   await endAgent('Plan written. Which runtime?')
   await settle()
-  expect(state().ledger.overview.goal).toBe('Adding a greeting CLI')
+  expect(state().ledger.overview.head?.title).toBe('Adding a greeting CLI')
   expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Use Node or Python?'])
   expect(overviewCompletions).toHaveLength(1)
   expect(overviewCompletions[0]!.prompt).toContain('Plan written. Which runtime?')
@@ -337,7 +337,7 @@ test('a reply’s Overview comes from the separate Overview call, after the ledg
 
 test('a run past the wait runs the Overview call on its work so far at its next tool start, once', async () => {
   createInbox(pi(), deps())
-  overviewReply = 'GOAL: Adding caching'
+  overviewReply = 'HEAD: Adding caching | Caching answers to cut load'
   const bash = (command: string) => call('tool_execution_start', { toolName: 'bash', args: { command } })
   await prompt('Add caching')
   await call('agent_start', { type: 'agent_start' })
@@ -351,11 +351,11 @@ test('a run past the wait runs the Overview call on its work so far at its next 
   expect(overviewCompletions).toHaveLength(1)
   expect(overviewCompletions[0]!.prompt).toContain('ran: npm test')
   expect(overviewCompletions[0]!.prompt).not.toContain('<reply>')
-  expect(state().ledger.overview.goal).toBe('Adding caching')
+  expect(state().ledger.overview.head?.title).toBe('Adding caching')
 })
 
 test('a next build keeps a record of each Overview call beside the saved sessions, and a release build keeps none', async () => {
-  overviewReply = 'GOAL: Adding a greeting CLI'
+  overviewReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name'
   createInbox(pi(), deps())
   await prompt('Add a greeting CLI')
   await endAgent('Plan written. Which runtime?')
@@ -381,7 +381,7 @@ test('a next build keeps a record of each Overview call beside the saved session
   })
   expect(record.prompt).toBe(overviewCompletions.at(-1)!.prompt)
   expect(record.attempts.map((a: { model: string }) => a.model)).toEqual([`${sonnet.provider}/${sonnet.id}`])
-  expect(record.after.goal).toBe('Adding a greeting CLI')
+  expect(record.after.head?.title).toBe('Adding a greeting CLI')
 })
 
 test('a failed Overview call leaves the ledger update applied with no Overview', async () => {
@@ -404,7 +404,7 @@ test('a ledger update shows before its Overview call returns', async () => {
   await settle()
   let release: () => void = () => undefined
   overviewHold = new Promise<void>(resolve => (release = resolve))
-  overviewReply = 'GOAL: Scaffolding the command'
+  overviewReply = 'HEAD: Scaffolding the command | Laying out the greet command'
   reply = 'CLOSED: i1 | Node chosen'
   await prompt('Use Node')
   await endAgent('Scaffolded the command with Node.')
@@ -415,13 +415,13 @@ test('a ledger update shows before its Overview call returns', async () => {
   expect(state().ledger.overview).toBeNull()
   release()
   await settle()
-  expect(state().ledger.overview.goal).toBe('Scaffolding the command')
+  expect(state().ledger.overview.head?.title).toBe('Scaffolding the command')
 })
 
 test('a ledger call that fails runs no Overview call', async () => {
   createInbox(pi(), deps())
   reply = new Error('overloaded')
-  overviewReply = 'GOAL: Adding a greeting CLI'
+  overviewReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name'
   await prompt('Add a greeting CLI')
   await endAgent('Plan written. Which runtime?')
   await settle()
@@ -433,7 +433,7 @@ test('the next ledger update does not wait for an earlier Overview call, and Ove
   createInbox(pi(), deps())
   let release: () => void = () => undefined
   overviewHold = new Promise<void>(resolve => (release = resolve))
-  overviewReply = 'GOAL: Scaffolding the command'
+  overviewReply = 'HEAD: Scaffolding the command | Laying out the greet command'
   reply = 'NEW: do | - | Water the plants | - | -'
   await prompt('Add a greeting CLI')
   await endAgent('Plan written.')
@@ -452,7 +452,9 @@ test('the next ledger update does not wait for an earlier Overview call, and Ove
   for (let waited = 0; overviewCompletions.length < 2 && waited < 200; waited += 1)
     await new Promise(resolve => setTimeout(resolve, 10))
   expect(overviewCompletions).toHaveLength(2)
-  expect(overviewCompletions[1]!.prompt).toContain('<goal>\nScaffolding the command\n</goal>')
+  expect(overviewCompletions[1]!.prompt).toContain(
+    '<head>\nScaffolding the command | Laying out the greet command\n</head>',
+  )
 })
 
 test('a settle that will continue does not end the turn', async () => {
@@ -905,6 +907,15 @@ test('opening the panel finds gh missing when no gh starts', async () => {
   await inbox.openPanel(makeCtx(), clock)
   await settle()
   expect((await inbox.screen(makeCtx())).isGhMissing).toBe(true)
+})
+
+test('opening the panel does not find gh missing when every gh run times out', async () => {
+  const inbox = createInbox(pi(), deps())
+  for (const gh of ['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh']) execResults.set(gh, { code: -1, killed: true })
+  await record({ kind: 'task', ask: 'Try the CLI by hand' })
+  await inbox.openPanel(makeCtx(), clock)
+  await settle()
+  expect((await inbox.screen(makeCtx())).isGhMissing).toBe(false)
 })
 
 test('opening the panel finds gh signed out, and a later fetch that gh answers without asking clears it', async () => {
@@ -1369,7 +1380,7 @@ test('a look starts when the panel shows the Overview and ends on another tab or
   const inbox = createInbox(pi(), deps())
   await prompt('hello')
   const saved = state()
-  const overview = { ...EMPTY_OVERVIEW, goal: 'Ship it' }
+  const overview = { ...EMPTY_OVERVIEW, head: { title: 'Ship it', description: 'Shipping the first version' } }
   writeFileSync(join(dir, 'sessions', 's1.json'), JSON.stringify({ ...saved, ledger: { ...saved.ledger, overview } }))
   await inbox.openPanel(makeCtx(), clock)
   inbox.showTab(makeCtx(), 'overview', { ...NO_HOLDS, shownSince: 1234 })

@@ -1,6 +1,9 @@
 import type { GhRun } from './pr-tab'
 
-/** Runs a command and never throws: a command that cannot start, times out, is killed or overflows its output ends with code -1. */
+/**
+ * Runs a command and never throws: a command still running at `timeoutMs` ends with code -2, and one that cannot
+ * start, is killed or overflows its output ends with code -1.
+ */
 export type Run = (
   args: string[],
   opts: { cwd: string; timeoutMs: number; env?: Record<string, string> },
@@ -8,9 +11,11 @@ export type Run = (
 
 const CANDIDATES = ['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh']
 
-const GH_TIMEOUT_MS = 20_000
+export const GH_TIMEOUT_MS = 20_000
 
 export const UNSTARTABLE_CODE = -1
+
+export const TIMED_OUT_CODE = -2
 
 const GIT_TIMEOUT_MS = 5000
 
@@ -22,9 +27,9 @@ export async function branchIn(run: Run, folder: string): Promise<string | null>
 }
 
 /**
- * Finds the first gh that starts: `exec` ends with code -1 for a command it cannot start. The one found is kept
- * until `forget` is called; while none starts, each call looks again, since the person may install gh without
- * restarting the host.
+ * Finds the first gh that starts: `exec` ends with code -1 for a command it cannot start, and a gh that timed out
+ * started. The one found is kept until `forget` is called; while none starts, each call looks again, since the
+ * person may install gh without restarting the host.
  */
 export function ghFinder(exec: Run): { find: () => Promise<string | null>; forget: () => void } {
   let found: string | null = null
@@ -49,7 +54,8 @@ export function ghFinder(exec: Run): { find: () => Promise<string | null>; forge
 }
 
 /**
- * `onUnstartable` is called when a run ends with code -1, which also covers a timeout kill and an output overflow.
+ * `onUnstartable` is called when a run ends with code -1, which also covers an output overflow. A run that timed out
+ * started, so it does not call it.
  */
 export function ghIn(exec: Run, bin: string, cwd: string, onUnstartable: () => void): GhRun {
   return async args => {
