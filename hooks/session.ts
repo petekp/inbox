@@ -1,3 +1,4 @@
+import { isRowTabRunning } from './arrivals'
 import { linkDialogs } from './dialogs'
 import {
   applyExchangeUpdate,
@@ -17,10 +18,12 @@ import {
   applyPrPress,
   drawnPrs,
   isPrPress,
+  isPrTabRunning,
   isViewKept,
   itemPrSteps,
   olderPrsText,
   linkedPrs,
+  openPrViews,
   pressRowId,
   prOrderText,
   prTabActions,
@@ -46,16 +49,20 @@ import { applyStatus, lookEnded, lookStarted } from './status'
 import type { StatusAnswer } from './status'
 import {
   allRows,
+  hasRunningMark,
   inboxView,
+  isRowTab,
   isShownSince,
+  MARK_LEGEND,
   NO_HOLDS,
   outAction,
   statusPage,
   perTurnStatus,
   pressFeedbackIn,
 } from './view'
-import type { InboxView, StatusPage, Holds, RowState } from './view'
+import type { InboxView, StatusPage, Holds, RowState, ShownTab } from './view'
 import type {
+  FoldKind,
   LastAction,
   Ledger,
   SessionStatus,
@@ -883,6 +890,23 @@ export function sessionView(
     prs: prTabOf(s, lastActions, now, holds.shownSince, settleWindowMs),
     statusPage: statusPage(s, now),
   }
+}
+
+/**
+ * Whether a text look draws a running mark on `shown`, so the terminal and omp keep their frame timer going. Help always
+ * does, since the legend's first mark runs.
+ */
+export function showsRunningMark(
+  v: SessionView,
+  shown: ShownTab,
+  isHelpShown: boolean,
+  isUnfolded: (kind: FoldKind) => boolean,
+): boolean {
+  if (isHelpShown) return MARK_LEGEND.some(m => m.isRunning)
+  if (!isRowTab(shown)) return hasRunningMark(v.statusPage)
+  if (shown === 'prs') return isPrTabRunning(openPrViews(v.prs.drawn), v.lastActions)
+
+  return isRowTabRunning(v, shown, isUnfolded)
 }
 
 function prTabOf(

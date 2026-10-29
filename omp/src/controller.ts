@@ -3,6 +3,7 @@ import { isPrPress, pressRowId } from '../../hooks/pr-tab'
 import type { PrPress } from '../../hooks/pr-tab'
 import { isPressConfirmed } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
+import { showsRunningMark } from '../../hooks/session'
 import { READING_TEXT, compareEndsAt, RUNNING_FRAME_MS } from '../../hooks/view'
 import type { Holds, ShownTab } from '../../hooks/view'
 import {
@@ -14,7 +15,6 @@ import {
   holdsOf,
   isAnimating,
   isLineWaiting,
-  isRunningMarkShown,
   noticeFor,
   tallestTabHeight,
 } from './panel'
@@ -95,7 +95,8 @@ export function createPanel(deps: PanelDeps): Panel {
       timers.stop(animation)
       animation = null
     }
-    const hasFrames = screen !== null && isRunningMarkShown(screen, ui)
+    const hasFrames =
+      screen !== null && showsRunningMark(screen.view, ui.tab, ui.isHelpShown, kind => ui.unfolded.includes(kind))
     if (hasFrames && frames === null) frames = timers.every(() => deps.requestRender(), RUNNING_FRAME_MS)
     if (!hasFrames && frames !== null) {
       timers.stop(frames)

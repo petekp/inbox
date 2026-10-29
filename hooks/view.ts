@@ -558,7 +558,7 @@ export function settledRowIds(rows: RowView[]): string[] {
   return rows.filter(r => r.state.is === 'settled').map(r => r.id)
 }
 
-export function closedShown<T extends { id: string }>(closed: T[], drawnSettled: ReadonlySet<string>): T[] {
+export function closedShown<T extends { id: string }>(closed: readonly T[], drawnSettled: ReadonlySet<string>): T[] {
   return closed.filter(d => !drawnSettled.has(d.id)).slice(0, CLOSED_SHOWN)
 }
 
@@ -979,28 +979,6 @@ export function settledMark(state: Pick<SettledState, 'delivery' | 'closedAs'>):
 export function closedMark(state: ClosedState, delivery: ClosedDelivery): ResultMark {
   if (isSendMoving(delivery)) return RUNNING_RESULT
   return { text: delivery === null ? CLOSED_MARKS[state] : '', isRunning: false }
-}
-
-/**
- * Whether a row tab draws a running mark, so the terminal and omp keep their frame timer going: a row whose answer is
- * on its way, or such a line in a Closed list the look shows unfolded.
- */
-export function isRowTabRunning(v: InboxView, tab: ListedTab, isUnfolded: (kind: FoldKind) => boolean): boolean {
-  const rows = tab === 'needsYou' ? [...v.needsYou.questions, ...v.needsYou.tasks] : v.findings.rows
-  const settled = new Set(settledRowIds(rows))
-  const closed =
-    tab === 'needsYou'
-      ? NEEDS_YOU_GROUPS.flatMap(g => (isUnfolded(g.kind) ? closedShown(v.needsYou.closed[g.list], settled) : []))
-      : (Object.keys(FINDING_GROUPS) as Finding['kind'][]).flatMap(kind =>
-          isUnfolded(kind)
-            ? closedShown(
-                v.findings.closed.filter(f => f.kind === kind),
-                settled,
-              )
-            : [],
-        )
-
-  return rows.some(r => rowResultMark(r)?.isRunning) || closed.some(d => d.mark.isRunning)
 }
 
 /** Whether a closed row offers Undo after its notification was refused. */

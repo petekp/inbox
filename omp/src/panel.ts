@@ -32,7 +32,6 @@ import {
   threadRowText,
   threadSentIn,
   isPrPress,
-  isPrTabRunning,
   openPrViews,
 } from '../../hooks/pr-tab'
 import type { PrAction, PrPress, PrRowMark } from '../../hooks/pr-tab'
@@ -89,8 +88,6 @@ import {
   resultGlyph,
   rowResultMark,
   settledMark,
-  isRowTabRunning,
-  hasRunningMark,
   statusKeyPlan,
   statusKeyRows,
   statusSelected,
@@ -961,15 +958,6 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
     isPressMoving ||
     isNoticeShown
   )
-}
-
-/** Whether the panel shows a running mark, whose frame moves with the clock: on the Status, or on a row tab. */
-export function isRunningMarkShown(screen: PanelScreen, ui: PanelUi): boolean {
-  if (ui.isHelpShown) return MARK_LEGEND.some(m => m.isRunning)
-  if (!isRowTab(ui.tab)) return hasRunningMark(screen.view.statusPage)
-  if (ui.tab === 'prs') return isPrTabRunning(openPrViews(screen.view.prs.drawn), screen.view.lastActions)
-
-  return isRowTabRunning(screen.view, ui.tab, kind => ui.unfolded.includes(kind))
 }
 
 /** The notice for a press the row cannot show: a failed send, or a press whose row had changed. */

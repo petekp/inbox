@@ -60,6 +60,7 @@ import {
   statusChanged,
   withLook,
   withNewPrRefs,
+  showsRunningMark,
 } from './session'
 import {
   activityGate,
@@ -114,7 +115,6 @@ import {
   prThreadId,
   threadActions,
   threadRowText,
-  isPrTabRunning,
   threadSentIn,
   ghNoticeOf,
   prsEmptyText,
@@ -256,12 +256,10 @@ import {
   rowTitle,
   resultGlyph,
   rowResultMark,
-  isRowTabRunning,
   rowFeedbackText,
   ROW_COPY,
   READING_TEXT,
   rowsIn,
-  hasRunningMark,
   LOOK_TEXT,
   mergedLine,
   nameBeforeStall,
@@ -4205,14 +4203,11 @@ export const register: Register = on => {
     const isStatusShown = savedPage === 'overview'
     const shownTab: ShownTab = isStatusShown ? 'overview' : tab
     const tabList = shownTabs(isNextBuild)
-    const isRunningMarkShown = isHelpShown
-      ? MARK_LEGEND.some(m => m.isRunning)
-      : isStatusShown
-        ? hasRunningMark(view.statusPage)
-        : tab === 'prs'
-          ? isPrTabRunning(openPrViews(view.prs.drawn), lastActions)
-          : isRowTabRunning(view, tab, kind => unfolded.includes(kind))
-    if (look === 'terminal') animateRunningMarks($, isRunningMarkShown)
+    if (look === 'terminal')
+      animateRunningMarks(
+        $,
+        showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)),
+      )
     const undoEnd = lastUndoEnd(view)
     if (undoEnd !== null) redrawWhileUndoLasts($, undoEnd)
     // A hot reload keeps TYPING but empties openFields, so an open field takes its key and seed again here.
@@ -4476,15 +4471,16 @@ export const register: Register = on => {
     }
 
     type Entry = DrawnEntry<Row>
-    // The Status draws no rows, so none are built while it shows.
+    // The Status and Help draw no rows, so none are built while either shows.
+    const isListShown = !isStatusShown && !isHelpShown
     const lists = drawnLists(
       view,
       () => true,
-      r => (isStatusShown ? null : r.item ? itemRow(r) : r.finding ? findingRow(r) : null),
+      r => (!isListShown ? null : r.item ? itemRow(r) : r.finding ? findingRow(r) : null),
     )
     const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({ ...g, entries: lists[g.list], rows: rowsIn(lists[g.list]) }))
     const findingEntries = lists.findings
-    const prGroups = (isStatusShown ? [] : shownPrs)
+    const prGroups = (isListShown ? shownPrs : [])
       .map(d => ({
         ...d,
         checks: d.state.is === 'settled' ? [] : failingChecks(d.pr).map(c => checkRow(d.pr, c)),
@@ -4511,8 +4507,8 @@ export const register: Register = on => {
     const ids = rows[tab].map(r => r.id)
     const indexOf = new Map(ids.map((id, n) => [id, n]))
     const cursor = selection[tab]
-    const settledIds = new Set(isStatusShown ? [] : settledRowIds(allRows(view)))
-    const top = isStatusShown ? null : firstWaiting(tabWaits(tab, view, openPrViews(shownPrs), lastActions))
+    const settledIds = new Set(isListShown ? settledRowIds(allRows(view)) : [])
+    const top = isListShown ? firstWaiting(tabWaits(tab, view, openPrViews(shownPrs), lastActions)) : null
     const at = selectedIndex(ids, cursor, top, id => settledIds.has(id))
     const isOpenGuarded = !isStatusShown && isGuarded(cursor.openedAt, now)
     const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection) : null
