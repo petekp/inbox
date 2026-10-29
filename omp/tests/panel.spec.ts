@@ -346,10 +346,10 @@ test('a row closed with Done shows its label and Undo, u returns the undo press,
   const demo = await afterPresses({ action: 'done', id: 'd14' })
   const screen = await demo.screen()
   const out = text(screen, INITIAL_UI)
-  expect(out).toMatch(/Put on the glasses and pair them with this Mac\s+Done\s+u Undo/)
+  expect(out).toMatch(/Put on the glasses and pair them with this Mac\s+✓ Done\s+u Undo/)
   expect(handleKey(screen, INITIAL_UI, 'u', NOW).press).toEqual({ action: 'undo', id: 'd14' })
   const later = await demo.advance()
-  expect(text(later, INITIAL_UI)).toMatch(/Put on the glasses and pair them with this Mac\s+Done/)
+  expect(text(later, INITIAL_UI)).toMatch(/Put on the glasses and pair them with this Mac\s+✓ Done/)
   expect(text(later, INITIAL_UI)).not.toContain('u Undo')
   expect(text(later, INITIAL_UI)).toContain('1 closed')
   const ownKey = shownTabs(later.isNextBuild === true).find(t => t.id === INITIAL_UI.tab)!.hotkey
@@ -381,7 +381,7 @@ test('after the replies to two presses, the row handed off reads Still open, the
   const out = text(await demo.advance(), INITIAL_UI)
   expect(out).toMatch(/Calibrate eye tracking for the new lenses\s+Still open/)
   expect(out).toMatch(/Dismiss a glance with a pinch, or a flick of the wrist\?\s+✓ Explained/)
-  expect(out).toMatch(/✓\s+Run the gesture tests and send back the failures\s+Run gesture tests/)
+  expect(out).toMatch(/Run the gesture tests and send back the failures\s+✓ Run gesture tests/)
   expect(out).toContain('Asks 7')
 })
 
@@ -396,7 +396,7 @@ test('a reply folds its row to one line with its mark and label, and the selecti
   const { row, screen } = await afterReply()
   const lines = text(screen, onRow(row)).split('\n')
   const at = lines.findIndex(l => l.includes(row.title))
-  expect(lines[at]).toMatch(/❯ ✓ .*Replied/)
+  expect(lines[at]).toMatch(/❯ .*✓ Replied/)
   expect(lines[at + 1]).not.toContain('↵')
 
   const moved = afterHandOff(screen, onRow(row), row.id, NOW)

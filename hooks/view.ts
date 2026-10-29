@@ -2,6 +2,7 @@ import type {
   Closed,
   ClosedFinding,
   Draft,
+  FoldKind,
   Finding,
   Item,
   LastAction,
@@ -19,7 +20,7 @@ import type {
   Tab,
   Turns,
 } from '../types'
-import { closedAt, isLapsed, reopenFinding, reopenItem } from './ledger'
+import { closedAt, closedState, reopenFinding, reopenItem } from './ledger'
 import { isChildRunning, isOpen } from './overview'
 import { ago, clipLabel, cutAtPhrase } from './text'
 import { questionNumbers } from './model-text'
@@ -68,7 +69,7 @@ export const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; list: 'quest
   { kind: 'task', title: 'Tasks', list: 'tasks' },
 ]
 
-export const CLOSED_MARKS: Record<ClosedState, string> = { handled: '✓', dismissed: '✕', lapsed: '' }
+export const CLOSED_MARKS: Record<ClosedState, string> = { handled: '✓', dismissed: '✕', lapsed: '✗' }
 
 export const CLOSED_SHOWN = 3
 /** How long Undo can take back a close or a press. Once it passes, Done tells the agent. */
@@ -196,7 +197,7 @@ export type RowState =
       /** Whether this kind of close offers Undo while Undo lasts. `canUndo` is whether Undo is on offer now. */
       offersUndo: boolean
       delivery: ClosedDelivery
-      isLapsed: boolean
+      closedAs: ClosedState
     }
 
 export type SettledState = Extract<RowState, { is: 'settled' }>
@@ -229,7 +230,7 @@ export function closedRowState(
     at,
     canUndo: canUndoClose(closed, at, now, settleWindowMs),
     offersUndo: offersUndo(closed),
-    isLapsed: isLapsed(closed),
+    closedAs: closedState(closed),
     delivery,
   }
 }
@@ -282,7 +283,8 @@ export type ActionView = {
 export type RowView = {
   id: string
   type: 'question' | 'task' | 'finding'
-  handle: string
+  /** The question's number in the batch the person can answer by number, as the agent's message numbers it. */
+  number: number | null
   title: string
   at: number | null
   detail: string | null
@@ -322,13 +324,14 @@ export function shownOptionDescriptions(row: RowView, isShowingAll: boolean): Op
   return row.optionDescriptions.filter(o => isShowingAll || !o.isFolded)
 }
 
-export function rowMark(row: RowView, look: Look): { text: string; tone?: 'done' | 'issue' } {
-  if (row.state.is === 'handedOff' && row.feedback?.is !== 'unconfirmed') return { text: '✓', tone: 'done' }
-  if (row.finding) {
-    const group = FINDING_GROUPS[row.finding.kind]
-    return { text: group.mark, tone: group.tone }
-  }
-  return { text: isTerminalLike(look) ? row.handle : '' }
+/** A row's handle in text the agent reads: its number, as "1)", or "•". */
+export function rowHandle(row: Pick<RowView, 'number'>): string {
+  return row.number === null ? '•' : `${row.number})`
+}
+
+/** A row's title as a look draws it. The terminal and omp start a numbered question's title with its number. */
+export function rowTitle(row: Pick<RowView, 'number' | 'title'>, look: Look): string {
+  return isTerminalLike(look) && row.number !== null ? `${rowHandle(row)} ${row.title}` : row.title
 }
 
 export function replyHint(row: RowView, agent: string): string {
@@ -367,9 +370,41 @@ export function markedFeedbackText(f: Feedback, isMarkDone: boolean, look: Look)
   return f.is === 'done' && isMarkDone ? f.label : feedbackText(f, look)
 }
 
+/** A handed-off row's ✓ leads its result line, so its result reads as the bare label. */
 export function rowFeedbackText(row: RowView, look: Look): string | null {
   const f = row.feedback
-  return f ? (f.is === 'done' && row.state.is === 'handedOff' ? f.label : feedbackText(f, look)) : null
+  return f ? (isHandedOffDone(row) && f.is === 'done' ? f.label : feedbackText(f, look)) : null
+}
+
+function isHandedOffDone(row: Pick<RowView, 'state' | 'feedback'>): boolean {
+  return row.state.is === 'handedOff' && row.feedback?.is === 'done'
+}
+
+/**
+ * The mark of a row's result: what came of it. The terminal and omp draw it before the result, and desktop and Codex
+ * in the row's mark column. `isRunning` says the look draws its running mark in place of `text`, as on the Overview,
+ * while what the row sent is on its way.
+ */
+export type ResultMark = { text: string; isRunning: boolean }
+
+const RUNNING_RESULT: ResultMark = { text: '●', isRunning: true }
+
+/**
+ * A row's result mark: a settled row's, or a handed-off row's, which runs while its message is on its way and is ✓
+ * once its press is done. It is blank otherwise, as while the message is unconfirmed, and keeps its place, so the
+ * result does not move when its mark arrives. Null on an open row.
+ */
+export function rowResultMark(row: Pick<RowView, 'state' | 'feedback'>): ResultMark | null {
+  if (row.state.is === 'settled') return settledMark(row.state)
+  const f = row.feedback
+  if (row.state.is !== 'handedOff' || !f) return null
+  if (f.is === 'sending' || f.is === 'queued') return RUNNING_RESULT
+  return { text: f.is === 'done' ? '✓' : '', isRunning: false }
+}
+
+/** Whether what a row sent is still on its way to the agent: `unconfirmed` and a refused send are not. */
+function isSendMoving(delivery: ClosedDelivery): boolean {
+  return delivery === 'sending' || delivery === 'queued'
 }
 
 export type InboxView = {
@@ -805,14 +840,39 @@ function deliveryLabel(state: 'queued' | 'unconfirmed', label: string): string {
   return state === 'queued' ? `Queued: ${label}` : `Not confirmed: ${label}`
 }
 
-/** A settled row's mark: ✓ once nothing it sent is on its way, else blank. */
-export function settledMark(delivery: ClosedDelivery): string {
-  return delivery === null ? '✓' : ''
+/** A settled row's mark: the one its line in the Closed list draws, so a row keeps its mark when it folds. */
+export function settledMark(state: Pick<SettledState, 'delivery' | 'closedAs'>): ResultMark {
+  return closedMark(state.closedAs, state.delivery)
 }
 
-/** A closed row's mark: blank while what it sent is on its way. */
-export function closedMark(state: ClosedState, delivery: ClosedDelivery): string {
-  return delivery === null ? CLOSED_MARKS[state] : ''
+/** A closed row's mark, as `CLOSED_MARKS` gives it: running while what it sent is on its way, else blank until it arrives. */
+export function closedMark(state: ClosedState, delivery: ClosedDelivery): ResultMark {
+  if (isSendMoving(delivery)) return RUNNING_RESULT
+  return { text: delivery === null ? CLOSED_MARKS[state] : '', isRunning: false }
+}
+
+/**
+ * Whether a row tab draws a running mark, so the terminal and omp keep their frame timer going: a row whose answer is
+ * on its way, or such a line in a Closed list the look shows unfolded.
+ */
+export function isRowTabRunning(v: InboxView, tab: ListedTab, isUnfolded: (kind: FoldKind) => boolean): boolean {
+  const rows = tab === 'needsYou' ? [...v.needsYou.questions, ...v.needsYou.tasks] : v.findings.rows
+  const settled = new Set(settledRowIds(rows))
+  const closed =
+    tab === 'needsYou'
+      ? NEEDS_YOU_GROUPS.flatMap(g => (isUnfolded(g.kind) ? closedShown(v.needsYou.closed[g.list], settled) : []))
+      : (Object.keys(FINDING_GROUPS) as Finding['kind'][]).flatMap(kind =>
+          isUnfolded(kind)
+            ? closedShown(
+                v.findings.closed.filter(f => f.kind === kind),
+                settled,
+              )
+            : [],
+        )
+
+  return (
+    rows.some(r => rowResultMark(r)?.isRunning) || closed.some(d => closedMark(closedState(d), d.delivery).isRunning)
+  )
 }
 
 /** Whether a closed row offers Undo after its notification was refused. */
@@ -825,8 +885,8 @@ export function canUndoRefused(delivery: ClosedDelivery): boolean {
  * "Not sent" or unconfirmed result never reads as success. A look that draws the label as muted text after the
  * title draws it muted either way.
  */
-export function settledTone(state: { delivery: ClosedDelivery; isLapsed: boolean }): 'done' | 'muted' {
-  return state.delivery === null && !state.isLapsed ? 'done' : 'muted'
+export function settledTone(state: Pick<SettledState, 'delivery' | 'closedAs'>): 'done' | 'muted' {
+  return state.delivery === null && state.closedAs === 'handled' ? 'done' : 'muted'
 }
 
 export function settledLabel(label: string, delivery: ClosedDelivery): string {
@@ -1574,7 +1634,7 @@ export function inboxView({
           canUndo: false,
           offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
-          isLapsed: false,
+          closedAs: 'handled',
         }
       if (isHeld(closed)) return { is: 'held', label: heldLabel(closed), at }
 
@@ -1601,7 +1661,7 @@ export function inboxView({
         canUndo: isUndoLeft(last.at, now, settleWindowMs),
         offersUndo: true,
         delivery: pendingDeliveryAt(last, now),
-        isLapsed: false,
+        closedAs: 'handled',
       }
 
     return isHandedOff(last, turns) ? { is: 'handedOff' } : { is: 'open' }
@@ -1632,7 +1692,7 @@ export function inboxView({
     return rowOf({
       id: item.id,
       type: item.kind,
-      handle: n === undefined ? '•' : `${n})`,
+      number: n ?? null,
       title: item.ask,
       at: item.at,
       detail: null,
@@ -1656,7 +1716,7 @@ export function inboxView({
       rowOf({
         id: finding.id,
         type: 'finding',
-        handle: '•',
+        number: null,
         title: finding.title,
         at: finding.at,
         detail: finding.detail,

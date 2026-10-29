@@ -58,7 +58,8 @@ import {
   PRESS_GUARD_MS,
   rowAfterClose,
   replyHint,
-  rowMark,
+  rowResultMark,
+  FINDING_GROUPS,
   rowFeedbackText,
   RUNNING_PULSE_MS,
   settledLabel,
@@ -82,6 +83,7 @@ import type {
   OverviewTone,
   PressState,
   Holds,
+  ResultMark,
   RowView,
   RowWait,
   SettledState,
@@ -141,6 +143,8 @@ type Row = {
   view?: RowView
   handle: string
   handleTone?: Tone
+  /** The mark is a running mark, which fades while what the row sent is on its way. */
+  isHandleRunning?: boolean
   /** A PR row's mark says its work is done. */
   isMarkDone?: boolean
   kind?: Finding['kind']
@@ -789,8 +793,14 @@ function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
   return actions
 }
 
+/** An Asks or Finds row's mark: its result's, in the mark column. An open row has none. */
+function resultHandle(r: RowView): Pick<Row, 'handle' | 'isHandleRunning'> {
+  const mark = rowResultMark(r)
+
+  return mark ? { handle: mark.text, isHandleRunning: mark.isRunning } : { handle: '' }
+}
+
 function itemRow(v: View, r: RowView): Row {
-  const mark = rowMark(r, 'codex')
   const isHandedOff = r.state.is === 'handedOff'
   const id = r.id
   const described = shownOptionDescriptions(r, optionsShown.has(id))
@@ -798,8 +808,7 @@ function itemRow(v: View, r: RowView): Row {
   return {
     id,
     view: r,
-    handle: mark.text,
-    handleTone: mark.tone,
+    ...resultHandle(r),
     ...(isHandedOff ? { fold: {} } : {}),
     title: r.title,
     // A next build draws the Overview, so only it names the subject an ask holds up.
@@ -831,13 +840,11 @@ function itemRow(v: View, r: RowView): Row {
 function findingRow(v: View, r: RowView, f: Finding): Row {
   const isHandedOff = r.state.is === 'handedOff'
   const id = r.id
-  const mark = rowMark(r, 'codex')
 
   return {
     id,
     view: r,
-    handle: mark.text,
-    handleTone: mark.tone,
+    ...resultHandle(r),
     kind: f.kind,
     ...(isHandedOff ? { fold: {} } : {}),
     title: r.title,
@@ -1134,7 +1141,14 @@ function isFeedbackShown(row: Row): boolean {
 function ListRow({ row, track, onSelect, now }: { row: Row; track: RowTrack; onSelect: () => void; now: number }) {
   const isClosing = track.hasPanel && (track.state === 'closing' || track.state === 'leaving')
   const isSelected = track.hasPanel && !isClosing
-  const handle = <span class={`mark ${row.handleTone ?? ''}`}>{row.handle}</span>
+  const handle = (
+    <span
+      class={`mark ${row.handleTone ?? ''}${row.isHandleRunning ? ' running' : ''}`}
+      ref={row.isHandleRunning ? pulseInStep : undefined}
+    >
+      {row.handle}
+    </span>
+  )
 
   const isPressing = sending.has(row.id)
   const pending = sending.get(row.id)?.pending ?? null
@@ -1258,7 +1272,7 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
 
   return (
     <div class={panel ? 'row settled was-open' : 'row settled'}>
-      <span class="mark">{settledMark(state.delivery)}</span>
+      <ResultMarkView mark={settledMark(state)} />
       <div class="content">
         <div class="settled-head">
           <div class="settled-line">
@@ -1448,9 +1462,19 @@ function OverviewTab({ page }: { page: OverviewPage }) {
   )
 }
 
-function GroupTitle({ title, count }: { title: string; count: number }) {
+function ResultMarkView({ mark }: { mark: ResultMark }) {
+  return (
+    <span class={mark.isRunning ? 'mark running' : 'mark'} ref={mark.isRunning ? pulseInStep : undefined}>
+      {mark.text}
+    </span>
+  )
+}
+
+/** A Finds group's title hangs its kind's mark in the mark column, since its rows draw none. */
+function GroupTitle({ title, count, mark }: { title: string; count: number; mark?: { mark: string; tone: Tone } }) {
   return (
     <div class="group-title">
+      {mark ? <span class={`group-mark ${mark.tone}`}>{mark.mark}</span> : null}
       <b>{title}</b>
       {count > 0 ? (
         <span class="count">
@@ -1584,7 +1608,7 @@ function GroupEnd({
           {closed.map(d => (
             <div class="entry" key={`closed-${d.id}`}>
               <div class="row">
-                <span class="mark">{closedMark(d.state, d.delivery)}</span>
+                <ResultMarkView mark={closedMark(d.state, d.delivery)} />
                 <div class="content tight">
                   <div class="muted">{d.ask}</div>
                   <div class="outcome">{settledLabel(d.outcomeLabel, d.delivery)}</div>
@@ -1687,7 +1711,7 @@ function Findings({ v, lists, now }: { v: View; lists: Lists; now: number }) {
         const rows = rest.flatMap(x => ('row' in x ? [x.row] : []))
         return (
           <section>
-            <GroupTitle title={g.title} count={waitingCount(rows.map(r => r.view))} />
+            <GroupTitle title={g.title} count={waitingCount(rows.map(r => r.view))} mark={FINDING_GROUPS[g.kind]} />
             <Entries entries={g.entries} group="finding" all={lists.byTab.findings} now={now} />
             <GroupEnd
               group={g.kind}

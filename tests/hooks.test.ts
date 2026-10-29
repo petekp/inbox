@@ -134,6 +134,14 @@ let panesOpened: string[] = []
 let paneOpens: PaneOpenArgs[] = []
 let paneState: { isShown: boolean; isFocused: boolean } | null = null
 
+/** Selects a terminal row by its title, which is a button only while the row is not selected. */
+async function selectRow(
+  pane: { find(q: { key: string }): Promise<unknown>; press(q: { key: string }): Promise<unknown> },
+  id: string,
+) {
+  if (await pane.find({ key: `title-${id}` })) await pane.press({ key: `title-${id}` })
+}
+
 async function runBeforeAct() {
   const act = beforeAct
   beforeAct = undefined
@@ -517,7 +525,7 @@ test('a dialog reaches the model with its questions, whether answered or dismiss
   const deployItem = itemAsking('Deploy to staging?')
   expect(deployItem?.optionDescriptions).toEqual({ Deploy: 'Runs the staging pipeline', Hold: 'Waits for the review' })
   const pane = await $.ui.mount(PANE)
-  await pane.press({ key: `select-${deployItem?.id}` })
+  await selectRow(pane, `${deployItem?.id}`)
   await clock.settle()
   const texts = (await pane.findAll({ type: 'Text' })).map(t => t.text ?? '')
   expect(texts).toContain('Deploy: Runs the staging pipeline')
@@ -591,23 +599,23 @@ test('a question’s handle is the number a typed answer reaches, and the band c
 
   const pane = await $.ui.mount(PANE)
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  const handle = async (id: string) => (await pane.find({ key: `select-${id}` }))?.props.label
+  const handle = async (id: string) => {
+    const label = (await pane.find({ key: `title-${id}` }))?.props.label
+    return typeof label === 'string' ? (label.match(/^(\d+\)) /)?.[1] ?? null) : undefined
+  }
   expect(await pane.find({ key: 'explain-i3-key' })).toBeDefined()
-  expect([await handle('i3'), await handle('i5'), await handle('i1'), await handle('i2')]).toEqual([
-    '1)',
-    '2)',
-    '•',
-    '•',
-  ])
+  expect([await handle('i5'), await handle('i1'), await handle('i2')]).toEqual(['2)', null, null])
+  expect(await pane.find({ text: /^1\) Add a --loud flag\?/ })).toBeDefined()
   expect(await band.find({ text: /Asks 6/ })).toBeDefined()
   expect(await pane.find({ text: /^ 6$/ })).toBeDefined()
   expect(sidebarTokens()).toMatchObject({ ...NO_COUNTS, 'inbox-needs-you': '6' })
 
   const answered = await $.prompt.submit({ text: '1. yes', wait: false, origin: { kind: 'composer' } })
   expect(answered.context?.join('\n')).toContain('1 → "Add a --loud flag?"')
-  expect(await handle('i3')).toBe('•')
+  expect(await pane.find({ text: /^1\) Add a --loud flag\?/ })).toBeUndefined()
+  expect(await pane.find({ text: /^Add a --loud flag\?/ })).toBeDefined()
 
-  await pane.press({ key: 'select-i4' })
+  await selectRow(pane, 'i4')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'help-i4-0' })
   await clock.settle()
@@ -660,7 +668,7 @@ test('Done on a task Claude just left tells Claude once Undo ends, and a task fr
   await reply('publish it', 'Sign in to npm and approve the deploy, then I publish.', 't2')
   const pane = await $.ui.mount(PANE)
   const done = async (id: string) => {
-    await pane.press({ key: `select-${id}` })
+    await selectRow(pane, `${id}`)
     await clock.advance(PRESS_GUARD_MS)
     await pane.press({ key: `done-${id}` })
     await clock.settle()
@@ -705,7 +713,7 @@ test('a Done message that waits for its prompt to run reads Queued instead of No
   })
   await clock.settle()
   const pane = await $.ui.mount(PANE)
-  await pane.press({ key: 'select-i1' })
+  await selectRow(pane, 'i1')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'done-i1' })
   await clock.settle()
@@ -742,7 +750,7 @@ const doneWakeAfterRewrite = async ($: Engine, on: On, isMatched: boolean) => {
     inFlight.push(pane.press({ key: 'explain-i1-key' }))
     await clock.settle()
   }
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'done-i2' })
   await clock.settle()
@@ -787,7 +795,7 @@ test('a turn runs from the main agent’s turn.start to its turn.complete, not f
   expect(await now()).toBe(null)
 
   const pane = await $.ui.mount(PANE)
-  await pane.press({ key: 'select-i1' })
+  await selectRow(pane, 'i1')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'done-i1' })
   await $.turn.start({ text: 'Look around the repo', turnId: 's1', agentId: 'a1' })
@@ -828,7 +836,7 @@ for (const switchAt of [null, 'before-submit', 'during-submit'] as const)
     await clock.settle()
     const pane = await $.ui.mount(PANE)
     for (const id of ['i1', 'i2']) {
-      await pane.press({ key: `select-${id}` })
+      await selectRow(pane, `${id}`)
       await clock.advance(PRESS_GUARD_MS)
       await pane.press({ key: `done-${id}` })
       await clock.settle()
@@ -931,7 +939,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   expect(await pane.find({ text: 'Could not open load.md: it no longer exists' })).toBeDefined()
 
   files = ['/tmp/project/.env.local']
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'help-i2-0' })
   await clock.settle()
@@ -1179,7 +1187,7 @@ test('the band is [Open inbox] and the counts with full-brightness labels, the s
   expect(await standing.find({ text: /Plan written|last active/ })).toBeUndefined()
 
   const pane = await $.ui.mount(PANE)
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await pane.press({ key: 'tab-findings' })
   panesOpened = []
   await standing.press({ key: 'open-inbox' })
@@ -1887,14 +1895,14 @@ test('t opens a field for the person’s own words: a question’s words go to C
   await pane.press({ key: 'cancel-i1' })
   expect(await replyField(pane, 'i1')).toBeUndefined()
   expect(sent).toEqual([])
-  await pane.press({ key: 'select-i2' })
-  await pane.press({ key: 'select-i1' })
+  await selectRow(pane, 'i2')
+  await selectRow(pane, 'i1')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i1' })
   expect((await replyField(pane, 'i1'))?.props.value).toBe('Deno, actually')
   await pane.press({ key: 'send-i1' })
   expect(sent.at(-1)).toBe('Re "Use Node or Python?": Deno, actually')
-  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/^✓Use Node or Python\?\s·\sReplied/)
+  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/^Use Node or Python\?\s·\s✓ Replied/)
   await $.tool.call({ tool: 'mcp__inbox__close', id: 'i1', answer: 'Deno' } as never)
   await clock.settle()
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
@@ -2020,7 +2028,7 @@ test('a question Claude closes while the person types an answer stays in place w
   await clock.settle()
   const pane = await $.ui.mount(PANE)
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
   await pane.input({ key: await replyKey(pane, 'i2'), text: 'Call it hello', kind: 'change' })
@@ -2088,7 +2096,7 @@ test('a held row and the rows that closed while the tab shows stay in place, and
   })
   await clock.settle()
   const pane = await $.ui.mount(PANE)
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
   await pane.input({ key: await replyKey(pane, 'i2'), text: 'Call it hello', kind: 'change' })
@@ -2136,7 +2144,7 @@ test('Discard ends a held row’s reply and folds it into Closed at once, and a 
   await pane.press({ key: 'typekey-i1' })
   await pane.input({ key: await replyKey(pane, 'i1'), text: 'Deno, actually', kind: 'change' })
   await pane.press({ key: 'cancel-i1' })
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
   await pane.input({ key: await replyKey(pane, 'i2'), text: 'Call it hello', kind: 'change' })
@@ -2155,7 +2163,7 @@ test('Discard ends a held row’s reply and folds it into Closed at once, and a 
   expect(await pane.find({ text: /1 closed/ })).toBeDefined()
   expect(sent).toEqual([])
 
-  await pane.press({ key: 'select-i1' })
+  await selectRow(pane, 'i1')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'dismiss-i1' })
   await clock.settle()
@@ -2228,7 +2236,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
   await clock.advance(QUEUED_AFTER_MS)
   expect(await pane.find({ text: /^Queued:\sExplain$/ })).toBeDefined()
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
   inFlight.push(pane.input({ key: await replyKey(pane, 'i2'), text: 'yes' }))
@@ -2237,12 +2245,12 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   expect(await pane.find({ text: /Queued:\sReply/ })).toBeDefined()
   await arrive($)
   await clock.settle()
-  await pane.press({ key: 'select-i1' })
+  await selectRow(pane, 'i1')
   expect(await pane.find({ text: /^Explaining…$/ })).toBeDefined()
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
 
   submitAnswer = { drop: 'a hook refused it' }
-  await pane.press({ key: 'select-i1' })
+  await selectRow(pane, 'i1')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i1' })
   await pane.input({ key: await replyKey(pane, 'i1'), text: 'Deno, actually' })
@@ -2296,7 +2304,7 @@ test('a reply another plugin rewrote to the text of a pending press reads Not co
   submitAnswer = 'hold'
   inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.settle()
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
   submitAnswer = { rewrite: held[0]!.text }
@@ -2588,7 +2596,7 @@ test('Dismiss settles a question in place with Undo, which brings it back open a
   await start()
   await clock.settle()
   expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
-  await pane.press({ key: 'select-i2' })
+  await selectRow(pane, 'i2')
   await pane.press({ key: 'undo-i1' })
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
@@ -3909,7 +3917,7 @@ test('a session saved mid-turn by a process that ended loads with no turn runnin
   await clock.settle()
   expect(session!.presence.isTurnRunning).toBe(false)
   const pane = await $.ui.mount(PANE)
-  await pane.press({ key: 'select-i1' })
+  await selectRow(pane, 'i1')
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'done-i1' })
   await clock.advance(SETTLED_MS)
@@ -4715,9 +4723,10 @@ for (const isNextBuild of [false, true])
       let checked = 0
       for (const row of prRows) {
         await clock.advance(PRESS_GUARD_MS)
-        if (!(await pane.find({ key: `select-${row.id}` }))) continue
-        if (look === 'terminal') await pane.press({ key: `select-${row.id}` })
-        else await pane.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: `select-${row.id}` })
+        const selectKey = look === 'terminal' ? `title-${row.id}` : `select-${row.id}`
+        if (!(await pane.find({ key: selectKey }))) continue
+        if (look === 'terminal') await pane.press({ key: selectKey })
+        else await pane.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: selectKey })
         await clock.settle()
         const { controls } = await drawn()
         const labels = [...row.labels.filter(a => !a.isFollowUp), ...row.labels.filter(a => a.isFollowUp)].map(
@@ -4816,9 +4825,10 @@ test('in the terminal and desktop looks, an open row’s follow-ups are never sp
     }
     await clock.settle()
     await clock.advance(PRESS_GUARD_MS)
-    if (await pane.find({ key: `select-${row.id}` }))
-      if (look === 'terminal') await pane.press({ key: `select-${row.id}` })
-      else await pane.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: `select-${row.id}` })
+    const selectKey = look === 'terminal' ? `title-${row.id}` : `select-${row.id}`
+    if (await pane.find({ key: selectKey }))
+      if (look === 'terminal') await pane.press({ key: selectKey })
+      else await pane.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: selectKey })
     await clock.settle()
 
     const forms = new Set<string>()
