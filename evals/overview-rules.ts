@@ -74,8 +74,14 @@ export function restatesText(text: string, other: string): boolean {
   return theirs.length >= 3 && theirs.filter(w => mine.has(w)).length / theirs.length >= 0.7
 }
 
+function headWords(o: Overview | null): string {
+  return o?.head ? `${o.head.title} ${o.head.description}` : ''
+}
+
 function modelTexts(o: Overview | null): string[] {
-  return [o?.goal ?? '', ...shownOf(o).flatMap(s => [s.name, s.text, s.was ?? ''])].filter(Boolean)
+  const head = o?.head ? [o.head.title, o.head.description] : []
+
+  return [...head, ...shownOf(o).flatMap(s => [s.name, s.text, s.was ?? ''])].filter(Boolean)
 }
 
 /** Whether a running child's label reads as words, not as a handle. */
@@ -119,21 +125,28 @@ export const RULES: Rule[] = [
     property: 1,
     text: 'The head holds no status word.',
     failures: ({ result }) => {
-      const goal = result.session.ledger.overview?.goal ?? ''
-      return STATUS_WORDS.test(goal) ? [`status word in the head: "${goal}"`] : []
+      const head = headWords(result.session.ledger.overview)
+      return STATUS_WORDS.test(head) ? [`status word in the head: "${head}"`] : []
     },
   },
   {
     id: 'head-follows',
     property: 1,
-    text: 'The head names the focus in the facts. It changes where the focus moved, and holds where it did not.',
+    text: 'The head names the focus in the facts, and its title no longer names finished work the focus moved on from. It changes where the focus moved, and holds where it did not.',
     failures: ({ result, before }) => {
-      const goal = result.session.ledger.overview?.goal ?? ''
-      const last = before.overview?.goal ?? ''
-      const isFocusSame = result.facts.focusMatch === before.facts.focusMatch
-      if (!new RegExp(result.facts.focusMatch, 'i').test(goal))
-        return [`the head "${goal}" is not about /${result.facts.focusMatch}/`]
-      return isFocusSame && last !== '' && goal !== last ? [`the head moved from "${last}" to "${goal}"`] : []
+      const now = result.session.ledger.overview?.head ?? null
+      const earlier = before.overview?.head ?? null
+      const head = headWords(result.session.ledger.overview)
+      const last = headWords(before.overview)
+      const { focusMatch, pastMatch } = result.facts
+      const isFocusSame = focusMatch === before.facts.focusMatch
+      const isDescriptionFilled = earlier?.description === '' && now?.title === earlier.title
+      if (!new RegExp(focusMatch, 'i').test(head)) return [`the head "${head}" is not about /${focusMatch}/`]
+      if (pastMatch && now && new RegExp(pastMatch, 'i').test(now.title))
+        return [`the head's title "${now.title}" still names /${pastMatch}/`]
+      return isFocusSame && last !== '' && head !== last && !isDescriptionFilled
+        ? [`the head moved from "${last}" to "${head}"`]
+        : []
     },
   },
   {
@@ -363,12 +376,20 @@ export const RULES: Rule[] = [
   {
     id: 'head-title',
     property: 1,
-    text: 'The head is a title and a one-line description that does not repeat it.',
-    until: '#148',
+    text: 'The head is a title of at most 3 words, with no "…" or question mark, and a description that does not repeat it.',
     failures: ({ result }) => {
-      const head = result.page as unknown as { title?: unknown; description?: unknown }
-      const isHead = typeof head.title === 'string' && typeof head.description === 'string'
-      return isHead && head.title !== head.description ? [] : ['the head is one goal line']
+      const head = result.page.head
+      if (head === null) return ['the page has no head']
+      const titleWords = new Set(head.title.toLowerCase().match(WORD) ?? [])
+      const descriptionWords = head.description?.toLowerCase().match(WORD) ?? []
+      const isTitleLong = head.title.trim().split(/\s+/).length > NAME_WORDS
+      return [
+        ...(isTitleLong || /…|\?/.test(head.title) ? [`title: "${head.title}"`] : []),
+        ...(descriptionWords.length === 0 ? ['the head has no description'] : []),
+        ...(descriptionWords.length > 0 && descriptionWords.every(w => titleWords.has(w))
+          ? [`the description repeats the title: "${head.description}"`]
+          : []),
+      ]
     },
   },
   {
