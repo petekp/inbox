@@ -110,7 +110,12 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
     words: 'Working. It moves while the work runs or your message is on its way.',
   },
   { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: 'Queued: not started yet' },
-  { mark: SUBJECT_MARKS['waits-on-other'].mark, tone: null, isRunning: false, words: 'Waits on someone else' },
+  {
+    mark: SUBJECT_MARKS['waits-on-other'].mark,
+    tone: null,
+    isRunning: false,
+    words: 'Waits on something other than you, such as a build or a review',
+  },
   { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: 'Waits on you' },
   { mark: SUBJECT_MARKS.done.mark, tone: 'done', isRunning: false, words: 'Done, or handed to the agent' },
   { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: 'Dropped before it was done' },
