@@ -301,7 +301,7 @@ test('each side of the look line lists held, working, waiting, queued, then fini
     '◌ Review: sent for review',
     '○ Help menu: outline ready',
     '✓ Banner: shipped',
-    '-- Seen',
+    '-- Last seen',
     '◆ Seen queue: later · waiting 1h',
     '● Seen work: old step',
   ])
