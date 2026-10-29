@@ -23,9 +23,10 @@ import {
   linkedPrs,
   pressRowId,
   prOrderText,
+  prTabActions,
   threadSentIn,
 } from './pr-tab'
-import type { Applied, DrawnPr, PrPress } from './pr-tab'
+import type { Applied, DrawnPr, PrAction, PrPress } from './pr-tab'
 import {
   actionId,
   applyPress,
@@ -815,6 +816,8 @@ type PrTab = {
   olderText: string | null
   /** Names the agent's order of the PRs above them, or null while it ranks no block the tab draws. `prOrderText`. */
   orderText: string | null
+  /** The tab's own buttons, drawn after its PR blocks. `prTabActions`. */
+  tabActions: PrAction[]
   /** Whether gh asked for a sign-in at the last fetch it answered. */
   isGhSignedOut: boolean
 }
@@ -901,6 +904,7 @@ function prTabOf(
     count: drawn.filter(d => d.state.is === 'open' && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger),
     orderText: prOrderText(s.ledger.prOrder, drawn, now),
+    tabActions: prTabActions(drawn, s.prViews.branchRef),
     isGhSignedOut: s.prViews.isGhSignedOut === true,
   }
 }

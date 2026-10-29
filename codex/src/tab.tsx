@@ -115,7 +115,6 @@ import {
   prRowWaits,
   prsEmptyText,
   prPressEffect,
-  prTabActions,
   prRankText,
   prRefreshFailedText,
   prThreadId,
@@ -907,7 +906,7 @@ function prKey(rowId: string, pr: PrView, a: PrAction): Key {
 
 /** The PRs tab's own buttons, drawn after its PR blocks. */
 function prTabKeys(v: View): Key[] {
-  return prTabActions(prPlan(v).blocks, v.prs.branchRef).map(a => ({
+  return v.prs.tabActions.map(a => ({
     ...(a.hotkey ? { hotkey: a.hotkey } : {}),
     label: a.label,
     emphasis: a.emphasis,

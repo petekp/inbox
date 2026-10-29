@@ -28,7 +28,6 @@ import {
   prCheckId,
   prMarkId,
   prRowWaits,
-  prTabActions,
   prThreadId,
   threadActions,
   threadRowText,
@@ -631,12 +630,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       })
     }
   }
-  const tabButtons = prButtons(
-    prTabActions(
-      prs.drawn.filter(d => isDrawnInPlace(d, ui.shownSince)),
-      prs.branchRef,
-    ),
-  )
+  const tabButtons = prButtons(prs.tabActions)
   if (tabButtons.length > 0)
     out.push({
       kind: 'row',

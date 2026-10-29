@@ -106,7 +106,6 @@ import {
   PR_TONES,
   prBlockActions,
   prCheckId,
-  prTabActions,
   DISMISS_MERGED_ID,
   prMarkId,
   pressRowId,
@@ -4298,12 +4297,11 @@ export const register: Register = on => {
 
     type Row = {
       id: string
-      view?: RowView
       /**
-       * An Asks or Finds row. The terminal draws it with no mark column, so its text starts at the tree's arm, and its
-       * result mark before its result. Desktop draws its result mark in the mark column.
+       * Set on an Asks or Finds row. The terminal draws it with no mark column, so its text starts at the tree's arm, and
+       * its result mark before its result. Desktop draws its result mark in the mark column.
        */
-      isUnmarked?: true
+      view?: RowView
       handle: string
       /** A Button takes no color, so this handle is Text and only the row's text selects it. */
       handleTone?: Tone
@@ -4334,7 +4332,6 @@ export const register: Register = on => {
       return {
         id: r.id,
         view: r,
-        isUnmarked: true,
         handle: '',
         ...(isHandedOff ? { fold: {} } : {}),
         title: rowTitle(r, look),
@@ -4372,7 +4369,6 @@ export const register: Register = on => {
       id: r.id,
       view: r,
       at: r.at ?? undefined,
-      isUnmarked: true,
       handle: '',
       ...(r.state.is === 'handedOff' ? { fold: {} } : {}),
       title: r.title,
@@ -4506,8 +4502,7 @@ export const register: Register = on => {
         threads: d.state.is === 'settled' ? [] : waitingThreads(d.pr).map(t => threadRow(d.pr, t)),
       }))
       .map(g => ({ ...g, rows: [...g.threads, ...g.checks] }))
-    const prTabKeys =
-      prGroups.length === 0 ? [] : prTabActions(prGroups, prState.branchRef).map(a => prKeyAction(a, 'tab'))
+    const prTabKeys = view.prs.tabActions.map(a => prKeyAction(a, 'tab'))
     const rows: Record<Tab, Row[]> = {
       needsYou: lists.byTab.needsYou,
       findings: lists.byTab.findings,
@@ -4746,9 +4741,9 @@ export const register: Register = on => {
         {...box}
       />
     )
-    const columnsFor = (row: Pick<Row, 'isUnmarked'>) => {
+    const columnsFor = (row: Pick<Row, 'view'>) => {
       const base = look === 'desktop' ? ROW_COLUMNS.desktop : ROW_COLUMNS.tree
-      return row.isUnmarked && look === 'terminal' ? { ...base, textAt: base.handleAt } : base
+      return row.view && look === 'terminal' ? { ...base, textAt: base.handleAt } : base
     }
     const markColumns = look === 'desktop' ? ROW_COLUMNS.desktop : ROW_COLUMNS.tree
     const markWidth = markColumns.textAt - markColumns.handleAt
@@ -4895,7 +4890,7 @@ export const register: Register = on => {
     const ToneSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
     /** An Asks or Finds row's result mark in the desktop mark column, or null when it has none. */
     const gutterMark = (row: Row) => {
-      const mark = look === 'desktop' && row.isUnmarked && row.view ? rowResultMark(row.view) : null
+      const mark = look === 'desktop' && row.view ? rowResultMark(row.view) : null
       if (mark?.tone && ToneSvg)
         return (
           <Box width={1} height={1} flexShrink={0}>
@@ -5072,10 +5067,11 @@ export const register: Register = on => {
       const index = indexOf.get(row.id) ?? -1
       const isSelected = index === at
       // On desktop a Client takes a click on every cell of the row, where a Button takes one only on its label.
-      if (!isSelected && hasClient)
+      if (!isSelected && hasClient) {
+        const gutter = gutterMark(row)
         return (
           <Box key={`row-${row.id}`} flexDirection="row" overflow="hidden">
-            {row.handle || gutterMark(row) ? (
+            {row.handle || gutter ? (
               <Box
                 position="absolute"
                 top={0}
@@ -5083,7 +5079,7 @@ export const register: Register = on => {
                 paddingLeft={(FRAME_INSET_PT - DESKTOP_CELL_PT) / DESKTOP_CELL_PT}
                 paddingTop={space.rowPad}
               >
-                {gutterMark(row) ?? toned(row) ?? (
+                {gutter ?? toned(row) ?? (
                   <Text color={row.handleTone ? pal.mark[row.handleTone] : undefined}>{row.handle}</Text>
                 )}
               </Box>
@@ -5098,6 +5094,7 @@ export const register: Register = on => {
             </Box>
           </Box>
         )
+      }
       const { keys, more } = isSelected ? rowActions(row) : { keys: [], more: [] }
       const isTyping = Input !== null && !!row.typeHint && typing === row.id
       const field =
@@ -5188,7 +5185,7 @@ export const register: Register = on => {
         return desktopFrame({
           key: `row-${row.id}`,
           markCells: DESKTOP_MARK_CELLS,
-          mark: row.isUnmarked
+          mark: row.view
             ? gutterMark(row)
             : (toned(row) ??
               (row.handleTone ? (
@@ -5232,7 +5229,7 @@ export const register: Register = on => {
           backgroundColor={isSelected ? pal.selection : undefined}
         >
           <Box width={columns.lead} flexShrink={0} />
-          {row.isUnmarked && look === 'terminal' ? null : (
+          {row.view && look === 'terminal' ? null : (
             <Box
               width={columns.textAt - columns.lead}
               flexShrink={0}
