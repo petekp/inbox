@@ -168,7 +168,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     ).ledger
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
     assert.equal(shownTab(), 'Status')
-    assert.equal(root.querySelector('.row.selected'), null)
+    assert.ok(root.querySelector('.row.selected') === null, 'a row is open')
     assert.deepEqual(tabLabels(), ['Status', 'Asks1', 'Finds1', 'PRs'])
 
     key('3')
@@ -191,7 +191,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     isOlderServer = true
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
     assert.equal(shownTab(), 'Asks1')
-    assert.equal(root.querySelector('.status-head'), null)
+    assert.ok(root.querySelector('.status-head') === null, 'the Status page is drawn')
     assert.equal(sentTabs.at(-1), 'overview')
     isOlderServer = false
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
@@ -206,8 +206,8 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
       shownTabs(false).map(t => t.label),
     )
     assert.equal(shownTab(), 'Asks1')
-    assert.equal(root.querySelector('.status-head'), null)
-    assert.equal(root.querySelector('main .holds-up'), null)
+    assert.ok(root.querySelector('.status-head') === null, 'the Status page is drawn')
+    assert.ok(root.querySelector('main .holds-up') === null, 'a row names what it holds up')
     key('4')
     assert.equal(shownTab(), 'Asks1')
     isNextBuild = true
