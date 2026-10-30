@@ -2,8 +2,9 @@ import { SETTLED_MS, NO_HOLDS, allRows, rowKeyPlan } from '../../hooks/view'
 import type { StatusRow, RowView } from '../../hooks/view'
 import { sessionView } from '../../hooks/session'
 import { demoState } from '../src/demo'
-import { INITIAL_UI, handleKey, render } from '../src/panel'
+import { INITIAL_UI, render } from '../src/panel'
 import type { PanelScreen, PanelUi, Style } from '../src/panel'
+import { handleKey } from '../src/panel-keys'
 
 export const NOW = 1_700_000_000_000
 export const ESC = '\x1b['

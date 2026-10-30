@@ -4,8 +4,10 @@ import { CLOSED_SHOWN, SETTLED_MS, NO_HOLDS, shownTabs, earlierLabel, foldLabel 
 import { sessionView } from '../../hooks/session'
 import { cellWidth } from '../../hooks/text'
 import { demoState } from '../src/demo'
-import { INITIAL_UI, followRows, handleKey } from '../src/panel'
+import { INITIAL_UI } from '../src/panel'
 import type { PanelScreen, PanelUi } from '../src/panel'
+import { handleKey } from '../src/panel-keys'
+import { followRows } from '../src/panel-tabs'
 import { emptyState } from '../src/state'
 import { drawn, ESC, firstQuestion, keys, NOW, onPage, screenOf, strip, text } from './panel-harness'
 
