@@ -39,7 +39,7 @@ export function Icon({ name }: { name: IconName }) {
   )
 }
 
-export type RowAction = {
+type RowAction = {
   label: string
   emphasis: ActionEmphasis
   isDismiss?: boolean
@@ -49,7 +49,7 @@ export type RowAction = {
   run: () => void
 }
 
-export type LedgerAction = RowAction & { hotkey?: string }
+type LedgerAction = RowAction & { hotkey?: string }
 
 /** `pressing` is the action of a press on its way to the server, which the row's view does not show yet. */
 export function ledgerActions(

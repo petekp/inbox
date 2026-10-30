@@ -4,7 +4,7 @@ import { readState } from './state'
 import type { SessionState } from './state'
 import type { RolloutReads, TurnRow } from './transcript'
 
-export type EarlierHistory = {
+type EarlierHistory = {
   /** The data folder, where a forked chat's parent keeps its state. */
   dir: string
   /** This hook's reads of the rollout. */

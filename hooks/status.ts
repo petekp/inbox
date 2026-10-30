@@ -51,7 +51,7 @@ export const EMPTY_SESSION_STATUS: SessionStatus = {
   look: null,
 }
 
-export type OpenStatus = Exclude<SubjectStatus, 'done' | 'dropped'>
+type OpenStatus = Exclude<SubjectStatus, 'done' | 'dropped'>
 
 const OPEN_STATUSES: readonly OpenStatus[] = ['working', 'queued', 'waits-on-other']
 const STATUSES: readonly SubjectStatus[] = [...OPEN_STATUSES, 'done', 'dropped']
@@ -76,7 +76,7 @@ export type StatusAnswer = { kind: 'unchanged' } | { kind: 'ops'; ops: Op[] }
 const LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i
 
 /** The first `limit` words of `text`, with an ellipsis when words were cut. */
-export function clipWords(text: string, limit: number): string {
+function clipWords(text: string, limit: number): string {
   const words = text.trim().split(/\s+/).filter(Boolean)
 
   return words.length <= limit ? words.join(' ') : `${words.slice(0, limit).join(' ')}…`
@@ -369,7 +369,7 @@ export function isChildRunning(c: Pick<Child, 'startedAt' | 'endedAt'>, now: num
 }
 
 /** What a host reports about a child: everything but the id and the link, which the Status owns. A delegate's state is null until reported. */
-export type ChildReport = Omit<Child, 'id' | 'subjectId' | 'delegateState'> & Partial<Pick<Child, 'delegateState'>>
+type ChildReport = Omit<Child, 'id' | 'subjectId' | 'delegateState'> & Partial<Pick<Child, 'delegateState'>>
 
 /**
  * Adds a child the host reports, or updates the one it holds with the same `ref`. A delegate prompted again keeps its

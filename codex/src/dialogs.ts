@@ -10,7 +10,7 @@ import type { Dialog } from './transcript'
  * The message the Codex app sends when the person answers a dialog question. The app counts the question answered
  * and closes the dialog only when a user message's whole text, trimmed, is this form and names the question's id.
  */
-export function dialogReply(link: DialogLink, answer: string): string {
+function dialogReply(link: DialogLink, answer: string): string {
   const questionItemId = JSON.stringify(['request_user_input_async', link.callId, link.index])
   const reply = [{ questionItemId, question: link.question, answer }]
 

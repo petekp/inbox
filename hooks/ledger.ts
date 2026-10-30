@@ -395,7 +395,7 @@ function isTakenUp(work: string, reply: string | null): boolean {
   return key.length > 0 && key.filter(w => said.has(w)).length * 2 >= key.length
 }
 
-export function todoAsk(work: string): string {
+function todoAsk(work: string): string {
   return `Ready to start on ${work.replace(/[.?!\s]+$/, '')}?`
 }
 
@@ -602,7 +602,7 @@ export function closeByAgent(
   return { ledger, closed: null }
 }
 
-export type Closing = Pick<Closed, 'how' | 'outcome'>
+type Closing = Pick<Closed, 'how' | 'outcome'>
 
 export function closeItem(ledger: Ledger, id: string, closing: Closing, now: number): Ledger {
   const records = ledger.items.filter(i => i.id === id).map(i => closedRecord(i, closing, now))
@@ -908,7 +908,7 @@ export function addFinding(
   }
 }
 
-export type AgentItemResult =
+type AgentItemResult =
   | { ledger: Ledger; is: 'added'; id: string; expired: Item | null }
   /** `newRec` is the recommendation the record changed the item to, or null when it kept the item's own. */
   | { ledger: Ledger; is: 'open'; id: string; addedSteps: number; isNewlyMarked: boolean; newRec: string | null }
@@ -993,6 +993,6 @@ export function closedAt(c: Closed | ClosedFinding): number {
   return 'closedAt' in c ? c.closedAt : c.at
 }
 
-export function isLapsed(d: Pick<Closed, 'how' | 'outcome'>): boolean {
+function isLapsed(d: Pick<Closed, 'how' | 'outcome'>): boolean {
   return closedState(d) !== 'handled'
 }

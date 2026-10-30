@@ -44,7 +44,7 @@ export type PanelSource = {
   onChange(listener: () => void): () => void
 }
 
-export type PanelDeps = {
+type PanelDeps = {
   source: PanelSource
   style: Style
   now(): number
@@ -58,7 +58,7 @@ export type PanelDeps = {
   height(): number | undefined
 }
 
-export type Panel = {
+type Panel = {
   render(width: number): string[]
   /** `key` is the parsed key name and `text` the printable text the key types. */
   handleInput(key: string, text?: string): void

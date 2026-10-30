@@ -12,7 +12,7 @@ import {
 import { branchIn } from '../../hooks/gh'
 import type { Run } from '../../hooks/gh'
 import { delegatesInHerdr } from '../../hooks/herdr'
-import { dialogActivity } from '../../hooks/model-text'
+import { dialogActivity, toolActivity } from '../../hooks/model-text'
 import { childEnded } from '../../hooks/status'
 import {
   claimedStatusRefresh,
@@ -28,7 +28,7 @@ import {
   turnStarted,
 } from '../../hooks/session'
 import { namedCli } from './cli'
-import { activityOf, endTurn, heardState, noteHook, notePrompt, patchFiles } from './core'
+import { endTurn, heardState, noteHook, notePrompt, patchFiles } from './core'
 import { noteDialogs } from './dialogs'
 import { withEarlierHistory, withMissedTurns } from './history'
 import { codexStore } from './host'
@@ -170,7 +170,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
 
         return null
       }
-      const line = activityOf(tool, toolInput)
+      const line = toolActivity(tool, toolInput)
       const agentId = input.agent_id
       const isDelegateCommand = agentId === undefined && delegateSteps(command).length > 0
       const withWork = (s: SessionState) =>

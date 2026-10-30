@@ -2,7 +2,6 @@ import type {
   Closed,
   ClosedFinding,
   Draft,
-  FoldKind,
   Finding,
   Item,
   LastAction,
@@ -52,7 +51,7 @@ const OPTIONS_FOLD_AT = 5
 const OPTION_LABEL_CHARS = 32
 // The digits switch tabs, and the letters left out are the
 // keys of an Asks row's other actions and of moving the selection.
-export const CHOICE_KEYS = [...'abcfghilm']
+const CHOICE_KEYS = [...'abcfghilm']
 /**
  * The dot between parts of a drawn line, as "title · 3m ago", set apart by spaces wider than a space. The one before
  * it is a figure space, which never breaks, so a wrapped line ends with the dot instead of starting with it.
@@ -223,7 +222,7 @@ export function compareEndsAt(lastActions: Record<string, LastAction>, now: numb
   return ends.length > 0 ? Math.min(...ends) : null
 }
 
-export function isQueuedAt(last: LastAction | undefined, now: number): boolean {
+function isQueuedAt(last: LastAction | undefined, now: number): boolean {
   return last?.delivery?.state === 'queued' && now - last.at >= QUEUED_AFTER_MS
 }
 
@@ -242,7 +241,7 @@ export function isGuarded(openedAt: number, now: number): boolean {
   return openedAt > 0 && now - openedAt < PRESS_GUARD_MS
 }
 
-export type ItemStatus = { isUpdating: boolean; error: string | null }
+type ItemStatus = { isUpdating: boolean; error: string | null }
 
 export type ViewInput = {
   ledger: Ledger
@@ -397,7 +396,7 @@ export const ROW_COPY = {
   allOptions: (count: number) => `All ${count} options`,
 } as const
 
-export type ActionView = {
+type ActionView = {
   press: RowPress
   label: string
   kind: PressKind
@@ -436,7 +435,7 @@ export type RowView = {
   holdsUpLine: string | null
 }
 
-export type OptionDescription = { label: string; description: string; isFolded: boolean }
+type OptionDescription = { label: string; description: string; isFolded: boolean }
 
 function optionDescriptionsOf(item: Item | null, actions: ActionView[]): OptionDescription[] {
   const descriptions = item?.optionDescriptions
@@ -558,7 +557,7 @@ export type InboxView = {
 }
 
 /** A closed entry as a look draws it. `mark` is `closedMark` of the entry and its delivery. */
-export type ClosedView<T> = T & { delivery: ClosedDelivery; outcomeLabel: string; mark: ResultMark }
+type ClosedView<T> = T & { delivery: ClosedDelivery; outcomeLabel: string; mark: ResultMark }
 
 export function allRows(v: InboxView): RowView[] {
   return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows]
@@ -735,7 +734,7 @@ function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[] } {
   return { questions: newestReplyFirst('question'), tasks: newestReplyFirst('task') }
 }
 
-export function showsCompare(item: Pick<Item, 'kind' | 'options' | 'isDesignChoice'>): boolean {
+function showsCompare(item: Pick<Item, 'kind' | 'options' | 'isDesignChoice'>): boolean {
   return item.kind === 'question' && item.isDesignChoice === true && item.options.length >= 2
 }
 
@@ -781,7 +780,7 @@ export function feedbackOf(
  * The feedback a row draws in its state. A settled row draws none. A held row draws why it closed, unless a note shows
  * or a reply sent since the close failed.
  */
-export function feedbackIn(
+function feedbackIn(
   id: string,
   state: RowState,
   last: LastAction | undefined,
@@ -867,7 +866,7 @@ export function hasAge(
   )
 }
 
-export function isPressOut(f: Feedback | null): boolean {
+function isPressOut(f: Feedback | null): boolean {
   return (
     f?.is === 'working' ||
     f?.is === 'sending' ||
@@ -988,7 +987,7 @@ export function settledMark(state: Pick<SettledState, 'delivery' | 'closedAs'>):
 }
 
 /** A closed row's mark, as `CLOSED_MARKS` gives it: running while what it sent is on its way, else blank until it arrives. */
-export function closedMark(state: ClosedState, delivery: ClosedDelivery): ResultMark {
+function closedMark(state: ClosedState, delivery: ClosedDelivery): ResultMark {
   if (isSendMoving(delivery)) return RUNNING_RESULT
   return { text: delivery === null ? CLOSED_MARKS[state] : '', isRunning: false }
 }
@@ -1061,7 +1060,7 @@ export function drawnTabOf(tab: ShownTab, isNextBuild: boolean): ShownTab {
 export type TabNaming = 'words' | 'symbols'
 
 /** The namings a look tries, in order: the words wherever they fit, and the symbols only where they do not. */
-export const TAB_NAMINGS: readonly TabNaming[] = ['words', 'symbols']
+const TAB_NAMINGS: readonly TabNaming[] = ['words', 'symbols']
 
 export function tabName(tab: { label: string; symbol: string }, naming: TabNaming): string {
   return naming === 'words' ? tab.label : tab.symbol
@@ -1613,7 +1612,7 @@ export function settledIn(entries: DrawnEntry<unknown>[]): Set<string> {
   return new Set(entries.flatMap(x => ('settled' in x ? [x.settled.id] : [])))
 }
 
-export type ActionKey = { slot: 'action'; action: ActionView; hotkey: string }
+type ActionKey = { slot: 'action'; action: ActionView; hotkey: string }
 
 export type PlannedKey =
   | { slot: 'retry'; press: RowPress; kind: PressKind; label: string; emphasis: 'normal'; icon: 'retry' }
@@ -1660,15 +1659,15 @@ export function rowKeyPlan(r: RowView, isAllShown: boolean): { keys: PlannedKey[
   return { keys, more }
 }
 
-/** A press on an Status row. `show-ask` opens Asks with that ask selected, and sends nothing. */
-export type StatusPress = { action: 'show-ask'; askId: string }
+/** A press on a Status row. `show-ask` opens Asks with that ask selected, and sends nothing. */
+type StatusPress = { action: 'show-ask'; askId: string }
 
-export type StatusKey = { press: StatusPress; label: string; hotkey: string; kind: PressKind }
+type StatusKey = { press: StatusPress; label: string; hotkey: string; kind: PressKind }
 
 /** The View button's label, by the kind of ask it opens. */
-export const VIEW_ASK_LABELS: Record<Item['kind'], string> = { question: 'View question', task: 'View task' }
+const VIEW_ASK_LABELS: Record<Item['kind'], string> = { question: 'View question', task: 'View task' }
 
-/** An Status row's buttons, in the order every look draws them. A row with none takes no press. */
+/** A Status row's buttons, in the order every look draws them. A row with none takes no press. */
 export function statusKeyPlan(row: StatusRow): StatusKey[] {
   if (row.kind !== 'subject' || row.ask === null) return []
 
@@ -1695,7 +1694,7 @@ export function statusSelected(page: StatusPage, selectedId: string | null): Sta
 }
 
 /** Widths in a look's own unit. `separator` is the extra room a look draws between the buttons and the follow-ups when they share a line. */
-export type ActionSpacing = { width: number; gap: number; separator: number }
+type ActionSpacing = { width: number; gap: number; separator: number }
 
 /**
  * Lays out a row's buttons, then its follow-ups, filling each line before the next. The follow-ups stay on the

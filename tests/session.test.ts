@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { flattenConversation } from '../hooks/conversation'
-import { EMPTY, applyUpdate, parseReply, upgradeLedger } from '../hooks/ledger'
+import { EMPTY, applyUpdate, parseReply } from '../hooks/ledger'
 import { applyStatus, parseStatus, withChild } from '../hooks/status'
 import { CLAUDE_CODE, STATUS_SYSTEM } from '../hooks/model-text'
 import {
@@ -21,7 +21,6 @@ import {
   notePrompt,
   pressOn,
   pruned,
-  recordPrompt,
   recorded,
   sessionView,
   startContext,

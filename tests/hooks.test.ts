@@ -142,7 +142,6 @@ let panesOpened: string[] = []
 let paneOpens: PaneOpenArgs[] = []
 let paneState: { isShown: boolean; isFocused: boolean } | null = null
 
-/** Selects a terminal row by its title, which is a button only while the row is not selected. */
 async function selectRow(
   pane: { find(q: { key: string }): Promise<unknown>; press(q: { key: string }): Promise<unknown> },
   id: string,
@@ -232,13 +231,13 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   panesOpened = []
   paneOpens = []
   paneState = null
-  on('store.get', async ($, e) => {
+  on('store.get', async (_$, e) => {
     if (e.key.startsWith('s:')) await storeHold?.()
     if (storeRefusal && e.key.startsWith('s:')) return { deny: storeRefusal }
     const json = stored.get(e.key)
     return { value: json === undefined ? undefined : JSON.parse(json) }
   })
-  on('store.set', async ($, e) => {
+  on('store.set', async (_$, e) => {
     await storeSetHold?.(e.key, e.value)
     if (storeSetRefusal && e.key.startsWith('s:')) return { deny: storeSetRefusal }
     if (storeSetLockHeld > 0 && e.key.startsWith('s:')) {
@@ -248,12 +247,12 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     stored.set(e.key, JSON.stringify(e.value))
     return { value: undefined }
   })
-  on('store.delete', ($, e) => {
+  on('store.delete', (_$, e) => {
     stored.delete(e.key)
     return { value: undefined }
   })
   on('store.keys', () => ({ value: [...stored.keys()] }))
-  on('ui.log', ($, e) => {
+  on('ui.log', (_$, e) => {
     logged.push(e.text)
     return { value: undefined }
   })
@@ -272,14 +271,14 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
       : [],
   }))
   on('session.surfaces', () => ({ value: surfaces }))
-  on('session.attach', ($, e) => ({ clientId: e.clientId }))
+  on('session.attach', (_$, e) => ({ clientId: e.clientId }))
   on('session.id', () => ({ value: sessionId }))
-  on('session.end', ($, e) => ({ sessionId: e.sessionId }))
+  on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
   on('session.root', () => ({ value: '/tmp/project' }))
-  on('env.get', ($, e) => ({ value: vars[e.name] }))
-  on('command.register', ($, e) => (commandRefusal ? { deny: commandRefusal } : { value: { command: e.name } }))
-  on('tool.register', ($, e) => (toolRefusal ? { deny: toolRefusal } : { value: { tool: `mcp__inbox__${e.name}` } }))
-  on('ui.open', ($, e) => {
+  on('env.get', (_$, e) => ({ value: vars[e.name] }))
+  on('command.register', (_$, e) => (commandRefusal ? { deny: commandRefusal } : { value: { command: e.name } }))
+  on('tool.register', (_$, e) => (toolRefusal ? { deny: toolRefusal } : { value: { tool: `mcp__inbox__${e.name}` } }))
+  on('ui.open', (_$, e) => {
     panesOpened.push(e.id)
     paneOpens.push(e)
     return { value: { isPlaced: true as const } }
@@ -288,21 +287,21 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     value: paneState ? [{ id: 'inbox', title: 'Inbox', ...paneState, isPlaced: paneState.isShown }] : [],
   }))
   on('ui.close', () => ({ value: undefined }))
-  on('ui.toast', ($, e) => {
+  on('ui.toast', (_$, e) => {
     toasts.push(e.text)
     return { value: undefined }
   })
-  on('ui.copy', ($, e) => {
+  on('ui.copy', (_$, e) => {
     copied.push(e.text)
     return { value: { isCopied: true as const } }
   })
-  on('fs.exists', ($, e) => ({ value: files.some(f => e.path.endsWith(f)) }))
-  on('fs.read', ($, e) => {
+  on('fs.exists', (_$, e) => ({ value: files.some(f => e.path.endsWith(f)) }))
+  on('fs.read', (_$, e) => {
     if (!e.path.endsWith('/.claude-plugin/plugin.json')) throw new Error(`ENOENT: ${e.path}`)
     return { value: JSON.stringify({ name: 'inbox', version: '1.2.3' }) }
   })
   on('fs.stat', () => ({ value: { kind: 'file' as const, size: 1, mtimeMs: 1, isLink: false } }))
-  on('process.run', async ($, e) => {
+  on('process.run', async (_$, e) => {
     ran.push([...e.argv])
     if (isGhMissing && e.argv[0] === 'gh') throw new Error('spawn gh ENOENT')
     if (slowGhClock && e.argv[0] === 'gh') {
@@ -312,7 +311,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     await ghAnswers.find(a => a.match(e.argv))?.hold?.()
     return { value: gh(e.argv) }
   })
-  on('model.complete', async ($, e) => {
+  on('model.complete', async (_$, e) => {
     const isStatusCall =
       (e.systemBlocks ?? []).some(block => block.text === STATUS_SYSTEM) || e.system === STATUS_SYSTEM
     if (isStatusCall) statusPrompts.push(e.prompt)
@@ -351,9 +350,9 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
 
     return { text: e.text, context: e.context }
   })
-  on('turn.complete', ($, e) => ({ text: e.answer }))
-  on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('turn.start', ($, e) => ({ turnId: e.turnId }))
+  on('turn.complete', (_$, e) => ({ text: e.answer }))
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('classic.StopFailure', () => ({}))
   on('classic.PermissionRequest', () => ({}))
   on('tool.check', () => ({ decision: toolVerdict }))
@@ -371,7 +370,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     }
   })
   on('session.messages', () => ({ value: transcriptRows }))
-  on('classic.SessionStart', ($, e) => {
+  on('classic.SessionStart', (_$, e) => {
     sessionId = e.session_id
     return {}
   })
@@ -382,11 +381,11 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   on('agent.spawn', () => ({ model: 'sonnet', agentId: spawnedAgentId }))
   on('agent.list', () => ({ value: listedAgents as never }))
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
-  on('ui.press', async ($, e, next) => {
+  on('ui.press', async (_$, e, next) => {
     await runBeforeAct()
     return next(e)
   })
-  on('ui.input', async ($, e, next) => {
+  on('ui.input', async (_$, e, next) => {
     if (e.kind === 'submit') await runBeforeAct()
     return next(e)
   })
@@ -802,7 +801,7 @@ test('a turn runs from the main agent’s turn.start to its turn.complete, not f
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let session: Parameters<typeof statusPage>[0] | null = null
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
     session = e.value as never
     return next(e)
   })
@@ -1091,14 +1090,14 @@ test('last actions an earlier build saved convert once by the table, and a task 
   }
   let saving: unknown = null
   let saved: unknown = null
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
     const write = saving ? { ...e, value: { ...e.value, lastActions: saving as never } } : e
     saved = write.value.lastActions
     return next(write)
   })
   let savingUnfolded: unknown = null
   let savedUnfolded: unknown = null
-  on('state.set', { plugin: 'inbox', key: 'unfolded' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'unfolded' } as const, (_$, e, next) => {
     const write = savingUnfolded ? { ...e, value: savingUnfolded as never } : e
     savedUnfolded = write.value
     return next(write)
@@ -1106,7 +1105,7 @@ test('last actions an earlier build saved convert once by the table, and a task 
   const oldCursor = { id: 'i1', index: 0 }
   let savingOpen: { selection: unknown } | null = null
   const savedOpen: { selection?: unknown } = {}
-  on('state.set', { plugin: 'inbox', key: 'selection' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'selection' } as const, (_$, e, next) => {
     const write = savingOpen ? { ...e, value: savingOpen.selection as never } : e
     savedOpen.selection = write.value
     return next(write)
@@ -1166,7 +1165,7 @@ test('last actions an earlier build saved convert once by the table, and a task 
 test('the guidance reaches Claude in the close tool’s description and nowhere else, and every inbox tool loads with the session', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  on('tool.describe', ($, e) => ({ description: e.description }))
+  on('tool.describe', (_$, e) => ({ description: e.description }))
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   const provider = { plugin: 'inbox', tier: 'user' } as const
   const close = await $.tool.describe({ tool: 'mcp__inbox__close', description: 'Close an item.', provider })
@@ -1254,7 +1253,7 @@ const replyWithStatus = async ($: Engine, on: On, answer: string | null | string
   statusReply = answer
   ledgerReply = ledgerAnswer
   let session: Pick<Session, 'ledger' | 'overviewFailure'> | null = null
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
     session = e.value as never
     return next(e)
   })
@@ -1323,7 +1322,7 @@ test('a ledger update shows before its Status call returns', async ($, on) => {
   world($, on, [])
   let session: { ledger: { overview: { head: { title: string } | null } | null; items: { id: string }[] } } | null =
     null
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
     session = e.value as never
     return next(e)
   })
@@ -1357,7 +1356,7 @@ test('a turn past the wait runs the Status call on its work so far at its next t
   world($, on, prompts)
   statusReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name'
   let session: Pick<Session, 'ledger'> | null = null
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
     session = e.value as never
     return next(e)
   })
@@ -1396,7 +1395,7 @@ test('the next ledger update does not wait for an earlier Status call, and Statu
   world($, on, [])
   let session: { ledger: { overview: { head: { title: string } | null } | null; items: { ask: string }[] } } | null =
     null
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
     session = e.value as never
     return next(e)
   })
@@ -1427,7 +1426,7 @@ test('a mid-turn Status call still out when its turn ends writes first, and the 
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let session: Pick<Session, 'ledger'> | null = null
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
     session = e.value as never
     return next(e)
   })
@@ -1462,7 +1461,7 @@ test('a Status answer that lands after /clear goes to the conversation it was fo
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let session: Pick<Session, 'ledger'> | null = null
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
     session = e.value as never
     return next(e)
   })
@@ -1517,7 +1516,7 @@ test('a catch-up writes its Status with a separate call over the transcript', as
   let session: {
     ledger: { overview: { head: { title: string } | null; subjects: { name: string; status: string }[] } | null }
   } | null = null
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
     session = e.value as never
     return next(e)
   })
@@ -1547,7 +1546,7 @@ test('a catch-up’s Status call waits for a failing Status call still out, and 
   world($, on, [])
   const failureCauses: (string | null)[] = []
   let session: Pick<Session, 'ledger' | 'overviewFailure'> | null = null
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
     const written: Pick<Session, 'ledger' | 'overviewFailure'> = e.value as never
     session = written
     failureCauses.push(written.overviewFailure?.cause ?? null)
@@ -2257,7 +2256,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   world($, on, prompts)
   on('ui.focus', () => ({}))
   let drafts: unknown = null
-  on('state.set', { plugin: 'inbox', key: 'drafts' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'drafts' } as const, (_$, e, next) => {
     drafts = e.value
     return next(e)
   })
@@ -2330,7 +2329,7 @@ test('a reply another plugin rewrote to the text of a pending press reads Not co
   world($, on, [])
   on('ui.focus', () => ({}))
   let drafts: unknown = null
-  on('state.set', { plugin: 'inbox', key: 'drafts' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'drafts' } as const, (_$, e, next) => {
     drafts = e.value
     return next(e)
   })
@@ -2492,7 +2491,7 @@ test('an older Claude send with no saved receipt cannot acknowledge a new identi
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let clearSent = false
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
     if (!clearSent) return next(e)
     clearSent = false
     return next({ ...e, value: { ...e.value, sent: [] } })
@@ -2715,7 +2714,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   let isResolved = false
   let onFetched: (() => void) | undefined
   let isFetching = false
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, async ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, async (_$, e, next) => {
     const r = await next(e)
     const wasFetching = isFetching
     isFetching = e.value.prViews.isFetching
@@ -3458,7 +3457,7 @@ test('a PR’s Dismiss settles its block until the person types their next messa
   const noThreads = JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } })
   let onFetched: (() => void) | undefined
   let isFetching = false
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, async ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, async (_$, e, next) => {
     const r = await next(e)
     const wasFetching = isFetching
     isFetching = e.value.prViews.isFetching
@@ -4192,7 +4191,7 @@ test('a ledger update held during clear cannot write its old question into the n
   const inWrite = new Promise<void>(resolve => (entered = resolve))
   const held = new Promise<void>(resolve => (release = resolve))
   let didHold = false
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, async ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, async (_$, e, next) => {
     if (!didHold && e.value.ledger.items.some(i => i.ask === 'Old question?')) {
       didHold = true
       entered()
@@ -4258,7 +4257,7 @@ test('a save that meets a held store lock waits, and the turn’s update still l
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let session: Pick<Session, 'ledger'> | null = null
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
     session = e.value as never
     return next(e)
   })
@@ -4288,7 +4287,7 @@ test('when the store lock stays held, the update still shows and the next save w
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let session: Pick<Session, 'ledger'> | null = null
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
     session = e.value as never
     return next(e)
   })
@@ -4326,7 +4325,7 @@ test('a session saved mid-turn by a process that ended loads with no turn runnin
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let session: Parameters<typeof statusPage>[0] | null = null
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
     session = e.value as never
     return next(e)
   })
@@ -4427,7 +4426,7 @@ test('a ledger write committed before clear still saves to its original session'
   let release!: () => void
   const afterWrite = new Promise<void>(resolve => (entered = resolve))
   const held = new Promise<void>(resolve => (release = resolve))
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, async ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, async (_$, e, next) => {
     const result = await next(e)
     if (e.value.ledger.findings.some((f: { title: string }) => f.title === 'Late finding')) {
       entered()
@@ -4464,7 +4463,7 @@ test('the latest committed ledger wins when an older write completes afterward',
   let release!: () => void
   const afterWrite = new Promise<void>(resolve => (entered = resolve))
   const held = new Promise<void>(resolve => (release = resolve))
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, async ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, async (_$, e, next) => {
     const result = await next(e)
     const titles = e.value.ledger.findings.map((f: { title: string }) => f.title)
     if (titles.includes('First finding') && !titles.includes('Second finding')) {
@@ -4548,7 +4547,7 @@ test('a delayed saved-session application cannot poison the next load', async ($
   const afterWrite = new Promise<void>(resolve => (entered = resolve))
   const held = new Promise<void>(resolve => (release = resolve))
   let holdNext = false
-  on('state.set', { plugin: 'inbox', key: 'unreadable' } as const, async ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'unreadable' } as const, async (_$, e, next) => {
     const result = await next(e)
     if (holdNext) {
       holdNext = false
@@ -4942,7 +4941,7 @@ test('a tool call after a hot reload, before the load converts the ledger, still
   mock.clock(on, { now: 1 })
   world($, on, [])
   let strip = false
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
     if (!strip) return next(e)
     const { closedFindings, ...old } = e.value.ledger as unknown as Record<string, unknown>
     return next({ ...e, value: { ...e.value, ledger: old as never } })
@@ -5609,7 +5608,7 @@ test('on a next build, a look at the Status that ends while a Status call is out
   files = ['/.next-build']
   paneState = { isShown: true, isFocused: true }
   let session: Parameters<typeof statusPage>[0] | null = null
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
     session = e.value as never
     return next(e)
   })
@@ -5653,7 +5652,7 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Status page s
     'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime'
   let page: { value: unknown; version: number } = { value: 'overview', version: 1 }
   on('state.get', { plugin: 'inbox', key: 'page' } as const, () => ({ value: page as never }))
-  on('state.set', { plugin: 'inbox', key: 'page' } as const, ($, e) => {
+  on('state.set', { plugin: 'inbox', key: 'page' } as const, (_$, e) => {
     page = { value: e.value, version: page.version + 1 }
     return { value: { isSet: true as const, version: page.version } }
   })
@@ -6187,7 +6186,7 @@ test('a PR that arrives while the Asks tab is empty moves the pane to the PRs ta
   let release = () => {}
   let onFetched = () => {}
   let isFetching = false
-  on('state.set', { plugin: 'inbox', key: 'session' } as const, async ($, e, next) => {
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, async (_$, e, next) => {
     const r = await next(e)
     const wasFetching = isFetching
     isFetching = e.value.prViews.isFetching

@@ -6923,7 +6923,7 @@ function tabBar(d) {
   return spread(lineOf(naming, layout), ui.isHelpShown ? "" : s.dim("esc to close "), width);
 }
 function footer(d, isPageScrolling) {
-  const { screen, ui, width, now, style: s } = d;
+  const { screen, ui, width, style: s } = d;
   const out = [s.dim("\u2500".repeat(width))];
   const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.statusPage.error);
   if (status.text)
@@ -8696,12 +8696,7 @@ function host_default(pi) {
   createInbox(pi);
 }
 export {
-  conversationOf,
   createInbox,
   host_default as default,
-  inboxModel,
-  sessionIdInFile,
-  statusRecords,
-  stopOf,
-  styleOf
+  stopOf
 };

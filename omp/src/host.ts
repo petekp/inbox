@@ -53,7 +53,6 @@ import {
   delegateWaitsEnded,
 } from '../../hooks/children'
 import { childEnded } from '../../hooks/status'
-import type { SessionView } from '../../hooks/session'
 import {
   askOverConversation,
   fetchPrs,
@@ -77,7 +76,7 @@ import { createPanel } from './controller'
 import type { PanelSource } from './controller'
 import { demoSource } from './demo'
 import { bandLines, wrapText } from './panel'
-import type { Style, Tone } from './panel'
+import type { PanelScreen, Style, Tone } from './panel'
 import { exclusiveRun, pruneSessions, readState, updateState } from './state'
 import type { OmpState } from './state'
 import { OMP, TOOL_LABELS } from './texts'
@@ -118,20 +117,9 @@ export type HostDeps = {
   herdrPane: string | null
 }
 
-/** The view a look draws, with the facts about the host that the shared view does not hold. */
-export type InboxScreen = {
-  view: SessionView
-  /** The model that runs the inbox update, or null when the person has none. */
-  modelName: string | null
-  isGhMissing: boolean
-  isFetchingPrs: boolean
-  stop: Stop | null
-  isNextBuild: boolean
-}
-
 /** What a panel needs from the host. */
-export type Inbox = {
-  screen(ctx: ExtensionContext, holds?: Holds): Promise<InboxScreen>
+type Inbox = {
+  screen(ctx: ExtensionContext, holds?: Holds): Promise<PanelScreen>
   /**
    * Marks the panel open, showing its first tab from `openedAt`, and runs what a freshly opened panel needs: Done
    * messages due, and a PR fetch when due.
@@ -207,7 +195,7 @@ const defaultDeps: HostDeps = {
 const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
 /**
- * True for a session nobody watches: a subagent, or a main session run without a UI, such as print mode. omp 18.1.17
+ * True for a session nobody watches: a subagent, or a main session run without a UI, such as print mode. An older omp
  * gives an extension no `ctx.agent`, and starts a subagent with no UI, so the read is guarded.
  */
 function isUnattended(ctx: ExtensionContext): boolean {
@@ -219,7 +207,7 @@ function isUnattended(ctx: ExtensionContext): boolean {
 const sessionIdOf = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId()
 
 /** The session id in a session file's name, `<timestamp>_<sessionId>.jsonl`. Null for any other name. */
-export function sessionIdInFile(file: string): string | null {
+function sessionIdInFile(file: string): string | null {
   return /(?:^|[\\/])[^_\\/]+_([^\\/]+)\.jsonl$/.exec(file)?.[1] ?? null
 }
 
@@ -243,7 +231,7 @@ const recordFiles: RecordFiles = {
 }
 
 /** A next build's Status call records for the session, beside the inbox's saved sessions. */
-export const statusRecords = (dir: string, sessionId: string): StatusRecords => ({
+const statusRecords = (dir: string, sessionId: string): StatusRecords => ({
   host: 'omp',
   folder: join(dir, 'overview-calls'),
   session: sessionId,
@@ -258,7 +246,7 @@ export const statusRecords = (dir: string, sessionId: string): StatusRecords => 
  * omp's model lists also hold retired Sonnets, which no longer answer. The `anthropic` provider is preferred.
  * Otherwise omp's `@smol` role.
  */
-export function inboxModel(ctx: ExtensionContext): Model | null {
+function inboxModel(ctx: ExtensionContext): Model | null {
   const sonnets = ctx.models
     .list()
     .filter(m => m.identity.family === 'sonnet')
@@ -370,7 +358,7 @@ type Message = {
 }
 
 /** The conversation of a session branch as turns, from the last `/clear` on. omp's own `/new` starts another session. */
-export function conversationOf(entries: readonly unknown[]): Turn[] {
+function conversationOf(entries: readonly unknown[]): Turn[] {
   const path = entries as Entry[]
   const messages = path
     .slice(path.findLastIndex(e => e.type === 'reset_boundary') + 1)
@@ -431,7 +419,7 @@ function truecolorFill(hex: string, text: string): string {
 }
 
 /** Maps the panel's styles onto omp's theme. The separator and the accent follow the theme; the tones follow `hooks/tones.ts`. */
-export function styleOf(theme: OmpTheme): Style {
+function styleOf(theme: OmpTheme): Style {
   const tones = theme.isLight ? LIGHT_TONES : DARK_TONES
   const tints = theme.isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS
 
@@ -967,7 +955,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   })
 
   /**
-   * A press sent while a turn runs reaches the agent as a queued message. omp 18.12.3 runs before_agent_start for it.
+   * A press sent while a turn runs reaches the agent as a queued message. omp runs before_agent_start for it.
    * When that has not noted the message, its arrival is noted here, once the message starts.
    */
   pi.on('message_start', async (event, ctx) => {
@@ -1147,7 +1135,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       BAND_KEY,
       (tui, theme) => {
         const style = styleOf(theme)
-        let screen: InboxScreen | null = null
+        let screen: PanelScreen | null = null
         const refresh = () =>
           inbox
             .screen(ctx)

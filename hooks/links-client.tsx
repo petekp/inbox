@@ -1,7 +1,7 @@
 import type { ClientModule } from 'claude-code'
 
 /** `isOut`: its press is out, so it draws dim and does not highlight under the pointer. */
-export type ClientLink = { key: string; label: string; width: number; isOut?: boolean }
+type ClientLink = { key: string; label: string; width: number; isOut?: boolean }
 
 export type LinksProps = {
   links: ClientLink[]

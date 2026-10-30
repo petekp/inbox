@@ -53,9 +53,9 @@ export type FeatureId =
   | 'help-page'
   | 'status-view-ask'
 
-export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
+type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
-export type Client = { support: Record<FeatureId, Support> }
+type Client = { support: Record<FeatureId, Support> }
 
 export const CLIENTS: Record<ClientId, Client> = {
   'claude-code': {

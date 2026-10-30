@@ -247,7 +247,7 @@ export function prNeedsYou(pr: PrView, isSent: IsThreadSent): boolean {
   )
 }
 
-export function checkCounts(pr: PrView): Record<PrCheck['bucket'], number> {
+function checkCounts(pr: PrView): Record<PrCheck['bucket'], number> {
   const counts = { pass: 0, fail: 0, pending: 0, skip: 0 }
   for (const c of pr.checks) counts[c.bucket] += 1
 

@@ -52,7 +52,7 @@ function childrenEnded(o: SessionStatus | null, isEnded: (c: Child) => boolean, 
 }
 
 /** What a background task's notification says: the ids it names, and whether the task ended. */
-export type TaskNotice = { ids: string[]; hasEnded: boolean }
+type TaskNotice = { ids: string[]; hasEnded: boolean }
 
 const TAG = (name: string) => new RegExp(`<${name}>([^<]*)</${name}>`)
 const ENDED = new Set(['completed', 'failed', 'killed', 'stopped'])
@@ -76,7 +76,7 @@ export function noticeApplied(o: SessionStatus | null, notice: TaskNotice, at: n
 }
 
 /** One `herdr agent` command a session ran on a delegate. */
-export type DelegateStep = { name: string; isPrompt: boolean; isWaitForEnd: boolean }
+type DelegateStep = { name: string; isPrompt: boolean; isWaitForEnd: boolean }
 
 const HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g
 
