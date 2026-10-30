@@ -1905,6 +1905,25 @@ function delegatesStarted(o, command, at) {
 function delegateWaitsEnded(o, command, at) {
   return delegateSteps(command).filter((step) => step.isWaitForEnd).reduce((x, step) => childEnded(x, delegateRef(step.name), at), o);
 }
+function waitsOnDelegate(command) {
+  return delegateSteps(command).some((step) => step.isWaitForEnd);
+}
+function delegatesRan(o, command, at) {
+  return waitsOnDelegate(command) ? delegateWaitsEnded(o, command, at) : delegatesStarted(o, command, at);
+}
+function delegatesTakenBack(o, command, before, at) {
+  const refs = new Set(delegateSteps(command).map((step) => delegateRef(step.name)));
+  const isStartedByCommand = (c) => refs.has(c.ref) && c.startedAt === at;
+  if (!o?.children.some(isStartedByCommand))
+    return o;
+  const children = o.children.flatMap((c) => {
+    if (!isStartedByCommand(c))
+      return [c];
+    const was = before?.children.find((x) => x.ref === c.ref);
+    return was ? [was] : [];
+  });
+  return { ...o, children };
+}
 var HERDR_PROMPT_SETTLE_MS = 15000;
 function hasRunningDelegate(o) {
   return o?.children.some((c) => c.kind === "delegate" && c.endedAt === null) ?? false;
@@ -7870,6 +7889,30 @@ function styleOf(theme) {
   };
 }
 
+// src/tool-calls.ts
+function activityOf(tool, input) {
+  switch (tool) {
+    case "bash":
+      return toolActivity("Bash", { command: input.command, run_in_background: input.async === true });
+    case "edit":
+    case "write":
+      return toolActivity("Edit", { file_path: input.path ?? input.file_path });
+  }
+  return null;
+}
+function askOutcome(event) {
+  const details = event.details ?? {};
+  const answer = event.content.flatMap((b) => b.type === "text" && b.text ? [b.text] : []).join(`
+`);
+  if (event.isError || details.chatRedirect || answer === "")
+    return { kind: "dismissed" };
+  return { kind: details.timedOut ? "timed-out" : "answered", answer };
+}
+function isDismissedAsk(message) {
+  const m = message;
+  return m?.role === "toolResult" && m.toolName === "ask" && Array.isArray(m.content) && askOutcome({ content: m.content, isError: m.isError === true, details: m.details }).kind === "dismissed";
+}
+
 // src/host.ts
 var INBOX_MODEL_TIMEOUT_MS = 120000;
 var WAKE_MARGIN_MS = 250;
@@ -7985,28 +8028,6 @@ async function stopOf(reply, isUsageLimit, at) {
 }
 function userText(content) {
   return typeof content === "string" ? content : textOfBlocks(content);
-}
-function activityOf(tool, input) {
-  switch (tool) {
-    case "bash":
-      return toolActivity("Bash", { command: input.command, run_in_background: input.async === true });
-    case "edit":
-    case "write":
-      return toolActivity("Edit", { file_path: input.path ?? input.file_path });
-  }
-  return null;
-}
-function askOutcome(event) {
-  const details = event.details ?? {};
-  const answer = event.content.flatMap((b) => b.type === "text" && b.text ? [b.text] : []).join(`
-`);
-  if (event.isError || details.chatRedirect || answer === "")
-    return { kind: "dismissed" };
-  return { kind: details.timedOut ? "timed-out" : "answered", answer };
-}
-function isDismissedAsk(message) {
-  const m = message;
-  return m?.role === "toolResult" && m.toolName === "ask" && Array.isArray(m.content) && askOutcome({ content: m.content, isError: m.isError === true, details: m.details }).kind === "dismissed";
 }
 function conversationOf(entries) {
   const path = entries;
@@ -8404,21 +8425,37 @@ function createInbox(pi, deps = defaultDeps) {
     if (isClaimed)
       deps.background(refreshStatus(updateHostFor(ctx)));
   };
+  const waits = new Map;
   pi.on("tool_execution_start", async (event, ctx) => {
     if (isUnattended(ctx))
       return;
     const args = event.args ?? {};
     const command = event.toolName === "bash" && typeof args.command === "string" ? args.command : "";
-    if (delegateSteps(command).length === 0)
+    if (!waitsOnDelegate(command))
       return;
-    const at = deps.now();
-    await change(sessionIdOf(ctx), (s) => statusChanged(s, (o) => delegatesStarted(o, command, at))).catch(() => {
+    const wait = { command, at: deps.now(), before: null };
+    waits.set(event.toolCallId, wait);
+    await change(sessionIdOf(ctx), (s) => {
+      wait.before = s.ledger.overview;
+      return statusChanged(s, (o) => delegatesStarted(o, command, wait.at));
+    }).catch(() => {
+      return;
+    });
+  });
+  pi.on("tool_execution_end", async (event, ctx) => {
+    const wait = waits.get(event.toolCallId);
+    if (!wait)
+      return;
+    waits.delete(event.toolCallId);
+    const takenBack = (o) => delegatesTakenBack(o, wait.command, wait.before, wait.at);
+    await change(sessionIdOf(ctx), (s) => statusChanged(s, takenBack)).catch(() => {
       return;
     });
   });
   pi.on("tool_result", async (event, ctx) => {
     if (isUnattended(ctx))
       return;
+    waits.delete(event.toolCallId);
     await noteQuietly(ctx, activityOf(event.toolName, event.input));
     if (event.toolName === "bash") {
       const command = event.input.command;
@@ -8430,7 +8467,7 @@ function createInbox(pi, deps = defaultDeps) {
         await change(sessionIdOf(ctx), (s) => {
           const after = noteCommandOutput(s, command, textOfBlocks(event.content));
           isLinked = after.ledger !== s.ledger;
-          return statusChanged(after, (o) => delegateWaitsEnded(o, command, at));
+          return statusChanged(after, (o) => delegatesRan(o, command, at));
         });
       } catch {
         return;

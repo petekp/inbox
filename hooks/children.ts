@@ -129,6 +129,43 @@ export function delegateWaitsEnded(o: SessionStatus | null, command: string, at:
     .reduce((x, step) => childEnded(x, delegateRef(step.name), at), o)
 }
 
+/**
+ * Whether `command` waits for a delegate's turn to end, which can take a long time. A host notes such a command's
+ * delegates as it starts, so they show during the wait. It notes any other delegate command's delegates once the
+ * command ran.
+ */
+export function waitsOnDelegate(command: string): boolean {
+  return delegateSteps(command).some(step => step.isWaitForEnd)
+}
+
+/** What a delegate command changes once it ran: a wait ends the delegates it waited on, and any other command starts its delegates. */
+export function delegatesRan(o: SessionStatus | null, command: string, at: number): SessionStatus | null {
+  return waitsOnDelegate(command) ? delegateWaitsEnded(o, command, at) : delegatesStarted(o, command, at)
+}
+
+/**
+ * Undoes what `delegatesStarted` noted at `at` for a command that never ran. Each row it started, or started again, goes
+ * back to its row in `before`, or goes away when `before` has none. A delegate that was already running keeps its row.
+ */
+export function delegatesTakenBack(
+  o: SessionStatus | null,
+  command: string,
+  before: SessionStatus | null,
+  at: number,
+): SessionStatus | null {
+  const refs = new Set(delegateSteps(command).map(step => delegateRef(step.name)))
+  const isStartedByCommand = (c: Child) => refs.has(c.ref) && c.startedAt === at
+  if (!o?.children.some(isStartedByCommand)) return o
+  const children = o.children.flatMap(c => {
+    if (!isStartedByCommand(c)) return [c]
+    const was = before?.children.find(x => x.ref === c.ref)
+
+    return was ? [was] : []
+  })
+
+  return { ...o, children }
+}
+
 /** Herdr shows a prompted agent working within 5 seconds. A delegate prompted closer than this to a check waits for the next one. */
 const HERDR_PROMPT_SETTLE_MS = 15_000
 

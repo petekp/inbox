@@ -56,6 +56,7 @@ Tags used in this file:
 - The loop emits `tool_execution_start` before it runs a call (`packages/agent/src/agent-loop.ts:3546` in 18.12.3). A call that an extension's `tool_call` handler blocked throws `ToolCallBlockedError` after it (`:3583`) [source 18.12.3].
 - The approval gate runs inside the tool wrapper's `execute`, also after `tool_execution_start`. It throws for a `deny` policy and for a call the person denies (`extensibility/extensions/wrapper.ts:277`, `:351`, `:464`) [source 18.12.3].
 - The wrapper emits `tool_result` only once the tool's own `execute` has returned or thrown (`:475`, `:505`), so a blocked call raises none [source 18.12.3]. The inbox notes a call's activity on `tool_result` (`omp/src/host.ts`).
+- The loop emits `tool_execution_end` for every call, a blocked one included, from `emitToolResult` (`packages/agent/src/agent-loop.ts:3454`, `:3466`). For a call that ran, it comes after the wrapper's `tool_result` [source 18.12.3]. A wait on a delegate notes its rows at `tool_execution_start`, and the inbox takes them back at a `tool_execution_end` with no `tool_result` before it (`omp/src/host.ts`).
 
 ## Live checks
 

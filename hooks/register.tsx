@@ -63,10 +63,12 @@ import {
   delegatesSettled,
   delegatesStarted,
   delegateSteps,
+  delegatesTakenBack,
   delegateWaitsEnded,
   noticeApplied,
   subagentsSettled,
   taskNotice,
+  waitsOnDelegate,
 } from './children'
 import type { SavedSession, SendOutcome, SentBy, Session, SessionView } from './session'
 import {
@@ -155,15 +157,7 @@ import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from 
 import type { Run } from './gh'
 import { CLEARED_TOKENS, delegatesInHerdr, HERDR_CHECK_MS, herdrTokens } from './herdr'
 import { ago, cellWidth, clipLabel } from './text'
-import {
-  COMPARE_PAGE_FILE,
-  demoAfterPress,
-  demoReplied,
-  demoSent,
-  isPressConfirmed,
-  openTarget,
-  withUnconfirmed,
-} from './presses'
+import { COMPARE_PAGE_FILE, demoAfterPress, demoReplied, demoSent, isPressConfirmed, openTarget } from './presses'
 import type { DemoSent, Effect, PathProbe, RowPress } from './presses'
 import {
   closedShown,
@@ -384,12 +378,12 @@ import {
 import {
   arrived,
   forgetStored,
-  isUntracked,
   messageText,
   noteStored,
   settleRewrite,
   stored,
   uncertainRecord,
+  withLostSendsUncertain,
 } from './mod-delivery'
 import {
   askedCalls,
@@ -752,34 +746,15 @@ async function fromOldFields($: EngineInterface): Promise<Session> {
   })
 }
 
-/**
- * Brings the drawn session to the current shape. A row's queued message that has no sent record lost it to an
- * older build, so its record becomes uncertain and the row reads unconfirmed.
- */
+/** Brings the drawn session to the current shape. */
 async function upgradeDrawn($: EngineInterface): Promise<ModSession> {
   const written = await $.state.get({ plugin: 'inbox', key: 'session' })
   const base = written.value === undefined ? await fromOldFields($) : upgradeSession(written.value as SavedSession)
 
   return update($, SESSION, cur => {
     const s = written.value === undefined ? base : upgradeSession(cur as SavedSession)
-    const lost = Object.entries(s.lastActions).flatMap(([row, action]) => {
-      const delivery = action.delivery
-      return /^[if]\d+$/.test(row) &&
-        delivery?.state === 'queued' &&
-        !s.sent.some(x =>
-          delivery.id ? x.deliveryId === delivery.id : x.text === delivery.message && x.pressedAt === action.at,
-        )
-        ? [delivery.message]
-        : []
-    })
-    const fresh = lost.filter(text => !s.sent.some(x => isUntracked(x) && x.text === text))
 
-    return {
-      ...s,
-      sent: [...s.sent, ...fresh.map(uncertainRecord)],
-      lastActions: lost.reduce((actions, text) => withUnconfirmed(actions, text), s.lastActions),
-      revision: (cur.revision ?? 0) + 1,
-    }
+    return { ...withLostSendsUncertain(s), revision: (cur.revision ?? 0) + 1 }
   })
 }
 
@@ -2509,8 +2484,12 @@ async function noteChild(
   isWorthSaving: (at: number) => boolean = () => true,
 ) {
   const at = await $.clock.now()
-  if (!isWorthSaving(at)) return
-  await commit($, currentOwner(), s => statusChanged(s, o => change(o, at))).catch(() => undefined)
+  if (!isWorthSaving(at)) return null
+  let before: SessionStatus | null = null
+  const changed = (o: SessionStatus | null) => change((before = o), at)
+  await commit($, currentOwner(), s => statusChanged(s, changed)).catch(() => undefined)
+
+  return { before, at }
 }
 
 async function noteAgentWork($: EngineInterface, agentId: string) {
@@ -2845,12 +2824,14 @@ export const register: Register = on => {
     const { tool: _tool, tool_use_id: _id, agentId: _agent, ...input } = e as unknown as Record<string, unknown>
     const key = callKey(String(e.tool), input)
     const activity = e.agentId ? null : toolActivity(String(e.tool), input)
+    const call = { didRun: true }
     const run = async () => {
       try {
         return await clearingDialog($, key, () => next(e))
       } finally {
         if (e.tool_use_id) askedCalls.delete(e.tool_use_id)
-        if (endedCallRan(e.tool_use_id) && activity) await noteActivity($, activity)
+        call.didRun = endedCallRan(e.tool_use_id, String(e.tool))
+        if (call.didRun && activity) await noteActivity($, activity)
       }
     }
     if (e.agentId) {
@@ -2861,8 +2842,14 @@ export const register: Register = on => {
     if (e.tool === 'Bash') {
       const steps = delegateSteps(e.command)
       const isDelegateCommand = steps.length > 0
-      if (isDelegateCommand) await noteChild($, (o, at) => delegatesStarted(o, e.command, at))
+      const isWait = waitsOnDelegate(e.command)
+      const started = isWait ? await noteChild($, (o, at) => delegatesStarted(o, e.command, at)) : null
       const ran = await run()
+      if (!call.didRun) {
+        if (started) await noteChild($, o => delegatesTakenBack(o, e.command, started.before, started.at))
+        return ran
+      }
+      if (isDelegateCommand && !isWait) await noteChild($, (o, at) => delegatesStarted(o, e.command, at))
       const found = commandFindings(e.command, ran.text ?? '')
       for (const line of found.lines) await noteActivity($, line)
       void linkPrs($, found.prRefs)
@@ -2929,11 +2916,11 @@ export const register: Register = on => {
   })
 
   on('classic.PostToolUse', async (_$, e, next) => {
-    if (isOn) noteRanCall(e.tool_use_id)
+    if (isOn) noteRanCall(e.tool_use_id, e.tool_name)
     return next(e)
   })
   on('classic.PostToolUseFailure', async (_$, e, next) => {
-    if (isOn) noteRanCall(e.tool_use_id)
+    if (isOn) noteRanCall(e.tool_use_id, e.tool_name)
     return next(e)
   })
 

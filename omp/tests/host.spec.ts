@@ -277,10 +277,10 @@ test("record and close draw the person's line under the call while the agent rea
   expect(drawn('record', savedBeforeDetails)).toEqual([])
 })
 
-test('bash, edit and write runs become turn activity and other tools do not', async () => {
+test('only bash, edit and write calls that ran become turn activity', async () => {
   createInbox(pi(), deps())
-  const run = (toolName: string, input: Record<string, unknown>) =>
-    call('tool_result', { toolName, input, content: [] })
+  const run = (toolName: string, input: Record<string, unknown>) => call('tool_result', { toolName, input })
+  await call('tool_execution_start', { toolName: 'bash', args: { command: 'rm -r /work' } })
   await run('bash', { command: 'npm test' })
   await run('bash', { command: 'sleep 9', async: true })
   await run('edit', { path: '/work/a.ts' })
@@ -1348,7 +1348,7 @@ test('a Herdr delegate runs as a child from the bash call that starts it until a
   createInbox(pi(), deps())
   const delegates = () =>
     state().ledger.overview.children.map((c: { name: string; endedAt: number | null }) => [c.name, c.endedAt === null])
-  const bash = (command: string) => call('tool_execution_start', { toolName: 'bash', args: { command } })
+  const bash = (command: string) => call('tool_result', { toolName: 'bash', input: { command } })
   await prompt('Hand it off')
   await bash('herdr agent start fixer --cmd omp')
   await bash('herdr agent start reviewer --cmd omp && herdr agent start helper --cmd omp')
@@ -1357,7 +1357,7 @@ test('a Herdr delegate runs as a child from the bash call that starts it until a
     ['reviewer', true],
     ['helper', true],
   ])
-  await call('tool_result', { toolName: 'bash', input: { command: 'herdr agent wait fixer' }, content: [] })
+  await bash('herdr agent wait fixer')
   expect(delegates()[0]).toEqual(['fixer', false])
   clock += 60_000
   await bash('herdr agent prompt scout "look around"')

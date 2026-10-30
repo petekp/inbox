@@ -17,22 +17,27 @@ export const MAX_PERSON_LINES = 200
 export const askedCalls = new Map<string, string>()
 /** The calls a PostToolUse or PostToolUseFailure hook reported, until their tool.call hook ends. */
 const ranCalls = new Set<string>()
-let hasPostToolHook = false
+/** The tool sources whose calls raised either hook since the mod loaded. */
+const reportingSources = new Set<string>()
 
-export function noteRanCall(id: string) {
-  hasPostToolHook = true
+/** A tool's source: an MCP tool's server, or `''` for Claude Code's own tools. */
+const sourceOf = (tool: string) => (tool.startsWith('mcp__') ? tool.split('__')[1]! : '')
+
+export function noteRanCall(id: string, tool: string) {
+  reportingSources.add(sourceOf(tool))
   ranCalls.add(id)
 }
 
 /**
- * Whether a call that just ended ran, and forgets it. Claude Code raises PostToolUse or PostToolUseFailure only for a
- * call that ran, never for one a deny rule, the person or a hook blocked. Until either has run, every call counts as
- * run: the guard Claude Code loads on Team and Enterprise sign-ins skips a mod's classic hooks, so neither fires there.
+ * Whether a call to `tool` that just ended ran, and forgets it. Claude Code raises PostToolUse or PostToolUseFailure
+ * only for a call that ran, never for one a deny rule, the person or a hook blocked. A call counts as run until a call
+ * from its source raised either. Neither fires for a tool another mod registers and answers in its own tool.call hook,
+ * or for any tool under the guard Claude Code loads on Team and Enterprise sign-ins, which skips a mod's classic hooks.
  */
-export function endedCallRan(id: string | undefined): boolean {
+export function endedCallRan(id: string | undefined, tool: string): boolean {
   const isReported = id !== undefined && ranCalls.delete(id)
 
-  return isReported || !hasPostToolHook
+  return isReported || !reportingSources.has(sourceOf(tool))
 }
 
 /** Each agent this session spawned inside a child: its id to the Workflow call or the agent that spawned it. */
