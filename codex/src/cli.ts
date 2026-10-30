@@ -23,3 +23,23 @@ export async function findCli(env: NodeJS.ProcessEnv, exec: Run, parentPid: numb
 
   return r.code === 0 && /(^|\/)codex$/.test(parent) ? parent : 'codex'
 }
+
+/**
+ * Whether a codex binary's `queue` takes `--resume`, read from its `queue --help` once per binary. From 0.166.0, a
+ * thread unloads one minute after its last client leaves, and a message queued to an unloaded thread waits until
+ * something resumes it; `--resume` resumes it. Older binaries reject the flag, as 0.166.0 rejects any option `queue`
+ * does not take. A help run that fails answers no and is asked again next time.
+ */
+export function queueResumeCheck(exec: Run): (cli: string) => Promise<boolean> {
+  const known = new Map<string, boolean>()
+  return async cli => {
+    const cached = known.get(cli)
+    if (cached !== undefined) return cached
+    const r = await exec([cli, 'queue', '--help'], { cwd: '/', timeoutMs: 5000 }).catch(() => null)
+    if (r === null || r.code !== 0) return false
+    const takesResume = /^\s*--resume\b/m.test(r.stdout)
+    known.set(cli, takesResume)
+
+    return takesResume
+  }
+}

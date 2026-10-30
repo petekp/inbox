@@ -8,6 +8,8 @@ This folder records what each client platform lets the inbox do, with a source f
 - The MCP Apps spec `2026-01-26` with ext-apps SDK 2.0.3, and core MCP `2026-07-28`.
 - This repo at commit `55ab122`.
 
+Later checks are recorded in each file: Codex CLI 0.163.0, 0.164.0 and 0.166.0 in `codex-plugins.md`, and omp 18.14.0 in `omp.md`.
+
 To keep it current, re-check those versions first: `claude --version`, `/status` in a Code-mode session, and `codex --version`. Then re-run the live checks in each file.
 
 For Claude Code, prefer the engine's local types (`.claude-plugin/types/claude-code/index.d.ts`) when they disagree with the public docs. The docs say to "trust these files over any page, this one included, when they disagree" ([claude-code-mods.md](claude-code-mods.md#engine-types)). The file is gitignored, and whichever engine last loaded the repo folder rewrites it. On 2026-10-08 its header read 2.1.292, 2.1.293, 2.1.294 and 2.1.295 at different times (`claude-code-mods.md:14`). Record the header version with any fact you cite from it.

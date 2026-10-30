@@ -147,6 +147,8 @@ export type ServerDeps = {
    * Without it, the tab does not say when Codex is not running the inbox's hooks.
    */
   hooksTrust?: (cli: string, folder: string) => Promise<HooksTrust | 'trusted' | null>
+  /** Whether `codex queue` on a binary takes `--resume`. Without it, a press never passes `--resume`. */
+  queueResumes?: (cli: string) => Promise<boolean>
   build?: string
   loadError?: () => string | null
   isPluginFolderGone?: () => boolean
@@ -303,7 +305,8 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       return { state: 'rejected', reason: err instanceof Error ? err.message : String(err) }
     }
     try {
-      const r = await deps.exec([cli, 'queue', '--thread', s.sessionId, '--message', message], {
+      const resume = (await deps.queueResumes?.(cli)) ? ['--resume'] : []
+      const r = await deps.exec([cli, 'queue', ...resume, '--thread', s.sessionId, '--message', message], {
         cwd: s.root || '/',
         timeoutMs: 15_000,
       })

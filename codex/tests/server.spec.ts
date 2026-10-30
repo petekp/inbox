@@ -21,7 +21,7 @@ import { PRESS_TIMEOUT_MS } from '../../hooks/session'
 import { POLL_MS, SETTLE_WINDOW_MS } from '../src/settle'
 import { readState, statePath, updateState } from '../src/state'
 import { handleHook } from '../src/hook'
-import { findCli } from '../src/cli'
+import { findCli, queueResumeCheck } from '../src/cli'
 import { run } from '../src/run'
 import { fakeRunner, hookDeps, input, rolloutAt, tempDir, turnRow } from './helpers'
 
@@ -98,6 +98,70 @@ test('a press sends its message into the tab’s thread with the codex binary th
   assert.deepEqual(prompt.state.turn.press, { id: 'i1', action: 'answer' })
   assert.deepEqual(prompt.state.sent, [])
   assert.match(prompt.notes.join('\n'), /Closed since you last read the inbox:\n- "Ship it\?" → Yes/)
+})
+
+test('a press passes --resume only to a codex whose queue help lists it, and asks each binary once', async () => {
+  const helps: Record<string, string> = {
+    '/apps/codex-0.166':
+      'Options:\n      --thread <THREAD>\n      --message <TEXT>\n      --resume\n          After queueing',
+    '/apps/codex-0.164': 'Options:\n      --thread <THREAD>\n      --message <TEXT>\n  -i, --image <FILE>...',
+  }
+  const helpRuns: string[] = []
+  const queueResumes = queueResumeCheck(async args => {
+    helpRuns.push(args[0]!)
+    return { code: 0, stdout: helps[args[0]!]!, stderr: '' }
+  })
+  const queueCalls = async (cli: string) => {
+    const { dir } = await setup(0)
+    await updateState(dir, 's1', s => ({
+      ...s,
+      cliPath: cli,
+      ledger: {
+        ...s.ledger,
+        nextId: 3,
+        items: [...s.ledger.items, { ...s.ledger.items[0]!, id: 'i2', ask: 'Tag it?' }],
+      },
+    }))
+    const runner = fakeRunner(() => ({ code: 0, stdout: 'Queued message q1\n', stderr: '' }))
+    const handle = makeServer({
+      comparePage: '/plugin/dist/compare-page.html',
+      dir,
+      now: () => 100,
+      exec: runner.exec,
+      tabHtml: '<html></html>',
+      fallbackCli: async () => 'codex',
+      queueResumes,
+    })
+    for (const id of ['i1', 'i2'])
+      await handle({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'inbox_press',
+          arguments: { press: { action: 'answer', id, option: 'Yes' }, thread: 's1', shownSince: 0 },
+          _meta: { thread_id: 's1' },
+        },
+      })
+
+    return runner.calls
+  }
+
+  const newer = await queueCalls('/apps/codex-0.166')
+  const older = await queueCalls('/apps/codex-0.164')
+  assert.equal(newer.length, 2)
+  assert.equal(older.length, 2)
+  assert.deepEqual(newer[0], [
+    '/apps/codex-0.166',
+    'queue',
+    '--resume',
+    '--thread',
+    's1',
+    '--message',
+    'Re "Ship it?": Yes',
+  ])
+  assert.deepEqual(older[0], ['/apps/codex-0.164', 'queue', '--thread', 's1', '--message', 'Re "Ship it?": Yes'])
+  assert.deepEqual(helpRuns, ['/apps/codex-0.166', '/apps/codex-0.164'])
 })
 
 test('a row the tab holds keeps its closed record through more closes than the Closed list keeps, from the agent’s tools and the per-reply update, and its reply still sends', async () => {

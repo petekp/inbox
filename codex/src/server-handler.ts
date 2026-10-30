@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { findCli } from './cli'
+import { findCli, queueResumeCheck } from './cli'
 import { makeServer } from './server'
 import { devBuild } from './data-dir'
 import TAB_HTML from './tab.html'
@@ -50,6 +50,7 @@ export function createHandler(
     tabHtml: TAB_HTML,
     fallbackCli: () => findCli(process.env, run, process.ppid),
     hooksTrust: listHooksTrust,
+    queueResumes: queueResumeCheck(run),
     devPage: devPageIn(dir),
     build: SERVER_BUILD,
     loadError,
