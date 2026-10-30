@@ -52,7 +52,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   `--color-border-*`, `--font-sans`, `--font-mono`, `--border-radius-*`,
   `--shadow-*` and more. "Views should set default fallback values for the set
   of these variables that they use" (APPSPEC:L791-955, L899). The tab reads
-  `styles.variables` (codex/src/tab.tsx:applyHost).
+  `styles.variables` (codex/src/tab-host.ts:applyHost).
 
 ## What the model sees in a tool result
 

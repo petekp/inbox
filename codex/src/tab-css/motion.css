@@ -1,0 +1,21 @@
+.banner,
+.empty,
+main,
+form {
+  transition: opacity var(--quick);
+  @starting-style {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0s !important;
+  }
+  .time-left,
+  .key.undo.undoing .icon,
+  .mark.running {
+    animation: none;
+  }
+}

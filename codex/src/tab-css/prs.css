@@ -1,0 +1,54 @@
+.pr-head,
+.pr-status,
+.pr-actions,
+.pr-last,
+.pr-order > div {
+  padding: 0 14px 0 var(--text-x);
+  overflow-wrap: anywhere;
+}
+.pr-order-changed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 6px;
+  margin-top: 8px;
+}
+.pr-order-changed .pr-actions {
+  padding: 0;
+  margin-top: 0;
+}
+.pr-head {
+  font-weight: 600;
+}
+.pr-head .rank,
+.pr-head .num,
+.pr-head .pr-verdict {
+  font-weight: 400;
+}
+.pr-actions {
+  margin-top: 8px;
+}
+.pr-last {
+  margin-top: 6px;
+}
+.pr-groups {
+  margin-top: 12px;
+}
+.pr-groups .list {
+  --mark-x: 41px;
+  --text-x: 67px;
+}
+.pr-groups .group-title + .list {
+  margin-bottom: 6px;
+}
+.link {
+  padding: 0;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--text) 30%, transparent);
+  text-underline-offset: 2px;
+}
+.link:hover {
+  text-decoration-color: currentColor;
+}

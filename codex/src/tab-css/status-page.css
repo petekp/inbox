@@ -1,0 +1,120 @@
+/* The head starts where the list's marks do. */
+.status-head {
+  padding: 0 14px 0 var(--mark-x);
+  overflow-wrap: anywhere;
+}
+.status-page .row {
+  padding-top: var(--status-row-pad);
+  padding-bottom: var(--status-row-pad);
+}
+.status-page .mark {
+  text-align: left;
+}
+.mark.running {
+  animation: running-pulse var(--pulse) ease-in-out infinite;
+}
+@keyframes running-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+.status-page .content {
+  overflow-wrap: anywhere;
+}
+.status-page .row.child {
+  padding-left: var(--text-x);
+}
+.status-page .content > .actions {
+  margin-top: 6px;
+}
+.status-page .clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--lines);
+  overflow: hidden;
+}
+.status-page .unbroken {
+  white-space: nowrap;
+}
+/* The tree line runs under the middle of a subject's mark, and its arm reaches to a child's mark. */
+.status-page .list {
+  --mark-middle: 6px;
+  --arm-gap: 2px;
+  --tree-x: calc(var(--mark-x) + var(--mark-middle));
+  --tree-line: color-mix(in oklab, var(--text) 15%, transparent);
+}
+.status-page .row.has-children,
+.status-page .row.branch-mid,
+.status-page .row.branch-last {
+  position: relative;
+}
+.status-page .row.has-children::before,
+.status-page .row.branch-mid::before,
+.status-page .row.branch-last::before {
+  content: '';
+  position: absolute;
+  left: var(--tree-x);
+  border-left: 1px solid var(--tree-line);
+}
+.status-page .row.has-children::before {
+  top: calc(var(--status-row-pad) + 1lh);
+  bottom: 0;
+}
+.status-page .row.branch-mid::before {
+  top: 0;
+  bottom: 0;
+}
+.status-page .row.branch-last::before {
+  top: 0;
+  height: calc(var(--status-row-pad) + 0.5lh);
+}
+.status-page .row.branch-mid::after,
+.status-page .row.branch-last::after {
+  content: '';
+  position: absolute;
+  left: var(--tree-x);
+  top: calc(var(--status-row-pad) + 0.5lh);
+  width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
+  border-top: 1px solid var(--tree-line);
+}
+/* "Last seen" in the middle of a dashed rule that spans what the rule above a row spans: from the text column to the tab's edge. */
+.status-page .row.look-line {
+  padding-left: 0;
+  padding-right: 0;
+  margin-top: var(--look-gap);
+  margin-bottom: var(--look-gap);
+}
+.status-page .row.look-line.last {
+  margin-bottom: 0;
+}
+.status-page .look-rule {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+.status-page .status-rule {
+  height: 1px;
+  background: var(--soft);
+}
+.status-page .status-rule,
+.status-page .look-rule {
+  margin-left: var(--text-x);
+}
+.status-page .look-rule::before,
+.status-page .look-rule::after {
+  content: '';
+  flex: 1;
+  border-top: 1px dashed var(--soft);
+}
+.status-head h1 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+}
+.status-head p {
+  margin: 0;
+}

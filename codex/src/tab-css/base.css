@@ -1,0 +1,153 @@
+/* The host's variables when Codex passes them; otherwise the pane's own colors. */
+:root {
+  color-scheme: light;
+  --bg: var(--color-background-primary, #ffffff);
+  --text: var(--color-text-primary, #1f1f1f);
+  --muted: var(--color-text-secondary, #595959);
+  /*TONES:light*/
+  --needs-you: var(--amber);
+  --issue: var(--amber);
+  --sans: var(--font-sans, -apple-system, system-ui, sans-serif);
+  --mono: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+  --raised: color-mix(in srgb, var(--text) 9%, var(--bg));
+  --selected: color-mix(in srgb, var(--text) 6%, var(--bg));
+  --age: color-mix(in srgb, var(--muted) 90%, var(--bg));
+  --hover: color-mix(in srgb, var(--key) 14%, transparent);
+  --soft: color-mix(in oklab, var(--text) 8%, transparent);
+  --soft-hover: color-mix(in oklab, var(--text) 10%, transparent);
+  --row-hover: color-mix(in oklab, var(--soft) 50%, transparent);
+  --quick: 150ms ease;
+  --mark-x: 18px;
+  --text-x: 44px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: var(--color-background-primary, #171717);
+    --text: var(--color-text-primary, #ececec);
+    --muted: var(--color-text-secondary, #a8a8a8);
+    /*TONES:dark*/
+    --raised: color-mix(in srgb, var(--text) 11%, var(--bg));
+    --selected: color-mix(in srgb, var(--text) 8%, var(--bg));
+    --age: color-mix(in srgb, var(--muted) 85%, var(--bg));
+    --soft: color-mix(in oklab, var(--text) 12%, transparent);
+    --soft-hover: color-mix(in oklab, var(--text) 14%, transparent);
+  }
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  /*TONES:dark*/
+  --raised: color-mix(in srgb, var(--text) 11%, var(--bg));
+  --selected: color-mix(in srgb, var(--text) 8%, var(--bg));
+  --age: color-mix(in srgb, var(--muted) 85%, var(--bg));
+  --soft: color-mix(in oklab, var(--text) 12%, transparent);
+  --soft-hover: color-mix(in oklab, var(--text) 14%, transparent);
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/20px var(--sans);
+  -webkit-font-smoothing: antialiased;
+  cursor: default;
+  user-select: none;
+}
+/* Text a person may copy: what an item, PR or Status line says, an error, and the reply field. */
+.status-head,
+.status-page .content,
+.earlier,
+.body,
+.panel .muted,
+.settled-line .what,
+.pr-head,
+.pr-order,
+.tone-error,
+input,
+textarea {
+  cursor: auto;
+  user-select: text;
+}
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+}
+:focus-visible {
+  outline: 1.5px solid var(--key);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+.muted {
+  color: var(--muted);
+}
+.tone-needsYou {
+  color: var(--needs-you);
+}
+.tone-findings {
+  color: var(--findings);
+}
+.tone-prs {
+  color: var(--prs);
+}
+.tone-done {
+  color: var(--done);
+}
+.tone-error {
+  color: var(--error);
+}
+.notice {
+  padding: 10px 16px;
+  overflow-wrap: anywhere;
+}
+/* A message about the inbox's own state, in the tone of what it says. */
+.banner {
+  --tone: var(--error);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-basis: 100%;
+  padding: var(--banner-pad-y) 12px;
+  border: 1px solid color-mix(in srgb, var(--tone) 30%, var(--bg));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--tone) 9%, var(--bg));
+  color: var(--text);
+  line-height: 19px;
+  overflow-wrap: anywhere;
+  cursor: auto;
+  user-select: text;
+}
+.banner-warning {
+  --tone: var(--needs-you);
+}
+/* --muted is see-through in the Codex app, so a notice mixes from the text color. */
+.banner-notice {
+  --tone: var(--text);
+}
+.banner .lead {
+  font-weight: 600;
+  color: var(--tone);
+}
+/* The tab bar's rows sit 4px apart. */
+nav > .banner {
+  margin-top: calc(var(--banner-gap) - 4px);
+}
+#app > .banner {
+  margin: 12px 12px 0;
+}
+.banner-place {
+  padding: 12px 12px 0;
+}
+.banner .key {
+  flex: none;
+  white-space: nowrap;
+  color: var(--text);
+  cursor: default;
+  user-select: none;
+}
