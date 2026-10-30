@@ -1,4 +1,5 @@
 import { SUBJECT_MARKS } from '../hooks/view'
+import { IDLE_MARK } from '../hooks/help'
 import type { SubjectStatus } from '../types'
 
 /** What really happened to a piece of work at a step, as the case's author knows it. */
@@ -134,7 +135,9 @@ export function factsText(f: Facts): string {
     const was = p.was ? ` Plan changed; it was ${p.was}.` : ''
     const merged = p.merged?.length ? ` Merged into it: ${p.merged.map(nameOf).join(', ')}.` : ''
     const isChanged = f.changed.includes(p.id) ? ' Changed at this step.' : ''
-    const alsoMarks = (p.alsoRight ?? []).map(s => SUBJECT_MARKS[s].mark)
+    const alsoMarks = (p.alsoRight ?? []).flatMap(s =>
+      s === 'working' ? [SUBJECT_MARKS.working.mark, IDLE_MARK.mark] : [SUBJECT_MARKS[s].mark],
+    )
     const alsoRight = alsoMarks.length > 0 ? ` Its row may also show ${alsoMarks.join(' or ')}.` : ''
 
     return `- ${p.names[0]}${also}: ${STATE_TEXT[p.state]}. ${p.stands}.${parts}${was}${merged}${alsoRight}${isChanged}`
