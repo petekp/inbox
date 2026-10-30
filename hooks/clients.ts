@@ -151,11 +151,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason: 'The Codex app calls a conversation a chat, so its hint says chat where the mod says session.',
       },
       'gh-signed-out-notice': { kind: 'full' },
-      'link-open-rule': {
-        kind: 'different',
-        reason:
-          'The maintainer chose to keep each host rule. The mod opens a link with any scheme. Codex opens only https links and treats anything else as a path.',
-      },
+      'link-open-rule': { kind: 'full' },
       'fork-ledger': {
         kind: 'different',
         reason:
@@ -247,11 +243,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'pr-arrivals': { kind: 'full' },
       'prs-empty-hint': { kind: 'full' },
       'gh-signed-out-notice': { kind: 'full' },
-      'link-open-rule': {
-        kind: 'different',
-        reason:
-          'The maintainer chose to keep each host rule. The mod opens a link with any scheme. omp opens only https links and treats anything else as a path.',
-      },
+      'link-open-rule': { kind: 'full' },
       'fork-ledger': { kind: 'full' },
       'band-and-stop-rows': {
         kind: 'different',

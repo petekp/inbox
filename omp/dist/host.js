@@ -2265,7 +2265,7 @@ var OPEN_TIMEOUT_MS = 1e4;
 async function openTarget(run, probe, target, root, home) {
   const open = (argv) => run(argv, { cwd: "/", timeoutMs: OPEN_TIMEOUT_MS });
   const failure = (r) => r.stderr.trim() || `open exited ${r.code}`;
-  if (/^https:\/\//.test(target)) {
+  if (/^https?:\/\//.test(target)) {
     const r = await open(["open", target]);
     return r.code === 0 ? null : failure(r);
   }

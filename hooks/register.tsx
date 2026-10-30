@@ -172,13 +172,12 @@ import {
   demoReplied,
   demoSent,
   isPressConfirmed,
-  localPath,
-  openCommands,
+  openTarget,
   withArrival,
   withRewrite,
   withUnconfirmed,
 } from './presses'
-import type { DemoSent, Effect, RowPress } from './presses'
+import type { DemoSent, Effect, PathProbe, RowPress } from './presses'
 import {
   closedShown,
   DOT,
@@ -1540,23 +1539,15 @@ const COPY_FAILURES: Record<Extract<UiCopyResult, { isCopied: false }>['reason']
   refused: 'another plugin refused it',
 }
 
-async function openUrl($: EngineInterface, url: string): Promise<string | null> {
-  const r = await $.process.run(['open', url])
-
-  return r.exitCode === 0 ? null : r.stderr.trim() || `open exited ${r.exitCode}`
-}
-
-async function openPath($: EngineInterface, raw: string): Promise<string | null> {
-  const path = localPath(raw, conversation.root, (await $.env.get('HOME')) ?? '')
-  if (!(await $.fs.exists(path))) return 'it no longer exists'
-  const stat = await $.fs.stat(path)
-  const isFile = stat.kind === 'file'
-  const isExecutable = isFile && (await $.process.run(['test', '-x', path])).exitCode === 0
-  const { argv, fallback } = openCommands(path, isFile, isExecutable)
-  const r = await $.process.run(argv)
-  const retry = r.exitCode !== 0 && fallback ? await $.process.run(fallback) : r
-
-  return retry.exitCode === 0 ? null : retry.stderr.trim() || `open exited ${retry.exitCode}`
+function pathProbe($: EngineInterface): PathProbe {
+  return {
+    stat: async path => {
+      if (!(await $.fs.exists(path))) return null
+      const stat = await $.fs.stat(path)
+      return { isFile: () => stat.kind === 'file' }
+    },
+    isExecutable: async path => (await $.process.run(['test', '-x', path])).exitCode === 0,
+  }
 }
 
 async function perform(
@@ -1565,10 +1556,10 @@ async function perform(
   surface: UiPressArgument['surface'],
 ): Promise<string | null> {
   try {
-    if (effect.kind === 'open')
-      return await (/^[a-z][a-z\d+.-]*:\/\//i.test(effect.target)
-        ? openUrl($, effect.target)
-        : openPath($, effect.target))
+    if (effect.kind === 'open') {
+      const home = (await $.env.get('HOME')) ?? ''
+      return await openTarget(processRun($), pathProbe($), effect.target, conversation.root, home)
+    }
     const r = await $.ui.copy({ text: effect.text, surface })
     return r.isCopied ? null : COPY_FAILURES[r.reason]
   } catch (err) {

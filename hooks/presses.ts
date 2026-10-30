@@ -26,7 +26,7 @@ function helpLabel(help: Help): string {
   return clipLabel(label, 32)
 }
 
-export function localPath(raw: string, root: string, home: string): string {
+function localPath(raw: string, root: string, home: string): string {
   if (raw.startsWith('~/')) return home + raw.slice(1)
   if (raw.startsWith('/')) return raw
 
@@ -43,7 +43,7 @@ const LAUNCHES =
  * macOS assigns to its type, and `fallback` opens one with no assigned app
  * in the default text editor.
  */
-export function openCommands(
+function openCommands(
   path: string,
   isFile: boolean,
   isExecutable: boolean,
@@ -71,7 +71,7 @@ export async function openTarget(
 ): Promise<string | null> {
   const open = (argv: string[]) => run(argv, { cwd: '/', timeoutMs: OPEN_TIMEOUT_MS })
   const failure = (r: { code: number; stderr: string }) => r.stderr.trim() || `open exited ${r.code}`
-  if (/^https:\/\//.test(target)) {
+  if (/^https?:\/\//.test(target)) {
     const r = await open(['open', target])
     return r.code === 0 ? null : failure(r)
   }
