@@ -128,8 +128,11 @@ test('a bash result notes local URLs it printed and links the PR gh pr create na
   await result('npm run dev', 'ready at http://localhost:3000/')
   await result('gh pr create --fill', 'https://github.com/acme/app/pull/12\n')
   await result('cat notes.txt', 'https://github.com/acme/app/pull/77\n')
-  expect(state().turn.activity.filter((line: string) => line.startsWith('URL'))).toEqual([
+  expect(state().turn.activity).toEqual([
+    'ran: npm run dev',
     'URL in output: http://localhost:3000/',
+    'ran: gh pr create --fill',
+    'ran: cat notes.txt',
   ])
   expect(state().ledger.prs).toEqual(['acme/app#12'])
 })
