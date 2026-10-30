@@ -2481,9 +2481,6 @@ function isTabOpen(s, now) {
 function notePrompt2(s, text2, now) {
   return notePrompt(CODEX, s, text2, isTabOpen(s, now));
 }
-function activityOf(tool, input) {
-  return toolActivity(tool, input);
-}
 function patchFiles(patch) {
   return [...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((m) => (m[1] ?? "").trim()).filter(Boolean);
 }
@@ -3059,7 +3056,7 @@ var literalValue = (literal) => {
 var PATCH_ARGUMENT = /tools\.apply_patch\(\s*("(?:[^"\\]|\\.)*")/;
 var COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")/;
 var shellLines = (command) => {
-  const line = command === "" ? null : activityOf("Bash", { command });
+  const line = command === "" ? null : toolActivity("Bash", { command });
   return line ? [line] : [];
 };
 var editLines = (patch, cwd) => patchFiles(patch).map((file) => `edited ${resolve2(cwd || "/", file)}`);
@@ -3077,11 +3074,11 @@ function callLines(p, hasCommandRows, cwd) {
   const args = jsonRecord(p.arguments);
   if (name === "apply_patch") return editLines(textOf2(args.input ?? args.patch ?? args.command), cwd);
   if (name === "spawn_agent") {
-    const line2 = activityOf("Agent", { description: textOf2(args.task_name) });
+    const line2 = toolActivity("Agent", { description: textOf2(args.task_name) });
     return line2 ? [line2] : [];
   }
   if (name === DIALOG_TOOL) return [dialogActivity(dialogQuestions(args.questions), { kind: "open" })];
-  const line = activityOf(textOf2(p.namespace).startsWith("mcp__") ? textOf2(p.namespace) + name : name, {});
+  const line = toolActivity(textOf2(p.namespace).startsWith("mcp__") ? textOf2(p.namespace) + name : name, {});
   return line ? [line] : [];
 }
 var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf2(record(record(row.payload).item).type));
@@ -3286,7 +3283,7 @@ async function handleHook(input, deps) {
         await write((s) => files.reduce((x, f) => noteActivity(x, `edited ${f}`), withRollout(s)));
         return null;
       }
-      const line = activityOf(tool, toolInput);
+      const line = toolActivity(tool, toolInput);
       const agentId = input.agent_id;
       const isDelegateCommand = agentId === void 0 && delegateSteps(command).length > 0;
       const withWork = (s) => statusChanged(s, (o) => agentId ? childWorked(o, agentId, now()) : delegatesStarted(o, command, now()));
