@@ -12,14 +12,19 @@ Decision 16 sets the method. The evals run at each release, and after a change t
 
 | File | What it holds |
 | --- | --- |
-| `evals/status-replays.ts` | The replays and the short case, with their facts |
+| `evals/status-replays.ts` | The list of replays the suite runs |
+| `evals/replays/` | The replays and the short case, with their facts |
 | `evals/status-replay.ts` | How a replay runs each step through the hosts' own code |
 | `evals/status-facts.ts` | The fact list, and the text of it the judge reads |
 | `evals/status-rules.ts` | The fixed rules |
 | `evals/status-judge.ts` | The judge's checks, its prompt, and how its answer is read |
-| `evals/status-judge.md` | The judge's instructions |
+| `evals/status-judge-text.ts` | `judgeSystemText`, which joins the parts into the judge's system text |
+| `evals/status-judge.md` | The index of the judge's instructions: what the harness sends and reads back, and the parts |
+| `evals/status-judge/` | The judge's instructions, in parts |
 | `evals/status-run.ts` | The runner, its report and its results file |
 | `tests/status-evals.test.ts` | The checks with no model calls |
+| `tests/status-evals-scenes.ts` | The pages and Status call answers those checks grade |
+| `tests/status-evals-known-failing.test.ts` | The known failing cases, each of which fails until the issue it names is built |
 
 ### What goes in the suite
 

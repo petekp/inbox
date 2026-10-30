@@ -4,7 +4,7 @@ import { noteDialog } from '../../hooks/dialogs'
 import { messages } from '../../hooks/presses'
 import type { Session } from '../../hooks/session'
 import type { DialogLink, Item } from '../../types'
-import type { Dialog } from './transcript'
+import type { Dialog } from './rollout-turns'
 
 /**
  * The message the Codex app sends when the person answers a dialog question. The app counts the question answered

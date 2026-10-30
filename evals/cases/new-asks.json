@@ -1,0 +1,298 @@
+[
+  {
+    "name": "person-todo-becomes-question",
+    "about": "A todo the person mentions, which the reply does not take up, becomes a question about starting it.",
+    "ledger": {
+      "turn": 4,
+      "nextId": 5,
+      "card": {
+        "goal": "Fix the flaky checkout test",
+        "done": [],
+        "now": "Fixing the checkout test",
+        "running": []
+      },
+      "items": [],
+      "findings": [],
+      "closed": [],
+      "batchTurn": 3
+    },
+    "exchange": {
+      "person": "nice. todo: look into caching the product API responses",
+      "turn": 4,
+      "activity": ["edited tests/checkout.test.ts"],
+      "reply": "The checkout test is fixed. It waited on a fixed 200 ms timer; it now waits for the order-saved event, and it passed 50 runs in a row."
+    },
+    "checks": [
+      {
+        "new": "cach",
+        "kind": "question"
+      },
+      {
+        "added": 1
+      }
+    ]
+  },
+  {
+    "name": "person-todo-mid-task-becomes-question",
+    "about": "A todo the person sends while the agent works on something else becomes a question about starting it.",
+    "ledger": {
+      "turn": 4,
+      "nextId": 5,
+      "card": {
+        "goal": "Rename BASE to API_URL across the app",
+        "done": [],
+        "now": "Renaming the env var",
+        "running": []
+      },
+      "items": [],
+      "findings": [],
+      "closed": [],
+      "batchTurn": 3
+    },
+    "exchange": {
+      "person": "todo: investigate why the build takes 4 minutes",
+      "turn": 4,
+      "activity": ["edited src/config.ts", "edited deploy/env.yaml", "edited README.md"],
+      "reply": "The rename is done: all 9 files now use API_URL, and the tests pass."
+    },
+    "checks": [
+      {
+        "new": "build",
+        "kind": "question"
+      },
+      {
+        "added": 1
+      }
+    ]
+  },
+  {
+    "name": "person-todo-taken-up-not-new",
+    "about": "A todo the reply already took up adds nothing.",
+    "ledger": {
+      "turn": 4,
+      "nextId": 5,
+      "card": {
+        "goal": "Add flags to the greet CLI",
+        "done": [],
+        "now": "Adding flags",
+        "running": []
+      },
+      "items": [],
+      "findings": [],
+      "closed": [],
+      "batchTurn": 3
+    },
+    "exchange": {
+      "person": "todo: add a --verbose flag",
+      "turn": 4,
+      "activity": ["edited src/cli.ts", "ran: npm test"],
+      "reply": "Added --verbose: it prints each step as it runs. Tests pass."
+    },
+    "checks": [
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
+    "name": "approval-gate-is-question",
+    "about": "A reply that holds an edit until the person approves it asks for that approval.",
+    "ledger": {
+      "turn": 4,
+      "nextId": 4,
+      "card": {
+        "goal": "Fix the onboarding docs",
+        "done": [],
+        "now": "Waiting on approval",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "the onboarding page is wrong about SSO, look into it",
+      "turn": 4,
+      "activity": ["ran: rg -n SSO docs/onboarding.md"],
+      "reply": "The onboarding page says SSO is set up per user. It is set up per workspace: an admin turns it on once in Settings → Security, and every member then signs in with it.\n\nThe page is shared with the support team, so I won't edit the page without your OK. The change replaces the second paragraph of the SSO section with the per-workspace steps."
+    },
+    "checks": [
+      {
+        "new": "edit|onboarding|SSO|page",
+        "kind": "question"
+      }
+    ]
+  },
+  {
+    "name": "soft-ask-is-question",
+    "about": "A soft ask at the end of a reply waits on the person.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Clean up the billing tests",
+        "done": [],
+        "now": "Tests fixed",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "fix the three flaky billing tests",
+      "turn": 6,
+      "activity": [
+        "edited tests/billing/invoice.test.ts",
+        "edited tests/billing/refund.test.ts",
+        "edited tests/billing/tax.test.ts",
+        "ran: npm test -- billing"
+      ],
+      "reply": "Fixed all three. Each one read the clock directly, so it failed near midnight UTC. They now use the fake clock the other billing tests use. 40 runs in a row passed.\n\nThe changes are uncommitted. Say when you want those committed."
+    },
+    "checks": [
+      {
+        "new": "commit"
+      }
+    ]
+  },
+  {
+    "name": "numbered-questions-all-kept",
+    "about": "Every question in a numbered list becomes its own item.",
+    "ledger": {
+      "turn": 2,
+      "nextId": 2,
+      "card": {
+        "goal": "Plan the export feature",
+        "done": [],
+        "now": "Waiting on scope answers",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "plan the CSV export",
+      "turn": 2,
+      "activity": [],
+      "reply": "I read the reports module and the existing PDF export. Before I write the plan, five things need your call:\n\n1. Should the export include archived reports? I'd leave them out: nobody can open them in the app.\n2. Comma or semicolon as the separator? I'd use comma, the default in Sheets and Excel in the US.\n3. Should dates be ISO 8601 or the account's locale format?\n4. Is there a row limit? I'd cap it at 100,000 rows, like the PDF export.\n5. Should the export run in the background and email a link, or download right away?"
+    },
+    "checks": [
+      {
+        "new": "archived"
+      },
+      {
+        "new": "separator|comma|semicolon"
+      },
+      {
+        "new": "date|ISO|locale"
+      },
+      {
+        "new": "row limit|limit|cap|100,000"
+      },
+      {
+        "new": "background|email|download"
+      },
+      {
+        "added": 5
+      }
+    ]
+  },
+  {
+    "name": "rhetorical-question-not-new",
+    "about": "A rhetorical question in the reply adds nothing.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Profiled slow endpoints"],
+        "now": "Working on the cache layer",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "why did the import script fail?",
+      "turn": 6,
+      "reply": "It failed because the input file had a byte-order mark in front of the header row. The parser read it as part of the first column name.\n\nWho puts a byte-order mark in a CSV? Plenty of spreadsheet exports do. I now strip it before parsing, and the script passes."
+    },
+    "checks": [
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
+    "name": "offer-to-continue-not-new",
+    "about": "An offer to continue, when continuing is the obvious default, adds nothing.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Profiled slow endpoints"],
+        "now": "Working on the cache layer",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "migrate the config loaders to the new schema",
+      "turn": 6,
+      "activity": ["edited src/config/auth.ts", "ran: npm test -- config"],
+      "reply": "Migrated the auth config loader to the new schema. Its tests pass.\n\nThe cache and logging loaders are next, and they follow the same pattern. Want me to start on the next file?"
+    },
+    "checks": [
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
+    "name": "describe-what-you-saw-not-new",
+    "about": "A question asking the person to describe what they saw adds nothing.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Profiled slow endpoints"],
+        "now": "Working on the cache layer",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "the save button does nothing for me",
+      "turn": 6,
+      "reply": "I can't reproduce it: in my run the button saves and shows the toast. The handler only fires when the form is valid, so a hidden required field could block it.\n\nWhat happens when you click it? Do you see an error, or nothing at all?"
+    },
+    "checks": [
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
+    "name": "look-at-finished-work-not-new",
+    "about": "An invitation to look at finished work adds nothing.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Profiled slow endpoints"],
+        "now": "Working on the cache layer",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "build the settings page",
+      "turn": 6,
+      "activity": ["edited src/pages/settings.tsx", "ran: npm run dev"],
+      "reply": "The settings page is done. It has the profile form and the notification toggles, and the tests pass.\n\nOpen http://localhost:3000/settings to see it."
+    },
+    "checks": [
+      {
+        "added": 0
+      }
+    ]
+  }
+]

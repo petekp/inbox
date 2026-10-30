@@ -52,7 +52,7 @@ At every step, the pieces set aside or waiting on a vendor stay on the page.
 
 **One short case** stays outside the replays: a catch-up of a conversation the inbox never saw, from an empty page. One feature is half done: images attach, and PDFs wait on a question. The page may draw it as one row with both parts, or give the finished part a ✓ row of its own. The case checks that the question links to the feature, and that a finished part drawn as its own row is not ●. Finished work marked ● after a catch-up was a real failure, and Replay C's catch-up starts from a page that already holds the work.
 
-The 20 single-exchange Status cases left `evals/cases.json`. Each one's scenario is a step above, and their checks run at every step. `status-shown-records-question` checks only the ledger, so it stays in the ledger suite. `catch-up-records-open-question-and-result` keeps its ledger check, and the short case above checks its Status.
+The 20 single-exchange Status cases left the ledger suite, whose cases are in `evals/cases/`. Each one's scenario is a step above, and their checks run at every step. `status-shown-records-question` checks only the ledger, so it stays in the ledger suite. `catch-up-records-open-question-and-result` keeps its ledger check, and the short case above checks its Status.
 
 | Case | Replay step |
 | --- | --- |

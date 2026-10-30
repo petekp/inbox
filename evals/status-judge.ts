@@ -48,7 +48,7 @@ export type JudgeInput = {
   facts: string
 }
 
-/** The prompt the judge reads. Its system text is the instructions in `evals/status-judge.md`. */
+/** The prompt the judge reads. Its system text comes from `judgeSystemText`. */
 export function judgePrompt(input: JudgeInput): string {
   return [
     '<page>',

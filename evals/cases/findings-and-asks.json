@@ -1,0 +1,209 @@
+[
+  {
+    "name": "task-about-finding-replaces-it",
+    "about": "A task about a finding takes its place.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 10,
+      "card": {
+        "goal": "Clean up the reports app before release",
+        "done": ["Report export fixed"],
+        "now": "Finishing the export work",
+        "running": []
+      },
+      "items": [],
+      "findings": [
+        {
+          "id": "f4",
+          "kind": "issue",
+          "title": "Move 2.5 GB research folder out of apps/reports",
+          "detail": "The folder bloats the app package; it belongs in a separate repo.",
+          "path": null,
+          "at": 1
+        },
+        {
+          "id": "f5",
+          "kind": "issue",
+          "title": "Tabs unreadable in the light theme",
+          "detail": "Tab labels use the dark-theme gray.",
+          "path": null,
+          "at": 1
+        }
+      ]
+    },
+    "exchange": {
+      "person": "finish the export work",
+      "reply": "Export now streams rows, and the report tests pass.\n\nOne thing waits on you. The QA run is still reading from the research folder I flagged in f4, so I can't move it yet. Tell me when Inbox QA finishes and I'll move the folder out of apps/reports.",
+      "activity": []
+    },
+    "checks": [
+      {
+        "closed": "f4",
+        "outcome": "asked as"
+      },
+      {
+        "open": "f5"
+      },
+      {
+        "new": "qa"
+      }
+    ]
+  },
+  {
+    "name": "question-about-finding-replaces-it",
+    "about": "A question about a finding takes its place.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 10,
+      "card": {
+        "goal": "Clean up the reports app before release",
+        "done": ["Report export fixed"],
+        "now": "Finishing the export work",
+        "running": []
+      },
+      "items": [],
+      "findings": [
+        {
+          "id": "f4",
+          "kind": "issue",
+          "title": "Release notes miss the login fix",
+          "detail": "The changelog skips the login redirect fix shipped this week.",
+          "path": null,
+          "at": 1
+        },
+        {
+          "id": "f5",
+          "kind": "issue",
+          "title": "Tabs unreadable in the light theme",
+          "detail": "Tab labels use the dark-theme gray.",
+          "path": null,
+          "at": 1
+        }
+      ]
+    },
+    "exchange": {
+      "person": "commit the export fix",
+      "reply": "The export fix is committed.\n\nShould I add the login fix to the release notes now, or leave it for the release PR? I'd add it now: it's one line and easy to forget.",
+      "activity": []
+    },
+    "checks": [
+      {
+        "closed": "f4",
+        "outcome": "asked as"
+      },
+      {
+        "open": "f5"
+      },
+      {
+        "new": "login"
+      }
+    ]
+  },
+  {
+    "name": "finding-of-open-question-closes",
+    "about": "A finding recorded for an open question closes into it.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 10,
+      "card": {
+        "goal": "Clean up the reports app before release",
+        "done": ["Report export fixed"],
+        "now": "Finishing the export work",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i5",
+          "kind": "question",
+          "label": null,
+          "ask": "Delete the old staging branch and its preview deploy?",
+          "options": ["Delete it", "Keep it"],
+          "rec": "Delete it",
+          "helps": [],
+          "turn": 5,
+          "at": 1
+        }
+      ],
+      "findings": [
+        {
+          "id": "f5",
+          "kind": "issue",
+          "title": "Tabs unreadable in the light theme",
+          "detail": "Tab labels use the dark-theme gray.",
+          "path": null,
+          "at": 1
+        },
+        {
+          "id": "f6",
+          "kind": "issue",
+          "title": "Old staging branch is still deployed",
+          "detail": "staging-old still runs on the preview host and costs money.",
+          "path": null,
+          "at": 1
+        }
+      ]
+    },
+    "exchange": {
+      "person": "what's left?",
+      "reply": "I recorded the old staging deploy as a finding too, since it costs money every day.\n\nThe question from before still stands: delete the old staging branch and its preview deploy? I'd delete it: nothing points at it.",
+      "activity": []
+    },
+    "checks": [
+      {
+        "closed": "f6",
+        "outcome": "asked as"
+      },
+      {
+        "open": "i5"
+      }
+    ]
+  },
+  {
+    "name": "ask-names-finding-not-id",
+    "about": "A reply that cites a finding by its id adds a question that names the finding by what it says.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 225,
+      "card": {
+        "goal": "Ship the search page to staging",
+        "done": ["Rebuilt the deploy branch"],
+        "now": "Waiting on the staging deploy",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i220",
+          "kind": "task",
+          "label": null,
+          "ask": "Run the staging deploy and choose merge, not overwrite",
+          "options": [],
+          "rec": null,
+          "helps": [],
+          "turn": 5,
+          "at": 5
+        }
+      ],
+      "findings": [
+        {
+          "id": "f221",
+          "kind": "issue",
+          "title": "Staging recorded the PR's migrations under their old filenames",
+          "detail": "A plain migrate apply would try to add the same columns again.",
+          "path": null,
+          "at": 5
+        }
+      ]
+    },
+    "exchange": {
+      "person": "what does that finding mean for the next deploy?",
+      "turn": 6,
+      "reply": "**The next deploy is safe as it stands.** The deploy branch still uses the old filenames, so staging sees nothing new to apply.\n\n**The problem comes later.** Once the renamed migrations land on main, staging will see two new filenames and try to add the same columns again.\n\nThe fix is option 1: mark the renamed migrations as applied on staging before that deploy. You own staging, so you run it.\n\nIf you agree, I'll rewrite f221 to say exactly that: when to act, the option 1 commands, and that you run them. I'll also add a line to the rollout checklist. No code changes are needed."
+    },
+    "checks": [
+      {
+        "new": "^(?!.*\\b[fi]\\d+\\b).*(finding|migration|filename|rewrite)",
+        "kind": "question"
+      }
+    ]
+  }
+]

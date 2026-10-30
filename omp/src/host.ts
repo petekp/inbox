@@ -13,8 +13,8 @@ import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 import { flattenConversation } from '../../hooks/conversation'
 import { isSameTaskList, ompTodoFromBranch } from '../../hooks/host-tasks'
 import type { Turn } from '../../hooks/conversation'
-import { dialogActivity, dialogQuestions, guidanceText, screenText, toolActivity } from '../../hooks/model-text'
-import type { DialogOutcome, ScreenTab } from '../../hooks/model-text'
+import { dialogActivity, dialogQuestions, guidanceText, screenText } from '../../hooks/model-text'
+import type { ScreenTab } from '../../hooks/model-text'
 import type { PrPress } from '../../hooks/pr-tab'
 import { noteDialog } from '../../hooks/dialogs'
 import { branchIn, ghFinder, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
@@ -49,10 +49,11 @@ import {
   childrenCutOff,
   childStarted,
   childWorked,
+  delegatesRan,
   delegatesSettled,
   delegatesStarted,
-  delegateSteps,
-  delegateWaitsEnded,
+  delegatesTakenBack,
+  waitsOnDelegate,
 } from '../../hooks/children'
 import { childEnded } from '../../hooks/status'
 import {
@@ -82,7 +83,8 @@ import { exclusiveRun, pruneSessions, readState, updateState } from './state'
 import { styleOf } from './theme'
 import type { OmpState } from './state'
 import { OMP, TOOL_LABELS } from './texts'
-import type { Stop } from '../../types'
+import { activityOf, askOutcome, isDismissedAsk } from './tool-calls'
+import type { SessionStatus, Stop } from '../../types'
 
 const INBOX_MODEL_TIMEOUT_MS = 120_000
 /** Added to the settle window so the timer fires after the window has fully passed. */
@@ -307,44 +309,6 @@ export async function stopOf(
 /** The text of a user message. */
 function userText(content: unknown): string {
   return typeof content === 'string' ? content : textOfBlocks(content)
-}
-
-/** The activity line for an omp tool call, through the names the shared `toolActivity` knows. */
-function activityOf(tool: string, input: Record<string, unknown>): string | null {
-  switch (tool) {
-    case 'bash':
-      return toolActivity('Bash', { command: input.command, run_in_background: input.async === true })
-    case 'edit':
-    case 'write':
-      return toolActivity('Edit', { file_path: input.path ?? input.file_path })
-  }
-
-  return null
-}
-
-/** How an `ask` dialog ended, from its tool result. */
-function askOutcome(event: {
-  content: { type: string; text?: string }[]
-  isError: boolean
-  details?: unknown
-}): DialogOutcome {
-  const details = (event.details ?? {}) as { timedOut?: boolean; chatRedirect?: boolean }
-  const answer = event.content.flatMap(b => (b.type === 'text' && b.text ? [b.text] : [])).join('\n')
-  if (event.isError || details.chatRedirect || answer === '') return { kind: 'dismissed' }
-
-  return { kind: details.timedOut ? 'timed-out' : 'answered', answer }
-}
-
-/** Whether a message is the result of an ask dialog the person dismissed. */
-function isDismissedAsk(message: unknown): boolean {
-  const m = message as { role?: unknown; toolName?: unknown; content?: unknown; isError?: unknown; details?: unknown }
-
-  return (
-    m?.role === 'toolResult' &&
-    m.toolName === 'ask' &&
-    Array.isArray(m.content) &&
-    askOutcome({ content: m.content, isError: m.isError === true, details: m.details }).kind === 'dismissed'
-  )
 }
 
 type Entry = { type?: unknown; message?: unknown }
@@ -866,19 +830,36 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     if (isClaimed) deps.background(refreshStatus(updateHostFor(ctx)))
   }
 
-  // Noted as the tool starts, not in tool_call, which omp waits on before every tool runs.
+  /** Each running bash call that waits on a delegate: its command, when it started, and the Status before it started. */
+  const waits = new Map<string, { command: string; at: number; before: SessionStatus | null }>()
+
   pi.on('tool_execution_start', async (event, ctx) => {
     if (isUnattended(ctx)) return
     const args = (event.args ?? {}) as Record<string, unknown>
-    await noteQuietly(ctx, activityOf(event.toolName, args))
     const command = event.toolName === 'bash' && typeof args.command === 'string' ? args.command : ''
-    if (delegateSteps(command).length === 0) return
-    const at = deps.now()
-    await change(sessionIdOf(ctx), s => statusChanged(s, o => delegatesStarted(o, command, at))).catch(() => undefined)
+    if (!waitsOnDelegate(command)) return
+    const wait = { command, at: deps.now(), before: null as SessionStatus | null }
+    waits.set(event.toolCallId, wait)
+    await change(sessionIdOf(ctx), s => {
+      wait.before = s.ledger.overview
+      return statusChanged(s, o => delegatesStarted(o, command, wait.at))
+    }).catch(() => undefined)
   })
 
+  // A wait that ended with no tool_result never ran.
+  pi.on('tool_execution_end', async (event, ctx) => {
+    const wait = waits.get(event.toolCallId)
+    if (!wait) return
+    waits.delete(event.toolCallId)
+    const takenBack = (o: SessionStatus | null) => delegatesTakenBack(o, wait.command, wait.before, wait.at)
+    await change(sessionIdOf(ctx), s => statusChanged(s, takenBack)).catch(() => undefined)
+  })
+
+  // omp raises tool_result only for a call that ran, never for one it blocked.
   pi.on('tool_result', async (event, ctx) => {
     if (isUnattended(ctx)) return
+    waits.delete(event.toolCallId)
+    await noteQuietly(ctx, activityOf(event.toolName, event.input))
     if (event.toolName === 'bash') {
       const command = (event.input as { command?: unknown }).command
       if (typeof command !== 'string') return
@@ -888,7 +869,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         await change(sessionIdOf(ctx), s => {
           const after = noteCommandOutput(s, command, textOfBlocks(event.content))
           isLinked = after.ledger !== s.ledger
-          return statusChanged(after, o => delegateWaitsEnded(o, command, at))
+          return statusChanged(after, o => delegatesRan(o, command, at))
         })
       } catch {
         return

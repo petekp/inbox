@@ -1,0 +1,254 @@
+[
+  {
+    "name": "explain-reply-pick-reaches-row",
+    "about": "An Explain reply's recommendation reaches the open question.",
+    "ledger": {
+      "turn": 4,
+      "nextId": 4,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Profiled slow endpoints"],
+        "now": "Waiting on cache choice",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "label": null,
+          "ask": "Which cache should the product API use?",
+          "options": ["Redis", "In-memory"],
+          "rec": null,
+          "helps": [],
+          "turn": 3,
+          "at": 3
+        }
+      ]
+    },
+    "exchange": {
+      "person": "Remind me what this question you asked me is about: why it came up, what each choice would do, and which you would pick. Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply. Don't act on it yet.\n\"Which cache should the product API use?\"\nOptions: Redis / In-memory",
+      "turn": 4,
+      "press": {
+        "id": "i3",
+        "action": "explain"
+      },
+      "reply": "The product list is slow (almost a second) because it repeats the same three database lookups. Saving the answers fixes that, but the service runs on four servers and prices change during the day.\n\n```\nRedis:      server1..4 ──► one shared saved copy\nIn-memory:  server1 ► copy1   server2 ► copy2  ...\n```\n\n**Redis:** one shared copy, so a price change is updated once for all four servers.\n**In-memory:** simpler, but each server holds its own copy, so servers may show different prices for a while.\n\nI'd pick **Redis**: every customer sees the same price."
+    },
+    "checks": [
+      {
+        "item": "i3",
+        "rec": "redis"
+      }
+    ]
+  },
+  {
+    "name": "narrowed-question-new-options",
+    "about": "A reply that narrows a question leaves one open question with the new options, as the old item or a new one.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Profiled slow endpoints"],
+        "now": "Waiting on cache choice",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i5",
+          "kind": "question",
+          "label": null,
+          "ask": "Which Postgres version should the new database run?",
+          "options": ["Postgres", "SQLite"],
+          "rec": null,
+          "helps": [],
+          "turn": 5,
+          "at": 5
+        }
+      ]
+    },
+    "exchange": {
+      "person": "we're going with postgres for sure",
+      "turn": 6,
+      "reply": "Good, Postgres it is. That leaves the version: our host offers 15 and 16. 16 has the faster bulk loading we'd use for the nightly import, and the client library we use supports both. I'd go with 16. Which version should I set up?"
+    },
+    "checks": [
+      {
+        "waiting": "version",
+        "options": "16",
+        "rec": "16"
+      },
+      {
+        "openItems": 1
+      }
+    ]
+  },
+  {
+    "name": "reworded-question-not-new",
+    "about": "A reworded open question is not added again.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Profiled slow endpoints"],
+        "now": "Waiting on cache choice",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i5",
+          "kind": "question",
+          "label": null,
+          "ask": "Should I delete the old migrations folder?",
+          "options": ["Delete it", "Keep it"],
+          "rec": null,
+          "helps": [],
+          "turn": 5,
+          "at": 5
+        }
+      ]
+    },
+    "exchange": {
+      "person": "what's the status?",
+      "turn": 6,
+      "reply": "The import script now runs in 40 s, down from 3 min. The tests pass.\n\nOne thing still waits on you: can I remove the old migrations folder, or should it stay?"
+    },
+    "checks": [
+      {
+        "open": "i5"
+      },
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
+    "name": "unrelated-progress-keeps-questions",
+    "about": "Unrelated progress closes no open question.",
+    "ledger": {
+      "turn": 7,
+      "nextId": 7,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Profiled slow endpoints"],
+        "now": "Waiting on cache choice",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i5",
+          "kind": "question",
+          "label": null,
+          "ask": "Which cache should the product API use?",
+          "options": ["Redis", "In-memory"],
+          "rec": null,
+          "helps": [],
+          "turn": 5,
+          "at": 5
+        },
+        {
+          "id": "i6",
+          "kind": "question",
+          "label": null,
+          "ask": "Should cache keys include the locale?",
+          "options": ["Yes", "No"],
+          "rec": null,
+          "helps": [],
+          "turn": 5,
+          "at": 5
+        }
+      ]
+    },
+    "exchange": {
+      "person": "while you wait on me, fix the flaky checkout test",
+      "turn": 7,
+      "activity": ["edited tests/checkout.test.ts", "ran: npm test -- checkout"],
+      "reply": "Fixed the flaky checkout test. It waited on a fixed 200 ms timer; it now waits for the order-saved event. It passed 50 runs in a row."
+    },
+    "checks": [
+      {
+        "open": "i5"
+      },
+      {
+        "open": "i6"
+      },
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
+    "name": "stated-recommendation-kept",
+    "about": "A stated recommendation becomes the item's rec.",
+    "ledger": {
+      "turn": 2,
+      "nextId": 2,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Profiled slow endpoints"],
+        "now": "Waiting on cache choice",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "how should we expire cache entries?",
+      "turn": 2,
+      "reply": "Two ways fit here:\n\n1. A fixed TTL of 5 minutes on every entry.\n2. Clear an entry when its product is saved.\n\nI recommend clearing on save: prices then update at once, and the TTL can stay long. Which do you want?"
+    },
+    "checks": [
+      {
+        "new": "expir|clear|ttl",
+        "rec": "clear|save"
+      }
+    ]
+  },
+  {
+    "name": "reason-not-recommendation",
+    "about": "A reason for one answer is not a recommendation.",
+    "ledger": {
+      "turn": 2,
+      "nextId": 2,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Profiled slow endpoints"],
+        "now": "Waiting on cache choice",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "what's next?",
+      "turn": 2,
+      "reply": "The cache works locally. Two decisions are yours:\n\n1. Deploy it today, so the slow pages are fixed before the sale starts tomorrow?\n2. Turn on the new metrics dashboard? It costs about $40 a month."
+    },
+    "checks": [
+      {
+        "new": "deploy",
+        "rec": null
+      }
+    ]
+  },
+  {
+    "name": "question-without-recommendation-has-no-rec",
+    "about": "A question whose reply weighs both answers but recommends neither gets no recommendation.",
+    "ledger": {
+      "turn": 2,
+      "nextId": 1,
+      "card": null,
+      "items": []
+    },
+    "exchange": {
+      "person": "the upload page is slow to draw, can you look into it",
+      "turn": 2,
+      "reply": "The upload page waits on a 4 MB thumbnail library before it draws anything. There are two ways to fix it.\n\n- **Lazy-load the library** when the person picks a file. Thumbnails stay as they are, but the first preview shows about 300 ms later.\n- **Switch to the browser's createImageBitmap** and drop the library. The page gets 4 MB lighter, but older Safari loses HEIC previews.\n\nWhich way do you want to go?"
+    },
+    "checks": [
+      {
+        "new": "lazy|library|thumbnail|createImageBitmap|upload",
+        "rec": null
+      }
+    ]
+  }
+]

@@ -1,0 +1,328 @@
+[
+  {
+    "name": "put-off-finding-stays-open",
+    "about": "A finding the person put off stays open.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Ship the greeting CLI v1",
+        "done": ["Arg parser fixed"],
+        "now": "Preparing the release",
+        "running": []
+      },
+      "items": [],
+      "findings": [
+        {
+          "id": "f4",
+          "kind": "issue",
+          "title": "README has no install steps",
+          "detail": "New users cannot install the CLI from the README alone.",
+          "path": "README.md",
+          "at": 1
+        },
+        {
+          "id": "f5",
+          "kind": "opportunity",
+          "title": "Arg parser has no tests for quoted values",
+          "detail": "A regression in quoting would go unnoticed.",
+          "path": "src/args.ts",
+          "at": 1
+        }
+      ]
+    },
+    "exchange": {
+      "person": "don't worry about the README thing for now, let's get the release out",
+      "turn": 6,
+      "activity": ["ran: npm version patch"],
+      "reply": "Bumped the version to 1.0.1 and tagged it. The release build is running."
+    },
+    "checks": [
+      {
+        "open": "f4"
+      },
+      {
+        "open": "f5"
+      }
+    ]
+  },
+  {
+    "name": "agent-fixed-finding-closes",
+    "about": "A finding the agent fixed closes.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Ship the greeting CLI v1",
+        "done": ["Arg parser fixed"],
+        "now": "Preparing the release",
+        "running": []
+      },
+      "items": [],
+      "findings": [
+        {
+          "id": "f4",
+          "kind": "issue",
+          "title": "README has no install steps",
+          "detail": "New users cannot install the CLI from the README alone.",
+          "path": "README.md",
+          "at": 1
+        },
+        {
+          "id": "f5",
+          "kind": "opportunity",
+          "title": "Arg parser has no tests for quoted values",
+          "detail": "A regression in quoting would go unnoticed.",
+          "path": "src/args.ts",
+          "at": 1
+        }
+      ]
+    },
+    "exchange": {
+      "person": "add the install steps to the readme",
+      "turn": 6,
+      "activity": ["edited README.md"],
+      "reply": "Added an Install section to the README with the npm command and a one-line usage example."
+    },
+    "checks": [
+      {
+        "closed": "f4"
+      },
+      {
+        "open": "f5"
+      }
+    ]
+  },
+  {
+    "name": "person-fixed-finding-closes",
+    "about": "A finding the person fixed closes.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Ship the greeting CLI v1",
+        "done": ["Arg parser fixed"],
+        "now": "Preparing the release",
+        "running": []
+      },
+      "items": [],
+      "findings": [
+        {
+          "id": "f4",
+          "kind": "issue",
+          "title": "README has no install steps",
+          "detail": "New users cannot install the CLI from the README alone.",
+          "path": "README.md",
+          "at": 1
+        },
+        {
+          "id": "f5",
+          "kind": "opportunity",
+          "title": "Arg parser has no tests for quoted values",
+          "detail": "A regression in quoting would go unnoticed.",
+          "path": "src/args.ts",
+          "at": 1
+        }
+      ]
+    },
+    "exchange": {
+      "person": "fyi I already added install steps to the README myself, pushed it",
+      "turn": 6,
+      "activity": [],
+      "reply": "Thanks. I pulled your change, and the README's Install section matches the published package name."
+    },
+    "checks": [
+      {
+        "closed": "f4"
+      },
+      {
+        "open": "f5"
+      }
+    ]
+  },
+  {
+    "name": "set-aside-finding-stays-open",
+    "about": "A finding the person set aside stays open until they dismiss it.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Ship the greeting CLI v1",
+        "done": ["Arg parser fixed"],
+        "now": "Preparing the release",
+        "running": []
+      },
+      "items": [],
+      "findings": [
+        {
+          "id": "f4",
+          "kind": "issue",
+          "title": "README has no install steps",
+          "detail": "New users cannot install the CLI from the README alone.",
+          "path": "README.md",
+          "at": 1
+        },
+        {
+          "id": "f5",
+          "kind": "opportunity",
+          "title": "Arg parser has no tests for quoted values",
+          "detail": "A regression in quoting would go unnoticed.",
+          "path": "src/args.ts",
+          "at": 1
+        }
+      ]
+    },
+    "exchange": {
+      "person": "the README finding doesn't matter, we'll never document install there",
+      "turn": 6,
+      "activity": [],
+      "reply": "Understood, I'll leave the README as it is."
+    },
+    "checks": [
+      {
+        "open": "f4"
+      }
+    ]
+  },
+  {
+    "name": "mentioned-finding-stays-open",
+    "about": "A finding the reply only mentions stays open.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 10,
+      "card": {
+        "goal": "Clean up the reports app before release",
+        "done": ["Report export fixed"],
+        "now": "Finishing the export work",
+        "running": []
+      },
+      "items": [],
+      "findings": [
+        {
+          "id": "f4",
+          "kind": "issue",
+          "title": "Upload test fails about one run in five on CI",
+          "detail": "test_upload_large times out under load; it needs a longer timeout or a smaller fixture.",
+          "path": null,
+          "at": 1
+        },
+        {
+          "id": "f5",
+          "kind": "issue",
+          "title": "Tabs unreadable in the light theme",
+          "detail": "Tab labels use the dark-theme gray.",
+          "path": null,
+          "at": 1
+        }
+      ]
+    },
+    "exchange": {
+      "person": "finish the export work",
+      "reply": "Export now streams rows and the tests pass. The upload test failed once on CI; I recorded it as f4, since it's outside this task. Nothing waits on you.",
+      "activity": []
+    },
+    "checks": [
+      {
+        "open": "f4"
+      },
+      {
+        "open": "f5"
+      }
+    ]
+  },
+  {
+    "name": "unrelated-question-keeps-findings",
+    "about": "An unrelated question leaves the findings open.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 10,
+      "card": {
+        "goal": "Clean up the reports app before release",
+        "done": ["Report export fixed"],
+        "now": "Finishing the export work",
+        "running": []
+      },
+      "items": [],
+      "findings": [
+        {
+          "id": "f4",
+          "kind": "issue",
+          "title": "Upload test fails about one run in five on CI",
+          "detail": "test_upload_large times out under load; it needs a longer timeout or a smaller fixture.",
+          "path": null,
+          "at": 1
+        },
+        {
+          "id": "f5",
+          "kind": "issue",
+          "title": "Tabs unreadable in the light theme",
+          "detail": "Tab labels use the dark-theme gray.",
+          "path": null,
+          "at": 1
+        }
+      ]
+    },
+    "exchange": {
+      "person": "open the PR",
+      "reply": "The export PR is ready. Ship it now, or wait for the code owner's review? I'd wait: they own the report code.",
+      "activity": []
+    },
+    "checks": [
+      {
+        "open": "f4"
+      },
+      {
+        "open": "f5"
+      },
+      {
+        "new": "ship|pr"
+      }
+    ]
+  },
+  {
+    "name": "put-off-finding-not-asked",
+    "about": "A finding put off is neither asked nor closed.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 10,
+      "card": {
+        "goal": "Clean up the reports app before release",
+        "done": ["Report export fixed"],
+        "now": "Finishing the export work",
+        "running": []
+      },
+      "items": [],
+      "findings": [
+        {
+          "id": "f4",
+          "kind": "issue",
+          "title": "Upload test fails about one run in five on CI",
+          "detail": "test_upload_large times out under load; it needs a longer timeout or a smaller fixture.",
+          "path": null,
+          "at": 1
+        },
+        {
+          "id": "f5",
+          "kind": "issue",
+          "title": "Tabs unreadable in the light theme",
+          "detail": "Tab labels use the dark-theme gray.",
+          "path": null,
+          "at": 1
+        }
+      ]
+    },
+    "exchange": {
+      "person": "leave the flaky upload test for later, not now",
+      "reply": "Okay, I'll leave the flaky upload test for later. It stays in your findings.",
+      "activity": []
+    },
+    "checks": [
+      {
+        "open": "f4"
+      },
+      {
+        "open": "f5"
+      }
+    ]
+  }
+]

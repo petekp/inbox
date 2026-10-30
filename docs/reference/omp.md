@@ -51,6 +51,13 @@ Tags used in this file:
 - `restrictToolNames` skips discovery of custom commands, and the plan-mode policy turns it on for a plan-mode subagent: `const restrictToolNames = policy.planMode || session.restrictToolNames === true` (`task/structured-subagent.ts:403` in 18.1.17) [source 18.1.17]. `sdk.ts:1417` (18.1.17) and `:1890` (18.12.3) read the same option [source both].
 - Live, a plan-mode child does load extensions but is offered only plan-mode tools: see "Live checks".
 
+### A blocked call reaches `tool_execution_start`
+
+- The loop emits `tool_execution_start` before it runs a call (`packages/agent/src/agent-loop.ts:3546` in 18.12.3). A call that an extension's `tool_call` handler blocked throws `ToolCallBlockedError` after it (`:3583`) [source 18.12.3].
+- The approval gate runs inside the tool wrapper's `execute`, also after `tool_execution_start`. It throws for a `deny` policy and for a call the person denies (`extensibility/extensions/wrapper.ts:277`, `:351`, `:464`) [source 18.12.3].
+- The wrapper emits `tool_result` only once the tool's own `execute` has returned or thrown (`:475`, `:505`), so a blocked call raises none [source 18.12.3]. The inbox notes a call's activity on `tool_result` (`omp/src/host.ts`).
+- The loop emits `tool_execution_end` for every call, a blocked one included, from `emitToolResult` (`packages/agent/src/agent-loop.ts:3454`, `:3466`). For a call that ran, it comes after the wrapper's `tool_result` [source 18.12.3]. A wait on a delegate notes its rows at `tool_execution_start`, and the inbox takes them back at a `tool_execution_end` with no `tool_result` before it (`omp/src/host.ts`).
+
 ## Live checks
 
 Tested 2026-10-21 in the inbox-ui VM with omp 18.12.3, run as `HOME=/Users/admin/omp-home-0210 omp -p --mode json --session-dir <scratch> --no-extensions -e <probe extension>`. The probe extension (`step0/omp-step2.mjs` in the VM share) logs `pi.events` frames, `session_start`, `before_agent_start`, `agent_start` and `agent_end` with the extension instance's id, edits the system prompt, and registers a `step` tool. Logs are under `step0/logs/` in the share, named `o1` to `o4`. The plan's omp source facts were pinned to 18.1.17. These answers are for 18.12.3 only.

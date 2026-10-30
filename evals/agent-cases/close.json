@@ -1,0 +1,379 @@
+[
+  {
+    "name": "close-answered",
+    "about": "The user's message answers an open question, so the agent closes it with their answer.",
+    "ledger": {
+      "nextId": 5,
+      "items": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "label": null,
+          "ask": "Which cache should the product API use?",
+          "options": ["Redis", "In-memory"],
+          "rec": "In-memory",
+          "helps": [],
+          "turn": 1,
+          "at": 1
+        },
+        {
+          "id": "i4",
+          "kind": "task",
+          "label": null,
+          "ask": "Sign in to the staging dashboard",
+          "options": [],
+          "rec": null,
+          "helps": [],
+          "turn": 1,
+          "at": 1
+        }
+      ]
+    },
+    "prompt": "In-memory. Go ahead and add it.",
+    "checks": [
+      {
+        "calls": "close",
+        "count": 1
+      },
+      {
+        "calls": "close",
+        "count": 1,
+        "match": {
+          "id": "^i3$",
+          "answer": "memory"
+        }
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "close-answered-says-answer",
+    "about": "The user answers by position, so the agent closes the question with the option they picked, by name, and says in its reply which one it took them to mean.",
+    "ledger": {
+      "nextId": 5,
+      "items": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "label": null,
+          "ask": "Which cache should the product API use?",
+          "options": ["Redis", "In-memory"],
+          "rec": "In-memory",
+          "helps": [],
+          "turn": 1,
+          "at": 1
+        }
+      ]
+    },
+    "prompt": "The second one.",
+    "checks": [
+      {
+        "calls": "close",
+        "count": 1,
+        "match": {
+          "id": "^i3$",
+          "answer": "in.?memory"
+        }
+      },
+      {
+        "reply": "in.?memory"
+      },
+      {
+        "notReply": "(do|did) you mean|which (one|cache)[^.\\n]*\\?"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "close-already-closed",
+    "about": "Closing an item the user already closed gets the Already closed answer; the agent does not retry or apologize at length.",
+    "ledger": {
+      "nextId": 6,
+      "items": [
+        {
+          "id": "i5",
+          "kind": "question",
+          "label": null,
+          "ask": "Which database should the app use?",
+          "options": ["Postgres", "SQLite"],
+          "rec": "Postgres",
+          "helps": [],
+          "turn": 1,
+          "at": 1
+        }
+      ]
+    },
+    "toolLedger": {
+      "nextId": 6,
+      "closed": [
+        {
+          "id": "i5",
+          "kind": "question",
+          "ask": "Which database should the app use?",
+          "outcome": "Postgres",
+          "how": "answered",
+          "at": 2
+        }
+      ]
+    },
+    "prompt": "Postgres.",
+    "checks": [
+      {
+        "calls": "close",
+        "min": 1,
+        "max": 1,
+        "match": {
+          "id": "^i5$"
+        }
+      },
+      {
+        "reply": "already|settled|postgres it is|(use|using|go with|going with|proceed|set up)[\\s\\S]*postgres"
+      },
+      {
+        "notReply": "apolog|sorry"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "close-done-finding",
+    "about": "A finding the agent just fixed is closed with a short reason, without being asked.",
+    "ledger": {
+      "nextId": 3,
+      "findings": [
+        {
+          "id": "f2",
+          "kind": "issue",
+          "title": "parseDate returns January for December dates",
+          "detail": "Month index is off by one in src/dates.ts.",
+          "path": "src/dates.ts",
+          "at": 1
+        }
+      ]
+    },
+    "prompt": "Please fix the December date bug in src/dates.ts. (You did: parseDate now subtracts 1 from the month, and the tests pass. Write your closing reply to me.)",
+    "checks": [
+      {
+        "calls": "close",
+        "count": 1,
+        "match": {
+          "id": "^f2$",
+          "reason": "."
+        }
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "close-no-self-answer",
+    "about": "When the user does not answer an open question, the agent does not close it with an answer of its own.",
+    "ledger": {
+      "nextId": 4,
+      "items": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "label": null,
+          "ask": "Which cache should the product API use?",
+          "options": ["Redis", "In-memory"],
+          "rec": "In-memory",
+          "helps": [],
+          "turn": 1,
+          "at": 1
+        }
+      ]
+    },
+    "prompt": "I am not sure about the cache yet. What would you pick, and why?",
+    "checks": [
+      {
+        "calls": "close",
+        "count": 0
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "pivot-moots-recorded-question",
+    "about": "The user drops the work an agent-recorded question was about, so the agent closes it with a reason.",
+    "ledger": {
+      "nextId": 4,
+      "turn": 2,
+      "items": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "label": null,
+          "from": "record",
+          "ask": "Which cache should the product API use?",
+          "options": ["Redis", "In-memory"],
+          "rec": "In-memory",
+          "helps": [],
+          "turn": 1,
+          "at": 1
+        }
+      ]
+    },
+    "prompt": "Change of plan: we're dropping caching from this work entirely. Let's spend the time on the pagination bug in the orders list instead. Where would you start?",
+    "checks": [
+      {
+        "calls": "close",
+        "count": 1,
+        "match": {
+          "id": "^i3$"
+        },
+        "has": ["reason"]
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "pivot-moots-recorded-task",
+    "about": "The user's new direction removes the need for a task the agent recorded, so the agent closes it.",
+    "ledger": {
+      "nextId": 5,
+      "turn": 2,
+      "items": [
+        {
+          "id": "i4",
+          "kind": "task",
+          "label": null,
+          "from": "record",
+          "ask": "Sign in to the staging dashboard",
+          "options": [],
+          "rec": null,
+          "helps": [],
+          "turn": 1,
+          "at": 1
+        }
+      ]
+    },
+    "prompt": "We're not going to test this on staging at all. Local only from here on. Run the checkout tests locally and tell me what fails.",
+    "checks": [
+      {
+        "calls": "close",
+        "count": 1,
+        "match": {
+          "id": "^i4$"
+        }
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "user-did-it-closes-question",
+    "about": "The user says they already did what an agent-recorded question asked about, so the agent closes it.",
+    "ledger": {
+      "nextId": 6,
+      "turn": 3,
+      "items": [
+        {
+          "id": "i5",
+          "kind": "question",
+          "label": null,
+          "from": "record",
+          "ask": "Add a retry to the image upload job?",
+          "options": ["Add the retry", "Leave it"],
+          "rec": "Add the retry",
+          "helps": [],
+          "turn": 2,
+          "at": 2
+        }
+      ]
+    },
+    "prompt": "I added the retry to the upload job myself in my last commit. Now can you look at why the thumbnail step is slow?",
+    "checks": [
+      {
+        "calls": "close",
+        "count": 1,
+        "match": {
+          "id": "^i5$"
+        }
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "implied-answer-closes-question",
+    "about": "The user's instruction settles an agent-recorded question without quoting an option, so the agent closes it with their answer.",
+    "ledger": {
+      "nextId": 8,
+      "turn": 3,
+      "items": [
+        {
+          "id": "i7",
+          "kind": "question",
+          "label": null,
+          "from": "record",
+          "ask": "Release v0.3 now, or after the login fix?",
+          "options": ["Release now", "After the login fix"],
+          "rec": "After the login fix",
+          "helps": [],
+          "turn": 2,
+          "at": 2
+        }
+      ]
+    },
+    "prompt": "Let's get the login fix merged first. Start on it now; we'll cut the release once it's in.",
+    "checks": [
+      {
+        "calls": "close",
+        "count": 1,
+        "match": {
+          "id": "^i7$"
+        },
+        "has": ["answer"]
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "side-request-leaves-question-open",
+    "about": "The user asks for something unrelated without settling or dropping the open question, so the agent leaves it open.",
+    "ledger": {
+      "nextId": 4,
+      "turn": 2,
+      "items": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "label": null,
+          "from": "record",
+          "ask": "Which cache should the product API use?",
+          "options": ["Redis", "In-memory"],
+          "rec": "In-memory",
+          "helps": [],
+          "turn": 1,
+          "at": 1
+        }
+      ]
+    },
+    "prompt": "Before the cache, quick one: what does the pagination bug in the orders list look like to you?",
+    "checks": [
+      {
+        "calls": "close",
+        "count": 0
+      },
+      {
+        "noIds": true
+      }
+    ]
+  }
+]
