@@ -60,7 +60,7 @@ Claude mode is the desktop app's chat side. It runs no hooks and no mods. The in
 
 If the host does not grant fullscreen, the card stays a summary with no [Open inbox]. Answers, Done and Dismiss then go through the composer, and Claude closes items with its tools. An expanded card with clickable rows would break the inline guidance: at most 2 actions, no drill-ins, no nested scrolling.
 
-**Presses.** What `ui/message` and `updateModelContext` do in Claude is unknown (reference open question 4). The view can read which methods the host declares in its `ui/initialize` result, but not whether Claude treats a `ui/message` as the person's own words. So the send route is fixed per host after live check 2, not chosen per press.
+**Presses.** What `ui/message` and `updateModelContext` do in Claude is unknown ([reference open question 4](../reference/constraints-and-open-questions.md)). The view can read which methods the host declares in its `ui/initialize` result, but not whether Claude treats a `ui/message` as the person's own words. So the send route is fixed per host after live check 2, not chosen per press.
 
 - **If `ui/message` arrives as the person's message:** sends work as in the other looks. The row reads `Queued: Explain` until the host answers the request, then `✓ Explain · just now`. A refusal reads `Not sent: <reason>`.
 - **If only `updateModelContext` works:**
@@ -105,7 +105,7 @@ Done and Dismiss are Marks, recorded by the server, with Undo. Claude learns of 
 
 ## The biggest unknown
 
-Two questions are open (reference open question 1):
+Two questions are open ([reference open question 1](../reference/constraints-and-open-questions.md)):
 
 - Does desktop Code mode render MCP App views?
 - Does Claude mode run mod modules? The question is asked of Cowork. If Unified Claude merges Chat and Cowork, it applies to Claude mode as a whole.

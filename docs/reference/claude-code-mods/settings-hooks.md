@@ -1,0 +1,61 @@
+# Settings hooks and `classic.*` events
+
+Part of [Claude Code mods](../claude-code-mods.md).
+
+A **settings hook** is a hook defined in a settings file or a plugin's `hooks/hooks.json` `hooks` key. It runs a shell command, an HTTP request, an MCP tool call, a model prompt, or an agent. A mod sees each settings-hook event as `classic.<Event>`. [H; E#hook-the-settings-hook-events]
+
+## How mods and settings hooks interact
+
+- "Each settings hook event … is also an event named `classic.` followed by the settings hook event's name, such as `classic.Stop`. `e` is the JSON a settings hook receives on stdin, including `transcript_path`." Return `next(e)` "so Stop hooks in your settings files still run". [E#hook-the-settings-hook-events]
+- Classic events fire "wherever the engine runs the classic hook, whether or not any settings hook is configured". [T: classic events] So `classic.PermissionRequest`, `classic.Stop` and `classic.StopFailure` fire without a settings hook, except where the guard skips a user mod's `classic.*` hooks (see "When the guard loads"). The inbox uses `classic.PermissionRequest` and `classic.StopFailure` and no longer uses `classic.Stop`.
+- Order: "The chain is [managed settings hooks, ...hooks modules, the other settings hooks as core], so a managed block ends it above every module." "`classic.PreToolUse` alone differs: its `e` is ToolCallEnvelope." Results "fold into one of these (last write wins, contexts concatenate)". "A field of the wrong shape fails the hook, which is skipped." [T: classic events]
+- A mod's `classic.*` result (`ClassicResult`) has `block`, `preventContinuation`, `stopReason`, `additionalContext: string[]`, `sessionTitle`, `suppressOriginalPrompt`, `initialUserMessage`, `watchPaths`, `reloadSkills`, `permissionDecision`, `permissionDecisionReason`, `decision`, `updatedToolOutput`, `updatedMCPToolOutput`, `retry`, `displayContent`, `worktreePath`. It has no `systemMessage`, `terminalSequence`, `classifierContext`, or Elicitation `action`/`content`. [T: `ClassicResult`] So a mod's classic return can do less than a settings hook.
+- A mod's `tool.check` "answers after the rules and the `PreToolUse` hooks have decided, and its answer can replace theirs": it can approve over ask rules and non-managed `PreToolUse` blocks, and skips the auto-mode classifier. Deny rules hold over the mod only "on a machine with managed settings, or when you're signed in with a Team or Enterprise plan". [P#extend-permissions-with-hooks]
+- A `classic.*` handler that doesn't call `next` keeps the person's own settings hooks from running. The inbox always calls `next`.
+- "Claude Code fires the same hook events wherever it runs: sessions in the terminal, IDE extensions, the Desktop app, and cloud sessions." [H] What they deliver differs by host; see below.
+
+## Events the inbox uses
+
+| Event | Inbox use | Key facts |
+|---|---|---|
+| `SessionStart` | `classic.SessionStart` with `source: ['clear','resume','fork']` reloads the conversation (`hooks/register.tsx:on('classic.SessionStart')`) | Sources: startup, resume, clear, compact, fork. `fork` covers `--fork-session`, `/fork`, `/branch`, moving to the background (before 2.1.214 forks reported `resume`). "If you run `/clear` or switch to another conversation while background hooks are still running, nothing they return applies to the session." "When you switch conversations with `/resume` inside a session, the switch waits for the hooks to finish instead." [H#sessionstart] |
+| `PermissionRequest` | Opens dialog rows (`hooks/register.tsx:on('classic.PermissionRequest')`) | Fires when Claude Code is about to prompt, or would auto-deny a call that can't prompt. Not for sandbox network prompts. No `tool_use_id`. "For a call that reaches a `--permission-prompt-tool` or the Agent SDK's `canUseTool` callback, the hooks run alongside your host, and whichever decides first applies." [H#permissionrequest] |
+| `Stop` | Not used. The inbox reads a reply another hook sent back from `turn.step` (`hooks/register.tsx:on('turn.step')`), which the guard passes | `decision: block` makes Claude continue. `additionalContext` also continues, shown as `Stop hook feedback` "rather than a hook error". "after stop hooks have continued the turn eight times in a row, Claude Code overrides the next block" (`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`). Input has `stop_hook_active`, `last_assistant_message`, `background_tasks`, `session_crons`. "Does not run if the stoppage occurred due to a user interrupt". "The `/goal` command is a built-in shortcut for a session-scoped prompt-based Stop hook." [H#stop] |
+| `StopFailure` | Reads usage-limit and sign-in stops. Where the guard skips it, `turn.complete` with reason `error` reads the same stop from the transcript's last message | Fires instead of Stop when an API error ends the turn. `error`, `error_details`. Types add `verification_required` to the documented 12 error values; the repo handles it (`hooks/claude.ts:stopKindOf`). [H#stopfailure-input; T] |
+
+
+## Other events a "waits on you" model could use
+
+- `Notification` types: `permission_prompt` (about 6 s, deferred by each keystroke in the terminal); `idle_prompt` (about 60 s after Claude finishes, only if the person hasn't typed and nothing runs in the background; not sent during a usage-limit wait); `elicitation_dialog`, `elicitation_url_dialog`; `agent_needs_input`, `agent_completed` (agent view, terminal); `quota_auto_resume_*`. "These hooks run even when desktop notifications are off." [H#notification]
+- In SDK hosts (desktop, VS Code), `permission_prompt` fires about 6 s after the request, not deferred by typing, and skipped if answered sooner. "Before v2.1.233, `permission_prompt` didn't fire in these sessions." [H#notification]
+- `Elicitation`, `ElicitationResult` (an MCP server asks for input). `TaskCreated`, `TaskCompleted`, `TeammateIdle`, `SubagentStart`, `SubagentStop`, `PostToolBatch`, `PreCompact`, `PostCompact`, `PreModelSwitch`, `PostModelSwitch`, `CwdChanged`, `FileChanged`, `MessageDisplay`, `InstructionsLoaded`, `ConfigChange`, `WorktreeCreate`, `WorktreeRemove`, `PermissionDenied`, `UserPromptExpansion`, `Setup`, `SessionEnd`. 33 events in all, matching the types' `HookInput` union. [H#hook-events]
+- `UserPromptSubmit` also fires for "scheduled task, `/loop`, background-subagent report, cross-session message". [H#userpromptsubmit] The types add an undocumented `source`: `'user' | 'sdk' | 'system' | 'loop_wakeup' | 'schedule_wakeup' | 'poll_event'`, which "Payloads may omit … while the field rolls out". [T: `UserPromptSubmitHookInput`]
+- AskUserQuestion can be answered from a hook: `permissionDecision: "allow"` plus `updatedInput` that echoes the original `questions` and adds `answers`. "Returning `"allow"` alone is not sufficient". `updatedInput` "Replaces the entire input object". [H#allow-with-updatedinput] Inference: a pane button could answer the agent's multiple-choice question. Not verified.
+
+## Context injection rules
+
+- Delivery: "Claude Code wraps the string in a system reminder and inserts it into the conversation at the point where the hook fired … it doesn't appear as a chat message in the interface." [H#add-context-for-claude]
+- "Write the text as factual statements rather than imperative system instructions … Text framed as out-of-band system commands can trigger Claude's prompt-injection defenses". [H#add-context-for-claude] Inference: this likely applies to the inbox's `prompt.submit` context and its `inbox:` texts too.
+- On resume, "Claude Code replays the saved text rather than re-running the hook for past turns, so values like timestamps or commit SHAs become stale." [H#add-context-for-claude] Inference: past `inbox:` lines show old state after `--resume`. `SessionStart` with `resume` or `fork` is the refresh point.
+- Cap: "A hook's `additionalContext`, `systemMessage`, and `initialUserMessage` strings, and its plain stdout, are capped at 10,000 characters." Over the cap, Claude gets a file path plus up to 2,000 characters of preview, and "Claude Code doesn't ask Claude to read the file." No setting raises it. [H#json-output] Whether it applies to mod context is unknown; mod `prompt.submit` context has its own 100,000-character cut.
+- UserPromptSubmit context: "Neither channel produces a visible transcript entry … To confirm delivery, check the debug log." [H#userpromptsubmit-decision-control]
+
+## How behavior differs in desktop Code mode
+
+- "canUseTool … is how Claude Desktop and the VS Code extension host Claude Code" [H#notification], and Claude Code "times `permission_prompt` differently in a terminal and in Claude Desktop, the VS Code extension, and other hosts that answer permission requests through the Agent SDK". [HG#get-notified-when-claude-needs-input]
+- Inference, from the SDK rules applied to Code mode: `terminalSequence` is ignored ("In non-interactive mode with the `-p` flag and in the Agent SDK, it ignores the field" [H#emit-terminal-notifications]); `MessageDisplay` fires once per message; `CwdChanged` and `FileChanged` `systemMessage` "doesn't reach the SDK message stream"; `PermissionRequest` hooks race the desktop dialog.
+- Trust: interactive sessions hold back settings hooks "until you accept the workspace trust dialog". `-p` and SDK sessions "never show the dialog and treats the folder as trusted". [H#workspace-trust] Whether Code mode follows the SDK rule is unknown.
+- SDK callback hooks fail closed: "An Agent SDK callback hook on `PreToolUse` that exceeds its timeout blocks the tool call". Command, HTTP and mcp_tool hooks that time out don't block. [H#timeouts] Whether the desktop app registers SDK callback hooks is unknown.
+- Cloud sessions "don't read your local `~/.claude/settings.json`". `$CLAUDE_CODE_REMOTE` is `"true"` in remote web environments. `$CLAUDE_CODE_BRIDGE_SESSION_ID` is set while Remote Control is connected (2.1.199+). [H#hook-locations; H#hook-handler-fields]
+
+## Settings-hook mechanics worth knowing
+
+- Locations: user, project, local, managed settings, a plugin's `hooks/hooks.json`, skill frontmatter, subagent frontmatter. Entries "merge across settings levels". "All matching hooks run in parallel." [H#hook-locations; H#hook-handler-fields]
+- Default timeouts: 600 s for command, HTTP and mcp_tool; 30 s for prompt; 60 s for agent. 30 s on `UserPromptSubmit`, `PreModelSwitch`, `PostModelSwitch`; 10 s on `MessageDisplay`; `SessionEnd` hooks share 1.5 s. [H#common-fields]
+- Exit 2 blocks "whether or not you print JSON". Stdout is parsed as JSON only if it starts with `{` and ends with `}`. [H#exit-code-2; H#exit-code-0]
+- `disableAllHooks`: "There is no way to disable an individual hook while keeping it in the configuration." Only managed-level `disableAllHooks` disables managed hooks. [H#disable-or-remove-hooks]
+- `allowManagedHooksOnly`: "Your user, project, local, and plugin hooks are blocked. Hooks from plugins force-enabled in managed settings `enabledPlugins` are exempt." [H#hook-locations]
+- Debug: `claude --debug-file <path>`, or `--debug` writes to `~/.claude/debug/<session-id>.txt`; `/debug` turns it on mid-session; `CLAUDE_CODE_DEBUG_LOG_LEVEL=verbose` adds matcher counts. [H#debug-hooks]
+- Common input: `session_id`, `prompt_id`, `transcript_path` ("written asynchronously and may lag"), `cwd`, `scratchpad_dir` (2.1.257+; not in the types), `permission_mode`, `hook_event_name`, `agent_id`, `agent_type`. [H#common-input-fields]
+- Inference: one plugin's `hooks/hooks.json` could carry both `modules` and a settings `hooks` key. Whether both may coexist is unknown.
+- Codex comparison (repo, inference): Codex's `hooks.json` uses the same event, matcher group, command handler shape, but different variables (`${PLUGIN_ROOT}`), events (`Interrupt`, no `StopFailure`) and caps (about 2,500 tokens of `additionalContext`, `docs/plans/codex-plugin.md`). One shared `hooks.json` can't serve both hosts.
