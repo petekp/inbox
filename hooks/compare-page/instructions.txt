@@ -1,0 +1,37 @@
+The inbox's page for a comparison of a question's choices. To make one, write the comparison as JSON, then append
+it to a copy of this file:
+
+  cat "<this file>" comparison.json > comparison.html
+
+The JSON. Only "pick" and "choices" are required:
+
+{
+  "question": "Which cache should the product API use?",
+  "pick": "Redis",
+  "pickBefore": "In-memory",
+  "reason": "Every instance serves the same prices, for 3 ms more per read.",
+  "unexpected": "In-memory kept a changed price for up to 5 minutes.",
+  "choices": [
+    { "name": "Redis", "summary": "One cache that all four instances share." },
+    { "name": "In-memory", "summary": "Each instance keeps its own cache." }
+  ],
+  "measures": [
+    {
+      "name": "Stale prices after a change",
+      "better": "fewer is better",
+      "values": { "Redis": "None", "In-memory": { "value": "Up to 5 minutes", "note": "Until each cache expires" } },
+      "best": ["Redis"]
+    },
+    { "name": "Read time", "better": "less is better", "values": { "Redis": "4 ms", "In-memory": "1 ms" }, "best": ["In-memory"] }
+  ],
+  "previews": [{ "title": "After a price change", "note": "One request to each instance.", "texts": { "Redis": "...", "In-memory": "..." } }],
+  "caveats": ["Measured on a laptop, not in production."],
+  "method": "How you compared them: one string, or a list of paragraphs."
+}
+
+- Name each choice exactly as the question lists it, everywhere a choice is named.
+- "pickBefore" is the choice you would have picked before comparing. Leave it out when you had none.
+- Put first the measures a person notices when using the choice.
+- A value is text, or an object with the "value" and a "note" that explains it.
+- "best" names the choice or choices with the best value on that measure. Leave it out when none is best.
+- A preview is preformatted text for each choice, such as a mock or a diagram.
