@@ -107,6 +107,21 @@ test('running children sit under their subject, at most three, each tied to it a
   })
 })
 
+test('a working subject with a child at work draws the running mark, and one with nothing running draws ◐ and stands still', () => {
+  const now = 100 * MIN
+  let o = after(null, 'NEW: working | Offline mode | queue built\nNEW: working | Sync | step one', 10 * MIN)
+  o = withChild(
+    o,
+    { ref: 't1', kind: 'subagent', name: 'Review sync', startedAt: 50 * MIN, endedAt: null, lastActivityAt: now },
+    now,
+  )
+  o = after(o, 'LINK: c1 | s2', 50 * MIN)
+  const rows = page(o, now).rows
+
+  expect(shape(rows)).toEqual(['◐ Offline mode: queue built', '● Sync: step one ┐', '└ ● Review sync'])
+  expect(rows.filter(r => r.kind === 'subject').map(r => r.isRunning)).toEqual([false, true])
+})
+
 test('a delegate says what Herdr shows: nothing while it works, waiting while blocked, and finished from when it is ready until the person has looked, its subject moved above the Seen line, and one Herdr no longer lists leaves', () => {
   let o: SessionStatus | null = {
     ...after(null, 'NEW: working | Export | layout next', 10 * MIN),
@@ -145,9 +160,9 @@ test('a delegate says what Herdr shows: nothing while it works, waiting while bl
     { kind: 'look', isLast: true },
   ])
   const looked = lookEnded(lookStarted(finished, 5 * 60 * MIN), 5 * 60 * MIN + LOOK_MIN_MS)
-  expect(rows(looked, 6 * 60 * MIN)).toEqual(['● Export: layout next'])
+  expect(rows(looked, 6 * 60 * MIN)).toEqual(['◐ Export: layout next'])
   const gone = delegatesSettled(blocked, new Map(), 4 * 60 * MIN)
-  expect(rows(gone, 4 * 60 * MIN)).toEqual(['● Export: layout next'])
+  expect(rows(gone, 4 * 60 * MIN)).toEqual(['◐ Export: layout next'])
 })
 
 test('a rule sets each item on the page apart: a subject and the rows under it are one item, and the look line takes none beside it', () => {
@@ -204,7 +219,7 @@ test('open subjects past seven fold their oldest queued ones into a count', () =
   expect(rows.at(-1)).toMatchObject({ kind: 'fold', text: '2 more queued' })
   expect(shape(heldOldest)).toEqual([
     '◆ Part 0: step 0 · waiting',
-    ...[3, 4, 5, 6, 7, 8].map(n => `● Part ${n}: step ${n}`),
+    ...[3, 4, 5, 6, 7, 8].map(n => `◐ Part ${n}: step ${n}`),
     '○ 2 more queued',
   ])
 })
