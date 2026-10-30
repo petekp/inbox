@@ -18,7 +18,7 @@ Part of [Claude Code mods](../claude-code-mods.md).
 | `f7536d0` | "Load the right conversation after /clear, /resume and /branch": `classic.SessionStart` with source `clear`, `resume` or `fork` calls `loadConversation`. |
 | `f23d9ad` | "Load the conversation the switch names, not $.session.id()": uses `e.session_id` (`hooks/register.tsx:on('classic.SessionStart')`). |
 
-- Tests: `tests/hooks.test.ts` test "a headless run stays inactive when ${origin.kind} invokes the inbox command" checks that a headless start does nothing. The tests `tests/hooks.test.ts` "the desktop app turns the mod on when it attaches before the start" and "… after the start" cover a desktop attach before and after `session.start`, then mount the band on `surface: 'desktop'`.
+- Tests: `tests/hooks-startup.test.ts` test "a headless run stays inactive when ${origin.kind} invokes the inbox command" checks that a headless start does nothing. The tests `tests/hooks-startup.test.ts` "the desktop app turns the mod on when it attaches before the start" and "… after the start" cover a desktop attach before and after `session.start`, then mount the band on `surface: 'desktop'`.
 - The desktop tests submit prompts with `origin: { kind: 'sdk' }`. That is an assumption about Code mode, not an observed value.
 
 ## Checks
