@@ -54,7 +54,7 @@ const judgeSystem = judgeSystemText(ROOT)
 const isJudgeWritten = judgeSystem !== '' && !judgeSystem.startsWith('PLACEHOLDER')
 const isJudging = values.judge || values['judge-pages'] !== undefined
 if (isJudging && !isJudgeWritten)
-  throw new Error("The judge's instructions in evals/status-judge.md are still a placeholder.")
+  throw new Error("The judge's instructions in evals/status-judge/ are still a placeholder.")
 
 const about = provenance(
   values['judge-pages'] !== undefined ? 'status-judge' : 'status',
