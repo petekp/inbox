@@ -1,15 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { test } from 'node:test'
 import type { TestContext } from 'node:test'
@@ -61,9 +52,7 @@ function fixture(t: TestContext) {
     mkdirSync(dirname(join(root, path)), { recursive: true })
     writeFileSync(join(root, path), text)
   }
-  write('scripts/check-structure.mjs', '')
-  copyFileSync(join(ROOT, 'scripts/check-structure.mjs'), join(root, 'scripts/check-structure.mjs'))
-  copyFileSync(join(ROOT, 'scripts/shared-modules.mjs'), join(root, 'scripts/shared-modules.mjs'))
+  cpSync(join(ROOT, 'scripts'), join(root, 'scripts'), { recursive: true })
   for (const file of readdirSync(join(ROOT, 'hooks')).filter(f => f.endsWith('.ts')))
     write(`hooks/${file}`, 'export const value = 1\n')
   write('hooks/register.tsx', 'export const value = 1\n')
