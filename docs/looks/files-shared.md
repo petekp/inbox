@@ -29,6 +29,6 @@ Part of [the look map](../looks.md#files).
 | `hooks/demo.ts` | Shared module. Sample data for `/inbox demo` and the Codex demo. |
 | `hooks/dialogs.ts` | Shared module. Notes the questions of a Codex dialog or a dismissed dialog, and links each to the inbox question that copies it: a Codex dialog's link, and the dialog's option descriptions. |
 | `hooks/layout.ts` | Shared module. Sizes the desktop look and the Codex tab share. |
-| `hooks/marks.ts` | Shared module. Mark shapes for marks the system font draws poorly: desktop draws its Svg marks from `markShape`, and desktop and Codex draw a cancelled row's ✗ from `cancelledMarkShape`. |
+| `hooks/marks.ts` | Shared module. Mark shapes for marks the system font draws poorly: desktop draws its toned Svg marks from `markShape`, and ✗ and ◌ from `mutedMarkShape`. Codex draws a cancelled row's ✗ from `cancelledMarkShape`. |
 | `hooks/tones.ts` | Shared module. Status colors for native marks and terminal palettes. The Codex build writes them into CSS, and omp draws them as true color. Also the banner tints the terminal and omp draw. |
 | `hooks/inline.ts` | Shared module. Inline markdown in the agent's text, as spans each look draws. |

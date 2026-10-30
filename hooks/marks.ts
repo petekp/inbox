@@ -1,3 +1,5 @@
+import { CLOSED_MARKS, SUBJECT_MARKS } from './help'
+
 const STROKE = 'fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"'
 
 /**
@@ -32,4 +34,28 @@ export function cancelledMarkShape(midY: number): string {
     `<path d="M1.2,${t + 8.2} Q3.4,${t + 4.4} 7.4,${t - 0.2}" ${STROKE} stroke-width="1.9"/>` +
     `<path d="M2.2,${t + 1.4} Q3.8,${t + 4.4} 5.6,${t + 7.4}" ${STROKE} stroke-width="1.6"/>`
   )
+}
+
+/**
+ * ◌, a subject that waits on something else, as the desktop pane draws it. The system font draws ◌ with specks for
+ * dots, which nearly vanish beside ○, so this draws the ring Menlo draws: eight short dashes, as wide as the font's ○.
+ * It is centred in the 8-point box and reaches past it, as ○ does.
+ */
+export function waitingMarkShape(midY: number): string {
+  const radius = 4.85
+  const dash = (Math.PI / 4) * 0.38
+  const point = (angle: number) =>
+    `${(4 + radius * Math.cos(angle)).toFixed(2)},${(midY + radius * Math.sin(angle)).toFixed(2)}`
+
+  return Array.from({ length: 8 }, (_, n) => {
+    const from = (n * Math.PI) / 4 - dash / 2
+    return `<path d="M${point(from)} A${radius},${radius} 0 0 1 ${point(from + dash)}" ${STROKE} stroke-width="1.4"/>`
+  }).join('')
+}
+
+/** A muted mark's shape where the system font draws it badly, or null where the font's glyph serves. */
+export function mutedMarkShape(mark: string, midY: number): string | null {
+  if (mark === CLOSED_MARKS.lapsed) return cancelledMarkShape(midY)
+  if (mark === SUBJECT_MARKS['waits-on-other'].mark) return waitingMarkShape(midY)
+  return null
 }

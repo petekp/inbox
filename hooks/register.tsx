@@ -179,7 +179,6 @@ import {
   tabBadge,
   tabName,
   canUndoRefused,
-  CLOSED_MARKS,
   settledMark,
   settledTone,
   DEMO_NOTICE,
@@ -282,7 +281,7 @@ import {
 import { parseInline } from './inline'
 import type { RowRecord } from './arrivals'
 import { BANNER_GAP_PT, BANNER_PAD_Y_PT, LOOK_GAP_PT, ROW_PAD_PT } from './layout'
-import { cancelledMarkShape, markShape } from './marks'
+import { markShape } from './marks'
 import type { BannerTone } from './tones'
 import type { FoldProps } from './fold-client'
 import type { LinksProps } from './links-client'
@@ -324,8 +323,8 @@ import { lookOf, paletteFor, type Tone } from './palettes'
 import { animateRunningMarks } from './running-mark-timer'
 import {
   chevronSvg,
-  markSvg,
   MUTED_MARK,
+  mutedMarkSvg,
   RESULT_MARK_CELLS,
   RUNNING_SVG_CELLS,
   runningSvg,
@@ -3973,11 +3972,11 @@ export const register: Register = on => {
       )
     }
     const ToneSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
-    /** A desktop mark drawn as an Svg in one cell, or null outside desktop. */
-    const svgCell = (source: string, alt: string, key?: string) =>
+    /** A desktop mark drawn as an Svg `cells` wide, or null outside desktop. */
+    const svgCell = (source: string, alt: string, key?: string, cells = 1) =>
       ToneSvg ? (
-        <Box key={key} width={1} height={1} flexShrink={0}>
-          <ToneSvg source={source} alt={alt} width={DESKTOP_CELL_PT} height={DESKTOP_LINE_PT} />
+        <Box key={key} width={cells} height={1} flexShrink={0}>
+          <ToneSvg source={source} alt={alt} width={cells * DESKTOP_CELL_PT} height={DESKTOP_LINE_PT} />
         </Box>
       ) : null
     /** An Asks or Finds row's result mark in the desktop mark column, or null when it has none. */
@@ -3987,16 +3986,7 @@ export const register: Register = on => {
       return mark ? markGlyph(mark, `gutter-${row.id}`, mark.tone ? pal.mark[mark.tone] : pal.muted) : null
     }
     const runningDot = (id: string, glyph: string, color: string) =>
-      ToneSvg ? (
-        <Box key={`${id}-mark`} width={RUNNING_SVG_CELLS} height={1} flexShrink={0}>
-          <ToneSvg
-            source={runningSvg(now)}
-            alt={glyph}
-            width={RUNNING_SVG_CELLS * DESKTOP_CELL_PT}
-            height={DESKTOP_LINE_PT}
-          />
-        </Box>
-      ) : (
+      svgCell(runningSvg(now), glyph, `${id}-mark`, RUNNING_SVG_CELLS) ?? (
         <Text color={color}>{look === 'terminal' ? runningMark(now) : glyph}</Text>
       )
     const toned = (row: Row) => {
@@ -4841,15 +4831,10 @@ export const register: Register = on => {
             ]
     const markGlyph = (mark: ResultMark, key: string, color: string) => {
       if (mark.isRunning) return runningDot(key, mark.text, color)
-      if (mark.text === CLOSED_MARKS.lapsed && ToneSvg) {
-        // An Svg cannot read a theme key, so one takes the muted mark's colors.
-        const { light, dark } = color.startsWith('#') ? { light: color, dark: color } : MUTED_MARK
-        return svgCell(
-          markSvg(mark.text, cancelledMarkShape(DESKTOP_LINE_PT / 2), light, dark),
-          mark.text,
-          `${key}-mark`,
-        )
-      }
+      // An Svg cannot read a theme key, so one takes the muted mark's colors.
+      const { light, dark } = color.startsWith('#') ? { light: color, dark: color } : MUTED_MARK
+      const drawn = ToneSvg ? mutedMarkSvg(mark.text, light, dark) : null
+      if (drawn) return svgCell(drawn.source, mark.text, `${key}-mark`, drawn.cells)
       return <Text color={color}>{mark.text || ' '}</Text>
     }
     /** A result mark and the space after it, before its label. A blank mark keeps its place, so the label stays put. */
@@ -5631,10 +5616,8 @@ export const register: Register = on => {
         ...(r.id === statusKeyRow?.id ? { hotkey: k.hotkey } : {}),
         onPress: () => showAsk($, k.press.askId),
       }))
-    const statusMark = (r: Pick<StatusRow & { kind: 'subject' }, 'id' | 'mark' | 'tone' | 'isRunning'>) => {
-      const color = r.tone ? pal.mark[r.tone] : pal.muted
-      return r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
-    }
+    const statusMark = (r: Pick<StatusRow & { kind: 'subject' }, 'id' | 'mark' | 'tone' | 'isRunning'>) =>
+      markGlyph({ text: r.mark, isRunning: r.isRunning }, r.id, r.tone ? pal.mark[r.tone] : pal.muted)
     const statusRow = (r: StatusRow) => {
       if (r.kind === 'subject') {
         const keys = statusKeys(r)
@@ -5720,21 +5703,14 @@ export const register: Register = on => {
 
     /** A legend mark, drawn as rows draw it: the running mark moves, and desktop draws a shape where it has one. */
     const legendMark = (m: LegendEntry) => {
-      const color = m.tone ? pal.mark[m.tone] : pal.muted
-      if (m.isRunning) return runningDot(`legend-${m.mark}`, m.mark, color)
-      const shape =
-        m.mark === CLOSED_MARKS.lapsed
-          ? cancelledMarkShape(DESKTOP_LINE_PT / 2)
-          : m.tone
-            ? markShape(m.mark, DESKTOP_LINE_PT / 2)
-            : null
-      if (ToneSvg && shape !== null)
-        return svgCell(
-          m.tone ? toneSvg(m.tone, m.mark) : markSvg(m.mark, shape, MUTED_MARK.light, MUTED_MARK.dark),
-          m.mark,
-        )
+      if (ToneSvg && m.tone && markShape(m.mark, DESKTOP_LINE_PT / 2) !== null)
+        return svgCell(toneSvg(m.tone, m.mark), m.mark)
 
-      return <Text color={color}>{m.mark}</Text>
+      return markGlyph(
+        { text: m.mark, isRunning: m.isRunning },
+        `legend-${m.mark}`,
+        m.tone ? pal.mark[m.tone] : pal.muted,
+      )
     }
     const helpKeysSection = () =>
       section([
