@@ -12,7 +12,7 @@
 # extension, evals/omp-probe.ts, that registers the two tools as native omp tools. Run it before a release, and
 # after a change to guidanceText, a tool description or a tool answer.
 #
-# The status suite is the Status call: the replays in evals/status-replays.ts on Sonnet, the Codex model, or
+# The status suite is the Status call: the replays in evals/replays/ on Sonnet, the Codex model, or
 # both, 3 runs each by default. Fixed rules check the page after every step, and a replay fails a check that fails at
 # a step in more than one run of three. The report also says which targeted steps reproduced their failure.
 # --judge also runs the judge on Opus at each replay's checkpoints. --judge-pages <folder> runs only the judge, once

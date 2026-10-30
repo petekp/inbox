@@ -12,7 +12,8 @@ Decision 16 sets the method. The evals run at each release, and after a change t
 
 | File | What it holds |
 | --- | --- |
-| `evals/status-replays.ts` | The replays and the short case, with their facts |
+| `evals/status-replays.ts` | The list of replays the suite runs |
+| `evals/replays/` | The replays and the short case, with their facts |
 | `evals/status-replay.ts` | How a replay runs each step through the hosts' own code |
 | `evals/status-facts.ts` | The fact list, and the text of it the judge reads |
 | `evals/status-rules.ts` | The fixed rules |
