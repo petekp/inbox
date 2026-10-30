@@ -24,6 +24,27 @@ export function isUntracked(record: Session['sent'][number]): boolean {
   return record.phase === 'uncertain' && record.deliveryId === null
 }
 
+/** Adds back, as uncertain, the sent record an older build lost for a row's queued message, and marks the row unconfirmed. */
+export function withLostSendsUncertain<S extends Session>(s: S): S {
+  const lost = Object.entries(s.lastActions).flatMap(([row, action]) => {
+    const delivery = action.delivery
+    return /^[if]\d+$/.test(row) &&
+      delivery?.state === 'queued' &&
+      !s.sent.some(x =>
+        delivery.id ? x.deliveryId === delivery.id : x.text === delivery.message && x.pressedAt === action.at,
+      )
+      ? [delivery.message]
+      : []
+  })
+  const fresh = lost.filter(text => !s.sent.some(x => isUntracked(x) && x.text === text))
+
+  return {
+    ...s,
+    sent: [...s.sent, ...fresh.map(uncertainRecord)],
+    lastActions: lost.reduce((actions, text) => withUnconfirmed(actions, text), s.lastActions),
+  }
+}
+
 /**
  * The prompt rows of the mod's own messages Claude Code has stored, by text: how many rows were stored before
  * each, and the sent record each matched. A rewritten message is confirmed from these, since its row may be stored

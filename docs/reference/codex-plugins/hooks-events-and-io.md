@@ -31,6 +31,11 @@ generated schemas in GH/codex-rs/hooks/schema/generated/ (12 input schemas,
 
 Notes per event:
 
+- **PreToolUse runs before the approval.** An escalated shell command fired
+  `PreToolUse`, then `PermissionRequest`, then `PostToolUse` [live 0.163.0]
+  (`r3.hooks.jsonl` in the step-0 logs). A `PreToolUse` hook therefore cannot
+  know whether its call will run. The saved rollouts hold no declined command,
+  so how a rollout records one is unknown.
 - **SessionStart after compaction.** "After Codex compacts a root session,
   SessionStart hooks that match source: "compact" run before the next model
   request", including mid-turn. "If the hook returns `continue: false`, Codex

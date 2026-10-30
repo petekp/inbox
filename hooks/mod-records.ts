@@ -1,4 +1,5 @@
 import type { ToolResultOf } from 'claude-code'
+import type { Child } from '../types'
 import { activityGate } from './children'
 import { herdrCheckGate, herdrReporter } from './herdr'
 import { clipLabel } from './text'
@@ -14,6 +15,31 @@ export const MAX_PERSON_LINES = 200
  * call leaves when its verdict is not an ask, when it starts running and when it ends.
  */
 export const askedCalls = new Map<string, string>()
+/** The calls a PostToolUse or PostToolUseFailure hook reported, until their tool.call hook ends. */
+const ranCalls = new Set<string>()
+/** The tool sources whose calls raised either hook since the mod loaded. */
+const reportingSources = new Set<string>()
+
+/** A tool's source: an MCP tool's server, or `''` for Claude Code's own tools. */
+const sourceOf = (tool: string) => (tool.startsWith('mcp__') ? tool.split('__')[1]! : '')
+
+export function noteRanCall(id: string, tool: string) {
+  reportingSources.add(sourceOf(tool))
+  ranCalls.add(id)
+}
+
+/**
+ * Whether a call to `tool` that just ended ran, and forgets it. Claude Code raises PostToolUse or PostToolUseFailure
+ * only for a call that ran, never for one a deny rule, the person or a hook blocked. A call counts as run until a call
+ * from its source raised either. Neither fires for a tool another mod registers and answers in its own tool.call hook,
+ * or for any tool under the guard Claude Code loads on Team and Enterprise sign-ins, which skips a mod's classic hooks.
+ */
+export function endedCallRan(id: string | undefined, tool: string): boolean {
+  const isReported = id !== undefined && ranCalls.delete(id)
+
+  return isReported || !reportingSources.has(sourceOf(tool))
+}
+
 /** Each agent this session spawned inside a child: its id to the Workflow call or the agent that spawned it. */
 export const spawnedBy = new Map<string, string>()
 /** Each Workflow call's tool_use_id to the task id its child is kept under. */
@@ -72,6 +98,31 @@ export const isHerdrCheckDue = herdrCheckGate()
 /** A tool's structured result, or undefined when the call answered with text alone. */
 export function toolRecord<Name extends string>(_tool: Name, result: unknown): ToolResultOf<Name> | undefined {
   return typeof result === 'object' && result !== null ? (result as ToolResultOf<Name>) : undefined
+}
+
+/** The subagent a finished Agent call ran to its end. None for an agent that runs on in the background. */
+export function endedAgentOf(result: unknown): string | undefined {
+  const agent = toolRecord('Agent', result)
+  const isRunningOn = agent && 'status' in agent && agent.status !== 'completed'
+
+  return agent && 'agentId' in agent && !isRunningOn ? agent.agentId : undefined
+}
+
+/** The child a finished Monitor or Workflow call started: its background task, or its workflow run. */
+export function startedTaskOf(
+  tool: 'Monitor' | 'Workflow',
+  result: unknown,
+  description: string | undefined,
+): Pick<Child, 'ref' | 'kind' | 'name'> | null {
+  const workflow = tool === 'Workflow' ? toolRecord('Workflow', result) : undefined
+  const taskId = workflow?.taskId ?? (tool === 'Monitor' ? toolRecord('Monitor', result)?.taskId : undefined)
+  if (!taskId) return null
+
+  return {
+    ref: taskId,
+    kind: workflow ? 'workflow' : 'background',
+    name: workflow?.workflowName ?? description ?? tool,
+  }
 }
 
 /** The child an agent's work belongs to: the subagent itself, or the workflow or subagent that spawned it. */
