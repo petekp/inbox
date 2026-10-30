@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 /** The repo: `scripts/eval.sh` names it, since the runners run as bundles in a temporary folder. */
@@ -31,7 +31,7 @@ export type Run = {
 export class IsolationError extends Error {}
 
 /**
- * Throws for a case name the file lacks, for a selection with no cases, and for a check whose pattern is not a valid
+ * Throws for an unknown case name, for a selection with no cases, and for a check whose pattern is not a valid
  * regular expression, so a typo fails before any model call.
  */
 export function selectCases<C extends { name: string; checks: object[] }>(all: C[], names: string | undefined): C[] {
@@ -52,6 +52,25 @@ export function selectCases<C extends { name: string; checks: object[] }>(all: C
         }
 
   return chosen
+}
+
+/**
+ * The cases in every JSON file of `folder`, each a list of cases or one case, and the files' text for the results file
+ * to hash. Files are read in name order, so a folder always gives the same cases in the same order, and the same hash.
+ */
+export function readCases<C>(folder: string): { cases: C[]; text: string } {
+  const texts = readdirSync(folder)
+    .filter(name => name.endsWith('.json'))
+    .toSorted()
+    .map(name => readFileSync(join(folder, name), 'utf8'))
+
+  return {
+    cases: texts.flatMap(text => {
+      const data = JSON.parse(text)
+      return Array.isArray(data) ? data : [data]
+    }),
+    text: texts.join(''),
+  }
 }
 
 export function runCount(value: string): number {

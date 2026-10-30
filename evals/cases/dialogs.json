@@ -1,0 +1,284 @@
+[
+  {
+    "name": "dialog-answer-closes-open-item",
+    "about": "A dialog that asks what an open question asks, once answered, closes that question.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 5,
+      "card": {
+        "goal": "Fix the parser",
+        "done": [],
+        "now": "Waiting on whether to push",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i4",
+          "kind": "question",
+          "label": null,
+          "ask": "Should I push the fix to origin now?",
+          "options": ["Push now", "Wait"],
+          "rec": null,
+          "helps": [],
+          "turn": 4,
+          "at": 4
+        }
+      ]
+    },
+    "exchange": {
+      "person": "fix the failing parser test",
+      "activity": [
+        "edited src/parser.ts",
+        "asked the user in a dialog: \"Push the fix now?\" (options: Push now (recommended) / Wait); answer: User has answered your questions: \"Push the fix now?\"=\"Push now\". You can now continue with the user's answers in mind.",
+        "ran: git push origin parser-fix"
+      ],
+      "reply": "Pushed the fix to origin and opened PR #52. CI is running."
+    },
+    "checks": [
+      {
+        "closed": "i4"
+      },
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
+    "name": "dialog-answer-matches-nothing",
+    "about": "An answered dialog about something else leaves an unrelated open question open.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 5,
+      "card": {
+        "goal": "Move the export to the new module",
+        "done": [],
+        "now": "Waiting on the CSV endpoint",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i4",
+          "kind": "question",
+          "label": null,
+          "ask": "Should the old CSV endpoint return 410 Gone, or redirect to the new export?",
+          "options": ["410 Gone", "Redirect"],
+          "rec": null,
+          "helps": [],
+          "turn": 4,
+          "at": 4
+        }
+      ]
+    },
+    "exchange": {
+      "person": "add tests for the new export",
+      "activity": [
+        "edited src/export.ts",
+        "asked the user in a dialog: \"Which test runner should the new tests use?\" (options: Vitest (recommended) / Node test); answer: User has answered your questions: \"Which test runner should the new tests use?\"=\"Vitest\". You can now continue with the user's answers in mind."
+      ],
+      "reply": "Added six tests for the new export with Vitest. They all pass."
+    },
+    "checks": [
+      {
+        "open": "i4"
+      },
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
+    "name": "dialog-dismissed-question-waits",
+    "about": "A dialog the person dismissed, with a reply that waits for their call, is still a question for them.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 5,
+      "card": {
+        "goal": "Fix the parser",
+        "done": [],
+        "now": "Fix committed locally",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "fix the failing parser test",
+      "activity": [
+        "edited src/parser.ts",
+        "ran: git commit -am \"Fix parser\"",
+        "asked the user in a dialog: \"Push the fix now?\" (options: Push now (recommended) / Wait); the user dismissed it without answering"
+      ],
+      "reply": "The fix is committed locally on parser-fix. I'll leave it unpushed until you tell me what you want."
+    },
+    "checks": [
+      {
+        "new": "push",
+        "kind": "question"
+      }
+    ]
+  },
+  {
+    "name": "dialog-dismissed-layout-is-design-choice",
+    "about": "A dismissed dialog whose options are two layouts the agent could try becomes a question marked as a design choice.",
+    "ledger": {
+      "turn": 3,
+      "nextId": 3,
+      "card": {
+        "goal": "Add a settings page",
+        "done": [],
+        "now": "Reading the settings code",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "add a settings page with the five sections",
+      "activity": [
+        "read src/settings/index.ts",
+        "asked the user in a dialog: \"Lay out the settings page as one scrolling page or a tab per section?\" (options: One scrolling page / A tab per section (recommended)); the user dismissed it without answering"
+      ],
+      "reply": "I haven't built the settings page yet. I'd go with a tab per section, since two sections are long. Tell me which layout you want and I'll build it."
+    },
+    "checks": [
+      {
+        "new": "layout|scroll|tab",
+        "kind": "question",
+        "design": true
+      }
+    ]
+  },
+  {
+    "name": "fact-question-is-not-design-choice",
+    "about": "A question about a fact only the person knows is not marked as a design choice.",
+    "ledger": {
+      "turn": 3,
+      "nextId": 3,
+      "card": {
+        "goal": "Deploy the API to staging",
+        "done": [],
+        "now": "Reading the deploy script",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "deploy the api to staging",
+      "activity": ["read scripts/deploy.sh"],
+      "reply": "The deploy script needs the AWS region of the staging account, and nothing in the repo says which one it is. Is it us-east-1 or eu-west-1? I'll run the deploy once you tell me."
+    },
+    "checks": [
+      {
+        "new": "region",
+        "kind": "question",
+        "design": false
+      }
+    ]
+  },
+  {
+    "name": "dialog-escaped-no-reply",
+    "about": "A dialog the person dismissed with Escape, which ends the turn with no reply, is still a question for them.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 5,
+      "card": {
+        "goal": "Fix the parser",
+        "done": [],
+        "now": "Fix committed locally",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "fix the failing parser test",
+      "activity": [
+        "edited src/parser.ts",
+        "ran: git commit -am \"Fix parser\"",
+        "asked the user in a dialog: \"Push the fix now?\" (options: Push now (recommended) / Wait); the user dismissed it without answering"
+      ],
+      "reply": ""
+    },
+    "checks": [
+      {
+        "new": "push",
+        "kind": "question"
+      }
+    ]
+  },
+  {
+    "name": "dialog-about-finding-escaped",
+    "about": "A dialog about a finding that the person dismissed with Escape, which ends the turn with no reply, is still a question for them.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 10,
+      "card": {
+        "goal": "Add a greeting CLI",
+        "done": ["--name option added"],
+        "now": "Tests pass",
+        "running": []
+      },
+      "items": [],
+      "findings": [
+        {
+          "id": "f4",
+          "kind": "issue",
+          "title": "average() reads past the end of the array",
+          "detail": "The loop in util.js runs to i <= nums.length, so the sum is NaN.",
+          "path": "util.js",
+          "at": 1
+        },
+        {
+          "id": "f5",
+          "kind": "issue",
+          "title": "README lists a removed flag",
+          "detail": "The README still documents --loud.",
+          "path": "README.md",
+          "at": 1
+        }
+      ]
+    },
+    "exchange": {
+      "person": "go on",
+      "activity": [
+        "asked the user in a dialog: \"Fix the average bug in util.js now?\" (options: Fix it now (recommended) / Leave it); the user dismissed it without answering"
+      ],
+      "reply": ""
+    },
+    "checks": [
+      {
+        "open": "f5"
+      },
+      {
+        "new": "average",
+        "kind": "question"
+      }
+    ]
+  },
+  {
+    "name": "codex-open-dialog-is-question",
+    "about": "A dialog still open at the end of the turn is a question waiting on the person.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 5,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": [],
+        "now": "Profiled the slow endpoints",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "speed up the product API",
+      "activity": [
+        "ran: node profile.js",
+        "asked the user in a dialog: \"Which cache should the product API use?\" (options: Redis (recommended) / In-memory); still open, waiting on the user's answer"
+      ],
+      "reply": "I profiled the slow endpoints. Almost all the time is in three queries, so a cache will help. I have put the cache choice to you in a dialog."
+    },
+    "checks": [
+      {
+        "new": "cache",
+        "kind": "question"
+      }
+    ]
+  }
+]

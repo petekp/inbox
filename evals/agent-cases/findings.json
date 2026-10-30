@@ -1,0 +1,136 @@
+[
+  {
+    "name": "no-finding-own-change",
+    "about": "A problem left by the agent's own change is fixed or reported in the reply, not recorded as a finding.",
+    "files": {
+      "src/cli.ts": "export const flags = {\n  quick: { name: '--quick', describe: 'Skip the slow checks' },\n}\n",
+      "src/help.ts": "export const usage = 'Usage: tool [--fast] <file>'\n"
+    },
+    "prompt": "Task: rename the --fast flag to --quick in src/cli.ts. You did that. While checking your work you saw that src/help.ts still prints \"--fast\" in the usage text, which your rename left stale. You have not touched help.ts yet. Write your closing reply to me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "help\\.ts"
+      }
+    ]
+  },
+  {
+    "name": "no-finding-own-check",
+    "about": "A check the agent could run itself is run, or reported as not run, not recorded as a finding.",
+    "files": {
+      "package.json": "{\n  \"name\": \"net\",\n  \"private\": true,\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n",
+      "src/net.ts": "export const RETRY_DELAY_MS = 250\n",
+      "test/net.test.mjs": "import { readFileSync } from 'node:fs'\nimport { test } from 'node:test'\nimport assert from 'node:assert'\n\ntest('retry delay is set', () => {\n  assert.match(readFileSync(new URL('../src/net.ts', import.meta.url), 'utf8'), /RETRY_DELAY_MS = \\d+/)\n})\n"
+    },
+    "prompt": "Task: raise the retry delay in src/net.ts from 100 ms to 250 ms. You made that change. The repo's unit tests (npm test) are quick and you are allowed to run them, but you have not run them yet. Write your closing reply to me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "(ran|pass(es|ed)?|not run|n.t run|haven.t|hasn.t)[\\s\\S]*test|test[\\s\\S]*(ran|pass(es|ed)?|not run|n.t run|haven.t|hasn.t)"
+      }
+    ]
+  },
+  {
+    "name": "no-finding-progress",
+    "about": "Progress and a dropped approach are said in the reply, not recorded.",
+    "prompt": "Task: speed up the product list endpoint. You first tried caching results in a module-level Map, saw it served one customer's data to another, and dropped it. You then added per-request memoization, which works and cut the response time from 900 ms to 300 ms. Write your closing reply to me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "memoiz"
+      },
+      {
+        "reply": "300 ?ms"
+      }
+    ]
+  },
+  {
+    "name": "no-finding-user-only",
+    "about": "A step only the user can take is a question or task, never a finding.",
+    "prompt": "Task: run the production database migration 0042_add_index. Only I can approve a production migration, and nothing has been run yet. Ask me for the approval now.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "calls": "record",
+        "kind": "question|task",
+        "min": 1
+      },
+      {
+        "reply": "0042"
+      },
+      {
+        "reply": "approv"
+      },
+      {
+        "reply": "\\?"
+      }
+    ]
+  },
+  {
+    "name": "finding-out-of-scope-bug",
+    "about": "A real bug in code outside the task is recorded as a finding once.",
+    "prompt": "Task: add a --json flag to the report command in src/report.ts. You did that and it works. While reading src/dates.ts you checked and confirmed a separate bug: parseDate builds new Date(year, month, day) from a 1-based month, so every December date comes out as January of the next year. It is not part of your task and you did not change it. Write your closing reply to me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 1,
+        "has": ["title", "detail"]
+      },
+      {
+        "reply": "parseDate|dates\\.ts|December"
+      }
+    ]
+  },
+  {
+    "name": "finding-workaround",
+    "about": "Working around a problem instead of fixing it is recorded as a finding.",
+    "prompt": "Task: ship the new icons. The build script's glob (src/assets/*.svg) skips the subfolders, so dist/ was missing 14 icons. You could not change the build script in this task, so you copied those 14 files into dist/icons by hand with cp and moved on. Write your closing reply to me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "finding",
+        "min": 1,
+        "max": 2,
+        "match": {
+          "title": "glob|build|copy|icon|asset"
+        }
+      },
+      {
+        "reply": "cp|copied|by hand"
+      }
+    ]
+  },
+  {
+    "name": "finding-cannot-verify",
+    "about": "Part of the change that cannot be checked from where the agent is gets recorded, as a finding or as a task for the user.",
+    "prompt": "Task: fix push notification registration in ios/AppDelegate.swift. You made the change and the app builds. Push delivery only works on a physical iPhone with the production APNs certificate, and you have no device or certificate here, so you could not check that notifications arrive. Write your closing reply to me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "finding|task",
+        "min": 1,
+        "max": 2
+      },
+      {
+        "reply": "device|iphone|certificate|apns"
+      }
+    ]
+  }
+]

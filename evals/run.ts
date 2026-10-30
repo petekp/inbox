@@ -18,6 +18,7 @@ import {
   finish,
   provenance,
   readBaselines,
+  readCases,
   report,
   resultsPath,
   runCount,
@@ -70,7 +71,7 @@ const { values } = parseArgs({
     out: { type: 'string' },
     'set-baseline': { type: 'boolean', default: false },
     with: { type: 'string' },
-    cases: { type: 'string', default: 'evals/cases.json' },
+    cases: { type: 'string', default: 'evals/cases' },
   },
 })
 const AGENTS: Record<string, Agent[]> = { both: ['claude', 'codex'], claude: ['claude'], codex: ['codex'] }
@@ -78,14 +79,15 @@ const selected = AGENTS[values.agent]
 if (!selected) throw new Error(`Unknown --agent ${values.agent}. Use claude, codex or both.`)
 const agents: Agent[] = selected
 const runs = runCount(values.runs)
-const cases: Case[] = selectCases(JSON.parse(readFileSync(values.cases, 'utf8')), values.case)
+const caseFiles = readCases<Case>(values.cases)
+const cases: Case[] = selectCases(caseFiles.cases, values.case)
 const about = provenance(
   'model',
   { claude: 'claude', codex: codexCli },
   {
     'systemText claude': systemText(CLAUDE_CODE),
     'systemText codex': systemText(CODEX),
-    cases: readFileSync(values.cases, 'utf8'),
+    cases: caseFiles.text,
     models: JSON.stringify({ claude: CLAUDE_MODEL, codex: MODEL }),
     runner: readFileSync(process.argv[1]!, 'utf8'),
   },

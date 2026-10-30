@@ -56,7 +56,7 @@ that updates the inbox after each reply, reads two.
 - Nothing is sent back to Claude at the end of a turn. The inbox model keeps
   adding the asks Claude did not record. An item Claude
   recorded is in `<open>`, so the model does not add the reply's same ask
-  again. `evals/cases.json` has cases for it.
+  again. `evals/cases/agent-recorded.json` has cases for it.
 - Every way a finding leaves goes to Closed with its outcome. The code
   refuses a finding that restates one the person dismissed, and `record` answers
   why. A finding that expired or that Claude closed as fixed can be recorded

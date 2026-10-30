@@ -1,0 +1,316 @@
+[
+  {
+    "name": "credentials-command-is-terminal",
+    "about": "A command needing the person's credentials is theirs to run.",
+    "ledger": {
+      "turn": 3,
+      "nextId": 3,
+      "card": {
+        "goal": "Ship last_seen_at",
+        "done": ["Migration written"],
+        "now": "Waiting on production run",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "what's left?",
+      "turn": 3,
+      "activity": ["ran: ./scripts/migrate --env staging"],
+      "reply": "The migration ran on staging in 4 seconds. Production is the last step, and only you hold the production credentials, so it has to be you:\n\n```\n./scripts/migrate --env production\n```\n\nAfter it finishes, set LAST_SEEN_ENABLED=true in the hosting dashboard."
+    },
+    "checks": [
+      {
+        "new": "migrat|production",
+        "help": "terminal"
+      }
+    ]
+  },
+  {
+    "name": "device-command-is-terminal",
+    "about": "A command on the person's device is theirs to run.",
+    "ledger": {
+      "turn": 3,
+      "nextId": 3,
+      "card": {
+        "goal": "Ship last_seen_at",
+        "done": ["Migration written"],
+        "now": "Waiting on production run",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "can we check it on a phone?",
+      "turn": 3,
+      "activity": [],
+      "reply": "The simulator run passes. To check it on your iPhone, which is plugged into your Mac, not mine, run this and then tap through the cancel flow:\n\n```\nnpm run ios -- --device\n```"
+    },
+    "checks": [
+      {
+        "new": "phone|iphone|device",
+        "help": "terminal"
+      }
+    ]
+  },
+  {
+    "name": "agent-runnable-command-not-terminal",
+    "about": "A command the agent could run is not marked as the person's.",
+    "ledger": {
+      "turn": 3,
+      "nextId": 3,
+      "card": {
+        "goal": "Ship last_seen_at",
+        "done": ["Migration written"],
+        "now": "Waiting on production run",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "what do you need from me?",
+      "turn": 3,
+      "activity": ["edited scripts/load.sh"],
+      "reply": "The load script is ready. It reads the CSV export and fills the local database. Run `./scripts/load.sh` when you want the data loaded; it takes about a minute."
+    },
+    "checks": [
+      {
+        "noHelp": "terminal"
+      }
+    ]
+  },
+  {
+    "name": "approval-not-terminal",
+    "about": "An approval the agent then acts on is not a command for the person.",
+    "ledger": {
+      "turn": 3,
+      "nextId": 3,
+      "card": {
+        "goal": "Ship last_seen_at",
+        "done": ["Migration written"],
+        "now": "Waiting on production run",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "ok, staging next?",
+      "turn": 3,
+      "activity": [],
+      "reply": "Staging is ready for the deploy. Once you approve, I'll run `./deploy.sh staging` and watch the health checks. Approve the staging deploy?"
+    },
+    "checks": [
+      {
+        "noHelp": "terminal"
+      }
+    ]
+  },
+  {
+    "name": "finished-task-closes",
+    "about": "A task the person finished closes.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 10,
+      "card": {
+        "goal": "Ship the reports export",
+        "done": ["Export streams rows"],
+        "now": "Finishing the export",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i8",
+          "kind": "task",
+          "label": null,
+          "ask": "Sign in to npm so the agent can publish",
+          "options": [],
+          "rec": null,
+          "helps": [],
+          "turn": 5,
+          "at": 1
+        }
+      ],
+      "findings": [],
+      "closed": [],
+      "batchTurn": 5
+    },
+    "exchange": {
+      "person": "done, I'm signed in",
+      "reply": "Published reports-export 1.4.0 to npm.",
+      "activity": ["$ npm publish → + reports-export@1.4.0"]
+    },
+    "checks": [
+      {
+        "closed": "i8"
+      }
+    ]
+  },
+  {
+    "name": "done-message-blocked-task",
+    "about": "A Done message for a task the agent waited on adds nothing and keeps the open question.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 10,
+      "card": {
+        "goal": "Ship the reports export",
+        "done": ["Export streams rows"],
+        "now": "Waiting on sign in to npm so the agent can publish",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i9",
+          "kind": "question",
+          "label": null,
+          "ask": "Should the nightly import job email failures to you or post them in #ops?",
+          "options": ["Email me", "Post in #ops"],
+          "rec": "Post in #ops",
+          "helps": [],
+          "turn": 5,
+          "at": 1
+        }
+      ],
+      "findings": [],
+      "closed": [
+        {
+          "id": "i8",
+          "kind": "task",
+          "ask": "Sign in to npm so the agent can publish",
+          "outcome": "done",
+          "how": "done",
+          "at": 2
+        }
+      ],
+      "batchTurn": 5
+    },
+    "exchange": {
+      "person": "Done: Sign in to npm so the agent can publish",
+      "turn": 6,
+      "press": {
+        "id": "i8",
+        "action": "done"
+      },
+      "reply": "Published reports-export 1.4.0 to npm.",
+      "activity": ["$ npm publish → + reports-export@1.4.0"]
+    },
+    "checks": [
+      {
+        "open": "i9"
+      },
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
+    "name": "done-message-independent-task",
+    "about": "A Done message for a task that blocked nothing adds nothing and keeps the open question.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 10,
+      "card": {
+        "goal": "Ship the reports export",
+        "done": ["Export streams rows"],
+        "now": "Waiting on check the export page in the light theme",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i9",
+          "kind": "question",
+          "label": null,
+          "ask": "Should the nightly import job email failures to you or post them in #ops?",
+          "options": ["Email me", "Post in #ops"],
+          "rec": "Post in #ops",
+          "helps": [],
+          "turn": 5,
+          "at": 1
+        }
+      ],
+      "findings": [],
+      "closed": [
+        {
+          "id": "i8",
+          "kind": "task",
+          "ask": "Check the export page in the light theme",
+          "outcome": "done",
+          "how": "done",
+          "at": 2
+        }
+      ],
+      "batchTurn": 5
+    },
+    "exchange": {
+      "person": "Done: Check the export page in the light theme",
+      "turn": 6,
+      "press": {
+        "id": "i8",
+        "action": "done"
+      },
+      "reply": "Thanks for checking the light theme.",
+      "activity": []
+    },
+    "checks": [
+      {
+        "open": "i9"
+      },
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
+    "name": "reload-step-is-task",
+    "about": "A step only the person can take in their own session becomes a task.",
+    "ledger": {
+      "turn": 3,
+      "nextId": 3,
+      "card": {
+        "goal": "Add the lint skill",
+        "done": [],
+        "now": "Skill installed",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "add the lint skill to my setup",
+      "turn": 3,
+      "activity": ["edited /Users/me/.claude/skills/lint/SKILL.md"],
+      "reply": "Added the lint skill at ~/.claude/skills/lint/SKILL.md. It runs the repo's linter and fixes what it can.\n\nRun `/reload-plugins` in this session to pick it up."
+    },
+    "checks": [
+      {
+        "new": "reload",
+        "kind": "task"
+      }
+    ]
+  },
+  {
+    "name": "browser-agent-cannot-drive-is-task",
+    "about": "A check in a browser the agent says it cannot drive stays a task.",
+    "ledger": {
+      "turn": 17,
+      "nextId": 7,
+      "card": {
+        "goal": "Fix the home page crash",
+        "done": ["Found the crash trigger"],
+        "now": "Deploying the fix",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "ok ship the fix",
+      "turn": 17,
+      "activity": ["ran: npm run deploy", "ran: agent-browser open https://example.dev"],
+      "reply": "The fix is live. I loaded every page five times in Chrome and none crashed.\n\nI can't drive Dia from here. Please reload the site in Dia a few times and tell me if it crashes."
+    },
+    "checks": [
+      {
+        "new": "dia",
+        "kind": "task"
+      }
+    ]
+  }
+]
