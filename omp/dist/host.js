@@ -4262,8 +4262,10 @@ function prOrderView(order, drawn, presses, shownSince) {
     return null;
   const count = changedRankedPrs(order, openPrViews(drawn)).length;
   const row = lastPressOf(presses, RANK_AGAIN_ID);
-  const isPressShownHere = row.last !== undefined && (row.pressing !== null || isShownSince(row.last.at, shownSince));
-  const showsPress = isPressShownHere || row.last !== undefined && row.last.at >= order.at;
+  const last = row.last;
+  const isPressShownHere = last !== undefined && (row.pressing !== null || isShownSince(last.at, shownSince));
+  const isForThisOrder = last !== undefined && last.at >= order.at;
+  const showsPress = row.pressing !== null || isForThisOrder || isPressShownHere && count === 0;
   const isChangedShown = count > 0 || isPressShownHere;
   return {
     title,
@@ -6761,8 +6763,13 @@ function drawLine(line, isSelected, d) {
     const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
     const cells = line.buttons.map((b, i) => buttonCell(b, isSelected && i === focusOf2(line, ui), s));
     const title = line.title ? `${line.title}  ` : "";
+    const head = ` ${cursor} `;
+    const buttons = `${head}${title}${cells.join("")}`;
     const status = line.feedback ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
-    return [fit(` ${cursor} ${title}${cells.join("")}${status}`, width)];
+    if (!status)
+      return [fit(buttons, width)];
+    const together = `${buttons}${status}`;
+    return visibleLength(together) <= width ? [together] : [fit(buttons, width), fit(`${" ".repeat(visibleLength(head))}${status}`, width)];
   }
   const pad = line.depth * 2;
   const out = [];

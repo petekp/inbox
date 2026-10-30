@@ -1760,8 +1760,10 @@ function prOrderView(order, drawn, presses, shownSince) {
   if (!order || title === null) return null;
   const count = changedRankedPrs(order, openPrViews(drawn)).length;
   const row = lastPressOf(presses, RANK_AGAIN_ID);
-  const isPressShownHere = row.last !== void 0 && (row.pressing !== null || isShownSince(row.last.at, shownSince));
-  const showsPress = isPressShownHere || row.last !== void 0 && row.last.at >= order.at;
+  const last = row.last;
+  const isPressShownHere = last !== void 0 && (row.pressing !== null || isShownSince(last.at, shownSince));
+  const isForThisOrder = last !== void 0 && last.at >= order.at;
+  const showsPress = row.pressing !== null || isForThisOrder || isPressShownHere && count === 0;
   const isChangedShown = count > 0 || isPressShownHere;
   return {
     title,

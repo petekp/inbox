@@ -568,8 +568,8 @@ export type PrOrderView = {
   /**
    * The changed line, while a ranked open PR changed or Rank again's press shows. `text` is "2 PRs changed since", or
    * null once none has. `actions` holds Rank again while one has. The line stays while the press is out or was made
-   * since the tab was shown. `showsPress` says whether it draws the press's status: then, or when the press came after
-   * the order was set.
+   * since the tab was shown. `showsPress` says whether it draws the press's status: while the press is out, when it
+   * came after the order was set, or, once the agent's new order replaced that one, until a ranked PR changes again.
    */
   changed: { text: string | null; actions: PrAction[]; showsPress: boolean } | null
 }
@@ -584,8 +584,10 @@ export function prOrderView(
   if (!order || title === null) return null
   const count = changedRankedPrs(order, openPrViews(drawn)).length
   const row = lastPressOf(presses, RANK_AGAIN_ID)
-  const isPressShownHere = row.last !== undefined && (row.pressing !== null || isShownSince(row.last.at, shownSince))
-  const showsPress = isPressShownHere || (row.last !== undefined && row.last.at >= order.at)
+  const last = row.last
+  const isPressShownHere = last !== undefined && (row.pressing !== null || isShownSince(last.at, shownSince))
+  const isForThisOrder = last !== undefined && last.at >= order.at
+  const showsPress = row.pressing !== null || isForThisOrder || (isPressShownHere && count === 0)
   const isChangedShown = count > 0 || isPressShownHere
 
   return {

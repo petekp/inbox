@@ -522,6 +522,10 @@ test('a ranked PR that changed since the order draws the changed line with Rank 
     },
   )
   expect(text(pressed, ui)).toMatch(/1 PR changed since\s+g Rank again\s+Ranking…/)
+  const narrow = text(pressed, ui, 40).split('\n')
+  const at = narrow.findIndex(l => l.includes('1 PR changed since'))
+  expect(narrow[at]).toContain('g Rank again')
+  expect(narrow[at + 1]?.trim()).toBe('Ranking…')
   expect(helpKeys('omp', false, 'prs', false).map(k => k.keys)).toContain('g')
 })
 

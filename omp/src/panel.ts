@@ -265,8 +265,8 @@ type Line = {
   /** A handed-off row, drawn as its one line until the person opens it. */
   isFolded: boolean
   /**
-   * The PRs tab's own buttons, drawn on one line after the line's title, if any, with their press status after them.
-   * Their keys work from any row of the tab.
+   * The PRs tab's own buttons, drawn on one line after the line's title, if any, with their press status after them,
+   * or under them when it does not fit. Their keys work from any row of the tab.
    */
   isTabButtons: boolean
 }
@@ -1165,9 +1165,15 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
     const cursor = isSelected ? s.tone('accent', '❯') : ' '
     const cells = line.buttons.map((b, i) => buttonCell(b, isSelected && i === focusOf(line, ui), s))
     const title = line.title ? `${line.title}  ` : ''
+    const head = ` ${cursor} `
+    const buttons = `${head}${title}${cells.join('')}`
     const status = line.feedback ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : ''
+    if (!status) return [fit(buttons, width)]
+    const together = `${buttons}${status}`
 
-    return [fit(` ${cursor} ${title}${cells.join('')}${status}`, width)]
+    return visibleLength(together) <= width
+      ? [together]
+      : [fit(buttons, width), fit(`${' '.repeat(visibleLength(head))}${status}`, width)]
   }
   const pad = line.depth * 2
   const out: string[] = []

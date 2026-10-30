@@ -918,6 +918,9 @@ test('an order reads as changed once a ranked open PR is newly blocked, gains a 
   }
   expect(view(ranked, at + 30_000)?.changed).toEqual({ text: null, actions: [], showsPress: true })
   expect(view(ranked, at + 80_000)?.changed).toBeNull()
+  const failingThree: PrView = { ...openPr(3), checks: [{ name: 'lint', bucket: 'fail', url: null }] }
+  const changedAgain = withFetchedPrs(ranked, { 'acme/app#3': failingThree }, null, false)
+  expect(view(changedAgain, at + 30_000)?.changed).toMatchObject({ text: '1 PR changed since', showsPress: false })
   expect(
     applyPrPress(
       ranked.ledger,
