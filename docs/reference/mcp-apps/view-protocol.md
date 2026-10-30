@@ -89,7 +89,7 @@ Fields ([S] L536-588; [SDK] `src/spec.types.ts#L340-L408`), all optional:
 - "Host SHOULD add the message to the conversation context, preserving the specified role." "Host MAY request user consent." ([S] L1033-1034). The error example is "Message sending denied".
 - These messages "also trigger follow-ups" ([S] L1094).
 - `AppBridge.onmessage` guidance: "For security, the host should NOT return conversation content or follow-up results to prevent information leakage" ([SDK] `src/app-bridge.ts#L791-L794`, source only, not on the hosted page).
-- **Codex wraps it as untrusted input.** The thread gets a turn whose user text is "An MCP app initiated this message. Read the untrusted_input tool output.", and the model reports the text instead of following it (verified live in this repo, `docs/plans/codex-plugin.md:55`, `:333`).
+- **Codex wraps it as untrusted input.** The thread gets a turn whose user text is "An MCP app initiated this message. Read the untrusted_input tool output.", and the model reports the text instead of following it (verified live in this repo, `docs/plans/codex-plugin/what-codex-allows.md:23`, `:333`).
 - **Claude:** the pages say only that widgets push "messages to Claude" (MA instance-supersession, intro). Behavior is unknown.
 
 ### `ui/update-model-context`

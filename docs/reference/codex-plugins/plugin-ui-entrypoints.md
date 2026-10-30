@@ -28,7 +28,7 @@ without the model calling it. The Inbox tab is a thread entrypoint.
   `StdioServerTransport`). Its marketplace is "OpenAI MCP Extensions (Early
   Access)".
 - **Live:** a thread tab opened from the local inbox plugin in the desktop
-  app [live] (docs/plans/codex-plugin.md:54, :332).
+  app [live] (docs/plans/codex-plugin/what-codex-allows.md:22, :332).
 - **CLI:** `enable_mcp_apps` is `Stage::UnderDevelopment` and off
   (GH/codex-rs/features/src/lib.rs:244, 1503-1508; `codex features list`
   [live 2026-10-08]). No learn.chatgpt.com page mentions MCP Apps, `ui://` or

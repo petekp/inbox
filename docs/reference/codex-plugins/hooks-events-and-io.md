@@ -42,7 +42,7 @@ Notes per event:
   The docs list four. The hooks page warns that "main branch schemas may
   include hook fields that are not in the current release".
 - **SessionStart resume.** It fires again on resume, and earlier guidance is
-  still in the conversation [live] (docs/plans/codex-plugin.md:395).
+  still in the conversation [live] (docs/plans/codex-plugin/step-0-and-results.md:128).
 - **SessionEnd.** "runs for the main thread when you archive or delete a
   conversation that's still open, when Codex closes normally, or after a
   conversation has been idle and isn't open in any connected client for 30
@@ -83,7 +83,7 @@ Notes per event:
   `PreToolUse` again". (L/hooks#tool-coverage)
 - Code mode: PreToolUse can block or rewrite a call made from JavaScript. A
   blocking PostToolUse rejects the promise. (L/hooks#tool-calls-from-code-mode)
-- **Live shapes** [live] (docs/plans/codex-plugin.md:325-327):
+- **Live shapes** [live] (docs/plans/codex-plugin/step-0-and-results.md:58-60):
   - Shell: `tool_name` is `Bash`, `tool_input.command` is the command,
     `tool_response` is the output text only, with no exit code.
   - Patch: `apply_patch` fires Pre and PostToolUse. `tool_input.command` is
@@ -92,7 +92,7 @@ Notes per event:
   - MCP tools appear as `mcp__<server>__<tool>`, so PreToolUse sees them.
 - **A long command got no PostToolUse.** A 20-second command in the desktop
   app got none, because code mode returns after about 1 second [live]
-  (docs/plans/codex-plugin.md:373-378). The exit code is in the transcript
+  (docs/plans/codex-plugin/step-0-and-results.md:106-111). The exit code is in the transcript
   instead (see "Transcripts").
 - **The repo's matcher** is `Bash|apply_patch|mcp__.*` on PreToolUse
   (the `PreToolUse` block of codex/plugin/hooks/hooks.json).
@@ -144,7 +144,7 @@ Notes per event:
   your reason". `continue: false` from any Stop hook wins. (L/hooks#stop) The
   stop output schema has only `continue`, `decision`, `reason`, `stopReason`,
   `suppressOutput`, `systemMessage` [source].
-- **Live** [live] (docs/plans/codex-plugin.md:391-396): SessionStart and
+- **Live** [live] (docs/plans/codex-plugin/step-0-and-results.md:124-129): SessionStart and
   UserPromptSubmit `additionalContext` reached the model as a developer
   message; PreToolUse `deny` stopped the command; Stop `{decision: "block",
   reason}` continued the turn and the next Stop had `stop_hook_active: true`.

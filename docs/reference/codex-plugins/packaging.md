@@ -181,6 +181,6 @@ upload doesn't mean the listing is ready to submit."
 - **The plugin-file placement works but is undocumented.**
   `default_tools_approval_mode: "approve"` in `.mcp.json` let `record`
   run without approval; without it, Codex refused the call [live]
-  (docs/plans/codex-plugin.md:399). No page documents the key inside a
+  (docs/plans/codex-plugin/step-0-and-results.md:132). No page documents the key inside a
   plugin's `.mcp.json`. Whether per-tool `approval_mode` works there is
   [unknown].

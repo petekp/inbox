@@ -40,7 +40,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   `containerDimensions`, `locale`, `timeZone`, `userAgent`, `platform`
   (`web | desktop | mobile`), `deviceCapabilities`, `safeAreaInsets`. No
   thread or session id. (APPSPEC:L531-620) Live, the Codex host context had
-  no thread id [live] (docs/plans/codex-plugin.md:332).
+  no thread id [live] (docs/plans/codex-plugin/step-0-and-results.md:65).
 - **Host capabilities** in the stable spec: `experimental`, `openLinks`,
   `serverTools`, `serverResources`, `logging`, `sandbox.{permissions, csp}`
   (APPSPEC:L627-666). SPEC shows ChatGPT also sending `message` (L1134),
@@ -99,7 +99,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   MCP app initiated this message. Read the untrusted_input tool output." The
   tab's text sat in an `untrusted_input` tool output with `source:
   "mcp_app"`. Asked for "OK", the model answered "The MCP app sent: …" [live]
-  (docs/plans/codex-plugin.md:333). No doc describes this wrapping.
+  (docs/plans/codex-plugin/step-0-and-results.md:66). No doc describes this wrapping.
 - `target: "new"` opens a new conversation (SPEC:L1175-1185), so it cannot
   route to a known session.
 

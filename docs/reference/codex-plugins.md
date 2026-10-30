@@ -39,11 +39,11 @@ citation prefixes are defined in "How to read the citations".
 1. A plugin with hooks cannot be listed in the public directory, so the inbox ships through a Git or local marketplace (D/build/plugins#bundled-mcp-servers-and-lifecycle-hooks).
 2. Hooks run only after the person trusts each hook. Since 0.164.0 the trust also covers every file in the plugin, so any update re-asks, and until then the hooks fail (L/hooks#review-and-trust-hooks; [live 0.164.0]).
 3. `Stop` cannot add context for the model; only `SessionStart`, `UserPromptSubmit`, `SubagentStart`, `PreToolUse` and `PostToolUse` can (GH/codex-rs/hooks/schema/generated/).
-4. No public doc says Codex renders plugin UI; the Inbox tab rests on the early-access openai/mcp-extensions repo and this repo's live check (docs/plans/codex-plugin.md:332).
-5. Nothing pushes updates to a thread tab, so the tab must poll a tool [live] (docs/plans/codex-plugin.md:332; APPSPEC:L489-508).
-6. A tab's `ui/message` arrives as untrusted input, so presses go through `codex queue` and the undocumented, `#[experimental]` `thread/queue/add` [live] (docs/plans/codex-plugin.md:333; GH/codex-rs/app-server-protocol/src/protocol/common.rs:630-664).
+4. No public doc says Codex renders plugin UI; the Inbox tab rests on the early-access openai/mcp-extensions repo and this repo's live check (docs/plans/codex-plugin/step-0-and-results.md:65).
+5. Nothing pushes updates to a thread tab, so the tab must poll a tool [live] (docs/plans/codex-plugin/step-0-and-results.md:65; APPSPEC:L489-508).
+6. A tab's `ui/message` arrives as untrusted input, so presses go through `codex queue` and the undocumented, `#[experimental]` `thread/queue/add` [live] (docs/plans/codex-plugin/step-0-and-results.md:66; GH/codex-rs/app-server-protocol/src/protocol/common.rs:630-664).
 7. Codex calls both the transcript format and app-server unstable, and the inbox depends on both (L/hooks#common-input-fields; L/mcp-server).
-8. `default_tools_approval_mode` in the plugin's `.mcp.json` works live but is documented only in user `config.toml` (docs/plans/codex-plugin.md:399; D/build/plugins#bundled-mcp-servers-and-lifecycle-hooks).
+8. `default_tools_approval_mode` in the plugin's `.mcp.json` works live but is documented only in user `config.toml` (docs/plans/codex-plugin/step-0-and-results.md:132; D/build/plugins#bundled-mcp-servers-and-lifecycle-hooks).
 
 ## How to read the citations
 

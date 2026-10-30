@@ -146,5 +146,5 @@ Whether the person sees which plugin was affected is [unknown].
   the inbox's guidance (hooks/model-text.ts:guidanceText) break.
 - **Code mode.** L/config-reference calls `features.code_mode.enabled` "under
   development and off by default", yet the desktop app runs shell commands
-  through code mode [live] (docs/plans/codex-plugin.md:373). [inference] The
+  through code mode [live] (docs/plans/codex-plugin/step-0-and-results.md:106). [inference] The
   app turns it on by its own config; the CLI and app behave differently here.

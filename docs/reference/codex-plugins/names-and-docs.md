@@ -15,7 +15,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   app, open the ChatGPT dropdown and select **Codex**." (L/environments/modes)
 - **The binary still names itself Codex Desktop.** Desktop transcripts record
   `originator: "Codex Desktop"` and `source: "vscode"` [live]
-  (docs/plans/codex-plugin.md:331). The app ships inside
+  (docs/plans/codex-plugin/step-0-and-results.md:64). The app ships inside
   `/Applications/ChatGPT.app`, with the CLI at
   `Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex` [live 2026-10-08].
 - **Docs disagree on the name.** learn.chatgpt.com says "Codex in the ChatGPT

@@ -86,7 +86,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
     bound to the plugin's contents; see "Checked against Codex 0.164.0".
     Reordering hooks is still [inference].
   - Hooks were trusted and ran in a desktop app session [live]
-    (docs/plans/codex-plugin.md:421-423). The docs describe trust review only
+    (docs/plans/codex-plugin.md:124-126). The docs describe trust review only
     in the CLI's `/hooks`.
 - **Environment.** "Plugin hook commands receive the Codex-specific
   environment variables `PLUGIN_ROOT` and `PLUGIN_DATA`. `PLUGIN_ROOT` points
@@ -97,7 +97,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   No page says MCP servers get these.
 - **`CODEX_CLI_PATH` and `CODEX_APP_RUNTIME_CLI_PATH`.** Earlier app releases
   gave every hook `CODEX_CLI_PATH`, the path of the desktop app's `codex`
-  [live] (docs/plans/codex-plugin.md:361-365). The ChatGPT app 26.1021.31345,
+  [live] (docs/plans/codex-plugin/step-0-and-results.md:94-98). The ChatGPT app 26.1021.31345,
   which bundles `codex-cli 0.164.0-alpha.11.1`, does not. When it starts its
   app-server, it deletes `CODEX_CLI_PATH` unless the app itself was started
   with one, and sets `CODEX_APP_RUNTIME_CLI_PATH` to the `codex` it runs
@@ -132,12 +132,12 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   timeout, or malformed response can fail the hook without blocking the
   tool." (L/hooks#managed-hooks-from-requirementstoml)
 - **Live:** every hook fired in a desktop thread [live]
-  (docs/plans/codex-plugin.md:331). `codex exec --ephemeral
+  (docs/plans/codex-plugin/step-0-and-results.md:64). `codex exec --ephemeral
   --ignore-user-config` fired no plugin hooks and saved no session [live]
-  (docs/plans/codex-plugin.md:328).
+  (docs/plans/codex-plugin/step-0-and-results.md:61).
 - **Telling an `exec` run apart.** SessionStart input in `exec` looks the
   same. The transcript's `session_meta` has `originator: "codex_exec"` and
-  `source: "exec"` [live] (docs/plans/codex-plugin.md:329). Live, one of two
+  `source: "exec"` [live] (docs/plans/codex-plugin/step-0-and-results.md:62). Live, one of two
   recent `codex_exec` transcripts had `source: {subagent: …}` instead
   [live 2026-10-08]. `isNonInteractiveRun` checks either field (codex/src/transcript.ts).
 - **Ephemeral threads.** An ephemeral thread has no live thread in the

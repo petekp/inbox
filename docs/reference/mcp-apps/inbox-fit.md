@@ -4,10 +4,10 @@ Part of [MCP Apps](../mcp-apps.md).
 
 ## Codex and the ChatGPT Apps SDK
 
-- **Codex renders standard MCP Apps plus its own placement key.** The inbox's `inbox_view` tool sets `_meta.ui.resourceUri` and `'openai/ui': { entrypoints: [{ type: 'thread' }] }` (`codex/src/server.ts:TOOLS`). `thread` opens the app as a tab in a thread; `global` as a sidebar entry. Only `thread` is verified (verified live in this repo, `docs/plans/codex-plugin.md:54`).
+- **Codex renders standard MCP Apps plus its own placement key.** The inbox's `inbox_view` tool sets `_meta.ui.resourceUri` and `'openai/ui': { entrypoints: [{ type: 'thread' }] }` (`codex/src/server.ts:TOOLS`). `thread` opens the app as a tab in a thread; `global` as a sidebar entry. Only `thread` is verified (verified live in this repo, `docs/plans/codex-plugin/what-codex-allows.md:22`).
 - **Codex renders the tab without the server declaring the extension.** The server's `initialize` reply is `capabilities: { tools: {}, resources: {} }` (`codex/src/server.ts:makeServer`). [inference] Codex does not enforce the both-sides rule in the client matrix L13.
-- **`ui/message` becomes untrusted input** (verified live in this repo, `docs/plans/codex-plugin.md:55`, `:333`). The spec's "SHOULD ... preserving the specified role" ([S] L1033) expects a user message. This is a SHOULD deviation, not a violation.
-- **Resource subscriptions did not work from a thread tab** (verified live in this repo, `docs/plans/codex-plugin.md:56`). The tab polls instead.
+- **`ui/message` becomes untrusted input** (verified live in this repo, `docs/plans/codex-plugin/what-codex-allows.md:23`, `:333`). The spec's "SHOULD ... preserving the specified role" ([S] L1033) expects a user message. This is a SHOULD deviation, not a violation.
+- **Resource subscriptions did not work from a thread tab** (verified live in this repo, `docs/plans/codex-plugin/what-codex-allows.md:24`). The tab polls instead.
 - **Plugins with MCP servers are "Desktop only".** "Any imported plugin that declares MCP servers in `mcp.json` or `.mcp.json` is marked Desktop only and works only in the ChatGPT desktop app" ([plugin-management](https://learn.chatgpt.com/docs/enterprise/plugin-management) #desktop-only-plugins).
 - **Public listing expects mobile support.** "Plugins must function reliably in ChatGPT on both desktop and mobile, including any UI components" ([plugin-guidelines](https://developers.openai.com/plugins/plugin-guidelines) #testing).
 - **Headless use must work.** "Keep tools useful without the component so the model can complete headless workflows" (OpenAI plugin architecture, "Optional UI").

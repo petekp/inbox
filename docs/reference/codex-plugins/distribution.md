@@ -13,7 +13,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   (D/build/plugins#how-local-marketplaces-work) No precedence is given.
 - **Which file wins at one root.** With both `.claude-plugin/marketplace.json`
   and `.agents/plugins/marketplace.json` at one root, Codex reads
-  `.agents/plugins/marketplace.json` [live] (docs/plans/codex-plugin.md:330).
+  `.agents/plugins/marketplace.json` [live] (docs/plans/codex-plugin/step-0-and-results.md:63).
   The row does not say which command or surface was used.
 - **This repo has both.** `.agents/plugins/marketplace.json` names the `inbox`
   marketplace with one local entry, `source: {source: "local", path:
@@ -95,7 +95,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   `<home>/plugins/data/<plugin>-<market>`, and falls back to
   `~/.codex/inbox-dev` (codex/src/state.ts:dataDir). MCP server processes
   found the hooks' data folder this way [live]
-  (docs/plans/codex-plugin.md:400). The `<plugin>-<market>` order is a code
+  (docs/plans/codex-plugin/step-0-and-results.md:133). The `<plugin>-<market>` order is a code
   assumption: it cannot be told apart while both names are "inbox".
   [inference] The regex ignores the version segment, so a switch to `local`
   would not break it. A change to the `data/` naming would.

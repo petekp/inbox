@@ -59,8 +59,8 @@ Part of [MCP Apps](../mcp-apps.md).
 | Claude desktop, Code tab | Unverified. The third-party (3P) changelog says the Code tab gained "interactive MCP app widgets in the conversation", a feature "already available in the standard app". code.claude.com says nothing. | [doc] [cowork changelog](https://claude.com/docs/cowork/changelog) v1.37937.0 |
 | Claude Code in the terminal | No. "Claude Code calls the tool as text and doesn't render the UI." | [doc] MA quickstart |
 | Claude mobile (iOS, Android) | Yes, in a native WebView, for connectors added on web or desktop | [doc] MA design-guidelines #mobile-guidelines |
-| Codex in the ChatGPT desktop app | Yes, including a thread tab from a local stdio plugin server | Verified live in this repo, `docs/plans/codex-plugin.md:53-54` |
-| Codex CLI | No. The `enable_mcp_apps` flag is off. | Verified live in this repo, `docs/plans/codex-plugin.md:53` |
+| Codex in the ChatGPT desktop app | Yes, including a thread tab from a local stdio plugin server | Verified live in this repo, `docs/plans/codex-plugin/what-codex-allows.md:21-22` |
+| Codex CLI | No. The `enable_mcp_apps` flag is off. | Verified live in this repo, `docs/plans/codex-plugin/what-codex-allows.md:21` |
 | ChatGPT (web, desktop, mobile) | Yes. ChatGPT supports "the open MCP Apps UI standard". | [doc] [OpenAI plugin architecture](https://developers.openai.com/plugins/concepts/plugins), "Optional UI" |
 | Others ticked in the matrix | VS Code GitHub Copilot, Microsoft 365 Copilot, Goose, Postman, MCPJam, Cursor, Archestra.AI, PostHog Code | [doc] client matrix L30-45 ("maintained by the community", L15-17) |
 

@@ -46,8 +46,8 @@ threads a root thread and its forks belong to. They differ after a fork.
 
   | Caller | Where the id is | Source |
   | --- | --- | --- |
-  | The model | `_meta["x-codex-turn-metadata"]` with `session_id`, `thread_id`, `turn_id`, `turn_trigger`, `forked_from_thread_id`, `parent_thread_id`, `thread_source`, plus `_meta.callId` | [live] docs/plans/codex-plugin.md:327; [source] GH/codex-rs/core/src/mcp_tool_call.rs:1311-1344, turn_metadata.rs:275-312, :440-490, responses_metadata.rs:418-445 |
-  | The desktop tab | `_meta.thread_id`, "equal to the hooks' `session_id`" | [live] docs/plans/codex-plugin.md:332 |
+  | The model | `_meta["x-codex-turn-metadata"]` with `session_id`, `thread_id`, `turn_id`, `turn_trigger`, `forked_from_thread_id`, `parent_thread_id`, `thread_source`, plus `_meta.callId` | [live] docs/plans/codex-plugin/step-0-and-results.md:60; [source] GH/codex-rs/core/src/mcp_tool_call.rs:1311-1344, turn_metadata.rs:275-312, :440-490, responses_metadata.rs:418-445 |
+  | The desktop tab | `_meta.thread_id`, "equal to the hooks' `session_id`" | [live] docs/plans/codex-plugin/step-0-and-results.md:65 |
   | app-server `mcpServer/tool/call` | The caller's own `_meta` object with `threadId` added; `{threadId}` if the caller sent none; a non-object `_meta` passes unchanged. No `x-codex-turn-metadata`. | [source] GH/codex-rs/app-server/src/request_processors/mcp_processor.rs:16, :679-701, :715-737 |
 
 - The model-call payload strips `agent_name`, `parent_turn_id` and
@@ -139,7 +139,7 @@ threads a root thread and its forks belong to. They differ after a fork.
 
 | Case | Result | Source |
 | --- | --- | --- |
-| Idle thread | Arrived as a plain user message; the model followed it; `UserPromptSubmit` fired with the exact text | docs/plans/codex-plugin.md:357 |
+| Idle thread | Arrived as a plain user message; the model followed it; `UserPromptSubmit` fired with the exact text | docs/plans/codex-plugin/step-0-and-results.md:90 |
 | Busy thread | Started its own turn 14 ms after the running turn ended | :358 |
 | Hand-off | `codex queue` exits in about 0.2 s; a row appears in `~/.codex/queue_1.sqlite` | :359 |
 | Server-started press | An app-server started the inbox server; `mcpServer/tool/call` pressed an answer; the server ran `codex queue`; the message started a turn | :398 |

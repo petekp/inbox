@@ -43,7 +43,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   connections". (L/agent-approvals-security#traffic-outside-the-command-network-proxy)
   "App and connector traffic is not controlled by the sandboxed-command
   network proxy or its domain allowlist." (L/config-reference, `features.apps`)
-- **Live process behavior** [live] (docs/plans/codex-plugin.md:327, :334):
+- **Live process behavior** [live] (docs/plans/codex-plugin/step-0-and-results.md:60, :334):
   - `initialize` and the server's environment carry no session id. A server
     learns its session at its first tool call.
   - One desktop app-server started 17 probe server processes in three

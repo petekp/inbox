@@ -97,7 +97,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   (BB `src/app/controller.ts:369`).
 - **Live:** a thread tab's `resources/subscribe` never reached the server, and
   no update arrived in two minutes. Polling a tool every 5 s worked [live]
-  (docs/plans/codex-plugin.md:332). The tab now polls every 3 s
+  (docs/plans/codex-plugin/step-0-and-results.md:65). The tab now polls every 3 s
   (codex/src/settle.ts:POLL_MS).
 - **MCP Events cannot replace polling.** "MCP Events is available in Work
   chats on ChatGPT web, in Work chats in the desktop app with **Cloud**

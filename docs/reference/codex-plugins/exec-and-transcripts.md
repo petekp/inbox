@@ -30,7 +30,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
 - Stdin: "If you omit the prompt argument, Codex reads the prompt from stdin".
   With both, the piped content is added as context. (L/non-interactive-mode)
   Live: "`exec` waits on stdin unless it is given `/dev/null`" [live]
-  (docs/plans/codex-plugin.md:328).
+  (docs/plans/codex-plugin/step-0-and-results.md:61).
 - `--json` events: `thread.started` (with `thread_id`), `turn.started`,
   `turn.completed` (with `usage`), `turn.failed`, `item.*`, `error`.
   (L/non-interactive-mode#make-output-machine-readable)
@@ -43,16 +43,16 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
 - **Cost** [live]: "It costs 21.5k input tokens for a one-word answer, 12.3k
   of it cached. Switching off tools and features and replacing the base
   instructions brings it to 12.5k, and no flag tried went lower."
-  (docs/plans/codex-plugin.md:328) Measured on 0.160.1, before 0.161.0 made
+  (docs/plans/codex-plugin/step-0-and-results.md:61) Measured on 0.160.1, before 0.161.0 made
   GPT-6.1 Sol the default model.
 - **Unknown flags.** `exec` rejects an unknown `--disable` name with "Unknown
   feature flag: X"; the code drops it and retries [live]
-  (codex/src/update.ts:codexAsk; docs/plans/codex-plugin.md:407-408).
+  (codex/src/update.ts:codexAsk; docs/plans/codex-plugin/step-0-and-results.md:140-141).
   `personality` is "removed" in 0.160.1 but still in the `OFF` list
   (codex/src/update.ts:OFF). On 0.163.0 `--disable personality` is still
   accepted [live 0.163.0].
 - **Model.** `gpt-6.1-sol` at low effort got 12 of 12 right in 4–5 s;
-  `gpt-6-luna` got 10 of 12 [live] (docs/plans/codex-plugin.md:412-419).
+  `gpt-6-luna` got 10 of 12 [live] (docs/plans/codex-plugin.md:115-122).
 - `exec` threads are excluded from `thread/list` by default (see app-server).
 - **`notify` is not a substitute trigger.** It runs one external program on
   `agent-turn-complete` with `thread-id` and `last-assistant-message`, but it
@@ -98,7 +98,7 @@ at each Stop, to find the question dialogs the agent opened in the ending turn.
 - **Command ends.** Every command's end is an `event_msg` / `item_completed`
   with `item.type: "CommandExecution"`; its `id` equals the hook's
   `tool_use_id`, and it is written before PostToolUse [live]
-  (docs/plans/codex-plugin.md:325, :377).
+  (docs/plans/codex-plugin/step-0-and-results.md:58, :377).
 - **Item fields** [live 2026-10-08, 1,525 items]: `aggregated_output`,
   `command` (always an argv list), `cwd` (always a `file://` URL), `duration`,
   `exit_code`, `formatted_output`, `id`, `parsed_cmd`, `process_id`, `source`,
