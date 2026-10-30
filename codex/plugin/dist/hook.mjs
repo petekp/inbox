@@ -419,6 +419,13 @@ function closedAt(c) {
   return "closedAt" in c ? c.closedAt : c.at;
 }
 
+// ../hooks/session-version.ts
+var SESSION_VERSION = 1;
+function checkVersion(saved) {
+  const version = saved.version ?? 1;
+  if (version !== SESSION_VERSION) throw new Error(`Unsupported inbox state version: ${version}`);
+}
+
 // ../hooks/prs.ts
 var PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
 function prRefs(text2) {
@@ -2243,7 +2250,7 @@ var NOTHING_HEARD = {
 };
 function emptyState(sessionId) {
   return {
-    version: 1,
+    version: SESSION_VERSION,
     sessionId,
     root: "",
     transcriptPath: null,
@@ -2261,8 +2268,7 @@ function statePath(dir, sessionId) {
   return join(dir, "sessions", sessionFile(sessionId));
 }
 function upgraded(saved, sessionId) {
-  if (saved.version !== void 0 && saved.version !== 1)
-    throw new Error(`Unsupported inbox state version: ${saved.version}`);
+  checkVersion(saved);
   const base = emptyState(sessionId);
   const {
     checks: _checks,

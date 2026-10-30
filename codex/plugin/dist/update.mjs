@@ -1043,6 +1043,13 @@ function isLapsed(d) {
   return closedState(d) !== "handled";
 }
 
+// ../hooks/session-version.ts
+var SESSION_VERSION = 1;
+function checkVersion(saved) {
+  const version = saved.version ?? 1;
+  if (version !== SESSION_VERSION) throw new Error(`Unsupported inbox state version: ${version}`);
+}
+
 // ../hooks/prs.ts
 function namedPrs(text2, refs) {
   const numbers = new Set([...text2.matchAll(/#(\d+)\b/g)].map((m) => m[1]));
@@ -2720,7 +2727,7 @@ var NOTHING_HEARD = {
 };
 function emptyState(sessionId) {
   return {
-    version: 1,
+    version: SESSION_VERSION,
     sessionId,
     root: "",
     transcriptPath: null,
@@ -2738,8 +2745,7 @@ function statePath(dir, sessionId) {
   return join2(dir, "sessions", sessionFile(sessionId));
 }
 function upgraded(saved, sessionId) {
-  if (saved.version !== void 0 && saved.version !== 1)
-    throw new Error(`Unsupported inbox state version: ${saved.version}`);
+  checkVersion(saved);
   const base = emptyState(sessionId);
   const {
     checks: _checks,

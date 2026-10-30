@@ -6,6 +6,7 @@ import {
   lstat,
   mkdir,
   readdir,
+  readFile,
   readlink,
   rename,
   rm,
@@ -21,6 +22,7 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import { KEPT_SESSIONS } from '../../hooks/ledger'
+import { SESSION_VERSION } from '../../hooks/session-version'
 import { pruneSessions, readState, statePath, tryWithLock, updateState, withLock } from '../src/state'
 import { notePrompt } from '../src/core'
 import { tempDir } from './helpers'
@@ -303,15 +305,17 @@ test('tryWithLock preserves a nested lock timeout after acquiring its own lock',
   }
 })
 
-test('a file saved before the rollout path, the dropped-reply flag and the covered turn existed reads with their defaults, and its covered turn is the last recorded prompt’s, or the one before while that turn runs', async t => {
+test('a file saved before the version, the rollout path, the dropped-reply flag and the covered turn existed reads with their defaults, a save writes the session version, and its covered turn is the last recorded prompt’s, or the one before while that turn runs', async t => {
   const dir = tempDir()
   t.after(() => rm(dir, { recursive: true, force: true }))
   const initial = await updateState(dir, 's1', s => s)
-  const { transcriptPath: _path, coveredTurn: _covered, ...older } = initial
+  assert.equal(JSON.parse(await readFile(statePath(dir, 's1'), 'utf8')).version, SESSION_VERSION)
+  const { version: _version, transcriptPath: _path, coveredTurn: _covered, ...older } = initial
   const { hasDroppedReply: _flag, ...presence } = initial.presence
   await writeFile(statePath(dir, 's1'), JSON.stringify({ ...older, presence }))
 
   const read = await readState(dir, 's1')
+  assert.equal(read.version, SESSION_VERSION)
   assert.equal(read.transcriptPath, null)
   assert.equal(read.presence.hasDroppedReply, false)
   assert.equal(read.coveredTurn, null)
