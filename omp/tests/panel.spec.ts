@@ -6,8 +6,9 @@ import { SETTLED_MS, shownTabs, rowKeyPlan } from '../../hooks/view'
 import type { RowView } from '../../hooks/view'
 import { sessionView } from '../../hooks/session'
 import { demoState } from '../src/demo'
-import { INITIAL_UI, handleKey } from '../src/panel'
+import { INITIAL_UI } from '../src/panel'
 import type { PanelUi } from '../src/panel'
+import { handleKey } from '../src/panel-keys'
 import {
   buttonLine,
   buttonLines,

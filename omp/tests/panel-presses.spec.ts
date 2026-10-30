@@ -5,7 +5,8 @@ import { SETTLED_MS, NO_HOLDS, shownTabs } from '../../hooks/view'
 import type { RowView } from '../../hooks/view'
 import { sessionView } from '../../hooks/session'
 import { demoSource, demoState } from '../src/demo'
-import { INITIAL_UI, afterHandOff, handleKey, holdsOf } from '../src/panel'
+import { INITIAL_UI, holdsOf } from '../src/panel'
+import { afterHandOff, handleKey } from '../src/panel-keys'
 import {
   buttonLine,
   drawn,
