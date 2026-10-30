@@ -93,7 +93,7 @@ function importTarget(root, project, path, dependency) {
     : null
 }
 
-// Hot reload selects installed or dev handler URLs at runtime; see docs/looks.md.
+// Hot reload selects installed or dev handler URLs at runtime; see docs/looks/differences-hosts.md.
 function isHandlerReload(path, dependency) {
   return (
     path === 'codex/src/server-main.ts' &&

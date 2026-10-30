@@ -57,18 +57,33 @@ export function checkDocs(root, errors) {
 // Type shims declare a module's shape and hold no code, so they need no row.
 const isMapped = path => /\.(?:ts|tsx|html)$/.test(path) && !path.endsWith('.d.ts')
 
+const LOOK_MAP = 'docs/looks.md'
+const LOOK_PARTS = 'docs/looks'
+
+export function lookParts(root, prefix) {
+  if (!exists(root, LOOK_PARTS)) return []
+  return readdirSync(join(root, LOOK_PARTS))
+    .filter(name => name.startsWith(prefix) && name.endsWith('.md'))
+    .sort()
+    .map(name => `${LOOK_PARTS}/${name}`)
+}
+
 export function checkLookMap(root, errors) {
-  const map = 'docs/looks.md'
-  const rows = new Set([...read(root, map).matchAll(/^\| `([^`]+)` \|/gm)].map(m => m[1]))
-  for (const dir of ['hooks', 'codex/src', 'omp/src'].filter(dir => exists(root, dir)))
-    for (const entry of readdirSync(join(root, dir))) {
-      const path = `${dir}/${entry}`
-      if (isMapped(path) && !rows.has(path)) errors.push(`${map} has no Files row for ${path}.`)
-    }
-  for (const m of read(root, map).matchAll(/`([\w./-]+\.[a-z]+):([\w.]+)`/g)) {
-    const [, path, symbol] = m
-    if (!exists(root, path)) continue
-    if (!new RegExp(`\\b${symbol.replaceAll('.', '\\.')}\\b`).test(read(root, path)))
-      errors.push(`${map} names ${path}:${symbol}, and ${path} has no ${symbol}.`)
+  const fileParts = lookParts(root, 'files-')
+  if (!fileParts.length) errors.push(`${LOOK_PARTS}/ has no files-*.md part to hold the Files rows.`)
+  else {
+    const rows = new Set(fileParts.flatMap(part => [...read(root, part).matchAll(/^\| `([^`]+)` \|/gm)].map(m => m[1])))
+    for (const dir of ['hooks', 'codex/src', 'omp/src'].filter(dir => exists(root, dir)))
+      for (const entry of readdirSync(join(root, dir))) {
+        const path = `${dir}/${entry}`
+        if (isMapped(path) && !rows.has(path)) errors.push(`${LOOK_PARTS}/files-*.md has no Files row for ${path}.`)
+      }
   }
+  for (const map of [LOOK_MAP, ...lookParts(root, '')])
+    for (const m of read(root, map).matchAll(/`([\w./-]+\.[a-z]+):([\w.]+)`/g)) {
+      const [, path, symbol] = m
+      if (!exists(root, path)) continue
+      if (!new RegExp(`\\b${symbol.replaceAll('.', '\\.')}\\b`).test(read(root, path)))
+        errors.push(`${map} names ${path}:${symbol}, and ${path} has no ${symbol}.`)
+    }
 }

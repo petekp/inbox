@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { read } from './docs.mjs'
+import { lookParts, read } from './docs.mjs'
 import { API, nameOf, propertiesOf, propertyOf, ts } from './ts.mjs'
 
 const FEATURE_ID = /^[a-z]+(-[a-z]+)*$/
@@ -47,25 +47,19 @@ function parityRecord(root) {
   }
 }
 
-function differenceRows(root, table) {
-  const text = read(root, 'docs/looks.md')
-  const start = text.indexOf('## Differences on purpose')
-  const omp = text.indexOf('### omp', start)
-  const end = text.indexOf('\n## ', omp === -1 ? start + 1 : omp)
-  const section =
-    start === -1
-      ? ''
-      : table === 'omp'
-        ? omp === -1
-          ? ''
-          : text.slice(omp, end === -1 ? undefined : end)
-        : text.slice(start, omp === -1 ? undefined : omp)
+const TABLE_PARTS = { main: 'docs/looks/differences-*.md', omp: 'docs/looks/differences-omp*.md' }
+const tableOf = part => (part.startsWith('docs/looks/differences-omp') ? 'omp' : 'main')
 
-  return section
-    .split('\n')
-    .filter(line => line.startsWith('|'))
-    .map(line => line.split('|')[1] ?? '')
-    .flatMap(cell => [...cell.matchAll(/`([a-z][a-z0-9-]*)`/g)].map(m => m[1]))
+function differenceRows(root, table) {
+  return lookParts(root, 'differences-')
+    .filter(part => tableOf(part) === table)
+    .flatMap(part =>
+      read(root, part)
+        .split('\n')
+        .filter(line => line.startsWith('|'))
+        .map(line => line.split('|')[1] ?? '')
+        .flatMap(cell => [...cell.matchAll(/`([a-z][a-z0-9-]*)`/g)].map(m => ({ id: m[1], part }))),
+    )
 }
 
 export function checkClients(root, errors) {
@@ -77,16 +71,15 @@ export function checkClients(root, errors) {
       errors.push(`hooks/clients.ts has feature id '${id}'. Use lowercase words joined by hyphens.`)
   const named = {}
   for (const table of new Set(Object.values(DIFFERENCE_TABLES))) {
-    named[table] = new Set(differenceRows(root, table))
-    for (const id of named[table])
+    const rows = differenceRows(root, table)
+    named[table] = new Set(rows.map(row => row.id))
+    for (const { id, part } of rows)
       if (!known.has(id))
-        errors.push(
-          `docs/looks.md names '${id}' in a Differences on purpose row, and hooks/clients.ts has no such feature.`,
-        )
+        errors.push(`${part} names '${id}' in a Differences on purpose row, and hooks/clients.ts has no such feature.`)
   }
   for (const [client, support] of record.clients) {
     const table = DIFFERENCE_TABLES[client]
-    if (!table) errors.push(`scripts/check-structure.mjs has no Differences on purpose table for client '${client}'.`)
+    if (!table) errors.push(`scripts/structure/clients.mjs has no Differences on purpose table for client '${client}'.`)
     for (const id of record.features) {
       const entry = support.get(id)
       if (!entry || !['full', 'different', 'unsupported'].includes(entry.kind)) {
@@ -97,7 +90,7 @@ export function checkClients(root, errors) {
       if (!entry.reason.trim()) errors.push(`hooks/clients.ts gives no reason for '${id}' in client '${client}'.`)
       if (table && !named[table].has(id))
         errors.push(
-          `docs/looks.md has no Differences on purpose row naming \`${id}\`, which is ${entry.kind} in client '${client}'.`,
+          `${TABLE_PARTS[table]} has no Differences on purpose row naming \`${id}\`, which is ${entry.kind} in client '${client}'.`,
         )
     }
   }

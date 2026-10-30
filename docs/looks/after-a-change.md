@@ -1,0 +1,21 @@
+# After you change X, check Y
+
+Part of [the look map](../looks.md#after-you-change-x-check-y).
+
+State in your change, for each look, whether it applies and what you checked.
+
+| Change | Edit | Then check |
+| --- | --- | --- |
+| A row action | `hooks/view.ts:actionsOf`, `hooks/presses.ts:applyPress`, and `hooks/view.ts:DONE_LABELS` for its label | The action appears in terminal, desktop, the Codex tab and the omp panel. Check Undo, failure and key letters. Add the case to `tests/hooks.test.ts`, `codex/tests/press.spec.ts` and `omp/tests/panel.spec.ts` when the repo's coverage expects it. |
+| A row field | `hooks/view.ts:inboxView` and the `RowView` type, then `itemRow` and `findingRow` in the mod and Codex adapters, and `omp/src/panel.ts` | Every adapter draws the shared field. Check resting, reply, handed-off, settled and failed forms that use it. |
+| A word on screen | The shared string in `hooks/view.ts` or `hooks/presses.ts`, else every adapter | Run the change through the `refine-prose` skill. Check each look for clipping. |
+| Model-read text | `hooks/model-text.ts` or `hooks/tools.ts`. The guidance and every `inbox:` text reach every agent. | A/B test it as `AGENTS.md` says, with Sonnet for Claude and with `codex exec` and the model in `codex/src/update.ts:MODEL` for Codex. Run `./scripts/eval.sh --suite agent --agent omp` for omp. |
+| A saved field | `types/index.d.ts:PluginState`, then `hooks/ledger.ts:upgradeLedger` or `hooks/register.tsx:upgradeState`, `codex/src/state.ts:upgraded` and `omp/src/state.ts:upgraded` | Load a state saved by the old build in the mod, in Codex and in omp. |
+| A size or timing | `hooks/view.ts` constants or `hooks/layout.ts:ROW_PAD_PT` when the looks share it, else the adapter's own constant | Measure in the terminal, desktop, Codex tab and omp panel. Add a row to Differences on purpose when the values differ. |
+| A tab | `hooks/view.ts:TAB_NAMES`, `hooks/view.ts:shownTabs`, `hooks/view.ts:ROW_TABS` and `hooks/view.ts:LISTED_TABS`. `hooks/arrivals.ts:ARRIVAL_TABS` follows `ROW_TABS`. | The mod pane, the Codex tab, the omp panel and the empty text in `hooks/view.ts:emptyText`, on a release build and a next build. A new tab needs a symbol that a terminal draws two cells wide. Check where each look switches to symbols. |
+| A PR feature | `hooks/prs.ts` and `hooks/pr-tab.ts:applyPrPress` | All four looks. Check PR-opening help, bulk arrival and the PRs tab in each, and add the case to `codex/tests/server.spec.ts` or `omp/tests/panel.spec.ts` when the repo's coverage expects it. |
+| Anything in `hooks/` that Codex imports | The shared module | Run `npm --prefix codex run build` to rebuild the Codex bundles. `./scripts/check.sh` fails until you do. |
+| Anything in `hooks/` that `omp/src/host.ts` imports | The shared module | Run `npm --prefix omp run build` to rebuild `omp/dist/host.js`. `./scripts/check.sh` fails until you do. |
+| The comparison page template | `hooks/compare-page.html`. Prettier skips it, since it would close the open element at its end, so keep its formatting by hand. | Run `npm --prefix codex run build` and `npm --prefix omp run build` to update the copies. `./scripts/check.sh` fails until you do. Build a page with `cat hooks/compare-page.html <comparison>.json > <page>.html` and look at it at 400, 668 and 1280 px in light and dark, including data with a problem and data that holds markup. For a change to the comment at the top, which agents read, test that an agent still writes valid data. |
+| `omp/src/host.ts` or the omp panel | The omp host or adapter | Run `omp/tests`. Then check live in omp with an isolated `HOME`, as `AGENTS.md` says: the band, `/inbox`, a real press that sends, and the light theme. |
+| `codex/src/server-main.ts` | The loader | Quit and reopen Codex. A change to `codex/src/server-handler.ts` or anything it imports reloads without a restart. |
