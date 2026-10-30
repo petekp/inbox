@@ -19,6 +19,7 @@ import * as esbuild from 'esbuild'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const mode = process.argv[2] ?? ''
+const { version } = JSON.parse(readFileSync(join(here, 'plugin', '.codex-plugin', 'plugin.json'), 'utf8'))
 
 async function serverBuild() {
   const result = await esbuild.build({
@@ -37,6 +38,7 @@ async function serverBuild() {
     .filter(p => !p.endsWith('tab.html'))
     .sort())
     hash.update(path).update(readFileSync(join(here, path)))
+  hash.update(version)
 
   return hash.digest('hex').slice(0, 12)
 }
@@ -49,6 +51,7 @@ async function buildTabScript(build) {
     absWorkingDir: here,
     define: {
       SERVER_BUILD: JSON.stringify(build),
+      VERSION: JSON.stringify(version),
       DEMO_BUTTON: JSON.stringify(isDemoButton),
       DEMO_RECORDING: JSON.stringify(isDemoRecording),
     },
@@ -123,7 +126,7 @@ const common = {
   format: 'esm',
   target: 'node20',
   loader: { '.html': 'text' },
-  define: { SERVER_BUILD: JSON.stringify(build) },
+  define: { SERVER_BUILD: JSON.stringify(build), VERSION: JSON.stringify(version) },
   plugins: [inlineTab(tabScript)],
   legalComments: 'none',
   logLevel: 'warning',
@@ -161,7 +164,7 @@ if (mode === '--dev') {
         ...common,
         absWorkingDir: here,
         entryPoints: ['src/server-handler.ts'],
-        define: { SERVER_BUILD: JSON.stringify(build) },
+        define: { SERVER_BUILD: JSON.stringify(build), VERSION: JSON.stringify(version) },
         plugins: [inlineTab(script, pageTones)],
         write: false,
       })
