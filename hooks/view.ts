@@ -2,7 +2,6 @@ import type {
   Closed,
   ClosedFinding,
   Draft,
-  FoldKind,
   Finding,
   Item,
   LastAction,

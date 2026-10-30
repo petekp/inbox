@@ -20,7 +20,6 @@ import type {
   Dialog,
   Draft,
   FoldKind,
-  Item,
   Ledger,
   OldPresence,
   PrCheck,
@@ -91,14 +90,11 @@ import type { Ask, CallReport, CatchUpReply, StatusCall, StatusRecords, RecordFi
 import { demoView, isDemoCopy, withDemoPresence } from './demo'
 import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
-import type { Exchange, Press, Update } from './ledger'
 import {
-  applyPrPress,
   checkActions,
   checkRowText,
   PR_QUOTE_CHARS,
   splitFollowUps,
-  fetchTracked,
   isDismissed,
   isPrPress,
   openPrViews,
@@ -120,7 +116,7 @@ import {
   prsEmptyText,
   prRefreshFailedText,
 } from './pr-tab'
-import type { Applied, DrawnPr, GhRun, PrAction, PrPress } from './pr-tab'
+import type { Applied, DrawnPr, PrAction, PrPress } from './pr-tab'
 import {
   commentLine,
   commentParts,
@@ -132,33 +128,19 @@ import {
   threadWhere,
   waitingThreads,
 } from './prs'
+import { EMPTY, KEPT_SESSIONS, closeItem, isBlankLedger, readKind, tasksRunBy } from './ledger'
 import {
-  EMPTY,
-  KEPT_SESSIONS,
-  applyExchangeUpdate,
-  closeItem,
-  isBlankLedger,
-  readKind,
-  tasksRunBy,
-  upgradeLedger,
-} from './ledger'
-import {
-  addActivity,
-  buildPrompt,
   statusCarryText,
   catchUpPrompt,
   CLAUDE_CODE,
   dialogActivity,
   dialogQuestions,
   guidedCloseDescription,
-  promptNotes,
   screenText,
   systemText,
   toolActivity,
   transcriptCatchUpPrompt,
-  TOLD_NOTHING,
   type ScreenTab,
-  type Told,
 } from './model-text'
 import {
   commandRowLine,
@@ -176,28 +158,19 @@ import type { Run } from './gh'
 import { CLEARED_TOKENS, delegatesInHerdr, HERDR_CHECK_MS, herdrCheckGate, herdrReporter, herdrTokens } from './herdr'
 import { ago, cellWidth, clipLabel, cutForEllipsis } from './text'
 import {
-  applyPress,
   baseName,
-  capitalized,
   COMPARE_PAGE_FILE,
   demoAfterPress,
   demoReplied,
   demoSent,
-  doneWake,
   isPressConfirmed,
   localPath,
-  markSentToAgent,
-  refuseDoneNotification,
   openCommands,
-  runLocalEffects,
-  runSends,
-  upgradeLastActions,
   withArrival,
-  withDeliveryId,
   withRewrite,
   withUnconfirmed,
 } from './presses'
-import type { DemoSent, Effect, EffectHost, RowPress } from './presses'
+import type { DemoSent, Effect, RowPress } from './presses'
 import {
   closedShown,
   DOT,
@@ -261,7 +234,6 @@ import {
   READING_TEXT,
   rowsIn,
   LOOK_DASH,
-  LOOK_TEXT,
   mergedLine,
   nameBeforeStall,
   STALL_GAP,
@@ -2210,7 +2182,7 @@ async function matchPaneEscape($: EngineInterface) {
 }
 
 async function openTopRow($: EngineInterface) {
-  const [{ view, ledger, prViews: prState, lastActions, now }, tab] = await Promise.all([drawnState($), readRowTab($)])
+  const [{ view, lastActions }, tab] = await Promise.all([drawnState($), readRowTab($)])
   if (tab === null) return
   const prViews = openPrViews(view.prs.drawn)
   const ids = tabRowIds(view, prViews)[tab]
@@ -2585,10 +2557,7 @@ async function scrollToOpenRow($: EngineInterface, tab: Tab, surface?: RenderSur
   if (surface !== 'desktop' && (await revealPendingUndo($))) return
   if (revision !== undoScrollRevision) return
   if (isInlinePane) {
-    const [selection, { view, ledger, prViews: prState, lastActions, now }] = await Promise.all([
-      read($, SELECTION),
-      drawnState($),
-    ])
+    const [selection, { view, lastActions }] = await Promise.all([read($, SELECTION), drawnState($)])
     const prViews = openPrViews(view.prs.drawn)
     const cursor = selection[tab]
     const id = cursor.id ?? (cursor.openedAt === 0 ? firstWaiting(tabWaits(tab, view, prViews, lastActions)) : null)
@@ -2603,11 +2572,7 @@ async function scrollToOpenRow($: EngineInterface, tab: Tab, surface?: RenderSur
 }
 
 async function selectClicked($: EngineInterface, id: string) {
-  const [{ ledger, prViews: prState, lastActions, view, now }, tab, selection] = await Promise.all([
-    drawnState($),
-    readRowTab($),
-    read($, SELECTION),
-  ])
+  const [{ view, now }, tab, selection] = await Promise.all([drawnState($), readRowTab($), read($, SELECTION)])
   if (tab === null) return
   const prViews = openPrViews(view.prs.drawn)
   const index = tabRowIds(view, prViews)[tab].indexOf(id)
@@ -2947,7 +2912,7 @@ async function undoKeyAfterPress(
   surface: UiPressArgument['surface'],
 ): Promise<string | null> {
   if (surface !== 'terminal' || !isInlineTerminalPane) return null
-  const { ledger, prViews, lastActions, view, now } = await drawnState($)
+  const { view } = await drawnState($)
   if (isPrPress(p)) {
     if (p.action === 'pr-dismiss-merged') {
       const nearest = view.prs.drawn.filter(x => x.state.is === 'settled' && x.state.canUndo).at(-1)
@@ -2963,7 +2928,7 @@ async function undoKeyAfterPress(
 }
 
 async function shownWaits($: EngineInterface) {
-  const [{ ledger, prViews: prState, lastActions, view, now }, tab] = await Promise.all([drawnState($), readRowTab($)])
+  const [{ lastActions, view }, tab] = await Promise.all([drawnState($), readRowTab($)])
   const prViews = openPrViews(view.prs.drawn)
   if (tab === null) return { tab, rows: [], ids: [] }
 
@@ -3738,11 +3703,11 @@ export const register: Register = on => {
     return r
   })
 
-  on('tool.describe', { tool: RECORD_TOOL }, async ($, e, next) => ({ ...(await next(e)), isDeferred: false }))
+  on('tool.describe', { tool: RECORD_TOOL }, async (_$, e, next) => ({ ...(await next(e)), isDeferred: false }))
   on('tool.call', { tool: RECORD_TOOL }, async ($, e) => ({
     result: await runTool($, 'record', e as unknown as Record<string, unknown>, e.tool_use_id),
   }))
-  on('tool.describe', { tool: CLOSE_TOOL }, async ($, e, next) => {
+  on('tool.describe', { tool: CLOSE_TOOL }, async (_$, e, next) => {
     const r = await next(e)
 
     return { ...r, description: guidedCloseDescription(CLAUDE_CODE, r.description), isDeferred: false }
@@ -3750,7 +3715,7 @@ export const register: Register = on => {
   on('tool.call', { tool: CLOSE_TOOL }, async ($, e) => ({
     result: await runTool($, 'close', e as unknown as Record<string, unknown>, e.tool_use_id),
   }))
-  on('tool.describe', { tool: ORDER_TOOL }, async ($, e, next) => ({ ...(await next(e)), isDeferred: false }))
+  on('tool.describe', { tool: ORDER_TOOL }, async (_$, e, next) => ({ ...(await next(e)), isDeferred: false }))
   on('tool.call', { tool: ORDER_TOOL }, async ($, e) => ({
     result: await runTool($, 'order_prs', e as unknown as Record<string, unknown>, e.tool_use_id),
   }))
@@ -3885,7 +3850,7 @@ export const register: Register = on => {
     return r
   })
 
-  on('turn.step', async function* ($, e, next) {
+  on('turn.step', async function* (_$, e, next) {
     if (!isOn || e.agentId) return yield* next(e)
     if (finalReply !== null) sentBack.push(finalReply)
     finalReply = null
@@ -4001,7 +3966,7 @@ export const register: Register = on => {
     }
   })
 
-  on('ui.press', async ($, e, next) => {
+  on('ui.press', async (_$, e, next) => {
     if (e.requestId === PANE && e.surface === 'terminal') {
       if (e.element.startsWith('fold-') || e.element === 'hide-demo') cancelUndoScroll()
       else suspendUndoReveal()
@@ -4013,7 +3978,7 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('ui.scroll', { requestId: PANE }, async ($, e, next) => {
+  on('ui.scroll', { requestId: PANE }, async (_$, e, next) => {
     if (e.origin.kind === 'person') cancelUndoScroll()
     return next(e)
   })
@@ -4220,7 +4185,7 @@ export const register: Register = on => {
         ? { rowPad: 2 * DESKTOP_ROW_PAD, settledPad: 2 * DESKTOP_ROW_PAD, buttonGap: 1, isFoldGapped: false }
         : { rowPad: blankLine, settledPad: 0, buttonGap: 2, isFoldGapped: true }
     const [
-      { ledger, prViews: prState, lastActions, notes, turns, stop, view, isDemo, showsDemoNotices, isUnread, now },
+      { prViews: prState, lastActions, notes, turns, stop, view, showsDemoNotices, isUnread, now },
       savedTab,
       savedPage,
       selection,
@@ -4572,7 +4537,7 @@ export const register: Register = on => {
     const desktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) =>
       a.icon ? `${a.icon} ${shownLabel(a)}` : shownLabel(a)
     // A native Button cuts a label wider than its row.
-    const fittedDesktopLabel = (rowId: string, a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) => {
+    const fittedDesktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) => {
       const icon = a.icon ? `${a.icon} ` : ''
       const fits = (label: string) => desktopTextPt(icon + label) + DESKTOP_BUTTON_EXTRA_PT <= desktopRowTextPt
 
@@ -4588,7 +4553,7 @@ export const register: Register = on => {
           <Button
             {...action}
             {...(isFollowUp ? { plain: true } : emphasis === 'primary' ? { variant: 'primary' as const } : {})}
-            label={fittedDesktopLabel(rowId, { ...action, ...(icon ? { icon } : {}) })}
+            label={fittedDesktopLabel({ ...action, ...(icon ? { icon } : {}) })}
             {...(isDim ? { dimColor: true } : {})}
             onPress={press => unlessGuarded($, rowId, press, action.onPress)}
           />

@@ -1436,7 +1436,7 @@ function tabBar(d: Draw): string {
 }
 
 function footer(d: Draw, isPageScrolling: boolean): string[] {
-  const { screen, ui, width, now, style: s } = d
+  const { screen, ui, width, style: s } = d
   const out: string[] = [s.dim('─'.repeat(width))]
   const status = footerStatus(
     ui.tab,

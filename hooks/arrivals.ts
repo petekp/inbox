@@ -3,7 +3,7 @@ import { prCheckId, prMarkId, prThreadId } from './pr-tab'
 import type { DrawnPr } from './pr-tab'
 import { closedShown, FINDING_GROUPS, NEEDS_YOU_GROUPS, ROW_TABS, rowResultMark, settledRowIds } from './view'
 import type { InboxView, ResultMark, RowView } from './view'
-import type { Finding, FoldKind, PrView, Tab } from '../types'
+import type { Finding, FoldKind, Tab } from '../types'
 
 export type RowRecord<T extends string> = Partial<Record<T, ReadonlySet<string>>>
 

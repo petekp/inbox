@@ -68,11 +68,9 @@ import type {
   Ledger,
   SessionStatus,
   StatusFailure,
-  PrView,
   PrViews,
   RowNote,
   Session,
-  Stop,
   Turns,
   TurnDialogQuestion,
 } from '../types'

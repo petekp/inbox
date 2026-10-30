@@ -25,7 +25,6 @@ import {
   allRows,
   earlierLabel,
   foldLabel,
-  isRowTab,
   STATUS_TEXT_LINES,
   rowKeyPlan,
   statusKeyPlan,
@@ -1006,7 +1005,6 @@ test('a Status page with nothing yet reads its empty text', () => {
   expect(text(screen, onPage)).toContain(empty.hint)
 })
 
-/** The demo with no ask linked to a subject, so no Status row has a button. */
 const unheldScreen = () => {
   const s = demoState(NOW)
   const ledger = { ...s.ledger, overview: { ...s.ledger.overview!, askSubjects: {} } }
