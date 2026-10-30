@@ -1,15 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { test } from 'node:test'
 import type { TestContext } from 'node:test'
@@ -33,22 +24,11 @@ export const CLIENTS = { ${clients.join('\n')} }
 `
 }
 
-function looksSource(main: string[] = [], omp: string[] = []) {
-  const row = (ids: string[]) => `| Topic (${ids.map(id => `\`${id}\``).join(', ')}) | a | b |`
-  return `## Differences on purpose
-
-| Topic | Terminal | Why |
+function differencesSource(column: string, ids: string[]) {
+  return `| Topic | ${column} | Why |
 | --- | --- | --- |
 | Keys | a | b |
-${main.map(id => row([id])).join('\n')}
-
-### omp
-
-| Topic | omp | Why |
-| --- | --- | --- |
-${omp.map(id => row([id])).join('\n')}
-
-## Adding a host
+${ids.map(id => `| Topic (\`${id}\`) | a | b |`).join('\n')}
 `
 }
 
@@ -61,9 +41,7 @@ function fixture(t: TestContext) {
     mkdirSync(dirname(join(root, path)), { recursive: true })
     writeFileSync(join(root, path), text)
   }
-  write('scripts/check-structure.mjs', '')
-  copyFileSync(join(ROOT, 'scripts/check-structure.mjs'), join(root, 'scripts/check-structure.mjs'))
-  copyFileSync(join(ROOT, 'scripts/shared-modules.mjs'), join(root, 'scripts/shared-modules.mjs'))
+  cpSync(join(ROOT, 'scripts'), join(root, 'scripts'), { recursive: true })
   for (const file of readdirSync(join(ROOT, 'hooks')).filter(f => f.endsWith('.ts')))
     write(`hooks/${file}`, 'export const value = 1\n')
   write('hooks/register.tsx', 'export const value = 1\n')
@@ -74,7 +52,12 @@ function fixture(t: TestContext) {
   write('codex/package.json', '{"type":"module"}\n')
   symlinkSync(join(ROOT, 'codex/node_modules'), join(root, 'codex/node_modules'), 'dir')
   write('hooks/clients.ts', clientsSource())
-  write('docs/looks.md', looksSource())
+  write('docs/looks.md', '# Looks\n')
+  const looks = (main: string[] = [], omp: string[] = []) => {
+    write('docs/looks/differences-main.md', differencesSource('Terminal', main))
+    write('docs/looks/differences-omp.md', differencesSource('omp', omp))
+  }
+  looks()
   write(
     'tsconfig.json',
     JSON.stringify({
@@ -88,12 +71,15 @@ function fixture(t: TestContext) {
       .filter(dir => existsSync(join(root, dir)))
       .flatMap(dir => readdirSync(join(root, dir)).map(entry => `${dir}/${entry}`))
       .filter(path => /\.(?:ts|tsx|html)$/.test(path) && !path.endsWith('.d.ts') && !unmapped.includes(path))
-    const looks = readFileSync(join(root, 'docs/looks.md'), 'utf8')
-    write('docs/looks.md', `## Files\n\n${files.map(path => `| \`${path}\` | a |`).join('\n')}\n\n${looks}`)
+    write(
+      'docs/looks/files-all.md',
+      `| File | Role |\n| --- | --- |\n${files.map(path => `| \`${path}\` | a |`).join('\n')}\n`,
+    )
   }
 
   return {
     write,
+    looks,
     check: ({ unmapped = [] }: { unmapped?: string[] } = {}) => {
       withFileRows(unmapped)
       return spawnSync(process.execPath, [join(root, 'scripts/check-structure.mjs')], { cwd: root, encoding: 'utf8' })
@@ -266,7 +252,7 @@ test('the structure gate permits the runtime loader to import its hot-reload han
   assert.equal(result.status, 0, result.stdout + result.stderr)
 })
 
-test('the structure gate rejects a source file that has no Files row in docs/looks.md', t => {
+test('the structure gate rejects a source file that has no Files row in docs/looks/', t => {
   const f = fixture(t)
   f.write('codex/src/consumer.ts', 'export const value = 1\n')
   const result = f.check({ unmapped: ['codex/src/consumer.ts'] })
@@ -283,7 +269,7 @@ test('the structure gate accepts a feature that is not full when each table that
       ['omp', 'catch-up', unsupported],
     ]),
   )
-  f.write('docs/looks.md', looksSource(['catch-up'], ['catch-up']))
+  f.looks(['catch-up'], ['catch-up'])
   const result = f.check()
   assert.equal(result.status, 0, result.stdout + result.stderr)
 })
@@ -300,7 +286,7 @@ test('the structure gate rejects a feature that is not full and has no row', t =
 test('the structure gate rejects an omp gap that only the main table names', t => {
   const f = fixture(t)
   f.write('hooks/clients.ts', clientsSource(undefined, [['omp', 'catch-up', unsupported]]))
-  f.write('docs/looks.md', looksSource(['catch-up'], []))
+  f.looks(['catch-up'])
   const result = f.check()
   assert.equal(result.status, 1, result.stdout + result.stderr)
   assert.ok(result.stdout.includes("'omp'"), result.stdout + result.stderr)
@@ -308,7 +294,7 @@ test('the structure gate rejects an omp gap that only the main table names', t =
 
 test('the structure gate rejects a row that names an unknown feature id', t => {
   const f = fixture(t)
-  f.write('docs/looks.md', looksSource(['no-such-feature']))
+  f.looks(['no-such-feature'])
   const result = f.check()
   assert.equal(result.status, 1, result.stdout + result.stderr)
   assert.ok(result.stdout.includes("'no-such-feature'"), result.stdout + result.stderr)
@@ -317,7 +303,7 @@ test('the structure gate rejects a row that names an unknown feature id', t => {
 test('the structure gate rejects an entry that is not full and gives no reason', t => {
   const f = fixture(t)
   f.write('hooks/clients.ts', clientsSource(undefined, [['codex', 'catch-up', "{ kind: 'different', reason: '' }"]]))
-  f.write('docs/looks.md', looksSource(['catch-up']))
+  f.looks(['catch-up'])
   const result = f.check()
   assert.equal(result.status, 1, result.stdout + result.stderr)
   assert.ok(result.stdout.includes('no reason'), result.stdout + result.stderr)
