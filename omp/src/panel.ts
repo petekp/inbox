@@ -98,6 +98,7 @@ import {
   STATUS_TEXT_LINES,
   STALL_GAP,
   WAS_PREFIX,
+  LOOK_DASH,
   runningMark,
   HELD_MARK,
   HELP_COPY,
@@ -1306,15 +1307,27 @@ function withTree(lines: string[], first: string | null, rest: string, s: Style)
   return lines.map((l, n) => (n === 0 ? (first ? drawn(l, first) : l) : drawn(l, rest)))
 }
 
-/** The rule above an Status row that starts an item, from the text column to the end of the row, with `label` in its middle. */
-function pageRule(width: number, s: Style, label: string | null = null): string {
-  const cells = Math.max(0, width - PAGE_TEXT_AT - 1)
-  if (label === null) return `${' '.repeat(PAGE_TEXT_AT)}${s.dim('─'.repeat(cells))}`
-  const text = ` ${label} `
-  const fill = Math.max(4, cells - cellWidth(text))
-  const before = Math.floor(fill / 2)
+/** The cells an Status rule spans: from the text column to the end of the row. */
+function pageRuleCells(width: number): number {
+  return Math.max(0, width - PAGE_TEXT_AT - 1)
+}
 
-  return `${' '.repeat(PAGE_TEXT_AT)}${s.dim(`${'─'.repeat(before)}${text}${'─'.repeat(fill - before)}`)}`
+/** The rule above an Status row that starts an item. */
+function pageRule(width: number, s: Style): string {
+  return `${' '.repeat(PAGE_TEXT_AT)}${s.dim('─'.repeat(pageRuleCells(width)))}`
+}
+
+/**
+ * The look line: "Last seen" in the middle of a dashed rule that spans what `pageRule` spans, with a blank line above
+ * it, and below it unless it ends the list.
+ */
+function lookLines(row: StatusRow & { kind: 'look' }, width: number, s: Style): string[] {
+  const text = ` ${row.text} `
+  const fill = Math.max(4, pageRuleCells(width) - cellWidth(text))
+  const before = Math.floor(fill / 2)
+  const rule = `${' '.repeat(PAGE_TEXT_AT)}${s.dim(`${LOOK_DASH.repeat(before)}${text}${LOOK_DASH.repeat(fill - before)}`)}`
+
+  return ['', rule, ...(row.isLast ? [] : [''])]
 }
 
 /** A line on the Status page, laid out as the shared row says. */
@@ -1369,7 +1382,7 @@ function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string[] {
 
     return withTree([' '.repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s)
   }
-  if (row.kind === 'look') return [pageRule(width, s, row.text)]
+  if (row.kind === 'look') return lookLines(row, width, s)
   return pageLine(d, PAGE_MARK_AT, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim)
 }
 

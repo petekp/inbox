@@ -33,6 +33,8 @@ import {
   RUNNING_FRAMES,
   runningMark,
   shownTabs,
+  LOOK_DASH,
+  LOOK_TEXT,
 } from '../hooks/view'
 import { reportedTokens } from './session-script'
 
@@ -6106,6 +6108,43 @@ test('on the Status, a rule sets each item apart in the docked terminal and on d
   await clock.settle()
   expect(await inline.find({ key: 'status-s1' })).toBeDefined()
   expect(await ruledAbove(inline)).toEqual([])
+})
+
+test('on the Status, the look line is a dashed rule, unlike the solid rules between items, with a blank line above and below it in the terminal and space above and below it on desktop', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  files = ['/.next-build']
+  expect(LOOK_DASH).not.toBe('─')
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'inbox', args: 'demo' } as never)
+  const docked = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
+  await docked.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  const gaps = async (pane: Pick<Mounted, 'findAll'>) =>
+    (await pane.findAll({ type: 'Box' })).flatMap(b =>
+      b.key === 'look-above' || b.key === 'look-below' ? [[b.key, b.props.height]] : [],
+    )
+  expect(await gaps(docked)).toEqual([
+    ['look-above', 1],
+    ['look-below', 1],
+  ])
+  const [left, right] = (await docked.find({ key: 'status-look' }))!.text.trim().split(` ${LOOK_TEXT} `)
+  expect(left).toMatch(new RegExp(`^${LOOK_DASH}+$`))
+  expect(right).toMatch(new RegExp(`^${LOOK_DASH}+$`))
+  await docked.unmount()
+
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
+  await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
+  await clock.settle()
+  const [above, below] = (await gaps(desktop)).map(([, height]) => height as number)
+  expect(above).toBeGreaterThan(0)
+  expect(above).toBeLessThan(1)
+  expect(below).toBe(above)
+  const keys = (await desktop.findAll({ type: 'Box' })).map(b => b.key ?? '')
+  const dashes = keys.filter(k => /^dash-\d+$/.test(k)).length
+  expect(dashes).toBeGreaterThan(4)
+  expect(keys.filter(k => k.startsWith('dash-gap-')).length).toBe(dashes - 2)
 })
 
 for (const isNextBuild of [false, true])

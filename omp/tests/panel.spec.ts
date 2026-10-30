@@ -32,6 +32,7 @@ import {
   statusKeyRows,
   PRESS_GUARD_MS,
   helpKeys,
+  LOOK_DASH,
 } from '../../hooks/view'
 import type { StatusRow, RowView } from '../../hooks/view'
 import { sessionView } from '../../hooks/session'
@@ -874,7 +875,7 @@ const tabLine = (screen: PanelScreen, ui: PanelUi, width: number) =>
 
 const labelOf = (row: StatusRow) => (row.kind === 'subject' || row.kind === 'child' ? row.name : row.text)
 
-test('the Status page shows the head’s title and description, then its rows in order, each subject’s marks in the head’s column, where it stands under its name and its was line under that, and Last seen in the middle of its rule', () => {
+test('the Status page shows the head’s title and description, then its rows in order, each subject’s marks in the head’s column, where it stands under its name and its was line under that, and Last seen in the middle of its dashed rule with a blank line above and below it', () => {
   const screen = screenOf()
   const page = screen.view.statusPage
   const lines = text(screen, onPage).split('\n')
@@ -892,10 +893,26 @@ test('the Status page shows the head’s title and description, then its rows in
     expect(lines[at(row.name) + 1]).toContain(row.text!)
     expect(lines[at(row.name) + 2]).toContain(`was: ${row.was}`)
   }
-  const seen = lines[at(' Last seen ')]!.trim()
-  const [left, right] = seen.split(' Last seen ')
+  const seenAt = at(' Last seen ')
+  const [left, right] = lines[seenAt]!.trim().split(' Last seen ')
   expect(left!.length - right!.length).toBeLessThanOrEqual(1)
-  expect(left).toMatch(/^─+$/)
+  expect(LOOK_DASH).not.toBe('─')
+  expect(left).toMatch(new RegExp(`^${LOOK_DASH}+$`))
+  expect([lines[seenAt - 1], lines[seenAt + 1]].map(l => l!.trim())).toEqual(['', ''])
+})
+
+test('on the Status page, Last seen at the end of the list leaves no blank line below it', () => {
+  const screen = screenOf()
+  const page = screen.view.statusPage
+  const through = page.rows.findIndex(r => r.kind === 'look')
+  const rows = page.rows.slice(0, through + 1).map(r => ({ ...r, isLast: r.kind === 'look' }))
+  const ending = { ...screen, view: { ...screen.view, statusPage: { ...page, rows } } }
+  const lines = text(ending, onPage).split('\n')
+  const seenAt = lines.findIndex(l => l.includes(' Last seen '))
+
+  expect(lines[seenAt - 1]!.trim()).toBe('')
+  expect(lines[seenAt + 1]).not.toBe(undefined)
+  expect(lines[seenAt + 1]!.trim()).not.toBe('')
 })
 
 test('on the Status page, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', () => {

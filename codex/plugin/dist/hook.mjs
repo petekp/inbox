@@ -1380,7 +1380,7 @@ function statusPage(s, now) {
   return {
     isEmpty: head === null && rows.length === 0,
     head,
-    rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
+    rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]), isLast: n === rows.length - 1 })),
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: "Status",

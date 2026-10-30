@@ -1130,6 +1130,8 @@ export type StatusStall = { text: string; tone: 'needsYou' | 'done' }
 export type StatusRow = StatusRowParts & {
   /** Whether a rule sets it apart from the row above. A subject and the rows under it are one item, and the look line is a rule already. */
   isRuledAbove: boolean
+  /** Whether it ends the list, so the look line leaves no space below it. */
+  isLast: boolean
 }
 
 type StatusRowParts =
@@ -1186,6 +1188,8 @@ export type StatusPage = {
 }
 
 export const LOOK_TEXT = 'Last seen'
+/** The dash the terminal and omp draw the look line's rule with. The rules between rows are solid, so the dashes mark this one out. */
+export const LOOK_DASH = '╌'
 /** What a subject's was line starts with, before the plan it replaces. */
 export const WAS_PREFIX = 'was: '
 const MERGED_PREFIX = 'merged in: '
@@ -1398,7 +1402,7 @@ export function statusPage(
   return {
     isEmpty: head === null && rows.length === 0,
     head,
-    rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
+    rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]), isLast: n === rows.length - 1 })),
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: 'Status',

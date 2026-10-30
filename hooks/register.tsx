@@ -260,6 +260,7 @@ import {
   ROW_COPY,
   READING_TEXT,
   rowsIn,
+  LOOK_DASH,
   LOOK_TEXT,
   mergedLine,
   nameBeforeStall,
@@ -328,7 +329,7 @@ import {
 import { parseInline } from './inline'
 import type { Span } from './inline'
 import type { RowRecord } from './arrivals'
-import { BANNER_GAP_PT, BANNER_PAD_Y_PT, STATUS_ROW_PAD_PT, ROW_PAD_PT } from './layout'
+import { BANNER_GAP_PT, BANNER_PAD_Y_PT, LOOK_GAP_PT, STATUS_ROW_PAD_PT, ROW_PAD_PT } from './layout'
 import { cancelledMarkShape, markShape } from './marks'
 import {
   DARK_BANNER_TINTS,
@@ -592,6 +593,9 @@ const DESKTOP_HAIR_LINES = 1 / DESKTOP_LINE_PT
 const DESKTOP_TREE_AT = 0.73
 /** The room the tree's arm leaves before a child's mark on desktop, in cells. */
 const DESKTOP_ARM_GAP = 0.4
+/** A dash of a dashed line on desktop, and the room between two, in points. */
+const DESKTOP_DASH_PT = 3
+const DESKTOP_DASH_GAP_PT = 3
 const STATUS_PAD_Y = STATUS_ROW_PAD_PT / DESKTOP_LINE_PT
 // How far a row frame's transparent border insets its content, in points.
 const FRAME_INSET_PT = 13.2
@@ -6453,37 +6457,57 @@ export const register: Register = on => {
           <Text color={pal.divider}>{'─'.repeat(statusRuleCells)}</Text>
         </Box>
       )
-    /** The look line: "Last seen" in the middle of a rule that spans what the rule above a row spans. */
-    const statusLookLine = (text: string) => {
-      // Outside a frame, whose border would inset the rule's right end, so the padding stands in for the frame's.
-      if (look === 'desktop')
-        return (
-          <Box
-            key="status-look"
-            flexDirection="row"
-            alignItems="center"
-            marginLeft={desktopStatusRuleLeft}
-            paddingY={statusFrameEdge}
-          >
-            <Box flexGrow={1} flexDirection="column">
-              {desktopHairline('look-before', 'across')}
-            </Box>
-            <Box flexShrink={0} paddingX={1}>
-              <Text color={pal.muted}>{text}</Text>
-            </Box>
-            <Box flexGrow={1} flexDirection="column">
-              {desktopHairline('look-after', 'across')}
-            </Box>
-          </Box>
-        )
+    /**
+     * A dashed 1 pt line on desktop, about `cells` wide: dashes that grow to share the room, so the line fills it at any
+     * width. Desktop has no dashed border, and a run of a dash glyph wraps.
+     */
+    const desktopDashes = (key: string, cells: number) => {
+      const count = Math.max(1, Math.round((cells * DESKTOP_CELL_PT) / (DESKTOP_DASH_PT + DESKTOP_DASH_GAP_PT)))
+      const dashes = Array.from({ length: count }, (_, n) => [
+        ...(n > 0 ? [<Box key={`dash-gap-${n}`} width={DESKTOP_DASH_GAP_PT / DESKTOP_CELL_PT} flexShrink={0} />] : []),
+        <Box key={`dash-${n}`} flexGrow={1} height={DESKTOP_HAIR_LINES} backgroundColor={pal.divider} />,
+      ]).flat()
+
+      return (
+        <Box key={key} flexGrow={1} flexDirection="row" height={DESKTOP_HAIR_LINES}>
+          {dashes}
+        </Box>
+      )
+    }
+    /**
+     * The look line: "Last seen" in the middle of a dashed rule that spans what the rule above a row spans, with space
+     * above it, and below it unless it ends the list.
+     */
+    const statusLookLine = (text: string, isLast: boolean) => {
+      // The terminal draws whole lines, so its space is a blank line.
+      const gap = (key: string) => <Box key={key} height={look === 'desktop' ? LOOK_GAP_PT / DESKTOP_LINE_PT : 1} />
       const label = ` ${text} `
       const fill = Math.max(4, statusRuleCells - cellWidth(label))
       const before = Math.floor(fill / 2)
+      const ruleCells = (listColumns - desktopStatusRuleLeft - 2 - text.length / DESKTOP_CHARS_PER_CELL) / 2
+      // On desktop it sits outside a frame, whose border would inset the rule's right end, so the padding stands in for
+      // the frame's.
+      const rule =
+        look === 'desktop' ? (
+          <Box flexDirection="row" alignItems="center" marginLeft={desktopStatusRuleLeft} paddingY={statusFrameEdge}>
+            {desktopDashes('look-before', ruleCells)}
+            <Box flexShrink={0} paddingX={1}>
+              <Text color={pal.muted}>{text}</Text>
+            </Box>
+            {desktopDashes('look-after', ruleCells)}
+          </Box>
+        ) : (
+          <Box flexDirection="row">
+            <Box width={statusRuleAt} flexShrink={0} />
+            <Text color={pal.divider}>{`${LOOK_DASH.repeat(before)}${label}${LOOK_DASH.repeat(fill - before)}`}</Text>
+          </Box>
+        )
 
       return (
-        <Box key="status-look" flexDirection="row">
-          <Box width={statusRuleAt} flexShrink={0} />
-          <Text color={pal.divider}>{`${'─'.repeat(before)}${label}${'─'.repeat(fill - before)}`}</Text>
+        <Box key="status-look" flexDirection="column">
+          {gap('look-above')}
+          {rule}
+          {isLast ? null : gap('look-below')}
         </Box>
       )
     }
@@ -6601,7 +6625,7 @@ export const register: Register = on => {
           content: <Text color={pal.muted}>{r.text}</Text>,
           tree: statusTree(`status-${r.id}-tree`, r.branch),
         })
-      if (r.kind === 'look') return statusLookLine(r.text)
+      if (r.kind === 'look') return statusLookLine(r.text, r.isLast)
 
       return statusRowLine({
         key: `status-${r.id}`,
