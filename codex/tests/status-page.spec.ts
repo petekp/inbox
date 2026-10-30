@@ -15,7 +15,8 @@ const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Status page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes, while a release build’s view draws Asks for it, and only a next build names on an Asks row the subject it holds up', async () => {
+test('the Codex tab draws the Status page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes, while a release build’s view draws Asks for it, and only a next build names on an Asks row the subject it holds up', async context => {
+  context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const now = Date.now()
   const state = emptyState('overview')
   state.heard.startAt = 1
@@ -71,14 +72,15 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     sessionStorage: window.sessionStorage,
     matchMedia: () => media,
     getComputedStyle: window.getComputedStyle.bind(window),
-    setTimeout: window.setTimeout.bind(window),
-    clearTimeout: window.clearTimeout.bind(window),
     DEMO_BUTTON: false,
     DEMO_RECORDING: false,
   }
   const previous = new Map(Object.keys(globals).map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]))
   for (const [key, value] of Object.entries(globals))
     Object.defineProperty(globalThis, key, { value, writable: true, configurable: true })
+  const windowTimers = { setTimeout, clearTimeout }
+  for (const [key, value] of Object.entries(windowTimers))
+    Object.defineProperty(window, key, { value, writable: true, configurable: true })
   const sentTabs: unknown[] = []
   let isOlderServer = false
   let isNextBuild = true
@@ -113,6 +115,10 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
   const until = async (ready: () => boolean) => {
     for (let n = 0; n < 50 && !ready(); n++) await new Promise<void>(resolve => setImmediate(resolve))
     assert.ok(ready())
+  }
+  const afterPoll = async () => {
+    context.mock.timers.tick(POLL_MS + 100)
+    await new Promise<void>(resolve => setImmediate(resolve))
   }
   const spokenText = (b: Element) =>
     [...b.children]
@@ -166,7 +172,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
       { kind: 'finding', title: 'The bar wraps at 320 px', detail: 'Four tabs need two lines.' },
       Date.now(),
     ).ledger
-    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
+    await afterPoll()
     assert.equal(shownTab(), 'Status')
     assert.ok(root.querySelector('.row.selected') === null, 'a row is open')
     assert.deepEqual(tabLabels(), ['Status', 'Asks1', 'Finds1', 'PRs'])
@@ -189,17 +195,17 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.equal(shownTab(), 'Status')
 
     isOlderServer = true
-    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
+    await afterPoll()
     assert.equal(shownTab(), 'Asks1')
     assert.ok(root.querySelector('.status-head') === null, 'the Status page is drawn')
     assert.equal(sentTabs.at(-1), 'overview')
     isOlderServer = false
-    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
+    await afterPoll()
     assert.equal(shownTab(), 'Status')
     assert.ok(root.querySelector('.status-head'))
 
     isNextBuild = false
-    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
+    await afterPoll()
     assert.deepEqual(tabLabels(), ['Asks1', 'Finds1', 'PRs'])
     assert.deepEqual(
       [...root.querySelectorAll('.tab')].map(b => b.getAttribute('title')),
@@ -211,10 +217,10 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     key('4')
     assert.equal(shownTab(), 'Asks1')
     isNextBuild = true
-    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
+    await afterPoll()
     assert.equal(shownTab(), 'Status')
     isNextBuild = false
-    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
+    await afterPoll()
     key('3')
     assert.equal(shownTab(), 'PRs')
     key('1')
@@ -222,13 +228,14 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
 
     isNextBuild = true
     state.ledger = closeItem(state.ledger, asked.items[0]!.id, { how: 'claude', outcome: 'answered in chat' }, now)
-    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
+    await afterPoll()
     key('1')
     assert.equal(shownTab(), 'Status')
     assert.ok(root.querySelector('.status-head'))
     assert.ok(![...root.querySelectorAll('main .mark')].some(m => m.textContent === '◆'))
     assert.equal(root.querySelectorAll('main button').length, 0)
   } finally {
+    for (const key of Object.keys(windowTimers)) Reflect.deleteProperty(window, key)
     await window.happyDOM.abort()
     for (const [key, descriptor] of previous) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor)
