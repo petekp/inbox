@@ -331,9 +331,11 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     named(root, 'Reply').click()
     const input = root.querySelector('input')!
     assert.ok(input)
-    assert.equal(document.activeElement, input)
+    assert.ok(document.activeElement === input, 'the reply field has focus')
     assert.deepEqual(
-      buttons(root).filter(b => ['Run tests', 'Done', 'Reply', 'Explain'].includes(b.textContent ?? '')),
+      buttons(root)
+        .map(b => b.textContent)
+        .filter(label => ['Run tests', 'Done', 'Reply', 'Explain'].includes(label ?? '')),
       [],
     )
     named(root, 'Cancel').focus()
@@ -344,14 +346,14 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     assert.equal(presses.length, 1)
     named(root, 'Send').click()
     assert.equal(presses.length, 1)
-    assert.equal(root.querySelector('input'), input)
+    assert.ok(root.querySelector('input') === input, 'the reply field was replaced')
     input.value = '  Waiting for access  '
     input.dispatchEvent(new Event('input', { bubbles: true }))
     named(root, 'Cancel').click()
-    assert.equal(root.querySelector('input'), null)
+    assert.ok(root.querySelector('input') === null, 'the reply field is still drawn')
     named(root, 'Reply').click()
     assert.equal(root.querySelector('input')!.value, '  Waiting for access  ')
-    assert.equal(document.activeElement, root.querySelector('input'))
+    assert.ok(document.activeElement === root.querySelector('input'), 'the reply field has focus')
     named(root, 'Send').click()
     await until(() => state.lastActions.i1?.kind === 'handoff' && root.querySelector('input') === null)
     assert.deepEqual(presses, [
@@ -359,7 +361,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
       { action: 'type', id: 'i1', text: 'Waiting for access' },
     ])
     assert.equal(state.ledger.items[0]?.id, 'i1')
-    assert.equal(root.querySelector('input'), null)
+    assert.ok(root.querySelector('input') === null, 'the reply field is still drawn')
 
     const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
     await until(() => root.querySelector('.row.selected') === null)
@@ -376,11 +378,12 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     named(root, 'Reply').click()
     const held = root.querySelector('input')!
     assert.equal(held.value, 'Still blocked')
-    state.ledger = recordClose(CODEX, state.ledger, { id: 'i1', reason: 'the build passed' }, Date.now()).ledger
+    const unconfirmedAt = state.lastActions.i1!.at
+    state.ledger = recordClose(CODEX, state.ledger, { id: 'i1', reason: 'the build passed' }, unconfirmedAt + 1).ledger
     await pause(POLL_MS + 100)
-    assert.equal(root.querySelector('input'), held)
+    assert.ok(root.querySelector('input') === held, 'the reply field was replaced')
     assert.equal(held.value, 'Still blocked')
-    assert.equal(document.activeElement, held)
+    assert.ok(document.activeElement === held, 'the reply field has focus')
     assert.match(root.textContent ?? '', /Closed by Codex: the build passed/)
     assert.deepEqual(
       buttons(root)
@@ -389,7 +392,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
       ['Discard'],
     )
     named(root, 'Discard').click()
-    assert.equal(root.querySelector('input'), null)
+    assert.ok(root.querySelector('input') === null, 'the reply field is still drawn')
     await until(() => !buttons(root).some(b => b.textContent === 'Reply' || b.textContent === 'Discard'))
     assert.doesNotMatch(root.textContent ?? '', /the build passed/)
     await pause(POLL_MS + 100)
@@ -411,13 +414,13 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     try {
       await pause(POLL_MS + 100)
       assert.match(root.querySelector('.row.settled')?.textContent ?? '', /Tag the release/)
-      assert.equal(root.querySelector('.key.undo:not(.spent)'), null)
+      assert.ok(root.querySelector('.key.undo:not(.spent)') === null, 'Undo is still offered')
       assert.ok(root.querySelector('.row.settled .key.undo.spent'))
       tabNamed('Finds').click()
       tabNamed('Asks').click()
-      assert.equal(root.querySelector('.row.settled'), null)
+      assert.ok(root.querySelector('.row.settled') === null, 'a settled row is still drawn')
       await pause(POLL_MS + 100)
-      assert.equal(root.querySelector('.row.settled'), null)
+      assert.ok(root.querySelector('.row.settled') === null, 'a settled row is still drawn')
 
       state.ledger = recordItem(CODEX, state.ledger, { kind: 'task', ask: 'Publish the notes' }, Date.now()).ledger
       const notes = state.ledger.items.find(i => i.ask === 'Publish the notes')!.id
@@ -441,7 +444,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
         /Publish the notes/.test(r.textContent ?? ''),
       )
       assert.ok(notesRow)
-      assert.equal(notesRow.querySelector('.key.undo:not(.spent)'), null)
+      assert.ok(notesRow.querySelector('.key.undo:not(.spent)') === null, 'Undo is still offered')
       assert.ok(notesRow.querySelector('.key.undo.spent'))
 
       state.presence = { ...state.presence, lastTypedMessageAt: Date.now() }
@@ -555,12 +558,12 @@ test('the built tab starts without randomUUID and reloads without losing its hos
       '$1throw new Error("broken candidate");$2',
     )
     await until(() => button('Try again') !== undefined)
-    assert.equal(document.getElementById('app'), workingRoot)
+    assert.ok(document.getElementById('app') === workingRoot, 'the tab root was replaced')
     assert.equal(document.querySelector('input')?.value, 'Keep these exact words')
-    assert.equal(document.activeElement, input)
+    assert.ok(document.activeElement === input, 'the reply field has focus')
     html = TAB_HTML.replace('</head>', '<meta name="test-page" content="next"></head>')
     await until(() => initialized === 2 && host.document.querySelector('input')?.value === 'Keep these exact words')
-    assert.equal(host.document.activeElement, host.document.querySelector('input'))
+    assert.ok(host.document.activeElement === host.document.querySelector('input'), 'the reply field has focus')
     assert.ok(host.document === document, 'page replacement preserves the host document')
     assert.ok(host.document.body === body, 'page replacement preserves the host body')
     assert.ok(hostControl.isConnected)
@@ -579,7 +582,7 @@ test('the built tab starts without randomUUID and reloads without losing its hos
     assert.equal(new Set(requestIds).size, requestIds.length)
     assert.ok(requestIds.every((id, n) => n === 0 || id > requestIds[n - 1]!))
     button('Cancel')!.click()
-    assert.equal(document.querySelector('input'), null)
+    assert.ok(document.querySelector('input') === null, 'the reply field is still drawn')
     button('Reply')!.click()
     assert.equal(document.querySelector('input')?.value, 'Keep these exact words')
     button('Send')!.click()

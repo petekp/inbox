@@ -1290,17 +1290,24 @@ async function changeSaved(
   savedWrites++
   // The read, the change and the write run in the save queue, so two changes to one saved session cannot both
   // start from the same read.
-  const changed = saving.then(async (): Promise<Changed> => {
-    const saved = await readSaved($, id)
-    if (!saved?.session) return { before: emptySession(), after: emptySession(), isDrawn: false }
-    const before = upgradeSession(saved.session)
-    const result = await change(before)
-    if (result === before) return { before, after: before, isDrawn: false }
-    const after = pruned({ ...result, heldRows: [], shownSince: null })
-    await $.store.set(sessionKey(id), { savedAt: saved.session.savedAt, ...after })
+  // A retry reads again, so it cannot write over a save another process made meanwhile.
+  const changed = saving.then(() =>
+    whileLockHeld($, async (): Promise<Changed> => {
+      const saved = await readSaved($, id)
+      if (!saved?.session) return { before: emptySession(), after: emptySession(), isDrawn: false }
+      const before = upgradeSession(saved.session)
+      const result = await change(before)
+      if (result === before) return { before, after: before, isDrawn: false }
+      const after = pruned({ ...result, heldRows: [], shownSince: null })
+      await $.store.set(sessionKey(id), { savedAt: saved.session.savedAt, ...after })
 
-    return { before, after, isDrawn: false }
-  })
+      return { before, after, isDrawn: false }
+    }).catch((error: unknown): Changed => {
+      if (!isLockHeld(error)) throw error
+      logSaveFailure($, id, error)
+      return { before: emptySession(), after: emptySession(), isDrawn: false }
+    }),
+  )
   const write = changed.then(() => undefined)
   saving = write.catch(() => undefined)
   track(id, write)
@@ -1311,6 +1318,35 @@ async function changeSaved(
 type SavedRecord = SavedSession & { savedAt: number }
 
 const sessionKey = (id: string) => `s:${id}`
+
+/**
+ * What the engine's store throws when another process holds the lock on its file. Only `set` and `delete` take the
+ * lock, and the engine retries it for under a second before throwing.
+ */
+const LOCK_HELD = 'Lock file is already being held'
+/** The waits before each retry of a store write that met a held lock, about two seconds in all. */
+const LOCK_RETRY_WAITS_MS = [100, 200, 300, 500, 900]
+
+const isLockHeld = (error: unknown) => error instanceof Error && error.message.includes(LOCK_HELD)
+
+/** Runs `write`, and again after each wait in `LOCK_RETRY_WAITS_MS` while the store's lock is held. */
+async function whileLockHeld<T>($: EngineInterface, write: () => Promise<T>): Promise<T> {
+  for (const ms of LOCK_RETRY_WAITS_MS) {
+    try {
+      return await write()
+    } catch (error) {
+      if (!isLockHeld(error)) throw error
+      await $.clock.sleep(ms)
+    }
+  }
+  return write()
+}
+
+function logSaveFailure($: EngineInterface, id: string, error: unknown) {
+  $.ui.log(`inbox: saving session ${id} failed: ${error instanceof Error ? error.message : String(error)}`, {
+    to: 'debug',
+  })
+}
 
 let saving: Promise<void> = Promise.resolve()
 /** How many changes went to a saved session that is not drawn, so a load can tell its read is out of date. */
@@ -1338,9 +1374,9 @@ function save($: EngineInterface, owner: Owner, s: ModSession): Promise<void> {
   const generation = `${owner.id}:${owner.generation}`
   savedRevisions.set(generation, Math.max(savedRevisions.get(generation) ?? 0, s.revision))
   const { revision: _revision, ...session } = s
-  const write = Promise.all([saving, $.clock.now()]).then(async ([, savedAt]) => {
+  const setAndPrune = Promise.all([saving, $.clock.now()]).then(async ([, savedAt]) => {
     if (s.revision < (savedRevisions.get(generation) ?? 0)) return
-    await $.store.set(key, { savedAt, ...session })
+    await whileLockHeld($, () => $.store.set(key, { savedAt, ...session }))
     if (prunedSaves.has(generation)) return
     const keys = await $.store.keys()
     const sessions = keys.filter(k => k.startsWith('s:'))
@@ -1362,8 +1398,15 @@ function save($: EngineInterface, owner: Owner, s: ModSession): Promise<void> {
       .slice(0, Math.max(0, sessions.length - KEPT_SESSIONS))
       .map(entry => entry.key)
     // `p:` keys held the last-session offer, which earlier builds saved per folder.
-    await Promise.all([...stale, ...keys.filter(k => k.startsWith('p:'))].map(old => $.store.delete(old)))
+    await Promise.all(
+      [...stale, ...keys.filter(k => k.startsWith('p:'))].map(old => whileLockHeld($, () => $.store.delete(old))),
+    )
     prunedSaves.add(generation)
+  })
+  const write = setAndPrune.catch((error: unknown) => {
+    // The session stays drawn, and the conversation's next save writes it whole.
+    if (!isLockHeld(error)) throw error
+    logSaveFailure($, owner.id, error)
   })
   saving = write.catch(() => undefined)
   track(owner.id, write)
