@@ -179,7 +179,7 @@ export type PanelUi = {
   /** The Status row the next draw scrolls into view, after j or k selects it. */
   pageReveal: string | null
   /**
-   * When an Status press selected the shown row, as View does. The row's buttons ignore keys until
+   * When a Status press selected the shown row, as View does. The row's buttons ignore keys until
    * `PRESS_GUARD_MS` has passed, so a second Enter does not press the row it opened.
    */
   openedAt: number
@@ -228,7 +228,7 @@ type Button = {
   isOut?: boolean
 }
 
-/** What a button draws. An Status button presses nothing the host runs, so it has a face and no `press`. */
+/** What a button draws. A Status button presses nothing the host runs, so it has a face and no `press`. */
 type ButtonFace = Omit<Button, 'press'>
 
 type Lead = { text: string; tone: Tone | null }
@@ -672,7 +672,7 @@ function pressFeedback(screen: PanelScreen, id: string, now: number, isMarkDone 
 
 const doneAt = (f: Line['feedback']): number | null => (f?.source?.is === 'done' ? f.source.at : null)
 
-/** Where an Status row's mark sits: in the head's column, so the list lines up with it. A subject's text starts at `PAGE_TEXT_AT`. */
+/** Where a Status row's mark sits: in the head's column, so the list lines up with it. A subject's text starts at `PAGE_TEXT_AT`. */
 const PAGE_MARK_AT = 1
 const PAGE_TEXT_AT = PAGE_MARK_AT + 2
 /** Where the mark of a child under a subject sits: after the tree's arm, which starts under the subject's mark. */
@@ -831,7 +831,7 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   const lines = linesOf(entriesOf(screen, ui, ui.tab, now))
   const selected = resolveSelected(lines, ui.selectedId)
   const isPage = !isRowTab(ui.tab)
-  // The Status lists no lines, and its selection is an Status row's id.
+  // The Status lists no lines, and its selection is a Status row's id.
   const base: PanelUi = isPage ? ui : { ...ui, selectedId: selected?.id ?? null }
   if (base.typing !== null) return typingKey(base, base.typing, key, now, text)
   const shown = shownTabs(screen.isNextBuild === true)
@@ -1237,7 +1237,7 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   return out
 }
 
-/** The room for an Status text after a mark at `indent`. */
+/** The room for a Status text after a mark at `indent`. */
 const pageRoom = (indent: number, width: number) => Math.max(10, width - indent - 2 - 1)
 
 /** `text` wrapped to `room` cells, at most `maxLines` lines and cut with an ellipsis past them, each line painted. */
@@ -1307,12 +1307,12 @@ function withTree(lines: string[], first: string | null, rest: string, s: Style)
   return lines.map((l, n) => (n === 0 ? (first ? drawn(l, first) : l) : drawn(l, rest)))
 }
 
-/** The cells an Status rule spans: from the text column to the end of the row. */
+/** The cells a Status rule spans: from the text column to the end of the row. */
 function pageRuleCells(width: number): number {
   return Math.max(0, width - PAGE_TEXT_AT - 1)
 }
 
-/** The rule above an Status row that starts an item. */
+/** The rule above a Status row that starts an item. */
 function pageRule(width: number, s: Style): string {
   return `${' '.repeat(PAGE_TEXT_AT)}${s.dim('─'.repeat(pageRuleCells(width)))}`
 }
@@ -1332,7 +1332,7 @@ function lookLines(row: StatusRow & { kind: 'look' }, width: number, s: Style): 
 
 /** A line on the Status page, laid out as the shared row says. */
 /**
- * An Status row's buttons from its plan, under its text. The selected row's focused button takes Enter, and its other
+ * A Status row's buttons from its plan, under its text. The selected row's focused button takes Enter, and its other
  * buttons their keys, so only that row draws them focused or with keys.
  */
 function pageButtonLines(row: StatusRow, d: Draw, isSelected: boolean): string[] {

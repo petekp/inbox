@@ -2583,7 +2583,7 @@ async function selectClicked($: EngineInterface, id: string) {
   await select($, tab, id, index)
 }
 
-/** An Status row's View press: Asks shows with the ask selected and in view. */
+/** A Status row's View press: Asks shows with the ask selected and in view. */
 async function showAsk($: EngineInterface, askId: string) {
   const { view } = await drawnState($)
   const prViews = openPrViews(view.prs.drawn)
@@ -6306,7 +6306,7 @@ export const register: Register = on => {
         </Box>
       )
     }
-    /** Where an Status row's mark sits in the terminal: in the head's column, so the list lines up with it. */
+    /** Where a Status row's mark sits in the terminal: in the head's column, so the list lines up with it. */
     const statusMarkAt = TREE_LINE_AT
     /** The text column of a Status line at `depth`, in cells on the terminal and in points on desktop. */
     const statusTextWidth = (depth: number) =>
@@ -6366,7 +6366,7 @@ export const register: Register = on => {
         </Box>
       )
     }
-    /** An Status row frame's padding and 1 pt border above or below its text on desktop, in half lines. */
+    /** A Status row frame's padding and 1 pt border above or below its text on desktop, in half lines. */
     const statusFrameEdge = STATUS_PAD_Y + 2 * DESKTOP_HAIR_LINES
     /**
      * The line that ties the rows under a subject to it, in the subject's mark column. `down` runs from under the
@@ -6406,12 +6406,12 @@ export const register: Register = on => {
         </Box>
       )
     }
-    // An Status rule starts at the text column, as the rules between sections and between Asks rows do. In the
+    // A Status rule starts at the text column, as the rules between sections and between Asks rows do. In the
     // terminal it stops at the end of the list's columns. On desktop it runs to the pane's edge.
     const statusRuleAt = statusMarkAt + markWidth
     const statusRuleCells = Math.max(0, listColumns - statusRuleAt)
     const desktopStatusRuleLeft = FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS
-    /** The rule above an Status row that starts an item. */
+    /** The rule above a Status row that starts an item. */
     const statusRule = (id: string) =>
       look === 'desktop' ? (
         desktopHairline(`status-rule-${id}`, 'across', { marginLeft: desktopStatusRuleLeft })
@@ -6526,7 +6526,7 @@ export const register: Register = on => {
           ) : null}
         </Box>
       )
-    /** An Status row's buttons from its plan. Only the selected row's key presses it, so only that row names its key. */
+    /** A Status row's buttons from its plan. Only the selected row's key presses it, so only that row names its key. */
     const statusKeys = (r: StatusRow): KeyAction[] =>
       statusKeyPlan(r).map(k => ({
         key: `${k.press.action}-${r.id}`,

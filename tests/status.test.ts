@@ -687,7 +687,7 @@ test('open subjects past seven fold their oldest queued ones into a count', () =
   ])
 })
 
-test('an Status saved before subjects keeps its open work, dated at the last look, and its headline as the head', () => {
+test('a Status saved before subjects keeps its open work, dated at the last look, and its headline as the head', () => {
   const old = {
     isCoordinator: true,
     headline: 'Releasing 0.2.11',
@@ -759,7 +759,7 @@ test('a saved goal becomes the head with no description, and a saved head keeps 
   expect(upgradeStatus({ head, subjects: [] })?.head).toEqual(head)
 })
 
-test('a saved Status drops subjects and children it cannot read, reads a delegate state it does not know as none, and nothing else is an Status', () => {
+test('a saved Status drops subjects and children it cannot read, reads a delegate state it does not know as none, and nothing else is a Status', () => {
   const saved = {
     ...EMPTY_SESSION_STATUS,
     subjects: [

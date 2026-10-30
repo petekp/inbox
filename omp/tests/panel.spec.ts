@@ -1012,7 +1012,7 @@ const unheldScreen = () => {
   return screenOf({ view: sessionView({ ...s, ledger }, NOW, SETTLED_MS, true, NO_HOLDS) })
 }
 
-test('keys on an Status page with no buttons select nothing and press nothing, and the footer offers only tab', () => {
+test('keys on a Status page with no buttons select nothing and press nothing, and the footer offers only tab', () => {
   const screen = unheldScreen()
   for (const key of ['up', 'down', 'j', 'k', 'left', 'right', 'enter', 'u', 'r', 'd', 'x', 'a']) {
     const result = handleKey(screen, onPage, key, NOW)
@@ -1089,7 +1089,7 @@ test('on the Status page, a subject an open ask holds up draws View, named for t
   expect(text(unheldScreen(), onPage)).not.toContain('View ')
 })
 
-test('View on an Status row shows Asks with the oldest ask that holds it up selected, by its key or Enter, sends nothing, and holds the ask’s buttons through a second Enter', () => {
+test('View on a Status row shows Asks with the oldest ask that holds it up selected, by its key or Enter, sends nothing, and holds the ask’s buttons through a second Enter', () => {
   const screen = screenOf()
   for (const key of ['v', 'enter']) {
     const result = handleKey(screen, onPage, key, NOW)
@@ -1104,7 +1104,7 @@ test('View on an Status row shows Asks with the oldest ask that holds it up sele
   expect(handleKey(screen, onAsk, 'enter', NOW + PRESS_GUARD_MS).press).toMatchObject({ action: 'answer', id: 'd11' })
 })
 
-test('an Status row’s View leaves once its asks close, and the selection moves to the row that still has one', () => {
+test('a Status row’s View leaves once its asks close, and the selection moves to the row that still has one', () => {
   const s = demoState(NOW)
   const items = s.ledger.items.filter(i => i.id !== 'd11')
   const screen = screenOf({
@@ -1119,7 +1119,7 @@ test('an Status row’s View leaves once its asks close, and the selection moves
   expect(handleKey(screen, onS3, 'v', NOW).ui.selectedId).toBe('d17')
 })
 
-test('on an Status page taller than the panel, j and k scroll the newly selected row into view', () => {
+test('on a Status page taller than the panel, j and k scroll the newly selected row into view', () => {
   const screen = screenOf()
   const height = 14
   const drawnFor = (ui: PanelUi) => drawPanel(screen, ui, 80, NOW, style, height)

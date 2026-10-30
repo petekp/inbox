@@ -1659,7 +1659,7 @@ export function rowKeyPlan(r: RowView, isAllShown: boolean): { keys: PlannedKey[
   return { keys, more }
 }
 
-/** A press on an Status row. `show-ask` opens Asks with that ask selected, and sends nothing. */
+/** A press on a Status row. `show-ask` opens Asks with that ask selected, and sends nothing. */
 type StatusPress = { action: 'show-ask'; askId: string }
 
 type StatusKey = { press: StatusPress; label: string; hotkey: string; kind: PressKind }
@@ -1667,7 +1667,7 @@ type StatusKey = { press: StatusPress; label: string; hotkey: string; kind: Pres
 /** The View button's label, by the kind of ask it opens. */
 const VIEW_ASK_LABELS: Record<Item['kind'], string> = { question: 'View question', task: 'View task' }
 
-/** An Status row's buttons, in the order every look draws them. A row with none takes no press. */
+/** A Status row's buttons, in the order every look draws them. A row with none takes no press. */
 export function statusKeyPlan(row: StatusRow): StatusKey[] {
   if (row.kind !== 'subject' || row.ask === null) return []
 

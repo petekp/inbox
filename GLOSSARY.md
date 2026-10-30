@@ -61,7 +61,7 @@ draws it. `MARK_LEGEND` in `hooks/view.ts` lists them all.
 **Result mark**:
 The mark of what came of a row: ✓ when handled, ✕ when dismissed, ✗ when it
 lapsed, as when the agent closed it because the work overtook it. It runs, as
-an Status mark does, while what the row sent is on its way to the agent.
+a Status mark does, while what the row sent is on its way to the agent.
 
 **Finding**:
 An issue or opportunity the agent noticed outside the current task.
@@ -113,7 +113,7 @@ host's events and from Herdr. The inbox model only links it to a subject.
 _Avoid_: subitem, job
 
 **Stall words**:
-The word after an Status row's name when its work waits on the person or has
+The word after a Status row's name when its work waits on the person or has
 finished. A subject held by an open question or task reads "waiting", in the
 needs-you tone, and so does a delegate while Herdr shows it at a question or an
 approval. A finished delegate reads "finished". A row waiting on someone else
