@@ -188,9 +188,17 @@ agent. Until then it keeps its label, so its width holds.
 **PR order**:
 The order an agent set for the PRs tab with `order_prs`, first to last, such as
 a merge ranking. Its open PRs draw first, each with its rank, under a line that
-names the order and the agent that set it. The other PRs follow in the tab's
-own order. The conversation saves it as `Ledger.prOrder`.
+names what the person does with the order, as "Merge in this order", and the
+agent that set it. The agent's reason for the order draws under that line. The
+other PRs follow in the tab's own order. The conversation saves it as
+`Ledger.prOrder`.
 _Avoid_: ranking, as the stored thing
+
+**Changed since**:
+A ranked open PR whose status, waiting threads or failing checks differ from
+what the PR order recorded for it. The order records each ranked PR's status
+when it is set, or at the PR's first fetch after. The tab then reads "2 PRs
+changed since", with Rank again, which asks the agent to rank the PRs again.
 
 ### Looks and hosts
 

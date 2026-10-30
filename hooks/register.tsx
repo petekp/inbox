@@ -108,6 +108,7 @@ import {
   prBlockActions,
   prCheckId,
   DISMISS_MERGED_ID,
+  RANK_AGAIN_ID,
   prMarkId,
   pressRowId,
   prRowWaits,
@@ -3052,6 +3053,7 @@ const PR_KEYS: Record<PrPress['action'], string> = {
   'pr-dismiss': 'dismiss-pr',
   'pr-undo': 'undo-pr',
   'pr-dismiss-merged': 'dismiss-merged',
+  'pr-rank-again': 'rank-again',
   'check-fix': 'fix',
   log: 'log',
 }
@@ -4487,6 +4489,7 @@ export const register: Register = on => {
       }))
       .map(g => ({ ...g, rows: [...g.threads, ...g.checks] }))
     const prTabKeys = view.prs.tabActions.map(a => prKeyAction(a, 'tab'))
+    const prOrderKeys = (view.prs.order?.changed?.actions ?? []).map(a => prKeyAction(a, 'order'))
     const rows: Record<Tab, Row[]> = {
       needsYou: lists.byTab.needsYou,
       findings: lists.byTab.findings,
@@ -6221,7 +6224,34 @@ export const register: Register = on => {
       </Text>
     )
     const olderPrs = () => (view.prs.olderText ? prTabLine('older-prs', mutedLine(view.prs.olderText)) : [])
-    const prOrderLine = () => (view.prs.orderText ? prTabLine('pr-order', mutedLine(view.prs.orderText)) : [])
+    /** The order's title, the agent's reason under it, and the changed line with Rank again and its press status. */
+    const prOrderLines = () => {
+      const order = view.prs.order
+      if (!order) return []
+      const changed = order.changed
+      const pressed = changed?.showsPress ? lastActionText(RANK_AGAIN_ID) : null
+      const lines = (
+        <Box flexDirection="column">
+          <Text wrap="wrap">{order.title}</Text>
+          {order.why ? mutedLine(order.why) : null}
+          {changed ? (
+            <Box flexDirection="column" marginTop={look === 'desktop' ? 1 : 0}>
+              <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap}>
+                {changed.text ? <Text wrap="wrap">{changed.text}</Text> : null}
+                {prOrderKeys.length > 0 ? keyRow(RANK_AGAIN_ID, prOrderKeys) : null}
+              </Box>
+              {pressed ? (
+                <Text color={pressed.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
+                  {pressed.text}
+                </Text>
+              ) : null}
+            </Box>
+          ) : null}
+        </Box>
+      )
+
+      return prTabLine('pr-order', lines)
+    }
     const prTabButtons = () =>
       prTabKeys.length === 0 ? [] : prTabLine('pr-tab-actions', keyRow(DISMISS_MERGED_ID, prTabKeys))
     const prsView = () =>
@@ -6233,7 +6263,7 @@ export const register: Register = on => {
         sections(
           [
             ...(ghNotice ? [section(banner(bannerOf(ghNotice.kind, ghNotice.text)))] : []),
-            ...prOrderLine(),
+            ...prOrderLines(),
             ...prGroups.map(prBlock),
             ...prTabButtons(),
             ...olderPrs(),
@@ -6666,7 +6696,7 @@ export const register: Register = on => {
     const rowKeys = [
       ...(statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []),
       ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow),
-      ...(tab === 'prs' && !isHelpShown ? prTabKeys : []),
+      ...(tab === 'prs' && !isHelpShown ? [...prOrderKeys, ...prTabKeys] : []),
     ]
 
     // A pane takes a key

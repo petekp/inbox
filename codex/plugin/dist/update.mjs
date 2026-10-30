@@ -503,7 +503,7 @@ function upgradeLedger(ledger) {
   const updates = typeof rest.updates === "number" ? rest.updates : card ? 1 : 0;
   return {
     ...rest,
-    prOrder: rest.prOrder ?? null,
+    prOrder: rest.prOrder ? { ...rest.prOrder, why: rest.prOrder.why ?? null, statuses: rest.prOrder.statuses ?? null } : null,
     updates,
     overview: upgradeStatus(rest.overview),
     findings: [...rest.findings ?? [], ...notes ?? []],
@@ -1777,7 +1777,8 @@ var WORKING_LABELS = {
   compare: "Comparing\u2026",
   discuss: "Discussing\u2026",
   "thread-discuss": "Discussing\u2026",
-  "thread-draft": "Drafting a reply\u2026"
+  "thread-draft": "Drafting a reply\u2026",
+  "pr-rank-again": "Ranking\u2026"
 };
 var DONE_LABELS = {
   address: () => "Handed off",
@@ -1793,7 +1794,8 @@ var DONE_LABELS = {
   "pr-conflicts": () => "Asked to resolve conflicts",
   "pr-merge": () => "Asked to merge",
   "pr-address-all": (text2) => text2.replace(/^Address\b/, "Addressed"),
-  "check-fix": () => "Asked to fix"
+  "check-fix": () => "Asked to fix",
+  "pr-rank-again": () => "Ranked"
 };
 var STILL_WAITING_AFTER = /* @__PURE__ */ new Set(["check-fix"]);
 function isPressOut(f) {
@@ -2269,6 +2271,8 @@ function prMarkId(ref) {
 var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds`;
 var PR_DISMISSED_LABEL = "Dismissed";
 var DISMISS_MERGED_LABEL = "Dismiss merged";
+var RANK_AGAIN_LABEL = "Rank again";
+var RANK_AGAIN_ID = "pr:order";
 function threadSentIn(lastActions) {
   return (pr, t) => {
     const last = lastActions[prThreadId(pr, t)];
@@ -2289,6 +2293,9 @@ function isViewKept(prState, links, lastActions, ref, shownSince) {
   const at = dismissedAt(lastActions, ref);
   return keepsView(prState, links, ref) || at !== null && isShownSince(at, shownSince);
 }
+function openPrViews(drawn) {
+  return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
+}
 var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
 function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
   const ranked = links.prOrder?.refs ?? [];
@@ -2306,6 +2313,60 @@ function prOrderText(order, drawn, now) {
   const isRanking = drawn.some((d) => d.rank !== null);
   if (!order || !isRanking) return null;
   return `${order.label ?? "Order"}${DOT}set by ${order.by} ${ago(now - order.at)}`;
+}
+function rankedStatusOf(pr) {
+  return {
+    status: readiness(pr).status,
+    threads: waitingThreads(pr).map((t) => t.id),
+    failing: failingChecks(pr).map((c) => c.name)
+  };
+}
+function hasChanged(was, is) {
+  return is.status !== was.status || is.threads.some((id) => !was.threads.includes(id)) || is.failing.some((name) => !was.failing.includes(name));
+}
+function changedRankedPrs(order, prs) {
+  const statuses = order.statuses ?? {};
+  return inPrOrder(prs, order.refs).filter((pr) => {
+    const was = statuses[pr.ref];
+    return rankOf(pr, order.refs) !== null && was !== void 0 && hasChanged(was, rankedStatusOf(pr));
+  });
+}
+function prOrderView(order, drawn, presses, shownSince) {
+  const title = prOrderText(order, drawn, presses.now);
+  if (!order || title === null) return null;
+  const count = changedRankedPrs(order, openPrViews(drawn)).length;
+  const row = lastPressOf(presses, RANK_AGAIN_ID);
+  const isPressShownHere = row.last !== void 0 && (row.pressing !== null || isShownSince(row.last.at, shownSince));
+  const showsPress = isPressShownHere || row.last !== void 0 && row.last.at >= order.at;
+  const isChangedShown = count > 0 || isPressShownHere;
+  return {
+    title,
+    why: order.why,
+    changed: isChangedShown ? {
+      text: count > 0 ? `${count} ${count === 1 ? "PR" : "PRs"} changed since` : null,
+      actions: count > 0 ? prOrderActions(row) : [],
+      showsPress
+    } : null
+  };
+}
+function prOrderActions(row) {
+  return withOut(row, [
+    {
+      press: { action: "pr-rank-again" },
+      label: RANK_AGAIN_LABEL,
+      kind: "talk",
+      emphasis: "normal",
+      hotkey: "g"
+    }
+  ]);
+}
+function lastPressOf(presses, rowId) {
+  const last = presses.lastActions[rowId];
+  const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
+  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
+}
+function withOut(row, actions) {
+  return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
 }
 function isDismissedByMerged(pr, branchRef) {
   return pr.state === "MERGED" && pr.ref !== branchRef;
@@ -2395,7 +2456,14 @@ var ORDER_SCHEMA = {
       items: { type: "integer" },
       description: `The PR numbers, first to last, at most ${MAX_ORDERED_PRS}. Give an empty list to clear the order.`
     },
-    label: { type: "string", description: 'What the order is, in at most 4 words, such as "Merge order".' }
+    label: {
+      type: "string",
+      description: 'What the user does with the order, in at most 4 words, such as "Merge in this order" or "Review in this order". Required to set an order.'
+    },
+    why: {
+      type: "string",
+      description: "The reason for this order, in one sentence, such as a PR that waits on another. Not a summary of each PR. Required to set an order."
+    }
   },
   required: ["numbers"]
 };
@@ -2627,7 +2695,12 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger),
-    orderText: prOrderText(s.ledger.prOrder, drawn, now),
+    order: prOrderView(
+      s.ledger.prOrder,
+      drawn,
+      { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
+      shownSince
+    ),
     tabActions: prTabActions(drawn, s.prViews.branchRef),
     isGhSignedOut: s.prViews.isGhSignedOut === true
   };

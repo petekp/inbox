@@ -25,11 +25,12 @@ import {
   linkedPrs,
   openPrViews,
   pressRowId,
-  prOrderText,
+  prOrderView,
+  withOrderStatuses,
   prTabActions,
   threadSentIn,
 } from './pr-tab'
-import type { Applied, DrawnPr, PrAction, PrPress } from './pr-tab'
+import type { Applied, DrawnPr, PrAction, PrOrderView, PrPress } from './pr-tab'
 import {
   actionId,
   applyPress,
@@ -758,8 +759,9 @@ export function recorded<S extends Session>(
   now: number,
 ): { state: S } & Omit<ToolAnswer, 'ledger'> {
   const r = toolAnswer(host, s.ledger, tool, args, now)
+  const ledger = withOrderStatuses(r.ledger, s.prViews.views)
 
-  return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result, personLine: r.personLine }
+  return { state: linkDialogs({ ...s, ledger }), result: r.result, personLine: r.personLine }
 }
 
 /** `s` with the rows a look holds in place and the start of its showing, which `pruned` keeps the records of. */
@@ -792,8 +794,9 @@ export function pruned<S extends Session>(s: S): S {
 }
 
 /**
- * Merges fetched PRs into the session. The write that saves it drops, through `pruned`, each view no look draws.
- * `isGhSignedOut` is null when no gh run answered, and the saved one stands.
+ * Merges fetched PRs into the session, and records the status of each ranked PR the order has none for. The write that
+ * saves it drops, through `pruned`, each view no look draws. `isGhSignedOut` is null when no gh run answered, and the
+ * saved one stands.
  */
 export function withFetchedPrs<S extends Session>(
   s: S,
@@ -802,11 +805,13 @@ export function withFetchedPrs<S extends Session>(
   isGhSignedOut: boolean | null,
 ): S {
   const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true
+  const views = { ...s.prViews.views, ...fetched }
 
   return {
     ...s,
+    ledger: withOrderStatuses(s.ledger, views),
     prViews: {
-      views: { ...s.prViews.views, ...fetched },
+      views,
       branchRef,
       isFetching: false,
       ...(isSignedOut ? { isGhSignedOut: true } : {}),
@@ -821,8 +826,8 @@ type PrTab = {
   count: number
   /** Names the linked PRs too old for the tab to show, or null. */
   olderText: string | null
-  /** Names the agent's order of the PRs above them, or null while it ranks no block the tab draws. `prOrderText`. */
-  orderText: string | null
+  /** The agent's order of the PRs, drawn above them, or null while it ranks no block the tab draws. `prOrderView`. */
+  order: PrOrderView | null
   /** The tab's own buttons, drawn after its PR blocks. `prTabActions`. */
   tabActions: PrAction[]
   /** Whether gh asked for a sign-in at the last fetch it answered. */
@@ -927,7 +932,12 @@ function prTabOf(
     branchRef: s.prViews.branchRef,
     count: drawn.filter(d => d.state.is === 'open' && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger),
-    orderText: prOrderText(s.ledger.prOrder, drawn, now),
+    order: prOrderView(
+      s.ledger.prOrder,
+      drawn,
+      { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
+      shownSince,
+    ),
     tabActions: prTabActions(drawn, s.prViews.branchRef),
     isGhSignedOut: s.prViews.isGhSignedOut === true,
   }

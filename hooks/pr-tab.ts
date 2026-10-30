@@ -1,4 +1,16 @@
-import type { Delivery, Item, LastAction, Ledger, PressKind, PrCheck, PrThread, PrView, PrViews } from '../types'
+import type {
+  Delivery,
+  Item,
+  LastAction,
+  Ledger,
+  PressKind,
+  PrCheck,
+  PrOrder,
+  PrThread,
+  PrView,
+  PrViews,
+  RankedPrStatus,
+} from '../types'
 import { GH_TIMEOUT_MS, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import { baseName, isFoldingPress, localLast, pendingResult, prSteps, recordPress, withQueued } from './presses'
 import type { Effect, HelpStep, PrActionId, RowPress } from './presses'
@@ -286,6 +298,11 @@ export const PR_DISMISSED_LABEL = 'Dismissed'
 
 const DISMISS_MERGED_LABEL = 'Dismiss merged'
 
+const RANK_AGAIN_LABEL = 'Rank again'
+
+/** The row id of Rank again's press. It starts with `pr:`, as a PR's mark id does, so no host takes it for an Asks row. */
+export const RANK_AGAIN_ID = 'pr:order'
+
 /** The row id of the PRs tab's Dismiss merged press. It starts with `pr:`, as a PR's mark id does, so no host takes it for an Asks row. */
 export const DISMISS_MERGED_ID = 'pr:merged'
 
@@ -494,6 +511,111 @@ export function prOrderText(order: PrLinks['prOrder'], drawn: DrawnPr[], now: nu
   return `${order.label ?? 'Order'}${DOT}set by ${order.by} ${ago(now - order.at)}`
 }
 
+/** What a ranked PR's block shows, as an order records it. Read without sent threads, so a press does not change it. */
+export function rankedStatusOf(pr: PrView): RankedPrStatus {
+  return {
+    status: readiness(pr).status,
+    threads: waitingThreads(pr).map(t => t.id),
+    failing: failingChecks(pr).map(c => c.name),
+  }
+}
+
+/**
+ * `links` with a recorded status for each open ranked PR that has a view in `views` and none recorded yet. A recorded
+ * status is never replaced, so it stays what the tab showed when the order was set, or at the PR's first fetch after.
+ */
+export function withOrderStatuses<L extends PrLinks>(links: L, views: Record<string, PrView>): L {
+  const order = links.prOrder
+  const statuses = order?.statuses
+  if (!order || !statuses) return links
+  const added = order.refs.flatMap(ref => {
+    const view = views[ref]
+    return statuses[ref] || view?.state !== 'OPEN' ? [] : [[ref, rankedStatusOf(view)] as const]
+  })
+  if (added.length === 0) return links
+
+  return { ...links, prOrder: { ...order, statuses: { ...statuses, ...Object.fromEntries(added) } } }
+}
+
+/** Whether a ranked PR changed since the order recorded its status: a new status, waiting thread or failing check. */
+function hasChanged(was: RankedPrStatus, is: RankedPrStatus): boolean {
+  return (
+    is.status !== was.status ||
+    is.threads.some(id => !was.threads.includes(id)) ||
+    is.failing.some(name => !was.failing.includes(name))
+  )
+}
+
+/** The open PRs of `prs` the order ranks and that changed since it recorded their status, in rank order. */
+export function changedRankedPrs(order: PrOrder, prs: PrView[]): PrView[] {
+  const statuses = order.statuses ?? {}
+
+  return inPrOrder(prs, order.refs).filter(pr => {
+    const was = statuses[pr.ref]
+    return rankOf(pr, order.refs) !== null && was !== undefined && hasChanged(was, rankedStatusOf(pr))
+  })
+}
+
+/**
+ * The order's lines above the PR blocks: its title, the agent's reason, and the line that says how many ranked PRs
+ * changed since, with Rank again.
+ */
+export type PrOrderView = {
+  /** "Merge in this order · set by Claude 2h ago". `prOrderText`. */
+  title: string
+  /** The agent's reason for the order, or null for an order saved before the inbox kept one. */
+  why: string | null
+  /**
+   * The changed line, while a ranked open PR changed or Rank again's press shows. `text` is "2 PRs changed since", or
+   * null once none has. `actions` holds Rank again while one has. The line stays while the press is out or was made
+   * since the tab was shown. `showsPress` says whether it draws the press's status: then, or when the press came after
+   * the order was set.
+   */
+  changed: { text: string | null; actions: PrAction[]; showsPress: boolean } | null
+}
+
+export function prOrderView(
+  order: PrOrder | null,
+  drawn: DrawnPr[],
+  presses: PressState,
+  shownSince: number | null,
+): PrOrderView | null {
+  const title = prOrderText(order, drawn, presses.now)
+  if (!order || title === null) return null
+  const count = changedRankedPrs(order, openPrViews(drawn)).length
+  const row = lastPressOf(presses, RANK_AGAIN_ID)
+  const isPressShownHere = row.last !== undefined && (row.pressing !== null || isShownSince(row.last.at, shownSince))
+  const showsPress = isPressShownHere || (row.last !== undefined && row.last.at >= order.at)
+  const isChangedShown = count > 0 || isPressShownHere
+
+  return {
+    title,
+    why: order.why,
+    changed: isChangedShown
+      ? {
+          text: count > 0 ? `${count} ${count === 1 ? 'PR' : 'PRs'} changed since` : null,
+          actions: count > 0 ? prOrderActions(row) : [],
+          showsPress,
+        }
+      : null,
+  }
+}
+
+/**
+ * The changed line's buttons: Rank again. Its label reads the same after a press, since it already says "again".
+ */
+function prOrderActions(row: LastPress): PrAction[] {
+  return withOut(row, [
+    {
+      press: { action: 'pr-rank-again' },
+      label: RANK_AGAIN_LABEL,
+      kind: 'talk',
+      emphasis: 'normal',
+      hotkey: 'g',
+    },
+  ])
+}
+
 /** Runs at most `limit` of the calls it is given at once, starting each in the order it was given. */
 function limitedTo(limit: number): <T>(call: () => Promise<T>) => Promise<T> {
   let running = 0
@@ -528,9 +650,10 @@ export type PrPress =
     }
   | { action: 'check-fix' | 'log'; ref: string; check: string }
   | { action: 'pr-dismiss-merged' }
+  | { action: 'pr-rank-again' }
 
 export function isPrPress(p: RowPress | PrPress): p is PrPress {
-  return 'ref' in p || p.action === 'pr-dismiss-merged'
+  return 'ref' in p || p.action === 'pr-dismiss-merged' || p.action === 'pr-rank-again'
 }
 
 /**
@@ -598,6 +721,7 @@ export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
 
 export function prRowId(p: PrPress): string {
   if (p.action === 'pr-dismiss-merged') return DISMISS_MERGED_ID
+  if (p.action === 'pr-rank-again') return RANK_AGAIN_ID
   if ('check' in p) return checkRowId(p.ref, p.check)
   if ('thread' in p) return threadRowId(p.ref, p.thread)
 
@@ -864,6 +988,28 @@ export function applyPrPress(
           return [id, recordPress('mark', 'pr-dismiss', PR_DISMISSED_LABEL, ctx, lastActions[id])]
         }),
       ),
+    })
+  }
+  if (p.action === 'pr-rank-again') {
+    const order = ledger.prOrder
+    if (!order) return stale
+    const open = Object.values(prState.views).filter(
+      pr => isTracked(prState, ledger, pr.ref) && rankOf(pr, order.refs) !== null,
+    )
+    const changed = changedRankedPrs(order, open)
+    if (changed.length === 0) return stale
+    const repo = parseRef(order.refs[0] ?? '').repo
+    return applied({
+      lasts: {
+        [RANK_AGAIN_ID]: recordPress('talk', p.action, RANK_AGAIN_LABEL, ctx, lastActions[RANK_AGAIN_ID]),
+      },
+      effects: [
+        {
+          kind: 'send',
+          text: prompts.rankAgain({ label: order.label, repo }, changed, inPrOrder(open, order.refs)),
+          by: null,
+        },
+      ],
     })
   }
   const pr = prState.views[p.ref]

@@ -173,6 +173,7 @@ export type PrActionId =
   | 'pr-open'
   | 'pr-refresh'
   | 'pr-dismiss'
+  | 'pr-rank-again'
   | 'check-fix'
   | 'log'
 

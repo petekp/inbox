@@ -72,7 +72,9 @@ export function upgradeLedger(ledger: Ledger): Ledger {
 
   return {
     ...rest,
-    prOrder: rest.prOrder ?? null,
+    prOrder: rest.prOrder
+      ? { ...rest.prOrder, why: rest.prOrder.why ?? null, statuses: rest.prOrder.statuses ?? null }
+      : null,
     updates,
     overview: upgradeStatus(rest.overview),
     findings: [...(rest.findings ?? []), ...(notes ?? [])],

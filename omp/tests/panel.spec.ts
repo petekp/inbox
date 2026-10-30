@@ -13,7 +13,8 @@ import {
 } from '../../hooks/pr-tab'
 import { version } from '../package.json'
 import { failingChecks, waitingThreads } from '../../hooks/prs'
-import type { LastAction, Stop } from '../../types'
+import type { LastAction, PrOrder, Stop } from '../../types'
+import { rankedStatusOf } from '../../hooks/pr-tab'
 import { closeItem } from '../../hooks/ledger'
 import { applyStatus, parseStatus } from '../../hooks/status'
 import {
@@ -30,6 +31,7 @@ import {
   statusKeyPlan,
   statusKeyRows,
   PRESS_GUARD_MS,
+  helpKeys,
 } from '../../hooks/view'
 import type { StatusRow, RowView } from '../../hooks/view'
 import { sessionView } from '../../hooks/session'
@@ -455,21 +457,72 @@ function withMerged(refs: string[]): PanelScreen {
   return screenOf({ view: sessionView({ ...s, prViews: { ...s.prViews, views } }, NOW, SETTLED_MS, true, NO_HOLDS) })
 }
 
-test('an order draws its line above the PR blocks and a dim rank before each ranked PR, ahead of the rest', () => {
+function withOrder(prOrder: Partial<PrOrder>, lastActions: Record<string, LastAction> = {}): PanelScreen {
   const s = demoState(NOW)
-  const prOrder = { refs: ['acme/visor#29', 'acme/visor#33'], label: 'Merge order', by: 'omp', at: NOW - 2 * 60_000 }
-  const ordered = { ...s, ledger: { ...s.ledger, prOrder } }
-  const screen = screenOf({ view: sessionView(ordered, NOW, SETTLED_MS, true, NO_HOLDS) })
+  const order: PrOrder = {
+    refs: ['acme/visor#29', 'acme/visor#33'],
+    label: 'Merge in this order',
+    why: '#33 builds on #29.',
+    statuses: null,
+    by: 'omp',
+    at: NOW - 2 * 60_000,
+    ...prOrder,
+  }
+  const ordered = { ...s, ledger: { ...s.ledger, prOrder: order }, lastActions: { ...s.lastActions, ...lastActions } }
+
+  return screenOf({ view: sessionView(ordered, NOW, SETTLED_MS, true, NO_HOLDS) })
+}
+
+test('an order draws its title and reason above the PR blocks and a dim rank before each ranked PR, ahead of the rest', () => {
+  const screen = withOrder({})
   const ui = { ...INITIAL_UI, tab: 'prs' as const }
   const lines = text(screen, ui).split('\n')
-  const heads = lines.flatMap(l => l.match(/(?:\d+\. )?#\d+ /) ?? []).map(h => h.trim())
+  const title = lines.findIndex(l => l.includes('Merge in this order · set by omp 2m ago'))
+  const heads = lines
+    .slice(title + 2)
+    .flatMap(l => l.match(/(?:\d+\. )?#\d+ /) ?? [])
+    .map(h => h.trim())
 
-  expect(lines.findIndex(l => l.includes('Merge order · set by omp 2m ago'))).toBeLessThan(
-    lines.findIndex(l => /#\d+ /.test(l)),
-  )
+  expect(title).toBeLessThan(lines.findIndex(l => /#\d+ /.test(l)))
+  expect(lines[title + 1]).toContain('#33 builds on #29.')
+  expect(drawn(screen, ui).join('\n')).toContain(`${ESC}2m#33 builds on #29.`)
   expect(heads).toEqual(['1. #29', '2. #33', '#31'])
   expect(drawn(screen, ui).join('\n')).toContain(`${ESC}2m1. ${ESC}22m`)
-  expect(text(screenOf(), ui)).not.toContain('Merge order')
+  expect(text(screen, ui)).not.toContain('changed since')
+  expect(text(screenOf(), ui)).not.toContain('Merge in this order')
+})
+
+test('a ranked PR that changed since the order draws the changed line with Rank again, which g from any row or Enter on it presses, and its status once pressed', () => {
+  const views = demoState(NOW).prViews.views
+  const was = rankedStatusOf(views['acme/visor#29']!)
+  const statuses = {
+    'acme/visor#29': { ...was, status: was.status === 'ready' ? ('waiting' as const) : ('ready' as const) },
+    'acme/visor#33': rankedStatusOf(views['acme/visor#33']!),
+  }
+  const screen = withOrder({ statuses })
+  const ui = { ...INITIAL_UI, tab: 'prs' as const }
+  const lines = text(screen, ui).split('\n')
+  const changed = lines.findIndex(l => l.includes('1 PR changed since'))
+
+  expect(changed).toBe(lines.findIndex(l => l.includes('#33 builds on #29.')) + 1)
+  expect(lines[changed]).toContain('g Rank again')
+  expect(handleKey(screen, ui, 'g', NOW).press).toEqual({ action: 'pr-rank-again' })
+  expect(handleKey(screen, { ...ui, selectedId: 'pr:order' }, 'enter', NOW).press).toEqual({ action: 'pr-rank-again' })
+
+  const pressed = withOrder(
+    { statuses },
+    {
+      'pr:order': {
+        kind: 'talk',
+        action: 'pr-rank-again',
+        text: 'Rank again',
+        at: NOW,
+        turnsStarted: demoState(NOW).presence.turnsStarted,
+      },
+    },
+  )
+  expect(text(pressed, ui)).toMatch(/1 PR changed since\s+g Rank again\s+Ranking…/)
+  expect(helpKeys('omp', false, 'prs', false).map(k => k.keys)).toContain('g')
 })
 
 test('Dismiss merged draws after the PR blocks, and m from any row or Enter on it returns the press', () => {

@@ -973,11 +973,21 @@ describe('upgradeLedger', () => {
     expect(upgradeLedger({ ...base, updates: 4 } as never).updates).toBe(4)
   })
 
-  test('a ledger saved before PR orders loads with no order, and one with an order keeps it', () => {
+  test('a ledger saved before PR orders loads with no order, one saved before reasons loads with no reason and no statuses, and a newer order keeps both', () => {
     const { prOrder: _prOrder, ...old } = EMPTY
     const order = { refs: ['acme/greet#12'], label: 'Merge order', by: 'Claude', at: 5 }
     expect(upgradeLedger(old as never).prOrder).toBeNull()
-    expect(upgradeLedger({ ...EMPTY, prOrder: order }).prOrder).toEqual(order)
+    expect(upgradeLedger({ ...EMPTY, prOrder: order } as never).prOrder).toEqual({
+      ...order,
+      why: null,
+      statuses: null,
+    })
+    const newer = {
+      ...order,
+      why: '#12 is green.',
+      statuses: { 'acme/greet#12': { status: 'ready' as const, threads: [], failing: [] } },
+    }
+    expect(upgradeLedger({ ...EMPTY, prOrder: newer }).prOrder).toEqual(newer)
   })
 
   test('converts a ledger saved with `decided` and the kinds decide and do', () => {
