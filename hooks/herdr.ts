@@ -9,7 +9,7 @@ import { isWaitingRow, ROW_TABS } from './view'
  * 32 ASCII letters, digits, `-` and `_`, and values of up to 80 characters with control characters removed, so a value
  * carries no color. A sidebar row colors each token it shows, and puts " · " between the tokens that have a value.
  */
-export type HerdrTokens = Record<string, string | null>
+type HerdrTokens = Record<string, string | null>
 
 /** What waits on the person, in one line: a stop, a dialog, the first item's ask, or the session's focus from the Status head. */
 const STATUS_TOKEN = 'inbox'
@@ -98,9 +98,9 @@ function dialogText(dialog: Dialog): string {
  * What the status line reads when no stop or dialog leads it: the first ask that waits, how many asks and findings
  * wait, and what the session is focused on.
  */
-export type StatusInput = { firstAsk: string | null; asks: number; findings: number; focus: string | null }
+type StatusInput = { firstAsk: string | null; asks: number; findings: number; focus: string | null }
 
-export function statusLine(stop: Stop | null, dialogs: readonly Dialog[], input: StatusInput): string {
+function statusLine(stop: Stop | null, dialogs: readonly Dialog[], input: StatusInput): string {
   if (stop) return stopLine(stop)
   const dialog = dialogs[0]
   if (dialog) return dialogText(dialog)
@@ -172,7 +172,7 @@ export function herdrReportKey(pane: string, tokens: HerdrTokens): string {
 }
 
 /** A report for a pane, or null when the session runs in no Herdr pane. */
-export type HerdrReport = { pane: string; tokens: HerdrTokens; seq?: number } | null
+type HerdrReport = { pane: string; tokens: HerdrTokens; seq?: number } | null
 
 /**
  * Sends reports one at a time, in the order they were asked for, with `run`. Each reads its pane and tokens when its

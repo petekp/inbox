@@ -45,7 +45,7 @@ import type { Holds } from './view'
 import type { ClientId } from './clients'
 import type { Exchange, HostTask, LastAction, SessionStatus, RowNote } from '../types'
 
-export type Exclusive<T> = { acquired: true; value: T } | { acquired: false }
+type Exclusive<T> = { acquired: true; value: T } | { acquired: false }
 
 /** Keys that at most one run holds at a time in this process. */
 export function exclusiveKeys(): {
@@ -145,7 +145,7 @@ export type StatusExchange =
   | { kind: 'mid-turn'; turn: Pick<Session['turn'], 'person' | 'trigger' | 'activity'> }
   | { kind: 'catch-up'; conversation: string }
 
-export type StatusCallKind = StatusExchange['kind']
+type StatusCallKind = StatusExchange['kind']
 
 /** The prompt that asks for the changes `read` makes to the Status, asks and task list in `input`. */
 export function statusCallPrompt(input: StatusCallInput, read: StatusExchange): string {
@@ -199,7 +199,7 @@ export type UpdateHost<S extends Session> = Pick<SessionHost<S>, 'now' | 'read' 
 type StatusHost<S extends Session> = Pick<UpdateHost<S>, 'now' | 'read' | 'update' | 'ask' | 'inOrder' | 'records'>
 
 /** One model call of a Status call. An answer that holds prose is asked once more, so a call makes one or two. */
-export type StatusAttempt = {
+type StatusAttempt = {
   /** The model the host asked for, and the one that answered. Null when the host does not say. */
   model: string | null
   answeredBy: string | null
@@ -256,7 +256,7 @@ const RECORD_NAME = /^(\d{13})-[a-z-]+\.jsonl$/
 const sweptAt = new Map<string, number>()
 
 /** A session's folder name: its id, with anything that could leave the records folder replaced. */
-export function recordsFolderName(session: string): string {
+function recordsFolderName(session: string): string {
   return session.replace(/[^A-Za-z0-9_-]/g, '_') || '_'
 }
 
@@ -660,7 +660,7 @@ async function checkPrFirst<S extends Session>(
 }
 
 /** A press that is saved, with what it still runs. */
-export type StartedPress = {
+type StartedPress = {
   /** The effects the press runs. Null when it was stale or could not be saved, so it runs nothing. */
   effects: Effect[] | null
   /** Delivers the press's message, outside the session's lock, then runs its opens and copies. */

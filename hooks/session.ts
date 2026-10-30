@@ -278,7 +278,7 @@ export function notePrompt<S extends Session>(
  * prompt's arrival carries only that. An uncertain earlier attempt blocks a
  * same-text match with a later send.
  */
-export function matchSent<S extends Session>(s: S, text: string): { state: S; sentBy: SentBy | null } {
+function matchSent<S extends Session>(s: S, text: string): { state: S; sentBy: SentBy | null } {
   const matchingAt = s.sent.findIndex(x => x.text === text)
   const matching = matchingAt >= 0 ? s.sent[matchingAt] : undefined
   // A host's own send can arrive before its delivery returns, while its record still reads attempting.
@@ -403,7 +403,7 @@ export function noteActivity<S extends Session>(s: S, line: string | null): S {
   return { ...s, turn: { ...s.turn, activity } }
 }
 
-export const LOCAL_URL = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|[\w.-]+\.localhost)(?::\d+)?[^\s"'`)\]]*/g
+const LOCAL_URL = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|[\w.-]+\.localhost)(?::\d+)?[^\s"'`)\]]*/g
 
 const PR_CREATE = /\bgh\s+pr\s+create\b/
 
@@ -573,7 +573,7 @@ export function needsUpdate(s: Session): boolean {
 }
 
 /** The Status tab is shown: a look starts. */
-export function lookStartedOn<S extends { ledger: Ledger }>(s: S, now: number): S {
+function lookStartedOn<S extends { ledger: Ledger }>(s: S, now: number): S {
   return statusChanged(s, o => lookStarted(o, now))
 }
 
@@ -653,7 +653,7 @@ export function appliedCatchUp<S extends Session>(s: S, begun: Session, parsed: 
 export type Pressed = Exclude<Applied, { stale: true }>
 
 /** What a look draws a session's rows with besides the session: how long Undo lasts, and what the look holds in place. */
-export type DrawnWith = { settleWindowMs: number; holds: Holds }
+type DrawnWith = { settleWindowMs: number; holds: Holds }
 
 /**
  * A press of an action whose button the look draws as out, since its earlier press is still out. It changes nothing,

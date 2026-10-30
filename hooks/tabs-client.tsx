@@ -1,6 +1,6 @@
 import type { ClientModule } from 'claude-code'
 
-export type ClientTab = {
+type ClientTab = {
   id: string
   label: string
   /** What follows the label: a row tab's count. */

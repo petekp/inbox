@@ -11,7 +11,7 @@ export function baseName(path: string): string {
   return path.replace(/\/+$/, '').split('/').pop() ?? path
 }
 
-export function helpLabel(help: Help): string {
+function helpLabel(help: Help): string {
   const label =
     help.kind === 'open'
       ? `Open ${baseName(help.path)}`
@@ -552,7 +552,7 @@ function withQueuedDelivery(
   return changed.length === 0 ? lastActions : { ...lastActions, ...Object.fromEntries(changed) }
 }
 
-export function withFailure(
+function withFailure(
   lastActions: Record<string, LastAction>,
   rows: string[],
   at: number,
@@ -591,7 +591,7 @@ export function withRewrite(
   )
 }
 
-export function reopenOnFailure(ledger: Ledger, id: string, at: number): Ledger {
+function reopenOnFailure(ledger: Ledger, id: string, at: number): Ledger {
   if (ledger.items.some(i => i.id === id)) return ledger
   const closed = ledger.closed.findLast(c => c.id === id)
 

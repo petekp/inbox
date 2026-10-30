@@ -134,7 +134,7 @@ function stamped(tabHtml: string): string {
   )
 }
 
-export type ServerDeps = {
+type ServerDeps = {
   dir: string
   now: () => number
   exec: Run
@@ -171,7 +171,7 @@ type Message = { jsonrpc: '2.0'; id?: number | string; method?: string; params?:
  * The session a call belongs to. Codex's own tool calls carry it in their
  * turn metadata, and the tab's calls as the thread id, which is the same id.
  */
-export function sessionOf(params: Record<string, unknown> | undefined): string | null {
+function sessionOf(params: Record<string, unknown> | undefined): string | null {
   const meta = (params?._meta ?? {}) as Record<string, unknown>
   const turn = (meta['x-codex-turn-metadata'] ?? {}) as Record<string, unknown>
   const id = turn.session_id ?? meta.thread_id ?? meta.threadId
@@ -186,7 +186,7 @@ export function sessionOf(params: Record<string, unknown> | undefined): string |
  * metadata, and a subagent's or a forked chat's call can carry the root's
  * session id for a turn whose prompt the root's UserPromptSubmit never saw.
  */
-export function turnOf(params: Record<string, unknown> | undefined): string | null | undefined {
+function turnOf(params: Record<string, unknown> | undefined): string | null | undefined {
   const meta = (params?._meta ?? {}) as Record<string, unknown>
   const turn = meta['x-codex-turn-metadata']
   if (typeof turn !== 'object' || turn === null) return undefined

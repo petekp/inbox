@@ -6,10 +6,10 @@ import { dirname, join, resolve } from 'node:path'
 import { flattenConversation } from '../../hooks/conversation'
 import { codexPlanOf } from '../../hooks/host-tasks'
 import type { Turn } from '../../hooks/conversation'
-import { addActivity, dialogActivity, dialogQuestions } from '../../hooks/model-text'
+import { addActivity, dialogActivity, dialogQuestions, toolActivity } from '../../hooks/model-text'
 import type { DialogQuestion } from '../../hooks/model-text'
 import type { HostTask } from '../../types'
-import { activityOf, patchFiles } from './core'
+import { patchFiles } from './core'
 
 type SessionMeta = {
   type?: string
@@ -43,7 +43,7 @@ async function readSessionMeta(path: string): Promise<SessionMeta | null> {
 }
 
 /** What a hook reads from the rollout's first row, `session_meta`. */
-export type RolloutMeta = {
+type RolloutMeta = {
   /**
    * Whether the session is a run no person chats in, where the hooks do nothing.
    * An ephemeral thread, such as the Codex app's own background jobs that
@@ -142,7 +142,7 @@ const DIALOG_TOOL = 'request_user_input_async'
 const TAIL_BYTES = 4 * 1024 * 1024
 
 /** A shell command that finished, with the text it printed. */
-export type FinishedCommand = { command: string; output: string }
+type FinishedCommand = { command: string; output: string }
 
 type RowPayload = NonNullable<TranscriptLine['payload']>
 
@@ -234,7 +234,7 @@ const TURN_ROW_BYTES = 64 * 1024
  * A row of the rollout that starts a turn (`task_started`), or ends it by completing (`task_complete`) or by an
  * interrupt (`turn_aborted`).
  */
-export type TurnEvent = { id: string; kind: 'started' | 'completed' | 'aborted' }
+type TurnEvent = { id: string; kind: 'started' | 'completed' | 'aborted' }
 
 const TURN_EVENT_KINDS = new Map<string, TurnEvent['kind']>([
   ['task_started', 'started'],
@@ -444,7 +444,7 @@ const PATCH_ARGUMENT = /tools\.apply_patch\(\s*("(?:[^"\\]|\\.)*")/
 const COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")/
 
 const shellLines = (command: string): string[] => {
-  const line = command === '' ? null : activityOf('Bash', { command })
+  const line = command === '' ? null : toolActivity('Bash', { command })
 
   return line ? [line] : []
 }
@@ -471,12 +471,12 @@ function callLines(p: Payload, hasCommandRows: boolean, cwd: string): string[] {
   const args = jsonRecord(p.arguments)
   if (name === 'apply_patch') return editLines(textOf(args.input ?? args.patch ?? args.command), cwd)
   if (name === 'spawn_agent') {
-    const line = activityOf('Agent', { description: textOf(args.task_name) })
+    const line = toolActivity('Agent', { description: textOf(args.task_name) })
 
     return line ? [line] : []
   }
   if (name === DIALOG_TOOL) return [dialogActivity(dialogQuestions(args.questions), { kind: 'open' })]
-  const line = activityOf(textOf(p.namespace).startsWith('mcp__') ? textOf(p.namespace) + name : name, {})
+  const line = toolActivity(textOf(p.namespace).startsWith('mcp__') ? textOf(p.namespace) + name : name, {})
 
   return line ? [line] : []
 }
@@ -653,7 +653,7 @@ export function rolloutReads(path: string, tail?: string[]): RolloutReads {
   }
 }
 
-export type Rollout = {
+type Rollout = {
   /** The whole conversation, oldest first, as the inbox model reads it. */
   conversation: string
   /** How many turns other than the current one finished or hold a person's message. */

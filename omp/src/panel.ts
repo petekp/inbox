@@ -126,7 +126,7 @@ import type {
   LegendEntry,
 } from '../../hooks/view'
 
-export type ResumePress = { action: 'resume' }
+type ResumePress = { action: 'resume' }
 export type PanelPress = RowPress | PrPress | ResumePress
 
 /** What the panel draws: the session's view and the host facts the shared view does not hold. */
@@ -747,7 +747,7 @@ function defaultFocus(line: Line): number {
 const focusOf = (line: Line, ui: PanelUi): number =>
   ui.focus?.rowId === line.id ? Math.min(ui.focus.index, line.buttons.length - 1) : defaultFocus(line)
 
-export type KeyResult = { ui: PanelUi; press?: PanelPress; close?: true }
+type KeyResult = { ui: PanelUi; press?: PanelPress; close?: true }
 
 function withSelection(ui: PanelUi, id: string | null): PanelUi {
   return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null, openedAt: 0 }
@@ -997,7 +997,7 @@ export function noticeFor(outcome: { error: string | null; note: 'stale' | null 
 }
 
 const ANSI = /\x1b\[[0-9;]*m/g
-export const visibleLength = (s: string): number => cellWidth(s.replace(ANSI, ''))
+const visibleLength = (s: string): number => cellWidth(s.replace(ANSI, ''))
 
 function fit(s: string, width: number): string {
   if (visibleLength(s) <= width) return s

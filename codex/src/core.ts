@@ -1,5 +1,4 @@
 import type { HooksTrust } from './hook-trust'
-import { toolActivity } from '../../hooks/model-text'
 import {
   endTurn as endSessionTurn,
   lookEndedOn,
@@ -38,10 +37,6 @@ export function notePrompt(
   now: number,
 ): { state: SessionState; notes: string[]; sentBy: SentBy | null } {
   return notePromptIn(CODEX, s, text, isTabOpen(s, now))
-}
-
-export function activityOf(tool: string, input: Record<string, unknown>): string | null {
-  return toolActivity(tool, input)
 }
 
 export function patchFiles(patch: string): string[] {
@@ -84,7 +79,7 @@ export function noteHook(
  * Another plugin's Stop hook can send Codex back within the same turn, so the
  * turn ids decide.
  */
-export function isPromptMissed(h: Heard, turnId: string | null): boolean {
+function isPromptMissed(h: Heard, turnId: string | null): boolean {
   if (turnId !== null && (h.promptTurns.length > 0 || h.promptAt === null)) return !h.promptTurns.includes(turnId)
 
   return h.promptAt === null || (h.stopAt !== null && h.promptAt < h.stopAt)

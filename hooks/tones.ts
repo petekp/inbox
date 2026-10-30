@@ -1,6 +1,6 @@
 export type ToneName = 'needsYou' | 'issue' | 'findings' | 'prs' | 'done' | 'error'
 
-export type ToneSet = Record<ToneName, string> & {
+type ToneSet = Record<ToneName, string> & {
   /** A marker in the error color. A marker needs only 3:1, so in dark it takes a stronger red than text could. */
   errorMark: string
   key: string
@@ -62,7 +62,7 @@ export function toneColors(tone: ToneName): { light: string; dark: string } {
 export type BannerTone = 'error' | 'warning' | 'notice'
 
 /** A banner's border and fill in a terminal. The fill sits inside the border, so the border is a step stronger. */
-export type BannerTint = { line: string; fill: string }
+type BannerTint = { line: string; fill: string }
 
 export const DARK_BANNER_TINTS: Record<BannerTone, BannerTint> = {
   error: { line: '#7a4a52', fill: '#3d2a2e' },

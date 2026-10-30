@@ -54,7 +54,7 @@ export function turnBoxText(input: Record<string, unknown>): string | null {
 }
 
 /** The mod's conversation as turns. A shell or slash command row is already its line, so it is not cut. */
-export function transcriptTurns(messages: SessionMessage[]): Turn[] {
+function transcriptTurns(messages: SessionMessage[]): Turn[] {
   return messages.map((m): Turn => {
     const text = m.text.trim()
     if (m.role === 'user') {
@@ -80,7 +80,7 @@ export function transcriptText(messages: SessionMessage[]): string {
   return flattenConversation(transcriptTurns(messages))
 }
 
-export type CommandRow =
+type CommandRow =
   | { kind: 'shell'; command: string }
   | { kind: 'output'; stdout: string; stderr: string }
   | { kind: 'slash'; name: string; args: string }
