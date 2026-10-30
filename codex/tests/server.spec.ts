@@ -1003,7 +1003,11 @@ type PrView = {
     }[]
     count: number
     isGhSignedOut: boolean
-    orderText: string | null
+    order: {
+      title: string
+      why: string | null
+      changed: { text: string | null; actions: { label: string; hotkey?: string }[]; showsPress: boolean } | null
+    } | null
   }
   isFetchingPrs: boolean
   isGhMissing: boolean
@@ -1428,14 +1432,34 @@ test('dismissing a linked PR unlinks it and settles its block as a dismissed row
   assert.equal(ref in (await readState(dir, 's1')).prViews.views, false)
 })
 
-test('an order_prs call links the PRs it names, and the next view ranks them first under the order’s line', async () => {
-  const view = (number: number) =>
-    JSON.stringify({ ...JSON.parse(GH_VIEW), number, url: `https://github.com/acme/app/pull/${number}` })
-  const { dir, call } = await prServer(args => {
-    const named = args[0] === 'gh' && args[1] === 'pr' ? args.find(a => /^\d+$/.test(a)) : undefined
-    return named ? { code: 0, stdout: view(Number(named)), stderr: '' } : ghAnswer(args)
-  })
-  const set = (await call('order_prs', { repo: 'acme/app', numbers: [9, 7], label: 'Merge order' })) as unknown as {
+test('an order_prs call links the PRs it names, the next view ranks them first under the order’s lines, and once a ranked PR changed, Rank again sends the agent its message', async () => {
+  let at = 100
+  const extraCheck = new Set<number>()
+  const view = (number: number) => {
+    const base = JSON.parse(GH_VIEW)
+    const checks = extraCheck.has(number)
+      ? [...base.statusCheckRollup, { name: 'test', conclusion: 'FAILURE', workflowName: 'CI' }]
+      : base.statusCheckRollup
+    return JSON.stringify({
+      ...base,
+      number,
+      url: `https://github.com/acme/app/pull/${number}`,
+      statusCheckRollup: checks,
+    })
+  }
+  const { dir, call } = await prServer(
+    args => {
+      const named = args[0] === 'gh' && args[1] === 'pr' ? args.find(a => /^\d+$/.test(a)) : undefined
+      return named ? { code: 0, stdout: view(Number(named)), stderr: '' } : ghAnswer(args)
+    },
+    () => at,
+  )
+  const set = (await call('order_prs', {
+    repo: 'acme/app',
+    numbers: [9, 7],
+    label: 'Merge in this order',
+    why: '#7 builds on #9.',
+  })) as unknown as {
     result: { content: { text: string }[] }
   }
   assert.match(set.result.content[0]!.text, /^Set\. These 2 PRs show first in the PRs section of the Inbox tab/)
@@ -1448,7 +1472,34 @@ test('an order_prs call links the PRs it names, and the next view ranks them fir
       [7, 2],
     ],
   )
-  assert.match(prs.orderText ?? '', /^Merge order · set by Codex/)
+  assert.match(prs.order?.title ?? '', /^Merge in this order · set by Codex/)
+  assert.equal(prs.order?.why, '#7 builds on #9.')
+  assert.equal(prs.order?.changed, null)
+  assert.deepEqual(Object.keys((await readState(dir, 's1')).ledger.prOrder?.statuses ?? {}), [
+    'acme/app#9',
+    'acme/app#7',
+  ])
+
+  extraCheck.add(9)
+  at += 3 * 60_000
+  const changed = (await viewAfterFetch(call)).result.structuredContent.prs.order?.changed
+  assert.equal(changed?.text, '1 PR changed since')
+  assert.deepEqual(
+    changed?.actions.map(a => [a.label, a.hotkey]),
+    [['Rank again', 'g']],
+  )
+  await call('inbox_press', { press: { action: 'pr-rank-again' }, thread: 's1', shownSince: 0 })
+  const s = await readState(dir, 's1')
+  assert.equal(s.lastActions['pr:order']?.action, 'pr-rank-again')
+  assert.deepEqual(
+    s.sent.map(x => [x.row, x.text]),
+    [
+      [
+        'pr:order',
+        'The PR order you set for the PRs tab, "Merge in this order", is out of date: #9 changed since you set it.\nRank its open PRs in acme/app again (#9, #7), and set the new order with order_prs.',
+      ],
+    ],
+  )
 })
 
 test('Dismiss merged unlinks the merged PRs and settles each block with its own Undo', async () => {

@@ -23,6 +23,7 @@ import {
   checkActions,
   checkRowText,
   DISMISS_MERGED_ID,
+  RANK_AGAIN_ID,
   prBlockActions,
   prCheckId,
   prMarkId,
@@ -34,7 +35,7 @@ import {
   isPrPress,
   openPrViews,
 } from '../../hooks/pr-tab'
-import type { PrAction, PrPress, PrRowMark } from '../../hooks/pr-tab'
+import type { PrAction, PrOrderView, PrPress, PrRowMark } from '../../hooks/pr-tab'
 import { failingChecks, readiness, waitingThreads } from '../../hooks/prs'
 import { capitalized, noteText } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
@@ -263,7 +264,10 @@ type Line = {
   isDetailShown: boolean
   /** A handed-off row, drawn as its one line until the person opens it. */
   isFolded: boolean
-  /** The PRs tab's own buttons, drawn as their button line alone. Their keys work from any row of the tab. */
+  /**
+   * The PRs tab's own buttons, drawn on one line after the line's title, if any, with their press status after them,
+   * or under them when it does not fit. Their keys work from any row of the tab.
+   */
   isTabButtons: boolean
 }
 
@@ -271,7 +275,7 @@ type Entry =
   /** A Finds group's heading leads with its kind's mark, since its rows draw none. */
   | { kind: 'heading'; text: string; count?: number; mark?: Lead }
   /** A note stops at 3 lines. One with `isWhole`, such as an empty page's hint, is the page's content and wraps in full. */
-  | { kind: 'note'; text: string; isStrong?: boolean; indent?: number; isWhole?: boolean }
+  | { kind: 'note'; text: string; isStrong?: boolean; isPlain?: boolean; indent?: number; isWhole?: boolean }
   | { kind: 'row'; line: Line }
   | { kind: 'page'; row: StatusRow }
   | { kind: 'banner'; banner: BannerView }
@@ -538,7 +542,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
   }
   const ghNotice = ghNoticeOf(ghState)
   if (ghNotice) out.push({ kind: 'banner', banner: bannerOf(ghNotice.kind, ghNotice.text) })
-  if (prs.orderText) out.push({ kind: 'note', text: prs.orderText })
+  if (prs.order) out.push(...orderEntries(screen, prs.order, now))
   for (const d of prs.drawn) {
     const { pr, state } = d
     const markId = prMarkId(pr.ref)
@@ -631,6 +635,30 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       line: { ...blankLine(DISMISS_MERGED_ID), buttons: tabButtons, isWaiting: false, isTabButtons: true },
     })
   if (prs.olderText) out.push({ kind: 'note', text: prs.olderText })
+
+  return out
+}
+
+/** The order's title, the agent's reason under it, and the changed line with Rank again and its press status. */
+function orderEntries(screen: PanelScreen, order: PrOrderView, now: number): Entry[] {
+  const out: Entry[] = [{ kind: 'note', text: order.title, isPlain: true }]
+  if (order.why) out.push({ kind: 'note', text: order.why })
+  const changed = order.changed
+  if (!changed) return out
+  const buttons = prButtons(changed.actions)
+  out.push({
+    kind: 'row',
+    line: {
+      ...blankLine(RANK_AGAIN_ID),
+      lead: null,
+      title: changed.text ?? '',
+      feedback: changed.showsPress ? pressFeedback(screen, RANK_AGAIN_ID, now) : null,
+      buttons,
+      isStatic: buttons.length === 0,
+      isWaiting: false,
+      isTabButtons: buttons.length > 0,
+    },
+  })
 
   return out
 }
@@ -840,7 +868,7 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
 
     return { ui: base }
   }
-  const tabLine = lines.find(l => l.isTabButtons)
+  const tabLine = lines.find(l => l.isTabButtons && l.buttons.some(b => b.key === key))
   const tabButton = tabLine?.buttons.find(b => b.key === key)
   if (tabLine && tabButton) return activate(screen, base, tabLine, tabButton, now)
   if (selected?.fold && key === 'enter') {
@@ -1136,8 +1164,16 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   if (line.isTabButtons) {
     const cursor = isSelected ? s.tone('accent', '❯') : ' '
     const cells = line.buttons.map((b, i) => buttonCell(b, isSelected && i === focusOf(line, ui), s))
+    const title = line.title ? `${line.title}  ` : ''
+    const head = ` ${cursor} `
+    const buttons = `${head}${title}${cells.join('')}`
+    const status = line.feedback ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : ''
+    if (!status) return [fit(buttons, width)]
+    const together = `${buttons}${status}`
 
-    return [fit(` ${cursor} ${cells.join('')}`, width)]
+    return visibleLength(together) <= width
+      ? [together]
+      : [fit(buttons, width), fit(`${' '.repeat(visibleLength(head))}${status}`, width)]
   }
   const pad = line.depth * 2
   const out: string[] = []
@@ -1493,7 +1529,13 @@ export function drawPanel(
       )
     } else if (e.kind === 'note')
       body.push(
-        ...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : style.dim),
+        ...indented(
+          e.text,
+          e.indent ?? 1,
+          width,
+          e.isWhole ? Infinity : 3,
+          e.isStrong ? style.bold : e.isPlain ? (text: string) => text : style.dim,
+        ),
       )
     else {
       const isSelected = e.line.id === selected?.id

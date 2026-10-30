@@ -134,6 +134,12 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
   },
 ]
 
+/** The PRs tab's own keys, which `hooks/pr-tab.ts:prOrderActions` and `prTabActions` bind from any row of the tab. */
+const PR_TAB_HELP_KEYS: HelpKey[] = [
+  { keys: 'g', does: 'Rank the PRs again, once a ranked PR changed' },
+  { keys: 'm', does: 'Dismiss the merged PRs' },
+]
+
 export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', marks: 'Marks' } as const
 
 export type HelpKey = { keys: string; does: string }
@@ -150,6 +156,7 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
   const hasRows = isRowTab(tab)
   const selectsStatusRows = tab === 'overview' && hasStatusButtons
   const switchTabs = { keys: tabKeys, does: 'Switch tabs' }
+  const prTabKeys = tab === 'prs' ? PR_TAB_HELP_KEYS : []
   switch (look) {
     case 'desktop':
       return []
@@ -157,12 +164,14 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
       return [
         switchTabs,
         ...(hasRows || selectsStatusRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
+        ...prTabKeys,
         { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
       ]
     case 'codex':
       return [
         switchTabs,
         ...(hasRows ? [{ keys: 'j k ↑ ↓', does: 'Select the next or previous row' }] : []),
+        ...prTabKeys,
         { keys: '?', does: 'Open or close help' },
         { keys: 'esc', does: 'Close help, or leave a reply field' },
       ]
@@ -176,6 +185,7 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
               { keys: '↵', does: 'Press the picked button' },
               { keys: 'r', does: 'Reply to the selected row' },
               { keys: 'u', does: 'Undo the last close' },
+              ...prTabKeys,
             ]
           : [
               ...(selectsStatusRows
@@ -811,6 +821,7 @@ const WORKING_LABELS: Record<string, string> = {
   discuss: 'Discussing…',
   'thread-discuss': 'Discussing…',
   'thread-draft': 'Drafting a reply…',
+  'pr-rank-again': 'Ranking…',
 }
 
 const DONE_LABELS: Record<string, (text: string) => string> = {
@@ -828,6 +839,7 @@ const DONE_LABELS: Record<string, (text: string) => string> = {
   'pr-merge': () => 'Asked to merge',
   'pr-address-all': text => text.replace(/^Address\b/, 'Addressed'),
   'check-fix': () => 'Asked to fix',
+  'pr-rank-again': () => 'Ranked',
 }
 
 /** Presses after which their row still waits on the person, as a failing check does after Fix. */

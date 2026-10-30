@@ -1,4 +1,4 @@
-import type { PrCheck, PrThread, PrView } from '../types'
+import type { PrCheck, PrStatus, PrThread, PrView } from '../types'
 import { clip } from './text'
 
 const NL = '\n'
@@ -258,7 +258,7 @@ function threadsWaiting(count: number): string {
   return `${count} ${count === 1 ? 'thread' : 'threads'} waiting on you`
 }
 
-export type PrStatus = 'ready' | 'blocked' | 'waiting' | 'draft' | 'merged' | 'closed'
+export type { PrStatus }
 
 function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`
@@ -450,4 +450,17 @@ export const prompts = {
       '',
       threadText(t),
     ].join(NL),
+  rankAgain: (order: { label: string | null; repo: string }, changed: PrView[], open: PrView[]) =>
+    [
+      `The PR order you set for the PRs tab${order.label ? `, "${order.label}",` : ''} is out of date: ${numberList(changed)} changed since you set it.`,
+      `Rank its open PRs in ${order.repo} again (${open.map(pr => `#${pr.number}`).join(', ')}), and set the new order with order_prs.`,
+    ].join(NL),
+}
+
+/** PR numbers as a sentence names them: "#3", "#3 and #5", "#3, #5 and #8". */
+function numberList(prs: PrView[]): string {
+  const numbers = prs.map(pr => `#${pr.number}`)
+  const last = numbers.pop()
+
+  return numbers.length === 0 ? (last ?? '') : `${numbers.join(', ')} and ${last}`
 }

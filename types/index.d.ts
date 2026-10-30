@@ -307,11 +307,29 @@ export type PrView = {
   fetchedAt?: number
 }
 
+/** Where a PR stands, as its block's status line names it. `hooks/prs.ts:readiness` reads it. */
+export type PrStatus = 'ready' | 'blocked' | 'waiting' | 'draft' | 'merged' | 'closed'
+
 /**
- * The PRs an agent ranked, first to last, as "owner/repo#123", with its short name for the order, the agent's name, as
- * "Claude", and when it set it.
+ * What a ranked PR's block showed: its status, read without sent threads, and the ids of its waiting threads and the
+ * names of its failing checks.
  */
-export type PrOrder = { refs: string[]; label: string | null; by: string; at: number }
+export type RankedPrStatus = { status: PrStatus; threads: string[]; failing: string[] }
+
+/**
+ * The PRs an agent ranked, first to last, as "owner/repo#123", with its short name for the order, as "Merge in this
+ * order", the reason it gave for the order, the agent's name, as "Claude", and when it set it. `statuses` holds each
+ * ranked PR's status from the first view the tab had of it once the order was set. It is null on an order saved before
+ * the inbox kept statuses, which never reads as changed.
+ */
+export type PrOrder = {
+  refs: string[]
+  label: string | null
+  why: string | null
+  statuses: Record<string, RankedPrStatus> | null
+  by: string
+  at: number
+}
 
 export type Ledger = {
   /** The session's Status page; null until the Status call writes one. Saved as `overview`, the tab's earlier name. */
@@ -530,7 +548,7 @@ declare module 'claude-code' {
    * for the tools it had connected, so an older build's session leaves this one out.
    */
   interface McpToolInputs {
-    mcp__inbox__order_prs: { repo?: string; numbers: number[]; label?: string }
+    mcp__inbox__order_prs: { repo?: string; numbers: number[]; label?: string; why?: string }
   }
   interface PluginState {
     inbox: {

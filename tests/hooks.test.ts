@@ -3316,10 +3316,11 @@ for (const look of ['terminal', 'desktop'] as const) {
 }
 
 for (const look of ['terminal', 'desktop'] as const) {
-  test(`in the ${look} look, an order_prs call draws its order's line and a rank before each ranked PR, ahead of the rest, and a merge, a later link, Dismiss, Undo and a clear each redraw it`, async ($, on) => {
+  test(`in the ${look} look, an order_prs call draws its order's lines and a rank before each ranked PR, ahead of the rest, a changed PR draws Rank again until the agent ranks again, and a merge, a later link, Dismiss, Undo and a clear each redraw it`, async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
     world($, on, [])
     const states: Record<number, string> = { 12: 'OPEN', 14: 'OPEN', 15: 'OPEN', 16: 'OPEN' }
+    const failing = new Set<number>()
     const view = (number: number) =>
       JSON.stringify({
         number,
@@ -3330,7 +3331,9 @@ for (const look of ['terminal', 'desktop'] as const) {
         baseRefName: 'main',
         mergeable: 'MERGEABLE',
         reviewDecision: '',
-        statusCheckRollup: [],
+        statusCheckRollup: failing.has(number)
+          ? [{ __typename: 'CheckRun', name: 'test', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: '' }]
+          : [],
       })
     ghAnswers.push(
       ...[12, 14, 15, 16].map(n => ({
@@ -3351,12 +3354,8 @@ for (const look of ['terminal', 'desktop'] as const) {
     }
     await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
     await reply('Opened https://github.com/acme/greet/pull/12 and https://github.com/acme/greet/pull/14.', 't1')
-    await $.tool.call({
-      tool: 'mcp__inbox__order_prs',
-      repo: 'acme/greet',
-      numbers: [14, 15, 12],
-      label: 'Merge order',
-    })
+    const order = { repo: 'acme/greet', numbers: [14, 15, 12], label: 'Merge in this order', why: '#15 waits on #14.' }
+    await $.tool.call({ tool: 'mcp__inbox__order_prs', ...order })
     await clock.advance(3 * 60_000)
     await $.command.run({ command: 'inbox', args: '' } as never)
     await clock.settle()
@@ -3381,10 +3380,37 @@ for (const look of ['terminal', 'desktop'] as const) {
       (await pane.findAll({ type: 'Text', text: /^(\d+\. )?#\d+ Work/ })).map(t =>
         (t.text ?? '').replace(/ Work[\s\S]*/, '').replace(' ', ' '),
       )
-    const orderLine = () => pane.find({ type: 'Text', text: /^Merge order · set by Claude/ })
+    const orderLine = () => pane.find({ type: 'Text', text: /^Merge in this order · set by Claude/ })
+    const changedLine = () => pane.find({ type: 'Text', text: /^1 PR changed since$/ })
 
     expect(await orderLine()).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: '#15 waits on #14.' })).toBeDefined()
     expect(await heads()).toEqual(['1. #14', '2. #15', '3. #12'])
+    expect(await changedLine()).toBeUndefined()
+
+    failing.add(12)
+    await clock.advance(3 * 60_000)
+    expect(await changedLine()).toBeDefined()
+    expect((await pane.find({ key: 'rank-again-order' }))?.props.label).toMatch(/Rank again$/)
+    await pane.press({ key: 'rank-again-order' })
+    expect(sent.at(-1)).toBe(
+      'The PR order you set for the PRs tab, "Merge in this order", is out of date: #12 changed since you set it.\nRank its open PRs in acme/greet again (#14, #15, #12), and set the new order with order_prs.',
+    )
+    await clock.settle()
+    expect(await pane.find({ type: 'Text', text: /^Ranking…/ })).toBeDefined()
+    await $.turn.start({ text: sent.at(-1) ?? '', turnId: 't-rank' })
+    await $.tool.call({ tool: 'mcp__inbox__order_prs', ...order })
+    await $.turn.complete({
+      answer: 'Ranked them again.',
+      durationMs: 5,
+      isAborted: false,
+      turnId: 't-rank',
+      reason: 'answer',
+    })
+    await clock.settle()
+    expect(await changedLine()).toBeUndefined()
+    expect(await pane.find({ key: 'rank-again-order' })).toBeUndefined()
+    expect(await pane.find({ type: 'Text', text: /^✓ Ranked/ })).toBeDefined()
 
     await reply('Opened https://github.com/acme/greet/pull/16.', 't2')
     await clock.advance(3 * 60_000)

@@ -81,7 +81,16 @@ const ORDER_SCHEMA = {
       items: { type: 'integer' },
       description: `The PR numbers, first to last, at most ${MAX_ORDERED_PRS}. Give an empty list to clear the order.`,
     },
-    label: { type: 'string', description: 'What the order is, in at most 4 words, such as "Merge order".' },
+    label: {
+      type: 'string',
+      description:
+        'What the user does with the order, in at most 4 words, such as "Merge in this order" or "Review in this order". Required to set an order.',
+    },
+    why: {
+      type: 'string',
+      description:
+        'The reason for this order, in one sentence, such as a PR that waits on another. Not a summary of each PR. Required to set an order.',
+    },
   },
   required: ['numbers'],
 }
@@ -286,6 +295,7 @@ export function recordClose(host: Host, ledger: Ledger, input: Record<string, un
 
 const REPO = /^[\w.-]+\/[\w.-]+$/
 const MAX_ORDER_LABEL = 40
+const MAX_ORDER_WHY = 300
 
 /** A PR number as the agent gave it, as 3401 or "#3401", or null when it is not one. */
 function prNumber(value: unknown): number | null {
@@ -315,7 +325,10 @@ function orderPrs(host: Host, ledger: Ledger, input: Record<string, unknown>, no
   if (!REPO.test(repo)) return unchanged(ledger, 'Not set: give repo as owner/name.')
   const refs = [...new Set(numbers.map(n => `${repo}#${n}`))]
   if (refs.length > MAX_ORDERED_PRS) return unchanged(ledger, `Not set: an order ranks at most ${MAX_ORDERED_PRS} PRs.`)
-  const label = cut(input.label, MAX_ORDER_LABEL) || null
+  const label = cut(input.label, MAX_ORDER_LABEL)
+  if (!label) return unchanged(ledger, 'Not set: give label, what the user does with the order.')
+  const why = cut(input.why, MAX_ORDER_WHY)
+  if (!why) return unchanged(ledger, 'Not set: give why, the reason for this order.')
   const added = refs.filter(ref => !ledger.prs.includes(ref))
   const addedText =
     added.length === 0
@@ -325,8 +338,12 @@ function orderPrs(host: Host, ledger: Ledger, input: Record<string, unknown>, no
         : ` ${added.length} of them were not in the tab yet. They show after the tab's next refresh, if the user wrote them and they are open.`
 
   return {
-    ledger: { ...ledger, prs: linkedPrs(ledger.prs, added), prOrder: { refs, label, by: host.agent, at: now } },
+    ledger: {
+      ...ledger,
+      prs: linkedPrs(ledger.prs, added),
+      prOrder: { refs, label, why, statuses: {}, by: host.agent, at: now },
+    },
     result: `Set. These ${refs.length} PRs show first in ${host.prsIn}, in this order.${addedText}`,
-    personLine: `PR order: ${label ? `${label}, ` : ''}${refs.length} ${refs.length === 1 ? 'PR' : 'PRs'}`,
+    personLine: `PR order: ${label}, ${refs.length} ${refs.length === 1 ? 'PR' : 'PRs'}`,
   }
 }

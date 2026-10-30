@@ -685,7 +685,7 @@ function upgradeLedger(ledger) {
   const updates = typeof rest.updates === "number" ? rest.updates : card ? 1 : 0;
   return {
     ...rest,
-    prOrder: rest.prOrder ?? null,
+    prOrder: rest.prOrder ? { ...rest.prOrder, why: rest.prOrder.why ?? null, statuses: rest.prOrder.statuses ?? null } : null,
     updates,
     overview: upgradeStatus(rest.overview),
     findings: [...rest.findings ?? [], ...notes ?? []],
@@ -2226,8 +2226,17 @@ var prompts = {
     `Let's talk through this review comment on PR #${pr.number} (${pr.url}) before changing anything.`,
     "",
     threadText(t)
+  ].join(NL7),
+  rankAgain: (order, changed, open) => [
+    `The PR order you set for the PRs tab${order.label ? `, "${order.label}",` : ""} is out of date: ${numberList(changed)} changed since you set it.`,
+    `Rank its open PRs in ${order.repo} again (${open.map((pr) => `#${pr.number}`).join(", ")}), and set the new order with order_prs.`
   ].join(NL7)
 };
+function numberList(prs) {
+  const numbers = prs.map((pr) => `#${pr.number}`);
+  const last = numbers.pop();
+  return numbers.length === 0 ? last ?? "" : `${numbers.join(", ")} and ${last}`;
+}
 
 // ../hooks/presses.ts
 function baseName(path) {
@@ -2859,12 +2868,17 @@ var MARK_LEGEND = [
     words: "Opportunity: something that could be better"
   }
 ];
+var PR_TAB_HELP_KEYS = [
+  { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
+  { keys: "m", does: "Dismiss the merged PRs" }
+];
 var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks" };
 function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
   const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
   const hasRows = isRowTab(tab);
   const selectsStatusRows = tab === "overview" && hasStatusButtons;
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
+  const prTabKeys = tab === "prs" ? PR_TAB_HELP_KEYS : [];
   switch (look) {
     case "desktop":
       return [];
@@ -2872,12 +2886,14 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
       return [
         switchTabs,
         ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
+        ...prTabKeys,
         { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
       ];
     case "codex":
       return [
         switchTabs,
         ...hasRows ? [{ keys: "j k \u2191 \u2193", does: "Select the next or previous row" }] : [],
+        ...prTabKeys,
         { keys: "?", does: "Open or close help" },
         { keys: "esc", does: "Close help, or leave a reply field" }
       ];
@@ -2889,7 +2905,8 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
           { keys: "\u2190 \u2192", does: "Pick a button" },
           { keys: "\u21B5", does: "Press the picked button" },
           { keys: "r", does: "Reply to the selected row" },
-          { keys: "u", does: "Undo the last close" }
+          { keys: "u", does: "Undo the last close" },
+          ...prTabKeys
         ] : [
           ...selectsStatusRows ? [
             { keys: "j k", does: "Select the next or previous row with a button" },
@@ -3186,7 +3203,8 @@ var WORKING_LABELS = {
   compare: "Comparing\u2026",
   discuss: "Discussing\u2026",
   "thread-discuss": "Discussing\u2026",
-  "thread-draft": "Drafting a reply\u2026"
+  "thread-draft": "Drafting a reply\u2026",
+  "pr-rank-again": "Ranking\u2026"
 };
 var DONE_LABELS = {
   address: () => "Handed off",
@@ -3202,7 +3220,8 @@ var DONE_LABELS = {
   "pr-conflicts": () => "Asked to resolve conflicts",
   "pr-merge": () => "Asked to merge",
   "pr-address-all": (text) => text.replace(/^Address\b/, "Addressed"),
-  "check-fix": () => "Asked to fix"
+  "check-fix": () => "Asked to fix",
+  "pr-rank-again": () => "Ranked"
 };
 var STILL_WAITING_AFTER = new Set(["check-fix"]);
 function isFailure(f) {
@@ -4105,6 +4124,8 @@ var PR_REFRESH_LABEL = "Refresh PRs";
 var PR_REFRESH = { kind: "refresh-prs", name: "PRs" };
 var PR_DISMISSED_LABEL = "Dismissed";
 var DISMISS_MERGED_LABEL = "Dismiss merged";
+var RANK_AGAIN_LABEL = "Rank again";
+var RANK_AGAIN_ID = "pr:order";
 var DISMISS_MERGED_ID = "pr:merged";
 var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks" };
 function threadRowText(pr, t, lastActions) {
@@ -4205,6 +4226,68 @@ function prOrderText(order, drawn, now) {
     return null;
   return `${order.label ?? "Order"}${DOT}set by ${order.by} ${ago(now - order.at)}`;
 }
+function rankedStatusOf(pr) {
+  return {
+    status: readiness(pr).status,
+    threads: waitingThreads(pr).map((t) => t.id),
+    failing: failingChecks(pr).map((c) => c.name)
+  };
+}
+function withOrderStatuses(links, views) {
+  const order = links.prOrder;
+  const statuses = order?.statuses;
+  if (!order || !statuses)
+    return links;
+  const added = order.refs.flatMap((ref) => {
+    const view = views[ref];
+    return statuses[ref] || view?.state !== "OPEN" ? [] : [[ref, rankedStatusOf(view)]];
+  });
+  if (added.length === 0)
+    return links;
+  return { ...links, prOrder: { ...order, statuses: { ...statuses, ...Object.fromEntries(added) } } };
+}
+function hasChanged(was, is) {
+  return is.status !== was.status || is.threads.some((id) => !was.threads.includes(id)) || is.failing.some((name) => !was.failing.includes(name));
+}
+function changedRankedPrs(order, prs) {
+  const statuses = order.statuses ?? {};
+  return inPrOrder(prs, order.refs).filter((pr) => {
+    const was = statuses[pr.ref];
+    return rankOf(pr, order.refs) !== null && was !== undefined && hasChanged(was, rankedStatusOf(pr));
+  });
+}
+function prOrderView(order, drawn, presses, shownSince) {
+  const title = prOrderText(order, drawn, presses.now);
+  if (!order || title === null)
+    return null;
+  const count = changedRankedPrs(order, openPrViews(drawn)).length;
+  const row = lastPressOf(presses, RANK_AGAIN_ID);
+  const last = row.last;
+  const isPressShownHere = last !== undefined && (row.pressing !== null || isShownSince(last.at, shownSince));
+  const isForThisOrder = last !== undefined && last.at >= order.at;
+  const showsPress = row.pressing !== null || isForThisOrder || isPressShownHere && count === 0;
+  const isChangedShown = count > 0 || isPressShownHere;
+  return {
+    title,
+    why: order.why,
+    changed: isChangedShown ? {
+      text: count > 0 ? `${count} ${count === 1 ? "PR" : "PRs"} changed since` : null,
+      actions: count > 0 ? prOrderActions(row) : [],
+      showsPress
+    } : null
+  };
+}
+function prOrderActions(row) {
+  return withOut(row, [
+    {
+      press: { action: "pr-rank-again" },
+      label: RANK_AGAIN_LABEL,
+      kind: "talk",
+      emphasis: "normal",
+      hotkey: "g"
+    }
+  ]);
+}
 function limitedTo(limit) {
   let running = 0;
   const waiting = [];
@@ -4229,7 +4312,7 @@ var PR_TONES = {
   closed: "error"
 };
 function isPrPress(p) {
-  return "ref" in p || p.action === "pr-dismiss-merged";
+  return "ref" in p || p.action === "pr-dismiss-merged" || p.action === "pr-rank-again";
 }
 function commentEffect(pr, t) {
   return { kind: "open", target: t.reply?.url || t.url || pr.url, name: "the comment" };
@@ -4253,6 +4336,8 @@ function fixCheckEffect(pr) {
 function prRowId(p) {
   if (p.action === "pr-dismiss-merged")
     return DISMISS_MERGED_ID;
+  if (p.action === "pr-rank-again")
+    return RANK_AGAIN_ID;
   if ("check" in p)
     return checkRowId(p.ref, p.check);
   if ("thread" in p)
@@ -4430,6 +4515,28 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
         const id = prMarkId(ref);
         return [id, recordPress("mark", "pr-dismiss", PR_DISMISSED_LABEL, ctx, lastActions[id])];
       }))
+    });
+  }
+  if (p.action === "pr-rank-again") {
+    const order = ledger.prOrder;
+    if (!order)
+      return stale;
+    const open = Object.values(prState.views).filter((pr) => isTracked(prState, ledger, pr.ref) && rankOf(pr, order.refs) !== null);
+    const changed = changedRankedPrs(order, open);
+    if (changed.length === 0)
+      return stale;
+    const repo = parseRef(order.refs[0] ?? "").repo;
+    return applied({
+      lasts: {
+        [RANK_AGAIN_ID]: recordPress("talk", p.action, RANK_AGAIN_LABEL, ctx, lastActions[RANK_AGAIN_ID])
+      },
+      effects: [
+        {
+          kind: "send",
+          text: prompts.rankAgain({ label: order.label, repo }, changed, inPrOrder(open, order.refs)),
+          by: null
+        }
+      ]
     });
   }
   const pr = prState.views[p.ref];
@@ -4663,7 +4770,14 @@ var ORDER_SCHEMA = {
       items: { type: "integer" },
       description: `The PR numbers, first to last, at most ${MAX_ORDERED_PRS}. Give an empty list to clear the order.`
     },
-    label: { type: "string", description: 'What the order is, in at most 4 words, such as "Merge order".' }
+    label: {
+      type: "string",
+      description: 'What the user does with the order, in at most 4 words, such as "Merge in this order" or "Review in this order". Required to set an order.'
+    },
+    why: {
+      type: "string",
+      description: "The reason for this order, in one sentence, such as a PR that waits on another. Not a summary of each PR. Required to set an order."
+    }
   },
   required: ["numbers"]
 };
@@ -4806,6 +4920,7 @@ function recordClose(host, ledger, input, now) {
 }
 var REPO = /^[\w.-]+\/[\w.-]+$/;
 var MAX_ORDER_LABEL = 40;
+var MAX_ORDER_WHY = 300;
 function prNumber(value) {
   const n = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim().replace(/^#/, "")) : NaN;
   return Number.isInteger(n) && n > 0 ? n : null;
@@ -4831,13 +4946,22 @@ function orderPrs(host, ledger, input, now) {
   const refs = [...new Set(numbers.map((n) => `${repo}#${n}`))];
   if (refs.length > MAX_ORDERED_PRS)
     return unchanged(ledger, `Not set: an order ranks at most ${MAX_ORDERED_PRS} PRs.`);
-  const label = cut(input.label, MAX_ORDER_LABEL) || null;
+  const label = cut(input.label, MAX_ORDER_LABEL);
+  if (!label)
+    return unchanged(ledger, "Not set: give label, what the user does with the order.");
+  const why = cut(input.why, MAX_ORDER_WHY);
+  if (!why)
+    return unchanged(ledger, "Not set: give why, the reason for this order.");
   const added = refs.filter((ref) => !ledger.prs.includes(ref));
   const addedText = added.length === 0 ? "" : added.length === 1 ? " 1 of them was not in the tab yet. It shows after the tab's next refresh, if the user wrote it and it is open." : ` ${added.length} of them were not in the tab yet. They show after the tab's next refresh, if the user wrote them and they are open.`;
   return {
-    ledger: { ...ledger, prs: linkedPrs(ledger.prs, added), prOrder: { refs, label, by: host.agent, at: now } },
+    ledger: {
+      ...ledger,
+      prs: linkedPrs(ledger.prs, added),
+      prOrder: { refs, label, why, statuses: {}, by: host.agent, at: now }
+    },
     result: `Set. These ${refs.length} PRs show first in ${host.prsIn}, in this order.${addedText}`,
-    personLine: `PR order: ${label ? `${label}, ` : ""}${refs.length} ${refs.length === 1 ? "PR" : "PRs"}`
+    personLine: `PR order: ${label}, ${refs.length} ${refs.length === 1 ? "PR" : "PRs"}`
   };
 }
 
@@ -5213,7 +5337,8 @@ function completedAttempt(state, deliveryId, outcome) {
 }
 function recorded(host, s, tool, args, now) {
   const r = toolAnswer(host, s.ledger, tool, args, now);
-  return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result, personLine: r.personLine };
+  const ledger = withOrderStatuses(r.ledger, s.prViews.views);
+  return { state: linkDialogs({ ...s, ledger }), result: r.result, personLine: r.personLine };
 }
 function withHolds(s, holds) {
   return { ...s, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince };
@@ -5233,10 +5358,12 @@ function pruned(s) {
 }
 function withFetchedPrs(s, fetched, branchRef, isGhSignedOut) {
   const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true;
+  const views = { ...s.prViews.views, ...fetched };
   return {
     ...s,
+    ledger: withOrderStatuses(s.ledger, views),
     prViews: {
-      views: { ...s.prViews.views, ...fetched },
+      views,
       branchRef,
       isFetching: false,
       ...isSignedOut ? { isGhSignedOut: true } : {}
@@ -5300,7 +5427,7 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger),
-    orderText: prOrderText(s.ledger.prOrder, drawn, now),
+    order: prOrderView(s.ledger.prOrder, drawn, { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now }, shownSince),
     tabActions: prTabActions(drawn, s.prViews.branchRef),
     isGhSignedOut: s.prViews.isGhSignedOut === true
   };
@@ -6131,8 +6258,8 @@ function prEntries(screen, ui, now) {
   const ghNotice = ghNoticeOf(ghState);
   if (ghNotice)
     out.push({ kind: "banner", banner: bannerOf(ghNotice.kind, ghNotice.text) });
-  if (prs.orderText)
-    out.push({ kind: "note", text: prs.orderText });
+  if (prs.order)
+    out.push(...orderEntries(screen, prs.order, now));
   for (const d of prs.drawn) {
     const { pr, state } = d;
     const markId = prMarkId(pr.ref);
@@ -6229,6 +6356,29 @@ function prEntries(screen, ui, now) {
     });
   if (prs.olderText)
     out.push({ kind: "note", text: prs.olderText });
+  return out;
+}
+function orderEntries(screen, order, now) {
+  const out = [{ kind: "note", text: order.title, isPlain: true }];
+  if (order.why)
+    out.push({ kind: "note", text: order.why });
+  const changed = order.changed;
+  if (!changed)
+    return out;
+  const buttons = prButtons(changed.actions);
+  out.push({
+    kind: "row",
+    line: {
+      ...blankLine(RANK_AGAIN_ID),
+      lead: null,
+      title: changed.text ?? "",
+      feedback: changed.showsPress ? pressFeedback(screen, RANK_AGAIN_ID, now) : null,
+      buttons,
+      isStatic: buttons.length === 0,
+      isWaiting: false,
+      isTabButtons: buttons.length > 0
+    }
+  });
   return out;
 }
 function pressFeedback(screen, id, now, isMarkDone = false) {
@@ -6399,7 +6549,7 @@ function handleKey(screen, ui, key, now, text) {
       return { ui: withSelection(base, undoable.id), press };
     return { ui: base };
   }
-  const tabLine = lines.find((l) => l.isTabButtons);
+  const tabLine = lines.find((l) => l.isTabButtons && l.buttons.some((b) => b.key === key));
   const tabButton = tabLine?.buttons.find((b) => b.key === key);
   if (tabLine && tabButton)
     return activate(screen, base, tabLine, tabButton, now);
@@ -6612,7 +6762,14 @@ function drawLine(line, isSelected, d) {
   if (line.isTabButtons) {
     const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
     const cells = line.buttons.map((b, i) => buttonCell(b, isSelected && i === focusOf2(line, ui), s));
-    return [fit(` ${cursor} ${cells.join("")}`, width)];
+    const title = line.title ? `${line.title}  ` : "";
+    const head = ` ${cursor} `;
+    const buttons = `${head}${title}${cells.join("")}`;
+    const status = line.feedback ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
+    if (!status)
+      return [fit(buttons, width)];
+    const together = `${buttons}${status}`;
+    return visibleLength(together) <= width ? [together] : [fit(buttons, width), fit(`${" ".repeat(visibleLength(head))}${status}`, width)];
   }
   const pad = line.depth * 2;
   const out = [];
@@ -6819,7 +6976,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
       const mark = paintMark(e.entry, now, style);
       body.push(...indented(e.entry.words, PAGE_TEXT_AT, width, Infinity, style.dim).map((l, n) => n === 0 ? `${" ".repeat(PAGE_MARK_AT)}${mark} ${l.trimStart()}` : l));
     } else if (e.kind === "note")
-      body.push(...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : style.dim));
+      body.push(...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : e.isPlain ? (text) => text : style.dim));
     else {
       const isSelected = e.line.id === selected?.id;
       const start = body.length;

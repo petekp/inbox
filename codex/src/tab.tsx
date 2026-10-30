@@ -100,6 +100,7 @@ import {
   checkActions,
   checkRowText,
   DISMISS_MERGED_ID,
+  RANK_AGAIN_ID,
   PR_QUOTE_CHARS,
   splitFollowUps,
   ghNoticeOf,
@@ -120,7 +121,7 @@ import {
   threadSentIn,
   openPrViews,
 } from '../../hooks/pr-tab'
-import type { DrawnPr, PrAction, PrPress } from '../../hooks/pr-tab'
+import type { DrawnPr, PrAction, PrOrderView, PrPress } from '../../hooks/pr-tab'
 import { commentParts, failingChecks, readableComment, readiness, threadWhere, waitingThreads } from '../../hooks/prs'
 import type { Draft, Finding, PrCheck, PrThread, PrView, Tab } from '../../types'
 import { ARRIVAL_TABS, followTo } from '../../hooks/arrivals'
@@ -899,13 +900,22 @@ function prKey(rowId: string, pr: PrView, a: PrAction): Key {
 
 /** The PRs tab's own buttons, drawn after its PR blocks. */
 function prTabKeys(v: View): Key[] {
-  return v.prs.tabActions.map(a => ({
+  return v.prs.tabActions.map(a => tabKey(DISMISS_MERGED_ID, a))
+}
+
+/** The order's changed line's buttons: Rank again. */
+function prOrderKeys(v: View): Key[] {
+  return (v.prs.order?.changed?.actions ?? []).map(a => tabKey(RANK_AGAIN_ID, a))
+}
+
+function tabKey(rowId: string, a: PrAction): Key {
+  return {
     ...(a.hotkey ? { hotkey: a.hotkey } : {}),
     label: a.label,
     emphasis: a.emphasis,
-    ...(a.isOut || sending.get(DISMISS_MERGED_ID)?.action === a.press.action ? { isOut: true } : {}),
-    run: () => void act(DISMISS_MERGED_ID, a.press),
-  }))
+    ...(a.isOut || sending.get(rowId)?.action === a.press.action ? { isOut: true } : {}),
+    run: () => void act(rowId, a.press),
+  }
 }
 
 function pendingLocal(effect: Effect): Feedback {
@@ -1960,7 +1970,11 @@ async function undoPr(id: string, ref: string) {
 }
 
 function prLastLine(v: View, ref: string): { text: string; isError: boolean } | null {
-  const id = prMarkId(ref)
+  return pressLine(v, prMarkId(ref), !isDismissed(v.lastActions, ref))
+}
+
+/** A press's status under its buttons. `showsLast` says whether it draws the row's last press once that is saved. */
+function pressLine(v: View, id: string, showsLast: boolean): { text: string; isError: boolean } | null {
   if (sending.has(id)) {
     const pending = sending.get(id)?.pending
     return { text: pending ? feedbackText(pending, 'codex') : SENDING, isError: false }
@@ -1969,11 +1983,37 @@ function prLastLine(v: View, ref: string): { text: string; isError: boolean } | 
   if (error) return { text: error, isError: true }
   const note = noteOf(id)
   if (note) return { text: note, isError: false }
-  const f = isDismissed(v.lastActions, ref) ? null : feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at)
+  const f = showsLast ? feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at) : null
   if (!f) return null
   const text = feedbackText(f, 'codex')
 
   return { text: hasAge(f) ? `${text}${DOT}${ago(v.at - f.at)}` : text, isError: isFailure(f) }
+}
+
+/** The order's title, the agent's reason under it, and the changed line with Rank again and its press status. */
+function PrOrderLines({ v, order }: { v: View; order: PrOrderView }) {
+  const keys = prOrderKeys(v)
+  const last = order.changed ? pressLine(v, RANK_AGAIN_ID, order.changed.showsPress) : null
+
+  return (
+    <section class="pr-order">
+      <div class="pr-order-title">{order.title}</div>
+      {order.why ? <div class="muted">{order.why}</div> : null}
+      {order.changed ? (
+        <div class="pr-order-changed">
+          {order.changed.text ? <span>{order.changed.text}</span> : null}
+          {keys.length > 0 ? (
+            <span class="pr-actions keys">
+              {keys.map(k => (
+                <KeyButton k={k} />
+              ))}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {last ? <div class={last.isError ? 'pr-last tone-error' : 'pr-last muted'}>{last.text}</div> : null}
+    </section>
+  )
 }
 
 function PrBlock({
@@ -2072,11 +2112,7 @@ function Prs({ v, now }: { v: View; now: number }) {
           <Banner banner={bannerOf(ghNotice.kind, ghNotice.text)} />
         </div>
       ) : null}
-      {v.prs.orderText ? (
-        <section>
-          <div class="group-title muted">{v.prs.orderText}</div>
-        </section>
-      ) : null}
+      {v.prs.order ? <PrOrderLines v={v} order={v.prs.order} /> : null}
       {blocks.map(b =>
         b.state.is === 'settled' ? (
           <section>
@@ -2562,7 +2598,7 @@ document.addEventListener(
     }
     const t = drawnTab()
     if (isHelpShown || !isRowTab(t)) return
-    const tabKey = t === 'prs' ? prTabKeys(view).find(x => x.hotkey === e.key) : undefined
+    const tabKey = t === 'prs' ? [...prOrderKeys(view), ...prTabKeys(view)].find(x => x.hotkey === e.key) : undefined
     if (tabKey) {
       e.preventDefault()
       if (!tabKey.isOut) tabKey.run()

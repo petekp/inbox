@@ -71,6 +71,7 @@
       .panel .muted,
       .settled-line .what,
       .pr-head,
+      .pr-order,
       .tone-error,
       input,
       textarea {
@@ -261,9 +262,22 @@
       .pr-head,
       .pr-status,
       .pr-actions,
-      .pr-last {
+      .pr-last,
+      .pr-order > div {
         padding: 0 14px 0 var(--text-x);
         overflow-wrap: anywhere;
+      }
+      .pr-order-changed {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        column-gap: 10px;
+        row-gap: 6px;
+        margin-top: 8px;
+      }
+      .pr-order-changed .pr-actions {
+        padding: 0;
+        margin-top: 0;
       }
       .pr-head {
         font-weight: 600;
