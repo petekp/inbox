@@ -1607,11 +1607,7 @@ function outcomeText(d) {
 }
 var TOLD_NOTHING = { inbox: null, closed: [] };
 
-// ../hooks/view.ts
-var OPTIONS_FOLD_AT = 5;
-var OPTION_LABEL_CHARS = 32;
-var CHOICE_KEYS = [..."abcfghilm"];
-var DOT = "\u2007\xB7\u2002";
+// ../hooks/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" }
@@ -1626,6 +1622,7 @@ var SUBJECT_MARKS = {
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
+var IDLE_MARK = { mark: "\u25D0", tone: null };
 var CLOSED_MARKS = {
   handled: SUBJECT_MARKS.done.mark,
   dismissed: "\u2715",
@@ -1643,6 +1640,7 @@ var MARK_LEGEND = [
     isRunning: true,
     words: "Working. It moves while the work runs or your message is on its way."
   },
+  { mark: IDLE_MARK.mark, tone: null, isRunning: false, words: "Working, with nothing running right now" },
   { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: "Queued: not started yet" },
   {
     mark: SUBJECT_MARKS["waits-on-other"].mark,
@@ -1667,6 +1665,12 @@ var MARK_LEGEND = [
     words: "Opportunity: something that could be better"
   }
 ];
+
+// ../hooks/view.ts
+var OPTIONS_FOLD_AT = 5;
+var OPTION_LABEL_CHARS = 32;
+var CHOICE_KEYS = [..."abcfghilm"];
+var DOT = "\u2007\xB7\u2002";
 var SETTLED_MS = 5120;
 var QUEUED_AFTER_MS = 1e3;
 var COMPARE_LIMIT_MS = 30 * 6e4;
@@ -1918,11 +1922,13 @@ function statusPage(s, now) {
     const under = running.filter((c) => c.subjectId === x.id);
     const shownUnder = under.slice(0, CHILD_ROWS);
     const isMore = under.length > CHILD_ROWS;
+    const isRunning = x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some(isChildWorking));
+    const isIdle = x.status === "working" && !isRunning;
     rows.push({
       kind: "subject",
       id: x.id,
-      ...isHeld(x) ? HELD_MARK : SUBJECT_MARKS[x.status],
-      isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some(isChildWorking)),
+      ...isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
+      isRunning,
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       stall: stallOf(x),
