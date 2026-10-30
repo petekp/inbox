@@ -51,10 +51,31 @@ Delegate tracking, `hooks/herdr.ts:delegatesInHerdr`, asks `herdr agent list`, w
 
 Nothing yet. Herdr 0.1.10's shipped `agents` sidebar and `tabs` bar draw each agent's status from its OSC 7501 report: a spinner while it works, "Needs you" while it is blocked, a dot when it is done. Neither reads any other label. So the labels reach Herdr, but the person sees them only in the inbox look.
 
-Three ways to show them, for Pete to choose:
+Three ways were weighed:
 
 1. **Herdr draws them.** Herdr's shipped `agents` and `tabs` mods show a count from a label. That could be a convention for any program, such as `badge.count` and `badge.tone`, or the `inbox.` labels themselves. Every Herdr user gets it with Herdr's updates, and no layout is cloned. This needs a change in Herdr.
 2. **The inbox ships clones.** The inbox ships copies of `agents` and `tabs` that also draw the counts. A shipped layout is read-only, so the person must switch to a cloned layout, and the clones stop getting Herdr's fixes.
 3. **Only the look shows them.** The look draws the counts of the session it follows. The sidebar shows no more than it does today.
 
-The recommendation is 1. The counts exist so the person can see which sessions need them without opening each one, and only the sidebar shows every session at once. The OSC 7501 status is the wrong channel: the app reads only its root `state` and `app`, so an inbox report there would overwrite the agent's own.
+Pete chose 1. The counts exist so the person can see which sessions need them without opening each one, and only the sidebar shows every session at once. The OSC 7501 status is the wrong channel: the app reads only its root `state` and `app`, so an inbox report there would overwrite the agent's own. Until Herdr draws the counts, they show only in the look.
+
+### Draft request to Herdr's maintainers
+
+Not filed. Pete approves each upstream report before it is filed.
+
+> **Show a count from a terminal label in the agents sidebar and the tabs bar**
+>
+> A program in a Herdr app terminal can set labels on its terminal with `hc label`. The shipped `agents` sidebar and `tabs` bar draw each agent's status from its OSC 7501 report, and read no other label. So a program cannot show a count, such as how many items wait on the person, in the place the person looks across sessions.
+>
+> **Use case.** The inbox runs inside Claude Code, Codex and omp sessions. It lists what waits on the person in each session: questions, tasks and findings. Each session will label its Herdr terminal with those counts. Drawn in the sidebar, they would show which sessions need the person without opening each one.
+>
+> **Proposal.** The `agents` and `tabs` mods draw a small count beside an agent when its terminal has these labels:
+>
+> - `badge.count`: a positive whole number. An empty value or 0 removes the count.
+> - `badge.tone`: `blocked`, `done` or `working`, drawn in the theme's color of the same name. Without it, the count uses `muted`.
+>
+> A label change already re-renders every mod, so the mods need no new event.
+>
+> **Questions.** Are `badge.count` and `badge.tone` good names? Should a program be able to set more than one count? Should the count show beside the agent's status, or replace it while it is set?
+>
+> _Written by Claude_

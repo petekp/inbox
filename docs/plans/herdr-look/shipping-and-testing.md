@@ -8,12 +8,12 @@ Status: proposed.
 
 A Herdr mod is a folder in `<app home>/mods/<name>/`. Herdr loads a new folder at once and reloads a mod when a file in it is saved. A mod the person copies in never updates by itself. Herdr lists shared mods at herdr.dev/mods, from public GitHub repos with the topic `herdr-mod`, and the person's agent copies the files.
 
-The inbox's three hosts each install the inbox from this repo, so each install already holds the built mod, `herdr/mod/inbox/`. Two ways to get it into Herdr, for Pete to choose:
+The inbox's three hosts each install the inbox from this repo, so each install already holds the built mod, `herdr/mod/inbox/`. Two ways to get it into Herdr were weighed:
 
 1. **The hosts install and update it.** A host that runs in a Herdr app terminal compares its bundled mod's version with the one in `<app home>/mods/inbox/`. When its own is newer, it copies its copy in, and Herdr reloads the mod in place. The first install asks the person once, in the inbox, before writing into Herdr's folder. The look then updates with the inbox, and every host carries the same files.
 2. **herdr.dev/mods.** The repo takes the `herdr-mod` topic, and the person's agent copies `herdr/mod/inbox/`. The mod never updates unless the person copies it again, and the listing covers the whole repo, not the mod alone.
 
-The recommendation is 1. A mod that falls behind the hosts breaks when the envelope's `format` moves, and the person has no reason to copy it again by hand. When two hosts carry different versions, the newer one wins, and the mod reads older envelopes through `upgradeSession`.
+Pete chose 1. A mod that falls behind the hosts breaks when the envelope's `format` moves, and the person has no reason to copy it again by hand. When two hosts carry different versions, the newer one wins, and the mod reads older envelopes through `upgradeSession`.
 
 ### Minimum Herdr version
 
@@ -88,7 +88,7 @@ Nothing merges into code before 0.3.0 ships. After that, each step merges on its
 1. **Shared code.** The `Intl.Segmenter` fallback, `Look` gains `'herdr'`, the row machine moves to `hooks/row-motion.ts`, and `hooks/herdr.ts` gains the app target, labels, envelope and press file.
 2. **Counts.** All three hosts set the labels in Herdr app terminals. This is useful on its own once Herdr's sidebar draws them.
 3. **The look, read-only.** `herdr/` draws the Asks, Finds and Status of the focused session from the published files.
-4. **Presses from Claude Code**, with the poll or the wake label, and the press follow-ups moved out of `runPress`.
+4. **Presses from Claude Code**, with the wake label, and the press follow-ups moved out of `runPress`.
 5. **Presses from omp, then Codex.**
 6. **Motion, keys, the PRs tab and Help.**
 7. **Install and update, docs and the release pass.**

@@ -60,12 +60,11 @@ A press is the person acting on a row: Done, Dismiss, an answer, a reply and the
 
 ### Claude Code
 
-The mod cannot watch a folder. Two ways to notice a press:
+The mod cannot watch a folder, so a **wake label** tells it a press is waiting. After writing a press file, the Herdr mod sets a label on the session's terminal: `hc label <terminal> inbox.press=<press id>`. The Claude Code mod keeps one `hc events` process running with `$.process.spawn`, and reads the press folder when a label event names its terminal. Nothing runs while no one presses. A slow poll, every 10 seconds, catches a missed event. The mod listens and polls only while `HC_TERMINAL_ID` is set.
 
-1. **A poll.** `$.clock.every(P)` lists the press folder with `$.fs.list`. This is what the spike ran. A press waits for the next tick: P/2 on average.
-2. **A wake label.** After writing a press file, the Herdr mod sets a label on the session's terminal: `hc label <terminal> inbox.press=<press id>`. The Claude Code mod keeps one `hc events` process running with `$.process.spawn`, and reads the press folder when a label event names its terminal. Nothing runs while no one presses. A slow poll, every 10 seconds, catches a missed event.
+The spike checked the signal from a shell: `hc events` reported each label change 11–17 ms after the `hc label` call started. Running `hc events` from the mod with `$.process.spawn` is the step still to check.
 
-The spike measured option 1: about 1 ms of CPU per tick, or 0.1% of a core at a 1000 ms poll, and a wait of P/2 on average. [The spike](spike.md) gives the numbers. It checked option 2's signal from a shell: `hc events` reported each label change 11–17 ms after the `hc label` call started. Option 2 is the recommendation. It costs nothing at idle and answers about 0.5 s sooner at P = 1000 ms. Running `hc events` from the mod with `$.process.spawn` is the step still to check. Either way the mod polls or listens only while `HC_TERMINAL_ID` is set.
+The other way was a poll alone, which the spike ran: `$.clock.every(P)` lists the press folder with `$.fs.list`. A tick costs about 1 ms of CPU, or 0.1% of a core at P = 1000 ms, and a press waits P/2 on average. [The spike](spike.md) gives the numbers. The wake label answers about 0.5 s sooner at P = 1000 ms and costs nothing at idle.
 
 Delivery is unchanged. The mod's `deliver` already sends a message with a sent record and holds the press as Queued until it runs.
 

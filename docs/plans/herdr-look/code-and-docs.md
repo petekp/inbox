@@ -36,7 +36,7 @@ The Herdr look is a look, not a host. Each host publishes for it and applies its
 
 | Client | Entry | Reason |
 | --- | --- | --- |
-| `claude-code` | `different` | The mod cannot watch a folder, so a press waits for the next poll or the wake label. |
+| `claude-code` | `different` | The mod cannot watch a folder, so a press reaches it through a wake label it reads with `hc events`. |
 | `codex` | `different` | Codex has no hook for a session's end, so its labels and file stay until the terminal runs something else. Whether `codex queue` reaches a CLI session is open. |
 | `omp` | `full` | omp watches the press folder in its own process and clears its labels when it shuts down. |
 
@@ -53,7 +53,7 @@ The look map is `docs/looks.md` and its parts in `docs/looks/`.
   | Topic | Herdr look | Why |
   | --- | --- | --- |
   | Who draws | A program apart from the host, from a published file | Herdr's mods run in Herdr's process. |
-  | Press delay | A press reaches the host at its next poll or wake | A press crosses a process boundary through a file. |
+  | Press delay | A press reaches the host when the host reads its file, after a file watch or a wake label | A press crosses a process boundary through a file. |
   | Following focus | Shows the session of the focused terminal in its tab | One pane can serve several agents in a tab. |
   | Motion | GPUI transitions on opacity, height and position | Herdr has no CSS. |
   | Reduced motion | Animates until Herdr reports the setting | Herdr exposes no reduced-motion setting yet. |

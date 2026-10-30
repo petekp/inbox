@@ -31,16 +31,16 @@ The look works with the three hosts the inbox has: Claude Code, Codex and omp, e
 - **A faster wake.** `hc events` reports a terminal's label change in 11–17 ms. A press could wake Claude Code that way with no poll at all.
 - **Motion.** GPUI's native opacity transition runs in the app.
 
-## Decisions for Pete
+## Decisions
 
-Each has a recommendation. The linked part gives its reason.
+Pete made each of these. The linked part gives the reason. A decision that still rests on an unchecked behavior names it, and [the open questions](herdr-look/shipping-and-testing.md#open-questions) list it.
 
-1. **[Where the files live](herdr-look/data-and-presses.md#the-data-path).** Recommended: under Herdr's app home, which works today because a mod may write only there. The other choice is a folder Herdr names for a mod's data.
-2. **[How a press wakes Claude Code](herdr-look/data-and-presses.md#claude-code).** Recommended: a wake label read through `hc events`, which costs nothing at idle and answers in about 15 ms. The other choice is a 1000 ms poll, measured at about 0.1% of a core and 0.5 s more delay on average.
-3. **[Where the look opens](herdr-look/look.md#where-it-opens).** Recommended: a pane to the right of the agent. The other choice is a floating window that follows focus across tabs.
-4. **[How the person opens it](herdr-look/look.md#where-it-opens).** The host's `/inbox` command opens the pane when it runs in Herdr, or a key in `keys.json` does. Each has an open question, so there is no recommendation yet.
-5. **[Counts in Herdr's sidebar and tabs](herdr-look/counts.md#what-herdrs-sidebar-and-tabs-show).** Recommended: Herdr's own `agents` and `tabs` mods draw a count from a label, which is a change in Herdr. The other choices are cloned mods shipped with the inbox, or counts in the look only.
-6. **[Install and update](herdr-look/shipping-and-testing.md#how-it-ships).** Recommended: each host copies its bundled mod into Herdr when its copy is newer, after asking once. The other choice is a listing on herdr.dev/mods.
+1. **[Where the files live](herdr-look/data-and-presses.md#the-data-path).** Under Herdr's app home, its settings folder. This works today because a mod may write only there.
+2. **[How a press wakes Claude Code](herdr-look/data-and-presses.md#claude-code).** A wake label: the look changes a label on the session's terminal, and Claude Code reads the change through `hc events`. It costs nothing at idle, and a shell saw each change in 11–17 ms. Still to check: running `hc events` from the Claude Code mod.
+3. **[Where the look opens](herdr-look/look.md#where-it-opens).** In a pane to the right of the agent's terminal.
+4. **[How the person opens it](herdr-look/look.md#where-it-opens).** The host's `/inbox` command opens the pane when it runs in a Herdr app terminal. Still to check: how the host finds its pane's id from its terminal.
+5. **[Counts in Herdr's sidebar and tabs](herdr-look/counts.md#what-herdrs-sidebar-and-tabs-show).** Herdr's own `agents` and `tabs` mods draw a count from a label. This needs a change in Herdr. [Counts](herdr-look/counts.md#draft-request-to-herdrs-maintainers) holds a draft request to Herdr's maintainers, which is not filed. Until Herdr draws the counts, they show only in the look.
+6. **[Install and update](herdr-look/shipping-and-testing.md#how-it-ships).** Each host copies its bundled mod into Herdr when its copy is newer, after asking the person once.
 
 ## Parts
 

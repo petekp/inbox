@@ -16,12 +16,11 @@ The look is a Herdr app mod: JavaScript that describes native GPUI elements, dra
 | A popup or dialog | `openOverlay({ kind: 'popup' })` | Quick look. | Closes on a click outside, so it cannot stay open while the person works. |
 | A sidebar section | A cloned layout | Always there. | A shipped layout is read-only. The person runs a clone that stops getting Herdr's layout updates. |
 
-The recommendation is **a pane to the right of the agent's terminal**, about 420 px wide. Every look today sits beside its session, and a pane is the only place that does that without a cloned layout.
+The look opens in **a pane to the right of the agent's terminal**, about 420 px wide. Every look today sits beside its session, and a pane is the only place that does that without a cloned layout.
 
-**Opening it.** A copy of a mod receives `<mod>.<command>` only while it shows, so a key cannot ask a closed look to open. Two ways, for Pete to choose:
+**Opening it.** The host's `/inbox` command, run in a Herdr app terminal, opens the pane with `herdr-app do pane.split '{"direction":"right","pane":"<id>","mod":"inbox"}'`. The spike opened its pane exactly this way. The host does not know its pane's id, only its terminal, so it needs a way to find the pane from the terminal. `herdr-app status` names only the focused pane. This is an open question.
 
-- The host's `/inbox` command, run in a Herdr app terminal, opens the pane with `herdr-app do pane.split '{"direction":"right","pane":"<id>","mod":"inbox"}'`. The spike opened its pane exactly this way. The host does not know its pane's id, only its terminal, so it needs a way to find the pane from the terminal. `herdr-app status` names only the focused pane.
-- A key in `keys.json`, if a binding can carry `pane.split`'s arguments. Not checked.
+A key cannot ask a closed look to open, because a copy of a mod receives `<mod>.<command>` only while it shows. A key in `keys.json` could open the look only if a binding can carry `pane.split`'s arguments, which was not checked.
 
 ## Following the focused pane
 
