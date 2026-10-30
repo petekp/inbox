@@ -58,7 +58,7 @@ Any change after the pass makes a new candidate and a new run.
 | Layer | Catches | Runs |
 | --- | --- | --- |
 | Drawing | What a look draws for a state: buttons, order, labels | `check.sh`. The mod's test kit returns a mounted tree as plain data with `drawn()`, and omp's `render()` in `omp/src/panel.ts` returns text lines. |
-| Host replay | Event order, timing and saved state in each host | `check.sh`. Sequences recorded from the real hosts replay through `omp/tests/host.spec.ts`, the Codex tests and `tests/session-fake-host.ts`. |
+| Host replay | Event order, timing and saved state in each host | `check.sh`. Sequences recorded from the real hosts replay through `omp/tests/host-*.spec.ts`, the Codex tests and `tests/session-fake-host.ts`. |
 | Agent evals | Whether each agent records and closes as the guidance says | `./scripts/eval.sh`, both suites |
 | Live pass | Install and update, the app's own layout, hooks, a press reaching the agent, and app UI around the inbox | VM clones |
 
