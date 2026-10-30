@@ -233,7 +233,6 @@ import {
   STALL_GAP,
   WAS_PREFIX,
   inboxCommandText,
-  RUNNING_FRAME_MS,
   runningMark,
   MARK_LEGEND,
   HELD_MARK,
@@ -328,6 +327,7 @@ import {
   UNDO_HEIGHT_PT,
 } from './pane-sizes'
 import { lookOf, paletteFor, type Tone } from './palettes'
+import { animateRunningMarks } from './running-mark-timer'
 import {
   chevronSvg,
   markSvg,
@@ -1213,27 +1213,6 @@ function redrawWhileUndoLasts($: EngineInterface, expiresAt: number) {
     await openLeftRows($)
     await finishPendingUndoScroll($)
   })().catch(() => undefined)
-}
-
-let runningMarkTimer: Timer | null = null
-let isRunningMarkDrawn = false
-
-/**
- * Redraws the terminal pane each frame while it shows a running mark. A tick that follows no such drawing stops the
- * timer, as when the pane closed or left the Status. Desktop runs no loop, as `redrawWhileUndoLasts` says why.
- */
-function animateRunningMarks($: EngineInterface, isDrawn: boolean) {
-  isRunningMarkDrawn = isDrawn
-  if (!isDrawn || runningMarkTimer !== null) return
-  runningMarkTimer = $.clock.every(RUNNING_FRAME_MS, () => {
-    if (!isRunningMarkDrawn || paneLook === 'desktop') {
-      runningMarkTimer?.cancel()
-      runningMarkTimer = null
-      return
-    }
-    isRunningMarkDrawn = false
-    void update($, RUNNING_FRAME, n => n + 1).catch(() => undefined)
-  })
 }
 
 function later($: EngineInterface, waitMs: number, run: () => unknown) {
@@ -3325,7 +3304,8 @@ export const register: Register = on => {
       read($, OPTIONS_SHOWN),
       $.env.get('TERM_PROGRAM'),
       read($, STATUS_SELECTION),
-      read($, RUNNING_FRAME),
+      // A redraw loop on desktop blocks clicks, as `redrawWhileUndoLasts` says.
+      look === 'terminal' ? read($, RUNNING_FRAME) : null,
     ])
     const tab: Tab = isShownTab(savedTab) && isRowTab(savedTab) ? savedTab : 'needsYou'
     const isStatusShown = savedPage === 'overview'
@@ -3333,8 +3313,10 @@ export const register: Register = on => {
     const tabList = shownTabs(isNextBuild)
     if (look === 'terminal')
       animateRunningMarks(
-        $,
         showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)),
+        now,
+        (ms, fn) => $.clock.every(ms, fn),
+        () => void update($, RUNNING_FRAME, n => n + 1).catch(() => undefined),
       )
     const undoEnd = lastUndoEnd(view)
     if (undoEnd !== null) redrawWhileUndoLasts($, undoEnd)
