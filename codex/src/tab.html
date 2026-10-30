@@ -863,10 +863,15 @@
         width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
         border-top: 1px solid var(--tree-line);
       }
-      /* "Last seen" in the middle of a rule that spans what the rule above a row spans: from the text column to the tab's edge. */
+      /* "Last seen" in the middle of a dashed rule that spans what the rule above a row spans: from the text column to the tab's edge. */
       .status-page .row.look-line {
         padding-left: 0;
         padding-right: 0;
+        margin-top: var(--look-gap);
+        margin-bottom: var(--look-gap);
+      }
+      .status-page .row.look-line.last {
+        margin-bottom: 0;
       }
       .status-page .look-rule {
         grid-column: 1 / -1;
@@ -888,7 +893,7 @@
       .status-page .look-rule::after {
         content: '';
         flex: 1;
-        border-top: 1px solid var(--soft);
+        border-top: 1px dashed var(--soft);
       }
       .status-head h1 {
         margin: 0;
