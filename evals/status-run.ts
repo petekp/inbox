@@ -14,6 +14,7 @@ import type { Job, Run } from './harness'
 import { factsText } from './status-facts'
 import { JUDGE_CHECKS, judgePrompt, mistakeKind, pageMistakes, parseJudgeAnswer } from './status-judge'
 import type { JudgeCheckId, JudgePageSet, JudgeVerdict } from './status-judge'
+import { judgeSystemText } from './status-judge-text'
 import { LIMITS, runReplay } from './status-replay'
 import type { Agent, ModelCall, Replay, StepResult } from './status-replay'
 import { REPLAYS } from './status-replays'
@@ -49,10 +50,7 @@ const judgeSets = values['judge-set'] === undefined ? [1, 2] : [Number(values['j
 if (!judgeSets.every(n => n === 1 || n === 2))
   throw new Error(`Unknown --judge-set ${values['judge-set']}. Use 1 or 2.`)
 
-const judgeFile = readFileSync(join(ROOT, 'evals', 'status-judge.md'), 'utf8')
-const JUDGE_SEPARATOR = '\n---\n'
-const separatorAt = judgeFile.indexOf(JUDGE_SEPARATOR)
-const judgeSystem = separatorAt === -1 ? '' : judgeFile.slice(separatorAt + JUDGE_SEPARATOR.length).trim()
+const judgeSystem = judgeSystemText(ROOT)
 const isJudgeWritten = judgeSystem !== '' && !judgeSystem.startsWith('PLACEHOLDER')
 const isJudging = values.judge || values['judge-pages'] !== undefined
 if (isJudging && !isJudgeWritten)
