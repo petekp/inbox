@@ -132,6 +132,8 @@ let storeRefusal: string | undefined
 let storeHold: (() => Promise<void>) | undefined
 let storeSetHold: ((key: string, value: unknown) => Promise<void>) | undefined
 let storeSetRefusal: string | undefined
+let storeSetLockHeld = 0
+let logged: string[] = []
 let toolRefusal: string | undefined
 let commandRefusal: string | undefined
 let panesOpened: string[] = []
@@ -221,6 +223,8 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   storeHold = undefined
   storeSetHold = undefined
   storeSetRefusal = undefined
+  storeSetLockHeld = 0
+  logged = []
   toolRefusal = undefined
   commandRefusal = undefined
   panesOpened = []
@@ -235,6 +239,10 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   on('store.set', async ($, e) => {
     await storeSetHold?.(e.key, e.value)
     if (storeSetRefusal && e.key.startsWith('s:')) return { deny: storeSetRefusal }
+    if (storeSetLockHeld > 0 && e.key.startsWith('s:')) {
+      storeSetLockHeld--
+      return { deny: 'Lock file is already being held' }
+    }
     stored.set(e.key, JSON.stringify(e.value))
     return { value: undefined }
   })
@@ -243,6 +251,10 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     return { value: undefined }
   })
   on('store.keys', () => ({ value: [...stored.keys()] }))
+  on('ui.log', ($, e) => {
+    logged.push(e.text)
+    return { value: undefined }
+  })
   on('config.list', () => ({
     value: theme
       ? [
@@ -4212,6 +4224,74 @@ test('a failed first save keeps the prior saved session intact', async ($, on) =
   await $.turn.complete({ answer: 'New reply.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
   expect(stored.get('s:session-1')).toBe(prior)
+})
+
+test('a save that meets a held store lock waits, and the turn’s update still lands', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let session: Pick<Session, 'ledger'> | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await clock.settle()
+  storeSetLockHeld = 1
+  const completing = $.turn.complete({
+    answer: 'Plan ready.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.advance(5_000)
+  await completing
+  await clock.settle()
+
+  const asks = ['Use Node or Python?', 'Name the command greet?']
+  expect(storeSetLockHeld).toBe(0)
+  expect(session!.ledger.items.map(i => i.ask)).toEqual(asks)
+  expect((JSON.parse(stored.get('s:session-1')!) as Session).ledger.items.map(i => i.ask)).toEqual(asks)
+  expect(logged).toEqual([])
+})
+
+test('when the store lock stays held, the update still shows and the next save writes it', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let session: Pick<Session, 'ledger'> | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await clock.settle()
+  const before = stored.get('s:session-1')
+  storeSetLockHeld = Infinity
+  const completing = $.turn.complete({
+    answer: 'Plan ready.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.advance(60_000)
+  await completing
+  await clock.settle()
+
+  const asks = ['Use Node or Python?', 'Name the command greet?']
+  expect(session!.ledger.items.map(i => i.ask)).toEqual(asks)
+  expect(stored.get('s:session-1')).toBe(before)
+  expect(logged.length).toBeGreaterThan(0)
+  expect(logged.every(line => line.includes('Lock file is already being held'))).toBe(true)
+
+  storeSetLockHeld = 0
+  ledgerReply = 'NONE'
+  await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Done.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
+  await clock.settle()
+  expect((JSON.parse(stored.get('s:session-1')!) as Session).ledger.items.map(i => i.ask)).toEqual(asks)
 })
 
 test('a session saved mid-turn by a process that ended loads with no turn running, and its Done message goes', async ($, on) => {
