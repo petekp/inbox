@@ -4,8 +4,9 @@ import { SETTLED_MS, NO_HOLDS, shownTabs, statusKeyPlan, statusKeyRows, PRESS_GU
 import type { StatusRow } from '../../hooks/view'
 import { sessionView } from '../../hooks/session'
 import { demoState } from '../src/demo'
-import { drawPanel, handleKey } from '../src/panel'
+import { drawPanel } from '../src/panel'
 import type { PanelUi } from '../src/panel'
+import { handleKey } from '../src/panel-keys'
 import { keys, labelOf, NOW, onPage, screenOf, strip, style, text } from './panel-harness'
 
 const unheldScreen = () => {

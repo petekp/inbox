@@ -6,19 +6,11 @@ import type { RowPress } from '../../hooks/presses'
 import { showsRunningMark } from '../../hooks/session'
 import { READING_TEXT, compareEndsAt, RUNNING_FRAME_MS } from '../../hooks/view'
 import type { Holds, ShownTab } from '../../hooks/view'
-import {
-  INITIAL_UI,
-  afterHandOff,
-  drawPanel,
-  followRows,
-  handleKey,
-  holdsOf,
-  isAnimating,
-  isLineWaiting,
-  noticeFor,
-  tallestTabHeight,
-} from './panel'
-import type { PanelPress, PanelScreen, PanelUi, SeenRows, Style } from './panel'
+import { INITIAL_UI, drawPanel, holdsOf, isAnimating, noticeFor, tallestTabHeight } from './panel'
+import type { PanelPress, PanelScreen, PanelUi, Style } from './panel'
+import { afterHandOff, handleKey, isLineWaiting } from './panel-keys'
+import { followRows } from './panel-tabs'
+import type { SeenRows } from './panel-tabs'
 
 const ANIMATION_MS = 200
 const PRS_CHECK_MS = 120_000

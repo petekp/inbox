@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, rm, rmdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,86 +9,36 @@ import { version } from '../package.json'
 import type { AssistantMessage, Context, Model } from '@oh-my-pi/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 
-import { flattenConversation } from '../../hooks/conversation'
-import { isSameTaskList, ompTodoFromBranch } from '../../hooks/host-tasks'
-import type { Turn } from '../../hooks/conversation'
-import { dialogActivity, dialogQuestions, guidanceText, screenText } from '../../hooks/model-text'
-import type { ScreenTab } from '../../hooks/model-text'
-import type { PrPress } from '../../hooks/pr-tab'
-import { noteDialog } from '../../hooks/dialogs'
-import { branchIn, ghFinder, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
-import { CLEARED_TOKENS, delegatesInHerdr, herdrCheckGate, herdrReporter, herdrTokens } from '../../hooks/herdr'
+import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
+import { herdrReporter } from '../../hooks/herdr'
 import type { Run } from '../../hooks/gh'
 import { COMPARE_PAGE_FILE } from '../../hooks/presses'
-import type { RowPress } from '../../hooks/presses'
-import {
-  claimedStatusRefresh,
-  endTurn,
-  forkedFrom,
-  hasLedger,
-  isUnseen,
-  lookEndedOn,
-  messageTyped,
-  needsUpdate,
-  noteActivity,
-  noteCommandOutput,
-  notePrompt,
-  recorded,
-  sessionView,
-  turnEnded,
-  turnStarted,
-  placed,
-  cutOffTurn,
-  statusChanged,
-  withHolds,
-  withLook,
-} from '../../hooks/session'
-import {
-  activityGate,
-  childrenCutOff,
-  childStarted,
-  childWorked,
-  delegatesRan,
-  delegatesSettled,
-  delegatesStarted,
-  delegatesTakenBack,
-  waitsOnDelegate,
-} from '../../hooks/children'
-import { childEnded } from '../../hooks/status'
-import {
-  askOverConversation,
-  fetchPrs,
-  prFetchTracker,
-  press,
-  orderedKeys,
-  reconcileUpdateStatus,
-  refreshStatus,
-  runUpdates,
-  wakeForDone,
-} from '../../hooks/session-host'
-import type { StatusRecords, PressOutcome, RecordFiles, SessionHost, UpdateHost } from '../../hooks/session-host'
+import { recorded } from '../../hooks/session'
+import { prFetchTracker } from '../../hooks/session-host'
+import type { SessionHost } from '../../hooks/session-host'
 import { agentTools } from '../../hooks/tools'
 import type { AgentTool, ToolAnswer } from '../../hooks/tools'
-import { clip } from '../../hooks/text'
-import { NEXT_BUILD_MARK, NO_HOLDS, RESUME_TEXT, SETTLED_MS, inboxCommandText, screenTabOf } from '../../hooks/view'
-import type { Holds, ShownTab } from '../../hooks/view'
-import { openTarget } from './commands'
+import { NEXT_BUILD_MARK, NO_HOLDS, SETTLED_MS, inboxCommandText } from '../../hooks/view'
 import { createPanel } from './controller'
-import type { PanelSource } from './controller'
 import { demoSource } from './demo'
-import { bandLines, wrapText } from './panel'
+import { bandLines } from './panel'
 import type { PanelScreen } from './panel'
-import { exclusiveRun, pruneSessions, readState, updateState } from './state'
+import { wrapText } from './panel-text'
 import { styleOf } from './theme'
 import type { OmpState } from './state'
 import { OMP, TOOL_LABELS } from './texts'
-import { activityOf, askOutcome, isDismissedAsk } from './tool-calls'
-import type { SessionStatus, Stop } from '../../types'
+import { activityHandlers } from './host-activity'
+import { isUnattended, sessionIdOf } from './host-context'
+import type { HostContext } from './host-context'
+import { panelCalls } from './host-panel'
+import type { Inbox } from './host-panel'
+import { sessionCalls } from './host-sessions'
+import { MESSAGE_TYPE, turnHandlers } from './host-turns'
+import { shownLine } from './omp-messages'
+import type { ToolDetails } from './omp-messages'
 
 const INBOX_MODEL_TIMEOUT_MS = 120_000
-/** Added to the settle window so the timer fires after the window has fully passed. */
-const WAKE_MARGIN_MS = 250
-const MESSAGE_TYPE = 'inbox'
+
 const BAND_KEY = 'inbox-band'
 
 type Complete = (
@@ -119,31 +68,6 @@ export type HostDeps = {
   isUsageLimit: (status: number | undefined, message: string) => Promise<boolean>
   /** The Herdr pane omp runs in, from `HERDR_PANE_ID`, or null outside Herdr. */
   herdrPane: string | null
-}
-
-/** What a panel needs from the host. */
-type Inbox = {
-  screen(ctx: ExtensionContext, holds?: Holds): Promise<PanelScreen>
-  /**
-   * Marks the panel open, showing its first tab from `openedAt`, and runs what a freshly opened panel needs: Done
-   * messages due, and a PR fetch when due.
-   */
-  openPanel(ctx: ExtensionContext, openedAt: number): Promise<void>
-  /** Records the tab an open panel shows. A new tab saves `holds`, with the showing the panel started. */
-  showTab(ctx: ExtensionContext, tab: ShownTab, holds: Holds): void
-  closePanel(ctx: ExtensionContext): void
-  fetchPrsWhenDue(ctx: ExtensionContext): void
-  /**
-   * Asks Herdr about the running delegates at most each `HERDR_CHECK_MS`, so a delegate's row follows Herdr while the
-   * session waits. The panel asks while it shows the Status.
-   */
-  checkDelegatesWhenDue(ctx: ExtensionContext): void
-  /** Calls `listener` after the session's saved state changes. Returns how to stop. */
-  onChange(ctx: ExtensionContext, listener: () => void): () => void
-  /** Applies a press for the session. */
-  press(ctx: ExtensionContext, p: RowPress | PrPress, holds: Holds): Promise<PressOutcome>
-  /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
-  resume(ctx: ExtensionContext): string | null
 }
 
 async function defaultComplete(
@@ -198,23 +122,6 @@ const defaultDeps: HostDeps = {
 
 const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
-/**
- * True for a session nobody watches: a subagent, or a main session run without a UI, such as print mode. An older omp
- * gives an extension no `ctx.agent`, and starts a subagent with no UI, so the read is guarded.
- */
-function isUnattended(ctx: ExtensionContext): boolean {
-  const agent = (ctx as { agent?: { kind?: unknown } }).agent
-
-  return agent?.kind === 'sub' || !ctx.hasUI
-}
-
-const sessionIdOf = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId()
-
-/** The session id in a session file's name, `<timestamp>_<sessionId>.jsonl`. Null for any other name. */
-function sessionIdInFile(file: string): string | null {
-  return /(?:^|[\\/])[^_\\/]+_([^\\/]+)\.jsonl$/.exec(file)?.[1] ?? null
-}
-
 /** Orders models newest first by the `major.minor.patch` revision omp classifies from each id. */
 function byNewestRevision(a: Model, b: Model): number {
   const parts = (m: Model) => (m.identity.revision ?? '0.0.0').split('.').map(Number)
@@ -223,24 +130,6 @@ function byNewestRevision(a: Model, b: Model): number {
 
   return differing === -1 ? 0 : (y[differing] ?? 0) - (x[differing] ?? 0)
 }
-
-const recordFiles: RecordFiles = {
-  write: async (path, text) => {
-    await mkdir(dirname(path), { recursive: true })
-    await writeFile(path, text)
-  },
-  list: folder => readdir(folder).catch(() => []),
-  removeFiles: async paths => void (await Promise.all(paths.map(p => rm(p, { force: true })))),
-  removeFolder: path => rmdir(path),
-}
-
-/** A next build's Status call records for the session, beside the inbox's saved sessions. */
-const statusRecords = (dir: string, sessionId: string): StatusRecords => ({
-  host: 'omp',
-  folder: join(dir, 'overview-calls'),
-  session: sessionId,
-  files: recordFiles,
-})
 
 /**
  * The inbox model: the person's `@inbox` role when it names a model omp can use. omp's `resolve` returns nothing for
@@ -260,177 +149,8 @@ function inboxModel(ctx: ExtensionContext): Model | null {
   return ctx.models.resolve('@inbox') ?? sonnet ?? ctx.models.resolve('@smol') ?? null
 }
 
-/** The text blocks of a message's content, joined. */
-function textOfBlocks(content: unknown): string {
-  if (!Array.isArray(content)) return ''
-
-  return content
-    .flatMap((b: { type?: unknown; text?: unknown }) =>
-      b.type === 'text' && typeof b.text === 'string' ? [b.text] : [],
-    )
-    .join('\n')
-}
-
-type Reply = { role?: unknown; content?: unknown; stopReason?: unknown; errorMessage?: unknown; errorStatus?: unknown }
-
-function lastAssistant(messages: readonly unknown[]): Reply | null {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const m = messages[i] as Reply | undefined
-    if (m?.role === 'assistant' && Array.isArray(m.content)) return m
-  }
-
-  return null
-}
-
-function apiErrorDetail(status: number | undefined, message: string): string {
-  if (status === 429) return 'rate_limit'
-  if (status === 503 || status === 529) return 'overloaded'
-  if (status !== undefined) return String(status)
-
-  return clip(message.split('\n')[0]?.trim() || 'no status', 60)
-}
-
-/** Why a turn stopped, from its last assistant message. Null when the turn did not end on an error. */
-export async function stopOf(
-  reply: Reply | null,
-  isUsageLimit: HostDeps['isUsageLimit'],
-  at: number,
-): Promise<Stop | null> {
-  if (reply?.stopReason !== 'error') return null
-  const message = typeof reply.errorMessage === 'string' ? reply.errorMessage : ''
-  const status = typeof reply.errorStatus === 'number' ? reply.errorStatus : undefined
-  const detail = status === undefined ? '' : String(status)
-  if (await isUsageLimit(status, message).catch(() => false)) return { kind: 'usage-limit', detail, resets: null, at }
-  if (status === 401 || status === 403) return { kind: 'sign-in', detail, resets: null, at }
-
-  return { kind: 'api-error', detail: apiErrorDetail(status, message), resets: null, at }
-}
-
-/** The text of a user message. */
-function userText(content: unknown): string {
-  return typeof content === 'string' ? content : textOfBlocks(content)
-}
-
-type Entry = { type?: unknown; message?: unknown }
-
-type Message = {
-  role?: unknown
-  content?: unknown
-  synthetic?: unknown
-  command?: unknown
-  toolCallId?: unknown
-  isError?: unknown
-  details?: unknown
-}
-
-/** The conversation of a session branch as turns, from the last `/clear` on. omp's own `/new` starts another session. */
-function conversationOf(entries: readonly unknown[]): Turn[] {
-  const path = entries as Entry[]
-  const messages = path
-    .slice(path.findLastIndex(e => e.type === 'reset_boundary') + 1)
-    .flatMap(e => (e.type === 'message' && e.message ? [e.message as Message] : []))
-  const results = new Map(
-    messages.flatMap(m => (m.role === 'toolResult' && typeof m.toolCallId === 'string' ? [[m.toolCallId, m]] : [])),
-  )
-
-  return messages.flatMap((m): Turn[] => {
-    if (m.role === 'user' && m.synthetic !== true) return [{ role: 'person', text: userText(m.content), activity: [] }]
-    if (m.role === 'bashExecution' && typeof m.command === 'string')
-      return [{ role: 'person', text: `$ ${m.command}`, activity: [] }]
-    if (m.role !== 'assistant' || !Array.isArray(m.content)) return []
-    const activity = m.content.flatMap(
-      (block: { type?: unknown; id?: unknown; name?: unknown; arguments?: unknown }) => {
-        if (block.type !== 'toolCall' || typeof block.name !== 'string') return []
-        const input = (block.arguments ?? {}) as Record<string, unknown>
-        const result = typeof block.id === 'string' ? results.get(block.id) : undefined
-        const line =
-          block.name === 'ask'
-            ? dialogActivity(
-                dialogQuestions(input.questions),
-                result
-                  ? askOutcome({ ...result, content: result.content as never, isError: result.isError === true })
-                  : { kind: 'open' },
-              )
-            : activityOf(block.name, input)
-
-        return line ? [line] : []
-      },
-    )
-
-    return [{ role: 'agent', text: textOfBlocks(m.content), activity }]
-  })
-}
-
-/** A `record` or `close` result's details, which omp keeps out of the model's context. */
-type ToolDetails = { personLine: string | null }
-
-/**
- * The line drawn under a `record` or `close` call: its person line, else the error when the call failed, else
- * nothing. A call saved before results carried details draws nothing.
- */
-function shownLine(result: {
-  content: readonly { type: string; text?: string }[]
-  details?: unknown
-  isError?: boolean
-}): string | null {
-  if (result.isError) return textOfBlocks(result.content).trim() || null
-  const details = result.details as Partial<ToolDetails> | null | undefined
-
-  return typeof details?.personLine === 'string' ? details.personLine : null
-}
-
 export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inbox {
   const dir = deps.stateDir(pi)
-  /** The open panels, with the tab each shows. */
-  const openPanels = new Map<string, ShownTab>()
-
-  function panelScreenTab(id: string): ScreenTab | null {
-    const tab = openPanels.get(id)
-
-    return tab === undefined ? null : screenTabOf(tab)
-  }
-  const prepared = new Set<string>()
-  const prFetches = prFetchTracker(deps.now)
-  const listeners = new Map<string, Set<() => void>>()
-  let noted: { id: string; prompt: string; notes: string[] } | null = null
-  /** The text of the reply the agent finished in this run since the turn's prompt. */
-  let replied: { id: string; text: string } | null = null
-  let isGhMissing = false
-
-  /** Queues the running turn's exchange with its reply, and marks the turn ended at `at`. */
-  function endedTurn(
-    id: string,
-    s: OmpState,
-    reply: string,
-    at: number,
-    { hostTasks, queuesEmptyReply = false }: { hostTasks: OmpState['hostTasks']; queuesEmptyReply?: boolean },
-  ): OmpState {
-    const ended = endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
-      tab: panelScreenTab(id),
-      queuesEmptyReply,
-    })
-
-    return turnEnded(ended, at)
-  }
-
-  /** Changes a session's saved state, then tells whoever draws it and the Herdr pane. */
-  const notifyChanged = (id: string) => {
-    listeners.get(id)?.forEach(listener => listener())
-    reportCounts(id)
-  }
-
-  const change = async (id: string, fn: Parameters<typeof updateState>[2]) => {
-    let isChanged = false
-    const saved = await updateState(dir, id, async current => {
-      const changed = await fn(current)
-      isChanged = changed !== current
-
-      return changed
-    })
-    if (isChanged) notifyChanged(id)
-
-    return saved
-  }
 
   const run: Run = async (args, { cwd, timeoutMs }) => {
     const [file = '', ...rest] = args
@@ -441,24 +161,6 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     } catch (err) {
       return { code: UNSTARTABLE_CODE, stdout: '', stderr: messageOf(err) }
     }
-  }
-  const gh = ghFinder(run)
-
-  const reportToHerdr = herdrReporter()
-  /** The session omp shows now. Only it reports to the pane. */
-  let shownId: string | null = null
-
-  function reportCounts(id: string): void {
-    const pane = deps.herdrPane
-    if (!pane || id !== shownId) return
-    deps.background(
-      reportToHerdr(run, async () => {
-        const s = await readState(dir, id)
-        const view = sessionView(s, deps.now(), deps.settleWindowMs, true)
-
-        return { pane, tokens: herdrTokens(s.ledger, s.stop, view, []) }
-      }),
-    )
   }
 
   /** Sends text to the agent as if the person typed it. Returns why it could not, or null. */
@@ -512,177 +214,6 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     }
   }
 
-  /** The sessions whose results calls run one after another. They hold no lock, so a ledger call never waits for one. */
-  const resultsOrder = orderedKeys()
-
-  function hostFor(ctx: ExtensionContext): SessionHost<OmpState> {
-    const id = sessionIdOf(ctx)
-
-    return {
-      now: deps.now,
-      read: () => readState(dir, id),
-      update: fn => change(id, fn),
-      exclusive: fn => exclusiveRun(dir, id, fn),
-      ask: askFor(ctx, id),
-      deliver: async (_s, text) => {
-        const why = sendToAgent(ctx, text)
-
-        return why === null ? { state: 'accepted', queuedId: null } : { state: 'rejected', reason: why }
-      },
-      perform: async (_s, effect) =>
-        effect.kind === 'copy' ? deps.copy(effect.text) : openTarget(run, effect.target, ctx.cwd, deps.home),
-      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true)),
-      gh: {
-        find: gh.find,
-        forget: gh.forget,
-        run: (_s, bin, onUnstartable) => ghIn(run, bin, ctx.cwd, onUnstartable),
-        noteMissing: isMissing => {
-          isGhMissing = isMissing
-        },
-      },
-      settleWindowMs: deps.settleWindowMs,
-      newId: deps.newId,
-      comparePage: deps.comparePage,
-    }
-  }
-
-  /** The session branch's conversation as the inbox model reads it. Empty when there is none or it cannot be read. */
-  const conversationText = (ctx: ExtensionContext): string => {
-    try {
-      return flattenConversation(conversationOf(ctx.sessionManager.getBranch()))
-    } catch {
-      return ''
-    }
-  }
-
-  /** The host for an update, which catches up over the branch's conversation when the ledger may have missed turns. */
-  function updateHostFor(ctx: ExtensionContext): UpdateHost<OmpState> {
-    const host = hostFor(ctx)
-    const id = sessionIdOf(ctx)
-
-    return {
-      ...host,
-      names: OMP,
-      inOrder: fn => resultsOrder.run(id, fn),
-      background: results => deps.background(results),
-      ...(deps.isNextBuild ? { records: statusRecords(dir, id) } : {}),
-      catchUp: s =>
-        askOverConversation(
-          host.ask,
-          OMP,
-          s,
-          screenText(OMP, openPanels.has(id), panelScreenTab(id)),
-          conversationText(ctx),
-        ),
-    }
-  }
-
-  /**
-   * A session that holds turns the inbox never saw, as when it is resumed or forked, or the extension was turned on
-   * in it, is marked `behind`, and its first update catches up over the branch.
-   */
-  async function catchUpUnseen(ctx: ExtensionContext): Promise<void> {
-    if (conversationText(ctx) === '') return
-    let isMarked = false
-    await change(sessionIdOf(ctx), s => {
-      if (!isUnseen(s)) return s
-      isMarked = true
-
-      return { ...s, presence: { ...s.presence, ledgerState: 'behind' } }
-    })
-    if (isMarked) await runUpdates(updateHostFor(ctx))
-  }
-
-  /**
-   * A forked session continues its parent's ledger, as the mod's fork does, when the parent saved one. The Status, items,
-   * the task list and closed records carry over, so the fork's catch-up does not offer back what the person already closed.
-   * A parent with no saved ledger leaves the fork to catch up over its branch.
-   */
-  async function continueFork(ctx: ExtensionContext, parentFile: string | undefined): Promise<void> {
-    const parentId = parentFile === undefined ? null : sessionIdInFile(parentFile)
-    if (parentId === null || parentId === sessionIdOf(ctx)) return
-    const parent = await readState(dir, parentId).catch(() => null)
-    if (parent === null || !hasLedger(parent)) return
-    await change(sessionIdOf(ctx), s => forkedFrom(s, parent))
-  }
-
-  /** Runs once for each session in this process: clears an update flag a crashed process left, and prunes old sessions. */
-  function prepare(ctx: ExtensionContext): void {
-    const id = sessionIdOf(ctx)
-    if (prepared.has(id)) return
-    prepared.add(id)
-    deps.background(reconcileUpdateStatus(hostFor(ctx)))
-    deps.background(pruneSessions(dir, id))
-  }
-
-  const isHerdrCheckDue = herdrCheckGate()
-
-  function checkDelegatesWhenDue(ctx: ExtensionContext): void {
-    const id = sessionIdOf(ctx)
-    if (!isHerdrCheckDue(id, deps.now())) return
-    deps.background(
-      (async () => {
-        const states = await delegatesInHerdr((await readState(dir, id)).ledger.overview, run)
-        if (states) await change(id, s => statusChanged(s, o => delegatesSettled(o, states, deps.now())))
-      })(),
-    )
-  }
-
-  function fetchPrsWhenDue(ctx: ExtensionContext): void {
-    const id = sessionIdOf(ctx)
-    if (prFetches.isFetching(id)) return
-    deps.background(
-      (async () => {
-        const host = hostFor(ctx)
-        const fetching = prFetches.fetchWhenDue(id, await host.read(), () => fetchPrs(host, true))
-        if (!fetching) return
-        notifyChanged(id)
-        await fetching
-        notifyChanged(id)
-      })(),
-    )
-  }
-
-  function wakeLater(ctx: ExtensionContext): void {
-    ctx.setTimeout(() => deps.background(wakeForDone(hostFor(ctx))), deps.settleWindowMs + WAKE_MARGIN_MS)
-  }
-
-  /**
-   * Counts a prompt that reached the agent: matches it to a press and returns the notes the agent is told.
-   * `finishedReply` is the reply the agent finished in this run since the turn's prompt, if any. omp runs a queued
-   * follow-up in the same run as the turn before it and fires agent_end once for both. So a prompt that comes after a
-   * finished reply first ends the running turn with that reply, and starts a turn of its own.
-   */
-  async function arrive(
-    ctx: ExtensionContext,
-    id: string,
-    text: string,
-    finishedReply: string | null,
-  ): Promise<string[]> {
-    const at = deps.now()
-    const hostTasks = finishedReply === null ? [] : ompTodoFromBranch(ctx.sessionManager.getBranch())
-    let notes: string[] = []
-    const written = await change(id, s => {
-      const before = finishedReply === null ? s : turnStarted(endedTurn(id, s, finishedReply, at, { hostTasks }), at)
-      const r = notePrompt(OMP, before, text, openPanels.has(id))
-      notes = r.notes
-
-      return r.state
-    })
-    if (finishedReply !== null && needsUpdate(written)) deps.background(runUpdates(updateHostFor(ctx)))
-
-    return notes
-  }
-
-  /** Takes the reply the agent finished in this run since the turn's prompt, if any. */
-  function takeFinishedReply(id: string): string | null {
-    if (replied?.id !== id) return null
-    const { text } = replied
-    replied = null
-
-    return text
-  }
-
   /** Takes record and close out of a session nobody watches, so its agent does not spend calls on them. */
   const dropTools = async () => {
     const active = pi.getActiveTools()
@@ -690,271 +221,58 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     if (kept.length !== active.length) await pi.setActiveTools(kept)
   }
 
-  const start = async (ctx: ExtensionContext, parentFile?: string) => {
-    if (isUnattended(ctx)) return dropTools()
-    // No turn runs as a session starts, so a running turn saved here was cut off by a process that ended.
-    const id = sessionIdOf(ctx)
-    shownId = id
-    framesFor = id
-    reportCounts(id)
-    // Subagents run in this process, so the ones a saved session lists running ended with the process that ran them.
-    const saved = await readState(dir, id).catch(() => null)
-    const isCutOff = saved?.presence.isTurnRunning || saved?.ledger.overview?.children.some(c => c.endedAt === null)
-    if (isCutOff)
-      await change(id, s => statusChanged(cutOffTurn(s), o => childrenCutOff(o, deps.now()))).catch(() => undefined)
-    prepare(ctx)
-    showBand(ctx)
-    deps.background(
-      continueFork(ctx, parentFile)
-        .catch(() => undefined)
-        .then(async () => {
-          const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
-          const branch = await branchIn(run, ctx.cwd)
-          await change(id, s =>
-            placed(isSameTaskList(s.hostTasks, hostTasks) ? s : { ...s, hostTasks }, ctx.cwd, branch),
-          )
-        })
-        .catch(() => undefined)
-        .then(() => catchUpUnseen(ctx)),
-    )
+  const modelNameOf = (ctx: ExtensionContext) => {
+    const model = inboxModel(ctx)
+
+    return model ? (model.name ?? model.id) : null
   }
-  /** The session the main agent runs. A `task:subagent:*` frame names no session, and only the main agent's own subagents send one here. */
-  let framesFor: string | null = null
-  const isActivityWorthSaving = activityGate()
-  pi.events.on('task:subagent:lifecycle', async data => {
-    const frame = data as { id?: unknown; agent?: unknown; description?: unknown; status?: unknown }
-    const id = framesFor
-    const ref = frame.id
-    if (!id || typeof ref !== 'string') return
-    const at = deps.now()
-    const label = typeof frame.description === 'string' && frame.description ? frame.description : frame.agent
-    const name = typeof label === 'string' ? label : 'subagent'
-    await change(id, s =>
-      statusChanged(s, o =>
-        frame.status === 'started' ? childStarted(o, { ref, kind: 'subagent', name }, at) : childEnded(o, ref, at),
+
+  const context: HostContext = {
+    deps,
+    dir,
+    openPanels: new Map(),
+    prepared: new Set(),
+    prFetches: prFetchTracker(deps.now),
+    listeners: new Map(),
+    reportToHerdr: herdrReporter(),
+    run,
+    memory: { isGhMissing: false, shownId: null, framesFor: null },
+    sendToAgent,
+    askFor,
+    dropTools,
+    showBand,
+    modelNameOf,
+    sendNotes: notes =>
+      pi.sendMessage(
+        { customType: MESSAGE_TYPE, content: notes.join('\n\n'), display: false, attribution: 'agent' },
+        { deliverAs: 'nextTurn' },
       ),
-    ).catch(() => undefined)
-  })
-  pi.events.on('task:subagent:progress', async data => {
-    const ref = (data as { progress?: { id?: unknown } }).progress?.id
-    const id = framesFor
-    const at = deps.now()
-    if (!id || typeof ref !== 'string' || !isActivityWorthSaving(ref, at)) return
-    await change(id, s => statusChanged(s, o => childWorked(o, ref, at))).catch(() => undefined)
-  })
+  }
+  const sessions = sessionCalls(context)
+  const { change } = sessions
+  const turns = turnHandlers(context, sessions)
+  const { start } = turns
+  const activity = activityHandlers(context, sessions)
+  const { inbox, liveSource } = panelCalls(context, sessions)
+
+  pi.events.on('task:subagent:lifecycle', activity.onSubagentLifecycle)
+  pi.events.on('task:subagent:progress', activity.onSubagentProgress)
   pi.on('session_start', (_event, ctx) => start(ctx))
   pi.on('session_switch', (event, ctx) => start(ctx, event.reason === 'fork' ? event.previousSessionFile : undefined))
   // A `/btw` promotion, a fork from an entry and a command's branch give the session a new id, with the old file as
   // `previousSessionFile`. A `/branch` in the same file keeps the id, and the fork step then finds nothing to copy.
   pi.on('session_branch', (event, ctx) => start(ctx, event.previousSessionFile))
-  pi.on('session_shutdown', async (_event, ctx) => {
-    const id = sessionIdOf(ctx)
-    openPanels.delete(id)
-    prepared.delete(id)
-    if (noted?.id === id) noted = null
-    if (replied?.id === id) replied = null
-    const pane = deps.herdrPane
-    if (id !== shownId || !pane) return
-    shownId = null
-    await reportToHerdr(run, async () => ({ pane, tokens: CLEARED_TOKENS }))
-  })
-
-  pi.on('before_agent_start', async (event, ctx) => {
-    if (isUnattended(ctx)) return
-    prepare(ctx)
-    const id = sessionIdOf(ctx)
-    const guidance = guidanceText(OMP)
-    const systemPrompt = event.systemPrompt.includes(guidance) ? event.systemPrompt : [...event.systemPrompt, guidance]
-    // omp can run this handler again for one prompt. The prompt counts once.
-    if (noted?.id !== id || noted.prompt !== event.prompt) {
-      const notes = await arrive(ctx, id, event.prompt, takeFinishedReply(id)).catch(() => null)
-      if (notes) noted = { id, prompt: event.prompt, notes }
-    }
-    const notes = noted?.notes ?? []
-
-    return {
-      systemPrompt,
-      ...(notes.length > 0
-        ? {
-            message: {
-              customType: MESSAGE_TYPE,
-              content: notes.join('\n\n'),
-              display: false,
-              attribution: 'agent' as const,
-            },
-          }
-        : {}),
-    }
-  })
-
-  // omp fires `input` with source `interactive` only for what the person submits in its editor. `sendUserMessage`,
-  // which a press sends with, fires no `input` event.
-  pi.on('input', async (event, ctx) => {
-    if (isUnattended(ctx) || event.source !== 'interactive') return
-    const at = deps.now()
-    await change(sessionIdOf(ctx), s => messageTyped(s, at)).catch(() => undefined)
-  })
-
-  // Not before_agent_start, which can run twice for one prompt and does not run for a queued message.
-  pi.on('agent_start', async (_event, ctx) => {
-    if (isUnattended(ctx)) return
-    const id = sessionIdOf(ctx)
-    if (replied?.id === id) replied = null
-    const startedAt = deps.now()
-    await change(id, s => turnStarted(s, startedAt)).catch(() => undefined)
-  })
-
-  pi.on('turn_start', async (_event, ctx) => {
-    noted = null
-    if (isUnattended(ctx)) return
-    await change(sessionIdOf(ctx), s => (s.stop ? { ...s, stop: null } : s)).catch(() => undefined)
-  })
-
-  /**
-   * Notes the main agent's activity, and runs the Status call when the running turn is due one. Activity notes are
-   * best effort, so a failed write never surfaces as an extension error.
-   */
-  const noteQuietly = async (ctx: ExtensionContext, line: string | null) => {
-    if (!line) return
-    let isClaimed = false
-    try {
-      await change(sessionIdOf(ctx), s => {
-        const noted = noteActivity(s, line)
-        const claimed = claimedStatusRefresh(noted, deps.now())
-        isClaimed = claimed !== noted
-        return claimed
-      })
-    } catch {
-      return
-    }
-    if (isClaimed) deps.background(refreshStatus(updateHostFor(ctx)))
-  }
-
-  /** Each running bash call that waits on a delegate: its command, when it started, and the Status before it started. */
-  const waits = new Map<string, { command: string; at: number; before: SessionStatus | null }>()
-
-  pi.on('tool_execution_start', async (event, ctx) => {
-    if (isUnattended(ctx)) return
-    const args = (event.args ?? {}) as Record<string, unknown>
-    const command = event.toolName === 'bash' && typeof args.command === 'string' ? args.command : ''
-    if (!waitsOnDelegate(command)) return
-    const wait = { command, at: deps.now(), before: null as SessionStatus | null }
-    waits.set(event.toolCallId, wait)
-    await change(sessionIdOf(ctx), s => {
-      wait.before = s.ledger.overview
-      return statusChanged(s, o => delegatesStarted(o, command, wait.at))
-    }).catch(() => undefined)
-  })
-
-  // A wait that ended with no tool_result never ran.
-  pi.on('tool_execution_end', async (event, ctx) => {
-    const wait = waits.get(event.toolCallId)
-    if (!wait) return
-    waits.delete(event.toolCallId)
-    const takenBack = (o: SessionStatus | null) => delegatesTakenBack(o, wait.command, wait.before, wait.at)
-    await change(sessionIdOf(ctx), s => statusChanged(s, takenBack)).catch(() => undefined)
-  })
-
-  // omp raises tool_result only for a call that ran, never for one it blocked.
-  pi.on('tool_result', async (event, ctx) => {
-    if (isUnattended(ctx)) return
-    waits.delete(event.toolCallId)
-    await noteQuietly(ctx, activityOf(event.toolName, event.input))
-    if (event.toolName === 'bash') {
-      const command = (event.input as { command?: unknown }).command
-      if (typeof command !== 'string') return
-      let isLinked = false
-      const at = deps.now()
-      try {
-        await change(sessionIdOf(ctx), s => {
-          const after = noteCommandOutput(s, command, textOfBlocks(event.content))
-          isLinked = after.ledger !== s.ledger
-          return statusChanged(after, o => delegatesRan(o, command, at))
-        })
-      } catch {
-        return
-      }
-      if (isLinked) fetchPrsWhenDue(ctx)
-      return
-    }
-    if (event.toolName !== 'ask') return
-    const questions = dialogQuestions((event.input as { questions?: unknown }).questions)
-    const outcome = askOutcome(event)
-    const line = dialogActivity(questions, outcome)
-    await change(sessionIdOf(ctx), s => {
-      const noted = noteActivity(s, line)
-      return outcome.kind === 'dismissed' ? noteDialog(noted, null, questions) : noted
-    }).catch(() => undefined)
-  })
-
-  // An assistant message with tool calls goes on working, so only one without them finishes a reply.
-  pi.on('message_end', (event, ctx) => {
-    const message = event.message as Reply
-    if (isUnattended(ctx) || message.role !== 'assistant' || !Array.isArray(message.content)) return
-    const isWorking = message.content.some((b: { type?: unknown }) => b.type === 'toolCall')
-    replied = isWorking ? null : { id: sessionIdOf(ctx), text: textOfBlocks(message.content) }
-  })
-
-  /**
-   * A press sent while a turn runs reaches the agent as a queued message. omp runs before_agent_start for it.
-   * When that has not noted the message, its arrival is noted here, once the message starts.
-   */
-  pi.on('message_start', async (event, ctx) => {
-    const message = event.message as { role?: unknown; content?: unknown }
-    if (isUnattended(ctx) || message.role !== 'user') return
-    const id = sessionIdOf(ctx)
-    const text = userText(message.content)
-    if (text === '' || (noted?.id === id && noted.prompt === text)) return
-    // Taken before the state read, since the press's own reply can finish during it.
-    const finished = replied?.id === id ? replied : null
-    try {
-      const isSentByPress = (await readState(dir, id)).sent.some(x => x.text === text)
-      if (!isSentByPress) return
-      if (replied === finished) replied = null
-      const notes = await arrive(ctx, id, text, finished?.text ?? null)
-      noted = { id, prompt: text, notes }
-      if (notes.length > 0) {
-        pi.sendMessage(
-          { customType: MESSAGE_TYPE, content: notes.join('\n\n'), display: false, attribution: 'agent' },
-          { deliverAs: 'nextTurn' },
-        )
-      }
-    } catch {
-      return
-    }
-  })
-
-  pi.on('agent_end', async (event, ctx) => {
-    if (isUnattended(ctx) || event.willContinue) return
-    prepare(ctx)
-    const id = sessionIdOf(ctx)
-    if (replied?.id === id) replied = null
-    const last = lastAssistant(event.messages)
-    const reply = last ? textOfBlocks(last.content) : ''
-    const stop = await stopOf(last, deps.isUsageLimit, deps.now())
-    // Escape on the ask dialog aborts the turn, so it ends with no reply text.
-    const isDialogDismissed = event.messages.some(isDismissedAsk)
-    const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
-    // Herdr and git are asked outside the change: each run can last its whole timeout, and the session's changes run
-    // one at a time.
-    const [inHerdr, branch] = await Promise.all([
-      readState(dir, id)
-        .catch(() => null)
-        .then(saved => delegatesInHerdr(saved?.ledger.overview ?? null, run)),
-      branchIn(run, ctx.cwd),
-    ])
-    const endedAt = deps.now()
-    const written = await change(id, s => {
-      const ended = endedTurn(id, s, reply, endedAt, { hostTasks, queuesEmptyReply: isDialogDismissed })
-      const settled = inHerdr ? statusChanged(ended, o => delegatesSettled(o, inHerdr, endedAt)) : ended
-
-      return { ...placed(settled, ctx.cwd, branch), stop }
-    }).catch(() => null)
-    if (!written) return
-    const host = hostFor(ctx)
-    if (needsUpdate(written)) deps.background(runUpdates(updateHostFor(ctx)))
-    deps.background(wakeForDone(host))
-  })
+  pi.on('session_shutdown', turns.onSessionShutdown)
+  pi.on('before_agent_start', turns.onBeforeAgentStart)
+  pi.on('input', turns.onInput)
+  pi.on('agent_start', turns.onAgentStart)
+  pi.on('turn_start', turns.onTurnStart)
+  pi.on('tool_execution_start', activity.onToolExecutionStart)
+  pi.on('tool_execution_end', activity.onToolExecutionEnd)
+  pi.on('tool_result', activity.onToolResult)
+  pi.on('message_end', turns.onMessageEnd)
+  pi.on('message_start', turns.onMessageStart)
+  pi.on('agent_end', turns.onAgentEnd)
 
   const tool = (name: AgentTool, description: string, parameters: object) => {
     pi.registerTool({
@@ -992,82 +310,8 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       },
     })
   }
+
   for (const { name, description, inputSchema } of agentTools(OMP)) tool(name, description, inputSchema)
-
-  const modelNameOf = (ctx: ExtensionContext) => {
-    const model = inboxModel(ctx)
-
-    return model ? (model.name ?? model.id) : null
-  }
-
-  const inbox: Inbox = {
-    screen: async (ctx, holds = NO_HOLDS) => {
-      const id = sessionIdOf(ctx)
-      const s = await readState(dir, id)
-
-      return {
-        view: sessionView(s, deps.now(), deps.settleWindowMs, true, holds),
-        modelName: modelNameOf(ctx),
-        isGhMissing,
-        isFetchingPrs: prFetches.isFetching(id),
-        stop: s.stop,
-        version,
-        isNextBuild: deps.isNextBuild,
-      }
-    },
-    openPanel: async (ctx, openedAt) => {
-      const id = sessionIdOf(ctx)
-      openPanels.set(id, 'needsYou')
-      deps.background(change(id, s => ({ ...s, shownSince: openedAt })))
-      await wakeForDone(hostFor(ctx)).catch(() => undefined)
-      fetchPrsWhenDue(ctx)
-    },
-    showTab: (ctx, tab, holds) => {
-      const id = sessionIdOf(ctx)
-      if (!openPanels.has(id)) return
-      const isChanged = openPanels.get(id) !== tab
-      openPanels.set(id, tab)
-      const now = deps.now()
-      if (isChanged) deps.background(change(id, s => withHolds(withLook(s, tab === 'overview', now), holds)))
-      if (isChanged && tab === 'overview') checkDelegatesWhenDue(ctx)
-    },
-    closePanel: ctx => {
-      const id = sessionIdOf(ctx)
-      openPanels.delete(id)
-      deps.background(change(id, s => ({ ...lookEndedOn(s, deps.now()), shownSince: null })))
-    },
-    fetchPrsWhenDue,
-    checkDelegatesWhenDue,
-    onChange: (ctx, listener) => {
-      const id = sessionIdOf(ctx)
-      const set = listeners.get(id) ?? new Set()
-      set.add(listener)
-      listeners.set(id, set)
-
-      return () => void set.delete(listener)
-    },
-    press: async (ctx, p, holds) => {
-      const outcome = await press(hostFor(ctx), p, false, holds)
-      if (outcome.wakesForDone) wakeLater(ctx)
-
-      return outcome
-    },
-    resume: ctx => sendToAgent(ctx, RESUME_TEXT),
-  }
-
-  const liveSource = (ctx: ExtensionContext): PanelSource => ({
-    screen: holds => inbox.screen(ctx, holds),
-    press: async (p, holds) => {
-      const outcome = await inbox.press(ctx, p, holds)
-
-      return { error: outcome.error, note: outcome.note, isUnconfirmed: outcome.isUnconfirmed }
-    },
-    resume: async () => inbox.resume(ctx),
-    fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),
-    checkDelegatesWhenDue: () => inbox.checkDelegatesWhenDue(ctx),
-    shown: (tab, holds) => inbox.showTab(ctx, tab, holds),
-    onChange: listener => inbox.onChange(ctx, listener),
-  })
 
   const hideBand = (ctx: ExtensionContext) => ctx.ui.setWidget(BAND_KEY, undefined)
 

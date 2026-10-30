@@ -150,6 +150,6 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
 - Neither lists Codex or Claude Code. Whether Claude Code or the Claude
   desktop app's Code mode renders MCP Apps is not answered here.
 - [inference] Of the inbox's MCP surface, only `_meta["openai/ui"].entrypoints`
-  is OpenAI-specific (codex/src/server.ts:TOOLS). The same `ui://inbox/view`
+  is OpenAI-specific (codex/src/server-tools.ts:TOOLS). The same `ui://inbox/view`
   resource could render in other MCP Apps hosts, opened by the model and
   inline.

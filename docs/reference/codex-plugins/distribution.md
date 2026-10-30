@@ -157,7 +157,7 @@ is ever listed publicly.
     destructiveHint to false."
   - [inference] `record`, `close` and `inbox_press` all need
     `readOnlyHint: false`. The inbox's tools set no annotations today
-    (codex/src/server.ts:TOOLS).
+    (codex/src/server-tools.ts:TOOLS).
   - "Do not request the full conversation history … Your MCP server must not
     pull, reconstruct, or infer the full chat log from the client or
     elsewhere." The per-reply update reads the Stop hook's `last_assistant_message`

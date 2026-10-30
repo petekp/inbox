@@ -305,9 +305,9 @@ function isChildRunning(c, now) {
 }
 function subjectsText(o) {
   const subjects = o?.subjects ?? [];
-  const open2 = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}`);
+  const open3 = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}`);
   const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
-  return { open: open2.join(NL) || "(none yet)", finished: finished.join(NL) };
+  return { open: open3.join(NL) || "(none yet)", finished: finished.join(NL) };
 }
 function asksText(o, asks) {
   return asks.map((a) => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id] ?? "-"}`).join(NL);
@@ -888,9 +888,9 @@ function pruneClosed(ledger, keep) {
 function idNumber(id) {
   return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
 }
-function inIdOrder(open2, entry) {
-  const at = open2.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
-  return at < 0 ? [...open2, entry] : [...open2.slice(0, at), entry, ...open2.slice(at)];
+function inIdOrder(open3, entry) {
+  const at = open3.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
+  return at < 0 ? [...open3, entry] : [...open3.slice(0, at), entry, ...open3.slice(at)];
 }
 function reopenItem(ledger, id) {
   const item = ledger.closed.findLast((c) => c.id === id)?.item;
@@ -1098,7 +1098,7 @@ function readiness(pr, isSent = () => false) {
   if (pr.state !== "OPEN") return result("closed", "Closed");
   const { fail: failing, pending } = checkCounts(pr);
   const waiting = waitingThreads(pr);
-  const open2 = threadsOnYou(pr, isSent).length;
+  const open3 = threadsOnYou(pr, isSent).length;
   const sent = waiting.filter((t) => isSent(pr, t)).length;
   const changed = waiting.filter((t) => t.isLinesChanged && !isSent(pr, t)).length;
   const isPresent = (b) => b !== null;
@@ -1107,7 +1107,7 @@ function readiness(pr, isSent = () => false) {
     pr.mergeable === "CONFLICTING" ? `conflicts with ${pr.base}` : null,
     row(failing > 0 ? plural(failing, "failing check", "failing checks") : null),
     pr.reviewDecision === "CHANGES_REQUESTED" ? "changes requested" : null,
-    row(open2 > 0 ? threadsWaiting(open2) : null)
+    row(open3 > 0 ? threadsWaiting(open3) : null)
   ].filter(isPresent);
   const onOthers = [
     row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to Claude` : null),
@@ -1161,11 +1161,11 @@ function helpLabel(help) {
 }
 function steps(helps) {
   const copy = helps.find((h) => h.kind === "copy");
-  const open2 = helps.find((h) => h.kind === "open");
-  if (!copy || !open2 || copy.kind !== "copy" || open2.kind !== "open")
+  const open3 = helps.find((h) => h.kind === "open");
+  if (!copy || !open3 || copy.kind !== "copy" || open3.kind !== "open")
     return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
   return helps.filter((h) => h !== copy).map(
-    (h) => h === open2 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open2.path)}`, 48), step: [copy, open2] } : { label: helpLabel(h), step: [h] }
+    (h) => h === open3 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open3.path)}`, 48), step: [copy, open3] } : { label: helpLabel(h), step: [h] }
   );
 }
 function prSteps(item, tracked) {
@@ -1451,13 +1451,13 @@ function dialogActivity(questions, outcome) {
   }
 }
 function ledgerBlocks(ledger) {
-  const open2 = ledger.items.map(
+  const open3 = ledger.items.map(
     (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`
   ).join(NL5);
   const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL5);
   const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL5);
   return [
-    `<open>${NL5}${open2}${NL5}</open>`,
+    `<open>${NL5}${open3}${NL5}</open>`,
     `<findings>${NL5}${findings}${NL5}</findings>`,
     `<decided>${NL5}${closed}${NL5}</decided>`
   ];
@@ -1526,13 +1526,13 @@ function headText(o) {
   return `${o.head.title} | ${o.head.description || "(no description yet)"}`;
 }
 function statusBlocks({ last, asks, tasks, now }) {
-  const { open: open2, finished } = subjectsText(last);
+  const { open: open3, finished } = subjectsText(last);
   const running = runningText(last, now);
   const held = asksText(last, asks);
   const list = tasksText(tasks);
   return [
     `<head>${NL5}${headText(last)}${NL5}</head>`,
-    `<subjects>${NL5}${open2}${NL5}</subjects>`,
+    `<subjects>${NL5}${open3}${NL5}</subjects>`,
     ...finished === "" ? [] : [`<finished>${NL5}${finished}${NL5}</finished>`],
     ...running === "" ? [] : [`<running>${NL5}${running}${NL5}</running>`],
     ...held === "" ? [] : [`<asks>${NL5}${held}${NL5}</asks>`],
@@ -1900,12 +1900,12 @@ function statusPage(s, now) {
   const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
-  const open2 = subjects.filter(isOpen);
-  const queuedOver = Math.max(0, open2.length - OPEN_ROWS);
+  const open3 = subjects.filter(isOpen);
+  const queuedOver = Math.max(0, open3.length - OPEN_ROWS);
   const hiddenQueued = new Set(
-    open2.filter((x) => placeOf(x) === "queued").sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id)
+    open3.filter((x) => placeOf(x) === "queued").sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id)
   );
-  const shown = [...open2.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort(pageOrder);
+  const shown = [...open3.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort(pageOrder);
   const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const shownIds = new Set(shown.map((x) => x.id));
@@ -3330,8 +3330,38 @@ async function runUpdates(host) {
 }
 
 // src/transcript.ts
-import { open, readdir as readdir2 } from "node:fs/promises";
-import { dirname as dirname2, join as join3, resolve as resolve2 } from "node:path";
+import { open as open2, readdir as readdir2 } from "node:fs/promises";
+import { dirname as dirname2, join as join3 } from "node:path";
+
+// src/rollout-rows.ts
+import { open } from "node:fs/promises";
+async function readSessionMeta(path) {
+  try {
+    const file = await open(path, "r");
+    try {
+      const buf = Buffer.alloc(64 * 1024);
+      const { bytesRead } = await file.read(buf, 0, buf.length, 0);
+      const first = buf.subarray(0, bytesRead).toString("utf8").split("\n")[0] ?? "";
+      const meta = JSON.parse(first);
+      return meta.type === "session_meta" ? meta : null;
+    } finally {
+      await file.close();
+    }
+  } catch {
+    return null;
+  }
+}
+var isText = (v) => typeof v === "string";
+var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+var textOf = (v) => isText(v) ? v : "";
+var contentText = (content) => (Array.isArray(content) ? content : []).map((part) => textOf(record(part).text)).filter(Boolean).join("\n").trim();
+var jsonRecord = (raw) => {
+  try {
+    return record(JSON.parse(textOf(raw)));
+  } catch {
+    return {};
+  }
+};
 
 // ../hooks/conversation.ts
 var NL6 = "\n";
@@ -3362,50 +3392,10 @@ function flattenConversation(turns) {
   return kept.reverse().join(NL6);
 }
 
-// src/transcript.ts
-async function readSessionMeta(path) {
-  try {
-    const file = await open(path, "r");
-    try {
-      const buf = Buffer.alloc(64 * 1024);
-      const { bytesRead } = await file.read(buf, 0, buf.length, 0);
-      const first = buf.subarray(0, bytesRead).toString("utf8").split("\n")[0] ?? "";
-      const meta = JSON.parse(first);
-      return meta.type === "session_meta" ? meta : null;
-    } finally {
-      await file.close();
-    }
-  } catch {
-    return null;
-  }
-}
-async function namesIn(dir, pattern) {
-  const names = await readdir2(dir).catch(() => []);
-  return names.filter((n) => pattern.test(n)).sort().reverse();
-}
-async function newestRollout(sessions, isWanted) {
-  for (const year of await namesIn(sessions, /^\d{4}$/))
-    for (const month of await namesIn(join3(sessions, year), /^\d{2}$/))
-      for (const day of await namesIn(join3(sessions, year, month), /^\d{2}$/)) {
-        const folder = join3(sessions, year, month, day);
-        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isWanted);
-        if (name !== void 0) return join3(folder, name);
-      }
-  return null;
-}
-async function historyBase(path) {
-  const base = (await readSessionMeta(path))?.payload?.history_base;
-  const id = base?.thread_id;
-  const end = base?.end_byte_offset;
-  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0) return null;
-  const sessions = dirname2(dirname2(dirname2(dirname2(path))));
-  const basePath = await newestRollout(sessions, (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`));
-  return basePath === null ? null : { path: basePath, end };
-}
+// src/rollout-commands.ts
+import { resolve as resolve2 } from "node:path";
 var DIALOG_TOOL = "request_user_input_async";
-var TAIL_BYTES = 4 * 1024 * 1024;
 var SHELL_CALLS = /* @__PURE__ */ new Set(["shell", "shell_command", "exec_command", "container.exec"]);
-var isText = (v) => typeof v === "string";
 function commandText2(command) {
   if (isText(command)) return command;
   if (!Array.isArray(command)) return "";
@@ -3423,62 +3413,6 @@ function callCommand(p) {
     return "";
   }
 }
-async function linesBefore(path, bytes, end = Infinity) {
-  const file = await open(path, "r");
-  try {
-    const stop = Math.min(end, (await file.stat()).size);
-    const start = Math.max(0, stop - bytes);
-    const buf = Buffer.alloc(stop - start);
-    const { bytesRead } = await file.read(buf, 0, buf.length, start);
-    const lines = buf.subarray(0, bytesRead).toString("utf8").split("\n");
-    if (start > 0) lines.shift();
-    return { lines, start, read: bytesRead };
-  } finally {
-    await file.close();
-  }
-}
-var TURN_ROW_BYTES = 64 * 1024;
-var TURN_EVENT_KINDS = /* @__PURE__ */ new Map([
-  ["task_started", "started"],
-  ["task_complete", "completed"],
-  ["turn_aborted", "aborted"]
-]);
-function turnEventOfRow(row) {
-  const p = record(row.payload);
-  const kind = row.type === "event_msg" ? TURN_EVENT_KINDS.get(textOf(p.type)) : void 0;
-  return kind === void 0 ? null : { id: textOf(p.turn_id) || textOf(record(p.turn_attribution).turn_id), kind };
-}
-async function historyLines(path, bytes) {
-  const first = await linesBefore(path, bytes);
-  const parts = [first.lines];
-  const seen = /* @__PURE__ */ new Set([path]);
-  let budget = bytes - first.read;
-  let isWhole = first.start === 0;
-  let current = path;
-  while (isWhole && budget > 0) {
-    const base = await historyBase(current).catch(() => null);
-    if (base === null || seen.has(base.path)) break;
-    seen.add(base.path);
-    const part = await linesBefore(base.path, budget, base.end).catch(() => null);
-    if (part === null) break;
-    parts.unshift(part.lines);
-    budget -= part.read;
-    isWhole = part.start === 0;
-    current = base.path;
-  }
-  return parts.flat();
-}
-var ROLLOUT_BYTES = 8 * 1024 * 1024;
-var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
-var textOf = (v) => isText(v) ? v : "";
-var contentText = (content) => (Array.isArray(content) ? content : []).map((part) => textOf(record(part).text)).filter(Boolean).join("\n").trim();
-var jsonRecord = (raw) => {
-  try {
-    return record(JSON.parse(textOf(raw)));
-  } catch {
-    return {};
-  }
-};
 var literalValue = (literal) => {
   if (literal === void 0) return null;
   try {
@@ -3514,6 +3448,18 @@ function callLines(p, hasCommandRows, cwd) {
   if (name === DIALOG_TOOL) return [dialogActivity(dialogQuestions(args.questions), { kind: "open" })];
   const line = toolActivity(textOf(p.namespace).startsWith("mcp__") ? textOf(p.namespace) + name : name, {});
   return line ? [line] : [];
+}
+
+// src/rollout-turns.ts
+var TURN_EVENT_KINDS = /* @__PURE__ */ new Map([
+  ["task_started", "started"],
+  ["task_complete", "completed"],
+  ["turn_aborted", "aborted"]
+]);
+function turnEventOfRow(row) {
+  const p = record(row.payload);
+  const kind = row.type === "event_msg" ? TURN_EVENT_KINDS.get(textOf(p.type)) : void 0;
+  return kind === void 0 ? null : { id: textOf(p.turn_id) || textOf(record(p.turn_attribution).turn_id), kind };
 }
 var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf(record(record(row.payload).item).type));
 function turnsOf(rows, cwd) {
@@ -3571,12 +3517,74 @@ function rolloutTurns(lines, cwd) {
   }
   return groups.map((g) => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd) }));
 }
-var TURN_WINDOW_BYTES = [TURN_ROW_BYTES, 512 * 1024, TAIL_BYTES];
 function rolloutOfLines(lines, cwd, currentTurnId) {
   const turns = rolloutTurns(lines, cwd);
   const earlier = turns.filter((t) => t.id !== currentTurnId && (t.isComplete || t.turns.some((x) => x.role === "person")));
   return { conversation: flattenConversation(turns.flatMap((t) => t.turns)), earlierTurns: earlier.length };
 }
+
+// src/transcript.ts
+async function namesIn(dir, pattern) {
+  const names = await readdir2(dir).catch(() => []);
+  return names.filter((n) => pattern.test(n)).sort().reverse();
+}
+async function newestRollout(sessions, isWanted) {
+  for (const year of await namesIn(sessions, /^\d{4}$/))
+    for (const month of await namesIn(join3(sessions, year), /^\d{2}$/))
+      for (const day of await namesIn(join3(sessions, year, month), /^\d{2}$/)) {
+        const folder = join3(sessions, year, month, day);
+        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isWanted);
+        if (name !== void 0) return join3(folder, name);
+      }
+  return null;
+}
+async function historyBase(path) {
+  const base = (await readSessionMeta(path))?.payload?.history_base;
+  const id = base?.thread_id;
+  const end = base?.end_byte_offset;
+  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0) return null;
+  const sessions = dirname2(dirname2(dirname2(dirname2(path))));
+  const basePath = await newestRollout(sessions, (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`));
+  return basePath === null ? null : { path: basePath, end };
+}
+var TAIL_BYTES = 4 * 1024 * 1024;
+async function linesBefore(path, bytes, end = Infinity) {
+  const file = await open2(path, "r");
+  try {
+    const stop = Math.min(end, (await file.stat()).size);
+    const start = Math.max(0, stop - bytes);
+    const buf = Buffer.alloc(stop - start);
+    const { bytesRead } = await file.read(buf, 0, buf.length, start);
+    const lines = buf.subarray(0, bytesRead).toString("utf8").split("\n");
+    if (start > 0) lines.shift();
+    return { lines, start, read: bytesRead };
+  } finally {
+    await file.close();
+  }
+}
+var TURN_ROW_BYTES = 64 * 1024;
+async function historyLines(path, bytes) {
+  const first = await linesBefore(path, bytes);
+  const parts = [first.lines];
+  const seen = /* @__PURE__ */ new Set([path]);
+  let budget = bytes - first.read;
+  let isWhole = first.start === 0;
+  let current = path;
+  while (isWhole && budget > 0) {
+    const base = await historyBase(current).catch(() => null);
+    if (base === null || seen.has(base.path)) break;
+    seen.add(base.path);
+    const part = await linesBefore(base.path, budget, base.end).catch(() => null);
+    if (part === null) break;
+    parts.unshift(part.lines);
+    budget -= part.read;
+    isWhole = part.start === 0;
+    current = base.path;
+  }
+  return parts.flat();
+}
+var ROLLOUT_BYTES = 8 * 1024 * 1024;
+var TURN_WINDOW_BYTES = [TURN_ROW_BYTES, 512 * 1024, TAIL_BYTES];
 async function readRollout(path, cwd, currentTurnId) {
   if (path === null) return null;
   try {
