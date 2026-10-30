@@ -8,6 +8,8 @@ import { mkdir as mkdir2, readdir as readdir2, rm, rmdir, writeFile as writeFile
 import { homedir } from "os";
 import { dirname, join as join2 } from "path";
 import { fileURLToPath } from "url";
+// package.json
+var version = "0.2.14";
 
 // ../hooks/text.ts
 var NL = `
@@ -5961,40 +5963,6 @@ async function fetchPrs(host, findsBranchPr) {
   await host.update((cur) => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut));
 }
 
-// ../hooks/tones.ts
-var DARK_AMBER = "#ffc107";
-var DARK_TONES = {
-  needsYou: DARK_AMBER,
-  issue: DARK_AMBER,
-  findings: "#cab0ff",
-  prs: "#8cc8c0",
-  done: "#7ecd8f",
-  error: "#ffa3b0",
-  errorMark: "#ff6b80",
-  key: "#b1b9f9"
-};
-var LIGHT_AMBER = "#745417";
-var LIGHT_TONES = {
-  needsYou: LIGHT_AMBER,
-  issue: LIGHT_AMBER,
-  findings: "#7b00e8",
-  prs: "#006363",
-  done: "#25652f",
-  error: "#a5293d",
-  errorMark: "#a5293d",
-  key: "#243bf5"
-};
-var DARK_BANNER_TINTS = {
-  error: { line: "#7a4a52", fill: "#3d2a2e" },
-  warning: { line: "#6e5a2c", fill: "#3a3322" },
-  notice: { line: "#505050", fill: "#333333" }
-};
-var LIGHT_BANNER_TINTS = {
-  error: { line: "#d9a3ab", fill: "#f8e9eb" },
-  warning: { line: "#d6c19a", fill: "#f6efe1" },
-  notice: { line: "#c8c8c8", fill: "#efefef" }
-};
-
 // src/commands.ts
 import { constants } from "fs";
 import { access, stat } from "fs/promises";
@@ -6004,8 +5972,6 @@ function openTarget2(run, target, root, home) {
     isExecutable: (path) => access(path, constants.X_OK).then(() => true, () => false)
   }, target, root, home);
 }
-// package.json
-var version = "0.2.14";
 
 // src/panel.ts
 var INITIAL_UI = {
@@ -6934,7 +6900,7 @@ function footer(d, isPageScrolling) {
     "tab switch",
     "? help"
   ];
-  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : "no inbox model: set @inbox"}  ${versionLabel(version, screen.isNextBuild === true)} `;
+  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : "no inbox model: set @inbox"}  ${versionLabel(screen.version, screen.isNextBuild === true)} `;
   const hintLine = ` ${hints.map((h) => s.dim(h)).join(` ${s.tone("sep", "\xB7")} `)}`;
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2;
   if (fitsBesideHints)
@@ -7800,6 +7766,7 @@ function demoSource(deps) {
       isGhMissing: false,
       isFetchingPrs: false,
       stop: null,
+      version: deps.version,
       isNextBuild: deps.isNextBuild,
       isDemo: true
     }),
@@ -7833,6 +7800,64 @@ function demoSource(deps) {
       listeners.add(listener);
       return () => void listeners.delete(listener);
     }
+  };
+}
+
+// ../hooks/tones.ts
+var DARK_AMBER = "#ffc107";
+var DARK_TONES = {
+  needsYou: DARK_AMBER,
+  issue: DARK_AMBER,
+  findings: "#cab0ff",
+  prs: "#8cc8c0",
+  done: "#7ecd8f",
+  error: "#ffa3b0",
+  errorMark: "#ff6b80",
+  key: "#b1b9f9"
+};
+var LIGHT_AMBER = "#745417";
+var LIGHT_TONES = {
+  needsYou: LIGHT_AMBER,
+  issue: LIGHT_AMBER,
+  findings: "#7b00e8",
+  prs: "#006363",
+  done: "#25652f",
+  error: "#a5293d",
+  errorMark: "#a5293d",
+  key: "#243bf5"
+};
+var DARK_BANNER_TINTS = {
+  error: { line: "#7a4a52", fill: "#3d2a2e" },
+  warning: { line: "#6e5a2c", fill: "#3a3322" },
+  notice: { line: "#505050", fill: "#333333" }
+};
+var LIGHT_BANNER_TINTS = {
+  error: { line: "#d9a3ab", fill: "#f8e9eb" },
+  warning: { line: "#d6c19a", fill: "#f6efe1" },
+  notice: { line: "#c8c8c8", fill: "#efefef" }
+};
+
+// src/theme.ts
+var ESC = "\x1B[";
+function rgbOf(hex) {
+  return [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16)).join(";");
+}
+function truecolor(hex, text) {
+  return `${ESC}38;2;${rgbOf(hex)}m${text}${ESC}39m`;
+}
+function truecolorFill(hex, text) {
+  return `${ESC}48;2;${rgbOf(hex)}m${text}${ESC}49m`;
+}
+function styleOf(theme) {
+  const tones = theme.isLight ? LIGHT_TONES : DARK_TONES;
+  const tints = theme.isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS;
+  return {
+    bold: theme.bold.bind(theme),
+    dim: (text) => `${ESC}2m${text}${ESC}22m`,
+    inverse: theme.inverse.bind(theme),
+    underline: theme.underline.bind(theme),
+    tone: (name, text) => name === "sep" || name === "accent" ? theme.fg(name === "sep" ? "statusLineSep" : "accent", text) : truecolor(tones[name], text),
+    banner: (tone, part, text) => part === "line" ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text)
   };
 }
 
@@ -7995,28 +8020,6 @@ function conversationOf(entries) {
     });
     return [{ role: "agent", text: textOfBlocks(m.content), activity }];
   });
-}
-var ESC = "\x1B[";
-function rgbOf(hex) {
-  return [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16)).join(";");
-}
-function truecolor(hex, text) {
-  return `${ESC}38;2;${rgbOf(hex)}m${text}${ESC}39m`;
-}
-function truecolorFill(hex, text) {
-  return `${ESC}48;2;${rgbOf(hex)}m${text}${ESC}49m`;
-}
-function styleOf(theme) {
-  const tones = theme.isLight ? LIGHT_TONES : DARK_TONES;
-  const tints = theme.isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS;
-  return {
-    bold: theme.bold.bind(theme),
-    dim: (text) => `${ESC}2m${text}${ESC}22m`,
-    inverse: theme.inverse.bind(theme),
-    underline: theme.underline.bind(theme),
-    tone: (name, text) => name === "sep" || name === "accent" ? theme.fg(name === "sep" ? "statusLineSep" : "accent", text) : truecolor(tones[name], text),
-    banner: (tone, part, text) => part === "line" ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text)
-  };
 }
 function shownLine(result) {
   if (result.isError)
@@ -8550,6 +8553,7 @@ function createInbox(pi, deps = defaultDeps) {
         isGhMissing,
         isFetchingPrs: prFetches.isFetching(id),
         stop: s.stop,
+        version,
         isNextBuild: deps.isNextBuild
       };
     },
@@ -8637,6 +8641,7 @@ function createInbox(pi, deps = defaultDeps) {
       now: deps.now,
       after: (fn, ms) => void ctx.setTimeout(fn, ms),
       settleWindowMs: deps.settleWindowMs,
+      version,
       isNextBuild: deps.isNextBuild,
       comparePage: deps.comparePage,
       modelName: modelNameOf(ctx)
@@ -8683,6 +8688,7 @@ function createInbox(pi, deps = defaultDeps) {
         now: deps.now,
         after: () => {},
         settleWindowMs: deps.settleWindowMs,
+        version,
         comparePage: deps.comparePage,
         modelName: modelNameOf(ctx)
       }).screen(NO_HOLDS) : await inbox.screen(ctx);
