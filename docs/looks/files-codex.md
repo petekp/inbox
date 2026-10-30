@@ -23,7 +23,10 @@ Part of [the look map](../looks.md#files).
 | `codex/src/hook.ts` | Codex host. The hook logic that changes session state. |
 | `codex/src/hook-main.ts` | Codex host. Entry point for the hooks. |
 | `codex/src/demo.ts` | Codex host. Turns the shared demo data into a session. |
-| `codex/src/transcript.ts` | Codex host. Reads the Codex session transcript. |
+| `codex/src/transcript.ts` | Codex host. Reads the Codex session transcript, which Codex calls the rollout. Finds a chat's rollout and reads its tail and history. |
+| `codex/src/rollout-rows.ts` | Codex host. The rollout's row types and the readers of a row's payload and text. Also reads the first row, `session_meta`. |
+| `codex/src/rollout-turns.ts` | Codex host. Finds the turns in the rollout's lines: a turn's dialogs, commands and plan, the conversation, and where each turn starts and ends. |
+| `codex/src/rollout-commands.ts` | Codex host. Reads the shell commands, patches and tool calls in rollout rows, and words them as activity lines. |
 | `codex/src/run.ts` | Codex host. Runs a command with Node. |
 | `codex/src/cli.ts` | Codex host. Finds the codex binary the app runs. The hooks, the server and the update process share it. |
 | `codex/src/dialogs.ts` | Codex host. Notes the dialogs a Codex turn opened, and words an inbox answer in the dialog's reply form. |
