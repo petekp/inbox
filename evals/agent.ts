@@ -1,36 +1,30 @@
-import { execFile } from 'node:child_process'
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 
-import { EMPTY } from '../hooks/ledger'
-import {
-  CLAUDE_CODE,
-  statusCarryText,
-  closedText,
-  guidanceText,
-  guidedCloseDescription,
-  inboxText,
-  MAX_TOOL_DESCRIPTION,
-} from '../hooks/model-text'
-import type { Host } from '../hooks/model-text'
-import type { Ledger } from '../types'
+import { CLAUDE_CODE, guidanceText, guidedCloseDescription, MAX_TOOL_DESCRIPTION } from '../hooks/model-text'
 import { CODEX } from '../codex/src/texts'
 import { OMP } from '../omp/src/texts'
 import { MODEL } from '../codex/src/update'
 import { agentTools } from '../hooks/tools'
-import type { AgentTool } from '../hooks/tools'
+import { failures } from './agent-checks'
+import type { Agent, Call, Case, Outcome } from './agent-checks'
+import {
+  assertOnlyOmpProbe,
+  assertOnlyProbe,
+  exec,
+  guidance,
+  lines,
+  message,
+  ompClaudeToken,
+  PROBE,
+  PROBE_TOOLS,
+  TIMEOUT_MS,
+  tomlString,
+  writesOnlyUnder,
+} from './agent-cli'
 import { codexCli } from './codex-cli'
 import {
   earlierRuns,
@@ -47,50 +41,7 @@ import {
 } from './harness'
 import type { Job, Run } from './harness'
 
-type Agent = 'claude' | 'codex' | 'omp'
-
-/** Patterns are case-insensitive regular expressions. */
-type Check =
-  | {
-      calls: AgentTool
-      /** Matches the call's `kind`, as a whole. */
-      kind?: string
-      /** Matches each named argument. */
-      match?: Record<string, string>
-      /** Arguments that must be non-empty. */
-      has?: string[]
-      /** Matches the tool's answer. */
-      result?: string
-      /** Exactly this many matching calls. Without `count` and `max`, at least `min` (default 1). */
-      count?: number
-      min?: number
-      max?: number
-    }
-  | { reply: string }
-  | { notReply: string }
-  /** No inbox id, such as i3 or f112, in the reply. Ids are lowercase, so "F1" is not one. */
-  | { noIds: true }
-
-type Case = {
-  name: string
-  about: string
-  /** The inbox the agent is shown. */
-  ledger?: Partial<Ledger>
-  /** The inbox the tools answer from, when it differs from what the agent was shown. */
-  toolLedger?: Partial<Ledger>
-  /** Files to put in the folder the agent runs in, by path within it. */
-  files?: Record<string, string>
-  prompt: string
-  checks: Check[]
-  min?: Partial<Record<Agent, number>>
-  /** The agents that run the case, when not all of them do. */
-  agents?: Agent[]
-}
-
-type Call = { tool: string; args: Record<string, unknown>; result: string }
-
 const MIN = 0.75
-const PROBE = 'probe'
 const OMP_MODEL = 'anthropic/claude-opus-5-5'
 
 const { values } = parseArgs({
@@ -130,58 +81,6 @@ const CODEX_EFFORT = 'medium'
 const CLAUDE_MODEL = values['claude-model']
 const OMP_RUN_MODEL = values['omp-model']
 const OMP_RUN_MODEL_ID = OMP_RUN_MODEL.split('/').at(-1)
-const TIMEOUT_MS = 300_000
-
-/**
- * The guidance the agent reads, from the shipped text. It names the tools of the real inbox server; the stand-in
- * server is named probe instead, because an agent session that can reach a server named inbox lets the real
- * installed mod answer the calls and save them to the person's real inbox.
- */
-function guidance(host: Host): string {
-  const text = guidanceText(host).replaceAll('mcp__inbox__', `mcp__${PROBE}__`)
-  if (text.includes('inbox__')) throw new Error('guidanceText names a tool this eval does not map to the probe server')
-
-  return text
-}
-
-function message(c: Case, host: Host): string {
-  if (!c.ledger) return c.prompt
-  const ledger = { ...EMPTY, ...c.ledger } as Ledger
-  const carry = host === CLAUDE_CODE ? statusCarryText(ledger) : null
-  const notes = [carry, inboxText(host, ledger, false), closedText(ledger.closed)].filter(Boolean)
-
-  return `${notes.join('\n')}\n\n${c.prompt}`
-}
-
-function exec(args: string[], opts: { cwd: string; env?: NodeJS.ProcessEnv; input?: string }) {
-  return new Promise<{ code: number; stdout: string; stderr: string }>(resolve => {
-    const [file = '', ...rest] = args
-    const child = execFile(
-      file,
-      rest,
-      { cwd: opts.cwd, env: opts.env, timeout: TIMEOUT_MS, maxBuffer: 1 << 26, encoding: 'utf8' },
-      (err, stdout, stderr) =>
-        resolve({ code: err ? (typeof err.code === 'number' ? err.code : -1) : 0, stdout, stderr }),
-    )
-    child.stdin?.end(opts.input ?? '')
-  })
-}
-
-function lines(stdout: string): Record<string, any>[] {
-  return stdout.split('\n').flatMap(l => {
-    try {
-      return [JSON.parse(l)]
-    } catch {
-      return []
-    }
-  })
-}
-
-/**
- * `error`: why the run could not be graded. `model`: the model that answered, as the agent reported it. `raw`: the
- * agent's own output, kept in the results as the evidence for each verdict.
- */
-type Outcome = { reply: string; calls: Call[]; error: string | null; model: string | null; raw: string }
 
 /** A fresh folder for one run: the stand-in server's state and log, and an empty working folder. */
 function sandbox(c: Case, agent: Agent) {
@@ -204,18 +103,6 @@ function sandbox(c: Case, agent: Agent) {
     lines(readFileSync(log, 'utf8')).map(l => ({ tool: l.tool, args: l.args, result: l.result }))
 
   return { dir, work, state, log, serverArgs, calls }
-}
-
-const PROBE_TOOLS = agentTools(CLAUDE_CODE).map(t => `mcp__${PROBE}__${t.name}`)
-
-/** Throws unless the session has exactly the connected probe server and no tool besides its own. */
-function assertOnlyProbe(init: Record<string, any>) {
-  const servers: { name: string; status: string }[] = init.mcp_servers ?? []
-  const tools: string[] = init.tools ?? []
-  if (servers.length !== 1 || servers[0]!.name !== PROBE || servers[0]!.status !== 'connected')
-    throw new IsolationError(`MCP servers are not just a connected ${PROBE}: ${JSON.stringify(servers)}`)
-  const extra = tools.filter(t => !PROBE_TOOLS.includes(t))
-  if (extra.length > 0) throw new IsolationError(`unexpected tools: ${extra.join(', ')}`)
 }
 
 async function runClaude(c: Case): Promise<Outcome> {
@@ -295,10 +182,6 @@ async function claudeIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome
   }
 }
 
-function tomlString(s: string): string {
-  return JSON.stringify(s)
-}
-
 function codexHome(s: ReturnType<typeof sandbox>): string {
   const home = join(s.dir, 'codex-home')
   mkdirSync(home)
@@ -362,45 +245,6 @@ async function codexIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome>
     model: null,
     raw: r.stdout,
   }
-}
-
-/** Throws unless the omp session offers exactly its `bash` and the probe's tools, and no MCP server's tools. */
-function assertOnlyOmpProbe(toolsFile: string) {
-  if (!existsSync(toolsFile)) throw new IsolationError('the omp probe wrote no tool list')
-  const seen: { active: string[]; all: { name: string; source: string }[] } = JSON.parse(
-    readFileSync(toolsFile, 'utf8'),
-  )
-  const wanted = ['bash', ...agentTools(OMP).map(t => t.name)].toSorted()
-  if (seen.active.toSorted().join() !== wanted.join())
-    throw new IsolationError(`omp's active tools are not just ${wanted.join(' and ')}: ${seen.active.join(', ')}`)
-  const mcp = seen.all.filter(t => /mcp/i.test(t.source))
-  if (mcp.length > 0) throw new IsolationError(`omp offers MCP tools: ${mcp.map(t => t.name).join(', ')}`)
-}
-
-/**
- * A macOS sandbox profile that lets a process write only under `dir` and the system temp folder, as Codex's
- * `-s read-only` keeps its shell from changing the person's files.
- */
-function writesOnlyUnder(dir: string): string {
-  const paths = [realpathSync(dir), realpathSync(tmpdir())].map(p => `(subpath ${JSON.stringify(p)})`).join(' ')
-
-  return `(version 1)(allow default)(deny file-write*)(allow file-write* ${paths} (literal "/dev/null") (literal "/dev/tty") (regex #"^/dev/fd/"))`
-}
-
-/**
- * The Claude sign-in of your own omp profile, which a run's empty `HOME` gets through its environment. Each run asks
- * again, since `omp token` refreshes a token that has expired.
- */
-async function ompClaudeToken(): Promise<{ token: string; error: string | null }> {
-  const r = await exec(['omp', 'token', 'anthropic'], { cwd: tmpdir(), env: process.env })
-  const token = r.stdout.trim()
-
-  return r.code === 0 && token !== ''
-    ? { token, error: null }
-    : {
-        token: '',
-        error: `The omp agent needs a Claude sign-in in omp (run omp, then /login): ${r.stderr.slice(0, 300)}`,
-      }
 }
 
 /**
@@ -501,46 +345,6 @@ async function runOmp(c: Case): Promise<Outcome> {
   } finally {
     rmSync(s.dir, { recursive: true, force: true })
   }
-}
-
-function failures(o: Outcome, checks: Check[]): string[] {
-  const has = (pattern: string, text: string) => new RegExp(pattern, 'i').test(text)
-  const out: string[] = []
-  for (const c of checks) {
-    if ('reply' in c) {
-      if (!has(c.reply, o.reply)) out.push(`reply lacks /${c.reply}/`)
-    } else if ('notReply' in c) {
-      const m = o.reply.match(new RegExp(c.notReply, 'i'))
-      if (m) out.push(`reply has "${m[0]}"`)
-    } else if ('noIds' in c) {
-      const m = o.reply.match(/\b[if]\d+\b/)
-      if (m) out.push(`reply has the id "${m[0]}"`)
-    } else {
-      const mine = o.calls.filter(
-        call =>
-          call.tool === c.calls &&
-          (!c.kind || has(`^(?:${c.kind})$`, String(call.args.kind ?? ''))) &&
-          Object.entries(c.match ?? {}).every(([k, p]) => has(p, String(call.args[k] ?? ''))) &&
-          (!c.result || has(c.result, call.result)) &&
-          (c.has ?? []).every(k => {
-            const v = call.args[k]
-            return Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v.trim() !== ''
-          }),
-      )
-      const label = `${c.calls}${c.kind ? ` ${c.kind}` : ''}${c.match ? ` ${JSON.stringify(c.match)}` : ''}${c.has ? ` with ${c.has.join(', ')}` : ''}${c.result ? ` answered /${c.result}/` : ''}`
-      const exact = c.count
-      const min = exact ?? c.min ?? (c.max === undefined ? 1 : 0)
-      const max = exact ?? c.max ?? Infinity
-      if (mine.length < min || mine.length > max)
-        out.push(
-          `${mine.length} ${label} calls, want ${exact ?? `${min}${max === Infinity ? '+' : `-${max}`}`}; calls: ${
-            o.calls.map(x => `${x.tool}(${JSON.stringify(x.args)}) → ${x.result}`).join(' ') || 'none'
-          }`,
-        )
-    }
-  }
-
-  return out
 }
 
 type Result = Run & { reply: string; calls: Call[]; raw: string }
