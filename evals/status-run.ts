@@ -166,7 +166,7 @@ type StepRecord = {
 type ReplayRun = Run & { steps: StepRecord[] }
 
 /**
- * A step as the replay tables in `docs/plans/status.md` name it: by its call's number, or by its label when it
+ * A step as the replay tables in `docs/status-replays.md` name it: by its call's number, or by its label when it
  * makes no call.
  */
 function stepName(replay: Replay, i: number): string {
