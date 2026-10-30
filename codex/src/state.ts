@@ -19,6 +19,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
 import { KEPT_SESSIONS } from '../../hooks/ledger'
 import type { Exchange } from '../../hooks/ledger'
+import { checkVersion, SESSION_VERSION } from '../../hooks/session-version'
 import {
   emptySession,
   isSessionFile,
@@ -39,7 +40,7 @@ import type { ShownTab } from '../../hooks/view'
 export type ModelFailure = { at: number; cli: string; code: number; stderr: string }
 
 export type SessionState = Session & {
-  version: 1
+  version: typeof SESSION_VERSION
   sessionId: string
   root: string
   /** The session's rollout file, from the latest hook input that named one. Null until a hook does. */
@@ -94,7 +95,7 @@ export const NOTHING_HEARD: Heard = {
 
 export function emptyState(sessionId: string): SessionState {
   return {
-    version: 1,
+    version: SESSION_VERSION,
     sessionId,
     root: '',
     transcriptPath: null,
@@ -128,8 +129,7 @@ type Saved = Omit<Partial<SessionState>, 'turn' | 'pending' | 'sent'> & {
 
 /** State saved by an earlier build, with any field it lacks, and without the keys it no longer has. */
 function upgraded(saved: Saved, sessionId: string): SessionState {
-  if (saved.version !== undefined && saved.version !== 1)
-    throw new Error(`Unsupported inbox state version: ${saved.version}`)
+  checkVersion(saved)
   const base = emptyState(sessionId)
   const {
     checks: _checks,
