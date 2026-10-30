@@ -3355,6 +3355,7 @@ function screenTabOf(tab) {
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var LOOK_TEXT = "Last seen";
+var LOOK_DASH = "\u254C";
 var WAS_PREFIX = "was: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " \xB7 ";
@@ -3495,7 +3496,7 @@ function statusPage(s, now) {
   return {
     isEmpty: head === null && rows.length === 0,
     head,
-    rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
+    rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]), isLast: n === rows.length - 1 })),
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: "Status",
@@ -6845,14 +6846,18 @@ function withTree(lines, first, rest, s) {
   const drawn = (line, glyph) => glyph.trim() === "" ? line : line.slice(0, PAGE_MARK_AT) + s.dim(glyph) + line.slice(PAGE_MARK_AT + glyph.length);
   return lines.map((l, n) => n === 0 ? first ? drawn(l, first) : l : drawn(l, rest));
 }
-function pageRule(width, s, label = null) {
-  const cells = Math.max(0, width - PAGE_TEXT_AT - 1);
-  if (label === null)
-    return `${" ".repeat(PAGE_TEXT_AT)}${s.dim("\u2500".repeat(cells))}`;
-  const text = ` ${label} `;
-  const fill = Math.max(4, cells - cellWidth(text));
+function pageRuleCells(width) {
+  return Math.max(0, width - PAGE_TEXT_AT - 1);
+}
+function pageRule(width, s) {
+  return `${" ".repeat(PAGE_TEXT_AT)}${s.dim("\u2500".repeat(pageRuleCells(width)))}`;
+}
+function lookLines(row, width, s) {
+  const text = ` ${row.text} `;
+  const fill = Math.max(4, pageRuleCells(width) - cellWidth(text));
   const before = Math.floor(fill / 2);
-  return `${" ".repeat(PAGE_TEXT_AT)}${s.dim(`${"\u2500".repeat(before)}${text}${"\u2500".repeat(fill - before)}`)}`;
+  const rule = `${" ".repeat(PAGE_TEXT_AT)}${s.dim(`${LOOK_DASH.repeat(before)}${text}${LOOK_DASH.repeat(fill - before)}`)}`;
+  return ["", rule, ...row.isLast ? [] : [""]];
 }
 function pageButtonLines(row, d, isSelected) {
   const faces = statusKeyPlan(row).map((k) => ({
@@ -6888,7 +6893,7 @@ function drawPageRow(row, d, isSelected = false) {
     return withTree([" ".repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s);
   }
   if (row.kind === "look")
-    return [pageRule(width, s, row.text)];
+    return lookLines(row, width, s);
   return pageLine(d, PAGE_MARK_AT, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim);
 }
 var TAB_FORMS = [{ isBracketed: true }, { isBracketed: false }];

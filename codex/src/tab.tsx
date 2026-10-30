@@ -76,7 +76,7 @@ import {
   shortAgo,
   shownOptionDescriptions,
 } from '../../hooks/view'
-import { BANNER_GAP_PT, BANNER_PAD_Y_PT, STATUS_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
+import { BANNER_GAP_PT, BANNER_PAD_Y_PT, LOOK_GAP_PT, STATUS_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
 import type {
   ActionEmphasis,
   BannerView,
@@ -1518,7 +1518,7 @@ function StatusLine({ row }: { row: StatusRow }) {
     )
   if (row.kind === 'look')
     return (
-      <div class="row look-line">
+      <div class={`row look-line${row.isLast ? ' last' : ''}`}>
         <div class="look-rule">{row.text}</div>
       </div>
     )
@@ -2501,6 +2501,7 @@ function revealSelected() {
 function applyPageVariables() {
   document.documentElement.style.setProperty('--row-pad', `${ROW_PAD_PT}px`)
   document.documentElement.style.setProperty('--status-row-pad', `${STATUS_ROW_PAD_PT}px`)
+  document.documentElement.style.setProperty('--look-gap', `${LOOK_GAP_PT}px`)
   document.documentElement.style.setProperty('--banner-pad-y', `${BANNER_PAD_Y_PT}px`)
   document.documentElement.style.setProperty('--banner-gap', `${BANNER_GAP_PT}px`)
   document.documentElement.style.setProperty('--pulse', `${RUNNING_PULSE_MS}ms`)
