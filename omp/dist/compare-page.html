@@ -549,12 +549,10 @@
           )
         })
         measures.forEach((m, i) => {
-          for (const name of Object.keys(m.values || {}))
-            choiceNamed(name, `named in the values of “${measureName(m, i)}”`)
+          for (const name of Object.keys(m.values || {})) choiceNamed(name, `named in the values of “${measureName(m, i)}”`)
         })
         previews.forEach((p, i) => {
-          for (const name of Object.keys(p.texts || {}))
-            choiceNamed(name, `named in the preview “${text(p.title) || i + 1}”`)
+          for (const name of Object.keys(p.texts || {})) choiceNamed(name, `named in the preview “${text(p.title) || i + 1}”`)
         })
         const judgedSets = bestSets.filter(s => s.size > 0)
 
@@ -611,8 +609,7 @@
             'aria-label': 'Choices',
             style: `grid-template-columns: repeat(${choices.length}, minmax(0, 1fr)); grid-template-rows: repeat(${headRows + 2 * measures.length}, auto)`,
           },
-          pickColumn > 0 &&
-            h('div', { class: 'band', style: `grid-column: ${pickColumn}; grid-row: 1 / ${headRows + 1}` }),
+          pickColumn > 0 && h('div', { class: 'band', style: `grid-column: ${pickColumn}; grid-row: 1 / ${headRows + 1}` }),
           stuckMark,
           choices.map((choice, c) => [
             h(
