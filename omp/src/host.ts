@@ -866,19 +866,19 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     if (isClaimed) deps.background(refreshStatus(updateHostFor(ctx)))
   }
 
-  // Noted as the tool starts, not in tool_call, which omp waits on before every tool runs.
   pi.on('tool_execution_start', async (event, ctx) => {
     if (isUnattended(ctx)) return
     const args = (event.args ?? {}) as Record<string, unknown>
-    await noteQuietly(ctx, activityOf(event.toolName, args))
     const command = event.toolName === 'bash' && typeof args.command === 'string' ? args.command : ''
     if (delegateSteps(command).length === 0) return
     const at = deps.now()
     await change(sessionIdOf(ctx), s => statusChanged(s, o => delegatesStarted(o, command, at))).catch(() => undefined)
   })
 
+  // omp raises tool_result only for a call that ran, never for one it blocked.
   pi.on('tool_result', async (event, ctx) => {
     if (isUnattended(ctx)) return
+    await noteQuietly(ctx, activityOf(event.toolName, event.input))
     if (event.toolName === 'bash') {
       const command = (event.input as { command?: unknown }).command
       if (typeof command !== 'string') return

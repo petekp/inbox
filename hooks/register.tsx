@@ -396,13 +396,17 @@ import {
   callKey,
   childRefOf,
   delegateWaits,
+  endedAgentOf,
+  endedCallRan,
   HOST_TASK_TOOLS,
   isActivityWorthSaving,
   isHerdrCheckDue,
   MAX_PERSON_LINES,
+  noteRanCall,
   permissionText,
   reportToHerdr,
   spawnedBy,
+  startedTaskOf,
   toolRecord,
   TOOLS_REFUSED_TEXT,
   workflowTasks,
@@ -2840,16 +2844,19 @@ export const register: Register = on => {
     if (!isOn) return next(e)
     const { tool: _tool, tool_use_id: _id, agentId: _agent, ...input } = e as unknown as Record<string, unknown>
     const key = callKey(String(e.tool), input)
-    const run = () =>
-      clearingDialog($, key, () => next(e)).finally(() => {
+    const activity = e.agentId ? null : toolActivity(String(e.tool), input)
+    const run = async () => {
+      try {
+        return await clearingDialog($, key, () => next(e))
+      } finally {
         if (e.tool_use_id) askedCalls.delete(e.tool_use_id)
-      })
+        if (endedCallRan(e.tool_use_id) && activity) await noteActivity($, activity)
+      }
+    }
     if (e.agentId) {
       await noteAgentWork($, e.agentId)
       return run()
     }
-    const line = toolActivity(String(e.tool), input)
-    if (line) await noteActivity($, line)
     if (String(e.tool) === TURN_BOX_TOOL) turnBox = turnBoxText(input) ?? turnBox
     if (e.tool === 'Bash') {
       const steps = delegateSteps(e.command)
@@ -2874,22 +2881,17 @@ export const register: Register = on => {
     }
     if (e.tool === 'Agent') {
       const ran = await run()
-      const result = toolRecord('Agent', ran.result)
-      const isRunningOn = result && 'status' in result && result.status !== 'completed'
-      const agentId = result && 'agentId' in result ? result.agentId : undefined
-      if (agentId && !isRunningOn) await noteChild($, (o, at) => childEnded(o, agentId, at))
+      const agentId = endedAgentOf(ran.result)
+      if (agentId) await noteChild($, (o, at) => childEnded(o, agentId, at))
 
       return ran
     }
     if (e.tool === 'Monitor' || e.tool === 'Workflow') {
       const ran = await run()
-      const workflow = e.tool === 'Workflow' ? toolRecord('Workflow', ran.result) : undefined
-      const taskId = workflow?.taskId ?? (e.tool === 'Monitor' ? toolRecord('Monitor', ran.result)?.taskId : undefined)
-      if (taskId) {
-        if (workflow && e.tool_use_id) workflowTasks.set(e.tool_use_id, taskId)
-        const kind = workflow ? 'workflow' : 'background'
-        const name = workflow?.workflowName ?? e.description ?? e.tool
-        await noteChild($, (o, at) => childStarted(o, { ref: taskId, kind, name }, at))
+      const child = startedTaskOf(e.tool, ran.result, e.description)
+      if (child) {
+        if (child.kind === 'workflow' && e.tool_use_id) workflowTasks.set(e.tool_use_id, child.ref)
+        await noteChild($, (o, at) => childStarted(o, child, at))
       }
 
       return ran
@@ -2924,6 +2926,15 @@ export const register: Register = on => {
       return ran
     }
     return run()
+  })
+
+  on('classic.PostToolUse', async (_$, e, next) => {
+    if (isOn) noteRanCall(e.tool_use_id)
+    return next(e)
+  })
+  on('classic.PostToolUseFailure', async (_$, e, next) => {
+    if (isOn) noteRanCall(e.tool_use_id)
+    return next(e)
   })
 
   // A question dialog opens from its own tool call, which also raises a permission request.

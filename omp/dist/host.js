@@ -8408,7 +8408,6 @@ function createInbox(pi, deps = defaultDeps) {
     if (isUnattended(ctx))
       return;
     const args = event.args ?? {};
-    await noteQuietly(ctx, activityOf(event.toolName, args));
     const command = event.toolName === "bash" && typeof args.command === "string" ? args.command : "";
     if (delegateSteps(command).length === 0)
       return;
@@ -8420,6 +8419,7 @@ function createInbox(pi, deps = defaultDeps) {
   pi.on("tool_result", async (event, ctx) => {
     if (isUnattended(ctx))
       return;
+    await noteQuietly(ctx, activityOf(event.toolName, event.input));
     if (event.toolName === "bash") {
       const command = event.input.command;
       if (typeof command !== "string")

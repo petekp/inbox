@@ -13,7 +13,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/pane-selection.ts` | Mod only. The shown tab, each tab's cursor and selected row, closed folds, Undo's scroll and redraw timing, and the keys that hold a settled layout and its scroll. |
 | `hooks/pane-keys.ts` | Mod only. Row buttons and their keys: the `Action` type, each PR press's key, button glyphs, which element takes focus, a reply field's key, and the text a failed copy shows. |
 | `hooks/mod-delivery.ts` | Mod only. Matches each prompt row Claude Code stores to the message a press sent, so the press reads as delivered. It also settles a message another plugin rewrote. |
-| `hooks/mod-records.ts` | Mod only. What the mod tracks about tool calls, subagents, workflows and Herdr delegates, and the text a permission dialog shows for a tool call. |
+| `hooks/mod-records.ts` | Mod only. What the mod tracks about tool calls, subagents, workflows and Herdr delegates. That includes which calls ran, and the child a finished Agent, Monitor or Workflow call ended or started. Also the text a permission dialog shows for a tool call. |
 | `hooks/mod-sessions.ts` | Mod only. Which conversation a session write belongs to, saves to the engine store and their retries while another process holds its lock, and the per-conversation queues for updates and Status calls. |
 | `hooks/tabs-client.tsx` | Mod only. A Client region for the desktop tab bar, so each tab takes clicks over its whole shape. |
 | `hooks/row-client.tsx` | Mod only. A Client region for a closed row in the desktop pane. |

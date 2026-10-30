@@ -45,6 +45,7 @@ export type FeatureId =
   | 'status-failed-warning'
   | 'asks-holds-up-line'
   | 'status-mid-turn-refresh'
+  | 'ran-call-activity'
   | 'tool-result-line'
   | 'status-call-records'
   | 'dismiss-merged-prs'
@@ -106,6 +107,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
+      'ran-call-activity': { kind: 'full' },
       'tool-result-line': { kind: 'full' },
       'status-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
@@ -209,6 +211,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
+      'ran-call-activity': {
+        kind: 'unsupported',
+        reason:
+          "Codex runs PreToolUse before a call is approved, so a call the person declines or a hook blocks still adds its activity line. PostToolUse cannot show which calls ran: Codex skips it for a command that runs longer than code mode's wait.",
+      },
       'tool-result-line': {
         kind: 'unsupported',
         reason:
@@ -289,6 +296,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
+      'ran-call-activity': { kind: 'full' },
       'tool-result-line': { kind: 'full' },
       'status-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },

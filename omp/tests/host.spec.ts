@@ -279,8 +279,8 @@ test("record and close draw the person's line under the call while the agent rea
 
 test('bash, edit and write runs become turn activity and other tools do not', async () => {
   createInbox(pi(), deps())
-  const run = (toolName: string, args: Record<string, unknown>) =>
-    call('tool_execution_start', { type: 'tool_execution_start', toolCallId: 'c', toolName, args })
+  const run = (toolName: string, input: Record<string, unknown>) =>
+    call('tool_result', { toolName, input, content: [] })
   await run('bash', { command: 'npm test' })
   await run('bash', { command: 'sleep 9', async: true })
   await run('edit', { path: '/work/a.ts' })
@@ -307,7 +307,9 @@ test('a bash result notes local URLs it printed and links the PR gh pr create na
   await result('npm run dev', 'ready at http://localhost:3000/')
   await result('gh pr create --fill', 'https://github.com/acme/app/pull/12\n')
   await result('cat notes.txt', 'https://github.com/acme/app/pull/77\n')
-  expect(state().turn.activity).toEqual(['URL in output: http://localhost:3000/'])
+  expect(state().turn.activity.filter((line: string) => line.startsWith('URL'))).toEqual([
+    'URL in output: http://localhost:3000/',
+  ])
   expect(state().ledger.prs).toEqual(['acme/app#12'])
 })
 
@@ -335,10 +337,10 @@ test('a reply’s Status comes from the separate Status call, after the ledger u
   expect(statusCompletions[0]!.prompt).toContain('Plan written. Which runtime?')
 })
 
-test('a run past the wait runs the Status call on its work so far at its next tool start, once', async () => {
+test('a run past the wait runs the Status call on its work so far at its next tool result, once', async () => {
   createInbox(pi(), deps())
   statusReply = 'HEAD: Adding caching | Caching answers to cut load'
-  const bash = (command: string) => call('tool_execution_start', { toolName: 'bash', args: { command } })
+  const bash = (command: string) => call('tool_result', { toolName: 'bash', input: { command } })
   await prompt('Add caching')
   await call('agent_start', { type: 'agent_start' })
   await bash('ls')
@@ -575,7 +577,7 @@ test('a session with no UI leaves no state and takes record and close out of its
   await call('session_start', { type: 'session_start' })
   expect(activeTools).toEqual(['read', 'bash'])
   const result = await prompt('hello')
-  await call('tool_execution_start', { toolName: 'bash', args: { command: 'ls' } })
+  await call('tool_result', { toolName: 'bash', input: { command: 'ls' } })
   await endAgent('Done.')
   const recorded = await record({ kind: 'task', ask: 'Try it' })
   await settle()
@@ -627,7 +629,7 @@ test('an activity note or an ask result still settles when the session file cann
   createInbox(pi(), deps())
   await prompt('hello')
   writeFileSync(join(dir, 'sessions', 's1.json'), '{not json')
-  expect(await call('tool_execution_start', { toolName: 'bash', args: { command: 'ls' } })).toBeUndefined()
+  expect(await call('tool_result', { toolName: 'bash', input: { command: 'ls' } })).toBeUndefined()
   expect(await call('tool_result', { toolName: 'ask', input: {}, content: [], isError: false })).toBeUndefined()
 })
 
