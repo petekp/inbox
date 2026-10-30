@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+
+import { API, nameOf, propertiesOf, ts } from './ts.mjs'
 
 const PLAN_STATUS = /^Status: (proposed|building|built|superseded by \S+)/m
 
@@ -79,11 +81,73 @@ export function checkLookMap(root, errors) {
         if (isMapped(path) && !rows.has(path)) errors.push(`${LOOK_PARTS}/files-*.md has no Files row for ${path}.`)
       }
   }
-  for (const map of [LOOK_MAP, ...lookParts(root, '')])
-    for (const m of read(root, map).matchAll(/`([\w./-]+\.[a-z]+):([\w.]+)`/g)) {
-      const [, path, symbol] = m
-      if (!exists(root, path)) continue
-      if (!new RegExp(`\\b${symbol.replaceAll('.', '\\.')}\\b`).test(read(root, path)))
-        errors.push(`${map} names ${path}:${symbol}, and ${path} has no ${symbol}.`)
+  const refs = [LOOK_MAP, ...lookParts(root, '')]
+    .flatMap(map =>
+      [...read(root, map).matchAll(/`([\w./-]+\.[cm]?[jt]sx?):([\w.]+)`/g)].map(([, path, symbol]) => ({
+        map,
+        path,
+        symbol,
+      })),
+    )
+    .filter(ref => exists(root, ref.path))
+  const paths = [...new Set(refs.map(ref => ref.path))]
+  const api = new API({ cwd: root })
+  try {
+    const snapshot = api.updateSnapshot({ openFiles: paths.map(path => join(root, path)) })
+    const names = new Map(
+      paths.map(path => {
+        const absolute = join(root, path)
+        const program = snapshot.getDefaultProjectForFile(absolute)?.program
+        const source = program?.getSourceFile(absolute) ?? program?.getSourceFile(realpathSync(absolute))
+        if (!source) throw new Error(`Cannot parse ${path}.`)
+        return [path, namesIn(source)]
+      }),
+    )
+    for (const { map, path, symbol } of refs) {
+      const { declared, importedFrom } = names.get(path)
+      if (declared.has(symbol)) continue
+      const name = symbol.split('.')[0]
+      errors.push(
+        importedFrom.has(name)
+          ? `${map} names ${path}:${symbol}, but ${path} imports ${name} from '${importedFrom.get(name)}'. Name the file that declares it.`
+          : `${map} names ${path}:${symbol}, and ${path} declares no ${symbol}.`,
+      )
     }
+  } finally {
+    api.close()
+  }
+}
+
+const DECLARATIONS = new Set(
+  [
+    'FunctionDeclaration',
+    'VariableDeclaration',
+    'ClassDeclaration',
+    'InterfaceDeclaration',
+    'TypeAliasDeclaration',
+    'EnumDeclaration',
+    'ModuleDeclaration',
+  ].map(kind => ts.SyntaxKind[kind]),
+)
+
+function namesIn(source) {
+  const declared = new Set()
+  const importedFrom = new Map()
+  const visit = node => {
+    const name = node.name ? nameOf(node.name) : null
+    if (DECLARATIONS.has(node.kind) && name !== null) {
+      declared.add(name)
+      if (ts.isVariableDeclaration(node) && node.initializer)
+        for (const property of propertiesOf(node.initializer)) declared.add(`${name}.${nameOf(property.name)}`)
+    }
+    if (ts.isImportSpecifier(node) || ts.isNamespaceImport(node) || (ts.isImportClause(node) && node.name)) {
+      let declaration = node.parent
+      while (!ts.isImportDeclaration(declaration)) declaration = declaration.parent
+      importedFrom.set(node.name.text, declaration.moduleSpecifier.text)
+    }
+    node.forEachChild(visit)
+  }
+  visit(source)
+
+  return { declared, importedFrom }
 }
