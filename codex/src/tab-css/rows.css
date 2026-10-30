@@ -1,0 +1,285 @@
+.row {
+  display: grid;
+  grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr) auto;
+  padding: var(--row-pad) 14px var(--row-pad) var(--mark-x);
+}
+.row.selected {
+  background-color: var(--selected);
+}
+.mark {
+  align-self: start;
+  padding-right: 8px;
+  text-align: center;
+  color: var(--muted);
+}
+.mark.done {
+  color: var(--done);
+}
+.mark-shape {
+  width: 8px;
+  height: 8px;
+  overflow: visible;
+}
+.mark.issue {
+  color: var(--issue);
+}
+.mark.error {
+  color: var(--error-mark);
+}
+.side {
+  align-self: start;
+  margin-left: 12px;
+  color: var(--age);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+.mark.tone-needsYou,
+.mark.needsYou,
+.side.tone-needsYou {
+  color: var(--needs-you);
+}
+.side[data-room]::after {
+  content: attr(data-room);
+  display: block;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+.side-label {
+  display: inline-block;
+  max-width: 11em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  margin-right: 4px;
+}
+.row.collapsed:hover .side {
+  color: var(--muted);
+}
+.content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* Its space above is padding, not a gap, so the row's height grows smoothly when the panel mounts. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0 2px;
+}
+.row > .panel {
+  grid-column: 2 / -1;
+}
+.content.tight {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.line {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+.line .text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.line .after {
+  color: var(--muted);
+}
+.row.collapsed .line .after:not(.tone-error) {
+  color: var(--age);
+}
+.row.collapsed:hover .line .after:not(.tone-error) {
+  color: var(--muted);
+}
+.line .after.tone-error {
+  color: var(--error);
+}
+.row.selected .line,
+.row.closing .line {
+  display: block;
+}
+.row.selected .line .text,
+.row.closing .line .text {
+  display: inline;
+  font-weight: 600;
+}
+.row.selected .line .after,
+.row.closing .line .after {
+  white-space: normal;
+  font-weight: 400;
+}
+.line .lead {
+  color: var(--muted);
+  font-weight: 400;
+}
+.line .meta {
+  display: block;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row.collapsed:not(:hover) .line .meta {
+  color: var(--age);
+}
+.line .holds-up {
+  display: block;
+  color: var(--muted);
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row.selected .line .meta {
+  display: none;
+}
+.quote {
+  white-space: pre-line;
+}
+.row.collapsed:hover {
+  background-color: var(--row-hover);
+}
+.still .row.collapsed:not(:active):hover {
+  background-color: transparent;
+}
+.still .fold:not(:active):hover {
+  color: var(--muted);
+}
+.title {
+  font-weight: 600;
+}
+.body {
+  overflow-wrap: anywhere;
+}
+.body p {
+  margin: 0;
+}
+.body p + p {
+  margin-top: 4px;
+}
+.body .option-description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.body .option-description + .option-description {
+  margin-top: 0;
+}
+code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--soft);
+  font-family: var(--mono);
+}
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.follow-ups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+}
+.key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 3px 11px;
+  border: 1px solid color-mix(in oklab, var(--text) 28%, transparent);
+  border-radius: 13px;
+  background: transparent;
+  font-weight: 400;
+  text-align: center;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.key:not(:disabled):hover {
+  background: var(--soft);
+}
+.key:focus-visible {
+  outline-width: 2px;
+  outline-offset: 2px;
+  border-radius: 13px;
+}
+.key.primary {
+  border-color: transparent;
+  background: var(--text);
+  color: var(--bg);
+}
+.key.primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--text) 82%, var(--bg));
+}
+.key .icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.key.ghost {
+  padding: 0 4px;
+  border-color: transparent;
+  background: none;
+  color: var(--muted);
+}
+.key.ghost:not(:disabled):hover {
+  background: none;
+  color: var(--text);
+}
+.key.out {
+  opacity: 0.4;
+  transition: opacity var(--quick);
+}
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+input {
+  flex: 1;
+  min-width: 0;
+  min-height: 28px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);
+  border-radius: 10px;
+  padding: 4px 10px;
+}
+input::placeholder {
+  color: var(--muted);
+}
+/* The radius again, since :focus-visible sets 4px. */
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: color-mix(in oklab, var(--text) 32%, transparent);
+  border-radius: 10px;
+}
+textarea {
+  width: 100%;
+  font: 12px var(--mono);
+  color: inherit;
+  background: transparent;
+  border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);
+  border-radius: 10px;
+}

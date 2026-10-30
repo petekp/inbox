@@ -1,0 +1,126 @@
+.group-end {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+/* Keeps the fold's margin inside, so its height is the whole end's content height. */
+.group-end-content {
+  display: flow-root;
+  position: relative;
+}
+.group-empty {
+  padding: var(--row-pad) 14px var(--row-pad) var(--text-x);
+  color: var(--muted);
+}
+.group-empty.leaving {
+  position: absolute;
+  inset: auto 0 100% 0;
+  pointer-events: none;
+  animation: fade-out var(--enter) forwards;
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+.fold {
+  display: block;
+  margin: 8px 0 0 calc(var(--mark-x) - 1px);
+  padding: 1px 4px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+.fold:hover {
+  color: var(--text);
+}
+.fold .icon {
+  width: 12px;
+  height: 12px;
+  margin-right: calc(var(--text-x) - var(--mark-x) - 15px);
+  vertical-align: -1px;
+}
+.closed-list {
+  --mark-x: 41px;
+  --text-x: 67px;
+}
+/* The gap above a Closed list's rows is content, not padding, so the list opens from and closes to 0. */
+.closed-list::before {
+  content: '';
+  display: block;
+  height: 4px;
+}
+.closed-list .row {
+  padding-top: calc(var(--row-pad) / 2);
+  padding-bottom: calc(var(--row-pad) / 2);
+}
+.outcome {
+  color: var(--age);
+}
+.settled-head {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.row.settled.was-open {
+  transition: background-color var(--move);
+  @starting-style {
+    background-color: var(--selected);
+  }
+}
+.settled-line {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.settled .outcome-label {
+  color: var(--muted);
+}
+/* The pill keeps the line's height, so the row does not grow. */
+.key.undo {
+  flex: none;
+  white-space: nowrap;
+  border-color: transparent;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  margin: -3px 0 -3px 12px;
+  background: color-mix(in oklab, var(--soft) 45%, transparent);
+}
+.key.undo.undoing {
+  color: var(--muted);
+}
+.key.undo.spent {
+  visibility: hidden;
+}
+.key.undo.undoing .icon {
+  animation: undo-turn 900ms linear infinite;
+}
+@keyframes undo-turn {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+.time-left {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--soft);
+  transform-origin: left;
+  animation-name: empty;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+.key.undo:not(:disabled):hover .time-left {
+  background: var(--soft-hover);
+}
+.time-left.paused {
+  animation-play-state: paused;
+}
+@keyframes empty {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}

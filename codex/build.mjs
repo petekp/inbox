@@ -100,11 +100,24 @@ async function toneVars() {
   return { light: vars(tones.LIGHT_TONES), dark: vars(tones.DARK_TONES) }
 }
 
-const tabPage = (html, script, tones) =>
-  html
+const TAB_CSS = join(here, 'src', 'tab-css')
+
+function tabPage(html, script, tones) {
+  const named = []
+  const page = html.replace(/^( *)\/\*TAB_CSS:([\w-]+)\*\/$/gm, (_, indent, name) => {
+    named.push(`${name}.css`)
+    return readFileSync(join(TAB_CSS, `${name}.css`), 'utf8')
+      .trimEnd()
+      .replace(/^(?=.)/gm, indent)
+  })
+  const unnamed = readdirSync(TAB_CSS).filter(file => !named.includes(file))
+  if (unnamed.length > 0) throw new Error(`tab.html has no /*TAB_CSS:…*/ line for ${unnamed.join(', ')}.`)
+
+  return page
     .replaceAll('/*TONES:light*/', () => tones.light)
     .replaceAll('/*TONES:dark*/', () => tones.dark)
     .replace('/*TAB_SCRIPT*/', () => script)
+}
 
 const build = await serverBuild()
 const tones = await toneVars()
