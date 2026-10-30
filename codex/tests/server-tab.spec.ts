@@ -5,7 +5,7 @@ import { EMPTY_SESSION_STATUS } from '../../hooks/status'
 import { screenTabOf, SETTLED_MS } from '../../hooks/view'
 import { screenText } from '../../hooks/model-text'
 import { CODEX } from '../src/texts'
-import { pageName } from '../src/server'
+import { pageName } from '../src/server-tools'
 import { readState, updateState } from '../src/state'
 import { setup } from './server-fixtures'
 
