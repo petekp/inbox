@@ -23,7 +23,7 @@ Part of [Claude Code mods](../claude-code-mods.md).
 - The types have more than the docs list: `describe`, `findAll`, `drawn`, `key`, `pointer`, `post`, `advance`, `resize`, `test(name, { options })` for `userConfig`, and about 15 more matchers. [T: testing types]
 - After `/clear`: fire `$.classic.SessionStart({ source: 'clear' })`, not `session.start`. [TT#test-a-drawing-after-clear]
 - Policy mods: `tier('prepend'|'append'|'builtin')` and `test(name, { plugins: [...] }, body)`. A refusal throws `<mod>: refused by <policy-mod>: <reason>`. [TT#test-a-mod-that-judges-other-mods]
-- Repo: most band tests mount only `terminal`. `tests/hooks.test.ts` tests "the desktop app turns the mod on when it attaches before the start" and "… after the start" fire a desktop attach in both orders and mount the band with `surface: 'desktop'`. `world()` stubs `session.attach`.
+- Repo: most band tests mount only `terminal`. `tests/hooks-startup.test.ts` tests "the desktop app turns the mod on when it attaches before the start" and "… after the start" fire a desktop attach in both orders and mount the band with `surface: 'desktop'`. `world()` in `tests/hooks-world.ts` stubs `session.attach`.
 
 ## Troubleshooting and the debug log
 

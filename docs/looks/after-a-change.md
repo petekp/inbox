@@ -6,7 +6,7 @@ State in your change, for each look, whether it applies and what you checked.
 
 | Change | Edit | Then check |
 | --- | --- | --- |
-| A row action | `hooks/view.ts:actionsOf`, `hooks/presses.ts:applyPress`, and `hooks/view.ts:DONE_LABELS` for its label | The action appears in terminal, desktop, the Codex tab and the omp panel. Check Undo, failure and key letters. Add the case to `tests/hooks.test.ts`, `codex/tests/press.spec.ts` and `omp/tests/panel.spec.ts` when the repo's coverage expects it. |
+| A row action | `hooks/view.ts:actionsOf`, `hooks/presses.ts:applyPress`, and `hooks/view.ts:DONE_LABELS` for its label | The action appears in terminal, desktop, the Codex tab and the omp panel. Check Undo, failure and key letters. Add the case to the `tests/hooks*.test.ts` file for its concern, `codex/tests/press.spec.ts` and `omp/tests/panel.spec.ts` when the repo's coverage expects it. |
 | A row field | `hooks/view.ts:inboxView` and the `RowView` type, then `itemRow` and `findingRow` in the mod and Codex adapters, and `omp/src/panel.ts` | Every adapter draws the shared field. Check resting, reply, handed-off, settled and failed forms that use it. |
 | A word on screen | The shared string in `hooks/view.ts` or `hooks/presses.ts`, else every adapter | Run the change through the `refine-prose` skill. Check each look for clipping. |
 | Model-read text | `hooks/model-text.ts` or `hooks/tools.ts`. The guidance and every `inbox:` text reach every agent. | A/B test it as `AGENTS.md` says, with Sonnet for Claude and with `codex exec` and the model in `codex/src/update.ts:MODEL` for Codex. Run `./scripts/eval.sh --suite agent --agent omp` for omp. |
