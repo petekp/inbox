@@ -1433,7 +1433,7 @@ function arrived(s: Session, text: string, count: number): { state: Session; sen
     .slice(index + 1)
     .filter(x => x.text === text && x.row !== null)
     .reduce(
-      (actions, later) => withUnconfirmed(actions, text, later.pressedAt ?? undefined, later.deliveryId),
+      (actions, laterSend) => withUnconfirmed(actions, text, laterSend.pressedAt ?? undefined, laterSend.deliveryId),
       match.row === null
         ? s.lastActions
         : withArrival(s.lastActions, text, match.pressedAt ?? undefined, match.deliveryId),
@@ -1509,13 +1509,16 @@ function callReport(r: ModelResult): CallReport {
   return { model: MODEL, error }
 }
 
-/** Calls the inbox model as `askLedgerModel` does, waiting up to `timeoutMs`. */
-function modelAsk($: EngineInterface, timeoutMs: number): Ask {
-  return async (prompt, system, report) => {
-    const r = await askLedgerModel($, prompt, system, timeoutMs)
-    report?.(callReport(r))
-    return r.isAnswered ? r.text : null
-  }
+async function askInboxModel(
+  $: EngineInterface,
+  prompt: string,
+  system: string,
+  timeoutMs: number,
+  report: Parameters<Ask>[2],
+) {
+  const r = await askLedgerModel($, prompt, system, timeoutMs)
+  report?.(callReport(r))
+  return r.isAnswered ? r.text : null
 }
 
 /** The engine has no call that removes a file, so removing runs `rm` and `rmdir`. */
@@ -1677,7 +1680,7 @@ function sessionHost(
     },
     update: opts.update,
     exclusive: fn => updating.run(owner.id, fn),
-    ask: modelAsk($, 45_000),
+    ask: (prompt, system, report) => askInboxModel($, prompt, system, 45_000, report),
     deliver: (_s, text, deliveryId) => deliver($, owner, text, deliveryId),
     isDeliveryHeldUntilRun: true,
     perform: async (_s, effect) => (opts.surface ? perform($, effect, opts.surface) : COPY_FAILURES['no-surface']),
@@ -1849,11 +1852,11 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
     $.session.messages().then(transcriptText),
   ])
   // The Overview call reads the transcript.
-  const askLong = modelAsk($, 90_000)
   const overview: OverviewCall | null = transcript
     ? {
         exchange: { kind: 'catch-up', conversation: transcript },
-        ask: async (prompt, system, report) => (isCurrent(owner) ? askLong(prompt, system, report) : null),
+        ask: async (prompt, system, report) =>
+          isCurrent(owner) ? askInboxModel($, prompt, system, 90_000, report) : null,
       }
     : null
   const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
