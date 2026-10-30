@@ -2,7 +2,8 @@
 # Checks the mod: formatting with Prettier, its plugin structure with
 # `claude plugin validate`, the imports and docs that keep the three looks in
 # step, and the plugin directory's rules for the hooks module, with
-# scripts/check-structure.mjs, its types with tsc, and its tests with
+# scripts/check-structure.mjs, that the three plugin manifests give one version,
+# with scripts/check-versions.mjs, its types with tsc, and its tests with
 # `claude plugin test`. Then the Codex plugin in codex/ and the omp extension in
 # omp/. Exits 1 on any failure, and when a check cannot run.
 #
@@ -41,6 +42,7 @@ check "prettier" npx -y "$PRETTIER" --check .
 
 check "plugin validate" claude plugin validate "$DIR"
 check "structure" node "$DIR/scripts/check-structure.mjs"
+check "versions" node "$DIR/scripts/check-versions.mjs"
 # Claude Code writes these types when it loads the mod from this folder, and
 # claude -p does not. A worktree's copy does not load while another copy of the
 # mod loads first. The types name no paths, so a worktree uses the main checkout's.
@@ -51,7 +53,9 @@ if [ ! -e "$types" ] && [ -n "$main" ] && [ -f "$main/.claude-plugin/types/tscon
     echo "  - types: copied from $main"
 fi
 if [ -f "$types/tsconfig.json" ]; then
-    check "types" npx -y -p typescript tsc --noEmit -p "$DIR"
+    # The TypeScript that codex/ pins, which the structure check also loads. An
+    # unpinned tsc changes with each TypeScript release.
+    check "types" "$DIR/codex/node_modules/.bin/tsc" --noEmit -p "$DIR"
 else
     echo "  x types: not checked. Start one interactive session to write them: claude --plugin-dir $DIR"
     status=1

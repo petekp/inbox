@@ -51,7 +51,7 @@ These functions move from the Codex host, and take the host's `Host` names where
 | `pressOn` | `server.ts` | Applies a row or PR press |
 | `completedAttempt` | `server.ts` | Records how a sent message's delivery went |
 | the record and close changes | `server.ts` | Applies `recordItem` and `recordClose` |
-| the PR merge | `server.ts:fetchPrs` | Merges fetched PRs into `prViews` |
+| `withFetchedPrs` | `server.ts` | Merges fetched PRs into `prViews` |
 
 Whether a look is open is a host fact, so `notePrompt`, `endTurn` and `viewOf` take it as an argument. Codex passes `isTabOpen`.
 

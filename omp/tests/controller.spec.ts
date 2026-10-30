@@ -27,6 +27,7 @@ function open(overrides: Partial<PanelSource> = {}) {
     now: () => now,
     after: fn => void replies.push(fn),
     settleWindowMs: SETTLED_MS,
+    version: '1.2.3',
     comparePage: '/omp/dist/compare-page.html',
   })
   const source: PanelSource = {
@@ -172,6 +173,7 @@ test('the frame timer runs while the Status shows a running mark, re-renders wit
     now: () => 0,
     after: () => undefined,
     settleWindowMs: SETTLED_MS,
+    version: '1.2.3',
     isNextBuild: true,
     comparePage: '/omp/dist/compare-page.html',
   })
@@ -254,6 +256,7 @@ test('a refused Resume shows why on the stop row', async () => {
     now: () => 0,
     after: () => {},
     settleWindowMs: SETTLED_MS,
+    version: '1.2.3',
     comparePage: '/omp/dist/compare-page.html',
   })
   const stop = { kind: 'api-error' as const, detail: 'overloaded', resets: null, at: 1_700_000_000_000 }

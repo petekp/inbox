@@ -5,6 +5,8 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { version } from '../package.json'
+
 import type { AssistantMessage, Context, Model } from '@oh-my-pi/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 
@@ -67,7 +69,6 @@ import {
 import type { StatusRecords, PressOutcome, RecordFiles, SessionHost, UpdateHost } from '../../hooks/session-host'
 import { agentTools } from '../../hooks/tools'
 import type { AgentTool, ToolAnswer } from '../../hooks/tools'
-import { DARK_BANNER_TINTS, DARK_TONES, LIGHT_BANNER_TINTS, LIGHT_TONES } from '../../hooks/tones'
 import { clip } from '../../hooks/text'
 import { NEXT_BUILD_MARK, NO_HOLDS, RESUME_TEXT, SETTLED_MS, inboxCommandText, screenTabOf } from '../../hooks/view'
 import type { Holds, ShownTab } from '../../hooks/view'
@@ -76,8 +77,9 @@ import { createPanel } from './controller'
 import type { PanelSource } from './controller'
 import { demoSource } from './demo'
 import { bandLines, wrapText } from './panel'
-import type { PanelScreen, Style, Tone } from './panel'
+import type { PanelScreen } from './panel'
 import { exclusiveRun, pruneSessions, readState, updateState } from './state'
+import { styleOf } from './theme'
 import type { OmpState } from './state'
 import { OMP, TOOL_LABELS } from './texts'
 import type { Stop } from '../../types'
@@ -393,48 +395,6 @@ function conversationOf(entries: readonly unknown[]): Turn[] {
 
     return [{ role: 'agent', text: textOfBlocks(m.content), activity }]
   })
-}
-
-/** The slice of omp's theme the panel's style uses. */
-type OmpTheme = {
-  isLight: boolean
-  bold(text: string): string
-  inverse(text: string): string
-  underline(text: string): string
-  fg(color: 'accent' | 'statusLineSep', text: string): string
-}
-
-const ESC = '\x1b['
-
-function rgbOf(hex: string): string {
-  return [1, 3, 5].map(i => Number.parseInt(hex.slice(i, i + 2), 16)).join(';')
-}
-
-function truecolor(hex: string, text: string): string {
-  return `${ESC}38;2;${rgbOf(hex)}m${text}${ESC}39m`
-}
-
-function truecolorFill(hex: string, text: string): string {
-  return `${ESC}48;2;${rgbOf(hex)}m${text}${ESC}49m`
-}
-
-/** Maps the panel's styles onto omp's theme. The separator and the accent follow the theme; the tones follow `hooks/tones.ts`. */
-function styleOf(theme: OmpTheme): Style {
-  const tones = theme.isLight ? LIGHT_TONES : DARK_TONES
-  const tints = theme.isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS
-
-  return {
-    bold: theme.bold.bind(theme),
-    dim: text => `${ESC}2m${text}${ESC}22m`,
-    inverse: theme.inverse.bind(theme),
-    underline: theme.underline.bind(theme),
-    tone: (name: Tone, text) =>
-      name === 'sep' || name === 'accent'
-        ? theme.fg(name === 'sep' ? 'statusLineSep' : 'accent', text)
-        : truecolor(tones[name], text),
-    banner: (tone, part, text) =>
-      part === 'line' ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text),
-  }
 }
 
 /** A `record` or `close` result's details, which omp keeps out of the model's context. */
@@ -1070,6 +1030,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         isGhMissing,
         isFetchingPrs: prFetches.isFetching(id),
         stop: s.stop,
+        version,
         isNextBuild: deps.isNextBuild,
       }
     },
@@ -1165,6 +1126,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
           now: deps.now,
           after: (fn, ms) => void ctx.setTimeout(fn, ms),
           settleWindowMs: deps.settleWindowMs,
+          version,
           isNextBuild: deps.isNextBuild,
           comparePage: deps.comparePage,
           modelName: modelNameOf(ctx),
@@ -1212,6 +1174,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
             now: deps.now,
             after: () => {},
             settleWindowMs: deps.settleWindowMs,
+            version,
             comparePage: deps.comparePage,
             modelName: modelNameOf(ctx),
           }).screen(NO_HOLDS)

@@ -11,7 +11,6 @@ import {
   threadActions,
   threadSentIn,
 } from '../../hooks/pr-tab'
-import { version } from '../package.json'
 import { failingChecks, waitingThreads } from '../../hooks/prs'
 import type { LastAction, PrOrder, Stop } from '../../types'
 import { rankedStatusOf } from '../../hooks/pr-tab'
@@ -59,6 +58,7 @@ const screenOf = (overrides: Partial<PanelScreen> = {}, holds = NO_HOLDS): Panel
   isGhMissing: false,
   isFetchingPrs: false,
   stop: null,
+  version: '1.2.3',
   ...overrides,
 })
 
@@ -315,6 +315,7 @@ async function afterPresses(...presses: Parameters<ReturnType<typeof demoSource>
     now: () => now,
     after: fn => later.push(fn),
     settleWindowMs: SETTLED_MS,
+    version: '1.2.3',
     comparePage: '/omp/dist/compare-page.html',
   })
   const holds = { ...NO_HOLDS, shownSince: NOW }
@@ -731,14 +732,14 @@ test('the footer shows the version after the inbox model, beside the hints or on
   const lastLines = (width: number) => drawn(screenOf(), INITIAL_UI, width).map(strip).slice(-2)
   const [, wide] = lastLines(140)
   expect(wide).toContain('tab switch')
-  expect(wide?.trimEnd()).toEndWith(`inbox model Claude Sonnet 4.5  v${version}`)
+  expect(wide?.trimEnd()).toEndWith('inbox model Claude Sonnet 4.5  v1.2.3')
   const [hints, named] = lastLines(60)
-  expect(hints).not.toContain(`v${version}`)
-  expect(named?.trimEnd()).toEndWith(`inbox model Claude Sonnet 4.5  v${version}`)
+  expect(hints).not.toContain('v1.2.3')
+  expect(named?.trimEnd()).toEndWith('inbox model Claude Sonnet 4.5  v1.2.3')
   const [, marked] = drawn(screenOf({ isNextBuild: true }), INITIAL_UI, 140)
     .map(strip)
     .slice(-2)
-  expect(marked?.trimEnd()).toEndWith(`inbox model Claude Sonnet 4.5  v${version} · next`)
+  expect(marked?.trimEnd()).toEndWith('inbox model Claude Sonnet 4.5  v1.2.3 · next')
 })
 
 test('the demo says its presses send nothing', () => {
