@@ -10,4 +10,6 @@ The script also checks that omp's files import only shared modules, and that onl
 
 `omp/tests/session.spec.ts` runs the shared session script from `tests/session-script.ts` against omp's `SessionHost`. `omp/tests/panel.spec.ts` checks that the panel draws buttons in the shared plan order, in place of the demo test in `tests/hooks.test.ts`.
 
-`./scripts/check.sh` runs formatting, plugin validation, structure, the type checks, the test suites, and that the Codex bundles and `omp/dist/host.js` match their sources. Run it after every change. Model evaluations run separately when model-facing text changes.
+`scripts/check-versions.mjs` checks that `.claude-plugin/plugin.json`, `codex/plugin/.codex-plugin/plugin.json` and `omp/package.json` give the same version. `codex/tests/versions.spec.ts` checks it against disposable manifests.
+
+`./scripts/check.sh` runs formatting, plugin validation, structure, the version check, the type checks, the test suites, and that the Codex bundles and `omp/dist/host.js` match their sources. Run it after every change. Model evaluations run separately when model-facing text changes.
