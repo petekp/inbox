@@ -23,6 +23,8 @@ Decision 16 sets the method. The evals run at each release, and after a change t
 | `evals/status-judge/` | The judge's instructions, in parts |
 | `evals/status-run.ts` | The runner, its report and its results file |
 | `tests/status-evals.test.ts` | The checks with no model calls |
+| `tests/status-evals-scenes.ts` | The pages and Status call answers those checks grade |
+| `tests/status-evals-known-failing.test.ts` | The known failing cases, each of which fails until the issue it names is built |
 
 ### What goes in the suite
 
