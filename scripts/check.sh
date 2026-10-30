@@ -3,7 +3,8 @@
 # `claude plugin validate`, the imports and docs that keep the three looks in
 # step, and the plugin directory's rules for the hooks module, with
 # scripts/check-structure.mjs, that the three plugin manifests give one version,
-# with scripts/check-versions.mjs, its types with tsc, and its tests with
+# with scripts/check-versions.mjs, that the comparison page matches its parts, with
+# scripts/build-compare-page.mjs, its types with tsc, and its tests with
 # `claude plugin test`. Then the Codex plugin in codex/ and the omp extension in
 # omp/. Exits 1 on any failure, and when a check cannot run.
 #
@@ -43,6 +44,7 @@ check "prettier" npx -y "$PRETTIER" --check .
 check "plugin validate" claude plugin validate "$DIR"
 check "structure" node "$DIR/scripts/check-structure.mjs"
 check "versions" node "$DIR/scripts/check-versions.mjs"
+check "compare page" node "$DIR/scripts/build-compare-page.mjs" --check
 # Claude Code writes these types when it loads the mod from this folder, and
 # claude -p does not. A worktree's copy does not load while another copy of the
 # mod loads first. The types name no paths, so a worktree uses the main checkout's.
