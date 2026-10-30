@@ -2,10 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type {
   EngineInterface,
   Register,
-  SessionAppendMessage,
   Timer,
-  ToolResultOf,
-  UiCopyResult,
   RenderSurface,
   UiPressArgument,
   UiScrollBlock,
@@ -13,9 +10,7 @@ import type {
 } from 'claude-code'
 
 import type {
-  Away,
   Cursor,
-  Closed,
   DemoCopy,
   Dialog,
   Draft,
@@ -28,7 +23,6 @@ import type {
   PrViews,
   LastAction,
   SessionStatus,
-  PressKind,
   PageTab,
   RowNote,
   SentPrompt,
@@ -62,7 +56,6 @@ import {
   showsRunningMark,
 } from './session'
 import {
-  activityGate,
   childrenCutOff,
   childStarted,
   childWorked,
@@ -77,10 +70,8 @@ import {
 } from './children'
 import type { SavedSession, SendOutcome, SentBy, Session, SessionView } from './session'
 import {
-  exclusiveKeys,
   fetchPrs as fetchSessionPrs,
   isPrFetchDue,
-  orderedKeys,
   refreshStatus,
   runUpdates,
   startPress,
@@ -88,7 +79,7 @@ import {
 } from './session-host'
 import type { Ask, CallReport, CatchUpReply, StatusCall, StatusRecords, RecordFiles, SessionHost } from './session-host'
 import { SESSION_VERSION } from './session-version'
-import { demoView, isDemoCopy, withDemoPresence } from './demo'
+import { demoView, isDemoCopy } from './demo'
 import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
 import {
@@ -108,7 +99,6 @@ import {
   RANK_AGAIN_ID,
   prMarkId,
   pressRowId,
-  prRowWaits,
   prThreadId,
   threadActions,
   threadRowText,
@@ -163,18 +153,15 @@ import {
 } from './desktop-metrics'
 import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
-import { CLEARED_TOKENS, delegatesInHerdr, HERDR_CHECK_MS, herdrCheckGate, herdrReporter, herdrTokens } from './herdr'
-import { ago, cellWidth, clipLabel, cutForEllipsis } from './text'
+import { CLEARED_TOKENS, delegatesInHerdr, HERDR_CHECK_MS, herdrTokens } from './herdr'
+import { ago, cellWidth, clipLabel } from './text'
 import {
-  baseName,
   COMPARE_PAGE_FILE,
   demoAfterPress,
   demoReplied,
   demoSent,
   isPressConfirmed,
   openTarget,
-  withArrival,
-  withRewrite,
   withUnconfirmed,
 } from './presses'
 import type { DemoSent, Effect, PathProbe, RowPress } from './presses'
@@ -247,7 +234,6 @@ import {
   WAS_PREFIX,
   inboxCommandText,
   RUNNING_FRAME_MS,
-  RUNNING_PULSE_MS,
   runningMark,
   MARK_LEGEND,
   HELD_MARK,
@@ -262,7 +248,6 @@ import {
   type BannerView,
   keptDiscards,
   keptOpen,
-  listWaits,
   NEXT_BUILD_MARK,
   STATUS_TEXT_LINES,
   rowAfterClose,
@@ -271,11 +256,8 @@ import {
   versionLabel,
 } from './view'
 import type {
-  ActionEmphasis,
-  ActionIcon,
   DrawnEntry,
   Holds,
-  InboxView,
   ModLook,
   PlannedKey,
   StatusBranch,
@@ -285,7 +267,6 @@ import type {
   RowView,
   ResultMark,
   LegendEntry,
-  RowWait,
   SettledState,
   ShownTab,
   TabNaming,
@@ -306,36 +287,155 @@ import {
   recordRows,
 } from './arrivals'
 import { parseInline } from './inline'
-import type { Span } from './inline'
 import type { RowRecord } from './arrivals'
-import { BANNER_GAP_PT, BANNER_PAD_Y_PT, LOOK_GAP_PT, STATUS_ROW_PAD_PT, ROW_PAD_PT } from './layout'
+import { BANNER_GAP_PT, BANNER_PAD_Y_PT, LOOK_GAP_PT, ROW_PAD_PT } from './layout'
 import { cancelledMarkShape, markShape } from './marks'
-import {
-  DARK_BANNER_TINTS,
-  DARK_DALTONIZED_TONES,
-  DARK_TONES,
-  LIGHT_BANNER_TINTS,
-  LIGHT_DALTONIZED_TONES,
-  LIGHT_TONES,
-  toneColors,
-} from './tones'
-import type { BannerTone, ToneName } from './tones'
+import type { BannerTone } from './tones'
 import type { FoldProps } from './fold-client'
 import type { LinksProps } from './links-client'
 import type { RowProps } from './row-client'
-import { TAB_COUNT_GAP, TAB_HEIGHT, tabLines, type TabsProps } from './tabs-client'
-
-/** The tools Claude Code writes its own task list with. They are off unless the person turns them on. */
-const HOST_TASK_TOOLS: ReadonlySet<string> = new Set(['TaskCreate', 'TaskUpdate', 'TodoWrite'])
-
-/** The drawn conversation's session. `revision` counts its writes, so a write computed from an older one is retried. */
-type ModSession = Session & { revision: number }
-
-const NO_SESSION: ModSession = { ...emptySession(), revision: 0 }
-const PRESENT: Away = { lastActiveAt: 0, isAway: false, minute: 0 }
-
-/** The tab the pane shows, whether it shows the sample, and since when. */
-type Shown = { tab: ShownTab; isDemo: boolean; since: number }
+import { TAB_HEIGHT, tabLines, type TabsProps } from './tabs-client'
+import {
+  DESKTOP_ARM_GAP,
+  DESKTOP_CELL_PT,
+  DESKTOP_DASH_GAP_PT,
+  DESKTOP_DASH_PT,
+  DESKTOP_HAIR_CELLS,
+  DESKTOP_HAIR_LINES,
+  DESKTOP_LINE_PT,
+  DESKTOP_LINK_GAP_CELLS,
+  DESKTOP_MARK_CELLS,
+  DESKTOP_REPLY_ROWS,
+  DESKTOP_ROW_PAD,
+  DESKTOP_SIDE_CELLS,
+  DESKTOP_TAB_PAD,
+  DESKTOP_TREE_AT,
+  DESKTOP_WIDE_AT,
+  desktopTabSizes,
+  FRAME_INSET_PT,
+  FRAMED_TAB_LAYOUTS,
+  INLINE_RAIL_AT,
+  INLINE_TAB_GAPS,
+  RAIL_GUTTER,
+  REPLY_ROWS,
+  ROW_COLUMNS,
+  SELECTED_GAP_PT,
+  STATUS_PAD_Y,
+  TAB_PAD,
+  TERMINAL_SIDE_CELLS,
+  TREE_LINE_AT,
+  UNDO_CELLS,
+  UNDO_HEIGHT_PT,
+} from './pane-sizes'
+import { lookOf, paletteFor, type Tone } from './palettes'
+import {
+  chevronSvg,
+  markSvg,
+  MUTED_MARK,
+  RESULT_MARK_CELLS,
+  RUNNING_SVG_CELLS,
+  runningSvg,
+  toneSvg,
+  undoSvg,
+} from './desktop-svg'
+import {
+  desktopSpanLines,
+  LEADING_DOT,
+  lineCount,
+  SELECTION_BAR,
+  type TerminalSpan,
+  terminalSpanLines,
+  terminalTextLines,
+  type TreePos,
+  treeText,
+} from './terminal-text'
+import {
+  type ClosedLine,
+  FOLD_KINDS,
+  lastUndoEnd,
+  NO_CURSOR,
+  NO_SELECTION,
+  type PendingUndoScroll,
+  RESIZE_SCROLL_MS,
+  sameCursor,
+  selectedIndex,
+  settledLayoutId,
+  settledScrollKey,
+  type Showing,
+  type Shown,
+  tabRowIds,
+  tabWaits,
+  UNDO_REDRAW_STEPS,
+} from './pane-selection'
+import {
+  type Action,
+  ACTION_GLYPHS,
+  COPY_FAILURES,
+  fieldKey,
+  focusHintFor,
+  focusKeys,
+  followUpPresses,
+  type KeyAction,
+  openedField,
+  openFields,
+  paneHasKeys,
+  PR_KEYS,
+} from './pane-keys'
+import {
+  arrived,
+  forgetStored,
+  isUntracked,
+  messageText,
+  noteStored,
+  settleRewrite,
+  stored,
+  uncertainRecord,
+} from './mod-delivery'
+import {
+  askedCalls,
+  callKey,
+  childRefOf,
+  delegateWaits,
+  HOST_TASK_TOOLS,
+  isActivityWorthSaving,
+  isHerdrCheckDue,
+  MAX_PERSON_LINES,
+  permissionText,
+  reportToHerdr,
+  spawnedBy,
+  toolRecord,
+  TOOLS_REFUSED_TEXT,
+  workflowTasks,
+} from './mod-records'
+import {
+  AWAY_MS,
+  CAN_CATCH_UP,
+  type Changed,
+  conversation,
+  currentOwner,
+  cutOffUpdate,
+  DESKTOP_APP_ENTRYPOINTS,
+  drawnSession,
+  isCurrent,
+  isLockHeld,
+  LOCK_RETRY_WAITS_MS,
+  MAX_TRIES,
+  type ModSession,
+  NO_SESSION,
+  type Owner,
+  PR_POLL_MS,
+  PRESENT,
+  prunedSaves,
+  READ_FAILED_TEXT,
+  resultsOrder,
+  type SavedRecord,
+  savedRevisions,
+  savesBySession,
+  sessionKey,
+  track,
+  updating,
+  withoutRowActions,
+} from './mod-sessions'
 
 const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
 /**
@@ -343,8 +443,6 @@ const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
  * does not know the page still reads a row tab there.
  */
 const PAGE = atom({ plugin: 'inbox', key: 'page' } as const, null as PageTab | null)
-const NO_CURSOR: Cursor = { id: null, index: 0, openedAt: 0 }
-const NO_SELECTION: Record<Tab, Cursor> = { needsYou: NO_CURSOR, findings: NO_CURSOR, prs: NO_CURSOR }
 const SELECTION = atom({ plugin: 'inbox', key: 'selection' } as const, NO_SELECTION)
 /** The Status row whose keys work, by id, as `statusSelected` resolves it. */
 const STATUS_SELECTION = atom({ plugin: 'inbox', key: 'statusSelection' } as const, null as string | null)
@@ -366,17 +464,8 @@ const FOLD_HOVER = atom({ plugin: 'inbox', key: 'foldHover' } as const, null as 
 const OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
 /** Switching tabs or closing the pane closes Help. */
 const IS_HELP_SHOWN = atom({ plugin: 'inbox', key: 'isHelpShown' } as const, false)
-/** How many times the terminal pane redraws while Undo's fill drains, two for each cell of the fill. */
-const UNDO_REDRAW_STEPS = 24
-const RESIZE_SCROLL_MS = 100
-/** The mod can always read the whole conversation: from a fork of it, or from the transcript. */
-const CAN_CATCH_UP = true
 const DEMO = atom({ plugin: 'inbox', key: 'demo' } as const, null as DemoCopy | null)
 const DEMO_RECORDING = atom({ plugin: 'inbox', key: 'isDemoRecording' } as const, false)
-const READ_FAILED_TEXT = 'Could not read the inbox.'
-const TOOLS_REFUSED_TEXT =
-  "Claude cannot record or close items here. Your organization's settings block the inbox's tools."
-const PR_POLL_MS = 2 * 60_000
 
 const RECORD_TOOL = 'mcp__inbox__record'
 const CLOSE_TOOL = 'mcp__inbox__close'
@@ -386,353 +475,8 @@ const ORDER_TOOL = 'mcp__inbox__order_prs'
  * process, so a call from before it draws nothing under its row.
  */
 const PERSON_LINES = atom({ plugin: 'inbox', key: 'personLines' } as const, {} as Record<string, string>)
-const MAX_PERSON_LINES = 200
 
 const PANE = 'inbox'
-const REPLY_ROWS = 3
-const DESKTOP_REPLY_ROWS = 2
-const DESKTOP_WIDE_AT = 50
-/** `spans` cut to what desktop draws in `limit` lines `widthPt` wide, with an ellipsis when cut. */
-function desktopSpanLines(spans: TerminalSpan[], widthPt: number, limit: number): TerminalSpan[] {
-  const words = spans.map(s => ({ ...s, text: s.text.replace(/[^\S\u00a0]+/g, ' ') }))
-  const lines = desktopLines(words.map(s => s.text).join(''), widthPt)
-  if (lines.length <= limit) return words
-  const last = cutForEllipsis(lines[limit - 1]!, t => desktopTextPt(t) <= widthPt)
-  let room = [...lines.slice(0, limit - 1), last].join(' ').length
-  const kept: TerminalSpan[] = []
-  for (const s of words) {
-    if (room <= 0) break
-    kept.push({ ...s, text: s.text.slice(0, room) })
-    room -= s.text.length
-  }
-  const isMuted = kept.at(-1)?.isMuted
-
-  return [...kept, { text: '…', ...(isMuted ? { isMuted } : {}) }]
-}
-const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
-const DESKTOP_LINE_PT = 19
-// One column of `bodyColumns` in the Claude app pane, in points: 15.8 px at 2x.
-const DESKTOP_CELL_PT = 7.9
-const DESKTOP_LINK_GAP_CELLS = 1.5
-const UNDO_CELLS = 9
-const UNDO_HEIGHT_PT = 23
-/**
- * The app draws an Svg as an image, which runs SMIL animation, so the fill moves
- * without the pane redrawing. An image cannot read the app's theme, so it follows the color scheme instead.
- */
-function undoSvg(fraction: number, leftMs: number): string {
-  const width = UNDO_CELLS * DESKTOP_CELL_PT
-  const height = UNDO_HEIGHT_PT
-  const left = (width * fraction).toFixed(1)
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    `<style>.used{fill:rgba(255,255,255,0.6)}.left{fill:rgba(0,0,0,0.06)}.edge{fill:none;stroke:rgba(0,0,0,0.1)}` +
-    `text{fill:#0b0b0b}@media (prefers-color-scheme: dark){.used{fill:rgba(255,255,255,0.05)}` +
-    `.left{fill:rgba(255,255,255,0.1)}.edge{stroke:none}text{fill:#f0efec}}</style>` +
-    `<clipPath id="shape"><rect width="${width}" height="${height}" rx="6"/></clipPath>` +
-    `<g clip-path="url(#shape)"><rect class="used" width="${width}" height="${height}"/>` +
-    `<rect class="left" width="${left}" height="${height}">` +
-    `<animate attributeName="width" from="${left}" to="0" dur="${leftMs}ms" fill="freeze"/></rect></g>` +
-    `<rect class="edge" x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" rx="5.5"/>` +
-    `<text x="${width / 2}" y="${height / 2}" dominant-baseline="central" text-anchor="middle" ` +
-    `font-family="-apple-system, system-ui, sans-serif" font-size="14">↺ Undo</text></svg>`
-  )
-}
-/**
- * Text draws one color in both
- * appearances, which the mod cannot read, but an Svg follows the system's light or dark setting, so this takes the
- * shared tone for each, as the Codex tab does.
- */
-function toneSvg(tone: ToneName, mark: string): string {
-  const { light, dark } = toneColors(tone)
-  // A marker needs only 3:1, so an error mark takes a stronger red than text could.
-  const shape = markShape(mark, DESKTOP_LINE_PT / 2)
-  return tone === 'error'
-    ? markSvg(mark, shape, LIGHT_TONES.errorMark, DARK_TONES.errorMark)
-    : markSvg(mark, shape, light, dark)
-}
-/** A muted mark's color in an Svg, in the light and dark appearances. */
-const MUTED_MARK = { light: '#595959', dark: '#a8a8a8' }
-/** A mark in an Svg: its `shape` when it has one, else its text. */
-function markSvg(mark: string, shape: string | null, lightMark: string, darkMark: string): string {
-  const width = DESKTOP_CELL_PT
-  const height = DESKTOP_LINE_PT
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    `<style>text{font-family:-apple-system,system-ui,sans-serif;font-size:14px;fill:currentColor}` +
-    `.mark{color:${lightMark}}` +
-    `@media (prefers-color-scheme: dark){.mark{color:${darkMark}}}</style>` +
-    (shape === null
-      ? `<text class="mark" x="0" y="${height / 2}" dominant-baseline="central">${escapeXml(mark)}</text>`
-      : `<g class="mark">${shape}</g>`) +
-    `</svg>`
-  )
-}
-/** The pane's ● and ○ glyphs, as measured in the app: 11 pt across, centred 6.55 pt into the mark column. */
-const MARK_GLYPH_PT = 11
-const MARK_GLYPH_MID_PT = 6.55
-const RUNNING_SVG_CELLS = 2
-/** A result mark and the space after it, as wide as a running mark's Svg on desktop. */
-const RESULT_MARK_CELLS = RUNNING_SVG_CELLS
-/**
- * A running mark on desktop: a dot that fades and returns. SMIL runs it, since a pane redraw loop stops clicks there.
- * Each pane redraw starts the animation again, so it begins at the clock's point in the pulse.
- */
-function runningSvg(now: number): string {
-  const width = RUNNING_SVG_CELLS * DESKTOP_CELL_PT
-  const height = DESKTOP_LINE_PT
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    `<style>.mark{fill:${MUTED_MARK.light}}@media (prefers-color-scheme: dark){.mark{fill:${MUTED_MARK.dark}}}</style>` +
-    `<circle class="mark" cx="${MARK_GLYPH_MID_PT}" cy="${height / 2}" r="${MARK_GLYPH_PT / 2}">` +
-    `<animate attributeName="opacity" values="1;0.3;1" dur="${RUNNING_PULSE_MS}ms" begin="-${now % RUNNING_PULSE_MS}ms" repeatCount="indefinite"/>` +
-    `</circle></svg>`
-  )
-}
-function escapeXml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-/**
- * It is an Svg, the
- * only icon the pane can draw, sized to the fold line, so it sits in the mark column at the line's middle.
- */
-function chevronSvg(isUnfolded: boolean, isHover: boolean): string {
-  const width = FRAME_INSET_PT + DESKTOP_MARK_CELLS * DESKTOP_CELL_PT
-  const height = 2 * ROW_PAD_PT + DESKTOP_LINE_PT
-  const x = FRAME_INSET_PT - DESKTOP_CELL_PT + 0.5
-  const y = height / 2
-  const points = isUnfolded
-    ? `${x},${y - 2} ${x + 3.5},${y + 1.5} ${x + 7},${y - 2}`
-    : `${x + 1.5},${y - 3.5} ${x + 5},${y} ${x + 1.5},${y + 3.5}`
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    (isHover
-      ? `<style>polyline{stroke:#0b0b0b}@media (prefers-color-scheme: dark){polyline{stroke:#f0efec}}</style>`
-      : `<style>polyline{stroke:${DESKTOP_AGE}}</style>`) +
-    `<polyline points="${points}" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`
-  )
-}
-/**
- * A Box in the hooks tree counts padding in half lines, so it pads twice this.
- */
-const DESKTOP_ROW_PAD = ROW_PAD_PT / DESKTOP_LINE_PT
-const TREE_LINE_AT = 2
-const ROW_COLUMNS = {
-  tree: { lead: TREE_LINE_AT + 3, handleAt: TREE_LINE_AT + 3, textAt: TREE_LINE_AT + 6 },
-  desktop: { lead: 1, handleAt: 1, textAt: 3 },
-} as const
-const DESKTOP_MARK_CELLS = 1
-/** One point, across in cells and down in lines: desktop draws a tree line as a filled Box, since it has no per-side borders. */
-const DESKTOP_HAIR_CELLS = 1 / DESKTOP_CELL_PT
-const DESKTOP_HAIR_LINES = 1 / DESKTOP_LINE_PT
-/**
- * Where the Status tab's tree line runs on desktop, in cells from a row's mark column: under the middle of a subject's
- * mark, which the Claude app 3.6556 draws 6.4 pt into the column, where a cell is 8.8 pt.
- */
-const DESKTOP_TREE_AT = 0.73
-/** The room the tree's arm leaves before a child's mark on desktop, in cells. */
-const DESKTOP_ARM_GAP = 0.4
-/** A dash of a dashed line on desktop, and the room between two, in points. */
-const DESKTOP_DASH_PT = 3
-const DESKTOP_DASH_GAP_PT = 3
-const STATUS_PAD_Y = STATUS_ROW_PAD_PT / DESKTOP_LINE_PT
-// How far a row frame's transparent border insets its content, in points.
-const FRAME_INSET_PT = 13.2
-const DESKTOP_SIDE_CELLS = 5
-const TERMINAL_SIDE_CELLS = 5
-const SELECTED_GAP_PT = 3
-const LEADING_DOT = new RegExp(`^${DOT}`)
-const NEEDS_YOU = 'warning'
-type TreePos = 'mid' | 'last' | 'pass'
-const TREE_DEPTH = 200
-const SELECTION_BAR = Array<string>(TREE_DEPTH).fill('▌').join('\n')
-const treeTexts = new Map<string, string>()
-
-function treeText(pos: TreePos, lead: number): string {
-  const key = `${pos}:${lead}`
-  const cached = treeTexts.get(key)
-  if (cached !== undefined) return cached
-  const text = [
-    ...Array<string>(lead).fill('│'),
-    pos === 'last' ? '└─' : pos === 'mid' ? '├─' : '│',
-    ...Array<string>(TREE_DEPTH).fill(pos === 'last' ? ' ' : '│'),
-  ].join('\n')
-  treeTexts.set(key, text)
-
-  return text
-}
-const DONE = 'success'
-const FINDINGS = 'autoAccept'
-const PRS = 'planMode'
-
-type Tone = Tab | 'issue' | 'done' | 'error'
-/**
- * The pane's colors in one Claude Code theme. Each text color meets WCAG AA,
- * 4.5:1, on every background the pane draws it on, and each marker meets 3:1.
- */
-type Palette = {
-  body?: string
-  card?: string
-  tab?: string
-  raised: string
-  raisedText?: string
-  selection?: string
-  muted: string
-  age: string
-  key: string
-  line: string
-  selectionLine?: string
-  divider: string
-  tone: Partial<Record<Tone, string>>
-  mark: Record<Tone, string>
-  /** A banner's border, and its fill where the palette can tint one. */
-  banner: Record<BannerTone, { line: string; fill?: string }>
-}
-
-/** Theme keys have no tint of each tone, so banners in these palettes draw their border alone. */
-const THEME_KEY_BANNERS: Palette['banner'] = {
-  error: { line: 'error' },
-  warning: { line: NEEDS_YOU },
-  notice: { line: 'inactive' },
-}
-const DARK_PALETTE: Palette = {
-  card: '#373737',
-  tab: '#373737',
-  raised: '#4c4c4c',
-  selection: '#3b4654',
-  muted: '#bdbdbd',
-  age: '#a3a3a3',
-  key: DARK_TONES.key,
-  line: '#505050',
-  selectionLine: '#5a6f88',
-  divider: '#444444',
-  tone: DARK_TONES,
-  mark: { ...DARK_TONES, error: DARK_TONES.errorMark },
-  banner: DARK_BANNER_TINTS,
-}
-const LIGHT_PALETTE: Palette = {
-  card: '#e6e6e6',
-  tab: '#e6e6e6',
-  raised: '#d0d0d0',
-  selection: '#b4d5ff',
-  muted: '#595959',
-  age: '#666666',
-  key: LIGHT_TONES.key,
-  line: '#afafaf',
-  selectionLine: '#7490b8',
-  divider: '#c8c8c8',
-  tone: LIGHT_TONES,
-  mark: LIGHT_TONES,
-  banner: LIGHT_BANNER_TINTS,
-}
-const DARK_ANSI_PALETTE: Palette = {
-  body: 'inverseText',
-  raised: 'inactive',
-  raisedText: 'inverseText',
-  muted: 'inactive',
-  age: 'inactive',
-  key: 'suggestion',
-  line: 'userMessageBackground',
-  divider: 'userMessageBackground',
-  tone: {},
-  mark: { needsYou: NEEDS_YOU, issue: NEEDS_YOU, findings: FINDINGS, prs: PRS, done: DONE, error: 'error' },
-  banner: THEME_KEY_BANNERS,
-}
-const LIGHT_ANSI_PALETTE: Palette = {
-  body: 'userMessageBackgroundHover',
-  raised: 'text',
-  raisedText: 'userMessageBackgroundHover',
-  muted: 'inactive',
-  age: 'inactive',
-  key: 'suggestion',
-  line: 'userMessageBackground',
-  divider: 'userMessageBackground',
-  tone: {},
-  mark: { needsYou: 'error', issue: 'error', findings: FINDINGS, prs: 'suggestion', done: DONE, error: 'error' },
-  banner: THEME_KEY_BANNERS,
-}
-const PALETTES: Record<string, Palette> = {
-  dark: DARK_PALETTE,
-  'dark-daltonized': {
-    ...DARK_PALETTE,
-    key: DARK_DALTONIZED_TONES.key,
-    tone: DARK_DALTONIZED_TONES,
-    mark: { ...DARK_DALTONIZED_TONES, error: DARK_DALTONIZED_TONES.errorMark },
-  },
-  light: LIGHT_PALETTE,
-  'light-daltonized': {
-    ...LIGHT_PALETTE,
-    card: '#dcdcdc',
-    tab: '#dcdcdc',
-    raised: '#c8c8c8',
-    muted: '#545454',
-    age: '#5e5e5e',
-    key: LIGHT_DALTONIZED_TONES.key,
-    divider: '#c0c0c0',
-    tone: LIGHT_DALTONIZED_TONES,
-    mark: LIGHT_DALTONIZED_TONES,
-  },
-  'dark-ansi': DARK_ANSI_PALETTE,
-  'light-ansi': LIGHT_ANSI_PALETTE,
-}
-const THEME_KEY_PALETTE: Palette = {
-  tab: 'userMessageBackground',
-  raised: 'subtle',
-  raisedText: 'text',
-  muted: 'inactive',
-  age: 'inactive',
-  key: 'remember',
-  line: 'subtle',
-  divider: 'subtle',
-  tone: {},
-  mark: { needsYou: NEEDS_YOU, issue: NEEDS_YOU, findings: FINDINGS, prs: PRS, done: DONE, error: 'error' },
-  banner: THEME_KEY_BANNERS,
-}
-// Theme keys resolve to the app's colors, so the desktop pane draws text in theme keys.
-// The app refuses an hsl() alpha or color-mix() color.
-const DESKTOP_AGE = '#85837e'
-const DESKTOP_PALETTE: Palette = {
-  raised: 'rgba(128, 120, 105, 0.14)',
-  raisedText: 'text',
-  selection: 'rgba(128, 120, 105, 0.14)',
-  muted: 'inactive',
-  age: DESKTOP_AGE,
-  key: 'remember',
-  line: 'subtle',
-  divider: 'rgba(128, 128, 128, 0.25)',
-  tone: { error: 'error' },
-  mark: { needsYou: NEEDS_YOU, issue: NEEDS_YOU, findings: FINDINGS, prs: 'suggestion', done: DONE, error: 'error' },
-  banner: {
-    error: { line: 'rgba(214, 69, 80, 0.32)', fill: 'rgba(214, 69, 80, 0.1)' },
-    warning: { line: 'rgba(212, 160, 23, 0.36)', fill: 'rgba(212, 160, 23, 0.1)' },
-    notice: { line: 'rgba(128, 120, 105, 0.28)', fill: 'rgba(128, 120, 105, 0.1)' },
-  },
-}
-/**
- * Mobile and VS Code get the terminal look, which nobody has checked
- * there: docs/reference/claude-desktop-app.md records what is known about those surfaces.
- */
-function lookOf(surface: RenderSurface): ModLook {
-  return surface === 'desktop' ? 'desktop' : 'terminal'
-}
-function paletteFor(theme: string, look: ModLook): Palette {
-  return look === 'desktop' ? DESKTOP_PALETTE : (PALETTES[theme] ?? THEME_KEY_PALETTE)
-}
-const TAB_PAD = '  '
-/** The docked terminal tabs' padding inside each tab, gap between tabs and right margin, from roomiest to tightest. */
-const FRAMED_TAB_LAYOUTS = [
-  { pad: TAB_PAD, gap: 1, right: 1 },
-  { pad: ' ', gap: 1, right: 1 },
-  { pad: ' ', gap: 0, right: 1 },
-  { pad: ' ', gap: 0, right: 0 },
-  { pad: '', gap: 1, right: 0 },
-]
-/** The inline tab row's gaps between tabs, from roomiest to tightest. */
-const INLINE_TAB_GAPS = [3, 2, 1]
-const INLINE_RAIL_AT = 80
-const RAIL_GUTTER = 2
-const FOLD_KINDS: FoldKind[] = [...NEEDS_YOU_GROUPS.map(g => g.kind), 'issue', 'opportunity']
-const AWAY_MS = 15 * 60_000
 
 /** The conversation whose first prompt has had the Status tab's headline and status carried beside it. */
 let carriedFor: string | null = null
@@ -750,17 +494,6 @@ let turnBox: string | null = null
 let isDialogDismissed = false
 /** True once a classic.PermissionRequest hook has run, which makes the tool.check fallback unnecessary. */
 let hasPermissionRequestHook = false
-/**
- * The calls tool.check saw that may still wait on a dialog: tool_use_id to `callKey`, the key their dialog has. A
- * call leaves when its verdict is not an ask, when it starts running and when it ends.
- */
-const askedCalls = new Map<string, string>()
-/** Each agent this session spawned inside a child: its id to the Workflow call or the agent that spawned it. */
-const spawnedBy = new Map<string, string>()
-/** Each Workflow call's tool_use_id to the task id its child is kept under. */
-const workflowTasks = new Map<string, string>()
-/** Each background `herdr agent wait`'s task id and tool_use_id to the delegate it waits on. */
-const delegateWaits = new Map<string, string>()
 let fetchingPrs: Promise<void> = Promise.resolve()
 let nextFetchFindsBranchPr: boolean | null = null
 let prFetchEndedAt: number | undefined
@@ -769,15 +502,6 @@ let isInlinePane = false
 let isInlineTerminalPane = false
 let terminalInlineSize: string | null = null
 let inlineSize: string | null = null
-type PendingUndoScroll = {
-  key: string
-  tab: Tab
-  cursor: Cursor
-  block: UiScrollBlock
-  expiresAt: number
-  sessionId: string
-  revealUndo: boolean
-}
 let pendingUndoScroll: PendingUndoScroll | null = null
 let undoScrollRevision = 0
 function cancelUndoScroll(): number {
@@ -791,9 +515,6 @@ function suspendUndoReveal(): number {
 let loadRevision = 0
 let applyingConversation: Promise<void> = Promise.resolve()
 let queue: Promise<void> = Promise.resolve()
-/** The conversations whose Status calls run one after another. They do not hold `queue`, so a ledger call never waits for one. */
-const resultsOrder = orderedKeys()
-const reportToHerdr = herdrReporter()
 let shellCommand: string | null = null
 let toolsRefused = false
 let isReadingAgain = false
@@ -807,37 +528,13 @@ let statusRecordsFolder: string | null = null
  */
 let focusedKey: string | null = null
 let focusHint: string | null = null
-function focusHintFor(element: string): string | null {
-  const id = element.split('-')[1]
-
-  return /^(answer|done|dismiss|drop)-/.test(element)
-    ? `undo-${id}`
-    : element.startsWith('typekey-')
-      ? `type-${id}`
-      : null
-}
-const followUpPresses = new Map<string, (press: UiPressArgument) => void>()
 let paneLook: ModLook = 'terminal'
-
-function focusKeys(node: unknown, keys = new Set<string>()): Set<string> {
-  if (Array.isArray(node)) for (const child of node) focusKeys(child, keys)
-  else if (node && typeof node === 'object') {
-    const el = node as { type?: unknown; props?: { key?: unknown }; children?: unknown }
-    if ((el.type === 'Button' || el.type === 'Input') && typeof el.props?.key === 'string') keys.add(el.props.key)
-    focusKeys(el.children, keys)
-  }
-
-  return keys
-}
 
 let resuming: { is: 'sending' } | { is: 'refused'; why: string } | null = null
 let stopGeneration = 0
-/** Each row's latest reply field: its key, and the draft text it opened with. */
-const openFields = new Map<string, { key: string; seed: string }>()
 let paneClosesOnEscape = true
 /** The row whose field opened while the keys stayed elsewhere, as over text in the prompt. */
 let fieldWithoutKeys: string | null = null
-const paneHasKeys = new Map<RenderSurface, boolean>()
 
 function resetTurn() {
   sentBack = []
@@ -871,10 +568,6 @@ async function noteActivity($: EngineInterface, line: string) {
       inOrder: fn => resultsOrder.run(owner.id, fn),
       records: recordsOf($, owner),
     })
-}
-
-function messageText(message: SessionAppendMessage): string {
-  return message.content.map(b => (b.type === 'text' ? b.text : '')).join('')
 }
 
 async function syncTheme($: EngineInterface) {
@@ -965,14 +658,6 @@ async function resume($: EngineInterface) {
   }
 }
 
-function callKey(tool: string, input: Record<string, unknown>): string {
-  const main = ['command', 'file_path', 'notebook_path', 'url', 'pattern', 'query', 'skill', 'description'].find(
-    k => typeof input[k] === 'string',
-  )
-
-  return main ? `${tool} ${main}=${String(input[main])}` : `${tool} ${JSON.stringify(input)}`
-}
-
 async function openDialog($: EngineInterface, dialog: Dialog) {
   await update($, DIALOGS, d => [...d.filter(x => x.key !== dialog.key), dialog])
   void publishStatus($)
@@ -989,43 +674,6 @@ async function clearingDialog<T>($: EngineInterface, key: string, run: () => Pro
     return await run()
   } finally {
     await closeDialogs($, key)
-  }
-}
-
-function permissionText(tool: string, input: Record<string, unknown>): string {
-  const text = (key: string) => (typeof input[key] === 'string' ? (input[key] as string) : '')
-  const file = (key: string) => baseName(text(key))
-  switch (tool) {
-    case 'Bash': {
-      const said = text('description') || text('command')
-      return clipLabel(/^[A-Z][a-z]/.test(said) ? said.charAt(0).toLowerCase() + said.slice(1) : said, 60)
-    }
-    case 'Edit':
-    case 'MultiEdit':
-    case 'Write':
-      return `edit ${file('file_path')}`
-    case 'NotebookEdit':
-      return `edit ${file('notebook_path')}`
-    case 'Read':
-      return `read ${file('file_path')}`
-    case 'Glob':
-    case 'Grep':
-      return `search ${text('path') ? `${file('path')} ` : ''}for ${clipLabel(text('pattern'), 30)}`
-    case 'WebFetch':
-      return `fetch ${
-        text('url')
-          .replace(/^https?:\/\//, '')
-          .split('/')[0]
-      }`
-    case 'WebSearch':
-      return `search the web for ${clipLabel(text('query'), 30)}`
-    case 'Skill':
-      return `use the ${text('skill')} skill`
-    case 'Agent':
-    case 'Task':
-      return text('description') ? `run an agent: ${text('description')}` : 'run an agent'
-    default:
-      return tool.startsWith('mcp__') ? tool.slice(5).replace(/__/g, ' ') : tool
   }
 }
 
@@ -1056,19 +704,6 @@ const OLD_UNTRACKED_SENT = atom(
   { plugin: 'inbox', key: 'untrackedSent' } as const,
   [] as { sessionId: string; text: string }[],
 )
-
-/** The conversation the session runs. /clear, /resume and /branch move it to another id, and each move is a new generation. */
-const conversation = { id: '', root: '', generation: 0 }
-
-type Owner = { id: string; generation: number }
-
-function currentOwner(): Owner {
-  return { id: conversation.id, generation: conversation.generation }
-}
-
-function isCurrent(owner: Owner): boolean {
-  return owner.id === conversation.id && owner.generation === conversation.generation
-}
 
 /**
  * The session as an older build left it in its separate fields, for a hot reload into this build. A sent message
@@ -1113,24 +748,6 @@ async function fromOldFields($: EngineInterface): Promise<Session> {
   })
 }
 
-/** A sent message no record can be matched to. Its text arriving reads unconfirmed. */
-function uncertainRecord(text: string): Session['sent'][number] {
-  return {
-    text,
-    press: null,
-    at: 0,
-    row: null,
-    queuedId: null,
-    pressedAt: null,
-    deliveryId: null,
-    phase: 'uncertain',
-  }
-}
-
-function isUntracked(record: Session['sent'][number]): boolean {
-  return record.phase === 'uncertain' && record.deliveryId === null
-}
-
 /**
  * Brings the drawn session to the current shape. A row's queued message that has no sent record lost it to an
  * older build, so its record becomes uncertain and the row reads unconfirmed.
@@ -1172,11 +789,6 @@ async function replaceDrawn($: EngineInterface, change: (s: ModSession) => Sessi
 
   return update($, SESSION, s => ({ ...change(s), revision: s.revision + 1 }))
 }
-
-const MAX_TRIES = 20
-
-/** A session change that landed: the session it read and the one it wrote, and whether that session is the drawn one. */
-type Changed = { before: Session; after: Session; isDrawn: boolean }
 
 /**
  * Changes the session of `owner`. While its conversation is drawn, the change runs on the drawn session and is
@@ -1258,20 +870,6 @@ async function changeSaved(
   return changed
 }
 
-type SavedRecord = SavedSession & { savedAt: number }
-
-const sessionKey = (id: string) => `s:${id}`
-
-/**
- * What the engine's store throws when another process holds the lock on its file. Only `set` and `delete` take the
- * lock, and the engine retries it for under a second before throwing.
- */
-const LOCK_HELD = 'Lock file is already being held'
-/** The waits before each retry of a store write that met a held lock, about two seconds in all. */
-const LOCK_RETRY_WAITS_MS = [100, 200, 300, 500, 900]
-
-const isLockHeld = (error: unknown) => error instanceof Error && error.message.includes(LOCK_HELD)
-
 /** Runs `write`, and again after each wait in `LOCK_RETRY_WAITS_MS` while the store's lock is held. */
 async function whileLockHeld<T>($: EngineInterface, write: () => Promise<T>): Promise<T> {
   for (const ms of LOCK_RETRY_WAITS_MS) {
@@ -1294,19 +892,6 @@ function logSaveFailure($: EngineInterface, id: string, error: unknown) {
 let saving: Promise<void> = Promise.resolve()
 /** How many changes went to a saved session that is not drawn, so a load can tell its read is out of date. */
 let savedWrites = 0
-
-const savesBySession = new Map<string, Promise<void>>()
-const prunedSaves = new Set<string>()
-const savedRevisions = new Map<string, number>()
-
-function track(id: string, write: Promise<void>) {
-  savesBySession.set(id, write)
-  void write
-    .finally(() => {
-      if (savesBySession.get(id) === write) savesBySession.delete(id)
-    })
-    .catch(() => undefined)
-}
 
 /**
  * Saves a conversation's session, once every earlier save has landed. A save older than one already resolved is
@@ -1373,108 +958,6 @@ async function readSettled($: EngineInterface, id: string) {
   return readSaved($, id)
 }
 
-/**
- * The prompt rows of the mod's own messages Claude Code has stored, by text: how many rows were stored before
- * each, and the sent record each matched. A rewritten message is confirmed from these, since its row may be stored
- * before `$.prompt.submit` returns.
- */
-const stored = {
-  count: 0,
-  at: new Map<string, number>(),
-  by: new Map<string, { count: number; deliveryId: string | null }>(),
-}
-
-function forgetStored() {
-  stored.at.clear()
-  stored.by.clear()
-}
-
-/** Records that Claude Code stored a prompt row of the mod's own. Returns the row's count, for `arrived`. */
-function noteStored(text: string): number {
-  const count = ++stored.count
-  stored.at.set(text, count)
-  stored.by.set(text, { count, deliveryId: null })
-
-  return count
-}
-
-/**
- * Matches the stored prompt row `count` to the message a press sent. A message matches while its send is still
- * running too, since Claude Code stores the row before `$.prompt.submit` returns. When an older build's untracked
- * send has the same text, the row confirms nothing, so it reads unconfirmed.
- */
-function arrived(s: Session, text: string, count: number): { state: Session; sentBy: SentBy } {
-  const tracked = s.sent.filter(x => !isUntracked(x))
-  const index = tracked.findIndex(x => x.text === text)
-  const match = tracked[index]
-  if (!match || s.sent.some(x => isUntracked(x) && x.text === text)) {
-    return {
-      state: {
-        ...s,
-        sent: match ? s.sent.filter(x => x !== match) : s.sent,
-        lastActions: withUnconfirmed(s.lastActions, text),
-      },
-      sentBy: { press: null },
-    }
-  }
-  if (stored.by.get(text)?.count === count) stored.by.set(text, { count, deliveryId: match.deliveryId })
-  const lastActions = tracked
-    .slice(index + 1)
-    .filter(x => x.text === text && x.row !== null)
-    .reduce(
-      (actions, laterSend) => withUnconfirmed(actions, text, laterSend.pressedAt ?? undefined, laterSend.deliveryId),
-      match.row === null
-        ? s.lastActions
-        : withArrival(s.lastActions, text, match.pressedAt ?? undefined, match.deliveryId),
-    )
-
-  return { state: { ...s, sent: s.sent.filter(x => x !== match), lastActions }, sentBy: { press: match.press } }
-}
-
-/**
- * Settles a message another plugin rewrote whose row Claude Code stored before `$.prompt.submit` returned. The row
- * confirms the press only when no other record or untracked send shares the new text and the row matched no record.
- * Returns how the send went, or null when the row is not stored yet and the shared code settles it.
- */
-function settleRewrite(
-  s: Session,
-  deliveryId: string,
-  text: string,
-  entered: string,
-  since: number,
-): { state: Session; outcome: SendOutcome } | null {
-  if ((stored.at.get(entered) ?? 0) <= since) return null
-  const record = s.sent.find(x => x.deliveryId === deliveryId)
-  const rows = Object.entries(s.lastActions).filter(
-    ([_id, a]) => a.delivery && 'id' in a.delivery && a.delivery.id === deliveryId,
-  )
-  const moved = rows.reduce(
-    (actions, [id, a]) => withRewrite(actions, [id], a.at, text, entered, deliveryId),
-    s.lastActions,
-  )
-  const isConfirmed =
-    !s.sent.some(x => x.deliveryId !== deliveryId && x.text === entered) && stored.by.get(entered)?.deliveryId === null
-  if (isConfirmed)
-    return {
-      state: {
-        ...s,
-        sent: s.sent.filter(x => x.deliveryId !== deliveryId),
-        lastActions: withArrival(moved, entered, undefined, deliveryId),
-        turn: { ...s.turn, press: s.turn.press ?? record?.press ?? null },
-      },
-      outcome: { state: 'accepted', queuedId: null },
-    }
-
-  return {
-    state: {
-      ...s,
-      sent: s.sent.map(x => (x.deliveryId === deliveryId ? { ...x, text: entered } : x)),
-      lastActions: withUnconfirmed(moved, entered, undefined, deliveryId),
-    },
-    outcome: { state: 'unconfirmed', reason: 'Another plugin changed the message' },
-  }
-}
-
 const MODEL = 'sonnet'
 
 type ModelResult = Awaited<ReturnType<EngineInterface['model']['fork']>>
@@ -1531,12 +1014,6 @@ async function recordsFolder($: EngineInterface): Promise<string | null> {
 
 function statusRecords($: EngineInterface, folder: string, owner: Owner): StatusRecords {
   return { host: 'claude-code', folder, session: owner.id, files: recordFiles($) }
-}
-
-const COPY_FAILURES: Record<Extract<UiCopyResult, { isCopied: false }>['reason'], string> = {
-  'no-surface': 'no app is attached',
-  'no-clipboard': 'the clipboard did not take it',
-  refused: 'another plugin refused it',
 }
 
 function pathProbe($: EngineInterface): PathProbe {
@@ -1684,9 +1161,6 @@ function sessionHost(
   }
 }
 
-/** The conversations whose per-reply update runs now. */
-const updating = exclusiveKeys()
-
 /** Changes the ledger of `owner`'s session. */
 function commitLedger(
   $: EngineInterface,
@@ -1717,31 +1191,6 @@ async function commit(
   void followNewRows($).catch(() => undefined)
 
   return after
-}
-
-/**
- * The session a look draws: `session`, with the ledger, PR views, presses and turn counts of the sample while it shows,
- * and the sample's place and presence.
- */
-function drawnSession(
-  session: Session,
-  drawn: Pick<DemoCopy, 'ledger' | 'stop' | 'prViews' | 'lastActions' | 'turns'>,
-  isDemo: boolean,
-  now: number,
-): Session {
-  const { ledger, stop, prViews, lastActions, turns } = drawn
-  const s = { ...session, ledger, stop, prViews, lastActions, presence: { ...session.presence, ...turns } }
-
-  return isDemo ? withDemoPresence(s, now) : s
-}
-
-/** When the last Undo the view offers ends, or null when it offers none. */
-function lastUndoEnd(view: SessionView): number | null {
-  const ends = [...allRows(view).map(r => r.state), ...view.prs.drawn.map(d => d.state)].flatMap(state =>
-    state.is === 'settled' && state.canUndo ? [state.at + SETTLED_MS] : [],
-  )
-
-  return ends.length > 0 ? Math.max(...ends) : null
 }
 
 let undoRedrawsUntil = -Infinity
@@ -2047,8 +1496,6 @@ async function syncLook($: EngineInterface, isOpen?: boolean) {
   await commit($, currentOwner(), s => withLook(s, isShown, now)).catch(() => undefined)
   followDelegates($, isShown)
 }
-
-const isHerdrCheckDue = herdrCheckGate()
 let herdrCheckTimer: Timer | null = null
 
 /**
@@ -2081,12 +1528,6 @@ async function checkDelegates($: EngineInterface) {
   const at = await $.clock.now()
   await commit($, owner, s => statusChanged(s, o => delegatesSettled(o, states, at)))
 }
-
-/**
- * What a caller knows about the showing: `isOpen` when it knows whether the pane shows, and `since` when a showing
- * starts then even on the same tab, as when another conversation loads.
- */
-type Showing = { isOpen?: boolean; since?: number }
 
 /**
  * Starts a showing when the pane opens or shows another tab or the sample, and ends it when the pane closes. A row that
@@ -2177,19 +1618,6 @@ async function sendTyped($: EngineInterface, id: string, text: string, surface: 
   else await focusField($, id)
 }
 
-/**
- * The engine keeps a field's typed text under its key after the field leaves the drawing. Enter
- * empties it and a Button press does not. So each draft gets its own key, and the field a new draft
- * opens starts empty.
- */
-function openedField(id: string, draft: Draft | undefined) {
-  return { key: `type-${id}-${draft?.since ?? 0}`, seed: draft?.text ?? '' }
-}
-
-function fieldKey(id: string) {
-  return openFields.get(id)?.key ?? `type-${id}`
-}
-
 async function startTyping($: EngineInterface, id: string) {
   const now = await $.clock.now()
   const drafts = await update($, DRAFTS, d => (d[id] ? d : { ...d, [id]: { text: '', since: now } }))
@@ -2269,116 +1697,6 @@ async function findPrs($: EngineInterface) {
   void fetchPrs($, true)
 }
 
-function lineCount(text: string, width: number): number {
-  return wrapped(text, width).length
-}
-
-type TerminalSpan = Span & { isLinkAddress?: true; isMuted?: true; isNeedsYou?: true; isDone?: true; isUnbroken?: true }
-
-function terminalTextLines(text: string, width: number, limit = Infinity): TerminalSpan[][] {
-  if (!text) return []
-  const spans: TerminalSpan[] = parseInline(text).flatMap(span =>
-    span.link ? [span, { text: ` ${span.link}`, isLinkAddress: true as const }] : [span],
-  )
-
-  return terminalSpanLines(spans, width, limit)
-}
-
-/** `spans` wrapped at word breaks to `width` cells, cut after `limit` lines with an ellipsis. */
-function terminalSpanLines(spans: TerminalSpan[], width: number, limit = Infinity): TerminalSpan[][] {
-  if (spans.every(s => !s.text) || limit < 1) return []
-  const size = Math.max(1, width)
-  type Character = { text: string; span: TerminalSpan }
-  const lines: Character[][] = []
-  let line: Character[] = []
-  let used = 0
-  let word: Character[] = []
-  let spaces: Character[] = []
-  let endsWithNewline = false
-  const columns = (characters: Character[]) => characters.reduce((n, c) => n + c.text.length, 0)
-  const nextLine = () => {
-    lines.push(line)
-    line = []
-    used = 0
-  }
-  const append = (characters: Character[]) => {
-    for (const character of characters) {
-      if (line.length > 0 && used + character.text.length > size) nextLine()
-      line.push(character)
-      used += character.text.length
-    }
-  }
-  const appendWord = () => {
-    if (word.length === 0) return
-    if (line.length > 0 && used + columns(spaces) + columns(word) > size) {
-      nextLine()
-      spaces = []
-    }
-    append(spaces)
-    append(word)
-    spaces = []
-    word = []
-  }
-  for (const span of spans) {
-    for (const character of span.text) {
-      endsWithNewline = character === '\n'
-      if (endsWithNewline) {
-        appendWord()
-        nextLine()
-        spaces = []
-      } else if (/\s/.test(character) && !span.isUnbroken) {
-        appendWord()
-        spaces.push({ text: character, span })
-      } else word.push({ text: character, span })
-    }
-  }
-  appendWord()
-  if (line.length > 0 || endsWithNewline) nextLine()
-  const kept = lines.slice(0, limit)
-  if (kept.length < lines.length) {
-    const last = kept.at(-1)!
-    const shown = cutForEllipsis(last.map(c => c.text).join(''), t => t.length <= size)
-    while (columns(last) > shown.length) last.pop()
-    const isMuted = last.at(-1)?.span.isMuted
-    last.push({ text: '…', span: { text: '…', ...(isMuted ? { isMuted } : {}) } })
-  }
-  return kept.map(characters => {
-    const runs: TerminalSpan[] = []
-    let previous: TerminalSpan | undefined
-    for (const character of characters) {
-      if (previous === character.span) runs.at(-1)!.text += character.text
-      else {
-        runs.push({ ...character.span, text: character.text })
-        previous = character.span
-      }
-    }
-    return runs
-  })
-}
-
-function wrapped(text: string, width: number): string[] {
-  const size = Math.max(1, width)
-  const lines: string[] = []
-  let line = ''
-  for (const word of text.split(/\s+/).filter(Boolean)) {
-    const longer = line ? `${line} ${word}` : word
-    if (longer.length <= size) {
-      line = longer
-      continue
-    }
-    if (line) lines.push(line)
-    let rest = word
-    while (rest.length > size) {
-      lines.push(rest.slice(0, size))
-      rest = rest.slice(size)
-    }
-    line = rest
-  }
-  if (line) lines.push(line)
-
-  return lines
-}
-
 async function select($: EngineInterface, tab: Tab, id: string, index: number, scroll = true) {
   if (scroll) {
     if (pendingUndoScroll && pendingUndoScroll.tab === tab) suspendUndoReveal()
@@ -2416,41 +1734,6 @@ async function selectStatusRow($: EngineInterface, id: string) {
 
 async function scrollToRow($: EngineInterface, id: string) {
   await scrollToKey($, `view-${id}`, isInlinePane ? 'start' : 'nearest')
-}
-
-function sameCursor(a: Cursor, b: Cursor): boolean {
-  return a.id === b.id && a.index === b.index && a.openedAt === b.openedAt
-}
-
-function settledLayoutId(
-  tab: Tab,
-  view: InboxView,
-  prs: DrawnPr[],
-  lastActions: Record<string, LastAction>,
-  notes: Record<string, RowNote>,
-  now: number,
-  size: string | null,
-): string {
-  const rows =
-    tab === 'needsYou'
-      ? [...view.needsYou.questions, ...view.needsYou.tasks]
-      : tab === 'findings'
-        ? view.findings.rows
-        : []
-  return JSON.stringify([
-    size,
-    ...rows.map(r => r.id),
-    ...rows.flatMap(r => (r.state.is === 'settled' ? [[r.id, r.state.at]] : [])),
-    ...(tab === 'prs' ? prs.map(x => [x.pr.ref, x.state.is === 'settled' ? x.state.at : null]) : []),
-    ...Object.entries(lastActions).flatMap(([id, action]) =>
-      action.result ? [[id, action.result.at, now - action.result.at < SETTLED_MS]] : [],
-    ),
-    ...Object.entries(notes).map(([id, note]) => [id, note.at, now - note.at < SETTLED_MS]),
-  ])
-}
-
-function settledScrollKey(key: string, layout: string): string {
-  return `scroll-${key}-${layout}`
 }
 
 async function revealPendingUndo($: EngineInterface): Promise<boolean> {
@@ -2572,16 +1855,6 @@ async function setFoldHover($: EngineInterface, kind: string, isHover: boolean) 
   await update($, FOLD_HOVER, hovered => (isHover ? fold : hovered === fold ? null : hovered))
 }
 
-function selectedIndex(ids: string[], cursor: Cursor, top: string | null, isSettled: (id: string) => boolean): number {
-  if (cursor.id !== null) {
-    const at = ids.indexOf(cursor.id)
-    if (at >= 0 || isSettled(cursor.id)) return at
-    return ids.length === 0 ? -1 : Math.min(cursor.index, ids.length - 1)
-  }
-
-  return cursor.openedAt === 0 && top !== null ? ids.indexOf(top) : -1
-}
-
 async function openLeftRows($: EngineInterface) {
   const { view, now } = await drawnState($)
   const prViews = openPrViews(view.prs.drawn)
@@ -2603,10 +1876,6 @@ async function openLeftRows($: EngineInterface) {
   })
   // The opened row's buttons draw dim while guarded; a fresh value redraws them once the guard ends.
   if (isMoved) later($, PRESS_GUARD_MS, () => update($, SELECTION, s => ({ ...s })))
-}
-
-function tabWaits(tab: Tab, view: InboxView, prViews: PrView[], lastActions: Record<string, LastAction>): RowWait[] {
-  return tab === 'prs' ? prRowWaits(prViews, lastActions) : listWaits(view)[tab]
 }
 
 async function unlessGuarded($: EngineInterface, rowId: string, press: UiPressArgument, onPress: Action['onPress']) {
@@ -2635,16 +1904,6 @@ async function jumpTo($: EngineInterface, tab: Tab) {
   await writeRowTab($, tab)
   await update($, SELECTION, s => ({ ...s, [tab]: NO_CURSOR }))
   await scrollToOpenRow($, tab)
-}
-
-function tabRowIds(view: InboxView, prViews: PrView[]): Record<Tab, string[]> {
-  const listed = drawnLists(
-    view,
-    () => false,
-    r => r.id,
-  ).byTab
-
-  return { ...listed, prs: prRowWaits(prViews, {}).map(r => r.id) }
 }
 
 /**
@@ -2993,42 +2252,6 @@ async function runDemoPress(
     later($, SETTLED_MS, () => update($, DEMO, d => d && { ...d, ...(reply ? demoReplied(d, reply) : {}) }))
 }
 
-type Action = {
-  key: string
-  label: string
-  variant?: 'primary'
-  emphasis?: ActionEmphasis
-  icon?: string
-  kind: PressKind
-  /**
-   * A hot reload keeps work an `onPress`
-   * returns and drops work it leaves running, so a returned press's result still lands.
-   */
-  onPress: (press: UiPressArgument) => void | Promise<void>
-}
-
-type KeyAction = Action & { hotkey?: string; isOut?: boolean }
-
-const ACTION_GLYPHS: Partial<Record<ActionIcon, string>> = { run: '▶', copy: '⧉', open: '↗', retry: '↻' }
-
-const PR_KEYS: Record<PrPress['action'], string> = {
-  'thread-address': 'address',
-  'thread-draft': 'draft',
-  'thread-open': 'open',
-  'thread-discuss': 'discuss',
-  'pr-conflicts': 'resolve',
-  'pr-address-all': 'address-all',
-  'pr-merge': 'merge',
-  'pr-open': 'open',
-  'pr-refresh': 'refresh',
-  'pr-dismiss': 'dismiss-pr',
-  'pr-undo': 'undo-pr',
-  'pr-dismiss-merged': 'dismiss-merged',
-  'pr-rank-again': 'rank-again',
-  'check-fix': 'fix',
-  log: 'log',
-}
-
 function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { keys: KeyAction[]; more: KeyAction[] } {
   const { id, item, finding } = r
   const keyAction = (k: PlannedKey): KeyAction => {
@@ -3108,44 +2331,6 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
   return { keys: keys.map(keyAction), more: more.map(keyAction) }
 }
 
-type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at'> & {
-  outcomeLabel: string
-  delivery: Parameters<typeof settledLabel>[1]
-  mark: ResultMark
-}
-
-function desktopTabSizes(
-  tabs: { label: string; symbol: string; badge: string | null; isShown: boolean }[],
-  columns: number,
-): { widths: number[]; gap: number; isEachFramed: boolean; naming: TabNaming } {
-  const steps = [
-    { padding: 1, gap: 1, isEachFramed: true },
-    { padding: 0, gap: 1, isEachFramed: true },
-    { padding: 0, gap: 0, isEachFramed: true },
-    { padding: 0, gap: 1, isEachFramed: false },
-  ]
-  const widthsOf = (naming: TabNaming, { padding, isEachFramed }: (typeof steps)[number]) =>
-    tabs.map(t => {
-      const name = tabName(t, naming)
-      const text = t.badge === null ? name : `${name}${TAB_COUNT_GAP}${t.badge}`
-      const isFramed = isEachFramed || t.isShown
-      // A tab's rounded frame insets its label FRAME_INSET_PT on each side, so its width adds those columns,
-      // rounded up, to what the label needs. Narrower, the label wraps inside the tab.
-      return (
-        Math.ceil(cellWidth(text) / DESKTOP_CHARS_PER_CELL) +
-        (isFramed ? Math.ceil((2 * FRAME_INSET_PT) / DESKTOP_CELL_PT) : 0) +
-        padding
-      )
-    })
-  const { naming, layout } = fitTabs(steps, (naming, step) => {
-    const widths = widthsOf(naming, step)
-
-    return widths.reduce((sum, w) => sum + w, 0) + step.gap * (widths.length - 1) <= columns
-  })
-
-  return { widths: widthsOf(naming, layout), gap: layout.gap, isEachFramed: layout.isEachFramed, naming }
-}
-
 async function drawnState(
   $: EngineInterface,
 ): Promise<
@@ -3221,9 +2406,6 @@ async function registerInboxCommand($: EngineInterface) {
 
   return $.command.register({ name: 'inbox', description, immediate: true }).catch(() => undefined)
 }
-
-/** The `CLAUDE_CODE_ENTRYPOINT` values the desktop app gives the Claude Code sessions it starts. */
-const DESKTOP_APP_ENTRYPOINTS = ['claude-desktop', 'claude-desktop-3p']
 
 /**
  * Whether the desktop app started this process. Claude Code sets `CLAUDE_CODE_CHILD_SESSION` for every command it
@@ -3317,11 +2499,6 @@ async function prepareConversation($: EngineInterface, id: string, revision: num
   return applying
 }
 
-/** A tool's structured result, or undefined when the call answered with text alone. */
-function toolRecord<Name extends string>(_tool: Name, result: unknown): ToolResultOf<Name> | undefined {
-  return typeof result === 'object' && result !== null ? (result as ToolResultOf<Name>) : undefined
-}
-
 async function noteChild(
   $: EngineInterface,
   change: (o: SessionStatus | null, at: number) => SessionStatus | null,
@@ -3331,16 +2508,6 @@ async function noteChild(
   if (!isWorthSaving(at)) return
   await commit($, currentOwner(), s => statusChanged(s, o => change(o, at))).catch(() => undefined)
 }
-
-/** The child an agent's work belongs to: the subagent itself, or the workflow or subagent that spawned it. */
-function childRefOf(agentId: string): string {
-  let id = agentId
-  for (let depth = 0; depth < 8 && spawnedBy.has(id); depth++) id = spawnedBy.get(id)!
-
-  return workflowTasks.get(id) ?? id
-}
-
-const isActivityWorthSaving = activityGate()
 
 async function noteAgentWork($: EngineInterface, agentId: string) {
   const ref = childRefOf(agentId)
@@ -3403,16 +2570,6 @@ async function applyConversation(
   if (needsCatchUp) await catchUpNow($)
   void publishStatus($)
   if (ledger.prs.length > 0) void fetchPrs($, false)
-}
-
-/** An update a reload cut off reads as failed, so the next one catches up. */
-function cutOffUpdate<S extends Session>(s: S): S {
-  return s.presence.isUpdating ? { ...s, presence: { ...s.presence, isUpdating: false, ledgerState: 'failed' } } : s
-}
-
-/** Row presses keep only their PR records, whose rows outlive a conversation's items. */
-function withoutRowActions(lastActions: Record<string, LastAction>): Record<string, LastAction> {
-  return Object.fromEntries(Object.entries(lastActions).filter(([k]) => !/^[if]\d+$/.test(k)))
 }
 
 /**
