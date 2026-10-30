@@ -4030,8 +4030,7 @@ export const register: Register = on => {
   })
 
   // A running tool row means the permission step is over: the dialog was answered or the
-  // auto-mode classifier approved the call. Live, 2026-10-22: isRunning stayed false while a
-  // dialog was open and turned true when the tool started.
+  // auto-mode classifier approved the call.
   on('ui.render', { component: 'ToolUse' }, ($, e, next) => {
     if (isOn && e.props.isRunning) endWaitFor($, e.props.tool_use_id)
 

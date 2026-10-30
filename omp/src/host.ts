@@ -195,7 +195,7 @@ const defaultDeps: HostDeps = {
 const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
 /**
- * True for a session nobody watches: a subagent, or a main session run without a UI, such as print mode. omp 18.1.17
+ * True for a session nobody watches: a subagent, or a main session run without a UI, such as print mode. An older omp
  * gives an extension no `ctx.agent`, and starts a subagent with no UI, so the read is guarded.
  */
 function isUnattended(ctx: ExtensionContext): boolean {
@@ -955,7 +955,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   })
 
   /**
-   * A press sent while a turn runs reaches the agent as a queued message. omp 18.12.3 runs before_agent_start for it.
+   * A press sent while a turn runs reaches the agent as a queued message. omp runs before_agent_start for it.
    * When that has not noted the message, its arrival is noted here, once the message starts.
    */
   pi.on('message_start', async (event, ctx) => {
