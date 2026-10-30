@@ -47,7 +47,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   answered, and the new page's polls worked. This probe did not check whether
   host timers or event listeners survived.
 - **Current Inbox reload ownership** [source, browser and native checks 2026-10-16].
-  `codex/src/tab.tsx:swapPage` preserves the host document and replaces only
+  `codex/src/tab-swap.ts:swapPage` preserves the host document and replaces only
   Inbox's root, style and script. It first initializes a candidate against a
   detached root and waits for active presses. Failed startup keeps the working
   page; disposal removes only the retired instance's timers, listeners and
