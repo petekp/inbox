@@ -71,6 +71,7 @@ Shared modules are in `hooks/`. Every host consumes them, directly or through a 
 | `omp/src/host.ts` | omp host. The only file that imports omp's packages. Wires omp's events to the shared session modules, registers the `record` and `close` tools and the `/inbox` command, shows the band, and supplies omp's `SessionHost`. |
 | `omp/src/state.ts` | omp host. One JSON file per session under omp's agent folder, with a lock held in the process. `OmpState` extends the shared `Session`. |
 | `omp/src/commands.ts` | omp host. Opens links and paths for omp's `SessionHost`. |
+| `omp/src/theme.ts` | omp host. Maps the panel's styles onto omp's theme. |
 | `omp/src/texts.ts` | omp host. The `OMP` host names the shared guidance uses. |
 | `omp/src/panel.ts` | omp adapter. Draws the band and the `/inbox` panel from the shared view and plans, and maps keys to presses. It imports no omp package. |
 | `omp/src/controller.ts` | omp adapter. The open panel: the cached screen, the person's ui state, the work a key starts, and the redraw timer. |
@@ -403,12 +404,4 @@ State in your change, for each look, whether it applies and what you checked.
 
 ## Checks
 
-`scripts/check-structure.mjs` checks the parity record in `hooks/clients.ts` against "Differences on purpose", as described there. It also parses imports and resolves their targets. It follows local import chains, including type bridges. Shared modules retain their shared-only restriction through those chains, and Codex cannot reach nonshared hooks through another local module. It includes build-shared tones and type imports. Shared modules and Codex reject computed targets. The only exception is a direct `import(url)` in the top-level `codex/src/server-main.ts:load` function. Nested functions do not inherit that exception. That function selects installed or dev handler URLs for hot reload.
-
-The script also checks that omp's files import only shared modules, and that only `omp/src/host.ts` imports omp's packages. It checks plan status lines, file references and links. Its owner-symbol check only verifies that a word occurs in the referenced file. It does not establish a definition or semantic freshness.
-
-`codex/tests/structure.spec.ts` checks the command against disposable fixtures. Mounted row-action tests check Codex controls and outcomes. The mod demo test checks terminal and desktop titles and actions, with settled rows and PRs outside that test. Full-page behavior, native painting, clipboard, focus and measured motion still need their own checks.
-
-`omp/tests/session.spec.ts` runs the shared session script from `tests/session-script.ts` against omp's `SessionHost`. `omp/tests/panel.spec.ts` checks that the panel draws buttons in the shared plan order, in place of the demo test in `tests/hooks.test.ts`.
-
-`./scripts/check.sh` runs formatting, plugin validation, structure, the type checks, the test suites, and that the Codex bundles and `omp/dist/host.js` match their sources. Run it after every change. Model evaluations run separately when model-facing text changes.
+[Checks](checks.md) says what `./scripts/check.sh` and the structure check cover, and what they leave to live checks.

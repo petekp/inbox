@@ -15,6 +15,7 @@ export function demoSource(deps: {
   now(): number
   after(fn: () => void, ms: number): void
   settleWindowMs: number
+  version: string
   isNextBuild?: boolean
   comparePage: string
   /** The person's inbox model, which the footer names as the live panel's does. */
@@ -31,6 +32,7 @@ export function demoSource(deps: {
       isGhMissing: false,
       isFetchingPrs: false,
       stop: null,
+      version: deps.version,
       isNextBuild: deps.isNextBuild,
       isDemo: true,
     }),

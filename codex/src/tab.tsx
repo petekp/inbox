@@ -1,5 +1,4 @@
 import { render } from 'preact'
-import manifest from '../plugin/.codex-plugin/plugin.json'
 import { ActionButton, RowActions, ledgerActions, Icon } from './row-actions'
 import type { ComponentChildren, JSX } from 'preact'
 import type { IconName } from './row-actions'
@@ -2317,7 +2316,7 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
         )}
         <div class="footer-end">
           <Status v={v} />
-          <span class="version">{versionLabel(manifest.version, v.isNextBuild === true)}</span>
+          <span class="version">{versionLabel(VERSION, v.isNextBuild === true)}</span>
         </div>
       </footer>
     </>
@@ -2645,7 +2644,7 @@ function initialize(): Promise<boolean> {
     'ui/initialize',
     {
       protocolVersion: '2026-01-26',
-      appInfo: { name: 'inbox', version: '0.2.14' },
+      appInfo: { name: 'inbox', version: VERSION },
       appCapabilities: { tools: {} },
     },
     READ_TIMEOUT_MS,

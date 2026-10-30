@@ -1,5 +1,4 @@
 import type { Draft, FoldKind, Stop, Tab } from '../../types'
-import { version } from '../package.json'
 import {
   ARRIVAL_TABS,
   closedGroups,
@@ -138,6 +137,7 @@ export type PanelScreen = {
   isFetchingPrs: boolean
   /** Why the last turn stopped, until the next turn starts. */
   stop: Stop | null
+  version: string
   isNextBuild?: boolean
   isDemo?: boolean
 }
@@ -1458,7 +1458,7 @@ function footer(d: Draw, isPageScrolling: boolean): string[] {
               'tab switch',
               '? help',
             ]
-  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : 'no inbox model: set @inbox'}  ${versionLabel(version, screen.isNextBuild === true)} `
+  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : 'no inbox model: set @inbox'}  ${versionLabel(screen.version, screen.isNextBuild === true)} `
   const hintLine = ` ${hints.map(h => s.dim(h)).join(` ${s.tone('sep', '·')} `)}`
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2
   if (fitsBesideHints) out.push(spread(hintLine, s.dim(model), width))
