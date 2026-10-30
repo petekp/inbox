@@ -24,7 +24,9 @@ class World {
   inFlight: Promise<unknown>[] = []
   promptRows = 0
 
-  toolVerdict: 'allow' | 'ask' = 'allow'
+  toolVerdict: 'allow' | 'ask' | 'deny' = 'allow'
+  raisesPostHooks = false
+  toolHold: Promise<void> | null = null
   stepAnswers: { answer: string; callsTool?: true }[] = []
   transcriptRows: { role: 'user' | 'assistant'; text: string; toolUses: never[] }[] = []
 
@@ -129,6 +131,8 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.inFlight = []
   w.ran = []
   w.toolVerdict = 'allow'
+  w.raisesPostHooks = false
+  w.toolHold = null
   w.stepAnswers = []
   w.transcriptRows = []
   w.dialogAnswer = { result: 'ok', text: 'ok' }
@@ -287,6 +291,8 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('classic.StopFailure', () => ({}))
   on('classic.PermissionRequest', () => ({}))
+  on('classic.PostToolUse', () => ({}))
+  on('classic.PostToolUseFailure', () => ({}))
   on('tool.check', () => ({ decision: w.toolVerdict }))
   on('turn.step', async function* (_$, e) {
     const { answer, callsTool } = w.stepAnswers[e.index] ?? { answer: '' }
@@ -306,9 +312,15 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
     w.sessionId = e.session_id
     return {}
   })
-  on('tool.call', (_$, e) => {
-    if (e.tool !== 'AskUserQuestion') return w.otherToolAnswer as never
-    return w.dialogAnswer as never
+  on('tool.call', async (_$, e) => {
+    await w.toolHold
+    const answer = e.tool === 'AskUserQuestion' ? w.dialogAnswer : w.otherToolAnswer
+    if (w.raisesPostHooks && w.toolVerdict !== 'deny') {
+      const call = { tool_name: e.tool, tool_input: e, tool_use_id: e.tool_use_id }
+      if (answer.isError) await $.classic.PostToolUseFailure({ ...call, error: answer.text } as never)
+      else await $.classic.PostToolUse({ ...call, tool_response: answer.result } as never)
+    }
+    return answer as never
   })
   on('agent.spawn', () => ({ model: 'sonnet', agentId: w.spawnedAgentId }))
   on('agent.list', () => ({ value: w.listedAgents as never }))

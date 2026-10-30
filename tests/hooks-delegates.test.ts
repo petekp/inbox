@@ -68,6 +68,50 @@ test('a Herdr delegate runs as a child from the command that starts it until a w
   ])
 })
 
+test('a herdr agent command that was blocked adds no delegate row and leaves an ended one ended, and the same prompt once it ran adds one', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.raisesPostHooks = true
+  const delegates = () => childrenOf(w.stored).map(c => [c.name, c.endedAt === null])
+  const bash = (command: string, use: string) => $.tool.call({ tool: 'Bash', command, tool_use_id: use } as never)
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'hand it off', wait: false, origin: { kind: 'composer' } })
+  await bash('git status', 'u1')
+  w.toolVerdict = 'deny'
+  await bash('herdr agent prompt fixer "fix it"', 'u2')
+  await bash('herdr agent wait scout --until done', 'u3')
+  expect(delegates()).toEqual([])
+
+  w.toolVerdict = 'allow'
+  await bash('herdr agent prompt fixer "fix it"', 'u4')
+  expect(delegates()).toEqual([['fixer', true]])
+  await bash('herdr agent wait fixer --until done', 'u5')
+  w.toolVerdict = 'deny'
+  await bash('herdr agent prompt fixer "again" && herdr agent wait fixer', 'u6')
+  expect(delegates()).toEqual([['fixer', false]])
+})
+
+test('a herdr wait shows its delegate running while it waits, for a delegate with no row yet, and ends it once it returns', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.raisesPostHooks = true
+  const delegates = () => childrenOf(w.stored).map(c => [c.name, c.endedAt === null])
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'hand it off', wait: false, origin: { kind: 'composer' } })
+  await $.tool.call({ tool: 'Bash', command: 'git status', tool_use_id: 'u1' } as never)
+  let release: () => void = () => undefined
+  w.toolHold = new Promise<void>(resolve => (release = resolve))
+  const wait = $.tool.call({ tool: 'Bash', command: 'herdr agent wait scout --until done', tool_use_id: 'u2' } as never)
+  await clock.settle()
+  expect(delegates()).toEqual([['scout', true]])
+
+  release()
+  await wait
+  expect(delegates()).toEqual([['scout', false]])
+})
+
 test('while the Status shows a running delegate, the inbox asks Herdr each HERDR_CHECK_MS, with no turn ending, and stops once the Status hides', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])

@@ -97,3 +97,96 @@ test('a working subject’s mark on the Status moves each frame only while a tur
   const ended = await frames()
   expect(ended.working).toEqual(ended.still)
 })
+
+test('a running mark on the terminal Status keeps moving while the desktop app draws the same pane, and no frame redraws the desktop pane', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.files = ['/.next-build']
+  w.paneState = { isShown: true, isFocused: true }
+  w.statusReply =
+    'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Help text | being written'
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-key-overview' })
+  await $.turn.start({ text: 'go on', turnId: 't2' })
+  await clock.settle()
+  const markOf = async () =>
+    [...((await pane.find({ key: 'status-s1' }))?.text ?? '')].filter(c => RUNNING_FRAMES.some(f => f === c)).join('')
+  const frames = async () => {
+    const drawn: string[] = []
+    const moving: string[] = []
+    for (let n = 0; n < RUNNING_FRAMES.length; n++) {
+      drawn.push(await markOf())
+      moving.push(runningMark(clock.now()))
+      await clock.advance(RUNNING_FRAME_MS)
+    }
+    expect(new Set(moving).size).toBeGreaterThan(1)
+
+    return { drawn, moving }
+  }
+  const alone = await frames()
+  expect(alone.drawn).toEqual(alone.moving)
+
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+  await clock.settle()
+  const desktopFrames: string[] = []
+  for (let n = 0; n < RUNNING_FRAMES.length; n++) {
+    desktopFrames.push(JSON.stringify(await desktop.drawn()))
+    await clock.advance(RUNNING_FRAME_MS)
+  }
+  expect(desktopFrames[0]).toContain('<animate')
+  expect(new Set(desktopFrames).size).toBe(1)
+  const beside = await frames()
+  expect(beside.drawn).toEqual(beside.moving)
+})
+
+test('a running mark moves again at the next redraw after the engine ends its timer', async ($, on) => {
+  let isPeriodRefused = false
+  on('clock.every', { ms: RUNNING_FRAME_MS }, (_$, e, next) => (isPeriodRefused ? { deny: 'refused' } : next(e)))
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.files = ['/.next-build']
+  w.paneState = { isShown: true, isFocused: true }
+  w.statusReply =
+    'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Help text | being written'
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-key-overview' })
+  await $.turn.start({ text: 'go on', turnId: 't2' })
+  await clock.settle()
+  const markOf = async () =>
+    [...((await pane.find({ key: 'status-s1' }))?.text ?? '')].filter(c => RUNNING_FRAMES.some(f => f === c)).join('')
+  const frames = async () => {
+    const drawn: string[] = []
+    const moving: string[] = []
+    for (let n = 0; n < RUNNING_FRAMES.length; n++) {
+      drawn.push(await markOf())
+      moving.push(runningMark(clock.now()))
+      await clock.advance(RUNNING_FRAME_MS)
+    }
+    expect(new Set(moving).size).toBeGreaterThan(1)
+
+    return { drawn, moving }
+  }
+  const before = await frames()
+  expect(before.drawn).toEqual(before.moving)
+
+  isPeriodRefused = true
+  await clock.advance(RUNNING_FRAME_MS)
+  isPeriodRefused = false
+  const ended = await frames()
+  expect(new Set(ended.drawn).size).toBe(1)
+
+  await pane.redraw()
+  const after = await frames()
+  expect(after.drawn).toEqual(after.moving)
+})

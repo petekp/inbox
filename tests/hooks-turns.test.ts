@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
+import type { Session } from '../types'
 import { PRESS_GUARD_MS, SETTLED_MS, statusPage } from '../hooks/view'
 import { w, world } from './hooks-world'
 import { PANE, selectRow } from './hooks-helpers'
@@ -51,6 +52,50 @@ test('a turn runs from the main agent’s turn.start to its turn.complete, not f
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
   expect(await now()).toBe(null)
+})
+
+test('once a call from its source raised a Post hook, a call that raised none adds no activity line, a call that ran or failed does, and so does a call to a tool another mod answers, which raises none', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  on('tool.call', { tool: 'mcp__othermod__ping' as never }, () => ({ result: 'pong' }) as never)
+  world($, on, [])
+  w.raisesPostHooks = true
+  let activity: string[] = []
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
+    activity = (e.value as Session).turn.activity
+    return next(e)
+  })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'run the checks', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'run the checks', turnId: 't1' })
+  const bash = (command: string, use: string) =>
+    $.tool.call({ tool: 'Bash', command, description: command, tool_use_id: use } as never)
+
+  await bash('echo probe-ok', 'ok')
+  w.toolVerdict = 'deny'
+  await bash('echo probe-denied', 'denied')
+  w.toolVerdict = 'allow'
+  w.otherToolAnswer = { result: 'Exit code 1', text: 'Exit code 1', isError: true }
+  await bash('false', 'failed')
+  await $.tool.call({ tool: 'mcp__othermod__ping', tool_use_id: 'mod' } as never)
+
+  expect(activity).toEqual(['ran: echo probe-ok', 'ran: false', 'called othermod__ping'])
+})
+
+test('where no Post hook runs, as under the guard, every call adds its activity line', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let activity: string[] = []
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
+    activity = (e.value as Session).turn.activity
+    return next(e)
+  })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'run the checks', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'run the checks', turnId: 't1' })
+  await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'npm test', tool_use_id: 'u1' } as never)
+  await $.tool.call({ tool: 'Write', file_path: '/tmp/project/a.ts', content: '', tool_use_id: 'u2' } as never)
+
+  expect(activity).toEqual(['ran: npm test', 'edited /tmp/project/a.ts'])
 })
 
 test('a reply a step ends on before another step starts reaches the per-turn call, and the last answer is not counted twice', async ($, on) => {
