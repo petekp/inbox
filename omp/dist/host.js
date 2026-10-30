@@ -5319,7 +5319,7 @@ function openTarget2(run, target, root, home) {
   }, target, root, home);
 }
 // package.json
-var version = "0.2.14";
+var version = "0.2.15";
 
 // ../hooks/arrivals.ts
 function recordRows(seen, listed) {
