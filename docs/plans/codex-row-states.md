@@ -69,6 +69,6 @@ Rules that hold in every state:
 
 ## Checks
 
-- Tests in `codex/tests/press.spec.ts`: every state reaches every target, a row drawing its panel never drops it except through `closing`, `settling` or `leaving`, a row turned around mid-move, and reduced motion.
+- Tests in `codex/tests/press-row-states.spec.ts`: every state reaches every target, a row drawing its panel never drops it except through `closing`, `settling` or `leaving`, a row turned around mid-move, and reduced motion.
 - In the harness, each row's height, opacity and panel, frame by frame, on both tabs: Dismiss with a slow reply, an answer with an instant reply, Undo, a failing Undo, a settled row leaving, a row arriving, a row arriving open and closed while it grows in, switching rows, reopening a row mid-close, and the Closed fold.
 - `./scripts/check.sh`.
