@@ -255,6 +255,6 @@ needs a row in "Differences on purpose" in `docs/looks.md`, and
 `scripts/check-structure.mjs` fails when one is missing.
 
 The engine has two terms of its own. Its `surface` is where Claude Code runs,
-and includes `mobile` and `vscode`; `lookOf` in `hooks/register.tsx` maps it to
+and includes `mobile` and `vscode`; `lookOf` in `hooks/palettes.ts` maps it to
 a look. Its `Client` is a drawn region that takes clicks over its whole shape,
 as in `hooks/row-client.tsx`.
