@@ -1,6 +1,6 @@
 # The Status replays
 
-The replays that judge the Status tab. [The Status tab plan](plans/status.md) gives the fixed rules, the judge and the pass bar.
+The replays that judge the Status tab. [How the Status is judged](plans/status/judging.md) gives the fixed rules, the judge and the pass bar.
 
 Three replays, each run 3 times on Sonnet and on Codex. Fixed rules check the page after every step. The judge reads a few checkpoints. Each call has its host's limits: 45 seconds and 1600 output tokens for Claude, 120 seconds for Codex. A call past its limit fails, as it would in the host: the page stays as it was, and the status line says so.
 
