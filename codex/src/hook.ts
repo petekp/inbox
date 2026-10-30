@@ -35,7 +35,9 @@ import { codexStore } from './host'
 import type { OnWrite } from './host'
 import type { SessionState } from './state'
 import { CODEX } from './texts'
-import { rolloutMeta, rolloutReads, rolloutTail, turnOf } from './transcript'
+import { rolloutMeta } from './rollout-rows'
+import { turnOf } from './rollout-turns'
+import { rolloutReads, rolloutTail } from './transcript'
 
 export type HookInput = {
   hook_event_name: string

@@ -51,7 +51,7 @@ without the model calling it. The Inbox tab is a thread entrypoint.
 - **Declaration.** `_meta["openai/ui"].entrypoints: [{ type: "global" }]`
   beside `_meta.ui.resourceUri`. "Use `{ type: "thread" }` to add an
   entrypoint in a conversation's side panel." (D/build/extensions#sidebar-apps)
-  The inbox declares `[{ type: 'thread' }]` (codex/src/server.ts:TOOLS).
+  The inbox declares `[{ type: 'thread' }]` (codex/src/server-tools.ts:TOOLS).
 - "Normally, MCP Apps can only be invoked via the model. However, it may be
   convenient to allow users to open your MCP App via static entrypoints."
   (SPEC:L36) Up to three per app: global, thread ("Available as a content tab
@@ -77,7 +77,7 @@ without the model calling it. The Inbox tab is a thread entrypoint.
   entrypoint that describes the view's contents and differs from the plugin
   name" (SPEC:L38). Title order: `title`, `annotations.title`, `name`
   (SPEC:L82-85). The inbox's tool is titled "Inbox", the plugin name
-  (codex/src/server.ts:TOOLS).
+  (codex/src/server-tools.ts:TOOLS).
 - **Icons.** SHOULD be on each entrypoint tool: SVG, monochrome, transparent,
   `currentColor`, 20x20 viewport, 1.33px strokes (SPEC:L56-63). Fallback: the
   tool icon, then the "Local MCP Server icon, or the app logo registered with
@@ -85,7 +85,7 @@ without the model calling it. The Inbox tab is a thread entrypoint.
   come from `_meta["io.modelcontextprotocol/serverInfo"]["icons"]` in
   `server/discover`; servers without `server/discover` use
   `serverInfo["icons"]` in `initialize`." (SPEC:L67-73) The inbox sets no
-  icons on the tool or `serverInfo` (codex/src/server.ts:TOOLS, codex/src/server.ts:makeServer).
+  icons on the tool or `serverInfo` (codex/src/server-tools.ts:TOOLS, codex/src/server.ts:makeServer).
 - **File entrypoints.** `extensions` MUST use the dot form (SPEC:L288). The
   tool gets `{file: {name, resourceUri}}`; `resourceUri` is opaque.
   "`resources/read` and `resources/subscribe` work. However, they will be
