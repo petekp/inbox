@@ -63,6 +63,7 @@ function fixture(t: TestContext) {
   }
   write('scripts/check-structure.mjs', '')
   copyFileSync(join(ROOT, 'scripts/check-structure.mjs'), join(root, 'scripts/check-structure.mjs'))
+  copyFileSync(join(ROOT, 'scripts/shared-modules.mjs'), join(root, 'scripts/shared-modules.mjs'))
   for (const file of readdirSync(join(ROOT, 'hooks')).filter(f => f.endsWith('.ts')))
     write(`hooks/${file}`, 'export const value = 1\n')
   write('hooks/register.tsx', 'export const value = 1\n')

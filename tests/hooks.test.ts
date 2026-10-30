@@ -15,6 +15,7 @@ import { STATUS_SYSTEM } from '../hooks/model-text'
 import { HERDR_CHECK_MS } from '../hooks/herdr'
 import { LOOK_MIN_MS } from '../hooks/status'
 import { emptySession, STATUS_REFRESH_MS } from '../hooks/session'
+import { SESSION_VERSION } from '../hooks/session-version'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
 import { failingChecks, waitingThreads } from '../hooks/prs'
 import {
@@ -28,7 +29,6 @@ import {
   statusPage,
   statusKeyPlan,
   rowKeyPlan,
-  actionLines,
   RUNNING_FRAME_MS,
   RUNNING_FRAMES,
   runningMark,
@@ -4321,7 +4321,7 @@ test('when the store lock stays held, the update still shows and the next save w
   expect((JSON.parse(stored.get('s:session-1')!) as Session).ledger.items.map(i => i.ask)).toEqual(asks)
 })
 
-test('a session saved mid-turn by a process that ended loads with no turn running, and its Done message goes', async ($, on) => {
+test('a session saved with no version, mid-turn, by a process that ended loads with no turn running, its Done message goes, and its next save writes the session version', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let session: Parameters<typeof statusPage>[0] | null = null
@@ -4355,6 +4355,7 @@ test('a session saved mid-turn by a process that ended loads with no turn runnin
   await pane.press({ key: 'done-i1' })
   await clock.advance(SETTLED_MS)
   expect(sent).toEqual(['Done: Sign in to npm'])
+  expect(JSON.parse(stored.get('s:session-1')!).version).toBe(SESSION_VERSION)
 })
 
 test('resuming a session waits for its in-flight save before loading it', async ($, on) => {
@@ -5196,34 +5197,6 @@ for (const isNextBuild of [false, true])
       expect(await pane.find({ key: 'view-d17' }), `${look} View selects the oldest ask`).toBeDefined()
     }
   })
-
-test('a row’s follow-ups stay on its buttons’ last line only when all of them fit there, and otherwise start the next line together', async () => {
-  const spacing = { gap: 1, separator: 0 }
-  expect(actionLines([4, 4], [3, 3], { ...spacing, width: 20 })).toEqual({
-    lines: [[0, 1, 2, 3]],
-    isFollowUpLineNew: false,
-  })
-  expect(actionLines([4, 4], [3, 3], { ...spacing, width: 14 })).toEqual({
-    lines: [
-      [0, 1],
-      [2, 3],
-    ],
-    isFollowUpLineNew: true,
-  })
-  expect(actionLines([4, 4], [3, 3], { ...spacing, width: 5 })).toEqual({
-    lines: [[0], [1], [2], [3]],
-    isFollowUpLineNew: true,
-  })
-  expect(actionLines([6, 6], [1, 1], { ...spacing, width: 10 })).toEqual({
-    lines: [[0], [1, 2, 3]],
-    isFollowUpLineNew: false,
-  })
-  expect(actionLines([6, 6], [1, 1], { ...spacing, separator: 1, width: 10 })).toEqual({
-    lines: [[0], [1], [2, 3]],
-    isFollowUpLineNew: true,
-  })
-  expect(actionLines([], [3, 3], { ...spacing, width: 5 })).toEqual({ lines: [[0], [1]], isFollowUpLineNew: false })
-})
 
 test('in the terminal and desktop looks, an open row’s follow-ups are never split between rows: the terminal gives them a row of their own when they do not fit after its buttons, and desktop’s links box asks for the width of all of them', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })

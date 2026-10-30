@@ -7653,16 +7653,25 @@ function demoView(now, agent) {
 // src/state.ts
 import { mkdir, readdir, readFile, rename, stat as stat2, unlink, writeFile } from "fs/promises";
 import { join } from "path";
+
+// ../hooks/session-version.ts
+var SESSION_VERSION = 1;
+function checkVersion(saved) {
+  const version = saved.version ?? 1;
+  if (version !== SESSION_VERSION)
+    throw new Error(`Unsupported inbox state version: ${version}`);
+}
+
+// src/state.ts
 function emptyState(sessionId) {
-  return { version: 1, sessionId, ...emptySession() };
+  return { version: SESSION_VERSION, sessionId, ...emptySession() };
 }
 function statePath(dir, sessionId) {
   return join(dir, "sessions", sessionFile(sessionId));
 }
 function upgraded(saved, sessionId) {
-  if (saved.version !== undefined && saved.version !== 1)
-    throw new Error(`Unsupported inbox state version: ${saved.version}`);
-  return { version: 1, sessionId, ...upgradeSession(saved) };
+  checkVersion(saved);
+  return { version: SESSION_VERSION, sessionId, ...upgradeSession(saved) };
 }
 async function readSaved(dir, sessionId) {
   const saved = await readFile(statePath(dir, sessionId), "utf8").catch(missingAsNull);

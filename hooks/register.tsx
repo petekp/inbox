@@ -87,6 +87,7 @@ import {
   wakeForDone as wakeSessionForDone,
 } from './session-host'
 import type { Ask, CallReport, CatchUpReply, StatusCall, StatusRecords, RecordFiles, SessionHost } from './session-host'
+import { SESSION_VERSION } from './session-version'
 import { demoView, isDemoCopy, withDemoPresence } from './demo'
 import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
@@ -153,6 +154,13 @@ import {
   TURN_BOX_TOOL,
   turnBoxText,
 } from './claude'
+import {
+  DESKTOP_BUTTON_EXTRA_PT,
+  DESKTOP_CHARS_PER_CELL,
+  DESKTOP_CLIP_CHARS_PER_CELL,
+  desktopLines,
+  desktopTextPt,
+} from './desktop-metrics'
 import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
 import { CLEARED_TOKENS, delegatesInHerdr, HERDR_CHECK_MS, herdrCheckGate, herdrReporter, herdrTokens } from './herdr'
@@ -385,46 +393,6 @@ const PANE = 'inbox'
 const REPLY_ROWS = 3
 const DESKTOP_REPLY_ROWS = 2
 const DESKTOP_WIDE_AT = 50
-// About how many characters of desktop's proportional text fit in one column of `bodyColumns`: sentences and
-// the tab labels run 1.23 to 1.30, bold or not.
-const DESKTOP_CHARS_PER_CELL = 1.25
-// A lower guess for text that must stay one line, since desktop wraps text that is too long.
-const DESKTOP_CLIP_CHARS_PER_CELL = 1.1
-// The widest character in each group, in points, in the pane's 13 pt system font as AppKit measures it. Any other
-// character counts as the widest group, so an estimate is never narrower than the text.
-const DESKTOP_CHAR_GROUPS: [chars: string, pt: number][] = [
-  ["ijl|I ',.:;/\\!", 4],
-  ['ftr()[]{}', 4.9],
-  ['aceksvxyz-*"`?1J', 7.4],
-  ['bdghnopqu_EFL27', 7.95],
-  ['ABKPRSTVXYZ0345689#$+<=>^~', 8.8],
-  ['CDGHNOQUw&', 10],
-]
-const DESKTOP_CHAR_PT = new Map(DESKTOP_CHAR_GROUPS.flatMap(([chars, pt]) => [...chars].map(c => [c, pt] as const)))
-const DESKTOP_WIDEST_CHAR_PT = 12.6
-// A native Button's padding around its label, and its bolder primary label, measured live: 163 to 167 pt for
-// "Plain (recommended)", whose label is 130 pt in the regular weight.
-const DESKTOP_BUTTON_EXTRA_PT = 38
-/** Desktop cuts a label wider than its control, so a control is sized from each character's width. */
-function desktopTextPt(text: string): number {
-  let pt = 0
-  for (const c of text) pt += DESKTOP_CHAR_PT.get(c) ?? DESKTOP_WIDEST_CHAR_PT
-  return pt
-}
-/** The words of `text` in lines `widthPt` wide. `desktopTextPt` never counts a line narrower than desktop draws it, so desktop needs no more lines. */
-function desktopLines(text: string, widthPt: number): string[] {
-  const lines: string[] = []
-  let line = ''
-  for (const word of text.split(' ').filter(Boolean)) {
-    const longer = line ? `${line} ${word}` : word
-    if (line && desktopTextPt(longer) > widthPt) {
-      lines.push(line)
-      line = word
-    } else line = longer
-  }
-  if (line) lines.push(line)
-  return lines
-}
 /** `spans` cut to what desktop draws in `limit` lines `widthPt` wide, with an ellipsis when cut. */
 function desktopSpanLines(spans: TerminalSpan[], widthPt: number, limit: number): TerminalSpan[] {
   const words = spans.map(s => ({ ...s, text: s.text.replace(/[^\S\u00a0]+/g, ' ') }))
@@ -1275,7 +1243,7 @@ async function changeSaved(
       const result = await change(before)
       if (result === before) return { before, after: before, isDrawn: false }
       const after = pruned({ ...result, heldRows: [], shownSince: null })
-      await $.store.set(sessionKey(id), { savedAt: saved.session.savedAt, ...after })
+      await $.store.set(sessionKey(id), { version: SESSION_VERSION, savedAt: saved.session.savedAt, ...after })
 
       return { before, after, isDrawn: false }
     }).catch((error: unknown): Changed => {
@@ -1352,7 +1320,7 @@ function save($: EngineInterface, owner: Owner, s: ModSession): Promise<void> {
   const { revision: _revision, ...session } = s
   const setAndPrune = Promise.all([saving, $.clock.now()]).then(async ([, savedAt]) => {
     if (s.revision < (savedRevisions.get(generation) ?? 0)) return
-    await whileLockHeld($, () => $.store.set(key, { savedAt, ...session }))
+    await whileLockHeld($, () => $.store.set(key, { version: SESSION_VERSION, savedAt, ...session }))
     if (prunedSaves.has(generation)) return
     const keys = await $.store.keys()
     const sessions = keys.filter(k => k.startsWith('s:'))

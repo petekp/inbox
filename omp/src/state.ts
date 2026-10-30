@@ -13,14 +13,15 @@ import {
 } from '../../hooks/session'
 import type { SavedSession, Session } from '../../hooks/session'
 import { exclusiveKeys } from '../../hooks/session-host'
+import { checkVersion, SESSION_VERSION } from '../../hooks/session-version'
 
 export type OmpState = Session & {
-  version: 1
+  version: typeof SESSION_VERSION
   sessionId: string
 }
 
 export function emptyState(sessionId: string): OmpState {
-  return { version: 1, sessionId, ...emptySession() }
+  return { version: SESSION_VERSION, sessionId, ...emptySession() }
 }
 
 export function statePath(dir: string, sessionId: string): string {
@@ -31,9 +32,8 @@ type Saved = SavedSession & Partial<Pick<OmpState, 'version' | 'sessionId'>>
 
 /** State saved by an earlier build, with any field it lacks filled in. */
 function upgraded(saved: Saved, sessionId: string): OmpState {
-  if (saved.version !== undefined && saved.version !== 1)
-    throw new Error(`Unsupported inbox state version: ${saved.version}`)
-  return { version: 1, sessionId, ...upgradeSession(saved) }
+  checkVersion(saved)
+  return { version: SESSION_VERSION, sessionId, ...upgradeSession(saved) }
 }
 
 async function readSaved(dir: string, sessionId: string): Promise<{ state: OmpState; isSaved: boolean }> {

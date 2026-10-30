@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { KEPT_SESSIONS } from '../../hooks/ledger'
+import { SESSION_VERSION } from '../../hooks/session-version'
 import { exclusiveRun, pruneSessions, readState, statePath, updateState } from '../src/state'
 import type { OmpState } from '../src/state'
 
@@ -94,10 +95,10 @@ test('a file from a newer version throws', async () => {
   await expect(readState(dir, 's1')).rejects.toThrow('Unsupported inbox state version: 2')
 })
 
-test('a file missing newer fields reads with their defaults', async () => {
+test('a file with no version and missing newer fields reads with their defaults, and its next save writes the session version', async () => {
   const dir = tempDir()
   mkdirSync(join(dir, 'sessions'))
-  writeFileSync(statePath(dir, 's1'), JSON.stringify({ version: 1, presence: { turnsStarted: 4 } }))
+  writeFileSync(statePath(dir, 's1'), JSON.stringify({ presence: { turnsStarted: 4 } }))
   const state = await readState(dir, 's1')
   expect(state.presence).toEqual({
     turnsStarted: 4,
@@ -112,6 +113,8 @@ test('a file missing newer fields reads with their defaults', async () => {
   })
   expect(state.pending).toEqual([])
   expect(state.prViews.isFetching).toBe(false)
+  await updateState(dir, 's1', withTurns(5))
+  expect(JSON.parse(readFileSync(statePath(dir, 's1'), 'utf8')).version).toBe(SESSION_VERSION)
 })
 
 test('a session id that is not a plain name is refused', async () => {

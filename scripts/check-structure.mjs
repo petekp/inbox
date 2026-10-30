@@ -4,34 +4,10 @@ import { createRequire } from 'node:module'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { SHARED } from './shared-modules.mjs'
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
-const SHARED = [
-  'arrivals',
-  'children',
-  'clients',
-  'conversation',
-  'demo',
-  'dialogs',
-  'gh',
-  'herdr',
-  'inline',
-  'layout',
-  'marks',
-  'ledger',
-  'host-tasks',
-  'status',
-  'model-text',
-  'pr-tab',
-  'presses',
-  'prs',
-  'session',
-  'session-host',
-  'text',
-  'tones',
-  'tools',
-  'view',
-]
 const PLAN_STATUS = /^Status: (proposed|building|built|superseded by \S+)/m
 
 const errors = []
