@@ -6,9 +6,9 @@ Some content and host bookkeeping still have two copies. These are remaining wor
 
 | Rule | Where it is written | Remaining work |
 | --- | --- | --- |
-| PR block and row composition | `hooks/register.tsx` and `codex/src/tab.tsx` | Both use shared PR rules and button plans, but compose their own content. |
-| Host notices and some closed-row composition | `hooks/register.tsx` and `codex/src/tab.tsx` | Share identical decisions while keeping native fitting and decoration local. |
-| Local effects and demo presses | `hooks/presses.ts:openTarget`, `hooks/presses.ts:demoAfterPress`, `hooks/presses.ts:demoReplied`, `hooks/register.tsx:runDemoPress`, `hooks/session-host.ts:press`, `codex/src/server.ts:makeServer`, `omp/src/demo.ts:demoSource` | Every host opens files and links through `openTarget`, and computes a demo press with `demoAfterPress`. `SETTLED_MS` after a press that sent, each host's own timer applies `demoReplied`, the demo's stand-in for the agent's reply. It answers that press and leaves the sample's own hand-offs waiting. |
+| PR block and row composition | `hooks/register.tsx`, `codex/src/tab-prs.tsx` and `codex/src/tab-rows.tsx` | Both use shared PR rules and button plans, but compose their own content. |
+| Host notices and some closed-row composition | `hooks/register.tsx`, `codex/src/tab-chrome.tsx` and `codex/src/tab-groups.tsx` | Share identical decisions while keeping native fitting and decoration local. |
+| Local effects and demo presses | `hooks/presses.ts:openTarget`, `hooks/presses.ts:demoAfterPress`, `hooks/presses.ts:demoReplied`, `hooks/register.tsx:runDemoPress`, `hooks/session-host.ts:press`, `codex/src/server-host.ts:open`, `codex/src/server-demo.ts:onDemoPress`, `omp/src/demo.ts:demoSource` | Every host opens files and links through `openTarget`, and computes a demo press with `demoAfterPress`. `SETTLED_MS` after a press that sent, each host's own timer applies `demoReplied`, the demo's stand-in for the agent's reply. It answers that press and leaves the sample's own hand-offs waiting. |
 
 A `deliveryId` identifies one local press. Each host keeps a sent-prompt record
 before an arrival can change its rows. Arrival events provide message text but

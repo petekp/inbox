@@ -1,0 +1,43 @@
+main {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0 4px;
+}
+section {
+  position: relative;
+  padding: 10px 0;
+}
+section + section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--text-x);
+  right: 0;
+  height: 1px;
+  background: var(--soft);
+}
+.group-title {
+  padding: 0 14px 6px var(--text-x);
+}
+.group-title {
+  position: relative;
+}
+.group-title b {
+  font-weight: 600;
+}
+.group-mark {
+  position: absolute;
+  left: var(--mark-x);
+  width: calc(var(--text-x) - var(--mark-x) - 8px);
+  text-align: center;
+}
+.group-mark.done {
+  color: var(--done);
+}
+.group-mark.issue {
+  color: var(--issue);
+}
+.group-title .count {
+  color: var(--muted);
+  white-space: pre;
+}

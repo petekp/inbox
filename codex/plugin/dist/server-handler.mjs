@@ -31,13 +31,6 @@ function queueResumeCheck(exec) {
   };
 }
 
-// src/server.ts
-import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
-import { constants } from "node:fs";
-import { access, stat as stat2 } from "node:fs/promises";
-import { homedir as homedir2 } from "node:os";
-import { isAbsolute as isAbsolute2 } from "node:path";
-
 // ../hooks/status.ts
 var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
@@ -281,38 +274,6 @@ function onceEvery(ms) {
     if (last !== void 0 && at - last < ms) return false;
     passed.set(key, at);
     return true;
-  };
-}
-
-// ../hooks/gh.ts
-var CANDIDATES = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
-var GH_TIMEOUT_MS = 2e4;
-var UNSTARTABLE_CODE = -1;
-var TIMED_OUT_CODE = -2;
-function ghFinder(exec) {
-  let found = null;
-  return {
-    find: async () => {
-      if (found) return found;
-      for (const candidate of CANDIDATES) {
-        const r = await exec([candidate, "--version"], { cwd: "/", timeoutMs: 5e3 });
-        if (r.code !== UNSTARTABLE_CODE) {
-          found = candidate;
-          return found;
-        }
-      }
-      return null;
-    },
-    forget: () => {
-      found = null;
-    }
-  };
-}
-function ghIn(exec, bin, cwd, onUnstartable) {
-  return async (args) => {
-    const r = await exec([bin, ...args], { cwd: cwd || "/", timeoutMs: GH_TIMEOUT_MS });
-    if (r.code === UNSTARTABLE_CODE) onUnstartable();
-    return { exitCode: r.code, stdout: r.stdout, stderr: r.stderr };
   };
 }
 
@@ -638,9 +599,9 @@ function pruneClosed(ledger, keep) {
 function idNumber(id) {
   return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
 }
-function inIdOrder(open2, entry) {
-  const at = open2.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
-  return at < 0 ? [...open2, entry] : [...open2.slice(0, at), entry, ...open2.slice(at)];
+function inIdOrder(open3, entry) {
+  const at = open3.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
+  return at < 0 ? [...open3, entry] : [...open3.slice(0, at), entry, ...open3.slice(at)];
 }
 function reopenItem(ledger, id) {
   const item = ledger.closed.findLast((c) => c.id === id)?.item;
@@ -679,8 +640,8 @@ function addFinding(ledger, finding) {
 function addAgentItem(ledger, entry, now) {
   const candidate = { ...entry, label: null };
   const recordedThisTurn = new Set(ledger.items.filter((i) => i.turn === ledger.turn).map((i) => i.id));
-  const open2 = matchOpen(ledger.items, candidate, recordedThisTurn);
-  const openItem = ledger.items[open2];
+  const open3 = matchOpen(ledger.items, candidate, recordedThisTurn);
+  const openItem = ledger.items[open3];
   if (openItem) {
     const helps = entry.helps.reduce(withHelp, openItem.helps);
     const isDesignChoice = openItem.isDesignChoice === true || entry.isDesignChoice === true;
@@ -1087,7 +1048,7 @@ function readiness(pr, isSent2 = () => false) {
   if (pr.state !== "OPEN") return result("closed", "Closed");
   const { fail: failing, pending } = checkCounts(pr);
   const waiting = waitingThreads(pr);
-  const open2 = threadsOnYou(pr, isSent2).length;
+  const open3 = threadsOnYou(pr, isSent2).length;
   const sent = waiting.filter((t) => isSent2(pr, t)).length;
   const changed = waiting.filter((t) => t.isLinesChanged && !isSent2(pr, t)).length;
   const isPresent = (b) => b !== null;
@@ -1096,7 +1057,7 @@ function readiness(pr, isSent2 = () => false) {
     pr.mergeable === "CONFLICTING" ? `conflicts with ${pr.base}` : null,
     row(failing > 0 ? plural(failing, "failing check", "failing checks") : null),
     pr.reviewDecision === "CHANGES_REQUESTED" ? "changes requested" : null,
-    row(open2 > 0 ? threadsWaiting(open2) : null)
+    row(open3 > 0 ? threadsWaiting(open3) : null)
   ].filter(isPresent);
   const onOthers = [
     row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to Claude` : null),
@@ -1174,9 +1135,9 @@ var prompts = {
     "",
     threadText(t)
   ].join(NL),
-  rankAgain: (order, changed, open2) => [
+  rankAgain: (order, changed, open3) => [
     `The PR order you set for the PRs tab${order.label ? `, "${order.label}",` : ""} is out of date: ${numberList(changed)} changed since you set it.`,
-    `Rank its open PRs in ${order.repo} again (${open2.map((pr) => `#${pr.number}`).join(", ")}), and set the new order with order_prs.`
+    `Rank its open PRs in ${order.repo} again (${open3.map((pr) => `#${pr.number}`).join(", ")}), and set the new order with order_prs.`
   ].join(NL)
 };
 function numberList(prs) {
@@ -1205,10 +1166,10 @@ function openCommands(path, isFile, isExecutable) {
 }
 var OPEN_TIMEOUT_MS = 1e4;
 async function openTarget(run2, probe, target, root, home) {
-  const open2 = (argv2) => run2(argv2, { cwd: "/", timeoutMs: OPEN_TIMEOUT_MS });
+  const open3 = (argv2) => run2(argv2, { cwd: "/", timeoutMs: OPEN_TIMEOUT_MS });
   const failure = (r2) => r2.stderr.trim() || `open exited ${r2.code}`;
   if (/^https?:\/\//.test(target)) {
-    const r2 = await open2(["open", target]);
+    const r2 = await open3(["open", target]);
     return r2.code === 0 ? null : failure(r2);
   }
   const path = localPath(target, root || "/", home);
@@ -1217,17 +1178,17 @@ async function openTarget(run2, probe, target, root, home) {
   const isFile = info.isFile();
   const isExecutable = isFile && await probe.isExecutable(path);
   const { argv, fallback } = openCommands(path, isFile, isExecutable);
-  const r = await open2(argv);
-  const retry = r.code !== 0 && fallback ? await open2(fallback) : r;
+  const r = await open3(argv);
+  const retry = r.code !== 0 && fallback ? await open3(fallback) : r;
   return retry.code === 0 ? null : failure(retry);
 }
 function steps(helps) {
   const copy = helps.find((h) => h.kind === "copy");
-  const open2 = helps.find((h) => h.kind === "open");
-  if (!copy || !open2 || copy.kind !== "copy" || open2.kind !== "open")
+  const open3 = helps.find((h) => h.kind === "open");
+  if (!copy || !open3 || copy.kind !== "copy" || open3.kind !== "open")
     return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
   return helps.filter((h) => h !== copy).map(
-    (h) => h === open2 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open2.path)}`, 48), step: [copy, open2] } : { label: helpLabel(h), step: [h] }
+    (h) => h === open3 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open3.path)}`, 48), step: [copy, open3] } : { label: helpLabel(h), step: [h] }
   );
 }
 function prSteps(item, tracked) {
@@ -2050,12 +2011,12 @@ function statusPage(s, now) {
   const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
-  const open2 = subjects.filter(isOpen);
-  const queuedOver = Math.max(0, open2.length - OPEN_ROWS);
+  const open3 = subjects.filter(isOpen);
+  const queuedOver = Math.max(0, open3.length - OPEN_ROWS);
   const hiddenQueued = new Set(
-    open2.filter((x) => placeOf(x) === "queued").sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id)
+    open3.filter((x) => placeOf(x) === "queued").sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id)
   );
-  const shown = [...open2.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort(pageOrder);
+  const shown = [...open3.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort(pageOrder);
   const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const shownIds = new Set(shown.map((x) => x.id));
@@ -2423,6 +2384,38 @@ function herdrCheckGate() {
   return onceEvery(HERDR_CHECK_MS);
 }
 
+// ../hooks/gh.ts
+var CANDIDATES = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
+var GH_TIMEOUT_MS = 2e4;
+var UNSTARTABLE_CODE = -1;
+var TIMED_OUT_CODE = -2;
+function ghFinder(exec) {
+  let found = null;
+  return {
+    find: async () => {
+      if (found) return found;
+      for (const candidate of CANDIDATES) {
+        const r = await exec([candidate, "--version"], { cwd: "/", timeoutMs: 5e3 });
+        if (r.code !== UNSTARTABLE_CODE) {
+          found = candidate;
+          return found;
+        }
+      }
+      return null;
+    },
+    forget: () => {
+      found = null;
+    }
+  };
+}
+function ghIn(exec, bin, cwd, onUnstartable) {
+  return async (args) => {
+    const r = await exec([bin, ...args], { cwd: cwd || "/", timeoutMs: GH_TIMEOUT_MS });
+    if (r.code === UNSTARTABLE_CODE) onUnstartable();
+    return { exitCode: r.code, stdout: r.stdout, stderr: r.stderr };
+  };
+}
+
 // ../hooks/pr-tab.ts
 var MAX_PRS = 12;
 var MAX_ORDERED_PRS = 30;
@@ -2744,10 +2737,10 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
   if (p.action === "pr-rank-again") {
     const order = ledger.prOrder;
     if (!order) return stale;
-    const open2 = Object.values(prState.views).filter(
+    const open3 = Object.values(prState.views).filter(
       (pr2) => isTracked(prState, ledger, pr2.ref) && rankOf(pr2, order.refs) !== null
     );
-    const changed = changedRankedPrs(order, open2);
+    const changed = changedRankedPrs(order, open3);
     if (changed.length === 0) return stale;
     const repo = parseRef(order.refs[0] ?? "").repo;
     return applied2({
@@ -2757,7 +2750,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
       effects: [
         {
           kind: "send",
-          text: prompts.rankAgain({ label: order.label, repo }, changed, inPrOrder(open2, order.refs)),
+          text: prompts.rankAgain({ label: order.label, repo }, changed, inPrOrder(open3, order.refs)),
           by: null
         }
       ]
@@ -2854,6 +2847,75 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
       return local(prCheckId(pr, check), "Open log", logEffect(pr, check));
     }
   }
+}
+
+// ../hooks/arrivals.ts
+var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
+
+// ../hooks/dialogs.ts
+function optionKey(option) {
+  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
+}
+function optionsKey(options) {
+  return options.map(optionKey).sort().join("\n");
+}
+function hasSameOptions(item, q) {
+  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
+}
+function copyOf(q, items, questions) {
+  const byOptions = items.filter((i) => hasSameOptions(i, q));
+  const [only] = byOptions;
+  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
+  const pool = byOptions.length > 0 ? byOptions : items;
+  const byAsk = pool.filter((i) => restates(i.ask, q.question));
+  const [asked] = byAsk;
+  if (!asked || byAsk.length !== 1) return null;
+  const restated = questions.filter((o) => restates(asked.ask, o.question));
+  return restated.length === 1 ? asked : null;
+}
+function descriptionsFor(options, descriptions) {
+  const byKey = new Map(Object.entries(descriptions).map(([label, text3]) => [optionKey(label), text3]));
+  const matched = options.flatMap((o) => {
+    const text3 = byKey.get(optionKey(o));
+    return text3 === void 0 ? [] : [[o, text3]];
+  });
+  return matched.length > 0 ? Object.fromEntries(matched) : null;
+}
+function asCopyOf(item, q) {
+  const descriptions = descriptionsFor(item.options, q.descriptions);
+  return {
+    ...item,
+    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
+    ...descriptions ? { optionDescriptions: descriptions } : {}
+  };
+}
+function linkDialogs(s) {
+  if (s.dialogQuestions.length === 0) return s;
+  let items = s.ledger.items;
+  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
+  const questions = s.dialogQuestions.map((q) => {
+    if (q.itemId !== null) return q;
+    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
+    const copy = copyOf(
+      q,
+      turnItems,
+      s.dialogQuestions.filter((o) => o.turn === q.turn)
+    );
+    if (!copy || copy.dialog || linked.has(copy.id)) return q;
+    linked.add(copy.id);
+    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
+    return { ...q, itemId: copy.id };
+  });
+  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
+  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+}
+function noteDialog(s, callId, questions) {
+  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
+  const added = questions.flatMap(
+    (q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]
+  );
+  if (added.length === 0) return s;
+  return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
 }
 
 // ../hooks/tools.ts
@@ -3112,75 +3174,6 @@ function orderPrs(host, ledger, input, now) {
     result: `Set. These ${refs.length} PRs show first in ${host.prsIn}, in this order.${addedText}`,
     personLine: `PR order: ${label}, ${refs.length} ${refs.length === 1 ? "PR" : "PRs"}`
   };
-}
-
-// ../hooks/arrivals.ts
-var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
-
-// ../hooks/dialogs.ts
-function optionKey(option) {
-  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
-}
-function optionsKey(options) {
-  return options.map(optionKey).sort().join("\n");
-}
-function hasSameOptions(item, q) {
-  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
-}
-function copyOf(q, items, questions) {
-  const byOptions = items.filter((i) => hasSameOptions(i, q));
-  const [only] = byOptions;
-  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
-  const pool = byOptions.length > 0 ? byOptions : items;
-  const byAsk = pool.filter((i) => restates(i.ask, q.question));
-  const [asked] = byAsk;
-  if (!asked || byAsk.length !== 1) return null;
-  const restated = questions.filter((o) => restates(asked.ask, o.question));
-  return restated.length === 1 ? asked : null;
-}
-function descriptionsFor(options, descriptions) {
-  const byKey = new Map(Object.entries(descriptions).map(([label, text3]) => [optionKey(label), text3]));
-  const matched = options.flatMap((o) => {
-    const text3 = byKey.get(optionKey(o));
-    return text3 === void 0 ? [] : [[o, text3]];
-  });
-  return matched.length > 0 ? Object.fromEntries(matched) : null;
-}
-function asCopyOf(item, q) {
-  const descriptions = descriptionsFor(item.options, q.descriptions);
-  return {
-    ...item,
-    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
-    ...descriptions ? { optionDescriptions: descriptions } : {}
-  };
-}
-function linkDialogs(s) {
-  if (s.dialogQuestions.length === 0) return s;
-  let items = s.ledger.items;
-  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
-  const questions = s.dialogQuestions.map((q) => {
-    if (q.itemId !== null) return q;
-    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
-    const copy = copyOf(
-      q,
-      turnItems,
-      s.dialogQuestions.filter((o) => o.turn === q.turn)
-    );
-    if (!copy || copy.dialog || linked.has(copy.id)) return q;
-    linked.add(copy.id);
-    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
-    return { ...q, itemId: copy.id };
-  });
-  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
-  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
-}
-function noteDialog(s, callId, questions) {
-  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
-  const added = questions.flatMap(
-    (q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]
-  );
-  if (added.length === 0) return s;
-  return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
 }
 
 // ../hooks/session.ts
@@ -3557,6 +3550,778 @@ function heardState(h) {
 function viewOf(s, now, holds = NO_HOLDS) {
   const canCatchUp = s.transcriptPath !== null;
   return { ...sessionView(s, now, SETTLE_WINDOW_MS, canCatchUp, holds), heard: heardState(s.heard), at: now };
+}
+
+// src/server-catch-up.ts
+import { isAbsolute as isAbsolute2 } from "node:path";
+
+// src/state.ts
+import { execFileSync } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  readlink,
+  realpath,
+  rename,
+  rmdir,
+  stat,
+  symlink,
+  unlink,
+  writeFile
+} from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+
+// ../hooks/session-version.ts
+var SESSION_VERSION = 1;
+function checkVersion(saved) {
+  const version = saved.version ?? 1;
+  if (version !== SESSION_VERSION) throw new Error(`Unsupported inbox state version: ${version}`);
+}
+
+// src/state.ts
+var NOTHING_HEARD = {
+  startAt: null,
+  promptAt: null,
+  prompts: 0,
+  promptTurns: [],
+  stopAt: null,
+  stops: 0,
+  promptMissedAt: null
+};
+function emptyState(sessionId) {
+  return {
+    version: SESSION_VERSION,
+    sessionId,
+    root: "",
+    transcriptPath: null,
+    home: homedir(),
+    cliPath: null,
+    lastModelFailure: null,
+    ...emptySession(),
+    tabSeenAt: 0,
+    shownTab: "needsYou",
+    heard: NOTHING_HEARD,
+    coveredTurn: null
+  };
+}
+function statePath(dir, sessionId) {
+  return join(dir, "sessions", sessionFile(sessionId));
+}
+function upgraded(saved, sessionId) {
+  checkVersion(saved);
+  const base = emptyState(sessionId);
+  const {
+    checks: _checks,
+    snapshots: _snapshots,
+    recordedRuns: _runs,
+    top: _top,
+    subagents: _subagents,
+    ...kept
+  } = saved;
+  const { sentBack: _sentBack, ...turn } = saved.turn ?? {};
+  const heard = saved.heard ? { ...NOTHING_HEARD, ...saved.heard } : {
+    ...NOTHING_HEARD,
+    startAt: 0,
+    promptAt: 0,
+    prompts: saved.presence?.turnsStarted ?? 0,
+    stops: saved.presence?.turnsStarted ?? 0
+  };
+  return {
+    ...base,
+    ...kept,
+    ...upgradeSession({
+      ...kept,
+      turn,
+      pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex }))
+    }),
+    shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
+    heard,
+    coveredTurn: saved.coveredTurn !== void 0 ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null)
+  };
+}
+function coveredBefore(heard, person) {
+  return heard.promptTurns.at(person === null ? -1 : -2) ?? null;
+}
+async function readSaved(dir, sessionId) {
+  const saved = await readFile(statePath(dir, sessionId), "utf8").catch(missingAsNull);
+  return saved === null ? { state: emptyState(sessionId), isSaved: false } : { state: upgraded(JSON.parse(saved), sessionId), isSaved: true };
+}
+async function readState(dir, sessionId) {
+  return (await readSaved(dir, sessionId)).state;
+}
+var LOCK_WAIT_MS = 1e4;
+var LOCK_CHILD = "held";
+var sleep = (ms) => new Promise((resolve3) => setTimeout(resolve3, ms));
+var LockBusyError = class extends Error {
+};
+var bootSession = null;
+var ownIdentity = null;
+function lockOwner(suffix) {
+  const match = /^(\d+)-[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}(?:-([a-f\d]{32}))?$/.exec(suffix);
+  const pid = Number(match?.[1]);
+  return Number.isSafeInteger(pid) && pid > 0 ? { pid, identity: match?.[2] ?? null } : null;
+}
+function processIdentity(pid) {
+  if (pid === process.pid && ownIdentity) return ownIdentity;
+  try {
+    const options = {
+      encoding: "utf8",
+      env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
+      stdio: "pipe",
+      timeout: 1e3
+    };
+    const boot = bootSession ?? execFileSync("/usr/sbin/sysctl", ["-n", "kern.bootsessionuuid"], options).trim();
+    const started = execFileSync("/bin/ps", ["-p", String(pid), "-o", "lstart="], options).trim();
+    if (!boot || !started) return null;
+    bootSession = boot;
+    const identity = createHash("sha256").update(boot).update("\0").update(started).digest("hex").slice(0, 32);
+    if (pid === process.pid) ownIdentity = identity;
+    return identity;
+  } catch {
+    return null;
+  }
+}
+function isLive(owner, generation, observedLiveAt) {
+  try {
+    process.kill(owner.pid, 0);
+  } catch (err) {
+    return err.code !== "ESRCH";
+  }
+  if (owner.identity === null) return true;
+  const checkedAt = observedLiveAt.get(generation);
+  if (checkedAt !== void 0 && Date.now() - checkedAt < 250) return true;
+  const identity = processIdentity(owner.pid);
+  if (identity !== null && identity !== owner.identity) return false;
+  observedLiveAt.set(generation, Date.now());
+  return true;
+}
+async function lockTarget(path) {
+  return readlink(path).catch((err) => {
+    if (err.code === "ENOENT" || err.code === "EINVAL") return null;
+    throw err;
+  });
+}
+async function removeOwnedLock(path, target, owner, source) {
+  const identity = processIdentity(process.pid);
+  const claimed = `${owner}.recover-${process.pid}-${randomUUID()}${identity ? `-${identity}` : ""}`;
+  const isDirectory = await lstat(source).then(
+    (s) => s.isDirectory(),
+    (err) => {
+      if (err.code === "ENOENT") return false;
+      throw err;
+    }
+  );
+  if (!isDirectory) return false;
+  try {
+    await rename(source, claimed);
+  } catch (err) {
+    if (err.code === "ENOENT") return false;
+    throw err;
+  }
+  if (await lockTarget(path) === target) await unlink(path);
+  await rmdir(claimed);
+  return true;
+}
+async function recoverLock(path, observedLiveAt) {
+  const target = await lockTarget(path);
+  if (!target || !isAbsolute(target)) return false;
+  const owner = basename(target) === LOCK_CHILD ? dirname(target) : target;
+  if (target !== owner && target !== join(owner, LOCK_CHILD)) return false;
+  const prefix = `${basename(path)}.owner-`;
+  if (!basename(owner).startsWith(prefix)) return false;
+  if (await realpath(dirname(owner)).catch(() => null) !== dirname(path)) return false;
+  const holder = lockOwner(basename(owner).slice(prefix.length));
+  if (!holder || isLive(holder, owner, observedLiveAt)) return false;
+  if (await removeOwnedLock(path, target, owner, owner)) return true;
+  const recoverPrefix = `${basename(owner)}.recover-`;
+  const entries = await readdir(dirname(path));
+  for (const entry of entries) {
+    if (!entry.startsWith(recoverPrefix)) continue;
+    const recovering = lockOwner(entry.slice(recoverPrefix.length));
+    if (!recovering || isLive(recovering, entry, observedLiveAt)) continue;
+    if (await removeOwnedLock(path, target, owner, join(dirname(path), entry))) return true;
+  }
+  return false;
+}
+async function withLock(path, fn, waitMs = LOCK_WAIT_MS) {
+  path = resolve(path);
+  await mkdir(dirname(path), { recursive: true });
+  path = join(await realpath(dirname(path)), basename(path));
+  const identity = processIdentity(process.pid);
+  const owner = `${path}.owner-${process.pid}-${randomUUID()}${identity ? `-${identity}` : ""}`;
+  const target = join(owner, LOCK_CHILD);
+  await mkdir(owner);
+  const until = Date.now() + waitMs;
+  const observedLiveAt = /* @__PURE__ */ new Map();
+  try {
+    for (; ; ) {
+      try {
+        await symlink(target, path);
+        break;
+      } catch (err) {
+        if (err.code !== "EEXIST") throw err;
+        if (await recoverLock(path, observedLiveAt)) continue;
+        if (Date.now() > until) throw new LockBusyError(`Timed out waiting for ${path}`);
+        await sleep(15);
+      }
+    }
+    return await fn();
+  } finally {
+    await removeOwnedLock(path, target, owner, owner);
+  }
+}
+async function tryWithLock(path, fn) {
+  let acquired = false;
+  try {
+    return {
+      acquired: true,
+      value: await withLock(
+        path,
+        () => {
+          acquired = true;
+          return fn();
+        },
+        0
+      )
+    };
+  } catch (err) {
+    if (!acquired && err instanceof LockBusyError) return { acquired: false };
+    throw err;
+  }
+}
+async function updateState(dir, sessionId, change) {
+  const path = statePath(dir, sessionId);
+  return withLock(`${path}.lock`, async () => {
+    const { state: current, isSaved } = await readSaved(dir, sessionId);
+    const changed = await change(current);
+    if (isSaved && changed === current) return current;
+    const next = pruned(changed);
+    const tmp = `${path}.${process.pid}.tmp`;
+    await writeFile(tmp, JSON.stringify(next));
+    await rename(tmp, path);
+    return next;
+  });
+}
+async function pruneSessions(dir, keep) {
+  const folder = join(dir, "sessions");
+  const names = (await readdir(folder)).filter(isSessionFile);
+  if (names.length <= KEPT_SESSIONS) return;
+  const readable = await Promise.all(
+    names.map(async (name) => {
+      const path = join(folder, name);
+      try {
+        const { mtimeMs } = await stat(path);
+        upgraded(JSON.parse(await readFile(path, "utf8")), name.slice(0, -".json".length));
+        return { name, path, mtimeMs };
+      } catch {
+        return null;
+      }
+    })
+  );
+  for (const { path, mtimeMs } of staleSessionFiles(
+    readable.filter((f) => f !== null),
+    keep
+  )) {
+    try {
+      await tryWithLock(
+        `${path}.updating`,
+        () => tryWithLock(`${path}.lock`, async () => {
+          if ((await stat(path)).mtimeMs === mtimeMs) await unlink(path);
+        })
+      );
+    } catch {
+      continue;
+    }
+  }
+}
+
+// src/history.ts
+async function withForkedLedger(s, { dir, reads }) {
+  const parentId = await reads.forkedFromId();
+  const parent = parentId === null ? null : await readState(dir, parentId).catch(() => null);
+  return parent !== null && hasLedger(parent) ? forkedFrom(s, parent) : s;
+}
+function newestEndedTurn(rows, currentTurnId) {
+  return rows?.findLast((t) => t.hasEnded && t.id !== currentTurnId)?.id ?? null;
+}
+var holdsEndedTurn = (currentTurnId) => (rows) => newestEndedTurn(rows, currentTurnId) !== null;
+async function withEarlierHistory(s, history) {
+  if (heardState(s.heard) !== "none") return { state: s, isBehind: false };
+  const forked = await withForkedLedger(s, history);
+  const { reads, cwd, currentTurnId, canMarkBehind = true } = history;
+  if (!canMarkBehind) return { state: forked, isBehind: false };
+  const rollout = isUnseen(forked) ? await reads.rollout(cwd, currentTurnId) : null;
+  const coveredTurn = newestEndedTurn(await reads.turns(holdsEndedTurn(currentTurnId)), currentTurnId);
+  const covered = coveredTurn === forked.coveredTurn ? forked : { ...forked, coveredTurn };
+  if ((rollout?.earlierTurns ?? 0) === 0) return { state: covered, isBehind: false };
+  return { state: { ...covered, presence: { ...covered.presence, ledgerState: "behind" } }, isBehind: true };
+}
+
+// src/transcript.ts
+import { open as open2, readdir as readdir2 } from "node:fs/promises";
+import { dirname as dirname2, join as join2 } from "node:path";
+
+// src/rollout-rows.ts
+import { open } from "node:fs/promises";
+async function readSessionMeta(path) {
+  try {
+    const file = await open(path, "r");
+    try {
+      const buf = Buffer.alloc(64 * 1024);
+      const { bytesRead } = await file.read(buf, 0, buf.length, 0);
+      const first = buf.subarray(0, bytesRead).toString("utf8").split("\n")[0] ?? "";
+      const meta = JSON.parse(first);
+      return meta.type === "session_meta" ? meta : null;
+    } finally {
+      await file.close();
+    }
+  } catch {
+    return null;
+  }
+}
+function isExecMeta(meta) {
+  return meta?.payload?.originator === "codex_exec" || meta?.payload?.source === "exec";
+}
+async function forkedFromId(path) {
+  const id = (await readSessionMeta(path))?.payload?.forked_from_id;
+  return typeof id === "string" && id !== "" ? id : null;
+}
+var isText = (v) => typeof v === "string";
+var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+var textOf2 = (v) => isText(v) ? v : "";
+var contentText = (content) => (Array.isArray(content) ? content : []).map((part) => textOf2(record(part).text)).filter(Boolean).join("\n").trim();
+var jsonRecord = (raw) => {
+  try {
+    return record(JSON.parse(textOf2(raw)));
+  } catch {
+    return {};
+  }
+};
+
+// ../hooks/conversation.ts
+var NL2 = "\n";
+var TRANSCRIPT_MAX = 8e4;
+var MESSAGE_MAX = 6e3;
+function flattenConversation(turns) {
+  const lines = [];
+  for (const turn of turns) {
+    const text3 = turn.text.trim();
+    const shown = turn.isVerbatim ? text3 : clip(text3, MESSAGE_MAX);
+    if (turn.role === "person") {
+      if (text3 && !text3.startsWith("inbox:")) lines.push(`Person: ${shown}`);
+      continue;
+    }
+    if (text3) lines.push(`Agent: ${shown}`);
+    for (const line of turn.activity) lines.push(`Agent ${line}`);
+  }
+  const kept = [];
+  let size = 0;
+  for (const line of lines.reverse()) {
+    size += line.length + 1;
+    if (size > TRANSCRIPT_MAX) {
+      kept.push("(earlier conversation left out)");
+      break;
+    }
+    kept.push(line);
+  }
+  return kept.reverse().join(NL2);
+}
+
+// src/rollout-commands.ts
+import { resolve as resolve2 } from "node:path";
+var DIALOG_TOOL = "request_user_input_async";
+var SHELL_CALLS = /* @__PURE__ */ new Set(["shell", "shell_command", "exec_command", "container.exec"]);
+function commandText2(command) {
+  if (isText(command)) return command;
+  if (!Array.isArray(command)) return "";
+  const argv = command.filter(isText);
+  const [, flag, script] = argv;
+  return argv.length === 3 && flag?.startsWith("-") && flag.endsWith("c") && script !== void 0 ? script : argv.join(" ");
+}
+function outputText(output) {
+  if (!isText(output)) return "";
+  try {
+    const parsed = JSON.parse(output);
+    return isText(parsed.output) ? parsed.output : output;
+  } catch {
+    return output;
+  }
+}
+function callCommand(p) {
+  if (p.type === "local_shell_call") return commandText2(p.action?.command);
+  if (p.type !== "function_call" || !p.name || !SHELL_CALLS.has(p.name) || !isText(p.arguments)) return "";
+  try {
+    const args = JSON.parse(p.arguments);
+    return commandText2(args.command ?? args.cmd);
+  } catch {
+    return "";
+  }
+}
+var literalValue = (literal) => {
+  if (literal === void 0) return null;
+  try {
+    return textOf2(JSON.parse(literal));
+  } catch {
+    return null;
+  }
+};
+var PATCH_ARGUMENT = /tools\.apply_patch\(\s*("(?:[^"\\]|\\.)*")/;
+var COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")/;
+var shellLines = (command) => {
+  const line = command === "" ? null : toolActivity("Bash", { command });
+  return line ? [line] : [];
+};
+var editLines = (patch, cwd) => patchFiles(patch).map((file) => `edited ${resolve2(cwd || "/", file)}`);
+function callLines(p, hasCommandRows, cwd) {
+  const name = textOf2(p.name);
+  if (p.type === "local_shell_call") return hasCommandRows ? [] : shellLines(callCommand(p));
+  if (p.type === "custom_tool_call" && name === "exec") {
+    const input = textOf2(p.input);
+    const patch = literalValue(PATCH_ARGUMENT.exec(input)?.[1]);
+    const command = literalValue(COMMAND_ARGUMENT.exec(input)?.[1]);
+    return [...patch ? editLines(patch, cwd) : [], ...command && !hasCommandRows ? shellLines(command) : []];
+  }
+  if (p.type !== "function_call") return [];
+  if (SHELL_CALLS.has(name)) return hasCommandRows ? [] : shellLines(callCommand(p));
+  const args = jsonRecord(p.arguments);
+  if (name === "apply_patch") return editLines(textOf2(args.input ?? args.patch ?? args.command), cwd);
+  if (name === "spawn_agent") {
+    const line2 = toolActivity("Agent", { description: textOf2(args.task_name) });
+    return line2 ? [line2] : [];
+  }
+  if (name === DIALOG_TOOL) return [dialogActivity(dialogQuestions(args.questions), { kind: "open" })];
+  const line = toolActivity(textOf2(p.namespace).startsWith("mcp__") ? textOf2(p.namespace) + name : name, {});
+  return line ? [line] : [];
+}
+
+// src/rollout-turns.ts
+var PLAN_TOOL = "update_plan";
+var MARKERS = ['"task_started"', DIALOG_TOOL, '"CommandExecution"', '"function_call', '"local_shell_call'];
+var TURN_EVENT_KINDS = /* @__PURE__ */ new Map([
+  ["task_started", "started"],
+  ["task_complete", "completed"],
+  ["turn_aborted", "aborted"]
+]);
+function turnEventOfRow(row) {
+  const p = record(row.payload);
+  const kind = row.type === "event_msg" ? TURN_EVENT_KINDS.get(textOf2(p.type)) : void 0;
+  return kind === void 0 ? null : { id: textOf2(p.turn_id) || textOf2(record(p.turn_attribution).turn_id), kind };
+}
+function turnEventOf(line) {
+  if (!line.includes('"task_') && !line.includes('"turn_aborted"')) return null;
+  try {
+    return turnEventOfRow(record(JSON.parse(line)));
+  } catch {
+    return null;
+  }
+}
+function turnOf(lines, turnId) {
+  const none = { dialogs: [], commands: [], plan: null };
+  try {
+    const byTurn = /* @__PURE__ */ new Map();
+    const newTurn = () => ({ dialogs: [], executions: [], calls: /* @__PURE__ */ new Map(), called: [], plan: null });
+    let current = "";
+    let newest = "";
+    for (const line of lines) {
+      if (!MARKERS.some((m) => line.includes(m))) continue;
+      let row;
+      try {
+        row = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const p = row.payload;
+      if (!p) continue;
+      if (row.type === "event_msg" && p.type === "task_started" && p.turn_id) {
+        current = p.turn_id;
+        newest = current;
+        if (!byTurn.has(current)) byTurn.set(current, newTurn());
+        continue;
+      }
+      const turn2 = byTurn.get(current) ?? newTurn();
+      byTurn.set(current, turn2);
+      if (row.type === "event_msg" && p.type === "item_completed" && p.item?.type === "CommandExecution") {
+        const output = p.item.aggregated_output;
+        turn2.executions.push({ command: commandText2(p.item.command), output: isText(output) ? output : "" });
+      } else if (row.type === "response_item" && p.type === "function_call" && p.name === PLAN_TOOL) {
+        turn2.plan = codexPlanOf(p.arguments) ?? turn2.plan;
+      } else if (row.type === "response_item" && p.type === "function_call" && p.name === DIALOG_TOOL) {
+        let args;
+        try {
+          args = JSON.parse(isText(p.arguments) ? p.arguments : "");
+        } catch {
+          continue;
+        }
+        turn2.dialogs.push({ callId: p.call_id ?? null, questions: dialogQuestions(args.questions) });
+      } else if (row.type === "response_item" && (p.type === "function_call" || p.type === "local_shell_call")) {
+        const command = callCommand(p);
+        if (command !== "" && p.call_id) turn2.calls.set(p.call_id, { command, output: "" });
+      } else if (row.type === "response_item" && p.type === "function_call_output" && p.call_id) {
+        const call = turn2.calls.get(p.call_id);
+        if (call) turn2.called.push({ command: call.command, output: outputText(p.output) });
+      }
+    }
+    const wanted = newest === "" ? "" : turnId ?? newest;
+    const turn = byTurn.get(wanted);
+    if (!turn) return none;
+    return {
+      dialogs: turn.dialogs.filter((d) => d.questions.length > 0),
+      commands: turn.executions.length > 0 ? turn.executions : turn.called,
+      plan: turn.plan
+    };
+  } catch {
+    return none;
+  }
+}
+var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf2(record(record(row.payload).item).type));
+function turnsOf(rows, cwd) {
+  const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
+  const hasCommandRows = rows.some((row) => isItem(row, "CommandExecution"));
+  const turns = [];
+  const agentTurn = () => {
+    const last = turns.at(-1);
+    if (last?.role === "agent") return last;
+    const turn = { role: "agent", text: "", activity: [] };
+    turns.push(turn);
+    return turn;
+  };
+  const person = (text3) => {
+    if (text3 && !text3.startsWith("<")) turns.push({ role: "person", text: text3, activity: [] });
+  };
+  const act = (lines) => {
+    if (lines.length === 0) return;
+    const turn = agentTurn();
+    turn.activity = lines.reduce((all, line) => addActivity(all, line), turn.activity);
+  };
+  for (const row of rows) {
+    const p = record(row.payload);
+    const item = record(p.item);
+    if (isItem(row, "UserMessage")) person(contentText(item.content));
+    else if (isItem(row, "AgentMessage")) turns.push({ role: "agent", text: contentText(item.content), activity: [] });
+    else if (isItem(row, "CommandExecution")) act(shellLines(commandText2(item.command)));
+    else if (row.type === "response_item") {
+      if (p.type === "message" && !hasMessageRows && p.role === "user") person(contentText(p.content));
+      else if (p.type === "message" && !hasMessageRows && p.role === "assistant")
+        turns.push({ role: "agent", text: contentText(p.content), activity: [] });
+      else act(callLines(p, hasCommandRows, cwd));
+    }
+  }
+  return turns;
+}
+function rolloutTurns(lines, cwd) {
+  const groups = [];
+  for (const line of lines) {
+    let row;
+    try {
+      row = record(JSON.parse(line));
+    } catch {
+      continue;
+    }
+    const event = turnEventOfRow(row);
+    if (event?.kind === "started") {
+      groups.push({ id: event.id, isComplete: false, rows: [] });
+      continue;
+    }
+    if (groups.length === 0) groups.push({ id: "", isComplete: false, rows: [] });
+    const group = groups.at(-1);
+    if (event?.kind === "completed") group.isComplete = true;
+    else group.rows.push(row);
+  }
+  return groups.map((g) => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd) }));
+}
+function turnRowsOf(lines, isWindow) {
+  const rows = [];
+  for (const line of lines) {
+    const event = turnEventOf(line);
+    if (event === null || isWindow && rows.length === 0 && event.kind !== "started") continue;
+    if (event.kind === "started") {
+      rows.push({ id: event.id, hasEnded: false });
+      continue;
+    }
+    const started = rows.findLast((t) => t.id === event.id) ?? (event.id === "" ? rows.at(-1) : void 0);
+    if (started) started.hasEnded = true;
+    else rows.push({ id: event.id, hasEnded: true });
+  }
+  return rows;
+}
+function rolloutOfLines(lines, cwd, currentTurnId) {
+  const turns = rolloutTurns(lines, cwd);
+  const earlier = turns.filter((t) => t.id !== currentTurnId && (t.isComplete || t.turns.some((x) => x.role === "person")));
+  return { conversation: flattenConversation(turns.flatMap((t) => t.turns)), earlierTurns: earlier.length };
+}
+
+// src/transcript.ts
+async function namesIn(dir, pattern) {
+  const names = await readdir2(dir).catch(() => []);
+  return names.filter((n) => pattern.test(n)).sort().reverse();
+}
+async function newestRollout(sessions, isWanted) {
+  for (const year of await namesIn(sessions, /^\d{4}$/))
+    for (const month of await namesIn(join2(sessions, year), /^\d{2}$/))
+      for (const day of await namesIn(join2(sessions, year, month), /^\d{2}$/)) {
+        const folder = join2(sessions, year, month, day);
+        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isWanted);
+        if (name !== void 0) return join2(folder, name);
+      }
+  return null;
+}
+async function rolloutFor(codexHome, threadId) {
+  if (threadId === "") return null;
+  const path = await newestRollout(
+    join2(codexHome, "sessions"),
+    (name) => name.endsWith(`-${threadId}.jsonl`) || name.includes(`-${threadId}_`)
+  );
+  if (path === null) return null;
+  const meta = await readSessionMeta(path);
+  const isOwnChat = meta !== null && !meta.payload?.parent_thread_id && !isExecMeta(meta);
+  return isOwnChat ? { path, cwd: typeof meta.payload?.cwd === "string" ? meta.payload.cwd : "" } : null;
+}
+async function historyBase(path) {
+  const base = (await readSessionMeta(path))?.payload?.history_base;
+  const id = base?.thread_id;
+  const end = base?.end_byte_offset;
+  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0) return null;
+  const sessions = dirname2(dirname2(dirname2(dirname2(path))));
+  const basePath = await newestRollout(sessions, (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`));
+  return basePath === null ? null : { path: basePath, end };
+}
+var TAIL_BYTES = 4 * 1024 * 1024;
+async function linesBefore(path, bytes, end = Infinity) {
+  const file = await open2(path, "r");
+  try {
+    const stop = Math.min(end, (await file.stat()).size);
+    const start = Math.max(0, stop - bytes);
+    const buf = Buffer.alloc(stop - start);
+    const { bytesRead } = await file.read(buf, 0, buf.length, start);
+    const lines = buf.subarray(0, bytesRead).toString("utf8").split("\n");
+    if (start > 0) lines.shift();
+    return { lines, start, read: bytesRead };
+  } finally {
+    await file.close();
+  }
+}
+var TURN_ROW_BYTES = 64 * 1024;
+async function newestTurnEvent(path) {
+  try {
+    for (const line of (await tailLines(path, TURN_ROW_BYTES)).reverse()) {
+      const event = turnEventOf(line);
+      if (event !== null) return event;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+async function tailLines(path, bytes) {
+  return (await linesBefore(path, bytes)).lines;
+}
+async function historyLines(path, bytes) {
+  const first = await linesBefore(path, bytes);
+  const parts = [first.lines];
+  const seen = /* @__PURE__ */ new Set([path]);
+  let budget = bytes - first.read;
+  let isWhole = first.start === 0;
+  let current = path;
+  while (isWhole && budget > 0) {
+    const base = await historyBase(current).catch(() => null);
+    if (base === null || seen.has(base.path)) break;
+    seen.add(base.path);
+    const part = await linesBefore(base.path, budget, base.end).catch(() => null);
+    if (part === null) break;
+    parts.unshift(part.lines);
+    budget -= part.read;
+    isWhole = part.start === 0;
+    current = base.path;
+  }
+  return parts.flat();
+}
+async function turnIn(path, turnId) {
+  return turnOf(await rolloutTail(path), turnId);
+}
+async function rolloutTail(path) {
+  return path === null ? [] : tailLines(path, TAIL_BYTES).catch(() => []);
+}
+var ROLLOUT_BYTES = 8 * 1024 * 1024;
+var TURN_WINDOW_BYTES = [TURN_ROW_BYTES, 512 * 1024, TAIL_BYTES];
+function rolloutReads(path, tail) {
+  let history = null;
+  let read = null;
+  const rollouts = /* @__PURE__ */ new Map();
+  let forkedFrom2 = null;
+  const wholeHistory = () => history ??= historyLines(path, ROLLOUT_BYTES);
+  async function windowTurns(isEnough) {
+    if (tail !== void 0) {
+      const turns = turnRowsOf(tail, true);
+      return isEnough(turns) ? turns : null;
+    }
+    for (const bytes of TURN_WINDOW_BYTES) {
+      const { lines, start } = await linesBefore(path, bytes);
+      const turns = turnRowsOf(lines, true);
+      if (isEnough(turns)) return turns;
+      if (start === 0) break;
+    }
+    return null;
+  }
+  return {
+    async turns(isEnough) {
+      try {
+        if (read === null || !(read.isWhole || isEnough(read.turns))) {
+          const window = history === null ? await windowTurns(isEnough) : null;
+          read = window === null ? { turns: turnRowsOf(await wholeHistory(), false), isWhole: true } : { turns: window, isWhole: false };
+        }
+        return read.turns;
+      } catch {
+        return null;
+      }
+    },
+    rollout(cwd, currentTurnId) {
+      const key = JSON.stringify([cwd, currentTurnId ?? null]);
+      const known = rollouts.get(key);
+      if (known !== void 0) return known;
+      const rollout = wholeHistory().then((lines) => rolloutOfLines(lines, cwd, currentTurnId)).catch(() => null);
+      rollouts.set(key, rollout);
+      return rollout;
+    },
+    forkedFromId() {
+      return forkedFrom2 ??= forkedFromId(path);
+    }
+  };
+}
+
+// src/server-catch-up.ts
+function makeCatchUpOnOpen(deps) {
+  const { dir } = deps;
+  const checkedOnOpen = /* @__PURE__ */ new Set();
+  async function catchUpOnOpen(id) {
+    const { openCatchUp } = deps;
+    if (!openCatchUp || checkedOnOpen.has(id)) return;
+    checkedOnOpen.add(id);
+    const before = await readState(dir, id);
+    if (before.transcriptPath !== null || heardState(before.heard) !== "none" || !isUnseen(before)) return;
+    const rollout = await rolloutFor(openCatchUp.codexHome, id);
+    if (rollout === null) return;
+    const cli = await deps.fallbackCli().catch(() => null);
+    const history = { dir, cwd: rollout.cwd, reads: rolloutReads(rollout.path) };
+    await withEarlierHistory(before, history);
+    let isBehind = false;
+    await updateState(dir, id, async (s) => {
+      const r = await withEarlierHistory(s, history);
+      isBehind = r.isBehind;
+      if (r.state === s) return s;
+      return {
+        ...r.state,
+        root: s.root || rollout.cwd,
+        transcriptPath: rollout.path,
+        cliPath: s.cliPath ?? (cli !== null && isAbsolute2(cli) ? cli : null)
+      };
+    });
+    if (isBehind) openCatchUp.startUpdate(id);
+  }
+  return catchUpOnOpen;
 }
 
 // ../hooks/demo.ts
@@ -4065,290 +4830,6 @@ function demoView(now, agent) {
   };
 }
 
-// src/state.ts
-import { execFileSync } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
-import {
-  lstat,
-  mkdir,
-  readFile,
-  readdir,
-  readlink,
-  realpath,
-  rename,
-  rmdir,
-  stat,
-  symlink,
-  unlink,
-  writeFile
-} from "node:fs/promises";
-import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-
-// ../hooks/session-version.ts
-var SESSION_VERSION = 1;
-function checkVersion(saved) {
-  const version = saved.version ?? 1;
-  if (version !== SESSION_VERSION) throw new Error(`Unsupported inbox state version: ${version}`);
-}
-
-// src/state.ts
-var NOTHING_HEARD = {
-  startAt: null,
-  promptAt: null,
-  prompts: 0,
-  promptTurns: [],
-  stopAt: null,
-  stops: 0,
-  promptMissedAt: null
-};
-function emptyState(sessionId) {
-  return {
-    version: SESSION_VERSION,
-    sessionId,
-    root: "",
-    transcriptPath: null,
-    home: homedir(),
-    cliPath: null,
-    lastModelFailure: null,
-    ...emptySession(),
-    tabSeenAt: 0,
-    shownTab: "needsYou",
-    heard: NOTHING_HEARD,
-    coveredTurn: null
-  };
-}
-function statePath(dir, sessionId) {
-  return join(dir, "sessions", sessionFile(sessionId));
-}
-function upgraded(saved, sessionId) {
-  checkVersion(saved);
-  const base = emptyState(sessionId);
-  const {
-    checks: _checks,
-    snapshots: _snapshots,
-    recordedRuns: _runs,
-    top: _top,
-    subagents: _subagents,
-    ...kept
-  } = saved;
-  const { sentBack: _sentBack, ...turn } = saved.turn ?? {};
-  const heard = saved.heard ? { ...NOTHING_HEARD, ...saved.heard } : {
-    ...NOTHING_HEARD,
-    startAt: 0,
-    promptAt: 0,
-    prompts: saved.presence?.turnsStarted ?? 0,
-    stops: saved.presence?.turnsStarted ?? 0
-  };
-  return {
-    ...base,
-    ...kept,
-    ...upgradeSession({
-      ...kept,
-      turn,
-      pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex }))
-    }),
-    shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
-    heard,
-    coveredTurn: saved.coveredTurn !== void 0 ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null)
-  };
-}
-function coveredBefore(heard, person) {
-  return heard.promptTurns.at(person === null ? -1 : -2) ?? null;
-}
-async function readSaved(dir, sessionId) {
-  const saved = await readFile(statePath(dir, sessionId), "utf8").catch(missingAsNull);
-  return saved === null ? { state: emptyState(sessionId), isSaved: false } : { state: upgraded(JSON.parse(saved), sessionId), isSaved: true };
-}
-async function readState(dir, sessionId) {
-  return (await readSaved(dir, sessionId)).state;
-}
-var LOCK_WAIT_MS = 1e4;
-var LOCK_CHILD = "held";
-var sleep = (ms) => new Promise((resolve3) => setTimeout(resolve3, ms));
-var LockBusyError = class extends Error {
-};
-var bootSession = null;
-var ownIdentity = null;
-function lockOwner(suffix) {
-  const match = /^(\d+)-[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}(?:-([a-f\d]{32}))?$/.exec(suffix);
-  const pid = Number(match?.[1]);
-  return Number.isSafeInteger(pid) && pid > 0 ? { pid, identity: match?.[2] ?? null } : null;
-}
-function processIdentity(pid) {
-  if (pid === process.pid && ownIdentity) return ownIdentity;
-  try {
-    const options = {
-      encoding: "utf8",
-      env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
-      stdio: "pipe",
-      timeout: 1e3
-    };
-    const boot = bootSession ?? execFileSync("/usr/sbin/sysctl", ["-n", "kern.bootsessionuuid"], options).trim();
-    const started = execFileSync("/bin/ps", ["-p", String(pid), "-o", "lstart="], options).trim();
-    if (!boot || !started) return null;
-    bootSession = boot;
-    const identity = createHash("sha256").update(boot).update("\0").update(started).digest("hex").slice(0, 32);
-    if (pid === process.pid) ownIdentity = identity;
-    return identity;
-  } catch {
-    return null;
-  }
-}
-function isLive(owner, generation, observedLiveAt) {
-  try {
-    process.kill(owner.pid, 0);
-  } catch (err) {
-    return err.code !== "ESRCH";
-  }
-  if (owner.identity === null) return true;
-  const checkedAt = observedLiveAt.get(generation);
-  if (checkedAt !== void 0 && Date.now() - checkedAt < 250) return true;
-  const identity = processIdentity(owner.pid);
-  if (identity !== null && identity !== owner.identity) return false;
-  observedLiveAt.set(generation, Date.now());
-  return true;
-}
-async function lockTarget(path) {
-  return readlink(path).catch((err) => {
-    if (err.code === "ENOENT" || err.code === "EINVAL") return null;
-    throw err;
-  });
-}
-async function removeOwnedLock(path, target, owner, source) {
-  const identity = processIdentity(process.pid);
-  const claimed = `${owner}.recover-${process.pid}-${randomUUID()}${identity ? `-${identity}` : ""}`;
-  const isDirectory = await lstat(source).then(
-    (s) => s.isDirectory(),
-    (err) => {
-      if (err.code === "ENOENT") return false;
-      throw err;
-    }
-  );
-  if (!isDirectory) return false;
-  try {
-    await rename(source, claimed);
-  } catch (err) {
-    if (err.code === "ENOENT") return false;
-    throw err;
-  }
-  if (await lockTarget(path) === target) await unlink(path);
-  await rmdir(claimed);
-  return true;
-}
-async function recoverLock(path, observedLiveAt) {
-  const target = await lockTarget(path);
-  if (!target || !isAbsolute(target)) return false;
-  const owner = basename(target) === LOCK_CHILD ? dirname(target) : target;
-  if (target !== owner && target !== join(owner, LOCK_CHILD)) return false;
-  const prefix = `${basename(path)}.owner-`;
-  if (!basename(owner).startsWith(prefix)) return false;
-  if (await realpath(dirname(owner)).catch(() => null) !== dirname(path)) return false;
-  const holder = lockOwner(basename(owner).slice(prefix.length));
-  if (!holder || isLive(holder, owner, observedLiveAt)) return false;
-  if (await removeOwnedLock(path, target, owner, owner)) return true;
-  const recoverPrefix = `${basename(owner)}.recover-`;
-  const entries = await readdir(dirname(path));
-  for (const entry of entries) {
-    if (!entry.startsWith(recoverPrefix)) continue;
-    const recovering = lockOwner(entry.slice(recoverPrefix.length));
-    if (!recovering || isLive(recovering, entry, observedLiveAt)) continue;
-    if (await removeOwnedLock(path, target, owner, join(dirname(path), entry))) return true;
-  }
-  return false;
-}
-async function withLock(path, fn, waitMs = LOCK_WAIT_MS) {
-  path = resolve(path);
-  await mkdir(dirname(path), { recursive: true });
-  path = join(await realpath(dirname(path)), basename(path));
-  const identity = processIdentity(process.pid);
-  const owner = `${path}.owner-${process.pid}-${randomUUID()}${identity ? `-${identity}` : ""}`;
-  const target = join(owner, LOCK_CHILD);
-  await mkdir(owner);
-  const until = Date.now() + waitMs;
-  const observedLiveAt = /* @__PURE__ */ new Map();
-  try {
-    for (; ; ) {
-      try {
-        await symlink(target, path);
-        break;
-      } catch (err) {
-        if (err.code !== "EEXIST") throw err;
-        if (await recoverLock(path, observedLiveAt)) continue;
-        if (Date.now() > until) throw new LockBusyError(`Timed out waiting for ${path}`);
-        await sleep(15);
-      }
-    }
-    return await fn();
-  } finally {
-    await removeOwnedLock(path, target, owner, owner);
-  }
-}
-async function tryWithLock(path, fn) {
-  let acquired = false;
-  try {
-    return {
-      acquired: true,
-      value: await withLock(
-        path,
-        () => {
-          acquired = true;
-          return fn();
-        },
-        0
-      )
-    };
-  } catch (err) {
-    if (!acquired && err instanceof LockBusyError) return { acquired: false };
-    throw err;
-  }
-}
-async function updateState(dir, sessionId, change) {
-  const path = statePath(dir, sessionId);
-  return withLock(`${path}.lock`, async () => {
-    const { state: current, isSaved } = await readSaved(dir, sessionId);
-    const changed = await change(current);
-    if (isSaved && changed === current) return current;
-    const next = pruned(changed);
-    const tmp = `${path}.${process.pid}.tmp`;
-    await writeFile(tmp, JSON.stringify(next));
-    await rename(tmp, path);
-    return next;
-  });
-}
-async function pruneSessions(dir, keep) {
-  const folder = join(dir, "sessions");
-  const names = (await readdir(folder)).filter(isSessionFile);
-  if (names.length <= KEPT_SESSIONS) return;
-  const readable = await Promise.all(
-    names.map(async (name) => {
-      const path = join(folder, name);
-      try {
-        const { mtimeMs } = await stat(path);
-        upgraded(JSON.parse(await readFile(path, "utf8")), name.slice(0, -".json".length));
-        return { name, path, mtimeMs };
-      } catch {
-        return null;
-      }
-    })
-  );
-  for (const { path, mtimeMs } of staleSessionFiles(
-    readable.filter((f) => f !== null),
-    keep
-  )) {
-    try {
-      await tryWithLock(
-        `${path}.updating`,
-        () => tryWithLock(`${path}.lock`, async () => {
-          if ((await stat(path)).mtimeMs === mtimeMs) await unlink(path);
-        })
-      );
-    } catch {
-      continue;
-    }
-  }
-}
-
 // src/demo.ts
 function demoState(now) {
   const s = emptyState("demo");
@@ -4360,57 +4841,53 @@ function demoState(now) {
   };
 }
 
-// src/dialogs.ts
-function dialogReply(link, answer) {
-  const questionItemId = JSON.stringify(["request_user_input_async", link.callId, link.index]);
-  const reply = [{ questionItemId, question: link.question, answer }];
-  return `<send_user_message_question_reply>
-${JSON.stringify(reply)}
-</send_user_message_question_reply>`;
-}
-function answerMessage(item, answer) {
-  return item.dialog ? dialogReply(item.dialog, answer) : messages.answer(item, answer);
-}
-function noteDialogs(s, dialogs) {
-  return dialogs.reduce((x, d) => d.callId === null ? x : noteDialog(x, d.callId, d.questions), s);
-}
-
-// src/history.ts
-async function withForkedLedger(s, { dir, reads }) {
-  const parentId = await reads.forkedFromId();
-  const parent = parentId === null ? null : await readState(dir, parentId).catch(() => null);
-  return parent !== null && hasLedger(parent) ? forkedFrom(s, parent) : s;
-}
-function newestEndedTurn(rows, currentTurnId) {
-  return rows?.findLast((t) => t.hasEnded && t.id !== currentTurnId)?.id ?? null;
-}
-var holdsEndedTurn = (currentTurnId) => (rows) => newestEndedTurn(rows, currentTurnId) !== null;
-async function withEarlierHistory(s, history) {
-  if (heardState(s.heard) !== "none") return { state: s, isBehind: false };
-  const forked = await withForkedLedger(s, history);
-  const { reads, cwd, currentTurnId, canMarkBehind = true } = history;
-  if (!canMarkBehind) return { state: forked, isBehind: false };
-  const rollout = isUnseen(forked) ? await reads.rollout(cwd, currentTurnId) : null;
-  const coveredTurn = newestEndedTurn(await reads.turns(holdsEndedTurn(currentTurnId)), currentTurnId);
-  const covered = coveredTurn === forked.coveredTurn ? forked : { ...forked, coveredTurn };
-  if ((rollout?.earlierTurns ?? 0) === 0) return { state: covered, isBehind: false };
-  return { state: { ...covered, presence: { ...covered.presence, ledgerState: "behind" } }, isBehind: true };
-}
-
-// src/host.ts
-function codexStore(dir, sessionId, now, onWrite = async () => {
-}) {
-  return {
-    now,
-    read: () => readState(dir, sessionId),
-    update: async (change) => {
-      const s = await updateState(dir, sessionId, change);
-      await onWrite(s);
-      return s;
-    },
-    exclusive: (fn) => tryWithLock(`${statePath(dir, sessionId)}.updating`, fn)
+// src/server-demo.ts
+function makeDemo(deps, served) {
+  const { now } = deps;
+  const demos = /* @__PURE__ */ new Map();
+  const demoOf = (id) => {
+    const s = demos.get(id) ?? demoState(now());
+    demos.set(id, s);
+    return s;
   };
+  async function onDemoPress(id, p, thread, holds) {
+    const s = demoOf(id);
+    const r = thread === id ? pressOn(s, p, now(), { settleWindowMs: SETTLE_WINDOW_MS, holds }, { comparePage: deps.comparePage }) : { stale: true };
+    if ("stale" in r) return { view: await served(s, id, true, holds), copy: null, error: null, note: "stale" };
+    const after = demoAfterPress(
+      { lastActions: s.lastActions, turns: s.presence },
+      r,
+      new Set(Object.keys(holds.replies))
+    );
+    const next = {
+      ...s,
+      ledger: after.ledger,
+      lastActions: after.lastActions,
+      presence: { ...s.presence, ...after.turns }
+    };
+    demos.set(id, next);
+    const sent = demoSent(r, after.turns);
+    if (sent)
+      setTimeout(() => {
+        const d = demos.get(id);
+        if (!d) return;
+        const replied = demoReplied({ lastActions: d.lastActions, turns: d.presence }, sent);
+        demos.set(id, { ...d, lastActions: replied.lastActions, presence: { ...d.presence, ...replied.turns } });
+      }, SETTLED_MS).unref();
+    return {
+      view: await served(next, id, true, holds),
+      copy: null,
+      error: null,
+      note: null
+    };
+  }
+  return { demoOf, onDemoPress };
 }
+
+// src/server-host.ts
+import { randomUUID as randomUUID2 } from "node:crypto";
+import { constants } from "node:fs";
+import { access, stat as stat2 } from "node:fs/promises";
 
 // ../hooks/session-host.ts
 function orderedKeys() {
@@ -4721,442 +5198,42 @@ async function fetchPrs(host, findsBranchPr) {
   await host.update((cur) => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut));
 }
 
-// src/transcript.ts
-import { open, readdir as readdir2 } from "node:fs/promises";
-import { dirname as dirname2, join as join2, resolve as resolve2 } from "node:path";
-
-// ../hooks/conversation.ts
-var NL2 = "\n";
-var TRANSCRIPT_MAX = 8e4;
-var MESSAGE_MAX = 6e3;
-function flattenConversation(turns) {
-  const lines = [];
-  for (const turn of turns) {
-    const text3 = turn.text.trim();
-    const shown = turn.isVerbatim ? text3 : clip(text3, MESSAGE_MAX);
-    if (turn.role === "person") {
-      if (text3 && !text3.startsWith("inbox:")) lines.push(`Person: ${shown}`);
-      continue;
-    }
-    if (text3) lines.push(`Agent: ${shown}`);
-    for (const line of turn.activity) lines.push(`Agent ${line}`);
-  }
-  const kept = [];
-  let size = 0;
-  for (const line of lines.reverse()) {
-    size += line.length + 1;
-    if (size > TRANSCRIPT_MAX) {
-      kept.push("(earlier conversation left out)");
-      break;
-    }
-    kept.push(line);
-  }
-  return kept.reverse().join(NL2);
+// src/dialogs.ts
+function dialogReply(link, answer) {
+  const questionItemId = JSON.stringify(["request_user_input_async", link.callId, link.index]);
+  const reply = [{ questionItemId, question: link.question, answer }];
+  return `<send_user_message_question_reply>
+${JSON.stringify(reply)}
+</send_user_message_question_reply>`;
+}
+function answerMessage(item, answer) {
+  return item.dialog ? dialogReply(item.dialog, answer) : messages.answer(item, answer);
+}
+function noteDialogs(s, dialogs) {
+  return dialogs.reduce((x, d) => d.callId === null ? x : noteDialog(x, d.callId, d.questions), s);
 }
 
-// src/transcript.ts
-async function readSessionMeta(path) {
-  try {
-    const file = await open(path, "r");
-    try {
-      const buf = Buffer.alloc(64 * 1024);
-      const { bytesRead } = await file.read(buf, 0, buf.length, 0);
-      const first = buf.subarray(0, bytesRead).toString("utf8").split("\n")[0] ?? "";
-      const meta = JSON.parse(first);
-      return meta.type === "session_meta" ? meta : null;
-    } finally {
-      await file.close();
-    }
-  } catch {
-    return null;
-  }
-}
-function isExecMeta(meta) {
-  return meta?.payload?.originator === "codex_exec" || meta?.payload?.source === "exec";
-}
-async function forkedFromId(path) {
-  const id = (await readSessionMeta(path))?.payload?.forked_from_id;
-  return typeof id === "string" && id !== "" ? id : null;
-}
-async function namesIn(dir, pattern) {
-  const names = await readdir2(dir).catch(() => []);
-  return names.filter((n) => pattern.test(n)).sort().reverse();
-}
-async function newestRollout(sessions, isWanted) {
-  for (const year of await namesIn(sessions, /^\d{4}$/))
-    for (const month of await namesIn(join2(sessions, year), /^\d{2}$/))
-      for (const day of await namesIn(join2(sessions, year, month), /^\d{2}$/)) {
-        const folder = join2(sessions, year, month, day);
-        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isWanted);
-        if (name !== void 0) return join2(folder, name);
-      }
-  return null;
-}
-async function rolloutFor(codexHome, threadId) {
-  if (threadId === "") return null;
-  const path = await newestRollout(
-    join2(codexHome, "sessions"),
-    (name) => name.endsWith(`-${threadId}.jsonl`) || name.includes(`-${threadId}_`)
-  );
-  if (path === null) return null;
-  const meta = await readSessionMeta(path);
-  const isOwnChat = meta !== null && !meta.payload?.parent_thread_id && !isExecMeta(meta);
-  return isOwnChat ? { path, cwd: typeof meta.payload?.cwd === "string" ? meta.payload.cwd : "" } : null;
-}
-async function historyBase(path) {
-  const base = (await readSessionMeta(path))?.payload?.history_base;
-  const id = base?.thread_id;
-  const end = base?.end_byte_offset;
-  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0) return null;
-  const sessions = dirname2(dirname2(dirname2(dirname2(path))));
-  const basePath = await newestRollout(sessions, (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`));
-  return basePath === null ? null : { path: basePath, end };
-}
-var DIALOG_TOOL = "request_user_input_async";
-var TAIL_BYTES = 4 * 1024 * 1024;
-var SHELL_CALLS = /* @__PURE__ */ new Set(["shell", "shell_command", "exec_command", "container.exec"]);
-var PLAN_TOOL = "update_plan";
-var MARKERS = ['"task_started"', DIALOG_TOOL, '"CommandExecution"', '"function_call', '"local_shell_call'];
-var isText = (v) => typeof v === "string";
-function commandText2(command) {
-  if (isText(command)) return command;
-  if (!Array.isArray(command)) return "";
-  const argv = command.filter(isText);
-  const [, flag, script] = argv;
-  return argv.length === 3 && flag?.startsWith("-") && flag.endsWith("c") && script !== void 0 ? script : argv.join(" ");
-}
-function outputText(output) {
-  if (!isText(output)) return "";
-  try {
-    const parsed = JSON.parse(output);
-    return isText(parsed.output) ? parsed.output : output;
-  } catch {
-    return output;
-  }
-}
-function callCommand(p) {
-  if (p.type === "local_shell_call") return commandText2(p.action?.command);
-  if (p.type !== "function_call" || !p.name || !SHELL_CALLS.has(p.name) || !isText(p.arguments)) return "";
-  try {
-    const args = JSON.parse(p.arguments);
-    return commandText2(args.command ?? args.cmd);
-  } catch {
-    return "";
-  }
-}
-async function linesBefore(path, bytes, end = Infinity) {
-  const file = await open(path, "r");
-  try {
-    const stop = Math.min(end, (await file.stat()).size);
-    const start = Math.max(0, stop - bytes);
-    const buf = Buffer.alloc(stop - start);
-    const { bytesRead } = await file.read(buf, 0, buf.length, start);
-    const lines = buf.subarray(0, bytesRead).toString("utf8").split("\n");
-    if (start > 0) lines.shift();
-    return { lines, start, read: bytesRead };
-  } finally {
-    await file.close();
-  }
-}
-var TURN_ROW_BYTES = 64 * 1024;
-var TURN_EVENT_KINDS = /* @__PURE__ */ new Map([
-  ["task_started", "started"],
-  ["task_complete", "completed"],
-  ["turn_aborted", "aborted"]
-]);
-function turnEventOfRow(row) {
-  const p = record(row.payload);
-  const kind = row.type === "event_msg" ? TURN_EVENT_KINDS.get(textOf2(p.type)) : void 0;
-  return kind === void 0 ? null : { id: textOf2(p.turn_id) || textOf2(record(p.turn_attribution).turn_id), kind };
-}
-function turnEventOf(line) {
-  if (!line.includes('"task_') && !line.includes('"turn_aborted"')) return null;
-  try {
-    return turnEventOfRow(record(JSON.parse(line)));
-  } catch {
-    return null;
-  }
-}
-async function newestTurnEvent(path) {
-  try {
-    for (const line of (await tailLines(path, TURN_ROW_BYTES)).reverse()) {
-      const event = turnEventOf(line);
-      if (event !== null) return event;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-async function tailLines(path, bytes) {
-  return (await linesBefore(path, bytes)).lines;
-}
-async function historyLines(path, bytes) {
-  const first = await linesBefore(path, bytes);
-  const parts = [first.lines];
-  const seen = /* @__PURE__ */ new Set([path]);
-  let budget = bytes - first.read;
-  let isWhole = first.start === 0;
-  let current = path;
-  while (isWhole && budget > 0) {
-    const base = await historyBase(current).catch(() => null);
-    if (base === null || seen.has(base.path)) break;
-    seen.add(base.path);
-    const part = await linesBefore(base.path, budget, base.end).catch(() => null);
-    if (part === null) break;
-    parts.unshift(part.lines);
-    budget -= part.read;
-    isWhole = part.start === 0;
-    current = base.path;
-  }
-  return parts.flat();
-}
-async function turnIn(path, turnId) {
-  return turnOf(await rolloutTail(path), turnId);
-}
-async function rolloutTail(path) {
-  return path === null ? [] : tailLines(path, TAIL_BYTES).catch(() => []);
-}
-function turnOf(lines, turnId) {
-  const none = { dialogs: [], commands: [], plan: null };
-  try {
-    const byTurn = /* @__PURE__ */ new Map();
-    const newTurn = () => ({ dialogs: [], executions: [], calls: /* @__PURE__ */ new Map(), called: [], plan: null });
-    let current = "";
-    let newest = "";
-    for (const line of lines) {
-      if (!MARKERS.some((m) => line.includes(m))) continue;
-      let row;
-      try {
-        row = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      const p = row.payload;
-      if (!p) continue;
-      if (row.type === "event_msg" && p.type === "task_started" && p.turn_id) {
-        current = p.turn_id;
-        newest = current;
-        if (!byTurn.has(current)) byTurn.set(current, newTurn());
-        continue;
-      }
-      const turn2 = byTurn.get(current) ?? newTurn();
-      byTurn.set(current, turn2);
-      if (row.type === "event_msg" && p.type === "item_completed" && p.item?.type === "CommandExecution") {
-        const output = p.item.aggregated_output;
-        turn2.executions.push({ command: commandText2(p.item.command), output: isText(output) ? output : "" });
-      } else if (row.type === "response_item" && p.type === "function_call" && p.name === PLAN_TOOL) {
-        turn2.plan = codexPlanOf(p.arguments) ?? turn2.plan;
-      } else if (row.type === "response_item" && p.type === "function_call" && p.name === DIALOG_TOOL) {
-        let args;
-        try {
-          args = JSON.parse(isText(p.arguments) ? p.arguments : "");
-        } catch {
-          continue;
-        }
-        turn2.dialogs.push({ callId: p.call_id ?? null, questions: dialogQuestions(args.questions) });
-      } else if (row.type === "response_item" && (p.type === "function_call" || p.type === "local_shell_call")) {
-        const command = callCommand(p);
-        if (command !== "" && p.call_id) turn2.calls.set(p.call_id, { command, output: "" });
-      } else if (row.type === "response_item" && p.type === "function_call_output" && p.call_id) {
-        const call = turn2.calls.get(p.call_id);
-        if (call) turn2.called.push({ command: call.command, output: outputText(p.output) });
-      }
-    }
-    const wanted = newest === "" ? "" : turnId ?? newest;
-    const turn = byTurn.get(wanted);
-    if (!turn) return none;
-    return {
-      dialogs: turn.dialogs.filter((d) => d.questions.length > 0),
-      commands: turn.executions.length > 0 ? turn.executions : turn.called,
-      plan: turn.plan
-    };
-  } catch {
-    return none;
-  }
-}
-var ROLLOUT_BYTES = 8 * 1024 * 1024;
-var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
-var textOf2 = (v) => isText(v) ? v : "";
-var contentText = (content) => (Array.isArray(content) ? content : []).map((part) => textOf2(record(part).text)).filter(Boolean).join("\n").trim();
-var jsonRecord = (raw) => {
-  try {
-    return record(JSON.parse(textOf2(raw)));
-  } catch {
-    return {};
-  }
-};
-var literalValue = (literal) => {
-  if (literal === void 0) return null;
-  try {
-    return textOf2(JSON.parse(literal));
-  } catch {
-    return null;
-  }
-};
-var PATCH_ARGUMENT = /tools\.apply_patch\(\s*("(?:[^"\\]|\\.)*")/;
-var COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")/;
-var shellLines = (command) => {
-  const line = command === "" ? null : toolActivity("Bash", { command });
-  return line ? [line] : [];
-};
-var editLines = (patch, cwd) => patchFiles(patch).map((file) => `edited ${resolve2(cwd || "/", file)}`);
-function callLines(p, hasCommandRows, cwd) {
-  const name = textOf2(p.name);
-  if (p.type === "local_shell_call") return hasCommandRows ? [] : shellLines(callCommand(p));
-  if (p.type === "custom_tool_call" && name === "exec") {
-    const input = textOf2(p.input);
-    const patch = literalValue(PATCH_ARGUMENT.exec(input)?.[1]);
-    const command = literalValue(COMMAND_ARGUMENT.exec(input)?.[1]);
-    return [...patch ? editLines(patch, cwd) : [], ...command && !hasCommandRows ? shellLines(command) : []];
-  }
-  if (p.type !== "function_call") return [];
-  if (SHELL_CALLS.has(name)) return hasCommandRows ? [] : shellLines(callCommand(p));
-  const args = jsonRecord(p.arguments);
-  if (name === "apply_patch") return editLines(textOf2(args.input ?? args.patch ?? args.command), cwd);
-  if (name === "spawn_agent") {
-    const line2 = toolActivity("Agent", { description: textOf2(args.task_name) });
-    return line2 ? [line2] : [];
-  }
-  if (name === DIALOG_TOOL) return [dialogActivity(dialogQuestions(args.questions), { kind: "open" })];
-  const line = toolActivity(textOf2(p.namespace).startsWith("mcp__") ? textOf2(p.namespace) + name : name, {});
-  return line ? [line] : [];
-}
-var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf2(record(record(row.payload).item).type));
-function turnsOf(rows, cwd) {
-  const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
-  const hasCommandRows = rows.some((row) => isItem(row, "CommandExecution"));
-  const turns = [];
-  const agentTurn = () => {
-    const last = turns.at(-1);
-    if (last?.role === "agent") return last;
-    const turn = { role: "agent", text: "", activity: [] };
-    turns.push(turn);
-    return turn;
-  };
-  const person = (text3) => {
-    if (text3 && !text3.startsWith("<")) turns.push({ role: "person", text: text3, activity: [] });
-  };
-  const act = (lines) => {
-    if (lines.length === 0) return;
-    const turn = agentTurn();
-    turn.activity = lines.reduce((all, line) => addActivity(all, line), turn.activity);
-  };
-  for (const row of rows) {
-    const p = record(row.payload);
-    const item = record(p.item);
-    if (isItem(row, "UserMessage")) person(contentText(item.content));
-    else if (isItem(row, "AgentMessage")) turns.push({ role: "agent", text: contentText(item.content), activity: [] });
-    else if (isItem(row, "CommandExecution")) act(shellLines(commandText2(item.command)));
-    else if (row.type === "response_item") {
-      if (p.type === "message" && !hasMessageRows && p.role === "user") person(contentText(p.content));
-      else if (p.type === "message" && !hasMessageRows && p.role === "assistant")
-        turns.push({ role: "agent", text: contentText(p.content), activity: [] });
-      else act(callLines(p, hasCommandRows, cwd));
-    }
-  }
-  return turns;
-}
-function rolloutTurns(lines, cwd) {
-  const groups = [];
-  for (const line of lines) {
-    let row;
-    try {
-      row = record(JSON.parse(line));
-    } catch {
-      continue;
-    }
-    const event = turnEventOfRow(row);
-    if (event?.kind === "started") {
-      groups.push({ id: event.id, isComplete: false, rows: [] });
-      continue;
-    }
-    if (groups.length === 0) groups.push({ id: "", isComplete: false, rows: [] });
-    const group = groups.at(-1);
-    if (event?.kind === "completed") group.isComplete = true;
-    else group.rows.push(row);
-  }
-  return groups.map((g) => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd) }));
-}
-function turnRowsOf(lines, isWindow) {
-  const rows = [];
-  for (const line of lines) {
-    const event = turnEventOf(line);
-    if (event === null || isWindow && rows.length === 0 && event.kind !== "started") continue;
-    if (event.kind === "started") {
-      rows.push({ id: event.id, hasEnded: false });
-      continue;
-    }
-    const started = rows.findLast((t) => t.id === event.id) ?? (event.id === "" ? rows.at(-1) : void 0);
-    if (started) started.hasEnded = true;
-    else rows.push({ id: event.id, hasEnded: true });
-  }
-  return rows;
-}
-var TURN_WINDOW_BYTES = [TURN_ROW_BYTES, 512 * 1024, TAIL_BYTES];
-function rolloutReads(path, tail) {
-  let history = null;
-  let read = null;
-  const rollouts = /* @__PURE__ */ new Map();
-  let forkedFrom2 = null;
-  const wholeHistory = () => history ??= historyLines(path, ROLLOUT_BYTES);
-  async function windowTurns(isEnough) {
-    if (tail !== void 0) {
-      const turns = turnRowsOf(tail, true);
-      return isEnough(turns) ? turns : null;
-    }
-    for (const bytes of TURN_WINDOW_BYTES) {
-      const { lines, start } = await linesBefore(path, bytes);
-      const turns = turnRowsOf(lines, true);
-      if (isEnough(turns)) return turns;
-      if (start === 0) break;
-    }
-    return null;
-  }
+// src/host.ts
+function codexStore(dir, sessionId, now, onWrite = async () => {
+}) {
   return {
-    async turns(isEnough) {
-      try {
-        if (read === null || !(read.isWhole || isEnough(read.turns))) {
-          const window = history === null ? await windowTurns(isEnough) : null;
-          read = window === null ? { turns: turnRowsOf(await wholeHistory(), false), isWhole: true } : { turns: window, isWhole: false };
-        }
-        return read.turns;
-      } catch {
-        return null;
-      }
+    now,
+    read: () => readState(dir, sessionId),
+    update: async (change) => {
+      const s = await updateState(dir, sessionId, change);
+      await onWrite(s);
+      return s;
     },
-    rollout(cwd, currentTurnId) {
-      const key = JSON.stringify([cwd, currentTurnId ?? null]);
-      const known = rollouts.get(key);
-      if (known !== void 0) return known;
-      const rollout = wholeHistory().then((lines) => rolloutOfLines(lines, cwd, currentTurnId)).catch(() => null);
-      rollouts.set(key, rollout);
-      return rollout;
-    },
-    forkedFromId() {
-      return forkedFrom2 ??= forkedFromId(path);
-    }
+    exclusive: (fn) => tryWithLock(`${statePath(dir, sessionId)}.updating`, fn)
   };
 }
-function rolloutOfLines(lines, cwd, currentTurnId) {
-  const turns = rolloutTurns(lines, cwd);
-  const earlier = turns.filter((t) => t.id !== currentTurnId && (t.isComplete || t.turns.some((x) => x.role === "person")));
-  return { conversation: flattenConversation(turns.flatMap((t) => t.turns)), earlierTurns: earlier.length };
-}
 
-// src/update.ts
-var TIMEOUT_MS = 12e4;
-var RESULTS_WAIT_MS = 4 * TIMEOUT_MS;
-var resultsOrder = orderedKeys();
-var reconcileUpdateStatus2 = (dir, sessionId) => reconcileUpdateStatus(codexStore(dir, sessionId, Date.now));
-
-// src/server.ts
+// src/server-tools.ts
+import { createHash as createHash2 } from "node:crypto";
 function pageName(tabHtml) {
   return `ui://inbox/tab-${createHash2("sha256").update(tabHtml).digest("hex").slice(0, 12)}`;
 }
 var TAB_ADDRESS = "ui://inbox/view";
-var HOOKS_UNCLEAR_CACHE_MS = 3e4;
-var HOOKS_STOPPED_CACHE_MS = 5e3;
 var TAB_MIME = "text/html;profile=mcp-app";
 var APP_ONLY = { ui: { visibility: ["app"] } };
 var TOOLS = [
@@ -5238,66 +5315,19 @@ function turnOf2(params) {
   if (t.parent_thread_id || t.forked_from_thread_id || isOtherThread) return void 0;
   return typeof t.turn_id === "string" && t.turn_id ? t.turn_id : null;
 }
-var text2 = (t) => ({ content: [{ type: "text", text: t }] });
-function makeServer(deps) {
+
+// src/update.ts
+var TIMEOUT_MS = 12e4;
+var RESULTS_WAIT_MS = 4 * TIMEOUT_MS;
+var resultsOrder = orderedKeys();
+var reconcileUpdateStatus2 = (dir, sessionId) => reconcileUpdateStatus(codexStore(dir, sessionId, Date.now));
+
+// src/server-host.ts
+function makeSessionHost(deps, newestTurns, hooksTrustNow, currentPage) {
   const { dir, now } = deps;
   const gh = ghFinder(deps.exec);
   const prFetches = prFetchTracker(now);
-  const prunedFor = /* @__PURE__ */ new Set();
-  const checkedOnOpen = /* @__PURE__ */ new Set();
   let isGhMissing = false;
-  const hooksTrust = /* @__PURE__ */ new Map();
-  const askingHooksIn = /* @__PURE__ */ new Set();
-  const newestTurns = /* @__PURE__ */ new Map();
-  const askedTurns = /* @__PURE__ */ new Map();
-  function unheardTurnOf(s, id) {
-    const newest = newestTurns.get(id);
-    return newest === void 0 || isTurnHeard(s, newest) ? null : newest;
-  }
-  function hooksTrustNow(s, id) {
-    const { hooksTrust: ask } = deps;
-    if (!ask) return null;
-    const folder = s.root || homedir2();
-    const known = hooksTrust.get(folder);
-    const unheardTurn = unheardTurnOf(s, id);
-    const isAskDue = known === void 0 || (known.answer === "trusted" ? unheardTurn !== null && askedTurns.get(id) !== unheardTurn : now() - known.at >= (known.answer === null ? HOOKS_UNCLEAR_CACHE_MS : HOOKS_STOPPED_CACHE_MS));
-    if (isAskDue && !askingHooksIn.has(folder)) {
-      askingHooksIn.add(folder);
-      if (unheardTurn !== null) askedTurns.set(id, unheardTurn);
-      void (async () => {
-        const answer2 = await Promise.resolve(s.cliPath ?? deps.fallbackCli()).then((cli) => ask(cli, folder)).catch(() => null);
-        hooksTrust.set(folder, { at: now(), answer: answer2 });
-        askingHooksIn.delete(folder);
-      })();
-    }
-    const answer = known?.answer;
-    return answer === "untrusted" || answer === "modified" ? answer : null;
-  }
-  async function catchUpOnOpen(id) {
-    const { openCatchUp } = deps;
-    if (!openCatchUp || checkedOnOpen.has(id)) return;
-    checkedOnOpen.add(id);
-    const before = await readState(dir, id);
-    if (before.transcriptPath !== null || heardState(before.heard) !== "none" || !isUnseen(before)) return;
-    const rollout = await rolloutFor(openCatchUp.codexHome, id);
-    if (rollout === null) return;
-    const cli = await deps.fallbackCli().catch(() => null);
-    const history = { dir, cwd: rollout.cwd, reads: rolloutReads(rollout.path) };
-    await withEarlierHistory(before, history);
-    let isBehind = false;
-    await updateState(dir, id, async (s) => {
-      const r = await withEarlierHistory(s, history);
-      isBehind = r.isBehind;
-      if (r.state === s) return s;
-      return {
-        ...r.state,
-        root: s.root || rollout.cwd,
-        transcriptPath: rollout.path,
-        cliPath: s.cliPath ?? (cli !== null && isAbsolute2(cli) ? cli : null)
-      };
-    });
-    if (isBehind) openCatchUp.startUpdate(id);
-  }
   async function queueMessage(s, message, resolvedCli) {
     let cli;
     try {
@@ -5325,7 +5355,7 @@ function makeServer(deps) {
         preparedCli = s.cliPath ?? await deps.fallbackCli();
       },
       deliver: (s, message) => queueMessage(s, message, preparedCli),
-      perform: async (s, e) => e.kind === "copy" ? null : open2(s, e.target),
+      perform: async (s, e) => e.kind === "copy" ? null : open3(s, e.target),
       refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true)),
       gh: {
         find: gh.find,
@@ -5353,16 +5383,8 @@ function makeServer(deps) {
   const wakeForDone2 = async (id) => {
     await wakeForDone(hostFor(id), await syncTurn(id));
   };
-  const currentPage = async () => await deps.devPage?.() ?? deps.tabHtml;
   function fetchPrsWhenDue(id, s) {
     void prFetches.fetchWhenDue(id, s, () => fetchPrs(hostFor(id), true));
-  }
-  const isHerdrCheckDue = herdrCheckGate();
-  function checkDelegatesWhenDue(id, s) {
-    if (s.shownTab !== "overview" || !isHerdrCheckDue(id, now())) return;
-    void delegatesInHerdr(s.ledger.overview, deps.exec).then((states) => {
-      if (states) return updateState(dir, id, (x) => statusChanged(x, (o) => delegatesSettled(o, states, now())));
-    }).catch(() => void 0);
   }
   const served = async (s, id, isDemo = false, holds = NO_HOLDS) => {
     const loadError = deps.loadError?.();
@@ -5410,43 +5432,67 @@ function makeServer(deps) {
       () => false
     )
   };
-  const open2 = (s, target) => openTarget(deps.exec, files, target, s.root, s.home);
-  const demos = /* @__PURE__ */ new Map();
-  const demoOf = (id) => {
-    const s = demos.get(id) ?? demoState(now());
-    demos.set(id, s);
-    return s;
-  };
-  async function onDemoPress(id, p, thread, holds) {
-    const s = demoOf(id);
-    const r = thread === id ? pressOn(s, p, now(), { settleWindowMs: SETTLE_WINDOW_MS, holds }, { comparePage: deps.comparePage }) : { stale: true };
-    if ("stale" in r) return { view: await served(s, id, true, holds), copy: null, error: null, note: "stale" };
-    const after = demoAfterPress(
-      { lastActions: s.lastActions, turns: s.presence },
-      r,
-      new Set(Object.keys(holds.replies))
-    );
-    const next = {
-      ...s,
-      ledger: after.ledger,
-      lastActions: after.lastActions,
-      presence: { ...s.presence, ...after.turns }
-    };
-    demos.set(id, next);
-    const sent = demoSent(r, after.turns);
-    if (sent)
-      setTimeout(() => {
-        const d = demos.get(id);
-        if (!d) return;
-        const replied = demoReplied({ lastActions: d.lastActions, turns: d.presence }, sent);
-        demos.set(id, { ...d, lastActions: replied.lastActions, presence: { ...d.presence, ...replied.turns } });
-      }, SETTLED_MS).unref();
-    return {
-      view: await served(next, id, true, holds),
-      copy: null,
-      error: null,
-      note: null
-    };
+  const open3 = (s, target) => openTarget(deps.exec, files, target, s.root, s.home);
+  return { wakeForDone: wakeForDone2, fetchPrsWhenDue, served, onPress };
+}
+
+// src/server-trust.ts
+import { homedir as homedir2 } from "node:os";
+var HOOKS_UNCLEAR_CACHE_MS = 3e4;
+var HOOKS_STOPPED_CACHE_MS = 5e3;
+function makeHooksTrustNow(deps, newestTurns) {
+  const { now } = deps;
+  const hooksTrust = /* @__PURE__ */ new Map();
+  const askingHooksIn = /* @__PURE__ */ new Set();
+  const askedTurns = /* @__PURE__ */ new Map();
+  function unheardTurnOf(s, id) {
+    const newest = newestTurns.get(id);
+    return newest === void 0 || isTurnHeard(s, newest) ? null : newest;
+  }
+  function hooksTrustNow(s, id) {
+    const { hooksTrust: ask } = deps;
+    if (!ask) return null;
+    const folder = s.root || homedir2();
+    const known = hooksTrust.get(folder);
+    const unheardTurn = unheardTurnOf(s, id);
+    const isAskDue = known === void 0 || (known.answer === "trusted" ? unheardTurn !== null && askedTurns.get(id) !== unheardTurn : now() - known.at >= (known.answer === null ? HOOKS_UNCLEAR_CACHE_MS : HOOKS_STOPPED_CACHE_MS));
+    if (isAskDue && !askingHooksIn.has(folder)) {
+      askingHooksIn.add(folder);
+      if (unheardTurn !== null) askedTurns.set(id, unheardTurn);
+      void (async () => {
+        const answer2 = await Promise.resolve(s.cliPath ?? deps.fallbackCli()).then((cli) => ask(cli, folder)).catch(() => null);
+        hooksTrust.set(folder, { at: now(), answer: answer2 });
+        askingHooksIn.delete(folder);
+      })();
+    }
+    const answer = known?.answer;
+    return answer === "untrusted" || answer === "modified" ? answer : null;
+  }
+  return hooksTrustNow;
+}
+
+// src/server.ts
+var text2 = (t) => ({ content: [{ type: "text", text: t }] });
+function makeServer(deps) {
+  const { dir, now } = deps;
+  const prunedFor = /* @__PURE__ */ new Set();
+  const newestTurns = /* @__PURE__ */ new Map();
+  const hooksTrustNow = makeHooksTrustNow(deps, newestTurns);
+  const catchUpOnOpen = makeCatchUpOnOpen(deps);
+  const currentPage = async () => await deps.devPage?.() ?? deps.tabHtml;
+  const { wakeForDone: wakeForDone2, fetchPrsWhenDue, served, onPress } = makeSessionHost(
+    deps,
+    newestTurns,
+    hooksTrustNow,
+    currentPage
+  );
+  const { demoOf, onDemoPress } = makeDemo(deps, served);
+  const isHerdrCheckDue = herdrCheckGate();
+  function checkDelegatesWhenDue(id, s) {
+    if (s.shownTab !== "overview" || !isHerdrCheckDue(id, now())) return;
+    void delegatesInHerdr(s.ledger.overview, deps.exec).then((states) => {
+      if (states) return updateState(dir, id, (x) => statusChanged(x, (o) => delegatesSettled(o, states, now())));
+    }).catch(() => void 0);
   }
   async function callTool(name, args, id, turn) {
     if (!id) return { ...text2("Not done: this call carries no session id."), isError: true };
@@ -5501,7 +5547,7 @@ function makeServer(deps) {
         return ok({
           protocolVersion: params?.protocolVersion ?? "2025-06-18",
           capabilities: { tools: {}, resources: {} },
-          serverInfo: { name: "inbox", version: "0.2.14" }
+          serverInfo: { name: "inbox", version: "0.2.15" }
         });
       case "tools/list":
         return ok({ tools: TOOLS });
@@ -5559,7 +5605,7 @@ async function devBuild(dir) {
 }
 
 // src/tab.html
-var tab_default = '<!doctype html>\n<html lang="en">\n  <head>\n    <meta charset="utf-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1" />\n    <meta name="inbox-handoff" content="1" />\n    <title>Inbox</title>\n    <style id="inbox-style">\n      /* The host\'s variables when Codex passes them; otherwise the pane\'s own colors. */\n      :root {\n        color-scheme: light;\n        --bg: var(--color-background-primary, #ffffff);\n        --text: var(--color-text-primary, #1f1f1f);\n        --muted: var(--color-text-secondary, #595959);\n        --key: #243bf5; --amber: #745417; --findings: #7b00e8; --prs: #006363; --done: #25652f; --error: #a5293d; --error-mark: #a5293d;\n        --needs-you: var(--amber);\n        --issue: var(--amber);\n        --sans: var(--font-sans, -apple-system, system-ui, sans-serif);\n        --mono: var(--font-mono, ui-monospace, \'SF Mono\', Menlo, monospace);\n        --raised: color-mix(in srgb, var(--text) 9%, var(--bg));\n        --selected: color-mix(in srgb, var(--text) 6%, var(--bg));\n        --age: color-mix(in srgb, var(--muted) 90%, var(--bg));\n        --hover: color-mix(in srgb, var(--key) 14%, transparent);\n        --soft: color-mix(in oklab, var(--text) 8%, transparent);\n        --soft-hover: color-mix(in oklab, var(--text) 10%, transparent);\n        --row-hover: color-mix(in oklab, var(--soft) 50%, transparent);\n        --quick: 150ms ease;\n        --mark-x: 18px;\n        --text-x: 44px;\n      }\n      @media (prefers-color-scheme: dark) {\n        :root:not([data-theme=\'light\']) {\n          color-scheme: dark;\n          --bg: var(--color-background-primary, #171717);\n          --text: var(--color-text-primary, #ececec);\n          --muted: var(--color-text-secondary, #a8a8a8);\n          --key: #b1b9f9; --amber: #ffc107; --findings: #cab0ff; --prs: #8cc8c0; --done: #7ecd8f; --error: #ffa3b0; --error-mark: #ff6b80;\n          --raised: color-mix(in srgb, var(--text) 11%, var(--bg));\n          --selected: color-mix(in srgb, var(--text) 8%, var(--bg));\n          --age: color-mix(in srgb, var(--muted) 85%, var(--bg));\n          --soft: color-mix(in oklab, var(--text) 12%, transparent);\n          --soft-hover: color-mix(in oklab, var(--text) 14%, transparent);\n        }\n      }\n      :root[data-theme=\'dark\'] {\n        color-scheme: dark;\n        --key: #b1b9f9; --amber: #ffc107; --findings: #cab0ff; --prs: #8cc8c0; --done: #7ecd8f; --error: #ffa3b0; --error-mark: #ff6b80;\n        --raised: color-mix(in srgb, var(--text) 11%, var(--bg));\n        --selected: color-mix(in srgb, var(--text) 8%, var(--bg));\n        --age: color-mix(in srgb, var(--muted) 85%, var(--bg));\n        --soft: color-mix(in oklab, var(--text) 12%, transparent);\n        --soft-hover: color-mix(in oklab, var(--text) 14%, transparent);\n      }\n      * {\n        box-sizing: border-box;\n      }\n      body {\n        margin: 0;\n        background: var(--bg);\n        color: var(--text);\n        font: 13px/20px var(--sans);\n        -webkit-font-smoothing: antialiased;\n        cursor: default;\n        user-select: none;\n      }\n      /* Text a person may copy: what an item, PR or Status line says, an error, and the reply field. */\n      .status-head,\n      .status-page .content,\n      .earlier,\n      .body,\n      .panel .muted,\n      .settled-line .what,\n      .pr-head,\n      .pr-order,\n      .tone-error,\n      input,\n      textarea {\n        cursor: auto;\n        user-select: text;\n      }\n      button {\n        font: inherit;\n        color: inherit;\n        background: none;\n        border: none;\n        padding: 0;\n        text-align: left;\n      }\n      :focus-visible {\n        outline: 1.5px solid var(--key);\n        outline-offset: 1px;\n        border-radius: 4px;\n      }\n      .muted {\n        color: var(--muted);\n      }\n      .tone-needsYou {\n        color: var(--needs-you);\n      }\n      .tone-findings {\n        color: var(--findings);\n      }\n      .tone-prs {\n        color: var(--prs);\n      }\n      .tone-done {\n        color: var(--done);\n      }\n      .tone-error {\n        color: var(--error);\n      }\n      .notice {\n        padding: 10px 16px;\n        overflow-wrap: anywhere;\n      }\n      /* A message about the inbox\'s own state, in the tone of what it says. */\n      .banner {\n        --tone: var(--error);\n        display: flex;\n        align-items: center;\n        justify-content: space-between;\n        gap: 12px;\n        flex-basis: 100%;\n        padding: var(--banner-pad-y) 12px;\n        border: 1px solid color-mix(in srgb, var(--tone) 30%, var(--bg));\n        border-radius: 10px;\n        background: color-mix(in srgb, var(--tone) 9%, var(--bg));\n        color: var(--text);\n        line-height: 19px;\n        overflow-wrap: anywhere;\n        cursor: auto;\n        user-select: text;\n      }\n      .banner-warning {\n        --tone: var(--needs-you);\n      }\n      /* --muted is see-through in the Codex app, so a notice mixes from the text color. */\n      .banner-notice {\n        --tone: var(--text);\n      }\n      .banner .lead {\n        font-weight: 600;\n        color: var(--tone);\n      }\n      /* The tab bar\'s rows sit 4px apart. */\n      nav > .banner {\n        margin-top: calc(var(--banner-gap) - 4px);\n      }\n      #app > .banner {\n        margin: 12px 12px 0;\n      }\n      .banner-place {\n        padding: 12px 12px 0;\n      }\n      .banner .key {\n        flex: none;\n        white-space: nowrap;\n        color: var(--text);\n        cursor: default;\n        user-select: none;\n      }\n\n      nav {\n        container: tab-bar / inline-size;\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        gap: 4px 16px;\n        padding: 12px 12px 0;\n      }\n      .tabs {\n        display: flex;\n        flex-wrap: wrap;\n        gap: 4px;\n      }\n      .tab {\n        position: relative;\n        white-space: nowrap;\n        padding: 6px 12px;\n        border-radius: 6px;\n        color: var(--muted);\n      }\n      .tab:hover {\n        color: var(--text);\n      }\n      .tab.shown {\n        background: var(--raised);\n        color: var(--text);\n        font-weight: 600;\n      }\n      .tab .count {\n        font-weight: 600;\n        margin-left: 6px;\n      }\n      /* --muted is see-through in the Codex app, and a color emoji takes its color\'s transparency. */\n      .tab-symbol {\n        display: none;\n        color: var(--text);\n      }\n      @container tab-bar (width < 316px) {\n        .tab-symbol {\n          display: inline;\n        }\n        .tab-word {\n          position: absolute;\n          width: 1px;\n          height: 1px;\n          overflow: hidden;\n          clip-path: inset(50%);\n        }\n      }\n      .status {\n        margin-left: auto;\n        color: var(--muted);\n        font-size: 12px;\n      }\n\n      main {\n        display: flex;\n        flex-direction: column;\n        padding: 8px 0 4px;\n      }\n      section {\n        position: relative;\n        padding: 10px 0;\n      }\n      section + section::before {\n        content: \'\';\n        position: absolute;\n        top: 0;\n        left: var(--text-x);\n        right: 0;\n        height: 1px;\n        background: var(--soft);\n      }\n      .group-title {\n        padding: 0 14px 6px var(--text-x);\n      }\n      .group-title {\n        position: relative;\n      }\n      .group-title b {\n        font-weight: 600;\n      }\n      .group-mark {\n        position: absolute;\n        left: var(--mark-x);\n        width: calc(var(--text-x) - var(--mark-x) - 8px);\n        text-align: center;\n      }\n      .group-mark.done {\n        color: var(--done);\n      }\n      .group-mark.issue {\n        color: var(--issue);\n      }\n      .group-title .count {\n        color: var(--muted);\n        white-space: pre;\n      }\n\n      .pr-head,\n      .pr-status,\n      .pr-actions,\n      .pr-last,\n      .pr-order > div {\n        padding: 0 14px 0 var(--text-x);\n        overflow-wrap: anywhere;\n      }\n      .pr-order-changed {\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        column-gap: 10px;\n        row-gap: 6px;\n        margin-top: 8px;\n      }\n      .pr-order-changed .pr-actions {\n        padding: 0;\n        margin-top: 0;\n      }\n      .pr-head {\n        font-weight: 600;\n      }\n      .pr-head .rank,\n      .pr-head .num,\n      .pr-head .pr-verdict {\n        font-weight: 400;\n      }\n      .pr-actions {\n        margin-top: 8px;\n      }\n      .pr-last {\n        margin-top: 6px;\n      }\n      .pr-groups {\n        margin-top: 12px;\n      }\n      .pr-groups .list {\n        --mark-x: 41px;\n        --text-x: 67px;\n      }\n      .pr-groups .group-title + .list {\n        margin-bottom: 6px;\n      }\n      .link {\n        padding: 0;\n        text-align: left;\n        text-decoration: underline;\n        text-decoration-color: color-mix(in oklab, var(--text) 30%, transparent);\n        text-underline-offset: 2px;\n      }\n      .link:hover {\n        text-decoration-color: currentColor;\n      }\n\n      .row {\n        display: grid;\n        grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr) auto;\n        padding: var(--row-pad) 14px var(--row-pad) var(--mark-x);\n      }\n      .row.selected {\n        background-color: var(--selected);\n      }\n      .mark {\n        align-self: start;\n        padding-right: 8px;\n        text-align: center;\n        color: var(--muted);\n      }\n      .mark.done {\n        color: var(--done);\n      }\n      .mark-shape {\n        width: 8px;\n        height: 8px;\n        overflow: visible;\n      }\n      .mark.issue {\n        color: var(--issue);\n      }\n      .mark.error {\n        color: var(--error-mark);\n      }\n      .side {\n        align-self: start;\n        margin-left: 12px;\n        color: var(--age);\n        font-variant-numeric: tabular-nums;\n        white-space: nowrap;\n        text-align: right;\n      }\n      .mark.tone-needsYou,\n      .mark.needsYou,\n      .side.tone-needsYou {\n        color: var(--needs-you);\n      }\n      .side[data-room]::after {\n        content: attr(data-room);\n        display: block;\n        height: 0;\n        overflow: hidden;\n        visibility: hidden;\n      }\n      .side-label {\n        display: inline-block;\n        max-width: 11em;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        vertical-align: bottom;\n        margin-right: 4px;\n      }\n      .row.collapsed:hover .side {\n        color: var(--muted);\n      }\n      .content {\n        min-width: 0;\n        display: flex;\n        flex-direction: column;\n      }\n      /* Its space above is padding, not a gap, so the row\'s height grows smoothly when the panel mounts. */\n      .panel {\n        display: flex;\n        flex-direction: column;\n        gap: 8px;\n        padding: 8px 0 2px;\n      }\n      .row > .panel {\n        grid-column: 2 / -1;\n      }\n      .content.tight {\n        display: flex;\n        flex-direction: column;\n        gap: 0;\n      }\n      .line {\n        display: flex;\n        flex-direction: column;\n        width: 100%;\n        min-width: 0;\n      }\n      .line .text {\n        min-width: 0;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        display: -webkit-box;\n        -webkit-line-clamp: 2;\n        -webkit-box-orient: vertical;\n      }\n      .line .after {\n        color: var(--muted);\n      }\n      .row.collapsed .line .after:not(.tone-error) {\n        color: var(--age);\n      }\n      .row.collapsed:hover .line .after:not(.tone-error) {\n        color: var(--muted);\n      }\n      .line .after.tone-error {\n        color: var(--error);\n      }\n      .row.selected .line,\n      .row.closing .line {\n        display: block;\n      }\n      .row.selected .line .text,\n      .row.closing .line .text {\n        display: inline;\n        font-weight: 600;\n      }\n      .row.selected .line .after,\n      .row.closing .line .after {\n        white-space: normal;\n        font-weight: 400;\n      }\n      .line .lead {\n        color: var(--muted);\n        font-weight: 400;\n      }\n      .line .meta {\n        display: block;\n        color: var(--muted);\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n      }\n      .row.collapsed:not(:hover) .line .meta {\n        color: var(--age);\n      }\n      .line .holds-up {\n        display: block;\n        color: var(--muted);\n        font-weight: 400;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n      }\n      .row.selected .line .meta {\n        display: none;\n      }\n      .quote {\n        white-space: pre-line;\n      }\n      .row.collapsed:hover {\n        background-color: var(--row-hover);\n      }\n      .still .row.collapsed:not(:active):hover {\n        background-color: transparent;\n      }\n      .still .fold:not(:active):hover {\n        color: var(--muted);\n      }\n      .title {\n        font-weight: 600;\n      }\n      .body {\n        overflow-wrap: anywhere;\n      }\n      .body p {\n        margin: 0;\n      }\n      .body p + p {\n        margin-top: 4px;\n      }\n      .body .option-description {\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n      }\n      .body .option-description + .option-description {\n        margin-top: 0;\n      }\n      code {\n        padding: 1px 4px;\n        border-radius: 4px;\n        background: var(--soft);\n        font-family: var(--mono);\n      }\n      .keys {\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        gap: 6px;\n      }\n      .follow-ups {\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        gap: 6px;\n        max-width: 100%;\n      }\n      .key {\n        display: inline-flex;\n        align-items: center;\n        justify-content: center;\n        gap: 5px;\n        min-height: 26px;\n        padding: 3px 11px;\n        border: 1px solid color-mix(in oklab, var(--text) 28%, transparent);\n        border-radius: 13px;\n        background: transparent;\n        font-weight: 400;\n        text-align: center;\n        max-width: 100%;\n        white-space: normal;\n        overflow-wrap: anywhere;\n      }\n      .key:not(:disabled):hover {\n        background: var(--soft);\n      }\n      .key:focus-visible {\n        outline-width: 2px;\n        outline-offset: 2px;\n        border-radius: 13px;\n      }\n      .key.primary {\n        border-color: transparent;\n        background: var(--text);\n        color: var(--bg);\n      }\n      .key.primary:not(:disabled):hover {\n        background: color-mix(in srgb, var(--text) 82%, var(--bg));\n      }\n      .key .icon {\n        flex: none;\n        width: 14px;\n        height: 14px;\n      }\n      .key.ghost {\n        padding: 0 4px;\n        border-color: transparent;\n        background: none;\n        color: var(--muted);\n      }\n      .key.ghost:not(:disabled):hover {\n        background: none;\n        color: var(--text);\n      }\n      .key.out {\n        opacity: 0.4;\n        transition: opacity var(--quick);\n      }\n      .actions {\n        display: flex;\n        flex-direction: column;\n        gap: 4px;\n      }\n      form {\n        display: flex;\n        align-items: center;\n        gap: 6px;\n      }\n      input {\n        flex: 1;\n        min-width: 0;\n        min-height: 28px;\n        font: inherit;\n        color: inherit;\n        background: transparent;\n        border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);\n        border-radius: 10px;\n        padding: 4px 10px;\n      }\n      input::placeholder {\n        color: var(--muted);\n      }\n      /* The radius again, since :focus-visible sets 4px. */\n      input:focus,\n      textarea:focus {\n        outline: none;\n        border-color: color-mix(in oklab, var(--text) 32%, transparent);\n        border-radius: 10px;\n      }\n      textarea {\n        width: 100%;\n        font: 12px var(--mono);\n        color: inherit;\n        background: transparent;\n        border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);\n        border-radius: 10px;\n      }\n\n      .group-end {\n        display: flex;\n        flex-direction: column;\n        justify-content: flex-end;\n      }\n      /* Keeps the fold\'s margin inside, so its height is the whole end\'s content height. */\n      .group-end-content {\n        display: flow-root;\n        position: relative;\n      }\n      .group-empty {\n        padding: var(--row-pad) 14px var(--row-pad) var(--text-x);\n        color: var(--muted);\n      }\n      .group-empty.leaving {\n        position: absolute;\n        inset: auto 0 100% 0;\n        pointer-events: none;\n        animation: fade-out var(--enter) forwards;\n      }\n      @keyframes fade-out {\n        to {\n          opacity: 0;\n        }\n      }\n      .fold {\n        display: block;\n        margin: 8px 0 0 calc(var(--mark-x) - 1px);\n        padding: 1px 4px;\n        border-radius: 5px;\n        color: var(--muted);\n      }\n      .fold:hover {\n        color: var(--text);\n      }\n      .fold .icon {\n        width: 12px;\n        height: 12px;\n        margin-right: calc(var(--text-x) - var(--mark-x) - 15px);\n        vertical-align: -1px;\n      }\n      .closed-list {\n        --mark-x: 41px;\n        --text-x: 67px;\n      }\n      /* The gap above a Closed list\'s rows is content, not padding, so the list opens from and closes to 0. */\n      .closed-list::before {\n        content: \'\';\n        display: block;\n        height: 4px;\n      }\n      .closed-list .row {\n        padding-top: calc(var(--row-pad) / 2);\n        padding-bottom: calc(var(--row-pad) / 2);\n      }\n      .outcome {\n        color: var(--age);\n      }\n      .settled-head {\n        display: flex;\n        align-items: center;\n        min-width: 0;\n      }\n      .row.settled.was-open {\n        transition: background-color var(--move);\n        @starting-style {\n          background-color: var(--selected);\n        }\n      }\n      .settled-line {\n        flex: 1;\n        min-width: 0;\n        overflow-wrap: anywhere;\n      }\n      .settled .outcome-label {\n        color: var(--muted);\n      }\n      /* The pill keeps the line\'s height, so the row does not grow. */\n      .key.undo {\n        flex: none;\n        white-space: nowrap;\n        border-color: transparent;\n        position: relative;\n        isolation: isolate;\n        overflow: hidden;\n        margin: -3px 0 -3px 12px;\n        background: color-mix(in oklab, var(--soft) 45%, transparent);\n      }\n      .key.undo.undoing {\n        color: var(--muted);\n      }\n      .key.undo.spent {\n        visibility: hidden;\n      }\n      .key.undo.undoing .icon {\n        animation: undo-turn 900ms linear infinite;\n      }\n      @keyframes undo-turn {\n        to {\n          transform: rotate(-360deg);\n        }\n      }\n      .time-left {\n        position: absolute;\n        inset: 0;\n        z-index: -1;\n        background: var(--soft);\n        transform-origin: left;\n        animation-name: empty;\n        animation-timing-function: linear;\n        animation-fill-mode: forwards;\n      }\n      .key.undo:not(:disabled):hover .time-left {\n        background: var(--soft-hover);\n      }\n      .time-left.paused {\n        animation-play-state: paused;\n      }\n      @keyframes empty {\n        from {\n          transform: scaleX(1);\n        }\n        to {\n          transform: scaleX(0);\n        }\n      }\n      #app {\n        display: flex;\n        flex-direction: column;\n        min-height: 100vh;\n      }\n      .empty {\n        flex: 1;\n        display: flex;\n        flex-direction: column;\n        justify-content: center;\n        padding: 32px;\n        text-align: center;\n      }\n      .empty .title {\n        margin-bottom: 4px;\n      }\n      footer {\n        margin-top: auto;\n        display: flex;\n        flex-wrap: wrap;\n        justify-content: space-between;\n        gap: 4px 16px;\n        padding: 8px 16px 16px;\n        color: var(--muted);\n        font-size: 12px;\n      }\n      .footer-end {\n        display: flex;\n        gap: 16px;\n        margin-left: auto;\n      }\n      .version {\n        color: color-mix(in srgb, var(--muted) 50%, var(--bg));\n      }\n      .demo-toggle,\n      .help-toggle {\n        padding: 0 6px;\n        border-radius: 5px;\n        color: var(--muted);\n      }\n      .demo-toggle:hover,\n      .help-toggle:hover {\n        color: var(--text);\n        background: var(--hover);\n      }\n      /* The keys start under the group title, and every description lines up after the widest key. */\n      .help-keys {\n        display: grid;\n        grid-template-columns: max-content minmax(0, 1fr);\n        gap: 4px 12px;\n        padding: var(--row-pad) 14px var(--row-pad) var(--text-x);\n      }\n      .help-keys b {\n        white-space: nowrap;\n      }\n      .earlier {\n        padding: 2px 14px 2px var(--text-x);\n      }\n      /* The head starts where the list\'s marks do. */\n      .status-head {\n        padding: 0 14px 0 var(--mark-x);\n        overflow-wrap: anywhere;\n      }\n      .status-page .row {\n        padding-top: var(--status-row-pad);\n        padding-bottom: var(--status-row-pad);\n      }\n      .status-page .mark {\n        text-align: left;\n      }\n      .mark.running {\n        animation: running-pulse var(--pulse) ease-in-out infinite;\n      }\n      @keyframes running-pulse {\n        50% {\n          opacity: 0.3;\n        }\n      }\n      .status-page .content {\n        overflow-wrap: anywhere;\n      }\n      .status-page .row.child {\n        padding-left: var(--text-x);\n      }\n      .status-page .content > .actions {\n        margin-top: 6px;\n      }\n      .status-page .clamp {\n        display: -webkit-box;\n        -webkit-box-orient: vertical;\n        -webkit-line-clamp: var(--lines);\n        overflow: hidden;\n      }\n      .status-page .unbroken {\n        white-space: nowrap;\n      }\n      /* The tree line runs under the middle of a subject\'s mark, and its arm reaches to a child\'s mark. */\n      .status-page .list {\n        --mark-middle: 6px;\n        --arm-gap: 2px;\n        --tree-x: calc(var(--mark-x) + var(--mark-middle));\n        --tree-line: color-mix(in oklab, var(--text) 15%, transparent);\n      }\n      .status-page .row.has-children,\n      .status-page .row.branch-mid,\n      .status-page .row.branch-last {\n        position: relative;\n      }\n      .status-page .row.has-children::before,\n      .status-page .row.branch-mid::before,\n      .status-page .row.branch-last::before {\n        content: \'\';\n        position: absolute;\n        left: var(--tree-x);\n        border-left: 1px solid var(--tree-line);\n      }\n      .status-page .row.has-children::before {\n        top: calc(var(--status-row-pad) + 1lh);\n        bottom: 0;\n      }\n      .status-page .row.branch-mid::before {\n        top: 0;\n        bottom: 0;\n      }\n      .status-page .row.branch-last::before {\n        top: 0;\n        height: calc(var(--status-row-pad) + 0.5lh);\n      }\n      .status-page .row.branch-mid::after,\n      .status-page .row.branch-last::after {\n        content: \'\';\n        position: absolute;\n        left: var(--tree-x);\n        top: calc(var(--status-row-pad) + 0.5lh);\n        width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));\n        border-top: 1px solid var(--tree-line);\n      }\n      /* "Last seen" in the middle of a dashed rule that spans what the rule above a row spans: from the text column to the tab\'s edge. */\n      .status-page .row.look-line {\n        padding-left: 0;\n        padding-right: 0;\n        margin-top: var(--look-gap);\n        margin-bottom: var(--look-gap);\n      }\n      .status-page .row.look-line.last {\n        margin-bottom: 0;\n      }\n      .status-page .look-rule {\n        grid-column: 1 / -1;\n        display: flex;\n        flex-direction: row;\n        align-items: center;\n        gap: 8px;\n        color: var(--muted);\n      }\n      .status-page .status-rule {\n        height: 1px;\n        background: var(--soft);\n      }\n      .status-page .status-rule,\n      .status-page .look-rule {\n        margin-left: var(--text-x);\n      }\n      .status-page .look-rule::before,\n      .status-page .look-rule::after {\n        content: \'\';\n        flex: 1;\n        border-top: 1px dashed var(--soft);\n      }\n      .status-head h1 {\n        margin: 0;\n        font-size: 15px;\n        line-height: 22px;\n        font-weight: 600;\n      }\n      .status-head p {\n        margin: 0;\n      }\n      .banner,\n      .empty,\n      main,\n      form {\n        transition: opacity var(--quick);\n        @starting-style {\n          opacity: 0;\n        }\n      }\n      @media (prefers-reduced-motion: reduce) {\n        *,\n        *::before,\n        *::after {\n          transition-duration: 0s !important;\n        }\n        .time-left,\n        .key.undo.undoing .icon,\n        .mark.running {\n          animation: none;\n        }\n      }\n    </style>\n  </head>\n  <body>\n    <div id="app"></div>\n    <script id="inbox-script">\n      "use strict";(()=>{var ct,S,Ts,pi,ee,Ss,As,Ps,Jt,rt,Ie,vs,tn,Zt,en,fi,lt={},dt=[],hi=/acit|ex(?:s|g|n|p|$)|rph|grid|ows|mnc|ntw|ine[ch]|zoo|^ord|itera/i,pt=Array.isArray;function X(e,t){for(var n in t)e[n]=t[n];return e}function nn(e){e&&e.parentNode&&e.parentNode.removeChild(e)}function gi(e,t,n){var s,o,r,a={};for(r in t)r=="key"?s=t[r]:r=="ref"?o=t[r]:a[r]=t[r];if(arguments.length>2&&(a.children=arguments.length>3?ct.call(arguments,2):n),typeof e=="function"&&e.defaultProps!=null)for(r in e.defaultProps)a[r]===void 0&&(a[r]=e.defaultProps[r]);return it(e,a,s,o,null)}function it(e,t,n,s,o){var r={type:e,props:t,key:n,ref:s,__k:null,__:null,__b:0,__e:null,__c:null,constructor:void 0,__v:o??++Ts,__i:-1,__u:0};return o==null&&S.vnode!=null&&S.vnode(r),r}function O(e){return e.children}function at(e,t){this.props=e,this.context=t}function pe(e,t){if(t==null)return e.__?pe(e.__,e.__i+1):null;for(var n;t<e.__k.length;t++)if((n=e.__k[t])!=null&&n.__e!=null)return n.__e;return typeof e.type=="function"?pe(e):null}function mi(e){if(e.__P&&e.__d){var t=e.__v,n=t.__e,s=[],o=[],r=X({},t);r.__v=t.__v+1,S.vnode&&S.vnode(r),sn(e.__P,r,t,e.__n,e.__P.namespaceURI,32&t.__u?[n]:null,s,n??pe(t),!!(32&t.__u),o),r.__v=t.__v,r.__.__k[r.__i]=r,Is(s,r,o),t.__e=t.__=null,r.__e!=n&&Es(r)}}function Es(e){if((e=e.__)!=null&&e.__c!=null)return e.__e=e.__c.base=null,e.__k.some(function(t){if(t!=null&&t.__e!=null)return e.__e=e.__c.base=t.__e}),Es(e)}function xs(e){(!e.__d&&(e.__d=!0)&&ee.push(e)&&!ut.__r++||Ss!=S.debounceRendering)&&((Ss=S.debounceRendering)||As)(ut)}function ut(){try{for(var e,t=1;ee.length;)ee.length>t&&ee.sort(Ps),e=ee.shift(),t=ee.length,mi(e)}finally{ee.length=ut.__r=0}}function Ls(e,t,n,s,o,r,a,l,c,d,p){var h,u,f,m,g,b,y=s&&s.__k||dt,w=t.length;for(c=wi(n,t,y,c,w),h=0;h<w;h++)(f=n.__k[h])!=null&&(u=f.__i!=-1&&y[f.__i]||lt,f.__i=h,b=sn(e,f,u,o,r,a,l,c,d,p),m=f.__e,f.ref&&u.ref!=f.ref&&(u.ref&&on(u.ref,null,f),p.push(f.ref,f.__c||m,f)),g==null&&m!=null&&(g=m),4&f.__u?(c=Os(f,c,e),u.__e&&(u.__e=null)):typeof f.type=="function"&&b!==void 0?c=b:m&&(c=m.nextSibling),f.__u&=-7);return n.__e=g,c}function wi(e,t,n,s,o){var r,a,l,c,d,p=n.length,h=p,u=0;for(e.__k=new Array(o),r=0;r<o;r++)(a=t[r])!=null&&typeof a!="boolean"&&typeof a!="function"?(typeof a=="string"||typeof a=="number"||typeof a=="bigint"||a.constructor==String?a=e.__k[r]=it(null,a,null,null,null):pt(a)?a=e.__k[r]=it(O,{children:a},null,null,null):a.constructor===void 0&&a.__b>0?a=e.__k[r]=it(a.type,a.props,a.key,a.ref?a.ref:null,a.__v):e.__k[r]=a,c=r+u,a.__=e,a.__b=e.__b+1,l=null,(d=a.__i=bi(a,n,c,h))!=-1&&(h--,(l=n[d])&&(l.__u|=2)),l==null||l.__v==null?(d==-1&&(o>p?u--:o<p&&u++),typeof a.type!="function"&&(a.__u|=4)):d!=c&&(d==c-1?u--:d==c+1?u++:(d>c?u--:u++,a.__u|=4))):e.__k[r]=null;if(h)for(r=0;r<p;r++)(l=n[r])!=null&&(2&l.__u)==0&&(l.__e==s&&(s=pe(l)),Ds(l,l));return s}function Os(e,t,n){var s,o;if(typeof e.type=="function"){for(s=e.__k,o=0;s&&o<s.length;o++)s[o]&&(s[o].__=e,t=Os(s[o],t,n));return t}e.__e!=t&&(t&&e.type&&!t.parentNode&&(t=pe(e)),t=n.insertBefore(e.__e,t||null));do t=t&&t.nextSibling;while(t!=null&&t.nodeType==8);return t}function bi(e,t,n,s){var o,r,a,l=e.key,c=e.type,d=t[n],p=d!=null&&(2&d.__u)==0;if(d===null&&l==null||p&&l==d.key&&c==d.type)return n;if(s>(p?1:0)){for(o=n-1,r=n+1;o>=0||r<t.length;)if((d=t[a=o>=0?o--:r++])!=null&&(2&d.__u)==0&&l==d.key&&c==d.type)return a}return-1}function Rs(e,t,n){t[0]=="-"?e.setProperty(t,n??""):e[t]=n==null?"":typeof n!="number"||hi.test(t)?n:n+"px"}function ot(e,t,n,s,o){var r,a;e:if(t=="style")if(typeof n=="string")e.style.cssText=n;else{if(typeof s=="string"&&(e.style.cssText=s=""),s)for(t in s)n&&t in n||Rs(e.style,t,"");if(n)for(t in n)s&&n[t]==s[t]||Rs(e.style,t,n[t])}else if(t[0]=="o"&&t[1]=="n")r=t!=(t=t.replace(vs,"$1")),a=t.toLowerCase(),t=a in e||t=="onFocusOut"||t=="onFocusIn"?a.slice(2):t.slice(2),e.l||(e.l={}),e.l[t+r]=n,n?s?n[Ie]=s[Ie]:(n[Ie]=tn,e.addEventListener(t,r?en:Zt,r)):e.removeEventListener(t,r?en:Zt,r);else{if(o=="http://www.w3.org/2000/svg")t=t.replace(/xlink(H|:h)/,"h").replace(/sName$/,"s");else if(t!="width"&&t!="height"&&t!="href"&&t!="list"&&t!="form"&&t!="tabIndex"&&t!="download"&&t!="rowSpan"&&t!="colSpan"&&t!="role"&&t!="popover"&&t in e)try{e[t]=n??"";break e}catch{}typeof n=="function"||(n==null||n===!1&&t[4]!="-"?e.removeAttribute(t):e.setAttribute(t,t=="popover"&&n==1?"":n))}}function _s(e){return function(t){if(this.l){var n=this.l[t.type+e];if(t[rt]==null)t[rt]=tn++;else if(t[rt]<n[Ie])return;return n(S.event?S.event(t):t)}}}function sn(e,t,n,s,o,r,a,l,c,d){var p,h,u,f,m,g,b,y,w,A,Y,F,_,st,xe,Re,L=t.type;if(t.constructor!==void 0)return null;128&n.__u&&(c=!!(32&n.__u),r=[l=t.__e=n.__e]),(p=S.__b)&&p(t);e:if(typeof L=="function"){h=a.length;try{if(w=t.props,A=L.prototype&&L.prototype.render,Y=(p=L.contextType)&&s[p.__c],F=p?Y?Y.props.value:p.__:s,n.__c?y=(u=t.__c=n.__c).__=u.__E:(A?t.__c=u=new L(w,F):(t.__c=u=new at(w,F),u.constructor=L,u.render=ki),Y&&Y.sub(u),u.state||(u.state={}),u.__n=s,f=u.__d=!0,u.__h=[],u._sb=[]),A&&u.__s==null&&(u.__s=u.state),A&&L.getDerivedStateFromProps!=null&&(u.__s==u.state&&(u.__s=X({},u.__s)),X(u.__s,L.getDerivedStateFromProps(w,u.__s))),m=u.props,g=u.state,u.__v=t,f)A&&L.getDerivedStateFromProps==null&&u.componentWillMount!=null&&u.componentWillMount(),A&&u.componentDidMount!=null&&u.__h.push(u.componentDidMount);else{if(A&&L.getDerivedStateFromProps==null&&w!==m&&u.componentWillReceiveProps!=null&&u.componentWillReceiveProps(w,F),t.__v==n.__v||!u.__e&&u.shouldComponentUpdate!=null&&u.shouldComponentUpdate(w,u.__s,F)===!1){t.__v!=n.__v&&(u.props=w,u.state=u.__s,u.__d=!1),t.__e=n.__e,t.__k=n.__k,t.__k.some(function(q){q&&(q.__=t)}),dt.push.apply(u.__h,u._sb),u._sb=[],u.__h.length&&a.push(u),l=pe(n);break e}u.componentWillUpdate!=null&&u.componentWillUpdate(w,u.__s,F),A&&u.componentDidUpdate!=null&&u.__h.push(function(){u.componentDidUpdate(m,g,b)})}if(u.context=F,u.props=w,u.__P=e,u.__e=!1,_=S.__r,st=0,A)u.state=u.__s,u.__d=!1,_&&_(t),p=u.render(u.props,u.state,u.context),dt.push.apply(u.__h,u._sb),u._sb=[];else do u.__d=!1,_&&_(t),p=u.render(u.props,u.state,u.context),u.state=u.__s;while(u.__d&&++st<25);u.state=u.__s,u.getChildContext!=null&&(s=X(X({},s),u.getChildContext())),A&&!f&&u.getSnapshotBeforeUpdate!=null&&(b=u.getSnapshotBeforeUpdate(m,g)),xe=p!=null&&p.type===O&&p.key==null?Cs(p.props.children):p,l=Ls(e,pt(xe)?xe:[xe],t,n,s,o,r,a,l,c,d),u.base=t.__e,t.__u&=-161,u.__h.length&&a.push(u),y&&(u.__E=u.__=null)}catch(q){if(a.length=h,t.__v=null,c||r!=null){if(q.then){for(t.__u|=c?160:128;l&&l.nodeType==8&&l.nextSibling;)l=l.nextSibling;r!=null&&(r[r.indexOf(l)]=null),t.__e=l}else if(r!=null)for(Re=r.length;Re--;)nn(r[Re])}else t.__e=n.__e;t.__k==null&&(t.__k=n.__k||[]),q.then||$s(t),S.__e(q,t,n)}}else r==null&&t.__v==n.__v?(t.__k=n.__k,t.__e=n.__e):l=t.__e=yi(n.__e,t,n,s,o,r,a,c,d);return(p=S.diffed)&&p(t),128&t.__u?void 0:l}function $s(e){e&&(e.__c&&(e.__c.__e=!0),e.__k&&e.__k.some($s))}function Is(e,t,n){for(var s=0;s<n.length;s++)on(n[s],n[++s],n[++s]);S.__c&&S.__c(t,e),e.some(function(o){try{e=o.__h,o.__h=[],e.some(function(r){r.call(o)})}catch(r){S.__e(r,o.__v)}})}function Cs(e){return typeof e!="object"||e==null||e.__b>0?e:pt(e)?e.map(Cs):e.constructor!==void 0?null:X({},e)}function yi(e,t,n,s,o,r,a,l,c){var d,p,h,u,f,m,g,b=n.props||lt,y=t.props,w=t.type;if(w=="svg"?o="http://www.w3.org/2000/svg":w=="math"?o="http://www.w3.org/1998/Math/MathML":o||(o="http://www.w3.org/1999/xhtml"),r!=null){for(d=0;d<r.length;d++)if((f=r[d])&&"setAttribute"in f==!!w&&(w?f.localName==w:f.nodeType==3)){e=f,r[d]=null;break}}if(e==null){if(w==null)return document.createTextNode(y);e=document.createElementNS(o,w,y.is&&y),l&&(S.__m&&S.__m(t,r),l=!1),r=null}if(w==null)b===y||l&&e.data==y||(e.data=y);else{if(r=w=="textarea"&&y.defaultValue!=null?null:r&&ct.call(e.childNodes),!l&&r!=null)for(b={},d=0;d<e.attributes.length;d++)b[(f=e.attributes[d]).name]=f.value;for(d in b)f=b[d],d=="dangerouslySetInnerHTML"?h=f:d=="children"||d in y||d=="value"&&"defaultValue"in y||d=="checked"&&"defaultChecked"in y||ot(e,d,null,f,o);for(d in y)f=y[d],d=="children"?u=f:d=="dangerouslySetInnerHTML"?p=f:d=="value"?m=f:d=="checked"?g=f:l&&typeof f!="function"||b[d]===f||ot(e,d,f,b[d],o);if(p)l||h&&(p.__html==h.__html||p.__html==e.innerHTML)||(e.innerHTML=p.__html),t.__k=[];else if(h&&(e.innerHTML=""),Ls(t.type=="template"?e.content:e,pt(u)?u:[u],t,n,s,w=="foreignObject"?"http://www.w3.org/1999/xhtml":o,r,a,r?r[0]:n.__k&&pe(n,0),l,c),r!=null)for(d=r.length;d--;)nn(r[d]);l&&w!="textarea"||(d="value",w=="progress"&&m==null?e.removeAttribute("value"):m!=null&&(m!==e[d]||w=="progress"&&!m||w=="option"&&m!=b[d])&&ot(e,d,m,b[d],o),d="checked",g!=null&&g!=e[d]&&ot(e,d,g,b[d],o))}return e}function on(e,t,n){try{if(typeof e=="function"){var s=typeof e.__u=="function";s&&e.__u(),s&&t==null||(e.__u=e(t))}else e.current=t}catch(o){S.__e(o,n)}}function Ds(e,t,n){var s,o;if(S.unmount&&S.unmount(e),(s=e.ref)&&(s.current&&s.current!=e.__e||on(s,null,t)),(s=e.__c)!=null){if(s.componentWillUnmount)try{s.componentWillUnmount()}catch(r){S.__e(r,t)}s.base=s.__P=s.__n=null}if(s=e.__k)for(o=0;o<s.length;o++)s[o]&&Ds(s[o],t,n||typeof e.type!="function");n||nn(e.__e),e.__c=e.__=e.__e=void 0}function ki(e,t,n){return this.constructor(e,n)}function rn(e,t,n){var s,o,r,a;t==document&&(t=document.documentElement),S.__&&S.__(e,t),o=(s=typeof n=="function")?null:n&&n.__k||t.__k,r=[],a=[],sn(t,e=(!s&&n||t).__k=gi(O,null,[e]),o||lt,lt,t.namespaceURI,!s&&n?[n]:o?null:t.firstChild?ct.call(t.childNodes):null,r,!s&&n?n:o?o.__e:t.firstChild,s,a),Is(r,e,a),e.props.children=null}ct=dt.slice,S={__e:function(e,t,n,s){for(var o,r,a;t=t.__;)if((o=t.__c)&&!o.__)try{if((r=o.constructor)&&r.getDerivedStateFromError!=null&&(o.setState(r.getDerivedStateFromError(e)),a=o.__d),o.componentDidCatch!=null&&(o.componentDidCatch(e,s||{}),a=o.__d),a)return o.__E=o}catch(l){e=l}throw e}},Ts=0,pi=function(e){return e!=null&&e.constructor===void 0},at.prototype.setState=function(e,t){var n;n=this.__s!=null&&this.__s!=this.state?this.__s:this.__s=X({},this.state),typeof e=="function"&&(e=e(X({},n),this.props)),e&&X(n,e),e!=null&&this.__v&&(t&&this._sb.push(t),xs(this))},at.prototype.forceUpdate=function(e){this.__v&&(this.__e=!0,e&&this.__h.push(e),xs(this))},at.prototype.render=O,ee=[],As=typeof Promise=="function"?Promise.prototype.then.bind(Promise.resolve()):setTimeout,Ps=function(e,t){return e.__v.__b-t.__v.__b},ut.__r=0,Jt=Math.random().toString(8),rt="__d"+Jt,Ie="__a"+Jt,vs=/(PointerCapture)$|Capture$/i,tn=0,Zt=_s(!1),en=_s(!0),fi=0;var Si=["working","queued","waits-on-other"],Dl=[...Si,"done","dropped"];function Q(e,t){return e.length>t?`${e.slice(0,t-1)}\\u2026`:e}var xi=/[,;](?=\\s)|\\s(?=and\\s)/g;function Ns(e,t){if(t(e))return e;let n=[...e.matchAll(xi)].map(s=>`${e.slice(0,s.index).replace(/[\\s.,;:]+$/,"")}\\u2026`);return n.findLast(t)??n[0]??e}var Ml=new Intl.Segmenter(void 0,{granularity:"grapheme"});var Fl=new RegExp("\\\\p{Emoji_Presentation}|\\\\uFE0F","u");function _e(e){let t=Math.round(e/6e4);if(t<1)return"just now";if(t<60)return`${t}m ago`;let n=Math.round(t/60);return n<48?`${n}h ago`:`${Math.round(n/24)}d ago`}var Ms="no longer applies|replaced|superseded|moot",Kl=new RegExp(`^(?:closed by \\\\w+: )?(?:${Ms})`,"i"),Bl=new RegExp(`^\\\\s*(?:done\\\\s*:|(?:${Ms}|no longer relevant|dealt with)\\\\b)`,"i");function te(e){return e.threads.filter(t=>t.isWaiting)}function ln(e,t){return te(e).filter(n=>!n.isLinesChanged&&!t(e,n))}function _i(e){let t={pass:0,fail:0,pending:0,skip:0};for(let n of e.checks)t[n.bucket]+=1;return t}function Ti(e){return`${e} ${e===1?"thread":"threads"} waiting on you`}function an(e,t,n){return`${e} ${e===1?t:n}`}function ft(e,t=()=>!1){let n=(g,b,y=[],w=": ")=>{let A=y.join(", "),Y=g==="ready"?[]:y.filter(F=>!s.includes(F));return{status:g,text:A?`${b}${w}${A}`:b,head:b,unlisted:Y}},s=[];if(e.state==="MERGED")return n("merged","Merged");if(e.state!=="OPEN")return n("closed","Closed");let{fail:o,pending:r}=_i(e),a=te(e),l=ln(e,t).length,c=a.filter(g=>t(e,g)).length,d=a.filter(g=>g.isLinesChanged&&!t(e,g)).length,p=g=>g!==null,h=g=>(g===null||s.push(g),g),u=[e.mergeable==="CONFLICTING"?`conflicts with ${e.base}`:null,h(o>0?an(o,"failing check","failing checks"):null),e.reviewDecision==="CHANGES_REQUESTED"?"changes requested":null,h(l>0?Ti(l):null)].filter(p),f=[h(c>0?`${an(c,"thread","threads")} sent to Claude`:null),h(d>0?`${an(d,"thread","threads")} on changed lines`:null),e.reviewDecision==="REVIEW_REQUIRED"?"needs approval":null,r>0?`${r} ${r===1?"check":"checks"} running`:null].filter(p);if(e.isDraft)return n("draft","Draft",[...u,...f]);if(u.length>0)return n("blocked","Blocked",u);if(f.length>0)return n("waiting","Waiting",f);let m=e.reviewDecision==="APPROVED";return n("ready","Ready to merge",[...m?["approved"]:[],"checks pass","no threads waiting on you"],m?": ":", ")}var Ai=/<\\/?(?:a|b|br|code|details|div|em|h[1-6]|hr|i|img|kbd|li|ol|p|pre|span|strong|sub|summary|sup|table|tbody|td|th|thead|tr|ul)\\b[^>]*>/g;function ht(e){return e.replace(/<!--[\\s\\S]*?-->/g,"").replace(Ai,"").replace(/^[^\\S\\n]*Useful\\?[^\\S\\n]+React[^\\S\\n]+with[^\\S\\n]+\u{1F44D}[^\\S\\n]*\\/[^\\S\\n]*\u{1F44E}\\.?[^\\S\\n]*$/gmu,"").replace(/!\\[([^\\]]*)\\]\\([^)]*\\)/g,(t,n)=>n.replace(/\\s*badge$/i,"")).trim()}function dn(e){return ht(e).replace(/\\[([^\\]]*)\\]\\([^)]*\\)/g,"$1").replace(/^\\s*(?:#{1,6}|>)\\s*/gm,"").replace(/\\*\\*|__|`/g,"").replace(/\\s+/g," ")}var un=120;function gt(e){let t=ht(e),[n="",...s]=t.split(`\n`),o=dn(n).trim();return{head:o,rest:o.length>un?t:s.join(`\n`).trim()}}function mt(e,t=e.path){return`${t}${e.line?`:${e.line}`:""}`}function Fs(e){let t=Math.max(0,Math.round(e/1e3));return t<60?`${t}s`:`${Math.floor(t/60)}m ${t%60}s`}function Te(e){return e.checks.filter(t=>t.bucket==="fail")}function wt(e){return e.replace(/\\/+$/,"").split("/").pop()??e}function Us(e,t){let n=e?.delivery?.state!=="failed"?e?.turnsStarted:void 0;return n!==void 0&&n<=t.turnsStarted&&t.turnsApplied<=n}function Vs(e){return e.startsWith("pr:")||e.includes(" ")}function bt(e,t){return!e.startsWith("pr:")&&t?.kind==="handoff"&&t.action!=="address"}function ne(e){return e.action==="step"?`step-${e.step}`:e.action}function cn(e){return e.charAt(0).toUpperCase()+e.slice(1)}var Oi="This changed before your press. Nothing was sent.";function Ce(){return Oi}function Ws(e){return e.error===null&&e.note===null&&!e.isUnconfirmed}function $i(e,t){switch(t.kind){case"run":return{kind:"send",text:Di.run(e,t.command),by:{id:e.id,action:"run"}};case"open":return{kind:"open",target:t.path,name:wt(t.path)};case"link":return{kind:"open",target:t.url,name:t.name??t.url};case"copy":return{kind:"copy",text:t.text,name:t.name??"snippet",isCommand:!1};case"terminal":return{kind:"copy",text:t.command,name:t.name??Q(t.command,32),isCommand:!0}}}function qs(e,t){return t.step.map(n=>$i(e,n))}function yt(e,t,n){return{state:"pending",parts:e.flatMap(s=>s.kind==="send"?[]:[{kind:s.kind,name:s.name,isCommand:s.kind==="copy"&&s.isCommand,error:null}]),at:t,...n?{pressId:n}:{}}}function Ks(e,t){if(!/^[if]\\d+$/.test(e))return null;let n=/^step-(\\d+)$/.exec(t.action);if(n)return{action:"step",id:e,step:Number(n[1]),label:t.text};switch(t.action){case"answer":return{action:"answer",id:e,option:t.text};case"explain":case"compare":case"address":case"issue":case"discuss":return{action:t.action,id:e};default:return null}}function Bs(e,t){return e?.action===t&&e.kind!=="local"&&e.delivery?.state!=="failed"}function Ii(e){return[`${e.kind==="issue"?"Issue":"Opportunity"}: ${e.title}`,e.detail,...e.path?[`File: ${e.path}`]:[]]}var js="Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.";var Ci=e=>["Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.","For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session\'s data outside this repo.",`Then make a page from the inbox\'s comparison template. Write the comparison as JSON in the shape the comment at the top of the template shows, with the few measures that tell the choices apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Build the page with: cat "${e}" <your JSON file> > <your page>.html`,"When the comparison is done, reply without a table, since the page holds the measures. Give your pick and say whether it changed, your reason in one line, one line on anything you did not expect, and the page\'s absolute path.","Also call the inbox\'s record tool yourself with this question\'s ask and options as listed below, and the page\'s absolute path in steps. That marks it compared. Call each choice by its name as listed."].join(`\n\n`);function Hs(e){return`"${e.ask}"${e.options.length>0?`\nOptions: ${e.options.join(" / ")}`:""}`}var Di={answer:(e,t)=>`Re "${e.ask}": ${t}`,explain:e=>`Remind me what ${e.kind==="task"?"this task you left for me is about: why it came up, and what doing it involves":"this question you asked me is about: why it came up, what each choice would do, and which you would pick"}. ${js} Don\'t act on it yet.\n${Hs(e)}`,compare:(e,t)=>`${Ci(t)}\n${Hs(e)}`,run:(e,t)=>`For "${e.ask}", run this:\n\\`\\`\\`\n${t}\n\\`\\`\\``,taskReply:(e,t)=>`Re the task you left for me, "${e.ask}": ${t}`,done:e=>e.length===1?`Done: ${e[0]}`:`Done:\n${e.map(t=>`- ${t}`).join(`\n`)}`,finding:(e,t,n="")=>[t==="address"?"Please address this finding you recorded:":t==="issue"?"Please file an issue for this finding you recorded, in the issue tracker you have tools for. First check whether one already exists, and if it does, use it instead of filing a duplicate. Then close the finding with the issue\'s key or number as the reason, and give me its link. If you have no tools for an issue tracker, say so and leave the finding open.":t==="explain"?`Remind me what this finding you recorded is about: why it matters, what fixing it would involve, and whether you would fix it now. ${js} Don\'t act on it yet.`:t==="discuss"?"Let\'s talk through this finding you recorded before changing anything:":"About this finding you recorded:",...Ii(e),...t==="typed"?["",n]:[]].join(`\n`)};var md=`You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.\n\nYou read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.\n\nInput:\n- <head>: the top of the page, as title | description: what the session is focused on now. Never write it into a subject.\n- <subjects>: the open subjects, one per line: id | status | name | where it stands\n- <finished>: subjects already done or dropped. Do not add them again.\n- <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet\n- <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subject it holds up, or - when it has none yet\n- <tasks>: the agent\'s own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.\n- <person>: what the person just sent\n- <activity>: what the agent did this turn\n- <reply>: the agent\'s final reply\n\nAnswer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, and the head still holds, answer with the one line NO CHANGE. Most exchanges change nothing.\n\nOtherwise write only the lines that apply:\nNEW: status | name | where it stands\nSET: id or name | status | where it stands\nDONE: id or name | where it ended\nDROP: id or name | why\nDROP: id or name | why | INTO id or name\nWAS: id or name | the plan it replaces\nLINK: running or ask id | subject id or name\nHEAD: title | description\n\nA subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${6} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.\n\nThe name is a label of at most ${3} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${4} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.\n\nThe head says what the session is focused on now: the work the person would name if asked what this session is doing. It may cover several subjects. Its title is a label of at most ${3} words, like a subject\'s name, such as "Offline sync" or "2.5 release". Its description is at most ${8} words on what the session is doing about that focus, such as "Adding offline sync to the notes app" or "Fixing the sync bug, then shipping 2.5". The description never repeats the title, and never says where one piece stands, such as "PR ready for review". The head follows the same rules on time words as where it stands.\n\nStatus is one of: working, queued, waits-on-other.\n- working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask. When the work stopped for another reason, it is queued, waits on something, or is done.\n- queued: planned, not started.\n- waits-on-other: it waits on something other than the person, such as a build, a review or another session.\n\nRules:\n- Change a subject by its id. Write NEW only when no subject in <subjects> covers it.\n- When work started and finished in this exchange, write NEW for it, then DONE with its name.\n- Write SET only when where a subject stands changed. Never reword a subject that did not change.\n- Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.\n- When the person files a piece for later, out of this session\'s plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.\n- When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.\n- Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.\n- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject\'s text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.\n- Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.\n- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.`;var Ys=[..."abcfghilm"],v="\\u2007\\xB7\\u2002",j={issue:{title:"Issues",mark:"\\u25B2",tone:"issue"},opportunity:{title:"Opportunities",mark:"\\u2726",tone:"done"}},Qs=[{kind:"question",title:"Questions",list:"questions"},{kind:"task",title:"Tasks",list:"tasks"}],z={working:{mark:"\\u25CF",tone:null},queued:{mark:"\\u25CB",tone:null},"waits-on-other":{mark:"\\u25CC",tone:null},done:{mark:"\\u2713",tone:"done"},dropped:{mark:"\\u2717",tone:null}},De={mark:"\\u25C6",tone:"needsYou"},zs=["\\u25CF","\\u25C9","\\u25CE","\\u25C9"],kt=zs[0],St={handled:z.done.mark,dismissed:"\\u2715",lapsed:z.dropped.mark},xt={waiting:{text:De.mark,tone:"needsYou"},sent:{text:z.done.mark,tone:"done"},failing:{text:j.issue.mark,tone:"error"}},mn=[{mark:kt,tone:null,isRunning:!0,words:"Working. It moves while the work runs or your message is on its way."},{mark:z.queued.mark,tone:null,isRunning:!1,words:"Queued: not started yet"},{mark:z["waits-on-other"].mark,tone:null,isRunning:!1,words:"Waits on something other than you, such as a build or a review"},{mark:De.mark,tone:De.tone,isRunning:!1,words:"Waits on you"},{mark:z.done.mark,tone:"done",isRunning:!1,words:"Done, or handed to the agent"},{mark:z.dropped.mark,tone:null,isRunning:!1,words:"Dropped before it was done"},{mark:St.dismissed,tone:null,isRunning:!1,words:"Dismissed by you"},{mark:j.issue.mark,tone:j.issue.tone,isRunning:!1,words:"Something is wrong: an issue or a failing check"},{mark:j.opportunity.mark,tone:j.opportunity.tone,isRunning:!1,words:"Opportunity: something that could be better"}],Ui=[{keys:"g",does:"Rank the PRs again, once a ranked PR changed"},{keys:"m",does:"Dismiss the merged PRs"}],Ae={open:"Help",close:"\\u2715 Close help",keys:"Keys",marks:"Marks"};function Js(e,t,n,s){let o=Me(t).map(d=>d.hotkey).join(" "),r=E(n),a=n==="overview"&&s,l={keys:o,does:"Switch tabs"},c=n==="prs"?Ui:[];switch(e){case"desktop":return[];case"terminal":return[l,...r||a?[{keys:"j k",does:"Select the next or previous row"}]:[],...c,{keys:"ctrl+x tab",does:"Move focus to the line above the prompt, then the pane, then the prompt"}];case"codex":return[l,...r?[{keys:"j k \\u2191 \\u2193",does:"Select the next or previous row"}]:[],...c,{keys:"?",does:"Open or close help"},{keys:"esc",does:"Close help, or leave a reply field"}];case"omp":return[{keys:`tab ${o}`,does:"Switch tabs"},...r?[{keys:"\\u2191 \\u2193 j k",does:"Move between rows"},{keys:"\\u2190 \\u2192",does:"Pick a button"},{keys:"\\u21B5",does:"Press the picked button"},{keys:"r",does:"Reply to the selected row"},{keys:"u",does:"Undo the last close"},...c]:[...a?[{keys:"j k",does:"Select the next or previous row with a button"},{keys:"\\u21B5",does:"Press the selected row\'s button"}]:[],{keys:"\\u2191 \\u2193",does:"Scroll the page"}],{keys:"?",does:"Open or close help"},{keys:"esc",does:"Close help, then the panel"}]}}var Vi=3,$=5120;var wn=400,Wi=1e3,qi=30*6e4;function Ki(e,t){return e?.delivery?.state==="queued"&&t-e.at>=Wi}function Bi(e,t){return e?.delivery?.state==="unconfirmed"?"unconfirmed":e?.delivery?.state!=="queued"?null:Ki(e,t)?"queued":"sending"}function Zs(e,t){return e>0&&t-e<wn}function Rt(e,t){return t!==null&&e>=t}function _t(e,t){return e.state.is!=="settled"||Rt(e.state.at,t)}function eo(e,t){return Object.fromEntries(Object.entries(e).filter(([,n])=>Rt(n,t)))}function to(e,t){return Object.fromEntries(Object.entries(t).flatMap(([n,s])=>n===e||s.text.trim()!==""?[[n,s.since]]:[]))}var Gi=e=>e==="terminal"||e==="omp",se={retry:"Try again",send:"Send",cancel:"Cancel",discard:"Discard",clickField:"Click the field to type",relevantFile:"Relevant file: ",allOptions:e=>`All ${e} options`};function no(e,t){return e.optionDescriptions.filter(n=>t||!n.isFolded)}function bn(e,t){return e.replyKind==="answer"?"Your answer":`Your reply to ${t}`}function so(e,t){if(!e.isPrimary)return e.label;let n=`${e.label} (recommended)`;return t&&!t(n)?e.label:n}function yn(e){return e.state.is==="held"?"discard":"cancel"}function oo(e){return e.state.is==="open"}function kn(e){return e.filter(t=>t!==void 0&&oo(t)).length}function ro(e,t,n){return e.is==="done"&&t?e.label:fe(e,n)}function io(e,t){let n=e.feedback;return n?ao(e)?n.is==="done"?n.label:n.is==="local"?hn(n.result,t):fe(n,t):fe(n,t):null}function ao(e){let t=e.feedback;return e.state.is==="handedOff"&&(t?.is==="done"||t?.is==="local"&&t.result.state==="done")}var lo={text:kt,isRunning:!0};function Sn(e){if(e.state.is==="settled")return Pt(e.state);let t=e.feedback;return e.state.is!=="handedOff"||!t?null:t.is==="sending"||t.is==="queued"?lo:ao(e)?{text:z.done.mark,isRunning:!1,tone:"done"}:{text:"",isRunning:!1}}function Yi(e){return e==="sending"||e==="queued"}function he(e){return[...e.needsYou.questions,...e.needsYou.tasks,...e.findings.rows]}function xn(e){return e.filter(t=>t.state.is==="settled").map(t=>t.id)}function Tt(e,t){return e.filter(n=>!t.has(n.id)).slice(0,Vi)}function At(e,t){return e.filter(n=>!t.has(n.id)).length}function uo(e){return`${e} closed`}function co(e,t){return e>t?`${e-t} earlier`:null}function ge(e){let t=_e(e);return t==="just now"?"now":t.replace(/ ago$/,"")}function po(e){return`No open ${e.toLowerCase()}`}var Xi={demo:"notice","update-failed":"warning","tools-refused":"error","read-failed":"error",stopped:"error","gh-missing":"warning","gh-signed-out":"warning","press-note":"notice","press-failed":"error","hooks-trust":"error","server-gone":"error","server-load-failed":"error","server-builds-differ":"warning","tab-update-failed":"warning"};function J(e,t){let n=t.indexOf(". "),s=n<0?t:t.slice(0,n+1),o=n<0?null:t.slice(n+2);return{kind:e,tone:Xi[e],lead:s,body:o}}function fo(e,t,n){return[...e,...t?[J("update-failed",t)]:[],...n?[J(n.isError?"press-failed":"press-note",n.text)]:[]]}var ho="Sample entries. Buttons here send nothing.",go="Reading the inbox\\u2026";function mo(e,t){return t?`v${e} \\xB7 next`:`v${e}`}function Pe(e,t,n,s,o,r){let a=t?.result;if(n&&o-n.at<$&&n.at>=Math.max(t?.at??0,a?.at??0))return{is:"note",note:n.note,at:n.at};if(a&&(a.state!=="done"||o-a.at<$))return{is:"local",result:a};if(!t||t.kind==="local")return null;let l=t.delivery,c=Bi(t,o);if(c==="queued"||c==="unconfirmed")return{is:c,label:t.text,at:t.at};if(l?.state==="failed")return{is:"notSent",reason:l.reason,retry:Ks(e,t)};let d=Us(t,s),p=t.action==="compare"&&!(r!==void 0&&r>=t.at),h=o-t.at>=qi,u=zi[t.action];if(t.kind==="talk"&&u&&(d||p&&!h))return{is:"working",label:u,at:t.at};if(c==="sending")return{is:"sending",label:t.text,at:t.at};if(p)return{is:"noComparison",at:t.at};if(!d&&!Vs(e)&&bt(e,t))return{is:"stillOpen",at:t.at};let f=t.kind==="handoff"&&t.action.startsWith("step-");return{is:"done",label:Ji[t.action]?.(t.text)??t.text,at:t.at,...f?{isHandedStep:!0}:{},...Zi.has(t.action)?{isStillWaiting:!0}:{}}}function Qi(e,t,n,s,o,r,a){if(t.is==="settled")return null;let l=Pe(e,n,s,o,r,a);if(t.is!=="held")return l;let c=l?.is==="notSent"&&n?.action==="type"&&n.at>=t.at;return l?.is==="note"||c?l:{is:"closed",label:t.label,at:t.at}}function Rn(e,t,n,s,o,r){return Qi(e,t,n,void 0,s,o,r)}var zi={explain:"Explaining\\u2026",compare:"Comparing\\u2026",discuss:"Discussing\\u2026","thread-discuss":"Discussing\\u2026","thread-draft":"Drafting a reply\\u2026","pr-rank-again":"Ranking\\u2026"},Ji={address:()=>"Handed off",issue:()=>"Asked to file",discuss:()=>"Discussed",explain:()=>"Explained",compare:()=>"Compared",dismiss:()=>"Dismissed",type:()=>"Replied","thread-address":()=>"Addressed","thread-discuss":()=>"Discussed","thread-draft":()=>"Drafted a reply","pr-conflicts":()=>"Asked to resolve conflicts","pr-merge":()=>"Asked to merge","pr-address-all":e=>e.replace(/^Address\\b/,"Addressed"),"check-fix":()=>"Asked to fix","pr-rank-again":()=>"Ranked"},Zi=new Set(["check-fix"]);function _n(e){return e?.is==="notSent"||e?.is==="local"&&e.result.state==="failed"}function Tn(e){return e.is==="done"||e.is==="working"||e.is==="stillOpen"||e.is==="noComparison"||e.is==="sending"||e.is==="queued"||e.is==="unconfirmed"||e.is==="closed"}function wo(e){return e?.is==="working"||e?.is==="sending"||e?.is==="queued"||e?.is==="unconfirmed"||e?.is==="local"&&e.result.state==="pending"}function An(e,t){return wo(t)?(t?.is==="local"?t.result.action:e?.action)??null:null}function Pn(e,t){let n=t?.is==="unconfirmed"?null:An(e,t);return n==="type"?null:n}function bo(e,t,n){return Bs(e,t)&&(!n||e?.isRepeat===!0)}function yo(e,t){let n=e?.is==="done"&&e.isStillWaiting===!0;return t&&(wo(e)||n)}var ea=e=>Gi(e)?"Run it in a terminal, or type ! and paste.":"Run it in Terminal.",pn={open:{pending:"Opening",done:"Opened",failed:"open"},copy:{pending:"Copying",done:"Copied",failed:"copy"},"refresh-prs":{pending:"Refreshing",done:"Refreshed",failed:"refresh"}};function hn(e,t){let s=e.parts.length>1&&e.parts.every(a=>a.kind==="open"&&a.error===null&&/^PR #\\d+$/.test(a.name))?[{...e.parts[0],name:`${e.parts.length} PRs`}]:e.parts;if(e.state==="pending")return`${s.map(a=>`${pn[a.kind].pending} ${a.name}`).join(v)}\\u2026`;let o=s.map(a=>a.error===null?`${pn[a.kind].done} ${a.name}`:`Could not ${pn[a.kind].failed} ${a.name}: ${a.error}`).join(v);if(e.state==="failed")return o;let r=s.some(a=>a.kind==="copy"&&a.isCommand);return`${o}${r?`. ${ea(t)}`:""}`}function fe(e,t){switch(e.is){case"note":return Ce();case"local":return e.result.state==="done"?`\\u2713 ${hn(e.result,t)}`:hn(e.result,t);case"sending":return e.label;case"queued":return gn(e.is,e.label);case"unconfirmed":return gn(e.is,e.label);case"notSent":return`Not sent: ${e.reason}`;case"done":return e.isHandedStep?`\\u2713 Handed off: ${e.label}`:`\\u2713 ${e.label}`;case"working":return e.label;case"stillOpen":return"Still open";case"noComparison":return"No comparison came back";case"closed":return e.label}}function gn(e,t){return e==="queued"?`Queued: ${t}`:`Not confirmed: ${t}`}function Pt(e){return ta(e.closedAs,e.delivery)}function ta(e,t){return Yi(t)?lo:{text:t===null?St[e]:"",isRunning:!1}}function ko(e){return e!==null&&typeof e=="object"&&e.canUndo}function vt(e,t){return t&&typeof t=="object"?`${e} \\xB7 Not sent: ${t.error}`:t===null||t==="sending"?e:gn(t,e)}var Ne=[{id:"overview",label:"Status",symbol:"\\u{1F9ED}"},{id:"needsYou",label:"Asks",symbol:"\\u{1F64B}"},{id:"findings",label:"Finds",symbol:"\\u{1F50D}"},{id:"prs",label:"PRs",symbol:"\\u{1F500}"}],So=e=>e.map((t,n)=>({...t,hotkey:String(n+1)})),na=So(Ne),sa=So(Ne.filter(e=>e.id!=="overview"));function Me(e){return e?na:sa}function xo(e,t){let n=Me(t);return n.some(s=>s.id===e)?e:n[0].id}function Ro(e,t){return E(e)&&t[e]>0?String(t[e]):null}function vn(e){return e==="needsYou"||e==="findings"}function E(e){return e!=="overview"}function _o(e){return Ne.some(t=>t.id===e)}var To=Ne.filter(e=>E(e.id)),En=Ne.filter(e=>vn(e.id));var Ao="was: ",Xs="merged in: ",Po=" \\xB7 ",ve=3;var Id={mark:z.working.mark,tone:null};var oa=300,vo=zs.length*oa;function Eo(e,t){return`${Xs}${Ns(e,n=>t(`${Xs}${n}`))}`}function Lo(e,t){let n=e.split(" "),s=n.map((o,r)=>r===0?e:`${n.slice(0,n.length-r).join(" ")}\\u2026`);return s.find(t)??s.at(-1)}function Fe(e,t){return e==="needsYou"?{title:"Nothing needed",hint:`${t}\'s questions and the tasks only you can do show up here.`}:{title:"No findings yet",hint:`${t} flags issues and opportunities it spots beyond your task.`}}function Ln(e,t,n){let s=c=>c.flatMap(d=>{if(d.state.is==="settled")return t(d.id)?[{settled:d,state:d.state}]:[];let p=n(d);return p===null?[]:[{row:p}]}),o=s(e.needsYou.questions),r=s(e.needsYou.tasks),a=Object.keys(j).map(c=>({kind:c,title:j[c].title,entries:s(e.findings.rows.filter(d=>d.finding?.kind===c))})),l=a.flatMap(c=>c.entries);return{questions:o,tasks:r,findings:l,findingGroups:a,byTab:{needsYou:[...fn(o),...fn(r)],findings:fn(l)}}}function me(e){return"row"in e?e.row.id:e.settled.id}function Oo(e){let t=Ln(e,()=>!0,s=>s),n=s=>s.map(o=>"row"in o?{id:o.row.id,isWaiting:oo(o.row)}:{id:o.settled.id,isWaiting:!1});return{needsYou:n([...t.questions,...t.tasks]),findings:n(t.findings)}}function On(e){return e.find(t=>t.isWaiting)?.id??null}function $o(e,t){return On(e.filter(n=>!t.includes(n.id)))}function Io(e,t){let n=e.findIndex(s=>s.id===t);return n<0?null:(e.slice(n+1).find(s=>s.isWaiting)??e.slice(0,n).reverse().find(s=>s.isWaiting))?.id??null}function fn(e){return e.flatMap(t=>"row"in t?[t.row]:[])}function Et(e){return new Set(e.flatMap(t=>"settled"in t?[t.settled.id]:[]))}function Co(e,t){let n=e.actions.filter(d=>t||!d.isFolded),s=e.actions.length-n.length,o=n.map(d=>d.press.action).lastIndexOf("answer"),r=[],a=[],l=e.feedback?.is==="notSent"?e.feedback.retry:null;if(l){let d=e.actions.find(p=>ne(p.press)===ne(l))?.kind??"talk";r.push({slot:"retry",press:l,kind:d,label:se.retry,emphasis:"normal",icon:"retry"})}let c=0;for(let[d,p]of n.entries()){let{press:h}=p;if(h.action==="answer"||h.action==="step"){let u=c<Ys.length?{hotkey:Ys[c++]}:{};r.push({slot:"choice",action:{...p,press:h},...u}),d===o&&s>0&&r.push({slot:"allOptions",count:e.actions.filter(f=>f.press.action==="answer").length,label:se.allOptions(e.actions.filter(f=>f.press.action==="answer").length),emphasis:"quiet"})}else p.hotkey&&(p.isFollowUp?a:r).push({slot:"action",action:p,hotkey:p.hotkey})}return{keys:r,more:a}}var ra={question:"View question",task:"View task"};function Do(e){return e.kind!=="subject"||e.ask===null?[]:[{press:{action:"show-ask",askId:e.ask.id},label:ra[e.ask.kind],hotkey:"v",kind:"view"}]}var ia="Updating\\u2026",aa="Refreshing PRs\\u2026";function No(e,t,n,s){if(e==="prs")return{text:n.isFetching&&n.hasPrs?aa:null,error:null};let o=(e==="overview"?s:null)??t.error;return{text:t.isUpdating?ia:null,error:o}}var la=0;function i(e,t,n,s,o,r){t||(t={});var a,l,c=t;if("ref"in c)for(l in c={},t)l=="ref"?a=t[l]:c[l]=t[l];var d={type:e,props:c,key:n,ref:a,__k:null,__:null,__b:0,__e:null,__c:null,constructor:void 0,__v:--la,__i:-1,__u:0,__source:o,__self:r};if(typeof e=="function"&&(a=e.defaultProps))for(l in a)c[l]===void 0&&(c[l]=a[l]);return S.vnode&&S.vnode(d),d}var da={check:"M20 6 9 17l-5-5",play:"M7 4.5v15l12-7.5z",copy:"M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1",open:"M7 17 17 7M8 7h9v9",retry:"M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5",undo:"M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11",right:"m9 18 6-6-6-6",down:"m6 9 6 6 6-6"},ua={done:"check",retry:"retry",open:"open",copy:"copy",run:"play"};function je({name:e}){return i("svg",{class:"icon",viewBox:"0 0 24 24",fill:"none",stroke:"currentColor","stroke-width":"2","stroke-linecap":"round","stroke-linejoin":"round","aria-hidden":"true",children:i("path",{d:da[e]})})}function Mo(e,t,n,s){let o=Co(e,t),r=a=>{if(a.slot==="retry")return{label:a.label,emphasis:a.emphasis,icon:a.icon,run:()=>s.press(a.press)};if(a.slot==="allOptions")return{label:a.label,emphasis:a.emphasis,run:s.showOptions};let l=a.action;return{label:so(l),emphasis:l.emphasis,...a.hotkey?{hotkey:a.hotkey}:{},...l.icon?{icon:ua[l.icon]}:{},...l.press.action==="dismiss"?{isDismiss:!0}:{},...l.isOut||ne(l.press)===n?{isOut:!0}:{},run:l.press.action==="type"?s.reply:l.press.action==="discard"?s.discard:()=>s.press(l.press)}};return{keys:o.keys.map(r),more:o.more.map(r)}}function Lt({action:e,isBlocked:t}){return i("button",{type:"button",class:`${e.emphasis==="primary"?"key primary":e.emphasis==="quiet"?"key ghost":"key"}${e.isDismiss?" dismiss":""}${e.isOut?" out":""}`,disabled:t()||e.isOut===!0,onClick:()=>{!t()&&!e.isOut&&e.run()},children:[e.icon?i(je,{name:e.icon}):null,e.label]})}function $n({keys:e,more:t,reply:n,isBlocked:s}){return n?i("div",{class:"actions",children:i("form",{onSubmit:o=>{o.preventDefault();let r=n.draft().trim();r&&n.send(r)},children:[i("input",{id:`type-${n.id}`,value:n.draft(),placeholder:n.hint,"aria-label":n.hint,onInput:o=>n.onDraft(o.currentTarget.value)}),i("button",{type:"submit",class:"key primary",children:se.send}),i("button",{type:"button",class:"key ghost",onClick:n.onExit,children:se[n.exit]})]})}):i("div",{class:"actions",children:e.length+t.length>0?i("div",{class:"keys",children:[e.map(o=>i(Lt,{action:o,isBlocked:s})),t.length>0?i("div",{class:"follow-ups",children:t.map(o=>i(Lt,{action:o,isBlocked:s}))}):null]}):null})}var Fo=\'fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"\';function jo(e){let t=e-4;return`<path d="M1.2,${t+8.2} Q3.4,${t+4.4} 7.4,${t-.2}" ${Fo} stroke-width="1.9"/><path d="M2.2,${t+1.4} Q3.8,${t+4.4} 5.6,${t+7.4}" ${Fo} stroke-width="1.6"/>`}var Ho=30;function be(e,t){return Uo(e.ref,t.id)}function He(e,t){return Vo(e.ref,t.name)}function Uo(e,t){return`${e} thread ${t}`}function Vo(e,t){return`${e} check ${t}`}function C(e){return`pr:${e}`}var fa="The inbox could not find gh. It needs gh to read your PRs.",pu=`gh did not answer within ${2e4/1e3} seconds`,ha="gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.";function In(e){return e.isGhMissing?{kind:"gh-missing",text:fa}:e.isGhSignedOut?{kind:"gh-signed-out",text:ha}:null}function ga(e){return`Your PRs show here when this ${e} opens or links one, or when your branch has one.`}function Wo(e,t){return{title:e.isFetching?"Checking for PRs\\u2026":"No PRs",hint:In(e)?.text??ga(t)}}function qo(e){return`Last refresh failed: ${e}`}var ma="Refresh PRs",wa={kind:"refresh-prs",name:"PRs"};var Cn="pr:order",Ko="pr:merged",Dn={threads:"Review threads",checks:"Failing checks"};function Bo(e,t,n){let s=Ue(n)(e,t),o=!s&&t.isLinesChanged;return{mark:ba(s?n[be(e,t)]?.delivery:null),fold:s||o?t.isLinesChanged?{note:`Lines changed since this comment${v}still open on GitHub`}:{}:null,title:Q(gt(t.body).head,un),meta:[mt(t,wt(t.path)),o?"Lines changed":"",t.reply?`@${t.reply.author}: ${dn(t.reply.body)}`:`@${t.author}`].filter(Boolean).join(v)}}function ba(e){return e===null?{...xt.waiting,isDone:!1,isRunning:!1}:e?.state==="queued"?{text:kt,tone:null,isDone:!1,isRunning:!0}:e?.state==="unconfirmed"?{text:"",tone:null,isDone:!1,isRunning:!1}:{...xt.sent,isDone:!0,isRunning:!1}}function Go(e){return{mark:{...xt.failing,isDone:!1,isRunning:!1},lead:e.workflow||null,title:e.name,meta:ya(e)}}var Nn=1200;function Yo(e){return{keys:e.filter(t=>!t.isFollowUp),more:e.filter(t=>t.isFollowUp)}}function ya(e){return e.startedAt!==void 0&&e.finishedAt!==void 0?`Failed after ${Fs(e.finishedAt-e.startedAt)}`:"Failed"}function Ue(e){return(t,n)=>{let s=e[be(t,n)];return s?.kind==="handoff"&&s.delivery?.state!=="failed"&&s.at>((n.reply??n).at??0)}}function Xo(e,t){let n=Ue(t);return e.flatMap(s=>[...te(s).map(o=>({id:be(s,o),isWaiting:!n(s,o)})),...Te(s).map(o=>{let r=He(s,o),a=t[r];return{id:r,isWaiting:!bt(r,a)||a?.delivery?.state==="failed"}})])}function ka(e,t){let n=e[C(t)];return n?.action==="pr-dismiss"?n.at:null}function Qo(e,t){return ka(e,t)!==null}function Mn(e){return e.filter(t=>t.state.is==="open").map(t=>t.pr)}function zo(e){return`${e}.\\u2002`}var Jo={ready:"done",blocked:"needsYou",waiting:null,draft:null,merged:"findings",closed:"error"};function Sa(e,t){return{kind:"open",target:t.reply?.url||t.url||e.url,name:"the comment"}}function xa(e){return{kind:"open",target:e.url,name:`PR #${e.number}`}}function Ra(e,t){return{kind:"open",target:t.url??e.url,name:t.url?"the log":`PR #${e.number}`}}var Zo={"pr-conflicts":"Resolve conflicts","check-fix":"Fix"};function _a(e){return e.action==="pr-conflicts"||e.action==="check-fix"}function Ta(e){return{kind:"refresh-prs",name:`PR #${e.number}`}}function Fn(e,t){if(_a(t))return Ta(e);switch(t.action){case"thread-open":{let n=e.threads.find(s=>s.id===t.thread);return n?Sa(e,n):null}case"pr-open":return xa(e);case"pr-refresh":return wa;case"log":{let n=e.checks.find(s=>s.name===t.check);return n?Ra(e,n):null}default:return null}}function jn(e,t,n,s=null){if(e?.delivery?.state!=="failed")return null;let o=e.action;return s!==null?o==="check-fix"?{press:{action:o,ref:t,check:s},kind:e.kind}:null:n!==null&&(o==="thread-address"||o==="thread-draft"||o==="thread-discuss")?{press:{action:o,ref:t,thread:n},kind:e.kind}:n===null&&(o==="pr-conflicts"||o==="pr-address-all"||o==="pr-merge")?{press:{action:o,ref:t},kind:e.kind}:null}function Hn(e,t){let n=e.lastActions[t],s=Rn(t,{is:"open"},n,e.turns,e.now);return{last:n,pressing:An(n,s),out:Pn(n,s)}}function we(e,t,n){return bo(e.last,t,e.pressing===t)?`${n} again`:n}function Un(e,t){return t.map(n=>({...n,isOut:n.press.action===e.out}))}function Vn(e){return e?[{press:e.press,label:"Try again",kind:e.kind,emphasis:"normal",icon:"retry",isRetry:!0}]:[]}function er(e,t,n){let s=Hn(n,Uo(e.ref,t.id)),o={ref:e.ref,thread:t.id};return Un(s,[...Vn(jn(s.last,e.ref,t.id)),{press:{action:"thread-address",...o},label:we(s,"thread-address","Address"),kind:"handoff",emphasis:"primary",hotkey:"a"},{press:{action:"thread-draft",...o},label:we(s,"thread-draft","Draft reply"),kind:"talk",emphasis:"normal",hotkey:"r"},{press:{action:"thread-open",...o},label:"Open comment",kind:"local",emphasis:"normal",icon:"open",hotkey:"o"},{press:{action:"thread-discuss",...o},label:we(s,"thread-discuss","Discuss"),kind:"talk",emphasis:"quiet",hotkey:"d",isFollowUp:!0}])}function tr(e,t,n){let s=Hn(n,Vo(e.ref,t.name)),o={ref:e.ref,check:t.name};return Un(s,[...Vn(jn(s.last,e.ref,null,t.name)),{press:{action:"check-fix",...o},label:we(s,"check-fix",Zo["check-fix"]),kind:"handoff",emphasis:"primary",hotkey:"a"},{press:{action:"log",...o},label:"Open log",kind:"local",emphasis:"normal",icon:"open",hotkey:"o"}])}function nr(e,t,n,s){let o=Hn(s,C(e.ref)),{status:r}=ft(e,t),a=ln(e,t).length,l=[...r==="ready"?[{press:{action:"pr-merge",ref:e.ref},label:we(o,"pr-merge","Merge"),kind:"handoff"}]:[],...e.state==="OPEN"&&e.mergeable==="CONFLICTING"?[{press:{action:"pr-conflicts",ref:e.ref},label:we(o,"pr-conflicts",Zo["pr-conflicts"]),kind:"handoff"}]:[],...a>1?[{press:{action:"pr-address-all",ref:e.ref},label:we(o,"pr-address-all",`Address all ${a} threads`),kind:"handoff"}]:[]];return Un(o,[...e.error?[{press:{action:"pr-refresh",ref:e.ref},label:ma,kind:"local",emphasis:"normal",icon:"retry"}]:[],...Vn(jn(o.last,e.ref,null)),...l.map((c,d)=>({...c,emphasis:d===0?"primary":"normal"})),{press:{action:"pr-open",ref:e.ref},label:"Open PR",kind:"local",emphasis:"normal",icon:"open"},...e.ref===n?[]:[{press:{action:"pr-dismiss",ref:e.ref},label:"Dismiss",kind:"mark",emphasis:"quiet"}]])}function sr(e,t){let n={...e},s={};for(let o of Object.keys(t)){let r=t[o],a=e[o];s[o]=r&&a?r.filter(l=>!a.has(l)):[],r&&(n[o]=new Set(r))}return{seen:n,added:s}}var Wn=To.map(e=>e.id);function or(e){return{needsYou:[...e.needsYou.questions,...e.needsYou.tasks].map(t=>t.id),findings:e.findings.rows.map(t=>t.id)}}function rr(e){let t=n=>n.filter(s=>s.state.is!=="settled").map(s=>s.id);return{needsYou:t([...e.needsYou.questions,...e.needsYou.tasks]),findings:t(e.findings.rows)}}function ir(e,t,n){return t==="findings"?Object.keys(j).map(s=>({isUnfolded:n(s),rows:e.findings.closed.filter(o=>o.kind===s)})):Qs.map(s=>({isUnfolded:n(s.kind),rows:e.needsYou.closed[s.list]}))}function ar({rows:e,settled:t,closed:n,hasBlocker:s}){return!s&&!e.some(o=>o.state.is!=="settled"||t.has(o.id))&&!n.some(o=>o.isUnfolded&&o.rows.some(r=>!t.has(r.id)))}function lr(e,t,n,s){return n?e.find(o=>o!==t&&s[o].length>0)??null:null}function dr(e){return e.flatMap(({pr:t,state:n})=>[C(t.ref),...n.is==="settled"?[]:[...te(t).map(s=>be(t,s)),...Te(t).map(s=>He(t,s))]])}function ur(e,t){return e===0&&!t}var Aa=/`([^`\\n]+)`|\\*\\*(?=\\S)(.+?)(?<=\\S)\\*\\*(?!\\*)|~~(?=\\S)(.+?)(?<=\\S)~~|(?<![\\w*])\\*(?=\\S)([^*\\n]+?)(?<=\\S)\\*(?![\\w*])|(?<!\\w)_(?=\\S)([^_\\n]+?)(?<=\\S)_(?!\\w)|\\[([^\\]\\n]+)\\]\\((https:\\/\\/[^\\s)]+)\\)/g;function Ot(e,t={}){let n=[],s=0;for(let o of e.matchAll(Aa)){o.index>s&&n.push({...t,text:e.slice(s,o.index)});let[,r,a,l,c,d,p,h]=o;r!==void 0?n.push({...t,text:r,code:!0}):a!==void 0?n.push(...Ot(a,{...t,bold:!0})):l!==void 0?n.push(...Ot(l,{...t,strike:!0})):c!==void 0||d!==void 0?n.push({...t,text:c??d??"",italic:!0}):n.push({...t,text:p??"",link:h}),s=o.index+o[0].length}return s<e.length&&n.push({...t,text:e.slice(s)}),n}var $t={question:"needsYou",task:"needsYou",finding:"findings"};function cr(e){return{...rr(e),prs:[]}}function pr(e,t,n){return sr(e,{...or(t),prs:n?null:dr(t.prs.drawn)})}function fr(e,t,n,s,o){return t==="prs"?ur(e.prs.drawn.length,o):ar({rows:t==="findings"?e.findings.rows:[...e.needsYou.questions,...e.needsYou.tasks],settled:n,closed:ir(e,t,r=>s.has(r)),hasBlocker:t==="needsYou"&&e.heard!=="heard"})}var It={entering:300,opening:200,closing:200,settling:200,leaving:200,closed:0,open:0,settled:0,undoing:0};function Ct(e){return It[e]>0}function gr(e,t,n,s=!1,o=!1){let r=t==="undoing"?"settled":t;if(!e)return s&&!o&&(r==="closed"||r==="open")?{state:"entering",since:n,hasPanel:r==="open"}:hr(void 0,r,t,n);let a=Pa(e)===r?e:va(e,r,n);return Ct(a.state)&&!o&&n-a.since<It[a.state]?a:hr(a,r,t,n)}function Pa({state:e,hasPanel:t}){switch(e){case"entering":return t?"open":"closed";case"opening":case"open":return"open";case"closing":case"closed":return"closed";case"settling":case"settled":case"undoing":return"settled";case"leaving":return"gone"}}function va(e,t,n){switch(t){case"open":return{state:"opening",since:n,hasPanel:!0};case"closed":return e.state==="leaving"?{state:"entering",since:n,hasPanel:!1}:{state:"closing",since:n,hasPanel:e.hasPanel};case"settled":return{state:"settling",since:n,hasPanel:e.hasPanel};case"gone":return{state:"leaving",since:n,hasPanel:e.hasPanel}}}function hr(e,t,n,s){if(t==="gone")return null;let o=n==="undoing"?"undoing":t;return e?.state===o?e:{state:o,since:s,hasPanel:o==="open"}}var Cu={type:"object",properties:{repo:{type:"string",description:"The repository, as owner/name."},numbers:{type:"array",items:{type:"integer"},description:`The PR numbers, first to last, at most ${Ho}. Give an empty list to clear the order.`},label:{type:"string",description:\'What the user does with the order, in at most 4 words, such as "Merge in this order" or "Review in this order". Required to set an order.\'},why:{type:"string",description:"The reason for this order, in one sentence, such as a PR that waits on another. Not a summary of each PR. Required to set an order."}},required:["numbers"]};var qn=6e4;var Mc=10*6e4;var Dt=3e3,Uc=$+2*Dt;function mr(e){return[...xn(he(e)),...e.prs.drawn.flatMap(t=>t.state.is==="settled"?[C(t.pr.ref)]:[])]}function wr(e,t,n){return new Map(t.map(s=>[s,e.get(s)??n]))}function br(e,t,n=new Set){return new Set(he(e).filter(s=>s.state.is==="settled"&&(n.has(s.id)||_t(s,t))).map(s=>s.id))}function Kn(e,t){return t-e<$}var x=null,le=!1,de=null,Mt=null,Er=!1,Ht=!1,Ve=null,yr=!1,Lr={},Yn={},Yt=0,Or=0,Se="needsYou",ue=Date.now(),K=!1;function Xt(e){e!==Se&&(ue=Date.now()),Se=e,K=!1}function W(){let e=xo(Se,x?.isNextBuild===!0);return e==="overview"&&!x?.statusPage?"needsYou":e}var P={needsYou:null,findings:null,prs:null},T=null,Ut=!1,D=new Map,qe={},Ke=new Set,oe=new Set,N=new Map,Xn="Sending\\u2026",U=new Map,Qn=new Map,Be=new Map,Le=null,re=new Map,Ft={},Oe=new Set,V=new Set,jt=new Set,I=new Map,Vt=null,os=0,Ge=0,Ye=0,ie=0,kr="inbox-tab-kept",H=window,Z=H.__inboxHandoff??null,B=Z?.root??document.getElementById("app"),Ze=new AbortController,Xe=new Set,Wt=new Set,ke=new Map,R=!1,M=Z===null;Z&&(Z.dispose=rs);function G(e,t){if(R)return 0;let n=window.setTimeout(()=>{Xe.delete(n),R||e()},t);return Xe.add(n),n}function qt(e){e!==void 0&&(window.clearTimeout(e),Xe.delete(e))}function rs(){if(!R){R=!0,Ze.abort();for(let e of Xe)window.clearTimeout(e);Xe.clear();for(let e of Wt)e.onfinish=null,e.oncancel=null,e.cancel();Wt.clear();for(let e of ke.values())e.reject(new Error("Inbox page replaced"));ke.clear(),rn(null,B),M&&document.body.classList.remove("still")}}function Da(){return{version:E(Se)?1:2,isDemo:le,tab:Se,selection:{needsYou:P.needsYou?.id??null,findings:P.findings?.id??null,prs:P.prs?.id??null},typing:T,drafts:[...D],optionsShown:[...Ke],unfolded:[...oe],shownSince:ue}}function $r(e){let t=e??H.__inboxKept??null;if(!e){delete H.__inboxKept;try{let n=sessionStorage.getItem(kr);sessionStorage.removeItem(kr),t??=n?JSON.parse(n):null}catch{}}if(!(t?.version!==1&&t?.version!==2)){le=t.isDemo,_o(t.tab)&&(Se=t.tab),typeof t.shownSince=="number"&&(ue=t.shownSince);for(let n of Wn){let s=t.selection[n];P[n]=s?{id:s,openedAt:0}:null}T=t.typing,Ut=T!==null;for(let[n,s]of t.drafts)D.set(n,typeof s=="string"?{text:s,since:Date.now()}:s);for(let n of t.optionsShown)Ke.add(n);for(let n of t.unfolded)for(let s of n==="finding"?["issue","opportunity"]:[n])oe.add(s)}}function Ir(e,t,n){return R?Promise.reject(new Error("Inbox page replaced")):new Promise((s,o)=>{let r=H.__inboxRequestId=(H.__inboxRequestId??Date.now())+1,a=n===void 0?void 0:G(()=>{ke.delete(r)&&o(new Error(`The inbox did not answer in ${Math.round(n/1e3)} s`))},n);ke.set(r,{resolve:s,reject:o,timer:a}),parent.postMessage({jsonrpc:"2.0",id:r,method:e,params:t},"*")})}window.addEventListener("message",e=>{if(R)return;let t=e.data;if(!(!t||t.jsonrpc!=="2.0")){if(t.id!=null&&!t.method&&ke.has(t.id)){let n=ke.get(t.id);ke.delete(t.id),qt(n.timer),t.error?n.reject(t.error):n.resolve(t.result);return}t.method==="ui/notifications/host-context-changed"&&(M?zn(t.params??{}):Yn=Na(Yn,t.params??{})),M&&t.id!=null&&t.method&&parent.postMessage({jsonrpc:"2.0",id:t.id,result:{}},"*")}},{signal:Ze.signal});function zn(e){if(!(R||!M)){e.theme&&(document.documentElement.dataset.theme=e.theme);for(let[t,n]of Object.entries(e.styles?.variables??{}))document.documentElement.style.setProperty(t,n)}}function Na(e,t){return{...e,...t,styles:{...e.styles,...t.styles,variables:{...e.styles?.variables,...t.styles?.variables}}}}async function is(e,t={},n){let s=await Ir("tools/call",{name:e,arguments:t},n);if(R)throw new Error("Inbox page replaced");if(!s||s.isError||s.structuredContent===void 0)throw new Error(s?.isError&&s.content?.[0]?.text||"The answer had nothing to show");return s.structuredContent}function Cr(e,t){if(R||t<Ge)return;Ge=t,de=null,Yt=0,Or=Date.now();let n=re;re=wr(re,mr(e),Date.now()),[...re.keys()].some(a=>!n.has(a))&&Je($),x=e;let s=En.every(a=>Ft[a.id]===void 0),o=pr(Ft,e,e.isFetchingPrs);Ft=o.seen;let r=[...o.added.needsYou,...o.added.findings];for(let a of r)Oe.add(a);for(let{id:a}of En){let l=!P[a]&&o.added[a].length>0?$o(Qt(e,a),o.added[a]):null;l&&(P[a]={id:l,openedAt:0})}Ma(e,s?cr(e):o.added),k()}function Ma(e,t){let n=W();if(!E(n))return;let s=us(e),o=lr(Wn,n,fr(e,n,s,oe,e.isFetchingPrs),t);o&&(Xt(o),P[o]=null)}var Fa=300,ja=2e3,Kt=3*Dt;async function et(){let e=ie,t=++os;try{let n=await is("inbox_view",{demo:le,tab:Se,...Fr()},Kt);if(e!==ie||t<Ge)return;ye=n.devPage,ae?.page!==ye&&(ae=null);let s=ye!==Dr;s&&!ae&&Nr(ye),Mt=n.isPluginFolderGone?{text:"Quit and reopen Codex to load the installed inbox. Its files were moved or removed, so it still runs the version Codex started with.",kind:"server-gone"}:n.serverLoadError?{text:`The inbox server could not load its new build, so it still runs the last one. ${n.serverLoadError}`,kind:"server-load-failed"}:n.serverBuild!=="b2846689c4df"&&!s?{text:"This tab and the inbox server are from different builds.",kind:"server-builds-differ"}:null,Cr(n,t)}catch(n){if(R||e!==ie||t<Ge)return;x?Yt++:de=Ha(n),k()}}function Ha(e){let t=typeof e=="object"&&e!==null&&typeof e.message=="string"?e.message:String(e),n=Q(t.replace(/^(Failed|Not done): /,"").replace(/\\s+/g," ").trim(),120)||"No reason given";return cn(/[.!?\u2026]$/.test(n)?n:`${n}.`)}var Dr=Z?.page??H.__inboxPage,Bn=!1,ye=null,ae=null;async function Nr(e){if(Bn||R||e===Dr)return;Bn=!0;let t=null,n=null,s=!1;try{let{html:o}=await is("inbox_tab_page",{},Kt);if(R||ye!==e)return;if(!/<\\/html>\\s*$/i.test(o))throw new Error("The new page is incomplete.");let r=new DOMParser().parseFromString(o,"text/html"),a=r.getElementById("app"),l=r.getElementById("inbox-style")??r.head.querySelector("style"),c=r.getElementById("inbox-script")??r.body.querySelector("script"),d=[...r.head.querySelectorAll("script")].map(_=>_.textContent?.match(/^\\s*window\\.__inboxPage\\s*=\\s*("[^"\\n]+")\\s*;?\\s*$/)?.[1]).find(_=>_!==void 0),p=d?JSON.parse(d):null,h=r.querySelector(\'meta[name="inbox-handoff"]\')?.getAttribute("content")==="1",u=document.getElementById("inbox-style"),f=document.getElementById("inbox-script");if(!(a instanceof HTMLDivElement)||a.childNodes.length>0||!(l instanceof HTMLStyleElement)||!l.textContent||!(c instanceof HTMLScriptElement)||c.src||!c.textContent||typeof p!="string"||p!==e||!/^ui:\\/\\/inbox\\/tab-[a-f0-9]{12}$/.test(p)||!h||!(u instanceof HTMLStyleElement)||!(f instanceof HTMLScriptElement))throw new Error("The new page is incomplete.");let m=document.createElement("div");m.id="app";let g=document.createElement("style");g.id="inbox-style",g.textContent=l.textContent,n=document.createElement("script"),n.id="inbox-script-candidate",n.textContent=c.textContent;let b,y=new Promise(_=>b=_);t={page:p,root:m,aborted:!1,ready:_=>{!t?.aborted&&H.__inboxHandoff===t&&b(_)}},H.__inboxHandoff=t,document.body.append(n);let w=(_,st)=>new Promise((xe,Re)=>{let L=G(()=>Re(new Error("The new page did not start.")),st);_.then(q=>{qt(L),xe(q)},q=>{qt(L),Re(q)})}),A=await w(y,ja);if(!await w(A.initialize(),Kt))throw new Error("The new page could not connect.");let Y=Date.now()+qn;for(;Ye>0&&Date.now()<Y;)await new Promise(_=>G(_,30));if(Ye>0)throw new Error("The current press is still running.");if(R||ye!==e||t.aborted)return;let F=Da();B.replaceWith(m);try{u.replaceWith(g),A.activate(F),A.start()}catch(_){throw m.isConnected&&m.replaceWith(B),g.isConnected&&g.replaceWith(u),ks(),_}rs(),f.remove(),n.id="inbox-script",H.__inboxPage=p,s=!0}catch{!R&&ye===e&&(ae={page:e,text:"Could not load the inbox update."},k())}finally{if(t&&(t.aborted=!0,H.__inboxHandoff===t&&delete H.__inboxHandoff,!s))try{t.dispose?.()}catch{}s||n?.remove(),Bn=!1}}async function Mr(){Ye===0&&await et(),G(Mr,Dt)}function Ua(e,t){return he(e).some(n=>n.id===t&&n.state.is!=="settled")||Yr(e).some(n=>n.id===t)||e.prs.drawn.some(n=>C(n.pr.ref)===t)}function Va(e,t){return he(e).some(n=>n.id===t&&n.feedback?.is==="notSent")||Pe(t,e.lastActions[t],void 0,e.turns,e.at)?.is==="notSent"}async function ce(e,t,n,s=null){if(R)return;let o=ie,r=++os,a=()=>N.get(e)?.seq===r;t.action!=="undo"&&!e.startsWith("pr:")&&Qr(e);let l=W(),c=!!x&&E(l)&&Qt(x,l).some(d=>d.id===e&&d.isWaiting);N.set(e,{seq:r,pending:s,action:t.action==="type"?null:ne(t)}),U.delete(e),Qn.delete(e),Be.delete(e),k(),Ye++;try{let d=await is("inbox_press",{press:t,thread:x?.thread,demo:le,...Fr()},qn);if(R||o!==ie||(d.copy&&await qa(e,d.copy,a),R||o!==ie||!a()))return;d.view&&Cr(d.view,r),d.error&&!(x&&Va(x,e))&&U.set(e,d.error);let p=Ws({error:d.error,note:d.note,isUnconfirmed:d.delivery==="unconfirmed"});p&&n?.(),p&&d.view&&c&&T!==e&&Wa(d.view,e);let{note:h}=d;h&&x&&Ua(x,e)?(Qn.set(e,{text:Ce(),at:Date.now()}),Je($),h==="stale"&&t.action==="type"&&(T=e)):h&&(Le={text:Ce(),at:Date.now()},Je($))}catch{if(R||o!==ie||!a())return;U.set(e,"Not confirmed: the inbox did not answer.")}finally{Ye--,a()&&(N.delete(e),k())}}function Qt(e,t){return t==="prs"?Xo(Mn(e.prs.drawn),e.lastActions):Oo(e)[t]}function Wa(e,t){let n=W();if(!E(n)||P[n]?.id!==t)return;let s=Qt(e,n);if(s.find(a=>a.id===t)?.isWaiting)return;let o=Io(s,t),r=o===null?-1:ds(e,n).findIndex(a=>a.id===o);if(o===null||r<0){P[n]=null;return}tt(n,o,r),G(ys,0)}async function qa(e,t,n){try{await navigator.clipboard.writeText(t.text)}catch{if(!n())return;U.set(e,`Could not copy ${t.name}: this tab has no clipboard access`),Be.set(e,t)}}function as(){return to(T,Object.fromEntries(D))}function Fr(){return qe=eo(qe,ue),{replies:as(),discarded:qe,shownSince:ue}}function jr(e,t){let n=D.get(e);ce(e,{action:"type",id:e,text:t},()=>{D.get(e)===n&&D.delete(e)})}function Ka(e){Qr(e);let t=e in as();D.has(e)||D.set(e,{text:"",since:x?.at??Date.now()}),T=e,Ut=!0,k(),!t&&(Ge=++os,et())}function Hr(e){qe={...qe,[e]:Date.now()},D.delete(e),T===e&&(T=null),k(),et()}function Ur(e){return Mo(e,Ke.has(e.id),N.get(e.id)?.action??null,{press:n=>{let s=n.action==="step"?e.steps[n.step]:void 0,r=e.actions.find(a=>a.press.action==="step"&&n.action==="step"&&a.press.step===n.step)?.kind==="local"&&e.item&&s?{is:"local",result:yt(qs(e.item,s),Date.now())}:null;ce(e.id,n,void 0,r)},reply:()=>Ka(e.id),discard:()=>Hr(e.id),showOptions:()=>{Ke.add(e.id),k()}})}function Vr(e){let t=Sn(e);return t?{handle:t.text,isHandleRunning:t.isRunning,...t.tone?{handleTone:t.tone}:{}}:{handle:""}}function Ba(e,t){let n=t.state.is==="handedOff",s=t.id,o=no(t,Ke.has(s));return{id:s,view:t,...Vr(t),...n?{fold:{}}:{},title:t.title,...e.isNextBuild===!0&&t.holdsUpLine?{holdsUp:t.holdsUpLine}:{},age:t.at===null?void 0:ge(e.at-t.at),...o.length>0?{body:i("div",{children:o.map(r=>i("p",{class:"option-description",title:`${r.label}: ${r.description}`,children:[r.label,i("span",{class:"muted",children:[": ",r.description]})]}))})}:{},...Ur(t),typing:{hint:bn(t,"Codex"),send:r=>jr(s,r)},feedback:t.feedback}}function Ga(e,t,n){let s=t.state.is==="handedOff",o=t.id;return{id:o,view:t,...Vr(t),kind:n.kind,...s?{fold:{}}:{},title:t.title,age:t.at===null?void 0:ge(e.at-t.at),body:i("div",{children:[i("p",{style:{whiteSpace:"pre-line"},children:es(t.detail??"")}),n.path?i("p",{children:[i("span",{class:"muted",children:se.relevantFile}),i("code",{title:n.path,children:t.fileName})]}):null]}),...Ur(t),typing:{hint:bn(t,"Codex"),send:r=>jr(o,r)},feedback:t.feedback}}var ls=e=>({lastActions:e.lastActions,turns:e.turns,now:e.at});function Bt(e,t,n){let s=Fn(t,n.press),o=s?Br(s):null;return{...n.hotkey?{hotkey:n.hotkey}:{},label:n.label,emphasis:n.emphasis,...n.icon?{icon:n.icon}:{},...n.press.action==="pr-dismiss"?{isDismiss:!0}:{},...n.isOut||N.get(e)?.action===n.press.action?{isOut:!0}:{},run:()=>{ce(e,n.press,void 0,o)}}}function Wr(e){return e.prs.tabActions.map(t=>Kr(Ko,t))}function qr(e){return(e.prs.order?.changed?.actions??[]).map(t=>Kr(Cn,t))}function Kr(e,t){return{...t.hotkey?{hotkey:t.hotkey}:{},label:t.label,emphasis:t.emphasis,...t.isOut||N.get(e)?.action===t.press.action?{isOut:!0}:{},run:()=>{ce(e,t.press)}}}function Br(e){return{is:"local",result:yt([e],Date.now())}}function Ya(e,t,n){let s=be(t,n),o=Bo(t,n,e.lastActions),r=(p,h=null)=>()=>{ce(s,{action:p,ref:t.ref,thread:n.id},void 0,h)},a=mt(n),{rest:l}=gt(n.body),c=Yo(er(t,n,ls(e))),d=Fn(t,{action:"thread-open",ref:t.ref,thread:n.id});return{id:s,handle:o.mark.text,handleTone:o.mark.tone??void 0,...o.mark.isRunning?{isHandleRunning:!0}:{},isMarkDone:o.mark.isDone,...o.fold?{fold:o.fold}:{},title:o.title,meta:o.meta,age:n.at===null?void 0:ge(e.at-n.at),body:i("div",{children:[l?i("p",{class:"quote",children:es(Q(l,Nn))}):null,i("p",{class:"muted",children:[i("button",{type:"button",class:"link",onClick:r("thread-open",d&&Br(d)),children:a}),`${v}@${n.author}`]}),n.reply?i("p",{class:"quote",children:[i("b",{children:["@",n.reply.author,":"]})," ",es(Q(ht(n.reply.body),Nn))]}):null]}),keys:c.keys.map(p=>Bt(s,t,p)),more:c.more.map(p=>Bt(s,t,p)),feedback:Pe(s,e.lastActions[s],void 0,e.turns,e.at)}}function Xa(e,t,n){let s=He(t,n),o=Go(n),r=o.meta;return{id:s,handle:o.mark.text,handleTone:o.mark.tone??void 0,isMarkDone:o.mark.isDone,...o.lead?{lead:`${o.lead} /`}:{},title:o.title,meta:r,age:n.finishedAt===void 0?void 0:ge(e.at-n.finishedAt),body:i("div",{class:"muted",children:r}),keys:tr(t,n,ls(e)).map(a=>Bt(s,t,a)),more:[],feedback:Pe(s,e.lastActions[s],void 0,e.turns,e.at)}}function Gr(e){let t=[];for(let n of e.prs.drawn)!_t(n,ue)&&!V.has(C(n.pr.ref))||t.push(n.state.is==="settled"?{...n,threads:[],checks:[]}:{...n,threads:te(n.pr).map(s=>Ya(e,n.pr,s)),checks:Te(n.pr).map(s=>Xa(e,n.pr,s))});return{blocks:t,rows:t.flatMap(n=>[...n.threads,...n.checks])}}function Yr(e){return Gr(e).rows}function ds(e,t){return t==="prs"?Yr(e):Xr(e,us(e)).byTab[t]}function Xr(e,t){let n=as();return Ln(e,s=>t.has(s),s=>s.state.is==="held"&&!(s.id in n)?null:s.item?Ba(e,s):s.finding?Ga(e,s,s.finding):null)}function us(e){return br(e,ue,V)}var Nt={question:"questions",task:"tasks",finding:"findings"};function Qa(e){let t=Date.now(),n=Xr(e,us(e)),s=W(),o=vn(s)?n.byTab[s]:[],r=E(s)?o[cs(o,s,e)]?.id:void 0,a=new Set,l=new Set;for(let c of Object.keys(Nt).filter(d=>$t[d]===s)){let d=n[Nt[c]],p=new Set(d.map(me)),h=[...d];for(let[f,m]of(Vt?.[Nt[c]]??[]).entries()){let g=me(m);!p.has(g)&&I.has(g)&&h.splice(Math.min(f,h.length),0,m)}let u=[];for(let f of h){let m=me(f),g=I.get(m),b=p.has(m)?"settled"in f?V.has(m)?"undoing":"settled":m===r?"open":"closed":"gone",y=gr(g?.track,b,t,Oe.has(m),zt.matches);if(!y)continue;y!==g?.track&&a.add(m);let w=y.hasPanel?"row"in f&&p.has(m)?f.row:g?.openRow:void 0;I.set(m,{track:y,openRow:w}),l.add(m),u.push(f)}n[Nt[c]]=u}n.findingGroups=n.findingGroups.map(c=>({...c,entries:n.findings.filter(d=>("row"in d?d.row.kind:d.settled.finding?.kind)===c.kind)}));for(let c of[...I.keys()])l.has(c)||I.delete(c);return{lists:n,changed:a}}async function za(e){if(V.has(e.id))return;let t=$t[e.type];V.add(e.id);try{await ce(e.id,{action:"undo",id:e.id},()=>tt(t,e.id))}finally{V.delete(e.id);let n=re.get(e.id),s=n!==void 0&&Kn(n,Date.now()),o=U.get(e.id);o&&!s&&(Le={text:o,at:Date.now(),isError:!0},Je($)),k()}}function cs(e,t,n){let s=P[t];if(s){let r=e.findIndex(l=>l.id===s.id);if(r>=0||I.has(s.id)||e.length===0)return r;let a=Math.min(s.index??0,e.length-1);return tt(t,e[a].id,a),a}let o=On(Qt(n,t));return o?e.findIndex(r=>r.id===o):-1}function tt(e,t,n){P[e]={id:t,openedAt:Date.now(),...n===void 0?{}:{index:n}},T!==t&&(T=null),Je(wn)}function ps(e,t,n){let s=t[n];s&&(tt(e,s.id,n),k())}function Qr(e){let t=W();E(t)&&!P[t]&&(P[t]={id:e,openedAt:0})}function Ja(){let e=W();return E(e)&&Zs(P[e]?.openedAt??0,Date.now())}function zr(e){return e.typing&&T===e.id?{keys:[],more:[]}:{keys:e.keys,more:e.more}}function fs({k:e}){return i(Lt,{action:e,isBlocked:()=>!1})}function Za(e){let t=e.feedback;return t?e.view?io(e.view,"codex"):ro(t,e.isMarkDone??!1,"codex"):null}function hs(e){let t=Qn.get(e);return t&&Date.now()-t.at<$?t.text:null}function el(e){return!U.has(e.id)&&hs(e.id)===null&&!Be.has(e.id)}function Jr({row:e,track:t,onSelect:n,now:s}){let o=t.hasPanel&&(t.state==="closing"||t.state==="leaving"),r=t.hasPanel&&!o,a=i("span",{class:`mark ${e.handleTone??""}${e.isHandleRunning?" running":""}`,ref:e.isHandleRunning?Qe:void 0,children:e.handle}),l=N.has(e.id),c=N.get(e.id)?.pending??null,d=l&&c===null,p=el(e)?e.feedback:null,h=d?null:c?fe(c,"codex"):p?Za(e):null,u=!l&&p&&Tn(p)?p.at:null,f=u!==null&&!r&&!o&&p?.is!=="queued"&&p?.is!=="unconfirmed",m=!d&&yo(c??p,r||o)?h:null,g=f||m?null:h,b=d?Xn:u!==null?ge(s-u):g?null:e.age,y=!l&&_n(e.feedback)?"error":void 0;return i("div",{class:`row ${r?"selected":"collapsed"}${o?" closing":""}`,onClick:r?void 0:n,children:[a,i("div",{class:"content",children:i("button",{type:"button",class:"line",...r?{tabIndex:-1,"aria-disabled":!0}:{"aria-expanded":!1},children:[i("span",{class:"text",children:[e.lead?i(O,{children:[i("span",{class:"lead",children:e.lead})," "]}):null,e.title]}),e.meta?i("span",{class:"meta",children:e.meta}):null,g?i("span",{class:`after ${y?`tone-${y}`:""}`,children:r||o?`${v}${g}`:g}):null,e.holdsUp?i("span",{class:"holds-up",children:[i("span",{class:"tone-needsYou",children:De.mark})," ",e.holdsUp]}):null]})}),i("span",{class:"side","data-room":Xn,children:[f?i("span",{class:"side-label",children:h}):null,b]}),r||o?i(Zr,{row:e,isClosing:o,status:m}):null]})}function Zr({row:e,isClosing:t,status:n}){let{keys:s,more:o}=zr(e),r=Be.get(e.id),a=hs(e.id),l=!!e.typing&&T===e.id,c=[e.fold?.note?i("div",{class:"muted",children:e.fold.note}):null,a?i("div",{class:"muted",children:a}):null,U.has(e.id)?i("div",{class:"tone-error",children:U.get(e.id)}):null].filter(Boolean);return i("div",{class:t?"panel closing":"panel",inert:t,children:[e.body?i("div",{class:"body",children:e.body}):null,c.length>0?i("div",{children:c}):null,i($n,{keys:s,more:o,reply:l?{id:e.id,hint:e.typing.hint,draft:()=>D.get(e.id)?.text??"",onDraft:d=>D.set(e.id,{text:d,since:D.get(e.id)?.since??x?.at??Date.now()}),send:d=>{T=null,e.typing.send(d)},exit:e.view?yn(e.view):"cancel",onExit:()=>{e.view&&yn(e.view)==="discard"?Hr(e.id):(T=null,k())}}:null,isBlocked:Ja}),n?i("div",{class:"muted",children:n}):null,r?i("div",{children:[i("div",{class:"muted",children:["Copy ",r.name," from here:"]}),i("textarea",{rows:3,readOnly:!0,value:r.text,onFocus:d=>d.currentTarget.select()}),i("button",{type:"button",class:"key",onClick:()=>{Be.delete(e.id),k()},children:"Close"})]}):null]})}function tl({settled:e,panel:t}){let{state:n}=e;if(n.is!=="settled")return null;let s=re.get(e.id)??Date.now(),o=U.get(e.id);return i("div",{class:t?"row settled was-open":"row settled",children:[i(gs,{mark:Pt(n)}),i("div",{class:"content",children:[i("div",{class:"settled-head",children:[i("div",{class:"settled-line",children:[i("span",{class:"what",children:e.title}),i("span",{class:"outcome-label",children:[v,vt(n.label,n.delivery)]}),o?i("span",{class:"tone-error",children:[v,o]}):null]}),i(ri,{start:s,isUndoing:V.has(e.id),canUndo:n.canUndo,offersUndo:n.offersUndo,onUndo:()=>{za(e)}})]}),t?i(Zr,{row:t,isClosing:!0}):null]})]})}function ei({entries:e,group:t,all:n,now:s}){let o=$t[t];return e.length===0?null:i("div",{class:"list",children:e.map(r=>{let a=me(r),l=I.get(a);return i("div",{class:"entry","data-motion":a,children:"row"in r?i(Jr,{row:r.row,track:l.track,now:s,onSelect:()=>ps(o,n,n.indexOf(r.row))}):i(tl,{settled:r.settled,panel:l.openRow})},a)})})}function Qe(e){for(let t of e?.getAnimations?.()??[])t.startTime=0}var nl={needsYou:"tone-needsYou",done:"done"};function Gn(e,t){return["mark",e?nl[e]:null,t?"running":null].filter(Boolean).join(" ")}var Sr;function sl(e,t){if(!e)return;Sr??=document.createElement("canvas").getContext("2d");let n=Sr;n&&(n.font=getComputedStyle(e).font),e.textContent=Eo(t,s=>!n||n.measureText(s).width<=e.clientWidth)}var ol={needsYou:"tone-needsYou",done:"tone-done"};function ti(e){let t=e.lastIndexOf(" ");return t<0?{head:"",last:e}:{head:e.slice(0,t+1),last:e.slice(t+1)}}function rl(e,t){let n=e?.querySelector(".flow"),s=e?.querySelector(".head"),o=e?.querySelector(".last");if(!n||!s||!o)return;let r=c=>{let{head:d,last:p}=ti(c);s.textContent=d,o.textContent=p},a=document.createRange();a.selectNodeContents(n);let l=()=>new Set([...a.getClientRects()].map(c=>Math.round(c.top))).size;r(Lo(t,c=>(r(c),l()<=ve)))}function xr({name:e,stall:t}){if(!t)return i("div",{class:"clamp",style:{"--lines":ve},children:e});let{head:n,last:s}=ti(e);return i("div",{ref:o=>rl(o,e),children:i("span",{class:"flow",children:[i("span",{class:"head",children:n}),i("span",{class:"unbroken",children:[i("span",{class:"last",children:s}),i("span",{class:"muted",children:Po}),i("span",{class:ol[t.tone],children:t.text})]})]})})}function il(e){Xt("needsYou");let t=x?ds(x,"needsYou").findIndex(n=>n.id===e):-1;tt("needsYou",e,t<0?void 0:t),k(),ys()}function al({row:e}){if(e.kind==="subject"){let t=e.merged,n=Do(e).map(s=>({label:s.label,emphasis:"normal",run:()=>il(s.press.askId)}));return i("div",{class:e.hasChildren?"row has-children":"row",children:[i("span",{class:Gn(e.tone,e.isRunning),ref:e.isRunning?Qe:void 0,children:e.mark}),i("div",{class:"content tight",children:[i(xr,{name:e.name,stall:e.stall}),e.text?i("div",{class:"muted clamp",style:{"--lines":ve},children:e.text}):null,t?i("div",{class:"outcome muted clamp",style:{"--lines":ve},ref:s=>sl(s,t)}):null,e.was?i("div",{class:"outcome muted clamp",style:{"--lines":ve},children:[Ao,e.was]}):null,n.length>0?i($n,{keys:n,more:[],reply:null,isBlocked:()=>!1}):null]})]})}return e.kind==="child"?i("div",{class:e.branch?`row child branch-${e.branch}`:"row",children:[i("span",{class:Gn(e.tone,e.isRunning),ref:e.isRunning?Qe:void 0,children:e.mark}),i("div",{class:"content tight muted",children:i(xr,{name:e.name,stall:e.stall})})]}):e.kind==="more"?i("div",{class:`row child branch-${e.branch}`,children:[i("span",{class:"mark"}),i("div",{class:"content tight muted",children:e.text})]}):e.kind==="look"?i("div",{class:`row look-line${e.isLast?" last":""}`,children:i("div",{class:"look-rule",children:e.text})}):i("div",{class:"row",children:[i("span",{class:Gn(e.tone,!1),children:e.mark}),i("div",{class:"content tight muted",children:e.text})]})}function ll({page:e}){return e.isEmpty?i("div",{class:"empty",children:[i("div",{class:"title",children:e.empty.title}),i("div",{class:"muted",children:e.empty.hint})]}):i("main",{class:"status-page",children:[e.head?i("section",{children:i("div",{class:"status-head",children:[i("h1",{children:e.head.title}),e.head.description?i("p",{class:"muted",children:e.head.description}):null]})}):null,e.rows.length>0?i("section",{children:i("div",{class:"list",children:e.rows.flatMap(t=>[...t.isRuledAbove?[i("div",{class:"status-rule"},`rule-${t.id}`)]:[],i(al,{row:t},t.id)])})}):null]})}function ni({text:e}){let t=e===St.lapsed?jo(4):null;return t===null?i(O,{children:e}):i("svg",{class:"mark-shape",viewBox:"0 0 8 8",role:"img","aria-label":e,dangerouslySetInnerHTML:{__html:t}})}function gs({mark:e}){return i("span",{class:e.isRunning?"mark running":"mark",ref:e.isRunning?Qe:void 0,children:i(ni,{text:e.text})})}function dl(e){return["mark",e.tone==="needsYou"?"tone-needsYou":e.tone,e.isRunning?"running":null].filter(Boolean).join(" ")}function ul({v:e}){let t=Js("codex",e.isNextBuild===!0,W(),!1);return i("main",{class:"status-page help",children:[i("section",{children:[i(ze,{title:Ae.keys,count:0}),i("div",{class:"help-keys",children:t.flatMap(n=>[i("b",{children:n.keys},`${n.keys}-keys`),i("span",{class:"muted",children:n.does},`${n.keys}-does`)])})]}),i("section",{children:[i(ze,{title:Ae.marks,count:0}),i("div",{class:"list",children:mn.map(n=>i("div",{class:"row",children:[i("span",{class:dl(n),ref:n.isRunning?Qe:void 0,children:i(ni,{text:n.mark})}),i("div",{class:"content tight muted",children:n.words})]},n.mark))})]})]})}function ze({title:e,count:t,mark:n}){return i("div",{class:"group-title",children:[n?i("span",{class:`group-mark ${n.tone}`,children:n.mark}):null,i("b",{children:e}),t>0?i("span",{class:"count",children:[v,t]}):null]})}function Jn(e,t,n){return Tt(e.needsYou.closed[t==="question"?"questions":"tasks"],Et(n)).map(s=>({id:s.id,ask:s.ask,outcomeLabel:s.outcomeLabel,mark:s.mark,at:s.at,delivery:s.delivery}))}function Rr({v:e,kind:t,entries:n,all:s,now:o}){let r=t==="question"?"Questions":"Tasks",a=Zn(n),l=Jn(e,t,a),c=a.flatMap(d=>"row"in d?[d.row]:[]);return i("section",{children:[i(ze,{title:r,count:kn(c.map(d=>d.view))}),i(ei,{entries:n,group:t,all:s,now:o}),i(oi,{group:t,empty:si(r,a),closed:l,total:At(e.needsYou.closed[t==="question"?"questions":"tasks"],Et(a)),now:o})]})}function Zn(e){return e.filter(t=>I.get(me(t))?.track.state!=="leaving")}function si(e,t){let n=t.every(s=>I.get(me(s))?.track.state==="entering");return t.length===0||n?{text:po(e),isLeaving:t.length>0}:null}function es(e){return Ot(e).map(t=>{let n=t.code?i("code",{children:t.text}):t.text;return t.italic&&(n=i("i",{children:n})),t.bold&&(n=i("b",{children:n})),t.strike&&(n=i("s",{children:n})),t.link?i(O,{children:[i("u",{children:n}),i("span",{class:"muted",children:[" ",t.link]})]}):n})}function oi({group:e,empty:t,closed:n,total:s,now:o}){let r=co(s,n.length),a=oe.has(e),l=s>0&&(a||jt.has(e));return i(O,{children:[i("div",{class:"group-end","data-motion":`end-${e}`,children:i("div",{class:"group-end-content",children:[t?i("div",{class:t.isLeaving?"group-empty leaving":"group-empty","aria-hidden":t.isLeaving,children:t.text}):null,s>0?i("button",{type:"button",class:"fold","data-fold":e,onClick:()=>Ol(e),children:[i(je,{name:a?"down":"right"}),uo(s)]}):null]})}),l?i("div",{class:"list closed-list","data-motion":`closed-${e}`,children:[n.map(c=>i("div",{class:"entry",children:i("div",{class:"row",children:[i(gs,{mark:c.mark}),i("div",{class:"content tight",children:[i("div",{class:"muted",children:c.ask}),i("div",{class:"outcome",children:vt(c.outcomeLabel,c.delivery)}),ko(c.delivery)?i("button",{type:"button",disabled:N.has(c.id),onClick:()=>ce(c.id,{id:c.id,action:"undo"}),children:"Undo"}):null]}),i("span",{class:"side",children:ge(o-c.at)})]})},`closed-${c.id}`)),r?i("div",{class:"earlier muted",children:r}):null]}):null]})}var cl={untrusted:"Codex is not running the inbox\\u2019s hooks, so the inbox is not reading Codex\\u2019s replies. Click the hook icon beside the approval setting, then Allow all. If the icon isn\\u2019t there, open Settings, then Hooks, then Inbox, then Trust all.",modified:"Codex stopped the inbox\\u2019s hooks when the inbox updated, so the inbox is not reading Codex\\u2019s replies. To trust them again, click the hook icon beside the approval setting, then Allow all. If the icon isn\\u2019t there, open Settings, then Hooks, then Inbox, then Trust all."};function pl(e){return e.heard==="heard"||e.hooksTrust?null:e.heard==="none"?["The inbox starts with your next message."]:["Items from Codex\\u2019s replies are missing.","The inbox has not heard from this chat\\u2019s hooks."]}function fl({v:e,lists:t,now:n}){let s=t.byTab.needsYou,o=t.questions.length===0&&t.tasks.length===0,r=Jn(e,"question",t.questions).length>0||Jn(e,"task",t.tasks).length>0,a=pl(e);return o&&!r?a?i("div",{class:"empty",children:[i("div",{class:"title",children:a[0]}),a[1]?i("div",{class:"muted",children:a[1]}):null]}):i("div",{class:"empty",children:[i("div",{class:"title",children:Fe("needsYou","Codex").title}),i("div",{class:"muted",children:Fe("needsYou","Codex").hint})]}):i("main",{children:[a?i("section",{children:i("div",{class:"group-title",children:[a[0],a[1]?i("div",{class:"muted",children:a[1]}):null]})}):null,i(Rr,{v:e,kind:"question",entries:t.questions,all:s,now:n}),i(Rr,{v:e,kind:"task",entries:t.tasks,all:s,now:n})]})}function hl({v:e,lists:t,now:n}){let s=Et(Zn(t.findings)),o=l=>e.findings.closed.filter(c=>c.kind===l),r=l=>Tt(o(l),s).map(c=>({id:c.id,ask:c.title,outcomeLabel:c.outcomeLabel,mark:c.mark,at:c.closedAt,delivery:c.delivery}));return t.findings.length===0&&At(e.findings.closed,s)===0?i("div",{class:"empty",children:[i("div",{class:"title",children:Fe("findings","Codex").title}),i("div",{class:"muted",children:Fe("findings","Codex").hint})]}):i("main",{children:t.findingGroups.map(l=>{let c=Zn(l.entries),d=c.flatMap(p=>"row"in p?[p.row]:[]);return i("section",{children:[i(ze,{title:l.title,count:kn(d.map(p=>p.view)),mark:j[l.kind]}),i(ei,{entries:l.entries,group:"finding",all:t.byTab.findings,now:n}),i(oi,{group:l.kind,empty:si(l.title,c),closed:r(l.kind),total:At(o(l.kind),s),now:n})]})})})}function gl({pr:e,state:t}){let n=C(e.ref),s=re.get(n)??Date.now(),o=U.get(n);return i("div",{class:"row settled",children:[i(gs,{mark:Pt(t)}),i("div",{class:"content",children:i("div",{class:"settled-head",children:[i("div",{class:"settled-line",children:[i("span",{class:"what",children:[i("span",{class:"tone-prs",children:["#",e.number]})," ",e.title]}),i("span",{class:"outcome-label",children:`${v}${vt(t.label,t.delivery)}`}),o?i("span",{class:"tone-error",children:`${v}${o}`}):null]}),i(ri,{start:s,isUndoing:V.has(n),canUndo:t.canUndo,offersUndo:t.offersUndo,onUndo:()=>{ml(n,e.ref)}})]})})]})}function ri({start:e,isUndoing:t,canUndo:n,offersUndo:s,onUndo:o}){return n&&(t||Kn(e,Date.now()))?i("button",{type:"button",class:t?"key undo undoing":"key undo",disabled:t,onClick:o,children:[i("span",{class:t?"time-left paused":"time-left",style:{animationDuration:`${$}ms`},ref:a=>{a&&!a.style.animationDelay&&(a.style.animationDelay=`-${Math.max(0,Date.now()-e)}ms`)}},e),i(je,{name:"undo"}),"Undo"]}):s?i("button",{type:"button",class:"key undo spent",disabled:!0,tabIndex:-1,"aria-hidden":"true",children:[i(je,{name:"undo"}),"Undo"]}):null}async function ml(e,t){if(!V.has(e)){V.add(e);try{await ce(e,{action:"pr-undo",ref:t})}finally{V.delete(e),k()}}}function wl(e,t){return ii(e,C(t),!Qo(e.lastActions,t))}function ii(e,t,n){if(N.has(t)){let l=N.get(t)?.pending;return{text:l?fe(l,"codex"):Xn,isError:!1}}let s=U.get(t);if(s)return{text:s,isError:!0};let o=hs(t);if(o)return{text:o,isError:!1};let r=n?Pe(t,e.lastActions[t],void 0,e.turns,e.at):null;if(!r)return null;let a=fe(r,"codex");return{text:Tn(r)?`${a}${v}${_e(e.at-r.at)}`:a,isError:_n(r)}}function bl({v:e,order:t}){let n=qr(e),s=t.changed?ii(e,Cn,t.changed.showsPress):null;return i("section",{class:"pr-order",children:[i("div",{class:"pr-order-title",children:t.title}),t.why?i("div",{class:"muted",children:t.why}):null,t.changed?i("div",{class:"pr-order-changed",children:[t.changed.text?i("span",{children:t.changed.text}):null,n.length>0?i("span",{class:"pr-actions keys",children:n.map(o=>i(fs,{k:o}))}):null]}):null,s?i("div",{class:s.isError?"pr-last tone-error":"pr-last muted",children:s.text}):null]})}function yl({v:e,pr:t,threads:n,checks:s,rank:o,openId:r,all:a,now:l}){let c=Ue(e.lastActions),{status:d,head:p,unlisted:h}=ft(t,c),u=Jo[d],f=C(t.ref),m=nr(t,c,e.prs.branchRef,ls(e)).map(b=>Bt(f,t,b)),g=wl(e,t.ref);return i("section",{children:[i("div",{class:"pr-head",children:[o===null?null:i("span",{class:"rank muted",children:zo(o)}),i("span",{class:"tone-prs num",children:["#",t.number]})," ",t.title," ",i("span",{class:u?`pr-verdict tone-${u}`:"pr-verdict muted",children:p}),i("span",{class:"pr-verdict muted",children:h.map(b=>`${v}${b}`).join("")})]}),t.error?i("div",{class:"pr-status tone-error",children:qo(t.error)}):null,i("div",{class:"pr-actions keys",children:m.map(b=>i(fs,{k:b}))}),g?i("div",{class:g.isError?"pr-last tone-error":"pr-last muted",children:g.text}):null,i("div",{class:"pr-groups",children:[i(_r,{title:Dn.threads,rows:n,all:a,openId:r,now:l}),i(_r,{title:Dn.checks,rows:s,all:a,openId:r,now:l})]})]})}function _r({title:e,rows:t,all:n,openId:s,now:o}){return t.length===0?null:i(O,{children:[i(ze,{title:e,count:t.length}),i("div",{class:"list",children:t.map(r=>{let a=r.id===s;return i("div",{class:"entry",children:i(Jr,{row:r,track:{state:a?"open":"closed",since:0,hasPanel:a},now:o,onSelect:()=>ps("prs",n,n.indexOf(r))})},r.id)})})]})}function kl({v:e,now:t}){let{blocks:n,rows:s}=Gr(e),o={isGhMissing:e.isGhMissing,isGhSignedOut:e.prs.isGhSignedOut},r=In(o),a=Wo({isFetching:e.isFetchingPrs,...o},"chat");if(n.length===0)return i("div",{class:"empty",children:[i("div",{class:"title",children:a.title}),i("div",{class:"muted",children:a.hint})]});let l=s[cs(s,"prs",e)]?.id,c=Wr(e);return i("main",{children:[r?i("div",{class:"banner-place",children:i($e,{banner:J(r.kind,r.text)})}):null,e.prs.order?i(bl,{v:e,order:e.prs.order}):null,n.map(d=>d.state.is==="settled"?i("section",{children:i(gl,{pr:d.pr,state:d.state})}):i(yl,{...d,v:e,openId:l,all:s,now:t})),c.length>0?i("section",{children:i("div",{class:"pr-actions keys",children:c.map(d=>i(fs,{k:d}))})}):null,e.prs.olderText?i("section",{children:i("div",{class:"group-title muted",children:e.prs.olderText})}):null]})}var Sl=6e4;function ai(e){return No(W(),e.status,{isFetching:e.isFetchingPrs,hasPrs:e.prs.drawn.length>0},e.statusPage?.error??null)}function xl({v:e}){let t=Date.now()-Or,n=Yt>=2?i("span",{class:t>Sl?"tone-error":void 0,children:["Last read ",_e(t),v,"retrying"]}):ai(e).text;return i("div",{class:"status",children:n})}function Rl({v:e}){let t={needsYou:e.needsYou.count,findings:e.findings.count,prs:e.prs.count},n=r=>Ro(r,t),{error:s}=ai(e),o=W();return i("nav",{children:[i("div",{class:"tabs",children:Me(e.isNextBuild===!0).map(r=>i("button",{type:"button",class:`tab ${o===r.id?"shown":""}`,title:r.label,onClick:()=>{Xt(r.id),k()},children:[i("span",{class:"tab-symbol","aria-hidden":"true",children:r.symbol}),i("span",{class:"tab-word",children:r.label}),n(r.id)===null?null:i("span",{class:E(r.id)?`count tone-${r.id}`:"count",children:n(r.id)})]}))}),fo([...Mt?[J(Mt.kind,Mt.text)]:[],...e.hooksTrust?[J("hooks-trust",cl[e.hooksTrust])]:[],...ae?[J("tab-update-failed",ae.text)]:[]],s,Le&&Date.now()-Le.at<$?{text:Le.text,isError:Le.isError===!0}:null).map(r=>r.kind==="server-builds-differ"?i($e,{banner:r,label:"Reload",press:()=>location.reload()}):r.kind==="tab-update-failed"?i($e,{banner:r,label:se.retry,press:()=>{let a=ae?.page;ae=null,k(),a&&Nr(a)}}):i($e,{banner:r}))]})}async function _l(){ie++,le=!le,ue=Date.now(),de=null,Yt=0,x=null,re=new Map,Ft={},I.clear(),Vt=null,P.needsYou=null,P.findings=null,P.prs=null,T=null,k(),await et()}function $e({banner:e,label:t,press:n}){return i("div",{class:`banner banner-${e.tone}`,role:e.tone==="notice"?"status":"alert",children:[i("span",{children:[i("strong",{class:"lead",children:e.lead}),e.body?` ${e.body}`:null]}),t&&n?i("button",{type:"button",class:"key",onClick:n,children:t}):null]})}function Tl({lists:e}){if(!x||!e)return de!==null?i($e,{banner:J("read-failed",`Could not read the inbox. ${de}`),label:"Reload",press:()=>{Ht?et():ns()}}):Er?i("div",{class:"notice muted",children:go}):null;let t=x,n=t.at,s=W();return i(O,{children:[le?i("div",{class:"banner-place",children:i($e,{banner:J("demo",ho),label:"Hide demo",press:()=>{_l()}})}):null,i(Rl,{v:t}),K?i(ul,{v:t}):s==="needsYou"?i(fl,{v:t,lists:e,now:n}):s==="findings"?i(hl,{v:t,lists:e,now:n}):s==="prs"?i(kl,{v:t,now:n}):i(ll,{page:t.statusPage}),i("footer",{children:[i("button",{type:"button",class:"help-toggle",title:`${Ae.open} (?)`,"aria-pressed":K,onClick:()=>{K=!K,k()},children:K?Ae.close:Ae.open}),null,i("div",{class:"footer-end",children:[i(xl,{v:t}),i("span",{class:"version",children:mo("0.2.14",t.isNextBuild===!0)})]})]})]})}var ms={duration:300,easing:"cubic-bezier(.19, 1, .22, 1)"},Gt={duration:200,easing:"cubic-bezier(.65, 0, .35, 1)"},ws={duration:200,easing:"cubic-bezier(.8, 0, .4, 1)",fill:"forwards"},zt=matchMedia("(prefers-reduced-motion: reduce)");function Al(){let e=new Map;for(let t of B.querySelectorAll("[data-motion]"))e.set(t.dataset.motion,{el:t,height:t.getBoundingClientRect().height});return e}function Pl(e,t,n,s){e.style.overflow="hidden",e.dataset.to=String(s);let o=e.animate(t,n);Wt.add(o);let r=()=>{Wt.delete(o),!R&&e.getAnimations().length===0&&li(e)};o.onfinish=r,o.oncancel=r}function ts(e){for(let t of e.getAnimations())t.cancel();li(e)}function li(e){e.style.overflow="",delete e.dataset.to}function bs(e){return[...e.children].reduce((t,n)=>t+n.getBoundingClientRect().height,0)}function nt(e,t,n,s){let o=r=>({height:`${r.height}px`,opacity:r.opacity});Pl(e,[o(t),o(n)],s,n.height)}function di(e,t){nt(e,{height:0,opacity:0},{height:t,opacity:1},ms)}function vl(e,t){if(zt.matches){Oe.clear();return}let n=new Set([...t].map(o=>I.get(o)?.track.state)),s=n.has("leaving")?{...ws,fill:"none"}:n.has("entering")?ms:Gt;for(let o of B.querySelectorAll("[data-motion]")){let r=o.dataset.motion,a=e.get(r);if(o.dataset.closing)continue;let l=I.get(r)?.track.state,c=!a||a.el!==o,d=()=>o.getAnimations().length>0||c?o.getBoundingClientRect().height:a.height;if(l&&t.has(r)&&El(o,l,d)||l==="closing"||l==="settling"||l==="leaving")continue;if(l&&!Ct(l)&&!N.has(r)){ts(o);continue}let p=l||o.classList.contains("group-end")?bs(o):o.scrollHeight;if(c){!l&&Oe.delete(r)&&di(o,p);continue}let h=o.getAnimations();if(h.length>0&&Math.abs(Number(o.dataset.to)-p)<1)continue;let u=d(),f=h.length>0?Number(getComputedStyle(o).opacity):1;for(let m of h)m.cancel();Math.abs(u-p)<1&&f>.99||nt(o,{height:u,opacity:f},{height:p,opacity:1},l?Gt:s)}Oe.clear()}function El(e,t,n){switch(t){case"opening":return!1;case"entering":return ts(e),di(e,bs(e)),!0;case"closing":case"settling":return Ll(e,Tr(e,n)),!0;case"leaving":{let s=Tr(e,n);for(let o of e.getAnimations())o.cancel();return nt(e,s,{height:0,opacity:0},ws),!0}default:return ts(e),!0}}function Tr(e,t){return{height:t(),opacity:Number(getComputedStyle(e).opacity)}}function Ll(e,t){let n=e.querySelector(".panel.closing"),s=e.querySelector(".row.closing");s?.classList.remove("closing"),n&&(n.style.display="none");let o=bs(e);n&&(n.style.display=""),s?.classList.add("closing");for(let r of e.getAnimations())r.cancel();nt(e,t,{height:o,opacity:1},{...Gt,fill:"forwards"})}function Ol(e){let t=B.querySelector(`[data-motion="closed-${e}"]`);if(!oe.has(e)){oe.add(e),jt.delete(e)&&t?delete t.dataset.closing:Oe.add(`closed-${e}`),k();return}if(oe.delete(e),!t||zt.matches){k();return}jt.add(e),k(),t.dataset.closing="1";let n=t.getBoundingClientRect().height;for(let s of t.getAnimations())s.cancel();nt(t,{height:n,opacity:1},{height:0,opacity:0},ws),G(()=>{oe.has(e)||!jt.delete(e)||k()},200)}function ys(){R||(B.querySelector(".row.selected")?.scrollIntoView({block:"nearest"}),zt.matches||G(()=>B.querySelector(".row.selected")?.scrollIntoView({block:"nearest"}),220))}function ks(){document.documentElement.style.setProperty("--row-pad",`${8}px`),document.documentElement.style.setProperty("--status-row-pad",`${4.75}px`),document.documentElement.style.setProperty("--look-gap",`${9.5}px`),document.documentElement.style.setProperty("--banner-pad-y",`${8}px`),document.documentElement.style.setProperty("--banner-gap",`${8}px`),document.documentElement.style.setProperty("--pulse",`${vo}ms`),document.documentElement.style.setProperty("--move",`${200}ms ${Gt.easing}`),document.documentElement.style.setProperty("--enter",`${300}ms ${ms.easing}`)}var ui=50;function Je(e){G(k,e+ui)}var Ee=null;function $l(){let e=Date.now(),t=[...I.values()].flatMap(({track:s})=>Ct(s.state)?[s.since+It[s.state]]:[]);if(t.length===0)return;let n=Math.min(...t)+ui;Ee&&Ee.at<=n||(Ee&&qt(Ee.timer),Ee={at:n,timer:G(()=>{Ee=null,k()},n-e)})}function k(){if(R||!M)return;let e=Al(),t=x?Qa(x):null;Vt=t?.lists??null,$l(),rn(i(Tl,{lists:Vt}),B),vl(e,t?.changed??new Set);let n=Ut&&T?document.getElementById(`type-${T}`):null;n&&(Ut=!1,n.focus())}var We=null;document.addEventListener("pointerdown",e=>{M&&(!(e.target instanceof Element)||!B.contains(e.target)||!e.target.closest(".list, .fold")||(We={x:e.clientX,y:e.clientY},document.body.classList.add("still")))},{signal:Ze.signal});document.addEventListener("pointermove",e=>{M&&(!We||Math.hypot(e.clientX-We.x,e.clientY-We.y)<3||(We=null,document.body.classList.remove("still")))},{signal:Ze.signal});document.addEventListener("keydown",e=>{if(!M||e.metaKey||e.ctrlKey||e.altKey||!x)return;let t=e.target;if(t?.closest("input, textarea")){e.key==="Escape"&&t.tagName==="INPUT"&&(T=null,k());return}if(e.key==="?"||e.key==="Escape"&&K){e.preventDefault(),K=e.key==="?"&&!K,k();return}let n=Me(x.isNextBuild===!0).find(u=>u.hotkey===e.key);if(n){Xt(n.id),k();return}let s=W();if(K||!E(s))return;let o=s==="prs"?[...qr(x),...Wr(x)].find(u=>u.hotkey===e.key):void 0;if(o){e.preventDefault(),o.isOut||o.run();return}let r=ds(x,s),a=cs(r,s,x),l=e.key==="j"||e.key==="ArrowDown"?1:e.key==="k"||e.key==="ArrowUp"?-1:0;if(l!==0){e.preventDefault(),ps(s,r,Math.max(0,Math.min(r.length-1,a+l))),ys();return}let c=r[a];if(!c)return;let{keys:d,more:p}=zr(c),h=[...d,...p].find(u=>u.hotkey===e.key);h&&(e.preventDefault(),h.isOut||h.run())},{signal:Ze.signal});function ci(){R||!M||!Ht||yr||(yr=!0,zn(Lr),zn(Yn),parent.postMessage({jsonrpc:"2.0",method:"ui/notifications/initialized",params:{}},"*"),Mr())}function ns(){return R?Promise.resolve(!1):Ht?Promise.resolve(!0):Ve||(de=null,M&&k(),Ve=Ir("ui/initialize",{protocolVersion:"2026-01-26",appInfo:{name:"inbox",version:"0.2.14"},appCapabilities:{tools:{}}},Kt).then(e=>R?!1:(Lr=e?.hostContext??{},Ht=!0,ci(),!0)).catch(()=>(M&&!R&&(de="The inbox could not connect to Codex.",k()),!1)).finally(()=>{Ve=null}),Ve)}function Ar(){ci(),G(()=>{Er=!0,!x&&de===null&&k()},Fa)}function Il(e){if(R||!Z||Z.aborted)throw new Error("The new page stopped.");$r(e),M=!0,ks(),k()}Z?Z.ready({initialize:ns,activate:Il,start:Ar,dispose:rs}):(ks(),$r(),ns(),Ar());})();\n\n    </script>\n  </body>\n</html>\n';
+var tab_default = '<!doctype html>\n<html lang="en">\n  <head>\n    <meta charset="utf-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1" />\n    <meta name="inbox-handoff" content="1" />\n    <title>Inbox</title>\n    <style id="inbox-style">\n      /* The host\'s variables when Codex passes them; otherwise the pane\'s own colors. */\n      :root {\n        color-scheme: light;\n        --bg: var(--color-background-primary, #ffffff);\n        --text: var(--color-text-primary, #1f1f1f);\n        --muted: var(--color-text-secondary, #595959);\n        --key: #243bf5; --amber: #745417; --findings: #7b00e8; --prs: #006363; --done: #25652f; --error: #a5293d; --error-mark: #a5293d;\n        --needs-you: var(--amber);\n        --issue: var(--amber);\n        --sans: var(--font-sans, -apple-system, system-ui, sans-serif);\n        --mono: var(--font-mono, ui-monospace, \'SF Mono\', Menlo, monospace);\n        --raised: color-mix(in srgb, var(--text) 9%, var(--bg));\n        --selected: color-mix(in srgb, var(--text) 6%, var(--bg));\n        --age: color-mix(in srgb, var(--muted) 90%, var(--bg));\n        --hover: color-mix(in srgb, var(--key) 14%, transparent);\n        --soft: color-mix(in oklab, var(--text) 8%, transparent);\n        --soft-hover: color-mix(in oklab, var(--text) 10%, transparent);\n        --row-hover: color-mix(in oklab, var(--soft) 50%, transparent);\n        --quick: 150ms ease;\n        --mark-x: 18px;\n        --text-x: 44px;\n      }\n      @media (prefers-color-scheme: dark) {\n        :root:not([data-theme=\'light\']) {\n          color-scheme: dark;\n          --bg: var(--color-background-primary, #171717);\n          --text: var(--color-text-primary, #ececec);\n          --muted: var(--color-text-secondary, #a8a8a8);\n          --key: #b1b9f9; --amber: #ffc107; --findings: #cab0ff; --prs: #8cc8c0; --done: #7ecd8f; --error: #ffa3b0; --error-mark: #ff6b80;\n          --raised: color-mix(in srgb, var(--text) 11%, var(--bg));\n          --selected: color-mix(in srgb, var(--text) 8%, var(--bg));\n          --age: color-mix(in srgb, var(--muted) 85%, var(--bg));\n          --soft: color-mix(in oklab, var(--text) 12%, transparent);\n          --soft-hover: color-mix(in oklab, var(--text) 14%, transparent);\n        }\n      }\n      :root[data-theme=\'dark\'] {\n        color-scheme: dark;\n        --key: #b1b9f9; --amber: #ffc107; --findings: #cab0ff; --prs: #8cc8c0; --done: #7ecd8f; --error: #ffa3b0; --error-mark: #ff6b80;\n        --raised: color-mix(in srgb, var(--text) 11%, var(--bg));\n        --selected: color-mix(in srgb, var(--text) 8%, var(--bg));\n        --age: color-mix(in srgb, var(--muted) 85%, var(--bg));\n        --soft: color-mix(in oklab, var(--text) 12%, transparent);\n        --soft-hover: color-mix(in oklab, var(--text) 14%, transparent);\n      }\n      * {\n        box-sizing: border-box;\n      }\n      body {\n        margin: 0;\n        background: var(--bg);\n        color: var(--text);\n        font: 13px/20px var(--sans);\n        -webkit-font-smoothing: antialiased;\n        cursor: default;\n        user-select: none;\n      }\n      /* Text a person may copy: what an item, PR or Status line says, an error, and the reply field. */\n      .status-head,\n      .status-page .content,\n      .earlier,\n      .body,\n      .panel .muted,\n      .settled-line .what,\n      .pr-head,\n      .pr-order,\n      .tone-error,\n      input,\n      textarea {\n        cursor: auto;\n        user-select: text;\n      }\n      button {\n        font: inherit;\n        color: inherit;\n        background: none;\n        border: none;\n        padding: 0;\n        text-align: left;\n      }\n      :focus-visible {\n        outline: 1.5px solid var(--key);\n        outline-offset: 1px;\n        border-radius: 4px;\n      }\n      .muted {\n        color: var(--muted);\n      }\n      .tone-needsYou {\n        color: var(--needs-you);\n      }\n      .tone-findings {\n        color: var(--findings);\n      }\n      .tone-prs {\n        color: var(--prs);\n      }\n      .tone-done {\n        color: var(--done);\n      }\n      .tone-error {\n        color: var(--error);\n      }\n      .notice {\n        padding: 10px 16px;\n        overflow-wrap: anywhere;\n      }\n      /* A message about the inbox\'s own state, in the tone of what it says. */\n      .banner {\n        --tone: var(--error);\n        display: flex;\n        align-items: center;\n        justify-content: space-between;\n        gap: 12px;\n        flex-basis: 100%;\n        padding: var(--banner-pad-y) 12px;\n        border: 1px solid color-mix(in srgb, var(--tone) 30%, var(--bg));\n        border-radius: 10px;\n        background: color-mix(in srgb, var(--tone) 9%, var(--bg));\n        color: var(--text);\n        line-height: 19px;\n        overflow-wrap: anywhere;\n        cursor: auto;\n        user-select: text;\n      }\n      .banner-warning {\n        --tone: var(--needs-you);\n      }\n      /* --muted is see-through in the Codex app, so a notice mixes from the text color. */\n      .banner-notice {\n        --tone: var(--text);\n      }\n      .banner .lead {\n        font-weight: 600;\n        color: var(--tone);\n      }\n      /* The tab bar\'s rows sit 4px apart. */\n      nav > .banner {\n        margin-top: calc(var(--banner-gap) - 4px);\n      }\n      #app > .banner {\n        margin: 12px 12px 0;\n      }\n      .banner-place {\n        padding: 12px 12px 0;\n      }\n      .banner .key {\n        flex: none;\n        white-space: nowrap;\n        color: var(--text);\n        cursor: default;\n        user-select: none;\n      }\n\n      nav {\n        container: tab-bar / inline-size;\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        gap: 4px 16px;\n        padding: 12px 12px 0;\n      }\n      .tabs {\n        display: flex;\n        flex-wrap: wrap;\n        gap: 4px;\n      }\n      .tab {\n        position: relative;\n        white-space: nowrap;\n        padding: 6px 12px;\n        border-radius: 6px;\n        color: var(--muted);\n      }\n      .tab:hover {\n        color: var(--text);\n      }\n      .tab.shown {\n        background: var(--raised);\n        color: var(--text);\n        font-weight: 600;\n      }\n      .tab .count {\n        font-weight: 600;\n        margin-left: 6px;\n      }\n      /* --muted is see-through in the Codex app, and a color emoji takes its color\'s transparency. */\n      .tab-symbol {\n        display: none;\n        color: var(--text);\n      }\n      @container tab-bar (width < 316px) {\n        .tab-symbol {\n          display: inline;\n        }\n        .tab-word {\n          position: absolute;\n          width: 1px;\n          height: 1px;\n          overflow: hidden;\n          clip-path: inset(50%);\n        }\n      }\n      .status {\n        margin-left: auto;\n        color: var(--muted);\n        font-size: 12px;\n      }\n\n      main {\n        display: flex;\n        flex-direction: column;\n        padding: 8px 0 4px;\n      }\n      section {\n        position: relative;\n        padding: 10px 0;\n      }\n      section + section::before {\n        content: \'\';\n        position: absolute;\n        top: 0;\n        left: var(--text-x);\n        right: 0;\n        height: 1px;\n        background: var(--soft);\n      }\n      .group-title {\n        padding: 0 14px 6px var(--text-x);\n      }\n      .group-title {\n        position: relative;\n      }\n      .group-title b {\n        font-weight: 600;\n      }\n      .group-mark {\n        position: absolute;\n        left: var(--mark-x);\n        width: calc(var(--text-x) - var(--mark-x) - 8px);\n        text-align: center;\n      }\n      .group-mark.done {\n        color: var(--done);\n      }\n      .group-mark.issue {\n        color: var(--issue);\n      }\n      .group-title .count {\n        color: var(--muted);\n        white-space: pre;\n      }\n\n      .pr-head,\n      .pr-status,\n      .pr-actions,\n      .pr-last,\n      .pr-order > div {\n        padding: 0 14px 0 var(--text-x);\n        overflow-wrap: anywhere;\n      }\n      .pr-order-changed {\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        column-gap: 10px;\n        row-gap: 6px;\n        margin-top: 8px;\n      }\n      .pr-order-changed .pr-actions {\n        padding: 0;\n        margin-top: 0;\n      }\n      .pr-head {\n        font-weight: 600;\n      }\n      .pr-head .rank,\n      .pr-head .num,\n      .pr-head .pr-verdict {\n        font-weight: 400;\n      }\n      .pr-actions {\n        margin-top: 8px;\n      }\n      .pr-last {\n        margin-top: 6px;\n      }\n      .pr-groups {\n        margin-top: 12px;\n      }\n      .pr-groups .list {\n        --mark-x: 41px;\n        --text-x: 67px;\n      }\n      .pr-groups .group-title + .list {\n        margin-bottom: 6px;\n      }\n      .link {\n        padding: 0;\n        text-align: left;\n        text-decoration: underline;\n        text-decoration-color: color-mix(in oklab, var(--text) 30%, transparent);\n        text-underline-offset: 2px;\n      }\n      .link:hover {\n        text-decoration-color: currentColor;\n      }\n\n      .row {\n        display: grid;\n        grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr) auto;\n        padding: var(--row-pad) 14px var(--row-pad) var(--mark-x);\n      }\n      .row.selected {\n        background-color: var(--selected);\n      }\n      .mark {\n        align-self: start;\n        padding-right: 8px;\n        text-align: center;\n        color: var(--muted);\n      }\n      .mark.done {\n        color: var(--done);\n      }\n      .mark-shape {\n        width: 8px;\n        height: 8px;\n        overflow: visible;\n      }\n      .mark.issue {\n        color: var(--issue);\n      }\n      .mark.error {\n        color: var(--error-mark);\n      }\n      .side {\n        align-self: start;\n        margin-left: 12px;\n        color: var(--age);\n        font-variant-numeric: tabular-nums;\n        white-space: nowrap;\n        text-align: right;\n      }\n      .mark.tone-needsYou,\n      .mark.needsYou,\n      .side.tone-needsYou {\n        color: var(--needs-you);\n      }\n      .side[data-room]::after {\n        content: attr(data-room);\n        display: block;\n        height: 0;\n        overflow: hidden;\n        visibility: hidden;\n      }\n      .side-label {\n        display: inline-block;\n        max-width: 11em;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        vertical-align: bottom;\n        margin-right: 4px;\n      }\n      .row.collapsed:hover .side {\n        color: var(--muted);\n      }\n      .content {\n        min-width: 0;\n        display: flex;\n        flex-direction: column;\n      }\n      /* Its space above is padding, not a gap, so the row\'s height grows smoothly when the panel mounts. */\n      .panel {\n        display: flex;\n        flex-direction: column;\n        gap: 8px;\n        padding: 8px 0 2px;\n      }\n      .row > .panel {\n        grid-column: 2 / -1;\n      }\n      .content.tight {\n        display: flex;\n        flex-direction: column;\n        gap: 0;\n      }\n      .line {\n        display: flex;\n        flex-direction: column;\n        width: 100%;\n        min-width: 0;\n      }\n      .line .text {\n        min-width: 0;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        display: -webkit-box;\n        -webkit-line-clamp: 2;\n        -webkit-box-orient: vertical;\n      }\n      .line .after {\n        color: var(--muted);\n      }\n      .row.collapsed .line .after:not(.tone-error) {\n        color: var(--age);\n      }\n      .row.collapsed:hover .line .after:not(.tone-error) {\n        color: var(--muted);\n      }\n      .line .after.tone-error {\n        color: var(--error);\n      }\n      .row.selected .line,\n      .row.closing .line {\n        display: block;\n      }\n      .row.selected .line .text,\n      .row.closing .line .text {\n        display: inline;\n        font-weight: 600;\n      }\n      .row.selected .line .after,\n      .row.closing .line .after {\n        white-space: normal;\n        font-weight: 400;\n      }\n      .line .lead {\n        color: var(--muted);\n        font-weight: 400;\n      }\n      .line .meta {\n        display: block;\n        color: var(--muted);\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n      }\n      .row.collapsed:not(:hover) .line .meta {\n        color: var(--age);\n      }\n      .line .holds-up {\n        display: block;\n        color: var(--muted);\n        font-weight: 400;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n      }\n      .row.selected .line .meta {\n        display: none;\n      }\n      .quote {\n        white-space: pre-line;\n      }\n      .row.collapsed:hover {\n        background-color: var(--row-hover);\n      }\n      .still .row.collapsed:not(:active):hover {\n        background-color: transparent;\n      }\n      .still .fold:not(:active):hover {\n        color: var(--muted);\n      }\n      .title {\n        font-weight: 600;\n      }\n      .body {\n        overflow-wrap: anywhere;\n      }\n      .body p {\n        margin: 0;\n      }\n      .body p + p {\n        margin-top: 4px;\n      }\n      .body .option-description {\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n      }\n      .body .option-description + .option-description {\n        margin-top: 0;\n      }\n      code {\n        padding: 1px 4px;\n        border-radius: 4px;\n        background: var(--soft);\n        font-family: var(--mono);\n      }\n      .keys {\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        gap: 6px;\n      }\n      .follow-ups {\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        gap: 6px;\n        max-width: 100%;\n      }\n      .key {\n        display: inline-flex;\n        align-items: center;\n        justify-content: center;\n        gap: 5px;\n        min-height: 26px;\n        padding: 3px 11px;\n        border: 1px solid color-mix(in oklab, var(--text) 28%, transparent);\n        border-radius: 13px;\n        background: transparent;\n        font-weight: 400;\n        text-align: center;\n        max-width: 100%;\n        white-space: normal;\n        overflow-wrap: anywhere;\n      }\n      .key:not(:disabled):hover {\n        background: var(--soft);\n      }\n      .key:focus-visible {\n        outline-width: 2px;\n        outline-offset: 2px;\n        border-radius: 13px;\n      }\n      .key.primary {\n        border-color: transparent;\n        background: var(--text);\n        color: var(--bg);\n      }\n      .key.primary:not(:disabled):hover {\n        background: color-mix(in srgb, var(--text) 82%, var(--bg));\n      }\n      .key .icon {\n        flex: none;\n        width: 14px;\n        height: 14px;\n      }\n      .key.ghost {\n        padding: 0 4px;\n        border-color: transparent;\n        background: none;\n        color: var(--muted);\n      }\n      .key.ghost:not(:disabled):hover {\n        background: none;\n        color: var(--text);\n      }\n      .key.out {\n        opacity: 0.4;\n        transition: opacity var(--quick);\n      }\n      .actions {\n        display: flex;\n        flex-direction: column;\n        gap: 4px;\n      }\n      form {\n        display: flex;\n        align-items: center;\n        gap: 6px;\n      }\n      input {\n        flex: 1;\n        min-width: 0;\n        min-height: 28px;\n        font: inherit;\n        color: inherit;\n        background: transparent;\n        border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);\n        border-radius: 10px;\n        padding: 4px 10px;\n      }\n      input::placeholder {\n        color: var(--muted);\n      }\n      /* The radius again, since :focus-visible sets 4px. */\n      input:focus,\n      textarea:focus {\n        outline: none;\n        border-color: color-mix(in oklab, var(--text) 32%, transparent);\n        border-radius: 10px;\n      }\n      textarea {\n        width: 100%;\n        font: 12px var(--mono);\n        color: inherit;\n        background: transparent;\n        border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);\n        border-radius: 10px;\n      }\n\n      .group-end {\n        display: flex;\n        flex-direction: column;\n        justify-content: flex-end;\n      }\n      /* Keeps the fold\'s margin inside, so its height is the whole end\'s content height. */\n      .group-end-content {\n        display: flow-root;\n        position: relative;\n      }\n      .group-empty {\n        padding: var(--row-pad) 14px var(--row-pad) var(--text-x);\n        color: var(--muted);\n      }\n      .group-empty.leaving {\n        position: absolute;\n        inset: auto 0 100% 0;\n        pointer-events: none;\n        animation: fade-out var(--enter) forwards;\n      }\n      @keyframes fade-out {\n        to {\n          opacity: 0;\n        }\n      }\n      .fold {\n        display: block;\n        margin: 8px 0 0 calc(var(--mark-x) - 1px);\n        padding: 1px 4px;\n        border-radius: 5px;\n        color: var(--muted);\n      }\n      .fold:hover {\n        color: var(--text);\n      }\n      .fold .icon {\n        width: 12px;\n        height: 12px;\n        margin-right: calc(var(--text-x) - var(--mark-x) - 15px);\n        vertical-align: -1px;\n      }\n      .closed-list {\n        --mark-x: 41px;\n        --text-x: 67px;\n      }\n      /* The gap above a Closed list\'s rows is content, not padding, so the list opens from and closes to 0. */\n      .closed-list::before {\n        content: \'\';\n        display: block;\n        height: 4px;\n      }\n      .closed-list .row {\n        padding-top: calc(var(--row-pad) / 2);\n        padding-bottom: calc(var(--row-pad) / 2);\n      }\n      .outcome {\n        color: var(--age);\n      }\n      .settled-head {\n        display: flex;\n        align-items: center;\n        min-width: 0;\n      }\n      .row.settled.was-open {\n        transition: background-color var(--move);\n        @starting-style {\n          background-color: var(--selected);\n        }\n      }\n      .settled-line {\n        flex: 1;\n        min-width: 0;\n        overflow-wrap: anywhere;\n      }\n      .settled .outcome-label {\n        color: var(--muted);\n      }\n      /* The pill keeps the line\'s height, so the row does not grow. */\n      .key.undo {\n        flex: none;\n        white-space: nowrap;\n        border-color: transparent;\n        position: relative;\n        isolation: isolate;\n        overflow: hidden;\n        margin: -3px 0 -3px 12px;\n        background: color-mix(in oklab, var(--soft) 45%, transparent);\n      }\n      .key.undo.undoing {\n        color: var(--muted);\n      }\n      .key.undo.spent {\n        visibility: hidden;\n      }\n      .key.undo.undoing .icon {\n        animation: undo-turn 900ms linear infinite;\n      }\n      @keyframes undo-turn {\n        to {\n          transform: rotate(-360deg);\n        }\n      }\n      .time-left {\n        position: absolute;\n        inset: 0;\n        z-index: -1;\n        background: var(--soft);\n        transform-origin: left;\n        animation-name: empty;\n        animation-timing-function: linear;\n        animation-fill-mode: forwards;\n      }\n      .key.undo:not(:disabled):hover .time-left {\n        background: var(--soft-hover);\n      }\n      .time-left.paused {\n        animation-play-state: paused;\n      }\n      @keyframes empty {\n        from {\n          transform: scaleX(1);\n        }\n        to {\n          transform: scaleX(0);\n        }\n      }\n      #app {\n        display: flex;\n        flex-direction: column;\n        min-height: 100vh;\n      }\n      .empty {\n        flex: 1;\n        display: flex;\n        flex-direction: column;\n        justify-content: center;\n        padding: 32px;\n        text-align: center;\n      }\n      .empty .title {\n        margin-bottom: 4px;\n      }\n      footer {\n        margin-top: auto;\n        display: flex;\n        flex-wrap: wrap;\n        justify-content: space-between;\n        gap: 4px 16px;\n        padding: 8px 16px 16px;\n        color: var(--muted);\n        font-size: 12px;\n      }\n      .footer-end {\n        display: flex;\n        gap: 16px;\n        margin-left: auto;\n      }\n      .version {\n        color: color-mix(in srgb, var(--muted) 50%, var(--bg));\n      }\n      .demo-toggle,\n      .help-toggle {\n        padding: 0 6px;\n        border-radius: 5px;\n        color: var(--muted);\n      }\n      .demo-toggle:hover,\n      .help-toggle:hover {\n        color: var(--text);\n        background: var(--hover);\n      }\n      /* The keys start under the group title, and every description lines up after the widest key. */\n      .help-keys {\n        display: grid;\n        grid-template-columns: max-content minmax(0, 1fr);\n        gap: 4px 12px;\n        padding: var(--row-pad) 14px var(--row-pad) var(--text-x);\n      }\n      .help-keys b {\n        white-space: nowrap;\n      }\n      .earlier {\n        padding: 2px 14px 2px var(--text-x);\n      }\n      /* The head starts where the list\'s marks do. */\n      .status-head {\n        padding: 0 14px 0 var(--mark-x);\n        overflow-wrap: anywhere;\n      }\n      .status-page .row {\n        padding-top: var(--status-row-pad);\n        padding-bottom: var(--status-row-pad);\n      }\n      .status-page .mark {\n        text-align: left;\n      }\n      .mark.running {\n        animation: running-pulse var(--pulse) ease-in-out infinite;\n      }\n      @keyframes running-pulse {\n        50% {\n          opacity: 0.3;\n        }\n      }\n      .status-page .content {\n        overflow-wrap: anywhere;\n      }\n      .status-page .row.child {\n        padding-left: var(--text-x);\n      }\n      .status-page .content > .actions {\n        margin-top: 6px;\n      }\n      .status-page .clamp {\n        display: -webkit-box;\n        -webkit-box-orient: vertical;\n        -webkit-line-clamp: var(--lines);\n        overflow: hidden;\n      }\n      .status-page .unbroken {\n        white-space: nowrap;\n      }\n      /* The tree line runs under the middle of a subject\'s mark, and its arm reaches to a child\'s mark. */\n      .status-page .list {\n        --mark-middle: 6px;\n        --arm-gap: 2px;\n        --tree-x: calc(var(--mark-x) + var(--mark-middle));\n        --tree-line: color-mix(in oklab, var(--text) 15%, transparent);\n      }\n      .status-page .row.has-children,\n      .status-page .row.branch-mid,\n      .status-page .row.branch-last {\n        position: relative;\n      }\n      .status-page .row.has-children::before,\n      .status-page .row.branch-mid::before,\n      .status-page .row.branch-last::before {\n        content: \'\';\n        position: absolute;\n        left: var(--tree-x);\n        border-left: 1px solid var(--tree-line);\n      }\n      .status-page .row.has-children::before {\n        top: calc(var(--status-row-pad) + 1lh);\n        bottom: 0;\n      }\n      .status-page .row.branch-mid::before {\n        top: 0;\n        bottom: 0;\n      }\n      .status-page .row.branch-last::before {\n        top: 0;\n        height: calc(var(--status-row-pad) + 0.5lh);\n      }\n      .status-page .row.branch-mid::after,\n      .status-page .row.branch-last::after {\n        content: \'\';\n        position: absolute;\n        left: var(--tree-x);\n        top: calc(var(--status-row-pad) + 0.5lh);\n        width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));\n        border-top: 1px solid var(--tree-line);\n      }\n      /* "Last seen" in the middle of a dashed rule that spans what the rule above a row spans: from the text column to the tab\'s edge. */\n      .status-page .row.look-line {\n        padding-left: 0;\n        padding-right: 0;\n        margin-top: var(--look-gap);\n        margin-bottom: var(--look-gap);\n      }\n      .status-page .row.look-line.last {\n        margin-bottom: 0;\n      }\n      .status-page .look-rule {\n        grid-column: 1 / -1;\n        display: flex;\n        flex-direction: row;\n        align-items: center;\n        gap: 8px;\n        color: var(--muted);\n      }\n      .status-page .status-rule {\n        height: 1px;\n        background: var(--soft);\n      }\n      .status-page .status-rule,\n      .status-page .look-rule {\n        margin-left: var(--text-x);\n      }\n      .status-page .look-rule::before,\n      .status-page .look-rule::after {\n        content: \'\';\n        flex: 1;\n        border-top: 1px dashed var(--soft);\n      }\n      .status-head h1 {\n        margin: 0;\n        font-size: 15px;\n        line-height: 22px;\n        font-weight: 600;\n      }\n      .status-head p {\n        margin: 0;\n      }\n      .banner,\n      .empty,\n      main,\n      form {\n        transition: opacity var(--quick);\n        @starting-style {\n          opacity: 0;\n        }\n      }\n      @media (prefers-reduced-motion: reduce) {\n        *,\n        *::before,\n        *::after {\n          transition-duration: 0s !important;\n        }\n        .time-left,\n        .key.undo.undoing .icon,\n        .mark.running {\n          animation: none;\n        }\n      }\n    </style>\n  </head>\n  <body>\n    <div id="app"></div>\n    <script id="inbox-script">\n      "use strict";(()=>{var yt,S,Ss,di,oe,ws,xs,Rs,an,ft,We,Ts,un,ln,dn,ui,gt={},wt=[],ci=/acit|ex(?:s|g|n|p|$)|rph|grid|ows|mnc|ntw|ine[ch]|zoo|^ord|itera/i,kt=Array.isArray;function X(e,t){for(var n in t)e[n]=t[n];return e}function cn(e){e&&e.parentNode&&e.parentNode.removeChild(e)}function pi(e,t,n){var s,o,r,l={};for(r in t)r=="key"?s=t[r]:r=="ref"?o=t[r]:l[r]=t[r];if(arguments.length>2&&(l.children=arguments.length>3?yt.call(arguments,2):n),typeof e=="function"&&e.defaultProps!=null)for(r in e.defaultProps)l[r]===void 0&&(l[r]=e.defaultProps[r]);return ht(e,l,s,o,null)}function ht(e,t,n,s,o){var r={type:e,props:t,key:n,ref:s,__k:null,__:null,__b:0,__e:null,__c:null,constructor:void 0,__v:o??++Ss,__i:-1,__u:0};return o==null&&S.vnode!=null&&S.vnode(r),r}function P(e){return e.children}function mt(e,t){this.props=e,this.context=t}function ge(e,t){if(t==null)return e.__?ge(e.__,e.__i+1):null;for(var n;t<e.__k.length;t++)if((n=e.__k[t])!=null&&n.__e!=null)return n.__e;return typeof e.type=="function"?ge(e):null}function fi(e){if(e.__P&&e.__d){var t=e.__v,n=t.__e,s=[],o=[],r=X({},t);r.__v=t.__v+1,S.vnode&&S.vnode(r),pn(e.__P,r,t,e.__n,e.__P.namespaceURI,32&t.__u?[n]:null,s,n??ge(t),!!(32&t.__u),o),r.__v=t.__v,r.__.__k[r.__i]=r,Es(s,r,o),t.__e=t.__=null,r.__e!=n&&_s(r)}}function _s(e){if((e=e.__)!=null&&e.__c!=null)return e.__e=e.__c.base=null,e.__k.some(function(t){if(t!=null&&t.__e!=null)return e.__e=e.__c.base=t.__e}),_s(e)}function bs(e){(!e.__d&&(e.__d=!0)&&oe.push(e)&&!bt.__r++||ws!=S.debounceRendering)&&((ws=S.debounceRendering)||xs)(bt)}function bt(){try{for(var e,t=1;oe.length;)oe.length>t&&oe.sort(Rs),e=oe.shift(),t=oe.length,fi(e)}finally{oe.length=bt.__r=0}}function vs(e,t,n,s,o,r,l,d,p,u,f){var m,c,h,w,g,y,k=s&&s.__k||wt,b=t.length;for(p=hi(n,t,k,p,b),m=0;m<b;m++)(h=n.__k[m])!=null&&(c=h.__i!=-1&&k[h.__i]||gt,h.__i=m,y=pn(e,h,c,o,r,l,d,p,u,f),w=h.__e,h.ref&&c.ref!=h.ref&&(c.ref&&fn(c.ref,null,h),f.push(h.ref,h.__c||w,h)),g==null&&w!=null&&(g=w),4&h.__u?(p=As(h,p,e),c.__e&&(c.__e=null)):typeof h.type=="function"&&y!==void 0?p=y:w&&(p=w.nextSibling),h.__u&=-7);return n.__e=g,p}function hi(e,t,n,s,o){var r,l,d,p,u,f=n.length,m=f,c=0;for(e.__k=new Array(o),r=0;r<o;r++)(l=t[r])!=null&&typeof l!="boolean"&&typeof l!="function"?(typeof l=="string"||typeof l=="number"||typeof l=="bigint"||l.constructor==String?l=e.__k[r]=ht(null,l,null,null,null):kt(l)?l=e.__k[r]=ht(P,{children:l},null,null,null):l.constructor===void 0&&l.__b>0?l=e.__k[r]=ht(l.type,l.props,l.key,l.ref?l.ref:null,l.__v):e.__k[r]=l,p=r+c,l.__=e,l.__b=e.__b+1,d=null,(u=l.__i=mi(l,n,p,m))!=-1&&(m--,(d=n[u])&&(d.__u|=2)),d==null||d.__v==null?(u==-1&&(o>f?c--:o<f&&c++),typeof l.type!="function"&&(l.__u|=4)):u!=p&&(u==p-1?c--:u==p+1?c++:(u>p?c--:c++,l.__u|=4))):e.__k[r]=null;if(m)for(r=0;r<f;r++)(d=n[r])!=null&&(2&d.__u)==0&&(d.__e==s&&(s=ge(d)),Os(d,d));return s}function As(e,t,n){var s,o;if(typeof e.type=="function"){for(s=e.__k,o=0;s&&o<s.length;o++)s[o]&&(s[o].__=e,t=As(s[o],t,n));return t}e.__e!=t&&(t&&e.type&&!t.parentNode&&(t=ge(e)),t=n.insertBefore(e.__e,t||null));do t=t&&t.nextSibling;while(t!=null&&t.nodeType==8);return t}function mi(e,t,n,s){var o,r,l,d=e.key,p=e.type,u=t[n],f=u!=null&&(2&u.__u)==0;if(u===null&&d==null||f&&d==u.key&&p==u.type)return n;if(s>(f?1:0)){for(o=n-1,r=n+1;o>=0||r<t.length;)if((u=t[l=o>=0?o--:r++])!=null&&(2&u.__u)==0&&d==u.key&&p==u.type)return l}return-1}function ys(e,t,n){t[0]=="-"?e.setProperty(t,n??""):e[t]=n==null?"":typeof n!="number"||ci.test(t)?n:n+"px"}function pt(e,t,n,s,o){var r,l;e:if(t=="style")if(typeof n=="string")e.style.cssText=n;else{if(typeof s=="string"&&(e.style.cssText=s=""),s)for(t in s)n&&t in n||ys(e.style,t,"");if(n)for(t in n)s&&n[t]==s[t]||ys(e.style,t,n[t])}else if(t[0]=="o"&&t[1]=="n")r=t!=(t=t.replace(Ts,"$1")),l=t.toLowerCase(),t=l in e||t=="onFocusOut"||t=="onFocusIn"?l.slice(2):t.slice(2),e.l||(e.l={}),e.l[t+r]=n,n?s?n[We]=s[We]:(n[We]=un,e.addEventListener(t,r?dn:ln,r)):e.removeEventListener(t,r?dn:ln,r);else{if(o=="http://www.w3.org/2000/svg")t=t.replace(/xlink(H|:h)/,"h").replace(/sName$/,"s");else if(t!="width"&&t!="height"&&t!="href"&&t!="list"&&t!="form"&&t!="tabIndex"&&t!="download"&&t!="rowSpan"&&t!="colSpan"&&t!="role"&&t!="popover"&&t in e)try{e[t]=n??"";break e}catch{}typeof n=="function"||(n==null||n===!1&&t[4]!="-"?e.removeAttribute(t):e.setAttribute(t,t=="popover"&&n==1?"":n))}}function ks(e){return function(t){if(this.l){var n=this.l[t.type+e];if(t[ft]==null)t[ft]=un++;else if(t[ft]<n[We])return;return n(S.event?S.event(t):t)}}}function pn(e,t,n,s,o,r,l,d,p,u){var f,m,c,h,w,g,y,k,b,A,Y,U,T,ct,_e,ve,M=t.type;if(t.constructor!==void 0)return null;128&n.__u&&(p=!!(32&n.__u),r=[d=t.__e=n.__e]),(f=S.__b)&&f(t);e:if(typeof M=="function"){m=l.length;try{if(b=t.props,A=M.prototype&&M.prototype.render,Y=(f=M.contextType)&&s[f.__c],U=f?Y?Y.props.value:f.__:s,n.__c?k=(c=t.__c=n.__c).__=c.__E:(A?t.__c=c=new M(b,U):(t.__c=c=new mt(b,U),c.constructor=M,c.render=wi),Y&&Y.sub(c),c.state||(c.state={}),c.__n=s,h=c.__d=!0,c.__h=[],c._sb=[]),A&&c.__s==null&&(c.__s=c.state),A&&M.getDerivedStateFromProps!=null&&(c.__s==c.state&&(c.__s=X({},c.__s)),X(c.__s,M.getDerivedStateFromProps(b,c.__s))),w=c.props,g=c.state,c.__v=t,h)A&&M.getDerivedStateFromProps==null&&c.componentWillMount!=null&&c.componentWillMount(),A&&c.componentDidMount!=null&&c.__h.push(c.componentDidMount);else{if(A&&M.getDerivedStateFromProps==null&&b!==w&&c.componentWillReceiveProps!=null&&c.componentWillReceiveProps(b,U),t.__v==n.__v||!c.__e&&c.shouldComponentUpdate!=null&&c.shouldComponentUpdate(b,c.__s,U)===!1){t.__v!=n.__v&&(c.props=b,c.state=c.__s,c.__d=!1),t.__e=n.__e,t.__k=n.__k,t.__k.some(function(G){G&&(G.__=t)}),wt.push.apply(c.__h,c._sb),c._sb=[],c.__h.length&&l.push(c),d=ge(n);break e}c.componentWillUpdate!=null&&c.componentWillUpdate(b,c.__s,U),A&&c.componentDidUpdate!=null&&c.__h.push(function(){c.componentDidUpdate(w,g,y)})}if(c.context=U,c.props=b,c.__P=e,c.__e=!1,T=S.__r,ct=0,A)c.state=c.__s,c.__d=!1,T&&T(t),f=c.render(c.props,c.state,c.context),wt.push.apply(c.__h,c._sb),c._sb=[];else do c.__d=!1,T&&T(t),f=c.render(c.props,c.state,c.context),c.state=c.__s;while(c.__d&&++ct<25);c.state=c.__s,c.getChildContext!=null&&(s=X(X({},s),c.getChildContext())),A&&!h&&c.getSnapshotBeforeUpdate!=null&&(y=c.getSnapshotBeforeUpdate(w,g)),_e=f!=null&&f.type===P&&f.key==null?Ls(f.props.children):f,d=vs(e,kt(_e)?_e:[_e],t,n,s,o,r,l,d,p,u),c.base=t.__e,t.__u&=-161,c.__h.length&&l.push(c),k&&(c.__E=c.__=null)}catch(G){if(l.length=m,t.__v=null,p||r!=null){if(G.then){for(t.__u|=p?160:128;d&&d.nodeType==8&&d.nextSibling;)d=d.nextSibling;r!=null&&(r[r.indexOf(d)]=null),t.__e=d}else if(r!=null)for(ve=r.length;ve--;)cn(r[ve])}else t.__e=n.__e;t.__k==null&&(t.__k=n.__k||[]),G.then||Ps(t),S.__e(G,t,n)}}else r==null&&t.__v==n.__v?(t.__k=n.__k,t.__e=n.__e):d=t.__e=gi(n.__e,t,n,s,o,r,l,p,u);return(f=S.diffed)&&f(t),128&t.__u?void 0:d}function Ps(e){e&&(e.__c&&(e.__c.__e=!0),e.__k&&e.__k.some(Ps))}function Es(e,t,n){for(var s=0;s<n.length;s++)fn(n[s],n[++s],n[++s]);S.__c&&S.__c(t,e),e.some(function(o){try{e=o.__h,o.__h=[],e.some(function(r){r.call(o)})}catch(r){S.__e(r,o.__v)}})}function Ls(e){return typeof e!="object"||e==null||e.__b>0?e:kt(e)?e.map(Ls):e.constructor!==void 0?null:X({},e)}function gi(e,t,n,s,o,r,l,d,p){var u,f,m,c,h,w,g,y=n.props||gt,k=t.props,b=t.type;if(b=="svg"?o="http://www.w3.org/2000/svg":b=="math"?o="http://www.w3.org/1998/Math/MathML":o||(o="http://www.w3.org/1999/xhtml"),r!=null){for(u=0;u<r.length;u++)if((h=r[u])&&"setAttribute"in h==!!b&&(b?h.localName==b:h.nodeType==3)){e=h,r[u]=null;break}}if(e==null){if(b==null)return document.createTextNode(k);e=document.createElementNS(o,b,k.is&&k),d&&(S.__m&&S.__m(t,r),d=!1),r=null}if(b==null)y===k||d&&e.data==k||(e.data=k);else{if(r=b=="textarea"&&k.defaultValue!=null?null:r&&yt.call(e.childNodes),!d&&r!=null)for(y={},u=0;u<e.attributes.length;u++)y[(h=e.attributes[u]).name]=h.value;for(u in y)h=y[u],u=="dangerouslySetInnerHTML"?m=h:u=="children"||u in k||u=="value"&&"defaultValue"in k||u=="checked"&&"defaultChecked"in k||pt(e,u,null,h,o);for(u in k)h=k[u],u=="children"?c=h:u=="dangerouslySetInnerHTML"?f=h:u=="value"?w=h:u=="checked"?g=h:d&&typeof h!="function"||y[u]===h||pt(e,u,h,y[u],o);if(f)d||m&&(f.__html==m.__html||f.__html==e.innerHTML)||(e.innerHTML=f.__html),t.__k=[];else if(m&&(e.innerHTML=""),vs(t.type=="template"?e.content:e,kt(c)?c:[c],t,n,s,b=="foreignObject"?"http://www.w3.org/1999/xhtml":o,r,l,r?r[0]:n.__k&&ge(n,0),d,p),r!=null)for(u=r.length;u--;)cn(r[u]);d&&b!="textarea"||(u="value",b=="progress"&&w==null?e.removeAttribute("value"):w!=null&&(w!==e[u]||b=="progress"&&!w||b=="option"&&w!=y[u])&&pt(e,u,w,y[u],o),u="checked",g!=null&&g!=e[u]&&pt(e,u,g,y[u],o))}return e}function fn(e,t,n){try{if(typeof e=="function"){var s=typeof e.__u=="function";s&&e.__u(),s&&t==null||(e.__u=e(t))}else e.current=t}catch(o){S.__e(o,n)}}function Os(e,t,n){var s,o;if(S.unmount&&S.unmount(e),(s=e.ref)&&(s.current&&s.current!=e.__e||fn(s,null,t)),(s=e.__c)!=null){if(s.componentWillUnmount)try{s.componentWillUnmount()}catch(r){S.__e(r,t)}s.base=s.__P=s.__n=null}if(s=e.__k)for(o=0;o<s.length;o++)s[o]&&Os(s[o],t,n||typeof e.type!="function");n||cn(e.__e),e.__c=e.__=e.__e=void 0}function wi(e,t,n){return this.constructor(e,n)}function St(e,t,n){var s,o,r,l;t==document&&(t=document.documentElement),S.__&&S.__(e,t),o=(s=typeof n=="function")?null:n&&n.__k||t.__k,r=[],l=[],pn(t,e=(!s&&n||t).__k=pi(P,null,[e]),o||gt,gt,t.namespaceURI,!s&&n?[n]:o?null:t.firstChild?yt.call(t.childNodes):null,r,!s&&n?n:o?o.__e:t.firstChild,s,l),Es(r,e,l),e.props.children=null}yt=wt.slice,S={__e:function(e,t,n,s){for(var o,r,l;t=t.__;)if((o=t.__c)&&!o.__)try{if((r=o.constructor)&&r.getDerivedStateFromError!=null&&(o.setState(r.getDerivedStateFromError(e)),l=o.__d),o.componentDidCatch!=null&&(o.componentDidCatch(e,s||{}),l=o.__d),l)return o.__E=o}catch(d){e=d}throw e}},Ss=0,di=function(e){return e!=null&&e.constructor===void 0},mt.prototype.setState=function(e,t){var n;n=this.__s!=null&&this.__s!=this.state?this.__s:this.__s=X({},this.state),typeof e=="function"&&(e=e(X({},n),this.props)),e&&X(n,e),e!=null&&this.__v&&(t&&this._sb.push(t),bs(this))},mt.prototype.forceUpdate=function(e){this.__v&&(this.__e=!0,e&&this.__h.push(e),bs(this))},mt.prototype.render=P,oe=[],xs=typeof Promise=="function"?Promise.prototype.then.bind(Promise.resolve()):setTimeout,Rs=function(e,t){return e.__v.__b-t.__v.__b},bt.__r=0,an=Math.random().toString(8),ft="__d"+an,We="__a"+an,Ts=/(PointerCapture)$|Capture$/i,un=0,ln=ks(!1),dn=ks(!0),ui=0;var bi=["working","queued","waits-on-other"],cl=[...bi,"done","dropped"];function B(e,t){return e.length>t?`${e.slice(0,t-1)}\\u2026`:e}var yi=/[,;](?=\\s)|\\s(?=and\\s)/g;function Is(e,t){if(t(e))return e;let n=[...e.matchAll(yi)].map(s=>`${e.slice(0,s.index).replace(/[\\s.,;:]+$/,"")}\\u2026`);return n.findLast(t)??n[0]??e}var fl=new Intl.Segmenter(void 0,{granularity:"grapheme"});var hl=new RegExp("\\\\p{Emoji_Presentation}|\\\\uFE0F","u");function we(e){let t=Math.round(e/6e4);if(t<1)return"just now";if(t<60)return`${t}m ago`;let n=Math.round(t/60);return n<48?`${n}h ago`:`${Math.round(n/24)}d ago`}var $s="no longer applies|replaced|superseded|moot",Sl=new RegExp(`^(?:closed by \\\\w+: )?(?:${$s})`,"i"),xl=new RegExp(`^\\\\s*(?:done\\\\s*:|(?:${$s}|no longer relevant|dealt with)\\\\b)`,"i");var Ml=`You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.\n\nYou read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.\n\nInput:\n- <head>: the top of the page, as title | description: what the session is focused on now. Never write it into a subject.\n- <subjects>: the open subjects, one per line: id | status | name | where it stands\n- <finished>: subjects already done or dropped. Do not add them again.\n- <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet\n- <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subject it holds up, or - when it has none yet\n- <tasks>: the agent\'s own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.\n- <person>: what the person just sent\n- <activity>: what the agent did this turn\n- <reply>: the agent\'s final reply\n\nAnswer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, and the head still holds, answer with the one line NO CHANGE. Most exchanges change nothing.\n\nOtherwise write only the lines that apply:\nNEW: status | name | where it stands\nSET: id or name | status | where it stands\nDONE: id or name | where it ended\nDROP: id or name | why\nDROP: id or name | why | INTO id or name\nWAS: id or name | the plan it replaces\nLINK: running or ask id | subject id or name\nHEAD: title | description\n\nA subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${6} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.\n\nThe name is a label of at most ${3} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${4} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.\n\nThe head says what the session is focused on now: the work the person would name if asked what this session is doing. It may cover several subjects. Its title is a label of at most ${3} words, like a subject\'s name, such as "Offline sync" or "2.5 release". Its description is at most ${8} words on what the session is doing about that focus, such as "Adding offline sync to the notes app" or "Fixing the sync bug, then shipping 2.5". The description never repeats the title, and never says where one piece stands, such as "PR ready for review". The head follows the same rules on time words as where it stands.\n\nStatus is one of: working, queued, waits-on-other.\n- working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask. When the work stopped for another reason, it is queued, waits on something, or is done.\n- queued: planned, not started.\n- waits-on-other: it waits on something other than the person, such as a build, a review or another session.\n\nRules:\n- Change a subject by its id. Write NEW only when no subject in <subjects> covers it.\n- When work started and finished in this exchange, write NEW for it, then DONE with its name.\n- Write SET only when where a subject stands changed. Never reword a subject that did not change.\n- Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.\n- When the person files a piece for later, out of this session\'s plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.\n- When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.\n- Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.\n- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject\'s text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.\n- Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.\n- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.`;function re(e){return e.threads.filter(t=>t.isWaiting)}function mn(e,t){return re(e).filter(n=>!n.isLinesChanged&&!t(e,n))}function _i(e){let t={pass:0,fail:0,pending:0,skip:0};for(let n of e.checks)t[n.bucket]+=1;return t}function vi(e){return`${e} ${e===1?"thread":"threads"} waiting on you`}function hn(e,t,n){return`${e} ${e===1?t:n}`}function xt(e,t=()=>!1){let n=(g,y,k=[],b=": ")=>{let A=k.join(", "),Y=g==="ready"?[]:k.filter(U=>!s.includes(U));return{status:g,text:A?`${y}${b}${A}`:y,head:y,unlisted:Y}},s=[];if(e.state==="MERGED")return n("merged","Merged");if(e.state!=="OPEN")return n("closed","Closed");let{fail:o,pending:r}=_i(e),l=re(e),d=mn(e,t).length,p=l.filter(g=>t(e,g)).length,u=l.filter(g=>g.isLinesChanged&&!t(e,g)).length,f=g=>g!==null,m=g=>(g===null||s.push(g),g),c=[e.mergeable==="CONFLICTING"?`conflicts with ${e.base}`:null,m(o>0?hn(o,"failing check","failing checks"):null),e.reviewDecision==="CHANGES_REQUESTED"?"changes requested":null,m(d>0?vi(d):null)].filter(f),h=[m(p>0?`${hn(p,"thread","threads")} sent to Claude`:null),m(u>0?`${hn(u,"thread","threads")} on changed lines`:null),e.reviewDecision==="REVIEW_REQUIRED"?"needs approval":null,r>0?`${r} ${r===1?"check":"checks"} running`:null].filter(f);if(e.isDraft)return n("draft","Draft",[...c,...h]);if(c.length>0)return n("blocked","Blocked",c);if(h.length>0)return n("waiting","Waiting",h);let w=e.reviewDecision==="APPROVED";return n("ready","Ready to merge",[...w?["approved"]:[],"checks pass","no threads waiting on you"],w?": ":", ")}var Ai=/<\\/?(?:a|b|br|code|details|div|em|h[1-6]|hr|i|img|kbd|li|ol|p|pre|span|strong|sub|summary|sup|table|tbody|td|th|thead|tr|ul)\\b[^>]*>/g;function Rt(e){return e.replace(/<!--[\\s\\S]*?-->/g,"").replace(Ai,"").replace(/^[^\\S\\n]*Useful\\?[^\\S\\n]+React[^\\S\\n]+with[^\\S\\n]+\u{1F44D}[^\\S\\n]*\\/[^\\S\\n]*\u{1F44E}\\.?[^\\S\\n]*$/gmu,"").replace(/!\\[([^\\]]*)\\]\\([^)]*\\)/g,(t,n)=>n.replace(/\\s*badge$/i,"")).trim()}function gn(e){return Rt(e).replace(/\\[([^\\]]*)\\]\\([^)]*\\)/g,"$1").replace(/^\\s*(?:#{1,6}|>)\\s*/gm,"").replace(/\\*\\*|__|`/g,"").replace(/\\s+/g," ")}var wn=120;function Tt(e){let t=Rt(e),[n="",...s]=t.split(`\n`),o=gn(n).trim();return{head:o,rest:o.length>wn?t:s.join(`\n`).trim()}}function _t(e,t=e.path){return`${t}${e.line?`:${e.line}`:""}`}function Ds(e){let t=Math.max(0,Math.round(e/1e3));return t<60?`${t}s`:`${Math.floor(t/60)}m ${t%60}s`}function Ae(e){return e.checks.filter(t=>t.bucket==="fail")}function vt(e){return e.replace(/\\/+$/,"").split("/").pop()??e}function Fs(e,t){let n=e?.delivery?.state!=="failed"?e?.turnsStarted:void 0;return n!==void 0&&n<=t.turnsStarted&&t.turnsApplied<=n}function Hs(e){return e.startsWith("pr:")||e.includes(" ")}function At(e,t){return!e.startsWith("pr:")&&t?.kind==="handoff"&&t.action!=="address"}function ie(e){return e.action==="step"?`step-${e.step}`:e.action}function bn(e){return e.charAt(0).toUpperCase()+e.slice(1)}var Ii="This changed before your press. Nothing was sent.";function qe(){return Ii}function js(e){return e.error===null&&e.note===null&&!e.isUnconfirmed}function $i(e,t){switch(t.kind){case"run":return{kind:"send",text:Ni.run(e,t.command),by:{id:e.id,action:"run"}};case"open":return{kind:"open",target:t.path,name:vt(t.path)};case"link":return{kind:"open",target:t.url,name:t.name??t.url};case"copy":return{kind:"copy",text:t.text,name:t.name??"snippet",isCommand:!1};case"terminal":return{kind:"copy",text:t.command,name:t.name??B(t.command,32),isCommand:!0}}}function Vs(e,t){return t.step.map(n=>$i(e,n))}function Pt(e,t,n){return{state:"pending",parts:e.flatMap(s=>s.kind==="send"?[]:[{kind:s.kind,name:s.name,isCommand:s.kind==="copy"&&s.isCommand,error:null}]),at:t,...n?{pressId:n}:{}}}function Us(e,t){if(!/^[if]\\d+$/.test(e))return null;let n=/^step-(\\d+)$/.exec(t.action);if(n)return{action:"step",id:e,step:Number(n[1]),label:t.text};switch(t.action){case"answer":return{action:"answer",id:e,option:t.text};case"explain":case"compare":case"address":case"issue":case"discuss":return{action:t.action,id:e};default:return null}}function Ws(e,t){return e?.action===t&&e.kind!=="local"&&e.delivery?.state!=="failed"}function Ci(e){return[`${e.kind==="issue"?"Issue":"Opportunity"}: ${e.title}`,e.detail,...e.path?[`File: ${e.path}`]:[]]}var Ns="Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.";var Di=e=>["Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.","For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session\'s data outside this repo.",`Then make a page from the inbox\'s comparison template. Write the comparison as JSON in the shape the comment at the top of the template shows, with the few measures that tell the choices apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Build the page with: cat "${e}" <your JSON file> > <your page>.html`,"When the comparison is done, reply without a table, since the page holds the measures. Give your pick and say whether it changed, your reason in one line, one line on anything you did not expect, and the page\'s absolute path.","Also call the inbox\'s record tool yourself with this question\'s ask and options as listed below, and the page\'s absolute path in steps. That marks it compared. Call each choice by its name as listed."].join(`\n\n`);function Ms(e){return`"${e.ask}"${e.options.length>0?`\nOptions: ${e.options.join(" / ")}`:""}`}var Ni={answer:(e,t)=>`Re "${e.ask}": ${t}`,explain:e=>`Remind me what ${e.kind==="task"?"this task you left for me is about: why it came up, and what doing it involves":"this question you asked me is about: why it came up, what each choice would do, and which you would pick"}. ${Ns} Don\'t act on it yet.\n${Ms(e)}`,compare:(e,t)=>`${Di(t)}\n${Ms(e)}`,run:(e,t)=>`For "${e.ask}", run this:\n\\`\\`\\`\n${t}\n\\`\\`\\``,taskReply:(e,t)=>`Re the task you left for me, "${e.ask}": ${t}`,done:e=>e.length===1?`Done: ${e[0]}`:`Done:\n${e.map(t=>`- ${t}`).join(`\n`)}`,finding:(e,t,n="")=>[t==="address"?"Please address this finding you recorded:":t==="issue"?"Please file an issue for this finding you recorded, in the issue tracker you have tools for. First check whether one already exists, and if it does, use it instead of filing a duplicate. Then close the finding with the issue\'s key or number as the reason, and give me its link. If you have no tools for an issue tracker, say so and leave the finding open.":t==="explain"?`Remind me what this finding you recorded is about: why it matters, what fixing it would involve, and whether you would fix it now. ${Ns} Don\'t act on it yet.`:t==="discuss"?"Let\'s talk through this finding you recorded before changing anything:":"About this finding you recorded:",...Ci(e),...t==="typed"?["",n]:[]].join(`\n`)};var qs=[..."abcfghilm"],R="\\u2007\\xB7\\u2002",W={issue:{title:"Issues",mark:"\\u25B2",tone:"issue"},opportunity:{title:"Opportunities",mark:"\\u2726",tone:"done"}},Gs=[{kind:"question",title:"Questions",list:"questions"},{kind:"task",title:"Tasks",list:"tasks"}],Q={working:{mark:"\\u25CF",tone:null},queued:{mark:"\\u25CB",tone:null},"waits-on-other":{mark:"\\u25CC",tone:null},done:{mark:"\\u2713",tone:"done"},dropped:{mark:"\\u2717",tone:null}},Ke={mark:"\\u25C6",tone:"needsYou"},Bs=["\\u25CF","\\u25C9","\\u25CE","\\u25C9"],Et=Bs[0],Lt={handled:Q.done.mark,dismissed:"\\u2715",lapsed:Q.dropped.mark},Ot={waiting:{text:Ke.mark,tone:"needsYou"},sent:{text:Q.done.mark,tone:"done"},failing:{text:W.issue.mark,tone:"error"}},Rn=[{mark:Et,tone:null,isRunning:!0,words:"Working. It moves while the work runs or your message is on its way."},{mark:Q.queued.mark,tone:null,isRunning:!1,words:"Queued: not started yet"},{mark:Q["waits-on-other"].mark,tone:null,isRunning:!1,words:"Waits on something other than you, such as a build or a review"},{mark:Ke.mark,tone:Ke.tone,isRunning:!1,words:"Waits on you"},{mark:Q.done.mark,tone:"done",isRunning:!1,words:"Done, or handed to the agent"},{mark:Q.dropped.mark,tone:null,isRunning:!1,words:"Dropped before it was done"},{mark:Lt.dismissed,tone:null,isRunning:!1,words:"Dismissed by you"},{mark:W.issue.mark,tone:W.issue.tone,isRunning:!1,words:"Something is wrong: an issue or a failing check"},{mark:W.opportunity.mark,tone:W.opportunity.tone,isRunning:!1,words:"Opportunity: something that could be better"}],Fi=[{keys:"g",does:"Rank the PRs again, once a ranked PR changed"},{keys:"m",does:"Dismiss the merged PRs"}],be={open:"Help",close:"\\u2715 Close help",keys:"Keys",marks:"Marks"};function Ys(e,t,n,s){let o=Ee(t).map(u=>u.hotkey).join(" "),r=_(n),l=n==="overview"&&s,d={keys:o,does:"Switch tabs"},p=n==="prs"?Fi:[];switch(e){case"desktop":return[];case"terminal":return[d,...r||l?[{keys:"j k",does:"Select the next or previous row"}]:[],...p,{keys:"ctrl+x tab",does:"Move focus to the line above the prompt, then the pane, then the prompt"}];case"codex":return[d,...r?[{keys:"j k \\u2191 \\u2193",does:"Select the next or previous row"}]:[],...p,{keys:"?",does:"Open or close help"},{keys:"esc",does:"Close help, or leave a reply field"}];case"omp":return[{keys:`tab ${o}`,does:"Switch tabs"},...r?[{keys:"\\u2191 \\u2193 j k",does:"Move between rows"},{keys:"\\u2190 \\u2192",does:"Pick a button"},{keys:"\\u21B5",does:"Press the picked button"},{keys:"r",does:"Reply to the selected row"},{keys:"u",does:"Undo the last close"},...p]:[...l?[{keys:"j k",does:"Select the next or previous row with a button"},{keys:"\\u21B5",does:"Press the selected row\'s button"}]:[],{keys:"\\u2191 \\u2193",does:"Scroll the page"}],{keys:"?",does:"Open or close help"},{keys:"esc",does:"Close help, then the panel"}]}}var Hi=3,E=5120;var Tn=400,ji=1e3,Vi=30*6e4;function Ui(e,t){return e?.delivery?.state==="queued"&&t-e.at>=ji}function Wi(e,t){return e?.delivery?.state==="unconfirmed"?"unconfirmed":e?.delivery?.state!=="queued"?null:Ui(e,t)?"queued":"sending"}function Xs(e,t){return e>0&&t-e<Tn}function It(e,t){return t!==null&&e>=t}function $t(e,t){return e.state.is!=="settled"||It(e.state.at,t)}function Qs(e,t){return Object.fromEntries(Object.entries(e).filter(([,n])=>It(n,t)))}function zs(e,t){return Object.fromEntries(Object.entries(t).flatMap(([n,s])=>n===e||s.text.trim()!==""?[[n,s.since]]:[]))}var qi=e=>e==="terminal"||e==="omp",z={retry:"Try again",send:"Send",cancel:"Cancel",discard:"Discard",clickField:"Click the field to type",relevantFile:"Relevant file: ",allOptions:e=>`All ${e} options`};function Js(e,t){return e.optionDescriptions.filter(n=>t||!n.isFolded)}function _n(e,t){return e.replyKind==="answer"?"Your answer":`Your reply to ${t}`}function Zs(e,t){if(!e.isPrimary)return e.label;let n=`${e.label} (recommended)`;return t&&!t(n)?e.label:n}function vn(e){return e.state.is==="held"?"discard":"cancel"}function eo(e){return e.state.is==="open"}function An(e){return e.filter(t=>t!==void 0&&eo(t)).length}function to(e,t,n){return e.is==="done"&&t?e.label:ae(e,n)}function no(e,t){let n=e.feedback;return n?so(e)?n.is==="done"?n.label:n.is==="local"?Sn(n.result,t):ae(n,t):ae(n,t):null}function so(e){let t=e.feedback;return e.state.is==="handedOff"&&(t?.is==="done"||t?.is==="local"&&t.result.state==="done")}var oo={text:Et,isRunning:!0};function Pn(e){if(e.state.is==="settled")return Ge(e.state);let t=e.feedback;return e.state.is!=="handedOff"||!t?null:t.is==="sending"||t.is==="queued"?oo:so(e)?{text:Q.done.mark,isRunning:!1,tone:"done"}:{text:"",isRunning:!1}}function Ki(e){return e==="sending"||e==="queued"}function le(e){return[...e.needsYou.questions,...e.needsYou.tasks,...e.findings.rows]}function En(e){return e.filter(t=>t.state.is==="settled").map(t=>t.id)}function Ct(e,t){return e.filter(n=>!t.has(n.id)).slice(0,Hi)}function Dt(e,t){return e.filter(n=>!t.has(n.id)).length}function ro(e){return`${e} closed`}function io(e,t){return e>t?`${e-t} earlier`:null}function J(e){let t=we(e);return t==="just now"?"now":t.replace(/ ago$/,"")}function ao(e){return`No open ${e.toLowerCase()}`}var Gi={demo:"notice","update-failed":"warning","tools-refused":"error","read-failed":"error",stopped:"error","gh-missing":"warning","gh-signed-out":"warning","press-note":"notice","press-failed":"error","hooks-trust":"error","server-gone":"error","server-load-failed":"error","server-builds-differ":"warning","tab-update-failed":"warning"};function q(e,t){let n=t.indexOf(". "),s=n<0?t:t.slice(0,n+1),o=n<0?null:t.slice(n+2);return{kind:e,tone:Gi[e],lead:s,body:o}}function lo(e,t,n){return[...e,...t?[q("update-failed",t)]:[],...n?[q(n.isError?"press-failed":"press-note",n.text)]:[]]}var uo="Sample entries. Buttons here send nothing.",co="Reading the inbox\\u2026";function po(e,t){return t?`v${e} \\xB7 next`:`v${e}`}function de(e,t,n,s,o,r){let l=t?.result;if(n&&o-n.at<E&&n.at>=Math.max(t?.at??0,l?.at??0))return{is:"note",note:n.note,at:n.at};if(l&&(l.state!=="done"||o-l.at<E))return{is:"local",result:l};if(!t||t.kind==="local")return null;let d=t.delivery,p=Wi(t,o);if(p==="queued"||p==="unconfirmed")return{is:p,label:t.text,at:t.at};if(d?.state==="failed")return{is:"notSent",reason:d.reason,retry:Us(e,t)};let u=Fs(t,s),f=t.action==="compare"&&!(r!==void 0&&r>=t.at),m=o-t.at>=Vi,c=Yi[t.action];if(t.kind==="talk"&&c&&(u||f&&!m))return{is:"working",label:c,at:t.at};if(p==="sending")return{is:"sending",label:t.text,at:t.at};if(f)return{is:"noComparison",at:t.at};if(!u&&!Hs(e)&&At(e,t))return{is:"stillOpen",at:t.at};let h=t.kind==="handoff"&&t.action.startsWith("step-");return{is:"done",label:Xi[t.action]?.(t.text)??t.text,at:t.at,...h?{isHandedStep:!0}:{},...Qi.has(t.action)?{isStillWaiting:!0}:{}}}function Bi(e,t,n,s,o,r,l){if(t.is==="settled")return null;let d=de(e,n,s,o,r,l);if(t.is!=="held")return d;let p=d?.is==="notSent"&&n?.action==="type"&&n.at>=t.at;return d?.is==="note"||p?d:{is:"closed",label:t.label,at:t.at}}function Ln(e,t,n,s,o,r){return Bi(e,t,n,void 0,s,o,r)}var Yi={explain:"Explaining\\u2026",compare:"Comparing\\u2026",discuss:"Discussing\\u2026","thread-discuss":"Discussing\\u2026","thread-draft":"Drafting a reply\\u2026","pr-rank-again":"Ranking\\u2026"},Xi={address:()=>"Handed off",issue:()=>"Asked to file",discuss:()=>"Discussed",explain:()=>"Explained",compare:()=>"Compared",dismiss:()=>"Dismissed",type:()=>"Replied","thread-address":()=>"Addressed","thread-discuss":()=>"Discussed","thread-draft":()=>"Drafted a reply","pr-conflicts":()=>"Asked to resolve conflicts","pr-merge":()=>"Asked to merge","pr-address-all":e=>e.replace(/^Address\\b/,"Addressed"),"check-fix":()=>"Asked to fix","pr-rank-again":()=>"Ranked"},Qi=new Set(["check-fix"]);function Nt(e){return e?.is==="notSent"||e?.is==="local"&&e.result.state==="failed"}function Mt(e){return e.is==="done"||e.is==="working"||e.is==="stillOpen"||e.is==="noComparison"||e.is==="sending"||e.is==="queued"||e.is==="unconfirmed"||e.is==="closed"}function fo(e){return e?.is==="working"||e?.is==="sending"||e?.is==="queued"||e?.is==="unconfirmed"||e?.is==="local"&&e.result.state==="pending"}function On(e,t){return fo(t)?(t?.is==="local"?t.result.action:e?.action)??null:null}function In(e,t){let n=t?.is==="unconfirmed"?null:On(e,t);return n==="type"?null:n}function ho(e,t,n){return Ws(e,t)&&(!n||e?.isRepeat===!0)}function mo(e,t){let n=e?.is==="done"&&e.isStillWaiting===!0;return t&&(fo(e)||n)}var zi=e=>qi(e)?"Run it in a terminal, or type ! and paste.":"Run it in Terminal.",yn={open:{pending:"Opening",done:"Opened",failed:"open"},copy:{pending:"Copying",done:"Copied",failed:"copy"},"refresh-prs":{pending:"Refreshing",done:"Refreshed",failed:"refresh"}};function Sn(e,t){let s=e.parts.length>1&&e.parts.every(l=>l.kind==="open"&&l.error===null&&/^PR #\\d+$/.test(l.name))?[{...e.parts[0],name:`${e.parts.length} PRs`}]:e.parts;if(e.state==="pending")return`${s.map(l=>`${yn[l.kind].pending} ${l.name}`).join(R)}\\u2026`;let o=s.map(l=>l.error===null?`${yn[l.kind].done} ${l.name}`:`Could not ${yn[l.kind].failed} ${l.name}: ${l.error}`).join(R);if(e.state==="failed")return o;let r=s.some(l=>l.kind==="copy"&&l.isCommand);return`${o}${r?`. ${zi(t)}`:""}`}function ae(e,t){switch(e.is){case"note":return qe();case"local":return e.result.state==="done"?`\\u2713 ${Sn(e.result,t)}`:Sn(e.result,t);case"sending":return e.label;case"queued":return xn(e.is,e.label);case"unconfirmed":return xn(e.is,e.label);case"notSent":return`Not sent: ${e.reason}`;case"done":return e.isHandedStep?`\\u2713 Handed off: ${e.label}`:`\\u2713 ${e.label}`;case"working":return e.label;case"stillOpen":return"Still open";case"noComparison":return"No comparison came back";case"closed":return e.label}}function xn(e,t){return e==="queued"?`Queued: ${t}`:`Not confirmed: ${t}`}function Ge(e){return Ji(e.closedAs,e.delivery)}function Ji(e,t){return Ki(t)?oo:{text:t===null?Lt[e]:"",isRunning:!1}}function go(e){return e!==null&&typeof e=="object"&&e.canUndo}function Pe(e,t){return t&&typeof t=="object"?`${e} \\xB7 Not sent: ${t.error}`:t===null||t==="sending"?e:xn(t,e)}var Be=[{id:"overview",label:"Status",symbol:"\\u{1F9ED}"},{id:"needsYou",label:"Asks",symbol:"\\u{1F64B}"},{id:"findings",label:"Finds",symbol:"\\u{1F50D}"},{id:"prs",label:"PRs",symbol:"\\u{1F500}"}],wo=e=>e.map((t,n)=>({...t,hotkey:String(n+1)})),Zi=wo(Be),ea=wo(Be.filter(e=>e.id!=="overview"));function Ee(e){return e?Zi:ea}function bo(e,t){let n=Ee(t);return n.some(s=>s.id===e)?e:n[0].id}function yo(e,t){return _(e)&&t[e]>0?String(t[e]):null}function $n(e){return e==="needsYou"||e==="findings"}function _(e){return e!=="overview"}function ko(e){return Be.some(t=>t.id===e)}var So=Be.filter(e=>_(e.id)),Cn=Be.filter(e=>$n(e.id));var xo="was: ",Ks="merged in: ",Ro=" \\xB7 ",Le=3;var dd={mark:Q.working.mark,tone:null};var ta=300,To=Bs.length*ta;function _o(e,t){return`${Ks}${Is(e,n=>t(`${Ks}${n}`))}`}function vo(e,t){let n=e.split(" "),s=n.map((o,r)=>r===0?e:`${n.slice(0,n.length-r).join(" ")}\\u2026`);return s.find(t)??s.at(-1)}function Ye(e,t){return e==="needsYou"?{title:"Nothing needed",hint:`${t}\'s questions and the tasks only you can do show up here.`}:{title:"No findings yet",hint:`${t} flags issues and opportunities it spots beyond your task.`}}function Dn(e,t,n){let s=p=>p.flatMap(u=>{if(u.state.is==="settled")return t(u.id)?[{settled:u,state:u.state}]:[];let f=n(u);return f===null?[]:[{row:f}]}),o=s(e.needsYou.questions),r=s(e.needsYou.tasks),l=Object.keys(W).map(p=>({kind:p,title:W[p].title,entries:s(e.findings.rows.filter(u=>u.finding?.kind===p))})),d=l.flatMap(p=>p.entries);return{questions:o,tasks:r,findings:d,findingGroups:l,byTab:{needsYou:[...kn(o),...kn(r)],findings:kn(d)}}}function ue(e){return"row"in e?e.row.id:e.settled.id}function Ao(e){let t=Dn(e,()=>!0,s=>s),n=s=>s.map(o=>"row"in o?{id:o.row.id,isWaiting:eo(o.row)}:{id:o.settled.id,isWaiting:!1});return{needsYou:n([...t.questions,...t.tasks]),findings:n(t.findings)}}function Nn(e){return e.find(t=>t.isWaiting)?.id??null}function Po(e,t){return Nn(e.filter(n=>!t.includes(n.id)))}function Eo(e,t){let n=e.findIndex(s=>s.id===t);return n<0?null:(e.slice(n+1).find(s=>s.isWaiting)??e.slice(0,n).reverse().find(s=>s.isWaiting))?.id??null}function kn(e){return e.flatMap(t=>"row"in t?[t.row]:[])}function Ft(e){return new Set(e.flatMap(t=>"settled"in t?[t.settled.id]:[]))}function Lo(e,t){let n=e.actions.filter(u=>t||!u.isFolded),s=e.actions.length-n.length,o=n.map(u=>u.press.action).lastIndexOf("answer"),r=[],l=[],d=e.feedback?.is==="notSent"?e.feedback.retry:null;if(d){let u=e.actions.find(f=>ie(f.press)===ie(d))?.kind??"talk";r.push({slot:"retry",press:d,kind:u,label:z.retry,emphasis:"normal",icon:"retry"})}let p=0;for(let[u,f]of n.entries()){let{press:m}=f;if(m.action==="answer"||m.action==="step"){let c=p<qs.length?{hotkey:qs[p++]}:{};r.push({slot:"choice",action:{...f,press:m},...c}),u===o&&s>0&&r.push({slot:"allOptions",count:e.actions.filter(h=>h.press.action==="answer").length,label:z.allOptions(e.actions.filter(h=>h.press.action==="answer").length),emphasis:"quiet"})}else f.hotkey&&(f.isFollowUp?l:r).push({slot:"action",action:f,hotkey:f.hotkey})}return{keys:r,more:l}}var na={question:"View question",task:"View task"};function Oo(e){return e.kind!=="subject"||e.ask===null?[]:[{press:{action:"show-ask",askId:e.ask.id},label:na[e.ask.kind],hotkey:"v",kind:"view"}]}var sa="Updating\\u2026",oa="Refreshing PRs\\u2026";function Io(e,t,n,s){if(e==="prs")return{text:n.isFetching&&n.hasPrs?oa:null,error:null};let o=(e==="overview"?s:null)??t.error;return{text:t.isUpdating?sa:null,error:o}}var x={needsYou:null,findings:null,prs:null},L=new Map,ye=new Set,j=new Set,O=new Map,Xe="Sending\\u2026",I=new Map,Qe=new Map,Z=new Map,ee=new Set,$=new Set,Oe=new Set,v=new Map,F=window,V=F.__inboxHandoff??null,N=V?.root??document.getElementById("app"),ke=new AbortController,Ie=new Set,$e=new Set,ce=new Map,Mn=class{view=null;isDemo=!1;readError=null;serverNote=null;isConnected=!1;stagedHostChanges={};pollFailures=0;readAt=0;tab="needsYou";shownSince=Date.now();isHelpShown=!1;typing=null;focusTyping=!1;discarded={};lineNote=null;seen=new Map;rowsSeen={};lastLists=null;requested=0;shown=0;activePresses=0;viewGeneration=0;isDisposed=!1;isActive=V===null;requestedPage=null;updateError=null;draw},a=new Mn;var $o=30;function xe(e,t){return Co(e.ref,t.id)}function ze(e,t){return Do(e.ref,t.name)}function Co(e,t){return`${e} thread ${t}`}function Do(e,t){return`${e} check ${t}`}function H(e){return`pr:${e}`}var aa="The inbox could not find gh. It needs gh to read your PRs.",Cd=`gh did not answer within ${2e4/1e3} seconds`,la="gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.";function Fn(e){return e.isGhMissing?{kind:"gh-missing",text:aa}:e.isGhSignedOut?{kind:"gh-signed-out",text:la}:null}function da(e){return`Your PRs show here when this ${e} opens or links one, or when your branch has one.`}function No(e,t){return{title:e.isFetching?"Checking for PRs\\u2026":"No PRs",hint:Fn(e)?.text??da(t)}}function Mo(e){return`Last refresh failed: ${e}`}var ua="Refresh PRs",ca={kind:"refresh-prs",name:"PRs"};var Hn="pr:order",Fo="pr:merged",jn={threads:"Review threads",checks:"Failing checks"};function Ho(e,t,n){let s=Je(n)(e,t),o=!s&&t.isLinesChanged;return{mark:pa(s?n[xe(e,t)]?.delivery:null),fold:s||o?t.isLinesChanged?{note:`Lines changed since this comment${R}still open on GitHub`}:{}:null,title:B(Tt(t.body).head,wn),meta:[_t(t,vt(t.path)),o?"Lines changed":"",t.reply?`@${t.reply.author}: ${gn(t.reply.body)}`:`@${t.author}`].filter(Boolean).join(R)}}function pa(e){return e===null?{...Ot.waiting,isDone:!1,isRunning:!1}:e?.state==="queued"?{text:Et,tone:null,isDone:!1,isRunning:!0}:e?.state==="unconfirmed"?{text:"",tone:null,isDone:!1,isRunning:!1}:{...Ot.sent,isDone:!0,isRunning:!1}}function jo(e){return{mark:{...Ot.failing,isDone:!1,isRunning:!1},lead:e.workflow||null,title:e.name,meta:fa(e)}}var Vn=1200;function Vo(e){return{keys:e.filter(t=>!t.isFollowUp),more:e.filter(t=>t.isFollowUp)}}function fa(e){return e.startedAt!==void 0&&e.finishedAt!==void 0?`Failed after ${Ds(e.finishedAt-e.startedAt)}`:"Failed"}function Je(e){return(t,n)=>{let s=e[xe(t,n)];return s?.kind==="handoff"&&s.delivery?.state!=="failed"&&s.at>((n.reply??n).at??0)}}function Uo(e,t){let n=Je(t);return e.flatMap(s=>[...re(s).map(o=>({id:xe(s,o),isWaiting:!n(s,o)})),...Ae(s).map(o=>{let r=ze(s,o),l=t[r];return{id:r,isWaiting:!At(r,l)||l?.delivery?.state==="failed"}})])}function ha(e,t){let n=e[H(t)];return n?.action==="pr-dismiss"?n.at:null}function Wo(e,t){return ha(e,t)!==null}function Un(e){return e.filter(t=>t.state.is==="open").map(t=>t.pr)}function qo(e){return`${e}.\\u2002`}var Ko={ready:"done",blocked:"needsYou",waiting:null,draft:null,merged:"findings",closed:"error"};function ma(e,t){return{kind:"open",target:t.reply?.url||t.url||e.url,name:"the comment"}}function ga(e){return{kind:"open",target:e.url,name:`PR #${e.number}`}}function wa(e,t){return{kind:"open",target:t.url??e.url,name:t.url?"the log":`PR #${e.number}`}}var Go={"pr-conflicts":"Resolve conflicts","check-fix":"Fix"};function ba(e){return e.action==="pr-conflicts"||e.action==="check-fix"}function ya(e){return{kind:"refresh-prs",name:`PR #${e.number}`}}function Wn(e,t){if(ba(t))return ya(e);switch(t.action){case"thread-open":{let n=e.threads.find(s=>s.id===t.thread);return n?ma(e,n):null}case"pr-open":return ga(e);case"pr-refresh":return ca;case"log":{let n=e.checks.find(s=>s.name===t.check);return n?wa(e,n):null}default:return null}}function qn(e,t,n,s=null){if(e?.delivery?.state!=="failed")return null;let o=e.action;return s!==null?o==="check-fix"?{press:{action:o,ref:t,check:s},kind:e.kind}:null:n!==null&&(o==="thread-address"||o==="thread-draft"||o==="thread-discuss")?{press:{action:o,ref:t,thread:n},kind:e.kind}:n===null&&(o==="pr-conflicts"||o==="pr-address-all"||o==="pr-merge")?{press:{action:o,ref:t},kind:e.kind}:null}function Kn(e,t){let n=e.lastActions[t],s=Ln(t,{is:"open"},n,e.turns,e.now);return{last:n,pressing:On(n,s),out:In(n,s)}}function Se(e,t,n){return ho(e.last,t,e.pressing===t)?`${n} again`:n}function Gn(e,t){return t.map(n=>({...n,isOut:n.press.action===e.out}))}function Bn(e){return e?[{press:e.press,label:"Try again",kind:e.kind,emphasis:"normal",icon:"retry",isRetry:!0}]:[]}function Bo(e,t,n){let s=Kn(n,Co(e.ref,t.id)),o={ref:e.ref,thread:t.id};return Gn(s,[...Bn(qn(s.last,e.ref,t.id)),{press:{action:"thread-address",...o},label:Se(s,"thread-address","Address"),kind:"handoff",emphasis:"primary",hotkey:"a"},{press:{action:"thread-draft",...o},label:Se(s,"thread-draft","Draft reply"),kind:"talk",emphasis:"normal",hotkey:"r"},{press:{action:"thread-open",...o},label:"Open comment",kind:"local",emphasis:"normal",icon:"open",hotkey:"o"},{press:{action:"thread-discuss",...o},label:Se(s,"thread-discuss","Discuss"),kind:"talk",emphasis:"quiet",hotkey:"d",isFollowUp:!0}])}function Yo(e,t,n){let s=Kn(n,Do(e.ref,t.name)),o={ref:e.ref,check:t.name};return Gn(s,[...Bn(qn(s.last,e.ref,null,t.name)),{press:{action:"check-fix",...o},label:Se(s,"check-fix",Go["check-fix"]),kind:"handoff",emphasis:"primary",hotkey:"a"},{press:{action:"log",...o},label:"Open log",kind:"local",emphasis:"normal",icon:"open",hotkey:"o"}])}function Xo(e,t,n,s){let o=Kn(s,H(e.ref)),{status:r}=xt(e,t),l=mn(e,t).length,d=[...r==="ready"?[{press:{action:"pr-merge",ref:e.ref},label:Se(o,"pr-merge","Merge"),kind:"handoff"}]:[],...e.state==="OPEN"&&e.mergeable==="CONFLICTING"?[{press:{action:"pr-conflicts",ref:e.ref},label:Se(o,"pr-conflicts",Go["pr-conflicts"]),kind:"handoff"}]:[],...l>1?[{press:{action:"pr-address-all",ref:e.ref},label:Se(o,"pr-address-all",`Address all ${l} threads`),kind:"handoff"}]:[]];return Gn(o,[...e.error?[{press:{action:"pr-refresh",ref:e.ref},label:ua,kind:"local",emphasis:"normal",icon:"retry"}]:[],...Bn(qn(o.last,e.ref,null)),...d.map((p,u)=>({...p,emphasis:u===0?"primary":"normal"})),{press:{action:"pr-open",ref:e.ref},label:"Open PR",kind:"local",emphasis:"normal",icon:"open"},...e.ref===n?[]:[{press:{action:"pr-dismiss",ref:e.ref},label:"Dismiss",kind:"mark",emphasis:"quiet"}]])}var Ze=3e3,Fd=E+2*Ze;function Qo(e){return[...En(le(e)),...e.prs.drawn.flatMap(t=>t.state.is==="settled"?[H(t.pr.ref)]:[])]}function zo(e,t,n){return new Map(t.map(s=>[s,e.get(s)??n]))}function Jo(e,t,n=new Set){return new Set(le(e).filter(s=>s.state.is==="settled"&&(n.has(s.id)||$t(s,t))).map(s=>s.id))}function Ht(e,t){return t-e<E}V&&(V.dispose=et);function C(e,t){if(a.isDisposed)return 0;let n=window.setTimeout(()=>{Ie.delete(n),a.isDisposed||e()},t);return Ie.add(n),n}function Ce(e){e!==void 0&&(window.clearTimeout(e),Ie.delete(e))}function et(){if(!a.isDisposed){a.isDisposed=!0,ke.abort();for(let e of Ie)window.clearTimeout(e);Ie.clear();for(let e of $e)e.onfinish=null,e.oncancel=null,e.cancel();$e.clear();for(let e of ce.values())e.reject(new Error("Inbox page replaced"));ce.clear(),St(null,N),a.isActive&&document.body.classList.remove("still")}}function Yn(e,t,n){return a.isDisposed?Promise.reject(new Error("Inbox page replaced")):new Promise((s,o)=>{let r=F.__inboxRequestId=(F.__inboxRequestId??Date.now())+1,l=n===void 0?void 0:C(()=>{ce.delete(r)&&o(new Error(`The inbox did not answer in ${Math.round(n/1e3)} s`))},n);ce.set(r,{resolve:s,reject:o,timer:l}),parent.postMessage({jsonrpc:"2.0",id:r,method:e,params:t},"*")})}window.addEventListener("message",e=>{if(a.isDisposed)return;let t=e.data;if(!(!t||t.jsonrpc!=="2.0")){if(t.id!=null&&!t.method&&ce.has(t.id)){let n=ce.get(t.id);ce.delete(t.id),Ce(n.timer),t.error?n.reject(t.error):n.resolve(t.result);return}t.method==="ui/notifications/host-context-changed"&&(a.isActive?jt(t.params??{}):a.stagedHostChanges=ka(a.stagedHostChanges,t.params??{})),a.isActive&&t.id!=null&&t.method&&parent.postMessage({jsonrpc:"2.0",id:t.id,result:{}},"*")}},{signal:ke.signal});function jt(e){if(!(a.isDisposed||!a.isActive)){e.theme&&(document.documentElement.dataset.theme=e.theme);for(let[t,n]of Object.entries(e.styles?.variables??{}))document.documentElement.style.setProperty(t,n)}}function ka(e,t){return{...e,...t,styles:{...e.styles,...t.styles,variables:{...e.styles?.variables,...t.styles?.variables}}}}async function De(e,t={},n){let s=await Yn("tools/call",{name:e,arguments:t},n);if(a.isDisposed)throw new Error("Inbox page replaced");if(!s||s.isError||s.structuredContent===void 0)throw new Error(s?.isError&&s.content?.[0]?.text||"The answer had nothing to show");return s.structuredContent}var Re=3*Ze;var Vt={entering:300,opening:200,closing:200,settling:200,leaving:200,closed:0,open:0,settled:0,undoing:0};function Ut(e){return Vt[e]>0}function er(e,t,n,s=!1,o=!1){let r=t==="undoing"?"settled":t;if(!e)return s&&!o&&(r==="closed"||r==="open")?{state:"entering",since:n,hasPanel:r==="open"}:Zo(void 0,r,t,n);let l=Sa(e)===r?e:xa(e,r,n);return Ut(l.state)&&!o&&n-l.since<Vt[l.state]?l:Zo(l,r,t,n)}function Sa({state:e,hasPanel:t}){switch(e){case"entering":return t?"open":"closed";case"opening":case"open":return"open";case"closing":case"closed":return"closed";case"settling":case"settled":case"undoing":return"settled";case"leaving":return"gone"}}function xa(e,t,n){switch(t){case"open":return{state:"opening",since:n,hasPanel:!0};case"closed":return e.state==="leaving"?{state:"entering",since:n,hasPanel:!1}:{state:"closing",since:n,hasPanel:e.hasPanel};case"settled":return{state:"settling",since:n,hasPanel:e.hasPanel};case"gone":return{state:"leaving",since:n,hasPanel:e.hasPanel}}}function Zo(e,t,n,s){if(t==="gone")return null;let o=n==="undoing"?"undoing":t;return e?.state===o?e:{state:o,since:s,hasPanel:o==="open"}}var zn={duration:300,easing:"cubic-bezier(.19, 1, .22, 1)"},Wt={duration:200,easing:"cubic-bezier(.65, 0, .35, 1)"},Jn={duration:200,easing:"cubic-bezier(.8, 0, .4, 1)",fill:"forwards"},tt=matchMedia("(prefers-reduced-motion: reduce)");function or(){let e=new Map;for(let t of N.querySelectorAll("[data-motion]"))e.set(t.dataset.motion,{el:t,height:t.getBoundingClientRect().height});return e}function Pa(e,t,n,s){e.style.overflow="hidden",e.dataset.to=String(s);let o=e.animate(t,n);$e.add(o);let r=()=>{$e.delete(o),!a.isDisposed&&e.getAnimations().length===0&&rr(e)};o.onfinish=r,o.oncancel=r}function Xn(e){for(let t of e.getAnimations())t.cancel();rr(e)}function rr(e){e.style.overflow="",delete e.dataset.to}function Zn(e){return[...e.children].reduce((t,n)=>t+n.getBoundingClientRect().height,0)}function nt(e,t,n,s){let o=r=>({height:`${r.height}px`,opacity:r.opacity});Pa(e,[o(t),o(n)],s,n.height)}function ir(e,t){nt(e,{height:0,opacity:0},{height:t,opacity:1},zn)}function ar(e,t){if(tt.matches){ee.clear();return}let n=new Set([...t].map(o=>v.get(o)?.track.state)),s=n.has("leaving")?{...Jn,fill:"none"}:n.has("entering")?zn:Wt;for(let o of N.querySelectorAll("[data-motion]")){let r=o.dataset.motion,l=e.get(r);if(o.dataset.closing)continue;let d=v.get(r)?.track.state,p=!l||l.el!==o,u=()=>o.getAnimations().length>0||p?o.getBoundingClientRect().height:l.height;if(d&&t.has(r)&&Ea(o,d,u)||d==="closing"||d==="settling"||d==="leaving")continue;if(d&&!Ut(d)&&!O.has(r)){Xn(o);continue}let f=d||o.classList.contains("group-end")?Zn(o):o.scrollHeight;if(p){!d&&ee.delete(r)&&ir(o,f);continue}let m=o.getAnimations();if(m.length>0&&Math.abs(Number(o.dataset.to)-f)<1)continue;let c=u(),h=m.length>0?Number(getComputedStyle(o).opacity):1;for(let w of m)w.cancel();Math.abs(c-f)<1&&h>.99||nt(o,{height:c,opacity:h},{height:f,opacity:1},d?Wt:s)}ee.clear()}function Ea(e,t,n){switch(t){case"opening":return!1;case"entering":return Xn(e),ir(e,Zn(e)),!0;case"closing":case"settling":return La(e,tr(e,n)),!0;case"leaving":{let s=tr(e,n);for(let o of e.getAnimations())o.cancel();return nt(e,s,{height:0,opacity:0},Jn),!0}default:return Xn(e),!0}}function tr(e,t){return{height:t(),opacity:Number(getComputedStyle(e).opacity)}}function La(e,t){let n=e.querySelector(".panel.closing"),s=e.querySelector(".row.closing");s?.classList.remove("closing"),n&&(n.style.display="none");let o=Zn(e);n&&(n.style.display=""),s?.classList.add("closing");for(let r of e.getAnimations())r.cancel();nt(e,t,{height:o,opacity:1},{...Wt,fill:"forwards"})}function lr(e){let t=N.querySelector(`[data-motion="closed-${e}"]`);if(!j.has(e)){j.add(e),Oe.delete(e)&&t?delete t.dataset.closing:ee.add(`closed-${e}`),a.draw();return}if(j.delete(e),!t||tt.matches){a.draw();return}Oe.add(e),a.draw(),t.dataset.closing="1";let n=t.getBoundingClientRect().height;for(let s of t.getAnimations())s.cancel();nt(t,{height:n,opacity:1},{height:0,opacity:0},Jn),C(()=>{j.has(e)||!Oe.delete(e)||a.draw()},200)}function Me(){a.isDisposed||(N.querySelector(".row.selected")?.scrollIntoView({block:"nearest"}),tt.matches||C(()=>N.querySelector(".row.selected")?.scrollIntoView({block:"nearest"}),220))}function st(){document.documentElement.style.setProperty("--row-pad",`${8}px`),document.documentElement.style.setProperty("--status-row-pad",`${4.75}px`),document.documentElement.style.setProperty("--look-gap",`${9.5}px`),document.documentElement.style.setProperty("--banner-pad-y",`${8}px`),document.documentElement.style.setProperty("--banner-gap",`${8}px`),document.documentElement.style.setProperty("--pulse",`${To}ms`),document.documentElement.style.setProperty("--move",`${200}ms ${Wt.easing}`),document.documentElement.style.setProperty("--enter",`${300}ms ${zn.easing}`)}var dr=50;function te(e){C(a.draw,e+dr)}var Ne=null;function ur(){let e=Date.now(),t=[...v.values()].flatMap(({track:s})=>Ut(s.state)?[s.since+Vt[s.state]]:[]);if(t.length===0)return;let n=Math.min(...t)+dr;Ne&&Ne.at<=n||(Ne&&Ce(Ne.timer),Ne={at:n,timer:C(()=>{Ne=null,a.draw()},n-e)})}function cr(e,t){let n={...e},s={};for(let o of Object.keys(t)){let r=t[o],l=e[o];s[o]=r&&l?r.filter(d=>!l.has(d)):[],r&&(n[o]=new Set(r))}return{seen:n,added:s}}var qt=So.map(e=>e.id);function pr(e){return{needsYou:[...e.needsYou.questions,...e.needsYou.tasks].map(t=>t.id),findings:e.findings.rows.map(t=>t.id)}}function fr(e){let t=n=>n.filter(s=>s.state.is!=="settled").map(s=>s.id);return{needsYou:t([...e.needsYou.questions,...e.needsYou.tasks]),findings:t(e.findings.rows)}}function hr(e,t,n){return t==="findings"?Object.keys(W).map(s=>({isUnfolded:n(s),rows:e.findings.closed.filter(o=>o.kind===s)})):Gs.map(s=>({isUnfolded:n(s.kind),rows:e.needsYou.closed[s.list]}))}function mr({rows:e,settled:t,closed:n,hasBlocker:s}){return!s&&!e.some(o=>o.state.is!=="settled"||t.has(o.id))&&!n.some(o=>o.isUnfolded&&o.rows.some(r=>!t.has(r.id)))}function gr(e,t,n,s){return n?e.find(o=>o!==t&&s[o].length>0)??null:null}function wr(e){return e.flatMap(({pr:t,state:n})=>[H(t.ref),...n.is==="settled"?[]:[...re(t).map(s=>xe(t,s)),...Ae(t).map(s=>ze(t,s))]])}function br(e,t){return e===0&&!t}var Kt={question:"needsYou",task:"needsYou",finding:"findings"};function yr(e){return{...fr(e),prs:[]}}function kr(e,t,n){return cr(e,{...pr(t),prs:n?null:wr(t.prs.drawn)})}function Sr(e,t,n,s,o){return t==="prs"?br(e.prs.drawn.length,o):mr({rows:t==="findings"?e.findings.rows:[...e.needsYou.questions,...e.needsYou.tasks],settled:n,closed:hr(e,t,r=>s.has(r)),hasBlocker:t==="needsYou"&&e.heard!=="heard"})}function Te(e){e!==a.tab&&(a.shownSince=Date.now()),a.tab=e,a.isHelpShown=!1}function D(){let e=bo(a.tab,a.view?.isNextBuild===!0);return e==="overview"&&!a.view?.statusPage?"needsYou":e}function xr(e,t){let n=D();if(!_(n))return;let s=ot(e),o=gr(qt,n,Sr(e,n,s,j,e.isFetchingPrs),t);o&&(Te(o),x[o]=null)}function Fe(e,t){return t==="prs"?Uo(Un(e.prs.drawn),e.lastActions):Ao(e)[t]}function ot(e){return Jo(e,a.shownSince,$)}function He(e,t,n){let s=x[t];if(s){let r=e.findIndex(d=>d.id===s.id);if(r>=0||v.has(s.id)||e.length===0)return r;let l=Math.min(s.index??0,e.length-1);return pe(t,e[l].id,l),l}let o=Nn(Fe(n,t));return o?e.findIndex(r=>r.id===o):-1}function pe(e,t,n){x[e]={id:t,openedAt:Date.now(),...n===void 0?{}:{index:n}},a.typing!==t&&(a.typing=null),te(Tn)}function je(e,t,n){let s=t[n];s&&(pe(e,s.id,n),a.draw())}function Gt(e){let t=D();_(t)&&!x[t]&&(x[t]={id:e,openedAt:0})}function Rr(){let e=D();return _(e)&&Xs(x[e]?.openedAt??0,Date.now())}function Bt(e){return e.typing&&a.typing===e.id?{keys:[],more:[]}:{keys:e.keys,more:e.more}}var Tu={type:"object",properties:{repo:{type:"string",description:"The repository, as owner/name."},numbers:{type:"array",items:{type:"integer"},description:`The PR numbers, first to last, at most ${$o}. Give an empty list to clear the order.`},label:{type:"string",description:\'What the user does with the order, in at most 4 words, such as "Merge in this order" or "Review in this order". Required to set an order.\'},why:{type:"string",description:"The reason for this order, in one sentence, such as a PR that waits on another. Not a summary of each PR. Required to set an order."}},required:["numbers"]};var Yt=6e4;var Ac=10*6e4;var Tr="inbox-tab-kept";function Ia(){return{version:_(a.tab)?1:2,isDemo:a.isDemo,tab:a.tab,selection:{needsYou:x.needsYou?.id??null,findings:x.findings?.id??null,prs:x.prs?.id??null},typing:a.typing,drafts:[...L],optionsShown:[...ye],unfolded:[...j],shownSince:a.shownSince}}function ts(e){let t=e??F.__inboxKept??null;if(!e){delete F.__inboxKept;try{let n=sessionStorage.getItem(Tr);sessionStorage.removeItem(Tr),t??=n?JSON.parse(n):null}catch{}}if(!(t?.version!==1&&t?.version!==2)){a.isDemo=t.isDemo,ko(t.tab)&&(a.tab=t.tab),typeof t.shownSince=="number"&&(a.shownSince=t.shownSince);for(let n of qt){let s=t.selection[n];x[n]=s?{id:s,openedAt:0}:null}a.typing=t.typing,a.focusTyping=a.typing!==null;for(let[n,s]of t.drafts)L.set(n,typeof s=="string"?{text:s,since:Date.now()}:s);for(let n of t.optionsShown)ye.add(n);for(let n of t.unfolded)for(let s of n==="finding"?["issue","opportunity"]:[n])j.add(s)}}var $a=2e3,ns=V?.page??F.__inboxPage,es=!1;async function Xt(e){if(es||a.isDisposed||e===ns)return;es=!0;let t=null,n=null,s=!1;try{let{html:o}=await De("inbox_tab_page",{},Re);if(a.isDisposed||a.requestedPage!==e)return;if(!/<\\/html>\\s*$/i.test(o))throw new Error("The new page is incomplete.");let r=new DOMParser().parseFromString(o,"text/html"),l=r.getElementById("app"),d=r.getElementById("inbox-style")??r.head.querySelector("style"),p=r.getElementById("inbox-script")??r.body.querySelector("script"),u=[...r.head.querySelectorAll("script")].map(T=>T.textContent?.match(/^\\s*window\\.__inboxPage\\s*=\\s*("[^"\\n]+")\\s*;?\\s*$/)?.[1]).find(T=>T!==void 0),f=u?JSON.parse(u):null,m=r.querySelector(\'meta[name="inbox-handoff"]\')?.getAttribute("content")==="1",c=document.getElementById("inbox-style"),h=document.getElementById("inbox-script");if(!(l instanceof HTMLDivElement)||l.childNodes.length>0||!(d instanceof HTMLStyleElement)||!d.textContent||!(p instanceof HTMLScriptElement)||p.src||!p.textContent||typeof f!="string"||f!==e||!/^ui:\\/\\/inbox\\/tab-[a-f0-9]{12}$/.test(f)||!m||!(c instanceof HTMLStyleElement)||!(h instanceof HTMLScriptElement))throw new Error("The new page is incomplete.");let w=document.createElement("div");w.id="app";let g=document.createElement("style");g.id="inbox-style",g.textContent=d.textContent,n=document.createElement("script"),n.id="inbox-script-candidate",n.textContent=p.textContent;let y,k=new Promise(T=>y=T);t={page:f,root:w,aborted:!1,ready:T=>{!t?.aborted&&F.__inboxHandoff===t&&y(T)}},F.__inboxHandoff=t,document.body.append(n);let b=(T,ct)=>new Promise((_e,ve)=>{let M=C(()=>ve(new Error("The new page did not start.")),ct);T.then(G=>{Ce(M),_e(G)},G=>{Ce(M),ve(G)})}),A=await b(k,$a);if(!await b(A.initialize(),Re))throw new Error("The new page could not connect.");let Y=Date.now()+Yt;for(;a.activePresses>0&&Date.now()<Y;)await new Promise(T=>C(T,30));if(a.activePresses>0)throw new Error("The current press is still running.");if(a.isDisposed||a.requestedPage!==e||t.aborted)return;let U=Ia();N.replaceWith(w);try{c.replaceWith(g),A.activate(U),A.start()}catch(T){throw w.isConnected&&w.replaceWith(N),g.isConnected&&g.replaceWith(c),st(),T}et(),h.remove(),n.id="inbox-script",F.__inboxPage=f,s=!0}catch{!a.isDisposed&&a.requestedPage===e&&(a.updateError={page:e,text:"Could not load the inbox update."},a.draw())}finally{if(t&&(t.aborted=!0,F.__inboxHandoff===t&&delete F.__inboxHandoff,!s))try{t.dispose?.()}catch{}s||n?.remove(),es=!1}}function ss(e,t){if(a.isDisposed||t<a.shown)return;a.shown=t,a.readError=null,a.pollFailures=0,a.readAt=Date.now();let n=a.seen;a.seen=zo(a.seen,Qo(e),Date.now()),[...a.seen.keys()].some(l=>!n.has(l))&&te(E),a.view=e;let s=Cn.every(l=>a.rowsSeen[l.id]===void 0),o=kr(a.rowsSeen,e,e.isFetchingPrs);a.rowsSeen=o.seen;let r=[...o.added.needsYou,...o.added.findings];for(let l of r)ee.add(l);for(let{id:l}of Cn){let d=!x[l]&&o.added[l].length>0?Po(Fe(e,l),o.added[l]):null;d&&(x[l]={id:d,openedAt:0})}xr(e,s?yr(e):o.added),a.draw()}async function fe(){let e=a.viewGeneration,t=++a.requested;try{let n=await De("inbox_view",{demo:a.isDemo,tab:a.tab,...rs()},Re);if(e!==a.viewGeneration||t<a.shown)return;a.requestedPage=n.devPage,a.updateError?.page!==a.requestedPage&&(a.updateError=null);let s=a.requestedPage!==ns;s&&!a.updateError&&Xt(a.requestedPage),a.serverNote=n.isPluginFolderGone?{text:"Quit and reopen Codex to load the installed inbox. Its files were moved or removed, so it still runs the version Codex started with.",kind:"server-gone"}:n.serverLoadError?{text:`The inbox server could not load its new build, so it still runs the last one. ${n.serverLoadError}`,kind:"server-load-failed"}:n.serverBuild!=="005cee073ae2"&&!s?{text:"This tab and the inbox server are from different builds.",kind:"server-builds-differ"}:null,ss(n,t)}catch(n){if(a.isDisposed||e!==a.viewGeneration||t<a.shown)return;a.view?a.pollFailures++:a.readError=Ca(n),a.draw()}}function Ca(e){let t=typeof e=="object"&&e!==null&&typeof e.message=="string"?e.message:String(e),n=B(t.replace(/^(Failed|Not done): /,"").replace(/\\s+/g," ").trim(),120)||"No reason given";return bn(/[.!?\u2026]$/.test(n)?n:`${n}.`)}async function os(){a.activePresses===0&&await fe(),C(os,Ze)}function rt(){return zs(a.typing,Object.fromEntries(L))}function rs(){return a.discarded=Qs(a.discarded,a.shownSince),{replies:rt(),discarded:a.discarded,shownSince:a.shownSince}}var Da=0;function i(e,t,n,s,o,r){t||(t={});var l,d,p=t;if("ref"in p)for(d in p={},t)d=="ref"?l=t[d]:p[d]=t[d];var u={type:e,props:p,key:n,ref:l,__k:null,__:null,__b:0,__e:null,__c:null,constructor:void 0,__v:--Da,__i:-1,__u:0,__source:o,__self:r};if(typeof e=="function"&&(l=e.defaultProps))for(d in l)p[d]===void 0&&(p[d]=l[d]);return S.vnode&&S.vnode(u),u}var Na={check:"M20 6 9 17l-5-5",play:"M7 4.5v15l12-7.5z",copy:"M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1",open:"M7 17 17 7M8 7h9v9",retry:"M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5",undo:"M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11",right:"m9 18 6-6-6-6",down:"m6 9 6 6 6-6"},Ma={done:"check",retry:"retry",open:"open",copy:"copy",run:"play"};function Ve({name:e}){return i("svg",{class:"icon",viewBox:"0 0 24 24",fill:"none",stroke:"currentColor","stroke-width":"2","stroke-linecap":"round","stroke-linejoin":"round","aria-hidden":"true",children:i("path",{d:Na[e]})})}function _r(e,t,n,s){let o=Lo(e,t),r=l=>{if(l.slot==="retry")return{label:l.label,emphasis:l.emphasis,icon:l.icon,run:()=>s.press(l.press)};if(l.slot==="allOptions")return{label:l.label,emphasis:l.emphasis,run:s.showOptions};let d=l.action;return{label:Zs(d),emphasis:d.emphasis,...l.hotkey?{hotkey:l.hotkey}:{},...d.icon?{icon:Ma[d.icon]}:{},...d.press.action==="dismiss"?{isDismiss:!0}:{},...d.isOut||ie(d.press)===n?{isOut:!0}:{},run:d.press.action==="type"?s.reply:d.press.action==="discard"?s.discard:()=>s.press(d.press)}};return{keys:o.keys.map(r),more:o.more.map(r)}}function Qt({action:e,isBlocked:t}){return i("button",{type:"button",class:`${e.emphasis==="primary"?"key primary":e.emphasis==="quiet"?"key ghost":"key"}${e.isDismiss?" dismiss":""}${e.isOut?" out":""}`,disabled:t()||e.isOut===!0,onClick:()=>{!t()&&!e.isOut&&e.run()},children:[e.icon?i(Ve,{name:e.icon}):null,e.label]})}function zt({keys:e,more:t,reply:n,isBlocked:s}){return n?i("div",{class:"actions",children:i("form",{onSubmit:o=>{o.preventDefault();let r=n.draft().trim();r&&n.send(r)},children:[i("input",{id:`type-${n.id}`,value:n.draft(),placeholder:n.hint,"aria-label":n.hint,onInput:o=>n.onDraft(o.currentTarget.value)}),i("button",{type:"submit",class:"key primary",children:z.send}),i("button",{type:"button",class:"key ghost",onClick:n.onExit,children:z[n.exit]})]})}):i("div",{class:"actions",children:e.length+t.length>0?i("div",{class:"keys",children:[e.map(o=>i(Qt,{action:o,isBlocked:s})),t.length>0?i("div",{class:"follow-ups",children:t.map(o=>i(Qt,{action:o,isBlocked:s}))}):null]}):null})}function vr(e,t){return le(e).some(n=>n.id===t&&n.feedback?.is==="notSent")||de(t,e.lastActions[t],void 0,e.turns,e.at)?.is==="notSent"}async function Ar(e,t,n){try{await navigator.clipboard.writeText(t.text)}catch{if(!n())return;I.set(e,`Could not copy ${t.name}: this tab has no clipboard access`),Z.set(e,t)}}function Pr(e){Gt(e);let t=e in rt();L.has(e)||L.set(e,{text:"",since:a.view?.at??Date.now()}),a.typing=e,a.focusTyping=!0,a.draw(),!t&&(a.shown=++a.requested,fe())}function Jt(e){a.discarded={...a.discarded,[e]:Date.now()},L.delete(e),a.typing===e&&(a.typing=null),a.draw(),fe()}var Er=\'fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"\';function Lr(e){let t=e-4;return`<path d="M1.2,${t+8.2} Q3.4,${t+4.4} 7.4,${t-.2}" ${Er} stroke-width="1.9"/><path d="M2.2,${t+1.4} Q3.8,${t+4.4} 5.6,${t+7.4}" ${Er} stroke-width="1.6"/>`}var Fa=/`([^`\\n]+)`|\\*\\*(?=\\S)(.+?)(?<=\\S)\\*\\*(?!\\*)|~~(?=\\S)(.+?)(?<=\\S)~~|(?<![\\w*])\\*(?=\\S)([^*\\n]+?)(?<=\\S)\\*(?![\\w*])|(?<!\\w)_(?=\\S)([^_\\n]+?)(?<=\\S)_(?!\\w)|\\[([^\\]\\n]+)\\]\\((https:\\/\\/[^\\s)]+)\\)/g;function Zt(e,t={}){let n=[],s=0;for(let o of e.matchAll(Fa)){o.index>s&&n.push({...t,text:e.slice(s,o.index)});let[,r,l,d,p,u,f,m]=o;r!==void 0?n.push({...t,text:r,code:!0}):l!==void 0?n.push(...Zt(l,{...t,bold:!0})):d!==void 0?n.push(...Zt(d,{...t,strike:!0})):p!==void 0||u!==void 0?n.push({...t,text:p??u??"",italic:!0}):n.push({...t,text:f??"",link:m}),s=o.index+o[0].length}return s<e.length&&n.push({...t,text:e.slice(s)}),n}function is(e){let t=Pn(e);return t?{handle:t.text,isHandleRunning:t.isRunning,...t.tone?{handleTone:t.tone}:{}}:{handle:""}}function en({k:e}){return i(Qt,{action:e,isBlocked:()=>!1})}function Or(e){let t=e.feedback;return t?e.view?no(e.view,"codex"):to(t,e.isMarkDone??!1,"codex"):null}function it(e){let t=Qe.get(e);return t&&Date.now()-t.at<E?t.text:null}function Ir(e){return!I.has(e.id)&&it(e.id)===null&&!Z.has(e.id)}function he(e){for(let t of e?.getAnimations?.()??[])t.startTime=0}var Ha={needsYou:"tone-needsYou",done:"done"};function tn(e,t){return["mark",e?Ha[e]:null,t?"running":null].filter(Boolean).join(" ")}function as({text:e}){let t=e===Lt.lapsed?Lr(4):null;return t===null?i(P,{children:e}):i("svg",{class:"mark-shape",viewBox:"0 0 8 8",role:"img","aria-label":e,dangerouslySetInnerHTML:{__html:t}})}function Ue({mark:e}){return i("span",{class:e.isRunning?"mark running":"mark",ref:e.isRunning?he:void 0,children:i(as,{text:e.text})})}function $r(e){return["mark",e.tone==="needsYou"?"tone-needsYou":e.tone,e.isRunning?"running":null].filter(Boolean).join(" ")}function me({title:e,count:t,mark:n}){return i("div",{class:"group-title",children:[n?i("span",{class:`group-mark ${n.tone}`,children:n.mark}):null,i("b",{children:e}),t>0?i("span",{class:"count",children:[R,t]}):null]})}function nn(e){return Zt(e).map(t=>{let n=t.code?i("code",{children:t.text}):t.text;return t.italic&&(n=i("i",{children:n})),t.bold&&(n=i("b",{children:n})),t.strike&&(n=i("s",{children:n})),t.link?i(P,{children:[i("u",{children:n}),i("span",{class:"muted",children:[" ",t.link]})]}):n})}function sn({start:e,isUndoing:t,canUndo:n,offersUndo:s,onUndo:o}){return n&&(t||Ht(e,Date.now()))?i("button",{type:"button",class:t?"key undo undoing":"key undo",disabled:t,onClick:o,children:[i("span",{class:t?"time-left paused":"time-left",style:{animationDuration:`${E}ms`},ref:l=>{l&&!l.style.animationDelay&&(l.style.animationDelay=`-${Math.max(0,Date.now()-e)}ms`)}},e),i(Ve,{name:"undo"}),"Undo"]}):s?i("button",{type:"button",class:"key undo spent",disabled:!0,tabIndex:-1,"aria-hidden":"true",children:[i(Ve,{name:"undo"}),"Undo"]}):null}function ne({banner:e,label:t,press:n}){return i("div",{class:`banner banner-${e.tone}`,role:e.tone==="notice"?"status":"alert",children:[i("span",{children:[i("strong",{class:"lead",children:e.lead}),e.body?` ${e.body}`:null]}),t&&n?i("button",{type:"button",class:"key",onClick:n,children:t}):null]})}function ja(e,t){return le(e).some(n=>n.id===t&&n.state.is!=="settled")||Mr(e).some(n=>n.id===t)||e.prs.drawn.some(n=>H(n.pr.ref)===t)}async function K(e,t,n,s=null){if(a.isDisposed)return;let o=a.viewGeneration,r=++a.requested,l=()=>O.get(e)?.seq===r;t.action!=="undo"&&!e.startsWith("pr:")&&Gt(e);let d=D(),p=!!a.view&&_(d)&&Fe(a.view,d).some(u=>u.id===e&&u.isWaiting);O.set(e,{seq:r,pending:s,action:t.action==="type"?null:ie(t)}),I.delete(e),Qe.delete(e),Z.delete(e),a.draw(),a.activePresses++;try{let u=await De("inbox_press",{press:t,thread:a.view?.thread,demo:a.isDemo,...rs()},Yt);if(a.isDisposed||o!==a.viewGeneration||(u.copy&&await Ar(e,u.copy,l),a.isDisposed||o!==a.viewGeneration||!l()))return;u.view&&ss(u.view,r),u.error&&!(a.view&&vr(a.view,e))&&I.set(e,u.error);let f=js({error:u.error,note:u.note,isUnconfirmed:u.delivery==="unconfirmed"});f&&n?.(),f&&u.view&&p&&a.typing!==e&&Va(u.view,e);let{note:m}=u;m&&a.view&&ja(a.view,e)?(Qe.set(e,{text:qe(),at:Date.now()}),te(E),m==="stale"&&t.action==="type"&&(a.typing=e)):m&&(a.lineNote={text:qe(),at:Date.now()},te(E))}catch{if(a.isDisposed||o!==a.viewGeneration||!l())return;I.set(e,"Not confirmed: the inbox did not answer.")}finally{a.activePresses--,l()&&(O.delete(e),a.draw())}}function Va(e,t){let n=D();if(!_(n)||x[n]?.id!==t)return;let s=Fe(e,n);if(s.find(l=>l.id===t)?.isWaiting)return;let o=Eo(s,t),r=o===null?-1:lt(e,n).findIndex(l=>l.id===o);if(o===null||r<0){x[n]=null;return}pe(n,o,r),C(Me,0)}function Cr(e,t){let n=L.get(e);K(e,{action:"type",id:e,text:t},()=>{L.get(e)===n&&L.delete(e)})}function Dr(e){return _r(e,ye.has(e.id),O.get(e.id)?.action??null,{press:n=>{let s=n.action==="step"?e.steps[n.step]:void 0,r=e.actions.find(l=>l.press.action==="step"&&n.action==="step"&&l.press.step===n.step)?.kind==="local"&&e.item&&s?{is:"local",result:Pt(Vs(e.item,s),Date.now())}:null;K(e.id,n,void 0,r)},reply:()=>Pr(e.id),discard:()=>Jt(e.id),showOptions:()=>{ye.add(e.id),a.draw()}})}function Ua(e,t){let n=t.state.is==="handedOff",s=t.id,o=Js(t,ye.has(s));return{id:s,view:t,...is(t),...n?{fold:{}}:{},title:t.title,...e.isNextBuild===!0&&t.holdsUpLine?{holdsUp:t.holdsUpLine}:{},age:t.at===null?void 0:J(e.at-t.at),...o.length>0?{body:i("div",{children:o.map(r=>i("p",{class:"option-description",title:`${r.label}: ${r.description}`,children:[r.label,i("span",{class:"muted",children:[": ",r.description]})]}))})}:{},...Dr(t),typing:{hint:_n(t,"Codex"),send:r=>Cr(s,r)},feedback:t.feedback}}function Wa(e,t,n){let s=t.state.is==="handedOff",o=t.id;return{id:o,view:t,...is(t),kind:n.kind,...s?{fold:{}}:{},title:t.title,age:t.at===null?void 0:J(e.at-t.at),body:i("div",{children:[i("p",{style:{whiteSpace:"pre-line"},children:nn(t.detail??"")}),n.path?i("p",{children:[i("span",{class:"muted",children:z.relevantFile}),i("code",{title:n.path,children:t.fileName})]}):null]}),...Dr(t),typing:{hint:_n(t,"Codex"),send:r=>Cr(o,r)},feedback:t.feedback}}var on=e=>({lastActions:e.lastActions,turns:e.turns,now:e.at});function at(e,t,n){let s=Wn(t,n.press),o=s?Nr(s):null;return{...n.hotkey?{hotkey:n.hotkey}:{},label:n.label,emphasis:n.emphasis,...n.icon?{icon:n.icon}:{},...n.press.action==="pr-dismiss"?{isDismiss:!0}:{},...n.isOut||O.get(e)?.action===n.press.action?{isOut:!0}:{},run:()=>{K(e,n.press,void 0,o)}}}function Nr(e){return{is:"local",result:Pt([e],Date.now())}}function qa(e,t,n){let s=xe(t,n),o=Ho(t,n,e.lastActions),r=(f,m=null)=>()=>{K(s,{action:f,ref:t.ref,thread:n.id},void 0,m)},l=_t(n),{rest:d}=Tt(n.body),p=Vo(Bo(t,n,on(e))),u=Wn(t,{action:"thread-open",ref:t.ref,thread:n.id});return{id:s,handle:o.mark.text,handleTone:o.mark.tone??void 0,...o.mark.isRunning?{isHandleRunning:!0}:{},isMarkDone:o.mark.isDone,...o.fold?{fold:o.fold}:{},title:o.title,meta:o.meta,age:n.at===null?void 0:J(e.at-n.at),body:i("div",{children:[d?i("p",{class:"quote",children:nn(B(d,Vn))}):null,i("p",{class:"muted",children:[i("button",{type:"button",class:"link",onClick:r("thread-open",u&&Nr(u)),children:l}),`${R}@${n.author}`]}),n.reply?i("p",{class:"quote",children:[i("b",{children:["@",n.reply.author,":"]})," ",nn(B(Rt(n.reply.body),Vn))]}):null]}),keys:p.keys.map(f=>at(s,t,f)),more:p.more.map(f=>at(s,t,f)),feedback:de(s,e.lastActions[s],void 0,e.turns,e.at)}}function Ka(e,t,n){let s=ze(t,n),o=jo(n),r=o.meta;return{id:s,handle:o.mark.text,handleTone:o.mark.tone??void 0,isMarkDone:o.mark.isDone,...o.lead?{lead:`${o.lead} /`}:{},title:o.title,meta:r,age:n.finishedAt===void 0?void 0:J(e.at-n.finishedAt),body:i("div",{class:"muted",children:r}),keys:Yo(t,n,on(e)).map(l=>at(s,t,l)),more:[],feedback:de(s,e.lastActions[s],void 0,e.turns,e.at)}}function ls(e){let t=[];for(let n of e.prs.drawn)!$t(n,a.shownSince)&&!$.has(H(n.pr.ref))||t.push(n.state.is==="settled"?{...n,threads:[],checks:[]}:{...n,threads:re(n.pr).map(s=>qa(e,n.pr,s)),checks:Ae(n.pr).map(s=>Ka(e,n.pr,s))});return{blocks:t,rows:t.flatMap(n=>[...n.threads,...n.checks])}}function Mr(e){return ls(e).rows}function lt(e,t){return t==="prs"?Mr(e):ds(e,ot(e)).byTab[t]}function ds(e,t){let n=rt();return Dn(e,s=>t.has(s),s=>s.state.is==="held"&&!(s.id in n)?null:s.item?Ua(e,s):s.finding?Wa(e,s,s.finding):null)}var rn={question:"questions",task:"tasks",finding:"findings"};function Fr(e){let t=Date.now(),n=ds(e,ot(e)),s=D(),o=$n(s)?n.byTab[s]:[],r=_(s)?o[He(o,s,e)]?.id:void 0,l=new Set,d=new Set;for(let p of Object.keys(rn).filter(u=>Kt[u]===s)){let u=n[rn[p]],f=new Set(u.map(ue)),m=[...u];for(let[h,w]of(a.lastLists?.[rn[p]]??[]).entries()){let g=ue(w);!f.has(g)&&v.has(g)&&m.splice(Math.min(h,m.length),0,w)}let c=[];for(let h of m){let w=ue(h),g=v.get(w),y=f.has(w)?"settled"in h?$.has(w)?"undoing":"settled":w===r?"open":"closed":"gone",k=er(g?.track,y,t,ee.has(w),tt.matches);if(!k)continue;k!==g?.track&&l.add(w);let b=k.hasPanel?"row"in h&&f.has(w)?h.row:g?.openRow:void 0;v.set(w,{track:k,openRow:b}),d.add(w),c.push(h)}n[rn[p]]=c}n.findingGroups=n.findingGroups.map(p=>({...p,entries:n.findings.filter(u=>("row"in u?u.row.kind:u.settled.finding?.kind)===p.kind)}));for(let p of[...v.keys()])d.has(p)||v.delete(p);return{lists:n,changed:l}}async function Ga(e){if($.has(e.id))return;let t=Kt[e.type];$.add(e.id);try{await K(e.id,{action:"undo",id:e.id},()=>pe(t,e.id))}finally{$.delete(e.id);let n=a.seen.get(e.id),s=n!==void 0&&Ht(n,Date.now()),o=I.get(e.id);o&&!s&&(a.lineNote={text:o,at:Date.now(),isError:!0},te(E)),a.draw()}}function us({row:e,track:t,onSelect:n,now:s}){let o=t.hasPanel&&(t.state==="closing"||t.state==="leaving"),r=t.hasPanel&&!o,l=i("span",{class:`mark ${e.handleTone??""}${e.isHandleRunning?" running":""}`,ref:e.isHandleRunning?he:void 0,children:e.handle}),d=O.has(e.id),p=O.get(e.id)?.pending??null,u=d&&p===null,f=Ir(e)?e.feedback:null,m=u?null:p?ae(p,"codex"):f?Or(e):null,c=!d&&f&&Mt(f)?f.at:null,h=c!==null&&!r&&!o&&f?.is!=="queued"&&f?.is!=="unconfirmed",w=!u&&mo(p??f,r||o)?m:null,g=h||w?null:m,y=u?Xe:c!==null?J(s-c):g?null:e.age,k=!d&&Nt(e.feedback)?"error":void 0;return i("div",{class:`row ${r?"selected":"collapsed"}${o?" closing":""}`,onClick:r?void 0:n,children:[l,i("div",{class:"content",children:i("button",{type:"button",class:"line",...r?{tabIndex:-1,"aria-disabled":!0}:{"aria-expanded":!1},children:[i("span",{class:"text",children:[e.lead?i(P,{children:[i("span",{class:"lead",children:e.lead})," "]}):null,e.title]}),e.meta?i("span",{class:"meta",children:e.meta}):null,g?i("span",{class:`after ${k?`tone-${k}`:""}`,children:r||o?`${R}${g}`:g}):null,e.holdsUp?i("span",{class:"holds-up",children:[i("span",{class:"tone-needsYou",children:Ke.mark})," ",e.holdsUp]}):null]})}),i("span",{class:"side","data-room":Xe,children:[h?i("span",{class:"side-label",children:m}):null,y]}),r||o?i(Hr,{row:e,isClosing:o,status:w}):null]})}function Hr({row:e,isClosing:t,status:n}){let{keys:s,more:o}=Bt(e),r=Z.get(e.id),l=it(e.id),d=!!e.typing&&a.typing===e.id,p=[e.fold?.note?i("div",{class:"muted",children:e.fold.note}):null,l?i("div",{class:"muted",children:l}):null,I.has(e.id)?i("div",{class:"tone-error",children:I.get(e.id)}):null].filter(Boolean);return i("div",{class:t?"panel closing":"panel",inert:t,children:[e.body?i("div",{class:"body",children:e.body}):null,p.length>0?i("div",{children:p}):null,i(zt,{keys:s,more:o,reply:d?{id:e.id,hint:e.typing.hint,draft:()=>L.get(e.id)?.text??"",onDraft:u=>L.set(e.id,{text:u,since:L.get(e.id)?.since??a.view?.at??Date.now()}),send:u=>{a.typing=null,e.typing.send(u)},exit:e.view?vn(e.view):"cancel",onExit:()=>{e.view&&vn(e.view)==="discard"?Jt(e.id):(a.typing=null,a.draw())}}:null,isBlocked:Rr}),n?i("div",{class:"muted",children:n}):null,r?i("div",{children:[i("div",{class:"muted",children:["Copy ",r.name," from here:"]}),i("textarea",{rows:3,readOnly:!0,value:r.text,onFocus:u=>u.currentTarget.select()}),i("button",{type:"button",class:"key",onClick:()=>{Z.delete(e.id),a.draw()},children:"Close"})]}):null]})}function Ba({settled:e,panel:t}){let{state:n}=e;if(n.is!=="settled")return null;let s=a.seen.get(e.id)??Date.now(),o=I.get(e.id);return i("div",{class:t?"row settled was-open":"row settled",children:[i(Ue,{mark:Ge(n)}),i("div",{class:"content",children:[i("div",{class:"settled-head",children:[i("div",{class:"settled-line",children:[i("span",{class:"what",children:e.title}),i("span",{class:"outcome-label",children:[R,Pe(n.label,n.delivery)]}),o?i("span",{class:"tone-error",children:[R,o]}):null]}),i(sn,{start:s,isUndoing:$.has(e.id),canUndo:n.canUndo,offersUndo:n.offersUndo,onUndo:()=>{Ga(e)}})]}),t?i(Hr,{row:t,isClosing:!0}):null]})]})}function cs({entries:e,group:t,all:n,now:s}){let o=Kt[t];return e.length===0?null:i("div",{class:"list",children:e.map(r=>{let l=ue(r),d=v.get(l);return i("div",{class:"entry","data-motion":l,children:"row"in r?i(us,{row:r.row,track:d.track,now:s,onSelect:()=>je(o,n,n.indexOf(r.row))}):i(Ba,{settled:r.settled,panel:d.openRow})},l)})})}function ps(e,t,n){return Ct(e.needsYou.closed[t==="question"?"questions":"tasks"],Ft(n)).map(s=>({id:s.id,ask:s.ask,outcomeLabel:s.outcomeLabel,mark:s.mark,at:s.at,delivery:s.delivery}))}function jr({v:e,kind:t,entries:n,all:s,now:o}){let r=t==="question"?"Questions":"Tasks",l=fs(n),d=ps(e,t,l),p=l.flatMap(u=>"row"in u?[u.row]:[]);return i("section",{children:[i(me,{title:r,count:An(p.map(u=>u.view))}),i(cs,{entries:n,group:t,all:s,now:o}),i(Ur,{group:t,empty:Vr(r,l),closed:d,total:Dt(e.needsYou.closed[t==="question"?"questions":"tasks"],Ft(l)),now:o})]})}function fs(e){return e.filter(t=>v.get(ue(t))?.track.state!=="leaving")}function Vr(e,t){let n=t.every(s=>v.get(ue(s))?.track.state==="entering");return t.length===0||n?{text:ao(e),isLeaving:t.length>0}:null}function Ur({group:e,empty:t,closed:n,total:s,now:o}){let r=io(s,n.length),l=j.has(e),d=s>0&&(l||Oe.has(e));return i(P,{children:[i("div",{class:"group-end","data-motion":`end-${e}`,children:i("div",{class:"group-end-content",children:[t?i("div",{class:t.isLeaving?"group-empty leaving":"group-empty","aria-hidden":t.isLeaving,children:t.text}):null,s>0?i("button",{type:"button",class:"fold","data-fold":e,onClick:()=>lr(e),children:[i(Ve,{name:l?"down":"right"}),ro(s)]}):null]})}),d?i("div",{class:"list closed-list","data-motion":`closed-${e}`,children:[n.map(p=>i("div",{class:"entry",children:i("div",{class:"row",children:[i(Ue,{mark:p.mark}),i("div",{class:"content tight",children:[i("div",{class:"muted",children:p.ask}),i("div",{class:"outcome",children:Pe(p.outcomeLabel,p.delivery)}),go(p.delivery)?i("button",{type:"button",disabled:O.has(p.id),onClick:()=>K(p.id,{id:p.id,action:"undo"}),children:"Undo"}):null]}),i("span",{class:"side",children:J(o-p.at)})]})},`closed-${p.id}`)),r?i("div",{class:"earlier muted",children:r}):null]}):null]})}function Ya(e){return e.heard==="heard"||e.hooksTrust?null:e.heard==="none"?["The inbox starts with your next message."]:["Items from Codex\\u2019s replies are missing.","The inbox has not heard from this chat\\u2019s hooks."]}function Wr({v:e,lists:t,now:n}){let s=t.byTab.needsYou,o=t.questions.length===0&&t.tasks.length===0,r=ps(e,"question",t.questions).length>0||ps(e,"task",t.tasks).length>0,l=Ya(e);return o&&!r?l?i("div",{class:"empty",children:[i("div",{class:"title",children:l[0]}),l[1]?i("div",{class:"muted",children:l[1]}):null]}):i("div",{class:"empty",children:[i("div",{class:"title",children:Ye("needsYou","Codex").title}),i("div",{class:"muted",children:Ye("needsYou","Codex").hint})]}):i("main",{children:[l?i("section",{children:i("div",{class:"group-title",children:[l[0],l[1]?i("div",{class:"muted",children:l[1]}):null]})}):null,i(jr,{v:e,kind:"question",entries:t.questions,all:s,now:n}),i(jr,{v:e,kind:"task",entries:t.tasks,all:s,now:n})]})}function qr({v:e,lists:t,now:n}){let s=Ft(fs(t.findings)),o=d=>e.findings.closed.filter(p=>p.kind===d),r=d=>Ct(o(d),s).map(p=>({id:p.id,ask:p.title,outcomeLabel:p.outcomeLabel,mark:p.mark,at:p.closedAt,delivery:p.delivery}));return t.findings.length===0&&Dt(e.findings.closed,s)===0?i("div",{class:"empty",children:[i("div",{class:"title",children:Ye("findings","Codex").title}),i("div",{class:"muted",children:Ye("findings","Codex").hint})]}):i("main",{children:t.findingGroups.map(d=>{let p=fs(d.entries),u=p.flatMap(f=>"row"in f?[f.row]:[]);return i("section",{children:[i(me,{title:d.title,count:An(u.map(f=>f.view)),mark:W[d.kind]}),i(cs,{entries:d.entries,group:"finding",all:t.byTab.findings,now:n}),i(Ur,{group:d.kind,empty:Vr(d.title,p),closed:r(d.kind),total:Dt(o(d.kind),s),now:n})]})})})}function hs(e){return e.prs.tabActions.map(t=>Gr(Fo,t))}function ms(e){return(e.prs.order?.changed?.actions??[]).map(t=>Gr(Hn,t))}function Gr(e,t){return{...t.hotkey?{hotkey:t.hotkey}:{},label:t.label,emphasis:t.emphasis,...t.isOut||O.get(e)?.action===t.press.action?{isOut:!0}:{},run:()=>{K(e,t.press)}}}function Xa({pr:e,state:t}){let n=H(e.ref),s=a.seen.get(n)??Date.now(),o=I.get(n);return i("div",{class:"row settled",children:[i(Ue,{mark:Ge(t)}),i("div",{class:"content",children:i("div",{class:"settled-head",children:[i("div",{class:"settled-line",children:[i("span",{class:"what",children:[i("span",{class:"tone-prs",children:["#",e.number]})," ",e.title]}),i("span",{class:"outcome-label",children:`${R}${Pe(t.label,t.delivery)}`}),o?i("span",{class:"tone-error",children:`${R}${o}`}):null]}),i(sn,{start:s,isUndoing:$.has(n),canUndo:t.canUndo,offersUndo:t.offersUndo,onUndo:()=>{Qa(n,e.ref)}})]})})]})}async function Qa(e,t){if(!$.has(e)){$.add(e);try{await K(e,{action:"pr-undo",ref:t})}finally{$.delete(e),a.draw()}}}function za(e,t){return Br(e,H(t),!Wo(e.lastActions,t))}function Br(e,t,n){if(O.has(t)){let d=O.get(t)?.pending;return{text:d?ae(d,"codex"):Xe,isError:!1}}let s=I.get(t);if(s)return{text:s,isError:!0};let o=it(t);if(o)return{text:o,isError:!1};let r=n?de(t,e.lastActions[t],void 0,e.turns,e.at):null;if(!r)return null;let l=ae(r,"codex");return{text:Mt(r)?`${l}${R}${we(e.at-r.at)}`:l,isError:Nt(r)}}function Ja({v:e,order:t}){let n=ms(e),s=t.changed?Br(e,Hn,t.changed.showsPress):null;return i("section",{class:"pr-order",children:[i("div",{class:"pr-order-title",children:t.title}),t.why?i("div",{class:"muted",children:t.why}):null,t.changed?i("div",{class:"pr-order-changed",children:[t.changed.text?i("span",{children:t.changed.text}):null,n.length>0?i("span",{class:"pr-actions keys",children:n.map(o=>i(en,{k:o}))}):null]}):null,s?i("div",{class:s.isError?"pr-last tone-error":"pr-last muted",children:s.text}):null]})}function Za({v:e,pr:t,threads:n,checks:s,rank:o,openId:r,all:l,now:d}){let p=Je(e.lastActions),{status:u,head:f,unlisted:m}=xt(t,p),c=Ko[u],h=H(t.ref),w=Xo(t,p,e.prs.branchRef,on(e)).map(y=>at(h,t,y)),g=za(e,t.ref);return i("section",{children:[i("div",{class:"pr-head",children:[o===null?null:i("span",{class:"rank muted",children:qo(o)}),i("span",{class:"tone-prs num",children:["#",t.number]})," ",t.title," ",i("span",{class:c?`pr-verdict tone-${c}`:"pr-verdict muted",children:f}),i("span",{class:"pr-verdict muted",children:m.map(y=>`${R}${y}`).join("")})]}),t.error?i("div",{class:"pr-status tone-error",children:Mo(t.error)}):null,i("div",{class:"pr-actions keys",children:w.map(y=>i(en,{k:y}))}),g?i("div",{class:g.isError?"pr-last tone-error":"pr-last muted",children:g.text}):null,i("div",{class:"pr-groups",children:[i(Kr,{title:jn.threads,rows:n,all:l,openId:r,now:d}),i(Kr,{title:jn.checks,rows:s,all:l,openId:r,now:d})]})]})}function Kr({title:e,rows:t,all:n,openId:s,now:o}){return t.length===0?null:i(P,{children:[i(me,{title:e,count:t.length}),i("div",{class:"list",children:t.map(r=>{let l=r.id===s;return i("div",{class:"entry",children:i(us,{row:r,track:{state:l?"open":"closed",since:0,hasPanel:l},now:o,onSelect:()=>je("prs",n,n.indexOf(r))})},r.id)})})]})}function Yr({v:e,now:t}){let{blocks:n,rows:s}=ls(e),o={isGhMissing:e.isGhMissing,isGhSignedOut:e.prs.isGhSignedOut},r=Fn(o),l=No({isFetching:e.isFetchingPrs,...o},"chat");if(n.length===0)return i("div",{class:"empty",children:[i("div",{class:"title",children:l.title}),i("div",{class:"muted",children:l.hint})]});let d=s[He(s,"prs",e)]?.id,p=hs(e);return i("main",{children:[r?i("div",{class:"banner-place",children:i(ne,{banner:q(r.kind,r.text)})}):null,e.prs.order?i(Ja,{v:e,order:e.prs.order}):null,n.map(u=>u.state.is==="settled"?i("section",{children:i(Xa,{pr:u.pr,state:u.state})}):i(Za,{...u,v:e,openId:d,all:s,now:t})),p.length>0?i("section",{children:i("div",{class:"pr-actions keys",children:p.map(u=>i(en,{k:u}))})}):null,e.prs.olderText?i("section",{children:i("div",{class:"group-title muted",children:e.prs.olderText})}):null]})}var Xr;function el(e,t){if(!e)return;Xr??=document.createElement("canvas").getContext("2d");let n=Xr;n&&(n.font=getComputedStyle(e).font),e.textContent=_o(t,s=>!n||n.measureText(s).width<=e.clientWidth)}var tl={needsYou:"tone-needsYou",done:"tone-done"};function zr(e){let t=e.lastIndexOf(" ");return t<0?{head:"",last:e}:{head:e.slice(0,t+1),last:e.slice(t+1)}}function nl(e,t){let n=e?.querySelector(".flow"),s=e?.querySelector(".head"),o=e?.querySelector(".last");if(!n||!s||!o)return;let r=p=>{let{head:u,last:f}=zr(p);s.textContent=u,o.textContent=f},l=document.createRange();l.selectNodeContents(n);let d=()=>new Set([...l.getClientRects()].map(p=>Math.round(p.top))).size;r(vo(t,p=>(r(p),d()<=Le)))}function Qr({name:e,stall:t}){if(!t)return i("div",{class:"clamp",style:{"--lines":Le},children:e});let{head:n,last:s}=zr(e);return i("div",{ref:o=>nl(o,e),children:i("span",{class:"flow",children:[i("span",{class:"head",children:n}),i("span",{class:"unbroken",children:[i("span",{class:"last",children:s}),i("span",{class:"muted",children:Ro}),i("span",{class:tl[t.tone],children:t.text})]})]})})}function sl(e){Te("needsYou");let t=a.view?lt(a.view,"needsYou").findIndex(n=>n.id===e):-1;pe("needsYou",e,t<0?void 0:t),a.draw(),Me()}function ol({row:e}){if(e.kind==="subject"){let t=e.merged,n=Oo(e).map(s=>({label:s.label,emphasis:"normal",run:()=>sl(s.press.askId)}));return i("div",{class:e.hasChildren?"row has-children":"row",children:[i("span",{class:tn(e.tone,e.isRunning),ref:e.isRunning?he:void 0,children:e.mark}),i("div",{class:"content tight",children:[i(Qr,{name:e.name,stall:e.stall}),e.text?i("div",{class:"muted clamp",style:{"--lines":Le},children:e.text}):null,t?i("div",{class:"outcome muted clamp",style:{"--lines":Le},ref:s=>el(s,t)}):null,e.was?i("div",{class:"outcome muted clamp",style:{"--lines":Le},children:[xo,e.was]}):null,n.length>0?i(zt,{keys:n,more:[],reply:null,isBlocked:()=>!1}):null]})]})}return e.kind==="child"?i("div",{class:e.branch?`row child branch-${e.branch}`:"row",children:[i("span",{class:tn(e.tone,e.isRunning),ref:e.isRunning?he:void 0,children:e.mark}),i("div",{class:"content tight muted",children:i(Qr,{name:e.name,stall:e.stall})})]}):e.kind==="more"?i("div",{class:`row child branch-${e.branch}`,children:[i("span",{class:"mark"}),i("div",{class:"content tight muted",children:e.text})]}):e.kind==="look"?i("div",{class:`row look-line${e.isLast?" last":""}`,children:i("div",{class:"look-rule",children:e.text})}):i("div",{class:"row",children:[i("span",{class:tn(e.tone,!1),children:e.mark}),i("div",{class:"content tight muted",children:e.text})]})}function Jr({page:e}){return e.isEmpty?i("div",{class:"empty",children:[i("div",{class:"title",children:e.empty.title}),i("div",{class:"muted",children:e.empty.hint})]}):i("main",{class:"status-page",children:[e.head?i("section",{children:i("div",{class:"status-head",children:[i("h1",{children:e.head.title}),e.head.description?i("p",{class:"muted",children:e.head.description}):null]})}):null,e.rows.length>0?i("section",{children:i("div",{class:"list",children:e.rows.flatMap(t=>[...t.isRuledAbove?[i("div",{class:"status-rule"},`rule-${t.id}`)]:[],i(ol,{row:t},t.id)])})}):null]})}function Zr({v:e}){let t=Ys("codex",e.isNextBuild===!0,D(),!1);return i("main",{class:"status-page help",children:[i("section",{children:[i(me,{title:be.keys,count:0}),i("div",{class:"help-keys",children:t.flatMap(n=>[i("b",{children:n.keys},`${n.keys}-keys`),i("span",{class:"muted",children:n.does},`${n.keys}-does`)])})]}),i("section",{children:[i(me,{title:be.marks,count:0}),i("div",{class:"list",children:Rn.map(n=>i("div",{class:"row",children:[i("span",{class:$r(n),ref:n.isRunning?he:void 0,children:i(as,{text:n.mark})}),i("div",{class:"content tight muted",children:n.words})]},n.mark))})]})]})}var rl={untrusted:"Codex is not running the inbox\\u2019s hooks, so the inbox is not reading Codex\\u2019s replies. Click the hook icon beside the approval setting, then Allow all. If the icon isn\\u2019t there, open Settings, then Hooks, then Inbox, then Trust all.",modified:"Codex stopped the inbox\\u2019s hooks when the inbox updated, so the inbox is not reading Codex\\u2019s replies. To trust them again, click the hook icon beside the approval setting, then Allow all. If the icon isn\\u2019t there, open Settings, then Hooks, then Inbox, then Trust all."},il=6e4;function ei(e){return Io(D(),e.status,{isFetching:e.isFetchingPrs,hasPrs:e.prs.drawn.length>0},e.statusPage?.error??null)}function ti({v:e}){let t=Date.now()-a.readAt,n=a.pollFailures>=2?i("span",{class:t>il?"tone-error":void 0,children:["Last read ",we(t),R,"retrying"]}):ei(e).text;return i("div",{class:"status",children:n})}function ni({v:e}){let t={needsYou:e.needsYou.count,findings:e.findings.count,prs:e.prs.count},n=r=>yo(r,t),{error:s}=ei(e),o=D();return i("nav",{children:[i("div",{class:"tabs",children:Ee(e.isNextBuild===!0).map(r=>i("button",{type:"button",class:`tab ${o===r.id?"shown":""}`,title:r.label,onClick:()=>{Te(r.id),a.draw()},children:[i("span",{class:"tab-symbol","aria-hidden":"true",children:r.symbol}),i("span",{class:"tab-word",children:r.label}),n(r.id)===null?null:i("span",{class:_(r.id)?`count tone-${r.id}`:"count",children:n(r.id)})]}))}),lo([...a.serverNote?[q(a.serverNote.kind,a.serverNote.text)]:[],...e.hooksTrust?[q("hooks-trust",rl[e.hooksTrust])]:[],...a.updateError?[q("tab-update-failed",a.updateError.text)]:[]],s,a.lineNote&&Date.now()-a.lineNote.at<E?{text:a.lineNote.text,isError:a.lineNote.isError===!0}:null).map(r=>r.kind==="server-builds-differ"?i(ne,{banner:r,label:"Reload",press:()=>location.reload()}):r.kind==="tab-update-failed"?i(ne,{banner:r,label:z.retry,press:()=>{let l=a.updateError?.page;a.updateError=null,a.draw(),l&&Xt(l)}}):i(ne,{banner:r}))]})}async function si(){a.viewGeneration++,a.isDemo=!a.isDemo,a.shownSince=Date.now(),a.readError=null,a.pollFailures=0,a.view=null,a.seen=new Map,a.rowsSeen={},v.clear(),a.lastLists=null,x.needsYou=null,x.findings=null,x.prs=null,a.typing=null,a.draw(),await fe()}var ii=!1,dt=null,oi=!1,ai={},al=300;function ll({lists:e}){if(!a.view||!e)return a.readError!==null?i(ne,{banner:q("read-failed",`Could not read the inbox. ${a.readError}`),label:"Reload",press:()=>{a.isConnected?fe():gs()}}):ii?i("div",{class:"notice muted",children:co}):null;let t=a.view,n=t.at,s=D();return i(P,{children:[a.isDemo?i("div",{class:"banner-place",children:i(ne,{banner:q("demo",uo),label:"Hide demo",press:()=>{si()}})}):null,i(ni,{v:t}),a.isHelpShown?i(Zr,{v:t}):s==="needsYou"?i(Wr,{v:t,lists:e,now:n}):s==="findings"?i(qr,{v:t,lists:e,now:n}):s==="prs"?i(Yr,{v:t,now:n}):i(Jr,{page:t.statusPage}),i("footer",{children:[i("button",{type:"button",class:"help-toggle",title:`${be.open} (?)`,"aria-pressed":a.isHelpShown,onClick:()=>{a.isHelpShown=!a.isHelpShown,se()},children:a.isHelpShown?be.close:be.open}),(a.isDemo,null),i("div",{class:"footer-end",children:[i(ti,{v:t}),i("span",{class:"version",children:po("0.2.15",t.isNextBuild===!0)})]})]})]})}function se(){if(a.isDisposed||!a.isActive)return;let e=or(),t=a.view?Fr(a.view):null;a.lastLists=t?.lists??null,ur(),St(i(ll,{lists:a.lastLists}),N),ar(e,t?.changed??new Set);let n=a.focusTyping&&a.typing?document.getElementById(`type-${a.typing}`):null;n&&(a.focusTyping=!1,n.focus())}a.draw=se;var ut=null;document.addEventListener("pointerdown",e=>{a.isActive&&(!(e.target instanceof Element)||!N.contains(e.target)||!e.target.closest(".list, .fold")||(ut={x:e.clientX,y:e.clientY},document.body.classList.add("still")))},{signal:ke.signal});document.addEventListener("pointermove",e=>{a.isActive&&(!ut||Math.hypot(e.clientX-ut.x,e.clientY-ut.y)<3||(ut=null,document.body.classList.remove("still")))},{signal:ke.signal});document.addEventListener("keydown",e=>{if(!a.isActive||e.metaKey||e.ctrlKey||e.altKey||!a.view)return;let t=e.target;if(t?.closest("input, textarea")){e.key==="Escape"&&t.tagName==="INPUT"&&(a.typing=null,se());return}if(e.key==="?"||e.key==="Escape"&&a.isHelpShown){e.preventDefault(),a.isHelpShown=e.key==="?"&&!a.isHelpShown,se();return}let n=Ee(a.view.isNextBuild===!0).find(c=>c.hotkey===e.key);if(n){Te(n.id),se();return}let s=D();if(a.isHelpShown||!_(s))return;let o=s==="prs"?[...ms(a.view),...hs(a.view)].find(c=>c.hotkey===e.key):void 0;if(o){e.preventDefault(),o.isOut||o.run();return}let r=lt(a.view,s),l=He(r,s,a.view),d=e.key==="j"||e.key==="ArrowDown"?1:e.key==="k"||e.key==="ArrowUp"?-1:0;if(d!==0){e.preventDefault(),je(s,r,Math.max(0,Math.min(r.length-1,l+d))),Me();return}let p=r[l];if(!p)return;let{keys:u,more:f}=Bt(p),m=[...u,...f].find(c=>c.hotkey===e.key);m&&(e.preventDefault(),m.isOut||m.run())},{signal:ke.signal});function li(){a.isDisposed||!a.isActive||!a.isConnected||oi||(oi=!0,jt(ai),jt(a.stagedHostChanges),parent.postMessage({jsonrpc:"2.0",method:"ui/notifications/initialized",params:{}},"*"),os())}function gs(){return a.isDisposed?Promise.resolve(!1):a.isConnected?Promise.resolve(!0):dt||(a.readError=null,a.isActive&&se(),dt=Yn("ui/initialize",{protocolVersion:"2026-01-26",appInfo:{name:"inbox",version:"0.2.15"},appCapabilities:{tools:{}}},Re).then(e=>a.isDisposed?!1:(ai=e?.hostContext??{},a.isConnected=!0,li(),!0)).catch(()=>(a.isActive&&!a.isDisposed&&(a.readError="The inbox could not connect to Codex.",se()),!1)).finally(()=>{dt=null}),dt)}function ri(){li(),C(()=>{ii=!0,!a.view&&a.readError===null&&se()},al)}function dl(e){if(a.isDisposed||!V||V.aborted)throw new Error("The new page stopped.");ts(e),a.isActive=!0,st(),se()}V?V.ready({initialize:gs,activate:dl,start:ri,dispose:et}):(st(),ts(),gs(),ri());})();\n\n    </script>\n  </body>\n</html>\n';
 
 // src/run.ts
 import { execFile } from "node:child_process";
@@ -5674,7 +5720,7 @@ function createHandler(dir, loadError = () => null, isPluginFolderGone = () => f
     hooksTrust: listHooksTrust,
     queueResumes: queueResumeCheck(run),
     devPage: devPageIn(dir),
-    build: "b2846689c4df",
+    build: "005cee073ae2",
     loadError,
     isPluginFolderGone,
     isNextBuild: existsSync(join4(dirname3(dirname3(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),

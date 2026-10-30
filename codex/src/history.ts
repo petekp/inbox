@@ -2,7 +2,8 @@ import { forkedFrom, hasLedger, isUnseen, NO_TURN } from '../../hooks/session'
 import { heardState, isTurnHeard } from './core'
 import { readState } from './state'
 import type { SessionState } from './state'
-import type { RolloutReads, TurnRow } from './transcript'
+import type { TurnRow } from './rollout-turns'
+import type { RolloutReads } from './transcript'
 
 type EarlierHistory = {
   /** The data folder, where a forked chat's parent keeps its state. */

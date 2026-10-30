@@ -1,0 +1,58 @@
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+.empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+}
+.empty .title {
+  margin-bottom: 4px;
+}
+footer {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding: 8px 16px 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.footer-end {
+  display: flex;
+  gap: 16px;
+  margin-left: auto;
+}
+.version {
+  color: color-mix(in srgb, var(--muted) 50%, var(--bg));
+}
+.demo-toggle,
+.help-toggle {
+  padding: 0 6px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+.demo-toggle:hover,
+.help-toggle:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+/* The keys start under the group title, and every description lines up after the widest key. */
+.help-keys {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  padding: var(--row-pad) 14px var(--row-pad) var(--text-x);
+}
+.help-keys b {
+  white-space: nowrap;
+}
+.earlier {
+  padding: 2px 14px 2px var(--text-x);
+}

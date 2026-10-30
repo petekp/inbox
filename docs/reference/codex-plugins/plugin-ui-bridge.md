@@ -52,7 +52,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   `--color-border-*`, `--font-sans`, `--font-mono`, `--border-radius-*`,
   `--shadow-*` and more. "Views should set default fallback values for the set
   of these variables that they use" (APPSPEC:L791-955, L899). The tab reads
-  `styles.variables` (codex/src/tab.tsx:applyHost).
+  `styles.variables` (codex/src/tab-host.ts:applyHost).
 
 ## What the model sees in a tool result
 
@@ -66,7 +66,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   transcript." (D/reference#tool-results)
 - "Declare `outputSchema` for any tool that returns `structuredContent`."
   (D/reference#tool-descriptor-parameters) `inbox`, `inbox_view` and
-  `inbox_press` declare none (codex/src/server.ts:TOOLS).
+  `inbox_press` declare none (codex/src/server-tools.ts:TOOLS).
 - "Tools MUST return meaningful content array even when UI is available"
   (APPSPEC:L1559). BB and SPEC's own settings examples return `content: []`.
 - "Return enough structured content for both the model and UI to understand

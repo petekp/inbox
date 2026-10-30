@@ -39,7 +39,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   copy under the fixed address is unknown, so after several updates it could
   be older. Reopening the tab in a thread that already had one drew the new
   page directly. So every new tab after an update relies on `swapPage`
-  (codex/src/tab.tsx). If the swap fails, the tab stays on the earlier build
+  (codex/src/tab-swap.ts). If the swap fails, the tab stays on the earlier build
   and says "Could not load the inbox update."
 - **Historical document-replacement probe** [live 2026-10-10]. A tab that
   fetched a page through `tools/call` and ran `document.open`, `write` and
@@ -47,7 +47,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
   answered, and the new page's polls worked. This probe did not check whether
   host timers or event listeners survived.
 - **Current Inbox reload ownership** [source, browser and native checks 2026-10-16].
-  `codex/src/tab.tsx:swapPage` preserves the host document and replaces only
+  `codex/src/tab-swap.ts:swapPage` preserves the host document and replaces only
   Inbox's root, style and script. It first initializes a candidate against a
   detached root and waits for active presses. Failed startup keeps the working
   page; disposal removes only the retired instance's timers, listeners and
@@ -150,6 +150,6 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
 - Neither lists Codex or Claude Code. Whether Claude Code or the Claude
   desktop app's Code mode renders MCP Apps is not answered here.
 - [inference] Of the inbox's MCP surface, only `_meta["openai/ui"].entrypoints`
-  is OpenAI-specific (codex/src/server.ts:TOOLS). The same `ui://inbox/view`
+  is OpenAI-specific (codex/src/server-tools.ts:TOOLS). The same `ui://inbox/view`
   resource could render in other MCP Apps hosts, opened by the model and
   inline.

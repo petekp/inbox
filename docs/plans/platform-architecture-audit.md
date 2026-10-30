@@ -72,7 +72,7 @@ existing worker and submission paths.
 | Update bookkeeping | `applyExchangeUpdate` preserves the item being explained. `addActivity` owns the activity cap and duplicate filter. Press results identify actual reopens for closed-note acknowledgement cleanup. |
 | Model text | `hooks/model-text.ts` owns prompts and inbox notes. `hooks/claude.ts` owns Claude transcript, command, dialog and stop helpers. `hooks/text.ts` owns formatting. Wording changes follow the model evaluation rules in `AGENTS.md`. |
 | Dependency rules | The checker resolves imports and follows local dependencies from shared modules and Codex sources and tests. Shared restrictions apply through type bridges. Computed imports are restricted to the top-level runtime handler loader. |
-| Codex reload ownership | `codex/src/tab.tsx:swapPage` replaces only the Inbox root, style and script. Each instance owns its timers, listeners and animations. Candidates initialize against a detached root. Replacement waits for active presses and preserves current UI state. A failed candidate leaves the working page usable. |
+| Codex reload ownership | `codex/src/tab-swap.ts:swapPage` replaces only the Inbox root, style and script. Each instance owns its timers, listeners and animations. Candidates initialize against a detached root. Replacement waits for active presses and preserves current UI state. A failed candidate leaves the working page usable. |
 | Agent guidance | The entry point, glossary, look map and active plans name current owners and behavior. The built UI spec describes delayed Queued, immediate uncertainty, key-only Explain and recording demos. |
 
 `registerInboxCommand` registers `/inbox` during `session.start`, before

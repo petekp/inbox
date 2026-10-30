@@ -58,7 +58,7 @@ This changes what the inbox's users must do after every update.
 - The inbox's own signal is `heard`: `none` when no hook has run in the chat.
   In the failing thread above `inbox_view` returned `"heard":"none"` and the
   tab read "The inbox has not heard from this chat's hooks."
-  (codex/src/core.ts `heardState`, codex/src/tab.tsx `notHeardText`) [live
+  (codex/src/core.ts `heardState`, codex/src/tab-groups.tsx `notHeardText`) [live
   0.164.0]. `heard` alone cannot tell never trusted from trust lost, so the
   tab also asks `hooks/list`, as the next point says.
 - `hooks/list` is not experimental (app-server-protocol common.rs:917), and
