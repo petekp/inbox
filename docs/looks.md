@@ -128,7 +128,7 @@ Change a rule in its owner. Do not change it in a reader.
 | Options fold size | `hooks/view.ts:OPTIONS_FOLD_AT` | The terminal, desktop and Codex looks through `actionsOf`. omp shows every option. |
 | New rows, empty tabs and where a look moves | `hooks/arrivals.ts:recordRows`, `hooks/arrivals.ts:listedRowIds`, `hooks/arrivals.ts:openRowIds`, `hooks/arrivals.ts:closedGroups`, `hooks/arrivals.ts:isTabEmpty`, `hooks/arrivals.ts:prRowIds`, `hooks/arrivals.ts:isPrsTabEmpty`, `hooks/arrivals.ts:followTo` | The pane, the Codex tab and the omp panel, in `omp/src/panel.ts:followRows`. |
 | Stop texts, and which stops offer Resume | `hooks/view.ts:stopText`, `hooks/view.ts:stopFix`, `hooks/view.ts:RESUME_TEXT`, `hooks/view.ts:isResumable` | The mod and omp. Codex shows no stops. |
-| Press guard | `hooks/view.ts:PRESS_GUARD_MS` | The terminal, desktop and Codex looks. omp takes keys only and has no guard. |
+| Press guard | `hooks/view.ts:PRESS_GUARD_MS` | The terminal, desktop and Codex looks. omp guards only the ask View opens. |
 | Row padding | `hooks/layout.ts:ROW_PAD_PT` | Desktop and Codex |
 | Banner padding and the space between banners | `hooks/layout.ts:BANNER_PAD_Y_PT`, `hooks/layout.ts:BANNER_GAP_PT` | Desktop and Codex |
 | Demo data | `hooks/demo.ts:demoView`, `hooks/demo.ts:demoSession` | The mod's `/inbox demo`, `codex/src/demo.ts:demoState` and `omp/src/demo.ts:demoState` |
