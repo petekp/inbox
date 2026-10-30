@@ -25,7 +25,7 @@ threads a root thread and its forks belong to. They differ after a fork.
   `CODEX_HOME`: the fork's rollout starts with its own `session_meta` row, which has `forked_from_id` set to the
   parent's thread id, then the parent's rows including the parent's `session_meta`. A rollout that is not a fork has
   no `forked_from_id`; a subagent's has `parent_thread_id` instead. Every hook's `transcript_path` is that rollout,
-  so the inbox reads the parent from the first row (`codex/src/transcript.ts:forkedFromId`).
+  so the inbox reads the parent from the first row (`codex/src/rollout-rows.ts:forkedFromId`).
 - **A rollout is found by thread id.** [live] On the test Mac, rollouts are
   `${CODEX_HOME:-~/.codex}/sessions/YYYY/MM/DD/rollout-<timestamp>-<thread id>.jsonl`, and the first row, `session_meta`,
   has `payload.id` equal to the thread id. Older files are compressed (`.zst`), and `archived_sessions` holds others.
@@ -55,7 +55,7 @@ threads a root thread and its forks belong to. They differ after a fork.
   inventory for external MCP servers." [source] (GH/codex-rs/core/src/turn_metadata.rs:275-312)
 - **The inbox resolver.** `sessionOf` reads
   `x-codex-turn-metadata.session_id`, then `thread_id`, then `threadId`
-  (codex/src/server.ts:sessionOf). [live 0.163.0-alpha.11]
+  (codex/src/server-tools.ts:sessionOf). [live 0.163.0-alpha.11]
   In a user fork, `session_id` and `thread_id` are both the fork's own id, so reading `session_id` first keys state to
   the chat the person is in (`step0/logs/r5.mcp.jsonl`). Whether `codex queue --thread <session_id>` reaches that chat
   was not tested; see the Unknown table. The earlier inference that a fork sends the root's `session_id` was wrong. In
@@ -149,7 +149,7 @@ threads a root thread and its forks belong to. They differ after a fork.
 - **Which binary.** The server uses the CLI path a hook saved, then
   `CODEX_CLI_PATH`, then `CODEX_APP_RUNTIME_CLI_PATH`, then its parent
   process if named `codex`, then `codex` (codex/src/cli.ts `findCli`,
-  codex/src/server.ts:queueMessage). The update process uses the same lookup.
+  codex/src/server-host.ts:queueMessage). The update process uses the same lookup.
 - **`--resume`.** The server passes `--resume` when that binary's
   `queue --help` lists it, asked once per binary (codex/src/cli.ts
   `queueResumeCheck`). Older binaries reject the flag.
