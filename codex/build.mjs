@@ -110,7 +110,7 @@ function tabPage(html, script, tones) {
       .trimEnd()
       .replace(/^(?=.)/gm, indent)
   })
-  const unnamed = readdirSync(TAB_CSS).filter(file => !named.includes(file))
+  const unnamed = readdirSync(TAB_CSS).filter(file => file.endsWith('.css') && !named.includes(file))
   if (unnamed.length > 0) throw new Error(`tab.html has no /*TAB_CSS:…*/ line for ${unnamed.join(', ')}.`)
 
   return page
