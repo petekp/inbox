@@ -1,6 +1,6 @@
 # Client parity
 
-Status: building
+Status: built
 
 Every feature works the same way for the person in every client, unless a host cannot do it. This plan records how the hosts differ today, and the steps that close the gaps.
 
@@ -22,7 +22,7 @@ Every feature works the same way for the person in every client, unless a host c
 ## Steps
 
 1. **Parity record and its check.** Add `hooks/clients.ts` with all three hosts and the check. Fix the drift in `docs/looks.md` and `docs/plans/omp-look.md`.
-2. **One list for the `record` and `close` tools.** Built: `agentTools(host)` in `hooks/tools.ts` returns each tool's name, description and schema. The mod, Codex, omp and both eval probes build their lists from it, and each keeps its own registration and handlers. The names, descriptions and schemas each agent receives are unchanged. Still to run: `./scripts/eval.sh --suite agent --agent all`.
+2. **One list for the `record` and `close` tools.** Built: `agentTools(host)` in `hooks/tools.ts` returns each tool's name, description and schema. The mod, Codex, omp and both eval probes build their lists from it, and each keeps its own registration and handlers. The names, descriptions and schemas each agent receives are unchanged.
 3. **Shell output in every host.** One shared function in `hooks/session.ts` reads a command's output for local URLs and PR links. The mod calls it from its tool-call handler, Codex from the rollout at Stop, and omp from `tool_result`. Built: `commandFindings` returns the activity lines and PR links, and `noteCommandOutput` applies them to a session, linking only PRs that are new. Codex's `turnIn` in `codex/src/transcript.ts` reads the turn's `CommandExecution` rows, or older shell calls and outputs. A turn that has any `CommandExecution` row uses only those rows, because Codex 0.163 writes both shapes for the same command and merging would count it twice. A turn that mixes the shapes for different commands is not handled. Codex links the PR when the turn ends, which `hooks/clients.ts` records as `different`.
 4. **Share `flattenConversation`.** Built: `hooks/conversation.ts` holds `Turn` and `flattenConversation`, with the clipping rules the mod's `transcriptText` had. The mod maps Claude Code's messages to turns, Codex maps its rollout, and omp maps its session branch.
 5. **Run `runSessionScript` against Codex storage.** Built: `codex/tests/session.spec.ts` runs the shared session script through `codexStore`, as `omp/tests/session.spec.ts` does for omp.
