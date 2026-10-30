@@ -1,0 +1,426 @@
+:root {
+  color-scheme: light dark;
+  --page: #f4f5f7;
+  --surface: #ffffff;
+  --ink: #1a1c21;
+  --muted: #5b616c;
+  --rule: #dcdfe5;
+  --code: #eceef2;
+  --pick: #243bf5;
+  --on-pick: #ffffff;
+  --band: color-mix(in srgb, var(--pick) 7%, var(--page));
+  --card-band: color-mix(in srgb, var(--pick) 6%, var(--surface));
+  --best: #25652f;
+  --best-tint: #dcefdf;
+  --odd: #745417;
+  --error: #a5293d;
+  --error-tint: #fbe9ec;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #131418;
+    --surface: #1b1d22;
+    --ink: #e8e9ed;
+    --muted: #a3a9b4;
+    --rule: #2e3139;
+    --code: #15171b;
+    --pick: #4b63ff;
+    --on-pick: #ffffff;
+    --band: color-mix(in srgb, var(--pick) 14%, var(--page));
+    --card-band: color-mix(in srgb, var(--pick) 14%, var(--surface));
+    --best: #7ecd8f;
+    --best-tint: #1d3a26;
+    --odd: #ffc107;
+    --error: #ffa3b0;
+    --error-tint: #3a1d23;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font:
+    15px/1.5 -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-text-size-adjust: 100%;
+}
+main {
+  container: page / inline-size;
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+h1,
+h2,
+h3,
+p,
+ul,
+figure {
+  margin: 0;
+}
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.tag,
+.best {
+  flex: none;
+  border-radius: 5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.tag {
+  padding: 2px 8px;
+  background: var(--pick);
+  color: var(--on-pick);
+  font-size: 12px;
+  line-height: 16px;
+}
+.best {
+  padding: 1px 6px;
+  background: var(--best-tint);
+  color: var(--best);
+  font-size: 11.5px;
+  line-height: 15px;
+}
+.pick,
+.col-name,
+.card-head h2,
+.preview figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+code {
+  padding: 0.05em 0.3em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  font:
+    0.9em/1 ui-monospace,
+    'SF Mono',
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+.verdict {
+  max-width: 44rem;
+}
+.question {
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 550;
+  line-height: 1.4;
+}
+.pick {
+  margin-top: 10px;
+  font-size: clamp(26px, 6vw, 34px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.012em;
+  overflow-wrap: anywhere;
+}
+.pick {
+  column-gap: 12px;
+}
+.pick .tag {
+  padding: 4px 11px;
+  border-radius: 7px;
+  font-size: 15px;
+  line-height: 20px;
+}
+.pick.is-missing {
+  color: var(--muted);
+}
+.change {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.reason {
+  margin-top: 14px;
+  font-size: 17px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.odd {
+  margin-top: 18px;
+  padding-left: 12px;
+  border-left: 3px solid var(--odd);
+  overflow-wrap: anywhere;
+}
+.odd strong {
+  color: var(--odd);
+}
+.problems {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--error-tint);
+  color: var(--error);
+  font-size: 14px;
+}
+.problems ul {
+  padding-left: 18px;
+}
+
+.better {
+  color: var(--muted);
+  font-weight: 400;
+  white-space: nowrap;
+}
+.value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  font-size: 15px;
+  line-height: 1.45;
+}
+.value.is-best {
+  font-weight: 650;
+}
+.value.is-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+.note {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.summary {
+  color: var(--muted);
+  font-size: 14px;
+}
+.tally {
+  color: var(--muted);
+  font-size: 13px;
+}
+.tally b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.matrix {
+  display: none;
+  margin-top: 32px;
+  overflow-wrap: anywhere;
+}
+.band {
+  margin-bottom: 10px;
+  border-radius: 10px;
+  background: var(--band);
+}
+.col-name {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 14px 14px 6px;
+  background: var(--page);
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.col-name.is-pick {
+  border-radius: 10px 10px 0 0;
+  background: var(--band);
+}
+.matrix.is-stuck .col-name {
+  box-shadow: 0 1px 0 var(--rule);
+}
+.matrix.is-stuck .col-name.is-pick {
+  border-radius: 0;
+}
+.stuck-mark {
+  align-self: start;
+  height: 1px;
+}
+.col-summary {
+  padding: 0 14px 8px;
+}
+.col-tally {
+  padding: 0 14px 24px;
+}
+.m-head {
+  padding: 14px 14px 4px;
+  border-top: 1px solid var(--rule);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.cell {
+  padding: 2px 14px 14px;
+}
+
+.cards {
+  display: grid;
+  gap: 16px;
+  margin-top: 28px;
+}
+.card {
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.card > * {
+  padding: 12px 18px;
+}
+.card-head {
+  padding-block: 16px 14px;
+}
+.card.is-pick .card-head {
+  background: var(--card-band);
+}
+.card-head h2 {
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.card-head .summary {
+  margin-top: 4px;
+}
+.card-head .tally {
+  margin-top: 8px;
+}
+.row {
+  border-top: 1px solid var(--rule);
+}
+.label {
+  margin-bottom: 2px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+@media (min-width: 600px) {
+  main {
+    padding: 40px 32px 64px;
+  }
+  .matrix {
+    margin-inline: -14px;
+  }
+}
+
+.previews {
+  margin-top: 40px;
+}
+.preview-group + .preview-group {
+  margin-top: 32px;
+}
+.preview-group h2 {
+  font-size: 16px;
+  font-weight: 650;
+}
+.preview-group > p {
+  max-width: 44rem;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.preview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 12px;
+}
+.preview-grid,
+.mono-probe {
+  font:
+    12.5px/1.4 ui-monospace,
+    'SF Mono',
+    Menlo,
+    Consolas,
+    monospace;
+}
+.mono-probe {
+  position: absolute;
+  visibility: hidden;
+  white-space: pre;
+}
+.preview figcaption {
+  margin-bottom: 6px;
+  font:
+    600 14px/1.4 -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    system-ui,
+    sans-serif;
+}
+.preview pre {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--code);
+  font: inherit;
+  tab-size: 4;
+}
+@media (max-width: 400px) {
+  .preview pre {
+    padding: 10px 11px;
+  }
+}
+
+.folds {
+  max-width: 44rem;
+  margin-top: 36px;
+}
+details {
+  border-top: 1px solid var(--rule);
+}
+details:last-child {
+  border-bottom: 1px solid var(--rule);
+}
+summary {
+  padding: 12px 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+summary::marker {
+  color: var(--muted);
+}
+summary:focus-visible {
+  outline: 2px solid var(--pick);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+summary .count {
+  margin-left: 6px;
+  color: var(--muted);
+  font-weight: 400;
+}
+details > ul,
+details > p {
+  overflow-wrap: anywhere;
+}
+details > :last-child {
+  padding-bottom: 14px;
+}
+details > ul {
+  padding-left: 20px;
+}
+details li + li,
+details p + p {
+  margin-top: 8px;
+}
