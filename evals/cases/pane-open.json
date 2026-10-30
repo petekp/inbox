@@ -1,0 +1,181 @@
+[
+  {
+    "name": "on-screen-question-not-new",
+    "about": "With the pane open, a reply that repeats a question the pane already lists adds nothing.",
+    "screen": {
+      "isOpen": true,
+      "tab": "Asks"
+    },
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Profiled slow endpoints"],
+        "now": "Working on the cache layer",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i5",
+          "kind": "question",
+          "label": null,
+          "ask": "Which cache should the product API use?",
+          "options": ["Redis", "In-memory"],
+          "rec": null,
+          "helps": [],
+          "turn": 5,
+          "at": 5
+        }
+      ]
+    },
+    "exchange": {
+      "person": "ok, carry on",
+      "turn": 6,
+      "reply": "The cache layer is wired in behind a flag. Tests pass.\n\nStill open: which cache should the product API use, Redis or in-memory?"
+    },
+    "checks": [
+      {
+        "open": "i5"
+      },
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
+    "name": "real-question-with-pane-open-new",
+    "about": "With the pane open, a real question the pane does not list is added.",
+    "screen": {
+      "isOpen": true,
+      "tab": "Asks"
+    },
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Profiled slow endpoints"],
+        "now": "Working on the cache layer",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i5",
+          "kind": "question",
+          "label": null,
+          "ask": "Should cache keys include the locale?",
+          "options": ["Yes", "No"],
+          "rec": null,
+          "helps": [],
+          "turn": 5,
+          "at": 5
+        }
+      ]
+    },
+    "exchange": {
+      "person": "ok, carry on",
+      "turn": 6,
+      "reply": "The cache layer is wired in behind a flag. Tests pass.\n\nOne decision blocks the rollout: should the cache expire entries after 5 minutes or after 1 hour? Prices change a few times a day, so I lean toward 5 minutes. I will not pick without you."
+    },
+    "checks": [
+      {
+        "open": "i5"
+      },
+      {
+        "new": "expire|minutes|hour"
+      }
+    ]
+  },
+  {
+    "name": "tab-open-needs-you-records-new-task",
+    "about": "With the inbox open on its Asks tab, a step only the person can do that the tab does not list is added.",
+    "screen": {
+      "isOpen": true,
+      "tab": "Asks"
+    },
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Profiled slow endpoints"],
+        "now": "Working on the cache layer",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i5",
+          "kind": "question",
+          "label": null,
+          "ask": "Should cache keys include the locale?",
+          "options": ["Yes", "No"],
+          "rec": null,
+          "helps": [],
+          "turn": 5,
+          "at": 5
+        }
+      ]
+    },
+    "exchange": {
+      "person": "ok, carry on",
+      "turn": 6,
+      "reply": "The cache layer is wired in behind a flag. Tests pass.\n\nI cannot reach staging from here, so the migration that creates the cache table has not run. Please run `npm run migrate` against staging and tell me when it finishes."
+    },
+    "checks": [
+      {
+        "open": "i5"
+      },
+      {
+        "new": "migrat",
+        "kind": "task"
+      }
+    ]
+  },
+  {
+    "name": "status-shown-records-question",
+    "about": "With the Status page shown, a new question that waits on the person is still recorded.",
+    "screen": {
+      "isOpen": true,
+      "tab": "Status",
+      "isPage": true
+    },
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Profiled slow endpoints"],
+        "now": "Working on the cache layer",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i5",
+          "kind": "question",
+          "label": null,
+          "ask": "Should cache keys include the locale?",
+          "options": ["Yes", "No"],
+          "rec": null,
+          "helps": [],
+          "turn": 5,
+          "at": 5
+        }
+      ]
+    },
+    "exchange": {
+      "person": "ok, carry on",
+      "turn": 6,
+      "reply": "The cache layer is wired in behind a flag. Tests pass.\n\nOne decision blocks the rollout: should the cache expire entries after 5 minutes or after 1 hour? Prices change a few times a day, so I lean toward 5 minutes. I will not pick without you."
+    },
+    "checks": [
+      {
+        "open": "i5"
+      },
+      {
+        "new": "expire|minutes|hour",
+        "kind": "question"
+      }
+    ]
+  }
+]

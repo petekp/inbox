@@ -1,0 +1,328 @@
+[
+  {
+    "name": "record-question",
+    "about": "A decision for the user is recorded as a question with options and a recommendation, and asked in the reply.",
+    "prompt": "Task: add caching to the product API. Before you can go on, I have to choose between Redis and an in-process memory cache. You recommend the memory cache because the service runs as a single process. Ask me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 1,
+        "has": ["ask", "options", "rec"]
+      },
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "redis"
+      },
+      {
+        "reply": "memory"
+      },
+      {
+        "reply": "\\?"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "record-design-choice",
+    "about": "A choice between two designs the agent could try is recorded as a question marked as a design choice.",
+    "prompt": "Task: add a settings page to the web app. Before you build it, I have to choose how its five sections are laid out: one long scrolling page, or a tab for each section. You recommend tabs, because two of the sections are long. Ask me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 1,
+        "match": {
+          "design_choice": "^true$"
+        }
+      },
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "tab"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "record-fact-question-not-design-choice",
+    "about": "A question about a fact only the user knows is recorded without the design-choice mark.",
+    "prompt": "Task: deploy the API to staging. The deploy script needs the AWS region of the staging account, and nothing in the repo says which one it is. It is us-east-1 or eu-west-1. Ask me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 1
+      },
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 0,
+        "match": {
+          "design_choice": "true"
+        }
+      },
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "region"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "record-task",
+    "about": "A step only the user can do is recorded as a task with its command and link, and given in the reply.",
+    "prompt": "Task: deploy the docs site. You are blocked until I sign in: the Vercel CLI needs my account, and only I can do that. Tell me what to run (npx vercel login), and then to open https://vercel.com/acme/docs/settings to copy the project id back to you.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "task",
+        "count": 1,
+        "has": ["ask", "steps"],
+        "match": {
+          "steps": "vercel login"
+        }
+      },
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "npx vercel login"
+      },
+      {
+        "reply": "https://vercel\\.com/acme/docs/settings"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "reply-never-shows-ids",
+    "about": "When the user asks what is in their inbox, the reply names items by what they say and records nothing new.",
+    "ledger": {
+      "nextId": 8,
+      "items": [
+        {
+          "id": "i7",
+          "kind": "question",
+          "label": null,
+          "ask": "Which cache should the product API use?",
+          "options": ["Redis", "In-memory"],
+          "rec": "In-memory",
+          "helps": [],
+          "turn": 1,
+          "at": 1
+        }
+      ],
+      "findings": [
+        {
+          "id": "f2",
+          "kind": "issue",
+          "title": "parseDate returns January for December dates",
+          "detail": "Month index is off by one in src/dates.ts.",
+          "path": "src/dates.ts",
+          "at": 1
+        }
+      ]
+    },
+    "prompt": "What is in my inbox, findings included? Answer in a short list.",
+    "checks": [
+      {
+        "calls": "record",
+        "count": 0
+      },
+      {
+        "reply": "cache"
+      },
+      {
+        "reply": "parseDate|december"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "record-after-own-close",
+    "about": "The agent can record again a question it closed itself, and the record goes through.",
+    "ledger": {
+      "nextId": 8,
+      "turn": 3,
+      "closed": [
+        {
+          "id": "i7",
+          "kind": "question",
+          "ask": "Which cache should the product API use?",
+          "outcome": "closed by Claude: no longer applies: cache dropped",
+          "how": "claude",
+          "at": 2,
+          "item": {
+            "id": "i7",
+            "kind": "question",
+            "label": null,
+            "from": "record",
+            "ask": "Which cache should the product API use?",
+            "options": ["Redis", "In-memory"],
+            "rec": null,
+            "helps": [],
+            "turn": 1,
+            "at": 1
+          }
+        }
+      ]
+    },
+    "prompt": "Change of plan: we're keeping the cache after all, so the cache question is back. The product API runs on four instances, and prices change during the day. Ask me again which cache it should use, with your recommendation.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "min": 1,
+        "has": ["rec"],
+        "result": "^Recorded"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "record-after-dismissed-other-subject",
+    "about": "The agent can record a question that shares the words of a dismissed question but asks about something else, and the record goes through.",
+    "ledger": {
+      "nextId": 8,
+      "turn": 3,
+      "closed": [
+        {
+          "id": "i7",
+          "kind": "question",
+          "ask": "Which license should package.json use?",
+          "outcome": "dismissed",
+          "how": "dismissed",
+          "at": 2,
+          "item": {
+            "id": "i7",
+            "kind": "question",
+            "label": null,
+            "from": "record",
+            "ask": "Which license should package.json use?",
+            "options": ["MIT", "Apache-2.0"],
+            "rec": null,
+            "helps": [],
+            "turn": 1,
+            "at": 1
+          }
+        }
+      ]
+    },
+    "prompt": "Leave the license out of package.json for now. Next is the engines field: we could support Node 20 and up, or only Node 22 and up. Ask me which engines package.json should use, with your recommendation.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "min": 1,
+        "has": ["rec"],
+        "result": "^Recorded"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "carry-status-answers-where-we-are",
+    "about": "The first prompt of a conversation carries the Status tab's headline and each subject's status, and the agent answers from it. Only the mod carries it this way; Codex and omp carry it at session start.",
+    "ledger": {
+      "nextId": 4,
+      "overview": {
+        "isCoordinator": false,
+        "state": "on-track",
+        "headline": "Migrating the billing job to the new queue",
+        "status": "Waiting on staging sign-in",
+        "course": "",
+        "queue": [],
+        "works": [],
+        "open": [],
+        "next": [],
+        "since": [],
+        "workstreams": [],
+        "earlier": [],
+        "lastLookAt": null,
+        "look": null,
+        "seen": { "since": [], "course": "" }
+      },
+      "items": [
+        {
+          "id": "i3",
+          "kind": "task",
+          "label": null,
+          "ask": "Sign in to the staging dashboard",
+          "options": [],
+          "rec": null,
+          "helps": [],
+          "turn": 1,
+          "at": 1
+        }
+      ]
+    },
+    "prompt": "Where did we get to? Answer in two sentences.",
+    "checks": [
+      {
+        "reply": "queue"
+      },
+      {
+        "reply": "staging"
+      },
+      {
+        "calls": "record",
+        "count": 0
+      },
+      {
+        "noIds": true
+      }
+    ],
+    "agents": ["claude"]
+  },
+  {
+    "name": "no-task-for-own-step",
+    "about": "A step the agent's tools can take is not handed to the user as a task; an outward one is asked as a question.",
+    "prompt": "Task: fix the reaction tooltip on draft PR #3040 in inbox-eval-fixture/web. You pushed the fix and the tests pass. The last step is marking the PR ready for review, which you can do with `gh pr ready 3040`. Write your closing reply to me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "task",
+        "count": 0
+      },
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 1,
+        "match": {
+          "ask": "ready|review"
+        }
+      },
+      {
+        "noIds": true
+      }
+    ]
+  }
+]

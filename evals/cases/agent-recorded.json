@@ -1,0 +1,211 @@
+[
+  {
+    "name": "agent-recorded-question-not-added-again",
+    "about": "A question the agent recorded with its record tool is in <open>, so the reply that asks the same thing adds nothing.",
+    "ledger": {
+      "turn": 4,
+      "nextId": 4,
+      "card": {
+        "goal": "Fix the onboarding docs",
+        "done": [],
+        "now": "Waiting on approval",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "label": null,
+          "ask": "Edit the shared onboarding page's SSO section?",
+          "options": ["Approve edit", "Not yet"],
+          "rec": "Approve edit",
+          "helps": [],
+          "turn": 4,
+          "at": 4
+        }
+      ]
+    },
+    "exchange": {
+      "person": "the onboarding page is wrong about SSO, look into it",
+      "turn": 4,
+      "activity": ["ran: rg -n SSO docs/onboarding.md", "called inbox__record"],
+      "reply": "The onboarding page says SSO is set up per user. It is set up per workspace: an admin turns it on once in Settings → Security, and every member then signs in with it.\n\nThe page is shared with the support team, so I won't edit the page without your OK. The change replaces the second paragraph of the SSO section with the per-workspace steps. I'd approve it."
+    },
+    "checks": [
+      {
+        "open": "i3"
+      },
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
+    "name": "agent-recorded-question-other-ask-added",
+    "about": "With one question recorded by the agent, a second ask the reply makes that nothing records is still added.",
+    "ledger": {
+      "turn": 4,
+      "nextId": 4,
+      "card": {
+        "goal": "Fix the onboarding docs",
+        "done": [],
+        "now": "Waiting on approval",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "label": null,
+          "ask": "Edit the shared onboarding page's SSO section?",
+          "options": ["Approve edit", "Not yet"],
+          "rec": "Approve edit",
+          "helps": [],
+          "turn": 4,
+          "at": 4
+        }
+      ]
+    },
+    "exchange": {
+      "person": "the onboarding page is wrong about SSO, look into it",
+      "turn": 4,
+      "activity": ["ran: rg -n SSO docs/onboarding.md", "called inbox__record"],
+      "reply": "The onboarding page says SSO is set up per user. It is set up per workspace: an admin turns it on once in Settings → Security, and every member then signs in with it.\n\nThe page is shared with the support team, so I won't edit the page without your OK. The change replaces the second paragraph of the SSO section with the per-workspace steps. I'd approve it.\n\nSeparately: should the SSO screenshots in the page be retaken now, or after the Settings redesign ships?"
+    },
+    "checks": [
+      {
+        "open": "i3"
+      },
+      {
+        "new": "screenshot",
+        "kind": "question"
+      }
+    ]
+  },
+  {
+    "name": "reminder-leaves-agent-question-open",
+    "about": "A reply that only reminds the person an agent-recorded question is open leaves it open.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 5,
+      "card": {
+        "goal": "Ship the upload retry fix",
+        "done": ["Retry fix merged"],
+        "now": "Waiting on deploy timing",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i4",
+          "kind": "question",
+          "label": null,
+          "from": "record",
+          "ask": "Deploy the retry fix tonight or tomorrow morning?",
+          "options": ["Tonight", "Tomorrow morning"],
+          "rec": "Tomorrow morning",
+          "helps": [],
+          "turn": 3,
+          "at": 3
+        }
+      ]
+    },
+    "exchange": {
+      "person": "how are the tests looking?",
+      "turn": 6,
+      "reply": "All 214 tests pass with the retry fix, and the flaky upload test passed 20 runs in a row. The deploy timing is still yours to call: say tonight or tomorrow morning when you're ready, and I'll start it."
+    },
+    "checks": [
+      {
+        "open": "i4"
+      },
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
+    "name": "changed-recommendation-reaches-agent-question",
+    "about": "A reply that changes its recommendation for an agent-recorded question gives that question the new recommendation, and adds nothing.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 4,
+      "card": {
+        "goal": "Add a snooze button to the inbox",
+        "done": ["Snooze state saved per row"],
+        "now": "Waiting on which looks get it first",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "label": null,
+          "from": "record",
+          "ask": "Build the snooze button for omp and the terminal first, or every look?",
+          "options": ["omp and the terminal", "Every look at once"],
+          "rec": "omp and the terminal",
+          "helps": [],
+          "turn": 4,
+          "at": 4
+        }
+      ]
+    },
+    "exchange": {
+      "person": "how much more work is every look?",
+      "turn": 5,
+      "activity": ["ran: sed -n 1,20p AGENTS.md"],
+      "reply": "About a day more: the desktop pane and the Codex tab each need their own button. I also checked AGENTS.md: it asks for every client from the start, and leaves a host out only for a real host limit. Snooze has none, so I'd now build it in every look, not omp and the terminal first. Say go and I'll start."
+    },
+    "checks": [
+      {
+        "item": "i3",
+        "rec": "every look"
+      },
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
+    "name": "agent-recorded-question-no-second-copy",
+    "about": "In a turn where the agent recorded a question, a reworded copy of it from the reply is not added.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 7,
+      "card": {
+        "goal": "Add a storage bucket for exports",
+        "done": [],
+        "now": "Writing the bucket config",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i6",
+          "kind": "question",
+          "label": null,
+          "from": "record",
+          "ask": "Which region should the exports bucket live in?",
+          "options": ["us-east-1", "eu-west-1"],
+          "rec": "eu-west-1",
+          "helps": [],
+          "turn": 5,
+          "at": 5
+        }
+      ]
+    },
+    "exchange": {
+      "person": "set up the storage bucket for the exports",
+      "turn": 5,
+      "activity": ["edited infra/exports.tf"],
+      "reply": "I wrote the Terraform for the exports bucket in infra/exports.tf. Before I apply it I need one call from you: host it in US East, next to the API, or in Ireland, next to most of the customers who download exports? I'd go with Ireland: about 70% of export downloads come from Europe."
+    },
+    "checks": [
+      {
+        "open": "i6"
+      },
+      {
+        "added": 0
+      }
+    ]
+  }
+]

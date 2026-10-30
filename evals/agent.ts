@@ -32,6 +32,7 @@ import {
   IsolationError,
   provenance,
   readBaselines,
+  readCases,
   report,
   resultsPath,
   runCount,
@@ -54,7 +55,7 @@ const { values } = parseArgs({
     out: { type: 'string' },
     'set-baseline': { type: 'boolean', default: false },
     with: { type: 'string' },
-    cases: { type: 'string', default: 'evals/agent-cases.json' },
+    cases: { type: 'string', default: 'evals/agent-cases' },
     probe: { type: 'string' },
     'omp-probe': { type: 'string' },
     'no-guidance': { type: 'boolean', default: false },
@@ -71,7 +72,8 @@ const selected = AGENTS[values.agent]
 if (!selected) throw new Error(`Unknown --agent ${values.agent}. Use claude, codex, omp, both or all.`)
 const agents: Agent[] = selected
 const runs = runCount(values.runs)
-const cases: Case[] = selectCases(JSON.parse(readFileSync(values.cases, 'utf8')), values.case)
+const caseFiles = readCases<Case>(values.cases)
+const cases: Case[] = selectCases(caseFiles.cases, values.case)
 /** The control run: every agent gets the tools and the inbox text, and none gets the guidance. */
 const isGuided = !values['no-guidance']
 const probeServer = values.probe ?? fileURLToPath(new URL('./probe.mjs', import.meta.url))
@@ -413,7 +415,7 @@ const about = provenance(
       ]),
     ),
     'close description Claude': guidedCloseDescription(CLAUDE_CODE, ''),
-    cases: readFileSync(values.cases, 'utf8'),
+    cases: caseFiles.text,
     models: JSON.stringify(REQUESTED),
     runner: readFileSync(process.argv[1]!, 'utf8'),
     probe: readFileSync(probeServer, 'utf8'),

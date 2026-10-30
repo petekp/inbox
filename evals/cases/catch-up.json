@@ -1,0 +1,23 @@
+[
+  {
+    "name": "catch-up-records-open-question-and-result",
+    "about": "A catch-up over a conversation the inbox never saw records the question the last reply left open.",
+    "ledger": {
+      "turn": 3,
+      "nextId": 1
+    },
+    "catchUp": "Person: switch the config loader from JSON to YAML\nAgent: I'll look at how the loader reads its file first.\nAgent ran: cat src/config/load.ts\nAgent edited src/config/load.ts\nAgent ran: npm test -- config\nAgent: The config loader reads YAML now. I replaced the JSON parser with the yaml package and updated the loader's 9 tests, which all pass.\nPerson: ok\nAgent: There are two old JSON files, config.dev.json and config.prod.json, that nothing reads anymore. Should I delete them or convert them to YAML?",
+    "exchange": {
+      "person": null,
+      "turn": 3,
+      "activity": [],
+      "reply": "(catch-up)"
+    },
+    "checks": [
+      {
+        "new": "json|yaml",
+        "kind": "question"
+      }
+    ]
+  }
+]

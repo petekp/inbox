@@ -11,8 +11,8 @@ Send each command's output to a log file and check its exit status. Each must ex
 | Command | What it checks |
 | --- | --- |
 | `./scripts/check.sh` | Formatting, plugin validation, structure, one version in the three plugin manifests, type checks, all test suites, and that the Codex and omp bundles match their sources. |
-| `./scripts/eval.sh` | The inbox model on every case in `evals/cases.json`, on Sonnet and on Codex. |
-| `./scripts/eval.sh --suite agent --agent all` | How Claude, Codex and omp use the `record` and `close` tools under the inbox's guidance, on every case in `evals/agent-cases.json`. The omp runs need a Claude sign-in in omp: run `omp`, then `/login`. |
+| `./scripts/eval.sh` | The inbox model on every case in `evals/cases/`, on Sonnet and on Codex. |
+| `./scripts/eval.sh --suite agent --agent all` | How Claude, Codex and omp use the `record` and `close` tools under the inbox's guidance, on every case in `evals/agent-cases/`. The omp runs need a Claude sign-in in omp: run `omp`, then `/login`. |
 | `./scripts/eval.sh --suite status --judge` | The Status call on every replay in `evals/status-replays.ts`, on Sonnet and on Codex, with the judge at its checkpoints. Known failing checks are listed apart and do not fail the run. |
 | `./scripts/eval.sh --suite status --judge-pages <folder>` | The judge calls every hand-written page right. The pages are kept out of Git, in `.scratch/status-judge-pages/` in the main checkout. |
 

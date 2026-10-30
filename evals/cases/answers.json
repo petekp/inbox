@@ -1,0 +1,318 @@
+[
+  {
+    "name": "agent-pick-not-person-answer",
+    "about": "An option the agent picked is recorded as done, not as the person's answer.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 10,
+      "card": {
+        "goal": "Ship the reports export",
+        "done": ["Export streams rows"],
+        "now": "Finishing the export",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i7",
+          "kind": "question",
+          "label": null,
+          "ask": "Use SQLite or Postgres for the export cache?",
+          "options": ["SQLite", "Postgres"],
+          "rec": "SQLite",
+          "helps": [],
+          "turn": 5,
+          "at": 1
+        }
+      ],
+      "findings": [],
+      "closed": [],
+      "batchTurn": 5
+    },
+    "exchange": {
+      "person": "keep going on the export",
+      "reply": "The export cache is in. I went with SQLite for now, since it needs no server, and the cache tests pass. Nothing else waits on you.",
+      "activity": []
+    },
+    "checks": [
+      {
+        "closed": "i7",
+        "outcome": "^(done|no longer applies):"
+      }
+    ]
+  },
+  {
+    "name": "person-answer-recorded",
+    "about": "The person's answer is the outcome.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 10,
+      "card": {
+        "goal": "Ship the reports export",
+        "done": ["Export streams rows"],
+        "now": "Finishing the export",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i7",
+          "kind": "question",
+          "label": null,
+          "ask": "Should the old CSV endpoint return 410 Gone or redirect?",
+          "options": ["410 Gone", "Redirect"],
+          "rec": "Redirect",
+          "helps": [],
+          "turn": 5,
+          "at": 1
+        }
+      ],
+      "findings": [],
+      "closed": [],
+      "batchTurn": 5
+    },
+    "exchange": {
+      "person": "redirect",
+      "reply": "Done: the old CSV endpoint now redirects to the new export, and its test passes.",
+      "activity": []
+    },
+    "checks": [
+      {
+        "closed": "i7",
+        "outcome": "^(?!done|no longer).*redirect"
+      }
+    ]
+  },
+  {
+    "name": "moot-question-no-invented-pick",
+    "about": "A question the work made moot names no choice.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 10,
+      "card": {
+        "goal": "Ship the reports export",
+        "done": ["Export streams rows"],
+        "now": "Finishing the export",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i7",
+          "kind": "question",
+          "label": null,
+          "ask": "Keep the legacy XLSX export behind a flag?",
+          "options": ["Keep it", "Remove it"],
+          "rec": "Keep it",
+          "helps": [],
+          "turn": 5,
+          "at": 1
+        }
+      ],
+      "findings": [],
+      "closed": [],
+      "batchTurn": 5
+    },
+    "exchange": {
+      "person": "the ticket changed, see the update",
+      "reply": "The product team removed XLSX from the spec this morning, per the ticket you linked, so I deleted the legacy XLSX export along with its flag. Tests pass.",
+      "activity": []
+    },
+    "checks": [
+      {
+        "closed": "i7",
+        "outcome": "^(done|no longer applies):"
+      }
+    ]
+  },
+  {
+    "name": "typed-answer-closes-question",
+    "about": "Words typed on a question that answer it close it.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 10,
+      "card": {
+        "goal": "Ship the reports export",
+        "done": [],
+        "now": "Waiting on the cache decision",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i7",
+          "kind": "question",
+          "label": null,
+          "ask": "Should findings close only when the person confirms a fix?",
+          "options": ["Yes", "No"],
+          "rec": "Yes",
+          "helps": [],
+          "turn": 5,
+          "at": 1
+        }
+      ]
+    },
+    "exchange": {
+      "person": "Re \"Should findings close only when the person confirms a fix?\": yes, only on my confirmation",
+      "reply": "Done: findings now close only when you confirm the fix. The tests pass.",
+      "activity": ["edited hooks/ledger.ts"]
+    },
+    "checks": [
+      {
+        "closed": "i7"
+      }
+    ]
+  },
+  {
+    "name": "typed-question-keeps-question",
+    "about": "Words typed on a question that ask something back leave it open.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 10,
+      "card": {
+        "goal": "Ship the reports export",
+        "done": [],
+        "now": "Waiting on the cache decision",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i7",
+          "kind": "question",
+          "label": null,
+          "ask": "Should findings close only when the person confirms a fix?",
+          "options": ["Yes", "No"],
+          "rec": "Yes",
+          "helps": [],
+          "turn": 5,
+          "at": 1
+        }
+      ]
+    },
+    "exchange": {
+      "person": "Re \"Should findings close only when the person confirms a fix?\": why wouldn't we want the model to close findings itself?",
+      "reply": "Letting the model close findings would clear stale ones sooner, but it also closed findings you had only put off in earlier runs. Confirming keeps that from happening. I'd still go with Yes. Which do you want?",
+      "activity": []
+    },
+    "checks": [
+      {
+        "open": "i7"
+      }
+    ]
+  },
+  {
+    "name": "answered-question-follow-up-added",
+    "about": "A follow-up that shares the words of an answered question is a new question, not a repeat.",
+    "ledger": {
+      "turn": 3,
+      "nextId": 4,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Picked the cache"],
+        "now": "Wiring in the cache",
+        "running": []
+      },
+      "items": [],
+      "closed": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "ask": "Which cache should the product API use?",
+          "how": "answered",
+          "outcome": "In-memory",
+          "at": 4
+        }
+      ]
+    },
+    "exchange": {
+      "person": "go with in-memory",
+      "turn": 3,
+      "activity": ["edited: src/cache.ts"],
+      "reply": "The in-memory cache is wired into the product API. One more choice before I tune it: which cache size should the product API use, 64 MB or 256 MB? I'd go with 64 MB: the service has 512 MB of memory."
+    },
+    "checks": [
+      {
+        "new": "size|\\d\\s?mb",
+        "rec": "64"
+      },
+      {
+        "dropped": 0
+      }
+    ]
+  },
+  {
+    "name": "list-choices-answer-asked-again",
+    "about": "A question the person answered with \"List the choices\" is added again when the reply lists the choices.",
+    "ledger": {
+      "turn": 3,
+      "nextId": 4,
+      "card": {
+        "goal": "Schedule the cleanup job",
+        "done": [],
+        "now": "Waiting on where it runs",
+        "running": []
+      },
+      "items": [],
+      "closed": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "ask": "Where should the job run?",
+          "how": "answered",
+          "outcome": "List the choices",
+          "at": 4
+        }
+      ]
+    },
+    "exchange": {
+      "person": "List the choices",
+      "turn": 3,
+      "activity": [],
+      "reply": "The job can run in one of two places: nightly in the batch cluster, or hourly on the API hosts. Which should it use? I'd go with nightly: the cleanup is heavy and the API hosts are busy by day."
+    },
+    "checks": [
+      {
+        "new": "job|run|nightly",
+        "rec": "nightly"
+      },
+      {
+        "dropped": 0
+      }
+    ]
+  },
+  {
+    "name": "answered-question-recap-not-new",
+    "about": "A reply that recaps an answered question in its own words adds no item.",
+    "ledger": {
+      "turn": 3,
+      "nextId": 4,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Picked the cache"],
+        "now": "Wiring in the cache",
+        "running": []
+      },
+      "items": [],
+      "closed": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "ask": "Which cache should the product API use?",
+          "how": "answered",
+          "outcome": "In-memory",
+          "at": 4
+        }
+      ]
+    },
+    "exchange": {
+      "person": "go with in-memory",
+      "turn": 3,
+      "activity": ["edited: src/cache.ts", "ran: npm test"],
+      "reply": "You chose which cache the product API should use: in-memory. It's wired in, and the tests pass."
+    },
+    "checks": [
+      {
+        "added": 0
+      },
+      {
+        "dropped": 0
+      }
+    ]
+  }
+]

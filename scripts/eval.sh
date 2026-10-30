@@ -3,10 +3,10 @@
 # its baseline, 2 when a case had too few runs that could be graded, and 3 when the run stopped because a session
 # could reach more than the stand-in inbox. Each run calls a model, so check.sh leaves this out.
 #
-# The default suite is the inbox model: the cases in evals/cases.json on Sonnet, the Codex model, or both. Run it
+# The default suite is the inbox model: the cases in evals/cases/ on Sonnet, the Codex model, or both. Run it
 # after a change to systemText or buildPrompt, and when a model alias moves.
 #
-# The agent suite is the agent that uses the inbox: the cases in evals/agent-cases.json on Claude Code with Opus,
+# The agent suite is the agent that uses the inbox: the cases in evals/agent-cases/ on Claude Code with Opus,
 # Codex, omp, or a set of them. Each run gives the agent the shipped guidance and a stand-in for the inbox, and
 # checks its record and close calls and its reply. Claude Code and Codex get an MCP server named probe. omp gets an
 # extension, evals/omp-probe.ts, that registers the two tools as native omp tools. Run it before a release, and
@@ -62,12 +62,12 @@ case "$suite" in
     model)
         "$esbuild" "$DIR/evals/run.ts" --bundle --platform=node --format=esm \
             --outfile="$bundle/run.mjs" --log-level=warning
-        INBOX_EVAL_ROOT="$DIR" node "$bundle/run.mjs" --cases "$DIR/evals/cases.json" "$@"
+        INBOX_EVAL_ROOT="$DIR" node "$bundle/run.mjs" --cases "$DIR/evals/cases" "$@"
         ;;
     agent)
         "$esbuild" "$DIR/evals/agent.ts" "$DIR/evals/probe.ts" "$DIR/evals/omp-probe.ts" --bundle --platform=node --format=esm \
             --outdir="$bundle" --out-extension:.js=.mjs --log-level=warning
-        INBOX_EVAL_ROOT="$DIR" node "$bundle/agent.mjs" --cases "$DIR/evals/agent-cases.json" "$@"
+        INBOX_EVAL_ROOT="$DIR" node "$bundle/agent.mjs" --cases "$DIR/evals/agent-cases" "$@"
         ;;
     status)
         "$esbuild" "$DIR/evals/status-run.ts" --bundle --platform=node --format=esm \

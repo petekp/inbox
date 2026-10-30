@@ -29,7 +29,7 @@ Each item saves what added it in `from`: `'record'` for the agent's `record` cal
 
 ### 3. Today's mistakes become eval cases
 
-Add one case per row of the table above to `evals/cases.json`, and to `evals/agent-cases.json` where the agent's calls are what is checked:
+Add one case per row of the table above to `evals/cases/`, and to `evals/agent-cases/` where the agent's calls are what is checked:
 
 - A reply that only says an item is still open leaves it open.
 - A reply that asks a question and states no recommendation gives `rec` "-".
