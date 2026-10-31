@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { EMPTY } from '../../hooks/ledger'
-import { inboxText } from '../../hooks/model-text'
+import { inboxText } from '../../hooks/inbox-text'
 import { parseStatus } from '../../hooks/status'
 import { applyStatus } from '../../hooks/status-ops'
 import { viewOf } from '../src/core'

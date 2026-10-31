@@ -1,14 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import {
-  CLAUDE_CODE,
-  MAX_TOOL_DESCRIPTION,
-  answerNote,
-  buildPrompt,
-  carryText,
-  guidedCloseDescription,
-  questionNumbers,
-} from '../hooks/model-text'
+import { CLAUDE_CODE, MAX_TOOL_DESCRIPTION, guidedCloseDescription } from '../hooks/model-text'
+import { answerNote, carryText, questionNumbers } from '../hooks/inbox-text'
+import { buildPrompt } from '../hooks/ledger-prompt'
 import { EMPTY } from '../hooks/ledger'
 import { applyUpdate } from '../hooks/ledger-update'
 import { parseReply, tasksRunBy } from '../hooks/reply-parse'

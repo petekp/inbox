@@ -8,7 +8,7 @@ import { readState, updateState } from '../src/state'
 import { codexAsk, recordModelFailure, runUpdates as runBothCalls } from '../src/update'
 import { findCli } from '../src/cli'
 import { run } from '../src/run'
-import { STATUS_SYSTEM } from '../../hooks/model-text'
+import { STATUS_SYSTEM } from '../../hooks/status-prompt'
 import { fakeRunner, tempDir } from './helpers'
 import { ex, LEDGER_ANSWER } from './update-fixtures'
 

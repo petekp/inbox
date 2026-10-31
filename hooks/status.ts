@@ -1,17 +1,9 @@
 import { NL, OPEN_STATUSES } from './status-limits'
 import type { OpenStatus } from './status-limits'
 
-export { DESCRIPTION_WORDS, isOpen, NAME_WORDS, OPEN_SUBJECTS, TEXT_WORDS } from './status-limits'
+export { isOpen } from './status-limits'
 export { applyStatus } from './status-ops'
-export {
-  asksText,
-  childEnded,
-  isChildRunning,
-  lookEnded,
-  lookStarted,
-  runningText,
-  subjectsText,
-} from './status-children'
+export { childEnded, isChildRunning, lookEnded, lookStarted } from './status-children'
 
 /** One line of the Status call's answer. */
 export type Op =

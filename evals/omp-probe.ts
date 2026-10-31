@@ -1,7 +1,8 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 
 import { EMPTY } from '../hooks/ledger'
-import { guidanceText, promptNotes, TOLD_NOTHING } from '../hooks/model-text'
+import { guidanceText } from '../hooks/model-text'
+import { promptNotes, TOLD_NOTHING } from '../hooks/inbox-text'
 import { agentTools, toolAnswer } from '../hooks/tools'
 import type { AgentTool } from '../hooks/tools'
 import { OMP } from '../omp/src/texts'

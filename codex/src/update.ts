@@ -16,7 +16,7 @@ import {
 } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-import { screenText } from '../../hooks/model-text'
+import { screenText } from '../../hooks/inbox-text'
 import {
   askOverConversation,
   orderedKeys,

@@ -37,7 +37,7 @@ The host's state type extends `Session` from `hooks/session.ts`. It adds its own
 | Session start or resume | `hooks/session.ts:startContext` gives the guidance and carried items. `hooks/session.ts:cleared` empties a session after a clear. A session with turns the inbox never recorded (`hooks/session.ts:isUnseen`) is marked `behind`, and its first update catches up. |
 | A prompt reaches the agent | `hooks/session.ts:notePrompt` records it, matches a press's message, and returns the notes to add beside the prompt. |
 | The person sends a message they typed | `hooks/session.ts:messageTyped` saves its time, and the rows that settled before it fold. A host never calls it for a message a press sent. |
-| The agent uses a tool | `hooks/model-text.ts:toolActivity` and `hooks/session.ts:noteActivity` add a line of turn activity. |
+| The agent uses a tool | `hooks/catch-up-text.ts:toolActivity` and `hooks/session.ts:noteActivity` add a line of turn activity. |
 | The agent calls `record` or `close` | `hooks/session.ts:recorded`, with the answer from `hooks/tools.ts`: the text the agent reads, and the person's line, which the host draws under the call. |
 | A turn ends | `hooks/session.ts:endTurn` queues the exchange. Then `hooks/session-host.ts:runUpdates` runs the inbox model on it, or catches up when `needsCatchUp` says the ledger may have missed a turn, and `hooks/session-host.ts:wakeForDone` tells the agent about rows closed with Done. |
 | The person presses a button | `hooks/session-host.ts:press` applies it, saves a sent record before delivery, delivers, and runs local effects. |

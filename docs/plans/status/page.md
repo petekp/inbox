@@ -64,4 +64,4 @@ Before any work, the page reads: "What this session's work is for, where each pa
 - **During a long turn.** The main agent's next tool call, once 10 minutes have passed since the turn began and since the last Status call, starts a Status call. That call reads the person's message and the turn's activity so far.
 - **On a catch-up.** The call reads the whole conversation and edits the current subjects.
 
-`hooks/status.ts` owns the parser, `hooks/status-ops.ts` how an answer applies, and `hooks/status-upgrade.ts` how a saved Status loads. `hooks/view.ts` owns the drawn page. `hooks/model-text.ts` owns the call's prompts. `docs/looks.md` names the owner of every other rule.
+`hooks/status.ts` owns the parser, `hooks/status-ops.ts` how an answer applies, and `hooks/status-upgrade.ts` how a saved Status loads. `hooks/view.ts` owns the drawn page. `hooks/status-prompt.ts` owns the call's prompts. `docs/looks.md` names the owner of every other rule.

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 import type { HookDeps, HookInput } from '../src/hook'
 import type { Run } from '../../hooks/gh'
-import { STATUS_SYSTEM } from '../../hooks/model-text'
+import { STATUS_SYSTEM } from '../../hooks/status-prompt'
 import type { Ask } from '../../hooks/session-host'
 
 export function tempDir(): string {

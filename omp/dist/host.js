@@ -1399,83 +1399,8 @@ async function askStatus(ask) {
   return { first, last: holdsProse ? await ask() : first };
 }
 
-// ../hooks/host-tasks.ts
+// ../hooks/ledger-prompt.ts
 var NL4 = `
-`;
-var TASKS_KEPT = 12;
-var STATUSES2 = {
-  pending: "pending",
-  in_progress: "in-progress",
-  "in-progress": "in-progress",
-  completed: "done",
-  done: "done",
-  abandoned: "dropped",
-  blocked: "blocked"
-};
-var statusOf = (raw) => STATUSES2[String(raw)] ?? "pending";
-var textOf = (raw) => typeof raw === "string" ? raw.trim() : "";
-var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
-function numberedTasks(rows, textKey) {
-  return rows.map(recordOf).map((row, n) => ({ id: String(n + 1), text: textOf(row[textKey]), status: statusOf(row.status) })).filter((t) => t.text !== "");
-}
-function ompTodoOf(details) {
-  const phases = recordOf(details).phases;
-  if (!Array.isArray(phases))
-    return null;
-  const tasks = phases.flatMap((phase) => Array.isArray(recordOf(phase).tasks) ? recordOf(phase).tasks : []);
-  return numberedTasks(tasks, "content");
-}
-function ompTodoFromBranch(entries) {
-  for (let n = entries.length - 1;n >= 0; n--) {
-    const entry = recordOf(entries[n]);
-    if (entry.type === "custom" && entry.customType === "user_todo_edit") {
-      const tasks = ompTodoOf(entry.data);
-      if (tasks !== null)
-        return tasks;
-      continue;
-    }
-    if (entry.type !== "message")
-      continue;
-    const message = recordOf(entry.message);
-    if (message.role !== "toolResult" || message.toolName !== "todo" || message.isError)
-      continue;
-    const tasks = ompTodoOf(message.details);
-    if (tasks !== null)
-      return tasks;
-  }
-  return [];
-}
-function isSameTaskList(a, b) {
-  return a.length === b.length && a.every((t, n) => t.id === b[n]?.id && t.text === b[n]?.text && t.status === b[n]?.status);
-}
-function upgradeHostTasks(saved) {
-  if (!Array.isArray(saved))
-    return [];
-  return saved.flatMap((raw) => {
-    const t = recordOf(raw);
-    const status = STATUSES2[String(t.status)];
-    return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
-  });
-}
-function keptTasks(tasks) {
-  let toCut = tasks.length - TASKS_KEPT;
-  if (toCut <= 0)
-    return tasks;
-  const kept = tasks.filter((t) => {
-    const isFinished = t.status === "done" || t.status === "dropped";
-    if (!isFinished || toCut <= 0)
-      return true;
-    toCut -= 1;
-    return false;
-  });
-  return kept.slice(-TASKS_KEPT);
-}
-function tasksText(tasks) {
-  return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL4);
-}
-
-// ../hooks/model-text.ts
-var NL5 = `
 `;
 var MODEL_KIND = { question: "decide", task: "do" };
 function systemText(host) {
@@ -1525,41 +1450,45 @@ TODO: <work>
 
 Write plainly. No jargon, no filler, no markdown.`;
 }
-function guidanceText(host) {
-  return `# Inbox
-${host.intro}
-
-When you ask the user to decide something, say which option you recommend and why, in one clause ("I'd go with B: it keeps the old API"). If you cannot recommend one, say what would decide it.
-
-Before you hand the user a step, take it yourself when your tools reach it, such as running a command, reloading or checking a page, or reading a log. When the step changes something other people see, such as marking a PR ready or pushing, ask for their OK as a question and take the step when they say yes. Record a task only for a step your tools cannot reach, and say in your reply why you cannot take it.
-
-When you ask the user to do something, such as review a page, sign in or run a command, give them what they need in the same reply: the link, file path or command, what to do there, and how the result gets back to you. If the result would stay where you cannot read it, such as in their browser, give them a way to send it to you.
-
-Ask in your reply as a direct question, and record the same ask in that turn with ${host.recordTool}, so it stays in the inbox after the conversation moves on. Record a decision, an approval or information you need as a question, with its options and the one you recommend. Record an act you hold until the user says so the same way. Record a step only the user can take as a task, with its steps. Record each one once. Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.
-
-A finding is something you noticed that deserves the user's attention but is outside the current task: a bug, a risk, missing tests, tech debt, or a chance to improve something. Check it once before you record it, by reading the code or running a quick command, so the finding says what is true. Record it with ${host.recordTool} as a finding, then go on with the task; fixing it waits until the user asks. Record one too when you work around a problem instead of fixing it, such as copying files by hand because a tool does not reach them, and when part of your change cannot be checked from where you are. State those in your reply as well. Mention any other finding only when it bears on what the user asked.
-
-These are not findings. Handle them in the task and your reply instead:
-- A problem in your own change or inside the task: fix it.
-- A check you could run yourself: run it, or say in your reply that you have not.
-- Progress, status, or an approach you tried and dropped: say it.
-- Something only the user can do or decide, such as an approval, a sign-in or a choice: ask it, and record it as a question or task.
-
-The latest "inbox:" text beside the user's prompt is the current state. It lists every open item and finding with its id, such as (close id: i35), and anything it does not list is closed. Check it before telling the user that something is open or waits on them. The ids are for the inbox tools only. The user never sees them, so never write one to the user, not even in parentheses: name an item or finding by what it says, as "the deploy task" or "the migration finding".
-
-Close with ${host.closeTool}:
-- When the user's message answers an open item, close it first, before other work, with their answer, and say in your reply what you took their answer to be.
-- When an item or finding is done or no longer applies, close it with a short reason, without waiting to be asked.
-The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`;
+function ledgerBlocks(ledger) {
+  const open = ledger.items.map((i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`).join(NL4);
+  const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL4);
+  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL4);
+  return [
+    `<open>${NL4}${open}${NL4}</open>`,
+    `<findings>${NL4}${findings}${NL4}</findings>`,
+    `<decided>${NL4}${closed}${NL4}</decided>`
+  ];
 }
+function buildPrompt(ledger, ex) {
+  const person = personText(ex.person, ex.trigger);
+  return [
+    ...ledgerBlocks(ledger),
+    `<person>${NL4}${clipMiddle(person, 4000, 1500)}${NL4}</person>`,
+    `<activity>${NL4}${clipMiddle(ex.activity.join(NL4), 2500, 500)}${NL4}</activity>`,
+    `<reply>${NL4}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL4}</reply>`,
+    `<screen>${NL4}${ex.screen}${NL4}</screen>`
+  ].join(NL4);
+}
+function personText(person, trigger) {
+  return person ?? `(The person sent nothing. The turn was started by: ${trigger ?? "unknown"}.)`;
+}
+function outcomeText(d) {
+  if (d.how === "dismissed")
+    return "dismissed by the user";
+  if (d.how === "expired")
+    return "expired before the user answered";
+  return d.outcome;
+}
+// ../hooks/catch-up-text.ts
 var CATCH_UP = "The ledger below may have missed turns. Write a CLOSED line for every item in <open> that the conversation shows answered, done, dealt with, or no longer relevant, and a FIXED line for every finding in <findings> that it shows was fixed. Add as NEW only what still waits on the user and is not already in <open> or <findings>.";
 function transcriptCatchUpPrompt(ledger, screen, transcript) {
   return [
     `Treat the conversation in <conversation> as the exchange. Its start may be cut. ${CATCH_UP}`,
     ...ledgerBlocks(ledger),
-    `<conversation>${NL5}${numberBlocks(transcript)}${NL5}</conversation>`,
-    `<screen>${NL5}${screen}${NL5}</screen>`
-  ].join(NL5);
+    `<conversation>${NL4}${numberBlocks(transcript)}${NL4}</conversation>`,
+    `<screen>${NL4}${screen}${NL4}</screen>`
+  ].join(NL4);
 }
 var MAX_ACTIVITY = 40;
 function addActivity(activity, line) {
@@ -1635,26 +1564,82 @@ function dialogActivity(questions, outcome) {
       return `${head}; still open, waiting on the user's answer`;
   }
 }
-function ledgerBlocks(ledger) {
-  const open = ledger.items.map((i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`).join(NL5);
-  const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL5);
-  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL5);
-  return [
-    `<open>${NL5}${open}${NL5}</open>`,
-    `<findings>${NL5}${findings}${NL5}</findings>`,
-    `<decided>${NL5}${closed}${NL5}</decided>`
-  ];
+// ../hooks/host-tasks.ts
+var NL5 = `
+`;
+var TASKS_KEPT = 12;
+var STATUSES2 = {
+  pending: "pending",
+  in_progress: "in-progress",
+  "in-progress": "in-progress",
+  completed: "done",
+  done: "done",
+  abandoned: "dropped",
+  blocked: "blocked"
+};
+var statusOf = (raw) => STATUSES2[String(raw)] ?? "pending";
+var textOf = (raw) => typeof raw === "string" ? raw.trim() : "";
+var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+function numberedTasks(rows, textKey) {
+  return rows.map(recordOf).map((row, n) => ({ id: String(n + 1), text: textOf(row[textKey]), status: statusOf(row.status) })).filter((t) => t.text !== "");
 }
-function buildPrompt(ledger, ex) {
-  const person = personText(ex.person, ex.trigger);
-  return [
-    ...ledgerBlocks(ledger),
-    `<person>${NL5}${clipMiddle(person, 4000, 1500)}${NL5}</person>`,
-    `<activity>${NL5}${clipMiddle(ex.activity.join(NL5), 2500, 500)}${NL5}</activity>`,
-    `<reply>${NL5}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL5}</reply>`,
-    `<screen>${NL5}${ex.screen}${NL5}</screen>`
-  ].join(NL5);
+function ompTodoOf(details) {
+  const phases = recordOf(details).phases;
+  if (!Array.isArray(phases))
+    return null;
+  const tasks = phases.flatMap((phase) => Array.isArray(recordOf(phase).tasks) ? recordOf(phase).tasks : []);
+  return numberedTasks(tasks, "content");
 }
+function ompTodoFromBranch(entries) {
+  for (let n = entries.length - 1;n >= 0; n--) {
+    const entry = recordOf(entries[n]);
+    if (entry.type === "custom" && entry.customType === "user_todo_edit") {
+      const tasks = ompTodoOf(entry.data);
+      if (tasks !== null)
+        return tasks;
+      continue;
+    }
+    if (entry.type !== "message")
+      continue;
+    const message = recordOf(entry.message);
+    if (message.role !== "toolResult" || message.toolName !== "todo" || message.isError)
+      continue;
+    const tasks = ompTodoOf(message.details);
+    if (tasks !== null)
+      return tasks;
+  }
+  return [];
+}
+function isSameTaskList(a, b) {
+  return a.length === b.length && a.every((t, n) => t.id === b[n]?.id && t.text === b[n]?.text && t.status === b[n]?.status);
+}
+function upgradeHostTasks(saved) {
+  if (!Array.isArray(saved))
+    return [];
+  return saved.flatMap((raw) => {
+    const t = recordOf(raw);
+    const status = STATUSES2[String(t.status)];
+    return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
+  });
+}
+function keptTasks(tasks) {
+  let toCut = tasks.length - TASKS_KEPT;
+  if (toCut <= 0)
+    return tasks;
+  const kept = tasks.filter((t) => {
+    const isFinished = t.status === "done" || t.status === "dropped";
+    if (!isFinished || toCut <= 0)
+      return true;
+    toCut -= 1;
+    return false;
+  });
+  return kept.slice(-TASKS_KEPT);
+}
+function tasksText(tasks) {
+  return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL5);
+}
+
+// ../hooks/status-prompt.ts
 var STATUS_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
 
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
@@ -1715,41 +1700,39 @@ function statusBlocks({ last, asks, tasks, now }) {
   const held = asksText(last, asks);
   const list = tasksText(tasks);
   return [
-    `<head>${NL5}${headText(last)}${NL5}</head>`,
-    `<subjects>${NL5}${open}${NL5}</subjects>`,
-    ...finished === "" ? [] : [`<finished>${NL5}${finished}${NL5}</finished>`],
-    ...running === "" ? [] : [`<running>${NL5}${running}${NL5}</running>`],
-    ...held === "" ? [] : [`<asks>${NL5}${held}${NL5}</asks>`],
-    ...list === "" ? [] : [`<tasks>${NL5}${list}${NL5}</tasks>`]
+    `<head>${NL4}${headText(last)}${NL4}</head>`,
+    `<subjects>${NL4}${open}${NL4}</subjects>`,
+    ...finished === "" ? [] : [`<finished>${NL4}${finished}${NL4}</finished>`],
+    ...running === "" ? [] : [`<running>${NL4}${running}${NL4}</running>`],
+    ...held === "" ? [] : [`<asks>${NL4}${held}${NL4}</asks>`],
+    ...list === "" ? [] : [`<tasks>${NL4}${list}${NL4}</tasks>`]
   ];
-}
-function personText(person, trigger) {
-  return person ?? `(The person sent nothing. The turn was started by: ${trigger ?? "unknown"}.)`;
 }
 function statusPrompt(input, ex) {
   const person = personText(ex.person, ex.trigger);
   return [
     ...statusBlocks(input),
-    `<person>${NL5}${clipMiddle(person, 4000, 1500)}${NL5}</person>`,
-    `<activity>${NL5}${clipMiddle(ex.activity.join(NL5), 2500, 500)}${NL5}</activity>`,
-    `<reply>${NL5}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL5}</reply>`
-  ].join(NL5);
+    `<person>${NL4}${clipMiddle(person, 4000, 1500)}${NL4}</person>`,
+    `<activity>${NL4}${clipMiddle(ex.activity.join(NL4), 2500, 500)}${NL4}</activity>`,
+    `<reply>${NL4}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL4}</reply>`
+  ].join(NL4);
 }
 function statusMidTurnPrompt(input, turn) {
   return [
     "The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes.",
     ...statusBlocks(input),
-    `<person>${NL5}${clipMiddle(personText(turn.person, turn.trigger), 4000, 1500)}${NL5}</person>`,
-    `<activity>${NL5}${clipMiddle(turn.activity.join(NL5), 2500, 500)}${NL5}</activity>`
-  ].join(NL5);
+    `<person>${NL4}${clipMiddle(personText(turn.person, turn.trigger), 4000, 1500)}${NL4}</person>`,
+    `<activity>${NL4}${clipMiddle(turn.activity.join(NL4), 2500, 500)}${NL4}</activity>`
+  ].join(NL4);
 }
 function statusCatchUpPrompt(input, transcript) {
   return [
     "Treat the conversation in <conversation> as the exchange. Its start may be cut. Answer with the changes that bring the list to where the conversation ends.",
     ...statusBlocks(input),
-    `<conversation>${NL5}${numberBlocks(transcript)}${NL5}</conversation>`
-  ].join(NL5);
+    `<conversation>${NL4}${numberBlocks(transcript)}${NL4}</conversation>`
+  ].join(NL4);
 }
+// ../hooks/inbox-text.ts
 function surfaceAtStart(host) {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
 }
@@ -1824,11 +1807,11 @@ function answerNote(ledger, text) {
         return [
           "inbox: if the user is accepting your recommendations, these are the open ones:",
           ...withRecs.map((i) => `- ${i.label ?? "\u2022"} \u2192 ${describe(i)}`)
-        ].join(NL5);
+        ].join(NL4);
       }
     }
   }
-  return lines.length === 0 ? null : ["inbox: the user's message answers these open items from your earlier replies:", ...lines].join(NL5);
+  return lines.length === 0 ? null : ["inbox: the user's message answers these open items from your earlier replies:", ...lines].join(NL4);
 }
 function itemLine(item) {
   return `- ${item.label ? `(${item.label}) ` : ""}${describe(item)} (close id: ${item.id})`;
@@ -1854,14 +1837,7 @@ function inboxText(host, ledger, isOpen) {
       out.push(findingLine(f));
   }
   out.push(isOpen ? `The user has ${host.surface} open beside the conversation.` : `${surfaceAtStart(host)} is closed.`);
-  return out.join(NL5);
-}
-function outcomeText(d) {
-  if (d.how === "dismissed")
-    return "dismissed by the user";
-  if (d.how === "expired")
-    return "expired before the user answered";
-  return d.outcome;
+  return out.join(NL4);
 }
 function closedText(closed) {
   if (closed.length === 0)
@@ -1870,7 +1846,7 @@ function closedText(closed) {
   return [
     "Closed since you last read the inbox:",
     ...closed.map((d) => `- "${d.ask}" \u2192 ${outcomeText(d)}${advice(d)}`)
-  ].join(NL5);
+  ].join(NL4);
 }
 var TOLD_NOTHING = { inbox: null, closed: [] };
 function promptNotes(host, ledger, prompt, told) {
@@ -1884,8 +1860,37 @@ function promptNotes(host, ledger, prompt, told) {
   const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0;
   if (!closed && (inbox === told.inbox || isEmpty && told.inbox === null))
     return { notes, told };
-  notes.push(closed ? `${inbox}${NL5}${closed}` : inbox);
+  notes.push(closed ? `${inbox}${NL4}${closed}` : inbox);
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
+}
+
+// ../hooks/model-text.ts
+function guidanceText(host) {
+  return `# Inbox
+${host.intro}
+
+When you ask the user to decide something, say which option you recommend and why, in one clause ("I'd go with B: it keeps the old API"). If you cannot recommend one, say what would decide it.
+
+Before you hand the user a step, take it yourself when your tools reach it, such as running a command, reloading or checking a page, or reading a log. When the step changes something other people see, such as marking a PR ready or pushing, ask for their OK as a question and take the step when they say yes. Record a task only for a step your tools cannot reach, and say in your reply why you cannot take it.
+
+When you ask the user to do something, such as review a page, sign in or run a command, give them what they need in the same reply: the link, file path or command, what to do there, and how the result gets back to you. If the result would stay where you cannot read it, such as in their browser, give them a way to send it to you.
+
+Ask in your reply as a direct question, and record the same ask in that turn with ${host.recordTool}, so it stays in the inbox after the conversation moves on. Record a decision, an approval or information you need as a question, with its options and the one you recommend. Record an act you hold until the user says so the same way. Record a step only the user can take as a task, with its steps. Record each one once. Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.
+
+A finding is something you noticed that deserves the user's attention but is outside the current task: a bug, a risk, missing tests, tech debt, or a chance to improve something. Check it once before you record it, by reading the code or running a quick command, so the finding says what is true. Record it with ${host.recordTool} as a finding, then go on with the task; fixing it waits until the user asks. Record one too when you work around a problem instead of fixing it, such as copying files by hand because a tool does not reach them, and when part of your change cannot be checked from where you are. State those in your reply as well. Mention any other finding only when it bears on what the user asked.
+
+These are not findings. Handle them in the task and your reply instead:
+- A problem in your own change or inside the task: fix it.
+- A check you could run yourself: run it, or say in your reply that you have not.
+- Progress, status, or an approach you tried and dropped: say it.
+- Something only the user can do or decide, such as an approval, a sign-in or a choice: ask it, and record it as a question or task.
+
+The latest "inbox:" text beside the user's prompt is the current state. It lists every open item and finding with its id, such as (close id: i35), and anything it does not list is closed. Check it before telling the user that something is open or waits on them. The ids are for the inbox tools only. The user never sees them, so never write one to the user, not even in parentheses: name an item or finding by what it says, as "the deploy task" or "the migration finding".
+
+Close with ${host.closeTool}:
+- When the user's message answers an open item, close it first, before other work, with their answer, and say in your reply what you took their answer to be.
+- When an item or finding is done or no longer applies, close it with a short reason, without waiting to be asked.
+The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`;
 }
 
 // ../hooks/prs.ts
