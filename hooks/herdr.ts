@@ -1,5 +1,10 @@
-import type { Dialog, Ledger, SessionStatus, StatusHead, Stop, Tab } from '../types'
+import type { Dialog, Ledger, Session, SessionStatus, StatusHead, Stop, Tab } from '../types'
 import { hasRunningDelegate, onceEvery } from './children'
+import type { ClientId } from './clients'
+import type { PrPress } from './pr-press'
+import type { RowPress } from './presses'
+import { emptySession } from './session-files'
+import type { Holds } from './timing'
 import type { Run } from './gh'
 import type { SessionView } from './session-view'
 import { isWaitingRow } from './rows'
@@ -198,4 +203,129 @@ export function herdrReporter(): (run: Run, report: () => Promise<HerdrReport>) 
 
     return sending
   }
+}
+
+/**
+ * Where a host reports: a pane of Herdr's terminal multiplexer, which sets `HERDR_PANE_ID`, or a terminal of the Herdr
+ * app, which sets `HC_TERMINAL_ID`. Null outside Herdr.
+ */
+export type HerdrTarget = { kind: 'pane'; pane: string } | { kind: 'terminal'; terminal: string } | null
+
+export function herdrTarget(env: Readonly<Record<string, string | undefined>>): HerdrTarget {
+  const pane = env.HERDR_PANE_ID
+  if (pane) return { kind: 'pane', pane }
+  const terminal = env.HC_TERMINAL_ID
+
+  return terminal ? { kind: 'terminal', terminal } : null
+}
+
+/**
+ * The tokens as labels on a Herdr app terminal, for `hc label`: `inbox.status`, `inbox.stop`, and a count label per row
+ * tab, such as `inbox.needs-you`. An empty value removes its label.
+ */
+export function herdrLabels(tokens: HerdrTokens): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(tokens).map(([name, value]) => [
+      name === STATUS_TOKEN ? 'inbox.status' : name.replace(/^inbox-/, 'inbox.'),
+      value ?? '',
+    ]),
+  )
+}
+
+/** The format of the session file a host publishes and of the press file the Herdr look writes. */
+const HERDR_FORMAT = 1
+
+/** Who publishes a session for the Herdr look, and when. `agent` is the name the shared texts use, as in "Tell Claude". */
+export type EnvelopeSource = { host: ClientId; agent: string; sessionId: string; terminal: string; writtenAt: number }
+
+/** The file a host publishes for the Herdr look. */
+export type HerdrEnvelope = EnvelopeSource & { format: typeof HERDR_FORMAT; session: Session }
+
+const SESSION_FIELDS = Object.keys(emptySession())
+
+/** The envelope for `session`, which keeps only the shared `Session` fields, without a host's own. */
+export function herdrEnvelope(source: EnvelopeSource, session: Session): HerdrEnvelope {
+  const shared = Object.fromEntries(SESSION_FIELDS.map(field => [field, session[field as keyof Session]]))
+
+  return { format: HERDR_FORMAT, ...source, session: shared as Session }
+}
+
+/** A press the Herdr look made, with the look's holds, which `press()` needs to tell a stale press. */
+export type PressFile = {
+  format: typeof HERDR_FORMAT
+  id: string
+  pressedAt: number
+  press: RowPress | PrPress
+  holds: Holds
+}
+
+/** The field that names what each press acts on: a row's `id`, a PR's `ref`, or none for the PRs tab's own buttons. */
+const PRESS_TARGETS: Record<RowPress['action'] | PrPress['action'], 'id' | 'ref' | null> = {
+  answer: 'id',
+  type: 'id',
+  explain: 'id',
+  compare: 'id',
+  done: 'id',
+  dismiss: 'id',
+  address: 'id',
+  issue: 'id',
+  discuss: 'id',
+  undo: 'id',
+  discard: 'id',
+  step: 'id',
+  'thread-address': 'ref',
+  'thread-draft': 'ref',
+  'thread-discuss': 'ref',
+  'thread-open': 'ref',
+  'pr-conflicts': 'ref',
+  'pr-address-all': 'ref',
+  'pr-merge': 'ref',
+  'pr-open': 'ref',
+  'pr-refresh': 'ref',
+  'pr-dismiss': 'ref',
+  'pr-undo': 'ref',
+  'check-fix': 'ref',
+  log: 'ref',
+  'pr-dismiss-merged': null,
+  'pr-rank-again': null,
+}
+
+const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
+
+const isTimes = (x: unknown): x is Record<string, number> =>
+  isRecord(x) && Object.values(x).every(at => typeof at === 'number')
+
+/** Why `press` is not a press the hosts know, or null when it is one. */
+function pressProblem(press: unknown): string | null {
+  if (!isRecord(press) || typeof press.action !== 'string') return 'press has no action'
+  if (!Object.hasOwn(PRESS_TARGETS, press.action)) return `unknown action ${press.action}`
+  const target = PRESS_TARGETS[press.action as keyof typeof PRESS_TARGETS]
+
+  return target === null || typeof press[target] === 'string' ? null : `${press.action} has no ${target}`
+}
+
+/** Why `holds` are not a look's holds, or null when they are. */
+function holdsProblem(holds: unknown): string | null {
+  if (!isRecord(holds)) return 'no holds'
+  if (!isTimes(holds.replies) || !isTimes(holds.discarded)) return 'holds without replies or discarded times'
+
+  return holds.shownSince === null || typeof holds.shownSince === 'number' ? null : 'holds without shownSince'
+}
+
+/** A press file's text, read and checked. `reason` says why a file was refused. */
+export function pressFile(text: string): { ok: true; file: PressFile } | { ok: false; reason: string } {
+  let file: unknown
+  try {
+    file = JSON.parse(text)
+  } catch {
+    return { ok: false, reason: 'not JSON' }
+  }
+  if (!isRecord(file)) return { ok: false, reason: 'not an object' }
+  if (file.format !== HERDR_FORMAT) return { ok: false, reason: `unknown format ${String(file.format)}` }
+  if (typeof file.id !== 'string' || file.id === '') return { ok: false, reason: 'no id' }
+  if (typeof file.pressedAt !== 'number' || !Number.isFinite(file.pressedAt))
+    return { ok: false, reason: 'no pressedAt' }
+  const reason = pressProblem(file.press) ?? holdsProblem(file.holds)
+
+  return reason ? { ok: false, reason } : { ok: true, file: file as PressFile }
 }
