@@ -5,7 +5,7 @@ import { endTurn, notePrompt, pressOn, recorded, sessionView, withFetchedPrs } f
 import type { PrView, RowNote } from '../types'
 import { press, runUpdates, wakeForDone } from '../hooks/session-host'
 import { allRows, COMPARE_LIMIT_MS, feedbackOf, feedbackText, NO_HOLDS } from '../hooks/view'
-import { checkRowId, prMarkId } from '../hooks/pr-tab'
+import { checkRowId, prMarkId } from '../hooks/pr-rows'
 import { fakeHost } from './session-fake-host'
 import { FIX_REF, BLOCKED_PR } from './session-helpers'
 

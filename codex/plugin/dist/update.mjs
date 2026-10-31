@@ -949,11 +949,6 @@ function failingChecks(pr) {
   return pr.checks.filter((c) => c.bucket === "fail");
 }
 
-// ../hooks/gh.ts
-var GH_TIMEOUT_MS = 2e4;
-var UNSTARTABLE_CODE = -1;
-var TIMED_OUT_CODE = -2;
-
 // ../hooks/presses.ts
 function baseName(path) {
   return path.replace(/\/+$/, "").split("/").pop() ?? path;
@@ -2267,33 +2262,7 @@ function perTurnStatus(update) {
   };
 }
 
-// ../hooks/pr-tab.ts
-var MAX_PRS = 12;
-var MAX_ORDERED_PRS = 30;
-function itemPrSteps(item, prState, linked) {
-  const refs = prState.branchRef ? [...linked, prState.branchRef] : linked;
-  return prSteps(
-    item,
-    refs.map((ref) => ({ ref, url: prState.views[ref]?.url ?? null }))
-  );
-}
-function isLeftOut(prState, ref) {
-  const view = prState.views[ref];
-  return view !== void 0 && !isKeptPr(view);
-}
-function splitLinked(prState, links) {
-  const ranked = new Set(links.prOrder?.refs ?? []);
-  const shown = links.prs.filter((ref) => !isLeftOut(prState, ref));
-  const unranked = shown.filter((ref) => !ranked.has(ref));
-  const older = unranked.slice(0, Math.max(0, unranked.length - MAX_PRS));
-  return { tracked: shown.filter((ref) => !older.includes(ref)), older };
-}
-function olderPrsText(prState, links) {
-  const { older } = splitLinked(prState, links);
-  if (older.length === 0) return null;
-  const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
-  return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
-}
+// ../hooks/pr-rows.ts
 function prThreadId(pr, t) {
   return threadRowId(pr.ref, t.id);
 }
@@ -2303,123 +2272,12 @@ function threadRowId(ref, thread) {
 function prMarkId(ref) {
   return `pr:${ref}`;
 }
-var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds`;
-var PR_DISMISSED_LABEL = "Dismissed";
-var DISMISS_MERGED_LABEL = "Dismiss merged";
-var RANK_AGAIN_LABEL = "Rank again";
 var RANK_AGAIN_ID = "pr:order";
 function threadSentIn(lastActions) {
   return (pr, t) => {
     const last = lastActions[prThreadId(pr, t)];
     return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
   };
-}
-function isTracked(prState, links, ref) {
-  return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
-}
-function keepsView(prState, links, ref) {
-  return isTracked(prState, links, ref) || links.prs.includes(ref) && isLeftOut(prState, ref);
-}
-function dismissedAt(lastActions, ref) {
-  const mark = lastActions[prMarkId(ref)];
-  return mark?.action === "pr-dismiss" ? mark.at : null;
-}
-function isViewKept(prState, links, lastActions, ref, shownSince) {
-  const at = dismissedAt(lastActions, ref);
-  return keepsView(prState, links, ref) || at !== null && isShownSince(at, shownSince);
-}
-function openPrViews(drawn) {
-  return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
-}
-var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
-function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
-  const ranked = links.prOrder?.refs ?? [];
-  const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr) => {
-    if (isTracked(prState, links, pr.ref)) return [{ pr, state: { is: "open" } }];
-    const at = dismissedAt(lastActions, pr.ref);
-    if (at === null) return [];
-    const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null);
-    return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
-  });
-  let rank = 0;
-  return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
-}
-function prOrderText(order, drawn, now) {
-  const isRanking = drawn.some((d) => d.rank !== null);
-  if (!order || !isRanking) return null;
-  return `${order.label ?? "Order"}${DOT}set by ${order.by} ${ago(now - order.at)}`;
-}
-function rankedStatusOf(pr) {
-  return {
-    status: readiness(pr).status,
-    threads: waitingThreads(pr).map((t) => t.id),
-    failing: failingChecks(pr).map((c) => c.name)
-  };
-}
-function hasChanged(was, is) {
-  return is.status !== was.status || is.threads.some((id) => !was.threads.includes(id)) || is.failing.some((name) => !was.failing.includes(name));
-}
-function changedRankedPrs(order, prs) {
-  const statuses = order.statuses ?? {};
-  return inPrOrder(prs, order.refs).filter((pr) => {
-    const was = statuses[pr.ref];
-    return rankOf(pr, order.refs) !== null && was !== void 0 && hasChanged(was, rankedStatusOf(pr));
-  });
-}
-function prOrderView(order, drawn, presses, shownSince) {
-  const title = prOrderText(order, drawn, presses.now);
-  if (!order || title === null) return null;
-  const count = changedRankedPrs(order, openPrViews(drawn)).length;
-  const row = lastPressOf(presses, RANK_AGAIN_ID);
-  const last = row.last;
-  const isPressShownHere = last !== void 0 && (row.pressing !== null || isShownSince(last.at, shownSince));
-  const isForThisOrder = last !== void 0 && last.at >= order.at;
-  const showsPress = row.pressing !== null || isForThisOrder || isPressShownHere && count === 0;
-  const isChangedShown = count > 0 || isPressShownHere;
-  return {
-    title,
-    why: order.why,
-    changed: isChangedShown ? {
-      text: count > 0 ? `${count} ${count === 1 ? "PR" : "PRs"} changed since` : null,
-      actions: count > 0 ? prOrderActions(row) : [],
-      showsPress
-    } : null
-  };
-}
-function prOrderActions(row) {
-  return withOut(row, [
-    {
-      press: { action: "pr-rank-again" },
-      label: RANK_AGAIN_LABEL,
-      kind: "talk",
-      emphasis: "normal",
-      hotkey: "g"
-    }
-  ]);
-}
-function lastPressOf(presses, rowId) {
-  const last = presses.lastActions[rowId];
-  const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
-  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
-}
-function withOut(row, actions) {
-  return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
-}
-function isDismissedByMerged(pr, branchRef) {
-  return pr.state === "MERGED" && pr.ref !== branchRef;
-}
-function prTabActions(drawn, branchRef) {
-  const hasMerged = drawn.some((d) => d.state.is === "open" && isDismissedByMerged(d.pr, branchRef));
-  return hasMerged ? [
-    {
-      press: { action: "pr-dismiss-merged" },
-      label: DISMISS_MERGED_LABEL,
-      kind: "mark",
-      emphasis: "normal",
-      hotkey: "m",
-      isOut: false
-    }
-  ] : [];
 }
 
 // ../hooks/arrivals.ts
@@ -2481,6 +2339,158 @@ function linkDialogs(s) {
   });
   const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
   return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+}
+
+// ../hooks/gh.ts
+var GH_TIMEOUT_MS = 2e4;
+var UNSTARTABLE_CODE = -1;
+var TIMED_OUT_CODE = -2;
+
+// ../hooks/pr-fetch.ts
+var MAX_PRS = 12;
+var MAX_ORDERED_PRS = 30;
+function itemPrSteps(item, prState, linked) {
+  const refs = prState.branchRef ? [...linked, prState.branchRef] : linked;
+  return prSteps(
+    item,
+    refs.map((ref) => ({ ref, url: prState.views[ref]?.url ?? null }))
+  );
+}
+function isLeftOut(prState, ref) {
+  const view = prState.views[ref];
+  return view !== void 0 && !isKeptPr(view);
+}
+function splitLinked(prState, links) {
+  const ranked = new Set(links.prOrder?.refs ?? []);
+  const shown = links.prs.filter((ref) => !isLeftOut(prState, ref));
+  const unranked = shown.filter((ref) => !ranked.has(ref));
+  const older = unranked.slice(0, Math.max(0, unranked.length - MAX_PRS));
+  return { tracked: shown.filter((ref) => !older.includes(ref)), older };
+}
+function olderPrsText(prState, links) {
+  const { older } = splitLinked(prState, links);
+  if (older.length === 0) return null;
+  const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
+  return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
+}
+var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds`;
+
+// ../hooks/pr-views.ts
+var PR_DISMISSED_LABEL = "Dismissed";
+function isTracked(prState, links, ref) {
+  return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
+}
+function keepsView(prState, links, ref) {
+  return isTracked(prState, links, ref) || links.prs.includes(ref) && isLeftOut(prState, ref);
+}
+function dismissedAt(lastActions, ref) {
+  const mark = lastActions[prMarkId(ref)];
+  return mark?.action === "pr-dismiss" ? mark.at : null;
+}
+function isViewKept(prState, links, lastActions, ref, shownSince) {
+  const at = dismissedAt(lastActions, ref);
+  return keepsView(prState, links, ref) || at !== null && isShownSince(at, shownSince);
+}
+function openPrViews(drawn) {
+  return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
+}
+var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
+function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
+  const ranked = links.prOrder?.refs ?? [];
+  const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr) => {
+    if (isTracked(prState, links, pr.ref)) return [{ pr, state: { is: "open" } }];
+    const at = dismissedAt(lastActions, pr.ref);
+    if (at === null) return [];
+    const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null);
+    return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
+  });
+  let rank = 0;
+  return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
+}
+
+// ../hooks/pr-press.ts
+function lastPressOf(presses, rowId) {
+  const last = presses.lastActions[rowId];
+  const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
+  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
+}
+function withOut(row, actions) {
+  return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
+}
+
+// ../hooks/pr-order.ts
+var RANK_AGAIN_LABEL = "Rank again";
+function prOrderText(order, drawn, now) {
+  const isRanking = drawn.some((d) => d.rank !== null);
+  if (!order || !isRanking) return null;
+  return `${order.label ?? "Order"}${DOT}set by ${order.by} ${ago(now - order.at)}`;
+}
+function rankedStatusOf(pr) {
+  return {
+    status: readiness(pr).status,
+    threads: waitingThreads(pr).map((t) => t.id),
+    failing: failingChecks(pr).map((c) => c.name)
+  };
+}
+function hasChanged(was, is) {
+  return is.status !== was.status || is.threads.some((id) => !was.threads.includes(id)) || is.failing.some((name) => !was.failing.includes(name));
+}
+function changedRankedPrs(order, prs) {
+  const statuses = order.statuses ?? {};
+  return inPrOrder(prs, order.refs).filter((pr) => {
+    const was = statuses[pr.ref];
+    return rankOf(pr, order.refs) !== null && was !== void 0 && hasChanged(was, rankedStatusOf(pr));
+  });
+}
+function prOrderView(order, drawn, presses, shownSince) {
+  const title = prOrderText(order, drawn, presses.now);
+  if (!order || title === null) return null;
+  const count = changedRankedPrs(order, openPrViews(drawn)).length;
+  const row = lastPressOf(presses, RANK_AGAIN_ID);
+  const last = row.last;
+  const isPressShownHere = last !== void 0 && (row.pressing !== null || isShownSince(last.at, shownSince));
+  const isForThisOrder = last !== void 0 && last.at >= order.at;
+  const showsPress = row.pressing !== null || isForThisOrder || isPressShownHere && count === 0;
+  const isChangedShown = count > 0 || isPressShownHere;
+  return {
+    title,
+    why: order.why,
+    changed: isChangedShown ? {
+      text: count > 0 ? `${count} ${count === 1 ? "PR" : "PRs"} changed since` : null,
+      actions: count > 0 ? prOrderActions(row) : [],
+      showsPress
+    } : null
+  };
+}
+function prOrderActions(row) {
+  return withOut(row, [
+    {
+      press: { action: "pr-rank-again" },
+      label: RANK_AGAIN_LABEL,
+      kind: "talk",
+      emphasis: "normal",
+      hotkey: "g"
+    }
+  ]);
+}
+
+// ../hooks/pr-tab.ts
+var DISMISS_MERGED_LABEL = "Dismiss merged";
+function isDismissedByMerged(pr, branchRef) {
+  return pr.state === "MERGED" && pr.ref !== branchRef;
+}
+function prTabActions(drawn, branchRef) {
+  const hasMerged = drawn.some((d) => d.state.is === "open" && isDismissedByMerged(d.pr, branchRef));
+  return hasMerged ? [
+    {
+      press: { action: "pr-dismiss-merged" },
+      label: DISMISS_MERGED_LABEL,
+      kind: "mark",
+      emphasis: "normal",
+      hotkey: "m",
+      isOut: false
+    }
+  ] : [];
 }
 
 // ../hooks/tools.ts

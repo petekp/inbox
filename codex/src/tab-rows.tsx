@@ -17,19 +17,19 @@ import {
 import type { Feedback, PressState, RowView } from '../../hooks/view'
 import { actionId, isPressConfirmed, noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { Effect, RowPress } from '../../hooks/presses'
+import { checkActions, threadActions } from '../../hooks/pr-tab'
 import {
-  checkActions,
   checkRowText,
   PR_QUOTE_CHARS,
   splitFollowUps,
   prCheckId,
   prMarkId,
-  prPressEffect,
   prThreadId,
-  threadActions,
   threadRowText,
-} from '../../hooks/pr-tab'
-import type { DrawnPr, PrAction, PrPress } from '../../hooks/pr-tab'
+} from '../../hooks/pr-rows'
+import { prPressEffect } from '../../hooks/pr-press'
+import type { DrawnPr } from '../../hooks/pr-views'
+import type { PrAction, PrPress } from '../../hooks/pr-press'
 import { commentParts, failingChecks, readableComment, threadWhere, waitingThreads } from '../../hooks/prs'
 import type { Finding, PrCheck, PrThread, PrView, Tab } from '../../types'
 import type { TabView as View } from './core'

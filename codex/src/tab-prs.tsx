@@ -1,21 +1,22 @@
 import { ago } from '../../hooks/text'
 import { settledMark, bannerOf, DOT, feedbackOf, feedbackText, hasAge, isFailure, settledLabel } from '../../hooks/view'
 import type { SettledState } from '../../hooks/view'
+import { prBlockActions } from '../../hooks/pr-tab'
 import {
   DISMISS_MERGED_ID,
   RANK_AGAIN_ID,
   ghNoticeOf,
-  isDismissed,
   PR_GROUP_TITLES,
   PR_TONES,
-  prBlockActions,
   prMarkId,
   prsEmptyText,
-  prRankText,
   prRefreshFailedText,
   threadSentIn,
-} from '../../hooks/pr-tab'
-import type { PrAction, PrOrderView } from '../../hooks/pr-tab'
+} from '../../hooks/pr-rows'
+import { isDismissed } from '../../hooks/pr-views'
+import { prRankText } from '../../hooks/pr-order'
+import type { PrOrderView } from '../../hooks/pr-order'
+import type { PrAction } from '../../hooks/pr-press'
 import { readiness } from '../../hooks/prs'
 import type { PrView } from '../../types'
 import type { TabView as View } from './core'

@@ -3,7 +3,7 @@ import { test } from 'node:test'
 
 import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
 import { feedbackOf, feedbackText } from '../../hooks/view'
-import { GH_TIMED_OUT_TEXT } from '../../hooks/pr-tab'
+import { GH_TIMED_OUT_TEXT } from '../../hooks/pr-fetch'
 import { readState } from '../src/state'
 import { run } from '../src/run'
 import { ghAnswer, PRS_STALE_MS, prServer, viewAfterFetch } from './server-fixtures'

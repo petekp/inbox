@@ -1,6 +1,6 @@
 import { version } from '../package.json'
 
-import type { PrPress } from '../../hooks/pr-tab'
+import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
 import { lookEndedOn, sessionView, withHolds, withLook } from '../../hooks/session'
 import { press, wakeForDone } from '../../hooks/session-host'
