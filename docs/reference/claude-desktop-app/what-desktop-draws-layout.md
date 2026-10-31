@@ -24,7 +24,7 @@ The reference says "`e.surface` is `terminal` or `desktop`" (reference#render-si
 
 Risks for the inbox:
 
-- The inbox draws hotkey `Button`s in a `Box` with `display="none"` only when `look !== 'desktop'` (`hooks/register.tsx:keyBindings`). On desktop it draws none. A desktop that draws native buttons may show hidden hotkey Buttons or drop them. Unverified.
+- The inbox draws hotkey `Button`s in a `Box` with `display="none"` only when `look !== 'desktop'` (`hooks/pane-row-keys.tsx:keyBindings`). On desktop it draws none. A desktop that draws native buttons may show hidden hotkey Buttons or drop them. Unverified.
 
 ## What desktop draws
 

@@ -61,7 +61,7 @@ on('session.attach', { surface: 'desktop' }, async ($, e, next) => {
 - Projects: "A conversation where Claude coordinates parallel threads of work and reports back", for when you "want to see which threads finished or need you". [MOB#work-from-your-phone] This overlaps the inbox's job.
 - Docs: mods draw nothing on the phone. Types: `mobile` is a surface with Box, Text, Button, Svg, Link, Code, Markdown and no `Input` or `Select` ("the mobile app draws no field yet"); "the mobile app reports `false`" for `isFullscreen`; Svg is drawn "in a web view"; the `session.attach` example reads `{ surface: "mobile" }`, "a phone joined: draw the lobby". [T: `Elements.mobile`; `RenderViewport`; `SvgProps`; `session.attach`] Inference: the protocol may exist without a slot for Pane or AbovePrompt ("draws the tree where it has a slot for it").
 - No `RenderSurface` value stands for claude.ai/code in a browser. [T]
-- The inbox has no mobile code. It detects a missing `Input` generically (`hooks/register.tsx:on('ui.render', Pane)`) and drops `typekey-` actions without one (`hooks/register.tsx:pressable`).
+- The inbox has no mobile code. It detects a missing `Input` generically (`hooks/register.tsx:on('ui.render', Pane)`) and drops `typekey-` actions without one (`hooks/pane-row-keys.tsx:pressable`).
 - Inference: if a phone ever draws mod trees, the rework needs one tree that degrades to Buttons, Text and Markdown, with no keyboard hints and no sidebar.
 
 ## Cloud sessions
