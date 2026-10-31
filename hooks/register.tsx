@@ -145,13 +145,7 @@ import {
   TURN_BOX_TOOL,
   turnBoxText,
 } from './claude'
-import {
-  DESKTOP_BUTTON_EXTRA_PT,
-  DESKTOP_CHARS_PER_CELL,
-  DESKTOP_CLIP_CHARS_PER_CELL,
-  desktopLines,
-  desktopTextPt,
-} from './desktop-metrics'
+import { DESKTOP_CHARS_PER_CELL, desktopLines, desktopTextPt } from './desktop-metrics'
 import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
 import { CLEARED_TOKENS, delegatesInHerdr, HERDR_CHECK_MS, herdrTokens } from './herdr'
@@ -159,7 +153,6 @@ import { ago, cellWidth, clipLabel, turnReply } from './text'
 import { COMPARE_PAGE_FILE, demoAfterPress, demoReplied, demoSent, isPressConfirmed, openTarget } from './presses'
 import type { DemoSent, Effect, PathProbe, RowPress } from './presses'
 import {
-  closedShown,
   DOT,
   NEEDS_YOU_GROUPS,
   isResumable,
@@ -167,38 +160,17 @@ import {
   stopFix,
   stopText,
   drawnLists,
-  emptyText,
   isRowTab,
   isShownTab,
   LISTED_TABS,
   screenTabOf,
   shownTabs,
   drawnTabOf,
-  fitTabs,
   tabBadge,
-  tabName,
-  canUndoRefused,
   settledMark,
-  settledTone,
   DEMO_NOTICE,
   bannerOf,
-  stopBanner,
-  tabBarBanners,
-  groupEmptyText,
-  closedTotal,
-  earlierLabel,
-  foldLabel,
-  feedbackOf,
-  feedbackText,
-  markedFeedbackText,
-  fieldExit,
-  hasAge,
   heldReplies,
-  isAfterTitle,
-  isFailure,
-  isStatusUnderActions,
-  waitingCount,
-  FINDING_GROUPS,
   isGuarded,
   PERMISSION_FALLBACK_DELAY_MS,
   PRESS_GUARD_MS,
@@ -208,16 +180,7 @@ import {
   statusKeyPlan,
   statusKeyRows,
   statusSelected,
-  actionLines,
   settledLabel,
-  actionLabel,
-  replyHint,
-  rowTitle,
-  resultGlyph,
-  rowResultMark,
-  rowFeedbackText,
-  ROW_COPY,
-  READING_TEXT,
   rowsIn,
   LOOK_DASH,
   mergedLine,
@@ -227,27 +190,20 @@ import {
   inboxCommandText,
   runningMark,
   MARK_LEGEND,
-  HELD_MARK,
   HELP_COPY,
   helpKeys,
   SETTLED_MS,
-  settledIn,
   settledRowIds,
   allRows,
   firstWaiting,
   footerStatus,
-  type BannerView,
   keptDiscards,
   keptOpen,
   NEXT_BUILD_MARK,
   STATUS_TEXT_LINES,
   rowAfterClose,
-  shortAgo,
-  shownOptionDescriptions,
-  versionLabel,
 } from './view'
 import type {
-  DrawnEntry,
   Holds,
   PlannedKey,
   StatusBranch,
@@ -255,16 +211,13 @@ import type {
   StatusRow,
   StatusStall,
   RowView,
-  ResultMark,
   LegendEntry,
   SettledState,
   ShownTab,
-  TabNaming,
 } from './view'
 import { agentTools } from './tools'
 import type { AgentTool } from './tools'
 import type { ToolAnswer } from './tools'
-import type { UndoProps } from './undo-client'
 import {
   ARRIVAL_TABS,
   closedGroups,
@@ -277,13 +230,8 @@ import {
   recordRows,
 } from './arrivals'
 import { parseInline } from './inline'
-import { BANNER_GAP_PT, BANNER_PAD_Y_PT, LOOK_GAP_PT, ROW_PAD_PT } from './layout'
+import { LOOK_GAP_PT } from './layout'
 import { markShape } from './marks'
-import type { BannerTone } from './tones'
-import type { FoldProps } from './fold-client'
-import type { LinksProps } from './links-client'
-import type { RowProps } from './row-client'
-import { TAB_HEIGHT, tabLines, type TabsProps } from './tabs-client'
 import {
   DESKTOP_ARM_GAP,
   DESKTOP_CELL_PT,
@@ -292,55 +240,30 @@ import {
   DESKTOP_HAIR_CELLS,
   DESKTOP_HAIR_LINES,
   DESKTOP_LINE_PT,
-  DESKTOP_LINK_GAP_CELLS,
   DESKTOP_MARK_CELLS,
-  DESKTOP_REPLY_ROWS,
   DESKTOP_ROW_PAD,
   DESKTOP_SIDE_CELLS,
-  DESKTOP_TAB_PAD,
   DESKTOP_TREE_AT,
   DESKTOP_WIDE_AT,
-  desktopTabSizes,
   FRAME_INSET_PT,
-  FRAMED_TAB_LAYOUTS,
   INLINE_RAIL_AT,
-  INLINE_TAB_GAPS,
   RAIL_GUTTER,
-  REPLY_ROWS,
-  ROW_COLUMNS,
-  SELECTED_GAP_PT,
   STATUS_PAD_Y,
   TAB_PAD,
-  TERMINAL_SIDE_CELLS,
   TREE_LINE_AT,
-  UNDO_CELLS,
-  UNDO_HEIGHT_PT,
 } from './pane-sizes'
-import { lookOf, paletteFor, type Tone } from './palettes'
+import { lookOf, paletteFor } from './palettes'
 import { animateRunningMarks } from './running-mark-timer'
-import {
-  chevronSvg,
-  MUTED_MARK,
-  mutedMarkSvg,
-  RESULT_MARK_CELLS,
-  RUNNING_SVG_CELLS,
-  runningSvg,
-  toneSvg,
-  undoSvg,
-} from './desktop-svg'
+import { toneSvg } from './desktop-svg'
 import {
   desktopSpanLines,
-  LEADING_DOT,
   lineCount,
   SELECTION_BAR,
   type TerminalSpan,
   terminalSpanLines,
   terminalTextLines,
-  type TreePos,
-  treeText,
 } from './terminal-text'
 import {
-  type ClosedLine,
   FOLD_KINDS,
   lastUndoEnd,
   NO_CURSOR,
@@ -398,7 +321,6 @@ import {
   spawnedBy,
   startedTaskOf,
   toolRecord,
-  TOOLS_REFUSED_TEXT,
   workflowTasks,
 } from './mod-records'
 import {
@@ -420,7 +342,6 @@ import {
   PR_POLL_MS,
   PRESENT,
   prunedSaves,
-  READ_FAILED_TEXT,
   resultsOrder,
   type SavedRecord,
   savedRevisions,
@@ -431,6 +352,14 @@ import {
   withoutRowActions,
 } from './mod-sessions'
 import { mod, paneState, sessionState } from './mod-state'
+import { paneAskRows, paneAskTabs } from './pane-asks'
+import { paneRowKeys } from './pane-row-keys'
+import { paneRowLines } from './pane-row-lines'
+import { paneRowFrame } from './pane-row-frame'
+import { paneRows } from './pane-rows'
+import { paneFrame } from './pane-frame'
+import { paneRowParts } from './pane-row-parts'
+import type { PaneClient, PaneHandlers, Row } from './pane-context'
 
 const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
 /**
@@ -3338,98 +3267,27 @@ export const register: Register = on => {
     }
     const raiseEdge = { dimColor: false, color: pal.raised, inverse: false }
 
-    type Row = {
-      id: string
-      /**
-       * Set on an Asks or Finds row. The terminal draws it with no mark column, so its text starts at the tree's arm, and
-       * its result mark before its result. Desktop draws its result mark in the mark column.
-       */
-      view?: RowView
-      handle: string
-      /** A Button takes no color, so this handle is Text and only the row's text selects it. */
-      handleTone?: Tone
-      /** Desktop draws its running dot in place of `handle`. The terminal's `handle` is already the frame. */
-      isHandleRunning?: boolean
-      /** A PR row's mark says its work is done. */
-      isMarkDone?: boolean
-      title: string
-      titleAfter?: string
-      at?: number
-      subtitle?: JSX.Element
-      line?: { before?: string; text: string; after?: string; afterTone?: Tone; age?: string }
-      hasSecondLine?: boolean
-      body?: JSX.Element | null
-      clippedBody?: (lines: number, width: number) => JSX.Element | null
-      keys: () => KeyAction[]
-      moreKeys?: () => KeyAction[]
-      typeHint?: string
-      fold?: { note?: string }
+    const client: PaneClient = hasClient ? { hasClient: true, elements } : { hasClient: false, elements }
+    const handlers: PaneHandlers = {
+      rowKeyActions: (r, isAllShown) => rowKeyActions($, r, isAllShown),
+      unlessGuarded: (rowId, press, onPress) => unlessGuarded($, rowId, press, onPress),
+      sendDraft: (id, surface) => sendDraft($, id, surface),
+      discardReply: id => discardReply($, id),
+      updateTyping: fn => update($, TYPING, fn),
+      updateDrafts: fn => update($, DRAFTS, fn),
+      sendTyped: (id, text, surface) => sendTyped($, id, text, surface),
+      select: (tab, id, index) => select($, tab, id, index),
+      showTab: tab => showTab($, tab),
+      updateHelpShown: fn => update($, IS_HELP_SHOWN, fn),
+      updateUnfolded: fn => update($, UNFOLDED, fn),
+      runPress: (p, surface) => runPress($, p, surface),
+      readAgain: () => readAgain($),
+      resume: () => resume($),
     }
-    /** A next build draws the Status, so only it names the subject an ask holds up. */
-    const holdsUpLineOf = (r: RowView | undefined) => (mod.isNextBuild ? (r?.holdsUpLine ?? null) : null)
-    const itemRow = (r: RowView): Row => {
-      const asked = r.at === null ? undefined : `${DOT}${ago(now - r.at)}`
-      const isHandedOff = r.state.is === 'handedOff'
-      const holdsUpLine = holdsUpLineOf(r)
-
-      return {
-        id: r.id,
-        view: r,
-        handle: '',
-        ...(isHandedOff ? { fold: {} } : {}),
-        title: rowTitle(r, look),
-        titleAfter: asked,
-        ...(r.at === null ? {} : { at: r.at }),
-        ...(holdsUpLine
-          ? {
-              subtitle: (
-                <Text color={pal.muted} wrap="wrap">
-                  <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
-                  {holdsUpLine}
-                </Text>
-              ),
-            }
-          : {}),
-        hasSecondLine: r.replyKind === 'answer',
-        body: null,
-        keys: () => rowKeyActions($, r, optionsShown.includes(r.id)).keys,
-        moreKeys: () => rowKeyActions($, r, optionsShown.includes(r.id)).more,
-        typeHint: replyHint(r, 'Claude'),
-      }
-    }
-    const findingBody = (detail: string, path: string | null, fitted?: TerminalSpan[][]) => (
-      <Box flexDirection="column" rowGap={blankLine}>
-        <Text wrap="wrap">{fitted ? terminalText(fitted) : inlineText(detail)}</Text>
-        {path ? (
-          <Text wrap="wrap">
-            <Text color={pal.muted}>{ROW_COPY.relevantFile}</Text>
-            <Text color="permission">{path}</Text>
-          </Text>
-        ) : null}
-      </Box>
+    const { holdsUpLineOf, itemRow, findingRow } = paneAskRows(
+      { now, look, Text, pal, optionsShown, Box, blankLine, terminalText, inlineText },
+      handlers,
     )
-    const findingRow = (r: RowView): Row => ({
-      id: r.id,
-      view: r,
-      at: r.at ?? undefined,
-      handle: '',
-      ...(r.state.is === 'handedOff' ? { fold: {} } : {}),
-      title: r.title,
-      titleAfter: `${DOT}${ago(now - (r.at ?? now))}`,
-      line: { text: r.title },
-      body: findingBody(r.detail ?? '', r.fileName),
-      clippedBody: (lines, width) =>
-        lines < 1
-          ? null
-          : findingBody(
-              r.detail ?? '',
-              lines > 1 ? r.fileName : null,
-              terminalTextLines(r.detail ?? '', width, Math.max(1, lines - (r.fileName && lines > 1 ? 1 : 0))),
-            ),
-      typeHint: replyHint(r, 'Claude'),
-      keys: () => rowKeyActions($, r, true).keys,
-      moreKeys: () => rowKeyActions($, r, true).more,
-    })
     const isThreadSent = threadSentIn(lastActions)
     const presses = { lastActions, turns, now }
     const prPress = (p: PrPress) => (press: UiPressArgument) => runPress($, p, press.surface)
@@ -3529,7 +3387,6 @@ export const register: Register = on => {
       }
     }
 
-    type Entry = DrawnEntry<Row>
     // The Status and Help draw no rows, so none are built while either shows.
     const isListShown = !isStatusShown && !isHelpShown
     const lists = drawnLists(
@@ -3574,799 +3431,104 @@ export const register: Register = on => {
     const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection) : null
     const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage) : []
 
-    const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
-      actionLabel({ label: a.label, isPrimary: a.variant === 'primary' })
-    const desktopTextColumns = (markCells: number) => listColumns - markCells - DESKTOP_SIDE_CELLS - 1
-    // A desktop text column after `markCells`, less a cell, since the measured column ran up to 10 pt narrower than this.
-    const desktopColumnPt = (markCells: number) => desktopTextColumns(markCells) * DESKTOP_CELL_PT - 2 * FRAME_INSET_PT
-    const desktopRowTextPt = desktopColumnPt(DESKTOP_MARK_CELLS)
-    const desktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) =>
-      a.icon ? `${a.icon} ${shownLabel(a)}` : shownLabel(a)
-    // A native Button cuts a label wider than its row.
-    const fittedDesktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) => {
-      const icon = a.icon ? `${a.icon} ` : ''
-      const fits = (label: string) => desktopTextPt(icon + label) + DESKTOP_BUTTON_EXTRA_PT <= desktopRowTextPt
-
-      return icon + actionLabel({ label: a.label, isPrimary: a.variant === 'primary' }, fits)
-    }
-    const keyedButton =
-      (rowId: string, isFollowUp = false) =>
-      ({ hotkey, kind: _kind, emphasis, icon, isOut = false, ...action }: KeyAction) => {
-        const { label: _label, ...unlabeled } = action
-        const isDim = isOpenGuarded || isOut
-
-        return look === 'desktop' ? (
-          <Button
-            {...action}
-            {...(isFollowUp ? { plain: true } : emphasis === 'primary' ? { variant: 'primary' as const } : {})}
-            label={fittedDesktopLabel({ ...action, ...(icon ? { icon } : {}) })}
-            {...(isDim ? { dimColor: true } : {})}
-            onPress={press => unlessGuarded($, rowId, press, action.onPress)}
-          />
-        ) : (
-          <Box key={`keyed-${action.key}`} flexDirection="row">
-            <Button
-              plain
-              {...unlabeled}
-              {...(isDim ? { dimColor: true } : {})}
-              hover={{ color: pal.muted, inverse: true }}
-              onPress={press => unlessGuarded($, rowId, press, action.onPress)}
-            >
-              {hotkey ? (
-                <Text color={pal.key} dimColor={isDim} hover={{ color: pal.muted, inverse: true }}>
-                  {hotkey}
-                </Text>
-              ) : null}
-              {hotkey ? `: ${shownLabel(action)}` : shownLabel(action)}
-            </Button>
-          </Box>
-        )
-      }
-    // Emptied here, after the drawing's reads, so a click that lands while they run still finds the last presses.
-    followUpPresses.clear()
-    const followUpLinks = (rowId: string, more: KeyAction[]) => {
-      if (!hasClient) return null
-      for (const a of more) followUpPresses.set(a.key, press => unlessGuarded($, rowId, press, a.onPress))
-      const props: LinksProps = {
-        links: more.map(a => {
-          const label = desktopLabel(a)
-          return {
-            key: a.key,
-            label,
-            width: desktopTextPt(label) / DESKTOP_CELL_PT,
-            ...(a.isOut ? { isOut: true } : {}),
-          }
-        }),
-        gap: DESKTOP_LINK_GAP_CELLS,
-        fallbackColumns: desktopTextColumns(DESKTOP_MARK_CELLS),
-        isGuarded: isOpenGuarded,
-        colors: { muted: pal.muted, hover: null },
-      }
-
-      const linksWidth = Math.ceil(props.links.reduce((sum, l) => sum + l.width, props.gap * (props.links.length - 1)))
-
-      // A Client takes no flexShrink or minWidth, so this Box gives it the room left on its line. In the Claude app,
-      // the wrapping row moves a Box this wide to the next line whole when the room left is narrower, and then shrinks
-      // it to the line.
-      return (
-        <Box flexGrow={1} flexShrink={1} minWidth={0} width={linksWidth}>
-          <elements.Client key={`links-${rowId}`} module="./links-client.tsx" width="100%" props={props} />
-        </Box>
-      )
-    }
-    const keyRow = (rowId: string, keys: KeyAction[], more: KeyAction[] = []) => (
-      <Box
-        flexDirection="row"
-        flexWrap="wrap"
-        alignItems="center"
-        columnGap={space.buttonGap}
-        rowGap={look === 'desktop' ? 1 : 0}
-      >
-        {keys.map(keyedButton(rowId))}
-        {look === 'terminal' && keys.length > 0 && more.length > 0 ? <Text color={pal.muted}>·</Text> : null}
-        {more.length > 0 ? (followUpLinks(rowId, more) ?? more.map(keyedButton(rowId, true))) : null}
-      </Box>
+    const {
+      desktopColumnPt,
+      desktopRowTextPt,
+      desktopLabel,
+      keyRow,
+      keyBindings,
+      keyLines,
+      actionRows,
+      rowActions,
+      fieldActions,
+    } = paneRowKeys(
+      { ...client, listColumns, isOpenGuarded, look, Button, Box, pal, Text, space, Input, typing },
+      handlers,
     )
-    const keyBindings = (keys: KeyAction[], suffix = '') =>
-      keys.flatMap(({ key, hotkey, kind: _kind, emphasis: _emphasis, icon: _icon, isOut: _isOut, ...k }) =>
-        hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} label={shownLabel(k)} />] : [],
-      )
-    const terminalKeyCells = (k: KeyAction) => (k.hotkey ? k.hotkey.length + 2 : 0) + cellWidth(shownLabel(k))
-    const terminalActionLines = (keys: KeyAction[], more: KeyAction[], width: number) =>
-      actionLines(keys.map(terminalKeyCells), more.map(terminalKeyCells), {
-        width,
-        gap: space.buttonGap,
-        // keyRow's `·` and the gap after it.
-        separator: 1 + space.buttonGap,
-      })
-    const keyLines = (keys: KeyAction[], more: KeyAction[], width: number) =>
-      terminalActionLines(keys, more, width).lines.length
-    // Desktop's links Box wraps as a whole by its own width, so only the terminal draws a second row.
-    const actionRows = (rowId: string, keys: KeyAction[], more: KeyAction[], terminalWidth: number) =>
-      look === 'terminal' && terminalActionLines(keys, more, terminalWidth).isFollowUpLineNew ? (
-        <Box flexDirection="column">
-          {keyRow(rowId, keys)}
-          {keyRow(rowId, [], more)}
-        </Box>
-      ) : (
-        keyRow(rowId, keys, more)
-      )
-    const pressable = (keys: KeyAction[]) => keys.filter(k => Input || !k.key.startsWith('typekey-'))
-    const rowActions = (row: Row): { keys: KeyAction[]; more: KeyAction[] } => {
-      if (Input && row.typeHint && typing === row.id) return { keys: [], more: [] }
-
-      return {
-        keys: pressable(row.keys()),
-        more: pressable(row.moreKeys?.() ?? []),
-      }
-    }
-    const fieldActions = (row: Row): KeyAction[] => [
+    const {
+      feedbackLabel,
+      lastActionText,
+      pressedAge,
+      branch,
+      desktopHairline,
+      columnsFor,
+      markWidth,
+      treeRow,
+      childPos,
+      divided,
+      withDoneMark,
+      unselectedLine,
+      ToneSvg,
+      svgCell,
+      gutterMark,
+      toned,
+      sideAge,
+      rowClientProps,
+      withSideAge,
+      markGlyph,
+    } = paneRowLines({
+      ...client,
+      lastActions,
+      notes,
+      turns,
+      now,
+      look,
+      isAgeDropped,
+      pal,
+      Box,
+      Text,
+      e,
+      isInline,
+      isAgeInSide,
+      listColumns,
+      Button,
+      holdsUpLineOf,
+    })
+    const { desktopFrame } = paneRowFrame({ space, Box })
+    const { listRow } = paneRows(
       {
-        key: `send-${row.id}`,
-        label: ROW_COPY.send,
-        kind: 'handoff',
-        onPress: press => sendDraft($, row.id, press.surface),
+        ...client,
+        indexOf,
+        at,
+        Box,
+        space,
+        Text,
+        pal,
+        Input,
+        typing,
+        look,
+        now,
+        isAgeInSide,
+        listColumns,
+        unbroken,
+        isInline,
+        e,
+        optionsShown,
+        blankLine,
+        Button,
+        tab,
+        settledLayout,
+        columnsFor,
+        gutterMark,
+        toned,
+        rowClientProps,
+        feedbackLabel,
+        pressedAge,
+        withDoneMark,
+        sideAge,
+        withSideAge,
+        unselectedLine,
+        branch,
+        rowActions,
+        desktopRowTextPt,
+        keyLines,
+        keyRow,
+        fieldActions,
+        actionRows,
+        desktopFrame,
       },
-      row.view && fieldExit(row.view) === 'discard'
-        ? {
-            key: `discard-${row.id}`,
-            label: ROW_COPY.discard,
-            kind: 'view',
-            onPress: () => void discardReply($, row.id),
-          }
-        : {
-            key: `cancel-${row.id}`,
-            label: ROW_COPY.cancel,
-            kind: 'view',
-            onPress: () => void update($, TYPING, t => (t === row.id ? null : t)),
-          },
-    ]
-    const feedbackLabel = (id: string, row?: Row) => {
-      const f = row?.view ? row.view.feedback : feedbackOf(id, lastActions[id], notes[id], turns, now)
-      if (!f) return null
-      const mark = look === 'terminal' && row?.view ? rowResultMark(row.view) : null
-      const lead = mark === null ? '' : `${resultGlyph(mark, now)} `
-
-      return hasAge(f)
-        ? {
-            text: `${lead}${row?.view ? rowFeedbackText(row.view, look)! : markedFeedbackText(f, row?.isMarkDone ?? false, look)}`,
-            age: ago(now - f.at),
-            isAfterTitle: true,
-            isFailure: false,
-            doneMark: mark?.tone === 'done' ? mark.text : null,
-            feedback: f,
-          }
-        : {
-            text: `${lead}${row?.view ? rowFeedbackText(row.view, look)! : feedbackText(f, look)}`,
-            age: '',
-            isAfterTitle: isAfterTitle(f),
-            isFailure: isFailure(f),
-            doneMark: null,
-            feedback: f,
-          }
-    }
-    const lastActionText = (id: string) => {
-      const f = feedbackLabel(id)
-
-      return f ? { text: [f.text, f.age].filter(Boolean).join(DOT), isFailure: f.isFailure } : null
-    }
-    const pressedAge = (row: Row) => {
-      const f = feedbackLabel(row.id, row)
-
-      return f?.isAfterTitle ? `${DOT}${[f.text, isAgeDropped ? '' : f.age].filter(Boolean).join(' ')}` : null
-    }
-    // The row clips, not this Box: once its row scrolled out of view,
-    // Claude Code drew lines this Box clipped elsewhere in the pane (anthropics/claude-code#100030).
-    // Desktop draws no tree: its lines differ in height, so stacked glyphs break into separate bars.
-    const branch = (pos: TreePos, lead = 0, left = TREE_LINE_AT, color = pal.line, top = 0, key?: string) =>
-      look === 'desktop' ? null : (
-        <Box key={key} position="absolute" top={top} bottom={0} left={left} width={2}>
-          <Text color={color}>{treeText(pos, lead)}</Text>
-        </Box>
-      )
-    /** A 1 pt line in the divider color on desktop, `across` the pane or `down` it. */
-    const desktopHairline = (
-      key: string,
-      direction: 'across' | 'down',
-      box: { marginTop?: number; marginBottom?: number; marginLeft?: number; width?: number } = {},
-    ) => (
-      <Box
-        key={key}
-        {...(direction === 'across' ? { height: DESKTOP_HAIR_LINES } : { width: DESKTOP_HAIR_CELLS })}
-        backgroundColor={pal.divider}
-        {...box}
-      />
+      handlers,
     )
-    const columnsFor = (row: Pick<Row, 'view'>) => {
-      const base = look === 'desktop' ? ROW_COLUMNS.desktop : ROW_COLUMNS.tree
-      return row.view && look === 'terminal' ? { ...base, textAt: base.handleAt } : base
-    }
-    const markColumns = look === 'desktop' ? ROW_COLUMNS.desktop : ROW_COLUMNS.tree
-    const markWidth = markColumns.textAt - markColumns.handleAt
-    const treeRow = (
-      pos: TreePos | null,
-      marker: JSX.Element | null,
-      content: JSX.Element,
-      key?: string,
-      depth = 0,
-      lead = markColumns.handleAt + markWidth * depth,
-    ) => (
-      <Box key={key} flexDirection="row" alignItems="flex-start" overflow="hidden">
-        <Box width={lead} flexShrink={0} />
-        {marker ? (
-          <Box width={markWidth} flexShrink={0}>
-            {marker}
-          </Box>
-        ) : null}
-        <Box flexDirection="column" flexShrink={1} flexGrow={1} paddingRight={1}>
-          {content}
-        </Box>
-        {pos ? branch(pos, 0, TREE_LINE_AT + markWidth * depth) : null}
-      </Box>
-    )
-    const childPos = (n: number, count: number): TreePos => (n === count - 1 ? 'last' : 'mid')
-    const rule = (inset: number) => (
-      <Text color={pal.divider}>{'─'.repeat(Math.max(0, e.props.bodyColumns - inset))}</Text>
-    )
-    // Desktop draws text in a proportional font, where a run of ─ sized in cells overflows the
-    // row and wraps into a second line, so there the rows sit flush and each pads itself.
-    const divided = (rowEls: JSX.Element[], group: string, textAt: number = ROW_COLUMNS.tree.textAt) =>
-      rowEls.flatMap((el, n) =>
-        n === 0 || isInline || look === 'desktop'
-          ? [el]
-          : [
-              <Box key={`divider-${group}-${n}`} flexDirection="row">
-                <Box width={TREE_LINE_AT} flexShrink={0} />
-                <Box width={textAt - TREE_LINE_AT} flexShrink={0}>
-                  <Text color={pal.line}>│</Text>
-                </Box>
-                {rule(textAt + 2)}
-              </Box>,
-              el,
-            ],
-      )
-    const buttonFrame = look === 'desktop' ? 2 : 0
-    const closedLine = (row: Row) => {
-      const plain = row.line ?? { text: row.title, age: row.titleAfter }
-      const f = feedbackLabel(row.id, row)
-      if (f)
-        return {
-          ...plain,
-          after: `${DOT}${[f.text, isAgeDropped ? '' : f.age].filter(Boolean).join(' ')}`,
-          afterTone: f.isFailure ? ('error' as const) : undefined,
-          afterDoneMark: f.doneMark,
-        }
-
-      return {
-        ...plain,
-        after: [plain.after, isAgeDropped ? '' : plain.age].filter(Boolean).join('') || undefined,
-        afterDoneMark: null,
-      }
-    }
-    /** A feedback text with its done mark in the done mark's color, which every palette defines. */
-    const withDoneMark = (text: string, doneMark: string | null | undefined) => {
-      const at = doneMark ? text.indexOf(doneMark) : -1
-      if (!doneMark || at < 0) return text
-
-      return [
-        text.slice(0, at),
-        <Text key="done" color={pal.mark.done}>
-          {doneMark}
-        </Text>,
-        text.slice(at + doneMark.length),
-      ]
-    }
-    const unselectedLine = (row: Row, onPress: (press: UiPressArgument) => void, inset: number) => {
-      const line = closedLine(row)
-      const before = line.before?.length ?? 0
-      const side = isAgeInSide ? TERMINAL_SIDE_CELLS : 0
-      const width = listColumns - 1 - inset - side - before
-      const perCell = look === 'desktop' ? DESKTOP_CHARS_PER_CELL : 1
-      const budget = Math.floor((listColumns - 1 - inset - side - buttonFrame) * perCell) - before
-      const isAfterCutting = line.after !== undefined && line.text.trim().length > budget - line.after.length
-      const meta =
-        look === 'terminal' && line.after && (!LEADING_DOT.test(line.after) || isAfterCutting)
-          ? line.after.replace(LEADING_DOT, '')
-          : null
-      const room = Math.max(12, budget - (meta ? 0 : (line.after?.length ?? 0)))
-      const text = line.text.trim()
-      const space = text.lastIndexOf(' ', room)
-      const isWrapped = look === 'terminal' && row.hasSecondLine === true && text.length > room && space > 0
-      const first = isWrapped ? text.slice(0, space) : clipLabel(text, room)
-      const second = isWrapped ? clipLabel(text.slice(space + 1), Math.max(12, width)) : null
-      const afterRoom = budget - first.length
-      const after = meta
-        ? undefined
-        : look === 'desktop' && line.after && line.after.length > afterRoom
-          ? afterRoom >= 2
-            ? clipLabel(line.after, afterRoom)
-            : undefined
-          : line.after
-      const hover = second ? { hover: { scope: `title-${row.id}`.slice(0, 64), inverse: true } } : {}
-      const holdsUpLine = holdsUpLineOf(row.view)
-
-      return (
-        <Box flexDirection="column">
-          <Box flexDirection="row">
-            {line.before ? (
-              <Box flexShrink={0}>
-                <Text color={pal.muted}>{line.before}</Text>
-              </Box>
-            ) : null}
-            <Box flexShrink={0}>
-              <Button plain key={`title-${row.id}`} label={first} {...hover} onPress={onPress} />
-            </Box>
-            {after ? (
-              <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
-                {withDoneMark(after, line.afterDoneMark)}
-              </Text>
-            ) : null}
-          </Box>
-          {second ? (
-            <Box paddingLeft={line.before?.length ?? 0}>
-              <Button plain key={`title-${row.id}-2`} label={second} {...hover} onPress={onPress} />
-            </Box>
-          ) : null}
-          {meta ? (
-            <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
-              {withDoneMark(meta, line.afterDoneMark)}
-            </Text>
-          ) : null}
-          {holdsUpLine ? (
-            <Box paddingLeft={line.before?.length ?? 0}>
-              <Text color={pal.muted}>
-                <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
-                {clipLabel(holdsUpLine, Math.max(12, width - 2))}
-              </Text>
-            </Box>
-          ) : null}
-        </Box>
-      )
-    }
-    const ToneSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
-    /** A desktop mark drawn as an Svg `cells` wide, or null outside desktop. */
-    const svgCell = (source: string, alt: string, key?: string, cells = 1) =>
-      ToneSvg ? (
-        <Box key={key} width={cells} height={1} flexShrink={0}>
-          <ToneSvg source={source} alt={alt} width={cells * DESKTOP_CELL_PT} height={DESKTOP_LINE_PT} />
-        </Box>
-      ) : null
-    /** An Asks or Finds row's result mark in the desktop mark column, or null when it has none. */
-    const gutterMark = (row: Row) => {
-      const mark = look === 'desktop' && row.view ? rowResultMark(row.view) : null
-      if (mark?.tone && ToneSvg) return svgCell(toneSvg(mark.tone, mark.text), mark.text)
-      return mark ? markGlyph(mark, `gutter-${row.id}`, mark.tone ? pal.mark[mark.tone] : pal.muted) : null
-    }
-    const runningDot = (id: string, glyph: string, color: string) =>
-      svgCell(runningSvg(now), glyph, `${id}-mark`, RUNNING_SVG_CELLS) ?? (
-        <Text color={color}>{look === 'terminal' ? runningMark(now) : glyph}</Text>
-      )
-    const toned = (row: Row) => {
-      if (look === 'desktop' && row.isHandleRunning) return runningDot(`handle-${row.id}`, row.handle, pal.muted)
-      if (ToneSvg === null || !row.handle || !row.handleTone) return null
-      return svgCell(toneSvg(row.handleTone, row.handle), row.handle)
-    }
-    const sideAge = (row: Row) => {
-      const f = row.view ? row.view.feedback : feedbackOf(row.id, lastActions[row.id], notes[row.id], turns, now)
-      const at = f && hasAge(f) ? f.at : row.at
-      return at === undefined ? '' : shortAgo(now - at)
-    }
-    const rowClientProps = (row: Row): RowProps => {
-      const f = feedbackLabel(row.id, row)
-      const text = row.line?.text ?? row.title
-
-      return {
-        markCells: DESKTOP_MARK_CELLS,
-        sideCells: DESKTOP_SIDE_CELLS,
-        before: row.line?.before ?? '',
-        title: text.trim(),
-        after: f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim(),
-        note: holdsUpLineOf(row.view) ?? '',
-        noteMark: holdsUpLineOf(row.view) ? { text: HELD_MARK.mark, color: pal.mark[HELD_MARK.tone] } : null,
-        side: sideAge(row),
-        padY: DESKTOP_ROW_PAD,
-        maxLines: row.hasSecondLine ? 4 : 2,
-        charsPerCell: DESKTOP_CLIP_CHARS_PER_CELL,
-        fallbackColumns: e.props.bodyColumns - 2,
-        colors: {
-          muted: pal.muted,
-          after: f?.isFailure ? (pal.tone.error ?? null) : pal.muted,
-          afterHover: f?.isFailure ? (pal.tone.error ?? null) : pal.muted,
-          side: pal.age,
-          hover: pal.raised,
-          hoverText: pal.raisedText ?? null,
-          pressed: pal.selection ?? pal.raised,
-        },
-      }
-    }
-    const desktopFrame = ({
-      key,
-      mark = null,
-      side = null,
-      fill,
-      padY = space.rowPad,
-      isSideCentered = false,
-      indent = 0,
-      isMarkHung = true,
-      markCells = DESKTOP_MARK_CELLS,
-      gapY = 0,
-      tree = null,
-      hasSide = true,
-      children,
-    }: {
-      key?: string
-      mark?: JSX.Element | null
-      side?: JSX.Element | null
-      /** Whether it keeps the side column, so its text lines up with rows that show an age there. */
-      hasSide?: boolean
-      /** An absolute Box in the mark column, which the frame stretches to the row's height. */
-      tree?: JSX.Element | null
-      fill?: string | undefined
-      padY?: number
-      /** Centers the side and the mark with its text on each other, for a side taller than a line of text, as Undo is. */
-      isSideCentered?: boolean
-      indent?: number
-      isMarkHung?: boolean
-      markCells?: number
-      /** Space above and below the frame, in the hooks tree's half lines. */
-      gapY?: number
-      children: JSX.Element | (JSX.Element | null)[]
-    }) => {
-      const markColumn = (
-        <Box key="mark" width={indent + markCells + (isMarkHung ? 0 : 1)} flexShrink={0} paddingLeft={indent}>
-          {tree}
-          {mark ? (
-            <Box position="absolute" top={0} left={isMarkHung ? indent - 1 : indent}>
-              {mark}
-            </Box>
-          ) : null}
-        </Box>
-      )
-      const textColumn = (
-        <Box key="text" flexDirection="column" flexShrink={1} flexGrow={1} minWidth={0}>
-          {children}
-        </Box>
-      )
-      return (
-        <Box
-          key={key}
-          flexDirection="row"
-          alignItems={isSideCentered ? 'center' : tree ? 'stretch' : 'flex-start'}
-          marginY={gapY}
-          borderStyle="single"
-          borderColor="#0000"
-          paddingY={padY}
-          {...(fill ? { backgroundColor: fill } : {})}
-        >
-          {isSideCentered ? (
-            <Box flexDirection="row" alignItems="flex-start" flexShrink={1} flexGrow={1} minWidth={0}>
-              {markColumn}
-              {textColumn}
-            </Box>
-          ) : (
-            [markColumn, textColumn]
-          )}
-          {hasSide ? (
-            <Box
-              minWidth={DESKTOP_SIDE_CELLS}
-              flexShrink={0}
-              flexDirection="row"
-              justifyContent="flex-end"
-              alignItems="flex-start"
-              paddingLeft={1}
-            >
-              {side}
-            </Box>
-          ) : null}
-        </Box>
-      )
-    }
-    const withSideAge = (row: Row, line: JSX.Element) =>
-      isAgeInSide ? (
-        <Box flexDirection="row">
-          <Box flexGrow={1} flexShrink={1}>
-            {line}
-          </Box>
-          <Box width={TERMINAL_SIDE_CELLS - 1} flexShrink={0} justifyContent="flex-end">
-            <Text color={pal.age}>{sideAge(row)}</Text>
-          </Box>
-        </Box>
-      ) : (
-        line
-      )
-    const listRow = (row: Row, tree: TreePos) => {
-      const columns = columnsFor(row)
-      const index = indexOf.get(row.id) ?? -1
-      const isSelected = index === at
-      // On desktop a Client takes a click on every cell of the row, where a Button takes one only on its label.
-      if (!isSelected && hasClient) {
-        const gutter = gutterMark(row)
-        return (
-          <Box key={`row-${row.id}`} flexDirection="row" overflow="hidden">
-            {row.handle || gutter ? (
-              <Box
-                position="absolute"
-                top={0}
-                left={0}
-                paddingLeft={(FRAME_INSET_PT - DESKTOP_CELL_PT) / DESKTOP_CELL_PT}
-                paddingTop={space.rowPad}
-              >
-                {gutter ?? toned(row) ?? (
-                  <Text color={row.handleTone ? pal.mark[row.handleTone] : undefined}>{row.handle}</Text>
-                )}
-              </Box>
-            ) : null}
-            <Box position="relative" width="100%">
-              <elements.Client
-                key={`select-${row.id}`}
-                module="./row-client.tsx"
-                width="100%"
-                props={rowClientProps(row)}
-              />
-            </Box>
-          </Box>
-        )
-      }
-      const { keys, more } = isSelected ? rowActions(row) : { keys: [], more: [] }
-      const isTyping = Input !== null && !!row.typeHint && typing === row.id
-      const field =
-        Input && isTyping ? (
-          <Input
-            key={fieldKey(row.id)}
-            placeholder={row.typeHint}
-            {...(openFields.get(row.id)?.seed ? { value: openFields.get(row.id)?.seed } : {})}
-            submitLabel={look === 'desktop' ? ROW_COPY.send : 'send'}
-            autoFocus
-            {...(look === 'terminal' ? { rows: REPLY_ROWS } : look === 'desktop' ? { rows: DESKTOP_REPLY_ROWS } : {})}
-            onInput={(value: string) =>
-              void update($, DRAFTS, d => ({ ...d, [row.id]: { text: value, since: d[row.id]?.since ?? now } }))
-            }
-            onSubmit={(value: string, submit) => sendTyped($, row.id, value, submit.surface)}
-          />
-        ) : null
-      const f = feedbackLabel(row.id, row)
-      const isStatusUnder = f !== null && isStatusUnderActions(f.feedback, isSelected)
-      const titleAfter = (isStatusUnder ? null : pressedAge(row)) ?? (isAgeInSide ? undefined : row.titleAfter)
-      const status = [
-        ...(row.fold?.note ? [{ text: row.fold.note, color: pal.muted }] : []),
-        ...(f && !f.isAfterTitle ? [{ text: f.text, color: f.isFailure ? pal.tone.error : pal.muted }] : []),
-        ...(isTyping && paneState.fieldWithoutKeys === row.id ? [{ text: ROW_COPY.clickField, color: pal.muted }] : []),
-      ]
-
-      const textWidth = listColumns - 1 - columns.textAt
-      const titleWidth = textWidth - TERMINAL_SIDE_CELLS
-      const fitsTitleLine = (text: string) =>
-        look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt : text.length <= titleWidth
-      const shownAfter = titleAfter ? unbroken(titleAfter, row.title, fitsTitleLine) : ''
-      const bodyLines =
-        isSelected && isInline && look === 'terminal' && row.clippedBody
-          ? e.props.scroll.bodyRows -
-            2 * space.rowPad -
-            lineCount(`${row.title}${shownAfter}`, titleWidth) -
-            status.length -
-            keyLines(keys, more, textWidth) -
-            (isStatusUnder ? lineCount(f.text, textWidth) : 0)
-          : null
-      const body =
-        bodyLines !== null && row.clippedBody && row.body ? row.clippedBody(bodyLines, textWidth) : (row.body ?? null)
-      const described = row.view ? shownOptionDescriptions(row.view, optionsShown.includes(row.id)) : []
-      const descriptionsBlock =
-        described.length > 0 ? (
-          <Box flexDirection="column" marginTop={blankLine}>
-            {described.map(o => {
-              const line = clipLabel(`${o.label}: ${o.description}`, look === 'desktop' ? titleWidth : textWidth)
-              return (
-                <Text wrap="truncate-end">
-                  <Text>{line.slice(0, o.label.length)}</Text>
-                  <Text color={pal.muted}>{line.slice(o.label.length)}</Text>
-                </Text>
-              )
-            })}
-          </Box>
-        ) : null
-      const keysBlock = (
-        <Box flexDirection="column" marginTop={blankLine}>
-          {isTyping ? (
-            look === 'desktop' ? (
-              <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap} rowGap={1}>
-                <Box flexShrink={1} minWidth={0} overflow="hidden">
-                  {field}
-                </Box>
-                {/* The desktop Input supplies its own Send button. */}
-                {keyRow(
-                  row.id,
-                  fieldActions(row).filter(a => !a.key.startsWith('send-')),
-                )}
-              </Box>
-            ) : (
-              [field, keyRow(row.id, fieldActions(row))]
-            )
-          ) : (
-            actionRows(row.id, keys, more, textWidth)
-          )}
-          {isStatusUnder ? (
-            <Text color={pal.muted} wrap="wrap">
-              {withDoneMark(f.text, f.doneMark)}
-            </Text>
-          ) : null}
-        </Box>
-      )
-      // The `view-` Box is what select() scrolls into view. Drawn on the selected row alone, so the key exists only
-      // once that row has redrawn expanded.
-      if (look === 'desktop' && isSelected)
-        return desktopFrame({
-          key: `row-${row.id}`,
-          markCells: DESKTOP_MARK_CELLS,
-          mark: row.view
-            ? gutterMark(row)
-            : (toned(row) ??
-              (row.handleTone ? (
-                <Text color={pal.mark[row.handleTone]}>{row.handle}</Text>
-              ) : (
-                <Text>{row.handle}</Text>
-              ))),
-          side: <Text color={pal.age}>{sideAge(row)}</Text>,
-          fill: pal.selection,
-          gapY: (2 * SELECTED_GAP_PT) / DESKTOP_LINE_PT,
-          children: [
-            <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />,
-            <Text wrap="wrap">
-              <Text bold>{row.title}</Text>
-              {f?.isAfterTitle && !isStatusUnder ? (
-                <Text color={pal.muted}>{unbroken(`${DOT}${f.text}`, row.title, fitsTitleLine)}</Text>
-              ) : null}
-            </Text>,
-            row.subtitle ?? null,
-            row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
-            descriptionsBlock,
-            status.length > 0 ? (
-              <Box flexDirection="column" marginTop={blankLine}>
-                {status.map(st => (
-                  <Text color={st.color} wrap="wrap">
-                    {st.text}
-                  </Text>
-                ))}
-              </Box>
-            ) : null,
-            keysBlock,
-          ],
-        })
-
-      return (
-        <Box
-          key={`row-${row.id}`}
-          flexDirection="row"
-          alignItems="flex-start"
-          overflow="hidden"
-          backgroundColor={isSelected ? pal.selection : undefined}
-        >
-          <Box width={columns.lead} flexShrink={0} />
-          {row.view && look === 'terminal' ? null : (
-            <Box
-              width={columns.textAt - columns.lead}
-              flexShrink={0}
-              paddingLeft={columns.handleAt - columns.lead}
-              paddingY={isSelected ? space.rowPad : 0}
-            >
-              {row.handleTone ? (
-                <Text color={pal.mark[row.handleTone]}>{row.handle}</Text>
-              ) : look === 'desktop' ? (
-                (gutterMark(row) ?? <Text>{row.handle}</Text>)
-              ) : (
-                <Button
-                  plain
-                  key={`select-${row.id}`}
-                  label={row.handle || ' '}
-                  onPress={() => void select($, tab, row.id, index)}
-                />
-              )}
-            </Box>
-          )}
-          {isSelected ? (
-            <Box flexDirection="column" flexShrink={1} flexGrow={1} paddingRight={1} paddingY={space.rowPad}>
-              {withSideAge(
-                row,
-                <Text wrap="wrap">
-                  <Text bold>{row.title}</Text>
-                  {titleAfter ? (
-                    <Text color={pal.muted}>{withDoneMark(shownAfter, isStatusUnder ? null : f?.doneMark)}</Text>
-                  ) : null}
-                </Text>,
-              )}
-              {row.subtitle}
-              {body ? <Box marginTop={blankLine}>{body}</Box> : null}
-              {descriptionsBlock}
-              {status.length > 0 ? (
-                <Box flexDirection="column" marginTop={blankLine}>
-                  {status.map(s => (
-                    <Text color={s.color} wrap="wrap">
-                      {s.text}
-                    </Text>
-                  ))}
-                </Box>
-              ) : null}
-              {keysBlock}
-            </Box>
-          ) : (
-            <Box flexShrink={1} flexGrow={1} paddingRight={1}>
-              {unselectedLine(row, () => void select($, tab, row.id, index), columns.textAt)}
-            </Box>
-          )}
-          {isAgeInSide && !isSelected ? (
-            <Box
-              width={TERMINAL_SIDE_CELLS}
-              flexShrink={0}
-              justifyContent="flex-end"
-              paddingRight={1}
-              paddingTop={isSelected ? space.rowPad : 0}
-            >
-              <Text color={pal.age}>{sideAge(row)}</Text>
-            </Box>
-          ) : null}
-          {isSelected ? branch(tree, blankLine, TREE_LINE_AT, pal.selectionLine ?? pal.line) : branch(tree, 0)}
-          {isSelected && look === 'terminal' ? (
-            <Box
-              key={settledScrollKey(`view-${row.id}`, settledLayout)}
-              position="absolute"
-              top={0}
-              bottom={0}
-              left={0}
-              width={1}
-            />
-          ) : null}
-          {/* What select() scrolls into view. Drawn on the selected row alone, so the key exists
-          only once that row has redrawn expanded. */}
-          {isSelected ? (
-            <Box
-              key={`view-${row.id}`}
-              position="absolute"
-              top={0}
-              bottom={0}
-              left={0}
-              width={1}
-              // Desktop draws a column of ▌ as broken dashes, so there the bar is the Box's own fill.
-              {...(look === 'desktop' && !pal.selection ? { backgroundColor: pal.key } : {})}
-            >
-              {pal.selection || look === 'desktop' ? null : <Text color={pal.key}>{SELECTION_BAR}</Text>}
-            </Box>
-          ) : null}
-        </Box>
-      )
-    }
-    const emptyState = ({ title, hint: text = '' }: { title: string; hint?: string }) => {
-      const wrap = (width: number) => {
-        const lines: string[] = []
-        for (const word of text.split(' ').filter(Boolean)) {
-          const last = lines.at(-1)
-          if (last !== undefined && last.length + 1 + word.length <= width) lines[lines.length - 1] = `${last} ${word}`
-          else lines.push(word)
-        }
-
-        return lines
-      }
-      const room = listColumns - 4
-      const most = Math.min(46, look === 'desktop' ? Math.floor(room * DESKTOP_CHARS_PER_CELL) : room)
-      const count = wrap(most).length
-      let width = Math.ceil(text.length / Math.max(count, 1))
-      while (width < most && wrap(width).length > count) width++
-      const lines = wrap(width)
-      const align = isInline ? 'flex-start' : 'center'
-
-      return (
-        <Box flexDirection="column" flexGrow={1} justifyContent={align} alignItems={align}>
-          <Box flexDirection="column" alignItems={align} paddingLeft={isInline ? 1 : 0}>
-            <Text bold>{title}</Text>
-            {lines.length > 0 ? (
-              <Box flexDirection="column" alignItems={align} marginTop={blankLine}>
-                {lines.map(line => (
-                  <Text color={pal.muted}>{line}</Text>
-                ))}
-              </Box>
-            ) : null}
-          </Box>
-        </Box>
-      )
-    }
 
     const shownStatus = footerStatus(
       shownTab,
@@ -4386,763 +3548,94 @@ export const register: Register = on => {
     const keyList = helpKeys(look, mod.isNextBuild, shownTab, statusPressRows.length > 0)
     const keyColumn = Math.max(0, ...keyList.map(k => cellWidth(k.keys))) + 2
 
-    const tabColumns = e.props.bodyColumns - 2
-    const tabSizes = desktopTabSizes(
-      tabList.map(t => ({ ...t, badge: badgeOf(t.id), isShown: t.id === shownTab })),
-      tabColumns,
-    )
-    const tabProps: TabsProps | null = hasClient
-      ? {
-          tabs: tabList.map((t, n) => ({
-            id: t.id,
-            label: tabName(t, tabSizes.naming),
-            badge: badgeOf(t.id),
-            badgeColor: isRowTab(t.id) ? (pal.tone[t.id] ?? pal.mark[t.id]) : null,
-            width: tabSizes.widths[n]!,
-          })),
-          shown: shownTab,
-          gap: tabSizes.gap,
-          isEachFramed: tabSizes.isEachFramed,
-          columns: tabColumns,
-          colors: {
-            tab: pal.tab ?? null,
-            raised: pal.raised,
-            raisedText: pal.raisedText ?? null,
-            muted: pal.muted,
-          },
-        }
-      : null
-    const leadColor: Record<BannerTone, string | undefined> = {
-      error: pal.tone.error ?? pal.mark.error,
-      warning: pal.tone.needsYou ?? pal.mark.needsYou,
-      notice: undefined,
-    }
-    /**
-     * A banner as a rounded box. The terminal paints a Box's fill inside its border, so a docked banner's fill sits
-     * inside its rounded border. The inline pane draws the fill alone, so a tab still fits its height.
-     */
-    const banner = (
-      b: BannerView,
-      more: {
-        /** Drawn in place of the bold lead, as while a press runs. */
-        lead?: JSX.Element
-        after?: JSX.Element
-        isBodyBelow?: boolean
-        extra?: JSX.Element | null
-        action?: JSX.Element | null
-      } = {},
-    ) => {
-      const { line, fill } = pal.banner[b.tone]
-      const frame =
-        look === 'desktop'
-          ? { borderStyle: 'single', borderColor: line, paddingY: (2 * BANNER_PAD_Y_PT) / DESKTOP_LINE_PT }
-          : isInline
-            ? { paddingX: 1 }
-            : { borderStyle: 'round', borderColor: line, paddingX: 1 }
-      const lead = more.lead ?? (
-        <Text bold color={leadColor[b.tone]}>
-          {b.lead}
-        </Text>
-      )
-      const isActionBelow = isNarrowDesktop && Boolean(more.action)
-
-      return (
-        <Box
-          key={`banner-${b.kind}`}
-          {...(isActionBelow
-            ? { flexDirection: 'column', alignItems: 'flex-start', rowGap: (2 * BANNER_PAD_Y_PT) / DESKTOP_LINE_PT }
-            : { flexDirection: 'row', alignItems: 'center', columnGap: 2 })}
-          {...frame}
-          {...(fill ? { backgroundColor: fill } : {})}
-        >
-          <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
-            <Text wrap="wrap">
-              {lead}
-              {more.after ?? null}
-              {b.body && !more.isBodyBelow ? ` ${b.body}` : ''}
-            </Text>
-            {b.body && more.isBodyBelow ? <Text wrap="wrap">{b.body}</Text> : null}
-            {more.extra ?? null}
-          </Box>
-          {more.action ? <Box flexShrink={0}>{more.action}</Box> : null}
-        </Box>
-      )
-    }
-    const statusLines = tabBarBanners(
-      mod.toolsRefused ? [bannerOf('tools-refused', TOOLS_REFUSED_TEXT)] : [],
-      shownStatus.error,
-      lineNote
-        ? { text: feedbackText({ is: 'note', note: lineNote.note, at: lineNote.at }, look), isError: false }
-        : null,
-    ).map(b => banner(b))
-    const namesWidth = (naming: TabNaming) =>
-      tabList.reduce((sum, t) => sum + cellWidth(tabText(t.id, tabName(t, naming))), 0)
-    const framedTabs = fitTabs(
-      FRAMED_TAB_LAYOUTS,
-      (naming, r) =>
-        namesWidth(naming) + 2 * r.pad.length * tabList.length + r.gap * (tabList.length - 1) <=
-        e.props.bodyColumns - 1 - r.right,
-    )
-    const { pad } = framedTabs.layout
-    const inlineTabs = fitTabs(
-      INLINE_TAB_GAPS,
-      (naming, gap) => namesWidth(naming) + gap * (tabList.length - 1) <= e.props.bodyColumns - 3,
-    )
-    const tabNaming = isInline ? inlineTabs.naming : look === 'desktop' ? tabSizes.naming : framedTabs.naming
-    const hasTabLine = !isInline && look !== 'desktop'
-    const tabLine = pal.tab ?? pal.divider
-    // Terminal.app draws block characters from its font, which leaves a seam between a half block and the filled
-    // line beside it. There a tab is its filled name line alone.
-    const hasHalfLines = termProgram !== 'Apple_Terminal'
-    const tabs = (
-      <Box
-        paddingLeft={isInline ? 2 : 1}
-        paddingRight={isInline ? 1 : framedTabs.layout.right}
-        flexDirection="row"
-        {...(hasTabLine ? { overflow: 'hidden' as const } : {})}
-      >
-        {/* ─ draws at the middle of its cell, where the tabs' ▀ ends, and the tabs draw over it. The tabs' Box
-            clips it, as a row clips the tree (anthropics/claude-code#100030). */}
-        {hasTabLine ? (
-          <Box position="absolute" bottom={0} left={0} right={0} height={1}>
-            <Text color={tabLine}>{'─'.repeat(e.props.bodyColumns)}</Text>
-          </Box>
-        ) : null}
-        <Box
-          flexDirection="row"
-          flexWrap="wrap"
-          columnGap={isInline ? inlineTabs.layout : look === 'desktop' ? 2 : framedTabs.layout.gap}
-        >
-          {hasClient && tabProps ? (
-            <elements.Client
-              key="tabs"
-              module="./tabs-client.tsx"
-              height={TAB_HEIGHT * tabLines(tabProps.tabs, tabProps.gap, tabProps.columns).length}
-              props={tabProps}
-            />
-          ) : null}
-          {tabProps
-            ? null
-            : tabList.map(t => {
-                const { id } = t
-                const label = tabName(t, tabNaming)
-                const badge = badgeOf(id)
-
-                if (isInline)
-                  return (
-                    <Box key={`tab-block-${id}`} flexDirection="row">
-                      {shownTab === id ? (
-                        <Text bold underline>
-                          {label}
-                        </Text>
-                      ) : (
-                        <Button plain key={`tab-${id}`} label={label} onPress={() => void showTab($, id)} />
-                      )}
-                      {badge !== null ? (
-                        <Text bold={shownTab === id} color={tabTone(id)}>
-                          {' '}
-                          {badge}
-                        </Text>
-                      ) : null}
-                    </Box>
-                  )
-
-                const width = cellWidth(tabText(id, label)) + 2 * pad.length
-
-                // The key stays the
-                // same in every drawing: the app takes the focus off the pane when the element holding
-                // it leaves, and the next click would only bring it back.
-                // A Button sizes to its label, so non-breaking spaces widen the tab; plain spaces would collapse.
-                // A native tab element would replace this (anthropics/claude-code#100890).
-                if (look === 'desktop')
-                  return (
-                    <Button
-                      key={`tab-${id}`}
-                      label={`${DESKTOP_TAB_PAD}${badge === null ? label : `${label} ${badge}`}${DESKTOP_TAB_PAD}`}
-                      {...(shownTab === id ? { variant: 'primary' as const } : {})}
-                      onPress={() => void showTab($, id)}
-                    />
-                  )
-
-                if (shownTab === id)
-                  return (
-                    <Box flexDirection="column" flexShrink={0}>
-                      <Text color={pal.raised}>{(hasHalfLines ? '▄' : ' ').repeat(width)}</Text>
-                      <Text backgroundColor={pal.raised}>
-                        {pad}
-                        <Text bold color={pal.raisedText} backgroundColor={pal.raised}>
-                          {label}
-                        </Text>
-                        {badge !== null ? (
-                          <Text bold color={tabTone(id) ?? pal.raisedText} backgroundColor={pal.raised}>
-                            {' '}
-                            {badge}
-                          </Text>
-                        ) : null}
-                        {pad}
-                      </Text>
-                      {hasHalfLines ? (
-                        <Text color={pal.raised}>{'▀'.repeat(width)}</Text>
-                      ) : (
-                        <Text color={tabLine}>{'─'.repeat(width)}</Text>
-                      )}
-                    </Box>
-                  )
-
-                const show = () => void showTab($, id)
-                const edgeFill = hasHalfLines ? pal.tab : undefined
-                const edgeHover = edgeFill ? raiseEdge : { inverse: false }
-
-                return (
-                  <Box key={`tab-block-${id}`} flexDirection="column" flexShrink={0}>
-                    <Button plain key={`tab-${id}-above`} hover={edgeHover} onPress={show}>
-                      {edgeFill ? (
-                        <Text color={edgeFill} hover={raiseEdge}>
-                          {'▄'.repeat(width)}
-                        </Text>
-                      ) : (
-                        ' '.repeat(width)
-                      )}
-                    </Button>
-                    <Box flexDirection="row" backgroundColor={pal.tab}>
-                      {pad ? <Button plain key={`tab-${id}-before`} label={pad} hover={raise} onPress={show} /> : null}
-                      <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
-                      {badge !== null ? (
-                        <Text color={tabTone(id)} hover={raise}>
-                          {' '}
-                          {badge}
-                        </Text>
-                      ) : null}
-                      {pad ? <Button plain key={`tab-${id}-after`} label={pad} hover={raise} onPress={show} /> : null}
-                    </Box>
-                    <Button plain key={`tab-${id}-below`} hover={edgeHover} onPress={show}>
-                      {edgeFill ? (
-                        <Text color={edgeFill} hover={raiseEdge}>
-                          {'▀'.repeat(width)}
-                        </Text>
-                      ) : (
-                        <Text color={tabLine}>{'─'.repeat(width)}</Text>
-                      )}
-                    </Button>
-                  </Box>
-                )
-              })}
-        </Box>
-      </Box>
-    )
-    const faint = (text: string) =>
-      look === 'desktop' ? <Text color={pal.age}>{text}</Text> : <Text dimColor>{text}</Text>
-    const statusText = faint(status)
-    const versionText = mod.version ? faint(versionLabel(mod.version, mod.isNextBuild)) : null
-    const rail = (
-      <Box flexDirection="column" flexShrink={0} paddingLeft={1} marginRight={RAIL_GUTTER}>
-        {tabList.map(({ id, label }) => {
-          const badge = badgeOf(id)
-          const fill = ' '.repeat(railWidth - cellWidth(tabText(id, label)) - TAB_PAD.length)
-          if (shownTab === id)
-            return (
-              <Text key={`rail-${id}`} backgroundColor={pal.raised}>
-                {TAB_PAD}
-                <Text bold color={pal.raisedText} backgroundColor={pal.raised}>
-                  {label}
-                </Text>
-                {badge !== null ? (
-                  <Text bold color={tabTone(id) ?? pal.raisedText} backgroundColor={pal.raised}>
-                    {' '}
-                    {badge}
-                  </Text>
-                ) : null}
-                {fill}
-              </Text>
-            )
-          const show = () => void showTab($, id)
-
-          return (
-            <Box key={`rail-${id}`} flexDirection="row">
-              <Button plain key={`tab-${id}-before`} label={TAB_PAD} hover={raise} onPress={show} />
-              <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
-              {badge !== null ? (
-                <Button plain key={`tab-${id}-count`} hover={raise} onPress={show}>
-                  <Text color={tabTone(id)}> {badge}</Text>
-                </Button>
-              ) : null}
-              <Button plain key={`tab-${id}-after`} label={fill} hover={raise} onPress={show} />
-            </Box>
-          )
-        })}
-      </Box>
-    )
-    const statusBlock = statusLines.some(Boolean) ? (
-      <Box
-        flexDirection="column"
-        rowGap={look === 'desktop' ? (2 * BANNER_GAP_PT) / DESKTOP_LINE_PT : isInline ? 0 : 1}
-        paddingX={hasRail ? 1 : isInline ? 2 : 1}
-        paddingTop={hasRail ? 0 : 1}
-      >
-        {statusLines}
-      </Box>
-    ) : null
-    const footer = (
-      <Box flexDirection="column" paddingX={1} paddingTop={blankLine}>
-        <Box flexDirection="row" paddingX={1} justifyContent="space-between" columnGap={3}>
-          {/* The same key in both states, so a desktop pane keeps its focus on the Button. */}
-          <Button
-            plain
-            dimColor={look !== 'desktop'}
-            key="help"
-            label={isHelpShown ? HELP_COPY.close : HELP_COPY.open}
-            onPress={() => void update($, IS_HELP_SHOWN, shown => !shown)}
-          />
-          <Box flexDirection="row" columnGap={2}>
-            {statusText}
-            {versionText}
-          </Box>
-        </Box>
-      </Box>
+    const { banner, tabs, rail, statusBlock, footer } = paneFrame(
+      {
+        ...client,
+        e,
+        tabList,
+        badgeOf,
+        shownTab,
+        pal,
+        look,
+        isInline,
+        Text,
+        isNarrowDesktop,
+        Box,
+        shownStatus,
+        lineNote,
+        tabText,
+        termProgram,
+        Button,
+        tabTone,
+        raiseEdge,
+        raise,
+        status,
+        railWidth,
+        hasRail,
+        blankLine,
+        isHelpShown,
+      },
+      handlers,
     )
 
-    const groupEmpty = (title: string) =>
-      look === 'desktop'
-        ? desktopFrame({
-            key: `empty-${title}`,
-            children: <Text color={pal.muted}>{groupEmptyText(title)}</Text>,
-          })
-        : treeRow('last', null, <Text color={pal.muted}>{`  ${groupEmptyText(title)}`}</Text>, `empty-${title}`)
-    /** A Finds group's title leads with its kind's mark, since its rows draw none. */
-    const groupTitle = (title: string, count: number, mark?: { mark: string; tone: Tone }) => {
-      const words = (
-        <Text>
-          <Text bold>{title}</Text>
-          {count > 0 ? <Text color={pal.muted}>{`${DOT}${count}`}</Text> : null}
-        </Text>
+    const { groupEmpty, groupTitle, section, sections, titleGap, closedFold, undoPlace, settledContent, settledRow } =
+      paneRowParts(
+        {
+          ...client,
+          look,
+          Text,
+          pal,
+          Box,
+          blankLine,
+          isInline,
+          space,
+          now,
+          foldHover,
+          Button,
+          settledLayout,
+          desktopFrame,
+          treeRow,
+          ToneSvg,
+          desktopHairline,
+          markGlyph,
+          markWidth,
+          childPos,
+        },
+        handlers,
       )
-      const lead = mark ? (
-        <Box width={RESULT_MARK_CELLS} flexShrink={0}>
-          {ToneSvg ? (
-            <ToneSvg
-              source={toneSvg(mark.tone, mark.mark)}
-              alt={mark.mark}
-              width={DESKTOP_CELL_PT}
-              height={DESKTOP_LINE_PT}
-            />
-          ) : (
-            <Text color={pal.mark[mark.tone]}>{mark.mark}</Text>
-          )}
-        </Box>
-      ) : null
-      const line = lead ? (
-        <Box flexDirection="row">
-          {lead}
-          {words}
-        </Box>
-      ) : (
-        words
-      )
-
-      return look === 'desktop' ? (
-        desktopFrame({ padY: 0, mark: lead, children: words })
-      ) : (
-        <Box paddingLeft={TREE_LINE_AT}>{line}</Box>
-      )
-    }
-    const section = (children: JSX.Element | JSX.Element[]) =>
-      look === 'desktop' ? (
-        <Box flexDirection="column" paddingTop={blankLine}>
-          {children}
-        </Box>
-      ) : (
-        <Box flexDirection="column">{children}</Box>
-      )
-    const sections = (list: JSX.Element[], space = 1) => (
-      <Box flexDirection="column" flexGrow={1} gap={look === 'desktop' ? 0 : isInline ? 1 : 2}>
-        {look === 'desktop'
-          ? list.flatMap((el, n) =>
-              n === 0
-                ? [el]
-                : [
-                    desktopHairline(`rule-${n}`, 'across', {
-                      marginTop: space,
-                      marginBottom: space - blankLine,
-                      marginLeft: FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS,
-                    }),
-                    el,
-                  ],
-            )
-          : list}
-      </Box>
+    const { emptyState, needsYouView, findingsView } = paneAskTabs(
+      {
+        listColumns,
+        look,
+        isInline,
+        Box,
+        Text,
+        blankLine,
+        pal,
+        needsYouGroups,
+        view,
+        isUnread,
+        unfolded,
+        Button,
+        stop,
+        glued,
+        now,
+        findingEntries,
+        lists,
+        divided,
+        childPos,
+        listRow,
+        settledRow,
+        closedFold,
+        section,
+        groupTitle,
+        titleGap,
+        groupEmpty,
+        sections,
+        banner,
+      },
+      handlers,
     )
-    const titleGap = (hasChildren = true) =>
-      isInline
-        ? []
-        : look === 'desktop'
-          ? [<Box paddingTop={(2 * ROW_PAD_PT) / DESKTOP_LINE_PT} />]
-          : [
-              <Box paddingLeft={TREE_LINE_AT}>
-                <Text color={pal.line}>{hasChildren ? '│' : ' '}</Text>
-              </Box>,
-            ]
-    const markGlyph = (mark: ResultMark, key: string, color: string) => {
-      if (mark.isRunning) return runningDot(key, mark.text, color)
-      // An Svg cannot read a theme key, so one takes the muted mark's colors.
-      const { light, dark } = color.startsWith('#') ? { light: color, dark: color } : MUTED_MARK
-      const drawn = ToneSvg ? mutedMarkSvg(mark.text, light, dark) : null
-      if (drawn) return svgCell(drawn.source, mark.text, `${key}-mark`, drawn.cells)
-      return <Text color={color}>{mark.text || ' '}</Text>
-    }
-    /** A result mark and the space after it, before its label. A blank mark keeps its place, so the label stays put. */
-    const resultLead = (mark: ResultMark, key: string, color: string) => (
-      <Box key={`${key}-lead`} width={RESULT_MARK_CELLS} flexShrink={0}>
-        {markGlyph(mark, key, color)}
-      </Box>
-    )
-    const resultLine = (mark: ResultMark | null, key: string, markColor: string, label: JSX.Element) =>
-      mark ? (
-        <Box flexDirection="row" flexShrink={1}>
-          {resultLead(mark, key, markColor)}
-          {label}
-        </Box>
-      ) : (
-        label
-      )
-    const refusedUndo = (d: ClosedLine) =>
-      canUndoRefused(d.delivery) ? undoButton({ id: d.id, action: 'undo' }, null) : null
-    const closedRow = (d: ClosedLine, pos: TreePos) =>
-      look === 'desktop'
-        ? desktopFrame({
-            key: `closed-${d.id}`,
-            indent: DESKTOP_MARK_CELLS,
-            isMarkHung: false,
-            padY: space.rowPad / 2,
-            mark: markGlyph(d.mark, `closed-${d.id}`, pal.age),
-            side: <Text color={pal.age}>{shortAgo(now - d.at)}</Text>,
-            children: [
-              <Text wrap="wrap" color={pal.muted}>
-                {d.ask}
-              </Text>,
-              <Text wrap="wrap" color={pal.age}>
-                {settledLabel(d.outcomeLabel, d.delivery)}
-              </Text>,
-              refusedUndo(d),
-            ],
-          })
-        : treeRow(
-            pos,
-            null,
-            <Box flexDirection="row">
-              <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-                <Text wrap="wrap" color={pal.muted}>
-                  {d.ask}
-                </Text>
-                {resultLine(
-                  d.mark,
-                  `closed-${d.id}`,
-                  pal.muted,
-                  <Text wrap="wrap" color={pal.age}>
-                    {settledLabel(d.outcomeLabel, d.delivery)}
-                  </Text>,
-                )}
-                {refusedUndo(d)}
-              </Box>
-              <Box width={TERMINAL_SIDE_CELLS - 1} flexShrink={0} justifyContent="flex-end">
-                <Text color={pal.age}>{shortAgo(now - d.at)}</Text>
-              </Box>
-            </Box>,
-            `closed-${d.id}`,
-            1,
-          )
-    // On desktop a Client takes a click on every cell of the line, where a Button takes one only on its label.
-    const foldRow = (kind: FoldKind, count: number, isUnfolded: boolean) =>
-      hasClient ? (
-        <Box key={`fold-row-${kind}`} flexDirection="row" overflow="hidden">
-          {'Svg' in elements ? (
-            <elements.Svg
-              source={chevronSvg(isUnfolded, foldHover === kind)}
-              alt={isUnfolded ? 'Unfolded' : 'Folded'}
-              width={FRAME_INSET_PT + DESKTOP_MARK_CELLS * DESKTOP_CELL_PT}
-              height={2 * ROW_PAD_PT + DESKTOP_LINE_PT}
-            />
-          ) : null}
-          <Box position="absolute" top={0} left={0} width="100%">
-            <elements.Client
-              key={`fold-${kind}`}
-              module="./fold-client.tsx"
-              width="100%"
-              props={
-                {
-                  markCells: DESKTOP_MARK_CELLS,
-                  label: foldLabel(count),
-                  isUnfolded,
-                  padY: DESKTOP_ROW_PAD,
-                  colors: {
-                    rest: isInline ? null : (pal.card ?? null),
-                    text: pal.age,
-                    hoverText: 'text',
-                  },
-                } satisfies FoldProps
-              }
-            />
-          </Box>
-        </Box>
-      ) : (
-        treeRow(
-          null,
-          null,
-          <Box flexDirection="row">
-            <Button
-              plain
-              dimColor
-              key={`fold-${kind}`}
-              label={`${isUnfolded ? '▾' : '▸'} ${foldLabel(count)}`}
-              onPress={() =>
-                void update($, UNFOLDED, u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind]))
-              }
-            />
-          </Box>,
-          `fold-row-${kind}`,
-        )
-      )
-    const closedFold = (kind: FoldKind, closed: ClosedLine[], total: number, isUnfolded: boolean) => {
-      const earlier = earlierLabel(total, closed.length)
-      return closed.length === 0
-        ? []
-        : [
-            ...(space.isFoldGapped ? titleGap(false) : []),
-            foldRow(kind, total, isUnfolded),
-            ...(isUnfolded && look !== 'desktop' && !isInline
-              ? [
-                  <Box key={`fold-gap-${kind}`} paddingLeft={TREE_LINE_AT + markWidth}>
-                    <Text color={pal.line}>│</Text>
-                  </Box>,
-                ]
-              : []),
-            ...(isUnfolded ? closed.map((d, n) => closedRow(d, childPos(n, closed.length + (earlier ? 1 : 0)))) : []),
-            ...(isUnfolded && earlier
-              ? [
-                  look === 'desktop'
-                    ? desktopFrame({
-                        key: `earlier-${kind}`,
-                        indent: DESKTOP_MARK_CELLS,
-                        isMarkHung: false,
-                        padY: space.rowPad / 2,
-                        children: <Text color={pal.age}>{earlier}</Text>,
-                      })
-                    : treeRow(
-                        childPos(closed.length, closed.length + 1),
-                        null,
-                        <Text color={pal.age}>{earlier}</Text>,
-                        `earlier-${kind}`,
-                        1,
-                      ),
-                ]
-              : []),
-          ]
-    }
-    const svgClientElements = hasClient && 'Svg' in elements ? elements : null
-    const undoButton = (undo: RowPress | PrPress, at: number | null) => {
-      const key = `undo-${pressRowId(undo)}`
-      const label = ' ↺ Undo '
-      const onPress = (press: { surface: UiPressArgument['surface'] }) => runPress($, undo, press.surface)
-      if (svgClientElements) {
-        followUpPresses.set(key, onPress)
-        const leftMs = at === null ? 0 : Math.max(0, SETTLED_MS - (now - at))
-        return (
-          <Box key={`${key}-${at}`} width={UNDO_CELLS} height={UNDO_HEIGHT_PT / DESKTOP_LINE_PT}>
-            <svgClientElements.Svg
-              source={undoSvg(leftMs / SETTLED_MS, leftMs)}
-              alt="Undo"
-              width={UNDO_CELLS * DESKTOP_CELL_PT}
-              height={UNDO_HEIGHT_PT}
-            />
-            <Box position="absolute" top={0} left={0}>
-              <svgClientElements.Client
-                key={key}
-                module="./undo-client.tsx"
-                width={UNDO_CELLS}
-                height={UNDO_HEIGHT_PT / DESKTOP_LINE_PT}
-                props={{ pressKey: key, hover: 'rgba(128, 128, 128, 0.12)' } satisfies UndoProps}
-              />
-            </Box>
-          </Box>
-        )
-      }
-      if (look !== 'terminal' || at === null) return <Button key={key} label="↺ Undo" onPress={onPress} />
-      const cells = [...label]
-      const filled = Math.ceil((Math.max(0, SETTLED_MS - (now - at)) / SETTLED_MS) * cells.length)
-
-      return (
-        <Button key={key} onPress={onPress}>
-          <Text backgroundColor={pal.divider}>{cells.slice(0, filled).join('')}</Text>
-          <Text>{cells.slice(filled).join('')}</Text>
-        </Button>
-      )
-    }
-    // A desktop title wraps beside Undo, so Undo's place keeps its size after Undo ends and the title keeps its wrap.
-    const undoPlace = (id: string, undo: RowPress | PrPress | null, at: number, offersUndo: boolean) =>
-      svgClientElements && offersUndo ? (
-        <Box key={`undo-place-${id}`} width={UNDO_CELLS} height={UNDO_HEIGHT_PT / DESKTOP_LINE_PT}>
-          {undo ? undoButton(undo, at) : null}
-        </Box>
-      ) : undo ? (
-        undoButton(undo, at)
-      ) : null
-    const settledContent = (
-      what: string,
-      { label, at, delivery, closedAs }: SettledState,
-      undo: RowPress | PrPress | null,
-      mark: ResultMark | null,
-    ) => (
-      <Box flexDirection="column">
-        <Text wrap="truncate-end" color={pal.muted}>
-          {what}
-        </Text>
-        <Box position="relative" flexDirection="row" columnGap={2}>
-          {undo ? (
-            <Box
-              key={settledScrollKey(`undo-${pressRowId(undo)}`, settledLayout)}
-              position="absolute"
-              top={0}
-              bottom={0}
-              left={0}
-              width={1}
-            />
-          ) : null}
-          {resultLine(
-            mark,
-            `settled-${what}`,
-            pal.muted,
-            <Text wrap="wrap" color={settledTone({ delivery, closedAs }) === 'done' ? pal.tone.done : pal.muted}>
-              {settledLabel(label, delivery)}
-            </Text>,
-          )}
-          {undo ? undoButton(undo, at) : null}
-        </Box>
-      </Box>
-    )
-    const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos: TreePos) => {
-      const undo = r.actions.find(a => a.press.action === 'undo')?.press ?? null
-      const mark = settledMark(state)
-      if (look === 'desktop')
-        return desktopFrame({
-          key: `settled-${r.id}`,
-          markCells: DESKTOP_MARK_CELLS,
-          mark: markGlyph(mark, `settled-${r.id}`, pal.muted),
-          side: undoPlace(r.id, undo, state.at, state.offersUndo),
-          padY: space.settledPad,
-          isSideCentered: true,
-          children: [
-            <Text wrap="wrap">
-              {r.title}
-              <Text color={pal.muted}>{`${DOT}${settledLabel(state.label, state.delivery)}`}</Text>
-            </Text>,
-          ],
-        })
-      return (
-        <Box key={`settled-${r.id}`} flexDirection="column" paddingY={space.settledPad}>
-          {treeRow(pos, null, settledContent(rowTitle(r, look), state, undo, mark))}
-        </Box>
-      )
-    }
-    const needsYouView = () => {
-      const groups = needsYouGroups.flatMap(g => {
-        const { entries } = g
-        const closed = closedShown(view.needsYou.closed[g.list], settledIn(entries))
-        if (isUnread) return []
-        const isUnfolded = unfolded.includes(g.kind)
-        const open = divided(
-          entries.map((x, n) =>
-            'row' in x ? listRow(x.row, childPos(n, entries.length)) : settledRow(x, childPos(n, entries.length)),
-          ),
-          g.kind,
-          ROW_COLUMNS.tree.handleAt,
-        )
-        const tail = closedFold(
-          g.kind,
-          closed,
-          closedTotal(view.needsYou.closed[g.list], settledIn(entries)),
-          isUnfolded,
-        )
-
-        return [
-          section([
-            groupTitle(g.title, waitingCount(g.rows.map(r => r.view))),
-            ...titleGap(),
-            ...(open.length > 0 ? open : [groupEmpty(g.title)]),
-            ...tail,
-          ]),
-        ]
-      })
-      const isNothing = needsYouGroups.every(
-        g => g.entries.length === 0 && closedTotal(view.needsYou.closed[g.list], settledIn(g.entries)) === 0,
-      )
-      const unread = isUnread
-        ? [
-            section(
-              banner(bannerOf('read-failed', READ_FAILED_TEXT), {
-                ...(sessionState.isReadingAgain ? { lead: <Text color={pal.muted}>{READING_TEXT}</Text> } : {}),
-                action: <Button key="read-again" label="Try again" onPress={() => void readAgain($)} />,
-              }),
-            ),
-          ]
-        : []
-      if (isNothing && !stop && unread.length === 0) return emptyState(emptyText('needsYou', 'Claude'))
-      const outside = stop
-        ? [
-            section(
-              banner(stopBanner(stop), {
-                after: <Text color={pal.muted}>{glued(`${DOT}${ago(now - stop.at)}`)}</Text>,
-                isBodyBelow: true,
-                extra:
-                  sessionState.resuming?.is === 'refused' ? (
-                    <Text color={pal.tone.error} wrap="wrap">
-                      Not sent: {sessionState.resuming.why}
-                    </Text>
-                  ) : null,
-                action: isResumable(stop) ? (
-                  <Button
-                    key="resume"
-                    label={sessionState.resuming?.is === 'sending' ? 'Resuming…' : 'Resume'}
-                    onPress={() => void resume($)}
-                  />
-                ) : null,
-              }),
-            ),
-          ]
-        : []
-
-      return sections([...outside, ...unread, ...groups])
-    }
-
-    const findingsView = () => {
-      const settled = settledIn(findingEntries)
-      if (findingEntries.length === 0 && closedTotal(view.findings.closed, settled) === 0)
-        return emptyState(emptyText('findings', 'Claude'))
-      const groups = lists.findingGroups.map(g => {
-        const closedOf = view.findings.closed.filter(f => f.kind === g.kind)
-        const closed = closedShown(closedOf, settled).map(f => ({
-          id: f.id,
-          ask: f.title,
-          at: f.closedAt,
-          outcomeLabel: f.outcomeLabel,
-          delivery: f.delivery,
-          mark: f.mark,
-        }))
-        return section([
-          groupTitle(g.title, waitingCount(rowsIn(g.entries).map(r => r.view)), FINDING_GROUPS[g.kind]),
-          ...titleGap(),
-          ...(g.entries.length === 0 ? [groupEmpty(g.title)] : []),
-          ...divided(
-            g.entries.map((x, n) =>
-              'row' in x ? listRow(x.row, childPos(n, g.entries.length)) : settledRow(x, childPos(n, g.entries.length)),
-            ),
-            g.kind,
-            ROW_COLUMNS.tree.handleAt,
-          ),
-          ...closedFold(g.kind, closed, closedTotal(closedOf, settled), unfolded.includes(g.kind)),
-        ])
-      })
-
-      return sections(groups)
-    }
 
     const settledPrBlock = (pr: PrView, state: SettledState) => {
       const what = `#${pr.number} ${pr.title}`
