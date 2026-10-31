@@ -1,3 +1,5 @@
+// Built by scripts/build-types.mjs from types/parts/. Edit a part, then run the script.
+
 /** Where a subject of the session's work stands. `done` and `dropped` close it. */
 export type SubjectStatus = 'working' | 'queued' | 'waits-on-other' | 'done' | 'dropped'
 

@@ -1,2 +1,4 @@
 # Built by scripts/build-compare-page.mjs from hooks/compare-page/
 hooks/compare-page.html linguist-generated=true
+# Built by scripts/build-types.mjs from types/parts/
+types/index.d.ts linguist-generated=true
