@@ -1,5 +1,6 @@
 import type { Away, DemoCopy, LastAction } from '../types'
-import { emptySession, type SavedSession, type Session } from './session'
+import type { Session } from './session'
+import { emptySession, type SavedSession } from './session-files'
 import { exclusiveKeys, orderedKeys } from './session-host'
 import { withDemoPresence } from './demo'
 

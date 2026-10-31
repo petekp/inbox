@@ -1,7 +1,7 @@
 import { parseStatus } from '../hooks/status'
 import type { Op } from '../hooks/status'
 import { applyOps } from '../hooks/status-ops'
-import { emptySession } from '../hooks/session'
+import { emptySession } from '../hooks/session-files'
 import { statusPage } from '../hooks/view'
 import type { StatusRow } from '../hooks/view'
 import type { Item, SessionStatus, Session } from '../types'

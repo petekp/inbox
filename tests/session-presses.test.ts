@@ -1,7 +1,9 @@
 import { expect, test } from 'claude-code/testing'
 
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { endTurn, notePrompt, pressOn, recorded, sessionView, withFetchedPrs } from '../hooks/session'
+import { endTurn, notePrompt } from '../hooks/session-turns'
+import { pressOn, recorded, withFetchedPrs } from '../hooks/session-presses'
+import { sessionView } from '../hooks/session-view'
 import type { PrView, RowNote } from '../types'
 import { press, runUpdates, wakeForDone } from '../hooks/session-host'
 import { allRows, COMPARE_LIMIT_MS, feedbackOf, feedbackText, NO_HOLDS } from '../hooks/view'

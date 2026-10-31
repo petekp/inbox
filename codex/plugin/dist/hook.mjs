@@ -412,6 +412,161 @@ function checkVersion(saved) {
   if (version !== SESSION_VERSION) throw new Error(`Unsupported inbox state version: ${version}`);
 }
 
+// ../hooks/ledger-prompt.ts
+var NL2 = "\n";
+function outcomeText(d) {
+  if (d.how === "dismissed") return "dismissed by the user";
+  if (d.how === "expired") return "expired before the user answered";
+  return d.outcome;
+}
+
+// ../hooks/inbox-text.ts
+var START_TITLE = 'inbox: where this session stands, as of the last reply. An "inbox:" text beside a later prompt replaces this.';
+function surfaceAtStart(host) {
+  return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
+}
+function screenText(host, isOpen2, tab) {
+  if (!isOpen2) return `${surfaceAtStart(host)} is closed.`;
+  if (tab?.isPage)
+    return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows a guide to the session's work, not rows.`;
+  return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}listing every open item.`;
+}
+function latestBatch(ledger) {
+  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
+}
+function describe(item) {
+  const parts = [`"${item.ask}"`];
+  if (item.options.length > 0) parts.push(`options: ${item.options.join(" / ")}`);
+  if (item.rec) parts.push(`recommended: ${item.rec}`);
+  if (item.kind === "task") parts.push("an action for the user");
+  return parts.join("; ");
+}
+function numberOf(label) {
+  const m = label?.match(/(?:^|[^A-Za-z\d])(?:[QqDd#]\s?)?(\d{1,2})(?!\d)/);
+  return m ? Number(m[1]) : null;
+}
+function answerableBatch(ledger, promptTurn) {
+  return ledger.batchTurn === promptTurn - 1 ? latestBatch(ledger) : [];
+}
+function batchNumbers(batch) {
+  const hasLabels = batch.some((i) => numberOf(i.label) !== null);
+  const byNumber = /* @__PURE__ */ new Map();
+  batch.forEach((item, at) => {
+    const n = hasLabels ? numberOf(item.label) : at + 1;
+    if (n !== null && !byNumber.has(n)) byNumber.set(n, item);
+  });
+  return byNumber;
+}
+function questionNumbers(ledger, promptTurn) {
+  const numbers = /* @__PURE__ */ new Map();
+  for (const [n, item] of batchNumbers(answerableBatch(ledger, promptTurn)))
+    if (item.kind === "question") numbers.set(item.id, n);
+  return numbers;
+}
+var LINE_ANSWER = /(?:^|\n)\s*(?:[QqDd#]\s?)?(\d{1,2})\s*[.):\-–]\s*\S/g;
+var INLINE_ANSWER = /\s(?:[QqDd#]\s?)?(\d{1,2})\s*[.)]\s+\S/g;
+var ACCEPT_ALL = /^\s*(go|go ahead|yes|yep|yeah|sure|ok|okay|sgtm|lgtm|sounds good|do it|proceed|all good|ship it)\s*[.!]*\s*$/i;
+var ACCEPT_RECS = /\b(all|both|everything|your)\b[^.\n]{0,40}\b(recommend\w*|recs?|suggest\w*|picks?|calls?)\b/i;
+function answerNote(ledger, text2) {
+  const lines = [];
+  const batch = answerableBatch(ledger, ledger.turn);
+  if (batch.length > 0) {
+    const numbers = /* @__PURE__ */ new Set();
+    for (const m of text2.matchAll(LINE_ANSWER)) numbers.add(Number(m[1]));
+    if (/^\s*(?:[QqDd#]\s?)?\d{1,2}\s*[.):\-–]\s/.test(text2)) {
+      for (const m of text2.matchAll(INLINE_ANSWER)) numbers.add(Number(m[1]));
+    }
+    const byNumber = batchNumbers(batch);
+    for (const n of [...numbers].sort((a, b) => a - b)) {
+      const item = byNumber.get(n);
+      if (item) lines.push(`- ${n} \u2192 ${describe(item)}`);
+    }
+    if (lines.length === 0 && (ACCEPT_ALL.test(text2) || ACCEPT_RECS.test(text2))) {
+      const withRecs = batch.filter((i) => i.rec);
+      if (withRecs.length > 0) {
+        return [
+          "inbox: if the user is accepting your recommendations, these are the open ones:",
+          ...withRecs.map((i) => `- ${i.label ?? "\u2022"} \u2192 ${describe(i)}`)
+        ].join(NL2);
+      }
+    }
+  }
+  return lines.length === 0 ? null : ["inbox: the user's message answers these open items from your earlier replies:", ...lines].join(NL2);
+}
+function itemLine(item) {
+  return `- ${item.label ? `(${item.label}) ` : ""}${describe(item)} (close id: ${item.id})`;
+}
+function findingLine(finding) {
+  return `- ${finding.kind}: ${finding.title} (close id: ${finding.id})`;
+}
+function statusSummaryLines(ledger) {
+  const head = ledger.overview?.head ?? null;
+  const focus = head ? [head.title, head.description].filter(Boolean).join(": ") : "";
+  const open3 = (ledger.overview?.subjects ?? []).filter(isOpen);
+  return [
+    ...focus ? [`Working on: ${focus}`] : [],
+    ...open3.length > 0 ? ["Where it stands:", ...open3.map((s) => `- ${s.name}: ${s.text || "-"} (${s.status})`)] : []
+  ];
+}
+function carryText(ledger, title) {
+  const findings = ledger.findings;
+  const lines = statusSummaryLines(ledger);
+  if (lines.length === 0 && ledger.items.length === 0 && findings.length === 0) return null;
+  const out = [title, ...lines];
+  if (ledger.items.length > 0) {
+    out.push("Waiting on the user:");
+    for (const item of ledger.items) out.push(itemLine(item));
+  }
+  if (findings.length > 0) {
+    out.push("Findings you recorded, still open:");
+    for (const f of findings) out.push(findingLine(f));
+  }
+  if (ledger.closed.length > 0) {
+    out.push("Recently closed:");
+    for (const d of ledger.closed) out.push(`- "${d.ask}" \u2192 ${outcomeText(d)}`);
+  }
+  return out.join(NL2);
+}
+var CLOSE_ID_RULE = "A close id is only for the close tool. Never write one in a reply.";
+function inboxText(host, ledger, isOpen2) {
+  const out = [
+    `inbox: what waits on the user, as of your last reply. Anything not listed here is closed. ${CLOSE_ID_RULE}`
+  ];
+  if (ledger.items.length > 0) {
+    out.push("Waiting on the user:");
+    for (const item of ledger.items) out.push(itemLine(item));
+  } else {
+    out.push("Nothing is waiting on the user.");
+  }
+  if (ledger.findings.length > 0) {
+    out.push("Findings you recorded, still open:");
+    for (const f of ledger.findings) out.push(findingLine(f));
+  }
+  out.push(isOpen2 ? `The user has ${host.surface} open beside the conversation.` : `${surfaceAtStart(host)} is closed.`);
+  return out.join(NL2);
+}
+function closedText(closed) {
+  if (closed.length === 0) return null;
+  const advice = (d) => d.how === "dismissed" ? ". Ask it again only if the user brings it up." : d.how === "expired" ? ". Ask it again if it still matters." : "";
+  return [
+    "Closed since you last read the inbox:",
+    ...closed.map((d) => `- "${d.ask}" \u2192 ${outcomeText(d)}${advice(d)}`)
+  ].join(NL2);
+}
+var TOLD_NOTHING = { inbox: null, closed: [] };
+function promptNotes(host, ledger, prompt, told) {
+  const notes = [];
+  const answer = prompt.isPress ? null : answerNote(ledger, prompt.text);
+  if (answer) notes.push(answer);
+  const inbox = inboxText(host, ledger, prompt.isOpen);
+  const toldClosed = new Set(told.closed);
+  const closed = closedText(ledger.closed.filter((d) => !toldClosed.has(d.id)));
+  const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0;
+  if (!closed && (inbox === told.inbox || isEmpty && told.inbox === null)) return { notes, told };
+  notes.push(closed ? `${inbox}${NL2}${closed}` : inbox);
+  return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
+}
+
 // ../hooks/prs.ts
 var PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
 function prRefs(text2) {
@@ -510,16 +665,6 @@ function inPrOrder(prs, ranked = []) {
 }
 function failingChecks(pr) {
   return pr.checks.filter((c) => c.bucket === "fail");
-}
-
-// ../hooks/gh.ts
-var GH_TIMEOUT_MS = 2e4;
-var UNSTARTABLE_CODE = -1;
-var TIMED_OUT_CODE = -2;
-var GIT_TIMEOUT_MS = 5e3;
-async function branchIn(run2, folder) {
-  const r = await run2(["git", "branch", "--show-current"], { cwd: folder, timeoutMs: GIT_TIMEOUT_MS });
-  return r.code === 0 ? r.stdout.trim() || null : null;
 }
 
 // ../hooks/presses.ts
@@ -676,44 +821,139 @@ function isRepeatOf(last, action) {
   return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
 }
 
-// ../hooks/status-children.ts
-function isChildRunning(c, now) {
-  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+// ../hooks/host-tasks.ts
+var STATUSES2 = {
+  pending: "pending",
+  in_progress: "in-progress",
+  "in-progress": "in-progress",
+  completed: "done",
+  done: "done",
+  abandoned: "dropped",
+  blocked: "blocked"
+};
+var statusOf = (raw) => STATUSES2[String(raw)] ?? "pending";
+var textOf = (raw) => typeof raw === "string" ? raw.trim() : "";
+var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+function numberedTasks(rows, textKey) {
+  return rows.map(recordOf).map((row, n) => ({ id: String(n + 1), text: textOf(row[textKey]), status: statusOf(row.status) })).filter((t) => t.text !== "");
 }
-function withChild(last, c, now) {
-  const o = last ?? EMPTY_SESSION_STATUS;
-  const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
-  const known = kept.find((x) => x.ref === c.ref);
-  if (known) return { ...o, children: kept.map((x) => x === known ? { ...x, ...c } : x) };
-  return {
-    ...o,
-    nextChildId: o.nextChildId + 1,
-    children: [...kept, { delegateState: null, ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
-  };
+function codexPlanOf(args) {
+  const parsed = typeof args === "string" ? safeJson(args) : args;
+  const plan = recordOf(parsed).plan;
+  if (!Array.isArray(plan)) return null;
+  return numberedTasks(plan, "step");
 }
-function changedChild(o, ref, change) {
-  const known = o?.children.find((c) => c.ref === ref);
-  if (!o || !known) return o;
-  return { ...o, children: o.children.map((c) => c === known ? { ...c, ...change(c) } : c) };
+function safeJson(text2) {
+  try {
+    return JSON.parse(text2);
+  } catch {
+    return null;
+  }
 }
-function childEnded(o, ref, at) {
-  return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
-}
-function subjectTouched(o, id, at) {
-  const isSeen = (s) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
-  const touched = (s) => isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
-  return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
-}
-function childActive(o, ref, at) {
-  return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
+function upgradeHostTasks(saved) {
+  if (!Array.isArray(saved)) return [];
+  return saved.flatMap((raw) => {
+    const t = recordOf(raw);
+    const status = STATUSES2[String(t.status)];
+    return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
+  });
 }
 
-// ../hooks/ledger-prompt.ts
-var NL3 = "\n";
-function outcomeText(d) {
-  if (d.how === "dismissed") return "dismissed by the user";
-  if (d.how === "expired") return "expired before the user answered";
-  return d.outcome;
+// ../hooks/session-files.ts
+var NO_PRS = { views: {}, branchRef: null, isFetching: false };
+var NO_TURN = { person: null, trigger: null, activity: [], press: null };
+function emptySession() {
+  return {
+    ledger: EMPTY,
+    turn: NO_TURN,
+    told: TOLD_NOTHING,
+    presence: {
+      turnsStarted: 0,
+      turnsApplied: 0,
+      ledgerState: "current",
+      hasDroppedReply: false,
+      isUpdating: false,
+      isTurnRunning: false,
+      turnStartedAt: null,
+      lastReplyAt: null,
+      lastTypedMessageAt: null
+    },
+    place: null,
+    pending: [],
+    sent: [],
+    lastActions: {},
+    heldRows: [],
+    shownSince: null,
+    prViews: NO_PRS,
+    stop: null,
+    overviewFailure: null,
+    lastOverviewCallAt: null,
+    hostTasks: [],
+    dialogQuestions: []
+  };
+}
+var SESSION_ID = /^[\w-]{1,100}$/;
+function sessionFile(sessionId) {
+  if (!SESSION_ID.test(sessionId)) throw new Error(`Not a session id: ${sessionId}`);
+  return `${sessionId}.json`;
+}
+function missingAsNull(err) {
+  if (err.code === "ENOENT") return null;
+  throw err;
+}
+function withoutStatedStep(presence) {
+  const { statedStep: _statedStep, ...rest } = presence ?? {};
+  return rest;
+}
+function upgradeSession(saved) {
+  const base = emptySession();
+  const views = saved.prViews?.views ?? {};
+  return {
+    ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
+    turn: { ...base.turn, ...saved.turn },
+    told: { ...base.told, ...saved.told },
+    presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
+    place: saved.place ?? null,
+    pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
+    sent: (saved.sent ?? []).map((x) => ({
+      ...x,
+      row: x.row ?? null,
+      queuedId: x.queuedId ?? null,
+      pressedAt: x.pressedAt ?? null,
+      deliveryId: x.deliveryId ?? null,
+      phase: x.phase ?? "accepted"
+    })),
+    lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    heldRows: saved.heldRows ?? [],
+    shownSince: saved.shownSince ?? null,
+    prViews: {
+      ...NO_PRS,
+      ...saved.prViews,
+      // Views saved before `isYours` and `wasSeenOpen`, and threads saved before their times and `isLinesChanged` existed.
+      views: Object.fromEntries(
+        Object.entries(views).map(([ref, pr]) => [
+          ref,
+          {
+            ...pr,
+            isYours: pr.isYours ?? null,
+            wasSeenOpen: pr.wasSeenOpen ?? pr.state === "OPEN",
+            threads: pr.threads.map((t) => ({
+              ...t,
+              isLinesChanged: t.isLinesChanged ?? false,
+              at: t.at ?? null,
+              reply: t.reply && { ...t.reply, at: t.reply.at ?? null }
+            }))
+          }
+        ])
+      ),
+      isFetching: false
+    },
+    stop: saved.stop ?? null,
+    overviewFailure: saved.overviewFailure ?? null,
+    lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
+    hostTasks: upgradeHostTasks(saved.hostTasks),
+    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
+  };
 }
 
 // ../hooks/catch-up-text.ts
@@ -790,42 +1030,112 @@ function dialogActivity(questions, outcome) {
   }
 }
 
-// ../hooks/host-tasks.ts
-var STATUSES2 = {
-  pending: "pending",
-  in_progress: "in-progress",
-  "in-progress": "in-progress",
-  completed: "done",
-  done: "done",
-  abandoned: "dropped",
-  blocked: "blocked"
-};
-var statusOf = (raw) => STATUSES2[String(raw)] ?? "pending";
-var textOf = (raw) => typeof raw === "string" ? raw.trim() : "";
-var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
-function numberedTasks(rows, textKey) {
-  return rows.map(recordOf).map((row, n) => ({ id: String(n + 1), text: textOf(row[textKey]), status: statusOf(row.status) })).filter((t) => t.text !== "");
+// ../hooks/dialogs.ts
+function optionKey(option) {
+  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
 }
-function codexPlanOf(args) {
-  const parsed = typeof args === "string" ? safeJson(args) : args;
-  const plan = recordOf(parsed).plan;
-  if (!Array.isArray(plan)) return null;
-  return numberedTasks(plan, "step");
+function optionsKey(options) {
+  return options.map(optionKey).sort().join("\n");
 }
-function safeJson(text2) {
-  try {
-    return JSON.parse(text2);
-  } catch {
-    return null;
-  }
+function hasSameOptions(item, q) {
+  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
 }
-function upgradeHostTasks(saved) {
-  if (!Array.isArray(saved)) return [];
-  return saved.flatMap((raw) => {
-    const t = recordOf(raw);
-    const status = STATUSES2[String(t.status)];
-    return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
+function copyOf(q, items, questions) {
+  const byOptions = items.filter((i) => hasSameOptions(i, q));
+  const [only] = byOptions;
+  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
+  const pool = byOptions.length > 0 ? byOptions : items;
+  const byAsk = pool.filter((i) => restates(i.ask, q.question));
+  const [asked] = byAsk;
+  if (!asked || byAsk.length !== 1) return null;
+  const restated = questions.filter((o) => restates(asked.ask, o.question));
+  return restated.length === 1 ? asked : null;
+}
+function descriptionsFor(options, descriptions) {
+  const byKey = new Map(Object.entries(descriptions).map(([label, text2]) => [optionKey(label), text2]));
+  const matched = options.flatMap((o) => {
+    const text2 = byKey.get(optionKey(o));
+    return text2 === void 0 ? [] : [[o, text2]];
   });
+  return matched.length > 0 ? Object.fromEntries(matched) : null;
+}
+function asCopyOf(item, q) {
+  const descriptions = descriptionsFor(item.options, q.descriptions);
+  return {
+    ...item,
+    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
+    ...descriptions ? { optionDescriptions: descriptions } : {}
+  };
+}
+function linkDialogs(s) {
+  if (s.dialogQuestions.length === 0) return s;
+  let items = s.ledger.items;
+  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
+  const questions = s.dialogQuestions.map((q) => {
+    if (q.itemId !== null) return q;
+    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
+    const copy = copyOf(
+      q,
+      turnItems,
+      s.dialogQuestions.filter((o) => o.turn === q.turn)
+    );
+    if (!copy || copy.dialog || linked.has(copy.id)) return q;
+    linked.add(copy.id);
+    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
+    return { ...q, itemId: copy.id };
+  });
+  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
+  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+}
+function noteDialog(s, callId, questions) {
+  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
+  const added = questions.flatMap(
+    (q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]
+  );
+  if (added.length === 0) return s;
+  return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
+}
+
+// ../hooks/gh.ts
+var GH_TIMEOUT_MS = 2e4;
+var UNSTARTABLE_CODE = -1;
+var TIMED_OUT_CODE = -2;
+var GIT_TIMEOUT_MS = 5e3;
+async function branchIn(run2, folder) {
+  const r = await run2(["git", "branch", "--show-current"], { cwd: folder, timeoutMs: GIT_TIMEOUT_MS });
+  return r.code === 0 ? r.stdout.trim() || null : null;
+}
+
+// ../hooks/status-children.ts
+function isChildRunning(c, now) {
+  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+}
+function withChild(last, c, now) {
+  const o = last ?? EMPTY_SESSION_STATUS;
+  const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
+  const known = kept.find((x) => x.ref === c.ref);
+  if (known) return { ...o, children: kept.map((x) => x === known ? { ...x, ...c } : x) };
+  return {
+    ...o,
+    nextChildId: o.nextChildId + 1,
+    children: [...kept, { delegateState: null, ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
+  };
+}
+function changedChild(o, ref, change) {
+  const known = o?.children.find((c) => c.ref === ref);
+  if (!o || !known) return o;
+  return { ...o, children: o.children.map((c) => c === known ? { ...c, ...change(c) } : c) };
+}
+function childEnded(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
+}
+function subjectTouched(o, id, at) {
+  const isSeen = (s) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
+  const touched = (s) => isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
+  return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
+}
+function childActive(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
 }
 
 // ../hooks/status-prompt.ts
@@ -878,153 +1188,6 @@ Rules:
 - Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
 - Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.
 - The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.`;
-
-// ../hooks/inbox-text.ts
-var START_TITLE = 'inbox: where this session stands, as of the last reply. An "inbox:" text beside a later prompt replaces this.';
-function surfaceAtStart(host) {
-  return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
-}
-function screenText(host, isOpen2, tab) {
-  if (!isOpen2) return `${surfaceAtStart(host)} is closed.`;
-  if (tab?.isPage)
-    return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows a guide to the session's work, not rows.`;
-  return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}listing every open item.`;
-}
-function latestBatch(ledger) {
-  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
-}
-function describe(item) {
-  const parts = [`"${item.ask}"`];
-  if (item.options.length > 0) parts.push(`options: ${item.options.join(" / ")}`);
-  if (item.rec) parts.push(`recommended: ${item.rec}`);
-  if (item.kind === "task") parts.push("an action for the user");
-  return parts.join("; ");
-}
-function numberOf(label) {
-  const m = label?.match(/(?:^|[^A-Za-z\d])(?:[QqDd#]\s?)?(\d{1,2})(?!\d)/);
-  return m ? Number(m[1]) : null;
-}
-function answerableBatch(ledger, promptTurn) {
-  return ledger.batchTurn === promptTurn - 1 ? latestBatch(ledger) : [];
-}
-function batchNumbers(batch) {
-  const hasLabels = batch.some((i) => numberOf(i.label) !== null);
-  const byNumber = /* @__PURE__ */ new Map();
-  batch.forEach((item, at) => {
-    const n = hasLabels ? numberOf(item.label) : at + 1;
-    if (n !== null && !byNumber.has(n)) byNumber.set(n, item);
-  });
-  return byNumber;
-}
-function questionNumbers(ledger, promptTurn) {
-  const numbers = /* @__PURE__ */ new Map();
-  for (const [n, item] of batchNumbers(answerableBatch(ledger, promptTurn)))
-    if (item.kind === "question") numbers.set(item.id, n);
-  return numbers;
-}
-var LINE_ANSWER = /(?:^|\n)\s*(?:[QqDd#]\s?)?(\d{1,2})\s*[.):\-–]\s*\S/g;
-var INLINE_ANSWER = /\s(?:[QqDd#]\s?)?(\d{1,2})\s*[.)]\s+\S/g;
-var ACCEPT_ALL = /^\s*(go|go ahead|yes|yep|yeah|sure|ok|okay|sgtm|lgtm|sounds good|do it|proceed|all good|ship it)\s*[.!]*\s*$/i;
-var ACCEPT_RECS = /\b(all|both|everything|your)\b[^.\n]{0,40}\b(recommend\w*|recs?|suggest\w*|picks?|calls?)\b/i;
-function answerNote(ledger, text2) {
-  const lines = [];
-  const batch = answerableBatch(ledger, ledger.turn);
-  if (batch.length > 0) {
-    const numbers = /* @__PURE__ */ new Set();
-    for (const m of text2.matchAll(LINE_ANSWER)) numbers.add(Number(m[1]));
-    if (/^\s*(?:[QqDd#]\s?)?\d{1,2}\s*[.):\-–]\s/.test(text2)) {
-      for (const m of text2.matchAll(INLINE_ANSWER)) numbers.add(Number(m[1]));
-    }
-    const byNumber = batchNumbers(batch);
-    for (const n of [...numbers].sort((a, b) => a - b)) {
-      const item = byNumber.get(n);
-      if (item) lines.push(`- ${n} \u2192 ${describe(item)}`);
-    }
-    if (lines.length === 0 && (ACCEPT_ALL.test(text2) || ACCEPT_RECS.test(text2))) {
-      const withRecs = batch.filter((i) => i.rec);
-      if (withRecs.length > 0) {
-        return [
-          "inbox: if the user is accepting your recommendations, these are the open ones:",
-          ...withRecs.map((i) => `- ${i.label ?? "\u2022"} \u2192 ${describe(i)}`)
-        ].join(NL3);
-      }
-    }
-  }
-  return lines.length === 0 ? null : ["inbox: the user's message answers these open items from your earlier replies:", ...lines].join(NL3);
-}
-function itemLine(item) {
-  return `- ${item.label ? `(${item.label}) ` : ""}${describe(item)} (close id: ${item.id})`;
-}
-function findingLine(finding) {
-  return `- ${finding.kind}: ${finding.title} (close id: ${finding.id})`;
-}
-function statusSummaryLines(ledger) {
-  const head = ledger.overview?.head ?? null;
-  const focus = head ? [head.title, head.description].filter(Boolean).join(": ") : "";
-  const open3 = (ledger.overview?.subjects ?? []).filter(isOpen);
-  return [
-    ...focus ? [`Working on: ${focus}`] : [],
-    ...open3.length > 0 ? ["Where it stands:", ...open3.map((s) => `- ${s.name}: ${s.text || "-"} (${s.status})`)] : []
-  ];
-}
-function carryText(ledger, title) {
-  const findings = ledger.findings;
-  const lines = statusSummaryLines(ledger);
-  if (lines.length === 0 && ledger.items.length === 0 && findings.length === 0) return null;
-  const out = [title, ...lines];
-  if (ledger.items.length > 0) {
-    out.push("Waiting on the user:");
-    for (const item of ledger.items) out.push(itemLine(item));
-  }
-  if (findings.length > 0) {
-    out.push("Findings you recorded, still open:");
-    for (const f of findings) out.push(findingLine(f));
-  }
-  if (ledger.closed.length > 0) {
-    out.push("Recently closed:");
-    for (const d of ledger.closed) out.push(`- "${d.ask}" \u2192 ${outcomeText(d)}`);
-  }
-  return out.join(NL3);
-}
-var CLOSE_ID_RULE = "A close id is only for the close tool. Never write one in a reply.";
-function inboxText(host, ledger, isOpen2) {
-  const out = [
-    `inbox: what waits on the user, as of your last reply. Anything not listed here is closed. ${CLOSE_ID_RULE}`
-  ];
-  if (ledger.items.length > 0) {
-    out.push("Waiting on the user:");
-    for (const item of ledger.items) out.push(itemLine(item));
-  } else {
-    out.push("Nothing is waiting on the user.");
-  }
-  if (ledger.findings.length > 0) {
-    out.push("Findings you recorded, still open:");
-    for (const f of ledger.findings) out.push(findingLine(f));
-  }
-  out.push(isOpen2 ? `The user has ${host.surface} open beside the conversation.` : `${surfaceAtStart(host)} is closed.`);
-  return out.join(NL3);
-}
-function closedText(closed) {
-  if (closed.length === 0) return null;
-  const advice = (d) => d.how === "dismissed" ? ". Ask it again only if the user brings it up." : d.how === "expired" ? ". Ask it again if it still matters." : "";
-  return [
-    "Closed since you last read the inbox:",
-    ...closed.map((d) => `- "${d.ask}" \u2192 ${outcomeText(d)}${advice(d)}`)
-  ].join(NL3);
-}
-var TOLD_NOTHING = { inbox: null, closed: [] };
-function promptNotes(host, ledger, prompt, told) {
-  const notes = [];
-  const answer = prompt.isPress ? null : answerNote(ledger, prompt.text);
-  if (answer) notes.push(answer);
-  const inbox = inboxText(host, ledger, prompt.isOpen);
-  const toldClosed = new Set(told.closed);
-  const closed = closedText(ledger.closed.filter((d) => !toldClosed.has(d.id)));
-  const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0;
-  if (!closed && (inbox === told.inbox || isEmpty && told.inbox === null)) return { notes, told };
-  notes.push(closed ? `${inbox}${NL3}${closed}` : inbox);
-  return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
-}
 
 // ../hooks/model-text.ts
 function guidanceText(host) {
@@ -1850,75 +2013,6 @@ function prTabActions(drawn, branchRef) {
   ] : [];
 }
 
-// ../hooks/arrivals.ts
-var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
-
-// ../hooks/dialogs.ts
-function optionKey(option) {
-  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
-}
-function optionsKey(options) {
-  return options.map(optionKey).sort().join("\n");
-}
-function hasSameOptions(item, q) {
-  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
-}
-function copyOf(q, items, questions) {
-  const byOptions = items.filter((i) => hasSameOptions(i, q));
-  const [only] = byOptions;
-  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
-  const pool = byOptions.length > 0 ? byOptions : items;
-  const byAsk = pool.filter((i) => restates(i.ask, q.question));
-  const [asked] = byAsk;
-  if (!asked || byAsk.length !== 1) return null;
-  const restated = questions.filter((o) => restates(asked.ask, o.question));
-  return restated.length === 1 ? asked : null;
-}
-function descriptionsFor(options, descriptions) {
-  const byKey = new Map(Object.entries(descriptions).map(([label, text2]) => [optionKey(label), text2]));
-  const matched = options.flatMap((o) => {
-    const text2 = byKey.get(optionKey(o));
-    return text2 === void 0 ? [] : [[o, text2]];
-  });
-  return matched.length > 0 ? Object.fromEntries(matched) : null;
-}
-function asCopyOf(item, q) {
-  const descriptions = descriptionsFor(item.options, q.descriptions);
-  return {
-    ...item,
-    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
-    ...descriptions ? { optionDescriptions: descriptions } : {}
-  };
-}
-function linkDialogs(s) {
-  if (s.dialogQuestions.length === 0) return s;
-  let items = s.ledger.items;
-  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
-  const questions = s.dialogQuestions.map((q) => {
-    if (q.itemId !== null) return q;
-    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
-    const copy = copyOf(
-      q,
-      turnItems,
-      s.dialogQuestions.filter((o) => o.turn === q.turn)
-    );
-    if (!copy || copy.dialog || linked.has(copy.id)) return q;
-    linked.add(copy.id);
-    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
-    return { ...q, itemId: copy.id };
-  });
-  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
-  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
-}
-function noteDialog(s, callId, questions) {
-  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
-  const added = questions.flatMap(
-    (q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]
-  );
-  if (added.length === 0) return s;
-  return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
-}
-
 // ../hooks/tools.ts
 var ORDER_SCHEMA = {
   type: "object",
@@ -1941,277 +2035,11 @@ var ORDER_SCHEMA = {
   required: ["numbers"]
 };
 
-// ../hooks/session.ts
-var NO_PRS = { views: {}, branchRef: null, isFetching: false };
-var NO_TURN = { person: null, trigger: null, activity: [], press: null };
-function emptySession() {
-  return {
-    ledger: EMPTY,
-    turn: NO_TURN,
-    told: TOLD_NOTHING,
-    presence: {
-      turnsStarted: 0,
-      turnsApplied: 0,
-      ledgerState: "current",
-      hasDroppedReply: false,
-      isUpdating: false,
-      isTurnRunning: false,
-      turnStartedAt: null,
-      lastReplyAt: null,
-      lastTypedMessageAt: null
-    },
-    place: null,
-    pending: [],
-    sent: [],
-    lastActions: {},
-    heldRows: [],
-    shownSince: null,
-    prViews: NO_PRS,
-    stop: null,
-    overviewFailure: null,
-    lastOverviewCallAt: null,
-    hostTasks: [],
-    dialogQuestions: []
-  };
-}
-var SESSION_ID = /^[\w-]{1,100}$/;
-function sessionFile(sessionId) {
-  if (!SESSION_ID.test(sessionId)) throw new Error(`Not a session id: ${sessionId}`);
-  return `${sessionId}.json`;
-}
-function missingAsNull(err) {
-  if (err.code === "ENOENT") return null;
-  throw err;
-}
-var PRESS_TIMEOUT_MS = 6e4;
-function withoutStatedStep(presence) {
-  const { statedStep: _statedStep, ...rest } = presence ?? {};
-  return rest;
-}
-function upgradeSession(saved) {
-  const base = emptySession();
-  const views = saved.prViews?.views ?? {};
-  return {
-    ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
-    turn: { ...base.turn, ...saved.turn },
-    told: { ...base.told, ...saved.told },
-    presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
-    place: saved.place ?? null,
-    pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
-    sent: (saved.sent ?? []).map((x) => ({
-      ...x,
-      row: x.row ?? null,
-      queuedId: x.queuedId ?? null,
-      pressedAt: x.pressedAt ?? null,
-      deliveryId: x.deliveryId ?? null,
-      phase: x.phase ?? "accepted"
-    })),
-    lastActions: upgradeLastActions(saved.lastActions ?? {}),
-    heldRows: saved.heldRows ?? [],
-    shownSince: saved.shownSince ?? null,
-    prViews: {
-      ...NO_PRS,
-      ...saved.prViews,
-      // Views saved before `isYours` and `wasSeenOpen`, and threads saved before their times and `isLinesChanged` existed.
-      views: Object.fromEntries(
-        Object.entries(views).map(([ref, pr]) => [
-          ref,
-          {
-            ...pr,
-            isYours: pr.isYours ?? null,
-            wasSeenOpen: pr.wasSeenOpen ?? pr.state === "OPEN",
-            threads: pr.threads.map((t) => ({
-              ...t,
-              isLinesChanged: t.isLinesChanged ?? false,
-              at: t.at ?? null,
-              reply: t.reply && { ...t.reply, at: t.reply.at ?? null }
-            }))
-          }
-        ])
-      ),
-      isFetching: false
-    },
-    stop: saved.stop ?? null,
-    overviewFailure: saved.overviewFailure ?? null,
-    lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
-    hostTasks: upgradeHostTasks(saved.hostTasks),
-    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
-  };
-}
-function startContext(host, s, source) {
-  const carried = carryText(s.ledger, START_TITLE);
-  const parts = [source === "resume" ? null : guidanceText(host), carried].filter((x) => x !== null);
-  return parts.length > 0 ? parts.join("\n\n") : null;
-}
-function cleared(s) {
-  return {
-    ...s,
-    hostTasks: [],
-    ledger: EMPTY,
-    turn: NO_TURN,
-    told: { inbox: null, closed: [] },
-    pending: [],
-    presence: {
-      ...s.presence,
-      ledgerState: "current",
-      hasDroppedReply: false,
-      turnsApplied: s.presence.turnsStarted,
-      isTurnRunning: false
-    },
-    lastActions: {},
-    stop: null,
-    overviewFailure: null,
-    lastOverviewCallAt: null
-  };
-}
-function notePrompt(host, s, text2, isOpen2) {
-  const matched = matchSent(s, text2);
-  return { ...recordPrompt(host, startTurn(matched.state), text2, isOpen2, matched.sentBy), sentBy: matched.sentBy };
-}
-function matchSent(s, text2) {
-  const matchingAt = s.sent.findIndex((x) => x.text === text2);
-  const matching = matchingAt >= 0 ? s.sent[matchingAt] : void 0;
-  const isMatchable = matching !== void 0 && (matching.phase === void 0 || matching.phase === "accepted" || matching.phase === "attempting" && matching.deliveryId !== null);
-  const sentAt = isMatchable ? matchingAt : -1;
-  const sent = sentAt >= 0 ? s.sent[sentAt] : void 0;
-  const eligible = sent?.deliveryId === null ? Object.fromEntries(
-    Object.entries(s.lastActions).filter(
-      ([_id, last]) => (last.delivery?.state === "queued" || last.delivery?.state === "unconfirmed") && last.delivery.id === void 0
-    )
-  ) : s.lastActions;
-  const arrived = sent && sent.row !== null ? {
-    ...s.lastActions,
-    ...sent.deliveryId === null ? withUnconfirmed(eligible, text2) : withArrival(eligible, text2, sent.pressedAt ?? void 0, sent.deliveryId)
-  } : s.lastActions;
-  const lastActions = s.sent.slice(matchingAt + 1).reduce(
-    (actions, later) => later.text === text2 && later.row !== null ? withUnconfirmed(actions, text2, later.pressedAt ?? void 0, later.deliveryId) : actions,
-    arrived
-  );
-  return {
-    state: { ...s, lastActions, sent: sent ? s.sent.filter((_x, i) => i !== sentAt) : s.sent },
-    sentBy: sent ? { press: sent.press } : null
-  };
-}
-function turnStarted(s, at) {
-  const startedAt = s.presence.isTurnRunning ? s.presence.turnStartedAt ?? at : at;
-  return { ...s, presence: { ...s.presence, isTurnRunning: true, turnStartedAt: startedAt } };
-}
-function turnEnded(s, at) {
-  const lastReplyAt = at ?? s.presence.lastReplyAt;
-  return { ...s, presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt } };
-}
-function messageTyped(s, at) {
-  return { ...s, presence: { ...s.presence, lastTypedMessageAt: at } };
-}
-function placed(s, folder, branch) {
-  const place = { folder: s.place?.folder || folder, branch: branch === "HEAD" ? null : branch };
-  const isSame = s.place?.folder === place.folder && s.place.branch === place.branch;
-  return isSame ? s : { ...s, place };
-}
-function startTurn(s) {
-  return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
-}
-function recordPrompt(host, s, text2, isOpen2, sentBy) {
-  const ledger = { ...s.ledger, turn: s.ledger.turn + 1 };
-  const r = promptNotes(host, ledger, { text: text2, isPress: sentBy !== null, isOpen: isOpen2 }, s.told);
-  const person = s.turn.person === null ? text2 : `${s.turn.person}
+// ../hooks/arrivals.ts
+var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
 
-${text2}`;
-  return {
-    state: {
-      ...s,
-      ledger,
-      told: r.told,
-      turn: { ...s.turn, person, trigger: null, press: sentBy?.press ?? s.turn.press }
-    },
-    notes: r.notes
-  };
-}
-function noteActivity(s, line) {
-  const activity = addActivity(s.turn.activity, line);
-  if (activity === s.turn.activity) return s;
-  return { ...s, turn: { ...s.turn, activity } };
-}
-var LOCAL_URL = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|[\w.-]+\.localhost)(?::\d+)?[^\s"'`)\]]*/g;
-var PR_CREATE = /\bgh\s+pr\s+create\b/;
-function commandFindings(command, output) {
-  return {
-    lines: [...new Set(output.match(LOCAL_URL) ?? [])].map((url) => `URL in output: ${url}`),
-    prRefs: PR_CREATE.test(command) ? prRefs(output) : []
-  };
-}
-function withNewPrRefs(ledger, refs) {
-  const fresh = refs.filter((ref) => !ledger.prs.includes(ref));
-  return fresh.length === 0 ? ledger : { ...ledger, prs: linkedPrs(ledger.prs, fresh) };
-}
-function noteCommandOutput(s, command, output) {
-  const found = commandFindings(command, output);
-  const noted = found.lines.reduce((x, line) => noteActivity(x, line), s);
-  const ledger = withNewPrRefs(noted.ledger, found.prRefs);
-  return ledger === noted.ledger ? noted : { ...noted, ledger };
-}
-function endTurn(host, s, reply, isOpen2, { tab = null, queuesEmptyReply = false } = {}) {
-  const refs = prRefs(reply);
-  const base = {
-    ...s,
-    ledger: refs.length > 0 ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs) } : s.ledger,
-    turn: NO_TURN
-  };
-  if (reply.trim() === "" && !queuesEmptyReply) return base;
-  const ex = {
-    person: s.turn.person,
-    trigger: s.turn.person === null ? s.turn.trigger ?? "unknown" : null,
-    activity: s.turn.activity,
-    reply,
-    turn: s.ledger.turn,
-    press: s.turn.press,
-    screen: screenText(host, isOpen2, tab),
-    tasks: s.hostTasks
-  };
-  return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] };
-}
-var STATUS_REFRESH_MS = 10 * 6e4;
-function claimedStatusRefresh(s, now) {
-  const { isTurnRunning, turnStartedAt } = s.presence;
-  const times = [s.lastOverviewCallAt, turnStartedAt].filter((t) => t !== null);
-  const isDue = isTurnRunning && times.length > 0 && now - Math.max(...times) >= STATUS_REFRESH_MS;
-  return isDue ? { ...s, lastOverviewCallAt: now } : s;
-}
-function needsUpdate(s) {
-  return s.pending.length > 0 || s.presence.ledgerState !== "current";
-}
-function statusChanged(s, change) {
-  const overview = change(s.ledger.overview);
-  return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } };
-}
-function hasLedger(s) {
-  return !isBlankLedger(s.ledger);
-}
-function forkedFrom(child, parent) {
-  if (!isBlankLedger(child.ledger)) return child;
-  return { ...child, ledger: parent.ledger, hostTasks: parent.hostTasks };
-}
-function isUnseen(s) {
-  const { ledger } = s;
-  return s.presence.turnsStarted === 0 && s.presence.ledgerState === "current" && s.pending.length === 0 && isBlankLedger(ledger);
-}
-function pruned(s) {
-  const inPlace = [
-    ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
-    ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
-  ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
-  const views = Object.fromEntries(
-    Object.entries(s.prViews.views).filter(
-      ([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)
-    )
-  );
-  const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
-  return {
-    ...s,
-    ledger: pruneClosed(s.ledger, /* @__PURE__ */ new Set([...s.heldRows, ...inPlace])),
-    prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
-  };
-}
+// ../hooks/session-view.ts
+var PRESS_TIMEOUT_MS = 6e4;
 function withoutStaleResult(last, now) {
   if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS) return last;
   const { result: _result, ...rest } = last;
@@ -2267,6 +2095,25 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
     ),
     tabActions: prTabActions(drawn, s.prViews.branchRef),
     isGhSignedOut: s.prViews.isGhSignedOut === true
+  };
+}
+
+// ../hooks/session-presses.ts
+function pruned(s) {
+  const inPlace = [
+    ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
+    ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
+  ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
+  const views = Object.fromEntries(
+    Object.entries(s.prViews.views).filter(
+      ([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)
+    )
+  );
+  const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
+  return {
+    ...s,
+    ledger: pruneClosed(s.ledger, /* @__PURE__ */ new Set([...s.heldRows, ...inPlace])),
+    prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
   };
 }
 
@@ -2493,6 +2340,167 @@ async function updateState(dir, sessionId, change) {
     await rename(tmp, path);
     return next;
   });
+}
+
+// ../hooks/session-turns.ts
+function startContext(host, s, source) {
+  const carried = carryText(s.ledger, START_TITLE);
+  const parts = [source === "resume" ? null : guidanceText(host), carried].filter((x) => x !== null);
+  return parts.length > 0 ? parts.join("\n\n") : null;
+}
+function cleared(s) {
+  return {
+    ...s,
+    hostTasks: [],
+    ledger: EMPTY,
+    turn: NO_TURN,
+    told: { inbox: null, closed: [] },
+    pending: [],
+    presence: {
+      ...s.presence,
+      ledgerState: "current",
+      hasDroppedReply: false,
+      turnsApplied: s.presence.turnsStarted,
+      isTurnRunning: false
+    },
+    lastActions: {},
+    stop: null,
+    overviewFailure: null,
+    lastOverviewCallAt: null
+  };
+}
+function notePrompt(host, s, text2, isOpen2) {
+  const matched = matchSent(s, text2);
+  return { ...recordPrompt(host, startTurn(matched.state), text2, isOpen2, matched.sentBy), sentBy: matched.sentBy };
+}
+function matchSent(s, text2) {
+  const matchingAt = s.sent.findIndex((x) => x.text === text2);
+  const matching = matchingAt >= 0 ? s.sent[matchingAt] : void 0;
+  const isMatchable = matching !== void 0 && (matching.phase === void 0 || matching.phase === "accepted" || matching.phase === "attempting" && matching.deliveryId !== null);
+  const sentAt = isMatchable ? matchingAt : -1;
+  const sent = sentAt >= 0 ? s.sent[sentAt] : void 0;
+  const eligible = sent?.deliveryId === null ? Object.fromEntries(
+    Object.entries(s.lastActions).filter(
+      ([_id, last]) => (last.delivery?.state === "queued" || last.delivery?.state === "unconfirmed") && last.delivery.id === void 0
+    )
+  ) : s.lastActions;
+  const arrived = sent && sent.row !== null ? {
+    ...s.lastActions,
+    ...sent.deliveryId === null ? withUnconfirmed(eligible, text2) : withArrival(eligible, text2, sent.pressedAt ?? void 0, sent.deliveryId)
+  } : s.lastActions;
+  const lastActions = s.sent.slice(matchingAt + 1).reduce(
+    (actions, later) => later.text === text2 && later.row !== null ? withUnconfirmed(actions, text2, later.pressedAt ?? void 0, later.deliveryId) : actions,
+    arrived
+  );
+  return {
+    state: { ...s, lastActions, sent: sent ? s.sent.filter((_x, i) => i !== sentAt) : s.sent },
+    sentBy: sent ? { press: sent.press } : null
+  };
+}
+function turnStarted(s, at) {
+  const startedAt = s.presence.isTurnRunning ? s.presence.turnStartedAt ?? at : at;
+  return { ...s, presence: { ...s.presence, isTurnRunning: true, turnStartedAt: startedAt } };
+}
+function turnEnded(s, at) {
+  const lastReplyAt = at ?? s.presence.lastReplyAt;
+  return { ...s, presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt } };
+}
+function messageTyped(s, at) {
+  return { ...s, presence: { ...s.presence, lastTypedMessageAt: at } };
+}
+function placed(s, folder, branch) {
+  const place = { folder: s.place?.folder || folder, branch: branch === "HEAD" ? null : branch };
+  const isSame = s.place?.folder === place.folder && s.place.branch === place.branch;
+  return isSame ? s : { ...s, place };
+}
+function startTurn(s) {
+  return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
+}
+function recordPrompt(host, s, text2, isOpen2, sentBy) {
+  const ledger = { ...s.ledger, turn: s.ledger.turn + 1 };
+  const r = promptNotes(host, ledger, { text: text2, isPress: sentBy !== null, isOpen: isOpen2 }, s.told);
+  const person = s.turn.person === null ? text2 : `${s.turn.person}
+
+${text2}`;
+  return {
+    state: {
+      ...s,
+      ledger,
+      told: r.told,
+      turn: { ...s.turn, person, trigger: null, press: sentBy?.press ?? s.turn.press }
+    },
+    notes: r.notes
+  };
+}
+function noteActivity(s, line) {
+  const activity = addActivity(s.turn.activity, line);
+  if (activity === s.turn.activity) return s;
+  return { ...s, turn: { ...s.turn, activity } };
+}
+var LOCAL_URL = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|[\w.-]+\.localhost)(?::\d+)?[^\s"'`)\]]*/g;
+var PR_CREATE = /\bgh\s+pr\s+create\b/;
+function commandFindings(command, output) {
+  return {
+    lines: [...new Set(output.match(LOCAL_URL) ?? [])].map((url) => `URL in output: ${url}`),
+    prRefs: PR_CREATE.test(command) ? prRefs(output) : []
+  };
+}
+function withNewPrRefs(ledger, refs) {
+  const fresh = refs.filter((ref) => !ledger.prs.includes(ref));
+  return fresh.length === 0 ? ledger : { ...ledger, prs: linkedPrs(ledger.prs, fresh) };
+}
+function noteCommandOutput(s, command, output) {
+  const found = commandFindings(command, output);
+  const noted = found.lines.reduce((x, line) => noteActivity(x, line), s);
+  const ledger = withNewPrRefs(noted.ledger, found.prRefs);
+  return ledger === noted.ledger ? noted : { ...noted, ledger };
+}
+function endTurn(host, s, reply, isOpen2, { tab = null, queuesEmptyReply = false } = {}) {
+  const refs = prRefs(reply);
+  const base = {
+    ...s,
+    ledger: refs.length > 0 ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs) } : s.ledger,
+    turn: NO_TURN
+  };
+  if (reply.trim() === "" && !queuesEmptyReply) return base;
+  const ex = {
+    person: s.turn.person,
+    trigger: s.turn.person === null ? s.turn.trigger ?? "unknown" : null,
+    activity: s.turn.activity,
+    reply,
+    turn: s.ledger.turn,
+    press: s.turn.press,
+    screen: screenText(host, isOpen2, tab),
+    tasks: s.hostTasks
+  };
+  return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] };
+}
+
+// ../hooks/session-status.ts
+var STATUS_REFRESH_MS = 10 * 6e4;
+function claimedStatusRefresh(s, now) {
+  const { isTurnRunning, turnStartedAt } = s.presence;
+  const times = [s.lastOverviewCallAt, turnStartedAt].filter((t) => t !== null);
+  const isDue = isTurnRunning && times.length > 0 && now - Math.max(...times) >= STATUS_REFRESH_MS;
+  return isDue ? { ...s, lastOverviewCallAt: now } : s;
+}
+function needsUpdate(s) {
+  return s.pending.length > 0 || s.presence.ledgerState !== "current";
+}
+function statusChanged(s, change) {
+  const overview = change(s.ledger.overview);
+  return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } };
+}
+function hasLedger(s) {
+  return !isBlankLedger(s.ledger);
+}
+function forkedFrom(child, parent) {
+  if (!isBlankLedger(child.ledger)) return child;
+  return { ...child, ledger: parent.ledger, hostTasks: parent.hostTasks };
+}
+function isUnseen(s) {
+  const { ledger } = s;
+  return s.presence.turnsStarted === 0 && s.presence.ledgerState === "current" && s.pending.length === 0 && isBlankLedger(ledger);
 }
 
 // src/settle.ts

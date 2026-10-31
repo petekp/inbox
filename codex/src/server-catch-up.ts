@@ -1,6 +1,6 @@
 import { isAbsolute } from 'node:path'
 
-import { isUnseen } from '../../hooks/session'
+import { isUnseen } from '../../hooks/session-status'
 import { heardState } from './core'
 import { withEarlierHistory } from './history'
 import type { ServerDeps } from './server'

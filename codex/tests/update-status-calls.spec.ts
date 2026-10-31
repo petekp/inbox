@@ -3,7 +3,7 @@ import { rm } from 'node:fs/promises'
 import { test } from 'node:test'
 
 import { parseStatus } from '../../hooks/status'
-import { appliedStatus } from '../../hooks/session'
+import { appliedStatus } from '../../hooks/session-status'
 import { readState, statePath, updateState, withLock } from '../src/state'
 import { runUpdates as runBothCalls } from '../src/update'
 import { STATUS_SYSTEM } from '../../hooks/status-prompt'

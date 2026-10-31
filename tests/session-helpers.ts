@@ -1,6 +1,6 @@
 import { parseStatus } from '../hooks/status'
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { endTurn, notePrompt } from '../hooks/session'
+import { endTurn, notePrompt } from '../hooks/session-turns'
 import type { Session } from '../hooks/session'
 import type { PrView } from '../types'
 

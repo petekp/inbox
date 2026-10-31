@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { systemText } from '../../hooks/ledger-prompt'
-import { STATUS_REFRESH_MS } from '../../hooks/session'
+import { STATUS_REFRESH_MS } from '../../hooks/session-status'
 import { createInbox } from '../src/host'
 import { OMP } from '../src/texts'
 import {

@@ -1,5 +1,5 @@
 import { prMarkId } from '../../hooks/pr-tab'
-import type { SessionView } from '../../hooks/session'
+import type { SessionView } from '../../hooks/session-view'
 import { allRows, isDrawnInPlace, SETTLED_MS, settledRowIds } from '../../hooks/view'
 import type { InboxView } from '../../hooks/view'
 

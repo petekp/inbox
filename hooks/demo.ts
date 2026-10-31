@@ -1,5 +1,5 @@
 import type { DemoCopy, Session, Subject } from '../types'
-import { emptySession } from './session'
+import { emptySession } from './session-files'
 
 const MIN = 60_000
 const REPO = 'https://github.com/acme/visor'

@@ -1,6 +1,7 @@
 import { demoSession } from '../../hooks/demo'
 import { demoAfterPress, demoReplied, demoSent } from '../../hooks/presses'
-import { pressOn, sessionView } from '../../hooks/session'
+import { pressOn } from '../../hooks/session-presses'
+import { sessionView } from '../../hooks/session-view'
 import type { PanelSource } from './controller'
 import { emptyState } from './state'
 import type { OmpState } from './state'

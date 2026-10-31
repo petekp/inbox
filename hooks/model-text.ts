@@ -1,24 +1,9 @@
 export type { Told } from '../types'
 export { buildPrompt, systemText } from './ledger-prompt'
-export {
-  addActivity,
-  catchUpPrompt,
-  dialogActivity,
-  dialogQuestions,
-  toolActivity,
-  transcriptCatchUpPrompt,
-} from './catch-up-text'
+export { catchUpPrompt, dialogActivity, dialogQuestions, toolActivity, transcriptCatchUpPrompt } from './catch-up-text'
 export { STATUS_SYSTEM, statusCatchUpPrompt, statusMidTurnPrompt, statusPrompt } from './status-prompt'
 export type { StatusCallInput } from './status-prompt'
-export {
-  carryText,
-  promptNotes,
-  questionNumbers,
-  screenText,
-  START_TITLE,
-  statusCarryText,
-  TOLD_NOTHING,
-} from './inbox-text'
+export { questionNumbers, screenText, statusCarryText } from './inbox-text'
 export type { ScreenTab } from './inbox-text'
 
 export function guidanceText(host: Host): string {

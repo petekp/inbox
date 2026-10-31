@@ -16,18 +16,16 @@ import { dialogActivity, toolActivity } from '../../hooks/catch-up-text'
 import { childEnded } from '../../hooks/status-children'
 import { turnReply } from '../../hooks/text'
 import {
-  claimedStatusRefresh,
   cleared,
   messageTyped,
-  needsUpdate,
   noteActivity,
   noteCommandOutput,
-  statusChanged,
   placed,
   startContext,
   turnEnded,
   turnStarted,
-} from '../../hooks/session'
+} from '../../hooks/session-turns'
+import { claimedStatusRefresh, needsUpdate, statusChanged } from '../../hooks/session-status'
 import { namedCli } from './cli'
 import { endTurn, heardState, noteHook, notePrompt, patchFiles } from './core'
 import { noteDialogs } from './dialogs'

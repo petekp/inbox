@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 
 import type { Stop } from '../../types'
 import { SETTLED_MS } from '../../hooks/view'
-import { sessionView } from '../../hooks/session'
+import { sessionView } from '../../hooks/session-view'
 import { INITIAL_UI, bandLines, render } from '../src/panel'
 import type { PanelScreen } from '../src/panel'
 import { handleKey } from '../src/panel-keys'

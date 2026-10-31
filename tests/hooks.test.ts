@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { LinksProps } from '../hooks/links-client'
 import type { TabsProps } from '../hooks/tabs-client'
 import { demoView } from '../hooks/demo'
-import { emptySession } from '../hooks/session'
+import { emptySession } from '../hooks/session-files'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
 import { failingChecks, waitingThreads } from '../hooks/prs'
 import {

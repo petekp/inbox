@@ -34,7 +34,7 @@ import { commentParts, failingChecks, readableComment, threadWhere, waitingThrea
 import type { Finding, PrCheck, PrThread, PrView, Tab } from '../../types'
 import type { TabView as View } from './core'
 import type { PressReply } from './server'
-import { PRESS_TIMEOUT_MS } from '../../hooks/session'
+import { PRESS_TIMEOUT_MS } from '../../hooks/session-view'
 import { tabState, selection, drafts, optionsShown, sending, errors, notes, copies, undoing } from './tab-state'
 import type { Key, Row, Lists } from './tab-state'
 import { later, callTool } from './tab-host'

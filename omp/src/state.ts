@@ -6,12 +6,13 @@ import {
   emptySession,
   isSessionFile,
   missingAsNull,
-  pruned,
   sessionFile,
   staleSessionFiles,
   upgradeSession,
-} from '../../hooks/session'
-import type { SavedSession, Session } from '../../hooks/session'
+} from '../../hooks/session-files'
+import { pruned } from '../../hooks/session-presses'
+import type { Session } from '../../hooks/session'
+import type { SavedSession } from '../../hooks/session-files'
 import { exclusiveKeys } from '../../hooks/session-host'
 import { checkVersion, SESSION_VERSION } from '../../hooks/session-version'
 

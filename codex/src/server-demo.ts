@@ -1,7 +1,7 @@
 import type { PrPress } from '../../hooks/pr-tab'
 import { demoAfterPress, demoReplied, demoSent } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
-import { pressOn } from '../../hooks/session'
+import { pressOn } from '../../hooks/session-presses'
 import { SETTLED_MS } from '../../hooks/view'
 import type { Holds } from '../../hooks/view'
 import type { TabView } from './core'

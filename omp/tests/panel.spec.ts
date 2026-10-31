@@ -4,7 +4,7 @@ import { checkActions, prBlockActions, prMarkId, threadActions, threadSentIn } f
 import { failingChecks, waitingThreads } from '../../hooks/prs'
 import { SETTLED_MS, shownTabs, rowKeyPlan } from '../../hooks/view'
 import type { RowView } from '../../hooks/view'
-import { sessionView } from '../../hooks/session'
+import { sessionView } from '../../hooks/session-view'
 import { demoState } from '../src/demo'
 import { INITIAL_UI } from '../src/panel'
 import type { PanelUi } from '../src/panel'

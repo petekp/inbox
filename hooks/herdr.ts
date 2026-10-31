@@ -1,7 +1,7 @@
 import type { Dialog, Ledger, SessionStatus, StatusHead, Stop, Tab } from '../types'
 import { hasRunningDelegate, onceEvery } from './children'
 import type { Run } from './gh'
-import type { SessionView } from './session'
+import type { SessionView } from './session-view'
 import { isWaitingRow, ROW_TABS } from './view'
 
 /**
