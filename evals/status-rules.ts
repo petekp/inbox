@@ -188,7 +188,7 @@ export const RULES: Rule[] = [
   {
     id: 'open-pieces-kept',
     property: 5,
-    text: 'Every open piece in the facts is an open subject, drawn as a row or in the queued fold.',
+    text: 'Every open piece in the facts is an open subject, drawn as a row or in the "N more" fold.',
     failures: ({ result }) =>
       result.facts.pieces
         .filter(isOpenPiece)

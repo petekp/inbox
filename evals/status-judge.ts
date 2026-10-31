@@ -14,7 +14,7 @@ export const JUDGE_CHECKS = [
   {
     id: 'marks',
     property: 5,
-    text: "Each mark on a row of work fits its piece's real state, and every open piece has a row or a place in the queued fold.",
+    text: 'Each mark on a row of work fits its piece\'s real state, and every open piece has a row or a place in the "N more" fold.',
   },
   {
     id: 'where-it-stands',

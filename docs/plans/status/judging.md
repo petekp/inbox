@@ -63,7 +63,7 @@ These run after every step of every replay, on the saved Status, the page `statu
 - The head holds no status word, such as "ready", "merged", "passes" or "waiting".
 - No two open subjects share every key word of a name, numbers included, or the same issue or PR number. So "2.4 release" and "2.5 release" are two pieces.
 - No open subject's text says the work is over: "published", "merged", "shipped", "released" or "done".
-- Every open piece in the fact list matches a row or is in the queued fold.
+- Every open piece in the fact list matches a row or is in the "N more" fold.
 - Each piece's mark matches its state in the fact list. Where two marks are both right, as for work just set aside, the fact list allows both.
 - No subject matches an ask, a finding, a task for the person or a standing rule in the fact list. No text restates an open ask or finding.
 - Each open ask is linked to every subject the fact list says it holds up, and to no other. A held subject's text names no decision, such as "needs your decision" or "your call".
@@ -86,7 +86,7 @@ The judge reads the drawn page as plain text, the page at the last checkpoint, a
 - Each child sits under the piece it serves, and its label says what its work does.
 - Each row is a piece of the session's work.
 - No two rows are the same work by meaning, and no new row is finished work under a new name.
-- Each mark on a row of work fits its piece's real state, and every open piece has a row or a place in the queued fold.
+- Each mark on a row of work fits its piece's real state, and every open piece has a row or a place in the "N more" fold.
 - Where it stands says the state, and keeps parts whose states differ.
 - No text repeats an ask or a finding in any words, or says that its piece waits on the person's decision.
 - A was line names the plan that was replaced, or the piece that merged in.

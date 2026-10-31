@@ -19,7 +19,7 @@ import type {
   Turns,
 } from '../types'
 import { closedAt, closedState, reopenFinding, reopenItem } from './ledger'
-import { isChildRunning, isOpen } from './status'
+import { isChildRunning, isOpen, OPEN_SUBJECTS } from './status'
 import { ago, clipLabel, cutAtPhrase } from './text'
 import { questionNumbers } from './model-text'
 import type { ScreenTab } from './model-text'
@@ -1109,7 +1109,7 @@ type StatusRowParts =
   | { kind: 'more'; id: string; text: string; branch: 'last' }
   /** Where the person last looked: rows above it changed since. */
   | { kind: 'look'; id: string; text: string }
-  /** Rows folded into a count, as "✓ 3 done" or "○ 2 more queued". */
+  /** Rows folded into a count, as "✓ 3 done" or "○ 2 more". */
   | { kind: 'fold'; id: string; mark: string; tone: StatusTone; text: string }
 
 /** What the Status page shows. Every look draws it as it is. */
@@ -1138,8 +1138,6 @@ export const STATUS_TEXT_LINES = 3
 export const CHILD_ROWS = 3
 /** Finished rows drawn above the look line; older ones fold into the count. */
 const NEW_CLOSED_ROWS = 2
-/** Open rows drawn before the oldest queued ones fold into a count. */
-const OPEN_ROWS = 7
 
 const CHILD_MARK: { mark: string; tone: StatusTone } = { mark: SUBJECT_MARKS.working.mark, tone: null }
 
@@ -1263,17 +1261,12 @@ export function statusPage(
     .filter(x => !isOpen(x) && isNew(x))
     .sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0))
     .slice(0, NEW_CLOSED_ROWS)
-  const open = subjects.filter(isOpen)
-  const queuedOver = Math.max(0, open.length - OPEN_ROWS)
-  const hiddenQueued = new Set(
-    open
-      .filter(x => placeOf(x) === 'queued')
-      .sort((x, y) => x.changedAt - y.changedAt)
-      .slice(0, queuedOver)
-      .map(x => x.id),
-  )
-  const shown = [...open.filter(x => !hiddenQueued.has(x.id)), ...newClosed].sort(pageOrder)
-  const folded = subjects.filter(x => x.status === 'done' && !newClosed.includes(x))
+  const open = subjects.filter(isOpen).sort(pageOrder)
+  const foldable = open.filter(x => !isHeld(x) && !isNew(x))
+  const foldableShown = Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length))
+  const foldedOpen = foldable.slice(foldableShown)
+  const shown = [...open.filter(x => !foldedOpen.includes(x)), ...newClosed].sort(pageOrder)
+  const foldedDone = subjects.filter(x => x.status === 'done' && !newClosed.includes(x))
   const running = (o?.children ?? [])
     .filter(c => isChildRunning(c, now) || isFinishedUnseen(c, look))
     .sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt))
@@ -1317,22 +1310,16 @@ export function statusPage(
   }
   const isEveryShownNew = firstSeen === -1
   if (lookRow && isEveryShownNew && shown.length > 0) rows.push(lookRow)
-  if (hiddenQueued.size > 0)
-    rows.push({
-      kind: 'fold',
-      id: 'queued',
-      mark: SUBJECT_MARKS.queued.mark,
-      tone: null,
-      text: `${hiddenQueued.size} more queued`,
-    })
-  if (folded.length > 0) {
+  if (foldedOpen.length > 0)
+    rows.push({ kind: 'fold', id: 'open', ...SUBJECT_MARKS.queued, text: `${foldedOpen.length} more` })
+  if (foldedDone.length > 0) {
     const isMore = newClosed.some(x => x.status === 'done')
     rows.push({
       kind: 'fold',
       id: 'done',
       mark: SUBJECT_MARKS.done.mark,
       tone: 'done',
-      text: `${folded.length}${isMore ? ' more' : ''} done`,
+      text: `${foldedDone.length}${isMore ? ' more' : ''} done`,
     })
   }
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null

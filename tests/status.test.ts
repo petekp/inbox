@@ -79,7 +79,7 @@ test('each side of the look line lists held, working, waiting, queued, then fini
     '✓ Banner: shipped',
     '-- Last seen',
     '◆ Seen queue: later · waiting',
-    '◐ Seen work: old step',
+    '○ 1 more',
   ])
 })
 
