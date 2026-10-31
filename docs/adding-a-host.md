@@ -63,7 +63,7 @@ The host's state type extends `Session` from `hooks/session.ts`. It adds its own
 
 ## Where else to register a host
 
-1. `Look` in `hooks/view.ts` gains the new value. Name the places that branch on it, as `isTerminalLike` does for the terminal's handles.
+1. `Look` in `hooks/rows.ts` gains the new value. Name the places that branch on it, as `isTerminalLike` does for the terminal's handles.
 2. `scripts/check-structure.mjs` checks the host's imports. omp's rule is that its files import only shared modules, and that one file imports the agent's packages.
 3. `scripts/check.sh` runs the host's bundle check, type check and tests.
 4. `evals/agent.ts` gains the agent, with a stand-in for the inbox that uses the real tool descriptions, as `evals/omp-probe.ts` does for omp. `scripts/eval.sh` passes it through.

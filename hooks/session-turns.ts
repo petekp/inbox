@@ -136,7 +136,7 @@ export function turnEnded<S extends Session>(s: S, at: number | null): S {
 
 /**
  * Notes that the person sent a message they typed, at `at`. A host calls it only for a message the person typed, never
- * for one a press sent. The rows that settled before it fold, as `hooks/view.ts:isSettledInPlace` says.
+ * for one a press sent. The rows that settled before it fold, as `hooks/timing.ts:isSettledInPlace` says.
  */
 export function messageTyped<S extends Session>(s: S, at: number): S {
   return { ...s, presence: { ...s.presence, lastTypedMessageAt: at } }

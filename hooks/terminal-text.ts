@@ -1,6 +1,6 @@
 import { desktopLines, desktopTextPt } from './desktop-metrics'
 import { cutForEllipsis } from './text'
-import { DOT } from './view'
+import { DOT } from './rows'
 import { parseInline, type Span } from './inline'
 
 /** `spans` cut to what desktop draws in `limit` lines `widthPt` wide, with an ellipsis when cut. */

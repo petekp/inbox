@@ -1,16 +1,9 @@
 import { isPrPress } from '../../hooks/pr-press'
-import {
-  keptDiscards,
-  shownTabs,
-  firstWaiting,
-  isRowTab,
-  rowAfterClose,
-  statusKeyPlan,
-  statusKeyRows,
-  statusSelected,
-  isGuarded,
-} from '../../hooks/view'
-import type { StatusRow, ShownTab } from '../../hooks/view'
+import { keptDiscards, isGuarded } from '../../hooks/timing'
+import { shownTabs, isRowTab } from '../../hooks/tabs'
+import { firstWaiting, rowAfterClose, statusKeyPlan, statusKeyRows, statusSelected } from '../../hooks/action-plan'
+import type { StatusRow } from '../../hooks/status-page'
+import type { ShownTab } from '../../hooks/tabs'
 import { entriesOf } from './panel-entries'
 import { isSelectable, isShut, linesOf, waitsOf } from './panel-lines'
 import type { Button, Line } from './panel-lines'

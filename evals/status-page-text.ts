@@ -1,5 +1,5 @@
-import { LOOK_TEXT, mergedLine, STALL_GAP, WAS_PREFIX } from '../hooks/view'
-import type { StatusPage, StatusRow, StatusStall } from '../hooks/view'
+import { LOOK_TEXT, mergedLine, STALL_GAP, WAS_PREFIX } from '../hooks/status-page'
+import type { StatusPage, StatusRow, StatusStall } from '../hooks/status-page'
 
 /** A row's name, with its stall word after it. */
 function nameLine(name: string, stall: StatusStall | null): string {

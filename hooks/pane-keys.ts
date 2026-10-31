@@ -1,7 +1,7 @@
 import type { RenderSurface, UiCopyResult, UiPressArgument } from 'claude-code'
 import type { Draft, PressKind } from '../types'
 import type { PrPress } from './pr-press'
-import type { ActionEmphasis, ActionIcon } from './view'
+import type { ActionEmphasis, ActionIcon } from './rows'
 
 export function focusHintFor(element: string): string | null {
   const id = element.split('-')[1]

@@ -1,19 +1,11 @@
 import { ago } from '../../hooks/text'
-import {
-  HELP_COPY,
-  helpKeys,
-  MARK_LEGEND,
-  bannerOf,
-  tabBarBanners,
-  DOT,
-  isRowTab,
-  shownTabs,
-  tabBadge,
-  footerStatus,
-  ROW_COPY,
-  SETTLED_MS,
-} from '../../hooks/view'
-import type { ShownTab } from '../../hooks/view'
+import { HELP_COPY, helpKeys, MARK_LEGEND } from '../../hooks/help'
+import { bannerOf, tabBarBanners } from '../../hooks/banners'
+import { DOT, ROW_COPY } from '../../hooks/rows'
+import { isRowTab, shownTabs, tabBadge } from '../../hooks/tabs'
+import { footerStatus } from '../../hooks/view'
+import { SETTLED_MS } from '../../hooks/timing'
+import type { ShownTab } from '../../hooks/tabs'
 import type { Tab } from '../../types'
 import type { TabView as View } from './core'
 import { tabState, selection, drawnRows } from './tab-state'

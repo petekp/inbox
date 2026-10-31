@@ -1,14 +1,9 @@
-export { actionId, capitalized, ISSUE_LABEL } from './press-labels'
-export { baseName, openTarget } from './open-targets'
+export { openTarget } from './open-targets'
 export type { PathProbe } from './open-targets'
-export { stepIconKind, stepsOf } from './help-steps'
-export type { HelpStep } from './help-steps'
-export { isAwaitingReply, isFixSent, isFoldingPress, isHandedOff } from './last-actions'
 export {
   doneWake,
   isPressConfirmed,
   markSentToAgent,
-  noteText,
   refuseDoneNotification,
   withDeliveryId,
   withUnconfirmed,
@@ -24,16 +19,7 @@ export {
   withResult,
 } from './press-effects'
 export type { DemoSent, EffectHost } from './press-effects'
-export {
-  isRepeatOf,
-  isUndoable,
-  localLast,
-  offersUndo,
-  pendingResult,
-  recordPress,
-  retryOf,
-  withLasts,
-} from './pressed'
+export { localLast, pendingResult, recordPress, withLasts } from './pressed'
 export { COMPARE_PAGE_FILE } from './press-messages'
 export type { AnswerMessage } from './press-messages'
 

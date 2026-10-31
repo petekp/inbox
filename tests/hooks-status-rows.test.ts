@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Mounted } from 'claude-code/testing'
-import { STATUS_TEXT_LINES, LOOK_DASH, LOOK_TEXT } from '../hooks/view'
+import { STATUS_TEXT_LINES, LOOK_DASH, LOOK_TEXT } from '../hooks/status-page'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 

@@ -1,20 +1,12 @@
 import { ledgerActions } from './row-actions'
 import { clipLabel } from '../../hooks/text'
-import {
-  allRows,
-  DOT,
-  drawnLists,
-  isRowTab,
-  feedbackOf,
-  isDrawnInPlace,
-  rowAfterClose,
-  replyHint,
-  ROW_COPY,
-  SETTLED_MS,
-  shortAgo,
-  shownOptionDescriptions,
-} from '../../hooks/view'
-import type { Feedback, PressState, RowView } from '../../hooks/view'
+import { allRows, DOT, replyHint, ROW_COPY, shortAgo, shownOptionDescriptions } from '../../hooks/rows'
+import { drawnLists, rowAfterClose } from '../../hooks/action-plan'
+import { isRowTab } from '../../hooks/tabs'
+import { feedbackOf } from '../../hooks/feedback'
+import { isDrawnInPlace, SETTLED_MS } from '../../hooks/timing'
+import type { Feedback, PressState } from '../../hooks/feedback'
+import type { RowView } from '../../hooks/rows'
 import { actionId } from '../../hooks/press-labels'
 import { stepEffects } from '../../hooks/help-steps'
 import { isPressConfirmed, noteText } from '../../hooks/press-reducer'

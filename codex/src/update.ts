@@ -25,7 +25,7 @@ import {
   runUpdates as runSessionUpdates,
 } from '../../hooks/session-host'
 import type { Ask, StatusRecords, RecordFiles } from '../../hooks/session-host'
-import { screenTabOf } from '../../hooks/view'
+import { screenTabOf } from '../../hooks/tabs'
 import { isTabOpen } from './core'
 import { codexStore } from './host'
 import type { OnWrite } from './host'

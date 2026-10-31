@@ -1,4 +1,4 @@
-import { RUNNING_PULSE_MS } from '../../hooks/view'
+import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import { BANNER_GAP_PT, BANNER_PAD_Y_PT, LOOK_GAP_PT, STATUS_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
 import type { FoldGroup } from './arrivals'
 import { ENTER_MS, EXIT_MS, isMoving, MOVE_MS, ROW_STATE_MS } from './rows'

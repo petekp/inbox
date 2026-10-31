@@ -1,6 +1,8 @@
 import { ago } from '../../hooks/text'
-import { settledMark, bannerOf, DOT, feedbackOf, feedbackText, hasAge, isFailure, settledLabel } from '../../hooks/view'
-import type { SettledState } from '../../hooks/view'
+import { settledMark, DOT, settledLabel } from '../../hooks/rows'
+import { bannerOf } from '../../hooks/banners'
+import { feedbackOf, feedbackText, hasAge, isFailure } from '../../hooks/feedback'
+import type { SettledState } from '../../hooks/rows'
 import { prBlockActions } from '../../hooks/pr-tab'
 import {
   DISMISS_MERGED_ID,

@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { statusCallPrompt } from '../hooks/session-host'
 import type { StatusExchange } from '../hooks/session-host'
-import { statusPage } from '../hooks/view'
+import { statusPage } from '../hooks/status-page'
 import { factsAfter, factsText } from '../evals/status-facts'
 import type { Facts } from '../evals/status-facts'
 import { JUDGE_CHECKS, pageMistakes, parseJudgeAnswer } from '../evals/status-judge'

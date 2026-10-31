@@ -1,6 +1,7 @@
 import { prMarkId } from '../../hooks/pr-rows'
 import type { SessionView } from '../../hooks/session-view'
-import { allRows, isDrawnInPlace, SETTLED_MS, settledRowIds } from '../../hooks/view'
+import { allRows, settledRowIds } from '../../hooks/rows'
+import { isDrawnInPlace, SETTLED_MS } from '../../hooks/timing'
 import type { InboxView } from '../../hooks/view'
 
 export const POLL_MS = 3000

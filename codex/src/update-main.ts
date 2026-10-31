@@ -8,7 +8,7 @@ import { dataDir } from './data-dir'
 import { herdrOnWrite } from './host'
 import { readState } from './state'
 import { run } from './run'
-import { NEXT_BUILD_MARK } from '../../hooks/view'
+import { NEXT_BUILD_MARK } from '../../hooks/banners'
 import { codexAsk, statusRecords, recordModelFailure, refreshStatus, runUpdates } from './update'
 import { STATUS_REFRESH } from './detached-update'
 

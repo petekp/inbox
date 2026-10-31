@@ -11,7 +11,7 @@ import TAB_HTML from './tab.html'
 import { run } from './run'
 import { listHooksTrust } from './hook-trust'
 import { COMPARE_PAGE_FILE } from '../../hooks/press-messages'
-import { NEXT_BUILD_MARK } from '../../hooks/view'
+import { NEXT_BUILD_MARK } from '../../hooks/banners'
 
 function devPageIn(dir: string): () => Promise<string | null> {
   let cached: { path: string; mtimeMs: number; html: string } | null = null

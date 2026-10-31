@@ -1,6 +1,6 @@
 import type { RenderSurface } from 'claude-code'
 import type { Tab } from '../types'
-import type { ModLook } from './view'
+import type { ModLook } from './rows'
 import {
   type BannerTone,
   DARK_BANNER_TINTS,

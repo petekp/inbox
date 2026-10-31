@@ -1,7 +1,8 @@
-import type { ActionEmphasis, ActionIcon, RowView } from '../../hooks/view'
+import type { ActionEmphasis, ActionIcon, RowView } from '../../hooks/rows'
 import { actionId } from '../../hooks/press-labels'
 import type { RowPress } from '../../hooks/presses'
-import { actionLabel, rowKeyPlan, ROW_COPY } from '../../hooks/view'
+import { actionLabel, ROW_COPY } from '../../hooks/rows'
+import { rowKeyPlan } from '../../hooks/action-plan'
 
 const ICONS = {
   check: 'M20 6 9 17l-5-5',

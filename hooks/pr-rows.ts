@@ -4,8 +4,10 @@ import { isFoldingPress } from './last-actions'
 import { clipLabel } from './text'
 import { commentLine, commentParts, failingChecks, THREAD_TITLE_CHARS, threadWhere, took, waitingThreads } from './prs'
 import type { IsThreadSent, PrStatus } from './prs'
-import { DOT, PR_MARKS, RUNNING_MARK } from './view'
-import type { BannerKind, RowWait } from './view'
+import { DOT } from './rows'
+import { PR_MARKS, RUNNING_MARK } from './help'
+import type { BannerKind } from './banners'
+import type { RowWait } from './action-plan'
 
 export function prThreadId(pr: PrView, t: PrThread): string {
   return threadRowId(pr.ref, t.id)

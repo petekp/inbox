@@ -22,26 +22,14 @@ import type { PrOrderView } from '../../hooks/pr-order'
 import { failingChecks, readiness, waitingThreads } from '../../hooks/prs'
 import { capitalized } from '../../hooks/press-labels'
 import { cellWidth } from '../../hooks/text'
-import {
-  settledTone,
-  bannerOf,
-  FINDING_GROUPS,
-  NEEDS_YOU_GROUPS,
-  isDrawnInPlace,
-  emptyText,
-  isRowTab,
-  isResumable,
-  settledMark,
-  statusKeyRows,
-  runningMark,
-  HELP_COPY,
-  helpKeys,
-  MARK_LEGEND,
-  settledLabel,
-  stopFix,
-  stopText,
-} from '../../hooks/view'
-import type { StatusPage, ShownTab } from '../../hooks/view'
+import { settledTone, NEEDS_YOU_GROUPS, settledMark, settledLabel } from '../../hooks/rows'
+import { bannerOf, emptyText, isResumable, stopFix, stopText } from '../../hooks/banners'
+import { FINDING_GROUPS, HELP_COPY, helpKeys, MARK_LEGEND } from '../../hooks/help'
+import { isDrawnInPlace, runningMark } from '../../hooks/timing'
+import { isRowTab } from '../../hooks/tabs'
+import { statusKeyRows } from '../../hooks/action-plan'
+import type { StatusPage } from '../../hooks/status-page'
+import type { ShownTab } from '../../hooks/tabs'
 import { AGENT, STOP_ID, blankLine, doneAt, groupEntries, isGroupEmpty, prButtons, pressFeedback } from './panel-lines'
 import type { Button, Entry, Group, Lead } from './panel-lines'
 import type { PanelScreen, PanelUi } from './panel'

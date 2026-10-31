@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { PERMISSION_FALLBACK_DELAY_MS } from '../hooks/view'
+import { PERMISSION_FALLBACK_DELAY_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
 import { sidebarLines } from './hooks-helpers'
 

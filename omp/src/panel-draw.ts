@@ -1,15 +1,12 @@
 import type { BannerTone } from '../../hooks/tones'
 import { ago } from '../../hooks/text'
-import {
-  actionLabel,
-  actionLines,
-  isStatusUnderActions,
-  replyHint,
-  resultGlyph,
-  runningMark,
-  HELD_MARK,
-} from '../../hooks/view'
-import type { BannerView, ResultMark } from '../../hooks/view'
+import { actionLabel, replyHint } from '../../hooks/rows'
+import { actionLines } from '../../hooks/action-plan'
+import { isStatusUnderActions } from '../../hooks/feedback'
+import { resultGlyph, runningMark } from '../../hooks/timing'
+import { HELD_MARK } from '../../hooks/help'
+import type { BannerView } from '../../hooks/banners'
+import type { ResultMark } from '../../hooks/rows'
 import { focusOf } from './panel-keys'
 import { AGENT, INDENT, UNLED_INDENT, isShut } from './panel-lines'
 import type { ButtonFace, Lead, Line } from './panel-lines'
