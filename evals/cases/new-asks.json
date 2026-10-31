@@ -310,7 +310,7 @@
       "activity": ["edited src/dates/parse.ts", "ran: npm test -- dates", "ran: rg parseLegacyDate"],
       "reply": "The date parser is fixed, and the 40 date tests pass. `parseLegacyDate` has no callers left. Should I delete it, or keep it for one more release?\n\nI'd delete it: the changelog already marks it deprecated."
     },
-    "checks": [{ "new": "parseLegacyDate|legacy", "kind": "question", "rec": "delete" }, { "added": 1 }]
+    "checks": [{ "new": "parseLegacyDate|legacy|date parser", "kind": "question", "rec": "delete" }, { "added": 1 }]
   },
   {
     "name": "question-answered-later-in-turn-not-new",
