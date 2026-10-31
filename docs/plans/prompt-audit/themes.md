@@ -25,7 +25,7 @@ Status: building. The index says which themes are built, measured or proposed.
 ### 2. An open item cannot change
 
 - **Where:**
-  - `applyUpdate` in `hooks/ledger.ts` and `ledgerBlocks` in `hooks/model-text.ts`;
+  - `applyUpdate` in `hooks/ledger-update.ts` and `ledgerBlocks` in `hooks/model-text.ts`;
   - the sentence in `systemText` that begins "When the reply restates, rewords or narrows an item";
   - `messages.explain` in `hooks/presses.ts`.
 - **What is wrong:**
@@ -42,7 +42,7 @@ Status: building. The index says which themes are built, measured or proposed.
 
 ### 3. Dismissed findings vanish
 
-- **Where:** `addFinding` in `hooks/ledger.ts`, `closedText` and `promptNotes` in `hooks/model-text.ts`, and `recordFinding` in `hooks/tools.ts`.
+- **Where:** `addFinding` in `hooks/ledger-update.ts`, `closedText` and `promptNotes` in `hooks/model-text.ts`, and `recordFinding` in `hooks/tools.ts`.
 - **What is wrong:**
   - Closed findings are saved, but no text tells either model about them. When the person dismisses a finding, the agent sees it gone from the inbox line with no reason given.
   - `addFinding` checks a new finding only against open findings, and only by exact title. A reworded finding the person dismissed is recorded again, and `recordFinding` answers "Recorded as fN".

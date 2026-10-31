@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { closeItem } from '../../hooks/ledger'
+import { closeItem } from '../../hooks/ledger-close'
 import { SETTLED_MS, NO_HOLDS, shownTabs } from '../../hooks/view'
 import type { RowView } from '../../hooks/view'
 import { sessionView } from '../../hooks/session'

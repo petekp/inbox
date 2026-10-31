@@ -1,16 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import {
-  EMPTY,
-  addAgentItem,
-  addFinding,
-  applyUpdate,
-  closeItem,
-  closedState,
-  parseReply,
-  reopenFinding,
-  upgradeLedger,
-} from '../hooks/ledger'
+import { EMPTY, upgradeLedger } from '../hooks/ledger'
+import { closeItem, closedState, reopenFinding } from '../hooks/ledger-close'
+import { addAgentItem, addFinding, applyUpdate } from '../hooks/ledger-update'
+import { parseReply } from '../hooks/reply-parse'
 import { applyPress } from '../hooks/presses'
 
 describe('a finding replaced by a question', () => {
