@@ -4,9 +4,16 @@ Part of [the look map](../looks.md#files).
 
 | File | Role |
 | --- | --- |
-| `hooks/view.ts` | Shared module. The inbox view: Asks order and count, handles, row state, feedback, done labels, action order, key plan, timing constants. |
-| `hooks/help.ts` | Shared module. The marks that rows and group titles draw, the Help legend, and Help's labels. |
-| `hooks/presses.ts` | Shared module. The press types `RowPress` and `PrActionId`, and `isPrRowId`, which tells whether a row id is a PR row's. It re-exports the names that `register.tsx`, `session.ts`, `session-host.ts` and `view.ts` import from it. |
+| `hooks/view.ts` | Shared module. `inboxView` builds the inbox view: the Asks order and count, each row's state, feedback and actions, and the closed rows. `footerStatus` is the status line under the inbox. It re-exports the names that `register.tsx` and `session-host.ts` import from it. |
+| `hooks/timing.ts` | Shared module. The timing constants: how long a row stays settled, the press guard, when a send reads Queued, and the running mark's frames. Which rows a look draws in place, and which replies and discards it holds. |
+| `hooks/rows.ts` | Shared module. The `Look`, `RowView` and `RowState` types. Row handles, titles, reply hints and action labels, a closed row's state, outcome label and mark, and the labels of the closed folds. |
+| `hooks/feedback.ts` | Shared module. A press's feedback on its row: `feedbackOf`, its text in each look, the working and done labels, and whether the press is still out. |
+| `hooks/banners.ts` | Shared module. The banners under the tab bar, the stop texts and Continue, the sample and reading notices, the next build's version label, and the empty-list texts. |
+| `hooks/tabs.ts` | Shared module. The tabs each build shows, with their names, symbols and badges, how the tab bar fits them, and the `/inbox` command's description. |
+| `hooks/status-page.ts` | Shared module. `statusPage` builds the Status page's rows in order. Also the Last seen line, the merged line and the text before a stall. |
+| `hooks/action-plan.ts` | Shared module. A row's actions in order, from `actionsOf`, and the key plans `rowKeyPlan` and `statusKeyPlan`. `actionLines` wraps a row's buttons. `drawnLists` gives each tab's drawn rows, and `rowAfterClose` the row that opens after a close. |
+| `hooks/help.ts` | Shared module. The marks that rows and group titles draw, the Help legend, Help's labels, and the keys Help lists in each look. |
+| `hooks/presses.ts` | Shared module. The press types `RowPress` and `PrActionId`, and `isPrRowId`, which tells whether a row id is a PR row's. It re-exports the names that `register.tsx` and `session-host.ts` import from it. |
 | `hooks/press-labels.ts` | Shared module. `actionId` and `pressText`, the action id and label that a press records, and the `capitalized` and `ISSUE_LABEL` they use. It imports only types, so importing it loads no other module. |
 | `hooks/open-targets.ts` | Shared module. `openTarget`, which opens a row's link or path through a host's command runner, and `baseName`. |
 | `hooks/help-steps.ts` | Shared module. A row's help steps: each step's label and icon, the Open PR step for the PRs an item names, and the effects each step runs. |
@@ -24,13 +31,13 @@ Part of [the look map](../looks.md#files).
 | `hooks/ledger-close.ts` | Shared module. Closing and reopening items and findings, pruning closed records, and whether a closed record counts as handled, dismissed or lapsed. |
 | `hooks/ledger-update.ts` | Shared module. Applying a parsed update to the ledger, and adding findings and the items the agent records. |
 | `hooks/host-tasks.ts` | Shared module. The agent's own task list: how each host's tool calls become `Session.hostTasks`, and the `<tasks>` lines the Status call reads. |
-| `hooks/status.ts` | Shared module. The parser for the Status call's lines, and `askStatus`, which asks the call again when its answer holds prose. It re-exports the names that `register.tsx` and `view.ts` import from it. |
+| `hooks/status.ts` | Shared module. The parser for the Status call's lines, and `askStatus`, which asks the call again when its answer holds prose. It re-exports the names that `register.tsx` imports from it. |
 | `hooks/status-limits.ts` | Shared module. The Status's limits on words, subjects and children, `EMPTY_SESSION_STATUS`, `isOpen`, and the helpers that clip a text and compare subject names. |
 | `hooks/status-ops.ts` | Shared module. How an answer changes the saved Status: `applyOps`, `applyStatus`, and when a HEAD line replaces the head. |
 | `hooks/status-children.ts` | Shared module. A child the host reports, and its end and activity. The text of the subjects, asks and running children that the Status call reads. When a look at the Status starts and ends. |
 | `hooks/status-upgrade.ts` | Shared module. `upgradeStatus`, which reads a saved Status from this build or an earlier one and leaves out anything wrongly shaped. |
 | `hooks/children.ts` | Shared module. How each host's events become the Status tab's children: the task notice parser, the Herdr delegate steps, the end of a delegate Herdr no longer shows working, the cut-off at a reload, and the gate that limits how often a child's activity is saved. |
-| `hooks/model-text.ts` | Shared module. The guidance `guidanceText` builds, the `close` tool's description that carries it, and the `Host` and `Told` types. Each host's `Host` names its agent, surface and the `record` and `close` tools. It re-exports the names that `register.tsx`, `session-host.ts` and `view.ts` import from it. |
+| `hooks/model-text.ts` | Shared module. The guidance `guidanceText` builds, the `close` tool's description that carries it, and the `Host` and `Told` types. Each host's `Host` names its agent, surface and the `record` and `close` tools. It re-exports the names that `register.tsx` and `session-host.ts` import from it. |
 | `hooks/ledger-prompt.ts` | Shared module. What the ledger call reads: `systemText`, and the prompt `buildPrompt` builds from the ledger and the new exchange. |
 | `hooks/catch-up-text.ts` | Shared module. The ledger call's catch-up prompts, and the activity lines that a turn's tool calls and dialogs add. |
 | `hooks/status-prompt.ts` | Shared module. What the Status call reads: `STATUS_SYSTEM`, and its prompts after a reply, during a long turn and for a catch-up. |

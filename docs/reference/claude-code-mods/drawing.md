@@ -85,5 +85,5 @@ Sources: [R#render-sites; IF#change-what-claude-code-already-draws; T: render-si
 | `pane:close` | ctrl+x x (also in `PaneField`) |
 
 - "`ctrl+x b`, `ctrl+x ctrl+a`, and `ctrl+x tab` require v2.1.260 or later." Chord keys must come within 3 seconds. Reserved: ctrl+c, ctrl+d, ctrl+m, ctrl+[, ctrl+i, ctrl+h, Caps Lock. [KB#unbind-default-shortcuts; KB#chords; KB#reserved-shortcuts]
-- Inference: users can rebind these keys, so the inbox's Help text ("ctrl+x tab", `hooks/view.ts:helpKeys`) can go stale. Whether desktop reads `keybindings.json` is undocumented.
+- Inference: users can rebind these keys, so the inbox's Help text ("ctrl+x tab", `hooks/help.ts:helpKeys`) can go stale. Whether desktop reads `keybindings.json` is undocumented.
 - The pane's hotkeys: 1, 2, 3, j, k, v, a, t, e, x, o, r, d (repo). Tab, arrows, Enter and Esc belong to the engine.

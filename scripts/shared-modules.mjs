@@ -57,4 +57,11 @@ export const SHARED = [
   'tones',
   'tools',
   'view',
+  'timing',
+  'rows',
+  'feedback',
+  'banners',
+  'tabs',
+  'status-page',
+  'action-plan',
 ]
