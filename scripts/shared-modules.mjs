@@ -62,6 +62,7 @@ export const SHARED = [
   'view',
   'timing',
   'rows',
+  'row-motion',
   'feedback',
   'banners',
   'tabs',

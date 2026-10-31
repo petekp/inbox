@@ -141,7 +141,7 @@ function clip(text2, max) {
 function clipLabel(text2, max) {
   return text2.length > max ? `${text2.slice(0, max - 1)}\u2026` : text2;
 }
-var graphemes = new Intl.Segmenter(void 0, { granularity: "grapheme" });
+var segmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter(void 0, { granularity: "grapheme" }) : null;
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
 function ago(ms) {
   const min = Math.round(ms / 6e4);
@@ -2721,6 +2721,7 @@ function herdrReporter() {
     return sending;
   };
 }
+var SESSION_FIELDS = Object.keys(emptySession());
 
 // src/host.ts
 function codexStore(dir, sessionId, now, onWrite = async () => {

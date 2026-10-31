@@ -40,7 +40,7 @@ export function clipLabel(text: string, max: number): string {
 
 /** The longest start of `line` that `fits` with an ellipsis after it, with no space or punctuation before the ellipsis. */
 export function cutForEllipsis(line: string, fits: (withEllipsis: string) => boolean): string {
-  const parts = [...graphemes.segment(line)].map(p => p.segment)
+  const parts = graphemesOf(line)
   while (parts.length > 0 && !fits(`${parts.join('')}…`)) parts.pop()
 
   return parts.join('').replace(/[\s.,;:]+$/, '')
@@ -66,7 +66,22 @@ export function clipMiddle(text: string, max: number, head: number): string {
   return `${text.slice(0, head)}${NL}…[cut]${NL}${text.slice(text.length - (max - head))}`
 }
 
-const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+const segmenter =
+  typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function'
+    ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+    : null
+
+/**
+ * A grapheme where `Intl.Segmenter` is missing, as in Herdr's mod runtime: a base character keeps its combining marks
+ * and emoji modifiers, and U+200D joins the next character to it.
+ */
+const GRAPHEME =
+  /[\p{M}\p{Emoji_Modifier}\u200D]+|[^\p{M}\p{Emoji_Modifier}\u200D](?:[\p{M}\p{Emoji_Modifier}]|\u200D[^\p{M}\p{Emoji_Modifier}\u200D]?)*/gu
+
+/** The characters a reader sees in `text`, in order. */
+function graphemesOf(text: string): string[] {
+  return segmenter ? Array.from(segmenter.segment(text), s => s.segment) : (text.match(GRAPHEME) ?? [])
+}
 const ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cc}\p{Cf}]+$/u
 const EMOJI = /\p{Emoji_Presentation}|\uFE0F/u
 const WIDE =
@@ -75,7 +90,7 @@ const WIDE =
 /** The cells a terminal draws `text` in: two for an emoji or a wide East Asian character, however many code points it takes. */
 export function cellWidth(text: string): number {
   let cells = 0
-  for (const { segment } of graphemes.segment(text)) cells += graphemeCells(segment)
+  for (const segment of graphemesOf(text)) cells += graphemeCells(segment)
 
   return cells
 }
@@ -84,7 +99,7 @@ export function cellWidth(text: string): number {
 export function cutToCells(text: string, cells: number): string {
   let out = ''
   let used = 0
-  for (const { segment } of graphemes.segment(text)) {
+  for (const segment of graphemesOf(text)) {
     used += graphemeCells(segment)
     if (used > cells) break
     out += segment

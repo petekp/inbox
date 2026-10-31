@@ -7,6 +7,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/view.ts` | Shared module. `inboxView` builds the inbox view: the Asks order and count, each row's state, feedback and actions, and the closed rows. `footerStatus` is the status line under the inbox. It re-exports the names that `register.tsx` imports from it. |
 | `hooks/timing.ts` | Shared module. The timing constants: how long a row stays settled, the press guard, when a send reads Queued, and the running mark's frames. Which rows a look draws in place, and which replies and discards it holds. |
 | `hooks/rows.ts` | Shared module. The `Look`, `RowView` and `RowState` types. Row handles, titles, reply hints and action labels, a closed row's state, outcome label and mark, and the labels of the closed folds. |
+| `hooks/row-motion.ts` | Shared module. The motion state machine for rows. |
 | `hooks/feedback.ts` | Shared module. A press's feedback on its row: `feedbackOf`, its text in each look, the working and done labels, and whether the press is still out. |
 | `hooks/banners.ts` | Shared module. The banners under the tab bar, the stop texts and Continue, the sample and reading notices, the next build's version label, and the empty-list texts. |
 | `hooks/tabs.ts` | Shared module. The tabs each build shows, with their names, symbols and badges, how the tab bar fits them, and the `/inbox` command's description. |
@@ -56,7 +57,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/host-press.ts` | Shared module. `press` and `startPress`, which run a press on a host's store, and `wakeForDone`, which tells the agent about rows closed with Done. |
 | `hooks/host-prs.ts` | Shared module. `fetchPrs`, which fetches a session's PRs through the host's gh, and `isPrFetchDue` and `prFetchTracker`, which say when to fetch again. |
 | `hooks/gh.ts` | Shared module. `ghFinder` finds a gh that starts, and `ghIn` runs it, over a host's command runner. `branchIn` reads a folder's git branch over the same runner. |
-| `hooks/herdr.ts` | Shared module. What a host reports to the Herdr pane it runs in: the `inbox` status line, the stop, and each row tab's count, as pane tokens in one `herdr pane report-metadata` command. Also `delegatesInHerdr`, which asks `herdr agent list` which delegates still run, only while one runs. |
+| `hooks/herdr.ts` | Shared module. What a host reports to the Herdr pane it runs in: the `inbox` status line, the stop, and each row tab's count, as pane tokens in one `herdr pane report-metadata` command. Also `delegatesInHerdr`, which asks `herdr agent list` which delegates still run, only while one runs. For the Herdr app: `herdrTarget` picks a multiplexer pane or an app terminal, `herdrLabels` turns the tokens into terminal labels, `herdrEnvelope` builds the session file a host publishes, and `pressFile` reads and checks a press file. |
 | `hooks/text.ts` | Shared module. Clipping, code-block formatting, relative ages and a turn's reply. |
 | `hooks/prs.ts` | Shared module. PR parsing, readiness and prompts. |
 | `hooks/pr-tab.ts` | Shared module. What each PR press does, in `applyPrPress`, and the PR button plans: `threadActions`, `checkActions`, `prBlockActions`, and `prTabActions` for the tab's own buttons. It re-exports the names that `register.tsx` imports from it. |
