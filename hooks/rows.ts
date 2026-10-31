@@ -64,8 +64,8 @@ export function closedRowState(
   }
 }
 
-export type Look = 'terminal' | 'desktop' | 'codex' | 'omp'
-export type ModLook = Exclude<Look, 'codex' | 'omp'>
+export type Look = 'terminal' | 'desktop' | 'codex' | 'omp' | 'herdr'
+export type ModLook = Exclude<Look, 'codex' | 'omp' | 'herdr'>
 
 export const isTerminalLike = (look: Look) => look === 'terminal' || look === 'omp'
 

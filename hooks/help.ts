@@ -147,5 +147,12 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
         { keys: '?', does: 'Open or close help' },
         { keys: 'esc', does: 'Close help, then the panel' },
       ]
+    case 'herdr':
+      return [
+        { keys: '← →', does: 'Switch tabs' },
+        ...(hasRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
+        ...prTabKeys,
+        { keys: 'esc', does: "Move focus back to the agent's terminal" },
+      ]
   }
 }
