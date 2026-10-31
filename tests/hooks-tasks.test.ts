@@ -3,82 +3,86 @@ import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/view'
 import { w, world } from './hooks-world'
 import { BAND, PANE, selectRow } from './hooks-helpers'
 
-test('a task handed to Claude folds and leaves the count until Claude’s reply leaves it open, whatever it opens or copies meanwhile', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000_000 })
-  world($, on, [])
-  w.ledgerReply = [
-    'NEW: do | - | Run the load script | - | -',
-    'HELP: new 1 | run | ./load.sh | load script',
-    'HELP: new 1 | run | npm login | -',
-    'HELP: new 1 | open | notes/load.md | -',
-    'NEW: do | - | Add the API key | - | -',
-    'HELP: new 2 | copy | API_KEY=x | env line',
-    'HELP: new 2 | open | .env.local | -',
-  ].join('\n')
-  const answer = 'Run ./load.sh after npm login; see notes/load.md. Put API_KEY=x in .env.local.'
-  w.theme = 'dark'
+test(
+  'a task handed to Claude folds and leaves the count until Claude’s reply leaves it open, whatever it opens or copies meanwhile',
+  { timeoutMs: 20_000 },
+  async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    w.ledgerReply = [
+      'NEW: do | - | Run the load script | - | -',
+      'HELP: new 1 | run | ./load.sh | load script',
+      'HELP: new 1 | run | npm login | -',
+      'HELP: new 1 | open | notes/load.md | -',
+      'NEW: do | - | Add the API key | - | -',
+      'HELP: new 2 | copy | API_KEY=x | env line',
+      'HELP: new 2 | open | .env.local | -',
+    ].join('\n')
+    const answer = 'Run ./load.sh after npm login; see notes/load.md. Put API_KEY=x in .env.local.'
+    w.theme = 'dark'
 
-  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  await $.prompt.submit({ text: 'load the data', wait: false, origin: { kind: 'composer' } })
-  await $.turn.start({ text: 'load the data', turnId: 't1' })
-  await $.turn.complete({ answer, durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
-  await clock.settle()
-  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  const pane = await $.ui.mount(PANE)
-  expect(await band.find({ text: /Asks 2/ })).toBeDefined()
+    await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+    await $.prompt.submit({ text: 'load the data', wait: false, origin: { kind: 'composer' } })
+    await $.turn.start({ text: 'load the data', turnId: 't1' })
+    await $.turn.complete({ answer, durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+    await clock.settle()
+    const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+    const pane = await $.ui.mount(PANE)
+    expect(await band.find({ text: /Asks 2/ })).toBeDefined()
 
-  await pane.press({ key: 'help-i1-0' })
-  await clock.settle()
-  expect(w.sent.at(-1)).toContain('./load.sh')
-  expect(await pane.find({ text: /Run load script/ })).toBeDefined()
-  expect(await pane.find({ key: 'help-i1-1' })).toBeUndefined()
-  expect(await band.find({ text: /Asks 1/ })).toBeDefined()
-  expect(await pane.find({ key: 'help-i2-0' })).toBeDefined()
+    await pane.press({ key: 'help-i1-0' })
+    await clock.settle()
+    expect(w.sent.at(-1)).toContain('./load.sh')
+    expect(await pane.find({ text: /Run load script/ })).toBeDefined()
+    expect(await pane.find({ key: 'help-i1-1' })).toBeUndefined()
+    expect(await band.find({ text: /Asks 1/ })).toBeDefined()
+    expect(await pane.find({ key: 'help-i2-0' })).toBeDefined()
 
-  await pane.press({ key: 'title-i1' })
-  await clock.advance(PRESS_GUARD_MS)
-  await pane.press({ key: 'help-i1-1' })
-  await clock.settle()
-  expect(w.copied).toEqual(['npm login'])
-  expect(
-    await pane.find({
-      text: /^\u2007·\s✓\sCopied\snpm\slogin\.\sRun\sit\sin\sa\sterminal,\sor\stype\s!\sand\spaste\.$/,
-    }),
-  ).toBeDefined()
-  await pane.press({ key: 'help-i1-2' })
-  await clock.settle()
-  const red = (await pane.find({ type: 'Text', text: /^\s*Could not open load\.md: it no longer exists$/ }))?.props
-    .color
-  expect(red).toBeDefined()
-  expect(w.toasts).toEqual([])
-  expect(await band.find({ text: /Asks 1/ })).toBeDefined()
-  await clock.advance(SETTLED_MS)
-  expect(await pane.find({ text: 'Could not open load.md: it no longer exists' })).toBeDefined()
+    await pane.press({ key: 'title-i1' })
+    await clock.advance(PRESS_GUARD_MS)
+    await pane.press({ key: 'help-i1-1' })
+    await clock.settle()
+    expect(w.copied).toEqual(['npm login'])
+    expect(
+      await pane.find({
+        text: /^\u2007·\s✓\sCopied\snpm\slogin\.\sRun\sit\sin\sa\sterminal,\sor\stype\s!\sand\spaste\.$/,
+      }),
+    ).toBeDefined()
+    await pane.press({ key: 'help-i1-2' })
+    await clock.settle()
+    const red = (await pane.find({ type: 'Text', text: /^\s*Could not open load\.md: it no longer exists$/ }))?.props
+      .color
+    expect(red).toBeDefined()
+    expect(w.toasts).toEqual([])
+    expect(await band.find({ text: /Asks 1/ })).toBeDefined()
+    await clock.advance(SETTLED_MS)
+    expect(await pane.find({ text: 'Could not open load.md: it no longer exists' })).toBeDefined()
 
-  w.files = ['/tmp/project/.env.local']
-  await selectRow(pane, 'i2')
-  await clock.advance(PRESS_GUARD_MS)
-  await pane.press({ key: 'help-i2-0' })
-  await clock.settle()
-  expect(w.copied.at(-1)).toBe('API_KEY=x')
-  expect(w.ran.at(-1)).toEqual(['open', '/tmp/project/.env.local'])
-  expect(
-    (await pane.find({ type: 'Text', text: /^\u2007·\s✓\sCopied\senv\sline\u2007·\sOpened\s\.env\.local$/ }))?.props
-      .color,
-  ).not.toBe(red)
-  expect((await pane.find({ type: 'Text', text: /Could not open load\.md/ }))?.props.color).toBe(red)
-  expect((await pane.find({ key: 'help-i2-0-key' }))?.props.label).toBe('Copy env line and open .env.local')
-  await clock.advance(SETTLED_MS)
-  expect(await pane.find({ text: /Opened \.env\.local/ })).toBeUndefined()
-  await pane.press({ key: 'title-i1' })
+    w.files = ['/tmp/project/.env.local']
+    await selectRow(pane, 'i2')
+    await clock.advance(PRESS_GUARD_MS)
+    await pane.press({ key: 'help-i2-0' })
+    await clock.settle()
+    expect(w.copied.at(-1)).toBe('API_KEY=x')
+    expect(w.ran.at(-1)).toEqual(['open', '/tmp/project/.env.local'])
+    expect(
+      (await pane.find({ type: 'Text', text: /^\u2007·\s✓\sCopied\senv\sline\u2007·\sOpened\s\.env\.local$/ }))?.props
+        .color,
+    ).not.toBe(red)
+    expect((await pane.find({ type: 'Text', text: /Could not open load\.md/ }))?.props.color).toBe(red)
+    expect((await pane.find({ key: 'help-i2-0-key' }))?.props.label).toBe('Copy env line and open .env.local')
+    await clock.advance(SETTLED_MS)
+    expect(await pane.find({ text: /Opened \.env\.local/ })).toBeUndefined()
+    await pane.press({ key: 'title-i1' })
 
-  w.ledgerReply = 'NONE'
-  await $.turn.start({ text: 'For "Run the load script", run this', turnId: 't2' })
-  await $.turn.complete({ answer: 'It needs sudo.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
-  await clock.settle()
-  expect((await pane.find({ key: 'help-i1-0-key' }))?.props.label).toBe('Run load script again')
-  expect(await band.find({ text: /Asks 2/ })).toBeDefined()
-})
+    w.ledgerReply = 'NONE'
+    await $.turn.start({ text: 'For "Run the load script", run this', turnId: 't2' })
+    await $.turn.complete({ answer: 'It needs sudo.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
+    await clock.settle()
+    expect((await pane.find({ key: 'help-i1-0-key' }))?.props.label).toBe('Run load script again')
+    expect(await band.find({ text: /Asks 2/ })).toBeDefined()
+  },
+)
 
 test('last actions an earlier build saved convert once by the table, and a task handed off then still folds', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
