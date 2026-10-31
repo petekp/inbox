@@ -4,7 +4,10 @@ import type { SessionStatus, Subject, SubjectStatus } from '../types'
 export const NAME_WORDS = 3
 export const TEXT_WORDS = 4
 export const DESCRIPTION_WORDS = 8
-/** The most open subjects the call keeps. */
+/**
+ * The most open subjects the call keeps. The Status page folds the open subjects past it into "N more", except held
+ * ones, ones changed since the last look and ones with a child row under them.
+ */
 export const OPEN_SUBJECTS = 6
 /** Limits code holds an answer to when the call writes past the words it was asked for. */
 export const NAME_KEPT = 20

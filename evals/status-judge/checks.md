@@ -82,7 +82,7 @@ Each mark on a subject row fits its piece's state in the facts, and every open p
 Judge it in two steps:
 
 1. Check the mark of each row of work against the list of marks above. For a `◆` row, check only that an open ask in the facts holds up that piece. Do not compare a `◆` row's mark with the piece's state.
-2. List the open pieces in the facts that have no row on the page. The queued fold accounts for them. The check fails when that list is not empty and the page has no queued fold, or the fold counts fewer pieces than the list holds.
+2. List the open pieces in the facts that have no row on the page. The `○ N more` fold accounts for them. The check fails when that list is not empty and the page has no `○ N more` fold, or the fold counts fewer pieces than the list holds.
 
 The check fails when any of these is on the page:
 
@@ -103,7 +103,7 @@ Examples:
 - Fail: `✓ Passkeys: filed for later`. Filed work is not delivered.
 - Fail: `○ Passkeys: filed for later`. Filed work is closed.
 - Fail: `◆ Recovery codes`, when no open ask holds up recovery codes.
-- Fail: the facts list nine open pieces. The page shows six open rows and no queued fold.
+- Fail: the facts list nine open pieces. The page shows six open rows and no `○ N more` fold.
 
 ### where-it-stands
 

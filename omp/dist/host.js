@@ -3157,7 +3157,6 @@ var STALL_GAP = " \xB7 ";
 var STATUS_TEXT_LINES = 3;
 var CHILD_ROWS = 3;
 var NEW_CLOSED_ROWS = 2;
-var OPEN_ROWS = 7;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 var RUNNING_FRAME_MS = 300;
@@ -3225,12 +3224,12 @@ function statusPage(s, now) {
   const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
-  const open = subjects.filter(isOpen);
-  const queuedOver = Math.max(0, open.length - OPEN_ROWS);
-  const hiddenQueued = new Set(open.filter((x) => placeOf(x) === "queued").sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id));
-  const shown = [...open.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort(pageOrder);
-  const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const open = subjects.filter(isOpen).sort(pageOrder);
+  const foldable = open.filter((x) => !isHeld(x) && !isNew(x) && !running.some((c) => c.subjectId === x.id));
+  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
+  const shown = [...open.filter((x) => !folded.includes(x)), ...newClosed].sort(pageOrder);
+  const foldedDone = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
   const shownIds = new Set(shown.map((x) => x.id));
   const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null));
   const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
@@ -3271,22 +3270,16 @@ function statusPage(s, now) {
   const isEveryShownNew = firstSeen === -1;
   if (lookRow && isEveryShownNew && shown.length > 0)
     rows.push(lookRow);
-  if (hiddenQueued.size > 0)
-    rows.push({
-      kind: "fold",
-      id: "queued",
-      mark: SUBJECT_MARKS.queued.mark,
-      tone: null,
-      text: `${hiddenQueued.size} more queued`
-    });
-  if (folded.length > 0) {
+  if (folded.length > 0)
+    rows.push({ kind: "fold", id: "open", ...SUBJECT_MARKS.queued, text: `${folded.length} more` });
+  if (foldedDone.length > 0) {
     const isMore = newClosed.some((x) => x.status === "done");
     rows.push({
       kind: "fold",
       id: "done",
       mark: SUBJECT_MARKS.done.mark,
       tone: "done",
-      text: `${folded.length}${isMore ? " more" : ""} done`
+      text: `${foldedDone.length}${isMore ? " more" : ""} done`
     });
   }
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
