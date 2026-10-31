@@ -2,7 +2,7 @@
 
 import type { DialogQuestion, Item, Session, TurnDialogQuestion } from '../types'
 import { restates } from './ask-match'
-import { RECOMMENDED_SUFFIX } from './model-text'
+import { RECOMMENDED_SUFFIX } from './catch-up-text'
 
 type AskedQuestion = Pick<DialogQuestion, 'question' | 'options'>
 

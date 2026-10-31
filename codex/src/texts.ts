@@ -1,4 +1,4 @@
-import { CLOSE_ID_RULE } from '../../hooks/model-text'
+import { CLOSE_ID_RULE } from '../../hooks/inbox-text'
 import type { Host } from '../../hooks/model-text'
 import type { InboxView, RowView } from '../../hooks/view'
 import { rowHandle } from '../../hooks/view'

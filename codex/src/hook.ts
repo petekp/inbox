@@ -12,7 +12,7 @@ import {
 import { branchIn } from '../../hooks/gh'
 import type { Run } from '../../hooks/gh'
 import { delegatesInHerdr } from '../../hooks/herdr'
-import { dialogActivity, toolActivity } from '../../hooks/model-text'
+import { dialogActivity, toolActivity } from '../../hooks/catch-up-text'
 import { childEnded } from '../../hooks/status-children'
 import { turnReply } from '../../hooks/text'
 import {

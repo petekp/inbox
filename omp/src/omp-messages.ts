@@ -1,5 +1,5 @@
 import type { Turn } from '../../hooks/conversation'
-import { dialogActivity, dialogQuestions } from '../../hooks/model-text'
+import { dialogActivity, dialogQuestions } from '../../hooks/catch-up-text'
 import { clip } from '../../hooks/text'
 import { activityOf, askOutcome } from './tool-calls'
 import type { Stop } from '../../types'

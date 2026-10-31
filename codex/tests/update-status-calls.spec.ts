@@ -6,7 +6,7 @@ import { parseStatus } from '../../hooks/status'
 import { appliedStatus } from '../../hooks/session'
 import { readState, statePath, updateState, withLock } from '../src/state'
 import { runUpdates as runBothCalls } from '../src/update'
-import { STATUS_SYSTEM } from '../../hooks/model-text'
+import { STATUS_SYSTEM } from '../../hooks/status-prompt'
 import { tempDir } from './helpers'
 import { ex, LEDGER_ANSWER } from './update-fixtures'
 

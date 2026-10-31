@@ -3,7 +3,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { STATUS_SYSTEM } from '../hooks/model-text'
+import { STATUS_SYSTEM } from '../hooks/status-prompt'
 import { parseStatus } from '../hooks/status'
 import { upgradeStatus } from '../hooks/status-upgrade'
 import { STATUS_RECORD_VERSION } from '../hooks/session-host'

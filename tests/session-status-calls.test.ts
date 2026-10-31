@@ -3,7 +3,8 @@ import { expect, test } from 'claude-code/testing'
 import { EMPTY } from '../hooks/ledger'
 import { withChild } from '../hooks/status-children'
 import { applyStatus } from '../hooks/status-ops'
-import { CLAUDE_CODE, STATUS_SYSTEM } from '../hooks/model-text'
+import { CLAUDE_CODE } from '../hooks/model-text'
+import { STATUS_SYSTEM } from '../hooks/status-prompt'
 import {
   appliedStatus,
   cleared,
