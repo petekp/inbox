@@ -8,7 +8,7 @@ import type { Tone } from './palettes'
 import type { Entry, PaneBase, PaneClient, PaneHandlers } from './pane-context'
 import { followUpPresses } from './pane-keys'
 import type { PaneRowFrame } from './pane-row-frame'
-import type { PaneRowLines } from './pane-row-lines'
+import { childPos, type PaneRowLines } from './pane-row-lines'
 import { type ClosedLine, settledScrollKey } from './pane-selection'
 import {
   DESKTOP_CELL_PT,
@@ -62,7 +62,6 @@ export function paneRowParts(
     desktopHairline,
     markGlyph,
     markWidth,
-    childPos,
   }: PaneClient &
     Pick<
       PaneBase,
@@ -79,7 +78,7 @@ export function paneRowParts(
       | 'settledLayout'
     > &
     Pick<PaneRowFrame, 'desktopFrame'> &
-    Pick<PaneRowLines, 'treeRow' | 'ToneSvg' | 'desktopHairline' | 'markGlyph' | 'markWidth' | 'childPos'>,
+    Pick<PaneRowLines, 'treeRow' | 'ToneSvg' | 'desktopHairline' | 'markGlyph' | 'markWidth'>,
   { updateUnfolded, runPress }: Pick<PaneHandlers, 'updateUnfolded' | 'runPress'>,
 ) {
   const groupEmpty = (title: string) =>

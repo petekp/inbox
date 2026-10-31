@@ -354,7 +354,7 @@ import {
 import { mod, paneState, sessionState } from './mod-state'
 import { paneAskRows, paneAskTabs } from './pane-asks'
 import { paneRowKeys } from './pane-row-keys'
-import { paneRowLines } from './pane-row-lines'
+import { childPos, paneRowLines } from './pane-row-lines'
 import { paneRowFrame } from './pane-row-frame'
 import { paneRows } from './pane-rows'
 import { paneFrame } from './pane-frame'
@@ -3284,7 +3284,7 @@ export const register: Register = on => {
       readAgain: () => readAgain($),
       resume: () => resume($),
     }
-    const { holdsUpLineOf, itemRow, findingRow } = paneAskRows(
+    const { itemRow, findingRow } = paneAskRows(
       { now, look, Text, pal, optionsShown, Box, blankLine, terminalText, inlineText },
       handlers,
     )
@@ -3454,7 +3454,6 @@ export const register: Register = on => {
       columnsFor,
       markWidth,
       treeRow,
-      childPos,
       divided,
       withDoneMark,
       unselectedLine,
@@ -3482,7 +3481,6 @@ export const register: Register = on => {
       isAgeInSide,
       listColumns,
       Button,
-      holdsUpLineOf,
     })
     const { desktopFrame } = paneRowFrame({ space, Box })
     const { listRow } = paneRows(
@@ -3599,7 +3597,6 @@ export const register: Register = on => {
           desktopHairline,
           markGlyph,
           markWidth,
-          childPos,
         },
         handlers,
       )
@@ -3623,7 +3620,6 @@ export const register: Register = on => {
         findingEntries,
         lists,
         divided,
-        childPos,
         listRow,
         settledRow,
         closedFold,

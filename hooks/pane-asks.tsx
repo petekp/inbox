@@ -3,10 +3,10 @@ import { bannerOf, emptyText, isResumable, READING_TEXT, stopBanner } from './ba
 import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
 import { FINDING_GROUPS, HELD_MARK } from './help'
 import { READ_FAILED_TEXT } from './mod-sessions'
-import { mod, sessionState } from './mod-state'
+import { sessionState } from './mod-state'
 import type { PaneBase, PaneHandlers, Row } from './pane-context'
 import type { PaneFrame } from './pane-frame'
-import type { PaneRowLines } from './pane-row-lines'
+import { childPos, holdsUpLineOf, type PaneRowLines } from './pane-row-lines'
 import type { PaneRowParts } from './pane-row-parts'
 import type { PaneRows } from './pane-rows'
 import { ROW_COLUMNS } from './pane-sizes'
@@ -31,8 +31,6 @@ export function paneAskRows(
   >,
   { rowKeyActions }: Pick<PaneHandlers, 'rowKeyActions'>,
 ) {
-  /** A next build draws the Status, so only it names the subject an ask holds up. */
-  const holdsUpLineOf = (r: RowView | undefined) => (mod.isNextBuild ? (r?.holdsUpLine ?? null) : null)
   const itemRow = (r: RowView): Row => {
     const asked = r.at === null ? undefined : `${DOT}${ago(now - r.at)}`
     const isHandedOff = r.state.is === 'handedOff'
@@ -97,7 +95,7 @@ export function paneAskRows(
     moreKeys: () => rowKeyActions(r, true).more,
   })
 
-  return { holdsUpLineOf, itemRow, findingRow }
+  return { itemRow, findingRow }
 }
 
 export type PaneAskRows = ReturnType<typeof paneAskRows>
@@ -122,7 +120,6 @@ export function paneAskTabs(
     findingEntries,
     lists,
     divided,
-    childPos,
     listRow,
     settledRow,
     closedFold,
@@ -152,7 +149,7 @@ export function paneAskTabs(
     | 'findingEntries'
     | 'lists'
   > &
-    Pick<PaneRowLines, 'divided' | 'childPos'> &
+    Pick<PaneRowLines, 'divided'> &
     Pick<PaneRows, 'listRow'> &
     Pick<
       PaneRowParts,

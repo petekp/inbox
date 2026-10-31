@@ -11,7 +11,7 @@ import {
   rowFeedbackText,
 } from './feedback'
 import { HELD_MARK } from './help'
-import type { PaneAskRows } from './pane-asks'
+import { mod } from './mod-state'
 import type { PaneBase, PaneClient, Row } from './pane-context'
 import {
   DESKTOP_CELL_PT,
@@ -26,10 +26,15 @@ import {
   TREE_LINE_AT,
 } from './pane-sizes'
 import type { RowProps } from './row-client'
-import { DOT, type ResultMark, rowResultMark, shortAgo } from './rows'
+import { DOT, type ResultMark, rowResultMark, type RowView, shortAgo } from './rows'
 import { LEADING_DOT, type TreePos, treeText } from './terminal-text'
 import { ago, clipLabel } from './text'
 import { resultGlyph, runningMark } from './timing'
+
+/** A next build draws the Status, so only it names the subject an ask holds up. */
+export const holdsUpLineOf = (r: RowView | undefined) => (mod.isNextBuild ? (r?.holdsUpLine ?? null) : null)
+
+export const childPos = (n: number, count: number): TreePos => (n === count - 1 ? 'last' : 'mid')
 
 export function paneRowLines({
   elements,
@@ -47,7 +52,6 @@ export function paneRowLines({
   isAgeInSide,
   listColumns,
   Button,
-  holdsUpLineOf,
 }: Pick<PaneClient, 'elements'> &
   Pick<
     PaneBase,
@@ -65,8 +69,7 @@ export function paneRowLines({
     | 'isAgeInSide'
     | 'listColumns'
     | 'Button'
-  > &
-  Pick<PaneAskRows, 'holdsUpLineOf'>) {
+  >) {
   const feedbackLabel = (id: string, row?: Row) => {
     const f = row?.view ? row.view.feedback : feedbackOf(id, lastActions[id], notes[id], turns, now)
     if (!f) return null
@@ -150,7 +153,6 @@ export function paneRowLines({
       {pos ? branch(pos, 0, TREE_LINE_AT + markWidth * depth) : null}
     </Box>
   )
-  const childPos = (n: number, count: number): TreePos => (n === count - 1 ? 'last' : 'mid')
   const rule = (inset: number) => (
     <Text color={pal.divider}>{'─'.repeat(Math.max(0, e.props.bodyColumns - inset))}</Text>
   )
@@ -356,7 +358,6 @@ export function paneRowLines({
     columnsFor,
     markWidth,
     treeRow,
-    childPos,
     divided,
     withDoneMark,
     unselectedLine,
