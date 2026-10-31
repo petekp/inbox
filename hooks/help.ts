@@ -86,7 +86,7 @@ export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', 
 
 export type HelpKey = { keys: string; does: string }
 
-/** The PRs tab's own keys, which `hooks/pr-tab.ts:prOrderActions` and `prTabActions` bind from any row of the tab. */
+/** The PRs tab's own keys, which `hooks/pr-order.ts:prOrderActions` and `hooks/pr-tab.ts:prTabActions` bind from any row of the tab. */
 const PR_TAB_HELP_KEYS: HelpKey[] = [
   { keys: 'g', does: 'Rank the PRs again, once a ranked PR changed' },
   { keys: 'm', does: 'Dismiss the merged PRs' },
