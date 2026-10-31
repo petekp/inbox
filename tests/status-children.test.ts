@@ -251,3 +251,37 @@ test('a subject an ask holds up or that changed since the last look never folds,
   expect(draw(openSubjects(9)).filter(r => r.includes('Part'))).toHaveLength(9)
   expect(draw(openSubjects(9)).some(r => r.includes('more'))).toBe(false)
 })
+
+test('a subject with a child row under it never folds, so its child stays under it, and more than six can show', () => {
+  const withChildOn = (o: SessionStatus, s: number) =>
+    after(
+      withChild(
+        o,
+        {
+          ref: `r${s}`,
+          kind: 'subagent',
+          name: `Review s${s}`,
+          startedAt: 12 * MIN,
+          endedAt: null,
+          lastActivityAt: 19 * MIN,
+        },
+        12 * MIN,
+      ),
+      `LINK: c${o.nextChildId} | s${s}`,
+      12 * MIN,
+    )
+  const seen = seenAt10(openSubjects(9))
+  const sevenWithChildren = [1, 2, 3, 4, 5, 6, 7].reduce(withChildOn, seen)
+  const draw = (o: SessionStatus) => shape(page(o, 20 * MIN).rows)
+
+  expect(draw(withChildOn(withChildOn(seen, 5), 8))).toEqual([
+    ...[3, 2, 1, 0].map(n => `◐ Part ${n}: step ${n}`),
+    '◌ Part 4: step 4 ┐',
+    '└ ● Review s5',
+    '○ Part 7: step 7 ┐',
+    '└ ● Review s8',
+    '○ 3 more',
+  ])
+  expect(draw(sevenWithChildren).filter(r => r.startsWith('└'))).toHaveLength(7)
+  expect(draw(sevenWithChildren).at(-1)).toBe('○ 2 more')
+})

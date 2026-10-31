@@ -1336,13 +1336,12 @@ function statusPage(s, now) {
   const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
-  const open3 = subjects.filter(isOpen).sort(pageOrder);
-  const foldable = open3.filter((x) => !isHeld(x) && !isNew(x));
-  const foldableShown = Math.max(0, OPEN_SUBJECTS - (open3.length - foldable.length));
-  const foldedOpen = foldable.slice(foldableShown);
-  const shown = [...open3.filter((x) => !foldedOpen.includes(x)), ...newClosed].sort(pageOrder);
-  const foldedDone = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const open3 = subjects.filter(isOpen).sort(pageOrder);
+  const foldable = open3.filter((x) => !isHeld(x) && !isNew(x) && !running.some((c) => c.subjectId === x.id));
+  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open3.length - foldable.length)));
+  const shown = [...open3.filter((x) => !folded.includes(x)), ...newClosed].sort(pageOrder);
+  const foldedDone = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
   const shownIds = new Set(shown.map((x) => x.id));
   const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null));
   const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
@@ -1381,8 +1380,7 @@ function statusPage(s, now) {
   }
   const isEveryShownNew = firstSeen === -1;
   if (lookRow && isEveryShownNew && shown.length > 0) rows.push(lookRow);
-  if (foldedOpen.length > 0)
-    rows.push({ kind: "fold", id: "open", ...SUBJECT_MARKS.queued, text: `${foldedOpen.length} more` });
+  if (folded.length > 0) rows.push({ kind: "fold", id: "open", ...SUBJECT_MARKS.queued, text: `${folded.length} more` });
   if (foldedDone.length > 0) {
     const isMore = newClosed.some((x) => x.status === "done");
     rows.push({

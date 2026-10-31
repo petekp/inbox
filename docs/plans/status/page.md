@@ -41,7 +41,7 @@ More rules of the drawn page, all in `hooks/view.ts:statusPage`:
 - At most 3 children show under one subject. The rest read "+ 2 more running".
 - A child whose subject is not shown, or that has no link yet, sits at the top of the list.
 - At most 6 open rows show, the number the Status call is told to keep. The rest fold into "○ N more", taken from the rows the page would draw last: queued rows first, then rows that wait on others, then working rows.
-- A held subject never folds, and its mark does not move. A subject that changed since the last look never folds either. So more than 6 open rows can show, and a page the person has never looked at folds nothing.
+- A held subject never folds, and its mark does not move. A subject that changed since the last look never folds either, and neither does one with a child row under it, so the child always shows under its subject. So more than 6 open rows can show, and a page the person has never looked at folds nothing.
 - The fold's mark is always ○, whatever rows it holds. Every row in it is one the person has already seen, and none waits on them. ○, the mark of work set aside, says that.
 - The Asks row of a linked ask reads "Holds up" and the subject's name.
 
