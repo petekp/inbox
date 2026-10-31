@@ -2,15 +2,8 @@ import { isSameTaskList, ompTodoFromBranch } from '../../hooks/host-tasks'
 import { guidanceText } from '../../hooks/model-text'
 import { branchIn } from '../../hooks/gh'
 import { CLEARED_TOKENS, delegatesInHerdr } from '../../hooks/herdr'
-import {
-  messageTyped,
-  needsUpdate,
-  notePrompt,
-  turnStarted,
-  placed,
-  cutOffTurn,
-  statusChanged,
-} from '../../hooks/session'
+import { messageTyped, notePrompt, turnStarted, placed, cutOffTurn } from '../../hooks/session-turns'
+import { needsUpdate, statusChanged } from '../../hooks/session-status'
 import { childrenCutOff, delegatesSettled } from '../../hooks/children'
 import { runUpdates, wakeForDone } from '../../hooks/session-host'
 import { turnReply } from '../../hooks/text'

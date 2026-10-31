@@ -5,22 +5,18 @@ import { withChild } from '../hooks/status-children'
 import { applyStatus } from '../hooks/status-ops'
 import { CLAUDE_CODE } from '../hooks/model-text'
 import { STATUS_SYSTEM } from '../hooks/status-prompt'
+import { emptySession } from '../hooks/session-files'
+import { cleared, noteActivity, notePrompt, turnEnded, turnStarted } from '../hooks/session-turns'
 import {
   appliedStatus,
-  cleared,
   claimedStatusRefresh,
-  emptySession,
   failedStatus,
   forkedFrom,
   hasLedger,
   isUnseen,
-  noteActivity,
   STATUS_REFRESH_MS,
-  notePrompt,
-  sessionView,
-  turnEnded,
-  turnStarted,
-} from '../hooks/session'
+} from '../hooks/session-status'
+import { sessionView } from '../hooks/session-view'
 import type { Session } from '../hooks/session'
 import {
   STATUS_RECORD_VERSION,

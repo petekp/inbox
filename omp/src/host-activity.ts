@@ -1,6 +1,7 @@
 import { dialogActivity, dialogQuestions } from '../../hooks/catch-up-text'
 import { noteDialog } from '../../hooks/dialogs'
-import { claimedStatusRefresh, noteActivity, noteCommandOutput, statusChanged } from '../../hooks/session'
+import { noteActivity, noteCommandOutput } from '../../hooks/session-turns'
+import { claimedStatusRefresh, statusChanged } from '../../hooks/session-status'
 import {
   activityGate,
   childStarted,

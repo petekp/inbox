@@ -6,7 +6,9 @@ import { screenText } from '../../hooks/inbox-text'
 import type { ScreenTab } from '../../hooks/inbox-text'
 import { ghFinder, ghIn } from '../../hooks/gh'
 import { delegatesInHerdr, herdrCheckGate, herdrTokens } from '../../hooks/herdr'
-import { endTurn, forkedFrom, hasLedger, isUnseen, sessionView, turnEnded, statusChanged } from '../../hooks/session'
+import { endTurn, turnEnded } from '../../hooks/session-turns'
+import { forkedFrom, hasLedger, isUnseen, statusChanged } from '../../hooks/session-status'
+import { sessionView } from '../../hooks/session-view'
 import { delegatesSettled } from '../../hooks/children'
 import {
   askOverConversation,

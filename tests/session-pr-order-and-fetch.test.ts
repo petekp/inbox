@@ -1,7 +1,9 @@
 import { expect, test } from 'claude-code/testing'
 
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { emptySession, recorded, sessionView, withFetchedPrs } from '../hooks/session'
+import { emptySession } from '../hooks/session-files'
+import { recorded, withFetchedPrs } from '../hooks/session-presses'
+import { sessionView } from '../hooks/session-view'
 import type { Session } from '../hooks/session'
 import type { PrView } from '../types'
 import { isPrFetchDue, prFetchTracker } from '../hooks/session-host'

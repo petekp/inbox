@@ -1,7 +1,9 @@
 import { expect, test } from 'claude-code/testing'
 
 import { flattenConversation } from '../hooks/conversation'
-import { emptySession, noteCommandOutput, sessionView } from '../hooks/session'
+import { emptySession } from '../hooks/session-files'
+import { noteCommandOutput } from '../hooks/session-turns'
+import { sessionView } from '../hooks/session-view'
 import { runUpdates } from '../hooks/session-host'
 import type { CatchUpReply, StatusCall } from '../hooks/session-host'
 import { fakeHost } from './session-fake-host'

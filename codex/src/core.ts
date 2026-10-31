@@ -1,12 +1,9 @@
 import type { HooksTrust } from './hook-trust'
-import {
-  endTurn as endSessionTurn,
-  lookEndedOn,
-  notePrompt as notePromptIn,
-  sessionView,
-  withLook,
-} from '../../hooks/session'
-import type { SentBy, SessionView } from '../../hooks/session'
+import { endTurn as endSessionTurn, notePrompt as notePromptIn } from '../../hooks/session-turns'
+import { lookEndedOn, withLook } from '../../hooks/session-status'
+import { sessionView } from '../../hooks/session-view'
+import type { SentBy } from '../../hooks/session-turns'
+import type { SessionView } from '../../hooks/session-view'
 import { NO_HOLDS, screenTabOf } from '../../hooks/view'
 import type { Holds } from '../../hooks/view'
 import { SETTLE_WINDOW_MS } from './settle'

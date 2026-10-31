@@ -1186,160 +1186,6 @@ function howFromOutcome(outcome) {
   return "update";
 }
 var CLOSED_BY_CLAUDE = "closed by Claude";
-// ../hooks/status-ops.ts
-function hasSameWords(a, b) {
-  const x = words(a);
-  const y = words(b);
-  return x.size === y.size && [...x].every((w) => y.has(w));
-}
-function isUnderWay(s) {
-  return s.status === "working" || s.status === "waits-on-other";
-}
-function answerWork(before, o, now) {
-  const was = new Map(before.map((s) => [s.id, s]));
-  const closed = o.subjects.filter((s) => {
-    const earlier = was.get(s.id);
-    return !isOpen(s) && s.closedAt === now && (earlier === undefined || isOpen(earlier));
-  });
-  const isClosedWorkNew = closed.some((s) => !was.has(s.id));
-  const isUnderWayWorkClosed = closed.some((s) => {
-    const earlier = was.get(s.id);
-    return earlier !== undefined && isUnderWay(earlier);
-  });
-  return {
-    isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
-    isWorkUnderWay: o.subjects.some((s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now),
-    namesClosed: (description) => {
-      const said = words(description);
-      return closed.some((s) => {
-        const name = [...words(s.name)];
-        return name.length > 0 && name.every((w) => said.has(w));
-      });
-    }
-  };
-}
-function isDescriptionStale(head, work) {
-  return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
-}
-function headAfter(last, op, work) {
-  const isComplete = last !== null && last.description !== "";
-  const isSameTitle = last !== null && hasSameWords(last.title, op.title);
-  const isStale = isDescriptionStale(last, work);
-  const isHeld = isComplete && (isSameTitle && !isStale || work.isEarlierWorkFinished && !work.isWorkUnderWay);
-  return isHeld ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
-}
-var OP_ORDER = {
-  none: 0,
-  head: 1,
-  new: 0,
-  set: 0,
-  done: 0,
-  drop: 0,
-  was: 1,
-  link: 2
-};
-function applyOps(last, ops, now, askIds) {
-  let o = {
-    ...last ?? EMPTY_SESSION_STATUS,
-    subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
-    children: (last?.children ?? []).map((c) => ({ ...c })),
-    askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask)))
-  };
-  const find = (ref) => {
-    const key = nameKey(clipWords(ref, NAME_KEPT));
-    return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
-  };
-  const forgetSeenWas = (s) => {
-    const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
-    if (isSeen) {
-      s.was = null;
-      s.merged = null;
-    }
-  };
-  const set = (s, status, text) => {
-    const isReworded = s.status === status && hasSameWords(s.text, text);
-    if (isReworded)
-      return;
-    s.status = status;
-    s.text = clipWords(text, TEXT_KEPT);
-    forgetSeenWas(s);
-    s.changedAt = now;
-  };
-  const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
-  for (const { op } of ordered) {
-    if (op.kind === "none")
-      continue;
-    if (op.kind === "head")
-      o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
-    else if (op.kind === "link") {
-      const child = o.children.find((c) => c.id === op.ref);
-      const subject = find(op.subject);
-      if (child && subject)
-        child.subjectId = subject.id;
-      else if (subject && askIds.has(op.ref))
-        o.askSubjects[op.ref] = subject.id;
-    } else if (op.kind === "new") {
-      const known = find(op.name);
-      if (known && isOpen(known)) {
-        set(known, op.status, op.text);
-        continue;
-      }
-      const s = {
-        id: `s${o.nextId}`,
-        name: clipWords(op.name, NAME_KEPT),
-        status: op.status,
-        text: clipWords(op.text, TEXT_KEPT),
-        was: null,
-        merged: null,
-        createdAt: now,
-        changedAt: now,
-        closedAt: null,
-        into: null
-      };
-      o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] };
-    } else {
-      const s = find(op.ref);
-      if (!s)
-        continue;
-      if (op.kind === "set")
-        set(s, op.status, op.text);
-      else if (op.kind === "done") {
-        s.status = "done";
-        if (op.text)
-          s.text = clipWords(op.text, TEXT_KEPT);
-        forgetSeenWas(s);
-        s.closedAt = now;
-        s.changedAt = now;
-      } else if (op.kind === "drop") {
-        const target = op.into ? find(op.into) : null;
-        s.status = "dropped";
-        s.text = clipWords(op.why, TEXT_KEPT);
-        s.closedAt = now;
-        s.into = target && target.id !== s.id ? target.id : null;
-        s.changedAt = now;
-        if (target && s.into) {
-          forgetSeenWas(target);
-          target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name;
-          target.changedAt = now;
-          for (const [ask, id] of Object.entries(o.askSubjects))
-            if (id === s.id)
-              o.askSubjects[ask] = target.id;
-        }
-      } else {
-        forgetSeenWas(s);
-        s.was = op.text;
-        s.changedAt = now;
-      }
-    }
-  }
-  const isHeadKept = o.head === (last?.head ?? null);
-  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
-    o = { ...o, head: { ...o.head, description: "" } };
-  return o;
-}
-function applyStatus(last, answer, now, askIds) {
-  return answer.kind === "unchanged" ? last : applyOps(last, answer.ops, now, askIds);
-}
 
 // ../hooks/status.ts
 var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i;
@@ -3919,6 +3765,73 @@ function herdrReporter() {
   };
 }
 
+// ../hooks/dialogs.ts
+function optionKey(option) {
+  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
+}
+function optionsKey(options) {
+  return options.map(optionKey).sort().join(`
+`);
+}
+function hasSameOptions(item, q) {
+  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
+}
+function copyOf(q, items, questions) {
+  const byOptions = items.filter((i) => hasSameOptions(i, q));
+  const [only] = byOptions;
+  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1)
+    return only;
+  const pool = byOptions.length > 0 ? byOptions : items;
+  const byAsk = pool.filter((i) => restates(i.ask, q.question));
+  const [asked] = byAsk;
+  if (!asked || byAsk.length !== 1)
+    return null;
+  const restated = questions.filter((o) => restates(asked.ask, o.question));
+  return restated.length === 1 ? asked : null;
+}
+function descriptionsFor(options, descriptions) {
+  const byKey = new Map(Object.entries(descriptions).map(([label, text]) => [optionKey(label), text]));
+  const matched = options.flatMap((o) => {
+    const text = byKey.get(optionKey(o));
+    return text === undefined ? [] : [[o, text]];
+  });
+  return matched.length > 0 ? Object.fromEntries(matched) : null;
+}
+function asCopyOf(item, q) {
+  const descriptions = descriptionsFor(item.options, q.descriptions);
+  return {
+    ...item,
+    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
+    ...descriptions ? { optionDescriptions: descriptions } : {}
+  };
+}
+function linkDialogs(s) {
+  if (s.dialogQuestions.length === 0)
+    return s;
+  let items = s.ledger.items;
+  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
+  const questions = s.dialogQuestions.map((q) => {
+    if (q.itemId !== null)
+      return q;
+    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
+    const copy = copyOf(q, turnItems, s.dialogQuestions.filter((o) => o.turn === q.turn));
+    if (!copy || copy.dialog || linked.has(copy.id))
+      return q;
+    linked.add(copy.id);
+    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
+    return { ...q, itemId: copy.id };
+  });
+  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
+  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+}
+function noteDialog(s, callId, questions) {
+  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
+  const added = questions.flatMap((q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]);
+  if (added.length === 0)
+    return s;
+  return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
+}
+
 // ../hooks/pr-rows.ts
 function prThreadId(pr, t) {
   return threadRowId(pr.ref, t.id);
@@ -4021,130 +3934,6 @@ var PR_TONES = {
   merged: "findings",
   closed: "error"
 };
-
-// ../hooks/arrivals.ts
-function recordRows(seen, listed) {
-  const next = { ...seen };
-  const added = {};
-  for (const tab of Object.keys(listed)) {
-    const ids = listed[tab];
-    const before = seen[tab];
-    added[tab] = ids && before ? ids.filter((id) => !before.has(id)) : [];
-    if (ids)
-      next[tab] = new Set(ids);
-  }
-  return { seen: next, added };
-}
-var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
-function listedRowIds(v) {
-  return {
-    needsYou: [...v.needsYou.questions, ...v.needsYou.tasks].map((r) => r.id),
-    findings: v.findings.rows.map((r) => r.id)
-  };
-}
-function openRowIds(v) {
-  const open = (rows) => rows.filter((r) => r.state.is !== "settled").map((r) => r.id);
-  return { needsYou: open([...v.needsYou.questions, ...v.needsYou.tasks]), findings: open(v.findings.rows) };
-}
-function closedGroups(v, tab, isUnfolded) {
-  return tab === "findings" ? Object.keys(FINDING_GROUPS).map((kind) => ({
-    isUnfolded: isUnfolded(kind),
-    rows: v.findings.closed.filter((f) => f.kind === kind)
-  })) : NEEDS_YOU_GROUPS.map((g) => ({ isUnfolded: isUnfolded(g.kind), rows: v.needsYou.closed[g.list] }));
-}
-function isRowTabRunning(v, tab, isUnfolded) {
-  const rows = tab === "needsYou" ? [...v.needsYou.questions, ...v.needsYou.tasks] : v.findings.rows;
-  const settled = new Set(settledRowIds(rows));
-  const closed = closedGroups(v, tab, isUnfolded).flatMap((g) => g.isUnfolded ? closedShown(g.rows, settled) : []);
-  return rows.some((r) => rowResultMark(r)?.isRunning) || closed.some((d) => d.mark.isRunning);
-}
-function isTabEmpty({
-  rows,
-  settled,
-  closed,
-  hasBlocker
-}) {
-  return !hasBlocker && !rows.some((r) => r.state.is !== "settled" || settled.has(r.id)) && !closed.some((g) => g.isUnfolded && g.rows.some((r) => !settled.has(r.id)));
-}
-function followTo(tabs, shown, isShownEmpty, rows) {
-  return isShownEmpty ? tabs.find((t) => t !== shown && rows[t].length > 0) ?? null : null;
-}
-function prRowIds(drawn) {
-  return drawn.flatMap(({ pr, state }) => [
-    prMarkId(pr.ref),
-    ...state.is === "settled" ? [] : [...waitingThreads(pr).map((t) => prThreadId(pr, t)), ...failingChecks(pr).map((c) => prCheckId(pr, c))]
-  ]);
-}
-function isPrsTabEmpty(drawnCount, isFetching) {
-  return drawnCount === 0 && !isFetching;
-}
-
-// ../hooks/dialogs.ts
-function optionKey(option) {
-  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
-}
-function optionsKey(options) {
-  return options.map(optionKey).sort().join(`
-`);
-}
-function hasSameOptions(item, q) {
-  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
-}
-function copyOf(q, items, questions) {
-  const byOptions = items.filter((i) => hasSameOptions(i, q));
-  const [only] = byOptions;
-  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1)
-    return only;
-  const pool = byOptions.length > 0 ? byOptions : items;
-  const byAsk = pool.filter((i) => restates(i.ask, q.question));
-  const [asked] = byAsk;
-  if (!asked || byAsk.length !== 1)
-    return null;
-  const restated = questions.filter((o) => restates(asked.ask, o.question));
-  return restated.length === 1 ? asked : null;
-}
-function descriptionsFor(options, descriptions) {
-  const byKey = new Map(Object.entries(descriptions).map(([label, text]) => [optionKey(label), text]));
-  const matched = options.flatMap((o) => {
-    const text = byKey.get(optionKey(o));
-    return text === undefined ? [] : [[o, text]];
-  });
-  return matched.length > 0 ? Object.fromEntries(matched) : null;
-}
-function asCopyOf(item, q) {
-  const descriptions = descriptionsFor(item.options, q.descriptions);
-  return {
-    ...item,
-    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
-    ...descriptions ? { optionDescriptions: descriptions } : {}
-  };
-}
-function linkDialogs(s) {
-  if (s.dialogQuestions.length === 0)
-    return s;
-  let items = s.ledger.items;
-  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
-  const questions = s.dialogQuestions.map((q) => {
-    if (q.itemId !== null)
-      return q;
-    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
-    const copy = copyOf(q, turnItems, s.dialogQuestions.filter((o) => o.turn === q.turn));
-    if (!copy || copy.dialog || linked.has(copy.id))
-      return q;
-    linked.add(copy.id);
-    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
-    return { ...q, itemId: copy.id };
-  });
-  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
-  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
-}
-function noteDialog(s, callId, questions) {
-  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
-  const added = questions.flatMap((q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]);
-  if (added.length === 0)
-    return s;
-  return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
-}
 
 // ../hooks/pr-fetch.ts
 var MAX_PRS = 12;
@@ -4987,7 +4776,226 @@ function orderPrs(host, ledger, input, now) {
   };
 }
 
-// ../hooks/session.ts
+// ../hooks/arrivals.ts
+function recordRows(seen, listed) {
+  const next = { ...seen };
+  const added = {};
+  for (const tab of Object.keys(listed)) {
+    const ids = listed[tab];
+    const before = seen[tab];
+    added[tab] = ids && before ? ids.filter((id) => !before.has(id)) : [];
+    if (ids)
+      next[tab] = new Set(ids);
+  }
+  return { seen: next, added };
+}
+var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
+function listedRowIds(v) {
+  return {
+    needsYou: [...v.needsYou.questions, ...v.needsYou.tasks].map((r) => r.id),
+    findings: v.findings.rows.map((r) => r.id)
+  };
+}
+function openRowIds(v) {
+  const open = (rows) => rows.filter((r) => r.state.is !== "settled").map((r) => r.id);
+  return { needsYou: open([...v.needsYou.questions, ...v.needsYou.tasks]), findings: open(v.findings.rows) };
+}
+function closedGroups(v, tab, isUnfolded) {
+  return tab === "findings" ? Object.keys(FINDING_GROUPS).map((kind) => ({
+    isUnfolded: isUnfolded(kind),
+    rows: v.findings.closed.filter((f) => f.kind === kind)
+  })) : NEEDS_YOU_GROUPS.map((g) => ({ isUnfolded: isUnfolded(g.kind), rows: v.needsYou.closed[g.list] }));
+}
+function isRowTabRunning(v, tab, isUnfolded) {
+  const rows = tab === "needsYou" ? [...v.needsYou.questions, ...v.needsYou.tasks] : v.findings.rows;
+  const settled = new Set(settledRowIds(rows));
+  const closed = closedGroups(v, tab, isUnfolded).flatMap((g) => g.isUnfolded ? closedShown(g.rows, settled) : []);
+  return rows.some((r) => rowResultMark(r)?.isRunning) || closed.some((d) => d.mark.isRunning);
+}
+function isTabEmpty({
+  rows,
+  settled,
+  closed,
+  hasBlocker
+}) {
+  return !hasBlocker && !rows.some((r) => r.state.is !== "settled" || settled.has(r.id)) && !closed.some((g) => g.isUnfolded && g.rows.some((r) => !settled.has(r.id)));
+}
+function followTo(tabs, shown, isShownEmpty, rows) {
+  return isShownEmpty ? tabs.find((t) => t !== shown && rows[t].length > 0) ?? null : null;
+}
+function prRowIds(drawn) {
+  return drawn.flatMap(({ pr, state }) => [
+    prMarkId(pr.ref),
+    ...state.is === "settled" ? [] : [...waitingThreads(pr).map((t) => prThreadId(pr, t)), ...failingChecks(pr).map((c) => prCheckId(pr, c))]
+  ]);
+}
+function isPrsTabEmpty(drawnCount, isFetching) {
+  return drawnCount === 0 && !isFetching;
+}
+
+// ../hooks/session-view.ts
+var PRESS_TIMEOUT_MS = 60000;
+function withoutStaleResult(last, now) {
+  if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS)
+    return last;
+  const { result: _result, ...rest } = last;
+  return rest;
+}
+function withoutStalePending(lastActions, now) {
+  return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]));
+}
+function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes = {}) {
+  const l = s.ledger;
+  const lastActions = withoutStalePending(s.lastActions, now);
+  const update = {
+    isUpdating: s.presence.isUpdating,
+    isFailed: s.presence.ledgerState === "failed",
+    retries: canCatchUp || s.pending.length > 0
+  };
+  const inbox = inboxView({
+    ledger: l,
+    lastActions,
+    notes,
+    turns: s.presence,
+    extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, l.prs)])),
+    settleWindowMs,
+    status: perTurnStatus(update),
+    now,
+    ...holds,
+    lastTypedMessageAt: s.presence.lastTypedMessageAt
+  });
+  return {
+    ...inbox,
+    lastActions,
+    turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
+    prs: prTabOf(s, lastActions, now, holds.shownSince, settleWindowMs),
+    statusPage: statusPage(s, now)
+  };
+}
+function showsRunningMark(v, shown, isHelpShown, isUnfolded) {
+  if (isHelpShown)
+    return MARK_LEGEND.some((m) => m.isRunning);
+  if (!isRowTab(shown))
+    return hasRunningMark(v.statusPage);
+  if (shown === "prs")
+    return isPrTabRunning(openPrViews(v.prs.drawn), v.lastActions);
+  return isRowTabRunning(v, shown, isUnfolded);
+}
+function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
+  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, now, settleWindowMs, {
+    shownSince,
+    lastTypedMessageAt: s.presence.lastTypedMessageAt
+  });
+  const isSent = threadSentIn(lastActions);
+  return {
+    drawn,
+    branchRef: s.prViews.branchRef,
+    count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
+    olderText: olderPrsText(s.prViews, s.ledger),
+    order: prOrderView(s.ledger.prOrder, drawn, { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now }, shownSince),
+    tabActions: prTabActions(drawn, s.prViews.branchRef),
+    isGhSignedOut: s.prViews.isGhSignedOut === true
+  };
+}
+
+// ../hooks/session-presses.ts
+function isRepeatWhileOut(s, p, at, drawn) {
+  const rowId = pressRowId(p);
+  const view = sessionView(s, at, drawn.settleWindowMs, false, drawn.holds);
+  const row = allRows(view).find((r) => r.id === rowId);
+  const last = view.lastActions[rowId];
+  const state = row?.state ?? { is: "open" };
+  const feedback = pressFeedbackIn(rowId, state, last, s.presence, at, row?.item?.reportedAt);
+  return outAction(last, feedback) === actionId(p);
+}
+function pressOn(s, p, at, drawn, texts, localPressId) {
+  if (isRepeatWhileOut(s, p, at, drawn))
+    return { ledger: s.ledger, lasts: {}, drop: [], effects: [] };
+  const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId };
+  if (isPrPress(p))
+    return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx);
+  const item = s.ledger.items.find((i) => i.id === p.id);
+  const r = applyPress(s.ledger, s.lastActions[p.id], p, {
+    ...ctx,
+    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : [],
+    answerMessage: texts.answerMessage,
+    comparePage: texts.comparePage
+  });
+  if ("stale" in r)
+    return r;
+  return {
+    ledger: r.ledger,
+    lasts: r.last ? { [p.id]: r.last } : {},
+    drop: [],
+    effects: r.effects,
+    ...r.reopenedId ? { reopenedId: r.reopenedId } : {}
+  };
+}
+function completedAttempt(state, deliveryId, outcome) {
+  if (outcome.state === "rejected")
+    return { ...state, sent: state.sent.filter((s) => s.deliveryId !== deliveryId) };
+  const index = state.sent.findIndex((s) => s.deliveryId === deliveryId);
+  const attempt = state.sent[index];
+  if (!attempt)
+    return state;
+  const text = outcome.state === "accepted" ? outcome.entered ?? attempt.text : attempt.text;
+  const delivered = Object.entries(state.lastActions).filter(([_id, action]) => action.delivery && ("id" in action.delivery) && action.delivery.id === deliveryId);
+  let lastActions = text === attempt.text ? state.lastActions : delivered.reduce((actions, [id, action]) => withRewrite(actions, [id], action.at, attempt.text, text, deliveryId), state.lastActions);
+  const earlierUnknown = state.sent.slice(0, index).some((s) => s.text === text && (s.phase === "attempting" || s.phase === "uncertain"));
+  if (outcome.state === "accepted" && !earlierUnknown) {
+    for (const [id, action] of delivered)
+      lastActions = withAcceptedSend(lastActions, [id], action.at, text, deliveryId);
+  }
+  if (outcome.state === "accepted" && earlierUnknown)
+    lastActions = withUnconfirmed(lastActions, text, undefined, deliveryId);
+  return {
+    ...state,
+    lastActions,
+    sent: state.sent.map((s) => s.deliveryId === deliveryId ? {
+      ...s,
+      text,
+      phase: outcome.state === "accepted" ? "accepted" : "uncertain",
+      queuedId: outcome.state === "accepted" ? outcome.queuedId : null
+    } : s)
+  };
+}
+function recorded(host, s, tool, args, now) {
+  const r = toolAnswer(host, s.ledger, tool, args, now);
+  const ledger = withOrderStatuses(r.ledger, s.prViews.views);
+  return { state: linkDialogs({ ...s, ledger }), result: r.result, personLine: r.personLine };
+}
+function withHolds(s, holds) {
+  return { ...s, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince };
+}
+function pruned(s) {
+  const inPlace = [
+    ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
+    ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
+  ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
+  const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)));
+  const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
+  return {
+    ...s,
+    ledger: pruneClosed(s.ledger, new Set([...s.heldRows, ...inPlace])),
+    prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
+  };
+}
+function withFetchedPrs(s, fetched, branchRef, isGhSignedOut) {
+  const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true;
+  const views = { ...s.prViews.views, ...fetched };
+  return {
+    ...s,
+    ledger: withOrderStatuses(s.ledger, views),
+    prViews: {
+      views,
+      branchRef,
+      isFetching: false,
+      ...isSignedOut ? { isGhSignedOut: true } : {}
+    }
+  };
+}
+
+// ../hooks/session-files.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_TURN = { person: null, trigger: null, activity: [], press: null };
 function emptySession() {
@@ -5037,7 +5045,6 @@ function staleSessionFiles(files, keep) {
   const ranked = [...files].sort((a, b) => a.mtimeMs - b.mtimeMs || a.name.localeCompare(b.name));
   return ranked.filter((f) => f.name !== `${keep}.json`).slice(0, Math.max(0, ranked.length - KEPT_SESSIONS));
 }
-var PRESS_TIMEOUT_MS = 60000;
 function withoutStatedStep(presence) {
   const { statedStep: _statedStep, ...rest } = presence ?? {};
   return rest;
@@ -5089,6 +5096,7 @@ function upgradeSession(saved) {
     dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
 }
+// ../hooks/session-turns.ts
 function notePrompt(host, s, text, isOpen) {
   const matched = matchSent(s, text);
   return { ...recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy), sentBy: matched.sentBy };
@@ -5222,6 +5230,162 @@ function applied(s, parsed, now, promptAt) {
     }
   });
 }
+// ../hooks/status-ops.ts
+function hasSameWords(a, b) {
+  const x = words(a);
+  const y = words(b);
+  return x.size === y.size && [...x].every((w) => y.has(w));
+}
+function isUnderWay(s) {
+  return s.status === "working" || s.status === "waits-on-other";
+}
+function answerWork(before, o, now) {
+  const was = new Map(before.map((s) => [s.id, s]));
+  const closed = o.subjects.filter((s) => {
+    const earlier = was.get(s.id);
+    return !isOpen(s) && s.closedAt === now && (earlier === undefined || isOpen(earlier));
+  });
+  const isClosedWorkNew = closed.some((s) => !was.has(s.id));
+  const isUnderWayWorkClosed = closed.some((s) => {
+    const earlier = was.get(s.id);
+    return earlier !== undefined && isUnderWay(earlier);
+  });
+  return {
+    isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
+    isWorkUnderWay: o.subjects.some((s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now),
+    namesClosed: (description) => {
+      const said = words(description);
+      return closed.some((s) => {
+        const name = [...words(s.name)];
+        return name.length > 0 && name.every((w) => said.has(w));
+      });
+    }
+  };
+}
+function isDescriptionStale(head, work) {
+  return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
+}
+function headAfter(last, op, work) {
+  const isComplete = last !== null && last.description !== "";
+  const isSameTitle = last !== null && hasSameWords(last.title, op.title);
+  const isStale = isDescriptionStale(last, work);
+  const isHeld = isComplete && (isSameTitle && !isStale || work.isEarlierWorkFinished && !work.isWorkUnderWay);
+  return isHeld ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
+}
+var OP_ORDER = {
+  none: 0,
+  head: 1,
+  new: 0,
+  set: 0,
+  done: 0,
+  drop: 0,
+  was: 1,
+  link: 2
+};
+function applyOps(last, ops, now, askIds) {
+  let o = {
+    ...last ?? EMPTY_SESSION_STATUS,
+    subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
+    children: (last?.children ?? []).map((c) => ({ ...c })),
+    askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask)))
+  };
+  const find = (ref) => {
+    const key = nameKey(clipWords(ref, NAME_KEPT));
+    return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
+  };
+  const forgetSeenWas = (s) => {
+    const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
+    if (isSeen) {
+      s.was = null;
+      s.merged = null;
+    }
+  };
+  const set = (s, status, text) => {
+    const isReworded = s.status === status && hasSameWords(s.text, text);
+    if (isReworded)
+      return;
+    s.status = status;
+    s.text = clipWords(text, TEXT_KEPT);
+    forgetSeenWas(s);
+    s.changedAt = now;
+  };
+  const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
+  for (const { op } of ordered) {
+    if (op.kind === "none")
+      continue;
+    if (op.kind === "head")
+      o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
+    else if (op.kind === "link") {
+      const child = o.children.find((c) => c.id === op.ref);
+      const subject = find(op.subject);
+      if (child && subject)
+        child.subjectId = subject.id;
+      else if (subject && askIds.has(op.ref))
+        o.askSubjects[op.ref] = subject.id;
+    } else if (op.kind === "new") {
+      const known = find(op.name);
+      if (known && isOpen(known)) {
+        set(known, op.status, op.text);
+        continue;
+      }
+      const s = {
+        id: `s${o.nextId}`,
+        name: clipWords(op.name, NAME_KEPT),
+        status: op.status,
+        text: clipWords(op.text, TEXT_KEPT),
+        was: null,
+        merged: null,
+        createdAt: now,
+        changedAt: now,
+        closedAt: null,
+        into: null
+      };
+      o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] };
+    } else {
+      const s = find(op.ref);
+      if (!s)
+        continue;
+      if (op.kind === "set")
+        set(s, op.status, op.text);
+      else if (op.kind === "done") {
+        s.status = "done";
+        if (op.text)
+          s.text = clipWords(op.text, TEXT_KEPT);
+        forgetSeenWas(s);
+        s.closedAt = now;
+        s.changedAt = now;
+      } else if (op.kind === "drop") {
+        const target = op.into ? find(op.into) : null;
+        s.status = "dropped";
+        s.text = clipWords(op.why, TEXT_KEPT);
+        s.closedAt = now;
+        s.into = target && target.id !== s.id ? target.id : null;
+        s.changedAt = now;
+        if (target && s.into) {
+          forgetSeenWas(target);
+          target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name;
+          target.changedAt = now;
+          for (const [ask, id] of Object.entries(o.askSubjects))
+            if (id === s.id)
+              o.askSubjects[ask] = target.id;
+        }
+      } else {
+        forgetSeenWas(s);
+        s.was = op.text;
+        s.changedAt = now;
+      }
+    }
+  }
+  const isHeadKept = o.head === (last?.head ?? null);
+  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
+    o = { ...o, head: { ...o.head, description: "" } };
+  return o;
+}
+function applyStatus(last, answer, now, askIds) {
+  return answer.kind === "unchanged" ? last : applyOps(last, answer.ops, now, askIds);
+}
+
+// ../hooks/session-status.ts
 function appliedStatus(s, answer, appliedAfter, now) {
   if (s.presence.turnsApplied < appliedAfter)
     return s;
@@ -5297,164 +5461,6 @@ function appliedCatchUp(s, begun, parsed, now) {
     }
   });
 }
-function isRepeatWhileOut(s, p, at, drawn) {
-  const rowId = pressRowId(p);
-  const view = sessionView(s, at, drawn.settleWindowMs, false, drawn.holds);
-  const row = allRows(view).find((r) => r.id === rowId);
-  const last = view.lastActions[rowId];
-  const state = row?.state ?? { is: "open" };
-  const feedback = pressFeedbackIn(rowId, state, last, s.presence, at, row?.item?.reportedAt);
-  return outAction(last, feedback) === actionId(p);
-}
-function pressOn(s, p, at, drawn, texts, localPressId) {
-  if (isRepeatWhileOut(s, p, at, drawn))
-    return { ledger: s.ledger, lasts: {}, drop: [], effects: [] };
-  const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId };
-  if (isPrPress(p))
-    return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx);
-  const item = s.ledger.items.find((i) => i.id === p.id);
-  const r = applyPress(s.ledger, s.lastActions[p.id], p, {
-    ...ctx,
-    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : [],
-    answerMessage: texts.answerMessage,
-    comparePage: texts.comparePage
-  });
-  if ("stale" in r)
-    return r;
-  return {
-    ledger: r.ledger,
-    lasts: r.last ? { [p.id]: r.last } : {},
-    drop: [],
-    effects: r.effects,
-    ...r.reopenedId ? { reopenedId: r.reopenedId } : {}
-  };
-}
-function completedAttempt(state, deliveryId, outcome) {
-  if (outcome.state === "rejected")
-    return { ...state, sent: state.sent.filter((s) => s.deliveryId !== deliveryId) };
-  const index = state.sent.findIndex((s) => s.deliveryId === deliveryId);
-  const attempt = state.sent[index];
-  if (!attempt)
-    return state;
-  const text = outcome.state === "accepted" ? outcome.entered ?? attempt.text : attempt.text;
-  const delivered = Object.entries(state.lastActions).filter(([_id, action]) => action.delivery && ("id" in action.delivery) && action.delivery.id === deliveryId);
-  let lastActions = text === attempt.text ? state.lastActions : delivered.reduce((actions, [id, action]) => withRewrite(actions, [id], action.at, attempt.text, text, deliveryId), state.lastActions);
-  const earlierUnknown = state.sent.slice(0, index).some((s) => s.text === text && (s.phase === "attempting" || s.phase === "uncertain"));
-  if (outcome.state === "accepted" && !earlierUnknown) {
-    for (const [id, action] of delivered)
-      lastActions = withAcceptedSend(lastActions, [id], action.at, text, deliveryId);
-  }
-  if (outcome.state === "accepted" && earlierUnknown)
-    lastActions = withUnconfirmed(lastActions, text, undefined, deliveryId);
-  return {
-    ...state,
-    lastActions,
-    sent: state.sent.map((s) => s.deliveryId === deliveryId ? {
-      ...s,
-      text,
-      phase: outcome.state === "accepted" ? "accepted" : "uncertain",
-      queuedId: outcome.state === "accepted" ? outcome.queuedId : null
-    } : s)
-  };
-}
-function recorded(host, s, tool, args, now) {
-  const r = toolAnswer(host, s.ledger, tool, args, now);
-  const ledger = withOrderStatuses(r.ledger, s.prViews.views);
-  return { state: linkDialogs({ ...s, ledger }), result: r.result, personLine: r.personLine };
-}
-function withHolds(s, holds) {
-  return { ...s, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince };
-}
-function pruned(s) {
-  const inPlace = [
-    ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
-    ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
-  ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
-  const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)));
-  const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
-  return {
-    ...s,
-    ledger: pruneClosed(s.ledger, new Set([...s.heldRows, ...inPlace])),
-    prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
-  };
-}
-function withFetchedPrs(s, fetched, branchRef, isGhSignedOut) {
-  const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true;
-  const views = { ...s.prViews.views, ...fetched };
-  return {
-    ...s,
-    ledger: withOrderStatuses(s.ledger, views),
-    prViews: {
-      views,
-      branchRef,
-      isFetching: false,
-      ...isSignedOut ? { isGhSignedOut: true } : {}
-    }
-  };
-}
-function withoutStaleResult(last, now) {
-  if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS)
-    return last;
-  const { result: _result, ...rest } = last;
-  return rest;
-}
-function withoutStalePending(lastActions, now) {
-  return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]));
-}
-function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes = {}) {
-  const l = s.ledger;
-  const lastActions = withoutStalePending(s.lastActions, now);
-  const update = {
-    isUpdating: s.presence.isUpdating,
-    isFailed: s.presence.ledgerState === "failed",
-    retries: canCatchUp || s.pending.length > 0
-  };
-  const inbox = inboxView({
-    ledger: l,
-    lastActions,
-    notes,
-    turns: s.presence,
-    extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, l.prs)])),
-    settleWindowMs,
-    status: perTurnStatus(update),
-    now,
-    ...holds,
-    lastTypedMessageAt: s.presence.lastTypedMessageAt
-  });
-  return {
-    ...inbox,
-    lastActions,
-    turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now, holds.shownSince, settleWindowMs),
-    statusPage: statusPage(s, now)
-  };
-}
-function showsRunningMark(v, shown, isHelpShown, isUnfolded) {
-  if (isHelpShown)
-    return MARK_LEGEND.some((m) => m.isRunning);
-  if (!isRowTab(shown))
-    return hasRunningMark(v.statusPage);
-  if (shown === "prs")
-    return isPrTabRunning(openPrViews(v.prs.drawn), v.lastActions);
-  return isRowTabRunning(v, shown, isUnfolded);
-}
-function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
-  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, now, settleWindowMs, {
-    shownSince,
-    lastTypedMessageAt: s.presence.lastTypedMessageAt
-  });
-  const isSent = threadSentIn(lastActions);
-  return {
-    drawn,
-    branchRef: s.prViews.branchRef,
-    count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
-    olderText: olderPrsText(s.prViews, s.ledger),
-    order: prOrderView(s.ledger.prOrder, drawn, { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now }, shownSince),
-    tabActions: prTabActions(drawn, s.prViews.branchRef),
-    isGhSignedOut: s.prViews.isGhSignedOut === true
-  };
-}
-
 // ../hooks/session-host.ts
 function exclusiveKeys() {
   const held = new Set;
