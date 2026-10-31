@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { EMPTY, applyUpdate, parseReply } from '../hooks/ledger'
+import { EMPTY } from '../hooks/ledger'
+import { applyUpdate } from '../hooks/ledger-update'
+import { parseReply } from '../hooks/reply-parse'
 import { REPLY } from './ledger-helpers'
 
 describe('parseReply', () => {
