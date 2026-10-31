@@ -604,7 +604,7 @@ function withUpdate(item, updated) {
   return { ...item, options, rec: restatedRec(options, item.rec, change.rec) };
 }
 
-// ../hooks/status.ts
+// ../hooks/status-limits.ts
 var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
 var DESCRIPTION_WORDS = 8;
@@ -647,67 +647,12 @@ var EMPTY_SESSION_STATUS = {
   look: null
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
-var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
-var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
-var DELEGATE_STATES = ["working", "blocked", "finished"];
-var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i;
 function clipWords(text2, limit) {
   const words3 = text2.trim().split(/\s+/).filter(Boolean);
   return words3.length <= limit ? words3.join(" ") : `${words3.slice(0, limit).join(" ")}\u2026`;
 }
-function fields(value) {
-  return value.split("|").map((f) => f.trim());
-}
-function openStatus(s) {
-  return OPEN_STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
-}
-function opOf(key, f) {
-  if (key === "NOCHANGE" || key === "UNCHANGED") return { kind: "none" };
-  if (key === "NEW") {
-    const status = openStatus(f[0]);
-    return status && f[1] ? { kind: "new", status, name: f[1], text: f[2] ?? "" } : null;
-  }
-  if (key === "SET") {
-    const isDone = f[1]?.toLowerCase() === "done";
-    if (f[0] && isDone) return { kind: "done", ref: f[0], text: f[2] ?? "" };
-    const status = openStatus(f[1]);
-    return f[0] && status ? { kind: "set", ref: f[0], status, text: f[2] ?? "" } : null;
-  }
-  if (key === "DONE") return f[0] ? { kind: "done", ref: f[0], text: f[1] ?? "" } : null;
-  if (key === "DROP") {
-    const into = (f[2] ?? "").replace(/^INTO\s+/i, "").trim();
-    return f[0] ? { kind: "drop", ref: f[0], why: f[1] ?? "", into: into || null } : null;
-  }
-  if (key === "WAS") return f[0] && f[1] ? { kind: "was", ref: f[0], text: f[1] } : null;
-  if (key === "HEAD") return f[0] ? { kind: "head", title: f[0], description: f[1] ?? "" } : null;
-  if (key === "LINK") return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
-  return null;
-}
-function parseStatus(text2) {
-  const ops = [];
-  for (const raw of (text2 ?? "").split(NL3)) {
-    const line = raw.trim();
-    if (line === "") continue;
-    const m = LINE.exec(line);
-    const op = m ? opOf(m[1].toUpperCase().replace(" ", ""), fields(m[2] ?? "")) : null;
-    if (op === null) return null;
-    ops.push(op);
-  }
-  if (ops.length === 0) return null;
-  return ops.every((o) => o.kind === "none") ? { kind: "unchanged" } : { kind: "ops", ops };
-}
-async function askStatus(ask) {
-  const first = await ask();
-  const holdsProse = first.text !== null && parseStatus(first.text) === null;
-  return { first, last: holdsProse ? await ask() : first };
-}
 function words2(text2) {
   return new Set((text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
-}
-function hasSameWords(a, b) {
-  const x = words2(a);
-  const y = words2(b);
-  return x.size === y.size && [...x].every((w) => y.has(w));
 }
 function nameKey(name) {
   return [...words2(name)].sort().join(" ");
@@ -715,161 +660,11 @@ function nameKey(name) {
 function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
-function isUnderWay(s) {
-  return s.status === "working" || s.status === "waits-on-other";
-}
-function answerWork(before, o, now) {
-  const was = new Map(before.map((s) => [s.id, s]));
-  const closed = o.subjects.filter((s) => {
-    const earlier = was.get(s.id);
-    return !isOpen(s) && s.closedAt === now && (earlier === void 0 || isOpen(earlier));
-  });
-  const isClosedWorkNew = closed.some((s) => !was.has(s.id));
-  const isUnderWayWorkClosed = closed.some((s) => {
-    const earlier = was.get(s.id);
-    return earlier !== void 0 && isUnderWay(earlier);
-  });
-  return {
-    isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
-    isWorkUnderWay: o.subjects.some(
-      (s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now
-    ),
-    namesClosed: (description) => {
-      const said = words2(description);
-      return closed.some((s) => {
-        const name = [...words2(s.name)];
-        return name.length > 0 && name.every((w) => said.has(w));
-      });
-    }
-  };
-}
-function isDescriptionStale(head, work) {
-  return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
-}
-function headAfter(last, op, work) {
-  const isComplete = last !== null && last.description !== "";
-  const isSameTitle = last !== null && hasSameWords(last.title, op.title);
-  const isStale = isDescriptionStale(last, work);
-  const isHeld = isComplete && (isSameTitle && !isStale || work.isEarlierWorkFinished && !work.isWorkUnderWay);
-  return isHeld ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
-}
-var OP_ORDER = {
-  none: 0,
-  head: 1,
-  new: 0,
-  set: 0,
-  done: 0,
-  drop: 0,
-  was: 1,
-  link: 2
-};
-function applyOps(last, ops, now, askIds) {
-  let o = {
-    ...last ?? EMPTY_SESSION_STATUS,
-    subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
-    children: (last?.children ?? []).map((c) => ({ ...c })),
-    askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask)))
-  };
-  const find = (ref) => {
-    const key = nameKey(clipWords(ref, NAME_KEPT));
-    return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
-  };
-  const forgetSeenWas = (s) => {
-    const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
-    if (isSeen) {
-      s.was = null;
-      s.merged = null;
-    }
-  };
-  const set = (s, status, text2) => {
-    const isReworded = s.status === status && hasSameWords(s.text, text2);
-    if (isReworded) return;
-    s.status = status;
-    s.text = clipWords(text2, TEXT_KEPT);
-    forgetSeenWas(s);
-    s.changedAt = now;
-  };
-  const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
-  for (const { op } of ordered) {
-    if (op.kind === "none") continue;
-    if (op.kind === "head") o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
-    else if (op.kind === "link") {
-      const child = o.children.find((c) => c.id === op.ref);
-      const subject = find(op.subject);
-      if (child && subject) child.subjectId = subject.id;
-      else if (subject && askIds.has(op.ref)) o.askSubjects[op.ref] = subject.id;
-    } else if (op.kind === "new") {
-      const known = find(op.name);
-      if (known && isOpen(known)) {
-        set(known, op.status, op.text);
-        continue;
-      }
-      const s = {
-        id: `s${o.nextId}`,
-        name: clipWords(op.name, NAME_KEPT),
-        status: op.status,
-        text: clipWords(op.text, TEXT_KEPT),
-        was: null,
-        merged: null,
-        createdAt: now,
-        changedAt: now,
-        closedAt: null,
-        into: null
-      };
-      o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] };
-    } else {
-      const s = find(op.ref);
-      if (!s) continue;
-      if (op.kind === "set") set(s, op.status, op.text);
-      else if (op.kind === "done") {
-        s.status = "done";
-        if (op.text) s.text = clipWords(op.text, TEXT_KEPT);
-        forgetSeenWas(s);
-        s.closedAt = now;
-        s.changedAt = now;
-      } else if (op.kind === "drop") {
-        const target = op.into ? find(op.into) : null;
-        s.status = "dropped";
-        s.text = clipWords(op.why, TEXT_KEPT);
-        s.closedAt = now;
-        s.into = target && target.id !== s.id ? target.id : null;
-        s.changedAt = now;
-        if (target && s.into) {
-          forgetSeenWas(target);
-          target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name;
-          target.changedAt = now;
-          for (const [ask, id] of Object.entries(o.askSubjects)) if (id === s.id) o.askSubjects[ask] = target.id;
-        }
-      } else {
-        forgetSeenWas(s);
-        s.was = op.text;
-        s.changedAt = now;
-      }
-    }
-  }
-  const isHeadKept = o.head === (last?.head ?? null);
-  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
-    o = { ...o, head: { ...o.head, description: "" } };
-  return o;
-}
-function applyStatus(last, answer, now, askIds) {
-  return answer.kind === "unchanged" ? last : applyOps(last, answer.ops, now, askIds);
-}
-function isChildRunning(c, now) {
-  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
-}
-function subjectsText(o) {
-  const subjects = o?.subjects ?? [];
-  const open3 = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}`);
-  const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
-  return { open: open3.join(NL3) || "(none yet)", finished: finished.join(NL3) };
-}
-function asksText(o, asks) {
-  return asks.map((a) => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id] ?? "-"}`).join(NL3);
-}
-function runningText(o, now) {
-  return (o?.children ?? []).filter((c) => isChildRunning(c, now)).map((c) => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? "-"}`).join(NL3);
-}
+
+// ../hooks/status-upgrade.ts
+var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
+var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
+var DELEGATE_STATES = ["working", "blocked", "finished"];
 function text(value) {
   return typeof value === "string" ? value : "";
 }
@@ -1289,6 +1084,219 @@ function retryOf(id, last) {
 }
 function isRepeatOf(last, action) {
   return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
+}
+
+// ../hooks/status-ops.ts
+function hasSameWords(a, b) {
+  const x = words2(a);
+  const y = words2(b);
+  return x.size === y.size && [...x].every((w) => y.has(w));
+}
+function isUnderWay(s) {
+  return s.status === "working" || s.status === "waits-on-other";
+}
+function answerWork(before, o, now) {
+  const was = new Map(before.map((s) => [s.id, s]));
+  const closed = o.subjects.filter((s) => {
+    const earlier = was.get(s.id);
+    return !isOpen(s) && s.closedAt === now && (earlier === void 0 || isOpen(earlier));
+  });
+  const isClosedWorkNew = closed.some((s) => !was.has(s.id));
+  const isUnderWayWorkClosed = closed.some((s) => {
+    const earlier = was.get(s.id);
+    return earlier !== void 0 && isUnderWay(earlier);
+  });
+  return {
+    isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
+    isWorkUnderWay: o.subjects.some(
+      (s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now
+    ),
+    namesClosed: (description) => {
+      const said = words2(description);
+      return closed.some((s) => {
+        const name = [...words2(s.name)];
+        return name.length > 0 && name.every((w) => said.has(w));
+      });
+    }
+  };
+}
+function isDescriptionStale(head, work) {
+  return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
+}
+function headAfter(last, op, work) {
+  const isComplete = last !== null && last.description !== "";
+  const isSameTitle = last !== null && hasSameWords(last.title, op.title);
+  const isStale = isDescriptionStale(last, work);
+  const isHeld = isComplete && (isSameTitle && !isStale || work.isEarlierWorkFinished && !work.isWorkUnderWay);
+  return isHeld ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
+}
+var OP_ORDER = {
+  none: 0,
+  head: 1,
+  new: 0,
+  set: 0,
+  done: 0,
+  drop: 0,
+  was: 1,
+  link: 2
+};
+function applyOps(last, ops, now, askIds) {
+  let o = {
+    ...last ?? EMPTY_SESSION_STATUS,
+    subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
+    children: (last?.children ?? []).map((c) => ({ ...c })),
+    askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask)))
+  };
+  const find = (ref) => {
+    const key = nameKey(clipWords(ref, NAME_KEPT));
+    return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
+  };
+  const forgetSeenWas = (s) => {
+    const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
+    if (isSeen) {
+      s.was = null;
+      s.merged = null;
+    }
+  };
+  const set = (s, status, text2) => {
+    const isReworded = s.status === status && hasSameWords(s.text, text2);
+    if (isReworded) return;
+    s.status = status;
+    s.text = clipWords(text2, TEXT_KEPT);
+    forgetSeenWas(s);
+    s.changedAt = now;
+  };
+  const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
+  for (const { op } of ordered) {
+    if (op.kind === "none") continue;
+    if (op.kind === "head") o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
+    else if (op.kind === "link") {
+      const child = o.children.find((c) => c.id === op.ref);
+      const subject = find(op.subject);
+      if (child && subject) child.subjectId = subject.id;
+      else if (subject && askIds.has(op.ref)) o.askSubjects[op.ref] = subject.id;
+    } else if (op.kind === "new") {
+      const known = find(op.name);
+      if (known && isOpen(known)) {
+        set(known, op.status, op.text);
+        continue;
+      }
+      const s = {
+        id: `s${o.nextId}`,
+        name: clipWords(op.name, NAME_KEPT),
+        status: op.status,
+        text: clipWords(op.text, TEXT_KEPT),
+        was: null,
+        merged: null,
+        createdAt: now,
+        changedAt: now,
+        closedAt: null,
+        into: null
+      };
+      o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] };
+    } else {
+      const s = find(op.ref);
+      if (!s) continue;
+      if (op.kind === "set") set(s, op.status, op.text);
+      else if (op.kind === "done") {
+        s.status = "done";
+        if (op.text) s.text = clipWords(op.text, TEXT_KEPT);
+        forgetSeenWas(s);
+        s.closedAt = now;
+        s.changedAt = now;
+      } else if (op.kind === "drop") {
+        const target = op.into ? find(op.into) : null;
+        s.status = "dropped";
+        s.text = clipWords(op.why, TEXT_KEPT);
+        s.closedAt = now;
+        s.into = target && target.id !== s.id ? target.id : null;
+        s.changedAt = now;
+        if (target && s.into) {
+          forgetSeenWas(target);
+          target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name;
+          target.changedAt = now;
+          for (const [ask, id] of Object.entries(o.askSubjects)) if (id === s.id) o.askSubjects[ask] = target.id;
+        }
+      } else {
+        forgetSeenWas(s);
+        s.was = op.text;
+        s.changedAt = now;
+      }
+    }
+  }
+  const isHeadKept = o.head === (last?.head ?? null);
+  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
+    o = { ...o, head: { ...o.head, description: "" } };
+  return o;
+}
+function applyStatus(last, answer, now, askIds) {
+  return answer.kind === "unchanged" ? last : applyOps(last, answer.ops, now, askIds);
+}
+
+// ../hooks/status-children.ts
+function isChildRunning(c, now) {
+  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+}
+function subjectsText(o) {
+  const subjects = o?.subjects ?? [];
+  const open3 = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}`);
+  const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
+  return { open: open3.join(NL3) || "(none yet)", finished: finished.join(NL3) };
+}
+function asksText(o, asks) {
+  return asks.map((a) => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id] ?? "-"}`).join(NL3);
+}
+function runningText(o, now) {
+  return (o?.children ?? []).filter((c) => isChildRunning(c, now)).map((c) => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? "-"}`).join(NL3);
+}
+
+// ../hooks/status.ts
+var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i;
+function fields(value) {
+  return value.split("|").map((f) => f.trim());
+}
+function openStatus(s) {
+  return OPEN_STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
+}
+function opOf(key, f) {
+  if (key === "NOCHANGE" || key === "UNCHANGED") return { kind: "none" };
+  if (key === "NEW") {
+    const status = openStatus(f[0]);
+    return status && f[1] ? { kind: "new", status, name: f[1], text: f[2] ?? "" } : null;
+  }
+  if (key === "SET") {
+    const isDone = f[1]?.toLowerCase() === "done";
+    if (f[0] && isDone) return { kind: "done", ref: f[0], text: f[2] ?? "" };
+    const status = openStatus(f[1]);
+    return f[0] && status ? { kind: "set", ref: f[0], status, text: f[2] ?? "" } : null;
+  }
+  if (key === "DONE") return f[0] ? { kind: "done", ref: f[0], text: f[1] ?? "" } : null;
+  if (key === "DROP") {
+    const into = (f[2] ?? "").replace(/^INTO\s+/i, "").trim();
+    return f[0] ? { kind: "drop", ref: f[0], why: f[1] ?? "", into: into || null } : null;
+  }
+  if (key === "WAS") return f[0] && f[1] ? { kind: "was", ref: f[0], text: f[1] } : null;
+  if (key === "HEAD") return f[0] ? { kind: "head", title: f[0], description: f[1] ?? "" } : null;
+  if (key === "LINK") return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
+  return null;
+}
+function parseStatus(text2) {
+  const ops = [];
+  for (const raw of (text2 ?? "").split(NL3)) {
+    const line = raw.trim();
+    if (line === "") continue;
+    const m = LINE.exec(line);
+    const op = m ? opOf(m[1].toUpperCase().replace(" ", ""), fields(m[2] ?? "")) : null;
+    if (op === null) return null;
+    ops.push(op);
+  }
+  if (ops.length === 0) return null;
+  return ops.every((o) => o.kind === "none") ? { kind: "unchanged" } : { kind: "ops", ops };
+}
+async function askStatus(ask) {
+  const first = await ask();
+  const holdsProse = first.text !== null && parseStatus(first.text) === null;
+  return { first, last: holdsProse ? await ask() : first };
 }
 
 // ../hooks/host-tasks.ts

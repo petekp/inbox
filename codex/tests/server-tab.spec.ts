@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { EMPTY_SESSION_STATUS } from '../../hooks/status'
+import { EMPTY_SESSION_STATUS } from '../../hooks/status-limits'
 import { screenTabOf, SETTLED_MS } from '../../hooks/view'
 import { screenText } from '../../hooks/model-text'
 import { CODEX } from '../src/texts'

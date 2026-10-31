@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
-import { asksText, EMPTY_SESSION_STATUS, lookEnded, lookStarted, LOOK_MIN_MS } from '../hooks/status'
+import { asksText, lookEnded, lookStarted, LOOK_MIN_MS } from '../hooks/status-children'
+import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
 import {
   CLOSED_MARKS,
   FINDING_GROUPS,

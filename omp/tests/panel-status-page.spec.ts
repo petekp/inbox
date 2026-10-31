@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 
-import { applyStatus, parseStatus } from '../../hooks/status'
+import { parseStatus } from '../../hooks/status'
+import { applyStatus } from '../../hooks/status-ops'
 import { SETTLED_MS, NO_HOLDS, STATUS_TEXT_LINES, LOOK_DASH } from '../../hooks/view'
 import { sessionView } from '../../hooks/session'
 import { cellWidth } from '../../hooks/text'

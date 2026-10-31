@@ -1,4 +1,4 @@
-import { EMPTY_SESSION_STATUS } from '../hooks/status'
+import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
 import { emptySession } from '../hooks/session'
 import type { Session } from '../hooks/session'
 import { statusPage } from '../hooks/view'

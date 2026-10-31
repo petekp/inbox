@@ -155,7 +155,7 @@ function readKind(kind) {
 var EXPIRED = "expired, unanswered";
 var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
 
-// ../hooks/status.ts
+// ../hooks/status-limits.ts
 var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
 var DESCRIPTION_WORDS = 8;
@@ -196,9 +196,6 @@ var EMPTY_SESSION_STATUS = {
   look: null
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
-var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
-var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
-var DELEGATE_STATES = ["working", "blocked", "finished"];
 function clipWords(text2, limit) {
   const words3 = text2.trim().split(/\s+/).filter(Boolean);
   return words3.length <= limit ? words3.join(" ") : `${words3.slice(0, limit).join(" ")}\u2026`;
@@ -212,36 +209,11 @@ function nameKey(name) {
 function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
-function isChildRunning(c, now) {
-  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
-}
-function withChild(last, c, now) {
-  const o = last ?? EMPTY_SESSION_STATUS;
-  const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
-  const known = kept.find((x) => x.ref === c.ref);
-  if (known) return { ...o, children: kept.map((x) => x === known ? { ...x, ...c } : x) };
-  return {
-    ...o,
-    nextChildId: o.nextChildId + 1,
-    children: [...kept, { delegateState: null, ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
-  };
-}
-function changedChild(o, ref, change) {
-  const known = o?.children.find((c) => c.ref === ref);
-  if (!o || !known) return o;
-  return { ...o, children: o.children.map((c) => c === known ? { ...c, ...change(c) } : c) };
-}
-function childEnded(o, ref, at) {
-  return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
-}
-function subjectTouched(o, id, at) {
-  const isSeen = (s) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
-  const touched = (s) => isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
-  return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
-}
-function childActive(o, ref, at) {
-  return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
-}
+
+// ../hooks/status-upgrade.ts
+var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
+var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
+var DELEGATE_STATES = ["working", "blocked", "finished"];
 function text(value) {
   return typeof value === "string" ? value : "";
 }
@@ -698,6 +670,38 @@ function isRepeatOf(last, action) {
   return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
 }
 
+// ../hooks/status-children.ts
+function isChildRunning(c, now) {
+  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+}
+function withChild(last, c, now) {
+  const o = last ?? EMPTY_SESSION_STATUS;
+  const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
+  const known = kept.find((x) => x.ref === c.ref);
+  if (known) return { ...o, children: kept.map((x) => x === known ? { ...x, ...c } : x) };
+  return {
+    ...o,
+    nextChildId: o.nextChildId + 1,
+    children: [...kept, { delegateState: null, ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
+  };
+}
+function changedChild(o, ref, change) {
+  const known = o?.children.find((c) => c.ref === ref);
+  if (!o || !known) return o;
+  return { ...o, children: o.children.map((c) => c === known ? { ...c, ...change(c) } : c) };
+}
+function childEnded(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
+}
+function subjectTouched(o, id, at) {
+  const isSeen = (s) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
+  const touched = (s) => isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
+  return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
+}
+function childActive(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
+}
+
 // ../hooks/host-tasks.ts
 var STATUSES2 = {
   pending: "pending",
@@ -737,7 +741,7 @@ function upgradeHostTasks(saved) {
 }
 
 // ../hooks/model-text.ts
-var NL = "\n";
+var NL2 = "\n";
 function guidanceText(host) {
   return `# Inbox
 ${host.intro}
@@ -952,11 +956,11 @@ function answerNote(ledger, text2) {
         return [
           "inbox: if the user is accepting your recommendations, these are the open ones:",
           ...withRecs.map((i) => `- ${i.label ?? "\u2022"} \u2192 ${describe(i)}`)
-        ].join(NL);
+        ].join(NL2);
       }
     }
   }
-  return lines.length === 0 ? null : ["inbox: the user's message answers these open items from your earlier replies:", ...lines].join(NL);
+  return lines.length === 0 ? null : ["inbox: the user's message answers these open items from your earlier replies:", ...lines].join(NL2);
 }
 function itemLine(item) {
   return `- ${item.label ? `(${item.label}) ` : ""}${describe(item)} (close id: ${item.id})`;
@@ -990,7 +994,7 @@ function carryText(ledger, title) {
     out.push("Recently closed:");
     for (const d of ledger.closed) out.push(`- "${d.ask}" \u2192 ${outcomeText(d)}`);
   }
-  return out.join(NL);
+  return out.join(NL2);
 }
 var CLOSE_ID_RULE = "A close id is only for the close tool. Never write one in a reply.";
 function inboxText(host, ledger, isOpen2) {
@@ -1008,7 +1012,7 @@ function inboxText(host, ledger, isOpen2) {
     for (const f of ledger.findings) out.push(findingLine(f));
   }
   out.push(isOpen2 ? `The user has ${host.surface} open beside the conversation.` : `${surfaceAtStart(host)} is closed.`);
-  return out.join(NL);
+  return out.join(NL2);
 }
 function outcomeText(d) {
   if (d.how === "dismissed") return "dismissed by the user";
@@ -1021,7 +1025,7 @@ function closedText(closed) {
   return [
     "Closed since you last read the inbox:",
     ...closed.map((d) => `- "${d.ask}" \u2192 ${outcomeText(d)}${advice(d)}`)
-  ].join(NL);
+  ].join(NL2);
 }
 var TOLD_NOTHING = { inbox: null, closed: [] };
 function promptNotes(host, ledger, prompt, told) {
@@ -1033,7 +1037,7 @@ function promptNotes(host, ledger, prompt, told) {
   const closed = closedText(ledger.closed.filter((d) => !toldClosed.has(d.id)));
   const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0;
   if (!closed && (inbox === told.inbox || isEmpty && told.inbox === null)) return { notes, told };
-  notes.push(closed ? `${inbox}${NL}${closed}` : inbox);
+  notes.push(closed ? `${inbox}${NL2}${closed}` : inbox);
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
 }
 
@@ -2863,7 +2867,7 @@ var jsonRecord = (raw) => {
 };
 
 // ../hooks/conversation.ts
-var NL2 = "\n";
+var NL3 = "\n";
 var TRANSCRIPT_MAX = 8e4;
 var MESSAGE_MAX = 6e3;
 function flattenConversation(turns) {
@@ -2888,7 +2892,7 @@ function flattenConversation(turns) {
     }
     kept.push(line);
   }
-  return kept.reverse().join(NL2);
+  return kept.reverse().join(NL3);
 }
 
 // src/rollout-commands.ts

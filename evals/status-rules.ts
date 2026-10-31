@@ -1,4 +1,4 @@
-import { isOpen, NAME_WORDS } from '../hooks/status'
+import { isOpen, NAME_WORDS } from '../hooks/status-limits'
 import type { SessionStatus, Subject } from '../types'
 import { isOpenPiece, rightStatuses } from './status-facts'
 import type { Facts, Piece } from './status-facts'
