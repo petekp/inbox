@@ -1,4 +1,5 @@
-import { allRows, feedbackOf } from '../../hooks/view'
+import { allRows } from '../../hooks/rows'
+import { feedbackOf } from '../../hooks/feedback'
 import type { TabView as View } from './core'
 import { tabState, drafts, errors, copies } from './tab-state'
 import { keepPressedOpen } from './tab-selection'

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { test } from 'node:test'
 
-import { NO_HOLDS } from '../../hooks/view'
+import { NO_HOLDS } from '../../hooks/timing'
 import { notePrompt, viewOf } from '../src/core'
 import { makeServer } from '../src/server'
 import { SETTLE_WINDOW_MS } from '../src/settle'

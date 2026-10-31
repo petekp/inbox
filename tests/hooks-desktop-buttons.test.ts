@@ -3,7 +3,7 @@ import type { FoldProps } from '../hooks/fold-client'
 import type { LinksProps } from '../hooks/links-client'
 import type { RowProps } from '../hooks/row-client'
 import type { TabsProps } from '../hooks/tabs-client'
-import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/view'
+import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 

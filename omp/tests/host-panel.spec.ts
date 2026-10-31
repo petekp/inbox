@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { LOOK_MIN_MS } from '../../hooks/status-children'
 import { EMPTY_SESSION_STATUS } from '../../hooks/status-limits'
-import { NO_HOLDS } from '../../hooks/view'
+import { NO_HOLDS } from '../../hooks/timing'
 import { createInbox } from '../src/host'
 import { call, deps, endWorld, makeCtx, pi, prompt, record, settle, startWorld, state, w } from './host-harness'
 

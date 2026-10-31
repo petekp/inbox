@@ -29,7 +29,8 @@ import {
   writeStatusRecord,
 } from '../hooks/session-host'
 import type { StatusRecord, RecordFiles } from '../hooks/session-host'
-import { footerStatus, NO_HOLDS } from '../hooks/view'
+import { footerStatus } from '../hooks/view'
+import { NO_HOLDS } from '../hooks/timing'
 import { fakeHost } from './session-fake-host'
 import { LEDGER_REPLY, finishTurn, answer } from './session-helpers'
 

@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { demoView } from '../hooks/demo'
-import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/view'
+import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
 import { BAND, PANE, leaveAndReturn, replyKey } from './hooks-helpers'
 

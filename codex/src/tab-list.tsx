@@ -1,21 +1,11 @@
 import { RowActions } from './row-actions'
-import {
-  HELD_MARK,
-  settledMark,
-  DOT,
-  entryId,
-  isListedTab,
-  isRowTab,
-  feedbackText,
-  fieldExit,
-  hasAge,
-  isFailure,
-  isStatusUnderActions,
-  settledLabel,
-  SETTLED_MS,
-  shortAgo,
-} from '../../hooks/view'
-import type { RowView } from '../../hooks/view'
+import { HELD_MARK } from '../../hooks/help'
+import { settledMark, DOT, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
+import { entryId } from '../../hooks/action-plan'
+import { isListedTab, isRowTab } from '../../hooks/tabs'
+import { feedbackText, hasAge, isFailure, isStatusUnderActions } from '../../hooks/feedback'
+import { SETTLED_MS } from '../../hooks/timing'
+import type { RowView } from '../../hooks/rows'
 import { TAB_OF } from './arrivals'
 import type { Group } from './arrivals'
 import type { TabView as View } from './core'

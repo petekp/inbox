@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Session } from '../types'
-import { PRESS_GUARD_MS } from '../hooks/view'
+import { PRESS_GUARD_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 

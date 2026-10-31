@@ -3,16 +3,11 @@ import { test } from 'node:test'
 
 import { finishedResult } from '../../hooks/press-effects'
 import type { RowPress } from '../../hooks/presses'
-import {
-  feedbackText,
-  firstWaiting,
-  listWaits,
-  QUEUED_AFTER_MS,
-  rowHandle,
-  rowResultMark,
-  SETTLED_MS,
-} from '../../hooks/view'
-import type { RowView } from '../../hooks/view'
+import { feedbackText } from '../../hooks/feedback'
+import { firstWaiting, listWaits } from '../../hooks/action-plan'
+import { QUEUED_AFTER_MS, SETTLED_MS } from '../../hooks/timing'
+import { rowHandle, rowResultMark } from '../../hooks/rows'
+import type { RowView } from '../../hooks/rows'
 import type { Item, LocalResult } from '../../types'
 import { notePrompt, viewOf } from '../src/core'
 import { emptyState } from '../src/state'

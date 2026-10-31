@@ -2,19 +2,18 @@ import { expect, test } from 'claude-code/testing'
 
 import { asksText, lookEnded, lookStarted, LOOK_MIN_MS } from '../hooks/status-children'
 import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
+import { mergedLine, nameBeforeStall } from '../hooks/status-page'
+import { statusKeyPlan } from '../hooks/action-plan'
 import {
+  IDLE_MARK,
   CLOSED_MARKS,
   FINDING_GROUPS,
   HELD_MARK,
   MARK_LEGEND,
-  mergedLine,
-  nameBeforeStall,
-  statusKeyPlan,
   PR_MARKS,
   RUNNING_FRAMES,
   SUBJECT_MARKS,
-} from '../hooks/view'
-import { IDLE_MARK } from '../hooks/help'
+} from '../hooks/help'
 import type { Item } from '../types'
 import { MIN, after, askItem, page, shape } from './status-helpers'
 

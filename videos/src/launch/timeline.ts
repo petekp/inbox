@@ -2,7 +2,7 @@
 // and what the screen shows from which second.
 
 import { EXIT_MS } from '../../../codex/src/rows'
-import { SETTLED_MS } from '../../../hooks/view'
+import { SETTLED_MS } from '../../../hooks/timing'
 import type { RowLines } from '../shared/EndCard'
 import type { CameraMove, Point, Rect } from '../shared/geometry'
 import type { Segment } from '../shared/Footage'

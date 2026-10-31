@@ -12,7 +12,7 @@ import {
 } from '../hooks/status-children'
 import { delegatesSettled, delegatesStarted } from '../hooks/children'
 import type { HerdrStatus } from '../hooks/herdr'
-import { CHILD_ROWS } from '../hooks/view'
+import { CHILD_ROWS } from '../hooks/status-page'
 import type { SessionStatus } from '../types'
 import { MIN, after, askItem, page, shape } from './status-helpers'
 

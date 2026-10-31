@@ -3,17 +3,10 @@ import { test } from 'node:test'
 
 import { applyPress } from '../../hooks/press-reducer'
 import { recordClose, recordItem } from '../../hooks/tools'
-import {
-  closedShown,
-  firstWaiting,
-  keptOpen,
-  listWaits,
-  QUEUED_AFTER_MS,
-  rowAfterClose,
-  NO_HOLDS,
-  SETTLED_MS,
-} from '../../hooks/view'
-import type { RowWait } from '../../hooks/view'
+import { closedShown } from '../../hooks/rows'
+import { firstWaiting, keptOpen, listWaits, rowAfterClose } from '../../hooks/action-plan'
+import { QUEUED_AFTER_MS, NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
+import type { RowWait } from '../../hooks/action-plan'
 import { viewOf } from '../src/core'
 import { EXIT_MS } from '../src/rows'
 import { drawnSettled, SETTLE_WINDOW_MS } from '../src/settle'

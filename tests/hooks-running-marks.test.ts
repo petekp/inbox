@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { RUNNING_FRAME_MS, RUNNING_FRAMES, runningMark } from '../hooks/view'
-import { IDLE_MARK } from '../hooks/help'
+import { RUNNING_FRAME_MS, runningMark } from '../hooks/timing'
+import { IDLE_MARK, RUNNING_FRAMES } from '../hooks/help'
 import { w, arrive, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 

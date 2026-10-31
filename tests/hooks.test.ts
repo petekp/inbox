@@ -6,16 +6,11 @@ import { emptySession } from '../hooks/session-files'
 import { checkActions, prBlockActions, threadActions } from '../hooks/pr-tab'
 import { prCheckId, prThreadId, threadSentIn } from '../hooks/pr-rows'
 import { failingChecks, waitingThreads } from '../hooks/prs'
-import {
-  PRESS_GUARD_MS,
-  SETTLED_MS,
-  inboxView,
-  perTurnStatus,
-  statusPage,
-  statusKeyPlan,
-  rowKeyPlan,
-  shownTabs,
-} from '../hooks/view'
+import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
+import { inboxView, perTurnStatus } from '../hooks/view'
+import { statusPage } from '../hooks/status-page'
+import { statusKeyPlan, rowKeyPlan } from '../hooks/action-plan'
+import { shownTabs } from '../hooks/tabs'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 

@@ -1,8 +1,11 @@
 import { failingChecks, waitingThreads } from './prs'
 import { prCheckId, prMarkId, prThreadId } from './pr-rows'
 import type { DrawnPr } from './pr-views'
-import { closedShown, FINDING_GROUPS, NEEDS_YOU_GROUPS, ROW_TABS, rowResultMark, settledRowIds } from './view'
-import type { InboxView, ResultMark, RowView } from './view'
+import { closedShown, NEEDS_YOU_GROUPS, rowResultMark, settledRowIds } from './rows'
+import { FINDING_GROUPS } from './help'
+import { ROW_TABS } from './tabs'
+import type { InboxView } from './view'
+import type { ResultMark, RowView } from './rows'
 import type { Finding, FoldKind, Tab } from '../types'
 
 export type RowRecord<T extends string> = Partial<Record<T, ReadonlySet<string>>>

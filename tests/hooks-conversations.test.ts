@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { SETTLED_MS } from '../hooks/view'
+import { SETTLED_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
 import { PANE, SAVED_SESSION } from './hooks-helpers'
 

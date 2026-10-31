@@ -1,6 +1,6 @@
 import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
 import { cellWidth } from './text'
-import { fitTabs, tabName, type TabNaming } from './view'
+import { fitTabs, tabName, type TabNaming } from './tabs'
 import { ROW_PAD_PT, STATUS_ROW_PAD_PT } from './layout'
 import { TAB_COUNT_GAP } from './tabs-client'
 

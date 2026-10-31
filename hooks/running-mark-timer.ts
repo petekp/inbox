@@ -1,5 +1,5 @@
 import type { Timer } from 'claude-code'
-import { RUNNING_FRAME_MS } from './view'
+import { RUNNING_FRAME_MS } from './timing'
 
 let runningMarkTimer: Timer | null = null
 let isRunningMarkDrawn = false

@@ -1,6 +1,9 @@
 import type { Finding, SubjectStatus } from '../types'
 import type { ClosedState } from './ledger-close'
 import type { ToneName } from './tones'
+import type { Look } from './rows'
+import { shownTabs, isRowTab } from './tabs'
+import type { ShownTab } from './tabs'
 
 export const FINDING_GROUPS: Record<Finding['kind'], { title: string; mark: string; tone: 'issue' | 'done' }> = {
   issue: { title: 'Issues', mark: '▲', tone: 'issue' },
@@ -82,3 +85,67 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
 export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', marks: 'Marks' } as const
 
 export type HelpKey = { keys: string; does: string }
+
+/** The PRs tab's own keys, which `hooks/pr-tab.ts:prOrderActions` and `prTabActions` bind from any row of the tab. */
+const PR_TAB_HELP_KEYS: HelpKey[] = [
+  { keys: 'g', does: 'Rank the PRs again, once a ranked PR changed' },
+  { keys: 'm', does: 'Dismiss the merged PRs' },
+]
+
+/**
+ * The keys a look's Help lists, for the tab Help opened over. `hasStatusButtons` says the Status has a row with a
+ * button, which the terminal and omp select with j and k. Desktop takes no keys, so its Help lists marks only. Each
+ * look binds these keys in its own adapter.
+ */
+export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasStatusButtons: boolean): HelpKey[] {
+  const tabKeys = shownTabs(isNextBuild)
+    .map(t => t.hotkey)
+    .join(' ')
+  const hasRows = isRowTab(tab)
+  const selectsStatusRows = tab === 'overview' && hasStatusButtons
+  const switchTabs = { keys: tabKeys, does: 'Switch tabs' }
+  const prTabKeys = tab === 'prs' ? PR_TAB_HELP_KEYS : []
+  switch (look) {
+    case 'desktop':
+      return []
+    case 'terminal':
+      return [
+        switchTabs,
+        ...(hasRows || selectsStatusRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
+        ...prTabKeys,
+        { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
+      ]
+    case 'codex':
+      return [
+        switchTabs,
+        ...(hasRows ? [{ keys: 'j k ↑ ↓', does: 'Select the next or previous row' }] : []),
+        ...prTabKeys,
+        { keys: '?', does: 'Open or close help' },
+        { keys: 'esc', does: 'Close help, or leave a reply field' },
+      ]
+    case 'omp':
+      return [
+        { keys: `tab ${tabKeys}`, does: 'Switch tabs' },
+        ...(hasRows
+          ? [
+              { keys: '↑ ↓ j k', does: 'Move between rows' },
+              { keys: '← →', does: 'Pick a button' },
+              { keys: '↵', does: 'Press the picked button' },
+              { keys: 'r', does: 'Reply to the selected row' },
+              { keys: 'u', does: 'Undo the last close' },
+              ...prTabKeys,
+            ]
+          : [
+              ...(selectsStatusRows
+                ? [
+                    { keys: 'j k', does: 'Select the next or previous row with a button' },
+                    { keys: '↵', does: "Press the selected row's button" },
+                  ]
+                : []),
+              { keys: '↑ ↓', does: 'Scroll the page' },
+            ]),
+        { keys: '?', does: 'Open or close help' },
+        { keys: 'esc', does: 'Close help, then the panel' },
+      ]
+  }
+}

@@ -19,7 +19,7 @@ import {
   wakeForDone,
 } from '../../hooks/session-host'
 import type { StatusRecords, RecordFiles, SessionHost, UpdateHost } from '../../hooks/session-host'
-import { screenTabOf } from '../../hooks/view'
+import { screenTabOf } from '../../hooks/tabs'
 import { openTarget } from './commands'
 import { exclusiveRun, pruneSessions, readState, updateState } from './state'
 import type { OmpState } from './state'

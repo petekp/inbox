@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
 
 import { agentTools } from '../../hooks/tools'
-import { isShownTab } from '../../hooks/view'
-import type { Holds, ShownTab } from '../../hooks/view'
+import { isShownTab } from '../../hooks/tabs'
+import type { Holds } from '../../hooks/timing'
+import type { ShownTab } from '../../hooks/tabs'
 import { CODEX, INBOX_DESCRIPTION, VIEW_DESCRIPTION } from './texts'
 
 /**

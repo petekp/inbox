@@ -5,7 +5,7 @@ import { test } from 'node:test'
 
 import { linkDialogs } from '../../hooks/dialogs'
 import { EMPTY } from '../../hooks/ledger'
-import { feedbackText } from '../../hooks/view'
+import { feedbackText } from '../../hooks/feedback'
 import { notePrompt, noteToolCall, viewOf } from '../src/core'
 import { readState, statePath, updateState } from '../src/state'
 import { tempDir } from './helpers'

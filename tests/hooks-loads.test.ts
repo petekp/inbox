@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { SESSION_VERSION } from '../hooks/session-version'
-import { PRESS_GUARD_MS, SETTLED_MS, statusPage } from '../hooks/view'
+import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
+import { statusPage } from '../hooks/status-page'
 import { w, world } from './hooks-world'
 import { PANE, selectRow, SAVED_SESSION } from './hooks-helpers'
 
