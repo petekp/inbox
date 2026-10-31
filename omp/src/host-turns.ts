@@ -13,6 +13,7 @@ import {
 } from '../../hooks/session'
 import { childrenCutOff, delegatesSettled } from '../../hooks/children'
 import { runUpdates, wakeForDone } from '../../hooks/session-host'
+import { turnReply } from '../../hooks/text'
 import { readState } from './state'
 import { OMP } from './texts'
 import { isDismissedAsk } from './tool-calls'
@@ -30,8 +31,11 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
 
   let noted: { id: string; prompt: string; notes: string[] } | null = null
 
-  /** The text of the reply the agent finished in this run since the turn's prompt. */
-  let replied: { id: string; text: string } | null = null
+  /**
+   * The text of each assistant message in this run since the turn's prompt, in order, and whether the last one finished
+   * a reply.
+   */
+  let agentTexts: { id: string; texts: string[]; isFinished: boolean } | null = null
 
   /**
    * Counts a prompt that reached the agent: matches it to a press and returns the notes the agent is told.
@@ -57,11 +61,11 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
 
   /** Takes the reply the agent finished in this run since the turn's prompt, if any. */
   function takeFinishedReply(id: string): string | null {
-    if (replied?.id !== id) return null
-    const { text } = replied
-    replied = null
+    if (agentTexts?.id !== id || !agentTexts.isFinished) return null
+    const { texts } = agentTexts
+    agentTexts = null
 
-    return text
+    return turnReply(texts)
   }
 
   const start = async (ctx: OmpContext, parentFile?: string) => {
@@ -98,7 +102,7 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     openPanels.delete(id)
     prepared.delete(id)
     if (noted?.id === id) noted = null
-    if (replied?.id === id) replied = null
+    if (agentTexts?.id === id) agentTexts = null
     const pane = deps.herdrPane
     if (id !== memory.shownId || !pane) return
     memory.shownId = null
@@ -145,7 +149,7 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
   const onAgentStart = async (_event: unknown, ctx: OmpContext) => {
     if (isUnattended(ctx)) return
     const id = sessionIdOf(ctx)
-    if (replied?.id === id) replied = null
+    if (agentTexts?.id === id) agentTexts = null
     const startedAt = deps.now()
     await change(id, s => turnStarted(s, startedAt)).catch(() => undefined)
   }
@@ -160,8 +164,10 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
   const onMessageEnd = (event: { message: unknown }, ctx: OmpContext) => {
     const message = event.message as Reply
     if (isUnattended(ctx) || message.role !== 'assistant' || !Array.isArray(message.content)) return
-    const isWorking = message.content.some((b: { type?: unknown }) => b.type === 'toolCall')
-    replied = isWorking ? null : { id: sessionIdOf(ctx), text: textOfBlocks(message.content) }
+    const id = sessionIdOf(ctx)
+    const texts = agentTexts?.id === id ? agentTexts.texts : []
+    const isFinished = !message.content.some((b: { type?: unknown }) => b.type === 'toolCall')
+    agentTexts = { id, texts: [...texts, textOfBlocks(message.content)], isFinished }
   }
 
   /**
@@ -175,12 +181,15 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     const text = userText(message.content)
     if (text === '' || (noted?.id === id && noted.prompt === text)) return
     // Taken before the state read, since the press's own reply can finish during it.
-    const finished = replied?.id === id ? replied : null
+    const finished = agentTexts?.id === id && agentTexts.isFinished ? agentTexts : null
     try {
       const isSentByPress = (await readState(dir, id)).sent.some(x => x.text === text)
       if (!isSentByPress) return
-      if (replied === finished) replied = null
-      const notes = await arrive(ctx, id, text, finished?.text ?? null)
+      // Texts the agent wrote during the read answer this message, so they start the turn it starts.
+      if (agentTexts === finished) agentTexts = null
+      else if (finished && agentTexts?.id === id)
+        agentTexts = { ...agentTexts, texts: agentTexts.texts.slice(finished.texts.length) }
+      const notes = await arrive(ctx, id, text, finished ? turnReply(finished.texts) : null)
       noted = { id, prompt: text, notes }
       if (notes.length > 0) {
         sendNotes(notes)
@@ -194,10 +203,11 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     if (isUnattended(ctx) || event.willContinue) return
     prepare(ctx)
     const id = sessionIdOf(ctx)
-    if (replied?.id === id) replied = null
+    const texts = agentTexts?.id === id ? agentTexts.texts : []
+    if (agentTexts?.id === id) agentTexts = null
     const last = lastAssistant(event.messages)
-    const reply = last ? textOfBlocks(last.content) : ''
     const stop = await stopOf(last, deps.isUsageLimit, deps.now())
+    const reply = stop === null ? turnReply(texts, last ? textOfBlocks(last.content) : '') : ''
     // Escape on the ask dialog aborts the turn, so it ends with no reply text.
     const isDialogDismissed = event.messages.some(isDismissedAsk)
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())

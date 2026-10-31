@@ -14,6 +14,7 @@ import type { Run } from '../../hooks/gh'
 import { delegatesInHerdr } from '../../hooks/herdr'
 import { dialogActivity, toolActivity } from '../../hooks/model-text'
 import { childEnded } from '../../hooks/status'
+import { turnReply } from '../../hooks/text'
 import {
   claimedStatusRefresh,
   cleared,
@@ -207,7 +208,6 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       return null
     }
     case 'Stop': {
-      const reply = input.last_assistant_message ?? ''
       const folder = input.cwd
       const before = read()
       // Herdr is asked outside the write: its run can last its whole timeout, and the server's views and presses wait
@@ -220,7 +220,9 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
           () => null,
         ),
       ])
-      const { dialogs, commands, plan } = turnOf(tail, input.turn_id)
+      const { dialogs, commands, plan, texts } = turnOf(tail, input.turn_id)
+      // Codex runs Stop without writing the rollout out first, so the rollout can lack the turn's last message.
+      const reply = turnReply(texts, input.last_assistant_message ?? '')
       const withHistory = await readHistoryAhead(() => before, tail)
       const lines = dialogs.map(d => dialogActivity(d.questions, { kind: 'open' }))
       const written = await write(async s => {

@@ -22,7 +22,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/session-host.ts` | Shared module. The `SessionHost` flows that run on a host's store: `runUpdates`, `askOverConversation`, `reconcileUpdateStatus`, `wakeForDone`, `press`, `fetchPrs`, `isPrFetchDue`, `prFetchTracker` and `exclusiveKeys`. |
 | `hooks/gh.ts` | Shared module. `ghFinder` finds a gh that starts, and `ghIn` runs it, over a host's command runner. `branchIn` reads a folder's git branch over the same runner. |
 | `hooks/herdr.ts` | Shared module. What a host reports to the Herdr pane it runs in: the `inbox` status line, the stop, and each row tab's count, as pane tokens in one `herdr pane report-metadata` command. Also `delegatesInHerdr`, which asks `herdr agent list` which delegates still run, only while one runs. |
-| `hooks/text.ts` | Shared module. Clipping, code-block formatting and relative ages. |
+| `hooks/text.ts` | Shared module. Clipping, code-block formatting, relative ages and a turn's reply. |
 | `hooks/prs.ts` | Shared module. PR parsing, readiness and prompts. |
 | `hooks/pr-tab.ts` | Shared module. The PRs tab's rules: fetching each tracked PR through a host's gh runner, which PRs the tab draws, its row ids, and what each PR press does. |
 | `hooks/tools.ts` | Shared module. The record and close tools, and `agentTools`, the one list of their names, descriptions and schemas that every host and eval probe registers. Each call's answer holds the text the agent reads and the line the person sees under the call. |

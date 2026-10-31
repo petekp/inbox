@@ -1332,7 +1332,7 @@ Input:
 - <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
 - <person>: what the person just sent, and the commands they ran themselves: "$ cmd" for a shell command, with its output, and "/name" for a slash command
 - <activity>: what the agent did this turn (files edited, commands, URLs)
-- <reply>: the agent's final reply
+- <reply>: what the agent said this turn, in order
 - <screen>: what the person has on screen besides the conversation.${band}
 
 Answer with lines only, each starting with one of these keys. No other text. When nothing in the exchange changes the ledger, answer with the one line NONE.
@@ -1463,7 +1463,7 @@ function ledgerBlocks(ledger) {
   ];
 }
 function buildPrompt(ledger, ex) {
-  const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
+  const person = personText(ex.person, ex.trigger);
   return [
     ...ledgerBlocks(ledger),
     `<person>${NL5}${clipMiddle(person, 4e3, 1500)}${NL5}</person>`,
@@ -1485,7 +1485,7 @@ Input:
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
-- <reply>: the agent's final reply
+- <reply>: what the agent said this turn, in order
 
 Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, and the head still holds, answer with the one line NO CHANGE. Most exchanges change nothing.
 

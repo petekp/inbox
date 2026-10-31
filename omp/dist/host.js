@@ -509,6 +509,11 @@ function numberBlocks(reply) {
   let n = 0;
   return reply.replace(FENCE, (block) => `[block ${n += 1}]${NL2}${block}`);
 }
+function turnReply(texts, final = "") {
+  const written = texts.filter((text) => text.trim() !== "");
+  const isFinalWritten = final.trim() === "" || written.at(-1)?.trim() === final.trim();
+  return (isFinalWritten ? written : [...written, final]).join(`${NL2}${NL2}`);
+}
 function dash(value) {
   const v = (value ?? "").trim();
   return v === "" || v === "-" ? null : v;
@@ -1468,7 +1473,7 @@ Input:
 - <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
 - <person>: what the person just sent, and the commands they ran themselves: "$ cmd" for a shell command, with its output, and "/name" for a slash command
 - <activity>: what the agent did this turn (files edited, commands, URLs)
-- <reply>: the agent's final reply
+- <reply>: what the agent said this turn, in order
 - <screen>: what the person has on screen besides the conversation.${band}
 
 Answer with lines only, each starting with one of these keys. No other text. When nothing in the exchange changes the ledger, answer with the one line NONE.
@@ -1626,7 +1631,7 @@ function ledgerBlocks(ledger) {
   ];
 }
 function buildPrompt(ledger, ex) {
-  const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
+  const person = personText(ex.person, ex.trigger);
   return [
     ...ledgerBlocks(ledger),
     `<person>${NL5}${clipMiddle(person, 4000, 1500)}${NL5}</person>`,
@@ -1648,7 +1653,7 @@ Input:
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
-- <reply>: the agent's final reply
+- <reply>: what the agent said this turn, in order
 
 Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, and the head still holds, answer with the one line NO CHANGE. Most exchanges change nothing.
 
@@ -8384,7 +8389,7 @@ function turnHandlers(context, sessions) {
   const { deps, dir, openPanels, prepared, reportToHerdr, run, memory, dropTools, showBand, sendNotes } = context;
   const { change, endedTurn, hostFor, updateHostFor, reportCounts, prepare, continueFork, catchUpUnseen } = sessions;
   let noted = null;
-  let replied = null;
+  let agentTexts = null;
   async function arrive(ctx, id, text, finishedReply) {
     const at = deps.now();
     const hostTasks = finishedReply === null ? [] : ompTodoFromBranch(ctx.sessionManager.getBranch());
@@ -8400,11 +8405,11 @@ function turnHandlers(context, sessions) {
     return notes;
   }
   function takeFinishedReply(id) {
-    if (replied?.id !== id)
+    if (agentTexts?.id !== id || !agentTexts.isFinished)
       return null;
-    const { text } = replied;
-    replied = null;
-    return text;
+    const { texts } = agentTexts;
+    agentTexts = null;
+    return turnReply(texts);
   }
   const start = async (ctx, parentFile) => {
     if (isUnattended(ctx))
@@ -8437,8 +8442,8 @@ function turnHandlers(context, sessions) {
     prepared.delete(id);
     if (noted?.id === id)
       noted = null;
-    if (replied?.id === id)
-      replied = null;
+    if (agentTexts?.id === id)
+      agentTexts = null;
     const pane = deps.herdrPane;
     if (id !== memory.shownId || !pane)
       return;
@@ -8484,8 +8489,8 @@ function turnHandlers(context, sessions) {
     if (isUnattended(ctx))
       return;
     const id = sessionIdOf(ctx);
-    if (replied?.id === id)
-      replied = null;
+    if (agentTexts?.id === id)
+      agentTexts = null;
     const startedAt = deps.now();
     await change(id, (s) => turnStarted(s, startedAt)).catch(() => {
       return;
@@ -8503,8 +8508,10 @@ function turnHandlers(context, sessions) {
     const message = event.message;
     if (isUnattended(ctx) || message.role !== "assistant" || !Array.isArray(message.content))
       return;
-    const isWorking = message.content.some((b) => b.type === "toolCall");
-    replied = isWorking ? null : { id: sessionIdOf(ctx), text: textOfBlocks(message.content) };
+    const id = sessionIdOf(ctx);
+    const texts = agentTexts?.id === id ? agentTexts.texts : [];
+    const isFinished = !message.content.some((b) => b.type === "toolCall");
+    agentTexts = { id, texts: [...texts, textOfBlocks(message.content)], isFinished };
   };
   const onMessageStart = async (event, ctx) => {
     const message = event.message;
@@ -8514,14 +8521,16 @@ function turnHandlers(context, sessions) {
     const text = userText(message.content);
     if (text === "" || noted?.id === id && noted.prompt === text)
       return;
-    const finished = replied?.id === id ? replied : null;
+    const finished = agentTexts?.id === id && agentTexts.isFinished ? agentTexts : null;
     try {
       const isSentByPress = (await readState(dir, id)).sent.some((x) => x.text === text);
       if (!isSentByPress)
         return;
-      if (replied === finished)
-        replied = null;
-      const notes = await arrive(ctx, id, text, finished?.text ?? null);
+      if (agentTexts === finished)
+        agentTexts = null;
+      else if (finished && agentTexts?.id === id)
+        agentTexts = { ...agentTexts, texts: agentTexts.texts.slice(finished.texts.length) };
+      const notes = await arrive(ctx, id, text, finished ? turnReply(finished.texts) : null);
       noted = { id, prompt: text, notes };
       if (notes.length > 0) {
         sendNotes(notes);
@@ -8535,11 +8544,12 @@ function turnHandlers(context, sessions) {
       return;
     prepare(ctx);
     const id = sessionIdOf(ctx);
-    if (replied?.id === id)
-      replied = null;
+    const texts = agentTexts?.id === id ? agentTexts.texts : [];
+    if (agentTexts?.id === id)
+      agentTexts = null;
     const last = lastAssistant(event.messages);
-    const reply = last ? textOfBlocks(last.content) : "";
     const stop = await stopOf(last, deps.isUsageLimit, deps.now());
+    const reply = stop === null ? turnReply(texts, last ? textOfBlocks(last.content) : "") : "";
     const isDialogDismissed = event.messages.some(isDismissedAsk);
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
     const [inHerdr, branch] = await Promise.all([

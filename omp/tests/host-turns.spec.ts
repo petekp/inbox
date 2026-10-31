@@ -74,12 +74,14 @@ const endOnError = (fields: Record<string, unknown>) =>
     messages: [{ role: 'assistant', content: [], stopReason: 'error', ...fields }],
   })
 
-test('a turn that ends on an error saves why it stopped, and the next turn clears it', async () => {
+test('a turn that ends on an error saves why it stopped, queues no exchange, and the next turn clears it', async () => {
   const inbox = createInbox(pi(), deps())
   await prompt('Add a greeting CLI')
+  await call('message_end', { message: { role: 'assistant', content: [{ type: 'text', text: 'Should I use Node?' }] } })
   await endOnError({ errorStatus: 401, errorMessage: 'invalid x-api-key' })
   await settle()
   expect((await inbox.screen(makeCtx())).stop).toMatchObject({ kind: 'sign-in', detail: '401' })
+  expect(w.completions).toEqual([])
   await call('turn_start', { type: 'turn_start' })
   expect(state().stop).toBeNull()
 })

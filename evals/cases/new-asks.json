@@ -294,5 +294,49 @@
         "added": 0
       }
     ]
+  },
+  {
+    "name": "question-before-last-tool-call",
+    "about": "The reply holds everything the agent said this turn, in order. A question asked before the agent's last tool call, followed by a closing line that recommends an answer without restating it, becomes a question with that recommendation.",
+    "ledger": {
+      "turn": 3,
+      "nextId": 1,
+      "card": { "goal": "Fix the date parser", "done": [], "now": "Fixing the date parser", "running": [] },
+      "items": []
+    },
+    "exchange": {
+      "person": "fix the date parser",
+      "turn": 3,
+      "activity": ["edited src/dates/parse.ts", "ran: npm test -- dates", "ran: rg parseLegacyDate"],
+      "reply": "The date parser is fixed, and the 40 date tests pass. `parseLegacyDate` has no callers left. Should I delete it, or keep it for one more release?\n\nI'd delete it: the changelog already marks it deprecated."
+    },
+    "checks": [{ "new": "parseLegacyDate|legacy", "kind": "question", "rec": "delete" }, { "added": 1 }]
+  },
+  {
+    "name": "question-answered-later-in-turn-not-new",
+    "about": "A question the agent asks itself in a note between tool calls, and answers later in the same turn, adds nothing.",
+    "ledger": {
+      "turn": 4,
+      "nextId": 1,
+      "card": {
+        "goal": "Find why the scroll test fails",
+        "done": [],
+        "now": "Checking the scroll test",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "why does the scroll test fail since the upgrade?",
+      "turn": 4,
+      "activity": [
+        "ran: git switch --detach v2.3.0",
+        "ran: npm test -- scroll",
+        "ran: git switch main",
+        "ran: npm test -- scroll"
+      ],
+      "reply": "Checking whether the old release failed the same way. Did v2.3.0 fail the scroll test too?\n\nIt did: v2.3.0 fails the same scroll test, so the failure is older than the upgrade.\n\nThe scroll test fails on both versions because it waits a fixed 100 ms for the list to render. It is a flaky test, not a regression from the upgrade."
+    },
+    "checks": [{ "added": 0 }]
   }
 ]

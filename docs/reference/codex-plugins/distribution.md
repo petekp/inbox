@@ -160,9 +160,10 @@ is ever listed publicly.
     (codex/src/server-tools.ts:TOOLS).
   - "Do not request the full conversation history … Your MCP server must not
     pull, reconstruct, or infer the full chat log from the client or
-    elsewhere." The per-reply update reads the Stop hook's `last_assistant_message`
-    and the tool activity the hooks noted, not the transcript
-    (codex/src/hook.ts:handleHook).
+    elsewhere." At Stop, the per-reply update reads the ending turn's agent
+    messages, commands and dialogs from the transcript, and the Stop hook's
+    `last_assistant_message` (codex/src/hook.ts:handleHook). A catch-up reads
+    the whole transcript (codex/src/transcript.ts:readRollout).
   - Responses must not include "session IDs, trace IDs, request IDs,
     timestamps" unless needed.
   - "Do not use discovery, operation selection, or schema fetching with a

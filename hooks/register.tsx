@@ -156,7 +156,7 @@ import {
 import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
 import { CLEARED_TOKENS, delegatesInHerdr, HERDR_CHECK_MS, herdrTokens } from './herdr'
-import { ago, cellWidth, clipLabel } from './text'
+import { ago, cellWidth, clipLabel, turnReply } from './text'
 import { COMPARE_PAGE_FILE, demoAfterPress, demoReplied, demoSent, isPressConfirmed, openTarget } from './presses'
 import type { DemoSent, Effect, PathProbe, RowPress } from './presses'
 import {
@@ -482,9 +482,7 @@ let endReason: string | null = null
 let isOn = false
 let turningOn: Promise<void> | null = null
 let intervals: Timer[] = []
-let sentBack: string[] = []
-/** The reply a step ended on with no tool call, until the turn's next step shows it was sent back. */
-let finalReply: string | null = null
+let stepTexts: string[] = []
 /** True once an API error has set this turn's stop. */
 let hasStopFromError = false
 let turnBox: string | null = null
@@ -534,8 +532,7 @@ let paneClosesOnEscape = true
 let fieldWithoutKeys: string | null = null
 
 function resetTurn() {
-  sentBack = []
-  finalReply = null
+  stepTexts = []
   turnBox = null
   isDialogDismissed = false
 }
@@ -2746,7 +2743,7 @@ export const register: Register = on => {
       if (isOn) await noteAgentWork($, e.agentId)
       return next(e)
     }
-    finalReply = null
+    resetTurn()
     hasStopFromError = false
     // Counted here, before the
     // turn can end, since a reload can cut off its end-of-turn hook.
@@ -2944,11 +2941,8 @@ export const register: Register = on => {
 
   on('turn.step', async function* (_$, e, next) {
     if (!isOn || e.agentId) return yield* next(e)
-    if (finalReply !== null) sentBack.push(finalReply)
-    finalReply = null
     const response = yield* next(e)
-    const isFinalReply = response.toolUses.length === 0 && response.stopReason === 'end_turn'
-    if (isFinalReply && response.answer.trim()) finalReply = response.answer
+    stepTexts.push(response.answer)
 
     return response
   })
@@ -2980,8 +2974,8 @@ export const register: Register = on => {
     if (e.reason === 'error' && !hasStopFromError) await setStopFromLastReply($)
     void wakeForDone($).catch(() => undefined)
     void followNewRows($).catch(() => undefined)
-    const hasReply = e.answer.trim() !== '' || turnBox !== null
-    const isAnswered = e.reason === 'answer' && hasReply
+    const reply = turnReply([turnReply(stepTexts, e.answer), turnBox ?? ''])
+    const isAnswered = e.reason === 'answer' && reply !== ''
     if (!isAnswered && !isDialogDismissed) return r
 
     const [screenTab, isShown, now, before] = await Promise.all([
@@ -2990,7 +2984,6 @@ export const register: Register = on => {
       $.clock.now(),
       read($, SESSION),
     ])
-    const reply = [...sentBack, e.answer, turnBox ?? ''].filter(text => text.trim() !== '').join('\n\n')
     const queuesEmptyReply = isDialogDismissed
     resetTurn()
     await update($, AWAY, a => ({ ...a, lastActiveAt: now }))

@@ -229,6 +229,8 @@ export const GOOD_RUNS: Record<string, string[]> = {
     'SET: s4 | working | shows on phones\nLINK: i2 | Offline banner',
     'CLOSED: i2 | the person dropped it',
     'DONE: s4 | shows on phones\nSET: s1 | working | Android syncs; iOS loses last edit',
+    'NONE',
+    'DONE: s1 | syncs after a crash on Android and iOS',
   ],
   'long-turn': [
     'DONE: s1 | fast on large libraries\nSET: s2 | working | under way',

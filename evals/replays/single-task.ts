@@ -199,5 +199,21 @@ export const singleTask: Replay = {
       checkpoint: true,
       targets: ['asks-linked', 'marks-true', 'where-it-stands'],
     },
+    {
+      label:
+        'The agent fixes the iOS edit loss. Its notes between tool calls say so, and its last message only says where it saved the results.',
+      at: 185,
+      call: {
+        kind: 'reply',
+        person: 'Fix the iOS edit loss.',
+        activity: ['Edited src/sync/queue.ts', 'Ran: npm run test:devices', 'Edited docs/device-tests.md'],
+        reply:
+          'Found it: on iOS the queue file was written in place, so a crash mid-write lost the last edit. The queue now writes a temp file and renames it over the old one.\n\nDevice tests pass: on Android and iOS, edits made before a crash sync once the app restarts. That finishes the sync engine.\n\nSaved the device test results to docs/device-tests.md.',
+      },
+      facts: {
+        pieces: [{ id: 'engine', state: 'done', stands: 'syncs after a crash on Android and iOS', parts: undefined }],
+      },
+      targets: ['marks-true', 'changes-move'],
+    },
   ],
 }
