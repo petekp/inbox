@@ -1,7 +1,7 @@
 import { NL, OPEN_STATUSES } from './status-limits'
 import type { OpenStatus } from './status-limits'
 
-export { isOpen } from './status-limits'
+export { isOpen, OPEN_SUBJECTS } from './status-limits'
 export { applyStatus } from './status-ops'
 export { childEnded, isChildRunning, lookEnded, lookStarted } from './status-children'
 
