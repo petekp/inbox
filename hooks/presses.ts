@@ -3,18 +3,14 @@ export { baseName, openTarget } from './open-targets'
 export type { PathProbe } from './open-targets'
 export { stepIconKind, stepsOf } from './help-steps'
 export type { HelpStep } from './help-steps'
-export { isAwaitingReply, isFixSent, isFoldingPress, isHandedOff, upgradeLastActions } from './last-actions'
+export { isAwaitingReply, isFixSent, isFoldingPress, isHandedOff } from './last-actions'
 export {
-  applyPress,
   doneWake,
   isPressConfirmed,
   markSentToAgent,
   noteText,
   refuseDoneNotification,
-  withAcceptedSend,
-  withArrival,
   withDeliveryId,
-  withRewrite,
   withUnconfirmed,
 } from './press-reducer'
 export type { Effect } from './press-reducer'
@@ -39,7 +35,7 @@ export {
   withLasts,
 } from './pressed'
 export { COMPARE_PAGE_FILE } from './press-messages'
-export type { AnswerMessage, PressTexts } from './press-messages'
+export type { AnswerMessage } from './press-messages'
 
 export function isPrRowId(id: string): boolean {
   return id.startsWith('pr:') || id.includes(' ')

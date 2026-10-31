@@ -971,149 +971,6 @@ function questionNumbers(ledger, promptTurn) {
 }
 var TOLD_NOTHING = { inbox: null, closed: [] };
 
-// ../hooks/press-labels.ts
-function actionId(p) {
-  return p.action === "step" ? `step-${p.step}` : p.action;
-}
-function capitalized(text2) {
-  return text2.charAt(0).toUpperCase() + text2.slice(1);
-}
-var ISSUE_LABEL = "File issue";
-
-// ../hooks/open-targets.ts
-function baseName(path) {
-  return path.replace(/\/+$/, "").split("/").pop() ?? path;
-}
-
-// ../hooks/prs.ts
-function namedPrs(text2, refs) {
-  const numbers = new Set([...text2.matchAll(/#(\d+)\b/g)].map((m) => m[1]));
-  const known = [...new Set(refs)];
-  return [...numbers].flatMap((n) => {
-    const named = known.filter((ref) => parseRef(ref).number === n);
-    return named.length === 1 ? named : [];
-  });
-}
-function parseRef(ref) {
-  const [repo = "", number = ""] = ref.split("#");
-  const [owner = "", name = ""] = repo.split("/");
-  return { repo, owner, name, number };
-}
-function isKeptPr(pr) {
-  return pr.isYours !== false && pr.wasSeenOpen;
-}
-function waitingThreads(pr) {
-  return pr.threads.filter((t) => t.isWaiting);
-}
-function threadsOnYou(pr, isSent) {
-  return waitingThreads(pr).filter((t) => !t.isLinesChanged && !isSent(pr, t));
-}
-function prNeedsYou(pr, isSent) {
-  return pr.state === "OPEN" && (pr.mergeable === "CONFLICTING" || failingChecks(pr).length > 0 || pr.reviewDecision === "CHANGES_REQUESTED" || threadsOnYou(pr, isSent).length > 0);
-}
-function checkCounts(pr) {
-  const counts = { pass: 0, fail: 0, pending: 0, skip: 0 };
-  for (const c of pr.checks) counts[c.bucket] += 1;
-  return counts;
-}
-function threadsWaiting(count) {
-  return `${count} ${count === 1 ? "thread" : "threads"} waiting on you`;
-}
-function plural(count, one, many) {
-  return `${count} ${count === 1 ? one : many}`;
-}
-function readiness(pr, isSent = () => false) {
-  const result = (status, head, reasonList = [], joint = ": ") => {
-    const reasons = reasonList.join(", ");
-    const unlisted = status === "ready" ? [] : reasonList.filter((r) => !listed.includes(r));
-    return { status, text: reasons ? `${head}${joint}${reasons}` : head, head, unlisted };
-  };
-  const listed = [];
-  if (pr.state === "MERGED") return result("merged", "Merged");
-  if (pr.state !== "OPEN") return result("closed", "Closed");
-  const { fail: failing, pending } = checkCounts(pr);
-  const waiting = waitingThreads(pr);
-  const open3 = threadsOnYou(pr, isSent).length;
-  const sent = waiting.filter((t) => isSent(pr, t)).length;
-  const changed = waiting.filter((t) => t.isLinesChanged && !isSent(pr, t)).length;
-  const isPresent = (b) => b !== null;
-  const row = (r) => r === null ? r : (listed.push(r), r);
-  const onYou = [
-    pr.mergeable === "CONFLICTING" ? `conflicts with ${pr.base}` : null,
-    row(failing > 0 ? plural(failing, "failing check", "failing checks") : null),
-    pr.reviewDecision === "CHANGES_REQUESTED" ? "changes requested" : null,
-    row(open3 > 0 ? threadsWaiting(open3) : null)
-  ].filter(isPresent);
-  const onOthers = [
-    row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to Claude` : null),
-    row(changed > 0 ? `${plural(changed, "thread", "threads")} on changed lines` : null),
-    pr.reviewDecision === "REVIEW_REQUIRED" ? "needs approval" : null,
-    pending > 0 ? `${pending} ${pending === 1 ? "check" : "checks"} running` : null
-  ].filter(isPresent);
-  if (pr.isDraft) return result("draft", "Draft", [...onYou, ...onOthers]);
-  if (onYou.length > 0) return result("blocked", "Blocked", onYou);
-  if (onOthers.length > 0) return result("waiting", "Waiting", onOthers);
-  const isApproved = pr.reviewDecision === "APPROVED";
-  return result(
-    "ready",
-    "Ready to merge",
-    [...isApproved ? ["approved"] : [], "checks pass", "no threads waiting on you"],
-    isApproved ? ": " : ", "
-  );
-}
-var STATUS_ORDER = { blocked: 0, ready: 1, draft: 2, waiting: 3, merged: 4, closed: 5 };
-function rankOf(pr, ranked) {
-  const at = ranked.indexOf(pr.ref);
-  return at === -1 || pr.state !== "OPEN" ? null : at;
-}
-function inPrOrder(prs, ranked = []) {
-  const place = (pr) => rankOf(pr, ranked) ?? Infinity;
-  const status = new Map(prs.map((pr) => [pr, STATUS_ORDER[readiness(pr).status]]));
-  const byPlace = (a, b) => {
-    const [x, y] = [place(a), place(b)];
-    return x === y ? 0 : x < y ? -1 : 1;
-  };
-  return [...prs].sort(
-    (a, b) => byPlace(a, b) || status.get(a) - status.get(b) || b.number - a.number || a.ref.localeCompare(b.ref)
-  );
-}
-function failingChecks(pr) {
-  return pr.checks.filter((c) => c.bucket === "fail");
-}
-
-// ../hooks/help-steps.ts
-function helpLabel(help) {
-  const label = help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? help.command}` : help.kind === "terminal" ? `Copy ${help.name ?? help.command}` : `Open ${help.name ?? new URL(help.url).host}`;
-  return clipLabel(label, 32);
-}
-function steps(helps) {
-  const copy = helps.find((h) => h.kind === "copy");
-  const open3 = helps.find((h) => h.kind === "open");
-  if (!copy || !open3 || copy.kind !== "copy" || open3.kind !== "open")
-    return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
-  return helps.filter((h) => h !== copy).map(
-    (h) => h === open3 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open3.path)}`, 48), step: [copy, open3] } : { label: helpLabel(h), step: [h] }
-  );
-}
-function prSteps(item, tracked) {
-  const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
-  const links = namedPrs(item.ask, [...urls.keys()]).map((ref) => {
-    const { repo, number } = parseRef(ref);
-    const url = urls.get(ref) ?? `https://github.com/${repo}/pull/${number}`;
-    return { kind: "link", url, name: `PR #${number}` };
-  }).filter((l) => !item.helps.some((h) => h.kind === "link" && h.url === l.url));
-  return links.length === 0 ? [] : [{ label: links.length === 1 ? helpLabel(links[0]) : `Open ${links.length} PRs`, step: links }];
-}
-function stepsOf(item, extraSteps) {
-  return [...steps(item.helps), ...extraSteps];
-}
-function stepIconKind(step) {
-  if (!step) return void 0;
-  if (step.step.some((h) => h.kind === "run")) return "run";
-  const first = step.step[0]?.kind;
-  return first === "copy" || first === "terminal" ? "copy" : first === "open" || first === "link" ? "open" : void 0;
-}
-
 // ../hooks/last-actions.ts
 function isAwaitingReply(last, turns) {
   const pressed2 = last?.delivery?.state !== "failed" ? last?.turnsStarted : void 0;
@@ -1174,39 +1031,6 @@ function upgradeLastActions(saved) {
       return upgraded2 ? [[key, upgraded2]] : [];
     })
   );
-}
-
-// ../hooks/pressed.ts
-function offersUndo(c) {
-  return c.how === "done" || c.how === "dismissed";
-}
-function isUndoable(c) {
-  return offersUndo(c) && !c.isSentToAgent;
-}
-function retryOf(id, last) {
-  if (!/^[if]\d+$/.test(id)) return null;
-  const step = /^step-(\d+)$/.exec(last.action);
-  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
-  switch (last.action) {
-    case "answer":
-      return { action: "answer", id, option: last.text };
-    case "explain":
-    case "compare":
-    case "address":
-    case "issue":
-    case "discuss":
-      return { action: last.action, id };
-    default:
-      return null;
-  }
-}
-function isRepeatOf(last, action) {
-  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
-}
-
-// ../hooks/presses.ts
-function isPrRowId(id) {
-  return id.startsWith("pr:") || id.includes(" ");
 }
 
 // ../hooks/host-tasks.ts
@@ -1483,6 +1307,177 @@ function linkDialogs(s) {
   return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
 }
 
+// ../hooks/open-targets.ts
+function baseName(path) {
+  return path.replace(/\/+$/, "").split("/").pop() ?? path;
+}
+
+// ../hooks/prs.ts
+function namedPrs(text2, refs) {
+  const numbers = new Set([...text2.matchAll(/#(\d+)\b/g)].map((m) => m[1]));
+  const known = [...new Set(refs)];
+  return [...numbers].flatMap((n) => {
+    const named = known.filter((ref) => parseRef(ref).number === n);
+    return named.length === 1 ? named : [];
+  });
+}
+function parseRef(ref) {
+  const [repo = "", number = ""] = ref.split("#");
+  const [owner = "", name = ""] = repo.split("/");
+  return { repo, owner, name, number };
+}
+function isKeptPr(pr) {
+  return pr.isYours !== false && pr.wasSeenOpen;
+}
+function waitingThreads(pr) {
+  return pr.threads.filter((t) => t.isWaiting);
+}
+function threadsOnYou(pr, isSent) {
+  return waitingThreads(pr).filter((t) => !t.isLinesChanged && !isSent(pr, t));
+}
+function prNeedsYou(pr, isSent) {
+  return pr.state === "OPEN" && (pr.mergeable === "CONFLICTING" || failingChecks(pr).length > 0 || pr.reviewDecision === "CHANGES_REQUESTED" || threadsOnYou(pr, isSent).length > 0);
+}
+function checkCounts(pr) {
+  const counts = { pass: 0, fail: 0, pending: 0, skip: 0 };
+  for (const c of pr.checks) counts[c.bucket] += 1;
+  return counts;
+}
+function threadsWaiting(count) {
+  return `${count} ${count === 1 ? "thread" : "threads"} waiting on you`;
+}
+function plural(count, one, many) {
+  return `${count} ${count === 1 ? one : many}`;
+}
+function readiness(pr, isSent = () => false) {
+  const result = (status, head, reasonList = [], joint = ": ") => {
+    const reasons = reasonList.join(", ");
+    const unlisted = status === "ready" ? [] : reasonList.filter((r) => !listed.includes(r));
+    return { status, text: reasons ? `${head}${joint}${reasons}` : head, head, unlisted };
+  };
+  const listed = [];
+  if (pr.state === "MERGED") return result("merged", "Merged");
+  if (pr.state !== "OPEN") return result("closed", "Closed");
+  const { fail: failing, pending } = checkCounts(pr);
+  const waiting = waitingThreads(pr);
+  const open3 = threadsOnYou(pr, isSent).length;
+  const sent = waiting.filter((t) => isSent(pr, t)).length;
+  const changed = waiting.filter((t) => t.isLinesChanged && !isSent(pr, t)).length;
+  const isPresent = (b) => b !== null;
+  const row = (r) => r === null ? r : (listed.push(r), r);
+  const onYou = [
+    pr.mergeable === "CONFLICTING" ? `conflicts with ${pr.base}` : null,
+    row(failing > 0 ? plural(failing, "failing check", "failing checks") : null),
+    pr.reviewDecision === "CHANGES_REQUESTED" ? "changes requested" : null,
+    row(open3 > 0 ? threadsWaiting(open3) : null)
+  ].filter(isPresent);
+  const onOthers = [
+    row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to Claude` : null),
+    row(changed > 0 ? `${plural(changed, "thread", "threads")} on changed lines` : null),
+    pr.reviewDecision === "REVIEW_REQUIRED" ? "needs approval" : null,
+    pending > 0 ? `${pending} ${pending === 1 ? "check" : "checks"} running` : null
+  ].filter(isPresent);
+  if (pr.isDraft) return result("draft", "Draft", [...onYou, ...onOthers]);
+  if (onYou.length > 0) return result("blocked", "Blocked", onYou);
+  if (onOthers.length > 0) return result("waiting", "Waiting", onOthers);
+  const isApproved = pr.reviewDecision === "APPROVED";
+  return result(
+    "ready",
+    "Ready to merge",
+    [...isApproved ? ["approved"] : [], "checks pass", "no threads waiting on you"],
+    isApproved ? ": " : ", "
+  );
+}
+var STATUS_ORDER = { blocked: 0, ready: 1, draft: 2, waiting: 3, merged: 4, closed: 5 };
+function rankOf(pr, ranked) {
+  const at = ranked.indexOf(pr.ref);
+  return at === -1 || pr.state !== "OPEN" ? null : at;
+}
+function inPrOrder(prs, ranked = []) {
+  const place = (pr) => rankOf(pr, ranked) ?? Infinity;
+  const status = new Map(prs.map((pr) => [pr, STATUS_ORDER[readiness(pr).status]]));
+  const byPlace = (a, b) => {
+    const [x, y] = [place(a), place(b)];
+    return x === y ? 0 : x < y ? -1 : 1;
+  };
+  return [...prs].sort(
+    (a, b) => byPlace(a, b) || status.get(a) - status.get(b) || b.number - a.number || a.ref.localeCompare(b.ref)
+  );
+}
+function failingChecks(pr) {
+  return pr.checks.filter((c) => c.bucket === "fail");
+}
+
+// ../hooks/help-steps.ts
+function helpLabel(help) {
+  const label = help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? help.command}` : help.kind === "terminal" ? `Copy ${help.name ?? help.command}` : `Open ${help.name ?? new URL(help.url).host}`;
+  return clipLabel(label, 32);
+}
+function steps(helps) {
+  const copy = helps.find((h) => h.kind === "copy");
+  const open3 = helps.find((h) => h.kind === "open");
+  if (!copy || !open3 || copy.kind !== "copy" || open3.kind !== "open")
+    return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
+  return helps.filter((h) => h !== copy).map(
+    (h) => h === open3 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open3.path)}`, 48), step: [copy, open3] } : { label: helpLabel(h), step: [h] }
+  );
+}
+function prSteps(item, tracked) {
+  const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
+  const links = namedPrs(item.ask, [...urls.keys()]).map((ref) => {
+    const { repo, number } = parseRef(ref);
+    const url = urls.get(ref) ?? `https://github.com/${repo}/pull/${number}`;
+    return { kind: "link", url, name: `PR #${number}` };
+  }).filter((l) => !item.helps.some((h) => h.kind === "link" && h.url === l.url));
+  return links.length === 0 ? [] : [{ label: links.length === 1 ? helpLabel(links[0]) : `Open ${links.length} PRs`, step: links }];
+}
+function stepsOf(item, extraSteps) {
+  return [...steps(item.helps), ...extraSteps];
+}
+function stepIconKind(step) {
+  if (!step) return void 0;
+  if (step.step.some((h) => h.kind === "run")) return "run";
+  const first = step.step[0]?.kind;
+  return first === "copy" || first === "terminal" ? "copy" : first === "open" || first === "link" ? "open" : void 0;
+}
+
+// ../hooks/press-labels.ts
+function actionId(p) {
+  return p.action === "step" ? `step-${p.step}` : p.action;
+}
+function capitalized(text2) {
+  return text2.charAt(0).toUpperCase() + text2.slice(1);
+}
+var ISSUE_LABEL = "File issue";
+
+// ../hooks/pressed.ts
+function offersUndo(c) {
+  return c.how === "done" || c.how === "dismissed";
+}
+function isUndoable(c) {
+  return offersUndo(c) && !c.isSentToAgent;
+}
+function retryOf(id, last) {
+  if (!/^[if]\d+$/.test(id)) return null;
+  const step = /^step-(\d+)$/.exec(last.action);
+  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
+  switch (last.action) {
+    case "answer":
+      return { action: "answer", id, option: last.text };
+    case "explain":
+    case "compare":
+    case "address":
+    case "issue":
+    case "discuss":
+      return { action: last.action, id };
+    default:
+      return null;
+  }
+}
+function isRepeatOf(last, action) {
+  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
+}
+
 // ../hooks/status-children.ts
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
@@ -1640,6 +1635,11 @@ function statusCatchUpPrompt(input, transcript) {
     ...statusBlocks(input),
     `<conversation>${NL4}${numberBlocks(transcript)}${NL4}</conversation>`
   ].join(NL4);
+}
+
+// ../hooks/presses.ts
+function isPrRowId(id) {
+  return id.startsWith("pr:") || id.includes(" ");
 }
 
 // ../hooks/help.ts

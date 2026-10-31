@@ -4,7 +4,7 @@ import { pruneClosed } from './ledger-close'
 import { reopenOnFailure, withFailure, withUnconfirmed } from './press-reducer'
 import type { Effect } from './press-reducer'
 import { withLasts } from './pressed'
-import type { Pressed } from './session'
+import type { Pressed } from './session-presses'
 
 export function finishedResult(pending: LocalResult, errors: (string | null)[], at: number): LocalResult {
   const parts = pending.parts.map((part, n) => ({ ...part, error: errors[n] ?? null }))
