@@ -853,6 +853,138 @@ function checkVersion(saved) {
   if (version !== SESSION_VERSION) throw new Error(`Unsupported inbox state version: ${version}`);
 }
 
+// ../hooks/ledger-prompt.ts
+var NL4 = "\n";
+var MODEL_KIND = { question: "decide", task: "do" };
+function systemText(host) {
+  const band = host.band ? ` They always see how many items are in <open> and <findings> in ${host.band}.` : "";
+  return `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
+
+Input:
+- <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design
+- <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
+- <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
+- <person>: what the person just sent, and the commands they ran themselves: "$ cmd" for a shell command, with its output, and "/name" for a slash command
+- <activity>: what the agent did this turn (files edited, commands, URLs)
+- <reply>: what the agent said this turn, in order
+- <screen>: what the person has on screen besides the conversation.${band}
+
+Answer with lines only, each starting with one of these keys. No other text. When nothing in the exchange changes the ledger, answer with the one line NONE.
+
+NONE: nothing in the exchange changes the ledger. Write it alone.
+CLOSED: <id> | the outcome, at most 8 words, in one of three forms. When the person answered in <person>, write their answer. Otherwise write "done: <what the agent did>" when the work is done, or "no longer applies: <what in the reply or <activity> made it moot>". An option the agent picked on its own, or an option the work made moot, is not the person's answer: write it in the "done:" or "no longer applies:" form. One line for each item in <open> the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers), or that the reply or <activity> shows is done or no longer applies. A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. An item that has nothing to do with this exchange stays open: being outside the current work, or not being mentioned, does not make it no longer apply.
+FIXED: <id> | the change that fixed it, at most 8 words. One line for each finding in <findings> whose problem the reply, <activity> or <person> shows was fixed by a change to the work. Only a change fixes a finding. When the person puts a finding off, sets it aside or says it does not matter, write no FIXED line: it stays open until they dismiss it.
+ASKED: <id> | <item>
+  For a finding in <findings> that a NEW line or an item in <open> asks the person about. item: "new N" for the Nth NEW line in your answer, or an id from <open>. The item takes the finding's place, so the person sees it once.
+NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
+  One line per thing in <reply> that waits on the person and is not already in <open> or <findings>. A finding the agent recorded is not NEW unless the reply asks the person to decide or do something about it now; then also write an ASKED line for it. Also one line per dialog in <activity> that the person dismissed or left unanswered, with an ASKED line when the dialog asks about a finding. When the reply restates, rewords or narrows an item in <open>, it is not new: add HELP lines to that item's id instead.
+  kind: "decide" (a choice, approval, or information only the person has, explicitly put to them, without which the agent cannot go on with its task) or "do" (an action only the person can take, without which the agent cannot continue or finish: sign in, run a command needing their password, test on their device, reply to a teammate).
+  label: the reply's own number or id for it ("1", "D3"), or "-".
+  ask: plain words, readable without the reply, at most 12 words, or up to 16 when 12 would lose meaning. Keep the question's meaning and every alternative it names. Replace any term the reply coined with what it means. Name an item or finding by what it says, never by its id: the person does not see ids.
+  options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
+  rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
+  design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
+  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, edit a shared page) until the person agrees is a "decide" item ("Say when you want those committed"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
+UPDATE: <id> | <options> | <rec>
+  For a "decide" item in <open> when the reply now offers it different answers, or states a recommendation for it that <open> does not show. options: the answers the person can now pick, as in NEW, or "-" to keep them. rec: as in NEW, or "-" to keep it. Rewording the question is not a change.
+HELP: <item> | <kind> | <value> | <name>
+  A step that does part of an item's work in one press, when the reply or activity already spells it out: the file to edit, the text to paste, the command to run, the page to visit. Not background reading. Up to 3 per item, most useful first.
+  item: "new N" for the Nth NEW line in your answer, or an id from <open>.
+  kind and value:
+    open | a file or folder the person needs to open or edit, the path as written
+    copy | text for the person to paste into a file or form, never a command: "block N" for the code block marked [block N] in <reply>, or one line of text
+    run | a shell command the reply asks the person to run or approve: "block N" or the command
+    terminal | a shell command the reply says only the person can run, because it needs their credentials, password, device or account. The command a "do" item asks the person to run is always terminal: "block N" or the command
+    link | an https URL the person needs to visit
+  name: what a copy, command or link is, at most 3 words ("settings snippet", "removal command", "token page"), or "-".
+  Use only paths, commands, text and URLs that appear in <reply> or <activity>. Never invent one.
+TODO: <work>
+  For a todo in <person>: work the person sets aside for later, as in "todo: X", and the reply leaves undone. work: at most 12 words, worded to follow "Ready to start on".
+
+Write plainly. No jargon, no filler, no markdown.`;
+}
+function ledgerBlocks(ledger) {
+  const open3 = ledger.items.map(
+    (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`
+  ).join(NL4);
+  const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL4);
+  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL4);
+  return [
+    `<open>${NL4}${open3}${NL4}</open>`,
+    `<findings>${NL4}${findings}${NL4}</findings>`,
+    `<decided>${NL4}${closed}${NL4}</decided>`
+  ];
+}
+function buildPrompt(ledger, ex) {
+  const person = personText(ex.person, ex.trigger);
+  return [
+    ...ledgerBlocks(ledger),
+    `<person>${NL4}${clipMiddle(person, 4e3, 1500)}${NL4}</person>`,
+    `<activity>${NL4}${clipMiddle(ex.activity.join(NL4), 2500, 500)}${NL4}</activity>`,
+    `<reply>${NL4}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL4}</reply>`,
+    `<screen>${NL4}${ex.screen}${NL4}</screen>`
+  ].join(NL4);
+}
+function personText(person, trigger) {
+  return person ?? `(The person sent nothing. The turn was started by: ${trigger ?? "unknown"}.)`;
+}
+function outcomeText(d) {
+  if (d.how === "dismissed") return "dismissed by the user";
+  if (d.how === "expired") return "expired before the user answered";
+  return d.outcome;
+}
+
+// ../hooks/inbox-text.ts
+function surfaceAtStart(host) {
+  return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
+}
+function screenText(host, isOpen2, tab) {
+  if (!isOpen2) return `${surfaceAtStart(host)} is closed.`;
+  if (tab?.isPage)
+    return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows a guide to the session's work, not rows.`;
+  return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}listing every open item.`;
+}
+function latestBatch(ledger) {
+  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
+}
+function numberOf(label) {
+  const m = label?.match(/(?:^|[^A-Za-z\d])(?:[QqDd#]\s?)?(\d{1,2})(?!\d)/);
+  return m ? Number(m[1]) : null;
+}
+function answerableBatch(ledger, promptTurn) {
+  return ledger.batchTurn === promptTurn - 1 ? latestBatch(ledger) : [];
+}
+function batchNumbers(batch) {
+  const hasLabels = batch.some((i) => numberOf(i.label) !== null);
+  const byNumber = /* @__PURE__ */ new Map();
+  batch.forEach((item, at) => {
+    const n = hasLabels ? numberOf(item.label) : at + 1;
+    if (n !== null && !byNumber.has(n)) byNumber.set(n, item);
+  });
+  return byNumber;
+}
+function questionNumbers(ledger, promptTurn) {
+  const numbers = /* @__PURE__ */ new Map();
+  for (const [n, item] of batchNumbers(answerableBatch(ledger, promptTurn)))
+    if (item.kind === "question") numbers.set(item.id, n);
+  return numbers;
+}
+var TOLD_NOTHING = { inbox: null, closed: [] };
+
+// ../hooks/press-labels.ts
+function actionId(p) {
+  return p.action === "step" ? `step-${p.step}` : p.action;
+}
+function capitalized(text2) {
+  return text2.charAt(0).toUpperCase() + text2.slice(1);
+}
+var ISSUE_LABEL = "File issue";
+
+// ../hooks/open-targets.ts
+function baseName(path) {
+  return path.replace(/\/+$/, "").split("/").pop() ?? path;
+}
+
 // ../hooks/prs.ts
 function namedPrs(text2, refs) {
   const numbers = new Set([...text2.matchAll(/#(\d+)\b/g)].map((m) => m[1]));
@@ -949,9 +1081,37 @@ function failingChecks(pr) {
   return pr.checks.filter((c) => c.bucket === "fail");
 }
 
-// ../hooks/open-targets.ts
-function baseName(path) {
-  return path.replace(/\/+$/, "").split("/").pop() ?? path;
+// ../hooks/help-steps.ts
+function helpLabel(help) {
+  const label = help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? help.command}` : help.kind === "terminal" ? `Copy ${help.name ?? help.command}` : `Open ${help.name ?? new URL(help.url).host}`;
+  return clipLabel(label, 32);
+}
+function steps(helps) {
+  const copy = helps.find((h) => h.kind === "copy");
+  const open3 = helps.find((h) => h.kind === "open");
+  if (!copy || !open3 || copy.kind !== "copy" || open3.kind !== "open")
+    return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
+  return helps.filter((h) => h !== copy).map(
+    (h) => h === open3 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open3.path)}`, 48), step: [copy, open3] } : { label: helpLabel(h), step: [h] }
+  );
+}
+function prSteps(item, tracked) {
+  const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
+  const links = namedPrs(item.ask, [...urls.keys()]).map((ref) => {
+    const { repo, number } = parseRef(ref);
+    const url = urls.get(ref) ?? `https://github.com/${repo}/pull/${number}`;
+    return { kind: "link", url, name: `PR #${number}` };
+  }).filter((l) => !item.helps.some((h) => h.kind === "link" && h.url === l.url));
+  return links.length === 0 ? [] : [{ label: links.length === 1 ? helpLabel(links[0]) : `Open ${links.length} PRs`, step: links }];
+}
+function stepsOf(item, extraSteps) {
+  return [...steps(item.helps), ...extraSteps];
+}
+function stepIconKind(step) {
+  if (!step) return void 0;
+  if (step.step.some((h) => h.kind === "run")) return "run";
+  const first = step.step[0]?.kind;
+  return first === "copy" || first === "terminal" ? "copy" : first === "open" || first === "link" ? "open" : void 0;
 }
 
 // ../hooks/last-actions.ts
@@ -1016,298 +1176,170 @@ function upgradeLastActions(saved) {
   );
 }
 
-// ../hooks/status-ops.ts
-function hasSameWords(a, b) {
-  const x = words2(a);
-  const y = words2(b);
-  return x.size === y.size && [...x].every((w) => y.has(w));
+// ../hooks/pressed.ts
+function offersUndo(c) {
+  return c.how === "done" || c.how === "dismissed";
 }
-function isUnderWay(s) {
-  return s.status === "working" || s.status === "waits-on-other";
+function isUndoable(c) {
+  return offersUndo(c) && !c.isSentToAgent;
 }
-function answerWork(before, o, now) {
-  const was = new Map(before.map((s) => [s.id, s]));
-  const closed = o.subjects.filter((s) => {
-    const earlier = was.get(s.id);
-    return !isOpen(s) && s.closedAt === now && (earlier === void 0 || isOpen(earlier));
-  });
-  const isClosedWorkNew = closed.some((s) => !was.has(s.id));
-  const isUnderWayWorkClosed = closed.some((s) => {
-    const earlier = was.get(s.id);
-    return earlier !== void 0 && isUnderWay(earlier);
-  });
-  return {
-    isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
-    isWorkUnderWay: o.subjects.some(
-      (s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now
-    ),
-    namesClosed: (description) => {
-      const said = words2(description);
-      return closed.some((s) => {
-        const name = [...words2(s.name)];
-        return name.length > 0 && name.every((w) => said.has(w));
-      });
-    }
-  };
+function retryOf(id, last) {
+  if (!/^[if]\d+$/.test(id)) return null;
+  const step = /^step-(\d+)$/.exec(last.action);
+  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
+  switch (last.action) {
+    case "answer":
+      return { action: "answer", id, option: last.text };
+    case "explain":
+    case "compare":
+    case "address":
+    case "issue":
+    case "discuss":
+      return { action: last.action, id };
+    default:
+      return null;
+  }
 }
-function isDescriptionStale(head, work) {
-  return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
+function isRepeatOf(last, action) {
+  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
 }
-function headAfter(last, op, work) {
-  const isComplete = last !== null && last.description !== "";
-  const isSameTitle = last !== null && hasSameWords(last.title, op.title);
-  const isStale = isDescriptionStale(last, work);
-  const isHeld = isComplete && (isSameTitle && !isStale || work.isEarlierWorkFinished && !work.isWorkUnderWay);
-  return isHeld ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
+
+// ../hooks/presses.ts
+function isPrRowId(id) {
+  return id.startsWith("pr:") || id.includes(" ");
 }
-var OP_ORDER = {
-  none: 0,
-  head: 1,
-  new: 0,
-  set: 0,
-  done: 0,
-  drop: 0,
-  was: 1,
-  link: 2
+
+// ../hooks/host-tasks.ts
+var NL5 = "\n";
+var TASKS_KEPT = 12;
+var STATUSES2 = {
+  pending: "pending",
+  in_progress: "in-progress",
+  "in-progress": "in-progress",
+  completed: "done",
+  done: "done",
+  abandoned: "dropped",
+  blocked: "blocked"
 };
-function applyOps(last, ops, now, askIds) {
-  let o = {
-    ...last ?? EMPTY_SESSION_STATUS,
-    subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
-    children: (last?.children ?? []).map((c) => ({ ...c })),
-    askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask)))
+var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+function upgradeHostTasks(saved) {
+  if (!Array.isArray(saved)) return [];
+  return saved.flatMap((raw) => {
+    const t = recordOf(raw);
+    const status = STATUSES2[String(t.status)];
+    return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
+  });
+}
+function keptTasks(tasks) {
+  let toCut = tasks.length - TASKS_KEPT;
+  if (toCut <= 0) return tasks;
+  const kept = tasks.filter((t) => {
+    const isFinished = t.status === "done" || t.status === "dropped";
+    if (!isFinished || toCut <= 0) return true;
+    toCut -= 1;
+    return false;
+  });
+  return kept.slice(-TASKS_KEPT);
+}
+function tasksText(tasks) {
+  return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL5);
+}
+
+// ../hooks/session-files.ts
+var NO_PRS = { views: {}, branchRef: null, isFetching: false };
+var NO_TURN = { person: null, trigger: null, activity: [], press: null };
+function emptySession() {
+  return {
+    ledger: EMPTY,
+    turn: NO_TURN,
+    told: TOLD_NOTHING,
+    presence: {
+      turnsStarted: 0,
+      turnsApplied: 0,
+      ledgerState: "current",
+      hasDroppedReply: false,
+      isUpdating: false,
+      isTurnRunning: false,
+      turnStartedAt: null,
+      lastReplyAt: null,
+      lastTypedMessageAt: null
+    },
+    place: null,
+    pending: [],
+    sent: [],
+    lastActions: {},
+    heldRows: [],
+    shownSince: null,
+    prViews: NO_PRS,
+    stop: null,
+    overviewFailure: null,
+    lastOverviewCallAt: null,
+    hostTasks: [],
+    dialogQuestions: []
   };
-  const find = (ref) => {
-    const key = nameKey(clipWords(ref, NAME_KEPT));
-    return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
+}
+var SESSION_ID = /^[\w-]{1,100}$/;
+function sessionFile(sessionId) {
+  if (!SESSION_ID.test(sessionId)) throw new Error(`Not a session id: ${sessionId}`);
+  return `${sessionId}.json`;
+}
+function missingAsNull(err) {
+  if (err.code === "ENOENT") return null;
+  throw err;
+}
+function withoutStatedStep(presence) {
+  const { statedStep: _statedStep, ...rest } = presence ?? {};
+  return rest;
+}
+function upgradeSession(saved) {
+  const base = emptySession();
+  const views = saved.prViews?.views ?? {};
+  return {
+    ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
+    turn: { ...base.turn, ...saved.turn },
+    told: { ...base.told, ...saved.told },
+    presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
+    place: saved.place ?? null,
+    pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
+    sent: (saved.sent ?? []).map((x) => ({
+      ...x,
+      row: x.row ?? null,
+      queuedId: x.queuedId ?? null,
+      pressedAt: x.pressedAt ?? null,
+      deliveryId: x.deliveryId ?? null,
+      phase: x.phase ?? "accepted"
+    })),
+    lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    heldRows: saved.heldRows ?? [],
+    shownSince: saved.shownSince ?? null,
+    prViews: {
+      ...NO_PRS,
+      ...saved.prViews,
+      // Views saved before `isYours` and `wasSeenOpen`, and threads saved before their times and `isLinesChanged` existed.
+      views: Object.fromEntries(
+        Object.entries(views).map(([ref, pr]) => [
+          ref,
+          {
+            ...pr,
+            isYours: pr.isYours ?? null,
+            wasSeenOpen: pr.wasSeenOpen ?? pr.state === "OPEN",
+            threads: pr.threads.map((t) => ({
+              ...t,
+              isLinesChanged: t.isLinesChanged ?? false,
+              at: t.at ?? null,
+              reply: t.reply && { ...t.reply, at: t.reply.at ?? null }
+            }))
+          }
+        ])
+      ),
+      isFetching: false
+    },
+    stop: saved.stop ?? null,
+    overviewFailure: saved.overviewFailure ?? null,
+    lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
+    hostTasks: upgradeHostTasks(saved.hostTasks),
+    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
-  const forgetSeenWas = (s) => {
-    const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
-    if (isSeen) {
-      s.was = null;
-      s.merged = null;
-    }
-  };
-  const set = (s, status, text2) => {
-    const isReworded = s.status === status && hasSameWords(s.text, text2);
-    if (isReworded) return;
-    s.status = status;
-    s.text = clipWords(text2, TEXT_KEPT);
-    forgetSeenWas(s);
-    s.changedAt = now;
-  };
-  const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
-  for (const { op } of ordered) {
-    if (op.kind === "none") continue;
-    if (op.kind === "head") o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
-    else if (op.kind === "link") {
-      const child = o.children.find((c) => c.id === op.ref);
-      const subject = find(op.subject);
-      if (child && subject) child.subjectId = subject.id;
-      else if (subject && askIds.has(op.ref)) o.askSubjects[op.ref] = subject.id;
-    } else if (op.kind === "new") {
-      const known = find(op.name);
-      if (known && isOpen(known)) {
-        set(known, op.status, op.text);
-        continue;
-      }
-      const s = {
-        id: `s${o.nextId}`,
-        name: clipWords(op.name, NAME_KEPT),
-        status: op.status,
-        text: clipWords(op.text, TEXT_KEPT),
-        was: null,
-        merged: null,
-        createdAt: now,
-        changedAt: now,
-        closedAt: null,
-        into: null
-      };
-      o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] };
-    } else {
-      const s = find(op.ref);
-      if (!s) continue;
-      if (op.kind === "set") set(s, op.status, op.text);
-      else if (op.kind === "done") {
-        s.status = "done";
-        if (op.text) s.text = clipWords(op.text, TEXT_KEPT);
-        forgetSeenWas(s);
-        s.closedAt = now;
-        s.changedAt = now;
-      } else if (op.kind === "drop") {
-        const target = op.into ? find(op.into) : null;
-        s.status = "dropped";
-        s.text = clipWords(op.why, TEXT_KEPT);
-        s.closedAt = now;
-        s.into = target && target.id !== s.id ? target.id : null;
-        s.changedAt = now;
-        if (target && s.into) {
-          forgetSeenWas(target);
-          target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name;
-          target.changedAt = now;
-          for (const [ask, id] of Object.entries(o.askSubjects)) if (id === s.id) o.askSubjects[ask] = target.id;
-        }
-      } else {
-        forgetSeenWas(s);
-        s.was = op.text;
-        s.changedAt = now;
-      }
-    }
-  }
-  const isHeadKept = o.head === (last?.head ?? null);
-  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
-    o = { ...o, head: { ...o.head, description: "" } };
-  return o;
-}
-function applyStatus(last, answer, now, askIds) {
-  return answer.kind === "unchanged" ? last : applyOps(last, answer.ops, now, askIds);
-}
-
-// ../hooks/status-children.ts
-function isChildRunning(c, now) {
-  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
-}
-function subjectsText(o) {
-  const subjects = o?.subjects ?? [];
-  const open3 = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}`);
-  const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
-  return { open: open3.join(NL3) || "(none yet)", finished: finished.join(NL3) };
-}
-function asksText(o, asks) {
-  return asks.map((a) => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id] ?? "-"}`).join(NL3);
-}
-function runningText(o, now) {
-  return (o?.children ?? []).filter((c) => isChildRunning(c, now)).map((c) => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? "-"}`).join(NL3);
-}
-
-// ../hooks/status.ts
-var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i;
-function fields(value) {
-  return value.split("|").map((f) => f.trim());
-}
-function openStatus(s) {
-  return OPEN_STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
-}
-function opOf(key, f) {
-  if (key === "NOCHANGE" || key === "UNCHANGED") return { kind: "none" };
-  if (key === "NEW") {
-    const status = openStatus(f[0]);
-    return status && f[1] ? { kind: "new", status, name: f[1], text: f[2] ?? "" } : null;
-  }
-  if (key === "SET") {
-    const isDone = f[1]?.toLowerCase() === "done";
-    if (f[0] && isDone) return { kind: "done", ref: f[0], text: f[2] ?? "" };
-    const status = openStatus(f[1]);
-    return f[0] && status ? { kind: "set", ref: f[0], status, text: f[2] ?? "" } : null;
-  }
-  if (key === "DONE") return f[0] ? { kind: "done", ref: f[0], text: f[1] ?? "" } : null;
-  if (key === "DROP") {
-    const into = (f[2] ?? "").replace(/^INTO\s+/i, "").trim();
-    return f[0] ? { kind: "drop", ref: f[0], why: f[1] ?? "", into: into || null } : null;
-  }
-  if (key === "WAS") return f[0] && f[1] ? { kind: "was", ref: f[0], text: f[1] } : null;
-  if (key === "HEAD") return f[0] ? { kind: "head", title: f[0], description: f[1] ?? "" } : null;
-  if (key === "LINK") return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
-  return null;
-}
-function parseStatus(text2) {
-  const ops = [];
-  for (const raw of (text2 ?? "").split(NL3)) {
-    const line = raw.trim();
-    if (line === "") continue;
-    const m = LINE.exec(line);
-    const op = m ? opOf(m[1].toUpperCase().replace(" ", ""), fields(m[2] ?? "")) : null;
-    if (op === null) return null;
-    ops.push(op);
-  }
-  if (ops.length === 0) return null;
-  return ops.every((o) => o.kind === "none") ? { kind: "unchanged" } : { kind: "ops", ops };
-}
-async function askStatus(ask) {
-  const first = await ask();
-  const holdsProse = first.text !== null && parseStatus(first.text) === null;
-  return { first, last: holdsProse ? await ask() : first };
-}
-
-// ../hooks/ledger-prompt.ts
-var NL4 = "\n";
-var MODEL_KIND = { question: "decide", task: "do" };
-function systemText(host) {
-  const band = host.band ? ` They always see how many items are in <open> and <findings> in ${host.band}.` : "";
-  return `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
-
-Input:
-- <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design
-- <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
-- <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
-- <person>: what the person just sent, and the commands they ran themselves: "$ cmd" for a shell command, with its output, and "/name" for a slash command
-- <activity>: what the agent did this turn (files edited, commands, URLs)
-- <reply>: what the agent said this turn, in order
-- <screen>: what the person has on screen besides the conversation.${band}
-
-Answer with lines only, each starting with one of these keys. No other text. When nothing in the exchange changes the ledger, answer with the one line NONE.
-
-NONE: nothing in the exchange changes the ledger. Write it alone.
-CLOSED: <id> | the outcome, at most 8 words, in one of three forms. When the person answered in <person>, write their answer. Otherwise write "done: <what the agent did>" when the work is done, or "no longer applies: <what in the reply or <activity> made it moot>". An option the agent picked on its own, or an option the work made moot, is not the person's answer: write it in the "done:" or "no longer applies:" form. One line for each item in <open> the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers), or that the reply or <activity> shows is done or no longer applies. A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. An item that has nothing to do with this exchange stays open: being outside the current work, or not being mentioned, does not make it no longer apply.
-FIXED: <id> | the change that fixed it, at most 8 words. One line for each finding in <findings> whose problem the reply, <activity> or <person> shows was fixed by a change to the work. Only a change fixes a finding. When the person puts a finding off, sets it aside or says it does not matter, write no FIXED line: it stays open until they dismiss it.
-ASKED: <id> | <item>
-  For a finding in <findings> that a NEW line or an item in <open> asks the person about. item: "new N" for the Nth NEW line in your answer, or an id from <open>. The item takes the finding's place, so the person sees it once.
-NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
-  One line per thing in <reply> that waits on the person and is not already in <open> or <findings>. A finding the agent recorded is not NEW unless the reply asks the person to decide or do something about it now; then also write an ASKED line for it. Also one line per dialog in <activity> that the person dismissed or left unanswered, with an ASKED line when the dialog asks about a finding. When the reply restates, rewords or narrows an item in <open>, it is not new: add HELP lines to that item's id instead.
-  kind: "decide" (a choice, approval, or information only the person has, explicitly put to them, without which the agent cannot go on with its task) or "do" (an action only the person can take, without which the agent cannot continue or finish: sign in, run a command needing their password, test on their device, reply to a teammate).
-  label: the reply's own number or id for it ("1", "D3"), or "-".
-  ask: plain words, readable without the reply, at most 12 words, or up to 16 when 12 would lose meaning. Keep the question's meaning and every alternative it names. Replace any term the reply coined with what it means. Name an item or finding by what it says, never by its id: the person does not see ids.
-  options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
-  rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
-  design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
-  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, edit a shared page) until the person agrees is a "decide" item ("Say when you want those committed"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
-UPDATE: <id> | <options> | <rec>
-  For a "decide" item in <open> when the reply now offers it different answers, or states a recommendation for it that <open> does not show. options: the answers the person can now pick, as in NEW, or "-" to keep them. rec: as in NEW, or "-" to keep it. Rewording the question is not a change.
-HELP: <item> | <kind> | <value> | <name>
-  A step that does part of an item's work in one press, when the reply or activity already spells it out: the file to edit, the text to paste, the command to run, the page to visit. Not background reading. Up to 3 per item, most useful first.
-  item: "new N" for the Nth NEW line in your answer, or an id from <open>.
-  kind and value:
-    open | a file or folder the person needs to open or edit, the path as written
-    copy | text for the person to paste into a file or form, never a command: "block N" for the code block marked [block N] in <reply>, or one line of text
-    run | a shell command the reply asks the person to run or approve: "block N" or the command
-    terminal | a shell command the reply says only the person can run, because it needs their credentials, password, device or account. The command a "do" item asks the person to run is always terminal: "block N" or the command
-    link | an https URL the person needs to visit
-  name: what a copy, command or link is, at most 3 words ("settings snippet", "removal command", "token page"), or "-".
-  Use only paths, commands, text and URLs that appear in <reply> or <activity>. Never invent one.
-TODO: <work>
-  For a todo in <person>: work the person sets aside for later, as in "todo: X", and the reply leaves undone. work: at most 12 words, worded to follow "Ready to start on".
-
-Write plainly. No jargon, no filler, no markdown.`;
-}
-function ledgerBlocks(ledger) {
-  const open3 = ledger.items.map(
-    (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`
-  ).join(NL4);
-  const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL4);
-  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL4);
-  return [
-    `<open>${NL4}${open3}${NL4}</open>`,
-    `<findings>${NL4}${findings}${NL4}</findings>`,
-    `<decided>${NL4}${closed}${NL4}</decided>`
-  ];
-}
-function buildPrompt(ledger, ex) {
-  const person = personText(ex.person, ex.trigger);
-  return [
-    ...ledgerBlocks(ledger),
-    `<person>${NL4}${clipMiddle(person, 4e3, 1500)}${NL4}</person>`,
-    `<activity>${NL4}${clipMiddle(ex.activity.join(NL4), 2500, 500)}${NL4}</activity>`,
-    `<reply>${NL4}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL4}</reply>`,
-    `<screen>${NL4}${ex.screen}${NL4}</screen>`
-  ].join(NL4);
-}
-function personText(person, trigger) {
-  return person ?? `(The person sent nothing. The turn was started by: ${trigger ?? "unknown"}.)`;
-}
-function outcomeText(d) {
-  if (d.how === "dismissed") return "dismissed by the user";
-  if (d.how === "expired") return "expired before the user answered";
-  return d.outcome;
 }
 
 // ../hooks/catch-up-text.ts
@@ -1393,40 +1425,128 @@ function dialogActivity(questions, outcome) {
   }
 }
 
-// ../hooks/host-tasks.ts
-var NL5 = "\n";
-var TASKS_KEPT = 12;
-var STATUSES2 = {
-  pending: "pending",
-  in_progress: "in-progress",
-  "in-progress": "in-progress",
-  completed: "done",
-  done: "done",
-  abandoned: "dropped",
-  blocked: "blocked"
-};
-var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
-function upgradeHostTasks(saved) {
-  if (!Array.isArray(saved)) return [];
-  return saved.flatMap((raw) => {
-    const t = recordOf(raw);
-    const status = STATUSES2[String(t.status)];
-    return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
-  });
+// ../hooks/dialogs.ts
+function optionKey(option) {
+  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
 }
-function keptTasks(tasks) {
-  let toCut = tasks.length - TASKS_KEPT;
-  if (toCut <= 0) return tasks;
-  const kept = tasks.filter((t) => {
-    const isFinished = t.status === "done" || t.status === "dropped";
-    if (!isFinished || toCut <= 0) return true;
-    toCut -= 1;
-    return false;
-  });
-  return kept.slice(-TASKS_KEPT);
+function optionsKey(options) {
+  return options.map(optionKey).sort().join("\n");
 }
-function tasksText(tasks) {
-  return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL5);
+function hasSameOptions(item, q) {
+  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
+}
+function copyOf(q, items, questions) {
+  const byOptions = items.filter((i) => hasSameOptions(i, q));
+  const [only] = byOptions;
+  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
+  const pool = byOptions.length > 0 ? byOptions : items;
+  const byAsk = pool.filter((i) => restates(i.ask, q.question));
+  const [asked] = byAsk;
+  if (!asked || byAsk.length !== 1) return null;
+  const restated = questions.filter((o) => restates(asked.ask, o.question));
+  return restated.length === 1 ? asked : null;
+}
+function descriptionsFor(options, descriptions) {
+  const byKey = new Map(Object.entries(descriptions).map(([label, text2]) => [optionKey(label), text2]));
+  const matched = options.flatMap((o) => {
+    const text2 = byKey.get(optionKey(o));
+    return text2 === void 0 ? [] : [[o, text2]];
+  });
+  return matched.length > 0 ? Object.fromEntries(matched) : null;
+}
+function asCopyOf(item, q) {
+  const descriptions = descriptionsFor(item.options, q.descriptions);
+  return {
+    ...item,
+    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
+    ...descriptions ? { optionDescriptions: descriptions } : {}
+  };
+}
+function linkDialogs(s) {
+  if (s.dialogQuestions.length === 0) return s;
+  let items = s.ledger.items;
+  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
+  const questions = s.dialogQuestions.map((q) => {
+    if (q.itemId !== null) return q;
+    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
+    const copy = copyOf(
+      q,
+      turnItems,
+      s.dialogQuestions.filter((o) => o.turn === q.turn)
+    );
+    if (!copy || copy.dialog || linked.has(copy.id)) return q;
+    linked.add(copy.id);
+    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
+    return { ...q, itemId: copy.id };
+  });
+  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
+  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+}
+
+// ../hooks/status-children.ts
+function isChildRunning(c, now) {
+  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+}
+function subjectsText(o) {
+  const subjects = o?.subjects ?? [];
+  const open3 = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}`);
+  const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
+  return { open: open3.join(NL3) || "(none yet)", finished: finished.join(NL3) };
+}
+function asksText(o, asks) {
+  return asks.map((a) => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id] ?? "-"}`).join(NL3);
+}
+function runningText(o, now) {
+  return (o?.children ?? []).filter((c) => isChildRunning(c, now)).map((c) => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? "-"}`).join(NL3);
+}
+
+// ../hooks/status.ts
+var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i;
+function fields(value) {
+  return value.split("|").map((f) => f.trim());
+}
+function openStatus(s) {
+  return OPEN_STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
+}
+function opOf(key, f) {
+  if (key === "NOCHANGE" || key === "UNCHANGED") return { kind: "none" };
+  if (key === "NEW") {
+    const status = openStatus(f[0]);
+    return status && f[1] ? { kind: "new", status, name: f[1], text: f[2] ?? "" } : null;
+  }
+  if (key === "SET") {
+    const isDone = f[1]?.toLowerCase() === "done";
+    if (f[0] && isDone) return { kind: "done", ref: f[0], text: f[2] ?? "" };
+    const status = openStatus(f[1]);
+    return f[0] && status ? { kind: "set", ref: f[0], status, text: f[2] ?? "" } : null;
+  }
+  if (key === "DONE") return f[0] ? { kind: "done", ref: f[0], text: f[1] ?? "" } : null;
+  if (key === "DROP") {
+    const into = (f[2] ?? "").replace(/^INTO\s+/i, "").trim();
+    return f[0] ? { kind: "drop", ref: f[0], why: f[1] ?? "", into: into || null } : null;
+  }
+  if (key === "WAS") return f[0] && f[1] ? { kind: "was", ref: f[0], text: f[1] } : null;
+  if (key === "HEAD") return f[0] ? { kind: "head", title: f[0], description: f[1] ?? "" } : null;
+  if (key === "LINK") return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
+  return null;
+}
+function parseStatus(text2) {
+  const ops = [];
+  for (const raw of (text2 ?? "").split(NL3)) {
+    const line = raw.trim();
+    if (line === "") continue;
+    const m = LINE.exec(line);
+    const op = m ? opOf(m[1].toUpperCase().replace(" ", ""), fields(m[2] ?? "")) : null;
+    if (op === null) return null;
+    ops.push(op);
+  }
+  if (ops.length === 0) return null;
+  return ops.every((o) => o.kind === "none") ? { kind: "unchanged" } : { kind: "ops", ops };
+}
+async function askStatus(ask) {
+  const first = await ask();
+  const holdsProse = first.text !== null && parseStatus(first.text) === null;
+  return { first, last: holdsProse ? await ask() : first };
 }
 
 // ../hooks/status-prompt.ts
@@ -1520,118 +1640,6 @@ function statusCatchUpPrompt(input, transcript) {
     ...statusBlocks(input),
     `<conversation>${NL4}${numberBlocks(transcript)}${NL4}</conversation>`
   ].join(NL4);
-}
-
-// ../hooks/inbox-text.ts
-function surfaceAtStart(host) {
-  return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
-}
-function screenText(host, isOpen2, tab) {
-  if (!isOpen2) return `${surfaceAtStart(host)} is closed.`;
-  if (tab?.isPage)
-    return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows a guide to the session's work, not rows.`;
-  return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}listing every open item.`;
-}
-function latestBatch(ledger) {
-  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
-}
-function numberOf(label) {
-  const m = label?.match(/(?:^|[^A-Za-z\d])(?:[QqDd#]\s?)?(\d{1,2})(?!\d)/);
-  return m ? Number(m[1]) : null;
-}
-function answerableBatch(ledger, promptTurn) {
-  return ledger.batchTurn === promptTurn - 1 ? latestBatch(ledger) : [];
-}
-function batchNumbers(batch) {
-  const hasLabels = batch.some((i) => numberOf(i.label) !== null);
-  const byNumber = /* @__PURE__ */ new Map();
-  batch.forEach((item, at) => {
-    const n = hasLabels ? numberOf(item.label) : at + 1;
-    if (n !== null && !byNumber.has(n)) byNumber.set(n, item);
-  });
-  return byNumber;
-}
-function questionNumbers(ledger, promptTurn) {
-  const numbers = /* @__PURE__ */ new Map();
-  for (const [n, item] of batchNumbers(answerableBatch(ledger, promptTurn)))
-    if (item.kind === "question") numbers.set(item.id, n);
-  return numbers;
-}
-var TOLD_NOTHING = { inbox: null, closed: [] };
-
-// ../hooks/press-labels.ts
-function actionId(p) {
-  return p.action === "step" ? `step-${p.step}` : p.action;
-}
-function capitalized(text2) {
-  return text2.charAt(0).toUpperCase() + text2.slice(1);
-}
-var ISSUE_LABEL = "File issue";
-
-// ../hooks/help-steps.ts
-function helpLabel(help) {
-  const label = help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? help.command}` : help.kind === "terminal" ? `Copy ${help.name ?? help.command}` : `Open ${help.name ?? new URL(help.url).host}`;
-  return clipLabel(label, 32);
-}
-function steps(helps) {
-  const copy = helps.find((h) => h.kind === "copy");
-  const open3 = helps.find((h) => h.kind === "open");
-  if (!copy || !open3 || copy.kind !== "copy" || open3.kind !== "open")
-    return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
-  return helps.filter((h) => h !== copy).map(
-    (h) => h === open3 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open3.path)}`, 48), step: [copy, open3] } : { label: helpLabel(h), step: [h] }
-  );
-}
-function prSteps(item, tracked) {
-  const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
-  const links = namedPrs(item.ask, [...urls.keys()]).map((ref) => {
-    const { repo, number } = parseRef(ref);
-    const url = urls.get(ref) ?? `https://github.com/${repo}/pull/${number}`;
-    return { kind: "link", url, name: `PR #${number}` };
-  }).filter((l) => !item.helps.some((h) => h.kind === "link" && h.url === l.url));
-  return links.length === 0 ? [] : [{ label: links.length === 1 ? helpLabel(links[0]) : `Open ${links.length} PRs`, step: links }];
-}
-function stepsOf(item, extraSteps) {
-  return [...steps(item.helps), ...extraSteps];
-}
-function stepIconKind(step) {
-  if (!step) return void 0;
-  if (step.step.some((h) => h.kind === "run")) return "run";
-  const first = step.step[0]?.kind;
-  return first === "copy" || first === "terminal" ? "copy" : first === "open" || first === "link" ? "open" : void 0;
-}
-
-// ../hooks/pressed.ts
-function offersUndo(c) {
-  return c.how === "done" || c.how === "dismissed";
-}
-function isUndoable(c) {
-  return offersUndo(c) && !c.isSentToAgent;
-}
-function retryOf(id, last) {
-  if (!/^[if]\d+$/.test(id)) return null;
-  const step = /^step-(\d+)$/.exec(last.action);
-  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
-  switch (last.action) {
-    case "answer":
-      return { action: "answer", id, option: last.text };
-    case "explain":
-    case "compare":
-    case "address":
-    case "issue":
-    case "discuss":
-      return { action: last.action, id };
-    default:
-      return null;
-  }
-}
-function isRepeatOf(last, action) {
-  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
-}
-
-// ../hooks/presses.ts
-function isPrRowId(id) {
-  return id.startsWith("pr:") || id.includes(" ");
 }
 
 // ../hooks/help.ts
@@ -1883,7 +1891,6 @@ var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var LOOK_TEXT = "Last seen";
 var CHILD_ROWS = 3;
 var NEW_CLOSED_ROWS = 2;
-var OPEN_ROWS = 7;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 var RUNNING_FRAME_MS = 300;
@@ -1931,14 +1938,12 @@ function statusPage(s, now) {
   const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
-  const open3 = subjects.filter(isOpen);
-  const queuedOver = Math.max(0, open3.length - OPEN_ROWS);
-  const hiddenQueued = new Set(
-    open3.filter((x) => placeOf(x) === "queued").sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id)
-  );
-  const shown = [...open3.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort(pageOrder);
-  const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const open3 = subjects.filter(isOpen).sort(pageOrder);
+  const foldable = open3.filter((x) => !isHeld(x) && !isNew(x) && !running.some((c) => c.subjectId === x.id));
+  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open3.length - foldable.length)));
+  const shown = [...open3.filter((x) => !folded.includes(x)), ...newClosed].sort(pageOrder);
+  const foldedDone = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
   const shownIds = new Set(shown.map((x) => x.id));
   const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null));
   const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
@@ -1977,22 +1982,15 @@ function statusPage(s, now) {
   }
   const isEveryShownNew = firstSeen === -1;
   if (lookRow && isEveryShownNew && shown.length > 0) rows.push(lookRow);
-  if (hiddenQueued.size > 0)
-    rows.push({
-      kind: "fold",
-      id: "queued",
-      mark: SUBJECT_MARKS.queued.mark,
-      tone: null,
-      text: `${hiddenQueued.size} more queued`
-    });
-  if (folded.length > 0) {
+  if (folded.length > 0) rows.push({ kind: "fold", id: "open", ...SUBJECT_MARKS.queued, text: `${folded.length} more` });
+  if (foldedDone.length > 0) {
     const isMore = newClosed.some((x) => x.status === "done");
     rows.push({
       kind: "fold",
       id: "done",
       mark: SUBJECT_MARKS.done.mark,
       tone: "done",
-      text: `${folded.length}${isMore ? " more" : ""} done`
+      text: `${foldedDone.length}${isMore ? " more" : ""} done`
     });
   }
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
@@ -2129,8 +2127,8 @@ function inboxView({
   const placedFindings = new Map(
     ledger.closedFindings.filter((f) => !isOpen2(f.id) && !isFixSettled(f.id) && isPlaced(f)).map((f) => [f.id, f])
   );
-  const placed = [...placedFindings.keys()].reduce(reopenFinding, [...placedItems.keys()].reduce(reopenItem, ledger));
-  const { questions, tasks } = needsYouOrder(placed);
+  const placed2 = [...placedFindings.keys()].reduce(reopenFinding, [...placedItems.keys()].reduce(reopenItem, ledger));
+  const { questions, tasks } = needsYouOrder(placed2);
   const numbers = questionNumbers(ledger, ledger.turn + 1);
   const stateOf = (id) => {
     const closed2 = placedItems.get(id) ?? placedFindings.get(id);
@@ -2207,7 +2205,7 @@ function inboxView({
   const counted = [...questionRows, ...taskRows].filter(isWaitingRow);
   const kinds = Object.keys(FINDING_GROUPS);
   const byGroup = (a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind);
-  const findingRows = [...placed.findings].filter((f) => !isFixSettled(f.id)).reverse().sort(byGroup).map(
+  const findingRows = [...placed2.findings].filter((f) => !isFixSettled(f.id)).reverse().sort(byGroup).map(
     (finding) => rowOf({
       id: finding.id,
       type: "finding",
@@ -2288,67 +2286,6 @@ function threadSentIn(lastActions) {
     const last = lastActions[prThreadId(pr, t)];
     return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
   };
-}
-
-// ../hooks/arrivals.ts
-var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
-
-// ../hooks/dialogs.ts
-function optionKey(option) {
-  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
-}
-function optionsKey(options) {
-  return options.map(optionKey).sort().join("\n");
-}
-function hasSameOptions(item, q) {
-  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
-}
-function copyOf(q, items, questions) {
-  const byOptions = items.filter((i) => hasSameOptions(i, q));
-  const [only] = byOptions;
-  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
-  const pool = byOptions.length > 0 ? byOptions : items;
-  const byAsk = pool.filter((i) => restates(i.ask, q.question));
-  const [asked] = byAsk;
-  if (!asked || byAsk.length !== 1) return null;
-  const restated = questions.filter((o) => restates(asked.ask, o.question));
-  return restated.length === 1 ? asked : null;
-}
-function descriptionsFor(options, descriptions) {
-  const byKey = new Map(Object.entries(descriptions).map(([label, text2]) => [optionKey(label), text2]));
-  const matched = options.flatMap((o) => {
-    const text2 = byKey.get(optionKey(o));
-    return text2 === void 0 ? [] : [[o, text2]];
-  });
-  return matched.length > 0 ? Object.fromEntries(matched) : null;
-}
-function asCopyOf(item, q) {
-  const descriptions = descriptionsFor(item.options, q.descriptions);
-  return {
-    ...item,
-    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
-    ...descriptions ? { optionDescriptions: descriptions } : {}
-  };
-}
-function linkDialogs(s) {
-  if (s.dialogQuestions.length === 0) return s;
-  let items = s.ledger.items;
-  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
-  const questions = s.dialogQuestions.map((q) => {
-    if (q.itemId !== null) return q;
-    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
-    const copy = copyOf(
-      q,
-      turnItems,
-      s.dialogQuestions.filter((o) => o.turn === q.turn)
-    );
-    if (!copy || copy.dialog || linked.has(copy.id)) return q;
-    linked.add(copy.id);
-    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
-    return { ...q, itemId: copy.id };
-  });
-  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
-  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
 }
 
 // ../hooks/gh.ts
@@ -2525,186 +2462,11 @@ var ORDER_SCHEMA = {
   required: ["numbers"]
 };
 
-// ../hooks/session.ts
-var NO_PRS = { views: {}, branchRef: null, isFetching: false };
-var NO_TURN = { person: null, trigger: null, activity: [], press: null };
-function emptySession() {
-  return {
-    ledger: EMPTY,
-    turn: NO_TURN,
-    told: TOLD_NOTHING,
-    presence: {
-      turnsStarted: 0,
-      turnsApplied: 0,
-      ledgerState: "current",
-      hasDroppedReply: false,
-      isUpdating: false,
-      isTurnRunning: false,
-      turnStartedAt: null,
-      lastReplyAt: null,
-      lastTypedMessageAt: null
-    },
-    place: null,
-    pending: [],
-    sent: [],
-    lastActions: {},
-    heldRows: [],
-    shownSince: null,
-    prViews: NO_PRS,
-    stop: null,
-    overviewFailure: null,
-    lastOverviewCallAt: null,
-    hostTasks: [],
-    dialogQuestions: []
-  };
-}
-var SESSION_ID = /^[\w-]{1,100}$/;
-function sessionFile(sessionId) {
-  if (!SESSION_ID.test(sessionId)) throw new Error(`Not a session id: ${sessionId}`);
-  return `${sessionId}.json`;
-}
-function missingAsNull(err) {
-  if (err.code === "ENOENT") return null;
-  throw err;
-}
+// ../hooks/arrivals.ts
+var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
+
+// ../hooks/session-view.ts
 var PRESS_TIMEOUT_MS = 6e4;
-function withoutStatedStep(presence) {
-  const { statedStep: _statedStep, ...rest } = presence ?? {};
-  return rest;
-}
-function upgradeSession(saved) {
-  const base = emptySession();
-  const views = saved.prViews?.views ?? {};
-  return {
-    ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
-    turn: { ...base.turn, ...saved.turn },
-    told: { ...base.told, ...saved.told },
-    presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
-    place: saved.place ?? null,
-    pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
-    sent: (saved.sent ?? []).map((x) => ({
-      ...x,
-      row: x.row ?? null,
-      queuedId: x.queuedId ?? null,
-      pressedAt: x.pressedAt ?? null,
-      deliveryId: x.deliveryId ?? null,
-      phase: x.phase ?? "accepted"
-    })),
-    lastActions: upgradeLastActions(saved.lastActions ?? {}),
-    heldRows: saved.heldRows ?? [],
-    shownSince: saved.shownSince ?? null,
-    prViews: {
-      ...NO_PRS,
-      ...saved.prViews,
-      // Views saved before `isYours` and `wasSeenOpen`, and threads saved before their times and `isLinesChanged` existed.
-      views: Object.fromEntries(
-        Object.entries(views).map(([ref, pr]) => [
-          ref,
-          {
-            ...pr,
-            isYours: pr.isYours ?? null,
-            wasSeenOpen: pr.wasSeenOpen ?? pr.state === "OPEN",
-            threads: pr.threads.map((t) => ({
-              ...t,
-              isLinesChanged: t.isLinesChanged ?? false,
-              at: t.at ?? null,
-              reply: t.reply && { ...t.reply, at: t.reply.at ?? null }
-            }))
-          }
-        ])
-      ),
-      isFetching: false
-    },
-    stop: saved.stop ?? null,
-    overviewFailure: saved.overviewFailure ?? null,
-    lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
-    hostTasks: upgradeHostTasks(saved.hostTasks),
-    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
-  };
-}
-function parsedReply(ex, reply) {
-  return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join("\n"));
-}
-function applied(s, parsed, now, promptAt) {
-  const next = s.pending[0];
-  if (!next) return s;
-  const { ex } = next;
-  if (!parsed && !next.failed)
-    return {
-      ...s,
-      pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
-      presence: { ...s.presence, ledgerState: "failed" }
-    };
-  const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger;
-  const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
-  return linkDialogs({
-    ...s,
-    ledger,
-    pending: s.pending.slice(1),
-    presence: {
-      ...s.presence,
-      ledgerState: hasDroppedReply ? "failed" : "current",
-      hasDroppedReply,
-      turnsApplied: Math.max(s.presence.turnsApplied, next.turnsStarted)
-    }
-  });
-}
-function appliedStatus(s, answer, appliedAfter, now) {
-  if (s.presence.turnsApplied < appliedAfter) return s;
-  return {
-    ...s,
-    ledger: {
-      ...s.ledger,
-      overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)))
-    },
-    overviewFailure: null,
-    lastOverviewCallAt: now
-  };
-}
-var REFUSED_ANSWER_CHARS = 500;
-function failedStatus(s, text2, appliedAfter, now) {
-  if (s.presence.turnsApplied < appliedAfter) return s;
-  const failure = text2 === null ? { at: now, cause: "no-answer", answer: null } : { at: now, cause: "refused", answer: text2.slice(0, REFUSED_ANSWER_CHARS) };
-  return { ...s, overviewFailure: failure, lastOverviewCallAt: now };
-}
-var STATUS_REFRESH_MS = 10 * 6e4;
-function needsCatchUp(s) {
-  const { presence } = s;
-  const hasUnappliedTurn = s.pending.length === 0 && s.turn.person === null && presence.turnsStarted > presence.turnsApplied;
-  return presence.ledgerState !== "current" || hasUnappliedTurn;
-}
-var pendingKey = (p) => `${p.turnsStarted}:${p.ex.turn}`;
-function appliedCatchUp(s, begun, parsed, now) {
-  const covered = new Set(begun.pending.map(pendingKey));
-  return linkDialogs({
-    ...s,
-    ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn, now) : s.ledger,
-    pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
-    presence: {
-      ...s.presence,
-      ledgerState: parsed ? "current" : "failed",
-      hasDroppedReply: parsed ? false : s.presence.hasDroppedReply,
-      turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted)
-    }
-  });
-}
-function pruned(s) {
-  const inPlace = [
-    ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
-    ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
-  ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
-  const views = Object.fromEntries(
-    Object.entries(s.prViews.views).filter(
-      ([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)
-    )
-  );
-  const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
-  return {
-    ...s,
-    ledger: pruneClosed(s.ledger, /* @__PURE__ */ new Set([...s.heldRows, ...inPlace])),
-    prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
-  };
-}
 function withoutStaleResult(last, now) {
   if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS) return last;
   const { result: _result, ...rest } = last;
@@ -2760,6 +2522,25 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
     ),
     tabActions: prTabActions(drawn, s.prViews.branchRef),
     isGhSignedOut: s.prViews.isGhSignedOut === true
+  };
+}
+
+// ../hooks/session-presses.ts
+function pruned(s) {
+  const inPlace = [
+    ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
+    ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
+  ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
+  const views = Object.fromEntries(
+    Object.entries(s.prViews.views).filter(
+      ([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)
+    )
+  );
+  const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
+  return {
+    ...s,
+    ledger: pruneClosed(s.ledger, /* @__PURE__ */ new Set([...s.heldRows, ...inPlace])),
+    prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
   };
 }
 
@@ -2985,6 +2766,223 @@ async function updateState(dir, sessionId, change) {
     await writeFile(tmp, JSON.stringify(next));
     await rename(tmp, path);
     return next;
+  });
+}
+
+// ../hooks/session-turns.ts
+function parsedReply(ex, reply) {
+  return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join("\n"));
+}
+function applied(s, parsed, now, promptAt) {
+  const next = s.pending[0];
+  if (!next) return s;
+  const { ex } = next;
+  if (!parsed && !next.failed)
+    return {
+      ...s,
+      pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
+      presence: { ...s.presence, ledgerState: "failed" }
+    };
+  const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger;
+  const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
+  return linkDialogs({
+    ...s,
+    ledger,
+    pending: s.pending.slice(1),
+    presence: {
+      ...s.presence,
+      ledgerState: hasDroppedReply ? "failed" : "current",
+      hasDroppedReply,
+      turnsApplied: Math.max(s.presence.turnsApplied, next.turnsStarted)
+    }
+  });
+}
+
+// ../hooks/status-ops.ts
+function hasSameWords(a, b) {
+  const x = words2(a);
+  const y = words2(b);
+  return x.size === y.size && [...x].every((w) => y.has(w));
+}
+function isUnderWay(s) {
+  return s.status === "working" || s.status === "waits-on-other";
+}
+function answerWork(before, o, now) {
+  const was = new Map(before.map((s) => [s.id, s]));
+  const closed = o.subjects.filter((s) => {
+    const earlier = was.get(s.id);
+    return !isOpen(s) && s.closedAt === now && (earlier === void 0 || isOpen(earlier));
+  });
+  const isClosedWorkNew = closed.some((s) => !was.has(s.id));
+  const isUnderWayWorkClosed = closed.some((s) => {
+    const earlier = was.get(s.id);
+    return earlier !== void 0 && isUnderWay(earlier);
+  });
+  return {
+    isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
+    isWorkUnderWay: o.subjects.some(
+      (s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now
+    ),
+    namesClosed: (description) => {
+      const said = words2(description);
+      return closed.some((s) => {
+        const name = [...words2(s.name)];
+        return name.length > 0 && name.every((w) => said.has(w));
+      });
+    }
+  };
+}
+function isDescriptionStale(head, work) {
+  return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
+}
+function headAfter(last, op, work) {
+  const isComplete = last !== null && last.description !== "";
+  const isSameTitle = last !== null && hasSameWords(last.title, op.title);
+  const isStale = isDescriptionStale(last, work);
+  const isHeld = isComplete && (isSameTitle && !isStale || work.isEarlierWorkFinished && !work.isWorkUnderWay);
+  return isHeld ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
+}
+var OP_ORDER = {
+  none: 0,
+  head: 1,
+  new: 0,
+  set: 0,
+  done: 0,
+  drop: 0,
+  was: 1,
+  link: 2
+};
+function applyOps(last, ops, now, askIds) {
+  let o = {
+    ...last ?? EMPTY_SESSION_STATUS,
+    subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
+    children: (last?.children ?? []).map((c) => ({ ...c })),
+    askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask)))
+  };
+  const find = (ref) => {
+    const key = nameKey(clipWords(ref, NAME_KEPT));
+    return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
+  };
+  const forgetSeenWas = (s) => {
+    const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
+    if (isSeen) {
+      s.was = null;
+      s.merged = null;
+    }
+  };
+  const set = (s, status, text2) => {
+    const isReworded = s.status === status && hasSameWords(s.text, text2);
+    if (isReworded) return;
+    s.status = status;
+    s.text = clipWords(text2, TEXT_KEPT);
+    forgetSeenWas(s);
+    s.changedAt = now;
+  };
+  const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
+  for (const { op } of ordered) {
+    if (op.kind === "none") continue;
+    if (op.kind === "head") o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
+    else if (op.kind === "link") {
+      const child = o.children.find((c) => c.id === op.ref);
+      const subject = find(op.subject);
+      if (child && subject) child.subjectId = subject.id;
+      else if (subject && askIds.has(op.ref)) o.askSubjects[op.ref] = subject.id;
+    } else if (op.kind === "new") {
+      const known = find(op.name);
+      if (known && isOpen(known)) {
+        set(known, op.status, op.text);
+        continue;
+      }
+      const s = {
+        id: `s${o.nextId}`,
+        name: clipWords(op.name, NAME_KEPT),
+        status: op.status,
+        text: clipWords(op.text, TEXT_KEPT),
+        was: null,
+        merged: null,
+        createdAt: now,
+        changedAt: now,
+        closedAt: null,
+        into: null
+      };
+      o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] };
+    } else {
+      const s = find(op.ref);
+      if (!s) continue;
+      if (op.kind === "set") set(s, op.status, op.text);
+      else if (op.kind === "done") {
+        s.status = "done";
+        if (op.text) s.text = clipWords(op.text, TEXT_KEPT);
+        forgetSeenWas(s);
+        s.closedAt = now;
+        s.changedAt = now;
+      } else if (op.kind === "drop") {
+        const target = op.into ? find(op.into) : null;
+        s.status = "dropped";
+        s.text = clipWords(op.why, TEXT_KEPT);
+        s.closedAt = now;
+        s.into = target && target.id !== s.id ? target.id : null;
+        s.changedAt = now;
+        if (target && s.into) {
+          forgetSeenWas(target);
+          target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name;
+          target.changedAt = now;
+          for (const [ask, id] of Object.entries(o.askSubjects)) if (id === s.id) o.askSubjects[ask] = target.id;
+        }
+      } else {
+        forgetSeenWas(s);
+        s.was = op.text;
+        s.changedAt = now;
+      }
+    }
+  }
+  const isHeadKept = o.head === (last?.head ?? null);
+  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
+    o = { ...o, head: { ...o.head, description: "" } };
+  return o;
+}
+function applyStatus(last, answer, now, askIds) {
+  return answer.kind === "unchanged" ? last : applyOps(last, answer.ops, now, askIds);
+}
+
+// ../hooks/session-status.ts
+function appliedStatus(s, answer, appliedAfter, now) {
+  if (s.presence.turnsApplied < appliedAfter) return s;
+  return {
+    ...s,
+    ledger: {
+      ...s.ledger,
+      overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)))
+    },
+    overviewFailure: null,
+    lastOverviewCallAt: now
+  };
+}
+var REFUSED_ANSWER_CHARS = 500;
+function failedStatus(s, text2, appliedAfter, now) {
+  if (s.presence.turnsApplied < appliedAfter) return s;
+  const failure = text2 === null ? { at: now, cause: "no-answer", answer: null } : { at: now, cause: "refused", answer: text2.slice(0, REFUSED_ANSWER_CHARS) };
+  return { ...s, overviewFailure: failure, lastOverviewCallAt: now };
+}
+var STATUS_REFRESH_MS = 10 * 6e4;
+function needsCatchUp(s) {
+  const { presence } = s;
+  const hasUnappliedTurn = s.pending.length === 0 && s.turn.person === null && presence.turnsStarted > presence.turnsApplied;
+  return presence.ledgerState !== "current" || hasUnappliedTurn;
+}
+var pendingKey = (p) => `${p.turnsStarted}:${p.ex.turn}`;
+function appliedCatchUp(s, begun, parsed, now) {
+  const covered = new Set(begun.pending.map(pendingKey));
+  return linkDialogs({
+    ...s,
+    ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn, now) : s.ledger,
+    pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
+    presence: {
+      ...s.presence,
+      ledgerState: parsed ? "current" : "failed",
+      hasDroppedReply: parsed ? false : s.presence.hasDroppedReply,
+      turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted)
+    }
   });
 }
 

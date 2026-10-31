@@ -24,11 +24,11 @@ import {
   emptySession,
   isSessionFile,
   missingAsNull,
-  pruned,
   sessionFile,
   staleSessionFiles,
   upgradeSession,
-} from '../../hooks/session'
+} from '../../hooks/session-files'
+import { pruned } from '../../hooks/session-presses'
 import type { Session } from '../../hooks/session'
 import { isShownTab } from '../../hooks/view'
 import type { ShownTab } from '../../hooks/view'

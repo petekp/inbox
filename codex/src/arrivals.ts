@@ -9,7 +9,7 @@ import {
 } from '../../hooks/arrivals'
 import type { ListedTab, RowRecord } from '../../hooks/arrivals'
 import type { Tab } from '../../types'
-import type { SessionView } from '../../hooks/session'
+import type { SessionView } from '../../hooks/session-view'
 import type { InboxView } from '../../hooks/view'
 import type { HeardState } from './core'
 

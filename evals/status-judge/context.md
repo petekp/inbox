@@ -36,7 +36,7 @@ A model writes the head's words, and each row's name, status, where it stands an
 3. **Was lines:** indented lines under a subject row. `was: <plan>` names a plan that a change replaced. `merged in: <names>` names the pieces merged into this one.
 4. **Child rows:** running work, which code draws from the host's events. A child under a subject row starts with `├` or `└`, then a mark, then the child's label. A stall word may follow the label after ` · `. Code writes it: `◆` and `waiting` for a delegate at a question or an approval, and `✓` and `finished` for a delegate that finished since the person last looked. Other running work has no stall word. A child linked to no row on the page sits at the top of the list, indented, with no `├` or `└`. The line `└ + 2 more running` stands for children that are not drawn.
 5. **The Seen line:** `── Last seen`. The rows above it changed since the person last looked.
-6. **Folds:** `○ 3 more queued` counts open rows that are not drawn. `✓ 4 done` or `✓ 4 more done` counts delivered pieces that are not drawn.
+6. **Folds:** `○ 3 more` counts open rows that are not drawn. Its `○` does not mean each of them is queued. `✓ 4 done` or `✓ 4 more done` counts delivered pieces that are not drawn.
 7. **The status line:** after a blank line at the end, `Last Status update failed. Changes from that reply may be missing.`
 
 Below the Seen line, a finished row shows only its mark and its name, and no row shows its was line. That is how the page is drawn, and it is not a failure.
@@ -63,7 +63,7 @@ Rules in code check these things. None of them is a reason to fail a check:
 - The status line.
 - The number of words in a name or a text. A name that is a sentence still fails `rows-are-work`.
 - Whether the head has one line or two, and whether its words changed while its meaning still fits the focus.
-- The counts in the folds, except as the `marks` check uses the queued fold.
+- The counts in the folds, except as the `marks` check uses the `○ N more` fold.
 
 ## How to work
 

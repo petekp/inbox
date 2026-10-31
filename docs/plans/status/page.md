@@ -15,7 +15,7 @@ From top to bottom:
 | Was line | The plan a change replaced, as "was: last-write-wins", or the pieces merged into this one, as "merged in: Banner on hover", until the person has seen it | The model writes it. Code shows it only until the person has looked. |
 | Child rows | Running work under its subject, named by the first line of the name its host gives it. A delegate shows what Herdr shows: `◆ … · waiting` at a question or an approval, and `✓ … · finished` once it stops, until the person has seen the Status. Running work shows no word. | Code, from host events and from Herdr. The model writes the link. |
 | Seen line | Where the person last looked. Rows above it changed since. It is left out when nothing changed. | Code |
-| Folds | "○ N more queued" past 7 open rows. "✓ N done" for the done subjects not drawn as a row, or "✓ N more done" when a done row shows above it. | Code |
+| Folds | "○ N more" for the open subjects past 6 that the page does not draw. "✓ N done" for the done subjects not drawn as a row, or "✓ N more done" when a done row shows above it. | Code |
 | Status line | "Last Status update failed. Changes from that reply may be missing." while the last call wrote nothing | Code |
 
 A decided change to this table, in "Not built yet": decision 21 names each child row in plain words. A Herdr delegate's name is often an id today.
@@ -40,7 +40,9 @@ More rules of the drawn page, all in `hooks/view.ts:statusPage`:
 - Below the Seen line, an open row keeps where it stands, and drops its was line.
 - At most 3 children show under one subject. The rest read "+ 2 more running".
 - A child whose subject is not shown, or that has no link yet, sits at the top of the list.
-- A held subject never folds into the queued count, and its mark does not move.
+- At most 6 open rows show, the number the Status call is told to keep. The rest fold into "○ N more", taken from the rows the page would draw last: queued rows first, then rows that wait on others, then working rows.
+- A held subject never folds, and its mark does not move. A subject that changed since the last look never folds either, and neither does one with a child row under it, so the child always shows under its subject. So more than 6 open rows can show, and a page the person has never looked at folds nothing.
+- The fold's mark is always ○, whatever rows it holds. Every row in it is one the person has already seen, and none waits on them. ○, the mark of work set aside, says that.
 - The Asks row of a linked ask reads "Holds up" and the subject's name.
 
 Before any work, the page reads: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."

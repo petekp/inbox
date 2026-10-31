@@ -5,7 +5,7 @@ import { test } from 'node:test'
 
 import type { View } from '../src/core'
 import { makeServer } from '../src/server'
-import { PRESS_TIMEOUT_MS } from '../../hooks/session'
+import { PRESS_TIMEOUT_MS } from '../../hooks/session-view'
 import { readState, statePath, updateState } from '../src/state'
 import { tempDir } from './helpers'
 import { setup } from './server-fixtures'

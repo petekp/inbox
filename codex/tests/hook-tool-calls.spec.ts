@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { addAgentItem } from '../../hooks/ledger-update'
-import { STATUS_REFRESH_MS } from '../../hooks/session'
+import { STATUS_REFRESH_MS } from '../../hooks/session-status'
 import { handleHook } from '../src/hook'
 import type { HookInput } from '../src/hook'
 import { herdrOnWrite } from '../src/host'

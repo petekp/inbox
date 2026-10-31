@@ -1,5 +1,7 @@
 import type { SessionAppendMessage } from 'claude-code'
-import type { SendOutcome, SentBy, Session } from './session'
+import type { Session } from './session'
+import type { SentBy } from './session-turns'
+import type { SendOutcome } from './session-presses'
 import { withArrival, withRewrite, withUnconfirmed } from './press-reducer'
 
 export function messageText(message: SessionAppendMessage): string {

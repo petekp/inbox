@@ -96,7 +96,7 @@ One row per piece, whatever words the conversation used for it. Finished work do
 
 #### 5. Each mark is true, and every open piece stays on the page
 
-The person can trust a mark at a glance. A piece that is delivered, dropped or filed for later closes, with its own mark. Every piece still open is on the page, as a row or in the queued fold, however many there are and however old. The page gets shorter by closing what is done, dropped, filed or listed twice, never by losing open work.
+The person can trust a mark at a glance. A piece that is delivered, dropped or filed for later closes, with its own mark. Every piece still open is on the page, as a row or in the "N more" fold, however many there are and however old. The page gets shorter by closing what is done, dropped, filed or listed twice, never by losing open work.
 
 - **Good:** `✓ 2.4 release: live in the store`, with a separate `● Sync bug: cause found`.
 - **Good:** a piece set aside for a day keeps its row: `○ Export button: works on web`.

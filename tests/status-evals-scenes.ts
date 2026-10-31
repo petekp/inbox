@@ -1,5 +1,5 @@
 import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
-import { emptySession } from '../hooks/session'
+import { emptySession } from '../hooks/session-files'
 import type { Session } from '../hooks/session'
 import { statusPage } from '../hooks/view'
 import type { Item, SessionStatus, Subject, SubjectStatus } from '../types'

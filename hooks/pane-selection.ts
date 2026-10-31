@@ -1,6 +1,6 @@
 import type { UiScrollBlock } from 'claude-code'
 import type { Closed, Cursor, FoldKind, LastAction, PrView, RowNote, Tab } from '../types'
-import type { SessionView } from './session'
+import type { SessionView } from './session-view'
 import { prRowWaits } from './pr-rows'
 import type { DrawnPr } from './pr-views'
 import {

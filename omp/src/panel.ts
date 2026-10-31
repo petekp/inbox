@@ -2,7 +2,7 @@ import type { Draft, FoldKind, Stop } from '../../types'
 import type { PrPress } from '../../hooks/pr-press'
 import { noteText } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
-import type { SessionView } from '../../hooks/session'
+import type { SessionView } from '../../hooks/session-view'
 import type { BannerTone, ToneName } from '../../hooks/tones'
 import { ago } from '../../hooks/text'
 import {

@@ -1,6 +1,6 @@
 import { isRowTab, isShownTab } from '../../hooks/view'
 import { ARRIVAL_TABS } from '../../hooks/arrivals'
-import { PRESS_TIMEOUT_MS } from '../../hooks/session'
+import { PRESS_TIMEOUT_MS } from '../../hooks/session-view'
 import { tabState, selection, drafts, optionsShown, unfolded, inboxWindow, handoff, root } from './tab-state'
 import type { Kept, CandidatePage, PageHandoff } from './tab-state'
 import { later, cancelTimer, dispose, callTool, READ_TIMEOUT_MS } from './tab-host'

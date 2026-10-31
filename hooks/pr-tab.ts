@@ -24,13 +24,12 @@ import {
 } from './pr-press'
 import type { Applied, PlannedPrAction, PrAction, PrPress } from './pr-press'
 
-export { fetchTracked, itemPrSteps, linkedPrs, olderPrsText, splitLinked } from './pr-fetch'
+export { fetchTracked, splitLinked } from './pr-fetch'
 export type { GhRun } from './pr-fetch'
 export {
   checkRowText,
   DISMISS_MERGED_ID,
   ghNoticeOf,
-  isPrTabRunning,
   PR_GROUP_TITLES,
   PR_QUOTE_CHARS,
   PR_TONES,
@@ -44,10 +43,9 @@ export {
   threadRowText,
   threadSentIn,
 } from './pr-rows'
-export { drawnPrs, isDismissed, isViewKept, openPrViews } from './pr-views'
+export { isDismissed, openPrViews } from './pr-views'
 export type { DrawnPr } from './pr-views'
-export { prOrderView, prRankText, withOrderStatuses } from './pr-order'
-export type { PrOrderView } from './pr-order'
+export { prRankText } from './pr-order'
 export { fixCheckEffect, isPrFixPress, isPrPress, PR_FIX_LABELS, pressRowId } from './pr-press'
 export type { Applied, PrAction, PrFixPress, PrPress } from './pr-press'
 

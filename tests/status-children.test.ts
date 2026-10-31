@@ -10,12 +10,11 @@ import {
   subjectsText,
   withChild,
 } from '../hooks/status-children'
-import { applyOps } from '../hooks/status-ops'
 import { delegatesSettled, delegatesStarted } from '../hooks/children'
 import type { HerdrStatus } from '../hooks/herdr'
 import { CHILD_ROWS } from '../hooks/view'
 import type { SessionStatus } from '../types'
-import { MIN, opsOf, NO_ASKS, after, askItem, page, shape } from './status-helpers'
+import { MIN, after, askItem, page, shape } from './status-helpers'
 
 test('the call reads open subjects with ids, finished ones by name, and running children with their links', () => {
   const o = withChild(
@@ -204,22 +203,85 @@ test('a child whose host reports no activity moves and shows no words for as lon
   expect(page(o, now).rows[0]).toMatchObject({ kind: 'child', stall: null, isRunning: true, branch: null })
 })
 
-test('open subjects past seven fold their oldest queued ones into a count', () => {
-  const lines = Array.from({ length: 9 }, (_, n) => `NEW: ${n < 3 ? 'queued' : 'working'} | Part ${n} | step ${n}`)
-  const o = applyOps(
+const OPEN_PLACES = [
+  'working',
+  'working',
+  'working',
+  'working',
+  'waits-on-other',
+  'waits-on-other',
+  'waits-on-other',
+  'queued',
+  'queued',
+]
+const openSubjects = (count: number) =>
+  OPEN_PLACES.slice(0, count).reduce<SessionStatus | null>(
+    (o, place, n) => after(o, `NEW: ${place} | Part ${n} | step ${n}`, n * MIN),
     null,
-    lines.map(l => opsOf(l)[0]!),
-    0,
-    NO_ASKS,
-  )
-  const rows = page(o, MIN).rows
-  const heldOldest = page(after(o, 'LINK: i1 | s1', 0, new Set(['i1'])), MIN, {}, [askItem('i1')]).rows
+  )!
+const seenAt10 = (o: SessionStatus) => ({ ...o, lastLookAt: 10 * MIN })
 
-  expect(rows.filter(r => r.kind === 'subject')).toHaveLength(7)
-  expect(rows.at(-1)).toMatchObject({ kind: 'fold', text: '2 more queued' })
-  expect(shape(heldOldest)).toEqual([
-    '◆ Part 0: step 0 · waiting',
-    ...[3, 4, 5, 6, 7, 8].map(n => `◐ Part ${n}: step ${n}`),
-    '○ 2 more queued',
+test('past six open subjects, the page folds the ones it draws last into one "N more" row: queued first, then waiting on others', () => {
+  expect(shape(page(seenAt10(openSubjects(9)), 20 * MIN).rows)).toEqual([
+    ...[3, 2, 1, 0].map(n => `◐ Part ${n}: step ${n}`),
+    '◌ Part 6: step 6',
+    '◌ Part 5: step 5',
+    '○ 3 more',
   ])
+  expect(page(seenAt10(openSubjects(7)), 20 * MIN).rows.at(-1)).toMatchObject({ kind: 'fold', text: '1 more' })
+  expect(page(seenAt10(openSubjects(6)), 20 * MIN).rows.map(r => r.kind)).toEqual(Array(6).fill('subject'))
+})
+
+test('a subject an ask holds up or that changed since the last look never folds, so more than six can show, and a page never looked at folds nothing', () => {
+  const asks = ['i1', 'i2', 'i3', 'i4', 'i5', 'i6', 'i7']
+  const seen = seenAt10(openSubjects(9))
+  const heldOne = after(seen, 'LINK: i1 | s8', 10 * MIN, new Set(asks))
+  const changedOne = after(heldOne, 'SET: s9 | queued | started over', 15 * MIN, new Set(asks))
+  const heldSeven = after(seen, asks.map((a, n) => `LINK: ${a} | s${n + 1}`).join('\n'), 10 * MIN, new Set(asks))
+  const draw = (o: SessionStatus) => shape(page(o, 20 * MIN, {}, asks.map(askItem)).rows)
+
+  expect(draw(changedOne)).toEqual([
+    '○ Part 8: started over',
+    '-- Last seen',
+    '◆ Part 7: step 7 · waiting',
+    ...[3, 2, 1, 0].map(n => `◐ Part ${n}: step ${n}`),
+    '○ 3 more',
+  ])
+  expect(draw(heldSeven)).toEqual([...[6, 5, 4, 3, 2, 1, 0].map(n => `◆ Part ${n}: step ${n} · waiting`), '○ 2 more'])
+  expect(draw(openSubjects(9)).filter(r => r.includes('Part'))).toHaveLength(9)
+  expect(draw(openSubjects(9)).some(r => r.includes('more'))).toBe(false)
+})
+
+test('a subject with a child row under it never folds, so its child stays under it, and more than six can show', () => {
+  const withChildOn = (o: SessionStatus, s: number) =>
+    after(
+      withChild(
+        o,
+        {
+          ref: `r${s}`,
+          kind: 'subagent',
+          name: `Review s${s}`,
+          startedAt: 12 * MIN,
+          endedAt: null,
+          lastActivityAt: 19 * MIN,
+        },
+        12 * MIN,
+      ),
+      `LINK: c${o.nextChildId} | s${s}`,
+      12 * MIN,
+    )
+  const seen = seenAt10(openSubjects(9))
+  const sevenWithChildren = [1, 2, 3, 4, 5, 6, 7].reduce(withChildOn, seen)
+  const draw = (o: SessionStatus) => shape(page(o, 20 * MIN).rows)
+
+  expect(draw(withChildOn(withChildOn(seen, 5), 8))).toEqual([
+    ...[3, 2, 1, 0].map(n => `◐ Part ${n}: step ${n}`),
+    '◌ Part 4: step 4 ┐',
+    '└ ● Review s5',
+    '○ Part 7: step 7 ┐',
+    '└ ● Review s8',
+    '○ 3 more',
+  ])
+  expect(draw(sevenWithChildren).filter(r => r.startsWith('└'))).toHaveLength(7)
+  expect(draw(sevenWithChildren).at(-1)).toBe('○ 2 more')
 })

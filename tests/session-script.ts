@@ -1,5 +1,7 @@
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { endTurn, messageTyped, notePrompt, recorded, sessionView } from '../hooks/session'
+import { endTurn, messageTyped, notePrompt } from '../hooks/session-turns'
+import { recorded } from '../hooks/session-presses'
+import { sessionView } from '../hooks/session-view'
 import type { Session } from '../hooks/session'
 import { orderedKeys, press, runUpdates } from '../hooks/session-host'
 import type { Ask, SessionHost, UpdateHost } from '../hooks/session-host'

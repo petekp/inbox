@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Session } from '../types'
-import { STATUS_REFRESH_MS } from '../hooks/session'
+import { STATUS_REFRESH_MS } from '../hooks/session-status'
 import { w, LEDGER_REPLY, world } from './hooks-world'
 
 const replyWithStatus = async ($: Engine, on: On, answer: string | null | string[], ledgerAnswer = LEDGER_REPLY) => {

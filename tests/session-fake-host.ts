@@ -1,4 +1,4 @@
-import { emptySession } from '../hooks/session'
+import { emptySession } from '../hooks/session-files'
 import type { Session } from '../hooks/session'
 import type { MakeHost } from './session-script'
 import { fakeHostWith } from './session-script'

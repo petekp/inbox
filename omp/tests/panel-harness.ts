@@ -1,6 +1,6 @@
 import { SETTLED_MS, NO_HOLDS, allRows, rowKeyPlan } from '../../hooks/view'
 import type { StatusRow, RowView } from '../../hooks/view'
-import { sessionView } from '../../hooks/session'
+import { sessionView } from '../../hooks/session-view'
 import { demoState } from '../src/demo'
 import { INITIAL_UI, render } from '../src/panel'
 import type { PanelScreen, PanelUi, Style } from '../src/panel'

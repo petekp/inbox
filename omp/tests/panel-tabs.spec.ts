@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 
 import { CLOSED_SHOWN, SETTLED_MS, NO_HOLDS, shownTabs, earlierLabel, foldLabel } from '../../hooks/view'
-import { sessionView } from '../../hooks/session'
+import { sessionView } from '../../hooks/session-view'
 import { cellWidth } from '../../hooks/text'
 import { demoState } from '../src/demo'
 import { INITIAL_UI } from '../src/panel'

@@ -32,7 +32,7 @@ From `GLOSSARY.md`: SessionStatus, Head, Subject, Child, Stall words, Seen line,
 - **Where it stands:** the few words on the line under a subject's name.
 - **Was line:** a line under a subject that names the plan a change replaced, as "was: last-write-wins", or a piece merged into it, as "merged in: Banner on hover".
 - **Link:** the Status call's tie from an open ask or a child to the subject it belongs to.
-- **Fold:** one line that stands for several rows: "✓ 3 done" or "○ 2 more queued".
+- **Fold:** one line that stands for several rows: "✓ 3 done" or "○ 2 more".
 - **Last changed:** when a subject's status or meaning last changed. It sets which side of the Seen line a row sits on, and its place among rows of the same status.
 - **Last checked:** when an Status call last read the work, whatever it answered.
 - **Property:** something true of a good Status that a person can check by reading the page, knowing what happened in the session.
