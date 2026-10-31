@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact'
 import { ActionButton, Icon } from './row-actions'
-import { cancelledMarkShape } from '../../hooks/marks'
-import { CLOSED_MARKS, DOT, markedFeedbackText, rowResultMark, rowFeedbackText, SETTLED_MS } from '../../hooks/view'
+import { mutedMarkShape } from '../../hooks/marks'
+import { DOT, markedFeedbackText, rowResultMark, rowFeedbackText, SETTLED_MS } from '../../hooks/view'
 import type { BannerView, StatusTone, ResultMark, LegendEntry, RowView } from '../../hooks/view'
 import { parseInline } from '../../hooks/inline'
 import { isUndoLeft } from './settle'
@@ -52,9 +52,12 @@ export function markClassOf(tone: StatusTone, isRunning: boolean): string {
   return ['mark', tone ? TONE_CLASS[tone] : null, isRunning ? 'running' : null].filter(Boolean).join(' ')
 }
 
-/** A mark's text, or its shape where the system font draws it like another mark. */
+/** The tab's ○ glyph, as measured in the Codex app: centred 6 px into the mark, and 0.75 px above an 8 px box's middle. */
+const CIRCLE_MID = { x: 6, y: 3.25 }
+
+/** A mark's text, or its shape from `mutedMarkShape` where the system font draws it badly. */
 export function MarkGlyph({ text }: { text: string }) {
-  const shape = text === CLOSED_MARKS.lapsed ? cancelledMarkShape(4) : null
+  const shape = mutedMarkShape(text, 4, CIRCLE_MID)
 
   return shape === null ? (
     <>{text}</>

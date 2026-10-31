@@ -71,14 +71,13 @@ const MARK_GLYPH_MID_PT = 6.55
 export const RUNNING_SVG_CELLS = 2
 /**
  * A muted mark the pane draws as a shape, and the cells its Svg takes, or null for one it draws as text. The ✗ fits one
- * cell. The ◌ ring is as wide as the font's ○, so it takes the running mark's two cells and sits where ○ sits.
+ * cell. The ◌ ring is as wide as the font's ○, so it takes the running mark's two cells.
  */
 export function mutedMarkSvg(mark: string, light: string, dark: string): { source: string; cells: number } | null {
-  const shape = mutedMarkShape(mark, DESKTOP_LINE_PT / 2)
+  const shape = mutedMarkShape(mark, DESKTOP_LINE_PT / 2, { x: MARK_GLYPH_MID_PT, y: DESKTOP_LINE_PT / 2 })
   if (shape === null) return null
-  if (mark === CLOSED_MARKS.lapsed) return { source: markSvg(mark, shape, light, dark), cells: 1 }
-  const placed = `<g transform="translate(${MARK_GLYPH_MID_PT - 4} 0)">${shape}</g>`
-  return { source: markSvg(mark, placed, light, dark, RUNNING_SVG_CELLS), cells: RUNNING_SVG_CELLS }
+  const cells = mark === CLOSED_MARKS.lapsed ? 1 : RUNNING_SVG_CELLS
+  return { source: markSvg(mark, shape, light, dark, cells), cells }
 }
 /** A result mark and the space after it, as wide as a running mark's Svg on desktop. */
 export const RESULT_MARK_CELLS = RUNNING_SVG_CELLS

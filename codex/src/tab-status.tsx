@@ -6,7 +6,7 @@ import type { Key } from './tab-state'
 import { revealSelected } from './tab-motion'
 import { switchTab, open } from './tab-selection'
 import { tabRows } from './tab-rows'
-import { pulseInStep, markClassOf } from './tab-parts'
+import { pulseInStep, markClassOf, MarkGlyph } from './tab-parts'
 
 let measuring: CanvasRenderingContext2D | null | undefined
 
@@ -101,7 +101,7 @@ function StatusLine({ row }: { row: StatusRow }) {
     return (
       <div class={row.hasChildren ? 'row has-children' : 'row'}>
         <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
-          {row.mark}
+          <MarkGlyph text={row.mark} />
         </span>
         <div class="content tight">
           <NameLine name={row.name} stall={row.stall} />
@@ -132,7 +132,7 @@ function StatusLine({ row }: { row: StatusRow }) {
     return (
       <div class={row.branch ? `row child branch-${row.branch}` : 'row'}>
         <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
-          {row.mark}
+          <MarkGlyph text={row.mark} />
         </span>
         <div class="content tight muted">
           <NameLine name={row.name} stall={row.stall} />
@@ -155,7 +155,9 @@ function StatusLine({ row }: { row: StatusRow }) {
 
   return (
     <div class="row">
-      <span class={markClassOf(row.tone, false)}>{row.mark}</span>
+      <span class={markClassOf(row.tone, false)}>
+        <MarkGlyph text={row.mark} />
+      </span>
       <div class="content tight muted">{row.text}</div>
     </div>
   )

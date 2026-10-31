@@ -27,7 +27,7 @@ export function markShape(mark: string, midY: number): string | null {
  * A cancelled row's ✗ in the desktop pane and the Codex tab, in the same 8-point box. The system font draws ✗ the
  * same as ✕, so this draws the ballot X a monospace font draws: a long, heavy upstroke crossed by a shorter stroke.
  */
-export function cancelledMarkShape(midY: number): string {
+function cancelledMarkShape(midY: number): string {
   const t = midY - 4
 
   return (
@@ -36,16 +36,18 @@ export function cancelledMarkShape(midY: number): string {
   )
 }
 
+type Point = { x: number; y: number }
+
 /**
- * ◌, a subject that waits on something else, as the desktop pane draws it. The system font draws ◌ with specks for
- * dots, which nearly vanish beside ○, so this draws the ring Menlo draws: eight short dashes, as wide as the font's ○.
- * It is centred in the 8-point box and reaches past it, as ○ does.
+ * ◌, a subject that waits on something else, in the desktop pane and the Codex tab. The system font draws ◌ with specks
+ * for dots, which nearly vanish beside ○, so this draws the ring Menlo draws: eight short dashes, as wide as the font's
+ * ○. `circleMid` is where the look's font centres ○, so the ring reaches past the 8-point box as ○ does.
  */
-export function waitingMarkShape(midY: number): string {
+function waitingMarkShape(circleMid: Point): string {
   const radius = 4.85
   const dash = (Math.PI / 4) * 0.38
   const point = (angle: number) =>
-    `${(4 + radius * Math.cos(angle)).toFixed(2)},${(midY + radius * Math.sin(angle)).toFixed(2)}`
+    `${(circleMid.x + radius * Math.cos(angle)).toFixed(2)},${(circleMid.y + radius * Math.sin(angle)).toFixed(2)}`
 
   return Array.from({ length: 8 }, (_, n) => {
     const from = (n * Math.PI) / 4 - dash / 2
@@ -53,9 +55,12 @@ export function waitingMarkShape(midY: number): string {
   }).join('')
 }
 
-/** A muted mark's shape where the system font draws it badly, or null where the font's glyph serves. */
-export function mutedMarkShape(mark: string, midY: number): string | null {
+/**
+ * A muted mark's shape where the system font draws it badly, or null where the font's glyph serves. `circleMid` is
+ * where the look's font centres ○ in the mark's box, measured in that look.
+ */
+export function mutedMarkShape(mark: string, midY: number, circleMid: Point): string | null {
   if (mark === CLOSED_MARKS.lapsed) return cancelledMarkShape(midY)
-  if (mark === SUBJECT_MARKS['waits-on-other'].mark) return waitingMarkShape(midY)
+  if (mark === SUBJECT_MARKS['waits-on-other'].mark) return waitingMarkShape(circleMid)
   return null
 }
