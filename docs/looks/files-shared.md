@@ -6,7 +6,7 @@ Part of [the look map](../looks.md#files).
 | --- | --- |
 | `hooks/view.ts` | Shared module. The inbox view: Asks order and count, handles, row state, feedback, done labels, action order, key plan, timing constants. |
 | `hooks/help.ts` | Shared module. The marks that rows and group titles draw, the Help legend, and Help's labels. |
-| `hooks/presses.ts` | Shared module. The press types `RowPress` and `PrActionId`, and `isPrRowId`, which tells whether a row id is a PR row's. It re-exports the names that `register.tsx`, `session.ts`, `session-host.ts` and `view.ts` import from it. |
+| `hooks/presses.ts` | Shared module. The press types `RowPress` and `PrActionId`, and `isPrRowId`, which tells whether a row id is a PR row's. It re-exports the names that `register.tsx`, `session.ts` and `view.ts` import from it. |
 | `hooks/press-labels.ts` | Shared module. `actionId` and `pressText`, the action id and label that a press records, and the `capitalized` and `ISSUE_LABEL` they use. It imports only types, so importing it loads no other module. |
 | `hooks/open-targets.ts` | Shared module. `openTarget`, which opens a row's link or path through a host's command runner, and `baseName`. |
 | `hooks/help-steps.ts` | Shared module. A row's help steps: each step's label and icon, the Open PR step for the PRs an item names, and the effects each step runs. |
@@ -30,13 +30,13 @@ Part of [the look map](../looks.md#files).
 | `hooks/status-children.ts` | Shared module. A child the host reports, and its end and activity. The text of the subjects, asks and running children that the Status call reads. When a look at the Status starts and ends. |
 | `hooks/status-upgrade.ts` | Shared module. `upgradeStatus`, which reads a saved Status from this build or an earlier one and leaves out anything wrongly shaped. |
 | `hooks/children.ts` | Shared module. How each host's events become the Status tab's children: the task notice parser, the Herdr delegate steps, the end of a delegate Herdr no longer shows working, the cut-off at a reload, and the gate that limits how often a child's activity is saved. |
-| `hooks/model-text.ts` | Shared module. The guidance `guidanceText` builds, the `close` tool's description that carries it, and the `Host` and `Told` types. Each host's `Host` names its agent, surface and the `record` and `close` tools. It re-exports the names that `register.tsx`, `session-host.ts` and `view.ts` import from it. |
+| `hooks/model-text.ts` | Shared module. The guidance `guidanceText` builds, the `close` tool's description that carries it, and the `Host` and `Told` types. Each host's `Host` names its agent, surface and the `record` and `close` tools. It re-exports the names that `register.tsx` and `view.ts` import from it. |
 | `hooks/ledger-prompt.ts` | Shared module. What the ledger call reads: `systemText`, and the prompt `buildPrompt` builds from the ledger and the new exchange. |
 | `hooks/catch-up-text.ts` | Shared module. The ledger call's catch-up prompts, and the activity lines that a turn's tool calls and dialogs add. |
 | `hooks/status-prompt.ts` | Shared module. What the Status call reads: `STATUS_SYSTEM`, and its prompts after a reply, during a long turn and for a catch-up. |
 | `hooks/inbox-text.ts` | Shared module. The `inbox:` texts beside a prompt, the state a new conversation starts with, and the question numbers a typed answer such as "1 yes" refers to. `screenText` tells the models whether the inbox is open, and on which tab. |
 | `hooks/session-version.ts` | Shared module. The version every host writes on a session it saves, and `checkVersion`, which Codex and omp run when they read one. |
-| `hooks/session.ts` | Shared module. It re-exports the `Session` type, and the names that `register.tsx`, `session-host.ts` and `presses.ts` import from it. The functions are in the five modules below. |
+| `hooks/session.ts` | Shared module. It re-exports the `Session` type, and the names that `register.tsx` and `presses.ts` import from it. The functions are in the five modules below. |
 | `hooks/session-files.ts` | Shared module. The empty session, a session's saved file name, which saved files may be deleted, and `upgradeSession`, which converts a session an earlier build saved to the current shape. |
 | `hooks/session-turns.ts` | Shared module. A turn's start and end, each prompt and the press that sent it, turn activity, and what a shell command's output shows. `endTurn` queues the turn's exchange, and `applied` applies the ledger call's answer to it. |
 | `hooks/session-status.ts` | Shared module. Saving the Status call's answer or why it failed, and when a running turn's Status call is due. Whether an update or a catch-up is due, and `appliedCatchUp`, which applies a catch-up's answer. A forked conversation's ledger, and when a look at the Status starts and ends. |
@@ -44,12 +44,15 @@ Part of [the look map](../looks.md#files).
 | `hooks/session-view.ts` | Shared module. `sessionView` builds the view each look draws, including the PRs tab. `showsRunningMark` says whether a text look draws a running mark. |
 | `hooks/conversation.ts` | Shared module. `flattenConversation` turns a conversation's `Turn`s into the text a catch-up reads, and clips it. Each host maps its own conversation to turns. |
 | `hooks/clients.ts` | Shared module. The parity record: how each host supports each feature, and why where it does not. |
-| `hooks/session-host.ts` | Shared module. The `SessionHost` flows that run on a host's store: `runUpdates`, `askOverConversation`, `reconcileUpdateStatus`, `wakeForDone`, `press`, `fetchPrs`, `isPrFetchDue`, `prFetchTracker` and `exclusiveKeys`. |
+| `hooks/session-host.ts` | Shared module. The `SessionHost` and `UpdateHost` types a host supplies, and the update flows that run on a host's store: `runUpdates`, `askOverConversation` and `reconcileUpdateStatus`. It also holds `exclusiveKeys` and `orderedKeys`, which keep runs of one key apart in a process. It re-exports the names that `register.tsx` imports from the three modules below. |
+| `hooks/status-records.ts` | Shared module. The Status call: `statusCallPrompt` builds its prompt, `askAndWriteStatus` sends it and writes the answer, and `refreshStatus` runs one during a long turn. It also holds the call records, `StatusRecord` and `writeStatusRecord`. |
+| `hooks/host-press.ts` | Shared module. `press` and `startPress`, which run a press on a host's store, and `wakeForDone`, which tells the agent about rows closed with Done. |
+| `hooks/host-prs.ts` | Shared module. `fetchPrs`, which fetches a session's PRs through the host's gh, and `isPrFetchDue` and `prFetchTracker`, which say when to fetch again. |
 | `hooks/gh.ts` | Shared module. `ghFinder` finds a gh that starts, and `ghIn` runs it, over a host's command runner. `branchIn` reads a folder's git branch over the same runner. |
 | `hooks/herdr.ts` | Shared module. What a host reports to the Herdr pane it runs in: the `inbox` status line, the stop, and each row tab's count, as pane tokens in one `herdr pane report-metadata` command. Also `delegatesInHerdr`, which asks `herdr agent list` which delegates still run, only while one runs. |
 | `hooks/text.ts` | Shared module. Clipping, code-block formatting, relative ages and a turn's reply. |
 | `hooks/prs.ts` | Shared module. PR parsing, readiness and prompts. |
-| `hooks/pr-tab.ts` | Shared module. What each PR press does, in `applyPrPress`, and the PR button plans: `threadActions`, `checkActions`, `prBlockActions`, and `prTabActions` for the tab's own buttons. It re-exports the names that `register.tsx` and `session-host.ts` import from it. |
+| `hooks/pr-tab.ts` | Shared module. What each PR press does, in `applyPrPress`, and the PR button plans: `threadActions`, `checkActions`, `prBlockActions`, and `prTabActions` for the tab's own buttons. It re-exports the names that `register.tsx` imports from it. |
 | `hooks/pr-fetch.ts` | Shared module. Which linked PRs the tab tracks, the line that names the older ones it leaves out, the Open PR help step for any linked PR, and fetching each tracked PR through a host's gh runner. |
 | `hooks/pr-rows.ts` | Shared module. PR row ids, each PR row's mark, title and meta line, which PR rows wait on the person, the gh notices, the PRs tab's empty text, and the tone of each PR status. |
 | `hooks/pr-views.ts` | Shared module. The PR blocks a look draws and their order, which PR views a session keeps, and whether the person dismissed a PR. |

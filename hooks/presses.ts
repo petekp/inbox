@@ -4,38 +4,12 @@ export type { PathProbe } from './open-targets'
 export { stepIconKind, stepsOf } from './help-steps'
 export type { HelpStep } from './help-steps'
 export { isAwaitingReply, isFixSent, isFoldingPress, isHandedOff } from './last-actions'
-export {
-  doneWake,
-  isPressConfirmed,
-  markSentToAgent,
-  noteText,
-  refuseDoneNotification,
-  withDeliveryId,
-  withUnconfirmed,
-} from './press-reducer'
+export { isPressConfirmed, noteText } from './press-reducer'
 export type { Effect } from './press-reducer'
-export {
-  demoAfterPress,
-  demoReplied,
-  demoSent,
-  finishedResult,
-  runLocalEffects,
-  runSends,
-  withResult,
-} from './press-effects'
-export type { DemoSent, EffectHost } from './press-effects'
-export {
-  isRepeatOf,
-  isUndoable,
-  localLast,
-  offersUndo,
-  pendingResult,
-  recordPress,
-  retryOf,
-  withLasts,
-} from './pressed'
+export { demoAfterPress, demoReplied, demoSent } from './press-effects'
+export type { DemoSent } from './press-effects'
+export { isRepeatOf, isUndoable, offersUndo, retryOf } from './pressed'
 export { COMPARE_PAGE_FILE } from './press-messages'
-export type { AnswerMessage } from './press-messages'
 
 export function isPrRowId(id: string): boolean {
   return id.startsWith('pr:') || id.includes(' ')

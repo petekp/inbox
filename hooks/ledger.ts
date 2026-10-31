@@ -9,7 +9,7 @@ import { upgradeStatus } from './status-upgrade'
 export { isAskedForChoices, LIST_CHOICES } from './ask-match'
 export { closedAt, closedState, closeItem, reopenFinding, reopenItem } from './ledger-close'
 export type { ClosedState } from './ledger-close'
-export { parseReply, readKind, tasksRunBy } from './reply-parse'
+export { readKind, tasksRunBy } from './reply-parse'
 
 /** How many saved sessions each host keeps; the newest by save time. */
 export const KEPT_SESSIONS = 40

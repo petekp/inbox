@@ -10,15 +10,11 @@ import { endTurn, turnEnded } from '../../hooks/session-turns'
 import { forkedFrom, hasLedger, isUnseen, statusChanged } from '../../hooks/session-status'
 import { sessionView } from '../../hooks/session-view'
 import { delegatesSettled } from '../../hooks/children'
-import {
-  askOverConversation,
-  fetchPrs,
-  orderedKeys,
-  reconcileUpdateStatus,
-  runUpdates,
-  wakeForDone,
-} from '../../hooks/session-host'
-import type { StatusRecords, RecordFiles, SessionHost, UpdateHost } from '../../hooks/session-host'
+import { askOverConversation, orderedKeys, reconcileUpdateStatus, runUpdates } from '../../hooks/session-host'
+import type { SessionHost, UpdateHost } from '../../hooks/session-host'
+import { fetchPrs } from '../../hooks/host-prs'
+import { wakeForDone } from '../../hooks/host-press'
+import type { StatusRecords, RecordFiles } from '../../hooks/status-records'
 import { screenTabOf } from '../../hooks/view'
 import { openTarget } from './commands'
 import { exclusiveRun, pruneSessions, readState, updateState } from './state'

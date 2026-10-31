@@ -18,6 +18,7 @@ import {
 } from '../hooks/session-status'
 import { sessionView } from '../hooks/session-view'
 import type { Session } from '../hooks/session'
+import { runUpdates } from '../hooks/session-host'
 import {
   STATUS_RECORD_VERSION,
   statusCallPrompt,
@@ -25,10 +26,9 @@ import {
   RECORDS_PER_SESSION,
   recordFileName,
   refreshStatus,
-  runUpdates,
   writeStatusRecord,
-} from '../hooks/session-host'
-import type { StatusRecord, RecordFiles } from '../hooks/session-host'
+} from '../hooks/status-records'
+import type { StatusRecord, RecordFiles } from '../hooks/status-records'
 import { footerStatus, NO_HOLDS } from '../hooks/view'
 import { fakeHost } from './session-fake-host'
 import { LEDGER_REPLY, finishTurn, answer } from './session-helpers'

@@ -1,6 +1,7 @@
 import type { herdrReporter } from '../../hooks/herdr'
 import type { Run } from '../../hooks/gh'
-import type { prFetchTracker, SessionHost } from '../../hooks/session-host'
+import type { SessionHost } from '../../hooks/session-host'
+import type { prFetchTracker } from '../../hooks/host-prs'
 import type { ShownTab } from '../../hooks/view'
 import type { OmpState } from './state'
 import type { HostDeps } from './host'
