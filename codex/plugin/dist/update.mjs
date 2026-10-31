@@ -1299,44 +1299,8 @@ async function askStatus(ask) {
   return { first, last: holdsProse ? await ask() : first };
 }
 
-// ../hooks/host-tasks.ts
+// ../hooks/ledger-prompt.ts
 var NL4 = "\n";
-var TASKS_KEPT = 12;
-var STATUSES2 = {
-  pending: "pending",
-  in_progress: "in-progress",
-  "in-progress": "in-progress",
-  completed: "done",
-  done: "done",
-  abandoned: "dropped",
-  blocked: "blocked"
-};
-var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
-function upgradeHostTasks(saved) {
-  if (!Array.isArray(saved)) return [];
-  return saved.flatMap((raw) => {
-    const t = recordOf(raw);
-    const status = STATUSES2[String(t.status)];
-    return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
-  });
-}
-function keptTasks(tasks) {
-  let toCut = tasks.length - TASKS_KEPT;
-  if (toCut <= 0) return tasks;
-  const kept = tasks.filter((t) => {
-    const isFinished = t.status === "done" || t.status === "dropped";
-    if (!isFinished || toCut <= 0) return true;
-    toCut -= 1;
-    return false;
-  });
-  return kept.slice(-TASKS_KEPT);
-}
-function tasksText(tasks) {
-  return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL4);
-}
-
-// ../hooks/model-text.ts
-var NL5 = "\n";
 var MODEL_KIND = { question: "decide", task: "do" };
 function systemText(host) {
   const band = host.band ? ` They always see how many items are in <open> and <findings> in ${host.band}.` : "";
@@ -1348,7 +1312,7 @@ Input:
 - <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
 - <person>: what the person just sent, and the commands they ran themselves: "$ cmd" for a shell command, with its output, and "/name" for a slash command
 - <activity>: what the agent did this turn (files edited, commands, URLs)
-- <reply>: the agent's final reply
+- <reply>: what the agent said this turn, in order
 - <screen>: what the person has on screen besides the conversation.${band}
 
 Answer with lines only, each starting with one of these keys. No other text. When nothing in the exchange changes the ledger, answer with the one line NONE.
@@ -1385,14 +1349,46 @@ TODO: <work>
 
 Write plainly. No jargon, no filler, no markdown.`;
 }
+function ledgerBlocks(ledger) {
+  const open3 = ledger.items.map(
+    (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`
+  ).join(NL4);
+  const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL4);
+  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL4);
+  return [
+    `<open>${NL4}${open3}${NL4}</open>`,
+    `<findings>${NL4}${findings}${NL4}</findings>`,
+    `<decided>${NL4}${closed}${NL4}</decided>`
+  ];
+}
+function buildPrompt(ledger, ex) {
+  const person = personText(ex.person, ex.trigger);
+  return [
+    ...ledgerBlocks(ledger),
+    `<person>${NL4}${clipMiddle(person, 4e3, 1500)}${NL4}</person>`,
+    `<activity>${NL4}${clipMiddle(ex.activity.join(NL4), 2500, 500)}${NL4}</activity>`,
+    `<reply>${NL4}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL4}</reply>`,
+    `<screen>${NL4}${ex.screen}${NL4}</screen>`
+  ].join(NL4);
+}
+function personText(person, trigger) {
+  return person ?? `(The person sent nothing. The turn was started by: ${trigger ?? "unknown"}.)`;
+}
+function outcomeText(d) {
+  if (d.how === "dismissed") return "dismissed by the user";
+  if (d.how === "expired") return "expired before the user answered";
+  return d.outcome;
+}
+
+// ../hooks/catch-up-text.ts
 var CATCH_UP = "The ledger below may have missed turns. Write a CLOSED line for every item in <open> that the conversation shows answered, done, dealt with, or no longer relevant, and a FIXED line for every finding in <findings> that it shows was fixed. Add as NEW only what still waits on the user and is not already in <open> or <findings>.";
 function transcriptCatchUpPrompt(ledger, screen, transcript) {
   return [
     `Treat the conversation in <conversation> as the exchange. Its start may be cut. ${CATCH_UP}`,
     ...ledgerBlocks(ledger),
-    `<conversation>${NL5}${numberBlocks(transcript)}${NL5}</conversation>`,
-    `<screen>${NL5}${screen}${NL5}</screen>`
-  ].join(NL5);
+    `<conversation>${NL4}${numberBlocks(transcript)}${NL4}</conversation>`,
+    `<screen>${NL4}${screen}${NL4}</screen>`
+  ].join(NL4);
 }
 var MAX_ACTIVITY = 40;
 function addActivity(activity, line) {
@@ -1466,28 +1462,44 @@ function dialogActivity(questions, outcome) {
       return `${head}; still open, waiting on the user's answer`;
   }
 }
-function ledgerBlocks(ledger) {
-  const open3 = ledger.items.map(
-    (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`
-  ).join(NL5);
-  const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL5);
-  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL5);
-  return [
-    `<open>${NL5}${open3}${NL5}</open>`,
-    `<findings>${NL5}${findings}${NL5}</findings>`,
-    `<decided>${NL5}${closed}${NL5}</decided>`
-  ];
+
+// ../hooks/host-tasks.ts
+var NL5 = "\n";
+var TASKS_KEPT = 12;
+var STATUSES2 = {
+  pending: "pending",
+  in_progress: "in-progress",
+  "in-progress": "in-progress",
+  completed: "done",
+  done: "done",
+  abandoned: "dropped",
+  blocked: "blocked"
+};
+var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+function upgradeHostTasks(saved) {
+  if (!Array.isArray(saved)) return [];
+  return saved.flatMap((raw) => {
+    const t = recordOf(raw);
+    const status = STATUSES2[String(t.status)];
+    return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
+  });
 }
-function buildPrompt(ledger, ex) {
-  const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
-  return [
-    ...ledgerBlocks(ledger),
-    `<person>${NL5}${clipMiddle(person, 4e3, 1500)}${NL5}</person>`,
-    `<activity>${NL5}${clipMiddle(ex.activity.join(NL5), 2500, 500)}${NL5}</activity>`,
-    `<reply>${NL5}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL5}</reply>`,
-    `<screen>${NL5}${ex.screen}${NL5}</screen>`
-  ].join(NL5);
+function keptTasks(tasks) {
+  let toCut = tasks.length - TASKS_KEPT;
+  if (toCut <= 0) return tasks;
+  const kept = tasks.filter((t) => {
+    const isFinished = t.status === "done" || t.status === "dropped";
+    if (!isFinished || toCut <= 0) return true;
+    toCut -= 1;
+    return false;
+  });
+  return kept.slice(-TASKS_KEPT);
 }
+function tasksText(tasks) {
+  return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL5);
+}
+
+// ../hooks/status-prompt.ts
 var STATUS_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
 
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
@@ -1501,7 +1513,7 @@ Input:
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
-- <reply>: the agent's final reply
+- <reply>: what the agent said this turn, in order
 
 Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, and the head still holds, answer with the one line NO CHANGE. Most exchanges change nothing.
 
@@ -1547,41 +1559,40 @@ function statusBlocks({ last, asks, tasks, now }) {
   const held = asksText(last, asks);
   const list = tasksText(tasks);
   return [
-    `<head>${NL5}${headText(last)}${NL5}</head>`,
-    `<subjects>${NL5}${open3}${NL5}</subjects>`,
-    ...finished === "" ? [] : [`<finished>${NL5}${finished}${NL5}</finished>`],
-    ...running === "" ? [] : [`<running>${NL5}${running}${NL5}</running>`],
-    ...held === "" ? [] : [`<asks>${NL5}${held}${NL5}</asks>`],
-    ...list === "" ? [] : [`<tasks>${NL5}${list}${NL5}</tasks>`]
+    `<head>${NL4}${headText(last)}${NL4}</head>`,
+    `<subjects>${NL4}${open3}${NL4}</subjects>`,
+    ...finished === "" ? [] : [`<finished>${NL4}${finished}${NL4}</finished>`],
+    ...running === "" ? [] : [`<running>${NL4}${running}${NL4}</running>`],
+    ...held === "" ? [] : [`<asks>${NL4}${held}${NL4}</asks>`],
+    ...list === "" ? [] : [`<tasks>${NL4}${list}${NL4}</tasks>`]
   ];
-}
-function personText(person, trigger) {
-  return person ?? `(The person sent nothing. The turn was started by: ${trigger ?? "unknown"}.)`;
 }
 function statusPrompt(input, ex) {
   const person = personText(ex.person, ex.trigger);
   return [
     ...statusBlocks(input),
-    `<person>${NL5}${clipMiddle(person, 4e3, 1500)}${NL5}</person>`,
-    `<activity>${NL5}${clipMiddle(ex.activity.join(NL5), 2500, 500)}${NL5}</activity>`,
-    `<reply>${NL5}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL5}</reply>`
-  ].join(NL5);
+    `<person>${NL4}${clipMiddle(person, 4e3, 1500)}${NL4}</person>`,
+    `<activity>${NL4}${clipMiddle(ex.activity.join(NL4), 2500, 500)}${NL4}</activity>`,
+    `<reply>${NL4}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL4}</reply>`
+  ].join(NL4);
 }
 function statusMidTurnPrompt(input, turn) {
   return [
     "The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes.",
     ...statusBlocks(input),
-    `<person>${NL5}${clipMiddle(personText(turn.person, turn.trigger), 4e3, 1500)}${NL5}</person>`,
-    `<activity>${NL5}${clipMiddle(turn.activity.join(NL5), 2500, 500)}${NL5}</activity>`
-  ].join(NL5);
+    `<person>${NL4}${clipMiddle(personText(turn.person, turn.trigger), 4e3, 1500)}${NL4}</person>`,
+    `<activity>${NL4}${clipMiddle(turn.activity.join(NL4), 2500, 500)}${NL4}</activity>`
+  ].join(NL4);
 }
 function statusCatchUpPrompt(input, transcript) {
   return [
     "Treat the conversation in <conversation> as the exchange. Its start may be cut. Answer with the changes that bring the list to where the conversation ends.",
     ...statusBlocks(input),
-    `<conversation>${NL5}${numberBlocks(transcript)}${NL5}</conversation>`
-  ].join(NL5);
+    `<conversation>${NL4}${numberBlocks(transcript)}${NL4}</conversation>`
+  ].join(NL4);
 }
+
+// ../hooks/inbox-text.ts
 function surfaceAtStart(host) {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
 }
@@ -1615,11 +1626,6 @@ function questionNumbers(ledger, promptTurn) {
   for (const [n, item] of batchNumbers(answerableBatch(ledger, promptTurn)))
     if (item.kind === "question") numbers.set(item.id, n);
   return numbers;
-}
-function outcomeText(d) {
-  if (d.how === "dismissed") return "dismissed by the user";
-  if (d.how === "expired") return "expired before the user answered";
-  return d.outcome;
 }
 var TOLD_NOTHING = { inbox: null, closed: [] };
 

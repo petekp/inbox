@@ -1,5 +1,5 @@
-import { toolActivity } from '../../hooks/model-text'
-import type { DialogOutcome } from '../../hooks/model-text'
+import { toolActivity } from '../../hooks/catch-up-text'
+import type { DialogOutcome } from '../../hooks/catch-up-text'
 
 /** The activity line for an omp tool call, through the names the shared `toolActivity` knows. */
 export function activityOf(tool: string, input: Record<string, unknown>): string | null {

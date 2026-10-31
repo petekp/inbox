@@ -1,7 +1,7 @@
 import type { Engine, MockClock } from 'claude-code/testing'
 import type { On, PaneOpenArgs, PromptOrigin, RenderSurface } from 'claude-code'
 import { GH_TIMEOUT_MS } from '../hooks/gh'
-import { STATUS_SYSTEM } from '../hooks/model-text'
+import { STATUS_SYSTEM } from '../hooks/status-prompt'
 
 export const LEDGER_REPLY = `NEW: decide | 1 | Use Node or Python? | Node / Python | Node
 NEW: decide | 2 | Name the command greet? | - | yes`

@@ -1,8 +1,8 @@
 import { flattenConversation } from '../../hooks/conversation'
 import { codexPlanOf } from '../../hooks/host-tasks'
 import type { Turn } from '../../hooks/conversation'
-import { addActivity, dialogQuestions } from '../../hooks/model-text'
-import type { DialogQuestion } from '../../hooks/model-text'
+import { addActivity, dialogQuestions } from '../../hooks/catch-up-text'
+import type { DialogQuestion } from '../../hooks/catch-up-text'
 import type { HostTask } from '../../types'
 import { callCommand, callLines, commandText, DIALOG_TOOL, outputText, shellLines } from './rollout-commands'
 import { contentText, isText, record, textOf } from './rollout-rows'
@@ -13,7 +13,15 @@ type FinishedCommand = { command: string; output: string }
 /** The Codex tool that writes the agent's plan: the rows of the plan, each with a step and a status. */
 const PLAN_TOOL = 'update_plan'
 
-const MARKERS = ['"task_started"', DIALOG_TOOL, '"CommandExecution"', '"function_call', '"local_shell_call']
+const MARKERS = [
+  '"task_started"',
+  DIALOG_TOOL,
+  '"CommandExecution"',
+  '"function_call',
+  '"local_shell_call',
+  '"AgentMessage"',
+  '"assistant"',
+]
 
 /**
  * A row of the rollout that starts a turn (`task_started`), or ends it by completing (`task_complete`) or by an
@@ -51,11 +59,12 @@ export function turnEventOf(line: string): TurnEvent | null {
  */
 export type Dialog = { callId: string | null; questions: DialogQuestion[] }
 
-export type TurnRows = { dialogs: Dialog[]; commands: FinishedCommand[]; plan: HostTask[] | null }
+/** `texts`: the agent's messages to the person, in order, from its notes while it works to its final answer. */
+export type TurnRows = { dialogs: Dialog[]; commands: FinishedCommand[]; plan: HostTask[] | null; texts: string[] }
 
 /** What the agent did in a turn, as `turnIn` says, read from the lines `rolloutTail` gives. */
 export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
-  const none: TurnRows = { dialogs: [], commands: [], plan: null }
+  const none: TurnRows = { dialogs: [], commands: [], plan: null, texts: [] }
   try {
     type Turn = {
       dialogs: Dialog[]
@@ -63,9 +72,19 @@ export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
       calls: Map<string, FinishedCommand>
       called: FinishedCommand[]
       plan: HostTask[] | null
+      itemTexts: string[]
+      messageTexts: string[]
     }
     const byTurn = new Map<string, Turn>()
-    const newTurn = (): Turn => ({ dialogs: [], executions: [], calls: new Map(), called: [], plan: null })
+    const newTurn = (): Turn => ({
+      dialogs: [],
+      executions: [],
+      calls: new Map(),
+      called: [],
+      plan: null,
+      itemTexts: [],
+      messageTexts: [],
+    })
     let current = ''
     let newest = ''
     for (const line of lines) {
@@ -89,6 +108,10 @@ export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
       if (row.type === 'event_msg' && p.type === 'item_completed' && p.item?.type === 'CommandExecution') {
         const output = p.item.aggregated_output
         turn.executions.push({ command: commandText(p.item.command), output: isText(output) ? output : '' })
+      } else if (row.type === 'event_msg' && p.type === 'item_completed' && p.item?.type === 'AgentMessage') {
+        turn.itemTexts.push(contentText(p.item.content))
+      } else if (row.type === 'response_item' && p.type === 'message' && p.role === 'assistant') {
+        turn.messageTexts.push(contentText(p.content))
       } else if (row.type === 'response_item' && p.type === 'function_call' && p.name === PLAN_TOOL) {
         turn.plan = codexPlanOf(p.arguments) ?? turn.plan
       } else if (row.type === 'response_item' && p.type === 'function_call' && p.name === DIALOG_TOOL) {
@@ -115,6 +138,7 @@ export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
       dialogs: turn.dialogs.filter(d => d.questions.length > 0),
       commands: turn.executions.length > 0 ? turn.executions : turn.called,
       plan: turn.plan,
+      texts: turn.itemTexts.length > 0 ? turn.itemTexts : turn.messageTexts,
     }
   } catch {
     return none

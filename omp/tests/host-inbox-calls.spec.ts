@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { systemText } from '../../hooks/model-text'
+import { systemText } from '../../hooks/ledger-prompt'
 import { STATUS_REFRESH_MS } from '../../hooks/session'
 import { createInbox } from '../src/host'
 import { OMP } from '../src/texts'
@@ -37,6 +37,38 @@ test('a turn that ends queues the exchange and the inbox model fills the ledger'
   expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Use Node or Python?'])
   expect(w.completions).toHaveLength(1)
   expect(w.completions[0]!.prompt).toContain('Plan written. Which runtime?')
+})
+
+const assistant = (text: string, isWorking = false) => ({
+  message: { role: 'assistant', content: [{ type: 'text', text }, ...(isWorking ? [{ type: 'toolCall' }] : [])] },
+})
+
+test('the inbox model reads the text of each assistant message in the turn, in order, including one that called tools', async () => {
+  createInbox(pi(), deps())
+  await prompt('Fix the parser')
+  await call('agent_start', { type: 'agent_start' })
+  await call('message_end', assistant('The parser is fixed. Should I also rename the helper?', true))
+  await call('message_end', assistant('Saved the notes.'))
+  await endAgent('Saved the notes.')
+  await settle()
+  expect(w.completions).toHaveLength(1)
+  expect(w.completions[0]!.prompt).toContain(
+    'The parser is fixed. Should I also rename the helper?\n\nSaved the notes.',
+  )
+})
+
+test('a follow-up that arrives after a finished reply ends that turn with all its text, and the next turn reads only its own', async () => {
+  createInbox(pi(), deps())
+  await prompt('Check the old build')
+  await call('agent_start', { type: 'agent_start' })
+  await call('message_end', assistant('Checking the old build.', true))
+  await call('message_end', assistant('The old build passes.'))
+  await prompt('Now fix the parser')
+  await call('message_end', assistant('The parser is fixed.'))
+  await endAgent('The parser is fixed.')
+  await settle()
+  const replies = w.completions.map(c => c.prompt.split('<reply>\n')[1]?.split('\n</reply>')[0])
+  expect(replies).toEqual(['Checking the old build.\n\nThe old build passes.', 'The parser is fixed.'])
 })
 
 test('a reply’s Status comes from the separate Status call, after the ledger update', async () => {

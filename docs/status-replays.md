@@ -40,6 +40,7 @@ At every step, the pieces set aside or waiting on a vendor stay on the page.
 | 6 | The person asks how the backup copy is named and why the plan changed, and the agent explains both. Nothing is decided. | Nothing moves |
 | 7 | The banner shows on phones, and the agent asks whether it shows on web too | ◆ on the banner, from the ledger's new ask |
 | 8 | The person dismisses the question and asks for device tests. Android syncs, and iOS loses edits after a crash. | The ask closes as dismissed, and ◆ clears. The banner closes as ✓. The engine row keeps both states, or splits. |
+| 9 | The agent fixes the iOS edit loss. Its notes between tool calls say the fix works and the engine is finished. Its last message only says where it saved the results. | The engine closes as ✓, from text before the last message. |
 
 **Replay C: a long turn and a catch-up.** Status calls only.
 

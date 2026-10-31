@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { latestBatch } from '../hooks/model-text'
+import { latestBatch } from '../hooks/inbox-text'
 import { EMPTY } from '../hooks/ledger'
 import { closeItem } from '../hooks/ledger-close'
 import { addAgentItem, applyUpdate } from '../hooks/ledger-update'

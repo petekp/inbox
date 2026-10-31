@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { STATUS_SYSTEM } from '../../hooks/model-text'
+import { STATUS_SYSTEM } from '../../hooks/status-prompt'
 import type { HostDeps } from '../src/host'
 
 type Handler = (event: any, ctx: any) => unknown

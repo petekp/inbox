@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 
-import { dialogActivity, dialogQuestions, toolActivity } from '../../hooks/model-text'
+import { dialogActivity, dialogQuestions, toolActivity } from '../../hooks/catch-up-text'
 import { patchFiles } from './core'
 import { isText, jsonRecord, textOf } from './rollout-rows'
 import type { Payload, RowPayload, TranscriptLine } from './rollout-rows'

@@ -56,7 +56,7 @@ The Closed fold's outcomes are the answer itself ("Yes, rename"), "Done", "You r
 
 Only the Status tab shows the headline and status. The band shows only counts, and the other tabs only rows. The Codex tab has no band, and its tab labels carry the counts, so it draws no count or headline either.
 
-**Question numbers.** Typing "1 yes" in the prompt answers a numbered question through `hooks/model-text.ts:answerNote`. That function maps a typed number to the agent's latest batch of questions: by the agent's own label when it gave one, else by position in the batch. It does this only when that batch came from the reply just before.
+**Question numbers.** Typing "1 yes" in the prompt answers a numbered question through `hooks/inbox-text.ts:answerNote`. That function maps a typed number to the agent's latest batch of questions: by the agent's own label when it gave one, else by position in the batch. It does this only when that batch came from the reply just before.
 
 The rule, in the terminal: a question's handle shows a number only when a typed number reaches it now, and shows the number `answerNote` would resolve. Every other open question shows a task's bullet, `•`. The Claude app pane and the Codex tab draw no number or bullet: a question's own buttons answer it there, and the agent's reply already shows the numbers a typed answer uses. Once the person sends any message, the batch is no longer "the reply just before", and every handle becomes `•` until the agent asks again. The Codex tab follows the same rule, since it uses `answerNote` through `promptNotes`.
 
