@@ -22,7 +22,6 @@ Part of [the look map](../looks.md#files).
 | `codex/src/row-actions.tsx` | Codex adapter. Maps shared actions to buttons and draws reply fields. Its production components have mounted tests. |
 | `codex/src/tab.html` | Codex adapter. The tab's page shell. `codex/build.mjs` replaces each `/*TAB_CSS:name*/` line with `tab-css/name.css`, so the shell sets the order the styles apply in. |
 | `codex/src/tab-css/` | Codex adapter. The tab's styles, one file per concern. |
-| `codex/src/rows.ts` | Codex adapter. The motion state machine for rows. |
 | `codex/src/arrivals.ts` | Codex adapter. The tab's rows, tabs and empty-tab rule, built on `hooks/arrivals.ts`. |
 | `codex/src/settle.ts` | Codex adapter. Polling, the settled rows the tab draws, and how long the tab offers Undo. |
 | `codex/src/texts.ts` | Codex adapter. Texts only Codex reads, and the `CODEX` host. |

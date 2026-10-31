@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { ROW_STATE_MS, stepRow } from '../src/rows'
-import type { RowState, RowTarget, RowTrack } from '../src/rows'
+import { ROW_STATE_MS, stepRow } from '../../hooks/row-motion'
+import type { RowState, RowTarget, RowTrack } from '../../hooks/row-motion'
 
 const ROW_STATES: RowState[] = [
   'entering',

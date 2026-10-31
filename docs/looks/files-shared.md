@@ -7,6 +7,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/view.ts` | Shared module. `inboxView` builds the inbox view: the Asks order and count, each row's state, feedback and actions, and the closed rows. `footerStatus` is the status line under the inbox. It re-exports the names that `register.tsx` imports from it. |
 | `hooks/timing.ts` | Shared module. The timing constants: how long a row stays settled, the press guard, when a send reads Queued, and the running mark's frames. Which rows a look draws in place, and which replies and discards it holds. |
 | `hooks/rows.ts` | Shared module. The `Look`, `RowView` and `RowState` types. Row handles, titles, reply hints and action labels, a closed row's state, outcome label and mark, and the labels of the closed folds. |
+| `hooks/row-motion.ts` | Shared module. The motion state machine for rows. |
 | `hooks/feedback.ts` | Shared module. A press's feedback on its row: `feedbackOf`, its text in each look, the working and done labels, and whether the press is still out. |
 | `hooks/banners.ts` | Shared module. The banners under the tab bar, the stop texts and Continue, the sample and reading notices, the next build's version label, and the empty-list texts. |
 | `hooks/tabs.ts` | Shared module. The tabs each build shows, with their names, symbols and badges, how the tab bar fits them, and the `/inbox` command's description. |

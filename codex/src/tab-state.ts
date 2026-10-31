@@ -7,7 +7,7 @@ import type { ShownTab } from '../../hooks/tabs'
 import type { Draft, Finding, Tab } from '../../types'
 import type { FoldGroup, SeenRows } from './arrivals'
 import type { TabView as View } from './core'
-import type { RowTrack } from './rows'
+import type { RowTrack } from '../../hooks/row-motion'
 import type { HostContext } from './tab-host'
 
 export type Tone = 'needsYou' | 'issue' | 'findings' | 'done' | 'error'
