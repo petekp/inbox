@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { finishedResult } from '../../hooks/presses'
+import { finishedResult } from '../../hooks/press-effects'
 import type { RowPress } from '../../hooks/presses'
 import {
   feedbackText,

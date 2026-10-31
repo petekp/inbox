@@ -17,7 +17,7 @@ Every feature works the same way for the person in every client, unless a host c
 - The choice between designs is made for the person's experience.
 - Codex and omp get catch-up, as the mod has it. When a host first sees a session that already has turns, or after a failed update, the next update reads the whole conversation.
 - Codex reads shell output, such as PR links and URL lines, from the rollout at Stop. It adds no PostToolUse hook.
-- Every host opens a row's link or path through `hooks/presses.ts:openTarget`. It opens http and https links, and reads anything else as a path.
+- Every host opens a row's link or path through `hooks/open-targets.ts:openTarget`. It opens http and https links, and reads anything else as a path.
 
 ## Steps
 

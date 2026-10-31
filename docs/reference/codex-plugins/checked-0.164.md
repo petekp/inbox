@@ -157,7 +157,7 @@ to resolve before continuing."
   id` [live 0.164.0].
 - So a press during a pending approval is accepted at once. The inbox keeps it
   `queued` until the message arrives as a prompt, and there is no timer that
-  turns it into `unconfirmed` (hooks/presses.ts `withArrival`).
+  turns it into `unconfirmed` (hooks/press-reducer.ts `withArrival`).
 - Any `-c` or `--config` on `codex queue`, even at two levels, makes it refuse
   while a local daemon runs: "cannot queue through an embedded app server
   while a local app-server daemon is running; remove configuration overrides or

@@ -10,7 +10,7 @@ import { devBuild } from './data-dir'
 import TAB_HTML from './tab.html'
 import { run } from './run'
 import { listHooksTrust } from './hook-trust'
-import { COMPARE_PAGE_FILE } from '../../hooks/presses'
+import { COMPARE_PAGE_FILE } from '../../hooks/press-messages'
 import { NEXT_BUILD_MARK } from '../../hooks/view'
 
 function devPageIn(dir: string): () => Promise<string | null> {

@@ -27,7 +27,7 @@ Status: building. The index says which themes are built, measured or proposed.
 - **Where:**
   - `applyUpdate` in `hooks/ledger-update.ts` and `ledgerBlocks` in `hooks/model-text.ts`;
   - the sentence in `systemText` that begins "When the reply restates, rewords or narrows an item";
-  - `messages.explain` in `hooks/presses.ts`.
+  - `messages.explain` in `hooks/press-messages.ts`.
 - **What is wrong:**
   - When a NEW line matches an open item, only its steps are merged. Its new ask, options and recommendation are dropped.
   - The inbox model sees each open item as id, kind, label and ask. It never sees the options or recommendation, so it cannot tell a reworded question from a changed one.
@@ -70,7 +70,7 @@ Status: building. The index says which themes are built, measured or proposed.
 
 ### 6. Ids go missing where the agent must close
 
-- **Where:** `messages` in `hooks/presses.ts`, and `recordClose` in `hooks/tools.ts`.
+- **Where:** `messages` in `hooks/press-messages.ts`, and `recordClose` in `hooks/tools.ts`.
 - **What is wrong:**
   - Address, Discuss, a typed reply to a finding and Run leave the row open until the agent closes it. Their messages name the row by its title only.
   - The inbox line with the ids is repeated only when the inbox changed, and after one of these presses it usually has not.

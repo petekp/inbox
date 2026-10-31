@@ -1893,6 +1893,111 @@ Close with ${host.closeTool}:
 The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`;
 }
 
+// ../hooks/press-labels.ts
+function actionId(p) {
+  return p.action === "step" ? `step-${p.step}` : p.action;
+}
+function pressText(p) {
+  switch (p.action) {
+    case "answer":
+      return p.option;
+    case "type":
+      return "Reply";
+    case "issue":
+      return ISSUE_LABEL;
+    case "step":
+      return p.label;
+    default:
+      return capitalized(p.action);
+  }
+}
+function capitalized(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+var ISSUE_LABEL = "File issue";
+// ../hooks/open-targets.ts
+function baseName(path) {
+  return path.replace(/\/+$/, "").split("/").pop() ?? path;
+}
+function localPath(raw, root, home) {
+  if (raw.startsWith("~/"))
+    return home + raw.slice(1);
+  if (raw.startsWith("/"))
+    return raw;
+  return `${root.replace(/\/$/, "")}/${raw.replace(/^\.\//, "")}`;
+}
+var LAUNCHES = /\.(app|command|tool|terminal|workflow|scpt|scptd|applescript|pkg|mpkg|dmg|webloc|inetloc|fileloc|prefpane|kext)$/i;
+function openCommands(path, isFile, isExecutable) {
+  if (!isFile || isExecutable || LAUNCHES.test(path))
+    return { argv: ["open", "-R", path], fallback: null };
+  return { argv: ["open", path], fallback: ["open", "-t", path] };
+}
+var OPEN_TIMEOUT_MS = 1e4;
+async function openTarget(run, probe, target, root, home) {
+  const open = (argv) => run(argv, { cwd: "/", timeoutMs: OPEN_TIMEOUT_MS });
+  const failure = (r) => r.stderr.trim() || `open exited ${r.code}`;
+  if (/^https?:\/\//.test(target)) {
+    const r = await open(["open", target]);
+    return r.code === 0 ? null : failure(r);
+  }
+  const path = localPath(target, root || "/", home);
+  const info = await probe.stat(path);
+  if (!info)
+    return "it no longer exists";
+  const isFile = info.isFile();
+  const isExecutable = isFile && await probe.isExecutable(path);
+  const { argv, fallback } = openCommands(path, isFile, isExecutable);
+  const r = await open(argv);
+  const retry = r.code !== 0 && fallback ? await open(fallback) : r;
+  return retry.code === 0 ? null : failure(retry);
+}
+// ../hooks/press-messages.ts
+function findingBody(finding) {
+  return [
+    `${finding.kind === "issue" ? "Issue" : "Opportunity"}: ${finding.title}`,
+    finding.detail,
+    ...finding.path ? [`File: ${finding.path}`] : []
+  ];
+}
+var EXPLAIN_REPLY_FORM = "Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.";
+var COMPARE_PAGE_FILE = "compare-page.html";
+var compareRequest = (comparePage) => [
+  "Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.",
+  "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
+  `Then make a page from the inbox's comparison template. Write the comparison as JSON in the shape the comment at the top of the template shows, with the few measures that tell the choices apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Build the page with: cat "${comparePage}" <your JSON file> > <your page>.html`,
+  "When the comparison is done, reply without a table, since the page holds the measures. Give your pick and say whether it changed, your reason in one line, one line on anything you did not expect, and the page's absolute path.",
+  "Also call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps. That marks it compared. Call each choice by its name as listed."
+].join(`
+
+`);
+function quotedAsk(item) {
+  return `"${item.ask}"${item.options.length > 0 ? `
+Options: ${item.options.join(" / ")}` : ""}`;
+}
+var messages = {
+  answer: (item, answer) => `Re "${item.ask}": ${answer}`,
+  explain: (item) => {
+    const what = item.kind === "task" ? "this task you left for me is about: why it came up, and what doing it involves" : "this question you asked me is about: why it came up, what each choice would do, and which you would pick";
+    return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.
+${quotedAsk(item)}`;
+  },
+  compare: (item, comparePage) => `${compareRequest(comparePage)}
+${quotedAsk(item)}`,
+  run: (item, command) => `For "${item.ask}", run this:
+\`\`\`
+${command}
+\`\`\``,
+  taskReply: (item, words) => `Re the task you left for me, "${item.ask}": ${words}`,
+  done: (asks) => asks.length === 1 ? `Done: ${asks[0]}` : `Done:
+${asks.map((a) => `- ${a}`).join(`
+`)}`,
+  finding: (finding, how, words = "") => {
+    const opening = how === "address" ? "Please address this finding you recorded:" : how === "issue" ? "Please file an issue for this finding you recorded, in the issue tracker you have tools for. First check whether one already exists, and if it does, use it instead of filing a duplicate. Then close the finding with the issue's key or number as the reason, and give me its link. If you have no tools for an issue tracker, say so and leave the finding open." : how === "explain" ? `Remind me what this finding you recorded is about: why it matters, what fixing it would involve, and whether you would fix it now. ${EXPLAIN_REPLY_FORM} Don't act on it yet.` : how === "discuss" ? "Let's talk through this finding you recorded before changing anything:" : "About this finding you recorded:";
+    return [opening, ...findingBody(finding), ...how === "typed" ? ["", words] : []].join(`
+`);
+  }
+};
+
 // ../hooks/prs.ts
 var NL6 = `
 `;
@@ -2183,45 +2288,10 @@ function numberList(prs) {
   return numbers.length === 0 ? last ?? "" : `${numbers.join(", ")} and ${last}`;
 }
 
-// ../hooks/presses.ts
-function baseName(path) {
-  return path.replace(/\/+$/, "").split("/").pop() ?? path;
-}
+// ../hooks/help-steps.ts
 function helpLabel(help) {
   const label = help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? help.command}` : help.kind === "terminal" ? `Copy ${help.name ?? help.command}` : `Open ${help.name ?? new URL(help.url).host}`;
   return clipLabel(label, 32);
-}
-function localPath(raw, root, home) {
-  if (raw.startsWith("~/"))
-    return home + raw.slice(1);
-  if (raw.startsWith("/"))
-    return raw;
-  return `${root.replace(/\/$/, "")}/${raw.replace(/^\.\//, "")}`;
-}
-var LAUNCHES = /\.(app|command|tool|terminal|workflow|scpt|scptd|applescript|pkg|mpkg|dmg|webloc|inetloc|fileloc|prefpane|kext)$/i;
-function openCommands(path, isFile, isExecutable) {
-  if (!isFile || isExecutable || LAUNCHES.test(path))
-    return { argv: ["open", "-R", path], fallback: null };
-  return { argv: ["open", path], fallback: ["open", "-t", path] };
-}
-var OPEN_TIMEOUT_MS = 1e4;
-async function openTarget(run, probe, target, root, home) {
-  const open = (argv) => run(argv, { cwd: "/", timeoutMs: OPEN_TIMEOUT_MS });
-  const failure = (r) => r.stderr.trim() || `open exited ${r.code}`;
-  if (/^https?:\/\//.test(target)) {
-    const r = await open(["open", target]);
-    return r.code === 0 ? null : failure(r);
-  }
-  const path = localPath(target, root || "/", home);
-  const info = await probe.stat(path);
-  if (!info)
-    return "it no longer exists";
-  const isFile = info.isFile();
-  const isExecutable = isFile && await probe.isExecutable(path);
-  const { argv, fallback } = openCommands(path, isFile, isExecutable);
-  const r = await open(argv);
-  const retry = r.code !== 0 && fallback ? await open(fallback) : r;
-  return retry.code === 0 ? null : failure(retry);
 }
 function steps(helps) {
   const copy = helps.find((h) => h.kind === "copy");
@@ -2242,42 +2312,6 @@ function prSteps(item, tracked) {
 function stepsOf(item, extraSteps) {
   return [...steps(item.helps), ...extraSteps];
 }
-function isAwaitingReply(last, turns) {
-  const pressed = last?.delivery?.state !== "failed" ? last?.turnsStarted : undefined;
-  return pressed !== undefined && pressed <= turns.turnsStarted && turns.turnsApplied <= pressed;
-}
-function isHandedOff(last, turns) {
-  return last?.kind === "handoff" && isAwaitingReply(last, turns);
-}
-function isPrRowId(id) {
-  return id.startsWith("pr:") || id.includes(" ");
-}
-function isFoldingPress(id, last) {
-  return !id.startsWith("pr:") && last?.kind === "handoff" && last.action !== "address";
-}
-function isFixSent(last) {
-  return last?.action === "address" && !last.isKept && last.delivery?.state !== "failed";
-}
-function actionId(p) {
-  return p.action === "step" ? `step-${p.step}` : p.action;
-}
-function pressText(p) {
-  switch (p.action) {
-    case "answer":
-      return p.option;
-    case "type":
-      return "Reply";
-    case "issue":
-      return ISSUE_LABEL;
-    case "step":
-      return p.label;
-    default:
-      return capitalized(p.action);
-  }
-}
-function capitalized(text) {
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
 function stepIconKind(step) {
   if (!step)
     return;
@@ -2285,6 +2319,37 @@ function stepIconKind(step) {
     return "run";
   const first = step.step[0]?.kind;
   return first === "copy" || first === "terminal" ? "copy" : first === "open" || first === "link" ? "open" : undefined;
+}
+function helpEffect(item, help) {
+  switch (help.kind) {
+    case "run":
+      return { kind: "send", text: messages.run(item, help.command), by: { id: item.id, action: "run" } };
+    case "open":
+      return { kind: "open", target: help.path, name: baseName(help.path) };
+    case "link":
+      return { kind: "open", target: help.url, name: help.name ?? help.url };
+    case "copy":
+      return { kind: "copy", text: help.text, name: help.name ?? "snippet", isCommand: false };
+    case "terminal":
+      return { kind: "copy", text: help.command, name: help.name ?? clipLabel(help.command, 32), isCommand: true };
+  }
+}
+function stepEffects(item, step) {
+  return step.step.map((h) => helpEffect(item, h));
+}
+// ../hooks/last-actions.ts
+function isAwaitingReply(last, turns) {
+  const pressed = last?.delivery?.state !== "failed" ? last?.turnsStarted : undefined;
+  return pressed !== undefined && pressed <= turns.turnsStarted && turns.turnsApplied <= pressed;
+}
+function isHandedOff(last, turns) {
+  return last?.kind === "handoff" && isAwaitingReply(last, turns);
+}
+function isFoldingPress(id, last) {
+  return !id.startsWith("pr:") && last?.kind === "handoff" && last.action !== "address";
+}
+function isFixSent(last) {
+  return last?.action === "address" && !last.isKept && last.delivery?.state !== "failed";
 }
 var HANDOFF_IDS = /^(address|type|step-\d+|thread-address|pr-conflicts|pr-address-all)$/;
 var PR_RENAMES = [
@@ -2332,60 +2397,12 @@ function upgradeLastActions(saved) {
     return upgraded ? [[key, upgraded]] : [];
   }));
 }
+// ../hooks/pressed.ts
 function offersUndo(c) {
   return c.how === "done" || c.how === "dismissed";
 }
 function isUndoable(c) {
   return offersUndo(c) && !c.isSentToAgent;
-}
-function doneWake(ledger, ctx) {
-  if (ctx.isTurnRunning)
-    return null;
-  const waited = ledger.closed.filter((c) => c.how === "done" && c.outcome === "done" && !c.isSentToAgent && !c.doneNotification && c.item?.turn === ledger.turn);
-  if (waited.length === 0 || waited.some((c) => ctx.now - c.at < ctx.windowMs))
-    return null;
-  return { text: messages.done(waited.map((c) => c.ask)), ids: waited.map((c) => c.id) };
-}
-function markSentToAgent(ledger, ids, notificationId) {
-  return {
-    ...ledger,
-    closed: ledger.closed.map((c) => ids.includes(c.id) ? { ...c, isSentToAgent: true, ...notificationId ? { doneNotification: { id: notificationId } } : {} } : c)
-  };
-}
-function refuseDoneNotification(ledger, notificationId, reason) {
-  return {
-    ...ledger,
-    closed: ledger.closed.map((c) => {
-      if (c.how !== "done" || c.doneNotification?.id !== notificationId)
-        return c;
-      const { isSentToAgent: _sent, ...closed } = c;
-      return { ...closed, doneNotification: { id: notificationId, error: reason } };
-    })
-  };
-}
-var STALE_TEXT = "This changed before your press. Nothing was sent.";
-function noteText() {
-  return STALE_TEXT;
-}
-function isPressConfirmed(outcome) {
-  return outcome.error === null && outcome.note === null && !outcome.isUnconfirmed;
-}
-function helpEffect(item, help) {
-  switch (help.kind) {
-    case "run":
-      return { kind: "send", text: messages.run(item, help.command), by: { id: item.id, action: "run" } };
-    case "open":
-      return { kind: "open", target: help.path, name: baseName(help.path) };
-    case "link":
-      return { kind: "open", target: help.url, name: help.name ?? help.url };
-    case "copy":
-      return { kind: "copy", text: help.text, name: help.name ?? "snippet", isCommand: false };
-    case "terminal":
-      return { kind: "copy", text: help.command, name: help.name ?? clipLabel(help.command, 32), isCommand: true };
-  }
-}
-function stepEffects(item, step) {
-  return step.step.map((h) => helpEffect(item, h));
 }
 function pendingResult(effects, at, pressId) {
   return {
@@ -2395,144 +2412,10 @@ function pendingResult(effects, at, pressId) {
     ...pressId ? { pressId } : {}
   };
 }
-function finishedResult(pending, errors, at) {
-  const parts = pending.parts.map((part, n) => ({ ...part, error: errors[n] ?? null }));
-  return {
-    state: parts.some((part) => part.error !== null) ? "failed" : "done",
-    parts,
-    at,
-    ...pending.pressId ? { pressId: pending.pressId } : {},
-    ...pending.action ? { action: pending.action } : {}
-  };
-}
 function localLast(last, pressed, pending) {
   const result = { ...pending, action: pressed.action };
   return last && last.kind !== "local" ? { ...last, result } : { kind: "local", ...pressed, at: result.at, result };
 }
-function withResult(lastActions, rowId, pendingAt, result) {
-  const last = lastActions[rowId];
-  if (last?.result?.state !== "pending" || last.result.at !== pendingAt || last.result.pressId !== result.pressId)
-    return lastActions;
-  return { ...lastActions, [rowId]: { ...last, result } };
-}
-function applyPress(ledger, last, p, ctx) {
-  const r = pressed(ledger, last, p, ctx);
-  return "stale" in r || !r.last ? r : { ...r, last: withQueued(r.last, r.effects) };
-}
-function withQueued(last, effects) {
-  const send = effects.find((e) => e.kind === "send");
-  return send ? { ...last, delivery: { state: "queued", message: send.text } } : last;
-}
-function withDeliveryId(lastActions, rows, at, message, id) {
-  return Object.fromEntries(Object.entries(lastActions).map(([row, action]) => [
-    row,
-    rows.includes(row) && action.at === at && action.delivery?.state === "queued" && action.delivery.id === undefined && action.delivery.message === message ? { ...action, delivery: { ...action.delivery, id } } : action
-  ]));
-}
-function withArrival(lastActions, message, pressedAt, deliveryId) {
-  const isWaiting = (a) => (a.delivery?.state === "queued" || a.delivery?.state === "unconfirmed") && a.delivery.message === message;
-  const waiting = Object.values(lastActions).filter((a) => isWaiting(a) && (deliveryId ? a.delivery?.id === deliveryId : a.delivery?.id === undefined));
-  if (waiting.length === 0)
-    return lastActions;
-  const at = pressedAt ?? Math.min(...waiting.map((a) => a.at));
-  return Object.fromEntries(Object.entries(lastActions).map(([id, a]) => [
-    id,
-    isWaiting(a) && (deliveryId ? a.delivery?.id === deliveryId : a.delivery?.id === undefined && a.at === at) ? { ...a, delivery: { state: "arrived" } } : a
-  ]));
-}
-function withUnconfirmed(lastActions, message, pressedAt, deliveryId) {
-  return Object.fromEntries(Object.entries(lastActions).map(([id, action]) => [
-    id,
-    action.delivery?.state === "queued" && action.delivery.message === message && (deliveryId ? action.delivery.id === deliveryId : pressedAt === undefined || action.delivery.id === undefined && action.at === pressedAt) ? { ...action, delivery: { ...action.delivery, state: "unconfirmed" } } : action
-  ]));
-}
-function withAcceptedSend(lastActions, rows, at, message, deliveryId) {
-  return withQueuedDelivery(lastActions, rows, at, (text) => text === message, { state: "queued", message, id: deliveryId }, deliveryId);
-}
-function withQueuedDelivery(lastActions, rows, at, matches, delivery, deliveryId) {
-  const changed = rows.flatMap((id) => {
-    const a = lastActions[id];
-    return a?.at === at && (a.delivery?.state === "queued" || a.delivery?.state === "unconfirmed") && (deliveryId ? a.delivery.id === deliveryId : a.delivery.id === undefined) && matches(a.delivery.message) ? [[id, { ...a, delivery }]] : [];
-  });
-  return changed.length === 0 ? lastActions : { ...lastActions, ...Object.fromEntries(changed) };
-}
-function withFailure(lastActions, rows, at, reason, deliveryId) {
-  return withQueuedDelivery(lastActions, rows, at, () => true, { state: "failed", reason, ...deliveryId ? { id: deliveryId } : {} }, deliveryId);
-}
-function withRewrite(lastActions, rows, at, message, entered, deliveryId) {
-  return Object.fromEntries(Object.entries(lastActions).map(([id, action]) => [
-    id,
-    rows.includes(id) && action.at === at && (action.delivery?.state === "queued" || action.delivery?.state === "unconfirmed") && (deliveryId ? action.delivery.id === deliveryId : action.delivery.id === undefined) && action.delivery.message === message ? { ...action, delivery: { ...action.delivery, message: entered } } : action
-  ]));
-}
-function reopenOnFailure(ledger, id, at) {
-  if (ledger.items.some((i) => i.id === id))
-    return ledger;
-  const closed = ledger.closed.findLast((c) => c.id === id);
-  return closed?.item && closed.how === "answered" && closed.at === at ? reopenItem(ledger, id) : ledger;
-}
-var isSent = (r) => r.effects.some((e) => e.kind === "send");
-function demoSent(r, after) {
-  return isSent(r) ? { rows: Object.keys(r.lasts), turn: after.turnsStarted } : null;
-}
-function demoReplied(s, sent) {
-  const turns = { ...s.turns, turnsApplied: Math.max(s.turns.turnsApplied, sent.turn) };
-  const isAnsweredByReply = (id, last) => !sent.rows.includes(id) && isAwaitingReply(last, s.turns) && !isAwaitingReply(last, turns);
-  const lastActions = Object.fromEntries(Object.entries(s.lastActions).map(([id, last]) => [
-    id,
-    isAnsweredByReply(id, last) ? { ...last, turnsStarted: turns.turnsApplied } : last
-  ]));
-  return { lastActions, turns };
-}
-function demoAfterPress(before, r, held) {
-  const lasts = Object.fromEntries(Object.entries(r.lasts).map(([id, { delivery: _unsent, ...l }]) => [
-    id,
-    l.result?.state === "pending" ? { ...l, result: finishedResult(l.result, [], l.result.at) } : l
-  ]));
-  return {
-    ledger: pruneClosed(r.ledger, held),
-    lastActions: withLasts(before.lastActions, lasts, r.drop),
-    turns: isSent(r) ? { ...before.turns, turnsStarted: before.turns.turnsStarted + 1 } : before.turns
-  };
-}
-async function runLocalEffects(host, effects, rowId, pending) {
-  const errors = [];
-  for (const e of effects)
-    if (e.kind !== "send") {
-      try {
-        errors.push(await host.perform(e));
-      } catch (err) {
-        errors.push(err instanceof Error ? err.message : String(err));
-      }
-    }
-  if (pending?.state !== "pending")
-    return null;
-  const result = finishedResult(pending, errors, await host.now());
-  await host.saveLasts((a) => withResult(a, rowId, pending.at, result));
-  return result;
-}
-async function runSends(host, effects, rowId, rows, at) {
-  for (const e of effects) {
-    if (e.kind !== "send")
-      continue;
-    const deliveryId = host.deliveryId();
-    const outcome = await host.send(e, deliveryId);
-    if (outcome.state === "accepted")
-      continue;
-    if (outcome.state === "unconfirmed") {
-      await host.saveLasts((a) => withUnconfirmed(a, e.text, at, deliveryId));
-      return outcome;
-    }
-    const reason = outcome.reason;
-    const last = (await host.saveLasts((a) => withFailure(a, rows, at, reason, deliveryId)))[rowId];
-    const isRowFailed = last?.at === at && last.delivery?.state === "failed" && last.delivery.id === deliveryId;
-    if (isRowFailed && last.kind === "mark")
-      await host.saveLedger((l) => reopenOnFailure(l, rowId, at));
-    return { state: "rejected", reason, isRowFailed };
-  }
-  return null;
-}
-var ISSUE_LABEL = "File issue";
 function retryOf(id, last) {
   if (!/^[if]\d+$/.test(id))
     return null;
@@ -2703,51 +2586,179 @@ function replyToClosed(ledger, p, last, answerMessage) {
     return { ledger, last: null, effects: [] };
   return { ledger, last, effects: [{ kind: "send", text, by: null }] };
 }
-function findingBody(finding) {
-  return [
-    `${finding.kind === "issue" ? "Issue" : "Opportunity"}: ${finding.title}`,
-    finding.detail,
-    ...finding.path ? [`File: ${finding.path}`] : []
-  ];
-}
-var EXPLAIN_REPLY_FORM = "Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.";
-var COMPARE_PAGE_FILE = "compare-page.html";
-var compareRequest = (comparePage) => [
-  "Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.",
-  "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
-  `Then make a page from the inbox's comparison template. Write the comparison as JSON in the shape the comment at the top of the template shows, with the few measures that tell the choices apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Build the page with: cat "${comparePage}" <your JSON file> > <your page>.html`,
-  "When the comparison is done, reply without a table, since the page holds the measures. Give your pick and say whether it changed, your reason in one line, one line on anything you did not expect, and the page's absolute path.",
-  "Also call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps. That marks it compared. Call each choice by its name as listed."
-].join(`
 
-`);
-function quotedAsk(item) {
-  return `"${item.ask}"${item.options.length > 0 ? `
-Options: ${item.options.join(" / ")}` : ""}`;
+// ../hooks/press-reducer.ts
+function doneWake(ledger, ctx) {
+  if (ctx.isTurnRunning)
+    return null;
+  const waited = ledger.closed.filter((c) => c.how === "done" && c.outcome === "done" && !c.isSentToAgent && !c.doneNotification && c.item?.turn === ledger.turn);
+  if (waited.length === 0 || waited.some((c) => ctx.now - c.at < ctx.windowMs))
+    return null;
+  return { text: messages.done(waited.map((c) => c.ask)), ids: waited.map((c) => c.id) };
 }
-var messages = {
-  answer: (item, answer) => `Re "${item.ask}": ${answer}`,
-  explain: (item) => {
-    const what = item.kind === "task" ? "this task you left for me is about: why it came up, and what doing it involves" : "this question you asked me is about: why it came up, what each choice would do, and which you would pick";
-    return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.
-${quotedAsk(item)}`;
-  },
-  compare: (item, comparePage) => `${compareRequest(comparePage)}
-${quotedAsk(item)}`,
-  run: (item, command) => `For "${item.ask}", run this:
-\`\`\`
-${command}
-\`\`\``,
-  taskReply: (item, words) => `Re the task you left for me, "${item.ask}": ${words}`,
-  done: (asks) => asks.length === 1 ? `Done: ${asks[0]}` : `Done:
-${asks.map((a) => `- ${a}`).join(`
-`)}`,
-  finding: (finding, how, words = "") => {
-    const opening = how === "address" ? "Please address this finding you recorded:" : how === "issue" ? "Please file an issue for this finding you recorded, in the issue tracker you have tools for. First check whether one already exists, and if it does, use it instead of filing a duplicate. Then close the finding with the issue's key or number as the reason, and give me its link. If you have no tools for an issue tracker, say so and leave the finding open." : how === "explain" ? `Remind me what this finding you recorded is about: why it matters, what fixing it would involve, and whether you would fix it now. ${EXPLAIN_REPLY_FORM} Don't act on it yet.` : how === "discuss" ? "Let's talk through this finding you recorded before changing anything:" : "About this finding you recorded:";
-    return [opening, ...findingBody(finding), ...how === "typed" ? ["", words] : []].join(`
-`);
+function markSentToAgent(ledger, ids, notificationId) {
+  return {
+    ...ledger,
+    closed: ledger.closed.map((c) => ids.includes(c.id) ? { ...c, isSentToAgent: true, ...notificationId ? { doneNotification: { id: notificationId } } : {} } : c)
+  };
+}
+function refuseDoneNotification(ledger, notificationId, reason) {
+  return {
+    ...ledger,
+    closed: ledger.closed.map((c) => {
+      if (c.how !== "done" || c.doneNotification?.id !== notificationId)
+        return c;
+      const { isSentToAgent: _sent, ...closed } = c;
+      return { ...closed, doneNotification: { id: notificationId, error: reason } };
+    })
+  };
+}
+var STALE_TEXT = "This changed before your press. Nothing was sent.";
+function noteText() {
+  return STALE_TEXT;
+}
+function isPressConfirmed(outcome) {
+  return outcome.error === null && outcome.note === null && !outcome.isUnconfirmed;
+}
+function applyPress(ledger, last, p, ctx) {
+  const r = pressed(ledger, last, p, ctx);
+  return "stale" in r || !r.last ? r : { ...r, last: withQueued(r.last, r.effects) };
+}
+function withQueued(last, effects) {
+  const send = effects.find((e) => e.kind === "send");
+  return send ? { ...last, delivery: { state: "queued", message: send.text } } : last;
+}
+function withDeliveryId(lastActions, rows, at, message, id) {
+  return Object.fromEntries(Object.entries(lastActions).map(([row, action]) => [
+    row,
+    rows.includes(row) && action.at === at && action.delivery?.state === "queued" && action.delivery.id === undefined && action.delivery.message === message ? { ...action, delivery: { ...action.delivery, id } } : action
+  ]));
+}
+function withArrival(lastActions, message, pressedAt, deliveryId) {
+  const isWaiting = (a) => (a.delivery?.state === "queued" || a.delivery?.state === "unconfirmed") && a.delivery.message === message;
+  const waiting = Object.values(lastActions).filter((a) => isWaiting(a) && (deliveryId ? a.delivery?.id === deliveryId : a.delivery?.id === undefined));
+  if (waiting.length === 0)
+    return lastActions;
+  const at = pressedAt ?? Math.min(...waiting.map((a) => a.at));
+  return Object.fromEntries(Object.entries(lastActions).map(([id, a]) => [
+    id,
+    isWaiting(a) && (deliveryId ? a.delivery?.id === deliveryId : a.delivery?.id === undefined && a.at === at) ? { ...a, delivery: { state: "arrived" } } : a
+  ]));
+}
+function withUnconfirmed(lastActions, message, pressedAt, deliveryId) {
+  return Object.fromEntries(Object.entries(lastActions).map(([id, action]) => [
+    id,
+    action.delivery?.state === "queued" && action.delivery.message === message && (deliveryId ? action.delivery.id === deliveryId : pressedAt === undefined || action.delivery.id === undefined && action.at === pressedAt) ? { ...action, delivery: { ...action.delivery, state: "unconfirmed" } } : action
+  ]));
+}
+function withAcceptedSend(lastActions, rows, at, message, deliveryId) {
+  return withQueuedDelivery(lastActions, rows, at, (text) => text === message, { state: "queued", message, id: deliveryId }, deliveryId);
+}
+function withQueuedDelivery(lastActions, rows, at, matches, delivery, deliveryId) {
+  const changed = rows.flatMap((id) => {
+    const a = lastActions[id];
+    return a?.at === at && (a.delivery?.state === "queued" || a.delivery?.state === "unconfirmed") && (deliveryId ? a.delivery.id === deliveryId : a.delivery.id === undefined) && matches(a.delivery.message) ? [[id, { ...a, delivery }]] : [];
+  });
+  return changed.length === 0 ? lastActions : { ...lastActions, ...Object.fromEntries(changed) };
+}
+function withFailure(lastActions, rows, at, reason, deliveryId) {
+  return withQueuedDelivery(lastActions, rows, at, () => true, { state: "failed", reason, ...deliveryId ? { id: deliveryId } : {} }, deliveryId);
+}
+function withRewrite(lastActions, rows, at, message, entered, deliveryId) {
+  return Object.fromEntries(Object.entries(lastActions).map(([id, action]) => [
+    id,
+    rows.includes(id) && action.at === at && (action.delivery?.state === "queued" || action.delivery?.state === "unconfirmed") && (deliveryId ? action.delivery.id === deliveryId : action.delivery.id === undefined) && action.delivery.message === message ? { ...action, delivery: { ...action.delivery, message: entered } } : action
+  ]));
+}
+function reopenOnFailure(ledger, id, at) {
+  if (ledger.items.some((i) => i.id === id))
+    return ledger;
+  const closed = ledger.closed.findLast((c) => c.id === id);
+  return closed?.item && closed.how === "answered" && closed.at === at ? reopenItem(ledger, id) : ledger;
+}
+// ../hooks/press-effects.ts
+function finishedResult(pending, errors, at) {
+  const parts = pending.parts.map((part, n) => ({ ...part, error: errors[n] ?? null }));
+  return {
+    state: parts.some((part) => part.error !== null) ? "failed" : "done",
+    parts,
+    at,
+    ...pending.pressId ? { pressId: pending.pressId } : {},
+    ...pending.action ? { action: pending.action } : {}
+  };
+}
+function withResult(lastActions, rowId, pendingAt, result) {
+  const last = lastActions[rowId];
+  if (last?.result?.state !== "pending" || last.result.at !== pendingAt || last.result.pressId !== result.pressId)
+    return lastActions;
+  return { ...lastActions, [rowId]: { ...last, result } };
+}
+var isSent = (r) => r.effects.some((e) => e.kind === "send");
+function demoSent(r, after) {
+  return isSent(r) ? { rows: Object.keys(r.lasts), turn: after.turnsStarted } : null;
+}
+function demoReplied(s, sent) {
+  const turns = { ...s.turns, turnsApplied: Math.max(s.turns.turnsApplied, sent.turn) };
+  const isAnsweredByReply = (id, last) => !sent.rows.includes(id) && isAwaitingReply(last, s.turns) && !isAwaitingReply(last, turns);
+  const lastActions = Object.fromEntries(Object.entries(s.lastActions).map(([id, last]) => [
+    id,
+    isAnsweredByReply(id, last) ? { ...last, turnsStarted: turns.turnsApplied } : last
+  ]));
+  return { lastActions, turns };
+}
+function demoAfterPress(before, r, held) {
+  const lasts = Object.fromEntries(Object.entries(r.lasts).map(([id, { delivery: _unsent, ...l }]) => [
+    id,
+    l.result?.state === "pending" ? { ...l, result: finishedResult(l.result, [], l.result.at) } : l
+  ]));
+  return {
+    ledger: pruneClosed(r.ledger, held),
+    lastActions: withLasts(before.lastActions, lasts, r.drop),
+    turns: isSent(r) ? { ...before.turns, turnsStarted: before.turns.turnsStarted + 1 } : before.turns
+  };
+}
+async function runLocalEffects(host, effects, rowId, pending) {
+  const errors = [];
+  for (const e of effects)
+    if (e.kind !== "send") {
+      try {
+        errors.push(await host.perform(e));
+      } catch (err) {
+        errors.push(err instanceof Error ? err.message : String(err));
+      }
+    }
+  if (pending?.state !== "pending")
+    return null;
+  const result = finishedResult(pending, errors, await host.now());
+  await host.saveLasts((a) => withResult(a, rowId, pending.at, result));
+  return result;
+}
+async function runSends(host, effects, rowId, rows, at) {
+  for (const e of effects) {
+    if (e.kind !== "send")
+      continue;
+    const deliveryId = host.deliveryId();
+    const outcome = await host.send(e, deliveryId);
+    if (outcome.state === "accepted")
+      continue;
+    if (outcome.state === "unconfirmed") {
+      await host.saveLasts((a) => withUnconfirmed(a, e.text, at, deliveryId));
+      return outcome;
+    }
+    const reason = outcome.reason;
+    const last = (await host.saveLasts((a) => withFailure(a, rows, at, reason, deliveryId)))[rowId];
+    const isRowFailed = last?.at === at && last.delivery?.state === "failed" && last.delivery.id === deliveryId;
+    if (isRowFailed && last.kind === "mark")
+      await host.saveLedger((l) => reopenOnFailure(l, rowId, at));
+    return { state: "rejected", reason, isRowFailed };
   }
-};
+  return null;
+}
+
+// ../hooks/presses.ts
+function isPrRowId(id) {
+  return id.startsWith("pr:") || id.includes(" ");
+}
 
 // ../hooks/help.ts
 var FINDING_GROUPS = {

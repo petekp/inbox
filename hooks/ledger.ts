@@ -7,7 +7,7 @@ import { readKind } from './reply-parse'
 import { upgradeStatus } from './status-upgrade'
 
 export { isAskedForChoices, LIST_CHOICES } from './ask-match'
-export { closedAt, closedState, closeFinding, closeItem, pruneClosed, reopenFinding, reopenItem } from './ledger-close'
+export { closedAt, closedState, closeItem, pruneClosed, reopenFinding, reopenItem } from './ledger-close'
 export type { ClosedState } from './ledger-close'
 export { applyExchangeUpdate, applyUpdate } from './ledger-update'
 export { parseReply, readKind, tasksRunBy } from './reply-parse'

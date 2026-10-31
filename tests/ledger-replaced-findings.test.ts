@@ -4,7 +4,7 @@ import { EMPTY, upgradeLedger } from '../hooks/ledger'
 import { closeItem, closedState, reopenFinding } from '../hooks/ledger-close'
 import { addAgentItem, addFinding, applyUpdate } from '../hooks/ledger-update'
 import { parseReply } from '../hooks/reply-parse'
-import { applyPress } from '../hooks/presses'
+import { applyPress } from '../hooks/press-reducer'
 
 describe('a finding replaced by a question', () => {
   const finding = (title: string, detail = 'd') => ({

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { applyPress } from '../../hooks/presses'
+import { applyPress } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
 import { PRESS_GUARD_MS, SETTLED_MS } from '../../hooks/view'
 import type { Holds } from '../../hooks/view'

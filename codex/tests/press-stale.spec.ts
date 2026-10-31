@@ -1,16 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import {
-  applyPress,
-  markSentToAgent,
-  refuseDoneNotification,
-  pendingResult,
-  runLocalEffects,
-  runSends,
-  withLasts,
-} from '../../hooks/presses'
-import type { EffectHost, RowPress } from '../../hooks/presses'
+import { applyPress, markSentToAgent, refuseDoneNotification } from '../../hooks/press-reducer'
+import { runLocalEffects, runSends } from '../../hooks/press-effects'
+import type { EffectHost } from '../../hooks/press-effects'
+import { pendingResult, withLasts } from '../../hooks/pressed'
+import type { RowPress } from '../../hooks/presses'
 import { applyPrPress } from '../../hooks/pr-tab'
 import { demoView } from '../../hooks/demo'
 import type { LastAction } from '../../types'

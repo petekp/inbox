@@ -1,5 +1,5 @@
 import { demoSession } from '../../hooks/demo'
-import { demoAfterPress, demoReplied, demoSent } from '../../hooks/presses'
+import { demoAfterPress, demoReplied, demoSent } from '../../hooks/press-effects'
 import { pressOn, sessionView } from '../../hooks/session'
 import type { PanelSource } from './controller'
 import { emptyState } from './state'

@@ -3,7 +3,7 @@ import type { Child } from '../types'
 import { activityGate } from './children'
 import { herdrCheckGate, herdrReporter } from './herdr'
 import { clipLabel } from './text'
-import { baseName } from './presses'
+import { baseName } from './open-targets'
 
 /** The tools Claude Code writes its own task list with. They are off unless the person turns them on. */
 export const HOST_TASK_TOOLS: ReadonlySet<string> = new Set(['TaskCreate', 'TaskUpdate', 'TodoWrite'])

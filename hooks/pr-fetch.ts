@@ -1,7 +1,7 @@
 import type { Item, Ledger, PrView, PrViews } from '../types'
 import { GH_TIMEOUT_MS, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
-import { prSteps } from './presses'
-import type { HelpStep } from './presses'
+import { prSteps } from './help-steps'
+import type { HelpStep } from './help-steps'
 import { isKeptPr, parseRef, prRefs, readThreadsAnswer, readView, THREADS_QUERY, VIEW_FIELDS } from './prs'
 
 export const MAX_PRS = 12

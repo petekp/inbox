@@ -15,8 +15,12 @@ import {
   shownOptionDescriptions,
 } from '../../hooks/view'
 import type { Feedback, PressState, RowView } from '../../hooks/view'
-import { actionId, isPressConfirmed, noteText, pendingResult, stepEffects } from '../../hooks/presses'
-import type { Effect, RowPress } from '../../hooks/presses'
+import { actionId } from '../../hooks/press-labels'
+import { stepEffects } from '../../hooks/help-steps'
+import { isPressConfirmed, noteText } from '../../hooks/press-reducer'
+import type { Effect } from '../../hooks/press-reducer'
+import { pendingResult } from '../../hooks/pressed'
+import type { RowPress } from '../../hooks/presses'
 import { checkActions, threadActions } from '../../hooks/pr-tab'
 import {
   checkRowText,

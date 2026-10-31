@@ -20,7 +20,7 @@ import { prRankText } from '../../hooks/pr-order'
 import type { PrRowMark } from '../../hooks/pr-rows'
 import type { PrOrderView } from '../../hooks/pr-order'
 import { failingChecks, readiness, waitingThreads } from '../../hooks/prs'
-import { capitalized } from '../../hooks/presses'
+import { capitalized } from '../../hooks/press-labels'
 import { cellWidth } from '../../hooks/text'
 import {
   settledTone,

@@ -512,62 +512,24 @@ function failingChecks(pr) {
   return pr.checks.filter((c) => c.bucket === "fail");
 }
 
-// ../hooks/presses.ts
+// ../hooks/open-targets.ts
 function baseName(path) {
   return path.replace(/\/+$/, "").split("/").pop() ?? path;
 }
-function helpLabel(help) {
-  const label = help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? help.command}` : help.kind === "terminal" ? `Copy ${help.name ?? help.command}` : `Open ${help.name ?? new URL(help.url).host}`;
-  return clipLabel(label, 32);
-}
-function steps(helps) {
-  const copy = helps.find((h) => h.kind === "copy");
-  const open3 = helps.find((h) => h.kind === "open");
-  if (!copy || !open3 || copy.kind !== "copy" || open3.kind !== "open")
-    return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
-  return helps.filter((h) => h !== copy).map(
-    (h) => h === open3 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open3.path)}`, 48), step: [copy, open3] } : { label: helpLabel(h), step: [h] }
-  );
-}
-function prSteps(item, tracked) {
-  const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
-  const links = namedPrs(item.ask, [...urls.keys()]).map((ref) => {
-    const { repo, number } = parseRef(ref);
-    const url = urls.get(ref) ?? `https://github.com/${repo}/pull/${number}`;
-    return { kind: "link", url, name: `PR #${number}` };
-  }).filter((l) => !item.helps.some((h) => h.kind === "link" && h.url === l.url));
-  return links.length === 0 ? [] : [{ label: links.length === 1 ? helpLabel(links[0]) : `Open ${links.length} PRs`, step: links }];
-}
-function stepsOf(item, extraSteps) {
-  return [...steps(item.helps), ...extraSteps];
-}
+
+// ../hooks/last-actions.ts
 function isAwaitingReply(last, turns) {
-  const pressed = last?.delivery?.state !== "failed" ? last?.turnsStarted : void 0;
-  return pressed !== void 0 && pressed <= turns.turnsStarted && turns.turnsApplied <= pressed;
+  const pressed2 = last?.delivery?.state !== "failed" ? last?.turnsStarted : void 0;
+  return pressed2 !== void 0 && pressed2 <= turns.turnsStarted && turns.turnsApplied <= pressed2;
 }
 function isHandedOff(last, turns) {
   return last?.kind === "handoff" && isAwaitingReply(last, turns);
-}
-function isPrRowId(id) {
-  return id.startsWith("pr:") || id.includes(" ");
 }
 function isFoldingPress(id, last) {
   return !id.startsWith("pr:") && last?.kind === "handoff" && last.action !== "address";
 }
 function isFixSent(last) {
   return last?.action === "address" && !last.isKept && last.delivery?.state !== "failed";
-}
-function actionId(p) {
-  return p.action === "step" ? `step-${p.step}` : p.action;
-}
-function capitalized(text2) {
-  return text2.charAt(0).toUpperCase() + text2.slice(1);
-}
-function stepIconKind(step) {
-  if (!step) return void 0;
-  if (step.step.some((h) => h.kind === "run")) return "run";
-  const first = step.step[0]?.kind;
-  return first === "copy" || first === "terminal" ? "copy" : first === "open" || first === "link" ? "open" : void 0;
 }
 var HANDOFF_IDS = /^(address|type|step-\d+|thread-address|pr-conflicts|pr-address-all)$/;
 var PR_RENAMES = [
@@ -615,55 +577,6 @@ function upgradeLastActions(saved) {
       return upgraded2 ? [[key, upgraded2]] : [];
     })
   );
-}
-function offersUndo(c) {
-  return c.how === "done" || c.how === "dismissed";
-}
-function isUndoable(c) {
-  return offersUndo(c) && !c.isSentToAgent;
-}
-function withArrival(lastActions, message, pressedAt, deliveryId) {
-  const isWaiting = (a) => (a.delivery?.state === "queued" || a.delivery?.state === "unconfirmed") && a.delivery.message === message;
-  const waiting = Object.values(lastActions).filter(
-    (a) => isWaiting(a) && (deliveryId ? a.delivery?.id === deliveryId : a.delivery?.id === void 0)
-  );
-  if (waiting.length === 0) return lastActions;
-  const at = pressedAt ?? Math.min(...waiting.map((a) => a.at));
-  return Object.fromEntries(
-    Object.entries(lastActions).map(([id, a]) => [
-      id,
-      isWaiting(a) && (deliveryId ? a.delivery?.id === deliveryId : a.delivery?.id === void 0 && a.at === at) ? { ...a, delivery: { state: "arrived" } } : a
-    ])
-  );
-}
-function withUnconfirmed(lastActions, message, pressedAt, deliveryId) {
-  return Object.fromEntries(
-    Object.entries(lastActions).map(([id, action]) => [
-      id,
-      action.delivery?.state === "queued" && action.delivery.message === message && (deliveryId ? action.delivery.id === deliveryId : pressedAt === void 0 || action.delivery.id === void 0 && action.at === pressedAt) ? { ...action, delivery: { ...action.delivery, state: "unconfirmed" } } : action
-    ])
-  );
-}
-var ISSUE_LABEL = "File issue";
-function retryOf(id, last) {
-  if (!/^[if]\d+$/.test(id)) return null;
-  const step = /^step-(\d+)$/.exec(last.action);
-  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
-  switch (last.action) {
-    case "answer":
-      return { action: "answer", id, option: last.text };
-    case "explain":
-    case "compare":
-    case "address":
-    case "issue":
-    case "discuss":
-      return { action: last.action, id };
-    default:
-      return null;
-  }
-}
-function isRepeatOf(last, action) {
-  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
 }
 
 // ../hooks/status-children.ts
@@ -1043,6 +956,105 @@ Close with ${host.closeTool}:
 - When the user's message answers an open item, close it first, before other work, with their answer, and say in your reply what you took their answer to be.
 - When an item or finding is done or no longer applies, close it with a short reason, without waiting to be asked.
 The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`;
+}
+
+// ../hooks/press-labels.ts
+function actionId(p) {
+  return p.action === "step" ? `step-${p.step}` : p.action;
+}
+function capitalized(text2) {
+  return text2.charAt(0).toUpperCase() + text2.slice(1);
+}
+var ISSUE_LABEL = "File issue";
+
+// ../hooks/help-steps.ts
+function helpLabel(help) {
+  const label = help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? help.command}` : help.kind === "terminal" ? `Copy ${help.name ?? help.command}` : `Open ${help.name ?? new URL(help.url).host}`;
+  return clipLabel(label, 32);
+}
+function steps(helps) {
+  const copy = helps.find((h) => h.kind === "copy");
+  const open3 = helps.find((h) => h.kind === "open");
+  if (!copy || !open3 || copy.kind !== "copy" || open3.kind !== "open")
+    return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
+  return helps.filter((h) => h !== copy).map(
+    (h) => h === open3 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open3.path)}`, 48), step: [copy, open3] } : { label: helpLabel(h), step: [h] }
+  );
+}
+function prSteps(item, tracked) {
+  const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
+  const links = namedPrs(item.ask, [...urls.keys()]).map((ref) => {
+    const { repo, number } = parseRef(ref);
+    const url = urls.get(ref) ?? `https://github.com/${repo}/pull/${number}`;
+    return { kind: "link", url, name: `PR #${number}` };
+  }).filter((l) => !item.helps.some((h) => h.kind === "link" && h.url === l.url));
+  return links.length === 0 ? [] : [{ label: links.length === 1 ? helpLabel(links[0]) : `Open ${links.length} PRs`, step: links }];
+}
+function stepsOf(item, extraSteps) {
+  return [...steps(item.helps), ...extraSteps];
+}
+function stepIconKind(step) {
+  if (!step) return void 0;
+  if (step.step.some((h) => h.kind === "run")) return "run";
+  const first = step.step[0]?.kind;
+  return first === "copy" || first === "terminal" ? "copy" : first === "open" || first === "link" ? "open" : void 0;
+}
+
+// ../hooks/pressed.ts
+function offersUndo(c) {
+  return c.how === "done" || c.how === "dismissed";
+}
+function isUndoable(c) {
+  return offersUndo(c) && !c.isSentToAgent;
+}
+function retryOf(id, last) {
+  if (!/^[if]\d+$/.test(id)) return null;
+  const step = /^step-(\d+)$/.exec(last.action);
+  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
+  switch (last.action) {
+    case "answer":
+      return { action: "answer", id, option: last.text };
+    case "explain":
+    case "compare":
+    case "address":
+    case "issue":
+    case "discuss":
+      return { action: last.action, id };
+    default:
+      return null;
+  }
+}
+function isRepeatOf(last, action) {
+  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
+}
+
+// ../hooks/press-reducer.ts
+function withArrival(lastActions, message, pressedAt, deliveryId) {
+  const isWaiting = (a) => (a.delivery?.state === "queued" || a.delivery?.state === "unconfirmed") && a.delivery.message === message;
+  const waiting = Object.values(lastActions).filter(
+    (a) => isWaiting(a) && (deliveryId ? a.delivery?.id === deliveryId : a.delivery?.id === void 0)
+  );
+  if (waiting.length === 0) return lastActions;
+  const at = pressedAt ?? Math.min(...waiting.map((a) => a.at));
+  return Object.fromEntries(
+    Object.entries(lastActions).map(([id, a]) => [
+      id,
+      isWaiting(a) && (deliveryId ? a.delivery?.id === deliveryId : a.delivery?.id === void 0 && a.at === at) ? { ...a, delivery: { state: "arrived" } } : a
+    ])
+  );
+}
+function withUnconfirmed(lastActions, message, pressedAt, deliveryId) {
+  return Object.fromEntries(
+    Object.entries(lastActions).map(([id, action]) => [
+      id,
+      action.delivery?.state === "queued" && action.delivery.message === message && (deliveryId ? action.delivery.id === deliveryId : pressedAt === void 0 || action.delivery.id === void 0 && action.at === pressedAt) ? { ...action, delivery: { ...action.delivery, state: "unconfirmed" } } : action
+    ])
+  );
+}
+
+// ../hooks/presses.ts
+function isPrRowId(id) {
+  return id.startsWith("pr:") || id.includes(" ");
 }
 
 // ../hooks/help.ts

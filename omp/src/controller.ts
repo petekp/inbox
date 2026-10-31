@@ -1,7 +1,7 @@
 import { HERDR_CHECK_MS } from '../../hooks/herdr'
 import { isPrPress, pressRowId } from '../../hooks/pr-press'
 import type { PrPress } from '../../hooks/pr-press'
-import { isPressConfirmed } from '../../hooks/presses'
+import { isPressConfirmed } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
 import { showsRunningMark } from '../../hooks/session'
 import { READING_TEXT, compareEndsAt, RUNNING_FRAME_MS } from '../../hooks/view'
