@@ -12,6 +12,17 @@ export function numberBlocks(reply: string): string {
   return reply.replace(FENCE, block => `[block ${(n += 1)}]${NL}${block}`)
 }
 
+/**
+ * A turn's reply for the inbox model: each text the agent wrote to the person, in order, a blank line apart. `final`
+ * is the turn's last message as the host reports it apart from `texts`. It ends the reply unless `texts` ends with it.
+ */
+export function turnReply(texts: readonly string[], final = ''): string {
+  const written = texts.filter(text => text.trim() !== '')
+  const isFinalWritten = final.trim() === '' || written.at(-1)?.trim() === final.trim()
+
+  return (isFinalWritten ? written : [...written, final]).join(`${NL}${NL}`)
+}
+
 /** A model's field, trimmed. Null when it is empty or a lone dash, which a model writes for none. */
 export function dash(value: string | undefined): string | null {
   const v = (value ?? '').trim()

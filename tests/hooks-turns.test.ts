@@ -124,11 +124,14 @@ test('a reply a step ends on before another step starts reaches the per-turn cal
   expect(prompts.at(-1)?.match(/Linted\. The parser is fixed\./g)).toHaveLength(1)
 })
 
-test('narration before a tool call is not a reply sent back', async ($, on) => {
+test('text a step writes before its tool calls reaches the per-turn call ahead of the final answer', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
   world($, on, prompts)
-  w.stepAnswers = [{ answer: 'Let me run the tests first.', callsTool: true }, { answer: 'All tests pass.' }]
+  w.stepAnswers = [
+    { answer: 'The parser is fixed. Should I also rename the helper?', callsTool: true },
+    { answer: 'Saved the notes.' },
+  ]
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'fix the parser', wait: false, origin: { kind: 'composer' } })
@@ -136,12 +139,55 @@ test('narration before a tool call is not a reply sent back', async ($, on) => {
   await runStep($, 0)
   await runStep($, 1)
   await $.turn.complete({
-    answer: 'All tests pass.',
+    answer: 'Saved the notes.',
     durationMs: 5,
     isAborted: false,
     turnId: 't1',
     reason: 'answer',
   })
   await clock.settle()
-  expect(prompts.at(-1)).not.toContain('Let me run the tests first.')
+  expect(prompts.at(-1)).toContain('The parser is fixed. Should I also rename the helper?\n\nSaved the notes.')
+})
+
+test('a turn whose last step wrote nothing reaches the per-turn call with its earlier text', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  const prompts: string[] = []
+  world($, on, prompts)
+  w.stepAnswers = [{ answer: 'Should I push the fix?', callsTool: true }, { answer: '' }]
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'fix the parser', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'fix the parser', turnId: 't1' })
+  await runStep($, 0)
+  await runStep($, 1)
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  expect(prompts.at(-1)).toContain('Should I push the fix?')
+})
+
+test('text from an interrupted turn stays out of the next turn’s per-turn call', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  const prompts: string[] = []
+  world($, on, prompts)
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'check the old build', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'check the old build', turnId: 't1' })
+  w.stepAnswers = [{ answer: 'Checking the old build.', callsTool: true }]
+  await runStep($, 0)
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: true, turnId: 't1', reason: 'aborted' })
+  await $.prompt.submit({ text: 'never mind, fix the parser', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'never mind, fix the parser', turnId: 't2' })
+  w.stepAnswers = [{ answer: 'The parser is fixed.' }]
+  await runStep($, 0)
+  await $.turn.complete({
+    answer: 'The parser is fixed.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't2',
+    reason: 'answer',
+  })
+  await clock.settle()
+  expect(prompts.at(-1)).toContain('The parser is fixed.')
+  expect(prompts.at(-1)).not.toContain('Checking the old build.')
 })

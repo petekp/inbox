@@ -135,6 +135,50 @@ test('a dialog question links to the question the agent recorded for it or the u
   assert.deepEqual(await linkedQuestions(), [true, false])
 })
 
+test('a Stop’s reply is the ending turn’s agent messages in order, ending with the Stop’s last message when the rollout lacks it', async () => {
+  const dir = tempDir()
+  const transcript = join(tempDir(), 'rollout.jsonl')
+  const deps = hookDeps(dir)
+  const item = (text: string, phase: string) => ({
+    type: 'event_msg',
+    payload: { type: 'item_completed', item: { type: 'AgentMessage', phase, content: [{ type: 'Text', text }] } },
+  })
+  const message = (text: string) => ({
+    type: 'response_item',
+    payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] },
+  })
+  const shell = { type: 'response_item', payload: { type: 'function_call', name: 'shell', arguments: '{}' } }
+  const write = (rows: unknown[]) => writeFileSync(transcript, rows.map(row => JSON.stringify(row)).join('\n'))
+  const replies = async () => (await readState(dir, 's1')).pending.map(p => p.ex.reply)
+
+  write([
+    { type: 'event_msg', payload: { type: 'task_started', turn_id: 't1' } },
+    item('Looking at the old turn.', 'commentary'),
+    { type: 'event_msg', payload: { type: 'task_started', turn_id: 't2' } },
+    item('The fix is in. Should I also tag a release?', 'commentary'),
+    message('The fix is in. Should I also tag a release?'),
+    shell,
+    item('Saved the notes.', 'final_answer'),
+    message('Saved the notes.'),
+  ])
+  await handleHook(
+    input('Stop', { turn_id: 't2', transcript_path: transcript, last_assistant_message: 'Saved the notes.' }),
+    deps,
+  )
+  assert.deepEqual(await replies(), ['The fix is in. Should I also tag a release?\n\nSaved the notes.'])
+
+  write([
+    { type: 'event_msg', payload: { type: 'task_started', turn_id: 't3' } },
+    message('Pushing the branch.'),
+    shell,
+  ])
+  await handleHook(
+    input('Stop', { turn_id: 't3', transcript_path: transcript, last_assistant_message: 'Pushed.' }),
+    deps,
+  )
+  assert.equal((await replies())[1], 'Pushing the branch.\n\nPushed.')
+})
+
 test('a PR link in the agent’s reply is linked to the session', async () => {
   const dir = tempDir()
   const deps = hookDeps(dir)

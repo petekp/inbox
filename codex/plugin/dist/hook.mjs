@@ -129,6 +129,12 @@ function closedAt(c) {
 }
 
 // ../hooks/text.ts
+var NL = "\n";
+function turnReply(texts, final = "") {
+  const written = texts.filter((text2) => text2.trim() !== "");
+  const isFinalWritten = final.trim() === "" || written.at(-1)?.trim() === final.trim();
+  return (isFinalWritten ? written : [...written, final]).join(`${NL}${NL}`);
+}
 function clip(text2, max) {
   return text2.length <= max ? text2 : text2.slice(0, max) + " \u2026[cut]";
 }
@@ -741,7 +747,7 @@ function upgradeHostTasks(saved) {
 }
 
 // ../hooks/model-text.ts
-var NL2 = "\n";
+var NL3 = "\n";
 function guidanceText(host) {
   return `# Inbox
 ${host.intro}
@@ -855,7 +861,7 @@ Input:
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
-- <reply>: the agent's final reply
+- <reply>: what the agent said this turn, in order
 
 Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, and the head still holds, answer with the one line NO CHANGE. Most exchanges change nothing.
 
@@ -956,11 +962,11 @@ function answerNote(ledger, text2) {
         return [
           "inbox: if the user is accepting your recommendations, these are the open ones:",
           ...withRecs.map((i) => `- ${i.label ?? "\u2022"} \u2192 ${describe(i)}`)
-        ].join(NL2);
+        ].join(NL3);
       }
     }
   }
-  return lines.length === 0 ? null : ["inbox: the user's message answers these open items from your earlier replies:", ...lines].join(NL2);
+  return lines.length === 0 ? null : ["inbox: the user's message answers these open items from your earlier replies:", ...lines].join(NL3);
 }
 function itemLine(item) {
   return `- ${item.label ? `(${item.label}) ` : ""}${describe(item)} (close id: ${item.id})`;
@@ -994,7 +1000,7 @@ function carryText(ledger, title) {
     out.push("Recently closed:");
     for (const d of ledger.closed) out.push(`- "${d.ask}" \u2192 ${outcomeText(d)}`);
   }
-  return out.join(NL2);
+  return out.join(NL3);
 }
 var CLOSE_ID_RULE = "A close id is only for the close tool. Never write one in a reply.";
 function inboxText(host, ledger, isOpen2) {
@@ -1012,7 +1018,7 @@ function inboxText(host, ledger, isOpen2) {
     for (const f of ledger.findings) out.push(findingLine(f));
   }
   out.push(isOpen2 ? `The user has ${host.surface} open beside the conversation.` : `${surfaceAtStart(host)} is closed.`);
-  return out.join(NL2);
+  return out.join(NL3);
 }
 function outcomeText(d) {
   if (d.how === "dismissed") return "dismissed by the user";
@@ -1025,7 +1031,7 @@ function closedText(closed) {
   return [
     "Closed since you last read the inbox:",
     ...closed.map((d) => `- "${d.ask}" \u2192 ${outcomeText(d)}${advice(d)}`)
-  ].join(NL2);
+  ].join(NL3);
 }
 var TOLD_NOTHING = { inbox: null, closed: [] };
 function promptNotes(host, ledger, prompt, told) {
@@ -1037,7 +1043,7 @@ function promptNotes(host, ledger, prompt, told) {
   const closed = closedText(ledger.closed.filter((d) => !toldClosed.has(d.id)));
   const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0;
   if (!closed && (inbox === told.inbox || isEmpty && told.inbox === null)) return { notes, told };
-  notes.push(closed ? `${inbox}${NL2}${closed}` : inbox);
+  notes.push(closed ? `${inbox}${NL3}${closed}` : inbox);
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
 }
 
@@ -2867,7 +2873,7 @@ var jsonRecord = (raw) => {
 };
 
 // ../hooks/conversation.ts
-var NL3 = "\n";
+var NL4 = "\n";
 var TRANSCRIPT_MAX = 8e4;
 var MESSAGE_MAX = 6e3;
 function flattenConversation(turns) {
@@ -2892,7 +2898,7 @@ function flattenConversation(turns) {
     }
     kept.push(line);
   }
-  return kept.reverse().join(NL3);
+  return kept.reverse().join(NL4);
 }
 
 // src/rollout-commands.ts
@@ -2964,7 +2970,15 @@ function callLines(p, hasCommandRows, cwd) {
 
 // src/rollout-turns.ts
 var PLAN_TOOL = "update_plan";
-var MARKERS = ['"task_started"', DIALOG_TOOL, '"CommandExecution"', '"function_call', '"local_shell_call'];
+var MARKERS = [
+  '"task_started"',
+  DIALOG_TOOL,
+  '"CommandExecution"',
+  '"function_call',
+  '"local_shell_call',
+  '"AgentMessage"',
+  '"assistant"'
+];
 var TURN_EVENT_KINDS = /* @__PURE__ */ new Map([
   ["task_started", "started"],
   ["task_complete", "completed"],
@@ -2984,10 +2998,18 @@ function turnEventOf(line) {
   }
 }
 function turnOf(lines, turnId) {
-  const none = { dialogs: [], commands: [], plan: null };
+  const none = { dialogs: [], commands: [], plan: null, texts: [] };
   try {
     const byTurn = /* @__PURE__ */ new Map();
-    const newTurn = () => ({ dialogs: [], executions: [], calls: /* @__PURE__ */ new Map(), called: [], plan: null });
+    const newTurn = () => ({
+      dialogs: [],
+      executions: [],
+      calls: /* @__PURE__ */ new Map(),
+      called: [],
+      plan: null,
+      itemTexts: [],
+      messageTexts: []
+    });
     let current = "";
     let newest = "";
     for (const line of lines) {
@@ -3011,6 +3033,10 @@ function turnOf(lines, turnId) {
       if (row.type === "event_msg" && p.type === "item_completed" && p.item?.type === "CommandExecution") {
         const output = p.item.aggregated_output;
         turn2.executions.push({ command: commandText(p.item.command), output: isText(output) ? output : "" });
+      } else if (row.type === "event_msg" && p.type === "item_completed" && p.item?.type === "AgentMessage") {
+        turn2.itemTexts.push(contentText(p.item.content));
+      } else if (row.type === "response_item" && p.type === "message" && p.role === "assistant") {
+        turn2.messageTexts.push(contentText(p.content));
       } else if (row.type === "response_item" && p.type === "function_call" && p.name === PLAN_TOOL) {
         turn2.plan = codexPlanOf(p.arguments) ?? turn2.plan;
       } else if (row.type === "response_item" && p.type === "function_call" && p.name === DIALOG_TOOL) {
@@ -3035,7 +3061,8 @@ function turnOf(lines, turnId) {
     return {
       dialogs: turn.dialogs.filter((d) => d.questions.length > 0),
       commands: turn.executions.length > 0 ? turn.executions : turn.called,
-      plan: turn.plan
+      plan: turn.plan,
+      texts: turn.itemTexts.length > 0 ? turn.itemTexts : turn.messageTexts
     };
   } catch {
     return none;
@@ -3343,7 +3370,6 @@ async function handleHook(input, deps) {
       return null;
     }
     case "Stop": {
-      const reply = input.last_assistant_message ?? "";
       const folder = input.cwd;
       const before = read();
       const [tail, branch, inHerdr] = await Promise.all([
@@ -3354,7 +3380,8 @@ async function handleHook(input, deps) {
           () => null
         )
       ]);
-      const { dialogs, commands, plan } = turnOf(tail, input.turn_id);
+      const { dialogs, commands, plan, texts } = turnOf(tail, input.turn_id);
+      const reply = turnReply(texts, input.last_assistant_message ?? "");
       const withHistory = await readHistoryAhead(() => before, tail);
       const lines = dialogs.map((d) => dialogActivity(d.questions, { kind: "open" }));
       const written = await write(async (s) => {

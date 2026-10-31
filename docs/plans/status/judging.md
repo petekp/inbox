@@ -128,10 +128,10 @@ These make no model calls.
 | Part | Status calls | Ledger calls | Judge calls |
 | --- | --- | --- | --- |
 | Replay A, 15 calls in 17 steps, 3 runs, 2 models | 90 | 0 | 24 |
-| Replay B, 8 steps, both calls | 48 | 48 | 12 |
+| Replay B, 9 steps, both calls | 54 | 54 | 12 |
 | Replay C, 4 steps, one of them a catch-up | 24 | 0 | 6 |
 | The short catch-up case | 6 | 0 | 0 |
 | The judge's check on both page sets, 24 pages | 0 | 0 | 24 |
-| **Total** | **168** | **48** | **66** |
+| **Total** | **174** | **54** | **66** |
 
-An answer that holds prose is asked once more, so the Status calls can reach about 185. That leaves room for about two new short cases, from use or from the call record, at 6 calls each, within the 200.
+An answer that holds prose is asked once more, so the Status calls can reach about 192. That leaves room for one new short case, from use or from the call record, at 6 calls, within the 200.

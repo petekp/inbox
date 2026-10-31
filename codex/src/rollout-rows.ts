@@ -79,7 +79,9 @@ export type TranscriptLine = {
     call_id?: string
     output?: unknown
     action?: { command?: unknown }
-    item?: { type?: string; command?: unknown; aggregated_output?: unknown }
+    role?: string
+    content?: unknown
+    item?: { type?: string; command?: unknown; aggregated_output?: unknown; content?: unknown }
   }
 }
 
