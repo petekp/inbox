@@ -8,7 +8,8 @@ import type { Session } from '../hooks/session'
 import type { PrView } from '../types'
 import { isPrFetchDue, prFetchTracker } from '../hooks/session-host'
 import { DOT, NO_HOLDS } from '../hooks/view'
-import { applyPrPress, fetchTracked, GH_RUNS_AT_ONCE, MAX_PRS } from '../hooks/pr-tab'
+import { applyPrPress } from '../hooks/pr-tab'
+import { fetchTracked, GH_RUNS_AT_ONCE, MAX_PRS } from '../hooks/pr-fetch'
 import { FIX_REF, BLOCKED_PR } from './session-helpers'
 
 const openPr = (number: number): PrView => ({

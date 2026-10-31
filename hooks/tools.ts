@@ -3,7 +3,7 @@ import { closeByAgent } from './ledger-close'
 import { addAgentItem, addFinding } from './ledger-update'
 import { stepHelp } from './reply-parse'
 import type { Host } from './model-text'
-import { linkedPrs, MAX_ORDERED_PRS } from './pr-tab'
+import { linkedPrs, MAX_ORDERED_PRS } from './pr-fetch'
 import type { Closed, Help, Ledger } from '../types'
 
 const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'

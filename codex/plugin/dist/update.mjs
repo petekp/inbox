@@ -1473,11 +1473,6 @@ function linkDialogs(s) {
   return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
 }
 
-// ../hooks/gh.ts
-var GH_TIMEOUT_MS = 2e4;
-var UNSTARTABLE_CODE = -1;
-var TIMED_OUT_CODE = -2;
-
 // ../hooks/status-children.ts
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
@@ -2275,7 +2270,30 @@ function perTurnStatus(update) {
   };
 }
 
-// ../hooks/pr-tab.ts
+// ../hooks/pr-rows.ts
+function prThreadId(pr, t) {
+  return threadRowId(pr.ref, t.id);
+}
+function threadRowId(ref, thread) {
+  return `${ref} thread ${thread}`;
+}
+function prMarkId(ref) {
+  return `pr:${ref}`;
+}
+var RANK_AGAIN_ID = "pr:order";
+function threadSentIn(lastActions) {
+  return (pr, t) => {
+    const last = lastActions[prThreadId(pr, t)];
+    return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
+  };
+}
+
+// ../hooks/gh.ts
+var GH_TIMEOUT_MS = 2e4;
+var UNSTARTABLE_CODE = -1;
+var TIMED_OUT_CODE = -2;
+
+// ../hooks/pr-fetch.ts
 var MAX_PRS = 12;
 var MAX_ORDERED_PRS = 30;
 function itemPrSteps(item, prState, linked) {
@@ -2302,26 +2320,10 @@ function olderPrsText(prState, links) {
   const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
   return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
 }
-function prThreadId(pr, t) {
-  return threadRowId(pr.ref, t.id);
-}
-function threadRowId(ref, thread) {
-  return `${ref} thread ${thread}`;
-}
-function prMarkId(ref) {
-  return `pr:${ref}`;
-}
 var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds`;
+
+// ../hooks/pr-views.ts
 var PR_DISMISSED_LABEL = "Dismissed";
-var DISMISS_MERGED_LABEL = "Dismiss merged";
-var RANK_AGAIN_LABEL = "Rank again";
-var RANK_AGAIN_ID = "pr:order";
-function threadSentIn(lastActions) {
-  return (pr, t) => {
-    const last = lastActions[prThreadId(pr, t)];
-    return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
-  };
-}
 function isTracked(prState, links, ref) {
   return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
 }
@@ -2352,6 +2354,19 @@ function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
   let rank = 0;
   return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
 }
+
+// ../hooks/pr-press.ts
+function lastPressOf(presses, rowId) {
+  const last = presses.lastActions[rowId];
+  const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
+  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
+}
+function withOut(row, actions) {
+  return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
+}
+
+// ../hooks/pr-order.ts
+var RANK_AGAIN_LABEL = "Rank again";
 function prOrderText(order, drawn, now) {
   const isRanking = drawn.some((d) => d.rank !== null);
   if (!order || !isRanking) return null;
@@ -2405,14 +2420,9 @@ function prOrderActions(row) {
     }
   ]);
 }
-function lastPressOf(presses, rowId) {
-  const last = presses.lastActions[rowId];
-  const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
-  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
-}
-function withOut(row, actions) {
-  return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
-}
+
+// ../hooks/pr-tab.ts
+var DISMISS_MERGED_LABEL = "Dismiss merged";
 function isDismissedByMerged(pr, branchRef) {
   return pr.state === "MERGED" && pr.ref !== branchRef;
 }

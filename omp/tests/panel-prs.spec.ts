@@ -7,10 +7,10 @@ import {
   prMarkId,
   prsEmptyHint,
   threadSentIn,
-} from '../../hooks/pr-tab'
+} from '../../hooks/pr-rows'
 import { failingChecks, waitingThreads } from '../../hooks/prs'
 import type { LastAction, PrOrder } from '../../types'
-import { rankedStatusOf } from '../../hooks/pr-tab'
+import { rankedStatusOf } from '../../hooks/pr-order'
 import { SETTLED_MS, NO_HOLDS, helpKeys } from '../../hooks/view'
 import { sessionView } from '../../hooks/session-view'
 import { demoState } from '../src/demo'

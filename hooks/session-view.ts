@@ -1,15 +1,12 @@
 import { isRowTabRunning } from './arrivals'
-import {
-  drawnPrs,
-  isPrTabRunning,
-  itemPrSteps,
-  olderPrsText,
-  openPrViews,
-  prOrderView,
-  prTabActions,
-  threadSentIn,
-} from './pr-tab'
-import type { DrawnPr, PrAction, PrOrderView } from './pr-tab'
+import { drawnPrs, openPrViews } from './pr-views'
+import { isPrTabRunning, threadSentIn } from './pr-rows'
+import { itemPrSteps, olderPrsText } from './pr-fetch'
+import { prOrderView } from './pr-order'
+import { prTabActions } from './pr-tab'
+import type { DrawnPr } from './pr-views'
+import type { PrAction } from './pr-press'
+import type { PrOrderView } from './pr-order'
 import { prNeedsYou } from './prs'
 import { MARK_LEGEND } from './help'
 import { hasRunningMark, inboxView, isRowTab, NO_HOLDS, statusPage, perTurnStatus } from './view'

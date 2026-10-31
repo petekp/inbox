@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 
-import { checkActions, prBlockActions, prMarkId, threadActions, threadSentIn } from '../../hooks/pr-tab'
+import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
+import { prMarkId, threadSentIn } from '../../hooks/pr-rows'
 import { failingChecks, waitingThreads } from '../../hooks/prs'
 import { SETTLED_MS, shownTabs, rowKeyPlan } from '../../hooks/view'
 import type { RowView } from '../../hooks/view'

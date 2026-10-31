@@ -14,7 +14,7 @@ import { sessionView } from '../hooks/session-view'
 import type { Session } from '../hooks/session'
 import type { Item } from '../types'
 import { allRows, NO_HOLDS } from '../hooks/view'
-import { prMarkId } from '../hooks/pr-tab'
+import { prMarkId } from '../hooks/pr-rows'
 import { demoSession, demoView, isDemoCopy } from '../hooks/demo'
 import { answer } from './session-helpers'
 

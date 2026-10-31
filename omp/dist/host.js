@@ -3839,7 +3839,110 @@ function noteDialog(s, callId, questions) {
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
 }
 
-// ../hooks/pr-tab.ts
+// ../hooks/pr-rows.ts
+function prThreadId(pr, t) {
+  return threadRowId(pr.ref, t.id);
+}
+function prCheckId(pr, check) {
+  return checkRowId(pr.ref, check.name);
+}
+function threadRowId(ref, thread) {
+  return `${ref} thread ${thread}`;
+}
+function checkRowId(ref, check) {
+  return `${ref} check ${check}`;
+}
+function prMarkId(ref) {
+  return `pr:${ref}`;
+}
+var GH_MISSING_TEXT = "The inbox could not find gh. It needs gh to read your PRs.";
+var GH_SIGNED_OUT_TEXT = "gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.";
+function ghNoticeOf(gh) {
+  if (gh.isGhMissing)
+    return { kind: "gh-missing", text: GH_MISSING_TEXT };
+  if (gh.isGhSignedOut)
+    return { kind: "gh-signed-out", text: GH_SIGNED_OUT_TEXT };
+  return null;
+}
+function prsEmptyHint(place) {
+  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
+}
+function prsEmptyText(prs, place) {
+  return {
+    title: prs.isFetching ? "Checking for PRs\u2026" : "No PRs",
+    hint: ghNoticeOf(prs)?.text ?? prsEmptyHint(place)
+  };
+}
+function prRefreshFailedText(error) {
+  return `Last refresh failed: ${error}`;
+}
+var RANK_AGAIN_ID = "pr:order";
+var DISMISS_MERGED_ID = "pr:merged";
+var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks" };
+function threadRowText(pr, t, lastActions) {
+  const isSent = threadSentIn(lastActions)(pr, t);
+  const isChanged = !isSent && t.isLinesChanged;
+  return {
+    mark: threadMark(isSent ? lastActions[prThreadId(pr, t)]?.delivery : null),
+    fold: isSent || isChanged ? t.isLinesChanged ? { note: `Lines changed since this comment${DOT}still open on GitHub` } : {} : null,
+    title: clipLabel(commentParts(t.body).head, THREAD_TITLE_CHARS),
+    meta: [
+      threadWhere(t, baseName(t.path)),
+      isChanged ? "Lines changed" : "",
+      t.reply ? `@${t.reply.author}: ${commentLine(t.reply.body)}` : `@${t.author}`
+    ].filter(Boolean).join(DOT)
+  };
+}
+function threadMark(delivery) {
+  if (delivery === null)
+    return { ...PR_MARKS.waiting, isDone: false, isRunning: false };
+  if (delivery?.state === "queued")
+    return { text: RUNNING_MARK, tone: null, isDone: false, isRunning: true };
+  if (delivery?.state === "unconfirmed")
+    return { text: "", tone: null, isDone: false, isRunning: false };
+  return { ...PR_MARKS.sent, isDone: true, isRunning: false };
+}
+function checkRowText(c) {
+  return {
+    mark: { ...PR_MARKS.failing, isDone: false, isRunning: false },
+    lead: c.workflow || null,
+    title: c.name,
+    meta: checkRunText(c)
+  };
+}
+function checkRunText(c) {
+  return c.startedAt !== undefined && c.finishedAt !== undefined ? `Failed after ${took(c.finishedAt - c.startedAt)}` : "Failed";
+}
+function threadSentIn(lastActions) {
+  return (pr, t) => {
+    const last = lastActions[prThreadId(pr, t)];
+    return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
+  };
+}
+function isPrTabRunning(prs, lastActions) {
+  return prs.some((pr) => waitingThreads(pr).some((t) => threadRowText(pr, t, lastActions).mark.isRunning));
+}
+function prRowWaits(prs, lastActions) {
+  const isSent = threadSentIn(lastActions);
+  return prs.flatMap((pr) => [
+    ...waitingThreads(pr).map((t) => ({ id: prThreadId(pr, t), isWaiting: !isSent(pr, t) })),
+    ...failingChecks(pr).map((c) => {
+      const id = prCheckId(pr, c);
+      const last = lastActions[id];
+      return { id, isWaiting: !isFoldingPress(id, last) || last?.delivery?.state === "failed" };
+    })
+  ]);
+}
+var PR_TONES = {
+  ready: "done",
+  blocked: "needsYou",
+  waiting: null,
+  draft: null,
+  merged: "findings",
+  closed: "error"
+};
+
+// ../hooks/pr-fetch.ts
 var MAX_PRS = 12;
 var MAX_ORDERED_PRS = 30;
 var GH_RUNS_AT_ONCE = 8;
@@ -3948,105 +4051,25 @@ function urlRef(json) {
     return null;
   }
 }
-function prThreadId(pr, t) {
-  return threadRowId(pr.ref, t.id);
-}
-function prCheckId(pr, check) {
-  return checkRowId(pr.ref, check.name);
-}
-function threadRowId(ref, thread) {
-  return `${ref} thread ${thread}`;
-}
-function checkRowId(ref, check) {
-  return `${ref} check ${check}`;
-}
-function prMarkId(ref) {
-  return `pr:${ref}`;
-}
-var GH_MISSING_TEXT = "The inbox could not find gh. It needs gh to read your PRs.";
 var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} seconds`;
-var GH_SIGNED_OUT_TEXT = "gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.";
-function ghNoticeOf(gh) {
-  if (gh.isGhMissing)
-    return { kind: "gh-missing", text: GH_MISSING_TEXT };
-  if (gh.isGhSignedOut)
-    return { kind: "gh-signed-out", text: GH_SIGNED_OUT_TEXT };
-  return null;
-}
-function prsEmptyHint(place) {
-  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
-}
-function prsEmptyText(prs, place) {
-  return {
-    title: prs.isFetching ? "Checking for PRs\u2026" : "No PRs",
-    hint: ghNoticeOf(prs)?.text ?? prsEmptyHint(place)
+function limitedTo(limit) {
+  let running = 0;
+  const waiting = [];
+  return async (call) => {
+    if (running >= limit)
+      await new Promise((go) => waiting.push(go));
+    running += 1;
+    try {
+      return await call();
+    } finally {
+      running -= 1;
+      waiting.shift()?.();
+    }
   };
 }
-function prRefreshFailedText(error) {
-  return `Last refresh failed: ${error}`;
-}
-var PR_REFRESH_LABEL = "Refresh PRs";
-var PR_REFRESH = { kind: "refresh-prs", name: "PRs" };
+
+// ../hooks/pr-views.ts
 var PR_DISMISSED_LABEL = "Dismissed";
-var DISMISS_MERGED_LABEL = "Dismiss merged";
-var RANK_AGAIN_LABEL = "Rank again";
-var RANK_AGAIN_ID = "pr:order";
-var DISMISS_MERGED_ID = "pr:merged";
-var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks" };
-function threadRowText(pr, t, lastActions) {
-  const isSent = threadSentIn(lastActions)(pr, t);
-  const isChanged = !isSent && t.isLinesChanged;
-  return {
-    mark: threadMark(isSent ? lastActions[prThreadId(pr, t)]?.delivery : null),
-    fold: isSent || isChanged ? t.isLinesChanged ? { note: `Lines changed since this comment${DOT}still open on GitHub` } : {} : null,
-    title: clipLabel(commentParts(t.body).head, THREAD_TITLE_CHARS),
-    meta: [
-      threadWhere(t, baseName(t.path)),
-      isChanged ? "Lines changed" : "",
-      t.reply ? `@${t.reply.author}: ${commentLine(t.reply.body)}` : `@${t.author}`
-    ].filter(Boolean).join(DOT)
-  };
-}
-function threadMark(delivery) {
-  if (delivery === null)
-    return { ...PR_MARKS.waiting, isDone: false, isRunning: false };
-  if (delivery?.state === "queued")
-    return { text: RUNNING_MARK, tone: null, isDone: false, isRunning: true };
-  if (delivery?.state === "unconfirmed")
-    return { text: "", tone: null, isDone: false, isRunning: false };
-  return { ...PR_MARKS.sent, isDone: true, isRunning: false };
-}
-function checkRowText(c) {
-  return {
-    mark: { ...PR_MARKS.failing, isDone: false, isRunning: false },
-    lead: c.workflow || null,
-    title: c.name,
-    meta: checkRunText(c)
-  };
-}
-function checkRunText(c) {
-  return c.startedAt !== undefined && c.finishedAt !== undefined ? `Failed after ${took(c.finishedAt - c.startedAt)}` : "Failed";
-}
-function threadSentIn(lastActions) {
-  return (pr, t) => {
-    const last = lastActions[prThreadId(pr, t)];
-    return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
-  };
-}
-function isPrTabRunning(prs, lastActions) {
-  return prs.some((pr) => waitingThreads(pr).some((t) => threadRowText(pr, t, lastActions).mark.isRunning));
-}
-function prRowWaits(prs, lastActions) {
-  const isSent = threadSentIn(lastActions);
-  return prs.flatMap((pr) => [
-    ...waitingThreads(pr).map((t) => ({ id: prThreadId(pr, t), isWaiting: !isSent(pr, t) })),
-    ...failingChecks(pr).map((c) => {
-      const id = prCheckId(pr, c);
-      const last = lastActions[id];
-      return { id, isWaiting: !isFoldingPress(id, last) || last?.delivery?.state === "failed" };
-    })
-  ]);
-}
 function isTracked(prState, links, ref) {
   return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
 }
@@ -4082,6 +4105,74 @@ function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
   let rank = 0;
   return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
 }
+
+// ../hooks/pr-press.ts
+var PR_REFRESH = { kind: "refresh-prs", name: "PRs" };
+function isPrPress(p) {
+  return "ref" in p || p.action === "pr-dismiss-merged" || p.action === "pr-rank-again";
+}
+function commentEffect(pr, t) {
+  return { kind: "open", target: t.reply?.url || t.url || pr.url, name: "the comment" };
+}
+function prPageEffect(pr) {
+  return { kind: "open", target: pr.url, name: `PR #${pr.number}` };
+}
+function logEffect(pr, check) {
+  return { kind: "open", target: check.url ?? pr.url, name: check.url ? "the log" : `PR #${pr.number}` };
+}
+var PR_FIX_LABELS = {
+  "pr-conflicts": "Resolve conflicts",
+  "check-fix": "Fix"
+};
+function isPrFixPress(p) {
+  return p.action === "pr-conflicts" || p.action === "check-fix";
+}
+function fixCheckEffect(pr) {
+  return { kind: "refresh-prs", name: `PR #${pr.number}` };
+}
+function prRowId(p) {
+  if (p.action === "pr-dismiss-merged")
+    return DISMISS_MERGED_ID;
+  if (p.action === "pr-rank-again")
+    return RANK_AGAIN_ID;
+  if ("check" in p)
+    return checkRowId(p.ref, p.check);
+  if ("thread" in p)
+    return threadRowId(p.ref, p.thread);
+  return prMarkId(p.ref);
+}
+function pressRowId(p) {
+  return isPrPress(p) ? prRowId(p) : p.id;
+}
+function prRetryOf(last, ref, thread, check = null) {
+  if (last?.delivery?.state !== "failed")
+    return null;
+  const a = last.action;
+  if (check !== null)
+    return a === "check-fix" ? { press: { action: a, ref, check }, kind: last.kind } : null;
+  if (thread !== null && (a === "thread-address" || a === "thread-draft" || a === "thread-discuss"))
+    return { press: { action: a, ref, thread }, kind: last.kind };
+  if (thread === null && (a === "pr-conflicts" || a === "pr-address-all" || a === "pr-merge"))
+    return { press: { action: a, ref }, kind: last.kind };
+  return null;
+}
+function lastPressOf(presses, rowId) {
+  const last = presses.lastActions[rowId];
+  const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
+  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
+}
+function again(row, action, label) {
+  return isAgain(row.last, action, row.pressing === action) ? `${label} again` : label;
+}
+function withOut(row, actions) {
+  return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
+}
+function retryAction(retry) {
+  return retry ? [{ press: retry.press, label: "Try again", kind: retry.kind, emphasis: "normal", icon: "retry", isRetry: true }] : [];
+}
+
+// ../hooks/pr-order.ts
+var RANK_AGAIN_LABEL = "Rank again";
 function prRankText(rank) {
   return `${rank}.\u2002`;
 }
@@ -4153,91 +4244,10 @@ function prOrderActions(row) {
     }
   ]);
 }
-function limitedTo(limit) {
-  let running = 0;
-  const waiting = [];
-  return async (call) => {
-    if (running >= limit)
-      await new Promise((go) => waiting.push(go));
-    running += 1;
-    try {
-      return await call();
-    } finally {
-      running -= 1;
-      waiting.shift()?.();
-    }
-  };
-}
-var PR_TONES = {
-  ready: "done",
-  blocked: "needsYou",
-  waiting: null,
-  draft: null,
-  merged: "findings",
-  closed: "error"
-};
-function isPrPress(p) {
-  return "ref" in p || p.action === "pr-dismiss-merged" || p.action === "pr-rank-again";
-}
-function commentEffect(pr, t) {
-  return { kind: "open", target: t.reply?.url || t.url || pr.url, name: "the comment" };
-}
-function prPageEffect(pr) {
-  return { kind: "open", target: pr.url, name: `PR #${pr.number}` };
-}
-function logEffect(pr, check) {
-  return { kind: "open", target: check.url ?? pr.url, name: check.url ? "the log" : `PR #${pr.number}` };
-}
-var PR_FIX_LABELS = {
-  "pr-conflicts": "Resolve conflicts",
-  "check-fix": "Fix"
-};
-function isPrFixPress(p) {
-  return p.action === "pr-conflicts" || p.action === "check-fix";
-}
-function fixCheckEffect(pr) {
-  return { kind: "refresh-prs", name: `PR #${pr.number}` };
-}
-function prRowId(p) {
-  if (p.action === "pr-dismiss-merged")
-    return DISMISS_MERGED_ID;
-  if (p.action === "pr-rank-again")
-    return RANK_AGAIN_ID;
-  if ("check" in p)
-    return checkRowId(p.ref, p.check);
-  if ("thread" in p)
-    return threadRowId(p.ref, p.thread);
-  return prMarkId(p.ref);
-}
-function pressRowId(p) {
-  return isPrPress(p) ? prRowId(p) : p.id;
-}
-function prRetryOf(last, ref, thread, check = null) {
-  if (last?.delivery?.state !== "failed")
-    return null;
-  const a = last.action;
-  if (check !== null)
-    return a === "check-fix" ? { press: { action: a, ref, check }, kind: last.kind } : null;
-  if (thread !== null && (a === "thread-address" || a === "thread-draft" || a === "thread-discuss"))
-    return { press: { action: a, ref, thread }, kind: last.kind };
-  if (thread === null && (a === "pr-conflicts" || a === "pr-address-all" || a === "pr-merge"))
-    return { press: { action: a, ref }, kind: last.kind };
-  return null;
-}
-function lastPressOf(presses, rowId) {
-  const last = presses.lastActions[rowId];
-  const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
-  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
-}
-function again(row, action, label) {
-  return isAgain(row.last, action, row.pressing === action) ? `${label} again` : label;
-}
-function withOut(row, actions) {
-  return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
-}
-function retryAction(retry) {
-  return retry ? [{ press: retry.press, label: "Try again", kind: retry.kind, emphasis: "normal", icon: "retry", isRetry: true }] : [];
-}
+
+// ../hooks/pr-tab.ts
+var PR_REFRESH_LABEL = "Refresh PRs";
+var DISMISS_MERGED_LABEL = "Dismiss merged";
 function threadActions(pr, t, presses) {
   const row = lastPressOf(presses, threadRowId(pr.ref, t.id));
   const on = { ref: pr.ref, thread: t.id };
