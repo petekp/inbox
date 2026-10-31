@@ -15,7 +15,7 @@ async function loadWithoutIntl(): Promise<typeof withSegmenter> {
   const intl = globalThis.Intl
   Reflect.deleteProperty(globalThis, 'Intl')
   try {
-    // @ts-expect-error A query makes Bun load a fresh copy, which TypeScript cannot resolve.
+    // @ts-expect-error
     return (await import('../../hooks/text.ts?without-intl')) as typeof withSegmenter
   } finally {
     globalThis.Intl = intl
