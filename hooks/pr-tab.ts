@@ -24,8 +24,6 @@ import {
 } from './pr-press'
 import type { Applied, PlannedPrAction, PrAction, PrPress } from './pr-press'
 
-export { fetchTracked, splitLinked } from './pr-fetch'
-export type { GhRun } from './pr-fetch'
 export {
   checkRowText,
   DISMISS_MERGED_ID,
@@ -46,8 +44,8 @@ export {
 export { isDismissed, openPrViews } from './pr-views'
 export type { DrawnPr } from './pr-views'
 export { prRankText } from './pr-order'
-export { fixCheckEffect, isPrFixPress, isPrPress, PR_FIX_LABELS, pressRowId } from './pr-press'
-export type { Applied, PrAction, PrFixPress, PrPress } from './pr-press'
+export { isPrPress, pressRowId } from './pr-press'
+export type { Applied, PrAction, PrPress } from './pr-press'
 
 /**
  * The button under a failed refresh. It is not "Try again", since a failed send on the same block draws that.

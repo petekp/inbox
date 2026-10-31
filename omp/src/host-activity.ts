@@ -12,7 +12,7 @@ import {
   waitsOnDelegate,
 } from '../../hooks/children'
 import { childEnded } from '../../hooks/status-children'
-import { refreshStatus } from '../../hooks/session-host'
+import { refreshStatus } from '../../hooks/status-records'
 import { activityOf, askOutcome } from './tool-calls'
 import type { SessionStatus } from '../../types'
 import { isUnattended, sessionIdOf } from './host-context'

@@ -21,10 +21,11 @@ import {
   askOverConversation,
   orderedKeys,
   reconcileUpdateStatus as reconcileStatus,
-  refreshStatus as refreshSessionStatus,
   runUpdates as runSessionUpdates,
 } from '../../hooks/session-host'
-import type { Ask, StatusRecords, RecordFiles } from '../../hooks/session-host'
+import type { Ask } from '../../hooks/session-host'
+import { refreshStatus as refreshSessionStatus } from '../../hooks/status-records'
+import type { StatusRecords, RecordFiles } from '../../hooks/status-records'
 import { screenTabOf } from '../../hooks/tabs'
 import { isTabOpen } from './core'
 import { codexStore } from './host'

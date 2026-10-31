@@ -1,8 +1,6 @@
 export type { Told } from '../types'
-export { buildPrompt, systemText } from './ledger-prompt'
+export { systemText } from './ledger-prompt'
 export { catchUpPrompt, dialogActivity, dialogQuestions, toolActivity, transcriptCatchUpPrompt } from './catch-up-text'
-export { STATUS_SYSTEM, statusCatchUpPrompt, statusMidTurnPrompt, statusPrompt } from './status-prompt'
-export type { StatusCallInput } from './status-prompt'
 export { screenText, statusCarryText } from './inbox-text'
 export type { ScreenTab } from './inbox-text'
 
