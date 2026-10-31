@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { withArrival } from '../../hooks/presses'
+import { withArrival } from '../../hooks/press-reducer'
 import { applyPrPress } from '../../hooks/pr-tab'
 import { demoView } from '../../hooks/demo'
 import { recordClose, recordItem } from '../../hooks/tools'

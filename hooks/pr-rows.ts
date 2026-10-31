@@ -1,5 +1,6 @@
 import type { Delivery, LastAction, PrCheck, PrThread, PrView } from '../types'
-import { baseName, isFoldingPress } from './presses'
+import { baseName } from './open-targets'
+import { isFoldingPress } from './last-actions'
 import { clipLabel } from './text'
 import { commentLine, commentParts, failingChecks, THREAD_TITLE_CHARS, threadWhere, took, waitingThreads } from './prs'
 import type { IsThreadSent, PrStatus } from './prs'

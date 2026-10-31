@@ -1,7 +1,7 @@
 import { clipLabel } from '../../hooks/text'
 import { LISTED_TABS, heldReplies, keptOpen, SETTLED_MS, keptDiscards } from '../../hooks/view'
 import type { Holds } from '../../hooks/view'
-import { capitalized } from '../../hooks/presses'
+import { capitalized } from '../../hooks/press-labels'
 import { newRows, openRows } from './arrivals'
 import type { TabView as View } from './core'
 import { POLL_MS, settledIds, settledSeen } from './settle'

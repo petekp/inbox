@@ -51,7 +51,7 @@ Each host's arrival signal:
 
 **Re-entry after a hand-off.** A handed-off row waits on the agent until it has replied once. If the row still waits on the person then, it counts again and takes back its own handle. Its age reads `Still open · 3m ago`, timed from the press. It stays closed until the person opens it.
 
-- Questions and tasks: the row waits until the update for a turn started after the press has applied (`hooks/presses.ts:isHandedOff`). An update that failed counts, since the reply has ended. A typed reply hands a question off as it does a task.
+- Questions and tasks: the row waits until the update for a turn started after the press has applied (`hooks/last-actions.ts:isHandedOff`). An update that failed counts, since the reply has ended. A typed reply hands a question off as it does a task.
 - Findings: the same turn rule, for a typed reply.
 - Review threads wait on GitHub, which says when they change. A sent thread unfolds when a newer comment arrives.
 

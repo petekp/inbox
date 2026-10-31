@@ -64,7 +64,7 @@ The saved records do not say whether an answer came from a press or from the age
 | `inbox:` texts beside a prompt | `hooks/model-text.ts:inboxText`, `hooks/model-text.ts:closedText`, `hooks/model-text.ts:answerNote` | Claude, Codex | Themes 3, 6 |
 | The start and compaction block | `hooks/model-text.ts:carryText` | Claude, Codex | No issue |
 | Activity and screen lines | `toolActivity`, `dialogActivity` and `screenText` in `hooks/model-text.ts` | Inbox model | No issue |
-| Row press messages | `hooks/presses.ts:messages` | Claude, Codex | Themes 2, 6 |
+| Row press messages | `hooks/press-messages.ts:messages` | Claude, Codex | Themes 2, 6 |
 | PR press messages | `hooks/prs.ts:prompts` | Claude | Read, no issue found |
 | Codex tool texts | `codex/src/texts.ts` | Codex | Theme 8 |
 | Codex hook context | `codex/src/hook.ts` | Codex | No issue. It passes the shared texts through. |

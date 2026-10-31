@@ -1,6 +1,6 @@
 import type { ActionEmphasis, ActionIcon, RowView } from '../../hooks/view'
+import { actionId } from '../../hooks/press-labels'
 import type { RowPress } from '../../hooks/presses'
-import { actionId } from '../../hooks/presses'
 import { actionLabel, rowKeyPlan, ROW_COPY } from '../../hooks/view'
 
 const ICONS = {
