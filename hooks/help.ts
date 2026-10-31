@@ -1,5 +1,5 @@
 import type { Finding, SubjectStatus } from '../types'
-import type { ClosedState } from './ledger'
+import type { ClosedState } from './ledger-close'
 import type { ToneName } from './tones'
 
 export const FINDING_GROUPS: Record<Finding['kind'], { title: string; mark: string; tone: 'issue' | 'done' }> = {
