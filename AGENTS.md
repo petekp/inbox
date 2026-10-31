@@ -18,7 +18,7 @@ The inbox is drawn in four looks: the Claude Code terminal, the Claude desktop a
 - When you finish a change to a shared module or a look's drawing code, say for each look whether the change applies and what you checked there. A difference between looks that is not in the "Differences on purpose" table in `docs/looks.md` is drift: fix it, or add it to the table with its reason.
 - Before you bump the version, run every check in [docs/release.md](docs/release.md).
 - When an eval run, a review or a release pass shows a bug or a gap in the evals, tests or release pass, write it down in the repo before you finish, with the failure it would catch. File a product bug as a GitHub issue. Add a gap in the checks to the follow-ups in `docs/plans/eval-trust-follow-ups.md` or `docs/plans/release-pass-follow-ups.md`.
-- Saved state outlives the code. The mod uses `PluginState` in `types/index.d.ts`; Codex uses `SessionState` in `codex/src/state.ts`; omp uses `OmpState` in `omp/src/state.ts`. Convert old shared fields in `upgradeLedger` or `upgradeLastActions`. Convert old host fields in the mod's `upgradeState` in `hooks/register.tsx`, and in `upgraded` in `codex/src/state.ts` and `omp/src/state.ts`.
+- Saved state outlives the code. The mod uses `PluginState` in `types/parts/claude-code.d.ts`, which `node scripts/build-types.mjs` builds into `types/index.d.ts`; Codex uses `SessionState` in `codex/src/state.ts`; omp uses `OmpState` in `omp/src/state.ts`. Convert old shared fields in `upgradeLedger` or `upgradeLastActions`. Convert old host fields in the mod's `upgradeState` in `hooks/register.tsx`, and in `upgraded` in `codex/src/state.ts` and `omp/src/state.ts`.
 
 ## Text a model reads
 
