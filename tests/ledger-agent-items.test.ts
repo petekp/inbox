@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { EMPTY, addAgentItem, applyUpdate, closeByAgent, closeItem, parseReply } from '../hooks/ledger'
+import { EMPTY } from '../hooks/ledger'
+import { closeByAgent, closeItem } from '../hooks/ledger-close'
+import { addAgentItem, applyUpdate } from '../hooks/ledger-update'
+import { parseReply } from '../hooks/reply-parse'
 import { recordClose, recordItem } from '../hooks/tools'
 
 describe('items the agent recorded', () => {

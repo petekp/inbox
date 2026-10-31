@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { addAgentItem } from '../../hooks/ledger'
+import { addAgentItem } from '../../hooks/ledger-update'
 import { applied, parsedReply } from '../../hooks/session'
 import { handleHook } from '../src/hook'
 import { readState, updateState } from '../src/state'

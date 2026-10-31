@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { LOOK_MIN_MS } from '../hooks/status'
+import { LOOK_MIN_MS } from '../hooks/status-children'
 import { statusPage } from '../hooks/view'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'

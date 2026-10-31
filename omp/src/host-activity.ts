@@ -10,7 +10,7 @@ import {
   delegatesTakenBack,
   waitsOnDelegate,
 } from '../../hooks/children'
-import { childEnded } from '../../hooks/status'
+import { childEnded } from '../../hooks/status-children'
 import { refreshStatus } from '../../hooks/session-host'
 import { activityOf, askOutcome } from './tool-calls'
 import type { SessionStatus } from '../../types'

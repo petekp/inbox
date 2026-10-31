@@ -9,7 +9,7 @@ The agent and the inbox model both write to the same open items. The agent recor
 | A second copy of a question the agent had just recorded, worded differently. | A `NEW:` line that `matchOpen` did not match to the agent's item. |
 | An unanswered question closed as "no longer applies": once because the reply only reminded the person it was open, once with an answer inferred from an earlier message. | A `CLOSED:` line on an agent-recorded item (`hooks/model-text.ts`, the CLOSED rule). |
 | A recommendation the agent never gave, on a question the model added from the reply. | The `rec` of a `NEW:` line, despite the rule that `rec` copies only a stated recommendation. |
-| The agent closed a question to record it again with its own recommendation, and `record` refused: "the user already closed this". | `addAgentItem` blocks on any matching closed item except an expired one (`hooks/ledger.ts`), and `tools.ts` words every refusal as the user's close. |
+| The agent closed a question to record it again with its own recommendation, and `record` refused: "the user already closed this". | `addAgentItem` blocks on any matching closed item except an expired one (`hooks/ledger-update.ts`), and `tools.ts` words every refusal as the user's close. |
 
 Each item saves what added it in `from`: `'record'` for the agent's `record` call, and `'update'` for a `NEW:` or `TODO:` line. `label` cannot tell them apart, because a `NEW:` line with the label "-" saves `label: null`, as the agent's records do. An item saved before `from` existed reads as `'update'` and keeps the model's rules. A close by the agent has `how: 'claude'`, and a close by the model has `how: 'update'`.
 
@@ -38,7 +38,7 @@ Add one case per row of the table above to `evals/cases/`, and to `evals/agent-c
 
 ## Decisions for the owner
 
-- **Stale questions (decided).** An item open for more than 12 turns expires (`STALE_AFTER` in `hooks/ledger.ts`), and a long session can keep a real decision open longer than that. Agent-recorded items (`from: 'record'`) are exempt from `STALE_AFTER`. Items from `NEW:` lines still expire after 12 turns. The `MAX_OPEN` cap of 20 still applies to every item.
+- **Stale questions (decided).** An item open for more than 12 turns expires (`STALE_AFTER` in `hooks/ledger-update.ts`), and a long session can keep a real decision open longer than that. Agent-recorded items (`from: 'record'`) are exempt from `STALE_AFTER`. Items from `NEW:` lines still expire after 12 turns. The `MAX_OPEN` cap of 20 still applies to every item.
 - **Missed closes (decided).** With change 1, a question the work has made moot stays open until the agent or the person closes it. An occasional extra open row is accepted as the cost of never losing an unanswered decision.
 
 ## Checks

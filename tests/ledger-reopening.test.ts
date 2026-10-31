@@ -1,17 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { CLAUDE_CODE } from '../hooks/model-text'
-import {
-  EMPTY,
-  addFinding,
-  applyUpdate,
-  closeByAgent,
-  closeFinding,
-  closeItem,
-  parseReply,
-  reopenFinding,
-  reopenItem,
-} from '../hooks/ledger'
+import { EMPTY } from '../hooks/ledger'
+import { closeByAgent, closeFinding, closeItem, reopenFinding, reopenItem } from '../hooks/ledger-close'
+import { addFinding, applyUpdate } from '../hooks/ledger-update'
+import { parseReply } from '../hooks/reply-parse'
 import { recordClose } from '../hooks/tools'
 import type { Item } from '../types'
 

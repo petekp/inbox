@@ -1,8 +1,10 @@
 import { expect, test } from 'claude-code/testing'
 
 import { childStarted } from '../hooks/children'
-import { applyOps, lookEnded, lookStarted, parseStatus } from '../hooks/status'
+import { parseStatus } from '../hooks/status'
 import type { Op } from '../hooks/status'
+import { lookEnded, lookStarted } from '../hooks/status-children'
+import { applyOps } from '../hooks/status-ops'
 import { statusPage } from '../hooks/view'
 import type { SessionStatus, SubjectStatus } from '../types'
 import { minutes } from '../evals/status-replay'

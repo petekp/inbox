@@ -56,7 +56,7 @@ Before any work, the page reads: "What this session's work is for, where each pa
   - the running children;
   - the host's task list, where there is one;
   - the person's message, the agent's tool activity and the reply.
-- **What it answers:** edits by id, one per line: add a subject, update one, finish one, drop one or drop it into another, write a was line, link an ask or a child, write the head. Or `UNCHANGED`. `hooks/status.ts` parses and applies the answer.
+- **What it answers:** edits by id, one per line: add a subject, update one, finish one, drop one or drop it into another, write a was line, link an ask or a child, write the head. Or `UNCHANGED`. `hooks/status.ts` parses the answer, and `hooks/status-ops.ts` applies it.
 - **What code does with it:**
   - A new subject whose name holds the same key words as an open one updates that one.
   - An update that keeps the status and has the same content words, in any order, keeps the old text and its place. A head that keeps its title, or that comes with finished work and none under way, keeps the old head.
@@ -64,4 +64,4 @@ Before any work, the page reads: "What this session's work is for, where each pa
 - **During a long turn.** The main agent's next tool call, once 10 minutes have passed since the turn began and since the last Status call, starts a Status call. That call reads the person's message and the turn's activity so far.
 - **On a catch-up.** The call reads the whole conversation and edits the current subjects.
 
-`hooks/status.ts` owns the saved Status, the parser and how an answer applies. `hooks/view.ts` owns the drawn page. `hooks/model-text.ts` owns the call's prompts. `docs/looks.md` names the owner of every other rule.
+`hooks/status.ts` owns the parser, `hooks/status-ops.ts` how an answer applies, and `hooks/status-upgrade.ts` how a saved Status loads. `hooks/view.ts` owns the drawn page. `hooks/model-text.ts` owns the call's prompts. `docs/looks.md` names the owner of every other rule.

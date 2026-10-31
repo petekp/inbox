@@ -9,11 +9,13 @@ import {
   guidedCloseDescription,
   questionNumbers,
 } from '../hooks/model-text'
-import { EMPTY, applyUpdate, parseReply, tasksRunBy } from '../hooks/ledger'
+import { EMPTY } from '../hooks/ledger'
+import { applyUpdate } from '../hooks/ledger-update'
+import { parseReply, tasksRunBy } from '../hooks/reply-parse'
 import { readCommandRow, resetTime, stopKindOf } from '../hooks/claude'
 import { herdrTokens } from '../hooks/herdr'
 import { parseInline } from '../hooks/inline'
-import { EMPTY_SESSION_STATUS } from '../hooks/status'
+import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
 import { emptySession, sessionView } from '../hooks/session'
 import { agentTools } from '../hooks/tools'
 import type { Dialog, Ledger, Stop } from '../types'

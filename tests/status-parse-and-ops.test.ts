@@ -1,6 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
-import { applyOps, applyStatus, lookEnded, lookStarted, LOOK_MIN_MS, parseStatus, withChild } from '../hooks/status'
+import { parseStatus } from '../hooks/status'
+import { lookEnded, lookStarted, LOOK_MIN_MS, withChild } from '../hooks/status-children'
+import { applyOps, applyStatus } from '../hooks/status-ops'
 import { opsOf, NO_ASKS, after } from './status-helpers'
 
 test('NO CHANGE keeps the list, and an empty answer or one holding prose cannot be read', () => {

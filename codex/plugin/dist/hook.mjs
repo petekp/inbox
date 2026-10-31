@@ -38,7 +38,130 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
-// ../hooks/status.ts
+// ../hooks/ask-match.ts
+function words(text2) {
+  return text2.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+function recommendedOption(options, rec) {
+  if (!rec) return null;
+  const named = new Set(words(rec));
+  let best = null;
+  for (const option of options) {
+    const w = words(option);
+    if (w.length > words(best ?? "").length && w.every((x) => named.has(x))) best = option;
+  }
+  const label = (text2) => text2.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
+  const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
+  return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
+}
+var FILLER = /* @__PURE__ */ new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "use",
+  "into",
+  "from",
+  "that",
+  "this",
+  "your",
+  "you",
+  "should",
+  "make",
+  "add",
+  "all"
+]);
+function keyWords(text2) {
+  return new Set(words(text2).filter((w) => new RegExp("\\p{N}", "u").test(w) || w.length > 2 && !FILLER.has(w)));
+}
+function restates(a, b) {
+  const x = keyWords(a);
+  const y = keyWords(b);
+  const fewer = Math.min(x.size, y.size);
+  const shared = [...x].filter((w) => y.has(w)).length;
+  const numbers = (words3) => [...words3].filter((w) => new RegExp("\\p{N}", "u").test(w)).sort().join(" ");
+  if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y)) return false;
+  return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
+}
+function sameAsk(a, b) {
+  const norm = (s) => words(s).join(" ");
+  return norm(a) !== "" && norm(a) === norm(b);
+}
+
+// ../hooks/ledger-close.ts
+var MAX_CLOSED = 12;
+function pruneClosed(ledger, keep) {
+  const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id));
+  return { ...ledger, closed: pruned2(ledger.closed), closedFindings: pruned2(ledger.closedFindings) };
+}
+function idNumber(id) {
+  return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
+}
+function inIdOrder(open3, entry) {
+  const at = open3.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
+  return at < 0 ? [...open3, entry] : [...open3.slice(0, at), entry, ...open3.slice(at)];
+}
+function reopenItem(ledger, id) {
+  const item = ledger.closed.findLast((c) => c.id === id)?.item;
+  if (!item || ledger.items.some((i) => i.id === id)) return ledger;
+  return { ...ledger, items: inIdOrder(ledger.items, item), closed: ledger.closed.filter((c) => c.id !== id) };
+}
+function reopenFinding(ledger, id) {
+  const record2 = ledger.closedFindings.findLast((f) => f.id === id);
+  if (!record2 || ledger.findings.some((f) => f.id === id)) return ledger;
+  const { how: _how, outcome: _outcome, closedAt: _closedAt, ...finding } = record2;
+  return {
+    ...ledger,
+    findings: inIdOrder(ledger.findings, finding),
+    closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
+  };
+}
+var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
+var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
+function closedState(d) {
+  if (d.how === "dismissed") return "dismissed";
+  if (d.how === "expired") return "lapsed";
+  const isOvertaken = OVERTAKEN.test(d.outcome);
+  return (d.how === "claude" || d.how === "update") && isOvertaken ? "lapsed" : "handled";
+}
+function closedAt(c) {
+  return "closedAt" in c ? c.closedAt : c.at;
+}
+
+// ../hooks/text.ts
+var NL = "\n";
+function turnReply(texts, final = "") {
+  const written = texts.filter((text2) => text2.trim() !== "");
+  const isFinalWritten = final.trim() === "" || written.at(-1)?.trim() === final.trim();
+  return (isFinalWritten ? written : [...written, final]).join(`${NL}${NL}`);
+}
+function clip(text2, max) {
+  return text2.length <= max ? text2 : text2.slice(0, max) + " \u2026[cut]";
+}
+function clipLabel(text2, max) {
+  return text2.length > max ? `${text2.slice(0, max - 1)}\u2026` : text2;
+}
+var graphemes = new Intl.Segmenter(void 0, { granularity: "grapheme" });
+var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
+function ago(ms) {
+  const min = Math.round(ms / 6e4);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const h = Math.round(min / 60);
+  if (h < 48) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+// ../hooks/reply-parse.ts
+function readKind(kind) {
+  return kind === "task" || kind === "do" ? "task" : "question";
+}
+
+// ../hooks/ledger-update.ts
+var EXPIRED = "expired, unanswered";
+var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
+
+// ../hooks/status-limits.ts
 var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
 var DESCRIPTION_WORDS = 8;
@@ -79,52 +202,24 @@ var EMPTY_SESSION_STATUS = {
   look: null
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
-var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
-var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
-var DELEGATE_STATES = ["working", "blocked", "finished"];
 function clipWords(text2, limit) {
   const words3 = text2.trim().split(/\s+/).filter(Boolean);
   return words3.length <= limit ? words3.join(" ") : `${words3.slice(0, limit).join(" ")}\u2026`;
 }
-function words(text2) {
+function words2(text2) {
   return new Set((text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
 }
 function nameKey(name) {
-  return [...words(name)].sort().join(" ");
+  return [...words2(name)].sort().join(" ");
 }
 function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
-function isChildRunning(c, now) {
-  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
-}
-function withChild(last, c, now) {
-  const o = last ?? EMPTY_SESSION_STATUS;
-  const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
-  const known = kept.find((x) => x.ref === c.ref);
-  if (known) return { ...o, children: kept.map((x) => x === known ? { ...x, ...c } : x) };
-  return {
-    ...o,
-    nextChildId: o.nextChildId + 1,
-    children: [...kept, { delegateState: null, ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
-  };
-}
-function changedChild(o, ref, change) {
-  const known = o?.children.find((c) => c.ref === ref);
-  if (!o || !known) return o;
-  return { ...o, children: o.children.map((c) => c === known ? { ...c, ...change(c) } : c) };
-}
-function childEnded(o, ref, at) {
-  return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
-}
-function subjectTouched(o, id, at) {
-  const isSeen = (s) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
-  const touched = (s) => isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
-  return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
-}
-function childActive(o, ref, at) {
-  return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
-}
+
+// ../hooks/status-upgrade.ts
+var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
+var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
+var DELEGATE_STATES = ["working", "blocked", "finished"];
 function text(value) {
   return typeof value === "string" ? value : "";
 }
@@ -243,30 +338,6 @@ function upgradeStatus(saved) {
   };
 }
 
-// ../hooks/text.ts
-var NL = "\n";
-function turnReply(texts, final = "") {
-  const written = texts.filter((text2) => text2.trim() !== "");
-  const isFinalWritten = final.trim() === "" || written.at(-1)?.trim() === final.trim();
-  return (isFinalWritten ? written : [...written, final]).join(`${NL}${NL}`);
-}
-function clip(text2, max) {
-  return text2.length <= max ? text2 : text2.slice(0, max) + " \u2026[cut]";
-}
-function clipLabel(text2, max) {
-  return text2.length > max ? `${text2.slice(0, max - 1)}\u2026` : text2;
-}
-var graphemes = new Intl.Segmenter(void 0, { granularity: "grapheme" });
-var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
-function ago(ms) {
-  const min = Math.round(ms / 6e4);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min}m ago`;
-  const h = Math.round(min / 60);
-  if (h < 48) return `${h}h ago`;
-  return `${Math.round(h / 24)}d ago`;
-}
-
 // ../hooks/ledger.ts
 var EMPTY = {
   overview: null,
@@ -284,11 +355,6 @@ var EMPTY = {
 function isBlankLedger(ledger) {
   const isStatusBlank = !ledger.overview || ledger.overview.head === null && ledger.overview.subjects.length === 0;
   return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0;
-}
-var MAX_CLOSED = 12;
-var EXPIRED = "expired, unanswered";
-function readKind(kind) {
-  return kind === "task" || kind === "do" ? "task" : "question";
 }
 function upgradeLedger(ledger) {
   const {
@@ -330,21 +396,6 @@ function upgradeItem(item) {
     from: item.from ?? "update"
   };
 }
-function words2(text2) {
-  return text2.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-}
-function recommendedOption(options, rec) {
-  if (!rec) return null;
-  const named = new Set(words2(rec));
-  let best = null;
-  for (const option of options) {
-    const w = words2(option);
-    if (w.length > words2(best ?? "").length && w.every((x) => named.has(x))) best = option;
-  }
-  const label = (text2) => text2.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
-  const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
-  return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
-}
 function howFromOutcome(outcome) {
   if (outcome === "dismissed") return "dismissed";
   if (outcome === EXPIRED) return "expired";
@@ -352,78 +403,7 @@ function howFromOutcome(outcome) {
   if (outcome.startsWith(CLOSED_BY_CLAUDE)) return "claude";
   return "update";
 }
-var FILLER = /* @__PURE__ */ new Set([
-  "the",
-  "and",
-  "for",
-  "with",
-  "use",
-  "into",
-  "from",
-  "that",
-  "this",
-  "your",
-  "you",
-  "should",
-  "make",
-  "add",
-  "all"
-]);
-function keyWords(text2) {
-  return new Set(words2(text2).filter((w) => new RegExp("\\p{N}", "u").test(w) || w.length > 2 && !FILLER.has(w)));
-}
-function restates(a, b) {
-  const x = keyWords(a);
-  const y = keyWords(b);
-  const fewer = Math.min(x.size, y.size);
-  const shared = [...x].filter((w) => y.has(w)).length;
-  const numbers = (words3) => [...words3].filter((w) => new RegExp("\\p{N}", "u").test(w)).sort().join(" ");
-  if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y)) return false;
-  return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
-}
-function sameAsk(a, b) {
-  const norm = (s) => words2(s).join(" ");
-  return norm(a) !== "" && norm(a) === norm(b);
-}
 var CLOSED_BY_CLAUDE = "closed by Claude";
-function pruneClosed(ledger, keep) {
-  const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id));
-  return { ...ledger, closed: pruned2(ledger.closed), closedFindings: pruned2(ledger.closedFindings) };
-}
-function idNumber(id) {
-  return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
-}
-function inIdOrder(open3, entry) {
-  const at = open3.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
-  return at < 0 ? [...open3, entry] : [...open3.slice(0, at), entry, ...open3.slice(at)];
-}
-function reopenItem(ledger, id) {
-  const item = ledger.closed.findLast((c) => c.id === id)?.item;
-  if (!item || ledger.items.some((i) => i.id === id)) return ledger;
-  return { ...ledger, items: inIdOrder(ledger.items, item), closed: ledger.closed.filter((c) => c.id !== id) };
-}
-function reopenFinding(ledger, id) {
-  const record2 = ledger.closedFindings.findLast((f) => f.id === id);
-  if (!record2 || ledger.findings.some((f) => f.id === id)) return ledger;
-  const { how: _how, outcome: _outcome, closedAt: _closedAt, ...finding } = record2;
-  return {
-    ...ledger,
-    findings: inIdOrder(ledger.findings, finding),
-    closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
-  };
-}
-var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
-var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
-var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
-function closedState(d) {
-  if (d.how === "dismissed") return "dismissed";
-  if (d.how === "expired") return "lapsed";
-  const isOvertaken = OVERTAKEN.test(d.outcome);
-  return (d.how === "claude" || d.how === "update") && isOvertaken ? "lapsed" : "handled";
-}
-function closedAt(c) {
-  return "closedAt" in c ? c.closedAt : c.at;
-}
 
 // ../hooks/session-version.ts
 var SESSION_VERSION = 1;
@@ -696,6 +676,38 @@ function isRepeatOf(last, action) {
   return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
 }
 
+// ../hooks/status-children.ts
+function isChildRunning(c, now) {
+  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+}
+function withChild(last, c, now) {
+  const o = last ?? EMPTY_SESSION_STATUS;
+  const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
+  const known = kept.find((x) => x.ref === c.ref);
+  if (known) return { ...o, children: kept.map((x) => x === known ? { ...x, ...c } : x) };
+  return {
+    ...o,
+    nextChildId: o.nextChildId + 1,
+    children: [...kept, { delegateState: null, ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
+  };
+}
+function changedChild(o, ref, change) {
+  const known = o?.children.find((c) => c.ref === ref);
+  if (!o || !known) return o;
+  return { ...o, children: o.children.map((c) => c === known ? { ...c, ...change(c) } : c) };
+}
+function childEnded(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
+}
+function subjectTouched(o, id, at) {
+  const isSeen = (s) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
+  const touched = (s) => isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
+  return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
+}
+function childActive(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
+}
+
 // ../hooks/host-tasks.ts
 var STATUSES2 = {
   pending: "pending",
@@ -735,7 +747,7 @@ function upgradeHostTasks(saved) {
 }
 
 // ../hooks/model-text.ts
-var NL2 = "\n";
+var NL3 = "\n";
 function guidanceText(host) {
   return `# Inbox
 ${host.intro}
@@ -950,11 +962,11 @@ function answerNote(ledger, text2) {
         return [
           "inbox: if the user is accepting your recommendations, these are the open ones:",
           ...withRecs.map((i) => `- ${i.label ?? "\u2022"} \u2192 ${describe(i)}`)
-        ].join(NL2);
+        ].join(NL3);
       }
     }
   }
-  return lines.length === 0 ? null : ["inbox: the user's message answers these open items from your earlier replies:", ...lines].join(NL2);
+  return lines.length === 0 ? null : ["inbox: the user's message answers these open items from your earlier replies:", ...lines].join(NL3);
 }
 function itemLine(item) {
   return `- ${item.label ? `(${item.label}) ` : ""}${describe(item)} (close id: ${item.id})`;
@@ -988,7 +1000,7 @@ function carryText(ledger, title) {
     out.push("Recently closed:");
     for (const d of ledger.closed) out.push(`- "${d.ask}" \u2192 ${outcomeText(d)}`);
   }
-  return out.join(NL2);
+  return out.join(NL3);
 }
 var CLOSE_ID_RULE = "A close id is only for the close tool. Never write one in a reply.";
 function inboxText(host, ledger, isOpen2) {
@@ -1006,7 +1018,7 @@ function inboxText(host, ledger, isOpen2) {
     for (const f of ledger.findings) out.push(findingLine(f));
   }
   out.push(isOpen2 ? `The user has ${host.surface} open beside the conversation.` : `${surfaceAtStart(host)} is closed.`);
-  return out.join(NL2);
+  return out.join(NL3);
 }
 function outcomeText(d) {
   if (d.how === "dismissed") return "dismissed by the user";
@@ -1019,7 +1031,7 @@ function closedText(closed) {
   return [
     "Closed since you last read the inbox:",
     ...closed.map((d) => `- "${d.ask}" \u2192 ${outcomeText(d)}${advice(d)}`)
-  ].join(NL2);
+  ].join(NL3);
 }
 var TOLD_NOTHING = { inbox: null, closed: [] };
 function promptNotes(host, ledger, prompt, told) {
@@ -1031,7 +1043,7 @@ function promptNotes(host, ledger, prompt, told) {
   const closed = closedText(ledger.closed.filter((d) => !toldClosed.has(d.id)));
   const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0;
   if (!closed && (inbox === told.inbox || isEmpty && told.inbox === null)) return { notes, told };
-  notes.push(closed ? `${inbox}${NL2}${closed}` : inbox);
+  notes.push(closed ? `${inbox}${NL3}${closed}` : inbox);
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
 }
 
@@ -2861,7 +2873,7 @@ var jsonRecord = (raw) => {
 };
 
 // ../hooks/conversation.ts
-var NL3 = "\n";
+var NL4 = "\n";
 var TRANSCRIPT_MAX = 8e4;
 var MESSAGE_MAX = 6e3;
 function flattenConversation(turns) {
@@ -2886,7 +2898,7 @@ function flattenConversation(turns) {
     }
     kept.push(line);
   }
-  return kept.reverse().join(NL3);
+  return kept.reverse().join(NL4);
 }
 
 // src/rollout-commands.ts

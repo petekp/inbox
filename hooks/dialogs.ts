@@ -1,7 +1,7 @@
 // Links an agent's dialog questions to the inbox questions that copy them.
 
 import type { DialogQuestion, Item, Session, TurnDialogQuestion } from '../types'
-import { restates } from './ledger'
+import { restates } from './ask-match'
 import { RECOMMENDED_SUFFIX } from './model-text'
 
 type AskedQuestion = Pick<DialogQuestion, 'question' | 'options'>

@@ -49,7 +49,7 @@ function ghIn(exec, bin, cwd, onUnstartable) {
   };
 }
 
-// ../hooks/status.ts
+// ../hooks/status-limits.ts
 var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
 var DESCRIPTION_WORDS = 8;
@@ -94,76 +94,12 @@ var EMPTY_SESSION_STATUS = {
   look: null
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
-var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
-var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
-var DELEGATE_STATES = ["working", "blocked", "finished"];
-var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i;
 function clipWords(text, limit) {
   const words = text.trim().split(/\s+/).filter(Boolean);
   return words.length <= limit ? words.join(" ") : `${words.slice(0, limit).join(" ")}\u2026`;
 }
-function fields(value) {
-  return value.split("|").map((f) => f.trim());
-}
-function openStatus(s) {
-  return OPEN_STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
-}
-function opOf(key, f) {
-  if (key === "NOCHANGE" || key === "UNCHANGED")
-    return { kind: "none" };
-  if (key === "NEW") {
-    const status = openStatus(f[0]);
-    return status && f[1] ? { kind: "new", status, name: f[1], text: f[2] ?? "" } : null;
-  }
-  if (key === "SET") {
-    const isDone = f[1]?.toLowerCase() === "done";
-    if (f[0] && isDone)
-      return { kind: "done", ref: f[0], text: f[2] ?? "" };
-    const status = openStatus(f[1]);
-    return f[0] && status ? { kind: "set", ref: f[0], status, text: f[2] ?? "" } : null;
-  }
-  if (key === "DONE")
-    return f[0] ? { kind: "done", ref: f[0], text: f[1] ?? "" } : null;
-  if (key === "DROP") {
-    const into = (f[2] ?? "").replace(/^INTO\s+/i, "").trim();
-    return f[0] ? { kind: "drop", ref: f[0], why: f[1] ?? "", into: into || null } : null;
-  }
-  if (key === "WAS")
-    return f[0] && f[1] ? { kind: "was", ref: f[0], text: f[1] } : null;
-  if (key === "HEAD")
-    return f[0] ? { kind: "head", title: f[0], description: f[1] ?? "" } : null;
-  if (key === "LINK")
-    return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
-  return null;
-}
-function parseStatus(text) {
-  const ops = [];
-  for (const raw of (text ?? "").split(NL)) {
-    const line = raw.trim();
-    if (line === "")
-      continue;
-    const m = LINE.exec(line);
-    const op = m ? opOf(m[1].toUpperCase().replace(" ", ""), fields(m[2] ?? "")) : null;
-    if (op === null)
-      return null;
-    ops.push(op);
-  }
-  if (ops.length === 0)
-    return null;
-  return ops.every((o) => o.kind === "none") ? { kind: "unchanged" } : { kind: "ops", ops };
-}
-async function askStatus(ask) {
-  const first = await ask();
-  const holdsProse = first.text !== null && parseStatus(first.text) === null;
-  return { first, last: holdsProse ? await ask() : first };
-}
 function words(text) {
   return new Set((text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
-}
-function hasSameWords(a, b) {
-  const x = words(a);
-  const y = words(b);
-  return x.size === y.size && [...x].every((w) => y.has(w));
 }
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
@@ -171,154 +107,8 @@ function nameKey(name) {
 function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
-function isUnderWay(s) {
-  return s.status === "working" || s.status === "waits-on-other";
-}
-function answerWork(before, o, now) {
-  const was = new Map(before.map((s) => [s.id, s]));
-  const closed = o.subjects.filter((s) => {
-    const earlier = was.get(s.id);
-    return !isOpen(s) && s.closedAt === now && (earlier === undefined || isOpen(earlier));
-  });
-  const isClosedWorkNew = closed.some((s) => !was.has(s.id));
-  const isUnderWayWorkClosed = closed.some((s) => {
-    const earlier = was.get(s.id);
-    return earlier !== undefined && isUnderWay(earlier);
-  });
-  return {
-    isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
-    isWorkUnderWay: o.subjects.some((s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now),
-    namesClosed: (description) => {
-      const said = words(description);
-      return closed.some((s) => {
-        const name = [...words(s.name)];
-        return name.length > 0 && name.every((w) => said.has(w));
-      });
-    }
-  };
-}
-function isDescriptionStale(head, work) {
-  return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
-}
-function headAfter(last, op, work) {
-  const isComplete = last !== null && last.description !== "";
-  const isSameTitle = last !== null && hasSameWords(last.title, op.title);
-  const isStale = isDescriptionStale(last, work);
-  const isHeld = isComplete && (isSameTitle && !isStale || work.isEarlierWorkFinished && !work.isWorkUnderWay);
-  return isHeld ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
-}
-var OP_ORDER = {
-  none: 0,
-  head: 1,
-  new: 0,
-  set: 0,
-  done: 0,
-  drop: 0,
-  was: 1,
-  link: 2
-};
-function applyOps(last, ops, now, askIds) {
-  let o = {
-    ...last ?? EMPTY_SESSION_STATUS,
-    subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
-    children: (last?.children ?? []).map((c) => ({ ...c })),
-    askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask)))
-  };
-  const find = (ref) => {
-    const key = nameKey(clipWords(ref, NAME_KEPT));
-    return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
-  };
-  const forgetSeenWas = (s) => {
-    const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
-    if (isSeen) {
-      s.was = null;
-      s.merged = null;
-    }
-  };
-  const set = (s, status, text) => {
-    const isReworded = s.status === status && hasSameWords(s.text, text);
-    if (isReworded)
-      return;
-    s.status = status;
-    s.text = clipWords(text, TEXT_KEPT);
-    forgetSeenWas(s);
-    s.changedAt = now;
-  };
-  const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
-  for (const { op } of ordered) {
-    if (op.kind === "none")
-      continue;
-    if (op.kind === "head")
-      o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
-    else if (op.kind === "link") {
-      const child = o.children.find((c) => c.id === op.ref);
-      const subject = find(op.subject);
-      if (child && subject)
-        child.subjectId = subject.id;
-      else if (subject && askIds.has(op.ref))
-        o.askSubjects[op.ref] = subject.id;
-    } else if (op.kind === "new") {
-      const known = find(op.name);
-      if (known && isOpen(known)) {
-        set(known, op.status, op.text);
-        continue;
-      }
-      const s = {
-        id: `s${o.nextId}`,
-        name: clipWords(op.name, NAME_KEPT),
-        status: op.status,
-        text: clipWords(op.text, TEXT_KEPT),
-        was: null,
-        merged: null,
-        createdAt: now,
-        changedAt: now,
-        closedAt: null,
-        into: null
-      };
-      o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] };
-    } else {
-      const s = find(op.ref);
-      if (!s)
-        continue;
-      if (op.kind === "set")
-        set(s, op.status, op.text);
-      else if (op.kind === "done") {
-        s.status = "done";
-        if (op.text)
-          s.text = clipWords(op.text, TEXT_KEPT);
-        forgetSeenWas(s);
-        s.closedAt = now;
-        s.changedAt = now;
-      } else if (op.kind === "drop") {
-        const target = op.into ? find(op.into) : null;
-        s.status = "dropped";
-        s.text = clipWords(op.why, TEXT_KEPT);
-        s.closedAt = now;
-        s.into = target && target.id !== s.id ? target.id : null;
-        s.changedAt = now;
-        if (target && s.into) {
-          forgetSeenWas(target);
-          target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name;
-          target.changedAt = now;
-          for (const [ask, id] of Object.entries(o.askSubjects))
-            if (id === s.id)
-              o.askSubjects[ask] = target.id;
-        }
-      } else {
-        forgetSeenWas(s);
-        s.was = op.text;
-        s.changedAt = now;
-      }
-    }
-  }
-  const isHeadKept = o.head === (last?.head ?? null);
-  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
-    o = { ...o, head: { ...o.head, description: "" } };
-  return o;
-}
-function applyStatus(last, answer, now, askIds) {
-  return answer.kind === "unchanged" ? last : applyOps(last, answer.ops, now, askIds);
-}
+
+// ../hooks/status-children.ts
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
 }
@@ -372,130 +162,6 @@ function lookEnded(o, at) {
     return o;
   const isLongEnough = at - o.look.startedAt >= LOOK_MIN_MS;
   return { ...o, lastLookAt: isLongEnough ? at : o.lastLookAt, look: null };
-}
-function text(value) {
-  return typeof value === "string" ? value : "";
-}
-function time(value) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-var DROPPED_STATUSES = { "waits-on-you": "queued", problem: "queued" };
-var OLD_MERGE = /^(.+?) folded in(?:; was: (.*))?$/s;
-function wasAndMerged(was, merged) {
-  const old = typeof was === "string" && typeof merged !== "string" ? OLD_MERGE.exec(was) : null;
-  if (old)
-    return { was: old[2] ?? null, merged: old[1] };
-  return { was: typeof was === "string" ? was : null, merged: typeof merged === "string" ? merged : null };
-}
-function subjectOf(saved) {
-  const s = saved;
-  const status = STATUSES.find((x) => x === s?.status) ?? DROPPED_STATUSES[String(s?.status)];
-  const changedAt = time(s?.changedAt);
-  if (!s || typeof s.id !== "string" || typeof s.name !== "string" || !status || changedAt === null)
-    return null;
-  return {
-    id: s.id,
-    name: s.name,
-    status,
-    text: text(s.text),
-    ...wasAndMerged(s.was, s.merged),
-    createdAt: time(s.createdAt) ?? changedAt,
-    changedAt,
-    closedAt: time(s.closedAt),
-    into: typeof s.into === "string" ? s.into : null
-  };
-}
-function childOf(saved) {
-  const c = saved;
-  const kind = CHILD_KINDS.find((k) => k === c?.kind);
-  const startedAt = time(c?.startedAt);
-  if (!c || typeof c.id !== "string" || typeof c.ref !== "string" || !kind || startedAt === null)
-    return null;
-  return {
-    id: c.id,
-    ref: c.ref,
-    kind,
-    name: text(c.name),
-    subjectId: typeof c.subjectId === "string" ? c.subjectId : null,
-    startedAt,
-    endedAt: time(c.endedAt),
-    lastActivityAt: time(c.lastActivityAt),
-    delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null
-  };
-}
-var OLD_STATUS = {
-  working: "working",
-  queued: "queued",
-  "waits-on-you": "queued",
-  "waits-on-other": "waits-on-other",
-  problem: "queued",
-  unknown: "queued",
-  done: null,
-  "ruled-out": null
-};
-function headOfGoal(goal) {
-  const title = clipWords(text(goal), DESCRIPTION_KEPT);
-  return title === "" ? null : { title, description: "" };
-}
-function headOf(saved) {
-  const h = saved;
-  const title = text(h?.title);
-  return title === "" ? null : { title, description: text(h?.description) };
-}
-function fromLists(o) {
-  const lastLookAt = time(o.lastLookAt);
-  const items = lastLookAt === null ? [] : ["workstreams", "queue", "open"].flatMap((k) => Array.isArray(o[k]) ? o[k] : []);
-  const subjects = items.flatMap((raw) => {
-    const item = raw;
-    const status = OLD_STATUS[String(item?.status)] ?? null;
-    if (!status || typeof item?.text !== "string")
-      return [];
-    return [
-      { status, name: clipWords(item.text, NAME_KEPT), text: typeof item.detail === "string" ? item.detail : "" }
-    ];
-  }).filter((s, n, all) => all.findIndex((t) => nameKey(t.name) === nameKey(s.name)) === n).slice(0, OPEN_SUBJECTS).map((s, n) => ({
-    id: `s${n + 1}`,
-    ...s,
-    text: clipWords(s.text, TEXT_KEPT),
-    was: null,
-    merged: null,
-    createdAt: lastLookAt,
-    changedAt: lastLookAt,
-    closedAt: null,
-    into: null
-  }));
-  return {
-    ...EMPTY_SESSION_STATUS,
-    head: headOfGoal(o.headline),
-    subjects,
-    nextId: subjects.length + 1,
-    lastLookAt
-  };
-}
-function upgradeStatus(saved) {
-  const o = saved;
-  if (typeof o !== "object" || o === null)
-    return null;
-  if (typeof o.headline === "string")
-    return fromLists(o);
-  if (!Array.isArray(o.subjects))
-    return null;
-  const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
-  const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
-  const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
-  const askSubjects = Object.fromEntries(savedLinks.filter((e) => typeof e[1] === "string"));
-  const look = o.look;
-  const lookAt = time(look?.startedAt);
-  return {
-    head: "head" in o ? headOf(o.head) : headOfGoal(o.goal),
-    subjects,
-    children,
-    askSubjects,
-    nextId: Math.max(time(o.nextId) ?? 1, subjects.length + 1),
-    nextChildId: Math.max(time(o.nextChildId) ?? 1, children.length + 1),
-    lastLookAt: time(o.lastLookAt),
-    look: lookAt === null ? null : { startedAt: lookAt }
-  };
 }
 
 // ../hooks/text.ts
@@ -699,76 +365,7 @@ function childrenCutOff(o, at) {
   return childrenEnded(o, (c) => c.kind !== "delegate", at);
 }
 
-// ../hooks/ledger.ts
-var KEPT_SESSIONS = 40;
-var EMPTY = {
-  overview: null,
-  items: [],
-  closed: [],
-  findings: [],
-  closedFindings: [],
-  prs: [],
-  prOrder: null,
-  nextId: 1,
-  turn: 0,
-  batchTurn: 0,
-  updates: 0
-};
-function isBlankLedger(ledger) {
-  const isStatusBlank = !ledger.overview || ledger.overview.head === null && ledger.overview.subjects.length === 0;
-  return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0;
-}
-var NL3 = `
-`;
-var MAX_OPEN = 20;
-var STALE_AFTER = 12;
-var UNFOUNDED_MOOT = /^no longer applies:.*(\b(not|never) (related|relevant|addressed|mentioned|discussed|answered|raised|part of)\b|\bunrelated\b|\b(still|stays) open\b|\boutside (the|this)\b|\bnothing\b.*\b(touch|address|mention|relate))/i;
-var MAX_CLOSED = 12;
-var EXPIRED = "expired, unanswered";
-var MAX_HELPS = 3;
-var MAX_FINDINGS = 30;
-function readKind(kind) {
-  return kind === "task" || kind === "do" ? "task" : "question";
-}
-function upgradeLedger(ledger) {
-  const {
-    notes,
-    decided,
-    milestones: _milestones,
-    card,
-    ...rest
-  } = ledger;
-  const updates = typeof rest.updates === "number" ? rest.updates : card ? 1 : 0;
-  return {
-    ...rest,
-    prOrder: rest.prOrder ? { ...rest.prOrder, why: rest.prOrder.why ?? null, statuses: rest.prOrder.statuses ?? null } : null,
-    updates,
-    overview: upgradeStatus(rest.overview),
-    findings: [...rest.findings ?? [], ...notes ?? []],
-    closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
-    items: rest.items.map(upgradeItem),
-    closed: (rest.closed ?? decided ?? []).map((d) => ({
-      ...d,
-      kind: readKind(d.kind),
-      how: d.how ?? howFromOutcome(d.outcome),
-      ...d.item ? { item: upgradeItem(d.item) } : {}
-    }))
-  };
-}
-var ASKED_AS = /^asked as (i\d+)$/;
-function upgradeClosedFinding(f) {
-  const asker = f.how === "update" ? ASKED_AS.exec(f.outcome)?.[1] : undefined;
-  return asker && f.askedAs === undefined ? { ...f, askedAs: asker } : f;
-}
-function upgradeItem(item) {
-  return {
-    ...item,
-    kind: readKind(item.kind),
-    at: item.at ?? null,
-    rec: recommendedOption(item.options, item.rec),
-    from: item.from ?? "update"
-  };
-}
+// ../hooks/ask-match.ts
 function words2(text) {
   return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
@@ -786,19 +383,235 @@ function recommendedOption(options, rec) {
   const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
   return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
 }
-function restatedRec(options, old, stated) {
-  return recommendedOption(options, stated) ?? recommendedOption(options, old);
+var FILLER = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "use",
+  "into",
+  "from",
+  "that",
+  "this",
+  "your",
+  "you",
+  "should",
+  "make",
+  "add",
+  "all"
+]);
+function keyWords(text) {
+  return new Set(words2(text).filter((w) => /\p{N}/u.test(w) || w.length > 2 && !FILLER.has(w)));
 }
-function howFromOutcome(outcome) {
-  if (outcome === "dismissed")
+function restates(a, b) {
+  const x = keyWords(a);
+  const y = keyWords(b);
+  const fewer = Math.min(x.size, y.size);
+  const shared = [...x].filter((w) => y.has(w)).length;
+  const numbers = (words) => [...words].filter((w) => /\p{N}/u.test(w)).sort().join(" ");
+  if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y))
+    return false;
+  return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
+}
+var GENERIC = new Set([
+  "which",
+  "what",
+  "how",
+  "when",
+  "where",
+  "whether",
+  "why",
+  "who",
+  "pick",
+  "choose",
+  "select",
+  "prefer",
+  "want",
+  "decide",
+  "need",
+  "like",
+  "are",
+  "was",
+  "were",
+  "been",
+  "being",
+  "can",
+  "could",
+  "would",
+  "will",
+  "shall",
+  "might",
+  "must",
+  "does",
+  "did",
+  "has",
+  "have",
+  "had",
+  "new",
+  "current",
+  "existing",
+  "its",
+  "our",
+  "their",
+  "now",
+  "still",
+  "also",
+  "just",
+  "again",
+  "already",
+  "instead",
+  "yet"
+]);
+function repeatsSubject(a, b) {
+  const x = keyWords(a);
+  const y = keyWords(b);
+  const within = (inner, outer) => [...inner].every((w) => GENERIC.has(w) || outer.has(w));
+  return sameAsk(a, b) || restates(a, b) && (within(x, y) || within(y, x));
+}
+function sameAsk(a, b) {
+  const norm = (s) => words2(s).join(" ");
+  return norm(a) !== "" && norm(a) === norm(b);
+}
+function matchOpen(items, a, sameBatch = new Set) {
+  return items.findIndex((i) => i.id === a.label || sameAsk(i.ask, a.ask) || !sameBatch.has(i.id) && i.kind === a.kind && restates(i.ask, a.ask));
+}
+function repeatsClosed(closed, a, since) {
+  const recent = closed.filter((c) => c.at >= since && !isAskedForChoices(c));
+  const settled = closed.filter((c) => c.at < since && c.how !== "expired");
+  return matchOpen(recent, a) >= 0 || a.label !== null && recent.some((c) => c.label === a.label) || settled.some((c) => repeatsSettled(c, a));
+}
+var LIST_CHOICES = "List the choices";
+function isAskedForChoices(c) {
+  return c.how === "answered" && c.outcome.trim().toLowerCase() === LIST_CHOICES.toLowerCase();
+}
+function repeatsSettled(c, a) {
+  if (isAskedForChoices(c))
+    return false;
+  if (c.how === "answered")
+    return c.id === a.label || sameAsk(c.ask, a.ask);
+  return c.id === a.label || sameAsk(c.ask, a.ask) || c.kind === a.kind && repeatsSubject(c.ask, a.ask);
+}
+
+// ../hooks/ledger-close.ts
+var MAX_CLOSED = 12;
+function closedRecord(item, closing, now) {
+  const { id, kind, ask, label } = item;
+  return { id, kind, ask, ...label ? { label } : {}, ...closing, at: now, item };
+}
+function closedFindingRecord(finding, closing, now, askedAs) {
+  return { ...finding, ...askedAs ? { askedAs } : {}, ...closing, closedAt: now };
+}
+function closeByAgent(host, ledger, id, how, now) {
+  const closing = "answer" in how ? { how: "answered", outcome: how.answer } : { how: "claude", outcome: `closed by ${host.agent}: ${how.reason}` };
+  const item = ledger.items.find((i) => i.id === id);
+  if (item)
+    return { ledger: closeItem(ledger, id, closing, now), closed: { item } };
+  const finding = ledger.findings.find((f) => f.id === id);
+  if (finding)
+    return { ledger: closeFinding(ledger, id, closing, now), closed: { finding } };
+  return { ledger, closed: null };
+}
+function closeItem(ledger, id, closing, now) {
+  const records = ledger.items.filter((i) => i.id === id).map((i) => closedRecord(i, closing, now));
+  return reopenAskedFindings({ ...ledger, items: ledger.items.filter((i) => i.id !== id), closed: [...ledger.closed, ...records] }, records);
+}
+function closeFinding(ledger, id, closing, now, askedAs) {
+  const finding = ledger.findings.find((f) => f.id === id);
+  if (!finding)
+    return ledger;
+  return {
+    ...ledger,
+    findings: ledger.findings.filter((f) => f.id !== id),
+    closedFindings: [...ledger.closedFindings, closedFindingRecord(finding, closing, now, askedAs)]
+  };
+}
+var SHARED_TITLE_WORDS = 2;
+var PUT_OFF = /\b(?:not (?:now|yet)|put off|for later|postpone|defer)/i;
+function leavesWorkOpen(c) {
+  return c.how !== "done" && (isLapsed(c) || PUT_OFF.test(c.outcome));
+}
+function reopenAskedFindings(ledger, closes) {
+  return closes.filter(leavesWorkOpen).reduce((l, c) => {
+    const record = l.closedFindings.findLast((f) => f.askedAs === c.id);
+    if (!record)
+      return l;
+    const reopened = reopenFinding(l, record.id);
+    return {
+      ...reopened,
+      findings: reopened.findings.map((f) => {
+        const { askedAs: _askedAs, ...rest } = f;
+        return f.id === record.id ? rest : f;
+      })
+    };
+  }, ledger);
+}
+function prNumbers(text) {
+  return new Set([...text.matchAll(/(?:#|\bPR\s*#?|\/pull\/)(\d+)/gi)].map((m) => m[1]));
+}
+function asksAbout(item, finding, isClaimed = false) {
+  if (item.label === finding.id)
+    return true;
+  if (restates(finding.title, item.ask) || restates(finding.detail, item.ask))
+    return true;
+  if (isClaimed) {
+    const known = keyWords(finding.title);
+    if ([...keyWords(item.ask)].filter((w) => known.has(w)).length >= SHARED_TITLE_WORDS)
+      return true;
+  }
+  const itemPrs = prNumbers(`${item.label ?? ""} ${item.ask}`);
+  return [...prNumbers(`${finding.title} ${finding.detail}`)].some((n) => itemPrs.has(n));
+}
+function pruneClosed(ledger, keep) {
+  const pruned = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id));
+  return { ...ledger, closed: pruned(ledger.closed), closedFindings: pruned(ledger.closedFindings) };
+}
+function idNumber(id) {
+  return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
+}
+function inIdOrder(open, entry) {
+  const at = open.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
+  return at < 0 ? [...open, entry] : [...open.slice(0, at), entry, ...open.slice(at)];
+}
+function reopenItem(ledger, id) {
+  const item = ledger.closed.findLast((c) => c.id === id)?.item;
+  if (!item || ledger.items.some((i) => i.id === id))
+    return ledger;
+  return { ...ledger, items: inIdOrder(ledger.items, item), closed: ledger.closed.filter((c) => c.id !== id) };
+}
+function reopenFinding(ledger, id) {
+  const record = ledger.closedFindings.findLast((f) => f.id === id);
+  if (!record || ledger.findings.some((f) => f.id === id))
+    return ledger;
+  const { how: _how, outcome: _outcome, closedAt: _closedAt, ...finding } = record;
+  return {
+    ...ledger,
+    findings: inIdOrder(ledger.findings, finding),
+    closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
+  };
+}
+var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
+var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
+function closedState(d) {
+  if (d.how === "dismissed")
     return "dismissed";
-  if (outcome === EXPIRED)
-    return "expired";
-  if (outcome === "done" || outcome === "you ran it")
-    return "done";
-  if (outcome.startsWith(CLOSED_BY_CLAUDE))
-    return "claude";
-  return "update";
+  if (d.how === "expired")
+    return "lapsed";
+  const isOvertaken = OVERTAKEN.test(d.outcome);
+  return (d.how === "claude" || d.how === "update") && isOvertaken ? "lapsed" : "handled";
+}
+function closedAt(c) {
+  return "closedAt" in c ? c.closedAt : c.at;
+}
+function isLapsed(d) {
+  return closedState(d) !== "handled";
+}
+
+// ../hooks/reply-parse.ts
+var NL3 = `
+`;
+var MAX_HELPS = 3;
+function readKind(kind) {
+  return kind === "task" || kind === "do" ? "task" : "question";
 }
 var NEEDS_PERSON = /(?:^|[\s;&|])(?:login|logout|signin|sign-in|sudo|passwd|ssh-add|ssh-keygen)(?=[\s:]|$)|\binit --interactive\b/i;
 var PERSON_ONLY_REASON = /credential|password|passphrase|secret|\btoken|\b2fa\b|\bmfa\b|\bdevice\b|phone|android|tablet|account|sign(?:ed)?[- ]?in|log(?:ged)?[- ]?in|only you|you hold|your (?:mac|machine|laptop|computer|keychain)|\bsudo\b/i;
@@ -983,209 +796,24 @@ function isTakenUp(work, reply) {
 function todoAsk(work) {
   return `Ready to start on ${work.replace(/[.?!\s]+$/, "")}?`;
 }
-var FILLER = new Set([
-  "the",
-  "and",
-  "for",
-  "with",
-  "use",
-  "into",
-  "from",
-  "that",
-  "this",
-  "your",
-  "you",
-  "should",
-  "make",
-  "add",
-  "all"
-]);
-function keyWords(text) {
-  return new Set(words2(text).filter((w) => /\p{N}/u.test(w) || w.length > 2 && !FILLER.has(w)));
+function stepHelp(step) {
+  const value = step.trim();
+  if (/^https?:\/\//i.test(value))
+    return readHelp("link", value, null, [], null);
+  if (/^(?:\/|~\/|\.{1,2}\/)\S*$/.test(value))
+    return readHelp("open", value, null, [], null);
+  const isSentence = /^[A-Z][a-z]+\s+[a-z]/.test(value) || /[.!?]$/.test(value);
+  return value !== "" && !isSentence ? readHelp("terminal", value, null, [], null) : null;
 }
-function restates(a, b) {
-  const x = keyWords(a);
-  const y = keyWords(b);
-  const fewer = Math.min(x.size, y.size);
-  const shared = [...x].filter((w) => y.has(w)).length;
-  const numbers = (words) => [...words].filter((w) => /\p{N}/u.test(w)).sort().join(" ");
-  if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y))
-    return false;
-  return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
-}
-var GENERIC = new Set([
-  "which",
-  "what",
-  "how",
-  "when",
-  "where",
-  "whether",
-  "why",
-  "who",
-  "pick",
-  "choose",
-  "select",
-  "prefer",
-  "want",
-  "decide",
-  "need",
-  "like",
-  "are",
-  "was",
-  "were",
-  "been",
-  "being",
-  "can",
-  "could",
-  "would",
-  "will",
-  "shall",
-  "might",
-  "must",
-  "does",
-  "did",
-  "has",
-  "have",
-  "had",
-  "new",
-  "current",
-  "existing",
-  "its",
-  "our",
-  "their",
-  "now",
-  "still",
-  "also",
-  "just",
-  "again",
-  "already",
-  "instead",
-  "yet"
-]);
-function repeatsSubject(a, b) {
-  const x = keyWords(a);
-  const y = keyWords(b);
-  const within = (inner, outer) => [...inner].every((w) => GENERIC.has(w) || outer.has(w));
-  return sameAsk(a, b) || restates(a, b) && (within(x, y) || within(y, x));
-}
-function sameAsk(a, b) {
-  const norm = (s) => words2(s).join(" ");
-  return norm(a) !== "" && norm(a) === norm(b);
-}
-function matchOpen(items, a, sameBatch = new Set) {
-  return items.findIndex((i) => i.id === a.label || sameAsk(i.ask, a.ask) || !sameBatch.has(i.id) && i.kind === a.kind && restates(i.ask, a.ask));
-}
-function repeatsClosed(closed, a, since) {
-  const recent = closed.filter((c) => c.at >= since && !isAskedForChoices(c));
-  const settled = closed.filter((c) => c.at < since && c.how !== "expired");
-  return matchOpen(recent, a) >= 0 || a.label !== null && recent.some((c) => c.label === a.label) || settled.some((c) => repeatsSettled(c, a));
-}
-var LIST_CHOICES = "List the choices";
-function isAskedForChoices(c) {
-  return c.how === "answered" && c.outcome.trim().toLowerCase() === LIST_CHOICES.toLowerCase();
-}
-function repeatsSettled(c, a) {
-  if (isAskedForChoices(c))
-    return false;
-  if (c.how === "answered")
-    return c.id === a.label || sameAsk(c.ask, a.ask);
-  return c.id === a.label || sameAsk(c.ask, a.ask) || c.kind === a.kind && repeatsSubject(c.ask, a.ask);
-}
-function closedRecord(item, closing, now) {
-  const { id, kind, ask, label } = item;
-  return { id, kind, ask, ...label ? { label } : {}, ...closing, at: now, item };
-}
-function closedFindingRecord(finding, closing, now, askedAs) {
-  return { ...finding, ...askedAs ? { askedAs } : {}, ...closing, closedAt: now };
-}
-var CLOSED_BY_CLAUDE = "closed by Claude";
-function closeByAgent(host, ledger, id, how, now) {
-  const closing = "answer" in how ? { how: "answered", outcome: how.answer } : { how: "claude", outcome: `closed by ${host.agent}: ${how.reason}` };
-  const item = ledger.items.find((i) => i.id === id);
-  if (item)
-    return { ledger: closeItem(ledger, id, closing, now), closed: { item } };
-  const finding = ledger.findings.find((f) => f.id === id);
-  if (finding)
-    return { ledger: closeFinding(ledger, id, closing, now), closed: { finding } };
-  return { ledger, closed: null };
-}
-function closeItem(ledger, id, closing, now) {
-  const records = ledger.items.filter((i) => i.id === id).map((i) => closedRecord(i, closing, now));
-  return reopenAskedFindings({ ...ledger, items: ledger.items.filter((i) => i.id !== id), closed: [...ledger.closed, ...records] }, records);
-}
-function closeFinding(ledger, id, closing, now, askedAs) {
-  const finding = ledger.findings.find((f) => f.id === id);
-  if (!finding)
-    return ledger;
-  return {
-    ...ledger,
-    findings: ledger.findings.filter((f) => f.id !== id),
-    closedFindings: [...ledger.closedFindings, closedFindingRecord(finding, closing, now, askedAs)]
-  };
-}
-var SHARED_TITLE_WORDS = 2;
-var PUT_OFF = /\b(?:not (?:now|yet)|put off|for later|postpone|defer)/i;
-function leavesWorkOpen(c) {
-  return c.how !== "done" && (isLapsed(c) || PUT_OFF.test(c.outcome));
-}
-function reopenAskedFindings(ledger, closes) {
-  return closes.filter(leavesWorkOpen).reduce((l, c) => {
-    const record = l.closedFindings.findLast((f) => f.askedAs === c.id);
-    if (!record)
-      return l;
-    const reopened = reopenFinding(l, record.id);
-    return {
-      ...reopened,
-      findings: reopened.findings.map((f) => {
-        const { askedAs: _askedAs, ...rest } = f;
-        return f.id === record.id ? rest : f;
-      })
-    };
-  }, ledger);
-}
-function prNumbers(text) {
-  return new Set([...text.matchAll(/(?:#|\bPR\s*#?|\/pull\/)(\d+)/gi)].map((m) => m[1]));
-}
-function asksAbout(item, finding, isClaimed = false) {
-  if (item.label === finding.id)
-    return true;
-  if (restates(finding.title, item.ask) || restates(finding.detail, item.ask))
-    return true;
-  if (isClaimed) {
-    const known = keyWords(finding.title);
-    if ([...keyWords(item.ask)].filter((w) => known.has(w)).length >= SHARED_TITLE_WORDS)
-      return true;
-  }
-  const itemPrs = prNumbers(`${item.label ?? ""} ${item.ask}`);
-  return [...prNumbers(`${finding.title} ${finding.detail}`)].some((n) => itemPrs.has(n));
-}
-function pruneClosed(ledger, keep) {
-  const pruned = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id));
-  return { ...ledger, closed: pruned(ledger.closed), closedFindings: pruned(ledger.closedFindings) };
-}
-function idNumber(id) {
-  return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
-}
-function inIdOrder(open, entry) {
-  const at = open.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
-  return at < 0 ? [...open, entry] : [...open.slice(0, at), entry, ...open.slice(at)];
-}
-function reopenItem(ledger, id) {
-  const item = ledger.closed.findLast((c) => c.id === id)?.item;
-  if (!item || ledger.items.some((i) => i.id === id))
-    return ledger;
-  return { ...ledger, items: inIdOrder(ledger.items, item), closed: ledger.closed.filter((c) => c.id !== id) };
-}
-function reopenFinding(ledger, id) {
-  const record = ledger.closedFindings.findLast((f) => f.id === id);
-  if (!record || ledger.findings.some((f) => f.id === id))
-    return ledger;
-  const { how: _how, outcome: _outcome, closedAt: _closedAt, ...finding } = record;
-  return {
-    ...ledger,
-    findings: inIdOrder(ledger.findings, finding),
-    closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
-  };
+
+// ../hooks/ledger-update.ts
+var MAX_OPEN = 20;
+var STALE_AFTER = 12;
+var UNFOUNDED_MOOT = /^no longer applies:.*(\b(not|never) (related|relevant|addressed|mentioned|discussed|answered|raised|part of)\b|\bunrelated\b|\b(still|stays) open\b|\boutside (the|this)\b|\bnothing\b.*\b(touch|address|mention|relate))/i;
+var EXPIRED = "expired, unanswered";
+var MAX_FINDINGS = 30;
+function restatedRec(options, old, stated) {
+  return recommendedOption(options, stated) ?? recommendedOption(options, old);
 }
 var SENT_PRESS_KINDS = {
   answer: "mark",
@@ -1199,8 +827,6 @@ function applyExchangeUpdate(ledger, update, exchange, now, promptAt) {
   const talkedAboutId = press && SENT_PRESS_KINDS[press.action] === "talk" ? press.id : null;
   return applyUpdate(ledger, { ...update, closed: update.closed.filter((c) => c.id !== talkedAboutId) }, now, exchange.turn, promptAt);
 }
-var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
-var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
 var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
 function isPersonsAnswer(outcome) {
   return outcome.trim() !== "" && !NOT_AN_ANSWER.test(outcome);
@@ -1360,28 +986,417 @@ function addAgentItem(ledger, entry, now) {
   const next = reopenAskedFindings(restated.reduce((l, f) => closeFinding(l, f.id, { outcome: `asked as ${id}`, how: "update" }, now, id), base), closed.slice(ledger.closed.length));
   return { ledger: next, is: "added", id, expired: dropped[0] ?? null };
 }
-function stepHelp(step) {
-  const value = step.trim();
-  if (/^https?:\/\//i.test(value))
-    return readHelp("link", value, null, [], null);
-  if (/^(?:\/|~\/|\.{1,2}\/)\S*$/.test(value))
-    return readHelp("open", value, null, [], null);
-  const isSentence = /^[A-Z][a-z]+\s+[a-z]/.test(value) || /[.!?]$/.test(value);
-  return value !== "" && !isSentence ? readHelp("terminal", value, null, [], null) : null;
+
+// ../hooks/status-upgrade.ts
+var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
+var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
+var DELEGATE_STATES = ["working", "blocked", "finished"];
+function text(value) {
+  return typeof value === "string" ? value : "";
 }
-function closedState(d) {
-  if (d.how === "dismissed")
+function time(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+var DROPPED_STATUSES = { "waits-on-you": "queued", problem: "queued" };
+var OLD_MERGE = /^(.+?) folded in(?:; was: (.*))?$/s;
+function wasAndMerged(was, merged) {
+  const old = typeof was === "string" && typeof merged !== "string" ? OLD_MERGE.exec(was) : null;
+  if (old)
+    return { was: old[2] ?? null, merged: old[1] };
+  return { was: typeof was === "string" ? was : null, merged: typeof merged === "string" ? merged : null };
+}
+function subjectOf(saved) {
+  const s = saved;
+  const status = STATUSES.find((x) => x === s?.status) ?? DROPPED_STATUSES[String(s?.status)];
+  const changedAt = time(s?.changedAt);
+  if (!s || typeof s.id !== "string" || typeof s.name !== "string" || !status || changedAt === null)
+    return null;
+  return {
+    id: s.id,
+    name: s.name,
+    status,
+    text: text(s.text),
+    ...wasAndMerged(s.was, s.merged),
+    createdAt: time(s.createdAt) ?? changedAt,
+    changedAt,
+    closedAt: time(s.closedAt),
+    into: typeof s.into === "string" ? s.into : null
+  };
+}
+function childOf(saved) {
+  const c = saved;
+  const kind = CHILD_KINDS.find((k) => k === c?.kind);
+  const startedAt = time(c?.startedAt);
+  if (!c || typeof c.id !== "string" || typeof c.ref !== "string" || !kind || startedAt === null)
+    return null;
+  return {
+    id: c.id,
+    ref: c.ref,
+    kind,
+    name: text(c.name),
+    subjectId: typeof c.subjectId === "string" ? c.subjectId : null,
+    startedAt,
+    endedAt: time(c.endedAt),
+    lastActivityAt: time(c.lastActivityAt),
+    delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null
+  };
+}
+var OLD_STATUS = {
+  working: "working",
+  queued: "queued",
+  "waits-on-you": "queued",
+  "waits-on-other": "waits-on-other",
+  problem: "queued",
+  unknown: "queued",
+  done: null,
+  "ruled-out": null
+};
+function headOfGoal(goal) {
+  const title = clipWords(text(goal), DESCRIPTION_KEPT);
+  return title === "" ? null : { title, description: "" };
+}
+function headOf(saved) {
+  const h = saved;
+  const title = text(h?.title);
+  return title === "" ? null : { title, description: text(h?.description) };
+}
+function fromLists(o) {
+  const lastLookAt = time(o.lastLookAt);
+  const items = lastLookAt === null ? [] : ["workstreams", "queue", "open"].flatMap((k) => Array.isArray(o[k]) ? o[k] : []);
+  const subjects = items.flatMap((raw) => {
+    const item = raw;
+    const status = OLD_STATUS[String(item?.status)] ?? null;
+    if (!status || typeof item?.text !== "string")
+      return [];
+    return [
+      { status, name: clipWords(item.text, NAME_KEPT), text: typeof item.detail === "string" ? item.detail : "" }
+    ];
+  }).filter((s, n, all) => all.findIndex((t) => nameKey(t.name) === nameKey(s.name)) === n).slice(0, OPEN_SUBJECTS).map((s, n) => ({
+    id: `s${n + 1}`,
+    ...s,
+    text: clipWords(s.text, TEXT_KEPT),
+    was: null,
+    merged: null,
+    createdAt: lastLookAt,
+    changedAt: lastLookAt,
+    closedAt: null,
+    into: null
+  }));
+  return {
+    ...EMPTY_SESSION_STATUS,
+    head: headOfGoal(o.headline),
+    subjects,
+    nextId: subjects.length + 1,
+    lastLookAt
+  };
+}
+function upgradeStatus(saved) {
+  const o = saved;
+  if (typeof o !== "object" || o === null)
+    return null;
+  if (typeof o.headline === "string")
+    return fromLists(o);
+  if (!Array.isArray(o.subjects))
+    return null;
+  const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
+  const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
+  const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
+  const askSubjects = Object.fromEntries(savedLinks.filter((e) => typeof e[1] === "string"));
+  const look = o.look;
+  const lookAt = time(look?.startedAt);
+  return {
+    head: "head" in o ? headOf(o.head) : headOfGoal(o.goal),
+    subjects,
+    children,
+    askSubjects,
+    nextId: Math.max(time(o.nextId) ?? 1, subjects.length + 1),
+    nextChildId: Math.max(time(o.nextChildId) ?? 1, children.length + 1),
+    lastLookAt: time(o.lastLookAt),
+    look: lookAt === null ? null : { startedAt: lookAt }
+  };
+}
+
+// ../hooks/ledger.ts
+var KEPT_SESSIONS = 40;
+var EMPTY = {
+  overview: null,
+  items: [],
+  closed: [],
+  findings: [],
+  closedFindings: [],
+  prs: [],
+  prOrder: null,
+  nextId: 1,
+  turn: 0,
+  batchTurn: 0,
+  updates: 0
+};
+function isBlankLedger(ledger) {
+  const isStatusBlank = !ledger.overview || ledger.overview.head === null && ledger.overview.subjects.length === 0;
+  return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0;
+}
+function upgradeLedger(ledger) {
+  const {
+    notes,
+    decided,
+    milestones: _milestones,
+    card,
+    ...rest
+  } = ledger;
+  const updates = typeof rest.updates === "number" ? rest.updates : card ? 1 : 0;
+  return {
+    ...rest,
+    prOrder: rest.prOrder ? { ...rest.prOrder, why: rest.prOrder.why ?? null, statuses: rest.prOrder.statuses ?? null } : null,
+    updates,
+    overview: upgradeStatus(rest.overview),
+    findings: [...rest.findings ?? [], ...notes ?? []],
+    closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
+    items: rest.items.map(upgradeItem),
+    closed: (rest.closed ?? decided ?? []).map((d) => ({
+      ...d,
+      kind: readKind(d.kind),
+      how: d.how ?? howFromOutcome(d.outcome),
+      ...d.item ? { item: upgradeItem(d.item) } : {}
+    }))
+  };
+}
+var ASKED_AS = /^asked as (i\d+)$/;
+function upgradeClosedFinding(f) {
+  const asker = f.how === "update" ? ASKED_AS.exec(f.outcome)?.[1] : undefined;
+  return asker && f.askedAs === undefined ? { ...f, askedAs: asker } : f;
+}
+function upgradeItem(item) {
+  return {
+    ...item,
+    kind: readKind(item.kind),
+    at: item.at ?? null,
+    rec: recommendedOption(item.options, item.rec),
+    from: item.from ?? "update"
+  };
+}
+function howFromOutcome(outcome) {
+  if (outcome === "dismissed")
     return "dismissed";
-  if (d.how === "expired")
-    return "lapsed";
-  const isOvertaken = OVERTAKEN.test(d.outcome);
-  return (d.how === "claude" || d.how === "update") && isOvertaken ? "lapsed" : "handled";
+  if (outcome === EXPIRED)
+    return "expired";
+  if (outcome === "done" || outcome === "you ran it")
+    return "done";
+  if (outcome.startsWith(CLOSED_BY_CLAUDE))
+    return "claude";
+  return "update";
 }
-function closedAt(c) {
-  return "closedAt" in c ? c.closedAt : c.at;
+var CLOSED_BY_CLAUDE = "closed by Claude";
+// ../hooks/status-ops.ts
+function hasSameWords(a, b) {
+  const x = words(a);
+  const y = words(b);
+  return x.size === y.size && [...x].every((w) => y.has(w));
 }
-function isLapsed(d) {
-  return closedState(d) !== "handled";
+function isUnderWay(s) {
+  return s.status === "working" || s.status === "waits-on-other";
+}
+function answerWork(before, o, now) {
+  const was = new Map(before.map((s) => [s.id, s]));
+  const closed = o.subjects.filter((s) => {
+    const earlier = was.get(s.id);
+    return !isOpen(s) && s.closedAt === now && (earlier === undefined || isOpen(earlier));
+  });
+  const isClosedWorkNew = closed.some((s) => !was.has(s.id));
+  const isUnderWayWorkClosed = closed.some((s) => {
+    const earlier = was.get(s.id);
+    return earlier !== undefined && isUnderWay(earlier);
+  });
+  return {
+    isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
+    isWorkUnderWay: o.subjects.some((s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now),
+    namesClosed: (description) => {
+      const said = words(description);
+      return closed.some((s) => {
+        const name = [...words(s.name)];
+        return name.length > 0 && name.every((w) => said.has(w));
+      });
+    }
+  };
+}
+function isDescriptionStale(head, work) {
+  return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
+}
+function headAfter(last, op, work) {
+  const isComplete = last !== null && last.description !== "";
+  const isSameTitle = last !== null && hasSameWords(last.title, op.title);
+  const isStale = isDescriptionStale(last, work);
+  const isHeld = isComplete && (isSameTitle && !isStale || work.isEarlierWorkFinished && !work.isWorkUnderWay);
+  return isHeld ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
+}
+var OP_ORDER = {
+  none: 0,
+  head: 1,
+  new: 0,
+  set: 0,
+  done: 0,
+  drop: 0,
+  was: 1,
+  link: 2
+};
+function applyOps(last, ops, now, askIds) {
+  let o = {
+    ...last ?? EMPTY_SESSION_STATUS,
+    subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
+    children: (last?.children ?? []).map((c) => ({ ...c })),
+    askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask)))
+  };
+  const find = (ref) => {
+    const key = nameKey(clipWords(ref, NAME_KEPT));
+    return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
+  };
+  const forgetSeenWas = (s) => {
+    const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
+    if (isSeen) {
+      s.was = null;
+      s.merged = null;
+    }
+  };
+  const set = (s, status, text) => {
+    const isReworded = s.status === status && hasSameWords(s.text, text);
+    if (isReworded)
+      return;
+    s.status = status;
+    s.text = clipWords(text, TEXT_KEPT);
+    forgetSeenWas(s);
+    s.changedAt = now;
+  };
+  const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
+  for (const { op } of ordered) {
+    if (op.kind === "none")
+      continue;
+    if (op.kind === "head")
+      o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
+    else if (op.kind === "link") {
+      const child = o.children.find((c) => c.id === op.ref);
+      const subject = find(op.subject);
+      if (child && subject)
+        child.subjectId = subject.id;
+      else if (subject && askIds.has(op.ref))
+        o.askSubjects[op.ref] = subject.id;
+    } else if (op.kind === "new") {
+      const known = find(op.name);
+      if (known && isOpen(known)) {
+        set(known, op.status, op.text);
+        continue;
+      }
+      const s = {
+        id: `s${o.nextId}`,
+        name: clipWords(op.name, NAME_KEPT),
+        status: op.status,
+        text: clipWords(op.text, TEXT_KEPT),
+        was: null,
+        merged: null,
+        createdAt: now,
+        changedAt: now,
+        closedAt: null,
+        into: null
+      };
+      o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] };
+    } else {
+      const s = find(op.ref);
+      if (!s)
+        continue;
+      if (op.kind === "set")
+        set(s, op.status, op.text);
+      else if (op.kind === "done") {
+        s.status = "done";
+        if (op.text)
+          s.text = clipWords(op.text, TEXT_KEPT);
+        forgetSeenWas(s);
+        s.closedAt = now;
+        s.changedAt = now;
+      } else if (op.kind === "drop") {
+        const target = op.into ? find(op.into) : null;
+        s.status = "dropped";
+        s.text = clipWords(op.why, TEXT_KEPT);
+        s.closedAt = now;
+        s.into = target && target.id !== s.id ? target.id : null;
+        s.changedAt = now;
+        if (target && s.into) {
+          forgetSeenWas(target);
+          target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name;
+          target.changedAt = now;
+          for (const [ask, id] of Object.entries(o.askSubjects))
+            if (id === s.id)
+              o.askSubjects[ask] = target.id;
+        }
+      } else {
+        forgetSeenWas(s);
+        s.was = op.text;
+        s.changedAt = now;
+      }
+    }
+  }
+  const isHeadKept = o.head === (last?.head ?? null);
+  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
+    o = { ...o, head: { ...o.head, description: "" } };
+  return o;
+}
+function applyStatus(last, answer, now, askIds) {
+  return answer.kind === "unchanged" ? last : applyOps(last, answer.ops, now, askIds);
+}
+
+// ../hooks/status.ts
+var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i;
+function fields(value) {
+  return value.split("|").map((f) => f.trim());
+}
+function openStatus(s) {
+  return OPEN_STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
+}
+function opOf(key, f) {
+  if (key === "NOCHANGE" || key === "UNCHANGED")
+    return { kind: "none" };
+  if (key === "NEW") {
+    const status = openStatus(f[0]);
+    return status && f[1] ? { kind: "new", status, name: f[1], text: f[2] ?? "" } : null;
+  }
+  if (key === "SET") {
+    const isDone = f[1]?.toLowerCase() === "done";
+    if (f[0] && isDone)
+      return { kind: "done", ref: f[0], text: f[2] ?? "" };
+    const status = openStatus(f[1]);
+    return f[0] && status ? { kind: "set", ref: f[0], status, text: f[2] ?? "" } : null;
+  }
+  if (key === "DONE")
+    return f[0] ? { kind: "done", ref: f[0], text: f[1] ?? "" } : null;
+  if (key === "DROP") {
+    const into = (f[2] ?? "").replace(/^INTO\s+/i, "").trim();
+    return f[0] ? { kind: "drop", ref: f[0], why: f[1] ?? "", into: into || null } : null;
+  }
+  if (key === "WAS")
+    return f[0] && f[1] ? { kind: "was", ref: f[0], text: f[1] } : null;
+  if (key === "HEAD")
+    return f[0] ? { kind: "head", title: f[0], description: f[1] ?? "" } : null;
+  if (key === "LINK")
+    return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
+  return null;
+}
+function parseStatus(text) {
+  const ops = [];
+  for (const raw of (text ?? "").split(NL)) {
+    const line = raw.trim();
+    if (line === "")
+      continue;
+    const m = LINE.exec(line);
+    const op = m ? opOf(m[1].toUpperCase().replace(" ", ""), fields(m[2] ?? "")) : null;
+    if (op === null)
+      return null;
+    ops.push(op);
+  }
+  if (ops.length === 0)
+    return null;
+  return ops.every((o) => o.kind === "none") ? { kind: "unchanged" } : { kind: "ops", ops };
+}
+async function askStatus(ask) {
+  const first = await ask();
+  const holdsProse = first.text !== null && parseStatus(first.text) === null;
+  return { first, last: holdsProse ? await ask() : first };
 }
 
 // ../hooks/host-tasks.ts
