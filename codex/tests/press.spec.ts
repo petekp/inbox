@@ -5,15 +5,10 @@ import { withArrival } from '../../hooks/press-reducer'
 import { applyPrPress } from '../../hooks/pr-tab'
 import { demoView } from '../../hooks/demo'
 import { recordClose, recordItem } from '../../hooks/tools'
-import {
-  feedbackText,
-  firstWaiting,
-  listWaits,
-  QUEUED_AFTER_MS,
-  rowHandle,
-  settledLabel,
-  settledMark,
-} from '../../hooks/view'
+import { feedbackText } from '../../hooks/feedback'
+import { firstWaiting, listWaits } from '../../hooks/action-plan'
+import { QUEUED_AFTER_MS } from '../../hooks/timing'
+import { rowHandle, settledLabel, settledMark } from '../../hooks/rows'
 import { notePrompt, viewOf } from '../src/core'
 import { SETTLE_WINDOW_MS } from '../src/settle'
 import type { SessionState } from '../src/state'

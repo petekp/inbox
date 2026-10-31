@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test'
 
-import { SETTLED_MS, NO_HOLDS, shownTabs, statusKeyPlan, statusKeyRows, PRESS_GUARD_MS } from '../../hooks/view'
-import type { StatusRow } from '../../hooks/view'
+import { SETTLED_MS, NO_HOLDS, PRESS_GUARD_MS } from '../../hooks/timing'
+import { shownTabs } from '../../hooks/tabs'
+import { statusKeyPlan, statusKeyRows } from '../../hooks/action-plan'
+import type { StatusRow } from '../../hooks/status-page'
 import { sessionView } from '../../hooks/session-view'
 import { demoState } from '../src/demo'
 import { drawPanel } from '../src/panel'

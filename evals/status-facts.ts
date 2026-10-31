@@ -1,5 +1,4 @@
-import { SUBJECT_MARKS } from '../hooks/view'
-import { IDLE_MARK } from '../hooks/help'
+import { IDLE_MARK, SUBJECT_MARKS } from '../hooks/help'
 import type { SubjectStatus } from '../types'
 
 /** What really happened to a piece of work at a step, as the case's author knows it. */

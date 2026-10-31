@@ -8,7 +8,7 @@ import { recordPress, pendingResult, localLast, withLasts } from './pressed'
 import type { RowPress } from './presses'
 import { completedAttempt, withHolds, pressOn } from './session-presses'
 import type { Pressed } from './session-presses'
-import type { Holds } from './view'
+import type { Holds } from './timing'
 import type { Session, RowNote, LastAction } from '../types'
 import type { SessionHost } from './session-host'
 

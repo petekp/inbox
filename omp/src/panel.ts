@@ -5,23 +5,13 @@ import type { RowPress } from '../../hooks/presses'
 import type { SessionView } from '../../hooks/session-view'
 import type { BannerTone, ToneName } from '../../hooks/tones'
 import { ago } from '../../hooks/text'
-import {
-  DEMO_NOTICE,
-  bannerOf,
-  stopBanner,
-  tabBarBanners,
-  QUEUED_AFTER_MS,
-  LISTED_TABS,
-  SETTLED_MS,
-  shownTabs,
-  footerStatus,
-  heldReplies,
-  isRowTab,
-  statusSelected,
-  stopFix,
-  stopText,
-} from '../../hooks/view'
-import type { Holds, ShownTab } from '../../hooks/view'
+import { DEMO_NOTICE, bannerOf, stopBanner, tabBarBanners, stopFix, stopText } from '../../hooks/banners'
+import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies } from '../../hooks/timing'
+import { LISTED_TABS, shownTabs, isRowTab } from '../../hooks/tabs'
+import { footerStatus } from '../../hooks/view'
+import { statusSelected } from '../../hooks/action-plan'
+import type { Holds } from '../../hooks/timing'
+import type { ShownTab } from '../../hooks/tabs'
 import { bannerLines, boxed, drawLine, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import { PAGE_MARK_AT, PAGE_TEXT_AT, entriesOf } from './panel-entries'

@@ -4,17 +4,15 @@ import {
   closedShown,
   closedTotal,
   earlierLabel,
-  emptyText,
-  groupEmptyText,
-  entryId,
   foldLabel,
   waitingCount,
-  FINDING_GROUPS,
   settledLabel,
-  settledIn,
   shortAgo,
-} from '../../hooks/view'
-import type { ResultMark } from '../../hooks/view'
+} from '../../hooks/rows'
+import { emptyText, groupEmptyText } from '../../hooks/banners'
+import { entryId, settledIn } from '../../hooks/action-plan'
+import { FINDING_GROUPS } from '../../hooks/help'
+import type { ResultMark } from '../../hooks/rows'
 import type { Finding } from '../../types'
 import type { FoldGroup } from './arrivals'
 import type { TabView as View } from './core'

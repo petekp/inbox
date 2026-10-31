@@ -1,7 +1,8 @@
 import { CLOSE_ID_RULE } from '../../hooks/inbox-text'
 import type { Host } from '../../hooks/model-text'
-import type { InboxView, RowView } from '../../hooks/view'
-import { rowHandle } from '../../hooks/view'
+import type { InboxView } from '../../hooks/view'
+import type { RowView } from '../../hooks/rows'
+import { rowHandle } from '../../hooks/rows'
 
 export const CODEX: Host = {
   agent: 'Codex',

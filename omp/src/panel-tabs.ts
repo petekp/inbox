@@ -12,19 +12,12 @@ import {
 } from '../../hooks/arrivals'
 import type { RowRecord } from '../../hooks/arrivals'
 import type { ToneName } from '../../hooks/tones'
-import {
-  ROW_COPY,
-  shownTabs,
-  tabBadge,
-  fitTabs,
-  tabName,
-  footerStatus,
-  isRowTab,
-  keptOpen,
-  statusKeyRows,
-  versionLabel,
-} from '../../hooks/view'
-import type { ShownTab, TabNaming } from '../../hooks/view'
+import { ROW_COPY } from '../../hooks/rows'
+import { shownTabs, tabBadge, fitTabs, tabName, isRowTab } from '../../hooks/tabs'
+import { footerStatus } from '../../hooks/view'
+import { keptOpen, statusKeyRows } from '../../hooks/action-plan'
+import { versionLabel } from '../../hooks/banners'
+import type { ShownTab, TabNaming } from '../../hooks/tabs'
 import type { Draw } from './panel-draw'
 import { entriesOf } from './panel-entries'
 import { withTab } from './panel-keys'

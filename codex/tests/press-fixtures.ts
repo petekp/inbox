@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { applyPress } from '../../hooks/press-reducer'
 import type { PressResult } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
-import { NO_HOLDS } from '../../hooks/view'
+import { NO_HOLDS } from '../../hooks/timing'
 import { emptyState } from '../src/state'
 import type { SessionState } from '../src/state'
 

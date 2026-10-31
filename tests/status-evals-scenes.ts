@@ -1,7 +1,7 @@
 import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
 import { emptySession } from '../hooks/session-files'
 import type { Session } from '../hooks/session'
-import { statusPage } from '../hooks/view'
+import { statusPage } from '../hooks/status-page'
 import type { Item, SessionStatus, Subject, SubjectStatus } from '../types'
 import type { Facts } from '../evals/status-facts'
 import { minutes } from '../evals/status-replay'

@@ -1,4 +1,4 @@
-import type { Feedback } from '../../hooks/view'
+import type { Feedback } from '../../hooks/feedback'
 import { makeServer } from '../src/server'
 import { updateState } from '../src/state'
 import { fakeRunner, tempDir } from './helpers'

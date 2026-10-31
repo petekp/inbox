@@ -1,8 +1,9 @@
 import type { LastAction, Ledger, PrCheck, PressKind, PrThread, PrView } from '../types'
 import type { Effect } from './press-reducer'
 import type { PrActionId, RowPress } from './presses'
-import { isAgain, outAction, pressFeedbackIn, pressOutAction } from './view'
-import type { ActionEmphasis, PressState } from './view'
+import { isAgain, outAction, pressFeedbackIn, pressOutAction } from './feedback'
+import type { ActionEmphasis } from './rows'
+import type { PressState } from './feedback'
 import { checkRowId, DISMISS_MERGED_ID, prMarkId, RANK_AGAIN_ID, threadRowId } from './pr-rows'
 
 /** Fetches every PR the session tracks, so the row reads "Refreshing PRs…". */

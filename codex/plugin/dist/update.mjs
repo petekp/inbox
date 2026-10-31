@@ -1478,76 +1478,30 @@ function isRepeatOf(last, action) {
   return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
 }
 
-// ../hooks/status-children.ts
-function isChildRunning(c, now) {
-  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+// ../hooks/tabs.ts
+var TAB_NAMES = [
+  { id: "overview", label: "Status", symbol: "\u{1F9ED}" },
+  { id: "needsYou", label: "Asks", symbol: "\u{1F64B}" },
+  { id: "findings", label: "Finds", symbol: "\u{1F50D}" },
+  { id: "prs", label: "PRs", symbol: "\u{1F500}" }
+];
+var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
+var NEXT_BUILD_TABS = numbered(TAB_NAMES);
+var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
+function isListedTab(tab) {
+  return tab === "needsYou" || tab === "findings";
 }
-function subjectsText(o) {
-  const subjects = o?.subjects ?? [];
-  const open3 = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}`);
-  const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
-  return { open: open3.join(NL3) || "(none yet)", finished: finished.join(NL3) };
+function isRowTab(tab) {
+  return tab !== "overview";
 }
-function asksText(o, asks) {
-  return asks.map((a) => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id] ?? "-"}`).join(NL3);
+function isShownTab(raw) {
+  return TAB_NAMES.some((t) => t.id === raw);
 }
-function runningText(o, now) {
-  return (o?.children ?? []).filter((c) => isChildRunning(c, now)).map((c) => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? "-"}`).join(NL3);
+function screenTabOf(tab) {
+  return { label: TAB_NAMES.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
 }
-
-// ../hooks/status.ts
-var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i;
-function fields(value) {
-  return value.split("|").map((f) => f.trim());
-}
-function openStatus(s) {
-  return OPEN_STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
-}
-function opOf(key, f) {
-  if (key === "NOCHANGE" || key === "UNCHANGED") return { kind: "none" };
-  if (key === "NEW") {
-    const status = openStatus(f[0]);
-    return status && f[1] ? { kind: "new", status, name: f[1], text: f[2] ?? "" } : null;
-  }
-  if (key === "SET") {
-    const isDone = f[1]?.toLowerCase() === "done";
-    if (f[0] && isDone) return { kind: "done", ref: f[0], text: f[2] ?? "" };
-    const status = openStatus(f[1]);
-    return f[0] && status ? { kind: "set", ref: f[0], status, text: f[2] ?? "" } : null;
-  }
-  if (key === "DONE") return f[0] ? { kind: "done", ref: f[0], text: f[1] ?? "" } : null;
-  if (key === "DROP") {
-    const into = (f[2] ?? "").replace(/^INTO\s+/i, "").trim();
-    return f[0] ? { kind: "drop", ref: f[0], why: f[1] ?? "", into: into || null } : null;
-  }
-  if (key === "WAS") return f[0] && f[1] ? { kind: "was", ref: f[0], text: f[1] } : null;
-  if (key === "HEAD") return f[0] ? { kind: "head", title: f[0], description: f[1] ?? "" } : null;
-  if (key === "LINK") return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
-  return null;
-}
-function parseStatus(text2) {
-  const ops = [];
-  for (const raw of (text2 ?? "").split(NL3)) {
-    const line = raw.trim();
-    if (line === "") continue;
-    const m = LINE.exec(line);
-    const op = m ? opOf(m[1].toUpperCase().replace(" ", ""), fields(m[2] ?? "")) : null;
-    if (op === null) return null;
-    ops.push(op);
-  }
-  if (ops.length === 0) return null;
-  return ops.every((o) => o.kind === "none") ? { kind: "unchanged" } : { kind: "ops", ops };
-}
-async function askStatus(ask) {
-  const first = await ask();
-  const holdsProse = first.text !== null && parseStatus(first.text) === null;
-  return { first, last: holdsProse ? await ask() : first };
-}
-
-// ../hooks/presses.ts
-function isPrRowId(id) {
-  return id.startsWith("pr:") || id.includes(" ");
-}
+var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
+var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 
 // ../hooks/help.ts
 var FINDING_GROUPS = {
@@ -1608,11 +1562,7 @@ var MARK_LEGEND = [
   }
 ];
 
-// ../hooks/view.ts
-var OPTIONS_FOLD_AT = 5;
-var OPTION_LABEL_CHARS = 32;
-var CHOICE_KEYS = [..."abcfghilm"];
-var DOT = "\u2007\xB7\u2002";
+// ../hooks/timing.ts
 var SETTLED_MS = 5120;
 var QUEUED_AFTER_MS = 1e3;
 var COMPARE_LIMIT_MS = 30 * 6e4;
@@ -1638,6 +1588,13 @@ function isUndoLeft(at, now, settleWindowMs) {
 function canUndoClose(closed, at, now, settleWindowMs) {
   return isUndoable(closed) && isUndoLeft(at, now, settleWindowMs);
 }
+var RUNNING_FRAME_MS = 300;
+var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
+
+// ../hooks/rows.ts
+var OPTIONS_FOLD_AT = 5;
+var OPTION_LABEL_CHARS = 32;
+var DOT = "\u2007\xB7\u2002";
 function closedRowState(closed, at, now, settleWindowMs, delivery) {
   return {
     is: "settled",
@@ -1674,18 +1631,105 @@ var RUNNING_RESULT = { text: RUNNING_MARK, isRunning: true };
 function isSendMoving(delivery) {
   return delivery === "sending" || delivery === "queued";
 }
-var NEXT_BUILD_MARK = ".next-build";
-var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
-var HOLDS_UP_TEXT = "Holds up";
-var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
-var UPDATE_RETRIES = " It retries after your next message.";
-function needsYouOrder(ledger) {
-  const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
-  return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
+function closedMark(state, delivery) {
+  if (isSendMoving(delivery)) return RUNNING_RESULT;
+  return { text: delivery === null ? CLOSED_MARKS[state] : "", isRunning: false };
 }
-function showsCompare(item) {
-  return item.kind === "question" && item.isDesignChoice === true && item.options.length >= 2;
+function outcomeLabel(c) {
+  return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
 }
+
+// ../hooks/pr-rows.ts
+function prThreadId(pr, t) {
+  return threadRowId(pr.ref, t.id);
+}
+function threadRowId(ref, thread) {
+  return `${ref} thread ${thread}`;
+}
+function prMarkId(ref) {
+  return `pr:${ref}`;
+}
+var RANK_AGAIN_ID = "pr:order";
+function threadSentIn(lastActions) {
+  return (pr, t) => {
+    const last = lastActions[prThreadId(pr, t)];
+    return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
+  };
+}
+
+// ../hooks/gh.ts
+var GH_TIMEOUT_MS = 2e4;
+var UNSTARTABLE_CODE = -1;
+var TIMED_OUT_CODE = -2;
+
+// ../hooks/pr-fetch.ts
+var MAX_PRS = 12;
+var MAX_ORDERED_PRS = 30;
+function itemPrSteps(item, prState, linked) {
+  const refs = prState.branchRef ? [...linked, prState.branchRef] : linked;
+  return prSteps(
+    item,
+    refs.map((ref) => ({ ref, url: prState.views[ref]?.url ?? null }))
+  );
+}
+function isLeftOut(prState, ref) {
+  const view = prState.views[ref];
+  return view !== void 0 && !isKeptPr(view);
+}
+function splitLinked(prState, links) {
+  const ranked = new Set(links.prOrder?.refs ?? []);
+  const shown = links.prs.filter((ref) => !isLeftOut(prState, ref));
+  const unranked = shown.filter((ref) => !ranked.has(ref));
+  const older = unranked.slice(0, Math.max(0, unranked.length - MAX_PRS));
+  return { tracked: shown.filter((ref) => !older.includes(ref)), older };
+}
+function olderPrsText(prState, links) {
+  const { older } = splitLinked(prState, links);
+  if (older.length === 0) return null;
+  const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
+  return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
+}
+var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds`;
+
+// ../hooks/pr-views.ts
+var PR_DISMISSED_LABEL = "Dismissed";
+function isTracked(prState, links, ref) {
+  return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
+}
+function keepsView(prState, links, ref) {
+  return isTracked(prState, links, ref) || links.prs.includes(ref) && isLeftOut(prState, ref);
+}
+function dismissedAt(lastActions, ref) {
+  const mark = lastActions[prMarkId(ref)];
+  return mark?.action === "pr-dismiss" ? mark.at : null;
+}
+function isViewKept(prState, links, lastActions, ref, shownSince) {
+  const at = dismissedAt(lastActions, ref);
+  return keepsView(prState, links, ref) || at !== null && isShownSince(at, shownSince);
+}
+function openPrViews(drawn) {
+  return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
+}
+var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
+function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
+  const ranked = links.prOrder?.refs ?? [];
+  const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr) => {
+    if (isTracked(prState, links, pr.ref)) return [{ pr, state: { is: "open" } }];
+    const at = dismissedAt(lastActions, pr.ref);
+    if (at === null) return [];
+    const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null);
+    return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
+  });
+  let rank = 0;
+  return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
+}
+
+// ../hooks/presses.ts
+function isPrRowId(id) {
+  return id.startsWith("pr:") || id.includes(" ");
+}
+
+// ../hooks/feedback.ts
 function feedbackOf(id, last, note, turns, now, reportedAt) {
   const result = last?.result;
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
@@ -1765,43 +1809,231 @@ function outAction(last, f) {
 function isAgain(last, action, isOut) {
   return isRepeatOf(last, action) && (!isOut || last?.isRepeat === true);
 }
-function closedMark(state, delivery) {
-  if (isSendMoving(delivery)) return RUNNING_RESULT;
-  return { text: delivery === null ? CLOSED_MARKS[state] : "", isRunning: false };
+
+// ../hooks/pr-press.ts
+function lastPressOf(presses, rowId) {
+  const last = presses.lastActions[rowId];
+  const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
+  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
+}
+function withOut(row, actions) {
+  return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
+}
+
+// ../hooks/pr-order.ts
+var RANK_AGAIN_LABEL = "Rank again";
+function prOrderText(order, drawn, now) {
+  const isRanking = drawn.some((d) => d.rank !== null);
+  if (!order || !isRanking) return null;
+  return `${order.label ?? "Order"}${DOT}set by ${order.by} ${ago(now - order.at)}`;
+}
+function rankedStatusOf(pr) {
+  return {
+    status: readiness(pr).status,
+    threads: waitingThreads(pr).map((t) => t.id),
+    failing: failingChecks(pr).map((c) => c.name)
+  };
+}
+function hasChanged(was, is) {
+  return is.status !== was.status || is.threads.some((id) => !was.threads.includes(id)) || is.failing.some((name) => !was.failing.includes(name));
+}
+function changedRankedPrs(order, prs) {
+  const statuses = order.statuses ?? {};
+  return inPrOrder(prs, order.refs).filter((pr) => {
+    const was = statuses[pr.ref];
+    return rankOf(pr, order.refs) !== null && was !== void 0 && hasChanged(was, rankedStatusOf(pr));
+  });
+}
+function prOrderView(order, drawn, presses, shownSince) {
+  const title = prOrderText(order, drawn, presses.now);
+  if (!order || title === null) return null;
+  const count = changedRankedPrs(order, openPrViews(drawn)).length;
+  const row = lastPressOf(presses, RANK_AGAIN_ID);
+  const last = row.last;
+  const isPressShownHere = last !== void 0 && (row.pressing !== null || isShownSince(last.at, shownSince));
+  const isForThisOrder = last !== void 0 && last.at >= order.at;
+  const showsPress = row.pressing !== null || isForThisOrder || isPressShownHere && count === 0;
+  const isChangedShown = count > 0 || isPressShownHere;
+  return {
+    title,
+    why: order.why,
+    changed: isChangedShown ? {
+      text: count > 0 ? `${count} ${count === 1 ? "PR" : "PRs"} changed since` : null,
+      actions: count > 0 ? prOrderActions(row) : [],
+      showsPress
+    } : null
+  };
+}
+function prOrderActions(row) {
+  return withOut(row, [
+    {
+      press: { action: "pr-rank-again" },
+      label: RANK_AGAIN_LABEL,
+      kind: "talk",
+      emphasis: "normal",
+      hotkey: "g"
+    }
+  ]);
+}
+
+// ../hooks/pr-tab.ts
+var DISMISS_MERGED_LABEL = "Dismiss merged";
+function isDismissedByMerged(pr, branchRef) {
+  return pr.state === "MERGED" && pr.ref !== branchRef;
+}
+function prTabActions(drawn, branchRef) {
+  const hasMerged = drawn.some((d) => d.state.is === "open" && isDismissedByMerged(d.pr, branchRef));
+  return hasMerged ? [
+    {
+      press: { action: "pr-dismiss-merged" },
+      label: DISMISS_MERGED_LABEL,
+      kind: "mark",
+      emphasis: "normal",
+      hotkey: "m",
+      isOut: false
+    }
+  ] : [];
+}
+
+// ../hooks/tools.ts
+var ORDER_SCHEMA = {
+  type: "object",
+  properties: {
+    repo: { type: "string", description: "The repository, as owner/name." },
+    numbers: {
+      type: "array",
+      items: { type: "integer" },
+      description: `The PR numbers, first to last, at most ${MAX_ORDERED_PRS}. Give an empty list to clear the order.`
+    },
+    label: {
+      type: "string",
+      description: 'What the user does with the order, in at most 4 words, such as "Merge in this order" or "Review in this order". Required to set an order.'
+    },
+    why: {
+      type: "string",
+      description: "The reason for this order, in one sentence, such as a PR that waits on another. Not a summary of each PR. Required to set an order."
+    }
+  },
+  required: ["numbers"]
+};
+
+// ../hooks/arrivals.ts
+var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
+
+// ../hooks/action-plan.ts
+var CHOICE_KEYS = [..."abcfghilm"];
+function showsCompare(item) {
+  return item.kind === "question" && item.isDesignChoice === true && item.options.length >= 2;
 }
 function stepKind(step) {
   return step.step.some((h) => h.kind === "run") ? "handoff" : "local";
 }
-var TAB_NAMES = [
-  { id: "overview", label: "Status", symbol: "\u{1F9ED}" },
-  { id: "needsYou", label: "Asks", symbol: "\u{1F64B}" },
-  { id: "findings", label: "Finds", symbol: "\u{1F50D}" },
-  { id: "prs", label: "PRs", symbol: "\u{1F500}" }
-];
-var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
-var NEXT_BUILD_TABS = numbered(TAB_NAMES);
-var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
-function isListedTab(tab) {
-  return tab === "needsYou" || tab === "findings";
+var FOLLOW_UPS = /* @__PURE__ */ new Set([
+  "type",
+  "explain",
+  "compare",
+  "discuss",
+  "dismiss",
+  "discard"
+]);
+var ACTION_KEYS = {
+  done: "d",
+  address: "a",
+  issue: "i",
+  type: "t",
+  explain: "e",
+  compare: "p",
+  discuss: "d",
+  dismiss: "x",
+  discard: "x"
+};
+function actionsOf(row, last, state, feedback) {
+  const { id, item, steps: steps2 } = row;
+  const pressing = pressOutAction(last, feedback);
+  const out = outAction(last, feedback);
+  const action = (press, label, kind, flags = {}) => {
+    const pressAction = actionId(press);
+    return {
+      press,
+      label: press.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
+      kind,
+      emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
+      ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps2[press.step]) ? { icon: stepIconKind(steps2[press.step]) } : {},
+      isPrimary: flags.isPrimary ?? false,
+      isFolded: flags.isFolded ?? false,
+      isFollowUp: FOLLOW_UPS.has(press.action),
+      ...ACTION_KEYS[press.action] ? { hotkey: ACTION_KEYS[press.action] } : {},
+      isOut: out === pressAction
+    };
+  };
+  if (state.is === "settled") return state.canUndo ? [action({ action: "undo", id }, "Undo", "view")] : [];
+  if (state.is === "held")
+    return [
+      action({ action: "type", id, text: "" }, "Reply", "handoff"),
+      action({ action: "discard", id }, ROW_COPY.discard, "view")
+    ];
+  const stepActions = steps2.map((s, n) => action({ action: "step", id, step: n, label: s.label }, s.label, stepKind(s)));
+  if (!item)
+    return [
+      action({ action: "address", id }, row.finding ? fixLabel(row.finding) : "Fix", "handoff"),
+      action({ action: "issue", id }, ISSUE_LABEL, "handoff"),
+      action({ action: "type", id, text: "" }, "Reply", "handoff"),
+      action({ action: "explain", id }, "Explain", "talk"),
+      action({ action: "discuss", id }, "Discuss", "talk"),
+      action({ action: "dismiss", id }, "Dismiss", "mark")
+    ];
+  if (item.kind === "task")
+    return [
+      ...stepActions,
+      action({ action: "done", id }, "Done", "mark"),
+      action({ action: "type", id, text: "" }, "Reply", "handoff"),
+      action({ action: "explain", id }, "Explain", "talk"),
+      action({ action: "dismiss", id }, "Dismiss", "mark")
+    ];
+  const isFolding = item.options.length > OPTIONS_FOLD_AT;
+  const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
+  return [
+    ...options.map(
+      (option, n) => action({ action: "answer", id, option }, clipLabel(option, OPTION_LABEL_CHARS), "mark", {
+        isPrimary: option === item.rec,
+        isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
+      })
+    ),
+    ...stepActions,
+    action({ action: "type", id, text: "" }, "Reply", "mark"),
+    action({ action: "explain", id }, "Explain", "talk"),
+    ...showsCompare(item) ? [action({ action: "compare", id }, "Compare", "talk")] : [],
+    action({ action: "dismiss", id }, "Dismiss", "mark")
+  ];
 }
-function isRowTab(tab) {
-  return tab !== "overview";
+
+// ../hooks/banners.ts
+var NEXT_BUILD_MARK = ".next-build";
+
+// ../hooks/status-children.ts
+function isChildRunning(c, now) {
+  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
 }
-function isShownTab(raw) {
-  return TAB_NAMES.some((t) => t.id === raw);
+function subjectsText(o) {
+  const subjects = o?.subjects ?? [];
+  const open3 = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}`);
+  const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
+  return { open: open3.join(NL3) || "(none yet)", finished: finished.join(NL3) };
 }
-function screenTabOf(tab) {
-  return { label: TAB_NAMES.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
+function asksText(o, asks) {
+  return asks.map((a) => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id] ?? "-"}`).join(NL3);
 }
-var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
-var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
+function runningText(o, now) {
+  return (o?.children ?? []).filter((c) => isChildRunning(c, now)).map((c) => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? "-"}`).join(NL3);
+}
+
+// ../hooks/status-page.ts
+var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
 var LOOK_TEXT = "Last seen";
 var CHILD_ROWS = 3;
 var NEW_CLOSED_ROWS = 2;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
-var RUNNING_FRAME_MS = 300;
-var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 function isItemAfterItem(row, prev) {
   const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
   return prev !== void 0 && prev.kind !== "look" && row.kind !== "look" && !isUnderSubject;
@@ -1912,83 +2144,14 @@ function statusPage(s, now) {
     }
   };
 }
-var FOLLOW_UPS = /* @__PURE__ */ new Set([
-  "type",
-  "explain",
-  "compare",
-  "discuss",
-  "dismiss",
-  "discard"
-]);
-var ACTION_KEYS = {
-  done: "d",
-  address: "a",
-  issue: "i",
-  type: "t",
-  explain: "e",
-  compare: "p",
-  discuss: "d",
-  dismiss: "x",
-  discard: "x"
-};
-function actionsOf(row, last, state, feedback) {
-  const { id, item, steps: steps2 } = row;
-  const pressing = pressOutAction(last, feedback);
-  const out = outAction(last, feedback);
-  const action = (press, label, kind, flags = {}) => {
-    const pressAction = actionId(press);
-    return {
-      press,
-      label: press.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
-      kind,
-      emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
-      ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps2[press.step]) ? { icon: stepIconKind(steps2[press.step]) } : {},
-      isPrimary: flags.isPrimary ?? false,
-      isFolded: flags.isFolded ?? false,
-      isFollowUp: FOLLOW_UPS.has(press.action),
-      ...ACTION_KEYS[press.action] ? { hotkey: ACTION_KEYS[press.action] } : {},
-      isOut: out === pressAction
-    };
-  };
-  if (state.is === "settled") return state.canUndo ? [action({ action: "undo", id }, "Undo", "view")] : [];
-  if (state.is === "held")
-    return [
-      action({ action: "type", id, text: "" }, "Reply", "handoff"),
-      action({ action: "discard", id }, ROW_COPY.discard, "view")
-    ];
-  const stepActions = steps2.map((s, n) => action({ action: "step", id, step: n, label: s.label }, s.label, stepKind(s)));
-  if (!item)
-    return [
-      action({ action: "address", id }, row.finding ? fixLabel(row.finding) : "Fix", "handoff"),
-      action({ action: "issue", id }, ISSUE_LABEL, "handoff"),
-      action({ action: "type", id, text: "" }, "Reply", "handoff"),
-      action({ action: "explain", id }, "Explain", "talk"),
-      action({ action: "discuss", id }, "Discuss", "talk"),
-      action({ action: "dismiss", id }, "Dismiss", "mark")
-    ];
-  if (item.kind === "task")
-    return [
-      ...stepActions,
-      action({ action: "done", id }, "Done", "mark"),
-      action({ action: "type", id, text: "" }, "Reply", "handoff"),
-      action({ action: "explain", id }, "Explain", "talk"),
-      action({ action: "dismiss", id }, "Dismiss", "mark")
-    ];
-  const isFolding = item.options.length > OPTIONS_FOLD_AT;
-  const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
-  return [
-    ...options.map(
-      (option, n) => action({ action: "answer", id, option }, clipLabel(option, OPTION_LABEL_CHARS), "mark", {
-        isPrimary: option === item.rec,
-        isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
-      })
-    ),
-    ...stepActions,
-    action({ action: "type", id, text: "" }, "Reply", "mark"),
-    action({ action: "explain", id }, "Explain", "talk"),
-    ...showsCompare(item) ? [action({ action: "compare", id }, "Compare", "talk")] : [],
-    action({ action: "dismiss", id }, "Dismiss", "mark")
-  ];
+
+// ../hooks/view.ts
+var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
+var HOLDS_UP_TEXT = "Holds up";
+var UPDATE_RETRIES = " It retries after your next message.";
+function needsYouOrder(ledger) {
+  const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
+  return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
 }
 function heldSubjectOf(o, askId) {
   const subjectId = o?.askSubjects[askId];
@@ -2163,9 +2326,6 @@ function inboxView({
     status
   };
 }
-function outcomeLabel(c) {
-  return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
-}
 function heldLabel(c) {
   if (c.how === "answered") return `Answered: ${c.outcome}`;
   return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
@@ -2176,201 +2336,6 @@ function perTurnStatus(update) {
     error: update.isFailed && !update.isUpdating ? UPDATE_FAILED + (update.retries ? UPDATE_RETRIES : "") : null
   };
 }
-
-// ../hooks/pr-rows.ts
-function prThreadId(pr, t) {
-  return threadRowId(pr.ref, t.id);
-}
-function threadRowId(ref, thread) {
-  return `${ref} thread ${thread}`;
-}
-function prMarkId(ref) {
-  return `pr:${ref}`;
-}
-var RANK_AGAIN_ID = "pr:order";
-function threadSentIn(lastActions) {
-  return (pr, t) => {
-    const last = lastActions[prThreadId(pr, t)];
-    return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
-  };
-}
-
-// ../hooks/gh.ts
-var GH_TIMEOUT_MS = 2e4;
-var UNSTARTABLE_CODE = -1;
-var TIMED_OUT_CODE = -2;
-
-// ../hooks/pr-fetch.ts
-var MAX_PRS = 12;
-var MAX_ORDERED_PRS = 30;
-function itemPrSteps(item, prState, linked) {
-  const refs = prState.branchRef ? [...linked, prState.branchRef] : linked;
-  return prSteps(
-    item,
-    refs.map((ref) => ({ ref, url: prState.views[ref]?.url ?? null }))
-  );
-}
-function isLeftOut(prState, ref) {
-  const view = prState.views[ref];
-  return view !== void 0 && !isKeptPr(view);
-}
-function splitLinked(prState, links) {
-  const ranked = new Set(links.prOrder?.refs ?? []);
-  const shown = links.prs.filter((ref) => !isLeftOut(prState, ref));
-  const unranked = shown.filter((ref) => !ranked.has(ref));
-  const older = unranked.slice(0, Math.max(0, unranked.length - MAX_PRS));
-  return { tracked: shown.filter((ref) => !older.includes(ref)), older };
-}
-function olderPrsText(prState, links) {
-  const { older } = splitLinked(prState, links);
-  if (older.length === 0) return null;
-  const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
-  return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
-}
-var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds`;
-
-// ../hooks/pr-views.ts
-var PR_DISMISSED_LABEL = "Dismissed";
-function isTracked(prState, links, ref) {
-  return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
-}
-function keepsView(prState, links, ref) {
-  return isTracked(prState, links, ref) || links.prs.includes(ref) && isLeftOut(prState, ref);
-}
-function dismissedAt(lastActions, ref) {
-  const mark = lastActions[prMarkId(ref)];
-  return mark?.action === "pr-dismiss" ? mark.at : null;
-}
-function isViewKept(prState, links, lastActions, ref, shownSince) {
-  const at = dismissedAt(lastActions, ref);
-  return keepsView(prState, links, ref) || at !== null && isShownSince(at, shownSince);
-}
-function openPrViews(drawn) {
-  return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
-}
-var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
-function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
-  const ranked = links.prOrder?.refs ?? [];
-  const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr) => {
-    if (isTracked(prState, links, pr.ref)) return [{ pr, state: { is: "open" } }];
-    const at = dismissedAt(lastActions, pr.ref);
-    if (at === null) return [];
-    const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null);
-    return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
-  });
-  let rank = 0;
-  return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
-}
-
-// ../hooks/pr-press.ts
-function lastPressOf(presses, rowId) {
-  const last = presses.lastActions[rowId];
-  const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
-  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
-}
-function withOut(row, actions) {
-  return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
-}
-
-// ../hooks/pr-order.ts
-var RANK_AGAIN_LABEL = "Rank again";
-function prOrderText(order, drawn, now) {
-  const isRanking = drawn.some((d) => d.rank !== null);
-  if (!order || !isRanking) return null;
-  return `${order.label ?? "Order"}${DOT}set by ${order.by} ${ago(now - order.at)}`;
-}
-function rankedStatusOf(pr) {
-  return {
-    status: readiness(pr).status,
-    threads: waitingThreads(pr).map((t) => t.id),
-    failing: failingChecks(pr).map((c) => c.name)
-  };
-}
-function hasChanged(was, is) {
-  return is.status !== was.status || is.threads.some((id) => !was.threads.includes(id)) || is.failing.some((name) => !was.failing.includes(name));
-}
-function changedRankedPrs(order, prs) {
-  const statuses = order.statuses ?? {};
-  return inPrOrder(prs, order.refs).filter((pr) => {
-    const was = statuses[pr.ref];
-    return rankOf(pr, order.refs) !== null && was !== void 0 && hasChanged(was, rankedStatusOf(pr));
-  });
-}
-function prOrderView(order, drawn, presses, shownSince) {
-  const title = prOrderText(order, drawn, presses.now);
-  if (!order || title === null) return null;
-  const count = changedRankedPrs(order, openPrViews(drawn)).length;
-  const row = lastPressOf(presses, RANK_AGAIN_ID);
-  const last = row.last;
-  const isPressShownHere = last !== void 0 && (row.pressing !== null || isShownSince(last.at, shownSince));
-  const isForThisOrder = last !== void 0 && last.at >= order.at;
-  const showsPress = row.pressing !== null || isForThisOrder || isPressShownHere && count === 0;
-  const isChangedShown = count > 0 || isPressShownHere;
-  return {
-    title,
-    why: order.why,
-    changed: isChangedShown ? {
-      text: count > 0 ? `${count} ${count === 1 ? "PR" : "PRs"} changed since` : null,
-      actions: count > 0 ? prOrderActions(row) : [],
-      showsPress
-    } : null
-  };
-}
-function prOrderActions(row) {
-  return withOut(row, [
-    {
-      press: { action: "pr-rank-again" },
-      label: RANK_AGAIN_LABEL,
-      kind: "talk",
-      emphasis: "normal",
-      hotkey: "g"
-    }
-  ]);
-}
-
-// ../hooks/pr-tab.ts
-var DISMISS_MERGED_LABEL = "Dismiss merged";
-function isDismissedByMerged(pr, branchRef) {
-  return pr.state === "MERGED" && pr.ref !== branchRef;
-}
-function prTabActions(drawn, branchRef) {
-  const hasMerged = drawn.some((d) => d.state.is === "open" && isDismissedByMerged(d.pr, branchRef));
-  return hasMerged ? [
-    {
-      press: { action: "pr-dismiss-merged" },
-      label: DISMISS_MERGED_LABEL,
-      kind: "mark",
-      emphasis: "normal",
-      hotkey: "m",
-      isOut: false
-    }
-  ] : [];
-}
-
-// ../hooks/tools.ts
-var ORDER_SCHEMA = {
-  type: "object",
-  properties: {
-    repo: { type: "string", description: "The repository, as owner/name." },
-    numbers: {
-      type: "array",
-      items: { type: "integer" },
-      description: `The PR numbers, first to last, at most ${MAX_ORDERED_PRS}. Give an empty list to clear the order.`
-    },
-    label: {
-      type: "string",
-      description: 'What the user does with the order, in at most 4 words, such as "Merge in this order" or "Review in this order". Required to set an order.'
-    },
-    why: {
-      type: "string",
-      description: "The reason for this order, in one sentence, such as a PR that waits on another. Not a summary of each PR. Required to set an order."
-    }
-  },
-  required: ["numbers"]
-};
-
-// ../hooks/arrivals.ts
-var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
 
 // ../hooks/session-view.ts
 var PRESS_TIMEOUT_MS = 6e4;
@@ -3093,6 +3058,55 @@ import {
   writeFile as writeFile2
 } from "node:fs/promises";
 import { dirname as dirname3, join as join4 } from "node:path";
+
+// ../hooks/status.ts
+var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i;
+function fields(value) {
+  return value.split("|").map((f) => f.trim());
+}
+function openStatus(s) {
+  return OPEN_STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
+}
+function opOf(key, f) {
+  if (key === "NOCHANGE" || key === "UNCHANGED") return { kind: "none" };
+  if (key === "NEW") {
+    const status = openStatus(f[0]);
+    return status && f[1] ? { kind: "new", status, name: f[1], text: f[2] ?? "" } : null;
+  }
+  if (key === "SET") {
+    const isDone = f[1]?.toLowerCase() === "done";
+    if (f[0] && isDone) return { kind: "done", ref: f[0], text: f[2] ?? "" };
+    const status = openStatus(f[1]);
+    return f[0] && status ? { kind: "set", ref: f[0], status, text: f[2] ?? "" } : null;
+  }
+  if (key === "DONE") return f[0] ? { kind: "done", ref: f[0], text: f[1] ?? "" } : null;
+  if (key === "DROP") {
+    const into = (f[2] ?? "").replace(/^INTO\s+/i, "").trim();
+    return f[0] ? { kind: "drop", ref: f[0], why: f[1] ?? "", into: into || null } : null;
+  }
+  if (key === "WAS") return f[0] && f[1] ? { kind: "was", ref: f[0], text: f[1] } : null;
+  if (key === "HEAD") return f[0] ? { kind: "head", title: f[0], description: f[1] ?? "" } : null;
+  if (key === "LINK") return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
+  return null;
+}
+function parseStatus(text2) {
+  const ops = [];
+  for (const raw of (text2 ?? "").split(NL3)) {
+    const line = raw.trim();
+    if (line === "") continue;
+    const m = LINE.exec(line);
+    const op = m ? opOf(m[1].toUpperCase().replace(" ", ""), fields(m[2] ?? "")) : null;
+    if (op === null) return null;
+    ops.push(op);
+  }
+  if (ops.length === 0) return null;
+  return ops.every((o) => o.kind === "none") ? { kind: "unchanged" } : { kind: "ops", ops };
+}
+async function askStatus(ask) {
+  const first = await ask();
+  const holdsProse = first.text !== null && parseStatus(first.text) === null;
+  return { first, last: holdsProse ? await ask() : first };
+}
 
 // ../hooks/status-prompt.ts
 var STATUS_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.

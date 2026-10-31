@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 
-import { NO_HOLDS } from '../../hooks/view'
+import { NO_HOLDS } from '../../hooks/timing'
 import { createInbox } from '../src/host'
 import { stopOf } from '../src/omp-messages'
 import { reportedTokens } from '../../tests/session-script'

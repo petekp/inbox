@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { demoView } from '../../hooks/demo'
-import { feedbackOf } from '../../hooks/view'
+import { feedbackOf } from '../../hooks/feedback'
 import { notePrompt, viewOf } from '../src/core'
 import { readState, updateState } from '../src/state'
 import { ghAnswer, prServer } from './server-fixtures'

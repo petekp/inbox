@@ -7,7 +7,8 @@ import { orderedKeys, runUpdates } from '../hooks/session-host'
 import { press } from '../hooks/host-press'
 import type { Ask, SessionHost, UpdateHost } from '../hooks/session-host'
 import type { Host } from '../hooks/model-text'
-import { allRows, NO_HOLDS } from '../hooks/view'
+import { allRows } from '../hooks/rows'
+import { NO_HOLDS } from '../hooks/timing'
 import type { Effect } from '../hooks/press-reducer'
 
 export type ScriptedHost<S extends Session = Session> = {

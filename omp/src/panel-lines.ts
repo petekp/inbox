@@ -6,29 +6,21 @@ import {
   closedShown,
   closedTotal,
   earlierLabel,
-  feedbackOf,
-  markedFeedbackText,
   foldLabel,
-  groupEmptyText,
-  isFailure,
   isWaitingRow,
   waitingCount,
-  rowFeedbackText,
-  rowKeyPlan,
   rowTitle,
   rowResultMark,
   settledLabel,
-} from '../../hooks/view'
-import type {
-  BannerView,
-  ClosedDelivery,
-  Feedback,
-  StatusRow,
-  RowView,
-  ResultMark,
-  HelpKey,
-  LegendEntry,
-} from '../../hooks/view'
+} from '../../hooks/rows'
+import { feedbackOf, markedFeedbackText, isFailure, rowFeedbackText } from '../../hooks/feedback'
+import { groupEmptyText } from '../../hooks/banners'
+import { rowKeyPlan } from '../../hooks/action-plan'
+import type { BannerView } from '../../hooks/banners'
+import type { ClosedDelivery, RowView, ResultMark } from '../../hooks/rows'
+import type { Feedback } from '../../hooks/feedback'
+import type { StatusRow } from '../../hooks/status-page'
+import type { HelpKey, LegendEntry } from '../../hooks/help'
 import type { PanelPress, PanelScreen, PanelUi, Tone } from './panel'
 
 export const AGENT = 'omp'

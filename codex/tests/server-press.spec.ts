@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { QUEUED_AFTER_MS } from '../../hooks/view'
+import { QUEUED_AFTER_MS } from '../../hooks/timing'
 import { notePrompt, viewOf } from '../src/core'
 import { makeServer } from '../src/server'
 import { readState, updateState } from '../src/state'

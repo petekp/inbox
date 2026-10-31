@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { recordClose, recordItem } from '../../hooks/tools'
-import { NO_HOLDS } from '../../hooks/view'
+import { NO_HOLDS } from '../../hooks/timing'
 import { ARRIVAL_TABS, followTo } from '../../hooks/arrivals'
 import { isShownEmpty, newRows, openRows } from '../src/arrivals'
 import { endTurn, noteHook, noteToolCall, viewOf } from '../src/core'

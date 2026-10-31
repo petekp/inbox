@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { COMPARE_LIMIT_MS, NO_HOLDS, RUNNING_FRAME_MS, SETTLED_MS } from '../../hooks/view'
+import { COMPARE_LIMIT_MS, NO_HOLDS, RUNNING_FRAME_MS, SETTLED_MS } from '../../hooks/timing'
 import { createPanel } from '../src/controller'
 import type { PanelSource } from '../src/controller'
 import { demoSource } from '../src/demo'

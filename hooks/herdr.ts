@@ -2,7 +2,8 @@ import type { Dialog, Ledger, SessionStatus, StatusHead, Stop, Tab } from '../ty
 import { hasRunningDelegate, onceEvery } from './children'
 import type { Run } from './gh'
 import type { SessionView } from './session-view'
-import { isWaitingRow, ROW_TABS } from './view'
+import { isWaitingRow } from './rows'
+import { ROW_TABS } from './tabs'
 
 /**
  * The pane tokens the inbox reports to Herdr, by name. A null value clears its token. Herdr takes token names of up to

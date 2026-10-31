@@ -1,5 +1,5 @@
 import { CLOSED_MARKS } from './help'
-import { RUNNING_PULSE_MS } from './view'
+import { RUNNING_PULSE_MS } from './timing'
 import { ROW_PAD_PT } from './layout'
 import { markShape, mutedMarkShape } from './marks'
 import { DARK_TONES, LIGHT_TONES, toneColors, type ToneName } from './tones'

@@ -30,8 +30,8 @@ import {
 } from '../../hooks/session-files'
 import { pruned } from '../../hooks/session-presses'
 import type { Session } from '../../hooks/session'
-import { isShownTab } from '../../hooks/view'
-import type { ShownTab } from '../../hooks/view'
+import { isShownTab } from '../../hooks/tabs'
+import type { ShownTab } from '../../hooks/tabs'
 
 /**
  * A failed `codex exec` call: when it ended, the binary it ran, its exit code, and the end of its stderr. A call that

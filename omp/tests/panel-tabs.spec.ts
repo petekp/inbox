@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test'
 
-import { CLOSED_SHOWN, SETTLED_MS, NO_HOLDS, shownTabs, earlierLabel, foldLabel } from '../../hooks/view'
+import { CLOSED_SHOWN, earlierLabel, foldLabel } from '../../hooks/rows'
+import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
+import { shownTabs } from '../../hooks/tabs'
 import { sessionView } from '../../hooks/session-view'
 import { cellWidth } from '../../hooks/text'
 import { demoState } from '../src/demo'

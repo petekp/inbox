@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { actionLines } from '../hooks/view'
+import { actionLines } from '../hooks/action-plan'
 
 test('a row’s follow-ups stay on its buttons’ last line only when all of them fit there, and otherwise start the next line together', async () => {
   const spacing = { gap: 1, separator: 0 }

@@ -26,7 +26,7 @@ import {
 import type { Ask } from '../../hooks/session-host'
 import { refreshStatus as refreshSessionStatus } from '../../hooks/status-records'
 import type { StatusRecords, RecordFiles } from '../../hooks/status-records'
-import { screenTabOf } from '../../hooks/view'
+import { screenTabOf } from '../../hooks/tabs'
 import { isTabOpen } from './core'
 import { codexStore } from './host'
 import type { OnWrite } from './host'

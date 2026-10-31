@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/view'
+import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
 import { BAND, PANE } from './hooks-helpers'
 

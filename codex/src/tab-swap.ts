@@ -1,4 +1,4 @@
-import { isRowTab, isShownTab } from '../../hooks/view'
+import { isRowTab, isShownTab } from '../../hooks/tabs'
 import { ARRIVAL_TABS } from '../../hooks/arrivals'
 import { PRESS_TIMEOUT_MS } from '../../hooks/session-view'
 import { tabState, selection, drafts, optionsShown, unfolded, inboxWindow, handoff, root } from './tab-state'

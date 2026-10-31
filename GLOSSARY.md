@@ -56,7 +56,7 @@ the close, and stays through a typed message until Undo ends.
 **Mark**:
 The glyph before a row or a group title that says where its work stands or what
 kind it is, such as ◆, waits on you. Each glyph means one thing wherever a look
-draws it. `MARK_LEGEND` in `hooks/view.ts` lists them all.
+draws it. `MARK_LEGEND` in `hooks/help.ts` lists them all.
 
 **Result mark**:
 The mark of what came of a row: ✓ when handled, ✕ when dismissed, ✗ when it
@@ -143,7 +143,7 @@ stop, such as "Last update failed." or "Could not read the inbox.". Its first
 sentence is its lead, drawn in bold. Its tone says what it means: error, the
 inbox cannot do its job until something changes; warning, part of it is
 missing or out of date; notice, a fact. A row's own result is not a banner.
-`BannerView` in `hooks/view.ts`.
+`BannerView` in `hooks/banners.ts`.
 _Avoid_: alert, error strip, status line
 
 **Help**:
@@ -166,7 +166,7 @@ shows them in an overlay that `/inbox` opens.
 
 **Tab symbol**:
 The emoji a tab shows in place of its words when the words don't fit,
-followed by its count, as "🔍 4". `symbol` in `TAB_NAMES` in `hooks/view.ts`.
+followed by its count, as "🔍 4". `symbol` in `TAB_NAMES` in `hooks/tabs.ts`.
 
 **New row**:
 A row a look lists for the first time since it last recorded its rows. A
@@ -205,7 +205,7 @@ changed since", with Rank again, which asks the agent to rank the PRs again.
 **Look**:
 One of the four ways the inbox is drawn: `terminal` in the Claude Code
 terminal, `desktop` in the pane of the Claude desktop app's Code sessions,
-`codex` in the Codex tab, and `omp` in omp's panel. `Look` in `hooks/view.ts`.
+`codex` in the Codex tab, and `omp` in omp's panel. `Look` in `hooks/rows.ts`.
 _Avoid_: client, surface
 
 **Host**:
@@ -246,7 +246,7 @@ warning stays until a clear.
 A checkout that follows the `next` branch and holds `NEXT_BUILD_MARK`, a file
 Git ignores, in each folder a host loads or installs. Each look's version label
 adds "next" on one, and only a next build draws the Status tab.
-`hooks/view.ts:versionLabel`, `hooks/view.ts:shownTabs`.
+`hooks/banners.ts:versionLabel`, `hooks/tabs.ts:shownTabs`.
 
 **Parity record**:
 `hooks/clients.ts`. It lists, for each host, whether each feature is `full`,

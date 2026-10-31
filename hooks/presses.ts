@@ -1,14 +1,9 @@
-export { actionId, capitalized, ISSUE_LABEL } from './press-labels'
-export { baseName, openTarget } from './open-targets'
+export { openTarget } from './open-targets'
 export type { PathProbe } from './open-targets'
-export { stepIconKind, stepsOf } from './help-steps'
-export type { HelpStep } from './help-steps'
-export { isAwaitingReply, isFixSent, isFoldingPress, isHandedOff } from './last-actions'
-export { isPressConfirmed, noteText } from './press-reducer'
+export { isPressConfirmed } from './press-reducer'
 export type { Effect } from './press-reducer'
 export { demoAfterPress, demoReplied, demoSent } from './press-effects'
 export type { DemoSent } from './press-effects'
-export { isRepeatOf, isUndoable, offersUndo, retryOf } from './pressed'
 export { COMPARE_PAGE_FILE } from './press-messages'
 
 export function isPrRowId(id: string): boolean {

@@ -3,18 +3,11 @@ import type { Closed, Cursor, FoldKind, LastAction, PrView, RowNote, Tab } from 
 import type { SessionView } from './session-view'
 import { prRowWaits } from './pr-rows'
 import type { DrawnPr } from './pr-views'
-import {
-  allRows,
-  drawnLists,
-  type InboxView,
-  listWaits,
-  NEEDS_YOU_GROUPS,
-  type ResultMark,
-  type RowWait,
-  SETTLED_MS,
-  type settledLabel,
-  type ShownTab,
-} from './view'
+import { allRows, NEEDS_YOU_GROUPS, type ResultMark, type settledLabel } from './rows'
+import { drawnLists, listWaits, type RowWait } from './action-plan'
+import { type InboxView } from './view'
+import { SETTLED_MS } from './timing'
+import { type ShownTab } from './tabs'
 
 /** The tab the pane shows, whether it shows the sample, and since when. */
 export type Shown = { tab: ShownTab; isDemo: boolean; since: number }

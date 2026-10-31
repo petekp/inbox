@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { TAB_HEIGHT, tabLines, type TabsProps } from '../hooks/tabs-client'
 import { cellWidth } from '../hooks/text'
-import { shownTabs } from '../hooks/view'
+import { shownTabs } from '../hooks/tabs'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 

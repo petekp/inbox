@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test'
 
 import { closeItem } from '../../hooks/ledger-close'
-import { SETTLED_MS, NO_HOLDS, shownTabs } from '../../hooks/view'
-import type { RowView } from '../../hooks/view'
+import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
+import { shownTabs } from '../../hooks/tabs'
+import type { RowView } from '../../hooks/rows'
 import { sessionView } from '../../hooks/session-view'
 import { demoSource, demoState } from '../src/demo'
 import { INITIAL_UI, holdsOf } from '../src/panel'

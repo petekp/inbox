@@ -1,14 +1,14 @@
 import { cellWidth, cutForEllipsis } from '../../hooks/text'
+import { statusKeyPlan } from '../../hooks/action-plan'
 import {
-  statusKeyPlan,
   mergedLine,
   nameBeforeStall,
   STATUS_TEXT_LINES,
   STALL_GAP,
   WAS_PREFIX,
   LOOK_DASH,
-} from '../../hooks/view'
-import type { StatusBranch, StatusRow, StatusStall } from '../../hooks/view'
+} from '../../hooks/status-page'
+import type { StatusBranch, StatusRow, StatusStall } from '../../hooks/status-page'
 import { faceLines, feedbackPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import { PAGE_CHILD_AT, PAGE_MARK_AT, PAGE_TEXT_AT } from './panel-entries'
