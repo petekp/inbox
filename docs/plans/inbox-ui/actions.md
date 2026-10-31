@@ -101,6 +101,6 @@ A finding's done label after Fix is "Handed off". "Address" names only the press
 
 **PR readiness.** The block's status follows its title on the same line, in its color, with no mark. It is one of: `Ready to merge: approved, checks pass, no threads waiting on you`, `Blocked: <reasons>`, a draft (`Blocked: draft, …`, gray), `Waiting: <reasons>` (gray), `Merged` or `Closed`. `Blocked` names only what waits on the person: a draft, conflicts, failing checks, requested changes and threads waiting on them. The rows under the block list each check and thread. `Waiting` shows once none of those is left, and names what waits on others: threads sent to Claude or on changed lines, a needed approval, running checks.
 
-**Which PRs show.** The tab fetches and shows the branch's PR and the 12 PRs the conversation linked most recently (`hooks/pr-tab.ts:MAX_PRS`). A line under the blocks names the older linked PRs it leaves out, newest first: `2 older PRs not shown: #31, #29`. Linking one again brings it back. The Codex tab shows the same PR blocks.
+**Which PRs show.** The tab fetches and shows the branch's PR and the 12 PRs the conversation linked most recently (`hooks/pr-fetch.ts:MAX_PRS`). A line under the blocks names the older linked PRs it leaves out, newest first: `2 older PRs not shown: #31, #29`. Linking one again brings it back. The Codex tab shows the same PR blocks.
 
 **Every option draws.** Every option has a button. In the terminal only the first 9 get letters.

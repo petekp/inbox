@@ -1,26 +1,24 @@
+import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
 import {
   ghNoticeOf,
-  isDismissed,
   prsEmptyText,
-  prRankText,
   prRefreshFailedText,
   PR_GROUP_TITLES,
   PR_TONES,
-  checkActions,
   checkRowText,
   DISMISS_MERGED_ID,
   RANK_AGAIN_ID,
-  prBlockActions,
   prCheckId,
   prMarkId,
   prRowWaits,
   prThreadId,
-  threadActions,
   threadRowText,
   threadSentIn,
-  openPrViews,
-} from '../../hooks/pr-tab'
-import type { PrOrderView, PrRowMark } from '../../hooks/pr-tab'
+} from '../../hooks/pr-rows'
+import { isDismissed, openPrViews } from '../../hooks/pr-views'
+import { prRankText } from '../../hooks/pr-order'
+import type { PrRowMark } from '../../hooks/pr-rows'
+import type { PrOrderView } from '../../hooks/pr-order'
 import { failingChecks, readiness, waitingThreads } from '../../hooks/prs'
 import { capitalized } from '../../hooks/presses'
 import { cellWidth } from '../../hooks/text'

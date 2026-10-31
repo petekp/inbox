@@ -1,4 +1,4 @@
-import { prMarkId } from '../../hooks/pr-tab'
+import { prMarkId } from '../../hooks/pr-rows'
 import type { SessionView } from '../../hooks/session'
 import { allRows, isDrawnInPlace, SETTLED_MS, settledRowIds } from '../../hooks/view'
 import type { InboxView } from '../../hooks/view'

@@ -63,7 +63,7 @@ existing worker and submission paths.
 | Saved state locks | `codex/src/state.ts` publishes a prepared owner through an atomic symlink to a missing child. Recovery canonicalizes paths and checks process start and boot identity when available. Release and recovery claim a generation before unlinking it. Live writers retain ownership regardless of elapsed time. |
 | Delivery | Both hosts keep sent-prompt records and a local delivery ID for each press. Shared reducers acknowledge every row of a bulk press. Late failures preserve newer actions and drafts. Concurrent mod presses retain the newer action by press order. |
 | Delivery feedback | `hooks/view.ts` shows Queued after one second. Delivery unconfirmed appears immediately, including in settled rows and Closed folds, with no success mark. |
-| PR-opening help | `hooks/pr-tab.ts:itemPrSteps` supplies both view construction and press validation. |
+| PR-opening help | `hooks/pr-fetch.ts:itemPrSteps` supplies both view construction and press validation. |
 | Failed updates | Codex separates an active update from a failed exchange awaiting its next retry trigger. A failure that will not retry makes no retry promise. |
 | Row and action meaning | `RowView`, `ActionView` and view helpers own content, reply intent, marks, emphasis and icon kinds. `rowKeyPlan` owns order. Renderers style actions in that order. Native desktop keeps Help before Done. |
 | Navigation | `firstWaiting`, `keptOpen`, `rowAfterClose`, `isTabEmpty` and `followTo` own selection and empty-tab decisions. Hosts supply drawn rows and blockers. New rows above the selected row remain closed. |
