@@ -4,7 +4,7 @@ export type { Exchange, Press } from '../types'
 import { recommendedOption } from './ask-match'
 import { EXPIRED } from './ledger-update'
 import { readKind } from './reply-parse'
-import { upgradeStatus } from './status'
+import { upgradeStatus } from './status-upgrade'
 
 export { isAskedForChoices, LIST_CHOICES } from './ask-match'
 export { closedAt, closedState, closeFinding, closeItem, pruneClosed, reopenFinding, reopenItem } from './ledger-close'

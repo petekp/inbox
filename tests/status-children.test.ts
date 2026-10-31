@@ -1,7 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
 import {
-  applyOps,
   childActive,
   childEnded,
   lookEnded,
@@ -10,7 +9,8 @@ import {
   runningText,
   subjectsText,
   withChild,
-} from '../hooks/status'
+} from '../hooks/status-children'
+import { applyOps } from '../hooks/status-ops'
 import { delegatesSettled, delegatesStarted } from '../hooks/children'
 import type { HerdrStatus } from '../hooks/herdr'
 import { CHILD_ROWS } from '../hooks/view'

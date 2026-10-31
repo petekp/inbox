@@ -1,5 +1,5 @@
 import type { Child, DelegateState, SessionStatus } from '../types'
-import { childActive, childEnded, subjectTouched, withChild } from './status'
+import { childActive, childEnded, subjectTouched, withChild } from './status-children'
 import type { HerdrStatus } from './herdr'
 import { clipLabel } from './text'
 

@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
-import { EMPTY_SESSION_STATUS, upgradeStatus } from '../hooks/status'
+import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
+import { upgradeStatus } from '../hooks/status-upgrade'
 
 test('a Status saved before subjects keeps its open work, dated at the last look, and its headline as the head', () => {
   const old = {

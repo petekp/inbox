@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { applyOps } from '../hooks/status'
+import { applyOps } from '../hooks/status-ops'
 import { opsOf, NO_ASKS, after } from './status-helpers'
 
 test('a HEAD that keeps the title, or that comes with work finished from under way and none left, keeps the head', () => {
