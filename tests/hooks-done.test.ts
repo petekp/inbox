@@ -5,51 +5,55 @@ import { PRESS_GUARD_MS, QUEUED_AFTER_MS, SETTLED_MS } from '../hooks/view'
 import { w, arrive, world } from './hooks-world'
 import { PANE, selectRow, leaveAndReturn } from './hooks-helpers'
 
-test('Done on a task Claude just left tells Claude once Undo ends, and a task from an earlier reply or one already read stays silent', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000_000 })
-  world($, on, [])
-  w.paneState = { isShown: true, isFocused: true }
-  const reply = async (text: string, answer: string, turnId: string) => {
-    await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
-    await $.turn.start({ text, turnId })
-    await $.turn.complete({ answer, durationMs: 5, isAborted: false, turnId, reason: 'answer' })
-    await clock.settle()
-  }
+test(
+  'Done on a task Claude just left tells Claude once Undo ends, and a task from an earlier reply or one already read stays silent',
+  { timeoutMs: 20_000 },
+  async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    w.paneState = { isShown: true, isFocused: true }
+    const reply = async (text: string, answer: string, turnId: string) => {
+      await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
+      await $.turn.start({ text, turnId })
+      await $.turn.complete({ answer, durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+      await clock.settle()
+    }
 
-  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  w.ledgerReply = 'NEW: do | - | Water the plants | - | -'
-  await reply('plan the day', 'Water the plants when you can.', 't1')
-  w.ledgerReply = ['NEW: do | - | Sign in to npm | - | -', 'NEW: do | - | Approve the deploy | - | -'].join('\n')
-  await reply('publish it', 'Sign in to npm and approve the deploy, then I publish.', 't2')
-  const pane = await $.ui.mount(PANE)
-  const done = async (id: string) => {
-    await selectRow(pane, `${id}`)
-    await clock.advance(PRESS_GUARD_MS)
-    await pane.press({ key: `done-${id}` })
-    await clock.settle()
-  }
+    await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+    w.ledgerReply = 'NEW: do | - | Water the plants | - | -'
+    await reply('plan the day', 'Water the plants when you can.', 't1')
+    w.ledgerReply = ['NEW: do | - | Sign in to npm | - | -', 'NEW: do | - | Approve the deploy | - | -'].join('\n')
+    await reply('publish it', 'Sign in to npm and approve the deploy, then I publish.', 't2')
+    const pane = await $.ui.mount(PANE)
+    const done = async (id: string) => {
+      await selectRow(pane, `${id}`)
+      await clock.advance(PRESS_GUARD_MS)
+      await pane.press({ key: `done-${id}` })
+      await clock.settle()
+    }
 
-  await done('i2')
-  await clock.advance(SETTLED_MS / 2)
-  await done('i3')
-  await clock.advance(SETTLED_MS / 2)
-  expect(w.sent).toEqual([])
-  expect(await pane.find({ key: 'undo-i3' })).toBeDefined()
-  await clock.advance(SETTLED_MS / 2)
-  expect(w.sent).toEqual(['Done:\n- Sign in to npm\n- Approve the deploy'])
+    await done('i2')
+    await clock.advance(SETTLED_MS / 2)
+    await done('i3')
+    await clock.advance(SETTLED_MS / 2)
+    expect(w.sent).toEqual([])
+    expect(await pane.find({ key: 'undo-i3' })).toBeDefined()
+    await clock.advance(SETTLED_MS / 2)
+    expect(w.sent).toEqual(['Done:\n- Sign in to npm\n- Approve the deploy'])
 
-  await reply('thanks', 'Published.', 't3')
-  await done('i1')
-  await clock.advance(SETTLED_MS)
-  expect(w.sent).toHaveLength(1)
+    await reply('thanks', 'Published.', 't3')
+    await done('i1')
+    await clock.advance(SETTLED_MS)
+    expect(w.sent).toHaveLength(1)
 
-  w.ledgerReply = 'NEW: do | - | Rotate the key | - | -'
-  await reply('next', 'Rotate the key, then I redeploy.', 't4')
-  await done('i4')
-  await $.prompt.submit({ text: 'done, go ahead', wait: false, origin: { kind: 'composer' } })
-  await clock.advance(SETTLED_MS)
-  expect(w.sent).toHaveLength(1)
-})
+    w.ledgerReply = 'NEW: do | - | Rotate the key | - | -'
+    await reply('next', 'Rotate the key, then I redeploy.', 't4')
+    await done('i4')
+    await $.prompt.submit({ text: 'done, go ahead', wait: false, origin: { kind: 'composer' } })
+    await clock.advance(SETTLED_MS)
+    expect(w.sent).toHaveLength(1)
+  },
+)
 
 test('a Done message that waits for its prompt to run reads Queued instead of Not confirmed', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })

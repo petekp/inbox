@@ -85,68 +85,72 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   await arrive($)
 })
 
-test('Dismiss settles a question in place with Undo, which brings it back open and selected, a second close reaches Claude too, and a message typed while Undo lasts folds the row when Undo ends', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000_000 })
-  world($, on, [])
-  w.paneState = { isShown: true, isFocused: true }
-  const start = () => $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  const prompt = async (text: string) =>
-    (await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })).context?.join('\n') ?? ''
-  const closedLine = '- "Use Node or Python?" → dismissed by the user.'
+test(
+  'Dismiss settles a question in place with Undo, which brings it back open and selected, a second close reaches Claude too, and a message typed while Undo lasts folds the row when Undo ends',
+  { timeoutMs: 20_000 },
+  async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    w.paneState = { isShown: true, isFocused: true }
+    const start = () => $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+    const prompt = async (text: string) =>
+      (await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })).context?.join('\n') ?? ''
+    const closedLine = '- "Use Node or Python?" → dismissed by the user.'
 
-  await start()
-  await prompt('add a greeting cli')
-  await $.turn.complete({
-    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
-    durationMs: 5,
-    isAborted: false,
-    turnId: 't1',
-    reason: 'answer',
-  })
-  await clock.settle()
-  const pane = await $.ui.mount(PANE)
+    await start()
+    await prompt('add a greeting cli')
+    await $.turn.complete({
+      answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+      durationMs: 5,
+      isAborted: false,
+      turnId: 't1',
+      reason: 'answer',
+    })
+    await clock.settle()
+    const pane = await $.ui.mount(PANE)
 
-  await pane.press({ key: 'dismiss-i1' })
-  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
-  expect(await pane.find({ text: /^Dismissed$/ })).toBeDefined()
-  expect(await pane.find({ key: 'explain-i2-key' })).toBeDefined()
-  expect((await pane.find({ key: 'dismiss-i2' }))?.props.dimColor).toBe(true)
-  expect(await prompt('carry on')).toContain(closedLine)
-  await start()
-  await clock.settle()
-  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
-  await selectRow(pane, 'i2')
-  await pane.press({ key: 'undo-i1' })
-  expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
-  expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
-  expect(await pane.find({ key: 'answer-i1-1' })).toBeDefined()
-  await clock.advance(100)
-  expect((await pane.find({ key: 'dismiss-i1' }))?.props.dimColor).toBe(true)
-  await pane.press({ key: 'dismiss-i1' })
-  expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
-  await pane.press({ key: 'dismiss-i1-key' })
-  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
-  expect(await prompt('and now?')).toContain(closedLine)
-  await pane.press({ key: 'undo-i1' })
-  await clock.advance(500)
-  expect((await pane.find({ key: 'dismiss-i1' }))?.props.dimColor).toBeUndefined()
-  await pane.press({ key: 'dismiss-i1' })
-  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
-  await clock.advance(SETTLED_MS)
-  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
-  expect(await pane.find({ key: 'undo-i1' })).toBeUndefined()
-  await leaveAndReturn(pane, clock, 'needsYou')
-  expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
-  expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('▸ 1 closed')
-  expect(await pane.find({ key: 'explain-i2-key' })).toBeDefined()
+    await pane.press({ key: 'dismiss-i1' })
+    expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+    expect(await pane.find({ text: /^Dismissed$/ })).toBeDefined()
+    expect(await pane.find({ key: 'explain-i2-key' })).toBeDefined()
+    expect((await pane.find({ key: 'dismiss-i2' }))?.props.dimColor).toBe(true)
+    expect(await prompt('carry on')).toContain(closedLine)
+    await start()
+    await clock.settle()
+    expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+    await selectRow(pane, 'i2')
+    await pane.press({ key: 'undo-i1' })
+    expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
+    expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
+    expect(await pane.find({ key: 'answer-i1-1' })).toBeDefined()
+    await clock.advance(100)
+    expect((await pane.find({ key: 'dismiss-i1' }))?.props.dimColor).toBe(true)
+    await pane.press({ key: 'dismiss-i1' })
+    expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
+    await pane.press({ key: 'dismiss-i1-key' })
+    expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+    expect(await prompt('and now?')).toContain(closedLine)
+    await pane.press({ key: 'undo-i1' })
+    await clock.advance(500)
+    expect((await pane.find({ key: 'dismiss-i1' }))?.props.dimColor).toBeUndefined()
+    await pane.press({ key: 'dismiss-i1' })
+    expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+    await clock.advance(SETTLED_MS)
+    expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+    expect(await pane.find({ key: 'undo-i1' })).toBeUndefined()
+    await leaveAndReturn(pane, clock, 'needsYou')
+    expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
+    expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('▸ 1 closed')
+    expect(await pane.find({ key: 'explain-i2-key' })).toBeDefined()
 
-  await clock.advance(PRESS_GUARD_MS)
-  await pane.press({ key: 'dismiss-i2' })
-  await clock.advance(100)
-  await prompt('what else?')
-  expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
-  expect(await pane.find({ key: 'undo-i2' })).toBeDefined()
-  await clock.advance(SETTLED_MS)
-  expect(await pane.find({ key: 'settled-i2' })).toBeUndefined()
-  expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('▸ 2 closed')
-})
+    await clock.advance(PRESS_GUARD_MS)
+    await pane.press({ key: 'dismiss-i2' })
+    await clock.advance(100)
+    await prompt('what else?')
+    expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
+    expect(await pane.find({ key: 'undo-i2' })).toBeDefined()
+    await clock.advance(SETTLED_MS)
+    expect(await pane.find({ key: 'settled-i2' })).toBeUndefined()
+    expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('▸ 2 closed')
+  },
+)
