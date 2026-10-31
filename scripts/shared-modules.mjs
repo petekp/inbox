@@ -8,6 +8,7 @@ export const SHARED = [
   'demo',
   'dialogs',
   'gh',
+  'help',
   'herdr',
   'inline',
   'layout',

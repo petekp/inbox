@@ -18,7 +18,7 @@ Three replays, each run 3 times on Sonnet and on Codex. Fixed rules check the pa
 | 7 | A reply that only explains how releases work | Nothing moves |
 | 8 | The coordinator records a flaky test elsewhere as a finding | No subject for it |
 | 9 | The fix's PR opens, and a reviewer subagent starts | Checkpoint. No new "PR" piece. The text says the state of the fix. The reviewer sits under the fix. |
-| 10 | The PR merges, and 2.5 prep starts. The person says nothing. | The fix closes as ✓ under its own name. 2.5 is ● or ◌, since its build runs. The head's title leaves the fix. |
+| 10 | The PR merges, and 2.5 prep starts. The person says nothing. | The fix closes as ✓ under its own name. 2.5 is ●, ◐ or ◌, since its build runs. The head's title leaves the fix. |
 | 11 | The person asks why export sometimes picks the wrong default folder on one platform | The new piece gets a short name |
 | Return | Three hours pass | No call. Step 12 reads the page three hours on. |
 | 12 | 2.5 is published, and nothing follows | The head names the finished push. The export piece, set aside since the start, is still ○. |
@@ -36,7 +36,7 @@ At every step, the pieces set aside or waiting on a vendor stay on the page.
 | 2 | The engine works. On the way the agent fixes a lint error and runs two review subagents. It asks "last-write-wins or manual merge?" | The head holds. The subagents sit under the engine, each named by the description it was started with. ◆ on conflicts, from the ledger's new ask. |
 | 3 | The person answers "manual merge" | The ask closes, ◆ clears, and the conflicts row shows the choice |
 | 4 | The person reverses: last-write-wins with a backup copy | A was line on conflicts, and no new piece |
-| 5 | Conflicts progress. The person sets the toggle aside and asks for an offline banner first. | The toggle is ○ and stays. The banner is ●. No new was line. |
+| 5 | Conflicts progress. The person sets the toggle aside and asks for an offline banner first. | The toggle is ○ and stays. The banner is ● or ◐. No new was line. |
 | 6 | The person asks how the backup copy is named and why the plan changed, and the agent explains both. Nothing is decided. | Nothing moves |
 | 7 | The banner shows on phones, and the agent asks whether it shows on web too | ◆ on the banner, from the ledger's new ask |
 | 8 | The person dismisses the question and asks for device tests. Android syncs, and iOS loses edits after a crash. | The ask closes as dismissed, and ◆ clears. The banner closes as ✓. The engine row keeps both states, or splits. |
@@ -45,10 +45,10 @@ At every step, the pieces set aside or waiting on a vendor stay on the page.
 
 | Step | What happens | What it checks |
 | --- | --- | --- |
-| 1 | A mid-turn call at 12 minutes. The activity finishes one piece and starts another. The host's task list holds file and test steps beside the features. | The finished piece closes, and the next is ●. No file name or test step becomes a row. |
+| 1 | A mid-turn call at 12 minutes. The activity finishes one piece and starts another. The host's task list holds file and test steps beside the features. | The finished piece closes, and the next is ●, since the turn still runs. No file name or test step becomes a row. |
 | 2 | A mid-turn call at 25 minutes. The activity shows more investigation and nothing new. | `UNCHANGED` is right, and no row moves |
 | 3 | The reply ends the turn | |
-| 4 | Two replies were dropped, and a catch-up reads the whole conversation | Finished work is not ●. The missed change reaches the page. |
+| 4 | Two replies were dropped, and a catch-up reads the whole conversation | Finished work is not ● or ◐. The missed change reaches the page. |
 
 **One short case** stays outside the replays: a catch-up of a conversation the inbox never saw, from an empty page. One feature is half done: images attach, and PDFs wait on a question. The page may draw it as one row with both parts, or give the finished part a ✓ row of its own. The case checks that the question links to the feature, and that a finished part drawn as its own row is not ●. Finished work marked ● after a catch-up was a real failure, and Replay C's catch-up starts from a page that already holds the work.
 

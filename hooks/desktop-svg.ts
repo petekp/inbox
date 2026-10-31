@@ -1,6 +1,7 @@
+import { CLOSED_MARKS } from './help'
 import { RUNNING_PULSE_MS } from './view'
 import { ROW_PAD_PT } from './layout'
-import { markShape } from './marks'
+import { markShape, mutedMarkShape } from './marks'
 import { DARK_TONES, LIGHT_TONES, toneColors, type ToneName } from './tones'
 import {
   DESKTOP_CELL_PT,
@@ -49,9 +50,9 @@ export function toneSvg(tone: ToneName, mark: string): string {
 }
 /** A muted mark's color in an Svg, in the light and dark appearances. */
 export const MUTED_MARK = { light: '#595959', dark: '#a8a8a8' }
-/** A mark in an Svg: its `shape` when it has one, else its text. */
-export function markSvg(mark: string, shape: string | null, lightMark: string, darkMark: string): string {
-  const width = DESKTOP_CELL_PT
+/** A mark in an Svg `cells` wide: its `shape` when it has one, else its text. */
+export function markSvg(mark: string, shape: string | null, lightMark: string, darkMark: string, cells = 1): string {
+  const width = cells * DESKTOP_CELL_PT
   const height = DESKTOP_LINE_PT
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
@@ -68,6 +69,16 @@ export function markSvg(mark: string, shape: string | null, lightMark: string, d
 const MARK_GLYPH_PT = 11
 const MARK_GLYPH_MID_PT = 6.55
 export const RUNNING_SVG_CELLS = 2
+/**
+ * A muted mark the pane draws as a shape, and the cells its Svg takes, or null for one it draws as text. The ✗ fits one
+ * cell. The ◌ ring is as wide as the font's ○, so it takes the running mark's two cells.
+ */
+export function mutedMarkSvg(mark: string, light: string, dark: string): { source: string; cells: number } | null {
+  const shape = mutedMarkShape(mark, DESKTOP_LINE_PT / 2, { x: MARK_GLYPH_MID_PT, y: DESKTOP_LINE_PT / 2 })
+  if (shape === null) return null
+  const cells = mark === CLOSED_MARKS.lapsed ? 1 : RUNNING_SVG_CELLS
+  return { source: markSvg(mark, shape, light, dark, cells), cells }
+}
 /** A result mark and the space after it, as wide as a running mark's Svg on desktop. */
 export const RESULT_MARK_CELLS = RUNNING_SVG_CELLS
 /**

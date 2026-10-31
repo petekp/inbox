@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { RUNNING_FRAME_MS, RUNNING_FRAMES, runningMark } from '../hooks/view'
+import { IDLE_MARK } from '../hooks/help'
 import { w, arrive, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
@@ -60,7 +61,7 @@ test('a working subject’s mark on the Status moves each frame only while a tur
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
   const markOf = async (key: string) =>
-    [...((await pane.find({ key }))?.text ?? '')].filter(c => RUNNING_FRAMES.some(f => f === c)).join('')
+    [...((await pane.find({ key }))?.text ?? '')].filter(c => [...RUNNING_FRAMES, IDLE_MARK.mark].includes(c)).join('')
   const frames = async () => {
     const working: string[] = []
     const queued: string[] = []
@@ -73,7 +74,7 @@ test('a working subject’s mark on the Status moves each frame only while a tur
     }
     expect(new Set(moving).size).toBeGreaterThan(1)
 
-    return { working, queued, moving, still: moving.map(() => '●') }
+    return { working, queued, moving, still: moving.map(() => IDLE_MARK.mark) }
   }
 
   const idle = await frames()

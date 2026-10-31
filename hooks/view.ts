@@ -13,7 +13,6 @@ import type {
   PageTab,
   Stop,
   Session,
-  SubjectStatus,
   Subject,
   Child,
   Tab,
@@ -45,7 +44,22 @@ import {
   stepsOf,
 } from './presses'
 import type { HelpStep, RowPress } from './presses'
-import type { BannerTone, ToneName } from './tones'
+import type { BannerTone } from './tones'
+import { CLOSED_MARKS, FINDING_GROUPS, HELD_MARK, IDLE_MARK, RUNNING_FRAMES, RUNNING_MARK, SUBJECT_MARKS } from './help'
+import type { HelpKey, StatusTone } from './help'
+
+export {
+  CLOSED_MARKS,
+  FINDING_GROUPS,
+  HELD_MARK,
+  HELP_COPY,
+  MARK_LEGEND,
+  PR_MARKS,
+  RUNNING_FRAMES,
+  RUNNING_MARK,
+  SUBJECT_MARKS,
+} from './help'
+export type { HelpKey, LegendEntry, StatusTone } from './help'
 
 const OPTIONS_FOLD_AT = 5
 const OPTION_LABEL_CHARS = 32
@@ -58,79 +72,9 @@ const CHOICE_KEYS = [...'abcfghilm']
  */
 export const DOT = '\u2007·\u2002'
 
-export const FINDING_GROUPS: Record<Finding['kind'], { title: string; mark: string; tone: 'issue' | 'done' }> = {
-  issue: { title: 'Issues', mark: '▲', tone: 'issue' },
-  opportunity: { title: 'Opportunities', mark: '✦', tone: 'done' },
-}
-
 export const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; list: 'questions' | 'tasks' }[] = [
   { kind: 'question', title: 'Questions', list: 'questions' },
   { kind: 'task', title: 'Tasks', list: 'tasks' },
-]
-
-export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: StatusTone }> = {
-  working: { mark: '●', tone: null },
-  queued: { mark: '○', tone: null },
-  'waits-on-other': { mark: '◌', tone: null },
-  done: { mark: '✓', tone: 'done' },
-  dropped: { mark: '✗', tone: null },
-}
-/** The mark of an open subject that an open ask holds up, in place of its status's mark, and of a delegate that waits for the person. */
-export const HELD_MARK: { mark: string; tone: 'needsYou' } = { mark: '◆', tone: 'needsYou' }
-
-/** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
-export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
-
-/** The running mark's first frame, the one a look draws still. */
-export const RUNNING_MARK = RUNNING_FRAMES[0]
-
-export const CLOSED_MARKS: Record<ClosedState, string> = {
-  handled: SUBJECT_MARKS.done.mark,
-  dismissed: '✕',
-  lapsed: SUBJECT_MARKS.dropped.mark,
-}
-
-/** A PR row's mark: a review thread that waits on the person, one sent to the agent, and a failing check. */
-export const PR_MARKS = {
-  waiting: { text: HELD_MARK.mark, tone: 'needsYou' },
-  sent: { text: SUBJECT_MARKS.done.mark, tone: 'done' },
-  failing: { text: FINDING_GROUPS.issue.mark, tone: 'error' },
-} as const
-
-/** One mark the legend explains. `isRunning` draws it as the running mark. */
-export type LegendEntry = { mark: string; tone: ToneName | null; isRunning: boolean; words: string }
-
-/** Every mark a look draws on a row or a group title, once each, with what it means wherever it appears. */
-export const MARK_LEGEND: readonly LegendEntry[] = [
-  {
-    mark: RUNNING_MARK,
-    tone: null,
-    isRunning: true,
-    words: 'Working. It moves while the work runs or your message is on its way.',
-  },
-  { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: 'Queued: not started yet' },
-  {
-    mark: SUBJECT_MARKS['waits-on-other'].mark,
-    tone: null,
-    isRunning: false,
-    words: 'Waits on something other than you, such as a build or a review',
-  },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: 'Waits on you' },
-  { mark: SUBJECT_MARKS.done.mark, tone: 'done', isRunning: false, words: 'Done, or handed to the agent' },
-  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: 'Dropped before it was done' },
-  { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: 'Dismissed by you' },
-  {
-    mark: FINDING_GROUPS.issue.mark,
-    tone: FINDING_GROUPS.issue.tone,
-    isRunning: false,
-    words: 'Something is wrong: an issue or a failing check',
-  },
-  {
-    mark: FINDING_GROUPS.opportunity.mark,
-    tone: FINDING_GROUPS.opportunity.tone,
-    isRunning: false,
-    words: 'Opportunity: something that could be better',
-  },
 ]
 
 /** The PRs tab's own keys, which `hooks/pr-tab.ts:prOrderActions` and `prTabActions` bind from any row of the tab. */
@@ -138,10 +82,6 @@ const PR_TAB_HELP_KEYS: HelpKey[] = [
   { keys: 'g', does: 'Rank the PRs again, once a ranked PR changed' },
   { keys: 'm', does: 'Dismiss the merged PRs' },
 ]
-
-export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', marks: 'Marks' } as const
-
-export type HelpKey = { keys: string; does: string }
 
 /**
  * The keys a look's Help lists, for the tab Help opened over. `hasStatusButtons` says the Status has a row with a
@@ -1112,9 +1052,6 @@ export const ROW_TABS = TAB_NAMES.filter((t): t is TabName & { id: Tab } => isRo
 
 export const LISTED_TABS = TAB_NAMES.filter((t): t is TabName & { id: ListedTab } => isListedTab(t.id))
 
-/** A mark's tone on the Status. Null draws it muted. */
-export type StatusTone = 'needsYou' | 'done' | null
-
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
 export type StatusBranch = 'mid' | 'last'
 
@@ -1352,11 +1289,13 @@ export function statusPage(
     const under = running.filter(c => c.subjectId === x.id)
     const shownUnder = under.slice(0, CHILD_ROWS)
     const isMore = under.length > CHILD_ROWS
+    const isRunning = x.status === 'working' && !isHeld(x) && (s.presence.isTurnRunning || under.some(isChildWorking))
+    const isIdle = x.status === 'working' && !isRunning
     rows.push({
       kind: 'subject',
       id: x.id,
-      ...(isHeld(x) ? HELD_MARK : SUBJECT_MARKS[x.status]),
-      isRunning: x.status === 'working' && !isHeld(x) && (s.presence.isTurnRunning || under.some(isChildWorking)),
+      ...(isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status]),
+      isRunning,
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       stall: stallOf(x),

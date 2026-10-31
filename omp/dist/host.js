@@ -2724,19 +2724,11 @@ ${asks.map((a) => `- ${a}`).join(`
   }
 };
 
-// ../hooks/view.ts
-var OPTIONS_FOLD_AT = 5;
-var OPTION_LABEL_CHARS = 32;
-var CHOICE_KEYS = [..."abcfghilm"];
-var DOT = "\u2007\xB7\u2002";
+// ../hooks/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" }
 };
-var NEEDS_YOU_GROUPS = [
-  { kind: "question", title: "Questions", list: "questions" },
-  { kind: "task", title: "Tasks", list: "tasks" }
-];
 var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: null },
   queued: { mark: "\u25CB", tone: null },
@@ -2747,6 +2739,7 @@ var SUBJECT_MARKS = {
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
+var IDLE_MARK = { mark: "\u25D0", tone: null };
 var CLOSED_MARKS = {
   handled: SUBJECT_MARKS.done.mark,
   dismissed: "\u2715",
@@ -2764,6 +2757,7 @@ var MARK_LEGEND = [
     isRunning: true,
     words: "Working. It moves while the work runs or your message is on its way."
   },
+  { mark: IDLE_MARK.mark, tone: null, isRunning: false, words: "Working, with nothing running right now" },
   { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: "Queued: not started yet" },
   {
     mark: SUBJECT_MARKS["waits-on-other"].mark,
@@ -2788,11 +2782,21 @@ var MARK_LEGEND = [
     words: "Opportunity: something that could be better"
   }
 ];
+var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks" };
+
+// ../hooks/view.ts
+var OPTIONS_FOLD_AT = 5;
+var OPTION_LABEL_CHARS = 32;
+var CHOICE_KEYS = [..."abcfghilm"];
+var DOT = "\u2007\xB7\u2002";
+var NEEDS_YOU_GROUPS = [
+  { kind: "question", title: "Questions", list: "questions" },
+  { kind: "task", title: "Tasks", list: "tasks" }
+];
 var PR_TAB_HELP_KEYS = [
   { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
   { keys: "m", does: "Dismiss the merged PRs" }
 ];
-var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks" };
 function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
   const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
   const hasRows = isRowTab(tab);
@@ -3367,11 +3371,13 @@ function statusPage(s, now) {
     const under = running.filter((c) => c.subjectId === x.id);
     const shownUnder = under.slice(0, CHILD_ROWS);
     const isMore = under.length > CHILD_ROWS;
+    const isRunning = x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some(isChildWorking));
+    const isIdle = x.status === "working" && !isRunning;
     rows.push({
       kind: "subject",
       id: x.id,
-      ...isHeld(x) ? HELD_MARK : SUBJECT_MARKS[x.status],
-      isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some(isChildWorking)),
+      ...isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
+      isRunning,
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       stall: stallOf(x),

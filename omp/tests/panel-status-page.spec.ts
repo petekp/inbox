@@ -111,7 +111,7 @@ test('on the Status page, a subject’s name stays plain, and where it stands go
   const subject = raw.slice(first, first + 2 + STATUS_TEXT_LINES + 1).map(strip)
 
   expect(subject.slice(0, 3)).toEqual([
-    ' ● Help text for every greeting',
+    ' ◐ Help text for every greeting',
     '   command',
     '   being written with examples,',
   ])

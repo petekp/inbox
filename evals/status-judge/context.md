@@ -46,6 +46,7 @@ A page that reads only `Status` and `What this session's work is for, where each
 The marks on subject rows, and the states each one fits:
 
 - `●`: being worked on now.
+- `◐`: being worked on, while nothing runs on it right now. It fits the same states as `●`.
 - `○`: not started yet, or set aside.
 - `◌`: waits on something outside the session, such as another team, a vendor or a build.
 - `✓`: delivered.

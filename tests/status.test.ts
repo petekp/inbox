@@ -13,6 +13,7 @@ import {
   RUNNING_FRAMES,
   SUBJECT_MARKS,
 } from '../hooks/view'
+import { IDLE_MARK } from '../hooks/help'
 import type { Item } from '../types'
 import { MIN, after, askItem, page, shape } from './status-helpers'
 
@@ -70,14 +71,14 @@ test('each side of the look line lists held, working, waiting, queued, then fini
 
   expect(shape(rows)).toEqual([
     '◆ Flick: needs a pick · waiting',
-    '● Sync: step two',
-    '● Export: step one',
+    '◐ Sync: step two',
+    '◐ Export: step one',
     '◌ Review: sent for review',
     '○ Help menu: outline ready',
     '✓ Banner: shipped',
     '-- Last seen',
     '◆ Seen queue: later · waiting',
-    '● Seen work: old step',
+    '◐ Seen work: old step',
   ])
 })
 
@@ -158,7 +159,7 @@ test('a subject that open asks hold up offers View on the oldest ask, named for 
 test('with no look yet every row is new, so the page draws no look line and shows where each stands', () => {
   const o = after(null, 'NEW: working | Offline mode | queue built', 10 * MIN)
 
-  expect(shape(page(o, 12 * MIN).rows)).toEqual(['● Offline mode: queue built'])
+  expect(shape(page(o, 12 * MIN).rows)).toEqual(['◐ Offline mode: queue built'])
 })
 
 test('a page with no head and no rows shows its empty state, even while a turn runs', () => {
@@ -195,6 +196,7 @@ test('finished work folds into a count once seen, keeping at most two new finish
 test('the Help legend explains every mark a row or group title draws, once each', () => {
   const drawn = new Set([
     ...Object.values(SUBJECT_MARKS).map(m => m.mark),
+    IDLE_MARK.mark,
     HELD_MARK.mark,
     ...Object.values(CLOSED_MARKS),
     ...Object.values(FINDING_GROUPS).map(g => g.mark),
