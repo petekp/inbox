@@ -1,4 +1,4 @@
-import { isPrPress } from '../../hooks/pr-tab'
+import { isPrPress } from '../../hooks/pr-press'
 import {
   keptDiscards,
   shownTabs,

@@ -1,7 +1,7 @@
 import { delegatesSettled } from '../../hooks/children'
 import type { Run } from '../../hooks/gh'
 import { delegatesInHerdr, herdrCheckGate } from '../../hooks/herdr'
-import type { PrPress } from '../../hooks/pr-tab'
+import type { PrPress } from '../../hooks/pr-press'
 import { noteText } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import { recorded, statusChanged, withHolds } from '../../hooks/session'

@@ -1,6 +1,7 @@
 import { isRowTab, drawnTabOf, isGuarded, firstWaiting, listWaits, PRESS_GUARD_MS } from '../../hooks/view'
 import type { RowWait, ShownTab } from '../../hooks/view'
-import { prRowWaits, openPrViews } from '../../hooks/pr-tab'
+import { prRowWaits } from '../../hooks/pr-rows'
+import { openPrViews } from '../../hooks/pr-views'
 import type { Tab } from '../../types'
 import { ARRIVAL_TABS, followTo } from '../../hooks/arrivals'
 import { isShownEmpty } from './arrivals'

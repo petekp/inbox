@@ -1,5 +1,5 @@
 import type { FoldKind } from '../../types'
-import type { PrAction } from '../../hooks/pr-tab'
+import type { PrAction } from '../../hooks/pr-press'
 import {
   canUndoRefused,
   settledTone,

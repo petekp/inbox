@@ -3,7 +3,8 @@ import type { LinksProps } from '../hooks/links-client'
 import type { TabsProps } from '../hooks/tabs-client'
 import { demoView } from '../hooks/demo'
 import { emptySession } from '../hooks/session'
-import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
+import { checkActions, prBlockActions, threadActions } from '../hooks/pr-tab'
+import { prCheckId, prThreadId, threadSentIn } from '../hooks/pr-rows'
 import { failingChecks, waitingThreads } from '../hooks/prs'
 import {
   PRESS_GUARD_MS,

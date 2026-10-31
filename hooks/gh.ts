@@ -1,4 +1,4 @@
-import type { GhRun } from './pr-tab'
+import type { GhRun } from './pr-fetch'
 
 /**
  * Runs a command and never throws: a command still running at `timeoutMs` ends with code -2, and one that cannot

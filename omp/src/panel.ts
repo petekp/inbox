@@ -1,5 +1,5 @@
 import type { Draft, FoldKind, Stop } from '../../types'
-import type { PrPress } from '../../hooks/pr-tab'
+import type { PrPress } from '../../hooks/pr-press'
 import { noteText } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import type { SessionView } from '../../hooks/session'
