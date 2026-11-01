@@ -76,7 +76,7 @@ export type StatusRowParts = {
   | { kind: 'fold'; id: string; mark: string; tone: StatusTone; text: string }
   /** Where the work the goal does not need starts, under its own rule. */
   | { kind: 'part'; id: string; text: string }
-  /** Seen rows folded into a count for each mark, as "● 5 working · ◌ 8 waiting · ○ 10 queued": under Other work, and under a milestone. */
+  /** Seen rows of that work folded into a count for each mark, as "● 5 working · ◌ 8 waiting · ○ 10 queued". */
   | { kind: 'counts'; id: string; counts: StatusCount[] }
 )
 
@@ -216,19 +216,36 @@ export function statusPage(
     ...running.filter(c => c.subjectId === null || !shownIds.has(c.subjectId)).map(c => childRow(c, null, 0)),
     ...partRows(top.shown, ctx, 0),
   ]
-  if (top.foldedOpen.length > 0)
-    rows.push({ kind: 'fold', id: 'open', depth: 0, ...SUBJECT_MARKS.queued, text: `${top.foldedOpen.length} more` })
-  if (top.foldedDone.length > 0) {
-    const isMore = top.newClosed.some(x => x.status === 'done')
-    rows.push({
-      kind: 'fold',
-      id: 'done',
-      depth: 0,
-      mark: SUBJECT_MARKS.done.mark,
-      tone: 'done',
-      text: `${top.foldedDone.length}${isMore ? ' more' : ''} done`,
-    })
-  }
+  /**
+   * A part's folds `depth` steps in: "○ N more" for its folded open work, and "✓ N done" for its seen finished work, or
+   * "✓ N more done" while finished rows still show above it.
+   */
+  const foldRows = (prefix: string, p: PartSplit, depth: number): StatusRowParts[] => [
+    ...(p.foldedOpen.length > 0
+      ? [
+          {
+            kind: 'fold' as const,
+            id: `${prefix}open`,
+            depth,
+            ...SUBJECT_MARKS.queued,
+            text: `${p.foldedOpen.length} more`,
+          },
+        ]
+      : []),
+    ...(p.foldedDone.length > 0
+      ? [
+          {
+            kind: 'fold' as const,
+            id: `${prefix}done`,
+            depth,
+            mark: SUBJECT_MARKS.done.mark,
+            tone: 'done' as const,
+            text: `${p.foldedDone.length}${p.newClosed.some(x => x.status === 'done') ? ' more' : ''} done`,
+          },
+        ]
+      : []),
+  ]
+  rows.push(...foldRows('', top, 0))
   if (otherShown.length > 0 || otherFolded.length > 0) {
     // The part's rule follows the list, so a look line that ends the list would draw a second rule under it.
     if (rows.at(-1)?.kind === 'look') rows.pop()
@@ -237,17 +254,15 @@ export function statusPage(
     if (otherFolded.length > 0)
       rows.push({ kind: 'counts', id: 'other-counts', depth: 0, counts: countsByMark(otherFolded) })
   }
-  /** A milestone's rows, one step in: its work in the page's order, then what folded, as a count for each mark. */
-  const milestoneRows = (id: string, p: PartSplit): StatusRow[] => {
-    const counts = countsByMark([...p.foldedOpen, ...p.foldedDone])
-    return ruledRows(
+  /** A milestone's rows, one step in: its work in the page's order, then its folds, as the list after the goal folds. */
+  const milestoneRows = (id: string, p: PartSplit): StatusRow[] =>
+    ruledRows(
       [
         ...partRows(p.shown, { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false }, 1),
-        ...(counts.length > 0 ? [{ kind: 'counts' as const, id: `${id}-counts`, depth: 1, counts }] : []),
+        ...foldRows(`${id}-`, p, 1),
       ],
       false,
     )
-  }
   const g = goalParts.goal
   const goal = g && {
     ...g,

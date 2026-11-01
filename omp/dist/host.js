@@ -1916,19 +1916,28 @@ function statusPage(s, now) {
     ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
     ...partRows(top.shown, ctx, 0)
   ];
-  if (top.foldedOpen.length > 0)
-    rows.push({ kind: "fold", id: "open", depth: 0, ...SUBJECT_MARKS.queued, text: `${top.foldedOpen.length} more` });
-  if (top.foldedDone.length > 0) {
-    const isMore = top.newClosed.some((x) => x.status === "done");
-    rows.push({
-      kind: "fold",
-      id: "done",
-      depth: 0,
-      mark: SUBJECT_MARKS.done.mark,
-      tone: "done",
-      text: `${top.foldedDone.length}${isMore ? " more" : ""} done`
-    });
-  }
+  const foldRows = (prefix, p, depth) => [
+    ...p.foldedOpen.length > 0 ? [
+      {
+        kind: "fold",
+        id: `${prefix}open`,
+        depth,
+        ...SUBJECT_MARKS.queued,
+        text: `${p.foldedOpen.length} more`
+      }
+    ] : [],
+    ...p.foldedDone.length > 0 ? [
+      {
+        kind: "fold",
+        id: `${prefix}done`,
+        depth,
+        mark: SUBJECT_MARKS.done.mark,
+        tone: "done",
+        text: `${p.foldedDone.length}${p.newClosed.some((x) => x.status === "done") ? " more" : ""} done`
+      }
+    ] : []
+  ];
+  rows.push(...foldRows("", top, 0));
   if (otherShown.length > 0 || otherFolded.length > 0) {
     if (rows.at(-1)?.kind === "look")
       rows.pop();
@@ -1937,13 +1946,10 @@ function statusPage(s, now) {
     if (otherFolded.length > 0)
       rows.push({ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFolded) });
   }
-  const milestoneRows = (id, p) => {
-    const counts = countsByMark([...p.foldedOpen, ...p.foldedDone]);
-    return ruledRows([
-      ...partRows(p.shown, { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false }, 1),
-      ...counts.length > 0 ? [{ kind: "counts", id: `${id}-counts`, depth: 1, counts }] : []
-    ], false);
-  };
+  const milestoneRows = (id, p) => ruledRows([
+    ...partRows(p.shown, { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false }, 1),
+    ...foldRows(`${id}-`, p, 1)
+  ], false);
   const g = goalParts.goal;
   const goal = g && {
     ...g,
