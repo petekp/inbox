@@ -116,7 +116,7 @@ export function statusMidTurnPrompt(
   turn: Pick<Session['turn'], 'person' | 'trigger' | 'activity'>,
 ): string {
   return [
-    'The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes.',
+    'The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes. Where it stands says what works so far and what is left, never what the agent is doing: "CSV export works, PDF not started", not "export edits underway" or "writing the PDF export".',
     ...statusBlocks(input),
     `<person>${NL}${clipMiddle(personText(turn.person, turn.trigger), 4000, 1500)}${NL}</person>`,
     `<activity>${NL}${clipMiddle(turn.activity.join(NL), 2500, 500)}${NL}</activity>`,
