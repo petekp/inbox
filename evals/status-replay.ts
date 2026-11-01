@@ -206,7 +206,10 @@ async function statusCall(
   }
   const answer = last.text === null ? null : parseStatus(last.text)
   const turns = s.presence.turnsApplied
-  const session = answer === null ? failedStatus(s, last.text, turns, now) : appliedStatus(s, answer, turns, now)
+  const session =
+    answer === null
+      ? failedStatus(s, last.text, turns, now)
+      : appliedStatus(s, answer, turns, now, input.last?.goal?.setAt ?? null)
 
   return { session, log, isFailed: answer === null }
 }

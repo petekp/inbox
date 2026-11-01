@@ -107,6 +107,7 @@ export function applyOps(
   ops: Op[],
   now: number,
   askIds: ReadonlySet<string>,
+  readSetAt: number | null = last?.goal?.setAt ?? null,
 ): SessionStatus {
   let o: SessionStatus = {
     ...(last ?? EMPTY_SESSION_STATUS),
@@ -204,7 +205,7 @@ export function applyOps(
   if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
     o = { ...o, head: { ...o.head, description: '' } }
 
-  return settleGoal(o, now)
+  return settleGoal(o, now, readSetAt)
 }
 
 /** The Status after an answer, applied at `now`. `askIds` are the open asks. */
@@ -213,8 +214,9 @@ export function applyStatus(
   answer: StatusAnswer,
   now: number,
   askIds: ReadonlySet<string>,
+  readSetAt: number | null = last?.goal?.setAt ?? null,
 ): SessionStatus | null {
-  if (answer.kind === 'ops') return applyOps(last, answer.ops, now, askIds)
+  if (answer.kind === 'ops') return applyOps(last, answer.ops, now, askIds, readSetAt)
 
-  return last === null ? null : settleGoal(last, now)
+  return last === null ? null : settleGoal(last, now, readSetAt)
 }

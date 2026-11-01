@@ -3,10 +3,16 @@ import { tasksText } from './host-tasks'
 import { NL, personText } from './ledger-prompt'
 import { asksText, runningText, subjectsText } from './status-children'
 import { DESCRIPTION_WORDS, NAME_WORDS, OPEN_SUBJECTS, TEXT_WORDS } from './status-limits'
+import { GOAL_INPUT, GOAL_LINES, goalBlocks, goalRules } from './status-prompt-goal'
+import type { GoalPartId } from './status-prompt-goal'
 import { clipMiddle, numberBlocks } from './text'
 
-/** The system text of the call that changes the Status tab's list, apart from the ledger call. */
-export const STATUS_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
+/**
+ * The system text of the call that changes the Status tab's list, apart from the ledger call, leaving out the goal's
+ * rules in `without`.
+ */
+export function statusSystem(without: readonly GoalPartId[] = []): string {
+  return `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
 
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
@@ -17,6 +23,7 @@ Input:
 - <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
 - <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subject it holds up, or - when it has none yet
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
+${GOAL_INPUT}
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
 - <reply>: what the agent said this turn, in order
@@ -32,6 +39,7 @@ DROP: id or name | why | INTO id or name
 WAS: id or name | the plan it replaces
 LINK: running or ask id | subject id or name
 HEAD: title | description
+${GOAL_LINES}
 
 A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
 
@@ -54,7 +62,13 @@ Rules:
 - Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
 - Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
 - Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.
-- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.`
+- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.
+
+Goal:
+${goalRules(without)}`
+}
+
+export const STATUS_SYSTEM = statusSystem()
 
 /**
  * What the Status call reads besides the exchange: the Status before it, the open asks, the agent's task list, and
@@ -75,6 +89,7 @@ function statusBlocks({ last, asks, tasks, now }: StatusCallInput): string[] {
   const list = tasksText(tasks)
 
   return [
+    ...goalBlocks(last),
     `<head>${NL}${headText(last)}${NL}</head>`,
     `<subjects>${NL}${open}${NL}</subjects>`,
     ...(finished === '' ? [] : [`<finished>${NL}${finished}${NL}</finished>`]),

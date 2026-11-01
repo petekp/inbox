@@ -3,6 +3,9 @@ import { expect, test } from 'claude-code/testing'
 import { parseStatus } from '../hooks/status'
 import { declineProposedGoal, setTypedGoal, useProposedGoal } from '../hooks/status-goal-ops'
 import { applyStatus } from '../hooks/status-ops'
+import { statusPrompt, statusSystem } from '../hooks/status-prompt'
+import { GOAL_PARTS } from '../hooks/status-prompt-goal'
+import type { GoalPartId } from '../hooks/status-prompt-goal'
 import type { SessionStatus } from '../types'
 import { after, NO_ASKS, opsOf } from './status-helpers'
 
@@ -105,7 +108,7 @@ test('the goal is met once every milestone left is done, and unmet when one open
   expect(reopened.goal?.metAt).toBeNull()
 })
 
-test('a typed goal unlinks every subject and waits, never met, until a milestone changes after it, and a rewording keeps its milestones and links and sends nothing', () => {
+test('a typed goal unlinks every subject and waits until an answer from a call that read it applies, and a rewording keeps its milestones and links and sends nothing', () => {
   const met = after(
     after(withGoal(), 'SERVES: s1 | m1\nSERVES: s2 | -', 22),
     'DONE: m2 | named\nDONE: m3 | written',
@@ -113,6 +116,7 @@ test('a typed goal unlinks every subject and waits, never met, until a milestone
   )
   const typed = setTypedGoal(met, 'Ship 2.6 with import', 30)
   const answered = applyStatus(typed.status, parseStatus('NO CHANGE')!, 40, NO_ASKS)!
+  const stale = applyStatus(typed.status, parseStatus('SET: m1 | working | redone')!, 40, NO_ASKS, met.goal!.setAt)!
   const reworded = setTypedGoal(met, 'Demo import ready', 30)
 
   expect(met.goal?.metAt).toBe(25)
@@ -124,7 +128,8 @@ test('a typed goal unlinks every subject and waits, never met, until a milestone
   })
   expect(typed.status.serves).toEqual({})
   expect(typed.status.milestones).toHaveLength(3)
-  expect(answered.goal).toMatchObject({ isAwaitingMilestones: true, metAt: null })
+  expect(answered.goal).toMatchObject({ isAwaitingMilestones: false, metAt: 40 })
+  expect(stale.goal).toMatchObject({ isAwaitingMilestones: true, metAt: null })
   expect(after(answered, 'MILESTONE: queued | Release notes | not started', 50).goal).toMatchObject({
     isAwaitingMilestones: false,
     metAt: null,
@@ -153,4 +158,34 @@ test("the replaced goal's was line goes once the person has looked", () => {
   const seen = applyStatus({ ...typed, lastLookAt: 35 }, parseStatus('NO CHANGE')!, 40, NO_ASKS)
 
   expect(seen?.goal?.was).toBeNull()
+})
+
+test("the call reads the goal, its milestones, each subject's link and the declined goals, and a copy of the system text can leave out any one goal rule", () => {
+  const linked = declineProposedGoal(
+    after(withGoal(), 'SERVES: s1 | m1\nGOAL: Dark mode shipped | queued Theme built; queued Theme released', 22),
+  )
+  const exchange = {
+    person: 'Go on',
+    trigger: null,
+    activity: [],
+    reply: 'Done.',
+    turn: 3,
+    press: null,
+    screen: '',
+    tasks: [],
+  }
+  const prompt = statusPrompt({ last: linked, asks: [], tasks: [], now: 30 }, exchange)
+  const noGoal = statusPrompt({ last: proposed(), asks: [], tasks: [], now: 30 }, exchange)
+
+  expect(prompt).toMatch(/<goal>\nImport ready to demo\n<\/goal>/)
+  expect(prompt).toMatch(/m2 \| working \| Error messages \| -/)
+  expect(prompt).toMatch(/s1 \| working \| Import \| CSV works \| m1\n/)
+  expect(prompt).toMatch(/s2 \| queued \| Dark mode \| not started \| \?\n/)
+  expect(prompt).toMatch(/<declined>\ndark mode shipped\n<\/declined>/)
+  expect(noGoal).not.toMatch(/<goal>|<milestones>|\| \?\n/)
+  for (const id of Object.keys(GOAL_PARTS) as GoalPartId[]) {
+    const others = (Object.keys(GOAL_PARTS) as GoalPartId[]).filter(x => x !== id)
+    expect({ id, kept: statusSystem([id]).includes(GOAL_PARTS[id]) }).toEqual({ id, kept: false })
+    expect({ id, others: others.every(x => statusSystem([id]).includes(GOAL_PARTS[x])) }).toEqual({ id, others: true })
+  }
 })

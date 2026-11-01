@@ -135,15 +135,16 @@ export function applyGoalOp(
 }
 
 /**
- * The goal once an answer has applied: a typed goal's milestones belong to it once a milestone changed after it was
- * set, its was line goes once the person has seen it, and it is met while every milestone that is not dropped is done.
- * Met follows the milestones, so a milestone that opens again unmeets it.
+ * The goal once an answer has applied: a typed goal's milestones belong to it once an answer from a call that read
+ * this goal applies, its was line goes once the person has seen it, and it is met while every milestone that is not
+ * dropped is done. Met follows the milestones, so a milestone that opens again unmeets it. `readSetAt` is when the
+ * goal the call read was set, or null when it read none: a call that read an earlier goal wrote for that goal.
  */
-export function settleGoal(o: SessionStatus, now: number): SessionStatus {
+export function settleGoal(o: SessionStatus, now: number, readSetAt: number | null): SessionStatus {
   if (o.goal === null) return o
   const setAt = o.goal.setAt
   const isSeen = o.lastLookAt !== null && setAt <= o.lastLookAt
-  const isAwaiting = o.goal.isAwaitingMilestones && !o.milestones.some(m => m.changedAt > setAt)
+  const isAwaiting = o.goal.isAwaitingMilestones && readSetAt !== setAt
   const kept = o.milestones.filter(m => m.status !== 'dropped')
   const isMet = !isAwaiting && kept.length > 0 && kept.every(m => m.status === 'done')
   const was = isSeen ? null : o.goal.was
@@ -193,6 +194,7 @@ export function useProposedGoal(o: SessionStatus, now: number): SessionStatus {
       milestones,
     ),
     now,
+    null,
   )
 }
 

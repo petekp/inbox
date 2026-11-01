@@ -153,9 +153,14 @@ function childActive(o, ref, at) {
 }
 function subjectsText(o) {
   const subjects = o?.subjects ?? [];
-  const open = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}`);
+  const serves = (id) => o?.goal ? ` | ${servesText(o, id)}` : "";
+  const open = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}${serves(s.id)}`);
   const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
   return { open: open.join(NL) || "(none yet)", finished: finished.join(NL) };
+}
+function servesText(o, subjectId) {
+  const to = o.serves[subjectId];
+  return to === undefined ? "?" : to === "none" ? "-" : to;
 }
 function asksText(o, asks) {
   return asks.map((a) => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id] ?? "-"}`).join(NL);
@@ -1159,12 +1164,12 @@ function applyGoalOp(o, op, now, findSubject) {
     return o;
   return { ...o, serves: { ...o.serves, [subject.id]: milestone?.id ?? "none" } };
 }
-function settleGoal(o, now) {
+function settleGoal(o, now, readSetAt) {
   if (o.goal === null)
     return o;
   const setAt = o.goal.setAt;
   const isSeen = o.lastLookAt !== null && setAt <= o.lastLookAt;
-  const isAwaiting = o.goal.isAwaitingMilestones && !o.milestones.some((m) => m.changedAt > setAt);
+  const isAwaiting = o.goal.isAwaitingMilestones && readSetAt !== setAt;
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   const isMet = !isAwaiting && kept.length > 0 && kept.every((m) => m.status === "done");
   const was = isSeen ? null : o.goal.was;
@@ -1202,7 +1207,7 @@ function useProposedGoal(o, now) {
     milestones,
     nextMilestoneId: o.nextMilestoneId + milestones.length,
     serves: {}
-  }, milestones), now);
+  }, milestones), now, null);
 }
 function declineProposedGoal(o) {
   if (o.proposedGoal === null)
@@ -7490,7 +7495,7 @@ var OP_ORDER = {
   milestone: 0,
   serves: 2
 };
-function applyOps(last, ops, now, askIds) {
+function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
   let o = {
     ...last ?? EMPTY_SESSION_STATUS,
     subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
@@ -7597,23 +7602,23 @@ function applyOps(last, ops, now, askIds) {
   const isHeadKept = o.head === (last?.head ?? null);
   if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
     o = { ...o, head: { ...o.head, description: "" } };
-  return settleGoal(o, now);
+  return settleGoal(o, now, readSetAt);
 }
-function applyStatus(last, answer, now, askIds) {
+function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
   if (answer.kind === "ops")
-    return applyOps(last, answer.ops, now, askIds);
-  return last === null ? null : settleGoal(last, now);
+    return applyOps(last, answer.ops, now, askIds, readSetAt);
+  return last === null ? null : settleGoal(last, now, readSetAt);
 }
 
 // ../hooks/session-status.ts
-function appliedStatus(s, answer, appliedAfter, now) {
+function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overview?.goal?.setAt ?? null) {
   if (s.presence.turnsApplied < appliedAfter)
     return s;
   return {
     ...s,
     ledger: {
       ...s.ledger,
-      overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)))
+      overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)), readSetAt)
     },
     overviewFailure: null,
     lastOverviewCallAt: now
@@ -7760,8 +7765,47 @@ async function askStatus(ask) {
   return { first, last: holdsProse ? await ask() : first };
 }
 
+// ../hooks/status-prompt-goal.ts
+var GOAL_LINES = `GOAL: outcome | status name; status name
+MILESTONE: status | name | where it stands
+SERVES: subject id or name | milestone id or name, or - when the goal does not need it
+GOAL proposes one outcome with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, each with its status, in order. It holds no date or time. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`;
+var GOAL_INPUT = `- <goal>: the outcome the person set for the work, when one is set. It says when the goal is met, and when it was just set, so its milestones still belong to the goal before it.
+- <milestones>: the outcomes the goal needs, one per line: id | status | name | where it stands
+- <proposed>: a goal you proposed that the person has not answered yet: outcome | its milestones
+- <declined>: goals the person declined, as their key words, one per line
+- While a goal is set, each line in <subjects> ends with the milestone the subject serves, - when the goal does not need it, or ? when it is not linked yet.`;
+var GOAL_PARTS = {
+  "goal-from-person": `Write GOAL only from what the person wrote in <person>, or in a catch-up, the person's own messages in <conversation>. Never propose from the agent's words in <reply>, <activity> or <tasks>, even when the agent writes "Goal:" or sums up the work.`,
+  "goal-finish-line": `Write GOAL only for an outcome with a finish line, one someone could check as met or not, such as "2.5 in the store" or "the import ready to demo". A direction is not a goal: "make search faster", "every item should earn its place" or "keep the list tidy" get no GOAL.`,
+  "goal-not-again": `Never propose the goal in <goal>, a goal in <proposed>, or a goal in <declined> again, in the same words or in other words. A goal the person declined stays declined until they state it again as new work.`,
+  "goal-belongs-to-person": `The goal belongs to the person. GOAL only proposes: the person uses it, edits it or declines it. Never write GOAL to reword or update the goal in <goal>, and never write the goal into the head, a subject or a milestone.`,
+  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
+  "milestones-for-new-goal": `When <goal> says it was just set, its milestones belong to the goal before it. Keep each one the new goal still needs as it is, DROP each one it does not need, and write MILESTONE for each outcome it needs that none covers, so the goal has ${MILESTONES_MIN} to ${MILESTONES_MAX}.`,
+  "serves-every-subject": `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work moves forward, or - when the goal does not need it. Change a link only when what the work is for changed. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`
+};
+function goalRules(without = []) {
+  return Object.keys(GOAL_PARTS).filter((id) => !without.includes(id)).map((id) => `- ${GOAL_PARTS[id]}`).join(NL4);
+}
+function goalBlocks(o) {
+  if (o === null)
+    return [];
+  const g = o.goal;
+  const state = g?.isAwaitingMilestones ? " (just set)" : g?.metAt != null ? " (met)" : "";
+  const milestones = o.milestones.filter((m) => m.status !== "dropped").map((m) => `${m.id} | ${m.status} | ${m.name} | ${m.text || "-"}`);
+  const p = o.proposedGoal;
+  const block = (tag, body) => `<${tag}>${NL4}${body}${NL4}</${tag}>`;
+  return [
+    ...g ? [block("goal", `${g.text}${state}`)] : [],
+    ...g && milestones.length > 0 ? [block("milestones", milestones.join(NL4))] : [],
+    ...p ? [block("proposed", `${p.text} | ${p.milestones.map((m) => `${m.status} ${m.name}`).join("; ")}`)] : [],
+    ...o.declinedGoals.length > 0 ? [block("declined", o.declinedGoals.join(NL4))] : []
+  ];
+}
+
 // ../hooks/status-prompt.ts
-var STATUS_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
+function statusSystem(without = []) {
+  return `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
 
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
@@ -7772,6 +7816,7 @@ Input:
 - <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
 - <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subject it holds up, or - when it has none yet
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
+${GOAL_INPUT}
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
 - <reply>: what the agent said this turn, in order
@@ -7787,6 +7832,7 @@ DROP: id or name | why | INTO id or name
 WAS: id or name | the plan it replaces
 LINK: running or ask id | subject id or name
 HEAD: title | description
+${GOAL_LINES}
 
 A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
 
@@ -7809,7 +7855,12 @@ Rules:
 - Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
 - Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
 - Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.
-- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.`;
+- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.
+
+Goal:
+${goalRules(without)}`;
+}
+var STATUS_SYSTEM = statusSystem();
 function headText(o) {
   if (!o?.head)
     return "(none yet)";
@@ -7821,6 +7872,7 @@ function statusBlocks({ last, asks, tasks, now }) {
   const held = asksText(last, asks);
   const list = tasksText(tasks);
   return [
+    ...goalBlocks(last),
     `<head>${NL4}${headText(last)}${NL4}</head>`,
     `<subjects>${NL4}${open}${NL4}</subjects>`,
     ...finished === "" ? [] : [`<finished>${NL4}${finished}${NL4}</finished>`],
@@ -7936,7 +7988,8 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
   const after = await host.update((x) => {
     before = x.ledger.overview;
     isWritten = x.presence.turnsApplied >= appliedAfter;
-    return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now);
+    const readSetAt = input.last?.goal?.setAt ?? null;
+    return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now, readSetAt);
   });
   if (!host.records)
     return;
