@@ -5583,6 +5583,7 @@ var withTab = (ui, tab, now) => ({
   ...withSelection(ui, null),
   tab,
   pageTop: 0,
+  pageReveal: isRowTab(tab) ? null : true,
   shownSince: tab === ui.tab ? ui.shownSince : now,
   isHelpShown: false
 });
@@ -6018,6 +6019,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   let selectedAt = [0, 0];
   const pageSelected = isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId);
   let pageSelectedAt = null;
+  let goalTitleAt = null;
   for (const e of entries) {
     if (e.kind === "heading")
       body.push(` ${e.mark ? `${e.mark.tone ? style.tone(e.mark.tone, e.mark.text) : e.mark.text} ` : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
@@ -6025,6 +6027,8 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
       if (e.kind === "page" && e.row.isRuledAbove)
         body.push(pageRule(width, style));
       const start = body.length;
+      if (e.kind === "goal" && e.part.is === "title")
+        goalTitleAt = start;
       const id = e.kind === "page" ? e.row.id : goalPartId(e.part);
       const isSelected = id !== null && id === pageSelected?.id;
       body.push(...e.kind === "page" ? drawPageRow(e.row, d, isSelected) : drawGoalPart(e.part, d, isSelected));
@@ -6057,8 +6061,10 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const room = roomBeside(foot);
   const blanks = (shown) => Array(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill("");
   const isOverflowing = body.length > room;
-  const [first = 0, last = 0] = pageSelectedAt ?? [];
-  const isRevealed = pageSelectedAt !== null && ui.pageReveal === pageSelected?.id;
+  const [keysAt = 0, last = 0] = pageSelectedAt ?? [];
+  const goalTextAt = pageSelected?.id === GOAL_KEYS_ID ? goalTitleAt : null;
+  const first = goalTextAt !== null && last - goalTextAt + 3 <= room ? goalTextAt : keysAt;
+  const isRevealed = pageSelectedAt !== null && (ui.pageReveal === true || ui.pageReveal === pageSelected?.id);
   const top = isRevealed ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop;
   const pageTop = isPage ? Math.min(Math.max(0, top), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop;
   const shown = !isOverflowing ? body : isPage ? pageWindow(body, pageTop, room, style) : scrolled(body, selectedAt, room, style);

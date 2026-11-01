@@ -43,6 +43,7 @@ export const withTab = (ui: PanelUi, tab: ShownTab, now: number): PanelUi => ({
   ...withSelection(ui, null),
   tab,
   pageTop: 0,
+  pageReveal: isRowTab(tab) ? null : true,
   shownSince: tab === ui.tab ? ui.shownSince : now,
   isHelpShown: false,
 })

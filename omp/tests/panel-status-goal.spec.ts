@@ -5,9 +5,10 @@ import { goalKeyPlan, proposalKeyPlan, statusKeyRows } from '../../hooks/status-
 import { sessionView } from '../../hooks/session-view'
 import type { SessionStatus } from '../../types'
 import { demoState } from '../src/demo'
+import { drawPanel } from '../src/panel'
 import type { PanelUi } from '../src/panel'
 import { handleKey } from '../src/panel-keys'
-import { keys, NOW, onPage, screenOf, text } from './panel-harness'
+import { keys, NOW, onPage, screenOf, strip, style, text } from './panel-harness'
 
 const MIN = 60_000
 
@@ -149,4 +150,11 @@ test('with a goal set, subjects that serve none of its milestones draw under the
   expect(rule.length).toBeLessThanOrEqual(60)
   expect(lines.find(l => l.includes('1 waiting'))).toBe('   ◌ 1 waiting · ✓ 2 done')
   expect(lineAt(lines, '1 waiting')).toBeGreaterThan(lineAt(lines, 'Other work'))
+})
+
+test('in a short panel, after Use this goal the goal’s text shows with its selected Change goal, even from a page scrolled past it', () => {
+  const used = handleKey(proposing(), { ...onPage, selectedId: 'proposal', pageTop: 4 }, 'u', NOW).ui
+  const lines = drawPanel(withGoal(), used, 60, NOW, style, 14).lines.map(strip)
+  expect(lineAt(lines, 'Pilot ready to announce')).toBeGreaterThan(-1)
+  expect(lineAt(lines, '↵ Change goal')).toBeGreaterThan(-1)
 })
