@@ -129,13 +129,13 @@ export function paneStatusLines({
   /**
    * The line that ties the rows under a subject to it, in the subject's mark column. `down` runs from under the
    * subject's mark to the end of its row. `mid` and `last` reach across to a child's mark, and `mid` runs on to the
-   * next row, so a row that wraps keeps the line beside each of its lines.
+   * next row, so a row that wraps keeps the line beside each of its lines. `depth` is the subject's.
    */
-  const statusTree = (key: string, shape: 'down' | StatusBranch) => {
-    if (look === 'terminal')
-      return shape === 'down'
-        ? branch('pass', 0, statusMarkAt, pal.line, 1, key)
-        : branch(shape, 0, statusMarkAt, pal.line, 0, key)
+  const statusTree = (key: string, shape: 'down' | StatusBranch, depth: number) => {
+    if (look === 'terminal') {
+      const at = statusMarkAt + markWidth * depth
+      return shape === 'down' ? branch('pass', 0, at, pal.line, 1, key) : branch(shape, 0, at, pal.line, 0, key)
+    }
     // The line spans the mark column, which spans the frame's content. To meet the next row's line, each end reaches
     // over the frame's padding and its border.
     const reach = -statusFrameEdge
@@ -157,7 +157,7 @@ export function paneStatusLines({
 
     return (
       <Box key={key} position="absolute" top={0} bottom={0} left={0} flexDirection="row">
-        <Box width={DESKTOP_TREE_AT - DESKTOP_HAIR_CELLS / 2} flexShrink={0} />
+        <Box width={DESKTOP_MARK_CELLS * 2 * depth + DESKTOP_TREE_AT - DESKTOP_HAIR_CELLS / 2} flexShrink={0} />
         <Box flexDirection="column" flexShrink={0}>
           {parts}
         </Box>

@@ -87,7 +87,7 @@ test('Set as goal and Not now press the goal by their keys or Enter and select t
   })
 })
 
-test('a set goal draws Edit beside its label, its text with its count, and its milestones above the head, which draws as its Now line', () => {
+test('a set goal draws Edit beside its label, its text with its count, the head as its Now line under its text, and then its milestones', () => {
   const screen = withGoal()
   const page = screen.view.statusPage
   expect(goalKeyPlan(page).map(k => k.label)).toEqual(['Edit'])
@@ -95,14 +95,14 @@ test('a set goal draws Edit beside its label, its text with its count, and its m
   const order = [
     'Goal · ↵ Edit',
     'Pilot ready to announce · 1 of 2 done',
+    `Now: ${page.head!.description}`,
     '✓ Fixes built',
     '○ Announced',
     'after deploy',
   ]
   const at = order.map(s => lineAt(lines, s))
   expect(at).toEqual([...at].sort((a, b) => a - b))
-  expect(lines.slice(at[4]! + 1).some(l => l.includes('Edit'))).toBe(false)
-  expect(lineAt(lines, `Now: ${page.head!.description}`)).toBeGreaterThan(at[4]!)
+  expect(lines.slice(at[5]! + 1).some(l => l.includes('Edit'))).toBe(false)
   expect(lineAt(lines, page.head!.title)).toBe(-1)
 })
 

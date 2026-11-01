@@ -1262,6 +1262,312 @@ var MARK_LEGEND = [
   }
 ];
 
+// ../hooks/status-children.ts
+function isChildRunning(c, now) {
+  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+}
+function withChild(last, c, now) {
+  const o = last ?? EMPTY_SESSION_STATUS;
+  const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
+  const known = kept.find((x) => x.ref === c.ref);
+  if (known) return { ...o, children: kept.map((x) => x === known ? { ...x, ...c } : x) };
+  return {
+    ...o,
+    nextChildId: o.nextChildId + 1,
+    children: [...kept, { delegateState: null, ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
+  };
+}
+function changedChild(o, ref, change) {
+  const known = o?.children.find((c) => c.ref === ref);
+  if (!o || !known) return o;
+  return { ...o, children: o.children.map((c) => c === known ? { ...c, ...change(c) } : c) };
+}
+function childEnded(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
+}
+function subjectTouched(o, id, at) {
+  const isSeen = (s) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
+  const touched = (s) => isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
+  return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
+}
+function childActive(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
+}
+
+// ../hooks/status-goal-page.ts
+var AWAITING_TEXT = "Milestones after the next reply";
+var PROPOSAL_LABEL = "Proposed goal \xB7 from your message";
+var NEW_GOAL_PROPOSAL_LABEL = "Proposed new goal \xB7 from your message";
+function oldestAsk(items, links, id) {
+  const oldest = items.filter((i) => links[i.id] === id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+  return oldest ? { id: oldest.id, kind: oldest.kind } : null;
+}
+function milestoneRow(m, o, items) {
+  const isOpen2 = m.status !== "done" && m.status !== "dropped";
+  const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
+  const holds = items.filter((i) => {
+    const to = o.askSubjects[i.id];
+    return to === m.id || to !== void 0 && servingIds.has(to);
+  });
+  const isHeld = isOpen2 && holds.length > 0;
+  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0);
+  const direct = oldestAsk(items, o.askSubjects, m.id);
+  const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+  return {
+    id: m.id,
+    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
+    name: m.name,
+    text: m.text || null,
+    stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
+    was: isChanged ? m.was : null,
+    isChanged,
+    ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
+    rows: []
+  };
+}
+function goalPage(o, items) {
+  const g = o?.goal ?? null;
+  const isBelowGoal = g !== null;
+  const proposal = o?.proposedGoal ? {
+    label: isBelowGoal ? NEW_GOAL_PROPOSAL_LABEL : PROPOSAL_LABEL,
+    isBelowGoal,
+    text: o.proposedGoal.text,
+    milestones: o.proposedGoal.milestones.map((m) => ({ ...SUBJECT_MARKS[m.status], name: m.name }))
+  } : null;
+  if (o === null || g === null) return { goal: null, proposal };
+  const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
+  const kept = o.milestones.filter((m) => m.status !== "dropped");
+  const shown = o.milestones.filter(
+    (m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt
+  );
+  const done = kept.filter((m) => m.status === "done").length;
+  const isMet = g.metAt !== null;
+  const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
+  const head = o.head;
+  return {
+    goal: {
+      label: isMet ? "Goal met" : "Goal",
+      text: g.text,
+      count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
+      isMet,
+      was: isWasShown ? g.was : null,
+      now: head ? `Now: ${head.description || head.title}` : null,
+      awaiting: isAwaiting ? AWAITING_TEXT : null,
+      milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
+    },
+    proposal
+  };
+}
+
+// ../hooks/status-page-parts.ts
+var CHILD_ROWS = 3;
+var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
+var COUNT_WORDS = {
+  working: "working",
+  "waits-on-other": "waiting",
+  queued: "queued",
+  done: "done"
+};
+function countsByMark(folded) {
+  return ["working", "waits-on-other", "queued", "done"].flatMap((status) => {
+    const n = folded.filter((x) => x.status === status).length;
+    return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
+  });
+}
+function isFinishedUnseen(c, lastLookAt) {
+  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
+}
+function isChildWorking(c) {
+  return c.endedAt === null && c.delegateState !== "blocked";
+}
+function childStall(c) {
+  if (c.delegateState === "finished") return { text: "finished", tone: "done" };
+  if (c.delegateState === "blocked") return { text: "waiting", tone: "needsYou" };
+  return null;
+}
+function childRow(c, branch, depth) {
+  const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
+  return {
+    kind: "child",
+    id: c.id,
+    depth,
+    ...marks,
+    isRunning: isChildWorking(c),
+    name: c.name,
+    stall: childStall(c),
+    branch
+  };
+}
+function partRows(shown, c, depth) {
+  const rows = [];
+  const lookRow = c.lookId === null ? null : { kind: "look", id: c.lookId, depth, text: c.lookText };
+  const firstSeen = shown.findIndex((x) => !c.isNew(x));
+  for (const [i, x] of shown.entries()) {
+    const hasNewAbove = i > 0;
+    if (lookRow && i === firstSeen && hasNewAbove) rows.push(lookRow);
+    const under = c.running.filter((ch) => ch.subjectId === x.id);
+    const shownUnder = under.slice(0, CHILD_ROWS);
+    const isMore = under.length > CHILD_ROWS;
+    const isRunning = x.status === "working" && !c.isHeld(x) && (c.isTurnRunning || under.some(isChildWorking));
+    const isIdle = x.status === "working" && !isRunning;
+    rows.push({
+      kind: "subject",
+      id: x.id,
+      depth,
+      ...c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
+      isRunning,
+      name: x.name,
+      text: c.isNew(x) || isOpen(x) ? x.text || null : null,
+      stall: c.isHeld(x) ? { text: "waiting", tone: "needsYou" } : null,
+      merged: c.isNew(x) ? x.merged : null,
+      was: c.isNew(x) ? x.was : null,
+      hasChildren: under.length > 0,
+      ask: c.oldestAskOf(x)
+    });
+    rows.push(
+      ...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? "last" : "mid", depth + 1))
+    );
+    const hidden = under.slice(CHILD_ROWS);
+    const isEveryHiddenRunning = hidden.every((ch) => ch.delegateState !== "finished");
+    if (isMore)
+      rows.push({
+        kind: "more",
+        id: `${x.id}-more`,
+        depth: depth + 1,
+        text: `+ ${hidden.length} more${isEveryHiddenRunning ? " running" : ""}`,
+        branch: "last"
+      });
+  }
+  const isEveryShownNew = firstSeen === -1;
+  if (lookRow && c.isLookAtEnd && isEveryShownNew && shown.length > 0) rows.push(lookRow);
+  return rows;
+}
+function isItemAfterItem(row, prev) {
+  const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
+  const isLine = (r) => r.kind === "look" || r.kind === "part";
+  return prev !== void 0 && !isLine(prev) && !isLine(row) && !isUnderSubject;
+}
+function ruledRows(rows, isRuled) {
+  return rows.map((r, n) => ({
+    ...r,
+    isRuledAbove: isRuled && isItemAfterItem(r, rows[n - 1]),
+    isLast: n === rows.length - 1
+  }));
+}
+
+// ../hooks/status-page.ts
+var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
+var LOOK_TEXT = "Last seen";
+var OTHER_WORK = "Other work";
+var NEW_CLOSED_ROWS = 2;
+var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
+function statusPage(s, now) {
+  const o = s.ledger.overview;
+  const look = o?.lastLookAt ?? null;
+  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
+  const isNew = (x) => look === null || x.changedAt > look;
+  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
+  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
+  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
+  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
+  const goalParts = goalPage(o, s.ledger.items);
+  const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
+  const servedBy = (x) => o?.goal ? o.serves[x.id] : void 0;
+  const isOther = (x) => servedBy(x) === "none";
+  const milestoneOf2 = (x) => {
+    const to = servedBy(x);
+    return to !== void 0 && milestoneIds.has(to) ? to : null;
+  };
+  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
+  const newClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
+  const main2 = subjects.filter((x) => !isOther(x));
+  const other = subjects.filter(isOther);
+  const open3 = main2.filter(isOpen).sort(pageOrder);
+  const foldable = open3.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
+  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open3.length - foldable.length)));
+  const split = (part) => {
+    const newClosed = newClosedOf(part);
+    return {
+      shown: [...part.filter((x) => isOpen(x) && !folded.includes(x)), ...newClosed].sort(pageOrder),
+      newClosed,
+      foldedOpen: part.filter((x) => folded.includes(x)),
+      foldedDone: part.filter((x) => x.status === "done" && !newClosed.includes(x))
+    };
+  };
+  const top = split(main2.filter((x) => milestoneOf2(x) === null));
+  const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main2.filter((x) => milestoneOf2(x) === m.id)));
+  const otherNewClosed = newClosedOf(other);
+  const isOtherFolded = (x) => isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === "done" && !otherNewClosed.includes(x);
+  const otherFolded = other.filter(isOtherFolded);
+  const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
+  const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
+  const ctx = {
+    isNew,
+    isHeld,
+    oldestAskOf,
+    running,
+    isTurnRunning: s.presence.isTurnRunning,
+    lookId: look === null ? null : "look",
+    lookText: LOOK_TEXT,
+    isLookAtEnd: true
+  };
+  const lookId = (id) => look === null ? null : id;
+  const rows = [
+    ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
+    ...partRows(top.shown, ctx, 0)
+  ];
+  if (top.foldedOpen.length > 0)
+    rows.push({ kind: "fold", id: "open", depth: 0, ...SUBJECT_MARKS.queued, text: `${top.foldedOpen.length} more` });
+  if (top.foldedDone.length > 0) {
+    const isMore = top.newClosed.some((x) => x.status === "done");
+    rows.push({
+      kind: "fold",
+      id: "done",
+      depth: 0,
+      mark: SUBJECT_MARKS.done.mark,
+      tone: "done",
+      text: `${top.foldedDone.length}${isMore ? " more" : ""} done`
+    });
+  }
+  if (otherShown.length > 0 || otherFolded.length > 0) {
+    if (rows.at(-1)?.kind === "look") rows.pop();
+    rows.push({ kind: "part", id: "other", depth: 0, text: OTHER_WORK });
+    rows.push(...partRows(otherShown, { ...ctx, lookId: lookId("other-look") }, 0));
+    if (otherFolded.length > 0)
+      rows.push({ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFolded) });
+  }
+  const milestoneRows = (id, p) => {
+    const counts = countsByMark([...p.foldedOpen, ...p.foldedDone]);
+    return ruledRows(
+      [
+        ...partRows(p.shown, { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false }, 1),
+        ...counts.length > 0 ? [{ kind: "counts", id: `${id}-counts`, depth: 1, counts }] : []
+      ],
+      false
+    );
+  };
+  const g = goalParts.goal;
+  const goal = g && {
+    ...g,
+    milestones: g.milestones.map((m, n) => ({ ...m, rows: milestoneRows(m.id, underMilestones[n]) }))
+  };
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
+  return {
+    isEmpty: head === null && rows.length === 0 && goal === null && goalParts.proposal === null,
+    head,
+    ...goalParts,
+    goal,
+    rows: ruledRows(rows, true),
+    error: s.overviewFailure ? STATUS_FAILED : null,
+    empty: {
+      title: "Status",
+      hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
+    }
+  };
+}
+
 // ../hooks/timing.ts
 var SETTLED_MS = 5120;
 var QUEUED_AFTER_MS = 1e3;
@@ -1905,262 +2211,6 @@ function perTurnStatus(update) {
   return {
     isUpdating: update.isUpdating,
     error: update.isFailed && !update.isUpdating ? UPDATE_FAILED + (update.retries ? UPDATE_RETRIES : "") : null
-  };
-}
-
-// ../hooks/status-children.ts
-function isChildRunning(c, now) {
-  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
-}
-function withChild(last, c, now) {
-  const o = last ?? EMPTY_SESSION_STATUS;
-  const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
-  const known = kept.find((x) => x.ref === c.ref);
-  if (known) return { ...o, children: kept.map((x) => x === known ? { ...x, ...c } : x) };
-  return {
-    ...o,
-    nextChildId: o.nextChildId + 1,
-    children: [...kept, { delegateState: null, ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
-  };
-}
-function changedChild(o, ref, change) {
-  const known = o?.children.find((c) => c.ref === ref);
-  if (!o || !known) return o;
-  return { ...o, children: o.children.map((c) => c === known ? { ...c, ...change(c) } : c) };
-}
-function childEnded(o, ref, at) {
-  return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
-}
-function subjectTouched(o, id, at) {
-  const isSeen = (s) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
-  const touched = (s) => isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
-  return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
-}
-function childActive(o, ref, at) {
-  return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
-}
-
-// ../hooks/status-goal-page.ts
-var AWAITING_TEXT = "Milestones after the next reply";
-var PROPOSAL_LABEL = "Proposed goal \xB7 from your message";
-var NEW_GOAL_PROPOSAL_LABEL = "Proposed new goal \xB7 from your message";
-function oldestAsk(items, links, id) {
-  const oldest = items.filter((i) => links[i.id] === id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
-  return oldest ? { id: oldest.id, kind: oldest.kind } : null;
-}
-function milestoneRow(m, o, items) {
-  const isOpen2 = m.status !== "done" && m.status !== "dropped";
-  const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
-  const holds = items.filter((i) => {
-    const to = o.askSubjects[i.id];
-    return to === m.id || to !== void 0 && servingIds.has(to);
-  });
-  const isHeld = isOpen2 && holds.length > 0;
-  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0);
-  const direct = oldestAsk(items, o.askSubjects, m.id);
-  const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
-  return {
-    id: m.id,
-    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
-    name: m.name,
-    text: m.text || null,
-    stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
-    was: isChanged ? m.was : null,
-    isChanged,
-    ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null)
-  };
-}
-function goalPage(o, items) {
-  const g = o?.goal ?? null;
-  const isBelowGoal = g !== null;
-  const proposal = o?.proposedGoal ? {
-    label: isBelowGoal ? NEW_GOAL_PROPOSAL_LABEL : PROPOSAL_LABEL,
-    isBelowGoal,
-    text: o.proposedGoal.text,
-    milestones: o.proposedGoal.milestones.map((m) => ({ ...SUBJECT_MARKS[m.status], name: m.name }))
-  } : null;
-  if (o === null || g === null) return { goal: null, proposal, nowLine: null };
-  const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
-  const kept = o.milestones.filter((m) => m.status !== "dropped");
-  const shown = o.milestones.filter(
-    (m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt
-  );
-  const done = kept.filter((m) => m.status === "done").length;
-  const isMet = g.metAt !== null;
-  const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
-  const head = o.head;
-  return {
-    goal: {
-      label: isMet ? "Goal met" : "Goal",
-      text: g.text,
-      count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
-      isMet,
-      was: isWasShown ? g.was : null,
-      awaiting: isAwaiting ? AWAITING_TEXT : null,
-      milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
-    },
-    proposal,
-    nowLine: head ? `Now: ${head.description || head.title}` : null
-  };
-}
-
-// ../hooks/status-page.ts
-var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
-var LOOK_TEXT = "Last seen";
-var OTHER_WORK = "Other work";
-var CHILD_ROWS = 3;
-var NEW_CLOSED_ROWS = 2;
-var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
-var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
-function isItemAfterItem(row, prev) {
-  const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
-  const isLine = (r) => r.kind === "look" || r.kind === "part";
-  return prev !== void 0 && !isLine(prev) && !isLine(row) && !isUnderSubject;
-}
-var COUNT_WORDS = {
-  working: "working",
-  "waits-on-other": "waiting",
-  queued: "queued",
-  done: "done"
-};
-function countsByMark(folded) {
-  return ["working", "waits-on-other", "queued", "done"].flatMap((status) => {
-    const n = folded.filter((x) => x.status === status).length;
-    return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
-  });
-}
-function isFinishedUnseen(c, lastLookAt) {
-  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
-}
-function isChildWorking(c) {
-  return c.endedAt === null && c.delegateState !== "blocked";
-}
-function childStall(c) {
-  if (c.delegateState === "finished") return { text: "finished", tone: "done" };
-  if (c.delegateState === "blocked") return { text: "waiting", tone: "needsYou" };
-  return null;
-}
-function childRow(c, branch) {
-  const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
-  return {
-    kind: "child",
-    id: c.id,
-    ...marks,
-    isRunning: isChildWorking(c),
-    name: c.name,
-    stall: childStall(c),
-    branch
-  };
-}
-function partRows(shown, c) {
-  const rows = [];
-  const firstSeen = shown.findIndex((x) => !c.isNew(x));
-  for (const [i, x] of shown.entries()) {
-    const hasNewAbove = i > 0;
-    if (c.lookRow && i === firstSeen && hasNewAbove) rows.push(c.lookRow);
-    const under = c.running.filter((ch) => ch.subjectId === x.id);
-    const shownUnder = under.slice(0, CHILD_ROWS);
-    const isMore = under.length > CHILD_ROWS;
-    const isRunning = x.status === "working" && !c.isHeld(x) && (c.isTurnRunning || under.some(isChildWorking));
-    const isIdle = x.status === "working" && !isRunning;
-    rows.push({
-      kind: "subject",
-      id: x.id,
-      ...c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
-      isRunning,
-      name: x.name,
-      text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: c.isHeld(x) ? { text: "waiting", tone: "needsYou" } : null,
-      merged: c.isNew(x) ? x.merged : null,
-      was: c.isNew(x) ? x.was : null,
-      hasChildren: under.length > 0,
-      ask: c.oldestAskOf(x)
-    });
-    rows.push(...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
-    const hidden = under.slice(CHILD_ROWS);
-    const isEveryHiddenRunning = hidden.every((ch) => ch.delegateState !== "finished");
-    if (isMore)
-      rows.push({
-        kind: "more",
-        id: `${x.id}-more`,
-        text: `+ ${hidden.length} more${isEveryHiddenRunning ? " running" : ""}`,
-        branch: "last"
-      });
-  }
-  const isEveryShownNew = firstSeen === -1;
-  if (c.lookRow && isEveryShownNew && shown.length > 0) rows.push(c.lookRow);
-  return rows;
-}
-function statusPage(s, now) {
-  const o = s.ledger.overview;
-  const look = o?.lastLookAt ?? null;
-  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
-  const isNew = (x) => look === null || x.changedAt > look;
-  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
-  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
-  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
-  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
-  const isOther = (x) => o?.goal != null && o.serves[x.id] === "none";
-  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
-  const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
-  const newClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
-  const main2 = subjects.filter((x) => !isOther(x));
-  const other = subjects.filter(isOther);
-  const newClosed = newClosedOf(main2);
-  const open3 = main2.filter(isOpen).sort(pageOrder);
-  const foldable = open3.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
-  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open3.length - foldable.length)));
-  const shown = [...open3.filter((x) => !folded.includes(x)), ...newClosed].sort(pageOrder);
-  const otherNewClosed = newClosedOf(other);
-  const isOtherFolded = (x) => isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === "done" && !otherNewClosed.includes(x);
-  const otherFolded = other.filter(isOtherFolded);
-  const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
-  const foldedDone = main2.filter((x) => x.status === "done" && !newClosed.includes(x));
-  const shownIds = new Set([...shown, ...otherShown].map((x) => x.id));
-  const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
-  const ctx = {
-    isNew,
-    isHeld,
-    oldestAskOf,
-    pageOrder,
-    running,
-    isTurnRunning: s.presence.isTurnRunning,
-    lookRow
-  };
-  const rows = [
-    ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null)),
-    ...partRows(shown, ctx)
-  ];
-  if (folded.length > 0) rows.push({ kind: "fold", id: "open", ...SUBJECT_MARKS.queued, text: `${folded.length} more` });
-  if (foldedDone.length > 0) {
-    const isMore = newClosed.some((x) => x.status === "done");
-    rows.push({
-      kind: "fold",
-      id: "done",
-      mark: SUBJECT_MARKS.done.mark,
-      tone: "done",
-      text: `${foldedDone.length}${isMore ? " more" : ""} done`
-    });
-  }
-  if (otherShown.length > 0 || otherFolded.length > 0) {
-    if (rows.at(-1)?.kind === "look") rows.pop();
-    rows.push({ kind: "part", id: "other", text: OTHER_WORK });
-    rows.push(...partRows(otherShown, { ...ctx, lookRow: lookRow && { ...lookRow, id: "other-look" } }));
-    if (otherFolded.length > 0) rows.push({ kind: "counts", id: "other-counts", counts: countsByMark(otherFolded) });
-  }
-  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
-  const goalParts = goalPage(o, s.ledger.items);
-  return {
-    isEmpty: head === null && rows.length === 0 && goalParts.goal === null && goalParts.proposal === null,
-    head,
-    ...goalParts,
-    rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]), isLast: n === rows.length - 1 })),
-    error: s.overviewFailure ? STATUS_FAILED : null,
-    empty: {
-      title: "Status",
-      hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
-    }
   };
 }
 

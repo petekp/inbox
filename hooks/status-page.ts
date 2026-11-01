@@ -1,11 +1,15 @@
-import type { Item, Child, Ledger, Session, Subject } from '../types'
+import type { Item, Ledger, Session, Subject } from '../types'
 import { isChildRunning } from './status-children'
 import { isOpen, OPEN_SUBJECTS } from './status-limits'
 import { cutAtPhrase } from './text'
-import { SUBJECT_MARKS, HELD_MARK, IDLE_MARK } from './help'
+import { SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { goalPage, oldestAsk } from './status-goal-page'
 import type { GoalParts } from './status-goal-page'
+import { childRow, countsByMark, isFinishedUnseen, partRows, ruledRows } from './status-page-parts'
+import type { ListContext } from './status-page-parts'
+
+export { CHILD_ROWS } from './status-page-parts'
 
 const STATUS_FAILED = 'Last Status update failed. Changes from that reply may be missing.'
 
@@ -27,7 +31,9 @@ export type StatusRow = StatusRowParts & {
   isLast: boolean
 }
 
-type StatusRowParts =
+export type StatusRowParts = {
+  /** How many steps in from the list's edge it draws: a subject under a milestone at 1, a child under that subject at 2. */ depth: number
+} & (
   | {
       kind: 'subject'
       id: string
@@ -70,8 +76,9 @@ type StatusRowParts =
   | { kind: 'fold'; id: string; mark: string; tone: StatusTone; text: string }
   /** Where the work the goal does not need starts, under its own rule. */
   | { kind: 'part'; id: string; text: string }
-  /** Seen rows of that work folded into a count for each mark, as "● 5 working · ◌ 8 waiting · ○ 10 queued". */
+  /** Seen rows folded into a count for each mark, as "● 5 working · ◌ 8 waiting · ○ 10 queued": under Other work, and under a milestone. */
   | { kind: 'counts'; id: string; counts: StatusCount[] }
+)
 
 /** One mark's share of a `counts` row. */
 export type StatusCount = { mark: string; tone: StatusTone; text: string }
@@ -79,8 +86,9 @@ export type StatusCount = { mark: string; tone: StatusTone; text: string }
 /** What the Status page shows. Every look draws it as it is. */
 export type StatusPage = GoalParts & {
   isEmpty: boolean
-  /** What the session is focused on now. The description is null until the Status call writes one. Looks draw `nowLine` in its place while a goal is set. */
+  /** What the session is focused on now. The description is null until the Status call writes one. Looks draw it only while no goal is set; the goal draws its Now line in its place. */
   head: { title: string; description: string | null } | null
+  /** The list after the goal: work not linked to a milestone, then Other work. Rows under a milestone are its `rows`. */
   rows: StatusRow[]
   /** The status line's error while the last Status call wrote nothing. */
   error: string | null
@@ -99,12 +107,8 @@ export const STALL_GAP = ' · '
 
 /** The most lines each text on a Status row wraps to: a name, where it stands, a was line. A look cuts past them with an ellipsis. */
 export const STATUS_TEXT_LINES = 3
-/** The most children drawn under one subject; the rest fold into "+ N more running". */
-export const CHILD_ROWS = 3
 /** Finished rows drawn above the look line; older ones fold into the count. */
 const NEW_CLOSED_ROWS = 2
-
-const CHILD_MARK: { mark: string; tone: StatusTone } = { mark: SUBJECT_MARKS.working.mark, tone: null }
 
 /** The order of subjects on each side of the look line, from what needs the person to what is finished. */
 const STATUS_PLACES = ['held', 'working', 'waits-on-other', 'queued', 'closed'] as const
@@ -131,119 +135,8 @@ export function nameBeforeStall(name: string, fits: (shown: string) => boolean):
   return cuts.find(fits) ?? cuts.at(-1)!
 }
 
-/** Whether `row` starts an item after another, with no look line between them. */
-function isItemAfterItem(row: StatusRowParts, prev: StatusRowParts | undefined): boolean {
-  const isUnderSubject = row.kind === 'more' || (row.kind === 'child' && row.branch !== null)
-
-  const isLine = (r: StatusRowParts) => r.kind === 'look' || r.kind === 'part'
-
-  return prev !== undefined && !isLine(prev) && !isLine(row) && !isUnderSubject
-}
-
-/** The words a `counts` row gives each mark. */
-const COUNT_WORDS: Record<'working' | 'waits-on-other' | 'queued' | 'done', string> = {
-  working: 'working',
-  'waits-on-other': 'waiting',
-  queued: 'queued',
-  done: 'done',
-}
-
-/** Subjects folded into one count for each status, in the page's order of marks. */
-function countsByMark(folded: Subject[]): StatusCount[] {
-  return (['working', 'waits-on-other', 'queued', 'done'] as const).flatMap(status => {
-    const n = folded.filter(x => x.status === status).length
-    return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }]
-  })
-}
-
-/** Whether `c` is a delegate that finished after the person last looked, so the page still shows it. */
-function isFinishedUnseen(c: Child, lastLookAt: number | null): boolean {
-  return c.delegateState === 'finished' && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt)
-}
-
-/** Whether `c` runs and waits on no one: not a delegate at a question or an approval, and not one that finished. */
-function isChildWorking(c: Child): boolean {
-  return c.endedAt === null && c.delegateState !== 'blocked'
-}
-
-/**
- * A delegate's stall word, from what Herdr shows: "waiting" at a question or an approval, in the needs-you tone, and
- * "finished", in the done tone. Other work shows none, since its moving mark shows it runs.
- */
-function childStall(c: Child): StatusStall | null {
-  if (c.delegateState === 'finished') return { text: 'finished', tone: 'done' }
-  if (c.delegateState === 'blocked') return { text: 'waiting', tone: 'needsYou' }
-
-  return null
-}
-
-function childRow(c: Child, branch: StatusBranch | null): StatusRowParts {
-  const marks =
-    c.delegateState === 'finished' ? SUBJECT_MARKS.done : c.delegateState === 'blocked' ? HELD_MARK : CHILD_MARK
-
-  return {
-    kind: 'child',
-    id: c.id,
-    ...marks,
-    isRunning: isChildWorking(c),
-    name: c.name,
-    stall: childStall(c),
-    branch,
-  }
-}
-
-/** What every part of the list reads to place and draw a subject. */
-type ListContext = {
-  isNew: (x: Subject) => boolean
-  isHeld: (x: Subject) => boolean
-  oldestAskOf: (x: Subject) => { id: string; kind: Item['kind'] } | null
-  pageOrder: (x: Subject, y: Subject) => number
-  running: Child[]
-  isTurnRunning: boolean
-  lookRow: StatusRowParts | null
-}
-
-/** A part of the list: its subjects in order, with their children under them and the look line between them. */
-function partRows(shown: Subject[], c: ListContext): StatusRowParts[] {
-  const rows: StatusRowParts[] = []
-  const firstSeen = shown.findIndex(x => !c.isNew(x))
-  for (const [i, x] of shown.entries()) {
-    const hasNewAbove = i > 0
-    if (c.lookRow && i === firstSeen && hasNewAbove) rows.push(c.lookRow)
-    const under = c.running.filter(ch => ch.subjectId === x.id)
-    const shownUnder = under.slice(0, CHILD_ROWS)
-    const isMore = under.length > CHILD_ROWS
-    const isRunning = x.status === 'working' && !c.isHeld(x) && (c.isTurnRunning || under.some(isChildWorking))
-    const isIdle = x.status === 'working' && !isRunning
-    rows.push({
-      kind: 'subject',
-      id: x.id,
-      ...(c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status]),
-      isRunning,
-      name: x.name,
-      text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: c.isHeld(x) ? { text: 'waiting', tone: 'needsYou' } : null,
-      merged: c.isNew(x) ? x.merged : null,
-      was: c.isNew(x) ? x.was : null,
-      hasChildren: under.length > 0,
-      ask: c.oldestAskOf(x),
-    })
-    rows.push(...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid')))
-    const hidden = under.slice(CHILD_ROWS)
-    const isEveryHiddenRunning = hidden.every(ch => ch.delegateState !== 'finished')
-    if (isMore)
-      rows.push({
-        kind: 'more',
-        id: `${x.id}-more`,
-        text: `+ ${hidden.length} more${isEveryHiddenRunning ? ' running' : ''}`,
-        branch: 'last',
-      })
-  }
-  const isEveryShownNew = firstSeen === -1
-  if (c.lookRow && isEveryShownNew && shown.length > 0) rows.push(c.lookRow)
-
-  return rows
-}
+/** A part of the list's subjects: those it draws, and those it folds into a count. */
+type PartSplit = { shown: Subject[]; newClosed: Subject[]; foldedOpen: Subject[]; foldedDone: Subject[] }
 
 export function statusPage(
   s: {
@@ -267,7 +160,15 @@ export function statusPage(
     Number(isNew(y)) - Number(isNew(x)) ||
     STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) ||
     y.changedAt - x.changedAt
-  const isOther = (x: Subject) => o?.goal != null && o.serves[x.id] === 'none'
+  const goalParts = goalPage(o, s.ledger.items)
+  const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map(m => m.id))
+  const servedBy = (x: Subject) => (o?.goal ? o.serves[x.id] : undefined)
+  const isOther = (x: Subject) => servedBy(x) === 'none'
+  /** The milestone the page draws `x` under: one it serves that the goal shows. */
+  const milestoneOf = (x: Subject): string | null => {
+    const to = servedBy(x)
+    return to !== undefined && milestoneIds.has(to) ? to : null
+  }
   const running = (o?.children ?? [])
     .filter(c => isChildRunning(c, now) || isFinishedUnseen(c, look))
     .sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt))
@@ -279,62 +180,96 @@ export function statusPage(
       .slice(0, NEW_CLOSED_ROWS)
   const main = subjects.filter(x => !isOther(x))
   const other = subjects.filter(isOther)
-  const newClosed = newClosedOf(main)
+  // The open fold is chosen across the whole main list, under milestones and not, so a goal changes no row's fold.
   const open = main.filter(isOpen).sort(pageOrder)
   const foldable = open.filter(x => !isHeld(x) && !isNew(x) && !hasChildRow(x))
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)))
-  const shown = [...open.filter(x => !folded.includes(x)), ...newClosed].sort(pageOrder)
+  const split = (part: Subject[]): PartSplit => {
+    const newClosed = newClosedOf(part)
+    return {
+      shown: [...part.filter(x => isOpen(x) && !folded.includes(x)), ...newClosed].sort(pageOrder),
+      newClosed,
+      foldedOpen: part.filter(x => folded.includes(x)),
+      foldedDone: part.filter(x => x.status === 'done' && !newClosed.includes(x)),
+    }
+  }
+  const top = split(main.filter(x => milestoneOf(x) === null))
+  const underMilestones = (goalParts.goal?.milestones ?? []).map(m => split(main.filter(x => milestoneOf(x) === m.id)))
   const otherNewClosed = newClosedOf(other)
   const isOtherFolded = (x: Subject) =>
     isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === 'done' && !otherNewClosed.includes(x)
   const otherFolded = other.filter(isOtherFolded)
   const otherShown = [...other.filter(x => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder)
-  const foldedDone = main.filter(x => x.status === 'done' && !newClosed.includes(x))
-  const shownIds = new Set([...shown, ...otherShown].map(x => x.id))
-  const lookRow: StatusRowParts | null = look === null ? null : { kind: 'look', id: 'look', text: LOOK_TEXT }
+  const shownIds = new Set([...top.shown, ...underMilestones.flatMap(p => p.shown), ...otherShown].map(x => x.id))
   const ctx: ListContext = {
     isNew,
     isHeld,
     oldestAskOf,
-    pageOrder,
     running,
     isTurnRunning: s.presence.isTurnRunning,
-    lookRow,
+    lookId: look === null ? null : 'look',
+    lookText: LOOK_TEXT,
+    isLookAtEnd: true,
   }
+  const lookId = (id: string) => (look === null ? null : id)
   const rows: StatusRowParts[] = [
-    ...running.filter(c => c.subjectId === null || !shownIds.has(c.subjectId)).map(c => childRow(c, null)),
-    ...partRows(shown, ctx),
+    ...running.filter(c => c.subjectId === null || !shownIds.has(c.subjectId)).map(c => childRow(c, null, 0)),
+    ...partRows(top.shown, ctx, 0),
   ]
-  if (folded.length > 0) rows.push({ kind: 'fold', id: 'open', ...SUBJECT_MARKS.queued, text: `${folded.length} more` })
-  if (foldedDone.length > 0) {
-    const isMore = newClosed.some(x => x.status === 'done')
+  if (top.foldedOpen.length > 0)
+    rows.push({ kind: 'fold', id: 'open', depth: 0, ...SUBJECT_MARKS.queued, text: `${top.foldedOpen.length} more` })
+  if (top.foldedDone.length > 0) {
+    const isMore = top.newClosed.some(x => x.status === 'done')
     rows.push({
       kind: 'fold',
       id: 'done',
+      depth: 0,
       mark: SUBJECT_MARKS.done.mark,
       tone: 'done',
-      text: `${foldedDone.length}${isMore ? ' more' : ''} done`,
+      text: `${top.foldedDone.length}${isMore ? ' more' : ''} done`,
     })
   }
   if (otherShown.length > 0 || otherFolded.length > 0) {
     // The part's rule follows the list, so a look line that ends the list would draw a second rule under it.
     if (rows.at(-1)?.kind === 'look') rows.pop()
-    rows.push({ kind: 'part', id: 'other', text: OTHER_WORK })
-    rows.push(...partRows(otherShown, { ...ctx, lookRow: lookRow && { ...lookRow, id: 'other-look' } }))
-    if (otherFolded.length > 0) rows.push({ kind: 'counts', id: 'other-counts', counts: countsByMark(otherFolded) })
+    rows.push({ kind: 'part', id: 'other', depth: 0, text: OTHER_WORK })
+    rows.push(...partRows(otherShown, { ...ctx, lookId: lookId('other-look') }, 0))
+    if (otherFolded.length > 0)
+      rows.push({ kind: 'counts', id: 'other-counts', depth: 0, counts: countsByMark(otherFolded) })
+  }
+  /** A milestone's rows, one step in: its work in the page's order, then what folded, as a count for each mark. */
+  const milestoneRows = (id: string, p: PartSplit): StatusRow[] => {
+    const counts = countsByMark([...p.foldedOpen, ...p.foldedDone])
+    return ruledRows(
+      [
+        ...partRows(p.shown, { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false }, 1),
+        ...(counts.length > 0 ? [{ kind: 'counts' as const, id: `${id}-counts`, depth: 1, counts }] : []),
+      ],
+      false,
+    )
+  }
+  const g = goalParts.goal
+  const goal = g && {
+    ...g,
+    milestones: g.milestones.map((m, n) => ({ ...m, rows: milestoneRows(m.id, underMilestones[n]!) })),
   }
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null
-  const goalParts = goalPage(o, s.ledger.items)
 
   return {
-    isEmpty: head === null && rows.length === 0 && goalParts.goal === null && goalParts.proposal === null,
+    isEmpty: head === null && rows.length === 0 && goal === null && goalParts.proposal === null,
     head,
     ...goalParts,
-    rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]), isLast: n === rows.length - 1 })),
+    goal,
+    rows: ruledRows(rows, true),
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: 'Status',
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts.",
     },
   }
+}
+
+/** Every row of the Status's list in the order the looks draw them: each milestone's rows, then the list after the goal. */
+export function statusListRows(page: StatusPage): StatusRow[] {
+  return [...(page.goal?.milestones ?? []).flatMap(m => m.rows), ...page.rows]
 }
