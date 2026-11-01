@@ -4,7 +4,7 @@ import { statusPage } from '../hooks/status-page'
 import type { Item, Session, SessionStatus, Subject, SubjectStatus } from '../types'
 import type { Facts } from '../evals/status-facts'
 import { minutes } from '../evals/status-replay'
-import type { Step, StepResult } from '../evals/status-replay'
+import type { CallLog, Step, StepResult } from '../evals/status-replay'
 import type { RuleContext } from '../evals/status-rules'
 
 export function subject(id: string, status: SubjectStatus, name: string, text: string, changedAt: number): Subject {
@@ -59,6 +59,7 @@ export type Scene = {
   facts: Facts
   step: Step
   isStatusFailed: boolean
+  calls?: CallLog[]
 }
 
 export function baseScene(): Scene {
@@ -121,13 +122,61 @@ export function contextOf(scene: Scene): RuleContext {
     page,
     text: '',
     facts: scene.facts,
-    calls: [],
+    calls: scene.calls ?? [],
     isStatusFailed: scene.isStatusFailed,
   }
   const beforeFacts = { ...scene.facts, changed: [] }
 
   return { step: scene.step, result, before: { overview: scene.before, facts: beforeFacts } }
 }
+
+function statusCall(answer: string): CallLog {
+  return { kind: 'status', answers: [answer], model: null, ms: 0, outputTokens: null, overLimit: null }
+}
+
+function withGoal(s: Scene) {
+  const milestone = (id: string, name: string, status: SubjectStatus) => ({
+    id,
+    name,
+    status,
+    text: 'under way',
+    was: null,
+    changedAt: minutes(0),
+    closedAt: null,
+  })
+  s.after.goal = {
+    text: 'Offline sync in both stores',
+    setAt: minutes(0),
+    metAt: null,
+    was: null,
+    isAwaitingMilestones: false,
+  }
+  s.after.milestones = [
+    milestone('m1', 'Edits survive offline', 'working'),
+    milestone('m2', 'Conflicts resolved', 'queued'),
+  ]
+  s.after.serves = { s1: 'm1', s2: 'm2' }
+  s.facts.goal = {
+    text: 'Offline sync in both stores',
+    match: 'offline sync',
+    milestones: [
+      { id: 'survive', name: 'Edits survive offline', match: 'survive', state: 'working' },
+      { id: 'resolved', name: 'Conflicts resolved', match: 'conflict', state: 'queued' },
+    ],
+  }
+  s.facts.pieces[0]!.serves = 'survive'
+  s.facts.pieces[1]!.serves = 'resolved'
+}
+
+function withProposal(s: Scene, names: string[]) {
+  s.after.proposedGoal = {
+    text: 'Offline sync in both stores',
+    milestones: names.map(name => ({ name, status: 'queued' as SubjectStatus })),
+    at: minutes(10),
+  }
+}
+
+const STATED = { text: 'Get offline sync into both stores', match: 'offline sync' }
 
 const s1Of = (s: Scene) => s.after.subjects[0]!
 const s2Of = (s: Scene) => s.after.subjects[1]!
@@ -167,6 +216,33 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     bad: s => {
       s.facts.pieces[1]!.state = 'filed'
       s2Of(s).status = 'done'
+    },
+  },
+  'answer-readable': {
+    good: s => (s.calls = [statusCall('SET: s1 | working | syncs on reconnect')]),
+    bad: s => (s.calls = [statusCall('The engine now syncs on reconnect.')]),
+  },
+  'proposal-only-when-stated': { bad: s => withProposal(s, ['Edits survive offline', 'Conflicts resolved']) },
+  'proposal-when-stated': {
+    good: s => {
+      s.facts.goalStated = STATED
+      withProposal(s, ['Edits survive offline', 'Conflicts resolved'])
+    },
+    bad: s => (s.facts.goalStated = STATED),
+  },
+  'milestones-true': {
+    good: withGoal,
+    bad: s => {
+      withGoal(s)
+      s.after.milestones[1]!.status = 'done'
+    },
+  },
+  'milestones-shape': { bad: s => withProposal(s, ['Edits survive offline']) },
+  'serves-linked': {
+    good: withGoal,
+    bad: s => {
+      withGoal(s)
+      s.after.serves = { s1: 'none', s2: 'm2' }
     },
   },
   'finished-named': {

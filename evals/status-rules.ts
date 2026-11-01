@@ -2,6 +2,7 @@ import { isOpen, NAME_WORDS } from '../hooks/status-limits'
 import type { SessionStatus, Subject } from '../types'
 import { isOpenPiece, rightStatuses } from './status-facts'
 import type { Facts } from './status-facts'
+import { GOAL_RULES } from './status-rules-goal'
 import type { Step, StepResult } from './status-replay'
 import {
   DECISION_WORDS,
@@ -47,6 +48,8 @@ export type Rule = {
   failures(ctx: RuleContext): string[]
   /** What makes two failures the same failure, so one left on the page counts once. The failure's text by default. */
   key?: (failure: string) => string
+  /** Where the rule can newly fail, in place of what `reads` gives. */
+  opportunity?: (ctx: RuleContext) => boolean
 }
 
 /**
@@ -62,7 +65,7 @@ export type RuleResult = {
   until: string | null
 }
 
-export const RULES: Rule[] = [
+const FIXED_RULES: Rule[] = [
   {
     id: 'no-time-words',
     reads: 'answer',
@@ -429,3 +432,5 @@ export const RULES: Rule[] = [
     },
   },
 ]
+
+export const RULES: Rule[] = [...FIXED_RULES, ...GOAL_RULES]

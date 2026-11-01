@@ -31,7 +31,7 @@ export function gradeStep(ctx: RuleContext, previous: RuleResult[] = []): RuleRe
       property: r.property,
       failures,
       fresh: failures.filter(f => !before.has(keyOf(f))),
-      isOpportunity: isOpportunity(r.reads, ctx),
+      isOpportunity: ctx.step.call !== undefined && (r.opportunity?.(ctx) ?? isOpportunity(r.reads, ctx)),
       until: r.until ?? null,
     }
   })
