@@ -221,12 +221,12 @@ export function paneStatus(
       </Box>
     )
   /**
-   * Answers the proposal, then selects the goal's button and scrolls to it, since the pressed button is gone and the
-   * pane's focus would fall to the footer.
+   * Answers the proposal, then selects the goal's button, scrolls to it and focuses it. The pressed button is gone, and
+   * the terminal would move its focus to the next button drawn, a milestone's View.
    */
   const answerProposal = async (action: 'use-goal' | 'decline-goal', surface: UiPressArgument['surface']) => {
     await runPress({ action, id: GOAL_KEYS_ID }, surface)
-    await selectStatusRow(GOAL_KEYS_ID)
+    await selectStatusRow(GOAL_KEYS_ID, `type-goal-${GOAL_KEYS_ID}`)
   }
   /** A target's buttons from its plan. Only the selected target's keys press it, so only that one names its keys. */
   const statusKeys = (t: StatusKeyTarget): KeyAction[] =>
