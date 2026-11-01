@@ -35,7 +35,7 @@ export const JUDGE_CHECKS = [
   {
     id: 'goal',
     property: 14,
-    text: 'A proposed goal is an outcome the person stated, with a finish line. A goal the person set passes in any words. With neither, the page offers to set one.',
+    text: 'A proposed goal is an outcome the person stated, with a finish line. A goal the person set passes in any words.',
   },
   {
     id: 'milestones',
