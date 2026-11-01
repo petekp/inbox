@@ -85,17 +85,29 @@ function stalledName(
   )
 }
 
-/** A row's lines with the tree line at `PAGE_MARK_AT`: `first` on its first line when given, and `rest` on each line after. */
-function withTree(lines: string[], first: string | null, rest: string, s: Style): string[] {
+/**
+ * Where a row `depth` steps in draws its mark. Each step is a mark and its space, so a row sits under the text of the
+ * row it hangs from.
+ */
+const markAt = (depth: number) => PAGE_MARK_AT + (PAGE_TEXT_AT - PAGE_MARK_AT) * depth
+
+/** Where a child under a subject at `depth` draws its mark: after the tree's arm, which starts under the subject's mark. */
+const childAt = (subjectDepth: number) => markAt(subjectDepth) + (PAGE_CHILD_AT - PAGE_MARK_AT)
+
+/**
+ * A row's lines with the tree line at column `at`: `first` on its first line when given, and `rest` on each line
+ * after.
+ */
+function withTree(lines: string[], at: number, first: string | null, rest: string, s: Style): string[] {
   const drawn = (line: string, glyph: string) =>
-    glyph.trim() === '' ? line : line.slice(0, PAGE_MARK_AT) + s.dim(glyph) + line.slice(PAGE_MARK_AT + glyph.length)
+    glyph.trim() === '' ? line : line.slice(0, at) + s.dim(glyph) + line.slice(at + glyph.length)
 
   return lines.map((l, n) => (n === 0 ? (first ? drawn(l, first) : l) : drawn(l, rest)))
 }
 
 /** The cells a Status rule spans: from the text column to the end of the row. */
-function pageRuleCells(width: number): number {
-  return Math.max(0, width - PAGE_TEXT_AT - 1)
+function pageRuleCells(width: number, textAt = PAGE_TEXT_AT): number {
+  return Math.max(0, width - textAt - 1)
 }
 
 /** The rule above a Status row that starts an item. */
@@ -109,9 +121,10 @@ export function pageRule(width: number, s: Style): string {
  */
 function lookLines(row: StatusRow & { kind: 'look' }, width: number, s: Style): string[] {
   const text = ` ${row.text} `
-  const fill = Math.max(4, pageRuleCells(width) - cellWidth(text))
+  const at = markAt(row.depth) + PAGE_TEXT_AT - PAGE_MARK_AT
+  const fill = Math.max(4, pageRuleCells(width, at) - cellWidth(text))
   const before = Math.floor(fill / 2)
-  const rule = `${' '.repeat(PAGE_TEXT_AT)}${s.dim(`${LOOK_DASH.repeat(before)}${text}${LOOK_DASH.repeat(fill - before)}`)}`
+  const rule = `${' '.repeat(at)}${s.dim(`${LOOK_DASH.repeat(before)}${text}${LOOK_DASH.repeat(fill - before)}`)}`
 
   return ['', rule, ...(row.isLast ? [] : [''])]
 }
@@ -141,35 +154,39 @@ export function pageButtonLines(
 /** A line on the Status page, laid out as the shared row says. */
 export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string[] {
   const { width, now, style: s } = d
+  const at = markAt(row.depth)
+  const textAt = at + PAGE_TEXT_AT - PAGE_MARK_AT
   if (row.kind === 'subject') {
     const mark = paintMark(row, now, s)
-    const out = pageLine(d, PAGE_MARK_AT, mark, row.name, t => t, { stall: row.stall, text: row.text })
-    const room = pageRoom(PAGE_MARK_AT, width)
+    const out = pageLine(d, at, mark, row.name, t => t, { stall: row.stall, text: row.text })
+    const room = pageRoom(at, width)
     if (row.merged)
       out.push(
         ...indented(
           mergedLine(row.merged, t => cellWidth(t) <= room),
-          PAGE_TEXT_AT,
+          textAt,
           width,
           STATUS_TEXT_LINES,
           s.dim,
         ),
       )
-    if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim))
-    out.push(...pageButtonLines({ id: row.id, keys: statusKeyPlan(row) }, d, isSelected))
+    if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, textAt, width, STATUS_TEXT_LINES, s.dim))
+    out.push(...pageButtonLines({ id: row.id, keys: statusKeyPlan(row) }, d, isSelected, textAt))
 
-    return row.hasChildren ? withTree(out, null, '│', s) : out
+    return row.hasChildren ? withTree(out, at, null, '│', s) : out
   }
   if (row.kind === 'child') {
     const mark = paintMark(row, now, s)
-    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, { stall: row.stall })
+    if (!row.branch) return pageLine(d, at, mark, row.name, s.dim, { stall: row.stall })
+    const out = pageLine(d, childAt(row.depth - 1), mark, row.name, s.dim, { stall: row.stall })
 
-    return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out
+    return withTree(out, markAt(row.depth - 1), TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s)
   }
   if (row.kind === 'more') {
     const arm = TREE_ARMS[row.branch]
+    const line = ' '.repeat(childAt(row.depth - 1) + 2) + s.dim(row.text)
 
-    return withTree([' '.repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s)
+    return withTree([line], markAt(row.depth - 1), arm.first, arm.rest, s)
   }
   if (row.kind === 'look') return lookLines(row, width, s)
   if (row.kind === 'part') {
@@ -181,8 +198,8 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
   }
   if (row.kind === 'counts')
     return [
-      ' '.repeat(PAGE_TEXT_AT) +
+      ' '.repeat(textAt) +
         row.counts.map(c => feedbackPaint(c.tone, s)(c.mark) + s.dim(` ${c.text}`)).join(s.dim(STALL_GAP)),
     ]
-  return pageLine(d, PAGE_MARK_AT, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim)
+  return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim)
 }

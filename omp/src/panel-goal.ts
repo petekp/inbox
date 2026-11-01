@@ -18,7 +18,8 @@ import { GLUE, pageButtonLines, pageLine } from './panel-page'
 import { indented, wrapText } from './panel-text'
 
 /**
- * A part of the goal on the Status page: the proposal, the goal's lines, a milestone, its button, its field, or Now.
+ * A part of the goal on the Status page: the proposal, the goal's lines with its Now line, a milestone, its button, or
+ * its field.
  * The goal's lines draw its button in their header while `isGoalKeyInHeader`.
  */
 export type GoalPart =
@@ -27,7 +28,6 @@ export type GoalPart =
   | { is: 'milestone'; row: MilestoneRow }
   | { is: 'keys'; page: StatusPage }
   | { is: 'field' }
-  | { is: 'now'; text: string }
 
 /** The id of the Status target a part draws the buttons of, or null for a part with none. */
 export function goalPartId(part: GoalPart): string | null {
@@ -41,7 +41,8 @@ const goalEntry = (part: GoalPart): Entry => ({ kind: 'goal', part })
 const blank: Entry = { kind: 'note', text: '' }
 
 /**
- * What the page draws above the head: the goal, its milestones and its button, and a proposal, which comes first only
+ * What the page draws above the head: the goal, its milestones each with the rows of its work, and its button, and a
+ * proposal, which comes first only
  * while no goal is set. While the person types a goal, the field takes the proposal's text's place, else the goal's,
  * and the buttons of both leave.
  */
@@ -53,7 +54,10 @@ export function goalAbove(page: StatusPage, typing: string | null): Entry[] {
   const isKeyInHeader = isGoalKeyInHeader(page)
   const goal = [
     goalEntry({ is: 'title', goal: g, page, isTyping: isTyping && proposal.length === 0, isKeyInHeader }),
-    ...g.milestones.map(row => goalEntry({ is: 'milestone', row })),
+    ...g.milestones.flatMap(row => [
+      goalEntry({ is: 'milestone', row }),
+      ...row.rows.map((r): Entry => ({ kind: 'page', row: r })),
+    ]),
     ...(isTyping || isKeyInHeader ? [] : [goalEntry({ is: 'keys', page })]),
   ]
   if (proposal.length === 0) return goal
@@ -67,9 +71,6 @@ export function setGoal(page: StatusPage, typing: string | null): Entry[] {
 
   return [goalEntry(typing === GOAL_KEYS_ID ? { is: 'field' } : { is: 'keys', page })]
 }
-
-/** While a goal is set, the head draws as one dim line. */
-export const nowEntry = (text: string): Entry => goalEntry({ is: 'now', text })
 
 /** The goal's text field with the draft in it and the cursor after it, under its placeholder. */
 function fieldLines(d: Draw): string[] {
@@ -126,6 +127,7 @@ export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): stri
       ...header,
       ...(part.isTyping ? fieldLines(d) : textWithCount(g, d)),
       ...(g.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : []),
+      ...(g.now ? at(g.now, s.dim) : []),
       ...(g.awaiting ? at(g.awaiting, s.dim) : []),
     ]
   }
@@ -139,7 +141,5 @@ export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): stri
   }
   if (part.is === 'keys')
     return pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyPlan(part.page) }, d, isSelected, PAGE_MARK_AT)
-  if (part.is === 'field') return fieldLines(d)
-
-  return at(part.text, s.dim)
+  return fieldLines(d)
 }

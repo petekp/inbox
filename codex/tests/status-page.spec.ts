@@ -279,13 +279,9 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.deepEqual(presses, [{ action: 'use-goal', id: 'goal' }])
     assert.deepEqual(
       [...root.querySelectorAll('.status-head.goal > *')].map(e => e.textContent),
-      ['Goal · Edit', 'Status tab shipped · 1 of 2 done'],
+      ['Goal · Edit', 'Status tab shipped · 1 of 2 done', 'Now: Drawing the Status in the Codex tab'],
     )
-    assert.equal(
-      root.querySelector('.status-head:not(.goal) p')?.textContent,
-      'Now: Drawing the Status in the Codex tab',
-    )
-    assert.equal(root.querySelector('.status-head:not(.goal) h1'), null)
+    assert.equal(root.querySelector('.status-head:not(.goal)'), null)
     assert.deepEqual(buttons(), ['Edit'])
     await click('Edit')
     assert.equal((root.querySelector('#type-goal') as HTMLInputElement | null)?.value, 'Status tab shipped')

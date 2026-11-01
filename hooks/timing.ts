@@ -2,6 +2,7 @@ import type { LastAction, Draft, Closed } from '../types'
 import { isUndoable } from './pressed'
 import { RUNNING_FRAMES } from './help'
 import type { SettledState, RowView, ResultMark } from './rows'
+import { statusListRows } from './status-page'
 import type { StatusPage } from './status-page'
 import type { ViewInput } from './view'
 
@@ -114,7 +115,7 @@ export const RUNNING_FRAME_MS = 300
 export const RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS
 
 export function hasRunningMark(page: StatusPage): boolean {
-  return page.rows.some(r => (r.kind === 'subject' || r.kind === 'child') && r.isRunning)
+  return statusListRows(page).some(r => (r.kind === 'subject' || r.kind === 'child') && r.isRunning)
 }
 
 /** A running row's mark at `now`. Every mark on a page takes its frame from the clock, so all of them move together. */

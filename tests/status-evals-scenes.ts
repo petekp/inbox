@@ -1,6 +1,6 @@
 import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
 import { emptySession } from '../hooks/session-files'
-import { statusPage } from '../hooks/status-page'
+import { statusListRows, statusPage } from '../hooks/status-page'
 import type { StatusPage } from '../hooks/status-page'
 import { HELD_MARK } from '../hooks/help'
 import { nameKey } from '../hooks/status-limits'
@@ -302,8 +302,8 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
       withGoal(s)
       s.after.serves.s1 = 'none'
       s.page = p => {
-        const s2 = p.rows.find(r => r.kind === 'subject' && r.id === 's2')!
-        p.rows.push({ ...s2 })
+        const s2 = statusListRows(p).find(r => r.kind === 'subject' && r.id === 's2')!
+        p.rows.push({ ...s2, depth: 0 })
       }
     },
   },

@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { SETTLED_MS, NO_HOLDS, PRESS_GUARD_MS } from '../../hooks/timing'
 import { shownTabs } from '../../hooks/tabs'
 import { statusKeyPlan, statusKeyRows } from '../../hooks/status-keys'
+import { statusListRows } from '../../hooks/status-page'
 import type { StatusRow } from '../../hooks/status-page'
 import { sessionView } from '../../hooks/session-view'
 import { demoState } from '../src/demo'
@@ -108,7 +109,7 @@ test('a Status row’s View leaves once its asks close, and the selection moves 
   })
   const onS3 = { ...onPage, selectedId: 's3' }
   const lines = text(screen, onS3).split('\n')
-  const s3 = screen.view.statusPage.rows.find(r => r.id === 's3')!
+  const s3 = statusListRows(screen.view.statusPage).find(r => r.id === 's3')!
   expect(s3).toMatchObject({ ask: null, mark: '○' })
   expect(lines.filter(l => l.includes('View '))).toHaveLength(1)
   expect(lines.find(l => l.includes('View '))).toContain('↵ View task')

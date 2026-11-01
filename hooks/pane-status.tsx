@@ -113,20 +113,21 @@ export function paneStatus(
   }
   /**
    * The look line: "Last seen" in the middle of a dashed rule that spans what the rule above a row spans, with space
-   * above it, and below it unless it ends the list.
+   * above it, and below it unless it ends the list. At `depth` it starts that many steps in, as the rows beside it do.
    */
-  const statusLookLine = (text: string, isLast: boolean) => {
+  const statusLookLine = (id: string, text: string, isLast: boolean, depth: number) => {
     // The terminal draws whole lines, so its space is a blank line.
     const gap = (key: string) => <Box key={key} height={look === 'desktop' ? LOOK_GAP_PT / DESKTOP_LINE_PT : 1} />
     const label = ` ${text} `
-    const fill = Math.max(4, statusRuleCells - cellWidth(label))
+    const fill = Math.max(4, statusRuleCells - markWidth * depth - cellWidth(label))
     const before = Math.floor(fill / 2)
-    const ruleCells = (listColumns - desktopStatusRuleLeft - 2 - text.length / DESKTOP_CHARS_PER_CELL) / 2
+    const desktopLeft = desktopStatusRuleLeft + DESKTOP_MARK_CELLS * 2 * depth
+    const ruleCells = (listColumns - desktopLeft - 2 - text.length / DESKTOP_CHARS_PER_CELL) / 2
     // On desktop it sits outside a frame, whose border would inset the rule's right end, so the padding stands in for
     // the frame's.
     const rule =
       look === 'desktop' ? (
-        <Box flexDirection="row" alignItems="center" marginLeft={desktopStatusRuleLeft} paddingY={statusFrameEdge}>
+        <Box flexDirection="row" alignItems="center" marginLeft={desktopLeft} paddingY={statusFrameEdge}>
           {desktopDashes('look-before', ruleCells)}
           <Box flexShrink={0} paddingX={1}>
             <Text color={pal.muted}>{text}</Text>
@@ -135,13 +136,13 @@ export function paneStatus(
         </Box>
       ) : (
         <Box flexDirection="row">
-          <Box width={statusRuleAt} flexShrink={0} />
+          <Box width={statusRuleAt + markWidth * depth} flexShrink={0} />
           <Text color={pal.divider}>{`${LOOK_DASH.repeat(before)}${label}${LOOK_DASH.repeat(fill - before)}`}</Text>
         </Box>
       )
 
     return (
-      <Box key="status-look" flexDirection="column">
+      <Box key={`status-${id}`} flexDirection="column">
         {gap('look-above')}
         {rule}
         {isLast ? null : gap('look-below')}
@@ -170,7 +171,7 @@ export function paneStatus(
         <Text color={pal.divider}>{'─'.repeat(Math.max(4, statusRuleCells - cellWidth(text) - 1))}</Text>
       </Box>
     )
-  /** One line of the Status tab's list: a mark and its text. `depth` 1 sits under a subject's text. */
+  /** One line of the Status tab's list: a mark and its text, `depth` steps in. Each step sits under the text of the row it hangs from. */
   const statusRowLine = ({
     key,
     depth = 0,
@@ -244,7 +245,7 @@ export function paneStatus(
             ? startTyping(GOAL_KEYS_ID, press.text)
             : answerProposal(press.action, p.surface),
     }))
-  const { goalAbove, setGoal, setGoalBare, nowLine, markRun } = paneStatusGoal(
+  const { goalAbove, setGoal, setGoalBare, markRun } = paneStatusGoal(
     {
       look,
       Box,
@@ -264,7 +265,7 @@ export function paneStatus(
       desktopFrame,
     },
     handlers,
-    { statusRowLine, statusKeys },
+    { statusRowLine, statusKeys, statusRows: rows => statusRows(rows) },
   )
   const statusMark = (r: Pick<StatusRow & { kind: 'subject' }, 'id' | 'mark' | 'tone' | 'isRunning'>) =>
     markGlyph({ text: r.mark, isRunning: r.isRunning }, r.id, r.tone ? pal.mark[r.tone] : pal.muted)
@@ -273,64 +274,71 @@ export function paneStatus(
       const keys = statusKeys({ id: r.id, keys: statusKeyPlan(r) })
       const mark = statusMark(r)
       const content = [
-        statusNameLine(`status-${r.id}-name`, { text: r.name }, r.stall, 0),
-        ...(r.text ? [statusPageText(`status-${r.id}-text`, [{ text: r.text, isMuted: true }], 0)] : []),
+        statusNameLine(`status-${r.id}-name`, { text: r.name }, r.stall, r.depth),
+        ...(r.text ? [statusPageText(`status-${r.id}-text`, [{ text: r.text, isMuted: true }], r.depth)] : []),
         ...(r.merged
           ? [
               statusPageText(
                 `status-${r.id}-merged`,
-                [{ text: mergedLine(r.merged, fitsStatusLine(0)), isMuted: true }],
-                0,
+                [{ text: mergedLine(r.merged, fitsStatusLine(r.depth)), isMuted: true }],
+                r.depth,
               ),
             ]
           : []),
-        ...(r.was ? [statusPageText(`status-${r.id}-was`, [{ text: `${WAS_PREFIX}${r.was}`, isMuted: true }], 0)] : []),
+        ...(r.was
+          ? [statusPageText(`status-${r.id}-was`, [{ text: `${WAS_PREFIX}${r.was}`, isMuted: true }], r.depth)]
+          : []),
         ...(keys.length > 0 ? [<Box key={`status-${r.id}-keys`}>{keyRow(r.id, keys)}</Box>] : []),
       ]
 
       return statusRowLine({
         key: `status-${r.id}`,
+        depth: r.depth,
         mark,
         content,
-        tree: r.hasChildren ? statusTree(`status-${r.id}-tree`, 'down') : null,
+        tree: r.hasChildren ? statusTree(`status-${r.id}-tree`, 'down', r.depth) : null,
         isSelected: look === 'terminal' && r.id === statusKeyRow?.id,
       })
     }
     if (r.kind === 'child') {
       const mark = statusMark(r)
-      const depth = r.branch === null ? 0 : 1
 
       return statusRowLine({
         key: `status-${r.id}`,
-        depth,
+        depth: r.depth,
         mark,
-        content: statusNameLine(`status-${r.id}-name`, { text: r.name, isMuted: true }, r.stall, depth),
-        tree: r.branch ? statusTree(`status-${r.id}-tree`, r.branch) : null,
+        content: statusNameLine(`status-${r.id}-name`, { text: r.name, isMuted: true }, r.stall, r.depth),
+        tree: r.branch ? statusTree(`status-${r.id}-tree`, r.branch, r.depth - 1) : null,
       })
     }
     if (r.kind === 'more')
       return statusRowLine({
         key: `status-${r.id}`,
-        depth: 1,
+        depth: r.depth,
         mark: null,
         content: <Text color={pal.muted}>{r.text}</Text>,
-        tree: statusTree(`status-${r.id}-tree`, r.branch),
+        tree: statusTree(`status-${r.id}-tree`, r.branch, r.depth - 1),
       })
-    if (r.kind === 'look') return statusLookLine(r.text, r.isLast)
+    if (r.kind === 'look') return statusLookLine(r.id, r.text, r.isLast, r.depth)
     if (r.kind === 'part') return statusPartLine(r.id, r.text)
     if (r.kind === 'counts')
       return statusRowLine({
         key: `status-${r.id}`,
+        depth: r.depth,
         mark: null,
         content: markRun(`status-${r.id}-counts`, r.counts, STALL_GAP, true),
       })
 
     return statusRowLine({
       key: `status-${r.id}`,
+      depth: r.depth,
       mark: <Text color={r.tone ? pal.mark[r.tone] : pal.muted}>{r.mark}</Text>,
       content: <Text color={pal.muted}>{r.text}</Text>,
     })
   }
+  /** Rows of the Status's list, each after its rule when it has one. The inline pane draws no rules. */
+  const statusRows = (rows: StatusRow[]) =>
+    rows.flatMap(r => (r.isRuledAbove && !isInline ? [statusRule(r.id), statusRow(r)] : [statusRow(r)]))
   const statusView = () => {
     const page = view.statusPage
     if (page.isEmpty)
@@ -340,23 +348,13 @@ export function paneStatus(
         </Box>
       )
     const { proposal, goal } = goalAbove(page)
-    const head = page.nowLine ? nowLine(page.nowLine) : page.head ? statusHead(page.head) : null
+    const head = page.goal === null && page.head ? statusHead(page.head) : null
     const headLines = [...(head ? [head] : []), ...setGoal(page)]
     const goalParts = page.proposal?.isBelowGoal ? [goal, proposal] : [proposal, goal]
 
     return sections([
       ...[...goalParts, headLines].flatMap(lines => (lines.length > 0 ? [section(lines)] : [])),
-      ...(page.rows.length > 0
-        ? [
-            section(
-              page.rows.flatMap(r => {
-                const isRuleDrawn = r.isRuledAbove && !isInline
-
-                return isRuleDrawn ? [statusRule(r.id), statusRow(r)] : [statusRow(r)]
-              }),
-            ),
-          ]
-        : []),
+      ...(page.rows.length > 0 ? [section(statusRows(page.rows))] : []),
     ])
   }
 

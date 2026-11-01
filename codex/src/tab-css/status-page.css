@@ -21,8 +21,9 @@
 .status-page .content {
   overflow-wrap: anywhere;
 }
-.status-page .row.child {
-  padding-left: var(--text-x);
+/* A row `--depth` steps in. Each step is the mark column's width, so a row sits under the text of the row it hangs from. */
+.status-page .row {
+  padding-left: calc(var(--mark-x) + var(--depth, 0) * var(--step));
 }
 .status-page .content > .actions {
   margin-top: 6px;
@@ -36,8 +37,9 @@
 .status-page .unbroken {
   white-space: nowrap;
 }
-/* The tree line runs under the middle of a subject's mark, and its arm reaches to a child's mark. */
+/* The tree line runs under the middle of a subject's mark, and its arm reaches to a child's mark, a step in. */
 .status-page .list {
+  --step: calc(var(--text-x) - var(--mark-x));
   --mark-middle: 6px;
   --arm-gap: 2px;
   --tree-x: calc(var(--mark-x) + var(--mark-middle));
@@ -53,8 +55,12 @@
 .status-page .row.branch-last::before {
   content: '';
   position: absolute;
-  left: var(--tree-x);
+  left: calc(var(--tree-x) + var(--depth, 0) * var(--step));
   border-left: 1px solid var(--tree-line);
+}
+.status-page .row.branch-mid::before,
+.status-page .row.branch-last::before {
+  left: calc(var(--tree-x) + (var(--depth) - 1) * var(--step));
 }
 .status-page .row.has-children::before {
   top: calc(var(--status-row-pad) + 1lh);
@@ -72,7 +78,7 @@
 .status-page .row.branch-last::after {
   content: '';
   position: absolute;
-  left: var(--tree-x);
+  left: calc(var(--tree-x) + (var(--depth) - 1) * var(--step));
   top: calc(var(--status-row-pad) + 0.5lh);
   width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
   border-top: 1px solid var(--tree-line);
@@ -101,7 +107,7 @@
 }
 .status-page .status-rule,
 .status-page .look-rule {
-  margin-left: var(--text-x);
+  margin-left: calc(var(--text-x) + var(--depth, 0) * var(--step));
 }
 .status-page .look-rule::before,
 .status-page .look-rule::after {

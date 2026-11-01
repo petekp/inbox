@@ -63,13 +63,16 @@ function statusKey({ press, label, emphasis }: StatusKey): Key {
   }
 }
 
+/** A row's depth, which the Status CSS reads to step the row in and to place its tree line. */
+const depthStyle = (row: StatusRow) => ({ '--depth': row.depth })
+
 function StatusLine({ row }: { row: StatusRow }) {
   if (row.kind === 'subject') {
     const merged = row.merged
     const keys = statusKeyPlan(row).map(statusKey)
 
     return (
-      <div class={row.hasChildren ? 'row has-children' : 'row'}>
+      <div class={row.hasChildren ? 'row has-children' : 'row'} style={depthStyle(row)}>
         <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
           <MarkGlyph text={row.mark} />
         </span>
@@ -100,7 +103,7 @@ function StatusLine({ row }: { row: StatusRow }) {
   }
   if (row.kind === 'child')
     return (
-      <div class={row.branch ? `row child branch-${row.branch}` : 'row'}>
+      <div class={row.branch ? `row child branch-${row.branch}` : 'row'} style={depthStyle(row)}>
         <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
           <MarkGlyph text={row.mark} />
         </span>
@@ -111,14 +114,14 @@ function StatusLine({ row }: { row: StatusRow }) {
     )
   if (row.kind === 'more')
     return (
-      <div class={`row child branch-${row.branch}`}>
+      <div class={`row child branch-${row.branch}`} style={depthStyle(row)}>
         <span class="mark" />
         <div class="content tight muted">{row.text}</div>
       </div>
     )
   if (row.kind === 'look')
     return (
-      <div class={`row look-line${row.isLast ? ' last' : ''}`}>
+      <div class={`row look-line${row.isLast ? ' last' : ''}`} style={depthStyle(row)}>
         <div class="look-rule">{row.text}</div>
       </div>
     )
@@ -130,7 +133,7 @@ function StatusLine({ row }: { row: StatusRow }) {
     )
   if (row.kind === 'counts')
     return (
-      <div class="row">
+      <div class="row" style={depthStyle(row)}>
         <span class="mark" />
         <div class="content tight">
           <div>
@@ -149,7 +152,7 @@ function StatusLine({ row }: { row: StatusRow }) {
     )
 
   return (
-    <div class="row">
+    <div class="row" style={depthStyle(row)}>
       <span class={markClassOf(row.tone, false)}>
         <MarkGlyph text={row.mark} />
       </span>
@@ -302,13 +305,15 @@ function GoalAbove({ page }: { page: StatusPage }) {
             {g.was}
           </p>
         ) : null}
+        {g.now ? <p class="muted">{g.now}</p> : null}
         {g.awaiting ? <p class="muted">{g.awaiting}</p> : null}
       </div>
       {g.milestones.length > 0 ? (
         <div class="list">
-          {g.milestones.map(m => (
-            <MilestoneLine key={m.id} m={m} />
-          ))}
+          {g.milestones.flatMap(m => [
+            <MilestoneLine key={m.id} m={m} />,
+            ...m.rows.map(r => <StatusLine key={r.id} row={r} />),
+          ])}
         </div>
       ) : null}
       {isTyping || isKeyInHeader ? null : (
@@ -362,16 +367,13 @@ export function StatusTab({ page }: { page: StatusPage }) {
         <SetGoal page={page} />
       </div>
     )
-  const head = page.nowLine ? (
-    <div class="status-head">
-      <p class="muted">{page.nowLine}</p>
-    </div>
-  ) : page.head ? (
-    <div class="status-head">
-      <h1>{page.head.title}</h1>
-      {page.head.description ? <p class="muted">{page.head.description}</p> : null}
-    </div>
-  ) : null
+  const head =
+    page.goal === null && page.head ? (
+      <div class="status-head">
+        <h1>{page.head.title}</h1>
+        {page.head.description ? <p class="muted">{page.head.description}</p> : null}
+      </div>
+    ) : null
 
   return (
     <main class="status-page">
