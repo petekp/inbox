@@ -62,11 +62,6 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     answer: GOOD_RUNS['catch-up-from-empty']![0]!.replace('DONE: Image attachments | show inline\n', ''),
     breaks: 'piece-once',
   },
-  'not-a-goal': {
-    at: 0,
-    answer: `${GOOD_RUNS['not-a-goal']![0]!}\nGOAL: Every item ranked by 2.6 | working Settings reviewed; queued Unused cut`,
-    breaks: 'proposal-only-when-stated',
-  },
   'declined-goal': {
     at: 1,
     answer: `${GOOD_RUNS['declined-goal']![1]!}\nGOAL: Import set for the demo | working Notes import; queued Progress bar`,

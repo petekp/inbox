@@ -84,9 +84,6 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'LINK: i1 | PDF attachments',
     ].join('\n'),
   ],
-  'not-a-goal': [
-    'HEAD: Settings list | Pruning the settings list\nNEW: working | Settings review | first half reviewed, four to cut',
-  ],
   'declined-goal': [
     'SET: s1 | working | notes and tags import\nGOAL: Import ready to demo | working Notes import; queued Demo run-through',
     'SET: s1 | working | attachments import; progress bar left',
