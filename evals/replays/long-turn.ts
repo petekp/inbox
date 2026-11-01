@@ -28,8 +28,8 @@ const searchTasks: HostTask[] = [
   { id: 't5', text: 'Add typo tolerance', status: 'pending' },
 ]
 
-/** Where the ranking piece stands at 12 minutes, read from the turn's activity: what ranks now, and what is left. */
-const RANK_AT_12 = 'results rank by match; recency sort not in yet'
+/** Where the ranking piece stands at 12 minutes, as far as the turn's activity shows it. */
+const RANK_AT_12 = 'recency sort started, not in yet'
 
 const SEARCH_PERSON = 'Speed up search on large libraries, then rank results by recency.'
 
