@@ -86,3 +86,22 @@ test('on a next build, Change goal opens the field with the goal in it in place 
   expect(await replyField(pane, 'goal')).toBeUndefined()
   expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Pilot ready to announce')
 })
+
+test('on a next build, Set a goal on the empty Status page sets the typed goal before any Status call', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.files = ['/.next-build']
+  w.paneState = { isShown: true, isFocused: true }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+
+  expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('s: Set a goal')
+  await pane.press({ key: 'type-goal-goal-key' })
+  await clock.settle()
+  await pane.input({ key: await replyKey(pane, 'goal'), text: 'Greeting CLI on npm' })
+  await clock.settle()
+  expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Greeting CLI on npm')
+  expect((await pane.find({ key: 'goal-awaiting' }))?.text).toBe('Milestones after the next reply')
+})

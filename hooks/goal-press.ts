@@ -2,10 +2,12 @@ import type { LastAction, Ledger } from '../types'
 import type { PressResult } from './press-reducer'
 import type { RowPress } from './presses'
 import { declineProposedGoal, setTypedGoal, useProposedGoal } from './status-goal-ops'
+import { EMPTY_SESSION_STATUS } from './status-limits'
 
 /**
  * A press on the Status page's goal: Use this goal or Not now on a proposal, or a goal the person typed. Each changes
- * the saved Status at once and sends nothing. A typed goal that rewords the goal keeps its milestones.
+ * the saved Status at once and sends nothing. A typed goal that rewords the goal keeps its milestones. A goal typed
+ * before the first Status starts one.
  */
 export function goalPressed(
   ledger: Ledger,
@@ -13,9 +15,8 @@ export function goalPressed(
   record: (kind: LastAction['kind']) => LastAction,
   now: number,
 ): PressResult {
-  const o = ledger.overview
+  const o = ledger.overview ?? EMPTY_SESSION_STATUS
   const unchanged: PressResult = { ledger, last: null, effects: [] }
-  if (o === null) return { stale: true }
   if (p.action === 'use-goal' || p.action === 'decline-goal') {
     if (o.proposedGoal === null) return { stale: true }
     const overview = p.action === 'use-goal' ? useProposedGoal(o, now) : declineProposedGoal(o)

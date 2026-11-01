@@ -1213,10 +1213,8 @@ function setTypedGoal(o, text, now) {
 
 // ../hooks/goal-press.ts
 function goalPressed(ledger, p, record, now) {
-  const o = ledger.overview;
+  const o = ledger.overview ?? EMPTY_SESSION_STATUS;
   const unchanged = { ledger, last: null, effects: [] };
-  if (o === null)
-    return { stale: true };
   if (p.action === "use-goal" || p.action === "decline-goal") {
     if (o.proposedGoal === null)
       return { stale: true };
