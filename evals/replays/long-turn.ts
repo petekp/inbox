@@ -81,7 +81,7 @@ export const longTurn: Replay = {
           { id: 'rank', state: 'working', stands: 'under way' },
         ],
       },
-      targets: ['marks-true', 'text-is-state', 'changes-move'],
+      targets: ['marks-true', 'text-no-ids', 'changes-move'],
     },
     {
       label: 'A mid-turn call at 25 minutes: more investigation and nothing new',

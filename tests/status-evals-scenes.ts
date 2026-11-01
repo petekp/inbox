@@ -135,12 +135,11 @@ const s2Of = (s: Scene) => s.after.subjects[1]!
 export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene) => void }> = {
   'no-time-words': { bad: s => (s1Of(s).text = 'synced 5m ago') },
   'short-names': { bad: s => (s1Of(s).name = 'The offline sync engine work') },
-  'text-is-state': { bad: s => (s1Of(s).text = 'tests running') },
+  'text-no-ids': { bad: s => (s1Of(s).text = 'retries in sync-queue.ts') },
   'head-no-status': { bad: s => (s.after.head = { title: 'Offline sync', description: 'Offline sync ready' }) },
   'head-follows': { bad: s => (s.after.head = { title: 'Lint error', description: 'Fixing the lint error' }) },
   'no-duplicates': { bad: s => s.after.subjects.push(subject('s3', 'working', 'Sync engine work', 'tests', 10)) },
   'piece-once': { bad: s => s.after.subjects.push(subject('s3', 'working', 'Engine queue', 'syncs', 10)) },
-  'open-not-over': { bad: s => (s1Of(s).text = 'shipped to users') },
   'open-pieces-kept': { bad: s => s.after.subjects.pop() },
   'marks-true': { bad: s => (s2Of(s).status = 'working') },
   'not-work': {

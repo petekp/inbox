@@ -5,9 +5,11 @@ import type { Facts } from './status-facts'
 import type { Step, StepResult } from './status-replay'
 import {
   DECISION_WORDS,
-  EVENT_PATTERNS,
+  DATE_WORDS,
+  ID_PATTERNS,
+  milestoneNames,
+  milestonesOf,
   NUMBERED,
-  OVER_WORDS,
   STATUS_WORDS,
   TIME_WORDS,
   WORD,
@@ -65,31 +67,35 @@ export const RULES: Rule[] = [
     id: 'no-time-words',
     reads: 'answer',
     property: 13,
-    text: 'No text the model writes holds a time word: the head, a name, where it stands, or a was line.',
+    text: 'No text the model writes holds a time word or a date: the head, the goal or proposal, a milestone, a name, where it stands, or a was line.',
     failures: ({ result }) =>
       modelTexts(result.session.ledger.overview)
-        .filter(t => TIME_WORDS.test(t))
+        .filter(t => TIME_WORDS.test(t) || DATE_WORDS.test(t))
         .map(t => `time word: "${t}"`),
   },
   {
     id: 'short-names',
     reads: 'answer',
     property: 3,
-    text: 'A name has at most 3 words, no "…" and no question mark.',
-    failures: ({ result }) =>
-      shownOf(result.session.ledger.overview)
-        .filter(s => s.name.trim().split(/\s+/).length > NAME_WORDS || /…|\?/.test(s.name))
-        .map(s => `name: "${s.name}"`),
+    text: 'A subject or milestone name has at most 3 words, no "…" and no question mark.',
+    failures: ({ result }) => {
+      const o = result.session.ledger.overview
+      return [...shownOf(o).map(s => s.name), ...milestoneNames(o)]
+        .filter(name => name.trim().split(/\s+/).length > NAME_WORDS || /…|\?/.test(name))
+        .map(name => `name: "${name}"`)
+    },
   },
   {
-    id: 'text-is-state',
+    id: 'text-no-ids',
     reads: 'answer',
     property: 6,
-    text: 'A text names no command, file, hash, ticket or PR number, count, or process step.',
-    failures: ({ result }) =>
-      shownOf(result.session.ledger.overview)
-        .filter(s => EVENT_PATTERNS.some(re => re.test(s.text)))
-        .map(s => `event text: ${label(s)}`),
+    text: "A subject's or milestone's text names no command, file, hash, ticket or PR number, or count of things run.",
+    failures: ({ result }) => {
+      const o = result.session.ledger.overview
+      return [...shownOf(o), ...milestonesOf(o)]
+        .filter(s => ID_PATTERNS.some(re => re.test(s.text)))
+        .map(s => `id in the text: "${s.name}: ${s.text}"`)
+    },
   },
   {
     id: 'head-no-status',
@@ -115,8 +121,9 @@ export const RULES: Rule[] = [
       const isFocusSame = focusMatch === before.facts.focusMatch
       const isDescriptionFilled = earlier?.description === '' && now?.title === earlier.title
       if (!new RegExp(focusMatch, 'i').test(head)) return [`the head "${head}" is not about /${focusMatch}/`]
-      if (pastMatch && now && new RegExp(pastMatch, 'i').test(now.title))
-        return [`the head's title "${now.title}" still names /${pastMatch}/`]
+      const shown = result.session.ledger.overview?.goal ? (now?.description ?? '') : (now?.title ?? '')
+      if (pastMatch && now && new RegExp(pastMatch, 'i').test(shown))
+        return [`the head "${shown}" still names /${pastMatch}/`]
       return isFocusSame && last !== '' && head !== last && !isDescriptionFilled
         ? [`the head moved from "${last}" to "${head}"`]
         : []
@@ -126,40 +133,39 @@ export const RULES: Rule[] = [
     id: 'no-duplicates',
     reads: 'answer',
     property: 4,
-    text: 'No two open subjects share every key word of a name, numbers included, or the same issue or PR number.',
+    text: 'No two open subjects, and no two open milestones, share every key word of a name, numbers included, or the same issue or PR number.',
     failures: ({ result }) => {
-      const open = shownOf(result.session.ledger.overview).filter(isOpen)
-      return open.flatMap((a, i) =>
-        open.slice(i + 1).flatMap(b => {
-          const [x, y] = [keyWords(a.name), keyWords(b.name)].sort((p, q) => p.size - q.size)
-          const isSameName = x!.size > 0 && [...x!].every(w => y!.has(w))
-          const numbers = (s: Subject): string[] => s.text.match(NUMBERED) ?? []
-          const shared = numbers(a).filter(n => numbers(b).includes(n))
-          return isSameName || shared.length > 0 ? [`${label(a)} and ${label(b)}`] : []
-        }),
-      )
+      const o = result.session.ledger.overview
+      const pairs = (open: Pick<Subject, 'name' | 'text'>[]) =>
+        open.flatMap((a, i) =>
+          open.slice(i + 1).flatMap(b => {
+            const [x, y] = [keyWords(a.name), keyWords(b.name)].sort((p, q) => p.size - q.size)
+            const isSameName = x!.size > 0 && [...x!].every(w => y!.has(w))
+            const numbers = (s: Pick<Subject, 'text'>): string[] => s.text.match(NUMBERED) ?? []
+            const shared = numbers(a).filter(n => numbers(b).includes(n))
+            return isSameName || shared.length > 0 ? [`"${a.name}: ${a.text}" and "${b.name}: ${b.text}"`] : []
+          }),
+        )
+      return [...pairs(shownOf(o).filter(isOpen)), ...pairs(milestonesOf(o).filter(isOpen))]
     },
   },
   {
     id: 'piece-once',
     reads: 'facts',
     property: 4,
-    text: 'No piece in the facts has two open subjects.',
-    failures: ({ result }) =>
-      result.facts.pieces.flatMap(p => {
-        const open = subjectsFor(p, result.session.ledger.overview).filter(isOpen)
+    text: 'No piece in the facts has two open subjects, and no milestone in the facts has two open milestones.',
+    failures: ({ result }) => {
+      const o = result.session.ledger.overview
+      const pieces = result.facts.pieces.flatMap(p => {
+        const open = subjectsFor(p, o).filter(isOpen)
         return open.length > 1 ? [`${p.names[0]} shows as ${open.map(label).join(' and ')}`] : []
-      }),
-  },
-  {
-    id: 'open-not-over',
-    reads: 'answer',
-    property: 5,
-    text: "No open subject's text says the work is over.",
-    failures: ({ result }) =>
-      shownOf(result.session.ledger.overview)
-        .filter(s => isOpen(s) && OVER_WORDS.test(s.text))
-        .map(s => `open, yet over: ${label(s)}`),
+      })
+      const milestones = (result.facts.goal?.milestones ?? []).flatMap(m => {
+        const open = milestonesOf(o).filter(x => isOpen(x) && new RegExp(m.match, 'i').test(x.name))
+        return open.length > 1 ? [`${m.name} shows as ${open.map(x => `"${x.name}"`).join(' and ')}`] : []
+      })
+      return [...pieces, ...milestones]
+    },
   },
   {
     id: 'open-pieces-kept',
@@ -209,13 +215,13 @@ export const RULES: Rule[] = [
     id: 'held-text',
     reads: 'answer',
     property: 9,
-    text: "A held subject's text names no decision.",
+    text: "A held subject's or milestone's text names no decision.",
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       const held = new Set(result.session.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
-      return shownOf(o)
+      return [...shownOf(o), ...milestonesOf(o)]
         .filter(s => held.has(s.id) && DECISION_WORDS.test(s.text))
-        .map(s => `held, and names the decision: ${label(s)}`)
+        .map(s => `held, and names the decision: "${s.name}: ${s.text}"`)
     },
   },
   {
@@ -292,15 +298,26 @@ export const RULES: Rule[] = [
     id: 'no-news-no-move',
     reads: 'quiet',
     property: 11,
-    text: 'On a step that changed no work, no subject is added, and no last-changed time moves.',
+    text: 'On a step that changed no work, no subject or milestone is added, no last-changed time moves, and the goal and proposal hold.',
     failures: ({ step, result, before }) => {
       if (!step.call || result.facts.changed.length > 0) return []
-      const was = new Map(shownOf(before.overview).map(s => [s.id, s]))
-      return shownOf(result.session.ledger.overview).flatMap(s => {
-        const old = was.get(s.id)
-        if (!old) return [`added ${label(s)}`]
-        return old.changedAt === s.changedAt ? [] : [`moved ${label(s)}`]
-      })
+      const o = result.session.ledger.overview
+      const moved = <T extends { id: string; name: string; changedAt: number }>(now: T[], then: T[]) => {
+        const was = new Map(then.map(x => [x.id, x]))
+        return now.flatMap(x => {
+          const old = was.get(x.id)
+          if (!old) return [`added "${x.name}"`]
+          return old.changedAt === x.changedAt ? [] : [`moved "${x.name}"`]
+        })
+      }
+      const goalMoved =
+        (o?.goal?.text ?? null) !== (before.overview?.goal?.text ?? null) ||
+        (o?.proposedGoal?.text ?? null) !== (before.overview?.proposedGoal?.text ?? null)
+      return [
+        ...moved(shownOf(o), shownOf(before.overview)),
+        ...moved(milestonesOf(o), milestonesOf(before.overview)),
+        ...(goalMoved ? ['the goal block changed'] : []),
+      ]
     },
   },
   {

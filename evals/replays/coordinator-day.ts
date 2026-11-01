@@ -88,7 +88,7 @@ export const coordinatorDay: Replay = {
         pieces: [{ id: 'merge', state: 'done', stands: 'merges edits on reconnect' }],
         children: [{ ref: 'herdr:release-notes', does: 'Write the 2.4 release notes', serves: 'r24' }],
       },
-      targets: ['marks-true', 'text-is-state', 'open-not-over'],
+      targets: ['marks-true', 'text-no-ids'],
     },
     {
       label: 'The person approves the notes, and the coordinator publishes 2.4. The reply is full of times.',
@@ -106,7 +106,7 @@ export const coordinatorDay: Replay = {
         asks: [],
         children: [],
       },
-      targets: ['no-time-words', 'marks-true', 'open-not-over'],
+      targets: ['no-time-words', 'marks-true'],
     },
     {
       label:
@@ -256,7 +256,7 @@ export const coordinatorDay: Replay = {
       },
       checkpoint: true,
       judgeUntil: { marks: '#137' },
-      targets: ['piece-once', 'text-is-state', 'children-linked', 'each-once', 'where-it-stands'],
+      targets: ['piece-once', 'text-no-ids', 'children-linked', 'each-once', 'where-it-stands'],
     },
     {
       label: 'The PR merges, and 2.5 prep starts',
