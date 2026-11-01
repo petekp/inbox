@@ -65,6 +65,8 @@ export type Replay = {
   about: string
   /** Each reply runs the ledger call, then the Status call, as the product does. Else the steps open and close asks. */
   hasLedgerCalls: boolean
+  /** A short case: it runs 5 times per model, and each model's runs are judged apart. Else 3 runs, judged together. */
+  isShort?: true
   start: { ledger: Partial<Ledger>; facts: Facts; place?: Place }
   steps: Step[]
 }
@@ -73,8 +75,8 @@ export type Agent = 'claude' | 'codex'
 
 export type CallAnswer = { text: string | null; model?: string | null; outputTokens?: number | null }
 
-/** One model call with `system` as its system text. */
-export type ModelCall = (prompt: string, system: string) => Promise<CallAnswer>
+/** One model call with `system` as its system text. `kind` says which of the inbox model's calls it is. */
+export type ModelCall = (prompt: string, system: string, kind: CallLog['kind']) => Promise<CallAnswer>
 
 /** A host's limits on an inbox model call. An answer past them is dropped, as the host drops it. */
 export type Limits = { ms: number; outputTokens: number | null }
@@ -152,7 +154,7 @@ async function timed(
 ): Promise<CallAnswer & { log: CallLog }> {
   const clock = deps.clock ?? Date.now
   const started = clock()
-  const answer = await deps.ask(prompt, system)
+  const answer = await deps.ask(prompt, system, kind)
   const ms = clock() - started
   const limits = LIMITS[deps.agent]
   const tokens = answer.outputTokens ?? null

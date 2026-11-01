@@ -1,6 +1,49 @@
 import { expect, test } from 'claude-code/testing'
 
 import { alphaPerTest, atLeast, blockAt, interval, TOLERANCE } from '../evals/status-bar'
+import { gradeReplay } from '../evals/status-grade'
+import { runReplay } from '../evals/status-replay'
+import type { Agent } from '../evals/status-replay'
+import { REPLAYS } from '../evals/status-replays'
+import { holdFailures, isBlocking, layerTests } from '../evals/status-report'
+import type { ReplayRun } from '../evals/status-report'
+import { GOOD_RUNS } from './status-evals-scenes'
+
+const longTurn = REPLAYS.find(r => r.name === 'long-turn')!
+
+async function longTurnRun(agent: Agent, run: number, isPlanted: boolean): Promise<ReplayRun> {
+  const answers = [...GOOD_RUNS['long-turn']!]
+  if (isPlanted) answers[1] = 'SET: s2 | working | reading the ranking code'
+  const results = await runReplay(longTurn, { agent, ask: async () => ({ text: answers.shift()! }) })
+  const steps = gradeReplay(longTurn, results).map((rules, i) => ({
+    label: results[i]!.label,
+    page: results[i]!.text,
+    calls: results[i]!.calls,
+    isStatusFailed: results[i]!.isStatusFailed,
+    rules,
+  }))
+  return { agent, name: longTurn.name, run, error: null, steps }
+}
+
+async function blockingWith(planted: number): Promise<string[]> {
+  const runs = await Promise.all(
+    [0, 1, 2, 3, 4, 5].map(n => longTurnRun(n < 3 ? 'claude' : 'codex', n % 3, n < planted)),
+  )
+  const cases = [{ replay: longTurn, runs }]
+
+  return [
+    ...layerTests(cases, ['claude', 'codex'], false)
+      .filter(isBlocking)
+      .map(t => t.name),
+    ...holdFailures(cases),
+  ]
+}
+
+test('a planted failure blocks its replay step when most runs show it, and good runs block nothing', async () => {
+  expect(await blockingWith(0)).toEqual([])
+  expect(await blockingWith(1)).toEqual([])
+  expect(await blockingWith(6)).toContain('long-turn step 2 no-news-no-move')
+})
 
 test('the old bar flips a step at a 20% rate one time in ten, as the eval plan computed', () => {
   expect(Math.round(atLeast(2, 3, 0.2) * 1000)).toBe(104)

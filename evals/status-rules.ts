@@ -50,6 +50,8 @@ export type Rule = {
   key?: (failure: string) => string
   /** Where the rule can newly fail, in place of what `reads` gives. */
   opportunity?: (ctx: RuleContext) => boolean
+  /** A hold the code keeps, not the model: any failure blocks, and it counts toward no rate. */
+  isHold?: true
 }
 
 /**
@@ -62,6 +64,7 @@ export type RuleResult = {
   failures: string[]
   fresh: string[]
   isOpportunity: boolean
+  isHold: boolean
   until: string | null
 }
 
