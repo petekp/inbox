@@ -335,7 +335,8 @@ const FIXED_RULES: Rule[] = [
     failures: ({ step, result }) => {
       if (!step.call) return []
       return result.facts.changed.flatMap(id => {
-        const piece = result.facts.pieces.find(p => p.id === id)!
+        const piece = result.facts.pieces.find(p => p.id === id)
+        if (piece === undefined) return []
         const subjects = subjectsFor(piece, result.session.ledger.overview)
         return subjects.some(s => s.changedAt === result.now) ? [] : [`${piece.names[0]} changed, and no row moved`]
       })
