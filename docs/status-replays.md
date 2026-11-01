@@ -23,7 +23,7 @@ A step with no call can press a goal button as the person would: Set as goal, No
 | Return | Three hours pass | No call |
 | 12 | 2.5 is published, and nothing follows | Checkpoint. The goal is met. The head names the finished push. |
 | 13 | The coordinator picks up the export folder bug from the queue. Nobody names a new goal. | Nothing is proposed. The head leaves 2.5. |
-| 14 | The person types the goal "Search under 100 ms in 2.6" with Change goal. The reply merges the folder fix and starts on search. | Checkpoint. The 2.5 milestones go, and the new ones are written with the right marks. Every subject is linked again. |
+| 14 | The person types the goal "Search under 100 ms in 2.6" with Edit. The reply merges the folder fix and starts on search. | Checkpoint. The 2.5 milestones go, and the new ones are written with the right marks. Every subject is linked again. |
 
 At every step, the pieces set aside or waiting on a vendor stay on the page.
 

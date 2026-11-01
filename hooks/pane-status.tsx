@@ -50,6 +50,7 @@ export function paneStatus(
     markGlyph,
     desktopFrame,
     keyRow,
+    textKey,
     emptyState,
     sections,
     section,
@@ -69,7 +70,7 @@ export function paneStatus(
     > &
     Pick<PaneRowLines, 'markWidth' | 'desktopHairline' | 'markGlyph'> &
     Pick<PaneRowFrame, 'desktopFrame'> &
-    Pick<PaneRowKeys, 'keyRow'> &
+    Pick<PaneRowKeys, 'keyRow' | 'textKey'> &
     Pick<PaneAskTabs, 'emptyState'> &
     Pick<PaneRowParts, 'sections' | 'section'>,
   handlers: Pick<
@@ -259,6 +260,7 @@ export function paneStatus(
       markGlyph,
       markWidth,
       keyRow,
+      textKey,
       desktopFrame,
     },
     handlers,

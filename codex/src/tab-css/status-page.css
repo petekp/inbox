@@ -123,6 +123,17 @@
 .status-head.goal p + .actions {
   margin-top: 2px;
 }
+.status-head .text-key {
+  cursor: pointer;
+}
+.status-head .text-key:hover {
+  color: var(--text);
+}
+/* The goal's count after its text, kept whole on the line with the text's last word. */
+.status-head h1 .count {
+  font-weight: 400;
+  white-space: nowrap;
+}
 .status-head .actions {
   margin-top: 6px;
 }

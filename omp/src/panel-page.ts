@@ -37,7 +37,7 @@ function pageText(text: string, room: number, maxLines: number, paint: (t: strin
 }
 
 /** Stands in for each space that joins a name's last word, `STALL_GAP` and the stall word, so a wrap never splits them. */
-const GLUE = '\uE000'
+export const GLUE = '\uE000'
 
 /**
  * One row of the Status's list: a mark and its name wrapped after it, with its stall word after `STALL_GAP` in the

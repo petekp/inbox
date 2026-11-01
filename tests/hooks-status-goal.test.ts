@@ -55,12 +55,14 @@ test('on a next build, a proposed goal shows above the head with its keys select
   await pane.press({ key: 'use-goal-proposal-key' })
   await clock.settle()
   expect(await pane.find({ key: 'status-proposal' })).toBeUndefined()
-  expect((await pane.find({ key: 'goal-label' }))?.text).toBe('Goal · 1 of 2 done')
-  expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Pilot ready to announce')
+  expect((await pane.find({ key: 'goal-label' }))?.text).toBe('Goal · e: Edit')
+  expect((await pane.find({ key: 'goal-text' }))?.text.replaceAll('\u00a0', ' ')).toBe(
+    'Pilot ready to announce · 1 of 2 done',
+  )
   expect((await pane.find({ key: 'goal-m1-name' }))?.text).toBe('Fixes built')
   expect((await pane.find({ key: 'status-now-line' }))?.text).toBe('Now: Shipping the pilot')
   expect(await pane.find({ key: 'status-head' })).toBeUndefined()
-  expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('g: Change goal')
+  expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('e: Edit')
   expect(w.sent).toEqual([])
 })
 
@@ -84,7 +86,7 @@ test('on a next build, Not now drops the proposal and keeps Set a goal, which op
   expect(w.sent).toEqual([])
 })
 
-test('on a next build, Change goal opens the field with the goal in it in place of the goal and its button and gives it the keys, and Cancel closes it and keeps the goal', async ($, on) => {
+test('on a next build, the goal header’s Edit opens the field with the goal in it in place of the goal’s text, leaves the header as Goal and gives the field the keys, and Cancel closes it and keeps the goal', async ($, on) => {
   const { clock, pane } = await statusShown($, on)
   await pane.press({ key: 'use-goal-proposal-key' })
   await clock.settle()
@@ -96,10 +98,13 @@ test('on a next build, Change goal opens the field with the goal in it in place 
   expect(w.paneOpens.at(-1)?.closeOnEscape).toBeUndefined()
   expect(await pane.find({ key: 'goal-text' })).toBeUndefined()
   expect(await pane.find({ key: 'type-goal-goal' })).toBeUndefined()
+  expect((await pane.find({ key: 'goal-label' }))?.text).toBe('Goal')
   await pane.press({ key: 'cancel-goal' })
   await clock.settle()
   expect(await replyField(pane, 'goal')).toBeUndefined()
-  expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Pilot ready to announce')
+  expect((await pane.find({ key: 'goal-text' }))?.text.replaceAll('\u00a0', ' ')).toBe(
+    'Pilot ready to announce · 1 of 2 done',
+  )
 })
 
 test('on a next build, Set a goal on the empty Status page sets the typed goal before any Status call', async ($, on) => {
