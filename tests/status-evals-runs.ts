@@ -89,7 +89,7 @@ export const GOOD_RUNS: Record<string, string[]> = {
   ],
   'declined-goal': [
     'SET: s1 | working | notes and tags import\nGOAL: Import ready to demo | working Notes import; queued Demo run-through',
-    'SET: s1 | working | notes, tags and attachments import\nNEW: queued | Import progress | not started',
+    'SET: s1 | working | attachments import; progress bar left',
   ],
   'goal-on-busy-page': [['SET: s2 | working | open the notebook as a viewer', ...servesLines].join('\n')],
   'mid-turn-activity': ['DONE: s1 | fast on large libraries\nSET: s2 | working | ranks by match; recency not in yet'],

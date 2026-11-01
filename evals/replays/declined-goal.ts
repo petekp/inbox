@@ -61,16 +61,7 @@ export const declinedGoal: Replay = {
           'Attachments now import too. For the demo, the one gap left is a progress bar, since a large import shows nothing for a while.',
       },
       facts: {
-        pieces: [
-          { id: 'evernote', stands: 'notes, tags and attachments import' },
-          piece({
-            id: 'progress',
-            names: ['Import progress'],
-            match: 'progress',
-            state: 'queued',
-            stands: 'not started',
-          }),
-        ],
+        pieces: [{ id: 'evernote', stands: 'notes, tags and attachments import; a progress bar left' }],
       },
       targets: ['proposal-only-when-stated'],
     },
