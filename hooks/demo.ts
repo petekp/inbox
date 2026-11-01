@@ -151,6 +151,12 @@ export function demoView(now: number, agent: string): DemoCopy {
         nextChildId: 6,
         lastLookAt: now - 30 * MIN,
         look: null,
+        goal: null,
+        proposedGoal: null,
+        declinedGoals: [],
+        milestones: [],
+        nextMilestoneId: 1,
+        serves: {},
       },
       items: [
         {

@@ -166,6 +166,8 @@ var OPEN_SUBJECTS = 6;
 var NAME_KEPT = 20;
 var TEXT_KEPT = 12;
 var DESCRIPTION_KEPT = 14;
+var MILESTONES_MAX = 5;
+var DECLINED_KEPT = 10;
 var CHILD_KEPT_MS = 24 * 60 * 6e4;
 var CHILDREN_KEPT = 50;
 var STOP_WORDS = /* @__PURE__ */ new Set([
@@ -196,9 +198,16 @@ var EMPTY_SESSION_STATUS = {
   nextId: 1,
   nextChildId: 1,
   lastLookAt: null,
-  look: null
+  look: null,
+  goal: null,
+  proposedGoal: null,
+  declinedGoals: [],
+  milestones: [],
+  nextMilestoneId: 1,
+  serves: {}
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
+var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
 function clipWords(text2, limit) {
   const words3 = text2.trim().split(/\s+/).filter(Boolean);
   return words3.length <= limit ? words3.join(" ") : `${words3.slice(0, limit).join(" ")}\u2026`;
@@ -213,14 +222,81 @@ function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
 
+// ../hooks/status-upgrade-goal.ts
+function time(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+function nonEmpty(value) {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+function goalOf(saved) {
+  const g = saved;
+  const text2 = nonEmpty(g?.text);
+  const setAt = time(g?.setAt);
+  if (typeof saved !== "object" || text2 === null || setAt === null) return null;
+  return {
+    text: text2,
+    setAt,
+    metAt: time(g?.metAt),
+    was: nonEmpty(g?.was),
+    isAwaitingMilestones: g?.isAwaitingMilestones === true
+  };
+}
+function proposedOf(saved) {
+  const p = saved;
+  const text2 = nonEmpty(p?.text);
+  const at = time(p?.at);
+  if (typeof saved !== "object" || text2 === null || at === null) return null;
+  const milestones = (Array.isArray(p?.milestones) ? p.milestones : []).flatMap((raw) => {
+    const m = raw;
+    const name = nonEmpty(m?.name);
+    const status = STATUSES.find((x) => x === m?.status);
+    return name && status ? [{ name, status }] : [];
+  });
+  return { text: text2, milestones: milestones.slice(0, MILESTONES_MAX), at };
+}
+function milestoneOf(saved) {
+  const m = saved;
+  const status = STATUSES.find((x) => x === m?.status);
+  const changedAt = time(m?.changedAt);
+  if (!m || typeof m.id !== "string" || typeof m.name !== "string" || !status || changedAt === null) return null;
+  return {
+    id: m.id,
+    name: m.name,
+    status,
+    text: typeof m.text === "string" ? m.text : "",
+    was: nonEmpty(m.was),
+    changedAt,
+    closedAt: time(m.closedAt)
+  };
+}
+function goalFields(o, subjectIds) {
+  const milestones = (Array.isArray(o.milestones) ? o.milestones : []).map(milestoneOf).filter((m) => m !== null);
+  const milestoneIds = new Set(milestones.map((m) => m.id));
+  const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
+  const serves = Object.fromEntries(
+    savedServes.filter(
+      (e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || milestoneIds.has(e[1]))
+    )
+  );
+  const declined = Array.isArray(o.declinedGoals) ? o.declinedGoals.filter((d) => typeof d === "string") : [];
+  return {
+    goal: goalOf(o.goal),
+    proposedGoal: proposedOf(o.proposedGoal),
+    declinedGoals: declined.slice(-DECLINED_KEPT),
+    milestones,
+    nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
+    serves
+  };
+}
+
 // ../hooks/status-upgrade.ts
-var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
 var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
 var DELEGATE_STATES = ["working", "blocked", "finished"];
 function text(value) {
   return typeof value === "string" ? value : "";
 }
-function time(value) {
+function time2(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 var DROPPED_STATUSES = { "waits-on-you": "queued", problem: "queued" };
@@ -233,7 +309,7 @@ function wasAndMerged(was, merged) {
 function subjectOf(saved) {
   const s = saved;
   const status = STATUSES.find((x) => x === s?.status) ?? DROPPED_STATUSES[String(s?.status)];
-  const changedAt = time(s?.changedAt);
+  const changedAt = time2(s?.changedAt);
   if (!s || typeof s.id !== "string" || typeof s.name !== "string" || !status || changedAt === null) return null;
   return {
     id: s.id,
@@ -241,16 +317,16 @@ function subjectOf(saved) {
     status,
     text: text(s.text),
     ...wasAndMerged(s.was, s.merged),
-    createdAt: time(s.createdAt) ?? changedAt,
+    createdAt: time2(s.createdAt) ?? changedAt,
     changedAt,
-    closedAt: time(s.closedAt),
+    closedAt: time2(s.closedAt),
     into: typeof s.into === "string" ? s.into : null
   };
 }
 function childOf(saved) {
   const c = saved;
   const kind = CHILD_KINDS.find((k) => k === c?.kind);
-  const startedAt = time(c?.startedAt);
+  const startedAt = time2(c?.startedAt);
   if (!c || typeof c.id !== "string" || typeof c.ref !== "string" || !kind || startedAt === null) return null;
   return {
     id: c.id,
@@ -259,8 +335,8 @@ function childOf(saved) {
     name: text(c.name),
     subjectId: typeof c.subjectId === "string" ? c.subjectId : null,
     startedAt,
-    endedAt: time(c.endedAt),
-    lastActivityAt: time(c.lastActivityAt),
+    endedAt: time2(c.endedAt),
+    lastActivityAt: time2(c.lastActivityAt),
     delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null
   };
 }
@@ -284,7 +360,7 @@ function headOf(saved) {
   return title === "" ? null : { title, description: text(h?.description) };
 }
 function fromLists(o) {
-  const lastLookAt = time(o.lastLookAt);
+  const lastLookAt = time2(o.lastLookAt);
   const items = lastLookAt === null ? [] : ["workstreams", "queue", "open"].flatMap((k) => Array.isArray(o[k]) ? o[k] : []);
   const subjects = items.flatMap((raw) => {
     const item = raw;
@@ -322,16 +398,17 @@ function upgradeStatus(saved) {
   const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
   const askSubjects = Object.fromEntries(savedLinks.filter((e) => typeof e[1] === "string"));
   const look = o.look;
-  const lookAt = time(look?.startedAt);
+  const lookAt = time2(look?.startedAt);
   return {
     head: "head" in o ? headOf(o.head) : headOfGoal(o.goal),
     subjects,
     children,
     askSubjects,
-    nextId: Math.max(time(o.nextId) ?? 1, subjects.length + 1),
-    nextChildId: Math.max(time(o.nextChildId) ?? 1, children.length + 1),
-    lastLookAt: time(o.lastLookAt),
-    look: lookAt === null ? null : { startedAt: lookAt }
+    nextId: Math.max(time2(o.nextId) ?? 1, subjects.length + 1),
+    nextChildId: Math.max(time2(o.nextChildId) ?? 1, children.length + 1),
+    lastLookAt: time2(o.lastLookAt),
+    look: lookAt === null ? null : { startedAt: lookAt },
+    ...goalFields(o, new Set(subjects.map((s) => s.id)))
   };
 }
 

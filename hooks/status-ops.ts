@@ -11,14 +11,7 @@ import {
   words,
 } from './status-limits'
 import type { OpenStatus } from './status-limits'
-
-/** Whether two texts have the same content words, in any order. */
-function hasSameWords(a: string, b: string): boolean {
-  const x = words(a)
-  const y = words(b)
-
-  return x.size === y.size && [...x].every(w => y.has(w))
-}
+import { applyGoalOp, findMilestone, hasSameWords, moveMilestone, settleGoal } from './status-goal-ops'
 
 function isUnderWay(s: Pick<Subject, 'status'>): boolean {
   return s.status === 'working' || s.status === 'waits-on-other'
@@ -100,6 +93,9 @@ const OP_ORDER: Record<Op['kind'], number> = {
   drop: 0,
   was: 1,
   link: 2,
+  goal: 0,
+  milestone: 0,
+  serves: 2,
 }
 
 /**
@@ -116,6 +112,8 @@ export function applyOps(
     ...(last ?? EMPTY_SESSION_STATUS),
     subjects: (last?.subjects ?? []).map(s => ({ ...s })),
     children: (last?.children ?? []).map(c => ({ ...c })),
+    milestones: (last?.milestones ?? []).map(m => ({ ...m })),
+    serves: { ...last?.serves },
     askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask))),
   }
   const find = (ref: string) => {
@@ -142,12 +140,15 @@ export function applyOps(
   const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
   for (const { op } of ordered) {
     if (op.kind === 'none') continue
-    if (op.kind === 'head') o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now))
+    if (op.kind === 'goal' || op.kind === 'milestone' || op.kind === 'serves') o = applyGoalOp(o, op, now, find)
+    else if (op.kind === 'head') o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now))
     else if (op.kind === 'link') {
       const child = o.children.find(c => c.id === op.ref)
       const subject = find(op.subject)
+      const milestone = subject ? null : findMilestone(o, op.subject)
       if (child && subject) child.subjectId = subject.id
       else if (subject && askIds.has(op.ref)) o.askSubjects[op.ref] = subject.id
+      else if (milestone && askIds.has(op.ref)) o.askSubjects[op.ref] = milestone.id
     } else if (op.kind === 'new') {
       const known = find(op.name)
       if (known && isOpen(known)) {
@@ -169,6 +170,8 @@ export function applyOps(
       o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] }
     } else {
       const s = find(op.ref)
+      const milestone = s ? null : findMilestone(o, op.ref)
+      if (milestone) moveMilestone(o, milestone, op, now)
       if (!s) continue
       if (op.kind === 'set') set(s, op.status, op.text)
       else if (op.kind === 'done') {
@@ -201,7 +204,7 @@ export function applyOps(
   if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
     o = { ...o, head: { ...o.head, description: '' } }
 
-  return o
+  return settleGoal(o, now)
 }
 
 /** The Status after an answer, applied at `now`. `askIds` are the open asks. */
@@ -211,5 +214,7 @@ export function applyStatus(
   now: number,
   askIds: ReadonlySet<string>,
 ): SessionStatus | null {
-  return answer.kind === 'unchanged' ? last : applyOps(last, answer.ops, now, askIds)
+  if (answer.kind === 'ops') return applyOps(last, answer.ops, now, askIds)
+
+  return last === null ? null : settleGoal(last, now)
 }
