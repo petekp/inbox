@@ -6,7 +6,7 @@ import { MILESTONES_MAX, MILESTONES_MIN, NAME_WORDS, TEXT_WORDS } from './status
 export const GOAL_LINES = `GOAL: outcome | status name; status name
 MILESTONE: status | name | where it stands
 SERVES: subject id or name | milestone id or name, or - when the goal does not need it
-GOAL proposes one outcome with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, each with its status, in order. It holds no date or time. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`
+GOAL proposes one outcome with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, then its name: GOAL: 2.5 in the store | done Bug fixed; working Release built; queued Store review. It holds no date or time. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`
 
 /** The input blocks the goal adds, as the system text describes them. */
 export const GOAL_INPUT = `- <goal>: the outcome the person set for the work, when one is set. It says when the goal is met, and when it was just set, so its milestones still belong to the goal before it.
