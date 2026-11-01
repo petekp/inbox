@@ -220,3 +220,20 @@ test('an open that fails leaves the reason on the row', async () => {
   const last = screen.view.lastActions[screen.view.needsYou.tasks[0]!.id]
   expect(JSON.stringify(last?.result)).toContain('no browser')
 })
+
+test('a proposed goal’s Use this goal and a typed goal set the saved goal, Not now declines a proposal, and none sends a message', async () => {
+  const inbox = createInbox(pi(), deps())
+  w.statusReply = 'HEAD: Pilot | Shipping the pilot\nGOAL: Pilot ready to announce | done Fixes built; queued Announced'
+  await prompt('get the pilot ready to announce')
+  await endAgent('Fixes built.')
+  await settle()
+  expect(state().ledger.overview.proposedGoal?.text).toBe('Pilot ready to announce')
+
+  await inbox.press(makeCtx(), { action: 'use-goal', id: 'goal' }, NO_HOLDS)
+  expect(state().ledger.overview).toMatchObject({ goal: { text: 'Pilot ready to announce' }, proposedGoal: null })
+  expect(state().ledger.overview.milestones.map((m: { name: string }) => m.name)).toEqual(['Fixes built', 'Announced'])
+
+  await inbox.press(makeCtx(), { action: 'type', id: 'goal', text: 'Pilot live for every team' }, NO_HOLDS)
+  expect(state().ledger.overview.goal).toMatchObject({ text: 'Pilot live for every team', isAwaitingMilestones: true })
+  expect(w.sent).toEqual([])
+})

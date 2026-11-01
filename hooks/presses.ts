@@ -10,6 +10,8 @@ export type RowPress =
       id: string
     }
   | { action: 'step'; id: string; step: number; label: string }
+  /** Answers the Status page's proposed goal. `id` is `GOAL_KEYS_ID`. A typed goal is a `type` press on that id. */
+  | { action: 'use-goal' | 'decline-goal'; id: string }
 
 export type PrActionId =
   | 'thread-address'

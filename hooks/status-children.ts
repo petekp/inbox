@@ -71,13 +71,21 @@ export function childActive(o: SessionStatus | null, ref: string, at: number): S
 /** The subjects as the call reads them: open ones with ids, and finished names it must not add again. */
 export function subjectsText(o: SessionStatus | null): { open: string; finished: string } {
   const subjects = o?.subjects ?? []
-  const open = subjects.filter(isOpen).map(s => `${s.id} | ${s.status} | ${s.name} | ${s.text || '-'}`)
+  const serves = (id: string) => (o?.goal ? ` | ${servesText(o, id)}` : '')
+  const open = subjects.filter(isOpen).map(s => `${s.id} | ${s.status} | ${s.name} | ${s.text || '-'}${serves(s.id)}`)
   const finished = subjects
     .filter(s => !isOpen(s))
     .slice(-FINISHED_READ)
     .map(s => `${s.id} | ${s.status} | ${s.name}`)
 
   return { open: open.join(NL) || '(none yet)', finished: finished.join(NL) }
+}
+
+/** How a subject's link reads in <subjects> while a goal is set: its milestone, - for none, or ? when not linked yet. */
+function servesText(o: SessionStatus, subjectId: string): string {
+  const to = o.serves[subjectId]
+
+  return to === undefined ? '?' : to === 'none' ? '-' : to
 }
 
 /** The open asks as the call reads them, each with the subject it holds up. */

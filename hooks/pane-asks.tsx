@@ -158,7 +158,8 @@ export function paneAskTabs(
     Pick<PaneFrame, 'banner'>,
   { readAgain, resume }: Pick<PaneHandlers, 'readAgain' | 'resume'>,
 ) {
-  const emptyState = ({ title, hint: text = '' }: { title: string; hint?: string }) => {
+  /** A tab's empty text, centred in the pane, with `below` under it. */
+  const emptyState = ({ title, hint: text = '' }: { title: string; hint?: string }, below: JSX.Element[] = []) => {
     const wrap = (width: number) => {
       const lines: string[] = []
       for (const word of text.split(' ').filter(Boolean)) {
@@ -175,6 +176,7 @@ export function paneAskTabs(
     let width = Math.ceil(text.length / Math.max(count, 1))
     while (width < most && wrap(width).length > count) width++
     const lines = wrap(width)
+    const mostCells = look === 'desktop' ? Math.floor(most / DESKTOP_CHARS_PER_CELL) : most
     const align = isInline ? 'flex-start' : 'center'
 
     return (
@@ -186,6 +188,11 @@ export function paneAskTabs(
               {lines.map(line => (
                 <Text color={pal.muted}>{line}</Text>
               ))}
+            </Box>
+          ) : null}
+          {below.length > 0 ? (
+            <Box flexDirection="column" alignItems={align} width={mostCells} marginTop={blankLine}>
+              {below}
             </Box>
           ) : null}
         </Box>

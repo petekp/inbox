@@ -14,6 +14,9 @@ import { appliedStatus, failedStatus } from '../hooks/session-status'
 import { statusCallPrompt } from '../hooks/status-records'
 import type { StatusExchange, StatusRecord } from '../hooks/status-records'
 import { statusPage } from '../hooks/status-page'
+import { goalPressed } from '../hooks/goal-press'
+import { GOAL_KEYS_ID } from '../hooks/status-keys'
+import type { RowPress } from '../hooks/presses'
 import type { StatusPage } from '../hooks/status-page'
 import { CODEX } from '../codex/src/texts'
 import type { ChildKind, Exchange, HostTask, Item, Ledger, Place, Session } from '../types'
@@ -32,6 +35,9 @@ export type HostEvent =
   /** An ask opens or closes, in a replay that runs no ledger call. */
   | { askOpens: { id: string; ask: string; kind?: Item['kind']; options?: string[] } }
   | { askCloses: string }
+  /** The person presses Use this goal or Not now on the proposal, or types a goal, through the host's own press. */
+  | { press: 'use-goal' | 'decline-goal' }
+  | { press: 'type'; text: string }
 
 /** The Status call a step runs, and what it reads. */
 export type StepCall =
@@ -65,6 +71,8 @@ export type Replay = {
   about: string
   /** Each reply runs the ledger call, then the Status call, as the product does. Else the steps open and close asks. */
   hasLedgerCalls: boolean
+  /** A short case: it runs 5 times per model, and each model's runs are judged apart. Else 3 runs, judged together. */
+  isShort?: true
   start: { ledger: Partial<Ledger>; facts: Facts; place?: Place }
   steps: Step[]
 }
@@ -73,8 +81,8 @@ export type Agent = 'claude' | 'codex'
 
 export type CallAnswer = { text: string | null; model?: string | null; outputTokens?: number | null }
 
-/** One model call with `system` as its system text. */
-export type ModelCall = (prompt: string, system: string) => Promise<CallAnswer>
+/** One model call with `system` as its system text. `kind` says which of the inbox model's calls it is. */
+export type ModelCall = (prompt: string, system: string, kind: CallLog['kind']) => Promise<CallAnswer>
 
 /** A host's limits on an inbox model call. An answer past them is dropped, as the host drops it. */
 export type Limits = { ms: number; outputTokens: number | null }
@@ -84,7 +92,13 @@ export const LIMITS: Record<Agent, Limits> = {
   codex: { ms: 120_000, outputTokens: null },
 }
 
-export type ReplayDeps = { agent: Agent; ask: ModelCall; clock?: () => number }
+export type ReplayDeps = {
+  agent: Agent
+  ask: ModelCall
+  clock?: () => number
+  /** The Status call's system text in place of `STATUS_SYSTEM`, as for a copy without one of the goal's rules. */
+  system?: string
+}
 
 /** What one model call of a step did. */
 export type CallLog = {
@@ -138,6 +152,13 @@ function withEvent(s: Session, e: HostEvent, now: number): Session {
     return withStatus(e.child === 'act' ? childWorked(o, e.ref, now) : childEnded(o, e.ref, now))
   }
   if ('look' in e) return withStatus(lookEnded(lookStarted(o, now), now + e.look * 1000))
+  if ('press' in e) {
+    const press: RowPress =
+      e.press === 'type' ? { action: 'type', id: GOAL_KEYS_ID, text: e.text } : { action: e.press, id: GOAL_KEYS_ID }
+    const r = goalPressed(s.ledger, press, kind => ({ kind, action: GOAL_KEYS_ID, text: e.press, at: now }), now)
+    // A press on a proposal the model did not write finds nothing, as in the product; the step's rules report the miss.
+    return 'stale' in r ? s : { ...s, ledger: r.ledger }
+  }
   if ('askOpens' in e)
     return { ...s, ledger: { ...s.ledger, items: [...s.ledger.items, itemOf(e.askOpens, s.ledger.turn, now)] } }
 
@@ -152,7 +173,7 @@ async function timed(
 ): Promise<CallAnswer & { log: CallLog }> {
   const clock = deps.clock ?? Date.now
   const started = clock()
-  const answer = await deps.ask(prompt, system)
+  const answer = await deps.ask(prompt, system, kind)
   const ms = clock() - started
   const limits = LIMITS[deps.agent]
   const tokens = answer.outputTokens ?? null
@@ -180,7 +201,7 @@ async function statusCall(
   const prompt = statusCallPrompt(input, read)
   const logs: CallLog[] = []
   const { last } = await askStatus(async () => {
-    const answer = await timed(deps, 'status', prompt, STATUS_SYSTEM)
+    const answer = await timed(deps, 'status', prompt, deps.system ?? STATUS_SYSTEM)
     logs.push(answer.log)
     return answer
   })
@@ -191,7 +212,10 @@ async function statusCall(
   }
   const answer = last.text === null ? null : parseStatus(last.text)
   const turns = s.presence.turnsApplied
-  const session = answer === null ? failedStatus(s, last.text, turns, now) : appliedStatus(s, answer, turns, now)
+  const session =
+    answer === null
+      ? failedStatus(s, last.text, turns, now)
+      : appliedStatus(s, answer, turns, now, input.last?.goal?.setAt ?? null)
 
   return { session, log, isFailed: answer === null }
 }

@@ -60,4 +60,9 @@ export function buttonLine(screen: PanelScreen, ui: PanelUi): string {
 
 export const onPage: PanelUi = { ...INITIAL_UI, tab: 'overview' }
 
-export const labelOf = (row: StatusRow) => (row.kind === 'subject' || row.kind === 'child' ? row.name : row.text)
+export const labelOf = (row: StatusRow) =>
+  row.kind === 'subject' || row.kind === 'child'
+    ? row.name
+    : row.kind === 'counts'
+      ? row.counts.map(c => c.text).join(' · ')
+      : row.text

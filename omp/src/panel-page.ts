@@ -1,5 +1,6 @@
 import { cellWidth, cutForEllipsis } from '../../hooks/text'
-import { statusKeyPlan } from '../../hooks/action-plan'
+import { statusKeyPlan } from '../../hooks/status-keys'
+import type { StatusKeyTarget } from '../../hooks/status-keys'
 import {
   mergedLine,
   nameBeforeStall,
@@ -42,7 +43,7 @@ const GLUE = '\uE000'
  * One row of the Status's list: a mark and its name wrapped after it, with its stall word after `STALL_GAP` in the
  * stall's tone on the line of the name's last word. Then where it stands, dim.
  */
-function pageLine(
+export function pageLine(
   d: Draw,
   indent: number,
   mark: string,
@@ -115,23 +116,29 @@ function lookLines(row: StatusRow & { kind: 'look' }, width: number, s: Style): 
   return ['', rule, ...(row.isLast ? [] : [''])]
 }
 
-/** A line on the Status page, laid out as the shared row says. */
 /**
- * A Status row's buttons from its plan, under its text. The selected row's focused button takes Enter, and its other
- * buttons their keys, so only that row draws them focused or with keys.
+ * A Status target's buttons from its plan, with their text at `textAt`. The selected target's focused button takes
+ * Enter, and its other buttons their keys, so only that target draws them focused or with keys.
  */
-function pageButtonLines(row: StatusRow, d: Draw, isSelected: boolean): string[] {
-  const faces = statusKeyPlan(row).map((k): ButtonFace => ({
+export function pageButtonLines(
+  target: StatusKeyTarget,
+  d: Draw,
+  isSelected: boolean,
+  textAt = PAGE_TEXT_AT,
+): string[] {
+  const faces = target.keys.map((k): ButtonFace => ({
     label: k.label,
     key: isSelected ? k.hotkey : null,
     isRecommended: false,
     isFollowUp: false,
+    ...(k.emphasis === 'quiet' ? { isQuiet: true } : {}),
   }))
-  const focused = isSelected ? pageFocus(row, d.ui) : -1
+  const focused = isSelected ? pageFocus(target, d.ui) : -1
 
-  return faces.length > 0 ? faceLines(faces, focused, PAGE_TEXT_AT - 1, d.width, d.style) : []
+  return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style) : []
 }
 
+/** A line on the Status page, laid out as the shared row says. */
 export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string[] {
   const { width, now, style: s } = d
   if (row.kind === 'subject') {
@@ -149,7 +156,7 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
         ),
       )
     if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim))
-    out.push(...pageButtonLines(row, d, isSelected))
+    out.push(...pageButtonLines({ id: row.id, keys: statusKeyPlan(row) }, d, isSelected))
 
     return row.hasChildren ? withTree(out, null, '│', s) : out
   }
@@ -165,5 +172,17 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
     return withTree([' '.repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s)
   }
   if (row.kind === 'look') return lookLines(row, width, s)
+  if (row.kind === 'part') {
+    const label = `${row.text} `
+
+    return [
+      `${' '.repeat(PAGE_TEXT_AT)}${s.dim(label + '─'.repeat(Math.max(4, pageRuleCells(width) - cellWidth(label))))}`,
+    ]
+  }
+  if (row.kind === 'counts')
+    return [
+      ' '.repeat(PAGE_TEXT_AT) +
+        row.counts.map(c => feedbackPaint(c.tone, s)(c.mark) + s.dim(` ${c.text}`)).join(s.dim(STALL_GAP)),
+    ]
   return pageLine(d, PAGE_MARK_AT, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim)
 }

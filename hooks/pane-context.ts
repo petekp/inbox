@@ -8,7 +8,8 @@ import type {
   UiPressArgument,
 } from 'claude-code'
 import type { Draft, FoldKind, LastAction, PrViews, RowNote, Stop, Tab, Turns } from '../types'
-import type { DrawnEntry, DrawnLists, statusSelected } from './action-plan'
+import type { DrawnEntry, DrawnLists } from './action-plan'
+import type { statusSelected } from './status-keys'
 import type { PressState } from './feedback'
 import type { helpKeys } from './help'
 import type { Action, KeyAction } from './pane-keys'
@@ -130,6 +131,8 @@ export type PaneHandlers = {
   unlessGuarded: (rowId: string, press: UiPressArgument, onPress: Action['onPress']) => Promise<void>
   sendDraft: (id: string, surface: UiPressArgument['surface']) => Promise<void>
   discardReply: (id: string) => Promise<void>
+  startTyping: (id: string, seed?: string) => Promise<void>
+  selectStatusRow: (id: string, focusKey?: string) => Promise<void>
   sendTyped: (id: string, text: string, surface: UiPressArgument['surface']) => Promise<void>
   select: (tab: Tab, id: string, index: number) => Promise<void>
   showTab: (tab: ShownTab) => Promise<void>

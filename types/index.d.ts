@@ -56,16 +56,60 @@ export type StatusHead = {
 
 export type DelegateState = 'working' | 'blocked' | 'finished'
 
+/** The outcome the person set for the session's work. Only a press sets or changes it. */
+export type StatusGoal = {
+  text: string
+  setAt: number
+  /** When every milestone was first done together. Code sets it, and the goal stays until the person replaces it. */
+  metAt: number | null
+  /** The goal this one replaced, shown until the person looks. */
+  was: string | null
+  /** Whether the milestones still belong to an earlier goal, until a Status call after this goal was set has written. */
+  isAwaitingMilestones: boolean
+}
+
+/** A goal the Status call proposed from the person's own words, waiting for the person to use it, edit it or decline it. */
+export type ProposedGoal = {
+  text: string
+  milestones: { name: string; status: SubjectStatus }[]
+  at: number
+}
+
+/** An outcome the goal needs. The Status call writes and moves it by id, as it does a subject. */
+export type Milestone = {
+  id: string
+  name: string
+  status: SubjectStatus
+  /** Where it stands, in a few words. */
+  text: string
+  /** The plan a change replaced, shown until the person looks. */
+  was: string | null
+  changedAt: number
+  closedAt: number | null
+}
+
+/** What a subject serves: one milestone by its id, or `none` for work the goal does not need. */
+export type Serves = string | 'none'
+
 /** The Status tab's list. The Status call changes it by id; code keeps the order and every time. */
 export type SessionStatus = {
   /** Null until the Status call writes it. */
   head: StatusHead | null
   subjects: Subject[]
   children: Child[]
-  /** The subject each ask holds up, by the ask's item id, as the Status call linked them. */
+  /** The subject or milestone each ask holds up, by the ask's item id, as the Status call linked them. */
   askSubjects: Record<string, string>
   nextId: number
   nextChildId: number
+  goal: StatusGoal | null
+  proposedGoal: ProposedGoal | null
+  /** The name keys of goals the person declined, newest last, so the call does not propose them again. */
+  declinedGoals: string[]
+  milestones: Milestone[]
+  nextMilestoneId: number
+  /** What each subject serves, by subject id, as the Status call linked them. A subject with no entry is not linked yet. */
+  serves: Record<string, Serves>
+
   /** When the person last looked: the last time a look ended. Null before the first look. */
   lastLookAt: number | null
   /** The look in progress, while the Status tab is shown. Null otherwise. */

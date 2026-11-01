@@ -1,81 +1,66 @@
 # The Status replays
 
-The replays that judge the Status tab. [How the Status is judged](plans/status/judging.md) gives the fixed rules, the judge and the pass bar.
+The cases that judge the Status tab. [How the Status is judged](plans/status/judging.md) gives the fixed rules, the code holds, the judge and the pass bar.
 
-Three replays, each run 3 times on Sonnet and on Codex. Fixed rules check the page after every step. The judge reads a few checkpoints. Each call has its host's limits: 45 seconds and 1600 output tokens for Claude, 120 seconds for Codex. A call past its limit fails, as it would in the host: the page stays as it was, and the status line says so.
+Three replays and one short case run 3 times each on Sonnet and on Codex, and three short cases run 5 times each. Fixed rules and code holds check the page after every step. The judge reads a few checkpoints. Each call has its host's limits: 45 seconds and 1600 output tokens for Claude, 120 seconds for Codex. A call past its limit fails, as it would in the host: the page stays as it was, and the status line says so.
 
-**Replay A: a coordinator's day.** Status calls only. The fixture opens and closes the asks. It starts from a busy page: a head about shipping notes 2.4, seven open pieces, three done, two running delegates and one open ask, last seen two hours earlier. One delegate's Herdr name is an id, and its session publishes its focus.
+A step with no call can press a goal button as the person would: Use this goal, Not now, or a typed goal. It runs through the host's own press.
+
+**Replay A: a coordinator's day.** Status calls only, 11 of them. The fixture opens and closes the asks. It starts from a busy page last seen two hours earlier: the goal "Notes 2.4 in the store" with three milestones, one done, a head about shipping 2.4, seven open pieces, three done, two running delegates and one open ask. The export button sits under Other work. One delegate's Herdr name is an id, and its session publishes its focus.
 
 | Step | What happens | What it checks |
 | --- | --- | --- |
-| 1 | A delegate reports the sync merge done, and the coordinator merges it | The piece closes as ✓. Its text names no step. |
-| 2 | The coordinator publishes 2.4. The reply is full of times. | The release closes. No time word reaches the page. |
-| 3 | The person asks to file dark mode and widgets for later, fix the vanishing-notes bug, and ship 2.5. A delegate starts on the bug. | The head leaves 2.4. Both filed pieces leave the open rows, with the filed mark once it is built. The delegate sits under the bug, in plain words. |
-| 4 | The delegate calls it "the archive bug", and the person asks for a long, sentence-like extra on the same fix | One piece, not two. If the extra merges into the fix, the line naming it is readable. |
+| 2 | A delegate reports the sync merge done, and the coordinator publishes 2.4. The reply is full of times. | Both milestones close, and the goal is met. No time word reaches the page. The text names no step. |
+| 3 | The person files dark mode and widgets for later, and asks for a fix to the vanishing-notes bug, then 2.5. A delegate starts on the bug. | Checkpoint. "2.5" is proposed, and the 2.4 goal holds. The head leaves 2.4. Both filed pieces close. The delegate sits under the bug, in plain words. |
+| Press | The person presses Use this goal | No call. The 2.5 goal and its milestones take the page. |
+| 4 | The delegate calls it "the archive bug", and the person asks for a long extra on the same fix | One piece, not two. The fix links to its milestone, and the pieces the goal does not need link to Other work. |
 | 5 | The coordinator asks whether 2.5 waits for the fix. The ask opens. | ◆ on 2.5 only. Its text does not restate the question. |
-| 6 | The person answers, and the ask closes | ◆ clears. The row shows the choice. |
-| Look | The person reads the page | The Seen line moves to this point |
-| 7 | A reply that only explains how releases work | Nothing moves |
-| 8 | The coordinator records a flaky test elsewhere as a finding | No subject for it |
+| Look | The person answers in the inbox, and reads the page | No call. The ask closes, and the Seen line moves. |
+| 8 | The coordinator records a flaky test elsewhere as a finding | No subject for it, and nothing moves |
 | 9 | The fix's PR opens, and a reviewer subagent starts | Checkpoint. No new "PR" piece. The text says the state of the fix. The reviewer sits under the fix. |
-| 10 | The PR merges, and 2.5 prep starts. The person says nothing. | The fix closes as ✓ under its own name. 2.5 is ●, ◐ or ◌, since its build runs. The head's title leaves the fix. |
-| 11 | The person asks why export sometimes picks the wrong default folder on one platform | The new piece gets a short name |
-| Return | Three hours pass | No call. Step 12 reads the page three hours on. |
-| 12 | 2.5 is published, and nothing follows | The head names the finished push. The export piece, set aside since the start, is still ○. |
-| 13 | The person says "ok", and the coordinator picks up the export folder bug from the queue | The head leaves 2.5 for the folder bug, though no one named a new goal |
-| 14 | The folder fix merges, and the coordinator starts on search speed | Checkpoint. The head leaves the finished folder fix for search. |
-| 15 | Search gets faster | The head holds |
+| 10 | The PR merges, and 2.5 prep starts | The fix and its milestone close. The head's title leaves the fix. |
+| 11 | The person asks why export sometimes picks the wrong default folder on one platform | The new piece gets a short name, and links to Other work |
+| Return | Three hours pass | No call |
+| 12 | 2.5 is published, and nothing follows | Checkpoint. The goal is met. The head names the finished push. |
+| 13 | The coordinator picks up the export folder bug from the queue. Nobody names a new goal. | Nothing is proposed. The head leaves 2.5. |
+| 14 | The person types the goal "Search under 100 ms in 2.6" with Change goal. The reply merges the folder fix and starts on search. | Checkpoint. The 2.5 milestones go, and the new ones are written with the right marks. Every subject is linked again. |
 
 At every step, the pieces set aside or waiting on a vendor stay on the page.
 
-**Replay B: one task, with both calls.** Each reply runs the ledger call, then the Status call, as the product does. So an ask is born, answered and dismissed by the ledger, and the Status sees each change. It starts empty.
+**Replay B: one task, with both calls.** Each reply runs the ledger call, then the Status call, as the product does. So an ask is born, answered and dismissed by the ledger, and the Status sees each change. It starts empty, and has 9 calls.
 
 | Step | What happens | What it checks |
 | --- | --- | --- |
-| 1 | The person asks for offline sync. The agent plans the engine, conflicts and a settings toggle, and starts the engine. | The head names the aim. Three pieces. |
-| 2 | The engine works. On the way the agent fixes a lint error and runs two review subagents. It asks "last-write-wins or manual merge?" | The head holds. The subagents sit under the engine, each named by the description it was started with. ◆ on conflicts, from the ledger's new ask. |
+| 1 | The person asks for offline sync, shipped in 2.5. The agent plans the engine, conflicts and a settings toggle, and starts the engine. | The goal is proposed. The head names the aim. Three pieces. |
+| Press | The person presses Use this goal | No call |
+| 2 | The engine works. The agent fixes a lint error, runs two review subagents and asks "last-write-wins or manual merge?" | The head holds. The subagents sit under the engine. ◆ on conflicts, from the ledger's new ask. Each piece links to its milestone. |
 | 3 | The person answers "manual merge" | The ask closes, ◆ clears, and the conflicts row shows the choice |
-| 4 | The person reverses: last-write-wins with a backup copy | A was line on conflicts, and no new piece |
-| 5 | Conflicts progress. The person sets the toggle aside and asks for an offline banner first. | The toggle is ○ and stays. The banner is ● or ◐. No new was line. |
-| 6 | The person asks how the backup copy is named and why the plan changed, and the agent explains both. Nothing is decided. | Nothing moves |
+| 4 | The person reverses: last-write-wins with a backup copy | Checkpoint. A was line on conflicts, and no new piece |
+| 5 | Conflicts progress. The person sets the toggle aside and asks for an offline banner first. | The toggle is ○ and keeps its link. The banner links to a milestone. No new was line. |
+| 6 | The person asks how the backup copy is named and why the plan changed. Nothing is decided. | Nothing moves |
 | 7 | The banner shows on phones, and the agent asks whether it shows on web too | ◆ on the banner, from the ledger's new ask |
-| 8 | The person dismisses the question and asks for device tests. Android syncs, and iOS loses edits after a crash. | The ask closes as dismissed, and ◆ clears. The banner closes as ✓. The engine row keeps both states, or splits. |
-| 9 | The agent fixes the iOS edit loss. Its notes between tool calls say the fix works and the engine is finished. Its last message only says where it saved the results. | The engine closes as ✓, from text before the last message. |
+| 8 | The person dismisses the web question. Device tests: Android syncs, and iOS loses edits after a crash. | Checkpoint. The ask closes as dismissed, and ◆ clears. The banner closes as ✓. The engine row keeps both states, or splits. |
+| 9 | The agent fixes the iOS edit loss. Its notes between tool calls say the fix works. Its last message only says where it saved the results. | The engine and its milestone close, from text before the last message. The goal stays unmet. |
 
-**Replay C: a long turn and a catch-up.** Status calls only.
+**Replay C: a long turn and a catch-up.** Status calls only, 3 of them, with no goal.
 
 | Step | What happens | What it checks |
 | --- | --- | --- |
-| 1 | A mid-turn call at 12 minutes. The activity finishes one piece and starts another. The host's task list holds file and test steps beside the features. | The finished piece closes, and the next is ●, since the turn still runs. No file name or test step becomes a row. |
-| 2 | A mid-turn call at 25 minutes. The activity shows more investigation and nothing new. | `UNCHANGED` is right, and no row moves |
-| 3 | The reply ends the turn | |
-| 4 | Two replies were dropped, and a catch-up reads the whole conversation | Finished work is not ● or ◐. The missed change reaches the page. |
+| 1 | A mid-turn call at 12 minutes. The activity finishes one piece and starts another. The host's task list holds file and test steps beside the features. | Checkpoint. The finished piece closes, and the next is ●, since the turn still runs. No file name or test step becomes a row. Where it stands says what works, not what the agent is doing. |
+| 2 | A mid-turn call at 25 minutes. The activity shows more investigation and nothing new. | `NO CHANGE` is right, and no row moves |
+| 4 | The reply and two more were dropped, and a catch-up reads the whole conversation. The person had asked to get search under 100 ms on big libraries and ship it in 3.1. | Checkpoint. The goal is proposed. Finished work is not ● or ◐. The missed change reaches the page. |
 
-**One short case** stays outside the replays: a catch-up of a conversation the inbox never saw, from an empty page. One feature is half done: images attach, and PDFs wait on a question. The page may draw it as one row with both parts, or give the finished part a ✓ row of its own. The case checks that the question links to the feature, and that a finished part drawn as its own row is not ●. Finished work marked ● after a catch-up was a real failure, and Replay C's catch-up starts from a page that already holds the work.
+The person's "speed up search on large libraries" at steps 1 and 2 is a direction, so nothing is proposed there.
 
-The 20 single-exchange Status cases left the ledger suite, whose cases are in `evals/cases/`. Each one's scenario is a step above, and their checks run at every step. `status-shown-records-question` checks only the ledger, so it stays in the ledger suite. `catch-up-records-open-question-and-result` keeps its ledger check, and the short case above checks its Status.
+**The short cases.**
 
-| Case | Replay step |
-| --- | --- |
-| `status-feature-level` | A 9, and the text rule at every step |
-| `status-direction-change` | B 4 |
-| `status-plain-progress-no-course` | B 2 |
-| `status-coordinator` | A 3, for the delegate's link |
-| `status-single-task-not-coordinator` | B 2, for a piece that finishes in one exchange |
-| `status-coordinator-update` | A 1 and A 10 |
-| `status-ask-not-restated` | B 2 |
-| `status-ask-links-right-subject` | A 5 |
-| `status-problem-outside-task-not-subject` | A 8 |
-| `status-long-name` | A 11 |
-| `status-mid-turn-moves-on` | C 1 |
-| `status-new-goal` | A 3 |
-| `status-nothing-changes` | A 7 |
-| `status-reversal-then-progress` | B 5 |
-| `status-reversal-explained-again` | B 6 |
-| `status-host-tasks` | C 1 |
-| `status-long-session` | A, from its busy start |
-| `status-child-linked` | A 9 |
-| `status-reword-only` | A 7 |
-| `status-no-time-words` | A 2, and the time-word rule at every step |
+| Case | Runs | What happens | What it checks |
+| --- | --- | --- | --- |
+| `catch-up-from-empty` | 3 | A catch-up of a conversation the inbox never saw, from an empty page. Images attach, and PDFs wait on a question. | The question links to the feature. A finished part drawn as its own row is not ●. |
+| `declined-goal` | 5 | Step 1: the person asks for the import ready to demo by the 14th. The person presses Not now. Step 2: "Let's get the import demo-ready." | Step 1 proposes, with no date. Step 2 does not propose the declined goal again in other words. |
+| `goal-on-busy-page` | 5 | 18 open subjects and a goal just accepted, none linked. One reply. | Every subject is linked, to a milestone or to Other work |
+| `mid-turn-activity` | 5 | Replay C's first step, judged per model | Checkpoint. Where it stands says the state, not the activity. |
 
-Two of these cases also checked the coordinator role, which the Status call no longer writes.
+`catch-up-from-empty` is judged with the replays: both models' runs together. The other three are judged on each model apart.
+
+**Steps that test the goal, and the ablation.** The goal's steps come from the design, not from failures seen in use. So a step that tempts a false proposal ran against a copy of the system text without the rule it tests, as [How the Status is judged](plans/status/judging.md) describes. A case where the agent's reply states its own goal drew no proposal even from the copy without both proposal rules, so it was dropped. `declined-goal` step 2 is inconclusive: code already drops a proposal with a declined goal's key words, so the step can fail only on a reworded one. Replay C's steps 1 and 2, where the person gives a direction with no finish line, also check that nothing is proposed.

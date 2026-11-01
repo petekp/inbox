@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { asksText, lookEnded, lookStarted, LOOK_MIN_MS } from '../hooks/status-children'
 import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
 import { mergedLine, nameBeforeStall } from '../hooks/status-page'
-import { statusKeyPlan } from '../hooks/action-plan'
+import { statusKeyPlan } from '../hooks/status-keys'
 import {
   IDLE_MARK,
   CLOSED_MARKS,
@@ -148,7 +148,9 @@ test('a subject that open asks hold up offers View on the oldest ask, named for 
     i3: askItem('i3'),
   }
   const viewOf = (items: Item[]) =>
-    page(o, 10 * MIN, {}, items).rows.map(r => statusKeyPlan(r).map(k => `${r.id} ${k.label} ${k.press.askId}`))
+    page(o, 10 * MIN, {}, items).rows.map(r =>
+      statusKeyPlan(r).map(k => `${r.id} ${k.label} ${k.press.action === 'show-ask' ? k.press.askId : ''}`),
+    )
 
   expect(viewOf([asks.i1, asks.i2])).toEqual([['s1 View task i2'], []])
   expect(viewOf([asks.i1, asks.i2, asks.i3])).toEqual([['s1 View question i3'], []])

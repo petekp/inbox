@@ -1,3 +1,4 @@
+import type { GoalPart } from './panel-goal'
 import type { FoldKind } from '../../types'
 import type { PrAction } from '../../hooks/pr-press'
 import {
@@ -38,6 +39,8 @@ export type Button = {
   isFollowUp: boolean
   /** Its press is out, so it draws dim and its key does nothing. */
   isOut?: boolean
+  /** It holds up nothing, so it draws dim until focused. */
+  isQuiet?: boolean
 }
 
 /** What a button draws. A Status button presses nothing the host runs, so it has a face and no `press`. */
@@ -91,6 +94,7 @@ export type Entry =
   | { kind: 'note'; text: string; isStrong?: boolean; isPlain?: boolean; indent?: number; isWhole?: boolean }
   | { kind: 'row'; line: Line }
   | { kind: 'page'; row: StatusRow }
+  | { kind: 'goal'; part: GoalPart }
   | { kind: 'banner'; banner: BannerView }
   /** A key Help lists, its keys padded to `column`. */
   | { kind: 'key'; key: HelpKey; column: number }

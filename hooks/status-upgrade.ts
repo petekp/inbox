@@ -1,17 +1,17 @@
 import type { Child, ChildKind, DelegateState, SessionStatus, StatusHead, Subject, SubjectStatus } from '../types'
+import { goalFields } from './status-upgrade-goal'
 import {
   clipWords,
   DESCRIPTION_KEPT,
   EMPTY_SESSION_STATUS,
   NAME_KEPT,
   nameKey,
-  OPEN_STATUSES,
+  STATUSES,
   OPEN_SUBJECTS,
   TEXT_KEPT,
 } from './status-limits'
 import type { OpenStatus } from './status-limits'
 
-const STATUSES: readonly SubjectStatus[] = [...OPEN_STATUSES, 'done', 'dropped']
 const CHILD_KINDS: readonly ChildKind[] = ['subagent', 'background', 'workflow', 'delegate']
 const DELEGATE_STATES: readonly DelegateState[] = ['working', 'blocked', 'finished']
 
@@ -164,5 +164,6 @@ export function upgradeStatus(saved: unknown): SessionStatus | null {
     nextChildId: Math.max(time(o.nextChildId) ?? 1, children.length + 1),
     lastLookAt: time(o.lastLookAt),
     look: lookAt === null ? null : { startedAt: lookAt },
+    ...goalFields(o, new Set(subjects.map(s => s.id))),
   }
 }

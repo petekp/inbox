@@ -30,6 +30,9 @@ export type Run = {
 /** A run that found the session could reach more than the stand-in inbox. The whole run stops, with no retry. */
 export class IsolationError extends Error {}
 
+/** A run that would pass its ceiling of model calls. The whole run stops, with no retry, and has no grade. */
+export class BudgetError extends Error {}
+
 /**
  * Throws for an unknown case name, for a selection with no cases, and for a check whose pattern is not a valid
  * regular expression, so a typo fails before any model call.
@@ -136,13 +139,14 @@ export type Job<R extends Run> = { go: () => Promise<R>; unrun: (error: string) 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 /**
- * Runs each job, `PARALLEL` at a time, and retries one whose call failed. A job that throws becomes a run that could
- * not be graded. An `IsolationError` is never retried: it starts no more jobs, and its message is returned as
- * `stopped`. `onResult` gets every result so far each time one lands, so a run cut short keeps them.
+ * Runs each job, `PARALLEL` at a time, and retries one whose call failed up to `retries` times. A job that throws
+ * becomes a run that could not be graded. An `IsolationError` or `BudgetError` is never retried: it starts no more
+ * jobs, and its message is returned as `stopped`. `onResult` gets every result so far each time one lands, so a run cut short keeps them.
  */
 export async function runJobs<R extends Run>(
   jobs: Job<R>[],
   onResult: (results: R[]) => void,
+  retries = RETRIES,
 ): Promise<{ results: R[]; stopped: string | null }> {
   const results: R[] = []
   let stopped: string | null = null
@@ -152,7 +156,7 @@ export async function runJobs<R extends Run>(
     try {
       return { ...(await job.go()), durationMs: Date.now() - started }
     } catch (e) {
-      if (e instanceof IsolationError) throw e
+      if (e instanceof IsolationError || e instanceof BudgetError) throw e
       return job.unrun(`the runner threw: ${String(e)}`)
     }
   }
@@ -163,7 +167,7 @@ export async function runJobs<R extends Run>(
         try {
           let r = await attempt(job)
           const earlier: object[] = []
-          for (let tries = 1; r.error && tries <= RETRIES && stopped === null; tries++) {
+          for (let tries = 1; r.error && tries <= retries && stopped === null; tries++) {
             await wait(RETRY_WAIT_MS * tries)
             if (stopped !== null) break
             earlier.push(r)

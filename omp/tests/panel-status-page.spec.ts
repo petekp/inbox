@@ -8,13 +8,21 @@ import { sessionView } from '../../hooks/session-view'
 import { cellWidth } from '../../hooks/text'
 import { render } from '../src/panel'
 import type { Style } from '../src/panel'
+import { demoState } from '../src/demo'
 import { emptyState } from '../src/state'
 import { drawn, ESC, labelOf, NOW, onPage, screenOf, strip, style, text } from './panel-harness'
 
 const toneNamed: Style = { ...style, tone: (name, s) => `<${name}>${s}</${name}>` }
 
+function noGoalScreen() {
+  const state = demoState(NOW)
+  const o = state.ledger.overview!
+  state.ledger = { ...state.ledger, overview: { ...o, goal: null, milestones: [], serves: {} } }
+  return screenOf({ view: sessionView(state, NOW, SETTLED_MS, true, NO_HOLDS) })
+}
+
 test('the Status page shows the head’s title and description, then its rows in order, each subject’s marks in the head’s column, where it stands under its name and its was line under that, and Last seen in the middle of its dashed rule with a blank line above and below it', () => {
-  const screen = screenOf()
+  const screen = noGoalScreen()
   const page = screen.view.statusPage
   const lines = text(screen, onPage).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
@@ -89,7 +97,7 @@ test('on the Status page, a row’s stall word follows its name on the line of i
 })
 
 test('on the Status page, a rule from the text column sets each item apart, with none inside a subject’s tree or beside the look line', () => {
-  const lines = text(screenOf(), onPage, 40).split('\n')
+  const lines = text(noGoalScreen(), onPage, 40).split('\n')
   const subject = lines.find(l => l.includes('Dismiss gesture'))!
   const rule = new RegExp(`^ {${subject.indexOf('Dismiss')}}─+$`)
   const rowsAfterRules = lines.flatMap((l, n) => (rule.test(l) ? [lines[n + 1]!] : []))

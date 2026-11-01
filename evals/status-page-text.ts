@@ -30,15 +30,47 @@ function rowText(r: StatusRow): string[] {
       return [`── ${LOOK_TEXT}`]
     case 'fold':
       return [`${r.mark} ${r.text}`]
+    case 'part':
+      return [`── ${r.text}`]
+    case 'counts':
+      return [r.counts.map(c => `${c.mark} ${c.text}`).join(STALL_GAP)]
   }
+}
+
+/** The goal and its milestones, or a proposal, above the head. */
+function goalText(page: StatusPage): string[] {
+  const proposal = page.proposal
+    ? [page.proposal.label, page.proposal.text, page.proposal.milestones.map(m => `${m.mark} ${m.name}`).join('   ')]
+    : []
+  const g = page.goal
+  const goal = g
+    ? [
+        g.label,
+        g.text,
+        ...(g.was ? [`${WAS_PREFIX}${g.was}`] : []),
+        ...(g.awaiting ? [g.awaiting] : []),
+        ...g.milestones.flatMap(m => [`${m.mark} ${nameLine(m.name, m.stall)}`, ...(m.text ? [`  ${m.text}`] : [])]),
+      ]
+    : []
+
+  return [...proposal, ...(proposal.length > 0 && goal.length > 0 ? [''] : []), ...goal]
 }
 
 /** The Status page as plain text, in the order every look draws it, with no styling. */
 export function pageText(page: StatusPage): string {
   if (page.isEmpty) return `${page.empty.title}\n${page.empty.hint}`
 
+  const head = page.nowLine
+    ? [page.nowLine]
+    : page.head
+      ? [page.head.title, ...(page.head.description ? [page.head.description] : [])]
+      : []
+  const goal = goalText(page)
+
   return [
-    ...(page.head ? [page.head.title, ...(page.head.description ? [page.head.description] : [])] : []),
+    ...goal,
+    ...(goal.length > 0 ? [''] : []),
+    ...head,
     '',
     ...page.rows.flatMap(rowText),
     ...(page.error ? ['', page.error] : []),

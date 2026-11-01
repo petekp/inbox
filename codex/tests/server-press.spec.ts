@@ -3,6 +3,8 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
+import { parseStatus } from '../../hooks/status'
+import { applyStatus } from '../../hooks/status-ops'
 import { QUEUED_AFTER_MS } from '../../hooks/timing'
 import { notePrompt, viewOf } from '../src/core'
 import { makeServer } from '../src/server'
@@ -236,4 +238,47 @@ test('a server whose environment names no CLI runs its parent when that is a cod
   assert.equal(await findCli({}, exec, 42), '/apps/CodexCLI.app/Contents/MacOS/codex')
   assert.equal(await findCli({}, exec, 43), 'codex')
   assert.equal(await findCli({ CODEX_APP_RUNTIME_CLI_PATH: '/app/codex' }, exec, 43), '/app/codex')
+})
+
+test('on a next build, Use this goal sets the proposed goal and a typed goal replaces it, each saved at once and sent nowhere', async () => {
+  const { dir, calls, call } = await setup(
+    0,
+    () => 100,
+    async () => 'codex',
+    true,
+  )
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: {
+      ...s.ledger,
+      overview: applyStatus(
+        null,
+        parseStatus('HEAD: Pilot | Shipping it\nGOAL: Pilot ready to announce | done Fixes built; queued Announced')!,
+        50,
+        new Set(),
+      ),
+    },
+  }))
+  const used = await call(
+    'inbox_press',
+    { press: { action: 'use-goal', id: 'goal' }, thread: 's1' },
+    { thread_id: 's1' },
+  )
+  assert.equal(used.result.structuredContent.error, null)
+  const goalOf = async () => (await readState(dir, 's1')).ledger.overview
+  assert.deepEqual(
+    [(await goalOf())?.goal?.text, (await goalOf())?.milestones.map(m => m.name), (await goalOf())?.proposedGoal],
+    ['Pilot ready to announce', ['Fixes built', 'Announced'], null],
+  )
+
+  await call(
+    'inbox_press',
+    { press: { action: 'type', id: 'goal', text: 'Pilot live for every team' }, thread: 's1' },
+    { thread_id: 's1' },
+  )
+  assert.deepEqual(
+    [(await goalOf())?.goal?.text, (await goalOf())?.goal?.isAwaitingMilestones],
+    ['Pilot live for every team', true],
+  )
+  assert.deepEqual(calls, [])
 })

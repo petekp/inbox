@@ -17,6 +17,11 @@ export const DESCRIPTION_KEPT = 14
 export const ASK_READ_WORDS = 30
 /** Finished subjects the call reads, so it does not add one again. */
 export const FINISHED_READ = 10
+/** The most milestones a goal keeps, and the fewest a proposal needs. */
+export const MILESTONES_MAX = 5
+export const MILESTONES_MIN = 2
+/** How many declined goals the call is told not to propose again. */
+export const DECLINED_KEPT = 10
 /** How long an ended child stays saved, so a delegate prompted again keeps its link. */
 export const CHILD_KEPT_MS = 24 * 60 * 60_000
 export const CHILDREN_KEPT = 50
@@ -52,11 +57,19 @@ export const EMPTY_SESSION_STATUS: SessionStatus = {
   nextChildId: 1,
   lastLookAt: null,
   look: null,
+  goal: null,
+  proposedGoal: null,
+  declinedGoals: [],
+  milestones: [],
+  nextMilestoneId: 1,
+  serves: {},
 }
 
 export type OpenStatus = Exclude<SubjectStatus, 'done' | 'dropped'>
 
 export const OPEN_STATUSES: readonly OpenStatus[] = ['working', 'queued', 'waits-on-other']
+
+export const STATUSES: readonly SubjectStatus[] = [...OPEN_STATUSES, 'done', 'dropped']
 
 /** The first `limit` words of `text`, with an ellipsis when words were cut. */
 export function clipWords(text: string, limit: number): string {
