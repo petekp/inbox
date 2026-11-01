@@ -7,6 +7,7 @@ import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
 import { DESKTOP_REPLY_ROWS, REPLY_ROWS } from './pane-sizes'
 import type { PaneStatusLines } from './pane-status-lines'
+import type { StatusTone } from './help'
 import type { MilestoneRow } from './status-goal-page'
 import {
   GOAL_FIELD,
@@ -87,7 +88,7 @@ export function paneStatusGoal(
 
     return keys.length > 0 ? [<Box key={`${target.id}-keys`}>{keyRow(target.id, keys)}</Box>] : []
   }
-  const isSelected = (id: string) => look === 'terminal' && statusKeyRow?.id === id
+  const isSelected = (id: string) => look === 'terminal' && !isTypingGoal && statusKeyRow?.id === id
   const cancel: KeyAction = {
     key: `cancel-${GOAL_KEYS_ID}`,
     label: 'Cancel',
@@ -115,6 +116,29 @@ export function paneStatusGoal(
           />,
           <Box key="goal-field-keys">{keyRow(`${GOAL_KEYS_ID}-field`, [cancel])}</Box>,
         ]
+  /** Marks in their tones, each with its text, on lines that wrap between them, as the proposal's milestones and the Other work counts draw. */
+  const markRun = (
+    key: string,
+    parts: { mark: string; tone: StatusTone; text: string }[],
+    gap: string,
+    isMuted = false,
+  ) => (
+    <Box key={key} flexDirection="row" flexWrap="wrap">
+      {parts.flatMap((part, n) => [
+        ...(n > 0
+          ? [
+              <Text key={`${key}-gap-${n}`} color={pal.muted}>
+                {gap}
+              </Text>,
+            ]
+          : []),
+        <Box key={`${key}-${n}`} flexDirection="row" flexShrink={0}>
+          {markGlyph({ text: part.mark, isRunning: false }, `${key}-${n}`, part.tone ? pal.mark[part.tone] : pal.muted)}
+          <Text color={isMuted ? pal.muted : undefined}>{` ${part.text}`}</Text>
+        </Box>,
+      ])}
+    </Box>
+  )
   const milestoneLine = (m: MilestoneRow) =>
     statusRowLine({
       key: `goal-${m.id}`,
@@ -129,8 +153,9 @@ export function paneStatusGoal(
     })
 
   /**
-   * What the page draws above the head: a proposal, then the goal with its milestones. The field takes the goal's
-   * place while the person types one. With no goal, it takes the place of Set a goal under the head.
+   * What the page draws above the head: a proposal, then the goal with its milestones. While the person types a goal,
+   * the field takes the proposal's text's place, else the goal's, else Set a goal's under the head, and the buttons of
+   * the proposal and the goal give way to it.
    */
   const goalAbove = (page: StatusPage): JSX.Element[] => {
     const p = page.proposal
@@ -141,19 +166,13 @@ export function paneStatusGoal(
             'goal-proposal',
             [
               muted('goal-proposal-label', p.label),
-              bold('goal-proposal-text', p.text),
-              <Box key="goal-proposal-milestones">
-                <Text wrap="wrap">
-                  {p.milestones.map((m, n) => (
-                    <Text key={`goal-proposal-${n}`}>
-                      {n > 0 ? '   ' : ''}
-                      <Text color={m.tone ? pal.mark[m.tone] : pal.muted}>{m.mark}</Text>
-                      {` ${m.name}`}
-                    </Text>
-                  ))}
-                </Text>
-              </Box>,
-              ...keysLine({ id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(page) }),
+              ...(isTypingGoal ? field() : [bold('goal-proposal-text', p.text)]),
+              markRun(
+                'goal-proposal-milestones',
+                p.milestones.map(m => ({ ...m, text: m.name })),
+                '   ',
+              ),
+              ...(isTypingGoal ? [] : keysLine({ id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(page) })),
             ],
             isSelected(PROPOSAL_KEYS_ID),
           ),
@@ -165,7 +184,7 @@ export function paneStatusGoal(
       ...proposal,
       block('goal-title', [
         muted('goal-label', g.label),
-        ...(isTypingGoal ? field() : [bold('goal-text', g.text)]),
+        ...(isTypingGoal && !p ? field() : [bold('goal-text', g.text)]),
         ...(g.was ? [muted('goal-was', `${WAS_PREFIX}${g.was}`)] : []),
         ...(g.awaiting ? [muted('goal-awaiting', g.awaiting)] : []),
       ]),
@@ -174,15 +193,18 @@ export function paneStatusGoal(
     ]
   }
   const goalKeys = (page: StatusPage) => keysLine({ id: GOAL_KEYS_ID, keys: goalKeyPlan(page) })
-  /** Under the head, or under the empty state, while no goal is set: Set a goal, or the field it opened. */
-  const setGoal = (page: StatusPage): JSX.Element[] =>
-    page.goal !== null
-      ? []
-      : [block('goal-set', isTypingGoal ? field() : goalKeys(page), !isTypingGoal && isSelected(GOAL_KEYS_ID))]
+  /** Under the head, or under the empty state, while no goal is set: Set a goal, or the field it opened when no proposal shows. */
+  const setGoal = (page: StatusPage): JSX.Element[] => {
+    if (page.goal !== null || (isTypingGoal && page.proposal !== null)) return []
+
+    return [block('goal-set', isTypingGoal ? field() : goalKeys(page), isSelected(GOAL_KEYS_ID))]
+  }
+  /** Set a goal, or the field it opened, with no frame, for the empty page's centred column. */
+  const setGoalBare = (page: StatusPage): JSX.Element[] => (isTypingGoal ? field() : goalKeys(page))
   /** While a goal is set, the head draws as one muted line. */
   const nowLine = (text: string) => block('status-now', [muted('status-now-line', text)])
 
-  return { goalAbove, setGoal, nowLine }
+  return { goalAbove, setGoal, setGoalBare, nowLine, markRun }
 }
 
 export type PaneStatusGoal = ReturnType<typeof paneStatusGoal>

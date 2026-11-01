@@ -4166,8 +4166,9 @@ function needsYouOrder(ledger) {
   return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
 }
 function heldSubjectOf(o, askId) {
-  const subjectId = o?.askSubjects[askId];
-  return o?.subjects.find((s) => s.id === subjectId && isOpen(s)) ?? null;
+  const linkedId = o?.askSubjects[askId];
+  const milestones = o?.goal ? o.milestones : [];
+  return [...o?.subjects ?? [], ...milestones].find((s) => s.id === linkedId && isOpen(s)) ?? null;
 }
 function inboxView({
   ledger,
@@ -4362,7 +4363,7 @@ function milestoneRow(m, o, items) {
     return to === m.id || to !== undefined && servingIds.has(to);
   });
   const isHeld = isOpen && holds.length > 0;
-  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt;
+  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0);
   const direct = oldestAsk(items, o.askSubjects, m.id);
   const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return {
@@ -4435,10 +4436,11 @@ function isItemAfterItem(row, prev) {
 var COUNT_WORDS = {
   working: "working",
   "waits-on-other": "waiting",
-  queued: "queued"
+  queued: "queued",
+  done: "done"
 };
 function countsByMark(folded) {
-  return ["working", "waits-on-other", "queued"].flatMap((status) => {
+  return ["working", "waits-on-other", "queued", "done"].flatMap((status) => {
     const n = folded.filter((x) => x.status === status).length;
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
@@ -4531,9 +4533,10 @@ function statusPage(s, now) {
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
   const shown = [...open.filter((x) => !folded.includes(x)), ...newClosed].sort(pageOrder);
   const otherNewClosed = newClosedOf(other);
-  const otherFolded = other.filter((x) => isOpen(x) && !isHeld(x) && !isNew(x) && !hasChildRow(x));
+  const isOtherFolded = (x) => isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === "done" && !otherNewClosed.includes(x);
+  const otherFolded = other.filter(isOtherFolded);
   const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
-  const foldedDone = subjects.filter((x) => x.status === "done" && !newClosed.includes(x) && !otherNewClosed.includes(x));
+  const foldedDone = main.filter((x) => x.status === "done" && !newClosed.includes(x));
   const shownIds = new Set([...shown, ...otherShown].map((x) => x.id));
   const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
   const ctx = {
@@ -4552,13 +4555,15 @@ function statusPage(s, now) {
   if (folded.length > 0)
     rows.push({ kind: "fold", id: "open", ...SUBJECT_MARKS.queued, text: `${folded.length} more` });
   if (otherShown.length > 0 || otherFolded.length > 0) {
+    if (rows.at(-1)?.kind === "look")
+      rows.pop();
     rows.push({ kind: "part", id: "other", text: OTHER_WORK });
     rows.push(...partRows(otherShown, { ...ctx, lookRow: lookRow && { ...lookRow, id: "other-look" } }));
     if (otherFolded.length > 0)
       rows.push({ kind: "counts", id: "other-counts", counts: countsByMark(otherFolded) });
   }
   if (foldedDone.length > 0) {
-    const isMore = newClosed.some((x) => x.status === "done") || otherNewClosed.some((x) => x.status === "done");
+    const isMore = newClosed.some((x) => x.status === "done");
     rows.push({
       kind: "fold",
       id: "done",
@@ -5001,7 +5006,8 @@ function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT) {
     label: k.label,
     key: isSelected ? k.hotkey : null,
     isRecommended: false,
-    isFollowUp: false
+    isFollowUp: false,
+    ...k.emphasis === "quiet" ? { isQuiet: true } : {}
   }));
   const focused = isSelected ? pageFocus(target, d.ui) : -1;
   return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style) : [];
@@ -5055,20 +5061,20 @@ var goalEntry = (part) => ({ kind: "goal", part });
 var blank = { kind: "note", text: "" };
 function goalAbove(page, typing) {
   const isTyping = typing === GOAL_KEYS_ID;
-  const proposal = page.proposal ? [goalEntry({ is: "proposal", proposal: page.proposal, page })] : [];
+  const proposal = page.proposal ? [goalEntry({ is: "proposal", proposal: page.proposal, page, isTyping })] : [];
   const g = page.goal;
   if (g === null)
     return proposal;
   return [
     ...proposal,
     ...proposal.length > 0 ? [blank] : [],
-    goalEntry({ is: "title", goal: g, isTyping }),
+    goalEntry({ is: "title", goal: g, isTyping: isTyping && proposal.length === 0 }),
     ...g.milestones.map((row) => goalEntry({ is: "milestone", row })),
     ...isTyping ? [] : [goalEntry({ is: "keys", page })]
   ];
 }
 function setGoal(page, typing) {
-  if (page.goal !== null)
+  if (page.goal !== null || typing === GOAL_KEYS_ID && page.proposal !== null)
     return [];
   return [goalEntry(typing === GOAL_KEYS_ID ? { is: "field" } : { is: "keys", page })];
 }
@@ -5082,17 +5088,32 @@ function fieldLines(d) {
     ...field.map((l) => " ".repeat(PAGE_MARK_AT) + l.replace("\x00", s.inverse(" ")))
   ];
 }
+var MARKS_GAP = "   ";
+function marksLines(p, d) {
+  const room = d.width - PAGE_MARK_AT - 1;
+  const lines = [];
+  for (const m of p.milestones) {
+    const cells = cellWidth(`${m.mark} ${m.name}`);
+    const text = `${feedbackPaint(m.tone, d.style)(m.mark)} ${m.name}`;
+    const last = lines.at(-1);
+    if (last && last.cells + MARKS_GAP.length + cells <= room) {
+      last.cells += MARKS_GAP.length + cells;
+      last.text += MARKS_GAP + text;
+    } else
+      lines.push({ cells, text });
+  }
+  return lines.map((l) => " ".repeat(PAGE_MARK_AT) + l.text);
+}
 function drawGoalPart(part, d, isSelected) {
   const { width, now, style: s } = d;
   const at = (text, paint, lines = STATUS_TEXT_LINES) => indented(text, PAGE_MARK_AT, width, lines, paint);
   if (part.is === "proposal") {
     const p = part.proposal;
-    const marks = p.milestones.map((m) => `${feedbackPaint(m.tone, s)(m.mark)} ${m.name}`).join("   ");
     return [
       ...at(p.label, s.dim),
-      ...at(p.text, s.bold, Infinity),
-      ...marks ? [" ".repeat(PAGE_MARK_AT) + marks] : [],
-      ...pageButtonLines({ id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(part.page) }, d, isSelected, PAGE_MARK_AT)
+      ...part.isTyping ? fieldLines(d) : at(p.text, s.bold, Infinity),
+      ...marksLines(p, d),
+      ...part.isTyping ? [] : pageButtonLines({ id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(part.page) }, d, isSelected, PAGE_MARK_AT)
     ];
   }
   if (part.is === "title") {
@@ -5722,7 +5743,7 @@ function buttonCell(b, isFocused, s, mark = "") {
     return s.inverse(b.isOut ? s.dim(` \u21B5 ${b.label}${mark} `) : s.bold(` \u21B5 ${b.label}${mark} `));
   if (b.isOut && !b.isFollowUp)
     return s.dim(b.key ? ` ${b.key} ${b.label}${mark} ` : ` ${b.label}${mark} `);
-  if (b.isFollowUp)
+  if (b.isFollowUp || b.isQuiet)
     return s.dim(b.key ? ` ${b.key} ${b.label} ` : ` ${b.label} `);
   const label = (b.isRecommended ? s.underline(b.label) : b.label) + mark;
   return b.key ? ` ${s.bold(b.key)} ${label} ` : ` ${label} `;
@@ -5977,7 +5998,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   ];
   const body = [];
   let selectedAt = [0, 0];
-  const pageSelected = isRowTab(ui.tab) ? null : statusSelected(screen.view.statusPage, ui.selectedId);
+  const pageSelected = isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId);
   let pageSelectedAt = null;
   for (const e of entries) {
     if (e.kind === "heading")

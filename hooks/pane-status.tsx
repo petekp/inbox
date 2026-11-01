@@ -22,7 +22,7 @@ import {
 import { paneStatusGoal } from './pane-status-goal'
 import type { PaneStatusLines } from './pane-status-lines'
 import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from './status-keys'
-import { LOOK_DASH, mergedLine, STALL_GAP, type StatusCount, type StatusRow, WAS_PREFIX } from './status-page'
+import { LOOK_DASH, mergedLine, STALL_GAP, type StatusRow, WAS_PREFIX } from './status-page'
 import { SELECTION_BAR } from './terminal-text'
 import { cellWidth } from './text'
 
@@ -167,14 +167,6 @@ export function paneStatus(
         <Text color={pal.divider}>{'─'.repeat(Math.max(4, statusRuleCells - cellWidth(text) - 1))}</Text>
       </Box>
     )
-  /** One count of the folded Other work rows: its mark in its tone, then the count. */
-  const statusCount = (c: StatusCount, n: number) => (
-    <Text key={`count-${n}`}>
-      {n > 0 ? <Text color={pal.muted}>{STALL_GAP}</Text> : null}
-      <Text color={c.tone ? pal.mark[c.tone] : pal.muted}>{c.mark}</Text>
-      <Text color={pal.muted}>{` ${c.text}`}</Text>
-    </Text>
-  )
   /** One line of the Status tab's list: a mark and its text. `depth` 1 sits under a subject's text. */
   const statusRowLine = ({
     key,
@@ -239,7 +231,7 @@ export function paneStatus(
       label,
       kind,
       emphasis,
-      ...(t.id === statusKeyRow?.id ? { hotkey } : {}),
+      ...(t.id === statusKeyRow?.id && typing !== GOAL_KEYS_ID ? { hotkey } : {}),
       onPress: (p: UiPressArgument) =>
         press.action === 'show-ask'
           ? showAsk(press.askId)
@@ -247,7 +239,7 @@ export function paneStatus(
             ? openGoalField(press.text)
             : runPress({ action: press.action, id: GOAL_KEYS_ID }, p.surface),
     }))
-  const { goalAbove, setGoal, nowLine } = paneStatusGoal(
+  const { goalAbove, setGoal, setGoalBare, nowLine, markRun } = paneStatusGoal(
     {
       look,
       Box,
@@ -323,7 +315,7 @@ export function paneStatus(
       return statusRowLine({
         key: `status-${r.id}`,
         mark: null,
-        content: <Text wrap="wrap">{r.counts.map(statusCount)}</Text>,
+        content: markRun(`status-${r.id}-counts`, r.counts, STALL_GAP, true),
       })
 
     return statusRowLine({
@@ -337,8 +329,7 @@ export function paneStatus(
     if (page.isEmpty)
       return (
         <Box flexDirection="column" flexGrow={1}>
-          {emptyState(page.empty)}
-          {setGoal(page)}
+          {emptyState(page.empty, setGoalBare(page))}
         </Box>
       )
     const above = goalAbove(page)

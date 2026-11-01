@@ -39,6 +39,8 @@ export type Button = {
   isFollowUp: boolean
   /** Its press is out, so it draws dim and its key does nothing. */
   isOut?: boolean
+  /** It holds up nothing, so it draws dim until focused. */
+  isQuiet?: boolean
 }
 
 /** What a button draws. A Status button presses nothing the host runs, so it has a face and no `press`. */

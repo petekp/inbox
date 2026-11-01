@@ -70,7 +70,7 @@ function milestoneRow(m: Milestone, o: SessionStatus, items: readonly Item[]): M
     return to === m.id || (to !== undefined && servingIds.has(to))
   })
   const isHeld = isOpen && holds.length > 0
-  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt
+  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0)
   const direct = oldestAsk(items, o.askSubjects, m.id)
   const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0]
 

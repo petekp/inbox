@@ -131,6 +131,7 @@ export function pageButtonLines(
     key: isSelected ? k.hotkey : null,
     isRecommended: false,
     isFollowUp: false,
+    ...(k.emphasis === 'quiet' ? { isQuiet: true } : {}),
   }))
   const focused = isSelected ? pageFocus(target, d.ui) : -1
 

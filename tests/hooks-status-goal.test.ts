@@ -23,7 +23,7 @@ async function statusShown($: Engine, on: On) {
   return { clock, pane }
 }
 
-test('on a next build, a proposed goal shows above the head with its keys selected and its x bound to Not now alone, Use this goal sets it with its milestones and draws the head as its Now line, and nothing is sent', async ($, on) => {
+test('on a next build, a proposed goal shows above the head with its keys selected and its x bound to Not now alone, Edit opens the field in its place, Use this goal sets it with its milestones and draws the head as its Now line, and nothing is sent', async ($, on) => {
   const { clock, pane } = await statusShown($, on)
 
   expect((await pane.find({ key: 'goal-proposal-text' }))?.text).toBe('Pilot ready to announce')
@@ -39,6 +39,15 @@ test('on a next build, a proposed goal shows above the head with its keys select
     'decline-goal-proposal-key',
     'no-row-d-key',
   ])
+
+  await pane.press({ key: 'type-goal-proposal-key' })
+  await clock.settle()
+  expect(await replyField(pane, 'goal')).toMatchObject({ props: { value: 'Pilot ready to announce' } })
+  expect(await pane.find({ key: 'goal-proposal-text' })).toBeUndefined()
+  expect(await pane.find({ key: 'use-goal-proposal' })).toBeUndefined()
+  expect(await pane.find({ key: 'type-goal-goal' })).toBeUndefined()
+  await pane.press({ key: 'cancel-goal' })
+  await clock.settle()
 
   await pane.press({ key: 'use-goal-proposal-key' })
   await clock.settle()

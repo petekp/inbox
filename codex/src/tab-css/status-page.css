@@ -156,3 +156,11 @@
   flex: 1;
   border-top: 1px solid var(--soft);
 }
+/* Set a goal under the empty page's centred text. */
+.empty .status-head {
+  padding: 0;
+}
+.empty .actions,
+.empty .keys {
+  justify-content: center;
+}

@@ -1,6 +1,11 @@
 import { expect, test } from 'claude-code/testing'
 
+import { EMPTY } from '../hooks/ledger'
+import { allRows } from '../hooks/rows'
+import { emptySession } from '../hooks/session-files'
+import { sessionView } from '../hooks/session-view'
 import { setTypedGoal, useProposedGoal } from '../hooks/status-goal-ops'
+import { NO_HOLDS } from '../hooks/timing'
 import type { SessionStatus } from '../types'
 import { after, askItem, page, shape } from './status-helpers'
 
@@ -92,4 +97,35 @@ test('a typed goal waits for its milestones, and a goal whose milestones are all
     milestones: [],
   })
   expect(page(met, 55).goal).toMatchObject({ label: 'Goal met', isMet: true, awaiting: null })
+})
+
+test('an ask linked to a milestone names it as what it holds up, and milestones made with the goal draw as unchanged', () => {
+  const o = { ...after(withGoal(), 'LINK: i1 | m3', 30, new Set(['i1'])), lastLookAt: 15 }
+  const held = { ...emptySession(), ledger: { ...EMPTY, items: [askItem('i1')], overview: o } }
+  const view = sessionView(held, 40, 0, true, NO_HOLDS)
+
+  expect(allRows(view).find(r => r.id === 'i1')?.holdsUpLine).toBe('Holds up Demo script')
+  expect(view.statusPage.goal?.milestones.map(m => m.isChanged)).toEqual([false, false, false])
+  expect(
+    page(after(o, 'SET: m2 | done | errors named', 50, new Set(['i1'])), 60, {}, [askItem('i1')]).goal?.milestones.map(
+      m => m.isChanged,
+    ),
+  ).toEqual([false, true, false])
+})
+
+test('the look line that would end the main list gives way to the Other work rule', () => {
+  const seen = { ...linked(), lastLookAt: 35 }
+  const changed = after(
+    seen,
+    'SET: s1 | working | bad rows named\nSET: s2 | queued | outline written',
+    50,
+    new Set(['i1']),
+  )
+
+  expect(shape(page(changed, 60, {}, [askItem('i1')]).rows)).toEqual([
+    '◆ Error copy: outline written · waiting',
+    '◐ CSV import: bad rows named',
+    '== Other work',
+    '● 1 working · ○ 1 queued',
+  ])
 })

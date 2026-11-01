@@ -183,7 +183,8 @@ export function drawPanel(
   ]
   const body: string[] = []
   let selectedAt = [0, 0]
-  const pageSelected = isRowTab(ui.tab) ? null : statusSelected(screen.view.statusPage, ui.selectedId)
+  const pageSelected =
+    isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId)
   let pageSelectedAt: number[] | null = null
   for (const e of entries) {
     if (e.kind === 'heading')

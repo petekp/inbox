@@ -141,15 +141,16 @@ function isItemAfterItem(row: StatusRowParts, prev: StatusRowParts | undefined):
 }
 
 /** The words a `counts` row gives each mark. */
-const COUNT_WORDS: Record<'working' | 'waits-on-other' | 'queued', string> = {
+const COUNT_WORDS: Record<'working' | 'waits-on-other' | 'queued' | 'done', string> = {
   working: 'working',
   'waits-on-other': 'waiting',
   queued: 'queued',
+  done: 'done',
 }
 
-/** Open subjects folded into one count for each status, in the page's order of marks. */
+/** Subjects folded into one count for each status, in the page's order of marks. */
 function countsByMark(folded: Subject[]): StatusCount[] {
-  return (['working', 'waits-on-other', 'queued'] as const).flatMap(status => {
+  return (['working', 'waits-on-other', 'queued', 'done'] as const).flatMap(status => {
     const n = folded.filter(x => x.status === status).length
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }]
   })
@@ -284,9 +285,11 @@ export function statusPage(
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)))
   const shown = [...open.filter(x => !folded.includes(x)), ...newClosed].sort(pageOrder)
   const otherNewClosed = newClosedOf(other)
-  const otherFolded = other.filter(x => isOpen(x) && !isHeld(x) && !isNew(x) && !hasChildRow(x))
+  const isOtherFolded = (x: Subject) =>
+    isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === 'done' && !otherNewClosed.includes(x)
+  const otherFolded = other.filter(isOtherFolded)
   const otherShown = [...other.filter(x => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder)
-  const foldedDone = subjects.filter(x => x.status === 'done' && !newClosed.includes(x) && !otherNewClosed.includes(x))
+  const foldedDone = main.filter(x => x.status === 'done' && !newClosed.includes(x))
   const shownIds = new Set([...shown, ...otherShown].map(x => x.id))
   const lookRow: StatusRowParts | null = look === null ? null : { kind: 'look', id: 'look', text: LOOK_TEXT }
   const ctx: ListContext = {
@@ -304,12 +307,14 @@ export function statusPage(
   ]
   if (folded.length > 0) rows.push({ kind: 'fold', id: 'open', ...SUBJECT_MARKS.queued, text: `${folded.length} more` })
   if (otherShown.length > 0 || otherFolded.length > 0) {
+    // The part's rule follows the list, so a look line that ends the list would draw a second rule under it.
+    if (rows.at(-1)?.kind === 'look') rows.pop()
     rows.push({ kind: 'part', id: 'other', text: OTHER_WORK })
     rows.push(...partRows(otherShown, { ...ctx, lookRow: lookRow && { ...lookRow, id: 'other-look' } }))
     if (otherFolded.length > 0) rows.push({ kind: 'counts', id: 'other-counts', counts: countsByMark(otherFolded) })
   }
   if (foldedDone.length > 0) {
-    const isMore = newClosed.some(x => x.status === 'done') || otherNewClosed.some(x => x.status === 'done')
+    const isMore = newClosed.some(x => x.status === 'done')
     rows.push({
       kind: 'fold',
       id: 'done',

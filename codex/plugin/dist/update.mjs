@@ -2191,8 +2191,9 @@ function needsYouOrder(ledger) {
   return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
 }
 function heldSubjectOf(o, askId) {
-  const subjectId = o?.askSubjects[askId];
-  return o?.subjects.find((s) => s.id === subjectId && isOpen(s)) ?? null;
+  const linkedId = o?.askSubjects[askId];
+  const milestones = o?.goal ? o.milestones : [];
+  return [...o?.subjects ?? [], ...milestones].find((s) => s.id === linkedId && isOpen(s)) ?? null;
 }
 function inboxView({
   ledger,
@@ -2406,7 +2407,7 @@ function milestoneRow(m, o, items) {
     return to === m.id || to !== void 0 && servingIds.has(to);
   });
   const isHeld = isOpen2 && holds.length > 0;
-  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt;
+  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0);
   const direct = oldestAsk(items, o.askSubjects, m.id);
   const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return {
@@ -2467,10 +2468,11 @@ function isItemAfterItem(row, prev) {
 var COUNT_WORDS = {
   working: "working",
   "waits-on-other": "waiting",
-  queued: "queued"
+  queued: "queued",
+  done: "done"
 };
 function countsByMark(folded) {
-  return ["working", "waits-on-other", "queued"].flatMap((status) => {
+  return ["working", "waits-on-other", "queued", "done"].flatMap((status) => {
     const n = folded.filter((x) => x.status === status).length;
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
@@ -2559,9 +2561,10 @@ function statusPage(s, now) {
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open3.length - foldable.length)));
   const shown = [...open3.filter((x) => !folded.includes(x)), ...newClosed].sort(pageOrder);
   const otherNewClosed = newClosedOf(other);
-  const otherFolded = other.filter((x) => isOpen(x) && !isHeld(x) && !isNew(x) && !hasChildRow(x));
+  const isOtherFolded = (x) => isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === "done" && !otherNewClosed.includes(x);
+  const otherFolded = other.filter(isOtherFolded);
   const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
-  const foldedDone = subjects.filter((x) => x.status === "done" && !newClosed.includes(x) && !otherNewClosed.includes(x));
+  const foldedDone = main2.filter((x) => x.status === "done" && !newClosed.includes(x));
   const shownIds = new Set([...shown, ...otherShown].map((x) => x.id));
   const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
   const ctx = {
@@ -2579,12 +2582,13 @@ function statusPage(s, now) {
   ];
   if (folded.length > 0) rows.push({ kind: "fold", id: "open", ...SUBJECT_MARKS.queued, text: `${folded.length} more` });
   if (otherShown.length > 0 || otherFolded.length > 0) {
+    if (rows.at(-1)?.kind === "look") rows.pop();
     rows.push({ kind: "part", id: "other", text: OTHER_WORK });
     rows.push(...partRows(otherShown, { ...ctx, lookRow: lookRow && { ...lookRow, id: "other-look" } }));
     if (otherFolded.length > 0) rows.push({ kind: "counts", id: "other-counts", counts: countsByMark(otherFolded) });
   }
   if (foldedDone.length > 0) {
-    const isMore = newClosed.some((x) => x.status === "done") || otherNewClosed.some((x) => x.status === "done");
+    const isMore = newClosed.some((x) => x.status === "done");
     rows.push({
       kind: "fold",
       id: "done",

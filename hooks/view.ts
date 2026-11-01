@@ -77,11 +77,12 @@ function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[] } {
   return { questions: newestReplyFirst('question'), tasks: newestReplyFirst('task') }
 }
 
-/** The open subject the Status call linked an ask to, by the ask's id. */
-function heldSubjectOf(o: SessionStatus | null, askId: string): Subject | null {
-  const subjectId = o?.askSubjects[askId]
+/** The open subject, or the open milestone of a set goal, the Status call linked an ask to, by the ask's id. */
+function heldSubjectOf(o: SessionStatus | null, askId: string): Pick<Subject, 'name'> | null {
+  const linkedId = o?.askSubjects[askId]
+  const milestones = o?.goal ? o.milestones : []
 
-  return o?.subjects.find(s => s.id === subjectId && isOpen(s)) ?? null
+  return [...(o?.subjects ?? []), ...milestones].find(s => s.id === linkedId && isOpen(s)) ?? null
 }
 
 export function inboxView({

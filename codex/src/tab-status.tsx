@@ -12,7 +12,7 @@ import type { MilestoneRow } from '../../hooks/status-goal-page'
 import { ROW_COPY } from '../../hooks/rows'
 import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
-import { drafts, sending, tabState } from './tab-state'
+import { drafts, errors, sending, tabState } from './tab-state'
 import type { Key } from './tab-state'
 import { act } from './tab-rows'
 import { NameLine } from './tab-status-name'
@@ -135,7 +135,9 @@ function StatusLine({ row }: { row: StatusRow }) {
           {row.counts.map((c, n) => (
             <span key={n}>
               {n > 0 ? <span class="muted">{STALL_GAP}</span> : null}
-              <span class={markClassOf(c.tone, false)}>{c.mark}</span>
+              <span class={markClassOf(c.tone, false)}>
+                <MarkGlyph text={c.mark} />
+              </span>
               <span class="muted"> {c.text}</span>
             </span>
           ))}
@@ -153,9 +155,10 @@ function StatusLine({ row }: { row: StatusRow }) {
   )
 }
 
-/** The goal's text field, with Set goal and Cancel. */
+/** The goal's text field, with Set goal and Cancel. It stays open, its buttons out, until the server confirms the goal. */
 function GoalField() {
   const draft = () => drafts.get(GOAL_KEYS_ID)?.text ?? ''
+  const isOut = sending.has(GOAL_KEYS_ID)
 
   return (
     <div class="actions">
@@ -163,10 +166,10 @@ function GoalField() {
         onSubmit={e => {
           e.preventDefault()
           const text = draft().trim()
-          if (!text) return
+          if (!text || isOut) return
           const sent = drafts.get(GOAL_KEYS_ID)
-          tabState.typing = null
           void act(GOAL_KEYS_ID, { action: 'type', id: GOAL_KEYS_ID, text }, () => {
+            if (tabState.typing === GOAL_KEYS_ID) tabState.typing = null
             if (drafts.get(GOAL_KEYS_ID) === sent) drafts.delete(GOAL_KEYS_ID)
           })
         }}
@@ -183,12 +186,13 @@ function GoalField() {
             })
           }
         />
-        <button type="submit" class="key primary">
+        <button type="submit" class={isOut ? 'key primary out' : 'key primary'} disabled={isOut}>
           {GOAL_FIELD.submit}
         </button>
         <button
           type="button"
-          class="key ghost"
+          class={isOut ? 'key ghost out' : 'key ghost'}
+          disabled={isOut}
           onClick={() => {
             tabState.typing = null
             tabState.draw()
@@ -233,8 +237,8 @@ function MilestoneLine({ m }: { m: MilestoneRow }) {
 }
 
 /**
- * A proposal, then the goal with its milestones, above the head. The field takes the goal's place while the person
- * types one.
+ * A proposal, then the goal with its milestones, above the head. While the person types a goal, the field takes the
+ * proposal's text's place, else the goal's, and the proposal's and the goal's buttons give way to it.
  */
 function GoalAbove({ page }: { page: StatusPage }) {
   const p = page.proposal
@@ -247,15 +251,18 @@ function GoalAbove({ page }: { page: StatusPage }) {
         <section>
           <div class="status-head goal">
             <p class="muted">{p.label}</p>
-            <h1>{p.text}</h1>
+            {isTyping ? <GoalField /> : <h1>{p.text}</h1>}
             <p class="goal-proposed">
               {p.milestones.map((m, n) => (
                 <span key={n}>
-                  <span class={markClassOf(m.tone, false)}>{m.mark}</span> {m.name}
+                  <span class={markClassOf(m.tone, false)}>
+                    <MarkGlyph text={m.mark} />
+                  </span>{' '}
+                  {m.name}
                 </span>
               ))}
             </p>
-            <Keys keys={proposalKeyPlan(page)} />
+            {isTyping ? null : <Keys keys={proposalKeyPlan(page)} />}
           </div>
         </section>
       ) : null}
@@ -263,7 +270,7 @@ function GoalAbove({ page }: { page: StatusPage }) {
         <section>
           <div class="status-head goal">
             <p class="muted">{g.label}</p>
-            {isTyping ? <GoalField /> : <h1>{g.text}</h1>}
+            {isTyping && !p ? <GoalField /> : <h1>{g.text}</h1>}
             {g.was ? (
               <p class="muted">
                 {WAS_PREFIX}
@@ -284,21 +291,31 @@ function GoalAbove({ page }: { page: StatusPage }) {
               <Keys keys={goalKeyPlan(page)} />
             </div>
           )}
+          <GoalError />
         </section>
       ) : null}
     </>
   )
 }
 
-/** Under the head, or the empty state, while no goal is set: Set a goal, or the field it opened. */
+/** Under the head, or the empty state, while no goal is set: Set a goal, or the field it opened when no proposal shows. */
 function SetGoal({ page }: { page: StatusPage }) {
   if (page.goal !== null) return null
+  if (tabState.typing === GOAL_KEYS_ID && page.proposal !== null) return <GoalError />
 
   return (
     <div class="status-head">
       {tabState.typing === GOAL_KEYS_ID ? <GoalField /> : <Keys keys={goalKeyPlan(page)} />}
+      <GoalError />
     </div>
   )
+}
+
+/** Why the last goal press failed. Set a goal or the goal draws it, whichever the page shows. */
+function GoalError() {
+  const error = errors.get(GOAL_KEYS_ID)
+
+  return error ? <p class="tone-error">{error}</p> : null
 }
 
 export function StatusTab({ page }: { page: StatusPage }) {

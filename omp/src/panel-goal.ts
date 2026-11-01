@@ -14,11 +14,12 @@ import type { Draw } from './panel-draw'
 import type { Entry } from './panel-lines'
 import { PAGE_MARK_AT, PAGE_TEXT_AT } from './panel-entries'
 import { pageButtonLines, pageLine } from './panel-page'
+import { cellWidth } from '../../hooks/text'
 import { indented, wrapText } from './panel-text'
 
 /** A part of the goal on the Status page: the proposal, the goal's lines, a milestone, its button, its field, or Now. */
 export type GoalPart =
-  | { is: 'proposal'; proposal: ProposalBlock; page: StatusPage }
+  | { is: 'proposal'; proposal: ProposalBlock; page: StatusPage; isTyping: boolean }
   | { is: 'title'; goal: GoalBlock; isTyping: boolean }
   | { is: 'milestone'; row: MilestoneRow }
   | { is: 'keys'; page: StatusPage }
@@ -37,26 +38,26 @@ const blank: Entry = { kind: 'note', text: '' }
 
 /**
  * What the page draws above the head: a proposal, then the goal, its milestones and its button. While the person
- * types a goal, the field takes the goal text's place and the button leaves.
+ * types a goal, the field takes the proposal's text's place, else the goal's, and the buttons of both leave.
  */
 export function goalAbove(page: StatusPage, typing: string | null): Entry[] {
   const isTyping = typing === GOAL_KEYS_ID
-  const proposal = page.proposal ? [goalEntry({ is: 'proposal', proposal: page.proposal, page })] : []
+  const proposal = page.proposal ? [goalEntry({ is: 'proposal', proposal: page.proposal, page, isTyping })] : []
   const g = page.goal
   if (g === null) return proposal
 
   return [
     ...proposal,
     ...(proposal.length > 0 ? [blank] : []),
-    goalEntry({ is: 'title', goal: g, isTyping }),
+    goalEntry({ is: 'title', goal: g, isTyping: isTyping && proposal.length === 0 }),
     ...g.milestones.map(row => goalEntry({ is: 'milestone', row })),
     ...(isTyping ? [] : [goalEntry({ is: 'keys', page })]),
   ]
 }
 
-/** Under the head, or under the empty state, while no goal is set: Set a goal, or the field it opened. */
+/** Under the head, or under the empty state, while no goal is set: Set a goal, or the field it opened when no proposal shows. */
 export function setGoal(page: StatusPage, typing: string | null): Entry[] {
-  if (page.goal !== null) return []
+  if (page.goal !== null || (typing === GOAL_KEYS_ID && page.proposal !== null)) return []
 
   return [goalEntry(typing === GOAL_KEYS_ID ? { is: 'field' } : { is: 'keys', page })]
 }
@@ -76,19 +77,39 @@ function fieldLines(d: Draw): string[] {
   ]
 }
 
+const MARKS_GAP = '   '
+
+/** The proposal's milestones, each mark in its tone with its name, wrapped between milestones to the width. */
+function marksLines(p: ProposalBlock, d: Draw): string[] {
+  const room = d.width - PAGE_MARK_AT - 1
+  const lines: { cells: number; text: string }[] = []
+  for (const m of p.milestones) {
+    const cells = cellWidth(`${m.mark} ${m.name}`)
+    const text = `${feedbackPaint(m.tone, d.style)(m.mark)} ${m.name}`
+    const last = lines.at(-1)
+    if (last && last.cells + MARKS_GAP.length + cells <= room) {
+      last.cells += MARKS_GAP.length + cells
+      last.text += MARKS_GAP + text
+    } else lines.push({ cells, text })
+  }
+
+  return lines.map(l => ' '.repeat(PAGE_MARK_AT) + l.text)
+}
+
 export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): string[] {
   const { width, now, style: s } = d
   const at = (text: string, paint: (t: string) => string, lines = STATUS_TEXT_LINES) =>
     indented(text, PAGE_MARK_AT, width, lines, paint)
   if (part.is === 'proposal') {
     const p = part.proposal
-    const marks = p.milestones.map(m => `${feedbackPaint(m.tone, s)(m.mark)} ${m.name}`).join('   ')
 
     return [
       ...at(p.label, s.dim),
-      ...at(p.text, s.bold, Infinity),
-      ...(marks ? [' '.repeat(PAGE_MARK_AT) + marks] : []),
-      ...pageButtonLines({ id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(part.page) }, d, isSelected, PAGE_MARK_AT),
+      ...(part.isTyping ? fieldLines(d) : at(p.text, s.bold, Infinity)),
+      ...marksLines(p, d),
+      ...(part.isTyping
+        ? []
+        : pageButtonLines({ id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(part.page) }, d, isSelected, PAGE_MARK_AT)),
     ]
   }
   if (part.is === 'title') {

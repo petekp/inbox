@@ -130,7 +130,7 @@ test('Set a goal is the only button on a page with no goal and no held subject: 
   expect(lineAt(lines, 'An outcome to work toward:')).toBeGreaterThan(lineAt(lines, screen.view.statusPage.head!.title))
 })
 
-test('with a goal set, subjects that serve none of its milestones draw under the Other work rule, and the seen ones fold into a count by mark', () => {
+test('with a goal set, subjects that serve none of its milestones draw under the Other work rule, and the seen ones, done ones included, fold into a count by mark', () => {
   const s = demoState(NOW)
   const serves = Object.fromEntries(s.ledger.overview!.subjects.map(x => [x.id, 'none']))
   const screen = screenWith({
@@ -147,6 +147,6 @@ test('with a goal set, subjects that serve none of its milestones draw under the
   const rule = lines.find(l => l.includes('Other work'))!
   expect(rule).toMatch(/^ {3}Other work ─{4,}$/)
   expect(rule.length).toBeLessThanOrEqual(60)
-  expect(lines.find(l => l.includes('1 waiting'))).toBe('   ◌ 1 waiting')
+  expect(lines.find(l => l.includes('1 waiting'))).toBe('   ◌ 1 waiting · ✓ 2 done')
   expect(lineAt(lines, '1 waiting')).toBeGreaterThan(lineAt(lines, 'Other work'))
 })
