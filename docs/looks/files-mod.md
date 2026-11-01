@@ -5,7 +5,7 @@ Part of [the look map](../looks.md#files).
 | File | Role |
 | --- | --- |
 | `hooks/claude.ts` | Mod only. Claude transcript, command, dialog and stop helpers. |
-| `hooks/register.tsx` | Mod adapter and host. Runs the Pane render, which draws the PRs, Status and Help tabs and calls the `pane-*.tsx` files for the rest. It also runs the band, the per-reply update and the press runner. It keeps the drawn session in an engine atom, saves each conversation's session in the engine store, and builds the mod's `SessionHost`. The plugin directory refuses `$` passed to a function another of the mod's files declares, so every function that takes `$` lives in this file. |
+| `hooks/register.tsx` | Mod adapter and host. Runs the Pane render. It reads the drawn state, builds the handlers for the calls that need `$`, and calls the `pane-*.tsx` files, which draw every tab. It also runs the band, the per-reply update and the press runner. It keeps the drawn session in an engine atom, saves each conversation's session in the engine store, and builds the mod's `SessionHost`. The plugin directory refuses `$` passed to a function another of the mod's files declares, so every function that takes `$` lives in this file. |
 | `hooks/pane-context.ts` | Mod only. The types the Pane render hands its drawing files: `PaneBase` for the values the render computed, `PaneClient` for whether the surface draws Clients, `PaneHandlers` for the calls that need `$`, and `Row`, the shape every list row is drawn from. |
 | `hooks/pane-frame.tsx` | Mod only. The pane's frame in both looks: the tab bar, the inline rail, banners, the status line and the footer. |
 | `hooks/pane-row-frame.tsx` | Mod only. `desktopFrame`, the frame a desktop row, group title, PR block or Status row draws in: its mark column, side column and padding. |
@@ -14,6 +14,10 @@ Part of [the look map](../looks.md#files).
 | `hooks/pane-row-lines.tsx` | Mod only. The parts a row's lines are drawn from: marks, tree lines, ages, feedback labels, an unselected row's line, and the props of the desktop row Client. |
 | `hooks/pane-row-keys.tsx` | Mod only. A row's buttons: keyed buttons, the desktop follow-up links, the terminal's action lines and a reply field's actions. |
 | `hooks/pane-row-parts.tsx` | Mod only. Group titles and sections, and closed rows: the result line, the closed fold, Undo and the settled row. |
+| `hooks/pane-prs.tsx` | Mod only. The PRs tab: thread and check rows, PR blocks and their settled form, the PR order lines, the tab's buttons, and its empty state and gh notice. |
+| `hooks/pane-status-lines.tsx` | Mod only. The lines a Status row is drawn from: the head, a subject's name line and its text width, and the tree beside a subject's children. |
+| `hooks/pane-status.tsx` | Mod only. The Status tab: the rules between items, the look line, each row and its buttons, and the tab's page. |
+| `hooks/pane-help.tsx` | Mod only. The Help page: the key list and the mark legend. |
 | `hooks/pane-sizes.ts` | Mod only. The terminal and desktop looks' sizes in cells, lines and points: row columns, padding, tree lines, tab layouts and the inline tab column. `desktopTabSizes` fits the desktop tab bar to the pane's width. |
 | `hooks/running-mark-timer.ts` | Mod only. The terminal look's running-mark timer. It asks for a new frame each `RUNNING_FRAME_MS` while the pane draws a running mark, and only once the last frame has drawn. |
 | `hooks/palettes.ts` | Mod only. The pane's colors for each Claude Code theme and for desktop. `lookOf` picks a surface's look, and `paletteFor` picks the palette for a theme and look. |

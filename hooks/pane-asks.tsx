@@ -290,3 +290,5 @@ export function paneAskTabs(
 
   return { emptyState, needsYouView, findingsView }
 }
+
+export type PaneAskTabs = ReturnType<typeof paneAskTabs>
