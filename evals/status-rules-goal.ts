@@ -87,10 +87,10 @@ export const GOAL_RULES: Rule[] = [
     id: 'serves-linked',
     reads: 'facts',
     property: 16,
-    text: 'A subject the goal needs is not under Other work, and one the goal does not need is not linked to a milestone.',
-    failures: ({ result }) => {
+    text: 'Each subject the facts say what it serves is linked: one the goal needs to a milestone, and one it does not need to Other work.',
+    failures: ({ step, result }) => {
       const o = result.session.ledger.overview
-      if (!o?.goal) return []
+      if (!o?.goal || o.goal.isAwaitingMilestones) return []
       return result.facts.pieces.flatMap(p =>
         p.serves === undefined
           ? []
@@ -98,7 +98,7 @@ export const GOAL_RULES: Rule[] = [
               .filter(isOpen)
               .flatMap(s => {
                 const link = o.serves[s.id]
-                if (link === undefined) return []
+                if (link === undefined) return step.call ? [`${label(s)} is not linked`] : []
                 if (p.serves === 'none' && link !== 'none')
                   return [`${label(s)} serves a milestone, and the goal does not need it`]
                 return p.serves !== 'none' && link === 'none'

@@ -248,7 +248,7 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     good: withGoal,
     bad: s => {
       withGoal(s)
-      s.after.serves = { s1: 'none', s2: 'm2' }
+      s.after.serves = { s2: 'm2' }
     },
   },
   'goal-on-press': {

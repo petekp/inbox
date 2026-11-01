@@ -5,7 +5,7 @@ const servesLines = [
 
 export const GOOD_RUNS: Record<string, string[]> = {
   'coordinator-day': [
-    'DONE: s1 | merges edits on reconnect\nDONE: s2 | live in both stores\nDONE: m2 | merges edits on reconnect\nDONE: m3 | live in both stores',
+    'DONE: s1 | merges edits on reconnect\nDONE: s2 | live in both stores\nDONE: m2 | merges edits on reconnect\nDONE: m3 | live in both stores\nSERVES: s4 | -\nSERVES: s5 | -\nSERVES: s6 | -\nSERVES: s7 | -',
     [
       'HEAD: Vanishing notes | Fixing the archive bug, then shipping 2.5',
       'DONE: s6 | filed for later',
@@ -15,7 +15,7 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'LINK: c3 | Vanishing notes',
       'GOAL: Notes 2.5 in the stores | working Notes stop vanishing; queued 2.5 live',
     ].join('\n'),
-    'SET: s11 | working | cause found\nSERVES: s11 | m4\nSERVES: s12 | m5',
+    'SET: s11 | working | cause found\nSERVES: s11 | m4\nSERVES: s12 | m5\nSERVES: s3 | -\nSERVES: s4 | -\nSERVES: s5 | -',
     'LINK: i2 | 2.5 release',
     'UNCHANGED',
     'SET: s11 | working | fix in review\nLINK: c4 | Vanishing notes',
@@ -32,6 +32,8 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'MILESTONE: working | Under 100 ms | index rebuilds on each keystroke',
       'MILESTONE: queued | 2.6 live | after search',
       'SERVES: s5 | Under 100 ms',
+      'SERVES: s3 | -',
+      'SERVES: s4 | -',
     ].join('\n'),
   ],
   'single-task': [
