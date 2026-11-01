@@ -20,7 +20,8 @@ import { judgeSystemText } from './status-judge-text'
 import { LIMITS, runReplay } from './status-replay'
 import type { Agent, ModelCall, Replay, StepResult } from './status-replay'
 import { REPLAYS } from './status-replays'
-import { gradeReplay, RULES } from './status-rules'
+import { gradeReplay } from './status-grade'
+import { RULES } from './status-rules'
 import type { RuleResult } from './status-rules'
 
 const ROOT = process.env.INBOX_EVAL_ROOT ?? process.cwd()

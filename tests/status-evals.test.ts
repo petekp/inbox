@@ -10,7 +10,8 @@ import type { JudgePage } from '../evals/status-judge'
 import { minutes, replayFromRecord, runReplay } from '../evals/status-replay'
 import type { ModelCall, Replay } from '../evals/status-replay'
 import { REPLAYS } from '../evals/status-replays'
-import { blockingFailures, gradeReplay, gradeStep, RULES } from '../evals/status-rules'
+import { blockingFailures, gradeReplay, gradeStep, tally } from '../evals/status-grade'
+import { RULES } from '../evals/status-rules'
 import { subject, statusOf, sessionOf, baseScene, contextOf, SCENES, GOOD_RUNS } from './status-evals-scenes'
 import type { Scene } from './status-evals-scenes'
 
@@ -91,6 +92,20 @@ test('a bad run of each replay fails the rule it breaks at the step it breaks, a
     })
     expect({ replay: r.name, failed: steps[answerStep]!.failed }).toEqual({ replay: r.name, failed: [bad.breaks] })
   }
+})
+
+test('a failure left on the page counts once, at the step where it first appears, and later steps carry it', async () => {
+  const r = REPLAYS.find(x => x.name === 'coordinator-day')!
+  const bad = BAD_RUNS[r.name]!
+  const answers = [...GOOD_RUNS[r.name]!]
+  answers[bad.at] = bad.answer
+  const marks = gradeReplay(r, await runReplay(r, { agent: 'claude', ask: scripted(answers) })).map(results =>
+    results.find(x => x.rule === bad.breaks)!,
+  )
+  const failing = marks.flatMap((m, n) => (m.failures.length > 0 ? [n] : []))
+  expect(failing.length).toBeGreaterThan(1)
+  expect(marks.map(tally).filter(t => t === 'fail')).toHaveLength(1)
+  expect(failing.slice(1).map(n => marks[n]!.fresh)).toEqual(failing.slice(1).map(() => []))
 })
 
 const RULE_IDS = new Set<string>(RULES.map(r => r.id))

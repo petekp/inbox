@@ -2,8 +2,7 @@ import { isOpen, NAME_WORDS } from '../hooks/status-limits'
 import type { SessionStatus, Subject } from '../types'
 import { isOpenPiece, rightStatuses } from './status-facts'
 import type { Facts, Piece } from './status-facts'
-import { startSession } from './status-replay'
-import type { Replay, Step, StepResult } from './status-replay'
+import type { Step, StepResult } from './status-replay'
 
 /** What a rule reads: the step, the state it left, and the state before it. */
 export type RuleContext = {
@@ -12,17 +11,37 @@ export type RuleContext = {
   before: { overview: SessionStatus | null; facts: Facts }
 }
 
+/**
+ * Where a rule can newly fail: in text the step's answer wrote, wherever the answer wrote or the facts changed, or at
+ * a step with a call and no change in the facts.
+ */
+export type Reads = 'answer' | 'facts' | 'quiet'
+
 export type Rule = {
   id: string
   property: number
+  reads: Reads
   /** What the rule checks, as the spec says it. */
   text: string
   /** The decision or issue the rule waits on. Until it is built, the rule is expected to fail and blocks nothing. */
   until?: string
   failures(ctx: RuleContext): string[]
+  /** What makes two failures the same failure, so one left on the page counts once. The failure's text by default. */
+  key?: (failure: string) => string
 }
 
-export type RuleResult = { rule: string; property: number; failures: string[]; until: string | null }
+/**
+ * One rule at one step. `fresh` holds the failures that were not already there at the last step with a call, and
+ * `isOpportunity` says whether the step could make the rule newly fail.
+ */
+export type RuleResult = {
+  rule: string
+  property: number
+  failures: string[]
+  fresh: string[]
+  isOpportunity: boolean
+  until: string | null
+}
 
 /** A word that names a time, which code writes and the model never does. */
 export const TIME_WORDS =
@@ -95,6 +114,7 @@ function isPlainLabel(name: string, ref: string): boolean {
 export const RULES: Rule[] = [
   {
     id: 'no-time-words',
+    reads: 'answer',
     property: 13,
     text: 'No text the model writes holds a time word: the head, a name, where it stands, or a was line.',
     failures: ({ result }) =>
@@ -104,6 +124,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'short-names',
+    reads: 'answer',
     property: 3,
     text: 'A name has at most 3 words, no "…" and no question mark.',
     failures: ({ result }) =>
@@ -113,6 +134,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'text-is-state',
+    reads: 'answer',
     property: 6,
     text: 'A text names no command, file, hash, ticket or PR number, count, or process step.',
     failures: ({ result }) =>
@@ -122,6 +144,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'head-no-status',
+    reads: 'answer',
     property: 1,
     text: 'The head holds no status word.',
     failures: ({ result }) => {
@@ -131,6 +154,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'head-follows',
+    reads: 'facts',
     property: 1,
     text: 'The head names the focus in the facts, and its title no longer names finished work the focus moved on from. It changes where the focus moved, and holds where it did not.',
     failures: ({ result, before }) => {
@@ -151,6 +175,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'no-duplicates',
+    reads: 'answer',
     property: 4,
     text: 'No two open subjects share every key word of a name, numbers included, or the same issue or PR number.',
     failures: ({ result }) => {
@@ -168,6 +193,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'piece-once',
+    reads: 'facts',
     property: 4,
     text: 'No piece in the facts has two open subjects.',
     failures: ({ result }) =>
@@ -178,6 +204,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'open-not-over',
+    reads: 'answer',
     property: 5,
     text: "No open subject's text says the work is over.",
     failures: ({ result }) =>
@@ -187,6 +214,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'open-pieces-kept',
+    reads: 'facts',
     property: 5,
     text: 'Every open piece in the facts is an open subject, drawn as a row or in the "N more" fold.',
     failures: ({ result }) =>
@@ -197,6 +225,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'marks-true',
+    reads: 'facts',
     property: 5,
     text: "Each piece's subject has a status its state allows. Filed work closed as done is left to filed-mark.",
     failures: ({ result }) =>
@@ -206,9 +235,11 @@ export const RULES: Rule[] = [
           .filter(s => !(p.state === 'filed' && s.status === 'done'))
           .map(s => `${label(s)} is ${s.status}, and ${p.names[0]} is ${p.state}`),
       ),
+    key: failure => failure.slice(0, failure.lastIndexOf(', and ')),
   },
   {
     id: 'not-work',
+    reads: 'answer',
     property: 3,
     text: 'No subject is an ask, a finding, a task for the person or a standing rule. No text restates an open ask or finding.',
     failures: ({ result }) => {
@@ -227,6 +258,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'held-text',
+    reads: 'answer',
     property: 9,
     text: "A held subject's text names no decision.",
     failures: ({ result }) => {
@@ -239,6 +271,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'asks-linked',
+    reads: 'facts',
     property: 8,
     text: 'Each open ask is linked to a subject it holds up, and an ask that holds up nothing is linked to none.',
     failures: ({ result }) => {
@@ -259,6 +292,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'ask-holds-several',
+    reads: 'facts',
     property: 8,
     text: 'An ask that holds up several pieces marks each of them.',
     until: '#140',
@@ -278,6 +312,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'children-linked',
+    reads: 'facts',
     property: 7,
     text: 'Each running child is linked to the subject it serves.',
     failures: ({ result }) => {
@@ -295,6 +330,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'child-labels',
+    reads: 'facts',
     property: 7,
     text: 'A running child reads in plain words: not its host handle, no words joined by "-" or "_", at least two words.',
     until: '#149',
@@ -305,6 +341,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'no-news-no-move',
+    reads: 'quiet',
     property: 11,
     text: 'On a step that changed no work, no subject is added, and no last-changed time moves.',
     failures: ({ step, result, before }) => {
@@ -319,6 +356,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'changes-move',
+    reads: 'facts',
     property: 10,
     text: "On a step that changed work, each changed piece's last-changed time moves.",
     failures: ({ step, result }) => {
@@ -332,6 +370,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'was-on-reversal',
+    reads: 'facts',
     property: 12,
     text: 'A changed plan puts a was line on its subject, and a step of plain progress adds none.',
     failures: ({ step, result, before }) => {
@@ -357,6 +396,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'was-not-cut',
+    reads: 'answer',
     property: 12,
     text: 'No was or merged-in line ends cut with "…".',
     failures: ({ result }) =>
@@ -368,6 +408,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'failure-shown',
+    reads: 'facts',
     property: 13,
     text: 'While the last Status call wrote nothing, the status line says so.',
     failures: ({ result }) =>
@@ -375,6 +416,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'head-title',
+    reads: 'answer',
     property: 1,
     text: 'The head is a title of at most 3 words, with no "…" or question mark, and a description that does not repeat it.',
     failures: ({ result }) => {
@@ -394,6 +436,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'filed-mark',
+    reads: 'facts',
     property: 5,
     text: 'Work filed for later closes with its own mark, not ✓.',
     until: '#137',
@@ -406,6 +449,7 @@ export const RULES: Rule[] = [
   },
   {
     id: 'finished-named',
+    reads: 'facts',
     property: 10,
     text: 'Every piece that finished since the last look is drawn as a row.',
     until: '#138',
@@ -419,24 +463,3 @@ export const RULES: Rule[] = [
     },
   },
 ]
-
-/** Runs every rule on one step. */
-export function gradeStep(ctx: RuleContext): RuleResult[] {
-  return RULES.map(r => ({ rule: r.id, property: r.property, failures: r.failures(ctx), until: r.until ?? null }))
-}
-
-/** Runs every rule on each step of a replay's run, each step against the state the step before left. */
-export function gradeReplay(replay: Replay, steps: StepResult[]): RuleResult[][] {
-  const start = { overview: startSession(replay).ledger.overview, facts: { ...replay.start.facts, changed: [] } }
-
-  return steps.map((result, n) => {
-    const prev = steps[n - 1]
-    const before = prev ? { overview: prev.session.ledger.overview, facts: prev.facts } : start
-    return gradeStep({ step: replay.steps[n]!, result, before })
-  })
-}
-
-/** The failures that count against a run: every rule's but those that wait on a change not built yet. */
-export function blockingFailures(results: RuleResult[]): RuleResult[] {
-  return results.filter(r => r.until === null && r.failures.length > 0)
-}
