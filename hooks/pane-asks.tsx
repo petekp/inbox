@@ -176,6 +176,7 @@ export function paneAskTabs(
     let width = Math.ceil(text.length / Math.max(count, 1))
     while (width < most && wrap(width).length > count) width++
     const lines = wrap(width)
+    const mostCells = look === 'desktop' ? Math.floor(most / DESKTOP_CHARS_PER_CELL) : most
     const align = isInline ? 'flex-start' : 'center'
 
     return (
@@ -190,7 +191,7 @@ export function paneAskTabs(
             </Box>
           ) : null}
           {below.length > 0 ? (
-            <Box flexDirection="column" alignItems={align} width={room} marginTop={blankLine}>
+            <Box flexDirection="column" alignItems={align} width={mostCells} marginTop={blankLine}>
               {below}
             </Box>
           ) : null}

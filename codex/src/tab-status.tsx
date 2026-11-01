@@ -165,6 +165,7 @@ function GoalField() {
   return (
     <div class="actions">
       <form
+        class="goal-field"
         onSubmit={e => {
           e.preventDefault()
           const text = draft().trim()

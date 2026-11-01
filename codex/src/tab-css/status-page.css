@@ -162,13 +162,13 @@
 }
 .empty .actions,
 .empty .keys,
-.empty form {
+.empty .goal-field {
   justify-content: center;
 }
-.empty form {
+.goal-field {
   flex-wrap: wrap;
 }
-.empty input {
+.goal-field input {
   flex: 1 1 18em;
 }
 .field-keys {
