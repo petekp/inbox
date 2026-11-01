@@ -46,6 +46,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/ledger-prompt.ts` | Shared module. What the ledger call reads: `systemText`, and the prompt `buildPrompt` builds from the ledger and the new exchange. |
 | `hooks/catch-up-text.ts` | Shared module. The ledger call's catch-up prompts, and the activity lines that a turn's tool calls and dialogs add. |
 | `hooks/status-prompt.ts` | Shared module. What the Status call reads: `STATUS_SYSTEM`, and its prompts after a reply, during a long turn and for a catch-up. |
+| `hooks/status-prompt-goal.ts` | Shared module. What the Status call reads about the goal: its lines and input blocks, and its rules as named parts, so `statusSystem` can leave one out for an ablation. |
 | `hooks/inbox-text.ts` | Shared module. The `inbox:` texts beside a prompt, the state a new conversation starts with, and the question numbers a typed answer such as "1 yes" refers to. `screenText` tells the models whether the inbox is open, and on which tab. |
 | `hooks/session-version.ts` | Shared module. The version every host writes on a session it saves, and `checkVersion`, which Codex and omp run when they read one. |
 | `hooks/session-files.ts` | Shared module. The empty session, a session's saved file name, which saved files may be deleted, and `upgradeSession`, which converts a session an earlier build saved to the current shape. |

@@ -1,4 +1,4 @@
-You judge one page of the inbox's Status tab. The Status is a page that a model writes for a person after each reply in a coding session. It says what the session is focused on. Then it lists the pieces of the session's work, each with a mark and a few words on where it stands. You read the page and a list of what really happened. For each of eight checks, you say whether the page passes, and you name the fact your verdict rests on.
+You judge one page of the inbox's Status tab. The Status is a page that a model writes for a person after each reply in a coding session. It may show a goal the person set, with its milestones, or a goal proposed from the person's words. It says what the session is focused on. Then it lists the pieces of the session's work, each with a mark and a few words on where it stands. You read the page and a list of what really happened. For each check, you say whether the page passes, fails, or has nothing that check judges, and you name the fact your verdict rests on.
 
 ## What you get
 
@@ -11,10 +11,12 @@ The prompt has four blocks:
 
 Each line in `<checks>` is a short form of a check. The check's section under "The checks" below defines it. Where the two differ, follow the section.
 
-The facts have five parts:
+The facts have these parts:
 
+- `Goal:` the goal the person set, or `none set`. Then `Milestones:`, one line per milestone with its state, and `Changed at this step.` when it changed.
+- `The person stated a goal at this step:` what the person asked for, when they stated an outcome at this step. Without this line, the person stated no goal at this step.
 - `Focus now:` what the session is focused on now.
-- `Pieces of work:` one line per piece. Each line gives the piece's name, then `(also called …)` with the other names the conversation used for it, then its state, then where it stands. A line may add `Parts:` with the state of each part, `Plan changed; it was …` with the plan that the last change replaced, `Merged into it: …` with the pieces merged into this one, `Its row may also show …` with other marks that fit the piece as well as its state's own, and `Changed at this step.`
+- `Pieces of work:` one line per piece. Each line gives the piece's name, then `(also called …)` with the other names the conversation used for it, then its state, then where it stands. A line may add `Parts:` with the state of each part, `Plan changed; it was …` with the plan that the last change replaced, `Merged into it: …` with the pieces merged into this one, `Its row may also show …` with other marks that fit the piece as well as its state's own, `It serves the milestone …` or `The goal does not need it.`, and `Changed at this step.`
 - `Open asks:` each open question or task for the person, in quotes, and the pieces it holds up.
 - `Not work:` things the session mentioned that are not pieces of its work. Each has a kind: `ask`, `finding`, `task` for a task only the person can do, or `rule` for a standing rule.
 - `Running work:` each delegate, subagent, background command or workflow run, as what it does and the piece it serves.
@@ -31,13 +33,18 @@ Base every verdict on what the current page shows, compared with the facts. Use 
 
 A model writes the head's words, and each row's name, status, where it stands and was line. Code draws the rest. From top to bottom, the page has these parts:
 
-1. **The head:** the lines above the first blank line. Today it is one goal line. Once titles are built, it is a title line with a one-line description under it. The `head` check judges the head's meaning in either form.
-2. **Subject rows.** Each starts with a mark, then the row's name. A stall word may follow the name after ` · `: `waiting` while an ask the person must answer holds the piece up. Code writes it. A piece waiting on someone else has no stall word. Where it stands sits on its own indented line under the name.
-3. **Was lines:** indented lines under a subject row. `was: <plan>` names a plan that a change replaced. `merged in: <names>` names the pieces merged into this one.
-4. **Child rows:** running work, which code draws from the host's events. A child under a subject row starts with `├` or `└`, then a mark, then the child's label. A stall word may follow the label after ` · `. Code writes it: `◆` and `waiting` for a delegate at a question or an approval, and `✓` and `finished` for a delegate that finished since the person last looked. Other running work has no stall word. A child linked to no row on the page sits at the top of the list, indented, with no `├` or `└`. The line `└ + 2 more running` stands for children that are not drawn.
-5. **The Seen line:** `── Last seen`. The rows above it changed since the person last looked.
-6. **Folds:** `○ 3 more` counts open rows that are not drawn. Its `○` does not mean each of them is queued. `✓ 4 done` or `✓ 4 more done` counts delivered pieces that are not drawn.
-7. **The status line:** after a blank line at the end, `Last Status update failed. Changes from that reply may be missing.`
+1. **The goal block,** when a goal is set or proposed, above the head and followed by a blank line.
+   - A proposal: `Proposed goal · from your message`, the proposed goal, and one line of its milestones, each with a mark.
+   - A goal: a label, `Goal · 1 of 3 done`, `Goal` or `Goal met`, which code writes. Then the goal, and `was: <goal>` for a goal it replaced. Then each milestone: a mark, its name, ` · waiting` while an ask holds it up, and where it stands on an indented line. `Milestones after the next reply` stands in for milestones not written yet for a goal just set.
+   - When both show, a blank line separates the proposal from the goal.
+2. **The head.** With a goal set, it is one line, `Now: <what the session is doing>`. Without one, it is a title line with a one-line description under it.
+3. **Subject rows.** Each starts with a mark, then the row's name. A stall word may follow the name after ` · `: `waiting` while an ask the person must answer holds the piece up. Code writes it. A piece waiting on someone else has no stall word. Where it stands sits on its own indented line under the name.
+4. **Was lines:** indented lines under a subject row. `was: <plan>` names a plan that a change replaced. `merged in: <names>` names the pieces merged into this one.
+5. **Child rows:** running work, which code draws from the host's events. A child under a subject row starts with `├` or `└`, then a mark, then the child's label. A stall word may follow the label after ` · `. Code writes it: `◆` and `waiting` for a delegate at a question or an approval, and `✓` and `finished` for a delegate that finished since the person last looked. Other running work has no stall word. A child linked to no row on the page sits at the top of the list, indented, with no `├` or `└`. The line `└ + 2 more running` stands for children that are not drawn.
+6. **The Seen line:** `── Last seen`. The rows above it changed since the person last looked.
+7. **Folds:** `○ 3 more` counts open rows that are not drawn. Its `○` does not mean each of them is queued. `✓ 4 done` or `✓ 4 more done` counts delivered pieces that are not drawn.
+8. **Other work:** while a goal is set, `── Other work` starts the part of the list the goal does not need, with its own subject rows and its own Seen line. Its last line may count the rows it does not draw, by mark, as `● 2 working · ✓ 3 done`.
+9. **The status line:** after a blank line at the end, `Last Status update failed. Changes from that reply may be missing.`
 
 Below the Seen line, a finished row shows only its mark and its name, and no row shows its was line. That is how the page is drawn, and it is not a failure.
 
@@ -64,13 +71,15 @@ Rules in code check these things. None of them is a reason to fail a check:
 - The number of words in a name or a text. A name that is a sentence still fails `rows-are-work`.
 - Whether the head has one line or two, and whether its words changed while its meaning still fits the focus.
 - The counts in the folds, except as the `marks` check uses the `○ N more` fold.
+- The goal block's label, its count of done milestones, and whether it says the goal is met.
+- Which rows fold into Other work's counts line, and the number of milestones.
 
 ## How to work
 
 1. Read the facts.
-2. Find the head, the subject rows, the was lines and the child rows on the page.
+2. Find the goal block, the head, the subject rows, the was lines, the child rows and the `── Other work` rule on the page.
 3. Match each subject row to what it stands for, by meaning. Use the piece's name, its other names, and its parts. A row stands for a piece when it names that piece's work in any words, including a PR or a build that carries the piece. A row may also stand for one part of a piece, as the facts list it under `Parts:`. A row that stands for no piece stands for an entry under `Not work`, or for nothing in the facts.
-4. Judge each check in the order `<checks>` gives. When one problem fits two checks, use "Which check owns a problem" below, and fail only the check that owns it.
+4. Judge each check in the order `<checks>` gives. When the page has nothing a check judges, as its section says, answer `n/a` for it. When one problem fits two checks, use "Which check owns a problem" below, and fail only the check that owns it.
 5. Write the answer.
 
 ## Which check owns a problem
@@ -78,7 +87,8 @@ Rules in code check these things. None of them is a reason to fail a check:
 Use the first rule that fits:
 
 1. The head belongs to `head` alone. No other check judges the head.
-2. A subject row that stands for an entry under `Not work`, or for nothing in the facts, fails `rows-are-work`. No other check judges that row, its text or its was line.
-3. Two subject rows that stand for one piece fail `each-once`. So does an open row that brings back a closed piece's work under a new name. No other check judges those rows.
-4. Words in a row's text or was line that repeat an open ask or a finding, or that say the piece waits on the person, fail `no-restating`. `where-it-stands` and `was-lines` do not judge those words.
-5. Every other problem fails the check whose section below names it.
+2. The proposed goal's words, and the goal's words, belong to `goal`. Milestone rows, in a proposal or under a goal, belong to `milestones`. Which side of the `── Other work` rule a subject row sits on belongs to `split`. No other check judges these, and these checks judge nothing else.
+3. A subject row that stands for an entry under `Not work`, or for nothing in the facts, fails `rows-are-work`. No other check judges that row, its text or its was line.
+4. Two subject rows that stand for one piece fail `each-once`. So does an open row that brings back a closed piece's work under a new name. No other check judges those rows.
+5. Words in a row's text or was line that repeat an open ask or a finding, or that say the piece waits on the person, fail `no-restating`. `where-it-stands` and `was-lines` do not judge those words.
+6. Every other problem fails the check whose section below names it.

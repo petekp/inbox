@@ -88,7 +88,8 @@ function addMilestone(o: SessionStatus, op: Extract<Op, { kind: 'milestone' }>, 
     else moveMilestone(o, known, { kind: 'set', ref: known.id, status: op.status, text: op.text }, now)
     return o
   }
-  const isFull = o.milestones.filter(m => m.status !== 'dropped').length >= MILESTONES_MAX
+  const isFull =
+    !o.goal!.isAwaitingMilestones && o.milestones.filter(m => m.status !== 'dropped').length >= MILESTONES_MAX
   if (isFull) return o
   const m: Milestone = {
     id: `m${o.nextMilestoneId}`,
@@ -135,22 +136,40 @@ export function applyGoalOp(
 }
 
 /**
- * The goal once an answer has applied: a typed goal's milestones belong to it once a milestone changed after it was
- * set, its was line goes once the person has seen it, and it is met while every milestone that is not dropped is done.
- * Met follows the milestones, so a milestone that opens again unmeets it.
+ * The goal once an answer has applied. A typed goal carries the milestones of the goal before it until an answer from a
+ * call that read this goal applies: that answer keeps up to `MILESTONES_MAX` of the milestones it names in `named` and
+ * has not dropped, and the rest go. While the goal waits, the carried milestones do not count toward that limit. Until it keeps one, the goal still waits for its milestones. The was line goes once the person has seen it,
+ * and the goal is met while every milestone that is not dropped is done. Met follows the milestones, so a milestone
+ * that opens again unmeets it. `readSetAt` is when the goal the call read was set, or null when it read none: a call
+ * that read an earlier goal wrote for that goal.
  */
-export function settleGoal(o: SessionStatus, now: number): SessionStatus {
+export function settleGoal(
+  o: SessionStatus,
+  now: number,
+  readSetAt: number | null,
+  named: ReadonlySet<string>,
+): SessionStatus {
   if (o.goal === null) return o
   const setAt = o.goal.setAt
   const isSeen = o.lastLookAt !== null && setAt <= o.lastLookAt
-  const isAwaiting = o.goal.isAwaitingMilestones && !o.milestones.some(m => m.changedAt > setAt)
-  const kept = o.milestones.filter(m => m.status !== 'dropped')
+  const isAnswerForNewGoal = o.goal.isAwaitingMilestones && readSetAt === setAt
+  const milestones = isAnswerForNewGoal
+    ? o.milestones.filter(m => named.has(m.id) && m.status !== 'dropped').slice(0, MILESTONES_MAX)
+    : o.milestones
+  const isAwaiting = o.goal.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0)
+  const kept = milestones.filter(m => m.status !== 'dropped')
   const isMet = !isAwaiting && kept.length > 0 && kept.every(m => m.status === 'done')
   const was = isSeen ? null : o.goal.was
   const metAt = isMet ? (o.goal.metAt ?? now) : null
-  const isSame = was === o.goal.was && isAwaiting === o.goal.isAwaitingMilestones && metAt === o.goal.metAt
+  const isSame =
+    milestones.length === o.milestones.length &&
+    was === o.goal.was &&
+    isAwaiting === o.goal.isAwaitingMilestones &&
+    metAt === o.goal.metAt
+  if (isSame) return o
+  const settled = { ...o, milestones, goal: { ...o.goal, was, isAwaitingMilestones: isAwaiting, metAt } }
 
-  return isSame ? o : { ...o, goal: { ...o.goal, was, isAwaitingMilestones: isAwaiting, metAt } }
+  return isAnswerForNewGoal ? withoutLinksTo(settled, milestones) : settled
 }
 
 /** Links to milestones that `milestones` no longer holds, dropped so their subjects count as not linked yet. */
@@ -193,6 +212,8 @@ export function useProposedGoal(o: SessionStatus, now: number): SessionStatus {
       milestones,
     ),
     now,
+    null,
+    new Set(),
   )
 }
 
@@ -207,8 +228,8 @@ export function declineProposedGoal(o: SessionStatus): SessionStatus {
 /**
  * A goal the person typed. One with a proposal's words uses the proposal and its milestones, as Use this goal does. Any
  * other declines a proposal. A rewording of the goal keeps its milestones and needs no message. Any other goal replaces
- * it, unlinks every subject, and keeps the milestones for a Status call to keep by id or replace. The page draws none of
- * them until one changes.
+ * it, unlinks every subject, and carries the milestones until the Status call that reads it keeps the ones it names. The
+ * page draws none of them until then.
  */
 export function setTypedGoal(o: SessionStatus, text: string, now: number): { status: SessionStatus; isNew: boolean } {
   const typed = clipWords(text, DESCRIPTION_KEPT)

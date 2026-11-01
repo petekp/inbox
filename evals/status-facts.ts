@@ -22,7 +22,25 @@ export type Piece = {
   merged?: string[]
   /** Statuses that are also right, as `queued` and `working` are for work just set aside. */
   alsoRight?: SubjectStatus[]
+  /** The id of the goal's milestone this piece serves, or `none` for work the goal does not need. */
+  serves?: string
 }
+
+/** One milestone of the goal: an outcome the goal needs, by the fact's own id, not the call's. */
+export type MilestoneFact = {
+  id: string
+  name: string
+  /** A case-insensitive pattern that this milestone's name matches, and no other milestone's. */
+  match: string
+  state: PieceState
+  alsoRight?: SubjectStatus[]
+}
+
+/** The goal the person set or accepted, and its milestones. */
+export type GoalFact = { text: string; match: string; milestones: MilestoneFact[] }
+
+/** An outcome with a finish line the person stated at a step, which a proposal should match. */
+export type GoalStated = { text: string; match: string }
 
 /** An open ask, and the pieces it holds up. */
 export type AskFact = { match: string; text: string; holdsUp: string[] }
@@ -44,7 +62,11 @@ export type Facts = {
   asks: AskFact[]
   notWork: NotWork[]
   children: ChildFact[]
-  /** The ids of pieces whose state, place or plan changed at this step. Empty when the step changed no work. */
+  /** The goal as the session holds it. None when no goal is set. */
+  goal?: GoalFact | null
+  /** What the person stated as a goal at this step. Null at a step where they stated none. */
+  goalStated?: GoalStated | null
+  /** The ids of pieces and milestones whose state, place or plan changed at this step. Empty when nothing changed. */
   changed: string[]
 }
 
@@ -59,9 +81,29 @@ export type FactsChange = {
   notWork?: NotWork[]
   /** The running work after the step, in place of the work before. */
   children?: ChildFact[]
+  /** The goal after the step, in place of the one before. */
+  goal?: GoalFact | null
+  /** Milestones of the goal whose facts change: a known id updates it. */
+  milestones?: (Partial<MilestoneFact> & { id: string })[]
+  goalStated?: GoalStated
 }
 
-const CHANGING_KEYS = ['state', 'stands', 'parts', 'was', 'merged'] as const
+const CHANGING_KEYS = ['state', 'stands', 'parts', 'was', 'merged', 'serves'] as const
+
+/** The goal after `change`, adding to `changed` each milestone whose state changed or that the goal gained. */
+function goalAfter(before: Facts['goal'], change: FactsChange | undefined, changed: string[]): GoalFact | null {
+  const goal = change?.goal !== undefined ? change.goal : (before ?? null)
+  if (goal === null) return null
+  const known = new Map((before?.milestones ?? []).map(m => [m.id, m]))
+  const milestones = goal.milestones.map(m => {
+    const update = change?.milestones?.find(x => x.id === m.id)
+    const next = { ...m, ...update }
+    if (known.get(m.id)?.state !== next.state) changed.push(m.id)
+    return next
+  })
+
+  return { ...goal, milestones }
+}
 
 /** The facts after `change`, with `changed` naming each piece whose state, stand, parts, plan or merges changed. */
 export function factsAfter(before: Facts, change: FactsChange | undefined): Facts {
@@ -88,6 +130,8 @@ export function factsAfter(before: Facts, change: FactsChange | undefined): Fact
     asks: change?.asks ?? before.asks,
     notWork: [...before.notWork, ...(change?.notWork ?? [])],
     children: change?.children ?? before.children,
+    goal: goalAfter(before.goal, change, changed),
+    goalStated: change?.goalStated ?? null,
     changed,
   }
 }
@@ -138,12 +182,34 @@ export function factsText(f: Facts): string {
       s === 'working' ? [SUBJECT_MARKS.working.mark, IDLE_MARK.mark] : [SUBJECT_MARKS[s].mark],
     )
     const alsoRight = alsoMarks.length > 0 ? ` Its row may also show ${alsoMarks.join(' or ')}.` : ''
+    const serves =
+      p.serves === undefined
+        ? ''
+        : p.serves === 'none'
+          ? ' The goal does not need it.'
+          : ` It serves the milestone ${milestoneName(p.serves)}.`
 
-    return `- ${p.names[0]}${also}: ${STATE_TEXT[p.state]}. ${p.stands}.${parts}${was}${merged}${alsoRight}${isChanged}`
+    return `- ${p.names[0]}${also}: ${STATE_TEXT[p.state]}. ${p.stands}.${parts}${was}${merged}${alsoRight}${serves}${isChanged}`
   }
+  const milestoneName = (id: string) => f.goal?.milestones.find(m => m.id === id)?.name ?? id
   const list = (lines: string[]) => (lines.length > 0 ? lines.join('\n') : '- none')
 
+  const goal = f.goal
+    ? [
+        `Goal: ${f.goal.text}`,
+        'Milestones:',
+        list(
+          f.goal.milestones.map(
+            m => `- ${m.name}: ${STATE_TEXT[m.state]}.${f.changed.includes(m.id) ? ' Changed at this step.' : ''}`,
+          ),
+        ),
+      ]
+    : ['Goal: none set']
+  const stated = f.goalStated ? [`The person stated a goal at this step: ${f.goalStated.text}`] : []
+
   return [
+    ...goal,
+    ...stated,
     `Focus now: ${f.focus}`,
     'Pieces of work:',
     list(f.pieces.map(piece)),

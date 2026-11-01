@@ -4,39 +4,57 @@ import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { STATUS_SYSTEM } from '../hooks/status-prompt'
+import { statusSystem } from '../hooks/status-prompt'
+import { GOAL_PARTS } from '../hooks/status-prompt-goal'
+import type { GoalPartId } from '../hooks/status-prompt-goal'
 import { systemText } from '../hooks/ledger-prompt'
 import { CODEX } from '../codex/src/texts'
 import { run } from '../codex/src/run'
 import { codexAsk, MODEL } from '../codex/src/update'
 import { claude, CLAUDE_MODEL } from './claude-model'
 import { codexCli } from './codex-cli'
-import { provenance, resultsPath, runCount, runJobs, writeResults } from './harness'
+import { BudgetError, provenance, resultsPath, runCount, runJobs, writeResults } from './harness'
 import type { Job, Run } from './harness'
 import { factsText } from './status-facts'
-import { JUDGE_CHECKS, judgePrompt, mistakeKind, pageMistakes, parseJudgeAnswer } from './status-judge'
-import type { JudgeCheckId, JudgePageSet, JudgeVerdict } from './status-judge'
+import { judgePrompt, mistakeKind, pageMistakes, parseJudgeAnswer } from './status-judge'
+import type { JudgePageSet, JudgeVerdict } from './status-judge'
 import { judgeSystemText } from './status-judge-text'
 import { LIMITS, runReplay } from './status-replay'
-import type { Agent, ModelCall, Replay, StepResult } from './status-replay'
+import type { Agent, CallAnswer, ModelCall, Replay } from './status-replay'
 import { REPLAYS } from './status-replays'
-import { gradeReplay, RULES } from './status-rules'
-import type { RuleResult } from './status-rules'
+import { blockingFailures, gradeReplay } from './status-grade'
+import {
+  holdFailures,
+  isBlocking,
+  knownFailing,
+  layerLines,
+  layerTests,
+  reasks,
+  stepName,
+  unjudgedTargets,
+} from './status-report'
+import type { GradedCase, ReplayRun, StepRecord } from './status-report'
+
+type RunRecord = Run & ReplayRun
 
 const ROOT = process.env.INBOX_EVAL_ROOT ?? process.cwd()
 const JUDGE_MODEL = 'opus'
 const JUDGE_EFFORT = 'high'
-/** A check passes at a step when it passes in at least this share of the runs. */
-const PASS_SHARE = 2 / 3
+/** The most Status calls one run makes, both models together. A run that would pass it stops with no grade. */
+const STATUS_CALLS_MAX = 200
+/** A call that fails before the model answers is tried this many more times, from the same prompt. */
+const CALL_RETRIES = 2
+const CALL_RETRY_WAIT_MS = 10_000
 
 const { values } = parseArgs({
   options: {
     agent: { type: 'string', default: 'both' },
-    runs: { type: 'string', default: '3' },
+    runs: { type: 'string' },
     replay: { type: 'string' },
     judge: { type: 'boolean', default: false },
     'judge-pages': { type: 'string' },
     'judge-set': { type: 'string' },
+    without: { type: 'string' },
     out: { type: 'string' },
   },
 })
@@ -48,6 +66,12 @@ const wanted = values.replay?.split(',')
 const unknown = (wanted ?? []).filter(n => !REPLAYS.some(r => r.name === n))
 if (unknown.length > 0) throw new Error(`Unknown --replay ${unknown.join(', ')}`)
 const replays = REPLAYS.filter(r => !wanted || wanted.includes(r.name))
+const without = (values.without?.split(',') ?? []) as GoalPartId[]
+const unknownParts = without.filter(id => !(id in GOAL_PARTS))
+if (unknownParts.length > 0)
+  throw new Error(`Unknown --without ${unknownParts.join(', ')}. Use ${Object.keys(GOAL_PARTS).join(', ')}.`)
+/** The Status call's system text: the shipped one, or a copy without the goal rules `--without` names. */
+const statusSystemText = statusSystem(without)
 const judgeSets = values['judge-set'] === undefined ? [1, 2] : [Number(values['judge-set'])]
 if (!judgeSets.every(n => n === 1 || n === 2))
   throw new Error(`Unknown --judge-set ${values['judge-set']}. Use 1 or 2.`)
@@ -62,7 +86,7 @@ const about = provenance(
   values['judge-pages'] !== undefined ? 'status-judge' : 'status',
   { claude: 'claude', codex: codexCli },
   {
-    'status systemText': STATUS_SYSTEM,
+    'status systemText': statusSystemText,
     'systemText claude': systemText(CLAUDE_CODE),
     'systemText codex': systemText(CODEX),
     judge: judgeSystem,
@@ -136,12 +160,16 @@ if (agents.includes('codex') && !existsSync(join(codexHome, 'auth.json')))
 const codexData = mkdtempSync(join(tmpdir(), 'inbox-eval-'))
 const askCodex = codexAsk(run, codexCli, codexData, codexHome)
 
+let statusCalls = 0
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
 /**
- * The agent's model call. A call that gives nothing before the host's time limit failed outside the model, so it
- * throws, and the harness runs the whole replay again. One past the limit is the host's to drop.
+ * The agent's model call. A call that gives nothing before the host's time limit failed outside the model, so it is
+ * tried again from the same prompt, and then throws, so the run cannot be graded. One past the limit is the host's to
+ * drop. Each Status call, a re-ask or a retry included, counts toward `STATUS_CALLS_MAX`.
  */
 function modelCall(agent: Agent): ModelCall {
-  return async (prompt, system) => {
+  const once = async (prompt: string, system: string): Promise<CallAnswer> => {
     const started = Date.now()
     const answer =
       agent === 'codex'
@@ -152,31 +180,23 @@ function modelCall(agent: Agent): ModelCall {
 
     return answer
   }
+
+  return async (prompt, system, kind) => {
+    for (let tries = 0; ; tries++) {
+      if (kind === 'status' && ++statusCalls > STATUS_CALLS_MAX)
+        throw new BudgetError(`the run reached ${STATUS_CALLS_MAX} Status calls`)
+      try {
+        return await once(prompt, system)
+      } catch (e) {
+        if (tries >= CALL_RETRIES) throw e
+        await wait(CALL_RETRY_WAIT_MS * (tries + 1))
+      }
+    }
+  }
 }
 
-type StepRecord = {
-  label: string
-  page: string
-  calls: StepResult['calls']
-  isStatusFailed: boolean
-  rules: RuleResult[]
-  judge?: { answer: string | null; verdicts: JudgeVerdict[] | null }
-}
-
-type ReplayRun = Run & { steps: StepRecord[] }
-
-/**
- * A step as the replay tables in `docs/status-replays.md` name it: by its call's number, or by its label when it
- * makes no call.
- */
-function stepName(replay: Replay, i: number): string {
-  const step = replay.steps[i]!
-
-  return step.call ? `step ${replay.steps.slice(0, i + 1).filter(s => s.call).length}` : `"${step.label}"`
-}
-
-async function once(agent: Agent, replay: Replay, n: number): Promise<ReplayRun> {
-  const steps = await runReplay(replay, { agent, ask: modelCall(agent) })
+async function once(agent: Agent, replay: Replay, n: number): Promise<RunRecord> {
+  const steps = await runReplay(replay, { agent, ask: modelCall(agent), system: statusSystemText })
   const graded = gradeReplay(replay, steps)
   const records: StepRecord[] = []
   let previous: string | null = null
@@ -195,9 +215,7 @@ async function once(agent: Agent, replay: Replay, n: number): Promise<ReplayRun>
     records.push(record)
   }
   const failed = records.flatMap((r, i) =>
-    r.rules
-      .filter(x => x.until === null && x.failures.length > 0)
-      .map(x => `${stepName(replay, i)} ${x.rule}: ${x.failures.join('; ')}`),
+    blockingFailures(r.rules).map(x => `${stepName(replay, i)} ${x.rule}: ${x.failures.join('; ')}`),
   )
 
   return { ...job(agent, replay, n), error: null, failed, attempts: 1, earlier: [], durationMs: 0, steps: records }
@@ -207,12 +225,13 @@ function job(agent: Agent, replay: Replay, n: number) {
   return { agent, name: replay.name, run: n, model: null, requested: agent === 'codex' ? MODEL : CLAUDE_MODEL }
 }
 
-const runs = runCount(values.runs)
-const jobs: Job<ReplayRun>[] = agents.flatMap(agent =>
+/** A replay's runs per model, or a short case's, unless `--runs` sets one count for every case. */
+const runsOf = (replay: Replay) => (values.runs !== undefined ? runCount(values.runs) : replay.isShort ? 5 : 3)
+const jobs: Job<RunRecord>[] = agents.flatMap(agent =>
   replays.flatMap(replay =>
-    Array.from({ length: runs }, (_, n) => ({
+    Array.from({ length: runsOf(replay) }, (_, n) => ({
       go: () => once(agent, replay, n),
-      unrun: (error: string): ReplayRun => ({
+      unrun: (error: string): RunRecord => ({
         ...job(agent, replay, n),
         error,
         failed: [],
@@ -224,70 +243,44 @@ const jobs: Job<ReplayRun>[] = agents.flatMap(agent =>
     })),
   ),
 )
-const { results, stopped } = await runJobs(jobs, so => writeResults(path, about, so))
+const { results, stopped } = await runJobs(jobs, so => writeResults(path, about, so), 0)
 writeResults(path, about, results, stopped)
 rmSync(codexData, { recursive: true, force: true })
 
-/**
- * Prints each replay's checks that failed at a step in more runs than the pass bar allows, the checks that failed in
- * one run, the known failing rules, and which targeted steps reproduced their failure.
- */
-function reportReplay(agent: Agent, replay: Replay): 'pass' | 'fail' | 'not run' {
-  const mine = results.filter(r => r.agent === agent && r.name === replay.name)
-  const graded = mine.filter(r => !r.error)
-  if (graded.length < runs) {
-    console.log(`  ? ${agent} ${replay.name}: not run, ${graded.length} of ${runs} runs could be graded`)
-    for (const r of mine.filter(x => x.error)) console.log(`       ${r.error}`)
-    return 'not run'
-  }
-  const needed = Math.ceil(runs * PASS_SHARE)
-  const blocking: string[] = []
-  const once: string[] = []
-  const known = new Set<string>()
-  const reproduced: string[] = []
-  const missed: string[] = []
-  const unjudged: string[] = []
-  for (const [i, step] of replay.steps.entries()) {
-    const failing = (id: string) =>
-      graded.filter(r => {
-        const s = r.steps[i]!
-        const rule = s.rules.find(x => x.rule === id)
-        const verdict = s.judge?.verdicts?.find(v => v.check === id)
-        const isJudgeUnread = s.judge !== undefined && s.judge.verdicts === null
-        return (
-          (rule && rule.failures.length > 0) ||
-          verdict?.verdict === 'fail' ||
-          (isJudgeUnread && JUDGE_CHECKS.some(c => c.id === id))
-        )
-      }).length
-    const ids = [...RULES.map(r => r.id), ...(values.judge && step.checkpoint ? JUDGE_CHECKS.map(c => c.id) : [])]
-    for (const id of ids) {
-      const fails = failing(id)
-      const until = RULES.find(r => r.id === id)?.until ?? step.judgeUntil?.[id as JudgeCheckId]
-      if (fails === 0) continue
-      if (until) known.add(`${id}, until ${until}`)
-      else if (graded.length - fails < needed)
-        blocking.push(`${stepName(replay, i)} ${id}: failed in ${fails} of ${graded.length}`)
-      else once.push(`${stepName(replay, i)} ${id}: failed in ${fails} of ${graded.length}`)
-    }
-    for (const t of step.targets ?? []) {
-      const isJudgeOnly = !RULES.some(r => r.id === t)
-      const list = isJudgeOnly && !values.judge ? unjudged : failing(t) >= needed ? reproduced : missed
-      list.push(`${stepName(replay, i)} ${t}`)
-    }
-  }
-  console.log(`${blocking.length === 0 ? '  ok' : '  x '} ${agent} ${replay.name}: ${graded.length} runs`)
-  for (const b of blocking) console.log(`       ${b}`)
-  for (const o of once) console.log(`       for reading: ${o}`)
-  if (known.size > 0) console.log(`       known failing: ${[...known].join('; ')}`)
-  console.log(`       reproduced: ${reproduced.join(', ') || 'none'}`)
-  console.log(`       not reproduced: ${missed.join(', ') || 'none'}`)
-  if (unjudged.length > 0) console.log(`       needs --judge: ${unjudged.join(', ')}`)
-
-  return blocking.length === 0 ? 'pass' : 'fail'
+const ungraded = agents.flatMap(agent =>
+  replays.flatMap(replay => {
+    const mine = results.filter(r => r.agent === agent && r.name === replay.name)
+    const graded = mine.filter(r => !r.error).length
+    if (graded === runsOf(replay)) return []
+    return [
+      `${agent} ${replay.name}: ${graded} of ${runsOf(replay)} runs could be graded`,
+      ...mine.flatMap(r => (r.error ? [`  ${r.error}`] : [])),
+    ]
+  }),
+)
+const cases: GradedCase[] = replays.map(replay => ({
+  replay,
+  runs: results.filter(r => r.name === replay.name && !r.error),
+}))
+const tests = layerTests(cases, agents, values.judge)
+for (const line of layerLines(tests)) console.log(line)
+const isBlocked = tests.some(isBlocking)
+const holds = holdFailures(cases)
+console.log(`code holds: ${holds.length === 0 ? 'none failed' : `${holds.length} failed`}`)
+for (const h of holds) console.log(`  x ${h}`)
+const known = knownFailing(cases)
+if (known.length > 0) console.log(`known failing: ${known.join('; ')}`)
+const unjudged = unjudgedTargets(cases, values.judge)
+if (unjudged.length > 0) console.log(`needs --judge: ${unjudged.join(', ')}`)
+for (const agent of agents) {
+  const r = reasks(cases, agent)
+  console.log(`${agent} re-asked ${r.reasked} of ${r.calls} Status calls for a readable answer`)
 }
-
-const verdicts = agents.flatMap(a => replays.map(r => reportReplay(a, r)))
+console.log('A target counts a failure on any piece; counting only the pieces its step changes is not built.')
+for (const u of ungraded) console.log(`not graded: ${u}`)
+console.log(`Status calls: ${Math.min(statusCalls, STATUS_CALLS_MAX)} of ${STATUS_CALLS_MAX}`)
 if (stopped !== null) console.log(`Stopped: ${stopped}`)
 console.log(`Results: ${path}${about.isDirty ? ' (the tree had uncommitted changes)' : ''}`)
-process.exit(stopped !== null ? 3 : verdicts.includes('fail') ? 1 : verdicts.includes('not run') ? 2 : 0)
+const isOverBudget = statusCalls > STATUS_CALLS_MAX
+const isFailed = isBlocked || holds.length > 0
+process.exit(isOverBudget ? 2 : stopped !== null ? 3 : isFailed ? 1 : ungraded.length > 0 ? 2 : 0)

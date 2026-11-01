@@ -33,6 +33,7 @@ export const SHARED = [
   'ledger-prompt',
   'catch-up-text',
   'status-prompt',
+  'status-prompt-goal',
   'inbox-text',
   'pr-tab',
   'pr-fetch',
