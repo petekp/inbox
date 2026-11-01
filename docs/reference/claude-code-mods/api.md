@@ -66,7 +66,7 @@ Namespaces and methods. [R#mods-api-methods; T]
 - Caching: "Put the text every call repeats first and mark its last block (`cache`); whatever follows the last mark is paid for whole on every call." "a call within five minutes that opens with the same text reads it there". Both cache counts at zero means "text under the model's minimum, or caching switched off". "On Bedrock, Vertex, Foundry or behind a gateway the text is found again only while `prompt` opens the same way." "Marks go uncounted: one too many is the API's own `api-error` (status 400)." [T: `ModelTextBlock`]
 - `fork` "asks one question over the current conversation instead, with the same model and system prompt, so the Claude API serves most of it from the prompt cache". Types: "every tool denied … the prefix billed afresh once the entry lapsed or after `/model`". `nothing-to-fork` covers "before the first response and after `/clear`". [A#call-a-model; T: `model.fork`]
 - `classify` defaults to "the engine's small fast model". [T]
-- The inbox: `MODEL = 'sonnet'` (`hooks/register.tsx:MODEL`); `askLedgerModel` sends a `cache: true` system block with `maxTokens: 1600`, `effort: 'low'` (`hooks/register.tsx:askLedgerModel`) and a 45 s timeout (`hooks/register.tsx:runUpdate`); `$.model.fork` in `hooks/register.tsx:catchUp`. See "What the inbox's model calls cost".
+- The inbox: `MODEL = 'sonnet'` (`hooks/register.tsx:MODEL`); `askInboxModel` sends a `cache: true` system block with `maxTokens: 1600`, `effort: 'low'` (`hooks/register.tsx:askInboxModel`) and a 45 s timeout (`hooks/register.tsx:runUpdate`); `$.model.fork` in `hooks/register.tsx:catchUp`. See "What the inbox's model calls cost".
 
 ### `$.store` and `$.state`
 
