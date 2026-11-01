@@ -1,5 +1,7 @@
 // Fails on a tracked file over 5,000 tokens (tokens = bytes / 4) that
-// .token-ceilings does not list, and on a listed file past its ceiling. It uses
+// .token-ceilings does not list, and on a listed file past its ceiling. It also
+// fails on a list entry that names no tracked file, or a file now at or under
+// the limit, so the list holds only files that need a ceiling. It uses
 // the rules of the token-limit pre-commit hook, and skips the files the hook
 // skips: lockfiles, built and generated files, binaries, and files marked
 // linguist-generated in .gitattributes.
@@ -126,11 +128,28 @@ function readCeilings() {
   return parseCeilings(text)
 }
 
-function filesOverLimit(ceilings) {
-  const paths = git('ls-files', '-z')
+const trackedFiles = () =>
+  git('ls-files', '-z')
     .toString()
     .split('\0')
-    .filter(path => path !== '' && !skippedByName(path))
+    .filter(path => path !== '')
+
+function staleEntries(ceilings, tracked) {
+  const stale = []
+  for (const path of ceilings.keys()) {
+    const full = join(ROOT, path)
+    if (!tracked.has(path) || !existsSync(full))
+      stale.push(`${CEILINGS_FILE} lists ${path}, which is not a tracked file.`)
+    else if (Math.floor(lstatSync(full).size / BYTES_PER_TOKEN) <= TOKEN_LIMIT)
+      stale.push(
+        `${CEILINGS_FILE} lists ${path}, which is now at or under the ${TOKEN_LIMIT.toLocaleString('en-US')}-token limit.`,
+      )
+  }
+  return stale.map(problem => `${problem} Remove its entry.`)
+}
+
+function filesOverLimit(ceilings, tracked) {
+  const paths = tracked.filter(path => !skippedByName(path))
   const generated = markedGenerated(paths)
   const over = []
   for (const path of paths) {
@@ -182,7 +201,10 @@ function differences(ours, hooks) {
 
 const problems = []
 try {
-  const over = filesOverLimit(readCeilings())
+  const ceilings = readCeilings()
+  const tracked = trackedFiles()
+  problems.push(...staleEntries(ceilings, new Set(tracked)))
+  const over = filesOverLimit(ceilings, tracked)
   for (const file of over)
     problems.push(
       file.ceiling === undefined
