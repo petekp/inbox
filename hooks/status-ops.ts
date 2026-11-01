@@ -1,4 +1,4 @@
-import type { SessionStatus, StatusHead, Subject } from '../types'
+import type { Milestone, SessionStatus, StatusHead, Subject } from '../types'
 import type { Op, StatusAnswer } from './status'
 import {
   clipWords,
@@ -138,11 +138,18 @@ export function applyOps(
     forgetSeenWas(s)
     s.changedAt = now
   }
+  const named = new Set<string>()
+  const markNamed = (m: Milestone | null) => {
+    if (m) named.add(m.id)
+  }
   const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
   for (const { op } of ordered) {
     if (op.kind === 'none') continue
-    if (op.kind === 'goal' || op.kind === 'milestone' || op.kind === 'serves') o = applyGoalOp(o, op, now, find)
-    else if (op.kind === 'head') o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now))
+    if (op.kind === 'goal' || op.kind === 'milestone' || op.kind === 'serves') {
+      o = applyGoalOp(o, op, now, find)
+      if (op.kind === 'milestone') markNamed(findMilestone(o, op.name))
+      if (op.kind === 'serves' && op.milestone !== null) markNamed(findMilestone(o, op.milestone))
+    } else if (op.kind === 'head') o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now))
     else if (op.kind === 'link') {
       const child = o.children.find(c => c.id === op.ref)
       const subject = find(op.subject)
@@ -150,6 +157,7 @@ export function applyOps(
       if (child && subject) child.subjectId = subject.id
       else if (subject && askIds.has(op.ref)) o.askSubjects[op.ref] = subject.id
       else if (milestone && askIds.has(op.ref)) o.askSubjects[op.ref] = milestone.id
+      markNamed(milestone)
     } else if (op.kind === 'new') {
       const known = find(op.name)
       if (known && isOpen(known)) {
@@ -173,6 +181,7 @@ export function applyOps(
       const s = find(op.ref)
       const milestone = s ? null : findMilestone(o, op.ref)
       if (milestone) moveMilestone(o, milestone, op, now)
+      markNamed(milestone)
       if (!s) continue
       if (op.kind === 'set') set(s, op.status, op.text)
       else if (op.kind === 'done') {
@@ -205,7 +214,7 @@ export function applyOps(
   if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
     o = { ...o, head: { ...o.head, description: '' } }
 
-  return settleGoal(o, now, readSetAt)
+  return settleGoal(o, now, readSetAt, named)
 }
 
 /** The Status after an answer, applied at `now`. `askIds` are the open asks. */
@@ -218,5 +227,5 @@ export function applyStatus(
 ): SessionStatus | null {
   if (answer.kind === 'ops') return applyOps(last, answer.ops, now, askIds, readSetAt)
 
-  return last === null ? null : settleGoal(last, now, readSetAt)
+  return last === null ? null : settleGoal(last, now, readSetAt, new Set())
 }

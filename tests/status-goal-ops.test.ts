@@ -108,7 +108,7 @@ test('the goal is met once every milestone left is done, and unmet when one open
   expect(reopened.goal?.metAt).toBeNull()
 })
 
-test('a typed goal unlinks every subject and waits until an answer from a call that read it applies, and a rewording keeps its milestones and links and sends nothing', () => {
+test('a typed goal unlinks every subject and waits until an answer from a call that read it keeps a milestone, and a rewording keeps its milestones and links and sends nothing', () => {
   const met = after(
     after(withGoal(), 'SERVES: s1 | m1\nSERVES: s2 | -', 22),
     'DONE: m2 | named\nDONE: m3 | written',
@@ -128,7 +128,8 @@ test('a typed goal unlinks every subject and waits until an answer from a call t
   })
   expect(typed.status.serves).toEqual({})
   expect(typed.status.milestones).toHaveLength(3)
-  expect(answered.goal).toMatchObject({ isAwaitingMilestones: false, metAt: 40 })
+  expect(answered.milestones).toEqual([])
+  expect(answered.goal).toMatchObject({ isAwaitingMilestones: true, metAt: null })
   expect(stale.goal).toMatchObject({ isAwaitingMilestones: true, metAt: null })
   expect(after(answered, 'MILESTONE: queued | Release notes | not started', 50).goal).toMatchObject({
     isAwaitingMilestones: false,
@@ -137,6 +138,20 @@ test('a typed goal unlinks every subject and waits until an answer from a call t
   expect(reworded.status.serves).toEqual({ s1: 'm1', s2: 'none' })
   expect(reworded.isNew).toBe(false)
   expect(reworded.status.goal).toMatchObject({ text: 'Demo import ready', setAt: 20, isAwaitingMilestones: false })
+})
+
+test('the answer that reads a typed goal keeps the milestones it names, and the dropped and unnamed ones of the goal before go', () => {
+  const met = after(after(withGoal(), 'DONE: m2 | named\nDONE: m3 | written', 25), 'SERVES: s1 | m3', 26)
+  const typed = setTypedGoal(met, 'Ship 2.6 with import', 30).status
+  const answered = after(
+    typed,
+    'MILESTONE: done | Import works | CSV works\nDROP: m2 | not needed\nMILESTONE: queued | Release notes | not started\nSERVES: s2 | m1',
+    40,
+  )
+
+  expect(answered.milestones.map(m => m.name)).toEqual(['Import works', 'Release notes'])
+  expect(answered.goal).toMatchObject({ isAwaitingMilestones: false, metAt: null })
+  expect(answered.serves).toEqual({ s2: 'm1' })
 })
 
 test('a goal typed over a proposal declines it, one with the proposal’s words uses the proposal and its milestones, and Use this goal links no subject yet', () => {

@@ -1612,17 +1612,30 @@ function applyGoalOp(o, op, now, findSubject) {
   if (!subject || op.milestone !== null && !milestone) return o;
   return { ...o, serves: { ...o.serves, [subject.id]: milestone?.id ?? "none" } };
 }
-function settleGoal(o, now, readSetAt) {
+function settleGoal(o, now, readSetAt, named) {
   if (o.goal === null) return o;
   const setAt = o.goal.setAt;
   const isSeen = o.lastLookAt !== null && setAt <= o.lastLookAt;
-  const isAwaiting = o.goal.isAwaitingMilestones && readSetAt !== setAt;
-  const kept = o.milestones.filter((m) => m.status !== "dropped");
+  const isAnswerForNewGoal = o.goal.isAwaitingMilestones && readSetAt === setAt;
+  const milestones = isAnswerForNewGoal ? o.milestones.filter((m) => named.has(m.id) && m.status !== "dropped") : o.milestones;
+  const isAwaiting = o.goal.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0);
+  const kept = milestones.filter((m) => m.status !== "dropped");
   const isMet = !isAwaiting && kept.length > 0 && kept.every((m) => m.status === "done");
   const was = isSeen ? null : o.goal.was;
   const metAt = isMet ? o.goal.metAt ?? now : null;
-  const isSame = was === o.goal.was && isAwaiting === o.goal.isAwaitingMilestones && metAt === o.goal.metAt;
-  return isSame ? o : { ...o, goal: { ...o.goal, was, isAwaitingMilestones: isAwaiting, metAt } };
+  const isSame = milestones.length === o.milestones.length && was === o.goal.was && isAwaiting === o.goal.isAwaitingMilestones && metAt === o.goal.metAt;
+  if (isSame) return o;
+  const settled = { ...o, milestones, goal: { ...o.goal, was, isAwaitingMilestones: isAwaiting, metAt } };
+  return isAnswerForNewGoal ? withoutLinksTo(settled, milestones) : settled;
+}
+function withoutLinksTo(o, milestones) {
+  const ids = new Set(milestones.map((m) => m.id));
+  const keep = ([, to]) => to === "none" || !/^m\d+$/.test(to) || ids.has(to);
+  return {
+    ...o,
+    serves: Object.fromEntries(Object.entries(o.serves).filter(keep)),
+    askSubjects: Object.fromEntries(Object.entries(o.askSubjects).filter(keep))
+  };
 }
 
 // ../hooks/pressed.ts
@@ -3030,11 +3043,18 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     forgetSeenWas2(s);
     s.changedAt = now;
   };
+  const named = /* @__PURE__ */ new Set();
+  const markNamed = (m) => {
+    if (m) named.add(m.id);
+  };
   const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
   for (const { op } of ordered) {
     if (op.kind === "none") continue;
-    if (op.kind === "goal" || op.kind === "milestone" || op.kind === "serves") o = applyGoalOp(o, op, now, find);
-    else if (op.kind === "head") o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
+    if (op.kind === "goal" || op.kind === "milestone" || op.kind === "serves") {
+      o = applyGoalOp(o, op, now, find);
+      if (op.kind === "milestone") markNamed(findMilestone(o, op.name));
+      if (op.kind === "serves" && op.milestone !== null) markNamed(findMilestone(o, op.milestone));
+    } else if (op.kind === "head") o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
     else if (op.kind === "link") {
       const child = o.children.find((c) => c.id === op.ref);
       const subject = find(op.subject);
@@ -3042,6 +3062,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       if (child && subject) child.subjectId = subject.id;
       else if (subject && askIds.has(op.ref)) o.askSubjects[op.ref] = subject.id;
       else if (milestone && askIds.has(op.ref)) o.askSubjects[op.ref] = milestone.id;
+      markNamed(milestone);
     } else if (op.kind === "new") {
       const known = find(op.name);
       if (known && isOpen(known)) {
@@ -3065,6 +3086,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       const s = find(op.ref);
       const milestone = s ? null : findMilestone(o, op.ref);
       if (milestone) moveMilestone(o, milestone, op, now);
+      markNamed(milestone);
       if (!s) continue;
       if (op.kind === "set") set(s, op.status, op.text);
       else if (op.kind === "done") {
@@ -3096,11 +3118,11 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   const isHeadKept = o.head === (last?.head ?? null);
   if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
     o = { ...o, head: { ...o.head, description: "" } };
-  return settleGoal(o, now, readSetAt);
+  return settleGoal(o, now, readSetAt, named);
 }
 function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
   if (answer.kind === "ops") return applyOps(last, answer.ops, now, askIds, readSetAt);
-  return last === null ? null : settleGoal(last, now, readSetAt);
+  return last === null ? null : settleGoal(last, now, readSetAt, /* @__PURE__ */ new Set());
 }
 
 // ../hooks/session-status.ts
@@ -3432,7 +3454,7 @@ var GOAL_PARTS = {
   "goal-not-again": `Never propose the goal in <goal>, a goal in <proposed>, or a goal in <declined> again, in the same words or in other words. A goal the person declined stays declined until they state it again as new work.`,
   "goal-belongs-to-person": `The goal belongs to the person. GOAL only proposes: the person uses it, edits it or declines it. Never write GOAL to reword or update the goal in <goal>, and never write the goal into the head, a subject or a milestone.`,
   "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
-  "milestones-for-new-goal": `When <goal> says it was just set, its milestones belong to the goal before it. Keep each one the new goal still needs as it is, DROP each one it does not need, and write MILESTONE for each outcome it needs that none covers, so the goal has ${MILESTONES_MIN} to ${MILESTONES_MAX}.`,
+  "milestones-for-new-goal": `When <goal> says it was just set, its milestones belong to the goal before it, and each one your answer does not name goes. For each one the new goal still needs, write MILESTONE again with its name, status and text. Write MILESTONE for each outcome it needs that none covers, so the goal has ${MILESTONES_MIN} to ${MILESTONES_MAX}.`,
   "serves-every-subject": `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work moves forward, or - when the goal does not need it. Change a link only when what the work is for changed. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`
 };
 function goalRules(without = []) {
