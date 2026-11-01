@@ -16,14 +16,23 @@ import { codexCli } from './codex-cli'
 import { BudgetError, provenance, resultsPath, runCount, runJobs, writeResults } from './harness'
 import type { Job, Run } from './harness'
 import { factsText } from './status-facts'
-import { JUDGE_CHECKS, judgePrompt, mistakeKind, pageMistakes, parseJudgeAnswer } from './status-judge'
+import { judgePrompt, mistakeKind, pageMistakes, parseJudgeAnswer } from './status-judge'
 import type { JudgePageSet, JudgeVerdict } from './status-judge'
 import { judgeSystemText } from './status-judge-text'
 import { LIMITS, runReplay } from './status-replay'
 import type { Agent, CallAnswer, ModelCall, Replay } from './status-replay'
 import { REPLAYS } from './status-replays'
 import { blockingFailures, gradeReplay } from './status-grade'
-import { holdFailures, knownFailing, layerTests, printLayers, reasks, stepName, unjudgedTargets } from './status-report'
+import {
+  holdFailures,
+  isBlocking,
+  knownFailing,
+  layerLines,
+  layerTests,
+  reasks,
+  stepName,
+  unjudgedTargets,
+} from './status-report'
 import type { GradedCase, ReplayRun, StepRecord } from './status-report'
 
 type RunRecord = Run & ReplayRun
