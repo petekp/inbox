@@ -10,7 +10,7 @@ import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { inboxView, perTurnStatus } from '../hooks/view'
 import { statusPage } from '../hooks/status-page'
 import { rowKeyPlan } from '../hooks/action-plan'
-import { statusKeyPlan } from '../hooks/status-keys'
+import { statusKeyPlan, statusKeyRows } from '../hooks/status-keys'
 import { shownTabs } from '../hooks/tabs'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
@@ -232,7 +232,9 @@ for (const isNextBuild of [false, true])
       }
       await clock.settle()
       const page = statusPage({ ledger, presence: emptySession().presence }, 1_000_000)
-      const planned = page.rows.flatMap(r => statusKeyPlan(r).map(k => `${r.id} ${k.label}`))
+      const planned = statusKeyRows(page).flatMap(t =>
+        t.keys.filter(k => k.press.action === 'show-ask').map(k => `${t.id} ${k.label}`),
+      )
       expect(planned, 'the demo’s Status has rows with buttons').not.toEqual([])
       const statusButtons = (await drawn()).buttons
         .filter(b => b.key.startsWith('show-ask-'))

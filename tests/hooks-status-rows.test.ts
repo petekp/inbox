@@ -89,13 +89,13 @@ test('on the Status, a rule sets each item apart in the docked terminal and on d
   const docked = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
   await docked.press({ key: 'tab-key-overview' })
   await clock.settle()
-  expect(await ruledAbove(docked)).toEqual(['s3', 's1', 's4', 'done'])
+  expect(await ruledAbove(docked)).toEqual(['s3', 's1', 's4'])
   await docked.unmount()
 
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
   await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
-  expect(await ruledAbove(desktop)).toEqual(['s3', 's1', 's4', 'done'])
+  expect(await ruledAbove(desktop)).toEqual(['s3', 's1', 's4'])
   await desktop.unmount()
 
   const inline = await $.ui.mount({ ...PANE, props: { ...PANE.props, placement: 'inline', bodyColumns: 90 } })

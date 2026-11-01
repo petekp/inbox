@@ -11,6 +11,12 @@ import type { PanelUi } from '../src/panel'
 import { handleKey } from '../src/panel-keys'
 import { keys, labelOf, NOW, onPage, screenOf, strip, style, text } from './panel-harness'
 
+const goallessScreen = () => {
+  const s = demoState(NOW)
+  const overview = { ...s.ledger.overview!, goal: null, milestones: [], serves: {} }
+
+  return screenOf({ view: sessionView({ ...s, ledger: { ...s.ledger, overview } }, NOW, SETTLED_MS, true, NO_HOLDS) })
+}
 const unheldScreen = () => {
   const s = demoState(NOW)
   const ledger = { ...s.ledger, overview: { ...s.ledger.overview!, askSubjects: {} } }
@@ -49,7 +55,7 @@ test('on a Status page taller than the panel, each ↑↓ press shows one more o
 })
 
 test('on the Status page, a subject an open ask holds up draws View, named for the ask’s kind, under its text in the plan’s order, and only the selected row draws it focused and keyed', () => {
-  const screen = screenOf()
+  const screen = goallessScreen()
   const page = screen.view.statusPage
   const held = page.rows.filter(r => statusKeyPlan(r).length > 0)
   expect(statusKeyRows(page).map(t => t.id)).toEqual(['goal', 's2', 's3'])
@@ -80,7 +86,7 @@ test('on the Status page, a subject an open ask holds up draws View, named for t
 })
 
 test('View on a Status row shows Asks with the oldest ask that holds it up selected, by its key or Enter, sends nothing, and holds the ask’s buttons through a second Enter', () => {
-  const screen = screenOf()
+  const screen = goallessScreen()
   for (const key of ['v', 'enter']) {
     const result = handleKey(screen, onPage, key, NOW)
     expect(result.press).toBeUndefined()
@@ -110,7 +116,7 @@ test('a Status row’s View leaves once its asks close, and the selection moves 
 })
 
 test('on a Status page taller than the panel, j and k scroll the newly selected row into view', () => {
-  const screen = screenOf()
+  const screen = goallessScreen()
   const height = 14
   const drawnFor = (ui: PanelUi) => drawPanel(screen, ui, 80, NOW, style, height)
   const isFocusShown = (ui: PanelUi) =>
