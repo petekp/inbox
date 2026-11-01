@@ -1321,6 +1321,7 @@ async function sendTyped($: EngineInterface, id: string, text: string, surface: 
 
 /** Opens `id`'s field with its draft, or with `seed` as a fresh one, and gives it the keys. */
 async function startTyping($: EngineInterface, id: string, seed?: string) {
+  paneState.focusHint = `type-${id}`
   const now = await $.clock.now()
   const drafts = await update($, DRAFTS, d =>
     d[id] && seed === undefined ? d : { ...d, [id]: { text: seed ?? '', since: now } },

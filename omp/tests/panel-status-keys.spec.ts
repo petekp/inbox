@@ -140,3 +140,17 @@ test('changing the shown tab starts the Status page at its top', () => {
   for (const key of ['tab', 'shift+tab', ...shownTabs(true).map(t => t.hotkey)])
     expect(keys(screen, scrolled, key).pageTop).toBe(0)
 })
+
+test('in a short panel, switching to the Status page scrolls its first selected row into view', () => {
+  const screen = screenOf({ isNextBuild: true })
+  const page = keys(
+    screen,
+    { ...onPage, tab: 'needsYou' },
+    ...shownTabs(true)
+      .filter(t => t.id === 'overview')
+      .map(t => t.hotkey),
+  )
+  const lines = drawPanel(screen, page, 60, NOW, style, 14).lines.map(strip)
+  expect(page.tab).toBe('overview')
+  expect(lines.some(l => l.includes('↵ View'))).toBe(true)
+})

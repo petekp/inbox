@@ -119,19 +119,26 @@ export function paneRowKeys(
       </Box>
     )
   }
-  const keyRow = (rowId: string, keys: KeyAction[], more: KeyAction[] = []) => (
-    <Box
-      flexDirection="row"
-      flexWrap="wrap"
-      alignItems="center"
-      columnGap={space.buttonGap}
-      rowGap={look === 'desktop' ? 1 : 0}
-    >
-      {keys.map(keyedButton(rowId))}
-      {look === 'terminal' && keys.length > 0 && more.length > 0 ? <Text color={pal.muted}>·</Text> : null}
-      {more.length > 0 ? (followUpLinks(rowId, more) ?? more.map(keyedButton(rowId, true))) : null}
-    </Box>
-  )
+  const keyRow = (rowId: string, keys: KeyAction[], more: KeyAction[] = []) => {
+    // A click on a Client gives that Client the keys, so a field opened from one never gets the typing.
+    const reply = hasClient && look === 'desktop' && more[0]?.key.startsWith('typekey-') ? more[0] : null
+    const links = reply ? more.slice(1) : more
+
+    return (
+      <Box
+        flexDirection="row"
+        flexWrap="wrap"
+        alignItems="center"
+        columnGap={space.buttonGap}
+        rowGap={look === 'desktop' ? 1 : 0}
+      >
+        {keys.map(keyedButton(rowId))}
+        {look === 'terminal' && keys.length > 0 && more.length > 0 ? <Text color={pal.muted}>·</Text> : null}
+        {reply ? keyedButton(rowId, true)(reply) : null}
+        {links.length > 0 ? (followUpLinks(rowId, links) ?? links.map(keyedButton(rowId, true))) : null}
+      </Box>
+    )
+  }
   const keyBindings = (keys: KeyAction[], suffix = '') =>
     keys.flatMap(({ key, hotkey, kind: _kind, emphasis: _emphasis, icon: _icon, isOut: _isOut, ...k }) =>
       hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} label={shownLabel(k)} />] : [],
