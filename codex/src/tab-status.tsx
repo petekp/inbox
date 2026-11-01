@@ -49,7 +49,7 @@ function openGoalField(text: string) {
   tabState.draw()
 }
 
-/** A Status key as a tab key. Use this goal and Not now draw out while the goal's press is on its way. */
+/** A Status key as a tab key. Set as goal and Not now draw out while the goal's press is on its way. */
 function statusKey({ press, label, emphasis }: StatusKey): Key {
   if (press.action === 'show-ask') return { label, emphasis, run: () => showAsk(press.askId) }
   if (press.action === 'type-goal') return { label, emphasis, run: () => openGoalField(press.text) }
@@ -242,63 +242,70 @@ function MilestoneLine({ m }: { m: MilestoneRow }) {
 }
 
 /**
- * A proposal, then the goal with its milestones, above the head. While the person types a goal, the field takes the
- * proposal's text's place, else the goal's, and the proposal's and the goal's buttons give way to it.
+ * The goal with its milestones, and a proposal, above the head. The proposal comes first only while no goal is set.
+ * While the person types a goal, the field takes the proposal's text's place, else the goal's, and the proposal's and
+ * the goal's buttons give way to it.
  */
 function GoalAbove({ page }: { page: StatusPage }) {
   const p = page.proposal
   const g = page.goal
   const isTyping = tabState.typing === GOAL_KEYS_ID
+  const proposal = p ? (
+    <section>
+      <div class="status-head goal">
+        <p class="muted">{p.label}</p>
+        {isTyping ? <GoalField /> : <h1>{p.text}</h1>}
+        <div class="goal-proposed">
+          {p.milestones.flatMap((m, n) => [
+            <span key={`mark-${n}`} class={markClassOf(m.tone, false)}>
+              <MarkGlyph text={m.mark} />
+            </span>,
+            <NameLine key={`name-${n}`} name={m.name} stall={null} />,
+          ])}
+        </div>
+        {isTyping ? null : <Keys keys={proposalKeyPlan(page)} />}
+      </div>
+      {p.isBelowGoal ? <GoalError /> : null}
+    </section>
+  ) : null
+  const goal = g ? (
+    <section>
+      <div class="status-head goal">
+        <p class="muted">{g.label}</p>
+        {isTyping && !p ? <GoalField /> : <h1>{g.text}</h1>}
+        {g.was ? (
+          <p class="muted">
+            {WAS_PREFIX}
+            {g.was}
+          </p>
+        ) : null}
+        {g.awaiting ? <p class="muted">{g.awaiting}</p> : null}
+      </div>
+      {g.milestones.length > 0 ? (
+        <div class="list">
+          {g.milestones.map(m => (
+            <MilestoneLine key={m.id} m={m} />
+          ))}
+        </div>
+      ) : null}
+      {isTyping ? null : (
+        <div class="status-head">
+          <Keys keys={goalKeyPlan(page)} />
+        </div>
+      )}
+      {p?.isBelowGoal ? null : <GoalError />}
+    </section>
+  ) : null
 
-  return (
+  return p?.isBelowGoal ? (
     <>
-      {p ? (
-        <section>
-          <div class="status-head goal">
-            <p class="muted">{p.label}</p>
-            {isTyping ? <GoalField /> : <h1>{p.text}</h1>}
-            <p class="goal-proposed">
-              {p.milestones.map((m, n) => (
-                <span key={n}>
-                  <span class={markClassOf(m.tone, false)}>
-                    <MarkGlyph text={m.mark} />
-                  </span>{' '}
-                  {m.name}
-                </span>
-              ))}
-            </p>
-            {isTyping ? null : <Keys keys={proposalKeyPlan(page)} />}
-          </div>
-        </section>
-      ) : null}
-      {g ? (
-        <section>
-          <div class="status-head goal">
-            <p class="muted">{g.label}</p>
-            {isTyping && !p ? <GoalField /> : <h1>{g.text}</h1>}
-            {g.was ? (
-              <p class="muted">
-                {WAS_PREFIX}
-                {g.was}
-              </p>
-            ) : null}
-            {g.awaiting ? <p class="muted">{g.awaiting}</p> : null}
-          </div>
-          {g.milestones.length > 0 ? (
-            <div class="list">
-              {g.milestones.map(m => (
-                <MilestoneLine key={m.id} m={m} />
-              ))}
-            </div>
-          ) : null}
-          {isTyping ? null : (
-            <div class="status-head">
-              <Keys keys={goalKeyPlan(page)} />
-            </div>
-          )}
-          <GoalError />
-        </section>
-      ) : null}
+      {goal}
+      {proposal}
+    </>
+  ) : (
+    <>
+      {proposal}
+      {goal}
     </>
   )
 }

@@ -221,7 +221,7 @@ test('an open that fails leaves the reason on the row', async () => {
   expect(JSON.stringify(last?.result)).toContain('no browser')
 })
 
-test('a proposed goal’s Use this goal and a typed goal set the saved goal, Not now declines a proposal, and none sends a message', async () => {
+test('a proposed goal’s Set as goal and a typed goal set the saved goal, Not now declines a proposal, and none sends a message', async () => {
   const inbox = createInbox(pi(), deps())
   w.statusReply = 'HEAD: Pilot | Shipping the pilot\nGOAL: Pilot ready to announce | done Fixes built; queued Announced'
   await prompt('get the pilot ready to announce')

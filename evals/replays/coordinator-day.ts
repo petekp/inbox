@@ -100,7 +100,7 @@ export const coordinatorDay: Replay = {
       ],
     },
     {
-      label: 'The person presses Use this goal on the 2.5 proposal',
+      label: 'The person presses Set as goal on the 2.5 proposal',
       at: 60,
       events: [{ press: 'use-goal' }],
       facts: {

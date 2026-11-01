@@ -44,7 +44,7 @@ A case is a starting state, then steps, with the fact list beside them.
 
 - **The starting state:** a saved ledger, with its Status, open asks and findings, and the session's presence.
 - **A step** has a time, and runs in this order:
-  - host events: a child starts, acts or ends, the person looks at the page for some seconds, or the person presses Use this goal or Not now or types a goal, through the host's own `goalPressed`;
+  - host events: a child starts, acts or ends, the person looks at the page for some seconds, or the person presses Set as goal or Not now or types a goal, through the host's own `goalPressed`;
   - fixture events, in a replay that skips the ledger call: an ask opens or closes;
   - at most one call: a reply, a mid-turn call or a catch-up, each with its exchange or conversation, or a recorded call's exchange as it was.
 - **The fact list** gives, for each step, the session's focus, the goal and each milestone's real state, every piece of work with its aliases, its real state and the milestone it serves, the asks and the pieces each holds up, the running work and the piece each serves, what is not work, and any goal the person stated at that step. A step lists only what it changes, and the pieces it changes are the step's changes.

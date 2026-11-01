@@ -34,9 +34,8 @@ Base every verdict on what the current page shows, compared with the facts. Use 
 A model writes the head's words, and each row's name, status, where it stands and was line. Code draws the rest. From top to bottom, the page has these parts:
 
 1. **The goal block,** when a goal is set or proposed, above the head and followed by a blank line.
-   - A proposal: `Proposed goal · from your message`, the proposed goal, and one line of its milestones, each with a mark.
    - A goal: a label, `Goal · 1 of 3 done`, `Goal` or `Goal met`, which code writes. Then the goal, and `was: <goal>` for a goal it replaced. Then each milestone: a mark, its name, ` · waiting` while an ask holds it up, and where it stands on an indented line. `Milestones after the next reply` stands in for milestones not written yet for a goal just set.
-   - When both show, a blank line separates the proposal from the goal.
+   - A proposal: a label, then the proposed goal, then each of its milestones on its own line, a mark and its name. With no goal set, the label is `Proposed goal · from your message` and the proposal is the whole goal block. While a goal is set, the label is `Proposed new goal · from your message`, and the proposal comes after the goal and its milestones, separated by a blank line. It would replace the goal; the goal above it is the one in effect.
 2. **The head.** With a goal set, it is one line, `Now: <what the session is doing>`. Without one, it is a title line with a one-line description under it.
 3. **Subject rows.** Each starts with a mark, then the row's name. A stall word may follow the name after ` · `: `waiting` while an ask the person must answer holds the piece up. Code writes it. A piece waiting on someone else has no stall word. Where it stands sits on its own indented line under the name.
 4. **Was lines:** indented lines under a subject row. `was: <plan>` names a plan that a change replaced. `merged in: <names>` names the pieces merged into this one.

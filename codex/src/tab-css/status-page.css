@@ -118,7 +118,7 @@
 .status-head p {
   margin: 0;
 }
-/* A goal, or a proposed one: its label, its text as the head's title, and the proposed milestones on one line. */
+/* A goal, or a proposed one: its label, then its text as the head's title. */
 .status-head.goal p + h1,
 .status-head.goal p + .actions {
   margin-top: 2px;
@@ -126,13 +126,17 @@
 .status-head .actions {
   margin-top: 6px;
 }
-.status-head.goal + .list {
+.status-head.goal + .list,
+.goal-proposed {
   margin-top: 4px;
 }
+/* Each proposed milestone on its own line, spaced and in the columns of the goal's milestone rows. The head already starts at the marks' column. */
 .goal-proposed {
-  display: flex;
-  flex-wrap: wrap;
-  column-gap: 14px;
+  display: grid;
+  grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr);
+}
+.goal-proposed > * {
+  padding: var(--status-row-pad) 0;
 }
 .status-page .content.changed > :first-child {
   font-weight: 600;

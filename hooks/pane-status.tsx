@@ -257,6 +257,7 @@ export function paneStatus(
       statusNameLine,
       statusPageText,
       markGlyph,
+      markWidth,
       keyRow,
       desktopFrame,
     },
@@ -339,9 +340,10 @@ export function paneStatus(
     const { proposal, goal } = goalAbove(page)
     const head = page.nowLine ? nowLine(page.nowLine) : page.head ? statusHead(page.head) : null
     const headLines = [...(head ? [head] : []), ...setGoal(page)]
+    const goalParts = page.proposal?.isBelowGoal ? [goal, proposal] : [proposal, goal]
 
     return sections([
-      ...[proposal, goal, headLines].flatMap(lines => (lines.length > 0 ? [section(lines)] : [])),
+      ...[...goalParts, headLines].flatMap(lines => (lines.length > 0 ? [section(lines)] : [])),
       ...(page.rows.length > 0
         ? [
             section(

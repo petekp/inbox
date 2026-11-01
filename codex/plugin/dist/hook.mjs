@@ -1943,6 +1943,7 @@ function childActive(o, ref, at) {
 // ../hooks/status-goal-page.ts
 var AWAITING_TEXT = "Milestones after the next reply";
 var PROPOSAL_LABEL = "Proposed goal \xB7 from your message";
+var NEW_GOAL_PROPOSAL_LABEL = "Proposed new goal \xB7 from your message";
 function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id] === id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
@@ -1970,12 +1971,14 @@ function milestoneRow(m, o, items) {
   };
 }
 function goalPage(o, items) {
+  const g = o?.goal ?? null;
+  const isBelowGoal = g !== null;
   const proposal = o?.proposedGoal ? {
-    label: PROPOSAL_LABEL,
+    label: isBelowGoal ? NEW_GOAL_PROPOSAL_LABEL : PROPOSAL_LABEL,
+    isBelowGoal,
     text: o.proposedGoal.text,
     milestones: o.proposedGoal.milestones.map((m) => ({ ...SUBJECT_MARKS[m.status], name: m.name }))
   } : null;
-  const g = o?.goal ?? null;
   if (o === null || g === null) return { goal: null, proposal, nowLine: null };
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
   const kept = o.milestones.filter((m) => m.status !== "dropped");

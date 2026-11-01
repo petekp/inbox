@@ -16,7 +16,7 @@ export function pressText(p: RowPress): string {
     case 'step':
       return p.label
     case 'use-goal':
-      return 'Use this goal'
+      return 'Set as goal'
     case 'decline-goal':
       return 'Not now'
     default:

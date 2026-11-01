@@ -50,7 +50,7 @@ export function proposalKeyPlan(page: StatusPage): StatusKey[] {
   if (page.proposal === null) return []
 
   return [
-    { press: { action: 'use-goal' }, label: 'Use this goal', hotkey: 'u', kind: 'mark', emphasis: 'primary' },
+    { press: { action: 'use-goal' }, label: 'Set as goal', hotkey: 's', kind: 'mark', emphasis: 'primary' },
     {
       press: { action: 'type-goal', text: page.proposal.text },
       label: 'Edit',
@@ -84,10 +84,14 @@ export function goalKeyPlan(page: StatusPage): StatusKey[] {
 
 /** Everything on the Status page with buttons, in the order the looks draw them: the targets j and k move between. */
 export function statusKeyRows(page: StatusPage): StatusKeyTarget[] {
+  const proposal = { id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(page) }
+  const isProposalBelowGoal = page.proposal?.isBelowGoal ?? false
+
   return [
-    { id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(page) },
+    ...(isProposalBelowGoal ? [] : [proposal]),
     ...(page.goal?.milestones ?? []).map(m => ({ id: m.id, keys: milestoneKeyPlan(m) })),
     { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) },
+    ...(isProposalBelowGoal ? [proposal] : []),
     ...page.rows.map(r => ({ id: r.id, keys: statusKeyPlan(r) })),
   ].filter(t => t.keys.length > 0)
 }

@@ -35,7 +35,7 @@ export type HostEvent =
   /** An ask opens or closes, in a replay that runs no ledger call. */
   | { askOpens: { id: string; ask: string; kind?: Item['kind']; options?: string[] } }
   | { askCloses: string }
-  /** The person presses Use this goal or Not now on the proposal, or types a goal, through the host's own press. */
+  /** The person presses Set as goal or Not now on the proposal, or types a goal, through the host's own press. */
   | { press: 'use-goal' | 'decline-goal' }
   | { press: 'type'; text: string }
 

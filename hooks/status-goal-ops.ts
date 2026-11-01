@@ -184,7 +184,7 @@ function withoutLinksTo(o: SessionStatus, milestones: readonly Milestone[]): Ses
   }
 }
 
-/** Use this goal: the proposal becomes the goal, with its milestones as it proposed them and no subject linked yet. */
+/** Set as goal: the proposal becomes the goal, with its milestones as it proposed them and no subject linked yet. */
 export function useProposedGoal(o: SessionStatus, now: number): SessionStatus {
   const p = o.proposedGoal
   if (p === null) return o
@@ -226,7 +226,7 @@ export function declineProposedGoal(o: SessionStatus): SessionStatus {
 }
 
 /**
- * A goal the person typed. One with a proposal's words uses the proposal and its milestones, as Use this goal does. Any
+ * A goal the person typed. One with a proposal's words uses the proposal and its milestones, as Set as goal does. Any
  * other declines a proposal. A rewording of the goal keeps its milestones and needs no message. Any other goal replaces
  * it, unlinks every subject, and carries the milestones until the Status call that reads it keeps the ones it names. The
  * page draws none of them until then.

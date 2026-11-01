@@ -264,15 +264,18 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     state.ledger = { ...state.ledger, overview: proposing }
     await afterPoll()
     const buttons = () => [...root.querySelectorAll('main button')].map(b => b.textContent)
-    assert.equal(root.querySelector('.goal-proposed')?.textContent, '✓ Page○ Label')
-    assert.deepEqual(buttons(), ['Use this goal', 'Edit', 'Not now'])
+    assert.deepEqual(
+      [...root.querySelectorAll('.goal-proposed > *')].map(e => e.textContent),
+      ['✓', 'Page', '○', 'Label'],
+    )
+    assert.deepEqual(buttons(), ['Set as goal', 'Edit', 'Not now'])
 
     const click = async (label: string) => {
       ;([...root.querySelectorAll('main button')].find(b => b.textContent === label) as HTMLElement).click()
       await new Promise<void>(resolve => setImmediate(resolve))
       await new Promise<void>(resolve => setImmediate(resolve))
     }
-    await click('Use this goal')
+    await click('Set as goal')
     assert.deepEqual(presses, [{ action: 'use-goal', id: 'goal' }])
     assert.deepEqual(
       [...root.querySelectorAll('.status-head.goal > *')].map(e => e.textContent),

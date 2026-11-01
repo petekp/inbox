@@ -157,7 +157,7 @@ export function createPanel(deps: PanelDeps): Panel {
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight)
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity))
       heldHeight = Math.max(heldHeight, drawn.lines.length)
-      // A reveal waits for a draw that has its target, as after Use this goal, whose goal button comes with the next screen.
+      // A reveal waits for a draw that has its target, as after Set as goal, whose goal button comes with the next screen.
       ui = { ...ui, pageTop: drawn.pageTop, pageReveal: drawn.isRevealed ? null : ui.pageReveal }
 
       return drawn.lines

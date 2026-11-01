@@ -636,7 +636,7 @@ function pressText(p) {
     case "step":
       return p.label;
     case "use-goal":
-      return "Use this goal";
+      return "Set as goal";
     case "decline-goal":
       return "Not now";
     default:
@@ -1278,7 +1278,7 @@ function proposalKeyPlan(page) {
   if (page.proposal === null)
     return [];
   return [
-    { press: { action: "use-goal" }, label: "Use this goal", hotkey: "u", kind: "mark", emphasis: "primary" },
+    { press: { action: "use-goal" }, label: "Set as goal", hotkey: "s", kind: "mark", emphasis: "primary" },
     {
       press: { action: "type-goal", text: page.proposal.text },
       label: "Edit",
@@ -1305,10 +1305,13 @@ function goalKeyPlan(page) {
   ];
 }
 function statusKeyRows(page) {
+  const proposal = { id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(page) };
+  const isProposalBelowGoal = page.proposal?.isBelowGoal ?? false;
   return [
-    { id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(page) },
+    ...isProposalBelowGoal ? [] : [proposal],
     ...(page.goal?.milestones ?? []).map((m) => ({ id: m.id, keys: milestoneKeyPlan(m) })),
     { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) },
+    ...isProposalBelowGoal ? [proposal] : [],
     ...page.rows.map((r) => ({ id: r.id, keys: statusKeyPlan(r) }))
   ].filter((t) => t.keys.length > 0);
 }
@@ -4366,6 +4369,7 @@ function perTurnStatus(update) {
 // ../hooks/status-goal-page.ts
 var AWAITING_TEXT = "Milestones after the next reply";
 var PROPOSAL_LABEL = "Proposed goal \xB7 from your message";
+var NEW_GOAL_PROPOSAL_LABEL = "Proposed new goal \xB7 from your message";
 function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id] === id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
@@ -4393,12 +4397,14 @@ function milestoneRow(m, o, items) {
   };
 }
 function goalPage(o, items) {
+  const g = o?.goal ?? null;
+  const isBelowGoal = g !== null;
   const proposal = o?.proposedGoal ? {
-    label: PROPOSAL_LABEL,
+    label: isBelowGoal ? NEW_GOAL_PROPOSAL_LABEL : PROPOSAL_LABEL,
+    isBelowGoal,
     text: o.proposedGoal.text,
     milestones: o.proposedGoal.milestones.map((m) => ({ ...SUBJECT_MARKS[m.status], name: m.name }))
   } : null;
-  const g = o?.goal ?? null;
   if (o === null || g === null)
     return { goal: null, proposal, nowLine: null };
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
@@ -5080,13 +5086,14 @@ function goalAbove(page, typing) {
   const g = page.goal;
   if (g === null)
     return proposal;
-  return [
-    ...proposal,
-    ...proposal.length > 0 ? [blank] : [],
+  const goal = [
     goalEntry({ is: "title", goal: g, isTyping: isTyping && proposal.length === 0 }),
     ...g.milestones.map((row) => goalEntry({ is: "milestone", row })),
     ...isTyping ? [] : [goalEntry({ is: "keys", page })]
   ];
+  if (proposal.length === 0)
+    return goal;
+  return page.proposal?.isBelowGoal ? [...goal, blank, ...proposal] : [...proposal, blank, ...goal];
 }
 function setGoal(page, typing) {
   if (page.goal !== null || page.proposal !== null)
@@ -5103,22 +5110,6 @@ function fieldLines(d) {
     ...field.map((l) => " ".repeat(PAGE_MARK_AT) + l.replace("\x00", s.inverse(" ")))
   ];
 }
-var MARKS_GAP = "   ";
-function marksLines(p, d) {
-  const room = d.width - PAGE_MARK_AT - 1;
-  const lines = [];
-  for (const m of p.milestones) {
-    const cells = cellWidth(`${m.mark} ${m.name}`);
-    const text = `${feedbackPaint(m.tone, d.style)(m.mark)} ${m.name}`;
-    const last = lines.at(-1);
-    if (last && last.cells + MARKS_GAP.length + cells <= room) {
-      last.cells += MARKS_GAP.length + cells;
-      last.text += MARKS_GAP + text;
-    } else
-      lines.push({ cells, text });
-  }
-  return lines.map((l) => " ".repeat(PAGE_MARK_AT) + l.text);
-}
 function drawGoalPart(part, d, isSelected) {
   const { width, now, style: s } = d;
   const at = (text, paint, lines = STATUS_TEXT_LINES) => indented(text, PAGE_MARK_AT, width, lines, paint);
@@ -5127,7 +5118,7 @@ function drawGoalPart(part, d, isSelected) {
     return [
       ...at(p.label, s.dim),
       ...part.isTyping ? fieldLines(d) : at(p.text, s.bold, Infinity),
-      ...marksLines(p, d),
+      ...p.milestones.flatMap((m) => pageLine(d, PAGE_MARK_AT, paintMark({ ...m, isRunning: false }, now, s), m.name, (t) => t)),
       ...part.isTyping ? [] : pageButtonLines({ id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(part.page) }, d, isSelected, PAGE_MARK_AT)
     ];
   }
