@@ -18,7 +18,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
 import { KEPT_SESSIONS } from '../../hooks/ledger'
-import type { Exchange } from '../../hooks/ledger'
+import type { Exchange, Session } from '../../types'
 import { checkVersion, SESSION_VERSION } from '../../hooks/session-version'
 import {
   emptySession,
@@ -29,7 +29,6 @@ import {
   upgradeSession,
 } from '../../hooks/session-files'
 import { pruned } from '../../hooks/session-presses'
-import type { Session } from '../../hooks/session'
 import { isShownTab } from '../../hooks/tabs'
 import type { ShownTab } from '../../hooks/tabs'
 

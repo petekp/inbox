@@ -28,7 +28,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/texts.ts` | Codex adapter. Texts only Codex reads, and the `CODEX` host. |
 | `codex/src/core.ts` | Codex host. Codex bindings over `hooks/session-turns.ts`, `hooks/session-status.ts` and `hooks/session-view.ts`, the tab view and tab helpers. |
 | `codex/src/data-dir.ts` | Codex host. The data folder and the dev build, which the loader reads. It imports no shared module, so a shared-module change leaves the loader's bundle unchanged. |
-| `codex/src/state.ts` | Codex host. One JSON state file per session, under a lock. `SessionState` extends the shared `Session` from `hooks/session.ts`. |
+| `codex/src/state.ts` | Codex host. One JSON state file per session, under a lock. `SessionState` extends the shared `Session` from `types/index.d.ts`. |
 | `codex/src/host.ts` | Codex host. `codexStore`, the Codex store that `hooks/session-host.ts` runs on. |
 | `codex/src/server.ts` | Codex host. The MCP server: `makeServer`, which takes `ServerDeps` and answers each JSON-RPC call. |
 | `codex/src/server-tools.ts` | Codex host. The tools and tab page the server lists, and the readers of a call's session, turn and arguments. |

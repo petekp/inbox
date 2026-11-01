@@ -59,8 +59,8 @@ The saved records do not say whether an answer came from a press or from the age
 | --- | --- | --- | --- |
 | The guidance | `hooks/model-text.ts:guidanceText` | Claude, Codex | Themes 1, 6, 7 |
 | `record` and `close`, their fields and results | `hooks/tools.ts` | Claude, Codex | Themes 3, 6 |
-| The inbox model's instructions and input | `hooks/model-text.ts:systemText`, `hooks/model-text.ts:buildPrompt` | Inbox model | Themes 2, 4, 5, 7 |
-| The catch-up prompts | `hooks/model-text.ts:catchUpPrompt`, `hooks/model-text.ts:transcriptCatchUpPrompt` | Inbox model or a fork | Theme 5 |
+| The inbox model's instructions and input | `hooks/ledger-prompt.ts:systemText`, `hooks/ledger-prompt.ts:buildPrompt` | Inbox model | Themes 2, 4, 5, 7 |
+| The catch-up prompts | `hooks/catch-up-text.ts:catchUpPrompt`, `hooks/catch-up-text.ts:transcriptCatchUpPrompt` | Inbox model or a fork | Theme 5 |
 | `inbox:` texts beside a prompt | `hooks/model-text.ts:inboxText`, `hooks/model-text.ts:closedText`, `hooks/model-text.ts:answerNote` | Claude, Codex | Themes 3, 6 |
 | The start and compaction block | `hooks/model-text.ts:carryText` | Claude, Codex | No issue |
 | Activity and screen lines | `toolActivity`, `dialogActivity` and `screenText` in `hooks/model-text.ts` | Inbox model | No issue |

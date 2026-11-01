@@ -12,7 +12,7 @@ Each host publishes its session to a file. The mod reads that file and builds th
 
 - **Where.** `<app home>/inbox/sessions/<session id>.json`. The app home is `$HERDR_APP_HOME`, or `~/.config/herdr-app` when that is unset. An app terminal inherits `HERDR_APP_HOME` when the app was started with it, as the spike's was. One folder holds both directions, because a mod may read anywhere in the home folder but may write only under the app home.
 - **When.** After every saved change to the session, at session start, and at session end. A host publishes only when `HC_TERMINAL_ID` is set, which means it runs in a Herdr app terminal. At session end the host deletes its file.
-- **What.** A versioned envelope around the shared `Session` from `hooks/session.ts`:
+- **What.** A versioned envelope around the shared `Session` from `types/index.d.ts`:
 
   ```json
   { "format": 1, "host": "claude-code", "agent": "Claude", "sessionId": "…", "terminal": "t1", "writtenAt": 0, "session": {} }

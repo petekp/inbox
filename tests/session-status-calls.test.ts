@@ -17,7 +17,7 @@ import {
   STATUS_REFRESH_MS,
 } from '../hooks/session-status'
 import { sessionView } from '../hooks/session-view'
-import type { Session } from '../hooks/session'
+import type { Session } from '../types'
 import { runUpdates } from '../hooks/session-host'
 import {
   STATUS_RECORD_VERSION,

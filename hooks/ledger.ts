@@ -1,14 +1,9 @@
 import type { Closed, ClosedFinding, Finding, Item, Ledger } from '../types'
 
-export type { Exchange, Press } from '../types'
 import { recommendedOption } from './ask-match'
 import { EXPIRED } from './ledger-update'
 import { readKind } from './reply-parse'
 import { upgradeStatus } from './status-upgrade'
-
-export { isAskedForChoices, LIST_CHOICES } from './ask-match'
-export { closeItem } from './ledger-close'
-export { readKind, tasksRunBy } from './reply-parse'
 
 /** How many saved sessions each host keeps; the newest by save time. */
 export const KEPT_SESSIONS = 40

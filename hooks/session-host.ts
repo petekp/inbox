@@ -11,10 +11,6 @@ import type { SendOutcome } from './session-presses'
 import type { Session, HostTask } from '../types'
 import { askAndWriteStatus } from './status-records'
 import type { StatusCall, StatusRecords } from './status-records'
-export { fetchPrs, isPrFetchDue } from './host-prs'
-export { refreshStatus } from './status-records'
-export type { StatusCall, StatusRecords, RecordFiles } from './status-records'
-export { startPress, wakeForDone } from './host-press'
 
 type Exclusive<T> = { acquired: true; value: T } | { acquired: false }
 

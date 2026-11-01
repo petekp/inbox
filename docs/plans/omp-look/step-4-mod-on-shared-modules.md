@@ -6,7 +6,7 @@ Status: built. Merged to main in #5.
 
 ## Step 4: the mod on the shared session modules
 
-Built. The mod keeps one `session` value of type `Session`, and runs its presses, Done messages, turns, updates and PR fetches through `hooks/session.ts` and `hooks/session-host.ts`. `hooks/register.tsx` holds the mod's `SessionHost`, how it stores and saves each conversation's session, and its effects. It also handles Claude Code's events and draws the terminal and desktop looks.
+Built. The mod keeps one `session` value of type `Session`, and runs its presses, Done messages, turns, updates and PR fetches through the session modules and `hooks/session-host.ts`. `hooks/register.tsx` holds the mod's `SessionHost`, how it stores and saves each conversation's session, and its effects. It also handles Claude Code's events and draws the terminal and desktop looks.
 
 This step changes the most code, and runs last so that the `SessionHost` shape has been tested on two hosts first. After it, each host runs the same session code, and a new host supplies a `SessionHost`, a look and their tests.
 

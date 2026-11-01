@@ -28,7 +28,7 @@ A host is a program that runs the inbox's agent: it reacts to events, keeps stat
 
 A host reports a running turn by calling `hooks/session-turns.ts:turnStarted` and `turnEnded`, which set `presence.isTurnRunning`. A running turn holds a Done message back and moves a working subject's mark on the Status.
 
-The host's state type extends `Session` from `hooks/session.ts`. It adds its own fields, and upgrades a state saved by an earlier build, as `omp/src/state.ts:upgraded` does.
+The host's state type extends `Session` from `types/index.d.ts`. It adds its own fields, and upgrades a state saved by an earlier build, as `omp/src/state.ts:upgraded` does.
 
 ## What a host calls on each event
 
