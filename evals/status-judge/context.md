@@ -34,15 +34,15 @@ Base every verdict on what the current page shows, compared with the facts. Use 
 A model writes the head's words, and each row's name, status, where it stands and was line. Code draws the rest. From top to bottom, the page has these parts:
 
 1. **The goal block,** when a goal is set or proposed, above the head and followed by a blank line.
-   - A goal: a label, `Goal` or `Goal met`, which code writes. Then the goal, followed by its count of done milestones, as in `Ship the export fix · 1 of 3 done`, while its milestones are written and it is not met. Then `was: <goal>` for a goal it replaced. Then each milestone: a mark, its name, ` · waiting` while an ask holds it up, and where it stands on an indented line. `Milestones after the next reply` stands in for milestones not written yet for a goal just set.
+   - A goal: a label, `Goal` or `Goal met`, which code writes. Then the goal, followed by its count of done milestones, as in `Ship the export fix · 1 of 3 done`, while its milestones are written and it is not met. Then `was: <goal>` for a goal it replaced. Then the head, as one line, `Now: <what the session is doing>`. Then each milestone: a mark, its name, ` · waiting` while an ask holds it up, and where it stands on an indented line. Under each milestone, indented one step, come the subject rows of the work that serves it, drawn as rows in the list are, with their child rows, their own Seen line, and a last line that counts the rows it does not draw, by mark, as `✓ 2 done`. `Milestones after the next reply` stands in for milestones not written yet for a goal just set.
    - A proposal: a label, then the proposed goal, then each of its milestones on its own line, a mark and its name. With no goal set, the label is `Proposed goal · from your message` and the proposal is the whole goal block. While a goal is set, the label is `Proposed new goal · from your message`, and the proposal comes after the goal and its milestones, separated by a blank line. It would replace the goal; the goal above it is the one in effect.
-2. **The head.** With a goal set, it is one line, `Now: <what the session is doing>`. Without one, it is a title line with a one-line description under it.
+2. **The head.** With a goal set, it is the `Now:` line in the goal block. Without one, it is a title line with a one-line description under it.
 3. **Subject rows.** Each starts with a mark, then the row's name. A stall word may follow the name after ` · `: `waiting` while an ask the person must answer holds the piece up. Code writes it. A piece waiting on someone else has no stall word. Where it stands sits on its own indented line under the name.
 4. **Was lines:** indented lines under a subject row. `was: <plan>` names a plan that a change replaced. `merged in: <names>` names the pieces merged into this one.
 5. **Child rows:** running work, which code draws from the host's events. A child under a subject row starts with `├` or `└`, then a mark, then the child's label. A stall word may follow the label after ` · `. Code writes it: `◆` and `waiting` for a delegate at a question or an approval, and `✓` and `finished` for a delegate that finished since the person last looked. Other running work has no stall word. A child linked to no row on the page sits at the top of the list, indented, with no `├` or `└`. The line `└ + 2 more running` stands for children that are not drawn.
 6. **The Seen line:** `── Last seen`. The rows above it changed since the person last looked.
 7. **Folds:** `○ 3 more` counts open rows that are not drawn. Its `○` does not mean each of them is queued. `✓ 4 done` or `✓ 4 more done` counts delivered pieces that are not drawn.
-8. **Other work:** while a goal is set, `── Other work` starts the part of the list the goal does not need, with its own subject rows and its own Seen line. Its last line may count the rows it does not draw, by mark, as `● 2 working · ✓ 3 done`.
+8. **Other work:** while a goal is set, `── Other work` starts the part of the list the goal does not need, with its own subject rows and its own Seen line. Its last line may count the rows it does not draw, by mark, as `● 2 working · ✓ 3 done`. Subject rows after the goal block and above `── Other work` are work not linked to a milestone yet.
 9. **The status line:** after a blank line at the end, `Last Status update failed. Changes from that reply may be missing.`
 
 Below the Seen line, a finished row shows only its mark and its name, and no row shows its was line. That is how the page is drawn, and it is not a failure.
@@ -71,7 +71,7 @@ Rules in code check these things. None of them is a reason to fail a check:
 - Whether the head has one line or two, and whether its words changed while its meaning still fits the focus.
 - The counts in the folds, except as the `marks` check uses the `○ N more` fold.
 - The goal block's label, its count of done milestones, and whether it says the goal is met.
-- Which rows fold into Other work's counts line, and the number of milestones.
+- Which rows fold into Other work's counts line or a milestone's, and the number of milestones.
 
 ## How to work
 
@@ -86,7 +86,7 @@ Rules in code check these things. None of them is a reason to fail a check:
 Use the first rule that fits:
 
 1. The head belongs to `head` alone. No other check judges the head.
-2. The proposed goal's words, and the goal's words, belong to `goal`. Milestone rows, in a proposal or under a goal, belong to `milestones`. Which side of the `── Other work` rule a subject row sits on belongs to `split`. No other check judges these, and these checks judge nothing else.
+2. The proposed goal's words, and the goal's words, belong to `goal`. Milestone rows, in a proposal or under a goal, belong to `milestones`. Which side of the `── Other work` rule a subject row sits on belongs to `split`. A row under a milestone is on the goal's side. No other check judges these, and these checks judge nothing else.
 3. A subject row that stands for an entry under `Not work`, or for nothing in the facts, fails `rows-are-work`. No other check judges that row, its text or its was line.
 4. Two subject rows that stand for one piece fail `each-once`. So does an open row that brings back a closed piece's work under a new name. No other check judges those rows.
 5. Words in a row's text or was line that repeat an open ask or a finding, or that say the piece waits on the person, fail `no-restating`. `where-it-stands` and `was-lines` do not judge those words.
