@@ -80,7 +80,7 @@ function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[] } {
 /** The open subject, or the open milestone of a set goal, the Status call linked an ask to, by the ask's id. */
 function heldSubjectOf(o: SessionStatus | null, askId: string): Pick<Subject, 'name'> | null {
   const linkedId = o?.askSubjects[askId]
-  const milestones = o?.goal ? o.milestones : []
+  const milestones = o?.goal && !o.goal.isAwaitingMilestones ? o.milestones : []
 
   return [...(o?.subjects ?? []), ...milestones].find(s => s.id === linkedId && isOpen(s)) ?? null
 }

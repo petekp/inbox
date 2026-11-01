@@ -2192,7 +2192,7 @@ function needsYouOrder(ledger) {
 }
 function heldSubjectOf(o, askId) {
   const linkedId = o?.askSubjects[askId];
-  const milestones = o?.goal ? o.milestones : [];
+  const milestones = o?.goal && !o.goal.isAwaitingMilestones ? o.milestones : [];
   return [...o?.subjects ?? [], ...milestones].find((s) => s.id === linkedId && isOpen(s)) ?? null;
 }
 function inboxView({
@@ -2581,12 +2581,6 @@ function statusPage(s, now) {
     ...partRows(shown, ctx)
   ];
   if (folded.length > 0) rows.push({ kind: "fold", id: "open", ...SUBJECT_MARKS.queued, text: `${folded.length} more` });
-  if (otherShown.length > 0 || otherFolded.length > 0) {
-    if (rows.at(-1)?.kind === "look") rows.pop();
-    rows.push({ kind: "part", id: "other", text: OTHER_WORK });
-    rows.push(...partRows(otherShown, { ...ctx, lookRow: lookRow && { ...lookRow, id: "other-look" } }));
-    if (otherFolded.length > 0) rows.push({ kind: "counts", id: "other-counts", counts: countsByMark(otherFolded) });
-  }
   if (foldedDone.length > 0) {
     const isMore = newClosed.some((x) => x.status === "done");
     rows.push({
@@ -2596,6 +2590,12 @@ function statusPage(s, now) {
       tone: "done",
       text: `${foldedDone.length}${isMore ? " more" : ""} done`
     });
+  }
+  if (otherShown.length > 0 || otherFolded.length > 0) {
+    if (rows.at(-1)?.kind === "look") rows.pop();
+    rows.push({ kind: "part", id: "other", text: OTHER_WORK });
+    rows.push(...partRows(otherShown, { ...ctx, lookRow: lookRow && { ...lookRow, id: "other-look" } }));
+    if (otherFolded.length > 0) rows.push({ kind: "counts", id: "other-counts", counts: countsByMark(otherFolded) });
   }
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   const goalParts = goalPage(o, s.ledger.items);

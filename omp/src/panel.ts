@@ -161,7 +161,7 @@ export function drawPanel(
   style: Style,
   height?: number,
   minHeight = 0,
-): { lines: string[]; pageTop: number } {
+): { lines: string[]; pageTop: number; isRevealed: boolean } {
   const d: Draw = { screen, ui, width, now, style }
   const entries = entriesOf(screen, ui, ui.tab, now)
   const selected = resolveSelected(linesOf(entries), ui.selectedId)
@@ -250,10 +250,8 @@ export function drawPanel(
   const isOverflowing = body.length > room
   const [first = 0, last = 0] = pageSelectedAt ?? []
   // In view between the ↑ line above and the ↓ line below, which `pageWindow` draws while the page runs past them.
-  const top =
-    pageSelectedAt && ui.pageReveal === pageSelected?.id
-      ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1))
-      : ui.pageTop
+  const isRevealed = pageSelectedAt !== null && ui.pageReveal === pageSelected?.id
+  const top = isRevealed ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop
   const pageTop = isPage ? Math.min(Math.max(0, top), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop
   const shown = !isOverflowing
     ? body
@@ -261,7 +259,7 @@ export function drawPanel(
       ? pageWindow(body, pageTop, room, style)
       : scrolled(body, selectedAt, room, style)
 
-  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)), pageTop }
+  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)), pageTop, isRevealed }
 }
 
 /** The most lines a shown tab draws, each tab as switching to it would show it. */

@@ -1215,8 +1215,11 @@ function setTypedGoal(o, text, now) {
   if (typed === "")
     return { status: o, isNew: false };
   const p = o.proposedGoal;
-  const isProposalTyped = p !== null && hasSameWords(p.text, typed);
-  const declined = p && !isProposalTyped ? declineProposedGoal(o) : { ...o, proposedGoal: null };
+  if (p !== null && hasSameWords(p.text, typed)) {
+    const used = useProposedGoal(o, now);
+    return { status: { ...used, goal: { ...used.goal, text: typed } }, isNew: true };
+  }
+  const declined = declineProposedGoal(o);
   const isReworded = o.goal !== null && hasSameWords(o.goal.text, typed);
   if (isReworded)
     return { status: { ...declined, goal: { ...o.goal, text: typed } }, isNew: false };
@@ -4169,7 +4172,7 @@ function needsYouOrder(ledger) {
 }
 function heldSubjectOf(o, askId) {
   const linkedId = o?.askSubjects[askId];
-  const milestones = o?.goal ? o.milestones : [];
+  const milestones = o?.goal && !o.goal.isAwaitingMilestones ? o.milestones : [];
   return [...o?.subjects ?? [], ...milestones].find((s) => s.id === linkedId && isOpen(s)) ?? null;
 }
 function inboxView({
@@ -4556,14 +4559,6 @@ function statusPage(s, now) {
   ];
   if (folded.length > 0)
     rows.push({ kind: "fold", id: "open", ...SUBJECT_MARKS.queued, text: `${folded.length} more` });
-  if (otherShown.length > 0 || otherFolded.length > 0) {
-    if (rows.at(-1)?.kind === "look")
-      rows.pop();
-    rows.push({ kind: "part", id: "other", text: OTHER_WORK });
-    rows.push(...partRows(otherShown, { ...ctx, lookRow: lookRow && { ...lookRow, id: "other-look" } }));
-    if (otherFolded.length > 0)
-      rows.push({ kind: "counts", id: "other-counts", counts: countsByMark(otherFolded) });
-  }
   if (foldedDone.length > 0) {
     const isMore = newClosed.some((x) => x.status === "done");
     rows.push({
@@ -4573,6 +4568,14 @@ function statusPage(s, now) {
       tone: "done",
       text: `${foldedDone.length}${isMore ? " more" : ""} done`
     });
+  }
+  if (otherShown.length > 0 || otherFolded.length > 0) {
+    if (rows.at(-1)?.kind === "look")
+      rows.pop();
+    rows.push({ kind: "part", id: "other", text: OTHER_WORK });
+    rows.push(...partRows(otherShown, { ...ctx, lookRow: lookRow && { ...lookRow, id: "other-look" } }));
+    if (otherFolded.length > 0)
+      rows.push({ kind: "counts", id: "other-counts", counts: countsByMark(otherFolded) });
   }
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   const goalParts = goalPage(o, s.ledger.items);
@@ -5076,7 +5079,7 @@ function goalAbove(page, typing) {
   ];
 }
 function setGoal(page, typing) {
-  if (page.goal !== null || typing === GOAL_KEYS_ID && page.proposal !== null)
+  if (page.goal !== null || page.proposal !== null)
     return [];
   return [goalEntry(typing === GOAL_KEYS_ID ? { is: "field" } : { is: "keys", page })];
 }
@@ -6045,10 +6048,11 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const blanks = (shown) => Array(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill("");
   const isOverflowing = body.length > room;
   const [first = 0, last = 0] = pageSelectedAt ?? [];
-  const top = pageSelectedAt && ui.pageReveal === pageSelected?.id ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop;
+  const isRevealed = pageSelectedAt !== null && ui.pageReveal === pageSelected?.id;
+  const top = isRevealed ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop;
   const pageTop = isPage ? Math.min(Math.max(0, top), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop;
   const shown = !isOverflowing ? body : isPage ? pageWindow(body, pageTop, room, style) : scrolled(body, selectedAt, room, style);
-  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)), pageTop };
+  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)), pageTop, isRevealed };
 }
 function tallestTabHeight(screen, ui, width, now, style, height) {
   const heights = shownTabs(screen.isNextBuild === true).map((t) => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id, now), width, now, style, height).lines.length);
@@ -6156,7 +6160,7 @@ function createPanel(deps) {
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight);
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity));
       heldHeight = Math.max(heldHeight, drawn.lines.length);
-      ui = { ...ui, pageTop: drawn.pageTop, pageReveal: null };
+      ui = { ...ui, pageTop: drawn.pageTop, pageReveal: drawn.isRevealed ? null : ui.pageReveal };
       return drawn.lines;
     },
     handleInput(key, text) {

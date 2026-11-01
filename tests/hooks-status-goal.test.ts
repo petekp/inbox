@@ -83,7 +83,7 @@ test('on a next build, Not now drops the proposal and keeps Set a goal, which op
   expect(w.sent).toEqual([])
 })
 
-test('on a next build, Change goal opens the field with the goal in it in place of the goal and gives it the keys, and Cancel closes it and keeps the goal', async ($, on) => {
+test('on a next build, Change goal opens the field with the goal in it in place of the goal and its button and gives it the keys, and Cancel closes it and keeps the goal', async ($, on) => {
   const { clock, pane } = await statusShown($, on)
   await pane.press({ key: 'use-goal-proposal-key' })
   await clock.settle()
@@ -94,6 +94,7 @@ test('on a next build, Change goal opens the field with the goal in it in place 
   expect(w.paneOpens.at(-1)).toMatchObject({ id: 'inbox', focus: true })
   expect(w.paneOpens.at(-1)?.closeOnEscape).toBeUndefined()
   expect(await pane.find({ key: 'goal-text' })).toBeUndefined()
+  expect(await pane.find({ key: 'type-goal-goal' })).toBeUndefined()
   await pane.press({ key: 'cancel-goal' })
   await clock.settle()
   expect(await replyField(pane, 'goal')).toBeUndefined()

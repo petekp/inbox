@@ -305,7 +305,7 @@ function GoalAbove({ page }: { page: StatusPage }) {
 /** Under the head, or the empty state, while no goal is set: Set a goal, or the field it opened when no proposal shows. */
 function SetGoal({ page }: { page: StatusPage }) {
   if (page.goal !== null) return null
-  if (tabState.typing === GOAL_KEYS_ID && page.proposal !== null) return <GoalError />
+  if (page.proposal !== null) return <GoalError />
 
   return (
     <div class="status-head">

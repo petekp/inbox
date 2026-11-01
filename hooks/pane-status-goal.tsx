@@ -196,7 +196,9 @@ export function paneStatusGoal(
           ...(g.awaiting ? [muted('goal-awaiting', g.awaiting)] : []),
         ]),
         ...g.milestones.map(milestoneLine),
-        ...(goalKeyRow.length > 0 ? [block(`status-${GOAL_KEYS_ID}`, goalKeyRow, isSelected(GOAL_KEYS_ID))] : []),
+        ...(!isTypingGoal && goalKeyRow.length > 0
+          ? [block(`status-${GOAL_KEYS_ID}`, goalKeyRow, isSelected(GOAL_KEYS_ID))]
+          : []),
       ],
     }
   }

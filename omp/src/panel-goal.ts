@@ -57,7 +57,7 @@ export function goalAbove(page: StatusPage, typing: string | null): Entry[] {
 
 /** Under the head, or under the empty state, while no goal is set: Set a goal, or the field it opened when no proposal shows. */
 export function setGoal(page: StatusPage, typing: string | null): Entry[] {
-  if (page.goal !== null || (typing === GOAL_KEYS_ID && page.proposal !== null)) return []
+  if (page.goal !== null || page.proposal !== null) return []
 
   return [goalEntry(typing === GOAL_KEYS_ID ? { is: 'field' } : { is: 'keys', page })]
 }

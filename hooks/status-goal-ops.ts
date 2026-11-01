@@ -205,16 +205,21 @@ export function declineProposedGoal(o: SessionStatus): SessionStatus {
 }
 
 /**
- * A goal the person typed. It ends a proposal, which counts as declined unless the typed goal has its words. A
- * rewording of the goal keeps its milestones and needs no message. Any other goal replaces it, unlinks every subject,
- * and keeps the milestones for a Status call to keep by id or replace. The page draws none of them until one changes.
+ * A goal the person typed. One with a proposal's words uses the proposal and its milestones, as Use this goal does. Any
+ * other declines a proposal. A rewording of the goal keeps its milestones and needs no message. Any other goal replaces
+ * it, unlinks every subject, and keeps the milestones for a Status call to keep by id or replace. The page draws none of
+ * them until one changes.
  */
 export function setTypedGoal(o: SessionStatus, text: string, now: number): { status: SessionStatus; isNew: boolean } {
   const typed = clipWords(text, DESCRIPTION_KEPT)
   if (typed === '') return { status: o, isNew: false }
   const p = o.proposedGoal
-  const isProposalTyped = p !== null && hasSameWords(p.text, typed)
-  const declined = p && !isProposalTyped ? declineProposedGoal(o) : { ...o, proposedGoal: null }
+  if (p !== null && hasSameWords(p.text, typed)) {
+    const used = useProposedGoal(o, now)
+
+    return { status: { ...used, goal: { ...used.goal!, text: typed } }, isNew: true }
+  }
+  const declined = declineProposedGoal(o)
   const isReworded = o.goal !== null && hasSameWords(o.goal.text, typed)
   if (isReworded) return { status: { ...declined, goal: { ...o.goal!, text: typed } }, isNew: false }
   const goal = { text: typed, setAt: now, metAt: null, was: o.goal?.text ?? null, isAwaitingMilestones: true }

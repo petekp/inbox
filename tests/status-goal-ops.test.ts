@@ -134,13 +134,16 @@ test('a typed goal unlinks every subject and waits, never met, until a milestone
   expect(reworded.status.goal).toMatchObject({ text: 'Demo import ready', setAt: 20, isAwaitingMilestones: false })
 })
 
-test('a goal typed over a proposal declines it unless it has the proposal’s words, and Use this goal links no subject yet', () => {
+test('a goal typed over a proposal declines it, one with the proposal’s words uses the proposal and its milestones, and Use this goal links no subject yet', () => {
   const o = proposed()
   const linked = after(withGoal(), 'SERVES: s1 | -\nGOAL: Ship 2.6 | queued Notes; queued Tag', 22)
 
   expect(setTypedGoal(o, 'Ship 2.6', 30).status).toMatchObject({ proposedGoal: null })
   expect(setTypedGoal(o, 'Ship 2.6', 30).status.declinedGoals).toHaveLength(1)
-  expect(setTypedGoal(o, 'Demo ready: import', 30).status).toMatchObject({ proposedGoal: null, declinedGoals: [] })
+  const typed = setTypedGoal(o, 'Demo ready: import', 30)
+  expect(typed.status).toMatchObject({ proposedGoal: null, declinedGoals: [] })
+  expect(typed.status.goal).toMatchObject({ text: 'Demo ready: import', isAwaitingMilestones: false })
+  expect(typed.status.milestones.map(m => m.name)).toEqual(useProposedGoal(o, 30).milestones.map(m => m.name))
   expect(linked.serves).toEqual({ s1: 'none' })
   expect(useProposedGoal(linked, 40).serves).toEqual({})
 })
