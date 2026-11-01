@@ -1637,156 +1637,6 @@ function actionsOf(row, last, state, feedback) {
   ];
 }
 
-// ../hooks/status-children.ts
-function isChildRunning(c, now) {
-  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
-}
-function withChild(last, c, now) {
-  const o = last ?? EMPTY_SESSION_STATUS;
-  const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
-  const known = kept.find((x) => x.ref === c.ref);
-  if (known) return { ...o, children: kept.map((x) => x === known ? { ...x, ...c } : x) };
-  return {
-    ...o,
-    nextChildId: o.nextChildId + 1,
-    children: [...kept, { delegateState: null, ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
-  };
-}
-function changedChild(o, ref, change) {
-  const known = o?.children.find((c) => c.ref === ref);
-  if (!o || !known) return o;
-  return { ...o, children: o.children.map((c) => c === known ? { ...c, ...change(c) } : c) };
-}
-function childEnded(o, ref, at) {
-  return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
-}
-function subjectTouched(o, id, at) {
-  const isSeen = (s) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
-  const touched = (s) => isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
-  return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
-}
-function childActive(o, ref, at) {
-  return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
-}
-
-// ../hooks/status-page.ts
-var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
-var LOOK_TEXT = "Last seen";
-var CHILD_ROWS = 3;
-var NEW_CLOSED_ROWS = 2;
-var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
-var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
-function isItemAfterItem(row, prev) {
-  const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
-  return prev !== void 0 && prev.kind !== "look" && row.kind !== "look" && !isUnderSubject;
-}
-function isFinishedUnseen(c, lastLookAt) {
-  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
-}
-function isChildWorking(c) {
-  return c.endedAt === null && c.delegateState !== "blocked";
-}
-function childStall(c) {
-  if (c.delegateState === "finished") return { text: "finished", tone: "done" };
-  if (c.delegateState === "blocked") return { text: "waiting", tone: "needsYou" };
-  return null;
-}
-function childRow(c, branch) {
-  const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
-  return {
-    kind: "child",
-    id: c.id,
-    ...marks,
-    isRunning: isChildWorking(c),
-    name: c.name,
-    stall: childStall(c),
-    branch
-  };
-}
-function statusPage(s, now) {
-  const o = s.ledger.overview;
-  const look = o?.lastLookAt ?? null;
-  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
-  const isNew = (x) => look === null || x.changedAt > look;
-  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
-  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const oldestAskOf = (x) => {
-    if (!isHeld(x)) return null;
-    const oldest = s.ledger.items.filter((i) => o?.askSubjects[i.id] === x.id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
-    return oldest ? { id: oldest.id, kind: oldest.kind } : null;
-  };
-  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
-  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
-  const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
-  const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
-  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
-  const open3 = subjects.filter(isOpen).sort(pageOrder);
-  const foldable = open3.filter((x) => !isHeld(x) && !isNew(x) && !running.some((c) => c.subjectId === x.id));
-  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open3.length - foldable.length)));
-  const shown = [...open3.filter((x) => !folded.includes(x)), ...newClosed].sort(pageOrder);
-  const foldedDone = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
-  const shownIds = new Set(shown.map((x) => x.id));
-  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null));
-  const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
-  const firstSeen = shown.findIndex((x) => !isNew(x));
-  for (const [i, x] of shown.entries()) {
-    const hasNewAbove = i > 0;
-    if (lookRow && i === firstSeen && hasNewAbove) rows.push(lookRow);
-    const under = running.filter((c) => c.subjectId === x.id);
-    const shownUnder = under.slice(0, CHILD_ROWS);
-    const isMore = under.length > CHILD_ROWS;
-    const isRunning = x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some(isChildWorking));
-    const isIdle = x.status === "working" && !isRunning;
-    rows.push({
-      kind: "subject",
-      id: x.id,
-      ...isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
-      isRunning,
-      name: x.name,
-      text: isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: stallOf(x),
-      merged: isNew(x) ? x.merged : null,
-      was: isNew(x) ? x.was : null,
-      hasChildren: under.length > 0,
-      ask: oldestAskOf(x)
-    });
-    rows.push(...shownUnder.map((c, n) => childRow(c, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
-    const hidden = under.slice(CHILD_ROWS);
-    const isEveryHiddenRunning = hidden.every((c) => c.delegateState !== "finished");
-    if (isMore)
-      rows.push({
-        kind: "more",
-        id: `${x.id}-more`,
-        text: `+ ${hidden.length} more${isEveryHiddenRunning ? " running" : ""}`,
-        branch: "last"
-      });
-  }
-  const isEveryShownNew = firstSeen === -1;
-  if (lookRow && isEveryShownNew && shown.length > 0) rows.push(lookRow);
-  if (folded.length > 0) rows.push({ kind: "fold", id: "open", ...SUBJECT_MARKS.queued, text: `${folded.length} more` });
-  if (foldedDone.length > 0) {
-    const isMore = newClosed.some((x) => x.status === "done");
-    rows.push({
-      kind: "fold",
-      id: "done",
-      mark: SUBJECT_MARKS.done.mark,
-      tone: "done",
-      text: `${foldedDone.length}${isMore ? " more" : ""} done`
-    });
-  }
-  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
-  return {
-    isEmpty: head === null && rows.length === 0,
-    head,
-    rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]), isLast: n === rows.length - 1 })),
-    error: s.overviewFailure ? STATUS_FAILED : null,
-    empty: {
-      title: "Status",
-      hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
-    }
-  };
-}
-
 // ../hooks/view.ts
 var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
 var HOLDS_UP_TEXT = "Holds up";
@@ -1976,6 +1826,156 @@ function perTurnStatus(update) {
   return {
     isUpdating: update.isUpdating,
     error: update.isFailed && !update.isUpdating ? UPDATE_FAILED + (update.retries ? UPDATE_RETRIES : "") : null
+  };
+}
+
+// ../hooks/status-children.ts
+function isChildRunning(c, now) {
+  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+}
+function withChild(last, c, now) {
+  const o = last ?? EMPTY_SESSION_STATUS;
+  const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
+  const known = kept.find((x) => x.ref === c.ref);
+  if (known) return { ...o, children: kept.map((x) => x === known ? { ...x, ...c } : x) };
+  return {
+    ...o,
+    nextChildId: o.nextChildId + 1,
+    children: [...kept, { delegateState: null, ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
+  };
+}
+function changedChild(o, ref, change) {
+  const known = o?.children.find((c) => c.ref === ref);
+  if (!o || !known) return o;
+  return { ...o, children: o.children.map((c) => c === known ? { ...c, ...change(c) } : c) };
+}
+function childEnded(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
+}
+function subjectTouched(o, id, at) {
+  const isSeen = (s) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
+  const touched = (s) => isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
+  return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
+}
+function childActive(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
+}
+
+// ../hooks/status-page.ts
+var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
+var LOOK_TEXT = "Last seen";
+var CHILD_ROWS = 3;
+var NEW_CLOSED_ROWS = 2;
+var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
+var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
+function isItemAfterItem(row, prev) {
+  const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
+  return prev !== void 0 && prev.kind !== "look" && row.kind !== "look" && !isUnderSubject;
+}
+function isFinishedUnseen(c, lastLookAt) {
+  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
+}
+function isChildWorking(c) {
+  return c.endedAt === null && c.delegateState !== "blocked";
+}
+function childStall(c) {
+  if (c.delegateState === "finished") return { text: "finished", tone: "done" };
+  if (c.delegateState === "blocked") return { text: "waiting", tone: "needsYou" };
+  return null;
+}
+function childRow(c, branch) {
+  const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
+  return {
+    kind: "child",
+    id: c.id,
+    ...marks,
+    isRunning: isChildWorking(c),
+    name: c.name,
+    stall: childStall(c),
+    branch
+  };
+}
+function statusPage(s, now) {
+  const o = s.ledger.overview;
+  const look = o?.lastLookAt ?? null;
+  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
+  const isNew = (x) => look === null || x.changedAt > look;
+  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
+  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const oldestAskOf = (x) => {
+    if (!isHeld(x)) return null;
+    const oldest = s.ledger.items.filter((i) => o?.askSubjects[i.id] === x.id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+    return oldest ? { id: oldest.id, kind: oldest.kind } : null;
+  };
+  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
+  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
+  const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
+  const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
+  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const open3 = subjects.filter(isOpen).sort(pageOrder);
+  const foldable = open3.filter((x) => !isHeld(x) && !isNew(x) && !running.some((c) => c.subjectId === x.id));
+  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open3.length - foldable.length)));
+  const shown = [...open3.filter((x) => !folded.includes(x)), ...newClosed].sort(pageOrder);
+  const foldedDone = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
+  const shownIds = new Set(shown.map((x) => x.id));
+  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null));
+  const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
+  const firstSeen = shown.findIndex((x) => !isNew(x));
+  for (const [i, x] of shown.entries()) {
+    const hasNewAbove = i > 0;
+    if (lookRow && i === firstSeen && hasNewAbove) rows.push(lookRow);
+    const under = running.filter((c) => c.subjectId === x.id);
+    const shownUnder = under.slice(0, CHILD_ROWS);
+    const isMore = under.length > CHILD_ROWS;
+    const isRunning = x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some(isChildWorking));
+    const isIdle = x.status === "working" && !isRunning;
+    rows.push({
+      kind: "subject",
+      id: x.id,
+      ...isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
+      isRunning,
+      name: x.name,
+      text: isNew(x) || isOpen(x) ? x.text || null : null,
+      stall: stallOf(x),
+      merged: isNew(x) ? x.merged : null,
+      was: isNew(x) ? x.was : null,
+      hasChildren: under.length > 0,
+      ask: oldestAskOf(x)
+    });
+    rows.push(...shownUnder.map((c, n) => childRow(c, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
+    const hidden = under.slice(CHILD_ROWS);
+    const isEveryHiddenRunning = hidden.every((c) => c.delegateState !== "finished");
+    if (isMore)
+      rows.push({
+        kind: "more",
+        id: `${x.id}-more`,
+        text: `+ ${hidden.length} more${isEveryHiddenRunning ? " running" : ""}`,
+        branch: "last"
+      });
+  }
+  const isEveryShownNew = firstSeen === -1;
+  if (lookRow && isEveryShownNew && shown.length > 0) rows.push(lookRow);
+  if (folded.length > 0) rows.push({ kind: "fold", id: "open", ...SUBJECT_MARKS.queued, text: `${folded.length} more` });
+  if (foldedDone.length > 0) {
+    const isMore = newClosed.some((x) => x.status === "done");
+    rows.push({
+      kind: "fold",
+      id: "done",
+      mark: SUBJECT_MARKS.done.mark,
+      tone: "done",
+      text: `${foldedDone.length}${isMore ? " more" : ""} done`
+    });
+  }
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
+  return {
+    isEmpty: head === null && rows.length === 0,
+    head,
+    rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]), isLast: n === rows.length - 1 })),
+    error: s.overviewFailure ? STATUS_FAILED : null,
+    empty: {
+      title: "Status",
+      hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
+    }
   };
 }
 

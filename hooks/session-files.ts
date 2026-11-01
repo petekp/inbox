@@ -1,9 +1,8 @@
 import { EMPTY, KEPT_SESSIONS, upgradeLedger } from './ledger'
 import { TOLD_NOTHING } from './inbox-text'
-import type { Told } from './model-text'
 import { upgradeLastActions } from './last-actions'
 import { upgradeHostTasks } from './host-tasks'
-import type { PrViews, Session, TurnDialogQuestion } from '../types'
+import type { PrViews, Session, Told, TurnDialogQuestion } from '../types'
 
 const NO_PRS: PrViews = { views: {}, branchRef: null, isFetching: false }
 

@@ -1,6 +1,5 @@
-import type { HostTask, Item, Session, SessionStatus } from '../types'
+import type { Exchange, HostTask, Item, Session, SessionStatus } from '../types'
 import { tasksText } from './host-tasks'
-import type { Exchange } from './ledger'
 import { NL, personText } from './ledger-prompt'
 import { asksText, runningText, subjectsText } from './status-children'
 import { DESCRIPTION_WORDS, NAME_WORDS, OPEN_SUBJECTS, TEXT_WORDS } from './status-limits'

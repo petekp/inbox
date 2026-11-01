@@ -1,11 +1,3 @@
-export { openTarget } from './open-targets'
-export type { PathProbe } from './open-targets'
-export { isPressConfirmed } from './press-reducer'
-export type { Effect } from './press-reducer'
-export { demoAfterPress, demoReplied, demoSent } from './press-effects'
-export type { DemoSent } from './press-effects'
-export { COMPARE_PAGE_FILE } from './press-messages'
-
 export function isPrRowId(id: string): boolean {
   return id.startsWith('pr:') || id.includes(' ')
 }

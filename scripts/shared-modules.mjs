@@ -45,7 +45,6 @@ export const SHARED = [
   'pressed',
   'press-messages',
   'prs',
-  'session',
   'session-files',
   'session-turns',
   'session-status',

@@ -107,7 +107,7 @@ the version each names, and the Claude Code changelog.
   while leaving the message queued when pressed while those hooks were
   running." The mod's `prompt.submit` hook is not idempotent. Each run adds one
   to `ledger.turn` and appends the text to `turn.person`
-  (`hooks/session.ts:recordPrompt`), and `PromptSubmitInput` has no prompt id
+  (`hooks/session-turns.ts:recordPrompt`), and `PromptSubmitInput` has no prompt id
   to dedupe by. So on 2.1.308 and earlier, a restarted hook could count one
   message twice. From 2.1.309 it runs once. The mod does not use
   `prompt.compose` or `prompt.context`. Not reproduced live; no change.

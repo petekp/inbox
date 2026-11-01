@@ -16,9 +16,6 @@ import type {
   FoldKind,
   Ledger,
   OldPresence,
-  PrCheck,
-  PrThread,
-  PrView,
   PrViews,
   LastAction,
   SessionStatus,
@@ -27,33 +24,28 @@ import type {
   SentPrompt,
   Stop,
   Tab,
+  Session,
 } from '../types'
-import { childEnded } from './status'
+import { childEnded } from './status-children'
+import { claimedStatusRefresh, forkedFrom, statusChanged, withLook } from './session-status'
 import {
-  claimedStatusRefresh,
   cleared,
   commandFindings,
-  emptySession,
   endTurn,
-  forkedFrom,
   messageTyped,
   noteActivity as noteTurnActivity,
-  pressOn,
   recordPrompt,
-  recorded,
-  sessionView,
   startTurn,
   turnEnded,
   turnStarted,
   placed,
-  pruned,
-  upgradeSession,
   cutOffTurn,
-  statusChanged,
-  withLook,
   withNewPrRefs,
-  showsRunningMark,
-} from './session'
+  type SentBy,
+} from './session-turns'
+import { emptySession, upgradeSession, type SavedSession } from './session-files'
+import { pressOn, recorded, pruned, type SendOutcome } from './session-presses'
+import { sessionView, showsRunningMark, type SessionView } from './session-view'
 import {
   childrenCutOff,
   childStarted,
@@ -69,71 +61,26 @@ import {
   taskNotice,
   waitsOnDelegate,
 } from './children'
-import type { SavedSession, SendOutcome, SentBy, Session, SessionView } from './session'
-import {
-  fetchPrs as fetchSessionPrs,
-  isPrFetchDue,
-  refreshStatus,
-  runUpdates,
-  startPress,
-  wakeForDone as wakeSessionForDone,
-} from './session-host'
-import type { Ask, CallReport, CatchUpReply, StatusCall, StatusRecords, RecordFiles, SessionHost } from './session-host'
+import { runUpdates } from './session-host'
+import { fetchPrs as fetchSessionPrs, isPrFetchDue } from './host-prs'
+import { refreshStatus, type StatusCall, type StatusRecords, type RecordFiles } from './status-records'
+import { startPress, wakeForDone as wakeSessionForDone } from './host-press'
+import type { Ask, CallReport, CatchUpReply, SessionHost } from './session-host'
 import { SESSION_VERSION } from './session-version'
 import { demoView, isDemoCopy } from './demo'
 import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
-import {
-  checkActions,
-  checkRowText,
-  PR_QUOTE_CHARS,
-  splitFollowUps,
-  isDismissed,
-  isPrPress,
-  openPrViews,
-  prRankText,
-  PR_GROUP_TITLES,
-  PR_TONES,
-  prBlockActions,
-  prCheckId,
-  DISMISS_MERGED_ID,
-  RANK_AGAIN_ID,
-  prMarkId,
-  pressRowId,
-  prThreadId,
-  threadActions,
-  threadRowText,
-  threadSentIn,
-  ghNoticeOf,
-  prsEmptyText,
-  prRefreshFailedText,
-} from './pr-tab'
-import type { Applied, DrawnPr, PrAction, PrPress } from './pr-tab'
-import {
-  commentLine,
-  commentParts,
-  failingChecks,
-  prRefs,
-  prNeedsYou,
-  readableComment,
-  readiness,
-  threadWhere,
-  waitingThreads,
-} from './prs'
-import { EMPTY, KEPT_SESSIONS, closeItem, isBlankLedger, readKind, tasksRunBy } from './ledger'
-import {
-  statusCarryText,
-  catchUpPrompt,
-  CLAUDE_CODE,
-  dialogActivity,
-  dialogQuestions,
-  guidedCloseDescription,
-  screenText,
-  systemText,
-  toolActivity,
-  transcriptCatchUpPrompt,
-  type ScreenTab,
-} from './model-text'
+import { isPrPress, pressRowId, type Applied, type PrPress } from './pr-press'
+import { openPrViews } from './pr-views'
+import { prMarkId, threadSentIn } from './pr-rows'
+import { failingChecks, prRefs, prNeedsYou, waitingThreads } from './prs'
+import { EMPTY, KEPT_SESSIONS, isBlankLedger } from './ledger'
+import { closeItem } from './ledger-close'
+import { readKind, tasksRunBy } from './reply-parse'
+import { CLAUDE_CODE, guidedCloseDescription } from './model-text'
+import { statusCarryText, screenText, type ScreenTab } from './inbox-text'
+import { catchUpPrompt, dialogActivity, dialogQuestions, toolActivity, transcriptCatchUpPrompt } from './catch-up-text'
+import { systemText } from './ledger-prompt'
 import {
   commandRowLine,
   dialogOutcome,
@@ -145,21 +92,30 @@ import {
   TURN_BOX_TOOL,
   turnBoxText,
 } from './claude'
-import { DESKTOP_CHARS_PER_CELL, desktopLines, desktopTextPt } from './desktop-metrics'
 import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
 import { CLEARED_TOKENS, delegatesInHerdr, HERDR_CHECK_MS, herdrTokens } from './herdr'
-import { ago, cellWidth, clipLabel, turnReply } from './text'
-import { COMPARE_PAGE_FILE, demoAfterPress, demoReplied, demoSent, isPressConfirmed, openTarget } from './presses'
-import type { DemoSent, Effect, PathProbe, RowPress } from './presses'
+import { ago, cellWidth, turnReply } from './text'
+import { COMPARE_PAGE_FILE } from './press-messages'
+import { demoAfterPress, demoReplied, demoSent, type DemoSent } from './press-effects'
+import { isPressConfirmed, type Effect } from './press-reducer'
+import { openTarget, type PathProbe } from './open-targets'
+import type { RowPress } from './presses'
+import { footerStatus } from './view'
+import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, type RowView } from './rows'
+import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf, NEXT_BUILD_MARK } from './banners'
 import {
-  DOT,
-  NEEDS_YOU_GROUPS,
-  isResumable,
-  RESUME_TEXT,
-  stopFix,
-  stopText,
   drawnLists,
+  rowKeyPlan,
+  statusKeyRows,
+  statusSelected,
+  rowsIn,
+  firstWaiting,
+  keptOpen,
+  rowAfterClose,
+  type PlannedKey,
+} from './action-plan'
+import {
   isRowTab,
   isShownTab,
   LISTED_TABS,
@@ -167,54 +123,21 @@ import {
   shownTabs,
   drawnTabOf,
   tabBadge,
-  settledMark,
-  DEMO_NOTICE,
-  bannerOf,
+  inboxCommandText,
+  type ShownTab,
+} from './tabs'
+import {
   heldReplies,
   isGuarded,
   PERMISSION_FALLBACK_DELAY_MS,
   PRESS_GUARD_MS,
   QUEUED_AFTER_MS,
   compareEndsAt,
-  rowKeyPlan,
-  statusKeyPlan,
-  statusKeyRows,
-  statusSelected,
-  settledLabel,
-  rowsIn,
-  LOOK_DASH,
-  mergedLine,
-  nameBeforeStall,
-  STALL_GAP,
-  WAS_PREFIX,
-  inboxCommandText,
-  runningMark,
-  MARK_LEGEND,
-  HELP_COPY,
-  helpKeys,
   SETTLED_MS,
-  settledRowIds,
-  allRows,
-  firstWaiting,
-  footerStatus,
   keptDiscards,
-  keptOpen,
-  NEXT_BUILD_MARK,
-  STATUS_TEXT_LINES,
-  rowAfterClose,
-} from './view'
-import type {
-  Holds,
-  PlannedKey,
-  StatusBranch,
-  StatusPage,
-  StatusRow,
-  StatusStall,
-  RowView,
-  LegendEntry,
-  SettledState,
-  ShownTab,
-} from './view'
+  type Holds,
+} from './timing'
+import { helpKeys } from './help'
 import { agentTools } from './tools'
 import type { AgentTool } from './tools'
 import type { ToolAnswer } from './tools'
@@ -230,39 +153,10 @@ import {
   recordRows,
 } from './arrivals'
 import { parseInline } from './inline'
-import { LOOK_GAP_PT } from './layout'
-import { markShape } from './marks'
-import {
-  DESKTOP_ARM_GAP,
-  DESKTOP_CELL_PT,
-  DESKTOP_DASH_GAP_PT,
-  DESKTOP_DASH_PT,
-  DESKTOP_HAIR_CELLS,
-  DESKTOP_HAIR_LINES,
-  DESKTOP_LINE_PT,
-  DESKTOP_MARK_CELLS,
-  DESKTOP_ROW_PAD,
-  DESKTOP_SIDE_CELLS,
-  DESKTOP_TREE_AT,
-  DESKTOP_WIDE_AT,
-  FRAME_INSET_PT,
-  INLINE_RAIL_AT,
-  RAIL_GUTTER,
-  STATUS_PAD_Y,
-  TAB_PAD,
-  TREE_LINE_AT,
-} from './pane-sizes'
+import { DESKTOP_ROW_PAD, DESKTOP_WIDE_AT, INLINE_RAIL_AT, RAIL_GUTTER, TAB_PAD } from './pane-sizes'
 import { lookOf, paletteFor } from './palettes'
 import { animateRunningMarks } from './running-mark-timer'
-import { toneSvg } from './desktop-svg'
-import {
-  desktopSpanLines,
-  lineCount,
-  SELECTION_BAR,
-  type TerminalSpan,
-  terminalSpanLines,
-  terminalTextLines,
-} from './terminal-text'
+import { type TerminalSpan } from './terminal-text'
 import {
   FOLD_KINDS,
   lastUndoEnd,
@@ -292,7 +186,6 @@ import {
   openedField,
   openFields,
   paneHasKeys,
-  PR_KEYS,
 } from './pane-keys'
 import {
   arrived,
@@ -360,6 +253,10 @@ import { paneRows } from './pane-rows'
 import { paneFrame } from './pane-frame'
 import { paneRowParts } from './pane-row-parts'
 import type { PaneClient, PaneHandlers, Row } from './pane-context'
+import { panePrBlocks, panePrRows } from './pane-prs'
+import { paneStatusLines } from './pane-status-lines'
+import { paneStatus } from './pane-status'
+import { paneHelp } from './pane-help'
 
 const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
 /**
@@ -3283,109 +3180,18 @@ export const register: Register = on => {
       runPress: (p, surface) => runPress($, p, surface),
       readAgain: () => readAgain($),
       resume: () => resume($),
+      showAsk: askId => showAsk($, askId),
     }
-    const { holdsUpLineOf, itemRow, findingRow } = paneAskRows(
+    const { itemRow, findingRow } = paneAskRows(
       { now, look, Text, pal, optionsShown, Box, blankLine, terminalText, inlineText },
       handlers,
     )
     const isThreadSent = threadSentIn(lastActions)
     const presses = { lastActions, turns, now }
-    const prPress = (p: PrPress) => (press: UiPressArgument) => runPress($, p, press.surface)
-    const prKeyAction = (a: PrAction, row: string): KeyAction => {
-      // A failed send's Try again repeats its button's press, so it needs a key of its own.
-      const isResend = a.isRetry === true
-
-      return {
-        key: `${isResend ? 'retry' : PR_KEYS[a.press.action]}-${row}`,
-        label: a.label,
-        emphasis: a.emphasis,
-        kind: a.kind,
-        ...(a.icon ? { icon: ACTION_GLYPHS[a.icon] } : {}),
-        ...(a.hotkey ? { hotkey: a.hotkey } : {}),
-        isOut: a.isOut,
-        onPress: prPress(a.press),
-      }
-    }
-    const checkRow = (pr: PrView, c: PrCheck): Row => {
-      const { mark, lead, title, meta } = checkRowText(c)
-      return {
-        id: prCheckId(pr, c),
-        handle: mark.text,
-        handleTone: mark.tone ?? undefined,
-        isMarkDone: mark.isDone,
-        title,
-        ...(c.finishedAt !== undefined ? { at: c.finishedAt } : {}),
-        line: { ...(lead ? { before: `${lead} / ` } : {}), text: title, after: meta },
-        subtitle: <Text color={pal.muted}>{lead ? `${lead}${DOT}${meta}` : meta}</Text>,
-        body: null,
-        keys: () => checkActions(pr, c, presses).map(a => prKeyAction(a, `${pr.ref}-${c.name}`)),
-      }
-    }
-    const threadRow = (pr: PrView, t: PrThread): Row => {
-      const id = prThreadId(pr, t)
-      const { rest } = commentParts(t.body)
-      const where = (
-        <Text color={pal.muted} wrap="wrap">
-          <Link href={t.reply?.url || t.url}>
-            <Text underline>{threadWhere(t)}</Text>
-          </Link>
-          {DOT}@{t.author}
-        </Text>
-      )
-      const comment = (
-        <Box flexDirection="column">
-          {rest ? <Markdown text={clipLabel(rest, PR_QUOTE_CHARS)} /> : null}
-          {where}
-          {t.reply ? (
-            <Markdown text={`**@${t.reply.author}:** ${clipLabel(readableComment(t.reply.body), PR_QUOTE_CHARS)}`} />
-          ) : null}
-        </Box>
-      )
-      const replyText = t.reply ? `@${t.reply.author}: ${readableComment(t.reply.body)}` : ''
-      const clippedComment = (lines: number, width: number) => {
-        if (lines < 1) return null
-        const restLines = terminalTextLines(rest, width).length
-        const replyLines = terminalTextLines(replyText, width).length
-        const rawTextLines = lineCount(rest, width) + 1 + lineCount(replyText, width)
-        if (rawTextLines <= lines && restLines + 1 + replyLines <= lines) return comment
-        const restShown = Math.min(restLines, lines - 1)
-        const replyShown = Math.min(replyLines, lines - 1 - restShown)
-
-        return (
-          <Box flexDirection="column">
-            {rest && restShown > 0 ? (
-              <Text wrap="wrap">{terminalText(terminalTextLines(rest, width, restShown))}</Text>
-            ) : null}
-            {where}
-            {replyShown > 0 ? (
-              <Text wrap="wrap">{terminalText(terminalTextLines(replyText, width, replyShown))}</Text>
-            ) : null}
-          </Box>
-        )
-      }
-      const text = threadRowText(pr, t, lastActions)
-      const actions = splitFollowUps(threadActions(pr, t, presses))
-
-      return {
-        id,
-        handle: text.mark.isRunning && look !== 'desktop' ? runningMark(now) : text.mark.text,
-        handleTone: text.mark.tone ?? undefined,
-        ...(text.mark.isRunning ? { isHandleRunning: true } : {}),
-        isMarkDone: text.mark.isDone,
-        ...(text.fold ? { fold: text.fold } : {}),
-        title: text.title,
-        ...(t.at === null ? {} : { at: t.at }),
-        line: {
-          before: '',
-          text: commentLine(t.body),
-          after: text.meta,
-        },
-        body: comment,
-        clippedBody: clippedComment,
-        keys: () => actions.keys.map(a => prKeyAction(a, t.id)),
-        moreKeys: () => actions.more.map(a => prKeyAction(a, t.id)),
-      }
-    }
+    const { prKeyAction, checkRow, threadRow } = panePrRows(
+      { Text, pal, presses, Link, Box, Markdown, terminalText, lastActions, look, now },
+      handlers,
+    )
 
     // The Status and Help draw no rows, so none are built while either shows.
     const isListShown = !isStatusShown && !isHelpShown
@@ -3454,7 +3260,6 @@ export const register: Register = on => {
       columnsFor,
       markWidth,
       treeRow,
-      childPos,
       divided,
       withDoneMark,
       unselectedLine,
@@ -3482,7 +3287,6 @@ export const register: Register = on => {
       isAgeInSide,
       listColumns,
       Button,
-      holdsUpLineOf,
     })
     const { desktopFrame } = paneRowFrame({ space, Box })
     const { listRow } = paneRows(
@@ -3599,7 +3403,6 @@ export const register: Register = on => {
           desktopHairline,
           markGlyph,
           markWidth,
-          childPos,
         },
         handlers,
       )
@@ -3623,7 +3426,6 @@ export const register: Register = on => {
         findingEntries,
         lists,
         divided,
-        childPos,
         listRow,
         settledRow,
         closedFold,
@@ -3637,574 +3439,98 @@ export const register: Register = on => {
       handlers,
     )
 
-    const settledPrBlock = (pr: PrView, state: SettledState) => {
-      const what = `#${pr.number} ${pr.title}`
-      const undo: PrPress | null = state.canUndo ? { action: 'pr-undo', ref: pr.ref } : null
-      const key = `settled-pr:${pr.ref}`
-      const mark = settledMark(state)
-      if (look === 'desktop')
-        return section(
-          desktopFrame({
-            key,
-            mark: markGlyph(mark, key, pal.muted),
-            side: undoPlace(prMarkId(pr.ref), undo, state.at, state.offersUndo),
-            padY: 0,
-            isSideCentered: true,
-            children: [
-              <Text wrap="wrap">
-                {what}
-                <Text color={pal.muted}>{`${DOT}${settledLabel(state.label, state.delivery)}`}</Text>
-              </Text>,
-            ],
-          }),
-        )
+    const { prsView } = panePrBlocks({
+      look,
+      pal,
+      Text,
+      Box,
+      blankLine,
+      isThreadSent,
+      lastActions,
+      prState,
+      presses,
+      space,
+      Button,
+      view,
+      prOrderKeys,
+      prTabKeys,
+      prGroups,
+      section,
+      undoPlace,
+      settledContent,
+      groupTitle,
+      titleGap,
+      sections,
+      desktopFrame,
+      markGlyph,
+      divided,
+      lastActionText,
+      listRow,
+      prKeyAction,
+      desktopLabel,
+      keyRow,
+      emptyState,
+      banner,
+    })
 
-      return section(
-        <Box key={key} paddingLeft={1}>
-          {settledContent(what, state, undo, mark)}
-        </Box>,
-      )
-    }
-    const prRowGroup = (title: string, group: Row[], key: string) =>
-      group.length === 0
-        ? []
-        : [
-            <Box key={`group-${key}`} marginTop={blankLine}>
-              {groupTitle(title, group.length)}
-            </Box>,
-            ...(look === 'desktop' ? [] : titleGap()),
-            ...divided(
-              group.map((r, n) => listRow(r, childPos(n, group.length))),
-              key,
-            ),
-          ]
-    const prBlock = (b: DrawnPr & { rows: Row[]; checks: Row[]; threads: Row[] }) => {
-      if (b.state.is === 'settled') return settledPrBlock(b.pr, b.state)
-      const { pr, checks, threads } = b
-      const { status, head: statusHead, unlisted } = readiness(pr, isThreadSent)
-      const tone = PR_TONES[status]
-      const prLast = isDismissed(lastActions, pr.ref) ? null : lastActionText(prMarkId(pr.ref))
-      const prActions = prBlockActions(pr, isThreadSent, prState.branchRef, presses).map(a => prKeyAction(a, pr.ref))
-
-      const titleLine = (
-        <Text wrap="wrap">
-          {b.rank === null ? null : <Text color={pal.muted}>{prRankText(b.rank)}</Text>}
-          <Text color={look === 'desktop' ? pal.mark.prs : pal.tone.prs}>{`#${pr.number}\u2002`}</Text>
-          <Text bold>{pr.title}</Text>
-          <Text color={tone ? (pal.tone[tone] ?? pal.mark[tone]) : pal.muted}>{`\u2002${statusHead}`}</Text>
-          <Text color={pal.muted}>{unlisted.map(r => `${DOT}${r}`).join('')}</Text>
-        </Text>
-      )
-      const statusBlock = (
-        <Box flexDirection="column">
-          {pr.error ? (
-            <Box flexDirection="column">
-              <Text color={pal.tone.error} wrap="wrap">
-                {prRefreshFailedText(pr.error)}
-              </Text>
-            </Box>
-          ) : null}
-          <Box
-            flexDirection="row"
-            flexWrap="wrap"
-            columnGap={space.buttonGap}
-            rowGap={look === 'desktop' ? 1 : 0}
-            marginTop={blankLine}
-          >
-            {prActions.map(a =>
-              a.emphasis === 'quiet' ? (
-                <Button key={a.key} plain dimColor label={a.label} onPress={a.onPress} />
-              ) : look === 'desktop' ? (
-                <Button
-                  key={a.key}
-                  label={desktopLabel(a)}
-                  {...(a.emphasis === 'primary' ? { variant: 'primary' as const } : {})}
-                  {...(a.isOut ? { dimColor: true } : {})}
-                  onPress={a.onPress}
-                />
-              ) : (
-                <Button key={a.key} label={a.label} {...(a.isOut ? { dimColor: true } : {})} onPress={a.onPress} />
-              ),
-            )}
-          </Box>
-          {prLast ? (
-            <Box marginTop={look === 'desktop' ? 1 : 0}>
-              <Text color={prLast.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
-                {prLast.text}
-              </Text>
-            </Box>
-          ) : null}
-        </Box>
-      )
-
-      return section([
-        ...(look === 'desktop'
-          ? [
-              desktopFrame({ key: `pr-title-${pr.ref}`, padY: 0, children: titleLine }),
-              desktopFrame({ key: `pr-status-${pr.ref}`, padY: 0, children: statusBlock }),
-            ]
-          : [<Box paddingLeft={1}>{titleLine}</Box>, <Box paddingLeft={1}>{statusBlock}</Box>]),
-        ...prRowGroup(PR_GROUP_TITLES.threads, threads, `${pr.ref}-threads`),
-        ...prRowGroup(PR_GROUP_TITLES.checks, checks, `${pr.ref}-checks`),
-      ])
-    }
-    const ghState = { isGhMissing: Boolean(prState.isGhMissing), isGhSignedOut: Boolean(prState.isGhSignedOut) }
-    const ghNotice = ghNoticeOf(ghState)
-    const prTabLine = (key: string, content: JSX.Element) => [
-      section(
-        look === 'desktop' ? desktopFrame({ key, padY: 0, children: content }) : <Box paddingLeft={1}>{content}</Box>,
-      ),
-    ]
-    const mutedLine = (text: string) => (
-      <Text color={pal.muted} wrap="wrap">
-        {text}
-      </Text>
-    )
-    const olderPrs = () => (view.prs.olderText ? prTabLine('older-prs', mutedLine(view.prs.olderText)) : [])
-    /** The order's title, the agent's reason under it, and the changed line with Rank again and its press status. */
-    const prOrderLines = () => {
-      const order = view.prs.order
-      if (!order) return []
-      const changed = order.changed
-      const pressed = changed?.showsPress ? lastActionText(RANK_AGAIN_ID) : null
-      const lines = (
-        <Box flexDirection="column">
-          <Text wrap="wrap">{order.title}</Text>
-          {order.why ? mutedLine(order.why) : null}
-          {changed ? (
-            <Box flexDirection="column" marginTop={look === 'desktop' ? 1 : 0}>
-              <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap}>
-                {changed.text ? <Text wrap="wrap">{changed.text}</Text> : null}
-                {prOrderKeys.length > 0 ? keyRow(RANK_AGAIN_ID, prOrderKeys) : null}
-              </Box>
-              {pressed ? (
-                <Text color={pressed.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
-                  {pressed.text}
-                </Text>
-              ) : null}
-            </Box>
-          ) : null}
-        </Box>
-      )
-
-      return prTabLine('pr-order', lines)
-    }
-    const prTabButtons = () =>
-      prTabKeys.length === 0 ? [] : prTabLine('pr-tab-actions', keyRow(DISMISS_MERGED_ID, prTabKeys))
-    const prsView = () =>
-      prGroups.length === 0 ? (
-        <Box flexDirection="column" flexGrow={1}>
-          {emptyState(prsEmptyText({ isFetching: prState.isFetching, ...ghState }, 'session'))}
-        </Box>
-      ) : (
-        sections(
-          [
-            ...(ghNotice ? [section(banner(bannerOf(ghNotice.kind, ghNotice.text)))] : []),
-            ...prOrderLines(),
-            ...prGroups.map(prBlock),
-            ...prTabButtons(),
-            ...olderPrs(),
-          ],
-          2,
-        )
-      )
-
-    /** The head reads like a row: its title in bold, and its description muted on the line under it. */
-    const statusHead = (head: NonNullable<StatusPage['head']>) => {
-      const lines = (
-        <Box flexDirection="column">
-          <Text wrap="wrap" bold>
-            {head.title}
-          </Text>
-          {head.description ? (
-            <Text wrap="wrap" color={pal.muted}>
-              {head.description}
-            </Text>
-          ) : null}
-        </Box>
-      )
-
-      return look === 'desktop' ? (
-        desktopFrame({ key: 'status-head', padY: 0, markCells: 0, hasSide: false, children: lines })
-      ) : (
-        <Box key="status-head" paddingLeft={TREE_LINE_AT}>
-          {lines}
-        </Box>
-      )
-    }
-    /** Where a Status row's mark sits in the terminal: in the head's column, so the list lines up with it. */
-    const statusMarkAt = TREE_LINE_AT
-    /** The text column of a Status line at `depth`, in cells on the terminal and in points on desktop. */
-    const statusTextWidth = (depth: number) =>
-      look === 'desktop'
-        ? desktopColumnPt(1 + DESKTOP_MARK_CELLS * (depth * 2 + 1)) + DESKTOP_SIDE_CELLS * DESKTOP_CELL_PT
-        : listColumns - 1 - statusMarkAt - markWidth * (depth + 1)
-    const fitsStatusLine = (depth: number) => (text: string) =>
-      look === 'desktop' ? desktopTextPt(text) <= statusTextWidth(depth) : cellWidth(text) <= statusTextWidth(depth)
-    /** One text of a Status line, wrapped to at most `limit` lines and cut with an ellipsis past them. */
-    const statusPageText = (key: string, spans: TerminalSpan[], depth: number, limit = STATUS_TEXT_LINES) => (
-      <Box key={key}>
-        <Text wrap="wrap">
-          {terminalText(
-            look === 'desktop'
-              ? [desktopSpanLines(spans, statusTextWidth(depth), limit)]
-              : terminalSpanLines(spans, statusTextWidth(depth), limit),
-          )}
-        </Text>
-      </Box>
-    )
-    /** A row's stall word in the stall's tone, never split by a wrap. */
-    const stallSpan = (stall: StatusStall): TerminalSpan => {
-      const text = look === 'desktop' ? stall.text.replaceAll(' ', '\u00a0') : stall.text
-      const tone = stall.tone === 'needsYou' ? { isNeedsYou: true as const } : { isDone: true as const }
-
-      return { text, isUnbroken: true, ...tone }
-    }
-    /**
-     * A row's name with its stall word after `STALL_GAP`, on the line of the name's last word, which a wrap never
-     * splits from them. `nameBeforeStall` cuts the name so the line fits `STATUS_TEXT_LINES`.
-     */
-    const statusNameLine = (key: string, name: TerminalSpan, stall: StatusStall | null, depth: number) => {
-      if (!stall) return statusPageText(key, [name], depth)
-      const width = statusTextWidth(depth)
-      const gap = look === 'desktop' ? STALL_GAP.replaceAll(' ', '\u00a0') : STALL_GAP
-      const spans = (shown: string): TerminalSpan[] => [
-        { ...name, text: shown },
-        { text: gap, isMuted: true, isUnbroken: true },
-        stallSpan(stall),
-      ]
-      const lineCount = (shown: string) =>
-        look === 'desktop'
-          ? desktopLines(
-              spans(shown)
-                .map(s => s.text)
-                .join(''),
-              width,
-            ).length
-          : terminalSpanLines(spans(shown), width).length
-      const shown = nameBeforeStall(name.text, x => lineCount(x) <= STATUS_TEXT_LINES)
-
-      return (
-        <Box key={key}>
-          <Text wrap="wrap">
-            {terminalText(look === 'desktop' ? [spans(shown)] : terminalSpanLines(spans(shown), width))}
-          </Text>
-        </Box>
-      )
-    }
-    /** A Status row frame's padding and 1 pt border above or below its text on desktop, in half lines. */
-    const statusFrameEdge = STATUS_PAD_Y + 2 * DESKTOP_HAIR_LINES
-    /**
-     * The line that ties the rows under a subject to it, in the subject's mark column. `down` runs from under the
-     * subject's mark to the end of its row. `mid` and `last` reach across to a child's mark, and `mid` runs on to the
-     * next row, so a row that wraps keeps the line beside each of its lines.
-     */
-    const statusTree = (key: string, shape: 'down' | StatusBranch) => {
-      if (look === 'terminal')
-        return shape === 'down'
-          ? branch('pass', 0, statusMarkAt, pal.line, 1, key)
-          : branch(shape, 0, statusMarkAt, pal.line, 0, key)
-      // The line spans the mark column, which spans the frame's content. To meet the next row's line, each end reaches
-      // over the frame's padding and its border.
-      const reach = -statusFrameEdge
-      const firstLineMiddle = 0.5
-      const hair = (key: string, grow: boolean, ends: { marginTop?: number; marginBottom?: number }) => (
-        <Box key={key} flexDirection="row" {...(grow ? { flexGrow: 1 } : { height: firstLineMiddle })}>
-          {desktopHairline('line', 'down', ends)}
-        </Box>
-      )
-      const arm = DESKTOP_MARK_CELLS * 2 - DESKTOP_TREE_AT - DESKTOP_ARM_GAP
-      const parts =
-        shape === 'down'
-          ? [<Box key="under-mark" height={firstLineMiddle + 0.4} />, hair('down', true, { marginBottom: reach })]
-          : [
-              hair('to-arm', false, { marginTop: reach }),
-              desktopHairline('arm', 'across', { width: arm }),
-              ...(shape === 'mid' ? [hair('on', true, { marginBottom: reach })] : []),
-            ]
-
-      return (
-        <Box key={key} position="absolute" top={0} bottom={0} left={0} flexDirection="row">
-          <Box width={DESKTOP_TREE_AT - DESKTOP_HAIR_CELLS / 2} flexShrink={0} />
-          <Box flexDirection="column" flexShrink={0}>
-            {parts}
-          </Box>
-        </Box>
-      )
-    }
-    // A Status rule starts at the text column, as the rules between sections and between Asks rows do. In the
-    // terminal it stops at the end of the list's columns. On desktop it runs to the pane's edge.
-    const statusRuleAt = statusMarkAt + markWidth
-    const statusRuleCells = Math.max(0, listColumns - statusRuleAt)
-    const desktopStatusRuleLeft = FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS
-    /** The rule above a Status row that starts an item. */
-    const statusRule = (id: string) =>
-      look === 'desktop' ? (
-        desktopHairline(`status-rule-${id}`, 'across', { marginLeft: desktopStatusRuleLeft })
-      ) : (
-        <Box key={`status-rule-${id}`} flexDirection="row">
-          <Box width={statusRuleAt} flexShrink={0} />
-          <Text color={pal.divider}>{'─'.repeat(statusRuleCells)}</Text>
-        </Box>
-      )
-    /**
-     * A dashed 1 pt line on desktop, about `cells` wide: dashes that grow to share the room, so the line fills it at any
-     * width. Desktop has no dashed border, and a run of a dash glyph wraps.
-     */
-    const desktopDashes = (key: string, cells: number) => {
-      const count = Math.max(1, Math.round((cells * DESKTOP_CELL_PT) / (DESKTOP_DASH_PT + DESKTOP_DASH_GAP_PT)))
-      const dashes = Array.from({ length: count }, (_, n) => [
-        ...(n > 0 ? [<Box key={`dash-gap-${n}`} width={DESKTOP_DASH_GAP_PT / DESKTOP_CELL_PT} flexShrink={0} />] : []),
-        <Box key={`dash-${n}`} flexGrow={1} height={DESKTOP_HAIR_LINES} backgroundColor={pal.divider} />,
-      ]).flat()
-
-      return (
-        <Box key={key} flexGrow={1} flexDirection="row" height={DESKTOP_HAIR_LINES}>
-          {dashes}
-        </Box>
-      )
-    }
-    /**
-     * The look line: "Last seen" in the middle of a dashed rule that spans what the rule above a row spans, with space
-     * above it, and below it unless it ends the list.
-     */
-    const statusLookLine = (text: string, isLast: boolean) => {
-      // The terminal draws whole lines, so its space is a blank line.
-      const gap = (key: string) => <Box key={key} height={look === 'desktop' ? LOOK_GAP_PT / DESKTOP_LINE_PT : 1} />
-      const label = ` ${text} `
-      const fill = Math.max(4, statusRuleCells - cellWidth(label))
-      const before = Math.floor(fill / 2)
-      const ruleCells = (listColumns - desktopStatusRuleLeft - 2 - text.length / DESKTOP_CHARS_PER_CELL) / 2
-      // On desktop it sits outside a frame, whose border would inset the rule's right end, so the padding stands in for
-      // the frame's.
-      const rule =
-        look === 'desktop' ? (
-          <Box flexDirection="row" alignItems="center" marginLeft={desktopStatusRuleLeft} paddingY={statusFrameEdge}>
-            {desktopDashes('look-before', ruleCells)}
-            <Box flexShrink={0} paddingX={1}>
-              <Text color={pal.muted}>{text}</Text>
-            </Box>
-            {desktopDashes('look-after', ruleCells)}
-          </Box>
-        ) : (
-          <Box flexDirection="row">
-            <Box width={statusRuleAt} flexShrink={0} />
-            <Text color={pal.divider}>{`${LOOK_DASH.repeat(before)}${label}${LOOK_DASH.repeat(fill - before)}`}</Text>
-          </Box>
-        )
-
-      return (
-        <Box key="status-look" flexDirection="column">
-          {gap('look-above')}
-          {rule}
-          {isLast ? null : gap('look-below')}
-        </Box>
-      )
-    }
-    /** One line of the Status tab's list: a mark and its text. `depth` 1 sits under a subject's text. */
-    const statusRowLine = ({
-      key,
-      depth = 0,
-      mark,
-      content,
-      tree = null,
-      isSelected = false,
-    }: {
-      key: string
-      depth?: number
-      mark: JSX.Element | null
-      content: JSX.Element | JSX.Element[]
-      tree?: JSX.Element | null
-      /** The row whose keys work, which the terminal marks with the selection bar, as on a row tab. */
-      isSelected?: boolean
-    }) =>
-      look === 'desktop' ? (
-        desktopFrame({
-          key,
-          indent: DESKTOP_MARK_CELLS * (depth * 2),
-          isMarkHung: false,
-          padY: STATUS_PAD_Y,
-          hasSide: false,
-          mark,
-          tree,
-          children: Array.isArray(content) ? content : [content],
-        })
-      ) : (
-        <Box
-          key={key}
-          flexDirection="row"
-          alignItems="flex-start"
-          overflow="hidden"
-          backgroundColor={isSelected ? pal.selection : undefined}
-        >
-          <Box width={statusMarkAt + markWidth * depth} flexShrink={0} />
-          <Box width={markWidth} flexShrink={0}>
-            {mark}
-          </Box>
-          <Box flexDirection="column" flexShrink={1} flexGrow={1}>
-            {content}
-          </Box>
-          {tree}
-          {isSelected ? (
-            <Box position="absolute" top={0} bottom={0} left={0} width={1}>
-              {pal.selection ? null : <Text color={pal.key}>{SELECTION_BAR}</Text>}
-            </Box>
-          ) : null}
-        </Box>
-      )
-    /** A Status row's buttons from its plan. Only the selected row's key presses it, so only that row names its key. */
-    const statusKeys = (r: StatusRow): KeyAction[] =>
-      statusKeyPlan(r).map(k => ({
-        key: `${k.press.action}-${r.id}`,
-        label: k.label,
-        kind: k.kind,
-        ...(r.id === statusKeyRow?.id ? { hotkey: k.hotkey } : {}),
-        onPress: () => showAsk($, k.press.askId),
-      }))
-    const statusMark = (r: Pick<StatusRow & { kind: 'subject' }, 'id' | 'mark' | 'tone' | 'isRunning'>) =>
-      markGlyph({ text: r.mark, isRunning: r.isRunning }, r.id, r.tone ? pal.mark[r.tone] : pal.muted)
-    const statusRow = (r: StatusRow) => {
-      if (r.kind === 'subject') {
-        const keys = statusKeys(r)
-        const mark = statusMark(r)
-        const content = [
-          statusNameLine(`status-${r.id}-name`, { text: r.name }, r.stall, 0),
-          ...(r.text ? [statusPageText(`status-${r.id}-text`, [{ text: r.text, isMuted: true }], 0)] : []),
-          ...(r.merged
-            ? [
-                statusPageText(
-                  `status-${r.id}-merged`,
-                  [{ text: mergedLine(r.merged, fitsStatusLine(0)), isMuted: true }],
-                  0,
-                ),
-              ]
-            : []),
-          ...(r.was
-            ? [statusPageText(`status-${r.id}-was`, [{ text: `${WAS_PREFIX}${r.was}`, isMuted: true }], 0)]
-            : []),
-          ...(keys.length > 0 ? [<Box key={`status-${r.id}-keys`}>{keyRow(r.id, keys)}</Box>] : []),
-        ]
-
-        return statusRowLine({
-          key: `status-${r.id}`,
-          mark,
-          content,
-          tree: r.hasChildren ? statusTree(`status-${r.id}-tree`, 'down') : null,
-          isSelected: look === 'terminal' && r.id === statusKeyRow?.id,
-        })
-      }
-      if (r.kind === 'child') {
-        const mark = statusMark(r)
-        const depth = r.branch === null ? 0 : 1
-
-        return statusRowLine({
-          key: `status-${r.id}`,
-          depth,
-          mark,
-          content: statusNameLine(`status-${r.id}-name`, { text: r.name, isMuted: true }, r.stall, depth),
-          tree: r.branch ? statusTree(`status-${r.id}-tree`, r.branch) : null,
-        })
-      }
-      if (r.kind === 'more')
-        return statusRowLine({
-          key: `status-${r.id}`,
-          depth: 1,
-          mark: null,
-          content: <Text color={pal.muted}>{r.text}</Text>,
-          tree: statusTree(`status-${r.id}-tree`, r.branch),
-        })
-      if (r.kind === 'look') return statusLookLine(r.text, r.isLast)
-
-      return statusRowLine({
-        key: `status-${r.id}`,
-        mark: <Text color={r.tone ? pal.mark[r.tone] : pal.muted}>{r.mark}</Text>,
-        content: <Text color={pal.muted}>{r.text}</Text>,
+    const { statusHead, statusMarkAt, fitsStatusLine, statusPageText, statusNameLine, statusFrameEdge, statusTree } =
+      paneStatusLines({
+        Box,
+        Text,
+        pal,
+        look,
+        listColumns,
+        terminalText,
+        desktopFrame,
+        desktopColumnPt,
+        markWidth,
+        branch,
+        desktopHairline,
       })
-    }
-    const statusView = () => {
-      const page = view.statusPage
-      if (page.isEmpty)
-        return (
-          <Box flexDirection="column" flexGrow={1}>
-            {emptyState(page.empty)}
-          </Box>
-        )
+    const { statusRowLine, statusKeys, statusView } = paneStatus(
+      {
+        listColumns,
+        look,
+        Box,
+        Text,
+        pal,
+        statusKeyRow,
+        view,
+        isInline,
+        statusMarkAt,
+        statusFrameEdge,
+        statusNameLine,
+        statusPageText,
+        fitsStatusLine,
+        statusTree,
+        statusHead,
+        markWidth,
+        desktopHairline,
+        markGlyph,
+        desktopFrame,
+        keyRow,
+        emptyState,
+        sections,
+        section,
+      },
+      handlers,
+    )
 
-      return sections([
-        ...(page.head ? [statusHead(page.head)] : []),
-        ...(page.rows.length > 0
-          ? [
-              section(
-                page.rows.flatMap(r => {
-                  const isRuleDrawn = r.isRuledAbove && !isInline
-
-                  return isRuleDrawn ? [statusRule(r.id), statusRow(r)] : [statusRow(r)]
-                }),
-              ),
-            ]
-          : []),
-      ])
-    }
-
-    /** A legend mark, drawn as rows draw it: the running mark moves, and desktop draws a shape where it has one. */
-    const legendMark = (m: LegendEntry) => {
-      if (ToneSvg && m.tone && markShape(m.mark, DESKTOP_LINE_PT / 2) !== null)
-        return svgCell(toneSvg(m.tone, m.mark), m.mark)
-
-      return markGlyph(
-        { text: m.mark, isRunning: m.isRunning },
-        `legend-${m.mark}`,
-        m.tone ? pal.mark[m.tone] : pal.muted,
-      )
-    }
-    const helpKeysSection = () =>
-      section([
-        groupTitle(HELP_COPY.keys, 0),
-        ...keyList.map(k => (
-          <Box key={`help-key-${k.keys}`} flexDirection="row" paddingLeft={TREE_LINE_AT}>
-            <Box width={keyColumn} flexShrink={0}>
-              <Text bold>{k.keys}</Text>
-            </Box>
-            <Box flexShrink={1}>
-              <Text color={pal.muted} wrap="wrap">
-                {k.does}
-              </Text>
-            </Box>
-          </Box>
-        )),
-      ])
-    const helpMarksSection = () =>
-      section([
-        groupTitle(HELP_COPY.marks, 0),
-        ...MARK_LEGEND.map(m =>
-          statusRowLine({
-            key: `help-mark-${m.mark}`,
-            mark: legendMark(m),
-            content: (
-              <Text color={pal.muted} wrap="wrap">
-                {m.words}
-              </Text>
-            ),
-          }),
-        ),
-      ])
-    /** Help in place of the tab's body: the keys where keys work, then the legend. A wide inline pane sets them side by side. */
-    const helpView = () => {
-      if (keyList.length === 0) return sections([helpMarksSection()])
-      if (hasRail)
-        return (
-          <Box flexDirection="row" columnGap={4} flexGrow={1}>
-            <Box flexDirection="column" width="50%" flexShrink={1}>
-              {helpKeysSection()}
-            </Box>
-            <Box flexDirection="column" width="50%" flexShrink={1}>
-              {helpMarksSection()}
-            </Box>
-          </Box>
-        )
-
-      return sections([helpKeysSection(), helpMarksSection()])
-    }
+    const { helpView } = paneHelp({
+      pal,
+      keyList,
+      Box,
+      keyColumn,
+      Text,
+      hasRail,
+      ToneSvg,
+      svgCell,
+      markGlyph,
+      section,
+      groupTitle,
+      sections,
+      statusRowLine,
+    })
 
     const move = (step: number) => {
       const to = Math.min(Math.max(at + step, 0), ids.length - 1)

@@ -2,8 +2,7 @@
 
 import { noteDialog } from '../../hooks/dialogs'
 import { messages } from '../../hooks/press-messages'
-import type { Session } from '../../hooks/session'
-import type { DialogLink, Item } from '../../types'
+import type { DialogLink, Item, Session } from '../../types'
 import type { Dialog } from './rollout-turns'
 
 /**
