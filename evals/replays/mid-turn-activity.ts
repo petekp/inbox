@@ -9,5 +9,12 @@ export const midTurnActivity: Replay = {
   hasLedgerCalls: false,
   isShort: true,
   start: searchStart,
-  steps: [{ ...searchAt12, checkpoint: true, targets: ['where-it-stands', 'text-no-ids'] }],
+  steps: [
+    {
+      ...searchAt12,
+      checkpoint: true,
+      targets: ['where-it-stands', 'text-no-ids'],
+      judgeUntil: { 'where-it-stands': 'the mid-turn wording follow-up' },
+    },
+  ],
 }
