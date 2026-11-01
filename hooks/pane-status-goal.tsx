@@ -226,12 +226,10 @@ export function paneStatusGoal(
               ? field()
               : [
                   <Box key="goal-text">
-                    <Text wrap="wrap" bold>
-                      {g.text}
+                    <Text wrap="wrap">
+                      <Text bold>{g.text}</Text>
                       {g.count ? (
-                        <Text bold={false} color={pal.muted}>
-                          {`${STALL_GAP}${g.count}`.replaceAll(' ', '\u00a0')}
-                        </Text>
+                        <Text color={pal.muted}>{`${STALL_GAP}${g.count}`.replaceAll(' ', '\u00a0')}</Text>
                       ) : null}
                     </Text>
                   </Box>,
