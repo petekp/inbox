@@ -258,8 +258,6 @@ function threadsWaiting(count: number): string {
   return `${count} ${count === 1 ? 'thread' : 'threads'} waiting on you`
 }
 
-export type { PrStatus }
-
 function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`
 }

@@ -50,8 +50,6 @@ export function toolActivity(tool: string, input: Record<string, unknown>): stri
   return tool.startsWith('mcp__') ? `called ${tool.slice(5)}` : null
 }
 
-export type { DialogQuestion }
-
 export type DialogOutcome =
   | { kind: 'answered'; answer: string }
   | { kind: 'timed-out'; answer: string }
