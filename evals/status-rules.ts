@@ -128,7 +128,7 @@ const FIXED_RULES: Rule[] = [
       const isFocusSame = focusMatch === before.facts.focusMatch
       const isDescriptionFilled = earlier?.description === '' && now?.title === earlier.title
       if (!new RegExp(focusMatch, 'i').test(head)) return [`the head "${head}" is not about /${focusMatch}/`]
-      const shown = result.session.ledger.overview?.goal ? (now?.description ?? '') : (now?.title ?? '')
+      const shown = result.session.ledger.overview?.goal ? now?.description || now?.title || '' : (now?.title ?? '')
       if (pastMatch && now && new RegExp(pastMatch, 'i').test(shown))
         return [`the head "${shown}" still names /${pastMatch}/`]
       return isFocusSame && last !== '' && head !== last && !isDescriptionFilled

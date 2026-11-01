@@ -51,10 +51,12 @@ export const GOAL_RULES: Rule[] = [
     id: 'milestones-true',
     reads: 'facts',
     property: 15,
-    text: "Each of the goal's milestones in the facts has a milestone with a status its state allows.",
-    failures: ({ result }) => {
+    text: "Each of the goal's milestones in the facts has a milestone with a status its state allows, and a goal has them once a call has read it.",
+    failures: ({ step, result }) => {
       const o = result.session.ledger.overview
-      if (!o?.goal || o.goal.isAwaitingMilestones) return []
+      if (!o?.goal) return []
+      if (o.goal.isAwaitingMilestones)
+        return step.call && !result.isStatusFailed ? [`"${o.goal.text}" has no milestones after a call`] : []
       return (result.facts.goal?.milestones ?? []).flatMap(m => {
         const saved = milestonesOf(o).filter(x => new RegExp(m.match, 'i').test(x.name))
         if (saved.length === 0) return [`no milestone for ${m.name}`]

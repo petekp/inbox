@@ -1,18 +1,18 @@
 /**
- * Grades the runs in Status results files again with the current rules and pass bar, from their recorded answers.
- * It makes no model call. A run whose replay changed since it was recorded is reported and skipped.
+ * Grades the runs in Status results files again from their recorded answers, with the current rules and the release
+ * report's layers, bar and code holds. It makes no model call and runs no judge, so judge checks are left out. A run
+ * whose replay changed since it was recorded is reported and skipped.
  *
  * Usage: node status-regrade.mjs <results.json>...
  */
 import { readFileSync } from 'node:fs'
 
-import { alphaPerTest, blockAt, interval, TOLERANCE } from './status-bar'
-import { gradeReplay, tally } from './status-grade'
+import { gradeReplay } from './status-grade'
 import { runReplay } from './status-replay'
 import type { Agent, CallLog, ModelCall } from './status-replay'
 import { REPLAYS } from './status-replays'
-import { RULES } from './status-rules'
-import type { RuleResult } from './status-rules'
+import { holdFailures, isBlocking, knownFailing, layerLines, layerTests } from './status-report'
+import type { GradedCase, ReplayRun } from './status-report'
 
 type RecordedRun = { agent: Agent; name: string; run: number; steps: { calls: CallLog[] }[] }
 
@@ -34,7 +34,7 @@ const runs = process.argv
   .flatMap(path => (JSON.parse(readFileSync(path, 'utf8')) as { results: RecordedRun[] }).results)
   .filter(r => r.steps.length > 0)
 
-const graded: { agent: Agent; name: string; steps: RuleResult[][] }[] = []
+const graded: ReplayRun[] = []
 for (const run of runs) {
   const replay = REPLAYS.find(r => r.name === run.name)
   if (!replay) {
@@ -47,24 +47,32 @@ for (const run of runs) {
     console.log(`skipped ${run.agent} ${run.name} run ${run.run}: the replay asks differently than it was recorded`)
     continue
   }
-  graded.push({ agent: run.agent, name: run.name, steps: gradeReplay(replay, steps) })
+  const rules = gradeReplay(replay, steps)
+  graded.push({
+    agent: run.agent,
+    name: run.name,
+    run: run.run,
+    error: null,
+    steps: steps.map((s, i) => ({
+      label: s.label,
+      page: s.text,
+      calls: s.calls,
+      isStatusFailed: s.isStatusFailed,
+      rules: rules[i]!,
+    })),
+  })
 }
 
-const spreadAlpha = alphaPerTest('spread', RULES.length * 2)
-for (const agent of [...new Set(graded.map(g => g.agent))]) {
-  const mine = graded.filter(g => g.agent === agent)
-  console.log(`\n${agent}: ${mine.length} runs`)
-  for (const rule of RULES) {
-    const tallies = mine.flatMap(g => g.steps.map(s => tally(s.find(x => x.rule === rule.id)!)))
-    const fails = tallies.filter(t => t === 'fail').length
-    const n = tallies.filter(t => t !== null).length
-    const raw = mine.flatMap(g => g.steps.map(s => s.find(x => x.rule === rule.id)!)).filter(r => r.failures.length > 0)
-    if (n === 0 && raw.length === 0) continue
-    const [low, high] = interval(fails, n)
-    const at = blockAt(n, TOLERANCE.modelRule, spreadAlpha)
-    const verdict = rule.until ? `known failing, until ${rule.until}` : fails >= at ? 'blocks' : 'passes'
-    console.log(
-      `  ${rule.id}: ${fails} of ${n} counted (95% ${low.toFixed(2)}-${high.toFixed(2)}), blocks at ${at > n ? 'never' : at}; ${raw.length} step-runs show a failure; ${verdict}`,
-    )
-  }
-}
+const cases: GradedCase[] = REPLAYS.map(replay => ({
+  replay,
+  runs: graded.filter(r => r.name === replay.name),
+})).filter(c => c.runs.length > 0)
+const agents = [...new Set(graded.map(r => r.agent as Agent))]
+const tests = layerTests(cases, agents, false)
+for (const line of layerLines(tests)) console.log(line)
+const holds = holdFailures(cases)
+console.log(`code holds: ${holds.length === 0 ? 'none failed' : `${holds.length} failed`}`)
+for (const h of holds) console.log(`  x ${h}`)
+const known = knownFailing(cases)
+if (known.length > 0) console.log(`known failing: ${known.join('; ')}`)
+console.log(tests.some(isBlocking) || holds.length > 0 ? 'blocked' : 'passes')
