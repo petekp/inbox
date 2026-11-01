@@ -14,6 +14,9 @@ import { appliedStatus, failedStatus } from '../hooks/session-status'
 import { statusCallPrompt } from '../hooks/status-records'
 import type { StatusExchange, StatusRecord } from '../hooks/status-records'
 import { statusPage } from '../hooks/status-page'
+import { goalPressed } from '../hooks/goal-press'
+import { GOAL_KEYS_ID } from '../hooks/status-keys'
+import type { RowPress } from '../hooks/presses'
 import type { StatusPage } from '../hooks/status-page'
 import { CODEX } from '../codex/src/texts'
 import type { ChildKind, Exchange, HostTask, Item, Ledger, Place, Session } from '../types'
@@ -32,6 +35,9 @@ export type HostEvent =
   /** An ask opens or closes, in a replay that runs no ledger call. */
   | { askOpens: { id: string; ask: string; kind?: Item['kind']; options?: string[] } }
   | { askCloses: string }
+  /** The person presses Use this goal or Not now on the proposal, or types a goal, through the host's own press. */
+  | { press: 'use-goal' | 'decline-goal' }
+  | { press: 'type'; text: string }
 
 /** The Status call a step runs, and what it reads. */
 export type StepCall =
@@ -140,6 +146,13 @@ function withEvent(s: Session, e: HostEvent, now: number): Session {
     return withStatus(e.child === 'act' ? childWorked(o, e.ref, now) : childEnded(o, e.ref, now))
   }
   if ('look' in e) return withStatus(lookEnded(lookStarted(o, now), now + e.look * 1000))
+  if ('press' in e) {
+    const press: RowPress =
+      e.press === 'type' ? { action: 'type', id: GOAL_KEYS_ID, text: e.text } : { action: e.press, id: GOAL_KEYS_ID }
+    const r = goalPressed(s.ledger, press, kind => ({ kind, action: GOAL_KEYS_ID, text: e.press, at: now }), now)
+    // A press on a proposal the model did not write finds nothing, as in the product; the step's rules report the miss.
+    return 'stale' in r ? s : { ...s, ledger: r.ledger }
+  }
   if ('askOpens' in e)
     return { ...s, ledger: { ...s.ledger, items: [...s.ledger.items, itemOf(e.askOpens, s.ledger.turn, now)] } }
 

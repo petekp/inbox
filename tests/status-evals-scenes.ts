@@ -1,6 +1,9 @@
 import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
 import { emptySession } from '../hooks/session-files'
 import { statusPage } from '../hooks/status-page'
+import type { StatusPage } from '../hooks/status-page'
+import { HELD_MARK } from '../hooks/help'
+import { nameKey } from '../hooks/status-limits'
 import type { Item, Session, SessionStatus, Subject, SubjectStatus } from '../types'
 import type { Facts } from '../evals/status-facts'
 import { minutes } from '../evals/status-replay'
@@ -60,6 +63,8 @@ export type Scene = {
   step: Step
   isStatusFailed: boolean
   calls?: CallLog[]
+  /** Breaks the drawn page, for a code hold the page code itself would never break. */
+  page?: (p: StatusPage) => void
 }
 
 export function baseScene(): Scene {
@@ -114,6 +119,7 @@ export function baseScene(): Scene {
 export function contextOf(scene: Scene): RuleContext {
   const session = sessionOf(scene.after, scene.items, 10)
   const page = statusPage(session, minutes(10))
+  scene.page?.(page)
   const result: StepResult = {
     index: 0,
     label: scene.step.label,
@@ -243,6 +249,62 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     bad: s => {
       withGoal(s)
       s.after.serves = { s1: 'none', s2: 'm2' }
+    },
+  },
+  'goal-on-press': {
+    good: s => {
+      withGoal(s)
+      s.step.events = [{ press: 'use-goal' }]
+    },
+    bad: withGoal,
+  },
+  'proposal-not-repeated': {
+    bad: s => {
+      withProposal(s, ['Edits survive offline', 'Conflicts resolved'])
+      s.after.declinedGoals = [nameKey(s.after.proposedGoal!.text)]
+    },
+  },
+  'met-follows': {
+    good: s => {
+      withGoal(s)
+      for (const m of s.after.milestones) m.status = 'done'
+      s.after.goal!.metAt = minutes(10)
+    },
+    bad: s => {
+      withGoal(s)
+      for (const m of s.after.milestones) m.status = 'done'
+    },
+  },
+  'held-milestone': {
+    good: withGoal,
+    bad: s => {
+      withGoal(s)
+      s.page = p => (p.goal!.milestones[0]!.mark = HELD_MARK.mark)
+    },
+  },
+  'other-work-shows-news': {
+    good: s => {
+      withGoal(s)
+      s.after.serves.s1 = 'none'
+    },
+    bad: s => {
+      withGoal(s)
+      s.after.serves.s1 = 'none'
+      s.page = p => (p.rows = p.rows.filter(r => !(r.kind === 'subject' && r.id === 's1')))
+    },
+  },
+  'unlinked-in-main': {
+    good: s => {
+      withGoal(s)
+      s.after.serves.s1 = 'none'
+    },
+    bad: s => {
+      withGoal(s)
+      s.after.serves.s1 = 'none'
+      s.page = p => {
+        const s2 = p.rows.find(r => r.kind === 'subject' && r.id === 's2')!
+        p.rows.push({ ...s2 })
+      }
     },
   },
   'finished-named': {

@@ -3,6 +3,7 @@ import type { SessionStatus, Subject } from '../types'
 import { isOpenPiece, rightStatuses } from './status-facts'
 import type { Facts } from './status-facts'
 import { GOAL_RULES } from './status-rules-goal'
+import { HOLD_RULES } from './status-holds'
 import type { Step, StepResult } from './status-replay'
 import {
   DECISION_WORDS,
@@ -436,4 +437,4 @@ const FIXED_RULES: Rule[] = [
   },
 ]
 
-export const RULES: Rule[] = [...FIXED_RULES, ...GOAL_RULES]
+export const RULES: Rule[] = [...FIXED_RULES, ...GOAL_RULES, ...HOLD_RULES]
