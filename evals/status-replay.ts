@@ -92,7 +92,13 @@ export const LIMITS: Record<Agent, Limits> = {
   codex: { ms: 120_000, outputTokens: null },
 }
 
-export type ReplayDeps = { agent: Agent; ask: ModelCall; clock?: () => number }
+export type ReplayDeps = {
+  agent: Agent
+  ask: ModelCall
+  clock?: () => number
+  /** The Status call's system text in place of `STATUS_SYSTEM`, as for a copy without one of the goal's rules. */
+  system?: string
+}
 
 /** What one model call of a step did. */
 export type CallLog = {
@@ -195,7 +201,7 @@ async function statusCall(
   const prompt = statusCallPrompt(input, read)
   const logs: CallLog[] = []
   const { last } = await askStatus(async () => {
-    const answer = await timed(deps, 'status', prompt, STATUS_SYSTEM)
+    const answer = await timed(deps, 'status', prompt, deps.system ?? STATUS_SYSTEM)
     logs.push(answer.log)
     return answer
   })

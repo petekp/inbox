@@ -4,7 +4,9 @@ import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { STATUS_SYSTEM } from '../hooks/status-prompt'
+import { statusSystem } from '../hooks/status-prompt'
+import { GOAL_PARTS } from '../hooks/status-prompt-goal'
+import type { GoalPartId } from '../hooks/status-prompt-goal'
 import { systemText } from '../hooks/ledger-prompt'
 import { CODEX } from '../codex/src/texts'
 import { run } from '../codex/src/run'
@@ -43,6 +45,7 @@ const { values } = parseArgs({
     judge: { type: 'boolean', default: false },
     'judge-pages': { type: 'string' },
     'judge-set': { type: 'string' },
+    without: { type: 'string' },
     out: { type: 'string' },
   },
 })
@@ -54,6 +57,12 @@ const wanted = values.replay?.split(',')
 const unknown = (wanted ?? []).filter(n => !REPLAYS.some(r => r.name === n))
 if (unknown.length > 0) throw new Error(`Unknown --replay ${unknown.join(', ')}`)
 const replays = REPLAYS.filter(r => !wanted || wanted.includes(r.name))
+const without = (values.without?.split(',') ?? []) as GoalPartId[]
+const unknownParts = without.filter(id => !(id in GOAL_PARTS))
+if (unknownParts.length > 0)
+  throw new Error(`Unknown --without ${unknownParts.join(', ')}. Use ${Object.keys(GOAL_PARTS).join(', ')}.`)
+/** The Status call's system text: the shipped one, or a copy without the goal rules `--without` names. */
+const statusSystemText = statusSystem(without)
 const judgeSets = values['judge-set'] === undefined ? [1, 2] : [Number(values['judge-set'])]
 if (!judgeSets.every(n => n === 1 || n === 2))
   throw new Error(`Unknown --judge-set ${values['judge-set']}. Use 1 or 2.`)
@@ -68,7 +77,7 @@ const about = provenance(
   values['judge-pages'] !== undefined ? 'status-judge' : 'status',
   { claude: 'claude', codex: codexCli },
   {
-    'status systemText': STATUS_SYSTEM,
+    'status systemText': statusSystemText,
     'systemText claude': systemText(CLAUDE_CODE),
     'systemText codex': systemText(CODEX),
     judge: judgeSystem,
@@ -178,7 +187,7 @@ function modelCall(agent: Agent): ModelCall {
 }
 
 async function once(agent: Agent, replay: Replay, n: number): Promise<RunRecord> {
-  const steps = await runReplay(replay, { agent, ask: modelCall(agent) })
+  const steps = await runReplay(replay, { agent, ask: modelCall(agent), system: statusSystemText })
   const graded = gradeReplay(replay, steps)
   const records: StepRecord[] = []
   let previous: string | null = null
