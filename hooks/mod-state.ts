@@ -22,12 +22,23 @@ class PaneState {
   paneClosesOnEscape = true
   /** The row whose field opened while the keys stayed elsewhere, as over text in the prompt. */
   fieldWithoutKeys: string | null = null
-  undoRedrawsUntil = -Infinity
+  /** The ends of the Undos whose end work has yet to run. */
+  undoEnds = new Set<number>()
+  isUndoLoopRunning = false
   compareRedrawAt: number | null = null
   herdrCheckTimer: Timer | null = null
 }
 
 export const paneState = new PaneState()
+
+export function cancelUndoScroll(): number {
+  paneState.pendingUndoScroll = null
+  return ++paneState.undoScrollRevision
+}
+export function suspendUndoReveal(): number {
+  if (paneState.pendingUndoScroll) paneState.pendingUndoScroll.revealUndo = false
+  return ++paneState.undoScrollRevision
+}
 
 class SessionState {
   /** The conversation whose first prompt has had the Status tab's headline and status carried beside it. */
