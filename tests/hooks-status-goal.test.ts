@@ -24,13 +24,14 @@ async function statusShown($: Engine, on: On) {
   return { clock, pane }
 }
 
-test('on a next build, a proposed goal shows above the head with its keys selected, its x bound to Not now alone and no Set a goal, Edit opens the field in its place, Use this goal sets it with its milestones and draws the head as its Now line, and nothing is sent', async ($, on) => {
+test('on a next build, a proposed goal shows above the head with its keys selected, its x bound to Not now alone and no Set a goal, Edit opens the field in its place, Set as goal sets it with its milestones and draws the head as its Now line, and nothing is sent', async ($, on) => {
   const { clock, pane } = await statusShown($, on)
 
   expect((await pane.find({ key: 'goal-proposal-text' }))?.text).toBe('Pilot ready to announce')
   expect(await pane.find({ key: 'status-proposal' })).toBeDefined()
-  expect((await pane.find({ key: 'goal-proposal-milestones' }))?.text).toBe('✓ Fixes built   ○ Announced')
-  expect((await pane.find({ key: 'use-goal-proposal' }))?.text).toBe('u: Use this goal')
+  expect((await pane.find({ key: 'goal-proposal-0' }))?.text).toBe('✓Fixes built')
+  expect((await pane.find({ key: 'goal-proposal-1' }))?.text).toBe('○Announced')
+  expect((await pane.find({ key: 'use-goal-proposal' }))?.text).toBe('s: Set as goal')
   expect(await pane.find({ key: 'type-goal-goal' })).toBeUndefined()
   const hiddenKeys = (await pane.findAll({ type: 'Button' })).flatMap(b =>
     b.key?.endsWith('-key') && !b.key.startsWith('tab-') ? [b.key] : [],

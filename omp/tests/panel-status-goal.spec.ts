@@ -59,25 +59,26 @@ test('a proposed goal draws above the head with its milestones’ marks and its 
   const page = screen.view.statusPage
   expect(statusKeyRows(page).map(t => t.id)).toEqual(['proposal'])
   const lines = text(screen, onPage).split('\n')
-  const order = ['Proposed goal · from your message', 'Pilot ready to announce', '✓ Fixes built   ○ Announced']
+  const order = ['Proposed goal · from your message', 'Pilot ready to announce', '✓ Fixes built', '○ Announced']
   const at = order.map(s => lineAt(lines, s))
   expect(at).toEqual([...at].sort((a, b) => a - b))
-  expect(at[2]).toBeLessThan(lineAt(lines, page.head!.title))
-  const buttons = lines[at[2]! + 1]!
+  expect(at[3]).toBe(at[2]! + 1)
+  expect(at[3]).toBeLessThan(lineAt(lines, page.head!.title))
+  const buttons = lines[at[3]! + 1]!
   const labels = proposalKeyPlan(page).map(k => k.label)
-  expect(labels).toEqual(['Use this goal', 'Edit', 'Not now'])
+  expect(labels).toEqual(['Set as goal', 'Edit', 'Not now'])
   expect(labels.map(l => buttons.indexOf(l))).toEqual(labels.map(l => buttons.indexOf(l)).sort((a, b) => a - b))
-  expect(buttons).toContain('↵ Use this goal')
+  expect(buttons).toContain('↵ Set as goal')
   expect(buttons).toContain('e Edit')
   expect(lines.some(l => l.includes('Set a goal'))).toBe(false)
 })
 
-test('Use this goal and Not now press the goal by their keys or Enter and select the goal’s button, and Edit opens the goal field with the proposal in it', () => {
+test('Set as goal and Not now press the goal by their keys or Enter and select the goal’s button, and Edit opens the goal field with the proposal in it', () => {
   const screen = proposing()
-  expect(handleKey(screen, onPage, 'u', NOW).press).toEqual({ action: 'use-goal', id: 'goal' })
+  expect(handleKey(screen, onPage, 's', NOW).press).toEqual({ action: 'use-goal', id: 'goal' })
   expect(handleKey(screen, onPage, 'enter', NOW).press).toEqual({ action: 'use-goal', id: 'goal' })
   expect(handleKey(screen, onPage, 'x', NOW).press).toEqual({ action: 'decline-goal', id: 'goal' })
-  expect(handleKey(screen, onPage, 'u', NOW).ui).toMatchObject({ selectedId: 'goal', pageReveal: 'goal' })
+  expect(handleKey(screen, onPage, 's', NOW).ui).toMatchObject({ selectedId: 'goal', pageReveal: 'goal' })
   const editing = handleKey(screen, onPage, 'e', NOW)
   expect(editing.press).toBeUndefined()
   expect(editing.ui).toMatchObject({
@@ -152,8 +153,8 @@ test('with a goal set, subjects that serve none of its milestones draw under the
   expect(lineAt(lines, '1 waiting')).toBeGreaterThan(lineAt(lines, 'Other work'))
 })
 
-test('in a short panel, after Use this goal the goal’s text shows with its selected Change goal, even from a page scrolled past it', () => {
-  const used = handleKey(proposing(), { ...onPage, selectedId: 'proposal', pageTop: 4 }, 'u', NOW).ui
+test('in a short panel, after Set as goal the goal’s text shows with its selected Change goal, even from a page scrolled past it', () => {
+  const used = handleKey(proposing(), { ...onPage, selectedId: 'proposal', pageTop: 4 }, 's', NOW).ui
   const lines = drawPanel(withGoal(), used, 60, NOW, style, 14).lines.map(strip)
   expect(lineAt(lines, 'Pilot ready to announce')).toBeGreaterThan(-1)
   expect(lineAt(lines, '↵ Change goal')).toBeGreaterThan(-1)

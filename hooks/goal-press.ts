@@ -5,7 +5,7 @@ import { declineProposedGoal, setTypedGoal, useProposedGoal } from './status-goa
 import { EMPTY_SESSION_STATUS } from './status-limits'
 
 /**
- * A press on the Status page's goal: Use this goal or Not now on a proposal, or a goal the person typed. Each changes
+ * A press on the Status page's goal: Set as goal or Not now on a proposal, or a goal the person typed. Each changes
  * the saved Status at once and sends nothing. A typed goal that rewords the goal keeps its milestones. A goal typed
  * before the first Status starts one.
  */

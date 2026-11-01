@@ -240,7 +240,7 @@ test('a server whose environment names no CLI runs its parent when that is a cod
   assert.equal(await findCli({ CODEX_APP_RUNTIME_CLI_PATH: '/app/codex' }, exec, 43), '/app/codex')
 })
 
-test('on a next build, Use this goal sets the proposed goal and a typed goal replaces it, each saved at once and sent nowhere', async () => {
+test('on a next build, Set as goal sets the proposed goal and a typed goal replaces it, each saved at once and sent nowhere', async () => {
   const { dir, calls, call } = await setup(
     0,
     () => 100,

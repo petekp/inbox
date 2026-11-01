@@ -5,6 +5,7 @@ import { allRows } from '../hooks/rows'
 import { emptySession } from '../hooks/session-files'
 import { sessionView } from '../hooks/session-view'
 import { setTypedGoal, useProposedGoal } from '../hooks/status-goal-ops'
+import { statusKeyRows } from '../hooks/status-keys'
 import { NO_HOLDS } from '../hooks/timing'
 import type { SessionStatus } from '../types'
 import { after, askItem, page, shape } from './status-helpers'
@@ -33,6 +34,7 @@ test('a proposal shows above the head, with its milestones, until the person ans
 
   expect(p.proposal).toEqual({
     label: 'Proposed goal · from your message',
+    isBelowGoal: false,
     text: 'Import ready to demo',
     milestones: [
       { mark: '✓', tone: 'done', name: 'Parsing works' },
@@ -42,6 +44,20 @@ test('a proposal shows above the head, with its milestones, until the person ans
   })
   expect(p.goal).toBeNull()
   expect(p.nowLine).toBeNull()
+})
+
+test('a proposal made while a goal is set reads as a new goal, and its buttons come after the goal’s in the order j and k move', () => {
+  const p = page(
+    after(linked(), 'GOAL: Import shipped | queued Release notes; queued Launch post', 45, new Set(['i1'])),
+    50,
+    {},
+    [askItem('i1')],
+  )
+
+  expect(p.proposal).toMatchObject({ label: 'Proposed new goal · from your message', isBelowGoal: true })
+  const ids = statusKeyRows(p).map(t => t.id)
+  expect(ids.indexOf('m2')).toBeLessThan(ids.indexOf('proposal'))
+  expect(ids.indexOf('proposal')).toBeLessThan(ids.indexOf('s2'))
 })
 
 test('a goal shows how far the work is, and the head draws as the Now line', () => {

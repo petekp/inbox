@@ -6,10 +6,10 @@ import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
 import { paneState } from './mod-state'
-import { DESKTOP_REPLY_ROWS, REPLY_ROWS } from './pane-sizes'
+import { DESKTOP_MARK_CELLS, DESKTOP_REPLY_ROWS, REPLY_ROWS, STATUS_PAD_Y } from './pane-sizes'
 import type { PaneStatusLines } from './pane-status-lines'
 import type { StatusTone } from './help'
-import type { MilestoneRow } from './status-goal-page'
+import type { MilestoneRow, ProposalBlock } from './status-goal-page'
 import {
   GOAL_FIELD,
   GOAL_KEYS_ID,
@@ -46,11 +46,12 @@ export function paneStatusGoal(
     statusNameLine,
     statusPageText,
     markGlyph,
+    markWidth,
     keyRow,
     desktopFrame,
   }: Pick<PaneBase, 'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'now' | 'statusKeyRow'> &
     Pick<PaneStatusLines, 'statusMarkAt' | 'statusNameLine' | 'statusPageText'> &
-    Pick<PaneRowLines, 'markGlyph'> &
+    Pick<PaneRowLines, 'markGlyph' | 'markWidth'> &
     Pick<PaneRowKeys, 'keyRow'> &
     Pick<PaneRowFrame, 'desktopFrame'>,
   { updateDrafts, updateTyping, sendTyped }: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped'>,
@@ -121,7 +122,7 @@ export function paneStatusGoal(
   const fieldKeys = () =>
     Input === null ? [] : [<Box key="goal-field-keys">{keyRow(`${GOAL_KEYS_ID}-field`, [cancel])}</Box>]
   const field = () => [...fieldInput(), ...fieldKeys()]
-  /** Marks in their tones, each with its text, on lines that wrap between them, as the proposal's milestones and the Other work counts draw. */
+  /** Marks in their tones, each with its text, on lines that wrap between them, as the Other work counts draw. */
   const markRun = (
     key: string,
     parts: { mark: string; tone: StatusTone; text: string }[],
@@ -144,6 +145,25 @@ export function paneStatusGoal(
       ])}
     </Box>
   )
+  /**
+   * A proposed milestone on its own line, its mark, name and spacing as a goal's milestone row draws them, so the list
+   * keeps its place when the proposal becomes the goal. The block already starts at the mark's column.
+   */
+  const proposedMilestone = (m: ProposalBlock['milestones'][number], n: number) => (
+    <Box
+      key={`goal-proposal-${n}`}
+      flexDirection="row"
+      alignItems="flex-start"
+      paddingY={look === 'desktop' ? STATUS_PAD_Y : 0}
+    >
+      <Box width={look === 'desktop' ? DESKTOP_MARK_CELLS + 1 : markWidth} flexShrink={0}>
+        {markGlyph({ text: m.mark, isRunning: false }, `goal-proposal-${n}`, m.tone ? pal.mark[m.tone] : pal.muted)}
+      </Box>
+      <Box flexDirection="column" flexShrink={1} flexGrow={1} minWidth={0}>
+        {statusNameLine(`goal-proposal-${n}-name`, { text: m.name }, null, 0)}
+      </Box>
+    </Box>
+  )
   const milestoneLine = (m: MilestoneRow) =>
     statusRowLine({
       key: `status-${m.id}`,
@@ -158,7 +178,8 @@ export function paneStatusGoal(
     })
 
   /**
-   * What the page draws above the head: a proposal, then the goal with its milestones. While the person types a goal,
+   * What the page draws above the head: the goal with its milestones, and a proposal, which the page puts first only
+   * while no goal is set. While the person types a goal,
    * the field takes the proposal's text's place, else the goal's, else Set a goal's under the head, and the buttons of
    * the proposal and the goal give way to it.
    */
@@ -172,11 +193,7 @@ export function paneStatusGoal(
             [
               muted('goal-proposal-label', p.label),
               ...(isTypingGoal ? fieldInput() : [bold('goal-proposal-text', p.text)]),
-              markRun(
-                'goal-proposal-milestones',
-                p.milestones.map(m => ({ ...m, text: m.name })),
-                '   ',
-              ),
+              ...p.milestones.map(proposedMilestone),
               ...(isTypingGoal ? fieldKeys() : keysLine({ id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(page) })),
             ],
             isSelected(PROPOSAL_KEYS_ID),

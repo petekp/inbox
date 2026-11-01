@@ -54,7 +54,7 @@ export const singleTask: Replay = {
       targets: ['proposal-when-stated', 'head-no-status', 'head-follows'],
     },
     {
-      label: 'The person presses Use this goal on the offline sync proposal',
+      label: 'The person presses Set as goal on the offline sync proposal',
       at: 10,
       events: [{ press: 'use-goal' }],
       facts: {

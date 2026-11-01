@@ -52,7 +52,7 @@ test('a GOAL line proposes and never sets the goal, and one with under two miles
   expect(after(declinedLong, long, 20).proposedGoal).toBeNull()
 })
 
-test('Use this goal takes the proposed milestones with their states, and Not now remembers the goal', () => {
+test('Set as goal takes the proposed milestones with their states, and Not now remembers the goal', () => {
   const o = withGoal()
 
   expect(o.goal).toEqual({
@@ -168,7 +168,7 @@ test('the answer that reads a typed goal keeps the milestones it names, and the 
   expect(replaced.serves).toEqual({ s1: replaced.milestones[0]!.id })
 })
 
-test('a goal typed over a proposal declines it, one with the proposal’s words uses the proposal and its milestones, and Use this goal links no subject yet', () => {
+test('a goal typed over a proposal declines it, one with the proposal’s words uses the proposal and its milestones, and Set as goal links no subject yet', () => {
   const o = proposed()
   const linked = after(withGoal(), 'SERVES: s1 | -\nGOAL: Ship 2.6 | queued Notes; queued Tag', 22)
 

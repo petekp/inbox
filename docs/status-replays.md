@@ -4,7 +4,7 @@ The cases that judge the Status tab. [How the Status is judged](plans/status/jud
 
 Three replays and one short case run 3 times each on Sonnet and on Codex, and three short cases run 5 times each. Fixed rules and code holds check the page after every step. The judge reads a few checkpoints. Each call has its host's limits: 45 seconds and 1600 output tokens for Claude, 120 seconds for Codex. A call past its limit fails, as it would in the host: the page stays as it was, and the status line says so.
 
-A step with no call can press a goal button as the person would: Use this goal, Not now, or a typed goal. It runs through the host's own press.
+A step with no call can press a goal button as the person would: Set as goal, Not now, or a typed goal. It runs through the host's own press.
 
 **Replay A: a coordinator's day.** Status calls only, 11 of them. The fixture opens and closes the asks. It starts from a busy page last seen two hours earlier: the goal "Notes 2.4 in the store" with three milestones, one done, a head about shipping 2.4, seven open pieces, three done, two running delegates and one open ask. The export button sits under Other work. One delegate's Herdr name is an id, and its session publishes its focus.
 
@@ -12,7 +12,7 @@ A step with no call can press a goal button as the person would: Use this goal, 
 | --- | --- | --- |
 | 2 | A delegate reports the sync merge done, and the coordinator publishes 2.4. The reply is full of times. | Both milestones close, and the goal is met. No time word reaches the page. The text names no step. |
 | 3 | The person files dark mode and widgets for later, and asks for a fix to the vanishing-notes bug, then 2.5. A delegate starts on the bug. | Checkpoint. "2.5" is proposed, and the 2.4 goal holds. The head leaves 2.4. Both filed pieces close. The delegate sits under the bug, in plain words. |
-| Press | The person presses Use this goal | No call. The 2.5 goal and its milestones take the page. |
+| Press | The person presses Set as goal | No call. The 2.5 goal and its milestones take the page. |
 | 4 | The delegate calls it "the archive bug", and the person asks for a long extra on the same fix | One piece, not two. The fix links to its milestone, and the pieces the goal does not need link to Other work. |
 | 5 | The coordinator asks whether 2.5 waits for the fix. The ask opens. | ◆ on 2.5 only. Its text does not restate the question. |
 | Look | The person answers in the inbox, and reads the page | No call. The ask closes, and the Seen line moves. |
@@ -32,7 +32,7 @@ At every step, the pieces set aside or waiting on a vendor stay on the page.
 | Step | What happens | What it checks |
 | --- | --- | --- |
 | 1 | The person asks for offline sync, shipped in 2.5. The agent plans the engine, conflicts and a settings toggle, and starts the engine. | The goal is proposed. The head names the aim. Three pieces. |
-| Press | The person presses Use this goal | No call |
+| Press | The person presses Set as goal | No call |
 | 2 | The engine works. The agent fixes a lint error, runs two review subagents and asks "last-write-wins or manual merge?" | The head holds. The subagents sit under the engine. ◆ on conflicts, from the ledger's new ask. Each piece links to its milestone. |
 | 3 | The person answers "manual merge" | The ask closes, ◆ clears, and the conflicts row shows the choice |
 | 4 | The person reverses: last-write-wins with a backup copy | Checkpoint. A was line on conflicts, and no new piece |
