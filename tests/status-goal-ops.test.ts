@@ -140,7 +140,7 @@ test('a typed goal unlinks every subject and waits until an answer from a call t
   expect(reworded.status.goal).toMatchObject({ text: 'Demo import ready', setAt: 20, isAwaitingMilestones: false })
 })
 
-test('the answer that reads a typed goal keeps the milestones it names, and the dropped and unnamed ones of the goal before go', () => {
+test('the answer that reads a typed goal keeps the milestones it names, and the dropped and unnamed ones of the goal before go and never fill its five places', () => {
   const met = after(after(withGoal(), 'DONE: m2 | named\nDONE: m3 | written', 25), 'SERVES: s1 | m3', 26)
   const typed = setTypedGoal(met, 'Ship 2.6 with import', 30).status
   const answered = after(
@@ -149,9 +149,23 @@ test('the answer that reads a typed goal keeps the milestones it names, and the 
     40,
   )
 
+  const five = after(
+    withGoal(),
+    'MILESTONE: queued | Docs | not started\nMILESTONE: queued | Store page | not started',
+    26,
+  )
+  const replaced = after(
+    setTypedGoal(five, 'Search under 100 ms', 30).status,
+    'MILESTONE: working | Under 100 ms | index rebuilt\nMILESTONE: queued | 2.6 live | not started\nSERVES: s1 | Under 100 ms',
+    40,
+  )
+
   expect(answered.milestones.map(m => m.name)).toEqual(['Import works', 'Release notes'])
   expect(answered.goal).toMatchObject({ isAwaitingMilestones: false, metAt: null })
   expect(answered.serves).toEqual({ s2: 'm1' })
+  expect(five.milestones).toHaveLength(5)
+  expect(replaced.milestones.map(m => m.name)).toEqual(['Under 100 ms', '2.6 live'])
+  expect(replaced.serves).toEqual({ s1: replaced.milestones[0]!.id })
 })
 
 test('a goal typed over a proposal declines it, one with the proposal’s words uses the proposal and its milestones, and Use this goal links no subject yet', () => {

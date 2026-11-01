@@ -88,7 +88,8 @@ function addMilestone(o: SessionStatus, op: Extract<Op, { kind: 'milestone' }>, 
     else moveMilestone(o, known, { kind: 'set', ref: known.id, status: op.status, text: op.text }, now)
     return o
   }
-  const isFull = o.milestones.filter(m => m.status !== 'dropped').length >= MILESTONES_MAX
+  const isFull =
+    !o.goal!.isAwaitingMilestones && o.milestones.filter(m => m.status !== 'dropped').length >= MILESTONES_MAX
   if (isFull) return o
   const m: Milestone = {
     id: `m${o.nextMilestoneId}`,
@@ -136,8 +137,8 @@ export function applyGoalOp(
 
 /**
  * The goal once an answer has applied. A typed goal carries the milestones of the goal before it until an answer from a
- * call that read this goal applies: that answer keeps the milestones it names in `named` and has not dropped, and the
- * rest go. Until it keeps one, the goal still waits for its milestones. The was line goes once the person has seen it,
+ * call that read this goal applies: that answer keeps up to `MILESTONES_MAX` of the milestones it names in `named` and
+ * has not dropped, and the rest go. While the goal waits, the carried milestones do not count toward that limit. Until it keeps one, the goal still waits for its milestones. The was line goes once the person has seen it,
  * and the goal is met while every milestone that is not dropped is done. Met follows the milestones, so a milestone
  * that opens again unmeets it. `readSetAt` is when the goal the call read was set, or null when it read none: a call
  * that read an earlier goal wrote for that goal.
@@ -153,7 +154,7 @@ export function settleGoal(
   const isSeen = o.lastLookAt !== null && setAt <= o.lastLookAt
   const isAnswerForNewGoal = o.goal.isAwaitingMilestones && readSetAt === setAt
   const milestones = isAnswerForNewGoal
-    ? o.milestones.filter(m => named.has(m.id) && m.status !== 'dropped')
+    ? o.milestones.filter(m => named.has(m.id) && m.status !== 'dropped').slice(0, MILESTONES_MAX)
     : o.milestones
   const isAwaiting = o.goal.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0)
   const kept = milestones.filter(m => m.status !== 'dropped')

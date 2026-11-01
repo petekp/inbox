@@ -1583,7 +1583,7 @@ function addMilestone(o, op, now) {
     else moveMilestone(o, known, { kind: "set", ref: known.id, status: op.status, text: op.text }, now);
     return o;
   }
-  const isFull = o.milestones.filter((m2) => m2.status !== "dropped").length >= MILESTONES_MAX;
+  const isFull = !o.goal.isAwaitingMilestones && o.milestones.filter((m2) => m2.status !== "dropped").length >= MILESTONES_MAX;
   if (isFull) return o;
   const m = {
     id: `m${o.nextMilestoneId}`,
@@ -1617,7 +1617,7 @@ function settleGoal(o, now, readSetAt, named) {
   const setAt = o.goal.setAt;
   const isSeen = o.lastLookAt !== null && setAt <= o.lastLookAt;
   const isAnswerForNewGoal = o.goal.isAwaitingMilestones && readSetAt === setAt;
-  const milestones = isAnswerForNewGoal ? o.milestones.filter((m) => named.has(m.id) && m.status !== "dropped") : o.milestones;
+  const milestones = isAnswerForNewGoal ? o.milestones.filter((m) => named.has(m.id) && m.status !== "dropped").slice(0, MILESTONES_MAX) : o.milestones;
   const isAwaiting = o.goal.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0);
   const kept = milestones.filter((m) => m.status !== "dropped");
   const isMet = !isAwaiting && kept.length > 0 && kept.every((m) => m.status === "done");
