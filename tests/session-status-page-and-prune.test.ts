@@ -99,7 +99,8 @@ test('a sample saved without a Status is replaced, and the sample session carrie
     'subject',
     'look',
     'subject',
-    'fold',
+    'part',
+    'counts',
   ])
 })
 
