@@ -236,7 +236,7 @@ import {
   updating,
   withoutRowActions,
 } from './mod-sessions'
-import { mod, paneState, sessionState } from './mod-state'
+import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
 import { paneAskRows, paneAskTabs } from './pane-asks'
 import { paneRowKeys } from './pane-row-keys'
 import { paneRowLines } from './pane-row-lines'
@@ -290,15 +290,6 @@ const ORDER_TOOL = 'mcp__inbox__order_prs'
 const PERSON_LINES = atom({ plugin: 'inbox', key: 'personLines' } as const, {} as Record<string, string>)
 
 const PANE = 'inbox'
-
-function cancelUndoScroll(): number {
-  paneState.pendingUndoScroll = null
-  return ++paneState.undoScrollRevision
-}
-function suspendUndoReveal(): number {
-  if (paneState.pendingUndoScroll) paneState.pendingUndoScroll.revealUndo = false
-  return ++paneState.undoScrollRevision
-}
 
 function resetTurn() {
   sessionState.stepTexts = []
@@ -921,26 +912,32 @@ async function commit(
   return after
 }
 
-/** Redraws the pane while Undo lasts, to `expiresAt`, unless a redraw already runs to then or later. */
+/** At `expiresAt`, redraws the pane and runs that Undo's end work. On the terminal, one loop redraws to the last end. */
 function redrawWhileUndoLasts($: EngineInterface, expiresAt: number) {
-  if (expiresAt <= paneState.undoRedrawsUntil) return
-  paneState.undoRedrawsUntil = expiresAt
+  const ends = paneState.undoEnds
+  if (ends.has(expiresAt)) return
+  ends.add(expiresAt)
+  const redrawAll = () => Promise.all([redraw($), update($, DEMO, d => d && { ...d })])
   // Desktop redraws once, when Undo ends: while the terminal's steps redrew every 213 ms there, clicks on the
   // pane's Buttons, Undo among them, did nothing.
-  void (async () => {
-    const startedAt = await $.clock.now()
-    const remaining = Math.max(0, expiresAt - startedAt)
-    const steps =
-      paneState.paneLook === 'desktop'
-        ? 1
-        : Math.max(1, Math.ceil(remaining / Math.ceil(SETTLED_MS / UNDO_REDRAW_STEPS)))
-    for (let n = 1; n <= steps; n++) {
-      await $.clock.sleep(Math.max(0, Math.ceil(startedAt + (n * remaining) / steps - (await $.clock.now()))))
-      await Promise.all([redraw($), update($, DEMO, d => d && { ...d })])
-    }
+  if (paneState.paneLook === 'terminal' && !paneState.isUndoLoopRunning) {
+    paneState.isUndoLoopRunning = true
+    void (async () => {
+      const stepMs = Math.ceil(SETTLED_MS / UNDO_REDRAW_STEPS)
+      try {
+        while ((await $.clock.now()) + stepMs < Math.max(...ends)) await $.clock.sleep(stepMs).then(redrawAll)
+      } finally {
+        paneState.isUndoLoopRunning = false
+      }
+    })().catch(() => undefined)
+  }
+  later($, 0, async () => {
+    await $.clock.sleep(Math.max(0, expiresAt - (await $.clock.now())))
+    ends.delete(expiresAt)
+    await redrawAll()
     await openLeftRows($)
     await finishPendingUndoScroll($)
-  })().catch(() => undefined)
+  })
 }
 
 function later($: EngineInterface, waitMs: number, run: () => unknown) {
@@ -2170,7 +2167,6 @@ async function initializeInbox($: EngineInterface) {
   mod.isOn = true
   mod.toolsRefused = false
   paneState.compareRedrawAt = null
-  paneState.undoRedrawsUntil = -Infinity
   const refused = () => {
     mod.toolsRefused = true
   }
