@@ -29,6 +29,7 @@ export const GOAL_RULES: Rule[] = [
     text: 'No proposal appears at a step where the person stated no new outcome with a finish line.',
     failures: ({ result, before }) => {
       const proposed = result.session.ledger.overview?.proposedGoal ?? null
+      if (result.facts.goalStated) return []
       return proposed && proposed.text !== before.overview?.proposedGoal?.text ? [`proposed "${proposed.text}"`] : []
     },
   },
