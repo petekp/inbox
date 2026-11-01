@@ -17,6 +17,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/pane-prs.tsx` | Mod only. The PRs tab: thread and check rows, PR blocks and their settled form, the PR order lines, the tab's buttons, and its empty state and gh notice. |
 | `hooks/pane-status-lines.tsx` | Mod only. The lines a Status row is drawn from: the head, a subject's name line and its text width, and the tree beside a subject's children. |
 | `hooks/pane-status.tsx` | Mod only. The Status tab: the rules between items, the look line, each row and its buttons, and the tab's page. |
+| `hooks/inbox-model.ts` | Mod only. The model the mod's ledger and Status calls ask, and the report each call gives its record. |
 | `hooks/pane-status-goal.tsx` | Mod only. The Status tab's goal: a proposal, the goal and its milestones, Set a goal, the goal's text field and the Now line. |
 | `hooks/pane-help.tsx` | Mod only. The Help page: the key list and the mark legend. |
 | `hooks/pane-sizes.ts` | Mod only. The terminal and desktop looks' sizes in cells, lines and points: row columns, padding, tree lines, tab layouts and the inline tab column. `desktopTabSizes` fits the desktop tab bar to the pane's width. |

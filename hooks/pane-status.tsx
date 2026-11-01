@@ -4,7 +4,6 @@ import { LOOK_GAP_PT } from './layout'
 import type { PaneAskTabs } from './pane-asks'
 import type { PaneBase, PaneHandlers } from './pane-context'
 import type { KeyAction } from './pane-keys'
-import { openFields } from './pane-keys'
 import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
@@ -73,9 +72,12 @@ export function paneStatus(
     Pick<PaneRowKeys, 'keyRow'> &
     Pick<PaneAskTabs, 'emptyState'> &
     Pick<PaneRowParts, 'sections' | 'section'>,
-  handlers: Pick<PaneHandlers, 'showAsk' | 'runPress' | 'updateDrafts' | 'updateTyping' | 'sendTyped'>,
+  handlers: Pick<
+    PaneHandlers,
+    'showAsk' | 'runPress' | 'updateDrafts' | 'updateTyping' | 'sendTyped' | 'startTyping' | 'selectStatusRow'
+  >,
 ) {
-  const { showAsk, runPress, updateDrafts, updateTyping } = handlers
+  const { showAsk, runPress, startTyping, selectStatusRow } = handlers
   // A Status rule starts at the text column, as the rules between sections and between Asks rows do. In the
   // terminal it stops at the end of the list's columns. On desktop it runs to the pane's edge.
   const statusRuleAt = statusMarkAt + markWidth
@@ -218,11 +220,13 @@ export function paneStatus(
         ) : null}
       </Box>
     )
-  /** Opens the goal's field with `text` in it, as a fresh draft. */
-  const openGoalField = async (text: string) => {
-    openFields.delete(GOAL_KEYS_ID)
-    await updateDrafts(d => ({ ...d, [GOAL_KEYS_ID]: { text, since: now } }))
-    await updateTyping(() => GOAL_KEYS_ID)
+  /**
+   * Answers the proposal, then selects the goal's button and scrolls to it, since the pressed button is gone and the
+   * pane's focus would fall to the footer.
+   */
+  const answerProposal = async (action: 'use-goal' | 'decline-goal', surface: UiPressArgument['surface']) => {
+    await runPress({ action, id: GOAL_KEYS_ID }, surface)
+    await selectStatusRow(GOAL_KEYS_ID)
   }
   /** A target's buttons from its plan. Only the selected target's keys press it, so only that one names its keys. */
   const statusKeys = (t: StatusKeyTarget): KeyAction[] =>
@@ -236,8 +240,8 @@ export function paneStatus(
         press.action === 'show-ask'
           ? showAsk(press.askId)
           : press.action === 'type-goal'
-            ? openGoalField(press.text)
-            : runPress({ action: press.action, id: GOAL_KEYS_ID }, p.surface),
+            ? startTyping(GOAL_KEYS_ID, press.text)
+            : answerProposal(press.action, p.surface),
     }))
   const { goalAbove, setGoal, setGoalBare, nowLine, markRun } = paneStatusGoal(
     {

@@ -13,6 +13,7 @@ async function statusShown($: Engine, on: On) {
   w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
   w.statusReply = PROPOSING
+  on('ui.focus', () => ({}))
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'get the pilot ready to announce', wait: false, origin: { kind: 'composer' } })
   await $.turn.complete({ answer: 'Fixes built.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
@@ -27,6 +28,7 @@ test('on a next build, a proposed goal shows above the head with its keys select
   const { clock, pane } = await statusShown($, on)
 
   expect((await pane.find({ key: 'goal-proposal-text' }))?.text).toBe('Pilot ready to announce')
+  expect(await pane.find({ key: 'status-proposal' })).toBeDefined()
   expect((await pane.find({ key: 'goal-proposal-milestones' }))?.text).toBe('✓ Fixes built   ○ Announced')
   expect((await pane.find({ key: 'use-goal-proposal' }))?.text).toBe('u: Use this goal')
   expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('Set a goal')
@@ -51,7 +53,7 @@ test('on a next build, a proposed goal shows above the head with its keys select
 
   await pane.press({ key: 'use-goal-proposal-key' })
   await clock.settle()
-  expect(await pane.find({ key: 'goal-proposal' })).toBeUndefined()
+  expect(await pane.find({ key: 'status-proposal' })).toBeUndefined()
   expect((await pane.find({ key: 'goal-label' }))?.text).toBe('Goal · 1 of 2 done')
   expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Pilot ready to announce')
   expect((await pane.find({ key: 'goal-m1-name' }))?.text).toBe('Fixes built')
@@ -66,7 +68,7 @@ test('on a next build, Not now drops the proposal and keeps Set a goal, which op
 
   await pane.press({ key: 'decline-goal-proposal-key' })
   await clock.settle()
-  expect(await pane.find({ key: 'goal-proposal' })).toBeUndefined()
+  expect(await pane.find({ key: 'status-proposal' })).toBeUndefined()
   expect(await pane.find({ key: 'status-head' })).toBeDefined()
 
   await pane.press({ key: 'type-goal-goal-key' })
@@ -81,7 +83,7 @@ test('on a next build, Not now drops the proposal and keeps Set a goal, which op
   expect(w.sent).toEqual([])
 })
 
-test('on a next build, Change goal opens the field with the goal in it in place of the goal, and Cancel closes it and keeps the goal', async ($, on) => {
+test('on a next build, Change goal opens the field with the goal in it in place of the goal and gives it the keys, and Cancel closes it and keeps the goal', async ($, on) => {
   const { clock, pane } = await statusShown($, on)
   await pane.press({ key: 'use-goal-proposal-key' })
   await clock.settle()
@@ -89,6 +91,8 @@ test('on a next build, Change goal opens the field with the goal in it in place 
   await pane.press({ key: 'type-goal-goal-key' })
   await clock.settle()
   expect(await replyField(pane, 'goal')).toMatchObject({ props: { value: 'Pilot ready to announce' } })
+  expect(w.paneOpens.at(-1)).toMatchObject({ id: 'inbox', focus: true })
+  expect(w.paneOpens.at(-1)?.closeOnEscape).toBeUndefined()
   expect(await pane.find({ key: 'goal-text' })).toBeUndefined()
   await pane.press({ key: 'cancel-goal' })
   await clock.settle()

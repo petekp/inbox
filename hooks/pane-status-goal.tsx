@@ -141,7 +141,7 @@ export function paneStatusGoal(
   )
   const milestoneLine = (m: MilestoneRow) =>
     statusRowLine({
-      key: `goal-${m.id}`,
+      key: `status-${m.id}`,
       mark: markGlyph({ text: m.mark, isRunning: false }, m.id, m.tone ? pal.mark[m.tone] : pal.muted),
       content: [
         statusNameLine(`goal-${m.id}-name`, { text: m.name, ...(m.isChanged ? { bold: true } : {}) }, m.stall, 0),
@@ -163,7 +163,7 @@ export function paneStatusGoal(
     const proposal = p
       ? [
           block(
-            'goal-proposal',
+            `status-${PROPOSAL_KEYS_ID}`,
             [
               muted('goal-proposal-label', p.label),
               ...(isTypingGoal ? field() : [bold('goal-proposal-text', p.text)]),
@@ -189,7 +189,7 @@ export function paneStatusGoal(
         ...(g.awaiting ? [muted('goal-awaiting', g.awaiting)] : []),
       ]),
       ...g.milestones.map(milestoneLine),
-      ...(isTypingGoal ? [] : [block('goal-change', goalKeys(page), isSelected(GOAL_KEYS_ID))]),
+      ...(isTypingGoal ? [] : [block(`status-${GOAL_KEYS_ID}`, goalKeys(page), isSelected(GOAL_KEYS_ID))]),
     ]
   }
   const goalKeys = (page: StatusPage) => keysLine({ id: GOAL_KEYS_ID, keys: goalKeyPlan(page) })
@@ -197,7 +197,7 @@ export function paneStatusGoal(
   const setGoal = (page: StatusPage): JSX.Element[] => {
     if (page.goal !== null || (isTypingGoal && page.proposal !== null)) return []
 
-    return [block('goal-set', isTypingGoal ? field() : goalKeys(page), isSelected(GOAL_KEYS_ID))]
+    return [block(`status-${GOAL_KEYS_ID}`, isTypingGoal ? field() : goalKeys(page), isSelected(GOAL_KEYS_ID))]
   }
   /** Set a goal, or the field it opened, with no frame, for the empty page's centred column. */
   const setGoalBare = (page: StatusPage): JSX.Element[] => (isTypingGoal ? field() : goalKeys(page))

@@ -65,7 +65,8 @@ import { runUpdates } from './session-host'
 import { fetchPrs as fetchSessionPrs, isPrFetchDue } from './host-prs'
 import { refreshStatus, type StatusCall, type StatusRecords, type RecordFiles } from './status-records'
 import { startPress, wakeForDone as wakeSessionForDone } from './host-press'
-import type { Ask, CallReport, CatchUpReply, SessionHost } from './session-host'
+import type { Ask, CatchUpReply, SessionHost } from './session-host'
+import { callReport, MODEL, type ModelResult } from './inbox-model'
 import { SESSION_VERSION } from './session-version'
 import { demoView, isDemoCopy } from './demo'
 import { claudeTasksAfter } from './host-tasks'
@@ -697,10 +698,6 @@ async function readSettled($: EngineInterface, id: string) {
   return readSaved($, id)
 }
 
-const MODEL = 'sonnet'
-
-type ModelResult = Awaited<ReturnType<EngineInterface['model']['fork']>>
-
 function askLedgerModel($: EngineInterface, prompt: string, system: string, timeoutMs: number): Promise<ModelResult> {
   return $.model.complete({
     model: MODEL,
@@ -710,14 +707,6 @@ function askLedgerModel($: EngineInterface, prompt: string, system: string, time
     effort: 'low',
     timeoutMs,
   })
-}
-
-/** The engine does not say which model answered. */
-function callReport(r: ModelResult): CallReport {
-  if (r.isAnswered) return { model: MODEL }
-  const error = r.reason === 'api-error' ? `api-error ${r.status ?? 'with no response'}: ${r.error}` : r.reason
-
-  return { model: MODEL, error }
 }
 
 /** Calls the inbox model as `askLedgerModel` does, reports the call, and returns the answer. */
@@ -1333,9 +1322,12 @@ async function sendTyped($: EngineInterface, id: string, text: string, surface: 
   else await focusField($, id)
 }
 
-async function startTyping($: EngineInterface, id: string) {
+/** Opens `id`'s field with its draft, or with `seed` as a fresh one, and gives it the keys. */
+async function startTyping($: EngineInterface, id: string, seed?: string) {
   const now = await $.clock.now()
-  const drafts = await update($, DRAFTS, d => (d[id] ? d : { ...d, [id]: { text: '', since: now } }))
+  const drafts = await update($, DRAFTS, d =>
+    d[id] && seed === undefined ? d : { ...d, [id]: { text: seed ?? '', since: now } },
+  )
   openFields.set(id, openedField(id, drafts[id]))
   await keepPressedOpen($, id)
   await update($, TYPING, () => id)
@@ -3161,6 +3153,8 @@ export const register: Register = on => {
       unlessGuarded: (rowId, press, onPress) => unlessGuarded($, rowId, press, onPress),
       sendDraft: (id, surface) => sendDraft($, id, surface),
       discardReply: id => discardReply($, id),
+      startTyping: (id, seed) => startTyping($, id, seed),
+      selectStatusRow: id => selectStatusRow($, id),
       updateTyping: fn => update($, TYPING, fn),
       updateDrafts: fn => update($, DRAFTS, fn),
       sendTyped: (id, text, surface) => sendTyped($, id, text, surface),
