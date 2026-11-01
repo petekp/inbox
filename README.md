@@ -365,7 +365,7 @@ with that Bun version installed.
 Try a build in omp with a fresh `HOME`, so it cannot touch your own omp
 settings or inbox: `env HOME=/path/to/empty/folder omp -e omp/src/host.ts`.
 
-`./scripts/check.sh` runs Prettier, `claude plugin validate`, a type check and
+`./scripts/check.sh` runs Prettier, a file-size check, `claude plugin validate`, a type check and
 the tests, and checks the Codex bundles and the omp bundle are current. The type check needs the
 types Claude Code writes to `.claude-plugin/types/` the first time it loads
 the mod.

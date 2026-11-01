@@ -12,4 +12,6 @@ The script also checks that omp's files import only shared modules, and that onl
 
 `scripts/check-versions.mjs` checks that `.claude-plugin/plugin.json`, `codex/plugin/.codex-plugin/plugin.json` and `omp/package.json` give the same version. `codex/tests/versions.spec.ts` checks it against disposable manifests.
 
-`./scripts/check.sh` runs formatting, plugin validation, structure, the version check, the type checks, the test suites, and that the Codex bundles and `omp/dist/host.js` match their sources. Run it after every change. Model evaluations run separately when model-facing text changes.
+`scripts/check-sizes.mjs` fails on a tracked file over 5,000 tokens, counted as bytes / 4. `.token-ceilings` lists the files allowed over that limit, one `path ceiling` entry per line, and the check fails on a listed file past its ceiling. It also fails on an entry that names no tracked file, or a file now at or under 5,000 tokens. It skips the files the token-limit pre-commit hook skips: lockfiles, built and generated files, binaries, and files marked `linguist-generated` in `.gitattributes`. Where that hook is installed, the check also runs the hook's `--scan` and fails when the two find different files.
+
+`./scripts/check.sh` runs formatting, file sizes, plugin validation, structure, the version check, the type checks, the test suites, and that the Codex bundles and `omp/dist/host.js` match their sources. Run it after every change. Model evaluations run separately when model-facing text changes.

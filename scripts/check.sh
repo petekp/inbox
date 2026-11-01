@@ -1,5 +1,6 @@
 #!/bin/sh
-# Checks the mod: formatting with Prettier, its plugin structure with
+# Checks the mod: formatting with Prettier, that no file is over its token
+# limit, with scripts/check-sizes.mjs, its plugin structure with
 # `claude plugin validate`, the imports and docs that keep the three looks in
 # step, and the plugin directory's rules for the hooks module, with
 # scripts/check-structure.mjs, that the three plugin manifests give one version,
@@ -41,6 +42,8 @@ cd "$DIR"
 before=$status
 check "prettier" npx -y "$PRETTIER" --check .
 [ "$status" = "$before" ] || echo "      Fix: npx -y $PRETTIER --write ."
+
+check "file sizes" node "$DIR/scripts/check-sizes.mjs"
 
 check "plugin validate" claude plugin validate "$DIR"
 check "structure" node "$DIR/scripts/check-structure.mjs"
