@@ -66,7 +66,7 @@ import { fetchPrs as fetchSessionPrs, isPrFetchDue } from './host-prs'
 import { refreshStatus, type StatusCall, type StatusRecords, type RecordFiles } from './status-records'
 import { startPress, wakeForDone as wakeSessionForDone } from './host-press'
 import type { Ask, CatchUpReply, SessionHost } from './session-host'
-import { callReport, MODEL, type ModelResult } from './inbox-model'
+import { callReport, MODEL } from './inbox-model'
 import { SESSION_VERSION } from './session-version'
 import { demoView, isDemoCopy } from './demo'
 import { claudeTasksAfter } from './host-tasks'
@@ -689,18 +689,7 @@ async function readSettled($: EngineInterface, id: string) {
   return readSaved($, id)
 }
 
-function askLedgerModel($: EngineInterface, prompt: string, system: string, timeoutMs: number): Promise<ModelResult> {
-  return $.model.complete({
-    model: MODEL,
-    system: [{ text: system, cache: true as const }],
-    prompt,
-    maxTokens: 1600,
-    effort: 'low',
-    timeoutMs,
-  })
-}
-
-/** Calls the inbox model as `askLedgerModel` does, reports the call, and returns the answer. */
+/** Calls the inbox model, reports the call, and returns the answer. */
 async function askInboxModel(
   $: EngineInterface,
   prompt: string,
@@ -708,7 +697,14 @@ async function askInboxModel(
   timeoutMs: number,
   report: Parameters<Ask>[2],
 ): Promise<string | null> {
-  const r = await askLedgerModel($, prompt, system, timeoutMs)
+  const r = await $.model.complete({
+    model: MODEL,
+    system: [{ text: system, cache: true }],
+    prompt,
+    maxTokens: 1600,
+    effort: 'low',
+    timeoutMs,
+  })
   report?.(callReport(r))
   return r.isAnswered ? r.text : null
 }
@@ -1001,10 +997,11 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
   // as after a resume. The model then reads the transcript instead, uncached.
   if (forked.reason !== 'nothing-to-fork') return { kind: 'failed' }
   if (!transcript) return { kind: 'unreadable' }
-  const r = await askLedgerModel($, transcriptCatchUpPrompt(ledger, shown, transcript), systemText(CLAUDE_CODE), 90_000)
+  const prompt = transcriptCatchUpPrompt(ledger, shown, transcript)
+  const text = await askInboxModel($, prompt, systemText(CLAUDE_CODE), 90_000, undefined)
   if (!isCurrent(owner)) return { kind: 'failed' }
 
-  return r.isAnswered ? { kind: 'reply', text: r.text, source: transcript, statusCall } : { kind: 'failed' }
+  return text === null ? { kind: 'failed' } : { kind: 'reply', text, source: transcript, statusCall }
 }
 
 /**

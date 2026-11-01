@@ -132,6 +132,50 @@ function returnedFunctionOf(node) {
   return null
 }
 
+/**
+ * The first type in `fn`'s signature, or in a type alias of this file that it names, that indexes into the engine's
+ * interface, as `EngineInterface['model']`. The directory refused each call that passed `$` to such a function. That
+ * the type is the cause is inferred; no scan has confirmed it.
+ */
+function engineIndexIn(source, fn) {
+  const engineNames = new Set(
+    source.statements
+      .filter(node => ts.isImportDeclaration(node) && node.moduleSpecifier.text === 'claude-code')
+      .flatMap(node => [...(node.importClause?.namedBindings?.elements ?? [])])
+      .filter(element => (element.propertyName ?? element.name).text === 'EngineInterface')
+      .map(element => element.name.text),
+  )
+  const aliases = new Map(
+    source.statements.filter(node => ts.isTypeAliasDeclaration(node)).map(node => [node.name.text, node.type]),
+  )
+  const seen = new Set()
+  const find = node => {
+    if (ts.isIndexedAccessTypeNode(node)) {
+      let object = node.objectType
+      while (ts.isIndexedAccessTypeNode(object) || ts.isParenthesizedTypeNode(object))
+        object = ts.isIndexedAccessTypeNode(object) ? object.objectType : object.type
+      if (ts.isTypeReferenceNode(object) && engineNames.has(object.typeName.getText())) return node
+    }
+    if (ts.isTypeReferenceNode(node) && aliases.has(node.typeName.getText()) && !seen.has(node.typeName.getText())) {
+      seen.add(node.typeName.getText())
+      const found = find(aliases.get(node.typeName.getText()))
+      if (found) return found
+    }
+    let found = null
+    node.forEachChild(child => {
+      found ??= find(child)
+    })
+    return found
+  }
+  const types = [...fn.parameters.map(p => p.type), fn.type].filter(Boolean)
+  for (const type of types) {
+    const found = find(type)
+    if (found) return found
+  }
+
+  return null
+}
+
 function answersOf(hook) {
   if (!ts.isBlock(hook.body)) return [{ at: hook.body, value: hook.body }]
   const found = []
@@ -215,6 +259,17 @@ export function checkHooksModules(root, errors) {
             argument,
             'MOD_CAPABILITY_USE_NOT_PLAIN',
             `passes \`$\` to \`${callee.text}\`, and line ${lineOf(source, rebinding)} binds \`${callee.text}\` again. The directory reads the names in a file without scopes, so it cannot tell which \`${callee.text}\` this is. Rename that binding.`,
+          )
+        const receiver =
+          !refusal && ts.isIdentifier(callee)
+            ? source.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === callee.text)
+            : null
+        const engineIndex = receiver ? engineIndexIn(source, receiver) : null
+        if (engineIndex)
+          report(
+            argument,
+            'MOD_CAPABILITY_USE_NOT_PLAIN',
+            `passes \`$\` to \`${callee.text}\`, whose signature reaches into the engine's interface with \`${snippet(engineIndex)}\` at line ${lineOf(source, engineIndex)}. The directory refused every call to such a function. Name the type the engine exports, such as \`ModelCompleteResult\`, instead.`,
           )
         const returned = returnedFunctionOf(argument)
         if (returned)

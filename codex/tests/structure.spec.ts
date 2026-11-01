@@ -383,6 +383,22 @@ const refusedHooksModules = [
     code: 'MOD_CAPABILITY_USE_NOT_PLAIN',
   },
   {
+    name: '$ passed to a function whose signature indexes into EngineInterface',
+    text: hooksModule(
+      `  on('tool.call', async ($, e, next) => {
+    await ask($)
+    return next(e)
+  })`,
+      `import type { EngineInterface } from 'claude-code'
+type Answer = Awaited<ReturnType<EngineInterface['model']['complete']>>
+function ask($: EngineInterface): Promise<Answer> {
+  return $.model.complete({ model: 'haiku', prompt: '' })
+}`,
+    ),
+    at: 'await ask($)',
+    code: 'MOD_CAPABILITY_USE_NOT_PLAIN',
+  },
+  {
     name: 'a tool.check hook that returns the verdict by name',
     text: hooksModule(`  on('tool.check', async ($, e, next) => {
     const verdict = await next(e)
