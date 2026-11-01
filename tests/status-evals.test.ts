@@ -232,6 +232,10 @@ test('a page is called right only when the judge fails just the check a bad page
   expect(pageMistakes(page, verdicts(['marks']))).toEqual([])
   expect(pageMistakes(page, verdicts([]))).toEqual(['marks: pass, expected fail'])
   expect(pageMistakes(page, verdicts(['marks', 'head']))).toEqual(['head: fail, expected pass'])
+  const noGoal: JudgePage = { ...page, breaks: null, na: ['goal'] }
+  const withNa = parseJudgeAnswer(JUDGE_CHECKS.map(c => `${c.id} | ${c.id === 'goal' ? 'n/a' : 'pass'} | x`).join('\n'))
+  expect(pageMistakes(noGoal, withNa)).toEqual([])
+  expect(pageMistakes(noGoal, verdicts([]))).toEqual(['goal: pass, expected n/a'])
 })
 
 test('the facts read the same pieces, asks and running work the judge is told about', () => {
