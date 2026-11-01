@@ -7,7 +7,7 @@ import type { Agent } from '../evals/status-replay'
 import { REPLAYS } from '../evals/status-replays'
 import { holdFailures, isBlocking, layerTests } from '../evals/status-report'
 import type { ReplayRun } from '../evals/status-report'
-import { GOOD_RUNS } from './status-evals-scenes'
+import { GOOD_RUNS } from './status-evals-runs'
 
 const longTurn = REPLAYS.find(r => r.name === 'long-turn')!
 

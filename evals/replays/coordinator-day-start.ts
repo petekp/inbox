@@ -1,8 +1,11 @@
 import { minutes } from '../status-replay'
 import type { Replay } from '../status-replay'
-import { delegate, NO_FACTS, overview, piece, question, subject } from './builders'
+import { delegate, goal, milestone, NO_FACTS, overview, piece, question, subject } from './builders'
 
-/** The busy page a coordinator's day starts from, last seen two hours earlier. */
+/**
+ * The busy page a coordinator's day starts from, last seen two hours earlier. Its goal is 2.4 in the store: one milestone
+ * done and two under way. The export button is linked under Other work, and the rest of the queued work is not linked yet.
+ */
 export const coordinatorDayStart: Replay['start'] = {
   place: { folder: '/work/notes', branch: 'main' },
   ledger: {
@@ -25,22 +28,61 @@ export const coordinatorDayStart: Replay['start'] = {
       children: [delegate('c1', 'sm4', 's1', -90), delegate('c2', 'release-notes', 's2', -50)],
       askSubjects: { i1: 's2' },
       lastLookAt: minutes(-120),
+      goal: goal('Notes 2.4 in the store', -200),
+      milestones: [
+        milestone('m1', 'done', 'Bugs fixed', 'crash, login and backup fixed', -60),
+        milestone('m2', 'working', 'Sync merges edits', 'in review', -40),
+        milestone('m3', 'working', 'Live in store', 'notes drafted', -30),
+      ],
+      nextMilestoneId: 4,
+      serves: { s1: 'm2', s2: 'm3', s3: 'none', s8: 'm1', s9: 'm1', s10: 'm1' },
     }),
   },
   facts: {
     ...NO_FACTS,
     focus: 'shipping notes 2.4',
     focusMatch: '2\\.4',
+    goal: {
+      text: 'Notes 2.4 in the store',
+      match: '2\\.4',
+      milestones: [
+        { id: 'ms-fixes', name: 'Bugs fixed', match: 'bug', state: 'done' },
+        { id: 'ms-merge', name: 'Sync merges edits', match: 'merge', state: 'working' },
+        { id: 'ms-live24', name: 'Live in store', match: 'live', state: 'working' },
+      ],
+    },
     pieces: [
-      piece({ id: 'merge', names: ['Sync merge'], match: 'merge', state: 'working', stands: 'in review' }),
-      piece({ id: 'r24', names: ['2.4 release'], match: '2\\.4', state: 'working', stands: 'notes drafted' }),
-      piece({ id: 'export', names: ['Export button'], match: 'button', state: 'set-aside', stands: 'works on web' }),
+      piece({
+        id: 'merge',
+        names: ['Sync merge'],
+        match: 'merge',
+        state: 'working',
+        stands: 'in review',
+        serves: 'ms-merge',
+      }),
+      piece({
+        id: 'r24',
+        names: ['2.4 release'],
+        match: '2\\.4',
+        state: 'working',
+        stands: 'notes drafted',
+        serves: 'ms-live24',
+      }),
+      piece({
+        id: 'export',
+        names: ['Export button'],
+        match: 'button',
+        state: 'set-aside',
+        stands: 'works on web',
+        serves: 'none',
+      }),
       piece({
         id: 'font',
         names: ['Vendor font'],
         match: 'font',
         state: 'waits-on-other',
         stands: 'waits on the license',
+        serves: 'none',
       }),
       piece({
         id: 'search',
@@ -48,17 +90,47 @@ export const coordinatorDayStart: Replay['start'] = {
         match: 'search',
         state: 'queued',
         stands: 'slow on large libraries',
+        serves: 'none',
       }),
-      piece({ id: 'dark', names: ['Dark mode'], match: 'dark', state: 'queued', stands: 'design picked' }),
-      piece({ id: 'widgets', names: ['Widgets'], match: 'widget', state: 'queued', stands: 'not started' }),
-      piece({ id: 'crash', names: ['Crash on launch'], match: 'crash', state: 'done', stands: 'fixed on Android' }),
-      piece({ id: 'login', names: ['Login timeout'], match: 'login', state: 'done', stands: 'fixed' }),
+      piece({
+        id: 'dark',
+        names: ['Dark mode'],
+        match: 'dark',
+        state: 'queued',
+        stands: 'design picked',
+        serves: 'none',
+      }),
+      piece({
+        id: 'widgets',
+        names: ['Widgets'],
+        match: 'widget',
+        state: 'queued',
+        stands: 'not started',
+        serves: 'none',
+      }),
+      piece({
+        id: 'crash',
+        names: ['Crash on launch'],
+        match: 'crash',
+        state: 'done',
+        stands: 'fixed on Android',
+        serves: 'ms-fixes',
+      }),
+      piece({
+        id: 'login',
+        names: ['Login timeout'],
+        match: 'login',
+        state: 'done',
+        stands: 'fixed',
+        serves: 'ms-fixes',
+      }),
       piece({
         id: 'backup',
         names: ['Backup restore'],
         match: 'backup',
         state: 'done',
         stands: 'restores attachments',
+        serves: 'ms-fixes',
       }),
     ],
     asks: [{ match: 'release notes', text: 'Approve the 2.4 release notes?', holdsUp: ['r24'] }],

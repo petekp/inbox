@@ -12,7 +12,8 @@ import type { ModelCall, Replay } from '../evals/status-replay'
 import { REPLAYS } from '../evals/status-replays'
 import { blockingFailures, gradeReplay, gradeStep, tally } from '../evals/status-grade'
 import { RULES } from '../evals/status-rules'
-import { subject, statusOf, sessionOf, baseScene, contextOf, SCENES, GOOD_RUNS } from './status-evals-scenes'
+import { subject, statusOf, sessionOf, baseScene, contextOf, SCENES } from './status-evals-scenes'
+import { GOOD_RUNS } from './status-evals-runs'
 import type { Scene } from './status-evals-scenes'
 
 function failuresOf(rule: string, change?: (s: Scene) => void): string[] {
@@ -47,8 +48,8 @@ async function gradedRun(replay: Replay, answers: string[]) {
 
 const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> = {
   'coordinator-day': {
-    at: 2,
-    answer: GOOD_RUNS['coordinator-day']![2]!.replace(
+    at: 1,
+    answer: GOOD_RUNS['coordinator-day']![1]!.replace(
       'DONE: s6 | filed for later',
       'SET: s6 | queued | filed for later',
     ),
@@ -60,6 +61,26 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     at: 0,
     answer: GOOD_RUNS['catch-up-from-empty']![0]!.replace('DONE: Image attachments | show inline\n', ''),
     breaks: 'piece-once',
+  },
+  'not-a-goal': {
+    at: 0,
+    answer: `${GOOD_RUNS['not-a-goal']![0]!}\nGOAL: Every item ranked by 2.6 | working Settings reviewed; queued Unused cut`,
+    breaks: 'proposal-only-when-stated',
+  },
+  'declined-goal': {
+    at: 1,
+    answer: `${GOOD_RUNS['declined-goal']![1]!}\nGOAL: Import set for the demo | working Notes import; queued Progress bar`,
+    breaks: 'proposal-only-when-stated',
+  },
+  'goal-on-busy-page': {
+    at: 0,
+    answer: GOOD_RUNS['goal-on-busy-page']![0]!.replace('SERVES: s1 | m1', 'SERVES: s1 | -'),
+    breaks: 'serves-linked',
+  },
+  'mid-turn-activity': {
+    at: 0,
+    answer: 'DONE: s1 | fast on large libraries\nSET: s2 | working | editing rank.ts',
+    breaks: 'text-no-ids',
   },
 }
 
