@@ -133,7 +133,7 @@ export const coordinatorDayLater: Step[] = [
   },
   {
     label:
-      'The person types the goal "Search under 100 ms in 2.6" with Change goal. The reply merges the folder fix and starts on search.',
+      'The person types the goal "Search under 100 ms in 2.6" with Edit. The reply merges the folder fix and starts on search.',
     at: 470,
     events: [{ press: 'type', text: 'Search under 100 ms in 2.6' }],
     call: {

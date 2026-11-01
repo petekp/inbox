@@ -22,9 +22,11 @@ export type MilestoneRow = {
 
 /** The goal and where the work stands against it. */
 export type GoalBlock = {
-  /** "Goal · 1 of 5 done", "Goal" while the milestones are not written yet, or "Goal met". */
+  /** "Goal", or "Goal met". */
   label: string
   text: string
+  /** "1 of 5 done", drawn after the goal's text. Null once the goal is met and while its milestones are not written. */
+  count: string | null
   isMet: boolean
   /** The goal this one replaced, while the person has not seen it. */
   was: string | null
@@ -112,20 +114,17 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalP
   )
   const done = kept.filter(m => m.status === 'done').length
   const isMet = g.metAt !== null
-  const label = isMet
-    ? 'Goal met'
-    : g.isAwaitingMilestones || kept.length === 0
-      ? 'Goal'
-      : `Goal · ${done} of ${kept.length} done`
+  const isAwaiting = g.isAwaitingMilestones || kept.length === 0
   const head = o.head
 
   return {
     goal: {
-      label,
+      label: isMet ? 'Goal met' : 'Goal',
       text: g.text,
+      count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
       isMet,
       was: isWasShown ? g.was : null,
-      awaiting: g.isAwaitingMilestones || kept.length === 0 ? AWAITING_TEXT : null,
+      awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestones: g.isAwaitingMilestones ? [] : shown.map(m => milestoneRow(m, o, items)),
     },
     proposal,

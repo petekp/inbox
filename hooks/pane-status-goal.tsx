@@ -14,13 +14,14 @@ import {
   GOAL_FIELD,
   GOAL_KEYS_ID,
   goalKeyPlan,
+  isGoalKeyInHeader,
   milestoneKeyPlan,
   PROPOSAL_KEYS_ID,
   proposalKeyPlan,
 } from './status-keys'
 import type { StatusKeyTarget } from './status-keys'
 import type { StatusPage } from './status-page'
-import { WAS_PREFIX } from './status-page'
+import { STALL_GAP, WAS_PREFIX } from './status-page'
 import { ROW_COPY } from './rows'
 
 /** One line of the Status list, as `paneStatus` draws it, so milestones line up with subjects. */
@@ -48,11 +49,12 @@ export function paneStatusGoal(
     markGlyph,
     markWidth,
     keyRow,
+    textKey,
     desktopFrame,
   }: Pick<PaneBase, 'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'now' | 'statusKeyRow'> &
     Pick<PaneStatusLines, 'statusMarkAt' | 'statusNameLine' | 'statusPageText'> &
     Pick<PaneRowLines, 'markGlyph' | 'markWidth'> &
-    Pick<PaneRowKeys, 'keyRow'> &
+    Pick<PaneRowKeys, 'keyRow' | 'textKey'> &
     Pick<PaneRowFrame, 'desktopFrame'>,
   { updateDrafts, updateTyping, sendTyped }: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped'>,
   { statusRowLine, statusKeys }: { statusRowLine: StatusRowLine; statusKeys: (t: StatusKeyTarget) => KeyAction[] },
@@ -201,17 +203,44 @@ export function paneStatusGoal(
         ]
       : []
     if (g === null) return { proposal, goal: [] }
-    const goalKeyRow = goalKeys(page)
+    const isKeyInHeader = isGoalKeyInHeader(page)
+    const headerKeys = isKeyInHeader && !isTypingGoal ? statusKeys({ id: GOAL_KEYS_ID, keys: goalKeyPlan(page) }) : []
+    const goalKeyRow = isKeyInHeader ? [] : goalKeys(page)
 
     return {
       proposal,
       goal: [
-        block('goal-title', [
-          muted('goal-label', g.label),
-          ...(isTypingGoal && !p ? field() : [bold('goal-text', g.text)]),
-          ...(g.was ? [muted('goal-was', `${WAS_PREFIX}${g.was}`)] : []),
-          ...(g.awaiting ? [muted('goal-awaiting', g.awaiting)] : []),
-        ]),
+        block(
+          'goal-title',
+          [
+            <Box key="goal-label" flexDirection="row" flexWrap="wrap" alignItems="center">
+              <Text color={pal.muted}>{g.label}</Text>
+              {headerKeys.flatMap(k => [
+                <Text key={`goal-label-dot-${k.key}`} color={pal.muted}>
+                  {STALL_GAP}
+                </Text>,
+                textKey(GOAL_KEYS_ID, k),
+              ])}
+            </Box>,
+            ...(isTypingGoal && !p
+              ? field()
+              : [
+                  <Box key="goal-text">
+                    <Text wrap="wrap" bold>
+                      {g.text}
+                      {g.count ? (
+                        <Text bold={false} color={pal.muted}>
+                          {`${STALL_GAP}${g.count}`.replaceAll(' ', '\u00a0')}
+                        </Text>
+                      ) : null}
+                    </Text>
+                  </Box>,
+                ]),
+            ...(g.was ? [muted('goal-was', `${WAS_PREFIX}${g.was}`)] : []),
+            ...(g.awaiting ? [muted('goal-awaiting', g.awaiting)] : []),
+          ],
+          headerKeys.length > 0 && isSelected(GOAL_KEYS_ID),
+        ),
         ...g.milestones.map(milestoneLine),
         ...(!isTypingGoal && goalKeyRow.length > 0
           ? [block(`status-${GOAL_KEYS_ID}`, goalKeyRow, isSelected(GOAL_KEYS_ID))]

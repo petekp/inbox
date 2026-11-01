@@ -1289,28 +1289,39 @@ function proposalKeyPlan(page) {
     { press: { action: "decline-goal" }, label: "Not now", hotkey: "x", kind: "mark", emphasis: "normal" }
   ];
 }
+function isGoalKeyInHeader(page) {
+  return page.goal !== null && !page.goal.isMet;
+}
 function goalKeyPlan(page) {
   if (page.proposal !== null)
     return [];
   const g = page.goal;
-  const label = g === null ? "Set a goal" : g.isMet ? "Set next goal" : "Change goal";
-  return [
-    {
-      press: { action: "type-goal", text: g?.isMet ? "" : g?.text ?? "" },
-      label,
-      hotkey: g ? "g" : "s",
-      kind: "view",
-      emphasis: g ? "normal" : "quiet"
-    }
-  ];
+  if (g === null)
+    return [
+      { press: { action: "type-goal", text: "" }, label: "Set a goal", hotkey: "s", kind: "view", emphasis: "quiet" }
+    ];
+  if (g.isMet)
+    return [
+      {
+        press: { action: "type-goal", text: "" },
+        label: "Set next goal",
+        hotkey: "g",
+        kind: "view",
+        emphasis: "normal"
+      }
+    ];
+  return [{ press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" }];
 }
 function statusKeyRows(page) {
   const proposal = { id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(page) };
+  const goal = { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) };
   const isProposalBelowGoal = page.proposal?.isBelowGoal ?? false;
+  const isGoalFirst = isGoalKeyInHeader(page);
   return [
     ...isProposalBelowGoal ? [] : [proposal],
+    ...isGoalFirst ? [goal] : [],
     ...(page.goal?.milestones ?? []).map((m) => ({ id: m.id, keys: milestoneKeyPlan(m) })),
-    { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) },
+    ...isGoalFirst ? [] : [goal],
     ...isProposalBelowGoal ? [proposal] : [],
     ...page.rows.map((r) => ({ id: r.id, keys: statusKeyPlan(r) }))
   ].filter((t) => t.keys.length > 0);
@@ -4412,15 +4423,16 @@ function goalPage(o, items) {
   const shown = o.milestones.filter((m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt);
   const done = kept.filter((m) => m.status === "done").length;
   const isMet = g.metAt !== null;
-  const label = isMet ? "Goal met" : g.isAwaitingMilestones || kept.length === 0 ? "Goal" : `Goal \xB7 ${done} of ${kept.length} done`;
+  const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
   const head = o.head;
   return {
     goal: {
-      label,
+      label: isMet ? "Goal met" : "Goal",
       text: g.text,
+      count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
       isMet,
       was: isWasShown ? g.was : null,
-      awaiting: g.isAwaitingMilestones || kept.length === 0 ? AWAITING_TEXT : null,
+      awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
     },
     proposal,
@@ -5076,6 +5088,8 @@ function goalPartId(part) {
     return PROPOSAL_KEYS_ID;
   if (part.is === "milestone")
     return part.row.id;
+  if (part.is === "title")
+    return part.isKeyInHeader && !part.isTyping ? GOAL_KEYS_ID : null;
   return part.is === "keys" ? GOAL_KEYS_ID : null;
 }
 var goalEntry = (part) => ({ kind: "goal", part });
@@ -5086,10 +5100,11 @@ function goalAbove(page, typing) {
   const g = page.goal;
   if (g === null)
     return proposal;
+  const isKeyInHeader = isGoalKeyInHeader(page);
   const goal = [
-    goalEntry({ is: "title", goal: g, isTyping: isTyping && proposal.length === 0 }),
+    goalEntry({ is: "title", goal: g, page, isTyping: isTyping && proposal.length === 0, isKeyInHeader }),
     ...g.milestones.map((row) => goalEntry({ is: "milestone", row })),
-    ...isTyping ? [] : [goalEntry({ is: "keys", page })]
+    ...isTyping || isKeyInHeader ? [] : [goalEntry({ is: "keys", page })]
   ];
   if (proposal.length === 0)
     return goal;
@@ -5110,6 +5125,14 @@ function fieldLines(d) {
     ...field.map((l) => " ".repeat(PAGE_MARK_AT) + l.replace("\x00", s.inverse(" ")))
   ];
 }
+function textWithCount(g, d) {
+  const { width, style: s } = d;
+  if (g.count === null)
+    return indented(g.text, PAGE_MARK_AT, width, Infinity, s.bold);
+  const tail = `${STALL_GAP}${g.count}`.replaceAll(" ", GLUE);
+  const lines = wrapText(`${g.text}${tail}`, Math.max(10, width - PAGE_MARK_AT - 1));
+  return lines.map((l) => " ".repeat(PAGE_MARK_AT) + (l.endsWith(tail) ? s.bold(l.slice(0, -tail.length)) + s.dim(tail.replaceAll(GLUE, " ")) : s.bold(l)));
+}
 function drawGoalPart(part, d, isSelected) {
   const { width, now, style: s } = d;
   const at = (text, paint, lines = STATUS_TEXT_LINES) => indented(text, PAGE_MARK_AT, width, lines, paint);
@@ -5124,9 +5147,12 @@ function drawGoalPart(part, d, isSelected) {
   }
   if (part.is === "title") {
     const g = part.goal;
+    const keys = part.isKeyInHeader && !part.isTyping ? goalKeyPlan(part.page) : [];
+    const keyCells = pageButtonLines({ id: GOAL_KEYS_ID, keys }, d, isSelected, 1).join("");
+    const header = keys.length > 0 ? [`${" ".repeat(PAGE_MARK_AT)}${s.dim(`${g.label} \xB7`)}${keyCells}`] : at(g.label, s.dim);
     return [
-      ...at(g.label, s.dim),
-      ...part.isTyping ? fieldLines(d) : at(g.text, s.bold, Infinity),
+      ...header,
+      ...part.isTyping ? fieldLines(d) : textWithCount(g, d),
       ...g.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [],
       ...g.awaiting ? at(g.awaiting, s.dim) : []
     ];

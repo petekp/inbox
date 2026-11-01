@@ -45,7 +45,7 @@ function goalText(page: StatusPage): string[] {
   const goal = g
     ? [
         g.label,
-        g.text,
+        g.count ? `${g.text}${STALL_GAP}${g.count}` : g.text,
         ...(g.was ? [`${WAS_PREFIX}${g.was}`] : []),
         ...(g.awaiting ? [g.awaiting] : []),
         ...g.milestones.flatMap(m => [`${m.mark} ${nameLine(m.name, m.stall)}`, ...(m.text ? [`  ${m.text}`] : [])]),

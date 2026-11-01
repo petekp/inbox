@@ -87,6 +87,32 @@ export function paneRowKeys(
         </Box>
       )
     }
+  /**
+   * A key drawn in a line of muted text, as the goal's Edit is in "Goal · Edit". The terminal draws its label muted and
+   * names its hotkey while it has one. Desktop draws a plain native Button, since a Client's click would keep the keys
+   * from the field it opens.
+   */
+  const textKey = (rowId: string, { hotkey, key, label, onPress }: KeyAction) =>
+    look === 'desktop' ? (
+      <Button key={key} plain dimColor label={label} onPress={press => unlessGuarded(rowId, press, onPress)} />
+    ) : (
+      <Button
+        key={key}
+        plain
+        {...(isOpenGuarded ? { dimColor: true } : {})}
+        hover={{ color: pal.muted, inverse: true }}
+        onPress={press => unlessGuarded(rowId, press, onPress)}
+      >
+        {hotkey ? (
+          <Text color={pal.key} dimColor={isOpenGuarded} hover={{ color: pal.muted, inverse: true }}>
+            {hotkey}
+          </Text>
+        ) : null}
+        <Text color={pal.muted} hover={{ color: pal.muted, inverse: true }}>
+          {hotkey ? `: ${label}` : label}
+        </Text>
+      </Button>
+    )
   // Emptied here, after the drawing's reads, so a click that lands while they run still finds the last presses.
   followUpPresses.clear()
   const followUpLinks = (rowId: string, more: KeyAction[]) => {
@@ -199,6 +225,7 @@ export function paneRowKeys(
     desktopRowTextPt,
     desktopLabel,
     keyRow,
+    textKey,
     keyBindings,
     keyLines,
     actionRows,

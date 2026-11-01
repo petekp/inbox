@@ -20,7 +20,7 @@ const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Status page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes, while a release build’s view draws Asks for it, only a next build names on an Asks row the subject it holds up, and a proposed goal, a set goal with its Now line and Change goal’s field draw in place', async context => {
+test('the Codex tab draws the Status page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes, while a release build’s view draws Asks for it, only a next build names on an Asks row the subject it holds up, and a proposed goal, a set goal with Edit in its label line, its count after its text, its Now line and the field Edit opens draw in place', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const now = Date.now()
   const state = emptyState('overview')
@@ -279,22 +279,23 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.deepEqual(presses, [{ action: 'use-goal', id: 'goal' }])
     assert.deepEqual(
       [...root.querySelectorAll('.status-head.goal > *')].map(e => e.textContent),
-      ['Goal · 1 of 2 done', 'Status tab shipped'],
+      ['Goal · Edit', 'Status tab shipped · 1 of 2 done'],
     )
     assert.equal(
       root.querySelector('.status-head:not(.goal) p')?.textContent,
       'Now: Drawing the Status in the Codex tab',
     )
     assert.equal(root.querySelector('.status-head:not(.goal) h1'), null)
-    assert.deepEqual(buttons(), ['Change goal'])
-    await click('Change goal')
+    assert.deepEqual(buttons(), ['Edit'])
+    await click('Edit')
     assert.equal((root.querySelector('#type-goal') as HTMLInputElement | null)?.value, 'Status tab shipped')
     assert.equal(root.querySelector('.status-head.goal h1'), null)
+    assert.equal(root.querySelector('.status-head.goal p')?.textContent, 'Goal')
     await click('Cancel')
     assert.equal(root.querySelector('#type-goal'), null)
-    assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab shipped')
+    assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab shipped · 1 of 2 done')
 
-    await click('Change goal')
+    await click('Edit')
     const field = window.document.querySelector('#type-goal')!
     Object.assign(field, { value: 'Status tab in the store' })
     field.dispatchEvent(new window.Event('input', { bubbles: true }))

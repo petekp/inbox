@@ -4,6 +4,7 @@ import {
   GOAL_FIELD,
   GOAL_KEYS_ID,
   goalKeyPlan,
+  isGoalKeyInHeader,
   milestoneKeyPlan,
   proposalKeyPlan,
   statusKeyPlan,
@@ -250,6 +251,8 @@ function GoalAbove({ page }: { page: StatusPage }) {
   const p = page.proposal
   const g = page.goal
   const isTyping = tabState.typing === GOAL_KEYS_ID
+  const isKeyInHeader = isGoalKeyInHeader(page)
+  const headerKeys = isKeyInHeader && !isTyping ? goalKeyPlan(page) : []
   const proposal = p ? (
     <section>
       <div class="status-head goal">
@@ -271,8 +274,28 @@ function GoalAbove({ page }: { page: StatusPage }) {
   const goal = g ? (
     <section>
       <div class="status-head goal">
-        <p class="muted">{g.label}</p>
-        {isTyping && !p ? <GoalField /> : <h1>{g.text}</h1>}
+        <p class="muted">
+          {g.label}
+          {headerKeys.map(k => [
+            STALL_GAP,
+            <button key={k.label} type="button" class="text-key" onClick={() => statusKey(k).run()}>
+              {k.label}
+            </button>,
+          ])}
+        </p>
+        {isTyping && !p ? (
+          <GoalField />
+        ) : (
+          <h1>
+            {g.text}
+            {g.count ? (
+              <span class="muted count">
+                {STALL_GAP}
+                {g.count}
+              </span>
+            ) : null}
+          </h1>
+        )}
         {g.was ? (
           <p class="muted">
             {WAS_PREFIX}
@@ -288,7 +311,7 @@ function GoalAbove({ page }: { page: StatusPage }) {
           ))}
         </div>
       ) : null}
-      {isTyping ? null : (
+      {isTyping || isKeyInHeader ? null : (
         <div class="status-head">
           <Keys keys={goalKeyPlan(page)} />
         </div>

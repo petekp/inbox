@@ -87,28 +87,35 @@ test('Set as goal and Not now press the goal by their keys or Enter and select t
   })
 })
 
-test('a set goal draws its count, its text, its milestones and Change goal above the head, which draws as its Now line', () => {
+test('a set goal draws Edit beside its label, its text with its count, and its milestones above the head, which draws as its Now line', () => {
   const screen = withGoal()
   const page = screen.view.statusPage
-  expect(goalKeyPlan(page).map(k => k.label)).toEqual(['Change goal'])
+  expect(goalKeyPlan(page).map(k => k.label)).toEqual(['Edit'])
   const lines = text(screen, onPage).split('\n')
-  const order = ['Goal · 1 of 2 done', 'Pilot ready to announce', '✓ Fixes built', '○ Announced', 'after deploy']
+  const order = [
+    'Goal · ↵ Edit',
+    'Pilot ready to announce · 1 of 2 done',
+    '✓ Fixes built',
+    '○ Announced',
+    'after deploy',
+  ]
   const at = order.map(s => lineAt(lines, s))
   expect(at).toEqual([...at].sort((a, b) => a - b))
-  expect(lines[at[4]! + 1]).toContain('↵ Change goal')
-  expect(lineAt(lines, `Now: ${page.head!.description}`)).toBeGreaterThan(at[4]! + 1)
+  expect(lines.slice(at[4]! + 1).some(l => l.includes('Edit'))).toBe(false)
+  expect(lineAt(lines, `Now: ${page.head!.description}`)).toBeGreaterThan(at[4]!)
   expect(lineAt(lines, page.head!.title)).toBe(-1)
 })
 
-test('Change goal opens the field with the goal in it in place of the goal and its button, Enter sets what was typed, and Escape keeps the draft', () => {
+test('e on the goal’s Edit opens the field with the goal in it in place of the goal’s text, leaving its label as Goal, Enter sets what was typed, and Escape keeps the draft', () => {
   const screen = withGoal()
-  const typing = keys(screen, onPage, 'g')
+  const typing = keys(screen, onPage, 'e')
   expect(typing).toMatchObject({ typing: 'goal', drafts: { goal: { text: 'Pilot ready to announce' } } })
   const edited: PanelUi = keys(screen, typing, 'backspace', 'backspace', 'backspace', 'backspace', 'backspace')
   const lines = text(screen, edited).split('\n')
   expect(lines.some(l => l.includes('An outcome to work toward:'))).toBe(true)
   expect(lines.some(l => l.includes('Pilot ready to ann'))).toBe(true)
-  expect(lines.some(l => l.includes('Change goal'))).toBe(false)
+  expect(lines.some(l => l.includes('Edit'))).toBe(false)
+  expect(lines.some(l => l.trim() === 'Goal')).toBe(true)
   expect(lines.at(-1)).toContain('↵ Set goal')
   expect(handleKey(screen, edited, 'enter', NOW).press).toEqual({
     action: 'type',
@@ -118,7 +125,7 @@ test('Change goal opens the field with the goal in it in place of the goal and i
   const cancelled = handleKey(screen, edited, 'escape', NOW).ui
   expect(cancelled.typing).toBeNull()
   expect(cancelled.drafts.goal?.text).toBe('Pilot ready to ann')
-  expect(text(screen, cancelled)).toContain('Change goal')
+  expect(text(screen, cancelled)).toContain('Goal · ↵ Edit')
 })
 
 test('Set a goal is the only button on a page with no goal and no held subject: it is selected and keyed, up and down still scroll, and s opens an empty goal field under the head', () => {
@@ -153,9 +160,9 @@ test('with a goal set, subjects that serve none of its milestones draw under the
   expect(lineAt(lines, '1 waiting')).toBeGreaterThan(lineAt(lines, 'Other work'))
 })
 
-test('in a short panel, after Set as goal the goal’s text shows with its selected Change goal, even from a page scrolled past it', () => {
+test('in a short panel, after Set as goal the goal’s text shows with its selected Edit, even from a page scrolled past it', () => {
   const used = handleKey(proposing(), { ...onPage, selectedId: 'proposal', pageTop: 4 }, 's', NOW).ui
   const lines = drawPanel(withGoal(), used, 60, NOW, style, 14).lines.map(strip)
   expect(lineAt(lines, 'Pilot ready to announce')).toBeGreaterThan(-1)
-  expect(lineAt(lines, '↵ Change goal')).toBeGreaterThan(-1)
+  expect(lineAt(lines, 'Goal · ↵ Edit')).toBeGreaterThan(-1)
 })

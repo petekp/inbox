@@ -2457,15 +2457,16 @@ function goalPage(o, items) {
   );
   const done = kept.filter((m) => m.status === "done").length;
   const isMet = g.metAt !== null;
-  const label = isMet ? "Goal met" : g.isAwaitingMilestones || kept.length === 0 ? "Goal" : `Goal \xB7 ${done} of ${kept.length} done`;
+  const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
   const head = o.head;
   return {
     goal: {
-      label,
+      label: isMet ? "Goal met" : "Goal",
       text: g.text,
+      count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
       isMet,
       was: isWasShown ? g.was : null,
-      awaiting: g.isAwaitingMilestones || kept.length === 0 ? AWAITING_TEXT : null,
+      awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
     },
     proposal,
