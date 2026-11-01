@@ -1,4 +1,4 @@
-import type { Child, Item, SessionStatus, Subject, SubjectStatus } from '../../types'
+import type { Child, Item, Milestone, SessionStatus, Subject, SubjectStatus } from '../../types'
 import type { Facts, Piece } from '../status-facts'
 import { minutes } from '../status-replay'
 
@@ -18,6 +18,17 @@ export function subject(id: string, status: SubjectStatus, name: string, text: s
     closedAt: isClosed ? at : null,
     into: null,
   }
+}
+
+export function milestone(id: string, status: SubjectStatus, name: string, text: string, changedAt: number): Milestone {
+  const at = minutes(changedAt)
+
+  return { id, name, status, text, was: null, changedAt: at, closedAt: status === 'done' ? at : null }
+}
+
+/** A goal the person set or accepted at `setAt`, with its milestones written. */
+export function goal(text: string, setAt: number): NonNullable<SessionStatus['goal']> {
+  return { text, setAt: minutes(setAt), metAt: null, was: null, isAwaitingMilestones: false }
 }
 
 export function delegate(id: string, name: string, subjectId: string, startedAt: number): Child {
@@ -57,6 +68,12 @@ export function overview(o: Pick<SessionStatus, 'head' | 'subjects'> & Partial<S
     nextChildId: (o.children?.length ?? 0) + 1,
     lastLookAt: null,
     look: null,
+    goal: null,
+    proposedGoal: null,
+    declinedGoals: [],
+    milestones: [],
+    nextMilestoneId: 1,
+    serves: {},
     ...o,
   }
 }

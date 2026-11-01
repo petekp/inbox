@@ -9,7 +9,6 @@ import { ROW_COPY, OPTIONS_FOLD_AT, OPTION_LABEL_CHARS, isWaitingRow } from './r
 import type { RowState, ActionView, RowView, SettledState } from './rows'
 import { pressOutAction, outAction, isAgain, fixLabel } from './feedback'
 import type { Feedback } from './feedback'
-import type { StatusRow, StatusPage } from './status-page'
 import type { InboxView } from './view'
 
 // The digits switch tabs, and the letters left out are the
@@ -265,40 +264,6 @@ export function rowKeyPlan(r: RowView, isAllShown: boolean): { keys: PlannedKey[
   }
 
   return { keys, more }
-}
-
-/** A press on a Status row. `show-ask` opens Asks with that ask selected, and sends nothing. */
-type StatusPress = { action: 'show-ask'; askId: string }
-
-type StatusKey = { press: StatusPress; label: string; hotkey: string; kind: PressKind }
-
-/** The View button's label, by the kind of ask it opens. */
-const VIEW_ASK_LABELS: Record<Item['kind'], string> = { question: 'View question', task: 'View task' }
-
-/** A Status row's buttons, in the order every look draws them. A row with none takes no press. */
-export function statusKeyPlan(row: StatusRow): StatusKey[] {
-  if (row.kind !== 'subject' || row.ask === null) return []
-
-  return [
-    {
-      press: { action: 'show-ask', askId: row.ask.id },
-      label: VIEW_ASK_LABELS[row.ask.kind],
-      hotkey: 'v',
-      kind: 'view',
-    },
-  ]
-}
-
-/** The Status rows that have buttons, in page order: the rows j and k move between. */
-export function statusKeyRows(page: StatusPage): StatusRow[] {
-  return page.rows.filter(r => statusKeyPlan(r).length > 0)
-}
-
-/** The Status row whose keys work: the selected row while it still has buttons, else the first row that has. */
-export function statusSelected(page: StatusPage, selectedId: string | null): StatusRow | null {
-  const rows = statusKeyRows(page)
-
-  return rows.find(r => r.id === selectedId) ?? rows[0] ?? null
 }
 
 /** Widths in a look's own unit. `separator` is the extra room a look draws between the buttons and the follow-ups when they share a line. */

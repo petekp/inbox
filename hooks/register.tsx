@@ -1,7 +1,6 @@
 import { atom, read, update } from 'claude-code'
 import type {
   EngineInterface,
-  ModelCompleteResult,
   Register,
   RenderSurface,
   UiPressArgument,
@@ -66,7 +65,8 @@ import { runUpdates } from './session-host'
 import { fetchPrs as fetchSessionPrs, isPrFetchDue } from './host-prs'
 import { refreshStatus, type StatusCall, type StatusRecords, type RecordFiles } from './status-records'
 import { startPress, wakeForDone as wakeSessionForDone } from './host-press'
-import type { Ask, CallReport, CatchUpReply, SessionHost } from './session-host'
+import type { Ask, CatchUpReply, SessionHost } from './session-host'
+import { callReport, MODEL } from './inbox-model'
 import { SESSION_VERSION } from './session-version'
 import { demoView, isDemoCopy } from './demo'
 import { claudeTasksAfter } from './host-tasks'
@@ -102,20 +102,11 @@ import { demoAfterPress, demoReplied, demoSent, type DemoSent } from './press-ef
 import { isPressConfirmed, type Effect } from './press-reducer'
 import { openTarget, type PathProbe } from './open-targets'
 import type { RowPress } from './presses'
+import { statusKeyRows, statusSelected } from './status-keys'
 import { footerStatus } from './view'
 import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, type RowView } from './rows'
 import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf, NEXT_BUILD_MARK } from './banners'
-import {
-  drawnLists,
-  rowKeyPlan,
-  statusKeyRows,
-  statusSelected,
-  rowsIn,
-  firstWaiting,
-  keptOpen,
-  rowAfterClose,
-  type PlannedKey,
-} from './action-plan'
+import { drawnLists, rowKeyPlan, rowsIn, firstWaiting, keptOpen, rowAfterClose, type PlannedKey } from './action-plan'
 import {
   isRowTab,
   isShownTab,
@@ -696,16 +687,6 @@ async function readSettled($: EngineInterface, id: string) {
   await savesBySession.get(id)?.catch(() => undefined)
 
   return readSaved($, id)
-}
-
-const MODEL = 'sonnet'
-
-/** The engine does not say which model answered. */
-function callReport(r: ModelCompleteResult): CallReport {
-  if (r.isAnswered) return { model: MODEL }
-  const error = r.reason === 'api-error' ? `api-error ${r.status ?? 'with no response'}: ${r.error}` : r.reason
-
-  return { model: MODEL, error }
 }
 
 /** Calls the inbox model, reports the call, and returns the answer. */
@@ -1335,9 +1316,13 @@ async function sendTyped($: EngineInterface, id: string, text: string, surface: 
   else await focusField($, id)
 }
 
-async function startTyping($: EngineInterface, id: string) {
+/** Opens `id`'s field with its draft, or with `seed` as a fresh one, and gives it the keys. */
+async function startTyping($: EngineInterface, id: string, seed?: string) {
+  paneState.focusHint = `type-${id}`
   const now = await $.clock.now()
-  const drafts = await update($, DRAFTS, d => (d[id] ? d : { ...d, [id]: { text: '', since: now } }))
+  const drafts = await update($, DRAFTS, d =>
+    d[id] && seed === undefined ? d : { ...d, [id]: { text: seed ?? '', since: now } },
+  )
   openFields.set(id, openedField(id, drafts[id]))
   await keepPressedOpen($, id)
   await update($, TYPING, () => id)
@@ -1444,9 +1429,10 @@ async function scrollToKey(
   return false
 }
 
-async function selectStatusRow($: EngineInterface, id: string) {
+async function selectStatusRow($: EngineInterface, id: string, focusKey?: string) {
   await update($, STATUS_SELECTION, () => id)
-  await scrollToKey($, `status-${id}`, 'nearest')
+  const isDrawn = await scrollToKey($, `status-${id}`, 'nearest')
+  if (isDrawn && focusKey) await $.ui.focus({ requestId: PANE, key: focusKey }).catch(() => {})
 }
 
 async function scrollToRow($: EngineInterface, id: string) {
@@ -3162,6 +3148,8 @@ export const register: Register = on => {
       unlessGuarded: (rowId, press, onPress) => unlessGuarded($, rowId, press, onPress),
       sendDraft: (id, surface) => sendDraft($, id, surface),
       discardReply: id => discardReply($, id),
+      startTyping: (id, seed) => startTyping($, id, seed),
+      selectStatusRow: (id, focusKey) => selectStatusRow($, id, focusKey),
       updateTyping: fn => update($, TYPING, fn),
       updateDrafts: fn => update($, DRAFTS, fn),
       sendTyped: (id, text, surface) => sendTyped($, id, text, surface),
@@ -3465,20 +3453,19 @@ export const register: Register = on => {
       banner,
     })
 
-    const { statusHead, statusMarkAt, fitsStatusLine, statusPageText, statusNameLine, statusFrameEdge, statusTree } =
-      paneStatusLines({
-        Box,
-        Text,
-        pal,
-        look,
-        listColumns,
-        terminalText,
-        desktopFrame,
-        desktopColumnPt,
-        markWidth,
-        branch,
-        desktopHairline,
-      })
+    const statusLines = paneStatusLines({
+      Box,
+      Text,
+      pal,
+      look,
+      listColumns,
+      terminalText,
+      desktopFrame,
+      desktopColumnPt,
+      markWidth,
+      branch,
+      desktopHairline,
+    })
     const { statusRowLine, statusKeys, statusView } = paneStatus(
       {
         listColumns,
@@ -3489,13 +3476,10 @@ export const register: Register = on => {
         statusKeyRow,
         view,
         isInline,
-        statusMarkAt,
-        statusFrameEdge,
-        statusNameLine,
-        statusPageText,
-        fitsStatusLine,
-        statusTree,
-        statusHead,
+        ...statusLines,
+        Input,
+        typing,
+        now,
         markWidth,
         desktopHairline,
         markGlyph,
@@ -3552,15 +3536,22 @@ export const register: Register = on => {
 
     const selectedRow = isStatusShown || isHelpShown ? undefined : rows[tab][at]
     const selectedActions = selectedRow ? rowActions(selectedRow) : null
-    const closeKeysWithoutRow: KeyAction[] = ['d', 'x'].map(hotkey => ({
-      key: `no-row-${hotkey}`,
-      label: 'Close',
-      hotkey,
-      kind: 'view',
-      onPress: () => undefined,
-    }))
+    const statusRowKeys = statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []
+    const closeKeysWithoutRow: KeyAction[] = ['d', 'x'].flatMap(hotkey =>
+      statusRowKeys.some(k => k.hotkey === hotkey)
+        ? []
+        : [
+            {
+              key: `no-row-${hotkey}`,
+              label: 'Close',
+              hotkey,
+              kind: 'view',
+              onPress: () => undefined,
+            },
+          ],
+    )
     const rowKeys = [
-      ...(statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []),
+      ...statusRowKeys,
       ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow),
       ...(tab === 'prs' && !isHelpShown ? [...prOrderKeys, ...prTabKeys] : []),
     ]

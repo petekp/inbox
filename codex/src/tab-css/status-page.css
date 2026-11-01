@@ -118,3 +118,60 @@
 .status-head p {
   margin: 0;
 }
+/* A goal, or a proposed one: its label, its text as the head's title, and the proposed milestones on one line. */
+.status-head.goal p + h1,
+.status-head.goal p + .actions {
+  margin-top: 2px;
+}
+.status-head .actions {
+  margin-top: 6px;
+}
+.status-head.goal + .list {
+  margin-top: 4px;
+}
+.goal-proposed {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 14px;
+}
+.status-page .content.changed > :first-child {
+  font-weight: 600;
+}
+/* "Other work" at the text column, then a solid rule to the tab's edge. */
+.status-page .row.part-line {
+  padding-left: 0;
+  padding-right: 0;
+  margin-top: var(--look-gap);
+}
+.status-page .part-rule {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: var(--text-x);
+  color: var(--muted);
+}
+.status-page .part-rule::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--soft);
+}
+/* Set a goal under the empty page's centred text. */
+.empty .status-head {
+  padding: 0;
+}
+.empty .actions,
+.empty .keys,
+.empty .goal-field {
+  justify-content: center;
+}
+.goal-field {
+  flex-wrap: wrap;
+}
+.goal-field input {
+  flex: 1 1 18em;
+}
+.field-keys {
+  display: flex;
+  gap: 6px;
+}

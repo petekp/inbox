@@ -1,8 +1,9 @@
 import { isPrPress } from '../../hooks/pr-press'
 import { keptDiscards, isGuarded } from '../../hooks/timing'
 import { shownTabs, isRowTab } from '../../hooks/tabs'
-import { firstWaiting, rowAfterClose, statusKeyPlan, statusKeyRows, statusSelected } from '../../hooks/action-plan'
-import type { StatusRow } from '../../hooks/status-page'
+import { firstWaiting, rowAfterClose } from '../../hooks/action-plan'
+import { GOAL_KEYS_ID, statusKeyRows, statusSelected } from '../../hooks/status-keys'
+import type { StatusKeyTarget } from '../../hooks/status-keys'
 import type { ShownTab } from '../../hooks/tabs'
 import { entriesOf } from './panel-entries'
 import { isSelectable, isShut, linesOf, waitsOf } from './panel-lines'
@@ -42,6 +43,7 @@ export const withTab = (ui: PanelUi, tab: ShownTab, now: number): PanelUi => ({
   ...withSelection(ui, null),
   tab,
   pageTop: 0,
+  pageReveal: isRowTab(tab) ? null : true,
   shownSince: tab === ui.tab ? ui.shownSince : now,
   isHelpShown: false,
 })
@@ -176,8 +178,9 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
 }
 
 /**
- * A key on the Status page, or null when the page leaves it to the panel. While a row has buttons, j and k move the
- * selection between those rows and up and down still scroll. Enter and the buttons' keys press the selected row's.
+ * A key on the Status page, or null when the page leaves it to the panel. While a target has buttons, j and k move the
+ * selection between those targets and up and down still scroll. Enter and the buttons' keys press the selected
+ * target's. View shows Asks, a goal button that types opens the goal's field with its text, and the rest are presses.
  */
 function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): KeyResult | null {
   const page = screen.view.statusPage
@@ -190,7 +193,7 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
 
     return { ui: { ...ui, selectedId: to, focus: null, pageReveal: to } }
   }
-  const keys = statusKeyPlan(row)
+  const { keys } = row
   if (key === 'left' || key === 'right') {
     const index = wrapIndex(pageFocus(row, ui) + (key === 'left' ? -1 : 1), keys.length)
 
@@ -198,9 +201,21 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
   }
   const pressed = key === 'enter' ? keys[pageFocus(row, ui)] : keys.find(k => k.hotkey === key)
   if (!pressed) return null
+  const { press } = pressed
+  if (press.action === 'show-ask')
+    return { ui: { ...withTab(ui, 'needsYou', now), selectedId: press.askId, openedAt: now } }
+  if (press.action === 'type-goal') {
+    const drafts = { ...ui.drafts, [GOAL_KEYS_ID]: { text: press.text, since: now } }
 
-  return { ui: { ...withTab(ui, 'needsYou', now), selectedId: pressed.press.askId, openedAt: now } }
+    return { ui: { ...ui, selectedId: row.id, typing: GOAL_KEYS_ID, focus: null, drafts } }
+  }
+
+  // The proposal goes with the press, so the goal's button, which then shows, takes the selection.
+  return {
+    ui: { ...ui, selectedId: GOAL_KEYS_ID, focus: null, pageReveal: GOAL_KEYS_ID },
+    press: { action: press.action, id: GOAL_KEYS_ID },
+  }
 }
 
-export const pageFocus = (row: StatusRow, ui: PanelUi): number =>
-  ui.focus?.rowId === row.id ? Math.min(ui.focus.index, statusKeyPlan(row).length - 1) : 0
+export const pageFocus = (target: StatusKeyTarget, ui: PanelUi): number =>
+  ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0

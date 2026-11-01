@@ -9,7 +9,7 @@ import { DEMO_NOTICE, bannerOf, stopBanner, tabBarBanners, stopFix, stopText } f
 import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies } from '../../hooks/timing'
 import { LISTED_TABS, shownTabs, isRowTab } from '../../hooks/tabs'
 import { footerStatus } from '../../hooks/view'
-import { statusSelected } from '../../hooks/action-plan'
+import { GOAL_KEYS_ID, statusSelected } from '../../hooks/status-keys'
 import type { Holds } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import { bannerLines, boxed, drawLine, paintMark } from './panel-draw'
@@ -17,6 +17,7 @@ import type { Draw } from './panel-draw'
 import { PAGE_MARK_AT, PAGE_TEXT_AT, entriesOf } from './panel-entries'
 import { resolveSelected, withTab } from './panel-keys'
 import { STOP_ID, linesOf } from './panel-lines'
+import { drawGoalPart, goalPartId } from './panel-goal'
 import { drawPageRow, pageRule } from './panel-page'
 import { footer, pageWindow, scrolled, tabBar } from './panel-tabs'
 import { fit, indented, spread } from './panel-text'
@@ -72,8 +73,8 @@ export type PanelUi = {
   opened: string | null
   /** How many lines of the Status page are scrolled above the panel. Drawing clamps it to the page's end. */
   pageTop: number
-  /** The Status row the next draw scrolls into view, after j or k selects it. */
-  pageReveal: string | null
+  /** The Status row the next draw scrolls into view, after j or k selects it. `true` is the selected row, as when the page shows. */
+  pageReveal: string | true | null
   /**
    * When a Status press selected the shown row, as View does. The row's buttons ignore keys until
    * `PRESS_GUARD_MS` has passed, so a second Enter does not press the row it opened.
@@ -160,7 +161,7 @@ export function drawPanel(
   style: Style,
   height?: number,
   minHeight = 0,
-): { lines: string[]; pageTop: number } {
+): { lines: string[]; pageTop: number; isRevealed: boolean } {
   const d: Draw = { screen, ui, width, now, style }
   const entries = entriesOf(screen, ui, ui.tab, now)
   const selected = resolveSelected(linesOf(entries), ui.selectedId)
@@ -182,18 +183,22 @@ export function drawPanel(
   ]
   const body: string[] = []
   let selectedAt = [0, 0]
-  const pageSelected = isRowTab(ui.tab) ? null : statusSelected(screen.view.statusPage, ui.selectedId)
+  const pageSelected =
+    isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId)
   let pageSelectedAt: number[] | null = null
+  let goalTitleAt: number | null = null
   for (const e of entries) {
     if (e.kind === 'heading')
       body.push(
         ` ${e.mark ? `${e.mark.tone ? style.tone(e.mark.tone, e.mark.text) : e.mark.text} ` : ''}${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`,
       )
-    else if (e.kind === 'page') {
-      if (e.row.isRuledAbove) body.push(pageRule(width, style))
+    else if (e.kind === 'page' || e.kind === 'goal') {
+      if (e.kind === 'page' && e.row.isRuledAbove) body.push(pageRule(width, style))
       const start = body.length
-      const isSelected = e.row.id === pageSelected?.id
-      body.push(...drawPageRow(e.row, d, isSelected))
+      if (e.kind === 'goal' && e.part.is === 'title') goalTitleAt = start
+      const id = e.kind === 'page' ? e.row.id : goalPartId(e.part)
+      const isSelected = id !== null && id === pageSelected?.id
+      body.push(...(e.kind === 'page' ? drawPageRow(e.row, d, isSelected) : drawGoalPart(e.part, d, isSelected)))
       if (isSelected) pageSelectedAt = [start, body.length - 1]
     } else if (e.kind === 'banner') body.push(...bannerLines(e.banner, width, style))
     else if (e.kind === 'key')
@@ -245,12 +250,13 @@ export function drawPanel(
   const blanks = (shown: string[]) =>
     Array<string>(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill('')
   const isOverflowing = body.length > room
-  const [first = 0, last = 0] = pageSelectedAt ?? []
+  const [keysAt = 0, last = 0] = pageSelectedAt ?? []
+  // The goal's button reveals the goal's text above it too, when both fit.
+  const goalTextAt = pageSelected?.id === GOAL_KEYS_ID ? goalTitleAt : null
+  const first = goalTextAt !== null && last - goalTextAt + 3 <= room ? goalTextAt : keysAt
   // In view between the ↑ line above and the ↓ line below, which `pageWindow` draws while the page runs past them.
-  const top =
-    pageSelectedAt && ui.pageReveal === pageSelected?.id
-      ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1))
-      : ui.pageTop
+  const isRevealed = pageSelectedAt !== null && (ui.pageReveal === true || ui.pageReveal === pageSelected?.id)
+  const top = isRevealed ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop
   const pageTop = isPage ? Math.min(Math.max(0, top), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop
   const shown = !isOverflowing
     ? body
@@ -258,7 +264,7 @@ export function drawPanel(
       ? pageWindow(body, pageTop, room, style)
       : scrolled(body, selectedAt, room, style)
 
-  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)), pageTop }
+  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)), pageTop, isRevealed }
 }
 
 /** The most lines a shown tab draws, each tab as switching to it would show it. */

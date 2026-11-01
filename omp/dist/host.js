@@ -59,6 +59,9 @@ var TEXT_KEPT = 12;
 var DESCRIPTION_KEPT = 14;
 var ASK_READ_WORDS = 30;
 var FINISHED_READ = 10;
+var MILESTONES_MAX = 5;
+var MILESTONES_MIN = 2;
+var DECLINED_KEPT = 10;
 var CHILD_KEPT_MS = 24 * 60 * 60000;
 var CHILDREN_KEPT = 50;
 var STOP_WORDS = new Set([
@@ -91,9 +94,16 @@ var EMPTY_SESSION_STATUS = {
   nextId: 1,
   nextChildId: 1,
   lastLookAt: null,
-  look: null
+  look: null,
+  goal: null,
+  proposedGoal: null,
+  declinedGoals: [],
+  milestones: [],
+  nextMilestoneId: 1,
+  serves: {}
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
+var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
 function clipWords(text, limit) {
   const words = text.trim().split(/\s+/).filter(Boolean);
   return words.length <= limit ? words.join(" ") : `${words.slice(0, limit).join(" ")}\u2026`;
@@ -143,9 +153,14 @@ function childActive(o, ref, at) {
 }
 function subjectsText(o) {
   const subjects = o?.subjects ?? [];
-  const open = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}`);
+  const serves = (id) => o?.goal ? ` | ${servesText(o, id)}` : "";
+  const open = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}${serves(s.id)}`);
   const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
   return { open: open.join(NL) || "(none yet)", finished: finished.join(NL) };
+}
+function servesText(o, subjectId) {
+  const to = o.serves[subjectId];
+  return to === undefined ? "?" : to === "none" ? "-" : to;
 }
 function asksText(o, asks) {
   return asks.map((a) => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id] ?? "-"}`).join(NL);
@@ -620,6 +635,10 @@ function pressText(p) {
       return ISSUE_LABEL;
     case "step":
       return p.label;
+    case "use-goal":
+      return "Use this goal";
+    case "decline-goal":
+      return "Not now";
     default:
       return capitalized(p.action);
   }
@@ -1053,6 +1072,253 @@ function stepEffects(item, step) {
   return step.step.map((h) => helpEffect(item, h));
 }
 
+// ../hooks/status-goal-ops.ts
+function hasSameWords(a, b) {
+  const x = words(a);
+  const y = words(b);
+  return x.size === y.size && [...x].every((w) => y.has(w));
+}
+function findMilestone(o, ref) {
+  const key = nameKey(clipWords(ref, NAME_KEPT));
+  return o.milestones.find((m) => m.id === ref) ?? o.milestones.find((m) => m.status !== "dropped" && nameKey(m.name) === key) ?? null;
+}
+function forgetSeenWas(m, lastLookAt) {
+  if (lastLookAt !== null && m.changedAt <= lastLookAt)
+    m.was = null;
+}
+function moveMilestone(o, m, op, now) {
+  if (op.kind === "set") {
+    const isReworded = m.status === op.status && hasSameWords(m.text, op.text);
+    if (isReworded)
+      return;
+    m.status = op.status;
+    m.text = clipWords(op.text, TEXT_KEPT);
+    m.closedAt = null;
+  } else if (op.kind === "done") {
+    m.status = "done";
+    if (op.text)
+      m.text = clipWords(op.text, TEXT_KEPT);
+    m.closedAt = now;
+  } else if (op.kind === "drop") {
+    const target = op.into ? findMilestone(o, op.into) : null;
+    m.status = "dropped";
+    m.text = clipWords(op.why, TEXT_KEPT);
+    m.closedAt = now;
+    if (target && target.id !== m.id) {
+      for (const [id, to] of Object.entries(o.serves))
+        if (to === m.id)
+          o.serves[id] = target.id;
+      for (const [ask, to] of Object.entries(o.askSubjects))
+        if (to === m.id)
+          o.askSubjects[ask] = target.id;
+    }
+  } else {
+    forgetSeenWas(m, o.lastLookAt);
+    m.was = op.text;
+    m.changedAt = now;
+    return;
+  }
+  forgetSeenWas(m, o.lastLookAt);
+  m.changedAt = now;
+}
+function addMilestone(o, op, now) {
+  const known = findMilestone(o, op.name);
+  if (known) {
+    if (op.status === "done" || op.status === "dropped")
+      moveMilestone(o, known, op.status === "done" ? { kind: "done", ref: known.id, text: op.text } : { kind: "drop", ref: known.id, why: op.text, into: null }, now);
+    else
+      moveMilestone(o, known, { kind: "set", ref: known.id, status: op.status, text: op.text }, now);
+    return o;
+  }
+  const isFull = !o.goal.isAwaitingMilestones && o.milestones.filter((m) => m.status !== "dropped").length >= MILESTONES_MAX;
+  if (isFull)
+    return o;
+  const m = {
+    id: `m${o.nextMilestoneId}`,
+    name: clipWords(op.name, NAME_KEPT),
+    status: op.status,
+    text: clipWords(op.text, TEXT_KEPT),
+    was: null,
+    changedAt: now,
+    closedAt: op.status === "done" || op.status === "dropped" ? now : null
+  };
+  return { ...o, nextMilestoneId: o.nextMilestoneId + 1, milestones: [...o.milestones, m] };
+}
+function applyGoalOp(o, op, now, findSubject) {
+  if (op.kind === "goal") {
+    const text = clipWords(op.text, DESCRIPTION_KEPT);
+    const key = nameKey(text);
+    const isCurrent = o.goal !== null && nameKey(o.goal.text) === key;
+    if (op.milestones.length < MILESTONES_MIN || isCurrent || o.declinedGoals.includes(key))
+      return o;
+    const milestones = op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }));
+    return { ...o, proposedGoal: { text, milestones, at: now } };
+  }
+  if (o.goal === null)
+    return o;
+  if (op.kind === "milestone")
+    return addMilestone(o, op, now);
+  const subject = findSubject(op.subject);
+  const milestone = op.milestone === null ? null : findMilestone(o, op.milestone);
+  if (!subject || op.milestone !== null && !milestone)
+    return o;
+  return { ...o, serves: { ...o.serves, [subject.id]: milestone?.id ?? "none" } };
+}
+function settleGoal(o, now, readSetAt, named) {
+  if (o.goal === null)
+    return o;
+  const setAt = o.goal.setAt;
+  const isSeen = o.lastLookAt !== null && setAt <= o.lastLookAt;
+  const isAnswerForNewGoal = o.goal.isAwaitingMilestones && readSetAt === setAt;
+  const milestones = isAnswerForNewGoal ? o.milestones.filter((m) => named.has(m.id) && m.status !== "dropped").slice(0, MILESTONES_MAX) : o.milestones;
+  const isAwaiting = o.goal.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0);
+  const kept = milestones.filter((m) => m.status !== "dropped");
+  const isMet = !isAwaiting && kept.length > 0 && kept.every((m) => m.status === "done");
+  const was = isSeen ? null : o.goal.was;
+  const metAt = isMet ? o.goal.metAt ?? now : null;
+  const isSame = milestones.length === o.milestones.length && was === o.goal.was && isAwaiting === o.goal.isAwaitingMilestones && metAt === o.goal.metAt;
+  if (isSame)
+    return o;
+  const settled = { ...o, milestones, goal: { ...o.goal, was, isAwaitingMilestones: isAwaiting, metAt } };
+  return isAnswerForNewGoal ? withoutLinksTo(settled, milestones) : settled;
+}
+function withoutLinksTo(o, milestones) {
+  const ids = new Set(milestones.map((m) => m.id));
+  const keep = ([, to]) => to === "none" || !/^m\d+$/.test(to) || ids.has(to);
+  return {
+    ...o,
+    serves: Object.fromEntries(Object.entries(o.serves).filter(keep)),
+    askSubjects: Object.fromEntries(Object.entries(o.askSubjects).filter(keep))
+  };
+}
+function useProposedGoal(o, now) {
+  const p = o.proposedGoal;
+  if (p === null)
+    return o;
+  const milestones = p.milestones.map((m, n) => ({
+    id: `m${o.nextMilestoneId + n}`,
+    name: m.name,
+    status: m.status,
+    text: "",
+    was: null,
+    changedAt: now,
+    closedAt: isOpen(m) ? null : now
+  }));
+  const goal = { text: p.text, setAt: now, metAt: null, was: o.goal?.text ?? null, isAwaitingMilestones: false };
+  return settleGoal(withoutLinksTo({
+    ...o,
+    goal,
+    proposedGoal: null,
+    milestones,
+    nextMilestoneId: o.nextMilestoneId + milestones.length,
+    serves: {}
+  }, milestones), now, null, new Set);
+}
+function declineProposedGoal(o) {
+  if (o.proposedGoal === null)
+    return o;
+  const declinedGoals = [...o.declinedGoals, nameKey(o.proposedGoal.text)].slice(-DECLINED_KEPT);
+  return { ...o, proposedGoal: null, declinedGoals };
+}
+function setTypedGoal(o, text, now) {
+  const typed = clipWords(text, DESCRIPTION_KEPT);
+  if (typed === "")
+    return { status: o, isNew: false };
+  const p = o.proposedGoal;
+  if (p !== null && hasSameWords(p.text, typed)) {
+    const used = useProposedGoal(o, now);
+    return { status: { ...used, goal: { ...used.goal, text: typed } }, isNew: true };
+  }
+  const declined = declineProposedGoal(o);
+  const isReworded = o.goal !== null && hasSameWords(o.goal.text, typed);
+  if (isReworded)
+    return { status: { ...declined, goal: { ...o.goal, text: typed } }, isNew: false };
+  const goal = { text: typed, setAt: now, metAt: null, was: o.goal?.text ?? null, isAwaitingMilestones: true };
+  return { status: { ...declined, goal, serves: {} }, isNew: true };
+}
+
+// ../hooks/goal-press.ts
+function goalPressed(ledger, p, record, now) {
+  const o = ledger.overview ?? EMPTY_SESSION_STATUS;
+  const unchanged = { ledger, last: null, effects: [] };
+  if (p.action === "use-goal" || p.action === "decline-goal") {
+    if (o.proposedGoal === null)
+      return { stale: true };
+    const overview = p.action === "use-goal" ? useProposedGoal(o, now) : declineProposedGoal(o);
+    return { ledger: { ...ledger, overview }, last: record("mark"), effects: [] };
+  }
+  if (p.action !== "type")
+    return { stale: true };
+  const typed = setTypedGoal(o, p.text, now);
+  if (typed.status === o)
+    return unchanged;
+  return { ledger: { ...ledger, overview: typed.status }, last: record("mark"), effects: [] };
+}
+
+// ../hooks/status-keys.ts
+var PROPOSAL_KEYS_ID = "proposal";
+var GOAL_KEYS_ID = "goal";
+var VIEW_ASK_LABELS = { question: "View question", task: "View task" };
+function viewAsk(ask) {
+  return {
+    press: { action: "show-ask", askId: ask.id },
+    label: VIEW_ASK_LABELS[ask.kind],
+    hotkey: "v",
+    kind: "view",
+    emphasis: "normal"
+  };
+}
+function statusKeyPlan(row) {
+  return row.kind === "subject" && row.ask !== null ? [viewAsk(row.ask)] : [];
+}
+function milestoneKeyPlan(m) {
+  return m.ask === null ? [] : [viewAsk(m.ask)];
+}
+function proposalKeyPlan(page) {
+  if (page.proposal === null)
+    return [];
+  return [
+    { press: { action: "use-goal" }, label: "Use this goal", hotkey: "u", kind: "mark", emphasis: "primary" },
+    {
+      press: { action: "type-goal", text: page.proposal.text },
+      label: "Edit",
+      hotkey: "e",
+      kind: "view",
+      emphasis: "normal"
+    },
+    { press: { action: "decline-goal" }, label: "Not now", hotkey: "x", kind: "mark", emphasis: "normal" }
+  ];
+}
+function goalKeyPlan(page) {
+  if (page.proposal !== null)
+    return [];
+  const g = page.goal;
+  const label = g === null ? "Set a goal" : g.isMet ? "Set next goal" : "Change goal";
+  return [
+    {
+      press: { action: "type-goal", text: g?.isMet ? "" : g?.text ?? "" },
+      label,
+      hotkey: g ? "g" : "s",
+      kind: "view",
+      emphasis: g ? "normal" : "quiet"
+    }
+  ];
+}
+function statusKeyRows(page) {
+  return [
+    { id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(page) },
+    ...(page.goal?.milestones ?? []).map((m) => ({ id: m.id, keys: milestoneKeyPlan(m) })),
+    { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) },
+    ...page.rows.map((r) => ({ id: r.id, keys: statusKeyPlan(r) }))
+  ].filter((t) => t.keys.length > 0);
+}
+function statusSelected(page, selectedId) {
+  const targets = statusKeyRows(page);
+  const opensAsk = (t) => t.keys.some((k) => k.press.action === "show-ask");
+  return targets.find((t) => t.id === selectedId) ?? targets.find(opensAsk) ?? targets[0] ?? null;
+}
+var GOAL_FIELD = { placeholder: "An outcome to work toward", submit: "Set goal" };
+
 // ../hooks/pressed.ts
 function offersUndo(c) {
   return c.how === "done" || c.how === "dismissed";
@@ -1125,6 +1391,8 @@ function pressed(ledger, last, p, ctx) {
   const answerMessage = ctx.answerMessage ?? messages.answer;
   const record = (kind) => recordPress(kind, actionId(p), pressText(p), ctx, last);
   const unchanged = { ledger, last: null, effects: [] };
+  if (p.id === GOAL_KEYS_ID)
+    return goalPressed(ledger, p, record, ctx.now);
   if (p.action === "undo") {
     if (ledger.findings.some((f) => f.id === p.id) && last?.action === "address" && !last.isKept)
       return { ...unchanged, last: { ...last, isKept: true } };
@@ -3878,26 +4146,6 @@ function rowKeyPlan(r, isAllShown) {
   }
   return { keys, more };
 }
-var VIEW_ASK_LABELS = { question: "View question", task: "View task" };
-function statusKeyPlan(row) {
-  if (row.kind !== "subject" || row.ask === null)
-    return [];
-  return [
-    {
-      press: { action: "show-ask", askId: row.ask.id },
-      label: VIEW_ASK_LABELS[row.ask.kind],
-      hotkey: "v",
-      kind: "view"
-    }
-  ];
-}
-function statusKeyRows(page) {
-  return page.rows.filter((r) => statusKeyPlan(r).length > 0);
-}
-function statusSelected(page, selectedId) {
-  const rows = statusKeyRows(page);
-  return rows.find((r) => r.id === selectedId) ?? rows[0] ?? null;
-}
 function actionLines(keys, more, { width, gap, separator }) {
   const lines = [];
   let used = 0;
@@ -3933,8 +4181,9 @@ function needsYouOrder(ledger) {
   return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
 }
 function heldSubjectOf(o, askId) {
-  const subjectId = o?.askSubjects[askId];
-  return o?.subjects.find((s) => s.id === subjectId && isOpen(s)) ?? null;
+  const linkedId = o?.askSubjects[askId];
+  const milestones = o?.goal && !o.goal.isAwaitingMilestones ? o.milestones : [];
+  return [...o?.subjects ?? [], ...milestones].find((s) => s.id === linkedId && isOpen(s)) ?? null;
 }
 function inboxView({
   ledger,
@@ -4114,9 +4363,69 @@ function perTurnStatus(update) {
   };
 }
 
+// ../hooks/status-goal-page.ts
+var AWAITING_TEXT = "Milestones after the next reply";
+var PROPOSAL_LABEL = "Proposed goal \xB7 from your message";
+function oldestAsk(items, links, id) {
+  const oldest = items.filter((i) => links[i.id] === id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+  return oldest ? { id: oldest.id, kind: oldest.kind } : null;
+}
+function milestoneRow(m, o, items) {
+  const isOpen = m.status !== "done" && m.status !== "dropped";
+  const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
+  const holds = items.filter((i) => {
+    const to = o.askSubjects[i.id];
+    return to === m.id || to !== undefined && servingIds.has(to);
+  });
+  const isHeld = isOpen && holds.length > 0;
+  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0);
+  const direct = oldestAsk(items, o.askSubjects, m.id);
+  const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+  return {
+    id: m.id,
+    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
+    name: m.name,
+    text: m.text || null,
+    stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
+    was: isChanged ? m.was : null,
+    isChanged,
+    ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null)
+  };
+}
+function goalPage(o, items) {
+  const proposal = o?.proposedGoal ? {
+    label: PROPOSAL_LABEL,
+    text: o.proposedGoal.text,
+    milestones: o.proposedGoal.milestones.map((m) => ({ ...SUBJECT_MARKS[m.status], name: m.name }))
+  } : null;
+  const g = o?.goal ?? null;
+  if (o === null || g === null)
+    return { goal: null, proposal, nowLine: null };
+  const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
+  const kept = o.milestones.filter((m) => m.status !== "dropped");
+  const shown = o.milestones.filter((m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt);
+  const done = kept.filter((m) => m.status === "done").length;
+  const isMet = g.metAt !== null;
+  const label = isMet ? "Goal met" : g.isAwaitingMilestones || kept.length === 0 ? "Goal" : `Goal \xB7 ${done} of ${kept.length} done`;
+  const head = o.head;
+  return {
+    goal: {
+      label,
+      text: g.text,
+      isMet,
+      was: isWasShown ? g.was : null,
+      awaiting: g.isAwaitingMilestones || kept.length === 0 ? AWAITING_TEXT : null,
+      milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
+    },
+    proposal,
+    nowLine: head ? `Now: ${head.description || head.title}` : null
+  };
+}
+
 // ../hooks/status-page.ts
 var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
 var LOOK_TEXT = "Last seen";
+var OTHER_WORK = "Other work";
 var LOOK_DASH = "\u254C";
 var WAS_PREFIX = "was: ";
 var MERGED_PREFIX = "merged in: ";
@@ -4136,7 +4445,20 @@ function nameBeforeStall(name, fits) {
 }
 function isItemAfterItem(row, prev) {
   const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
-  return prev !== undefined && prev.kind !== "look" && row.kind !== "look" && !isUnderSubject;
+  const isLine = (r) => r.kind === "look" || r.kind === "part";
+  return prev !== undefined && !isLine(prev) && !isLine(row) && !isUnderSubject;
+}
+var COUNT_WORDS = {
+  working: "working",
+  "waits-on-other": "waiting",
+  queued: "queued",
+  done: "done"
+};
+function countsByMark(folded) {
+  return ["working", "waits-on-other", "queued", "done"].flatMap((status) => {
+    const n = folded.filter((x) => x.status === status).length;
+    return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
+  });
 }
 function isFinishedUnseen(c, lastLookAt) {
   return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
@@ -4163,58 +4485,34 @@ function childRow(c, branch) {
     branch
   };
 }
-function statusPage(s, now) {
-  const o = s.ledger.overview;
-  const look = o?.lastLookAt ?? null;
-  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
-  const isNew = (x) => look === null || x.changedAt > look;
-  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
-  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const oldestAskOf = (x) => {
-    if (!isHeld(x))
-      return null;
-    const oldest = s.ledger.items.filter((i) => o?.askSubjects[i.id] === x.id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
-    return oldest ? { id: oldest.id, kind: oldest.kind } : null;
-  };
-  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
-  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
-  const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
-  const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
-  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
-  const open = subjects.filter(isOpen).sort(pageOrder);
-  const foldable = open.filter((x) => !isHeld(x) && !isNew(x) && !running.some((c) => c.subjectId === x.id));
-  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
-  const shown = [...open.filter((x) => !folded.includes(x)), ...newClosed].sort(pageOrder);
-  const foldedDone = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
-  const shownIds = new Set(shown.map((x) => x.id));
-  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null));
-  const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
-  const firstSeen = shown.findIndex((x) => !isNew(x));
+function partRows(shown, c) {
+  const rows = [];
+  const firstSeen = shown.findIndex((x) => !c.isNew(x));
   for (const [i, x] of shown.entries()) {
     const hasNewAbove = i > 0;
-    if (lookRow && i === firstSeen && hasNewAbove)
-      rows.push(lookRow);
-    const under = running.filter((c) => c.subjectId === x.id);
+    if (c.lookRow && i === firstSeen && hasNewAbove)
+      rows.push(c.lookRow);
+    const under = c.running.filter((ch) => ch.subjectId === x.id);
     const shownUnder = under.slice(0, CHILD_ROWS);
     const isMore = under.length > CHILD_ROWS;
-    const isRunning = x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some(isChildWorking));
+    const isRunning = x.status === "working" && !c.isHeld(x) && (c.isTurnRunning || under.some(isChildWorking));
     const isIdle = x.status === "working" && !isRunning;
     rows.push({
       kind: "subject",
       id: x.id,
-      ...isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
+      ...c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
       isRunning,
       name: x.name,
-      text: isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: stallOf(x),
-      merged: isNew(x) ? x.merged : null,
-      was: isNew(x) ? x.was : null,
+      text: c.isNew(x) || isOpen(x) ? x.text || null : null,
+      stall: c.isHeld(x) ? { text: "waiting", tone: "needsYou" } : null,
+      merged: c.isNew(x) ? x.merged : null,
+      was: c.isNew(x) ? x.was : null,
       hasChildren: under.length > 0,
-      ask: oldestAskOf(x)
+      ask: c.oldestAskOf(x)
     });
-    rows.push(...shownUnder.map((c, n) => childRow(c, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
+    rows.push(...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
     const hidden = under.slice(CHILD_ROWS);
-    const isEveryHiddenRunning = hidden.every((c) => c.delegateState !== "finished");
+    const isEveryHiddenRunning = hidden.every((ch) => ch.delegateState !== "finished");
     if (isMore)
       rows.push({
         kind: "more",
@@ -4224,8 +4522,51 @@ function statusPage(s, now) {
       });
   }
   const isEveryShownNew = firstSeen === -1;
-  if (lookRow && isEveryShownNew && shown.length > 0)
-    rows.push(lookRow);
+  if (c.lookRow && isEveryShownNew && shown.length > 0)
+    rows.push(c.lookRow);
+  return rows;
+}
+function statusPage(s, now) {
+  const o = s.ledger.overview;
+  const look = o?.lastLookAt ?? null;
+  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
+  const isNew = (x) => look === null || x.changedAt > look;
+  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
+  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
+  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
+  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
+  const isOther = (x) => o?.goal != null && o.serves[x.id] === "none";
+  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
+  const newClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
+  const main = subjects.filter((x) => !isOther(x));
+  const other = subjects.filter(isOther);
+  const newClosed = newClosedOf(main);
+  const open = main.filter(isOpen).sort(pageOrder);
+  const foldable = open.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
+  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
+  const shown = [...open.filter((x) => !folded.includes(x)), ...newClosed].sort(pageOrder);
+  const otherNewClosed = newClosedOf(other);
+  const isOtherFolded = (x) => isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === "done" && !otherNewClosed.includes(x);
+  const otherFolded = other.filter(isOtherFolded);
+  const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
+  const foldedDone = main.filter((x) => x.status === "done" && !newClosed.includes(x));
+  const shownIds = new Set([...shown, ...otherShown].map((x) => x.id));
+  const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
+  const ctx = {
+    isNew,
+    isHeld,
+    oldestAskOf,
+    pageOrder,
+    running,
+    isTurnRunning: s.presence.isTurnRunning,
+    lookRow
+  };
+  const rows = [
+    ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null)),
+    ...partRows(shown, ctx)
+  ];
   if (folded.length > 0)
     rows.push({ kind: "fold", id: "open", ...SUBJECT_MARKS.queued, text: `${folded.length} more` });
   if (foldedDone.length > 0) {
@@ -4238,10 +4579,20 @@ function statusPage(s, now) {
       text: `${foldedDone.length}${isMore ? " more" : ""} done`
     });
   }
+  if (otherShown.length > 0 || otherFolded.length > 0) {
+    if (rows.at(-1)?.kind === "look")
+      rows.pop();
+    rows.push({ kind: "part", id: "other", text: OTHER_WORK });
+    rows.push(...partRows(otherShown, { ...ctx, lookRow: lookRow && { ...lookRow, id: "other-look" } }));
+    if (otherFolded.length > 0)
+      rows.push({ kind: "counts", id: "other-counts", counts: countsByMark(otherFolded) });
+  }
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
+  const goalParts = goalPage(o, s.ledger.items);
   return {
-    isEmpty: head === null && rows.length === 0,
+    isEmpty: head === null && rows.length === 0 && goalParts.goal === null && goalParts.proposal === null,
     head,
+    ...goalParts,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]), isLast: n === rows.length - 1 })),
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
@@ -4555,6 +4906,253 @@ function versionLabel(version, isNextBuild) {
 }
 function emptyText(tab, agent) {
   return tab === "needsYou" ? { title: "Nothing needed", hint: `${agent}'s questions and the tasks only you can do show up here.` } : { title: "No findings yet", hint: `${agent} flags issues and opportunities it spots beyond your task.` };
+}
+
+// src/panel-text.ts
+var ANSI = /\x1b\[[0-9;]*m/g;
+var visibleLength = (s) => cellWidth(s.replace(ANSI, ""));
+function fit(s, width) {
+  if (visibleLength(s) <= width)
+    return s;
+  let out = "";
+  let n = 0;
+  for (const part of s.split(/(\x1b\[[0-9;]*m)/)) {
+    if (part.startsWith("\x1B[")) {
+      out += part;
+      continue;
+    }
+    const cells = cellWidth(part);
+    if (n + cells > width - 1)
+      return `${out}${cutToCells(part, width - 1 - n)}\u2026\x1B[0m`;
+    out += part;
+    n += cells;
+  }
+  return out;
+}
+var MARKED_TITLE_CELLS = 12;
+function cutTitle(title, room) {
+  const cells = Math.max(MARKED_TITLE_CELLS, room);
+  return cellWidth(title) <= cells ? title : `${cutToCells(title, cells - 1)}\u2026`;
+}
+function spread(left, right, width) {
+  const gap = width - visibleLength(left) - visibleLength(right);
+  return gap >= 2 ? left + " ".repeat(gap) + right : fit(left, width);
+}
+function wrapText(text, width) {
+  const out = [];
+  for (const paragraph of text.split(`
+`)) {
+    let line = "";
+    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+      const long = cellWidth(word) > width ? cutToCells(word, width - 1) + "\u2026" : word;
+      if (line === "")
+        line = long;
+      else if (cellWidth(line) + 1 + cellWidth(long) <= width)
+        line += ` ${long}`;
+      else {
+        out.push(line);
+        line = long;
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
+function indented(text, indent, width, maxLines, paint) {
+  const room = Math.max(10, width - indent - 1);
+  const wrapped = wrapText(text, room);
+  const shown = wrapped.slice(0, maxLines);
+  if (wrapped.length > maxLines)
+    shown[maxLines - 1] = `${cutForEllipsis(shown[maxLines - 1], (t) => cellWidth(t) <= room)}\u2026`;
+  return shown.map((l) => " ".repeat(indent) + paint(l));
+}
+
+// src/panel-page.ts
+var TREE_ARMS = {
+  mid: { first: "\u251C\u2500", rest: "\u2502" },
+  last: { first: "\u2514\u2500", rest: " " }
+};
+var pageRoom = (indent, width) => Math.max(10, width - indent - 2 - 1);
+function pageText(text, room, maxLines, paint) {
+  const wrapped = wrapText(text, room);
+  const lines = wrapped.slice(0, maxLines);
+  if (wrapped.length > lines.length)
+    lines[lines.length - 1] = `${cutForEllipsis(lines.at(-1), (t) => cellWidth(t) <= room)}\u2026`;
+  return lines.map(paint);
+}
+var GLUE = "\uE000";
+function pageLine(d, indent, mark, name, namePaint, { stall = null, text = null } = {}) {
+  const { width, style: s } = d;
+  const textAt = indent + 2;
+  const room = pageRoom(indent, width);
+  const names = stall ? stalledName(name, stall, room, namePaint, s) : pageText(name, room, STATUS_TEXT_LINES, namePaint);
+  const seconds = text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : [];
+  return [
+    `${" ".repeat(indent)}${mark} ${names[0] ?? ""}`,
+    ...[...names.slice(1), ...seconds].map((l) => " ".repeat(textAt) + l)
+  ];
+}
+function stalledName(name, stall, room, namePaint, s) {
+  const tail = `${STALL_GAP}${stall.text}`.replaceAll(" ", GLUE);
+  const wrapped = (shown) => wrapText(`${shown}${tail}`, room);
+  const lines = wrapped(nameBeforeStall(name, (shown) => wrapped(shown).length <= STATUS_TEXT_LINES));
+  const words = s.tone(stall.tone, stall.text);
+  return lines.map((l) => l.endsWith(tail) ? namePaint(l.slice(0, -tail.length)) + s.dim(STALL_GAP) + words : namePaint(l.replaceAll(GLUE, " ")));
+}
+function withTree(lines, first, rest, s) {
+  const drawn = (line, glyph) => glyph.trim() === "" ? line : line.slice(0, PAGE_MARK_AT) + s.dim(glyph) + line.slice(PAGE_MARK_AT + glyph.length);
+  return lines.map((l, n) => n === 0 ? first ? drawn(l, first) : l : drawn(l, rest));
+}
+function pageRuleCells(width) {
+  return Math.max(0, width - PAGE_TEXT_AT - 1);
+}
+function pageRule(width, s) {
+  return `${" ".repeat(PAGE_TEXT_AT)}${s.dim("\u2500".repeat(pageRuleCells(width)))}`;
+}
+function lookLines(row, width, s) {
+  const text = ` ${row.text} `;
+  const fill = Math.max(4, pageRuleCells(width) - cellWidth(text));
+  const before = Math.floor(fill / 2);
+  const rule = `${" ".repeat(PAGE_TEXT_AT)}${s.dim(`${LOOK_DASH.repeat(before)}${text}${LOOK_DASH.repeat(fill - before)}`)}`;
+  return ["", rule, ...row.isLast ? [] : [""]];
+}
+function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT) {
+  const faces = target.keys.map((k) => ({
+    label: k.label,
+    key: isSelected ? k.hotkey : null,
+    isRecommended: false,
+    isFollowUp: false,
+    ...k.emphasis === "quiet" ? { isQuiet: true } : {}
+  }));
+  const focused = isSelected ? pageFocus(target, d.ui) : -1;
+  return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style) : [];
+}
+function drawPageRow(row, d, isSelected = false) {
+  const { width, now, style: s } = d;
+  if (row.kind === "subject") {
+    const mark = paintMark(row, now, s);
+    const out = pageLine(d, PAGE_MARK_AT, mark, row.name, (t) => t, { stall: row.stall, text: row.text });
+    const room = pageRoom(PAGE_MARK_AT, width);
+    if (row.merged)
+      out.push(...indented(mergedLine(row.merged, (t) => cellWidth(t) <= room), PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim));
+    if (row.was)
+      out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim));
+    out.push(...pageButtonLines({ id: row.id, keys: statusKeyPlan(row) }, d, isSelected));
+    return row.hasChildren ? withTree(out, null, "\u2502", s) : out;
+  }
+  if (row.kind === "child") {
+    const mark = paintMark(row, now, s);
+    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, { stall: row.stall });
+    return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out;
+  }
+  if (row.kind === "more") {
+    const arm = TREE_ARMS[row.branch];
+    return withTree([" ".repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s);
+  }
+  if (row.kind === "look")
+    return lookLines(row, width, s);
+  if (row.kind === "part") {
+    const label = `${row.text} `;
+    return [
+      `${" ".repeat(PAGE_TEXT_AT)}${s.dim(label + "\u2500".repeat(Math.max(4, pageRuleCells(width) - cellWidth(label))))}`
+    ];
+  }
+  if (row.kind === "counts")
+    return [
+      " ".repeat(PAGE_TEXT_AT) + row.counts.map((c) => feedbackPaint(c.tone, s)(c.mark) + s.dim(` ${c.text}`)).join(s.dim(STALL_GAP))
+    ];
+  return pageLine(d, PAGE_MARK_AT, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim);
+}
+
+// src/panel-goal.ts
+function goalPartId(part) {
+  if (part.is === "proposal")
+    return PROPOSAL_KEYS_ID;
+  if (part.is === "milestone")
+    return part.row.id;
+  return part.is === "keys" ? GOAL_KEYS_ID : null;
+}
+var goalEntry = (part) => ({ kind: "goal", part });
+var blank = { kind: "note", text: "" };
+function goalAbove(page, typing) {
+  const isTyping = typing === GOAL_KEYS_ID;
+  const proposal = page.proposal ? [goalEntry({ is: "proposal", proposal: page.proposal, page, isTyping })] : [];
+  const g = page.goal;
+  if (g === null)
+    return proposal;
+  return [
+    ...proposal,
+    ...proposal.length > 0 ? [blank] : [],
+    goalEntry({ is: "title", goal: g, isTyping: isTyping && proposal.length === 0 }),
+    ...g.milestones.map((row) => goalEntry({ is: "milestone", row })),
+    ...isTyping ? [] : [goalEntry({ is: "keys", page })]
+  ];
+}
+function setGoal(page, typing) {
+  if (page.goal !== null || page.proposal !== null)
+    return [];
+  return [goalEntry(typing === GOAL_KEYS_ID ? { is: "field" } : { is: "keys", page })];
+}
+var nowEntry = (text) => goalEntry({ is: "now", text });
+function fieldLines(d) {
+  const { ui, width, style: s } = d;
+  const text = ui.drafts[GOAL_KEYS_ID]?.text ?? "";
+  const field = wrapText(`${text}\x00`, Math.max(10, width - PAGE_MARK_AT - 1));
+  return [
+    " ".repeat(PAGE_MARK_AT) + s.dim(`${GOAL_FIELD.placeholder}:`),
+    ...field.map((l) => " ".repeat(PAGE_MARK_AT) + l.replace("\x00", s.inverse(" ")))
+  ];
+}
+var MARKS_GAP = "   ";
+function marksLines(p, d) {
+  const room = d.width - PAGE_MARK_AT - 1;
+  const lines = [];
+  for (const m of p.milestones) {
+    const cells = cellWidth(`${m.mark} ${m.name}`);
+    const text = `${feedbackPaint(m.tone, d.style)(m.mark)} ${m.name}`;
+    const last = lines.at(-1);
+    if (last && last.cells + MARKS_GAP.length + cells <= room) {
+      last.cells += MARKS_GAP.length + cells;
+      last.text += MARKS_GAP + text;
+    } else
+      lines.push({ cells, text });
+  }
+  return lines.map((l) => " ".repeat(PAGE_MARK_AT) + l.text);
+}
+function drawGoalPart(part, d, isSelected) {
+  const { width, now, style: s } = d;
+  const at = (text, paint, lines = STATUS_TEXT_LINES) => indented(text, PAGE_MARK_AT, width, lines, paint);
+  if (part.is === "proposal") {
+    const p = part.proposal;
+    return [
+      ...at(p.label, s.dim),
+      ...part.isTyping ? fieldLines(d) : at(p.text, s.bold, Infinity),
+      ...marksLines(p, d),
+      ...part.isTyping ? [] : pageButtonLines({ id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(part.page) }, d, isSelected, PAGE_MARK_AT)
+    ];
+  }
+  if (part.is === "title") {
+    const g = part.goal;
+    return [
+      ...at(g.label, s.dim),
+      ...part.isTyping ? fieldLines(d) : at(g.text, s.bold, Infinity),
+      ...g.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [],
+      ...g.awaiting ? at(g.awaiting, s.dim) : []
+    ];
+  }
+  if (part.is === "milestone") {
+    const m = part.row;
+    const mark = paintMark({ ...m, isRunning: false }, now, s);
+    const out = pageLine(d, PAGE_MARK_AT, mark, m.name, m.isChanged ? s.bold : (t) => t, { stall: m.stall, text: m.text });
+    if (m.was)
+      out.push(...indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim));
+    return [...out, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)];
+  }
+  if (part.is === "keys")
+    return pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyPlan(part.page) }, d, isSelected, PAGE_MARK_AT);
+  if (part.is === "field")
+    return fieldLines(d);
+  return at(part.text, s.dim);
 }
 
 // src/panel-lines.ts
@@ -4925,19 +5523,24 @@ function orderEntries(screen, order, now) {
 var PAGE_MARK_AT = 1;
 var PAGE_TEXT_AT = PAGE_MARK_AT + 2;
 var PAGE_CHILD_AT = PAGE_MARK_AT + 3;
-function pageEntries(page) {
+function pageEntries(page, typing) {
+  const blank = { kind: "note", text: "" };
   if (page.isEmpty)
     return [
       { kind: "note", text: page.empty.title, isStrong: true },
-      { kind: "note", text: page.empty.hint, isWhole: true }
+      { kind: "note", text: page.empty.hint, isWhole: true },
+      ...setGoal(page, typing)
     ];
   const description = page.head?.description;
-  const head = page.head ? [
+  const head = page.nowLine ? [nowEntry(page.nowLine)] : page.head ? [
     { kind: "note", text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
     ...description ? [{ kind: "note", text: description, indent: PAGE_MARK_AT }] : []
   ] : [];
+  const above = goalAbove(page, typing);
+  const under = [...head, ...setGoal(page, typing)];
+  const top = above.length > 0 && under.length > 0 ? [...above, blank, ...under] : [...above, ...under];
   const rows = page.rows.map((row) => ({ kind: "page", row }));
-  return head.length > 0 && rows.length > 0 ? [...head, { kind: "note", text: "" }, ...rows] : [...head, ...rows];
+  return top.length > 0 && rows.length > 0 ? [...top, blank, ...rows] : [...top, ...rows];
 }
 function helpEntries(screen, tab) {
   const keys = helpKeys("omp", screen.isNextBuild === true, tab, statusKeyRows(screen.view.statusPage).length > 0);
@@ -4954,7 +5557,7 @@ function entriesOf(screen, ui, tab, now) {
   if (ui.isHelpShown && tab === ui.tab)
     return helpEntries(screen, tab);
   if (!isRowTab(tab))
-    return pageEntries(screen.view.statusPage);
+    return pageEntries(screen.view.statusPage, ui.typing);
   return tab === "prs" ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab);
 }
 
@@ -4980,6 +5583,7 @@ var withTab = (ui, tab, now) => ({
   ...withSelection(ui, null),
   tab,
   pageTop: 0,
+  pageReveal: isRowTab(tab) ? null : true,
   shownSince: tab === ui.tab ? ui.shownSince : now,
   isHelpShown: false
 });
@@ -5111,7 +5715,7 @@ function pageKey(screen, ui, key, now) {
     const to = rows[wrapIndex(at + (key === "k" ? -1 : 1), rows.length)].id;
     return { ui: { ...ui, selectedId: to, focus: null, pageReveal: to } };
   }
-  const keys = statusKeyPlan(row);
+  const { keys } = row;
   if (key === "left" || key === "right") {
     const index = wrapIndex(pageFocus(row, ui) + (key === "left" ? -1 : 1), keys.length);
     return { ui: { ...ui, selectedId: row.id, focus: { rowId: row.id, index } } };
@@ -5119,68 +5723,19 @@ function pageKey(screen, ui, key, now) {
   const pressed = key === "enter" ? keys[pageFocus(row, ui)] : keys.find((k) => k.hotkey === key);
   if (!pressed)
     return null;
-  return { ui: { ...withTab(ui, "needsYou", now), selectedId: pressed.press.askId, openedAt: now } };
-}
-var pageFocus = (row, ui) => ui.focus?.rowId === row.id ? Math.min(ui.focus.index, statusKeyPlan(row).length - 1) : 0;
-
-// src/panel-text.ts
-var ANSI = /\x1b\[[0-9;]*m/g;
-var visibleLength = (s) => cellWidth(s.replace(ANSI, ""));
-function fit(s, width) {
-  if (visibleLength(s) <= width)
-    return s;
-  let out = "";
-  let n = 0;
-  for (const part of s.split(/(\x1b\[[0-9;]*m)/)) {
-    if (part.startsWith("\x1B[")) {
-      out += part;
-      continue;
-    }
-    const cells = cellWidth(part);
-    if (n + cells > width - 1)
-      return `${out}${cutToCells(part, width - 1 - n)}\u2026\x1B[0m`;
-    out += part;
-    n += cells;
+  const { press } = pressed;
+  if (press.action === "show-ask")
+    return { ui: { ...withTab(ui, "needsYou", now), selectedId: press.askId, openedAt: now } };
+  if (press.action === "type-goal") {
+    const drafts = { ...ui.drafts, [GOAL_KEYS_ID]: { text: press.text, since: now } };
+    return { ui: { ...ui, selectedId: row.id, typing: GOAL_KEYS_ID, focus: null, drafts } };
   }
-  return out;
+  return {
+    ui: { ...ui, selectedId: GOAL_KEYS_ID, focus: null, pageReveal: GOAL_KEYS_ID },
+    press: { action: press.action, id: GOAL_KEYS_ID }
+  };
 }
-var MARKED_TITLE_CELLS = 12;
-function cutTitle(title, room) {
-  const cells = Math.max(MARKED_TITLE_CELLS, room);
-  return cellWidth(title) <= cells ? title : `${cutToCells(title, cells - 1)}\u2026`;
-}
-function spread(left, right, width) {
-  const gap = width - visibleLength(left) - visibleLength(right);
-  return gap >= 2 ? left + " ".repeat(gap) + right : fit(left, width);
-}
-function wrapText(text, width) {
-  const out = [];
-  for (const paragraph of text.split(`
-`)) {
-    let line = "";
-    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
-      const long = cellWidth(word) > width ? cutToCells(word, width - 1) + "\u2026" : word;
-      if (line === "")
-        line = long;
-      else if (cellWidth(line) + 1 + cellWidth(long) <= width)
-        line += ` ${long}`;
-      else {
-        out.push(line);
-        line = long;
-      }
-    }
-    out.push(line);
-  }
-  return out;
-}
-function indented(text, indent, width, maxLines, paint) {
-  const room = Math.max(10, width - indent - 1);
-  const wrapped = wrapText(text, room);
-  const shown = wrapped.slice(0, maxLines);
-  if (wrapped.length > maxLines)
-    shown[maxLines - 1] = `${cutForEllipsis(shown[maxLines - 1], (t) => cellWidth(t) <= room)}\u2026`;
-  return shown.map((l) => " ".repeat(indent) + paint(l));
-}
+var pageFocus = (target, ui) => ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0;
 
 // src/panel-draw.ts
 function boxed(inner, tone, width, s) {
@@ -5207,7 +5762,7 @@ function buttonCell(b, isFocused, s, mark = "") {
     return s.inverse(b.isOut ? s.dim(` \u21B5 ${b.label}${mark} `) : s.bold(` \u21B5 ${b.label}${mark} `));
   if (b.isOut && !b.isFollowUp)
     return s.dim(b.key ? ` ${b.key} ${b.label}${mark} ` : ` ${b.label}${mark} `);
-  if (b.isFollowUp)
+  if (b.isFollowUp || b.isQuiet)
     return s.dim(b.key ? ` ${b.key} ${b.label} ` : ` ${b.label} `);
   const label = (b.isRecommended ? s.underline(b.label) : b.label) + mark;
   return b.key ? ` ${s.bold(b.key)} ${label} ` : ` ${label} `;
@@ -5306,92 +5861,6 @@ function drawLine(line, isSelected, d) {
   return out;
 }
 
-// src/panel-page.ts
-var TREE_ARMS = {
-  mid: { first: "\u251C\u2500", rest: "\u2502" },
-  last: { first: "\u2514\u2500", rest: " " }
-};
-var pageRoom = (indent, width) => Math.max(10, width - indent - 2 - 1);
-function pageText(text, room, maxLines, paint) {
-  const wrapped = wrapText(text, room);
-  const lines = wrapped.slice(0, maxLines);
-  if (wrapped.length > lines.length)
-    lines[lines.length - 1] = `${cutForEllipsis(lines.at(-1), (t) => cellWidth(t) <= room)}\u2026`;
-  return lines.map(paint);
-}
-var GLUE = "\uE000";
-function pageLine(d, indent, mark, name, namePaint, { stall = null, text = null } = {}) {
-  const { width, style: s } = d;
-  const textAt = indent + 2;
-  const room = pageRoom(indent, width);
-  const names = stall ? stalledName(name, stall, room, namePaint, s) : pageText(name, room, STATUS_TEXT_LINES, namePaint);
-  const seconds = text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : [];
-  return [
-    `${" ".repeat(indent)}${mark} ${names[0] ?? ""}`,
-    ...[...names.slice(1), ...seconds].map((l) => " ".repeat(textAt) + l)
-  ];
-}
-function stalledName(name, stall, room, namePaint, s) {
-  const tail = `${STALL_GAP}${stall.text}`.replaceAll(" ", GLUE);
-  const wrapped = (shown) => wrapText(`${shown}${tail}`, room);
-  const lines = wrapped(nameBeforeStall(name, (shown) => wrapped(shown).length <= STATUS_TEXT_LINES));
-  const words = s.tone(stall.tone, stall.text);
-  return lines.map((l) => l.endsWith(tail) ? namePaint(l.slice(0, -tail.length)) + s.dim(STALL_GAP) + words : namePaint(l.replaceAll(GLUE, " ")));
-}
-function withTree(lines, first, rest, s) {
-  const drawn = (line, glyph) => glyph.trim() === "" ? line : line.slice(0, PAGE_MARK_AT) + s.dim(glyph) + line.slice(PAGE_MARK_AT + glyph.length);
-  return lines.map((l, n) => n === 0 ? first ? drawn(l, first) : l : drawn(l, rest));
-}
-function pageRuleCells(width) {
-  return Math.max(0, width - PAGE_TEXT_AT - 1);
-}
-function pageRule(width, s) {
-  return `${" ".repeat(PAGE_TEXT_AT)}${s.dim("\u2500".repeat(pageRuleCells(width)))}`;
-}
-function lookLines(row, width, s) {
-  const text = ` ${row.text} `;
-  const fill = Math.max(4, pageRuleCells(width) - cellWidth(text));
-  const before = Math.floor(fill / 2);
-  const rule = `${" ".repeat(PAGE_TEXT_AT)}${s.dim(`${LOOK_DASH.repeat(before)}${text}${LOOK_DASH.repeat(fill - before)}`)}`;
-  return ["", rule, ...row.isLast ? [] : [""]];
-}
-function pageButtonLines(row, d, isSelected) {
-  const faces = statusKeyPlan(row).map((k) => ({
-    label: k.label,
-    key: isSelected ? k.hotkey : null,
-    isRecommended: false,
-    isFollowUp: false
-  }));
-  const focused = isSelected ? pageFocus(row, d.ui) : -1;
-  return faces.length > 0 ? faceLines(faces, focused, PAGE_TEXT_AT - 1, d.width, d.style) : [];
-}
-function drawPageRow(row, d, isSelected = false) {
-  const { width, now, style: s } = d;
-  if (row.kind === "subject") {
-    const mark = paintMark(row, now, s);
-    const out = pageLine(d, PAGE_MARK_AT, mark, row.name, (t) => t, { stall: row.stall, text: row.text });
-    const room = pageRoom(PAGE_MARK_AT, width);
-    if (row.merged)
-      out.push(...indented(mergedLine(row.merged, (t) => cellWidth(t) <= room), PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim));
-    if (row.was)
-      out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim));
-    out.push(...pageButtonLines(row, d, isSelected));
-    return row.hasChildren ? withTree(out, null, "\u2502", s) : out;
-  }
-  if (row.kind === "child") {
-    const mark = paintMark(row, now, s);
-    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, { stall: row.stall });
-    return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out;
-  }
-  if (row.kind === "more") {
-    const arm = TREE_ARMS[row.branch];
-    return withTree([" ".repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s);
-  }
-  if (row.kind === "look")
-    return lookLines(row, width, s);
-  return pageLine(d, PAGE_MARK_AT, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim);
-}
-
 // src/panel-tabs.ts
 function tabRows(screen) {
   const { view } = screen;
@@ -5459,7 +5928,7 @@ function footer(d, isPageScrolling) {
   const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.statusPage.error);
   if (status.text)
     out.push(` ${s.dim(status.text)}`);
-  const hints = ui.typing !== null ? [`\u21B5 ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch", "? help"] : [
+  const hints = ui.typing !== null ? [`\u21B5 ${ui.typing === GOAL_KEYS_ID ? GOAL_FIELD.submit : ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch", "? help"] : [
     ...statusKeyRows(screen.view.statusPage).length > 0 ? ["j k select", "\u21B5 press"] : [],
     ...isPageScrolling ? ["\u2191\u2193 scroll"] : [],
     "tab switch",
@@ -5548,17 +6017,21 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   ];
   const body = [];
   let selectedAt = [0, 0];
-  const pageSelected = isRowTab(ui.tab) ? null : statusSelected(screen.view.statusPage, ui.selectedId);
+  const pageSelected = isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId);
   let pageSelectedAt = null;
+  let goalTitleAt = null;
   for (const e of entries) {
     if (e.kind === "heading")
       body.push(` ${e.mark ? `${e.mark.tone ? style.tone(e.mark.tone, e.mark.text) : e.mark.text} ` : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
-    else if (e.kind === "page") {
-      if (e.row.isRuledAbove)
+    else if (e.kind === "page" || e.kind === "goal") {
+      if (e.kind === "page" && e.row.isRuledAbove)
         body.push(pageRule(width, style));
       const start = body.length;
-      const isSelected = e.row.id === pageSelected?.id;
-      body.push(...drawPageRow(e.row, d, isSelected));
+      if (e.kind === "goal" && e.part.is === "title")
+        goalTitleAt = start;
+      const id = e.kind === "page" ? e.row.id : goalPartId(e.part);
+      const isSelected = id !== null && id === pageSelected?.id;
+      body.push(...e.kind === "page" ? drawPageRow(e.row, d, isSelected) : drawGoalPart(e.part, d, isSelected));
       if (isSelected)
         pageSelectedAt = [start, body.length - 1];
     } else if (e.kind === "banner")
@@ -5588,11 +6061,14 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const room = roomBeside(foot);
   const blanks = (shown) => Array(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill("");
   const isOverflowing = body.length > room;
-  const [first = 0, last = 0] = pageSelectedAt ?? [];
-  const top = pageSelectedAt && ui.pageReveal === pageSelected?.id ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop;
+  const [keysAt = 0, last = 0] = pageSelectedAt ?? [];
+  const goalTextAt = pageSelected?.id === GOAL_KEYS_ID ? goalTitleAt : null;
+  const first = goalTextAt !== null && last - goalTextAt + 3 <= room ? goalTextAt : keysAt;
+  const isRevealed = pageSelectedAt !== null && (ui.pageReveal === true || ui.pageReveal === pageSelected?.id);
+  const top = isRevealed ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop;
   const pageTop = isPage ? Math.min(Math.max(0, top), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop;
   const shown = !isOverflowing ? body : isPage ? pageWindow(body, pageTop, room, style) : scrolled(body, selectedAt, room, style);
-  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)), pageTop };
+  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)), pageTop, isRevealed };
 }
 function tallestTabHeight(screen, ui, width, now, style, height) {
   const heights = shownTabs(screen.isNextBuild === true).map((t) => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id, now), width, now, style, height).lines.length);
@@ -5700,7 +6176,7 @@ function createPanel(deps) {
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight);
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity));
       heldHeight = Math.max(heldHeight, drawn.lines.length);
-      ui = { ...ui, pageTop: drawn.pageTop, pageReveal: null };
+      ui = { ...ui, pageTop: drawn.pageTop, pageReveal: drawn.isRevealed ? null : ui.pageReveal };
       return drawn.lines;
     },
     handleInput(key, text) {
@@ -5745,14 +6221,80 @@ function createPanel(deps) {
   };
 }
 
+// ../hooks/status-upgrade-goal.ts
+function time(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+function nonEmpty(value) {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+function goalOf(saved) {
+  const g = saved;
+  const text = nonEmpty(g?.text);
+  const setAt = time(g?.setAt);
+  if (typeof saved !== "object" || text === null || setAt === null)
+    return null;
+  return {
+    text,
+    setAt,
+    metAt: time(g?.metAt),
+    was: nonEmpty(g?.was),
+    isAwaitingMilestones: g?.isAwaitingMilestones === true
+  };
+}
+function proposedOf(saved) {
+  const p = saved;
+  const text = nonEmpty(p?.text);
+  const at = time(p?.at);
+  if (typeof saved !== "object" || text === null || at === null)
+    return null;
+  const milestones = (Array.isArray(p?.milestones) ? p.milestones : []).flatMap((raw) => {
+    const m = raw;
+    const name = nonEmpty(m?.name);
+    const status = STATUSES.find((x) => x === m?.status);
+    return name && status ? [{ name, status }] : [];
+  });
+  return { text, milestones: milestones.slice(0, MILESTONES_MAX), at };
+}
+function milestoneOf(saved) {
+  const m = saved;
+  const status = STATUSES.find((x) => x === m?.status);
+  const changedAt = time(m?.changedAt);
+  if (!m || typeof m.id !== "string" || typeof m.name !== "string" || !status || changedAt === null)
+    return null;
+  return {
+    id: m.id,
+    name: m.name,
+    status,
+    text: typeof m.text === "string" ? m.text : "",
+    was: nonEmpty(m.was),
+    changedAt,
+    closedAt: time(m.closedAt)
+  };
+}
+function goalFields(o, subjectIds) {
+  const milestones = (Array.isArray(o.milestones) ? o.milestones : []).map(milestoneOf).filter((m) => m !== null);
+  const milestoneIds = new Set(milestones.map((m) => m.id));
+  const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
+  const serves = Object.fromEntries(savedServes.filter((e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || milestoneIds.has(e[1]))));
+  const declined = Array.isArray(o.declinedGoals) ? o.declinedGoals.filter((d) => typeof d === "string") : [];
+  return {
+    goal: goalOf(o.goal),
+    proposedGoal: proposedOf(o.proposedGoal),
+    declinedGoals: declined.slice(-DECLINED_KEPT),
+    milestones,
+    nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
+    serves
+  };
+}
+
 // ../hooks/status-upgrade.ts
-var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
 var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
 var DELEGATE_STATES = ["working", "blocked", "finished"];
 function text(value) {
   return typeof value === "string" ? value : "";
 }
-function time(value) {
+function time2(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 var DROPPED_STATUSES = { "waits-on-you": "queued", problem: "queued" };
@@ -5766,7 +6308,7 @@ function wasAndMerged(was, merged) {
 function subjectOf(saved) {
   const s = saved;
   const status = STATUSES.find((x) => x === s?.status) ?? DROPPED_STATUSES[String(s?.status)];
-  const changedAt = time(s?.changedAt);
+  const changedAt = time2(s?.changedAt);
   if (!s || typeof s.id !== "string" || typeof s.name !== "string" || !status || changedAt === null)
     return null;
   return {
@@ -5775,16 +6317,16 @@ function subjectOf(saved) {
     status,
     text: text(s.text),
     ...wasAndMerged(s.was, s.merged),
-    createdAt: time(s.createdAt) ?? changedAt,
+    createdAt: time2(s.createdAt) ?? changedAt,
     changedAt,
-    closedAt: time(s.closedAt),
+    closedAt: time2(s.closedAt),
     into: typeof s.into === "string" ? s.into : null
   };
 }
 function childOf(saved) {
   const c = saved;
   const kind = CHILD_KINDS.find((k) => k === c?.kind);
-  const startedAt = time(c?.startedAt);
+  const startedAt = time2(c?.startedAt);
   if (!c || typeof c.id !== "string" || typeof c.ref !== "string" || !kind || startedAt === null)
     return null;
   return {
@@ -5794,8 +6336,8 @@ function childOf(saved) {
     name: text(c.name),
     subjectId: typeof c.subjectId === "string" ? c.subjectId : null,
     startedAt,
-    endedAt: time(c.endedAt),
-    lastActivityAt: time(c.lastActivityAt),
+    endedAt: time2(c.endedAt),
+    lastActivityAt: time2(c.lastActivityAt),
     delegateState: DELEGATE_STATES.find((state) => state === c.delegateState) ?? null
   };
 }
@@ -5819,7 +6361,7 @@ function headOf(saved) {
   return title === "" ? null : { title, description: text(h?.description) };
 }
 function fromLists(o) {
-  const lastLookAt = time(o.lastLookAt);
+  const lastLookAt = time2(o.lastLookAt);
   const items = lastLookAt === null ? [] : ["workstreams", "queue", "open"].flatMap((k) => Array.isArray(o[k]) ? o[k] : []);
   const subjects = items.flatMap((raw) => {
     const item = raw;
@@ -5861,16 +6403,17 @@ function upgradeStatus(saved) {
   const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
   const askSubjects = Object.fromEntries(savedLinks.filter((e) => typeof e[1] === "string"));
   const look = o.look;
-  const lookAt = time(look?.startedAt);
+  const lookAt = time2(look?.startedAt);
   return {
     head: "head" in o ? headOf(o.head) : headOfGoal(o.goal),
     subjects,
     children,
     askSubjects,
-    nextId: Math.max(time(o.nextId) ?? 1, subjects.length + 1),
-    nextChildId: Math.max(time(o.nextChildId) ?? 1, children.length + 1),
-    lastLookAt: time(o.lastLookAt),
-    look: lookAt === null ? null : { startedAt: lookAt }
+    nextId: Math.max(time2(o.nextId) ?? 1, subjects.length + 1),
+    nextChildId: Math.max(time2(o.nextChildId) ?? 1, children.length + 1),
+    lastLookAt: time2(o.lastLookAt),
+    look: lookAt === null ? null : { startedAt: lookAt },
+    ...goalFields(o, new Set(subjects.map((s) => s.id)))
   };
 }
 
@@ -5890,7 +6433,8 @@ var EMPTY = {
   updates: 0
 };
 function isBlankLedger(ledger) {
-  const isStatusBlank = !ledger.overview || ledger.overview.head === null && ledger.overview.subjects.length === 0;
+  const o = ledger.overview;
+  const isStatusBlank = !o || o.head === null && o.subjects.length === 0 && o.goal === null;
   return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0;
 }
 function upgradeLedger(ledger) {
@@ -6237,7 +6781,47 @@ function demoView(now, agent) {
         nextId: 8,
         nextChildId: 6,
         lastLookAt: now - 30 * MIN,
-        look: null
+        look: null,
+        goal: {
+          text: "Pinch ships in the beta",
+          setAt: now - 60 * MIN,
+          metAt: null,
+          was: null,
+          isAwaitingMilestones: false
+        },
+        proposedGoal: null,
+        declinedGoals: [],
+        milestones: [
+          {
+            id: "m1",
+            name: "Glances fade out",
+            status: "done",
+            text: "",
+            was: null,
+            changedAt: now - 40 * MIN,
+            closedAt: now - 40 * MIN
+          },
+          {
+            id: "m2",
+            name: "Pinch dismisses reliably",
+            status: "working",
+            text: "tuning pinch pressure",
+            was: null,
+            changedAt: now - 35 * MIN,
+            closedAt: null
+          },
+          {
+            id: "m3",
+            name: "Flick decided",
+            status: "queued",
+            text: "waits on your pick",
+            was: null,
+            changedAt: now - 5 * MIN,
+            closedAt: null
+          }
+        ],
+        nextMilestoneId: 4,
+        serves: { s1: "m2", s3: "m3", s4: "m1", s6: "none", s7: "none" }
       },
       items: [
         {
@@ -6873,11 +7457,6 @@ function applied(s, parsed, now, promptAt) {
 }
 
 // ../hooks/status-ops.ts
-function hasSameWords(a, b) {
-  const x = words(a);
-  const y = words(b);
-  return x.size === y.size && [...x].every((w) => y.has(w));
-}
 function isUnderWay(s) {
   return s.status === "working" || s.status === "waits-on-other";
 }
@@ -6922,13 +7501,18 @@ var OP_ORDER = {
   done: 0,
   drop: 0,
   was: 1,
-  link: 2
+  link: 2,
+  goal: 0,
+  milestone: 0,
+  serves: 2
 };
-function applyOps(last, ops, now, askIds) {
+function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
   let o = {
     ...last ?? EMPTY_SESSION_STATUS,
     subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
     children: (last?.children ?? []).map((c) => ({ ...c })),
+    milestones: (last?.milestones ?? []).map((m) => ({ ...m })),
+    serves: { ...last?.serves },
     askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask)))
   };
   const find = (ref) => {
@@ -6951,19 +7535,34 @@ function applyOps(last, ops, now, askIds) {
     forgetSeenWas(s);
     s.changedAt = now;
   };
+  const named = new Set;
+  const markNamed = (m) => {
+    if (m)
+      named.add(m.id);
+  };
   const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
   for (const { op } of ordered) {
     if (op.kind === "none")
       continue;
-    if (op.kind === "head")
+    if (op.kind === "goal" || op.kind === "milestone" || op.kind === "serves") {
+      o = applyGoalOp(o, op, now, find);
+      if (op.kind === "milestone")
+        markNamed(findMilestone(o, op.name));
+      if (op.kind === "serves" && op.milestone !== null)
+        markNamed(findMilestone(o, op.milestone));
+    } else if (op.kind === "head")
       o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
     else if (op.kind === "link") {
       const child = o.children.find((c) => c.id === op.ref);
       const subject = find(op.subject);
+      const milestone = subject ? null : findMilestone(o, op.subject);
       if (child && subject)
         child.subjectId = subject.id;
       else if (subject && askIds.has(op.ref))
         o.askSubjects[op.ref] = subject.id;
+      else if (milestone && askIds.has(op.ref))
+        o.askSubjects[op.ref] = milestone.id;
+      markNamed(milestone);
     } else if (op.kind === "new") {
       const known = find(op.name);
       if (known && isOpen(known)) {
@@ -6985,6 +7584,10 @@ function applyOps(last, ops, now, askIds) {
       o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] };
     } else {
       const s = find(op.ref);
+      const milestone = s ? null : findMilestone(o, op.ref);
+      if (milestone)
+        moveMilestone(o, milestone, op, now);
+      markNamed(milestone);
       if (!s)
         continue;
       if (op.kind === "set")
@@ -7021,21 +7624,23 @@ function applyOps(last, ops, now, askIds) {
   const isHeadKept = o.head === (last?.head ?? null);
   if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
     o = { ...o, head: { ...o.head, description: "" } };
-  return o;
+  return settleGoal(o, now, readSetAt, named);
 }
-function applyStatus(last, answer, now, askIds) {
-  return answer.kind === "unchanged" ? last : applyOps(last, answer.ops, now, askIds);
+function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
+  if (answer.kind === "ops")
+    return applyOps(last, answer.ops, now, askIds, readSetAt);
+  return last === null ? null : settleGoal(last, now, readSetAt, new Set);
 }
 
 // ../hooks/session-status.ts
-function appliedStatus(s, answer, appliedAfter, now) {
+function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overview?.goal?.setAt ?? null) {
   if (s.presence.turnsApplied < appliedAfter)
     return s;
   return {
     ...s,
     ledger: {
       ...s.ledger,
-      overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)))
+      overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)), readSetAt)
     },
     overviewFailure: null,
     lastOverviewCallAt: now
@@ -7105,12 +7710,22 @@ function appliedCatchUp(s, begun, parsed, now) {
 }
 
 // ../hooks/status.ts
-var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i;
+var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|MILESTONE|SERVES)\s*(?::\s*(.*))?$/i;
 function fields(value) {
   return value.split("|").map((f) => f.trim());
 }
 function openStatus(s) {
   return OPEN_STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
+}
+function anyStatus(s) {
+  return STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
+}
+function proposedMilestones(value) {
+  return (value ?? "").split(";").flatMap((part) => {
+    const m = /^\s*(\S+)\s+(.+?)\s*$/.exec(part);
+    const status = anyStatus(m?.[1]);
+    return status && m?.[2] ? [{ status, name: m[2] }] : [];
+  });
 }
 function opOf(key, f) {
   if (key === "NOCHANGE" || key === "UNCHANGED")
@@ -7138,6 +7753,16 @@ function opOf(key, f) {
     return f[0] ? { kind: "head", title: f[0], description: f[1] ?? "" } : null;
   if (key === "LINK")
     return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
+  if (key === "GOAL")
+    return f[0] ? { kind: "goal", text: f[0], milestones: proposedMilestones(f[1]) } : null;
+  if (key === "MILESTONE") {
+    const status = anyStatus(f[0]);
+    return status && f[1] ? { kind: "milestone", status, name: f[1], text: f[2] ?? "" } : null;
+  }
+  if (key === "SERVES") {
+    const isNone = f[1] === "-" || f[1]?.toLowerCase() === "none";
+    return f[0] && f[1] ? { kind: "serves", subject: f[0], milestone: isNone ? null : f[1] } : null;
+  }
   return null;
 }
 function parseStatus(text) {
@@ -7162,8 +7787,47 @@ async function askStatus(ask) {
   return { first, last: holdsProse ? await ask() : first };
 }
 
+// ../hooks/status-prompt-goal.ts
+var GOAL_LINES = `GOAL: outcome | status name; status name
+MILESTONE: status | name | where it stands
+SERVES: subject id or name | milestone id or name, or - when the goal does not need it
+GOAL proposes one outcome with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, then its name: GOAL: 2.5 in the store | done Bug fixed; working Release built; queued Store review. It holds no date or time. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`;
+var GOAL_INPUT = `- <goal>: the outcome the person set for the work, when one is set. It says when the goal is met, and when it was just set, so its milestones still belong to the goal before it.
+- <milestones>: the outcomes the goal needs, one per line: id | status | name | where it stands
+- <proposed>: a goal you proposed that the person has not answered yet: outcome | its milestones
+- <declined>: goals the person declined, as their key words, one per line
+- While a goal is set, each line in <subjects> ends with the milestone the subject serves, - when the goal does not need it, or ? when it is not linked yet.`;
+var GOAL_PARTS = {
+  "goal-from-person": `Write GOAL only from what the person wrote in <person>, or in a catch-up, the person's own messages in <conversation>. Never propose from the agent's words in <reply>, <activity> or <tasks>, even when the agent writes "Goal:" or sums up the work.`,
+  "goal-finish-line": `Write GOAL only for an outcome with a finish line, one someone could check as met or not, such as "2.5 in the store" or "the import ready to demo". A direction is not a goal: "make search faster", "every item should earn its place" or "keep the list tidy" get no GOAL.`,
+  "goal-not-again": `Never propose the goal in <goal>, a goal in <proposed>, or a goal in <declined> again, in the same words or in other words. A goal the person declined stays declined until they state it again as new work.`,
+  "goal-belongs-to-person": `The goal belongs to the person. GOAL only proposes: the person uses it, edits it or declines it. Never write GOAL to reword or update the goal in <goal>, and never write the goal into the head, a subject or a milestone.`,
+  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
+  "milestones-for-new-goal": `When <goal> says it was just set, its milestones belong to the goal before it, and each one your answer does not name goes. For each one the new goal still needs, write MILESTONE again with its name, status and text. Write MILESTONE for each outcome it needs that none covers, so the goal has ${MILESTONES_MIN} to ${MILESTONES_MAX}.`,
+  "serves-every-subject": `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work moves forward, or - when the goal does not need it. Change a link only when what the work is for changed. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`
+};
+function goalRules(without = []) {
+  return Object.keys(GOAL_PARTS).filter((id) => !without.includes(id)).map((id) => `- ${GOAL_PARTS[id]}`).join(NL4);
+}
+function goalBlocks(o) {
+  if (o === null)
+    return [];
+  const g = o.goal;
+  const state = g?.isAwaitingMilestones ? " (just set)" : g?.metAt != null ? " (met)" : "";
+  const milestones = o.milestones.filter((m) => m.status !== "dropped").map((m) => `${m.id} | ${m.status} | ${m.name} | ${m.text || "-"}`);
+  const p = o.proposedGoal;
+  const block = (tag, body) => `<${tag}>${NL4}${body}${NL4}</${tag}>`;
+  return [
+    ...g ? [block("goal", `${g.text}${state}`)] : [],
+    ...g && milestones.length > 0 ? [block("milestones", milestones.join(NL4))] : [],
+    ...p ? [block("proposed", `${p.text} | ${p.milestones.map((m) => `${m.status} ${m.name}`).join("; ")}`)] : [],
+    ...o.declinedGoals.length > 0 ? [block("declined", o.declinedGoals.join(NL4))] : []
+  ];
+}
+
 // ../hooks/status-prompt.ts
-var STATUS_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
+function statusSystem(without = []) {
+  return `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
 
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
@@ -7174,6 +7838,7 @@ Input:
 - <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
 - <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subject it holds up, or - when it has none yet
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
+${GOAL_INPUT}
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
 - <reply>: what the agent said this turn, in order
@@ -7189,6 +7854,7 @@ DROP: id or name | why | INTO id or name
 WAS: id or name | the plan it replaces
 LINK: running or ask id | subject id or name
 HEAD: title | description
+${GOAL_LINES}
 
 A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
 
@@ -7211,7 +7877,12 @@ Rules:
 - Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
 - Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
 - Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.
-- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.`;
+- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.
+
+Goal:
+${goalRules(without)}`;
+}
+var STATUS_SYSTEM = statusSystem();
 function headText(o) {
   if (!o?.head)
     return "(none yet)";
@@ -7223,6 +7894,7 @@ function statusBlocks({ last, asks, tasks, now }) {
   const held = asksText(last, asks);
   const list = tasksText(tasks);
   return [
+    ...goalBlocks(last),
     `<head>${NL4}${headText(last)}${NL4}</head>`,
     `<subjects>${NL4}${open}${NL4}</subjects>`,
     ...finished === "" ? [] : [`<finished>${NL4}${finished}${NL4}</finished>`],
@@ -7242,7 +7914,7 @@ function statusPrompt(input, ex) {
 }
 function statusMidTurnPrompt(input, turn) {
   return [
-    "The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes.",
+    'The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes. Where it stands says what works so far and what is left, never what the agent is doing: "CSV export works, PDF not started", not "export edits underway" or "writing the PDF export".',
     ...statusBlocks(input),
     `<person>${NL4}${clipMiddle(personText(turn.person, turn.trigger), 4000, 1500)}${NL4}</person>`,
     `<activity>${NL4}${clipMiddle(turn.activity.join(NL4), 2500, 500)}${NL4}</activity>`
@@ -7338,7 +8010,8 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
   const after = await host.update((x) => {
     before = x.ledger.overview;
     isWritten = x.presence.turnsApplied >= appliedAfter;
-    return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now);
+    const readSetAt = input.last?.goal?.setAt ?? null;
+    return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now, readSetAt);
   });
   if (!host.records)
     return;

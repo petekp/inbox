@@ -12,14 +12,20 @@ import type { Ledger, SessionStatus, StatusFailure, Session } from '../types'
  * `turnsApplied` when the update landed. The answer is dropped when the session now has fewer applied turns than that:
  * it was replaced by one that never applied this update.
  */
-export function appliedStatus<S extends Session>(s: S, answer: StatusAnswer, appliedAfter: number, now: number): S {
+export function appliedStatus<S extends Session>(
+  s: S,
+  answer: StatusAnswer,
+  appliedAfter: number,
+  now: number,
+  readSetAt: number | null = s.ledger.overview?.goal?.setAt ?? null,
+): S {
   if (s.presence.turnsApplied < appliedAfter) return s
 
   return {
     ...s,
     ledger: {
       ...s.ledger,
-      overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map(i => i.id))),
+      overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map(i => i.id)), readSetAt),
     },
     overviewFailure: null,
     lastOverviewCallAt: now,

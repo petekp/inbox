@@ -1,17 +1,29 @@
 ## The checks
 
-The examples come from one invented session. It adds two-factor sign-in to a web app. Its pieces are SMS codes, authenticator setup, recovery codes and the 3.0 release. A subagent checks the recovery code tests. The open question "Offer SMS codes outside the US?" holds up SMS codes. A finding says the password reset link expires too fast. The person has a task: add the SMS provider's key to staging. A standing rule says no deploys on Fridays. The examples write a row on one line, as `Name: where it stands`.
+The examples come from one invented session. It adds two-factor sign-in to a web app. Its pieces are SMS codes, authenticator setup, recovery codes and the 3.0 release. A subagent checks the recovery code tests. The person set the goal "Two-factor sign-in in 3.0", with the milestones SMS codes work, Recovery codes shown and 3.0 shipped. A pricing page tweak is work the goal does not need. The open question "Offer SMS codes outside the US?" holds up SMS codes. A finding says the password reset link expires too fast. The person has a task: add the SMS provider's key to staging. A standing rule says no deploys on Fridays. The examples write a row on one line, as `Name: where it stands`.
+
+**`n/a`.** A check has nothing to judge in these cases and no others. Its answer is then `n/a`, never `pass`:
+
+- `rows-are-work`, `each-once`, `marks` and `where-it-stands`: the page has no subject rows.
+- `child-labels`: the page has no child rows.
+- `no-restating`: the facts have no open ask and no finding.
+- `was-lines`: the page has no was line under a subject row.
+- `goal`: the page shows no goal and no proposed goal.
+- `milestones`: the page shows no milestone rows.
+- `split`: no goal is set, so nothing is split. A proposed goal alone splits nothing.
+
+`head` is never `n/a`: a page with no head while the facts give a focus fails it.
 
 ### head
 
 The head tells the person what the session is focused on now, in the person's own words. Compare it with `Focus now` in the facts.
 
-The head passes when it names that focus, in any words. In the two-line form, the title names the focus in a few words, like a row's name, and the description says what the session is doing about it. When the focus is work that has finished and the facts give no newer focus, a head that names that finished work passes.
+The head passes when it names that focus, in any words. While a goal is set, the head is the one `Now:` line. The goal above it already names the aim, so the `Now:` line names the part of the focus underway now: one piece, one step of a piece, or the next few steps. It passes when that part serves the focus. It fails when it names work outside the focus, or only repeats the goal. In the two-line form, the title names the focus in a few words, like a row's name, and the description says what the session is doing about it. When the focus is work that has finished and the facts give no newer focus, a head that names that finished work passes.
 
 The head fails when it does any of these:
 
 - It names a focus the session has moved past.
-- It names one small part of the work: a step on the way, or one stream of a coordinator whose focus covers more.
+- Its title, or its `Now:` line, names one small part of the work in place of the focus: a step on the way that the focus does not need, or one stream of a coordinator whose focus covers more. In the two-line form, a description that names the step underway on the focus passes.
 - It names where one piece stands in place of the focus.
 - It names the focus by an id or a tool's handle, in place of the person's words.
 - In the two-line form, the description only repeats the title, or the title is a sentence.
@@ -20,7 +32,9 @@ The head fails when it does any of these:
 Examples:
 
 - Pass: `Two-factor sign-in` over `Adding SMS and app codes to sign-in`, while the agent fixes a typo on the way.
-- Pass: the goal line `Two-factor sign-in for the web app`.
+- Pass: `Now: Adding recovery codes to sign-in`, under the goal `Two-factor sign-in in 3.0`.
+- Pass: `Now: Showing recovery codes, then the SMS check`, when the focus is two-factor sign-in as a whole.
+- Fail: `Now: Two-factor sign-in in 3.0`, which repeats the goal while the session works on recovery codes.
 - Pass: `3.0 release` over `Shipping two-factor sign-in in 3.0`, after 3.0 shipped, when the person asked for nothing more and the focus is still the release.
 - Fail: the same head after the focus moved to a billing bug.
 - Fail: `Typo fix` over `Fixing a typo on the sign-in form`, while the focus is two-factor sign-in.
@@ -113,6 +127,7 @@ The check passes when every row's words say its piece's state and agree with the
 
 The check fails when a row's words do any of these:
 
+- They say what the agent is doing in place of where the work stands, in any words: `edits underway`, `being edited`, `in progress` and `working on it` all fail alike.
 - They name the step that ran, or the tool or command that runs now.
 - They name an id, such as a PR or ticket number, a hash or a file.
 - They report what was said in the conversation.
@@ -130,6 +145,7 @@ Examples:
 - Pass: `3.0 release: after recovery codes`.
 - Fail: `SMS codes: partly working`, when US numbers work and EU codes never arrive.
 - Fail: `Recovery codes: tests running`.
+- Fail: `Recovery codes: edits underway`.
 - Fail: `Recovery codes: in review, subagent checking tests`, while that subagent shows as a child row under it.
 - Fail: `SMS codes: PR #212`.
 - Fail: `Authenticator setup: compared three QR libraries`.
@@ -205,3 +221,68 @@ Examples:
 - Fail: `● Recovery codes: printable sheet`, with `was: printable sheet`.
 - Fail: `merged in: Let people type the setup key by hand when the…`.
 - Fail: the facts say recovery codes changed from email to a printable sheet at this step, and the row has no was line.
+
+### goal
+
+The goal is the one outcome the person is working toward. The person owns it. The model may only propose one, from the person's own words.
+
+A goal the person set passes in any words. Judge it only for `was:`: a `was:` line under the goal names the goal it replaced.
+
+A proposed goal passes when all of these hold:
+
+- The facts say the person stated a goal, at this step or before, and the proposal names that outcome. Its words may differ.
+- It is an outcome someone could check as met or not, with a finish line, such as `3.0 shipped` or `Sign-in ready to demo`.
+
+A proposed goal fails when it does any of these:
+
+- It comes from the agent's words, or from a summary of the work, when the facts give no goal the person stated.
+- It names a direction with no finish line, such as `Better sign-in security` or `Keep the code clean`.
+- It names an activity in place of an outcome, such as `Reviewing sign-in`.
+- It names a different outcome from the one the person stated, or adds an aim the person did not state.
+- It proposes the goal already set, in other words.
+
+Examples:
+
+- Pass: the goal `Two-factor sign-in in 3.0`, which the person set.
+- Pass: `Proposed goal · from your message` over `Recovery codes ready to demo`, when the person stated: get recovery codes ready to demo.
+- Fail: the same proposal when the person stated no goal and the agent wrote "the goal now is a recovery code demo".
+- Fail: a proposal of `Stronger account security`, when the person asked to make sign-in safer.
+- Fail: a proposal of `Recovery codes and SMS outside the US ready`, when the person stated only the recovery code demo.
+
+### milestones
+
+Milestones are the outcomes the goal needs, in order. Each is something that is either true or not yet, such as `SMS codes work`, never a step or a task such as `Write SMS tests`. Compare each with the facts' `Milestones:` lines. A proposal's milestones have no `Milestones:` lines: compare them with what the person stated, and judge their marks by the pieces of work that would make each one true.
+
+The check passes when every milestone row is an outcome the goal needs, its mark fits its state as the marks list says, and together the rows show what is done, what is left and what is held up. A milestone held up by an open ask shows `◆` and `waiting`, as a subject row does.
+
+The check fails when any of these hold:
+
+- A milestone names a task, a step, a tool or a file, in place of an outcome.
+- A milestone names something the goal does not need.
+- A milestone's mark does not fit its state in the facts, such as `○ SMS codes work` when the facts say SMS codes work is delivered.
+- A milestone in the facts has no row, or two rows stand for one milestone.
+- An open ask holds up a milestone, or a piece that serves it, and the milestone shows no `◆`.
+
+Examples:
+
+- Pass: `✓ SMS codes work`, `● Recovery codes shown`, `○ 3.0 shipped`, matching the facts.
+- Fail: `● Write recovery code tests`, a task.
+- Fail: `○ SMS codes work`, when the facts say it is delivered.
+- Fail: `● SMS codes work`, while the open question "Offer SMS codes outside the US?" holds up SMS codes, which serves it.
+
+### split
+
+While a goal is set, the subject rows above `── Other work` are the work the goal needs, and the rows under it are work the goal does not need. Compare each row with its piece's line in the facts: `It serves the milestone …` or `The goal does not need it.`
+
+The check passes when every row sits on the side its piece's facts give. A piece whose facts say neither may sit on either side.
+
+The check fails when any of these hold:
+
+- A row under `── Other work` stands for a piece that serves a milestone.
+- A row above `── Other work` stands for a piece the goal does not need.
+
+Examples:
+
+- Pass: `● Recovery codes: generated, not shown yet` above the rule, and `● Pricing page: new plan names` under it.
+- Fail: `● Recovery codes: generated, not shown yet` under `── Other work`.
+- Fail: `● Pricing page: new plan names` above the rule, when the facts say the goal does not need it.

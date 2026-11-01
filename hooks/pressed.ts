@@ -7,6 +7,8 @@ import { messages } from './press-messages'
 import type { AnswerMessage, PressTexts } from './press-messages'
 import type { Effect, PressResult } from './press-reducer'
 import type { RowPress } from './presses'
+import { goalPressed } from './goal-press'
+import { GOAL_KEYS_ID } from './status-keys'
 
 export function offersUndo(c: Pick<Closed, 'how'>): boolean {
   return c.how === 'done' || c.how === 'dismissed'
@@ -115,6 +117,7 @@ export function pressed(
   const answerMessage = ctx.answerMessage ?? messages.answer
   const record = (kind: LastAction['kind']) => recordPress(kind, actionId(p), pressText(p), ctx, last)
   const unchanged = { ledger, last: null, effects: [] }
+  if (p.id === GOAL_KEYS_ID) return goalPressed(ledger, p, record, ctx.now)
 
   if (p.action === 'undo') {
     if (ledger.findings.some(f => f.id === p.id) && last?.action === 'address' && !last.isKept)

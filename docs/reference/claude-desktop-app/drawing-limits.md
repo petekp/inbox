@@ -36,7 +36,7 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 - **Trying a prop just to see what happens.** One unsupported prop drops the mod's whole drawing.
 - **Image or Raster.** They are not drawn on desktop. Svg is the only image route, and the mod receives no clicks from it.
 - **Redrawing a focused Button under a new key.** The pane loses focus (#100874), unless the mod moves the focus to a Button that is still drawn.
-- **Giving a text field the keyboard.** On the first Reply in desktop 2.42304.0 with engine 2.1.299, an `Input` with `autoFocus` stays empty while typing enters the composer. `ui.open` returns `{ isPlaced: true }` and `ui.focus` returns `{}`. Clicking the field enables typing. Pointer-up and requesting focus before any await produced the same failure. A native Reply Button needed a second click to activate. These probes leave the host failure open ([#100966](https://github.com/anthropics/claude-code/issues/100966)).
+- **Giving a text field the keyboard from a Client click.** A click on a Client gives that Client the keys, and `onKey` gets them until Escape. A field that the click opens stays empty: typing goes to the Client, or stays in the composer when the composer held the keys. `ui.open` with `focus: true` still returns `{ isPlaced: true }`, `ui.focus` still returns `{}`, and the pane reports that it holds the keys (live, Claude app 4.4212.0, engine 2.1.309). The earlier probe on desktop 2.42304.0 with engine 2.1.299 is [#100966](https://github.com/anthropics/claude-code/issues/100966).
 - **Redrawing the pane every fraction of a second.** While a settled row's leave bar redrew every 213 ms, clicks on the pane's Buttons did nothing. With one redraw at the end, they worked (live, 2.1.295, #100924).
 
 ## What works
@@ -44,6 +44,7 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 - `Client` rows and fold lines: a click anywhere on them lands, they show hover, and the pane still scrolls with the pointer over them (live, 2.1.295).
 - A docked pane whose width follows the person's drag. Fit content to `bodyColumns`.
 - Native Buttons. `onPress` fires with surface `'desktop'`, and a click on a button's corners or edges presses it (live, 2.1.295).
+- Giving a text field the keys after a native Button's press. The mod calls `$.ui.focus` for the field after the hook of the drawing that adds the field returns. That moved typing to the field in 3 of 3 tries each for Reply, Edit and Change goal, where the pressed Button left that drawing. It also worked in one try each for Reply and Change goal with text in the composer, and the composer kept its text (live, Claude app 4.4212.0, engine 2.1.309).
 - Moving the focus to a Button the next drawing still has, when a press removes the focused one. A `$.ui.focus` for that Button, called once the render hook has returned, kept every next click working in a run of 19 presses (live, 2.1.295).
 - A `Client` for any click area larger than a Button label. Its module draws with Box and Text, gets pointer events over its whole region, and posts to the hooks module through `ui.message`.
 - Scrolling the pane with the pointer over a `Client` (live, 2.1.295). On 2.1.293 the pane did not scroll there (#100923).
@@ -66,7 +67,6 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 - **How `role: 'dismiss'` looks.** Draw it in the pane and in the band.
 - **Where a Link click opens, and whether `http://localhost` links work.** Click both kinds of link.
 - **Whether Markdown link clicks reach `onLinkPress`.** Log presses while clicking a Markdown link.
-- **Whether typing reaches an Input on desktop.** Draw an autoFocus Input and type.
 - **Whether `ctrl+x tab` or `focus: true` focuses the pane on desktop, and whether keybindings.json applies.** Try each and read `isFocused`.
 - **Toasts, status, `holdToasts` and `$.ui.selection` on desktop.** Call each and screenshot or log the result.
 - **`$.ui.notify`.** Retest once the app runs 2.1.295. Check the session's engine version first.

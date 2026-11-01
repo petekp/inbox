@@ -9,7 +9,7 @@ import { w, world } from './hooks-world'
 import { PANE, selectRow, leaveAndReturn, replyKey } from './hooks-helpers'
 
 test(
-  'in the terminal and desktop looks, an open row’s follow-ups are never split between rows: the terminal gives them a row of their own when they do not fit after its buttons, and desktop’s links box asks for the width of all of them',
+  'in the terminal and desktop looks, an open row’s follow-ups are never split between rows: the terminal gives them a row of their own when they do not fit after its buttons, and desktop draws Reply as a Button and its links box asks for the width of the rest',
   { timeoutMs: 20_000 },
   async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
@@ -91,7 +91,10 @@ test(
           const followUpButtons = (await pane.findAll({ type: 'Button' })).filter(b =>
             followUpLabels.some(l => holds(shownLabels(b), l)),
           )
-          expect(followUpButtons, `desktop at ${columns} columns draws its follow-ups as links`).toHaveLength(0)
+          expect(
+            followUpButtons.map(b => shownLabels(b).join('')),
+            `desktop at ${columns} columns draws its follow-ups but Reply as links`,
+          ).toEqual(['Reply'])
           const linksBox = (await pane.findAll({ type: 'Box' })).find(b =>
             b.children.some(c => (c as { props?: { key?: string } }).props?.key === `links-${row.id}`),
           )!

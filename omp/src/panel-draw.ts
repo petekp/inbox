@@ -49,7 +49,7 @@ export function bannerLines(b: BannerView, width: number, s: Style): string[] {
 function buttonCell(b: ButtonFace, isFocused: boolean, s: Style, mark = ''): string {
   if (isFocused) return s.inverse(b.isOut ? s.dim(` ↵ ${b.label}${mark} `) : s.bold(` ↵ ${b.label}${mark} `))
   if (b.isOut && !b.isFollowUp) return s.dim(b.key ? ` ${b.key} ${b.label}${mark} ` : ` ${b.label}${mark} `)
-  if (b.isFollowUp) return s.dim(b.key ? ` ${b.key} ${b.label} ` : ` ${b.label} `)
+  if (b.isFollowUp || b.isQuiet) return s.dim(b.key ? ` ${b.key} ${b.label} ` : ` ${b.label} `)
   const label = (b.isRecommended ? s.underline(b.label) : b.label) + mark
 
   return b.key ? ` ${s.bold(b.key)} ${label} ` : ` ${label} `

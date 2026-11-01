@@ -9,7 +9,8 @@ import { failingChecks, waitingThreads } from '../hooks/prs'
 import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { inboxView, perTurnStatus } from '../hooks/view'
 import { statusPage } from '../hooks/status-page'
-import { statusKeyPlan, rowKeyPlan } from '../hooks/action-plan'
+import { rowKeyPlan } from '../hooks/action-plan'
+import { statusKeyPlan, statusKeyRows } from '../hooks/status-keys'
 import { shownTabs } from '../hooks/tabs'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
@@ -231,11 +232,15 @@ for (const isNextBuild of [false, true])
       }
       await clock.settle()
       const page = statusPage({ ledger, presence: emptySession().presence }, 1_000_000)
-      const planned = page.rows.flatMap(r => statusKeyPlan(r).map(k => `${r.id} ${k.label}`))
+      const targets = statusKeyRows(page)
+      const planned = targets.flatMap(t => t.keys.map(k => `${t.id} ${k.label}`))
       expect(planned, 'the demo’s Status has rows with buttons').not.toEqual([])
+      const targetOf = new Map<string, string>(
+        targets.flatMap(t => t.keys.map(k => [`${k.press.action}-${t.id}`, t.id])),
+      )
       const statusButtons = (await drawn()).buttons
-        .filter(b => b.key.startsWith('show-ask-'))
-        .map(b => `${b.key.slice('show-ask-'.length)} ${b.label}`)
+        .filter(b => targetOf.has(b.key))
+        .map(b => `${targetOf.get(b.key)} ${b.label}`)
       expect(statusButtons, `${look} Status buttons`).toEqual(planned)
       await pane.press({ key: `show-ask-${page.rows.find(r => statusKeyPlan(r).length > 0)!.id}` })
       await clock.settle()

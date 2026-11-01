@@ -34,13 +34,19 @@ Part of [the look map](../looks.md#files).
 | `hooks/status.ts` | Shared module. The parser for the Status call's lines, and `askStatus`, which asks the call again when its answer holds prose. |
 | `hooks/status-limits.ts` | Shared module. The Status's limits on words, subjects and children, `EMPTY_SESSION_STATUS`, `isOpen`, and the helpers that clip a text and compare subject names. |
 | `hooks/status-ops.ts` | Shared module. How an answer changes the saved Status: `applyOps`, `applyStatus`, and when a HEAD line replaces the head. |
+| `hooks/status-goal-ops.ts` | Shared module. How an answer and the goal's presses change the goal: a GOAL line's proposal, MILESTONE and SERVES lines, milestones moved by id, met, and Use this goal, Not now and a typed goal. |
+| `hooks/status-goal-page.ts` | Shared module. The goal's parts of the Status page: the goal block with its milestone rows, a proposal, and the Now line. |
+| `hooks/status-keys.ts` | Shared module. The Status page's buttons: View on a held subject or milestone, the proposal's and the goal's buttons, the order j and k move through them, and which one is selected. |
+| `hooks/goal-press.ts` | Shared module. Use this goal, Not now and a typed goal as presses on the id `goal`, for `pressed`. |
 | `hooks/status-children.ts` | Shared module. A child the host reports, and its end and activity. The text of the subjects, asks and running children that the Status call reads. When a look at the Status starts and ends. |
 | `hooks/status-upgrade.ts` | Shared module. `upgradeStatus`, which reads a saved Status from this build or an earlier one and leaves out anything wrongly shaped. |
+| `hooks/status-upgrade-goal.ts` | Shared module. The goal's fields of a saved Status, for `upgradeStatus`. Only an object loads as a goal. |
 | `hooks/children.ts` | Shared module. How each host's events become the Status tab's children: the task notice parser, the Herdr delegate steps, the end of a delegate Herdr no longer shows working, the cut-off at a reload, and the gate that limits how often a child's activity is saved. |
 | `hooks/model-text.ts` | Shared module. The guidance `guidanceText` builds, the `close` tool's description that carries it, and the `Host` and `Told` types. Each host's `Host` names its agent, surface and the `record` and `close` tools. |
 | `hooks/ledger-prompt.ts` | Shared module. What the ledger call reads: `systemText`, and the prompt `buildPrompt` builds from the ledger and the new exchange. |
 | `hooks/catch-up-text.ts` | Shared module. The ledger call's catch-up prompts, and the activity lines that a turn's tool calls and dialogs add. |
 | `hooks/status-prompt.ts` | Shared module. What the Status call reads: `STATUS_SYSTEM`, and its prompts after a reply, during a long turn and for a catch-up. |
+| `hooks/status-prompt-goal.ts` | Shared module. What the Status call reads about the goal: its lines and input blocks, and its rules as named parts, so `statusSystem` can leave one out for an ablation. |
 | `hooks/inbox-text.ts` | Shared module. The `inbox:` texts beside a prompt, the state a new conversation starts with, and the question numbers a typed answer such as "1 yes" refers to. `screenText` tells the models whether the inbox is open, and on which tab. |
 | `hooks/session-version.ts` | Shared module. The version every host writes on a session it saves, and `checkVersion`, which Codex and omp run when they read one. |
 | `hooks/session-files.ts` | Shared module. The empty session, a session's saved file name, which saved files may be deleted, and `upgradeSession`, which converts a session an earlier build saved to the current shape. |

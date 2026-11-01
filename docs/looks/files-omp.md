@@ -23,6 +23,7 @@ Part of [the look map](../looks.md#files).
 | `omp/src/panel-text.ts` | omp adapter. Measures, cuts and wraps text that holds ANSI styles. |
 | `omp/src/panel-draw.ts` | omp adapter. Draws a line with its marks and buttons, and a banner in its box. |
 | `omp/src/panel-page.ts` | omp adapter. Draws the Status page's rows: the tree, stall words, rules and buttons. |
+| `omp/src/panel-goal.ts` | omp adapter. Draws the Status page's goal: a proposal, the goal and its milestones, Set a goal, the goal's text field and the Now line. |
 | `omp/src/panel-tabs.ts` | omp adapter. The tab bar, the footer, scrolling, and the tab the panel moves to as rows arrive. |
 | `omp/src/controller.ts` | omp adapter. The open panel: the cached screen, the person's ui state, the work a key starts, and the redraw timer. |
 | `omp/src/demo.ts` | omp host. Turns the shared demo data into a panel source for `/inbox demo`. |

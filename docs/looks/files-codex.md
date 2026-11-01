@@ -17,7 +17,8 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-list.tsx` | Codex adapter. A list's rows: the motion state of each, the row line, its open panel, and settled rows with Undo. |
 | `codex/src/tab-groups.tsx` | Codex adapter. The Asks and Finds tabs: their groups, empty lines and Closed folds. |
 | `codex/src/tab-prs.tsx` | Codex adapter. The PRs tab: PR blocks, their keys, the order lines, and settled PRs. |
-| `codex/src/tab-status.tsx` | Codex adapter. The Status tab and the fitting of its names and lines to the width. |
+| `codex/src/tab-status.tsx` | Codex adapter. The Status tab: its rows, the goal and its milestones, a proposal, the goal's text field, and the fitting of merged lines to the width. |
+| `codex/src/tab-status-name.tsx` | Codex adapter. A Status row's name line, cut so that it and its stall word fit the lines it may take. |
 | `codex/src/tab-chrome.tsx` | Codex adapter. The tab bar, the footer's status, Help, and the demo toggle. |
 | `codex/src/row-actions.tsx` | Codex adapter. Maps shared actions to buttons and draws reply fields. Its production components have mounted tests. |
 | `codex/src/tab.html` | Codex adapter. The tab's page shell. `codex/build.mjs` replaces each `/*TAB_CSS:name*/` line with `tab-css/name.css`, so the shell sets the order the styles apply in. |

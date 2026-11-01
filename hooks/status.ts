@@ -1,4 +1,5 @@
-import { NL, OPEN_STATUSES } from './status-limits'
+import type { SubjectStatus } from '../types'
+import { NL, OPEN_STATUSES, STATUSES } from './status-limits'
 import type { OpenStatus } from './status-limits'
 
 /** One line of the Status call's answer. */
@@ -10,13 +11,19 @@ export type Op =
   | { kind: 'drop'; ref: string; why: string; into: string | null }
   | { kind: 'was'; ref: string; text: string }
   | { kind: 'head'; title: string; description: string }
-  /** `ref` is a running child's id or an open ask's id. */
+  /** `ref` is a running child's id or an open ask's id. `subject` may name a milestone. */
   | { kind: 'link'; ref: string; subject: string }
+  /** A goal proposed from the person's own words, with the milestones it needs. Never a change to the goal. */
+  | { kind: 'goal'; text: string; milestones: { status: SubjectStatus; name: string }[] }
+  | { kind: 'milestone'; status: SubjectStatus; name: string; text: string }
+  /** `milestone` is null for work the goal does not need. */
+  | { kind: 'serves'; subject: string; milestone: string | null }
 
 /** What the Status call answered: nothing to change, or the changes to make. */
 export type StatusAnswer = { kind: 'unchanged' } | { kind: 'ops'; ops: Op[] }
 
-const LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i
+const LINE =
+  /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|MILESTONE|SERVES)\s*(?::\s*(.*))?$/i
 
 function fields(value: string): string[] {
   return value.split('|').map(f => f.trim())
@@ -24,6 +31,19 @@ function fields(value: string): string[] {
 
 function openStatus(s: string | undefined): OpenStatus | null {
   return OPEN_STATUSES.find(o => o === s?.toLowerCase()) ?? null
+}
+
+function anyStatus(s: string | undefined): SubjectStatus | null {
+  return STATUSES.find(o => o === s?.toLowerCase()) ?? null
+}
+
+/** A proposal's milestones, as `status name; status name`. A milestone with no known status is left out. */
+function proposedMilestones(value: string | undefined): { status: SubjectStatus; name: string }[] {
+  return (value ?? '').split(';').flatMap(part => {
+    const m = /^\s*(\S+)\s+(.+?)\s*$/.exec(part)
+    const status = anyStatus(m?.[1])
+    return status && m?.[2] ? [{ status, name: m[2] }] : []
+  })
 }
 
 function opOf(key: string, f: string[]): Op | null {
@@ -49,6 +69,17 @@ function opOf(key: string, f: string[]): Op | null {
   if (key === 'WAS') return f[0] && f[1] ? { kind: 'was', ref: f[0], text: f[1] } : null
   if (key === 'HEAD') return f[0] ? { kind: 'head', title: f[0], description: f[1] ?? '' } : null
   if (key === 'LINK') return f[0] && f[1] ? { kind: 'link', ref: f[0], subject: f[1] } : null
+  if (key === 'GOAL') return f[0] ? { kind: 'goal', text: f[0], milestones: proposedMilestones(f[1]) } : null
+  if (key === 'MILESTONE') {
+    const status = anyStatus(f[0])
+
+    return status && f[1] ? { kind: 'milestone', status, name: f[1], text: f[2] ?? '' } : null
+  }
+  if (key === 'SERVES') {
+    const isNone = f[1] === '-' || f[1]?.toLowerCase() === 'none'
+
+    return f[0] && f[1] ? { kind: 'serves', subject: f[0], milestone: isNone ? null : f[1] } : null
+  }
 
   return null
 }

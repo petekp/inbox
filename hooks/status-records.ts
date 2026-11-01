@@ -175,7 +175,10 @@ export async function askAndWriteStatus<S extends Session>(
   const after = await host.update(x => {
     before = x.ledger.overview
     isWritten = x.presence.turnsApplied >= appliedAfter
-    return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now)
+    const readSetAt = input.last?.goal?.setAt ?? null
+    return answer === null
+      ? failedStatus(x, last.text, appliedAfter, now)
+      : appliedStatus(x, answer, appliedAfter, now, readSetAt)
   })
   if (!host.records) return
   const record: StatusRecord = {

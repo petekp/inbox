@@ -15,6 +15,10 @@ export function pressText(p: RowPress): string {
       return ISSUE_LABEL
     case 'step':
       return p.label
+    case 'use-goal':
+      return 'Use this goal'
+    case 'decline-goal':
+      return 'Not now'
     default:
       return capitalized(p.action)
   }
