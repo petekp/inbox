@@ -1431,9 +1431,10 @@ async function scrollToKey(
   return false
 }
 
-async function selectStatusRow($: EngineInterface, id: string) {
+async function selectStatusRow($: EngineInterface, id: string, focusKey?: string) {
   await update($, STATUS_SELECTION, () => id)
-  await scrollToKey($, `status-${id}`, 'nearest')
+  const isDrawn = await scrollToKey($, `status-${id}`, 'nearest')
+  if (isDrawn && focusKey) await $.ui.focus({ requestId: PANE, key: focusKey }).catch(() => {})
 }
 
 async function scrollToRow($: EngineInterface, id: string) {
@@ -3150,7 +3151,7 @@ export const register: Register = on => {
       sendDraft: (id, surface) => sendDraft($, id, surface),
       discardReply: id => discardReply($, id),
       startTyping: (id, seed) => startTyping($, id, seed),
-      selectStatusRow: id => selectStatusRow($, id),
+      selectStatusRow: (id, focusKey) => selectStatusRow($, id, focusKey),
       updateTyping: fn => update($, TYPING, fn),
       updateDrafts: fn => update($, DRAFTS, fn),
       sendTyped: (id, text, surface) => sendTyped($, id, text, surface),
