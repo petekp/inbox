@@ -23,7 +23,7 @@ The head passes when it names that focus, in any words. While a goal is set, the
 The head fails when it does any of these:
 
 - It names a focus the session has moved past.
-- It names one small part of the work: a step on the way, or one stream of a coordinator whose focus covers more.
+- Its title, or its `Now:` line, names one small part of the work in place of the focus: a step on the way that the focus does not need, or one stream of a coordinator whose focus covers more. In the two-line form, a description that names the step underway on the focus passes.
 - It names where one piece stands in place of the focus.
 - It names the focus by an id or a tool's handle, in place of the person's words.
 - In the two-line form, the description only repeats the title, or the title is a sentence.
