@@ -153,7 +153,7 @@ function StatusLine({ row }: { row: StatusRow }) {
   )
 }
 
-/** The goal's text field, with Set goal and Cancel. Cancel keeps the draft, as a row's Cancel does. */
+/** The goal's text field, with Set goal and Cancel. */
 function GoalField() {
   const draft = () => drafts.get(GOAL_KEYS_ID)?.text ?? ''
 

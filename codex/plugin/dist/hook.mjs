@@ -427,7 +427,8 @@ var EMPTY = {
   updates: 0
 };
 function isBlankLedger(ledger) {
-  const isStatusBlank = !ledger.overview || ledger.overview.head === null && ledger.overview.subjects.length === 0;
+  const o = ledger.overview;
+  const isStatusBlank = !o || o.head === null && o.subjects.length === 0 && o.goal === null;
   return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0;
 }
 function upgradeLedger(ledger) {

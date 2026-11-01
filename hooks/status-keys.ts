@@ -81,12 +81,12 @@ export function goalKeyPlan(page: StatusPage): StatusKey[] {
   ]
 }
 
-/** Everything on the Status page with buttons, in page order: the targets j and k move between. */
+/** Everything on the Status page with buttons, in the order the looks draw them: the targets j and k move between. */
 export function statusKeyRows(page: StatusPage): StatusKeyTarget[] {
   return [
     { id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(page) },
-    { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) },
     ...(page.goal?.milestones ?? []).map(m => ({ id: m.id, keys: milestoneKeyPlan(m) })),
+    { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) },
     ...page.rows.map(r => ({ id: r.id, keys: statusKeyPlan(r) })),
   ].filter(t => t.keys.length > 0)
 }

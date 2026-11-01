@@ -615,6 +615,7 @@ var DESCRIPTION_KEPT = 14;
 var ASK_READ_WORDS = 30;
 var FINISHED_READ = 10;
 var MILESTONES_MAX = 5;
+var MILESTONES_MIN = 2;
 var DECLINED_KEPT = 10;
 var CHILD_KEPT_MS = 24 * 60 * 6e4;
 var STOP_WORDS = /* @__PURE__ */ new Set([
@@ -1597,11 +1598,12 @@ function addMilestone(o, op, now) {
 }
 function applyGoalOp(o, op, now, findSubject) {
   if (op.kind === "goal") {
-    const key = nameKey(op.text);
+    const text2 = clipWords(op.text, DESCRIPTION_KEPT);
+    const key = nameKey(text2);
     const isCurrent = o.goal !== null && nameKey(o.goal.text) === key;
-    if (isCurrent || o.declinedGoals.includes(key)) return o;
+    if (op.milestones.length < MILESTONES_MIN || isCurrent || o.declinedGoals.includes(key)) return o;
     const milestones = op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }));
-    return { ...o, proposedGoal: { text: clipWords(op.text, DESCRIPTION_KEPT), milestones, at: now } };
+    return { ...o, proposedGoal: { text: text2, milestones, at: now } };
   }
   if (o.goal === null) return o;
   if (op.kind === "milestone") return addMilestone(o, op, now);
@@ -1612,8 +1614,9 @@ function applyGoalOp(o, op, now, findSubject) {
 }
 function settleGoal(o, now) {
   if (o.goal === null) return o;
-  const isSeen = o.lastLookAt !== null && o.goal.setAt <= o.lastLookAt;
-  const isAwaiting = o.goal.isAwaitingMilestones && o.goal.setAt >= now;
+  const setAt = o.goal.setAt;
+  const isSeen = o.lastLookAt !== null && setAt <= o.lastLookAt;
+  const isAwaiting = o.goal.isAwaitingMilestones && !o.milestones.some((m) => m.changedAt > setAt);
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   const isMet = !isAwaiting && kept.length > 0 && kept.every((m) => m.status === "done");
   const was = isSeen ? null : o.goal.was;

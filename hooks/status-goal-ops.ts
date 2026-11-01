@@ -6,6 +6,7 @@ import {
   DESCRIPTION_KEPT,
   isOpen,
   MILESTONES_MAX,
+  MILESTONES_MIN,
   NAME_KEPT,
   nameKey,
   TEXT_KEPT,
@@ -104,7 +105,8 @@ function addMilestone(o: SessionStatus, op: Extract<Op, { kind: 'milestone' }>, 
 
 /**
  * Applies a GOAL, MILESTONE or SERVES line. A GOAL line only ever proposes: the goal itself changes on a press alone.
- * A proposal of the current goal or of a declined one is dropped. Milestones and links need a goal.
+ * A proposal with fewer than `MILESTONES_MIN` milestones, of the current goal or of a declined one is dropped.
+ * Milestones and links need a goal.
  */
 export function applyGoalOp(
   o: SessionStatus,
@@ -113,14 +115,15 @@ export function applyGoalOp(
   findSubject: (ref: string) => Subject | null,
 ): SessionStatus {
   if (op.kind === 'goal') {
-    const key = nameKey(op.text)
+    const text = clipWords(op.text, DESCRIPTION_KEPT)
+    const key = nameKey(text)
     const isCurrent = o.goal !== null && nameKey(o.goal.text) === key
-    if (isCurrent || o.declinedGoals.includes(key)) return o
+    if (op.milestones.length < MILESTONES_MIN || isCurrent || o.declinedGoals.includes(key)) return o
     const milestones = op.milestones
       .slice(0, MILESTONES_MAX)
       .map(m => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }))
 
-    return { ...o, proposedGoal: { text: clipWords(op.text, DESCRIPTION_KEPT), milestones, at: now } }
+    return { ...o, proposedGoal: { text, milestones, at: now } }
   }
   if (o.goal === null) return o
   if (op.kind === 'milestone') return addMilestone(o, op, now)
@@ -132,14 +135,15 @@ export function applyGoalOp(
 }
 
 /**
- * The goal once an answer has applied at `now`: the milestones belong to it, its was line goes once the person has seen
- * it, and it is met while every milestone that is not dropped is done. Met follows the milestones, so a milestone that
- * opens again unmeets it.
+ * The goal once an answer has applied: a typed goal's milestones belong to it once a milestone changed after it was
+ * set, its was line goes once the person has seen it, and it is met while every milestone that is not dropped is done.
+ * Met follows the milestones, so a milestone that opens again unmeets it.
  */
 export function settleGoal(o: SessionStatus, now: number): SessionStatus {
   if (o.goal === null) return o
-  const isSeen = o.lastLookAt !== null && o.goal.setAt <= o.lastLookAt
-  const isAwaiting = o.goal.isAwaitingMilestones && o.goal.setAt >= now
+  const setAt = o.goal.setAt
+  const isSeen = o.lastLookAt !== null && setAt <= o.lastLookAt
+  const isAwaiting = o.goal.isAwaitingMilestones && !o.milestones.some(m => m.changedAt > setAt)
   const kept = o.milestones.filter(m => m.status !== 'dropped')
   const isMet = !isAwaiting && kept.length > 0 && kept.every(m => m.status === 'done')
   const was = isSeen ? null : o.goal.was
@@ -161,7 +165,7 @@ function withoutLinksTo(o: SessionStatus, milestones: readonly Milestone[]): Ses
   }
 }
 
-/** Use this goal: the proposal becomes the goal, with its milestones as it proposed them. */
+/** Use this goal: the proposal becomes the goal, with its milestones as it proposed them and no subject linked yet. */
 export function useProposedGoal(o: SessionStatus, now: number): SessionStatus {
   const p = o.proposedGoal
   if (p === null) return o
@@ -178,7 +182,14 @@ export function useProposedGoal(o: SessionStatus, now: number): SessionStatus {
 
   return settleGoal(
     withoutLinksTo(
-      { ...o, goal, proposedGoal: null, milestones, nextMilestoneId: o.nextMilestoneId + milestones.length },
+      {
+        ...o,
+        goal,
+        proposedGoal: null,
+        milestones,
+        nextMilestoneId: o.nextMilestoneId + milestones.length,
+        serves: {},
+      },
       milestones,
     ),
     now,
@@ -194,16 +205,19 @@ export function declineProposedGoal(o: SessionStatus): SessionStatus {
 }
 
 /**
- * A goal the person typed. A rewording of the goal keeps its milestones and needs no message. Any other goal replaces
- * it, ends a proposal, and keeps the milestones for the next Status call to keep by id or replace. Until that call
- * writes, the milestones read as belonging to the earlier goal.
+ * A goal the person typed. It ends a proposal, which counts as declined unless the typed goal has its words. A
+ * rewording of the goal keeps its milestones and needs no message. Any other goal replaces it, unlinks every subject,
+ * and keeps the milestones for a Status call to keep by id or replace. The page draws none of them until one changes.
  */
 export function setTypedGoal(o: SessionStatus, text: string, now: number): { status: SessionStatus; isNew: boolean } {
   const typed = clipWords(text, DESCRIPTION_KEPT)
   if (typed === '') return { status: o, isNew: false }
+  const p = o.proposedGoal
+  const isProposalTyped = p !== null && hasSameWords(p.text, typed)
+  const declined = p && !isProposalTyped ? declineProposedGoal(o) : { ...o, proposedGoal: null }
   const isReworded = o.goal !== null && hasSameWords(o.goal.text, typed)
-  if (isReworded) return { status: { ...o, goal: { ...o.goal!, text: typed }, proposedGoal: null }, isNew: false }
+  if (isReworded) return { status: { ...declined, goal: { ...o.goal!, text: typed } }, isNew: false }
   const goal = { text: typed, setAt: now, metAt: null, was: o.goal?.text ?? null, isAwaitingMilestones: true }
 
-  return { status: { ...o, goal, proposedGoal: null }, isNew: true }
+  return { status: { ...declined, goal, serves: {} }, isNew: true }
 }

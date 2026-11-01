@@ -60,6 +60,7 @@ var DESCRIPTION_KEPT = 14;
 var ASK_READ_WORDS = 30;
 var FINISHED_READ = 10;
 var MILESTONES_MAX = 5;
+var MILESTONES_MIN = 2;
 var DECLINED_KEPT = 10;
 var CHILD_KEPT_MS = 24 * 60 * 60000;
 var CHILDREN_KEPT = 50;
@@ -1140,12 +1141,13 @@ function addMilestone(o, op, now) {
 }
 function applyGoalOp(o, op, now, findSubject) {
   if (op.kind === "goal") {
-    const key = nameKey(op.text);
+    const text = clipWords(op.text, DESCRIPTION_KEPT);
+    const key = nameKey(text);
     const isCurrent = o.goal !== null && nameKey(o.goal.text) === key;
-    if (isCurrent || o.declinedGoals.includes(key))
+    if (op.milestones.length < MILESTONES_MIN || isCurrent || o.declinedGoals.includes(key))
       return o;
     const milestones = op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }));
-    return { ...o, proposedGoal: { text: clipWords(op.text, DESCRIPTION_KEPT), milestones, at: now } };
+    return { ...o, proposedGoal: { text, milestones, at: now } };
   }
   if (o.goal === null)
     return o;
@@ -1160,8 +1162,9 @@ function applyGoalOp(o, op, now, findSubject) {
 function settleGoal(o, now) {
   if (o.goal === null)
     return o;
-  const isSeen = o.lastLookAt !== null && o.goal.setAt <= o.lastLookAt;
-  const isAwaiting = o.goal.isAwaitingMilestones && o.goal.setAt >= now;
+  const setAt = o.goal.setAt;
+  const isSeen = o.lastLookAt !== null && setAt <= o.lastLookAt;
+  const isAwaiting = o.goal.isAwaitingMilestones && !o.milestones.some((m) => m.changedAt > setAt);
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   const isMet = !isAwaiting && kept.length > 0 && kept.every((m) => m.status === "done");
   const was = isSeen ? null : o.goal.was;
@@ -1192,7 +1195,14 @@ function useProposedGoal(o, now) {
     closedAt: isOpen(m) ? null : now
   }));
   const goal = { text: p.text, setAt: now, metAt: null, was: o.goal?.text ?? null, isAwaitingMilestones: false };
-  return settleGoal(withoutLinksTo({ ...o, goal, proposedGoal: null, milestones, nextMilestoneId: o.nextMilestoneId + milestones.length }, milestones), now);
+  return settleGoal(withoutLinksTo({
+    ...o,
+    goal,
+    proposedGoal: null,
+    milestones,
+    nextMilestoneId: o.nextMilestoneId + milestones.length,
+    serves: {}
+  }, milestones), now);
 }
 function declineProposedGoal(o) {
   if (o.proposedGoal === null)
@@ -1204,11 +1214,14 @@ function setTypedGoal(o, text, now) {
   const typed = clipWords(text, DESCRIPTION_KEPT);
   if (typed === "")
     return { status: o, isNew: false };
+  const p = o.proposedGoal;
+  const isProposalTyped = p !== null && hasSameWords(p.text, typed);
+  const declined = p && !isProposalTyped ? declineProposedGoal(o) : { ...o, proposedGoal: null };
   const isReworded = o.goal !== null && hasSameWords(o.goal.text, typed);
   if (isReworded)
-    return { status: { ...o, goal: { ...o.goal, text: typed }, proposedGoal: null }, isNew: false };
+    return { status: { ...declined, goal: { ...o.goal, text: typed } }, isNew: false };
   const goal = { text: typed, setAt: now, metAt: null, was: o.goal?.text ?? null, isAwaitingMilestones: true };
-  return { status: { ...o, goal, proposedGoal: null }, isNew: true };
+  return { status: { ...declined, goal, serves: {} }, isNew: true };
 }
 
 // ../hooks/goal-press.ts
@@ -1279,8 +1292,8 @@ function goalKeyPlan(page) {
 function statusKeyRows(page) {
   return [
     { id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(page) },
-    { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) },
     ...(page.goal?.milestones ?? []).map((m) => ({ id: m.id, keys: milestoneKeyPlan(m) })),
+    { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) },
     ...page.rows.map((r) => ({ id: r.id, keys: statusKeyPlan(r) }))
   ].filter((t) => t.keys.length > 0);
 }
@@ -6374,7 +6387,8 @@ var EMPTY = {
   updates: 0
 };
 function isBlankLedger(ledger) {
-  const isStatusBlank = !ledger.overview || ledger.overview.head === null && ledger.overview.subjects.length === 0;
+  const o = ledger.overview;
+  const isStatusBlank = !o || o.head === null && o.subjects.length === 0 && o.goal === null;
   return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0;
 }
 function upgradeLedger(ledger) {
