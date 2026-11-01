@@ -101,20 +101,11 @@ import { demoAfterPress, demoReplied, demoSent, type DemoSent } from './press-ef
 import { isPressConfirmed, type Effect } from './press-reducer'
 import { openTarget, type PathProbe } from './open-targets'
 import type { RowPress } from './presses'
+import { statusKeyRows, statusSelected } from './status-keys'
 import { footerStatus } from './view'
 import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, type RowView } from './rows'
 import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf, NEXT_BUILD_MARK } from './banners'
-import {
-  drawnLists,
-  rowKeyPlan,
-  statusKeyRows,
-  statusSelected,
-  rowsIn,
-  firstWaiting,
-  keptOpen,
-  rowAfterClose,
-  type PlannedKey,
-} from './action-plan'
+import { drawnLists, rowKeyPlan, rowsIn, firstWaiting, keptOpen, rowAfterClose, type PlannedKey } from './action-plan'
 import {
   isRowTab,
   isShownTab,
@@ -3473,20 +3464,19 @@ export const register: Register = on => {
       banner,
     })
 
-    const { statusHead, statusMarkAt, fitsStatusLine, statusPageText, statusNameLine, statusFrameEdge, statusTree } =
-      paneStatusLines({
-        Box,
-        Text,
-        pal,
-        look,
-        listColumns,
-        terminalText,
-        desktopFrame,
-        desktopColumnPt,
-        markWidth,
-        branch,
-        desktopHairline,
-      })
+    const statusLines = paneStatusLines({
+      Box,
+      Text,
+      pal,
+      look,
+      listColumns,
+      terminalText,
+      desktopFrame,
+      desktopColumnPt,
+      markWidth,
+      branch,
+      desktopHairline,
+    })
     const { statusRowLine, statusKeys, statusView } = paneStatus(
       {
         listColumns,
@@ -3497,13 +3487,10 @@ export const register: Register = on => {
         statusKeyRow,
         view,
         isInline,
-        statusMarkAt,
-        statusFrameEdge,
-        statusNameLine,
-        statusPageText,
-        fitsStatusLine,
-        statusTree,
-        statusHead,
+        ...statusLines,
+        Input,
+        typing,
+        now,
         markWidth,
         desktopHairline,
         markGlyph,
@@ -3560,15 +3547,22 @@ export const register: Register = on => {
 
     const selectedRow = isStatusShown || isHelpShown ? undefined : rows[tab][at]
     const selectedActions = selectedRow ? rowActions(selectedRow) : null
-    const closeKeysWithoutRow: KeyAction[] = ['d', 'x'].map(hotkey => ({
-      key: `no-row-${hotkey}`,
-      label: 'Close',
-      hotkey,
-      kind: 'view',
-      onPress: () => undefined,
-    }))
+    const statusRowKeys = statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []
+    const closeKeysWithoutRow: KeyAction[] = ['d', 'x'].flatMap(hotkey =>
+      statusRowKeys.some(k => k.hotkey === hotkey)
+        ? []
+        : [
+            {
+              key: `no-row-${hotkey}`,
+              label: 'Close',
+              hotkey,
+              kind: 'view',
+              onPress: () => undefined,
+            },
+          ],
+    )
     const rowKeys = [
-      ...(statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []),
+      ...statusRowKeys,
       ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow),
       ...(tab === 'prs' && !isHelpShown ? [...prOrderKeys, ...prTabKeys] : []),
     ]

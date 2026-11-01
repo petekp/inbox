@@ -70,7 +70,8 @@ test('on a next build, a look starts when the Status page shows, the page shows 
   await clock.settle()
   expect((await pane.find({ key: 'status-s1' }))?.text).not.toContain('◆')
   expect(await pane.find({ key: 'show-ask-s1' })).toBeUndefined()
-  expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
+  expect(await rowKeys()).toEqual(['type-goal-goal-key', 'no-row-d-key', 'no-row-x-key'])
+  expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('s: Set a goal')
 })
 
 test('on a next build, a look at the Status that ends while a Status call is out keeps its Seen line, and the answer that lands after it shows above the line', async ($, on) => {

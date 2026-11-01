@@ -4,6 +4,8 @@ import { isOpen, OPEN_SUBJECTS } from './status-limits'
 import { cutAtPhrase } from './text'
 import { SUBJECT_MARKS, HELD_MARK, IDLE_MARK } from './help'
 import type { StatusTone } from './help'
+import { goalPage, oldestAsk } from './status-goal-page'
+import type { GoalParts } from './status-goal-page'
 
 const STATUS_FAILED = 'Last Status update failed. Changes from that reply may be missing.'
 
@@ -66,11 +68,18 @@ type StatusRowParts =
   | { kind: 'look'; id: string; text: string }
   /** Rows folded into a count, as "✓ 3 done" or "○ 2 more". */
   | { kind: 'fold'; id: string; mark: string; tone: StatusTone; text: string }
+  /** Where the work the goal does not need starts, under its own rule. */
+  | { kind: 'part'; id: string; text: string }
+  /** Seen rows of that work folded into a count for each mark, as "● 5 working · ◌ 8 waiting · ○ 10 queued". */
+  | { kind: 'counts'; id: string; counts: StatusCount[] }
+
+/** One mark's share of a `counts` row. */
+export type StatusCount = { mark: string; tone: StatusTone; text: string }
 
 /** What the Status page shows. Every look draws it as it is. */
-export type StatusPage = {
+export type StatusPage = GoalParts & {
   isEmpty: boolean
-  /** What the session is focused on now. The description is null until the Status call writes one. */
+  /** What the session is focused on now. The description is null until the Status call writes one. Looks draw `nowLine` in its place while a goal is set. */
   head: { title: string; description: string | null } | null
   rows: StatusRow[]
   /** The status line's error while the last Status call wrote nothing. */
@@ -79,6 +88,7 @@ export type StatusPage = {
 }
 
 export const LOOK_TEXT = 'Last seen'
+export const OTHER_WORK = 'Other work'
 /** The dash the terminal and omp draw the look line's rule with. The rules between rows are solid, so the dashes mark this one out. */
 export const LOOK_DASH = '╌'
 /** What a subject's was line starts with, before the plan it replaces. */
@@ -125,7 +135,24 @@ export function nameBeforeStall(name: string, fits: (shown: string) => boolean):
 function isItemAfterItem(row: StatusRowParts, prev: StatusRowParts | undefined): boolean {
   const isUnderSubject = row.kind === 'more' || (row.kind === 'child' && row.branch !== null)
 
-  return prev !== undefined && prev.kind !== 'look' && row.kind !== 'look' && !isUnderSubject
+  const isLine = (r: StatusRowParts) => r.kind === 'look' || r.kind === 'part'
+
+  return prev !== undefined && !isLine(prev) && !isLine(row) && !isUnderSubject
+}
+
+/** The words a `counts` row gives each mark. */
+const COUNT_WORDS: Record<'working' | 'waits-on-other' | 'queued', string> = {
+  working: 'working',
+  'waits-on-other': 'waiting',
+  queued: 'queued',
+}
+
+/** Open subjects folded into one count for each status, in the page's order of marks. */
+function countsByMark(folded: Subject[]): StatusCount[] {
+  return (['working', 'waits-on-other', 'queued'] as const).flatMap(status => {
+    const n = folded.filter(x => x.status === status).length
+    return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }]
+  })
 }
 
 /** Whether `c` is a delegate that finished after the person last looked, so the page still shows it. */
@@ -164,6 +191,59 @@ function childRow(c: Child, branch: StatusBranch | null): StatusRowParts {
   }
 }
 
+/** What every part of the list reads to place and draw a subject. */
+type ListContext = {
+  isNew: (x: Subject) => boolean
+  isHeld: (x: Subject) => boolean
+  oldestAskOf: (x: Subject) => { id: string; kind: Item['kind'] } | null
+  pageOrder: (x: Subject, y: Subject) => number
+  running: Child[]
+  isTurnRunning: boolean
+  lookRow: StatusRowParts | null
+}
+
+/** A part of the list: its subjects in order, with their children under them and the look line between them. */
+function partRows(shown: Subject[], c: ListContext): StatusRowParts[] {
+  const rows: StatusRowParts[] = []
+  const firstSeen = shown.findIndex(x => !c.isNew(x))
+  for (const [i, x] of shown.entries()) {
+    const hasNewAbove = i > 0
+    if (c.lookRow && i === firstSeen && hasNewAbove) rows.push(c.lookRow)
+    const under = c.running.filter(ch => ch.subjectId === x.id)
+    const shownUnder = under.slice(0, CHILD_ROWS)
+    const isMore = under.length > CHILD_ROWS
+    const isRunning = x.status === 'working' && !c.isHeld(x) && (c.isTurnRunning || under.some(isChildWorking))
+    const isIdle = x.status === 'working' && !isRunning
+    rows.push({
+      kind: 'subject',
+      id: x.id,
+      ...(c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status]),
+      isRunning,
+      name: x.name,
+      text: c.isNew(x) || isOpen(x) ? x.text || null : null,
+      stall: c.isHeld(x) ? { text: 'waiting', tone: 'needsYou' } : null,
+      merged: c.isNew(x) ? x.merged : null,
+      was: c.isNew(x) ? x.was : null,
+      hasChildren: under.length > 0,
+      ask: c.oldestAskOf(x),
+    })
+    rows.push(...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid')))
+    const hidden = under.slice(CHILD_ROWS)
+    const isEveryHiddenRunning = hidden.every(ch => ch.delegateState !== 'finished')
+    if (isMore)
+      rows.push({
+        kind: 'more',
+        id: `${x.id}-more`,
+        text: `+ ${hidden.length} more${isEveryHiddenRunning ? ' running' : ''}`,
+        branch: 'last',
+      })
+  }
+  const isEveryShownNew = firstSeen === -1
+  if (c.lookRow && isEveryShownNew && shown.length > 0) rows.push(c.lookRow)
+
+  return rows
+}
+
 export function statusPage(
   s: {
     ledger: Pick<Ledger, 'overview' | 'items'>
@@ -178,76 +258,58 @@ export function statusPage(
   const isNew = (x: Subject) => look === null || x.changedAt > look
   const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
   const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
-  const oldestAskOf = (x: Subject): { id: string; kind: Item['kind'] } | null => {
-    if (!isHeld(x)) return null
-    const oldest = s.ledger.items
-      .filter(i => o?.askSubjects[i.id] === x.id)
-      .sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0]
-
-    return oldest ? { id: oldest.id, kind: oldest.kind } : null
-  }
+  const oldestAskOf = (x: Subject): { id: string; kind: Item['kind'] } | null =>
+    isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null
   const placeOf = (x: Subject): StatusPlace =>
     isHeld(x) ? 'held' : x.status === 'done' || x.status === 'dropped' ? 'closed' : x.status
   const pageOrder = (x: Subject, y: Subject) =>
     Number(isNew(y)) - Number(isNew(x)) ||
     STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) ||
     y.changedAt - x.changedAt
-  const stallOf = (x: Subject): StatusStall | null => (isHeld(x) ? { text: 'waiting', tone: 'needsYou' } : null)
-  const newClosed = subjects
-    .filter(x => !isOpen(x) && isNew(x))
-    .sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0))
-    .slice(0, NEW_CLOSED_ROWS)
+  const isOther = (x: Subject) => o?.goal != null && o.serves[x.id] === 'none'
   const running = (o?.children ?? [])
     .filter(c => isChildRunning(c, now) || isFinishedUnseen(c, look))
     .sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt))
-  const open = subjects.filter(isOpen).sort(pageOrder)
-  const foldable = open.filter(x => !isHeld(x) && !isNew(x) && !running.some(c => c.subjectId === x.id))
+  const hasChildRow = (x: Subject) => running.some(c => c.subjectId === x.id)
+  const newClosedOf = (part: Subject[]) =>
+    part
+      .filter(x => !isOpen(x) && isNew(x))
+      .sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0))
+      .slice(0, NEW_CLOSED_ROWS)
+  const main = subjects.filter(x => !isOther(x))
+  const other = subjects.filter(isOther)
+  const newClosed = newClosedOf(main)
+  const open = main.filter(isOpen).sort(pageOrder)
+  const foldable = open.filter(x => !isHeld(x) && !isNew(x) && !hasChildRow(x))
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)))
   const shown = [...open.filter(x => !folded.includes(x)), ...newClosed].sort(pageOrder)
-  const foldedDone = subjects.filter(x => x.status === 'done' && !newClosed.includes(x))
-  const shownIds = new Set(shown.map(x => x.id))
-  const rows: StatusRowParts[] = running
-    .filter(c => c.subjectId === null || !shownIds.has(c.subjectId))
-    .map(c => childRow(c, null))
+  const otherNewClosed = newClosedOf(other)
+  const otherFolded = other.filter(x => isOpen(x) && !isHeld(x) && !isNew(x) && !hasChildRow(x))
+  const otherShown = [...other.filter(x => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder)
+  const foldedDone = subjects.filter(x => x.status === 'done' && !newClosed.includes(x) && !otherNewClosed.includes(x))
+  const shownIds = new Set([...shown, ...otherShown].map(x => x.id))
   const lookRow: StatusRowParts | null = look === null ? null : { kind: 'look', id: 'look', text: LOOK_TEXT }
-  const firstSeen = shown.findIndex(x => !isNew(x))
-  for (const [i, x] of shown.entries()) {
-    const hasNewAbove = i > 0
-    if (lookRow && i === firstSeen && hasNewAbove) rows.push(lookRow)
-    const under = running.filter(c => c.subjectId === x.id)
-    const shownUnder = under.slice(0, CHILD_ROWS)
-    const isMore = under.length > CHILD_ROWS
-    const isRunning = x.status === 'working' && !isHeld(x) && (s.presence.isTurnRunning || under.some(isChildWorking))
-    const isIdle = x.status === 'working' && !isRunning
-    rows.push({
-      kind: 'subject',
-      id: x.id,
-      ...(isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status]),
-      isRunning,
-      name: x.name,
-      text: isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: stallOf(x),
-      merged: isNew(x) ? x.merged : null,
-      was: isNew(x) ? x.was : null,
-      hasChildren: under.length > 0,
-      ask: oldestAskOf(x),
-    })
-    rows.push(...shownUnder.map((c, n) => childRow(c, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid')))
-    const hidden = under.slice(CHILD_ROWS)
-    const isEveryHiddenRunning = hidden.every(c => c.delegateState !== 'finished')
-    if (isMore)
-      rows.push({
-        kind: 'more',
-        id: `${x.id}-more`,
-        text: `+ ${hidden.length} more${isEveryHiddenRunning ? ' running' : ''}`,
-        branch: 'last',
-      })
+  const ctx: ListContext = {
+    isNew,
+    isHeld,
+    oldestAskOf,
+    pageOrder,
+    running,
+    isTurnRunning: s.presence.isTurnRunning,
+    lookRow,
   }
-  const isEveryShownNew = firstSeen === -1
-  if (lookRow && isEveryShownNew && shown.length > 0) rows.push(lookRow)
+  const rows: StatusRowParts[] = [
+    ...running.filter(c => c.subjectId === null || !shownIds.has(c.subjectId)).map(c => childRow(c, null)),
+    ...partRows(shown, ctx),
+  ]
   if (folded.length > 0) rows.push({ kind: 'fold', id: 'open', ...SUBJECT_MARKS.queued, text: `${folded.length} more` })
+  if (otherShown.length > 0 || otherFolded.length > 0) {
+    rows.push({ kind: 'part', id: 'other', text: OTHER_WORK })
+    rows.push(...partRows(otherShown, { ...ctx, lookRow: lookRow && { ...lookRow, id: 'other-look' } }))
+    if (otherFolded.length > 0) rows.push({ kind: 'counts', id: 'other-counts', counts: countsByMark(otherFolded) })
+  }
   if (foldedDone.length > 0) {
-    const isMore = newClosed.some(x => x.status === 'done')
+    const isMore = newClosed.some(x => x.status === 'done') || otherNewClosed.some(x => x.status === 'done')
     rows.push({
       kind: 'fold',
       id: 'done',
@@ -257,10 +319,12 @@ export function statusPage(
     })
   }
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null
+  const goalParts = goalPage(o, s.ledger.items)
 
   return {
-    isEmpty: head === null && rows.length === 0,
+    isEmpty: head === null && rows.length === 0 && goalParts.goal === null && goalParts.proposal === null,
     head,
+    ...goalParts,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]), isLast: n === rows.length - 1 })),
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {

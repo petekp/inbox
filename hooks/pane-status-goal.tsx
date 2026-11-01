@@ -1,0 +1,188 @@
+import type { UiPressArgument } from 'claude-code'
+import type { PaneBase, PaneHandlers } from './pane-context'
+import type { KeyAction } from './pane-keys'
+import { fieldKey, openFields } from './pane-keys'
+import type { PaneRowFrame } from './pane-row-frame'
+import type { PaneRowKeys } from './pane-row-keys'
+import type { PaneRowLines } from './pane-row-lines'
+import { DESKTOP_REPLY_ROWS, REPLY_ROWS } from './pane-sizes'
+import type { PaneStatusLines } from './pane-status-lines'
+import type { MilestoneRow } from './status-goal-page'
+import {
+  GOAL_FIELD,
+  GOAL_KEYS_ID,
+  goalKeyPlan,
+  milestoneKeyPlan,
+  PROPOSAL_KEYS_ID,
+  proposalKeyPlan,
+} from './status-keys'
+import type { StatusKeyTarget } from './status-keys'
+import type { StatusPage } from './status-page'
+import { WAS_PREFIX } from './status-page'
+
+/** One line of the Status list, as `paneStatus` draws it, so milestones line up with subjects. */
+type StatusRowLine = (line: {
+  key: string
+  mark: JSX.Element | null
+  content: JSX.Element[]
+  isSelected?: boolean
+}) => JSX.Element
+
+/** The proposal, the goal and its milestones, and the goal's text field, in the terminal and desktop looks. */
+export function paneStatusGoal(
+  {
+    look,
+    Box,
+    Text,
+    pal,
+    Input,
+    typing,
+    now,
+    statusKeyRow,
+    statusMarkAt,
+    statusNameLine,
+    statusPageText,
+    markGlyph,
+    keyRow,
+    desktopFrame,
+  }: Pick<PaneBase, 'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'now' | 'statusKeyRow'> &
+    Pick<PaneStatusLines, 'statusMarkAt' | 'statusNameLine' | 'statusPageText'> &
+    Pick<PaneRowLines, 'markGlyph'> &
+    Pick<PaneRowKeys, 'keyRow'> &
+    Pick<PaneRowFrame, 'desktopFrame'>,
+  { updateDrafts, updateTyping, sendTyped }: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped'>,
+  { statusRowLine, statusKeys }: { statusRowLine: StatusRowLine; statusKeys: (t: StatusKeyTarget) => KeyAction[] },
+) {
+  const isTypingGoal = Input !== null && typing === GOAL_KEYS_ID
+  /** Lines at the head's column. The terminal marks the selected block with the selection color, as it does a row. */
+  const block = (key: string, children: JSX.Element[], isSelected = false) =>
+    look === 'desktop' ? (
+      desktopFrame({ key, padY: 0, markCells: 0, hasSide: false, children })
+    ) : (
+      <Box
+        key={key}
+        flexDirection="column"
+        paddingLeft={statusMarkAt}
+        backgroundColor={isSelected ? pal.selection : undefined}
+      >
+        {children}
+      </Box>
+    )
+  const muted = (key: string, text: string) => (
+    <Box key={key}>
+      <Text wrap="wrap" color={pal.muted}>
+        {text}
+      </Text>
+    </Box>
+  )
+  const bold = (key: string, text: string) => (
+    <Box key={key}>
+      <Text wrap="wrap" bold>
+        {text}
+      </Text>
+    </Box>
+  )
+  const keysLine = (target: StatusKeyTarget) => {
+    const keys = statusKeys(target)
+
+    return keys.length > 0 ? [<Box key={`${target.id}-keys`}>{keyRow(target.id, keys)}</Box>] : []
+  }
+  const isSelected = (id: string) => look === 'terminal' && statusKeyRow?.id === id
+  const cancel: KeyAction = {
+    key: `cancel-${GOAL_KEYS_ID}`,
+    label: 'Cancel',
+    kind: 'view',
+    onPress: () => void updateTyping(t => (t === GOAL_KEYS_ID ? null : t)),
+  }
+  /** The goal's text field and its Cancel button. Submitting sets the typed goal. */
+  const field = () =>
+    Input === null
+      ? []
+      : [
+          <Input
+            key={fieldKey(GOAL_KEYS_ID)}
+            placeholder={GOAL_FIELD.placeholder}
+            {...(openFields.get(GOAL_KEYS_ID)?.seed ? { value: openFields.get(GOAL_KEYS_ID)?.seed } : {})}
+            submitLabel={look === 'desktop' ? GOAL_FIELD.submit : 'set'}
+            autoFocus
+            {...(look === 'terminal' ? { rows: REPLY_ROWS } : look === 'desktop' ? { rows: DESKTOP_REPLY_ROWS } : {})}
+            onInput={(value: string) =>
+              void updateDrafts(d => ({ ...d, [GOAL_KEYS_ID]: { text: value, since: d[GOAL_KEYS_ID]?.since ?? now } }))
+            }
+            onSubmit={(value: string, submit: { surface: UiPressArgument['surface'] }) =>
+              sendTyped(GOAL_KEYS_ID, value, submit.surface)
+            }
+          />,
+          <Box key="goal-field-keys">{keyRow(`${GOAL_KEYS_ID}-field`, [cancel])}</Box>,
+        ]
+  const milestoneLine = (m: MilestoneRow) =>
+    statusRowLine({
+      key: `goal-${m.id}`,
+      mark: markGlyph({ text: m.mark, isRunning: false }, m.id, m.tone ? pal.mark[m.tone] : pal.muted),
+      content: [
+        statusNameLine(`goal-${m.id}-name`, { text: m.name, ...(m.isChanged ? { bold: true } : {}) }, m.stall, 0),
+        ...(m.text ? [statusPageText(`goal-${m.id}-text`, [{ text: m.text, isMuted: true }], 0)] : []),
+        ...(m.was ? [statusPageText(`goal-${m.id}-was`, [{ text: `${WAS_PREFIX}${m.was}`, isMuted: true }], 0)] : []),
+        ...keysLine({ id: m.id, keys: milestoneKeyPlan(m) }),
+      ],
+      isSelected: isSelected(m.id),
+    })
+
+  /**
+   * What the page draws above the head: a proposal, then the goal with its milestones. The field takes the goal's
+   * place while the person types one. With no goal, it takes the place of Set a goal under the head.
+   */
+  const goalAbove = (page: StatusPage): JSX.Element[] => {
+    const p = page.proposal
+    const g = page.goal
+    const proposal = p
+      ? [
+          block(
+            'goal-proposal',
+            [
+              muted('goal-proposal-label', p.label),
+              bold('goal-proposal-text', p.text),
+              <Box key="goal-proposal-milestones">
+                <Text wrap="wrap">
+                  {p.milestones.map((m, n) => (
+                    <Text key={`goal-proposal-${n}`}>
+                      {n > 0 ? '   ' : ''}
+                      <Text color={m.tone ? pal.mark[m.tone] : pal.muted}>{m.mark}</Text>
+                      {` ${m.name}`}
+                    </Text>
+                  ))}
+                </Text>
+              </Box>,
+              ...keysLine({ id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(page) }),
+            ],
+            isSelected(PROPOSAL_KEYS_ID),
+          ),
+        ]
+      : []
+    if (g === null) return proposal
+
+    return [
+      ...proposal,
+      block('goal-title', [
+        muted('goal-label', g.label),
+        ...(isTypingGoal ? field() : [bold('goal-text', g.text)]),
+        ...(g.was ? [muted('goal-was', `${WAS_PREFIX}${g.was}`)] : []),
+        ...(g.awaiting ? [muted('goal-awaiting', g.awaiting)] : []),
+      ]),
+      ...g.milestones.map(milestoneLine),
+      ...(isTypingGoal ? [] : [block('goal-change', goalKeys(page), isSelected(GOAL_KEYS_ID))]),
+    ]
+  }
+  const goalKeys = (page: StatusPage) => keysLine({ id: GOAL_KEYS_ID, keys: goalKeyPlan(page) })
+  /** Under the head, or under the empty state, while no goal is set: Set a goal, or the field it opened. */
+  const setGoal = (page: StatusPage): JSX.Element[] =>
+    page.goal !== null
+      ? []
+      : [block('goal-set', isTypingGoal ? field() : goalKeys(page), !isTypingGoal && isSelected(GOAL_KEYS_ID))]
+  /** While a goal is set, the head draws as one muted line. */
+  const nowLine = (text: string) => block('status-now', [muted('status-now-line', text)])
+
+  return { goalAbove, setGoal, nowLine }
+}
+
+export type PaneStatusGoal = ReturnType<typeof paneStatusGoal>

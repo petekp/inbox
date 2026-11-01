@@ -15,7 +15,8 @@ import type { ToneName } from '../../hooks/tones'
 import { ROW_COPY } from '../../hooks/rows'
 import { shownTabs, tabBadge, fitTabs, tabName, isRowTab } from '../../hooks/tabs'
 import { footerStatus } from '../../hooks/view'
-import { keptOpen, statusKeyRows } from '../../hooks/action-plan'
+import { keptOpen } from '../../hooks/action-plan'
+import { GOAL_FIELD, GOAL_KEYS_ID, statusKeyRows } from '../../hooks/status-keys'
 import { versionLabel } from '../../hooks/banners'
 import type { ShownTab, TabNaming } from '../../hooks/tabs'
 import type { Draw } from './panel-draw'
@@ -135,7 +136,7 @@ export function footer(d: Draw, isPageScrolling: boolean): string[] {
   if (status.text) out.push(` ${s.dim(status.text)}`)
   const hints =
     ui.typing !== null
-      ? [`↵ ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`]
+      ? [`↵ ${ui.typing === GOAL_KEYS_ID ? GOAL_FIELD.submit : ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`]
       : ui.isHelpShown
         ? [...(isPageScrolling ? ['↑↓ scroll'] : []), 'esc close help']
         : isRowTab(ui.tab)

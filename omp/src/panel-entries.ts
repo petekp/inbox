@@ -27,7 +27,8 @@ import { bannerOf, emptyText, isResumable, stopFix, stopText } from '../../hooks
 import { FINDING_GROUPS, HELP_COPY, helpKeys, MARK_LEGEND } from '../../hooks/help'
 import { isDrawnInPlace, runningMark } from '../../hooks/timing'
 import { isRowTab } from '../../hooks/tabs'
-import { statusKeyRows } from '../../hooks/action-plan'
+import { statusKeyRows } from '../../hooks/status-keys'
+import { goalAbove, nowEntry, setGoal } from './panel-goal'
 import type { StatusPage } from '../../hooks/status-page'
 import type { ShownTab } from '../../hooks/tabs'
 import { AGENT, STOP_ID, blankLine, doneAt, groupEntries, isGroupEmpty, prButtons, pressFeedback } from './panel-lines'
@@ -248,22 +249,29 @@ export const PAGE_TEXT_AT = PAGE_MARK_AT + 2
 /** Where the mark of a child under a subject sits: after the tree's arm, which starts under the subject's mark. */
 export const PAGE_CHILD_AT = PAGE_MARK_AT + 3
 
-function pageEntries(page: StatusPage): Entry[] {
+function pageEntries(page: StatusPage, typing: string | null): Entry[] {
+  const blank: Entry = { kind: 'note', text: '' }
   if (page.isEmpty)
     return [
       { kind: 'note', text: page.empty.title, isStrong: true },
       { kind: 'note', text: page.empty.hint, isWhole: true },
+      ...setGoal(page, typing),
     ]
   const description = page.head?.description
-  const head: Entry[] = page.head
-    ? [
-        { kind: 'note', text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
-        ...(description ? [{ kind: 'note' as const, text: description, indent: PAGE_MARK_AT }] : []),
-      ]
-    : []
+  const head: Entry[] = page.nowLine
+    ? [nowEntry(page.nowLine)]
+    : page.head
+      ? [
+          { kind: 'note', text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
+          ...(description ? [{ kind: 'note' as const, text: description, indent: PAGE_MARK_AT }] : []),
+        ]
+      : []
+  const above = goalAbove(page, typing)
+  const under = [...head, ...setGoal(page, typing)]
+  const top = above.length > 0 && under.length > 0 ? [...above, blank, ...under] : [...above, ...under]
   const rows = page.rows.map((row): Entry => ({ kind: 'page', row }))
 
-  return head.length > 0 && rows.length > 0 ? [...head, { kind: 'note', text: '' }, ...rows] : [...head, ...rows]
+  return top.length > 0 && rows.length > 0 ? [...top, blank, ...rows] : [...top, ...rows]
 }
 
 /** Help in place of the tab's lines: the keys the panel takes, then what each mark means. */
@@ -282,7 +290,7 @@ function helpEntries(screen: PanelScreen, tab: ShownTab): Entry[] {
 
 export function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: number): Entry[] {
   if (ui.isHelpShown && tab === ui.tab) return helpEntries(screen, tab)
-  if (!isRowTab(tab)) return pageEntries(screen.view.statusPage)
+  if (!isRowTab(tab)) return pageEntries(screen.view.statusPage, ui.typing)
 
   return tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab)
 }

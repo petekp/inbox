@@ -1,9 +1,10 @@
-import { statusKeyPlan } from './action-plan'
+import type { UiPressArgument } from 'claude-code'
 import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
 import { LOOK_GAP_PT } from './layout'
 import type { PaneAskTabs } from './pane-asks'
 import type { PaneBase, PaneHandlers } from './pane-context'
 import type { KeyAction } from './pane-keys'
+import { openFields } from './pane-keys'
 import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
@@ -18,8 +19,10 @@ import {
   FRAME_INSET_PT,
   STATUS_PAD_Y,
 } from './pane-sizes'
+import { paneStatusGoal } from './pane-status-goal'
 import type { PaneStatusLines } from './pane-status-lines'
-import { LOOK_DASH, mergedLine, type StatusRow, WAS_PREFIX } from './status-page'
+import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from './status-keys'
+import { LOOK_DASH, mergedLine, STALL_GAP, type StatusCount, type StatusRow, WAS_PREFIX } from './status-page'
 import { SELECTION_BAR } from './terminal-text'
 import { cellWidth } from './text'
 
@@ -33,6 +36,9 @@ export function paneStatus(
     statusKeyRow,
     view,
     isInline,
+    Input,
+    typing,
+    now,
     statusMarkAt,
     statusFrameEdge,
     statusNameLine,
@@ -48,7 +54,10 @@ export function paneStatus(
     emptyState,
     sections,
     section,
-  }: Pick<PaneBase, 'listColumns' | 'look' | 'Box' | 'Text' | 'pal' | 'statusKeyRow' | 'view' | 'isInline'> &
+  }: Pick<
+    PaneBase,
+    'listColumns' | 'look' | 'Box' | 'Text' | 'pal' | 'statusKeyRow' | 'view' | 'isInline' | 'Input' | 'typing' | 'now'
+  > &
     Pick<
       PaneStatusLines,
       | 'statusMarkAt'
@@ -64,8 +73,9 @@ export function paneStatus(
     Pick<PaneRowKeys, 'keyRow'> &
     Pick<PaneAskTabs, 'emptyState'> &
     Pick<PaneRowParts, 'sections' | 'section'>,
-  { showAsk }: Pick<PaneHandlers, 'showAsk'>,
+  handlers: Pick<PaneHandlers, 'showAsk' | 'runPress' | 'updateDrafts' | 'updateTyping' | 'sendTyped'>,
 ) {
+  const { showAsk, runPress, updateDrafts, updateTyping } = handlers
   // A Status rule starts at the text column, as the rules between sections and between Asks rows do. In the
   // terminal it stops at the end of the list's columns. On desktop it runs to the pane's edge.
   const statusRuleAt = statusMarkAt + markWidth
@@ -135,6 +145,36 @@ export function paneStatus(
       </Box>
     )
   }
+  /** The rule that starts Other work: its name, then a solid rule to the end of the list's columns. */
+  const statusPartLine = (id: string, text: string) =>
+    look === 'desktop' ? (
+      <Box
+        key={`status-${id}`}
+        flexDirection="row"
+        alignItems="center"
+        marginLeft={desktopStatusRuleLeft}
+        paddingY={statusFrameEdge}
+      >
+        <Box flexShrink={0} paddingRight={1}>
+          <Text color={pal.muted}>{text}</Text>
+        </Box>
+        <Box flexGrow={1} height={DESKTOP_HAIR_LINES} backgroundColor={pal.divider} />
+      </Box>
+    ) : (
+      <Box key={`status-${id}`} flexDirection="row">
+        <Box width={statusRuleAt} flexShrink={0} />
+        <Text color={pal.muted}>{`${text} `}</Text>
+        <Text color={pal.divider}>{'─'.repeat(Math.max(4, statusRuleCells - cellWidth(text) - 1))}</Text>
+      </Box>
+    )
+  /** One count of the folded Other work rows: its mark in its tone, then the count. */
+  const statusCount = (c: StatusCount, n: number) => (
+    <Text key={`count-${n}`}>
+      {n > 0 ? <Text color={pal.muted}>{STALL_GAP}</Text> : null}
+      <Text color={c.tone ? pal.mark[c.tone] : pal.muted}>{c.mark}</Text>
+      <Text color={pal.muted}>{` ${c.text}`}</Text>
+    </Text>
+  )
   /** One line of the Status tab's list: a mark and its text. `depth` 1 sits under a subject's text. */
   const statusRowLine = ({
     key,
@@ -186,20 +226,52 @@ export function paneStatus(
         ) : null}
       </Box>
     )
-  /** A Status row's buttons from its plan. Only the selected row's key presses it, so only that row names its key. */
-  const statusKeys = (r: StatusRow): KeyAction[] =>
-    statusKeyPlan(r).map(k => ({
-      key: `${k.press.action}-${r.id}`,
-      label: k.label,
-      kind: k.kind,
-      ...(r.id === statusKeyRow?.id ? { hotkey: k.hotkey } : {}),
-      onPress: () => showAsk(k.press.askId),
+  /** Opens the goal's field with `text` in it, as a fresh draft. */
+  const openGoalField = async (text: string) => {
+    openFields.delete(GOAL_KEYS_ID)
+    await updateDrafts(d => ({ ...d, [GOAL_KEYS_ID]: { text, since: now } }))
+    await updateTyping(() => GOAL_KEYS_ID)
+  }
+  /** A target's buttons from its plan. Only the selected target's keys press it, so only that one names its keys. */
+  const statusKeys = (t: StatusKeyTarget): KeyAction[] =>
+    t.keys.map(({ press, label, kind, hotkey, emphasis }) => ({
+      key: `${press.action}-${t.id}`,
+      label,
+      kind,
+      emphasis,
+      ...(t.id === statusKeyRow?.id ? { hotkey } : {}),
+      onPress: (p: UiPressArgument) =>
+        press.action === 'show-ask'
+          ? showAsk(press.askId)
+          : press.action === 'type-goal'
+            ? openGoalField(press.text)
+            : runPress({ action: press.action, id: GOAL_KEYS_ID }, p.surface),
     }))
+  const { goalAbove, setGoal, nowLine } = paneStatusGoal(
+    {
+      look,
+      Box,
+      Text,
+      pal,
+      Input,
+      typing,
+      now,
+      statusKeyRow,
+      statusMarkAt,
+      statusNameLine,
+      statusPageText,
+      markGlyph,
+      keyRow,
+      desktopFrame,
+    },
+    handlers,
+    { statusRowLine, statusKeys },
+  )
   const statusMark = (r: Pick<StatusRow & { kind: 'subject' }, 'id' | 'mark' | 'tone' | 'isRunning'>) =>
     markGlyph({ text: r.mark, isRunning: r.isRunning }, r.id, r.tone ? pal.mark[r.tone] : pal.muted)
   const statusRow = (r: StatusRow) => {
     if (r.kind === 'subject') {
-      const keys = statusKeys(r)
+      const keys = statusKeys({ id: r.id, keys: statusKeyPlan(r) })
       const mark = statusMark(r)
       const content = [
         statusNameLine(`status-${r.id}-name`, { text: r.name }, r.stall, 0),
@@ -246,6 +318,13 @@ export function paneStatus(
         tree: statusTree(`status-${r.id}-tree`, r.branch),
       })
     if (r.kind === 'look') return statusLookLine(r.text, r.isLast)
+    if (r.kind === 'part') return statusPartLine(r.id, r.text)
+    if (r.kind === 'counts')
+      return statusRowLine({
+        key: `status-${r.id}`,
+        mark: null,
+        content: <Text wrap="wrap">{r.counts.map(statusCount)}</Text>,
+      })
 
     return statusRowLine({
       key: `status-${r.id}`,
@@ -259,11 +338,15 @@ export function paneStatus(
       return (
         <Box flexDirection="column" flexGrow={1}>
           {emptyState(page.empty)}
+          {setGoal(page)}
         </Box>
       )
+    const above = goalAbove(page)
+    const head = page.nowLine ? nowLine(page.nowLine) : page.head ? statusHead(page.head) : null
 
     return sections([
-      ...(page.head ? [statusHead(page.head)] : []),
+      ...(above.length > 0 ? [section(above)] : []),
+      ...(head || page.goal === null ? [section([...(head ? [head] : []), ...setGoal(page)])] : []),
       ...(page.rows.length > 0
         ? [
             section(

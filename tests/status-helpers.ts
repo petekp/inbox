@@ -57,5 +57,9 @@ export const shape = (rows: StatusRow[]) =>
           ? `-- ${r.text}`
           : r.kind === 'more'
             ? `${ARMS[r.branch]}${r.text}`
-            : `${r.mark} ${r.text}`,
+            : r.kind === 'part'
+              ? `== ${r.text}`
+              : r.kind === 'counts'
+                ? r.counts.map(c => `${c.mark} ${c.text}`).join(' · ')
+                : `${r.mark} ${r.text}`,
   )

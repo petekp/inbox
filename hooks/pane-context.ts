@@ -8,7 +8,8 @@ import type {
   UiPressArgument,
 } from 'claude-code'
 import type { Draft, FoldKind, LastAction, PrViews, RowNote, Stop, Tab, Turns } from '../types'
-import type { DrawnEntry, DrawnLists, statusSelected } from './action-plan'
+import type { DrawnEntry, DrawnLists } from './action-plan'
+import type { statusSelected } from './status-keys'
 import type { PressState } from './feedback'
 import type { helpKeys } from './help'
 import type { Action, KeyAction } from './pane-keys'

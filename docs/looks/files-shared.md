@@ -35,6 +35,9 @@ Part of [the look map](../looks.md#files).
 | `hooks/status-limits.ts` | Shared module. The Status's limits on words, subjects and children, `EMPTY_SESSION_STATUS`, `isOpen`, and the helpers that clip a text and compare subject names. |
 | `hooks/status-ops.ts` | Shared module. How an answer changes the saved Status: `applyOps`, `applyStatus`, and when a HEAD line replaces the head. |
 | `hooks/status-goal-ops.ts` | Shared module. How an answer and the goal's presses change the goal: a GOAL line's proposal, MILESTONE and SERVES lines, milestones moved by id, met, and Use this goal, Not now and a typed goal. |
+| `hooks/status-goal-page.ts` | Shared module. The goal's parts of the Status page: the goal block with its milestone rows, a proposal, and the Now line. |
+| `hooks/status-keys.ts` | Shared module. The Status page's buttons: View on a held subject or milestone, the proposal's and the goal's buttons, the order j and k move through them, and which one is selected. |
+| `hooks/goal-press.ts` | Shared module. Use this goal, Not now and a typed goal as presses on the id `goal`, for `pressed`. |
 | `hooks/status-children.ts` | Shared module. A child the host reports, and its end and activity. The text of the subjects, asks and running children that the Status call reads. When a look at the Status starts and ends. |
 | `hooks/status-upgrade.ts` | Shared module. `upgradeStatus`, which reads a saved Status from this build or an earlier one and leaves out anything wrongly shaped. |
 | `hooks/status-upgrade-goal.ts` | Shared module. The goal's fields of a saved Status, for `upgradeStatus`. Only an object loads as a goal. |

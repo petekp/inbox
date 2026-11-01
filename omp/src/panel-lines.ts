@@ -1,3 +1,4 @@
+import type { GoalPart } from './panel-goal'
 import type { FoldKind } from '../../types'
 import type { PrAction } from '../../hooks/pr-press'
 import {
@@ -91,6 +92,7 @@ export type Entry =
   | { kind: 'note'; text: string; isStrong?: boolean; isPlain?: boolean; indent?: number; isWhole?: boolean }
   | { kind: 'row'; line: Line }
   | { kind: 'page'; row: StatusRow }
+  | { kind: 'goal'; part: GoalPart }
   | { kind: 'banner'; banner: BannerView }
   /** A key Help lists, its keys padded to `column`. */
   | { kind: 'key'; key: HelpKey; column: number }
