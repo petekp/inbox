@@ -2,7 +2,7 @@
 
 The examples come from one invented session. It adds two-factor sign-in to a web app. Its pieces are SMS codes, authenticator setup, recovery codes and the 3.0 release. A subagent checks the recovery code tests. The person set the goal "Two-factor sign-in in 3.0", with the milestones SMS codes work, Recovery codes shown and 3.0 shipped. A pricing page tweak is work the goal does not need. The open question "Offer SMS codes outside the US?" holds up SMS codes. A finding says the password reset link expires too fast. The person has a task: add the SMS provider's key to staging. A standing rule says no deploys on Fridays. The examples write a row on one line, as `Name: where it stands`.
 
-**`n/a`.** A check has nothing to judge, and its answer is `n/a`, in these cases and no others:
+**`n/a`.** A check has nothing to judge in these cases and no others. Its answer is then `n/a`, never `pass`:
 
 - `rows-are-work`, `each-once`, `marks` and `where-it-stands`: the page has no subject rows.
 - `child-labels`: the page has no child rows.
@@ -18,7 +18,7 @@ The examples come from one invented session. It adds two-factor sign-in to a web
 
 The head tells the person what the session is focused on now, in the person's own words. Compare it with `Focus now` in the facts.
 
-The head passes when it names that focus, in any words. While a goal is set, the head is the one `Now:` line, and it passes when it names what the session is doing now. It never needs to repeat the goal. In the two-line form, the title names the focus in a few words, like a row's name, and the description says what the session is doing about it. When the focus is work that has finished and the facts give no newer focus, a head that names that finished work passes.
+The head passes when it names that focus, in any words. While a goal is set, the head is the one `Now:` line. The goal above it already names the aim, so the `Now:` line names the part of the focus underway now: one piece, one step of a piece, or the next few steps. It passes when that part serves the focus. It fails when it names work outside the focus, or only repeats the goal. In the two-line form, the title names the focus in a few words, like a row's name, and the description says what the session is doing about it. When the focus is work that has finished and the facts give no newer focus, a head that names that finished work passes.
 
 The head fails when it does any of these:
 
@@ -33,6 +33,7 @@ Examples:
 
 - Pass: `Two-factor sign-in` over `Adding SMS and app codes to sign-in`, while the agent fixes a typo on the way.
 - Pass: `Now: Adding recovery codes to sign-in`, under the goal `Two-factor sign-in in 3.0`.
+- Pass: `Now: Showing recovery codes, then the SMS check`, when the focus is two-factor sign-in as a whole.
 - Fail: `Now: Two-factor sign-in in 3.0`, which repeats the goal while the session works on recovery codes.
 - Pass: `3.0 release` over `Shipping two-factor sign-in in 3.0`, after 3.0 shipped, when the person asked for nothing more and the focus is still the release.
 - Fail: the same head after the focus moved to a billing bug.
