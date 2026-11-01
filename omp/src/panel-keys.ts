@@ -209,7 +209,11 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
     return { ui: { ...ui, selectedId: row.id, typing: GOAL_KEYS_ID, focus: null, drafts } }
   }
 
-  return { ui: { ...ui, selectedId: row.id, focus: null }, press: { action: press.action, id: GOAL_KEYS_ID } }
+  // The proposal goes with the press, so the goal's button, which then shows, takes the selection.
+  return {
+    ui: { ...ui, selectedId: GOAL_KEYS_ID, focus: null, pageReveal: GOAL_KEYS_ID },
+    press: { action: press.action, id: GOAL_KEYS_ID },
+  }
 }
 
 export const pageFocus = (target: StatusKeyTarget, ui: PanelUi): number =>

@@ -132,15 +132,17 @@ function StatusLine({ row }: { row: StatusRow }) {
       <div class="row">
         <span class="mark" />
         <div class="content tight">
-          {row.counts.map((c, n) => (
-            <span key={n}>
-              {n > 0 ? <span class="muted">{STALL_GAP}</span> : null}
-              <span class={markClassOf(c.tone, false)}>
-                <MarkGlyph text={c.mark} />
+          <div>
+            {row.counts.map((c, n) => (
+              <span key={n}>
+                {n > 0 ? <span class="muted">{STALL_GAP}</span> : null}
+                <span class={markClassOf(c.tone, false)}>
+                  <MarkGlyph text={c.mark} />
+                </span>
+                <span class="muted"> {c.text}</span>
               </span>
-              <span class="muted"> {c.text}</span>
-            </span>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     )
@@ -186,20 +188,22 @@ function GoalField() {
             })
           }
         />
-        <button type="submit" class={isOut ? 'key primary out' : 'key primary'} disabled={isOut}>
-          {GOAL_FIELD.submit}
-        </button>
-        <button
-          type="button"
-          class={isOut ? 'key ghost out' : 'key ghost'}
-          disabled={isOut}
-          onClick={() => {
-            tabState.typing = null
-            tabState.draw()
-          }}
-        >
-          {ROW_COPY.cancel}
-        </button>
+        <span class="field-keys">
+          <button type="submit" class={isOut ? 'key primary out' : 'key primary'} disabled={isOut}>
+            {GOAL_FIELD.submit}
+          </button>
+          <button
+            type="button"
+            class={isOut ? 'key ghost out' : 'key ghost'}
+            disabled={isOut}
+            onClick={() => {
+              tabState.typing = null
+              tabState.draw()
+            }}
+          >
+            {ROW_COPY.cancel}
+          </button>
+        </span>
       </form>
     </div>
   )

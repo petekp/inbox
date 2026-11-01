@@ -161,6 +161,17 @@
   padding: 0;
 }
 .empty .actions,
-.empty .keys {
+.empty .keys,
+.empty form {
   justify-content: center;
+}
+.empty form {
+  flex-wrap: wrap;
+}
+.empty input {
+  flex: 1 1 18em;
+}
+.field-keys {
+  display: flex;
+  gap: 6px;
 }

@@ -13,7 +13,7 @@ const MIN = 60_000
 
 const screenWith = (fields: Partial<SessionStatus>) => {
   const s = demoState(NOW)
-  const overview = { ...s.ledger.overview!, askSubjects: {}, ...fields }
+  const overview = { ...s.ledger.overview!, askSubjects: {}, goal: null, milestones: [], serves: {}, ...fields }
 
   return screenOf({ view: sessionView({ ...s, ledger: { ...s.ledger, overview } }, NOW, SETTLED_MS, true, NO_HOLDS) })
 }
@@ -53,10 +53,10 @@ const withGoal = () =>
   })
 const lineAt = (lines: string[], s: string) => lines.findIndex(l => l.includes(s))
 
-test('a proposed goal draws above the head with its milestones’ marks and its buttons in the plan’s order, selected first when no ask holds anything up', () => {
+test('a proposed goal draws above the head with its milestones’ marks and its buttons in the plan’s order, selected first when no ask holds anything up, and no Set a goal while it shows', () => {
   const screen = proposing()
   const page = screen.view.statusPage
-  expect(statusKeyRows(page).map(t => t.id)).toEqual(['proposal', 'goal'])
+  expect(statusKeyRows(page).map(t => t.id)).toEqual(['proposal'])
   const lines = text(screen, onPage).split('\n')
   const order = ['Proposed goal · from your message', 'Pilot ready to announce', '✓ Fixes built   ○ Announced']
   const at = order.map(s => lineAt(lines, s))
@@ -68,15 +68,15 @@ test('a proposed goal draws above the head with its milestones’ marks and its 
   expect(labels.map(l => buttons.indexOf(l))).toEqual(labels.map(l => buttons.indexOf(l)).sort((a, b) => a - b))
   expect(buttons).toContain('↵ Use this goal')
   expect(buttons).toContain('e Edit')
-  expect(lines[lineAt(lines, page.head!.description!) + 1]).toContain('Set a goal')
-  expect(lines[lineAt(lines, page.head!.description!) + 1]).not.toContain('s Set a goal')
+  expect(lines.some(l => l.includes('Set a goal'))).toBe(false)
 })
 
-test('Use this goal and Not now press the goal by their keys or Enter, and Edit opens the goal field with the proposal in it', () => {
+test('Use this goal and Not now press the goal by their keys or Enter and select the goal’s button, and Edit opens the goal field with the proposal in it', () => {
   const screen = proposing()
   expect(handleKey(screen, onPage, 'u', NOW).press).toEqual({ action: 'use-goal', id: 'goal' })
   expect(handleKey(screen, onPage, 'enter', NOW).press).toEqual({ action: 'use-goal', id: 'goal' })
   expect(handleKey(screen, onPage, 'x', NOW).press).toEqual({ action: 'decline-goal', id: 'goal' })
+  expect(handleKey(screen, onPage, 'u', NOW).ui).toMatchObject({ selectedId: 'goal', pageReveal: 'goal' })
   const editing = handleKey(screen, onPage, 'e', NOW)
   expect(editing.press).toBeUndefined()
   expect(editing.ui).toMatchObject({

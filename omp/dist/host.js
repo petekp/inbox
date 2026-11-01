@@ -1277,6 +1277,8 @@ function proposalKeyPlan(page) {
   ];
 }
 function goalKeyPlan(page) {
+  if (page.proposal !== null)
+    return [];
   const g = page.goal;
   const label = g === null ? "Set a goal" : g.isMet ? "Set next goal" : "Change goal";
   return [
@@ -5714,7 +5716,10 @@ function pageKey(screen, ui, key, now) {
     const drafts = { ...ui.drafts, [GOAL_KEYS_ID]: { text: press.text, since: now } };
     return { ui: { ...ui, selectedId: row.id, typing: GOAL_KEYS_ID, focus: null, drafts } };
   }
-  return { ui: { ...ui, selectedId: row.id, focus: null }, press: { action: press.action, id: GOAL_KEYS_ID } };
+  return {
+    ui: { ...ui, selectedId: GOAL_KEYS_ID, focus: null, pageReveal: GOAL_KEYS_ID },
+    press: { action: press.action, id: GOAL_KEYS_ID }
+  };
 }
 var pageFocus = (target, ui) => ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0;
 

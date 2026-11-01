@@ -64,9 +64,10 @@ export function proposalKeyPlan(page: StatusPage): StatusKey[] {
 
 /**
  * The goal's button: Set a goal before one is set, Change goal while one is, and Set next goal once it is met. Set a
- * goal is quiet, since a missing goal holds up no work.
+ * goal is quiet, since a missing goal holds up no work. While a proposal shows there is none: its Edit types a goal.
  */
 export function goalKeyPlan(page: StatusPage): StatusKey[] {
+  if (page.proposal !== null) return []
   const g = page.goal
   const label = g === null ? 'Set a goal' : g.isMet ? 'Set next goal' : 'Change goal'
 

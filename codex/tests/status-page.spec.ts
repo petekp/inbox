@@ -265,7 +265,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     await afterPoll()
     const buttons = () => [...root.querySelectorAll('main button')].map(b => b.textContent)
     assert.equal(root.querySelector('.goal-proposed')?.textContent, '✓ Page○ Label')
-    assert.deepEqual(buttons(), ['Use this goal', 'Edit', 'Not now', 'Set a goal'])
+    assert.deepEqual(buttons(), ['Use this goal', 'Edit', 'Not now'])
 
     const click = async (label: string) => {
       ;([...root.querySelectorAll('main button')].find(b => b.textContent === label) as HTMLElement).click()

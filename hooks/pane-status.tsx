@@ -336,12 +336,12 @@ export function paneStatus(
           {emptyState(page.empty, setGoalBare(page))}
         </Box>
       )
-    const above = goalAbove(page)
+    const { proposal, goal } = goalAbove(page)
     const head = page.nowLine ? nowLine(page.nowLine) : page.head ? statusHead(page.head) : null
+    const headLines = [...(head ? [head] : []), ...setGoal(page)]
 
     return sections([
-      ...(above.length > 0 ? [section(above)] : []),
-      ...(head || page.goal === null ? [section([...(head ? [head] : []), ...setGoal(page)])] : []),
+      ...[proposal, goal, headLines].flatMap(lines => (lines.length > 0 ? [section(lines)] : [])),
       ...(page.rows.length > 0
         ? [
             section(

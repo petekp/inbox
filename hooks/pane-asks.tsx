@@ -190,12 +190,7 @@ export function paneAskTabs(
             </Box>
           ) : null}
           {below.length > 0 ? (
-            <Box
-              flexDirection="column"
-              alignItems={align}
-              width={look === 'desktop' ? width / DESKTOP_CHARS_PER_CELL : width}
-              marginTop={blankLine}
-            >
+            <Box flexDirection="column" alignItems={align} width={room} marginTop={blankLine}>
               {below}
             </Box>
           ) : null}
