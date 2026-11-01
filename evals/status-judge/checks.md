@@ -10,7 +10,7 @@ The examples come from one invented session. It adds two-factor sign-in to a web
 - `was-lines`: the page has no was line under a subject row.
 - `goal`: the page shows no goal and no proposed goal.
 - `milestones`: the page shows no milestone rows.
-- `split`: the page shows no goal, so nothing is split.
+- `split`: no goal is set, so nothing is split. A proposed goal alone splits nothing.
 
 `head` is never `n/a`: a page with no head while the facts give a focus fails it.
 
@@ -250,7 +250,7 @@ Examples:
 
 ### milestones
 
-Milestones are the outcomes the goal needs, in order. Each is something that is either true or not yet, such as `SMS codes work`, never a step or a task such as `Write SMS tests`. Compare each with the facts' `Milestones:` lines, and a proposal's with what the person stated.
+Milestones are the outcomes the goal needs, in order. Each is something that is either true or not yet, such as `SMS codes work`, never a step or a task such as `Write SMS tests`. Compare each with the facts' `Milestones:` lines. A proposal's milestones have no `Milestones:` lines: compare them with what the person stated, and judge their marks by the pieces of work that would make each one true.
 
 The check passes when every milestone row is an outcome the goal needs, its mark fits its state as the marks list says, and together the rows show what is done, what is left and what is held up. A milestone held up by an open ask shows `◆` and `waiting`, as a subject row does.
 
