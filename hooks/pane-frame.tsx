@@ -227,12 +227,19 @@ export function paneFrame(
                     ) : (
                       <Button plain key={`tab-${id}`} label={label} onPress={() => void showTab(id)} />
                     )}
-                    {badge !== null ? (
-                      <Text bold={shownTab === id} color={tabTone(id)}>
+                    {badge === null ? null : shownTab === id ? (
+                      <Text bold color={tabTone(id)}>
                         {' '}
                         {badge}
                       </Text>
-                    ) : null}
+                    ) : (
+                      <Button plain key={`tab-${id}-count`} onPress={() => void showTab(id)}>
+                        <Text color={tabTone(id)}>
+                          {' '}
+                          {badge}
+                        </Text>
+                      </Button>
+                    )}
                   </Box>
                 )
 
@@ -297,10 +304,12 @@ export function paneFrame(
                     {pad ? <Button plain key={`tab-${id}-before`} label={pad} hover={raise} onPress={show} /> : null}
                     <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
                     {badge !== null ? (
-                      <Text color={tabTone(id)} hover={raise}>
-                        {' '}
-                        {badge}
-                      </Text>
+                      <Button plain key={`tab-${id}-count`} hover={raise} onPress={show}>
+                        <Text color={tabTone(id)}>
+                          {' '}
+                          {badge}
+                        </Text>
+                      </Button>
                     ) : null}
                     {pad ? <Button plain key={`tab-${id}-after`} label={pad} hover={raise} onPress={show} /> : null}
                   </Box>
