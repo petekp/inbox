@@ -139,7 +139,8 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
               ...(selectsStatusRows
                 ? [
                     { keys: 'j k', does: 'Select the next or previous row with a button' },
-                    { keys: '↵', does: "Press the selected row's button" },
+                    { keys: '← →', does: 'Pick a button' },
+                    { keys: '↵', does: 'Press the picked button' },
                   ]
                 : []),
               { keys: '↑ ↓', does: 'Scroll the page' },
