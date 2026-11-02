@@ -52,6 +52,34 @@ test('a GOAL line proposes and never sets the goal, and one with under two miles
   expect(after(declinedLong, long, 20).proposedGoal).toBeNull()
 })
 
+test('a proposal that rewords the goal or a declined goal, or names the goal’s milestones, is not proposed, and a next goal that shares a few words is', () => {
+  const typed = setTypedGoal(
+    after(null, 'NEW: working | Import | CSV works', 10),
+    'Ship 2.6 with the import feature and recent fixes',
+    20,
+  ).status
+  const declined = declineProposedGoal(proposed())
+
+  expect(typed.goal?.isAwaitingMilestones).toBe(true)
+  expect(
+    after(typed, 'GOAL: 2.6 shipped with the import feature | working Import landed; queued 2.6 cut', 30).proposedGoal,
+  ).toBeNull()
+  expect(
+    after(typed, 'GOAL: Ship 2.7 with PR grouping | queued Grouping built; queued 2.7 cut', 30).proposedGoal?.text,
+  ).toBe('Ship 2.7 with PR grouping')
+  expect(
+    after(typed, 'GOAL: Ship 2.7 with the import feature and recent fixes | queued Fixes; queued 2.7 cut', 30)
+      .proposedGoal,
+  ).not.toBeNull()
+  expect(
+    after(withGoal(), 'GOAL: CSV import done | queued Demo script; done Import works; working Error messages', 30)
+      .proposedGoal,
+  ).toBeNull()
+  expect(
+    after(declined, 'GOAL: Import demo-ready | working Import works; queued Demo script', 30).proposedGoal,
+  ).toBeNull()
+})
+
 test('Set as goal takes the proposed milestones with their states, and Not now remembers the goal', () => {
   const o = withGoal()
 

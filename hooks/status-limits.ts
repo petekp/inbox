@@ -86,6 +86,22 @@ export function nameKey(name: string): string {
   return [...words(name)].sort().join(' ')
 }
 
+const SUFFIXES = ['ing', 'ed', 'es', 's']
+
+/** A word cut to a rough stem, so "ship", "ships", "shipped" and "shipping" match. A word with a digit stays whole. */
+export function stem(word: string): string {
+  if (/\d/.test(word)) return word
+  const suffix = SUFFIXES.find(s => word.endsWith(s) && word.length - s.length >= 3) ?? ''
+  const cut = word.slice(0, word.length - suffix.length)
+  const base = cut.length > 3 && cut.endsWith('e') ? cut.slice(0, -1) : cut
+
+  return base.replace(/([b-df-hj-np-tv-z])\1$/, '$1')
+}
+
+export function stems(text: string): Set<string> {
+  return new Set([...words(text)].map(stem))
+}
+
 export function isOpen(s: Pick<Subject, 'status'>): boolean {
   return s.status !== 'done' && s.status !== 'dropped'
 }

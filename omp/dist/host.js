@@ -114,6 +114,18 @@ function words(text) {
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
 }
+var SUFFIXES = ["ing", "ed", "es", "s"];
+function stem(word) {
+  if (/\d/.test(word))
+    return word;
+  const suffix = SUFFIXES.find((s) => word.endsWith(s) && word.length - s.length >= 3) ?? "";
+  const cut = word.slice(0, word.length - suffix.length);
+  const base = cut.length > 3 && cut.endsWith("e") ? cut.slice(0, -1) : cut;
+  return base.replace(/([b-df-hj-np-tv-z])\1$/, "$1");
+}
+function stems(text) {
+  return new Set([...words(text)].map(stem));
+}
 function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
@@ -1073,6 +1085,21 @@ function stepEffects(item, step) {
 }
 
 // ../hooks/status-goal-ops.ts
+var RESTATED_SHARE = 0.8;
+function restatesGoal(text, goal) {
+  const own = [...stems(text)];
+  const theirs = stems(goal);
+  const shared = own.filter((w) => theirs.has(w)).length;
+  const hasNewNumber = own.some((w) => /\d/.test(w) && !theirs.has(w));
+  return own.length > 0 && !hasNewNumber && shared >= RESTATED_SHARE * own.length;
+}
+function hasGoalMilestones(o, proposed) {
+  if (o.goal === null || o.goal.isAwaitingMilestones)
+    return false;
+  const keys = (names) => names.map(nameKey).sort().join(NL);
+  const kept = o.milestones.filter((m) => m.status !== "dropped").map((m) => m.name);
+  return kept.length > 0 && keys(kept) === keys(proposed.map((m) => m.name));
+}
 function hasSameWords(a, b) {
   const x = words(a);
   const y = words(b);
@@ -1147,11 +1174,11 @@ function addMilestone(o, op, now) {
 function applyGoalOp(o, op, now, findSubject) {
   if (op.kind === "goal") {
     const text = clipWords(op.text, DESCRIPTION_KEPT);
-    const key = nameKey(text);
-    const isCurrent = o.goal !== null && nameKey(o.goal.text) === key;
-    if (op.milestones.length < MILESTONES_MIN || isCurrent || o.declinedGoals.includes(key))
-      return o;
     const milestones = op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }));
+    const isCurrent = o.goal !== null && (restatesGoal(text, o.goal.text) || hasGoalMilestones(o, milestones));
+    const isDeclined = o.declinedGoals.some((key) => restatesGoal(text, key));
+    if (op.milestones.length < MILESTONES_MIN || isCurrent || isDeclined)
+      return o;
     return { ...o, proposedGoal: { text, milestones, at: now } };
   }
   if (o.goal === null)
