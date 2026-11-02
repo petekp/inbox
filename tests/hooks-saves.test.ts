@@ -108,7 +108,11 @@ test('when the store lock stays held, the update still shows and the next save w
   expect((JSON.parse(w.stored.get('s:session-1')!) as Session).ledger.items.map(i => i.ask)).toEqual(asks)
 })
 
-async function heldStatusAfterClear($: Parameters<typeof world>[0], on: Parameters<typeof world>[1]) {
+async function heldStatusAfterClear(
+  $: Parameters<typeof world>[0],
+  on: Parameters<typeof world>[1],
+  heads = ['Adding a greeting CLI'],
+) {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let session: Pick<Session, 'ledger'> | null = null
@@ -119,10 +123,12 @@ async function heldStatusAfterClear($: Parameters<typeof world>[0], on: Paramete
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   let release: () => void = () => undefined
   w.statusHold = new Promise<void>(resolve => (release = resolve))
-  w.statusReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name'
-  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
-  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
-  await clock.settle()
+  w.statusReply = heads.map(head => `HEAD: ${head} | Building a CLI that greets by name`)
+  for (const [n, head] of heads.entries()) {
+    await $.prompt.submit({ text: head, wait: false, origin: { kind: 'composer' } })
+    await $.turn.complete({ answer: 'Noted.', durationMs: 5, isAborted: false, turnId: `t${n}`, reason: 'answer' })
+    await clock.settle()
+  }
   await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
   await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })
   await clock.settle()
@@ -153,6 +159,19 @@ test('a write to a conversation off screen that meets a held lock lands in the b
   await clock.advance(10_000)
   await clock.settle()
   expect(savedHead()).toBe('Adding a greeting CLI')
+})
+
+test('a later write to a conversation whose write is held runs after it, and both land in order', async ($, on) => {
+  const { clock, savedHead } = await heldStatusAfterClear($, on, ['Adding a greeting CLI', 'Naming the command'])
+  await clock.advance(3_000)
+  expect(w.statusPrompts).toHaveLength(2)
+  expect(w.statusPrompts[1]).toContain('<head>\nAdding a greeting CLI |')
+  expect(savedHead()).toBeUndefined()
+
+  w.storeLockedKey = undefined
+  await clock.advance(10_000)
+  await clock.settle()
+  expect(savedHead()).toBe('Naming the command')
 })
 
 test('resuming a conversation whose write is held shows that write', async ($, on) => {
