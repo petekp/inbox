@@ -175,7 +175,7 @@ on you, failing checks and merge conflicts. Buttons hand the work to the
 agent: address one review comment or all of them, draft a reply, fix a
 failing check, resolve conflicts, or merge. Fix and Resolve conflicts show only
 while GitHub still shows the problem. Dismiss merged clears every merged PR at
-once.
+once, except your current branch's own.
 
 Your agent can also put the PRs in an order, such as which to merge first. The
 tab then lists them first, numbered, under what the order is for and why. When
