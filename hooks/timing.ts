@@ -1,6 +1,7 @@
 import type { LastAction, Draft, Closed } from '../types'
 import { isUndoable } from './pressed'
 import { RUNNING_FRAMES } from './help'
+import { textMark } from './marks'
 import type { SettledState, RowView, ResultMark } from './rows'
 import { statusListRows } from './status-page'
 import type { StatusPage } from './status-page'
@@ -125,5 +126,5 @@ export function runningMark(now: number): string {
 
 /** A result mark's glyph in the text looks at `now`. A blank mark keeps its place, so the result stays put when its mark arrives. */
 export function resultGlyph(mark: ResultMark, now: number): string {
-  return mark.isRunning ? runningMark(now) : mark.text || ' '
+  return mark.isRunning ? runningMark(now) : textMark(mark.text) || ' '
 }

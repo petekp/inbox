@@ -1,6 +1,7 @@
 import type { UiPressArgument } from 'claude-code'
 import { DESKTOP_CHARS_PER_CELL, DESKTOP_CLIP_CHARS_PER_CELL } from './desktop-metrics'
 import { MUTED_MARK, mutedMarkSvg, RUNNING_SVG_CELLS, runningSvg, toneSvg } from './desktop-svg'
+import { textMark } from './marks'
 import {
   feedbackOf,
   feedbackText,
@@ -346,7 +347,7 @@ export function paneRowLines({
     const { light, dark } = color.startsWith('#') ? { light: color, dark: color } : MUTED_MARK
     const drawn = ToneSvg ? mutedMarkSvg(mark.text, light, dark) : null
     if (drawn) return svgCell(drawn.source, mark.text, `${key}-mark`, drawn.cells)
-    return <Text color={color}>{mark.text || ' '}</Text>
+    return <Text color={color}>{textMark(mark.text) || ' '}</Text>
   }
 
   return {

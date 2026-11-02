@@ -154,10 +154,16 @@ export function paneRows(
       DESKTOP_FIELD_PT,
       desktopRowTextPt - desktopTextPt(submitLabel) - DESKTOP_BUTTON_EXTRA_PT,
     )
-    const fieldRowCount = (text: string) =>
-      look === 'desktop'
-        ? fieldRows(text, line => desktopLines(line, desktopFieldPt).length, DESKTOP_REPLY_ROWS)
-        : fieldRows(text, line => lineCount(line, terminalFieldColumns), REPLY_ROWS)
+    /**
+     * A terminal field that passes one row takes all `REPLY_ROWS`. Claude Code's hint beside a field of several rows
+     * changes with the pane's width, so the rows its text wraps to cannot be counted here.
+     */
+    const fieldRowCount = (text: string) => {
+      if (look === 'desktop')
+        return fieldRows(text, line => desktopLines(line, desktopFieldPt).length, DESKTOP_REPLY_ROWS)
+      const fitsOneRow = fieldRows(text, line => lineCount(line, terminalFieldColumns), REPLY_ROWS) === 1
+      return fitsOneRow ? 1 : REPLY_ROWS
+    }
     const field =
       Input && isTyping ? (
         <Input
@@ -227,7 +233,14 @@ export function paneRows(
               )}
             </Box>
           ) : (
-            [field, keyRow(row.id, fieldActions(row))]
+            [
+              // Claude Code wraps a focused field of several rows at the pane's width less its hint, whatever its
+              // Box's width, and draws only one row of it in a narrower Box.
+              <Box key={`field-${row.id}`} width={e.props.bodyColumns} flexShrink={0}>
+                {field}
+              </Box>,
+              keyRow(row.id, fieldActions(row)),
+            ]
           )
         ) : (
           actionRows(row.id, keys, more, textWidth)

@@ -24,8 +24,17 @@ export function markShape(mark: string, midY: number): string | null {
 }
 
 /**
+ * The glyph the terminal and omp draw for a mark. macOS Terminal's default font, SF Mono, draws ✗ as ×. It has no ✕,
+ * so Terminal falls back to Menlo, which draws the same ×, and a cancelled row would look dismissed. Menlo draws ⊘ as a
+ * slashed circle.
+ */
+export function textMark(mark: string): string {
+  return mark === CLOSED_MARKS.lapsed ? '⊘' : mark
+}
+
+/**
  * A cancelled row's ✗ in the desktop pane and the Codex tab, in the same 8-point box. The system font draws ✗ the
- * same as ✕, so this draws the ballot X a monospace font draws: a long, heavy upstroke crossed by a shorter stroke.
+ * same as ✕, so this draws a ballot X: a long, heavy upstroke crossed by a shorter stroke.
  */
 function cancelledMarkShape(midY: number): string {
   const t = midY - 4

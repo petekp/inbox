@@ -8,6 +8,8 @@ import { drawnLists, listWaits, type RowWait } from './action-plan'
 import { type InboxView } from './view'
 import { SETTLED_MS } from './timing'
 import { type ShownTab } from './tabs'
+import { recordRows } from './arrivals'
+import { paneState } from './mod-state'
 
 /** The tab the pane shows, whether it shows the sample, and since when. */
 export type Shown = { tab: ShownTab; isDemo: boolean; since: number }
@@ -115,4 +117,14 @@ export type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at'> & {
   outcomeLabel: string
   delivery: Parameters<typeof settledLabel>[1]
   mark: ResultMark
+}
+
+export function newRows(isDemo: boolean, current: Record<Tab, string[] | null>): Record<Tab, string[]> {
+  const { seen, added } = recordRows(
+    paneState.recordedRows?.isDemo === isDemo ? paneState.recordedRows.ids : {},
+    current,
+  )
+  paneState.recordedRows = { isDemo, ids: seen }
+
+  return added
 }
