@@ -28,7 +28,7 @@ import { FINDING_GROUPS, HELP_COPY, helpKeys, MARK_LEGEND } from '../../hooks/he
 import { isDrawnInPlace, runningMark } from '../../hooks/timing'
 import { isRowTab } from '../../hooks/tabs'
 import { statusKeyRows } from '../../hooks/status-keys'
-import { goalAbove, nowEntry, setGoal } from './panel-goal'
+import { goalAbove, setGoal } from './panel-goal'
 import type { StatusPage } from '../../hooks/status-page'
 import type { ShownTab } from '../../hooks/tabs'
 import { AGENT, STOP_ID, blankLine, doneAt, groupEntries, isGroupEmpty, prButtons, pressFeedback } from './panel-lines'
@@ -258,9 +258,8 @@ function pageEntries(page: StatusPage, typing: string | null): Entry[] {
       ...setGoal(page, typing),
     ]
   const description = page.head?.description
-  const head: Entry[] = page.nowLine
-    ? [nowEntry(page.nowLine)]
-    : page.head
+  const head: Entry[] =
+    page.goal === null && page.head
       ? [
           { kind: 'note', text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
           ...(description ? [{ kind: 'note' as const, text: description, indent: PAGE_MARK_AT }] : []),

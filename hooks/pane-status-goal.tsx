@@ -20,7 +20,7 @@ import {
   proposalKeyPlan,
 } from './status-keys'
 import type { StatusKeyTarget } from './status-keys'
-import type { StatusPage } from './status-page'
+import type { StatusPage, StatusRow } from './status-page'
 import { STALL_GAP, WAS_PREFIX } from './status-page'
 import { ROW_COPY } from './rows'
 
@@ -57,7 +57,15 @@ export function paneStatusGoal(
     Pick<PaneRowKeys, 'keyRow' | 'textKey'> &
     Pick<PaneRowFrame, 'desktopFrame'>,
   { updateDrafts, updateTyping, sendTyped }: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped'>,
-  { statusRowLine, statusKeys }: { statusRowLine: StatusRowLine; statusKeys: (t: StatusKeyTarget) => KeyAction[] },
+  {
+    statusRowLine,
+    statusKeys,
+    statusRows,
+  }: {
+    statusRowLine: StatusRowLine
+    statusKeys: (t: StatusKeyTarget) => KeyAction[]
+    statusRows: (rows: StatusRow[]) => JSX.Element[]
+  },
 ) {
   const isTypingGoal = Input !== null && typing === GOAL_KEYS_ID
   /** Lines at the head's column. The terminal marks the selected block with the selection color, as it does a row. */
@@ -166,7 +174,8 @@ export function paneStatusGoal(
       </Box>
     </Box>
   )
-  const milestoneLine = (m: MilestoneRow) =>
+  /** A milestone, then the work that serves it, one step in. */
+  const milestoneLines = (m: MilestoneRow) => [
     statusRowLine({
       key: `status-${m.id}`,
       mark: markGlyph({ text: m.mark, isRunning: false }, m.id, m.tone ? pal.mark[m.tone] : pal.muted),
@@ -177,7 +186,9 @@ export function paneStatusGoal(
         ...keysLine({ id: m.id, keys: milestoneKeyPlan(m) }),
       ],
       isSelected: isSelected(m.id),
-    })
+    }),
+    ...statusRows(m.rows),
+  ]
 
   /**
    * What the page draws above the head: the goal with its milestones, and a proposal, which the page puts first only
@@ -235,11 +246,12 @@ export function paneStatusGoal(
                   </Box>,
                 ]),
             ...(g.was ? [muted('goal-was', `${WAS_PREFIX}${g.was}`)] : []),
+            ...(g.now ? [muted('goal-now', g.now)] : []),
             ...(g.awaiting ? [muted('goal-awaiting', g.awaiting)] : []),
           ],
           headerKeys.length > 0 && isSelected(GOAL_KEYS_ID),
         ),
-        ...g.milestones.map(milestoneLine),
+        ...g.milestones.flatMap(milestoneLines),
         ...(!isTypingGoal && goalKeyRow.length > 0
           ? [block(`status-${GOAL_KEYS_ID}`, goalKeyRow, isSelected(GOAL_KEYS_ID))]
           : []),
@@ -262,10 +274,7 @@ export function paneStatusGoal(
           </Box>,
         ]
       : goalKeys(page)
-  /** While a goal is set, the head draws as one muted line. */
-  const nowLine = (text: string) => block('status-now', [muted('status-now-line', text)])
-
-  return { goalAbove, setGoal, setGoalBare, nowLine, markRun }
+  return { goalAbove, setGoal, setGoalBare, markRun }
 }
 
 export type PaneStatusGoal = ReturnType<typeof paneStatusGoal>

@@ -69,7 +69,7 @@ test('on the Status page, the rows under a subject hang from its mark, ├─ fo
     at('Review the'),
     at('Tune how hard'),
     at('Time the'),
-    at('Fade-out'),
+    at('Flick decided'),
   ]
   const col = lines[subject]!.search(/\S/)
   const glyphs = (from: number, to: number) => lines.slice(from, to).map(l => l.slice(col, col + 2))

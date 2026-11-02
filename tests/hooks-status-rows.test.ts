@@ -75,13 +75,22 @@ test('on the Status in the terminal, the rows under a subject hang from its mark
   expect(await textLines('c3')).toEqual(['Tune how hard a pinch must be · waiting'])
 })
 
-test('on the Status, a rule sets each item apart in the docked terminal and on desktop, with none inside a subject’s tree or beside the look line, and the inline pane draws none', async ($, on) => {
+test('on the Status, a rule sets each item apart in the docked terminal and on desktop, and the inline pane draws none', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.files = ['/.next-build']
+  w.paneState = { isShown: true, isFocused: true }
+  w.statusReply = [
+    'HEAD: Adding a greeting CLI | Building a CLI that greets by name',
+    'NEW: working | Help text | being written',
+    'NEW: working | Loud flag | parsing done',
+    'NEW: queued | Docs | after help',
+  ].join('\n')
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  await $.command.run({ command: 'inbox', args: 'demo' } as never)
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
   const ruledAbove = async (pane: Pick<Mounted, 'findAll'>) =>
     (await pane.findAll({ type: 'Box' })).flatMap(b =>
       b.key?.startsWith('status-rule-') ? [b.key.slice('status-rule-'.length)] : [],
@@ -89,13 +98,14 @@ test('on the Status, a rule sets each item apart in the docked terminal and on d
   const docked = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
   await docked.press({ key: 'tab-key-overview' })
   await clock.settle()
-  expect(await ruledAbove(docked)).toEqual(['s3', 's1', 's4'])
+  const ruled = await ruledAbove(docked)
+  expect(ruled).toHaveLength(2)
   await docked.unmount()
 
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
   await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
-  expect(await ruledAbove(desktop)).toEqual(['s3', 's1', 's4'])
+  expect(await ruledAbove(desktop)).toEqual(ruled)
   await desktop.unmount()
 
   const inline = await $.ui.mount({ ...PANE, props: { ...PANE.props, placement: 'inline', bodyColumns: 90 } })

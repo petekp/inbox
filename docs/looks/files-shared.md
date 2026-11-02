@@ -11,6 +11,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/banners.ts` | Shared module. The banners under the tab bar, the stop texts and Continue, the sample and reading notices, the next build's version label, and the empty-list texts. |
 | `hooks/tabs.ts` | Shared module. The tabs each build shows, with their names, symbols and badges, how the tab bar fits them, and the `/inbox` command's description. |
 | `hooks/status-page.ts` | Shared module. `statusPage` builds the Status page's rows in order. Also the Last seen line, the merged line and the text before a stall. |
+| `hooks/status-page-parts.ts` | Shared module. The parts of the Status's list that `statusPage` builds: subject and child rows in order with the Seen line, the counts by mark, and the rules between rows. |
 | `hooks/action-plan.ts` | Shared module. A row's actions in order, from `actionsOf`, and the key plans `rowKeyPlan` and `statusKeyPlan`. `actionLines` wraps a row's buttons. `drawnLists` gives each tab's drawn rows, and `rowAfterClose` the row that opens after a close. |
 | `hooks/help.ts` | Shared module. The marks that rows and group titles draw, the Help legend, Help's labels, and the keys Help lists in each look. |
 | `hooks/presses.ts` | Shared module. The press types `RowPress` and `PrActionId`, and `isPrRowId`, which tells whether a row id is a PR row's. |
@@ -35,7 +36,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/status-limits.ts` | Shared module. The Status's limits on words, subjects and children, `EMPTY_SESSION_STATUS`, `isOpen`, and the helpers that clip a text and compare subject names. |
 | `hooks/status-ops.ts` | Shared module. How an answer changes the saved Status: `applyOps`, `applyStatus`, and when a HEAD line replaces the head. |
 | `hooks/status-goal-ops.ts` | Shared module. How an answer and the goal's presses change the goal: a GOAL line's proposal, MILESTONE and SERVES lines, milestones moved by id, met, and Set as goal, Not now and a typed goal. |
-| `hooks/status-goal-page.ts` | Shared module. The goal's parts of the Status page: the goal block with its milestone rows, a proposal, and the Now line. |
+| `hooks/status-goal-page.ts` | Shared module. The goal's parts of the Status page: the goal block with its Now line and its milestone rows, and a proposal. |
 | `hooks/status-keys.ts` | Shared module. The Status page's buttons: View on a held subject or milestone, the proposal's and the goal's buttons, the order j and k move through them, and which one is selected. |
 | `hooks/goal-press.ts` | Shared module. Set as goal, Not now and a typed goal as presses on the id `goal`, for `pressed`. |
 | `hooks/status-children.ts` | Shared module. A child the host reports, and its end and activity. The text of the subjects, asks and running children that the Status call reads. When a look at the Status starts and ends. |

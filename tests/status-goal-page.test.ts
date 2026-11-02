@@ -43,10 +43,9 @@ test('a proposal shows above the head, with its milestones, until the person ans
     ].map((m, n) => (n === 1 ? { ...m, mark: '●' } : m)),
   })
   expect(p.goal).toBeNull()
-  expect(p.nowLine).toBeNull()
 })
 
-test('a proposal made while a goal is set reads as a new goal, and its buttons come after the goal’s in the order j and k move', () => {
+test('a proposal made while a goal is set reads as a new goal, and its buttons come after the goal’s and its milestones’ rows in the order j and k move', () => {
   const p = page(
     after(linked(), 'GOAL: Import shipped | queued Release notes; queued Launch post', 45, new Set(['i1'])),
     50,
@@ -56,16 +55,17 @@ test('a proposal made while a goal is set reads as a new goal, and its buttons c
 
   expect(p.proposal).toMatchObject({ label: 'Proposed new goal · from your message', isBelowGoal: true })
   const ids = statusKeyRows(p).map(t => t.id)
-  expect(ids.indexOf('m2')).toBeLessThan(ids.indexOf('proposal'))
-  expect(ids.indexOf('proposal')).toBeLessThan(ids.indexOf('s2'))
+  expect(ids.indexOf('m2')).toBeLessThan(ids.indexOf('s2'))
+  expect(ids.indexOf('s2')).toBeLessThan(ids.indexOf('proposal'))
 })
 
-test('a goal shows how far the work is after its text, its Edit comes before its milestones in the order j and k move, and the head draws as the Now line', () => {
+test('a goal shows how far the work is after its text, its Edit comes before its milestones in the order j and k move, and the head draws as its Now line', () => {
   const p = page(linked(), 40, {}, [askItem('i1')])
 
   expect(p.goal).toMatchObject({ label: 'Goal', count: '1 of 3 done' })
   expect(p.goal?.text).toBe('Import ready to demo')
-  expect(p.nowLine).toBe('Now: Making CSV import ready to demo')
+  expect(p.goal?.now).toBe('Now: Making CSV import ready to demo')
+  expect(p.head).not.toBeNull()
   expect(p.goal?.milestones.map(m => `${m.mark} ${m.name}${m.stall ? ' · waiting' : ''}`)).toEqual([
     '✓ Parsing works',
     '◆ Errors explained · waiting',
@@ -79,24 +79,40 @@ test('a goal shows how far the work is after its text, its Edit comes before its
   ])
 })
 
-test('work the goal does not need sits under Other work, where seen rows fold into a count for each mark', () => {
+test('work that serves a milestone draws under it one step in, and work the goal does not need sits under Other work, where seen rows fold into a count for each mark', () => {
   const seen = { ...linked(), lastLookAt: 35 }
   const changed = after(seen, 'SET: s4 | working | new logo drawn', 50, new Set(['i1']))
+  const p = page(seen, 40, {}, [askItem('i1')])
 
-  expect(shape(page(seen, 40, {}, [askItem('i1')]).rows)).toEqual([
-    '◆ Error copy: not started · waiting',
-    '◐ CSV import: bad rows skipped',
-    '== Other work',
-    '● 1 working · ○ 1 queued',
+  expect(p.goal?.milestones.map(m => shape(m.rows))).toEqual([
+    [],
+    ['◆ Error copy: not started · waiting', '◐ CSV import: bad rows skipped'],
+    [],
   ])
+  expect(p.goal?.milestones[1]?.rows.map(r => [r.depth, r.isRuledAbove])).toEqual([
+    [1, false],
+    [1, false],
+  ])
+  expect(shape(p.rows)).toEqual(['== Other work', '● 1 working · ○ 1 queued'])
   expect(shape(page(changed, 60, {}, [askItem('i1')]).rows)).toEqual([
-    '◆ Error copy: not started · waiting',
-    '◐ CSV import: bad rows skipped',
     '== Other work',
     '◐ Logo refresh: new logo drawn',
     '-- Last seen',
     '● 1 working',
   ])
+})
+
+test('finished work under a milestone shows as a row until the person looks, then folds into the milestone’s count', () => {
+  const finished = after({ ...linked(), lastLookAt: 35 }, 'DONE: s1 | import ships', 50, new Set(['i1']))
+  const rowsOf = (o: SessionStatus) => page(o, 80, {}, [askItem('i1')]).goal?.milestones[1]?.rows ?? []
+
+  expect(shape(rowsOf(finished))).toEqual([
+    '✓ CSV import: import ships',
+    '-- Last seen',
+    '◆ Error copy: not started · waiting',
+  ])
+  expect(shape(rowsOf({ ...finished, lastLookAt: 70 }))).toEqual(['◆ Error copy: not started · waiting', '✓ 1 done'])
+  expect(page({ ...finished, lastLookAt: 70 }, 80, {}, [askItem('i1')]).rows.some(r => r.kind === 'fold')).toBe(false)
 })
 
 test('a subject not linked yet stays in the main list, and nothing splits without a goal', () => {
@@ -141,7 +157,7 @@ test('an ask linked to a milestone names it as what it holds up, and milestones 
 })
 
 test('the look line that would end the main list gives way to the Other work rule', () => {
-  const seen = { ...linked(), lastLookAt: 35 }
+  const seen: SessionStatus = { ...linked(), serves: { s3: 'none', s4: 'none' }, lastLookAt: 35 }
   const changed = after(
     seen,
     'SET: s1 | working | bad rows named\nSET: s2 | queued | outline written',

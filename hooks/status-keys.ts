@@ -96,7 +96,12 @@ export function goalKeyPlan(page: StatusPage): StatusKey[] {
   return [{ press: { action: 'type-goal', text: g.text }, label: 'Edit', hotkey: 'e', kind: 'view', emphasis: 'quiet' }]
 }
 
-/** Everything on the Status page with buttons, in the order the looks draw them: the targets j and k move between. */
+const rowTarget = (r: StatusRow): StatusKeyTarget => ({ id: r.id, keys: statusKeyPlan(r) })
+
+/**
+ * Everything on the Status page with buttons, in the order the looks draw them: the targets j and k move between. A
+ * milestone's rows follow it.
+ */
 export function statusKeyRows(page: StatusPage): StatusKeyTarget[] {
   const proposal = { id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(page) }
   const goal = { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) }
@@ -106,10 +111,10 @@ export function statusKeyRows(page: StatusPage): StatusKeyTarget[] {
   return [
     ...(isProposalBelowGoal ? [] : [proposal]),
     ...(isGoalFirst ? [goal] : []),
-    ...(page.goal?.milestones ?? []).map(m => ({ id: m.id, keys: milestoneKeyPlan(m) })),
+    ...(page.goal?.milestones ?? []).flatMap(m => [{ id: m.id, keys: milestoneKeyPlan(m) }, ...m.rows.map(rowTarget)]),
     ...(isGoalFirst ? [] : [goal]),
     ...(isProposalBelowGoal ? [proposal] : []),
-    ...page.rows.map(r => ({ id: r.id, keys: statusKeyPlan(r) })),
+    ...page.rows.map(rowTarget),
   ].filter(t => t.keys.length > 0)
 }
 

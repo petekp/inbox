@@ -18,7 +18,7 @@ The examples come from one invented session. It adds two-factor sign-in to a web
 
 The head tells the person what the session is focused on now, in the person's own words. Compare it with `Focus now` in the facts.
 
-The head passes when it names that focus, in any words. While a goal is set, the head is the one `Now:` line. The goal above it already names the aim, so the `Now:` line names the part of the focus underway now: one piece, one step of a piece, or the next few steps. It passes when that part serves the focus. It fails when it names work outside the focus, or only repeats the goal. In the two-line form, the title names the focus in a few words, like a row's name, and the description says what the session is doing about it. When the focus is work that has finished and the facts give no newer focus, a head that names that finished work passes.
+The head passes when it names that focus, in any words. While a goal is set, the head is the one `Now:` line under the goal. The goal already names the aim, so the `Now:` line names the part of the focus underway now: one piece, one step of a piece, or the next few steps. It passes when that part serves the focus. It fails when it names work outside the focus, or only repeats the goal. In the two-line form, the title names the focus in a few words, like a row's name, and the description says what the session is doing about it. When the focus is work that has finished and the facts give no newer focus, a head that names that finished work passes.
 
 The head fails when it does any of these:
 
@@ -272,7 +272,7 @@ Examples:
 
 ### split
 
-While a goal is set, the subject rows above `── Other work` are the work the goal needs, and the rows under it are work the goal does not need. Compare each row with its piece's line in the facts: `It serves the milestone …` or `The goal does not need it.`
+While a goal is set, the subject rows above `── Other work`, under a milestone or not, are the work the goal needs, and the rows under it are work the goal does not need. Compare each row with its piece's line in the facts: `It serves the milestone …` or `The goal does not need it.`
 
 The check passes when every row sits on the side its piece's facts give. A piece whose facts say neither may sit on either side.
 

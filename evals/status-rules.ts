@@ -1,4 +1,5 @@
 import { isOpen, NAME_WORDS } from '../hooks/status-limits'
+import { statusListRows } from '../hooks/status-page'
 import type { SessionStatus, Subject } from '../types'
 import { isOpenPiece, rightStatuses } from './status-facts'
 import type { Facts } from './status-facts'
@@ -430,7 +431,7 @@ const FIXED_RULES: Rule[] = [
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       const look = o?.lastLookAt ?? null
-      const drawn = new Set(result.page.rows.flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
+      const drawn = new Set(statusListRows(result.page).flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
       return shownOf(o)
         .filter(s => !isOpen(s) && s.status === 'done' && (look === null || s.changedAt > look) && !drawn.has(s.id))
         .map(s => `finished, unseen and folded: ${label(s)}`)

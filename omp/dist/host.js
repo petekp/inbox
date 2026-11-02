@@ -1312,6 +1312,7 @@ function goalKeyPlan(page) {
     ];
   return [{ press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" }];
 }
+var rowTarget = (r) => ({ id: r.id, keys: statusKeyPlan(r) });
 function statusKeyRows(page) {
   const proposal = { id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(page) };
   const goal = { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) };
@@ -1320,10 +1321,10 @@ function statusKeyRows(page) {
   return [
     ...isProposalBelowGoal ? [] : [proposal],
     ...isGoalFirst ? [goal] : [],
-    ...(page.goal?.milestones ?? []).map((m) => ({ id: m.id, keys: milestoneKeyPlan(m) })),
+    ...(page.goal?.milestones ?? []).flatMap((m) => [{ id: m.id, keys: milestoneKeyPlan(m) }, ...m.rows.map(rowTarget)]),
     ...isGoalFirst ? [] : [goal],
     ...isProposalBelowGoal ? [proposal] : [],
-    ...page.rows.map((r) => ({ id: r.id, keys: statusKeyPlan(r) }))
+    ...page.rows.map(rowTarget)
   ].filter((t) => t.keys.length > 0);
 }
 function statusSelected(page, selectedId) {
@@ -1677,6 +1678,301 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
   }
 }
 
+// ../hooks/status-goal-page.ts
+var AWAITING_TEXT = "Milestones after the next reply";
+var PROPOSAL_LABEL = "Proposed goal \xB7 from your message";
+var NEW_GOAL_PROPOSAL_LABEL = "Proposed new goal \xB7 from your message";
+function oldestAsk(items, links, id) {
+  const oldest = items.filter((i) => links[i.id] === id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+  return oldest ? { id: oldest.id, kind: oldest.kind } : null;
+}
+function milestoneRow(m, o, items) {
+  const isOpen = m.status !== "done" && m.status !== "dropped";
+  const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
+  const holds = items.filter((i) => {
+    const to = o.askSubjects[i.id];
+    return to === m.id || to !== undefined && servingIds.has(to);
+  });
+  const isHeld = isOpen && holds.length > 0;
+  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0);
+  const direct = oldestAsk(items, o.askSubjects, m.id);
+  const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+  return {
+    id: m.id,
+    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
+    name: m.name,
+    text: m.text || null,
+    stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
+    was: isChanged ? m.was : null,
+    isChanged,
+    ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
+    rows: []
+  };
+}
+function goalPage(o, items) {
+  const g = o?.goal ?? null;
+  const isBelowGoal = g !== null;
+  const proposal = o?.proposedGoal ? {
+    label: isBelowGoal ? NEW_GOAL_PROPOSAL_LABEL : PROPOSAL_LABEL,
+    isBelowGoal,
+    text: o.proposedGoal.text,
+    milestones: o.proposedGoal.milestones.map((m) => ({ ...SUBJECT_MARKS[m.status], name: m.name }))
+  } : null;
+  if (o === null || g === null)
+    return { goal: null, proposal };
+  const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
+  const kept = o.milestones.filter((m) => m.status !== "dropped");
+  const shown = o.milestones.filter((m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt);
+  const done = kept.filter((m) => m.status === "done").length;
+  const isMet = g.metAt !== null;
+  const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
+  const head = o.head;
+  return {
+    goal: {
+      label: isMet ? "Goal met" : "Goal",
+      text: g.text,
+      count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
+      isMet,
+      was: isWasShown ? g.was : null,
+      now: head ? `Now: ${head.description || head.title}` : null,
+      awaiting: isAwaiting ? AWAITING_TEXT : null,
+      milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
+    },
+    proposal
+  };
+}
+
+// ../hooks/status-page-parts.ts
+var CHILD_ROWS = 3;
+var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
+var COUNT_WORDS = {
+  working: "working",
+  "waits-on-other": "waiting",
+  queued: "queued",
+  done: "done"
+};
+function countsByMark(folded) {
+  return ["working", "waits-on-other", "queued", "done"].flatMap((status) => {
+    const n = folded.filter((x) => x.status === status).length;
+    return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
+  });
+}
+function isFinishedUnseen(c, lastLookAt) {
+  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
+}
+function isChildWorking(c) {
+  return c.endedAt === null && c.delegateState !== "blocked";
+}
+function childStall(c) {
+  if (c.delegateState === "finished")
+    return { text: "finished", tone: "done" };
+  if (c.delegateState === "blocked")
+    return { text: "waiting", tone: "needsYou" };
+  return null;
+}
+function childRow(c, branch, depth) {
+  const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
+  return {
+    kind: "child",
+    id: c.id,
+    depth,
+    ...marks,
+    isRunning: isChildWorking(c),
+    name: c.name,
+    stall: childStall(c),
+    branch
+  };
+}
+function partRows(shown, c, depth) {
+  const rows = [];
+  const lookRow = c.lookId === null ? null : { kind: "look", id: c.lookId, depth, text: c.lookText };
+  const firstSeen = shown.findIndex((x) => !c.isNew(x));
+  for (const [i, x] of shown.entries()) {
+    const hasNewAbove = i > 0;
+    if (lookRow && i === firstSeen && hasNewAbove)
+      rows.push(lookRow);
+    const under = c.running.filter((ch) => ch.subjectId === x.id);
+    const shownUnder = under.slice(0, CHILD_ROWS);
+    const isMore = under.length > CHILD_ROWS;
+    const isRunning = x.status === "working" && !c.isHeld(x) && (c.isTurnRunning || under.some(isChildWorking));
+    const isIdle = x.status === "working" && !isRunning;
+    rows.push({
+      kind: "subject",
+      id: x.id,
+      depth,
+      ...c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
+      isRunning,
+      name: x.name,
+      text: c.isNew(x) || isOpen(x) ? x.text || null : null,
+      stall: c.isHeld(x) ? { text: "waiting", tone: "needsYou" } : null,
+      merged: c.isNew(x) ? x.merged : null,
+      was: c.isNew(x) ? x.was : null,
+      hasChildren: under.length > 0,
+      ask: c.oldestAskOf(x)
+    });
+    rows.push(...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? "last" : "mid", depth + 1)));
+    const hidden = under.slice(CHILD_ROWS);
+    const isEveryHiddenRunning = hidden.every((ch) => ch.delegateState !== "finished");
+    if (isMore)
+      rows.push({
+        kind: "more",
+        id: `${x.id}-more`,
+        depth: depth + 1,
+        text: `+ ${hidden.length} more${isEveryHiddenRunning ? " running" : ""}`,
+        branch: "last"
+      });
+  }
+  const isEveryShownNew = firstSeen === -1;
+  if (lookRow && c.isLookAtEnd && isEveryShownNew && shown.length > 0)
+    rows.push(lookRow);
+  return rows;
+}
+function isItemAfterItem(row, prev) {
+  const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
+  const isLine = (r) => r.kind === "look" || r.kind === "part";
+  return prev !== undefined && !isLine(prev) && !isLine(row) && !isUnderSubject;
+}
+function ruledRows(rows, isRuled) {
+  return rows.map((r, n) => ({
+    ...r,
+    isRuledAbove: isRuled && isItemAfterItem(r, rows[n - 1]),
+    isLast: n === rows.length - 1
+  }));
+}
+
+// ../hooks/status-page.ts
+var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
+var LOOK_TEXT = "Last seen";
+var OTHER_WORK = "Other work";
+var LOOK_DASH = "\u254C";
+var WAS_PREFIX = "was: ";
+var MERGED_PREFIX = "merged in: ";
+var STALL_GAP = " \xB7 ";
+var STATUS_TEXT_LINES = 3;
+var NEW_CLOSED_ROWS = 2;
+var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
+function mergedLine(merged, fits) {
+  return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
+}
+function nameBeforeStall(name, fits) {
+  const words = name.split(" ");
+  const cuts = words.map((_, n) => n === 0 ? name : `${words.slice(0, words.length - n).join(" ")}\u2026`);
+  return cuts.find(fits) ?? cuts.at(-1);
+}
+function statusPage(s, now) {
+  const o = s.ledger.overview;
+  const look = o?.lastLookAt ?? null;
+  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
+  const isNew = (x) => look === null || x.changedAt > look;
+  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
+  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
+  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
+  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
+  const goalParts = goalPage(o, s.ledger.items);
+  const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
+  const servedBy = (x) => o?.goal ? o.serves[x.id] : undefined;
+  const isOther = (x) => servedBy(x) === "none";
+  const milestoneOf = (x) => {
+    const to = servedBy(x);
+    return to !== undefined && milestoneIds.has(to) ? to : null;
+  };
+  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
+  const newClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
+  const main = subjects.filter((x) => !isOther(x));
+  const other = subjects.filter(isOther);
+  const open = main.filter(isOpen).sort(pageOrder);
+  const foldable = open.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
+  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
+  const split = (part) => {
+    const newClosed = newClosedOf(part);
+    return {
+      shown: [...part.filter((x) => isOpen(x) && !folded.includes(x)), ...newClosed].sort(pageOrder),
+      newClosed,
+      foldedOpen: part.filter((x) => folded.includes(x)),
+      foldedDone: part.filter((x) => x.status === "done" && !newClosed.includes(x))
+    };
+  };
+  const top = split(main.filter((x) => milestoneOf(x) === null));
+  const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main.filter((x) => milestoneOf(x) === m.id)));
+  const otherNewClosed = newClosedOf(other);
+  const isOtherFolded = (x) => isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === "done" && !otherNewClosed.includes(x);
+  const otherFolded = other.filter(isOtherFolded);
+  const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
+  const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
+  const ctx = {
+    isNew,
+    isHeld,
+    oldestAskOf,
+    running,
+    isTurnRunning: s.presence.isTurnRunning,
+    lookId: look === null ? null : "look",
+    lookText: LOOK_TEXT,
+    isLookAtEnd: true
+  };
+  const lookId = (id) => look === null ? null : id;
+  const rows = [
+    ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
+    ...partRows(top.shown, ctx, 0)
+  ];
+  const foldRows = (prefix, p, depth) => [
+    ...p.foldedOpen.length > 0 ? [
+      {
+        kind: "fold",
+        id: `${prefix}open`,
+        depth,
+        ...SUBJECT_MARKS.queued,
+        text: `${p.foldedOpen.length} more`
+      }
+    ] : [],
+    ...p.foldedDone.length > 0 ? [
+      {
+        kind: "fold",
+        id: `${prefix}done`,
+        depth,
+        mark: SUBJECT_MARKS.done.mark,
+        tone: "done",
+        text: `${p.foldedDone.length}${p.newClosed.some((x) => x.status === "done") ? " more" : ""} done`
+      }
+    ] : []
+  ];
+  rows.push(...foldRows("", top, 0));
+  if (otherShown.length > 0 || otherFolded.length > 0) {
+    if (rows.at(-1)?.kind === "look")
+      rows.pop();
+    rows.push({ kind: "part", id: "other", depth: 0, text: OTHER_WORK });
+    rows.push(...partRows(otherShown, { ...ctx, lookId: lookId("other-look") }, 0));
+    if (otherFolded.length > 0)
+      rows.push({ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFolded) });
+  }
+  const milestoneRows = (id, p) => ruledRows([
+    ...partRows(p.shown, { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false }, 1),
+    ...foldRows(`${id}-`, p, 1)
+  ], false);
+  const g = goalParts.goal;
+  const goal = g && {
+    ...g,
+    milestones: g.milestones.map((m, n) => ({ ...m, rows: milestoneRows(m.id, underMilestones[n]) }))
+  };
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
+  return {
+    isEmpty: head === null && rows.length === 0 && goal === null && goalParts.proposal === null,
+    head,
+    ...goalParts,
+    goal,
+    rows: ruledRows(rows, true),
+    error: s.overviewFailure ? STATUS_FAILED : null,
+    empty: {
+      title: "Status",
+      hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
+    }
+  };
+}
+function statusListRows(page) {
+  return [...(page.goal?.milestones ?? []).flatMap((m) => m.rows), ...page.rows];
+}
+
 // ../hooks/timing.ts
 var SETTLED_MS = 5120;
 var PRESS_GUARD_MS = 400;
@@ -1725,7 +2021,7 @@ function canUndoClose(closed, at, now, settleWindowMs) {
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 function hasRunningMark(page) {
-  return page.rows.some((r) => (r.kind === "subject" || r.kind === "child") && r.isRunning);
+  return statusListRows(page).some((r) => (r.kind === "subject" || r.kind === "child") && r.isRunning);
 }
 function runningMark(now) {
   return RUNNING_FRAMES[Math.floor(now / RUNNING_FRAME_MS) % RUNNING_FRAMES.length];
@@ -4377,249 +4673,6 @@ function perTurnStatus(update) {
   };
 }
 
-// ../hooks/status-goal-page.ts
-var AWAITING_TEXT = "Milestones after the next reply";
-var PROPOSAL_LABEL = "Proposed goal \xB7 from your message";
-var NEW_GOAL_PROPOSAL_LABEL = "Proposed new goal \xB7 from your message";
-function oldestAsk(items, links, id) {
-  const oldest = items.filter((i) => links[i.id] === id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
-  return oldest ? { id: oldest.id, kind: oldest.kind } : null;
-}
-function milestoneRow(m, o, items) {
-  const isOpen = m.status !== "done" && m.status !== "dropped";
-  const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
-  const holds = items.filter((i) => {
-    const to = o.askSubjects[i.id];
-    return to === m.id || to !== undefined && servingIds.has(to);
-  });
-  const isHeld = isOpen && holds.length > 0;
-  const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0);
-  const direct = oldestAsk(items, o.askSubjects, m.id);
-  const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
-  return {
-    id: m.id,
-    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
-    name: m.name,
-    text: m.text || null,
-    stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
-    was: isChanged ? m.was : null,
-    isChanged,
-    ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null)
-  };
-}
-function goalPage(o, items) {
-  const g = o?.goal ?? null;
-  const isBelowGoal = g !== null;
-  const proposal = o?.proposedGoal ? {
-    label: isBelowGoal ? NEW_GOAL_PROPOSAL_LABEL : PROPOSAL_LABEL,
-    isBelowGoal,
-    text: o.proposedGoal.text,
-    milestones: o.proposedGoal.milestones.map((m) => ({ ...SUBJECT_MARKS[m.status], name: m.name }))
-  } : null;
-  if (o === null || g === null)
-    return { goal: null, proposal, nowLine: null };
-  const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
-  const kept = o.milestones.filter((m) => m.status !== "dropped");
-  const shown = o.milestones.filter((m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt);
-  const done = kept.filter((m) => m.status === "done").length;
-  const isMet = g.metAt !== null;
-  const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
-  const head = o.head;
-  return {
-    goal: {
-      label: isMet ? "Goal met" : "Goal",
-      text: g.text,
-      count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
-      isMet,
-      was: isWasShown ? g.was : null,
-      awaiting: isAwaiting ? AWAITING_TEXT : null,
-      milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
-    },
-    proposal,
-    nowLine: head ? `Now: ${head.description || head.title}` : null
-  };
-}
-
-// ../hooks/status-page.ts
-var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
-var LOOK_TEXT = "Last seen";
-var OTHER_WORK = "Other work";
-var LOOK_DASH = "\u254C";
-var WAS_PREFIX = "was: ";
-var MERGED_PREFIX = "merged in: ";
-var STALL_GAP = " \xB7 ";
-var STATUS_TEXT_LINES = 3;
-var CHILD_ROWS = 3;
-var NEW_CLOSED_ROWS = 2;
-var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
-var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
-function mergedLine(merged, fits) {
-  return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
-}
-function nameBeforeStall(name, fits) {
-  const words = name.split(" ");
-  const cuts = words.map((_, n) => n === 0 ? name : `${words.slice(0, words.length - n).join(" ")}\u2026`);
-  return cuts.find(fits) ?? cuts.at(-1);
-}
-function isItemAfterItem(row, prev) {
-  const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
-  const isLine = (r) => r.kind === "look" || r.kind === "part";
-  return prev !== undefined && !isLine(prev) && !isLine(row) && !isUnderSubject;
-}
-var COUNT_WORDS = {
-  working: "working",
-  "waits-on-other": "waiting",
-  queued: "queued",
-  done: "done"
-};
-function countsByMark(folded) {
-  return ["working", "waits-on-other", "queued", "done"].flatMap((status) => {
-    const n = folded.filter((x) => x.status === status).length;
-    return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
-  });
-}
-function isFinishedUnseen(c, lastLookAt) {
-  return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
-}
-function isChildWorking(c) {
-  return c.endedAt === null && c.delegateState !== "blocked";
-}
-function childStall(c) {
-  if (c.delegateState === "finished")
-    return { text: "finished", tone: "done" };
-  if (c.delegateState === "blocked")
-    return { text: "waiting", tone: "needsYou" };
-  return null;
-}
-function childRow(c, branch) {
-  const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
-  return {
-    kind: "child",
-    id: c.id,
-    ...marks,
-    isRunning: isChildWorking(c),
-    name: c.name,
-    stall: childStall(c),
-    branch
-  };
-}
-function partRows(shown, c) {
-  const rows = [];
-  const firstSeen = shown.findIndex((x) => !c.isNew(x));
-  for (const [i, x] of shown.entries()) {
-    const hasNewAbove = i > 0;
-    if (c.lookRow && i === firstSeen && hasNewAbove)
-      rows.push(c.lookRow);
-    const under = c.running.filter((ch) => ch.subjectId === x.id);
-    const shownUnder = under.slice(0, CHILD_ROWS);
-    const isMore = under.length > CHILD_ROWS;
-    const isRunning = x.status === "working" && !c.isHeld(x) && (c.isTurnRunning || under.some(isChildWorking));
-    const isIdle = x.status === "working" && !isRunning;
-    rows.push({
-      kind: "subject",
-      id: x.id,
-      ...c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
-      isRunning,
-      name: x.name,
-      text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: c.isHeld(x) ? { text: "waiting", tone: "needsYou" } : null,
-      merged: c.isNew(x) ? x.merged : null,
-      was: c.isNew(x) ? x.was : null,
-      hasChildren: under.length > 0,
-      ask: c.oldestAskOf(x)
-    });
-    rows.push(...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
-    const hidden = under.slice(CHILD_ROWS);
-    const isEveryHiddenRunning = hidden.every((ch) => ch.delegateState !== "finished");
-    if (isMore)
-      rows.push({
-        kind: "more",
-        id: `${x.id}-more`,
-        text: `+ ${hidden.length} more${isEveryHiddenRunning ? " running" : ""}`,
-        branch: "last"
-      });
-  }
-  const isEveryShownNew = firstSeen === -1;
-  if (c.lookRow && isEveryShownNew && shown.length > 0)
-    rows.push(c.lookRow);
-  return rows;
-}
-function statusPage(s, now) {
-  const o = s.ledger.overview;
-  const look = o?.lastLookAt ?? null;
-  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
-  const isNew = (x) => look === null || x.changedAt > look;
-  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
-  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
-  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
-  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
-  const isOther = (x) => o?.goal != null && o.serves[x.id] === "none";
-  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
-  const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
-  const newClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
-  const main = subjects.filter((x) => !isOther(x));
-  const other = subjects.filter(isOther);
-  const newClosed = newClosedOf(main);
-  const open = main.filter(isOpen).sort(pageOrder);
-  const foldable = open.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
-  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
-  const shown = [...open.filter((x) => !folded.includes(x)), ...newClosed].sort(pageOrder);
-  const otherNewClosed = newClosedOf(other);
-  const isOtherFolded = (x) => isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === "done" && !otherNewClosed.includes(x);
-  const otherFolded = other.filter(isOtherFolded);
-  const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
-  const foldedDone = main.filter((x) => x.status === "done" && !newClosed.includes(x));
-  const shownIds = new Set([...shown, ...otherShown].map((x) => x.id));
-  const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
-  const ctx = {
-    isNew,
-    isHeld,
-    oldestAskOf,
-    pageOrder,
-    running,
-    isTurnRunning: s.presence.isTurnRunning,
-    lookRow
-  };
-  const rows = [
-    ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null)),
-    ...partRows(shown, ctx)
-  ];
-  if (folded.length > 0)
-    rows.push({ kind: "fold", id: "open", ...SUBJECT_MARKS.queued, text: `${folded.length} more` });
-  if (foldedDone.length > 0) {
-    const isMore = newClosed.some((x) => x.status === "done");
-    rows.push({
-      kind: "fold",
-      id: "done",
-      mark: SUBJECT_MARKS.done.mark,
-      tone: "done",
-      text: `${foldedDone.length}${isMore ? " more" : ""} done`
-    });
-  }
-  if (otherShown.length > 0 || otherFolded.length > 0) {
-    if (rows.at(-1)?.kind === "look")
-      rows.pop();
-    rows.push({ kind: "part", id: "other", text: OTHER_WORK });
-    rows.push(...partRows(otherShown, { ...ctx, lookRow: lookRow && { ...lookRow, id: "other-look" } }));
-    if (otherFolded.length > 0)
-      rows.push({ kind: "counts", id: "other-counts", counts: countsByMark(otherFolded) });
-  }
-  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
-  const goalParts = goalPage(o, s.ledger.items);
-  return {
-    isEmpty: head === null && rows.length === 0 && goalParts.goal === null && goalParts.proposal === null,
-    head,
-    ...goalParts,
-    rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]), isLast: n === rows.length - 1 })),
-    error: s.overviewFailure ? STATUS_FAILED : null,
-    empty: {
-      title: "Status",
-      hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
-    }
-  };
-}
-
 // ../hooks/session-view.ts
 var PRESS_TIMEOUT_MS = 60000;
 function withoutStaleResult(last, now) {
@@ -5017,21 +5070,24 @@ function stalledName(name, stall, room, namePaint, s) {
   const words = s.tone(stall.tone, stall.text);
   return lines.map((l) => l.endsWith(tail) ? namePaint(l.slice(0, -tail.length)) + s.dim(STALL_GAP) + words : namePaint(l.replaceAll(GLUE, " ")));
 }
-function withTree(lines, first, rest, s) {
-  const drawn = (line, glyph) => glyph.trim() === "" ? line : line.slice(0, PAGE_MARK_AT) + s.dim(glyph) + line.slice(PAGE_MARK_AT + glyph.length);
+var markAt = (depth) => PAGE_MARK_AT + (PAGE_TEXT_AT - PAGE_MARK_AT) * depth;
+var childAt = (subjectDepth) => markAt(subjectDepth) + (PAGE_CHILD_AT - PAGE_MARK_AT);
+function withTree(lines, at, first, rest, s) {
+  const drawn = (line, glyph) => glyph.trim() === "" ? line : line.slice(0, at) + s.dim(glyph) + line.slice(at + glyph.length);
   return lines.map((l, n) => n === 0 ? first ? drawn(l, first) : l : drawn(l, rest));
 }
-function pageRuleCells(width) {
-  return Math.max(0, width - PAGE_TEXT_AT - 1);
+function pageRuleCells(width, textAt = PAGE_TEXT_AT) {
+  return Math.max(0, width - textAt - 1);
 }
 function pageRule(width, s) {
   return `${" ".repeat(PAGE_TEXT_AT)}${s.dim("\u2500".repeat(pageRuleCells(width)))}`;
 }
 function lookLines(row, width, s) {
   const text = ` ${row.text} `;
-  const fill = Math.max(4, pageRuleCells(width) - cellWidth(text));
+  const at = markAt(row.depth) + PAGE_TEXT_AT - PAGE_MARK_AT;
+  const fill = Math.max(4, pageRuleCells(width, at) - cellWidth(text));
   const before = Math.floor(fill / 2);
-  const rule = `${" ".repeat(PAGE_TEXT_AT)}${s.dim(`${LOOK_DASH.repeat(before)}${text}${LOOK_DASH.repeat(fill - before)}`)}`;
+  const rule = `${" ".repeat(at)}${s.dim(`${LOOK_DASH.repeat(before)}${text}${LOOK_DASH.repeat(fill - before)}`)}`;
   return ["", rule, ...row.isLast ? [] : [""]];
 }
 function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT) {
@@ -5047,25 +5103,30 @@ function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT) {
 }
 function drawPageRow(row, d, isSelected = false) {
   const { width, now, style: s } = d;
+  const at = markAt(row.depth);
+  const textAt = at + PAGE_TEXT_AT - PAGE_MARK_AT;
   if (row.kind === "subject") {
     const mark = paintMark(row, now, s);
-    const out = pageLine(d, PAGE_MARK_AT, mark, row.name, (t) => t, { stall: row.stall, text: row.text });
-    const room = pageRoom(PAGE_MARK_AT, width);
+    const out = pageLine(d, at, mark, row.name, (t) => t, { stall: row.stall, text: row.text });
+    const room = pageRoom(at, width);
     if (row.merged)
-      out.push(...indented(mergedLine(row.merged, (t) => cellWidth(t) <= room), PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim));
+      out.push(...indented(mergedLine(row.merged, (t) => cellWidth(t) <= room), textAt, width, STATUS_TEXT_LINES, s.dim));
     if (row.was)
-      out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim));
-    out.push(...pageButtonLines({ id: row.id, keys: statusKeyPlan(row) }, d, isSelected));
-    return row.hasChildren ? withTree(out, null, "\u2502", s) : out;
+      out.push(...indented(`${WAS_PREFIX}${row.was}`, textAt, width, STATUS_TEXT_LINES, s.dim));
+    out.push(...pageButtonLines({ id: row.id, keys: statusKeyPlan(row) }, d, isSelected, textAt));
+    return row.hasChildren ? withTree(out, at, null, "\u2502", s) : out;
   }
   if (row.kind === "child") {
     const mark = paintMark(row, now, s);
-    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, { stall: row.stall });
-    return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out;
+    if (!row.branch)
+      return pageLine(d, at, mark, row.name, s.dim, { stall: row.stall });
+    const out = pageLine(d, childAt(row.depth - 1), mark, row.name, s.dim, { stall: row.stall });
+    return withTree(out, markAt(row.depth - 1), TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s);
   }
   if (row.kind === "more") {
     const arm = TREE_ARMS[row.branch];
-    return withTree([" ".repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s);
+    const line = " ".repeat(childAt(row.depth - 1) + 2) + s.dim(row.text);
+    return withTree([line], markAt(row.depth - 1), arm.first, arm.rest, s);
   }
   if (row.kind === "look")
     return lookLines(row, width, s);
@@ -5077,9 +5138,9 @@ function drawPageRow(row, d, isSelected = false) {
   }
   if (row.kind === "counts")
     return [
-      " ".repeat(PAGE_TEXT_AT) + row.counts.map((c) => feedbackPaint(c.tone, s)(c.mark) + s.dim(` ${c.text}`)).join(s.dim(STALL_GAP))
+      " ".repeat(textAt) + row.counts.map((c) => feedbackPaint(c.tone, s)(c.mark) + s.dim(` ${c.text}`)).join(s.dim(STALL_GAP))
     ];
-  return pageLine(d, PAGE_MARK_AT, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim);
+  return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim);
 }
 
 // src/panel-goal.ts
@@ -5103,7 +5164,10 @@ function goalAbove(page, typing) {
   const isKeyInHeader = isGoalKeyInHeader(page);
   const goal = [
     goalEntry({ is: "title", goal: g, page, isTyping: isTyping && proposal.length === 0, isKeyInHeader }),
-    ...g.milestones.map((row) => goalEntry({ is: "milestone", row })),
+    ...g.milestones.flatMap((row) => [
+      goalEntry({ is: "milestone", row }),
+      ...row.rows.map((r) => ({ kind: "page", row: r }))
+    ]),
     ...isTyping || isKeyInHeader ? [] : [goalEntry({ is: "keys", page })]
   ];
   if (proposal.length === 0)
@@ -5115,7 +5179,6 @@ function setGoal(page, typing) {
     return [];
   return [goalEntry(typing === GOAL_KEYS_ID ? { is: "field" } : { is: "keys", page })];
 }
-var nowEntry = (text) => goalEntry({ is: "now", text });
 function fieldLines(d) {
   const { ui, width, style: s } = d;
   const text = ui.drafts[GOAL_KEYS_ID]?.text ?? "";
@@ -5154,6 +5217,7 @@ function drawGoalPart(part, d, isSelected) {
       ...header,
       ...part.isTyping ? fieldLines(d) : textWithCount(g, d),
       ...g.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [],
+      ...g.now ? at(g.now, s.dim) : [],
       ...g.awaiting ? at(g.awaiting, s.dim) : []
     ];
   }
@@ -5167,9 +5231,7 @@ function drawGoalPart(part, d, isSelected) {
   }
   if (part.is === "keys")
     return pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyPlan(part.page) }, d, isSelected, PAGE_MARK_AT);
-  if (part.is === "field")
-    return fieldLines(d);
-  return at(part.text, s.dim);
+  return fieldLines(d);
 }
 
 // src/panel-lines.ts
@@ -5549,7 +5611,7 @@ function pageEntries(page, typing) {
       ...setGoal(page, typing)
     ];
   const description = page.head?.description;
-  const head = page.nowLine ? [nowEntry(page.nowLine)] : page.head ? [
+  const head = page.goal === null && page.head ? [
     { kind: "note", text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
     ...description ? [{ kind: "note", text: description, indent: PAGE_MARK_AT }] : []
   ] : [];

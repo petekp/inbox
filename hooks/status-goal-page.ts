@@ -1,6 +1,7 @@
 import type { Item, Milestone, SessionStatus } from '../types'
 import { HELD_MARK, SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
+import type { StatusRow } from './status-page'
 
 /** A milestone under the goal. Its place never changes, so a change draws its name in bold until the person looks. */
 export type MilestoneRow = {
@@ -18,6 +19,8 @@ export type MilestoneRow = {
   isChanged: boolean
   /** The oldest open ask that holds it up, which its View button opens. */
   ask: { id: string; kind: Item['kind'] } | null
+  /** The work that serves it, drawn under it one step in. `statusPage` fills it. */
+  rows: StatusRow[]
 }
 
 /** The goal and where the work stands against it. */
@@ -30,6 +33,8 @@ export type GoalBlock = {
   isMet: boolean
   /** The goal this one replaced, while the person has not seen it. */
   was: string | null
+  /** What the session works on now, as "Now: " and the head's description, drawn under the goal's text and its was line. */
+  now: string | null
   /** The line drawn in place of the milestones until the Status call writes them for this goal. */
   awaiting: string | null
   milestones: MilestoneRow[]
@@ -51,8 +56,6 @@ export type ProposalBlock = {
 export type GoalParts = {
   goal: GoalBlock | null
   proposal: ProposalBlock | null
-  /** While a goal is set, the head draws as this one line, its description after "Now: ". */
-  nowLine: string | null
 }
 
 export const AWAITING_TEXT = 'Milestones after the next reply'
@@ -91,10 +94,11 @@ function milestoneRow(m: Milestone, o: SessionStatus, items: readonly Item[]): M
     was: isChanged ? m.was : null,
     isChanged,
     ask: !isHeld ? null : (direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null)),
+    rows: [],
   }
 }
 
-/** The goal block, the proposal and the "Now" line, from the saved Status and the open asks. */
+/** The goal block with its Now line, and the proposal, from the saved Status and the open asks. */
 export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalParts {
   const g = o?.goal ?? null
   const isBelowGoal = g !== null
@@ -106,7 +110,7 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalP
         milestones: o.proposedGoal.milestones.map(m => ({ ...SUBJECT_MARKS[m.status], name: m.name })),
       }
     : null
-  if (o === null || g === null) return { goal: null, proposal, nowLine: null }
+  if (o === null || g === null) return { goal: null, proposal }
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt)
   const kept = o.milestones.filter(m => m.status !== 'dropped')
   const shown = o.milestones.filter(
@@ -124,10 +128,10 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalP
       count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
       isMet,
       was: isWasShown ? g.was : null,
+      now: head ? `Now: ${head.description || head.title}` : null,
       awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestones: g.isAwaitingMilestones ? [] : shown.map(m => milestoneRow(m, o, items)),
     },
     proposal,
-    nowLine: head ? `Now: ${head.description || head.title}` : null,
   }
 }

@@ -1,5 +1,6 @@
 import { HELD_MARK } from '../hooks/help'
 import { isOpen, nameKey } from '../hooks/status-limits'
+import { statusListRows } from '../hooks/status-page'
 import type { StatusPage } from '../hooks/status-page'
 import type { Rule } from './status-rules'
 
@@ -91,7 +92,7 @@ export const HOLD_RULES: Rule[] = [
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       if (!o?.goal) return []
-      const drawn = new Set(result.page.rows.flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
+      const drawn = new Set(statusListRows(result.page).flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
       const held = new Set(result.session.ledger.items.flatMap(i => o.askSubjects[i.id] ?? []))
       const isNews = (changedAt: number, id: string) =>
         o.lastLookAt === null || changedAt > o.lastLookAt || held.has(id)

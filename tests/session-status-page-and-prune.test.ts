@@ -87,21 +87,12 @@ test('a sample saved without a Status is replaced, and the sample session carrie
   expect(isDemoCopy({ ...old, ledger: { ...old.ledger, overview: undefined } })).toBe(false)
   const page = sessionView(demoSession(1_000_000, 'Claude'), 1_000_000, 1000, true, NO_HOLDS).statusPage
   expect(page.head?.title).toBe('Pinch to dismiss')
-  expect(page.rows.map(r => r.kind)).toEqual([
-    'subject',
-    'child',
-    'child',
-    'subject',
-    'subject',
-    'child',
-    'child',
-    'child',
-    'subject',
-    'look',
-    'subject',
-    'part',
-    'counts',
+  expect(page.goal?.milestones.map(m => m.rows.map(r => r.kind))).toEqual([
+    ['subject'],
+    ['subject', 'child', 'child', 'child'],
+    ['subject'],
   ])
+  expect(page.rows.map(r => r.kind)).toEqual(['subject', 'child', 'child', 'look', 'subject', 'part', 'counts'])
 })
 
 test('a conversation start carries the head and where each open subject stands, not on a resume the guidance, and nothing for an empty session', () => {
