@@ -39,34 +39,35 @@ export type SaveEngine = {
   log: (text: string) => void
 }
 
+/**
+ * A change to a saved session. It runs on the newest session each time its write is tried, and the last run's result
+ * is what is written and returned. It never runs again once its write lands or is held.
+ */
 type Change = (s: Session) => Session | Promise<Session>
 
-/** The wait before each background try of a held change. */
+/** The wait before each background try of a held session. */
 const HELD_RETRY_MS = 5_000
-/** How long held changes keep trying before they are dropped. */
+/** How long a held session keeps trying before it is dropped. */
 const HELD_CAP_MS = 10 * 60_000
 
-/**
- * The changes to a conversation off screen that met a held lock through every retry, oldest first, and when the first
- * was held. Every read of the saved session runs them on what the store holds, and every write writes them too.
- */
-const held = new Map<string, { changes: Change[]; since: number; timer: { cancel: () => void } }>()
+type Timer = { cancel: () => void }
+/** A conversation's session that met a held lock through every retry, as its last change left it. */
+type Held = { session: Session; savedAt: number; since: number; timer: Timer }
+
+/** Each conversation off screen whose session is held. Every write and read of that session starts from it. */
+const held = new Map<string, Held>()
 
 /** For saving: the pane draws another conversation, so this one holds no rows and has no showing. */
 const forSaving = (s: Session): Session => pruned({ ...s, heldRows: [], shownSince: null })
 
-/**
- * `id`'s saved session with `changes` run on it, oldest first. Undefined when none is saved, and null when the store
- * cannot read it.
- */
-async function readChanged(e: SaveEngine, id: string, changes: Change[]) {
+/** `id`'s session to change: the held one, else the store's. Undefined when none is saved, null when unreadable. */
+async function sessionToChange(e: SaveEngine, id: string) {
+  const kept = held.get(id)
+  if (kept) return { session: kept.session, savedAt: kept.savedAt }
   const saved = await readSaved(e, id)
   if (!saved) return null
-  if (!saved.session) return undefined
-  let session = upgradeSession(saved.session)
-  for (const change of changes) session = await change(session)
 
-  return { savedAt: saved.session.savedAt, session: changes.length > 0 ? forSaving(session) : session }
+  return saved.session && { session: upgradeSession(saved.session), savedAt: saved.session.savedAt }
 }
 
 function writeSaved(e: SaveEngine, id: string, savedAt: number, s: Session) {
@@ -74,30 +75,34 @@ function writeSaved(e: SaveEngine, id: string, savedAt: number, s: Session) {
 }
 
 /**
- * Changes a conversation's saved session, after its pending saves and its held changes, and prunes it with `pruned`. A
- * session the store cannot read stays as it is. A change that meets a held lock through every retry is held, and the
- * result says what it will write.
+ * Changes a conversation's saved session, after its pending saves, and prunes it with `pruned`. A session the store
+ * cannot read stays as it is. A write that meets a held lock through every retry holds the changed session, and the
+ * result is what it will write.
  */
 export function changeSaved(e: SaveEngine, id: string, change: Change): Promise<Changed> {
   sessionState.savedWrites++
   // The read, the change and the write run in the save queue, so two changes to one saved session cannot both
   // start from the same read.
-  // A retry reads again, so it cannot write over a save another process made meanwhile.
+  // With nothing held, a retry reads again, so it cannot write over a save another process made meanwhile.
   const changed = sessionState.saving.then(async (): Promise<Changed> => {
-    const earlier = [...(held.get(id)?.changes ?? [])]
     let result: Changed = { before: emptySession(), after: emptySession(), isDrawn: false }
+    let unwritten: { session: Session; savedAt: number } | null = null
     try {
       await whileLockHeld(e, async () => {
-        const read = await readChanged(e, id, earlier)
+        unwritten = null
+        const read = await sessionToChange(e, id)
         if (!read) return
         const after = await change(read.session)
         result = { before: read.session, after: after === read.session ? after : forSaving(after), isDrawn: false }
-        if (result.after !== read.session || earlier.length > 0) await writeSaved(e, id, read.savedAt, result.after)
-        landed(id, earlier)
+        if (result.after === read.session && !held.has(id)) return
+        unwritten = { session: result.after, savedAt: read.savedAt }
+        await writeSaved(e, id, read.savedAt, result.after)
+        dropHeldNow(id)
       })
     } catch (error) {
       if (!isLockHeld(error)) throw error
-      await hold(e, id, change, error)
+      const toHold = unwritten as { session: Session; savedAt: number } | null
+      if (toHold) await hold(e, id, toHold, error)
     }
 
     return result
@@ -109,61 +114,49 @@ export function changeSaved(e: SaveEngine, id: string, change: Change): Promise<
   return changed
 }
 
-/** Holds `change` for `id`, and starts the background tries when it is the first. */
-async function hold(e: SaveEngine, id: string, change: Change, error: unknown) {
-  const entry = held.get(id)
-  if (entry) {
-    entry.changes.push(change)
+/** Holds `id`'s changed session, and starts the background tries when nothing was held. */
+async function hold(e: SaveEngine, id: string, changed: { session: Session; savedAt: number }, error: unknown) {
+  const kept = held.get(id)
+  if (kept) {
+    kept.session = changed.session
     return
   }
-  const since = await e.now()
-  held.set(id, { changes: [change], since, timer: e.after(HELD_RETRY_MS, () => retryHeld(e, id)) })
+  const entry: Held = { ...changed, since: await e.now(), timer: { cancel: () => undefined } }
+  entry.timer = e.after(HELD_RETRY_MS, () => retryHeld(e, id, entry))
+  held.set(id, entry)
   e.log(`inbox: saving session ${id} waits for the store lock, and tries again in the background: ${errorText(error)}`)
 }
 
-/** Forgets `changes` once a write has landed them, unless the drawn session took them first. */
-function landed(id: string, changes: Change[]) {
-  const entry = held.get(id)
-  if (!entry || changes.length === 0 || changes.some((c, i) => entry.changes[i] !== c)) return
-  entry.changes.splice(0, changes.length)
-  if (entry.changes.length > 0) return
-  entry.timer.cancel()
-  held.delete(id)
-}
-
-/**
- * Drops `id`'s held changes, since the conversation is drawn again and its session, read with `readSettled`, holds
- * them. Its next save writes them.
- */
-export function dropHeld(id: string) {
+function dropHeldNow(id: string) {
   held.get(id)?.timer.cancel()
   held.delete(id)
 }
 
-/** Tries once, in the save queue, to write `id`'s held changes. A failure tries again later, until `HELD_CAP_MS`. */
-function retryHeld(e: SaveEngine, id: string) {
+/**
+ * Drops `id`'s held session, in the save queue, since the conversation is drawn again from it, read with
+ * `readSettled`. Its next save writes it.
+ */
+export function dropHeld(id: string) {
+  sessionState.saving = sessionState.saving.then(() => dropHeldNow(id))
+}
+
+/** Tries once, in the save queue, to write `entry`. A failure tries again later, until `HELD_CAP_MS`. */
+function retryHeld(e: SaveEngine, id: string, entry: Held) {
   const tried = sessionState.saving.then(async () => {
-    const entry = held.get(id)
-    if (!entry) return
-    const changes = [...entry.changes]
-    let failure: unknown = 'the store could not read the session'
+    if (held.get(id) !== entry) return
     try {
-      const read = await readChanged(e, id, changes)
-      if (read !== null) {
-        if (read) await writeSaved(e, id, read.savedAt, read.session)
-        landed(id, changes)
+      await writeSaved(e, id, entry.savedAt, entry.session)
+      dropHeldNow(id)
+      return
+    } catch (error) {
+      if ((await e.now()) - entry.since < HELD_CAP_MS) {
+        entry.timer.cancel()
+        entry.timer = e.after(HELD_RETRY_MS, () => retryHeld(e, id, entry))
         return
       }
-    } catch (error) {
-      failure = error
+      held.delete(id)
+      e.log(`inbox: saving session ${id} failed after ${HELD_CAP_MS / 60_000} minutes: ${errorText(error)}`)
     }
-    if (held.get(id) !== entry) return
-    if ((await e.now()) - entry.since < HELD_CAP_MS) {
-      entry.timer = e.after(HELD_RETRY_MS, () => retryHeld(e, id))
-      return
-    }
-    held.delete(id)
-    e.log(`inbox: saving session ${id} failed after ${HELD_CAP_MS / 60_000} minutes: ${errorText(failure)}`)
   })
   const write = tried.catch(() => undefined)
   sessionState.saving = write
@@ -247,12 +240,10 @@ export async function readSaved(e: SaveEngine, id: string): Promise<{ session: S
   }
 }
 
-/** A conversation's saved session, once its pending saves have landed, with its held changes run on it. */
+/** A conversation's saved session, once its pending saves have landed. A held session is read as it will be saved. */
 export async function readSettled(e: SaveEngine, id: string): Promise<{ session: SavedRecord | undefined } | null> {
   await savesBySession.get(id)?.catch(() => undefined)
-  const changes = held.get(id)?.changes ?? []
-  if (changes.length === 0) return readSaved(e, id)
-  const read = await readChanged(e, id, [...changes])
+  const kept = held.get(id)
 
-  return read === null ? null : { session: read && { savedAt: read.savedAt, ...read.session } }
+  return kept ? { session: { savedAt: kept.savedAt, ...kept.session } } : readSaved(e, id)
 }

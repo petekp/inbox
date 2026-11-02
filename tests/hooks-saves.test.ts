@@ -2,6 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Session } from '../types'
 import { w, world } from './hooks-world'
 import { SAVED_SESSION } from './hooks-helpers'
+import { changeSaved, readSettled, type SaveEngine } from '../hooks/mod-saves'
 
 test('tool calls during a turn leave the saved session alone, and the turn’s update saves it', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -191,6 +192,81 @@ test('a held write that cannot land within the cap is dropped and logged', async
   await clock.advance(60_000)
   await clock.settle()
   expect(savedHead()).toBeUndefined()
+})
+
+function fakeSaves(id: string) {
+  const store = new Map<string, unknown>([[`s:${id}`, SAVED_SESSION]])
+  const timers: { fn: () => void; isLive: boolean }[] = []
+  const fake = {
+    isLocked: true,
+    gate: null as { reached: () => void; open: Promise<void> } | null,
+    storedNextId: () => (store.get(`s:${id}`) as Session).ledger.nextId,
+    liveTimers: () => timers.filter(t => t.isLive),
+    fire: () => {
+      const [timer] = fake.liveTimers()
+      timer!.isLive = false
+      timer!.fn()
+    },
+    engine: {
+      store: {
+        get: async (key: string) => store.get(key),
+        set: async (key: string, value: unknown) => {
+          if (fake.isLocked) throw new Error('Lock file is already being held')
+          const gate = fake.gate
+          fake.gate = null
+          gate?.reached()
+          await gate?.open
+          store.set(key, JSON.parse(JSON.stringify(value)))
+        },
+        delete: async (key: string) => void store.delete(key),
+        keys: async () => [...store.keys()],
+      },
+      sleep: async () => undefined,
+      now: async () => 0,
+      after: (_ms: number, fn: () => void) => {
+        const timer = { fn, isLive: true }
+        timers.push(timer)
+        return { cancel: () => void (timer.isLive = false) }
+      },
+      log: () => undefined,
+    } satisfies SaveEngine,
+  }
+  return fake
+}
+
+const bumped = (s: Session): Session => ({ ...s, ledger: { ...s.ledger, nextId: s.ledger.nextId + 1 } })
+
+test('a retry queued behind a write that landed and a newly held write leaves one retry timer', async () => {
+  const f = fakeSaves('timers')
+  await changeSaved(f.engine, 'timers', bumped)
+  expect(f.liveTimers()).toHaveLength(1)
+  f.isLocked = false
+  let open: () => void = () => undefined
+  let reached: () => void = () => undefined
+  const isReached = new Promise<void>(resolve => (reached = resolve))
+  f.gate = { reached, open: new Promise<void>(resolve => (open = resolve)) }
+  const landing = changeSaved(f.engine, 'timers', bumped)
+  const holding = changeSaved(f.engine, 'timers', bumped)
+  await isReached
+  f.fire()
+  f.isLocked = true
+  open()
+  await Promise.all([landing, holding])
+  await readSettled(f.engine, 'timers')
+  expect(f.liveTimers()).toHaveLength(1)
+})
+
+test('a held change that makes a fresh id each run keeps one id for its caller, a read and the write that lands', async () => {
+  const f = fakeSaves('ids')
+  let runs = 0
+  const stamped = (s: Session): Session => ({ ...s, ledger: { ...s.ledger, nextId: 100 + ++runs } })
+  const { after } = await changeSaved(f.engine, 'ids', stamped)
+  const read = await readSettled(f.engine, 'ids')
+  f.isLocked = false
+  f.fire()
+  await readSettled(f.engine, 'ids')
+  expect(read?.session?.ledger?.nextId).toBe(after.ledger.nextId)
+  expect(f.storedNextId()).toBe(after.ledger.nextId)
 })
 
 test('session pruning uses saved time and retains records whose age cannot be read', async ($, on) => {
