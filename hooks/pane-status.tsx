@@ -213,7 +213,7 @@ export function paneStatus(
     mark: JSX.Element | null
     content: JSX.Element | JSX.Element[]
     tree?: JSX.Element | null
-    /** A fold's line in the terminal, whose control draws its chevron in the mark column. */
+    /** A fold's line in the terminal, whose control draws its chevron in the mark column and its count at the text column. */
     isFold?: boolean
     /** The row whose keys work, which the terminal marks with the selection bar, as on a row tab. */
     isSelected?: boolean
@@ -368,7 +368,7 @@ export function paneStatus(
           key: `status-${r.id}`,
           depth: r.depth,
           mark: null,
-          content: foldButton(key, r.text, isUnfolded(r.id), toggle),
+          content: foldButton(key, r.text, isUnfolded(r.id), toggle, ' '.repeat(Math.max(1, markWidth - 1))),
           isSelected: r.id === statusKeyRow?.id,
           isFold: true,
         })

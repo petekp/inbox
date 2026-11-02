@@ -222,9 +222,9 @@ export function paneRowParts(
           `closed-${d.id}`,
           1,
         )
-  /** The terminal's fold control: a chevron and `label`, one Button. */
-  const foldButton = (key: string, label: string, isUnfolded: boolean, toggle: () => void) => (
-    <Button plain dimColor key={`fold-${key}`} label={`${isUnfolded ? '▾' : '▸'} ${label}`} onPress={toggle} />
+  /** The terminal's fold control: a chevron, `gap` and `label`, one Button. */
+  const foldButton = (key: string, label: string, isUnfolded: boolean, toggle: () => void, gap = ' ') => (
+    <Button plain dimColor key={`fold-${key}`} label={`${isUnfolded ? '▾' : '▸'}${gap}${label}`} onPress={toggle} />
   )
   // On desktop a Client takes a click on every cell of the line, where a Button takes one only on its label.
   /** A fold's line: a chevron, then `label`. Desktop posts its click and hover under `fold-` and `key`. */
