@@ -1,5 +1,7 @@
+# The tool and type folders have no trailing slash, so a symbolic link in their place is ignored too.
+
 # Types the engine writes beside a loaded mod
-.claude-plugin/types/
+.claude-plugin/types
 
 # Written by the maintainer's script that keeps a daily-build checkout on the next branch, into the root, codex/plugin
 # and omp, so each look's version label says "next" (NEXT_BUILD_MARK in hooks/view.ts)
@@ -9,11 +11,11 @@
 .scratch/
 
 # The Codex plugin's tools and test bundles; its plugin/dist bundles are committed
-codex/node_modules/
+codex/node_modules
 codex/test-dist/
 
 # The omp extension's tools
-omp/node_modules/
+omp/node_modules
 
 # The tab page `npm --prefix codex run dev` keeps built
 codex/.dev/
