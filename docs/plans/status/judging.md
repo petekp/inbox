@@ -94,7 +94,7 @@ The goal adds these:
 **The code holds** are checked at every step of every run, and any failure blocks:
 
 - The goal changes only on a press.
-- No proposal has the name key of the goal or of a declined goal.
+- No proposal restates the goal or a declined goal in its words, as `restatesGoal` judges it.
 - The goal shows met exactly while every milestone that is not dropped is done.
 - A milestone shows ◆ exactly while it is open and an open ask holds it up, itself or through a subject that serves it.
 - Under Other work, an open subject that changed since the person looked, or that an ask holds up, has its own row.

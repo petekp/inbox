@@ -9,9 +9,39 @@ import {
   MILESTONES_MIN,
   NAME_KEPT,
   nameKey,
+  NL,
+  stems,
   TEXT_KEPT,
   words,
 } from './status-limits'
+
+/** The share of a proposal's words, as stems, that a goal must hold for the proposal to restate it. */
+const RESTATED_SHARE = 0.8
+
+/**
+ * Whether a proposed goal restates `goal`, a goal's text or a declined goal's key: most of its words are the goal's
+ * once cut to their stems, and it names no number the goal does not, since another version is another goal.
+ */
+export function restatesGoal(text: string, goal: string): boolean {
+  const own = [...stems(text)]
+  const theirs = stems(goal)
+  const shared = own.filter(w => theirs.has(w)).length
+  const hasNewNumber = own.some(w => /\d/.test(w) && !theirs.has(w))
+
+  return own.length > 0 && !hasNewNumber && shared >= RESTATED_SHARE * own.length
+}
+
+/**
+ * Whether proposed milestones are the current goal's, by name key. A goal that waits for its milestones still holds
+ * the milestones of the goal before it, so it has none to compare.
+ */
+function hasGoalMilestones(o: SessionStatus, proposed: readonly { name: string }[]): boolean {
+  if (o.goal === null || o.goal.isAwaitingMilestones) return false
+  const keys = (names: string[]) => names.map(nameKey).sort().join(NL)
+  const kept = o.milestones.filter(m => m.status !== 'dropped').map(m => m.name)
+
+  return kept.length > 0 && keys(kept) === keys(proposed.map(m => m.name))
+}
 
 /** Whether two texts have the same content words, in any order. */
 export function hasSameWords(a: string, b: string): boolean {
@@ -106,7 +136,8 @@ function addMilestone(o: SessionStatus, op: Extract<Op, { kind: 'milestone' }>, 
 
 /**
  * Applies a GOAL, MILESTONE or SERVES line. A GOAL line only ever proposes: the goal itself changes on a press alone.
- * A proposal with fewer than `MILESTONES_MIN` milestones, of the current goal or of a declined one is dropped.
+ * A proposal with fewer than `MILESTONES_MIN` milestones, or one that restates the current goal or a declined one, in
+ * its words or its milestones, is dropped.
  * Milestones and links need a goal.
  */
 export function applyGoalOp(
@@ -117,12 +148,12 @@ export function applyGoalOp(
 ): SessionStatus {
   if (op.kind === 'goal') {
     const text = clipWords(op.text, DESCRIPTION_KEPT)
-    const key = nameKey(text)
-    const isCurrent = o.goal !== null && nameKey(o.goal.text) === key
-    if (op.milestones.length < MILESTONES_MIN || isCurrent || o.declinedGoals.includes(key)) return o
     const milestones = op.milestones
       .slice(0, MILESTONES_MAX)
       .map(m => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }))
+    const isCurrent = o.goal !== null && (restatesGoal(text, o.goal.text) || hasGoalMilestones(o, milestones))
+    const isDeclined = o.declinedGoals.some(key => restatesGoal(text, key))
+    if (op.milestones.length < MILESTONES_MIN || isCurrent || isDeclined) return o
 
     return { ...o, proposedGoal: { text, milestones, at: now } }
   }

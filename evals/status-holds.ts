@@ -1,5 +1,6 @@
 import { HELD_MARK } from '../hooks/help'
-import { isOpen, nameKey } from '../hooks/status-limits'
+import { restatesGoal } from '../hooks/status-goal-ops'
+import { isOpen } from '../hooks/status-limits'
 import { statusListRows } from '../hooks/status-page'
 import type { StatusPage } from '../hooks/status-page'
 import type { Rule } from './status-rules'
@@ -36,14 +37,14 @@ export const HOLD_RULES: Rule[] = [
   hold({
     id: 'proposal-not-repeated',
     property: 14,
-    text: 'No proposal has the name key of the goal or of a goal the person declined.',
+    text: 'No proposal restates the goal or a goal the person declined in its words.',
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       const p = o?.proposedGoal
       if (!o || !p) return []
-      const key = nameKey(p.text)
-      const isGoal = o.goal !== null && nameKey(o.goal.text) === key
-      return isGoal || o.declinedGoals.includes(key) ? [`proposed "${p.text}" again`] : []
+      const isGoal = o.goal !== null && restatesGoal(p.text, o.goal.text)
+      const isDeclined = o.declinedGoals.some(key => restatesGoal(p.text, key))
+      return isGoal || isDeclined ? [`proposed "${p.text}" again`] : []
     },
   }),
   hold({
