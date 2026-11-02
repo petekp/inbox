@@ -29,7 +29,7 @@ Adding offline sync to the notes app
 ── Last seen ─────────────────────────
 ◌ 2.4 release
   in store review
-✓ 2 more done
+▸ 2 more done
 ```
 
 The question "Which conflict rule ships?" waits in Asks, and its row there reads "Holds up Sync conflicts".
@@ -103,7 +103,7 @@ The person can trust a mark at a glance. A piece that is delivered, dropped or f
 - **Good:** `→ Dark mode toggle: filed for later`, then folded apart from the done count.
 - **Bad:** `● 2.4 release: published, sync bug next`. The release is over.
 - **Bad:** ten `○` rows that read "filed for later", all evening.
-- **Bad:** `✓ Dark mode toggle: filed for later`, counted with delivered work in "✓ 4 done".
+- **Bad:** `✓ Dark mode toggle: filed for later`, counted with delivered work in "▸ 4 done".
 - **Bad:** nine pieces are open, and the page shows six, with no fold and no ✓ or ✗ for the other three.
 
 #### 6. Where it stands says the state of the work
@@ -158,7 +158,7 @@ Back after a break, the person learns from the rows above the Seen line what fin
 
 - **Good:** the sample page above. The conflicts work and the sync engine changed since the look, and the export did not.
 - **Bad:** 2.4 shipped, but `2.4 release` still sits below the Seen line with its old text.
-- **Bad:** six pieces finished while the person was away. The page names two and folds the release into "✓ 4 more done".
+- **Bad:** six pieces finished while the person was away. The page names two and folds the release into "▸ 4 more done".
 - **Bad:** forty pieces finished. The person saw the first six rows and left, and the page now treats all forty as seen.
 
 #### 11. Nothing moves that did not change
