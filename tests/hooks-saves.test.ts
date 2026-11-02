@@ -108,6 +108,33 @@ test('when the store lock stays held, the update still shows and the next save w
   expect((JSON.parse(w.stored.get('s:session-1')!) as Session).ledger.items.map(i => i.ask)).toEqual(asks)
 })
 
+test('when the store lock stays held, a write to a conversation off screen lands once the lock frees', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  let release: () => void = () => undefined
+  w.statusHold = new Promise<void>(resolve => (release = resolve))
+  w.statusReply = 'HEAD: Adding a greeting CLI | Building a CLI that greets by name'
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
+  await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })
+  await clock.settle()
+  const savedHead = () => JSON.parse(w.stored.get('s:session-1') ?? '{}').ledger.overview?.head?.title
+
+  w.storeSetLockHeld = Infinity
+  release()
+  await clock.advance(60_000)
+  expect(savedHead()).toBeUndefined()
+  expect(w.logged.filter(line => line.includes('session-1 waits for the store lock'))).toHaveLength(1)
+
+  w.storeSetLockHeld = 0
+  await clock.advance(60_000)
+  await clock.settle()
+  expect(savedHead()).toBe('Adding a greeting CLI')
+})
+
 test('session pruning uses saved time and retains records whose age cannot be read', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])

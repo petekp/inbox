@@ -67,7 +67,6 @@ import { refreshStatus, type StatusCall, type StatusRecords, type RecordFiles } 
 import { startPress, wakeForDone as wakeSessionForDone } from './host-press'
 import type { Ask, CatchUpReply, SessionHost } from './session-host'
 import { callReport, MODEL } from './inbox-model'
-import { SESSION_VERSION } from './session-version'
 import { demoView, isDemoCopy } from './demo'
 import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
@@ -75,7 +74,7 @@ import { isPrPress, pressRowId, type Applied, type PrPress } from './pr-press'
 import { openPrViews } from './pr-views'
 import { prMarkId, threadSentIn } from './pr-rows'
 import { failingChecks, prRefs, prNeedsYou, waitingThreads } from './prs'
-import { EMPTY, KEPT_SESSIONS, isBlankLedger } from './ledger'
+import { EMPTY, isBlankLedger } from './ledger'
 import { closeItem } from './ledger-close'
 import { tasksRunBy } from './reply-parse'
 import { CLAUDE_CODE, guidedCloseDescription } from './model-text'
@@ -217,25 +216,19 @@ import {
   DESKTOP_APP_ENTRYPOINTS,
   drawnSession,
   isCurrent,
-  isLockHeld,
-  LOCK_RETRY_WAITS_MS,
   MAX_TRIES,
   type ModSession,
   NO_SESSION,
   type Owner,
   PR_POLL_MS,
   PRESENT,
-  prunedSaves,
   resultsOrder,
   type SavedRecord,
-  savedRevisions,
-  savesBySession,
-  sessionKey,
-  track,
   updating,
   withoutRowActions,
 } from './mod-sessions'
 import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
+import { changeSaved, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
 import { paneAskRows, paneAskTabs } from './pane-asks'
 import { paneRowKeys } from './pane-row-keys'
 import { paneRowLines } from './pane-row-lines'
@@ -540,7 +533,7 @@ async function changeSession(
   held: Set<string>,
 ): Promise<Changed> {
   for (let tries = 0; tries < MAX_TRIES; tries++) {
-    if (!isCurrent(owner)) return changeSaved($, owner.id, change)
+    if (!isCurrent(owner)) return changeSaved(saveEngine($), owner.id, change)
     const drawn = await read($, SESSION)
     // A hot reload can leave a session an earlier build wrote. The fetch that is running still runs.
     const upgraded = upgradeSession(drawn)
@@ -563,131 +556,25 @@ async function changeSession(
     })
     const written = landed as ModSession | null
     if (!written) continue
-    if (!isTurnOnly && (await read($, UNREADABLE)) !== owner.id) await save($, owner, written)
+    if (!isTurnOnly && (await read($, UNREADABLE)) !== owner.id) await save(saveEngine($), owner, written)
     return { before, after: written, isDrawn: isCurrent(owner) }
   }
   throw new Error('The session kept changing under this write.')
 }
 
-/**
- * Changes a conversation's saved session, after its pending saves, and prunes it with `pruned`. The pane draws another
- * conversation, so this one holds no rows and has no showing. A session the store cannot read stays as it is.
- */
-async function changeSaved(
-  $: EngineInterface,
-  id: string,
-  change: (s: Session) => Session | Promise<Session>,
-): Promise<Changed> {
-  sessionState.savedWrites++
-  // The read, the change and the write run in the save queue, so two changes to one saved session cannot both
-  // start from the same read.
-  // A retry reads again, so it cannot write over a save another process made meanwhile.
-  const changed = sessionState.saving.then(() =>
-    whileLockHeld($, async (): Promise<Changed> => {
-      const saved = await readSaved($, id)
-      if (!saved?.session) return { before: emptySession(), after: emptySession(), isDrawn: false }
-      const before = upgradeSession(saved.session)
-      const result = await change(before)
-      if (result === before) return { before, after: before, isDrawn: false }
-      const after = pruned({ ...result, heldRows: [], shownSince: null })
-      await $.store.set(sessionKey(id), { version: SESSION_VERSION, savedAt: saved.session.savedAt, ...after })
-
-      return { before, after, isDrawn: false }
-    }).catch((error: unknown): Changed => {
-      if (!isLockHeld(error)) throw error
-      logSaveFailure($, id, error)
-      return { before: emptySession(), after: emptySession(), isDrawn: false }
-    }),
-  )
-  const write = changed.then(() => undefined)
-  sessionState.saving = write.catch(() => undefined)
-  track(id, write)
-
-  return changed
-}
-
-/** Runs `write`, and again after each wait in `LOCK_RETRY_WAITS_MS` while the store's lock is held. */
-async function whileLockHeld<T>($: EngineInterface, write: () => Promise<T>): Promise<T> {
-  for (const ms of LOCK_RETRY_WAITS_MS) {
-    try {
-      return await write()
-    } catch (error) {
-      if (!isLockHeld(error)) throw error
-      await $.clock.sleep(ms)
-    }
+/** The store, clock and debug log calls that `hooks/mod-saves.ts` makes. */
+function saveEngine($: EngineInterface): SaveEngine {
+  return {
+    store: {
+      get: key => $.store.get(key),
+      set: (key, value) => $.store.set(key, value),
+      delete: key => $.store.delete(key),
+      keys: () => $.store.keys(),
+    },
+    sleep: ms => $.clock.sleep(ms),
+    now: () => $.clock.now(),
+    log: text => $.ui.log(text, { to: 'debug' }),
   }
-  return write()
-}
-
-function logSaveFailure($: EngineInterface, id: string, error: unknown) {
-  $.ui.log(`inbox: saving session ${id} failed: ${error instanceof Error ? error.message : String(error)}`, {
-    to: 'debug',
-  })
-}
-
-/**
- * Saves a conversation's session, once every earlier save has landed. A save older than one already resolved is
- * skipped. The first save of each conversation also deletes the oldest saved sessions beyond the newest `KEPT_SESSIONS`.
- */
-function save($: EngineInterface, owner: Owner, s: ModSession): Promise<void> {
-  const key = sessionKey(owner.id)
-  const generation = `${owner.id}:${owner.generation}`
-  savedRevisions.set(generation, Math.max(savedRevisions.get(generation) ?? 0, s.revision))
-  const { revision: _revision, ...session } = s
-  const setAndPrune = Promise.all([sessionState.saving, $.clock.now()]).then(async ([, savedAt]) => {
-    if (s.revision < (savedRevisions.get(generation) ?? 0)) return
-    await whileLockHeld($, () => $.store.set(key, { version: SESSION_VERSION, savedAt, ...session }))
-    if (prunedSaves.has(generation)) return
-    const keys = await $.store.keys()
-    const sessions = keys.filter(k => k.startsWith('s:'))
-    const ages = await Promise.all(
-      sessions.map(async candidate => {
-        try {
-          const saved = (await $.store.get(candidate)) as SavedRecord | undefined
-          return saved && Number.isFinite(saved.savedAt) && saved.ledger && typeof saved.ledger === 'object'
-            ? { key: candidate, savedAt: saved.savedAt }
-            : null
-        } catch {
-          return null
-        }
-      }),
-    )
-    const stale = ages
-      .filter((entry): entry is { key: string; savedAt: number } => entry !== null && entry.key !== key)
-      .sort((a, b) => a.savedAt - b.savedAt || a.key.localeCompare(b.key))
-      .slice(0, Math.max(0, sessions.length - KEPT_SESSIONS))
-      .map(entry => entry.key)
-    // `p:` keys held the last-session offer, which earlier builds saved per folder.
-    await Promise.all(
-      [...stale, ...keys.filter(k => k.startsWith('p:'))].map(old => whileLockHeld($, () => $.store.delete(old))),
-    )
-    prunedSaves.add(generation)
-  })
-  const write = setAndPrune.catch((error: unknown) => {
-    // The session stays drawn, and the conversation's next save writes it whole.
-    if (!isLockHeld(error)) throw error
-    logSaveFailure($, owner.id, error)
-  })
-  sessionState.saving = write.catch(() => undefined)
-  track(owner.id, write)
-
-  return write
-}
-
-/** A conversation's saved session, or `{ session: undefined }` when none is saved. Null when the store cannot read it. */
-async function readSaved($: EngineInterface, id: string): Promise<{ session: SavedRecord | undefined } | null> {
-  try {
-    return { session: (await $.store.get(sessionKey(id))) as SavedRecord | undefined }
-  } catch {
-    return null
-  }
-}
-
-/** A conversation's saved session, once its pending saves have landed. */
-async function readSettled($: EngineInterface, id: string) {
-  await savesBySession.get(id)?.catch(() => undefined)
-
-  return readSaved($, id)
 }
 
 /** Calls the inbox model, reports the call, and returns the answer. */
@@ -850,7 +737,7 @@ function sessionHost(
     now: () => $.clock.now(),
     read: async () => {
       if (isCurrent(owner)) return upgradeSession(await read($, SESSION))
-      const saved = await readSettled($, owner.id)
+      const saved = await readSettled(saveEngine($), owner.id)
       return saved?.session ? upgradeSession(saved.session) : emptySession()
     },
     update: opts.update,
@@ -2182,14 +2069,14 @@ function loadConversation($: EngineInterface, id: string, forkedFrom?: string): 
 
 async function prepareConversation($: EngineInterface, id: string, revision: number, forkedFrom?: string) {
   const writesAtRead = sessionState.savedWrites
-  const [sessionRoot, saved] = await Promise.all([$.session.root(), readSettled($, id)])
+  const [sessionRoot, saved] = await Promise.all([$.session.root(), readSettled(saveEngine($), id)])
   if (revision !== sessionState.loadRevision) return
   const applying = sessionState.applyingConversation.then(async () => {
     if (revision !== sessionState.loadRevision) return
     // A write to a saved session after the read above, such as a refused Done message, is read again.
-    const latest = writesAtRead === sessionState.savedWrites ? saved : await readSettled($, id)
+    const latest = writesAtRead === sessionState.savedWrites ? saved : await readSettled(saveEngine($), id)
     // A fork continues its parent's inbox, so a new id with no saved state starts from the parent's.
-    const parent = latest?.session || !forkedFrom ? null : await readSettled($, forkedFrom)
+    const parent = latest?.session || !forkedFrom ? null : await readSettled(saveEngine($), forkedFrom)
     await applyConversation($, id, revision, sessionRoot, latest, parent?.session)
   })
   sessionState.applyingConversation = applying.catch(() => undefined)
@@ -2351,7 +2238,7 @@ async function readAgain($: EngineInterface) {
     return
   }
   await redrawPane($)
-  const saved = await readSaved($, id)
+  const saved = await readSaved(saveEngine($), id)
   if (conversation.id !== id) return
   sessionState.isReadingAgain = false
   if (saved !== null) {
