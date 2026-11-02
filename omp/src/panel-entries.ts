@@ -24,7 +24,7 @@ import { capitalized } from '../../hooks/press-labels'
 import { cellWidth } from '../../hooks/text'
 import { settledTone, NEEDS_YOU_GROUPS, settledMark, settledLabel } from '../../hooks/rows'
 import { bannerOf, emptyText, isResumable, stopFix, stopText } from '../../hooks/banners'
-import { FINDING_GROUPS, HELP_COPY, helpKeys, MARK_LEGEND } from '../../hooks/help'
+import { FINDING_GROUPS, HELP_COPY, helpKeys, markLegend } from '../../hooks/help'
 import { isDrawnInPlace, runningMark } from '../../hooks/timing'
 import { isRowTab } from '../../hooks/tabs'
 import { statusKeyRows } from '../../hooks/status-keys'
@@ -284,7 +284,7 @@ function helpEntries(screen: PanelScreen, tab: ShownTab): Entry[] {
     ...keys.map((key): Entry => ({ kind: 'key', key, column })),
     { kind: 'note', text: '' },
     { kind: 'heading', text: HELP_COPY.marks },
-    ...MARK_LEGEND.map((entry): Entry => ({ kind: 'legend', entry })),
+    ...markLegend(screen.isNextBuild === true).map((entry): Entry => ({ kind: 'legend', entry })),
   ]
 }
 
