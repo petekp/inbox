@@ -218,9 +218,11 @@ A file in `hooks/` that every host consumes, directly or through a build.
 It imports only other shared modules and the shared types.
 
 **Adapter**:
-The code that draws the shared view in one look: `hooks/register.tsx` for the
-terminal and desktop looks, `codex/src/tab.tsx` for the Codex tab,
-`omp/src/panel.ts` for the omp panel.
+The code that draws the shared view in one look. For the terminal and desktop
+looks, it is `hooks/register.tsx` and the `hooks/pane-*.tsx` files. For the
+Codex tab, it is `codex/src/tab.tsx`, the other `codex/src/tab-*` files,
+`codex/src/row-actions.tsx` and the styles in `codex/src/tab-css/`. For the omp
+panel, it is `omp/src/panel.ts` and the other `omp/src/panel-*.ts` files.
 
 **Difference on purpose**:
 A behavior that differs between looks because one look cannot do something,
