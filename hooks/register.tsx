@@ -142,7 +142,6 @@ import {
   listedRowIds,
   openRowIds,
   prRowIds,
-  recordRows,
 } from './arrivals'
 import { parseInline } from './inline'
 import { DESKTOP_ROW_PAD, DESKTOP_WIDE_AT, INLINE_RAIL_AT, RAIL_GUTTER, TAB_PAD } from './pane-sizes'
@@ -161,6 +160,7 @@ import {
   settledScrollKey,
   type Showing,
   type Shown,
+  newRows,
   tabRowIds,
   tabWaits,
   UNDO_REDRAW_STEPS,
@@ -1595,16 +1595,6 @@ async function keepPressedOpen($: EngineInterface, id: string) {
   await update($, SELECTION, s =>
     s[tab].id === null && s[tab].openedAt === 0 ? { ...s, [tab]: { id, index: 0, openedAt: 0 } } : s,
   )
-}
-
-function newRows(isDemo: boolean, current: Record<Tab, string[] | null>): Record<Tab, string[]> {
-  const { seen, added } = recordRows(
-    paneState.recordedRows?.isDemo === isDemo ? paneState.recordedRows.ids : {},
-    current,
-  )
-  paneState.recordedRows = { isDemo, ids: seen }
-
-  return added
 }
 
 async function jumpTo($: EngineInterface, tab: Tab) {
@@ -3477,6 +3467,7 @@ export const register: Register = on => {
     })
     const { statusRowLine, statusKeys, statusView } = paneStatus(
       {
+        e,
         listColumns,
         look,
         Box,
