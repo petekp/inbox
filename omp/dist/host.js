@@ -1679,7 +1679,8 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
         ] : [
           ...selectsStatusRows ? [
             { keys: "j k", does: "Select the next or previous row with a button" },
-            { keys: "\u21B5", does: "Press the selected row's button" }
+            { keys: "\u2190 \u2192", does: "Pick a button" },
+            { keys: "\u21B5", does: "Press the picked button" }
           ] : [],
           { keys: "\u2191 \u2193", does: "Scroll the page" }
         ],
@@ -5152,14 +5153,31 @@ function drawPageRow(row, d, isSelected = false) {
   if (row.kind === "part") {
     const label = `${row.text} `;
     return [
+      "",
       `${" ".repeat(PAGE_TEXT_AT)}${s.dim(label + "\u2500".repeat(Math.max(4, pageRuleCells(width) - cellWidth(label))))}`
     ];
   }
   if (row.kind === "counts")
-    return [
-      " ".repeat(textAt) + row.counts.map((c) => feedbackPaint(c.tone, s)(c.mark) + s.dim(` ${c.text}`)).join(s.dim(STALL_GAP))
-    ];
+    return countLines(row.counts, textAt, width, s);
   return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim);
+}
+function countLines(counts, textAt, width, s) {
+  const room = Math.max(1, width - textAt);
+  const gap = { cells: cellWidth(STALL_GAP), text: s.dim(STALL_GAP) };
+  const lines = [];
+  for (const c of counts) {
+    const count = {
+      cells: cellWidth(`${c.mark} ${c.text}`),
+      text: feedbackPaint(c.tone, s)(c.mark) + s.dim(` ${c.text}`)
+    };
+    const line = lines.at(-1);
+    if (line && line.cells + gap.cells + count.cells <= room) {
+      line.cells += gap.cells + count.cells;
+      line.text += gap.text + count.text;
+    } else
+      lines.push(count);
+  }
+  return lines.map((l) => " ".repeat(textAt) + l.text);
 }
 
 // src/panel-goal.ts
@@ -6033,7 +6051,7 @@ function footer(d, isPageScrolling) {
   if (status.text)
     out.push(` ${s.dim(status.text)}`);
   const hints = ui.typing !== null ? [`\u21B5 ${ui.typing === GOAL_KEYS_ID ? GOAL_FIELD.submit : ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch", "? help"] : [
-    ...statusKeyRows(screen.view.statusPage).length > 0 ? ["j k select", "\u21B5 press"] : [],
+    ...statusHints(screen.view.statusPage, ui.selectedId),
     ...isPageScrolling ? ["\u2191\u2193 scroll"] : [],
     "tab switch",
     "? help"
@@ -6070,6 +6088,12 @@ function scrolled(body, selectedAt, room, s) {
   if (end < body.length)
     clip[clip.length - 1] = s.dim(`  \u2193 ${body.length - end} more lines`);
   return clip;
+}
+function statusHints(page, selectedId) {
+  if (statusKeyRows(page).length === 0)
+    return [];
+  const isPicking = (statusSelected(page, selectedId)?.keys.length ?? 0) > 1;
+  return ["j k select", ...isPicking ? ["\u2190\u2192 pick"] : [], "\u21B5 press"];
 }
 
 // src/panel.ts
@@ -8019,7 +8043,7 @@ function statusPrompt(input, ex) {
 }
 function statusMidTurnPrompt(input, turn) {
   return [
-    'The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes. Where it stands says what works so far and what is left, never what the agent is doing: "CSV export works, PDF not started", not "export edits underway" or "writing the PDF export".',
+    'The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes. Where it stands says what works so far and what is left, never what the agent is doing: "CSV export works, PDF not started", not "export edits underway" or "writing the PDF export". When a piece has started and nothing in it works yet, say that: "PDF export started, not working yet", not "PDF edits begun, untested".',
     ...statusBlocks(input),
     `<person>${NL4}${clipMiddle(personText(turn.person, turn.trigger), 4000, 1500)}${NL4}</person>`,
     `<activity>${NL4}${clipMiddle(turn.activity.join(NL4), 2500, 500)}${NL4}</activity>`

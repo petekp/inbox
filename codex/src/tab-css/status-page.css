@@ -155,7 +155,10 @@
 .goal-proposed > * {
   padding: var(--status-row-pad) 0;
 }
-.status-page .content.changed > :first-child {
+/* A changed milestone's name, bold without the gap and stall word after it. */
+.status-page .content.changed > .clamp:first-child,
+.status-page .content.changed > :first-child .head,
+.status-page .content.changed > :first-child .last {
   font-weight: 600;
 }
 /* "Other work" at the text column, then a solid rule to the tab's edge. */

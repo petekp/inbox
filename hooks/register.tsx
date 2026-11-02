@@ -3277,6 +3277,7 @@ export const register: Register = on => {
         pal,
         Input,
         typing,
+        drafts,
         look,
         now,
         isAgeInSide,

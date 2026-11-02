@@ -200,13 +200,38 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
     const label = `${row.text} `
 
     return [
+      '',
       `${' '.repeat(PAGE_TEXT_AT)}${s.dim(label + '─'.repeat(Math.max(4, pageRuleCells(width) - cellWidth(label))))}`,
     ]
   }
-  if (row.kind === 'counts')
-    return [
-      ' '.repeat(textAt) +
-        row.counts.map(c => feedbackPaint(c.tone, s)(c.mark) + s.dim(` ${c.text}`)).join(s.dim(STALL_GAP)),
-    ]
+  if (row.kind === 'counts') return countLines(row.counts, textAt, width, s)
   return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim)
+}
+
+/**
+ * Other work's counts, each mark in its tone with its count, joined by `STALL_GAP`. A count that does not fit starts the
+ * next line without the gap, so a count stays with its mark.
+ */
+function countLines(
+  counts: (StatusRow & { kind: 'counts' })['counts'],
+  textAt: number,
+  width: number,
+  s: Style,
+): string[] {
+  const room = Math.max(1, width - textAt)
+  const gap = { cells: cellWidth(STALL_GAP), text: s.dim(STALL_GAP) }
+  const lines: { cells: number; text: string }[] = []
+  for (const c of counts) {
+    const count = {
+      cells: cellWidth(`${c.mark} ${c.text}`),
+      text: feedbackPaint(c.tone, s)(c.mark) + s.dim(` ${c.text}`),
+    }
+    const line = lines.at(-1)
+    if (line && line.cells + gap.cells + count.cells <= room) {
+      line.cells += gap.cells + count.cells
+      line.text += gap.text + count.text
+    } else lines.push(count)
+  }
+
+  return lines.map(l => ' '.repeat(textAt) + l.text)
 }

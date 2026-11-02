@@ -3631,7 +3631,7 @@ function statusPrompt(input, ex) {
 }
 function statusMidTurnPrompt(input, turn) {
   return [
-    'The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes. Where it stands says what works so far and what is left, never what the agent is doing: "CSV export works, PDF not started", not "export edits underway" or "writing the PDF export".',
+    'The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes. Where it stands says what works so far and what is left, never what the agent is doing: "CSV export works, PDF not started", not "export edits underway" or "writing the PDF export". When a piece has started and nothing in it works yet, say that: "PDF export started, not working yet", not "PDF edits begun, untested".',
     ...statusBlocks(input),
     `<person>${NL4}${clipMiddle(personText(turn.person, turn.trigger), 4e3, 1500)}${NL4}</person>`,
     `<activity>${NL4}${clipMiddle(turn.activity.join(NL4), 2500, 500)}${NL4}</activity>`

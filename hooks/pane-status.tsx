@@ -138,13 +138,13 @@ export function paneStatus(
       </Box>
     )
   }
+  /** The space above a labeled rule. The terminal draws whole lines, so its space is a blank line. */
+  const gap = (key: string) => <Box key={key} height={look === 'desktop' ? LOOK_GAP_PT / DESKTOP_LINE_PT : 1} />
   /**
    * The look line: "Last seen" in the middle of a dashed rule that spans what the rule above a row spans, with space
    * above it, and below it unless it ends the list. At `depth` it starts that many steps in, as the rows beside it do.
    */
   const statusLookLine = (id: string, text: string, isLast: boolean, depth: number) => {
-    // The terminal draws whole lines, so its space is a blank line.
-    const gap = (key: string) => <Box key={key} height={look === 'desktop' ? LOOK_GAP_PT / DESKTOP_LINE_PT : 1} />
     const label = ` ${text} `
     const fill = Math.max(4, statusRuleCells - markWidth * depth - cellWidth(label))
     const before = Math.floor(fill / 2)
@@ -176,28 +176,26 @@ export function paneStatus(
       </Box>
     )
   }
-  /** The rule that starts Other work: its name, then a solid rule to the end of the list's columns. */
-  const statusPartLine = (id: string, text: string) =>
-    look === 'desktop' ? (
-      <Box
-        key={`status-${id}`}
-        flexDirection="row"
-        alignItems="center"
-        marginLeft={desktopStatusRuleLeft}
-        paddingY={statusFrameEdge}
-      >
-        <Box flexShrink={0} paddingRight={1}>
-          <Text color={pal.muted}>{text}</Text>
+  /** Other work's line: the space above it, its name, then a solid rule to the end of the list's columns. */
+  const statusPartLine = (id: string, text: string) => (
+    <Box key={`status-${id}`} flexDirection="column">
+      {gap('part-above')}
+      {look === 'desktop' ? (
+        <Box flexDirection="row" alignItems="center" marginLeft={desktopStatusRuleLeft} paddingY={statusFrameEdge}>
+          <Box flexShrink={0} paddingRight={1}>
+            <Text color={pal.muted}>{text}</Text>
+          </Box>
+          <Box flexGrow={1} height={DESKTOP_HAIR_LINES} backgroundColor={pal.divider} />
         </Box>
-        <Box flexGrow={1} height={DESKTOP_HAIR_LINES} backgroundColor={pal.divider} />
-      </Box>
-    ) : (
-      <Box key={`status-${id}`} flexDirection="row">
-        <Box width={statusRuleAt} flexShrink={0} />
-        <Text color={pal.muted}>{`${text} `}</Text>
-        <Text color={pal.divider}>{'─'.repeat(Math.max(4, statusRuleCells - cellWidth(text) - 1))}</Text>
-      </Box>
-    )
+      ) : (
+        <Box flexDirection="row">
+          <Box width={statusRuleAt} flexShrink={0} />
+          <Text color={pal.muted}>{`${text} `}</Text>
+          <Text color={pal.divider}>{'─'.repeat(Math.max(4, statusRuleCells - cellWidth(text) - 1))}</Text>
+        </Box>
+      )}
+    </Box>
+  )
   /** One line of the Status tab's list: a mark and its text, `depth` steps in. Each step sits under the text of the row it hangs from. */
   const statusRowLine = ({
     key,
