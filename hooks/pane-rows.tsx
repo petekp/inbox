@@ -1,4 +1,4 @@
-import { desktopTextPt } from './desktop-metrics'
+import { DESKTOP_BUTTON_EXTRA_PT, desktopLines, desktopTextPt } from './desktop-metrics'
 import { isStatusUnderActions } from './feedback'
 import { paneState } from './mod-state'
 import type { PaneBase, PaneClient, PaneHandlers, Row } from './pane-context'
@@ -9,9 +9,11 @@ import type { PaneRowLines } from './pane-row-lines'
 import { settledScrollKey } from './pane-selection'
 import {
   DESKTOP_CELL_PT,
+  DESKTOP_FIELD_PT,
   DESKTOP_LINE_PT,
   DESKTOP_MARK_CELLS,
   DESKTOP_REPLY_ROWS,
+  fieldRows,
   FRAME_INSET_PT,
   REPLY_ROWS,
   SELECTED_GAP_PT,
@@ -20,7 +22,7 @@ import {
 } from './pane-sizes'
 import { DOT, ROW_COPY, shownOptionDescriptions } from './rows'
 import { lineCount, SELECTION_BAR, type TreePos } from './terminal-text'
-import { clipLabel } from './text'
+import { cellWidth, clipLabel } from './text'
 
 export function paneRows(
   {
@@ -34,6 +36,7 @@ export function paneRows(
     pal,
     Input,
     typing,
+    drafts,
     look,
     now,
     isAgeInSide,
@@ -75,6 +78,7 @@ export function paneRows(
       | 'pal'
       | 'Input'
       | 'typing'
+      | 'drafts'
       | 'look'
       | 'now'
       | 'isAgeInSide'
@@ -141,15 +145,28 @@ export function paneRows(
     }
     const { keys, more } = isSelected ? rowActions(row) : { keys: [], more: [] }
     const isTyping = Input !== null && !!row.typeHint && typing === row.id
+    const textWidth = listColumns - 1 - columns.textAt
+    const submitLabel = look === 'desktop' ? ROW_COPY.send : 'send'
+    /** The terminal draws `⏎` and the submit label beside the field. */
+    const terminalFieldColumns = textWidth - cellWidth(`⏎ ${submitLabel}`) - 1
+    /** The desktop field's Box shrinks it below its own width when the row cannot also hold its Send button. */
+    const desktopFieldPt = Math.min(
+      DESKTOP_FIELD_PT,
+      desktopRowTextPt - desktopTextPt(submitLabel) - DESKTOP_BUTTON_EXTRA_PT,
+    )
+    const fieldRowCount = (text: string) =>
+      look === 'desktop'
+        ? fieldRows(text, line => desktopLines(line, desktopFieldPt).length, DESKTOP_REPLY_ROWS)
+        : fieldRows(text, line => lineCount(line, terminalFieldColumns), REPLY_ROWS)
     const field =
       Input && isTyping ? (
         <Input
           key={fieldKey(row.id)}
           placeholder={row.typeHint}
           {...(openFields.get(row.id)?.seed ? { value: openFields.get(row.id)?.seed } : {})}
-          submitLabel={look === 'desktop' ? ROW_COPY.send : 'send'}
+          submitLabel={submitLabel}
           autoFocus
-          {...(look === 'terminal' ? { rows: REPLY_ROWS } : look === 'desktop' ? { rows: DESKTOP_REPLY_ROWS } : {})}
+          rows={fieldRowCount(drafts[row.id]?.text ?? openFields.get(row.id)?.seed ?? '')}
           onInput={(value: string) =>
             void updateDrafts(d => ({ ...d, [row.id]: { text: value, since: d[row.id]?.since ?? now } }))
           }
@@ -165,7 +182,6 @@ export function paneRows(
       ...(isTyping && paneState.fieldWithoutKeys === row.id ? [{ text: ROW_COPY.clickField, color: pal.muted }] : []),
     ]
 
-    const textWidth = listColumns - 1 - columns.textAt
     const titleWidth = textWidth - TERMINAL_SIDE_CELLS
     const fitsTitleLine = (text: string) =>
       look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt : text.length <= titleWidth
