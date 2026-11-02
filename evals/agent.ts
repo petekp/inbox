@@ -26,6 +26,7 @@ import {
   writesOnlyUnder,
 } from './agent-cli'
 import { codexCli } from './codex-cli'
+import { assertCodexOffersOnlyProbe, assertCodexUsedOnlyProbe, CODEX_ISOLATION_CONFIG, codexEnv } from './codex-isolation'
 import {
   earlierRuns,
   finish,
@@ -116,6 +117,23 @@ async function runClaude(c: Case): Promise<Outcome> {
   }
 }
 
+/**
+ * The whole environment of a Claude run: the sign-in's variables and nothing of the runner's own session, whose
+ * variables load its plugins, such as the real inbox, into the run. Claude reads its sign-in from the keychain of `USER`.
+ */
+function claudeEnv(): NodeJS.ProcessEnv {
+  const signIn = ['CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']
+  const kept = Object.fromEntries(signIn.flatMap(k => (process.env[k] ? [[k, process.env[k]]] : [])))
+
+  return {
+    PATH: process.env.PATH,
+    HOME: process.env.HOME,
+    USER: process.env.USER,
+    ...kept,
+    CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH: String(MAX_TOOL_DESCRIPTION),
+  }
+}
+
 async function claudeIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome> {
   const config = join(s.dir, 'mcp.json')
   writeFileSync(config, JSON.stringify({ mcpServers: { [PROBE]: { command: process.execPath, args: s.serverArgs } } }))
@@ -142,7 +160,7 @@ async function claudeIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome
     ],
     {
       cwd: s.work,
-      env: { ...process.env, CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH: String(MAX_TOOL_DESCRIPTION) },
+      env: claudeEnv(),
       input: message(c, CLAUDE_CODE),
     },
   )
@@ -187,7 +205,7 @@ async function claudeIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome
 function codexHome(s: ReturnType<typeof sandbox>): string {
   const home = join(s.dir, 'codex-home')
   mkdirSync(home)
-  // Only the sign-in: the runner's own AGENTS.md would reach the agent.
+  // Only the sign-in: the runner's own AGENTS.md, rules and installed plugins would reach the agent.
   const auth = join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'auth.json')
   if (existsSync(auth)) symlinkSync(auth, join(home, 'auth.json'))
   writeFileSync(
@@ -200,6 +218,7 @@ function codexHome(s: ReturnType<typeof sandbox>): string {
       `command = ${tomlString(process.execPath)}`,
       `args = ${JSON.stringify(s.serverArgs)}`,
       `default_tools_approval_mode = "approve"`,
+      ...CODEX_ISOLATION_CONFIG,
       '',
     ].join('\n'),
   )
@@ -232,9 +251,10 @@ async function codexIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome>
       s.work,
       message(c, CODEX),
     ],
-    { cwd: s.work, env: { ...process.env, CODEX_HOME: home } },
+    { cwd: s.work, env: codexEnv(s.dir, home) },
   )
   const events = lines(r.stdout)
+  assertCodexUsedOnlyProbe(events)
   const reply = events
     .filter(e => e.type === 'item.completed' && e.item?.type === 'agent_message')
     .map(e => e.item.text as string)
@@ -370,19 +390,14 @@ function job(agent: Agent, c: Case, n: number) {
   return { agent, name: c.name, run: n, requested: REQUESTED[agent] }
 }
 
-async function assertNoInboxServer() {
+async function assertOnlyCodexProbe() {
   if (!agents.includes('codex')) return
   const probe = sandbox({ name: 'preflight', about: '', prompt: '', checks: [] }, 'codex')
-  const home = codexHome(probe)
-  const r = await exec([codexCli, 'mcp', 'list'], { cwd: probe.work, env: { ...process.env, CODEX_HOME: home } })
-  const names = r.stdout
-    .split('\n')
-    .slice(1)
-    .map(l => l.split(/\s+/)[0])
-    .filter(Boolean)
-  if (r.code !== 0 || names.join() !== PROBE)
-    throw new IsolationError(`Codex's MCP servers are not just ${PROBE}:\n${r.stdout}${r.stderr}`)
-  rmSync(probe.dir, { recursive: true, force: true })
+  try {
+    await assertCodexOffersOnlyProbe(codexCli, probe.work, codexEnv(probe.dir, codexHome(probe)))
+  } finally {
+    rmSync(probe.dir, { recursive: true, force: true })
+  }
 }
 
 /** One trivial omp run, which fails when the session offers any tool besides the probe's, or any MCP server's. */
@@ -424,7 +439,7 @@ const about = provenance(
 )
 const path = resultsPath(values.out, about)
 const firstRuns = earlierRuns<Result>(values.with, about, path)
-const preflight = await Promise.all([assertNoInboxServer(), assertOnlyOmpProbeSession()]).then(
+const preflight = await Promise.all([assertOnlyCodexProbe(), assertOnlyOmpProbeSession()]).then(
   () => null,
   (e: unknown) => `preflight: ${String(e)}`,
 )
