@@ -228,7 +228,7 @@ import {
   withoutRowActions,
 } from './mod-sessions'
 import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
-import { changeSaved, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
+import { changeSaved, dropHeld, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
 import { paneAskRows, paneAskTabs } from './pane-asks'
 import { paneRowKeys } from './pane-row-keys'
 import { paneRowLines } from './pane-row-lines'
@@ -573,6 +573,7 @@ function saveEngine($: EngineInterface): SaveEngine {
     },
     sleep: ms => $.clock.sleep(ms),
     now: () => $.clock.now(),
+    after: (ms, fn) => $.clock.after(ms, fn),
     log: text => $.ui.log(text, { to: 'debug' }),
   }
 }
@@ -2127,6 +2128,7 @@ async function applyConversation(
   sessionState.stopGeneration++
   sessionState.resuming = null
   conversation.id = id
+  dropHeld(id)
   conversation.root = sessionRoot
   paneState.recordedRows = null
   sessionState.isReadingAgain = false
