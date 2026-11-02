@@ -43,7 +43,7 @@ test('a question Claude closes while the person types an answer stays in place w
   expect(await replyField(pane, 'i2')).toBeUndefined()
   expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
   expect(await pane.find({ text: /^Replied$/ })).toBeDefined()
-  expect((await pane.find({ key: 'settled-i2' }))?.text).toMatch(/✗\s*Replied/)
+  expect((await pane.find({ key: 'settled-i2' }))?.text).toMatch(/⊘\s*Replied/)
   await clock.advance(9000)
   expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
   await $.prompt.submit({ text: 'what is next?', wait: false, origin: { kind: 'composer' } })
@@ -52,7 +52,7 @@ test('a question Claude closes while the person types an answer stays in place w
   expect(await pane.find({ key: 'settled-i2' })).toBeUndefined()
   expect(await pane.find({ text: /1 closed/ })).toBeDefined()
   await pane.press({ key: 'fold-question' })
-  expect((await pane.find({ key: 'closed-i2' }))?.text).toMatch(/✗\s*Closed\sby\sClaude/)
+  expect((await pane.find({ key: 'closed-i2' }))?.text).toMatch(/⊘\s*Closed\sby\sClaude/)
 })
 
 test('a held row and the rows that closed while the tab shows stay in place, and the reply still sends, after more items close than the Closed list keeps', async ($, on) => {

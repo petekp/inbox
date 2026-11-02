@@ -28,6 +28,7 @@ import { cellWidth } from './text'
 
 export function paneStatus(
   {
+    e,
     listColumns,
     look,
     Box,
@@ -61,6 +62,7 @@ export function paneStatus(
     statusUnfolded,
   }: Pick<
     PaneBase,
+    | 'e'
     | 'listColumns'
     | 'look'
     | 'Box'
@@ -279,6 +281,7 @@ export function paneStatus(
     }))
   const { goalAbove, setGoal, setGoalBare, markRun } = paneStatusGoal(
     {
+      e,
       look,
       Box,
       Text,

@@ -45,6 +45,7 @@ type StatusRowLine = (line: {
 /** The proposal, the goal and its milestones, and the goal's text field, in the terminal and desktop looks. */
 export function paneStatusGoal(
   {
+    e,
     look,
     Box,
     Text,
@@ -65,7 +66,7 @@ export function paneStatusGoal(
     desktopFrame,
   }: Pick<
     PaneBase,
-    'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'drafts' | 'listColumns' | 'now' | 'statusKeyRow'
+    'e' | 'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'drafts' | 'listColumns' | 'now' | 'statusKeyRow'
   > &
     Pick<PaneStatusLines, 'statusMarkAt' | 'statusNameLine' | 'statusPageText'> &
     Pick<PaneRowLines, 'markGlyph' | 'markWidth'> &
@@ -126,32 +127,47 @@ export function paneStatusGoal(
   const submitLabel = look === 'desktop' ? GOAL_FIELD.submit : 'set'
   /** The terminal draws `⏎` and the submit label beside the field. */
   const terminalFieldColumns = listColumns - statusMarkAt - cellWidth(`⏎ ${submitLabel}`) - 1
-  const fieldRowCount = (text: string) =>
-    look === 'desktop'
-      ? fieldRows(text, line => desktopLines(line, DESKTOP_FIELD_PT).length, DESKTOP_REPLY_ROWS)
-      : fieldRows(text, line => lineCount(line, terminalFieldColumns), REPLY_ROWS)
+  /** A terminal field that passes one row takes all `REPLY_ROWS`, as the reply field does in `paneRows`. */
+  const fieldRowCount = (text: string) => {
+    if (look === 'desktop')
+      return fieldRows(text, line => desktopLines(line, DESKTOP_FIELD_PT).length, DESKTOP_REPLY_ROWS)
+    const fitsOneRow = fieldRows(text, line => lineCount(line, terminalFieldColumns), REPLY_ROWS) === 1
+    return fitsOneRow ? 1 : REPLY_ROWS
+  }
+  const goalInput = (Field: NonNullable<typeof Input>) => (
+    <Field
+      key={fieldKey(GOAL_KEYS_ID)}
+      placeholder={GOAL_FIELD.placeholder}
+      {...(openFields.get(GOAL_KEYS_ID)?.seed ? { value: openFields.get(GOAL_KEYS_ID)?.seed } : {})}
+      submitLabel={submitLabel}
+      autoFocus
+      rows={fieldRowCount(drafts[GOAL_KEYS_ID]?.text ?? openFields.get(GOAL_KEYS_ID)?.seed ?? '')}
+      onInput={(value: string) =>
+        void updateDrafts(d => ({
+          ...d,
+          [GOAL_KEYS_ID]: { text: value, since: d[GOAL_KEYS_ID]?.since ?? now },
+        }))
+      }
+      onSubmit={(value: string, submit: { surface: UiPressArgument['surface'] }) =>
+        sendTyped(GOAL_KEYS_ID, value, submit.surface)
+      }
+    />
+  )
   /**
-   * The goal's text field, as many rows tall as its text takes. Submitting sets the typed goal. When the prompt kept the
+   * The goal's text field, as many rows tall as `fieldRowCount` gives. Submitting sets the typed goal. When the prompt kept the
    * keys, a line under it says to click it.
    */
   const fieldInput = () =>
     Input === null
       ? []
       : [
-          <Input
-            key={fieldKey(GOAL_KEYS_ID)}
-            placeholder={GOAL_FIELD.placeholder}
-            {...(openFields.get(GOAL_KEYS_ID)?.seed ? { value: openFields.get(GOAL_KEYS_ID)?.seed } : {})}
-            submitLabel={submitLabel}
-            autoFocus
-            rows={fieldRowCount(drafts[GOAL_KEYS_ID]?.text ?? openFields.get(GOAL_KEYS_ID)?.seed ?? '')}
-            onInput={(value: string) =>
-              void updateDrafts(d => ({ ...d, [GOAL_KEYS_ID]: { text: value, since: d[GOAL_KEYS_ID]?.since ?? now } }))
-            }
-            onSubmit={(value: string, submit: { surface: UiPressArgument['surface'] }) =>
-              sendTyped(GOAL_KEYS_ID, value, submit.surface)
-            }
-          />,
+          look === 'terminal' ? (
+            <Box key="goal-field" width={e.props.bodyColumns} flexShrink={0}>
+              {goalInput(Input)}
+            </Box>
+          ) : (
+            goalInput(Input)
+          ),
           ...(paneState.fieldWithoutKeys === GOAL_KEYS_ID ? [muted('goal-field-click', ROW_COPY.clickField)] : []),
         ]
   const fieldKeys = () =>

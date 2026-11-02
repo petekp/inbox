@@ -130,7 +130,8 @@ Type `/inbox` in Claude Code or omp, or open the Inbox tab in the ChatGPT app. T
 inbox has three tabs: Asks, Finds and PRs. A build that follows the `next`
 branch also shows a Status tab before them: what the session is focused on now, each part
 of the work with how long ago it changed, the subagents and other work running
-under each part, and a line where you last looked.
+under each part, and a line where you last looked. You can set a goal there, and
+the page then groups the work under the goal's milestones.
 
 ### Asks
 
@@ -153,7 +154,8 @@ reads "No comparison came back", and you can press Compare again.
 
 A task is something like signing in or adding an API key. It comes with
 buttons for its steps, such as copying a command or opening a file. In Claude
-Code, running the command with `!` closes the task once it succeeds.
+Code, running the command with `!` closes the task once it succeeds. Dismiss
+drops a task you won't do, without a message to the agent.
 
 ### Finds
 
@@ -171,7 +173,13 @@ Pull requests from this session and your current branch. Each one is marked
 Blocked, Ready or Waiting, and lists what blocks it: review comments waiting
 on you, failing checks and merge conflicts. Buttons hand the work to the
 agent: address one review comment or all of them, draft a reply, fix a
-failing check, resolve conflicts, or merge.
+failing check, resolve conflicts, or merge. Fix and Resolve conflicts show only
+while GitHub still shows the problem. Dismiss merged clears every merged PR at
+once, except your current branch's own.
+
+Your agent can also put the PRs in an order, such as which to merge first. The
+tab then lists them first, numbered, under what the order is for and why. When
+a ranked PR changes, the tab says so and offers Rank again.
 
 ### It keeps itself up to date
 
@@ -187,7 +195,9 @@ the agent replies, then "✓ Discussed".
 
 ### In each app
 
-- **Terminal:** each action shows the letter that runs it. `1` to `4`
+Help lists the keys and what each mark means.
+
+- **Terminal:** each action shows the letter that runs it. The number keys
   switch tabs, and `j` and `k` move up and down. ctrl+x tab moves focus from
   the prompt to the line above it, then to the panel, then back to the prompt.
 - **Claude desktop app:** you click. Type `/inbox` to open the pane.
@@ -196,7 +206,7 @@ the agent replies, then "✓ Discussed".
 - **omp:** `/inbox` opens the panel over the conversation, and esc closes it.
   Each action shows the letter that runs it, and Reply is `r`. Arrow keys move
   between rows and between a row's buttons, and enter presses the focused
-  button. Tab, or `1` to `4`, switch tabs.
+  button. Tab, or the number keys, switch tabs.
 
 In Claude Code, a line above your prompt counts what needs you and the
 findings waiting, with a button that opens the panel. When Claude stops on an
