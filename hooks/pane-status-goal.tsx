@@ -6,7 +6,17 @@ import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
 import { paneState } from './mod-state'
-import { DESKTOP_MARK_CELLS, DESKTOP_REPLY_ROWS, REPLY_ROWS, STATUS_PAD_Y } from './pane-sizes'
+import {
+  DESKTOP_FIELD_PT,
+  DESKTOP_MARK_CELLS,
+  DESKTOP_REPLY_ROWS,
+  fieldRows,
+  REPLY_ROWS,
+  STATUS_PAD_Y,
+} from './pane-sizes'
+import { desktopLines } from './desktop-metrics'
+import { lineCount } from './terminal-text'
+import { cellWidth } from './text'
 import type { PaneStatusLines } from './pane-status-lines'
 import type { StatusTone } from './help'
 import type { MilestoneRow, ProposalBlock } from './status-goal-page'
@@ -41,6 +51,8 @@ export function paneStatusGoal(
     pal,
     Input,
     typing,
+    drafts,
+    listColumns,
     now,
     statusKeyRow,
     statusMarkAt,
@@ -51,7 +63,10 @@ export function paneStatusGoal(
     keyRow,
     textKey,
     desktopFrame,
-  }: Pick<PaneBase, 'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'now' | 'statusKeyRow'> &
+  }: Pick<
+    PaneBase,
+    'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'drafts' | 'listColumns' | 'now' | 'statusKeyRow'
+  > &
     Pick<PaneStatusLines, 'statusMarkAt' | 'statusNameLine' | 'statusPageText'> &
     Pick<PaneRowLines, 'markGlyph' | 'markWidth'> &
     Pick<PaneRowKeys, 'keyRow' | 'textKey'> &
@@ -108,7 +123,17 @@ export function paneStatusGoal(
     kind: 'view',
     onPress: () => void updateTyping(t => (t === GOAL_KEYS_ID ? null : t)),
   }
-  /** The goal's text field. Submitting sets the typed goal. When the prompt kept the keys, a line under it says to click it. */
+  const submitLabel = look === 'desktop' ? GOAL_FIELD.submit : 'set'
+  /** The terminal draws `⏎` and the submit label beside the field. */
+  const terminalFieldColumns = listColumns - statusMarkAt - cellWidth(`⏎ ${submitLabel}`) - 1
+  const fieldRowCount = (text: string) =>
+    look === 'desktop'
+      ? fieldRows(text, line => desktopLines(line, DESKTOP_FIELD_PT).length, DESKTOP_REPLY_ROWS)
+      : fieldRows(text, line => lineCount(line, terminalFieldColumns), REPLY_ROWS)
+  /**
+   * The goal's text field, as many rows tall as its text takes. Submitting sets the typed goal. When the prompt kept the
+   * keys, a line under it says to click it.
+   */
   const fieldInput = () =>
     Input === null
       ? []
@@ -117,9 +142,9 @@ export function paneStatusGoal(
             key={fieldKey(GOAL_KEYS_ID)}
             placeholder={GOAL_FIELD.placeholder}
             {...(openFields.get(GOAL_KEYS_ID)?.seed ? { value: openFields.get(GOAL_KEYS_ID)?.seed } : {})}
-            submitLabel={look === 'desktop' ? GOAL_FIELD.submit : 'set'}
+            submitLabel={submitLabel}
             autoFocus
-            {...(look === 'terminal' ? { rows: REPLY_ROWS } : look === 'desktop' ? { rows: DESKTOP_REPLY_ROWS } : {})}
+            rows={fieldRowCount(drafts[GOAL_KEYS_ID]?.text ?? openFields.get(GOAL_KEYS_ID)?.seed ?? '')}
             onInput={(value: string) =>
               void updateDrafts(d => ({ ...d, [GOAL_KEYS_ID]: { text: value, since: d[GOAL_KEYS_ID]?.since ?? now } }))
             }

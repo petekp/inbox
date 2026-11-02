@@ -37,6 +37,7 @@ export function paneStatus(
     isInline,
     Input,
     typing,
+    drafts,
     now,
     statusMarkAt,
     statusFrameEdge,
@@ -56,7 +57,18 @@ export function paneStatus(
     section,
   }: Pick<
     PaneBase,
-    'listColumns' | 'look' | 'Box' | 'Text' | 'pal' | 'statusKeyRow' | 'view' | 'isInline' | 'Input' | 'typing' | 'now'
+    | 'listColumns'
+    | 'look'
+    | 'Box'
+    | 'Text'
+    | 'pal'
+    | 'statusKeyRow'
+    | 'view'
+    | 'isInline'
+    | 'Input'
+    | 'typing'
+    | 'drafts'
+    | 'now'
   > &
     Pick<
       PaneStatusLines,
@@ -253,6 +265,8 @@ export function paneStatus(
       pal,
       Input,
       typing,
+      drafts,
+      listColumns,
       now,
       statusKeyRow,
       statusMarkAt,
