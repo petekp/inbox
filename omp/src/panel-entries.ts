@@ -29,6 +29,7 @@ import { isDrawnInPlace, runningMark } from '../../hooks/timing'
 import { isRowTab } from '../../hooks/tabs'
 import { statusKeyRows } from '../../hooks/status-keys'
 import { goalAbove, setGoal } from './panel-goal'
+import { unfoldedRows } from '../../hooks/status-page'
 import type { StatusPage } from '../../hooks/status-page'
 import type { ShownTab } from '../../hooks/tabs'
 import { AGENT, STOP_ID, blankLine, doneAt, groupEntries, isGroupEmpty, prButtons, pressFeedback } from './panel-lines'
@@ -249,7 +250,7 @@ export const PAGE_TEXT_AT = PAGE_MARK_AT + 2
 /** Where the mark of a child under a subject sits: after the tree's arm, which starts under the subject's mark. */
 export const PAGE_CHILD_AT = PAGE_MARK_AT + 3
 
-function pageEntries(page: StatusPage, typing: string | null): Entry[] {
+function pageEntries(page: StatusPage, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
   const blank: Entry = { kind: 'note', text: '' }
   if (page.isEmpty)
     return [
@@ -265,10 +266,10 @@ function pageEntries(page: StatusPage, typing: string | null): Entry[] {
           ...(description ? [{ kind: 'note' as const, text: description, indent: PAGE_MARK_AT }] : []),
         ]
       : []
-  const above = goalAbove(page, typing)
+  const above = goalAbove(page, typing, isUnfolded)
   const under = [...head, ...setGoal(page, typing)]
   const top = above.length > 0 && under.length > 0 ? [...above, blank, ...under] : [...above, ...under]
-  const rows = page.rows.map((row): Entry => ({ kind: 'page', row }))
+  const rows = unfoldedRows(page.rows, isUnfolded).map((row): Entry => ({ kind: 'page', row }))
 
   return top.length > 0 && rows.length > 0 ? [...top, blank, ...rows] : [...top, ...rows]
 }
@@ -289,7 +290,7 @@ function helpEntries(screen: PanelScreen, tab: ShownTab): Entry[] {
 
 export function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: number): Entry[] {
   if (ui.isHelpShown && tab === ui.tab) return helpEntries(screen, tab)
-  if (!isRowTab(tab)) return pageEntries(screen.view.statusPage, ui.typing)
+  if (!isRowTab(tab)) return pageEntries(screen.view.statusPage, ui.typing, id => ui.statusUnfolded.includes(id))
 
   return tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab)
 }

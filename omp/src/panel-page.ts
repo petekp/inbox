@@ -188,6 +188,13 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
 
     return withTree([line], markAt(row.depth - 1), arm.first, arm.rest, s)
   }
+  if (row.kind === 'done-fold') {
+    const chevron = d.ui.statusUnfolded.includes(row.id) ? '▾' : '▸'
+
+    return isSelected
+      ? pageLine(d, at, s.tone('accent', chevron), row.text, s.bold)
+      : pageLine(d, at, s.dim(chevron), row.text, s.dim)
+  }
   if (row.kind === 'look') return lookLines(row, width, s)
   if (row.kind === 'part') {
     const label = `${row.text} `

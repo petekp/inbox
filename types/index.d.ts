@@ -625,7 +625,10 @@ declare module 'claude-code' {
       notes: Record<string, RowNote>
       /** The Asks groups and the kinds of finding whose closed items show. Each starts folded. */
       unfolded: FoldKind[]
-      foldHover: FoldKind | null
+      /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
+      statusUnfolded: string[]
+      /** The fold under the pointer on desktop: an Asks fold's kind, or `status-` and a Status fold's id. */
+      foldHover: string | null
       /** The questions whose every option shows, by the row's id. */
       optionsShown: string[]
       /** Whether the pane shows its Help page in place of the shown tab's body. */

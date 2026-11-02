@@ -55,6 +55,7 @@ export type FeatureId =
   | 'help-page'
   | 'status-view-ask'
   | 'status-goal'
+  | 'status-done-fold'
 
 type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -123,6 +124,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'status-view-ask': { kind: 'full' },
       'status-goal': { kind: 'full' },
+      'status-done-fold': { kind: 'full' },
     },
   },
   codex: {
@@ -245,6 +247,11 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           "The goal's buttons take clicks only, as View does: the Codex Status has no row selection and is used by clicking.",
       },
+      'status-done-fold': {
+        kind: 'different',
+        reason:
+          'A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking.',
+      },
     },
   },
   omp: {
@@ -323,6 +330,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'status-view-ask': { kind: 'full' },
       'status-goal': { kind: 'full' },
+      'status-done-fold': { kind: 'full' },
     },
   },
 }

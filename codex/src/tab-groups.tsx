@@ -115,7 +115,7 @@ function GroupEnd({
             </div>
           ) : null}
           {total > 0 ? (
-            <button type="button" class="fold" data-fold={group} onClick={() => toggleFold(group)}>
+            <button type="button" class="fold" data-fold={group} onClick={() => toggleFold(group, unfolded)}>
               <Icon name={isUnfolded ? 'down' : 'right'} />
               {foldLabel(total)}
             </button>

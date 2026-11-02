@@ -5,13 +5,15 @@ import type { StatusPage, StatusRow } from './status-page'
 
 /**
  * A press on the Status page. `show-ask` opens Asks with that ask selected. `type-goal` opens Reply's field for the
- * goal, prefilled with `text`. `use-goal` and `decline-goal` answer the proposal. None sends a message.
+ * goal, prefilled with `text`. `use-goal` and `decline-goal` answer the proposal. `toggle-fold` unfolds a done fold, or
+ * folds it again, in the look that drew it. None sends a message.
  */
 export type StatusPress =
   | { action: 'show-ask'; askId: string }
   | { action: 'type-goal'; text: string }
   | { action: 'use-goal' }
   | { action: 'decline-goal' }
+  | { action: 'toggle-fold'; foldId: string }
 
 export type StatusKey = { press: StatusPress; label: string; hotkey: string; kind: PressKind; emphasis: ActionEmphasis }
 
@@ -35,8 +37,22 @@ function viewAsk(ask: { id: string; kind: Item['kind'] }): StatusKey {
   }
 }
 
-/** A Status row's buttons, in the order every look draws them. A row with none takes no press. */
+/**
+ * A Status row's buttons, in the order every look draws them. A row with none takes no press. A done fold's one key is
+ * the fold itself, which each look draws as its fold line rather than as a button.
+ */
 export function statusKeyPlan(row: StatusRow): StatusKey[] {
+  if (row.kind === 'done-fold')
+    return [
+      {
+        press: { action: 'toggle-fold', foldId: row.id },
+        label: row.text,
+        hotkey: 'f',
+        kind: 'view',
+        emphasis: 'quiet',
+      },
+    ]
+
   return row.kind === 'subject' && row.ask !== null ? [viewAsk(row.ask)] : []
 }
 
@@ -120,13 +136,21 @@ export function statusKeyRows(page: StatusPage): StatusKeyTarget[] {
 
 /**
  * The target whose keys work: the selected one while it still has buttons, else the first that opens an ask, else the
- * first that has buttons. An ask holds up work and a missing goal does not, so View wins over Set a goal.
+ * first that is not a done fold, else the first. An ask holds up work and a missing goal does not, so View wins over
+ * Set a goal. A done fold holds up nothing, so Set next goal wins over a milestone's fold above it.
  */
 export function statusSelected(page: StatusPage, selectedId: string | null): StatusKeyTarget | null {
   const targets = statusKeyRows(page)
   const opensAsk = (t: StatusKeyTarget) => t.keys.some(k => k.press.action === 'show-ask')
+  const isFold = (t: StatusKeyTarget) => t.keys.some(k => k.press.action === 'toggle-fold')
 
-  return targets.find(t => t.id === selectedId) ?? targets.find(opensAsk) ?? targets[0] ?? null
+  return (
+    targets.find(t => t.id === selectedId) ??
+    targets.find(opensAsk) ??
+    targets.find(t => !isFold(t)) ??
+    targets[0] ??
+    null
+  )
 }
 
 /** The goal's text field: its placeholder, and the label of the button that sets what it holds. */

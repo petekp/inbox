@@ -1365,11 +1365,10 @@ var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
 var COUNT_WORDS = {
   working: "working",
   "waits-on-other": "waiting",
-  queued: "queued",
-  done: "done"
+  queued: "queued"
 };
 function countsByMark(folded) {
-  return ["working", "waits-on-other", "queued", "done"].flatMap((status) => {
+  return ["working", "waits-on-other", "queued"].flatMap((status) => {
     const n = folded.filter((x) => x.status === status).length;
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
@@ -1518,6 +1517,15 @@ function statusPage(s, now) {
     ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
     ...partRows(top.shown, ctx, 0)
   ];
+  const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
+    {
+      kind: "done-fold",
+      id: `${prefix}done`,
+      depth,
+      text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
+      rows: ruledRows(partRows([...done].sort(pageOrder), { ...ctx, lookId: null }, depth + 1), false)
+    }
+  ];
   const foldRows = (prefix, p, depth) => [
     ...p.foldedOpen.length > 0 ? [
       {
@@ -1528,24 +1536,24 @@ function statusPage(s, now) {
         text: `${p.foldedOpen.length} more`
       }
     ] : [],
-    ...p.foldedDone.length > 0 ? [
-      {
-        kind: "fold",
-        id: `${prefix}done`,
-        depth,
-        mark: SUBJECT_MARKS.done.mark,
-        tone: "done",
-        text: `${p.foldedDone.length}${p.newClosed.some((x) => x.status === "done") ? " more" : ""} done`
-      }
-    ] : []
+    ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
   ];
   rows.push(...foldRows("", top, 0));
   if (otherShown.length > 0 || otherFolded.length > 0) {
     if (rows.at(-1)?.kind === "look") rows.pop();
     rows.push({ kind: "part", id: "other", depth: 0, text: OTHER_WORK });
     rows.push(...partRows(otherShown, { ...ctx, lookId: lookId("other-look") }, 0));
-    if (otherFolded.length > 0)
-      rows.push({ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFolded) });
+    const otherFoldedOpen = otherFolded.filter(isOpen);
+    if (otherFoldedOpen.length > 0)
+      rows.push({ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFoldedOpen) });
+    rows.push(
+      ...doneFold(
+        "other-",
+        otherFolded.filter((x) => x.status === "done"),
+        otherNewClosed,
+        0
+      )
+    );
   }
   const milestoneRows = (id, p) => ruledRows(
     [

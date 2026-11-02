@@ -187,7 +187,7 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
     '└ ● Review r2',
     '-- Last seen',
     '○ Docs: outline ready',
-    '── ✓ 1 done',
+    '── ▸ 1 done',
   ])
 })
 

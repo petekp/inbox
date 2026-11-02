@@ -10,16 +10,15 @@ export const CHILD_ROWS = 3
 const CHILD_MARK: { mark: string; tone: StatusTone } = { mark: SUBJECT_MARKS.working.mark, tone: null }
 
 /** The words a `counts` row gives each mark. */
-const COUNT_WORDS: Record<'working' | 'waits-on-other' | 'queued' | 'done', string> = {
+const COUNT_WORDS: Record<'working' | 'waits-on-other' | 'queued', string> = {
   working: 'working',
   'waits-on-other': 'waiting',
   queued: 'queued',
-  done: 'done',
 }
 
-/** Subjects folded into one count for each status, in the page's order of marks. */
+/** Open subjects folded into one count for each status, in the page's order of marks. */
 export function countsByMark(folded: Subject[]): StatusCount[] {
-  return (['working', 'waits-on-other', 'queued', 'done'] as const).flatMap(status => {
+  return (['working', 'waits-on-other', 'queued'] as const).flatMap(status => {
     const n = folded.filter(x => x.status === status).length
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }]
   })
@@ -149,4 +148,16 @@ export function ruledRows(rows: StatusRowParts[], isRuled: boolean): StatusRow[]
     isRuledAbove: isRuled && isItemAfterItem(r, rows[n - 1]),
     isLast: n === rows.length - 1,
   }))
+}
+
+/**
+ * `rows` as a look draws them: each done fold that `isUnfolded` names by id followed by the finished rows it holds. The
+ * last row drawn ends the list.
+ */
+export function unfoldedRows(rows: StatusRow[], isUnfolded: (id: string) => boolean): StatusRow[] {
+  return rows.flatMap(r =>
+    r.kind === 'done-fold' && isUnfolded(r.id)
+      ? [{ ...r, isLast: false }, ...r.rows.map((x, n) => ({ ...x, isLast: r.isLast && n === r.rows.length - 1 }))]
+      : [r],
+  )
 }

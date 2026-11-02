@@ -196,3 +196,10 @@
   display: flex;
   gap: 6px;
 }
+/* A done fold draws as the Closed fold does: its chevron in the mark column and its count at the text column. */
+.status-page .row.fold-row {
+  display: block;
+}
+.status-page .fold-row .fold {
+  margin: 0 0 0 -1px;
+}

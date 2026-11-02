@@ -1,9 +1,8 @@
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import { BANNER_GAP_PT, BANNER_PAD_Y_PT, LOOK_GAP_PT, STATUS_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
-import type { FoldGroup } from './arrivals'
 import { ENTER_MS, EXIT_MS, isMoving, MOVE_MS, ROW_STATE_MS } from './rows'
 import type { RowState } from './rows'
-import { tabState, unfolded, sending, entering, closingFolds, drawnRows, root, animations } from './tab-state'
+import { tabState, sending, entering, closingFolds, drawnRows, root, animations } from './tab-state'
 import { later, cancelTimer } from './tab-host'
 
 // The Codex app's own curves, from its bundled styles: --cubic-enter, --cubic-move and --cubic-exit.
@@ -147,28 +146,32 @@ function collapse(el: HTMLElement, from: Frame) {
   tween(el, from, { height: target, opacity: 1 }, { ...MOVE, fill: 'forwards' })
 }
 
-export function toggleFold(group: FoldGroup) {
-  const el = root.querySelector<HTMLElement>(`[data-motion="closed-${group}"]`)
-  if (!unfolded.has(group)) {
-    unfolded.add(group)
-    if (closingFolds.delete(group) && el) delete el.dataset.closing
-    else entering.add(`closed-${group}`)
+/**
+ * Unfolds or folds `id` in `shown`, and grows or shrinks the list drawn under `data-motion="closed-<motion>"`: an Asks
+ * group's closed rows, or a Status done fold's finished rows.
+ */
+export function toggleFold(id: string, shown: Set<string>, motion = id) {
+  const el = root.querySelector<HTMLElement>(`[data-motion="closed-${motion}"]`)
+  if (!shown.has(id)) {
+    shown.add(id)
+    if (closingFolds.delete(motion) && el) delete el.dataset.closing
+    else entering.add(`closed-${motion}`)
     tabState.draw()
     return
   }
-  unfolded.delete(group)
+  shown.delete(id)
   if (!el || reducedMotion.matches) {
     tabState.draw()
     return
   }
-  closingFolds.add(group)
+  closingFolds.add(motion)
   tabState.draw()
   el.dataset.closing = '1'
   const height = el.getBoundingClientRect().height
   for (const a of el.getAnimations()) a.cancel()
   tween(el, { height, opacity: 1 }, { height: 0, opacity: 0 }, EXIT)
   later(() => {
-    if (unfolded.has(group) || !closingFolds.delete(group)) return
+    if (shown.has(id) || !closingFolds.delete(motion)) return
     tabState.draw()
   }, EXIT_MS)
 }

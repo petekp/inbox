@@ -58,8 +58,8 @@ test('on a Status page taller than the panel, each ↑↓ press shows one more o
 test('on the Status page, a subject an open ask holds up draws View, named for the ask’s kind, under its text in the plan’s order, and only the selected row draws it focused and keyed', () => {
   const screen = goallessScreen()
   const page = screen.view.statusPage
-  const held = page.rows.filter(r => statusKeyPlan(r).length > 0)
-  expect(statusKeyRows(page).map(t => t.id)).toEqual(['goal', 's2', 's3'])
+  const held = page.rows.filter(r => r.kind === 'subject' && statusKeyPlan(r).length > 0)
+  expect(statusKeyRows(page).map(t => t.id)).toEqual(['goal', 's2', 's3', 'done'])
   const lines = text(screen, onPage).split('\n')
   const nameAt = (row: StatusRow) => lines.findIndex(l => l.includes(labelOf(row)))
   const buttonAt = (row: StatusRow) => lines.findIndex((l, n) => n > nameAt(row) && l.includes('View '))
@@ -80,7 +80,8 @@ test('on the Status page, a subject an open ask holds up draws View, named for t
   const moved = text(screen, second).split('\n')
   expect(moved[buttonAt(held[0]!)]).not.toContain('↵')
   expect(moved[buttonAt(held[1]!)]).toContain('↵ View question')
-  expect(keys(screen, second, 'j').selectedId).toBe('goal')
+  expect(keys(screen, second, 'j').selectedId).toBe('done')
+  expect(keys(screen, second, 'j', 'j').selectedId).toBe('goal')
   expect(keys(screen, onPage, 'k').selectedId).toBe('goal')
   expect(text(screen, onPage).split('\n').at(-1)).toContain('j k select')
   expect(text(unheldScreen(), onPage)).not.toContain('View ')
@@ -154,4 +155,25 @@ test('in a short panel, switching to the Status page scrolls its first selected 
   const lines = drawPanel(screen, page, 60, NOW, style, 14).lines.map(strip)
   expect(page.tab).toBe('overview')
   expect(lines.some(l => l.includes('↵ View'))).toBe(true)
+})
+
+test('on the Status page, j reaches the done fold after the rows with buttons, Enter lists its finished rows one step in under ▾, and f folds them again', () => {
+  const screen = goallessScreen()
+  const fold = screen.view.statusPage.rows.find(r => r.kind === 'done-fold')!
+  const finished = fold.kind === 'done-fold' ? fold.rows : []
+  const onFold = keys(screen, onPage, 'j', 'j')
+  expect(onFold.selectedId).toBe(fold.id)
+  const folded = text(screen, onFold).split('\n')
+  expect(folded.filter(l => l.includes(`▸ ${labelOf(fold)}`))).toHaveLength(1)
+  expect(finished.length).toBeGreaterThan(0)
+
+  const unfolded = keys(screen, onFold, 'enter')
+  const lines = text(screen, unfolded).split('\n')
+  const foldAt = lines.findIndex(l => l.includes(`▾ ${labelOf(fold)}`))
+  expect(foldAt).toBeGreaterThan(-1)
+  expect(lines.slice(foldAt + 1, foldAt + 1 + finished.length).map(l => l.trim())).toEqual(
+    finished.map(r => `✓ ${labelOf(r)}`),
+  )
+  expect(lines[foldAt + 1]!.indexOf('✓')).toBe(lines[foldAt]!.indexOf('▾') + 2)
+  expect(text(screen, keys(screen, unfolded, 'f'))).toBe(text(screen, onFold))
 })

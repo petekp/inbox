@@ -57,7 +57,7 @@ const lineAt = (lines: string[], s: string) => lines.findIndex(l => l.includes(s
 test('a proposed goal draws above the head with its milestones’ marks and its buttons in the plan’s order, selected first when no ask holds anything up, and no Set a goal while it shows', () => {
   const screen = proposing()
   const page = screen.view.statusPage
-  expect(statusKeyRows(page).map(t => t.id)).toEqual(['proposal'])
+  expect(statusKeyRows(page).map(t => t.id)).toEqual(['proposal', 'done'])
   const lines = text(screen, onPage).split('\n')
   const order = ['Proposed goal · from your message', 'Pilot ready to announce', '✓ Fixes built', '○ Announced']
   const at = order.map(s => lineAt(lines, s))
@@ -128,9 +128,9 @@ test('e on the goal’s Edit opens the field with the goal in it in place of the
   expect(text(screen, cancelled)).toContain('Goal · ↵ Edit')
 })
 
-test('Set a goal is the only button on a page with no goal and no held subject: it is selected and keyed, up and down still scroll, and s opens an empty goal field under the head', () => {
+test('Set a goal is the only button on a page with no goal and no held subject, and is selected ahead of the done fold: it is keyed, up and down still scroll, and s opens an empty goal field under the head', () => {
   const screen = screenWith({})
-  expect(statusKeyRows(screen.view.statusPage).map(t => t.id)).toEqual(['goal'])
+  expect(statusKeyRows(screen.view.statusPage).map(t => t.id)).toEqual(['goal', 'done'])
   expect(text(screen, onPage)).toContain('↵ Set a goal')
   expect(keys(screen, onPage, 'down').pageTop).toBe(1)
   const typing = keys(screen, onPage, 's')
@@ -139,7 +139,7 @@ test('Set a goal is the only button on a page with no goal and no held subject: 
   expect(lineAt(lines, 'An outcome to work toward:')).toBeGreaterThan(lineAt(lines, screen.view.statusPage.head!.title))
 })
 
-test('with a goal set, subjects that serve none of its milestones draw under the Other work rule, and the seen ones, done ones included, fold into a count by mark', () => {
+test('with a goal set, subjects that serve none of its milestones draw under the Other work rule, and the seen open ones fold into a count by mark, with the done ones in a done fold after it', () => {
   const s = demoState(NOW)
   const serves = Object.fromEntries(s.ledger.overview!.subjects.map(x => [x.id, 'none']))
   const screen = screenWith({
@@ -156,7 +156,11 @@ test('with a goal set, subjects that serve none of its milestones draw under the
   const rule = lines.find(l => l.includes('Other work'))!
   expect(rule).toMatch(/^ {3}Other work ─{4,}$/)
   expect(rule.length).toBeLessThanOrEqual(60)
-  expect(lines.find(l => l.includes('1 waiting'))).toBe('   ◌ 1 waiting · ✓ 2 done')
+  expect(lines.find(l => l.includes('1 waiting'))).toBe('   ◌ 1 waiting')
+  expect(lines.slice(lineAt(lines, '1 waiting') + 1, lineAt(lines, '1 waiting') + 3)).toEqual([
+    `   ${'─'.repeat(56)}`,
+    ' ▸ 2 more done',
+  ])
   expect(lineAt(lines, '1 waiting')).toBeGreaterThan(lineAt(lines, 'Other work'))
 })
 

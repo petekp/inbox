@@ -77,7 +77,7 @@ import { prMarkId, threadSentIn } from './pr-rows'
 import { failingChecks, prRefs, prNeedsYou, waitingThreads } from './prs'
 import { EMPTY, KEPT_SESSIONS, isBlankLedger } from './ledger'
 import { closeItem } from './ledger-close'
-import { readKind, tasksRunBy } from './reply-parse'
+import { tasksRunBy } from './reply-parse'
 import { CLAUDE_CODE, guidedCloseDescription } from './model-text'
 import { statusCarryText, screenText, type ScreenTab } from './inbox-text'
 import { catchUpPrompt, dialogActivity, dialogQuestions, toolActivity, transcriptCatchUpPrompt } from './catch-up-text'
@@ -150,7 +150,6 @@ import { lookOf, paletteFor } from './palettes'
 import { animateRunningMarks } from './running-mark-timer'
 import { type TerminalSpan } from './terminal-text'
 import {
-  FOLD_KINDS,
   lastUndoEnd,
   NO_CURSOR,
   NO_SELECTION,
@@ -249,6 +248,7 @@ import { panePrBlocks, panePrRows } from './pane-prs'
 import { paneStatusLines } from './pane-status-lines'
 import { paneStatus } from './pane-status'
 import { paneHelp } from './pane-help'
+import { foldOf, upgradedUnfolded, withFold } from './fold-keys'
 
 const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
 /**
@@ -273,7 +273,8 @@ const SESSION = atom({ plugin: 'inbox', key: 'session' } as const, NO_SESSION)
 const AWAY = atom({ plugin: 'inbox', key: 'away' } as const, PRESENT)
 const UNREADABLE = atom({ plugin: 'inbox', key: 'unreadable' } as const, null as string | null)
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as FoldKind[])
-const FOLD_HOVER = atom({ plugin: 'inbox', key: 'foldHover' } as const, null as FoldKind | null)
+const STATUS_UNFOLDED = atom({ plugin: 'inbox', key: 'statusUnfolded' } as const, [] as string[])
+const FOLD_HOVER = atom({ plugin: 'inbox', key: 'foldHover' } as const, null as string | null)
 const OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
 /** Switching tabs or closing the pane closes Help. */
 const IS_HELP_SHOWN = atom({ plugin: 'inbox', key: 'isHelpShown' } as const, false)
@@ -1116,12 +1117,7 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
         Object.entries(cursors).map(([t, c]) => [t, { ...c, openedAt: c.openedAt ?? 0 }]),
       ) as Record<Tab, Cursor>
     }),
-    // Old builds saved the group kinds as `decide` and `do`, and the Finds tab's one fold as `finding`, now one per kind.
-    update($, UNFOLDED, u =>
-      u.flatMap((k: string): FoldKind[] =>
-        k === 'finding' ? ['issue', 'opportunity'] : k === 'issue' || k === 'opportunity' ? [k] : [readKind(k)],
-      ),
-    ),
+    update($, UNFOLDED, upgradedUnfolded),
     // A demo an earlier build seeded may lack a field this one draws, so it ends; /inbox demo seeds a new one.
     update($, DEMO, d => (d === null || isDemoCopy(d) ? d : null)),
     // A draft saved as bare text began before now, so a row that closed before this load stays closed.
@@ -1551,22 +1547,17 @@ async function showAsk($: EngineInterface, askId: string) {
   await scrollToRow($, askId)
 }
 
-/**
- * A set, not a toggle: a second
- * click before the redraw posts the same state, so a double-click leaves the fold unfolded.
- */
-async function setFold($: EngineInterface, kind: string, isUnfolded: unknown) {
-  const fold = FOLD_KINDS.find(k => k === kind)
-  if (fold === undefined || typeof isUnfolded !== 'boolean') return
-  await update($, UNFOLDED, u =>
-    u.includes(fold) === isUnfolded ? u : isUnfolded ? [...u, fold] : u.filter(k => k !== fold),
-  )
+/** A set, not a toggle: a second click before the redraw posts the same state, so a double-click leaves it unfolded. */
+async function setFold($: EngineInterface, key: string, isUnfolded: unknown) {
+  const fold = foldOf(key)
+  if (!fold || typeof isUnfolded !== 'boolean') return
+  await ('kind' in fold
+    ? update($, UNFOLDED, u => withFold(u, fold.kind, isUnfolded))
+    : update($, STATUS_UNFOLDED, u => withFold(u, fold.statusId, isUnfolded)))
 }
 
-async function setFoldHover($: EngineInterface, kind: string, isHover: boolean) {
-  const fold = FOLD_KINDS.find(k => k === kind)
-  if (fold === undefined) return
-  await update($, FOLD_HOVER, hovered => (isHover ? fold : hovered === fold ? null : hovered))
+async function setFoldHover($: EngineInterface, key: string, isHover: boolean) {
+  if (foldOf(key)) await update($, FOLD_HOVER, hovered => (isHover ? key : hovered === key ? null : hovered))
 }
 
 async function openLeftRows($: EngineInterface) {
@@ -2352,6 +2343,7 @@ async function forgetRowState($: EngineInterface) {
     update($, SELECTION, () => NO_SELECTION),
     update($, TYPING, () => null),
     update($, UNFOLDED, () => []),
+    update($, STATUS_UNFOLDED, () => []),
     update($, OPTIONS_SHOWN, () => []),
     update($, DRAFTS, () => ({})),
     update($, DISCARDED, () => ({})),
@@ -3045,6 +3037,7 @@ export const register: Register = on => {
       optionsShown,
       termProgram,
       statusSelection,
+      statusUnfolded,
     ] = await Promise.all([
       drawnState($),
       read($, TAB),
@@ -3059,6 +3052,7 @@ export const register: Register = on => {
       read($, OPTIONS_SHOWN),
       $.env.get('TERM_PROGRAM'),
       read($, STATUS_SELECTION),
+      read($, STATUS_UNFOLDED),
       // A redraw loop on desktop blocks clicks, as `redrawWhileUndoLasts` says.
       look === 'terminal' ? read($, RUNNING_FRAME) : null,
     ])
@@ -3158,6 +3152,7 @@ export const register: Register = on => {
       showTab: tab => showTab($, tab),
       updateHelpShown: fn => update($, IS_HELP_SHOWN, fn),
       updateUnfolded: fn => update($, UNFOLDED, fn),
+      updateStatusUnfolded: fn => update($, STATUS_UNFOLDED, fn),
       runPress: (p, surface) => runPress($, p, surface),
       readAgain: () => readAgain($),
       resume: () => resume($),
@@ -3364,30 +3359,41 @@ export const register: Register = on => {
       handlers,
     )
 
-    const { groupEmpty, groupTitle, section, sections, titleGap, closedFold, undoPlace, settledContent, settledRow } =
-      paneRowParts(
-        {
-          ...client,
-          look,
-          Text,
-          pal,
-          Box,
-          blankLine,
-          isInline,
-          space,
-          now,
-          foldHover,
-          Button,
-          settledLayout,
-          desktopFrame,
-          treeRow,
-          ToneSvg,
-          desktopHairline,
-          markGlyph,
-          markWidth,
-        },
-        handlers,
-      )
+    const {
+      groupEmpty,
+      groupTitle,
+      section,
+      sections,
+      titleGap,
+      foldButton,
+      foldRow,
+      closedFold,
+      undoPlace,
+      settledContent,
+      settledRow,
+    } = paneRowParts(
+      {
+        ...client,
+        look,
+        Text,
+        pal,
+        Box,
+        blankLine,
+        isInline,
+        space,
+        now,
+        foldHover,
+        Button,
+        settledLayout,
+        desktopFrame,
+        treeRow,
+        ToneSvg,
+        desktopHairline,
+        markGlyph,
+        markWidth,
+      },
+      handlers,
+    )
     const { emptyState, needsYouView, findingsView } = paneAskTabs(
       {
         listColumns,
@@ -3492,6 +3498,9 @@ export const register: Register = on => {
         emptyState,
         sections,
         section,
+        foldRow,
+        foldButton,
+        statusUnfolded,
       },
       handlers,
     )

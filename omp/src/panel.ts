@@ -67,6 +67,8 @@ export type PanelUi = {
   notice: { text: string; at: number; isError: boolean } | null
   /** The groups whose closed rows show. Each starts folded. */
   unfolded: FoldKind[]
+  /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
+  statusUnfolded: string[]
   /** A Resume press for the stop that began at `stopAt`. */
   resuming: { stopAt: number; is: 'sending' } | { stopAt: number; is: 'refused'; why: string } | null
   /** A handed-off row the person opened again with Enter. Moving the selection off it folds it again. */
@@ -95,6 +97,7 @@ export const INITIAL_UI: PanelUi = {
   discarded: {},
   notice: null,
   unfolded: [],
+  statusUnfolded: [],
   resuming: null,
   opened: null,
   pageTop: 0,

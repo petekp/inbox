@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { FoldProps } from '../hooks/fold-client'
 import { LOOK_MIN_MS } from '../hooks/status-children'
 import { statusPage } from '../hooks/status-page'
 import { w, world } from './hooks-world'
@@ -169,4 +170,56 @@ test('the Status page says what it is for before the session has any work', asyn
   expect(await terminal.find({ text: /once the work starts\./ })).toBeDefined()
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await desktop.find({ text: /once the work starts\./ })).toBeDefined()
+})
+
+test('on a next build, seen finished work folds into "N done" with no mark, a press unfolds it to list the finished rows one step in and a second folds it, and j selects the fold so f unfolds it, and desktop’s fold line takes its click', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.files = ['/.next-build']
+  w.paneState = { isShown: true, isFocused: true }
+  w.statusReply =
+    'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Runtime | Node chosen\nNEW: working | Plan | being written\nDONE: s2 | written'
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  await clock.advance(LOOK_MIN_MS)
+  await pane.press({ key: 'tab-key-needsYou' })
+  await clock.settle()
+  await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+
+  const foldLabel = async () => (await pane.find({ key: 'fold-status-done' }))?.props.label
+  expect(await foldLabel()).toBe('▸ 1 done')
+  expect((await pane.find({ key: 'status-done' }))?.text).not.toContain('✓')
+  expect(await pane.find({ key: 'status-s2' })).toBeUndefined()
+  await pane.press({ key: 'fold-status-done' })
+  await clock.settle()
+  expect(await foldLabel()).toBe('▾ 1 done')
+  expect((await pane.find({ key: 'status-s2' }))?.text).toBe('✓Plan')
+  await pane.press({ key: 'fold-status-done' })
+  await clock.settle()
+  expect(await pane.find({ key: 'status-s2' })).toBeUndefined()
+
+  await pane.press({ key: 'next' })
+  await clock.settle()
+  await pane.press({ key: 'toggle-fold-done-key' })
+  await clock.settle()
+  expect(await foldLabel()).toBe('▾ 1 done')
+  expect(await pane.find({ key: 'status-s2' })).toBeDefined()
+
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+  await clock.settle()
+  const desktopFold = async () => (await desktop.find({ key: 'fold-status-done' }))?.props.props as FoldProps
+  expect(await desktop.find({ key: 'fold-status-done' })).toMatchObject({ type: 'Client' })
+  expect(await desktopFold()).toMatchObject({ label: '1 done', isUnfolded: true })
+  await desktop.post({ isUnfolded: false }, { in: 'fold-status-done' })
+  await clock.settle()
+  expect((await desktopFold()).isUnfolded).toBe(false)
+  expect(await desktop.find({ key: 'status-s2' })).toBeUndefined()
+  expect(await foldLabel()).toBe('▸ 1 done')
 })

@@ -13,7 +13,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/pane-rows.tsx` | Mod only. `listRow`, which draws one list row, selected or not, in both looks. |
 | `hooks/pane-row-lines.tsx` | Mod only. The parts a row's lines are drawn from: marks, tree lines, ages, feedback labels, an unselected row's line, and the props of the desktop row Client. |
 | `hooks/pane-row-keys.tsx` | Mod only. A row's buttons: keyed buttons, the desktop follow-up links, the terminal's action lines and a reply field's actions. |
-| `hooks/pane-row-parts.tsx` | Mod only. Group titles and sections, and closed rows: the result line, the closed fold, Undo and the settled row. |
+| `hooks/pane-row-parts.tsx` | Mod only. Group titles and sections, and closed rows: the result line, the fold line, the closed fold, Undo and the settled row. |
 | `hooks/pane-prs.tsx` | Mod only. The PRs tab: thread and check rows, PR blocks and their settled form, the PR order lines, the tab's buttons, and its empty state and gh notice. |
 | `hooks/pane-status-lines.tsx` | Mod only. The lines a Status row is drawn from: the head, a subject's name line and its text width, and the tree beside a subject's children. |
 | `hooks/pane-status.tsx` | Mod only. The Status tab: the rules between items, the look line, each row and its buttons, and the tab's page. |
@@ -33,7 +33,8 @@ Part of [the look map](../looks.md#files).
 | `hooks/mod-state.ts` | Mod only. The values the hooks module keeps between events, in three holders: `paneState` for the drawn pane, `sessionState` for the conversation the session runs, and `mod` for the rest of the process. A reload that runs the modules again resets them. |
 | `hooks/tabs-client.tsx` | Mod only. A Client region for the desktop tab bar, so each tab takes clicks over its whole shape. |
 | `hooks/row-client.tsx` | Mod only. A Client region for a closed row in the desktop pane. |
-| `hooks/fold-client.tsx` | Mod only. A Client region for the desktop "N Closed" line. |
+| `hooks/fold-keys.ts` | Mod only. The keys a fold line draws under, for an Asks group's Closed fold and a Status done fold, which a desktop click and hover come back with, and the upgrade of the saved Asks folds. |
+| `hooks/fold-client.tsx` | Mod only. A Client region for a desktop fold line: "N closed" on Asks and "N done" on the Status. |
 | `hooks/links-client.tsx` | Mod only. A Client region for an open row's follow-ups on desktop. |
 | `hooks/undo-client.tsx` | Mod only. A Client region for Undo on desktop, whose fill drains while Undo lasts. |
 | `hooks/desktop-metrics.ts` | Mod only. How wide the desktop pane draws text: characters per column, each character's width in points, a Button's padding, and line wrapping. |

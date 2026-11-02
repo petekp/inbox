@@ -6,6 +6,7 @@ import { emptySession } from '../hooks/session-files'
 import { sessionView } from '../hooks/session-view'
 import { setTypedGoal, useProposedGoal } from '../hooks/status-goal-ops'
 import { statusKeyRows } from '../hooks/status-keys'
+import { unfoldedRows } from '../hooks/status-page'
 import { NO_HOLDS } from '../hooks/timing'
 import type { SessionStatus } from '../types'
 import { after, askItem, page, shape } from './status-helpers'
@@ -111,8 +112,18 @@ test('finished work under a milestone shows as a row until the person looks, the
     '-- Last seen',
     '◆ Error copy: not started · waiting',
   ])
-  expect(shape(rowsOf({ ...finished, lastLookAt: 70 }))).toEqual(['◆ Error copy: not started · waiting', '✓ 1 done'])
-  expect(page({ ...finished, lastLookAt: 70 }, 80, {}, [askItem('i1')]).rows.some(r => r.kind === 'fold')).toBe(false)
+  expect(shape(rowsOf({ ...finished, lastLookAt: 70 }))).toEqual(['◆ Error copy: not started · waiting', '▸ 1 done'])
+  expect(shape(unfoldedRows(rowsOf({ ...finished, lastLookAt: 70 }), () => true))).toEqual([
+    '◆ Error copy: not started · waiting',
+    '▸ 1 done',
+    '✓ CSV import',
+  ])
+  expect(unfoldedRows(rowsOf({ ...finished, lastLookAt: 70 }), () => true).map(r => r.depth)).toEqual([1, 1, 2])
+  expect(
+    page({ ...finished, lastLookAt: 70 }, 80, {}, [askItem('i1')]).rows.some(
+      r => r.kind === 'fold' || r.kind === 'done-fold',
+    ),
+  ).toBe(false)
 })
 
 test('a subject not linked yet stays in the main list, and nothing splits without a goal', () => {
