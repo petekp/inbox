@@ -60,11 +60,27 @@ const held = new Map<string, Held>()
 /** For saving: the pane draws another conversation, so this one holds no rows and has no showing. */
 const forSaving = (s: Session): Session => pruned({ ...s, heldRows: [], shownSince: null })
 
-/** `id`'s session to change: the held one, else the store's. Undefined when none is saved, null when unreadable. */
+/**
+ * Whether the store holds a newer save of `kept`'s conversation than the one it was changed from. Only a save of the
+ * drawn session stamps a new `savedAt`, here or in another process.
+ */
+const isOvertaken = (kept: Held, saved: { session: SavedRecord | undefined }) => saved.session?.savedAt !== kept.savedAt
+
+/** Drops `id`'s held session, since a newer save of the conversation landed. */
+function dropOvertaken(e: SaveEngine, id: string) {
+  dropHeldNow(id)
+  e.log(`inbox: dropped the held session ${id}, since a newer save of it landed`)
+}
+
+/**
+ * `id`'s session to change: the held one, unless a newer save of it landed, else the store's. Undefined when none is
+ * saved, null when the store cannot read it and nothing is held.
+ */
 async function sessionToChange(e: SaveEngine, id: string) {
-  const kept = held.get(id)
-  if (kept) return { session: kept.session, savedAt: kept.savedAt }
   const saved = await readSaved(e, id)
+  const kept = held.get(id)
+  if (kept && (!saved || !isOvertaken(kept, saved))) return { session: kept.session, savedAt: kept.savedAt }
+  if (kept) dropOvertaken(e, id)
   if (!saved) return null
 
   return saved.session && { session: upgradeSession(saved.session), savedAt: saved.session.savedAt }
@@ -83,18 +99,24 @@ export function changeSaved(e: SaveEngine, id: string, change: Change): Promise<
   sessionState.savedWrites++
   // The read, the change and the write run in the save queue, so two changes to one saved session cannot both
   // start from the same read.
-  // With nothing held, a retry reads again, so it cannot write over a save another process made meanwhile.
+  // A retry reads again, so it cannot write over a save another process made meanwhile.
+  // While a session is held the lock was last seen held, so a write tries once and the timer tries again.
   const changed = sessionState.saving.then(async (): Promise<Changed> => {
-    let result: Changed = { before: emptySession(), after: emptySession(), isDrawn: false }
+    const nothing = (): Changed => ({ before: emptySession(), after: emptySession(), isDrawn: false })
+    let result = nothing()
     let unwritten: { session: Session; savedAt: number } | null = null
+    const tries = held.has(id)
+      ? <T>(write: () => Promise<T>) => write()
+      : <T>(write: () => Promise<T>) => whileLockHeld(e, write)
     try {
-      await whileLockHeld(e, async () => {
+      await tries(async () => {
+        result = nothing()
         unwritten = null
         const read = await sessionToChange(e, id)
         if (!read) return
         const after = await change(read.session)
         result = { before: read.session, after: after === read.session ? after : forSaving(after), isDrawn: false }
-        if (result.after === read.session && !held.has(id)) return
+        if (result.after === read.session) return
         unwritten = { session: result.after, savedAt: read.savedAt }
         await writeSaved(e, id, read.savedAt, result.after)
         dropHeldNow(id)
@@ -132,19 +154,14 @@ function dropHeldNow(id: string) {
   held.delete(id)
 }
 
-/**
- * Drops `id`'s held session, in the save queue, since the conversation is drawn again from it, read with
- * `readSettled`. Its next save writes it.
- */
-export function dropHeld(id: string) {
-  sessionState.saving = sessionState.saving.then(() => dropHeldNow(id))
-}
-
 /** Tries once, in the save queue, to write `entry`. A failure tries again later, until `HELD_CAP_MS`. */
 function retryHeld(e: SaveEngine, id: string, entry: Held) {
   const tried = sessionState.saving.then(async () => {
     if (held.get(id) !== entry) return
     try {
+      const saved = await readSaved(e, id)
+      if (!saved) throw new Error('the store could not read the session')
+      if (isOvertaken(entry, saved)) return dropOvertaken(e, id)
       await writeSaved(e, id, entry.savedAt, entry.session)
       dropHeldNow(id)
       return
@@ -194,6 +211,8 @@ export function save(e: SaveEngine, owner: Owner, s: ModSession): Promise<void> 
   const setAndPrune = Promise.all([sessionState.saving, e.now()]).then(async ([, savedAt]) => {
     if (s.revision < (savedRevisions.get(generation) ?? 0)) return
     await whileLockHeld(e, () => e.store.set(key, { version: SESSION_VERSION, savedAt, ...session }))
+    // The drawn session was read with any held session of this conversation, so this save holds it too.
+    dropHeldNow(owner.id)
     if (prunedSaves.has(generation)) return
     const keys = await e.store.keys()
     const sessions = keys.filter(k => k.startsWith('s:'))
@@ -240,10 +259,14 @@ export async function readSaved(e: SaveEngine, id: string): Promise<{ session: S
   }
 }
 
-/** A conversation's saved session, once its pending saves have landed. A held session is read as it will be saved. */
+/**
+ * A conversation's saved session, once its pending saves have landed. A held session is read as it will be saved,
+ * unless a newer save of the conversation landed.
+ */
 export async function readSettled(e: SaveEngine, id: string): Promise<{ session: SavedRecord | undefined } | null> {
   await savesBySession.get(id)?.catch(() => undefined)
+  const saved = await readSaved(e, id)
   const kept = held.get(id)
 
-  return kept ? { session: { savedAt: kept.savedAt, ...kept.session } } : readSaved(e, id)
+  return kept && (!saved || !isOvertaken(kept, saved)) ? { session: { savedAt: kept.savedAt, ...kept.session } } : saved
 }

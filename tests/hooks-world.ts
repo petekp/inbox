@@ -64,6 +64,7 @@ class World {
   storeSetRefusal: string | undefined
   storeSetLockHeld = 0
   storeLockedKey: string | undefined
+  isStoreLocked = false
   logged: string[] = []
   toolRefusal: string | undefined
   commandRefusal: string | undefined
@@ -161,6 +162,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.storeSetRefusal = undefined
   w.storeSetLockHeld = 0
   w.storeLockedKey = undefined
+  w.isStoreLocked = false
   w.logged = []
   w.toolRefusal = undefined
   w.commandRefusal = undefined
@@ -176,7 +178,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   on('store.set', async (_$, e) => {
     await w.storeSetHold?.(e.key, e.value)
     if (w.storeSetRefusal && e.key.startsWith('s:')) return { deny: w.storeSetRefusal }
-    if (e.key === w.storeLockedKey) return { deny: 'Lock file is already being held' }
+    if (w.isStoreLocked || e.key === w.storeLockedKey) return { deny: 'Lock file is already being held' }
     if (w.storeSetLockHeld > 0 && e.key.startsWith('s:')) {
       w.storeSetLockHeld--
       return { deny: 'Lock file is already being held' }
@@ -185,6 +187,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
     return { value: undefined }
   })
   on('store.delete', (_$, e) => {
+    if (w.isStoreLocked) return { deny: 'Lock file is already being held' }
     w.stored.delete(e.key)
     return { value: undefined }
   })

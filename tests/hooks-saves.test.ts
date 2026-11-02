@@ -113,6 +113,7 @@ async function heldStatusAfterClear(
   $: Parameters<typeof world>[0],
   on: Parameters<typeof world>[1],
   heads = ['Adding a greeting CLI'],
+  locks: 'the store' | 'session-1' = 'the store',
 ) {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
@@ -133,17 +134,22 @@ async function heldStatusAfterClear(
   await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
   await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })
   await clock.settle()
-  w.storeLockedKey = 's:session-1'
+  if (locks === 'the store') w.isStoreLocked = true
+  else w.storeLockedKey = 's:session-1'
   release()
   await clock.advance(3_000)
+  const unlock = () => {
+    w.isStoreLocked = false
+    w.storeLockedKey = undefined
+  }
 
-  return { clock, drawn: () => session!, savedHead: () => storedHead('s:session-1') }
+  return { clock, unlock, drawn: () => session!, savedHead: () => storedHead('s:session-1') }
 }
 
 const storedHead = (key: string) => JSON.parse(w.stored.get(key) ?? '{}').ledger?.overview?.head?.title
 
 test('a write to a conversation off screen that meets a held lock lands in the background, and drawn saves go on meanwhile', async ($, on) => {
-  const { clock, savedHead } = await heldStatusAfterClear($, on)
+  const { clock, unlock, savedHead } = await heldStatusAfterClear($, on, undefined, 'session-1')
   expect(savedHead()).toBeUndefined()
   expect(w.logged.filter(line => line.includes('session-1 waits for the store lock'))).toHaveLength(1)
 
@@ -156,39 +162,69 @@ test('a write to a conversation off screen that meets a held lock lands in the b
   ])
   expect(savedHead()).toBeUndefined()
 
-  w.storeLockedKey = undefined
+  unlock()
   await clock.advance(10_000)
   await clock.settle()
   expect(savedHead()).toBe('Adding a greeting CLI')
 })
 
 test('a later write to a conversation whose write is held runs after it, and both land in order', async ($, on) => {
-  const { clock, savedHead } = await heldStatusAfterClear($, on, ['Adding a greeting CLI', 'Naming the command'])
+  const { clock, unlock, savedHead } = await heldStatusAfterClear($, on, [
+    'Adding a greeting CLI',
+    'Naming the command',
+  ])
   await clock.advance(3_000)
   expect(w.statusPrompts).toHaveLength(2)
   expect(w.statusPrompts[1]).toContain('<head>\nAdding a greeting CLI |')
   expect(savedHead()).toBeUndefined()
 
-  w.storeLockedKey = undefined
+  unlock()
   await clock.advance(10_000)
   await clock.settle()
   expect(savedHead()).toBe('Naming the command')
 })
 
-test('resuming a conversation whose write is held shows that write', async ($, on) => {
-  const { clock, drawn } = await heldStatusAfterClear($, on)
+test('resuming a conversation whose write is held shows that write, and it lands before any drawn save does', async ($, on) => {
+  const { clock, unlock, drawn, savedHead } = await heldStatusAfterClear($, on)
   await $.session.end({ reason: 'resume', sessionId: 'session-2', resume: { id: 'session-2' } })
   await $.classic.SessionStart({ source: 'resume', session_id: 'session-1' })
   await clock.settle()
   expect(drawn().ledger.overview?.head?.title).toBe('Adding a greeting CLI')
+
+  unlock()
+  await clock.advance(10_000)
+  await clock.settle()
+  expect(savedHead()).toBe('Adding a greeting CLI')
+
+  w.ledgerReply = 'NEW: do | - | Water the plants | - | -'
+  await $.prompt.submit({ text: 'water the plants', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Noted.', durationMs: 5, isAborted: false, turnId: 't9', reason: 'answer' })
+  await clock.advance(10_000)
+  await clock.settle()
+  const saved = JSON.parse(w.stored.get('s:session-1')!) as Session
+  expect(saved.ledger.items.map(i => i.ask)).toContain('Water the plants')
+  expect(saved.ledger.overview?.head?.title).toBe('Adding a greeting CLI')
+})
+
+test('a held session never lands over a newer save of its conversation', async ($, on) => {
+  const { clock, unlock, savedHead } = await heldStatusAfterClear($, on)
+  const newer = { ...JSON.parse(w.stored.get('s:session-1')!), savedAt: 2_000_000 }
+  w.stored.set('s:session-1', JSON.stringify(newer))
+
+  unlock()
+  await clock.advance(10_000)
+  await clock.settle()
+  expect(JSON.parse(w.stored.get('s:session-1')!).savedAt).toBe(2_000_000)
+  expect(savedHead()).toBeUndefined()
+  expect(w.logged.filter(line => line.includes('dropped the held session session-1'))).toHaveLength(1)
 })
 
 test('a held write that cannot land within the cap is dropped and logged', async ($, on) => {
-  const { clock, savedHead } = await heldStatusAfterClear($, on)
+  const { clock, unlock, savedHead } = await heldStatusAfterClear($, on)
   await clock.advance(11 * 60_000)
   expect(w.logged.filter(line => line.includes('session-1 failed after 10 minutes'))).toHaveLength(1)
 
-  w.storeLockedKey = undefined
+  unlock()
   await clock.advance(60_000)
   await clock.settle()
   expect(savedHead()).toBeUndefined()
@@ -199,6 +235,8 @@ function fakeSaves(id: string) {
   const timers: { fn: () => void; isLive: boolean }[] = []
   const fake = {
     isLocked: true,
+    sets: 0,
+    readableGets: Infinity,
     gate: null as { reached: () => void; open: Promise<void> } | null,
     storedNextId: () => (store.get(`s:${id}`) as Session).ledger.nextId,
     liveTimers: () => timers.filter(t => t.isLive),
@@ -209,8 +247,12 @@ function fakeSaves(id: string) {
     },
     engine: {
       store: {
-        get: async (key: string) => store.get(key),
+        get: async (key: string) => {
+          if (fake.readableGets-- <= 0) throw new Error('the store could not be read')
+          return store.get(key)
+        },
         set: async (key: string, value: unknown) => {
+          fake.sets++
           if (fake.isLocked) throw new Error('Lock file is already being held')
           const gate = fake.gate
           fake.gate = null
@@ -267,6 +309,23 @@ test('a held change that makes a fresh id each run keeps one id for its caller, 
   await readSettled(f.engine, 'ids')
   expect(read?.session?.ledger?.nextId).toBe(after.ledger.nextId)
   expect(f.storedNextId()).toBe(after.ledger.nextId)
+})
+
+test('a change to a held conversation that changes nothing writes nothing, and a change tries once', async () => {
+  const f = fakeSaves('quiet')
+  await changeSaved(f.engine, 'quiet', bumped)
+  const setsWhenHeld = f.sets
+  await changeSaved(f.engine, 'quiet', s => s)
+  expect(f.sets).toBe(setsWhenHeld)
+  await changeSaved(f.engine, 'quiet', bumped)
+  expect(f.sets).toBe(setsWhenHeld + 1)
+})
+
+test('a write whose retry cannot read the store returns no session, not the one it could not write', async () => {
+  const f = fakeSaves('unread')
+  f.readableGets = 1
+  const { after } = await changeSaved(f.engine, 'unread', bumped)
+  expect(after.ledger.items).toEqual([])
 })
 
 test('session pruning uses saved time and retains records whose age cannot be read', async ($, on) => {
