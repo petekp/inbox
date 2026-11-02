@@ -38,17 +38,78 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
-// ../hooks/ask-match.ts
+// ../hooks/status-limits.ts
+var OPEN_SUBJECTS = 6;
+var NAME_KEPT = 20;
+var TEXT_KEPT = 12;
+var DESCRIPTION_KEPT = 14;
+var MILESTONES_MAX = 5;
+var DECLINED_KEPT = 10;
+var CHILD_KEPT_MS = 24 * 60 * 6e4;
+var CHILDREN_KEPT = 50;
+var STOP_WORDS = /* @__PURE__ */ new Set([
+  "a",
+  "an",
+  "the",
+  "of",
+  "for",
+  "to",
+  "in",
+  "on",
+  "and",
+  "or",
+  "is",
+  "it",
+  "its",
+  "now",
+  "be",
+  "by",
+  "at",
+  "with"
+]);
+var EMPTY_SESSION_STATUS = {
+  head: null,
+  subjects: [],
+  children: [],
+  askSubjects: {},
+  nextId: 1,
+  nextChildId: 1,
+  lastLookAt: null,
+  look: null,
+  goal: null,
+  proposedGoal: null,
+  declinedGoals: [],
+  milestones: [],
+  nextMilestoneId: 1,
+  serves: {}
+};
+var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
+var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
+function clipWords(text2, limit) {
+  const words3 = text2.trim().split(/\s+/).filter(Boolean);
+  return words3.length <= limit ? words3.join(" ") : `${words3.slice(0, limit).join(" ")}\u2026`;
+}
 function words(text2) {
+  return new Set((text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
+}
+function nameKey(name) {
+  return [...words(name)].sort().join(" ");
+}
+function isOpen(s) {
+  return s.status !== "done" && s.status !== "dropped";
+}
+
+// ../hooks/ask-match.ts
+function words2(text2) {
   return text2.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 function recommendedOption(options, rec) {
   if (!rec) return null;
-  const named = new Set(words(rec));
+  const named = new Set(words2(rec));
   let best = null;
   for (const option of options) {
-    const w = words(option);
-    if (w.length > words(best ?? "").length && w.every((x) => named.has(x))) best = option;
+    const w = words2(option);
+    if (w.length > words2(best ?? "").length && w.every((x) => named.has(x))) best = option;
   }
   const label = (text2) => text2.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
   const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
@@ -72,19 +133,20 @@ var FILLER = /* @__PURE__ */ new Set([
   "all"
 ]);
 function keyWords(text2) {
-  return new Set(words(text2).filter((w) => new RegExp("\\p{N}", "u").test(w) || w.length > 2 && !FILLER.has(w)));
+  return new Set(words2(text2).filter((w) => new RegExp("\\p{N}", "u").test(w) || w.length > 2 && !FILLER.has(w)));
 }
 function restates(a, b) {
-  const x = keyWords(a);
-  const y = keyWords(b);
+  return sharesKeyWords(keyWords(a), keyWords(b)) ?? sameAsk(a, b);
+}
+function sharesKeyWords(x, y) {
   const fewer = Math.min(x.size, y.size);
   const shared = [...x].filter((w) => y.has(w)).length;
   const numbers = (words3) => [...words3].filter((w) => new RegExp("\\p{N}", "u").test(w)).sort().join(" ");
   if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y)) return false;
-  return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
+  return fewer >= 2 ? shared / fewer >= 0.7 : null;
 }
 function sameAsk(a, b) {
-  const norm = (s) => words(s).join(" ");
+  const norm = (s) => words2(s).join(" ");
   return norm(a) !== "" && norm(a) === norm(b);
 }
 
@@ -160,67 +222,6 @@ function readKind(kind) {
 // ../hooks/ledger-update.ts
 var EXPIRED = "expired, unanswered";
 var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
-
-// ../hooks/status-limits.ts
-var OPEN_SUBJECTS = 6;
-var NAME_KEPT = 20;
-var TEXT_KEPT = 12;
-var DESCRIPTION_KEPT = 14;
-var MILESTONES_MAX = 5;
-var DECLINED_KEPT = 10;
-var CHILD_KEPT_MS = 24 * 60 * 6e4;
-var CHILDREN_KEPT = 50;
-var STOP_WORDS = /* @__PURE__ */ new Set([
-  "a",
-  "an",
-  "the",
-  "of",
-  "for",
-  "to",
-  "in",
-  "on",
-  "and",
-  "or",
-  "is",
-  "it",
-  "its",
-  "now",
-  "be",
-  "by",
-  "at",
-  "with"
-]);
-var EMPTY_SESSION_STATUS = {
-  head: null,
-  subjects: [],
-  children: [],
-  askSubjects: {},
-  nextId: 1,
-  nextChildId: 1,
-  lastLookAt: null,
-  look: null,
-  goal: null,
-  proposedGoal: null,
-  declinedGoals: [],
-  milestones: [],
-  nextMilestoneId: 1,
-  serves: {}
-};
-var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
-var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
-function clipWords(text2, limit) {
-  const words3 = text2.trim().split(/\s+/).filter(Boolean);
-  return words3.length <= limit ? words3.join(" ") : `${words3.slice(0, limit).join(" ")}\u2026`;
-}
-function words2(text2) {
-  return new Set((text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
-}
-function nameKey(name) {
-  return [...words2(name)].sort().join(" ");
-}
-function isOpen(s) {
-  return s.status !== "done" && s.status !== "dropped";
-}
 
 // ../hooks/status-upgrade-goal.ts
 function time(value) {

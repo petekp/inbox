@@ -106,6 +106,7 @@ describe('reopening', () => {
     expect([again.isAdded, again.dismissed?.id, again.ledger]).toEqual([false, 'f1', dismissed])
     expect(addFinding(dismissed, { ...finding, title: 'In the ANSI mode, hotkeys vanish' }).isAdded).toBe(false)
     expect(addFinding(dismissed, { ...finding, title: 'Hotkeys vanish in ANSI mode on macOS' }).isAdded).toBe(false)
+    expect(addFinding(dismissed, { ...finding, title: 'Hotkeys vanished in ANSI mode' }).isAdded).toBe(false)
     expect(addFinding(dismissed, { ...finding, title: 'Tabs unreadable' }).isAdded).toBe(true)
     for (const closing of [
       { how: 'expired' as const, outcome: 'list full' },
