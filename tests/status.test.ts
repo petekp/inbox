@@ -191,7 +191,7 @@ test('finished work folds into a count once seen, keeping at most two new finish
     '✓ Four: done d',
     '✓ Three: done c',
     '-- Last seen',
-    '✓ 2 more done',
+    '▸ 2 more done',
   ])
 })
 

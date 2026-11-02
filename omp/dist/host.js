@@ -1269,6 +1269,16 @@ function viewAsk(ask) {
   };
 }
 function statusKeyPlan(row) {
+  if (row.kind === "done-fold")
+    return [
+      {
+        press: { action: "toggle-fold", foldId: row.id },
+        label: row.text,
+        hotkey: "f",
+        kind: "view",
+        emphasis: "quiet"
+      }
+    ];
   return row.kind === "subject" && row.ask !== null ? [viewAsk(row.ask)] : [];
 }
 function milestoneKeyPlan(m) {
@@ -1330,7 +1340,8 @@ function statusKeyRows(page) {
 function statusSelected(page, selectedId) {
   const targets = statusKeyRows(page);
   const opensAsk = (t) => t.keys.some((k) => k.press.action === "show-ask");
-  return targets.find((t) => t.id === selectedId) ?? targets.find(opensAsk) ?? targets[0] ?? null;
+  const isFold = (t) => t.keys.some((k) => k.press.action === "toggle-fold");
+  return targets.find((t) => t.id === selectedId) ?? targets.find(opensAsk) ?? targets.find((t) => !isFold(t)) ?? targets[0] ?? null;
 }
 var GOAL_FIELD = { placeholder: "An outcome to work toward", submit: "Set goal" };
 
@@ -1749,11 +1760,10 @@ var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
 var COUNT_WORDS = {
   working: "working",
   "waits-on-other": "waiting",
-  queued: "queued",
-  done: "done"
+  queued: "queued"
 };
 function countsByMark(folded) {
-  return ["working", "waits-on-other", "queued", "done"].flatMap((status) => {
+  return ["working", "waits-on-other", "queued"].flatMap((status) => {
     const n = folded.filter((x) => x.status === status).length;
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
@@ -1840,6 +1850,9 @@ function ruledRows(rows, isRuled) {
     isLast: n === rows.length - 1
   }));
 }
+function unfoldedRows(rows, isUnfolded) {
+  return rows.flatMap((r) => r.kind === "done-fold" && isUnfolded(r.id) ? [{ ...r, isLast: false }, ...r.rows.map((x, n) => ({ ...x, isLast: r.isLast && n === r.rows.length - 1 }))] : [r]);
+}
 
 // ../hooks/status-page.ts
 var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
@@ -1917,6 +1930,15 @@ function statusPage(s, now) {
     ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
     ...partRows(top.shown, ctx, 0)
   ];
+  const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
+    {
+      kind: "done-fold",
+      id: `${prefix}done`,
+      depth,
+      text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
+      rows: ruledRows(partRows([...done].sort(pageOrder), { ...ctx, lookId: null }, depth + 1), false)
+    }
+  ];
   const foldRows = (prefix, p, depth) => [
     ...p.foldedOpen.length > 0 ? [
       {
@@ -1927,16 +1949,7 @@ function statusPage(s, now) {
         text: `${p.foldedOpen.length} more`
       }
     ] : [],
-    ...p.foldedDone.length > 0 ? [
-      {
-        kind: "fold",
-        id: `${prefix}done`,
-        depth,
-        mark: SUBJECT_MARKS.done.mark,
-        tone: "done",
-        text: `${p.foldedDone.length}${p.newClosed.some((x) => x.status === "done") ? " more" : ""} done`
-      }
-    ] : []
+    ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
   ];
   rows.push(...foldRows("", top, 0));
   if (otherShown.length > 0 || otherFolded.length > 0) {
@@ -1944,8 +1957,10 @@ function statusPage(s, now) {
       rows.pop();
     rows.push({ kind: "part", id: "other", depth: 0, text: OTHER_WORK });
     rows.push(...partRows(otherShown, { ...ctx, lookId: lookId("other-look") }, 0));
-    if (otherFolded.length > 0)
-      rows.push({ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFolded) });
+    const otherFoldedOpen = otherFolded.filter(isOpen);
+    if (otherFoldedOpen.length > 0)
+      rows.push({ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFoldedOpen) });
+    rows.push(...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0));
   }
   const milestoneRows = (id, p) => ruledRows([
     ...partRows(p.shown, { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false }, 1),
@@ -5129,6 +5144,10 @@ function drawPageRow(row, d, isSelected = false) {
     const line = " ".repeat(childAt(row.depth - 1) + 2) + s.dim(row.text);
     return withTree([line], markAt(row.depth - 1), arm.first, arm.rest, s);
   }
+  if (row.kind === "done-fold") {
+    const chevron = d.ui.statusUnfolded.includes(row.id) ? "\u25BE" : "\u25B8";
+    return isSelected ? pageLine(d, at, s.tone("accent", chevron), row.text, s.bold) : pageLine(d, at, s.dim(chevron), row.text, s.dim);
+  }
   if (row.kind === "look")
     return lookLines(row, width, s);
   if (row.kind === "part") {
@@ -5173,7 +5192,7 @@ function goalPartId(part) {
 }
 var goalEntry = (part) => ({ kind: "goal", part });
 var blank = { kind: "note", text: "" };
-function goalAbove(page, typing) {
+function goalAbove(page, typing, isUnfolded) {
   const isTyping = typing === GOAL_KEYS_ID;
   const proposal = page.proposal ? [goalEntry({ is: "proposal", proposal: page.proposal, page, isTyping })] : [];
   const g = page.goal;
@@ -5184,7 +5203,7 @@ function goalAbove(page, typing) {
     goalEntry({ is: "title", goal: g, page, isTyping: isTyping && proposal.length === 0, isKeyInHeader }),
     ...g.milestones.flatMap((row) => [
       goalEntry({ is: "milestone", row }),
-      ...row.rows.map((r) => ({ kind: "page", row: r }))
+      ...unfoldedRows(row.rows, isUnfolded).map((r) => ({ kind: "page", row: r }))
     ]),
     ...isTyping || isKeyInHeader ? [] : [goalEntry({ is: "keys", page })]
   ];
@@ -5620,7 +5639,7 @@ function orderEntries(screen, order, now) {
 var PAGE_MARK_AT = 1;
 var PAGE_TEXT_AT = PAGE_MARK_AT + 2;
 var PAGE_CHILD_AT = PAGE_MARK_AT + 3;
-function pageEntries(page, typing) {
+function pageEntries(page, typing, isUnfolded) {
   const blank = { kind: "note", text: "" };
   if (page.isEmpty)
     return [
@@ -5633,10 +5652,10 @@ function pageEntries(page, typing) {
     { kind: "note", text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
     ...description ? [{ kind: "note", text: description, indent: PAGE_MARK_AT }] : []
   ] : [];
-  const above = goalAbove(page, typing);
+  const above = goalAbove(page, typing, isUnfolded);
   const under = [...head, ...setGoal(page, typing)];
   const top = above.length > 0 && under.length > 0 ? [...above, blank, ...under] : [...above, ...under];
-  const rows = page.rows.map((row) => ({ kind: "page", row }));
+  const rows = unfoldedRows(page.rows, isUnfolded).map((row) => ({ kind: "page", row }));
   return top.length > 0 && rows.length > 0 ? [...top, blank, ...rows] : [...top, ...rows];
 }
 function helpEntries(screen, tab) {
@@ -5654,7 +5673,7 @@ function entriesOf(screen, ui, tab, now) {
   if (ui.isHelpShown && tab === ui.tab)
     return helpEntries(screen, tab);
   if (!isRowTab(tab))
-    return pageEntries(screen.view.statusPage, ui.typing);
+    return pageEntries(screen.view.statusPage, ui.typing, (id) => ui.statusUnfolded.includes(id));
   return tab === "prs" ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab);
 }
 
@@ -5823,6 +5842,12 @@ function pageKey(screen, ui, key, now) {
   const { press } = pressed;
   if (press.action === "show-ask")
     return { ui: { ...withTab(ui, "needsYou", now), selectedId: press.askId, openedAt: now } };
+  if (press.action === "toggle-fold") {
+    const { foldId } = press;
+    const isShown = ui.statusUnfolded.includes(foldId);
+    const statusUnfolded = isShown ? ui.statusUnfolded.filter((id) => id !== foldId) : [...ui.statusUnfolded, foldId];
+    return { ui: { ...ui, selectedId: row.id, statusUnfolded } };
+  }
   if (press.action === "type-goal") {
     const drafts = { ...ui.drafts, [GOAL_KEYS_ID]: { text: press.text, since: now } };
     return { ui: { ...ui, selectedId: row.id, typing: GOAL_KEYS_ID, focus: null, drafts } };
@@ -6081,6 +6106,7 @@ var INITIAL_UI = {
   discarded: {},
   notice: null,
   unfolded: [],
+  statusUnfolded: [],
   resuming: null,
   opened: null,
   pageTop: 0,

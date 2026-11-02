@@ -204,6 +204,13 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
   const { press } = pressed
   if (press.action === 'show-ask')
     return { ui: { ...withTab(ui, 'needsYou', now), selectedId: press.askId, openedAt: now } }
+  if (press.action === 'toggle-fold') {
+    const { foldId } = press
+    const isShown = ui.statusUnfolded.includes(foldId)
+    const statusUnfolded = isShown ? ui.statusUnfolded.filter(id => id !== foldId) : [...ui.statusUnfolded, foldId]
+
+    return { ui: { ...ui, selectedId: row.id, statusUnfolded } }
+  }
   if (press.action === 'type-goal') {
     const drafts = { ...ui.drafts, [GOAL_KEYS_ID]: { text: press.text, since: now } }
 

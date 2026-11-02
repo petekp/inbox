@@ -222,13 +222,18 @@ export function paneRowParts(
           `closed-${d.id}`,
           1,
         )
+  /** The terminal's fold control: a chevron, `gap` and `label`, one Button. */
+  const foldButton = (key: string, label: string, isUnfolded: boolean, toggle: () => void, gap = ' ') => (
+    <Button plain dimColor key={`fold-${key}`} label={`${isUnfolded ? '▾' : '▸'}${gap}${label}`} onPress={toggle} />
+  )
   // On desktop a Client takes a click on every cell of the line, where a Button takes one only on its label.
-  const foldRow = (kind: FoldKind, count: number, isUnfolded: boolean) =>
+  /** A fold's line: a chevron, then `label`. Desktop posts its click and hover under `fold-` and `key`. */
+  const foldRow = (key: string, label: string, isUnfolded: boolean, toggle: () => void) =>
     hasClient ? (
-      <Box key={`fold-row-${kind}`} flexDirection="row" overflow="hidden">
+      <Box key={`fold-row-${key}`} flexDirection="row" overflow="hidden">
         {'Svg' in elements ? (
           <elements.Svg
-            source={chevronSvg(isUnfolded, foldHover === kind)}
+            source={chevronSvg(isUnfolded, foldHover === key)}
             alt={isUnfolded ? 'Unfolded' : 'Folded'}
             width={FRAME_INSET_PT + DESKTOP_MARK_CELLS * DESKTOP_CELL_PT}
             height={2 * ROW_PAD_PT + DESKTOP_LINE_PT}
@@ -236,13 +241,13 @@ export function paneRowParts(
         ) : null}
         <Box position="absolute" top={0} left={0} width="100%">
           <elements.Client
-            key={`fold-${kind}`}
+            key={`fold-${key}`}
             module="./fold-client.tsx"
             width="100%"
             props={
               {
                 markCells: DESKTOP_MARK_CELLS,
-                label: foldLabel(count),
+                label,
                 isUnfolded,
                 padY: DESKTOP_ROW_PAD,
                 colors: {
@@ -259,16 +264,8 @@ export function paneRowParts(
       treeRow(
         null,
         null,
-        <Box flexDirection="row">
-          <Button
-            plain
-            dimColor
-            key={`fold-${kind}`}
-            label={`${isUnfolded ? '▾' : '▸'} ${foldLabel(count)}`}
-            onPress={() => void updateUnfolded(u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind]))}
-          />
-        </Box>,
-        `fold-row-${kind}`,
+        <Box flexDirection="row">{foldButton(key, label, isUnfolded, toggle)}</Box>,
+        `fold-row-${key}`,
       )
     )
   const closedFold = (kind: FoldKind, closed: ClosedLine[], total: number, isUnfolded: boolean) => {
@@ -277,7 +274,12 @@ export function paneRowParts(
       ? []
       : [
           ...(space.isFoldGapped ? titleGap(false) : []),
-          foldRow(kind, total, isUnfolded),
+          foldRow(
+            kind,
+            foldLabel(total),
+            isUnfolded,
+            () => void updateUnfolded(u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind])),
+          ),
           ...(isUnfolded && look !== 'desktop' && !isInline
             ? [
                 <Box key={`fold-gap-${kind}`} paddingLeft={TREE_LINE_AT + markWidth}>
@@ -413,7 +415,19 @@ export function paneRowParts(
     )
   }
 
-  return { groupEmpty, groupTitle, section, sections, titleGap, closedFold, undoPlace, settledContent, settledRow }
+  return {
+    groupEmpty,
+    groupTitle,
+    section,
+    sections,
+    titleGap,
+    foldButton,
+    foldRow,
+    closedFold,
+    undoPlace,
+    settledContent,
+    settledRow,
+  }
 }
 
 export type PaneRowParts = ReturnType<typeof paneRowParts>

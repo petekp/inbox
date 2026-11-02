@@ -59,6 +59,8 @@ export const selection: Record<Tab, { id: string; openedAt: number; index?: numb
 export const drafts = new Map<string, Draft>()
 export const optionsShown = new Set<string>()
 export const unfolded = new Set<FoldGroup>()
+/** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
+export const statusUnfolded = new Set<string>()
 /**
  * The latest press on its way, by row id: its request number, its pending Local result or null for a message, which
  * reads SENDING, and its action, so its button draws as out before the view says so. A reply's action is null, since
@@ -71,7 +73,8 @@ export const notes = new Map<string, { text: string; at: number }>()
 export const copies = new Map<string, { name: string; text: string }>()
 export const entering = new Set<string>()
 export const undoing = new Set<string>()
-export const closingFolds = new Set<FoldGroup>()
+/** Folds whose list still shrinks after a press folded them, by the list's motion key after `closed-`. */
+export const closingFolds = new Set<string>()
 type DrawnRow = { track: RowTrack; openRow?: Row }
 export const drawnRows = new Map<string, DrawnRow>()
 
@@ -89,6 +92,8 @@ export type Kept = {
   unfolded: (FoldGroup | 'finding')[]
   /** Missing on a state an earlier page kept. */
   shownSince?: number
+  /** Missing on a state an earlier page kept. */
+  statusUnfolded?: string[]
 }
 export type CandidatePage = {
   initialize: () => Promise<boolean>

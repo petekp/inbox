@@ -32,6 +32,8 @@ function rowText(r: StatusRow): string[] {
       return [`${pad}── ${LOOK_TEXT}`]
     case 'fold':
       return [`${pad}${r.mark} ${r.text}`]
+    case 'done-fold':
+      return [`${pad}▸ ${r.text}`]
     case 'part':
       return [`── ${r.text}`]
     case 'counts':

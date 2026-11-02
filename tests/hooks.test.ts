@@ -233,7 +233,9 @@ for (const isNextBuild of [false, true])
       await clock.settle()
       const page = statusPage({ ledger, presence: emptySession().presence }, 1_000_000)
       const targets = statusKeyRows(page)
-      const planned = targets.flatMap(t => t.keys.map(k => `${t.id} ${k.label}`))
+      const planned = targets.flatMap(t =>
+        t.keys.filter(k => k.press.action !== 'toggle-fold').map(k => `${t.id} ${k.label}`),
+      )
       expect(planned, 'the demo’s Status has rows with buttons').not.toEqual([])
       const targetOf = new Map<string, string>(
         targets.flatMap(t => t.keys.map(k => [`${k.press.action}-${t.id}`, t.id])),

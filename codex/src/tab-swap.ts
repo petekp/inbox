@@ -1,7 +1,17 @@
 import { isRowTab, isShownTab } from '../../hooks/tabs'
 import { ARRIVAL_TABS } from '../../hooks/arrivals'
 import { PRESS_TIMEOUT_MS } from '../../hooks/session-view'
-import { tabState, selection, drafts, optionsShown, unfolded, inboxWindow, handoff, root } from './tab-state'
+import {
+  tabState,
+  selection,
+  drafts,
+  optionsShown,
+  unfolded,
+  statusUnfolded,
+  inboxWindow,
+  handoff,
+  root,
+} from './tab-state'
 import type { Kept, CandidatePage, PageHandoff } from './tab-state'
 import { later, cancelTimer, dispose, callTool, READ_TIMEOUT_MS } from './tab-host'
 import { applyPageVariables } from './tab-motion'
@@ -23,6 +33,7 @@ function capturedState(): Kept {
     optionsShown: [...optionsShown],
     unfolded: [...unfolded],
     shownSince: tabState.shownSince,
+    statusUnfolded: [...statusUnfolded],
   }
 }
 
@@ -53,6 +64,7 @@ export function restoreState(incoming?: Kept) {
   for (const id of kept.optionsShown) optionsShown.add(id)
   for (const g of kept.unfolded)
     for (const fold of g === 'finding' ? (['issue', 'opportunity'] as const) : [g]) unfolded.add(fold)
+  for (const id of kept.statusUnfolded ?? []) statusUnfolded.add(id)
 }
 
 const PAGE_START_MS = 2_000

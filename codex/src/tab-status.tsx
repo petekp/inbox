@@ -1,4 +1,4 @@
-import { RowActions } from './row-actions'
+import { Icon, RowActions } from './row-actions'
 import { mergedLine, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
 import {
   GOAL_FIELD,
@@ -13,11 +13,11 @@ import type { MilestoneRow } from '../../hooks/status-goal-page'
 import { ROW_COPY } from '../../hooks/rows'
 import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
-import { drafts, errors, sending, tabState } from './tab-state'
+import { closingFolds, drafts, errors, sending, statusUnfolded, tabState } from './tab-state'
 import type { Key } from './tab-state'
 import { act } from './tab-rows'
 import { NameLine } from './tab-status-name'
-import { revealSelected } from './tab-motion'
+import { revealSelected, toggleFold } from './tab-motion'
 import { switchTab, open } from './tab-selection'
 import { tabRows } from './tab-rows'
 import { pulseInStep, markClassOf, MarkGlyph } from './tab-parts'
@@ -53,6 +53,7 @@ function openGoalField(text: string) {
 /** A Status key as a tab key. Set as goal and Not now draw out while the goal's press is on its way. */
 function statusKey({ press, label, emphasis }: StatusKey): Key {
   if (press.action === 'show-ask') return { label, emphasis, run: () => showAsk(press.askId) }
+  if (press.action === 'toggle-fold') return { label, emphasis, run: () => toggleStatusFold(press.foldId) }
   if (press.action === 'type-goal') return { label, emphasis, run: () => openGoalField(press.text) }
 
   return {
@@ -61,6 +62,13 @@ function statusKey({ press, label, emphasis }: StatusKey): Key {
     ...(sending.has(GOAL_KEYS_ID) ? { isOut: true } : {}),
     run: () => void act(GOAL_KEYS_ID, { action: press.action, id: GOAL_KEYS_ID }),
   }
+}
+
+/** The motion key of a done fold's list, apart from the Asks groups' Closed lists. */
+const foldMotion = (id: string) => `status-${id}`
+
+function toggleStatusFold(id: string) {
+  toggleFold(id, statusUnfolded, foldMotion(id))
 }
 
 /** A row's depth, which the Status CSS reads to step the row in and to place its tree line. */
@@ -119,6 +127,28 @@ function StatusLine({ row }: { row: StatusRow }) {
         <div class="content tight muted">{row.text}</div>
       </div>
     )
+  if (row.kind === 'done-fold') {
+    const isUnfolded = statusUnfolded.has(row.id)
+    const motion = foldMotion(row.id)
+
+    return (
+      <>
+        <div class="row fold-row" style={depthStyle(row)}>
+          <button type="button" class="fold" data-fold={motion} onClick={() => toggleStatusFold(row.id)}>
+            <Icon name={isUnfolded ? 'down' : 'right'} />
+            {row.text}
+          </button>
+        </div>
+        {isUnfolded || closingFolds.has(motion) ? (
+          <div class="fold-rows" data-motion={`closed-${motion}`}>
+            {row.rows.map(r => (
+              <StatusLine key={r.id} row={r} />
+            ))}
+          </div>
+        ) : null}
+      </>
+    )
+  }
   if (row.kind === 'look')
     return (
       <div class={`row look-line${row.isLast ? ' last' : ''}`} style={depthStyle(row)}>

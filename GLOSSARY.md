@@ -131,6 +131,14 @@ changed since then, the page draws no line. The code calls it the look line,
 after `lastLookAt`.
 _Avoid_: "you looked" line
 
+**Done fold**:
+The line on the Status that counts seen finished work it does not draw, as "3
+done", after a chevron and with no mark. Pressing it lists those rows under it,
+one step in, as the Closed fold lists closed items, and pressing it again folds
+them. The list after the goal, each milestone and Other work each have their
+own.
+_Avoid_: done row, done count
+
 **Band**:
 In Claude Code, the line above the prompt with the Asks and Finds
 counts and [Open inbox]. When the session stops, a second line says why, with

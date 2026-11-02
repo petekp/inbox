@@ -1,5 +1,6 @@
 import type { UiPressArgument } from 'claude-code'
 import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
+import { foldKey } from './fold-keys'
 import { LOOK_GAP_PT } from './layout'
 import type { PaneAskTabs } from './pane-asks'
 import type { PaneBase, PaneHandlers } from './pane-context'
@@ -21,7 +22,7 @@ import {
 import { paneStatusGoal } from './pane-status-goal'
 import type { PaneStatusLines } from './pane-status-lines'
 import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from './status-keys'
-import { LOOK_DASH, mergedLine, STALL_GAP, type StatusRow, WAS_PREFIX } from './status-page'
+import { LOOK_DASH, mergedLine, STALL_GAP, type StatusRow, unfoldedRows, WAS_PREFIX } from './status-page'
 import { SELECTION_BAR } from './terminal-text'
 import { cellWidth } from './text'
 
@@ -55,6 +56,9 @@ export function paneStatus(
     emptyState,
     sections,
     section,
+    foldRow,
+    foldButton,
+    statusUnfolded,
   }: Pick<
     PaneBase,
     | 'listColumns'
@@ -69,6 +73,7 @@ export function paneStatus(
     | 'typing'
     | 'drafts'
     | 'now'
+    | 'statusUnfolded'
   > &
     Pick<
       PaneStatusLines,
@@ -84,13 +89,23 @@ export function paneStatus(
     Pick<PaneRowFrame, 'desktopFrame'> &
     Pick<PaneRowKeys, 'keyRow' | 'textKey'> &
     Pick<PaneAskTabs, 'emptyState'> &
-    Pick<PaneRowParts, 'sections' | 'section'>,
+    Pick<PaneRowParts, 'sections' | 'section' | 'foldRow' | 'foldButton'>,
   handlers: Pick<
     PaneHandlers,
-    'showAsk' | 'runPress' | 'updateDrafts' | 'updateTyping' | 'sendTyped' | 'startTyping' | 'selectStatusRow'
+    | 'showAsk'
+    | 'runPress'
+    | 'updateDrafts'
+    | 'updateTyping'
+    | 'sendTyped'
+    | 'startTyping'
+    | 'selectStatusRow'
+    | 'updateStatusUnfolded'
   >,
 ) {
-  const { showAsk, runPress, startTyping, selectStatusRow } = handlers
+  const { showAsk, runPress, startTyping, selectStatusRow, updateStatusUnfolded } = handlers
+  const isUnfolded = (id: string) => statusUnfolded.includes(id)
+  const toggleFold = (id: string) =>
+    void updateStatusUnfolded(u => (u.includes(id) ? u.filter(k => k !== id) : [...u, id]))
   // A Status rule starts at the text column, as the rules between sections and between Asks rows do. In the
   // terminal it stops at the end of the list's columns. On desktop it runs to the pane's edge.
   const statusRuleAt = statusMarkAt + markWidth
@@ -189,12 +204,15 @@ export function paneStatus(
     content,
     tree = null,
     isSelected = false,
+    isFold = false,
   }: {
     key: string
     depth?: number
     mark: JSX.Element | null
     content: JSX.Element | JSX.Element[]
     tree?: JSX.Element | null
+    /** A fold's line in the terminal, whose control draws its chevron in the mark column and its count at the text column. */
+    isFold?: boolean
     /** The row whose keys work, which the terminal marks with the selection bar, as on a row tab. */
     isSelected?: boolean
   }) =>
@@ -218,9 +236,11 @@ export function paneStatus(
         backgroundColor={isSelected ? pal.selection : undefined}
       >
         <Box width={statusMarkAt + markWidth * depth} flexShrink={0} />
-        <Box width={markWidth} flexShrink={0}>
-          {mark}
-        </Box>
+        {isFold ? null : (
+          <Box width={markWidth} flexShrink={0}>
+            {mark}
+          </Box>
+        )}
         <Box flexDirection="column" flexShrink={1} flexGrow={1}>
           {content}
         </Box>
@@ -253,7 +273,9 @@ export function paneStatus(
           ? showAsk(press.askId)
           : press.action === 'type-goal'
             ? startTyping(GOAL_KEYS_ID, press.text)
-            : answerProposal(press.action, p.surface),
+            : press.action === 'toggle-fold'
+              ? toggleFold(press.foldId)
+              : answerProposal(press.action, p.surface),
     }))
   const { goalAbove, setGoal, setGoalBare, markRun } = paneStatusGoal(
     {
@@ -331,6 +353,25 @@ export function paneStatus(
         content: <Text color={pal.muted}>{r.text}</Text>,
         tree: statusTree(`status-${r.id}-tree`, r.branch, r.depth - 1),
       })
+    if (r.kind === 'done-fold') {
+      const key = foldKey({ statusId: r.id })
+      const toggle = () => toggleFold(r.id)
+
+      return look === 'desktop' ? (
+        <Box key={`status-${r.id}`} paddingLeft={DESKTOP_MARK_CELLS * 2 * r.depth}>
+          {foldRow(key, r.text, isUnfolded(r.id), toggle)}
+        </Box>
+      ) : (
+        statusRowLine({
+          key: `status-${r.id}`,
+          depth: r.depth,
+          mark: null,
+          content: foldButton(key, r.text, isUnfolded(r.id), toggle, ' '.repeat(Math.max(1, markWidth - 1))),
+          isSelected: r.id === statusKeyRow?.id,
+          isFold: true,
+        })
+      )
+    }
     if (r.kind === 'look') return statusLookLine(r.id, r.text, r.isLast, r.depth)
     if (r.kind === 'part') return statusPartLine(r.id, r.text)
     if (r.kind === 'counts')
@@ -350,7 +391,9 @@ export function paneStatus(
   }
   /** Rows of the Status's list, each after its rule when it has one. The inline pane draws no rules. */
   const statusRows = (rows: StatusRow[]) =>
-    rows.flatMap(r => (r.isRuledAbove && !isInline ? [statusRule(r.id), statusRow(r)] : [statusRow(r)]))
+    unfoldedRows(rows, isUnfolded).flatMap(r =>
+      r.isRuledAbove && !isInline ? [statusRule(r.id), statusRow(r)] : [statusRow(r)],
+    )
   const statusView = () => {
     const page = view.statusPage
     if (page.isEmpty)

@@ -88,7 +88,8 @@ export type PaneBase = {
   typing: string | null
   drafts: Record<string, Draft>
   unfolded: FoldKind[]
-  foldHover: FoldKind | null
+  statusUnfolded: string[]
+  foldHover: string | null
   isHelpShown: boolean
   optionsShown: string[]
   termProgram: string | undefined
@@ -145,4 +146,5 @@ export type PaneHandlers = {
   updateDrafts: (fn: (drafts: Record<string, Draft>) => Record<string, Draft>) => Promise<unknown>
   updateHelpShown: (fn: (isShown: boolean) => boolean) => Promise<unknown>
   updateUnfolded: (fn: (unfolded: FoldKind[]) => FoldKind[]) => Promise<unknown>
+  updateStatusUnfolded: (fn: (unfolded: string[]) => string[]) => Promise<unknown>
 }

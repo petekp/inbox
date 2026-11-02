@@ -8,7 +8,7 @@ import {
   proposalKeyPlan,
 } from '../../hooks/status-keys'
 import type { GoalBlock, MilestoneRow, ProposalBlock } from '../../hooks/status-goal-page'
-import { STALL_GAP, STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
+import { STALL_GAP, STATUS_TEXT_LINES, unfoldedRows, WAS_PREFIX } from '../../hooks/status-page'
 import type { StatusPage } from '../../hooks/status-page'
 import { paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
@@ -46,7 +46,7 @@ const blank: Entry = { kind: 'note', text: '' }
  * while no goal is set. While the person types a goal, the field takes the proposal's text's place, else the goal's,
  * and the buttons of both leave.
  */
-export function goalAbove(page: StatusPage, typing: string | null): Entry[] {
+export function goalAbove(page: StatusPage, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
   const isTyping = typing === GOAL_KEYS_ID
   const proposal = page.proposal ? [goalEntry({ is: 'proposal', proposal: page.proposal, page, isTyping })] : []
   const g = page.goal
@@ -56,7 +56,7 @@ export function goalAbove(page: StatusPage, typing: string | null): Entry[] {
     goalEntry({ is: 'title', goal: g, page, isTyping: isTyping && proposal.length === 0, isKeyInHeader }),
     ...g.milestones.flatMap(row => [
       goalEntry({ is: 'milestone', row }),
-      ...row.rows.map((r): Entry => ({ kind: 'page', row: r })),
+      ...unfoldedRows(row.rows, isUnfolded).map((r): Entry => ({ kind: 'page', row: r })),
     ]),
     ...(isTyping || isKeyInHeader ? [] : [goalEntry({ is: 'keys', page })]),
   ]
