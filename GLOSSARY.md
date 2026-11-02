@@ -60,7 +60,7 @@ draws it. `MARK_LEGEND` in `hooks/help.ts` lists them all.
 
 **Result mark**:
 The mark of what came of a row: ✓ when handled, ✕ when dismissed, ✗ when it
-lapsed, as when the agent closed it because the work overtook it. It runs, as
+lapsed (⊘ in the terminal and omp), as when the agent closed it because the work overtook it. It runs, as
 a Status mark does, while what the row sent is on its way to the agent.
 
 **Finding**:

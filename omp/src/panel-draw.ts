@@ -5,6 +5,7 @@ import { actionLines } from '../../hooks/action-plan'
 import { isStatusUnderActions } from '../../hooks/feedback'
 import { resultGlyph, runningMark } from '../../hooks/timing'
 import { HELD_MARK } from '../../hooks/help'
+import { textMark } from '../../hooks/marks'
 import type { BannerView } from '../../hooks/banners'
 import type { ResultMark } from '../../hooks/rows'
 import { focusOf } from './panel-keys'
@@ -102,7 +103,7 @@ export function feedbackPaint(tone: Tone | null, s: Style) {
 
 /** A Status row's or legend entry's mark. A running mark draws the frame at `now`. */
 export function paintMark(m: { mark: string; tone: Tone | null; isRunning: boolean }, now: number, s: Style): string {
-  return feedbackPaint(m.tone, s)(m.isRunning ? runningMark(now) : m.mark)
+  return feedbackPaint(m.tone, s)(m.isRunning ? runningMark(now) : textMark(m.mark))
 }
 
 export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {

@@ -1694,6 +1694,11 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
   }
 }
 
+// ../hooks/marks.ts
+function textMark(mark) {
+  return mark === CLOSED_MARKS.lapsed ? "\u2298" : mark;
+}
+
 // ../hooks/status-goal-page.ts
 var AWAITING_TEXT = "Milestones after the next reply";
 var PROPOSAL_LABEL = "Proposed goal \xB7 from your message";
@@ -2047,7 +2052,7 @@ function runningMark(now) {
   return RUNNING_FRAMES[Math.floor(now / RUNNING_FRAME_MS) % RUNNING_FRAMES.length];
 }
 function resultGlyph(mark, now) {
-  return mark.isRunning ? runningMark(now) : mark.text || " ";
+  return mark.isRunning ? runningMark(now) : textMark(mark.text) || " ";
 }
 
 // ../hooks/rows.ts
@@ -5927,7 +5932,7 @@ function feedbackPaint(tone, s) {
   return (text) => tone ? s.tone(tone, text) : s.dim(text);
 }
 function paintMark(m, now, s) {
-  return feedbackPaint(m.tone, s)(m.isRunning ? runningMark(now) : m.mark);
+  return feedbackPaint(m.tone, s)(m.isRunning ? runningMark(now) : textMark(m.mark));
 }
 function drawLine(line, isSelected, d) {
   const { ui, width, now, style: s } = d;
