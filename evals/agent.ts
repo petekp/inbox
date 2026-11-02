@@ -26,7 +26,12 @@ import {
   writesOnlyUnder,
 } from './agent-cli'
 import { codexCli } from './codex-cli'
-import { assertCodexOffersOnlyProbe, assertCodexUsedOnlyProbe, CODEX_ISOLATION_CONFIG, codexEnv } from './codex-isolation'
+import {
+  assertCodexOffersOnlyProbe,
+  assertCodexUsedOnlyProbe,
+  CODEX_ISOLATION_CONFIG,
+  codexEnv,
+} from './codex-isolation'
 import {
   earlierRuns,
   finish,

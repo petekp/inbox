@@ -12,7 +12,13 @@ import { IsolationError } from './harness'
  * `codex_apps` MCP server, which `codex mcp list` leaves out. Plugins bring their own skills and apps. Bundled skills
  * come with Codex.
  */
-export const CODEX_ISOLATION_CONFIG = ['[features]', 'apps = false', 'plugins = false', '[skills.bundled]', 'enabled = false']
+export const CODEX_ISOLATION_CONFIG = [
+  '[features]',
+  'apps = false',
+  'plugins = false',
+  '[skills.bundled]',
+  'enabled = false',
+]
 
 /**
  * The whole environment of a Codex run. Codex finds user skills under `$HOME/.agents/skills`, and its shell runs
@@ -50,7 +56,10 @@ export async function assertCodexOffersOnlyProbe(cli: string, cwd: string, env: 
   const ask = (method: string, params: object) =>
     new Promise<any>((resolve, reject) => {
       const id = ++next
-      const timer = setTimeout(() => reject(new IsolationError(`Codex's app-server did not answer ${method}: ${stderr}`)), 30_000)
+      const timer = setTimeout(
+        () => reject(new IsolationError(`Codex's app-server did not answer ${method}: ${stderr}`)),
+        30_000,
+      )
       waiting.set(id, r => {
         clearTimeout(timer)
         if (r.error) reject(new IsolationError(`Codex's app-server refused ${method}: ${r.error.message}`))
@@ -66,7 +75,8 @@ export async function assertCodexOffersOnlyProbe(cli: string, cwd: string, env: 
     const skills: { skills: { path: string }[] }[] = (await ask('skills/list', { cwds: [cwd], forceReload: true })).data
     const names = servers.map(s => s.name)
     const skillPaths = skills.flatMap(s => s.skills.map(k => k.path))
-    if (names.join() !== PROBE) throw new IsolationError(`Codex's MCP servers are not just ${PROBE}: ${names.join(', ')}`)
+    if (names.join() !== PROBE)
+      throw new IsolationError(`Codex's MCP servers are not just ${PROBE}: ${names.join(', ')}`)
     if (apps.length > 0) throw new IsolationError(`Codex offers apps: ${apps.map(a => a.id).join(', ')}`)
     if (skillPaths.length > 0) throw new IsolationError(`Codex offers skills: ${skillPaths.join(', ')}`)
   } finally {
