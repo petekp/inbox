@@ -63,7 +63,7 @@ export function lines(stdout: string): Record<string, any>[] {
 
 export const PROBE_TOOLS = agentTools(CLAUDE_CODE).map(t => `mcp__${PROBE}__${t.name}`)
 
-/** Throws unless the session has exactly the connected probe server and no tool besides its own. */
+/** Throws unless the session has exactly the connected probe server, no tool besides its own, and only built-in plugins. */
 export function assertOnlyProbe(init: Record<string, any>) {
   const servers: { name: string; status: string }[] = init.mcp_servers ?? []
   const tools: string[] = init.tools ?? []
@@ -71,6 +71,9 @@ export function assertOnlyProbe(init: Record<string, any>) {
     throw new IsolationError(`MCP servers are not just a connected ${PROBE}: ${JSON.stringify(servers)}`)
   const extra = tools.filter(t => !PROBE_TOOLS.includes(t))
   if (extra.length > 0) throw new IsolationError(`unexpected tools: ${extra.join(', ')}`)
+  const plugins: { name: string; path: string }[] = init.plugins ?? []
+  const loaded = plugins.filter(p => p.path !== 'builtin')
+  if (loaded.length > 0) throw new IsolationError(`plugins loaded: ${loaded.map(p => p.name).join(', ')}`)
 }
 
 export function tomlString(s: string): string {
