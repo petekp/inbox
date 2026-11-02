@@ -6,6 +6,18 @@ import { TAB_COUNT_GAP } from './tabs-client'
 
 export const REPLY_ROWS = 3
 export const DESKTOP_REPLY_ROWS = 2
+/** The Claude app's Input keeps this width whatever room its Box gives, unless an `overflow="hidden"` Box shrinks it. */
+export const DESKTOP_FIELD_PT = 180
+
+/**
+ * The rows a text field needs to show `text` whole, from 1 up to `most`: each of its lines takes the rows `lineRows`
+ * counts, and at least one.
+ */
+export function fieldRows(text: string, lineRows: (line: string) => number, most: number): number {
+  const rows = text.split('\n').reduce((n, line) => n + Math.max(1, lineRows(line)), 0)
+
+  return Math.min(most, rows)
+}
 export const DESKTOP_WIDE_AT = 50
 export const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
 export const DESKTOP_LINE_PT = 19

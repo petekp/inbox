@@ -86,6 +86,7 @@ export type PaneBase = {
   isUnread: boolean
   now: number
   typing: string | null
+  drafts: Record<string, Draft>
   unfolded: FoldKind[]
   foldHover: FoldKind | null
   isHelpShown: boolean

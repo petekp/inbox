@@ -3038,6 +3038,7 @@ export const register: Register = on => {
       selection,
       theme,
       typing,
+      drafts,
       unfolded,
       foldHover,
       isHelpShown,
@@ -3051,6 +3052,7 @@ export const register: Register = on => {
       read($, SELECTION),
       read($, THEME),
       read($, TYPING),
+      read($, DRAFTS),
       read($, UNFOLDED),
       read($, FOLD_HOVER),
       read($, IS_HELP_SHOWN),
@@ -3074,8 +3076,7 @@ export const register: Register = on => {
     const undoEnd = lastUndoEnd(view)
     if (undoEnd !== null) redrawWhileUndoLasts($, undoEnd)
     // A hot reload keeps TYPING but empties openFields, so an open field takes its key and seed again here.
-    if (typing !== null && !openFields.has(typing))
-      openFields.set(typing, openedField(typing, (await read($, DRAFTS))[typing]))
+    if (typing !== null && !openFields.has(typing)) openFields.set(typing, openedField(typing, drafts[typing]))
     if (e.props.isFocused || typing !== paneState.fieldWithoutKeys) paneState.fieldWithoutKeys = null
     // Escape, or a click outside the pane, closes the field and keeps its draft, as Cancel does.
     if (isKeyboardHandedBack && typing !== null) later($, 0, () => update($, TYPING, t => (t === typing ? null : t)))
@@ -3480,6 +3481,7 @@ export const register: Register = on => {
         ...statusLines,
         Input,
         typing,
+        drafts,
         now,
         markWidth,
         desktopHairline,
