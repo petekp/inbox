@@ -1,5 +1,5 @@
 import { toneSvg } from './desktop-svg'
-import { HELP_COPY, type LegendEntry, MARK_LEGEND } from './help'
+import { HELP_COPY, type LegendEntry, markLegend } from './help'
 import { markShape } from './marks'
 import type { PaneBase } from './pane-context'
 import type { PaneRowLines } from './pane-row-lines'
@@ -21,7 +21,8 @@ export function paneHelp({
   groupTitle,
   sections,
   statusRowLine,
-}: Pick<PaneBase, 'pal' | 'keyList' | 'Box' | 'keyColumn' | 'Text' | 'hasRail'> &
+  isNextBuild,
+}: { isNextBuild: boolean } & Pick<PaneBase, 'pal' | 'keyList' | 'Box' | 'keyColumn' | 'Text' | 'hasRail'> &
   Pick<PaneRowLines, 'ToneSvg' | 'svgCell' | 'markGlyph'> &
   Pick<PaneRowParts, 'section' | 'groupTitle' | 'sections'> &
   Pick<PaneStatus, 'statusRowLine'>) {
@@ -55,7 +56,7 @@ export function paneHelp({
   const helpMarksSection = () =>
     section([
       groupTitle(HELP_COPY.marks, 0),
-      ...MARK_LEGEND.map(m =>
+      ...markLegend(isNextBuild).map(m =>
         statusRowLine({
           key: `help-mark-${m.mark}`,
           mark: legendMark(m),

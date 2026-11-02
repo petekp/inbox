@@ -82,6 +82,14 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
   },
 ]
 
+/** Marks only the Status tab draws, which a release build does not show. */
+const STATUS_ONLY_MARKS = new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS['waits-on-other'].mark])
+
+/** The marks a build's Help explains: a release build leaves out the ones only the Status tab draws. */
+export function markLegend(isNextBuild: boolean): readonly LegendEntry[] {
+  return isNextBuild ? MARK_LEGEND : MARK_LEGEND.filter(m => !STATUS_ONLY_MARKS.has(m.mark))
+}
+
 export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', marks: 'Marks' } as const
 
 export type HelpKey = { keys: string; does: string }

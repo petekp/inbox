@@ -3507,6 +3507,7 @@ export const register: Register = on => {
     )
 
     const { helpView } = paneHelp({
+      isNextBuild: mod.isNextBuild,
       pal,
       keyList,
       Box,

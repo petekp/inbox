@@ -1637,6 +1637,10 @@ var MARK_LEGEND = [
     words: "Opportunity: something that could be better"
   }
 ];
+var STATUS_ONLY_MARKS = new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
+function markLegend(isNextBuild) {
+  return isNextBuild ? MARK_LEGEND : MARK_LEGEND.filter((m) => !STATUS_ONLY_MARKS.has(m.mark));
+}
 var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks" };
 var PR_TAB_HELP_KEYS = [
   { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
@@ -5666,7 +5670,7 @@ function helpEntries(screen, tab) {
     ...keys.map((key) => ({ kind: "key", key, column })),
     { kind: "note", text: "" },
     { kind: "heading", text: HELP_COPY.marks },
-    ...MARK_LEGEND.map((entry) => ({ kind: "legend", entry }))
+    ...markLegend(screen.isNextBuild === true).map((entry) => ({ kind: "legend", entry }))
   ];
 }
 function entriesOf(screen, ui, tab, now) {

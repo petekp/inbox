@@ -1261,6 +1261,7 @@ var MARK_LEGEND = [
     words: "Opportunity: something that could be better"
   }
 ];
+var STATUS_ONLY_MARKS = /* @__PURE__ */ new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
 
 // ../hooks/status-children.ts
 function isChildRunning(c, now) {
