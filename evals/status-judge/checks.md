@@ -123,11 +123,11 @@ Examples:
 
 Where it stands is the few words after a subject row's name. They say the state of the work in the work's own terms: what works, what is left, or what it waits on. When the facts give a piece parts in different states, the words keep each part, or each part has a row of its own.
 
-The check passes when every row's words say its piece's state and agree with the facts. Words the facts neither confirm nor contradict are not a failure.
+The check passes when every row's words say its piece's state and agree with the facts. Words the facts neither confirm nor contradict are not a failure. When the facts show a piece started with nothing in it working yet, words that say so pass, such as `started, not working yet` or `incomplete`.
 
 The check fails when a row's words do any of these:
 
-- They say what the agent is doing in place of where the work stands, in any words: `edits underway`, `being edited`, `in progress` and `working on it` all fail alike.
+- They say what the agent is doing or did in place of where the work stands, in any words: `edits underway`, `being edited`, `edits begun` and `working on it` all fail alike.
 - They name the step that ran, or the tool or command that runs now.
 - They name an id, such as a PR or ticket number, a hash or a file.
 - They report what was said in the conversation.
@@ -143,9 +143,11 @@ Examples:
 - Pass: `Recovery codes: generated, not shown yet`.
 - Pass: `SMS codes: US works, EU codes never arrive`.
 - Pass: `3.0 release: after recovery codes`.
+- Pass: `Authenticator setup: started, not working yet`, when nothing in it works yet.
 - Fail: `SMS codes: partly working`, when US numbers work and EU codes never arrive.
 - Fail: `Recovery codes: tests running`.
 - Fail: `Recovery codes: edits underway`.
+- Fail: `Authenticator setup: edits begun, untested`.
 - Fail: `Recovery codes: in review, subagent checking tests`, while that subagent shows as a child row under it.
 - Fail: `SMS codes: PR #212`.
 - Fail: `Authenticator setup: compared three QR libraries`.
