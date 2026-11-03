@@ -289,7 +289,7 @@ function childName(text) {
 `)[0] ?? "", NAME_CHARS);
 }
 function nameInWords(name) {
-  const words = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(/[-_\s]+/).filter(Boolean).map((w, n) => n > 0 && /^[A-Z][a-z]+$/.test(w) ? w.toLowerCase() : w);
+  const words = name.replace(/([a-z]{2,})(?=[A-Z][a-z])/g, "$1 ").split(/[-_\s]+/).filter(Boolean);
   return words.join(" ") || name;
 }
 function childWorked(o, ref, at) {

@@ -37,16 +37,15 @@ function childName(text: string): string {
 }
 
 /**
- * A delegate's Herdr name in words, split at each `-`, `_` and lowercase-to-capital change, so `pdf-layout` and
- * `pdfLayout` read "pdf layout". A capitalized word after the first is lowercased, and a word in capitals keeps them.
- * A name with nothing to split at, such as `pdfx2`, stays as it is.
+ * A delegate's Herdr name in words, split at each `-` and `_`, and where two or more lowercase letters meet a capital
+ * and a lowercase letter, so `pdf-layout` reads "pdf layout" and `pdfLayout` reads "pdf Layout". Capitals stay as
+ * written, so `macOS-port` reads "macOS port" and `iOSApp` stays as it is, as does `pdfx2`.
  */
 export function nameInWords(name: string): string {
   const words = name
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([a-z]{2,})(?=[A-Z][a-z])/g, '$1 ')
     .split(/[-_\s]+/)
     .filter(Boolean)
-    .map((w, n) => (n > 0 && /^[A-Z][a-z]+$/.test(w) ? w.toLowerCase() : w))
 
   return words.join(' ') || name
 }
@@ -116,8 +115,8 @@ export const delegateRef = (name: string) => `herdr:${name}`
 /**
  * The delegate a step names runs from `at`. A delegate prompted again keeps its id, name and link, and a new run starts
  * its age over. A delegate is named by its Herdr name in words until Herdr shows its focus, and one saved under its
- * bare Herdr name takes the words when it runs again. A prompt shows it
- * working, so it can read finished once Herdr shows it ready.
+ * bare Herdr name takes the words when it runs again. A prompt shows it working, so it can read finished once Herdr
+ * shows it ready.
  */
 function delegateRunning(o: SessionStatus | null, step: DelegateStep, at: number): SessionStatus | null {
   const ref = delegateRef(step.name)
