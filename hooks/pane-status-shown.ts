@@ -118,10 +118,11 @@ export function probedScroll(e: UiScrollInput): UiScrollResult | null {
   return { deny: 'measuring where the Status rows sit' }
 }
 
-/** The rows the look that just ended showed. The next look starts with none. */
+/** The rows the look that just ended showed, and a measurement under way stops. The next look starts with none. */
 export function takeShownRows(): ShownRows {
   const rows = look.rows === 'all' ? 'all' : Object.fromEntries(look.rows)
   look.rows = new Map()
+  look.measuring = null
 
   return rows
 }

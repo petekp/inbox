@@ -141,7 +141,7 @@ export function lookEnded(o: SessionStatus | null, at: number, shown: ShownRows)
   const isLongEnough = at - o.look.startedAt >= LOOK_MIN_MS
   if (!isLongEnough) return { ...o, look: null }
   const isShown = (s: Subject) => shown === 'all' || (shown[s.id] ?? -Infinity) >= s.changedAt
-  const missed = o.subjects.filter(s => !isShown(s)).map(s => [s.id, subjectSeenAt(o, s.id)])
+  const missed = o.subjects.filter(s => s.into === null && !isShown(s)).map(s => [s.id, subjectSeenAt(o, s.id)])
 
   return { ...o, lastLookAt: at, missedInLastLook: Object.fromEntries(missed), look: null }
 }

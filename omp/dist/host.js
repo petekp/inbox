@@ -199,7 +199,7 @@ function lookEnded(o, at, shown) {
   if (!isLongEnough)
     return { ...o, look: null };
   const isShown = (s) => shown === "all" || (shown[s.id] ?? -Infinity) >= s.changedAt;
-  const missed = o.subjects.filter((s) => !isShown(s)).map((s) => [s.id, subjectSeenAt(o, s.id)]);
+  const missed = o.subjects.filter((s) => s.into === null && !isShown(s)).map((s) => [s.id, subjectSeenAt(o, s.id)]);
   return { ...o, lastLookAt: at, missedInLastLook: Object.fromEntries(missed), look: null };
 }
 
@@ -7782,7 +7782,11 @@ var CLIENTS = {
       },
       "status-view-ask": { kind: "full" },
       "status-goal": { kind: "full" },
-      "status-done-fold": { kind: "full" }
+      "status-done-fold": { kind: "full" },
+      "seen-on-screen": {
+        kind: "different",
+        reason: "The terminal counts the rows in its window as seen. The desktop pane counts every subject, since its scroll position is not yet probed."
+      }
     }
   },
   codex: {
@@ -7894,7 +7898,8 @@ var CLIENTS = {
       "status-done-fold": {
         kind: "different",
         reason: "A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking."
-      }
+      },
+      "seen-on-screen": { kind: "full" }
     }
   },
   omp: {
@@ -7970,7 +7975,8 @@ var CLIENTS = {
       },
       "status-view-ask": { kind: "full" },
       "status-goal": { kind: "full" },
-      "status-done-fold": { kind: "full" }
+      "status-done-fold": { kind: "full" },
+      "seen-on-screen": { kind: "full" }
     }
   }
 };
