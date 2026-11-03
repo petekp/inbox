@@ -3002,7 +3002,7 @@ function upgraded(saved, sessionId) {
     }),
     shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     heard,
-    lastModelFailure: saved.lastModelFailure ? { signal: null, errorCode: null, timeoutMs: null, ...saved.lastModelFailure } : null,
+    lastModelFailure: saved.lastModelFailure ? { signal: null, errorCode: null, timeoutMs: null, call: null, elapsedMs: null, ...saved.lastModelFailure } : null,
     coveredTurn: saved.coveredTurn !== void 0 ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null)
   };
 }
@@ -4552,7 +4552,7 @@ async function keepNewerSignIn(link, auth) {
 }
 var FAILURE_TAIL_CHARS = 2e3;
 function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
-}) {
+}, now = Date.now) {
   return async (prompt, instructions, report) => {
     const work = join4(dir, "exec");
     const system = join4(dir, `inbox-system-${createHash2("sha256").update(instructions).digest("hex").slice(0, 12)}.md`);
@@ -4563,6 +4563,7 @@ function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
     let off = [...OFF];
     for (let tries = 0; tries <= OFF.length; tries += 1) {
       await rm(out, { force: true });
+      const startedAt = now();
       const r = await exec(
         [
           cli,
@@ -4591,6 +4592,7 @@ function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
         ],
         { cwd: work, timeoutMs: TIMEOUT_MS, env: home ? { CODEX_HOME: home } : {}, input: prompt }
       );
+      const elapsedMs = now() - startedAt;
       const unknown = r.stderr.match(/Unknown feature flag: (\S+)/)?.[1];
       if (r.code !== 0 && unknown && off.includes(unknown)) {
         off = off.filter((f) => f !== unknown);
@@ -4605,7 +4607,9 @@ function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
         stderr,
         signal: r.signal ?? null,
         errorCode: r.errorCode ?? null,
-        timeoutMs: r.code === TIMED_OUT_CODE ? TIMEOUT_MS : null
+        timeoutMs: r.code === TIMED_OUT_CODE ? TIMEOUT_MS : null,
+        call: instructions === STATUS_SYSTEM ? "status" : "ledger",
+        elapsedMs
       };
       report?.({ model: MODEL, ...text2 === null ? { error: `codex exec ${endOf(failure)}: ${stderr.trim()}` } : {} });
       if (text2 === null) await onFailure(failure);

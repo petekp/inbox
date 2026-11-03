@@ -139,7 +139,7 @@ test('an update whose codex command cannot start saves why as its failure beside
   assert.match(s.lastModelFailure?.stderr ?? '', /null bytes/)
 })
 
-test('a failed update saves the signal that ended codex, the error of a codex that could not start, and the timeout it ran out', async t => {
+test('a failed update saves the signal that ended codex, the error of a codex that could not start, the timeout it ran out, which call failed and how long codex ran', async t => {
   const dir = tempDir()
   const personHome = tempDir()
   const bin = tempDir()
@@ -153,22 +153,24 @@ test('a failed update saves the signal that ended codex, the error of a codex th
   )
   chmodSync(killed, 0o755)
   const timedOut = fakeRunner(() => ({ code: TIMED_OUT_CODE, stdout: '', stderr: '' })).exec
-  const failureWith = async (exec: Parameters<typeof codexAsk>[0], cli: string) => {
+  const failureWith = async (exec: Parameters<typeof codexAsk>[0], cli: string, system = 'ledger system') => {
     const errors: string[] = []
+    let clock = 0
     await codexAsk(
       exec,
       cli,
       dir,
       personHome,
       recordModelFailure(dir, 's1', () => 7),
-    )('prompt', 'system', r => errors.push(r.error ?? ''))
+      () => (clock += 40),
+    )('prompt', system, r => errors.push(r.error ?? ''))
 
     return { ...(await readState(dir, 's1')).lastModelFailure, error: errors[0] ?? '' }
   }
 
   const bySignal = await failureWith(run, killed)
   const unstartable = await failureWith(run, join(bin, 'missing-codex'))
-  const late = await failureWith(timedOut, killed)
+  const late = await failureWith(timedOut, killed, STATUS_SYSTEM)
 
   assert.deepEqual(
     [bySignal.code, bySignal.signal, bySignal.errorCode, bySignal.timeoutMs],
@@ -181,4 +183,6 @@ test('a failed update saves the signal that ended codex, the error of a codex th
   assert.match(unstartable.error, /^codex exec failed with ENOENT/)
   assert.deepEqual([late.code, late.signal, late.timeoutMs], [TIMED_OUT_CODE, null, 120_000])
   assert.match(late.error, /^codex exec timed out after 120 s/)
+  assert.deepEqual([bySignal.call, late.call], ['ledger', 'status'])
+  assert.deepEqual([bySignal.elapsedMs, late.elapsedMs], [40, 40])
 })

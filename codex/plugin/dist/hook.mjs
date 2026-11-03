@@ -2470,7 +2470,7 @@ function upgraded(saved, sessionId) {
     }),
     shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     heard,
-    lastModelFailure: saved.lastModelFailure ? { signal: null, errorCode: null, timeoutMs: null, ...saved.lastModelFailure } : null,
+    lastModelFailure: saved.lastModelFailure ? { signal: null, errorCode: null, timeoutMs: null, call: null, elapsedMs: null, ...saved.lastModelFailure } : null,
     coveredTurn: saved.coveredTurn !== void 0 ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null)
   };
 }

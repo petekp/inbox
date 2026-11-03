@@ -305,7 +305,7 @@ test('tryWithLock preserves a nested lock timeout after acquiring its own lock',
   }
 })
 
-test('a file saved before the version, the rollout path, the dropped-reply flag, the covered turn and a failure’s signal, error code and timeout existed reads with their defaults, a save writes the session version, and its covered turn is the last recorded prompt’s, or the one before while that turn runs', async t => {
+test('a file saved before the version, the rollout path, the dropped-reply flag, the covered turn and a failure’s signal, error code, timeout, call and elapsed time existed reads with their defaults, a save writes the session version, and its covered turn is the last recorded prompt’s, or the one before while that turn runs', async t => {
   const dir = tempDir()
   t.after(() => rm(dir, { recursive: true, force: true }))
   const initial = await updateState(dir, 's1', s => s)
@@ -316,7 +316,14 @@ test('a file saved before the version, the rollout path, the dropped-reply flag,
   await writeFile(statePath(dir, 's1'), JSON.stringify({ ...older, presence, lastModelFailure: oldFailure }))
 
   const read = await readState(dir, 's1')
-  assert.deepEqual(read.lastModelFailure, { ...oldFailure, signal: null, errorCode: null, timeoutMs: null })
+  assert.deepEqual(read.lastModelFailure, {
+    ...oldFailure,
+    signal: null,
+    errorCode: null,
+    timeoutMs: null,
+    call: null,
+    elapsedMs: null,
+  })
   assert.equal(read.version, SESSION_VERSION)
   assert.equal(read.transcriptPath, null)
   assert.equal(read.presence.hasDroppedReply, false)

@@ -27,6 +27,7 @@ import {
 import type { Ask } from '../../hooks/session-host'
 import { refreshStatus as refreshSessionStatus } from '../../hooks/status-records'
 import type { StatusRecords, RecordFiles } from '../../hooks/status-records'
+import { STATUS_SYSTEM } from '../../hooks/status-prompt'
 import { screenTabOf } from '../../hooks/tabs'
 import { isTabOpen } from './core'
 import { codexStore } from './host'
@@ -113,7 +114,7 @@ const FAILURE_TAIL_CHARS = 2000
 
 /**
  * Null when it fails, after passing the failure to `onFailure`. `personHome` is the person's Codex home, which holds
- * their sign-in.
+ * their sign-in. `now` times each run of the command.
  */
 export function codexAsk(
   exec: RunWithInput,
@@ -121,6 +122,7 @@ export function codexAsk(
   dir: string,
   personHome: string,
   onFailure: (failure: Omit<ModelFailure, 'at'>) => Promise<void> = async () => {},
+  now: () => number = Date.now,
 ): Ask {
   return async (prompt, instructions, report) => {
     const work = join(dir, 'exec')
@@ -132,6 +134,7 @@ export function codexAsk(
     let off = [...OFF]
     for (let tries = 0; tries <= OFF.length; tries += 1) {
       await rm(out, { force: true })
+      const startedAt = now()
       // `-` reads the prompt from stdin. No argument can hold a NUL byte, and the conversation in a prompt can.
       const r = await exec(
         [
@@ -161,6 +164,7 @@ export function codexAsk(
         ],
         { cwd: work, timeoutMs: TIMEOUT_MS, env: home ? { CODEX_HOME: home } : {}, input: prompt },
       )
+      const elapsedMs = now() - startedAt
       const unknown = r.stderr.match(/Unknown feature flag: (\S+)/)?.[1]
       if (r.code !== 0 && unknown && off.includes(unknown)) {
         off = off.filter(f => f !== unknown)
@@ -176,6 +180,8 @@ export function codexAsk(
         signal: r.signal ?? null,
         errorCode: r.errorCode ?? null,
         timeoutMs: r.code === TIMED_OUT_CODE ? TIMEOUT_MS : null,
+        call: instructions === STATUS_SYSTEM ? ('status' as const) : ('ledger' as const),
+        elapsedMs,
       }
       report?.({ model: MODEL, ...(text === null ? { error: `codex exec ${endOf(failure)}: ${stderr.trim()}` } : {}) })
       if (text === null) await onFailure(failure)
