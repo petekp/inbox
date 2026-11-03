@@ -115,7 +115,8 @@ export const delegateRef = (name: string) => `herdr:${name}`
 
 /**
  * The delegate a step names runs from `at`. A delegate prompted again keeps its id, name and link, and a new run starts
- * its age over. A new delegate is named by its Herdr name in words until Herdr shows its focus. A prompt shows it
+ * its age over. A delegate is named by its Herdr name in words until Herdr shows its focus, and one saved under its
+ * bare Herdr name takes the words when it runs again. A prompt shows it
  * working, so it can read finished once Herdr shows it ready.
  */
 function delegateRunning(o: SessionStatus | null, step: DelegateStep, at: number): SessionStatus | null {
@@ -123,9 +124,14 @@ function delegateRunning(o: SessionStatus | null, step: DelegateStep, at: number
   const known = o?.children.find(c => c.ref === ref)
   const isRunning = known !== undefined && known.endedAt === null
   if (!isRunning)
-    return childStarted(o, { ref, kind: 'delegate', name: known?.name ?? nameInWords(step.name) }, at, {
-      delegateState: step.isPrompt ? 'working' : null,
-    })
+    return childStarted(
+      o,
+      { ref, kind: 'delegate', name: known && known.name !== step.name ? known.name : nameInWords(step.name) },
+      at,
+      {
+        delegateState: step.isPrompt ? 'working' : null,
+      },
+    )
   const active = childActive(o, ref, at)
 
   return step.isPrompt ? delegateStateSet(active, ref, 'working') : active

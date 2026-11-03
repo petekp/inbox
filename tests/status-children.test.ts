@@ -317,6 +317,14 @@ test('a child row says what its work does: a delegate shows the focus its sessio
     },
     0,
   )
+  const delegateRow = {
+    ref: 'herdr:release-notes',
+    kind: 'delegate' as const,
+    name: '',
+    startedAt: 0,
+    endedAt: null,
+    lastActivityAt: 0,
+  }
   const names = (x: SessionStatus | null) => page(x, 4 * MIN).rows.flatMap(r => (r.kind === 'child' ? [r.name] : []))
 
   expect(names(o)).toEqual(['pdfx2', 'release notes', 'Review the sync engine diff'])
@@ -327,6 +335,8 @@ test('a child row says what its work does: a delegate shows the focus its sessio
   ])
   const named = delegatesSettled(o, agents, MIN)
   expect(names(named)).toEqual(['Lay out the PDF export', 'release notes', 'Review the sync engine diff'])
+  const saved = childEnded(withChild(null, { ...delegateRow, name: 'release-notes' }, 0), 'herdr:release-notes', MIN)
+  expect(names(delegatesStarted(saved, 'herdr agent prompt release-notes "go on"', 2 * MIN))).toEqual(['release notes'])
   const ended = childEnded(named, 'herdr:pdfx2', 2 * MIN)
   expect(names(delegatesStarted(ended, 'herdr agent prompt pdfx2 "go on"', 3 * MIN))).toContain(
     'Lay out the PDF export',

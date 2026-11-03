@@ -318,7 +318,7 @@ function delegateRunning(o, step, at) {
   const known = o?.children.find((c) => c.ref === ref);
   const isRunning = known !== undefined && known.endedAt === null;
   if (!isRunning)
-    return childStarted(o, { ref, kind: "delegate", name: known?.name ?? nameInWords(step.name) }, at, {
+    return childStarted(o, { ref, kind: "delegate", name: known && known.name !== step.name ? known.name : nameInWords(step.name) }, at, {
       delegateState: step.isPrompt ? "working" : null
     });
   const active = childActive(o, ref, at);
