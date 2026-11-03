@@ -1,5 +1,5 @@
 import type { AgentTool } from '../hooks/tools'
-import type { Ledger } from '../types'
+import type { LastAction, Ledger } from '../types'
 
 export type Agent = 'claude' | 'codex' | 'omp'
 
@@ -32,6 +32,8 @@ export type Case = {
   ledger?: Partial<Ledger>
   /** The inbox the tools answer from, when it differs from what the agent was shown. */
   toolLedger?: Partial<Ledger>
+  /** The person's latest press on each row, by row id, as the tools see it. */
+  lastActions?: Record<string, LastAction>
   /** Files to put in the folder the agent runs in, by path within it. */
   files?: Record<string, string>
   prompt: string

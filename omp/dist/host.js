@@ -743,7 +743,7 @@ var compareRequest = (texts) => [
   "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
   `Then make a page from the inbox's comparison template. Write the comparison as JSON in the shape the comment at the top of the template shows, with the few measures that tell the choices apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Build the page with: cat "${texts.comparePage}" <your JSON file> > <your page>.html`,
   "When the comparison is done, reply without a table, since the page holds the measures. Give your pick and say whether it changed, your reason in one line, one line on anything you did not expect, and the page's absolute path.",
-  "Also call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps. That marks it compared. Call each choice by its name as listed."
+  "Also call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps. That updates the open question and marks it compared. It stays open, so do not close it. Call each choice by its name as listed."
 ].join(`
 
 `);
@@ -4236,12 +4236,12 @@ function agentTools(host) {
     { name: "order_prs", description: orderDescription(host), inputSchema: ORDER_SCHEMA }
   ];
 }
-function toolAnswer(host, ledger, tool, input, now) {
+function toolAnswer(host, ledger, tool, input, now, presses) {
   switch (tool) {
     case "record":
-      return recordItem(host, ledger, input, now);
+      return recordAfterCompare(host, ledger, input, now, presses) ?? recordItem(host, ledger, input, now);
     case "close":
-      return recordClose(host, ledger, input, now);
+      return recordClose(host, ledger, input, now, presses);
     case "order_prs":
       return orderPrs(host, ledger, input, now);
   }
@@ -4331,12 +4331,33 @@ function closedHow(c) {
       return `the inbox closed it (${c.outcome})`;
   }
 }
-function recordClose(host, ledger, input, now) {
+function isAfterCompareThisTurn(id, at, presses) {
+  const last = presses.lastActions[id];
+  return last?.action === "compare" && at >= Math.max(last.at, presses.turnStartedAt ?? last.at);
+}
+function isRecordedAfterCompare(ledger, id, presses) {
+  const item = ledger.items.find((i) => i.id === id);
+  if (item?.kind !== "question" || item.reportedAt === undefined)
+    return false;
+  return isAfterCompareThisTurn(id, item.reportedAt, presses);
+}
+function recordAfterCompare(host, ledger, input, now, presses) {
+  const isClosedAfterCompare = (c) => c.how === "claude" && c.kind === "question" && isAfterCompareThisTurn(c.id, c.at, presses);
+  const closed = ledger.closed.findLast(isClosedAfterCompare);
+  if (!closed)
+    return null;
+  const r = recordItem(host, reopenItem(ledger, closed.id), input, now);
+  const isUpdated = r.ledger.items.some((i) => i.id === closed.id && i.reportedAt === now);
+  return isUpdated ? r : null;
+}
+function recordClose(host, ledger, input, now, presses) {
   const id = cut(input.id, 80).replace(/^\[|\]$/g, "");
   const answer = cut(input.answer, 80);
   const reason = cut(input.reason, 80);
   if (id === "" || answer === "" && reason === "")
     return unchanged(ledger, "Not closed: give the id, and the user's answer or a reason.");
+  if (answer === "" && isRecordedAfterCompare(ledger, id, presses))
+    return unchanged(ledger, "Not closed: your record updated this question, and it stays open for the user.");
   const r = closeByAgent(host, ledger, id, answer ? { answer } : { reason }, now);
   if (r.closed && "item" in r.closed)
     return {
@@ -5083,7 +5104,8 @@ function completedAttempt(state, deliveryId, outcome) {
   };
 }
 function recorded(host, s, tool, args, now) {
-  const r = toolAnswer(host, s.ledger, tool, args, now);
+  const presses = { lastActions: s.lastActions, turnStartedAt: s.presence.turnStartedAt };
+  const r = toolAnswer(host, s.ledger, tool, args, now, presses);
   const ledger = withOrderStatuses(r.ledger, s.prViews.views);
   return { state: linkDialogs({ ...s, ledger }), result: r.result, personLine: r.personLine };
 }

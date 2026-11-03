@@ -103,7 +103,13 @@ function sandbox(c: Case, agent: Agent) {
   const log = join(dir, 'calls.jsonl')
   writeFileSync(
     state,
-    JSON.stringify({ agent, isGuided, shown: c.ledger ?? {}, ledger: c.toolLedger ?? c.ledger ?? {} }),
+    JSON.stringify({
+      agent,
+      isGuided,
+      shown: c.ledger ?? {},
+      ledger: c.toolLedger ?? c.ledger ?? {},
+      lastActions: c.lastActions ?? {},
+    }),
   )
   writeFileSync(log, '')
   const serverArgs = [probeServer, '--state', state, '--log', log]

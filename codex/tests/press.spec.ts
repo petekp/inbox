@@ -135,7 +135,10 @@ test('Fix hands a finding off and settles it as the choice made, each press with
   assert.deepEqual(stillOpen.closed, [])
   const filedAndClosed = {
     ...leftOpen,
-    ledger: recordClose(CODEX, leftOpen.ledger, { id: 'f3', reason: 'LIN-12' }, 90).ledger,
+    ledger: recordClose(CODEX, leftOpen.ledger, { id: 'f3', reason: 'LIN-12' }, 90, {
+      lastActions: {},
+      turnStartedAt: null,
+    }).ledger,
   }
   assert.deepEqual(
     viewOf(filedAndClosed, 90 + SETTLE_WINDOW_MS).findings.closed.map(f => [f.id, f.outcome]),
@@ -147,7 +150,11 @@ test('Fix hands a finding off and settles it as the choice made, each press with
     [['f3', 'open', 'Discuss']],
   )
   assert.equal(discussed.count, 1)
-  const closedBy = { ...sent, ledger: recordClose(CODEX, sent.ledger, { id: 'f3', reason: 'fixed' }, 90).ledger }
+  const closedBy = {
+    ...sent,
+    ledger: recordClose(CODEX, sent.ledger, { id: 'f3', reason: 'fixed' }, 90, { lastActions: {}, turnStartedAt: null })
+      .ledger,
+  }
   assert.deepEqual(
     viewOf(closedBy, 100, SHOWN).findings.rows.map(r => [r.id, r.state, r.actions]),
     [
@@ -216,7 +223,11 @@ test('Dismiss settles a row in place with Undo, and Undo puts it back open where
   assert.ok('stale' in pressed(undone, { action: 'undo', id: 'i1' }))
   const answered = after(s, { action: 'answer', id: 'i1', option: 'Fix add.js' })
   assert.ok('stale' in pressed(answered, { action: 'undo', id: 'i1' }))
-  const closedByCodex = { ...s, ledger: recordClose(CODEX, s.ledger, { id: 'i2', reason: 'done' }, 50).ledger }
+  const closedByCodex = {
+    ...s,
+    ledger: recordClose(CODEX, s.ledger, { id: 'i2', reason: 'done' }, 50, { lastActions: {}, turnStartedAt: null })
+      .ledger,
+  }
   assert.ok('stale' in pressed(closedByCodex, { action: 'undo', id: 'i2' }))
   const expired = {
     ...s,

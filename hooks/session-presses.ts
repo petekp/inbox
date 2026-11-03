@@ -128,7 +128,8 @@ export function recorded<S extends Session>(
   args: Record<string, unknown>,
   now: number,
 ): { state: S } & Omit<ToolAnswer, 'ledger'> {
-  const r = toolAnswer(host, s.ledger, tool, args, now)
+  const presses = { lastActions: s.lastActions, turnStartedAt: s.presence.turnStartedAt }
+  const r = toolAnswer(host, s.ledger, tool, args, now, presses)
   const ledger = withOrderStatuses(r.ledger, s.prViews.views)
 
   return { state: linkDialogs({ ...s, ledger }), result: r.result, personLine: r.personLine }
