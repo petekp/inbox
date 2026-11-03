@@ -1981,6 +1981,8 @@ var STALL_GAP = " \xB7 ";
 var STATUS_TEXT_LINES = 3;
 var NEW_CLOSED_ROWS = 2;
 var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
+var NAMED_FOLD_NAMES = 2;
+var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function mergedLine(merged, fits) {
   return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
@@ -2049,13 +2051,15 @@ function statusPage(s, now) {
   const foldCtx = { ...ctx, lookId: null, running: [] };
   const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
     const names = named.filter((x) => x.status === status).map((x) => x.name);
+    const hidden = names.length - NAMED_FOLD_NAMES;
+    const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []];
     return names.length === 0 ? [] : [
       {
         kind: "fold",
         id: `${prefix}also-${status}`,
         depth,
         ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${names.join(", ")}`
+        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`
       }
     ];
   });

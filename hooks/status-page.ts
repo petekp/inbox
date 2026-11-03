@@ -118,6 +118,14 @@ export const STATUS_TEXT_LINES = 3
 const NEW_CLOSED_ROWS = 2
 /** What a named fold says before the names it holds. Each closed status gets its own fold, in this order. */
 export const NAMED_FOLD_TEXT = { done: 'Also done: ', dropped: 'Also dropped: ' } as const
+/**
+ * The most names a named fold shows; it counts the rest as "+N more". Two names of up to `NAME_KEPT` characters, the
+ * prefix and the count wrap to at most `STATUS_TEXT_LINES` lines in 31 cells, the text width at the narrowest terminal
+ * dock, so omp, which cuts a row's text past that many lines, shows the whole line there too.
+ */
+const NAMED_FOLD_NAMES = 2
+/** What ends a named fold that holds more names than it shows. */
+export const namedFoldMore = (n: number) => `+${n} more`
 
 /** The order of subjects on each side of the look line, from what needs the person to what is finished. */
 const STATUS_PLACES = ['held', 'working', 'waits-on-other', 'queued', 'closed'] as const
@@ -236,6 +244,8 @@ export function statusPage(
   const namedFolds = (prefix: string, named: Subject[], depth: number): StatusRowParts[] =>
     (['done', 'dropped'] as const).flatMap(status => {
       const names = named.filter(x => x.status === status).map(x => x.name)
+      const hidden = names.length - NAMED_FOLD_NAMES
+      const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...(hidden > 0 ? [namedFoldMore(hidden)] : [])]
       return names.length === 0
         ? []
         : [
@@ -244,7 +254,7 @@ export function statusPage(
               id: `${prefix}also-${status}`,
               depth,
               ...SUBJECT_MARKS[status],
-              text: `${NAMED_FOLD_TEXT[status]}${names.join(', ')}`,
+              text: `${NAMED_FOLD_TEXT[status]}${shown.join(', ')}`,
             },
           ]
     })

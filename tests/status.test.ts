@@ -223,6 +223,19 @@ test('when every row on the page closed since the last look, the named fold ends
   ])
 })
 
+test('a named line shows two names, the newest first, and counts the rest as +N more', () => {
+  const names = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven']
+  const opened = after(null, names.map(n => `NEW: working | ${n} | x`).join('\n'), 10 * MIN)
+  const closed = names.reduce((o, _, n) => after(o, `DONE: s${n + 1} | done`, (20 + 5 * n) * MIN), opened)
+
+  expect(shape(page({ ...closed, lastLookAt: 15 * MIN }, 90 * MIN).rows)).toEqual([
+    '✓ Seven: done',
+    '✓ Six: done',
+    '✓ Also done: Five, Four, +3 more',
+    '-- Last seen',
+  ])
+})
+
 test('the Help legend explains every mark a row or group title draws, once each', () => {
   const drawn = new Set([
     ...Object.values(SUBJECT_MARKS).map(m => m.mark),
