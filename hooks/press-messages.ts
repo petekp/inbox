@@ -30,7 +30,7 @@ const COMPARE_IN_BACKGROUND =
   'Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.'
 
 const COMPARE_IN_TURN =
-  "Compare the choices in this question you asked me by trying them against the code, not from memory. Do it now, and reply with the result before this turn ends. A background subagent's result does not reach this chat once your turn has ended."
+  "Compare the choices in this question you asked me by trying them against the code, not from memory. Do it now, and reply with the result before this turn ends, because a background subagent's report after your turn ends may not reach this chat."
 
 const compareRequest = (texts: Pick<PressTexts, 'comparePage' | 'compareInBackground'>) =>
   [
