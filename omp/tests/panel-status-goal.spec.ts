@@ -16,7 +16,7 @@ const screenWith = (fields: Partial<SessionStatus>) => {
   const s = demoState(NOW)
   const overview = { ...s.ledger.overview!, askSubjects: {}, goal: null, milestones: [], serves: {}, ...fields }
 
-  return screenOf({ view: sessionView({ ...s, ledger: { ...s.ledger, overview } }, NOW, SETTLED_MS, true, NO_HOLDS) })
+  return screenOf({ view: sessionView({ ...s, ledger: { ...s.ledger, overview } }, NOW, SETTLED_MS, NO_HOLDS) })
 }
 const proposing = () =>
   screenWith({

@@ -135,8 +135,10 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     lastTypedMessageAt: null,
   })
   assert.equal(viewOf(dropped, 6).status.isUpdating, false)
-  assert.match(viewOf(dropped, 6).status.error ?? '', /^Last update failed\. The inbox cannot read this conversation/)
-  assert.doesNotMatch(viewOf(dropped, 6).status.error ?? '', /tries again/)
+  assert.match(
+    viewOf(dropped, 6).status.error ?? '',
+    /^Last update failed\. The inbox cannot read this conversation right now.*tries again after the agent's next reply\.$/,
+  )
 })
 
 test('a failed ledger catches up over a rollout Codex moved into archived_sessions, and saves where it is now', async () => {

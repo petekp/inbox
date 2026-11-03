@@ -334,10 +334,9 @@ export function footerStatus(
 /**
  * Where a failed ledger update stands. `waiting`: the host retries after the agent's next reply. `retrying`: an
  * update runs now. `failed-again`: a retry failed too, and the host tries again. `unreadable`: the last catch-up could
- * not read the conversation, and the next update tries again. `cannot-retry`: nothing is pending and the host cannot
- * catch up.
+ * not read the conversation, and the next update tries again.
  */
-export type UpdateRecovery = 'none' | 'waiting' | 'retrying' | 'failed-again' | 'unreadable' | 'cannot-retry'
+export type UpdateRecovery = 'none' | 'waiting' | 'retrying' | 'failed-again' | 'unreadable'
 
 const NEXT_TRY = " The inbox tries again after the agent's next reply."
 
@@ -345,8 +344,6 @@ const FAILED_UPDATE_TEXT: Record<Exclude<UpdateRecovery, 'none' | 'retrying'>, s
   waiting: `Last update failed. Items from that reply may be missing.${NEXT_TRY}`,
   'failed-again': `Last update failed, and its retry failed too. Items from recent replies may be missing.${NEXT_TRY}`,
   unreadable: `Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing.${NEXT_TRY}`,
-  'cannot-retry':
-    "Last update failed. The inbox cannot read this conversation to try again. Check the agent's last reply for anything that needs you.",
 }
 
 export function perTurnStatus(isUpdating: boolean, recovery: UpdateRecovery): ItemStatus {

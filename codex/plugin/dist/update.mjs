@@ -2821,8 +2821,7 @@ var NEXT_TRY = " The inbox tries again after the agent's next reply.";
 var FAILED_UPDATE_TEXT = {
   waiting: `Last update failed. Items from that reply may be missing.${NEXT_TRY}`,
   "failed-again": `Last update failed, and its retry failed too. Items from recent replies may be missing.${NEXT_TRY}`,
-  unreadable: `Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing.${NEXT_TRY}`,
-  "cannot-retry": "Last update failed. The inbox cannot read this conversation to try again. Check the agent's last reply for anything that needs you."
+  unreadable: `Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing.${NEXT_TRY}`
 };
 function perTurnStatus(isUpdating, recovery) {
   const error = recovery === "none" || recovery === "retrying" ? null : FAILED_UPDATE_TEXT[recovery];
@@ -2839,16 +2838,14 @@ function withoutStaleResult(last, now) {
 function withoutStalePending(lastActions, now) {
   return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]));
 }
-function updateRecovery(s, canCatchUp) {
+function updateRecovery(s) {
   const { presence } = s;
   if (presence.ledgerState !== "failed") return "none";
   if (presence.isUpdating) return "retrying";
-  const isPending = s.pending.length > 0;
-  if (!isPending && !canCatchUp) return "cannot-retry";
-  if (!isPending && presence.isConversationUnreadable) return "unreadable";
+  if (s.pending.length === 0 && presence.isConversationUnreadable) return "unreadable";
   return presence.failedAttempts > 1 ? "failed-again" : "waiting";
 }
-function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes = {}) {
+function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
   const inbox = inboxView({
@@ -2858,7 +2855,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     turns: s.presence,
     extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
     settleWindowMs,
-    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s, canCatchUp)),
+    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s)),
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt
@@ -3407,8 +3404,7 @@ function heardState(h) {
   return h.startAt === null || isMissed || turns >= 2 && h.stops === 0 ? "partial" : "heard";
 }
 function viewOf(s, now, holds = NO_HOLDS) {
-  const canCatchUp = s.transcriptPath !== null;
-  return { ...sessionView(s, now, SETTLE_WINDOW_MS, canCatchUp, holds), heard: heardState(s.heard), at: now };
+  return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds), heard: heardState(s.heard), at: now };
 }
 
 // ../hooks/herdr.ts

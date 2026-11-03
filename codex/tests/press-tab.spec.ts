@@ -27,7 +27,7 @@ test('the tab reports active work separately from pending exchanges and failed u
   assert.deepEqual(viewOf(scheduled, 60).status, { isUpdating: false, isRetrying: false, error: null })
   assert.equal(
     viewOf(s, 60).status.error,
-    "Last update failed. The inbox cannot read this conversation to try again. Check the agent's last reply for anything that needs you.",
+    "Last update failed. Items from that reply may be missing. The inbox tries again after the agent's next reply.",
   )
 })
 

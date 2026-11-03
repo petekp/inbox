@@ -32,7 +32,7 @@ test('a refused Done message leaves its row reading Not sent, with Undo', async 
   await press(host, { action: 'done', id }, false, NO_HOLDS)
   clock += host.settleWindowMs
   await wakeForDone(host)
-  const view = sessionView(await host.read(), clock, host.settleWindowMs, true)
+  const view = sessionView(await host.read(), clock, host.settleWindowMs)
 
   expect(view.needsYou.closed.tasks.map(c => c.delivery)).toEqual([{ error: 'queue refused', canUndo: true }])
 })
@@ -65,7 +65,7 @@ test('Compare reads Comparing… after its reply until the agent records the que
   await runUpdates(host)
   const id = (await host.read()).ledger.items[0]!.id
   const row = async (later = 0) => {
-    const view = sessionView(await host.read(), (await host.now()) + later, host.settleWindowMs, true)
+    const view = sessionView(await host.read(), (await host.now()) + later, host.settleWindowMs)
     const r = allRows(view).find(x => x.id === id)!
 
     return { feedback: r.feedback && feedbackText(r.feedback, 'terminal'), actions: r.actions.map(a => a.label) }
@@ -108,7 +108,7 @@ test('while a press is out, its button stays out and a second press sends nothin
   const s = await host.read()
   const at = await host.now()
   const explainOf = (notes: Record<string, RowNote>) => {
-    const row = allRows(sessionView(s, at, host.settleWindowMs, true, NO_HOLDS, notes)).find(r => r.id === id)!
+    const row = allRows(sessionView(s, at, host.settleWindowMs, NO_HOLDS, notes)).find(r => r.id === id)!
     const explain = row.actions.find(a => a.press.action === 'explain')!
 
     return { feedback: row.feedback?.is, label: explain.label, isOut: explain.isOut }

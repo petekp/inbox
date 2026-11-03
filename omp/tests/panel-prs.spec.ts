@@ -30,7 +30,7 @@ function withMerged(refs: string[]): PanelScreen {
     ]),
   )
 
-  return screenOf({ view: sessionView({ ...s, prViews: { ...s.prViews, views } }, NOW, SETTLED_MS, true, NO_HOLDS) })
+  return screenOf({ view: sessionView({ ...s, prViews: { ...s.prViews, views } }, NOW, SETTLED_MS, NO_HOLDS) })
 }
 
 function withOrder(prOrder: Partial<PrOrder>, lastActions: Record<string, LastAction> = {}): PanelScreen {
@@ -47,7 +47,7 @@ function withOrder(prOrder: Partial<PrOrder>, lastActions: Record<string, LastAc
   }
   const ordered = { ...s, ledger: { ...s.ledger, prOrder: order }, lastActions: { ...s.lastActions, ...lastActions } }
 
-  return screenOf({ view: sessionView(ordered, NOW, SETTLED_MS, true, NO_HOLDS) })
+  return screenOf({ view: sessionView(ordered, NOW, SETTLED_MS, NO_HOLDS) })
 }
 
 test('an order draws its title and reason above the PR blocks and a dim rank before each ranked PR, ahead of the rest', () => {
@@ -218,7 +218,7 @@ test('the PRs tab says when gh is missing, when gh is not signed in, and when th
   })
   expect(text(signedOut(screenOf()), ui)).toContain(GH_SIGNED_OUT_TEXT)
   expect(text(signedOut(screen), ui)).not.toContain(GH_SIGNED_OUT_TEXT)
-  const empty = { ...screenOf(), view: sessionView(emptyState('s'), NOW, SETTLED_MS, true) }
+  const empty = { ...screenOf(), view: sessionView(emptyState('s'), NOW, SETTLED_MS) }
   expect(text(empty, ui)).toContain('No PRs')
   expect(text(empty, ui)).toContain(prsEmptyHint('session'))
   expect(text(signedOut(empty), ui)).toContain(GH_SIGNED_OUT_TEXT)

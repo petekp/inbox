@@ -59,26 +59,23 @@ function withoutStalePending(lastActions: Record<string, LastAction>, now: numbe
 }
 
 /**
- * Where the session's failed ledger update stands. A pending exchange is retried on its own. Otherwise the host
- * retries by catching up, which needs `canCatchUp`.
+ * Where the session's failed ledger update stands. Every host retries after the agent's next reply: a pending exchange
+ * on its own, otherwise by catching up. A Codex chat saved with no rollout path gets one from that reply's Stop hook,
+ * which saves it before the update starts.
  */
-export function updateRecovery(s: Session, canCatchUp: boolean): UpdateRecovery {
+export function updateRecovery(s: Session): UpdateRecovery {
   const { presence } = s
   if (presence.ledgerState !== 'failed') return 'none'
   if (presence.isUpdating) return 'retrying'
-  const isPending = s.pending.length > 0
-  if (!isPending && !canCatchUp) return 'cannot-retry'
-  if (!isPending && presence.isConversationUnreadable) return 'unreadable'
+  if (s.pending.length === 0 && presence.isConversationUnreadable) return 'unreadable'
 
   return presence.failedAttempts > 1 ? 'failed-again' : 'waiting'
 }
 
-/** `canCatchUp` says whether the host can read the whole conversation, so its next update can retry a failed ledger. */
 export function sessionView(
   s: Session,
   now: number,
   settleWindowMs: number,
-  canCatchUp: boolean,
   holds: Holds = NO_HOLDS,
   notes: Record<string, RowNote> = {},
 ): SessionView {
@@ -92,7 +89,7 @@ export function sessionView(
     turns: s.presence,
     extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
     settleWindowMs,
-    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s, canCatchUp)),
+    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s)),
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,

@@ -4882,8 +4882,7 @@ var NEXT_TRY = " The inbox tries again after the agent's next reply.";
 var FAILED_UPDATE_TEXT = {
   waiting: `Last update failed. Items from that reply may be missing.${NEXT_TRY}`,
   "failed-again": `Last update failed, and its retry failed too. Items from recent replies may be missing.${NEXT_TRY}`,
-  unreadable: `Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing.${NEXT_TRY}`,
-  "cannot-retry": "Last update failed. The inbox cannot read this conversation to try again. Check the agent's last reply for anything that needs you."
+  unreadable: `Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing.${NEXT_TRY}`
 };
 function perTurnStatus(isUpdating, recovery) {
   const error = recovery === "none" || recovery === "retrying" ? null : FAILED_UPDATE_TEXT[recovery];
@@ -4901,20 +4900,17 @@ function withoutStaleResult(last, now) {
 function withoutStalePending(lastActions, now) {
   return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]));
 }
-function updateRecovery(s, canCatchUp) {
+function updateRecovery(s) {
   const { presence } = s;
   if (presence.ledgerState !== "failed")
     return "none";
   if (presence.isUpdating)
     return "retrying";
-  const isPending = s.pending.length > 0;
-  if (!isPending && !canCatchUp)
-    return "cannot-retry";
-  if (!isPending && presence.isConversationUnreadable)
+  if (s.pending.length === 0 && presence.isConversationUnreadable)
     return "unreadable";
   return presence.failedAttempts > 1 ? "failed-again" : "waiting";
 }
-function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes = {}) {
+function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
   const inbox = inboxView({
@@ -4924,7 +4920,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     turns: s.presence,
     extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
     settleWindowMs,
-    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s, canCatchUp)),
+    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s)),
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt
@@ -4966,7 +4962,7 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
 // ../hooks/session-presses.ts
 function isRepeatWhileOut(s, p, at, drawn) {
   const rowId = pressRowId(p);
-  const view = sessionView(s, at, drawn.settleWindowMs, false, drawn.holds);
+  const view = sessionView(s, at, drawn.settleWindowMs, drawn.holds);
   const row = allRows(view).find((r) => r.id === rowId);
   const last = view.lastActions[rowId];
   const state = row?.state ?? { is: "open" };
@@ -8702,7 +8698,7 @@ function demoSource(deps) {
   const changed = () => listeners.forEach((l) => l());
   return {
     screen: async (holds) => ({
-      view: sessionView(state, deps.now(), deps.settleWindowMs, true, holds),
+      view: sessionView(state, deps.now(), deps.settleWindowMs, holds),
       modelName: deps.modelName,
       isGhMissing: false,
       isFetchingPrs: false,
@@ -9254,7 +9250,7 @@ function panelCalls(context, sessions) {
       const id = sessionIdOf(ctx);
       const s = await readState(dir, id);
       return {
-        view: sessionView(s, deps.now(), deps.settleWindowMs, true, holds),
+        view: sessionView(s, deps.now(), deps.settleWindowMs, holds),
         modelName: modelNameOf(ctx),
         isGhMissing: memory.isGhMissing,
         isFetchingPrs: prFetches.isFetching(id),
@@ -9423,7 +9419,7 @@ function sessionCalls(context) {
       return;
     deps.background(reportToHerdr(run, async () => {
       const s = await readState(dir, id);
-      const view = sessionView(s, deps.now(), deps.settleWindowMs, true);
+      const view = sessionView(s, deps.now(), deps.settleWindowMs);
       return { pane, tokens: herdrTokens(s.ledger, s.stop, view, []) };
     }, deps.after));
   }
