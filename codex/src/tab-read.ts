@@ -91,8 +91,13 @@ function failureText(err: unknown): string {
 }
 
 export async function poll() {
-  await read()
-  later(poll, POLL_MS)
+  try {
+    await read()
+  } catch (err) {
+    console.error(err)
+  } finally {
+    later(poll, POLL_MS)
+  }
 }
 
 export function replies(): Record<string, number> {
