@@ -159,9 +159,9 @@ function pruneClosed(ledger, keep) {
 function idNumber(id) {
   return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
 }
-function inIdOrder(open3, entry) {
-  const at = open3.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
-  return at < 0 ? [...open3, entry] : [...open3.slice(0, at), entry, ...open3.slice(at)];
+function inIdOrder(open2, entry) {
+  const at = open2.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
+  return at < 0 ? [...open2, entry] : [...open2.slice(0, at), entry, ...open2.slice(at)];
 }
 function reopenItem(ledger, id) {
   const item = ledger.closed.findLast((c) => c.id === id)?.item;
@@ -586,10 +586,10 @@ function findingLine(finding) {
 function statusSummaryLines(ledger) {
   const head = ledger.overview?.head ?? null;
   const focus = head ? [head.title, head.description].filter(Boolean).join(": ") : "";
-  const open3 = (ledger.overview?.subjects ?? []).filter(isOpen);
+  const open2 = (ledger.overview?.subjects ?? []).filter(isOpen);
   return [
     ...focus ? [`Working on: ${focus}`] : [],
-    ...open3.length > 0 ? ["Where it stands:", ...open3.map((s) => `- ${s.name}: ${s.text || "-"} (${s.status})`)] : []
+    ...open2.length > 0 ? ["Where it stands:", ...open2.map((s) => `- ${s.name}: ${s.text || "-"} (${s.status})`)] : []
   ];
 }
 function carryText(ledger, title) {
@@ -806,7 +806,7 @@ function readiness(pr, isSent = () => false) {
   if (pr.state !== "OPEN") return result("closed", "Closed");
   const { fail: failing, cancelled, pending } = checkCounts(pr);
   const waiting = waitingThreads(pr);
-  const open3 = threadsOnYou(pr, isSent).length;
+  const open2 = threadsOnYou(pr, isSent).length;
   const sent = waiting.filter((t) => isSent(pr, t)).length;
   const changed = waiting.filter((t) => t.isLinesChanged && !isSent(pr, t)).length;
   const isPresent = (b) => b !== null;
@@ -816,7 +816,7 @@ function readiness(pr, isSent = () => false) {
     row(failing > 0 ? plural(failing, "failing check", "failing checks") : null),
     row(cancelled > 0 ? plural(cancelled, "cancelled check", "cancelled checks") : null),
     pr.reviewDecision === "CHANGES_REQUESTED" ? "changes requested" : null,
-    row(open3 > 0 ? threadsWaiting(open3) : null)
+    row(open2 > 0 ? threadsWaiting(open2) : null)
   ].filter(isPresent);
   const onOthers = [
     row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to Claude` : null),
@@ -882,11 +882,11 @@ function helpLabel(help) {
 }
 function steps(helps) {
   const copy = helps.find((h) => h.kind === "copy");
-  const open3 = helps.find((h) => h.kind === "open");
-  if (!copy || !open3 || copy.kind !== "copy" || open3.kind !== "open")
+  const open2 = helps.find((h) => h.kind === "open");
+  if (!copy || !open2 || copy.kind !== "copy" || open2.kind !== "open")
     return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
   return helps.filter((h) => h !== copy).map(
-    (h) => h === open3 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open3.path)}`, 48), step: [copy, open3] } : { label: helpLabel(h), step: [h] }
+    (h) => h === open2 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open2.path)}`, 48), step: [copy, open2] } : { label: helpLabel(h), step: [h] }
   );
 }
 function prSteps(item, tracked) {
@@ -1250,9 +1250,9 @@ function statusPage(s, now) {
   const newClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const main2 = subjects.filter((x) => !isOther(x));
   const other = subjects.filter(isOther);
-  const open3 = main2.filter(isOpen).sort(pageOrder);
-  const foldable = open3.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
-  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open3.length - foldable.length)));
+  const open2 = main2.filter(isOpen).sort(pageOrder);
+  const foldable = open2.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
+  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open2.length - foldable.length)));
   const split = (part) => {
     const newClosed = newClosedOf(part);
     return {
@@ -2411,7 +2411,8 @@ function emptyState(sessionId) {
     tabSeenAt: 0,
     shownTab: "needsYou",
     heard: NOTHING_HEARD,
-    coveredTurn: null
+    coveredTurn: null,
+    openCatchUpKey: null
   };
 }
 function statePath(dir, sessionId) {
@@ -3175,20 +3176,88 @@ async function withMissedTurns(s, { reads, currentTurnId, canMarkBehind = true, 
   };
 }
 
-// src/rollout-rows.ts
-import { open } from "node:fs/promises";
-async function readSessionMeta(path) {
+// src/rollout-file.ts
+import { createReadStream } from "node:fs";
+import { open, stat as stat2 } from "node:fs/promises";
+import * as zlib from "node:zlib";
+var canReadZstd = typeof zlib.createZstdDecompress === "function";
+var isCompressed = (path) => path.endsWith(".zst");
+async function plainBytesBefore(path, bytes, end) {
+  const file = await open(path, "r");
   try {
+    const stop = Math.min(end, (await file.stat()).size);
+    const start = Math.max(0, stop - bytes);
+    const buf = Buffer.alloc(stop - start);
+    const { bytesRead } = await file.read(buf, 0, buf.length, start);
+    return { buf: buf.subarray(0, bytesRead), start };
+  } finally {
+    await file.close();
+  }
+}
+async function compressedBytesBefore(path, bytes, end) {
+  if (!canReadZstd) throw new Error("This Node cannot read zstd");
+  const kept = [];
+  let keptBytes = 0;
+  let read = 0;
+  const input = createReadStream(path);
+  const content = input.pipe(zlib.createZstdDecompress());
+  input.on("error", (err) => content.destroy(err));
+  try {
+    for await (const chunk of content) {
+      const part = chunk.subarray(0, Math.max(0, end - read));
+      read += part.length;
+      kept.push(part);
+      keptBytes += part.length;
+      while (kept.length > 1 && keptBytes - kept[0].length >= bytes) keptBytes -= kept.shift().length;
+      if (read >= end) break;
+    }
+  } finally {
+    input.destroy();
+    content.destroy();
+  }
+  const window = Buffer.concat(kept);
+  const cut = Math.max(0, window.length - bytes);
+  return { buf: window.subarray(cut), start: read - window.length + cut };
+}
+var tails = /* @__PURE__ */ new Map();
+var KEPT_TAILS = 4;
+var TAIL_KEPT_BYTES = 8 * 1024 * 1024;
+async function bytesBefore(path, bytes, end = Infinity) {
+  if (!isCompressed(path)) return plainBytesBefore(path, bytes, end);
+  if (end !== Infinity || bytes > TAIL_KEPT_BYTES) return compressedBytesBefore(path, bytes, end);
+  const info = await stat2(path);
+  const version = `${info.size}:${info.mtimeMs}`;
+  let known = tails.get(path);
+  if (known?.version !== version) {
+    known = { version, tail: await compressedBytesBefore(path, TAIL_KEPT_BYTES, Infinity) };
+    tails.delete(path);
+    tails.set(path, known);
+    for (const old of tails.keys()) if (tails.size > KEPT_TAILS) tails.delete(old);
+  }
+  const { buf, start } = known.tail;
+  const cut = Math.max(0, buf.length - bytes);
+  return { buf: buf.subarray(cut), start: start + cut };
+}
+async function firstBytes(path, bytes) {
+  if (!isCompressed(path)) {
     const file = await open(path, "r");
     try {
-      const buf = Buffer.alloc(64 * 1024);
-      const { bytesRead } = await file.read(buf, 0, buf.length, 0);
-      const first = buf.subarray(0, bytesRead).toString("utf8").split("\n")[0] ?? "";
-      const meta = JSON.parse(first);
-      return meta.type === "session_meta" ? meta : null;
+      const buf = Buffer.alloc(bytes);
+      const { bytesRead } = await file.read(buf, 0, bytes, 0);
+      return buf.subarray(0, bytesRead);
     } finally {
       await file.close();
     }
+  }
+  return (await compressedBytesBefore(path, bytes, bytes)).buf;
+}
+
+// src/rollout-rows.ts
+async function readSessionMeta(path) {
+  try {
+    const first = (await firstBytes(path, 64 * 1024)).toString("utf8").split("\n")[0] ?? "";
+    const meta = JSON.parse(first);
+    return meta.type === "session_meta" ? meta : null;
   } catch {
     return null;
   }
@@ -3498,45 +3567,56 @@ function rolloutOfLines(lines, cwd, currentTurnId) {
 }
 
 // src/transcript.ts
-import { open as open2, readdir as readdir2 } from "node:fs/promises";
-import { dirname as dirname2, join as join2 } from "node:path";
+import { readdir as readdir2, stat as stat3 } from "node:fs/promises";
+import { basename as basename2, dirname as dirname2, join as join2 } from "node:path";
 async function namesIn(dir, pattern) {
   const names = await readdir2(dir).catch(() => []);
   return names.filter((n) => pattern.test(n)).sort().reverse();
 }
-async function newestRollout(sessions, isWanted) {
+var ROLLOUT_NAME = canReadZstd ? /^rollout-.+\.jsonl(\.zst)?$/ : /^rollout-.+\.jsonl$/;
+var plainName = (name) => name.replace(/\.zst$/, "");
+async function rolloutsIn(folder, isWanted) {
+  const names = (await namesIn(folder, ROLLOUT_NAME)).filter((n) => isWanted(plainName(n)));
+  const byNewest = (a, b) => plainName(b).localeCompare(plainName(a)) || a.length - b.length;
+  return names.sort(byNewest);
+}
+async function newestRollout(codexHome, isWanted) {
+  const sessions = join2(codexHome, "sessions");
   for (const year of await namesIn(sessions, /^\d{4}$/))
     for (const month of await namesIn(join2(sessions, year), /^\d{2}$/))
       for (const day of await namesIn(join2(sessions, year, month), /^\d{2}$/)) {
         const folder = join2(sessions, year, month, day);
-        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isWanted);
+        const [name] = await rolloutsIn(folder, isWanted);
         if (name !== void 0) return join2(folder, name);
       }
-  return null;
+  const archive = join2(codexHome, "archived_sessions");
+  const [archived] = await rolloutsIn(archive, isWanted);
+  return archived === void 0 ? null : join2(archive, archived);
+}
+function codexHomeOf(path) {
+  const folder = dirname2(path);
+  if (basename2(folder) === "archived_sessions") return dirname2(folder);
+  const sessions = dirname2(dirname2(dirname2(folder)));
+  return basename2(sessions) === "sessions" ? dirname2(sessions) : null;
 }
 async function historyBase(path) {
   const base = (await readSessionMeta(path))?.payload?.history_base;
   const id = base?.thread_id;
   const end = base?.end_byte_offset;
-  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0) return null;
-  const sessions = dirname2(dirname2(dirname2(dirname2(path))));
-  const basePath = await newestRollout(sessions, (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`));
+  const codexHome = codexHomeOf(path);
+  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0 || codexHome === null) return null;
+  const basePath = await newestRollout(
+    codexHome,
+    (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`)
+  );
   return basePath === null ? null : { path: basePath, end };
 }
 var TAIL_BYTES = 4 * 1024 * 1024;
 async function linesBefore(path, bytes, end = Infinity) {
-  const file = await open2(path, "r");
-  try {
-    const stop = Math.min(end, (await file.stat()).size);
-    const start = Math.max(0, stop - bytes);
-    const buf = Buffer.alloc(stop - start);
-    const { bytesRead } = await file.read(buf, 0, buf.length, start);
-    const lines = buf.subarray(0, bytesRead).toString("utf8").split("\n");
-    if (start > 0) lines.shift();
-    return { lines, start, read: bytesRead };
-  } finally {
-    await file.close();
-  }
+  const { buf, start } = await bytesBefore(path, bytes, end);
+  const lines = buf.toString("utf8").split("\n");
+  if (start > 0) lines.shift();
+  return { lines, start, read: buf.length };
 }
 var TURN_ROW_BYTES = 64 * 1024;
 async function tailLines(path, bytes) {

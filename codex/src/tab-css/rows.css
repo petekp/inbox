@@ -139,7 +139,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.row.selected .line .meta {
+.row.selected .line .meta,
+.row.closing .line .meta {
+  display: none;
+}
+.row.closing .closed-only,
+.row.collapsed:not(.closing) .open-only {
   display: none;
 }
 .quote {

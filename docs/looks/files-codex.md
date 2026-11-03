@@ -17,6 +17,8 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-list.tsx` | Codex adapter. A list's rows: the motion state of each, the row line, its open panel, and settled rows with Undo. |
 | `codex/src/tab-groups.tsx` | Codex adapter. The Asks and Finds tabs: their groups, empty lines and Closed folds. |
 | `codex/src/tab-prs.tsx` | Codex adapter. The PRs tab: PR blocks, their keys, the order lines, and settled PRs. |
+| `codex/src/tab-pr-steps.ts` | Codex adapter. The motion state of each PR row, PR group and press line on the PRs tab, through the row states. |
+| `codex/src/tab-pr-lines.ts` | Codex adapter. The press status under a PR block's buttons and under the order's changed line. |
 | `codex/src/tab-status.tsx` | Codex adapter. The Status tab: its rows, the goal and its milestones, a proposal, the goal's text field, and the fitting of merged lines to the width. |
 | `codex/src/tab-status-name.tsx` | Codex adapter. A Status row's name line, cut so that it and its stall word fit the lines it may take. |
 | `codex/src/tab-chrome.tsx` | Codex adapter. The tab bar, the footer's status, Help, and the demo toggle. |
@@ -45,6 +47,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/hook-main.ts` | Codex host. Entry point for the hooks. |
 | `codex/src/demo.ts` | Codex host. Turns the shared demo data into a session. |
 | `codex/src/transcript.ts` | Codex host. Reads the Codex session transcript, which Codex calls the rollout. Finds a chat's rollout and reads its tail and history. |
+| `codex/src/rollout-file.ts` | Codex host. Reads a rollout file's bytes: its start, or its end before an offset. Streams a rollout Codex compressed with zstd, and keeps the end of a few once read. |
 | `codex/src/rollout-rows.ts` | Codex host. The rollout's row types and the readers of a row's payload and text. Also reads the first row, `session_meta`. |
 | `codex/src/rollout-turns.ts` | Codex host. Finds the turns in the rollout's lines: a turn's dialogs, commands and plan, the conversation, and where each turn starts and ends. |
 | `codex/src/rollout-commands.ts` | Codex host. Reads the shell commands, patches and tool calls in rollout rows, and words them as activity lines. |
