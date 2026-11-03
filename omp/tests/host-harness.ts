@@ -164,6 +164,7 @@ export const deps = (): HostDeps => ({
   background: work => {
     w.background.push(work.catch(() => undefined))
   },
+  after: () => undefined,
   isUsageLimit: async (_status, message) => /usage limit/i.test(message),
   herdrPane: null,
 })

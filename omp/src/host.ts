@@ -66,6 +66,8 @@ export type HostDeps = {
   copy: (text: string) => Promise<string | null>
   /** Runs work the handler that started it does not wait for. */
   background: (work: Promise<unknown>) => void
+  /** Runs `fn` once, `ms` from now, without keeping omp running. */
+  after: (ms: number, fn: () => Promise<unknown>) => void
   /** Whether a failed request hit the account's usage limit, by omp's own rule. */
   isUsageLimit: (status: number | undefined, message: string) => Promise<boolean>
   /** The Herdr pane omp runs in, from `HERDR_PANE_ID`, or null outside Herdr. */
@@ -118,6 +120,7 @@ const defaultDeps: HostDeps = {
   complete: defaultComplete,
   copy: copyToClipboard,
   background: work => void work.catch(() => undefined),
+  after: (ms, fn) => void setTimeout(fn, ms).unref(),
   isUsageLimit: isUsageLimitOutcome,
   herdrPane: process.env.HERDR_PANE_ID || null,
 }

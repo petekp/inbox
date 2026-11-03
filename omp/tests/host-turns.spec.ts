@@ -187,6 +187,27 @@ test('a subagent runs as a child from its started frame to its end, its progress
   ])
 })
 
+test('a Herdr report that failed before the person switched sessions is retried with the session now shown', async () => {
+  const retries: (() => Promise<unknown>)[] = []
+  createInbox(pi(), { ...deps(), herdrPane: 'p1', after: (_ms, retry) => void retries.push(retry) })
+  await call('session_start', { type: 'session_start' })
+  await settle()
+  w.execResults.set('herdr', { code: 1 })
+  await record({ kind: 'question', ask: 'Ship it?', options: ['yes', 'no'] })
+  await settle()
+  expect(herdrReports().at(-1)?.tokens.inbox).toBe('Ship it?')
+  expect(retries).toHaveLength(1)
+
+  await call('session_switch', { type: 'session_switch', reason: 'new' }, makeCtx('s2'))
+  await settle()
+  w.execResults.delete('herdr')
+  const reports = herdrReports().length
+  await retries.shift()!()
+
+  expect(herdrReports()).toHaveLength(reports + 1)
+  expect(herdrReports().at(-1)?.tokens).toMatchObject({ inbox: null, 'inbox-needs-you': null })
+})
+
 test('a Herdr delegate runs as a child from the bash call that starts it until a wait on it returns, or Herdr shows it no longer working at the turn’s end', async () => {
   createInbox(pi(), deps())
   const delegates = () =>
