@@ -77,6 +77,11 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     answer: 'DONE: s1 | fast on large libraries\nSET: s2 | working | editing rank.ts',
     breaks: 'text-no-ids',
   },
+  'milestone-dropped': {
+    at: 0,
+    answer: GOOD_RUNS['milestone-dropped']![0]!.replace('SERVES: s2 | -\nSERVES: s3 | -\n', ''),
+    breaks: 'serves-linked',
+  },
 }
 
 test('a good run of each replay passes every rule that is built, at every step', async () => {

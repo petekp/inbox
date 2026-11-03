@@ -5,6 +5,7 @@ import { declinedGoal } from './replays/declined-goal'
 import { goalOnBusyPage } from './replays/goal-on-busy-page'
 import { longTurn } from './replays/long-turn'
 import { midTurnActivity } from './replays/mid-turn-activity'
+import { milestoneDropped } from './replays/milestone-dropped'
 import { singleTask } from './replays/single-task'
 
 export const REPLAYS: Replay[] = [
@@ -15,4 +16,5 @@ export const REPLAYS: Replay[] = [
   declinedGoal,
   goalOnBusyPage,
   midTurnActivity,
+  milestoneDropped,
 ]
