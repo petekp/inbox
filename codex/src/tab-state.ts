@@ -9,7 +9,7 @@ import type { FoldGroup, SeenRows } from './arrivals'
 import type { TabView as View } from './core'
 import type { RowTrack } from './rows'
 import type { HostContext } from './tab-host'
-import type { DrawnPrs } from './tab-pr-steps'
+import type { DrawnPrs, OpenPrBlock } from './tab-pr-steps'
 
 export type Tone = 'needsYou' | 'issue' | 'findings' | 'done' | 'error'
 
@@ -79,7 +79,8 @@ export const entering = new Set<string>()
 export const undoing = new Set<string>()
 /** Folds whose list still shrinks after a press folded them, by the list's motion key after `closed-`. */
 export const closingFolds = new Set<string>()
-type DrawnRow = { track: RowTrack; openRow?: Row }
+/** A row's or PR block's track, and what it drew open, which it still draws while its height shrinks over it. */
+type DrawnRow = { track: RowTrack; openRow?: Row; openBlock?: OpenPrBlock }
 export const drawnRows = new Map<string, DrawnRow>()
 
 export type Kept = {
