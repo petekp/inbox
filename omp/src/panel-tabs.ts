@@ -157,6 +157,14 @@ export function footer(d: Draw, isPageScrolling: boolean): string[] {
   return out
 }
 
+/** The lines of a page `lines` long that `pageWindow` shows, from `start` up to `end`. */
+export function pageWindowLines(lines: number, top: number, room: number): { start: number; end: number } {
+  const end = Math.min(lines, room - 1 + top)
+  const start = end - (room - (top > 0 ? 1 : 0) - (lines - end > 0 ? 1 : 0))
+
+  return { start, end }
+}
+
 const moreLines = (arrow: string, n: number, s: Style) => s.dim(`  ${arrow} ${n} more line${n === 1 ? '' : 's'}`)
 
 /**
@@ -164,9 +172,8 @@ const moreLines = (arrow: string, n: number, s: Style) => s.dim(`  ${arrow} ${n}
  * first press also hides the line the "↑" line takes, and the press before the end leaves "↓ 1 more line".
  */
 export function pageWindow(body: string[], top: number, room: number, s: Style): string[] {
-  const end = Math.min(body.length, room - 1 + top)
+  const { start, end } = pageWindowLines(body.length, top, room)
   const below = body.length - end
-  const start = end - (room - (top > 0 ? 1 : 0) - (below > 0 ? 1 : 0))
 
   return [
     ...(top > 0 ? [moreLines('↑', start, s)] : []),
