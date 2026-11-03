@@ -103,7 +103,7 @@ import { demoAfterPress, demoReplied, demoSent, type DemoSent } from './press-ef
 import { isPressConfirmed, type Effect } from './press-reducer'
 import { openTarget, type PathProbe } from './open-targets'
 import type { RowPress } from './presses'
-import { GOAL_KEYS_ID, statusKeyRows, statusSelected } from './status-keys'
+import { statusKeyRows, statusSelected } from './status-keys'
 import { footerStatus } from './view'
 import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, type RowView } from './rows'
 import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf, NEXT_BUILD_MARK } from './banners'
@@ -242,7 +242,7 @@ import {
   withoutRowActions,
 } from './mod-sessions'
 import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
-import { noteStatusDrawn, probedScroll, takeShownRows } from './pane-status-shown'
+import { noteStatusDrawn, takeShownRows } from './pane-status-shown'
 import { changeSaved, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
 import { paneAskRows, paneAskTabs } from './pane-asks'
 import { paneRowKeys } from './pane-row-keys'
@@ -1332,14 +1332,6 @@ async function scrollToKey(
     await $.clock.sleep(retryMs)
   }
   return false
-}
-
-/** Scrolls `key` to the pane's top. False when Claude Code could not resolve it, as opposed to a refused move. */
-function scrollToTop($: EngineInterface, key: string): Promise<boolean> {
-  return $.ui.scroll({ in: PANE, to: { key }, block: 'start' }).then(
-    () => true,
-    () => false,
-  )
 }
 
 async function selectStatusRow($: EngineInterface, id: string, focusKey?: string) {
@@ -2721,8 +2713,6 @@ export const register: Register = on => {
   })
 
   on('ui.scroll', { requestId: PANE }, async (_$, e, next) => {
-    const probed = probedScroll(e)
-    if (probed) return probed
     if (e.origin.kind === 'person') cancelUndoScroll()
     return next(e)
   })
@@ -3102,13 +3092,6 @@ export const register: Register = on => {
     const isOpenGuarded = !isStatusShown && isGuarded(cursor.openedAt, now)
     const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection) : null
     const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage) : []
-    if (isStatusShown && !isHelpShown && !isDemo && (look === 'desktop' || e.surface === 'terminal')) {
-      const goalDraft = typing === GOAL_KEYS_ID ? drafts[GOAL_KEYS_ID]?.text : null
-      const layout = [e.props.bodyColumns, isInline, view.status, showsDemoNotices, statusKeyRow?.id, typing, goalDraft]
-      const { scroll } = e.props
-      const engine = { scrollToTop: (key: string) => scrollToTop($, key), now: () => $.clock.now() }
-      noteStatusDrawn(engine, { look, page: view.statusPage, unfolded: statusUnfolded, scroll, layout, now })
-    }
 
     const {
       desktopColumnPt,
@@ -3118,6 +3101,7 @@ export const register: Register = on => {
       textKey,
       keyBindings,
       keyLines,
+      terminalKeyCells,
       actionRows,
       rowActions,
       fieldActions,
@@ -3227,7 +3211,7 @@ export const register: Register = on => {
     const keyList = helpKeys(look, mod.isNextBuild, shownTab, statusPressRows.length > 0)
     const keyColumn = Math.max(0, ...keyList.map(k => cellWidth(k.keys))) + 2
 
-    const { banner, tabs, rail, statusBlock, footer } = paneFrame(
+    const { banner, tabs, rail, statusBlock, footer, isTabRowFit } = paneFrame(
       {
         ...client,
         e,
@@ -3372,7 +3356,7 @@ export const register: Register = on => {
       branch,
       desktopHairline,
     })
-    const { statusRowLine, statusKeys, statusView } = paneStatus(
+    const { statusRowLine, statusKeys, statusView, statusTops } = paneStatus(
       {
         e,
         listColumns,
@@ -3394,6 +3378,8 @@ export const register: Register = on => {
         desktopFrame,
         keyRow,
         textKey,
+        keyLines,
+        terminalKeyCells,
         emptyState,
         sections,
         section,
@@ -3460,6 +3446,15 @@ export const register: Register = on => {
     // A pane takes a key
     // only as a Button's hotkey, so the tab keys, j, k and the selected row's keys
     // are Buttons in a hidden Box.
+    const isLookCounted = isStatusShown && !isHelpShown && !isDemo
+    if (isLookCounted && look === 'desktop') noteStatusDrawn({ look })
+    if (isLookCounted && e.surface === 'terminal') {
+      // The lines above the Status: the tabs, unless the rail draws them beside it, and the space under them.
+      const tabLines = hasRail ? 0 : isTabRowFit ? (isInline ? 1 : 3) : null
+      const isChromeKnown = tabLines !== null && !statusBlock && !showsDemoNotices
+      const pageTop = isChromeKnown ? tabLines + (hasRail ? 0 : blankLine) : null
+      noteStatusDrawn({ look, pageTop, tops: statusTops(), scroll: e.props.scroll, now })
+    }
     const tabView = isHelpShown
       ? helpView()
       : isStatusShown

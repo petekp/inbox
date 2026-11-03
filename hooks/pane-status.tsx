@@ -20,6 +20,7 @@ import {
   STATUS_PAD_Y,
 } from './pane-sizes'
 import { paneStatusGoal } from './pane-status-goal'
+import { statusRowTops } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from './status-keys'
 import { LOOK_DASH, mergedLine, STALL_GAP, type StatusRow, WAS_PREFIX } from './status-page'
@@ -45,11 +46,16 @@ export function paneStatus(
     statusMarkAt,
     statusFrameEdge,
     statusNameLine,
+    statusNameLineCount,
     statusPageText,
+    statusPageTextLines,
+    statusTextWidth,
     fitsStatusLine,
     statusTree,
     statusHead,
     markWidth,
+    keyLines,
+    terminalKeyCells,
     desktopHairline,
     markGlyph,
     desktopFrame,
@@ -83,14 +89,17 @@ export function paneStatus(
       | 'statusMarkAt'
       | 'statusFrameEdge'
       | 'statusNameLine'
+      | 'statusNameLineCount'
       | 'statusPageText'
+      | 'statusPageTextLines'
+      | 'statusTextWidth'
       | 'fitsStatusLine'
       | 'statusTree'
       | 'statusHead'
     > &
     Pick<PaneRowLines, 'markWidth' | 'desktopHairline' | 'markGlyph'> &
     Pick<PaneRowFrame, 'desktopFrame'> &
-    Pick<PaneRowKeys, 'keyRow' | 'textKey'> &
+    Pick<PaneRowKeys, 'keyRow' | 'textKey' | 'keyLines' | 'terminalKeyCells'> &
     Pick<PaneAskTabs, 'emptyState'> &
     Pick<PaneRowParts, 'sections' | 'section' | 'foldRow' | 'foldButton'>,
   handlers: Pick<
@@ -417,7 +426,25 @@ export function paneStatus(
     ])
   }
 
-  return { statusRowLine, statusKeys, statusView }
+  /** Each subject row's first line in the terminal look, from the top of `statusView`, as `statusRowTops` counts it. */
+  const statusTops = () =>
+    statusRowTops(view.statusPage, {
+      isInline,
+      listColumns,
+      statusMarkAt,
+      markWidth,
+      isTypingGoal: Input !== null && typing === GOAL_KEYS_ID,
+      isUnfolded,
+      textWidth: statusTextWidth,
+      fitsStatusLine,
+      nameLines: statusNameLineCount,
+      textLines: (spans, depth) => statusPageTextLines(spans, depth).length,
+      statusKeys,
+      keyLines,
+      keyCells: terminalKeyCells,
+    })
+
+  return { statusRowLine, statusKeys, statusView, statusTops }
 }
 
 export type PaneStatus = ReturnType<typeof paneStatus>
