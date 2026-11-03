@@ -89,14 +89,22 @@ function runStart(e: RollupEntry): number | undefined {
 }
 
 /**
+ * What tells a PR's checks apart: the workflow and the name, as GitHub shows them in "CI / test", or the name alone
+ * for a check without a workflow. Two workflows can each run a check with the same name.
+ */
+export function checkKey(c: Pick<PrCheck, 'name' | 'workflow'>): string {
+  return c.workflow ? `${c.workflow} / ${c.name}` : c.name
+}
+
+/**
  * The rollup lists every run of a check on the head commit, such as a cancelled run and the run that replaced it.
- * Keeps the latest run of each check, by workflow and name, in the place of the check's first run. A run is
+ * Keeps the latest run of each check, by `checkKey`, in the place of the check's first run. A run is
  * later when it started later, or, when either has no start time, when it comes later in the rollup.
  */
 function latestRuns(rollup: RollupEntry[]): RollupEntry[] {
   const latest = new Map<string, RollupEntry>()
   for (const e of rollup) {
-    const key = JSON.stringify([e.workflowName ?? '', e.name ?? e.context ?? ''])
+    const key = checkKey({ name: e.name ?? e.context ?? '', workflow: e.workflowName })
     const kept = latest.get(key)
     const keptStart = kept && runStart(kept)
     const start = runStart(e)

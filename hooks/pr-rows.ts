@@ -12,6 +12,7 @@ import {
   threadWhere,
   took,
   waitingThreads,
+  checkKey,
 } from './prs'
 import type { IsThreadSent } from './prs'
 import { DOT } from './rows'
@@ -24,13 +25,14 @@ export function prThreadId(pr: PrView, t: PrThread): string {
 }
 
 export function prCheckId(pr: PrView, check: PrCheck): string {
-  return checkRowId(pr.ref, check.name)
+  return checkRowId(pr.ref, checkKey(check))
 }
 
 export function threadRowId(ref: string, thread: string): string {
   return `${ref} thread ${thread}`
 }
 
+/** `check` is the check's `checkKey`. */
 export function checkRowId(ref: string, check: string): string {
   return `${ref} check ${check}`
 }

@@ -10,8 +10,12 @@ import { press, wakeForDone } from '../hooks/host-press'
 import { allRows } from '../hooks/rows'
 import { COMPARE_LIMIT_MS, NO_HOLDS } from '../hooks/timing'
 import { feedbackOf, feedbackText } from '../hooks/feedback'
-import { checkRowId, isBlockPressShown, prBlockRows, prMarkId } from '../hooks/pr-rows'
+import { checkRowId, isBlockPressShown, prBlockRows, prMarkId, prRowWaits } from '../hooks/pr-rows'
 import { checkActions } from '../hooks/pr-tab'
+import { prPressEffect } from '../hooks/pr-press'
+import { upgradeSession } from '../hooks/session-files'
+import { EMPTY } from '../hooks/ledger'
+import { checkKey } from '../hooks/prs'
 import { fakeHost } from './session-fake-host'
 import { FIX_REF, BLOCKED_PR } from './session-helpers'
 
@@ -122,12 +126,12 @@ test('while a press is out, its button stays out and a second press sends nothin
   expect(explainOf({ [id]: { note: 'stale', at } })).toEqual({ feedback: 'note', label: 'Explain', isOut: true })
 })
 
-async function blockedPrHost(refreshed: (pr: PrView, at: number) => PrView) {
+async function blockedPrHost(refreshed: (pr: PrView, at: number) => PrView, start: PrView = BLOCKED_PR) {
   const { host, delivered } = fakeHost(async () => null)
   await host.update(s => ({
     ...s,
     ledger: { ...s.ledger, prs: [FIX_REF] },
-    prViews: { ...s.prViews, views: { [FIX_REF]: BLOCKED_PR } },
+    prViews: { ...s.prViews, views: { [FIX_REF]: start } },
   }))
   const shownWhileRefreshing: string[] = []
   const shownOn = async (rowId: string) => {
@@ -236,7 +240,8 @@ async function cancelledRunHost(isRunningOnGitHub: () => boolean) {
     const s = await host.read()
     return isBlockPressShown(s.prViews.views[FIX_REF]!, s.lastActions) ? shownOn(prMarkId(FIX_REF)) : null
   }
-  const rerun = (check: string) => press(host, { action: 'check-rerun', ref: FIX_REF, check }, false, NO_HOLDS)
+  const rerun = (name: string) =>
+    press(host, { action: 'check-rerun', ref: FIX_REF, check: checkKey({ name, workflow: 'CI' }) }, false, NO_HOLDS)
   const answer = (a: typeof ghAnswer) => {
     ghAnswer = a
   }
@@ -283,7 +288,7 @@ test('Re-run reads GitHub refusing a run that is already running as started, and
   const running = await cancelledRunHost(() => false)
   running.answer({ exitCode: 1, stdout: '', stderr: 'run 77 cannot be rerun; This workflow is already running\n' })
   await running.rerun('e2e')
-  expect(await running.shownOn(checkRowId(FIX_REF, 'e2e'))).toBe('✓ Started a re-run of CI')
+  expect(await running.shownOn(checkRowId(FIX_REF, 'CI / e2e'))).toBe('✓ Started a re-run of CI')
   expect(await running.blockShows()).toBe(null)
 
   const refused = await cancelledRunHost(() => false)
@@ -291,7 +296,63 @@ test('Re-run reads GitHub refusing a run that is already running as started, and
   await refused.rerun('e2e')
   expect(refused.refreshes).toEqual([0, 1])
   expect(await refused.blockShows()).toBe(null)
-  expect(await refused.shownOn(checkRowId(FIX_REF, 'e2e'))).toBe(
+  expect(await refused.shownOn(checkRowId(FIX_REF, 'CI / e2e'))).toBe(
     'Could not start a re-run of CI: HTTP 403: Resource not accessible by integration',
   )
+})
+
+const SAME_NAME_CHECKS: PrView['checks'] = [
+  { name: 'test', bucket: 'fail', url: 'https://github.com/acme/app/actions/runs/5/job/1', workflow: 'CI' },
+  { name: 'test', bucket: 'fail', url: 'https://github.com/acme/app/actions/runs/6/job/2', workflow: 'Nightly' },
+]
+
+test('two checks with one name in different workflows are two rows, and Fix and Open log on one act on that check', async () => {
+  const pr = { ...BLOCKED_PR, mergeable: 'MERGEABLE', checks: SAME_NAME_CHECKS }
+  const [ci, nightly] = SAME_NAME_CHECKS.map(checkKey) as [string, string]
+  const t = await blockedPrHost((p, at) => ({ ...p, fetchedAt: at }), pr)
+  expect(prRowWaits([pr], {}).map(r => r.id)).toEqual([checkRowId(FIX_REF, ci), checkRowId(FIX_REF, nightly)])
+  expect(prPressEffect(pr, { action: 'log', ref: FIX_REF, check: ci })).toEqual({
+    kind: 'open',
+    target: SAME_NAME_CHECKS[0]!.url,
+    name: 'the log',
+  })
+
+  expect((await press(t.host, { action: 'check-fix', ref: FIX_REF, check: nightly }, false, NO_HOLDS)).note).toBe(null)
+  expect(t.delivered.map(m => m.split('\n')[0])).toEqual([
+    `The Nightly / test check failed on PR #12 (https://github.com/acme/app/pull/12). Read its log (${SAME_NAME_CHECKS[1]!.url}), find the cause, fix it in code, and verify.`,
+  ])
+  const s = await t.host.read()
+  expect(prRowWaits([s.prViews.views[FIX_REF]!], s.lastActions).map(r => r.isWaiting)).toEqual([true, false])
+})
+
+test('a check saved by its name alone loads named by workflow and name when one check has that name, and loading twice changes nothing', () => {
+  const checks: PrView['checks'] = [
+    { name: 'lint', bucket: 'fail', url: null, workflow: 'CI' },
+    ...SAME_NAME_CHECKS,
+    { name: 'deploy', bucket: 'fail', url: null },
+  ]
+  const last = { kind: 'handoff' as const, action: 'check-fix', text: 'Fix', at: 1 }
+  const old = (name: string) => checkRowId(FIX_REF, name)
+  const loaded = upgradeSession({
+    prViews: { views: { [FIX_REF]: { ...BLOCKED_PR, checks } }, branchRef: null, isFetching: false },
+    lastActions: { [old('lint')]: last, [old('test')]: last, [old('deploy')]: last },
+    sent: [{ text: 'Fix lint', press: null, at: 1, row: old('lint') }],
+    ledger: {
+      ...EMPTY,
+      prOrder: {
+        refs: [FIX_REF],
+        label: null,
+        why: null,
+        statuses: { [FIX_REF]: { status: 'blocked', threads: [], failing: ['lint', 'test', 'deploy'] } },
+        dismissed: [],
+        by: 'Claude',
+        at: 1,
+      },
+    },
+  })
+
+  expect(Object.keys(loaded.lastActions)).toEqual([old('CI / lint'), old('test'), old('deploy')])
+  expect(loaded.sent.map(x => x.row)).toEqual([old('CI / lint')])
+  expect(loaded.ledger.prOrder?.statuses?.[FIX_REF]?.failing).toEqual(['CI / lint', 'test', 'deploy'])
+  expect(upgradeSession(loaded)).toEqual(loaded)
 })

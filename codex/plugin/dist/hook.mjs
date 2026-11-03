@@ -751,248 +751,6 @@ function upgradeHostTasks(saved) {
   });
 }
 
-// ../hooks/session-files.ts
-var NO_PRS = { views: {}, branchRef: null, isFetching: false };
-var NO_TURN = { person: null, trigger: null, activity: [], press: null };
-function emptySession() {
-  return {
-    ledger: EMPTY,
-    turn: NO_TURN,
-    told: TOLD_NOTHING,
-    presence: {
-      turnsStarted: 0,
-      turnsApplied: 0,
-      ledgerState: "current",
-      hasDroppedReply: false,
-      isUpdating: false,
-      isTurnRunning: false,
-      turnStartedAt: null,
-      lastReplyAt: null,
-      lastTypedMessageAt: null
-    },
-    place: null,
-    pending: [],
-    sent: [],
-    lastActions: {},
-    heldRows: [],
-    shownSince: null,
-    prViews: NO_PRS,
-    stop: null,
-    overviewFailure: null,
-    lastOverviewCallAt: null,
-    hostTasks: [],
-    dialogQuestions: []
-  };
-}
-var SESSION_ID = /^[\w-]{1,100}$/;
-function sessionFile(sessionId) {
-  if (!SESSION_ID.test(sessionId)) throw new Error(`Not a session id: ${sessionId}`);
-  return `${sessionId}.json`;
-}
-function missingAsNull(err) {
-  if (err.code === "ENOENT") return null;
-  throw err;
-}
-function withoutStatedStep(presence) {
-  const { statedStep: _statedStep, ...rest } = presence ?? {};
-  return rest;
-}
-function upgradeSession(saved) {
-  const base = emptySession();
-  const views = saved.prViews?.views ?? {};
-  return {
-    ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
-    turn: { ...base.turn, ...saved.turn },
-    told: { ...base.told, ...saved.told },
-    presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
-    place: saved.place ?? null,
-    pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
-    sent: (saved.sent ?? []).map((x) => ({
-      ...x,
-      row: x.row ?? null,
-      queuedId: x.queuedId ?? null,
-      pressedAt: x.pressedAt ?? null,
-      deliveryId: x.deliveryId ?? null,
-      phase: x.phase ?? "accepted"
-    })),
-    lastActions: upgradeLastActions(saved.lastActions ?? {}),
-    heldRows: saved.heldRows ?? [],
-    shownSince: saved.shownSince ?? null,
-    prViews: {
-      ...NO_PRS,
-      ...saved.prViews,
-      // Views saved before `isYours` and `wasSeenOpen`, and threads saved before their times and `isLinesChanged` existed.
-      views: Object.fromEntries(
-        Object.entries(views).map(([ref, pr]) => [
-          ref,
-          {
-            ...pr,
-            isYours: pr.isYours ?? null,
-            wasSeenOpen: pr.wasSeenOpen ?? pr.state === "OPEN",
-            threads: pr.threads.map((t) => ({
-              ...t,
-              isLinesChanged: t.isLinesChanged ?? false,
-              at: t.at ?? null,
-              reply: t.reply && { ...t.reply, at: t.reply.at ?? null }
-            }))
-          }
-        ])
-      ),
-      isFetching: false
-    },
-    stop: saved.stop ?? null,
-    overviewFailure: saved.overviewFailure ?? null,
-    lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
-    hostTasks: upgradeHostTasks(saved.hostTasks),
-    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
-  };
-}
-
-// ../hooks/catch-up-text.ts
-var MAX_ACTIVITY = 40;
-function addActivity(activity, line) {
-  return !line || activity.length >= MAX_ACTIVITY || activity.includes(line) ? activity : [...activity, line];
-}
-function toolActivity(tool, input) {
-  const text2 = (key) => typeof input[key] === "string" ? input[key] : "";
-  switch (tool) {
-    case "Bash":
-      return `${input.run_in_background ? "started in background" : "ran"}: ${text2("command").slice(0, 140)}`;
-    case "Edit":
-    case "Write":
-      return `edited ${text2("file_path")}`;
-    case "Skill":
-      return `used skill ${text2("skill")}`;
-    case "Agent":
-      return `started agent: ${text2("description")}`;
-  }
-  return tool.startsWith("mcp__") ? `called ${tool.slice(5)}` : null;
-}
-var DIALOG_QUESTIONS_SHOWN = 3;
-var DIALOG_QUESTION_MAX = 200;
-var DIALOG_OPTIONS_SHOWN = 6;
-var DIALOG_OPTION_MAX = 60;
-var DIALOG_ANSWER_MAX = 400;
-var RECOMMENDED_SUFFIX = /\s*\(recommended\)\s*$/i;
-function dialogQuestions(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw.flatMap((q) => {
-    const fields = q ?? {};
-    const text2 = [fields.question, fields.title].find((v) => typeof v === "string" && v.trim() !== "");
-    if (!text2) return [];
-    const options = (Array.isArray(fields.options) ? fields.options : []).flatMap((o) => {
-      const option = typeof o === "string" ? { label: o } : o ?? {};
-      const label = typeof option.label === "string" ? option.label.trim() : "";
-      const description = typeof option.description === "string" ? option.description.trim() : "";
-      return label === "" ? [] : [{ label, description }];
-    });
-    return [
-      {
-        question: text2.trim(),
-        options: options.map((o) => o.label),
-        descriptions: Object.fromEntries(options.filter((o) => o.description !== "").map((o) => [o.label, o.description]))
-      }
-    ];
-  });
-}
-function dialogQuestionText(q) {
-  const shown = q.options.slice(0, DIALOG_OPTIONS_SHOWN).map((label) => {
-    const plain = label.replace(RECOMMENDED_SUFFIX, "");
-    const text2 = clip(plain, DIALOG_OPTION_MAX);
-    return plain === label ? text2 : `${text2} (recommended)`;
-  });
-  const more = q.options.length > shown.length ? ` / and ${q.options.length - shown.length} more` : "";
-  const options = shown.length > 0 ? ` (options: ${shown.join(" / ")}${more})` : "";
-  return `"${clip(q.question.replaceAll('"', "'"), DIALOG_QUESTION_MAX)}"${options}`;
-}
-function dialogActivity(questions, outcome) {
-  const shown = questions.slice(0, DIALOG_QUESTIONS_SHOWN).map(dialogQuestionText);
-  const more = questions.length - shown.length;
-  const asked = shown.length > 0 ? `: ${shown.join("; ")}${more > 0 ? `; and ${more} more` : ""}` : "";
-  const head = `asked the user in a dialog${asked}`;
-  switch (outcome.kind) {
-    case "answered":
-      return `${head}; answer: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
-    case "timed-out":
-      return `${head}; it timed out while the user was away, so the user did not answer; it went on with: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
-    case "dismissed":
-      return `${head}; the user dismissed it without answering`;
-    case "open":
-      return `${head}; still open, waiting on the user's answer`;
-  }
-}
-
-// ../hooks/dialogs.ts
-function optionKey(option) {
-  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
-}
-function optionsKey(options) {
-  return options.map(optionKey).sort().join("\n");
-}
-function hasSameOptions(item, q) {
-  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
-}
-function copyOf(q, items, questions) {
-  const byOptions = items.filter((i) => hasSameOptions(i, q));
-  const [only] = byOptions;
-  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
-  const pool = byOptions.length > 0 ? byOptions : items;
-  const byAsk = pool.filter((i) => restates(i.ask, q.question));
-  const [asked] = byAsk;
-  if (!asked || byAsk.length !== 1) return null;
-  const restated = questions.filter((o) => restates(asked.ask, o.question));
-  return restated.length === 1 ? asked : null;
-}
-function descriptionsFor(options, descriptions) {
-  const byKey = new Map(Object.entries(descriptions).map(([label, text2]) => [optionKey(label), text2]));
-  const matched = options.flatMap((o) => {
-    const text2 = byKey.get(optionKey(o));
-    return text2 === void 0 ? [] : [[o, text2]];
-  });
-  return matched.length > 0 ? Object.fromEntries(matched) : null;
-}
-function asCopyOf(item, q) {
-  const descriptions = descriptionsFor(item.options, q.descriptions);
-  return {
-    ...item,
-    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
-    ...descriptions ? { optionDescriptions: descriptions } : {}
-  };
-}
-function linkDialogs(s) {
-  if (s.dialogQuestions.length === 0) return s;
-  let items = s.ledger.items;
-  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
-  const questions = s.dialogQuestions.map((q) => {
-    if (q.itemId !== null) return q;
-    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
-    const copy = copyOf(
-      q,
-      turnItems,
-      s.dialogQuestions.filter((o) => o.turn === q.turn)
-    );
-    if (!copy || copy.dialog || linked.has(copy.id)) return q;
-    linked.add(copy.id);
-    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
-    return { ...q, itemId: copy.id };
-  });
-  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
-  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
-}
-function noteDialog(s, callId, questions) {
-  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
-  const added = questions.flatMap(
-    (q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]
-  );
-  if (added.length === 0) return s;
-  return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
-}
-
-// ../hooks/open-targets.ts
-function baseName(path) {
-  return path.replace(/\/+$/, "").split("/").pop() ?? path;
-}
-
 // ../hooks/prs.ts
 var PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
 function prRefs(text2) {
@@ -1010,6 +768,9 @@ function parseRef(ref) {
   const [repo = "", number = ""] = ref.split("#");
   const [owner = "", name = ""] = repo.split("/");
   return { repo, owner, name, number };
+}
+function checkKey(c) {
+  return c.workflow ? `${c.workflow} / ${c.name}` : c.name;
 }
 function isKeptPr(pr) {
   return pr.isYours !== false && pr.wasSeenOpen;
@@ -1100,6 +861,20 @@ function blockingChecks(pr) {
   return [...failingChecks(pr), ...cancelledChecks(pr)];
 }
 
+// ../hooks/open-targets.ts
+function baseName(path) {
+  return path.replace(/\/+$/, "").split("/").pop() ?? path;
+}
+
+// ../hooks/press-labels.ts
+function actionId(p) {
+  return p.action === "step" ? `step-${p.step}` : p.action;
+}
+function capitalized(text2) {
+  return text2.charAt(0).toUpperCase() + text2.slice(1);
+}
+var ISSUE_LABEL = "File issue";
+
 // ../hooks/help-steps.ts
 function helpLabel(help) {
   const label = help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? help.command}` : help.kind === "terminal" ? `Copy ${help.name ?? help.command}` : `Open ${help.name ?? new URL(help.url).host}`;
@@ -1133,15 +908,6 @@ function stepIconKind(step) {
   return first === "copy" || first === "terminal" ? "copy" : first === "open" || first === "link" ? "open" : void 0;
 }
 
-// ../hooks/press-labels.ts
-function actionId(p) {
-  return p.action === "step" ? `step-${p.step}` : p.action;
-}
-function capitalized(text2) {
-  return text2.charAt(0).toUpperCase() + text2.slice(1);
-}
-var ISSUE_LABEL = "File issue";
-
 // ../hooks/pressed.ts
 function offersUndo(c) {
   return c.how === "done" || c.how === "dismissed";
@@ -1168,30 +934,6 @@ function retryOf(id, last) {
 }
 function isRepeatOf(last, action) {
   return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
-}
-
-// ../hooks/press-reducer.ts
-function withArrival(lastActions, message, pressedAt, deliveryId) {
-  const isWaiting = (a) => (a.delivery?.state === "queued" || a.delivery?.state === "unconfirmed") && a.delivery.message === message;
-  const waiting = Object.values(lastActions).filter(
-    (a) => isWaiting(a) && (deliveryId ? a.delivery?.id === deliveryId : a.delivery?.id === void 0)
-  );
-  if (waiting.length === 0) return lastActions;
-  const at = pressedAt ?? Math.min(...waiting.map((a) => a.at));
-  return Object.fromEntries(
-    Object.entries(lastActions).map(([id, a]) => [
-      id,
-      isWaiting(a) && (deliveryId ? a.delivery?.id === deliveryId : a.delivery?.id === void 0 && a.at === at) ? { ...a, delivery: { state: "arrived" } } : a
-    ])
-  );
-}
-function withUnconfirmed(lastActions, message, pressedAt, deliveryId) {
-  return Object.fromEntries(
-    Object.entries(lastActions).map(([id, action]) => [
-      id,
-      action.delivery?.state === "queued" && action.delivery.message === message && (deliveryId ? action.delivery.id === deliveryId : pressedAt === void 0 || action.delivery.id === void 0 && action.at === pressedAt) ? { ...action, delivery: { ...action.delivery, state: "unconfirmed" } } : action
-    ])
-  );
 }
 
 // ../hooks/tabs.ts
@@ -1691,6 +1433,9 @@ function prThreadId(pr, t) {
 function threadRowId(ref, thread) {
   return `${ref} thread ${thread}`;
 }
+function checkRowId(ref, check) {
+  return `${ref} check ${check}`;
+}
 function prMarkId(ref) {
   return `pr:${ref}`;
 }
@@ -1700,6 +1445,303 @@ function threadSentIn(lastActions) {
     const last = lastActions[prThreadId(pr, t)];
     return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
   };
+}
+
+// ../hooks/saved-check-keys.ts
+function savedCheckKey(checks, name) {
+  if (checks.some((c) => checkKey(c) === name)) return name;
+  const named = checks.filter((c) => c.name === name);
+  return named.length === 1 ? checkKey(named[0]) : name;
+}
+var CHECK_ROW_ID = /^(\S+) check (.+)$/;
+function savedRowId(id, views) {
+  const m = CHECK_ROW_ID.exec(id);
+  return m ? checkRowId(m[1], savedCheckKey(views[m[1]]?.checks ?? [], m[2])) : id;
+}
+function withCheckKeys(s, views) {
+  const order = s.ledger.prOrder;
+  const statuses = order?.statuses;
+  const upgradedStatuses = statuses && Object.fromEntries(
+    Object.entries(statuses).map(([ref, status]) => [
+      ref,
+      { ...status, failing: status.failing.map((name) => savedCheckKey(views[ref]?.checks ?? [], name)) }
+    ])
+  );
+  return {
+    ...s,
+    ledger: order ? { ...s.ledger, prOrder: { ...order, statuses: upgradedStatuses } } : s.ledger,
+    sent: s.sent.map((x) => x.row === null ? x : { ...x, row: savedRowId(x.row, views) }),
+    lastActions: Object.fromEntries(
+      Object.entries(s.lastActions).map(([id, last]) => {
+        const upgraded2 = savedRowId(id, views);
+        return [upgraded2 in s.lastActions ? id : upgraded2, last];
+      })
+    )
+  };
+}
+
+// ../hooks/session-files.ts
+var NO_PRS = { views: {}, branchRef: null, isFetching: false };
+var NO_TURN = { person: null, trigger: null, activity: [], press: null };
+function emptySession() {
+  return {
+    ledger: EMPTY,
+    turn: NO_TURN,
+    told: TOLD_NOTHING,
+    presence: {
+      turnsStarted: 0,
+      turnsApplied: 0,
+      ledgerState: "current",
+      hasDroppedReply: false,
+      isUpdating: false,
+      isTurnRunning: false,
+      turnStartedAt: null,
+      lastReplyAt: null,
+      lastTypedMessageAt: null
+    },
+    place: null,
+    pending: [],
+    sent: [],
+    lastActions: {},
+    heldRows: [],
+    shownSince: null,
+    prViews: NO_PRS,
+    stop: null,
+    overviewFailure: null,
+    lastOverviewCallAt: null,
+    hostTasks: [],
+    dialogQuestions: []
+  };
+}
+var SESSION_ID = /^[\w-]{1,100}$/;
+function sessionFile(sessionId) {
+  if (!SESSION_ID.test(sessionId)) throw new Error(`Not a session id: ${sessionId}`);
+  return `${sessionId}.json`;
+}
+function missingAsNull(err) {
+  if (err.code === "ENOENT") return null;
+  throw err;
+}
+function withoutStatedStep(presence) {
+  const { statedStep: _statedStep, ...rest } = presence ?? {};
+  return rest;
+}
+function upgradeSession(saved) {
+  const views = saved.prViews?.views ?? {};
+  return withCheckKeys(sessionFields(saved, views), views);
+}
+function sessionFields(saved, views) {
+  const base = emptySession();
+  return {
+    ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
+    turn: { ...base.turn, ...saved.turn },
+    told: { ...base.told, ...saved.told },
+    presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
+    place: saved.place ?? null,
+    pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
+    sent: (saved.sent ?? []).map((x) => ({
+      ...x,
+      row: x.row ?? null,
+      queuedId: x.queuedId ?? null,
+      pressedAt: x.pressedAt ?? null,
+      deliveryId: x.deliveryId ?? null,
+      phase: x.phase ?? "accepted"
+    })),
+    lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    heldRows: saved.heldRows ?? [],
+    shownSince: saved.shownSince ?? null,
+    prViews: {
+      ...NO_PRS,
+      ...saved.prViews,
+      // Views saved before `isYours` and `wasSeenOpen`, and threads saved before their times and `isLinesChanged` existed.
+      views: Object.fromEntries(
+        Object.entries(views).map(([ref, pr]) => [
+          ref,
+          {
+            ...pr,
+            isYours: pr.isYours ?? null,
+            wasSeenOpen: pr.wasSeenOpen ?? pr.state === "OPEN",
+            threads: pr.threads.map((t) => ({
+              ...t,
+              isLinesChanged: t.isLinesChanged ?? false,
+              at: t.at ?? null,
+              reply: t.reply && { ...t.reply, at: t.reply.at ?? null }
+            }))
+          }
+        ])
+      ),
+      isFetching: false
+    },
+    stop: saved.stop ?? null,
+    overviewFailure: saved.overviewFailure ?? null,
+    lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
+    hostTasks: upgradeHostTasks(saved.hostTasks),
+    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
+  };
+}
+
+// ../hooks/catch-up-text.ts
+var MAX_ACTIVITY = 40;
+function addActivity(activity, line) {
+  return !line || activity.length >= MAX_ACTIVITY || activity.includes(line) ? activity : [...activity, line];
+}
+function toolActivity(tool, input) {
+  const text2 = (key) => typeof input[key] === "string" ? input[key] : "";
+  switch (tool) {
+    case "Bash":
+      return `${input.run_in_background ? "started in background" : "ran"}: ${text2("command").slice(0, 140)}`;
+    case "Edit":
+    case "Write":
+      return `edited ${text2("file_path")}`;
+    case "Skill":
+      return `used skill ${text2("skill")}`;
+    case "Agent":
+      return `started agent: ${text2("description")}`;
+  }
+  return tool.startsWith("mcp__") ? `called ${tool.slice(5)}` : null;
+}
+var DIALOG_QUESTIONS_SHOWN = 3;
+var DIALOG_QUESTION_MAX = 200;
+var DIALOG_OPTIONS_SHOWN = 6;
+var DIALOG_OPTION_MAX = 60;
+var DIALOG_ANSWER_MAX = 400;
+var RECOMMENDED_SUFFIX = /\s*\(recommended\)\s*$/i;
+function dialogQuestions(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((q) => {
+    const fields = q ?? {};
+    const text2 = [fields.question, fields.title].find((v) => typeof v === "string" && v.trim() !== "");
+    if (!text2) return [];
+    const options = (Array.isArray(fields.options) ? fields.options : []).flatMap((o) => {
+      const option = typeof o === "string" ? { label: o } : o ?? {};
+      const label = typeof option.label === "string" ? option.label.trim() : "";
+      const description = typeof option.description === "string" ? option.description.trim() : "";
+      return label === "" ? [] : [{ label, description }];
+    });
+    return [
+      {
+        question: text2.trim(),
+        options: options.map((o) => o.label),
+        descriptions: Object.fromEntries(options.filter((o) => o.description !== "").map((o) => [o.label, o.description]))
+      }
+    ];
+  });
+}
+function dialogQuestionText(q) {
+  const shown = q.options.slice(0, DIALOG_OPTIONS_SHOWN).map((label) => {
+    const plain = label.replace(RECOMMENDED_SUFFIX, "");
+    const text2 = clip(plain, DIALOG_OPTION_MAX);
+    return plain === label ? text2 : `${text2} (recommended)`;
+  });
+  const more = q.options.length > shown.length ? ` / and ${q.options.length - shown.length} more` : "";
+  const options = shown.length > 0 ? ` (options: ${shown.join(" / ")}${more})` : "";
+  return `"${clip(q.question.replaceAll('"', "'"), DIALOG_QUESTION_MAX)}"${options}`;
+}
+function dialogActivity(questions, outcome) {
+  const shown = questions.slice(0, DIALOG_QUESTIONS_SHOWN).map(dialogQuestionText);
+  const more = questions.length - shown.length;
+  const asked = shown.length > 0 ? `: ${shown.join("; ")}${more > 0 ? `; and ${more} more` : ""}` : "";
+  const head = `asked the user in a dialog${asked}`;
+  switch (outcome.kind) {
+    case "answered":
+      return `${head}; answer: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
+    case "timed-out":
+      return `${head}; it timed out while the user was away, so the user did not answer; it went on with: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
+    case "dismissed":
+      return `${head}; the user dismissed it without answering`;
+    case "open":
+      return `${head}; still open, waiting on the user's answer`;
+  }
+}
+
+// ../hooks/dialogs.ts
+function optionKey(option) {
+  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
+}
+function optionsKey(options) {
+  return options.map(optionKey).sort().join("\n");
+}
+function hasSameOptions(item, q) {
+  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
+}
+function copyOf(q, items, questions) {
+  const byOptions = items.filter((i) => hasSameOptions(i, q));
+  const [only] = byOptions;
+  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
+  const pool = byOptions.length > 0 ? byOptions : items;
+  const byAsk = pool.filter((i) => restates(i.ask, q.question));
+  const [asked] = byAsk;
+  if (!asked || byAsk.length !== 1) return null;
+  const restated = questions.filter((o) => restates(asked.ask, o.question));
+  return restated.length === 1 ? asked : null;
+}
+function descriptionsFor(options, descriptions) {
+  const byKey = new Map(Object.entries(descriptions).map(([label, text2]) => [optionKey(label), text2]));
+  const matched = options.flatMap((o) => {
+    const text2 = byKey.get(optionKey(o));
+    return text2 === void 0 ? [] : [[o, text2]];
+  });
+  return matched.length > 0 ? Object.fromEntries(matched) : null;
+}
+function asCopyOf(item, q) {
+  const descriptions = descriptionsFor(item.options, q.descriptions);
+  return {
+    ...item,
+    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
+    ...descriptions ? { optionDescriptions: descriptions } : {}
+  };
+}
+function linkDialogs(s) {
+  if (s.dialogQuestions.length === 0) return s;
+  let items = s.ledger.items;
+  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
+  const questions = s.dialogQuestions.map((q) => {
+    if (q.itemId !== null) return q;
+    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
+    const copy = copyOf(
+      q,
+      turnItems,
+      s.dialogQuestions.filter((o) => o.turn === q.turn)
+    );
+    if (!copy || copy.dialog || linked.has(copy.id)) return q;
+    linked.add(copy.id);
+    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
+    return { ...q, itemId: copy.id };
+  });
+  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
+  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+}
+function noteDialog(s, callId, questions) {
+  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
+  const added = questions.flatMap(
+    (q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]
+  );
+  if (added.length === 0) return s;
+  return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
+}
+
+// ../hooks/press-reducer.ts
+function withArrival(lastActions, message, pressedAt, deliveryId) {
+  const isWaiting = (a) => (a.delivery?.state === "queued" || a.delivery?.state === "unconfirmed") && a.delivery.message === message;
+  const waiting = Object.values(lastActions).filter(
+    (a) => isWaiting(a) && (deliveryId ? a.delivery?.id === deliveryId : a.delivery?.id === void 0)
+  );
+  if (waiting.length === 0) return lastActions;
+  const at = pressedAt ?? Math.min(...waiting.map((a) => a.at));
+  return Object.fromEntries(
+    Object.entries(lastActions).map(([id, a]) => [
+      id,
+      isWaiting(a) && (deliveryId ? a.delivery?.id === deliveryId : a.delivery?.id === void 0 && a.at === at) ? { ...a, delivery: { state: "arrived" } } : a
+    ])
+  );
+}
+function withUnconfirmed(lastActions, message, pressedAt, deliveryId) {
+  return Object.fromEntries(
+    Object.entries(lastActions).map(([id, action]) => [
+      id,
+      action.delivery?.state === "queued" && action.delivery.message === message && (deliveryId ? action.delivery.id === deliveryId : pressedAt === void 0 || action.delivery.id === void 0 && action.at === pressedAt) ? { ...action, delivery: { ...action.delivery, state: "unconfirmed" } } : action
+    ])
+  );
 }
 
 // ../hooks/gh.ts
@@ -1898,7 +1940,7 @@ function rankedStatusOf(pr) {
   return {
     status: readiness(pr).status,
     threads: waitingThreads(pr).map((t) => t.id),
-    failing: blockingChecks(pr).map((c) => c.name)
+    failing: blockingChecks(pr).map(checkKey)
   };
 }
 function hasChanged(was, is) {
