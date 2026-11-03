@@ -23,9 +23,16 @@ The UI reads one status record for items and one for PRs. The status shows only 
 
 The PRs tab shows the PR status. The other tabs show the item status. `hooks/view.ts:footerStatus` picks between them for every look. The Codex tab shows its status at the footer's right. While polls fail it shows `Last read 1m ago · retrying` there instead, muted, and red after a minute.
 
-The UI names the result, not the model call or tool. The failure text is `Last update failed. Items from that reply may be missing.` A stopped worker shows that error. An active update shows `Updating…` and hides the prior error.
+The UI names the result, not the model call or tool. `updateRecovery` in `hooks/session-view.ts` reads where a failed ledger stands from saved state, and `perTurnStatus` in `hooks/view.ts` gives its text:
 
-Every host with `canCatchUp` reads the whole conversation on its next update, so a failed ledger always retries and the failure text ends with `It retries after your next message.` A host that cannot read its conversation, a Codex thread without a `transcriptPath`, promises the retry only while an exchange is pending. A second failure drops the exchange and keeps the warning until a catch-up covers it. If a conversation that has a path cannot be read or parsed, nothing is pending and the ledger is failed, the promise is false: the run reports it unreadable and has nothing to retry. All hosts advance applied turns after a failed update, so a handed-off row can return to the count.
+| State | When | Text |
+| --- | --- | --- |
+| Waiting | The ledger failed once, and the host can retry | `Last update failed. Items from that reply may be missing. The inbox tries again after the agent's next reply.` |
+| Retrying | An update runs while the ledger is failed | `Retrying the last update…` in the status line, in place of `Updating…`, with no error |
+| Failed again | `presence.failedUpdates` is 2 or more, and the host can retry | `The last N updates failed. Items from recent replies may be missing. The inbox tries again after the agent's next reply.` |
+| Cannot retry | Nothing is pending, and the host cannot catch up | `Last update failed. The inbox cannot read this conversation to try again. Check the agent's last reply for anything that needs you.` |
+
+A host can retry when an exchange is pending, or when it can catch up: `canCatchUp` is true and `presence.isConversationUnreadable` is false. Codex passes `canCatchUp` only when the thread has a `transcriptPath`. A catch-up that finds the conversation unreadable sets `isConversationUnreadable`, and one that reads it clears it. A second failure drops the exchange and keeps the warning until a catch-up covers it. A catch-up that applies clears the warning. An update a reload cut off leaves `failedUpdates` as it was, so it reads as waiting, not as failed again. All hosts advance applied turns after a failed update, so a handed-off row can return to the count.
 
 An expired item closes as `Expired`. The rule behind it, 12 prompts or more than 20 open, belongs to the per-turn update.
 

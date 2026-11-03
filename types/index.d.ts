@@ -531,6 +531,10 @@ export type Session = {
      * keeps `failed` until a catch-up covers it.
      */
     hasDroppedReply: boolean
+    /** Updates in a row whose model answer failed since the ledger was last current. */
+    failedUpdates: number
+    /** The last catch-up could not read the conversation. A catch-up that reads it clears this. */
+    isConversationUnreadable: boolean
     isUpdating: boolean
     /** Whether the main agent's turn runs. A subagent's turn does not set it. */
     isTurnRunning: boolean

@@ -4672,9 +4672,7 @@ function actionLines(keys, more, { width, gap, separator }) {
 }
 
 // ../hooks/view.ts
-var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
 var HOLDS_UP_TEXT = "Holds up";
-var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
   return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
@@ -4848,18 +4846,26 @@ function heldLabel(c) {
   return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
 }
 var UPDATING_TEXT = "Updating\u2026";
+var RETRYING_TEXT = "Retrying the last update\u2026";
 var REFRESHING_PRS_TEXT = "Refreshing PRs\u2026";
 function footerStatus(tab, status, prs, statusPageError) {
   if (tab === "prs")
     return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null };
   const error = (tab === "overview" ? statusPageError : null) ?? status.error;
-  return { text: status.isUpdating ? UPDATING_TEXT : null, error };
+  return { text: status.isRetrying ? RETRYING_TEXT : status.isUpdating ? UPDATING_TEXT : null, error };
 }
-function perTurnStatus(update) {
-  return {
-    isUpdating: update.isUpdating,
-    error: update.isFailed && !update.isUpdating ? UPDATE_FAILED + (update.retries ? UPDATE_RETRIES : "") : null
-  };
+var NEXT_TRY = " The inbox tries again after the agent's next reply.";
+function failedUpdateText(recovery, failedUpdates) {
+  if (recovery === "waiting")
+    return `Last update failed. Items from that reply may be missing.${NEXT_TRY}`;
+  if (recovery === "failed-again")
+    return `The last ${failedUpdates} updates failed. Items from recent replies may be missing.${NEXT_TRY}`;
+  if (recovery === "cannot-retry")
+    return "Last update failed. The inbox cannot read this conversation to try again. Check the agent's last reply for anything that needs you.";
+  return null;
+}
+function perTurnStatus(isUpdating, recovery, failedUpdates) {
+  return { isUpdating, isRetrying: recovery === "retrying", error: failedUpdateText(recovery, failedUpdates) };
 }
 
 // ../hooks/session-view.ts
@@ -4873,14 +4879,20 @@ function withoutStaleResult(last, now) {
 function withoutStalePending(lastActions, now) {
   return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]));
 }
+function updateRecovery(s, canCatchUp) {
+  const { presence } = s;
+  if (presence.ledgerState !== "failed")
+    return "none";
+  if (presence.isUpdating)
+    return "retrying";
+  const canRetry = s.pending.length > 0 || canCatchUp && !presence.isConversationUnreadable;
+  if (!canRetry)
+    return "cannot-retry";
+  return presence.failedUpdates > 1 ? "failed-again" : "waiting";
+}
 function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes = {}) {
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
-  const update = {
-    isUpdating: s.presence.isUpdating,
-    isFailed: s.presence.ledgerState === "failed",
-    retries: canCatchUp || s.pending.length > 0
-  };
   const inbox = inboxView({
     ledger: l,
     lastActions,
@@ -4888,7 +4900,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     turns: s.presence,
     extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
     settleWindowMs,
-    status: perTurnStatus(update),
+    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s, canCatchUp), s.presence.failedUpdates),
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt
@@ -6934,6 +6946,8 @@ function emptySession() {
       turnsApplied: 0,
       ledgerState: "current",
       hasDroppedReply: false,
+      failedUpdates: 0,
+      isConversationUnreadable: false,
       isUpdating: false,
       isTurnRunning: false,
       turnStartedAt: null,
@@ -7807,18 +7821,22 @@ function applied(s, parsed, now, promptAt) {
     return {
       ...s,
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
-      presence: { ...s.presence, ledgerState: "failed" }
+      presence: { ...s.presence, ledgerState: "failed", failedUpdates: s.presence.failedUpdates + 1 }
     };
   const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger;
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
+  const isCurrent = !hasDroppedReply;
+  const failedUpdates = parsed ? s.presence.failedUpdates : s.presence.failedUpdates + 1;
   return linkDialogs({
     ...s,
     ledger,
     pending: s.pending.slice(1),
     presence: {
       ...s.presence,
-      ledgerState: hasDroppedReply ? "failed" : "current",
+      ledgerState: isCurrent ? "current" : "failed",
       hasDroppedReply,
+      failedUpdates: isCurrent ? 0 : failedUpdates,
+      isConversationUnreadable: isCurrent ? false : s.presence.isConversationUnreadable,
       turnsApplied: Math.max(s.presence.turnsApplied, next.turnsStarted)
     }
   });
@@ -8072,6 +8090,8 @@ function appliedCatchUp(s, begun, parsed, now) {
       ...s.presence,
       ledgerState: parsed ? "current" : "failed",
       hasDroppedReply: parsed ? false : s.presence.hasDroppedReply,
+      failedUpdates: parsed ? 0 : s.presence.failedUpdates + 1,
+      isConversationUnreadable: false,
       turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted)
     }
   });
@@ -8501,6 +8521,7 @@ async function runUpdates(host) {
               const reply = await host.catchUp(s).catch(() => ({ kind: "failed" }));
               if (reply.kind === "unreadable") {
                 canCatchUp = false;
+                await host.update((x) => ({ ...x, presence: { ...x.presence, isConversationUnreadable: true } }));
                 continue;
               }
               const parsed = reply.kind === "reply" ? parseReply(reply.text, reply.source) : null;

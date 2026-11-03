@@ -27,7 +27,8 @@ import { DONE_LABELS, fixLabel, feedbackIn, pressFeedbackIn } from './feedback'
 import type { ShownTab } from './tabs'
 import { actionsOf } from './action-plan'
 
-type ItemStatus = { isUpdating: boolean; error: string | null }
+/** `isRetrying`: the update that runs retries a failed one. */
+type ItemStatus = { isUpdating: boolean; isRetrying: boolean; error: string | null }
 
 export type ViewInput = {
   ledger: Ledger
@@ -66,9 +67,7 @@ export type InboxView = {
 /** A closed entry as a look draws it. `mark` is `closedMark` of the entry and its delivery. */
 type ClosedView<T> = T & { delivery: ClosedDelivery; outcomeLabel: string; mark: ResultMark }
 
-const UPDATE_FAILED = 'Last update failed. Items from that reply may be missing.'
 const HOLDS_UP_TEXT = 'Holds up'
-const UPDATE_RETRIES = ' It retries after your next message.'
 
 function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[] } {
   const newestReplyFirst = (kind: Item['kind']) =>
@@ -312,6 +311,7 @@ function heldLabel(c: Pick<Closed, 'how' | 'outcome'>): string {
 }
 
 const UPDATING_TEXT = 'Updating…'
+const RETRYING_TEXT = 'Retrying the last update…'
 const REFRESHING_PRS_TEXT = 'Refreshing PRs…'
 
 /**
@@ -328,12 +328,28 @@ export function footerStatus(
   if (tab === 'prs') return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null }
   const error = (tab === 'overview' ? statusPageError : null) ?? status.error
 
-  return { text: status.isUpdating ? UPDATING_TEXT : null, error }
+  return { text: status.isRetrying ? RETRYING_TEXT : status.isUpdating ? UPDATING_TEXT : null, error }
 }
 
-export function perTurnStatus(update: { isUpdating: boolean; isFailed: boolean; retries: boolean }): ItemStatus {
-  return {
-    isUpdating: update.isUpdating,
-    error: update.isFailed && !update.isUpdating ? UPDATE_FAILED + (update.retries ? UPDATE_RETRIES : '') : null,
-  }
+/**
+ * Where a failed ledger update stands. `waiting`: the host retries after the agent's next reply. `retrying`: an
+ * update runs now. `failed-again`: a retry failed too, and the host tries again. `cannot-retry`: nothing is pending
+ * and the host cannot read the conversation to catch up.
+ */
+export type UpdateRecovery = 'none' | 'waiting' | 'retrying' | 'failed-again' | 'cannot-retry'
+
+const NEXT_TRY = " The inbox tries again after the agent's next reply."
+
+function failedUpdateText(recovery: UpdateRecovery, failedUpdates: number): string | null {
+  if (recovery === 'waiting') return `Last update failed. Items from that reply may be missing.${NEXT_TRY}`
+  if (recovery === 'failed-again')
+    return `The last ${failedUpdates} updates failed. Items from recent replies may be missing.${NEXT_TRY}`
+  if (recovery === 'cannot-retry')
+    return "Last update failed. The inbox cannot read this conversation to try again. Check the agent's last reply for anything that needs you."
+
+  return null
+}
+
+export function perTurnStatus(isUpdating: boolean, recovery: UpdateRecovery, failedUpdates: number): ItemStatus {
+  return { isUpdating, isRetrying: recovery === 'retrying', error: failedUpdateText(recovery, failedUpdates) }
 }

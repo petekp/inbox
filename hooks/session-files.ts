@@ -19,6 +19,8 @@ export function emptySession(): Session {
       turnsApplied: 0,
       ledgerState: 'current',
       hasDroppedReply: false,
+      failedUpdates: 0,
+      isConversationUnreadable: false,
       isUpdating: false,
       isTurnRunning: false,
       turnStartedAt: null,

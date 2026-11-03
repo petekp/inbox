@@ -251,7 +251,7 @@ nothing of, though it already has turns. The next update catches up. Only
 An exchange whose update failed twice, so its reply never reached the ledger.
 `presence.hasDroppedReply` keeps the "may be missing" warning until a catch-up
 covers it. A host that cannot read its conversation has no catch-up, so the
-warning stays until a clear.
+warning stays until a clear, and says the inbox cannot try again.
 
 **Next build**:
 A checkout that follows the `next` branch and holds `NEXT_BUILD_MARK`, a file

@@ -11,6 +11,7 @@ import { prNeedsYou } from './prs'
 import { MARK_LEGEND } from './help'
 import { hasRunningMark, NO_HOLDS } from './timing'
 import { inboxView, perTurnStatus } from './view'
+import type { UpdateRecovery } from './view'
 import { isRowTab } from './tabs'
 import { statusPage } from './status-page'
 import type { InboxView } from './view'
@@ -58,9 +59,20 @@ function withoutStalePending(lastActions: Record<string, LastAction>, now: numbe
 }
 
 /**
- * `canCatchUp` says whether the host can read the whole conversation. Its next update then retries a failed ledger,
- * even with no exchange waiting. A host that cannot retries only when an exchange is pending.
+ * Where the session's failed ledger update stands. A host retries when an exchange is pending, or when it can catch
+ * up: `canCatchUp`, and the last catch-up did not find the conversation unreadable.
  */
+export function updateRecovery(s: Session, canCatchUp: boolean): UpdateRecovery {
+  const { presence } = s
+  if (presence.ledgerState !== 'failed') return 'none'
+  if (presence.isUpdating) return 'retrying'
+  const canRetry = s.pending.length > 0 || (canCatchUp && !presence.isConversationUnreadable)
+  if (!canRetry) return 'cannot-retry'
+
+  return presence.failedUpdates > 1 ? 'failed-again' : 'waiting'
+}
+
+/** `canCatchUp` says whether the host can read the whole conversation, so its next update can retry a failed ledger. */
 export function sessionView(
   s: Session,
   now: number,
@@ -71,11 +83,6 @@ export function sessionView(
 ): SessionView {
   const l = s.ledger
   const lastActions = withoutStalePending(s.lastActions, now)
-  const update = {
-    isUpdating: s.presence.isUpdating,
-    isFailed: s.presence.ledgerState === 'failed',
-    retries: canCatchUp || s.pending.length > 0,
-  }
 
   const inbox = inboxView({
     ledger: l,
@@ -84,7 +91,7 @@ export function sessionView(
     turns: s.presence,
     extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
     settleWindowMs,
-    status: perTurnStatus(update),
+    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s, canCatchUp), s.presence.failedUpdates),
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,

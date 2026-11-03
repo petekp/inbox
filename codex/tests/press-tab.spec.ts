@@ -17,12 +17,18 @@ test('the tab reports active work separately from pending exchanges and failed u
   const waiting = endTurn(s, 'Done.', 50)
   assert.equal(waiting.pending.length, 1)
   assert.equal(viewOf(waiting, 60).status.isUpdating, false)
-  assert.match(viewOf(waiting, 60).status.error ?? '', /Last update failed.*retries after your next message/)
+  assert.match(
+    viewOf(waiting, 60).status.error ?? '',
+    /^Last update failed\..*tries again after the agent's next reply/,
+  )
   const running = { ...waiting, presence: { ...waiting.presence, isUpdating: true } }
-  assert.deepEqual(viewOf(running, 60).status, { isUpdating: true, error: null })
+  assert.deepEqual(viewOf(running, 60).status, { isUpdating: true, isRetrying: true, error: null })
   const scheduled = { ...waiting, presence: { ...waiting.presence, ledgerState: 'current' as const } }
-  assert.deepEqual(viewOf(scheduled, 60).status, { isUpdating: false, error: null })
-  assert.equal(viewOf(s, 60).status.error, 'Last update failed. Items from that reply may be missing.')
+  assert.deepEqual(viewOf(scheduled, 60).status, { isUpdating: false, isRetrying: false, error: null })
+  assert.equal(
+    viewOf(s, 60).status.error,
+    "Last update failed. The inbox cannot read this conversation to try again. Check the agent's last reply for anything that needs you.",
+  )
 })
 
 test('the tab says the hooks were not heard when none ran, when a tool call comes in a turn no prompt recorded, or when two prompts saw no Stop', () => {

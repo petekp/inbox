@@ -71,7 +71,7 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
   const prompts: string[] = []
   const answers = ['NEW: decide | - | Deploy now? | Yes / No | Yes', null]
   const ask = async (p: string) => (prompts.push(p), answers.shift() ?? null)
-  assert.deepEqual(viewOf(await readState(dir, 's1'), 4).status, { isUpdating: false, error: null })
+  assert.deepEqual(viewOf(await readState(dir, 's1'), 4).status, { isUpdating: false, isRetrying: false, error: null })
   await runUpdates(dir, 's1', ask, () => 5)
 
   const kept = await readState(dir, 's1')
@@ -90,6 +90,8 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     turnsApplied: 1,
     ledgerState: 'failed',
     hasDroppedReply: false,
+    failedUpdates: 1,
+    isConversationUnreadable: false,
     isUpdating: false,
     isTurnRunning: false,
     turnStartedAt: null,
@@ -97,7 +99,7 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     lastTypedMessageAt: null,
   })
   assert.equal(viewOf(kept, 5).status.isUpdating, false)
-  assert.match(viewOf(kept, 5).status.error ?? '', /Last update failed.*retries after your next message/)
+  assert.match(viewOf(kept, 5).status.error ?? '', /^Last update failed\..*tries again after the agent's next reply/)
   assert.equal(
     viewOf({ ...kept, pending: [...kept.pending, { ex: ex(3, 'More work.'), turnsStarted: 3 }] }, 5).status.isUpdating,
     false,
@@ -107,7 +109,11 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     dir,
     's1',
     async prompt => {
-      assert.deepEqual(viewOf(await readState(dir, 's1'), 6).status, { isUpdating: true, error: null })
+      assert.deepEqual(viewOf(await readState(dir, 's1'), 6).status, {
+        isUpdating: true,
+        isRetrying: true,
+        error: null,
+      })
       return ask(prompt)
     },
     () => 6,
@@ -120,6 +126,8 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     turnsApplied: 2,
     ledgerState: 'failed',
     hasDroppedReply: true,
+    failedUpdates: 2,
+    isConversationUnreadable: true,
     isUpdating: false,
     isTurnRunning: false,
     turnStartedAt: null,
@@ -127,8 +135,8 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     lastTypedMessageAt: null,
   })
   assert.equal(viewOf(dropped, 6).status.isUpdating, false)
-  assert.match(viewOf(dropped, 6).status.error ?? '', /Last update failed/)
-  assert.doesNotMatch(viewOf(dropped, 6).status.error ?? '', /retry/)
+  assert.match(viewOf(dropped, 6).status.error ?? '', /^Last update failed\. The inbox cannot read this conversation/)
+  assert.doesNotMatch(viewOf(dropped, 6).status.error ?? '', /tries again/)
 })
 
 test('a failed ledger catches up over a rollout Codex moved into archived_sessions, and saves where it is now', async () => {
@@ -254,7 +262,7 @@ test('view polls preserve live worker activity and reconcile a killed worker wit
   await exited
   const stopped = await poll()
   assert.equal(stopped.status.isUpdating, false)
-  assert.match(stopped.status.error ?? '', /Last update failed.*retries after your next message/)
+  assert.match(stopped.status.error ?? '', /^Last update failed\..*tries again after the agent's next reply/)
   const state = await readState(dir, 's1')
   assert.equal(state.presence.isUpdating, false)
   assert.equal(state.pending.length, 1)
@@ -284,5 +292,5 @@ test('view polls preserve live worker activity and reconcile a killed worker wit
   assert.equal(calls, 2)
   assert.deepEqual((await readState(dir, 's1')).pending, [])
   await updateState(dir, 's1', s => ({ ...s, presence: { ...s.presence, isUpdating: true, ledgerState: 'current' } }))
-  assert.deepEqual((await poll()).status, { isUpdating: false, error: null })
+  assert.deepEqual((await poll()).status, { isUpdating: false, isRetrying: false, error: null })
 })
