@@ -54,6 +54,13 @@ export type HookInput = {
   last_assistant_message?: string | null
 }
 
+/** The session with the lines of `lines` taken out of the running turn's activity. */
+const withoutActivity = (s: SessionState, lines: string[]): SessionState => {
+  const activity = s.turn.activity.filter(line => !lines.includes(line))
+
+  return activity.length === s.turn.activity.length ? s : { ...s, turn: { ...s.turn, activity } }
+}
+
 export type HookDeps = {
   dir: string
   env: NodeJS.ProcessEnv
@@ -180,9 +187,13 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       // Only the main agent's activity is what the Status call reads mid-turn, so only it claims the call.
       const isMainActivity = line !== null && agentId === undefined
       let isClaimed = false
+      // The Status call reads the turn's activity, so the lines of earlier calls that did not run come out first.
+      const isStatusDue = isMainActivity && (await read().then(s => claimedStatusRefresh(s, now()) !== s))
+      const unran = isStatusDue ? turnOf(await rolloutTail(input.transcript_path), input.turn_id).unran : []
       if (hasWork)
         await write(s => {
-          const worked = withWork(line ? noteActivity(withRollout(s), line) : withRollout(s))
+          const kept = withoutActivity(withRollout(s), unran)
+          const worked = withWork(line ? noteActivity(kept, line) : kept)
           const claimed = isMainActivity ? claimedStatusRefresh(worked, now()) : worked
           isClaimed = claimed !== worked
           return claimed
@@ -220,7 +231,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
           () => null,
         ),
       ])
-      const { dialogs, commands, plan, texts } = turnOf(tail, input.turn_id)
+      const { dialogs, commands, plan, texts, unran } = turnOf(tail, input.turn_id)
       // Codex runs Stop without writing the rollout out first, so the rollout can lack the turn's last message.
       const reply = turnReply(texts, input.last_assistant_message ?? '')
       const withHistory = await readHistoryAhead(() => before, tail)
@@ -228,7 +239,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const written = await write(async s => {
         const withLines = lines.reduce(
           (x, line) => noteActivity(x, line),
-          noteDialogs(withHost(await withHistory(s)), dialogs),
+          withoutActivity(noteDialogs(withHost(await withHistory(s)), dialogs), unran),
         )
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines)
         // A wait on a delegate holds the turn, so the delegate's turn settled by Stop, where the turn's commands are read.
