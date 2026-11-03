@@ -337,6 +337,43 @@
       {
         "new": "ready|review",
         "kind": "question"
+      },
+      {
+        "added": 1
+      }
+    ]
+  },
+  {
+    "name": "push-agent-cannot-run-is-task",
+    "about": "An outward act the agent cannot take, such as a push its sandbox blocks, stays a task for the person.",
+    "ledger": {
+      "turn": 4,
+      "nextId": 3,
+      "card": {
+        "goal": "Fix the date picker's time zone",
+        "done": ["Found the time zone bug"],
+        "now": "Pushing the fix",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "looks good, push it",
+      "turn": 4,
+      "activity": [
+        "edited src/forms/DatePicker.tsx",
+        "ran: npm test -- forms",
+        "ran: git push origin date-picker-tz (failed: network access is blocked in this sandbox)"
+      ],
+      "reply": "The fix is committed on date-picker-tz and the 42 form tests pass.\n\nI can't push from here: this sandbox blocks network access. Run this yourself:\n\n```\ngit push origin date-picker-tz\n```"
+    },
+    "checks": [
+      {
+        "new": "push",
+        "kind": "task"
+      },
+      {
+        "added": 1
       }
     ]
   }
