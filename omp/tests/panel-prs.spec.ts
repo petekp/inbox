@@ -6,9 +6,12 @@ import {
   prCheckId,
   prMarkId,
   prsEmptyHint,
+  prThreadId,
+  threadRowText,
   threadSentIn,
 } from '../../hooks/pr-rows'
-import { failingChecks, waitingThreads } from '../../hooks/prs'
+import { cancelledChecks, failingChecks, waitingThreads } from '../../hooks/prs'
+import { ago } from '../../hooks/text'
 import type { LastAction, PrOrder } from '../../types'
 import { rankedStatusOf } from '../../hooks/pr-order'
 import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
@@ -196,6 +199,21 @@ test('a press on the PRs tab says when it was made, and a failing check keeps As
   const open = text(pressed, { ...INITIAL_UI, tab: 'prs', selectedId: checkId }).split('\n')
   const buttons = open.findIndex(l => l.includes('Fix again'))
   expect(open[buttons + 1]?.trim()).toBe('✓ Asked to fix')
+})
+
+test('a thread row reads its comment’s time and a check row its finish time before any press', () => {
+  const screen = screenOf()
+  const { pr } = screen.view.prs.drawn[0]!
+  const lines = text(screen, { ...INITIAL_UI, tab: 'prs' }).split('\n')
+  const rowOf = (title: string) => lines.find(l => l.includes(title)) ?? ''
+  const isUnpressed = (id: string) => screen.view.lastActions[id] === undefined
+  const threads = waitingThreads(pr).filter(t => t.at !== null && isUnpressed(prThreadId(pr, t)))
+  const checks = [...failingChecks(pr), ...cancelledChecks(pr)].filter(c => isUnpressed(prCheckId(pr, c)))
+
+  expect(threads.length).toBeGreaterThan(0)
+  expect(checks.length).toBeGreaterThan(0)
+  for (const t of threads) expect(rowOf(threadRowText(pr, t, {}).title)).toMatch(new RegExp(`${ago(NOW - t.at!)}\\s*$`))
+  for (const c of checks) expect(rowOf(`/ ${c.name}`)).toMatch(new RegExp(`${ago(NOW - c.finishedAt!)}\\s*$`))
 })
 
 test('the PRs tab opens on the first thread that waits, and its press goes through the PR press', () => {

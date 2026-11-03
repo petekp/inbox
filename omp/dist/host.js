@@ -5805,7 +5805,7 @@ function prEntries(screen, ui, now) {
           title: text.title,
           isDim: text.fold !== null,
           detail: [text.meta, text.fold?.note].filter(Boolean).join(" \xB7 ") || null,
-          age: doneAt(feedback),
+          age: doneAt(feedback) ?? t.at,
           feedback,
           buttons: prButtons(threadActions(pr, t, presses)),
           isWaiting: isWaiting(id),
@@ -5825,7 +5825,7 @@ function prEntries(screen, ui, now) {
           lead: markLead(text.mark),
           title: text.lead ? `${text.lead} / ${text.title}` : text.title,
           detail: text.meta,
-          age: doneAt(feedback),
+          age: doneAt(feedback) ?? c.finishedAt ?? null,
           feedback,
           buttons: prButtons(checkActions(pr, c, presses)),
           isWaiting: isWaiting(id)
