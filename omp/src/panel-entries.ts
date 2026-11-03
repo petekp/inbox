@@ -145,6 +145,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
             label: settledLabel(state.label, state.delivery),
             tone: settledTone(state),
             undo: state.canUndo ? { action: 'pr-undo', ref: pr.ref } : null,
+            at: state.at,
           },
         },
       })

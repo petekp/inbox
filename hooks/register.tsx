@@ -107,7 +107,17 @@ import { statusKeyRows, statusSelected } from './status-keys'
 import { footerStatus } from './view'
 import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, type RowView } from './rows'
 import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf, NEXT_BUILD_MARK } from './banners'
-import { drawnLists, rowKeyPlan, rowsIn, firstWaiting, keptOpen, rowAfterClose, type PlannedKey } from './action-plan'
+import {
+  drawnLists,
+  rowKeyPlan,
+  rowsIn,
+  firstWaiting,
+  keptOpen,
+  rowAfterClose,
+  tabUndos,
+  latestUndo,
+} from './action-plan'
+import type { PlannedKey } from './action-plan'
 import {
   isRowTab,
   isShownTab,
@@ -178,6 +188,8 @@ import {
   openedField,
   openFields,
   paneHasKeys,
+  closeKeysWithoutRow,
+  undoKey,
 } from './pane-keys'
 import {
   arrived,
@@ -3430,23 +3442,11 @@ export const register: Register = on => {
     const selectedRow = isStatusShown || isHelpShown ? undefined : rows[tab][at]
     const selectedActions = selectedRow ? rowActions(selectedRow) : null
     const statusRowKeys = statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []
-    const closeKeysWithoutRow: KeyAction[] = ['d', 'x'].flatMap(hotkey =>
-      statusRowKeys.some(k => k.hotkey === hotkey)
-        ? []
-        : [
-            {
-              key: `no-row-${hotkey}`,
-              label: 'Close',
-              hotkey,
-              kind: 'view',
-              onPress: () => undefined,
-            },
-          ],
-    )
     const rowKeys = [
       ...statusRowKeys,
-      ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow),
+      ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow(statusRowKeys)),
       ...(tab === 'prs' && !isHelpShown ? [...prOrderKeys, ...prTabKeys] : []),
+      undoKey(isListShown ? latestUndo(tabUndos(tab, lists, shownPrs)) : null, (p, surface) => runPress($, p, surface)),
     ]
 
     // A pane takes a key

@@ -1,6 +1,6 @@
 import { render } from 'preact'
 import type { ComponentChildren } from 'preact'
-import { HELP_COPY } from '../../hooks/help'
+import { HELP_COPY, UNDO_KEY } from '../../hooks/help'
 import { versionLabel, DEMO_NOTICE, bannerOf, READING_TEXT } from '../../hooks/banners'
 import { isRowTab, shownTabs } from '../../hooks/tabs'
 import { tabState, handoff, root, instanceAbort } from './tab-state'
@@ -18,6 +18,7 @@ import { stepLists } from './tab-list'
 import { NeedsYou, Findings } from './tab-groups'
 import { prTabKeys, prOrderKeys, Prs } from './tab-prs'
 import { StatusTab } from './tab-status'
+import { pressUndoKey } from './undo-key'
 import { HelpPage, Status, TabBar, toggleDemo } from './tab-chrome'
 
 let isLoadingShown = false
@@ -174,6 +175,10 @@ document.addEventListener(
       e.preventDefault()
       select(t, rows, Math.max(0, Math.min(rows.length - 1, at + move)))
       revealSelected()
+      return
+    }
+    if (e.key === UNDO_KEY) {
+      if (pressUndoKey(tabState.view, t)) e.preventDefault()
       return
     }
     const row = rows[at]

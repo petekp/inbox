@@ -1,9 +1,11 @@
-import type { Item, PressKind, Finding, LastAction } from '../types'
+import type { Item, PressKind, Finding, LastAction, Tab } from '../types'
 import { clipLabel } from './text'
 import { actionId, ISSUE_LABEL } from './press-labels'
 import { stepIconKind } from './help-steps'
 import type { HelpStep } from './help-steps'
 import type { RowPress } from './presses'
+import type { PrPress } from './pr-press'
+import type { DrawnPr } from './pr-views'
 import { FINDING_GROUPS } from './help'
 import { ROW_COPY, OPTIONS_FOLD_AT, OPTION_LABEL_CHARS, isWaitingRow } from './rows'
 import type { RowState, ActionView, RowView, SettledState } from './rows'
@@ -41,6 +43,35 @@ const ACTION_KEYS: Partial<Record<RowPress['action'], string>> = {
   discuss: 'd',
   dismiss: 'x',
   discard: 'x',
+}
+
+export type ShownUndo = { press: RowPress | PrPress; at: number }
+
+/** The Undo the undo key presses: the one of the shown tab's Undos whose row closed last. */
+export function latestUndo<U extends { at: number }>(undos: readonly U[]): U | null {
+  return undos.reduce<U | null>((latest, u) => (latest === null || u.at >= latest.at ? u : latest), null)
+}
+
+/** The Undos a row tab draws: one on each settled row or PR that still offers it. */
+export function tabUndos(tab: Tab, lists: DrawnLists<unknown>, prs: readonly DrawnPr[]): ShownUndo[] {
+  return tab === 'prs'
+    ? prUndos(prs)
+    : listUndos(tab === 'needsYou' ? [...lists.questions, ...lists.tasks] : lists.findings)
+}
+
+function listUndos(entries: readonly DrawnEntry<unknown>[]): ShownUndo[] {
+  return entries.flatMap(x => {
+    const undo = 'settled' in x ? x.settled.actions.find(a => a.press.action === 'undo') : undefined
+    return undo && 'settled' in x ? [{ press: undo.press, at: x.state.at }] : []
+  })
+}
+
+function prUndos(prs: readonly DrawnPr[]): ShownUndo[] {
+  return prs.flatMap(d =>
+    d.state.is === 'settled' && d.state.canUndo
+      ? [{ press: { action: 'pr-undo', ref: d.pr.ref }, at: d.state.at }]
+      : [],
+  )
 }
 
 export function actionsOf(
