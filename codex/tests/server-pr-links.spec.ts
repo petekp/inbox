@@ -62,7 +62,7 @@ test('dismissing a linked PR unlinks it and settles its block as a dismissed row
   assert.equal(ref in (await readState(dir, 's1')).prViews.views, false)
 })
 
-test('an order_prs call links the PRs it names, the next view ranks them first under the order’s lines, and once a ranked PR changed, Rank again sends the agent its message', async () => {
+test('an order_prs call ranks the PRs it names without linking them, the next view fetches them and ranks them first under the order’s lines, and once a ranked PR changed, Rank again sends the agent its message', async () => {
   let at = 100
   const extraCheck = new Set<number>()
   const view = (number: number) => {
@@ -93,7 +93,9 @@ test('an order_prs call links the PRs it names, the next view ranks them first u
     result: { content: { text: string }[] }
   }
   assert.match(set.result.content[0]!.text, /^Set\. These 2 PRs show first in the PRs section of the Inbox tab/)
-  assert.deepEqual((await readState(dir, 's1')).ledger.prs, ['acme/app#9', 'acme/app#7'])
+  const ordered = (await readState(dir, 's1')).ledger
+  assert.deepEqual(ordered.prs, [])
+  assert.deepEqual(ordered.prOrder?.refs, ['acme/app#9', 'acme/app#7'])
   const { prs } = (await viewAfterFetch(call)).result.structuredContent
   assert.deepEqual(
     prs.drawn.map(d => [d.pr.number, d.rank]),

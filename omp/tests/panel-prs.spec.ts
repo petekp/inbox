@@ -40,6 +40,7 @@ function withOrder(prOrder: Partial<PrOrder>, lastActions: Record<string, LastAc
     label: 'Merge in this order',
     why: '#33 builds on #29.',
     statuses: null,
+    dismissed: [],
     by: 'omp',
     at: NOW - 2 * 60_000,
     ...prOrder,

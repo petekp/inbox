@@ -63,6 +63,7 @@ import {
 } from './children'
 import { runUpdates } from './session-host'
 import { fetchPrs as fetchSessionPrs, isPrFetchDue } from './host-prs'
+import { tabPrs } from './pr-fetch'
 import { refreshStatus, type StatusCall, type StatusRecords, type RecordFiles } from './status-records'
 import { startPress, wakeForDone as wakeSessionForDone } from './host-press'
 import type { Ask, CatchUpReply, SessionHost } from './session-host'
@@ -1624,7 +1625,7 @@ async function pollPrs($: EngineInterface) {
     read($, SESSION),
     isPrsTabShown($),
   ])
-  if (away.isAway || (!findsBranchPr && ledger.prs.length === 0 && prViews.branchRef === null)) return
+  if (away.isAway || (!findsBranchPr && tabPrs(ledger).length === 0 && prViews.branchRef === null)) return
   await fetchPrs($, findsBranchPr)
 }
 
@@ -2158,7 +2159,7 @@ async function applyConversation(
   if (!isLoading()) return
   if (needsCatchUp) await catchUpNow($)
   void publishStatus($)
-  if (ledger.prs.length > 0) void fetchPrs($, false)
+  if (tabPrs(ledger).length > 0) void fetchPrs($, false)
 }
 
 /**
@@ -2252,7 +2253,7 @@ async function readAgain($: EngineInterface) {
     if ((hasRun && saved.session) || (isBlankLedger(ledger) && (await $.session.turns().catch(() => 0)) > 0))
       await catchUpNow($)
     void publishStatus($)
-    if (ledger.prs.length > 0) void fetchPrs($, false)
+    if (tabPrs(ledger).length > 0) void fetchPrs($, false)
     void followNewRows($).catch(() => undefined)
   }
   await redrawPane($)
@@ -2623,7 +2624,7 @@ export const register: Register = on => {
     updateLedger($)
     const after = await read($, SESSION)
     const linksNewPr = prRefs(reply).some(ref => !before.ledger.prs.includes(ref))
-    const tracksPrs = after.ledger.prs.length > 0 || after.prViews.branchRef !== null
+    const tracksPrs = tabPrs(after.ledger).length > 0 || after.prViews.branchRef !== null
     if (linksNewPr || (tracksPrs && isPrFetchDue(after, mod.prFetchEndedAt, now)))
       void fetchPrs($, await isPrsTabShown($))
 
