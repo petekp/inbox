@@ -6188,10 +6188,11 @@ function drawLine(line, isSelected, d) {
   const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim("u Undo")}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
   const head = ` ${" ".repeat(pad)}${cursor} ${line.rank ? s.dim(line.rank) : ""}${leadText(line.lead, s)}`;
-  const shownTitle = line.mark ? cutTitle(line.title, width - visibleLength(head) - visibleLength(status) - visibleLength(after)) : line.title;
-  const title = line.isDim ? s.dim(shownTitle) : isSelected ? s.bold(shownTitle) : shownTitle;
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
-  out.push(spread(`${head}${title}${status}${after}`, `${age} `, width));
+  const besideAge = age ? width - visibleLength(`  ${age} `) : width;
+  const shownTitle = line.mark ? cutTitle(line.title, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after)) : line.title;
+  const title = line.isDim ? s.dim(shownTitle) : isSelected ? s.bold(shownTitle) : shownTitle;
+  out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width));
   if (line.settled || isShut(line, ui))
     return out;
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
