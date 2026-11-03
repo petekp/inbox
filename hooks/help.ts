@@ -38,11 +38,12 @@ export const CLOSED_MARKS: Record<ClosedState, string> = {
   lapsed: SUBJECT_MARKS.dropped.mark,
 }
 
-/** A PR row's mark: a review thread that waits on the person, one sent to the agent, and a failing check. */
+/** A PR row's mark: a review thread that waits on the person, one sent to the agent, a failing check and a cancelled one. */
 export const PR_MARKS = {
   waiting: { text: HELD_MARK.mark, tone: 'needsYou' },
   sent: { text: SUBJECT_MARKS.done.mark, tone: 'done' },
   failing: { text: FINDING_GROUPS.issue.mark, tone: 'error' },
+  cancelled: { text: '⊘', tone: null },
 } as const
 
 /** One mark the legend explains. `isRunning` draws it as the running mark. */
@@ -73,6 +74,12 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
     tone: FINDING_GROUPS.issue.tone,
     isRunning: false,
     words: 'Something is wrong: an issue or a failing check',
+  },
+  {
+    mark: PR_MARKS.cancelled.text,
+    tone: PR_MARKS.cancelled.tone,
+    isRunning: false,
+    words: 'A cancelled check: its run stopped before it finished, and needs another run',
   },
   {
     mark: FINDING_GROUPS.opportunity.mark,

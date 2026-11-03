@@ -19,6 +19,7 @@ import {
   PR_REFRESH,
   prPageEffect,
   prRetryOf,
+  rerunEffect,
   retryAction,
   withOut,
 } from './pr-press'
@@ -30,6 +31,8 @@ import type { Applied, PlannedPrAction, PrAction, PrPress } from './pr-press'
 const PR_REFRESH_LABEL = 'Refresh PRs'
 
 const DISMISS_MERGED_LABEL = 'Dismiss merged'
+
+const RERUN_LABEL = 'Re-run'
 
 export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrAction[] {
   const row = lastPressOf(presses, threadRowId(pr.ref, t.id))
@@ -70,19 +73,36 @@ export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrA
   ])
 }
 
+/** A failing check offers Fix. A cancelled one offers Re-run in Fix's place, when its run is a GitHub Actions run. */
 export function checkActions(pr: PrView, c: PrCheck, presses: PressState): PrAction[] {
   const row = lastPressOf(presses, checkRowId(pr.ref, c.name))
   const on = { ref: pr.ref, check: c.name }
+  const isCancelled = c.bucket === 'cancelled'
+  const mainMove: PlannedPrAction[] = isCancelled
+    ? rerunEffect(c)
+      ? [
+          {
+            press: { action: 'check-rerun', ...on },
+            label: RERUN_LABEL,
+            kind: 'local',
+            emphasis: 'primary',
+            hotkey: 'a',
+          },
+        ]
+      : []
+    : [
+        {
+          press: { action: 'check-fix', ...on },
+          label: again(row, 'check-fix', PR_FIX_LABELS['check-fix']),
+          kind: 'handoff',
+          emphasis: 'primary',
+          hotkey: 'a',
+        },
+      ]
 
   return withOut(row, [
     ...retryAction(prRetryOf(row.last, pr.ref, null, c.name)),
-    {
-      press: { action: 'check-fix', ...on },
-      label: again(row, 'check-fix', PR_FIX_LABELS['check-fix']),
-      kind: 'handoff',
-      emphasis: 'primary',
-      hotkey: 'a',
-    },
+    ...mainMove,
     {
       press: { action: 'log', ...on },
       label: 'Open log',
@@ -335,6 +355,12 @@ export function applyPrPress(
         lasts: { [id]: record(id, 'handoff', p.action, PR_FIX_LABELS[p.action]) },
         effects: [send(prompts.fixCheck(pr, check))],
       })
+    }
+    case 'check-rerun': {
+      const check = pr.checks.find(c => c.name === p.check && c.bucket === 'cancelled')
+      const rerun = check && rerunEffect(check)
+      if (!check || !rerun) return stale
+      return local(prCheckId(pr, check), RERUN_LABEL, rerun)
     }
     case 'log': {
       const check = pr.checks.find(c => c.name === p.check)

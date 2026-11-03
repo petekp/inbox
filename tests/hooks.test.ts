@@ -5,7 +5,7 @@ import { demoView } from '../hooks/demo'
 import { emptySession } from '../hooks/session-files'
 import { checkActions, prBlockActions, threadActions } from '../hooks/pr-tab'
 import { prCheckId, prThreadId, threadSentIn } from '../hooks/pr-rows'
-import { failingChecks, waitingThreads } from '../hooks/prs'
+import { blockingChecks, waitingThreads } from '../hooks/prs'
 import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { inboxView, perTurnStatus } from '../hooks/view'
 import { statusPage } from '../hooks/status-page'
@@ -54,7 +54,7 @@ test('no two buttons on a row share a hotkey, for every row kind in the demo', a
   const prRows = Object.values(prViews.views).flatMap(pr => [
     { id: `PR #${pr.number}`, actions: prBlockActions(pr, isSent, prViews.branchRef, presses) },
     ...waitingThreads(pr).map(t => ({ id: prThreadId(pr, t), actions: threadActions(pr, t, presses) })),
-    ...failingChecks(pr).map(c => ({ id: prCheckId(pr, c), actions: checkActions(pr, c, presses) })),
+    ...blockingChecks(pr).map(c => ({ id: prCheckId(pr, c), actions: checkActions(pr, c, presses) })),
   ])
   const rows = [
     ...itemRows,
@@ -199,7 +199,7 @@ for (const isNextBuild of [false, true])
       }
       const prRows = prs.flatMap(pr => [
         ...waitingThreads(pr).map(t => ({ id: prThreadId(pr, t), labels: threadActions(pr, t, presses) })),
-        ...failingChecks(pr).map(c => ({ id: prCheckId(pr, c), labels: checkActions(pr, c, presses) })),
+        ...blockingChecks(pr).map(c => ({ id: prCheckId(pr, c), labels: checkActions(pr, c, presses) })),
       ])
       let checked = 0
       for (const row of prRows) {

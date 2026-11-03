@@ -15,7 +15,7 @@ export type PrPress =
       action: 'pr-conflicts' | 'pr-address-all' | 'pr-merge' | 'pr-open' | 'pr-refresh' | 'pr-dismiss' | 'pr-undo'
       ref: string
     }
-  | { action: 'check-fix' | 'log'; ref: string; check: string }
+  | { action: 'check-fix' | 'check-rerun' | 'log'; ref: string; check: string }
   | { action: 'pr-dismiss-merged' }
   | { action: 'pr-rank-again' }
 
@@ -42,6 +42,23 @@ export function prPageEffect(pr: PrView): Effect {
 
 export function logEffect(pr: PrView, check: PrCheck): Effect {
   return { kind: 'open', target: check.url ?? pr.url, name: check.url ? 'the log' : `PR #${pr.number}` }
+}
+
+const ACTIONS_RUN_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/actions\/runs\/(\d+)/
+
+/** The re-run of a cancelled check's workflow run, or null when the check is not from a GitHub Actions run. */
+export function rerunEffect(c: PrCheck): Extract<Effect, { kind: 'rerun' }> | null {
+  const m = ACTIONS_RUN_URL.exec(c.url ?? '')
+
+  return m ? { kind: 'rerun', repo: m[1]!, run: m[2]!, name: c.workflow || c.name } : null
+}
+
+/**
+ * The gh arguments that re-run a workflow run's failed and cancelled jobs, and the jobs that need them. GitHub keeps
+ * the jobs that passed, and refuses the re-run while the run is still running.
+ */
+export function rerunArgs(e: Extract<Effect, { kind: 'rerun' }>): string[] {
+  return ['run', 'rerun', e.run, '--failed', '-R', e.repo]
 }
 
 /** A PR press that hands off a fix. The saved view can predate a push, so the press reads the PR from GitHub first. */
@@ -80,6 +97,10 @@ export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
     case 'log': {
       const check = pr.checks.find(c => c.name === p.check)
       return check ? logEffect(pr, check) : null
+    }
+    case 'check-rerun': {
+      const check = pr.checks.find(c => c.name === p.check && c.bucket === 'cancelled')
+      return check ? rerunEffect(check) : null
     }
     default:
       return null

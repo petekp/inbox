@@ -310,12 +310,9 @@ export function paneRows(
             ) : look === 'desktop' ? (
               (gutterMark(row) ?? <Text>{row.handle}</Text>)
             ) : (
-              <Button
-                plain
-                key={`select-${row.id}`}
-                label={row.handle || ' '}
-                onPress={() => void select(tab, row.id, index)}
-              />
+              <Button plain key={`select-${row.id}`} onPress={() => void select(tab, row.id, index)}>
+                {row.handle && !row.isHandleRunning ? <Text color={pal.muted}>{row.handle}</Text> : row.handle || ' '}
+              </Button>
             )}
           </Box>
         )}

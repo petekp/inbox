@@ -144,6 +144,7 @@ function PrBlock({
   pr,
   threads,
   checks,
+  cancelled,
   rank,
   openId,
   all,
@@ -174,6 +175,7 @@ function PrBlock({
       <div class="pr-groups">
         <PrRows title={PR_GROUP_TITLES.threads} rows={threads} all={all} openId={openId} now={now} />
         <PrRows title={PR_GROUP_TITLES.checks} rows={checks} all={all} openId={openId} now={now} />
+        <PrRows title={PR_GROUP_TITLES.cancelled} rows={cancelled} all={all} openId={openId} now={now} />
       </div>
     </section>
   )

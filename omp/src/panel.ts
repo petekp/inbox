@@ -12,7 +12,7 @@ import { footerStatus } from '../../hooks/view'
 import { GOAL_KEYS_ID, statusSelected } from '../../hooks/status-keys'
 import type { Holds } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
-import { bannerLines, boxed, drawLine, paintMark } from './panel-draw'
+import { bannerLines, boxed, drawLine, leadPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import { PAGE_MARK_AT, PAGE_TEXT_AT, entriesOf } from './panel-entries'
 import { resolveSelected, withTab } from './panel-keys'
@@ -193,7 +193,7 @@ export function drawPanel(
   for (const e of entries) {
     if (e.kind === 'heading')
       body.push(
-        ` ${e.mark ? `${e.mark.tone ? style.tone(e.mark.tone, e.mark.text) : e.mark.text} ` : ''}${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`,
+        ` ${e.mark ? `${leadPaint(e.mark, e.mark.text, style)} ` : ''}${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`,
       )
     else if (e.kind === 'page' || e.kind === 'goal') {
       if (e.kind === 'page' && e.row.isRuledAbove) body.push(pageRule(width, style))

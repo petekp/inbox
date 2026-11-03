@@ -3,6 +3,7 @@ import type { PrFixPress, PrPress } from './pr-press'
 import { doneWake, markSentToAgent, refuseDoneNotification, withDeliveryId, withUnconfirmed } from './press-reducer'
 import type { Effect } from './press-reducer'
 import { finishedResult, withResult, runSends, runLocalEffects } from './press-effects'
+import { rerunRun } from './host-prs'
 import type { EffectHost } from './press-effects'
 import { recordPress, pendingResult, localLast, withLasts } from './pressed'
 import type { RowPress } from './presses'
@@ -105,6 +106,7 @@ type PressHost<S extends Session> = Pick<
   | 'deliver'
   | 'perform'
   | 'refreshPrs'
+  | 'gh'
   | 'newId'
   | 'isDeliveryHeldUntilRun'
   | 'answerMessage'
@@ -206,6 +208,11 @@ export async function startPress<S extends Session>(
       if (e.kind === 'refresh-prs') {
         await host.refreshPrs()
         return null
+      }
+      if (e.kind === 'rerun') {
+        const why = await rerunRun(host, e)
+        if (why === null) await host.refreshPrs()
+        return why
       }
       if (e.kind === 'copy') copy = { text: e.text, name: e.name }
       return host.perform(await host.read(), e)

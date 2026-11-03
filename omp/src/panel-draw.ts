@@ -82,12 +82,14 @@ export function faceLines(buttons: ButtonFace[], focused: number, indent: number
   return lines.map(at => ' '.repeat(indent) + at.map(i => cells[i]).join(''))
 }
 
+/** `text` in a lead's tone. */
+export function leadPaint(lead: Lead, text: string, s: Style): string {
+  return lead.tone === 'dim' ? s.dim(text) : lead.tone ? s.tone(lead.tone, text) : text
+}
+
 /** A lead and the space after it, or nothing for a line with no lead. */
 function leadText(lead: Lead | null, s: Style): string {
-  if (lead === null) return ''
-  const padded = lead.text.padEnd(2)
-
-  return `${lead.tone ? s.tone(lead.tone, padded) : padded} `
+  return lead === null ? '' : `${leadPaint(lead, lead.text.padEnd(2), s)} `
 }
 
 /** A result mark and the space after it. */

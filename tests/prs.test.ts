@@ -11,6 +11,8 @@ import {
   readableComment,
   readiness,
 } from '../hooks/prs'
+import { checkActions } from '../hooks/pr-tab'
+import { checkRowText } from '../hooks/pr-rows'
 
 const VIEW = JSON.stringify({
   number: 12,
@@ -211,6 +213,56 @@ describe('prs', () => {
     expect(readiness({ ...rerunPassed, threads: [], isYours: true, wasSeenOpen: true, error: null }).text).toBe(
       'Blocked: changes requested',
     )
+  })
+
+  test('a cancelled check reads as cancelled, still blocks the merge, and offers Re-run in place of Fix only when GitHub Actions ran it', () => {
+    const run = (name: string, conclusion: string, detailsUrl: string) => ({
+      __typename: 'CheckRun',
+      name,
+      workflowName: 'CI',
+      status: 'COMPLETED',
+      conclusion,
+      startedAt: '2026-10-08T09:00:00Z',
+      completedAt: '2026-10-08T09:03:02Z',
+      detailsUrl,
+    })
+    const view = readView(
+      'acme/greet#12',
+      JSON.stringify({
+        ...JSON.parse(VIEW),
+        reviewDecision: '',
+        statusCheckRollup: [
+          run('lint', 'FAILURE', 'https://github.com/acme/greet/actions/runs/5/job/50'),
+          run('e2e', 'CANCELLED', 'https://github.com/acme/greet/actions/runs/6/job/60'),
+          run('deploy', 'CANCELLED', 'https://ci.example.com/builds/7'),
+        ],
+      }),
+    )!
+    const pr = { ...view, threads: [], isYours: true, wasSeenOpen: true, error: null }
+    const presses = { lastActions: {}, turns: { turnsStarted: 0, turnsApplied: 0 }, now: 0 }
+    const buttons = (name: string) =>
+      checkActions(
+        pr,
+        pr.checks.find(c => c.name === name)!,
+        presses,
+      ).map(a => [a.label, a.kind, a.hotkey ?? null])
+
+    expect(pr.checks.map(c => [c.name, c.bucket])).toEqual([
+      ['lint', 'fail'],
+      ['e2e', 'cancelled'],
+      ['deploy', 'cancelled'],
+    ])
+    expect(readiness(pr).text).toBe('Blocked: 1 failing check, 2 cancelled checks')
+    expect(checkRowText(pr.checks[1]!).meta).toBe('Cancelled after 3m 2s')
+    expect(buttons('lint')).toEqual([
+      ['Fix', 'handoff', 'a'],
+      ['Open log', 'local', 'o'],
+    ])
+    expect(buttons('e2e')).toEqual([
+      ['Re-run', 'local', 'a'],
+      ['Open log', 'local', 'o'],
+    ])
+    expect(buttons('deploy')).toEqual([['Open log', 'local', 'o']])
   })
 
   test('an outdated thread waits again when someone replies after the latest commit', () => {

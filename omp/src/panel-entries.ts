@@ -19,7 +19,7 @@ import { isDismissed, openPrViews } from '../../hooks/pr-views'
 import { prRankText } from '../../hooks/pr-order'
 import type { PrRowMark } from '../../hooks/pr-rows'
 import type { PrOrderView } from '../../hooks/pr-order'
-import { failingChecks, readiness, waitingThreads } from '../../hooks/prs'
+import { cancelledChecks, failingChecks, readiness, waitingThreads } from '../../hooks/prs'
 import { capitalized } from '../../hooks/press-labels'
 import { cellWidth } from '../../hooks/text'
 import { settledTone, NEEDS_YOU_GROUPS, settledMark, settledLabel } from '../../hooks/rows'
@@ -110,7 +110,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
   const isWaiting = (id: string) => waits.some(w => w.id === id && w.isWaiting)
   const markLead = (mark: PrRowMark): Lead => ({
     text: mark.isRunning ? runningMark(now) : mark.text,
-    tone: mark.tone ?? 'sep',
+    tone: mark.tone ?? (mark.isRunning || !mark.text ? 'sep' : 'dim'),
   })
   const out: Entry[] = []
   const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut }
@@ -187,26 +187,31 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
         },
       })
     }
-    const checks = failingChecks(pr)
-    if (checks.length > 0) out.push({ kind: 'heading', text: PR_GROUP_TITLES.checks, count: checks.length })
-    for (const c of checks) {
-      const id = prCheckId(pr, c)
-      const text = checkRowText(c)
-      const feedback = pressFeedback(screen, id, now, text.mark.isDone)
-      out.push({
-        kind: 'row',
-        line: {
-          ...blankLine(id),
-          depth: 1,
-          lead: markLead(text.mark),
-          title: text.lead ? `${text.lead} / ${text.title}` : text.title,
-          detail: text.meta,
-          age: doneAt(feedback),
-          feedback,
-          buttons: prButtons(checkActions(pr, c, presses)),
-          isWaiting: isWaiting(id),
-        },
-      })
+    const checkGroups = [
+      { title: PR_GROUP_TITLES.checks, checks: failingChecks(pr) },
+      { title: PR_GROUP_TITLES.cancelled, checks: cancelledChecks(pr) },
+    ]
+    for (const { title, checks } of checkGroups) {
+      if (checks.length > 0) out.push({ kind: 'heading', text: title, count: checks.length })
+      for (const c of checks) {
+        const id = prCheckId(pr, c)
+        const text = checkRowText(c)
+        const feedback = pressFeedback(screen, id, now, text.mark.isDone)
+        out.push({
+          kind: 'row',
+          line: {
+            ...blankLine(id),
+            depth: 1,
+            lead: markLead(text.mark),
+            title: text.lead ? `${text.lead} / ${text.title}` : text.title,
+            detail: text.meta,
+            age: doneAt(feedback),
+            feedback,
+            buttons: prButtons(checkActions(pr, c, presses)),
+            isWaiting: isWaiting(id),
+          },
+        })
+      }
     }
   }
   const tabButtons = prButtons(prs.tabActions)

@@ -186,3 +186,48 @@ test('a fix press whose check of the PR fails sends nothing and says why on its 
   expect(unread.delivered).toEqual([])
   expect(await unread.shownOn(prMarkId(FIX_REF))).toBe('Could not refresh PR #12: HTTP 502')
 })
+
+test('Re-run on a cancelled check asks gh to re-run its run, fetches the PRs, and says on its row whether the re-run started', async () => {
+  const { host } = fakeHost(async () => null)
+  const ghRuns: string[][] = []
+  let ghAnswer = { exitCode: 0, stdout: '', stderr: '' }
+  let refreshes = 0
+  host.gh = {
+    ...host.gh,
+    find: async () => 'gh',
+    run: () => async args => (ghRuns.push(args), ghAnswer),
+  }
+  host.refreshPrs = async () => {
+    refreshes += 1
+  }
+  const cancelled = {
+    name: 'e2e',
+    bucket: 'cancelled' as const,
+    url: 'https://github.com/acme/app/actions/runs/77/job/9',
+    workflow: 'CI',
+  }
+  await host.update(s => ({
+    ...s,
+    ledger: { ...s.ledger, prs: [FIX_REF] },
+    prViews: { ...s.prViews, views: { [FIX_REF]: { ...BLOCKED_PR, checks: [cancelled] } } },
+  }))
+  const rowText = async () => {
+    const s = await host.read()
+    const id = checkRowId(FIX_REF, 'e2e')
+    const f = feedbackOf(id, s.lastActions[id], undefined, s.presence, await host.now())
+    return f ? feedbackText(f, 'terminal') : null
+  }
+  const rerun = () => press(host, { action: 'check-rerun', ref: FIX_REF, check: 'e2e' }, false, NO_HOLDS)
+
+  expect((await rerun()).note).toBe(null)
+  expect(ghRuns).toEqual([['run', 'rerun', '77', '--failed', '-R', 'acme/app']])
+  expect(refreshes).toBe(1)
+  expect(await rowText()).toBe('✓ Started a re-run of CI')
+
+  ghAnswer = { exitCode: 1, stdout: '', stderr: 'run 77 cannot be rerun; This workflow is already running\n' }
+  await rerun()
+  expect(refreshes).toBe(1)
+  expect(await rowText()).toBe(
+    'Could not start a re-run of CI: run 77 cannot be rerun; This workflow is already running',
+  )
+})

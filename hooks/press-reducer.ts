@@ -11,6 +11,7 @@ export type Effect =
   | { kind: 'open'; target: string; name: string }
   | { kind: 'copy'; text: string; name: string; isCommand: boolean }
   | { kind: 'refresh-prs'; name: string }
+  | { kind: 'rerun'; repo: string; run: string; name: string }
 
 /**
  * `last` null leaves the row's last action as it was.

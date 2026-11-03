@@ -88,7 +88,7 @@ export function demoAfterPress(
 
 export type EffectHost = {
   now(): Promise<number> | number
-  /** Opens, copies or refreshes PRs. Returns why it could not, or null. */
+  /** Opens, copies, refreshes PRs or re-runs a workflow run. Returns why it could not, or null. */
   perform(e: Exclude<Effect, { kind: 'send' }>): Promise<string | null>
   send(
     e: Extract<Effect, { kind: 'send' }>,

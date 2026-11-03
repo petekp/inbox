@@ -255,9 +255,9 @@ export function panePrBlocks({
             key,
           ),
         ]
-  const prBlock = (b: DrawnPr & { rows: Row[]; checks: Row[]; threads: Row[] }) => {
+  const prBlock = (b: DrawnPr & { rows: Row[]; checks: Row[]; cancelled: Row[]; threads: Row[] }) => {
     if (b.state.is === 'settled') return settledPrBlock(b.pr, b.state)
-    const { pr, checks, threads } = b
+    const { pr, checks, cancelled, threads } = b
     const { status, head: statusHead, unlisted } = readiness(pr, isThreadSent)
     const tone = PR_TONES[status]
     const prLast = isDismissed(lastActions, pr.ref) ? null : lastActionText(prMarkId(pr.ref))
@@ -323,6 +323,7 @@ export function panePrBlocks({
         : [<Box paddingLeft={1}>{titleLine}</Box>, <Box paddingLeft={1}>{statusBlock}</Box>]),
       ...prRowGroup(PR_GROUP_TITLES.threads, threads, `${pr.ref}-threads`),
       ...prRowGroup(PR_GROUP_TITLES.checks, checks, `${pr.ref}-checks`),
+      ...prRowGroup(PR_GROUP_TITLES.cancelled, cancelled, `${pr.ref}-cancelled`),
     ])
   }
   const ghState = { isGhMissing: Boolean(prState.isGhMissing), isGhSignedOut: Boolean(prState.isGhSignedOut) }

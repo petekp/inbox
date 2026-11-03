@@ -18,7 +18,7 @@ import { reducedMotion, drawIn } from './tab-motion'
 import { drawnTab, shownSettled, selectedIndex, open, select, isOpenGuarded, rowActions } from './tab-selection'
 import { discardReply } from './tab-press'
 import { act, listsOf } from './tab-rows'
-import { feedbackLabel, noteOf, isFeedbackShown, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
+import { feedbackLabel, noteOf, isFeedbackShown, MarkGlyph, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
 
 const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as const
 
@@ -106,7 +106,7 @@ export function ListRow({
       class={`mark ${row.handleTone ?? ''}${row.isHandleRunning ? ' running' : ''}`}
       ref={row.isHandleRunning ? pulseInStep : undefined}
     >
-      {row.handle}
+      <MarkGlyph text={row.handle} />
     </span>
   )
 

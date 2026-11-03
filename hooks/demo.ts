@@ -451,6 +451,14 @@ export function demoView(now: number, agent: string): DemoCopy {
               startedAt: now - 16 * MIN,
               finishedAt: now - 15 * MIN - 19_000,
             },
+            {
+              name: 'device matrix',
+              bucket: 'cancelled',
+              url: `${REPO}/actions/runs/4/job/40`,
+              workflow: 'E2E',
+              startedAt: now - 16 * MIN,
+              finishedAt: now - 9 * MIN,
+            },
             { name: 'gesture e2e', bucket: 'pending', url: null, workflow: 'CI', startedAt: now - 2 * MIN },
           ],
           threads: [
