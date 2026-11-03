@@ -41,7 +41,7 @@ export function suspendUndoReveal(): number {
 }
 
 class SessionState {
-  /** The conversation whose first prompt has had the Status tab's headline and status carried beside it. */
+  /** The conversation whose first prompt has had the Status's head and open subjects carried beside it. */
   carriedFor: string | null = null
   /** Why the last conversation ended, until the next conversation loads. */
   endReason: string | null = null

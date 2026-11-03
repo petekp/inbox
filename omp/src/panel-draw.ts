@@ -4,7 +4,7 @@ import { actionLabel, replyHint } from '../../hooks/rows'
 import { actionLines } from '../../hooks/action-plan'
 import { isStatusUnderActions } from '../../hooks/feedback'
 import { resultGlyph, runningMark } from '../../hooks/timing'
-import { HELD_MARK } from '../../hooks/help'
+import { HELD_MARK, UNDO_KEY } from '../../hooks/help'
 import { textMark } from '../../hooks/marks'
 import type { BannerView } from '../../hooks/banners'
 import type { ResultMark } from '../../hooks/rows'
@@ -138,7 +138,7 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       : null
   const mark = markText(line.mark, now, s)
   const after = line.settled
-    ? `  ${mark}${line.settled.tone === 'done' ? s.tone('done', line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim('u Undo')}` : ''}`
+    ? `  ${mark}${line.settled.tone === 'done' ? s.tone('done', line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ''}`
     : line.feedback && !statusUnder
       ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}`
       : ''

@@ -294,19 +294,19 @@ export function declineProposedGoal(o: SessionStatus): SessionStatus {
  * it, unlinks every subject, and carries the milestones until the Status call that reads it keeps the ones it names. The
  * page draws none of them until then.
  */
-export function setTypedGoal(o: SessionStatus, text: string, now: number): { status: SessionStatus; isNew: boolean } {
+export function setTypedGoal(o: SessionStatus, text: string, now: number): SessionStatus {
   const typed = clipWords(text, DESCRIPTION_KEPT)
-  if (typed === '') return { status: o, isNew: false }
+  if (typed === '') return o
   const p = o.proposedGoal
   if (p !== null && hasSameWords(p.text, typed)) {
     const used = useProposedGoal(o, now)
 
-    return { status: { ...used, goal: { ...used.goal!, text: typed } }, isNew: true }
+    return { ...used, goal: { ...used.goal!, text: typed } }
   }
   const declined = declineProposedGoal(o)
   const isReworded = o.goal !== null && hasSameWords(o.goal.text, typed)
-  if (isReworded) return { status: { ...declined, goal: { ...o.goal!, text: typed } }, isNew: false }
+  if (isReworded) return { ...declined, goal: { ...o.goal!, text: typed } }
   const goal = { text: typed, setAt: now, metAt: null, was: o.goal?.text ?? null, isAwaitingMilestones: true }
 
-  return { status: { ...declined, goal, serves: {} }, isNew: true }
+  return { ...declined, goal, serves: {} }
 }

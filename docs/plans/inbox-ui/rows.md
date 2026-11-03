@@ -8,7 +8,7 @@ Status: built.
 
 ### 2.1 What comes first
 
-The count of what needs the person and the top row come first. The headline and status go to the agent, in the carry text. Every platform already shows which session waits on the person. The inbox adds the item itself.
+The count of what needs the person and the top row come first. The Status's head and open subjects go to the agent, in the carry text. Every platform already shows which session waits on the person. The inbox adds the item itself.
 
 The count is named by its tab, Asks. The band reads tab names with counts, and an empty inbox reads "Nothing needs you".
 
@@ -54,7 +54,7 @@ The Codex tab draws its lists flat, with no tree lines, in the app's sans font. 
 
 The Closed fold's outcomes are the answer itself ("Yes, rename"), "Done", "You ran it", "Dismissed", "Expired", "Closed by Claude: <reason>", and the per-turn update's own outcome text. A finding that Fix handed off lists as "Fix" or "Do it".
 
-Only the Status tab shows the headline and status. The band shows only counts, and the other tabs only rows. The Codex tab has no band, and its tab labels carry the counts, so it draws no count or headline either.
+Only the Status tab shows the head and subjects. The band shows only counts, and the other tabs only rows. The Codex tab has no band, and its tab labels carry the counts, so it draws no count or head either.
 
 **Question numbers.** Typing "1 yes" in the prompt answers a numbered question through `hooks/inbox-text.ts:answerNote`. That function maps a typed number to the agent's latest batch of questions: by the agent's own label when it gave one, else by position in the batch. It does this only when that batch came from the reply just before.
 

@@ -1300,18 +1300,18 @@ function declineProposedGoal(o) {
 function setTypedGoal(o, text, now) {
   const typed = clipWords(text, DESCRIPTION_KEPT);
   if (typed === "")
-    return { status: o, isNew: false };
+    return o;
   const p = o.proposedGoal;
   if (p !== null && hasSameWords(p.text, typed)) {
     const used = useProposedGoal(o, now);
-    return { status: { ...used, goal: { ...used.goal, text: typed } }, isNew: true };
+    return { ...used, goal: { ...used.goal, text: typed } };
   }
   const declined = declineProposedGoal(o);
   const isReworded = o.goal !== null && hasSameWords(o.goal.text, typed);
   if (isReworded)
-    return { status: { ...declined, goal: { ...o.goal, text: typed } }, isNew: false };
+    return { ...declined, goal: { ...o.goal, text: typed } };
   const goal = { text: typed, setAt: now, metAt: null, was: o.goal?.text ?? null, isAwaitingMilestones: true };
-  return { status: { ...declined, goal, serves: {} }, isNew: true };
+  return { ...declined, goal, serves: {} };
 }
 
 // ../hooks/goal-press.ts
@@ -1327,9 +1327,9 @@ function goalPressed(ledger, p, record, now) {
   if (p.action !== "type")
     return { stale: true };
   const typed = setTypedGoal(o, p.text, now);
-  if (typed.status === o)
+  if (typed === o)
     return unchanged;
-  return { ledger: { ...ledger, overview: typed.status }, last: record("mark"), effects: [] };
+  return { ledger: { ...ledger, overview: typed }, last: record("mark"), effects: [] };
 }
 
 // ../hooks/status-keys.ts
@@ -1725,6 +1725,7 @@ function markLegend(isNextBuild) {
   return isNextBuild ? MARK_LEGEND : MARK_LEGEND.filter((m) => !STATUS_ONLY_MARKS.has(m.mark));
 }
 var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks" };
+var UNDO_KEY = "u";
 var PR_TAB_HELP_KEYS = [
   { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
   { keys: "m", does: "Dismiss the merged PRs" }
@@ -1735,6 +1736,7 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
   const selectsStatusRows = tab === "overview" && hasStatusButtons;
   const switchTabs = { keys: tabKeys, does: "Switch tabs" };
   const prTabKeys = tab === "prs" ? PR_TAB_HELP_KEYS : [];
+  const undoKey = { keys: UNDO_KEY, does: "Undo the last close" };
   switch (look) {
     case "desktop":
       return [];
@@ -1742,13 +1744,14 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
       return [
         switchTabs,
         ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
+        ...hasRows ? [undoKey] : [],
         ...prTabKeys,
         { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
       ];
     case "codex":
       return [
         switchTabs,
-        ...hasRows ? [{ keys: "j k \u2191 \u2193", does: "Select the next or previous row" }] : [],
+        ...hasRows ? [{ keys: "j k \u2191 \u2193", does: "Select the next or previous row" }, undoKey] : [],
         ...prTabKeys,
         { keys: "?", does: "Open or close help" },
         { keys: "esc", does: "Close help, or leave a reply field" }
@@ -1761,7 +1764,7 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
           { keys: "\u2190 \u2192", does: "Pick a button" },
           { keys: "\u21B5", does: "Press the picked button" },
           { keys: "r", does: "Reply to the selected row" },
-          { keys: "u", does: "Undo the last close" },
+          undoKey,
           ...prTabKeys
         ] : [
           ...selectsStatusRows ? [
@@ -4586,6 +4589,9 @@ var ACTION_KEYS = {
   dismiss: "x",
   discard: "x"
 };
+function latestUndo(undos) {
+  return undos.reduce((latest, u) => latest === null || u.at >= latest.at ? u : latest, null);
+}
 function actionsOf(row, last, state, feedback) {
   const { id, item, steps } = row;
   const pressing = pressOutAction(last, feedback);
@@ -5600,7 +5606,8 @@ function lineOfRow(row) {
     settled: state.is === "settled" ? {
       label: settledLabel(state.label, state.delivery),
       tone: settledTone(state),
-      undo: state.canUndo && undo ? undo.press : null
+      undo: state.canUndo && undo ? undo.press : null,
+      at: state.at
     } : null,
     buttons: state.is === "settled" ? [] : rowButtons(row),
     row,
@@ -5776,7 +5783,8 @@ function prEntries(screen, ui, now) {
           settled: {
             label: settledLabel(state.label, state.delivery),
             tone: settledTone(state),
-            undo: state.canUndo ? { action: "pr-undo", ref: pr.ref } : null
+            undo: state.canUndo ? { action: "pr-undo", ref: pr.ref } : null,
+            at: state.at
           }
         }
       });
@@ -6041,12 +6049,9 @@ function handleKey(screen, ui, key, now, text) {
   }
   if (pickedTab)
     return { ui: withTab(base, pickedTab.id, now) };
-  if (key === "u") {
-    const undoable = lines.filter((l) => l.settled?.undo).at(-1);
-    const press = undoable?.settled?.undo;
-    if (undoable && press)
-      return { ui: withSelection(base, undoable.id), press };
-    return { ui: base };
+  if (key === UNDO_KEY) {
+    const undoable = latestUndo(lines.flatMap((l) => l.settled?.undo ? [{ id: l.id, press: l.settled.undo, at: l.settled.at }] : []));
+    return undoable ? { ui: withSelection(base, undoable.id), press: undoable.press } : { ui: base };
   }
   const tabLine = lines.find((l) => l.isTabButtons && l.buttons.some((b) => b.key === key));
   const tabButton = tabLine?.buttons.find((b) => b.key === key);
@@ -6192,7 +6197,7 @@ function drawLine(line, isSelected, d) {
   const status = line.status ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}` : "";
   const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isSelected) ? line.feedback : null;
   const mark = markText(line.mark, now, s);
-  const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim("u Undo")}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
+  const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
   const head = ` ${" ".repeat(pad)}${cursor} ${line.rank ? s.dim(line.rank) : ""}${leadText(line.lead, s)}`;
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";

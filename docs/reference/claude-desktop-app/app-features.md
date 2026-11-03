@@ -47,5 +47,5 @@ Source: https://code.claude.com/docs/en/desktop unless noted.
 
 ## Costs
 
-- The inbox's per-turn update (a Sonnet call through `$.model.complete`, `hooks/register.tsx:MODEL`) uses "the user's plan or API key" (https://code.claude.com/docs/en/plugins/mods/api).
+- The inbox's per-turn update (a Sonnet call through `$.model.complete`, `hooks/inbox-model.ts:MODEL`) uses "the user's plan or API key" (https://code.claude.com/docs/en/plugins/mods/api).
 - Scheduled tasks and Dispatch run sessions with no one watching. If the app attaches to them, the inbox would spend usage there. Unknown.

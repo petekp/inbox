@@ -115,6 +115,8 @@ import {
   keptOpen,
   rowAfterClose,
   steppedIndex,
+  tabUndos,
+  latestUndo,
   type PlannedKey,
 } from './action-plan'
 import {
@@ -187,6 +189,8 @@ import {
   openedField,
   openFields,
   paneHasKeys,
+  closeKeysWithoutRow,
+  undoKey,
 } from './pane-keys'
 import {
   arrived,
@@ -3427,23 +3431,11 @@ export const register: Register = on => {
     const selectedRow = isStatusShown || isHelpShown ? undefined : rows[tab][at]
     const selectedActions = selectedRow ? rowActions(selectedRow) : null
     const statusRowKeys = statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []
-    const closeKeysWithoutRow: KeyAction[] = ['d', 'x'].flatMap(hotkey =>
-      statusRowKeys.some(k => k.hotkey === hotkey)
-        ? []
-        : [
-            {
-              key: `no-row-${hotkey}`,
-              label: 'Close',
-              hotkey,
-              kind: 'view',
-              onPress: () => undefined,
-            },
-          ],
-    )
     const rowKeys = [
       ...statusRowKeys,
-      ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow),
+      ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow(statusRowKeys)),
       ...(tab === 'prs' && !isHelpShown ? [...prOrderKeys, ...prTabKeys] : []),
+      undoKey(isListShown ? latestUndo(tabUndos(tab, lists, shownPrs)) : null, (p, surface) => runPress($, p, surface)),
     ]
 
     // A pane takes a key

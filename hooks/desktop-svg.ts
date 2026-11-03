@@ -51,7 +51,7 @@ export function toneSvg(tone: ToneName, mark: string): string {
 /** A muted mark's color in an Svg, in the light and dark appearances. */
 export const MUTED_MARK = { light: '#595959', dark: '#a8a8a8' }
 /** A mark in an Svg `cells` wide: its `shape` when it has one, else its text. */
-export function markSvg(mark: string, shape: string | null, lightMark: string, darkMark: string, cells = 1): string {
+function markSvg(mark: string, shape: string | null, lightMark: string, darkMark: string, cells = 1): string {
   const width = cells * DESKTOP_CELL_PT
   const height = DESKTOP_LINE_PT
   return (

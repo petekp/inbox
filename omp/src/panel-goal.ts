@@ -8,7 +8,8 @@ import {
   proposalKeyPlan,
 } from '../../hooks/status-keys'
 import type { GoalBlock, MilestoneRow, ProposalBlock } from '../../hooks/status-goal-page'
-import { STALL_GAP, STATUS_TEXT_LINES, unfoldedRows, WAS_PREFIX } from '../../hooks/status-page'
+import { STALL_GAP, STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
+import { unfoldedRows } from '../../hooks/status-page-parts'
 import type { StatusPage } from '../../hooks/status-page'
 import { paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'

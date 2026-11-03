@@ -7,6 +7,7 @@ import { ROW_PAD_PT } from './layout'
 import type { Tone } from './palettes'
 import type { Entry, PaneBase, PaneClient, PaneHandlers } from './pane-context'
 import { followUpPresses } from './pane-keys'
+import { UNDO_KEY } from './help'
 import type { PaneRowFrame } from './pane-row-frame'
 import { childPos, type PaneRowLines } from './pane-row-lines'
 import { type ClosedLine, settledScrollKey } from './pane-selection'
@@ -312,7 +313,7 @@ export function paneRowParts(
   const svgClientElements = hasClient && 'Svg' in elements ? elements : null
   const undoButton = (undo: RowPress | PrPress, at: number | null) => {
     const key = `undo-${pressRowId(undo)}`
-    const label = ' ↺ Undo '
+    const label = ` ↺ ${UNDO_KEY}: Undo `
     const onPress = (press: { surface: UiPressArgument['surface'] }) => runPress(undo, press.surface)
     if (svgClientElements) {
       followUpPresses.set(key, onPress)
@@ -339,12 +340,20 @@ export function paneRowParts(
     }
     if (look !== 'terminal' || at === null) return <Button key={key} label="↺ Undo" onPress={onPress} />
     const cells = [...label]
+    const keyAt = cells.indexOf(UNDO_KEY)
     const filled = Math.ceil((Math.max(0, SETTLED_MS - (now - at)) / SETTLED_MS) * cells.length)
 
     return (
       <Button key={key} onPress={onPress}>
-        <Text backgroundColor={pal.divider}>{cells.slice(0, filled).join('')}</Text>
-        <Text>{cells.slice(filled).join('')}</Text>
+        {cells.map((cell, n) => (
+          <Text
+            key={`${key}-${n}`}
+            {...(n < filled ? { backgroundColor: pal.divider } : {})}
+            {...(n === keyAt ? { color: pal.key } : {})}
+          >
+            {cell}
+          </Text>
+        ))}
       </Button>
     )
   }

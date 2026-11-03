@@ -41,7 +41,7 @@ type HerdrTarget = { kind: 'pane'; pane: string } | { kind: 'terminal'; terminal
 - `HC_TERMINAL_ID` set: `terminal`, reported with `hc label`, and the session file is published.
 - Neither: `null`, and nothing is reported.
 
-The three callers switch from reading `HERDR_PANE_ID` to this function: `hooks/register.tsx:publishStatus`, `codex/src/host.ts:herdrOnWrite` and `omp/src/host.ts:reportCounts`. Each reporter keeps its own queue, so one report runs at a time and the last one reads the newest state.
+The three callers switch from reading `HERDR_PANE_ID` to this function: `hooks/register.tsx:publishStatus`, `codex/src/host.ts:herdrOnWrite` and `omp/src/host-sessions.ts:reportCounts`. Each reporter keeps its own queue, so one report runs at a time and the last one reads the newest state.
 
 `hc` is found on `PATH`, then at `~/.local/bin/hc`, where Herdr's installer puts it. A host where neither exists reports nothing and logs why once. The spike called `~/.local/bin/hc` by its full path.
 
