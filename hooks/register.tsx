@@ -1436,9 +1436,6 @@ async function selectClicked($: EngineInterface, id: string) {
   const prViews = openPrViews(view.prs.drawn)
   const index = tabRowIds(view, prViews)[tab].indexOf(id)
   if (index < 0 || isGuarded(selection[tab].openedAt, now)) return
-  // The Client leaves the drawing as its row opens, so the focus repair moves the focus to the row's first action.
-  paneState.focusedKey = `select-${id}`
-  paneState.focusHint = null
   await select($, tab, id, index)
 }
 
@@ -1447,8 +1444,6 @@ async function showAsk($: EngineInterface, askId: string) {
   const { view } = await drawnState($)
   const prViews = openPrViews(view.prs.drawn)
   const index = Math.max(0, tabRowIds(view, prViews).needsYou.indexOf(askId))
-  paneState.focusedKey = `select-${askId}`
-  paneState.focusHint = null
   await select($, 'needsYou', askId, index, false)
   await showTab($, 'needsYou')
   await scrollToRow($, askId)
@@ -2731,7 +2726,7 @@ export const register: Register = on => {
         surface: e.surface,
       })
     else if (e.element.startsWith('links-') && followUp && typeof data?.key === 'string') {
-      // The Client is not a focusable key, so the next drawing moves the focus, to the hint first.
+      // The Client is not a focusable key, so the next drawing moves the focus to the hint, when it is drawn.
       paneState.focusedKey = e.element
       paneState.focusHint = focusHintFor(data.key)
       followUp({
@@ -3495,7 +3490,7 @@ export const register: Register = on => {
         : paneState.focusHint
       const opensField = hint?.startsWith('type-') && keys.has(hint)
       if (!keys.has(paneState.focusedKey) || opensField) {
-        const focusKey = [hint, rowKeys[0]?.key, ...keys].find((k): k is string => !!k && keys.has(k)) ?? null
+        const focusKey = hint && keys.has(hint) ? hint : null
         paneState.focusedKey = focusKey
         paneState.focusHint = null
         // After this hook returns, since a focus asked from inside a drawing's own hook cannot wait on it.
