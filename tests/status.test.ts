@@ -171,27 +171,68 @@ test('a page with no head and no rows shows its empty state, even while a turn r
   )
 })
 
-test('finished work folds into a count once seen, keeping at most two new finished rows', () => {
+test('work closed since the last look shows as two rows, the rest is named in a fold for each status above the look line, and finished work folds into a count once seen', () => {
   const now = 100 * MIN
   const opened = after(
     null,
-    ['NEW: working | One | a', 'NEW: working | Two | b', 'NEW: working | Three | c', 'NEW: working | Four | d'].join(
-      '\n',
-    ),
+    [
+      'NEW: working | One | a',
+      'NEW: working | Two | b',
+      'NEW: working | Three | c',
+      'NEW: working | Four | d',
+      'NEW: working | Five | e',
+      'NEW: working | Six | f',
+    ].join('\n'),
     10 * MIN,
   )
   const old = after(opened, 'DONE: s1 | done a', 20 * MIN)
-  const fresh = after(
-    after(after(old, 'DONE: s2 | done b', 70 * MIN), 'DONE: s3 | done c', 80 * MIN),
+  const fresh = [
+    'DONE: s2 | done b',
+    'DROP: s6 | not needed',
+    'DONE: s5 | done e',
+    'DONE: s3 | done c',
     'DONE: s4 | done d',
-    90 * MIN,
-  )
+  ].reduce((o, line, n) => after(o, line, (65 + 5 * n) * MIN), old)
 
   expect(shape(page({ ...fresh, lastLookAt: 60 * MIN }, now).rows)).toEqual([
     '✓ Four: done d',
     '✓ Three: done c',
+    '✓ Also done: Five, Two',
+    '✗ Also dropped: Six',
     '-- Last seen',
-    '▸ 2 more done',
+    '▸ 1 more done',
+  ])
+})
+
+test('when every row on the page closed since the last look, the named fold ends the rows, above the look line', () => {
+  const opened = after(
+    null,
+    ['NEW: working | One | a', 'NEW: working | Two | b', 'NEW: working | Three | c'].join('\n'),
+    10 * MIN,
+  )
+  const closed = ['DONE: s1 | done a', 'DONE: s2 | done b', 'DONE: s3 | done c'].reduce(
+    (o, line, n) => after(o, line, (20 + 10 * n) * MIN),
+    opened,
+  )
+
+  expect(shape(page({ ...closed, lastLookAt: 15 * MIN }, 60 * MIN).rows)).toEqual([
+    '✓ Three: done c',
+    '✓ Two: done b',
+    '✓ Also done: One',
+    '-- Last seen',
+  ])
+})
+
+test('a named line shows two names, the newest first, and counts the rest as +N more', () => {
+  const names = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven']
+  const opened = after(null, names.map(n => `NEW: working | ${n} | x`).join('\n'), 10 * MIN)
+  const closed = names.reduce((o, _, n) => after(o, `DONE: s${n + 1} | done`, (20 + 5 * n) * MIN), opened)
+
+  expect(shape(page({ ...closed, lastLookAt: 15 * MIN }, 90 * MIN).rows)).toEqual([
+    '✓ Seven: done',
+    '✓ Six: done',
+    '✓ Also done: Five, Four, +3 more',
+    '-- Last seen',
   ])
 })
 

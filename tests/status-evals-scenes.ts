@@ -309,12 +309,26 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     },
   },
   'finished-named': {
+    good: s => {
+      s.after.subjects.push(
+        subject('s3', 'done', 'Login timeout', 'fixed', 8),
+        subject('s4', 'done', 'Crash on launch', 'fixed', 9),
+        subject('s5', 'done', 'Backup restore', 'works', 10),
+        subject('s6', 'dropped', 'Offline banner', 'not needed', 7),
+        subject('s7', 'done', 'Sync merge', 'merges', 11),
+        subject('s8', 'done', 'Search speed', 'faster', 12),
+      )
+    },
     bad: s => {
       s.after.subjects.push(
         subject('s3', 'done', 'Login timeout', 'fixed', 8),
         subject('s4', 'done', 'Crash on launch', 'fixed', 9),
         subject('s5', 'done', 'Backup restore', 'works', 10),
+        subject('s6', 'dropped', 'Offline banner', 'not needed', 7),
+        subject('s7', 'done', 'Sync merge', 'merges', 11),
+        subject('s8', 'done', 'Search speed', 'faster', 12),
       )
+      s.page = p => (p.rows = p.rows.filter(r => !(r.kind === 'fold' && r.id === 'also-dropped')))
     },
   },
 }

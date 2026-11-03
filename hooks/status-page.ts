@@ -70,7 +70,10 @@ export type StatusRowParts = {
   | { kind: 'more'; id: string; text: string; branch: 'last' }
   /** Where the person last looked: rows above it changed since. */
   | { kind: 'look'; id: string; text: string }
-  /** Open rows folded into a count, as "○ 2 more". */
+  /**
+   * Rows folded into one line: open rows into a count, as "○ 2 more", or work that closed since the last look past the
+   * rows drawn for it, named, as "✓ Also done: Sync merge, Search speed".
+   */
   | { kind: 'fold'; id: string; mark: string; tone: StatusTone; text: string }
   /**
    * Seen finished rows folded into a count, as "3 done", or "3 more done" while finished rows still show above it. It
@@ -111,8 +114,18 @@ export const STALL_GAP = ' · '
 
 /** The most lines each text on a Status row wraps to: a name, where it stands, a was line. A look cuts past them with an ellipsis. */
 export const STATUS_TEXT_LINES = 3
-/** Finished rows drawn above the look line; older ones fold into the count. */
+/** Closed rows drawn above the look line for work that closed since the last look. The fold after them names the rest. */
 const NEW_CLOSED_ROWS = 2
+/** What a named fold says before the names it holds. Each closed status gets its own fold, in this order. */
+export const NAMED_FOLD_TEXT = { done: 'Also done: ', dropped: 'Also dropped: ' } as const
+/**
+ * The most names a named fold shows; it counts the rest as "+N more". Two names of up to `NAME_KEPT` characters, the
+ * prefix and the count wrap to at most `STATUS_TEXT_LINES` lines in 31 cells, the text width at the narrowest terminal
+ * dock, so omp, which cuts a row's text past that many lines, shows the whole line there too.
+ */
+const NAMED_FOLD_NAMES = 2
+/** What ends a named fold that holds more names than it shows. */
+export const namedFoldMore = (n: number) => `+${n} more`
 
 /** The order of subjects on each side of the look line, from what needs the person to what is finished. */
 const STATUS_PLACES = ['held', 'working', 'waits-on-other', 'queued', 'closed'] as const
@@ -139,8 +152,17 @@ export function nameBeforeStall(name: string, fits: (shown: string) => boolean):
   return cuts.find(fits) ?? cuts.at(-1)!
 }
 
-/** A part of the list's subjects: those it draws, and those it folds into a count. */
-type PartSplit = { shown: Subject[]; newClosed: Subject[]; foldedOpen: Subject[]; foldedDone: Subject[] }
+/**
+ * A part of the list's subjects: those it draws, the work that closed since the last look past its rows, which a fold
+ * names, and those it folds into a count.
+ */
+type PartSplit = {
+  shown: Subject[]
+  newClosed: Subject[]
+  named: Subject[]
+  foldedOpen: Subject[]
+  foldedDone: Subject[]
+}
 
 export function statusPage(
   s: {
@@ -177,11 +199,8 @@ export function statusPage(
     .filter(c => isChildRunning(c, now) || isFinishedUnseen(c, look))
     .sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt))
   const hasChildRow = (x: Subject) => running.some(c => c.subjectId === x.id)
-  const newClosedOf = (part: Subject[]) =>
-    part
-      .filter(x => !isOpen(x) && isNew(x))
-      .sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0))
-      .slice(0, NEW_CLOSED_ROWS)
+  const unseenClosedOf = (part: Subject[]) =>
+    part.filter(x => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0))
   const main = subjects.filter(x => !isOther(x))
   const other = subjects.filter(isOther)
   // The open fold is chosen across the whole main list, under milestones and not, so a goal changes no row's fold.
@@ -189,19 +208,22 @@ export function statusPage(
   const foldable = open.filter(x => !isHeld(x) && !isNew(x) && !hasChildRow(x))
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)))
   const split = (part: Subject[]): PartSplit => {
-    const newClosed = newClosedOf(part)
+    const unseenClosed = unseenClosedOf(part)
+    const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS)
     return {
       shown: [...part.filter(x => isOpen(x) && !folded.includes(x)), ...newClosed].sort(pageOrder),
       newClosed,
+      named: unseenClosed.slice(NEW_CLOSED_ROWS),
       foldedOpen: part.filter(x => folded.includes(x)),
-      foldedDone: part.filter(x => x.status === 'done' && !newClosed.includes(x)),
+      foldedDone: part.filter(x => x.status === 'done' && !isNew(x)),
     }
   }
   const top = split(main.filter(x => milestoneOf(x) === null))
   const underMilestones = (goalParts.goal?.milestones ?? []).map(m => split(main.filter(x => milestoneOf(x) === m.id)))
-  const otherNewClosed = newClosedOf(other)
+  const otherUnseenClosed = unseenClosedOf(other)
+  const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS)
   const isOtherFolded = (x: Subject) =>
-    isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === 'done' && !otherNewClosed.includes(x)
+    isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === 'done' && !isNew(x)
   const otherFolded = other.filter(isOtherFolded)
   const otherShown = [...other.filter(x => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder)
   const shownIds = new Set([...top.shown, ...underMilestones.flatMap(p => p.shown), ...otherShown].map(x => x.id))
@@ -218,9 +240,27 @@ export function statusPage(
   const lookId = (id: string) => (look === null ? null : id)
   /** A done fold's rows draw no child, since a child of a subject that is not shown is drawn at the top of the list. */
   const foldCtx: ListContext = { ...ctx, lookId: null, running: [] }
+  /** A part's closed work past its rows that the person has not seen, named in one fold for each closed status. */
+  const namedFolds = (prefix: string, named: Subject[], depth: number): StatusRowParts[] =>
+    (['done', 'dropped'] as const).flatMap(status => {
+      const names = named.filter(x => x.status === status).map(x => x.name)
+      const hidden = names.length - NAMED_FOLD_NAMES
+      const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...(hidden > 0 ? [namedFoldMore(hidden)] : [])]
+      return names.length === 0
+        ? []
+        : [
+            {
+              kind: 'fold' as const,
+              id: `${prefix}also-${status}`,
+              depth,
+              ...SUBJECT_MARKS[status],
+              text: `${NAMED_FOLD_TEXT[status]}${shown.join(', ')}`,
+            },
+          ]
+    })
   const rows: StatusRowParts[] = [
     ...running.filter(c => c.subjectId === null || !shownIds.has(c.subjectId)).map(c => childRow(c, null, 0)),
-    ...partRows(top.shown, ctx, 0),
+    ...partRows(top.shown, ctx, 0, namedFolds('', top.named, 0)),
   ]
   /** A part's seen finished work as one done fold `depth` steps in, which holds their rows one step further in. */
   const doneFold = (prefix: string, done: Subject[], newClosed: Subject[], depth: number): StatusRowParts[] =>
@@ -258,7 +298,14 @@ export function statusPage(
     // The part's rule follows the list, so a look line that ends the list would draw a second rule under it.
     if (rows.at(-1)?.kind === 'look') rows.pop()
     rows.push({ kind: 'part', id: 'other', depth: 0, text: OTHER_WORK })
-    rows.push(...partRows(otherShown, { ...ctx, lookId: lookId('other-look') }, 0))
+    rows.push(
+      ...partRows(
+        otherShown,
+        { ...ctx, lookId: lookId('other-look') },
+        0,
+        namedFolds('other-', otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0),
+      ),
+    )
     const otherFoldedOpen = otherFolded.filter(isOpen)
     if (otherFoldedOpen.length > 0)
       rows.push({ kind: 'counts', id: 'other-counts', depth: 0, counts: countsByMark(otherFoldedOpen) })
@@ -275,7 +322,12 @@ export function statusPage(
   const milestoneRows = (id: string, p: PartSplit): StatusRow[] =>
     ruledRows(
       [
-        ...partRows(p.shown, { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false }, 1),
+        ...partRows(
+          p.shown,
+          { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false },
+          1,
+          namedFolds(`${id}-`, p.named, 1),
+        ),
         ...foldRows(`${id}-`, p, 1),
       ],
       false,

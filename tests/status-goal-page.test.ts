@@ -126,6 +126,50 @@ test('finished work under a milestone shows as a row until the person looks, the
   ).toBe(false)
 })
 
+test('under a milestone and under Other work, closed work past two rows that the person has not seen is named above the look line', () => {
+  const more = after(
+    { ...linked(), lastLookAt: 35 },
+    [
+      'NEW: working | Parser | x',
+      'NEW: working | Sniffer | x',
+      'NEW: working | Fonts | x',
+      'NEW: working | Icons | x',
+      'SERVES: s5 | m2',
+      'SERVES: s6 | m2',
+      'SERVES: s7 | -',
+      'SERVES: s8 | -',
+    ].join('\n'),
+    40,
+    new Set(['i1']),
+  )
+  const closed = [
+    'DROP: s8 | not needed',
+    'DONE: s1 | import ships',
+    'DONE: s5 | parses',
+    'DONE: s6 | sniffs',
+    'DONE: s3 | toggle ships',
+    'DONE: s4 | logo ships',
+    'DONE: s7 | fonts ship',
+  ].reduce((o, line, n) => after(o, line, 46 + 2 * n, new Set(['i1'])), more)
+  const p = page(closed, 80, {}, [askItem('i1')])
+
+  expect(shape(p.goal?.milestones[1]?.rows ?? [])).toEqual([
+    '✓ Sniffer: sniffs',
+    '✓ Parser: parses',
+    '✓ Also done: CSV import',
+    '-- Last seen',
+    '◆ Error copy: not started · waiting',
+  ])
+  expect(shape(p.rows)).toEqual([
+    '== Other work',
+    '✓ Fonts: fonts ship',
+    '✓ Logo refresh: logo ships',
+    '✓ Also done: Dark mode',
+    '✗ Also dropped: Icons',
+    '-- Last seen',
+  ])
+})
+
 test('a subject not linked yet stays in the main list, and nothing splits without a goal', () => {
   const unlinked = { ...withGoal(), lastLookAt: 25 }
   const noGoal = { ...after(null, START, 10), serves: { s3: 'none' }, lastLookAt: 25 }
