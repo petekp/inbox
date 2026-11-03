@@ -3002,6 +3002,7 @@ function upgraded(saved, sessionId) {
     }),
     shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     heard,
+    lastModelFailure: saved.lastModelFailure ? { signal: null, errorCode: null, timeoutMs: null, ...saved.lastModelFailure } : null,
     coveredTurn: saved.coveredTurn !== void 0 ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null)
   };
 }
@@ -3616,7 +3617,16 @@ var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve3) => {
       rest,
       { cwd, env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, encoding: "utf8" },
       (err, stdout, stderr) => {
-        resolve3({ code: exitCodeOf(err), stdout: String(stdout), stderr: String(stderr) });
+        const signal = err?.killed ? void 0 : err?.signal ?? void 0;
+        const errorCode = typeof err?.code === "string" ? err.code : void 0;
+        const error = errorCode && !stderr ? err.message : String(stderr);
+        resolve3({
+          code: exitCodeOf(err),
+          stdout: String(stdout),
+          stderr: error,
+          ...signal ? { signal } : {},
+          ...errorCode ? { errorCode } : {}
+        });
       }
     );
     child.stdin?.on("error", () => {
@@ -4589,13 +4599,29 @@ function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
       const text2 = r.code === 0 ? await readFile2(out, "utf8").catch(() => null) : null;
       await rm(out, { force: true });
       const stderr = r.stderr.slice(-FAILURE_TAIL_CHARS);
-      report?.({ model: MODEL, ...text2 === null ? { error: `codex exec exited ${r.code}: ${stderr.trim()}` } : {} });
-      if (text2 === null) await onFailure({ cli, code: r.code, stderr });
+      const failure = {
+        cli,
+        code: r.code,
+        stderr,
+        signal: r.signal ?? null,
+        errorCode: r.errorCode ?? null,
+        timeoutMs: r.code === TIMED_OUT_CODE ? TIMEOUT_MS : null
+      };
+      report?.({ model: MODEL, ...text2 === null ? { error: `codex exec ${endOf(failure)}: ${stderr.trim()}` } : {} });
+      if (text2 === null) await onFailure(failure);
       return text2;
     }
     report?.({ model: MODEL, error: "codex exec refused every feature flag the inbox turns off" });
     return null;
   };
+}
+function endOf(f) {
+  if (f.timeoutMs !== null) return `timed out after ${f.timeoutMs / 1e3} s`;
+  if (f.signal) return `was ended by ${f.signal}`;
+  if (f.errorCode) return `failed with ${f.errorCode}`;
+  if (f.code === UNSTARTABLE_CODE) return "could not start";
+  if (f.code === 0) return "exited 0 and wrote no reply";
+  return `exited ${f.code}`;
 }
 var recordModelFailure = (dir, sessionId, now) => async (failure) => {
   await updateState(dir, sessionId, (s) => ({ ...s, lastModelFailure: { ...failure, at: now() } }));

@@ -16,6 +16,7 @@ import {
 } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
+import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
 import { screenText } from '../../hooks/inbox-text'
 import {
   askOverConversation,
@@ -168,8 +169,16 @@ export function codexAsk(
       const text = r.code === 0 ? await readFile(out, 'utf8').catch(() => null) : null
       await rm(out, { force: true })
       const stderr = r.stderr.slice(-FAILURE_TAIL_CHARS)
-      report?.({ model: MODEL, ...(text === null ? { error: `codex exec exited ${r.code}: ${stderr.trim()}` } : {}) })
-      if (text === null) await onFailure({ cli, code: r.code, stderr })
+      const failure = {
+        cli,
+        code: r.code,
+        stderr,
+        signal: r.signal ?? null,
+        errorCode: r.errorCode ?? null,
+        timeoutMs: r.code === TIMED_OUT_CODE ? TIMEOUT_MS : null,
+      }
+      report?.({ model: MODEL, ...(text === null ? { error: `codex exec ${endOf(failure)}: ${stderr.trim()}` } : {}) })
+      if (text === null) await onFailure(failure)
 
       return text
     }
@@ -177,6 +186,17 @@ export function codexAsk(
 
     return null
   }
+}
+
+/** How a failed call ended, as "timed out after 120 s", "was ended by SIGTERM" or "failed with ENOENT". */
+function endOf(f: Omit<ModelFailure, 'at'>): string {
+  if (f.timeoutMs !== null) return `timed out after ${f.timeoutMs / 1000} s`
+  if (f.signal) return `was ended by ${f.signal}`
+  if (f.errorCode) return `failed with ${f.errorCode}`
+  if (f.code === UNSTARTABLE_CODE) return 'could not start'
+  if (f.code === 0) return 'exited 0 and wrote no reply'
+
+  return `exited ${f.code}`
 }
 
 /** Saves a failed call as the session's `lastModelFailure`. */

@@ -7,7 +7,10 @@ import type { Run } from '../../hooks/gh'
 /** A `Run` that also writes `input` to the command's stdin. */
 export type RunWithInput = (args: string[], opts: Parameters<Run>[1] & { input?: string }) => ReturnType<Run>
 
-/** Runs a command, never throwing: a command still running at `timeoutMs` ends with code -2, and one that can't start with code -1. */
+/**
+ * Runs a command, never throwing: a command still running at `timeoutMs` ends with code -2, and one that can't start
+ * or is ended by a signal with code -1. A command that can't start gives its error's message as `stderr`.
+ */
 export const run: RunWithInput = (args, { cwd, timeoutMs, env, input }) =>
   new Promise(resolve => {
     const [file = '', ...rest] = args
@@ -17,7 +20,16 @@ export const run: RunWithInput = (args, { cwd, timeoutMs, env, input }) =>
         rest,
         { cwd, env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, encoding: 'utf8' },
         (err, stdout, stderr) => {
-          resolve({ code: exitCodeOf(err), stdout: String(stdout), stderr: String(stderr) })
+          const signal = err?.killed ? undefined : (err?.signal ?? undefined)
+          const errorCode = typeof err?.code === 'string' ? err.code : undefined
+          const error = errorCode && !stderr ? err!.message : String(stderr)
+          resolve({
+            code: exitCodeOf(err),
+            stdout: String(stdout),
+            stderr: error,
+            ...(signal ? { signal } : {}),
+            ...(errorCode ? { errorCode } : {}),
+          })
         },
       )
       // A command that exits before reading all its input fails the write with EPIPE, which Node throws when nothing listens.
