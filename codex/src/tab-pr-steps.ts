@@ -28,8 +28,8 @@ export type DrawnPrBlock = PrBlockPlan & {
 }
 
 /**
- * An open block's drawing, with the form each of its rows had, so it can be drawn again once its rows are not stepped.
- * A press line still growing in is left out, since the copy cannot draw it at the height it had.
+ * An open block's drawing, with the track each of its rows had, so it can be drawn again once its rows are not
+ * stepped. A row still moving keeps that move's form, and its element finishes the move.
  */
 export type OpenPrBlock = { block: DrawnPrBlock; tracks: Map<string, RowTrack> }
 
@@ -106,9 +106,8 @@ export function stepPrs(v: View, now: number, changed: Set<string>, kept: Set<st
     if (!track) return []
     if (target === 'open') {
       const block = stepOpen(b, id)
-      const tracks = new Map(PR_GROUPS.flatMap(g => block.drawn[g] ?? []).map(r => [r.id, restingForm(r.id)]))
-      const isLineGrowing = drawnRows.get(prLineMotion(id))?.track.state === 'entering'
-      drawnRows.set(motion, { track, openBlock: { block: isLineGrowing ? { ...block, line: null } : block, tracks } })
+      const tracks = new Map(PR_GROUPS.flatMap(g => block.drawn[g] ?? []).map(r => [r.id, drawnRows.get(r.id)!.track]))
+      drawnRows.set(motion, { track, openBlock: { block, tracks } })
       return [block]
     }
     if (track.hasPanel && wasOpen) drawnRows.set(motion, { track, openBlock: wasOpen })
@@ -120,12 +119,4 @@ export function stepPrs(v: View, now: number, changed: Set<string>, kept: Set<st
   const isTabActionsShown = step(PR_TAB_ACTIONS_MOTION, v.prs.tabActions.length > 0 ? 'closed' : 'gone', last !== null)
 
   return { blocks: drawnBlocks, rows, openId, tabActions: isTabActionsShown ? tabActions : null }
-}
-
-/** The form a row inside an open block rests in, for drawing that block again once its rows are no longer stepped. */
-function restingForm(rowId: string): RowTrack {
-  const track = drawnRows.get(rowId)!.track
-  const isOpen = track.hasPanel && (track.state === 'open' || track.state === 'opening' || track.state === 'entering')
-
-  return { state: isOpen ? 'open' : 'closed', since: track.since, hasPanel: isOpen }
 }

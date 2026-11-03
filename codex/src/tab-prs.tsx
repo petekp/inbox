@@ -123,60 +123,64 @@ function PrOrderLines({ v, order }: { v: View; order: PrOrderView }) {
 }
 
 /**
- * A PR block in the form its track draws. A settling block draws its settled line over the block it last drew open,
- * inert, while its height shrinks over it. A block leaving after the view dropped it draws its last form.
+ * A PR block in the form its track draws. A settling block draws its settled line over the body it last drew open,
+ * inert, while its height shrinks over it. A block leaving after the view dropped it draws its last form. The body
+ * stays the same element from open to settling, so the rows still moving in it finish their own moves.
  */
 function PrEntry({ b, v, prs, now }: { b: DrawnPrBlock; v: View; prs: DrawnPrs; now: number }) {
   const was = b.wasOpen
   const settled = b.state.is === 'settled' ? b.state : null
+  const shown = was?.block ?? b
+  const hasBody = !settled || was !== null
+  const bodyClass = !was ? 'pr-body' : settled ? 'pr-body pr-was-open closing' : 'pr-body closing'
 
   return (
     <section class="pr-entry" data-motion={prBlockMotion(prMarkId(b.pr.ref))}>
       <div class="pr-entry-content">
-        {settled ? <SettledPr pr={b.pr} state={settled} /> : null}
-        {was ? (
-          <div class={settled ? 'pr-was-open closing' : 'closing'} inert>
-            <PrParts {...was.block} v={v} prs={prs} now={now} tracks={was.tracks} hasHead={!settled} />
+        {settled ? <SettledPr key="settled" pr={b.pr} state={settled} /> : <PrHead key="head" v={v} {...shown} />}
+        {hasBody ? (
+          <div key="body" class={bodyClass} inert={was !== null}>
+            <PrBody {...shown} v={v} prs={prs} now={now} tracks={was?.tracks} />
           </div>
-        ) : settled ? null : (
-          <PrParts {...b} v={v} prs={prs} now={now} hasHead />
-        )}
+        ) : null}
       </div>
     </section>
   )
 }
 
+function PrHead({ v, pr, rank }: DrawnPrBlock & { v: View }) {
+  const { status, head, unlisted } = readiness(pr, threadSentIn(v.lastActions))
+  const tone = PR_TONES[status]
+
+  return (
+    <div class="pr-head">
+      {rank === null ? null : <span class="rank muted">{prRankText(rank)}</span>}
+      <span class="tone-prs num">#{pr.number}</span> {pr.title}{' '}
+      <span class={tone ? `pr-verdict tone-${tone}` : 'pr-verdict muted'}>{head}</span>
+      <span class="pr-verdict muted">{unlisted.map(r => `${DOT}${r}`).join('')}</span>
+    </div>
+  )
+}
+
 /**
- * An open block's head, buttons, press line and groups. With `tracks`, a copy drawn inert while the block settles or
- * leaves: its rows rest in those forms, and none of its parts animates on its own.
+ * An open block's buttons, press line and groups. With `tracks`, the body a settling or leaving block still draws:
+ * each row keeps the form it had, and no part takes a new move.
  */
-function PrParts({
+function PrBody({
   v,
   pr,
-  rank,
   drawn,
   line,
   prs,
   now,
   tracks,
-  hasHead,
-}: DrawnPrBlock & { v: View; prs: DrawnPrs; now: number; tracks?: Map<string, RowTrack>; hasHead: boolean }) {
+}: DrawnPrBlock & { v: View; prs: DrawnPrs; now: number; tracks?: Map<string, RowTrack> }) {
   const isSent = threadSentIn(v.lastActions)
-  const { status, head, unlisted } = readiness(pr, isSent)
-  const tone = PR_TONES[status]
   const id = prMarkId(pr.ref)
   const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v)).map(a => prKey(id, pr, a))
 
   return (
     <>
-      {hasHead ? (
-        <div class="pr-head">
-          {rank === null ? null : <span class="rank muted">{prRankText(rank)}</span>}
-          <span class="tone-prs num">#{pr.number}</span> {pr.title}{' '}
-          <span class={tone ? `pr-verdict tone-${tone}` : 'pr-verdict muted'}>{head}</span>
-          <span class="pr-verdict muted">{unlisted.map(r => `${DOT}${r}`).join('')}</span>
-        </div>
-      ) : null}
       {pr.error ? <div class="pr-status tone-error">{prRefreshFailedText(pr.error)}</div> : null}
       <div class="pr-actions keys">
         {keys.map(k => (

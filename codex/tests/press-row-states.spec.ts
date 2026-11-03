@@ -223,6 +223,10 @@ test('in the Codex tab, a PR row closes with its panel, leaves from its place wi
     await settle()
   }
   const isMoving = (e: HTMLElement) => e.getAnimations().length > 0
+  const blockEntry = (n: number, name: string) =>
+    [...block(n).querySelectorAll<HTMLElement>('.entry')].find(
+      e => e.querySelector('.line .text')?.textContent === `CI / ${name}`,
+    )
   const isSettlingOverBlock = (n: number) =>
     !!block(n).querySelector('.settled-line') && !!block(n).querySelector('.closing[inert] .pr-actions')
   const tabButtons = () => root.querySelector<HTMLElement>('[data-motion="pr-tab-actions"]')
@@ -278,7 +282,7 @@ test('in the Codex tab, a PR row closes with its panel, leaves from its place wi
     setViews([
       prView(13, 'Fix the login redirect', 'MERGED', []),
       prView(14, 'Bump the parser', 'MERGED', []),
-      prView(15, 'Speed up the build', 'OPEN', []),
+      prView(15, 'Speed up the build', 'OPEN', [check('lint', 'fail'), check('e2e', 'fail')]),
     ])
     const refs = ['acme/app#15', ref]
     state.ledger = {
@@ -288,7 +292,13 @@ test('in the Codex tab, a PR row closes with its panel, leaves from its place wi
     }
     await after(POLL_MS + 100)
     assert.ok(block(15).querySelector('.rank'))
+    setViews([prView(15, 'Speed up the build', 'OPEN', [check('lint', 'fail')])])
+    await after(POLL_MS + 100)
+    const leaving = blockEntry(15, 'e2e')!
+    assert.ok(isMoving(leaving))
     await press(block(15), 'Dismiss')
+    assert.ok(blockEntry(15, 'e2e') === leaving)
+    assert.ok(isMoving(leaving))
     assert.ok(isSettlingOverBlock(15))
     assert.ok(isMoving(block(15)))
     await after(MOVE_MS + 100)
