@@ -1334,6 +1334,14 @@ async function scrollToKey(
   return false
 }
 
+/** Scrolls `key` to the pane's top. False when Claude Code could not resolve it, as opposed to a refused move. */
+function scrollToTop($: EngineInterface, key: string): Promise<boolean> {
+  return $.ui.scroll({ in: PANE, to: { key }, block: 'start' }).then(
+    () => true,
+    () => false,
+  )
+}
+
 async function selectStatusRow($: EngineInterface, id: string, focusKey?: string) {
   await update($, STATUS_SELECTION, () => id)
   const isDrawn = await scrollToKey($, `status-${id}`, 'nearest')
@@ -3098,7 +3106,8 @@ export const register: Register = on => {
       const goalDraft = typing === GOAL_KEYS_ID ? drafts[GOAL_KEYS_ID]?.text : null
       const layout = [e.props.bodyColumns, isInline, view.status, showsDemoNotices, statusKeyRow?.id, typing, goalDraft]
       const { scroll } = e.props
-      noteStatusDrawn($, PANE, { look, page: view.statusPage, unfolded: statusUnfolded, scroll, layout, now })
+      const engine = { scrollToTop: (key: string) => scrollToTop($, key), now: () => $.clock.now() }
+      noteStatusDrawn(engine, { look, page: view.statusPage, unfolded: statusUnfolded, scroll, layout, now })
     }
 
     const {

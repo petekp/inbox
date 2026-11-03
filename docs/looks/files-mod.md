@@ -16,6 +16,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/pane-row-parts.tsx` | Mod only. Group titles and sections, and closed rows: the result line, the fold line, the closed fold, Undo and the settled row. |
 | `hooks/pane-prs.tsx` | Mod only. The PRs tab: thread and check rows, PR blocks and their settled form, the PR order lines, the tab's buttons, and its empty state and gh notice. |
 | `hooks/pane-status-lines.tsx` | Mod only. The lines a Status row is drawn from: the head, a subject's name line and its text width, and the tree beside a subject's children. |
+| `hooks/pane-status-shown.ts` | Mod only. Which Status subject rows a look had on screen: in the terminal, the rows whose first line is in the pane's window, found with scrolls the mod refuses. On desktop, every subject. |
 | `hooks/pane-status.tsx` | Mod only. The Status tab: the rules between items, the look line, each row and its buttons, and the tab's page. |
 | `hooks/inbox-model.ts` | Mod only. The model the mod's ledger and Status calls ask, and the report each call gives its record. |
 | `hooks/pane-status-goal.tsx` | Mod only. The Status tab's goal: a proposal, the goal and its milestones, Set a goal, the goal's text field and the Now line. |

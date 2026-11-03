@@ -124,7 +124,8 @@ _Avoid_: age
 **Seen line**:
 The rule labeled "Last seen" on the Status, at the time the person last left the
 page after it showed for at least five seconds. A shorter pass through the tab
-leaves the line where it was. A row above it changed since then. Every open row
+leaves the line where it was. A row above it changed since the person last saw
+it, in the last look that showed its row. Every open row
 shows where it stands, above or below the line. A row below it leaves out its
 merged and was lines, and a finished row below it shows only its mark and name. When no row
 changed since then, the page draws no line. The code calls it the look line,

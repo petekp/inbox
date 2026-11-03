@@ -1,4 +1,4 @@
-import type { EngineInterface, SiteScroll, UiScrollInput, UiScrollResult } from 'claude-code'
+import type { SiteScroll, UiScrollInput, UiScrollResult } from 'claude-code'
 import type { ShownRows } from './status-children'
 import { statusListRows } from './status-page'
 import type { StatusPage } from './status-page'
@@ -11,6 +11,12 @@ import { unfoldedRows } from './status-page-parts'
 type RowTop = number | 'end'
 
 const PLUGIN = 'inbox'
+
+/**
+ * What measuring needs from Claude Code: a scroll that brings `key` to the window's top, resolving to whether Claude
+ * Code resolved the key at all, and the clock.
+ */
+export type StatusEngine = { scrollToTop(key: string): Promise<boolean>; now(): Promise<number> }
 
 /** Where each row of `layout` sits, or `unmeasured` when the engine could not resolve a row's key to a line. */
 type Measured = { layout: string; tops: Map<string, RowTop> | 'unmeasured'; lastOffset: number }
@@ -50,8 +56,7 @@ function noteWindow(m: Measured, scroll: SiteScroll, now: number) {
  * so a look there counts every subject.
  */
 export function noteStatusDrawn(
-  $: EngineInterface,
-  pane: string,
+  engine: StatusEngine,
   d: {
     look: 'terminal' | 'desktop'
     page: StatusPage
@@ -73,7 +78,7 @@ export function noteStatusDrawn(
   if (look.measured?.layout === layout) return noteWindow(look.measured, scroll, now)
   if (look.measuring === layout) return
   look.measuring = layout
-  void measure($, pane, layout, ids).catch(() => undefined)
+  void measure(engine, layout, ids).catch(() => undefined)
 }
 
 /**
@@ -81,17 +86,14 @@ export function noteStatusDrawn(
  * `probedScroll`. The engine resolves the key to a row before any hook reads the move, and a refused move leaves the
  * window where it was. A scroll the engine fails, rather than refuses, means it cannot resolve keys at all.
  */
-async function measure($: EngineInterface, pane: string, layout: string, ids: string[]) {
+async function measure(engine: StatusEngine, layout: string, ids: string[]) {
   let tops: Measured['tops'] = new Map()
   let lastOffset = 0
   for (const id of ids) {
     if (look.measuring !== layout) return
     look.probe = null
     look.isProbing = true
-    const isResolved = await $.ui
-      .scroll({ in: pane, to: { key: `status-${id}` }, block: 'start' })
-      .then(() => true)
-      .catch(() => false)
+    const isResolved = await engine.scrollToTop(`status-${id}`)
     look.isProbing = false
     if (!isResolved) {
       tops = 'unmeasured'
@@ -105,7 +107,7 @@ async function measure($: EngineInterface, pane: string, layout: string, ids: st
   if (look.measuring !== layout) return
   look.measured = { layout, tops, lastOffset }
   look.measuring = null
-  if (look.scroll) noteWindow(look.measured, look.scroll, await $.clock.now())
+  if (look.scroll) noteWindow(look.measured, look.scroll, await engine.now())
 }
 
 /** The answer to a scroll this file's probe asked for: refused, with where it would have gone noted. Null for any other scroll. */

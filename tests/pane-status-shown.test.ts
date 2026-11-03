@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
-import type { EngineInterface, SiteScroll, UiScrollArgs, UiScrollInput } from 'claude-code'
+import type { SiteScroll, UiScrollInput } from 'claude-code'
 import { noteStatusDrawn, probedScroll, takeShownRows } from '../hooks/pane-status-shown'
+import type { StatusEngine } from '../hooks/pane-status-shown'
 import { statusPage } from '../hooks/status-page'
 import type { StatusPage } from '../hooks/status-page'
 import { minutes } from '../evals/status-replay'
@@ -23,10 +24,9 @@ const changedPage = (): StatusPage => {
 /** An engine that lays each subject row out `ROW_LINES` tall under `ABOVE_LIST` lines, and resolves a key scroll as the terminal does. */
 function engine(at: () => number) {
   const tops = new Map(Array.from({ length: PIECES }, (_, n) => [`status-s${n + 1}`, ABOVE_LIST + n * ROW_LINES]))
-  const scroll = async (args: UiScrollArgs) => {
-    const key = typeof args.to === 'object' && 'key' in args.to ? args.to.key : ''
+  const scrollToTop = async (key: string) => {
     const top = tops.get(key)
-    if (top === undefined) return { deny: 'not drawn' }
+    if (top === undefined) return true
     const input = {
       component: 'Pane',
       requestId: 'inbox',
@@ -36,9 +36,10 @@ function engine(at: () => number) {
       contentRows: CONTENT_ROWS,
       origin: { kind: 'plugin', name: 'inbox' },
     } satisfies UiScrollInput
-    return probedScroll(input) ?? {}
+    probedScroll(input)
+    return true
   }
-  return { ui: { scroll }, clock: { now: async () => at() } } as unknown as EngineInterface
+  return { scrollToTop, now: async () => at() } satisfies StatusEngine
 }
 
 const settle = async () => {
@@ -50,7 +51,7 @@ test('the terminal counts a Status row as shown when its first line was in the p
   const $ = engine(() => now)
   const page = changedPage()
   const draw = (offset: number) =>
-    noteStatusDrawn($, 'inbox', {
+    noteStatusDrawn($, {
       look: 'terminal',
       page,
       unfolded: [],
@@ -81,7 +82,7 @@ test('the terminal counts a Status row as shown when its first line was in the p
 
 test('a desktop drawing of the Status counts every subject, and a look starts with no rows shown', () => {
   const $ = engine(() => 0)
-  noteStatusDrawn($, 'inbox', {
+  noteStatusDrawn($, {
     look: 'desktop',
     page: changedPage(),
     unfolded: [],

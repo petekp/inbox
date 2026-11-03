@@ -58,6 +58,7 @@ export type FeatureId =
   | 'status-view-ask'
   | 'status-goal'
   | 'status-done-fold'
+  | 'seen-on-screen'
 
 type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -129,6 +130,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-view-ask': { kind: 'full' },
       'status-goal': { kind: 'full' },
       'status-done-fold': { kind: 'full' },
+      'seen-on-screen': {
+        kind: 'different',
+        reason:
+          'The terminal counts the rows in its window as seen. The desktop pane counts every subject, since its scroll position is not yet probed.',
+      },
     },
   },
   codex: {
@@ -258,6 +264,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           'A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking.',
       },
+      'seen-on-screen': { kind: 'full' },
     },
   },
   omp: {
@@ -339,6 +346,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-view-ask': { kind: 'full' },
       'status-goal': { kind: 'full' },
       'status-done-fold': { kind: 'full' },
+      'seen-on-screen': { kind: 'full' },
     },
   },
 }
