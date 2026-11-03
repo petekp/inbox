@@ -201,6 +201,23 @@ test('the answer that reads a typed goal keeps the milestones it names, and the 
   expect(replaced.serves).toEqual({ s1: replaced.milestones[0]!.id })
 })
 
+test('a GOAL line that restates a goal just set gives its milestones, and the SERVES lines that name them link, unless the call read the goal before it', () => {
+  const typed = setTypedGoal(withGoal(), 'Ship 2.6 with import', 30).status
+  const restated = 'GOAL: 2.6 shipped with import | working Import works; queued 2.6 live\nSERVES: s1 | Import works'
+  const answered = after(typed, restated, 40)
+  const stale = applyStatus(typed, parseStatus(restated)!, 40, NO_ASKS, withGoal().goal!.setAt)!
+
+  expect(answered.milestones.map(m => [m.name, m.status])).toEqual([
+    ['Import works', 'working'],
+    ['2.6 live', 'queued'],
+  ])
+  expect(answered.goal).toMatchObject({ text: 'Ship 2.6 with import', isAwaitingMilestones: false })
+  expect(answered.serves).toEqual({ s1: answered.milestones[0]!.id })
+  expect(answered.proposedGoal).toBeNull()
+  expect(stale.milestones.map(m => m.name)).toEqual(typed.milestones.map(m => m.name))
+  expect(stale.goal).toMatchObject({ isAwaitingMilestones: true })
+})
+
 test('a goal typed over a proposal declines it, one with the proposal’s words uses the proposal and its milestones, and Set as goal links no subject yet', () => {
   const o = proposed()
   const linked = after(withGoal(), 'SERVES: s1 | -\nGOAL: Ship 2.6 | queued Notes; queued Tag', 22)

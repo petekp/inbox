@@ -82,6 +82,19 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     answer: GOOD_RUNS['milestone-dropped']![0]!.replace('SERVES: s2 | -\nSERVES: s3 | -\n', ''),
     breaks: 'serves-linked',
   },
+  'catch-up-shipped': {
+    at: 0,
+    answer: GOOD_RUNS['catch-up-shipped']![0]!.replace(
+      'DONE: s1 | merged and shipped in the 2.5 beta',
+      'DROP: s1 | merged and shipped',
+    ),
+    breaks: 'marks-true',
+  },
+  'goal-awaiting-milestones': {
+    at: 0,
+    answer: 'DONE: s3 | merged\nSET: s4 | working | wider layout in',
+    breaks: 'milestones-true',
+  },
 }
 
 test('a good run of each replay passes every rule that is built, at every step', async () => {

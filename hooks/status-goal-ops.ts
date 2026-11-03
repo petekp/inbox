@@ -149,6 +149,22 @@ function addMilestone(o: SessionStatus, op: Extract<Op, { kind: 'milestone' }>, 
 }
 
 /**
+ * The answer with each GOAL line that restates a goal just set, from a call that read that goal, read as MILESTONE
+ * lines for its milestones. The call meant them as the goal's milestones, and the goal stays as the person set it.
+ */
+export function withRestatedGoalAsMilestones(o: SessionStatus | null, ops: Op[], readSetAt: number | null): Op[] {
+  const g = o?.goal
+  const isReadJustSet = g != null && g.isAwaitingMilestones && readSetAt === g.setAt
+  if (!isReadJustSet) return ops
+
+  return ops.flatMap(op =>
+    op.kind === 'goal' && restatesGoal(clipWords(op.text, DESCRIPTION_KEPT), g.text)
+      ? op.milestones.map(m => ({ kind: 'milestone' as const, status: m.status, name: m.name, text: '' }))
+      : [op],
+  )
+}
+
+/**
  * Applies a GOAL, MILESTONE or SERVES line. A GOAL line only ever proposes: the goal itself changes on a press alone.
  * A proposal with fewer than `MILESTONES_MIN` milestones, or one that restates the current goal or a declined one, in
  * its words or its milestones, is dropped.

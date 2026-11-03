@@ -1213,6 +1213,13 @@ function addMilestone(o, op, now) {
   };
   return { ...o, nextMilestoneId: o.nextMilestoneId + 1, milestones: [...o.milestones, m] };
 }
+function withRestatedGoalAsMilestones(o, ops, readSetAt) {
+  const g = o?.goal;
+  const isReadJustSet = g != null && g.isAwaitingMilestones && readSetAt === g.setAt;
+  if (!isReadJustSet)
+    return ops;
+  return ops.flatMap((op) => op.kind === "goal" && restatesGoal(clipWords(op.text, DESCRIPTION_KEPT), g.text) ? op.milestones.map((m) => ({ kind: "milestone", status: m.status, name: m.name, text: "" })) : [op]);
+}
 function applyGoalOp(o, op, now, findSubject) {
   if (op.kind === "goal") {
     const text = clipWords(op.text, DESCRIPTION_KEPT);
@@ -8228,7 +8235,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     if (m)
       named.add(m.id);
   };
-  const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
+  const ordered = withRestatedGoalAsMilestones(last, ops, readSetAt).map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
   for (const { op } of ordered) {
     if (op.kind === "none")
       continue;

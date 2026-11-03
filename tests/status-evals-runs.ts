@@ -100,4 +100,21 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'SET: s5 | queued | own setting planned',
     ].join('\n'),
   ],
+  'catch-up-shipped': [
+    [
+      'DONE: s1 | merged and shipped in the 2.5 beta',
+      'DONE: s2 | merged and shipped in the 2.5 beta',
+      'DONE: m1 | sync fix and banner shipped',
+      'SET: s3 | working | sync and banner covered, store text left',
+    ].join('\n'),
+  ],
+  'goal-awaiting-milestones': [
+    [
+      'DONE: s3 | merged',
+      'SET: s4 | working | wider layout in',
+      'MILESTONE: working | Fixes merged | toolbar fix merged',
+      'MILESTONE: working | Branch ready | two merges left',
+      'MILESTONE: queued | 4.1 build out | not started',
+    ].join('\n'),
+  ],
 }
