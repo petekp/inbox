@@ -2,11 +2,14 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Window } from 'happy-dom'
 import { DOT } from '../../hooks/rows'
-import type { PrCheck } from '../../types'
+import { applyPrPress } from '../../hooks/pr-tab'
+import type { PrPress } from '../../hooks/pr-press'
+import type { PrCheck, PrView } from '../../types'
 import { emptyState } from '../src/state'
 import { viewOf } from '../src/core'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
+import { NO_HOLDS } from '../../hooks/timing'
 import { EXIT_MS, MOVE_MS, ROW_STATE_MS, stepRow } from '../src/rows'
 import type { RowState, RowTarget, RowTrack } from '../src/rows'
 
@@ -72,7 +75,7 @@ test('a row turned around mid-move starts the new move at once, and with reduced
   assert.equal(stepRow(undefined, 'open', 0)?.state, 'open')
 })
 
-test('in the Codex tab, a PR row closes with its panel, leaves from its place with its group and title, and a block’s press line grows in, and with reduced motion each move ends as it starts', async context => {
+test('in the Codex tab, a PR row closes with its panel, leaves from its place with its group and title, a block’s press line grows in, a dismissed block settles under its settled line and grows back on Undo, the tab’s buttons leave with the last merged PR, and with reduced motion each move ends as it starts', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const window = new Window()
   const animate = window.HTMLElement.prototype.animate
@@ -94,31 +97,31 @@ test('in the Codex tab, a PR row closes with its panel, leaves from its place wi
   state.heard.startAt = 1
   state.shownTab = 'prs'
   state.ledger = { ...state.ledger, prs: [ref] }
-  const setChecks = (checks: PrCheck[]) => {
+  const prView = (number: number, title: string, prState: 'OPEN' | 'MERGED', checks: PrCheck[]): PrView => ({
+    ref: `acme/app#${number}`,
+    number,
+    title,
+    url: `https://github.com/acme/app/pull/${number}`,
+    isDraft: false,
+    state: prState,
+    base: 'main',
+    mergeable: 'MERGEABLE',
+    reviewDecision: '',
+    checks,
+    threads: [],
+    isYours: true,
+    wasSeenOpen: true,
+    error: null,
+    fetchedAt: Date.now(),
+  })
+  const setViews = (views: PrView[]) => {
     state.prViews = {
-      views: {
-        [ref]: {
-          ref,
-          number: 12,
-          title: 'Add a CLI',
-          url: 'https://github.com/acme/app/pull/12',
-          isDraft: false,
-          state: 'OPEN',
-          base: 'main',
-          mergeable: 'MERGEABLE',
-          reviewDecision: '',
-          checks,
-          threads: [],
-          isYours: true,
-          wasSeenOpen: true,
-          error: null,
-          fetchedAt: Date.now(),
-        },
-      },
+      views: { ...state.prViews.views, ...Object.fromEntries(views.map(pr => [pr.ref, pr])) },
       branchRef: null,
       isFetching: false,
     }
   }
+  const setChecks = (checks: PrCheck[]) => setViews([prView(12, 'Add a CLI', 'OPEN', checks)])
   setChecks([check('lint', 'fail'), check('e2e', 'cancelled'), check('e2e-mac', 'cancelled')])
   window.document.body.innerHTML = '<div id="app"></div>'
   Object.defineProperty(window, '__inboxPage', { value: 'pr-rows-page', configurable: true })
@@ -160,18 +163,35 @@ test('in the Codex tab, a PR row closes with its panel, leaves from its place wi
   for (const [key, value] of Object.entries({ setTimeout, clearTimeout }))
     Object.defineProperty(window, key, { value, writable: true, configurable: true })
   window.parent.postMessage = message => {
-    const request = message as { id?: number; method: string; params?: { name?: string } }
+    const request = message as {
+      id?: number
+      method: string
+      params?: { name?: string; arguments?: { press?: PrPress; shownSince?: number | null } }
+    }
     if (request.id === undefined) return
+    const press = request.params?.name === 'inbox_press' ? request.params.arguments!.press! : null
+    if (press) {
+      const applied = applyPrPress(state.ledger, state.prViews, state.lastActions, press, {
+        now: Date.now(),
+        turnsStarted: 0,
+      })
+      assert.ok(!('stale' in applied), press.action)
+      state.ledger = applied.ledger
+      state.lastActions = { ...state.lastActions, ...applied.lasts }
+    }
     const view: TabView = {
-      ...viewOf(state, Date.now()),
+      ...viewOf(state, Date.now(), { ...NO_HOLDS, shownSince: request.params?.arguments?.shownSince ?? null }),
       thread: state.sessionId,
       devPage: 'pr-rows-page',
       serverBuild: SERVER_BUILD,
       isFetchingPrs: false,
       isGhMissing: false,
     }
-    assert.ok(request.method === 'ui/initialize' || request.params?.name === 'inbox_view', request.method)
-    const result = request.method === 'ui/initialize' ? {} : { structuredContent: view }
+    assert.ok(request.method === 'ui/initialize' || request.params?.name === 'inbox_view' || press, request.method)
+    const result =
+      request.method === 'ui/initialize'
+        ? {}
+        : { structuredContent: press ? { view, copy: null, error: null, note: null } : view }
     queueMicrotask(() =>
       window.dispatchEvent(new window.MessageEvent('message', { data: { jsonrpc: '2.0', id: request.id, result } })),
     )
@@ -194,6 +214,22 @@ test('in the Codex tab, a PR row closes with its panel, leaves from its place wi
     entry(name)!.querySelector<HTMLElement>('.line')!.click()
     await settle()
   }
+  const block = (n: number) =>
+    [...root.querySelectorAll<HTMLElement>('main > section')].find(
+      e => e.querySelector('.num, .tone-prs')?.textContent === `#${n}`,
+    )!
+  const press = async (scope: HTMLElement, label: string) => {
+    ;[...scope.querySelectorAll<HTMLElement>('button')].find(b => b.textContent?.trim() === label)!.click()
+    await settle()
+  }
+  const isMoving = (e: HTMLElement) => e.getAnimations().length > 0
+  const blockEntry = (n: number, name: string) =>
+    [...block(n).querySelectorAll<HTMLElement>('.entry')].find(
+      e => e.querySelector('.line .text')?.textContent === `CI / ${name}`,
+    )
+  const isSettlingOverBlock = (n: number) =>
+    !!block(n).querySelector('.settled-line') && !!block(n).querySelector('.closing[inert] .pr-actions')
+  const tabButtons = () => root.querySelector<HTMLElement>('[data-motion="pr-tab-actions"]')
   const line = () => root.querySelector('.pr-last')?.textContent ?? null
   const isLineGrowing = () => (root.querySelector('.pr-last')?.parentElement?.getAnimations().length ?? 0) > 0
   try {
@@ -236,6 +272,63 @@ test('in the Codex tab, a PR row closes with its panel, leaves from its place wi
     await after(POLL_MS + 100)
     assert.deepEqual(groups(), [])
     assert.equal(entry('lint'), null)
+    isReduced = false
+    window.HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      const drawn = [this, ...this.querySelectorAll<HTMLElement>('*')].filter(
+        e => !e.closest('[style*="display: none"]'),
+      )
+      return new window.DOMRect(0, 0, 100, drawn.length)
+    }
+    setViews([
+      prView(13, 'Fix the login redirect', 'MERGED', []),
+      prView(14, 'Bump the parser', 'MERGED', []),
+      prView(15, 'Speed up the build', 'OPEN', [check('lint', 'fail'), check('e2e', 'fail')]),
+    ])
+    const refs = ['acme/app#15', ref]
+    state.ledger = {
+      ...state.ledger,
+      prs: [ref, 'acme/app#13', 'acme/app#14', 'acme/app#15'],
+      prOrder: { refs, label: null, why: null, statuses: null, dismissed: [], by: 'Claude', at: Date.now() },
+    }
+    await after(POLL_MS + 100)
+    assert.ok(block(15).querySelector('.rank'))
+    setViews([prView(15, 'Speed up the build', 'OPEN', [check('lint', 'fail')])])
+    await after(POLL_MS + 100)
+    const leaving = blockEntry(15, 'e2e')!
+    assert.ok(isMoving(leaving))
+    await press(block(15), 'Dismiss')
+    assert.ok(blockEntry(15, 'e2e') === leaving)
+    assert.ok(isMoving(leaving))
+    assert.ok(isSettlingOverBlock(15))
+    assert.ok(isMoving(block(15)))
+    await after(MOVE_MS + 100)
+    assert.ok(block(15).querySelector('.settled-line'))
+    assert.equal(block(15).querySelector('[inert]'), null)
+    await press(block(15), 'Undo')
+    assert.ok(block(15).querySelector('.pr-head'))
+    assert.ok(isMoving(block(15)))
+    await after(MOVE_MS + 100)
+    assert.ok(!isMoving(block(15)))
+    await press(tabButtons()!, 'Dismiss merged')
+    assert.ok(isSettlingOverBlock(13) && isSettlingOverBlock(14))
+    assert.ok(tabButtons()!.querySelector('[inert] .pr-actions'))
+    assert.ok(isMoving(tabButtons()!))
+    await after(EXIT_MS + 100)
+    assert.equal(tabButtons(), null)
+    assert.ok(!isSettlingOverBlock(13) && !isSettlingOverBlock(14))
+    state.prViews = {
+      ...state.prViews,
+      views: Object.fromEntries(Object.entries(state.prViews.views).filter(([r]) => r !== 'acme/app#13')),
+    }
+    await after(POLL_MS + 100)
+    assert.ok(block(13).querySelector('.settled-line'))
+    assert.ok(isMoving(block(13)))
+    await after(EXIT_MS + 100)
+    assert.equal(block(13), undefined)
+    isReduced = true
+    await press(block(12), 'Dismiss')
+    assert.ok(block(12).querySelector('.settled-line'))
+    assert.equal(block(12).querySelector('[inert]'), null)
   } finally {
     await window.happyDOM.abort()
     await window.happyDOM.close()
