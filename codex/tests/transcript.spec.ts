@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { zstdCompressSync } from 'node:zlib'
 
-import { readRollout, rolloutFor, withCurrentRollout } from '../src/transcript'
+import { newestTurnEvent, readRollout, rolloutFor, turnIn, withCurrentRollout } from '../src/transcript'
 import { movedRollout, ROLLOUT_FIXTURE, rolloutAt, tempDir } from './helpers'
 
 const rows = (...list: unknown[]) => list.map(row => (typeof row === 'string' ? row : JSON.stringify(row))).join('\n')
@@ -21,9 +22,9 @@ const message = (role: string, text: string) =>
     content: [{ type: role === 'assistant' ? 'output_text' : 'input_text', text }],
   })
 
-function rolloutOf(text: string): string {
-  const path = join(tempDir(), 'rollout.jsonl')
-  writeFileSync(path, text)
+function rolloutOf(text: string, ext = 'jsonl'): string {
+  const path = join(tempDir(), `rollout.${ext}`)
+  writeFileSync(path, ext === 'jsonl.zst' ? zstdCompressSync(text) : text)
 
   return path
 }
@@ -127,14 +128,18 @@ test('a rollout of older shapes reads shell calls, patches, spawned agents, dial
   ])
 })
 
-test('a rollout over the size limit keeps its newest turns and drops the cut line', async () => {
+test('a rollout over the size limit keeps its newest turns and drops the cut line, compressed or not', async () => {
   const filler = 'x'.repeat(1024 * 1024)
   const old = Array.from({ length: 10 }, (_, n) => message('user', `Old ${n} ${filler}`))
-  const path = rolloutOf(rows(started('t1'), ...old, started('t2'), message('user', 'Newest question')))
-  const rollout = await readRollout(path, '/repo', undefined)
+  const text = rows(started('t1'), ...old, started('t2'), message('user', 'Newest question'))
+  const rollout = await readRollout(rolloutOf(text), '/repo', undefined)
 
   assert.ok(rollout?.conversation.endsWith('Person: Newest question'))
   assert.ok((rollout?.conversation.match(/Person: Old/g)?.length ?? 0) < 10)
+  const compressed = rolloutOf(text, 'jsonl.zst')
+  assert.deepEqual(await readRollout(compressed, '/repo', undefined), rollout)
+  assert.deepEqual(await newestTurnEvent(compressed), { kind: 'started', id: 't2' })
+  assert.deepEqual(await turnIn(compressed, 't2'), await turnIn(rolloutOf(text), 't2'))
 })
 
 test('a rollout that cannot be read gives nothing', async () => {
@@ -190,7 +195,11 @@ test('a reverted chat reads the kept turns of each rollout it continues, then it
   movedRollout(second.path, home, 'archived_sessions')
   const thirdArchived = movedRollout(third.path, home, 'archived_sessions')
   assert.deepEqual(await persons(thirdArchived), [`Person: ${firstAsk}`, 'Person: Second ask', 'Person: Third ask'])
+  const firstCompressed = `${firstArchived}.zst`
+  writeFileSync(firstCompressed, zstdCompressSync(readFileSync(firstArchived)))
   rmSync(firstArchived)
+  assert.deepEqual(await persons(thirdArchived), [`Person: ${firstAsk}`, 'Person: Second ask', 'Person: Third ask'])
+  rmSync(firstCompressed)
   assert.deepEqual(await persons(thirdArchived), ['Person: Second ask', 'Person: Third ask'])
 })
 
@@ -229,11 +238,18 @@ test('a saved rollout path that Codex archived, then unarchived, is found again 
   })
 })
 
-test('rolloutFor skips a compressed rollout, a subagent’s and a codex exec run’s', async () => {
+test('rolloutFor reads a compressed rollout, archived or not, and skips a subagent’s and a codex exec run’s', async () => {
   const home = tempDir()
-  rolloutAt(home, 'packed', {}, { ext: 'jsonl.zst' })
+  const packed = rolloutAt(home, 'packed', { cwd: '/repo' }, { ext: 'jsonl.zst' })
+  assert.deepEqual(await rolloutFor(home, 'packed'), { path: packed, cwd: '/repo' })
+  const archived = movedRollout(packed, home, 'archived_sessions')
+  assert.deepEqual(await withCurrentRollout({ sessionId: 'packed', transcriptPath: packed }), {
+    sessionId: 'packed',
+    transcriptPath: archived,
+  })
+  assert.match((await readRollout(archived, '/repo'))?.conversation ?? '', /^Person: List the files here/)
   rolloutAt(home, 'sub', { parent_thread_id: 'chat-1' })
   rolloutAt(home, 'exec', { originator: 'codex_exec', source: 'exec' })
 
-  for (const id of ['packed', 'sub', 'exec']) assert.equal(await rolloutFor(home, id), null)
+  for (const id of ['sub', 'exec']) assert.equal(await rolloutFor(home, id), null)
 })

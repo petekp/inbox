@@ -1,4 +1,4 @@
-import { open } from 'node:fs/promises'
+import { firstBytes } from './rollout-file'
 
 type SessionMeta = {
   type?: string
@@ -16,17 +16,10 @@ type SessionMeta = {
 /** The rollout's first row, `session_meta`. Null when the file or the row cannot be read. */
 export async function readSessionMeta(path: string): Promise<SessionMeta | null> {
   try {
-    const file = await open(path, 'r')
-    try {
-      const buf = Buffer.alloc(64 * 1024)
-      const { bytesRead } = await file.read(buf, 0, buf.length, 0)
-      const first = buf.subarray(0, bytesRead).toString('utf8').split('\n')[0] ?? ''
-      const meta = JSON.parse(first) as SessionMeta
+    const first = (await firstBytes(path, 64 * 1024)).toString('utf8').split('\n')[0] ?? ''
+    const meta = JSON.parse(first) as SessionMeta
 
-      return meta.type === 'session_meta' ? meta : null
-    } finally {
-      await file.close()
-    }
+    return meta.type === 'session_meta' ? meta : null
   } catch {
     return null
   }

@@ -2,6 +2,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFi
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { zstdCompressSync } from 'node:zlib'
 
 import type { HookDeps, HookInput } from '../src/hook'
 import type { Run } from '../../hooks/gh'
@@ -71,7 +72,8 @@ export function rolloutAt(
     folder,
     `rollout-${day.replaceAll('/', '-')}T05-01-10-${threadId}${rolloutId ? `_${rolloutId}` : ''}.${ext}`,
   )
-  writeFileSync(path, ext === 'jsonl' ? [JSON.stringify({ ...row, payload }), ...rest].join('\n') : 'compressed')
+  const text = [JSON.stringify({ ...row, payload }), ...rest].join('\n')
+  writeFileSync(path, ext === 'jsonl.zst' ? zstdCompressSync(text) : text)
 
   return path
 }

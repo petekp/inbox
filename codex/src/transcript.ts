@@ -1,8 +1,9 @@
 // Reads Codex's session transcript, a JSONL file whose path every hook gets.
 
-import { open, readdir, stat } from 'node:fs/promises'
+import { readdir, stat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 
+import { bytesBefore, canReadZstd } from './rollout-file'
 import { forkedFromId, isExecMeta, readSessionMeta } from './rollout-rows'
 import { rolloutOfLines, turnEventOf, turnOf, turnRowsOf } from './rollout-turns'
 import type { Rollout, TurnEvent, TurnRow, TurnRows } from './rollout-turns'
@@ -17,7 +18,19 @@ async function namesIn(dir: string, pattern: RegExp): Promise<string[]> {
     .reverse()
 }
 
-const ROLLOUT_NAME = /^rollout-.+\.jsonl$/
+const ROLLOUT_NAME = canReadZstd ? /^rollout-.+\.jsonl(\.zst)?$/ : /^rollout-.+\.jsonl$/
+const plainName = (name: string) => name.replace(/\.zst$/, '')
+
+/**
+ * The rollouts in `folder` whose name, read without `.zst`, `isWanted` accepts, newest first. A plain file comes before
+ * a compressed one of the same name.
+ */
+async function rolloutsIn(folder: string, isWanted: (name: string) => boolean): Promise<string[]> {
+  const names = (await namesIn(folder, ROLLOUT_NAME)).filter(n => isWanted(plainName(n)))
+  const byNewest = (a: string, b: string) => plainName(b).localeCompare(plainName(a)) || a.length - b.length
+
+  return names.sort(byNewest)
+}
 
 /**
  * The newest rollout in a Codex home whose name `isWanted` accepts. Codex keeps a chat's rollouts under
@@ -30,11 +43,11 @@ async function newestRollout(codexHome: string, isWanted: (name: string) => bool
     for (const month of await namesIn(join(sessions, year), /^\d{2}$/))
       for (const day of await namesIn(join(sessions, year, month), /^\d{2}$/)) {
         const folder = join(sessions, year, month, day)
-        const [name] = (await namesIn(folder, ROLLOUT_NAME)).filter(isWanted)
+        const [name] = await rolloutsIn(folder, isWanted)
         if (name !== undefined) return join(folder, name)
       }
   const archive = join(codexHome, 'archived_sessions')
-  const [archived] = (await namesIn(archive, ROLLOUT_NAME)).filter(isWanted)
+  const [archived] = await rolloutsIn(archive, isWanted)
 
   return archived === undefined ? null : join(archive, archived)
 }
@@ -52,8 +65,8 @@ function codexHomeOf(path: string): string | null {
  * A chat's rollout, found by its thread id in Codex's `rollout-<time>-<thread id>.jsonl`, under `sessions/` or, for an
  * archived chat, `archived_sessions/`. A chat Codex reverted continues in `rollout-<time>-<thread id>_<rollout
  * id>.jsonl`, and the newest file wins: `readRollout` reads the history it continues. Null when no readable file holds
- * it, or when the newest one belongs to a subagent or a run no person chats in. A rollout Codex has compressed (`.zst`)
- * is not read. `cwd` is the folder the chat runs in, from its first row.
+ * it, or when the newest one belongs to a subagent or a run no person chats in. A rollout Codex has compressed
+ * (`.jsonl.zst`) is read too, on a Node that reads zstd. `cwd` is the folder the chat runs in, from its first row.
  */
 export async function rolloutFor(codexHome: string, threadId: string): Promise<{ path: string; cwd: string } | null> {
   if (threadId === '') return null
@@ -114,19 +127,11 @@ async function linesBefore(
   bytes: number,
   end = Infinity,
 ): Promise<{ lines: string[]; start: number; read: number }> {
-  const file = await open(path, 'r')
-  try {
-    const stop = Math.min(end, (await file.stat()).size)
-    const start = Math.max(0, stop - bytes)
-    const buf = Buffer.alloc(stop - start)
-    const { bytesRead } = await file.read(buf, 0, buf.length, start)
-    const lines = buf.subarray(0, bytesRead).toString('utf8').split('\n')
-    if (start > 0) lines.shift()
+  const { buf, start } = await bytesBefore(path, bytes, end)
+  const lines = buf.toString('utf8').split('\n')
+  if (start > 0) lines.shift()
 
-    return { lines, start, read: bytesRead }
-  } finally {
-    await file.close()
-  }
+  return { lines, start, read: buf.length }
 }
 
 const TURN_ROW_BYTES = 64 * 1024
