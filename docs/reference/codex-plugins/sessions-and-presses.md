@@ -35,9 +35,10 @@ threads a root thread and its forks belong to. They differ after a fork.
   directly in `${CODEX_HOME:-~/.codex}/archived_sessions/`, with no date folders, their file names kept, reverted
   continuations included. Most there are compressed. The CLI has `codex archive` and `codex unarchive`, and the
   app-server has `thread/archive` and `thread/unarchive` [binary strings]. A move either way leaves the saved rollout
-  path pointing at a file that is gone, and only a hook saves a new one. So when the saved file is gone, the inbox
+  path pointing at a file that is gone. So when the saved file is gone, the inbox
   looks the rollout up again by thread id under `sessions/`, then `archived_sessions/`, in the Codex home the saved
-  path was in, and saves the path it finds (`codex/src/transcript.ts:withCurrentRollout`).
+  path was in, and saves the path it finds (`codex/src/transcript.ts:withCurrentRollout`). The tab's turn check looks at most
+  once a minute per chat, since a miss reads every day folder.
 - **The tab catches a chat up when it opens.** [live] The tab's `tools/call inbox_view` carries `_meta.thread_id`,
   which equals the hooks' `session_id`. For a chat the inbox has never heard from, the server finds the rollout by that
   id, copies a fork's parent ledger, marks the ledger `behind` when the rollout has earlier turns, and starts the update
