@@ -34,7 +34,7 @@ import { codexStore } from './host'
 import type { OnWrite } from './host'
 import type { SessionState } from './state'
 import { CODEX } from './texts'
-import { rolloutMeta } from './rollout-rows'
+import { rolloutMeta, subagentTaskName } from './rollout-rows'
 import { turnOf } from './rollout-turns'
 import { rolloutReads, rolloutTail } from './transcript'
 
@@ -194,7 +194,9 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
     case 'SubagentStart': {
       const ref = input.agent_id
       if (!ref) return null
-      const name = input.agent_type || 'subagent'
+      const taskName = input.transcript_path ? await subagentTaskName(input.transcript_path) : null
+      const role = input.agent_type === 'default' ? '' : input.agent_type
+      const name = taskName || role || 'subagent'
       await write(s => statusChanged(s, o => childStarted(o, { ref, kind: 'subagent', name }, now())))
 
       return null

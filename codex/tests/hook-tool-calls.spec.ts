@@ -54,6 +54,24 @@ test('a subagent runs as a child from SubagentStart to SubagentStop, its tool ca
   assert.equal((await children())[1]?.[1], 12000)
 })
 
+test('a subagent is named by the task name in its own rollout, and never by the default role', async () => {
+  const dir = tempDir()
+  const deps = hookDeps(dir)
+  const rollout = (agentPath?: string) => {
+    const path = join(tempDir(), 'rollout.jsonl')
+    writeFileSync(path, `${JSON.stringify({ type: 'session_meta', payload: { agent_path: agentPath } })}\n`)
+    return path
+  }
+
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
+  const named = { agent_id: 'a', agent_type: 'default', transcript_path: rollout('/root/fix_login_test') }
+  await handleHook(input('SubagentStart', named), deps)
+  await handleHook(input('SubagentStart', { agent_id: 'b', agent_type: 'default', transcript_path: rollout() }), deps)
+  const names = ((await readState(dir, 's1')).ledger.overview?.children ?? []).map(c => c.name)
+
+  assert.deepEqual(names, ['fix login test', 'subagent'])
+})
+
 test('a Herdr delegate runs as a child from the command that starts it until a turn that waited on it ends, or Herdr shows it no longer working at a turn’s end', async () => {
   const dir = tempDir()
   let at = 1000
