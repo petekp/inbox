@@ -106,6 +106,20 @@ const FIXED_RULES: Rule[] = [
     },
   },
   {
+    id: 'no-semicolons',
+    reads: 'answer',
+    property: 6,
+    text: 'No name, where it stands, head, milestone or goal joins clipped phrases with a semicolon.',
+    failures: ({ result }) => {
+      const o = result.session.ledger.overview
+      const head = o?.head ? [o.head.title, o.head.description] : []
+      const goals = [o?.goal?.text ?? '', o?.proposedGoal?.text ?? '']
+      const pieces = [...shownOf(o), ...milestonesOf(o)].flatMap(s => [s.name, s.text])
+
+      return [...head, ...goals, ...pieces].filter(t => t.includes(';')).map(t => `semicolon: "${t}"`)
+    },
+  },
+  {
     id: 'head-no-status',
     reads: 'answer',
     property: 1,
