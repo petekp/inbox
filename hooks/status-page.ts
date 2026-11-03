@@ -9,8 +9,6 @@ import type { GoalParts } from './status-goal-page'
 import { childRow, countsByMark, isFinishedUnseen, partRows, ruledRows } from './status-page-parts'
 import type { ListContext } from './status-page-parts'
 
-export { CHILD_ROWS, unfoldedRows } from './status-page-parts'
-
 const STATUS_FAILED = 'Last Status update failed. Changes from that reply may be missing.'
 
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */

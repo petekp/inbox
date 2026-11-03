@@ -34,6 +34,21 @@ function isIgnored(root, path) {
   }
 }
 
+const isDeclared = (source, name) =>
+  new RegExp(
+    `(?:function\\*?|const|let|var|class|type|interface|enum)\\s+${name}\\b|^\\s*(?:async\\s+)?(?:readonly\\s+)?${name}\\??\\s*[(:=]`,
+    'm',
+  ).test(source)
+
+function checkSymbols(root, doc, text, errors) {
+  for (const m of text.matchAll(/`([\w.-]+\/[\w./-]+\.(?:m?[jt]sx?)):([A-Za-z_$][\w$.]*)`/g)) {
+    const [, path, symbol] = m
+    if (!exists(root, path)) continue
+    if (!isDeclared(read(root, path), symbol.split('.')[0]))
+      errors.push(`${doc} names ${path}:${symbol}, which ${path} does not declare.`)
+  }
+}
+
 export function checkDocs(root, errors) {
   const topLevel = new Set(readdirSync(root).filter(entry => entry !== 'node_modules'))
   for (const doc of docFiles(root)) {
@@ -46,6 +61,7 @@ export function checkDocs(root, errors) {
       if (!existsSync(join(root, dirname(doc), target))) errors.push(`${doc} links to ${target}, which does not exist.`)
     }
     const isUnbuilt = /^Status: (proposed|building)/m.test(text)
+    if (!isUnbuilt) checkSymbols(root, doc, text, errors)
     if (doc.startsWith('docs/reference/') || (doc.startsWith('docs/plans/') && isUnbuilt)) continue
     for (const m of text.matchAll(/`([\w.-]+\/[\w./-]+\.[a-z]+)(?::[\w.]+)?`/g)) {
       const path = m[1]

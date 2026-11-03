@@ -22,7 +22,8 @@ import {
 import { paneStatusGoal } from './pane-status-goal'
 import type { PaneStatusLines } from './pane-status-lines'
 import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from './status-keys'
-import { LOOK_DASH, mergedLine, STALL_GAP, type StatusRow, unfoldedRows, WAS_PREFIX } from './status-page'
+import { LOOK_DASH, mergedLine, STALL_GAP, type StatusRow, WAS_PREFIX } from './status-page'
+import { unfoldedRows } from './status-page-parts'
 import { SELECTION_BAR } from './terminal-text'
 import { cellWidth } from './text'
 

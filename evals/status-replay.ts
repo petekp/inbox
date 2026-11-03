@@ -125,7 +125,7 @@ export type StepResult = {
 }
 
 /** When every replay starts. A fixed time, so a replay's prompts are the same from run to run. */
-export const REPLAY_START = Date.UTC(2026, 9, 1, 9, 0)
+const REPLAY_START = Date.UTC(2026, 9, 1, 9, 0)
 
 export const minutes = (m: number) => REPLAY_START + m * 60_000
 

@@ -1300,18 +1300,18 @@ function declineProposedGoal(o) {
 function setTypedGoal(o, text, now) {
   const typed = clipWords(text, DESCRIPTION_KEPT);
   if (typed === "")
-    return { status: o, isNew: false };
+    return o;
   const p = o.proposedGoal;
   if (p !== null && hasSameWords(p.text, typed)) {
     const used = useProposedGoal(o, now);
-    return { status: { ...used, goal: { ...used.goal, text: typed } }, isNew: true };
+    return { ...used, goal: { ...used.goal, text: typed } };
   }
   const declined = declineProposedGoal(o);
   const isReworded = o.goal !== null && hasSameWords(o.goal.text, typed);
   if (isReworded)
-    return { status: { ...declined, goal: { ...o.goal, text: typed } }, isNew: false };
+    return { ...declined, goal: { ...o.goal, text: typed } };
   const goal = { text: typed, setAt: now, metAt: null, was: o.goal?.text ?? null, isAwaitingMilestones: true };
-  return { status: { ...declined, goal, serves: {} }, isNew: true };
+  return { ...declined, goal, serves: {} };
 }
 
 // ../hooks/goal-press.ts
@@ -1327,9 +1327,9 @@ function goalPressed(ledger, p, record, now) {
   if (p.action !== "type")
     return { stale: true };
   const typed = setTypedGoal(o, p.text, now);
-  if (typed.status === o)
+  if (typed === o)
     return unchanged;
-  return { ledger: { ...ledger, overview: typed.status }, last: record("mark"), effects: [] };
+  return { ledger: { ...ledger, overview: typed }, last: record("mark"), effects: [] };
 }
 
 // ../hooks/status-keys.ts

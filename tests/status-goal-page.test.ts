@@ -6,7 +6,7 @@ import { emptySession } from '../hooks/session-files'
 import { sessionView } from '../hooks/session-view'
 import { setTypedGoal, useProposedGoal } from '../hooks/status-goal-ops'
 import { statusKeyRows } from '../hooks/status-keys'
-import { unfoldedRows } from '../hooks/status-page'
+import { unfoldedRows } from '../hooks/status-page-parts'
 import { NO_HOLDS } from '../hooks/timing'
 import type { SessionStatus } from '../types'
 import { after, askItem, page, shape } from './status-helpers'
@@ -135,7 +135,7 @@ test('a subject not linked yet stays in the main list, and nothing splits withou
 })
 
 test('a typed goal waits for its milestones, and a goal whose milestones are all done reads met', () => {
-  const typed = setTypedGoal(linked(), 'Ship 2.6 with import', 45).status
+  const typed = setTypedGoal(linked(), 'Ship 2.6 with import', 45)
   const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written', 50)
 
   expect(page(typed, 46).goal).toMatchObject({
