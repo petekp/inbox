@@ -26,6 +26,11 @@ export const DESKTOP_LINE_PT = 19
  * measured on app 4.4212.0 with engine 2.1.309.
  */
 export const DESKTOP_ROW_PT = 20
+/**
+ * How far the desktop pane's `scroll.offset` may be from where its page sits, in rows: it reports whole rows, as 19 at
+ * the end of a page 47.85 rows tall, scrolled 18.85 (app 4.4212.0, engine 2.1.309).
+ */
+export const DESKTOP_OFFSET_ROUNDING = 0.5
 /** A native Button's height on desktop, in points, as measured in the pane for the desktop Undo. */
 export const DESKTOP_BUTTON_PT = 23
 /**

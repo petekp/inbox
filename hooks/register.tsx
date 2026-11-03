@@ -156,7 +156,14 @@ import {
   prRowIds,
 } from './arrivals'
 import { parseInline } from './inline'
-import { DESKTOP_ROW_PAD, DESKTOP_WIDE_AT, INLINE_RAIL_AT, RAIL_GUTTER, TAB_PAD } from './pane-sizes'
+import {
+  DESKTOP_OFFSET_ROUNDING,
+  DESKTOP_ROW_PAD,
+  DESKTOP_WIDE_AT,
+  INLINE_RAIL_AT,
+  RAIL_GUTTER,
+  TAB_PAD,
+} from './pane-sizes'
 import { lookOf, paletteFor } from './palettes'
 import { animateRunningMarks } from './running-mark-timer'
 import { glued, type TerminalSpan, unbroken } from './terminal-text'
@@ -243,7 +250,7 @@ import {
 } from './mod-sessions'
 import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
 import { noteStatusDrawn, takeShownRows } from './pane-status-shown'
-import { desktopSpaceLines, exactly } from './pane-status-tops'
+import { desktopSpaceLines } from './pane-status-tops'
 import { changeSaved, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
 import { paneAskRows, paneAskTabs } from './pane-asks'
 import { paneRowKeys } from './pane-row-keys'
@@ -3459,7 +3466,9 @@ export const register: Register = on => {
       const tabLines = look === 'desktop' ? (hasRail ? null : desktopTabLines) : terminalTabLines
       const isChromeKnown = tabLines !== null && !statusBlock && !showsDemoNotices
       const spaceLines = hasRail ? 0 : look === 'desktop' ? desktopSpaceLines(blankLine) : blankLine
-      const pageTop = isChromeKnown ? exactly(tabLines + spaceLines) : null
+      const top = isChromeKnown ? tabLines + spaceLines : null
+      const rounding = look === 'desktop' ? DESKTOP_OFFSET_ROUNDING : 0
+      const pageTop = top === null ? null : { least: top - rounding, most: top + rounding }
       noteStatusDrawn({ pageTop, tops: statusTops(), scroll: e.props.scroll, now })
     }
     const tabView = isHelpShown
