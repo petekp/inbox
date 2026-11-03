@@ -6,10 +6,13 @@ import { parseInline, type Span } from './inline'
 /** `spans` cut to what desktop draws in `limit` lines `widthPt` wide, with an ellipsis when cut. */
 export function desktopSpanLines(spans: TerminalSpan[], widthPt: number, limit: number): TerminalSpan[] {
   const words = spans.map(s => ({ ...s, text: s.text.replace(/[^\S\u00a0]+/g, ' ') }))
-  const lines = desktopLines(words.map(s => s.text).join(''), widthPt)
+  const text = words.map(s => s.text).join('')
+  const lines = desktopLines(text, widthPt)
   if (lines.length <= limit) return words
   const last = cutForEllipsis(lines[limit - 1]!, t => desktopTextPt(t) <= widthPt)
-  let room = [...lines.slice(0, limit - 1), last].join(' ').length
+  let shownEnd = 0
+  for (const line of lines.slice(0, limit - 1)) shownEnd = text.indexOf(line, shownEnd) + line.length
+  let room = text.indexOf(lines[limit - 1]!, shownEnd) + last.length
   const kept: TerminalSpan[] = []
   for (const s of words) {
     if (room <= 0) break

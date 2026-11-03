@@ -24,6 +24,7 @@ export const DESKTOP_LINE_PT = 19
 /**
  * One column of `bodyColumns` in the Claude app pane, in points, measured on app 3.6556.2 with engine 2.1.308. The
  * engine reports the pane in columns only, so this cannot be measured at run time.
+ * Remeasure it with the steps in docs/reference/claude-desktop-app/what-desktop-draws-layout.md.
  */
 export const DESKTOP_CELL_PT = 8.8
 export const DESKTOP_LINK_GAP_CELLS = 1.5
