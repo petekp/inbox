@@ -46,7 +46,8 @@ export type Button = {
 /** What a button draws. A Status button presses nothing the host runs, so it has a face and no `press`. */
 export type ButtonFace = Omit<Button, 'press'>
 
-export type Lead = { text: string; tone: Tone | null }
+/** `dim` draws the lead as the panel's other muted marks. */
+export type Lead = { text: string; tone: Tone | 'dim' | null }
 
 export type Line = {
   id: string

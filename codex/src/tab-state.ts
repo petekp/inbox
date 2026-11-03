@@ -64,9 +64,12 @@ export const statusUnfolded = new Set<string>()
 /**
  * The latest press on its way, by row id: its request number, its pending Local result or null for a message, which
  * reads SENDING, and its action, so its button draws as out before the view says so. A reply's action is null, since
- * a reply is never out.
+ * a reply is never out. `lastBefore` is the row's saved last press when the press started, from `lastPressKey`.
  */
-export const sending = new Map<string, { seq: number; pending: Feedback | null; action: string | null }>()
+export const sending = new Map<
+  string,
+  { seq: number; pending: Feedback | null; action: string | null; lastBefore: string }
+>()
 export const SENDING = 'Sending…'
 export const errors = new Map<string, string>()
 export const notes = new Map<string, { text: string; at: number }>()

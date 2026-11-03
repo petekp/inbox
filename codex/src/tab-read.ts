@@ -91,7 +91,7 @@ function failureText(err: unknown): string {
 }
 
 export async function poll() {
-  if (tabState.activePresses === 0) await read()
+  await read()
   later(poll, POLL_MS)
 }
 

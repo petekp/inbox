@@ -1,4 +1,4 @@
-import { failingChecks, waitingThreads } from './prs'
+import { blockingChecks, waitingThreads } from './prs'
 import { prCheckId, prMarkId, prThreadId } from './pr-rows'
 import type { DrawnPr } from './pr-views'
 import { closedShown, NEEDS_YOU_GROUPS, rowResultMark, settledRowIds } from './rows'
@@ -106,7 +106,8 @@ export function followTo<T extends string>(
 }
 
 /**
- * The PRs tab's row ids: each drawn PR's mark, and for a PR not settled, its waiting threads and failing checks. A new
+ * The PRs tab's row ids: each drawn PR's mark, and for a PR not settled, its waiting threads and its failing and
+ * cancelled checks. A new
  * PR counts as a new row through its mark.
  */
 export function prRowIds(drawn: readonly DrawnPr[]): string[] {
@@ -114,7 +115,7 @@ export function prRowIds(drawn: readonly DrawnPr[]): string[] {
     prMarkId(pr.ref),
     ...(state.is === 'settled'
       ? []
-      : [...waitingThreads(pr).map(t => prThreadId(pr, t)), ...failingChecks(pr).map(c => prCheckId(pr, c))]),
+      : [...waitingThreads(pr).map(t => prThreadId(pr, t)), ...blockingChecks(pr).map(c => prCheckId(pr, c))]),
   ])
 }
 

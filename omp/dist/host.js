@@ -812,6 +812,8 @@ function bucket(e) {
     return "pass";
   if (["SKIPPED", "STALE"].includes(result))
     return "skip";
+  if (result === "CANCELLED")
+    return "cancelled";
   if (["PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", ""].includes(result))
     return "pending";
   return "fail";
@@ -912,10 +914,10 @@ function threadsOnYou(pr, isSent) {
   return waitingThreads(pr).filter((t) => !t.isLinesChanged && !isSent(pr, t));
 }
 function prNeedsYou(pr, isSent) {
-  return pr.state === "OPEN" && (pr.mergeable === "CONFLICTING" || failingChecks(pr).length > 0 || pr.reviewDecision === "CHANGES_REQUESTED" || threadsOnYou(pr, isSent).length > 0);
+  return pr.state === "OPEN" && (pr.mergeable === "CONFLICTING" || blockingChecks(pr).length > 0 || pr.reviewDecision === "CHANGES_REQUESTED" || threadsOnYou(pr, isSent).length > 0);
 }
 function checkCounts(pr) {
-  const counts = { pass: 0, fail: 0, pending: 0, skip: 0 };
+  const counts = { pass: 0, fail: 0, cancelled: 0, pending: 0, skip: 0 };
   for (const c of pr.checks)
     counts[c.bucket] += 1;
   return counts;
@@ -937,7 +939,7 @@ function readiness(pr, isSent = () => false) {
     return result("merged", "Merged");
   if (pr.state !== "OPEN")
     return result("closed", "Closed");
-  const { fail: failing, pending } = checkCounts(pr);
+  const { fail: failing, cancelled, pending } = checkCounts(pr);
   const waiting = waitingThreads(pr);
   const open = threadsOnYou(pr, isSent).length;
   const sent = waiting.filter((t) => isSent(pr, t)).length;
@@ -947,6 +949,7 @@ function readiness(pr, isSent = () => false) {
   const onYou = [
     pr.mergeable === "CONFLICTING" ? `conflicts with ${pr.base}` : null,
     row(failing > 0 ? plural(failing, "failing check", "failing checks") : null),
+    row(cancelled > 0 ? plural(cancelled, "cancelled check", "cancelled checks") : null),
     pr.reviewDecision === "CHANGES_REQUESTED" ? "changes requested" : null,
     row(open > 0 ? threadsWaiting(open) : null)
   ].filter(isPresent);
@@ -1004,6 +1007,12 @@ function took(ms) {
 }
 function failingChecks(pr) {
   return pr.checks.filter((c) => c.bucket === "fail");
+}
+function cancelledChecks(pr) {
+  return pr.checks.filter((c) => c.bucket === "cancelled");
+}
+function blockingChecks(pr) {
+  return [...failingChecks(pr), ...cancelledChecks(pr)];
 }
 var COMMENT_MAX = 2000;
 function threadText(t) {
@@ -1649,8 +1658,10 @@ var CLOSED_MARKS = {
 var PR_MARKS = {
   waiting: { text: HELD_MARK.mark, tone: "needsYou" },
   sent: { text: SUBJECT_MARKS.done.mark, tone: "done" },
-  failing: { text: FINDING_GROUPS.issue.mark, tone: "error" }
+  failing: { text: FINDING_GROUPS.issue.mark, tone: "error" },
+  cancelled: { text: "\u2298", tone: null }
 };
+var stoppedWords = (what) => `Stopped before it finished: ${what}`;
 var MARK_LEGEND = [
   {
     mark: RUNNING_MARK,
@@ -1668,13 +1679,19 @@ var MARK_LEGEND = [
   },
   { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
   { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
-  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: "Dropped before it was done" },
+  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords("dropped work") },
   { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: "Dismissed by you" },
   {
     mark: FINDING_GROUPS.issue.mark,
     tone: FINDING_GROUPS.issue.tone,
     isRunning: false,
     words: "Something is wrong: an issue or a failing check"
+  },
+  {
+    mark: PR_MARKS.cancelled.text,
+    tone: PR_MARKS.cancelled.tone,
+    isRunning: false,
+    words: stoppedWords("a cancelled check, which needs another run")
   },
   {
     mark: FINDING_GROUPS.opportunity.mark,
@@ -2742,6 +2759,13 @@ function checkRowId(ref, check) {
 function prMarkId(ref) {
   return `pr:${ref}`;
 }
+function isBlockPressShown(pr, lastActions) {
+  const result = lastActions[prMarkId(pr.ref)]?.result;
+  if (result?.action !== "check-rerun")
+    return true;
+  const isSamePress = (r) => r !== undefined && (r.pressId !== undefined ? r.pressId === result.pressId : r.at === result.at);
+  return !blockingChecks(pr).some((c) => isSamePress(lastActions[prCheckId(pr, c)]?.result));
+}
 var GH_MISSING_TEXT = "The inbox could not find gh. It needs gh to read your PRs.";
 var GH_SIGNED_OUT_TEXT = "gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.";
 function ghNoticeOf(gh) {
@@ -2765,7 +2789,13 @@ function prRefreshFailedText(error) {
 }
 var RANK_AGAIN_ID = "pr:order";
 var DISMISS_MERGED_ID = "pr:merged";
-var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks" };
+var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks", cancelled: "Cancelled checks" };
+function prBlockRows(pr, isSettled, rowOf) {
+  const threads = isSettled ? [] : waitingThreads(pr).map(rowOf.thread);
+  const checks = isSettled ? [] : failingChecks(pr).map(rowOf.check);
+  const cancelled = isSettled ? [] : cancelledChecks(pr).map(rowOf.check);
+  return { threads, checks, cancelled, rows: [...threads, ...checks, ...cancelled] };
+}
 function threadRowText(pr, t, lastActions) {
   const isSent = threadSentIn(lastActions)(pr, t);
   const isChanged = !isSent && t.isLinesChanged;
@@ -2791,14 +2821,15 @@ function threadMark(delivery) {
 }
 function checkRowText(c) {
   return {
-    mark: { ...PR_MARKS.failing, isDone: false, isRunning: false },
+    mark: { ...c.bucket === "cancelled" ? PR_MARKS.cancelled : PR_MARKS.failing, isDone: false, isRunning: false },
     lead: c.workflow || null,
     title: c.name,
     meta: checkRunText(c)
   };
 }
 function checkRunText(c) {
-  return c.startedAt !== undefined && c.finishedAt !== undefined ? `Failed after ${took(c.finishedAt - c.startedAt)}` : "Failed";
+  const ended = c.bucket === "cancelled" ? "Cancelled" : "Failed";
+  return c.startedAt !== undefined && c.finishedAt !== undefined ? `${ended} after ${took(c.finishedAt - c.startedAt)}` : ended;
 }
 function threadSentIn(lastActions) {
   return (pr, t) => {
@@ -2813,7 +2844,7 @@ function prRowWaits(prs, lastActions) {
   const isSent = threadSentIn(lastActions);
   return prs.flatMap((pr) => [
     ...waitingThreads(pr).map((t) => ({ id: prThreadId(pr, t), isWaiting: !isSent(pr, t) })),
-    ...failingChecks(pr).map((c) => {
+    ...blockingChecks(pr).map((c) => {
       const id = prCheckId(pr, c);
       const last = lastActions[id];
       return { id, isWaiting: !isFoldingPress(id, last) || last?.delivery?.state === "failed" };
@@ -3115,7 +3146,8 @@ var runIt = (look) => isTerminalLike(look) ? "Run it in a terminal, or type ! an
 var VERBS = {
   open: { pending: "Opening", done: "Opened", failed: "open" },
   copy: { pending: "Copying", done: "Copied", failed: "copy" },
-  "refresh-prs": { pending: "Refreshing", done: "Refreshed", failed: "refresh" }
+  "refresh-prs": { pending: "Refreshing", done: "Refreshed", failed: "refresh" },
+  rerun: { pending: "Starting a re-run of", done: "Started a re-run of", failed: "start a re-run of" }
 };
 function localText(r, look) {
   const isPrs = r.parts.length > 1 && r.parts.every((p) => p.kind === "open" && p.error === null && /^PR #\d+$/.test(p.name));
@@ -3169,14 +3201,41 @@ function prPageEffect(pr) {
 function logEffect(pr, check) {
   return { kind: "open", target: check.url ?? pr.url, name: check.url ? "the log" : `PR #${pr.number}` };
 }
+var ACTIONS_RUN_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/actions\/runs\/(\d+)/;
+var RERUN_LABEL = "Re-run";
+function runOf(c) {
+  const m = ACTIONS_RUN_URL.exec(c.url ?? "");
+  return m ? { repo: m[1], run: m[2] } : null;
+}
+function isSameRun(a, b) {
+  return b !== null && a.repo === b.repo && a.run === b.run;
+}
+function rerunEffect(pr, c) {
+  const run = c.bucket === "cancelled" ? runOf(c) : null;
+  if (!run)
+    return null;
+  const isCancelledByFailure = pr.checks.some((f) => f.bucket === "fail" && isSameRun(run, runOf(f)));
+  return isCancelledByFailure ? null : { kind: "rerun", ...run, name: c.workflow || c.name };
+}
+function sameRunChecks(pr, c) {
+  const run = runOf(c);
+  return run ? pr.checks.filter((o) => o.name !== c.name && isSameRun(run, runOf(o)) && rerunEffect(pr, o)) : [];
+}
+function rerunArgs(e) {
+  return ["run", "rerun", e.run, "--failed", "-R", e.repo];
+}
 var PR_FIX_LABELS = {
   "pr-conflicts": "Resolve conflicts",
   "check-fix": "Fix"
 };
-function isPrFixPress(p) {
-  return p.action === "pr-conflicts" || p.action === "check-fix";
+var PR_READ_FIRST_LABELS = {
+  ...PR_FIX_LABELS,
+  "check-rerun": RERUN_LABEL
+};
+function isPrReadFirstPress(p) {
+  return p.action === "pr-conflicts" || p.action === "check-fix" || p.action === "check-rerun";
 }
-function fixCheckEffect(pr) {
+function readFirstEffect(pr) {
   return { kind: "refresh-prs", name: `PR #${pr.number}` };
 }
 function prRowId(p) {
@@ -3235,7 +3294,7 @@ function rankedStatusOf(pr) {
   return {
     status: readiness(pr).status,
     threads: waitingThreads(pr).map((t) => t.id),
-    failing: failingChecks(pr).map((c) => c.name)
+    failing: blockingChecks(pr).map((c) => c.name)
   };
 }
 function withOrderStatuses(links, views) {
@@ -3337,15 +3396,28 @@ function threadActions(pr, t, presses) {
 function checkActions(pr, c, presses) {
   const row = lastPressOf(presses, checkRowId(pr.ref, c.name));
   const on = { ref: pr.ref, check: c.name };
-  return withOut(row, [
-    ...retryAction(prRetryOf(row.last, pr.ref, null, c.name)),
+  const isCancelled = c.bucket === "cancelled";
+  const isRunRerunOut = sameRunChecks(pr, c).some((o) => lastPressOf(presses, checkRowId(pr.ref, o.name)).out === "check-rerun");
+  const mainMove = isCancelled ? rerunEffect(pr, c) ? [
+    {
+      press: { action: "check-rerun", ...on },
+      label: RERUN_LABEL,
+      kind: "local",
+      emphasis: "primary",
+      hotkey: "a"
+    }
+  ] : [] : [
     {
       press: { action: "check-fix", ...on },
       label: again(row, "check-fix", PR_FIX_LABELS["check-fix"]),
       kind: "handoff",
       emphasis: "primary",
       hotkey: "a"
-    },
+    }
+  ];
+  const actions = withOut(row, [
+    ...retryAction(prRetryOf(row.last, pr.ref, null, c.name)),
+    ...mainMove,
     {
       press: { action: "log", ...on },
       label: "Open log",
@@ -3355,6 +3427,7 @@ function checkActions(pr, c, presses) {
       hotkey: "o"
     }
   ]);
+  return isRunRerunOut ? actions.map((a) => a.press.action === "check-rerun" ? { ...a, isOut: true } : a) : actions;
 }
 function prBlockActions(pr, isThreadSent, branchRef, presses) {
   const row = lastPressOf(presses, prMarkId(pr.ref));
@@ -3502,10 +3575,11 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
     return stale;
   const record = (rowId, kind, action, text) => recordPress(kind, action, text, ctx, lastActions[rowId]);
   const send = (text) => ({ kind: "send", text, by: null });
-  const local = (rowId, text, effect) => {
+  const local = (rowIds, text, effect) => {
     const effects = [effect];
     const result = pendingResult(effects, ctx.now, ctx.localPressId);
-    return applied({ lasts: { [rowId]: localLast(lastActions[rowId], { action: p.action, text }, result) }, effects });
+    const lasts = Object.fromEntries(rowIds.map((id) => [id, localLast(lastActions[id], { action: p.action, text }, result)]));
+    return applied({ lasts, effects });
   };
   switch (p.action) {
     case "thread-address":
@@ -3519,7 +3593,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
         return stale;
       const id = prThreadId(pr, t);
       if (p.action === "thread-open")
-        return local(id, "Open", commentEffect(pr, t));
+        return local([id], "Open", commentEffect(pr, t));
       if (p.action === "thread-address")
         return applied({
           lasts: { [id]: record(id, "handoff", p.action, "Address") },
@@ -3566,9 +3640,9 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
         effects: [send(prompts.merge(pr))]
       });
     case "pr-open":
-      return local(markId, "Open PR", prPageEffect(pr));
+      return local([markId], "Open PR", prPageEffect(pr));
     case "pr-refresh":
-      return local(markId, PR_REFRESH_LABEL, PR_REFRESH);
+      return local([markId], PR_REFRESH_LABEL, PR_REFRESH);
     case "pr-dismiss":
       if (!tabPrs(ledger).includes(p.ref) || prState.branchRef === p.ref)
         return stale;
@@ -3586,11 +3660,19 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
         effects: [send(prompts.fixCheck(pr, check))]
       });
     }
+    case "check-rerun": {
+      const check = pr.checks.find((c) => c.name === p.check);
+      const rerun = check && rerunEffect(pr, check);
+      const isRunRerunOut = check !== undefined && sameRunChecks(pr, check).some((o) => lastActions[prCheckId(pr, o)]?.result?.state === "pending");
+      if (!check || !rerun || isRunRerunOut)
+        return stale;
+      return local([prCheckId(pr, check), markId], RERUN_LABEL, rerun);
+    }
     case "log": {
       const check = pr.checks.find((c) => c.name === p.check);
       if (!check)
         return stale;
-      return local(prCheckId(pr, check), "Open log", logEffect(pr, check));
+      return local([prCheckId(pr, check)], "Open log", logEffect(pr, check));
     }
   }
 }
@@ -4291,7 +4373,7 @@ function followTo(tabs, shown, isShownEmpty, rows) {
 function prRowIds(drawn) {
   return drawn.flatMap(({ pr, state }) => [
     prMarkId(pr.ref),
-    ...state.is === "settled" ? [] : [...waitingThreads(pr).map((t) => prThreadId(pr, t)), ...failingChecks(pr).map((c) => prCheckId(pr, c))]
+    ...state.is === "settled" ? [] : [...waitingThreads(pr).map((t) => prThreadId(pr, t)), ...blockingChecks(pr).map((c) => prCheckId(pr, c))]
   ]);
 }
 function isPrsTabEmpty(drawnCount, isFetching) {
@@ -5002,6 +5084,17 @@ async function fetchPrs(host, findsBranchPr) {
   const { views: fetched, branchRef, isGhSignedOut } = fetch;
   await host.update((cur) => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut));
 }
+var ALREADY_RUNNING = /already running/i;
+async function rerunRun(host, e) {
+  const bin = await host.gh.find();
+  if (bin === null)
+    return "the inbox could not find gh";
+  const r = await host.gh.run(await host.read(), bin, () => host.gh.forget())(rerunArgs(e));
+  if (r.exitCode === 0 || ALREADY_RUNNING.test(r.stderr))
+    return null;
+  return r.exitCode === TIMED_OUT_CODE ? GH_TIMED_OUT_TEXT : r.stderr.trim().split(`
+`)[0] || `gh exited with ${r.exitCode}`;
+}
 
 // ../hooks/banners.ts
 function groupEmptyText(title) {
@@ -5587,7 +5680,7 @@ function prEntries(screen, ui, now) {
   const isWaiting = (id) => waits.some((w) => w.id === id && w.isWaiting);
   const markLead = (mark) => ({
     text: mark.isRunning ? runningMark(now) : mark.text,
-    tone: mark.tone ?? "sep"
+    tone: mark.tone ?? (mark.isRunning || !mark.text ? "sep" : "dim")
   });
   const out = [];
   const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut };
@@ -5628,7 +5721,8 @@ function prEntries(screen, ui, now) {
       continue;
     }
     const { status, head, unlisted } = readiness(pr, isSent);
-    const f = isDismissed(lastActions, pr.ref) ? null : pressFeedback(screen, markId, now);
+    const isPrLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions);
+    const f = isPrLastShown ? pressFeedback(screen, markId, now) : null;
     out.push({
       kind: "row",
       line: {
@@ -5644,14 +5738,11 @@ function prEntries(screen, ui, now) {
         isWaiting: false
       }
     });
-    const threads = waitingThreads(pr);
-    if (threads.length > 0)
-      out.push({ kind: "heading", text: PR_GROUP_TITLES.threads, count: threads.length });
-    for (const t of threads) {
+    const threadEntry = (t) => {
       const id = prThreadId(pr, t);
       const text = threadRowText(pr, t, lastActions);
       const feedback = pressFeedback(screen, id, now, text.mark.isDone);
-      out.push({
+      return {
         kind: "row",
         line: {
           ...blankLine(id),
@@ -5666,16 +5757,13 @@ function prEntries(screen, ui, now) {
           isWaiting: isWaiting(id),
           isFolded: text.fold !== null
         }
-      });
-    }
-    const checks = failingChecks(pr);
-    if (checks.length > 0)
-      out.push({ kind: "heading", text: PR_GROUP_TITLES.checks, count: checks.length });
-    for (const c of checks) {
+      };
+    };
+    const checkEntry = (c) => {
       const id = prCheckId(pr, c);
       const text = checkRowText(c);
       const feedback = pressFeedback(screen, id, now, text.mark.isDone);
-      out.push({
+      return {
         kind: "row",
         line: {
           ...blankLine(id),
@@ -5688,7 +5776,18 @@ function prEntries(screen, ui, now) {
           buttons: prButtons(checkActions(pr, c, presses)),
           isWaiting: isWaiting(id)
         }
-      });
+      };
+    };
+    const rows = prBlockRows(pr, false, { thread: threadEntry, check: checkEntry });
+    const groups = [
+      { title: PR_GROUP_TITLES.threads, entries: rows.threads },
+      { title: PR_GROUP_TITLES.checks, entries: rows.checks },
+      { title: PR_GROUP_TITLES.cancelled, entries: rows.cancelled }
+    ];
+    for (const { title, entries } of groups) {
+      if (entries.length > 0)
+        out.push({ kind: "heading", text: title, count: entries.length });
+      out.push(...entries);
     }
   }
   const tabButtons = prButtons(prs.tabActions);
@@ -5996,11 +6095,11 @@ function faceLines(buttons, focused, indent, width, s) {
   });
   return lines.map((at) => " ".repeat(indent) + at.map((i) => cells[i]).join(""));
 }
+function leadPaint(lead, text, s) {
+  return lead.tone === "dim" ? s.dim(text) : lead.tone ? s.tone(lead.tone, text) : text;
+}
 function leadText(lead, s) {
-  if (lead === null)
-    return "";
-  const padded = lead.text.padEnd(2);
-  return `${lead.tone ? s.tone(lead.tone, padded) : padded} `;
+  return lead === null ? "" : `${leadPaint(lead, lead.text.padEnd(2), s)} `;
 }
 function markText(mark, now, s) {
   if (mark === null)
@@ -6239,7 +6338,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   let goalTitleAt = null;
   for (const e of entries) {
     if (e.kind === "heading")
-      body.push(` ${e.mark ? `${e.mark.tone ? style.tone(e.mark.tone, e.mark.text) : e.mark.text} ` : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
+      body.push(` ${e.mark ? `${leadPaint(e.mark, e.mark.text, style)} ` : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
     else if (e.kind === "page" || e.kind === "goal") {
       if (e.kind === "page" && e.row.isRuledAbove)
         body.push(pageRule(width, style));
@@ -7303,6 +7402,14 @@ function demoView(now, agent) {
               startedAt: now - 16 * MIN,
               finishedAt: now - 15 * MIN - 19000
             },
+            {
+              name: "device matrix",
+              bucket: "cancelled",
+              url: `${REPO2}/actions/runs/4/job/40`,
+              workflow: "E2E",
+              startedAt: now - 16 * MIN,
+              finishedAt: now - 9 * MIN
+            },
             { name: "gesture e2e", bucket: "pending", url: null, workflow: "CI", startedAt: now - 2 * MIN }
           ],
           threads: [
@@ -7475,7 +7582,7 @@ function demoAfterPress(before, r, held) {
     turns: isSent(r) ? { ...before.turns, turnsStarted: before.turns.turnsStarted + 1 } : before.turns
   };
 }
-async function runLocalEffects(host, effects, rowId, pending) {
+async function runLocalEffects(host, effects, rowIds, pending) {
   const errors = [];
   for (const e of effects)
     if (e.kind !== "send") {
@@ -7488,7 +7595,7 @@ async function runLocalEffects(host, effects, rowId, pending) {
   if (pending?.state !== "pending")
     return null;
   const result = finishedResult(pending, errors, await host.now());
-  await host.saveLasts((a) => withResult(a, rowId, pending.at, result));
+  await host.saveLasts((a) => rowIds.reduce((lasts, id) => withResult(lasts, id, pending.at, result), a));
   return result;
 }
 async function runSends(host, effects, rowId, rows, at) {
@@ -8900,13 +9007,13 @@ async function checkPrFirst(host, p, rowId, pressId, holds) {
     if (!pr || "stale" in pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, host))
       return s;
     const before = s.lastActions[rowId];
-    const pending = pendingResult([fixCheckEffect(pr)], at, pressId);
+    const pending = pendingResult([readFirstEffect(pr)], at, pressId);
     checking.check = { rowId, before, pendingAt: at, pressId };
     return {
       ...s,
       lastActions: {
         ...s.lastActions,
-        [rowId]: localLast(before, { action: p.action, text: PR_FIX_LABELS[p.action] }, pending)
+        [rowId]: localLast(before, { action: p.action, text: PR_READ_FIRST_LABELS[p.action] }, pending)
       }
     };
   });
@@ -8943,6 +9050,11 @@ async function startPress(host, p, isStale, holds) {
         await host.refreshPrs();
         return null;
       }
+      if (e.kind === "rerun") {
+        const why = await rerunRun(host, e);
+        await host.refreshPrs();
+        return why;
+      }
       if (e.kind === "copy")
         copy = { text: e.text, name: e.name };
       return host.perform(await host.read(), e);
@@ -8961,7 +9073,7 @@ async function startPress(host, p, isStale, holds) {
       await host.update((s) => ({ ...s, ledger: f(s.ledger) }));
     }
   };
-  const check = isPrPress(p) && isPrFixPress(p) && !isStale ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err) => {
+  const check = isPrPress(p) && isPrReadFirstPress(p) && !isStale ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err) => {
     error = `Not sent: ${err instanceof Error ? err.message : String(err)}`;
     return "unread";
   }) : null;
@@ -9043,7 +9155,7 @@ async function startPress(host, p, isStale, holds) {
       } catch {
         isUnconfirmed = true;
       }
-      await runLocalEffects(effectHost, r.effects, rowId, r.lasts[rowId]?.result);
+      await runLocalEffects(effectHost, r.effects, Object.keys(r.lasts), r.lasts[rowId]?.result);
       return { copy, error, note, isUnconfirmed, isRowFailed, wakesForDone: !isPrPress(p) && p.action === "done" };
     }
   };

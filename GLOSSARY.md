@@ -204,7 +204,7 @@ The conversation saves it as `Ledger.prOrder`.
 _Avoid_: ranking, as the stored thing
 
 **Changed since**:
-A ranked open PR whose status, waiting threads or failing checks differ from
+A ranked open PR whose status, waiting threads or failing or cancelled checks differ from
 what the PR order recorded for it. The order records each ranked PR's status
 when it is set, or at the PR's first fetch after. The tab then reads "2 PRs
 changed since", with Rank again, which asks the agent to rank the PRs again.

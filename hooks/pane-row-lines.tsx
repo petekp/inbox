@@ -292,6 +292,8 @@ export function paneRowLines({
     )
   const toned = (row: Row) => {
     if (look === 'desktop' && row.isHandleRunning) return runningDot(`handle-${row.id}`, row.handle, pal.muted)
+    const isMutedHandle = !!row.handle && !row.handleTone && !row.isHandleRunning
+    if (isMutedHandle) return markGlyph({ text: row.handle, isRunning: false }, `handle-${row.id}`, pal.muted)
     if (ToneSvg === null || !row.handle || !row.handleTone) return null
     return svgCell(toneSvg(row.handleTone, row.handle), row.handle)
   }

@@ -230,6 +230,7 @@ const VERBS = {
   open: { pending: 'Opening', done: 'Opened', failed: 'open' },
   copy: { pending: 'Copying', done: 'Copied', failed: 'copy' },
   'refresh-prs': { pending: 'Refreshing', done: 'Refreshed', failed: 'refresh' },
+  rerun: { pending: 'Starting a re-run of', done: 'Started a re-run of', failed: 'start a re-run of' },
 }
 
 function localText(r: LocalResult, look: Look): string {

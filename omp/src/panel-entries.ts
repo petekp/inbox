@@ -9,6 +9,8 @@ import {
   DISMISS_MERGED_ID,
   RANK_AGAIN_ID,
   prCheckId,
+  isBlockPressShown,
+  prBlockRows,
   prMarkId,
   prRowWaits,
   prThreadId,
@@ -18,8 +20,9 @@ import {
 import { isDismissed, openPrViews } from '../../hooks/pr-views'
 import { prRankText } from '../../hooks/pr-order'
 import type { PrRowMark } from '../../hooks/pr-rows'
+import type { PrCheck, PrThread } from '../../types'
 import type { PrOrderView } from '../../hooks/pr-order'
-import { failingChecks, readiness, waitingThreads } from '../../hooks/prs'
+import { readiness } from '../../hooks/prs'
 import { capitalized } from '../../hooks/press-labels'
 import { cellWidth } from '../../hooks/text'
 import { settledTone, NEEDS_YOU_GROUPS, settledMark, settledLabel } from '../../hooks/rows'
@@ -110,7 +113,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
   const isWaiting = (id: string) => waits.some(w => w.id === id && w.isWaiting)
   const markLead = (mark: PrRowMark): Lead => ({
     text: mark.isRunning ? runningMark(now) : mark.text,
-    tone: mark.tone ?? 'sep',
+    tone: mark.tone ?? (mark.isRunning || !mark.text ? 'sep' : 'dim'),
   })
   const out: Entry[] = []
   const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut }
@@ -148,7 +151,8 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       continue
     }
     const { status, head, unlisted } = readiness(pr, isSent)
-    const f = isDismissed(lastActions, pr.ref) ? null : pressFeedback(screen, markId, now)
+    const isPrLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
+    const f = isPrLastShown ? pressFeedback(screen, markId, now) : null
     out.push({
       kind: 'row',
       line: {
@@ -164,13 +168,11 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
         isWaiting: false,
       },
     })
-    const threads = waitingThreads(pr)
-    if (threads.length > 0) out.push({ kind: 'heading', text: PR_GROUP_TITLES.threads, count: threads.length })
-    for (const t of threads) {
+    const threadEntry = (t: PrThread): Entry => {
       const id = prThreadId(pr, t)
       const text = threadRowText(pr, t, lastActions)
       const feedback = pressFeedback(screen, id, now, text.mark.isDone)
-      out.push({
+      return {
         kind: 'row',
         line: {
           ...blankLine(id),
@@ -185,15 +187,13 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
           isWaiting: isWaiting(id),
           isFolded: text.fold !== null,
         },
-      })
+      }
     }
-    const checks = failingChecks(pr)
-    if (checks.length > 0) out.push({ kind: 'heading', text: PR_GROUP_TITLES.checks, count: checks.length })
-    for (const c of checks) {
+    const checkEntry = (c: PrCheck): Entry => {
       const id = prCheckId(pr, c)
       const text = checkRowText(c)
       const feedback = pressFeedback(screen, id, now, text.mark.isDone)
-      out.push({
+      return {
         kind: 'row',
         line: {
           ...blankLine(id),
@@ -206,7 +206,17 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
           buttons: prButtons(checkActions(pr, c, presses)),
           isWaiting: isWaiting(id),
         },
-      })
+      }
+    }
+    const rows = prBlockRows(pr, false, { thread: threadEntry, check: checkEntry })
+    const groups = [
+      { title: PR_GROUP_TITLES.threads, entries: rows.threads },
+      { title: PR_GROUP_TITLES.checks, entries: rows.checks },
+      { title: PR_GROUP_TITLES.cancelled, entries: rows.cancelled },
+    ]
+    for (const { title, entries } of groups) {
+      if (entries.length > 0) out.push({ kind: 'heading', text: title, count: entries.length })
+      out.push(...entries)
     }
   }
   const tabButtons = prButtons(prs.tabActions)

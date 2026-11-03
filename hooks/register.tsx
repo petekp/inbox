@@ -73,8 +73,8 @@ import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
 import { isPrPress, pressRowId, type Applied, type PrPress } from './pr-press'
 import { openPrViews } from './pr-views'
-import { prMarkId, threadSentIn } from './pr-rows'
-import { failingChecks, prRefs, prNeedsYou, waitingThreads } from './prs'
+import { prBlockRows, prMarkId, threadSentIn } from './pr-rows'
+import { prRefs, prNeedsYou } from './prs'
 import { EMPTY, isBlankLedger } from './ledger'
 import { closeItem } from './ledger-close'
 import { tasksRunBy } from './reply-parse'
@@ -1637,7 +1637,7 @@ async function wakeForDone($: EngineInterface) {
 
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
   const mayStayOnRow = isPrPress(p)
-    ? ['pr-open', 'pr-refresh', 'thread-open', 'log'].includes(p.action)
+    ? ['pr-open', 'pr-refresh', 'thread-open', 'log', 'check-rerun'].includes(p.action)
     : p.action === 'step'
   const undoRevision = mayStayOnRow ? suspendUndoReveal() : cancelUndoScroll()
   const rowId = pressRowId(p)
@@ -3057,13 +3057,13 @@ export const register: Register = on => {
     )
     const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({ ...g, entries: lists[g.list], rows: rowsIn(lists[g.list]) }))
     const findingEntries = lists.findings
-    const prGroups = (isListShown ? shownPrs : [])
-      .map(d => ({
-        ...d,
-        checks: d.state.is === 'settled' ? [] : failingChecks(d.pr).map(c => checkRow(d.pr, c)),
-        threads: d.state.is === 'settled' ? [] : waitingThreads(d.pr).map(t => threadRow(d.pr, t)),
-      }))
-      .map(g => ({ ...g, rows: [...g.threads, ...g.checks] }))
+    const prGroups = (isListShown ? shownPrs : []).map(d => ({
+      ...d,
+      ...prBlockRows(d.pr, d.state.is === 'settled', {
+        thread: t => threadRow(d.pr, t),
+        check: c => checkRow(d.pr, c),
+      }),
+    }))
     const prTabKeys = view.prs.tabActions.map(a => prKeyAction(a, 'tab'))
     const prOrderKeys = (view.prs.order?.changed?.actions ?? []).map(a => prKeyAction(a, 'order'))
     const rows: Record<Tab, Row[]> = {
