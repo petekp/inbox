@@ -6,21 +6,14 @@ import type { DialogQuestion, HostTask } from '../../types'
 import { callCommand, callLines, commandText, DIALOG_TOOL, outputText, shellLines } from './rollout-commands'
 import { contentText, isText, record, textOf } from './rollout-rows'
 import type { RolloutRow, TranscriptLine } from './rollout-rows'
+import { UNRAN_MARKERS, unranLines } from './rollout-unran'
 
 /** A shell command that finished, with the text it printed. */
 type FinishedCommand = { command: string; output: string }
 /** The Codex tool that writes the agent's plan: the rows of the plan, each with a step and a status. */
 const PLAN_TOOL = 'update_plan'
 
-const MARKERS = [
-  '"task_started"',
-  DIALOG_TOOL,
-  '"CommandExecution"',
-  '"function_call',
-  '"local_shell_call',
-  '"AgentMessage"',
-  '"assistant"',
-]
+const MARKERS = ['"task_started"', DIALOG_TOOL, '"AgentMessage"', '"assistant"', ...UNRAN_MARKERS]
 
 /**
  * A row of the rollout that starts a turn (`task_started`), or ends it by completing (`task_complete`) or by an
@@ -58,12 +51,21 @@ export function turnEventOf(line: string): TurnEvent | null {
  */
 export type Dialog = { callId: string | null; questions: DialogQuestion[] }
 
-/** `texts`: the agent's messages to the person, in order, from its notes while it works to its final answer. */
-export type TurnRows = { dialogs: Dialog[]; commands: FinishedCommand[]; plan: HostTask[] | null; texts: string[] }
+/**
+ * `texts`: the agent's messages to the person, in order, from its notes while it works to its final answer.
+ * `unran`: the activity lines of the calls that did not run, as `unranLines` gives them.
+ */
+export type TurnRows = {
+  dialogs: Dialog[]
+  commands: FinishedCommand[]
+  plan: HostTask[] | null
+  texts: string[]
+  unran: string[]
+}
 
 /** What the agent did in a turn, as `turnIn` says, read from the lines `rolloutTail` gives. */
 export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
-  const none: TurnRows = { dialogs: [], commands: [], plan: null, texts: [] }
+  const none: TurnRows = { dialogs: [], commands: [], plan: null, texts: [], unran: [] }
   try {
     type Turn = {
       dialogs: Dialog[]
@@ -73,6 +75,7 @@ export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
       plan: HostTask[] | null
       itemTexts: string[]
       messageTexts: string[]
+      rows: RolloutRow[]
     }
     const byTurn = new Map<string, Turn>()
     const newTurn = (): Turn => ({
@@ -83,6 +86,7 @@ export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
       plan: null,
       itemTexts: [],
       messageTexts: [],
+      rows: [],
     })
     let current = ''
     let newest = ''
@@ -104,7 +108,9 @@ export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
       }
       const turn = byTurn.get(current) ?? newTurn()
       byTurn.set(current, turn)
+      turn.rows.push(row as RolloutRow)
       if (row.type === 'event_msg' && p.type === 'item_completed' && p.item?.type === 'CommandExecution') {
+        if (p.item.status === 'declined') continue
         const output = p.item.aggregated_output
         turn.executions.push({ command: commandText(p.item.command), output: isText(output) ? output : '' })
       } else if (row.type === 'event_msg' && p.type === 'item_completed' && p.item?.type === 'AgentMessage') {
@@ -138,6 +144,7 @@ export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
       commands: turn.executions.length > 0 ? turn.executions : turn.called,
       plan: turn.plan,
       texts: turn.itemTexts.length > 0 ? turn.itemTexts : turn.messageTexts,
+      unran: unranLines(turn.rows),
     }
   } catch {
     return none
@@ -156,6 +163,7 @@ const isItem = (row: RolloutRow, ...kinds: string[]): boolean =>
 function turnsOf(rows: RolloutRow[], cwd: string): Turn[] {
   const hasMessageRows = rows.some(row => isItem(row, 'UserMessage', 'AgentMessage'))
   const hasCommandRows = rows.some(row => isItem(row, 'CommandExecution'))
+  const unran = new Set(unranLines(rows))
   const turns: Turn[] = []
   const agentTurn = (): Turn => {
     const last = turns.at(-1)
@@ -168,7 +176,8 @@ function turnsOf(rows: RolloutRow[], cwd: string): Turn[] {
   const person = (text: string) => {
     if (text && !text.startsWith('<')) turns.push({ role: 'person', text, activity: [] })
   }
-  const act = (lines: string[]) => {
+  const act = (all: string[]) => {
+    const lines = all.filter(line => !unran.has(line))
     if (lines.length === 0) return
     const turn = agentTurn()
     turn.activity = lines.reduce((all, line) => addActivity(all, line), turn.activity)

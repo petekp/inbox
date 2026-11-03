@@ -4140,6 +4140,15 @@ function commandText2(command) {
   const [, flag, script] = argv;
   return argv.length === 3 && flag?.startsWith("-") && flag.endsWith("c") && script !== void 0 ? script : argv.join(" ");
 }
+function outputText(output) {
+  if (!isText(output)) return "";
+  try {
+    const parsed = JSON.parse(output);
+    return isText(parsed.output) ? parsed.output : output;
+  } catch {
+    return output;
+  }
+}
 function callCommand(p) {
   if (p.type === "local_shell_call") return commandText2(p.action?.command);
   if (p.type !== "function_call" || !p.name || !SHELL_CALLS.has(p.name) || !isText(p.arguments)) return "";
@@ -4187,7 +4196,61 @@ function callLines(p, hasCommandRows, cwd) {
   return line ? [line] : [];
 }
 
+// src/rollout-unran.ts
+var UNRAN_MARKERS = [
+  '"CommandExecution"',
+  '"FileChange"',
+  '"McpToolCall"',
+  '"function_call',
+  '"local_shell_call',
+  '"custom_tool_call_output"'
+];
+var UNRAN_OUTPUT = /^(?:(?:exec command|patch) rejected by user|(?:Command|Tool call) blocked by PreToolUse hook: )/;
+var BLOCKED_COMMAND = /Command blocked by PreToolUse hook: [^\n]*?\. Command: ([^\n]+)/g;
+var BLOCKED_TOOL = /Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: ([^\s]+)/g;
+var toolLines = (tool) => {
+  const line = toolActivity(tool, {});
+  return line ? [line] : [];
+};
+var blockedLines = (output) => [
+  ...[...output.matchAll(BLOCKED_COMMAND)].flatMap((m) => shellLines(m[1].trim())),
+  ...[...output.matchAll(BLOCKED_TOOL)].flatMap((m) => toolLines(m[1]))
+];
+var editedLines = (changes) => Object.keys(record(changes)).map((path) => `edited ${path}`);
+function unranLines(rows) {
+  const ran = /* @__PURE__ */ new Set();
+  const unran = /* @__PURE__ */ new Set();
+  const note = (lines, didRun) => lines.forEach((line) => (didRun ? ran : unran).add(line));
+  const callCommands = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    const p = record(row.payload);
+    const item = record(p.item);
+    const isDeclined = item.status === "declined";
+    if (row.type === "event_msg" && p.type === "item_completed") {
+      if (item.type === "CommandExecution") note(shellLines(commandText2(item.command)), !isDeclined);
+      else if (item.type === "FileChange") note(editedLines(item.changes), !isDeclined);
+      else if (item.type === "McpToolCall") note(toolLines(`mcp__${textOf(item.server)}__${textOf(item.tool)}`), true);
+      continue;
+    }
+    if (row.type !== "response_item") continue;
+    const callId = textOf(p.call_id);
+    if (p.type === "function_call" || p.type === "local_shell_call") {
+      const command = callCommand(p);
+      if (command !== "" && callId !== "") callCommands.set(callId, command);
+    } else if (p.type === "function_call_output") {
+      const output = outputText(p.output);
+      const command = callCommands.get(callId);
+      if (command !== void 0) note(shellLines(command), !UNRAN_OUTPUT.test(output));
+      note(blockedLines(output), false);
+    } else if (p.type === "custom_tool_call_output") {
+      note(blockedLines(Array.isArray(p.output) ? contentText(p.output) : textOf(p.output)), false);
+    }
+  }
+  return [...unran].filter((line) => !ran.has(line));
+}
+
 // src/rollout-turns.ts
+var MARKERS = ['"task_started"', DIALOG_TOOL, '"AgentMessage"', '"assistant"', ...UNRAN_MARKERS];
 var TURN_EVENT_KINDS = /* @__PURE__ */ new Map([
   ["task_started", "started"],
   ["task_complete", "completed"],
@@ -4202,6 +4265,7 @@ var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).
 function turnsOf(rows, cwd) {
   const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
   const hasCommandRows = rows.some((row) => isItem(row, "CommandExecution"));
+  const unran = new Set(unranLines(rows));
   const turns = [];
   const agentTurn = () => {
     const last = turns.at(-1);
@@ -4213,10 +4277,11 @@ function turnsOf(rows, cwd) {
   const person = (text2) => {
     if (text2 && !text2.startsWith("<")) turns.push({ role: "person", text: text2, activity: [] });
   };
-  const act = (lines) => {
+  const act = (all) => {
+    const lines = all.filter((line) => !unran.has(line));
     if (lines.length === 0) return;
     const turn = agentTurn();
-    turn.activity = lines.reduce((all, line) => addActivity(all, line), turn.activity);
+    turn.activity = lines.reduce((all2, line) => addActivity(all2, line), turn.activity);
   };
   for (const row of rows) {
     const p = record(row.payload);
