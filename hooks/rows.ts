@@ -115,8 +115,8 @@ export type RowView = {
   /** The description of each answer button that has one, in button order. A folded button's is folded with it. */
   optionDescriptions: OptionDescription[]
   /**
-   * "Holds up" and the open subject's name, on an open ask the Status call linked to an open subject. A look draws it
-   * on a next build, which draws the Status.
+   * "Holds up" and the names of the open subjects an open ask holds up, comma-separated, as the Status call linked them.
+   * A look draws it on a next build, which draws the Status.
    */
   holdsUpLine: string | null
 }

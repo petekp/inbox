@@ -57,7 +57,6 @@ Decided, and still to build:
 - A closed mark and a fold of its own for work filed for later: #137.
 - The page names every piece finished since the person last saw it: #138.
 - A look marks as seen only the rows that were on screen: #139.
-- One ask holds up several subjects: #140.
 - In Codex, a Status answer from before a clear stays out of the cleared session: #152.
 - An older Status answer never overwrites a newer one: #153.
 - The judge's instructions, in `evals/status-judge.md`.

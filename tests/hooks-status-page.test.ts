@@ -153,7 +153,7 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Status page s
   ])
   const saved = [...w.stored].find(([k]) => k.startsWith('s:'))
   expect(saved && JSON.parse(saved[1]).ledger.overview.look).toBeNull()
-  expect(saved && JSON.parse(saved[1]).ledger.overview.askSubjects).toEqual({ i1: 's1' })
+  expect(saved && JSON.parse(saved[1]).ledger.overview.askSubjects).toEqual({ i1: ['s1'] })
   expect(page.value).toBe('overview')
   expect(prompts.at(-1)).toContain('is open beside the conversation, on its Asks tab, listing every open item.')
 

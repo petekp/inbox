@@ -38,7 +38,7 @@ export type Row = {
   lead?: string
   title: string
   meta?: string
-  /** The open subject an ask holds up, as "Holds up Offline sync". */
+  /** The open subjects an ask holds up, as "Holds up Offline sync, Hotfix release". */
   holdsUp?: string
   age?: string
   body?: JSX.Element | null

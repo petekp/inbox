@@ -78,7 +78,7 @@ export function baseScene(): Scene {
       subject('s2', 'queued', 'Sync conflicts', 'not started', 0),
     ],
     {
-      askSubjects: { i1: 's2' },
+      askSubjects: { i1: ['s2'] },
       nextChildId: 2,
       children: [
         {
@@ -205,7 +205,7 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     },
   },
   'held-text': { bad: s => (s2Of(s).text = 'needs your decision') },
-  'asks-linked': { bad: s => (s.after.askSubjects = { i1: 's1' }) },
+  'asks-linked': { bad: s => (s.after.askSubjects = { i1: ['s1'] }) },
   'ask-holds-several': { bad: s => (s.facts.asks[0]!.holdsUp = ['conflicts', 'engine']) },
   'children-linked': { bad: s => (s.after.children[0]!.subjectId = 's2') },
   'child-labels': { bad: s => (s.after.children[0]!.name = 'pdfx2') },
