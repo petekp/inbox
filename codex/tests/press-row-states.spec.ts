@@ -75,7 +75,6 @@ test('a row turned around mid-move starts the new move at once, and with reduced
 test('in the Codex tab, a PR row closes with its panel, leaves from its place with its group and title, and a block’s press line grows in, and with reduced motion each move ends as it starts', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const window = new Window()
-  Object.assign(globalThis, { window, document: window.document, Event: window.Event })
   const animate = window.HTMLElement.prototype.animate
   window.HTMLElement.prototype.animate = function (...args: Parameters<typeof animate>) {
     const animation = animate.apply(this, args)
@@ -121,7 +120,7 @@ test('in the Codex tab, a PR row closes with its panel, leaves from its place wi
     }
   }
   setChecks([check('lint', 'fail'), check('e2e', 'cancelled'), check('e2e-mac', 'cancelled')])
-  document.body.innerHTML = '<div id="app"></div>'
+  window.document.body.innerHTML = '<div id="app"></div>'
   Object.defineProperty(window, '__inboxPage', { value: 'pr-rows-page', configurable: true })
   Object.defineProperty(window, '__inboxKept', {
     value: {
@@ -141,6 +140,9 @@ test('in the Codex tab, a PR row closes with its panel, leaves from its place wi
   const media = window.matchMedia('(prefers-reduced-motion: reduce)')
   Object.defineProperty(media, 'matches', { get: () => isReduced })
   const globals = {
+    window,
+    document: window.document,
+    Event: window.Event,
     parent: window.parent,
     navigator: window.navigator,
     HTMLElement: window.HTMLElement,
@@ -152,6 +154,7 @@ test('in the Codex tab, a PR row closes with its panel, leaves from its place wi
     DEMO_BUTTON: false,
     DEMO_RECORDING: false,
   }
+  const previous = new Map(Object.keys(globals).map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]))
   for (const [key, value] of Object.entries(globals))
     Object.defineProperty(globalThis, key, { value, writable: true, configurable: true })
   for (const [key, value] of Object.entries({ setTimeout, clearTimeout }))
@@ -236,5 +239,9 @@ test('in the Codex tab, a PR row closes with its panel, leaves from its place wi
   } finally {
     await window.happyDOM.abort()
     await window.happyDOM.close()
+    for (const [key, descriptor] of previous) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor)
+      else Reflect.deleteProperty(globalThis, key)
+    }
   }
 })
