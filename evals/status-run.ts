@@ -41,7 +41,7 @@ const ROOT = process.env.INBOX_EVAL_ROOT ?? process.cwd()
 const JUDGE_MODEL = 'opus'
 const JUDGE_EFFORT = 'high'
 /** The most Status calls one run makes, both models together. A run that would pass it stops with no grade. */
-const STATUS_CALLS_MAX = 200
+const STATUS_CALLS_MAX = 220
 /** A call that fails before the model answers is tried this many more times, from the same prompt. */
 const CALL_RETRIES = 2
 const CALL_RETRY_WAIT_MS = 10_000
