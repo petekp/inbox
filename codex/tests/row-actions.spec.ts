@@ -156,7 +156,10 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     const held = root.querySelector('input')!
     assert.equal(held.value, 'Still blocked')
     const unconfirmedAt = state.lastActions.i1!.at
-    state.ledger = recordClose(CODEX, state.ledger, { id: 'i1', reason: 'the build passed' }, unconfirmedAt + 1).ledger
+    state.ledger = recordClose(CODEX, state.ledger, { id: 'i1', reason: 'the build passed' }, unconfirmedAt + 1, {
+      lastActions: {},
+      turnStartedAt: null,
+    }).ledger
     await pause(POLL_MS + 100)
     assert.ok(root.querySelector('input') === held, 'the reply field was replaced')
     assert.equal(held.value, 'Still blocked')

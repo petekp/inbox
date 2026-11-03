@@ -6,7 +6,7 @@ import { promptNotes, TOLD_NOTHING } from '../hooks/inbox-text'
 import { agentTools, toolAnswer } from '../hooks/tools'
 import type { AgentTool } from '../hooks/tools'
 import { OMP } from '../omp/src/texts'
-import type { Ledger } from '../types'
+import type { LastAction, Ledger } from '../types'
 
 /**
  * The stand-in for omp/src/host.ts in the agent eval, as probe.ts is for the MCP hosts. It registers the real `record`
@@ -15,14 +15,14 @@ import type { Ledger } from '../types'
  * `promptNotes` is the function host.ts reaches through `notePrompt`. The real host's state, panel and band are not
  * loaded.
  *
- * The runner passes the case through the environment. INBOX_EVAL_STATE holds `{ shown, ledger }`: the inbox the agent is
- * shown, and the inbox the tools answer from. INBOX_EVAL_LOG is the file each call is appended to. INBOX_EVAL_TOOLS is
+ * The runner passes the case through the environment. INBOX_EVAL_STATE holds `{ shown, ledger, lastActions }`: the inbox the
+ * agent is shown, the inbox the tools answer from, and the person's latest press on each row. INBOX_EVAL_LOG is the file each call is appended to. INBOX_EVAL_TOOLS is
  * the file where the probe writes the tools the session offers, which the runner checks. INBOX_EVAL_NO_GUIDANCE=1
  * leaves the guidance out, for the control run.
  */
 const MESSAGE_TYPE = 'inbox'
 
-type State = { shown: Partial<Ledger>; ledger: Partial<Ledger> }
+type State = { shown: Partial<Ledger>; ledger: Partial<Ledger>; lastActions: Record<string, LastAction> }
 
 function required(name: string): string {
   const value = process.env[name]
@@ -38,6 +38,7 @@ const isGuided = process.env.INBOX_EVAL_NO_GUIDANCE !== '1'
 const state: State = JSON.parse(readFileSync(statePath, 'utf8'))
 const shown = { ...EMPTY, ...state.shown } as Ledger
 let ledger = { ...EMPTY, ...state.ledger } as Ledger
+const presses = { lastActions: state.lastActions, turnStartedAt: Date.now() }
 
 /**
  * The slice of omp's `ExtensionAPI` this extension uses. It is declared here because the eval is typed with the
@@ -94,7 +95,7 @@ export default function (pi: Pi): void {
       loadMode: 'essential',
       approval: 'read',
       execute: async (_toolCallId, args) => {
-        const r = toolAnswer(OMP, ledger, name, args as Record<string, unknown>, Date.now())
+        const r = toolAnswer(OMP, ledger, name, args as Record<string, unknown>, Date.now(), presses)
         ledger = r.ledger
         appendFileSync(logPath, `${JSON.stringify({ tool: name, args, result: r.result })}\n`)
 
