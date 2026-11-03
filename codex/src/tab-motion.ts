@@ -134,7 +134,8 @@ function drawnFrame(el: HTMLElement, height: () => number): Frame {
 }
 
 function collapse(el: HTMLElement, from: Frame) {
-  const panel = el.querySelector<HTMLElement>('.panel.closing')
+  // What the entry drew open and still draws, inert, while its height shrinks over it: a row's panel or a PR block.
+  const panel = el.querySelector<HTMLElement>('.closing[inert]')
   // A closing row keeps its open line until the panel goes, so its end height is measured as it will draw then.
   const row = el.querySelector<HTMLElement>('.row.closing')
   row?.classList.remove('closing')
