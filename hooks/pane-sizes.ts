@@ -22,6 +22,13 @@ export const DESKTOP_WIDE_AT = 50
 export const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
 export const DESKTOP_LINE_PT = 19
 /**
+ * A row of the desktop pane's scroll, the unit of its `scroll.offset` and `bodyRows`: one line of text, in points,
+ * measured on app 4.4212.0 with engine 2.1.309.
+ */
+export const DESKTOP_ROW_PT = 20
+/** A native Button's height on desktop, in points, as measured in the pane for the desktop Undo. */
+export const DESKTOP_BUTTON_PT = 23
+/**
  * One column of `bodyColumns` in the Claude app pane, in points, measured on app 3.6556.2 with engine 2.1.308. The
  * engine reports the pane in columns only, so this cannot be measured at run time.
  * Remeasure it with the steps in docs/reference/claude-desktop-app/what-desktop-draws-layout.md.

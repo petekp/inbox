@@ -7,6 +7,7 @@ import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
 import { paneState } from './mod-state'
 import {
+  DESKTOP_CELL_PT,
   DESKTOP_FIELD_PT,
   DESKTOP_MARK_CELLS,
   DESKTOP_REPLY_ROWS,
@@ -14,11 +15,20 @@ import {
   REPLY_ROWS,
   STATUS_PAD_Y,
 } from './pane-sizes'
-import { desktopLines } from './desktop-metrics'
+import { DESKTOP_BUTTON_EXTRA_PT, desktopLines, desktopTextPt } from './desktop-metrics'
 import { lineCount } from './terminal-text'
 import { cellWidth } from './text'
-import { inkLines, stackedIn } from './pane-status-tops'
-import type { Drawn } from './pane-status-tops'
+import {
+  DESKTOP_BUTTON_LINES,
+  desktopFrameLines,
+  desktopSpaceLines,
+  desktopTextLines,
+  exactly,
+  inkLines,
+  plus,
+  stackedIn,
+} from './pane-status-tops'
+import type { Drawn, Lines } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import type { StatusTone } from './help'
 import type { MilestoneRow, ProposalBlock } from './status-goal-page'
@@ -56,6 +66,7 @@ export function paneStatusGoal(
     statusMarkAt,
     statusNameLine,
     statusPageText,
+    desktopBlockWidth,
     markGlyph,
     markWidth,
     keyRow,
@@ -66,7 +77,7 @@ export function paneStatusGoal(
     PaneBase,
     'e' | 'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'drafts' | 'listColumns' | 'now' | 'statusKeyRow'
   > &
-    Pick<PaneStatusLines, 'statusMarkAt' | 'statusNameLine' | 'statusPageText'> &
+    Pick<PaneStatusLines, 'statusMarkAt' | 'statusNameLine' | 'statusPageText' | 'desktopBlockWidth'> &
     Pick<PaneRowLines, 'markGlyph' | 'markWidth'> &
     Pick<PaneRowKeys, 'keyRow' | 'textKey' | 'terminalKeyCells'> &
     Pick<PaneRowFrame, 'desktopFrame'>,
@@ -87,6 +98,7 @@ export function paneStatusGoal(
   /** Lines at the head's column. The terminal marks the selected block with the selection color, as it does a row. */
   const block = (key: string, parts: Drawn[], isSelected = false): Drawn => {
     const children = parts.map(p => p.el)
+    const frame: Drawn[] = look === 'desktop' ? [{ el: <Box key={`${key}-frame`} />, lines: desktopFrameLines(0) }] : []
 
     return stackedIn(
       look === 'desktop' ? (
@@ -101,15 +113,15 @@ export function paneStatusGoal(
           {children}
         </Box>
       ),
-      parts,
+      [...parts, ...frame],
     )
   }
-  /** The width of a block's text: the list's columns past the head's column. */
-  const blockWidth = listColumns - statusMarkAt
-  /** Text Claude Code wraps in a block. */
+  /** The width of a block's text: the list's columns past the head's column, or its points on desktop. */
+  const blockWidth = look === 'desktop' ? desktopBlockWidth : listColumns - statusMarkAt
+  /** Text Claude Code or desktop wraps in a block. */
   const wrapped = (el: JSX.Element, text: string): Drawn => ({
     el,
-    lines: look === 'terminal' ? inkLines(text, blockWidth) : null,
+    lines: look === 'desktop' ? desktopTextLines(text, blockWidth) : inkLines(text, blockWidth),
   })
   const muted = (key: string, text: string) =>
     wrapped(
@@ -236,7 +248,7 @@ export function paneStatusGoal(
           </Box>
         </Box>
       ),
-      lines: name.lines,
+      lines: look === 'desktop' ? plus(name.lines, exactly(2 * desktopSpaceLines(STATUS_PAD_Y))) : name.lines,
     }
   }
   /** A milestone, then the work that serves it, one step in. */
@@ -332,12 +344,21 @@ export function paneStatusGoal(
     }
   }
   const goalKeys = (page: StatusPage) => keysLine({ id: GOAL_KEYS_ID, keys: goalKeyPlan(page) })
-  /** The goal's label line: one line while its words and header keys fit, as its wrapping row draws them. */
-  const labelLines = (label: string, keys: KeyAction[]): number | null => {
-    if (look !== 'terminal') return null
-    if (keys.length === 0) return inkLines(label, blockWidth)
+  /**
+   * The goal's label line: one line while its words and header keys fit, as its wrapping row draws them. On desktop a
+   * header key is a native button, so the line is as tall as a button.
+   */
+  const labelLines = (label: string, keys: KeyAction[]): Lines | null => {
+    if (keys.length === 0) return look === 'desktop' ? desktopTextLines(label, blockWidth) : inkLines(label, blockWidth)
+    if (look === 'desktop') {
+      const pt = keys.reduce(
+        (n, k) => n + desktopTextPt(STALL_GAP) + desktopTextPt(k.label) + DESKTOP_BUTTON_EXTRA_PT,
+        desktopTextPt(label),
+      )
+      return pt <= blockWidth - DESKTOP_CELL_PT ? { least: 1, most: DESKTOP_BUTTON_LINES } : null
+    }
     const cells = keys.reduce((n, k) => n + cellWidth(STALL_GAP) + terminalKeyCells(k), cellWidth(label))
-    return cells < blockWidth ? 1 : null
+    return cells < blockWidth ? exactly(1) : null
   }
   /** Under the head, or under the empty state, while no goal is set: Set a goal, or the field it opened when no proposal shows. */
   const setGoal = (page: StatusPage): Drawn[] => {

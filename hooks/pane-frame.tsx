@@ -184,6 +184,9 @@ export function paneFrame(
   // Terminal.app draws block characters from its font, which leaves a seam between a half block and the filled
   // line beside it. There a tab is its filled name line alone.
   const hasHalfLines = termProgram !== 'Apple_Terminal'
+  /** The lines the tabs' Client takes, which draws the tabs on desktop; null when the tabs are Buttons. */
+  const desktopTabLines =
+    hasClient && tabProps ? TAB_HEIGHT * tabLines(tabProps.tabs, tabProps.gap, tabProps.columns).length : null
   const tabs = (
     <Box
       paddingLeft={isInline ? 2 : 1}
@@ -204,12 +207,7 @@ export function paneFrame(
         columnGap={isInline ? inlineTabs.layout : look === 'desktop' ? 2 : framedTabs.layout.gap}
       >
         {hasClient && tabProps ? (
-          <elements.Client
-            key="tabs"
-            module="./tabs-client.tsx"
-            height={TAB_HEIGHT * tabLines(tabProps.tabs, tabProps.gap, tabProps.columns).length}
-            props={tabProps}
-          />
+          <elements.Client key="tabs" module="./tabs-client.tsx" height={desktopTabLines ?? 0} props={tabProps} />
         ) : null}
         {tabProps
           ? null
@@ -394,7 +392,7 @@ export function paneFrame(
     </Box>
   )
 
-  return { banner, tabs, rail, statusBlock, footer, isTabRowFit }
+  return { banner, tabs, rail, statusBlock, footer, isTabRowFit, desktopTabLines }
 }
 
 export type PaneFrame = ReturnType<typeof paneFrame>

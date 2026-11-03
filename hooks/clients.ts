@@ -130,11 +130,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-view-ask': { kind: 'full' },
       'status-goal': { kind: 'full' },
       'status-done-fold': { kind: 'full' },
-      'seen-on-screen': {
-        kind: 'different',
-        reason:
-          'The terminal counts the rows in its window as seen. The desktop pane counts every subject: it reports its scroll position, but desktop wraps text in a proportional font whose widths the mod only estimates, so the mod cannot know where a row starts.',
-      },
+      'seen-on-screen': { kind: 'full' },
     },
   },
   codex: {

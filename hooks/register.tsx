@@ -243,6 +243,7 @@ import {
 } from './mod-sessions'
 import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
 import { noteStatusDrawn, takeShownRows } from './pane-status-shown'
+import { desktopSpaceLines, exactly } from './pane-status-tops'
 import { changeSaved, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
 import { paneAskRows, paneAskTabs } from './pane-asks'
 import { paneRowKeys } from './pane-row-keys'
@@ -3211,7 +3212,7 @@ export const register: Register = on => {
     const keyList = helpKeys(look, mod.isNextBuild, shownTab, statusPressRows.length > 0)
     const keyColumn = Math.max(0, ...keyList.map(k => cellWidth(k.keys))) + 2
 
-    const { banner, tabs, rail, statusBlock, footer, isTabRowFit } = paneFrame(
+    const { banner, tabs, rail, statusBlock, footer, isTabRowFit, desktopTabLines } = paneFrame(
       {
         ...client,
         e,
@@ -3250,6 +3251,7 @@ export const register: Register = on => {
       titleGap,
       foldButton,
       foldRow,
+      desktopFoldLines,
       closedFold,
       undoPlace,
       settledContent,
@@ -3387,6 +3389,7 @@ export const register: Register = on => {
         section,
         foldRow,
         foldButton,
+        desktopFoldLines,
         statusUnfolded,
       },
       handlers,
@@ -3449,13 +3452,15 @@ export const register: Register = on => {
     // only as a Button's hotkey, so the tab keys, j, k and the selected row's keys
     // are Buttons in a hidden Box.
     const isLookCounted = isStatusShown && !isHelpShown && !isDemo
-    if (isLookCounted && look === 'desktop') noteStatusDrawn({ look })
-    if (isLookCounted && e.surface === 'terminal') {
-      // The lines above the Status: the tabs, unless the rail draws them beside it, and the space under them.
-      const tabLines = hasRail ? 0 : isTabRowFit ? (isInline ? 1 : 3) : null
+    if (isLookCounted) {
+      // The lines above the Status: the tabs, unless the rail draws them beside it, and the space under them, which
+      // desktop counts in half lines.
+      const terminalTabLines = hasRail ? 0 : isTabRowFit ? (isInline ? 1 : 3) : null
+      const tabLines = look === 'desktop' ? (hasRail ? null : desktopTabLines) : terminalTabLines
       const isChromeKnown = tabLines !== null && !statusBlock && !showsDemoNotices
-      const pageTop = isChromeKnown ? tabLines + (hasRail ? 0 : blankLine) : null
-      noteStatusDrawn({ look, pageTop, tops: statusTops(), scroll: e.props.scroll, now })
+      const spaceLines = hasRail ? 0 : look === 'desktop' ? desktopSpaceLines(blankLine) : blankLine
+      const pageTop = isChromeKnown ? exactly(tabLines + spaceLines) : null
+      noteStatusDrawn({ pageTop, tops: statusTops(), scroll: e.props.scroll, now })
     }
     const tabView = isHelpShown
       ? helpView()

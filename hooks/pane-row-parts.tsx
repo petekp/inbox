@@ -14,6 +14,7 @@ import { type ClosedLine, settledScrollKey } from './pane-selection'
 import {
   DESKTOP_CELL_PT,
   DESKTOP_LINE_PT,
+  DESKTOP_ROW_PT,
   DESKTOP_MARK_CELLS,
   DESKTOP_ROW_PAD,
   FRAME_INSET_PT,
@@ -22,6 +23,7 @@ import {
   UNDO_CELLS,
   UNDO_HEIGHT_PT,
 } from './pane-sizes'
+import { exactly, type Lines } from './pane-status-tops'
 import { pressRowId, type PrPress } from './pr-press'
 import type { RowPress } from './presses'
 import {
@@ -271,6 +273,9 @@ export function paneRowParts(
         `fold-row-${key}`,
       )
     )
+  /** The lines a desktop fold row takes: its chevron's height, in the pane's scroll rows. */
+  const desktopFoldLines: Lines | null =
+    hasClient && 'Svg' in elements ? exactly((2 * ROW_PAD_PT + DESKTOP_LINE_PT) / DESKTOP_ROW_PT) : null
   const closedFold = (kind: FoldKind, closed: ClosedLine[], total: number, isUnfolded: boolean) => {
     const earlier = earlierLabel(total, closed.length)
     return closed.length === 0
@@ -435,6 +440,7 @@ export function paneRowParts(
     titleGap,
     foldButton,
     foldRow,
+    desktopFoldLines,
     closedFold,
     undoPlace,
     settledContent,

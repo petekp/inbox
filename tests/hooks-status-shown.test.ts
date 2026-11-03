@@ -1,17 +1,19 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
+import type { On } from 'claude-code'
 import { isSubjectSeen, LOOK_MIN_MS } from '../hooks/status-children'
 import type { SessionStatus } from '../types'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
-test('on a next build, a look at the Status in the desktop pane counts every subject as seen, since the pane cannot say what it scrolled to', async ($, on) => {
+const desktopLook = async ($: Engine, on: On, bodyRows: number) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
-  let seen: { lastLookAt: number | null; missedInLastLook: Record<string, number | null> } | null = null
+  let seen: unknown = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
-    seen = (e.value as { ledger: { overview: typeof seen } }).ledger.overview
+    seen = (e.value as { ledger: { overview: unknown } }).ledger.overview
     return next(e)
   })
   await $.session.start({ cwd: '/tmp/project', surface: 'desktop', isInteractive: true })
@@ -22,16 +24,35 @@ test('on a next build, a look at the Status in the desktop pane counts every sub
   const pane = await $.ui.mount({
     ...PANE,
     surface: 'desktop',
-    props: { ...PANE.props, scroll: { offset: 0, bodyRows: 6 } },
+    props: { ...PANE.props, scroll: { offset: 0, bodyRows } },
   })
-
   await pane.post({ tab: 'overview' }, { in: 'tabs' })
   await clock.settle()
   await clock.advance(LOOK_MIN_MS)
   await pane.post({ tab: 'needsYou' }, { in: 'tabs' })
   await clock.settle()
+  const o = seen as unknown as SessionStatus
 
-  expect(seen).toMatchObject({ lastLookAt: 1_000_000 + LOOK_MIN_MS, missedInLastLook: {} })
+  return {
+    lastLookAt: o.lastLookAt,
+    seen: o.subjects.filter(x => isSubjectSeen(o, x)).map(x => x.id),
+    ids: o.subjects.map(x => x.id),
+  }
+}
+
+test('on a next build, a look at the desktop Status counts as seen only the first subjects, whose rows were surely in the pane’s window', async ($, on) => {
+  const look = await desktopLook($, on, 12)
+
+  expect(look.lastLookAt).toBe(1_000_000 + LOOK_MIN_MS)
+  expect(look.seen.length).toBeGreaterThan(0)
+  expect(look.seen.length).toBeLessThan(12)
+  expect(look.seen).toEqual(look.ids.slice(0, look.seen.length))
+})
+
+test('on a next build, a look at a desktop Status that fits the pane’s window counts every subject as seen', async ($, on) => {
+  const look = await desktopLook($, on, 400)
+
+  expect(look.seen).toEqual(look.ids)
 })
 
 test('on a next build, a look at the terminal Status counts as seen only the subjects whose first line was in the pane’s window, at any of its scrolls', async ($, on) => {
