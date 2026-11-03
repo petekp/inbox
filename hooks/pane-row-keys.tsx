@@ -6,6 +6,7 @@ import { followUpPresses, type KeyAction } from './pane-keys'
 import {
   DESKTOP_CELL_PT,
   DESKTOP_LINK_GAP_CELLS,
+  DESKTOP_LINK_SLACK_CELLS,
   DESKTOP_MARK_CELLS,
   DESKTOP_SIDE_CELLS,
   FRAME_INSET_PT,
@@ -41,8 +42,7 @@ export function paneRowKeys(
 ) {
   const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
     actionLabel({ label: a.label, isPrimary: a.variant === 'primary' })
-  const desktopTextColumns = (markCells: number) => listColumns - markCells - DESKTOP_SIDE_CELLS - 1
-  // A desktop text column after `markCells`, less a cell, since the measured column ran up to 10 pt narrower than this.
+  const desktopTextColumns = (markCells: number) => listColumns - markCells - DESKTOP_SIDE_CELLS
   const desktopColumnPt = (markCells: number) => desktopTextColumns(markCells) * DESKTOP_CELL_PT - 2 * FRAME_INSET_PT
   const desktopRowTextPt = desktopColumnPt(DESKTOP_MARK_CELLS)
   const desktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) =>
@@ -124,7 +124,7 @@ export function paneRowKeys(
         return {
           key: a.key,
           label,
-          width: desktopTextPt(label) / DESKTOP_CELL_PT,
+          width: desktopTextPt(label) / DESKTOP_CELL_PT + DESKTOP_LINK_SLACK_CELLS,
           ...(a.isOut ? { isOut: true } : {}),
         }
       }),
