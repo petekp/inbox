@@ -6,7 +6,7 @@ import type { DialogQuestion, HostTask } from '../../types'
 import { callCommand, callLines, commandText, DIALOG_TOOL, outputText, shellLines } from './rollout-commands'
 import { contentText, isText, record, textOf } from './rollout-rows'
 import type { RolloutRow, TranscriptLine } from './rollout-rows'
-import { UNRAN_MARKERS, unranLines } from './rollout-unran'
+import { isUnranOutput, UNRAN_MARKERS, unranCalls } from './rollout-unran'
 
 /** A shell command that finished, with the text it printed. */
 type FinishedCommand = { command: string; output: string }
@@ -53,7 +53,8 @@ export type Dialog = { callId: string | null; questions: DialogQuestion[] }
 
 /**
  * `texts`: the agent's messages to the person, in order, from its notes while it works to its final answer.
- * `unran`: the activity lines of the calls that did not run, as `unranLines` gives them.
+ * `unran` and `unranDelegates`: the activity lines and delegate refs of the calls that did not run, as `unranCalls`
+ * gives them.
  */
 export type TurnRows = {
   dialogs: Dialog[]
@@ -61,11 +62,12 @@ export type TurnRows = {
   plan: HostTask[] | null
   texts: string[]
   unran: string[]
+  unranDelegates: string[]
 }
 
 /** What the agent did in a turn, as `turnIn` says, read from the lines `rolloutTail` gives. */
 export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
-  const none: TurnRows = { dialogs: [], commands: [], plan: null, texts: [], unran: [] }
+  const none: TurnRows = { dialogs: [], commands: [], plan: null, texts: [], unran: [], unranDelegates: [] }
   try {
     type Turn = {
       dialogs: Dialog[]
@@ -132,19 +134,22 @@ export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
         if (command !== '' && p.call_id) turn.calls.set(p.call_id, { command, output: '' })
       } else if (row.type === 'response_item' && p.type === 'function_call_output' && p.call_id) {
         const call = turn.calls.get(p.call_id)
-        if (call) turn.called.push({ command: call.command, output: outputText(p.output) })
+        const output = outputText(p.output)
+        if (call && !isUnranOutput(output)) turn.called.push({ command: call.command, output })
       }
     }
     const wanted = newest === '' ? '' : (turnId ?? newest)
     const turn = byTurn.get(wanted)
     if (!turn) return none
+    const unran = unranCalls(turn.rows)
 
     return {
       dialogs: turn.dialogs.filter(d => d.questions.length > 0),
       commands: turn.executions.length > 0 ? turn.executions : turn.called,
       plan: turn.plan,
       texts: turn.itemTexts.length > 0 ? turn.itemTexts : turn.messageTexts,
-      unran: unranLines(turn.rows),
+      unran: unran.lines,
+      unranDelegates: unran.delegates,
     }
   } catch {
     return none
@@ -163,7 +168,7 @@ const isItem = (row: RolloutRow, ...kinds: string[]): boolean =>
 function turnsOf(rows: RolloutRow[], cwd: string): Turn[] {
   const hasMessageRows = rows.some(row => isItem(row, 'UserMessage', 'AgentMessage'))
   const hasCommandRows = rows.some(row => isItem(row, 'CommandExecution'))
-  const unran = new Set(unranLines(rows))
+  const unran = new Set(unranCalls(rows).lines)
   const turns: Turn[] = []
   const agentTurn = (): Turn => {
     const last = turns.at(-1)
