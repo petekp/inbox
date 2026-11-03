@@ -76,12 +76,12 @@ function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[] } {
   return { questions: newestReplyFirst('question'), tasks: newestReplyFirst('task') }
 }
 
-/** The open subject, or the open milestone of a set goal, the Status call linked an ask to, by the ask's id. */
-function heldSubjectOf(o: SessionStatus | null, askId: string): Pick<Subject, 'name'> | null {
-  const linkedId = o?.askSubjects[askId]
+/** The open subjects, and open milestones of a set goal, the Status call linked an ask to, by the ask's id. */
+function heldSubjectsOf(o: SessionStatus | null, askId: string): Pick<Subject, 'name'>[] {
   const milestones = o?.goal && !o.goal.isAwaitingMilestones ? o.milestones : []
+  const linkable = [...(o?.subjects ?? []), ...milestones]
 
-  return [...(o?.subjects ?? []), ...milestones].find(s => s.id === linkedId && isOpen(s)) ?? null
+  return (o?.askSubjects[askId] ?? []).flatMap(id => linkable.filter(s => s.id === id && isOpen(s)))
 }
 
 export function inboxView({
@@ -198,7 +198,7 @@ export function inboxView({
     // A button must keep its width while its press is out, or the buttons after it can move to another line.
     const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt))
 
-    const heldSubject = state.is === 'open' ? heldSubjectOf(ledger.overview, row.id) : null
+    const held = state.is === 'open' ? heldSubjectsOf(ledger.overview, row.id) : []
 
     return {
       ...row,
@@ -206,7 +206,7 @@ export function inboxView({
       feedback,
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
-      holdsUpLine: heldSubject ? `${HOLDS_UP_TEXT} ${heldSubject.name}` : null,
+      holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map(s => s.name).join(', ')}` : null,
     }
   }
   const itemRow = (item: Item): RowView => {

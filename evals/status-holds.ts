@@ -77,8 +77,8 @@ export const HOLD_RULES: Rule[] = [
         const isHeld =
           isOpen(m) &&
           result.session.ledger.items.some(i => {
-            const to = o.askSubjects[i.id]
-            return to === m.id || (to !== undefined && serving.includes(to))
+            const to = o.askSubjects[i.id] ?? []
+            return to.some(id => id === m.id || serving.includes(id))
           })
         const isDrawnHeld = row.mark === HELD_MARK.mark
         if (isDrawnHeld === isHeld) return []

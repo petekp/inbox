@@ -84,7 +84,7 @@ test('a saved Status drops subjects and children it cannot read, reads a delegat
       { id: 's3', name: 'C', status: 'waits-on-you', text: 'needs a pick', changedAt: 6, was: 'F folded in' },
       { id: 's4', name: 'D', status: 'problem', text: 'flaky', changedAt: 7 },
     ],
-    askSubjects: { i1: 's3', i2: 7 },
+    askSubjects: { i1: 's3', i2: 7, i3: ['s4', 9], i4: [] },
     children: [
       { id: 'c1', ref: 'r', kind: 'subagent', name: 'n', startedAt: 1 },
       { id: 'c2', kind: 'robot' },
@@ -133,7 +133,7 @@ test('a saved Status drops subjects and children it cannot read, reads a delegat
       into: null,
     },
   ])
-  expect(o.askSubjects).toEqual({ i1: 's3' })
+  expect(o.askSubjects).toEqual({ i1: ['s3'], i3: ['s4'] })
   expect(o.children).toEqual([
     {
       id: 'c1',
@@ -244,7 +244,7 @@ test('a saved Status loses its links to a dropped milestone, and its declined go
 
   expect({ serves: once.serves, asks: once.askSubjects, declined: once.declinedGoals }).toEqual({
     serves: { s1: 'm1' },
-    asks: { i2: 's1' },
+    asks: { i2: ['s1'] },
     declined: ['demo import ready', 'beta web'],
   })
   expect(upgradeStatus(once)).toEqual(once)

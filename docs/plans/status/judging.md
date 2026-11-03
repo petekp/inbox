@@ -155,7 +155,6 @@ These make no model calls.
   - work filed for later closes with its own mark, #137;
   - the fold names every finished piece the person has not seen, #138;
   - a look marks as seen only the rows that were on screen, #139;
-  - one ask holds up two subjects, #140;
   - a delegate with no published focus shows its name in words, #149.
 
   The rules for the same changes in the replays name their issue too. Until it is built, such a rule's failures are listed apart and block nothing. A replay step marks a judge check the same way: at Replay A's checkpoints, the judge's marks check waits on #137, since filed work there can only close as ✓ or ✗.
@@ -171,8 +170,9 @@ These make no model calls.
 | `milestone-dropped`, 1 call, 3 runs | 6 | 0 | 0 |
 | `catch-up-shipped`, 1 call, 3 runs | 6 | 0 | 0 |
 | `goal-awaiting-milestones`, 1 call, 3 runs | 6 | 0 | 0 |
+| `ask-holds-two`, 2 calls, 3 runs | 12 | 0 | 0 |
 | The three goal short cases, 4 calls, 5 runs, 2 models | 40 | 0 | 10 |
 | The judge's check on both page sets, 24 pages | 0 | 0 | 24 |
-| **Total** | **202** | **54** | **82** |
+| **Total** | **214** | **54** | **82** |
 
-An answer that holds prose is asked once more, and a call that fails outside the model is tried again. The runner stops at 220 Status calls, so 18 calls are left for both.
+An answer that holds prose is asked once more, and a call that fails outside the model is tried again. The runner stops at 220 Status calls, so 6 calls are left for both.

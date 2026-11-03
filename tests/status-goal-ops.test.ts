@@ -129,7 +129,7 @@ test('SERVES links a subject to a milestone or to none, and LINK can hold up a m
   )
 
   expect(o.serves).toEqual({ s1: 'm2', s2: 'none' })
-  expect(o.askSubjects).toEqual({ i1: 'm3' })
+  expect(o.askSubjects).toEqual({ i1: ['m3'] })
 })
 
 test('the goal is met once every milestone left is done, and unmet when one opens again', () => {

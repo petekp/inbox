@@ -176,7 +176,7 @@ function servesText(o, subjectId) {
   return to === undefined ? "?" : to === "none" ? "-" : to;
 }
 function asksText(o, asks) {
-  return asks.map((a) => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id] ?? "-"}`).join(NL);
+  return asks.map((a) => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id]?.join(", ") || "-"}`).join(NL);
 }
 function runningText(o, now) {
   return (o?.children ?? []).filter((c) => isChildRunning(c, now)).map((c) => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? "-"}`).join(NL);
@@ -1172,15 +1172,23 @@ function moveMilestone(o, m, op, now) {
     m.text = clipWords(op.why, TEXT_KEPT);
     m.closedAt = now;
     const into = target && target.id !== m.id ? target.id : null;
-    for (const links of [o.serves, o.askSubjects])
-      for (const [id, to] of Object.entries(links)) {
-        if (to !== m.id)
-          continue;
-        if (into)
-          links[id] = into;
-        else
-          delete links[id];
-      }
+    for (const [id, to] of Object.entries(o.serves)) {
+      if (to !== m.id)
+        continue;
+      if (into)
+        o.serves[id] = into;
+      else
+        delete o.serves[id];
+    }
+    for (const [ask, ids] of Object.entries(o.askSubjects)) {
+      if (!ids.includes(m.id))
+        continue;
+      const kept = (into ? linksWith(ids, into) : ids).filter((id) => id !== m.id);
+      if (kept.length > 0)
+        o.askSubjects[ask] = kept;
+      else
+        delete o.askSubjects[ask];
+    }
   } else {
     forgetSeenWas(m, o.lastLookAt);
     m.was = op.text;
@@ -1259,13 +1267,15 @@ function settleGoal(o, now, readSetAt, named) {
   const settled = { ...o, milestones, goal: { ...o.goal, was, isAwaitingMilestones: isAwaiting, metAt } };
   return isAnswerForNewGoal ? withoutLinksTo(settled, milestones) : settled;
 }
+var linksWith = (ids, id) => ids.includes(id) ? [...ids] : [...ids, id];
 function withoutLinksTo(o, milestones) {
   const ids = new Set(milestones.map((m) => m.id));
-  const keep = ([, to]) => to === "none" || !/^m\d+$/.test(to) || ids.has(to);
+  const isKept = (to) => to === "none" || !/^m\d+$/.test(to) || ids.has(to);
+  const askLinks = Object.entries(o.askSubjects).map(([ask, to]) => [ask, to.filter(isKept)]);
   return {
     ...o,
-    serves: Object.fromEntries(Object.entries(o.serves).filter(keep)),
-    askSubjects: Object.fromEntries(Object.entries(o.askSubjects).filter(keep))
+    serves: Object.fromEntries(Object.entries(o.serves).filter(([, to]) => isKept(to))),
+    askSubjects: Object.fromEntries(askLinks.filter(([, to]) => to.length > 0))
   };
 }
 function useProposedGoal(o, now) {
@@ -1790,15 +1800,15 @@ var AWAITING_TEXT = "Milestones after the next reply";
 var PROPOSAL_LABEL = "Proposed goal \xB7 from your message";
 var NEW_GOAL_PROPOSAL_LABEL = "Proposed new goal \xB7 from your message";
 function oldestAsk(items, links, id) {
-  const oldest = items.filter((i) => links[i.id] === id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+  const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
 }
 function milestoneRow(m, o, items) {
   const isOpen = m.status !== "done" && m.status !== "dropped";
   const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
   const holds = items.filter((i) => {
-    const to = o.askSubjects[i.id];
-    return to === m.id || to !== undefined && servingIds.has(to);
+    const to = o.askSubjects[i.id] ?? [];
+    return to.some((id) => id === m.id || servingIds.has(id));
   });
   const isHeld = isOpen && holds.length > 0;
   const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0);
@@ -4733,10 +4743,10 @@ function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
   return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
 }
-function heldSubjectOf(o, askId) {
-  const linkedId = o?.askSubjects[askId];
+function heldSubjectsOf(o, askId) {
   const milestones = o?.goal && !o.goal.isAwaitingMilestones ? o.milestones : [];
-  return [...o?.subjects ?? [], ...milestones].find((s) => s.id === linkedId && isOpen(s)) ?? null;
+  const linkable = [...o?.subjects ?? [], ...milestones];
+  return (o?.askSubjects[askId] ?? []).flatMap((id) => linkable.filter((s) => s.id === id && isOpen(s)));
 }
 function inboxView({
   ledger,
@@ -4816,14 +4826,14 @@ function inboxView({
     const last = lastActions[row.id];
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
     const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
-    const heldSubject = state.is === "open" ? heldSubjectOf(ledger.overview, row.id) : null;
+    const held = state.is === "open" ? heldSubjectsOf(ledger.overview, row.id) : [];
     return {
       ...row,
       state,
       feedback,
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
-      holdsUpLine: heldSubject ? `${HOLDS_UP_TEXT} ${heldSubject.name}` : null
+      holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map((s) => s.name).join(", ")}` : null
     };
   };
   const itemRow = (item) => {
@@ -6791,7 +6801,11 @@ function upgradeStatus(saved) {
   const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
   const goal = goalFields(o, new Set(subjects.map((s) => s.id)));
   const dropped = droppedMilestoneIds(goal.milestones);
-  const askSubjects = Object.fromEntries(savedLinks.filter((e) => typeof e[1] === "string" && !dropped.has(e[1])));
+  const askLinks = savedLinks.map(([ask, to]) => [
+    ask,
+    [to].flat().filter((id) => typeof id === "string" && !dropped.has(id))
+  ]);
+  const askSubjects = Object.fromEntries(askLinks.filter(([, ids]) => ids.length > 0));
   const look = o.look;
   const lookAt = time2(look?.startedAt);
   return {
@@ -7212,7 +7226,7 @@ function demoView(now, agent) {
             delegateState: null
           }
         ],
-        askSubjects: { d11: "s3", d14: "s2", d17: "s2" },
+        askSubjects: { d11: ["s3"], d14: ["s2"], d17: ["s2"] },
         nextId: 8,
         nextChildId: 6,
         lastLookAt: now - 30 * MIN,
@@ -8267,12 +8281,11 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       const child = o.children.find((c) => c.id === op.ref);
       const subject = find(op.subject);
       const milestone = subject ? null : linkableMilestone(o, op.subject);
+      const linked = subject ?? milestone;
       if (child && subject)
         child.subjectId = subject.id;
-      else if (subject && askIds.has(op.ref))
-        o.askSubjects[op.ref] = subject.id;
-      else if (milestone && askIds.has(op.ref))
-        o.askSubjects[op.ref] = milestone.id;
+      else if (linked && askIds.has(op.ref))
+        o.askSubjects[op.ref] = linksWith(o.askSubjects[op.ref] ?? [], linked.id);
       markNamed(milestone);
     } else if (op.kind === "new") {
       const known = find(op.name);
@@ -8324,9 +8337,9 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
           forgetSeenWas(target);
           target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name;
           target.changedAt = now;
-          for (const [ask, id] of Object.entries(o.askSubjects))
-            if (id === s.id)
-              o.askSubjects[ask] = target.id;
+          for (const [ask, ids] of Object.entries(o.askSubjects))
+            if (ids.includes(s.id))
+              o.askSubjects[ask] = linksWith(ids, target.id).filter((id) => id !== s.id);
         }
       } else {
         forgetSeenWas(s);
@@ -8556,7 +8569,7 @@ Input:
 - <subjects>: the open subjects, one per line: id | status | name | where it stands
 - <finished>: subjects already done or dropped. Do not add them again.
 - <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
-- <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subject it holds up, or - when it has none yet
+- <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subjects it holds up, or - when it has none yet
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 ${GOAL_INPUT}
 - <person>: what the person just sent
@@ -8596,7 +8609,7 @@ Rules:
 - Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
 - When the person files a piece for later, out of this session's plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
-- Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
+- Write LINK for each item in <asks> that has no subject yet, or when another subject's work also waits on it, one line for each subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
 - Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
 - Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.
 - The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.

@@ -55,7 +55,7 @@ function statusText(saved: SessionStatus | null): string {
       `  ${c.kind.padEnd(14)} ${c.name}${c.subjectId ? ` under ${names.get(c.subjectId) ?? c.subjectId}` : ''}${c.endedAt === null ? ', running' : ''}`,
   )
   const holds = Object.entries(o.askSubjects).map(
-    ([ask, subject]) => `  ${ask} holds up ${names.get(subject) ?? subject}`,
+    ([ask, ids]) => `  ${ask} holds up ${ids.map(id => names.get(id) ?? id).join(', ')}`,
   )
 
   return [

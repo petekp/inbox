@@ -101,12 +101,17 @@ export function moveMilestone(
     m.text = clipWords(op.why, TEXT_KEPT)
     m.closedAt = now
     const into = target && target.id !== m.id ? target.id : null
-    for (const links of [o.serves, o.askSubjects])
-      for (const [id, to] of Object.entries(links)) {
-        if (to !== m.id) continue
-        if (into) links[id] = into
-        else delete links[id]
-      }
+    for (const [id, to] of Object.entries(o.serves)) {
+      if (to !== m.id) continue
+      if (into) o.serves[id] = into
+      else delete o.serves[id]
+    }
+    for (const [ask, ids] of Object.entries(o.askSubjects)) {
+      if (!ids.includes(m.id)) continue
+      const kept = (into ? linksWith(ids, into) : ids).filter(id => id !== m.id)
+      if (kept.length > 0) o.askSubjects[ask] = kept
+      else delete o.askSubjects[ask]
+    }
   } else {
     forgetSeenWas(m, o.lastLookAt)
     m.was = op.text
@@ -235,15 +240,19 @@ export function settleGoal(
   return isAnswerForNewGoal ? withoutLinksTo(settled, milestones) : settled
 }
 
+/** An ask's links with `id` added after the others, once. */
+export const linksWith = (ids: readonly string[], id: string): string[] => (ids.includes(id) ? [...ids] : [...ids, id])
+
 /** Links to milestones that `milestones` no longer holds, dropped so their subjects count as not linked yet. */
 function withoutLinksTo(o: SessionStatus, milestones: readonly Milestone[]): SessionStatus {
   const ids = new Set(milestones.map(m => m.id))
-  const keep = ([, to]: [string, string]) => to === 'none' || !/^m\d+$/.test(to) || ids.has(to)
+  const isKept = (to: string) => to === 'none' || !/^m\d+$/.test(to) || ids.has(to)
+  const askLinks = Object.entries(o.askSubjects).map(([ask, to]): [string, string[]] => [ask, to.filter(isKept)])
 
   return {
     ...o,
-    serves: Object.fromEntries(Object.entries(o.serves).filter(keep)),
-    askSubjects: Object.fromEntries(Object.entries(o.askSubjects).filter(keep)),
+    serves: Object.fromEntries(Object.entries(o.serves).filter(([, to]) => isKept(to))),
+    askSubjects: Object.fromEntries(askLinks.filter(([, to]) => to.length > 0)),
   }
 }
 
