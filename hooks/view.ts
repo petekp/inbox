@@ -333,23 +333,24 @@ export function footerStatus(
 
 /**
  * Where a failed ledger update stands. `waiting`: the host retries after the agent's next reply. `retrying`: an
- * update runs now. `failed-again`: a retry failed too, and the host tries again. `cannot-retry`: nothing is pending
- * and the host cannot read the conversation to catch up.
+ * update runs now. `failed-again`: a retry failed too, and the host tries again. `unreadable`: the last catch-up could
+ * not read the conversation, and the next update tries again. `cannot-retry`: nothing is pending and the host cannot
+ * catch up.
  */
-export type UpdateRecovery = 'none' | 'waiting' | 'retrying' | 'failed-again' | 'cannot-retry'
+export type UpdateRecovery = 'none' | 'waiting' | 'retrying' | 'failed-again' | 'unreadable' | 'cannot-retry'
 
 const NEXT_TRY = " The inbox tries again after the agent's next reply."
 
-function failedUpdateText(recovery: UpdateRecovery, failedUpdates: number): string | null {
-  if (recovery === 'waiting') return `Last update failed. Items from that reply may be missing.${NEXT_TRY}`
-  if (recovery === 'failed-again')
-    return `The last ${failedUpdates} updates failed. Items from recent replies may be missing.${NEXT_TRY}`
-  if (recovery === 'cannot-retry')
-    return "Last update failed. The inbox cannot read this conversation to try again. Check the agent's last reply for anything that needs you."
-
-  return null
+const FAILED_UPDATE_TEXT: Record<Exclude<UpdateRecovery, 'none' | 'retrying'>, string> = {
+  waiting: `Last update failed. Items from that reply may be missing.${NEXT_TRY}`,
+  'failed-again': `Last update failed, and its retry failed too. Items from recent replies may be missing.${NEXT_TRY}`,
+  unreadable: `Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing.${NEXT_TRY}`,
+  'cannot-retry':
+    "Last update failed. The inbox cannot read this conversation to try again. Check the agent's last reply for anything that needs you.",
 }
 
-export function perTurnStatus(isUpdating: boolean, recovery: UpdateRecovery, failedUpdates: number): ItemStatus {
-  return { isUpdating, isRetrying: recovery === 'retrying', error: failedUpdateText(recovery, failedUpdates) }
+export function perTurnStatus(isUpdating: boolean, recovery: UpdateRecovery): ItemStatus {
+  const error = recovery === 'none' || recovery === 'retrying' ? null : FAILED_UPDATE_TEXT[recovery]
+
+  return { isUpdating, isRetrying: recovery === 'retrying', error }
 }

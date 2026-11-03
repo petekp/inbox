@@ -5,6 +5,7 @@ import { emptySession } from '../hooks/session-files'
 import { noteCommandOutput } from '../hooks/session-turns'
 import { sessionView } from '../hooks/session-view'
 import { reconcileUpdateStatus, runUpdates } from '../hooks/session-host'
+import { cutOffUpdate } from '../hooks/mod-sessions'
 import type { CatchUpReply } from '../hooks/session-host'
 import type { StatusCall } from '../hooks/status-records'
 import { footerStatus } from '../hooks/view'
@@ -164,7 +165,7 @@ test('a failed catch-up waits for the next reply, says when a retry fails again,
   })
   expect(duringRetry).toEqual({ text: 'Retrying the last update…', error: null })
   expect(shownStatus(await host.read()).error).toBe(
-    "The last 2 updates failed. Items from recent replies may be missing. The inbox tries again after the agent's next reply.",
+    "Last update failed, and its retry failed too. Items from recent replies may be missing. The inbox tries again after the agent's next reply.",
   )
 
   await runUpdates({
@@ -174,24 +175,36 @@ test('a failed catch-up waits for the next reply, says when a retry fails again,
   expect(shownStatus(await host.read())).toEqual({ text: null, error: null })
 })
 
-test('a failed update promises no retry once the catch-up finds the conversation unreadable, until one reads it', async () => {
+test('a catch-up that cannot read the conversation still promises the next retry, and one that reads it clears the warning', async () => {
   const calls = { catchUps: 0, asks: 0 }
   const { host } = fakeHost(async () => null)
-  await host.update(s => ({ ...s, presence: { ...s.presence, ledgerState: 'failed' as const, failedUpdates: 1 } }))
-  expect(shownStatus(await host.read()).error).toContain('tries again')
+  await host.update(s => ({ ...s, presence: { ...s.presence, ledgerState: 'failed' as const, failedAttempts: 1 } }))
 
   await runUpdates({ ...host, ...reading({ kind: 'unreadable' }, calls) })
   expect(shownStatus(await host.read()).error).toBe(
+    "Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing. The inbox tries again after the agent's next reply.",
+  )
+  expect(shownStatus(await host.read(), false).error).toBe(
     "Last update failed. The inbox cannot read this conversation to try again. Check the agent's last reply for anything that needs you.",
   )
-  expect(shownStatus(await host.read(), false).error).toBe(shownStatus(await host.read()).error)
 
   await runUpdates({
     ...host,
     ...reading({ kind: 'reply', text: LEDGER_REPLY, source: null, statusCall: UNANSWERED }, calls),
   })
+  expect(calls.catchUps).toBe(2)
   expect((await host.read()).presence.isConversationUnreadable).toBe(false)
   expect(shownStatus(await host.read()).error).toBeNull()
+})
+
+test('a pending exchange is retried on its own, so an unreadable conversation still reads as waiting', async () => {
+  const { host } = fakeHost(async () => null)
+  await host.update(s => finishTurn(s, 'Which runtime?'))
+  await runUpdates({ ...host, catchUp: undefined })
+  await host.update(s => ({ ...s, presence: { ...s.presence, isConversationUnreadable: true } }))
+  expect(shownStatus(await host.read(), false).error).toBe(
+    "Last update failed. Items from that reply may be missing. The inbox tries again after the agent's next reply.",
+  )
 })
 
 test('an update cut off after one failure still reads as waiting to retry, not as failing again', async () => {
@@ -201,7 +214,12 @@ test('an update cut off after one failure still reads as waiting to retry, not a
   await host.update(s => ({ ...s, presence: { ...s.presence, isUpdating: true } }))
   await reconcileUpdateStatus(host)
   expect((await host.read()).pending[0]?.failed).toBe(true)
-  expect(shownStatus(await host.read(), false).error).toMatch(/^Last update failed\..*tries again/)
+  expect(shownStatus(await host.read(), false).error).toMatch(/^Last update failed\. Items from that reply/)
+
+  const running = { ...(await host.read()), pending: [] }
+  const cutOff = cutOffUpdate({ ...running, presence: { ...running.presence, isUpdating: true } })
+  expect(cutOff.presence).toMatchObject({ ledgerState: 'failed', failedAttempts: 1 })
+  expect(shownStatus(cutOff).error).toMatch(/^Last update failed\. Items from that reply/)
 })
 
 test('the conversation keeps its newest lines when it is too long, and leaves out the inbox notes', () => {

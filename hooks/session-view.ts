@@ -59,17 +59,18 @@ function withoutStalePending(lastActions: Record<string, LastAction>, now: numbe
 }
 
 /**
- * Where the session's failed ledger update stands. A host retries when an exchange is pending, or when it can catch
- * up: `canCatchUp`, and the last catch-up did not find the conversation unreadable.
+ * Where the session's failed ledger update stands. A pending exchange is retried on its own. Otherwise the host
+ * retries by catching up, which needs `canCatchUp`.
  */
 export function updateRecovery(s: Session, canCatchUp: boolean): UpdateRecovery {
   const { presence } = s
   if (presence.ledgerState !== 'failed') return 'none'
   if (presence.isUpdating) return 'retrying'
-  const canRetry = s.pending.length > 0 || (canCatchUp && !presence.isConversationUnreadable)
-  if (!canRetry) return 'cannot-retry'
+  const isPending = s.pending.length > 0
+  if (!isPending && !canCatchUp) return 'cannot-retry'
+  if (!isPending && presence.isConversationUnreadable) return 'unreadable'
 
-  return presence.failedUpdates > 1 ? 'failed-again' : 'waiting'
+  return presence.failedAttempts > 1 ? 'failed-again' : 'waiting'
 }
 
 /** `canCatchUp` says whether the host can read the whole conversation, so its next update can retry a failed ledger. */
@@ -91,7 +92,7 @@ export function sessionView(
     turns: s.presence,
     extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
     settleWindowMs,
-    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s, canCatchUp), s.presence.failedUpdates),
+    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s, canCatchUp)),
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
