@@ -25,8 +25,10 @@ import { pageName } from './server-tools'
 import { SETTLE_WINDOW_MS } from './settle'
 import { readState, updateState } from './state'
 import type { SessionState } from './state'
-import { newestTurnEvent, turnIn } from './transcript'
+import { newestTurnEvent, turnIn, withCurrentRollout } from './transcript'
 import { reconcileUpdateStatus } from './update'
+
+const ROLLOUT_LOOKUP_MS = 60_000
 
 export function makeSessionHost(
   deps: ServerDeps,
@@ -84,9 +86,23 @@ export function makeSessionHost(
     }
   }
 
-  /** Sets whether a turn runs from the rollout's last turn row, read inside the state lock so no hook writes between. */
+  /** When each chat last looked for a rollout Codex moved. A miss walks every day folder, and the tab polls often. */
+  const rolloutLookups = new Map<string, number>()
+  const currentRollout = async (s: SessionState): Promise<SessionState> => {
+    const last = rolloutLookups.get(s.sessionId)
+    if (last !== undefined && now() - last < ROLLOUT_LOOKUP_MS) return s
+    rolloutLookups.set(s.sessionId, now())
+
+    return withCurrentRollout(s)
+  }
+
+  /**
+   * Sets whether a turn runs from the rollout's last turn row, read inside the state lock so no hook writes between.
+   * It first finds a rollout Codex moved again, so the reads after it use the path it saves.
+   */
   async function syncTurn(id: string): Promise<SessionState> {
-    return updateState(dir, id, async s => {
+    return updateState(dir, id, async saved => {
+      const s = await currentRollout(saved)
       const newest = s.transcriptPath === null ? null : await newestTurnEvent(s.transcriptPath)
       if (newest !== null) newestTurns.set(id, newest.id)
       const isRunning = newest === null ? null : newest.kind === 'started'

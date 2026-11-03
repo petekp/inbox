@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { zstdCompressSync } from 'node:zlib'
 
-import { readRollout, rolloutFor } from '../src/transcript'
-import { ROLLOUT_FIXTURE, rolloutAt, tempDir } from './helpers'
+import { bytesBefore, firstBytes } from '../src/rollout-file'
+import { newestTurnEvent, readRollout, rolloutFor, turnIn, withCurrentRollout } from '../src/transcript'
+import { movedRollout, ROLLOUT_FIXTURE, rolloutAt, tempDir } from './helpers'
 
 const rows = (...list: unknown[]) => list.map(row => (typeof row === 'string' ? row : JSON.stringify(row))).join('\n')
 
@@ -21,9 +23,9 @@ const message = (role: string, text: string) =>
     content: [{ type: role === 'assistant' ? 'output_text' : 'input_text', text }],
   })
 
-function rolloutOf(text: string): string {
-  const path = join(tempDir(), 'rollout.jsonl')
-  writeFileSync(path, text)
+function rolloutOf(text: string, ext = 'jsonl'): string {
+  const path = join(tempDir(), `rollout.${ext}`)
+  writeFileSync(path, ext === 'jsonl.zst' ? zstdCompressSync(text) : text)
 
   return path
 }
@@ -127,19 +129,27 @@ test('a rollout of older shapes reads shell calls, patches, spawned agents, dial
   ])
 })
 
-test('a rollout over the size limit keeps its newest turns and drops the cut line', async () => {
+test('a rollout over the size limit keeps its newest turns and drops the cut line, compressed or not', async () => {
   const filler = 'x'.repeat(1024 * 1024)
   const old = Array.from({ length: 10 }, (_, n) => message('user', `Old ${n} ${filler}`))
-  const path = rolloutOf(rows(started('t1'), ...old, started('t2'), message('user', 'Newest question')))
-  const rollout = await readRollout(path, '/repo', undefined)
+  const text = rows(started('t1'), ...old, started('t2'), message('user', 'Newest question'))
+  const rollout = await readRollout(rolloutOf(text), '/repo', undefined)
 
   assert.ok(rollout?.conversation.endsWith('Person: Newest question'))
   assert.ok((rollout?.conversation.match(/Person: Old/g)?.length ?? 0) < 10)
+  const compressed = rolloutOf(text, 'jsonl.zst')
+  assert.deepEqual(await readRollout(compressed, '/repo', undefined), rollout)
+  assert.deepEqual(await newestTurnEvent(compressed), { kind: 'started', id: 't2' })
+  assert.deepEqual(await turnIn(compressed, 't2'), await turnIn(rolloutOf(text), 't2'))
 })
 
-test('a rollout that cannot be read gives nothing', async () => {
+test('a rollout that cannot be read gives nothing, compressed or not', async () => {
   assert.equal(await readRollout(null, '/repo', undefined), null)
   assert.equal(await readRollout(join(tempDir(), 'missing.jsonl'), '/repo', undefined), null)
+  const missing = join(tempDir(), 'missing.jsonl.zst')
+  assert.equal(await readRollout(missing, '/repo', undefined), null)
+  await assert.rejects(firstBytes(missing, 1024), { code: 'ENOENT' })
+  await assert.rejects(bytesBefore(missing, 1024, 2048), { code: 'ENOENT' })
 })
 
 test('a reverted chat reads the kept turns of each rollout it continues, then its own, and stops where a rollout is missing', async () => {
@@ -186,8 +196,16 @@ test('a reverted chat reads the kept turns of each rollout it continues, then it
   assert.deepEqual(await persons(second.path), [`Person: ${firstAsk}`, 'Person: Second ask', 'Person: Also reverted'])
   assert.deepEqual(await persons(third.path), [`Person: ${firstAsk}`, 'Person: Second ask', 'Person: Third ask'])
   assert.equal((await readRollout(third.path, '/repo'))?.earlierTurns, 3)
-  rmSync(first.path)
-  assert.deepEqual(await persons(third.path), ['Person: Second ask', 'Person: Third ask'])
+  const firstArchived = movedRollout(first.path, home, 'archived_sessions')
+  movedRollout(second.path, home, 'archived_sessions')
+  const thirdArchived = movedRollout(third.path, home, 'archived_sessions')
+  assert.deepEqual(await persons(thirdArchived), [`Person: ${firstAsk}`, 'Person: Second ask', 'Person: Third ask'])
+  const firstCompressed = `${firstArchived}.zst`
+  writeFileSync(firstCompressed, zstdCompressSync(readFileSync(firstArchived)))
+  rmSync(firstArchived)
+  assert.deepEqual(await persons(thirdArchived), [`Person: ${firstAsk}`, 'Person: Second ask', 'Person: Third ask'])
+  rmSync(firstCompressed)
+  assert.deepEqual(await persons(thirdArchived), ['Person: Second ask', 'Person: Third ask'])
 })
 
 test('rolloutFor finds a chat’s newest rollout by its thread id and reads its folder', async () => {
@@ -204,11 +222,39 @@ test('rolloutFor finds a chat’s newest rollout by its thread id and reads its 
   assert.equal(await rolloutFor(home, ''), null)
 })
 
-test('rolloutFor skips a compressed rollout, a subagent’s and a codex exec run’s', async () => {
+test('a saved rollout path that Codex archived, then unarchived, is found again by thread id', async () => {
   const home = tempDir()
-  rolloutAt(home, 'packed', {}, { ext: 'jsonl.zst' })
+  const saved = rolloutAt(home, 'chat-1', { cwd: '/repo' })
+  const state = { sessionId: 'chat-1', transcriptPath: saved }
+  assert.equal(await withCurrentRollout(state), state)
+
+  const archived = movedRollout(saved, home, 'archived_sessions')
+  assert.deepEqual(await rolloutFor(home, 'chat-1'), { path: archived, cwd: '/repo' })
+  const found = await withCurrentRollout(state)
+  assert.deepEqual(found, { sessionId: 'chat-1', transcriptPath: archived })
+
+  const unarchived = movedRollout(archived, home, 'sessions/2026/10/20')
+  assert.deepEqual(await withCurrentRollout(found), { sessionId: 'chat-1', transcriptPath: unarchived })
+  rmSync(unarchived)
+  assert.equal(await withCurrentRollout(found), found)
+  assert.deepEqual(await withCurrentRollout({ sessionId: 'chat-1', transcriptPath: null }), {
+    sessionId: 'chat-1',
+    transcriptPath: null,
+  })
+})
+
+test('rolloutFor reads a compressed rollout, archived or not, and skips a subagent’s and a codex exec run’s', async () => {
+  const home = tempDir()
+  const packed = rolloutAt(home, 'packed', { cwd: '/repo' }, { ext: 'jsonl.zst' })
+  assert.deepEqual(await rolloutFor(home, 'packed'), { path: packed, cwd: '/repo' })
+  const archived = movedRollout(packed, home, 'archived_sessions')
+  assert.deepEqual(await withCurrentRollout({ sessionId: 'packed', transcriptPath: packed }), {
+    sessionId: 'packed',
+    transcriptPath: archived,
+  })
+  assert.match((await readRollout(archived, '/repo'))?.conversation ?? '', /^Person: List the files here/)
   rolloutAt(home, 'sub', { parent_thread_id: 'chat-1' })
   rolloutAt(home, 'exec', { originator: 'codex_exec', source: 'exec' })
 
-  for (const id of ['packed', 'sub', 'exec']) assert.equal(await rolloutFor(home, id), null)
+  for (const id of ['sub', 'exec']) assert.equal(await rolloutFor(home, id), null)
 })

@@ -12,7 +12,7 @@ import { endTurn, notePrompt, viewOf } from '../src/core'
 import { readState, statePath, updateState } from '../src/state'
 import { runUpdates as runBothCalls } from '../src/update'
 import { makeServer } from '../src/server'
-import { ledgerOnly, tempDir } from './helpers'
+import { ledgerOnly, movedRollout, rolloutAt, tempDir } from './helpers'
 import { ex } from './update-fixtures'
 
 const runUpdates = (dir: string, id: string, ask: (prompt: string) => Promise<string | null>, now: () => number) =>
@@ -129,6 +129,36 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
   assert.equal(viewOf(dropped, 6).status.isUpdating, false)
   assert.match(viewOf(dropped, 6).status.error ?? '', /Last update failed/)
   assert.doesNotMatch(viewOf(dropped, 6).status.error ?? '', /retry/)
+})
+
+test('a failed ledger catches up over a rollout Codex moved into archived_sessions, and saves where it is now', async () => {
+  const dir = tempDir()
+  const home = tempDir()
+  const saved = rolloutAt(home, 's1')
+  const archived = movedRollout(saved, home, 'archived_sessions')
+  await updateState(dir, 's1', s => ({
+    ...s,
+    root: '/repo',
+    transcriptPath: saved,
+    presence: { ...s.presence, ledgerState: 'failed' },
+  }))
+  const prompts: string[] = []
+
+  await runUpdates(
+    dir,
+    's1',
+    async p => (prompts.push(p), 'NEW: decide | - | Allow edits? | Yes / No | Yes'),
+    () => 5,
+  )
+  const caught = await readState(dir, 's1')
+  assert.equal(prompts.length, 1)
+  assert.match(prompts[0] ?? '', /Person: List the files here and say what each does/)
+  assert.equal(caught.transcriptPath, archived)
+  assert.equal(caught.presence.ledgerState, 'current')
+  assert.deepEqual(
+    caught.ledger.items.map(i => i.ask),
+    ['Allow edits?'],
+  )
 })
 
 test('an Explain exchange keeps its question open while applying the rest of the model update', async () => {
