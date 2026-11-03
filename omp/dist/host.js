@@ -3415,12 +3415,19 @@ function withDismissed(ledger, refs) {
     prOrder: order && ranked.length > 0 ? { ...order, dismissed: [...order.dismissed, ...ranked] } : order
   };
 }
-function withUndismissed(ledger, ref) {
+function dismissPress(ledger, ref, ctx, previous) {
+  const last = recordPress("mark", "pr-dismiss", PR_DISMISSED_LABEL, ctx, previous);
+  return ledger.prs.includes(ref) ? last : { ...last, isUnlinked: true };
+}
+function withUndismissed(ledger, ref, wasLinked) {
   const order = ledger.prOrder;
+  const isDismissedFromOrder = order?.dismissed.includes(ref) === true;
+  if (!wasLinked && !isDismissedFromOrder)
+    return null;
   return {
     ...ledger,
-    prs: [...ledger.prs, ref],
-    prOrder: order ? { ...order, dismissed: order.dismissed.filter((r) => r !== ref) } : order
+    prs: wasLinked ? [...ledger.prs, ref] : ledger.prs,
+    prOrder: order && isDismissedFromOrder ? { ...order, dismissed: order.dismissed.filter((r) => r !== ref) } : order
   };
 }
 function isDismissedByMerged(pr, branchRef) {
@@ -3454,7 +3461,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
       ledger: withDismissed(ledger, refs),
       lasts: Object.fromEntries(refs.map((ref) => {
         const id = prMarkId(ref);
-        return [id, recordPress("mark", "pr-dismiss", PR_DISMISSED_LABEL, ctx, lastActions[id])];
+        return [id, dismissPress(ledger, ref, ctx, lastActions[id])];
       }))
     });
   }
@@ -3483,9 +3490,13 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
   const pr = prState.views[p.ref];
   const markId = prMarkId(p.ref);
   if (p.action === "pr-undo") {
-    if (!pr || isTracked(prState, ledger, p.ref) || lastActions[markId]?.action !== "pr-dismiss")
+    const dismissed = lastActions[markId];
+    if (!pr || isTracked(prState, ledger, p.ref) || dismissed?.action !== "pr-dismiss")
       return stale;
-    return applied({ ledger: withUndismissed(ledger, p.ref), drop: [markId] });
+    const back = withUndismissed(ledger, p.ref, dismissed.isUnlinked !== true);
+    if (!back)
+      return stale;
+    return applied({ ledger: back, drop: [markId] });
   }
   if (!pr || !isTracked(prState, ledger, p.ref))
     return stale;
@@ -3563,7 +3574,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
         return stale;
       return applied({
         ledger: withDismissed(ledger, [p.ref]),
-        lasts: { [markId]: record(markId, "mark", p.action, PR_DISMISSED_LABEL) }
+        lasts: { [markId]: dismissPress(ledger, p.ref, ctx, lastActions[markId]) }
       });
     case "check-fix": {
       const check = pr.checks.find((c) => c.name === p.check && c.bucket === "fail");

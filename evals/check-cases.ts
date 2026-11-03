@@ -28,9 +28,16 @@ function checkLedger(where: string, saved: Partial<Ledger> | undefined) {
 }
 
 for (const c of read('cases')) checkLedger(`cases ${c.name}`, c.ledger)
+/** The agent suite's stand-in inbox answers tool calls on the case's ledger without `upgradeLedger`. */
+function checkToolOrder(where: string, saved: Partial<Ledger> | undefined) {
+  const order = saved?.prOrder
+  if (order && !Array.isArray(order.dismissed)) problems.push(`${where}: its PR order has no dismissed list`)
+}
+
 for (const c of read('agent-cases')) {
   checkLedger(`agent-cases ${c.name}`, c.ledger)
   checkLedger(`agent-cases ${c.name} toolLedger`, c.toolLedger)
+  checkToolOrder(`agent-cases ${c.name}`, c.toolLedger ?? c.ledger)
   const isAfterCompare = /\bpressed Compare\b/.test(c.prompt)
   const checksNoClose = (c.checks as Record<string, unknown>[]).some(k => k.calls === 'close' && k.count === 0)
   if (isAfterCompare && !checksNoClose)

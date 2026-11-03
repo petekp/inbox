@@ -211,5 +211,6 @@ for (const look of ['terminal', 'desktop'] as const) {
     await clock.settle()
     expect(await orderLine()).toBeUndefined()
     expect((await heads()).every(h => h.startsWith('#'))).toBe(true)
+    expect(await heads()).not.toContain('#15')
   })
 }

@@ -155,6 +155,50 @@ test('a new order takes the PRs only the order it replaces ranked off the tab, a
   expect(sessionView(replaced, at, 1000, true, NO_HOLDS).prs.olderText).toBeNull()
 })
 
+const pressed = (s: Session, p: Parameters<typeof applyPrPress>[3], at: number) => {
+  const r = applyPrPress(s.ledger, s.prViews, s.lastActions, p, { now: at, turnsStarted: 0 })
+  if ('stale' in r) return null
+  const lastActions = Object.fromEntries(
+    Object.entries({ ...s.lastActions, ...r.lasts }).filter(([id]) => !r.drop.includes(id)),
+  )
+  return { ...s, ledger: r.ledger, lastActions }
+}
+
+test('after the order is cleared a dismissed PR stays off the tab, and Undo links it again only if the session had linked it', () => {
+  const s = linkedSession([1, 2])
+  const at = 1_000_000
+  const ordered = orderedAndFetched(s, [40, 2], at)
+  const clear = (x: Session) => recorded(CLAUDE_CODE, x, 'order_prs', { numbers: [] }, at).state
+
+  const linkedGone = pressed(ordered, { action: 'pr-dismiss', ref: 'acme/app#2' }, at)!
+  expect(drawnNumbers(clear(linkedGone), at)).toEqual([1])
+  expect(pressed(clear(linkedGone), { action: 'pr-undo', ref: 'acme/app#2' }, at)?.ledger.prs).toEqual([
+    'acme/app#1',
+    'acme/app#2',
+  ])
+
+  const rankedGone = pressed(ordered, { action: 'pr-dismiss', ref: 'acme/app#40' }, at)!
+  expect(rankedGone.ledger.prOrder?.dismissed).toEqual(['acme/app#40'])
+  const undone = pressed(rankedGone, { action: 'pr-undo', ref: 'acme/app#40' }, at)!
+  expect(undone.ledger.prs).toEqual(s.ledger.prs)
+  expect(drawnNumbers(undone, at)).toContain(40)
+  expect(drawnNumbers(clear(undone), at)).not.toContain(40)
+  expect(pressed(clear(rankedGone), { action: 'pr-undo', ref: 'acme/app#40' }, at)).toBeNull()
+})
+
+test('Dismiss merged takes a merged PR only the order ranks off the tab and keeps its place in the order', () => {
+  const s = linkedSession([1])
+  const at = 1_000_000
+  const ordered = orderedAndFetched(s, [40, 1], at)
+  const merged = withFetchedPrs(ordered, { 'acme/app#40': { ...openPr(40), state: 'MERGED' } }, null, false)
+  expect(drawnNumbers(merged, at)).toContain(40)
+
+  const swept = pressed(merged, { action: 'pr-dismiss-merged' }, at)!
+  expect(swept.ledger.prOrder?.dismissed).toEqual(['acme/app#40'])
+  expect(swept.ledger.prOrder?.refs).toEqual(['acme/app#40', 'acme/app#1'])
+  expect(drawnNumbers(swept, at)).toEqual([1])
+})
+
 test('an order reads as changed once a ranked open PR is newly blocked, gains a waiting thread or failing check, or becomes ready, and Rank again asks the agent to rank its open PRs again until a new order replaces it', () => {
   const base = emptySession()
   const refs = [1, 2, 3, 4].map(n => `acme/app#${n}`)
