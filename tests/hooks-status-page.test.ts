@@ -5,7 +5,7 @@ import { statusPage } from '../hooks/status-page'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
-test('on a next build, a look starts when the Status page shows, the page shows the head and the subjects in place of rows, binds only the held subject’s View key, View shows Asks with its ask selected, and an ask names the subject it holds up', async ($, on) => {
+test('on a next build, a look starts when the Status page shows, the page shows the head and the subjects in place of rows, binds only the held subject’s View key, j and k wrap past its last and first rows, View shows Asks with its ask selected, and an ask names the subject it holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.files = ['/.next-build']
@@ -45,6 +45,9 @@ test('on a next build, a look starts when the Status page shows, the page shows 
   expect((await pane.find({ key: 'show-ask-s1' }))?.text).toBe('v: View question')
   expect(await pane.find({ key: 'show-ask-s2' })).toBeUndefined()
   await pane.press({ key: 'next' })
+  expect(await rowKeys()).toEqual(['type-goal-goal-key', 'no-row-d-key', 'no-row-x-key'])
+  await pane.press({ key: 'previous' })
+  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key'])
   await pane.press({ key: 'no-row-d-key' })
   await $.tool.call({
     tool: 'mcp__inbox__record',

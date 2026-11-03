@@ -173,3 +173,36 @@ test('Discard ends a held row’s reply and folds it into Closed at once, and a 
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
   expect(await pane.find({ text: /2 closed/ })).toBeDefined()
 })
+
+test('a held row’s label that does not fit after its title’s last word follows a plain space, where the terminal can break the line, and stays glued to the title where it fits', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('ui.focus', () => ({}))
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 38 } })
+  await selectRow(pane, 'i2')
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'typekey-i2' })
+  await pane.input({ key: await replyKey(pane, 'i2'), text: 'Call it hello', kind: 'change' })
+  await $.tool.call({ tool: 'mcp__inbox__close', id: 'i2', answer: '--shout' } as never)
+  await clock.settle()
+  const label = async (drawn: { findAll(q: { type: 'Text'; text: RegExp }): Promise<{ text: string }[]> }) =>
+    (await drawn.findAll({ type: 'Text', text: /^ ·.Answered: --shout$/ })).map(t => t.text)
+
+  expect(await label(pane)).toEqual([' · Answered: --shout'])
+  await pane.redraw({ ...PANE.props, bodyColumns: 80 })
+  expect(await label(pane)).toEqual([' · Answered: --shout'])
+  await pane.unmount()
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 120 } })
+  await selectRow(desktop, 'i2')
+  expect(await label(desktop)).toEqual([' · Answered: --shout'])
+})
