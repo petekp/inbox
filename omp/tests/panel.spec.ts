@@ -215,3 +215,18 @@ test('PR buttons follow the shared plan order for the block, its threads and its
     ui = keys(screen, ui, 'down')
   }
 })
+
+test('a row keeps its age at a narrow width and beside a long outcome, and its title and status shorten instead', () => {
+  const ui: PanelUi = { ...INITIAL_UI, unfolded: ['question', 'task', 'issue', 'opportunity'] }
+  const ages = (width: number) =>
+    (['needsYou', 'findings'] as const).flatMap(
+      tab => text(screenOf(), { ...ui, tab }, width).match(/\d+[mh] ago|just now/g) ?? [],
+    )
+  const wide = ages(200)
+
+  expect(wide.length).toBeGreaterThan(10)
+  expect(ages(90)).toEqual(wide)
+  expect(ages(48)).toEqual(wide)
+  for (const line of text(screenOf(), { ...ui, tab: 'needsYou' }, 48).split('\n'))
+    expect(strip(line).length).toBeLessThanOrEqual(48)
+})

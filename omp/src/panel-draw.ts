@@ -145,12 +145,13 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   // omp marks a selected item with ❯, its `nav.cursor` symbol, and keeps ▸ and ▾ for expand and collapse.
   const cursor = isSelected ? s.tone('accent', '❯') : ' '
   const head = ` ${' '.repeat(pad)}${cursor} ${line.rank ? s.dim(line.rank) : ''}${leadText(line.lead, s)}`
+  const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
+  const besideAge = age ? width - visibleLength(`  ${age} `) : width
   const shownTitle = line.mark
-    ? cutTitle(line.title, width - visibleLength(head) - visibleLength(status) - visibleLength(after))
+    ? cutTitle(line.title, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after))
     : line.title
   const title = line.isDim ? s.dim(shownTitle) : isSelected ? s.bold(shownTitle) : shownTitle
-  const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
-  out.push(spread(`${head}${title}${status}${after}`, `${age} `, width))
+  out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width))
   if (line.settled || isShut(line, ui)) return out
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
   // A next build draws the Status, so only it names the subject an ask holds up.
