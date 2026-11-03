@@ -3483,7 +3483,7 @@ function herdrReporter() {
     retries++;
     after(wait, () => {
       isRetryWaiting = false;
-      if (newest) void reportToHerdr(newest.run, newest.report, newest.after);
+      return newest ? reportToHerdr(newest.run, newest.report, newest.after) : Promise.resolve(false);
     });
   };
   const send = async (run2, report, after) => {
@@ -3512,17 +3512,17 @@ function herdrReporter() {
 }
 
 // src/host.ts
-function codexStore(dir, sessionId, now, onWrite = async () => {
-}) {
+function codexStore(dir, sessionId, now, onWrite) {
   return {
     now,
     read: () => readState(dir, sessionId),
     update: async (change) => {
-      const s = await updateState(dir, sessionId, async (current) => ({
-        ...await change(current),
-        writtenAt: Math.max(now(), (current.writtenAt ?? 0) + 1)
-      }));
-      await onWrite(s);
+      const s = await updateState(
+        dir,
+        sessionId,
+        onWrite ? async (current) => ({ ...await change(current), writtenAt: Math.max(now(), (current.writtenAt ?? 0) + 1) }) : change
+      );
+      await onWrite?.(s);
       return s;
     },
     exclusive: (fn) => tryWithLock(`${statePath(dir, sessionId)}.updating`, fn)
@@ -3530,9 +3530,9 @@ function codexStore(dir, sessionId, now, onWrite = async () => {
 }
 function herdrOnWrite(env, run2, dir, now) {
   const pane = env.HERDR_PANE_ID;
+  if (!pane) return void 0;
   const report = herdrReporter();
   return async (s) => {
-    if (!pane) return;
     const at = now();
     const seq = s.writtenAt ?? at;
     const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, at), []);

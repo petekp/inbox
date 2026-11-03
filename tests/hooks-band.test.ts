@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { HERDR_RETRY_MS } from '../hooks/herdr'
+import type { Run } from '../hooks/gh'
+import { HERDR_RETRY_MS, herdrReporter } from '../hooks/herdr'
 import { PRESS_GUARD_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
 import { BAND, PANE, selectRow, sidebarLines, sidebarTokens, NO_COUNTS } from './hooks-helpers'
@@ -172,4 +173,54 @@ test('a sidebar report Herdr fails to take is sent again after each wait in HERD
   await clock.advance(HERDR_RETRY_MS[2]!)
   await clock.settle()
   expect(sidebarLines()).toHaveLength(failed + 2)
+})
+
+function reporterWorld(codeOf: (send: number) => number) {
+  const sends: string[] = []
+  const waits: { ms: number; retry: () => Promise<unknown> }[] = []
+  const waited: number[] = []
+  const run: Run = async args => {
+    sends.push(args.join(' '))
+    return { code: codeOf(sends.length), stdout: '', stderr: '' }
+  }
+  const reportToHerdr = herdrReporter()
+  let reads = 0
+  const report = () =>
+    reportToHerdr(
+      run,
+      async () => ({ pane: 'p1', tokens: { inbox: `read ${++reads}` } }),
+      (ms, retry) => {
+        waited.push(ms)
+        waits.push({ ms, retry })
+      },
+    )
+  const retry = () => waits.shift()!.retry()
+
+  return { sends, waits, waited, report, retry }
+}
+
+test('of several Herdr reports that fail during one wait, only one retry waits', async () => {
+  const herdr = reporterWorld(() => 1)
+  await herdr.report()
+  await herdr.report()
+  await herdr.report()
+  expect(herdr.sends).toHaveLength(3)
+  expect(herdr.waited).toEqual([HERDR_RETRY_MS[0]])
+})
+
+test('when every retry of a Herdr report fails, the retries stop after the last wait in HERDR_RETRY_MS', async () => {
+  const herdr = reporterWorld(() => 1)
+  await herdr.report()
+  for (let n = 0; n <= HERDR_RETRY_MS.length && herdr.waits.length > 0; n++) await herdr.retry()
+  expect(herdr.waited).toEqual(HERDR_RETRY_MS)
+  expect(herdr.sends).toHaveLength(HERDR_RETRY_MS.length + 1)
+})
+
+test('a Herdr report taken by a retry starts the waits over for the next failure', async () => {
+  const herdr = reporterWorld(send => (send === 2 ? 0 : 1))
+  await herdr.report()
+  await herdr.retry()
+  await herdr.report()
+  expect(herdr.sends).toHaveLength(3)
+  expect(herdr.waited).toEqual([HERDR_RETRY_MS[0], HERDR_RETRY_MS[0]])
 })

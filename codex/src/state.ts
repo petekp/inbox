@@ -69,9 +69,9 @@ export type SessionState = Session & {
    */
   herdrReport?: { key: string; seq: number }
   /**
-   * When a hook or an update last changed this state, in ms, and always above the change before it. Each of their
-   * changes sets it, even one that changes nothing else. A Herdr report of the state carries it as `seq`, so Herdr drops
-   * a report of an earlier state that arrives after a later one.
+   * When a hook or an update in a Herdr pane last changed this state, in ms, and always above the change before it. Each
+   * of their changes sets it, even one that changes nothing else. A Herdr report of the state carries it as `seq`, so
+   * Herdr drops a report of an earlier state that arrives after a later one.
    */
   writtenAt?: number
 }

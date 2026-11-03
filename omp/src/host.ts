@@ -67,7 +67,7 @@ export type HostDeps = {
   /** Runs work the handler that started it does not wait for. */
   background: (work: Promise<unknown>) => void
   /** Runs `fn` once, `ms` from now, without keeping omp running. */
-  after: (ms: number, fn: () => void) => void
+  after: (ms: number, fn: () => Promise<unknown>) => void
   /** Whether a failed request hit the account's usage limit, by omp's own rule. */
   isUsageLimit: (status: number | undefined, message: string) => Promise<boolean>
   /** The Herdr pane omp runs in, from `HERDR_PANE_ID`, or null outside Herdr. */

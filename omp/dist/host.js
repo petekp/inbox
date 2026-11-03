@@ -2356,8 +2356,7 @@ function herdrReporter() {
     retries++;
     after(wait, () => {
       isRetryWaiting = false;
-      if (newest)
-        reportToHerdr(newest.run, newest.report, newest.after);
+      return newest ? reportToHerdr(newest.run, newest.report, newest.after) : Promise.resolve(false);
     });
   };
   const send = async (run, report, after) => {

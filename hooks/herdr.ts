@@ -181,8 +181,8 @@ type HerdrReport = { pane: string; tokens: HerdrTokens; seq?: number } | null
  */
 export const HERDR_RETRY_MS = [5_000, 30_000, 120_000]
 
-/** Runs `fn` once, `ms` from now. */
-type After = (ms: number, fn: () => void) => void
+/** Runs `fn` once, `ms` from now. `fn` returns the retry it starts. */
+type After = (ms: number, fn: () => Promise<unknown>) => void
 
 /**
  * Sends reports one at a time, in the order they were asked for, with `run`. Each reads its pane and tokens when its
@@ -207,7 +207,8 @@ export function herdrReporter(): (run: Run, report: () => Promise<HerdrReport>, 
     retries++
     after(wait, () => {
       isRetryWaiting = false
-      if (newest) void reportToHerdr(newest.run, newest.report, newest.after)
+
+      return newest ? reportToHerdr(newest.run, newest.report, newest.after) : Promise.resolve(false)
     })
   }
 

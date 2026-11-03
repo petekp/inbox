@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { writeFileSync } from 'node:fs'
+import { statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
@@ -8,7 +8,7 @@ import { STATUS_REFRESH_MS } from '../../hooks/session-status'
 import { handleHook } from '../src/hook'
 import type { HookInput } from '../src/hook'
 import { codexStore, herdrOnWrite } from '../src/host'
-import { readState, updateState } from '../src/state'
+import { readState, statePath, updateState } from '../src/state'
 import type { SessionState } from '../src/state'
 import { fakeRunner, hookDeps, input, tempDir } from './helpers'
 import { reportedTokens } from '../../tests/session-script'
@@ -230,7 +230,7 @@ test('of two writes from separate processes, Herdr shows the later state, whiche
   const held = new Promise<void>(resolve => (release = resolve))
   let markWritten = () => {}
   const written = new Promise<void>(resolve => (markWritten = resolve))
-  const reportFirst = herdrOnWrite(HERDR_ENV, herdr.exec, dir, now)
+  const reportFirst = herdrOnWrite(HERDR_ENV, herdr.exec, dir, now)!
   const first = codexStore(dir, 's1', now, async s => {
     markWritten()
     await held
@@ -261,4 +261,21 @@ test('an update that changes nothing reports a change the MCP server made, and H
 
   assert.equal(herdr.calls.length, 2)
   assert.equal(herdr.shown()['inbox-needs-you'], '2')
+})
+
+test('outside Herdr, an update that changes nothing writes nothing', async () => {
+  const dir = tempDir()
+  const store = codexStore(
+    dir,
+    's1',
+    () => 1000,
+    herdrOnWrite({}, fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec, dir, () => 1000),
+  )
+  await store.update(addAsk('Ship it?'))
+  const written = statSync(statePath(dir, 's1')).ino
+
+  await store.update(s => s)
+
+  assert.equal(statSync(statePath(dir, 's1')).ino, written)
+  assert.equal((await readState(dir, 's1')).writtenAt, undefined)
 })
