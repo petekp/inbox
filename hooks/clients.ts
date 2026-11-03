@@ -197,7 +197,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'compare-in-background': {
         kind: 'different',
         reason:
-          "Codex's subagents are experimental and off by default, and no source says one can report after the agent's turn ends, so a comparison runs in the turn.",
+          "When a Codex subagent ends, Codex queues its result for the main agent and starts no turn for it. So a result that arrives after the agent's turn has ended does not reach the chat on its own, and the Compare message asks for the comparison in the agent's own turn.",
       },
       'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
@@ -337,4 +337,9 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-done-fold': { kind: 'full' },
     },
   },
+}
+
+/** Whether a Compare press on `client` may hand its work to a background subagent, whose report reaches the chat. */
+export function isCompareInBackground(client: ClientId): boolean {
+  return CLIENTS[client].support['compare-in-background'].kind === 'full'
 }

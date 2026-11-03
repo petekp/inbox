@@ -197,9 +197,7 @@ export function pressed(
       return {
         ledger,
         last: record('talk'),
-        effects: [
-          { kind: 'send', text: messages.compare(item, ctx.comparePage), by: { id: item.id, action: 'compare' } },
-        ],
+        effects: [{ kind: 'send', text: messages.compare(item, ctx), by: { id: item.id, action: 'compare' } }],
       }
     case 'done':
       return { ledger: closeItem(ledger, item.id, { how: 'done', outcome: 'done' }, ctx.now), last: null, effects: [] }
