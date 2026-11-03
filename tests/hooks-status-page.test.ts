@@ -45,6 +45,9 @@ test('on a next build, a look starts when the Status page shows, the page shows 
   expect((await pane.find({ key: 'show-ask-s1' }))?.text).toBe('v: View question')
   expect(await pane.find({ key: 'show-ask-s2' })).toBeUndefined()
   await pane.press({ key: 'next' })
+  expect(await rowKeys()).toEqual(['type-goal-goal-key', 'no-row-d-key', 'no-row-x-key'])
+  await pane.press({ key: 'previous' })
+  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key'])
   await pane.press({ key: 'no-row-d-key' })
   await $.tool.call({
     tool: 'mcp__inbox__record',

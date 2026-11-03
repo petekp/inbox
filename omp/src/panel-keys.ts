@@ -1,7 +1,7 @@
 import { isPrPress } from '../../hooks/pr-press'
 import { keptDiscards, isGuarded } from '../../hooks/timing'
 import { shownTabs, isRowTab } from '../../hooks/tabs'
-import { firstWaiting, rowAfterClose } from '../../hooks/action-plan'
+import { firstWaiting, rowAfterClose, steppedIndex } from '../../hooks/action-plan'
 import { GOAL_KEYS_ID, statusKeyRows, statusSelected } from '../../hooks/status-keys'
 import type { StatusKeyTarget } from '../../hooks/status-keys'
 import type { ShownTab } from '../../hooks/tabs'
@@ -9,8 +9,6 @@ import { entriesOf } from './panel-entries'
 import { isSelectable, isShut, linesOf, waitsOf } from './panel-lines'
 import type { Button, Line } from './panel-lines'
 import type { PanelPress, PanelScreen, PanelUi } from './panel'
-
-const wrapIndex = (i: number, n: number) => ((i % n) + n) % n
 
 export function resolveSelected(lines: Line[], selectedId: string | null): Line | null {
   const selectable = lines.filter(isSelectable)
@@ -138,14 +136,14 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   if ((key === 'up' || key === 'k' || key === 'down' || key === 'j') && selectable.length > 0) {
     const step = key === 'up' || key === 'k' ? -1 : 1
 
-    return { ui: withSelection(base, selectable[wrapIndex(Math.max(0, at) + step, selectable.length)]!.id) }
+    return { ui: withSelection(base, selectable[steppedIndex(at, step, selectable.length)]!.id) }
   }
   const tabs = shown.map(t => t.id)
   const pickedTab = shown.find(t => t.hotkey === key)
   if (key === 'tab' || key === 'shift+tab') {
     const step = key === 'tab' ? 1 : -1
 
-    return { ui: withTab(base, tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)]!, now) }
+    return { ui: withTab(base, tabs[steppedIndex(tabs.indexOf(base.tab), step, tabs.length)]!, now) }
   }
   if (pickedTab) return { ui: withTab(base, pickedTab.id, now) }
   if (key === 'u') {
@@ -168,7 +166,7 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
     return key === 'enter' ? { ui: { ...base, opened: selected.id } } : { ui: base }
   if (!selected || selected.buttons.length === 0 || isGuarded(base.openedAt, now)) return { ui: base }
   if (key === 'left' || key === 'right') {
-    const index = wrapIndex(focusOf(selected, base) + (key === 'left' ? -1 : 1), selected.buttons.length)
+    const index = steppedIndex(focusOf(selected, base), key === 'left' ? -1 : 1, selected.buttons.length)
 
     return { ui: { ...base, focus: { rowId: selected.id, index } } }
   }
@@ -189,13 +187,13 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
   if (!row) return null
   if (key === 'j' || key === 'k') {
     const at = rows.findIndex(r => r.id === row.id)
-    const to = rows[wrapIndex(at + (key === 'k' ? -1 : 1), rows.length)]!.id
+    const to = rows[steppedIndex(at, key === 'k' ? -1 : 1, rows.length)]!.id
 
     return { ui: { ...ui, selectedId: to, focus: null, pageReveal: to } }
   }
   const { keys } = row
   if (key === 'left' || key === 'right') {
-    const index = wrapIndex(pageFocus(row, ui) + (key === 'left' ? -1 : 1), keys.length)
+    const index = steppedIndex(pageFocus(row, ui), key === 'left' ? -1 : 1, keys.length)
 
     return { ui: { ...ui, selectedId: row.id, focus: { rowId: row.id, index } } }
   }
