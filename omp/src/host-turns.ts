@@ -100,7 +100,7 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     const pane = deps.herdrPane
     if (id !== memory.shownId || !pane) return
     memory.shownId = null
-    await reportToHerdr(run, async () => ({ pane, tokens: CLEARED_TOKENS }))
+    await reportToHerdr(run, async () => ({ pane, tokens: CLEARED_TOKENS }), deps.after)
   }
 
   const onBeforeAgentStart = async (event: { prompt: string; systemPrompt: string[] }, ctx: OmpContext) => {
