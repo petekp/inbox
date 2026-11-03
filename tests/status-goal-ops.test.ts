@@ -258,5 +258,11 @@ test('a milestone dropped with no INTO unlinks its subjects and asks, so the cal
       serves: { s2: 'none' },
       asks: {},
     })
+    const relinked = after(dropped, 'SERVES: s1 | m2\nLINK: i1 | m2', 50, asks)
+    expect({ line, serves: relinked.serves, asks: relinked.askSubjects }).toEqual({
+      line,
+      serves: { s2: 'none' },
+      asks: {},
+    })
   }
 })

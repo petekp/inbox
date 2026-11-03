@@ -11,7 +11,14 @@ import {
   words,
 } from './status-limits'
 import type { OpenStatus } from './status-limits'
-import { applyGoalOp, findMilestone, hasSameWords, moveMilestone, settleGoal } from './status-goal-ops'
+import {
+  applyGoalOp,
+  findMilestone,
+  hasSameWords,
+  linkableMilestone,
+  moveMilestone,
+  settleGoal,
+} from './status-goal-ops'
 
 function isUnderWay(s: Pick<Subject, 'status'>): boolean {
   return s.status === 'working' || s.status === 'waits-on-other'
@@ -155,7 +162,7 @@ export function applyOps(
     else if (op.kind === 'link') {
       const child = o.children.find(c => c.id === op.ref)
       const subject = find(op.subject)
-      const milestone = subject ? null : findMilestone(o, op.subject)
+      const milestone = subject ? null : linkableMilestone(o, op.subject)
       if (child && subject) child.subjectId = subject.id
       else if (subject && askIds.has(op.ref)) o.askSubjects[op.ref] = subject.id
       else if (milestone && askIds.has(op.ref)) o.askSubjects[op.ref] = milestone.id

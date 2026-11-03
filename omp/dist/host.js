@@ -1141,6 +1141,10 @@ function findMilestone(o, ref) {
   const key = nameKey(clipWords(ref, NAME_KEPT));
   return o.milestones.find((m) => m.id === ref) ?? o.milestones.find((m) => m.status !== "dropped" && nameKey(m.name) === key) ?? null;
 }
+function linkableMilestone(o, ref) {
+  const m = findMilestone(o, ref);
+  return m && m.status !== "dropped" ? m : null;
+}
 function forgetSeenWas(m, lastLookAt) {
   if (lastLookAt !== null && m.changedAt <= lastLookAt)
     m.was = null;
@@ -1220,7 +1224,7 @@ function applyGoalOp(o, op, now, findSubject) {
   if (op.kind === "milestone")
     return addMilestone(o, op, now);
   const subject = findSubject(op.subject);
-  const milestone = op.milestone === null ? null : findMilestone(o, op.milestone);
+  const milestone = op.milestone === null ? null : linkableMilestone(o, op.milestone);
   if (!subject || op.milestone !== null && !milestone)
     return o;
   return { ...o, serves: { ...o.serves, [subject.id]: milestone?.id ?? "none" } };
@@ -7929,7 +7933,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     else if (op.kind === "link") {
       const child = o.children.find((c) => c.id === op.ref);
       const subject = find(op.subject);
-      const milestone = subject ? null : findMilestone(o, op.subject);
+      const milestone = subject ? null : linkableMilestone(o, op.subject);
       if (child && subject)
         child.subjectId = subject.id;
       else if (subject && askIds.has(op.ref))

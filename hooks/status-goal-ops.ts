@@ -62,6 +62,13 @@ export function findMilestone(o: SessionStatus, ref: string): Milestone | null {
   )
 }
 
+/** The milestone a SERVES or LINK line may link to: one `findMilestone` finds that is not dropped. */
+export function linkableMilestone(o: SessionStatus, ref: string): Milestone | null {
+  const m = findMilestone(o, ref)
+
+  return m && m.status !== 'dropped' ? m : null
+}
+
 /** A was line stays until the person has seen it. */
 function forgetSeenWas(m: Milestone, lastLookAt: number | null): void {
   if (lastLookAt !== null && m.changedAt <= lastLookAt) m.was = null
@@ -166,7 +173,7 @@ export function applyGoalOp(
   if (o.goal === null) return o
   if (op.kind === 'milestone') return addMilestone(o, op, now)
   const subject = findSubject(op.subject)
-  const milestone = op.milestone === null ? null : findMilestone(o, op.milestone)
+  const milestone = op.milestone === null ? null : linkableMilestone(o, op.milestone)
   if (!subject || (op.milestone !== null && !milestone)) return o
 
   return { ...o, serves: { ...o.serves, [subject.id]: milestone?.id ?? 'none' } }
