@@ -1165,7 +1165,7 @@ function moveMilestone(o, m, op, now) {
       m.text = clipWords(op.text, TEXT_KEPT);
     m.closedAt = now;
   } else if (op.kind === "drop") {
-    const target = op.into ? findMilestone(o, op.into) : null;
+    const target = op.into ? linkableMilestone(o, op.into) : null;
     m.status = "dropped";
     m.text = clipWords(op.why, TEXT_KEPT);
     m.closedAt = now;
@@ -7911,6 +7911,12 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       s.merged = null;
     }
   };
+  const unfold = (s) => {
+    const target = s.into === null ? undefined : o.subjects.find((x) => x.id === s.into);
+    if (target?.merged)
+      target.merged = target.merged.split(", ").filter((name) => name !== s.name).join(", ") || null;
+    s.into = null;
+  };
   const set = (s, status, text) => {
     const isReworded = s.status === status && hasSameWords(s.text, text);
     if (isReworded)
@@ -7918,7 +7924,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     s.status = status;
     s.text = clipWords(text, TEXT_KEPT);
     s.closedAt = null;
-    s.into = null;
+    unfold(s);
     forgetSeenWas(s);
     s.changedAt = now;
   };
@@ -7983,7 +7989,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
         if (s.status === "done")
           continue;
         s.status = "done";
-        s.into = null;
+        unfold(s);
         if (op.text)
           s.text = clipWords(op.text, TEXT_KEPT);
         forgetSeenWas(s);

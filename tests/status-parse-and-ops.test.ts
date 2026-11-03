@@ -155,6 +155,8 @@ test('a SET reopens a finished subject, even one folded into another, and a DONE
   const folded = after(two, 'DROP: s1 | part of auth | INTO s2', 200)
 
   expect(reopened.subjects[0]).toMatchObject({ status: 'working', closedAt: null, into: null })
+  expect(reopened.subjects[1]!.merged).toBeNull()
+  expect(after(folded, 'DONE: s1 | shipped', 300).subjects[1]!.merged).toBeNull()
   expect(page(reopened, 400).rows.flatMap(r => (r.kind === 'subject' ? [r.name] : []))).toContain('Login form')
   expect(after(seen, 'DONE: s1 | shipped', 1000 + LOOK_MIN_MS).subjects[0]).toMatchObject({
     closedAt: 200,

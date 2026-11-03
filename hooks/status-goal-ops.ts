@@ -96,7 +96,7 @@ export function moveMilestone(
     if (op.text) m.text = clipWords(op.text, TEXT_KEPT)
     m.closedAt = now
   } else if (op.kind === 'drop') {
-    const target = op.into ? findMilestone(o, op.into) : null
+    const target = op.into ? linkableMilestone(o, op.into) : null
     m.status = 'dropped'
     m.text = clipWords(op.why, TEXT_KEPT)
     m.closedAt = now

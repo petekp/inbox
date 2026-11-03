@@ -137,13 +137,24 @@ export function applyOps(
       s.merged = null
     }
   }
+  /** A subject folded into another comes back out: the other no longer names it as merged. */
+  const unfold = (s: Subject) => {
+    const target = s.into === null ? undefined : o.subjects.find(x => x.id === s.into)
+    if (target?.merged)
+      target.merged =
+        target.merged
+          .split(', ')
+          .filter(name => name !== s.name)
+          .join(', ') || null
+    s.into = null
+  }
   const set = (s: Subject, status: OpenStatus, text: string) => {
     const isReworded = s.status === status && hasSameWords(s.text, text)
     if (isReworded) return
     s.status = status
     s.text = clipWords(text, TEXT_KEPT)
     s.closedAt = null
-    s.into = null
+    unfold(s)
     forgetSeenWas(s)
     s.changedAt = now
   }
@@ -196,7 +207,7 @@ export function applyOps(
       else if (op.kind === 'done') {
         if (s.status === 'done') continue
         s.status = 'done'
-        s.into = null
+        unfold(s)
         if (op.text) s.text = clipWords(op.text, TEXT_KEPT)
         forgetSeenWas(s)
         s.closedAt = now

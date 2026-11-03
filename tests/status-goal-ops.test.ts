@@ -271,3 +271,10 @@ test('a milestone dropped with no INTO unlinks its subjects and asks, so the cal
     })
   }
 })
+
+test('a DROP whose INTO names a dropped milestone unlinks its subjects, as a DROP with no INTO does', () => {
+  const linked = after(withGoal(), 'SERVES: s1 | Error messages\nSERVES: s2 | m3\nDROP: m3 | not needed', 30)
+  const dropped = after(linked, 'DROP: m2 | not needed | INTO m3', 40)
+
+  expect(dropped.serves).toEqual({})
+})
