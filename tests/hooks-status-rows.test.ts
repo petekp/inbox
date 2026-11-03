@@ -39,7 +39,7 @@ test('on the Status, where a subject stands goes under its name, wraps to three 
   expect(await textOf(terminal, 'status-s1-text')).toBe(text)
   expect(await textOf(terminal, 'status-s1-merged')).toBe('merged in: Sync retry, backoff, and jitter')
 
-  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 30 } })
   await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
   const shown = (await textOf(desktop, 'status-s1-text'))!
