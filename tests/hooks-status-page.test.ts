@@ -41,13 +41,13 @@ test('on a next build, a look starts when the Status page shows, the page shows 
     (await pane.findAll({ type: 'Button' }))
       .map(b => b.key ?? '')
       .filter(k => k.endsWith('-key') && !k.startsWith('tab-'))
-  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key'])
+  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
   expect((await pane.find({ key: 'show-ask-s1' }))?.text).toBe('v: View question')
   expect(await pane.find({ key: 'show-ask-s2' })).toBeUndefined()
   await pane.press({ key: 'next' })
-  expect(await rowKeys()).toEqual(['type-goal-goal-key', 'no-row-d-key', 'no-row-x-key'])
+  expect(await rowKeys()).toEqual(['type-goal-goal-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
   await pane.press({ key: 'previous' })
-  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key'])
+  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
   await pane.press({ key: 'no-row-d-key' })
   await $.tool.call({
     tool: 'mcp__inbox__record',
@@ -58,7 +58,7 @@ test('on a next build, a look starts when the Status page shows, the page shows 
   })
   await clock.settle()
   expect(await pane.find({ key: 'status-head' })).toBeDefined()
-  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key'])
+  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
 
   await pane.press({ key: 'show-ask-s1-key' })
   await clock.settle()
@@ -74,7 +74,7 @@ test('on a next build, a look starts when the Status page shows, the page shows 
   await clock.settle()
   expect((await pane.find({ key: 'status-s1' }))?.text).not.toContain('◆')
   expect(await pane.find({ key: 'show-ask-s1' })).toBeUndefined()
-  expect(await rowKeys()).toEqual(['type-goal-goal-key', 'no-row-d-key', 'no-row-x-key'])
+  expect(await rowKeys()).toEqual(['type-goal-goal-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
   expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('s: Set a goal')
 })
 

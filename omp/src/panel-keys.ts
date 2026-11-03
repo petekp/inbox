@@ -1,7 +1,8 @@
 import { isPrPress } from '../../hooks/pr-press'
 import { keptDiscards, isGuarded } from '../../hooks/timing'
 import { shownTabs, isRowTab } from '../../hooks/tabs'
-import { firstWaiting, rowAfterClose, steppedIndex } from '../../hooks/action-plan'
+import { firstWaiting, latestUndo, rowAfterClose, steppedIndex } from '../../hooks/action-plan'
+import { UNDO_KEY } from '../../hooks/help'
 import { GOAL_KEYS_ID, statusKeyRows, statusSelected } from '../../hooks/status-keys'
 import type { StatusKeyTarget } from '../../hooks/status-keys'
 import type { ShownTab } from '../../hooks/tabs'
@@ -146,12 +147,12 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
     return { ui: withTab(base, tabs[steppedIndex(tabs.indexOf(base.tab), step, tabs.length)]!, now) }
   }
   if (pickedTab) return { ui: withTab(base, pickedTab.id, now) }
-  if (key === 'u') {
-    const undoable = lines.filter(l => l.settled?.undo).at(-1)
-    const press = undoable?.settled?.undo
-    if (undoable && press) return { ui: withSelection(base, undoable.id), press }
+  if (key === UNDO_KEY) {
+    const undoable = latestUndo(
+      lines.flatMap(l => (l.settled?.undo ? [{ id: l.id, press: l.settled.undo, at: l.settled.at }] : [])),
+    )
 
-    return { ui: base }
+    return undoable ? { ui: withSelection(base, undoable.id), press: undoable.press } : { ui: base }
   }
   const tabLine = lines.find(l => l.isTabButtons && l.buttons.some(b => b.key === key))
   const tabButton = tabLine?.buttons.find(b => b.key === key)

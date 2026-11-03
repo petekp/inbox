@@ -85,7 +85,7 @@ function SettledPr({ pr, state }: { pr: PrView; state: SettledState }) {
   )
 }
 
-async function undoPr(id: string, ref: string) {
+export async function undoPr(id: string, ref: string) {
   if (undoing.has(id)) return
   undoing.add(id)
   try {

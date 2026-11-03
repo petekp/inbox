@@ -68,7 +68,7 @@ export type Line = {
   file: string | null
   feedback: { text: string; tone: Tone | null; source: Feedback | null } | null
   /** Set once the row has closed and its label shows until it leaves. */
-  settled: { label: string; tone: 'done' | 'muted'; undo: PanelPress | null } | null
+  settled: { label: string; tone: 'done' | 'muted'; undo: PanelPress | null; at: number } | null
   buttons: Button[]
   row: RowView | null
   /** The group a Closed line folds. Enter unfolds or folds it. */
@@ -190,6 +190,7 @@ function lineOfRow(row: RowView): Line {
             label: settledLabel(state.label, state.delivery),
             tone: settledTone(state),
             undo: state.canUndo && undo ? undo.press : null,
+            at: state.at,
           }
         : null,
     buttons: state.is === 'settled' ? [] : rowButtons(row),

@@ -2,6 +2,8 @@ import type { RenderSurface, UiCopyResult, UiPressArgument } from 'claude-code'
 import type { Draft, PressKind } from '../types'
 import type { PrPress } from './pr-press'
 import type { ActionEmphasis, ActionIcon } from './rows'
+import type { ShownUndo } from './action-plan'
+import { UNDO_KEY } from './help'
 
 export function focusHintFor(element: string): string | null {
   const id = element.split('-')[1]
@@ -62,6 +64,37 @@ export type Action = {
 }
 
 export type KeyAction = Action & { hotkey?: string; isOut?: boolean }
+
+/** d and x with no row selected, so the keys stay bound when there is nothing to close. */
+export function closeKeysWithoutRow(statusRowKeys: KeyAction[]): KeyAction[] {
+  return ['d', 'x'].flatMap(hotkey =>
+    statusRowKeys.some(k => k.hotkey === hotkey)
+      ? []
+      : [
+          {
+            key: `no-row-${hotkey}`,
+            label: 'Close',
+            hotkey,
+            kind: 'view',
+            onPress: () => undefined,
+          },
+        ],
+  )
+}
+
+/** The undo key, bound apart from the selection, which leaves a row as it closes. It stays bound with no Undo shown. */
+export function undoKey(
+  undo: ShownUndo | null,
+  run: (press: ShownUndo['press'], surface: UiPressArgument['surface']) => Promise<void>,
+): KeyAction {
+  return {
+    key: 'last-undo',
+    label: 'Undo',
+    hotkey: UNDO_KEY,
+    kind: 'view',
+    onPress: p => (undo ? run(undo.press, p.surface) : undefined),
+  }
+}
 
 export const ACTION_GLYPHS: Partial<Record<ActionIcon, string>> = { run: '▶', copy: '⧉', open: '↗', retry: '↻' }
 
