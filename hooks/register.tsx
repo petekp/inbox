@@ -159,7 +159,7 @@ import { parseInline } from './inline'
 import { DESKTOP_ROW_PAD, DESKTOP_WIDE_AT, INLINE_RAIL_AT, RAIL_GUTTER, TAB_PAD } from './pane-sizes'
 import { lookOf, paletteFor } from './palettes'
 import { animateRunningMarks } from './running-mark-timer'
-import { type TerminalSpan } from './terminal-text'
+import { glued, type TerminalSpan, unbroken } from './terminal-text'
 import {
   lastUndoEnd,
   NO_CURSOR,
@@ -2066,7 +2066,9 @@ async function initializeInbox($: EngineInterface) {
     }),
   ]
   await loadConversation($, await $.session.id())
-  // After loadConversation, which brings saved state up to date.
+  // After loadConversation, which brings saved state up to date. A band or pane drawn while the mod was off read no
+  // state, so no state write draws it again.
+  $.ui.invalidate('ui.render')
   await redrawAfterReload($)
 }
 
@@ -2888,20 +2890,6 @@ export const register: Register = on => {
     const isNarrowDesktop = look === 'desktop' && e.props.bodyColumns < DESKTOP_WIDE_AT
     const isAgeInSide = look === 'terminal'
     const isAgeDropped = isNarrowDesktop || isAgeInSide
-    const glued = (after: string) => after.replace(/(?<=.)[ \u2002]/gs, c => (c === ' ' ? '\u00a0' : '\u2007'))
-    // The Codex tab wraps a suffix too long for one line between words, so this does too. Claude Code's terminal
-    // wraps only at a plain space, not at DOT's en space, so a suffix that moves to the next line follows a plain one.
-    const unbroken = (after: string, title: string, fits: (text: string) => boolean) => {
-      const lastWord = title.slice(Math.max(0, title.trimEnd().lastIndexOf(' ') + 1))
-      if (fits(lastWord + after)) return glued(after)
-      const dot = after.startsWith(DOT) ? `${DOT.trimEnd()} ` : ''
-      const rest = after.slice(dot.length)
-      const firstBreak = rest.indexOf(' ')
-
-      return (
-        dot + (fits(rest) || firstBreak < 0 ? glued(rest) : glued(rest.slice(0, firstBreak)) + rest.slice(firstBreak))
-      )
-    }
     const isInline = e.props.placement === 'inline'
     paneState.isInlinePane = isInline
     if (e.surface === 'terminal') {
