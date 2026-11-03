@@ -7,6 +7,7 @@ type SessionMeta = {
     source?: string
     forked_from_id?: unknown
     parent_thread_id?: unknown
+    agent_path?: unknown
     cwd?: unknown
     history_base?: { thread_id?: unknown; end_byte_offset?: unknown }
   }
@@ -65,6 +66,18 @@ export async function forkedFromId(path: string): Promise<string | null> {
   const id = (await readSessionMeta(path))?.payload?.forked_from_id
 
   return typeof id === 'string' && id !== '' ? id : null
+}
+
+/**
+ * The task name a subagent was spawned with, in words: the last part of `agent_path`, `/root/<task_name>`, in its own
+ * rollout's first row. Null when the row names none.
+ */
+export async function subagentTaskName(path: string): Promise<string | null> {
+  const agentPath = (await readSessionMeta(path))?.payload?.agent_path
+  const taskName = isText(agentPath) ? (agentPath.split('/').pop() ?? '') : ''
+  const words = taskName.replace(/[_-]+/g, ' ').trim()
+
+  return words === '' ? null : words
 }
 
 export type RowPayload = NonNullable<TranscriptLine['payload']>

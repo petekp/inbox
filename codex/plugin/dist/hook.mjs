@@ -3096,6 +3096,12 @@ async function forkedFromId(path) {
   const id = (await readSessionMeta(path))?.payload?.forked_from_id;
   return typeof id === "string" && id !== "" ? id : null;
 }
+async function subagentTaskName(path) {
+  const agentPath = (await readSessionMeta(path))?.payload?.agent_path;
+  const taskName = isText(agentPath) ? agentPath.split("/").pop() ?? "" : "";
+  const words3 = taskName.replace(/[_-]+/g, " ").trim();
+  return words3 === "" ? null : words3;
+}
 var isText = (v) => typeof v === "string";
 var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
 var textOf2 = (v) => isText(v) ? v : "";
@@ -3596,7 +3602,9 @@ async function handleHook(input, deps) {
     case "SubagentStart": {
       const ref = input.agent_id;
       if (!ref) return null;
-      const name = input.agent_type || "subagent";
+      const taskName = input.transcript_path ? await subagentTaskName(input.transcript_path) : null;
+      const role = input.agent_type === "default" ? "" : input.agent_type;
+      const name = taskName || role || "subagent";
       await write((s) => statusChanged(s, (o) => childStarted(o, { ref, kind: "subagent", name }, now())));
       return null;
     }
