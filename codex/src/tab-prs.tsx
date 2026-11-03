@@ -27,12 +27,17 @@ import { KeyButton, ResultMarkView, GroupTitle, UndoPlace, Banner } from './tab-
 import { ListRow } from './tab-list'
 import { pressLine } from './tab-pr-lines'
 import type { PressLine } from './tab-pr-lines'
-import { PR_GROUPS, prGroupMotion, prLineMotion } from './tab-pr-steps'
+import { PR_GROUPS, PR_TAB_ACTIONS_MOTION, prBlockMotion, prGroupMotion, prLineMotion } from './tab-pr-steps'
 import type { DrawnPrBlock, DrawnPrs, PrGroup } from './tab-pr-steps'
+import type { RowTrack } from './rows'
 
 /** The PRs tab's own buttons, drawn after its PR blocks. */
 export function prTabKeys(v: View): Key[] {
-  return v.prs.tabActions.map(a => tabKey(DISMISS_MERGED_ID, a))
+  return tabKeys(v.prs.tabActions)
+}
+
+function tabKeys(actions: PrAction[]): Key[] {
+  return actions.map(a => tabKey(DISMISS_MERGED_ID, a))
 }
 
 /** The order's changed line's buttons: Rank again. */
@@ -117,21 +122,65 @@ function PrOrderLines({ v, order }: { v: View; order: PrOrderView }) {
   )
 }
 
-function PrBlock({ v, pr, rank, drawn, line, prs, now }: DrawnPrBlock & { v: View; prs: DrawnPrs; now: number }) {
-  const isSent = threadSentIn(v.lastActions)
-  const { status, head, unlisted } = readiness(pr, isSent)
+/**
+ * A PR block in the form its track draws. A settling block draws its settled line over the body it last drew open,
+ * inert, while its height shrinks over it. A block leaving after the view dropped it draws its last form. The body
+ * stays the same element from open to settling, so the rows still moving in it finish their own moves.
+ */
+function PrEntry({ b, v, prs, now }: { b: DrawnPrBlock; v: View; prs: DrawnPrs; now: number }) {
+  const was = b.wasOpen
+  const settled = b.state.is === 'settled' ? b.state : null
+  const shown = was?.block ?? b
+  const hasBody = !settled || was !== null
+  const bodyClass = !was ? 'pr-body' : settled ? 'pr-body pr-was-open closing' : 'pr-body closing'
+
+  return (
+    <section class="pr-entry" data-motion={prBlockMotion(prMarkId(b.pr.ref))}>
+      <div class="pr-entry-content">
+        {settled ? <SettledPr key="settled" pr={b.pr} state={settled} /> : <PrHead key="head" v={v} {...shown} />}
+        {hasBody ? (
+          <div key="body" class={bodyClass} inert={was !== null}>
+            <PrBody {...shown} v={v} prs={prs} now={now} tracks={was?.tracks} />
+          </div>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function PrHead({ v, pr, rank }: DrawnPrBlock & { v: View }) {
+  const { status, head, unlisted } = readiness(pr, threadSentIn(v.lastActions))
   const tone = PR_TONES[status]
+
+  return (
+    <div class="pr-head">
+      {rank === null ? null : <span class="rank muted">{prRankText(rank)}</span>}
+      <span class="tone-prs num">#{pr.number}</span> {pr.title}{' '}
+      <span class={tone ? `pr-verdict tone-${tone}` : 'pr-verdict muted'}>{head}</span>
+      <span class="pr-verdict muted">{unlisted.map(r => `${DOT}${r}`).join('')}</span>
+    </div>
+  )
+}
+
+/**
+ * An open block's buttons, press line and groups. With `tracks`, the body a settling or leaving block still draws:
+ * each row keeps the form it had, and no part takes a new move.
+ */
+function PrBody({
+  v,
+  pr,
+  drawn,
+  line,
+  prs,
+  now,
+  tracks,
+}: DrawnPrBlock & { v: View; prs: DrawnPrs; now: number; tracks?: Map<string, RowTrack> }) {
+  const isSent = threadSentIn(v.lastActions)
   const id = prMarkId(pr.ref)
   const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v)).map(a => prKey(id, pr, a))
 
   return (
-    <section>
-      <div class="pr-head">
-        {rank === null ? null : <span class="rank muted">{prRankText(rank)}</span>}
-        <span class="tone-prs num">#{pr.number}</span> {pr.title}{' '}
-        <span class={tone ? `pr-verdict tone-${tone}` : 'pr-verdict muted'}>{head}</span>
-        <span class="pr-verdict muted">{unlisted.map(r => `${DOT}${r}`).join('')}</span>
-      </div>
+    <>
       {pr.error ? <div class="pr-status tone-error">{prRefreshFailedText(pr.error)}</div> : null}
       <div class="pr-actions keys">
         {keys.map(k => (
@@ -139,16 +188,24 @@ function PrBlock({ v, pr, rank, drawn, line, prs, now }: DrawnPrBlock & { v: Vie
         ))}
       </div>
       {line ? (
-        <div data-motion={prLineMotion(id)}>
+        <div data-motion={tracks ? undefined : prLineMotion(id)}>
           <PrLine line={line} />
         </div>
       ) : null}
       <div class="pr-groups">
         {PR_GROUPS.map(group => (
-          <PrRows key={group} motion={prGroupMotion(id, group)} group={group} rows={drawn[group]} prs={prs} now={now} />
+          <PrRows
+            key={group}
+            motion={tracks ? undefined : prGroupMotion(id, group)}
+            group={group}
+            rows={drawn[group]}
+            prs={prs}
+            now={now}
+            tracks={tracks}
+          />
         ))}
       </div>
-    </section>
+    </>
   )
 }
 
@@ -163,12 +220,14 @@ function PrRows({
   rows,
   prs,
   now,
+  tracks,
 }: {
-  motion: string
+  motion: string | undefined
   group: PrGroup
   rows: Row[] | null
   prs: DrawnPrs
   now: number
+  tracks: Map<string, RowTrack> | undefined
 }) {
   if (!rows) return null
   const listed = rows.filter(r => prs.rows.includes(r))
@@ -178,10 +237,10 @@ function PrRows({
       <GroupTitle title={PR_GROUP_TITLES[group]} count={listed.length} />
       <div class="list">
         {rows.map(row => (
-          <div class="entry" key={row.id} data-motion={row.id}>
+          <div class="entry" key={row.id} data-motion={tracks ? undefined : row.id}>
             <ListRow
               row={row}
-              track={drawnRows.get(row.id)!.track}
+              track={tracks?.get(row.id) ?? drawnRows.get(row.id)!.track}
               now={now}
               onSelect={() => select('prs', prs.rows, prs.rows.indexOf(row))}
             />
@@ -203,7 +262,8 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
         <div class="muted">{empty.hint}</div>
       </div>
     )
-  const tabKeys = prTabKeys(v)
+  const tabActions = prs.tabActions
+  const areTabActionsLeaving = v.prs.tabActions.length === 0
 
   return (
     <main>
@@ -213,21 +273,17 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
         </div>
       ) : null}
       {v.prs.order ? <PrOrderLines v={v} order={v.prs.order} /> : null}
-      {prs.blocks.map(b =>
-        b.state.is === 'settled' ? (
-          <section>
-            <SettledPr pr={b.pr} state={b.state} />
-          </section>
-        ) : (
-          <PrBlock {...b} v={v} prs={prs} now={now} />
-        ),
-      )}
-      {tabKeys.length > 0 ? (
-        <section>
-          <div class="pr-actions keys">
-            {tabKeys.map(k => (
-              <KeyButton k={k} />
-            ))}
+      {prs.blocks.map(b => (
+        <PrEntry key={prMarkId(b.pr.ref)} b={b} v={v} prs={prs} now={now} />
+      ))}
+      {tabActions ? (
+        <section class="pr-entry" data-motion={PR_TAB_ACTIONS_MOTION}>
+          <div class="pr-entry-content" inert={areTabActionsLeaving}>
+            <div class="pr-actions keys">
+              {tabKeys(tabActions).map(k => (
+                <KeyButton k={k} />
+              ))}
+            </div>
           </div>
         </section>
       ) : null}

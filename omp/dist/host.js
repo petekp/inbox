@@ -109,7 +109,8 @@ function clipWords(text, limit) {
   return words.length <= limit ? words.join(" ") : `${words.slice(0, limit).join(" ")}\u2026`;
 }
 function words(text) {
-  return new Set((text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
+  const matches = text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? [];
+  return new Set(matches.map((w) => w.replace(/^\.+|\.+$/g, "")).filter((w) => w !== "" && !STOP_WORDS.has(w)));
 }
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
@@ -726,10 +727,12 @@ function findingBody(finding) {
 }
 var EXPLAIN_REPLY_FORM = "Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.";
 var COMPARE_PAGE_FILE = "compare-page.html";
-var compareRequest = (comparePage) => [
-  "Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.",
+var COMPARE_IN_BACKGROUND = "Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.";
+var COMPARE_IN_TURN = "Compare the choices in this question you asked me by trying them against the code, not from memory. Do it now, and reply with the result before this turn ends, because a background subagent's report after your turn ends may not reach this chat.";
+var compareRequest = (texts) => [
+  texts.compareInBackground ? COMPARE_IN_BACKGROUND : COMPARE_IN_TURN,
   "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
-  `Then make a page from the inbox's comparison template. Write the comparison as JSON in the shape the comment at the top of the template shows, with the few measures that tell the choices apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Build the page with: cat "${comparePage}" <your JSON file> > <your page>.html`,
+  `Then make a page from the inbox's comparison template. Write the comparison as JSON in the shape the comment at the top of the template shows, with the few measures that tell the choices apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Build the page with: cat "${texts.comparePage}" <your JSON file> > <your page>.html`,
   "When the comparison is done, reply without a table, since the page holds the measures. Give your pick and say whether it changed, your reason in one line, one line on anything you did not expect, and the page's absolute path.",
   "Also call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps. That marks it compared. Call each choice by its name as listed."
 ].join(`
@@ -746,7 +749,7 @@ var messages = {
     return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.
 ${quotedAsk(item)}`;
   },
-  compare: (item, comparePage) => `${compareRequest(comparePage)}
+  compare: (item, texts) => `${compareRequest(texts)}
 ${quotedAsk(item)}`,
   run: (item, command) => `For "${item.ask}", run this:
 \`\`\`
@@ -1140,6 +1143,10 @@ function findMilestone(o, ref) {
   const key = nameKey(clipWords(ref, NAME_KEPT));
   return o.milestones.find((m) => m.id === ref) ?? o.milestones.find((m) => m.status !== "dropped" && nameKey(m.name) === key) ?? null;
 }
+function linkableMilestone(o, ref) {
+  const m = findMilestone(o, ref);
+  return m && m.status !== "dropped" ? m : null;
+}
 function forgetSeenWas(m, lastLookAt) {
   if (lastLookAt !== null && m.changedAt <= lastLookAt)
     m.was = null;
@@ -1153,23 +1160,27 @@ function moveMilestone(o, m, op, now) {
     m.text = clipWords(op.text, TEXT_KEPT);
     m.closedAt = null;
   } else if (op.kind === "done") {
+    if (m.status === "done")
+      return;
     m.status = "done";
     if (op.text)
       m.text = clipWords(op.text, TEXT_KEPT);
     m.closedAt = now;
   } else if (op.kind === "drop") {
-    const target = op.into ? findMilestone(o, op.into) : null;
+    const target = op.into ? linkableMilestone(o, op.into) : null;
     m.status = "dropped";
     m.text = clipWords(op.why, TEXT_KEPT);
     m.closedAt = now;
-    if (target && target.id !== m.id) {
-      for (const [id, to] of Object.entries(o.serves))
-        if (to === m.id)
-          o.serves[id] = target.id;
-      for (const [ask, to] of Object.entries(o.askSubjects))
-        if (to === m.id)
-          o.askSubjects[ask] = target.id;
-    }
+    const into = target && target.id !== m.id ? target.id : null;
+    for (const links of [o.serves, o.askSubjects])
+      for (const [id, to] of Object.entries(links)) {
+        if (to !== m.id)
+          continue;
+        if (into)
+          links[id] = into;
+        else
+          delete links[id];
+      }
   } else {
     forgetSeenWas(m, o.lastLookAt);
     m.was = op.text;
@@ -1217,7 +1228,7 @@ function applyGoalOp(o, op, now, findSubject) {
   if (op.kind === "milestone")
     return addMilestone(o, op, now);
   const subject = findSubject(op.subject);
-  const milestone = op.milestone === null ? null : findMilestone(o, op.milestone);
+  const milestone = op.milestone === null ? null : linkableMilestone(o, op.milestone);
   if (!subject || op.milestone !== null && !milestone)
     return o;
   return { ...o, serves: { ...o.serves, [subject.id]: milestone?.id ?? "none" } };
@@ -1554,9 +1565,7 @@ function pressed(ledger, last, p, ctx) {
       return {
         ledger,
         last: record("talk"),
-        effects: [
-          { kind: "send", text: messages.compare(item, ctx.comparePage), by: { id: item.id, action: "compare" } }
-        ]
+        effects: [{ kind: "send", text: messages.compare(item, ctx), by: { id: item.id, action: "compare" } }]
       };
     case "done":
       return { ledger: closeItem(ledger, item.id, { how: "done", outcome: "done" }, ctx.now), last: null, effects: [] };
@@ -2001,6 +2010,7 @@ function statusPage(s, now) {
     isLookAtEnd: true
   };
   const lookId = (id) => look === null ? null : id;
+  const foldCtx = { ...ctx, lookId: null, running: [] };
   const rows = [
     ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
     ...partRows(top.shown, ctx, 0)
@@ -2011,7 +2021,7 @@ function statusPage(s, now) {
       id: `${prefix}done`,
       depth,
       text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: ruledRows(partRows([...done].sort(pageOrder), { ...ctx, lookId: null }, depth + 1), false)
+      rows: ruledRows(partRows([...done].sort(pageOrder), foldCtx, depth + 1), false)
     }
   ];
   const foldRows = (prefix, p, depth) => [
@@ -4696,9 +4706,7 @@ function actionLines(keys, more, { width, gap, separator }) {
 }
 
 // ../hooks/view.ts
-var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
 var HOLDS_UP_TEXT = "Holds up";
-var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
   return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
@@ -4872,18 +4880,23 @@ function heldLabel(c) {
   return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
 }
 var UPDATING_TEXT = "Updating\u2026";
+var RETRYING_TEXT = "Retrying the last update\u2026";
 var REFRESHING_PRS_TEXT = "Refreshing PRs\u2026";
 function footerStatus(tab, status, prs, statusPageError) {
   if (tab === "prs")
     return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null };
   const error = (tab === "overview" ? statusPageError : null) ?? status.error;
-  return { text: status.isUpdating ? UPDATING_TEXT : null, error };
+  return { text: status.isRetrying ? RETRYING_TEXT : status.isUpdating ? UPDATING_TEXT : null, error };
 }
-function perTurnStatus(update) {
-  return {
-    isUpdating: update.isUpdating,
-    error: update.isFailed && !update.isUpdating ? UPDATE_FAILED + (update.retries ? UPDATE_RETRIES : "") : null
-  };
+var NEXT_TRY = " The inbox tries again after the agent's next reply.";
+var FAILED_UPDATE_TEXT = {
+  waiting: `Last update failed. Items from that reply may be missing.${NEXT_TRY}`,
+  "failed-again": `Last update failed, and its retry failed too. Items from recent replies may be missing.${NEXT_TRY}`,
+  unreadable: `Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing.${NEXT_TRY}`
+};
+function perTurnStatus(isUpdating, recovery) {
+  const error = recovery === "none" || recovery === "retrying" ? null : FAILED_UPDATE_TEXT[recovery];
+  return { isUpdating, isRetrying: recovery === "retrying", error };
 }
 
 // ../hooks/session-view.ts
@@ -4897,14 +4910,19 @@ function withoutStaleResult(last, now) {
 function withoutStalePending(lastActions, now) {
   return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]));
 }
-function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes = {}) {
+function updateRecovery(s) {
+  const { presence } = s;
+  if (presence.ledgerState !== "failed")
+    return "none";
+  if (presence.isUpdating)
+    return "retrying";
+  if (s.pending.length === 0 && presence.isConversationUnreadable)
+    return "unreadable";
+  return presence.failedAttempts > 1 ? "failed-again" : "waiting";
+}
+function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
-  const update = {
-    isUpdating: s.presence.isUpdating,
-    isFailed: s.presence.ledgerState === "failed",
-    retries: canCatchUp || s.pending.length > 0
-  };
   const inbox = inboxView({
     ledger: l,
     lastActions,
@@ -4912,7 +4930,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     turns: s.presence,
     extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
     settleWindowMs,
-    status: perTurnStatus(update),
+    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s)),
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt
@@ -4954,7 +4972,7 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
 // ../hooks/session-presses.ts
 function isRepeatWhileOut(s, p, at, drawn) {
   const rowId = pressRowId(p);
-  const view = sessionView(s, at, drawn.settleWindowMs, false, drawn.holds);
+  const view = sessionView(s, at, drawn.settleWindowMs, drawn.holds);
   const row = allRows(view).find((r) => r.id === rowId);
   const last = view.lastActions[rowId];
   const state = row?.state ?? { is: "open" };
@@ -4972,7 +4990,8 @@ function pressOn(s, p, at, drawn, texts, localPressId) {
     ...ctx,
     extraSteps: item ? itemPrSteps(item, s.prViews, tabPrs(s.ledger)) : [],
     answerMessage: texts.answerMessage,
-    comparePage: texts.comparePage
+    comparePage: texts.comparePage,
+    compareInBackground: texts.compareInBackground
   });
   if ("stale" in r)
     return r;
@@ -6615,12 +6634,17 @@ function milestoneOf(saved) {
     closedAt: time(m.closedAt)
   };
 }
+function droppedMilestoneIds(milestones) {
+  return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
+}
 function goalFields(o, subjectIds) {
   const milestones = (Array.isArray(o.milestones) ? o.milestones : []).map(milestoneOf).filter((m) => m !== null);
-  const milestoneIds = new Set(milestones.map((m) => m.id));
+  const dropped = droppedMilestoneIds(milestones);
+  const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
-  const serves = Object.fromEntries(savedServes.filter((e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || milestoneIds.has(e[1]))));
-  const declined = Array.isArray(o.declinedGoals) ? o.declinedGoals.filter((d) => typeof d === "string") : [];
+  const serves = Object.fromEntries(savedServes.filter((e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || liveIds.has(e[1]))));
+  const keys = (Array.isArray(o.declinedGoals) ? o.declinedGoals : []).flatMap((d) => typeof d === "string" ? [nameKey(d)] : []);
+  const declined = [...new Set(keys)].filter((key) => key !== "");
   return {
     goal: goalOf(o.goal),
     proposedGoal: proposedOf(o.proposedGoal),
@@ -6744,7 +6768,9 @@ function upgradeStatus(saved) {
   const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
   const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
-  const askSubjects = Object.fromEntries(savedLinks.filter((e) => typeof e[1] === "string"));
+  const goal = goalFields(o, new Set(subjects.map((s) => s.id)));
+  const dropped = droppedMilestoneIds(goal.milestones);
+  const askSubjects = Object.fromEntries(savedLinks.filter((e) => typeof e[1] === "string" && !dropped.has(e[1])));
   const look = o.look;
   const lookAt = time2(look?.startedAt);
   return {
@@ -6756,7 +6782,7 @@ function upgradeStatus(saved) {
     nextChildId: Math.max(time2(o.nextChildId) ?? 1, children.length + 1),
     lastLookAt: time2(o.lastLookAt),
     look: lookAt === null ? null : { startedAt: lookAt },
-    ...goalFields(o, new Set(subjects.map((s) => s.id)))
+    ...goal
   };
 }
 
@@ -6958,6 +6984,8 @@ function emptySession() {
       turnsApplied: 0,
       ledgerState: "current",
       hasDroppedReply: false,
+      failedAttempts: 0,
+      isConversationUnreadable: false,
       isUpdating: false,
       isTurnRunning: false,
       turnStartedAt: null,
@@ -6974,6 +7002,7 @@ function emptySession() {
     stop: null,
     overviewFailure: null,
     lastOverviewCallAt: null,
+    overviewTurn: 0,
     hostTasks: [],
     dialogQuestions: []
   };
@@ -7045,6 +7074,7 @@ function sessionFields(saved, views) {
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
+    overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
@@ -7601,6 +7631,262 @@ function demoView(now, agent) {
   };
 }
 
+// ../hooks/clients.ts
+var CLIENTS = {
+  "claude-code": {
+    support: {
+      "catch-up": { kind: "full" },
+      "failed-update-recovery": { kind: "full" },
+      "ledger-behind-state": { kind: "full" },
+      "dialog-outcome": { kind: "full" },
+      "dialog-answer": {
+        kind: "different",
+        reason: "The dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close."
+      },
+      "dialog-descriptions": { kind: "full" },
+      "tool-output-urls": { kind: "full" },
+      "pr-link-from-output": { kind: "full" },
+      "pr-arrivals": { kind: "full" },
+      "prs-empty-hint": { kind: "full" },
+      "gh-signed-out-notice": { kind: "full" },
+      "link-open-rule": { kind: "full" },
+      "fork-ledger": { kind: "full" },
+      "band-and-stop-rows": { kind: "full" },
+      "exchange-trigger": { kind: "full" },
+      "settle-window": { kind: "full" },
+      "fold-on-typed-message": { kind: "full" },
+      "version-label": { kind: "full" },
+      "status-tab": { kind: "full" },
+      "turn-working": { kind: "full" },
+      "host-task-list": { kind: "full" },
+      "hooks-need-trust": {
+        kind: "unsupported",
+        reason: "Claude Code asks no one to trust a plugin's hooks, so no hook stops running for want of trust."
+      },
+      "compare-in-background": { kind: "full" },
+      "compare-page": { kind: "full" },
+      "running-marks": { kind: "full" },
+      "pending-answer-mark": { kind: "full" },
+      "tab-symbols": { kind: "full" },
+      "dim-pressed-button": {
+        kind: "different",
+        reason: "The desktop app's Button has no disabled state. `dimColor` fades only its label, and a click still shows the native press highlight before the shared press path ignores it."
+      },
+      "herdr-sidebar": { kind: "full" },
+      "status-children": { kind: "full" },
+      "status-look-line": { kind: "full" },
+      "status-row-rules": { kind: "full" },
+      "status-failed-warning": { kind: "full" },
+      "asks-holds-up-line": { kind: "full" },
+      "status-mid-turn-refresh": { kind: "full" },
+      "ran-call-activity": { kind: "full" },
+      "ran-call-delegates": { kind: "full" },
+      "tool-result-line": { kind: "full" },
+      "status-call-records": { kind: "full" },
+      "dismiss-merged-prs": { kind: "full" },
+      "pr-order": { kind: "full" },
+      "pr-rank-again": { kind: "full" },
+      "pr-check-rerun": { kind: "full" },
+      "help-page": {
+        kind: "different",
+        reason: "The engine binds only a digit or a lowercase letter as a Button's hotkey, so no key opens the terminal's Help. The desktop pane takes no keys, so its Help lists only the marks."
+      },
+      "status-view-ask": { kind: "full" },
+      "status-goal": { kind: "full" },
+      "status-done-fold": { kind: "full" }
+    }
+  },
+  codex: {
+    support: {
+      "catch-up": {
+        kind: "different",
+        reason: "Codex runs no hook when a chat is opened. A resumed chat catches up when its Inbox tab opens, and at the hook its next message runs if the tab stays closed. A chat whose ledger failed or fell behind, such as an archived chat that runs no hooks, also catches up when its tab opens, once until the ledger or the chat moves on."
+      },
+      "failed-update-recovery": { kind: "full" },
+      "ledger-behind-state": {
+        kind: "different",
+        reason: "Codex runs no hook when a chat is opened. A resumed chat is marked behind when its Inbox tab opens, and at the hook its next message runs if the tab stays closed."
+      },
+      "dialog-outcome": {
+        kind: "different",
+        reason: "Codex's dialog tool returns at once and the answer arrives later as a user message, so a dialog is noted as open and its outcome is never recorded."
+      },
+      "dialog-answer": { kind: "full" },
+      "dialog-descriptions": { kind: "full" },
+      "tool-output-urls": { kind: "full" },
+      "pr-link-from-output": {
+        kind: "different",
+        reason: "Codex runs no hook for a long command's output, so the inbox reads the turn's shell commands from the rollout at Stop. A PR that `gh pr create` opened is linked when the turn ends, not when the command finishes."
+      },
+      "pr-arrivals": { kind: "full" },
+      "prs-empty-hint": {
+        kind: "different",
+        reason: "The Codex app calls a conversation a chat, so its hint says chat where the mod says session."
+      },
+      "gh-signed-out-notice": { kind: "full" },
+      "link-open-rule": { kind: "full" },
+      "fork-ledger": {
+        kind: "different",
+        reason: "Codex runs no hook when a chat is opened. A fork takes its parent's ledger when its Inbox tab opens, and at the hook its first message runs if the tab stays closed."
+      },
+      "band-and-stop-rows": {
+        kind: "unsupported",
+        reason: "Codex has no line above its prompt, and shows no stops."
+      },
+      "exchange-trigger": {
+        kind: "different",
+        reason: "A Codex hook names no source for a turn that has no prompt, so the exchange reads unknown. The mod reads the prompt origin."
+      },
+      "settle-window": {
+        kind: "different",
+        reason: "The tab only learns of a close at its next poll, so the server offers Undo for two polls longer."
+      },
+      "fold-on-typed-message": { kind: "full" },
+      "version-label": { kind: "full" },
+      "status-tab": { kind: "full" },
+      "turn-working": {
+        kind: "different",
+        reason: "Codex runs no hook when a chat is opened, and a turn whose app-server dies has no end row in the rollout. So after Codex's app-server dies during a turn, Working\u2026 stays and Done messages wait until the next message. Quitting the app, even with SIGKILL, ends the turn in the rollout."
+      },
+      "host-task-list": {
+        kind: "different",
+        reason: "Codex runs no hook for `update_plan`, and the inbox's tool matcher cannot be widened without every person trusting the hook again. So the plan is read from the rollout when the turn stops, and shows from the next Status call. The tool is not offered by default in `codex exec`, and the app is not checked."
+      },
+      "hooks-need-trust": { kind: "full" },
+      "compare-in-background": {
+        kind: "different",
+        reason: "When a Codex subagent ends, Codex queues its result for the main agent and starts no turn for it. So a result that arrives after the agent's turn has ended does not reach the chat on its own, and the Compare message asks for the comparison in the agent's own turn."
+      },
+      "compare-page": { kind: "full" },
+      "running-marks": { kind: "full" },
+      "pending-answer-mark": { kind: "full" },
+      "tab-symbols": { kind: "full" },
+      "dim-pressed-button": { kind: "full" },
+      "herdr-sidebar": {
+        kind: "different",
+        reason: "Only Codex's hooks and the update a hook starts know the Herdr pane, so a record or close during a turn reaches the sidebar at the next hook. Codex finds no stops, and runs no hook when a session ends."
+      },
+      "status-children": {
+        kind: "different",
+        reason: "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so background commands and workflows do not show. The end of a wait on a Herdr delegate is read at Stop."
+      },
+      "status-look-line": { kind: "full" },
+      "status-row-rules": { kind: "full" },
+      "status-failed-warning": { kind: "full" },
+      "asks-holds-up-line": { kind: "full" },
+      "status-mid-turn-refresh": { kind: "full" },
+      "ran-call-activity": {
+        kind: "different",
+        reason: "Codex runs PreToolUse before a call is approved, so a call's line shows from then. Stop, and the tool call that claims a Status call during the turn, take back the lines of calls the rollout shows were declined or blocked. A declined MCP call keeps its line, and so does a call whose block a code-mode script catches."
+      },
+      "ran-call-delegates": {
+        kind: "unsupported",
+        reason: "Codex runs PreToolUse before a call is approved, so a herdr command the person declines or a hook blocks still adds its delegate rows. PostToolUse cannot show which calls ran: Codex skips it for a command that runs longer than code mode's wait. The rollout check that takes back activity lines does not take back delegate rows yet."
+      },
+      "tool-result-line": {
+        kind: "unsupported",
+        reason: "Codex draws an MCP tool call's result from its content, which is the text the model reads. structuredContent reaches the model too, and _meta reaches only an MCP App view, so a result has no field for the person alone."
+      },
+      "status-call-records": { kind: "full" },
+      "dismiss-merged-prs": { kind: "full" },
+      "pr-order": { kind: "full" },
+      "pr-rank-again": { kind: "full" },
+      "pr-check-rerun": { kind: "full" },
+      "help-page": { kind: "full" },
+      "status-view-ask": {
+        kind: "different",
+        reason: "Pete's choice: View takes clicks only, with no key. The Codex Status has no row selection and is used by clicking."
+      },
+      "status-goal": {
+        kind: "different",
+        reason: "The goal's buttons take clicks only, as View does: the Codex Status has no row selection and is used by clicking."
+      },
+      "status-done-fold": {
+        kind: "different",
+        reason: "A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking."
+      }
+    }
+  },
+  omp: {
+    support: {
+      "catch-up": { kind: "full" },
+      "failed-update-recovery": { kind: "full" },
+      "ledger-behind-state": { kind: "full" },
+      "dialog-outcome": { kind: "full" },
+      "dialog-answer": {
+        kind: "different",
+        reason: "The ask dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close."
+      },
+      "dialog-descriptions": { kind: "full" },
+      "tool-output-urls": { kind: "full" },
+      "pr-link-from-output": { kind: "full" },
+      "pr-arrivals": { kind: "full" },
+      "prs-empty-hint": { kind: "full" },
+      "gh-signed-out-notice": { kind: "full" },
+      "link-open-rule": { kind: "full" },
+      "fork-ledger": { kind: "full" },
+      "band-and-stop-rows": {
+        kind: "different",
+        reason: "omp's band cannot take keys, so Resume is a button in the panel. omp classes a stop from the request's HTTP status and message, so it never names billing or a reset time."
+      },
+      "exchange-trigger": {
+        kind: "different",
+        reason: "omp's `before_agent_start` event carries only the prompt text, so every turn has words and none reads as started by something else."
+      },
+      "settle-window": { kind: "full" },
+      "fold-on-typed-message": { kind: "full" },
+      "version-label": {
+        kind: "different",
+        reason: "omp's panel footer ends with the inbox model's name, so the version follows it there."
+      },
+      "status-tab": { kind: "full" },
+      "turn-working": { kind: "full" },
+      "host-task-list": { kind: "full" },
+      "hooks-need-trust": {
+        kind: "unsupported",
+        reason: "omp runs an installed extension's events without asking anyone to trust them."
+      },
+      "compare-in-background": { kind: "full" },
+      "compare-page": { kind: "full" },
+      "running-marks": { kind: "full" },
+      "pending-answer-mark": { kind: "full" },
+      "tab-symbols": { kind: "full" },
+      "dim-pressed-button": {
+        kind: "different",
+        reason: "The panel already draws a follow-up such as Discuss dim, and has no dimmer style, so an out follow-up looks as it does at rest until it is focused. Its key still does nothing."
+      },
+      "herdr-sidebar": { kind: "full" },
+      "status-children": {
+        kind: "different",
+        reason: "omp's extension events report subagents and bash calls. omp's reference names no event for a background job or a workflow run, so those do not show."
+      },
+      "status-look-line": { kind: "full" },
+      "status-row-rules": { kind: "full" },
+      "status-failed-warning": { kind: "full" },
+      "asks-holds-up-line": { kind: "full" },
+      "status-mid-turn-refresh": { kind: "full" },
+      "ran-call-activity": { kind: "full" },
+      "ran-call-delegates": { kind: "full" },
+      "tool-result-line": { kind: "full" },
+      "status-call-records": { kind: "full" },
+      "dismiss-merged-prs": { kind: "full" },
+      "pr-order": { kind: "full" },
+      "pr-rank-again": { kind: "full" },
+      "pr-check-rerun": { kind: "full" },
+      "help-page": {
+        kind: "different",
+        reason: "The panel takes keys only, so `?` opens Help, and no button does."
+      },
+      "status-view-ask": { kind: "full" },
+      "status-goal": { kind: "full" },
+      "status-done-fold": { kind: "full" }
+    }
+  }
+};
+function isCompareInBackground(client) {
+  return CLIENTS[client].support["compare-in-background"].kind === "full";
+}
+
 // ../hooks/press-effects.ts
 function finishedResult(pending, errors, at) {
   const parts = pending.parts.map((part, n) => ({ ...part, error: errors[n] ?? null }));
@@ -7831,18 +8117,22 @@ function applied(s, parsed, now, promptAt) {
     return {
       ...s,
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
-      presence: { ...s.presence, ledgerState: "failed" }
+      presence: { ...s.presence, ledgerState: "failed", failedAttempts: s.presence.failedAttempts + 1 }
     };
   const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger;
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
+  const isCurrent = !hasDroppedReply;
+  const failedAttempts = parsed ? s.presence.failedAttempts : s.presence.failedAttempts + 1;
   return linkDialogs({
     ...s,
     ledger,
     pending: s.pending.slice(1),
     presence: {
       ...s.presence,
-      ledgerState: hasDroppedReply ? "failed" : "current",
+      ledgerState: isCurrent ? "current" : "failed",
       hasDroppedReply,
+      failedAttempts: isCurrent ? 0 : failedAttempts,
+      isConversationUnreadable: isCurrent ? false : s.presence.isConversationUnreadable,
       turnsApplied: Math.max(s.presence.turnsApplied, next.turnsStarted)
     }
   });
@@ -7918,12 +8208,20 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       s.merged = null;
     }
   };
+  const unfold = (s) => {
+    const target = s.into === null ? undefined : o.subjects.find((x) => x.id === s.into);
+    if (target?.merged)
+      target.merged = target.merged.split(", ").filter((name) => name !== s.name).join(", ") || null;
+    s.into = null;
+  };
   const set = (s, status, text) => {
     const isReworded = s.status === status && hasSameWords(s.text, text);
     if (isReworded)
       return;
     s.status = status;
     s.text = clipWords(text, TEXT_KEPT);
+    s.closedAt = null;
+    unfold(s);
     forgetSeenWas(s);
     s.changedAt = now;
   };
@@ -7947,7 +8245,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     else if (op.kind === "link") {
       const child = o.children.find((c) => c.id === op.ref);
       const subject = find(op.subject);
-      const milestone = subject ? null : findMilestone(o, op.subject);
+      const milestone = subject ? null : linkableMilestone(o, op.subject);
       if (child && subject)
         child.subjectId = subject.id;
       else if (subject && askIds.has(op.ref))
@@ -7985,7 +8283,10 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       if (op.kind === "set")
         set(s, op.status, op.text);
       else if (op.kind === "done") {
+        if (s.status === "done")
+          continue;
         s.status = "done";
+        unfold(s);
         if (op.text)
           s.text = clipWords(op.text, TEXT_KEPT);
         forgetSeenWas(s);
@@ -8025,8 +8326,11 @@ function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ??
 }
 
 // ../hooks/session-status.ts
+function isStatusCallCurrent(s, appliedAfter) {
+  return s.presence.turnsApplied >= appliedAfter && s.overviewTurn <= appliedAfter;
+}
 function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overview?.goal?.setAt ?? null) {
-  if (s.presence.turnsApplied < appliedAfter)
+  if (!isStatusCallCurrent(s, appliedAfter))
     return s;
   return {
     ...s,
@@ -8035,15 +8339,16 @@ function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overvi
       overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)), readSetAt)
     },
     overviewFailure: null,
-    lastOverviewCallAt: now
+    lastOverviewCallAt: now,
+    overviewTurn: appliedAfter
   };
 }
 var REFUSED_ANSWER_CHARS = 500;
 function failedStatus(s, text, appliedAfter, now) {
-  if (s.presence.turnsApplied < appliedAfter)
+  if (!isStatusCallCurrent(s, appliedAfter))
     return s;
   const failure = text === null ? { at: now, cause: "no-answer", answer: null } : { at: now, cause: "refused", answer: text.slice(0, REFUSED_ANSWER_CHARS) };
-  return { ...s, overviewFailure: failure, lastOverviewCallAt: now };
+  return { ...s, overviewFailure: failure, lastOverviewCallAt: now, overviewTurn: appliedAfter };
 }
 var STATUS_REFRESH_MS = 10 * 60000;
 function claimedStatusRefresh(s, now) {
@@ -8096,6 +8401,8 @@ function appliedCatchUp(s, begun, parsed, now) {
       ...s.presence,
       ledgerState: parsed ? "current" : "failed",
       hasDroppedReply: parsed ? false : s.presence.hasDroppedReply,
+      failedAttempts: parsed ? 0 : s.presence.failedAttempts + 1,
+      isConversationUnreadable: false,
       turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted)
     }
   });
@@ -8389,6 +8696,8 @@ async function attempt(host, ask, prompt) {
   };
 }
 async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
+  if (!isStatusCallCurrent(s, appliedAfter))
+    return;
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() };
   const prompt = statusCallPrompt(input, call.exchange);
   const attempts = [];
@@ -8403,7 +8712,7 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
   let isWritten = false;
   const after = await host.update((x) => {
     before = x.ledger.overview;
-    isWritten = x.presence.turnsApplied >= appliedAfter;
+    isWritten = isStatusCallCurrent(x, appliedAfter);
     const readSetAt = input.last?.goal?.setAt ?? null;
     return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now, readSetAt);
   });
@@ -8525,6 +8834,7 @@ async function runUpdates(host) {
               const reply = await host.catchUp(s).catch(() => ({ kind: "failed" }));
               if (reply.kind === "unreadable") {
                 canCatchUp = false;
+                await host.update((x) => ({ ...x, presence: { ...x.presence, isConversationUnreadable: true } }));
                 continue;
               }
               const parsed = reply.kind === "reply" ? parseReply(reply.text, reply.source) : null;
@@ -8681,7 +8991,7 @@ function demoSource(deps) {
   const changed = () => listeners.forEach((l) => l());
   return {
     screen: async (holds) => ({
-      view: sessionView(state, deps.now(), deps.settleWindowMs, true, holds),
+      view: sessionView(state, deps.now(), deps.settleWindowMs, holds),
       modelName: deps.modelName,
       isGhMissing: false,
       isFetchingPrs: false,
@@ -8692,7 +9002,10 @@ function demoSource(deps) {
     }),
     press: async (p, holds) => {
       const at = deps.now();
-      const r = pressOn(state, p, at, { settleWindowMs: deps.settleWindowMs, holds }, { comparePage: deps.comparePage });
+      const r = pressOn(state, p, at, { settleWindowMs: deps.settleWindowMs, holds }, {
+        comparePage: deps.comparePage,
+        compareInBackground: isCompareInBackground("omp")
+      });
       if ("stale" in r)
         return { error: null, note: "stale", isUnconfirmed: false };
       const after = demoAfterPress({ lastActions: state.lastActions, turns: state.presence }, r, new Set(Object.keys(holds.replies)));
@@ -9233,7 +9546,7 @@ function panelCalls(context, sessions) {
       const id = sessionIdOf(ctx);
       const s = await readState(dir, id);
       return {
-        view: sessionView(s, deps.now(), deps.settleWindowMs, true, holds),
+        view: sessionView(s, deps.now(), deps.settleWindowMs, holds),
         modelName: modelNameOf(ctx),
         isGhMissing: memory.isGhMissing,
         isFetchingPrs: prFetches.isFetching(id),
@@ -9402,7 +9715,7 @@ function sessionCalls(context) {
       return;
     deps.background(reportToHerdr(run, async () => {
       const s = await readState(dir, id);
-      const view = sessionView(s, deps.now(), deps.settleWindowMs, true);
+      const view = sessionView(s, deps.now(), deps.settleWindowMs);
       return { pane, tokens: herdrTokens(s.ledger, s.stop, view, []) };
     }, deps.after));
   }
@@ -9431,7 +9744,8 @@ function sessionCalls(context) {
       },
       settleWindowMs: deps.settleWindowMs,
       newId: deps.newId,
-      comparePage: deps.comparePage
+      comparePage: deps.comparePage,
+      compareInBackground: isCompareInBackground("omp")
     };
   }
   const conversationText = (ctx) => {

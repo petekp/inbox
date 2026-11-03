@@ -8,9 +8,17 @@ import type { StatusAnswer } from './status'
 import type { Ledger, SessionStatus, StatusFailure, Session } from '../types'
 
 /**
+ * Whether a Status call made for `appliedAfter` applied turns may still write. It may not when the session now has
+ * fewer applied turns, since it was replaced by one that never applied that update, or when a call made for more
+ * turns already wrote, since Codex update processes can run their Status calls in either order.
+ */
+export function isStatusCallCurrent(s: Session, appliedAfter: number): boolean {
+  return s.presence.turnsApplied >= appliedAfter && s.overviewTurn <= appliedAfter
+}
+
+/**
  * Writes the Status call's answer for an update that is already applied. `appliedAfter` is the session's
- * `turnsApplied` when the update landed. The answer is dropped when the session now has fewer applied turns than that:
- * it was replaced by one that never applied this update.
+ * `turnsApplied` when the update landed. The answer is dropped unless `isStatusCallCurrent`.
  */
 export function appliedStatus<S extends Session>(
   s: S,
@@ -19,7 +27,7 @@ export function appliedStatus<S extends Session>(
   now: number,
   readSetAt: number | null = s.ledger.overview?.goal?.setAt ?? null,
 ): S {
-  if (s.presence.turnsApplied < appliedAfter) return s
+  if (!isStatusCallCurrent(s, appliedAfter)) return s
 
   return {
     ...s,
@@ -29,6 +37,7 @@ export function appliedStatus<S extends Session>(
     },
     overviewFailure: null,
     lastOverviewCallAt: now,
+    overviewTurn: appliedAfter,
   }
 }
 
@@ -40,13 +49,13 @@ const REFUSED_ANSWER_CHARS = 500
  * none. `appliedAfter` drops the failure as `appliedStatus` drops an answer.
  */
 export function failedStatus<S extends Session>(s: S, text: string | null, appliedAfter: number, now: number): S {
-  if (s.presence.turnsApplied < appliedAfter) return s
+  if (!isStatusCallCurrent(s, appliedAfter)) return s
   const failure: StatusFailure =
     text === null
       ? { at: now, cause: 'no-answer', answer: null }
       : { at: now, cause: 'refused', answer: text.slice(0, REFUSED_ANSWER_CHARS) }
 
-  return { ...s, overviewFailure: failure, lastOverviewCallAt: now }
+  return { ...s, overviewFailure: failure, lastOverviewCallAt: now, overviewTurn: appliedAfter }
 }
 
 /** How long a running turn goes between Status calls. */
@@ -155,6 +164,8 @@ export function appliedCatchUp<S extends Session>(s: S, begun: Session, parsed: 
       ...s.presence,
       ledgerState: parsed ? 'current' : 'failed',
       hasDroppedReply: parsed ? false : s.presence.hasDroppedReply,
+      failedAttempts: parsed ? 0 : s.presence.failedAttempts + 1,
+      isConversationUnreadable: false,
       turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted),
     },
   })

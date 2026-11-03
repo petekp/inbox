@@ -8,8 +8,6 @@ export type ModSession = Session & { revision: number }
 
 export const NO_SESSION: ModSession = { ...emptySession(), revision: 0 }
 export const PRESENT: Away = { lastActiveAt: 0, isAway: false, minute: 0 }
-/** The mod can always read the whole conversation: from a fork of it, or from the transcript. */
-export const CAN_CATCH_UP = true
 export const READ_FAILED_TEXT = 'Could not read the inbox.'
 export const PR_POLL_MS = 2 * 60_000
 export const AWAY_MS = 15 * 60_000

@@ -197,7 +197,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'compare-in-background': {
         kind: 'different',
         reason:
-          "Codex's subagents are experimental and off by default, and no source says one can report after the agent's turn ends, so a comparison runs in the turn.",
+          "When a Codex subagent ends, Codex queues its result for the main agent and starts no turn for it. So a result that arrives after the agent's turn has ended does not reach the chat on its own, and the Compare message asks for the comparison in the agent's own turn.",
       },
       'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
@@ -220,14 +220,14 @@ export const CLIENTS: Record<ClientId, Client> = {
       'asks-holds-up-line': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
       'ran-call-activity': {
-        kind: 'unsupported',
+        kind: 'different',
         reason:
-          "Codex runs PreToolUse before a call is approved, so a call the person declines or a hook blocks still adds its activity line. PostToolUse cannot show which calls ran: Codex skips it for a command that runs longer than code mode's wait. GitHub issue #213 tracks a fix.",
+          "Codex runs PreToolUse before a call is approved, so a call's line shows from then. Stop, and the tool call that claims a Status call during the turn, take back the lines of calls the rollout shows were declined or blocked. A declined MCP call keeps its line, and so does a call whose block a code-mode script catches.",
       },
       'ran-call-delegates': {
         kind: 'unsupported',
         reason:
-          "Codex runs PreToolUse before a call is approved, so a herdr command the person declines or a hook blocks still adds its delegate rows. PostToolUse cannot show which calls ran: Codex skips it for a command that runs longer than code mode's wait. GitHub issue #213 tracks a fix.",
+          "Codex runs PreToolUse before a call is approved, so a herdr command the person declines or a hook blocks still adds its delegate rows. PostToolUse cannot show which calls ran: Codex skips it for a command that runs longer than code mode's wait. The rollout check that takes back activity lines does not take back delegate rows yet.",
       },
       'tool-result-line': {
         kind: 'unsupported',
@@ -337,4 +337,9 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-done-fold': { kind: 'full' },
     },
   },
+}
+
+/** Whether a Compare press on `client` may hand its work to a background subagent, whose report reaches the chat. */
+export function isCompareInBackground(client: ClientId): boolean {
+  return CLIENTS[client].support['compare-in-background'].kind === 'full'
 }

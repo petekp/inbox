@@ -18,7 +18,7 @@ function noGoalScreen() {
   const state = demoState(NOW)
   const o = state.ledger.overview!
   state.ledger = { ...state.ledger, overview: { ...o, goal: null, milestones: [], serves: {} } }
-  return screenOf({ view: sessionView(state, NOW, SETTLED_MS, true, NO_HOLDS) })
+  return screenOf({ view: sessionView(state, NOW, SETTLED_MS, NO_HOLDS) })
 }
 
 test('the Status page shows the head’s title and description, then its rows in order, each subject’s marks in the head’s column, where it stands under its name and its was line under that, and Last seen in the middle of its dashed rule with a blank line above and below it', () => {
@@ -115,7 +115,7 @@ test('on the Status page, a subject’s name stays plain, and where it stands go
     ...state.ledger,
     overview: applyStatus(null, parseStatus(`NEW: working | ${name} | ${where}`)!, NOW, new Set()),
   }
-  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, true, NO_HOLDS) })
+  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, NO_HOLDS) })
   const raw = drawn(screen, onPage, 34)
   const first = raw.findIndex(l => strip(l).includes('Help text'))
   const subject = raw.slice(first, first + 2 + STATUS_TEXT_LINES + 1).map(strip)
@@ -145,7 +145,7 @@ test('each subject’s mark takes its tone, and a mark with no tone is muted', (
 })
 
 test('a Status page with nothing yet reads its empty text', () => {
-  const screen = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
+  const screen = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, NO_HOLDS) })
   const { empty } = screen.view.statusPage
   expect(screen.view.statusPage.isEmpty).toBe(true)
   expect(text(screen, onPage)).toContain(empty.title)

@@ -5,6 +5,7 @@ import { withChild } from '../hooks/status-children'
 import { applyStatus } from '../hooks/status-ops'
 import { CLAUDE_CODE } from '../hooks/model-text'
 import { STATUS_SYSTEM } from '../hooks/status-prompt'
+import { parseStatus } from '../hooks/status'
 import { emptySession } from '../hooks/session-files'
 import { cleared, noteActivity, notePrompt, turnEnded, turnStarted } from '../hooks/session-turns'
 import {
@@ -52,6 +53,15 @@ test('a Status answer is written to the ledger after later updates and clears a 
   expect(cleared(failed).overviewFailure).toBeNull()
 })
 
+test('a Status answer or failure made for fewer applied turns than the last write is dropped', () => {
+  const later = { ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } }
+  const newer = appliedStatus(later, answer, 4, 1000)
+
+  expect(appliedStatus(newer, parseStatus('HEAD: Older | An older answer')!, 3, 1100)).toBe(newer)
+  expect(failedStatus(newer, null, 3, 1100)).toBe(newer)
+  expect(failedStatus(newer, null, 4, 1100).overviewFailure?.cause).toBe('no-answer')
+})
+
 test('a session whose only record is a Status has a ledger, is not unseen, is copied by a fork and is cleared', () => {
   const parent = withStatus(emptySession())
   const onlyChildren = withChild(
@@ -70,7 +80,7 @@ test('a session whose only record is a Status has a ledger, is not unseen, is co
 })
 
 test('the Status page is empty for a new session, and while its first turn runs, until the Status has a head', () => {
-  const view = (s: Session) => sessionView(s, 10_000, 1000, true, NO_HOLDS).statusPage
+  const view = (s: Session) => sessionView(s, 10_000, 1000, NO_HOLDS).statusPage
   const idle = emptySession()
 
   expect(view(idle).isEmpty).toBe(true)
@@ -253,7 +263,7 @@ test('a failed Status call shows in the status line on the Status tab, in place 
     0,
     900,
   )
-  const v = sessionView(failed, 1000, 1000, true, NO_HOLDS)
+  const v = sessionView(failed, 1000, 1000, NO_HOLDS)
   const prs = { isFetching: false, hasPrs: false }
 
   expect(v.statusPage.error).not.toBeNull()

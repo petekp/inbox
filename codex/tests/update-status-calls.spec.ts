@@ -268,3 +268,52 @@ test('an update’s Status call waits while another process holds the Status cal
   assert.ok((statusPrompts[0] ?? '').includes('Deploy script built'))
   assert.equal((await readState(dir, 's1')).ledger.overview?.head?.title, 'Rollback script built')
 })
+
+async function olderCallLandsAfterNewer(t: { after: (fn: () => Promise<void>) => void }, olderAnswer: string | null) {
+  const dir = tempDir()
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  await updateState(dir, 's1', s => ({
+    ...s,
+    presence: { ...s.presence, turnsStarted: 1 },
+    pending: [{ ex: ex(1, 'Built the deploy script.'), turnsStarted: 1 }],
+  }))
+  let running: Promise<void> = Promise.resolve()
+  await withLock(`${statePath(dir, 's1')}.results`, async () => {
+    running = runBothCalls(
+      dir,
+      's1',
+      async (_prompt, system) => (system === STATUS_SYSTEM ? olderAnswer : 'NONE'),
+      () => 5,
+    )
+    let shown = await readState(dir, 's1')
+    for (let waited = 0; shown.pending.length > 0 && waited < 300; waited += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      shown = await readState(dir, 's1')
+    }
+    assert.equal(shown.presence.turnsApplied, 1)
+    await updateState(dir, 's1', s =>
+      appliedStatus(
+        { ...s, presence: { ...s.presence, turnsStarted: 2, turnsApplied: 2 } },
+        parseStatus('HEAD: Rollback script built | Rolling back a bad deploy')!,
+        2,
+        4,
+      ),
+    )
+  })
+  await running
+
+  return readState(dir, 's1')
+}
+
+test('an older update’s Status answer that lands after a newer one’s leaves the newer Status', async t => {
+  const state = await olderCallLandsAfterNewer(t, 'HEAD: Deploy script built | Deploying the app with one script')
+
+  assert.equal(state.ledger.overview?.head?.title, 'Rollback script built')
+})
+
+test('an older update’s failed Status call that lands after a newer one’s answer shows no failure', async t => {
+  const state = await olderCallLandsAfterNewer(t, null)
+
+  assert.equal(state.ledger.overview?.head?.title, 'Rollback script built')
+  assert.equal(state.overviewFailure, null)
+})

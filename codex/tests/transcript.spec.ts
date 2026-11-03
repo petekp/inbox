@@ -129,6 +129,39 @@ test('a rollout of older shapes reads shell calls, patches, spawned agents, dial
   ])
 })
 
+test('a rollout reads no line for a command the person declined or a hook blocked', async () => {
+  const command = (script: string, status: string) => ({
+    type: 'event_msg',
+    payload: { type: 'item_completed', item: { type: 'CommandExecution', command: ['zsh', '-lc', script], status } },
+  })
+  const path = rolloutOf(
+    rows(
+      started('t1'),
+      message('user', 'Ship the fix'),
+      command('npm test', 'completed'),
+      command('git push', 'declined'),
+      completed('t1'),
+      started('t2'),
+      message('user', 'Clean up'),
+      response({ type: 'function_call', name: 'shell', call_id: 'c1', arguments: '{"command":"rm -rf build"}' }),
+      response({
+        type: 'function_call_output',
+        call_id: 'c1',
+        output: 'Command blocked by PreToolUse hook: no deletes. Command: rm -rf build',
+      }),
+      response({ type: 'function_call', name: 'shell', call_id: 'c2', arguments: '{"command":"ls"}' }),
+      completed('t2'),
+    ),
+  )
+
+  assert.deepEqual((await readRollout(path, '/repo', undefined))?.conversation.split('\n'), [
+    'Person: Ship the fix',
+    'Agent ran: npm test',
+    'Person: Clean up',
+    'Agent ran: ls',
+  ])
+})
+
 test('a rollout over the size limit keeps its newest turns and drops the cut line, compressed or not', async () => {
   const filler = 'x'.repeat(1024 * 1024)
   const old = Array.from({ length: 10 }, (_, n) => message('user', `Old ${n} ${filler}`))

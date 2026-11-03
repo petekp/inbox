@@ -285,3 +285,19 @@ test('a subject with a child row under it never folds, so its child stays under 
   expect(draw(sevenWithChildren).filter(r => r.startsWith('└'))).toHaveLength(7)
   expect(draw(sevenWithChildren).at(-1)).toBe('○ 2 more')
 })
+
+test('a running child of a done subject in the done fold shows once, at the top of the list', () => {
+  const now = 100 * MIN
+  const done = after(null, 'NEW: working | Offline mode | queue built\nNEW: working | Sync retry | drafted', 10 * MIN)
+  const seen = lookEnded(
+    lookStarted(after(done, 'DONE: s1 | works offline', 20 * MIN), 30 * MIN),
+    30 * MIN + LOOK_MIN_MS,
+  )
+  const child = { ref: 't1', kind: 'subagent' as const, name: 'Review', startedAt: 40 * MIN, endedAt: null }
+  const o = after(withChild(seen, { ...child, lastActivityAt: now - MIN }, now), 'LINK: c1 | s1', 50 * MIN)
+  const rows = page(o, now).rows
+  const drawn = rows.flatMap(r => (r.kind === 'done-fold' ? r.rows : [r]))
+
+  expect(rows.some(r => r.kind === 'done-fold')).toBe(true)
+  expect(drawn.filter(r => r.kind === 'child').map(r => r.depth)).toEqual([0])
+})

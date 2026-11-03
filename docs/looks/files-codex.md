@@ -17,7 +17,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-list.tsx` | Codex adapter. A list's rows: the motion state of each, the row line, its open panel, and settled rows with Undo. |
 | `codex/src/tab-groups.tsx` | Codex adapter. The Asks and Finds tabs: their groups, empty lines and Closed folds. |
 | `codex/src/tab-prs.tsx` | Codex adapter. The PRs tab: PR blocks, their keys, the order lines, and settled PRs. |
-| `codex/src/tab-pr-steps.ts` | Codex adapter. The motion state of each PR row, PR group and press line on the PRs tab, through the row states. |
+| `codex/src/tab-pr-steps.ts` | Codex adapter. The motion state of each PR block, PR row, PR group, press line and the tab's own buttons on the PRs tab, through the row states. |
 | `codex/src/tab-pr-lines.ts` | Codex adapter. The press status under a PR block's buttons and under the order's changed line. |
 | `codex/src/tab-status.tsx` | Codex adapter. The Status tab: its rows, the goal and its milestones, a proposal, the goal's text field, and the fitting of merged lines to the width. |
 | `codex/src/tab-status-name.tsx` | Codex adapter. A Status row's name line, cut so that it and its stall word fit the lines it may take. |
@@ -51,6 +51,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/rollout-rows.ts` | Codex host. The rollout's row types and the readers of a row's payload and text. Also reads the first row, `session_meta`. |
 | `codex/src/rollout-turns.ts` | Codex host. Finds the turns in the rollout's lines: a turn's dialogs, commands and plan, the conversation, and where each turn starts and ends. |
 | `codex/src/rollout-commands.ts` | Codex host. Reads the shell commands, patches and tool calls in rollout rows, and words them as activity lines. |
+| `codex/src/rollout-unran.ts` | Codex host. Finds the tool calls of a turn that did not run, because the person declined them or a hook blocked them, and gives their activity lines. |
 | `codex/src/run.ts` | Codex host. Runs a command with Node. |
 | `codex/src/cli.ts` | Codex host. Finds the codex binary the app runs. The hooks, the server and the update process share it. |
 | `codex/src/dialogs.ts` | Codex host. Notes the dialogs a Codex turn opened, and words an inbox answer in the dialog's reply form. |

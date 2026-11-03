@@ -90,7 +90,8 @@ function clipWords(text2, limit) {
   return words3.length <= limit ? words3.join(" ") : `${words3.slice(0, limit).join(" ")}\u2026`;
 }
 function words(text2) {
-  return new Set((text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
+  const matches = text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? [];
+  return new Set(matches.map((w) => w.replace(/^\.+|\.+$/g, "")).filter((w) => w !== "" && !STOP_WORDS.has(w)));
 }
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
@@ -271,16 +272,23 @@ function milestoneOf(saved) {
     closedAt: time(m.closedAt)
   };
 }
+function droppedMilestoneIds(milestones) {
+  return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
+}
 function goalFields(o, subjectIds) {
   const milestones = (Array.isArray(o.milestones) ? o.milestones : []).map(milestoneOf).filter((m) => m !== null);
-  const milestoneIds = new Set(milestones.map((m) => m.id));
+  const dropped = droppedMilestoneIds(milestones);
+  const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
   const serves = Object.fromEntries(
     savedServes.filter(
-      (e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || milestoneIds.has(e[1]))
+      (e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || liveIds.has(e[1]))
     )
   );
-  const declined = Array.isArray(o.declinedGoals) ? o.declinedGoals.filter((d) => typeof d === "string") : [];
+  const keys = (Array.isArray(o.declinedGoals) ? o.declinedGoals : []).flatMap(
+    (d) => typeof d === "string" ? [nameKey(d)] : []
+  );
+  const declined = [...new Set(keys)].filter((key) => key !== "");
   return {
     goal: goalOf(o.goal),
     proposedGoal: proposedOf(o.proposedGoal),
@@ -397,7 +405,11 @@ function upgradeStatus(saved) {
   const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
   const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
-  const askSubjects = Object.fromEntries(savedLinks.filter((e) => typeof e[1] === "string"));
+  const goal = goalFields(o, new Set(subjects.map((s) => s.id)));
+  const dropped = droppedMilestoneIds(goal.milestones);
+  const askSubjects = Object.fromEntries(
+    savedLinks.filter((e) => typeof e[1] === "string" && !dropped.has(e[1]))
+  );
   const look = o.look;
   const lookAt = time2(look?.startedAt);
   return {
@@ -409,7 +421,7 @@ function upgradeStatus(saved) {
     nextChildId: Math.max(time2(o.nextChildId) ?? 1, children.length + 1),
     lastLookAt: time2(o.lastLookAt),
     look: lookAt === null ? null : { startedAt: lookAt },
-    ...goalFields(o, new Set(subjects.map((s) => s.id)))
+    ...goal
   };
 }
 
@@ -1280,6 +1292,7 @@ function statusPage(s, now) {
     isLookAtEnd: true
   };
   const lookId = (id) => look === null ? null : id;
+  const foldCtx = { ...ctx, lookId: null, running: [] };
   const rows = [
     ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
     ...partRows(top.shown, ctx, 0)
@@ -1290,7 +1303,7 @@ function statusPage(s, now) {
       id: `${prefix}done`,
       depth,
       text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: ruledRows(partRows([...done].sort(pageOrder), { ...ctx, lookId: null }, depth + 1), false)
+      rows: ruledRows(partRows([...done].sort(pageOrder), foldCtx, depth + 1), false)
     }
   ];
   const foldRows = (prefix, p, depth) => [
@@ -1493,6 +1506,8 @@ function emptySession() {
       turnsApplied: 0,
       ledgerState: "current",
       hasDroppedReply: false,
+      failedAttempts: 0,
+      isConversationUnreadable: false,
       isUpdating: false,
       isTurnRunning: false,
       turnStartedAt: null,
@@ -1509,6 +1524,7 @@ function emptySession() {
     stop: null,
     overviewFailure: null,
     lastOverviewCallAt: null,
+    overviewTurn: 0,
     hostTasks: [],
     dialogQuestions: []
   };
@@ -1575,6 +1591,7 @@ function sessionFields(saved, views) {
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
+    overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
@@ -2117,9 +2134,7 @@ function actionsOf(row, last, state, feedback) {
 }
 
 // ../hooks/view.ts
-var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
 var HOLDS_UP_TEXT = "Holds up";
-var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
   return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
@@ -2302,11 +2317,15 @@ function heldLabel(c) {
   if (c.how === "answered") return `Answered: ${c.outcome}`;
   return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
 }
-function perTurnStatus(update) {
-  return {
-    isUpdating: update.isUpdating,
-    error: update.isFailed && !update.isUpdating ? UPDATE_FAILED + (update.retries ? UPDATE_RETRIES : "") : null
-  };
+var NEXT_TRY = " The inbox tries again after the agent's next reply.";
+var FAILED_UPDATE_TEXT = {
+  waiting: `Last update failed. Items from that reply may be missing.${NEXT_TRY}`,
+  "failed-again": `Last update failed, and its retry failed too. Items from recent replies may be missing.${NEXT_TRY}`,
+  unreadable: `Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing.${NEXT_TRY}`
+};
+function perTurnStatus(isUpdating, recovery) {
+  const error = recovery === "none" || recovery === "retrying" ? null : FAILED_UPDATE_TEXT[recovery];
+  return { isUpdating, isRetrying: recovery === "retrying", error };
 }
 
 // ../hooks/session-view.ts
@@ -2319,14 +2338,16 @@ function withoutStaleResult(last, now) {
 function withoutStalePending(lastActions, now) {
   return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]));
 }
-function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes = {}) {
+function updateRecovery(s) {
+  const { presence } = s;
+  if (presence.ledgerState !== "failed") return "none";
+  if (presence.isUpdating) return "retrying";
+  if (s.pending.length === 0 && presence.isConversationUnreadable) return "unreadable";
+  return presence.failedAttempts > 1 ? "failed-again" : "waiting";
+}
+function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
-  const update = {
-    isUpdating: s.presence.isUpdating,
-    isFailed: s.presence.ledgerState === "failed",
-    retries: canCatchUp || s.pending.length > 0
-  };
   const inbox = inboxView({
     ledger: l,
     lastActions,
@@ -2334,7 +2355,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     turns: s.presence,
     extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
     settleWindowMs,
-    status: perTurnStatus(update),
+    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s)),
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt
@@ -2661,6 +2682,8 @@ function cleared(s) {
       ...s.presence,
       ledgerState: "current",
       hasDroppedReply: false,
+      failedAttempts: 0,
+      isConversationUnreadable: false,
       turnsApplied: s.presence.turnsStarted,
       isTurnRunning: false
     },
@@ -2859,8 +2882,7 @@ function heardState(h) {
   return h.startAt === null || isMissed || turns >= 2 && h.stops === 0 ? "partial" : "heard";
 }
 function viewOf(s, now, holds = NO_HOLDS) {
-  const canCatchUp = s.transcriptPath !== null;
-  return { ...sessionView(s, now, SETTLE_WINDOW_MS, canCatchUp, holds), heard: heardState(s.heard), at: now };
+  return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds), heard: heardState(s.heard), at: now };
 }
 
 // ../hooks/children.ts
@@ -3389,17 +3411,65 @@ function callLines(p, hasCommandRows, cwd) {
   return line ? [line] : [];
 }
 
-// src/rollout-turns.ts
-var PLAN_TOOL = "update_plan";
-var MARKERS = [
-  '"task_started"',
-  DIALOG_TOOL,
+// src/rollout-unran.ts
+var UNRAN_MARKERS = [
   '"CommandExecution"',
+  '"FileChange"',
+  '"McpToolCall"',
   '"function_call',
   '"local_shell_call',
-  '"AgentMessage"',
-  '"assistant"'
+  '"custom_tool_call_output"'
 ];
+var UNRAN_OUTPUT = /^(?:(?:exec command|patch) rejected by user|(?:Command|Tool call) blocked by PreToolUse hook: )/;
+var BLOCKED_COMMAND = /^Command blocked by PreToolUse hook: [^\n]*?\. Command: ([^\n]+)/;
+var BLOCKED_TOOL = /^Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: (\S+)/;
+var SCRIPT_ERROR = "Script error: ";
+var toolLines = (tool) => {
+  const line = toolActivity(tool, {});
+  return line ? [line] : [];
+};
+var blockedLines = (output) => {
+  const command = BLOCKED_COMMAND.exec(output)?.[1];
+  const tool = BLOCKED_TOOL.exec(output)?.[1];
+  return command ? shellLines(command.trim()) : tool ? toolLines(tool) : [];
+};
+var editedLines = (changes) => Object.keys(record(changes)).map((path) => `edited ${path}`);
+function unranLines(rows) {
+  const ran = /* @__PURE__ */ new Set();
+  const unran = /* @__PURE__ */ new Set();
+  const note = (lines, didRun) => lines.forEach((line) => (didRun ? ran : unran).add(line));
+  const callCommands = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    const p = record(row.payload);
+    const item = record(p.item);
+    const isDeclined = item.status === "declined";
+    if (row.type === "event_msg" && p.type === "item_completed") {
+      if (item.type === "CommandExecution") note(shellLines(commandText(item.command)), !isDeclined);
+      else if (item.type === "FileChange") note(editedLines(item.changes), !isDeclined);
+      else if (item.type === "McpToolCall") note(toolLines(`mcp__${textOf2(item.server)}__${textOf2(item.tool)}`), true);
+      continue;
+    }
+    if (row.type !== "response_item") continue;
+    const callId = textOf2(p.call_id);
+    if (p.type === "function_call" || p.type === "local_shell_call") {
+      const command = callCommand(p);
+      if (command !== "" && callId !== "") callCommands.set(callId, command);
+    } else if (p.type === "function_call_output") {
+      const output = outputText(p.output);
+      const command = callCommands.get(callId);
+      if (command !== void 0) note(shellLines(command), !UNRAN_OUTPUT.test(output));
+      note(blockedLines(output), false);
+    } else if (p.type === "custom_tool_call_output") {
+      const output = Array.isArray(p.output) ? contentText(p.output) : textOf2(p.output);
+      if (output.startsWith(SCRIPT_ERROR)) note(blockedLines(output.slice(SCRIPT_ERROR.length)), false);
+    }
+  }
+  return [...unran].filter((line) => !ran.has(line));
+}
+
+// src/rollout-turns.ts
+var PLAN_TOOL = "update_plan";
+var MARKERS = ['"task_started"', DIALOG_TOOL, '"AgentMessage"', '"assistant"', ...UNRAN_MARKERS];
 var TURN_EVENT_KINDS = /* @__PURE__ */ new Map([
   ["task_started", "started"],
   ["task_complete", "completed"],
@@ -3419,7 +3489,7 @@ function turnEventOf(line) {
   }
 }
 function turnOf(lines, turnId) {
-  const none = { dialogs: [], commands: [], plan: null, texts: [] };
+  const none = { dialogs: [], commands: [], plan: null, texts: [], unran: [] };
   try {
     const byTurn = /* @__PURE__ */ new Map();
     const newTurn = () => ({
@@ -3429,7 +3499,8 @@ function turnOf(lines, turnId) {
       called: [],
       plan: null,
       itemTexts: [],
-      messageTexts: []
+      messageTexts: [],
+      rows: []
     });
     let current = "";
     let newest = "";
@@ -3451,7 +3522,9 @@ function turnOf(lines, turnId) {
       }
       const turn2 = byTurn.get(current) ?? newTurn();
       byTurn.set(current, turn2);
+      turn2.rows.push(row);
       if (row.type === "event_msg" && p.type === "item_completed" && p.item?.type === "CommandExecution") {
+        if (p.item.status === "declined") continue;
         const output = p.item.aggregated_output;
         turn2.executions.push({ command: commandText(p.item.command), output: isText(output) ? output : "" });
       } else if (row.type === "event_msg" && p.type === "item_completed" && p.item?.type === "AgentMessage") {
@@ -3483,7 +3556,8 @@ function turnOf(lines, turnId) {
       dialogs: turn.dialogs.filter((d) => d.questions.length > 0),
       commands: turn.executions.length > 0 ? turn.executions : turn.called,
       plan: turn.plan,
-      texts: turn.itemTexts.length > 0 ? turn.itemTexts : turn.messageTexts
+      texts: turn.itemTexts.length > 0 ? turn.itemTexts : turn.messageTexts,
+      unran: unranLines(turn.rows)
     };
   } catch {
     return none;
@@ -3493,6 +3567,7 @@ var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).
 function turnsOf(rows, cwd) {
   const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
   const hasCommandRows = rows.some((row) => isItem(row, "CommandExecution"));
+  const unran = new Set(unranLines(rows));
   const turns = [];
   const agentTurn = () => {
     const last = turns.at(-1);
@@ -3504,10 +3579,11 @@ function turnsOf(rows, cwd) {
   const person = (text2) => {
     if (text2 && !text2.startsWith("<")) turns.push({ role: "person", text: text2, activity: [] });
   };
-  const act = (lines) => {
+  const act = (all) => {
+    const lines = all.filter((line) => !unran.has(line));
     if (lines.length === 0) return;
     const turn = agentTurn();
-    turn.activity = lines.reduce((all, line) => addActivity(all, line), turn.activity);
+    turn.activity = lines.reduce((all2, line) => addActivity(all2, line), turn.activity);
   };
   for (const row of rows) {
     const p = record(row.payload);
@@ -3693,6 +3769,10 @@ function rolloutReads(path, tail) {
 }
 
 // src/hook.ts
+var withoutActivity = (s, lines) => {
+  const activity = s.turn.activity.filter((line) => !lines.includes(line));
+  return activity.length === s.turn.activity.length ? s : { ...s, turn: { ...s.turn, activity } };
+};
 async function handleHook(input, deps) {
   const id = input.session_id;
   const { dir, env, now } = deps;
@@ -3779,9 +3859,12 @@ async function handleHook(input, deps) {
       const hasWork = line !== null || agentId !== void 0 || isDelegateCommand;
       const isMainActivity = line !== null && agentId === void 0;
       let isClaimed = false;
+      const isStatusDue = isMainActivity && await read().then((s) => claimedStatusRefresh(s, now()) !== s);
+      const unran = isStatusDue ? turnOf(await rolloutTail(input.transcript_path), input.turn_id).unran : [];
       if (hasWork)
         await write((s) => {
-          const worked = withWork(line ? noteActivity(withRollout(s), line) : withRollout(s));
+          const kept = withoutActivity(withRollout(s), unran);
+          const worked = withWork(line ? noteActivity(kept, line) : kept);
           const claimed = isMainActivity ? claimedStatusRefresh(worked, now()) : worked;
           isClaimed = claimed !== worked;
           return claimed;
@@ -3814,14 +3897,14 @@ async function handleHook(input, deps) {
           () => null
         )
       ]);
-      const { dialogs, commands, plan, texts } = turnOf(tail, input.turn_id);
+      const { dialogs, commands, plan, texts, unran } = turnOf(tail, input.turn_id);
       const reply = turnReply(texts, input.last_assistant_message ?? "");
       const withHistory = await readHistoryAhead(() => before, tail);
       const lines = dialogs.map((d) => dialogActivity(d.questions, { kind: "open" }));
       const written = await write(async (s) => {
         const withLines = lines.reduce(
           (x, line) => noteActivity(x, line),
-          noteDialogs(withHost(await withHistory(s)), dialogs)
+          withoutActivity(noteDialogs(withHost(await withHistory(s)), dialogs), unran)
         );
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines);
         const waited = statusChanged(

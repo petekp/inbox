@@ -1,4 +1,5 @@
 import { demoSession } from '../../hooks/demo'
+import { isCompareInBackground } from '../../hooks/clients'
 import { demoAfterPress, demoReplied, demoSent } from '../../hooks/press-effects'
 import { pressOn } from '../../hooks/session-presses'
 import { sessionView } from '../../hooks/session-view'
@@ -28,7 +29,7 @@ export function demoSource(deps: {
 
   return {
     screen: async holds => ({
-      view: sessionView(state, deps.now(), deps.settleWindowMs, true, holds),
+      view: sessionView(state, deps.now(), deps.settleWindowMs, holds),
       modelName: deps.modelName,
       isGhMissing: false,
       isFetchingPrs: false,
@@ -39,7 +40,16 @@ export function demoSource(deps: {
     }),
     press: async (p, holds) => {
       const at = deps.now()
-      const r = pressOn(state, p, at, { settleWindowMs: deps.settleWindowMs, holds }, { comparePage: deps.comparePage })
+      const r = pressOn(
+        state,
+        p,
+        at,
+        { settleWindowMs: deps.settleWindowMs, holds },
+        {
+          comparePage: deps.comparePage,
+          compareInBackground: isCompareInBackground('omp'),
+        },
+      )
       if ('stale' in r) return { error: null, note: 'stale', isUnconfirmed: false }
       const after = demoAfterPress(
         { lastActions: state.lastActions, turns: state.presence },

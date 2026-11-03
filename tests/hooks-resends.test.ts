@@ -142,3 +142,22 @@ test('an older Claude send with no saved receipt cannot acknowledge a new identi
   await clock.settle()
   expect(await pane.find({ text: /Not\s+confirmed:\s+Explain/ })).toBeDefined()
 })
+
+test('a Compare press in Claude Code lets the agent hand the comparison to a background subagent', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  const question = { ...SAVED_SESSION.ledger.items[0]!, isDesignChoice: true }
+  w.stored.set(
+    's:session-1',
+    JSON.stringify({ ...SAVED_SESSION, ledger: { ...SAVED_SESSION.ledger, items: [question] } }),
+  )
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'compare-i1-key' })
+  await clock.settle()
+
+  expect(w.sent.at(-1)).toContain('If you can run a subagent in the background, hand it this work')
+  expect(w.sent.at(-1)).not.toContain('reply with the result before this turn ends')
+})

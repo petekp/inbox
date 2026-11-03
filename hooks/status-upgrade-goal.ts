@@ -1,5 +1,5 @@
 import type { Milestone, ProposedGoal, SessionStatus, StatusGoal } from '../types'
-import { DECLINED_KEPT, MILESTONES_MAX, STATUSES } from './status-limits'
+import { DECLINED_KEPT, MILESTONES_MAX, nameKey, STATUSES } from './status-limits'
 
 type GoalFields = Pick<
   SessionStatus,
@@ -65,26 +65,34 @@ function milestoneOf(saved: unknown): Milestone | null {
   }
 }
 
+/** The ids of the milestones a saved Status holds that are dropped. An earlier build kept links to them. */
+export function droppedMilestoneIds(milestones: readonly Milestone[]): Set<string> {
+  return new Set(milestones.filter(m => m.status === 'dropped').map(m => m.id))
+}
+
 /**
  * The goal's fields of a saved Status, with anything wrongly shaped left out. A Status saved before the goal loads
  * with none, so its page shows as before, with Set a goal. A link to a subject or milestone the Status no longer
- * holds is dropped.
+ * holds, or to a dropped milestone, is dropped. A declined goal's key is made again with the current `nameKey`, since
+ * an earlier build kept a trailing period in it.
  */
 export function goalFields(o: Record<string, unknown>, subjectIds: ReadonlySet<string>): GoalFields {
   const milestones = (Array.isArray(o.milestones) ? o.milestones : [])
     .map(milestoneOf)
     .filter((m): m is Milestone => m !== null)
-  const milestoneIds = new Set(milestones.map(m => m.id))
+  const dropped = droppedMilestoneIds(milestones)
+  const liveIds = new Set(milestones.filter(m => !dropped.has(m.id)).map(m => m.id))
   const savedServes = typeof o.serves === 'object' && o.serves !== null ? Object.entries(o.serves) : []
   const serves = Object.fromEntries(
     savedServes.filter(
       (e): e is [string, string] =>
-        subjectIds.has(e[0]) && typeof e[1] === 'string' && (e[1] === 'none' || milestoneIds.has(e[1])),
+        subjectIds.has(e[0]) && typeof e[1] === 'string' && (e[1] === 'none' || liveIds.has(e[1])),
     ),
   )
-  const declined = Array.isArray(o.declinedGoals)
-    ? o.declinedGoals.filter((d): d is string => typeof d === 'string')
-    : []
+  const keys = (Array.isArray(o.declinedGoals) ? o.declinedGoals : []).flatMap((d: unknown) =>
+    typeof d === 'string' ? [nameKey(d)] : [],
+  )
+  const declined = [...new Set(keys)].filter(key => key !== '')
 
   return {
     goal: goalOf(o.goal),

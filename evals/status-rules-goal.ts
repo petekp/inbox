@@ -100,7 +100,8 @@ export const GOAL_RULES: Rule[] = [
               .filter(isOpen)
               .flatMap(s => {
                 const link = o.serves[s.id]
-                if (link === undefined) return step.call ? [`${label(s)} is not linked`] : []
+                const isLive = link === 'none' || o.milestones.some(m => m.id === link && m.status !== 'dropped')
+                if (!isLive) return step.call ? [`${label(s)} is not linked`] : []
                 if (p.serves === 'none' && link !== 'none')
                   return [`${label(s)} serves a milestone, and the goal does not need it`]
                 return p.serves !== 'none' && link === 'none'

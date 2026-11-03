@@ -101,6 +101,8 @@ export type SessionHost<S extends Session> = {
   answerMessage?: AnswerMessage
   /** The absolute path of the page template for a comparison, in the host's own folder. */
   comparePage: string
+  /** Whether a background subagent's report reaches the chat, from the host's `compare-in-background` support. */
+  compareInBackground: boolean
 }
 
 /** What a host's catch-up found: the model's answer to apply, or why there is none. */
@@ -222,6 +224,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
               const reply = await host.catchUp!(s).catch((): CatchUpReply => ({ kind: 'failed' }))
               if (reply.kind === 'unreadable') {
                 canCatchUp = false
+                await host.update(x => ({ ...x, presence: { ...x.presence, isConversationUnreadable: true } }))
                 continue
               }
               const parsed = reply.kind === 'reply' ? parseReply(reply.text, reply.source) : null

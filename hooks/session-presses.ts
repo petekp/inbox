@@ -32,7 +32,7 @@ type DrawnWith = { settleWindowMs: number; holds: Holds }
  */
 function isRepeatWhileOut(s: Session, p: RowPress | PrPress, at: number, drawn: DrawnWith): boolean {
   const rowId = pressRowId(p)
-  const view = sessionView(s, at, drawn.settleWindowMs, false, drawn.holds)
+  const view = sessionView(s, at, drawn.settleWindowMs, drawn.holds)
   const row = allRows(view).find(r => r.id === rowId)
   const last = view.lastActions[rowId]
   const state: RowState = row?.state ?? { is: 'open' }
@@ -58,6 +58,7 @@ export function pressOn(
     extraSteps: item ? itemPrSteps(item, s.prViews, tabPrs(s.ledger)) : [],
     answerMessage: texts.answerMessage,
     comparePage: texts.comparePage,
+    compareInBackground: texts.compareInBackground,
   })
   if ('stale' in r) return r
 
