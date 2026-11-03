@@ -185,3 +185,27 @@ test('on desktop, a cancelled question’s ✗ is drawn as a shape and a dismiss
   expect((await desktop.find({ key: 'closed-i1' }))?.text).toMatch(/✕/)
   expect(await desktop.find({ key: 'closed-i1-mark' })).toBeUndefined()
 })
+
+test('on desktop at 30 and 56 columns, an unselected row’s title keeps every word its two lines hold, and is cut only past them', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: true, isFocused: true }
+  w.surfaces = ['desktop']
+  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+  const titles = [
+    'Rebuild the bundles',
+    'Snoozed glances come back after a restart',
+    'Snoozed glances come back after a restart, so a glance snoozed for an hour returns at once in the view',
+    'The saved layout keeps snoozed glances, and a restart shows them again, so a glance snoozed for an hour returns at once.',
+  ]
+  for (const ask of titles) await $.tool.call({ tool: 'mcp__inbox__record', kind: 'task', ask })
+  await clock.settle()
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 30 } })
+  const shownTitle = async (id: string) => (await pane.find({ type: 'Text', in: `select-${id}` }))?.text
+
+  expect(await shownTitle('i2')).toBe(titles[1])
+  expect(await shownTitle('i4')).toMatch(/…$/)
+  await pane.redraw({ ...PANE.props, bodyColumns: 56 })
+  expect(await shownTitle('i3')).toBe(titles[2])
+  expect(await shownTitle('i4')).toMatch(/…$/)
+})

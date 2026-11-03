@@ -6,6 +6,7 @@ import { followUpPresses, type KeyAction } from './pane-keys'
 import {
   DESKTOP_CELL_PT,
   DESKTOP_LINK_GAP_CELLS,
+  DESKTOP_LINK_SLACK_CELLS,
   DESKTOP_MARK_CELLS,
   DESKTOP_SIDE_CELLS,
   FRAME_INSET_PT,
@@ -124,7 +125,7 @@ export function paneRowKeys(
         return {
           key: a.key,
           label,
-          width: desktopTextPt(label) / DESKTOP_CELL_PT,
+          width: Math.ceil(desktopTextPt(label) / DESKTOP_CELL_PT + DESKTOP_LINK_SLACK_CELLS),
           ...(a.isOut ? { isOut: true } : {}),
         }
       }),

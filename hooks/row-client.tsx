@@ -4,6 +4,7 @@ export type RowProps = {
   markCells: number
   sideCells: number
   before: string
+  /** Already fitted to the lines the row shows. */
   title: string
   after: string
   /** A muted line under the title and `after`, or empty for none. */
@@ -13,7 +14,6 @@ export type RowProps = {
   side: string
   /** Lines of padding above and below the text. */
   padY: number
-  maxLines: number
   /** How many characters fit in a cell, counted low, so a clipped line does not wrap. */
   charsPerCell: number
   /** The region's width before its first layout, when `surface.columns` is still 0. */
@@ -43,10 +43,6 @@ function clipAtSpace(text: string, max: number): string {
   return `${head.trimEnd()}…`
 }
 
-function fitTitle(budget: number, before: string, title: string): string {
-  return clipAtSpace(title, Math.max(MIN_TITLE, budget - before.length - 1))
-}
-
 const Row: ClientModule<RowProps, State> = (props, surface) => {
   const { Box, Text } = surface.elements
   const hover = surface.state?.hover ?? false
@@ -71,7 +67,6 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
   const columns = surface.columns || props.fallbackColumns
   const textCells = columns - FRAME_CELLS - props.markCells - props.sideCells
   const perLine = Math.floor(textCells * props.charsPerCell)
-  const title = fitTitle(perLine * props.maxLines, props.before, props.title)
   const after = clipAtSpace(props.after, perLine)
   const note = clipAtSpace(props.note, perLine - (props.noteMark ? props.noteMark.text.length + 1 : 0))
   const background = pressed ? props.colors.pressed : hover ? props.colors.hover : null
@@ -103,7 +98,7 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
             ...colored(null),
             children: [
               ...(props.before ? [Text({ ...colored(props.colors.muted), children: props.before })] : []),
-              title,
+              props.title,
             ],
           }),
           ...(after ? [Text({ wrap: 'truncate-end', ...colored(ageColor), children: after })] : []),
