@@ -69,12 +69,13 @@ function msOf(iso: string | undefined): number | undefined {
   return Number.isFinite(ms) && ms > 0 ? ms : undefined
 }
 
-/** gh's check rollup as pass, fail, pending or skip; a check run and a commit status spell it differently. */
+/** gh's check rollup as pass, fail, cancelled, pending or skip; a check run and a commit status spell it differently. */
 function bucket(e: RollupEntry): PrCheck['bucket'] {
   const result = (e.conclusion || e.state || '').toUpperCase()
   if (e.status && e.status.toUpperCase() !== 'COMPLETED') return 'pending'
   if (['SUCCESS', 'NEUTRAL'].includes(result)) return 'pass'
   if (['SKIPPED', 'STALE'].includes(result)) return 'skip'
+  if (result === 'CANCELLED') return 'cancelled'
   if (['PENDING', 'EXPECTED', 'QUEUED', 'IN_PROGRESS', ''].includes(result)) return 'pending'
 
   return 'fail'
@@ -241,14 +242,14 @@ export function prNeedsYou(pr: PrView, isSent: IsThreadSent): boolean {
   return (
     pr.state === 'OPEN' &&
     (pr.mergeable === 'CONFLICTING' ||
-      failingChecks(pr).length > 0 ||
+      blockingChecks(pr).length > 0 ||
       pr.reviewDecision === 'CHANGES_REQUESTED' ||
       threadsOnYou(pr, isSent).length > 0)
   )
 }
 
 function checkCounts(pr: PrView): Record<PrCheck['bucket'], number> {
-  const counts = { pass: 0, fail: 0, pending: 0, skip: 0 }
+  const counts = { pass: 0, fail: 0, cancelled: 0, pending: 0, skip: 0 }
   for (const c of pr.checks) counts[c.bucket] += 1
 
   return counts
@@ -280,7 +281,7 @@ export function readiness(
   const listed: string[] = []
   if (pr.state === 'MERGED') return result('merged', 'Merged')
   if (pr.state !== 'OPEN') return result('closed', 'Closed')
-  const { fail: failing, pending } = checkCounts(pr)
+  const { fail: failing, cancelled, pending } = checkCounts(pr)
   const waiting = waitingThreads(pr)
   const open = threadsOnYou(pr, isSent).length
   const sent = waiting.filter(t => isSent(pr, t)).length
@@ -290,6 +291,7 @@ export function readiness(
   const onYou = [
     pr.mergeable === 'CONFLICTING' ? `conflicts with ${pr.base}` : null,
     row(failing > 0 ? plural(failing, 'failing check', 'failing checks') : null),
+    row(cancelled > 0 ? plural(cancelled, 'cancelled check', 'cancelled checks') : null),
     pr.reviewDecision === 'CHANGES_REQUESTED' ? 'changes requested' : null,
     row(open > 0 ? threadsWaiting(open) : null),
   ].filter(isPresent)
@@ -394,6 +396,15 @@ export function took(ms: number): string {
 
 export function failingChecks(pr: PrView): PrCheck[] {
   return pr.checks.filter(c => c.bucket === 'fail')
+}
+
+export function cancelledChecks(pr: PrView): PrCheck[] {
+  return pr.checks.filter(c => c.bucket === 'cancelled')
+}
+
+/** The checks that wait on the person, in the order the PR block lists them: failing, then cancelled. */
+export function blockingChecks(pr: PrView): PrCheck[] {
+  return [...failingChecks(pr), ...cancelledChecks(pr)]
 }
 
 const COMMENT_MAX = 2000

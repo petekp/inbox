@@ -52,6 +52,7 @@ export type FeatureId =
   | 'dismiss-merged-prs'
   | 'pr-order'
   | 'pr-rank-again'
+  | 'pr-check-rerun'
   | 'help-page'
   | 'status-view-ask'
   | 'status-goal'
@@ -117,6 +118,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'dismiss-merged-prs': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
+      'pr-check-rerun': { kind: 'full' },
       'help-page': {
         kind: 'different',
         reason:
@@ -236,6 +238,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'dismiss-merged-prs': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
+      'pr-check-rerun': { kind: 'full' },
       'help-page': { kind: 'full' },
       'status-view-ask': {
         kind: 'different',
@@ -324,6 +327,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'dismiss-merged-prs': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
+      'pr-check-rerun': { kind: 'full' },
       'help-page': {
         kind: 'different',
         reason: 'The panel takes keys only, so `?` opens Help, and no button does.',

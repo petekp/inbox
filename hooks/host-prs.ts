@@ -1,4 +1,7 @@
-import { splitLinked, fetchTracked } from './pr-fetch'
+import { splitLinked, fetchTracked, GH_TIMED_OUT_TEXT } from './pr-fetch'
+import { TIMED_OUT_CODE } from './gh'
+import { rerunArgs } from './pr-press'
+import type { Effect } from './press-reducer'
 import { withFetchedPrs } from './session-presses'
 import type { Session } from '../types'
 import type { SessionHost } from './session-host'
@@ -102,4 +105,25 @@ export async function fetchPrs<S extends Session>(
   }
   const { views: fetched, branchRef, isGhSignedOut } = fetch
   await host.update(cur => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut))
+}
+
+/**
+ * GitHub's refusal of a re-run while the run is running, as gh prints it: "run 77 cannot be rerun; This workflow is
+ * already running". The run is running, which is what the press asked for.
+ */
+const ALREADY_RUNNING = /already running/i
+
+/** Asks GitHub to re-run a workflow run. Returns why it could not, or null when the run is running. */
+export async function rerunRun<S extends Session>(
+  host: Pick<SessionHost<S>, 'read' | 'gh'>,
+  e: Extract<Effect, { kind: 'rerun' }>,
+): Promise<string | null> {
+  const bin = await host.gh.find()
+  if (bin === null) return 'the inbox could not find gh'
+  const r = await host.gh.run(await host.read(), bin, () => host.gh.forget())(rerunArgs(e))
+  if (r.exitCode === 0 || ALREADY_RUNNING.test(r.stderr)) return null
+
+  return r.exitCode === TIMED_OUT_CODE
+    ? GH_TIMED_OUT_TEXT
+    : r.stderr.trim().split('\n')[0] || `gh exited with ${r.exitCode}`
 }

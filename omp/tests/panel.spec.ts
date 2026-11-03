@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 
 import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
 import { prMarkId, threadSentIn } from '../../hooks/pr-rows'
-import { failingChecks, waitingThreads } from '../../hooks/prs'
+import { blockingChecks, waitingThreads } from '../../hooks/prs'
 import { SETTLED_MS } from '../../hooks/timing'
 import { shownTabs } from '../../hooks/tabs'
 import { rowKeyPlan } from '../../hooks/action-plan'
@@ -199,7 +199,7 @@ test('PR buttons follow the shared plan order for the block, its threads and its
   const plans = [
     block,
     ...waitingThreads(pr).map(t => threadActions(pr, t, presses)),
-    ...failingChecks(pr).map(c => checkActions(pr, c, presses)),
+    ...blockingChecks(pr).map(c => checkActions(pr, c, presses)),
   ]
   expect(plans.length).toBeGreaterThan(3)
   let ui: PanelUi = { ...INITIAL_UI, tab: 'prs', selectedId: prMarkId(pr.ref) }

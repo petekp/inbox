@@ -1021,10 +1021,10 @@ function threadsOnYou(pr, isSent) {
   return waitingThreads(pr).filter((t) => !t.isLinesChanged && !isSent(pr, t));
 }
 function prNeedsYou(pr, isSent) {
-  return pr.state === "OPEN" && (pr.mergeable === "CONFLICTING" || failingChecks(pr).length > 0 || pr.reviewDecision === "CHANGES_REQUESTED" || threadsOnYou(pr, isSent).length > 0);
+  return pr.state === "OPEN" && (pr.mergeable === "CONFLICTING" || blockingChecks(pr).length > 0 || pr.reviewDecision === "CHANGES_REQUESTED" || threadsOnYou(pr, isSent).length > 0);
 }
 function checkCounts(pr) {
-  const counts = { pass: 0, fail: 0, pending: 0, skip: 0 };
+  const counts = { pass: 0, fail: 0, cancelled: 0, pending: 0, skip: 0 };
   for (const c of pr.checks) counts[c.bucket] += 1;
   return counts;
 }
@@ -1043,7 +1043,7 @@ function readiness(pr, isSent = () => false) {
   const listed = [];
   if (pr.state === "MERGED") return result("merged", "Merged");
   if (pr.state !== "OPEN") return result("closed", "Closed");
-  const { fail: failing, pending } = checkCounts(pr);
+  const { fail: failing, cancelled, pending } = checkCounts(pr);
   const waiting = waitingThreads(pr);
   const open2 = threadsOnYou(pr, isSent).length;
   const sent = waiting.filter((t) => isSent(pr, t)).length;
@@ -1053,6 +1053,7 @@ function readiness(pr, isSent = () => false) {
   const onYou = [
     pr.mergeable === "CONFLICTING" ? `conflicts with ${pr.base}` : null,
     row(failing > 0 ? plural(failing, "failing check", "failing checks") : null),
+    row(cancelled > 0 ? plural(cancelled, "cancelled check", "cancelled checks") : null),
     pr.reviewDecision === "CHANGES_REQUESTED" ? "changes requested" : null,
     row(open2 > 0 ? threadsWaiting(open2) : null)
   ].filter(isPresent);
@@ -1091,6 +1092,12 @@ function inPrOrder(prs, ranked = []) {
 }
 function failingChecks(pr) {
   return pr.checks.filter((c) => c.bucket === "fail");
+}
+function cancelledChecks(pr) {
+  return pr.checks.filter((c) => c.bucket === "cancelled");
+}
+function blockingChecks(pr) {
+  return [...failingChecks(pr), ...cancelledChecks(pr)];
 }
 
 // ../hooks/help-steps.ts
@@ -1236,8 +1243,10 @@ var CLOSED_MARKS = {
 var PR_MARKS = {
   waiting: { text: HELD_MARK.mark, tone: "needsYou" },
   sent: { text: SUBJECT_MARKS.done.mark, tone: "done" },
-  failing: { text: FINDING_GROUPS.issue.mark, tone: "error" }
+  failing: { text: FINDING_GROUPS.issue.mark, tone: "error" },
+  cancelled: { text: "\u2298", tone: null }
 };
+var stoppedWords = (what) => `Stopped before it finished: ${what}`;
 var MARK_LEGEND = [
   {
     mark: RUNNING_MARK,
@@ -1255,13 +1264,19 @@ var MARK_LEGEND = [
   },
   { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
   { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
-  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: "Dropped before it was done" },
+  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords("dropped work") },
   { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: "Dismissed by you" },
   {
     mark: FINDING_GROUPS.issue.mark,
     tone: FINDING_GROUPS.issue.tone,
     isRunning: false,
     words: "Something is wrong: an issue or a failing check"
+  },
+  {
+    mark: PR_MARKS.cancelled.text,
+    tone: PR_MARKS.cancelled.tone,
+    isRunning: false,
+    words: stoppedWords("a cancelled check, which needs another run")
   },
   {
     mark: FINDING_GROUPS.opportunity.mark,
@@ -1854,6 +1869,15 @@ function isAgain(last, action, isOut) {
 }
 
 // ../hooks/pr-press.ts
+var RERUN_LABEL = "Re-run";
+var PR_FIX_LABELS = {
+  "pr-conflicts": "Resolve conflicts",
+  "check-fix": "Fix"
+};
+var PR_READ_FIRST_LABELS = {
+  ...PR_FIX_LABELS,
+  "check-rerun": RERUN_LABEL
+};
 function lastPressOf(presses, rowId) {
   const last = presses.lastActions[rowId];
   const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
@@ -1874,7 +1898,7 @@ function rankedStatusOf(pr) {
   return {
     status: readiness(pr).status,
     threads: waitingThreads(pr).map((t) => t.id),
-    failing: failingChecks(pr).map((c) => c.name)
+    failing: blockingChecks(pr).map((c) => c.name)
   };
 }
 function hasChanged(was, is) {

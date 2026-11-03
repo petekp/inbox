@@ -19,7 +19,7 @@ export type ClosedFinding = Finding & Pick<Closed, 'how' | 'outcome'> & { closed
 
 export type PrCheck = {
   name: string
-  bucket: 'pass' | 'fail' | 'pending' | 'skip'
+  bucket: 'pass' | 'fail' | 'cancelled' | 'pending' | 'skip'
   url: string | null
   /** The GitHub Actions workflow that ran it, such as "CI". Absent for a commit status, and on a check saved before the mod kept it. */
   workflow?: string
@@ -77,7 +77,7 @@ export type PrStatus = 'ready' | 'blocked' | 'waiting' | 'draft' | 'merged' | 'c
 
 /**
  * What a ranked PR's block showed: its status, read without sent threads, and the ids of its waiting threads and the
- * names of its failing checks.
+ * names of its failing and cancelled checks.
  */
 export type RankedPrStatus = { status: PrStatus; threads: string[]; failing: string[] }
 

@@ -16,7 +16,7 @@ import type { Action, KeyAction } from './pane-keys'
 import type { settledLayoutId } from './pane-selection'
 import type { RowPress } from './presses'
 import type { PrPress } from './pr-press'
-import type { threadSentIn } from './pr-rows'
+import type { prBlockRows, threadSentIn } from './pr-rows'
 import type { ModLook, NEEDS_YOU_GROUPS, RowView } from './rows'
 import type { SessionView } from './session-view'
 import type { ShownTab, shownTabs } from './tabs'
@@ -107,7 +107,7 @@ export type PaneBase = {
   lists: DrawnLists<Row>
   needsYouGroups: ((typeof NEEDS_YOU_GROUPS)[number] & { entries: DrawnEntry<Row>[]; rows: Row[] })[]
   findingEntries: DrawnEntry<Row>[]
-  prGroups: (SessionView['prs']['drawn'][number] & { checks: Row[]; threads: Row[]; rows: Row[] })[]
+  prGroups: (SessionView['prs']['drawn'][number] & ReturnType<typeof prBlockRows<Row>>)[]
   prTabKeys: KeyAction[]
   prOrderKeys: KeyAction[]
   badgeOf: (id: ShownTab) => string | null

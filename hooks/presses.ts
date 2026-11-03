@@ -26,4 +26,5 @@ export type PrActionId =
   | 'pr-dismiss'
   | 'pr-rank-again'
   | 'check-fix'
+  | 'check-rerun'
   | 'log'

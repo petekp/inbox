@@ -38,15 +38,22 @@ export const CLOSED_MARKS: Record<ClosedState, string> = {
   lapsed: SUBJECT_MARKS.dropped.mark,
 }
 
-/** A PR row's mark: a review thread that waits on the person, one sent to the agent, and a failing check. */
+/** A PR row's mark: a review thread that waits on the person, one sent to the agent, a failing check and a cancelled one. */
 export const PR_MARKS = {
   waiting: { text: HELD_MARK.mark, tone: 'needsYou' },
   sent: { text: SUBJECT_MARKS.done.mark, tone: 'done' },
   failing: { text: FINDING_GROUPS.issue.mark, tone: 'error' },
+  cancelled: { text: '⊘', tone: null },
 } as const
 
 /** One mark the legend explains. `isRunning` draws it as the running mark. */
 export type LegendEntry = { mark: string; tone: ToneName | null; isRunning: boolean; words: string }
+
+/**
+ * The words of the two marks that mean a thing stopped before it finished. The terminal and omp draw both as ⊘, so
+ * their Help lines start alike.
+ */
+const stoppedWords = (what: string) => `Stopped before it finished: ${what}`
 
 /** Every mark a look draws on a row or a group title, once each, with what it means wherever it appears. */
 export const MARK_LEGEND: readonly LegendEntry[] = [
@@ -66,13 +73,19 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
   },
   { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: 'Waits on you' },
   { mark: SUBJECT_MARKS.done.mark, tone: 'done', isRunning: false, words: 'Done, or handed to the agent' },
-  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: 'Dropped before it was done' },
+  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords('dropped work') },
   { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: 'Dismissed by you' },
   {
     mark: FINDING_GROUPS.issue.mark,
     tone: FINDING_GROUPS.issue.tone,
     isRunning: false,
     words: 'Something is wrong: an issue or a failing check',
+  },
+  {
+    mark: PR_MARKS.cancelled.text,
+    tone: PR_MARKS.cancelled.tone,
+    isRunning: false,
+    words: stoppedWords('a cancelled check, which needs another run'),
   },
   {
     mark: FINDING_GROUPS.opportunity.mark,

@@ -80,5 +80,6 @@ export const PR_KEYS: Record<PrPress['action'], string> = {
   'pr-dismiss-merged': 'dismiss-merged',
   'pr-rank-again': 'rank-again',
   'check-fix': 'fix',
+  'check-rerun': 'rerun',
   log: 'log',
 }
