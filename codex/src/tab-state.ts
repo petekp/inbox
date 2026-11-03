@@ -9,6 +9,7 @@ import type { FoldGroup, SeenRows } from './arrivals'
 import type { TabView as View } from './core'
 import type { RowTrack } from './rows'
 import type { HostContext } from './tab-host'
+import type { DrawnPrs } from './tab-pr-steps'
 
 export type Tone = 'needsYou' | 'issue' | 'findings' | 'done' | 'error'
 
@@ -150,6 +151,8 @@ class TabState {
   seen = new Map<string, number>()
   rowsSeen: SeenRows = {}
   lastLists: Lists | null = null
+  /** The PRs tab as the last draw drew it, or null when that draw showed another tab. */
+  lastPrs: DrawnPrs | null = null
   requested = 0
   shown = 0
   activePresses = 0

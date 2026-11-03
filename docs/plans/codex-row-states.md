@@ -57,6 +57,10 @@ Rules that hold in every state:
 - **A leaving row keeps its place.** The tab draws it where it last drew it until it is removed, in its Asks group or its kind's Finds group.
 - **A group's empty line and Closed fold take a leaving row's place.** A leaving row no longer counts in its group, so they show from the draw that starts its exit. One element holds both, with its content at its bottom. Its height grows on the exit's curve while the row collapses, so a fold already shown stays in view and the empty line slides in above it. The rows below move once, in one direction.
 - **A row that arrives in an empty group takes the empty line's place.** While every row that stays in the group is entering, the empty line stays drawn, out of the flow, just above the fold. It fades out where it was, and the space it held closes on the entry's curve while the row grows over it. The rows below move only by the difference in height, in one direction. With reduced motion, rows do not enter, so the line goes in one draw.
+- **A PR row moves as an item row does.** `stepPrs` in `codex/src/tab-pr-steps.ts` steps each PR row on the PRs tab through `stepRow`, the same as `stepLists` does for the other tabs. A row the view no longer lists, such as a cancelled check after Re-run, leaves from its place in its group.
+- **A PR group leaves with its last row.** A group's title and rows share one element with its own track. Its title counts only the rows the view lists. When the view lists none, the group leaves on the exit's curve while its rows collapse inside it, so the title stays drawn until its last row has left.
+- **A PR block's press line grows in.** The line under a block's buttons, such as "✓ Started a re-run of CI", has its own track. It enters when it first shows on a block the last draw drew, and leaves with its last text.
+- **A closing row comes to rest at its closed line's height.** A closing row also draws its closed line's after-label and side column, hidden, so the collapse measures the height the row has once the move ends. A PR row's ran line, which only the closed form shows, is hidden while the row closes.
 - **Rows of a tab not shown are forgotten.** They show their form at once when their tab shows.
 - **Reduced motion.** Every move ends in the draw that starts it.
 - **The line never moves** between `closed`, `opening`, `open` and `closing`, as [motion-and-undo.md](motion-and-undo.md) says.
@@ -69,6 +73,7 @@ Rules that hold in every state:
 
 ## Checks
 
-- Tests in `codex/tests/press-row-states.spec.ts`: every state reaches every target, a row drawing its panel never drops it except through `closing`, `settling` or `leaving`, a row turned around mid-move, and reduced motion.
+- Tests in `codex/tests/press-row-states.spec.ts`: every state reaches every target, a row drawing its panel never drops it except through `closing`, `settling` or `leaving`, a row turned around mid-move, and reduced motion. On the PRs tab of the real tab: a PR row closing with its panel, rows leaving from their places with their group and title, the press line growing in, and reduced motion.
+- In the harness, each PR row's, group's and press line's height and position, frame by frame, in both themes and with reduced motion: switching rows, Fix, and Re-run with the cancelled rows leaving.
 - In the harness, each row's height, opacity and panel, frame by frame, on both tabs: Dismiss with a slow reply, an answer with an instant reply, Undo, a failing Undo, a settled row leaving, a row arriving, a row arriving open and closed while it grows in, switching rows, reopening a row mid-close, and the Closed fold.
 - `./scripts/check.sh`.
