@@ -107,6 +107,9 @@ export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', 
 
 export type HelpKey = { keys: string; does: string }
 
+/** The key that presses Undo, which no row's selection holds: a closed row settles and the selection moves on. */
+export const UNDO_KEY = 'u'
+
 /** The PRs tab's own keys, which `hooks/pr-order.ts:prOrderActions` and `hooks/pr-tab.ts:prTabActions` bind from any row of the tab. */
 const PR_TAB_HELP_KEYS: HelpKey[] = [
   { keys: 'g', does: 'Rank the PRs again, once a ranked PR changed' },
@@ -126,6 +129,7 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
   const selectsStatusRows = tab === 'overview' && hasStatusButtons
   const switchTabs = { keys: tabKeys, does: 'Switch tabs' }
   const prTabKeys = tab === 'prs' ? PR_TAB_HELP_KEYS : []
+  const undoKey = { keys: UNDO_KEY, does: 'Undo the last close' }
   switch (look) {
     case 'desktop':
       return []
@@ -133,13 +137,14 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
       return [
         switchTabs,
         ...(hasRows || selectsStatusRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
+        ...(hasRows ? [undoKey] : []),
         ...prTabKeys,
         { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
       ]
     case 'codex':
       return [
         switchTabs,
-        ...(hasRows ? [{ keys: 'j k ↑ ↓', does: 'Select the next or previous row' }] : []),
+        ...(hasRows ? [{ keys: 'j k ↑ ↓', does: 'Select the next or previous row' }, undoKey] : []),
         ...prTabKeys,
         { keys: '?', does: 'Open or close help' },
         { keys: 'esc', does: 'Close help, or leave a reply field' },
@@ -153,7 +158,7 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
               { keys: '← →', does: 'Pick a button' },
               { keys: '↵', does: 'Press the picked button' },
               { keys: 'r', does: 'Reply to the selected row' },
-              { keys: 'u', does: 'Undo the last close' },
+              undoKey,
               ...prTabKeys,
             ]
           : [

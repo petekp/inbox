@@ -72,7 +72,7 @@ export function stepLists(v: View): { lists: Lists; prs: DrawnPrs | null; change
   return { lists, prs, changed }
 }
 
-async function undo(r: RowView) {
+export async function undo(r: RowView) {
   if (undoing.has(r.id)) return
   const t = TAB_OF[r.type]
   undoing.add(r.id)

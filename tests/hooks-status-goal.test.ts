@@ -41,6 +41,7 @@ test('on a next build, a proposed goal shows above the head with its keys select
     'type-goal-proposal-key',
     'decline-goal-proposal-key',
     'no-row-d-key',
+    'last-undo-key',
   ])
 
   await pane.press({ key: 'type-goal-proposal-key' })
