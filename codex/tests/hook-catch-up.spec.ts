@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
+import { viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
 import { herdrOnWrite } from '../src/host'
 import { readState, updateState } from '../src/state'
@@ -136,6 +137,37 @@ test('a failed catch-up leaves the ledger behind, and the next Stop catches up a
   assert.match(prompts[1] ?? '', /<conversation>/)
   assert.equal(caught.presence.ledgerState, 'current')
   assert.deepEqual(caught.pending, [])
+})
+
+test('a failed chat saved with no rollout path promises the retry, and the next Stop saves the path and catches up', async () => {
+  const dir = tempDir()
+  const deps = execDeps(dir)
+  const transcript = rolloutCopy()
+  const prompts: string[] = []
+  await updateState(dir, 's1', s => ({
+    ...s,
+    transcriptPath: null,
+    presence: { ...s.presence, ledgerState: 'failed', failedAttempts: 1 },
+  }))
+  assert.match(viewOf(await readState(dir, 's1'), 5).status.error ?? '', /tries again after the agent's next reply\.$/)
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'What now?', turn_id: 't9', transcript_path: transcript }), deps)
+  await handleHook(
+    input('Stop', { turn_id: 't9', transcript_path: transcript, last_assistant_message: 'Try adding tests.' }),
+    deps,
+  )
+  assert.equal((await readState(dir, 's1')).transcriptPath, transcript)
+  assert.ok(deps.updates.includes('s1'))
+  await runUpdates(
+    dir,
+    's1',
+    async prompt => (prompts.push(prompt), CATCH_UP_REPLY),
+    () => 7,
+  )
+  const caught = await readState(dir, 's1')
+  assert.match(prompts[0] ?? '', /<conversation>/)
+  assert.equal(caught.presence.ledgerState, 'current')
+  assert.equal(viewOf(caught, 8).status.error, null)
 })
 
 test('a new session, a compaction start, a subagent and a session with recorded turns are not marked behind', async () => {

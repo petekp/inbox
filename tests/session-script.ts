@@ -68,7 +68,7 @@ export async function runSessionScript<S extends Session>(makeHost: MakeHost<S>,
   const holds = { ...NO_HOLDS, shownSince: await host.now() }
   const snapshot = async (later = 0) => {
     const s = await host.read()
-    const view = sessionView(s, (await host.now()) + later, SETTLE_WINDOW_MS, true, holds)
+    const view = sessionView(s, (await host.now()) + later, SETTLE_WINDOW_MS, holds)
 
     return {
       rows: allRows(view).map(r => `${r.title}: ${r.state.is}`),

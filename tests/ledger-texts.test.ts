@@ -149,7 +149,7 @@ describe("the person's own commands", () => {
 
 describe('the Herdr status line', () => {
   const statusOf = (ledger: Ledger, stop: Stop | null, dialogs: Dialog[]) =>
-    herdrTokens(ledger, stop, sessionView({ ...emptySession(), ledger }, 3, 0, false), dialogs).inbox ?? ''
+    herdrTokens(ledger, stop, sessionView({ ...emptySession(), ledger }, 3, 0), dialogs).inbox ?? ''
 
   test('names the first waiting item after the count, and what the session is focused on when nothing waits', () => {
     const waiting = applyUpdate(EMPTY, parseReply(REPLY)!, 1, 1)
