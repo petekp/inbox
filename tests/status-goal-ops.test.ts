@@ -57,7 +57,7 @@ test('a proposal that rewords the goal or a declined goal, or names the goal’s
     after(null, 'NEW: working | Import | CSV works', 10),
     'Ship 2.6 with the import feature and recent fixes',
     20,
-  ).status
+  )
   const declined = declineProposedGoal(proposed())
 
   expect(typed.goal?.isAwaitingMilestones).toBe(true)
@@ -148,19 +148,18 @@ test('a typed goal unlinks every subject and waits until an answer from a call t
     25,
   )
   const typed = setTypedGoal(met, 'Ship 2.6 with import', 30)
-  const answered = applyStatus(typed.status, parseStatus('NO CHANGE')!, 40, NO_ASKS)!
-  const stale = applyStatus(typed.status, parseStatus('SET: m1 | working | redone')!, 40, NO_ASKS, met.goal!.setAt)!
+  const answered = applyStatus(typed, parseStatus('NO CHANGE')!, 40, NO_ASKS)!
+  const stale = applyStatus(typed, parseStatus('SET: m1 | working | redone')!, 40, NO_ASKS, met.goal!.setAt)!
   const reworded = setTypedGoal(met, 'Demo import ready', 30)
 
   expect(met.goal?.metAt).toBe(25)
-  expect(typed.isNew).toBe(true)
-  expect(typed.status.goal).toMatchObject({
+  expect(typed.goal).toMatchObject({
     text: 'Ship 2.6 with import',
     was: 'Import ready to demo',
     isAwaitingMilestones: true,
   })
-  expect(typed.status.serves).toEqual({})
-  expect(typed.status.milestones).toHaveLength(3)
+  expect(typed.serves).toEqual({})
+  expect(typed.milestones).toHaveLength(3)
   expect(answered.milestones).toEqual([])
   expect(answered.goal).toMatchObject({ isAwaitingMilestones: true, metAt: null })
   expect(stale.goal).toMatchObject({ isAwaitingMilestones: true, metAt: null })
@@ -168,14 +167,13 @@ test('a typed goal unlinks every subject and waits until an answer from a call t
     isAwaitingMilestones: false,
     metAt: null,
   })
-  expect(reworded.status.serves).toEqual({ s1: 'm1', s2: 'none' })
-  expect(reworded.isNew).toBe(false)
-  expect(reworded.status.goal).toMatchObject({ text: 'Demo import ready', setAt: 20, isAwaitingMilestones: false })
+  expect(reworded.serves).toEqual({ s1: 'm1', s2: 'none' })
+  expect(reworded.goal).toMatchObject({ text: 'Demo import ready', setAt: 20, isAwaitingMilestones: false })
 })
 
 test('the answer that reads a typed goal keeps the milestones it names, and the dropped and unnamed ones of the goal before go and never fill its five places', () => {
   const met = after(after(withGoal(), 'DONE: m2 | named\nDONE: m3 | written', 25), 'SERVES: s1 | m3', 26)
-  const typed = setTypedGoal(met, 'Ship 2.6 with import', 30).status
+  const typed = setTypedGoal(met, 'Ship 2.6 with import', 30)
   const answered = after(
     typed,
     'MILESTONE: done | Import works | CSV works\nDROP: m2 | not needed\nMILESTONE: queued | Release notes | not started\nSERVES: s2 | m1',
@@ -188,7 +186,7 @@ test('the answer that reads a typed goal keeps the milestones it names, and the 
     26,
   )
   const replaced = after(
-    setTypedGoal(five, 'Search under 100 ms', 30).status,
+    setTypedGoal(five, 'Search under 100 ms', 30),
     'MILESTONE: working | Under 100 ms | index rebuilt\nMILESTONE: queued | 2.6 live | not started\nSERVES: s1 | Under 100 ms',
     40,
   )
@@ -202,7 +200,7 @@ test('the answer that reads a typed goal keeps the milestones it names, and the 
 })
 
 test('a GOAL line that restates a goal just set gives its milestones, and the SERVES lines that name them link, unless the call read the goal before it', () => {
-  const typed = setTypedGoal(withGoal(), 'Ship 2.6 with import', 30).status
+  const typed = setTypedGoal(withGoal(), 'Ship 2.6 with import', 30)
   const restated = 'GOAL: 2.6 shipped with import | working Import works; queued 2.6 live\nSERVES: s1 | Import works'
   const answered = after(typed, restated, 40)
   const stale = applyStatus(typed, parseStatus(restated)!, 40, NO_ASKS, withGoal().goal!.setAt)!
@@ -220,8 +218,8 @@ test('a GOAL line that restates a goal just set gives its milestones, and the SE
 
 test('a restated goal’s milestone keeps the text the goal before it gave that milestone, and a GOAL line for another goal while a goal waits is still a proposal', () => {
   const described = after(withGoal(), 'SET: m1 | working | CSV and JSON work', 25)
-  const typed = setTypedGoal(withGoal(), 'Ship 2.6 with import', 30).status
-  const carried = setTypedGoal(described, 'Ship 2.6 with import', 30).status
+  const typed = setTypedGoal(withGoal(), 'Ship 2.6 with import', 30)
+  const carried = setTypedGoal(described, 'Ship 2.6 with import', 30)
   const restated = after(carried, 'GOAL: Ship 2.6 with import | done Import works; queued 2.6 live', 40)
   const other = after(typed, 'GOAL: Dark mode in 2.7 | working Dark theme; queued 2.7 live', 40)
 
@@ -239,18 +237,18 @@ test('a goal typed over a proposal declines it, one with the proposal’s words 
   const o = proposed()
   const linked = after(withGoal(), 'SERVES: s1 | -\nGOAL: Ship 2.6 | queued Notes; queued Tag', 22)
 
-  expect(setTypedGoal(o, 'Ship 2.6', 30).status).toMatchObject({ proposedGoal: null })
-  expect(setTypedGoal(o, 'Ship 2.6', 30).status.declinedGoals).toHaveLength(1)
+  expect(setTypedGoal(o, 'Ship 2.6', 30)).toMatchObject({ proposedGoal: null })
+  expect(setTypedGoal(o, 'Ship 2.6', 30).declinedGoals).toHaveLength(1)
   const typed = setTypedGoal(o, 'Demo ready: import', 30)
-  expect(typed.status).toMatchObject({ proposedGoal: null, declinedGoals: [] })
-  expect(typed.status.goal).toMatchObject({ text: 'Demo ready: import', isAwaitingMilestones: false })
-  expect(typed.status.milestones.map(m => m.name)).toEqual(useProposedGoal(o, 30).milestones.map(m => m.name))
+  expect(typed).toMatchObject({ proposedGoal: null, declinedGoals: [] })
+  expect(typed.goal).toMatchObject({ text: 'Demo ready: import', isAwaitingMilestones: false })
+  expect(typed.milestones.map(m => m.name)).toEqual(useProposedGoal(o, 30).milestones.map(m => m.name))
   expect(linked.serves).toEqual({ s1: 'none' })
   expect(useProposedGoal(linked, 40).serves).toEqual({})
 })
 
 test("the replaced goal's was line goes once the person has looked", () => {
-  const typed = setTypedGoal(withGoal(), 'Ship 2.6 with import', 30).status
+  const typed = setTypedGoal(withGoal(), 'Ship 2.6 with import', 30)
   const seen = applyStatus({ ...typed, lastLookAt: 35 }, parseStatus('NO CHANGE')!, 40, NO_ASKS)
 
   expect(seen?.goal?.was).toBeNull()

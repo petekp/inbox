@@ -1014,7 +1014,7 @@ NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
   options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
   rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
   design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
-  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, edit a shared page) until the person agrees is a "decide" item ("Say when you want those committed"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
+  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
 UPDATE: <id> | <options> | <rec>
   For a "decide" item in <open> when the reply now offers it different answers, or states a recommendation for it that <open> does not show. options: the answers the person can now pick, as in NEW, or "-" to keep them. rec: as in NEW, or "-" to keep it. Rewording the question is not a change.
 HELP: <item> | <kind> | <value> | <name>
@@ -3002,6 +3002,7 @@ function upgraded(saved, sessionId) {
     }),
     shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     heard,
+    lastModelFailure: saved.lastModelFailure ? { signal: null, errorCode: null, timeoutMs: null, call: null, elapsedMs: null, ...saved.lastModelFailure } : null,
     coveredTurn: saved.coveredTurn !== void 0 ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null)
   };
 }
@@ -3616,7 +3617,16 @@ var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve3) => {
       rest,
       { cwd, env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, encoding: "utf8" },
       (err, stdout, stderr) => {
-        resolve3({ code: exitCodeOf(err), stdout: String(stdout), stderr: String(stderr) });
+        const signal = err?.killed ? void 0 : err?.signal ?? void 0;
+        const errorCode = typeof err?.code === "string" ? err.code : void 0;
+        const error = errorCode && !stderr ? err.message : String(stderr);
+        resolve3({
+          code: exitCodeOf(err),
+          stdout: String(stdout),
+          stderr: error,
+          ...signal ? { signal } : {},
+          ...errorCode ? { errorCode } : {}
+        });
       }
     );
     child.stdin?.on("error", () => {
@@ -4542,7 +4552,7 @@ async function keepNewerSignIn(link, auth) {
 }
 var FAILURE_TAIL_CHARS = 2e3;
 function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
-}) {
+}, now = Date.now) {
   return async (prompt, instructions, report) => {
     const work = join4(dir, "exec");
     const system = join4(dir, `inbox-system-${createHash2("sha256").update(instructions).digest("hex").slice(0, 12)}.md`);
@@ -4553,6 +4563,7 @@ function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
     let off = [...OFF];
     for (let tries = 0; tries <= OFF.length; tries += 1) {
       await rm(out, { force: true });
+      const startedAt = now();
       const r = await exec(
         [
           cli,
@@ -4581,6 +4592,7 @@ function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
         ],
         { cwd: work, timeoutMs: TIMEOUT_MS, env: home ? { CODEX_HOME: home } : {}, input: prompt }
       );
+      const elapsedMs = now() - startedAt;
       const unknown = r.stderr.match(/Unknown feature flag: (\S+)/)?.[1];
       if (r.code !== 0 && unknown && off.includes(unknown)) {
         off = off.filter((f) => f !== unknown);
@@ -4589,13 +4601,31 @@ function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
       const text2 = r.code === 0 ? await readFile2(out, "utf8").catch(() => null) : null;
       await rm(out, { force: true });
       const stderr = r.stderr.slice(-FAILURE_TAIL_CHARS);
-      report?.({ model: MODEL, ...text2 === null ? { error: `codex exec exited ${r.code}: ${stderr.trim()}` } : {} });
-      if (text2 === null) await onFailure({ cli, code: r.code, stderr });
+      const failure = {
+        cli,
+        code: r.code,
+        stderr,
+        signal: r.signal ?? null,
+        errorCode: r.errorCode ?? null,
+        timeoutMs: r.code === TIMED_OUT_CODE ? TIMEOUT_MS : null,
+        call: instructions === STATUS_SYSTEM ? "status" : "ledger",
+        elapsedMs
+      };
+      report?.({ model: MODEL, ...text2 === null ? { error: `codex exec ${endOf(failure)}: ${stderr.trim()}` } : {} });
+      if (text2 === null) await onFailure(failure);
       return text2;
     }
     report?.({ model: MODEL, error: "codex exec refused every feature flag the inbox turns off" });
     return null;
   };
+}
+function endOf(f) {
+  if (f.timeoutMs !== null) return `timed out after ${f.timeoutMs / 1e3} s`;
+  if (f.signal) return `was ended by ${f.signal}`;
+  if (f.errorCode) return `failed with ${f.errorCode}`;
+  if (f.code === UNSTARTABLE_CODE) return "could not start";
+  if (f.code === 0) return "exited 0 and wrote no reply";
+  return `exited ${f.code}`;
 }
 var recordModelFailure = (dir, sessionId, now) => async (failure) => {
   await updateState(dir, sessionId, (s) => ({ ...s, lastModelFailure: { ...failure, at: now() } }));

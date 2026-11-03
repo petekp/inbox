@@ -1,4 +1,3 @@
-import type { EngineInterface } from 'claude-code'
 import type { Session } from '../types'
 import { KEPT_SESSIONS } from './ledger'
 import { type Changed, type ModSession, type Owner, type SavedRecord, sessionKey } from './mod-sessions'
@@ -32,7 +31,12 @@ function track(id: string, write: Promise<void>) {
 
 /** The engine calls a save makes: the store, the clock and the debug log. */
 export type SaveEngine = {
-  store: EngineInterface['store']
+  store: {
+    get: (key: string) => Promise<unknown>
+    set: (key: string, value: unknown) => Promise<void>
+    delete: (key: string) => Promise<void>
+    keys: () => Promise<string[]>
+  }
   sleep: (ms: number) => Promise<void>
   now: () => Promise<number>
   after: (ms: number, fn: () => void) => { cancel: () => void }

@@ -1300,18 +1300,18 @@ function declineProposedGoal(o) {
 function setTypedGoal(o, text, now) {
   const typed = clipWords(text, DESCRIPTION_KEPT);
   if (typed === "")
-    return { status: o, isNew: false };
+    return o;
   const p = o.proposedGoal;
   if (p !== null && hasSameWords(p.text, typed)) {
     const used = useProposedGoal(o, now);
-    return { status: { ...used, goal: { ...used.goal, text: typed } }, isNew: true };
+    return { ...used, goal: { ...used.goal, text: typed } };
   }
   const declined = declineProposedGoal(o);
   const isReworded = o.goal !== null && hasSameWords(o.goal.text, typed);
   if (isReworded)
-    return { status: { ...declined, goal: { ...o.goal, text: typed } }, isNew: false };
+    return { ...declined, goal: { ...o.goal, text: typed } };
   const goal = { text: typed, setAt: now, metAt: null, was: o.goal?.text ?? null, isAwaitingMilestones: true };
-  return { status: { ...declined, goal, serves: {} }, isNew: true };
+  return { ...declined, goal, serves: {} };
 }
 
 // ../hooks/goal-press.ts
@@ -1327,9 +1327,9 @@ function goalPressed(ledger, p, record, now) {
   if (p.action !== "type")
     return { stale: true };
   const typed = setTypedGoal(o, p.text, now);
-  if (typed.status === o)
+  if (typed === o)
     return unchanged;
-  return { ledger: { ...ledger, overview: typed.status }, last: record("mark"), effects: [] };
+  return { ledger: { ...ledger, overview: typed }, last: record("mark"), effects: [] };
 }
 
 // ../hooks/status-keys.ts
@@ -2435,7 +2435,7 @@ NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
   options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
   rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
   design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
-  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, edit a shared page) until the person agrees is a "decide" item ("Say when you want those committed"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
+  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
 UPDATE: <id> | <options> | <rec>
   For a "decide" item in <open> when the reply now offers it different answers, or states a recommendation for it that <open> does not show. options: the answers the person can now pick, as in NEW, or "-" to keep them. rec: as in NEW, or "-" to keep it. Rewording the question is not a change.
 HELP: <item> | <kind> | <value> | <name>

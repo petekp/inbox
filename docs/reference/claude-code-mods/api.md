@@ -45,7 +45,7 @@ Namespaces and methods. [R#mods-api-methods; T]
 
 ### `$.prompt`
 
-- `submit({ text })` "waits until the session is idle and then starts a new turn. It resolves when that turn starts, so don't `await` it in a handler that runs while Claude is working." Claude reads it "after a sentence that names your mod as the sender"; `asUser: true` drops that sentence. [A] The inbox uses `asUser: true` at `hooks/register.tsx:send`.
+- `submit({ text })` "waits until the session is idle and then starts a new turn. It resolves when that turn starts, so don't `await` it in a handler that runs while Claude is working." Claude reads it "after a sentence that names your mod as the sender"; `asUser: true` drops that sentence. [A] The inbox uses `asUser: true` at `hooks/register.tsx:deliver`.
 - Headless behavior: `read` returns `{ text: '', cursor: 0 }` "where the session draws no box (a -p run, an SDK host)"; `fill` returns `isFilled: false` "under a dialog or headless"; `suggest` returns `isShown: false` "while the box holds text, a turn runs, or headless". [T] Inference: these may be inert in desktop Code mode, which runs headless. Not verified.
 
 ### `$.tool.register` and `$.command.register`
@@ -66,7 +66,7 @@ Namespaces and methods. [R#mods-api-methods; T]
 - Caching: "Put the text every call repeats first and mark its last block (`cache`); whatever follows the last mark is paid for whole on every call." "a call within five minutes that opens with the same text reads it there". Both cache counts at zero means "text under the model's minimum, or caching switched off". "On Bedrock, Vertex, Foundry or behind a gateway the text is found again only while `prompt` opens the same way." "Marks go uncounted: one too many is the API's own `api-error` (status 400)." [T: `ModelTextBlock`]
 - `fork` "asks one question over the current conversation instead, with the same model and system prompt, so the Claude API serves most of it from the prompt cache". Types: "every tool denied … the prefix billed afresh once the entry lapsed or after `/model`". `nothing-to-fork` covers "before the first response and after `/clear`". [A#call-a-model; T: `model.fork`]
 - `classify` defaults to "the engine's small fast model". [T]
-- The inbox: `MODEL = 'sonnet'` (`hooks/register.tsx:MODEL`); `askInboxModel` sends a `cache: true` system block with `maxTokens: 1600`, `effort: 'low'` (`hooks/register.tsx:askInboxModel`) and a 45 s timeout (`hooks/register.tsx:runUpdate`); `$.model.fork` in `hooks/register.tsx:catchUp`. See "What the inbox's model calls cost".
+- The inbox: `MODEL = 'sonnet'` (`hooks/inbox-model.ts:MODEL`); `askInboxModel` sends a `cache: true` system block with `maxTokens: 1600`, `effort: 'low'` (`hooks/register.tsx:askInboxModel`) and a 45 s timeout (`hooks/register.tsx:sessionHost`); `$.model.fork` in `hooks/register.tsx:catchUpReply`. See "What the inbox's model calls cost".
 
 ### `$.store` and `$.state`
 
@@ -74,7 +74,7 @@ Namespaces and methods. [R#mods-api-methods; T]
 - `set` round-trips through JSON (a Date becomes a string, a Map becomes `{}`). It "Rejects a function, a cycle, or a store over 4 MiB". [T: `store`]
 - Live, file names only: store files are `~/.claude/plugins/store/<name>_<source>-<hash>.json`, where `<hash>` is the first 12 hex characters of sha256 of `<name>@<source>`. Verified for `inbox@inline` → `7e8589075f50`. So the store is keyed by plugin id, not name. Every folder copy named `inbox` shares `inbox@inline`. Inference: a marketplace install would be `inbox@<marketplace>` with a separate store, so a move to marketplace installs needs a store migration. The file was about 70 KB on 2026-10-08.
 - Inference: "every session on the machine" holds only for one `CLAUDE_CONFIG_DIR`.
-- The inbox saves per session under `s:${owner.id}` (`hooks/register.tsx:save`) and prunes to `KEPT_SESSIONS = 40` (`hooks/register.tsx:KEPT_SESSIONS`, used in `hooks/register.tsx:save`).
+- The inbox saves per session under `s:${owner.id}` (`hooks/mod-saves.ts:save`) and prunes to `KEPT_SESSIONS = 40` (`hooks/ledger.ts:KEPT_SESSIONS`, used in `hooks/mod-saves.ts:save`).
 - `$.state`: "Named values held by the host for the session, each with a version: plain data that survives a hot reload of the plugin's code." A `get` in `ui.render` subscribes that render. "Any plugin reads any value; its owner alone writes it. Persist through `$.store`." `set` is refused during render and takes `ifVersion`. `plugin` and `key` must be literals. [T: `state`]
 
 ### `$.process`, `$.fs`, `$.http`, `$.session`
