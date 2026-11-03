@@ -3,13 +3,23 @@ import { cutForEllipsis } from './text'
 import { DOT } from './rows'
 import { parseInline, type Span } from './inline'
 
-/** `spans` cut to what desktop draws in `limit` lines `widthPt` wide, with an ellipsis when cut. */
-export function desktopSpanLines(spans: TerminalSpan[], widthPt: number, limit: number): TerminalSpan[] {
+/**
+ * `spans` cut to what desktop draws in `limit` lines `widthPt` wide, with an ellipsis when cut. With `isCutAtWord`, the
+ * cut falls between words, and inside a word only when no word of the last line fits beside the ellipsis.
+ */
+export function desktopSpanLines(
+  spans: TerminalSpan[],
+  widthPt: number,
+  limit: number,
+  { isCutAtWord = false } = {},
+): TerminalSpan[] {
   const words = spans.map(s => ({ ...s, text: s.text.replace(/[^\S\u00a0]+/g, ' ') }))
   const text = words.map(s => s.text).join('')
   const lines = desktopLines(text, widthPt)
   if (lines.length <= limit) return words
-  const last = cutForEllipsis(lines[limit - 1]!, t => desktopTextPt(t) <= widthPt)
+  const fits = (withEllipsis: string) => desktopTextPt(withEllipsis) <= widthPt
+  const lastLine = lines[limit - 1]!
+  const last = (isCutAtWord ? cutAtWord(lastLine, fits) : null) ?? cutForEllipsis(lastLine, fits)
   let shownEnd = 0
   for (const line of lines.slice(0, limit - 1)) shownEnd = text.indexOf(line, shownEnd) + line.length
   let room = text.indexOf(lines[limit - 1]!, shownEnd) + last.length
@@ -22,6 +32,18 @@ export function desktopSpanLines(spans: TerminalSpan[], widthPt: number, limit: 
   const isMuted = kept.at(-1)?.isMuted
 
   return [...kept, { text: '…', ...(isMuted ? { isMuted } : {}) }]
+}
+/** The most words from the start of `line` that `fit` with an ellipsis after them, or null when not even one does. */
+function cutAtWord(line: string, fits: (withEllipsis: string) => boolean): string | null {
+  const lineWords = line.split(' ')
+  for (let n = lineWords.length; n > 0; n--) {
+    const head = lineWords
+      .slice(0, n)
+      .join(' ')
+      .replace(/[\s.,;:]+$/, '')
+    if (head && fits(`${head}…`)) return head
+  }
+  return null
 }
 export const LEADING_DOT = new RegExp(`^${DOT}`)
 export type TreePos = 'mid' | 'last' | 'pass'

@@ -306,7 +306,9 @@ export function paneRowLines({
     const f = feedbackLabel(row.id, row)
     const before = row.line?.before ?? ''
     const text = (row.line?.text ?? row.title).trim()
-    const [, ...titleSpans] = desktopSpanLines([{ text: before }, { text }], textColumnPt, row.hasSecondLine ? 4 : 2)
+    const [, ...titleSpans] = desktopSpanLines([{ text: before }, { text }], textColumnPt, row.hasSecondLine ? 4 : 2, {
+      isCutAtWord: true,
+    })
 
     return {
       markCells: DESKTOP_MARK_CELLS,
