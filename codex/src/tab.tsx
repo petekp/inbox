@@ -5,6 +5,7 @@ import { versionLabel, DEMO_NOTICE, bannerOf, READING_TEXT } from '../../hooks/b
 import { isRowTab, shownTabs } from '../../hooks/tabs'
 import { tabState, handoff, root, instanceAbort } from './tab-state'
 import type { Kept, Lists } from './tab-state'
+import type { DrawnPrs } from './tab-pr-steps'
 import { later, dispose, request, applyHost, READ_TIMEOUT_MS } from './tab-host'
 import type { HostContext } from './tab-host'
 import { measure, animateDraw, revealSelected, applyPageVariables, wakeForMoves } from './tab-motion'
@@ -26,7 +27,7 @@ let hostContext: HostContext = {}
 
 const LOADING_DELAY_MS = 300
 
-function App({ lists }: { lists: Lists | null }): ComponentChildren {
+function App({ lists, prs }: { lists: Lists | null; prs: DrawnPrs | null }): ComponentChildren {
   if (!tabState.view || !lists)
     return tabState.readError !== null ? (
       <Banner
@@ -56,7 +57,9 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
       ) : shown === 'findings' ? (
         <Findings v={v} lists={lists} now={now} />
       ) : shown === 'prs' ? (
-        <Prs v={v} now={now} />
+        prs ? (
+          <Prs v={v} prs={prs} now={now} />
+        ) : null
       ) : (
         <StatusTab page={v.statusPage} />
       )}
@@ -92,8 +95,9 @@ function draw() {
   const before = measure()
   const step = tabState.view ? stepLists(tabState.view) : null
   tabState.lastLists = step?.lists ?? null
+  tabState.lastPrs = step?.prs ?? null
   wakeForMoves()
-  render(<App lists={tabState.lastLists} />, root)
+  render(<App lists={tabState.lastLists} prs={tabState.lastPrs} />, root)
   animateDraw(before, step?.changed ?? new Set())
   const fieldToFocus =
     tabState.focusTyping && tabState.typing ? document.getElementById(`type-${tabState.typing}`) : null

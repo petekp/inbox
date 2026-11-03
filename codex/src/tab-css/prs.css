@@ -30,7 +30,7 @@
   margin-top: 8px;
 }
 .pr-last {
-  margin-top: 6px;
+  padding-top: 6px;
 }
 .pr-groups {
   margin-top: 12px;
@@ -39,8 +39,8 @@
   --mark-x: 41px;
   --text-x: 67px;
 }
-.pr-groups .group-title + .list {
-  margin-bottom: 6px;
+.pr-group .list {
+  padding-bottom: 6px;
 }
 .link {
   padding: 0;
