@@ -61,8 +61,8 @@ The saved records do not say whether an answer came from a press or from the age
 | `record` and `close`, their fields and results | `hooks/tools.ts` | Claude, Codex | Themes 3, 6 |
 | The inbox model's instructions and input | `hooks/ledger-prompt.ts:systemText`, `hooks/ledger-prompt.ts:buildPrompt` | Inbox model | Themes 2, 4, 5, 7 |
 | The catch-up prompts | `hooks/catch-up-text.ts:catchUpPrompt`, `hooks/catch-up-text.ts:transcriptCatchUpPrompt` | Inbox model or a fork | Theme 5 |
-| `inbox:` texts beside a prompt | `hooks/model-text.ts:inboxText`, `hooks/model-text.ts:closedText`, `hooks/model-text.ts:answerNote` | Claude, Codex | Themes 3, 6 |
-| The start and compaction block | `hooks/model-text.ts:carryText` | Claude, Codex | No issue |
+| `inbox:` texts beside a prompt | `hooks/inbox-text.ts:inboxText`, `hooks/inbox-text.ts:closedText`, `hooks/inbox-text.ts:answerNote` | Claude, Codex | Themes 3, 6 |
+| The start and compaction block | `hooks/inbox-text.ts:carryText` | Claude, Codex | No issue |
 | Activity and screen lines | `toolActivity`, `dialogActivity` and `screenText` in `hooks/model-text.ts` | Inbox model | No issue |
 | Row press messages | `hooks/press-messages.ts:messages` | Claude, Codex | Themes 2, 6 |
 | PR press messages | `hooks/prs.ts:prompts` | Claude | Read, no issue found |
