@@ -4647,6 +4647,12 @@ function actionsOf(row, last, state, feedback) {
 function firstWaiting(rows) {
   return rows.find((r) => r.isWaiting)?.id ?? null;
 }
+function steppedIndex(at, step, count) {
+  if (count === 0)
+    return -1;
+  const from = at < 0 ? step > 0 ? -1 : 0 : at;
+  return ((from + step) % count + count) % count;
+}
 function keptOpen(rows, added) {
   return firstWaiting(rows.filter((r) => !added.includes(r.id)));
 }
@@ -5921,7 +5927,6 @@ function entriesOf(screen, ui, tab, now) {
 }
 
 // src/panel-keys.ts
-var wrapIndex = (i, n) => (i % n + n) % n;
 function resolveSelected(lines, selectedId) {
   const selectable = lines.filter(isSelectable);
   const current = lines.find((l) => l.id === selectedId);
@@ -6026,13 +6031,13 @@ function handleKey(screen, ui, key, now, text) {
   const at = selectable.findIndex((l) => l.id === selected?.id);
   if ((key === "up" || key === "k" || key === "down" || key === "j") && selectable.length > 0) {
     const step = key === "up" || key === "k" ? -1 : 1;
-    return { ui: withSelection(base, selectable[wrapIndex(Math.max(0, at) + step, selectable.length)].id) };
+    return { ui: withSelection(base, selectable[steppedIndex(at, step, selectable.length)].id) };
   }
   const tabs = shown.map((t) => t.id);
   const pickedTab = shown.find((t) => t.hotkey === key);
   if (key === "tab" || key === "shift+tab") {
     const step = key === "tab" ? 1 : -1;
-    return { ui: withTab(base, tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)], now) };
+    return { ui: withTab(base, tabs[steppedIndex(tabs.indexOf(base.tab), step, tabs.length)], now) };
   }
   if (pickedTab)
     return { ui: withTab(base, pickedTab.id, now) };
@@ -6057,7 +6062,7 @@ function handleKey(screen, ui, key, now, text) {
   if (!selected || selected.buttons.length === 0 || isGuarded(base.openedAt, now))
     return { ui: base };
   if (key === "left" || key === "right") {
-    const index = wrapIndex(focusOf2(selected, base) + (key === "left" ? -1 : 1), selected.buttons.length);
+    const index = steppedIndex(focusOf2(selected, base), key === "left" ? -1 : 1, selected.buttons.length);
     return { ui: { ...base, focus: { rowId: selected.id, index } } };
   }
   const button = key === "enter" ? selected.buttons[focusOf2(selected, base)] : selected.buttons.find((b) => b.key === key);
@@ -6071,12 +6076,12 @@ function pageKey(screen, ui, key, now) {
     return null;
   if (key === "j" || key === "k") {
     const at = rows.findIndex((r) => r.id === row.id);
-    const to = rows[wrapIndex(at + (key === "k" ? -1 : 1), rows.length)].id;
+    const to = rows[steppedIndex(at, key === "k" ? -1 : 1, rows.length)].id;
     return { ui: { ...ui, selectedId: to, focus: null, pageReveal: to } };
   }
   const { keys } = row;
   if (key === "left" || key === "right") {
-    const index = wrapIndex(pageFocus(row, ui) + (key === "left" ? -1 : 1), keys.length);
+    const index = steppedIndex(pageFocus(row, ui), key === "left" ? -1 : 1, keys.length);
     return { ui: { ...ui, selectedId: row.id, focus: { rowId: row.id, index } } };
   }
   const pressed = key === "enter" ? keys[pageFocus(row, ui)] : keys.find((k) => k.hotkey === key);
