@@ -19,11 +19,10 @@ export function codexStore(
     now,
     read: () => readState(dir, sessionId),
     update: async change => {
-      const s = await updateState(dir, sessionId, async current => {
-        const changed = await change(current)
-
-        return changed === current ? current : { ...changed, writtenAt: Math.max(now(), (current.writtenAt ?? 0) + 1) }
-      })
+      const s = await updateState(dir, sessionId, async current => ({
+        ...(await change(current)),
+        writtenAt: Math.max(now(), (current.writtenAt ?? 0) + 1),
+      }))
       await onWrite(s)
 
       return s

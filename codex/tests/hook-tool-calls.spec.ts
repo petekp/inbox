@@ -175,6 +175,8 @@ test('a hook in a new process sends no Herdr report that would change nothing, a
   await handleHook(toolUse, hookProcess())
   assert.equal(herdr.calls.length, 2)
   assert.equal(reportedTokens(herdr.calls[1]!)['inbox-needs-you'], '1')
+  const [firstSeq, secondSeq] = herdr.calls.map(args => Number(args[args.indexOf('--seq') + 1]))
+  assert.ok(firstSeq! < secondSeq!)
 })
 
 test('a Herdr report that fails to send is sent again at the next write, and saved only once Herdr takes it', async () => {
@@ -197,38 +199,66 @@ test('a Herdr report that fails to send is sent again at the next write, and sav
   assert.ok((await readState(dir, 's1')).herdrReport)
 })
 
-test('of two writes from separate processes, the later state’s Herdr report carries the higher seq, whichever sends first', async () => {
+const HERDR_ENV = { HERDR_PANE_ID: 'p1' }
+
+const addAsk = (text: string) => (s: SessionState) => ({
+  ...s,
+  ledger: addAgentItem(s.ledger, { kind: 'question', ask: text, options: [], rec: null, helps: [] }, 1000).ledger,
+})
+
+function herdrThatOrdersBySeq() {
+  let lastSeq = -Infinity
+  let shown: Record<string, string | null> = {}
+  const herdr = fakeRunner(args => {
+    const seq = Number(args[args.indexOf('--seq') + 1])
+    if (seq > lastSeq) {
+      lastSeq = seq
+      shown = reportedTokens(args)
+    }
+    return { code: 0, stdout: '', stderr: '' }
+  })
+
+  return { ...herdr, shown: () => shown }
+}
+
+test('of two writes from separate processes, Herdr shows the later state, whichever report sends first', async () => {
   const dir = tempDir()
-  const herdr = fakeRunner(() => ({ code: 0, stdout: '', stderr: '' }))
+  const herdr = herdrThatOrdersBySeq()
   let at = 100
   const now = () => ++at
-  const env = { HERDR_PANE_ID: 'p1' }
-  const ask = (text: string) => (s: SessionState) => ({
-    ...s,
-    ledger: addAgentItem(s.ledger, { kind: 'question', ask: text, options: [], rec: null, helps: [] }, 1000).ledger,
-  })
   let release = () => {}
   const held = new Promise<void>(resolve => (release = resolve))
   let markWritten = () => {}
   const written = new Promise<void>(resolve => (markWritten = resolve))
-  const reportFirst = herdrOnWrite(env, herdr.exec, dir, now)
+  const reportFirst = herdrOnWrite(HERDR_ENV, herdr.exec, dir, now)
   const first = codexStore(dir, 's1', now, async s => {
     markWritten()
     await held
     await reportFirst(s)
   })
-  const second = codexStore(dir, 's1', now, herdrOnWrite(env, herdr.exec, dir, now))
+  const second = codexStore(dir, 's1', now, herdrOnWrite(HERDR_ENV, herdr.exec, dir, now))
 
-  const firstWrite = first.update(ask('Ship it?'))
+  const firstWrite = first.update(addAsk('Ship it?'))
   await written
-  await second.update(ask('Tag it?'))
+  await second.update(addAsk('Tag it?'))
   release()
   await firstWrite
 
-  const seqOf = (asks: string) => {
-    const report = herdr.calls.find(args => reportedTokens(args)['inbox-needs-you'] === asks)
-    return Number(report?.[report.indexOf('--seq') + 1])
-  }
   assert.equal(herdr.calls.length, 2)
-  assert.ok(seqOf('1') < seqOf('2'))
+  assert.equal(herdr.shown()['inbox-needs-you'], '2')
+})
+
+test('an update that changes nothing reports a change the MCP server made, and Herdr shows it', async () => {
+  const dir = tempDir()
+  const herdr = herdrThatOrdersBySeq()
+  let at = 100
+  const now = () => ++at
+  const store = () => codexStore(dir, 's1', now, herdrOnWrite(HERDR_ENV, herdr.exec, dir, now))
+
+  await store().update(addAsk('Ship it?'))
+  await updateState(dir, 's1', addAsk('Tag it?'))
+  await store().update(s => s)
+
+  assert.equal(herdr.calls.length, 2)
+  assert.equal(herdr.shown()['inbox-needs-you'], '2')
 })
