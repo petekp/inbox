@@ -33,7 +33,7 @@ import type { OnWrite } from './host'
 import { statePath, updateState, withLock } from './state'
 import type { ModelFailure, SessionState } from './state'
 import { CODEX } from './texts'
-import { readRollout } from './transcript'
+import { readRollout, withCurrentRollout } from './transcript'
 import type { RunWithInput } from './run'
 
 /** The inbox model, at low reasoning effort. gpt-6-luna is faster but closed a finding the reply only mentioned. */
@@ -238,19 +238,26 @@ export const runUpdates = (
   now: () => number,
   onWrite?: OnWrite,
   records?: StatusRecords,
-): Promise<void> =>
-  runSessionUpdates({
-    ...codexStore(dir, sessionId, now, onWrite),
+): Promise<void> => {
+  const store = codexStore(dir, sessionId, now, onWrite)
+
+  return runSessionUpdates({
+    ...store,
     ask,
     names: CODEX,
     inOrder: inOrderFor(dir, sessionId),
     records,
-    catchUp: async s =>
-      askOverConversation(
+    catchUp: async s => {
+      const isMoved = (await withCurrentRollout(s)) !== s
+      const path = isMoved ? (await store.update(withCurrentRollout)).transcriptPath : s.transcriptPath
+
+      return askOverConversation(
         ask,
         CODEX,
         s,
         screenText(CODEX, isTabOpen(s, now()), screenTabOf(s.shownTab)),
-        (await readRollout(s.transcriptPath, s.root))?.conversation ?? null,
-      ),
+        (await readRollout(path, s.root))?.conversation ?? null,
+      )
+    },
   })
+}

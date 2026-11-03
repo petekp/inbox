@@ -329,9 +329,9 @@ function pruneClosed(ledger, keep) {
 function idNumber(id) {
   return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
 }
-function inIdOrder(open3, entry) {
-  const at = open3.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
-  return at < 0 ? [...open3, entry] : [...open3.slice(0, at), entry, ...open3.slice(at)];
+function inIdOrder(open2, entry) {
+  const at = open2.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
+  return at < 0 ? [...open2, entry] : [...open2.slice(0, at), entry, ...open2.slice(at)];
 }
 function reopenItem(ledger, id) {
   const item = ledger.closed.findLast((c) => c.id === id)?.item;
@@ -1022,13 +1022,13 @@ TODO: <work>
 Write plainly. No jargon, no filler, no markdown.`;
 }
 function ledgerBlocks(ledger) {
-  const open3 = ledger.items.map(
+  const open2 = ledger.items.map(
     (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`
   ).join(NL4);
   const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL4);
   const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL4);
   return [
-    `<open>${NL4}${open3}${NL4}</open>`,
+    `<open>${NL4}${open2}${NL4}</open>`,
     `<findings>${NL4}${findings}${NL4}</findings>`,
     `<decided>${NL4}${closed}${NL4}</decided>`
   ];
@@ -1238,7 +1238,7 @@ function readiness(pr, isSent = () => false) {
   if (pr.state !== "OPEN") return result("closed", "Closed");
   const { fail: failing, cancelled, pending } = checkCounts(pr);
   const waiting = waitingThreads(pr);
-  const open3 = threadsOnYou(pr, isSent).length;
+  const open2 = threadsOnYou(pr, isSent).length;
   const sent = waiting.filter((t) => isSent(pr, t)).length;
   const changed = waiting.filter((t) => t.isLinesChanged && !isSent(pr, t)).length;
   const isPresent = (b) => b !== null;
@@ -1248,7 +1248,7 @@ function readiness(pr, isSent = () => false) {
     row(failing > 0 ? plural(failing, "failing check", "failing checks") : null),
     row(cancelled > 0 ? plural(cancelled, "cancelled check", "cancelled checks") : null),
     pr.reviewDecision === "CHANGES_REQUESTED" ? "changes requested" : null,
-    row(open3 > 0 ? threadsWaiting(open3) : null)
+    row(open2 > 0 ? threadsWaiting(open2) : null)
   ].filter(isPresent);
   const onOthers = [
     row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to Claude` : null),
@@ -1314,11 +1314,11 @@ function helpLabel(help) {
 }
 function steps(helps) {
   const copy = helps.find((h) => h.kind === "copy");
-  const open3 = helps.find((h) => h.kind === "open");
-  if (!copy || !open3 || copy.kind !== "copy" || open3.kind !== "open")
+  const open2 = helps.find((h) => h.kind === "open");
+  if (!copy || !open2 || copy.kind !== "copy" || open2.kind !== "open")
     return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
   return helps.filter((h) => h !== copy).map(
-    (h) => h === open3 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open3.path)}`, 48), step: [copy, open3] } : { label: helpLabel(h), step: [h] }
+    (h) => h === open2 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open2.path)}`, 48), step: [copy, open2] } : { label: helpLabel(h), step: [h] }
   );
 }
 function prSteps(item, tracked) {
@@ -1592,9 +1592,9 @@ function isChildRunning(c, now) {
 function subjectsText(o) {
   const subjects = o?.subjects ?? [];
   const serves = (id) => o?.goal ? ` | ${servesText(o, id)}` : "";
-  const open3 = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}${serves(s.id)}`);
+  const open2 = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}${serves(s.id)}`);
   const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
-  return { open: open3.join(NL) || "(none yet)", finished: finished.join(NL) };
+  return { open: open2.join(NL) || "(none yet)", finished: finished.join(NL) };
 }
 function servesText(o, subjectId) {
   const to = o.serves[subjectId];
@@ -1796,9 +1796,9 @@ function statusPage(s, now) {
   const newClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const main2 = subjects.filter((x) => !isOther(x));
   const other = subjects.filter(isOther);
-  const open3 = main2.filter(isOpen).sort(pageOrder);
-  const foldable = open3.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
-  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open3.length - foldable.length)));
+  const open2 = main2.filter(isOpen).sort(pageOrder);
+  const foldable = open2.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
+  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open2.length - foldable.length)));
   const split = (part) => {
     const newClosed = newClosedOf(part);
     return {
@@ -2926,7 +2926,8 @@ function emptyState(sessionId) {
     tabSeenAt: 0,
     shownTab: "needsYou",
     heard: NOTHING_HEARD,
-    coveredTurn: null
+    coveredTurn: null,
+    openCatchUpKey: null
   };
 }
 function statePath(dir, sessionId) {
@@ -3468,31 +3469,60 @@ function herdrReport(pane, tokens, seq) {
 function herdrReportKey(pane, tokens) {
   return herdrReport(pane, tokens).join("\n");
 }
+var HERDR_RETRY_MS = [5e3, 3e4, 12e4];
 function herdrReporter() {
   let sent = null;
+  let retries = 0;
+  let isRetryWaiting = false;
   let sending = Promise.resolve();
-  return (run2, report) => {
-    sending = sending.then(async () => {
-      const r = await report();
-      if (!r) return;
-      const key = herdrReportKey(r.pane, r.tokens);
-      if (key === sent) return;
-      sent = key;
-      await run2(herdrReport(r.pane, r.tokens, r.seq), { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS });
-    }).catch(() => void 0);
-    return sending;
+  let newest = null;
+  const retryLater = (after) => {
+    const wait = HERDR_RETRY_MS[retries];
+    if (!after || isRetryWaiting || wait === void 0) return;
+    isRetryWaiting = true;
+    retries++;
+    after(wait, () => {
+      isRetryWaiting = false;
+      return newest ? reportToHerdr(newest.run, newest.report, newest.after) : Promise.resolve(false);
+    });
   };
+  const send = async (run2, report, after) => {
+    const r = await report();
+    if (!r) return false;
+    const key = herdrReportKey(r.pane, r.tokens);
+    if (key === sent) return true;
+    sent = null;
+    const result = await run2(herdrReport(r.pane, r.tokens, r.seq), { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS }).catch(
+      () => null
+    );
+    const isTaken = result?.code === 0;
+    if (isTaken) {
+      sent = key;
+      retries = 0;
+    } else retryLater(after);
+    return isTaken;
+  };
+  const reportToHerdr = (run2, report, after) => {
+    newest = { run: run2, report, after };
+    const result = sending.then(() => send(run2, report, after)).catch(() => false);
+    sending = result;
+    return result;
+  };
+  return reportToHerdr;
 }
 
 // src/host.ts
-function codexStore(dir, sessionId, now, onWrite = async () => {
-}) {
+function codexStore(dir, sessionId, now, onWrite) {
   return {
     now,
     read: () => readState(dir, sessionId),
     update: async (change) => {
-      const s = await updateState(dir, sessionId, change);
-      await onWrite(s);
+      const s = await updateState(
+        dir,
+        sessionId,
+        onWrite ? async (current) => ({ ...await change(current), writtenAt: Math.max(now(), (current.writtenAt ?? 0) + 1) }) : change
+      );
+      await onWrite?.(s);
       return s;
     },
     exclusive: (fn) => tryWithLock(`${statePath(dir, sessionId)}.updating`, fn)
@@ -3500,14 +3530,15 @@ function codexStore(dir, sessionId, now, onWrite = async () => {
 }
 function herdrOnWrite(env, run2, dir, now) {
   const pane = env.HERDR_PANE_ID;
+  if (!pane) return void 0;
   const report = herdrReporter();
   return async (s) => {
-    if (!pane) return;
-    const seq = now();
-    const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, seq), []);
+    const at = now();
+    const seq = s.writtenAt ?? at;
+    const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, at), []);
     const key = herdrReportKey(pane, tokens);
     if (key === s.herdrReport?.key) return;
-    await report(run2, async () => ({ pane, tokens, seq }));
+    if (!await report(run2, async () => ({ pane, tokens, seq }))) return;
     await updateState(
       dir,
       s.sessionId,
@@ -3558,7 +3589,7 @@ import {
   rename as rename2,
   rm,
   rmdir as rmdir2,
-  stat as stat2,
+  stat as stat4,
   symlink as symlink2,
   writeFile as writeFile2
 } from "node:fs/promises";
@@ -3734,14 +3765,14 @@ function headText(o) {
   return `${o.head.title} | ${o.head.description || "(no description yet)"}`;
 }
 function statusBlocks({ last, asks, tasks, now }) {
-  const { open: open3, finished } = subjectsText(last);
+  const { open: open2, finished } = subjectsText(last);
   const running = runningText(last, now);
   const held = asksText(last, asks);
   const list = tasksText(tasks);
   return [
     ...goalBlocks(last),
     `<head>${NL4}${headText(last)}${NL4}</head>`,
-    `<subjects>${NL4}${open3}${NL4}</subjects>`,
+    `<subjects>${NL4}${open2}${NL4}</subjects>`,
     ...finished === "" ? [] : [`<finished>${NL4}${finished}${NL4}</finished>`],
     ...running === "" ? [] : [`<running>${NL4}${running}${NL4}</running>`],
     ...held === "" ? [] : [`<asks>${NL4}${held}${NL4}</asks>`],
@@ -3881,14 +3912,14 @@ function refreshStatus(host) {
 
 // ../hooks/session-host.ts
 function orderedKeys() {
-  const tails = /* @__PURE__ */ new Map();
+  const tails2 = /* @__PURE__ */ new Map();
   return {
     run: (key, fn) => {
-      const result = (tails.get(key) ?? Promise.resolve()).then(fn);
+      const result = (tails2.get(key) ?? Promise.resolve()).then(fn);
       const tail = result.catch(() => void 0);
-      tails.set(key, tail);
+      tails2.set(key, tail);
       void tail.then(() => {
-        if (tails.get(key) === tail) tails.delete(key);
+        if (tails2.get(key) === tail) tails2.delete(key);
       });
       return result;
     }
@@ -3965,26 +3996,97 @@ async function runUpdates(host) {
 }
 
 // src/transcript.ts
-import { open as open2, readdir as readdir2 } from "node:fs/promises";
-import { dirname as dirname2, join as join3 } from "node:path";
+import { readdir as readdir2, stat as stat3 } from "node:fs/promises";
+import { basename as basename2, dirname as dirname2, join as join3 } from "node:path";
 
-// src/rollout-rows.ts
-import { open } from "node:fs/promises";
-async function readSessionMeta(path) {
+// src/rollout-file.ts
+import { createReadStream } from "node:fs";
+import { open, stat as stat2 } from "node:fs/promises";
+import * as zlib from "node:zlib";
+var canReadZstd = typeof zlib.createZstdDecompress === "function";
+var isCompressed = (path) => path.endsWith(".zst");
+async function plainBytesBefore(path, bytes, end) {
+  const file = await open(path, "r");
   try {
+    const stop = Math.min(end, (await file.stat()).size);
+    const start = Math.max(0, stop - bytes);
+    const buf = Buffer.alloc(stop - start);
+    const { bytesRead } = await file.read(buf, 0, buf.length, start);
+    return { buf: buf.subarray(0, bytesRead), start };
+  } finally {
+    await file.close();
+  }
+}
+async function compressedBytesBefore(path, bytes, end) {
+  if (!canReadZstd) throw new Error("This Node cannot read zstd");
+  const kept = [];
+  let keptBytes = 0;
+  let read = 0;
+  const input = createReadStream(path);
+  const content = input.pipe(zlib.createZstdDecompress());
+  input.on("error", (err) => content.destroy(err));
+  try {
+    for await (const chunk of content) {
+      const part = chunk.subarray(0, Math.max(0, end - read));
+      read += part.length;
+      kept.push(part);
+      keptBytes += part.length;
+      while (kept.length > 1 && keptBytes - kept[0].length >= bytes) keptBytes -= kept.shift().length;
+      if (read >= end) break;
+    }
+  } finally {
+    input.destroy();
+    content.destroy();
+  }
+  const window = Buffer.concat(kept);
+  const cut = Math.max(0, window.length - bytes);
+  return { buf: window.subarray(cut), start: read - window.length + cut };
+}
+var tails = /* @__PURE__ */ new Map();
+var KEPT_TAILS = 4;
+var TAIL_KEPT_BYTES = 8 * 1024 * 1024;
+async function bytesBefore(path, bytes, end = Infinity) {
+  if (!isCompressed(path)) return plainBytesBefore(path, bytes, end);
+  if (end !== Infinity || bytes > TAIL_KEPT_BYTES) return compressedBytesBefore(path, bytes, end);
+  const info = await stat2(path);
+  const version = `${info.size}:${info.mtimeMs}`;
+  let known = tails.get(path);
+  if (known?.version !== version) {
+    known = { version, tail: await compressedBytesBefore(path, TAIL_KEPT_BYTES, Infinity) };
+    tails.delete(path);
+    tails.set(path, known);
+    for (const old of tails.keys()) if (tails.size > KEPT_TAILS) tails.delete(old);
+  }
+  const { buf, start } = known.tail;
+  const cut = Math.max(0, buf.length - bytes);
+  return { buf: buf.subarray(cut), start: start + cut };
+}
+async function firstBytes(path, bytes) {
+  if (!isCompressed(path)) {
     const file = await open(path, "r");
     try {
-      const buf = Buffer.alloc(64 * 1024);
-      const { bytesRead } = await file.read(buf, 0, buf.length, 0);
-      const first = buf.subarray(0, bytesRead).toString("utf8").split("\n")[0] ?? "";
-      const meta = JSON.parse(first);
-      return meta.type === "session_meta" ? meta : null;
+      const buf = Buffer.alloc(bytes);
+      const { bytesRead } = await file.read(buf, 0, bytes, 0);
+      return buf.subarray(0, bytesRead);
     } finally {
       await file.close();
     }
+  }
+  return (await compressedBytesBefore(path, bytes, bytes)).buf;
+}
+
+// src/rollout-rows.ts
+async function readSessionMeta(path) {
+  try {
+    const first = (await firstBytes(path, 64 * 1024)).toString("utf8").split("\n")[0] ?? "";
+    const meta = JSON.parse(first);
+    return meta.type === "session_meta" ? meta : null;
   } catch {
     return null;
   }
+}
+function isExecMeta(meta) {
+  return meta?.payload?.originator === "codex_exec" || meta?.payload?.source === "exec";
 }
 var isText = (v) => typeof v === "string";
 var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
@@ -4163,39 +4265,68 @@ async function namesIn(dir, pattern) {
   const names = await readdir2(dir).catch(() => []);
   return names.filter((n) => pattern.test(n)).sort().reverse();
 }
-async function newestRollout(sessions, isWanted) {
+var ROLLOUT_NAME = canReadZstd ? /^rollout-.+\.jsonl(\.zst)?$/ : /^rollout-.+\.jsonl$/;
+var plainName = (name) => name.replace(/\.zst$/, "");
+async function rolloutsIn(folder, isWanted) {
+  const names = (await namesIn(folder, ROLLOUT_NAME)).filter((n) => isWanted(plainName(n)));
+  const byNewest = (a, b) => plainName(b).localeCompare(plainName(a)) || a.length - b.length;
+  return names.sort(byNewest);
+}
+async function newestRollout(codexHome, isWanted) {
+  const sessions = join3(codexHome, "sessions");
   for (const year of await namesIn(sessions, /^\d{4}$/))
     for (const month of await namesIn(join3(sessions, year), /^\d{2}$/))
       for (const day of await namesIn(join3(sessions, year, month), /^\d{2}$/)) {
         const folder = join3(sessions, year, month, day);
-        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isWanted);
+        const [name] = await rolloutsIn(folder, isWanted);
         if (name !== void 0) return join3(folder, name);
       }
-  return null;
+  const archive = join3(codexHome, "archived_sessions");
+  const [archived] = await rolloutsIn(archive, isWanted);
+  return archived === void 0 ? null : join3(archive, archived);
+}
+function codexHomeOf(path) {
+  const folder = dirname2(path);
+  if (basename2(folder) === "archived_sessions") return dirname2(folder);
+  const sessions = dirname2(dirname2(dirname2(folder)));
+  return basename2(sessions) === "sessions" ? dirname2(sessions) : null;
+}
+async function rolloutFor(codexHome, threadId) {
+  if (threadId === "") return null;
+  const path = await newestRollout(
+    codexHome,
+    (name) => name.endsWith(`-${threadId}.jsonl`) || name.includes(`-${threadId}_`)
+  );
+  if (path === null) return null;
+  const meta = await readSessionMeta(path);
+  const isOwnChat = meta !== null && !meta.payload?.parent_thread_id && !isExecMeta(meta);
+  return isOwnChat ? { path, cwd: typeof meta.payload?.cwd === "string" ? meta.payload.cwd : "" } : null;
+}
+async function withCurrentRollout(s) {
+  const saved = s.transcriptPath;
+  if (saved === null || await stat3(saved).catch(() => null) !== null) return s;
+  const codexHome = codexHomeOf(saved);
+  const found = codexHome === null ? null : await rolloutFor(codexHome, s.sessionId);
+  return found === null || found.path === saved ? s : { ...s, transcriptPath: found.path };
 }
 async function historyBase(path) {
   const base = (await readSessionMeta(path))?.payload?.history_base;
   const id = base?.thread_id;
   const end = base?.end_byte_offset;
-  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0) return null;
-  const sessions = dirname2(dirname2(dirname2(dirname2(path))));
-  const basePath = await newestRollout(sessions, (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`));
+  const codexHome = codexHomeOf(path);
+  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0 || codexHome === null) return null;
+  const basePath = await newestRollout(
+    codexHome,
+    (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`)
+  );
   return basePath === null ? null : { path: basePath, end };
 }
 var TAIL_BYTES = 4 * 1024 * 1024;
 async function linesBefore(path, bytes, end = Infinity) {
-  const file = await open2(path, "r");
-  try {
-    const stop = Math.min(end, (await file.stat()).size);
-    const start = Math.max(0, stop - bytes);
-    const buf = Buffer.alloc(stop - start);
-    const { bytesRead } = await file.read(buf, 0, buf.length, start);
-    const lines = buf.subarray(0, bytesRead).toString("utf8").split("\n");
-    if (start > 0) lines.shift();
-    return { lines, start, read: bytesRead };
-  } finally {
-    await file.close();
-  }
+  const { buf, start } = await bytesBefore(path, bytes, end);
+  const lines = buf.toString("utf8").split("\n");
+  if (start > 0) lines.shift();
+  return { lines, start, read: buf.length };
 }
 var TURN_ROW_BYTES = 64 * 1024;
 async function historyLines(path, bytes) {
@@ -4277,7 +4408,7 @@ async function modelHome(dir, personHome) {
 async function keepNewerSignIn(link, auth) {
   const saved = await lstat2(link).catch(() => null);
   if (!saved?.isFile()) return;
-  const theirs = await stat2(auth);
+  const theirs = await stat4(auth);
   if (saved.mtimeMs > theirs.mtimeMs) await copyFile(link, auth);
 }
 var FAILURE_TAIL_CHARS = 2e3;
@@ -4365,20 +4496,27 @@ var refreshStatus2 = (dir, sessionId, ask, now, onWrite, records) => refreshStat
   inOrder: inOrderFor(dir, sessionId),
   records
 });
-var runUpdates2 = (dir, sessionId, ask, now, onWrite, records) => runUpdates({
-  ...codexStore(dir, sessionId, now, onWrite),
-  ask,
-  names: CODEX,
-  inOrder: inOrderFor(dir, sessionId),
-  records,
-  catchUp: async (s) => askOverConversation(
+var runUpdates2 = (dir, sessionId, ask, now, onWrite, records) => {
+  const store = codexStore(dir, sessionId, now, onWrite);
+  return runUpdates({
+    ...store,
     ask,
-    CODEX,
-    s,
-    screenText(CODEX, isTabOpen(s, now()), screenTabOf(s.shownTab)),
-    (await readRollout(s.transcriptPath, s.root))?.conversation ?? null
-  )
-});
+    names: CODEX,
+    inOrder: inOrderFor(dir, sessionId),
+    records,
+    catchUp: async (s) => {
+      const isMoved = await withCurrentRollout(s) !== s;
+      const path = isMoved ? (await store.update(withCurrentRollout)).transcriptPath : s.transcriptPath;
+      return askOverConversation(
+        ask,
+        CODEX,
+        s,
+        screenText(CODEX, isTabOpen(s, now()), screenTabOf(s.shownTab)),
+        (await readRollout(path, s.root))?.conversation ?? null
+      );
+    }
+  });
+};
 
 // src/detached-update.ts
 var STATUS_REFRESH = "status-refresh";
