@@ -2437,7 +2437,8 @@ function emptyState(sessionId) {
     shownTab: "needsYou",
     heard: NOTHING_HEARD,
     coveredTurn: null,
-    openCatchUpKey: null
+    openCatchUpKey: null,
+    delegateCalls: []
   };
 }
 function statePath(dir, sessionId) {
@@ -2956,6 +2957,19 @@ function delegatesStarted(o, command, at) {
 function delegateWaitsEnded(o, command, at) {
   return delegateSteps(command).filter((step) => step.isWaitForEnd).reduce((x, step) => childEnded(x, delegateRef(step.name), at), o);
 }
+function delegateRefs(command) {
+  return new Set(delegateSteps(command).map((step) => delegateRef(step.name)));
+}
+function delegateRowsTakenBack(o, refs, before, at) {
+  const isStartedByCommand = (c) => refs.has(c.ref) && c.startedAt === at;
+  if (!o?.children.some(isStartedByCommand)) return o;
+  const children = o.children.flatMap((c) => {
+    if (!isStartedByCommand(c)) return [c];
+    const was = before.find((x) => x.ref === c.ref);
+    return was ? [was] : [];
+  });
+  return { ...o, children };
+}
 var HERDR_PROMPT_SETTLE_MS = 15e3;
 function hasRunningDelegate(o) {
   return o?.children.some((c) => c.kind === "delegate" && c.endedAt === null) ?? false;
@@ -3227,6 +3241,25 @@ async function withMissedTurns(s, { reads, currentTurnId, canMarkBehind = true, 
   };
 }
 
+// src/delegate-calls.ts
+function delegateCallNoted(s, command, at) {
+  const refs = delegateRefs(command);
+  const before = (s.ledger.overview?.children ?? []).filter((c) => refs.has(c.ref));
+  const noted = { ...s, delegateCalls: [...s.delegateCalls, { command, at, before }] };
+  return statusChanged(noted, (o) => delegatesStarted(o, command, at));
+}
+function unranDelegatesTakenBack(s, refs) {
+  if (refs.length === 0) return s;
+  const unran = new Set(refs);
+  return statusChanged(
+    s,
+    (o) => s.delegateCalls.reduceRight((x, call) => {
+      const callRefs = new Set([...delegateRefs(call.command)].filter((ref) => unran.has(ref)));
+      return delegateRowsTakenBack(x, callRefs, call.before, call.at);
+    }, o)
+  );
+}
+
 // src/rollout-file.ts
 import { createReadStream } from "node:fs";
 import { open, stat as stat2 } from "node:fs/promises";
@@ -3450,6 +3483,7 @@ var UNRAN_MARKERS = [
   '"custom_tool_call_output"'
 ];
 var UNRAN_OUTPUT = /^(?:(?:exec command|patch) rejected by user|(?:Command|Tool call) blocked by PreToolUse hook: )/;
+var isUnranOutput = (output) => UNRAN_OUTPUT.test(output);
 var BLOCKED_COMMAND = /^Command blocked by PreToolUse hook: [^\n]*?\. Command: ([^\n]+)/;
 var BLOCKED_TOOL = /^Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: (\S+)/;
 var SCRIPT_ERROR = "Script error: ";
@@ -3457,43 +3491,57 @@ var toolLines = (tool) => {
   const line = toolActivity(tool, {});
   return line ? [line] : [];
 };
-var blockedLines = (output) => {
-  const command = BLOCKED_COMMAND.exec(output)?.[1];
+var blocked = (output) => {
+  const command = BLOCKED_COMMAND.exec(output)?.[1]?.trim();
   const tool = BLOCKED_TOOL.exec(output)?.[1];
-  return command ? shellLines(command.trim()) : tool ? toolLines(tool) : [];
+  return command ? { commands: [command], lines: shellLines(command) } : { commands: [], lines: tool ? toolLines(tool) : [] };
 };
 var editedLines = (changes) => Object.keys(record(changes)).map((path) => `edited ${path}`);
-function unranLines(rows) {
+function unranCalls(rows) {
   const ran = /* @__PURE__ */ new Set();
   const unran = /* @__PURE__ */ new Set();
+  const ranDelegates = /* @__PURE__ */ new Set();
+  const unranDelegates = /* @__PURE__ */ new Set();
   const note = (lines, didRun) => lines.forEach((line) => (didRun ? ran : unran).add(line));
+  const noteCommand = (command, didRun) => {
+    note(shellLines(command), didRun);
+    delegateRefs(command).forEach((ref) => (didRun ? ranDelegates : unranDelegates).add(ref));
+  };
   const callCommands = /* @__PURE__ */ new Map();
   for (const row of rows) {
     const p = record(row.payload);
     const item = record(p.item);
     const isDeclined = item.status === "declined";
     if (row.type === "event_msg" && p.type === "item_completed") {
-      if (item.type === "CommandExecution") note(shellLines(commandText(item.command)), !isDeclined);
+      if (item.type === "CommandExecution") noteCommand(commandText(item.command), !isDeclined);
       else if (item.type === "FileChange") note(editedLines(item.changes), !isDeclined);
       else if (item.type === "McpToolCall") note(toolLines(`mcp__${textOf2(item.server)}__${textOf2(item.tool)}`), true);
       continue;
     }
     if (row.type !== "response_item") continue;
     const callId = textOf2(p.call_id);
+    let block = { commands: [], lines: [] };
     if (p.type === "function_call" || p.type === "local_shell_call") {
       const command = callCommand(p);
       if (command !== "" && callId !== "") callCommands.set(callId, command);
     } else if (p.type === "function_call_output") {
       const output = outputText(p.output);
       const command = callCommands.get(callId);
-      if (command !== void 0) note(shellLines(command), !UNRAN_OUTPUT.test(output));
-      note(blockedLines(output), false);
+      callCommands.delete(callId);
+      if (command !== void 0) noteCommand(command, !isUnranOutput(output));
+      block = blocked(output);
     } else if (p.type === "custom_tool_call_output") {
       const output = Array.isArray(p.output) ? contentText(p.output) : textOf2(p.output);
-      if (output.startsWith(SCRIPT_ERROR)) note(blockedLines(output.slice(SCRIPT_ERROR.length)), false);
+      if (output.startsWith(SCRIPT_ERROR)) block = blocked(output.slice(SCRIPT_ERROR.length));
     }
+    note(block.lines, false);
+    block.commands.forEach((command) => noteCommand(command, false));
   }
-  return [...unran].filter((line) => !ran.has(line));
+  callCommands.forEach((command) => delegateRefs(command).forEach((ref) => ranDelegates.add(ref)));
+  return {
+    lines: [...unran].filter((line) => !ran.has(line)),
+    delegates: [...unranDelegates].filter((ref) => !ranDelegates.has(ref))
+  };
 }
 
 // src/rollout-turns.ts
@@ -3518,7 +3566,7 @@ function turnEventOf(line) {
   }
 }
 function turnOf(lines, turnId) {
-  const none = { dialogs: [], commands: [], plan: null, texts: [], unran: [] };
+  const none = { dialogs: [], commands: [], plan: null, texts: [], unran: [], unranDelegates: [] };
   try {
     const byTurn = /* @__PURE__ */ new Map();
     const newTurn = () => ({
@@ -3575,18 +3623,21 @@ function turnOf(lines, turnId) {
         if (command !== "" && p.call_id) turn2.calls.set(p.call_id, { command, output: "" });
       } else if (row.type === "response_item" && p.type === "function_call_output" && p.call_id) {
         const call = turn2.calls.get(p.call_id);
-        if (call) turn2.called.push({ command: call.command, output: outputText(p.output) });
+        const output = outputText(p.output);
+        if (call && !isUnranOutput(output)) turn2.called.push({ command: call.command, output });
       }
     }
     const wanted = newest === "" ? "" : turnId ?? newest;
     const turn = byTurn.get(wanted);
     if (!turn) return none;
+    const unran = unranCalls(turn.rows);
     return {
       dialogs: turn.dialogs.filter((d) => d.questions.length > 0),
       commands: turn.executions.length > 0 ? turn.executions : turn.called,
       plan: turn.plan,
       texts: turn.itemTexts.length > 0 ? turn.itemTexts : turn.messageTexts,
-      unran: unranLines(turn.rows)
+      unran: unran.lines,
+      unranDelegates: unran.delegates
     };
   } catch {
     return none;
@@ -3596,7 +3647,7 @@ var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).
 function turnsOf(rows, cwd) {
   const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
   const hasCommandRows = rows.some((row) => isItem(row, "CommandExecution"));
-  const unran = new Set(unranLines(rows));
+  const unran = new Set(unranCalls(rows).lines);
   const turns = [];
   const agentTurn = () => {
     const last = turns.at(-1);
@@ -3865,7 +3916,7 @@ async function handleHook(input, deps) {
         const r = notePrompt2(withHost(await withHistory(s)), input.prompt ?? "", now());
         notes = r.notes;
         if (input.agent_id) return r.state;
-        const started = noteHook(turnStarted(r.state, now()), "prompt", now(), input.turn_id);
+        const started = noteHook(turnStarted({ ...r.state, delegateCalls: [] }, now()), "prompt", now(), input.turn_id);
         const isTyped = r.sentBy === null;
         return isTyped ? messageTyped(started, now()) : started;
       });
@@ -3884,15 +3935,17 @@ async function handleHook(input, deps) {
       const line = toolActivity(tool, toolInput);
       const agentId = input.agent_id;
       const isDelegateCommand = agentId === void 0 && delegateSteps(command).length > 0;
-      const withWork = (s) => statusChanged(s, (o) => agentId ? childWorked(o, agentId, now()) : delegatesStarted(o, command, now()));
+      const at = now();
+      const withWork = (s) => agentId ? statusChanged(s, (o) => childWorked(o, agentId, at)) : isDelegateCommand ? delegateCallNoted(s, command, at) : s;
       const hasWork = line !== null || agentId !== void 0 || isDelegateCommand;
       const isMainActivity = line !== null && agentId === void 0;
       let isClaimed = false;
       const isStatusDue = isMainActivity && await read().then((s) => claimedStatusRefresh(s, now()) !== s);
-      const unran = isStatusDue ? turnOf(await rolloutTail(input.transcript_path), input.turn_id).unran : [];
+      const turn = isStatusDue ? turnOf(await rolloutTail(input.transcript_path), input.turn_id) : null;
       if (hasWork)
         await write((s) => {
-          const kept = withoutActivity(withRollout(s), unran);
+          const withoutUnran = withoutActivity(withRollout(s), turn?.unran ?? []);
+          const kept = unranDelegatesTakenBack(withoutUnran, turn?.unranDelegates ?? []);
           const worked = withWork(line ? noteActivity(kept, line) : kept);
           const claimed = isMainActivity ? claimedStatusRefresh(worked, now()) : worked;
           isClaimed = claimed !== worked;
@@ -3926,7 +3979,7 @@ async function handleHook(input, deps) {
           () => null
         )
       ]);
-      const { dialogs, commands, plan, texts, unran } = turnOf(tail, input.turn_id);
+      const { dialogs, commands, plan, texts, unran, unranDelegates } = turnOf(tail, input.turn_id);
       const reply = turnReply(texts, input.last_assistant_message ?? "");
       const withHistory = await readHistoryAhead(() => before, tail);
       const lines = dialogs.map((d) => dialogActivity(d.questions, { kind: "open" }));
@@ -3935,7 +3988,8 @@ async function handleHook(input, deps) {
           (x, line) => noteActivity(x, line),
           withoutActivity(noteDialogs(withHost(await withHistory(s)), dialogs), unran)
         );
-        const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines);
+        const withRan = { ...unranDelegatesTakenBack(withLines, unranDelegates), delegateCalls: [] };
+        const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withRan);
         const waited = statusChanged(
           withOutput,
           (o) => commands.reduce((x, c) => delegateWaitsEnded(x, c.command, now()), o)

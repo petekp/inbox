@@ -18,7 +18,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
 import { KEPT_SESSIONS } from '../../hooks/ledger'
-import type { Exchange, Session } from '../../types'
+import type { Child, Exchange, Session } from '../../types'
 import { checkVersion, SESSION_VERSION } from '../../hooks/session-version'
 import {
   emptySession,
@@ -77,6 +77,12 @@ export type SessionState = Session & {
    */
   openCatchUpKey: string | null
   /**
+   * The running turn's `herdr agent` commands, oldest first: each with when PreToolUse noted its delegates, and the
+   * rows those delegates had before. Codex runs PreToolUse before a call is approved, so the rows of a command that
+   * did not run go back to these.
+   */
+  delegateCalls: DelegateCall[]
+  /**
    * The newest report Herdr took from a hook or an update: its key from `herdrReportKey`, and its `seq`. Each runs in
    * its own process, so this is how a later one knows its report would change nothing.
    */
@@ -88,6 +94,8 @@ export type SessionState = Session & {
    */
   writtenAt?: number
 }
+
+export type DelegateCall = { command: string; at: number; before: Child[] }
 
 /**
  * Codex skips a hook
@@ -131,6 +139,7 @@ export function emptyState(sessionId: string): SessionState {
     heard: NOTHING_HEARD,
     coveredTurn: null,
     openCatchUpKey: null,
+    delegateCalls: [],
   }
 }
 
