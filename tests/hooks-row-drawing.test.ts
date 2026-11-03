@@ -197,6 +197,7 @@ test('on desktop at 30 and 56 columns, an unselected row’s title keeps every w
     'Snoozed glances come back after a restart',
     'Snoozed glances come back after a restart, so a glance snoozed for an hour returns at once in the view',
     'The saved layout keeps snoozed glances, and a restart shows them again, so a glance snoozed for an hour returns at once.',
+    'Put on the glasses and pair them with this Mac',
   ]
   for (const ask of titles) await $.tool.call({ tool: 'mcp__inbox__record', kind: 'task', ask })
   await clock.settle()
@@ -204,6 +205,7 @@ test('on desktop at 30 and 56 columns, an unselected row’s title keeps every w
   const shownTitle = async (id: string) => (await pane.find({ type: 'Text', in: `select-${id}` }))?.text
 
   expect(await shownTitle('i2')).toBe(titles[1])
+  expect(await shownTitle('i5')).toBe(titles[4])
   expect(await shownTitle('i4')).toMatch(/…$/)
   await pane.redraw({ ...PANE.props, bodyColumns: 56 })
   expect(await shownTitle('i3')).toBe(titles[2])
