@@ -117,4 +117,13 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'MILESTONE: queued | 4.1 build out | not started',
     ].join('\n'),
   ],
+  'ask-holds-two': [
+    [
+      'SET: s1 | working | build signed, upload needs sign-in',
+      'SET: s2 | working | build signed, upload needs sign-in',
+      'LINK: i1 | s1',
+      'LINK: i1 | s2',
+    ].join('\n'),
+    'NEW: working | 2.5 beta | signed, upload needs sign-in\nLINK: i1 | 2.5 beta',
+  ],
 }

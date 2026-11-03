@@ -95,6 +95,11 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     answer: 'DONE: s3 | merged\nSET: s4 | working | wider layout in',
     breaks: 'milestones-true',
   },
+  'ask-holds-two': {
+    at: 1,
+    answer: 'NEW: working | 2.5 beta | signed, upload needs sign-in',
+    breaks: 'ask-holds-several',
+  },
 }
 
 test('a good run of each replay passes every rule that is built, at every step', async () => {
