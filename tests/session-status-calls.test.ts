@@ -70,7 +70,7 @@ test('a session whose only record is a Status has a ledger, is not unseen, is co
 })
 
 test('the Status page is empty for a new session, and while its first turn runs, until the Status has a head', () => {
-  const view = (s: Session) => sessionView(s, 10_000, 1000, true, NO_HOLDS).statusPage
+  const view = (s: Session) => sessionView(s, 10_000, 1000, NO_HOLDS).statusPage
   const idle = emptySession()
 
   expect(view(idle).isEmpty).toBe(true)
@@ -253,7 +253,7 @@ test('a failed Status call shows in the status line on the Status tab, in place 
     0,
     900,
   )
-  const v = sessionView(failed, 1000, 1000, true, NO_HOLDS)
+  const v = sessionView(failed, 1000, 1000, NO_HOLDS)
   const prs = { isFetching: false, hasPrs: false }
 
   expect(v.statusPage.error).not.toBeNull()

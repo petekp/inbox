@@ -186,7 +186,7 @@ test('PR buttons follow the shared plan order for the block, its threads and its
     at: NOW,
     delivery: { state: 'failed', reason: 'omp is busy' },
   }
-  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, true) })
+  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS) })
   const { lastActions, turns, prs } = screen.view
   const { pr } = prs.drawn[0]!
   const isSent = threadSentIn(lastActions)

@@ -209,7 +209,6 @@ import {
 } from './mod-records'
 import {
   AWAY_MS,
-  CAN_CATCH_UP,
   type Changed,
   conversation,
   currentOwner,
@@ -332,7 +331,7 @@ function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
       if (!pane) return null
       if (isEnding) return { pane, tokens: CLEARED_TOKENS }
       const [session, dialogs, now] = await Promise.all([read($, SESSION), read($, DIALOGS), $.clock.now()])
-      const view = sessionView(session, now, SETTLED_MS, CAN_CATCH_UP)
+      const view = sessionView(session, now, SETTLED_MS)
 
       return { pane, tokens: herdrTokens(session.ledger, session.stop, view, dialogs) }
     },
@@ -1952,14 +1951,7 @@ async function drawnState(
 
   const isUnread = demo === null && unreadable === conversation.id
 
-  const view = sessionView(
-    drawnSession(session, drawn, demo !== null, now),
-    now,
-    SETTLED_MS,
-    CAN_CATCH_UP,
-    holds,
-    drawn.notes,
-  )
+  const view = sessionView(drawnSession(session, drawn, demo !== null, now), now, SETTLED_MS, holds, drawn.notes)
 
   return {
     ...drawn,

@@ -53,7 +53,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
       const s = await readState(dir, id)
 
       return {
-        view: sessionView(s, deps.now(), deps.settleWindowMs, true, holds),
+        view: sessionView(s, deps.now(), deps.settleWindowMs, holds),
         modelName: modelNameOf(ctx),
         isGhMissing: memory.isGhMissing,
         isFetchingPrs: prFetches.isFetching(id),

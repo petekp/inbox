@@ -42,7 +42,7 @@ test('the Status page draws each status with its mark and tone, and ◆ on a sub
   )
   const closed = applyStatus(opened, parseStatus('DONE: s1 | built')!, 2000, asks)
   const held = { ...emptySession(), ledger: { ...EMPTY, items: [ITEM], overview: closed } }
-  const rows = sessionView(held, 3000, 1000, true, NO_HOLDS).statusPage.rows.flatMap(r =>
+  const rows = sessionView(held, 3000, 1000, NO_HOLDS).statusPage.rows.flatMap(r =>
     r.kind === 'subject' ? [[r.name, r.mark, r.tone]] : [],
   )
 
@@ -52,14 +52,14 @@ test('the Status page draws each status with its mark and tone, and ◆ on a sub
     ['Part 1', '○', null],
     ['Part 0', '✓', 'done'],
   ])
-  expect(allRows(sessionView(held, 3000, 1000, true, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBe(
+  expect(allRows(sessionView(held, 3000, 1000, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBe(
     'Holds up Part 3',
   )
   const heldDone = {
     ...held,
     ledger: { ...held.ledger, overview: applyStatus(closed, parseStatus('DONE: s4 | built')!, 2500, asks) },
   }
-  expect(allRows(sessionView(heldDone, 3000, 1000, true, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBeNull()
+  expect(allRows(sessionView(heldDone, 3000, 1000, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBeNull()
 })
 
 test('a session saved by the Progress trial build loads without its results, subagents and stated step', () => {
@@ -85,7 +85,7 @@ test('a sample saved without a Status is replaced, and the sample session carrie
   expect(isDemoCopy(old)).toBe(true)
   expect(isDemoCopy({ ...old, presence: { isTurnRunning: false } })).toBe(true)
   expect(isDemoCopy({ ...old, ledger: { ...old.ledger, overview: undefined } })).toBe(false)
-  const page = sessionView(demoSession(1_000_000, 'Claude'), 1_000_000, 1000, true, NO_HOLDS).statusPage
+  const page = sessionView(demoSession(1_000_000, 'Claude'), 1_000_000, 1000, NO_HOLDS).statusPage
   expect(page.head?.title).toBe('Pinch to dismiss')
   expect(page.goal?.milestones.map(m => m.rows.map(r => r.kind))).toEqual([
     ['subject'],
