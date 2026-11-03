@@ -168,8 +168,9 @@ These make no model calls.
 | Replay B, 9 calls, both calls | 54 | 54 | 12 |
 | Replay C, 3 calls | 18 | 0 | 12 |
 | `catch-up-from-empty`, 1 call, 3 runs | 6 | 0 | 0 |
+| `milestone-dropped`, 1 call, 3 runs | 6 | 0 | 0 |
 | The three goal short cases, 4 calls, 5 runs, 2 models | 40 | 0 | 10 |
 | The judge's check on both page sets, 24 pages | 0 | 0 | 24 |
-| **Total** | **184** | **54** | **82** |
+| **Total** | **190** | **54** | **82** |
 
-An answer that holds prose is asked once more, and a call that fails outside the model is tried again. The runner stops at 200 Status calls, so 16 calls are left for both.
+An answer that holds prose is asked once more, and a call that fails outside the model is tried again. The runner stops at 200 Status calls, so 10 calls are left for both.

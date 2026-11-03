@@ -112,6 +112,11 @@ test('milestones need a goal, move by id under the rewording hold, and stop at f
   expect(moved.milestones.find(m => m.id === 'm2')).toMatchObject({ text: 'bad rows named', changedAt: 30 })
   expect(moved.milestones.find(m => m.id === 'm3')).toMatchObject({ status: 'done', closedAt: 30 })
   expect(reworded.milestones.find(m => m.id === 'm2')).toMatchObject({ text: 'bad rows named', changedAt: 30 })
+  expect(after(moved, 'DONE: m3 | written again', 40).milestones.find(m => m.id === 'm3')).toMatchObject({
+    text: 'written',
+    changedAt: 30,
+    closedAt: 30,
+  })
   expect(full.milestones.map(m => m.name)).toEqual(['Import works', 'Error messages', 'Demo script', 'A one', 'B two'])
 })
 
@@ -245,4 +250,31 @@ test("the call reads the goal, its milestones, each subject's link and the decli
     expect({ id, kept: statusSystem([id]).includes(GOAL_PARTS[id]) }).toEqual({ id, kept: false })
     expect({ id, others: others.every(x => statusSystem([id]).includes(GOAL_PARTS[x])) }).toEqual({ id, others: true })
   }
+})
+
+test('a milestone dropped with no INTO unlinks its subjects and asks, so the call links them again', () => {
+  const asks = new Set(['i1'])
+  const linked = after(withGoal(), 'SERVES: s1 | Error messages\nSERVES: s2 | -\nLINK: i1 | m2', 30, asks)
+
+  for (const line of ['DROP: m2 | not needed', 'MILESTONE: dropped | Error messages | not needed']) {
+    const dropped = after(linked, line, 40, asks)
+    expect({ line, serves: dropped.serves, asks: dropped.askSubjects }).toEqual({
+      line,
+      serves: { s2: 'none' },
+      asks: {},
+    })
+    const relinked = after(dropped, 'SERVES: s1 | m2\nLINK: i1 | m2', 50, asks)
+    expect({ line, serves: relinked.serves, asks: relinked.askSubjects }).toEqual({
+      line,
+      serves: { s2: 'none' },
+      asks: {},
+    })
+  }
+})
+
+test('a DROP whose INTO names a dropped milestone unlinks its subjects, as a DROP with no INTO does', () => {
+  const linked = after(withGoal(), 'SERVES: s1 | Error messages\nSERVES: s2 | m3\nDROP: m3 | not needed', 30)
+  const dropped = after(linked, 'DROP: m2 | not needed | INTO m3', 40)
+
+  expect(dropped.serves).toEqual({})
 })

@@ -90,4 +90,14 @@ export const GOOD_RUNS: Record<string, string[]> = {
   ],
   'goal-on-busy-page': [['SET: s2 | working | open the notebook as a viewer', ...servesLines].join('\n')],
   'mid-turn-activity': ['DONE: s1 | fast on large libraries\nSET: s2 | working | ranks by match, recency not in yet'],
+  'milestone-dropped': [
+    [
+      'DROP: m2 | 2.5 ships as a web beta first',
+      'SET: s2 | queued | waits for the store release',
+      'SET: s3 | queued | waits for the store release',
+      'SERVES: s2 | -',
+      'SERVES: s3 | -',
+      'SET: s5 | queued | own setting planned',
+    ].join('\n'),
+  ],
 }
