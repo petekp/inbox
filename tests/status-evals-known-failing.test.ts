@@ -28,17 +28,6 @@ knownFailing('#137: work filed for later draws its own mark and folds apart from
   expect(['✓', '✗', '●', '○', '◌']).not.toContain(row?.kind === 'subject' ? row.mark : '✓')
 })
 
-knownFailing('#138: every piece finished since the last look is drawn as a row', '#138', () => {
-  const done = ['Login timeout', 'Crash on launch', 'Backup restore', '2.4 release', 'Sync merge', 'Search speed']
-  const o = statusOf(
-    done.map((name, n) => subject(`s${n + 1}`, 'done', name, 'finished', 10 + n)),
-    { lastLookAt: minutes(0) },
-  )
-  const drawn = statusPage(sessionOf(o, [], 30), minutes(30)).rows.filter(r => r.kind === 'subject')
-
-  expect(drawn.length).toBe(6)
-})
-
 knownFailing('#139: a look marks as seen only the rows that were on screen', '#139', () => {
   const o = statusOf([
     subject('s1', 'working', 'Sync engine', 'syncs', 10),

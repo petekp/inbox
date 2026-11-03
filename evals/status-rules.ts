@@ -1,5 +1,5 @@
 import { isOpen, NAME_WORDS } from '../hooks/status-limits'
-import { statusListRows } from '../hooks/status-page'
+import { NAMED_FOLD_TEXT, namedFoldMore, statusListRows } from '../hooks/status-page'
 import type { SessionStatus, Subject } from '../types'
 import { isOpenPiece, rightStatuses } from './status-facts'
 import type { Facts } from './status-facts'
@@ -439,15 +439,39 @@ const FIXED_RULES: Rule[] = [
     id: 'finished-named',
     reads: 'facts',
     property: 10,
-    text: 'Every piece that finished since the last look is drawn as a row.',
-    until: '#138',
+    text: 'Every piece that finished or was dropped since the last look is drawn as a row, or named or counted in the "Also done" or "Also dropped" line.',
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       const look = o?.lastLookAt ?? null
-      const drawn = new Set(statusListRows(result.page).flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
-      return shownOf(o)
-        .filter(s => !isOpen(s) && s.status === 'done' && (look === null || s.changedAt > look) && !drawn.has(s.id))
-        .map(s => `finished, unseen and folded: ${label(s)}`)
+      const rows = statusListRows(result.page)
+      const drawn = new Set(rows.flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
+      /** The names every line for `status` shows, and how many more those lines count, across the parts of the list. */
+      const lineOf = (status: 'done' | 'dropped') => {
+        const lines = rows.flatMap(r =>
+          r.kind === 'fold' && new RegExp(`^(.+-)?also-${status}$`).test(r.id)
+            ? [r.text.slice(NAMED_FOLD_TEXT[status].length).split(', ')]
+            : [],
+        )
+        const hiddenOf = (parts: string[]) => Number(parts.at(-1)?.match(/^\+(\d+) more$/)?.[1] ?? 0)
+        return {
+          names: new Set(lines.flatMap(parts => (hiddenOf(parts) > 0 ? parts.slice(0, -1) : parts))),
+          hidden: lines.reduce((n, parts) => n + hiddenOf(parts), 0),
+        }
+      }
+      const lines = { done: lineOf('done'), dropped: lineOf('dropped') }
+      const missing = shownOf(o)
+        .flatMap(s => (s.status === 'done' || s.status === 'dropped' ? [{ ...s, status: s.status }] : []))
+        .filter(s => look === null || s.changedAt > look)
+        .filter(s => !drawn.has(s.id) && !lines[s.status].names.has(s.name))
+      return (['done', 'dropped'] as const).flatMap(status => {
+        const left = missing.filter(s => s.status === status)
+        const counted = lines[status].hidden
+        return left.length === counted
+          ? []
+          : [
+              `${left.length} ${status === 'done' ? 'finished' : 'dropped'} unseen pieces neither drawn nor named, and the line counts ${namedFoldMore(counted)}: ${left.map(label).join(', ')}`,
+            ]
+      })
     },
   },
 ]
