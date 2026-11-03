@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
 import { readState, updateState } from '../src/state'
 import { codexAsk, recordModelFailure, runUpdates as runBothCalls } from '../src/update'
@@ -22,6 +24,27 @@ test('an update for a session with no saved CLI runs the CLI its environment nam
     '/person/codex',
   )
   assert.equal(await findCli({}, exec, 1), 'codex')
+})
+
+test('the update process runs the CLI its session saved, else the one its environment names', async t => {
+  const updateScript = fileURLToPath(new URL('../plugin/dist/update.mjs', import.meta.url))
+  const failedCli = async (savedCli: string | null) => {
+    const dir = tempDir()
+    t.after(() => rm(dir, { recursive: true, force: true }))
+    await updateState(dir, 's1', s => ({
+      ...s,
+      cliPath: savedCli,
+      pending: [{ ex: ex(1, 'Should I deploy?'), turnsStarted: 1 }],
+    }))
+    execFileSync(process.execPath, [updateScript, 's1'], {
+      env: { PATH: process.env.PATH, INBOX_DATA: dir, CODEX_HOME: dir, CODEX_CLI_PATH: '/missing/env/codex' },
+    })
+
+    return (await readState(dir, 's1')).lastModelFailure?.cli
+  }
+
+  assert.equal(await failedCli('/missing/saved/codex'), '/missing/saved/codex')
+  assert.equal(await failedCli(null), '/missing/env/codex')
 })
 
 test('a failed update saves the CLI it ran, its exit code and the end of its stderr beside the failed state', async t => {

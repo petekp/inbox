@@ -33,7 +33,7 @@ export const subjectsFor = (p: Pick<Piece, 'match'>, o: SessionStatus | null) =>
 
 export const label = (s: Subject) => `"${s.name}: ${s.text}"`
 
-export const SMALL_WORDS = new Set(['the', 'and', 'for', 'with', 'from', 'into', 'its'])
+const SMALL_WORDS = new Set(['the', 'and', 'for', 'with', 'from', 'into', 'its'])
 
 /** The words that tell two names apart: words of three letters or more but a few small ones, and every word with a number. */
 export function keyWords(text: string): Set<string> {
@@ -43,7 +43,7 @@ export function keyWords(text: string): Set<string> {
 }
 
 export const WORD = /[\p{L}\p{N}]+/gu
-export const restateWords = (text: string) => new Set((text.toLowerCase().match(WORD) ?? []).filter(w => w.length > 3))
+const restateWords = (text: string) => new Set((text.toLowerCase().match(WORD) ?? []).filter(w => w.length > 3))
 
 /** Whether `text` has most of the key words of `other`, as a restatement does. */
 export function restatesText(text: string, other: string): boolean {

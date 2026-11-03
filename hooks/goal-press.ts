@@ -25,7 +25,7 @@ export function goalPressed(
   }
   if (p.action !== 'type') return { stale: true }
   const typed = setTypedGoal(o, p.text, now)
-  if (typed.status === o) return unchanged
+  if (typed === o) return unchanged
 
-  return { ledger: { ...ledger, overview: typed.status }, last: record('mark'), effects: [] }
+  return { ledger: { ...ledger, overview: typed }, last: record('mark'), effects: [] }
 }
