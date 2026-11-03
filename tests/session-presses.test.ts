@@ -37,7 +37,7 @@ test('a refused Done message leaves its row reading Not sent, with Undo', async 
   expect(view.needsYou.closed.tasks.map(c => c.delivery)).toEqual([{ error: 'queue refused', canUndo: true }])
 })
 
-test('a close with a reason of a question recorded again after its Compare press is refused in that turn, and takes effect in a later one', async () => {
+async function pressedCompare() {
   const { host } = fakeHost(async () => 'NONE')
   const call = async (tool: 'record' | 'close', args: Record<string, unknown>) => {
     let result = ''
@@ -53,7 +53,14 @@ test('a close with a reason of a question recorded again after its Compare press
   const id = (await host.read()).ledger.items[0]!.id
   await press(host, { action: 'compare', id }, false, NO_HOLDS)
   await host.update(async s => turnStarted(s, await host.now()))
-  await call('record', { ...question, steps: ['/tmp/project/.scratch/compare/caches.html'] })
+  const compared = { ...question, steps: ['/tmp/project/.scratch/compare/caches.html'] }
+
+  return { host, call, id, compared }
+}
+
+test('a close with a reason of a question recorded again after its Compare press is refused in that turn, and takes effect in a later one', async () => {
+  const { host, call, id, compared } = await pressedCompare()
+  await call('record', compared)
 
   expect(await call('close', { id, reason: 'replaced by the compared copy' })).toBe(
     'Not closed: your record updated this question, and it stays open for the user.',
@@ -63,6 +70,24 @@ test('a close with a reason of a question recorded again after its Compare press
   await host.update(async s => turnEnded(endTurn(CLAUDE_CODE, s, 'I pick Redis.', false), await host.now()))
   await host.update(async s => turnStarted(s, await host.now()))
   expect(await call('close', { id, reason: 'the person dropped caching' })).toMatch(/^Closed\./)
+})
+
+test('a record after the agent closed the question with a reason in its Compare turn reopens that question and updates it', async () => {
+  const { host, call, id, compared } = await pressedCompare()
+
+  expect(await call('close', { id, reason: 'replaced by the compared copy' })).toMatch(/^Closed\./)
+  expect(await call('record', compared)).toBe('Already open, so this record updated it and added its new steps.')
+  const { ledger } = await host.read()
+  expect(ledger.items.map(i => i.id)).toEqual([id])
+  expect(ledger.closed.map(c => c.id)).toEqual([])
+})
+
+test("a close with the person's answer after a Compare press takes effect", async () => {
+  const { host, call, id, compared } = await pressedCompare()
+  await call('record', compared)
+
+  expect(await call('close', { id, answer: 'Redis' })).toMatch(/^Closed\./)
+  expect((await host.read()).ledger.items).toEqual([])
 })
 
 test('Compare reads Comparing… after its reply until the agent records the question again with its page, or until its limit passes', async () => {

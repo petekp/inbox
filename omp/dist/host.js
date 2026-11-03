@@ -4239,7 +4239,7 @@ function agentTools(host) {
 function toolAnswer(host, ledger, tool, input, now, presses) {
   switch (tool) {
     case "record":
-      return recordItem(host, ledger, input, now);
+      return recordAfterCompare(host, ledger, input, now, presses) ?? recordItem(host, ledger, input, now);
     case "close":
       return recordClose(host, ledger, input, now, presses);
     case "order_prs":
@@ -4331,12 +4331,24 @@ function closedHow(c) {
       return `the inbox closed it (${c.outcome})`;
   }
 }
+function isAfterCompareThisTurn(id, at, presses) {
+  const last = presses.lastActions[id];
+  return last?.action === "compare" && at >= Math.max(last.at, presses.turnStartedAt ?? last.at);
+}
 function isRecordedAfterCompare(ledger, id, presses) {
   const item = ledger.items.find((i) => i.id === id);
-  const last = presses.lastActions[id];
-  if (item?.kind !== "question" || last?.action !== "compare" || item.reportedAt === undefined)
+  if (item?.kind !== "question" || item.reportedAt === undefined)
     return false;
-  return item.reportedAt >= Math.max(last.at, presses.turnStartedAt ?? last.at);
+  return isAfterCompareThisTurn(id, item.reportedAt, presses);
+}
+function recordAfterCompare(host, ledger, input, now, presses) {
+  const isClosedAfterCompare = (c) => c.how === "claude" && c.kind === "question" && isAfterCompareThisTurn(c.id, c.at, presses);
+  const closed = ledger.closed.findLast(isClosedAfterCompare);
+  if (!closed)
+    return null;
+  const r = recordItem(host, reopenItem(ledger, closed.id), input, now);
+  const isUpdated = r.ledger.items.some((i) => i.id === closed.id && i.reportedAt === now);
+  return isUpdated ? r : null;
 }
 function recordClose(host, ledger, input, now, presses) {
   const id = cut(input.id, 80).replace(/^\[|\]$/g, "");

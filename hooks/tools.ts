@@ -1,5 +1,5 @@
 import { recommendedOption } from './ask-match'
-import { closeByAgent } from './ledger-close'
+import { closeByAgent, reopenItem } from './ledger-close'
 import { addAgentItem, addFinding } from './ledger-update'
 import { stepHelp } from './reply-parse'
 import type { Host } from './model-text'
@@ -145,7 +145,7 @@ export function toolAnswer(
 ): ToolAnswer {
   switch (tool) {
     case 'record':
-      return recordItem(host, ledger, input, now)
+      return recordAfterCompare(host, ledger, input, now, presses) ?? recordItem(host, ledger, input, now)
     case 'close':
       return recordClose(host, ledger, input, now, presses)
     case 'order_prs':
@@ -272,16 +272,43 @@ function closedHow(c: Pick<Closed, 'how' | 'outcome'>): string {
   }
 }
 
+/** Whether `at` falls in the running turn, after the person's Compare press on `id`. */
+function isAfterCompareThisTurn(id: string, at: number, presses: Presses): boolean {
+  const last = presses.lastActions[id]
+
+  return last?.action === 'compare' && at >= Math.max(last.at, presses.turnStartedAt ?? last.at)
+}
+
 /**
  * Whether the agent recorded `id` again this turn, after the person pressed Compare on it. That record updated the open
  * question, so a close with a reason would only replace it with a copy.
  */
 function isRecordedAfterCompare(ledger: Ledger, id: string, presses: Presses): boolean {
   const item = ledger.items.find(i => i.id === id)
-  const last = presses.lastActions[id]
-  if (item?.kind !== 'question' || last?.action !== 'compare' || item.reportedAt === undefined) return false
+  if (item?.kind !== 'question' || item.reportedAt === undefined) return false
 
-  return item.reportedAt >= Math.max(last.at, presses.turnStartedAt ?? last.at)
+  return isAfterCompareThisTurn(id, item.reportedAt, presses)
+}
+
+/**
+ * A record of a question the agent closed with a reason this turn, after the person pressed Compare on it. The question
+ * reopens and the record updates it, as when the close comes after the record. Null when no such question matches.
+ */
+function recordAfterCompare(
+  host: Host,
+  ledger: Ledger,
+  input: Record<string, unknown>,
+  now: number,
+  presses: Presses,
+): ToolAnswer | null {
+  const isClosedAfterCompare = (c: Closed) =>
+    c.how === 'claude' && c.kind === 'question' && isAfterCompareThisTurn(c.id, c.at, presses)
+  const closed = ledger.closed.findLast(isClosedAfterCompare)
+  if (!closed) return null
+  const r = recordItem(host, reopenItem(ledger, closed.id), input, now)
+  const isUpdated = r.ledger.items.some(i => i.id === closed.id && i.reportedAt === now)
+
+  return isUpdated ? r : null
 }
 
 export function recordClose(
