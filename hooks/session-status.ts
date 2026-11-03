@@ -3,6 +3,7 @@ import { isBlankLedger } from './ledger'
 import { applyUpdate } from './ledger-update'
 import type { Update } from './reply-parse'
 import { lookEnded, lookStarted } from './status-children'
+import type { ShownRows } from './status-children'
 import { applyStatus } from './status-ops'
 import type { StatusAnswer } from './status'
 import type { Ledger, SessionStatus, StatusFailure, Session } from '../types'
@@ -96,9 +97,9 @@ function lookStartedOn<S extends { ledger: Ledger }>(s: S, now: number): S {
   return statusChanged(s, o => lookStarted(o, now))
 }
 
-/** The Status tab stopped being shown at `at`: the look ends. */
-export function lookEndedOn<S extends { ledger: Ledger }>(s: S, at: number): S {
-  return statusChanged(s, o => lookEnded(o, at))
+/** The Status tab stopped being shown at `at`: the look ends, and counts the subjects `shown` names as seen. */
+export function lookEndedOn<S extends { ledger: Ledger }>(s: S, at: number, shown: ShownRows): S {
+  return statusChanged(s, o => lookEnded(o, at, shown))
 }
 
 /** The session with its Status after `change`, or the same session when the Status did not change. */
@@ -111,9 +112,9 @@ export function statusChanged<S extends { ledger: Ledger }>(
   return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } }
 }
 
-/** Starts a look while the Status is shown, and ends it otherwise. */
-export function withLook<S extends { ledger: Ledger }>(s: S, isStatusShown: boolean, now: number): S {
-  return isStatusShown ? lookStartedOn(s, now) : lookEndedOn(s, now)
+/** Starts a look while the Status is shown, and ends it otherwise, with the rows `shown` says it showed. */
+export function withLook<S extends { ledger: Ledger }>(s: S, isStatusShown: boolean, now: number, shown: ShownRows): S {
+  return isStatusShown ? lookStartedOn(s, now) : lookEndedOn(s, now, shown)
 }
 
 /** Whether the session has anything recorded: an applied update, an item, a finding or a Status. */

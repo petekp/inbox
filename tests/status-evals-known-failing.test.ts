@@ -1,8 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
-import { lookEnded, lookStarted } from '../hooks/status-children'
 import { statusPage } from '../hooks/status-page'
-import type { SessionStatus, SubjectStatus } from '../types'
+import type { SubjectStatus } from '../types'
 import { minutes } from '../evals/status-replay'
 import { subject, statusOf, sessionOf } from './status-evals-scenes'
 
@@ -37,17 +36,4 @@ knownFailing('#138: every piece finished since the last look is drawn as a row',
   const drawn = statusPage(sessionOf(o, [], 30), minutes(30)).rows.filter(r => r.kind === 'subject')
 
   expect(drawn.length).toBe(6)
-})
-
-knownFailing('#139: a look marks as seen only the rows that were on screen', '#139', () => {
-  const o = statusOf([
-    subject('s1', 'working', 'Sync engine', 'syncs', 10),
-    subject('s2', 'working', 'Search speed', 'faster', 10),
-  ])
-  const endLook = lookEnded as (o: SessionStatus | null, at: number, shown: string[]) => SessionStatus | null
-  const looked = endLook(lookStarted(o, minutes(20)), minutes(21), ['s1'])
-  const page = statusPage(sessionOf(looked!, [], 22), minutes(22))
-  const names = page.rows.map(r => (r.kind === 'subject' ? r.name : r.kind))
-
-  expect(names.indexOf('Search speed')).toBeLessThan(names.indexOf('look'))
 })

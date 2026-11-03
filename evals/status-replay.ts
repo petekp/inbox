@@ -151,7 +151,7 @@ function withEvent(s: Session, e: HostEvent, now: number): Session {
     if (e.child === 'start') return withStatus(childStarted(o, e, now, { reportsActivity: e.reportsActivity ?? true }))
     return withStatus(e.child === 'act' ? childWorked(o, e.ref, now) : childEnded(o, e.ref, now))
   }
-  if ('look' in e) return withStatus(lookEnded(lookStarted(o, now), now + e.look * 1000))
+  if ('look' in e) return withStatus(lookEnded(lookStarted(o, now), now + e.look * 1000, 'all'))
   if ('press' in e) {
     const press: RowPress =
       e.press === 'type' ? { action: 'type', id: GOAL_KEYS_ID, text: e.text } : { action: e.press, id: GOAL_KEYS_ID }

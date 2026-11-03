@@ -112,6 +112,11 @@ export type SessionStatus = {
 
   /** When the person last looked: the last time a look ended. Null before the first look. */
   lastLookAt: number | null
+  /**
+   * The subjects the last look did not show since they last changed, each with when the person last saw it, or null
+   * for never. Every other subject that changed by `lastLookAt` counts as seen.
+   */
+  missedInLastLook: Record<string, number | null>
   /** The look in progress, while the Status tab is shown. Null otherwise. */
   look: { startedAt: number } | null
 }

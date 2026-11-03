@@ -103,7 +103,7 @@ import { demoAfterPress, demoReplied, demoSent, type DemoSent } from './press-ef
 import { isPressConfirmed, type Effect } from './press-reducer'
 import { openTarget, type PathProbe } from './open-targets'
 import type { RowPress } from './presses'
-import { statusKeyRows, statusSelected } from './status-keys'
+import { GOAL_KEYS_ID, statusKeyRows, statusSelected } from './status-keys'
 import { footerStatus } from './view'
 import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, type RowView } from './rows'
 import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf, NEXT_BUILD_MARK } from './banners'
@@ -242,6 +242,7 @@ import {
   withoutRowActions,
 } from './mod-sessions'
 import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
+import { noteStatusDrawn, probedScroll, takeShownRows } from './pane-status-shown'
 import { changeSaved, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
 import { paneAskRows, paneAskTabs } from './pane-asks'
 import { paneRowKeys } from './pane-row-keys'
@@ -1095,7 +1096,8 @@ async function syncLook($: EngineInterface, isOpen?: boolean) {
   if (await read($, DEMO)) return
   const [page, isPaneOpen, now] = await Promise.all([readPage($), isOpen ?? isPaneShown($), $.clock.now()])
   const isShown = isPaneOpen && page === 'overview'
-  await commit($, currentOwner(), s => withLook(s, isShown, now)).catch(() => undefined)
+  const shown = isShown ? {} : takeShownRows()
+  await commit($, currentOwner(), s => withLook(s, isShown, now, shown)).catch(() => undefined)
   followDelegates($, isShown)
 }
 
@@ -2711,6 +2713,8 @@ export const register: Register = on => {
   })
 
   on('ui.scroll', { requestId: PANE }, async (_$, e, next) => {
+    const probed = probedScroll(e)
+    if (probed) return probed
     if (e.origin.kind === 'person') cancelUndoScroll()
     return next(e)
   })
@@ -2902,7 +2906,7 @@ export const register: Register = on => {
         ? { rowPad: 2 * DESKTOP_ROW_PAD, settledPad: 2 * DESKTOP_ROW_PAD, buttonGap: 1, isFoldGapped: false }
         : { rowPad: blankLine, settledPad: 0, buttonGap: 2, isFoldGapped: true }
     const [
-      { prViews: prState, lastActions, notes, turns, stop, view, showsDemoNotices, isUnread, now },
+      { prViews: prState, lastActions, notes, turns, stop, view, isDemo, showsDemoNotices, isUnread, now },
       savedTab,
       savedPage,
       selection,
@@ -3090,6 +3094,12 @@ export const register: Register = on => {
     const isOpenGuarded = !isStatusShown && isGuarded(cursor.openedAt, now)
     const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection) : null
     const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage) : []
+    if (isStatusShown && !isHelpShown && !isDemo && (look === 'desktop' || e.surface === 'terminal')) {
+      const goalDraft = typing === GOAL_KEYS_ID ? drafts[GOAL_KEYS_ID]?.text : null
+      const layout = [e.props.bodyColumns, isInline, view.status, showsDemoNotices, statusKeyRow?.id, typing, goalDraft]
+      const { scroll } = e.props
+      noteStatusDrawn($, PANE, { look, page: view.statusPage, unfolded: statusUnfolded, scroll, layout, now })
+    }
 
     const {
       desktopColumnPt,

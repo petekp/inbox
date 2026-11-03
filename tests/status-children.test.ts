@@ -160,7 +160,7 @@ test('a delegate says what Herdr shows: nothing while it works, waiting while bl
     { kind: 'child', mark: '✓', tone: 'done', stall: { text: 'finished', tone: 'done' }, isLast: false },
     { kind: 'look', isLast: true },
   ])
-  const looked = lookEnded(lookStarted(finished, 5 * 60 * MIN), 5 * 60 * MIN + LOOK_MIN_MS)
+  const looked = lookEnded(lookStarted(finished, 5 * 60 * MIN), 5 * 60 * MIN + LOOK_MIN_MS, 'all')
   expect(rows(looked, 6 * 60 * MIN)).toEqual(['◐ Export: layout next'])
   const gone = delegatesSettled(blocked, new Map(), 4 * 60 * MIN)
   expect(rows(gone, 4 * 60 * MIN)).toEqual(['◐ Export: layout next'])
@@ -294,6 +294,7 @@ test('a running child of a done subject in the done fold shows once, at the top 
   const seen = lookEnded(
     lookStarted(after(done, 'DONE: s1 | works offline', 20 * MIN), 30 * MIN),
     30 * MIN + LOOK_MIN_MS,
+    'all',
   )
   const child = { ref: 't1', kind: 'subagent' as const, name: 'Review', startedAt: 40 * MIN, endedAt: null }
   const o = after(withChild(seen, { ...child, lastActivityAt: now - MIN }, now), 'LINK: c1 | s1', 50 * MIN)

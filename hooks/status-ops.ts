@@ -1,5 +1,6 @@
 import type { Milestone, SessionStatus, StatusHead, Subject } from '../types'
 import type { Op, StatusAnswer } from './status'
+import { isSubjectSeen } from './status-children'
 import {
   clipWords,
   DESCRIPTION_KEPT,
@@ -134,8 +135,7 @@ export function applyOps(
   }
   /** A was line and a merged line stay until the person has seen them. The page shows them only on rows that changed since the last look. */
   const forgetSeenWas = (s: Subject) => {
-    const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt
-    if (isSeen) {
+    if (isSubjectSeen(o, s)) {
       s.was = null
       s.merged = null
     }

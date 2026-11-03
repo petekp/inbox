@@ -1,5 +1,5 @@
 import type { Item, Ledger, Session, Subject } from '../types'
-import { isChildRunning } from './status-children'
+import { isChildRunning, isSubjectSeen } from './status-children'
 import { isOpen, OPEN_SUBJECTS } from './status-limits'
 import { cutAtPhrase } from './text'
 import { SUBJECT_MARKS } from './help'
@@ -153,7 +153,7 @@ export function statusPage(
   const o = s.ledger.overview
   const look = o?.lastLookAt ?? null
   const subjects = (o?.subjects ?? []).filter(x => x.into === null)
-  const isNew = (x: Subject) => look === null || x.changedAt > look
+  const isNew = (x: Subject) => o === null || !isSubjectSeen(o, x)
   const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
   const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
   const oldestAskOf = (x: Subject): { id: string; kind: Item['kind'] } | null =>
