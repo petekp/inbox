@@ -137,7 +137,7 @@ export function paneRows(
               key={`select-${row.id}`}
               module="./row-client.tsx"
               width="100%"
-              props={rowClientProps(row)}
+              props={rowClientProps(row, desktopRowTextPt)}
             />
           </Box>
         </Box>
