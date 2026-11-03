@@ -6,13 +6,7 @@ import type { ShownUndo } from './action-plan'
 import { UNDO_KEY } from './help'
 
 export function focusHintFor(element: string): string | null {
-  const id = element.split('-')[1]
-
-  return /^(answer|done|dismiss|drop)-/.test(element)
-    ? `undo-${id}`
-    : element.startsWith('typekey-')
-      ? `type-${id}`
-      : null
+  return element.startsWith('typekey-') ? `type-${element.slice('typekey-'.length)}` : null
 }
 export const followUpPresses = new Map<string, (press: UiPressArgument) => void>()
 

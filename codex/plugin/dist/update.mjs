@@ -3009,7 +3009,8 @@ function emptyState(sessionId) {
     shownTab: "needsYou",
     heard: NOTHING_HEARD,
     coveredTurn: null,
-    openCatchUpKey: null
+    openCatchUpKey: null,
+    delegateCalls: []
   };
 }
 function statePath(dir, sessionId) {
@@ -3497,6 +3498,20 @@ function heardState(h) {
 }
 function viewOf(s, now, holds = NO_HOLDS) {
   return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds), heard: heardState(s.heard), at: now };
+}
+
+// ../hooks/children.ts
+var HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
+function delegateSteps(command) {
+  return [...command.matchAll(HERDR)].map(([, verb, name, args]) => ({
+    name,
+    isPrompt: verb === "prompt",
+    isWaitForEnd: verb === "wait" && !/--until working/.test(args ?? "")
+  }));
+}
+var delegateRef = (name) => `herdr:${name}`;
+function delegateRefs(command) {
+  return new Set(delegateSteps(command).map((step) => delegateRef(step.name)));
 }
 
 // ../hooks/herdr.ts
@@ -4324,6 +4339,7 @@ var UNRAN_MARKERS = [
   '"custom_tool_call_output"'
 ];
 var UNRAN_OUTPUT = /^(?:(?:exec command|patch) rejected by user|(?:Command|Tool call) blocked by PreToolUse hook: )/;
+var isUnranOutput = (output) => UNRAN_OUTPUT.test(output);
 var BLOCKED_COMMAND = /^Command blocked by PreToolUse hook: [^\n]*?\. Command: ([^\n]+)/;
 var BLOCKED_TOOL = /^Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: (\S+)/;
 var SCRIPT_ERROR = "Script error: ";
@@ -4331,43 +4347,57 @@ var toolLines = (tool) => {
   const line = toolActivity(tool, {});
   return line ? [line] : [];
 };
-var blockedLines = (output) => {
-  const command = BLOCKED_COMMAND.exec(output)?.[1];
+var blocked = (output) => {
+  const command = BLOCKED_COMMAND.exec(output)?.[1]?.trim();
   const tool = BLOCKED_TOOL.exec(output)?.[1];
-  return command ? shellLines(command.trim()) : tool ? toolLines(tool) : [];
+  return command ? { commands: [command], lines: shellLines(command) } : { commands: [], lines: tool ? toolLines(tool) : [] };
 };
 var editedLines = (changes) => Object.keys(record(changes)).map((path) => `edited ${path}`);
-function unranLines(rows) {
+function unranCalls(rows) {
   const ran = /* @__PURE__ */ new Set();
   const unran = /* @__PURE__ */ new Set();
+  const ranDelegates = /* @__PURE__ */ new Set();
+  const unranDelegates = /* @__PURE__ */ new Set();
   const note = (lines, didRun) => lines.forEach((line) => (didRun ? ran : unran).add(line));
+  const noteCommand = (command, didRun) => {
+    note(shellLines(command), didRun);
+    delegateRefs(command).forEach((ref) => (didRun ? ranDelegates : unranDelegates).add(ref));
+  };
   const callCommands = /* @__PURE__ */ new Map();
   for (const row of rows) {
     const p = record(row.payload);
     const item = record(p.item);
     const isDeclined = item.status === "declined";
     if (row.type === "event_msg" && p.type === "item_completed") {
-      if (item.type === "CommandExecution") note(shellLines(commandText2(item.command)), !isDeclined);
+      if (item.type === "CommandExecution") noteCommand(commandText2(item.command), !isDeclined);
       else if (item.type === "FileChange") note(editedLines(item.changes), !isDeclined);
       else if (item.type === "McpToolCall") note(toolLines(`mcp__${textOf(item.server)}__${textOf(item.tool)}`), true);
       continue;
     }
     if (row.type !== "response_item") continue;
     const callId = textOf(p.call_id);
+    let block = { commands: [], lines: [] };
     if (p.type === "function_call" || p.type === "local_shell_call") {
       const command = callCommand(p);
       if (command !== "" && callId !== "") callCommands.set(callId, command);
     } else if (p.type === "function_call_output") {
       const output = outputText(p.output);
       const command = callCommands.get(callId);
-      if (command !== void 0) note(shellLines(command), !UNRAN_OUTPUT.test(output));
-      note(blockedLines(output), false);
+      callCommands.delete(callId);
+      if (command !== void 0) noteCommand(command, !isUnranOutput(output));
+      block = blocked(output);
     } else if (p.type === "custom_tool_call_output") {
       const output = Array.isArray(p.output) ? contentText(p.output) : textOf(p.output);
-      if (output.startsWith(SCRIPT_ERROR)) note(blockedLines(output.slice(SCRIPT_ERROR.length)), false);
+      if (output.startsWith(SCRIPT_ERROR)) block = blocked(output.slice(SCRIPT_ERROR.length));
     }
+    note(block.lines, false);
+    block.commands.forEach((command) => noteCommand(command, false));
   }
-  return [...unran].filter((line) => !ran.has(line));
+  callCommands.forEach((command) => delegateRefs(command).forEach((ref) => ranDelegates.add(ref)));
+  return {
+    lines: [...unran].filter((line) => !ran.has(line)),
+    delegates: [...unranDelegates].filter((ref) => !ranDelegates.has(ref))
+  };
 }
 
 // src/rollout-turns.ts
@@ -4386,7 +4416,7 @@ var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).
 function turnsOf(rows, cwd) {
   const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
   const hasCommandRows = rows.some((row) => isItem(row, "CommandExecution"));
-  const unran = new Set(unranLines(rows));
+  const unran = new Set(unranCalls(rows).lines);
   const turns = [];
   const agentTurn = () => {
     const last = turns.at(-1);

@@ -67,7 +67,7 @@ Captured on 2026-10-09 in the Claude app's demo pane and the Codex tab:
 ## Checks that need you
 
 - **Hover over the flush rows and the tabs.** Sweep the pointer down a list and across the tabs. Each row and tab should light over its whole height, with no dead band at its bottom edge.
-- **The press after a field opens or closes.** Type a reply removes its own button, the case where the app's next click only refocuses the pane (#100874). Click Type, then Cancel at once, then Type again, then another button, and count retries.
+- **No focus move after a press.** A press or click that removes its own button leaves the focus alone, and only a reply field the press opens takes it. Click a closed row, Dismiss a PR near the bottom of the PRs tab, and click Type, then Cancel at once, then Type again, then another button. The pane must not scroll, no button may show a focus ring, and each click must land on the first try.
 
 ## Checks
 
