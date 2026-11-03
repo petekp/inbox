@@ -3446,6 +3446,7 @@ var literalValue = (literal) => {
 };
 var PATCH_ARGUMENT = /tools\.apply_patch\(\s*("(?:[^"\\]|\\.)*")/;
 var COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")/;
+var scriptCommand = (input) => literalValue(COMMAND_ARGUMENT.exec(input)?.[1]) ?? "";
 var shellLines = (command) => {
   const line = command === "" ? null : toolActivity("Bash", { command });
   return line ? [line] : [];
@@ -3457,7 +3458,7 @@ function callLines(p, hasCommandRows, cwd) {
   if (p.type === "custom_tool_call" && name === "exec") {
     const input = textOf2(p.input);
     const patch = literalValue(PATCH_ARGUMENT.exec(input)?.[1]);
-    const command = literalValue(COMMAND_ARGUMENT.exec(input)?.[1]);
+    const command = scriptCommand(input);
     return [...patch ? editLines(patch, cwd) : [], ...command && !hasCommandRows ? shellLines(command) : []];
   }
   if (p.type !== "function_call") return [];
@@ -3479,6 +3480,7 @@ var UNRAN_MARKERS = [
   '"FileChange"',
   '"McpToolCall"',
   '"function_call',
+  '"custom_tool_call"',
   '"local_shell_call',
   '"custom_tool_call_output"'
 ];
@@ -3486,7 +3488,16 @@ var UNRAN_OUTPUT = /^(?:(?:exec command|patch) rejected by user|(?:Command|Tool 
 var isUnranOutput = (output) => UNRAN_OUTPUT.test(output);
 var BLOCKED_COMMAND = /^Command blocked by PreToolUse hook: [^\n]*?\. Command: ([^\n]+)/;
 var BLOCKED_TOOL = /^Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: (\S+)/;
-var SCRIPT_ERROR = "Script error: ";
+var SCRIPT_FAILED = "Script failed\n";
+var SCRIPT_ERROR = /^Script error:\s*/;
+var SCRIPT_DECLINED = /^(?:exec_command|shell_command|shell) failed: [^\n]*Rejected\("rejected by user"\)(?:\n|$)/;
+function scriptError(output) {
+  const parts = Array.isArray(output) ? output.map((part) => textOf2(record(part).text)) : [textOf2(output)];
+  const isFailed = parts.length === 1 || parts[0]?.startsWith(SCRIPT_FAILED) === true;
+  const last = isFailed ? parts.at(-1) ?? "" : "";
+  const prefix = SCRIPT_ERROR.exec(last)?.[0];
+  return prefix === void 0 ? "" : last.slice(prefix.length);
+}
 var toolLines = (tool) => {
   const line = toolActivity(tool, {});
   return line ? [line] : [];
@@ -3521,8 +3532,9 @@ function unranCalls(rows) {
     if (row.type !== "response_item") continue;
     const callId = textOf2(p.call_id);
     let block = { commands: [], lines: [] };
-    if (p.type === "function_call" || p.type === "local_shell_call") {
-      const command = callCommand(p);
+    const isScript = p.type === "custom_tool_call" && p.name === "exec";
+    if (isScript || p.type === "function_call" || p.type === "local_shell_call") {
+      const command = isScript ? scriptCommand(textOf2(p.input)) : callCommand(p);
       if (command !== "" && callId !== "") callCommands.set(callId, command);
     } else if (p.type === "function_call_output") {
       const output = outputText(p.output);
@@ -3531,8 +3543,12 @@ function unranCalls(rows) {
       if (command !== void 0) noteCommand(command, !isUnranOutput(output));
       block = blocked(output);
     } else if (p.type === "custom_tool_call_output") {
-      const output = Array.isArray(p.output) ? contentText(p.output) : textOf2(p.output);
-      if (output.startsWith(SCRIPT_ERROR)) block = blocked(output.slice(SCRIPT_ERROR.length));
+      const error = scriptError(p.output);
+      const command = callCommands.get(callId);
+      callCommands.delete(callId);
+      block = blocked(error);
+      const isBlockNamed = block.commands.length > 0 || block.lines.length > 0;
+      if (command !== void 0 && !isBlockNamed) noteCommand(command, !SCRIPT_DECLINED.test(error));
     }
     note(block.lines, false);
     block.commands.forEach((command) => noteCommand(command, false));

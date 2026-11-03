@@ -3,8 +3,8 @@
 
 import { toolActivity } from '../../hooks/catch-up-text'
 import { delegateRefs } from '../../hooks/children'
-import { callCommand, commandText, outputText, shellLines } from './rollout-commands'
-import { contentText, record, textOf } from './rollout-rows'
+import { callCommand, commandText, outputText, scriptCommand, shellLines } from './rollout-commands'
+import { record, textOf } from './rollout-rows'
 import type { RolloutRow } from './rollout-rows'
 
 /** Rollout markers of the rows `unranCalls` reads, for a reader that parses only the lines holding one. */
@@ -13,6 +13,7 @@ export const UNRAN_MARKERS = [
   '"FileChange"',
   '"McpToolCall"',
   '"function_call',
+  '"custom_tool_call"',
   '"local_shell_call',
   '"custom_tool_call_output"',
 ]
@@ -30,8 +31,25 @@ export const isUnranOutput = (output: string): boolean => UNRAN_OUTPUT.test(outp
 const BLOCKED_COMMAND = /^Command blocked by PreToolUse hook: [^\n]*?\. Command: ([^\n]+)/
 const BLOCKED_TOOL = /^Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: (\S+)/
 
-/** How a code-mode script's output starts when the script ended on an error it did not catch. */
-const SCRIPT_ERROR = 'Script error: '
+/**
+ * A code-mode script's output is a list of parts. When the script ended on an error it did not catch, the first part
+ * starts with `SCRIPT_FAILED` and the last with `SCRIPT_ERROR`, followed by the error.
+ */
+const SCRIPT_FAILED = 'Script failed\n'
+const SCRIPT_ERROR = /^Script error:\s*/
+
+/** The error a code-mode script ends on when the person declines one of its commands. */
+const SCRIPT_DECLINED = /^(?:exec_command|shell_command|shell) failed: [^\n]*Rejected\("rejected by user"\)(?:\n|$)/
+
+/** The error a code-mode script's output ends on, or '' when the script did not end on one. */
+function scriptError(output: unknown): string {
+  const parts = Array.isArray(output) ? output.map(part => textOf(record(part).text)) : [textOf(output)]
+  const isFailed = parts.length === 1 || parts[0]?.startsWith(SCRIPT_FAILED) === true
+  const last = isFailed ? (parts.at(-1) ?? '') : ''
+  const prefix = SCRIPT_ERROR.exec(last)?.[0]
+
+  return prefix === undefined ? '' : last.slice(prefix.length)
+}
 
 const toolLines = (tool: string): string[] => {
   const line = toolActivity(tool, {})
@@ -81,8 +99,9 @@ export function unranCalls(rows: RolloutRow[]): { lines: string[]; delegates: st
     if (row.type !== 'response_item') continue
     const callId = textOf(p.call_id)
     let block = { commands: [] as string[], lines: [] as string[] }
-    if (p.type === 'function_call' || p.type === 'local_shell_call') {
-      const command = callCommand(p)
+    const isScript = p.type === 'custom_tool_call' && p.name === 'exec'
+    if (isScript || p.type === 'function_call' || p.type === 'local_shell_call') {
+      const command = isScript ? scriptCommand(textOf(p.input)) : callCommand(p)
       if (command !== '' && callId !== '') callCommands.set(callId, command)
     } else if (p.type === 'function_call_output') {
       const output = outputText(p.output)
@@ -91,8 +110,12 @@ export function unranCalls(rows: RolloutRow[]): { lines: string[]; delegates: st
       if (command !== undefined) noteCommand(command, !isUnranOutput(output))
       block = blocked(output)
     } else if (p.type === 'custom_tool_call_output') {
-      const output = Array.isArray(p.output) ? contentText(p.output) : textOf(p.output)
-      if (output.startsWith(SCRIPT_ERROR)) block = blocked(output.slice(SCRIPT_ERROR.length))
+      const error = scriptError(p.output)
+      const command = callCommands.get(callId)
+      callCommands.delete(callId)
+      block = blocked(error)
+      const isBlockNamed = block.commands.length > 0 || block.lines.length > 0
+      if (command !== undefined && !isBlockNamed) noteCommand(command, !SCRIPT_DECLINED.test(error))
     }
     note(block.lines, false)
     block.commands.forEach(command => noteCommand(command, false))

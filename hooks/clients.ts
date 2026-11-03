@@ -225,12 +225,12 @@ export const CLIENTS: Record<ClientId, Client> = {
       'ran-call-activity': {
         kind: 'different',
         reason:
-          "Codex runs PreToolUse before a call is approved, so a call's line shows from then. Stop, and the tool call that claims a Status call during the turn, take back the lines of calls the rollout shows were declined or blocked. A declined MCP call keeps its line, and so does a call whose block a code-mode script catches.",
+          "Codex runs PreToolUse before a call is approved, so a call's line shows from then. Stop, and the tool call that claims a Status call during the turn, take back the lines of calls the rollout shows were declined or blocked, inside a code-mode script too. A declined MCP call keeps its line, and so does a call whose block a code-mode script catches.",
       },
       'ran-call-delegates': {
         kind: 'different',
         reason:
-          "Codex runs PreToolUse before a call is approved, so a herdr command's delegate rows show from then. Stop, and the tool call that claims a Status call during the turn, take back the rows of each command the rollout shows was declined or blocked. A code-mode call whose script catches the block keeps its rows.",
+          "Codex runs PreToolUse before a call is approved, so a herdr command's delegate rows show from then. Stop, and the tool call that claims a Status call during the turn, take back the rows of each command the rollout shows was declined or blocked, inside a code-mode script too. A code-mode call whose script catches the block keeps its rows.",
       },
       'tool-result-line': {
         kind: 'unsupported',

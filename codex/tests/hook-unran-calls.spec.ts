@@ -37,10 +37,33 @@ const patchRow = (path: string, status: string) => ({
   },
 })
 
-const scriptOutput = (text: string) => ({
+const scriptCall = (callId: string, command: string) => ({
   type: 'response_item',
-  payload: { type: 'custom_tool_call_output', call_id: 'c1', output: [{ type: 'input_text', text }] },
+  payload: {
+    type: 'custom_tool_call',
+    name: 'exec',
+    call_id: callId,
+    input: `text(await tools.exec_command({cmd:${JSON.stringify(command)}}));\n`,
+  },
 })
+
+const scriptOutput = (text: string, callId = 'c1') => {
+  const [status, ...printed] = text.split('\n')
+  const isFailed = status?.startsWith('Script error:') === true
+  const header = `${isFailed ? 'Script failed' : status}\nWall time 0.0 seconds\nOutput:\n`
+  const parts = isFailed ? [text] : printed
+
+  return {
+    type: 'response_item',
+    payload: {
+      type: 'custom_tool_call_output',
+      call_id: callId,
+      output: [header, ...parts].map(part => ({ type: 'input_text', text: part })),
+    },
+  }
+}
+
+const SCRIPT_DECLINED = 'Script error: \nexec_command failed: Rejected("rejected by user")'
 
 const shellCall = (callId: string, command: string) => ({
   type: 'response_item',
@@ -96,19 +119,41 @@ test('a command or patch the person declined leaves the ended turn activity', as
 test('a call a PreToolUse hook blocked leaves the ended turn activity, in code mode and as a direct call', async () => {
   const transcript = rollout([
     started,
+    {
+      type: 'response_item',
+      payload: {
+        type: 'custom_tool_call',
+        name: 'exec',
+        call_id: 'c1',
+        input: 'await tools.exec_command({cmd:"git status"});\nawait tools.exec_command({cmd:"git push"});\n',
+      },
+    },
     scriptOutput('Script error: Command blocked by PreToolUse hook: pushes wait for review. Command: git push'),
     shellCall('c2', 'rm -rf build'),
     callOutput('c2', 'Command blocked by PreToolUse hook: no deletes. Command: rm -rf build'),
     scriptOutput('Script error: Tool call blocked by PreToolUse hook: read only. Tool: mcp__linear__save_issue'),
   ])
   const activity = await endedActivity(transcript, [
+    bash(transcript, 'git status'),
     bash(transcript, 'git push'),
     bash(transcript, 'rm -rf build'),
     input('PreToolUse', { tool_name: 'mcp__linear__save_issue', transcript_path: transcript, turn_id: 't1' }),
-    bash(transcript, 'git status'),
   ])
 
   assert.deepEqual(activity, ['ran: git status'])
+})
+
+test('a command the person declined inside a code-mode script leaves the ended turn activity', async () => {
+  const transcript = rollout([
+    started,
+    scriptCall('c1', 'git push'),
+    scriptOutput(SCRIPT_DECLINED, 'c1'),
+    scriptCall('c2', 'npm test'),
+    scriptOutput(`Script completed\n${SCRIPT_DECLINED}`, 'c2'),
+  ])
+  const activity = await endedActivity(transcript, [bash(transcript, 'git push'), bash(transcript, 'npm test')])
+
+  assert.deepEqual(activity, ['ran: npm test'])
 })
 
 test('a command still running when the turn ends, or that ran once and was declined once, keeps its line', async () => {
@@ -153,7 +198,7 @@ test('a declined command leaves the activity before a Status call during the tur
 const delegateRows = async (dir: string) =>
   ((await readState(dir, 's1')).ledger.overview?.children ?? []).map(c => [c.name, c.endedAt === null, c.delegateState])
 
-test('a herdr command the person declined or a hook blocked leaves no delegate row, and one that ran keeps its row', async () => {
+test('a herdr command the person declined, in code mode too, or a hook blocked leaves no delegate row, and one that ran keeps its row', async () => {
   const dir = tempDir()
   const transcript = rollout([
     started,
@@ -161,12 +206,15 @@ test('a herdr command the person declined or a hook blocked leaves no delegate r
     shellCall('c2', 'herdr agent start beta --cmd codex'),
     callOutput('c2', 'Command blocked by PreToolUse hook: no agents. Command: herdr agent start beta --cmd codex'),
     commandRow('herdr agent start gamma --cmd codex', 'completed'),
+    scriptCall('c3', 'herdr agent start kappa --cmd codex'),
+    scriptOutput(SCRIPT_DECLINED, 'c3'),
   ])
   await endedActivity(
     transcript,
     [
       bash(transcript, 'herdr agent start alpha --cmd codex'),
       bash(transcript, 'herdr agent start beta --cmd codex'),
+      bash(transcript, 'herdr agent start kappa --cmd codex'),
       bash(transcript, 'herdr agent start gamma --cmd codex'),
     ],
     dir,
