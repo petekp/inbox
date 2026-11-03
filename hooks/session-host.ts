@@ -224,6 +224,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
               const reply = await host.catchUp!(s).catch((): CatchUpReply => ({ kind: 'failed' }))
               if (reply.kind === 'unreadable') {
                 canCatchUp = false
+                await host.update(x => ({ ...x, presence: { ...x.presence, isConversationUnreadable: true } }))
                 continue
               }
               const parsed = reply.kind === 'reply' ? parseReply(reply.text, reply.source) : null

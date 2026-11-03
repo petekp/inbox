@@ -37,6 +37,8 @@ export function cleared<S extends Session>(s: S): S {
       ...s.presence,
       ledgerState: 'current',
       hasDroppedReply: false,
+      failedAttempts: 0,
+      isConversationUnreadable: false,
       turnsApplied: s.presence.turnsStarted,
       isTurnRunning: false,
     },
@@ -277,10 +279,12 @@ export function applied<S extends Session>(s: S, parsed: Update | null, now: num
     return {
       ...s,
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
-      presence: { ...s.presence, ledgerState: 'failed' },
+      presence: { ...s.presence, ledgerState: 'failed', failedAttempts: s.presence.failedAttempts + 1 },
     }
   const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed
+  const isCurrent = !hasDroppedReply
+  const failedAttempts = parsed ? s.presence.failedAttempts : s.presence.failedAttempts + 1
 
   return linkDialogs({
     ...s,
@@ -288,8 +292,10 @@ export function applied<S extends Session>(s: S, parsed: Update | null, now: num
     pending: s.pending.slice(1),
     presence: {
       ...s.presence,
-      ledgerState: hasDroppedReply ? 'failed' : 'current',
+      ledgerState: isCurrent ? 'current' : 'failed',
       hasDroppedReply,
+      failedAttempts: isCurrent ? 0 : failedAttempts,
+      isConversationUnreadable: isCurrent ? false : s.presence.isConversationUnreadable,
       turnsApplied: Math.max(s.presence.turnsApplied, next.turnsStarted),
     },
   })

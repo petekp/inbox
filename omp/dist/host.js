@@ -109,7 +109,8 @@ function clipWords(text, limit) {
   return words.length <= limit ? words.join(" ") : `${words.slice(0, limit).join(" ")}\u2026`;
 }
 function words(text) {
-  return new Set((text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
+  const matches = text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? [];
+  return new Set(matches.map((w) => w.replace(/^\.+|\.+$/g, "")).filter((w) => w !== "" && !STOP_WORDS.has(w)));
 }
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
@@ -727,7 +728,7 @@ function findingBody(finding) {
 var EXPLAIN_REPLY_FORM = "Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.";
 var COMPARE_PAGE_FILE = "compare-page.html";
 var COMPARE_IN_BACKGROUND = "Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.";
-var COMPARE_IN_TURN = "Compare the choices in this question you asked me by trying them against the code, not from memory. Do it now, and reply with the result before this turn ends. A background subagent's result does not reach this chat once your turn has ended.";
+var COMPARE_IN_TURN = "Compare the choices in this question you asked me by trying them against the code, not from memory. Do it now, and reply with the result before this turn ends, because a background subagent's report after your turn ends may not reach this chat.";
 var compareRequest = (texts) => [
   texts.compareInBackground ? COMPARE_IN_BACKGROUND : COMPARE_IN_TURN,
   "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
@@ -1142,6 +1143,10 @@ function findMilestone(o, ref) {
   const key = nameKey(clipWords(ref, NAME_KEPT));
   return o.milestones.find((m) => m.id === ref) ?? o.milestones.find((m) => m.status !== "dropped" && nameKey(m.name) === key) ?? null;
 }
+function linkableMilestone(o, ref) {
+  const m = findMilestone(o, ref);
+  return m && m.status !== "dropped" ? m : null;
+}
 function forgetSeenWas(m, lastLookAt) {
   if (lastLookAt !== null && m.changedAt <= lastLookAt)
     m.was = null;
@@ -1155,23 +1160,27 @@ function moveMilestone(o, m, op, now) {
     m.text = clipWords(op.text, TEXT_KEPT);
     m.closedAt = null;
   } else if (op.kind === "done") {
+    if (m.status === "done")
+      return;
     m.status = "done";
     if (op.text)
       m.text = clipWords(op.text, TEXT_KEPT);
     m.closedAt = now;
   } else if (op.kind === "drop") {
-    const target = op.into ? findMilestone(o, op.into) : null;
+    const target = op.into ? linkableMilestone(o, op.into) : null;
     m.status = "dropped";
     m.text = clipWords(op.why, TEXT_KEPT);
     m.closedAt = now;
-    if (target && target.id !== m.id) {
-      for (const [id, to] of Object.entries(o.serves))
-        if (to === m.id)
-          o.serves[id] = target.id;
-      for (const [ask, to] of Object.entries(o.askSubjects))
-        if (to === m.id)
-          o.askSubjects[ask] = target.id;
-    }
+    const into = target && target.id !== m.id ? target.id : null;
+    for (const links of [o.serves, o.askSubjects])
+      for (const [id, to] of Object.entries(links)) {
+        if (to !== m.id)
+          continue;
+        if (into)
+          links[id] = into;
+        else
+          delete links[id];
+      }
   } else {
     forgetSeenWas(m, o.lastLookAt);
     m.was = op.text;
@@ -1219,7 +1228,7 @@ function applyGoalOp(o, op, now, findSubject) {
   if (op.kind === "milestone")
     return addMilestone(o, op, now);
   const subject = findSubject(op.subject);
-  const milestone = op.milestone === null ? null : findMilestone(o, op.milestone);
+  const milestone = op.milestone === null ? null : linkableMilestone(o, op.milestone);
   if (!subject || op.milestone !== null && !milestone)
     return o;
   return { ...o, serves: { ...o.serves, [subject.id]: milestone?.id ?? "none" } };
@@ -2001,6 +2010,7 @@ function statusPage(s, now) {
     isLookAtEnd: true
   };
   const lookId = (id) => look === null ? null : id;
+  const foldCtx = { ...ctx, lookId: null, running: [] };
   const rows = [
     ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
     ...partRows(top.shown, ctx, 0)
@@ -2011,7 +2021,7 @@ function statusPage(s, now) {
       id: `${prefix}done`,
       depth,
       text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: ruledRows(partRows([...done].sort(pageOrder), { ...ctx, lookId: null }, depth + 1), false)
+      rows: ruledRows(partRows([...done].sort(pageOrder), foldCtx, depth + 1), false)
     }
   ];
   const foldRows = (prefix, p, depth) => [
@@ -2341,24 +2351,48 @@ function herdrReportKey(pane, tokens) {
   return herdrReport(pane, tokens).join(`
 `);
 }
+var HERDR_RETRY_MS = [5000, 30000, 120000];
 function herdrReporter() {
   let sent = null;
+  let retries = 0;
+  let isRetryWaiting = false;
   let sending = Promise.resolve();
-  return (run, report) => {
-    sending = sending.then(async () => {
-      const r = await report();
-      if (!r)
-        return;
-      const key = herdrReportKey(r.pane, r.tokens);
-      if (key === sent)
-        return;
-      sent = key;
-      await run(herdrReport(r.pane, r.tokens, r.seq), { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS });
-    }).catch(() => {
+  let newest = null;
+  const retryLater = (after) => {
+    const wait = HERDR_RETRY_MS[retries];
+    if (!after || isRetryWaiting || wait === undefined)
       return;
+    isRetryWaiting = true;
+    retries++;
+    after(wait, () => {
+      isRetryWaiting = false;
+      return newest ? reportToHerdr(newest.run, newest.report, newest.after) : Promise.resolve(false);
     });
-    return sending;
   };
+  const send = async (run, report, after) => {
+    const r = await report();
+    if (!r)
+      return false;
+    const key = herdrReportKey(r.pane, r.tokens);
+    if (key === sent)
+      return true;
+    sent = null;
+    const result = await run(herdrReport(r.pane, r.tokens, r.seq), { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS }).catch(() => null);
+    const isTaken = result?.code === 0;
+    if (isTaken) {
+      sent = key;
+      retries = 0;
+    } else
+      retryLater(after);
+    return isTaken;
+  };
+  const reportToHerdr = (run, report, after) => {
+    newest = { run, report, after };
+    const result = sending.then(() => send(run, report, after)).catch(() => false);
+    sending = result;
+    return result;
+  };
+  return reportToHerdr;
 }
 
 // ../hooks/ledger-prompt.ts
@@ -4672,9 +4706,7 @@ function actionLines(keys, more, { width, gap, separator }) {
 }
 
 // ../hooks/view.ts
-var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
 var HOLDS_UP_TEXT = "Holds up";
-var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
   return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
@@ -4848,18 +4880,23 @@ function heldLabel(c) {
   return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
 }
 var UPDATING_TEXT = "Updating\u2026";
+var RETRYING_TEXT = "Retrying the last update\u2026";
 var REFRESHING_PRS_TEXT = "Refreshing PRs\u2026";
 function footerStatus(tab, status, prs, statusPageError) {
   if (tab === "prs")
     return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null };
   const error = (tab === "overview" ? statusPageError : null) ?? status.error;
-  return { text: status.isUpdating ? UPDATING_TEXT : null, error };
+  return { text: status.isRetrying ? RETRYING_TEXT : status.isUpdating ? UPDATING_TEXT : null, error };
 }
-function perTurnStatus(update) {
-  return {
-    isUpdating: update.isUpdating,
-    error: update.isFailed && !update.isUpdating ? UPDATE_FAILED + (update.retries ? UPDATE_RETRIES : "") : null
-  };
+var NEXT_TRY = " The inbox tries again after the agent's next reply.";
+var FAILED_UPDATE_TEXT = {
+  waiting: `Last update failed. Items from that reply may be missing.${NEXT_TRY}`,
+  "failed-again": `Last update failed, and its retry failed too. Items from recent replies may be missing.${NEXT_TRY}`,
+  unreadable: `Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing.${NEXT_TRY}`
+};
+function perTurnStatus(isUpdating, recovery) {
+  const error = recovery === "none" || recovery === "retrying" ? null : FAILED_UPDATE_TEXT[recovery];
+  return { isUpdating, isRetrying: recovery === "retrying", error };
 }
 
 // ../hooks/session-view.ts
@@ -4873,14 +4910,19 @@ function withoutStaleResult(last, now) {
 function withoutStalePending(lastActions, now) {
   return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]));
 }
-function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes = {}) {
+function updateRecovery(s) {
+  const { presence } = s;
+  if (presence.ledgerState !== "failed")
+    return "none";
+  if (presence.isUpdating)
+    return "retrying";
+  if (s.pending.length === 0 && presence.isConversationUnreadable)
+    return "unreadable";
+  return presence.failedAttempts > 1 ? "failed-again" : "waiting";
+}
+function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
-  const update = {
-    isUpdating: s.presence.isUpdating,
-    isFailed: s.presence.ledgerState === "failed",
-    retries: canCatchUp || s.pending.length > 0
-  };
   const inbox = inboxView({
     ledger: l,
     lastActions,
@@ -4888,7 +4930,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     turns: s.presence,
     extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
     settleWindowMs,
-    status: perTurnStatus(update),
+    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s)),
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt
@@ -4930,7 +4972,7 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
 // ../hooks/session-presses.ts
 function isRepeatWhileOut(s, p, at, drawn) {
   const rowId = pressRowId(p);
-  const view = sessionView(s, at, drawn.settleWindowMs, false, drawn.holds);
+  const view = sessionView(s, at, drawn.settleWindowMs, drawn.holds);
   const row = allRows(view).find((r) => r.id === rowId);
   const last = view.lastActions[rowId];
   const state = row?.state ?? { is: "open" };
@@ -6592,12 +6634,17 @@ function milestoneOf(saved) {
     closedAt: time(m.closedAt)
   };
 }
+function droppedMilestoneIds(milestones) {
+  return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
+}
 function goalFields(o, subjectIds) {
   const milestones = (Array.isArray(o.milestones) ? o.milestones : []).map(milestoneOf).filter((m) => m !== null);
-  const milestoneIds = new Set(milestones.map((m) => m.id));
+  const dropped = droppedMilestoneIds(milestones);
+  const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
-  const serves = Object.fromEntries(savedServes.filter((e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || milestoneIds.has(e[1]))));
-  const declined = Array.isArray(o.declinedGoals) ? o.declinedGoals.filter((d) => typeof d === "string") : [];
+  const serves = Object.fromEntries(savedServes.filter((e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || liveIds.has(e[1]))));
+  const keys = (Array.isArray(o.declinedGoals) ? o.declinedGoals : []).flatMap((d) => typeof d === "string" ? [nameKey(d)] : []);
+  const declined = [...new Set(keys)].filter((key) => key !== "");
   return {
     goal: goalOf(o.goal),
     proposedGoal: proposedOf(o.proposedGoal),
@@ -6721,7 +6768,9 @@ function upgradeStatus(saved) {
   const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
   const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
-  const askSubjects = Object.fromEntries(savedLinks.filter((e) => typeof e[1] === "string"));
+  const goal = goalFields(o, new Set(subjects.map((s) => s.id)));
+  const dropped = droppedMilestoneIds(goal.milestones);
+  const askSubjects = Object.fromEntries(savedLinks.filter((e) => typeof e[1] === "string" && !dropped.has(e[1])));
   const look = o.look;
   const lookAt = time2(look?.startedAt);
   return {
@@ -6733,7 +6782,7 @@ function upgradeStatus(saved) {
     nextChildId: Math.max(time2(o.nextChildId) ?? 1, children.length + 1),
     lastLookAt: time2(o.lastLookAt),
     look: lookAt === null ? null : { startedAt: lookAt },
-    ...goalFields(o, new Set(subjects.map((s) => s.id)))
+    ...goal
   };
 }
 
@@ -6935,6 +6984,8 @@ function emptySession() {
       turnsApplied: 0,
       ledgerState: "current",
       hasDroppedReply: false,
+      failedAttempts: 0,
+      isConversationUnreadable: false,
       isUpdating: false,
       isTurnRunning: false,
       turnStartedAt: null,
@@ -8064,18 +8115,22 @@ function applied(s, parsed, now, promptAt) {
     return {
       ...s,
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
-      presence: { ...s.presence, ledgerState: "failed" }
+      presence: { ...s.presence, ledgerState: "failed", failedAttempts: s.presence.failedAttempts + 1 }
     };
   const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger;
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
+  const isCurrent = !hasDroppedReply;
+  const failedAttempts = parsed ? s.presence.failedAttempts : s.presence.failedAttempts + 1;
   return linkDialogs({
     ...s,
     ledger,
     pending: s.pending.slice(1),
     presence: {
       ...s.presence,
-      ledgerState: hasDroppedReply ? "failed" : "current",
+      ledgerState: isCurrent ? "current" : "failed",
       hasDroppedReply,
+      failedAttempts: isCurrent ? 0 : failedAttempts,
+      isConversationUnreadable: isCurrent ? false : s.presence.isConversationUnreadable,
       turnsApplied: Math.max(s.presence.turnsApplied, next.turnsStarted)
     }
   });
@@ -8151,12 +8206,20 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       s.merged = null;
     }
   };
+  const unfold = (s) => {
+    const target = s.into === null ? undefined : o.subjects.find((x) => x.id === s.into);
+    if (target?.merged)
+      target.merged = target.merged.split(", ").filter((name) => name !== s.name).join(", ") || null;
+    s.into = null;
+  };
   const set = (s, status, text) => {
     const isReworded = s.status === status && hasSameWords(s.text, text);
     if (isReworded)
       return;
     s.status = status;
     s.text = clipWords(text, TEXT_KEPT);
+    s.closedAt = null;
+    unfold(s);
     forgetSeenWas(s);
     s.changedAt = now;
   };
@@ -8180,7 +8243,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     else if (op.kind === "link") {
       const child = o.children.find((c) => c.id === op.ref);
       const subject = find(op.subject);
-      const milestone = subject ? null : findMilestone(o, op.subject);
+      const milestone = subject ? null : linkableMilestone(o, op.subject);
       if (child && subject)
         child.subjectId = subject.id;
       else if (subject && askIds.has(op.ref))
@@ -8218,7 +8281,10 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       if (op.kind === "set")
         set(s, op.status, op.text);
       else if (op.kind === "done") {
+        if (s.status === "done")
+          continue;
         s.status = "done";
+        unfold(s);
         if (op.text)
           s.text = clipWords(op.text, TEXT_KEPT);
         forgetSeenWas(s);
@@ -8329,6 +8395,8 @@ function appliedCatchUp(s, begun, parsed, now) {
       ...s.presence,
       ledgerState: parsed ? "current" : "failed",
       hasDroppedReply: parsed ? false : s.presence.hasDroppedReply,
+      failedAttempts: parsed ? 0 : s.presence.failedAttempts + 1,
+      isConversationUnreadable: false,
       turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted)
     }
   });
@@ -8758,6 +8826,7 @@ async function runUpdates(host) {
               const reply = await host.catchUp(s).catch(() => ({ kind: "failed" }));
               if (reply.kind === "unreadable") {
                 canCatchUp = false;
+                await host.update((x) => ({ ...x, presence: { ...x.presence, isConversationUnreadable: true } }));
                 continue;
               }
               const parsed = reply.kind === "reply" ? parseReply(reply.text, reply.source) : null;
@@ -8914,7 +8983,7 @@ function demoSource(deps) {
   const changed = () => listeners.forEach((l) => l());
   return {
     screen: async (holds) => ({
-      view: sessionView(state, deps.now(), deps.settleWindowMs, true, holds),
+      view: sessionView(state, deps.now(), deps.settleWindowMs, holds),
       modelName: deps.modelName,
       isGhMissing: false,
       isFetchingPrs: false,
@@ -9469,7 +9538,7 @@ function panelCalls(context, sessions) {
       const id = sessionIdOf(ctx);
       const s = await readState(dir, id);
       return {
-        view: sessionView(s, deps.now(), deps.settleWindowMs, true, holds),
+        view: sessionView(s, deps.now(), deps.settleWindowMs, holds),
         modelName: modelNameOf(ctx),
         isGhMissing: memory.isGhMissing,
         isFetchingPrs: prFetches.isFetching(id),
@@ -9638,9 +9707,9 @@ function sessionCalls(context) {
       return;
     deps.background(reportToHerdr(run, async () => {
       const s = await readState(dir, id);
-      const view = sessionView(s, deps.now(), deps.settleWindowMs, true);
+      const view = sessionView(s, deps.now(), deps.settleWindowMs);
       return { pane, tokens: herdrTokens(s.ledger, s.stop, view, []) };
-    }));
+    }, deps.after));
   }
   const resultsOrder = orderedKeys();
   function hostFor(ctx) {
@@ -9828,7 +9897,7 @@ function turnHandlers(context, sessions) {
     if (id !== memory.shownId || !pane)
       return;
     memory.shownId = null;
-    await reportToHerdr(run, async () => ({ pane, tokens: CLEARED_TOKENS }));
+    await reportToHerdr(run, async () => ({ pane, tokens: CLEARED_TOKENS }), deps.after);
   };
   const onBeforeAgentStart = async (event, ctx) => {
     if (isUnattended(ctx))
@@ -9999,6 +10068,7 @@ var defaultDeps = {
   background: (work) => void work.catch(() => {
     return;
   }),
+  after: (ms, fn) => void setTimeout(fn, ms).unref(),
   isUsageLimit: isUsageLimitOutcome,
   herdrPane: process.env.HERDR_PANE_ID || null
 };

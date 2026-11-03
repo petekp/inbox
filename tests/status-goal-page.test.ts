@@ -156,7 +156,7 @@ test('a typed goal waits for its milestones, and a goal whose milestones are all
 test('an ask linked to a milestone names it as what it holds up, and milestones made with the goal draw as unchanged', () => {
   const o = { ...after(withGoal(), 'LINK: i1 | m3', 30, new Set(['i1'])), lastLookAt: 15 }
   const held = { ...emptySession(), ledger: { ...EMPTY, items: [askItem('i1')], overview: o } }
-  const view = sessionView(held, 40, 0, true, NO_HOLDS)
+  const view = sessionView(held, 40, 0, NO_HOLDS)
 
   expect(allRows(view).find(r => r.id === 'i1')?.holdsUpLine).toBe('Holds up Demo script')
   expect(view.statusPage.goal?.milestones.map(m => m.isChanged)).toEqual([false, false, false])

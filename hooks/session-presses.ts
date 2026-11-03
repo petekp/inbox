@@ -32,7 +32,7 @@ type DrawnWith = { settleWindowMs: number; holds: Holds }
  */
 function isRepeatWhileOut(s: Session, p: RowPress | PrPress, at: number, drawn: DrawnWith): boolean {
   const rowId = pressRowId(p)
-  const view = sessionView(s, at, drawn.settleWindowMs, false, drawn.holds)
+  const view = sessionView(s, at, drawn.settleWindowMs, drawn.holds)
   const row = allRows(view).find(r => r.id === rowId)
   const last = view.lastActions[rowId]
   const state: RowState = row?.state ?? { is: 'open' }

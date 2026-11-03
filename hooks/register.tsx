@@ -210,7 +210,6 @@ import {
 } from './mod-records'
 import {
   AWAY_MS,
-  CAN_CATCH_UP,
   type Changed,
   conversation,
   currentOwner,
@@ -325,16 +324,20 @@ async function syncTheme($: EngineInterface) {
   await update($, THEME, () => (typeof theme === 'string' ? theme : ''))
 }
 
-function publishStatus($: EngineInterface, isEnding = false): Promise<void> {
-  return reportToHerdr(processRun($), async () => {
-    const pane = await $.env.get('HERDR_PANE_ID')
-    if (!pane) return null
-    if (isEnding) return { pane, tokens: CLEARED_TOKENS }
-    const [session, dialogs, now] = await Promise.all([read($, SESSION), read($, DIALOGS), $.clock.now()])
-    const view = sessionView(session, now, SETTLED_MS, CAN_CATCH_UP)
+function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
+  return reportToHerdr(
+    processRun($),
+    async () => {
+      const pane = await $.env.get('HERDR_PANE_ID')
+      if (!pane) return null
+      if (isEnding) return { pane, tokens: CLEARED_TOKENS }
+      const [session, dialogs, now] = await Promise.all([read($, SESSION), read($, DIALOGS), $.clock.now()])
+      const view = sessionView(session, now, SETTLED_MS)
 
-    return { pane, tokens: herdrTokens(session.ledger, session.stop, view, dialogs) }
-  })
+      return { pane, tokens: herdrTokens(session.ledger, session.stop, view, dialogs) }
+    },
+    (ms, fn) => void $.clock.after(ms, fn),
+  )
 }
 
 async function setStop($: EngineInterface, stop: Stop | null) {
@@ -1950,14 +1953,7 @@ async function drawnState(
 
   const isUnread = demo === null && unreadable === conversation.id
 
-  const view = sessionView(
-    drawnSession(session, drawn, demo !== null, now),
-    now,
-    SETTLED_MS,
-    CAN_CATCH_UP,
-    holds,
-    drawn.notes,
-  )
+  const view = sessionView(drawnSession(session, drawn, demo !== null, now), now, SETTLED_MS, holds, drawn.notes)
 
   return {
     ...drawn,

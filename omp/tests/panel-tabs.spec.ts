@@ -23,7 +23,7 @@ test('the selected tab draws inverse and the others draw their counts', () => {
 })
 
 test('an empty Asks tab explains itself', () => {
-  const empty = { ...screenOf(), view: sessionView(emptyState('s'), NOW, SETTLED_MS, true) }
+  const empty = { ...screenOf(), view: sessionView(emptyState('s'), NOW, SETTLED_MS) }
   expect(text(empty, INITIAL_UI)).toContain('Nothing needed')
 })
 
@@ -48,7 +48,7 @@ test('a closed row whose Done message was refused offers Undo, which presses und
   const task = s.ledger.closed.find(d => d.kind === 'task' && d.how === 'done')!
   const refused = { ...task, doneNotification: { id: 'n1', error: 'queue refused' } }
   const ledger = { ...s.ledger, closed: s.ledger.closed.map(d => (d.id === task.id ? refused : d)) }
-  const screen = screenOf({ view: sessionView({ ...s, ledger }, NOW, SETTLED_MS, true, NO_HOLDS) })
+  const screen = screenOf({ view: sessionView({ ...s, ledger }, NOW, SETTLED_MS, NO_HOLDS) })
   const ui: PanelUi = { ...INITIAL_UI, unfolded: ['task'], selectedId: `closed ${task.id}` }
   expect(text(screen, ui)).toContain('Not sent: queue refused')
   expect(handleKey(screen, ui, 'enter', NOW).press).toEqual({ id: task.id, action: 'undo' })
@@ -58,7 +58,7 @@ const findingsOnly = () => {
   const s = demoState(NOW)
 
   return screenOf({
-    view: sessionView({ ...s, ledger: { ...s.ledger, items: [], closed: [] } }, NOW, SETTLED_MS, true, NO_HOLDS),
+    view: sessionView({ ...s, ledger: { ...s.ledger, items: [], closed: [] } }, NOW, SETTLED_MS, NO_HOLDS),
   })
 }
 
@@ -67,16 +67,16 @@ test('a panel that opens on an empty Asks moves to the first tab with open rows'
 })
 
 test('rows that arrive while Asks shows only its empty text move the panel to their tab', () => {
-  const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
+  const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, NO_HOLDS) })
   const opened = followRows(empty, INITIAL_UI, {}, true, NOW)
   expect(opened.ui.tab).toBe('needsYou')
   expect(followRows(findingsOnly(), opened.ui, opened.seen, false, NOW).ui.tab).toBe('findings')
 })
 
 test('a PR that arrives while Asks shows only its empty text moves the panel to PRs', () => {
-  const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
+  const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, NO_HOLDS) })
   const opened = followRows(empty, INITIAL_UI, {}, true, NOW)
-  const withPr = screenOf({ view: sessionView(demoState(NOW), NOW, SETTLED_MS, true, NO_HOLDS) })
+  const withPr = screenOf({ view: sessionView(demoState(NOW), NOW, SETTLED_MS, NO_HOLDS) })
   const prsOnly = {
     ...withPr,
     view: { ...withPr.view, needsYou: empty.view.needsYou, findings: empty.view.findings },
@@ -92,7 +92,7 @@ test('a new row above the default selection leaves the selection on its row', ()
   const question = s.ledger.items.find(i => i.id === firstQuestion(before).id)!
   const items = [{ ...question, id: 'new-question', ask: 'A new question?' }, ...s.ledger.items]
   const after = screenOf({
-    view: sessionView({ ...s, ledger: { ...s.ledger, items } }, NOW, SETTLED_MS, true, NO_HOLDS),
+    view: sessionView({ ...s, ledger: { ...s.ledger, items } }, NOW, SETTLED_MS, NO_HOLDS),
   })
   expect(handleKey(after, INITIAL_UI, 'noop', NOW).ui.selectedId).toBe('new-question')
   expect(followRows(after, INITIAL_UI, seen, false, NOW).ui.selectedId).toBe(selectedBefore)
@@ -104,7 +104,7 @@ const tabLine = (screen: PanelScreen, ui: PanelUi, width: number) =>
     .trimEnd()
 
 test('rows that arrive while the Status page shows leave the panel on the page', () => {
-  const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
+  const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, NO_HOLDS) })
   const opened = followRows(empty, onPage, {}, true, NOW)
   expect(opened.ui).toEqual(onPage)
   expect(followRows(findingsOnly(), opened.ui, opened.seen, false, NOW).ui).toEqual(onPage)
@@ -113,7 +113,7 @@ test('rows that arrive while the Status page shows leave the panel on the page',
 for (const isNextBuild of [false, true])
   test(`on a ${isNextBuild ? 'next' : 'release'} build, a narrowing tab line drops the brackets, then names every tab by its symbol, and draws no zero count`, () => {
     const tabs = shownTabs(isNextBuild)
-    const zeros = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS), isNextBuild })
+    const zeros = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, NO_HOLDS), isNextBuild })
     for (const screen of [screenOf({ isNextBuild }), zeros])
       for (const shown of tabs) {
         const ui = { ...INITIAL_UI, tab: shown.id }

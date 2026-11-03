@@ -155,6 +155,8 @@ export function appliedCatchUp<S extends Session>(s: S, begun: Session, parsed: 
       ...s.presence,
       ledgerState: parsed ? 'current' : 'failed',
       hasDroppedReply: parsed ? false : s.presence.hasDroppedReply,
+      failedAttempts: parsed ? 0 : s.presence.failedAttempts + 1,
+      isConversationUnreadable: false,
       turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted),
     },
   })

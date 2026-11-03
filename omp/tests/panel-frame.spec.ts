@@ -49,7 +49,7 @@ test('the band shows both counts with their labels at full brightness, and how t
   expect(strip(line)).toContain(`Finds ${screen.view.findings.count}`)
   expect(dimmed.some(t => t?.includes('Asks') || t?.includes('Finds'))).toBe(false)
   expect(strip(line)).toContain('/inbox to open')
-  const empty = { ...screenOf(), view: sessionView(emptyState('s'), NOW, SETTLED_MS, true) }
+  const empty = { ...screenOf(), view: sessionView(emptyState('s'), NOW, SETTLED_MS) }
   expect([...bandLines(empty, 80, NOW, style)[0]!.matchAll(/\x1b\[2m(.*?)\x1b\[22m/g)].map(m => m[1])).toContain(
     'Nothing needed',
   )
