@@ -14,7 +14,17 @@ import type { HooksTrust } from './hook-trust'
 import { makeCatchUpOnOpen } from './server-catch-up'
 import { makeDemo } from './server-demo'
 import { makeSessionHost } from './server-host'
-import { holdsOf, sessionOf, shownTabOf, stamped, TAB_ADDRESS, TAB_MIME, TOOLS, turnOf } from './server-tools'
+import {
+  holdsOf,
+  sessionOf,
+  shownRowsOf,
+  shownTabOf,
+  stamped,
+  TAB_ADDRESS,
+  TAB_MIME,
+  TOOLS,
+  turnOf,
+} from './server-tools'
 import { makeHooksTrustNow } from './server-trust'
 import { pruneSessions, readState, updateState } from './state'
 import type { SessionState } from './state'
@@ -129,7 +139,8 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         const s = await updateState(dir, id, s => {
           const shownTab = drawnTabOf(sentTab ?? s.shownTab, deps.isNextBuild === true)
 
-          return { ...withHolds(lookOnView(s, shownTab, now()), holds), tabSeenAt: now(), shownTab }
+          const looked = lookOnView(s, shownTab, now(), shownRowsOf(args))
+          return { ...withHolds(looked, holds), tabSeenAt: now(), shownTab }
         })
         fetchPrsWhenDue(id, s)
         checkDelegatesWhenDue(id, s)

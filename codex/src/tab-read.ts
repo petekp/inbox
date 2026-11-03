@@ -12,6 +12,7 @@ import { later, callTool, READ_TIMEOUT_MS } from './tab-host'
 import { drawIn } from './tab-motion'
 import { follow, tabWaits } from './tab-selection'
 import { PAGE, swapPage } from './tab-swap'
+import { takeShownRows } from './tab-shown'
 
 export function applyView(next: View, seq: number) {
   if (tabState.isDisposed || seq < tabState.shown) return
@@ -42,7 +43,7 @@ export async function read() {
   try {
     const next = await callTool<View>(
       'inbox_view',
-      { demo: tabState.isDemo, tab: tabState.tab, ...holds() },
+      { demo: tabState.isDemo, tab: tabState.tab, ...holds(), shownRows: takeShownRows() },
       READ_TIMEOUT_MS,
     )
     if (generation !== tabState.viewGeneration || seq < tabState.shown) return

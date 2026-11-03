@@ -63,6 +63,8 @@ export type SessionState = Session & {
   /** The inbox model's last failed call. Null until a call fails. */
   lastModelFailure: ModelFailure | null
   tabSeenAt: number
+  /** When the Inbox tab last had each Status subject row on screen in the look under way, by the row's id. Codex only. */
+  lookRows: Record<string, number>
   /** The tab the Inbox tab last showed, from its latest view request. Codex only. */
   shownTab: ShownTab
   heard: Heard
@@ -127,6 +129,7 @@ export function emptyState(sessionId: string): SessionState {
     lastModelFailure: null,
     ...emptySession(),
     tabSeenAt: 0,
+    lookRows: {},
     shownTab: 'needsYou',
     heard: NOTHING_HEARD,
     coveredTurn: null,

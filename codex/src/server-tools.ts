@@ -41,6 +41,7 @@ export const TOOLS = [
         replies: { type: 'object' },
         discarded: { type: 'object' },
         shownSince: { type: 'number' },
+        shownRows: { type: 'object' },
       },
     },
     _meta: {
@@ -77,14 +78,20 @@ export const TOOLS = [
  * The tab's replies in progress and discarded holds, each a time by row id, and when the tab began showing its tab.
  * Anything else in the arguments is dropped.
  */
-export function holdsOf(args: Record<string, unknown>): Holds {
-  const times = (raw: unknown): Record<string, number> =>
-    typeof raw !== 'object' || raw === null
-      ? {}
-      : Object.fromEntries(
-          Object.entries(raw).filter((e): e is [string, number] => typeof e[1] === 'number' && Number.isFinite(e[1])),
-        )
+function times(raw: unknown): Record<string, number> {
+  return typeof raw !== 'object' || raw === null
+    ? {}
+    : Object.fromEntries(
+        Object.entries(raw).filter((e): e is [string, number] => typeof e[1] === 'number' && Number.isFinite(e[1])),
+      )
+}
 
+/** When the tab last had each Status subject row on screen since its last request, by the row's id. */
+export function shownRowsOf(args: Record<string, unknown>): Record<string, number> {
+  return times(args.shownRows)
+}
+
+export function holdsOf(args: Record<string, unknown>): Holds {
   const shownSince = typeof args.shownSince === 'number' && Number.isFinite(args.shownSince) ? args.shownSince : null
 
   return { replies: times(args.replies), discarded: times(args.discarded), shownSince }

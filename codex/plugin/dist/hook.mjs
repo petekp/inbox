@@ -75,6 +75,7 @@ var EMPTY_SESSION_STATUS = {
   nextId: 1,
   nextChildId: 1,
   lastLookAt: null,
+  missedInLastLook: {},
   look: null,
   goal: null,
   proposedGoal: null,
@@ -397,6 +398,10 @@ function fromLists(o) {
     lastLookAt
   };
 }
+function missedOf(saved, ids) {
+  const entries = typeof saved === "object" && saved !== null ? Object.entries(saved) : [];
+  return Object.fromEntries(entries.filter(([id, at]) => ids.has(id) && (at === null || time2(at) !== null)));
+}
 function upgradeStatus(saved) {
   const o = saved;
   if (typeof o !== "object" || o === null) return null;
@@ -422,6 +427,7 @@ function upgradeStatus(saved) {
     nextId: Math.max(time2(o.nextId) ?? 1, subjects.length + 1),
     nextChildId: Math.max(time2(o.nextChildId) ?? 1, children.length + 1),
     lastLookAt: time2(o.lastLookAt),
+    missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map((s) => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
     ...goal
   };
@@ -1067,12 +1073,18 @@ function childEnded(o, ref, at) {
   return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
 }
 function subjectTouched(o, id, at) {
-  const isSeen = (s) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
-  const touched = (s) => isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
+  const touched = (s) => isSubjectSeen(o, s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
   return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
 }
 function childActive(o, ref, at) {
   return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
+}
+function subjectSeenAt(o, id) {
+  return id in o.missedInLastLook ? o.missedInLastLook[id] ?? null : o.lastLookAt;
+}
+function isSubjectSeen(o, s) {
+  const seenAt = subjectSeenAt(o, s.id);
+  return seenAt !== null && s.changedAt <= seenAt;
 }
 
 // ../hooks/status-goal-page.ts
@@ -1245,7 +1257,7 @@ function statusPage(s, now) {
   const o = s.ledger.overview;
   const look = o?.lastLookAt ?? null;
   const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
-  const isNew = (x) => look === null || x.changedAt > look;
+  const isNew = (x) => o === null || !isSubjectSeen(o, x);
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
   const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
@@ -2434,6 +2446,7 @@ function emptyState(sessionId) {
     lastModelFailure: null,
     ...emptySession(),
     tabSeenAt: 0,
+    lookRows: {},
     shownTab: "needsYou",
     heard: NOTHING_HEARD,
     coveredTurn: null,
