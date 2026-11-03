@@ -151,19 +151,28 @@ test('an activity note or an ask result still settles when the session file cann
   expect(await call('tool_result', { toolName: 'ask', input: {}, content: [], isError: false })).toBeUndefined()
 })
 
-test('an ask dialog becomes turn activity with the answer and the recommended option', async () => {
+test('an ask dialog becomes turn activity with the answer, and marks only a recommended index that names an option', async () => {
   createInbox(pi(), deps())
   await prompt('hello')
-  const input = {
-    questions: [{ question: 'Node or Python?', options: [{ label: 'Node' }, { label: 'Python' }], recommended: 1 }],
-  }
-  await call('tool_result', {
-    toolName: 'ask',
-    input,
-    content: [{ type: 'text', text: 'User selected: Node' }],
-    isError: false,
-  })
+  const options = [{ label: 'Node' }, { label: 'Python' }]
+  const ask = async (questions: unknown[]) =>
+    call('tool_result', {
+      toolName: 'ask',
+      input: { questions },
+      content: [{ type: 'text', text: 'User selected: Node' }],
+      isError: false,
+    })
+  await ask([
+    { question: 'Index?', options, recommended: 1 },
+    { question: 'String?', options, recommended: '1' },
+    { question: 'Past the end?', options, recommended: 2 },
+  ])
+  await ask([
+    { question: 'Negative?', options, recommended: -1 },
+    { question: 'Marked?', options: [{ label: 'Node' }, { label: 'Python (Recommended)' }], recommended: 1 },
+  ])
   expect(state().turn.activity).toEqual([
-    'asked the user in a dialog: "Node or Python?" (options: Node / Python (recommended)); answer: User selected: Node',
+    'asked the user in a dialog: "Index?" (options: Node / Python (recommended)); "String?" (options: Node / Python); "Past the end?" (options: Node / Python); answer: User selected: Node',
+    'asked the user in a dialog: "Negative?" (options: Node / Python); "Marked?" (options: Node / Python (recommended)); answer: User selected: Node',
   ])
 })
