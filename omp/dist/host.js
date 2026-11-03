@@ -1193,10 +1193,11 @@ function moveMilestone(o, m, op, now) {
 function addMilestone(o, op, now) {
   const known = findMilestone(o, op.name);
   if (known) {
+    const text = op.text || known.text;
     if (op.status === "done" || op.status === "dropped")
-      moveMilestone(o, known, op.status === "done" ? { kind: "done", ref: known.id, text: op.text } : { kind: "drop", ref: known.id, why: op.text, into: null }, now);
+      moveMilestone(o, known, op.status === "done" ? { kind: "done", ref: known.id, text } : { kind: "drop", ref: known.id, why: text, into: null }, now);
     else
-      moveMilestone(o, known, { kind: "set", ref: known.id, status: op.status, text: op.text }, now);
+      moveMilestone(o, known, { kind: "set", ref: known.id, status: op.status, text }, now);
     return o;
   }
   const isFull = !o.goal.isAwaitingMilestones && o.milestones.filter((m) => m.status !== "dropped").length >= MILESTONES_MAX;
@@ -1212,6 +1213,13 @@ function addMilestone(o, op, now) {
     closedAt: op.status === "done" || op.status === "dropped" ? now : null
   };
   return { ...o, nextMilestoneId: o.nextMilestoneId + 1, milestones: [...o.milestones, m] };
+}
+function withRestatedGoalAsMilestones(o, ops, readSetAt) {
+  const g = o?.goal;
+  const isReadJustSet = g != null && g.isAwaitingMilestones && readSetAt === g.setAt;
+  if (!isReadJustSet)
+    return ops;
+  return ops.flatMap((op) => op.kind === "goal" && restatesGoal(clipWords(op.text, DESCRIPTION_KEPT), g.text) ? op.milestones.map((m) => ({ kind: "milestone", status: m.status, name: m.name, text: "" })) : [op]);
 }
 function applyGoalOp(o, op, now, findSubject) {
   if (op.kind === "goal") {
@@ -8230,7 +8238,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     if (m)
       named.add(m.id);
   };
-  const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
+  const ordered = withRestatedGoalAsMilestones(last, ops, readSetAt).map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
   for (const { op } of ordered) {
     if (op.kind === "none")
       continue;

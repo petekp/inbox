@@ -18,6 +18,7 @@ import {
   linkableMilestone,
   moveMilestone,
   settleGoal,
+  withRestatedGoalAsMilestones,
 } from './status-goal-ops'
 
 function isUnderWay(s: Pick<Subject, 'status'>): boolean {
@@ -107,7 +108,8 @@ const OP_ORDER: Record<Op['kind'], number> = {
 
 /**
  * The list after `ops`, applied at `now`. `askIds` are the open asks: a LINK may name one, and the links of the others
- * go. A line that names an id or a name the list does not hold, or an ask that is not open, changes nothing.
+ * go. A line that names an id or a name the list does not hold, or an ask that is not open, changes nothing. A GOAL
+ * line that restates a goal just set gives its milestones, so the SERVES lines that name them link.
  */
 export function applyOps(
   last: SessionStatus | null,
@@ -162,7 +164,9 @@ export function applyOps(
   const markNamed = (m: Milestone | null) => {
     if (m) named.add(m.id)
   }
-  const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
+  const ordered = withRestatedGoalAsMilestones(last, ops, readSetAt)
+    .map((op, n) => ({ op, n }))
+    .sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
   for (const { op } of ordered) {
     if (op.kind === 'none') continue
     if (op.kind === 'goal' || op.kind === 'milestone' || op.kind === 'serves') {

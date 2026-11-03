@@ -117,19 +117,21 @@ export function moveMilestone(
   m.changedAt = now
 }
 
+/** A MILESTONE line for a milestone the goal holds moves it, and one with no text keeps the text it has. */
 function addMilestone(o: SessionStatus, op: Extract<Op, { kind: 'milestone' }>, now: number): SessionStatus {
   const known = findMilestone(o, op.name)
   if (known) {
+    const text = op.text || known.text
     if (op.status === 'done' || op.status === 'dropped')
       moveMilestone(
         o,
         known,
         op.status === 'done'
-          ? { kind: 'done', ref: known.id, text: op.text }
-          : { kind: 'drop', ref: known.id, why: op.text, into: null },
+          ? { kind: 'done', ref: known.id, text }
+          : { kind: 'drop', ref: known.id, why: text, into: null },
         now,
       )
-    else moveMilestone(o, known, { kind: 'set', ref: known.id, status: op.status, text: op.text }, now)
+    else moveMilestone(o, known, { kind: 'set', ref: known.id, status: op.status, text }, now)
     return o
   }
   const isFull =
@@ -146,6 +148,22 @@ function addMilestone(o: SessionStatus, op: Extract<Op, { kind: 'milestone' }>, 
   }
 
   return { ...o, nextMilestoneId: o.nextMilestoneId + 1, milestones: [...o.milestones, m] }
+}
+
+/**
+ * The answer with each GOAL line that restates a goal just set, from a call that read that goal, read as MILESTONE
+ * lines for its milestones. The call meant them as the goal's milestones, and the goal stays as the person set it.
+ */
+export function withRestatedGoalAsMilestones(o: SessionStatus | null, ops: Op[], readSetAt: number | null): Op[] {
+  const g = o?.goal
+  const isReadJustSet = g != null && g.isAwaitingMilestones && readSetAt === g.setAt
+  if (!isReadJustSet) return ops
+
+  return ops.flatMap(op =>
+    op.kind === 'goal' && restatesGoal(clipWords(op.text, DESCRIPTION_KEPT), g.text)
+      ? op.milestones.map(m => ({ kind: 'milestone' as const, status: m.status, name: m.name, text: '' }))
+      : [op],
+  )
 }
 
 /**
