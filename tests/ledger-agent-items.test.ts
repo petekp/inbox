@@ -81,13 +81,24 @@ describe('items the agent recorded', () => {
         .personLine,
     ).toBe('Opportunity: Cache the token')
 
-    const closed = recordClose(CLAUDE_CODE, found.ledger, { id: 'i1', answer: 'Redis' }, 1400)
+    const closed = recordClose(CLAUDE_CODE, found.ledger, { id: 'i1', answer: 'Redis' }, 1400, {
+      lastActions: {},
+      turnStartedAt: null,
+    })
     expect(closed.personLine).toBe('Closed: Which cache should the API use?')
-    expect(recordClose(CLAUDE_CODE, closed.ledger, { id: 'i1', answer: 'Redis' }, 1500).personLine).toBeNull()
+    expect(
+      recordClose(CLAUDE_CODE, closed.ledger, { id: 'i1', answer: 'Redis' }, 1500, {
+        lastActions: {},
+        turnStartedAt: null,
+      }).personLine,
+    ).toBeNull()
     const findingId = found.ledger.findings[0]!.id
-    expect(recordClose(CLAUDE_CODE, found.ledger, { id: findingId, reason: 'fixed' }, 1400).personLine).toBe(
-      'Closed: Retry loop never backs off',
-    )
+    expect(
+      recordClose(CLAUDE_CODE, found.ledger, { id: findingId, reason: 'fixed' }, 1400, {
+        lastActions: {},
+        turnStartedAt: null,
+      }).personLine,
+    ).toBe('Closed: Retry loop never backs off')
   })
 
   test('the agent can record again what it closed, but not what the person or the update closed', () => {

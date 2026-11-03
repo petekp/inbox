@@ -33,7 +33,13 @@ test('the tab draws a settled row while it shows the tab the row closed in, and 
 
 test('a row Codex closes while the person types a reply stays held in place, out of the count and the Closed fold, Discard folds it at once, and its reply sends and settles it as Replied', () => {
   const s = withItems()
-  const closed = { ...s, ledger: recordClose(CODEX, s.ledger, { id: 'i1', reason: 'settled in chat' }, 50).ledger }
+  const closed = {
+    ...s,
+    ledger: recordClose(CODEX, s.ledger, { id: 'i1', reason: 'settled in chat' }, 50, {
+      lastActions: {},
+      turnStartedAt: null,
+    }).ledger,
+  }
   const held = viewOf(closed, 50 + SETTLE_WINDOW_MS + 1, { ...NO_HOLDS, replies: { i1: 40 } }).needsYou
   assert.deepEqual(
     held.questions.map(r => [r.id, r.state, r.feedback, r.actions.map(a => [a.label, a.kind])]),
@@ -108,7 +114,10 @@ test('a held finding’s reply sends what a reply to the open finding sends, and
     { kind: 'finding', finding_kind: 'issue', title: 'No lint script', detail: 'Only tests run.' },
     10,
   ).ledger
-  const closed = recordClose(CODEX, recorded, { id: 'f3', reason: 'added one' }, 50).ledger
+  const closed = recordClose(CODEX, recorded, { id: 'f3', reason: 'added one' }, 50, {
+    lastActions: {},
+    turnStartedAt: null,
+  }).ledger
   const r = applyPress(
     closed,
     undefined,
@@ -146,14 +155,26 @@ test('a held finding’s reply sends what a reply to the open finding sends, and
 })
 
 test('Codex closing an item reads as Codex in its outcome', () => {
-  const r = recordClose(CODEX, withItems().ledger, { id: 'i1', reason: 'no longer applies' }, 50)
+  const r = recordClose(CODEX, withItems().ledger, { id: 'i1', reason: 'no longer applies' }, 50, {
+    lastActions: {},
+    turnStartedAt: null,
+  })
   assert.equal(r.ledger.closed[0]?.outcome, 'closed by Codex: no longer applies')
   assert.equal(
-    recordClose(CODEX, withItems().ledger, { id: 'i9', reason: 'x' }, 50).result.startsWith('Not closed'),
+    recordClose(CODEX, withItems().ledger, { id: 'i9', reason: 'x' }, 50, {
+      lastActions: {},
+      turnStartedAt: null,
+    }).result.startsWith('Not closed'),
     true,
   )
-  const closed = recordClose(CODEX, withItems().ledger, { id: 'i1', reason: 'a' }, 50)
-  const again = recordClose(CODEX, closed.ledger, { id: 'i1', answer: 'b' }, 60)
+  const closed = recordClose(CODEX, withItems().ledger, { id: 'i1', reason: 'a' }, 50, {
+    lastActions: {},
+    turnStartedAt: null,
+  })
+  const again = recordClose(CODEX, closed.ledger, { id: 'i1', answer: 'b' }, 60, {
+    lastActions: {},
+    turnStartedAt: null,
+  })
   assert.equal(again.result, 'Already closed: you closed it earlier.')
   assert.equal(again.ledger, closed.ledger)
 })

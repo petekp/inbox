@@ -6,8 +6,8 @@ import { readCases } from './harness'
 
 /**
  * Checks the eval case files with no model calls: every saved ledger loads through `upgradeLedger` with its items,
- * findings and Status, and every agent case after a Compare press checks that the agent closes nothing. Prints each
- * problem and exits 1 when there is one.
+ * findings and Status, and every agent case after a Compare press gives that press and checks that no close of the
+ * agent's takes effect. Prints each problem and exits 1 when there is one.
  */
 const root = process.argv[2] ?? process.cwd()
 const read = (name: string) => readCases<Record<string, any>>(join(root, 'evals', name)).cases
@@ -39,9 +39,16 @@ for (const c of read('agent-cases')) {
   checkLedger(`agent-cases ${c.name} toolLedger`, c.toolLedger)
   checkToolOrder(`agent-cases ${c.name}`, c.toolLedger ?? c.ledger)
   const isAfterCompare = /\bpressed Compare\b/.test(c.prompt)
-  const checksNoClose = (c.checks as Record<string, unknown>[]).some(k => k.calls === 'close' && k.count === 0)
+  const checksNoClose = (c.checks as Record<string, unknown>[]).some(
+    k => k.calls === 'close' && k.count === 0 && (k.result === undefined || k.result === '^Closed'),
+  )
   if (isAfterCompare && !checksNoClose)
-    problems.push(`agent-cases ${c.name}: a Compare case must check that the agent makes no close call`)
+    problems.push(`agent-cases ${c.name}: a Compare case must check that no close of the agent's takes effect`)
+  if (
+    isAfterCompare &&
+    !Object.values((c.lastActions ?? {}) as Record<string, { action?: unknown }>).some(a => a.action === 'compare')
+  )
+    problems.push(`agent-cases ${c.name}: a Compare case must give the Compare press in lastActions`)
 }
 
 for (const p of problems) console.log(p)

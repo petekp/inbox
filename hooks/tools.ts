@@ -4,7 +4,7 @@ import { addAgentItem, addFinding } from './ledger-update'
 import { stepHelp } from './reply-parse'
 import type { Host } from './model-text'
 import { MAX_ORDERED_PRS, tabPrs } from './pr-fetch'
-import type { Closed, Help, Ledger } from '../types'
+import type { Closed, Help, LastAction, Ledger } from '../types'
 
 const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'
 
@@ -131,6 +131,9 @@ export function isAgentTool(name: string): name is AgentTool {
   return (AGENT_TOOLS as readonly string[]).includes(name)
 }
 
+/** The person's latest press on each row, and when the running turn started, or null when the host did not say. */
+export type Presses = { lastActions: Record<string, LastAction>; turnStartedAt: number | null }
+
 /** The answer to a call of one of `agentTools`. */
 export function toolAnswer(
   host: Host,
@@ -138,12 +141,13 @@ export function toolAnswer(
   tool: AgentTool,
   input: Record<string, unknown>,
   now: number,
+  presses: Presses,
 ): ToolAnswer {
   switch (tool) {
     case 'record':
       return recordItem(host, ledger, input, now)
     case 'close':
-      return recordClose(host, ledger, input, now)
+      return recordClose(host, ledger, input, now, presses)
     case 'order_prs':
       return orderPrs(host, ledger, input, now)
   }
@@ -268,12 +272,32 @@ function closedHow(c: Pick<Closed, 'how' | 'outcome'>): string {
   }
 }
 
-export function recordClose(host: Host, ledger: Ledger, input: Record<string, unknown>, now: number): ToolAnswer {
+/**
+ * Whether the agent recorded `id` again this turn, after the person pressed Compare on it. That record updated the open
+ * question, so a close with a reason would only replace it with a copy.
+ */
+function isRecordedAfterCompare(ledger: Ledger, id: string, presses: Presses): boolean {
+  const item = ledger.items.find(i => i.id === id)
+  const last = presses.lastActions[id]
+  if (item?.kind !== 'question' || last?.action !== 'compare' || item.reportedAt === undefined) return false
+
+  return item.reportedAt >= Math.max(last.at, presses.turnStartedAt ?? last.at)
+}
+
+export function recordClose(
+  host: Host,
+  ledger: Ledger,
+  input: Record<string, unknown>,
+  now: number,
+  presses: Presses,
+): ToolAnswer {
   const id = cut(input.id, 80).replace(/^\[|\]$/g, '')
   const answer = cut(input.answer, 80)
   const reason = cut(input.reason, 80)
   if (id === '' || (answer === '' && reason === ''))
     return unchanged(ledger, "Not closed: give the id, and the user's answer or a reason.")
+  if (answer === '' && isRecordedAfterCompare(ledger, id, presses))
+    return unchanged(ledger, 'Not closed: your record updated this question, and it stays open for the user.')
   const r = closeByAgent(host, ledger, id, answer ? { answer } : { reason }, now)
   if (r.closed && 'item' in r.closed)
     return {

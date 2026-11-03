@@ -92,7 +92,10 @@ test('the tab moves from an empty Asks to Finds when it opens on a finding or a 
   assert.equal(followed({ ...withFinding, heard: NOTHING_HEARD }), null)
   assert.equal(followed({ ...withFinding, ledger: withItems().ledger }), null)
   assert.deepEqual(newRows(next.seen, viewOf(withFinding, 30), false).added, { needsYou: [], findings: [], prs: [] })
-  const closed = recordClose(CODEX, withFinding.ledger, { id: 'f1', reason: 'fixed' }, 30)
+  const closed = recordClose(CODEX, withFinding.ledger, { id: 'f1', reason: 'fixed' }, 30, {
+    lastActions: {},
+    turnStartedAt: null,
+  })
   const afterClose = { ...withFinding, ledger: closed.ledger }
   const settled = viewOf(afterClose, 31, { ...NO_HOLDS, shownSince: 20 })
   assert.equal(isShownEmpty(settled, 'findings', new Set(['f1']), new Set(), false), false)
