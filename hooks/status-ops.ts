@@ -135,6 +135,8 @@ export function applyOps(
     if (isReworded) return
     s.status = status
     s.text = clipWords(text, TEXT_KEPT)
+    s.closedAt = null
+    s.into = null
     forgetSeenWas(s)
     s.changedAt = now
   }
@@ -185,7 +187,9 @@ export function applyOps(
       if (!s) continue
       if (op.kind === 'set') set(s, op.status, op.text)
       else if (op.kind === 'done') {
+        if (s.status === 'done') continue
         s.status = 'done'
+        s.into = null
         if (op.text) s.text = clipWords(op.text, TEXT_KEPT)
         forgetSeenWas(s)
         s.closedAt = now

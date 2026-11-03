@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { parseStatus } from '../hooks/status'
 import { lookEnded, lookStarted, LOOK_MIN_MS, withChild } from '../hooks/status-children'
 import { applyOps, applyStatus } from '../hooks/status-ops'
-import { opsOf, NO_ASKS, after } from './status-helpers'
+import { opsOf, NO_ASKS, after, page } from './status-helpers'
 
 test('NO CHANGE keeps the list, and an empty answer or one holding prose cannot be read', () => {
   const last = after(null, 'NEW: working | Offline mode | sync queue built', 0)
@@ -132,4 +132,33 @@ test('a DROP INTO folds a subject into another, which names it, and a WAS keeps 
     was: null,
   })
   expect(foldedAfterLook.subjects[0]).toMatchObject({ merged: 'Retry limit', was: null })
+})
+
+test('a trailing period is not part of a word, so a SET that adds one rewords and a NEW that names a subject with one changes it', () => {
+  const one = after(null, 'NEW: working | Login form | tests pass', 1000)
+  const named = after(one, 'NEW: waits-on-other | Login form. | needs a review', 3000)
+
+  expect(after(one, 'SET: s1 | working | tests pass.', 3000).subjects[0]).toMatchObject({
+    text: 'tests pass',
+    changedAt: 1000,
+  })
+  expect(named.subjects).toHaveLength(1)
+  expect(named.subjects[0]).toMatchObject({ status: 'waits-on-other', changedAt: 3000 })
+  expect(after(one, 'SET: s1 | working | tests pass on 1.4.2', 3000).subjects[0]!.text).toBe('tests pass on 1.4.2')
+})
+
+test('a SET reopens a finished subject, even one folded into another, and a DONE on a done subject changes nothing', () => {
+  const two = after(null, 'NEW: working | Login form | drafted\nNEW: working | Auth flow | drafted', 100)
+  const reopened = after(after(two, 'DROP: s1 | part of auth | INTO s2', 200), 'SET: s1 | working | split out', 300)
+  const done = after(two, 'DONE: s1 | shipped', 200)
+  const seen = lookEnded(lookStarted(done, 300), 300 + LOOK_MIN_MS)
+  const folded = after(two, 'DROP: s1 | part of auth | INTO s2', 200)
+
+  expect(reopened.subjects[0]).toMatchObject({ status: 'working', closedAt: null, into: null })
+  expect(page(reopened, 400).rows.flatMap(r => (r.kind === 'subject' ? [r.name] : []))).toContain('Login form')
+  expect(after(seen, 'DONE: s1 | shipped', 1000 + LOOK_MIN_MS).subjects[0]).toMatchObject({
+    closedAt: 200,
+    changedAt: 200,
+  })
+  expect(after(folded, 'DONE: s1 | shipped', 300).subjects[0]).toMatchObject({ status: 'done', into: null })
 })

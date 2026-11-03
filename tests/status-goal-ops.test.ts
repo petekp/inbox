@@ -246,3 +246,17 @@ test("the call reads the goal, its milestones, each subject's link and the decli
     expect({ id, others: others.every(x => statusSystem([id]).includes(GOAL_PARTS[x])) }).toEqual({ id, others: true })
   }
 })
+
+test('a milestone dropped with no INTO unlinks its subjects and asks, so the call links them again', () => {
+  const asks = new Set(['i1'])
+  const linked = after(withGoal(), 'SERVES: s1 | Error messages\nSERVES: s2 | -\nLINK: i1 | m2', 30, asks)
+
+  for (const line of ['DROP: m2 | not needed', 'MILESTONE: dropped | Error messages | not needed']) {
+    const dropped = after(linked, line, 40, asks)
+    expect({ line, serves: dropped.serves, asks: dropped.askSubjects }).toEqual({
+      line,
+      serves: { s2: 'none' },
+      asks: {},
+    })
+  }
+})

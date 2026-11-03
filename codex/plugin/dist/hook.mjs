@@ -90,7 +90,8 @@ function clipWords(text2, limit) {
   return words3.length <= limit ? words3.join(" ") : `${words3.slice(0, limit).join(" ")}\u2026`;
 }
 function words(text2) {
-  return new Set((text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
+  const matches = text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? [];
+  return new Set(matches.map((w) => w.replace(/^\.+|\.+$/g, "")).filter((w) => w !== "" && !STOP_WORDS.has(w)));
 }
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
@@ -1280,6 +1281,7 @@ function statusPage(s, now) {
     isLookAtEnd: true
   };
   const lookId = (id) => look === null ? null : id;
+  const foldCtx = { ...ctx, lookId: null, running: [] };
   const rows = [
     ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
     ...partRows(top.shown, ctx, 0)
@@ -1290,7 +1292,7 @@ function statusPage(s, now) {
       id: `${prefix}done`,
       depth,
       text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: ruledRows(partRows([...done].sort(pageOrder), { ...ctx, lookId: null }, depth + 1), false)
+      rows: ruledRows(partRows([...done].sort(pageOrder), foldCtx, depth + 1), false)
     }
   ];
   const foldRows = (prefix, p, depth) => [

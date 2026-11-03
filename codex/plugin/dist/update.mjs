@@ -107,7 +107,8 @@ function clipWords(text2, limit) {
   return words3.length <= limit ? words3.join(" ") : `${words3.slice(0, limit).join(" ")}\u2026`;
 }
 function words(text2) {
-  return new Set((text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
+  const matches = text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? [];
+  return new Set(matches.map((w) => w.replace(/^\.+|\.+$/g, "")).filter((w) => w !== "" && !STOP_WORDS.has(w)));
 }
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
@@ -1383,10 +1384,13 @@ function moveMilestone(o, m, op, now) {
     m.status = "dropped";
     m.text = clipWords(op.why, TEXT_KEPT);
     m.closedAt = now;
-    if (target && target.id !== m.id) {
-      for (const [id, to] of Object.entries(o.serves)) if (to === m.id) o.serves[id] = target.id;
-      for (const [ask, to] of Object.entries(o.askSubjects)) if (to === m.id) o.askSubjects[ask] = target.id;
-    }
+    const into = target && target.id !== m.id ? target.id : null;
+    for (const links of [o.serves, o.askSubjects])
+      for (const [id, to] of Object.entries(links)) {
+        if (to !== m.id) continue;
+        if (into) links[id] = into;
+        else delete links[id];
+      }
   } else {
     forgetSeenWas(m, o.lastLookAt);
     m.was = op.text;
@@ -1826,6 +1830,7 @@ function statusPage(s, now) {
     isLookAtEnd: true
   };
   const lookId = (id) => look === null ? null : id;
+  const foldCtx = { ...ctx, lookId: null, running: [] };
   const rows = [
     ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
     ...partRows(top.shown, ctx, 0)
@@ -1836,7 +1841,7 @@ function statusPage(s, now) {
       id: `${prefix}done`,
       depth,
       text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: ruledRows(partRows([...done].sort(pageOrder), { ...ctx, lookId: null }, depth + 1), false)
+      rows: ruledRows(partRows([...done].sort(pageOrder), foldCtx, depth + 1), false)
     }
   ];
   const foldRows = (prefix, p, depth) => [
@@ -3235,6 +3240,8 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     if (isReworded) return;
     s.status = status;
     s.text = clipWords(text2, TEXT_KEPT);
+    s.closedAt = null;
+    s.into = null;
     forgetSeenWas2(s);
     s.changedAt = now;
   };
@@ -3285,7 +3292,9 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       if (!s) continue;
       if (op.kind === "set") set(s, op.status, op.text);
       else if (op.kind === "done") {
+        if (s.status === "done") continue;
         s.status = "done";
+        s.into = null;
         if (op.text) s.text = clipWords(op.text, TEXT_KEPT);
         forgetSeenWas2(s);
         s.closedAt = now;
