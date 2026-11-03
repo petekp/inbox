@@ -3,7 +3,7 @@
 
 import { toolActivity } from '../../hooks/catch-up-text'
 import { delegateRefs } from '../../hooks/children'
-import { callCommand, commandText, outputText, scriptCommand, shellLines } from './rollout-commands'
+import { callCommand, commandText, outputText, shellLines, soleScriptCommand } from './rollout-commands'
 import { record, textOf } from './rollout-rows'
 import type { RolloutRow } from './rollout-rows'
 
@@ -43,8 +43,8 @@ const SCRIPT_DECLINED = /^(?:exec_command|shell_command|shell) failed: [^\n]*Rej
 
 /** The error a code-mode script's output ends on, or '' when the script did not end on one. */
 function scriptError(output: unknown): string {
-  const parts = Array.isArray(output) ? output.map(part => textOf(record(part).text)) : [textOf(output)]
-  const isFailed = parts.length === 1 || parts[0]?.startsWith(SCRIPT_FAILED) === true
+  const parts = Array.isArray(output) ? output.map(part => textOf(record(part).text)) : []
+  const isFailed = parts.length > 1 && parts[0]?.startsWith(SCRIPT_FAILED) === true
   const last = isFailed ? (parts.at(-1) ?? '') : ''
   const prefix = SCRIPT_ERROR.exec(last)?.[0]
 
@@ -101,7 +101,7 @@ export function unranCalls(rows: RolloutRow[]): { lines: string[]; delegates: st
     let block = { commands: [] as string[], lines: [] as string[] }
     const isScript = p.type === 'custom_tool_call' && p.name === 'exec'
     if (isScript || p.type === 'function_call' || p.type === 'local_shell_call') {
-      const command = isScript ? scriptCommand(textOf(p.input)) : callCommand(p)
+      const command = isScript ? soleScriptCommand(textOf(p.input)) : callCommand(p)
       if (command !== '' && callId !== '') callCommands.set(callId, command)
     } else if (p.type === 'function_call_output') {
       const output = outputText(p.output)

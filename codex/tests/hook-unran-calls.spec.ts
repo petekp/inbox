@@ -37,15 +37,13 @@ const patchRow = (path: string, status: string) => ({
   },
 })
 
-const scriptCall = (callId: string, command: string) => ({
+const script = (callId: string, input: string) => ({
   type: 'response_item',
-  payload: {
-    type: 'custom_tool_call',
-    name: 'exec',
-    call_id: callId,
-    input: `text(await tools.exec_command({cmd:${JSON.stringify(command)}}));\n`,
-  },
+  payload: { type: 'custom_tool_call', name: 'exec', call_id: callId, input },
 })
+
+const scriptCall = (callId: string, command: string) =>
+  script(callId, `text(await tools.exec_command({cmd:${JSON.stringify(command)}}));\n`)
 
 const scriptOutput = (text: string, callId = 'c1') => {
   const [status, ...printed] = text.split('\n')
@@ -119,15 +117,7 @@ test('a command or patch the person declined leaves the ended turn activity', as
 test('a call a PreToolUse hook blocked leaves the ended turn activity, in code mode and as a direct call', async () => {
   const transcript = rollout([
     started,
-    {
-      type: 'response_item',
-      payload: {
-        type: 'custom_tool_call',
-        name: 'exec',
-        call_id: 'c1',
-        input: 'await tools.exec_command({cmd:"git status"});\nawait tools.exec_command({cmd:"git push"});\n',
-      },
-    },
+    script('c1', 'await tools.exec_command({cmd:"git status"});\nawait tools.exec_command({cmd:"git push"});\n'),
     scriptOutput('Script error: Command blocked by PreToolUse hook: pushes wait for review. Command: git push'),
     shellCall('c2', 'rm -rf build'),
     callOutput('c2', 'Command blocked by PreToolUse hook: no deletes. Command: rm -rf build'),
@@ -141,6 +131,27 @@ test('a call a PreToolUse hook blocked leaves the ended turn activity, in code m
   ])
 
   assert.deepEqual(activity, ['ran: git status'])
+})
+
+test('a declined script with two commands, or a command that is not a literal, keeps every line', async () => {
+  const transcript = rollout([
+    started,
+    script('c1', 'await tools.exec_command({cmd:"git status"});\nawait tools.exec_command({cmd:"git push"});\n'),
+    scriptOutput(SCRIPT_DECLINED, 'c1'),
+    script(
+      'c2',
+      'const c = "npm test";\nawait tools.exec_command({cmd:"npm ci"});\nawait tools.exec_command({cmd: c});\n',
+    ),
+    scriptOutput(SCRIPT_DECLINED, 'c2'),
+  ])
+  const activity = await endedActivity(transcript, [
+    bash(transcript, 'git status'),
+    bash(transcript, 'git push'),
+    bash(transcript, 'npm ci'),
+    bash(transcript, 'npm test'),
+  ])
+
+  assert.deepEqual(activity, ['ran: git status', 'ran: git push', 'ran: npm ci', 'ran: npm test'])
 })
 
 test('a command the person declined inside a code-mode script leaves the ended turn activity', async () => {

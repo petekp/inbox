@@ -61,6 +61,20 @@ const COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")/
 /** The command a code-mode `exec` script's input runs: the first `cmd:` it passes, or '' when it passes none. */
 export const scriptCommand = (input: string): string => literalValue(COMMAND_ARGUMENT.exec(input)?.[1]) ?? ''
 
+const COMMAND_KEY = /\bcmd["']?\s*:/g
+const COMMAND_ARGUMENTS = new RegExp(COMMAND_ARGUMENT.source, 'g')
+
+/**
+ * The command of a code-mode script that runs one command, or '' when its input passes several `cmd:` or one that is
+ * not a string literal.
+ */
+export function soleScriptCommand(input: string): string {
+  const literals = [...input.matchAll(COMMAND_ARGUMENTS)]
+  const isSole = literals.length === 1 && (input.match(COMMAND_KEY) ?? []).length === 1
+
+  return isSole ? (literalValue(literals[0]?.[1]) ?? '') : ''
+}
+
 export const shellLines = (command: string): string[] => {
   const line = command === '' ? null : toolActivity('Bash', { command })
 

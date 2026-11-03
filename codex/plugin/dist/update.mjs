@@ -4270,6 +4270,13 @@ var literalValue = (literal) => {
 var PATCH_ARGUMENT = /tools\.apply_patch\(\s*("(?:[^"\\]|\\.)*")/;
 var COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")/;
 var scriptCommand = (input) => literalValue(COMMAND_ARGUMENT.exec(input)?.[1]) ?? "";
+var COMMAND_KEY = /\bcmd["']?\s*:/g;
+var COMMAND_ARGUMENTS = new RegExp(COMMAND_ARGUMENT.source, "g");
+function soleScriptCommand(input) {
+  const literals = [...input.matchAll(COMMAND_ARGUMENTS)];
+  const isSole = literals.length === 1 && (input.match(COMMAND_KEY) ?? []).length === 1;
+  return isSole ? literalValue(literals[0]?.[1]) ?? "" : "";
+}
 var shellLines = (command) => {
   const line = command === "" ? null : toolActivity("Bash", { command });
   return line ? [line] : [];
@@ -4315,8 +4322,8 @@ var SCRIPT_FAILED = "Script failed\n";
 var SCRIPT_ERROR = /^Script error:\s*/;
 var SCRIPT_DECLINED = /^(?:exec_command|shell_command|shell) failed: [^\n]*Rejected\("rejected by user"\)(?:\n|$)/;
 function scriptError(output) {
-  const parts = Array.isArray(output) ? output.map((part) => textOf(record(part).text)) : [textOf(output)];
-  const isFailed = parts.length === 1 || parts[0]?.startsWith(SCRIPT_FAILED) === true;
+  const parts = Array.isArray(output) ? output.map((part) => textOf(record(part).text)) : [];
+  const isFailed = parts.length > 1 && parts[0]?.startsWith(SCRIPT_FAILED) === true;
   const last = isFailed ? parts.at(-1) ?? "" : "";
   const prefix = SCRIPT_ERROR.exec(last)?.[0];
   return prefix === void 0 ? "" : last.slice(prefix.length);
@@ -4357,7 +4364,7 @@ function unranCalls(rows) {
     let block = { commands: [], lines: [] };
     const isScript = p.type === "custom_tool_call" && p.name === "exec";
     if (isScript || p.type === "function_call" || p.type === "local_shell_call") {
-      const command = isScript ? scriptCommand(textOf(p.input)) : callCommand(p);
+      const command = isScript ? soleScriptCommand(textOf(p.input)) : callCommand(p);
       if (command !== "" && callId !== "") callCommands.set(callId, command);
     } else if (p.type === "function_call_output") {
       const output = outputText(p.output);
