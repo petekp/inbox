@@ -109,7 +109,8 @@ function clipWords(text, limit) {
   return words.length <= limit ? words.join(" ") : `${words.slice(0, limit).join(" ")}\u2026`;
 }
 function words(text) {
-  return new Set((text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
+  const matches = text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? [];
+  return new Set(matches.map((w) => w.replace(/^\.+|\.+$/g, "")).filter((w) => w !== "" && !STOP_WORDS.has(w)));
 }
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
@@ -1140,6 +1141,10 @@ function findMilestone(o, ref) {
   const key = nameKey(clipWords(ref, NAME_KEPT));
   return o.milestones.find((m) => m.id === ref) ?? o.milestones.find((m) => m.status !== "dropped" && nameKey(m.name) === key) ?? null;
 }
+function linkableMilestone(o, ref) {
+  const m = findMilestone(o, ref);
+  return m && m.status !== "dropped" ? m : null;
+}
 function forgetSeenWas(m, lastLookAt) {
   if (lastLookAt !== null && m.changedAt <= lastLookAt)
     m.was = null;
@@ -1153,23 +1158,27 @@ function moveMilestone(o, m, op, now) {
     m.text = clipWords(op.text, TEXT_KEPT);
     m.closedAt = null;
   } else if (op.kind === "done") {
+    if (m.status === "done")
+      return;
     m.status = "done";
     if (op.text)
       m.text = clipWords(op.text, TEXT_KEPT);
     m.closedAt = now;
   } else if (op.kind === "drop") {
-    const target = op.into ? findMilestone(o, op.into) : null;
+    const target = op.into ? linkableMilestone(o, op.into) : null;
     m.status = "dropped";
     m.text = clipWords(op.why, TEXT_KEPT);
     m.closedAt = now;
-    if (target && target.id !== m.id) {
-      for (const [id, to] of Object.entries(o.serves))
-        if (to === m.id)
-          o.serves[id] = target.id;
-      for (const [ask, to] of Object.entries(o.askSubjects))
-        if (to === m.id)
-          o.askSubjects[ask] = target.id;
-    }
+    const into = target && target.id !== m.id ? target.id : null;
+    for (const links of [o.serves, o.askSubjects])
+      for (const [id, to] of Object.entries(links)) {
+        if (to !== m.id)
+          continue;
+        if (into)
+          links[id] = into;
+        else
+          delete links[id];
+      }
   } else {
     forgetSeenWas(m, o.lastLookAt);
     m.was = op.text;
@@ -1217,7 +1226,7 @@ function applyGoalOp(o, op, now, findSubject) {
   if (op.kind === "milestone")
     return addMilestone(o, op, now);
   const subject = findSubject(op.subject);
-  const milestone = op.milestone === null ? null : findMilestone(o, op.milestone);
+  const milestone = op.milestone === null ? null : linkableMilestone(o, op.milestone);
   if (!subject || op.milestone !== null && !milestone)
     return o;
   return { ...o, serves: { ...o.serves, [subject.id]: milestone?.id ?? "none" } };
@@ -2001,6 +2010,7 @@ function statusPage(s, now) {
     isLookAtEnd: true
   };
   const lookId = (id) => look === null ? null : id;
+  const foldCtx = { ...ctx, lookId: null, running: [] };
   const rows = [
     ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
     ...partRows(top.shown, ctx, 0)
@@ -2011,7 +2021,7 @@ function statusPage(s, now) {
       id: `${prefix}done`,
       depth,
       text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: ruledRows(partRows([...done].sort(pageOrder), { ...ctx, lookId: null }, depth + 1), false)
+      rows: ruledRows(partRows([...done].sort(pageOrder), foldCtx, depth + 1), false)
     }
   ];
   const foldRows = (prefix, p, depth) => [
@@ -2341,24 +2351,48 @@ function herdrReportKey(pane, tokens) {
   return herdrReport(pane, tokens).join(`
 `);
 }
+var HERDR_RETRY_MS = [5000, 30000, 120000];
 function herdrReporter() {
   let sent = null;
+  let retries = 0;
+  let isRetryWaiting = false;
   let sending = Promise.resolve();
-  return (run, report) => {
-    sending = sending.then(async () => {
-      const r = await report();
-      if (!r)
-        return;
-      const key = herdrReportKey(r.pane, r.tokens);
-      if (key === sent)
-        return;
-      sent = key;
-      await run(herdrReport(r.pane, r.tokens, r.seq), { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS });
-    }).catch(() => {
+  let newest = null;
+  const retryLater = (after) => {
+    const wait = HERDR_RETRY_MS[retries];
+    if (!after || isRetryWaiting || wait === undefined)
       return;
+    isRetryWaiting = true;
+    retries++;
+    after(wait, () => {
+      isRetryWaiting = false;
+      return newest ? reportToHerdr(newest.run, newest.report, newest.after) : Promise.resolve(false);
     });
-    return sending;
   };
+  const send = async (run, report, after) => {
+    const r = await report();
+    if (!r)
+      return false;
+    const key = herdrReportKey(r.pane, r.tokens);
+    if (key === sent)
+      return true;
+    sent = null;
+    const result = await run(herdrReport(r.pane, r.tokens, r.seq), { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS }).catch(() => null);
+    const isTaken = result?.code === 0;
+    if (isTaken) {
+      sent = key;
+      retries = 0;
+    } else
+      retryLater(after);
+    return isTaken;
+  };
+  const reportToHerdr = (run, report, after) => {
+    newest = { run, report, after };
+    const result = sending.then(() => send(run, report, after)).catch(() => false);
+    sending = result;
+    return result;
+  };
+  return reportToHerdr;
 }
 
 // ../hooks/ledger-prompt.ts
@@ -6591,12 +6625,17 @@ function milestoneOf(saved) {
     closedAt: time(m.closedAt)
   };
 }
+function droppedMilestoneIds(milestones) {
+  return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
+}
 function goalFields(o, subjectIds) {
   const milestones = (Array.isArray(o.milestones) ? o.milestones : []).map(milestoneOf).filter((m) => m !== null);
-  const milestoneIds = new Set(milestones.map((m) => m.id));
+  const dropped = droppedMilestoneIds(milestones);
+  const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
-  const serves = Object.fromEntries(savedServes.filter((e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || milestoneIds.has(e[1]))));
-  const declined = Array.isArray(o.declinedGoals) ? o.declinedGoals.filter((d) => typeof d === "string") : [];
+  const serves = Object.fromEntries(savedServes.filter((e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || liveIds.has(e[1]))));
+  const keys = (Array.isArray(o.declinedGoals) ? o.declinedGoals : []).flatMap((d) => typeof d === "string" ? [nameKey(d)] : []);
+  const declined = [...new Set(keys)].filter((key) => key !== "");
   return {
     goal: goalOf(o.goal),
     proposedGoal: proposedOf(o.proposedGoal),
@@ -6720,7 +6759,9 @@ function upgradeStatus(saved) {
   const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
   const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
-  const askSubjects = Object.fromEntries(savedLinks.filter((e) => typeof e[1] === "string"));
+  const goal = goalFields(o, new Set(subjects.map((s) => s.id)));
+  const dropped = droppedMilestoneIds(goal.milestones);
+  const askSubjects = Object.fromEntries(savedLinks.filter((e) => typeof e[1] === "string" && !dropped.has(e[1])));
   const look = o.look;
   const lookAt = time2(look?.startedAt);
   return {
@@ -6732,7 +6773,7 @@ function upgradeStatus(saved) {
     nextChildId: Math.max(time2(o.nextChildId) ?? 1, children.length + 1),
     lastLookAt: time2(o.lastLookAt),
     look: lookAt === null ? null : { startedAt: lookAt },
-    ...goalFields(o, new Set(subjects.map((s) => s.id)))
+    ...goal
   };
 }
 
@@ -7894,12 +7935,20 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       s.merged = null;
     }
   };
+  const unfold = (s) => {
+    const target = s.into === null ? undefined : o.subjects.find((x) => x.id === s.into);
+    if (target?.merged)
+      target.merged = target.merged.split(", ").filter((name) => name !== s.name).join(", ") || null;
+    s.into = null;
+  };
   const set = (s, status, text) => {
     const isReworded = s.status === status && hasSameWords(s.text, text);
     if (isReworded)
       return;
     s.status = status;
     s.text = clipWords(text, TEXT_KEPT);
+    s.closedAt = null;
+    unfold(s);
     forgetSeenWas(s);
     s.changedAt = now;
   };
@@ -7923,7 +7972,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     else if (op.kind === "link") {
       const child = o.children.find((c) => c.id === op.ref);
       const subject = find(op.subject);
-      const milestone = subject ? null : findMilestone(o, op.subject);
+      const milestone = subject ? null : linkableMilestone(o, op.subject);
       if (child && subject)
         child.subjectId = subject.id;
       else if (subject && askIds.has(op.ref))
@@ -7961,7 +8010,10 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       if (op.kind === "set")
         set(s, op.status, op.text);
       else if (op.kind === "done") {
+        if (s.status === "done")
+          continue;
         s.status = "done";
+        unfold(s);
         if (op.text)
           s.text = clipWords(op.text, TEXT_KEPT);
         forgetSeenWas(s);
@@ -9380,7 +9432,7 @@ function sessionCalls(context) {
       const s = await readState(dir, id);
       const view = sessionView(s, deps.now(), deps.settleWindowMs, true);
       return { pane, tokens: herdrTokens(s.ledger, s.stop, view, []) };
-    }));
+    }, deps.after));
   }
   const resultsOrder = orderedKeys();
   function hostFor(ctx) {
@@ -9567,7 +9619,7 @@ function turnHandlers(context, sessions) {
     if (id !== memory.shownId || !pane)
       return;
     memory.shownId = null;
-    await reportToHerdr(run, async () => ({ pane, tokens: CLEARED_TOKENS }));
+    await reportToHerdr(run, async () => ({ pane, tokens: CLEARED_TOKENS }), deps.after);
   };
   const onBeforeAgentStart = async (event, ctx) => {
     if (isUnattended(ctx))
@@ -9738,6 +9790,7 @@ var defaultDeps = {
   background: (work) => void work.catch(() => {
     return;
   }),
+  after: (ms, fn) => void setTimeout(fn, ms).unref(),
   isUsageLimit: isUsageLimitOutcome,
   herdrPane: process.env.HERDR_PANE_ID || null
 };

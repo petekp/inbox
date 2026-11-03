@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
 import { upgradeStatus } from '../hooks/status-upgrade'
+import { after } from './status-helpers'
 
 test('a Status saved before subjects keeps its open work, dated at the last look, and its headline as the head', () => {
   const old = {
@@ -194,7 +195,7 @@ test('a saved goal keeps its milestones and proposal, and drops what it cannot r
       ],
       at: 6,
     },
-    declinedGoals: Array.from({ length: 12 }, (_, n) => `goal ${n}`),
+    declinedGoals: Array.from({ length: 12 }, (_, n) => `${n} goal`),
     milestones: [milestone, { id: 'm2', name: 'No time' }],
     nextMilestoneId: 1,
     serves: { s1: 'm1', s9: 'm1', s2: 'm7' },
@@ -212,7 +213,7 @@ test('a saved goal keeps its milestones and proposal, and drops what it cannot r
     milestones: [{ name: 'Import works', status: 'done' }],
     at: 6,
   })
-  expect(saved?.declinedGoals).toEqual(Array.from({ length: 10 }, (_, n) => `goal ${n + 2}`))
+  expect(saved?.declinedGoals).toEqual(Array.from({ length: 10 }, (_, n) => `${n + 2} goal`))
   expect(saved?.milestones).toEqual([milestone])
   expect(saved?.nextMilestoneId).toBe(2)
   expect(saved?.serves).toEqual({ s1: 'm1' })
@@ -221,4 +222,31 @@ test('a saved goal keeps its milestones and proposal, and drops what it cannot r
 test('a goal with no text or time is no goal', () => {
   expect(upgradeStatus({ ...EMPTY_SESSION_STATUS, goal: { text: '', setAt: 5 } })?.goal).toBeNull()
   expect(upgradeStatus({ ...EMPTY_SESSION_STATUS, goal: { text: 'Ship it' } })?.goal).toBeNull()
+})
+
+test('a saved Status loses its links to a dropped milestone, and its declined goals lose a trailing period and stay declined, the same on every load', () => {
+  const at = { was: null, changedAt: 5, closedAt: null }
+  const saved = {
+    ...EMPTY_SESSION_STATUS,
+    subjects: ['s1', 's2'].map(id => ({ id, name: id, status: 'working', text: '', createdAt: 5, ...at })),
+    goal: { text: 'Notes in the store', setAt: 5, metAt: null, was: null, isAwaitingMilestones: false },
+    milestones: [
+      { id: 'm1', name: 'Sync works', status: 'working', text: '', ...at },
+      { id: 'm2', name: 'Store review', status: 'dropped', text: 'not needed', ...at, closedAt: 6 },
+    ],
+    nextMilestoneId: 3,
+    serves: { s1: 'm1', s2: 'm2' },
+    askSubjects: { i1: 'm2', i2: 's1' },
+    declinedGoals: ['demo import ready.', 'demo import ready', 'web on beta'],
+  }
+  const once = upgradeStatus(saved)!
+  const reproposed = after(once, 'GOAL: Import ready to demo. | working Notes import; queued Demo run', 10)
+
+  expect({ serves: once.serves, asks: once.askSubjects, declined: once.declinedGoals }).toEqual({
+    serves: { s1: 'm1' },
+    asks: { i2: 's1' },
+    declined: ['demo import ready', 'beta web'],
+  })
+  expect(upgradeStatus(once)).toEqual(once)
+  expect(reproposed.proposedGoal).toBeNull()
 })

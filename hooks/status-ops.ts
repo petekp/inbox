@@ -11,7 +11,14 @@ import {
   words,
 } from './status-limits'
 import type { OpenStatus } from './status-limits'
-import { applyGoalOp, findMilestone, hasSameWords, moveMilestone, settleGoal } from './status-goal-ops'
+import {
+  applyGoalOp,
+  findMilestone,
+  hasSameWords,
+  linkableMilestone,
+  moveMilestone,
+  settleGoal,
+} from './status-goal-ops'
 
 function isUnderWay(s: Pick<Subject, 'status'>): boolean {
   return s.status === 'working' || s.status === 'waits-on-other'
@@ -130,11 +137,24 @@ export function applyOps(
       s.merged = null
     }
   }
+  /** A subject folded into another comes back out: the other no longer names it as merged. */
+  const unfold = (s: Subject) => {
+    const target = s.into === null ? undefined : o.subjects.find(x => x.id === s.into)
+    if (target?.merged)
+      target.merged =
+        target.merged
+          .split(', ')
+          .filter(name => name !== s.name)
+          .join(', ') || null
+    s.into = null
+  }
   const set = (s: Subject, status: OpenStatus, text: string) => {
     const isReworded = s.status === status && hasSameWords(s.text, text)
     if (isReworded) return
     s.status = status
     s.text = clipWords(text, TEXT_KEPT)
+    s.closedAt = null
+    unfold(s)
     forgetSeenWas(s)
     s.changedAt = now
   }
@@ -153,7 +173,7 @@ export function applyOps(
     else if (op.kind === 'link') {
       const child = o.children.find(c => c.id === op.ref)
       const subject = find(op.subject)
-      const milestone = subject ? null : findMilestone(o, op.subject)
+      const milestone = subject ? null : linkableMilestone(o, op.subject)
       if (child && subject) child.subjectId = subject.id
       else if (subject && askIds.has(op.ref)) o.askSubjects[op.ref] = subject.id
       else if (milestone && askIds.has(op.ref)) o.askSubjects[op.ref] = milestone.id
@@ -185,7 +205,9 @@ export function applyOps(
       if (!s) continue
       if (op.kind === 'set') set(s, op.status, op.text)
       else if (op.kind === 'done') {
+        if (s.status === 'done') continue
         s.status = 'done'
+        unfold(s)
         if (op.text) s.text = clipWords(op.text, TEXT_KEPT)
         forgetSeenWas(s)
         s.closedAt = now

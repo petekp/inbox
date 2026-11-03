@@ -1,5 +1,5 @@
 import type { Child, ChildKind, DelegateState, SessionStatus, StatusHead, Subject, SubjectStatus } from '../types'
-import { goalFields } from './status-upgrade-goal'
+import { droppedMilestoneIds, goalFields } from './status-upgrade-goal'
 import {
   clipWords,
   DESCRIPTION_KEPT,
@@ -151,7 +151,11 @@ export function upgradeStatus(saved: unknown): SessionStatus | null {
   const subjects = o.subjects.map(subjectOf).filter((s): s is Subject => s !== null)
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c): c is Child => c !== null) : []
   const savedLinks = typeof o.askSubjects === 'object' && o.askSubjects !== null ? Object.entries(o.askSubjects) : []
-  const askSubjects = Object.fromEntries(savedLinks.filter((e): e is [string, string] => typeof e[1] === 'string'))
+  const goal = goalFields(o, new Set(subjects.map(s => s.id)))
+  const dropped = droppedMilestoneIds(goal.milestones)
+  const askSubjects = Object.fromEntries(
+    savedLinks.filter((e): e is [string, string] => typeof e[1] === 'string' && !dropped.has(e[1])),
+  )
   const look = o.look as { startedAt?: unknown } | null | undefined
   const lookAt = time(look?.startedAt)
 
@@ -164,6 +168,6 @@ export function upgradeStatus(saved: unknown): SessionStatus | null {
     nextChildId: Math.max(time(o.nextChildId) ?? 1, children.length + 1),
     lastLookAt: time(o.lastLookAt),
     look: lookAt === null ? null : { startedAt: lookAt },
-    ...goalFields(o, new Set(subjects.map(s => s.id))),
+    ...goal,
   }
 }
