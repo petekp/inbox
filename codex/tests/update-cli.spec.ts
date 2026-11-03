@@ -10,6 +10,7 @@ import { readState, updateState } from '../src/state'
 import { codexAsk, recordModelFailure, runUpdates as runBothCalls } from '../src/update'
 import { findCli } from '../src/cli'
 import { run } from '../src/run'
+import { TIMED_OUT_CODE } from '../../hooks/gh'
 import { STATUS_SYSTEM } from '../../hooks/status-prompt'
 import { fakeRunner, tempDir } from './helpers'
 import { ex, LEDGER_ANSWER } from './update-fixtures'
@@ -159,4 +160,52 @@ test('an update whose codex command cannot start saves why as its failure beside
   assert.equal(s.lastModelFailure?.cli, cli)
   assert.equal(s.lastModelFailure?.code, -1)
   assert.match(s.lastModelFailure?.stderr ?? '', /null bytes/)
+})
+
+test('a failed update saves the signal that ended codex, the error of a codex that could not start, the timeout it ran out, which call failed and how long codex ran', async t => {
+  const dir = tempDir()
+  const personHome = tempDir()
+  const bin = tempDir()
+  t.after(() => Promise.all([dir, personHome, bin].map(d => rm(d, { recursive: true, force: true }))))
+  const killed = join(bin, 'codex')
+  writeFileSync(
+    killed,
+    [`#!${process.execPath}`, `console.error('warning: slow start')`, `process.kill(process.pid, 'SIGTERM')`].join(
+      '\n',
+    ),
+  )
+  chmodSync(killed, 0o755)
+  const timedOut = fakeRunner(() => ({ code: TIMED_OUT_CODE, stdout: '', stderr: '' })).exec
+  const failureWith = async (exec: Parameters<typeof codexAsk>[0], cli: string, system = 'ledger system') => {
+    const errors: string[] = []
+    let clock = 0
+    await codexAsk(
+      exec,
+      cli,
+      dir,
+      personHome,
+      recordModelFailure(dir, 's1', () => 7),
+      () => (clock += 40),
+    )('prompt', system, r => errors.push(r.error ?? ''))
+
+    return { ...(await readState(dir, 's1')).lastModelFailure, error: errors[0] ?? '' }
+  }
+
+  const bySignal = await failureWith(run, killed)
+  const unstartable = await failureWith(run, join(bin, 'missing-codex'))
+  const late = await failureWith(timedOut, killed, STATUS_SYSTEM)
+
+  assert.deepEqual(
+    [bySignal.code, bySignal.signal, bySignal.errorCode, bySignal.timeoutMs],
+    [-1, 'SIGTERM', null, null],
+  )
+  assert.match(bySignal.stderr ?? '', /warning: slow start/)
+  assert.match(bySignal.error, /^codex exec was ended by SIGTERM: warning: slow start/)
+  assert.deepEqual([unstartable.code, unstartable.signal, unstartable.errorCode], [-1, null, 'ENOENT'])
+  assert.match(unstartable.stderr ?? '', /ENOENT/)
+  assert.match(unstartable.error, /^codex exec failed with ENOENT/)
+  assert.deepEqual([late.code, late.signal, late.timeoutMs], [TIMED_OUT_CODE, null, 120_000])
+  assert.match(late.error, /^codex exec timed out after 120 s/)
+  assert.deepEqual([bySignal.call, late.call], ['ledger', 'status'])
+  assert.deepEqual([bySignal.elapsedMs, late.elapsedMs], [40, 40])
 })

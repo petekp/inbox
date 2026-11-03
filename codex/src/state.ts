@@ -34,9 +34,22 @@ import type { ShownTab } from '../../hooks/tabs'
 
 /**
  * A failed `codex exec` call: when it ended, the binary it ran, its exit code, and the end of its stderr. A call that
- * threw has code -1 and its error's message as `stderr`.
+ * could not start has code -1, its error's message as `stderr` and the error's code as `errorCode` when it has one. A
+ * call a signal ended has code -1 and the `signal`. A call that timed out has code -2 and the `timeoutMs` it had.
+ * `call` says whether it was the ledger call or the Status call, and `elapsedMs` how long the command ran. Records
+ * saved before these fields read null for each.
  */
-export type ModelFailure = { at: number; cli: string; code: number; stderr: string }
+export type ModelFailure = {
+  at: number
+  cli: string
+  code: number
+  stderr: string
+  signal: string | null
+  errorCode: string | null
+  timeoutMs: number | null
+  call: 'ledger' | 'status' | null
+  elapsedMs: number | null
+}
 
 export type SessionState = Session & {
   version: typeof SESSION_VERSION
@@ -126,7 +139,9 @@ export function statePath(dir: string, sessionId: string): string {
 }
 
 /** State an earlier build saved, with the keys it kept for session checks and the claim send-back. */
-type Saved = Omit<Partial<SessionState>, 'turn' | 'pending' | 'sent'> & {
+type Saved = Omit<Partial<SessionState>, 'turn' | 'pending' | 'sent' | 'lastModelFailure'> & {
+  lastModelFailure?:
+    (Omit<ModelFailure, 'signal' | 'errorCode' | 'timeoutMs' | 'call' | 'elapsedMs'> & Partial<ModelFailure>) | null
   sent?: (Omit<SessionState['sent'][number], 'row' | 'queuedId' | 'pressedAt' | 'deliveryId'> &
     Partial<SessionState['sent'][number]>)[]
   checks?: unknown
@@ -173,6 +188,9 @@ function upgraded(saved: Saved, sessionId: string): SessionState {
     }),
     shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     heard,
+    lastModelFailure: saved.lastModelFailure
+      ? { signal: null, errorCode: null, timeoutMs: null, call: null, elapsedMs: null, ...saved.lastModelFailure }
+      : null,
     coveredTurn: saved.coveredTurn !== undefined ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null),
   }
 }
