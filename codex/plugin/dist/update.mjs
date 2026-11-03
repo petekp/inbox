@@ -49,17 +49,95 @@ import {
 import { homedir as homedir2 } from "node:os";
 import { basename, dirname, isAbsolute, join as join2, resolve } from "node:path";
 
-// ../hooks/ask-match.ts
+// ../hooks/status-limits.ts
+var NAME_WORDS = 3;
+var TEXT_WORDS = 4;
+var DESCRIPTION_WORDS = 8;
+var OPEN_SUBJECTS = 6;
+var NAME_KEPT = 20;
+var TEXT_KEPT = 12;
+var DESCRIPTION_KEPT = 14;
+var ASK_READ_WORDS = 30;
+var FINISHED_READ = 10;
+var MILESTONES_MAX = 5;
+var MILESTONES_MIN = 2;
+var DECLINED_KEPT = 10;
+var CHILD_KEPT_MS = 24 * 60 * 6e4;
+var STOP_WORDS = /* @__PURE__ */ new Set([
+  "a",
+  "an",
+  "the",
+  "of",
+  "for",
+  "to",
+  "in",
+  "on",
+  "and",
+  "or",
+  "is",
+  "it",
+  "its",
+  "now",
+  "be",
+  "by",
+  "at",
+  "with"
+]);
+var NL = "\n";
+var EMPTY_SESSION_STATUS = {
+  head: null,
+  subjects: [],
+  children: [],
+  askSubjects: {},
+  nextId: 1,
+  nextChildId: 1,
+  lastLookAt: null,
+  look: null,
+  goal: null,
+  proposedGoal: null,
+  declinedGoals: [],
+  milestones: [],
+  nextMilestoneId: 1,
+  serves: {}
+};
+var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
+var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
+function clipWords(text2, limit) {
+  const words3 = text2.trim().split(/\s+/).filter(Boolean);
+  return words3.length <= limit ? words3.join(" ") : `${words3.slice(0, limit).join(" ")}\u2026`;
+}
 function words(text2) {
+  return new Set((text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
+}
+function nameKey(name) {
+  return [...words(name)].sort().join(" ");
+}
+var SUFFIXES = ["ing", "ed", "es", "s"];
+function stem(word) {
+  if (/\d/.test(word)) return word;
+  const suffix = SUFFIXES.find((s) => word.endsWith(s) && word.length - s.length >= 3) ?? "";
+  const cut = word.slice(0, word.length - suffix.length);
+  const base = cut.length > 3 && cut.endsWith("e") ? cut.slice(0, -1) : cut;
+  return base.replace(/([b-df-hj-np-tv-z])\1$/, "$1");
+}
+function stems(text2) {
+  return new Set([...words(text2)].map(stem));
+}
+function isOpen(s) {
+  return s.status !== "done" && s.status !== "dropped";
+}
+
+// ../hooks/ask-match.ts
+function words2(text2) {
   return text2.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 function recommendedOption(options, rec) {
   if (!rec) return null;
-  const named = new Set(words(rec));
+  const named = new Set(words2(rec));
   let best = null;
   for (const option of options) {
-    const w = words(option);
-    if (w.length > words(best ?? "").length && w.every((x) => named.has(x))) best = option;
+    const w = words2(option);
+    if (w.length > words2(best ?? "").length && w.every((x) => named.has(x))) best = option;
   }
   const label = (text2) => text2.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
   const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
@@ -83,16 +161,17 @@ var FILLER = /* @__PURE__ */ new Set([
   "all"
 ]);
 function keyWords(text2) {
-  return new Set(words(text2).filter((w) => new RegExp("\\p{N}", "u").test(w) || w.length > 2 && !FILLER.has(w)));
+  return new Set(words2(text2).filter((w) => new RegExp("\\p{N}", "u").test(w) || w.length > 2 && !FILLER.has(w)));
 }
 function restates(a, b) {
-  const x = keyWords(a);
-  const y = keyWords(b);
+  return sharesKeyWords(keyWords(a), keyWords(b)) ?? sameAsk(a, b);
+}
+function sharesKeyWords(x, y) {
   const fewer = Math.min(x.size, y.size);
   const shared = [...x].filter((w) => y.has(w)).length;
   const numbers = (words3) => [...words3].filter((w) => new RegExp("\\p{N}", "u").test(w)).sort().join(" ");
   if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y)) return false;
-  return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
+  return fewer >= 2 ? shared / fewer >= 0.7 : null;
 }
 var GENERIC = /* @__PURE__ */ new Set([
   "which",
@@ -143,14 +222,34 @@ var GENERIC = /* @__PURE__ */ new Set([
   "instead",
   "yet"
 ]);
+var STATES = /* @__PURE__ */ new Set(["new", "current", "existing", "old", "previous"]);
+var QUESTIONS = /* @__PURE__ */ new Set(["how", "when", "where", "why", "who", "whether"]);
+var PAST = /* @__PURE__ */ new Set(["was", "were", "did", "had"]);
+var FUTURE = /* @__PURE__ */ new Set(["will", "shall"]);
+var CONTRASTS = [
+  [STATES, STATES],
+  [QUESTIONS, QUESTIONS],
+  [PAST, FUTURE]
+];
+function contrasts(x, y) {
+  const onlyX = [...x].filter((w) => !y.has(w));
+  const onlyY = [...y].filter((w) => !x.has(w));
+  const holds = (own, group) => own.some((w) => group.has(w));
+  return CONTRASTS.some(
+    ([one, other]) => holds(onlyX, one) && holds(onlyY, other) || holds(onlyX, other) && holds(onlyY, one)
+  );
+}
 function repeatsSubject(a, b) {
   const x = keyWords(a);
   const y = keyWords(b);
-  const within = (inner, outer) => [...inner].every((w) => GENERIC.has(w) || outer.has(w));
-  return sameAsk(a, b) || restates(a, b) && (within(x, y) || within(y, x));
+  const stemsOf = (words3) => new Set([...words3].map(stem));
+  const [xStems, yStems] = [stemsOf(x), stemsOf(y)];
+  const within = (inner, outer) => [...inner].every((w) => GENERIC.has(w) || outer.has(stem(w)));
+  const isRestated = sharesKeyWords(xStems, yStems) === true;
+  return sameAsk(a, b) || isRestated && !contrasts(x, y) && (within(x, yStems) || within(y, xStems));
 }
 function sameAsk(a, b) {
-  const norm = (s) => words(s).join(" ");
+  const norm = (s) => words2(s).join(" ");
   return norm(a) !== "" && norm(a) === norm(b);
 }
 function matchOpen(items, a, sameBatch = /* @__PURE__ */ new Set()) {
@@ -265,14 +364,14 @@ function isLapsed(d) {
 }
 
 // ../hooks/text.ts
-var NL = "\n";
+var NL2 = "\n";
 var FENCE = /```[^\n]*\n([\s\S]*?)```/g;
 function codeBlocks(reply) {
   return [...reply.matchAll(FENCE)].map((m) => (m[1] ?? "").replace(/\n$/, ""));
 }
 function numberBlocks(reply) {
   let n = 0;
-  return reply.replace(FENCE, (block) => `[block ${n += 1}]${NL}${block}`);
+  return reply.replace(FENCE, (block) => `[block ${n += 1}]${NL2}${block}`);
 }
 function dash(value) {
   const v = (value ?? "").trim();
@@ -286,7 +385,7 @@ function clipLabel(text2, max) {
 }
 function clipMiddle(text2, max, head) {
   if (text2.length <= max) return text2;
-  return `${text2.slice(0, head)}${NL}\u2026[cut]${NL}${text2.slice(text2.length - (max - head))}`;
+  return `${text2.slice(0, head)}${NL2}\u2026[cut]${NL2}${text2.slice(text2.length - (max - head))}`;
 }
 var graphemes = new Intl.Segmenter(void 0, { granularity: "grapheme" });
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
@@ -300,7 +399,7 @@ function ago(ms) {
 }
 
 // ../hooks/reply-parse.ts
-var NL2 = "\n";
+var NL3 = "\n";
 var MAX_HELPS = 3;
 function readKind(kind) {
   return kind === "task" || kind === "do" ? "task" : "question";
@@ -396,7 +495,7 @@ function parseReply(text2, source = null) {
   const asks = [];
   const todos = [];
   let seen = 0;
-  const lines = text2.split(NL2);
+  const lines = text2.split(NL3);
   const newLines = [];
   for (const raw of lines.slice(lastAnswerStart(lines))) {
     const parsed = keyOf(raw);
@@ -467,7 +566,7 @@ function parseReply(text2, source = null) {
 }
 function isTakenUp(work, reply) {
   const key = [...keyWords(work)];
-  const said = new Set(words(reply ?? ""));
+  const said = new Set(words2(reply ?? ""));
   return key.length > 0 && key.filter((w) => said.has(w)).length * 2 >= key.length;
 }
 function todoAsk(work) {
@@ -602,84 +701,6 @@ function withUpdate(item, updated) {
   if (!change || item.kind !== "question") return item;
   const options = change.options ?? item.options;
   return { ...item, options, rec: restatedRec(options, item.rec, change.rec) };
-}
-
-// ../hooks/status-limits.ts
-var NAME_WORDS = 3;
-var TEXT_WORDS = 4;
-var DESCRIPTION_WORDS = 8;
-var OPEN_SUBJECTS = 6;
-var NAME_KEPT = 20;
-var TEXT_KEPT = 12;
-var DESCRIPTION_KEPT = 14;
-var ASK_READ_WORDS = 30;
-var FINISHED_READ = 10;
-var MILESTONES_MAX = 5;
-var MILESTONES_MIN = 2;
-var DECLINED_KEPT = 10;
-var CHILD_KEPT_MS = 24 * 60 * 6e4;
-var STOP_WORDS = /* @__PURE__ */ new Set([
-  "a",
-  "an",
-  "the",
-  "of",
-  "for",
-  "to",
-  "in",
-  "on",
-  "and",
-  "or",
-  "is",
-  "it",
-  "its",
-  "now",
-  "be",
-  "by",
-  "at",
-  "with"
-]);
-var NL3 = "\n";
-var EMPTY_SESSION_STATUS = {
-  head: null,
-  subjects: [],
-  children: [],
-  askSubjects: {},
-  nextId: 1,
-  nextChildId: 1,
-  lastLookAt: null,
-  look: null,
-  goal: null,
-  proposedGoal: null,
-  declinedGoals: [],
-  milestones: [],
-  nextMilestoneId: 1,
-  serves: {}
-};
-var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
-var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
-function clipWords(text2, limit) {
-  const words3 = text2.trim().split(/\s+/).filter(Boolean);
-  return words3.length <= limit ? words3.join(" ") : `${words3.slice(0, limit).join(" ")}\u2026`;
-}
-function words2(text2) {
-  return new Set((text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
-}
-function nameKey(name) {
-  return [...words2(name)].sort().join(" ");
-}
-var SUFFIXES = ["ing", "ed", "es", "s"];
-function stem(word) {
-  if (/\d/.test(word)) return word;
-  const suffix = SUFFIXES.find((s) => word.endsWith(s) && word.length - s.length >= 3) ?? "";
-  const cut = word.slice(0, word.length - suffix.length);
-  const base = cut.length > 3 && cut.endsWith("e") ? cut.slice(0, -1) : cut;
-  return base.replace(/([b-df-hj-np-tv-z])\1$/, "$1");
-}
-function stems(text2) {
-  return new Set([...words2(text2)].map(stem));
-}
-function isOpen(s) {
-  return s.status !== "done" && s.status !== "dropped";
 }
 
 // ../hooks/status-upgrade-goal.ts
@@ -1550,13 +1571,13 @@ function restatesGoal(text2, goal) {
 }
 function hasGoalMilestones(o, proposed) {
   if (o.goal === null || o.goal.isAwaitingMilestones) return false;
-  const keys = (names) => names.map(nameKey).sort().join(NL3);
+  const keys = (names) => names.map(nameKey).sort().join(NL);
   const kept = o.milestones.filter((m) => m.status !== "dropped").map((m) => m.name);
   return kept.length > 0 && keys(kept) === keys(proposed.map((m) => m.name));
 }
 function hasSameWords(a, b) {
-  const x = words2(a);
-  const y = words2(b);
+  const x = words(a);
+  const y = words(b);
   return x.size === y.size && [...x].every((w) => y.has(w));
 }
 function findMilestone(o, ref) {
@@ -1785,17 +1806,17 @@ function subjectsText(o) {
   const serves = (id) => o?.goal ? ` | ${servesText(o, id)}` : "";
   const open3 = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}${serves(s.id)}`);
   const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
-  return { open: open3.join(NL3) || "(none yet)", finished: finished.join(NL3) };
+  return { open: open3.join(NL) || "(none yet)", finished: finished.join(NL) };
 }
 function servesText(o, subjectId) {
   const to = o.serves[subjectId];
   return to === void 0 ? "?" : to === "none" ? "-" : to;
 }
 function asksText(o, asks) {
-  return asks.map((a) => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id] ?? "-"}`).join(NL3);
+  return asks.map((a) => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id] ?? "-"}`).join(NL);
 }
 function runningText(o, now) {
-  return (o?.children ?? []).filter((c) => isChildRunning(c, now)).map((c) => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? "-"}`).join(NL3);
+  return (o?.children ?? []).filter((c) => isChildRunning(c, now)).map((c) => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? "-"}`).join(NL);
 }
 
 // ../hooks/status-goal-page.ts
@@ -3078,9 +3099,9 @@ function answerWork(before, o, now) {
       (s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now
     ),
     namesClosed: (description) => {
-      const said = words2(description);
+      const said = words(description);
       return closed.some((s) => {
-        const name = [...words2(s.name)];
+        const name = [...words(s.name)];
         return name.length > 0 && name.every((w) => said.has(w));
       });
     }
@@ -3515,7 +3536,7 @@ function opOf(key, f) {
 }
 function parseStatus(text2) {
   const ops = [];
-  for (const raw of (text2 ?? "").split(NL3)) {
+  for (const raw of (text2 ?? "").split(NL)) {
     const line = raw.trim();
     if (line === "") continue;
     const m = LINE.exec(line);
