@@ -8,6 +8,7 @@ import type { IsThreadSent } from './prs'
 import type { PressState } from './feedback'
 import { checkRowId, prCheckId, prMarkId, prThreadId, RANK_AGAIN_ID, threadRowId, threadSentIn } from './pr-rows'
 import { isTracked, PR_DISMISSED_LABEL } from './pr-views'
+import { tabPrs } from './pr-fetch'
 import type { DrawnPr } from './pr-views'
 import { changedRankedPrs, RANK_AGAIN_LABEL } from './pr-order'
 import {
@@ -164,6 +165,32 @@ export function prBlockActions(
   ])
 }
 
+/** `ledger` with `refs` off the PRs tab: unlinked, and dismissed from the agent's order if it ranks them. */
+function withDismissed(ledger: Ledger, refs: string[]): Ledger {
+  const order = ledger.prOrder
+  const ranked = refs.filter(ref => order?.refs.includes(ref) && !order.dismissed.includes(ref))
+
+  return {
+    ...ledger,
+    prs: ledger.prs.filter(r => !refs.includes(r)),
+    prOrder: order && ranked.length > 0 ? { ...order, dismissed: [...order.dismissed, ...ranked] } : order,
+  }
+}
+
+/**
+ * `ledger` with a dismissed PR back on the PRs tab: linked again, and no longer dismissed from the agent's order. A
+ * ranked PR the session had not linked stays linked once the order is cleared.
+ */
+function withUndismissed(ledger: Ledger, ref: string): Ledger {
+  const order = ledger.prOrder
+
+  return {
+    ...ledger,
+    prs: [...ledger.prs, ref],
+    prOrder: order ? { ...order, dismissed: order.dismissed.filter(r => r !== ref) } : order,
+  }
+}
+
 /** Whether Dismiss merged dismisses the PR. The branch's own PR has no Dismiss, so it is left. */
 function isDismissedByMerged(pr: PrView, branchRef: string | null): boolean {
   return pr.state === 'MERGED' && pr.ref !== branchRef
@@ -217,7 +244,7 @@ export function applyPrPress(
       .map(pr => pr.ref)
     if (refs.length === 0) return stale
     return applied({
-      ledger: { ...ledger, prs: ledger.prs.filter(r => !refs.includes(r)) },
+      ledger: withDismissed(ledger, refs),
       lasts: Object.fromEntries(
         refs.map(ref => {
           const id = prMarkId(ref)
@@ -253,7 +280,7 @@ export function applyPrPress(
   if (p.action === 'pr-undo') {
     // Like an item's Undo, it does not check SETTLED_MS, so a press just after its button goes still lands.
     if (!pr || isTracked(prState, ledger, p.ref) || lastActions[markId]?.action !== 'pr-dismiss') return stale
-    return applied({ ledger: { ...ledger, prs: [...ledger.prs, p.ref] }, drop: [markId] })
+    return applied({ ledger: withUndismissed(ledger, p.ref), drop: [markId] })
   }
   if (!pr || !isTracked(prState, ledger, p.ref)) return stale
   const record = (rowId: string, kind: 'talk' | 'handoff' | 'mark', action: PrActionId, text: string) =>
@@ -322,9 +349,9 @@ export function applyPrPress(
     case 'pr-refresh':
       return local(markId, PR_REFRESH_LABEL, PR_REFRESH)
     case 'pr-dismiss':
-      if (!ledger.prs.includes(p.ref) || prState.branchRef === p.ref) return stale
+      if (!tabPrs(ledger).includes(p.ref) || prState.branchRef === p.ref) return stale
       return applied({
-        ledger: { ...ledger, prs: ledger.prs.filter(r => r !== p.ref) },
+        ledger: withDismissed(ledger, [p.ref]),
         lasts: { [markId]: record(markId, 'mark', p.action, PR_DISMISSED_LABEL) },
       })
     case 'check-fix': {

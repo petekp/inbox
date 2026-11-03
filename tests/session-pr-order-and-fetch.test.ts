@@ -22,7 +22,7 @@ const openPr = (number: number): PrView => ({
   checks: [],
 })
 
-test('an order_prs call ranks its PRs above the rest, links one the session lacks past the PR limit, ranks a merged PR no longer, keeps a dismissed PR’s place for Undo, and an empty call clears it', () => {
+test('an order_prs call ranks its PRs above the rest, tracks one the session lacks past the PR limit without linking it, ranks a merged PR no longer, keeps a dismissed PR’s place for Undo, and an empty call clears it', () => {
   const linked = Array.from({ length: MAX_PRS + 3 }, (_, n) => n + 1)
   const base = emptySession()
   const s: Session = {
@@ -40,7 +40,7 @@ test('an order_prs call ranks its PRs above the rest, links one the session lack
   )
   expect(order.personLine).toBe('PR order: Merge in this order, 3 PRs')
   expect(order.result).toContain('1 of them was not in the tab yet')
-  expect(order.state.ledger.prs.at(-1)).toBe('acme/app#20')
+  expect(order.state.ledger.prs).toEqual(s.ledger.prs)
   const fetched = withFetchedPrs(order.state, { 'acme/app#20': openPr(20) }, null, false)
   const tab = (x: Session) => sessionView(x, at + 2 * 60_000, 1000, true, NO_HOLDS).prs
   const ranks = (x: Session) => tab(x).drawn.map(d => [d.pr.number, d.rank])
@@ -101,6 +101,58 @@ test('an order_prs call ranks its PRs above the rest, links one the session lack
   const unexplained = recorded(CLAUDE_CODE, s, 'order_prs', { repo: 'acme/app', numbers: [3], label: 'Merge' }, at)
   expect(unexplained.result).toBe('Not set: give why, the reason for this order.')
   expect(unexplained.state.ledger.prOrder).toBeNull()
+})
+
+const linkedSession = (numbers: number[]): Session => {
+  const base = emptySession()
+  return {
+    ...base,
+    ledger: { ...base.ledger, prs: numbers.map(n => `acme/app#${n}`) },
+    prViews: { ...base.prViews, views: Object.fromEntries(numbers.map(n => [`acme/app#${n}`, openPr(n)])) },
+  }
+}
+
+const orderedAndFetched = (s: Session, numbers: number[], at: number): Session => {
+  const ordered = recorded(
+    CLAUDE_CODE,
+    s,
+    'order_prs',
+    { repo: 'acme/app', numbers, label: 'Review in this order', why: 'Smallest first.' },
+    at,
+  ).state
+  const views = Object.fromEntries(numbers.map(n => [`acme/app#${n}`, openPr(n)]))
+
+  return withFetchedPrs(ordered, views, null, false)
+}
+
+const drawnNumbers = (s: Session, at: number) =>
+  sessionView(s, at, 1000, true, NO_HOLDS).prs.drawn.map(d => d.pr.number)
+
+test('clearing an order takes the PRs only it ranked off the tab, keeps a ranked PR the session linked, and frees their places under the PR limit', () => {
+  const linked = Array.from({ length: MAX_PRS }, (_, n) => n + 1)
+  const s = linkedSession(linked)
+  const at = 1_000_000
+  const ordered = orderedAndFetched(s, [40, 41, 2], at)
+  expect(drawnNumbers(ordered, at).slice(0, 3)).toEqual([40, 41, 2])
+
+  const cleared = recorded(CLAUDE_CODE, ordered, 'order_prs', { numbers: [] }, at).state
+  expect(cleared.ledger.prs).toEqual(s.ledger.prs)
+  expect(drawnNumbers(cleared, at).sort((a, b) => a - b)).toEqual(linked)
+  expect(sessionView(cleared, at, 1000, true, NO_HOLDS).prs.olderText).toBeNull()
+})
+
+test('a new order takes the PRs only the order it replaces ranked off the tab, and keeps the session’s own PRs under the PR limit', () => {
+  const linked = Array.from({ length: MAX_PRS }, (_, n) => n + 1)
+  const s = linkedSession(linked)
+  const at = 1_000_000
+  const first = orderedAndFetched(s, [40, 41], at)
+  const replaced = orderedAndFetched(first, [3], at)
+
+  expect(replaced.ledger.prs).toEqual(s.ledger.prs)
+  expect(drawnNumbers(replaced, at)).not.toContain(40)
+  expect(drawnNumbers(replaced, at)).not.toContain(41)
+  expect(drawnNumbers(replaced, at).sort((a, b) => a - b)).toEqual(linked)
+  expect(sessionView(replaced, at, 1000, true, NO_HOLDS).prs.olderText).toBeNull()
 })
 
 test('an order reads as changed once a ranked open PR is newly blocked, gains a waiting thread or failing check, or becomes ready, and Rank again asks the agent to rank its open PRs again until a new order replaces it', () => {
@@ -212,7 +264,7 @@ test('a fetch of many PRs runs at most GH_RUNS_AT_ONCE gh runs at once, and read
     return { exitCode: 0, stdout: args[0] === 'pr' ? JSON.stringify(view) : '{"data":{}}', stderr: '' }
   }
   const refs = Array.from({ length: 20 }, (_, n) => `acme/app#${n + 1}`)
-  const order = { refs, label: null, why: null, statuses: null, by: 'Claude', at: 0 }
+  const order = { refs, label: null, why: null, statuses: null, dismissed: [], by: 'Claude', at: 0 }
   const state = { views: {}, branchRef: null, isFetching: false }
   const fetched = await fetchTracked(run, state, { prs: refs, prOrder: order }, false, () => 5)
 

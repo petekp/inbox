@@ -1,4 +1,4 @@
-import type { Closed, ClosedFinding, Finding, Item, Ledger } from '../types'
+import type { Closed, ClosedFinding, Finding, Item, Ledger, PrOrder } from '../types'
 
 import { recommendedOption } from './ask-match'
 import { EXPIRED } from './ledger-update'
@@ -54,9 +54,7 @@ export function upgradeLedger(ledger: Ledger): Ledger {
 
   return {
     ...rest,
-    prOrder: rest.prOrder
-      ? { ...rest.prOrder, why: rest.prOrder.why ?? null, statuses: rest.prOrder.statuses ?? null }
-      : null,
+    prOrder: rest.prOrder ? upgradePrOrder(rest.prOrder, rest.prs) : null,
     updates,
     overview: upgradeStatus(rest.overview),
     findings: [...(rest.findings ?? []), ...(notes ?? [])],
@@ -69,6 +67,19 @@ export function upgradeLedger(ledger: Ledger): Ledger {
       how: d.how ?? howFromOutcome(d.outcome),
       ...(d.item ? { item: upgradeItem(d.item) } : {}),
     })),
+  }
+}
+
+/**
+ * An order saved before the inbox kept `dismissed` linked every PR it ranked, so a ranked PR missing from `prs` was
+ * dismissed. Its PRs stay linked, since nothing tells which of them the session also linked itself.
+ */
+function upgradePrOrder(order: PrOrder, prs: string[]): PrOrder {
+  return {
+    ...order,
+    why: order.why ?? null,
+    statuses: order.statuses ?? null,
+    dismissed: order.dismissed ?? order.refs.filter(ref => !prs.includes(ref)),
   }
 }
 

@@ -4,7 +4,7 @@ import { closedRowState } from './rows'
 import { isSettledInPlace, isShownSince } from './timing'
 import type { SettledState } from './rows'
 import type { ViewInput } from './view'
-import { isLeftOut, splitLinked } from './pr-fetch'
+import { isLeftOut, splitLinked, tabPrs } from './pr-fetch'
 import type { PrLinks } from './pr-fetch'
 import { prMarkId } from './pr-rows'
 
@@ -15,9 +15,9 @@ export function isTracked(prState: PrViews, links: PrLinks, ref: string): boolea
   return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref
 }
 
-/** Whether the session keeps a PR's view: the tab tracks the PR, or it is linked and left out, which keeps a fetch from reading it again. */
+/** Whether the session keeps a PR's view: the tab tracks the PR, or it is on the tab and left out, which keeps a fetch from reading it again. */
 function keepsView(prState: PrViews, links: PrLinks, ref: string): boolean {
-  return isTracked(prState, links, ref) || (links.prs.includes(ref) && isLeftOut(prState, ref))
+  return isTracked(prState, links, ref) || (tabPrs(links).includes(ref) && isLeftOut(prState, ref))
 }
 
 /** When the PR was dismissed, or null when its last press did not dismiss it. */
