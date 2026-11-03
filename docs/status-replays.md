@@ -63,7 +63,7 @@ The person's "speed up search on large libraries" at steps 1 and 2 is a directio
 | `milestone-dropped` | 3 | A goal with three milestones, and a subject folded into another. One reply: the person cuts the store review milestone, and splits tag colors back out of the theme editor. | The cut milestone's work links to Other work. Tag colors shows as an open subject. |
 | `catch-up-shipped` | 3 | A goal with two milestones. A catch-up reads a conversation in which two pieces were merged and shipped. | Both pieces close as ✓, not as dropped, and their milestone closes. |
 | `goal-awaiting-milestones` | 3 | 14 open subjects, none linked, and a goal the person typed that an unreadable answer left with no milestones. One reply. | The goal gets its milestones. A GOAL line that restates the goal gives the goal its milestones. |
-| `ask-holds-two` | 3 | Two releases, each with a signed build. One reply: neither can upload until the person signs in to App Store Connect, and that task opens. | The task links to both releases, so both show ◆. |
+| `ask-holds-two` | 3 | Two releases, each with a signed build. Step 1: neither can upload until the person signs in to App Store Connect, and that task opens. Step 2: a TestFlight beta starts, and its upload waits on the same sign-in. | Step 1 links the task to both releases, so both show ◆. Step 2 links it to the beta too. |
 
 `catch-up-from-empty`, `milestone-dropped`, `catch-up-shipped`, `goal-awaiting-milestones` and `ask-holds-two` are judged with the replays: both models' runs together. The other three are judged on each model apart.
 

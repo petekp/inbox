@@ -24,7 +24,8 @@ const releases = [
 /** One task the agent cannot do holds up two releases at once. */
 export const askHoldsTwo: Replay = {
   name: 'ask-holds-two',
-  about: 'One task, signing in to the app store, holds up two releases, and the call links it to both.',
+  about:
+    'One task, signing in to the app store, holds up two releases, and the call links it to both. A later exchange adds a third piece that waits on the same task, and the call links it too.',
   hasLedgerCalls: false,
   start: {
     ledger: {
@@ -63,6 +64,31 @@ export const askHoldsTwo: Replay = {
           { id: 'hotfix', stands: 'build signed; upload waits on the app store sign-in' },
         ],
         asks: [{ match: 'app store', text: 'Sign in to App Store Connect', holdsUp: ['r24', 'hotfix'] }],
+      },
+      targets: ['asks-linked', 'ask-holds-several', 'open-pieces-kept'],
+    },
+    {
+      label: 'A TestFlight beta starts, and its upload waits on the same sign-in, which is still open',
+      at: 12,
+      call: {
+        kind: 'reply',
+        person: 'Also push a TestFlight beta of 2.5 for the testers.',
+        activity: ['Built the 2.5 beta', 'Signed the 2.5 beta build', 'Upload failed: not signed in'],
+        reply:
+          'The 2.5 beta is built and signed. Like the other two, it cannot upload until you sign in to App Store Connect. Once you do, I upload all three.',
+      },
+      facts: {
+        pieces: [
+          piece({
+            id: 'beta',
+            names: ['TestFlight beta', '2.5 beta'],
+            match: 'testflight|beta|2\\.5',
+            state: 'working',
+            stands: 'build signed; upload waits on the app store sign-in',
+            alsoRight: ['waits-on-other'],
+          }),
+        ],
+        asks: [{ match: 'app store', text: 'Sign in to App Store Connect', holdsUp: ['r24', 'hotfix', 'beta'] }],
       },
       targets: ['asks-linked', 'ask-holds-several', 'open-pieces-kept'],
     },

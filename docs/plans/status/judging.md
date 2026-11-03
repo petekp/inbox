@@ -170,9 +170,9 @@ These make no model calls.
 | `milestone-dropped`, 1 call, 3 runs | 6 | 0 | 0 |
 | `catch-up-shipped`, 1 call, 3 runs | 6 | 0 | 0 |
 | `goal-awaiting-milestones`, 1 call, 3 runs | 6 | 0 | 0 |
-| `ask-holds-two`, 1 call, 3 runs | 6 | 0 | 0 |
+| `ask-holds-two`, 2 calls, 3 runs | 12 | 0 | 0 |
 | The three goal short cases, 4 calls, 5 runs, 2 models | 40 | 0 | 10 |
 | The judge's check on both page sets, 24 pages | 0 | 0 | 24 |
-| **Total** | **208** | **54** | **82** |
+| **Total** | **214** | **54** | **82** |
 
-An answer that holds prose is asked once more, and a call that fails outside the model is tried again. The runner stops at 220 Status calls, so 12 calls are left for both.
+An answer that holds prose is asked once more, and a call that fails outside the model is tried again. The runner stops at 220 Status calls, so 6 calls are left for both.
