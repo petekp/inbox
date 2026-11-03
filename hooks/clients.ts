@@ -132,7 +132,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'catch-up': {
         kind: 'different',
         reason:
-          'Codex runs no hook when a chat is opened. A resumed chat catches up when its Inbox tab opens, and at the hook its next message runs if the tab stays closed.',
+          'Codex runs no hook when a chat is opened. A resumed chat catches up when its Inbox tab opens, and at the hook its next message runs if the tab stays closed. A chat whose ledger failed or fell behind, such as an archived chat that runs no hooks, also catches up when its tab first opens in a server run.',
       },
       'failed-update-recovery': { kind: 'full' },
       'ledger-behind-state': {

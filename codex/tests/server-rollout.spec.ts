@@ -205,18 +205,19 @@ test('the tab’s first view of a chat with earlier turns marks it behind and st
 
 test('the tab’s first view of a chat the inbox has seen starts one catch-up when its ledger failed or fell behind', async () => {
   const { dir, home, updates, call } = openSetup()
-  for (const [id, ledgerState] of [
-    ['failed', 'failed'],
-    ['behind', 'behind'],
-    ['current', 'current'],
+  for (const [id, ledgerState, isUpdating] of [
+    ['failed', 'failed', false],
+    ['behind', 'behind', false],
+    ['current', 'current', false],
+    ['killed-worker', 'failed', true],
   ] as const) {
     const transcriptPath = rolloutAt(home, id)
-    await updateState(dir, id, s => ({ ...s, transcriptPath, presence: { ...s.presence, ledgerState } }))
+    await updateState(dir, id, s => ({ ...s, transcriptPath, presence: { ...s.presence, ledgerState, isUpdating } }))
     await call('inbox_view', id)
     await call('inbox_view', id)
   }
 
-  assert.deepEqual(updates, ['failed', 'behind'])
+  assert.deepEqual(updates, ['failed', 'behind', 'killed-worker'])
 })
 
 test('the tab’s first view of a forked chat gives it the parent’s ledger and starts no catch-up', async () => {

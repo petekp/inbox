@@ -23,8 +23,8 @@ export function makeCatchUpOnOpen(deps: ServerDeps) {
     if (!openCatchUp || checkedOnOpen.has(id)) return
     checkedOnOpen.add(id)
     const before = await readState(dir, id)
-    const { ledgerState, isUpdating, isTurnRunning } = before.presence
-    const needsRetry = ledgerState !== 'current' && !isUpdating && !isTurnRunning
+    const { ledgerState, isTurnRunning } = before.presence
+    const needsRetry = ledgerState !== 'current' && !isTurnRunning
     if (before.transcriptPath !== null) {
       if (needsRetry) openCatchUp.startUpdate(id)
       return
