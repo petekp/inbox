@@ -91,6 +91,7 @@ export function moveMilestone(
     m.text = clipWords(op.text, TEXT_KEPT)
     m.closedAt = null
   } else if (op.kind === 'done') {
+    if (m.status === 'done') return
     m.status = 'done'
     if (op.text) m.text = clipWords(op.text, TEXT_KEPT)
     m.closedAt = now

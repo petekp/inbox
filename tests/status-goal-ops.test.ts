@@ -112,6 +112,11 @@ test('milestones need a goal, move by id under the rewording hold, and stop at f
   expect(moved.milestones.find(m => m.id === 'm2')).toMatchObject({ text: 'bad rows named', changedAt: 30 })
   expect(moved.milestones.find(m => m.id === 'm3')).toMatchObject({ status: 'done', closedAt: 30 })
   expect(reworded.milestones.find(m => m.id === 'm2')).toMatchObject({ text: 'bad rows named', changedAt: 30 })
+  expect(after(moved, 'DONE: m3 | written again', 40).milestones.find(m => m.id === 'm3')).toMatchObject({
+    text: 'written',
+    changedAt: 30,
+    closedAt: 30,
+  })
   expect(full.milestones.map(m => m.name)).toEqual(['Import works', 'Error messages', 'Demo script', 'A one', 'B two'])
 })
 
