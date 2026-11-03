@@ -66,12 +66,12 @@ export const GOOD_RUNS: Record<string, string[]> = {
     'NEW: decide | - | Should the offline banner show on web too? | Yes / No | -',
     'SET: s4 | working | shows on phones\nLINK: i2 | Offline banner',
     'CLOSED: i2 | the person dropped it',
-    'DONE: s4 | shows on phones\nSET: s1 | working | Android syncs; iOS loses last edit',
+    'DONE: s4 | shows on phones\nSET: s1 | working | Android syncs, iOS loses last edit',
     'NONE',
     'DONE: s1 | syncs after a crash on Android and iOS\nDONE: m1 | works on both phones',
   ],
   'long-turn': [
-    'DONE: s1 | fast on large libraries\nSET: s2 | working | ranks by match; recency not in yet',
+    'DONE: s1 | fast on large libraries\nSET: s2 | working | ranks by match, recency not in yet',
     'UNCHANGED',
     'DONE: s2 | pinned first, then by last edit\nSET: s3 | working | short typos match\nGOAL: Search under 100 ms in 3.1 | queued Under 100 ms; queued 3.1 live',
   ],
@@ -86,8 +86,8 @@ export const GOOD_RUNS: Record<string, string[]> = {
   ],
   'declined-goal': [
     'SET: s1 | working | notes and tags import\nGOAL: Import ready to demo | working Notes import; queued Demo run-through',
-    'SET: s1 | working | attachments import; progress bar left',
+    'SET: s1 | working | attachments import, progress bar left',
   ],
   'goal-on-busy-page': [['SET: s2 | working | open the notebook as a viewer', ...servesLines].join('\n')],
-  'mid-turn-activity': ['DONE: s1 | fast on large libraries\nSET: s2 | working | ranks by match; recency not in yet'],
+  'mid-turn-activity': ['DONE: s1 | fast on large libraries\nSET: s2 | working | ranks by match, recency not in yet'],
 }

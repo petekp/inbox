@@ -67,6 +67,7 @@ These run after every step of every replay, on the saved Status, the page `statu
 - A name has at most 3 words, no "…" and no question mark. So do the head's title and a milestone's name.
 - The head has a title and a one-line description, and the description does not repeat the title.
 - A text names no command, file, hash, ticket or PR number, or count of tests, files, commits, lines, calls or checks.
+- No name, where it stands, head, milestone or goal joins clipped phrases with a semicolon, as in "engine done; retries left".
 - The head holds no status word, such as "ready", "merged", "passes" or "waiting".
 - No two open subjects or milestones share every key word of a name, numbers included, or the same issue or PR number. So "2.4 release" and "2.5 release" are two pieces.
 - Every open piece in the fact list matches a row or is in the "N more" fold.

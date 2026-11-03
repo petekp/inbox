@@ -191,6 +191,7 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
   'no-time-words': { bad: s => (s1Of(s).text = 'synced 5m ago') },
   'short-names': { bad: s => (s1Of(s).name = 'The offline sync engine work') },
   'text-no-ids': { bad: s => (s1Of(s).text = 'retries in sync-queue.ts') },
+  'no-semicolons': { bad: s => (s1Of(s).text = 'engine done; retries left') },
   'head-no-status': { bad: s => (s.after.head = { title: 'Offline sync', description: 'Offline sync ready' }) },
   'head-follows': { bad: s => (s.after.head = { title: 'Lint error', description: 'Fixing the lint error' }) },
   'no-duplicates': { bad: s => s.after.subjects.push(subject('s3', 'working', 'Sync engine work', 'tests', 10)) },
