@@ -59,6 +59,11 @@ export type SessionState = Session & {
    */
   coveredTurn: string | null
   /**
+   * The ledger and turns, from `openCatchUpKey`, when the tab's view last started a catch-up for a ledger that failed or
+   * fell behind. The view starts another only once the ledger takes an answer or a turn starts. Null until one starts.
+   */
+  openCatchUpKey: string | null
+  /**
    * The newest report a hook or an update sent to the session's Herdr pane: its key from `herdrReportKey`, and its
    * `seq`. Each runs in its own process, so this is how a later one knows its report would change nothing.
    */
@@ -106,6 +111,7 @@ export function emptyState(sessionId: string): SessionState {
     shownTab: 'needsYou',
     heard: NOTHING_HEARD,
     coveredTurn: null,
+    openCatchUpKey: null,
   }
 }
 

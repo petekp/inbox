@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { writeFileSync } from 'node:fs'
+import { appendFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
@@ -8,7 +8,7 @@ import { makeServer } from '../src/server'
 import { SETTLE_WINDOW_MS } from '../src/settle'
 import { readState, updateState } from '../src/state'
 import { handleHook } from '../src/hook'
-import { fakeRunner, hookDeps, input, rolloutAt, tempDir, turnRow } from './helpers'
+import { fakeRunner, hookDeps, input, movedRollout, rolloutAt, tempDir, turnRow } from './helpers'
 
 test('a chat saved mid-turn stays running until a view or a press finds the turn ended in its rollout', async () => {
   const dir = tempDir()
@@ -164,14 +164,12 @@ test('Done on a task Codex just left waits while a turn runs, queues one message
   assert.deepEqual(notePrompt(s, s.sent[0]!.text, t).state.turn.press, { id: 'i2', action: 'done' })
 })
 
-function openSetup() {
-  const dir = tempDir()
-  const home = tempDir()
+function openSetup(dir = tempDir(), home = tempDir(), now = () => 100) {
   const updates: string[] = []
   const handle = makeServer({
     comparePage: '/plugin/dist/compare-page.html',
     dir,
-    now: () => 100,
+    now,
     exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
     tabHtml: '<html></html>',
     fallbackCli: async () => '/apps/codex',
@@ -203,21 +201,47 @@ test('the tab’s first view of a chat with earlier turns marks it behind and st
   assert.deepEqual(updates, ['c1'])
 })
 
-test('the tab’s first view of a chat the inbox has seen starts one catch-up when its ledger failed or fell behind', async () => {
+test('the tab’s view of a chat the inbox has seen starts one catch-up when its ledger failed or fell behind, until the chat moves on', async () => {
   const { dir, home, updates, call } = openSetup()
-  for (const [id, ledgerState, isUpdating] of [
-    ['failed', 'failed', false],
-    ['behind', 'behind', false],
-    ['current', 'current', false],
-    ['killed-worker', 'failed', true],
+  for (const [id, ledgerState, isUpdating, isTurnRunning] of [
+    ['failed', 'failed', false, false],
+    ['behind', 'behind', false, false],
+    ['current', 'current', false, false],
+    ['killed-worker', 'failed', true, false],
+    ['running', 'failed', false, true],
   ] as const) {
     const transcriptPath = rolloutAt(home, id)
+    if (isTurnRunning) appendFileSync(transcriptPath, `\n${turnRow('task_started', 't9')}\n`)
     await updateState(dir, id, s => ({ ...s, transcriptPath, presence: { ...s.presence, ledgerState, isUpdating } }))
     await call('inbox_view', id)
     await call('inbox_view', id)
   }
-
   assert.deepEqual(updates, ['failed', 'behind', 'killed-worker'])
+
+  const later = openSetup(dir, home)
+  await later.call('inbox_view', 'failed')
+  await updateState(dir, 'behind', s => ({
+    ...s,
+    presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 },
+  }))
+  await later.call('inbox_view', 'behind')
+  assert.deepEqual(later.updates, ['behind'])
+})
+
+test('the tab’s view finds a rollout Codex moved, looking at most once a minute per chat', async () => {
+  let at = 100
+  const { dir, home, call } = openSetup(tempDir(), tempDir(), () => at)
+  const saved = rolloutAt(home, 'c4')
+  await updateState(dir, 'c4', s => ({ ...s, transcriptPath: saved }))
+  await call('inbox_view', 'c4')
+  const archived = movedRollout(saved, home, 'archived_sessions')
+  at += 1_000
+  await call('inbox_view', 'c4')
+  assert.equal((await readState(dir, 'c4')).transcriptPath, saved)
+
+  at += 60_000
+  await call('inbox_view', 'c4')
+  assert.equal((await readState(dir, 'c4')).transcriptPath, archived)
 })
 
 test('the tab’s first view of a forked chat gives it the parent’s ledger and starts no catch-up', async () => {

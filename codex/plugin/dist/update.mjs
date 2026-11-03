@@ -2860,7 +2860,8 @@ function emptyState(sessionId) {
     tabSeenAt: 0,
     shownTab: "needsYou",
     heard: NOTHING_HEARD,
-    coveredTurn: null
+    coveredTurn: null,
+    openCatchUpKey: null
   };
 }
 function statePath(dir, sessionId) {
@@ -3927,6 +3928,7 @@ async function compressedBytesBefore(path, bytes, end) {
   let read = 0;
   const input = createReadStream(path);
   const content = input.pipe(zlib.createZstdDecompress());
+  input.on("error", (err) => content.destroy(err));
   try {
     for await (const chunk of content) {
       const part = chunk.subarray(0, Math.max(0, end - read));

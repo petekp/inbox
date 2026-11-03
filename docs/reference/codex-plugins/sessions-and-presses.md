@@ -27,25 +27,28 @@ threads a root thread and its forks belong to. They differ after a fork.
   no `forked_from_id`; a subagent's has `parent_thread_id` instead. Every hook's `transcript_path` is that rollout,
   so the inbox reads the parent from the first row (`codex/src/rollout-rows.ts:forkedFromId`).
 - **A rollout is found by thread id.** [live] On the test Mac, rollouts are
-  `${CODEX_HOME:-~/.codex}/sessions/YYYY/MM/DD/rollout-<timestamp>-<thread id>.jsonl`, and the first row, `session_meta`,
-  has `payload.id` equal to the thread id. Older files are compressed with zstd (`.jsonl.zst`)
-  (`codex/src/transcript.ts:rolloutFor`). The inbox reads them on a Node that has `zlib.createZstdDecompress`
-  (22.15 and 23.8 on), streaming the file and keeping only the end it needs, and skips them on an older Node
+  `${CODEX_HOME:-~/.codex}/sessions/YYYY/MM/DD/rollout-<timestamp>-<thread id>.jsonl`, and the first row,
+  `session_meta`, has `payload.id` equal to the thread id. Older files are compressed with zstd (`.jsonl.zst`)
+  (`codex/src/transcript.ts:rolloutFor`). The inbox reads them on a Node that has `zlib.createZstdDecompress` (22.15
+  and 23.8 on), streaming the file and keeping only the end it needs, and skips them on an older Node
   (`codex/src/rollout-file.ts`). Hooks, the server and the update run on `${CODEX_MCP_NODE_PATH:-node}`. The ChatGPT
   app 26.1027.51404 on the test Mac bundles one Node, v24.22.1, in `Contents/Resources/cua_node/bin/node`, and
   `@openai/codex` 0.164.0 from npm declares `node >=16`, so a CLI install uses whatever `node` is on the PATH. On the
-  test Mac the largest archived rollout, 143 MB compressed and 229 MB of text, streamed in 0.3 seconds. The MCP server's environment names no Codex home, so it uses
+  test Mac about nine in ten rollouts under `sessions/` are compressed too. The largest archived rollout, 143 MB
+  compressed and 229 MB of text, streamed whole in 0.3 seconds. Finding it and reading its end through the inbox took
+  0.8 seconds the first time and 1 ms after that. The MCP server's environment names no Codex home, so it uses
   `$CODEX_HOME`, else `~/.codex`.
 - **Archiving a chat moves its rollout.** [live] Codex 0.164.0 on the test Mac: an archived chat's rollouts sit
   directly in `${CODEX_HOME:-~/.codex}/archived_sessions/`, with no date folders, their file names kept, reverted
-  continuations included. Most there are compressed: 705 of 747 on the test Mac. The CLI has `codex archive` and `codex unarchive`, and the
-  app-server has `thread/archive` and `thread/unarchive` [binary strings]. A move either way leaves the saved rollout
-  path pointing at a file that is gone. So when the saved file is gone, the inbox
-  looks the rollout up again by thread id under `sessions/`, then `archived_sessions/`, in the Codex home the saved
-  path was in, and saves the path it finds (`codex/src/transcript.ts:withCurrentRollout`). The tab's turn check looks at most
-  once a minute per chat, since a miss reads every day folder. An archived chat runs no hooks until it is unarchived,
-  so the tab's first view in each server run starts a catch-up for a chat whose ledger failed or fell behind
-  (`codex/src/server-catch-up.ts`).
+  continuations included. Most there are compressed: 705 of 747 on the test Mac. The CLI has `codex archive` and
+  `codex unarchive`, and the app-server has `thread/archive` and `thread/unarchive` [binary strings]. A move either
+  way leaves the saved rollout path pointing at a file that is gone. So when the saved file is gone, the inbox looks
+  the rollout up again by thread id under `sessions/`, then `archived_sessions/`, in the Codex home the saved path was
+  in, and saves the path it finds (`codex/src/transcript.ts:withCurrentRollout`). The tab's turn check looks at most
+  once a minute per chat, since a miss reads every day folder. Only a hook starts an update for a chat the inbox has
+  seen, and an archived chat may run none, so the tab's view starts a catch-up for a chat whose ledger failed or fell
+  behind. The session saves `openCatchUpKey`, so the view starts one only once until the ledger takes an answer or a
+  turn starts, across the server processes Codex starts (`codex/src/server-catch-up.ts`).
 - **The tab catches a chat up when it opens.** [live] The tab's `tools/call inbox_view` carries `_meta.thread_id`,
   which equals the hooks' `session_id`. For a chat the inbox has never heard from, the server finds the rollout by that
   id, copies a fork's parent ledger, marks the ledger `behind` when the rollout has earlier turns, and starts the update

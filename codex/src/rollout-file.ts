@@ -37,6 +37,7 @@ async function compressedBytesBefore(path: string, bytes: number, end: number): 
   let read = 0
   const input = createReadStream(path)
   const content = input.pipe(zlib.createZstdDecompress())
+  input.on('error', err => content.destroy(err))
   try {
     for await (const chunk of content as AsyncIterable<Buffer>) {
       const part = chunk.subarray(0, Math.max(0, end - read))

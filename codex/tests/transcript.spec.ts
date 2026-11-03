@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { zstdCompressSync } from 'node:zlib'
 
+import { bytesBefore, firstBytes } from '../src/rollout-file'
 import { newestTurnEvent, readRollout, rolloutFor, turnIn, withCurrentRollout } from '../src/transcript'
 import { movedRollout, ROLLOUT_FIXTURE, rolloutAt, tempDir } from './helpers'
 
@@ -142,9 +143,13 @@ test('a rollout over the size limit keeps its newest turns and drops the cut lin
   assert.deepEqual(await turnIn(compressed, 't2'), await turnIn(rolloutOf(text), 't2'))
 })
 
-test('a rollout that cannot be read gives nothing', async () => {
+test('a rollout that cannot be read gives nothing, compressed or not', async () => {
   assert.equal(await readRollout(null, '/repo', undefined), null)
   assert.equal(await readRollout(join(tempDir(), 'missing.jsonl'), '/repo', undefined), null)
+  const missing = join(tempDir(), 'missing.jsonl.zst')
+  assert.equal(await readRollout(missing, '/repo', undefined), null)
+  await assert.rejects(firstBytes(missing, 1024), { code: 'ENOENT' })
+  await assert.rejects(bytesBefore(missing, 1024, 2048), { code: 'ENOENT' })
 })
 
 test('a reverted chat reads the kept turns of each rollout it continues, then its own, and stops where a rollout is missing', async () => {
