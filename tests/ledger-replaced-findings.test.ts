@@ -14,7 +14,13 @@ describe('a finding replaced by a question', () => {
     path: null,
     at: 1,
   })
-  const ctx = { now: 9, turnsStarted: 1, extraSteps: [], comparePage: '/plugin/hooks/compare-page.html' }
+  const ctx = {
+    now: 9,
+    turnsStarted: 1,
+    extraSteps: [],
+    comparePage: '/plugin/hooks/compare-page.html',
+    compareInBackground: true,
+  }
   const asked = () => {
     const open = addFinding(EMPTY, finding('Dismissed findings come back when recorded again')).ledger
     const reply =

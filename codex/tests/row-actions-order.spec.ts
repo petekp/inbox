@@ -34,6 +34,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
           turnsStarted: 1,
           extraSteps: [],
           comparePage: '/plugin/dist/compare-page.html',
+          compareInBackground: false,
         })
         assert.ok(!('stale' in result))
         retried = result
@@ -102,6 +103,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
           turnsStarted: 1,
           extraSteps: [],
           comparePage: '/plugin/dist/compare-page.html',
+          compareInBackground: false,
         })
       },
       reply: () => {},
@@ -152,6 +154,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
         turnsStarted: 1,
         extraSteps: [],
         comparePage: '/plugin/dist/compare-page.html',
+        compareInBackground: false,
       })
     },
     reply: () => {},

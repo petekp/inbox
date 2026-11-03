@@ -237,3 +237,11 @@ test('a proposed goal’s Set as goal and a typed goal set the saved goal, Not n
   expect(state().ledger.overview.goal).toMatchObject({ text: 'Pilot live for every team', isAwaitingMilestones: true })
   expect(w.sent).toEqual([])
 })
+
+test('a Compare press in omp lets the agent hand the comparison to a background subagent', async () => {
+  const { inbox, id } = await withQuestion()
+  await inbox.press(makeCtx(), { action: 'compare', id }, NO_HOLDS)
+
+  expect(w.sent.at(-1)!.text).toContain('If you can run a subagent in the background, hand it this work')
+  expect(w.sent.at(-1)!.text).not.toContain('reply with the result before this turn ends')
+})
