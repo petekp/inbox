@@ -1,5 +1,5 @@
 import { isOpen, NAME_WORDS } from '../hooks/status-limits'
-import { statusListRows } from '../hooks/status-page'
+import { NAMED_FOLD_TEXT, statusListRows } from '../hooks/status-page'
 import type { SessionStatus, Subject } from '../types'
 import { isOpenPiece, rightStatuses } from './status-facts'
 import type { Facts } from './status-facts'
@@ -439,15 +439,23 @@ const FIXED_RULES: Rule[] = [
     id: 'finished-named',
     reads: 'facts',
     property: 10,
-    text: 'Every piece that finished since the last look is drawn as a row.',
-    until: '#138',
+    text: 'Every piece that finished since the last look is drawn as a row or named in an "Also done" line.',
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       const look = o?.lastLookAt ?? null
-      const drawn = new Set(statusListRows(result.page).flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
+      const rows = statusListRows(result.page)
+      const drawn = new Set(rows.flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
+      const named = new Set(
+        rows.flatMap(r =>
+          r.kind === 'fold' && /^(.+-)?also-done$/.test(r.id)
+            ? r.text.slice(NAMED_FOLD_TEXT.done.length).split(', ')
+            : [],
+        ),
+      )
       return shownOf(o)
-        .filter(s => !isOpen(s) && s.status === 'done' && (look === null || s.changedAt > look) && !drawn.has(s.id))
-        .map(s => `finished, unseen and folded: ${label(s)}`)
+        .filter(s => !isOpen(s) && s.status === 'done' && (look === null || s.changedAt > look))
+        .filter(s => !drawn.has(s.id) && !named.has(s.name))
+        .map(s => `finished, unseen and neither drawn nor named: ${label(s)}`)
     },
   },
 ]

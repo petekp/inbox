@@ -117,7 +117,7 @@ export const STATUS_TEXT_LINES = 3
 /** Closed rows drawn above the look line for work that closed since the last look. The fold after them names the rest. */
 const NEW_CLOSED_ROWS = 2
 /** What a named fold says before the names it holds. Each closed status gets its own fold, in this order. */
-const NAMED_FOLD_TEXT = { done: 'Also done: ', dropped: 'Also dropped: ' } as const
+export const NAMED_FOLD_TEXT = { done: 'Also done: ', dropped: 'Also dropped: ' } as const
 
 /** The order of subjects on each side of the look line, from what needs the person to what is finished. */
 const STATUS_PLACES = ['held', 'working', 'waits-on-other', 'queued', 'closed'] as const

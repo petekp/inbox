@@ -204,6 +204,25 @@ test('work closed since the last look shows as two rows, the rest is named in a 
   ])
 })
 
+test('when every row on the page closed since the last look, the named fold ends the rows, above the look line', () => {
+  const opened = after(
+    null,
+    ['NEW: working | One | a', 'NEW: working | Two | b', 'NEW: working | Three | c'].join('\n'),
+    10 * MIN,
+  )
+  const closed = ['DONE: s1 | done a', 'DONE: s2 | done b', 'DONE: s3 | done c'].reduce(
+    (o, line, n) => after(o, line, (20 + 10 * n) * MIN),
+    opened,
+  )
+
+  expect(shape(page({ ...closed, lastLookAt: 15 * MIN }, 60 * MIN).rows)).toEqual([
+    '✓ Three: done c',
+    '✓ Two: done b',
+    '✓ Also done: One',
+    '-- Last seen',
+  ])
+})
+
 test('the Help legend explains every mark a row or group title draws, once each', () => {
   const drawn = new Set([
     ...Object.values(SUBJECT_MARKS).map(m => m.mark),

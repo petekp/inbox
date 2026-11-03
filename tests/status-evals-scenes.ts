@@ -309,12 +309,20 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     },
   },
   'finished-named': {
+    good: s => {
+      s.after.subjects.push(
+        subject('s3', 'done', 'Login timeout', 'fixed', 8),
+        subject('s4', 'done', 'Crash on launch', 'fixed', 9),
+        subject('s5', 'done', 'Backup restore', 'works', 10),
+      )
+    },
     bad: s => {
       s.after.subjects.push(
         subject('s3', 'done', 'Login timeout', 'fixed', 8),
         subject('s4', 'done', 'Crash on launch', 'fixed', 9),
         subject('s5', 'done', 'Backup restore', 'works', 10),
       )
+      s.page = p => (p.rows = p.rows.filter(r => r.kind !== 'fold'))
     },
   },
 }
