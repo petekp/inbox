@@ -14,14 +14,22 @@ export function makeCatchUpOnOpen(deps: ServerDeps) {
   /**
    * Codex runs no hook when a chat opens, so the tab's first view of a chat the inbox has not seen does what the
    * chat's first hook would: it copies a fork's ledger and, when the rollout holds earlier turns, starts a catch-up.
-   * It runs once per chat in this process, and changes nothing when the rollout cannot be found.
+   * The first view of a chat the inbox has seen starts a catch-up when its ledger failed or fell behind, since an
+   * archived chat runs no hooks. It runs once per chat in this process, and changes nothing when the rollout cannot be
+   * found.
    */
   async function catchUpOnOpen(id: string) {
     const { openCatchUp } = deps
     if (!openCatchUp || checkedOnOpen.has(id)) return
     checkedOnOpen.add(id)
     const before = await readState(dir, id)
-    if (before.transcriptPath !== null || heardState(before.heard) !== 'none' || !isUnseen(before)) return
+    const { ledgerState, isUpdating, isTurnRunning } = before.presence
+    const needsRetry = ledgerState !== 'current' && !isUpdating && !isTurnRunning
+    if (before.transcriptPath !== null) {
+      if (needsRetry) openCatchUp.startUpdate(id)
+      return
+    }
+    if (heardState(before.heard) !== 'none' || !isUnseen(before)) return
     const rollout = await rolloutFor(openCatchUp.codexHome, id)
     if (rollout === null) return
     const cli = await deps.fallbackCli().catch(() => null)
