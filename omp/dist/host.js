@@ -2528,11 +2528,13 @@ function dialogQuestions(raw) {
     const text = [fields.question, fields.title].find((v) => typeof v === "string" && v.trim() !== "");
     if (!text)
       return [];
-    const options = (Array.isArray(fields.options) ? fields.options : []).flatMap((o) => {
+    const options = (Array.isArray(fields.options) ? fields.options : []).flatMap((o, i) => {
       const option = typeof o === "string" ? { label: o } : o ?? {};
-      const label = typeof option.label === "string" ? option.label.trim() : "";
+      const plain = typeof option.label === "string" ? option.label.trim() : "";
+      const isMarked = i === fields.recommended && !RECOMMENDED_SUFFIX.test(plain);
+      const label = isMarked ? `${plain} (Recommended)` : plain;
       const description = typeof option.description === "string" ? option.description.trim() : "";
-      return label === "" ? [] : [{ label, description }];
+      return plain === "" ? [] : [{ label, description }];
     });
     return [
       {

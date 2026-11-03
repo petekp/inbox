@@ -151,10 +151,12 @@ test('an activity note or an ask result still settles when the session file cann
   expect(await call('tool_result', { toolName: 'ask', input: {}, content: [], isError: false })).toBeUndefined()
 })
 
-test('an ask dialog becomes turn activity with the answer', async () => {
+test('an ask dialog becomes turn activity with the answer and the recommended option', async () => {
   createInbox(pi(), deps())
   await prompt('hello')
-  const input = { questions: [{ question: 'Node or Python?', options: [{ label: 'Node' }, { label: 'Python' }] }] }
+  const input = {
+    questions: [{ question: 'Node or Python?', options: [{ label: 'Node' }, { label: 'Python' }], recommended: 1 }],
+  }
   await call('tool_result', {
     toolName: 'ask',
     input,
@@ -162,6 +164,6 @@ test('an ask dialog becomes turn activity with the answer', async () => {
     isError: false,
   })
   expect(state().turn.activity).toEqual([
-    'asked the user in a dialog: "Node or Python?" (options: Node / Python); answer: User selected: Node',
+    'asked the user in a dialog: "Node or Python?" (options: Node / Python (recommended)); answer: User selected: Node',
   ])
 })
