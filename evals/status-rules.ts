@@ -439,23 +439,26 @@ const FIXED_RULES: Rule[] = [
     id: 'finished-named',
     reads: 'facts',
     property: 10,
-    text: 'Every piece that finished since the last look is drawn as a row or named in an "Also done" line.',
+    text: 'Every piece that finished or was dropped since the last look is drawn as a row or named in the "Also done" or "Also dropped" line.',
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       const look = o?.lastLookAt ?? null
       const rows = statusListRows(result.page)
       const drawn = new Set(rows.flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
-      const named = new Set(
-        rows.flatMap(r =>
-          r.kind === 'fold' && /^(.+-)?also-done$/.test(r.id)
-            ? r.text.slice(NAMED_FOLD_TEXT.done.length).split(', ')
-            : [],
-        ),
-      )
+      const namedAs = (status: 'done' | 'dropped') =>
+        new Set(
+          rows.flatMap(r =>
+            r.kind === 'fold' && new RegExp(`^(.+-)?also-${status}$`).test(r.id)
+              ? r.text.slice(NAMED_FOLD_TEXT[status].length).split(', ')
+              : [],
+          ),
+        )
+      const named = { done: namedAs('done'), dropped: namedAs('dropped') }
       return shownOf(o)
-        .filter(s => !isOpen(s) && s.status === 'done' && (look === null || s.changedAt > look))
-        .filter(s => !drawn.has(s.id) && !named.has(s.name))
-        .map(s => `finished, unseen and neither drawn nor named: ${label(s)}`)
+        .flatMap(s => (s.status === 'done' || s.status === 'dropped' ? [{ ...s, status: s.status }] : []))
+        .filter(s => look === null || s.changedAt > look)
+        .filter(s => !drawn.has(s.id) && !named[s.status].has(s.name))
+        .map(s => `${s.status === 'done' ? 'finished' : 'dropped'}, unseen and neither drawn nor named: ${label(s)}`)
     },
   },
 ]
