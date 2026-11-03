@@ -822,10 +822,13 @@ function runStart(e) {
   const isWaiting = !!e.status && e.status.toUpperCase() !== "COMPLETED";
   return msOf(e.startedAt) ?? (isWaiting ? Infinity : undefined);
 }
+function checkKey(c) {
+  return c.workflow ? `${c.workflow} / ${c.name}` : c.name;
+}
 function latestRuns(rollup) {
   const latest = new Map;
   for (const e of rollup) {
-    const key = JSON.stringify([e.workflowName ?? "", e.name ?? e.context ?? ""]);
+    const key = checkKey({ name: e.name ?? e.context ?? "", workflow: e.workflowName });
     const kept = latest.get(key);
     const keptStart = kept && runStart(kept);
     const start = runStart(e);
@@ -2748,7 +2751,7 @@ function prThreadId(pr, t) {
   return threadRowId(pr.ref, t.id);
 }
 function prCheckId(pr, check) {
-  return checkRowId(pr.ref, check.name);
+  return checkRowId(pr.ref, checkKey(check));
 }
 function threadRowId(ref, thread) {
   return `${ref} thread ${thread}`;
@@ -3219,7 +3222,7 @@ function rerunEffect(pr, c) {
 }
 function sameRunChecks(pr, c) {
   const run = runOf(c);
-  return run ? pr.checks.filter((o) => o.name !== c.name && isSameRun(run, runOf(o)) && rerunEffect(pr, o)) : [];
+  return run ? pr.checks.filter((o) => checkKey(o) !== checkKey(c) && isSameRun(run, runOf(o)) && rerunEffect(pr, o)) : [];
 }
 function rerunArgs(e) {
   return ["run", "rerun", e.run, "--failed", "-R", e.repo];
@@ -3294,7 +3297,7 @@ function rankedStatusOf(pr) {
   return {
     status: readiness(pr).status,
     threads: waitingThreads(pr).map((t) => t.id),
-    failing: blockingChecks(pr).map((c) => c.name)
+    failing: blockingChecks(pr).map(checkKey)
   };
 }
 function withOrderStatuses(links, views) {
@@ -3394,10 +3397,10 @@ function threadActions(pr, t, presses) {
   ]);
 }
 function checkActions(pr, c, presses) {
-  const row = lastPressOf(presses, checkRowId(pr.ref, c.name));
-  const on = { ref: pr.ref, check: c.name };
+  const row = lastPressOf(presses, prCheckId(pr, c));
+  const on = { ref: pr.ref, check: checkKey(c) };
   const isCancelled = c.bucket === "cancelled";
-  const isRunRerunOut = sameRunChecks(pr, c).some((o) => lastPressOf(presses, checkRowId(pr.ref, o.name)).out === "check-rerun");
+  const isRunRerunOut = sameRunChecks(pr, c).some((o) => lastPressOf(presses, prCheckId(pr, o)).out === "check-rerun");
   const mainMove = isCancelled ? rerunEffect(pr, c) ? [
     {
       press: { action: "check-rerun", ...on },
@@ -3416,7 +3419,7 @@ function checkActions(pr, c, presses) {
     }
   ];
   const actions = withOut(row, [
-    ...retryAction(prRetryOf(row.last, pr.ref, null, c.name)),
+    ...retryAction(prRetryOf(row.last, pr.ref, null, on.check)),
     ...mainMove,
     {
       press: { action: "log", ...on },
@@ -3651,7 +3654,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
         lasts: { [markId]: dismissPress(ledger, p.ref, ctx, lastActions[markId]) }
       });
     case "check-fix": {
-      const check = pr.checks.find((c) => c.name === p.check && c.bucket === "fail");
+      const check = pr.checks.find((c) => checkKey(c) === p.check && c.bucket === "fail");
       if (!check)
         return stale;
       const id = prCheckId(pr, check);
@@ -3661,7 +3664,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
       });
     }
     case "check-rerun": {
-      const check = pr.checks.find((c) => c.name === p.check);
+      const check = pr.checks.find((c) => checkKey(c) === p.check);
       const rerun = check && rerunEffect(pr, check);
       const isRunRerunOut = check !== undefined && sameRunChecks(pr, check).some((o) => lastActions[prCheckId(pr, o)]?.result?.state === "pending");
       if (!check || !rerun || isRunRerunOut)
@@ -3669,7 +3672,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
       return local([prCheckId(pr, check), markId], RERUN_LABEL, rerun);
     }
     case "log": {
-      const check = pr.checks.find((c) => c.name === p.check);
+      const check = pr.checks.find((c) => checkKey(c) === p.check);
       if (!check)
         return stale;
       return local([prCheckId(pr, check)], "Open log", logEffect(pr, check));
@@ -6888,6 +6891,36 @@ function tasksText(tasks) {
   return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL6);
 }
 
+// ../hooks/saved-check-keys.ts
+function savedCheckKey(checks, name) {
+  if (checks.some((c) => checkKey(c) === name))
+    return name;
+  const named = checks.filter((c) => c.name === name);
+  return named.length === 1 ? checkKey(named[0]) : name;
+}
+var CHECK_ROW_ID = /^(\S+) check (.+)$/;
+function savedRowId(id, views) {
+  const m = CHECK_ROW_ID.exec(id);
+  return m ? checkRowId(m[1], savedCheckKey(views[m[1]]?.checks ?? [], m[2])) : id;
+}
+function withCheckKeys(s, views) {
+  const order = s.ledger.prOrder;
+  const statuses = order?.statuses;
+  const upgradedStatuses = statuses && Object.fromEntries(Object.entries(statuses).map(([ref, status]) => [
+    ref,
+    { ...status, failing: status.failing.map((name) => savedCheckKey(views[ref]?.checks ?? [], name)) }
+  ]));
+  return {
+    ...s,
+    ledger: order ? { ...s.ledger, prOrder: { ...order, statuses: upgradedStatuses } } : s.ledger,
+    sent: s.sent.map((x) => x.row === null ? x : { ...x, row: savedRowId(x.row, views) }),
+    lastActions: Object.fromEntries(Object.entries(s.lastActions).map(([id, last]) => {
+      const upgraded = savedRowId(id, views);
+      return [upgraded in s.lastActions ? id : upgraded, last];
+    }))
+  };
+}
+
 // ../hooks/session-files.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_TURN = { person: null, trigger: null, activity: [], press: null };
@@ -6943,8 +6976,11 @@ function withoutStatedStep(presence) {
   return rest;
 }
 function upgradeSession(saved) {
-  const base = emptySession();
   const views = saved.prViews?.views ?? {};
+  return withCheckKeys(sessionFields(saved, views), views);
+}
+function sessionFields(saved, views) {
+  const base = emptySession();
   return {
     ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
     turn: { ...base.turn, ...saved.turn },

@@ -31,7 +31,7 @@ import {
 } from './pr-rows'
 import { checkActions, prBlockActions, threadActions } from './pr-tab'
 import { type DrawnPr, isDismissed } from './pr-views'
-import { commentLine, commentParts, readableComment, readiness, threadWhere } from './prs'
+import { checkKey, commentLine, commentParts, readableComment, readiness, threadWhere } from './prs'
 import { DOT, settledLabel, settledMark, type SettledState } from './rows'
 import { lineCount, terminalTextLines } from './terminal-text'
 import { clipLabel } from './text'
@@ -83,7 +83,7 @@ export function panePrRows(
       line: { ...(lead ? { before: `${lead} / ` } : {}), text: title, after: meta },
       subtitle: <Text color={pal.muted}>{lead ? `${lead}${DOT}${meta}` : meta}</Text>,
       body: null,
-      keys: () => checkActions(pr, c, presses).map(a => prKeyAction(a, `${pr.ref}-${c.name}`)),
+      keys: () => checkActions(pr, c, presses).map(a => prKeyAction(a, `${pr.ref}-${checkKey(c)}`)),
     }
   }
   const threadRow = (pr: PrView, t: PrThread): Row => {

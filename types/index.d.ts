@@ -360,7 +360,7 @@ export type PrStatus = 'ready' | 'blocked' | 'waiting' | 'draft' | 'merged' | 'c
 
 /**
  * What a ranked PR's block showed: its status, read without sent threads, and the ids of its waiting threads and the
- * names of its failing and cancelled checks.
+ * `checkKey`s of its failing and cancelled checks.
  */
 export type RankedPrStatus = { status: PrStatus; threads: string[]; failing: string[] }
 

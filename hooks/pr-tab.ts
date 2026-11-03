@@ -3,10 +3,10 @@ import { withQueued } from './press-reducer'
 import type { Effect } from './press-reducer'
 import { localLast, pendingResult, recordPress } from './pressed'
 import type { PrActionId } from './presses'
-import { inPrOrder, parseRef, prompts, rankOf, readiness, threadsOnYou } from './prs'
+import { checkKey, inPrOrder, parseRef, prompts, rankOf, readiness, threadsOnYou } from './prs'
 import type { IsThreadSent } from './prs'
 import type { PressState } from './feedback'
-import { checkRowId, prCheckId, prMarkId, prThreadId, RANK_AGAIN_ID, threadRowId, threadSentIn } from './pr-rows'
+import { prCheckId, prMarkId, prThreadId, RANK_AGAIN_ID, threadRowId, threadSentIn } from './pr-rows'
 import { isTracked, PR_DISMISSED_LABEL } from './pr-views'
 import { tabPrs } from './pr-fetch'
 import type { DrawnPr } from './pr-views'
@@ -79,12 +79,10 @@ export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrA
  * while another row of its run has a re-run out, since that re-run covers this row too.
  */
 export function checkActions(pr: PrView, c: PrCheck, presses: PressState): PrAction[] {
-  const row = lastPressOf(presses, checkRowId(pr.ref, c.name))
-  const on = { ref: pr.ref, check: c.name }
+  const row = lastPressOf(presses, prCheckId(pr, c))
+  const on = { ref: pr.ref, check: checkKey(c) }
   const isCancelled = c.bucket === 'cancelled'
-  const isRunRerunOut = sameRunChecks(pr, c).some(
-    o => lastPressOf(presses, checkRowId(pr.ref, o.name)).out === 'check-rerun',
-  )
+  const isRunRerunOut = sameRunChecks(pr, c).some(o => lastPressOf(presses, prCheckId(pr, o)).out === 'check-rerun')
   const mainMove: PlannedPrAction[] = isCancelled
     ? rerunEffect(pr, c)
       ? [
@@ -108,7 +106,7 @@ export function checkActions(pr: PrView, c: PrCheck, presses: PressState): PrAct
       ]
 
   const actions = withOut(row, [
-    ...retryAction(prRetryOf(row.last, pr.ref, null, c.name)),
+    ...retryAction(prRetryOf(row.last, pr.ref, null, on.check)),
     ...mainMove,
     {
       press: { action: 'log', ...on },
@@ -403,7 +401,7 @@ export function applyPrPress(
         lasts: { [markId]: dismissPress(ledger, p.ref, ctx, lastActions[markId]) },
       })
     case 'check-fix': {
-      const check = pr.checks.find(c => c.name === p.check && c.bucket === 'fail')
+      const check = pr.checks.find(c => checkKey(c) === p.check && c.bucket === 'fail')
       if (!check) return stale
       const id = prCheckId(pr, check)
       return applied({
@@ -413,7 +411,7 @@ export function applyPrPress(
     }
     case 'check-rerun': {
       // The PR block shows the result too, since the row leaves once the refresh after the re-run finds it running.
-      const check = pr.checks.find(c => c.name === p.check)
+      const check = pr.checks.find(c => checkKey(c) === p.check)
       const rerun = check && rerunEffect(pr, check)
       const isRunRerunOut =
         check !== undefined &&
@@ -422,7 +420,7 @@ export function applyPrPress(
       return local([prCheckId(pr, check), markId], RERUN_LABEL, rerun)
     }
     case 'log': {
-      const check = pr.checks.find(c => c.name === p.check)
+      const check = pr.checks.find(c => checkKey(c) === p.check)
       if (!check) return stale
       return local([prCheckId(pr, check)], 'Open log', logEffect(pr, check))
     }
