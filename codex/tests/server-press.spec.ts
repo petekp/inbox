@@ -282,3 +282,12 @@ test('on a next build, Set as goal sets the proposed goal and a typed goal repla
   )
   assert.deepEqual(calls, [])
 })
+
+test('a Compare press in Codex asks for the comparison in the agent’s own turn, not in a background subagent', async () => {
+  const { calls, call } = await setup(0)
+  await call('inbox_press', { ...ANSWER, press: { action: 'compare', id: 'i1' }, shownSince: 0 }, { thread_id: 's1' })
+  const message = calls.at(-1)!.at(-1)!
+
+  assert.match(message, /Do it now, and reply with the result before this turn ends\./)
+  assert.doesNotMatch(message, /hand it this work/)
+})

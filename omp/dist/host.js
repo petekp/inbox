@@ -726,10 +726,12 @@ function findingBody(finding) {
 }
 var EXPLAIN_REPLY_FORM = "Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.";
 var COMPARE_PAGE_FILE = "compare-page.html";
-var compareRequest = (comparePage) => [
-  "Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.",
+var COMPARE_IN_BACKGROUND = "Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.";
+var COMPARE_IN_TURN = "Compare the choices in this question you asked me by trying them against the code, not from memory. Do it now, and reply with the result before this turn ends. A background subagent's result does not reach this chat once your turn has ended.";
+var compareRequest = (texts) => [
+  texts.compareInBackground ? COMPARE_IN_BACKGROUND : COMPARE_IN_TURN,
   "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
-  `Then make a page from the inbox's comparison template. Write the comparison as JSON in the shape the comment at the top of the template shows, with the few measures that tell the choices apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Build the page with: cat "${comparePage}" <your JSON file> > <your page>.html`,
+  `Then make a page from the inbox's comparison template. Write the comparison as JSON in the shape the comment at the top of the template shows, with the few measures that tell the choices apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Build the page with: cat "${texts.comparePage}" <your JSON file> > <your page>.html`,
   "When the comparison is done, reply without a table, since the page holds the measures. Give your pick and say whether it changed, your reason in one line, one line on anything you did not expect, and the page's absolute path.",
   "Also call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps. That marks it compared. Call each choice by its name as listed."
 ].join(`
@@ -746,7 +748,7 @@ var messages = {
     return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.
 ${quotedAsk(item)}`;
   },
-  compare: (item, comparePage) => `${compareRequest(comparePage)}
+  compare: (item, texts) => `${compareRequest(texts)}
 ${quotedAsk(item)}`,
   run: (item, command) => `For "${item.ask}", run this:
 \`\`\`
@@ -1554,9 +1556,7 @@ function pressed(ledger, last, p, ctx) {
       return {
         ledger,
         last: record("talk"),
-        effects: [
-          { kind: "send", text: messages.compare(item, ctx.comparePage), by: { id: item.id, action: "compare" } }
-        ]
+        effects: [{ kind: "send", text: messages.compare(item, ctx), by: { id: item.id, action: "compare" } }]
       };
     case "done":
       return { ledger: closeItem(ledger, item.id, { how: "done", outcome: "done" }, ctx.now), last: null, effects: [] };
@@ -4948,7 +4948,8 @@ function pressOn(s, p, at, drawn, texts, localPressId) {
     ...ctx,
     extraSteps: item ? itemPrSteps(item, s.prViews, tabPrs(s.ledger)) : [],
     answerMessage: texts.answerMessage,
-    comparePage: texts.comparePage
+    comparePage: texts.comparePage,
+    compareInBackground: texts.compareInBackground
   });
   if ("stale" in r)
     return r;
@@ -7577,6 +7578,262 @@ function demoView(now, agent) {
   };
 }
 
+// ../hooks/clients.ts
+var CLIENTS = {
+  "claude-code": {
+    support: {
+      "catch-up": { kind: "full" },
+      "failed-update-recovery": { kind: "full" },
+      "ledger-behind-state": { kind: "full" },
+      "dialog-outcome": { kind: "full" },
+      "dialog-answer": {
+        kind: "different",
+        reason: "The dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close."
+      },
+      "dialog-descriptions": { kind: "full" },
+      "tool-output-urls": { kind: "full" },
+      "pr-link-from-output": { kind: "full" },
+      "pr-arrivals": { kind: "full" },
+      "prs-empty-hint": { kind: "full" },
+      "gh-signed-out-notice": { kind: "full" },
+      "link-open-rule": { kind: "full" },
+      "fork-ledger": { kind: "full" },
+      "band-and-stop-rows": { kind: "full" },
+      "exchange-trigger": { kind: "full" },
+      "settle-window": { kind: "full" },
+      "fold-on-typed-message": { kind: "full" },
+      "version-label": { kind: "full" },
+      "status-tab": { kind: "full" },
+      "turn-working": { kind: "full" },
+      "host-task-list": { kind: "full" },
+      "hooks-need-trust": {
+        kind: "unsupported",
+        reason: "Claude Code asks no one to trust a plugin's hooks, so no hook stops running for want of trust."
+      },
+      "compare-in-background": { kind: "full" },
+      "compare-page": { kind: "full" },
+      "running-marks": { kind: "full" },
+      "pending-answer-mark": { kind: "full" },
+      "tab-symbols": { kind: "full" },
+      "dim-pressed-button": {
+        kind: "different",
+        reason: "The desktop app's Button has no disabled state. `dimColor` fades only its label, and a click still shows the native press highlight before the shared press path ignores it."
+      },
+      "herdr-sidebar": { kind: "full" },
+      "status-children": { kind: "full" },
+      "status-look-line": { kind: "full" },
+      "status-row-rules": { kind: "full" },
+      "status-failed-warning": { kind: "full" },
+      "asks-holds-up-line": { kind: "full" },
+      "status-mid-turn-refresh": { kind: "full" },
+      "ran-call-activity": { kind: "full" },
+      "ran-call-delegates": { kind: "full" },
+      "tool-result-line": { kind: "full" },
+      "status-call-records": { kind: "full" },
+      "dismiss-merged-prs": { kind: "full" },
+      "pr-order": { kind: "full" },
+      "pr-rank-again": { kind: "full" },
+      "pr-check-rerun": { kind: "full" },
+      "help-page": {
+        kind: "different",
+        reason: "The engine binds only a digit or a lowercase letter as a Button's hotkey, so no key opens the terminal's Help. The desktop pane takes no keys, so its Help lists only the marks."
+      },
+      "status-view-ask": { kind: "full" },
+      "status-goal": { kind: "full" },
+      "status-done-fold": { kind: "full" }
+    }
+  },
+  codex: {
+    support: {
+      "catch-up": {
+        kind: "different",
+        reason: "Codex runs no hook when a chat is opened. A resumed chat catches up when its Inbox tab opens, and at the hook its next message runs if the tab stays closed. A chat whose ledger failed or fell behind, such as an archived chat that runs no hooks, also catches up when its tab opens, once until the ledger or the chat moves on."
+      },
+      "failed-update-recovery": { kind: "full" },
+      "ledger-behind-state": {
+        kind: "different",
+        reason: "Codex runs no hook when a chat is opened. A resumed chat is marked behind when its Inbox tab opens, and at the hook its next message runs if the tab stays closed."
+      },
+      "dialog-outcome": {
+        kind: "different",
+        reason: "Codex's dialog tool returns at once and the answer arrives later as a user message, so a dialog is noted as open and its outcome is never recorded."
+      },
+      "dialog-answer": { kind: "full" },
+      "dialog-descriptions": { kind: "full" },
+      "tool-output-urls": { kind: "full" },
+      "pr-link-from-output": {
+        kind: "different",
+        reason: "Codex runs no hook for a long command's output, so the inbox reads the turn's shell commands from the rollout at Stop. A PR that `gh pr create` opened is linked when the turn ends, not when the command finishes."
+      },
+      "pr-arrivals": { kind: "full" },
+      "prs-empty-hint": {
+        kind: "different",
+        reason: "The Codex app calls a conversation a chat, so its hint says chat where the mod says session."
+      },
+      "gh-signed-out-notice": { kind: "full" },
+      "link-open-rule": { kind: "full" },
+      "fork-ledger": {
+        kind: "different",
+        reason: "Codex runs no hook when a chat is opened. A fork takes its parent's ledger when its Inbox tab opens, and at the hook its first message runs if the tab stays closed."
+      },
+      "band-and-stop-rows": {
+        kind: "unsupported",
+        reason: "Codex has no line above its prompt, and shows no stops."
+      },
+      "exchange-trigger": {
+        kind: "different",
+        reason: "A Codex hook names no source for a turn that has no prompt, so the exchange reads unknown. The mod reads the prompt origin."
+      },
+      "settle-window": {
+        kind: "different",
+        reason: "The tab only learns of a close at its next poll, so the server offers Undo for two polls longer."
+      },
+      "fold-on-typed-message": { kind: "full" },
+      "version-label": { kind: "full" },
+      "status-tab": { kind: "full" },
+      "turn-working": {
+        kind: "different",
+        reason: "Codex runs no hook when a chat is opened, and a turn whose app-server dies has no end row in the rollout. So after Codex's app-server dies during a turn, Working\u2026 stays and Done messages wait until the next message. Quitting the app, even with SIGKILL, ends the turn in the rollout."
+      },
+      "host-task-list": {
+        kind: "different",
+        reason: "Codex runs no hook for `update_plan`, and the inbox's tool matcher cannot be widened without every person trusting the hook again. So the plan is read from the rollout when the turn stops, and shows from the next Status call. The tool is not offered by default in `codex exec`, and the app is not checked."
+      },
+      "hooks-need-trust": { kind: "full" },
+      "compare-in-background": {
+        kind: "different",
+        reason: "When a Codex subagent ends, Codex queues its result for the main agent and starts no turn for it. So a result that arrives after the agent's turn has ended does not reach the chat on its own, and the Compare message asks for the comparison in the agent's own turn."
+      },
+      "compare-page": { kind: "full" },
+      "running-marks": { kind: "full" },
+      "pending-answer-mark": { kind: "full" },
+      "tab-symbols": { kind: "full" },
+      "dim-pressed-button": { kind: "full" },
+      "herdr-sidebar": {
+        kind: "different",
+        reason: "Only Codex's hooks and the update a hook starts know the Herdr pane, so a record or close during a turn reaches the sidebar at the next hook. Codex finds no stops, and runs no hook when a session ends."
+      },
+      "status-children": {
+        kind: "different",
+        reason: "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so background commands and workflows do not show. The end of a wait on a Herdr delegate is read at Stop."
+      },
+      "status-look-line": { kind: "full" },
+      "status-row-rules": { kind: "full" },
+      "status-failed-warning": { kind: "full" },
+      "asks-holds-up-line": { kind: "full" },
+      "status-mid-turn-refresh": { kind: "full" },
+      "ran-call-activity": {
+        kind: "unsupported",
+        reason: "Codex runs PreToolUse before a call is approved, so a call the person declines or a hook blocks still adds its activity line. PostToolUse cannot show which calls ran: Codex skips it for a command that runs longer than code mode's wait. GitHub issue #213 tracks a fix."
+      },
+      "ran-call-delegates": {
+        kind: "unsupported",
+        reason: "Codex runs PreToolUse before a call is approved, so a herdr command the person declines or a hook blocks still adds its delegate rows. PostToolUse cannot show which calls ran: Codex skips it for a command that runs longer than code mode's wait. GitHub issue #213 tracks a fix."
+      },
+      "tool-result-line": {
+        kind: "unsupported",
+        reason: "Codex draws an MCP tool call's result from its content, which is the text the model reads. structuredContent reaches the model too, and _meta reaches only an MCP App view, so a result has no field for the person alone."
+      },
+      "status-call-records": { kind: "full" },
+      "dismiss-merged-prs": { kind: "full" },
+      "pr-order": { kind: "full" },
+      "pr-rank-again": { kind: "full" },
+      "pr-check-rerun": { kind: "full" },
+      "help-page": { kind: "full" },
+      "status-view-ask": {
+        kind: "different",
+        reason: "Pete's choice: View takes clicks only, with no key. The Codex Status has no row selection and is used by clicking."
+      },
+      "status-goal": {
+        kind: "different",
+        reason: "The goal's buttons take clicks only, as View does: the Codex Status has no row selection and is used by clicking."
+      },
+      "status-done-fold": {
+        kind: "different",
+        reason: "A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking."
+      }
+    }
+  },
+  omp: {
+    support: {
+      "catch-up": { kind: "full" },
+      "failed-update-recovery": { kind: "full" },
+      "ledger-behind-state": { kind: "full" },
+      "dialog-outcome": { kind: "full" },
+      "dialog-answer": {
+        kind: "different",
+        reason: "The ask dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close."
+      },
+      "dialog-descriptions": { kind: "full" },
+      "tool-output-urls": { kind: "full" },
+      "pr-link-from-output": { kind: "full" },
+      "pr-arrivals": { kind: "full" },
+      "prs-empty-hint": { kind: "full" },
+      "gh-signed-out-notice": { kind: "full" },
+      "link-open-rule": { kind: "full" },
+      "fork-ledger": { kind: "full" },
+      "band-and-stop-rows": {
+        kind: "different",
+        reason: "omp's band cannot take keys, so Resume is a button in the panel. omp classes a stop from the request's HTTP status and message, so it never names billing or a reset time."
+      },
+      "exchange-trigger": {
+        kind: "different",
+        reason: "omp's `before_agent_start` event carries only the prompt text, so every turn has words and none reads as started by something else."
+      },
+      "settle-window": { kind: "full" },
+      "fold-on-typed-message": { kind: "full" },
+      "version-label": {
+        kind: "different",
+        reason: "omp's panel footer ends with the inbox model's name, so the version follows it there."
+      },
+      "status-tab": { kind: "full" },
+      "turn-working": { kind: "full" },
+      "host-task-list": { kind: "full" },
+      "hooks-need-trust": {
+        kind: "unsupported",
+        reason: "omp runs an installed extension's events without asking anyone to trust them."
+      },
+      "compare-in-background": { kind: "full" },
+      "compare-page": { kind: "full" },
+      "running-marks": { kind: "full" },
+      "pending-answer-mark": { kind: "full" },
+      "tab-symbols": { kind: "full" },
+      "dim-pressed-button": {
+        kind: "different",
+        reason: "The panel already draws a follow-up such as Discuss dim, and has no dimmer style, so an out follow-up looks as it does at rest until it is focused. Its key still does nothing."
+      },
+      "herdr-sidebar": { kind: "full" },
+      "status-children": {
+        kind: "different",
+        reason: "omp's extension events report subagents and bash calls. omp's reference names no event for a background job or a workflow run, so those do not show."
+      },
+      "status-look-line": { kind: "full" },
+      "status-row-rules": { kind: "full" },
+      "status-failed-warning": { kind: "full" },
+      "asks-holds-up-line": { kind: "full" },
+      "status-mid-turn-refresh": { kind: "full" },
+      "ran-call-activity": { kind: "full" },
+      "ran-call-delegates": { kind: "full" },
+      "tool-result-line": { kind: "full" },
+      "status-call-records": { kind: "full" },
+      "dismiss-merged-prs": { kind: "full" },
+      "pr-order": { kind: "full" },
+      "pr-rank-again": { kind: "full" },
+      "pr-check-rerun": { kind: "full" },
+      "help-page": {
+        kind: "different",
+        reason: "The panel takes keys only, so `?` opens Help, and no button does."
+      },
+      "status-view-ask": { kind: "full" },
+      "status-goal": { kind: "full" },
+      "status-done-fold": { kind: "full" }
+    }
+  }
+};
+function isCompareInBackground(client) {
+  return CLIENTS[client].support["compare-in-background"].kind === "full";
+}
+
 // ../hooks/press-effects.ts
 function finishedResult(pending, errors, at) {
   const parts = pending.parts.map((part, n) => ({ ...part, error: errors[n] ?? null }));
@@ -8668,7 +8925,10 @@ function demoSource(deps) {
     }),
     press: async (p, holds) => {
       const at = deps.now();
-      const r = pressOn(state, p, at, { settleWindowMs: deps.settleWindowMs, holds }, { comparePage: deps.comparePage });
+      const r = pressOn(state, p, at, { settleWindowMs: deps.settleWindowMs, holds }, {
+        comparePage: deps.comparePage,
+        compareInBackground: isCompareInBackground("omp")
+      });
       if ("stale" in r)
         return { error: null, note: "stale", isUnconfirmed: false };
       const after = demoAfterPress({ lastActions: state.lastActions, turns: state.presence }, r, new Set(Object.keys(holds.replies)));
@@ -9407,7 +9667,8 @@ function sessionCalls(context) {
       },
       settleWindowMs: deps.settleWindowMs,
       newId: deps.newId,
-      comparePage: deps.comparePage
+      comparePage: deps.comparePage,
+      compareInBackground: isCompareInBackground("omp")
     };
   }
   const conversationText = (ctx) => {

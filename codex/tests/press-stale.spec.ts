@@ -144,7 +144,13 @@ test('a refused Done attempt cannot change a later close of the same task', () =
     initial,
     undefined,
     { id: 'i2', action: 'done' },
-    { now: 20, turnsStarted: 1, extraSteps: [], comparePage: '/plugin/dist/compare-page.html' },
+    {
+      now: 20,
+      turnsStarted: 1,
+      extraSteps: [],
+      comparePage: '/plugin/dist/compare-page.html',
+      compareInBackground: false,
+    },
   )
   assert.ok(!('stale' in first))
   const sent = markSentToAgent(first.ledger, ['i2'], 'old-attempt')
@@ -153,14 +159,26 @@ test('a refused Done attempt cannot change a later close of the same task', () =
     refused,
     undefined,
     { id: 'i2', action: 'undo' },
-    { now: 20, turnsStarted: 1, extraSteps: [], comparePage: '/plugin/dist/compare-page.html' },
+    {
+      now: 20,
+      turnsStarted: 1,
+      extraSteps: [],
+      comparePage: '/plugin/dist/compare-page.html',
+      compareInBackground: false,
+    },
   )
   assert.ok(!('stale' in undo))
   const second = applyPress(
     undo.ledger,
     undefined,
     { id: 'i2', action: 'done' },
-    { now: 20, turnsStarted: 1, extraSteps: [], comparePage: '/plugin/dist/compare-page.html' },
+    {
+      now: 20,
+      turnsStarted: 1,
+      extraSteps: [],
+      comparePage: '/plugin/dist/compare-page.html',
+      compareInBackground: false,
+    },
   )
   assert.ok(!('stale' in second))
   const newer = markSentToAgent(second.ledger, ['i2'], 'new-attempt')

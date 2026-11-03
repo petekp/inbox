@@ -45,6 +45,7 @@ import {
 } from './session-turns'
 import { emptySession, upgradeSession, type SavedSession } from './session-files'
 import { pressOn, recorded, pruned, type SendOutcome } from './session-presses'
+import { isCompareInBackground } from './clients'
 import { sessionView, showsRunningMark, type SessionView } from './session-view'
 import {
   childrenCutOff,
@@ -762,6 +763,7 @@ function sessionHost(
     },
     settleWindowMs: opts.settleWindowMs,
     comparePage: comparePagePath($),
+    compareInBackground: isCompareInBackground('claude-code'),
     newId: () => crypto.randomUUID(),
   }
 }
@@ -1810,7 +1812,7 @@ async function runDemoPress(
       p,
       now,
       { settleWindowMs: SETTLED_MS, holds },
-      { comparePage: comparePagePath($) },
+      { comparePage: comparePagePath($), compareInBackground: isCompareInBackground('claude-code') },
     )
     applied = r
     const { [rowId]: _replaced, ...notes } = d.notes

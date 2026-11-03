@@ -58,6 +58,7 @@ export function pressOn(
     extraSteps: item ? itemPrSteps(item, s.prViews, tabPrs(s.ledger)) : [],
     answerMessage: texts.answerMessage,
     comparePage: texts.comparePage,
+    compareInBackground: texts.compareInBackground,
   })
   if ('stale' in r) return r
 

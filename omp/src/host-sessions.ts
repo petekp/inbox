@@ -2,6 +2,7 @@ import { mkdir, readdir, rm, rmdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import { flattenConversation } from '../../hooks/conversation'
+import { isCompareInBackground } from '../../hooks/clients'
 import { screenText } from '../../hooks/inbox-text'
 import type { ScreenTab } from '../../hooks/inbox-text'
 import { ghFinder, ghIn } from '../../hooks/gh'
@@ -141,6 +142,7 @@ export function sessionCalls(context: HostContext) {
       settleWindowMs: deps.settleWindowMs,
       newId: deps.newId,
       comparePage: deps.comparePage,
+      compareInBackground: isCompareInBackground('omp'),
     }
   }
 

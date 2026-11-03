@@ -52,6 +52,7 @@ export function fakeHostWith<S extends Session>(
       settleWindowMs: 1000,
       newId: () => `id${++ids}`,
       comparePage: '/plugin/hooks/compare-page.html',
+      compareInBackground: true,
     }
     return { host, delivered, performed }
   }

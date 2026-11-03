@@ -72,6 +72,7 @@ test('a row Codex closes while the person types a reply stays held in place, out
       turnsStarted: 1,
       extraSteps: [],
       comparePage: '/plugin/dist/compare-page.html',
+      compareInBackground: false,
     },
   )
   assert.ok(!('stale' in r))
@@ -117,6 +118,7 @@ test('a held finding’s reply sends what a reply to the open finding sends, and
       turnsStarted: 1,
       extraSteps: [],
       comparePage: '/plugin/dist/compare-page.html',
+      compareInBackground: false,
     },
   )
   assert.ok(!('stale' in r))
