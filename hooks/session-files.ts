@@ -2,7 +2,8 @@ import { EMPTY, KEPT_SESSIONS, upgradeLedger } from './ledger'
 import { TOLD_NOTHING } from './inbox-text'
 import { upgradeLastActions } from './last-actions'
 import { upgradeHostTasks } from './host-tasks'
-import type { PrViews, Session, Told, TurnDialogQuestion } from '../types'
+import { withCheckKeys } from './saved-check-keys'
+import type { PrView, PrViews, Session, Told, TurnDialogQuestion } from '../types'
 
 const NO_PRS: PrViews = { views: {}, branchRef: null, isFetching: false }
 
@@ -94,8 +95,13 @@ function withoutStatedStep(presence: SavedSession['presence']): SavedSession['pr
  * row and delivery fields existed changes no row when its message arrives.
  */
 export function upgradeSession(saved: SavedSession): Session {
-  const base = emptySession()
   const views = saved.prViews?.views ?? {}
+
+  return withCheckKeys(sessionFields(saved, views), views)
+}
+
+function sessionFields(saved: SavedSession, views: Record<string, PrView>): Session {
+  const base = emptySession()
 
   return {
     ledger: saved.ledger

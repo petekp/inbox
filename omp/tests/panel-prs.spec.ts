@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import {
   GH_MISSING_TEXT,
   GH_SIGNED_OUT_TEXT,
-  checkRowId,
+  prCheckId,
   prMarkId,
   prsEmptyHint,
   threadSentIn,
@@ -176,7 +176,7 @@ test('a press on the PRs tab says when it was made, and a failing check keeps As
   const screen = screenOf()
   const { pr } = screen.view.prs.drawn[0]!
   const check = failingChecks(pr)[0]!
-  const checkId = checkRowId(pr.ref, check.name)
+  const checkId = prCheckId(pr, check)
   const resolving = withLast(screen, prMarkId(pr.ref), {
     kind: 'handoff',
     action: 'pr-conflicts',
