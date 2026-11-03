@@ -329,9 +329,9 @@ function pruneClosed(ledger, keep) {
 function idNumber(id) {
   return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
 }
-function inIdOrder(open3, entry) {
-  const at = open3.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
-  return at < 0 ? [...open3, entry] : [...open3.slice(0, at), entry, ...open3.slice(at)];
+function inIdOrder(open2, entry) {
+  const at = open2.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
+  return at < 0 ? [...open2, entry] : [...open2.slice(0, at), entry, ...open2.slice(at)];
 }
 function reopenItem(ledger, id) {
   const item = ledger.closed.findLast((c) => c.id === id)?.item;
@@ -1022,13 +1022,13 @@ TODO: <work>
 Write plainly. No jargon, no filler, no markdown.`;
 }
 function ledgerBlocks(ledger) {
-  const open3 = ledger.items.map(
+  const open2 = ledger.items.map(
     (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`
   ).join(NL4);
   const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL4);
   const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL4);
   return [
-    `<open>${NL4}${open3}${NL4}</open>`,
+    `<open>${NL4}${open2}${NL4}</open>`,
     `<findings>${NL4}${findings}${NL4}</findings>`,
     `<decided>${NL4}${closed}${NL4}</decided>`
   ];
@@ -1187,249 +1187,6 @@ function tasksText(tasks) {
   return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL5);
 }
 
-// ../hooks/session-files.ts
-var NO_PRS = { views: {}, branchRef: null, isFetching: false };
-var NO_TURN = { person: null, trigger: null, activity: [], press: null };
-function emptySession() {
-  return {
-    ledger: EMPTY,
-    turn: NO_TURN,
-    told: TOLD_NOTHING,
-    presence: {
-      turnsStarted: 0,
-      turnsApplied: 0,
-      ledgerState: "current",
-      hasDroppedReply: false,
-      isUpdating: false,
-      isTurnRunning: false,
-      turnStartedAt: null,
-      lastReplyAt: null,
-      lastTypedMessageAt: null
-    },
-    place: null,
-    pending: [],
-    sent: [],
-    lastActions: {},
-    heldRows: [],
-    shownSince: null,
-    prViews: NO_PRS,
-    stop: null,
-    overviewFailure: null,
-    lastOverviewCallAt: null,
-    hostTasks: [],
-    dialogQuestions: []
-  };
-}
-var SESSION_ID = /^[\w-]{1,100}$/;
-function sessionFile(sessionId) {
-  if (!SESSION_ID.test(sessionId)) throw new Error(`Not a session id: ${sessionId}`);
-  return `${sessionId}.json`;
-}
-function missingAsNull(err) {
-  if (err.code === "ENOENT") return null;
-  throw err;
-}
-function withoutStatedStep(presence) {
-  const { statedStep: _statedStep, ...rest } = presence ?? {};
-  return rest;
-}
-function upgradeSession(saved) {
-  const base = emptySession();
-  const views = saved.prViews?.views ?? {};
-  return {
-    ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
-    turn: { ...base.turn, ...saved.turn },
-    told: { ...base.told, ...saved.told },
-    presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
-    place: saved.place ?? null,
-    pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
-    sent: (saved.sent ?? []).map((x) => ({
-      ...x,
-      row: x.row ?? null,
-      queuedId: x.queuedId ?? null,
-      pressedAt: x.pressedAt ?? null,
-      deliveryId: x.deliveryId ?? null,
-      phase: x.phase ?? "accepted"
-    })),
-    lastActions: upgradeLastActions(saved.lastActions ?? {}),
-    heldRows: saved.heldRows ?? [],
-    shownSince: saved.shownSince ?? null,
-    prViews: {
-      ...NO_PRS,
-      ...saved.prViews,
-      // Views saved before `isYours` and `wasSeenOpen`, and threads saved before their times and `isLinesChanged` existed.
-      views: Object.fromEntries(
-        Object.entries(views).map(([ref, pr]) => [
-          ref,
-          {
-            ...pr,
-            isYours: pr.isYours ?? null,
-            wasSeenOpen: pr.wasSeenOpen ?? pr.state === "OPEN",
-            threads: pr.threads.map((t) => ({
-              ...t,
-              isLinesChanged: t.isLinesChanged ?? false,
-              at: t.at ?? null,
-              reply: t.reply && { ...t.reply, at: t.reply.at ?? null }
-            }))
-          }
-        ])
-      ),
-      isFetching: false
-    },
-    stop: saved.stop ?? null,
-    overviewFailure: saved.overviewFailure ?? null,
-    lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
-    hostTasks: upgradeHostTasks(saved.hostTasks),
-    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
-  };
-}
-
-// ../hooks/catch-up-text.ts
-var CATCH_UP = "The ledger below may have missed turns. Write a CLOSED line for every item in <open> that the conversation shows answered, done, dealt with, or no longer relevant, and a FIXED line for every finding in <findings> that it shows was fixed. Add as NEW only what still waits on the user and is not already in <open> or <findings>.";
-function transcriptCatchUpPrompt(ledger, screen, transcript) {
-  return [
-    `Treat the conversation in <conversation> as the exchange. Its start may be cut. ${CATCH_UP}`,
-    ...ledgerBlocks(ledger),
-    `<conversation>${NL4}${numberBlocks(transcript)}${NL4}</conversation>`,
-    `<screen>${NL4}${screen}${NL4}</screen>`
-  ].join(NL4);
-}
-var MAX_ACTIVITY = 40;
-function addActivity(activity, line) {
-  return !line || activity.length >= MAX_ACTIVITY || activity.includes(line) ? activity : [...activity, line];
-}
-function toolActivity(tool, input) {
-  const text2 = (key) => typeof input[key] === "string" ? input[key] : "";
-  switch (tool) {
-    case "Bash":
-      return `${input.run_in_background ? "started in background" : "ran"}: ${text2("command").slice(0, 140)}`;
-    case "Edit":
-    case "Write":
-      return `edited ${text2("file_path")}`;
-    case "Skill":
-      return `used skill ${text2("skill")}`;
-    case "Agent":
-      return `started agent: ${text2("description")}`;
-  }
-  return tool.startsWith("mcp__") ? `called ${tool.slice(5)}` : null;
-}
-var DIALOG_QUESTIONS_SHOWN = 3;
-var DIALOG_QUESTION_MAX = 200;
-var DIALOG_OPTIONS_SHOWN = 6;
-var DIALOG_OPTION_MAX = 60;
-var DIALOG_ANSWER_MAX = 400;
-var RECOMMENDED_SUFFIX = /\s*\(recommended\)\s*$/i;
-function dialogQuestions(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw.flatMap((q) => {
-    const fields2 = q ?? {};
-    const text2 = [fields2.question, fields2.title].find((v) => typeof v === "string" && v.trim() !== "");
-    if (!text2) return [];
-    const options = (Array.isArray(fields2.options) ? fields2.options : []).flatMap((o) => {
-      const option = typeof o === "string" ? { label: o } : o ?? {};
-      const label = typeof option.label === "string" ? option.label.trim() : "";
-      const description = typeof option.description === "string" ? option.description.trim() : "";
-      return label === "" ? [] : [{ label, description }];
-    });
-    return [
-      {
-        question: text2.trim(),
-        options: options.map((o) => o.label),
-        descriptions: Object.fromEntries(options.filter((o) => o.description !== "").map((o) => [o.label, o.description]))
-      }
-    ];
-  });
-}
-function dialogQuestionText(q) {
-  const shown = q.options.slice(0, DIALOG_OPTIONS_SHOWN).map((label) => {
-    const plain = label.replace(RECOMMENDED_SUFFIX, "");
-    const text2 = clip(plain, DIALOG_OPTION_MAX);
-    return plain === label ? text2 : `${text2} (recommended)`;
-  });
-  const more = q.options.length > shown.length ? ` / and ${q.options.length - shown.length} more` : "";
-  const options = shown.length > 0 ? ` (options: ${shown.join(" / ")}${more})` : "";
-  return `"${clip(q.question.replaceAll('"', "'"), DIALOG_QUESTION_MAX)}"${options}`;
-}
-function dialogActivity(questions, outcome) {
-  const shown = questions.slice(0, DIALOG_QUESTIONS_SHOWN).map(dialogQuestionText);
-  const more = questions.length - shown.length;
-  const asked = shown.length > 0 ? `: ${shown.join("; ")}${more > 0 ? `; and ${more} more` : ""}` : "";
-  const head = `asked the user in a dialog${asked}`;
-  switch (outcome.kind) {
-    case "answered":
-      return `${head}; answer: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
-    case "timed-out":
-      return `${head}; it timed out while the user was away, so the user did not answer; it went on with: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
-    case "dismissed":
-      return `${head}; the user dismissed it without answering`;
-    case "open":
-      return `${head}; still open, waiting on the user's answer`;
-  }
-}
-
-// ../hooks/dialogs.ts
-function optionKey(option) {
-  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
-}
-function optionsKey(options) {
-  return options.map(optionKey).sort().join("\n");
-}
-function hasSameOptions(item, q) {
-  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
-}
-function copyOf(q, items, questions) {
-  const byOptions = items.filter((i) => hasSameOptions(i, q));
-  const [only] = byOptions;
-  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
-  const pool = byOptions.length > 0 ? byOptions : items;
-  const byAsk = pool.filter((i) => restates(i.ask, q.question));
-  const [asked] = byAsk;
-  if (!asked || byAsk.length !== 1) return null;
-  const restated = questions.filter((o) => restates(asked.ask, o.question));
-  return restated.length === 1 ? asked : null;
-}
-function descriptionsFor(options, descriptions) {
-  const byKey = new Map(Object.entries(descriptions).map(([label, text2]) => [optionKey(label), text2]));
-  const matched = options.flatMap((o) => {
-    const text2 = byKey.get(optionKey(o));
-    return text2 === void 0 ? [] : [[o, text2]];
-  });
-  return matched.length > 0 ? Object.fromEntries(matched) : null;
-}
-function asCopyOf(item, q) {
-  const descriptions = descriptionsFor(item.options, q.descriptions);
-  return {
-    ...item,
-    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
-    ...descriptions ? { optionDescriptions: descriptions } : {}
-  };
-}
-function linkDialogs(s) {
-  if (s.dialogQuestions.length === 0) return s;
-  let items = s.ledger.items;
-  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
-  const questions = s.dialogQuestions.map((q) => {
-    if (q.itemId !== null) return q;
-    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
-    const copy = copyOf(
-      q,
-      turnItems,
-      s.dialogQuestions.filter((o) => o.turn === q.turn)
-    );
-    if (!copy || copy.dialog || linked.has(copy.id)) return q;
-    linked.add(copy.id);
-    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
-    return { ...q, itemId: copy.id };
-  });
-  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
-  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
-}
-
-// ../hooks/open-targets.ts
-function baseName(path) {
-  return path.replace(/\/+$/, "").split("/").pop() ?? path;
-}
-
 // ../hooks/prs.ts
 function namedPrs(text2, refs) {
   const numbers = new Set([...text2.matchAll(/#(\d+)\b/g)].map((m) => m[1]));
@@ -1443,6 +1200,9 @@ function parseRef(ref) {
   const [repo = "", number = ""] = ref.split("#");
   const [owner = "", name = ""] = repo.split("/");
   return { repo, owner, name, number };
+}
+function checkKey(c) {
+  return c.workflow ? `${c.workflow} / ${c.name}` : c.name;
 }
 function isKeptPr(pr) {
   return pr.isYours !== false && pr.wasSeenOpen;
@@ -1478,7 +1238,7 @@ function readiness(pr, isSent = () => false) {
   if (pr.state !== "OPEN") return result("closed", "Closed");
   const { fail: failing, cancelled, pending } = checkCounts(pr);
   const waiting = waitingThreads(pr);
-  const open3 = threadsOnYou(pr, isSent).length;
+  const open2 = threadsOnYou(pr, isSent).length;
   const sent = waiting.filter((t) => isSent(pr, t)).length;
   const changed = waiting.filter((t) => t.isLinesChanged && !isSent(pr, t)).length;
   const isPresent = (b) => b !== null;
@@ -1488,7 +1248,7 @@ function readiness(pr, isSent = () => false) {
     row(failing > 0 ? plural(failing, "failing check", "failing checks") : null),
     row(cancelled > 0 ? plural(cancelled, "cancelled check", "cancelled checks") : null),
     pr.reviewDecision === "CHANGES_REQUESTED" ? "changes requested" : null,
-    row(open3 > 0 ? threadsWaiting(open3) : null)
+    row(open2 > 0 ? threadsWaiting(open2) : null)
   ].filter(isPresent);
   const onOthers = [
     row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to Claude` : null),
@@ -1533,6 +1293,20 @@ function blockingChecks(pr) {
   return [...failingChecks(pr), ...cancelledChecks(pr)];
 }
 
+// ../hooks/open-targets.ts
+function baseName(path) {
+  return path.replace(/\/+$/, "").split("/").pop() ?? path;
+}
+
+// ../hooks/press-labels.ts
+function actionId(p) {
+  return p.action === "step" ? `step-${p.step}` : p.action;
+}
+function capitalized(text2) {
+  return text2.charAt(0).toUpperCase() + text2.slice(1);
+}
+var ISSUE_LABEL = "File issue";
+
 // ../hooks/help-steps.ts
 function helpLabel(help) {
   const label = help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? help.command}` : help.kind === "terminal" ? `Copy ${help.name ?? help.command}` : `Open ${help.name ?? new URL(help.url).host}`;
@@ -1540,11 +1314,11 @@ function helpLabel(help) {
 }
 function steps(helps) {
   const copy = helps.find((h) => h.kind === "copy");
-  const open3 = helps.find((h) => h.kind === "open");
-  if (!copy || !open3 || copy.kind !== "copy" || open3.kind !== "open")
+  const open2 = helps.find((h) => h.kind === "open");
+  if (!copy || !open2 || copy.kind !== "copy" || open2.kind !== "open")
     return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
   return helps.filter((h) => h !== copy).map(
-    (h) => h === open3 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open3.path)}`, 48), step: [copy, open3] } : { label: helpLabel(h), step: [h] }
+    (h) => h === open2 ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open2.path)}`, 48), step: [copy, open2] } : { label: helpLabel(h), step: [h] }
   );
 }
 function prSteps(item, tracked) {
@@ -1565,15 +1339,6 @@ function stepIconKind(step) {
   const first = step.step[0]?.kind;
   return first === "copy" || first === "terminal" ? "copy" : first === "open" || first === "link" ? "open" : void 0;
 }
-
-// ../hooks/press-labels.ts
-function actionId(p) {
-  return p.action === "step" ? `step-${p.step}` : p.action;
-}
-function capitalized(text2) {
-  return text2.charAt(0).toUpperCase() + text2.slice(1);
-}
-var ISSUE_LABEL = "File issue";
 
 // ../hooks/status-goal-ops.ts
 var RESTATED_SHARE = 0.8;
@@ -1827,9 +1592,9 @@ function isChildRunning(c, now) {
 function subjectsText(o) {
   const subjects = o?.subjects ?? [];
   const serves = (id) => o?.goal ? ` | ${servesText(o, id)}` : "";
-  const open3 = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}${serves(s.id)}`);
+  const open2 = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}${serves(s.id)}`);
   const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
-  return { open: open3.join(NL) || "(none yet)", finished: finished.join(NL) };
+  return { open: open2.join(NL) || "(none yet)", finished: finished.join(NL) };
 }
 function servesText(o, subjectId) {
   const to = o.serves[subjectId];
@@ -2031,9 +1796,9 @@ function statusPage(s, now) {
   const newClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const main2 = subjects.filter((x) => !isOther(x));
   const other = subjects.filter(isOther);
-  const open3 = main2.filter(isOpen).sort(pageOrder);
-  const foldable = open3.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
-  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open3.length - foldable.length)));
+  const open2 = main2.filter(isOpen).sort(pageOrder);
+  const foldable = open2.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
+  const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open2.length - foldable.length)));
   const split = (part) => {
     const newClosed = newClosedOf(part);
     return {
@@ -2214,6 +1979,9 @@ function prThreadId(pr, t) {
 function threadRowId(ref, thread) {
   return `${ref} thread ${thread}`;
 }
+function checkRowId(ref, check) {
+  return `${ref} check ${check}`;
+}
 function prMarkId(ref) {
   return `pr:${ref}`;
 }
@@ -2223,6 +1991,280 @@ function threadSentIn(lastActions) {
     const last = lastActions[prThreadId(pr, t)];
     return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
   };
+}
+
+// ../hooks/saved-check-keys.ts
+function savedCheckKey(checks, name) {
+  if (checks.some((c) => checkKey(c) === name)) return name;
+  const named = checks.filter((c) => c.name === name);
+  return named.length === 1 ? checkKey(named[0]) : name;
+}
+var CHECK_ROW_ID = /^(\S+) check (.+)$/;
+function savedRowId(id, views) {
+  const m = CHECK_ROW_ID.exec(id);
+  return m ? checkRowId(m[1], savedCheckKey(views[m[1]]?.checks ?? [], m[2])) : id;
+}
+function withCheckKeys(s, views) {
+  const order = s.ledger.prOrder;
+  const statuses = order?.statuses;
+  const upgradedStatuses = statuses && Object.fromEntries(
+    Object.entries(statuses).map(([ref, status]) => [
+      ref,
+      { ...status, failing: status.failing.map((name) => savedCheckKey(views[ref]?.checks ?? [], name)) }
+    ])
+  );
+  return {
+    ...s,
+    ledger: order ? { ...s.ledger, prOrder: { ...order, statuses: upgradedStatuses } } : s.ledger,
+    sent: s.sent.map((x) => x.row === null ? x : { ...x, row: savedRowId(x.row, views) }),
+    lastActions: Object.fromEntries(
+      Object.entries(s.lastActions).map(([id, last]) => {
+        const upgraded2 = savedRowId(id, views);
+        return [upgraded2 in s.lastActions ? id : upgraded2, last];
+      })
+    )
+  };
+}
+
+// ../hooks/session-files.ts
+var NO_PRS = { views: {}, branchRef: null, isFetching: false };
+var NO_TURN = { person: null, trigger: null, activity: [], press: null };
+function emptySession() {
+  return {
+    ledger: EMPTY,
+    turn: NO_TURN,
+    told: TOLD_NOTHING,
+    presence: {
+      turnsStarted: 0,
+      turnsApplied: 0,
+      ledgerState: "current",
+      hasDroppedReply: false,
+      isUpdating: false,
+      isTurnRunning: false,
+      turnStartedAt: null,
+      lastReplyAt: null,
+      lastTypedMessageAt: null
+    },
+    place: null,
+    pending: [],
+    sent: [],
+    lastActions: {},
+    heldRows: [],
+    shownSince: null,
+    prViews: NO_PRS,
+    stop: null,
+    overviewFailure: null,
+    lastOverviewCallAt: null,
+    hostTasks: [],
+    dialogQuestions: []
+  };
+}
+var SESSION_ID = /^[\w-]{1,100}$/;
+function sessionFile(sessionId) {
+  if (!SESSION_ID.test(sessionId)) throw new Error(`Not a session id: ${sessionId}`);
+  return `${sessionId}.json`;
+}
+function missingAsNull(err) {
+  if (err.code === "ENOENT") return null;
+  throw err;
+}
+function withoutStatedStep(presence) {
+  const { statedStep: _statedStep, ...rest } = presence ?? {};
+  return rest;
+}
+function upgradeSession(saved) {
+  const views = saved.prViews?.views ?? {};
+  return withCheckKeys(sessionFields(saved, views), views);
+}
+function sessionFields(saved, views) {
+  const base = emptySession();
+  return {
+    ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
+    turn: { ...base.turn, ...saved.turn },
+    told: { ...base.told, ...saved.told },
+    presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
+    place: saved.place ?? null,
+    pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
+    sent: (saved.sent ?? []).map((x) => ({
+      ...x,
+      row: x.row ?? null,
+      queuedId: x.queuedId ?? null,
+      pressedAt: x.pressedAt ?? null,
+      deliveryId: x.deliveryId ?? null,
+      phase: x.phase ?? "accepted"
+    })),
+    lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    heldRows: saved.heldRows ?? [],
+    shownSince: saved.shownSince ?? null,
+    prViews: {
+      ...NO_PRS,
+      ...saved.prViews,
+      // Views saved before `isYours` and `wasSeenOpen`, and threads saved before their times and `isLinesChanged` existed.
+      views: Object.fromEntries(
+        Object.entries(views).map(([ref, pr]) => [
+          ref,
+          {
+            ...pr,
+            isYours: pr.isYours ?? null,
+            wasSeenOpen: pr.wasSeenOpen ?? pr.state === "OPEN",
+            threads: pr.threads.map((t) => ({
+              ...t,
+              isLinesChanged: t.isLinesChanged ?? false,
+              at: t.at ?? null,
+              reply: t.reply && { ...t.reply, at: t.reply.at ?? null }
+            }))
+          }
+        ])
+      ),
+      isFetching: false
+    },
+    stop: saved.stop ?? null,
+    overviewFailure: saved.overviewFailure ?? null,
+    lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
+    hostTasks: upgradeHostTasks(saved.hostTasks),
+    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
+  };
+}
+
+// ../hooks/catch-up-text.ts
+var CATCH_UP = "The ledger below may have missed turns. Write a CLOSED line for every item in <open> that the conversation shows answered, done, dealt with, or no longer relevant, and a FIXED line for every finding in <findings> that it shows was fixed. Add as NEW only what still waits on the user and is not already in <open> or <findings>.";
+function transcriptCatchUpPrompt(ledger, screen, transcript) {
+  return [
+    `Treat the conversation in <conversation> as the exchange. Its start may be cut. ${CATCH_UP}`,
+    ...ledgerBlocks(ledger),
+    `<conversation>${NL4}${numberBlocks(transcript)}${NL4}</conversation>`,
+    `<screen>${NL4}${screen}${NL4}</screen>`
+  ].join(NL4);
+}
+var MAX_ACTIVITY = 40;
+function addActivity(activity, line) {
+  return !line || activity.length >= MAX_ACTIVITY || activity.includes(line) ? activity : [...activity, line];
+}
+function toolActivity(tool, input) {
+  const text2 = (key) => typeof input[key] === "string" ? input[key] : "";
+  switch (tool) {
+    case "Bash":
+      return `${input.run_in_background ? "started in background" : "ran"}: ${text2("command").slice(0, 140)}`;
+    case "Edit":
+    case "Write":
+      return `edited ${text2("file_path")}`;
+    case "Skill":
+      return `used skill ${text2("skill")}`;
+    case "Agent":
+      return `started agent: ${text2("description")}`;
+  }
+  return tool.startsWith("mcp__") ? `called ${tool.slice(5)}` : null;
+}
+var DIALOG_QUESTIONS_SHOWN = 3;
+var DIALOG_QUESTION_MAX = 200;
+var DIALOG_OPTIONS_SHOWN = 6;
+var DIALOG_OPTION_MAX = 60;
+var DIALOG_ANSWER_MAX = 400;
+var RECOMMENDED_SUFFIX = /\s*\(recommended\)\s*$/i;
+function dialogQuestions(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((q) => {
+    const fields2 = q ?? {};
+    const text2 = [fields2.question, fields2.title].find((v) => typeof v === "string" && v.trim() !== "");
+    if (!text2) return [];
+    const options = (Array.isArray(fields2.options) ? fields2.options : []).flatMap((o) => {
+      const option = typeof o === "string" ? { label: o } : o ?? {};
+      const label = typeof option.label === "string" ? option.label.trim() : "";
+      const description = typeof option.description === "string" ? option.description.trim() : "";
+      return label === "" ? [] : [{ label, description }];
+    });
+    return [
+      {
+        question: text2.trim(),
+        options: options.map((o) => o.label),
+        descriptions: Object.fromEntries(options.filter((o) => o.description !== "").map((o) => [o.label, o.description]))
+      }
+    ];
+  });
+}
+function dialogQuestionText(q) {
+  const shown = q.options.slice(0, DIALOG_OPTIONS_SHOWN).map((label) => {
+    const plain = label.replace(RECOMMENDED_SUFFIX, "");
+    const text2 = clip(plain, DIALOG_OPTION_MAX);
+    return plain === label ? text2 : `${text2} (recommended)`;
+  });
+  const more = q.options.length > shown.length ? ` / and ${q.options.length - shown.length} more` : "";
+  const options = shown.length > 0 ? ` (options: ${shown.join(" / ")}${more})` : "";
+  return `"${clip(q.question.replaceAll('"', "'"), DIALOG_QUESTION_MAX)}"${options}`;
+}
+function dialogActivity(questions, outcome) {
+  const shown = questions.slice(0, DIALOG_QUESTIONS_SHOWN).map(dialogQuestionText);
+  const more = questions.length - shown.length;
+  const asked = shown.length > 0 ? `: ${shown.join("; ")}${more > 0 ? `; and ${more} more` : ""}` : "";
+  const head = `asked the user in a dialog${asked}`;
+  switch (outcome.kind) {
+    case "answered":
+      return `${head}; answer: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
+    case "timed-out":
+      return `${head}; it timed out while the user was away, so the user did not answer; it went on with: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
+    case "dismissed":
+      return `${head}; the user dismissed it without answering`;
+    case "open":
+      return `${head}; still open, waiting on the user's answer`;
+  }
+}
+
+// ../hooks/dialogs.ts
+function optionKey(option) {
+  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
+}
+function optionsKey(options) {
+  return options.map(optionKey).sort().join("\n");
+}
+function hasSameOptions(item, q) {
+  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
+}
+function copyOf(q, items, questions) {
+  const byOptions = items.filter((i) => hasSameOptions(i, q));
+  const [only] = byOptions;
+  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
+  const pool = byOptions.length > 0 ? byOptions : items;
+  const byAsk = pool.filter((i) => restates(i.ask, q.question));
+  const [asked] = byAsk;
+  if (!asked || byAsk.length !== 1) return null;
+  const restated = questions.filter((o) => restates(asked.ask, o.question));
+  return restated.length === 1 ? asked : null;
+}
+function descriptionsFor(options, descriptions) {
+  const byKey = new Map(Object.entries(descriptions).map(([label, text2]) => [optionKey(label), text2]));
+  const matched = options.flatMap((o) => {
+    const text2 = byKey.get(optionKey(o));
+    return text2 === void 0 ? [] : [[o, text2]];
+  });
+  return matched.length > 0 ? Object.fromEntries(matched) : null;
+}
+function asCopyOf(item, q) {
+  const descriptions = descriptionsFor(item.options, q.descriptions);
+  return {
+    ...item,
+    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
+    ...descriptions ? { optionDescriptions: descriptions } : {}
+  };
+}
+function linkDialogs(s) {
+  if (s.dialogQuestions.length === 0) return s;
+  let items = s.ledger.items;
+  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
+  const questions = s.dialogQuestions.map((q) => {
+    if (q.itemId !== null) return q;
+    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
+    const copy = copyOf(
+      q,
+      turnItems,
+      s.dialogQuestions.filter((o) => o.turn === q.turn)
+    );
+    if (!copy || copy.dialog || linked.has(copy.id)) return q;
+    linked.add(copy.id);
+    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
+    return { ...q, itemId: copy.id };
+  });
+  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
+  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
 }
 
 // ../hooks/gh.ts
@@ -2413,7 +2455,7 @@ function rankedStatusOf(pr) {
   return {
     status: readiness(pr).status,
     threads: waitingThreads(pr).map((t) => t.id),
-    failing: blockingChecks(pr).map((c) => c.name)
+    failing: blockingChecks(pr).map(checkKey)
   };
 }
 function hasChanged(was, is) {
@@ -2884,7 +2926,8 @@ function emptyState(sessionId) {
     tabSeenAt: 0,
     shownTab: "needsYou",
     heard: NOTHING_HEARD,
-    coveredTurn: null
+    coveredTurn: null,
+    openCatchUpKey: null
   };
 }
 function statePath(dir, sessionId) {
@@ -3516,7 +3559,7 @@ import {
   rename as rename2,
   rm,
   rmdir as rmdir2,
-  stat as stat2,
+  stat as stat4,
   symlink as symlink2,
   writeFile as writeFile2
 } from "node:fs/promises";
@@ -3692,14 +3735,14 @@ function headText(o) {
   return `${o.head.title} | ${o.head.description || "(no description yet)"}`;
 }
 function statusBlocks({ last, asks, tasks, now }) {
-  const { open: open3, finished } = subjectsText(last);
+  const { open: open2, finished } = subjectsText(last);
   const running = runningText(last, now);
   const held = asksText(last, asks);
   const list = tasksText(tasks);
   return [
     ...goalBlocks(last),
     `<head>${NL4}${headText(last)}${NL4}</head>`,
-    `<subjects>${NL4}${open3}${NL4}</subjects>`,
+    `<subjects>${NL4}${open2}${NL4}</subjects>`,
     ...finished === "" ? [] : [`<finished>${NL4}${finished}${NL4}</finished>`],
     ...running === "" ? [] : [`<running>${NL4}${running}${NL4}</running>`],
     ...held === "" ? [] : [`<asks>${NL4}${held}${NL4}</asks>`],
@@ -3839,14 +3882,14 @@ function refreshStatus(host) {
 
 // ../hooks/session-host.ts
 function orderedKeys() {
-  const tails = /* @__PURE__ */ new Map();
+  const tails2 = /* @__PURE__ */ new Map();
   return {
     run: (key, fn) => {
-      const result = (tails.get(key) ?? Promise.resolve()).then(fn);
+      const result = (tails2.get(key) ?? Promise.resolve()).then(fn);
       const tail = result.catch(() => void 0);
-      tails.set(key, tail);
+      tails2.set(key, tail);
       void tail.then(() => {
-        if (tails.get(key) === tail) tails.delete(key);
+        if (tails2.get(key) === tail) tails2.delete(key);
       });
       return result;
     }
@@ -3923,26 +3966,97 @@ async function runUpdates(host) {
 }
 
 // src/transcript.ts
-import { open as open2, readdir as readdir2 } from "node:fs/promises";
-import { dirname as dirname2, join as join3 } from "node:path";
+import { readdir as readdir2, stat as stat3 } from "node:fs/promises";
+import { basename as basename2, dirname as dirname2, join as join3 } from "node:path";
 
-// src/rollout-rows.ts
-import { open } from "node:fs/promises";
-async function readSessionMeta(path) {
+// src/rollout-file.ts
+import { createReadStream } from "node:fs";
+import { open, stat as stat2 } from "node:fs/promises";
+import * as zlib from "node:zlib";
+var canReadZstd = typeof zlib.createZstdDecompress === "function";
+var isCompressed = (path) => path.endsWith(".zst");
+async function plainBytesBefore(path, bytes, end) {
+  const file = await open(path, "r");
   try {
+    const stop = Math.min(end, (await file.stat()).size);
+    const start = Math.max(0, stop - bytes);
+    const buf = Buffer.alloc(stop - start);
+    const { bytesRead } = await file.read(buf, 0, buf.length, start);
+    return { buf: buf.subarray(0, bytesRead), start };
+  } finally {
+    await file.close();
+  }
+}
+async function compressedBytesBefore(path, bytes, end) {
+  if (!canReadZstd) throw new Error("This Node cannot read zstd");
+  const kept = [];
+  let keptBytes = 0;
+  let read = 0;
+  const input = createReadStream(path);
+  const content = input.pipe(zlib.createZstdDecompress());
+  input.on("error", (err) => content.destroy(err));
+  try {
+    for await (const chunk of content) {
+      const part = chunk.subarray(0, Math.max(0, end - read));
+      read += part.length;
+      kept.push(part);
+      keptBytes += part.length;
+      while (kept.length > 1 && keptBytes - kept[0].length >= bytes) keptBytes -= kept.shift().length;
+      if (read >= end) break;
+    }
+  } finally {
+    input.destroy();
+    content.destroy();
+  }
+  const window = Buffer.concat(kept);
+  const cut = Math.max(0, window.length - bytes);
+  return { buf: window.subarray(cut), start: read - window.length + cut };
+}
+var tails = /* @__PURE__ */ new Map();
+var KEPT_TAILS = 4;
+var TAIL_KEPT_BYTES = 8 * 1024 * 1024;
+async function bytesBefore(path, bytes, end = Infinity) {
+  if (!isCompressed(path)) return plainBytesBefore(path, bytes, end);
+  if (end !== Infinity || bytes > TAIL_KEPT_BYTES) return compressedBytesBefore(path, bytes, end);
+  const info = await stat2(path);
+  const version = `${info.size}:${info.mtimeMs}`;
+  let known = tails.get(path);
+  if (known?.version !== version) {
+    known = { version, tail: await compressedBytesBefore(path, TAIL_KEPT_BYTES, Infinity) };
+    tails.delete(path);
+    tails.set(path, known);
+    for (const old of tails.keys()) if (tails.size > KEPT_TAILS) tails.delete(old);
+  }
+  const { buf, start } = known.tail;
+  const cut = Math.max(0, buf.length - bytes);
+  return { buf: buf.subarray(cut), start: start + cut };
+}
+async function firstBytes(path, bytes) {
+  if (!isCompressed(path)) {
     const file = await open(path, "r");
     try {
-      const buf = Buffer.alloc(64 * 1024);
-      const { bytesRead } = await file.read(buf, 0, buf.length, 0);
-      const first = buf.subarray(0, bytesRead).toString("utf8").split("\n")[0] ?? "";
-      const meta = JSON.parse(first);
-      return meta.type === "session_meta" ? meta : null;
+      const buf = Buffer.alloc(bytes);
+      const { bytesRead } = await file.read(buf, 0, bytes, 0);
+      return buf.subarray(0, bytesRead);
     } finally {
       await file.close();
     }
+  }
+  return (await compressedBytesBefore(path, bytes, bytes)).buf;
+}
+
+// src/rollout-rows.ts
+async function readSessionMeta(path) {
+  try {
+    const first = (await firstBytes(path, 64 * 1024)).toString("utf8").split("\n")[0] ?? "";
+    const meta = JSON.parse(first);
+    return meta.type === "session_meta" ? meta : null;
   } catch {
     return null;
   }
+}
+function isExecMeta(meta) {
+  return meta?.payload?.originator === "codex_exec" || meta?.payload?.source === "exec";
 }
 var isText = (v) => typeof v === "string";
 var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
@@ -4121,39 +4235,68 @@ async function namesIn(dir, pattern) {
   const names = await readdir2(dir).catch(() => []);
   return names.filter((n) => pattern.test(n)).sort().reverse();
 }
-async function newestRollout(sessions, isWanted) {
+var ROLLOUT_NAME = canReadZstd ? /^rollout-.+\.jsonl(\.zst)?$/ : /^rollout-.+\.jsonl$/;
+var plainName = (name) => name.replace(/\.zst$/, "");
+async function rolloutsIn(folder, isWanted) {
+  const names = (await namesIn(folder, ROLLOUT_NAME)).filter((n) => isWanted(plainName(n)));
+  const byNewest = (a, b) => plainName(b).localeCompare(plainName(a)) || a.length - b.length;
+  return names.sort(byNewest);
+}
+async function newestRollout(codexHome, isWanted) {
+  const sessions = join3(codexHome, "sessions");
   for (const year of await namesIn(sessions, /^\d{4}$/))
     for (const month of await namesIn(join3(sessions, year), /^\d{2}$/))
       for (const day of await namesIn(join3(sessions, year, month), /^\d{2}$/)) {
         const folder = join3(sessions, year, month, day);
-        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isWanted);
+        const [name] = await rolloutsIn(folder, isWanted);
         if (name !== void 0) return join3(folder, name);
       }
-  return null;
+  const archive = join3(codexHome, "archived_sessions");
+  const [archived] = await rolloutsIn(archive, isWanted);
+  return archived === void 0 ? null : join3(archive, archived);
+}
+function codexHomeOf(path) {
+  const folder = dirname2(path);
+  if (basename2(folder) === "archived_sessions") return dirname2(folder);
+  const sessions = dirname2(dirname2(dirname2(folder)));
+  return basename2(sessions) === "sessions" ? dirname2(sessions) : null;
+}
+async function rolloutFor(codexHome, threadId) {
+  if (threadId === "") return null;
+  const path = await newestRollout(
+    codexHome,
+    (name) => name.endsWith(`-${threadId}.jsonl`) || name.includes(`-${threadId}_`)
+  );
+  if (path === null) return null;
+  const meta = await readSessionMeta(path);
+  const isOwnChat = meta !== null && !meta.payload?.parent_thread_id && !isExecMeta(meta);
+  return isOwnChat ? { path, cwd: typeof meta.payload?.cwd === "string" ? meta.payload.cwd : "" } : null;
+}
+async function withCurrentRollout(s) {
+  const saved = s.transcriptPath;
+  if (saved === null || await stat3(saved).catch(() => null) !== null) return s;
+  const codexHome = codexHomeOf(saved);
+  const found = codexHome === null ? null : await rolloutFor(codexHome, s.sessionId);
+  return found === null || found.path === saved ? s : { ...s, transcriptPath: found.path };
 }
 async function historyBase(path) {
   const base = (await readSessionMeta(path))?.payload?.history_base;
   const id = base?.thread_id;
   const end = base?.end_byte_offset;
-  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0) return null;
-  const sessions = dirname2(dirname2(dirname2(dirname2(path))));
-  const basePath = await newestRollout(sessions, (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`));
+  const codexHome = codexHomeOf(path);
+  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0 || codexHome === null) return null;
+  const basePath = await newestRollout(
+    codexHome,
+    (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`)
+  );
   return basePath === null ? null : { path: basePath, end };
 }
 var TAIL_BYTES = 4 * 1024 * 1024;
 async function linesBefore(path, bytes, end = Infinity) {
-  const file = await open2(path, "r");
-  try {
-    const stop = Math.min(end, (await file.stat()).size);
-    const start = Math.max(0, stop - bytes);
-    const buf = Buffer.alloc(stop - start);
-    const { bytesRead } = await file.read(buf, 0, buf.length, start);
-    const lines = buf.subarray(0, bytesRead).toString("utf8").split("\n");
-    if (start > 0) lines.shift();
-    return { lines, start, read: bytesRead };
-  } finally {
-    await file.close();
-  }
+  const { buf, start } = await bytesBefore(path, bytes, end);
+  const lines = buf.toString("utf8").split("\n");
+  if (start > 0) lines.shift();
+  return { lines, start, read: buf.length };
 }
 var TURN_ROW_BYTES = 64 * 1024;
 async function historyLines(path, bytes) {
@@ -4235,7 +4378,7 @@ async function modelHome(dir, personHome) {
 async function keepNewerSignIn(link, auth) {
   const saved = await lstat2(link).catch(() => null);
   if (!saved?.isFile()) return;
-  const theirs = await stat2(auth);
+  const theirs = await stat4(auth);
   if (saved.mtimeMs > theirs.mtimeMs) await copyFile(link, auth);
 }
 var FAILURE_TAIL_CHARS = 2e3;
@@ -4323,20 +4466,27 @@ var refreshStatus2 = (dir, sessionId, ask, now, onWrite, records) => refreshStat
   inOrder: inOrderFor(dir, sessionId),
   records
 });
-var runUpdates2 = (dir, sessionId, ask, now, onWrite, records) => runUpdates({
-  ...codexStore(dir, sessionId, now, onWrite),
-  ask,
-  names: CODEX,
-  inOrder: inOrderFor(dir, sessionId),
-  records,
-  catchUp: async (s) => askOverConversation(
+var runUpdates2 = (dir, sessionId, ask, now, onWrite, records) => {
+  const store = codexStore(dir, sessionId, now, onWrite);
+  return runUpdates({
+    ...store,
     ask,
-    CODEX,
-    s,
-    screenText(CODEX, isTabOpen(s, now()), screenTabOf(s.shownTab)),
-    (await readRollout(s.transcriptPath, s.root))?.conversation ?? null
-  )
-});
+    names: CODEX,
+    inOrder: inOrderFor(dir, sessionId),
+    records,
+    catchUp: async (s) => {
+      const isMoved = await withCurrentRollout(s) !== s;
+      const path = isMoved ? (await store.update(withCurrentRollout)).transcriptPath : s.transcriptPath;
+      return askOverConversation(
+        ask,
+        CODEX,
+        s,
+        screenText(CODEX, isTabOpen(s, now()), screenTabOf(s.shownTab)),
+        (await readRollout(path, s.root))?.conversation ?? null
+      );
+    }
+  });
+};
 
 // src/detached-update.ts
 var STATUS_REFRESH = "status-refresh";

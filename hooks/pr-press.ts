@@ -5,6 +5,7 @@ import { isAgain, outAction, pressFeedbackIn, pressOutAction } from './feedback'
 import type { ActionEmphasis } from './rows'
 import type { PressState } from './feedback'
 import { checkRowId, DISMISS_MERGED_ID, prMarkId, RANK_AGAIN_ID, threadRowId } from './pr-rows'
+import { checkKey } from './prs'
 
 /** Fetches every PR the session tracks, so the row reads "Refreshing PRs…". */
 export const PR_REFRESH: Effect = { kind: 'refresh-prs', name: 'PRs' }
@@ -15,6 +16,7 @@ export type PrPress =
       action: 'pr-conflicts' | 'pr-address-all' | 'pr-merge' | 'pr-open' | 'pr-refresh' | 'pr-dismiss' | 'pr-undo'
       ref: string
     }
+  /** `check` is the check's `checkKey`. */
   | { action: 'check-fix' | 'check-rerun' | 'log'; ref: string; check: string }
   | { action: 'pr-dismiss-merged' }
   | { action: 'pr-rank-again' }
@@ -75,7 +77,7 @@ export function rerunEffect(pr: PrView, c: PrCheck): Extract<Effect, { kind: 're
 export function sameRunChecks(pr: PrView, c: PrCheck): PrCheck[] {
   const run = runOf(c)
 
-  return run ? pr.checks.filter(o => o.name !== c.name && isSameRun(run, runOf(o)) && rerunEffect(pr, o)) : []
+  return run ? pr.checks.filter(o => checkKey(o) !== checkKey(c) && isSameRun(run, runOf(o)) && rerunEffect(pr, o)) : []
 }
 
 /**
@@ -132,7 +134,7 @@ export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
     case 'pr-refresh':
       return PR_REFRESH
     case 'log': {
-      const check = pr.checks.find(c => c.name === p.check)
+      const check = pr.checks.find(c => checkKey(c) === p.check)
       return check ? logEffect(pr, check) : null
     }
     default:
