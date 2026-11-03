@@ -8,7 +8,7 @@ let rows: Map<string, number> | 'all' = new Map()
 /**
  * The pane drew the Status at `now`. The desktop pane cannot say what it scrolled to, so a look there counts every
  * subject. The terminal counts the subject rows whose first line is in the pane's window: `pageTop` is the line of the
- * pane's tree the Status page starts on, and `tops` each row's line from there, as `statusRowTops` counts them. A row
+ * pane's tree the Status page starts on, and `tops` each row's line from there, as the drawing counts them. A row
  * whose line is not known exactly counts as shown, and so does every row when `pageTop` is not known.
  */
 export function noteStatusDrawn(

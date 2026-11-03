@@ -126,6 +126,8 @@ export function paneRowParts(
       <Box paddingLeft={TREE_LINE_AT}>{line}</Box>
     )
   }
+  /** The blank lines the terminal draws between sections. */
+  const terminalSectionGap = isInline ? 1 : 2
   const section = (children: JSX.Element | JSX.Element[]) =>
     look === 'desktop' ? (
       <Box flexDirection="column" paddingTop={blankLine}>
@@ -135,7 +137,7 @@ export function paneRowParts(
       <Box flexDirection="column">{children}</Box>
     )
   const sections = (list: JSX.Element[], space = 1) => (
-    <Box flexDirection="column" flexGrow={1} gap={look === 'desktop' ? 0 : isInline ? 1 : 2}>
+    <Box flexDirection="column" flexGrow={1} gap={look === 'desktop' ? 0 : terminalSectionGap}>
       {look === 'desktop'
         ? list.flatMap((el, n) =>
             n === 0
@@ -429,6 +431,7 @@ export function paneRowParts(
     groupTitle,
     section,
     sections,
+    terminalSectionGap,
     titleGap,
     foldButton,
     foldRow,
