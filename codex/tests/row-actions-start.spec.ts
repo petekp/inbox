@@ -198,6 +198,8 @@ test('the built tab keeps polling after a view it cannot draw, so a queued Expla
   })
   let isNextViewUndrawable = false
   let views = 0
+  const drawErrors: unknown[] = []
+  host.console.error = (...args: unknown[]) => void drawErrors.push(args[0])
   host.parent.postMessage = message => {
     const request = message as Parameters<typeof handle>[0]
     if (typeof request.id !== 'number') return
@@ -243,6 +245,8 @@ test('the built tab keeps polling after a view it cannot draw, so a queued Expla
     )
     await until(() => text().includes('Explaining…'))
     assert.doesNotMatch(text(), /Queued: Explain/)
+    assert.equal(drawErrors.length, 1)
+    assert.ok(drawErrors[0] instanceof host.TypeError)
   } finally {
     await host.happyDOM.close()
     await rm(dir, { recursive: true, force: true })
