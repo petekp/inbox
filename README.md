@@ -200,7 +200,9 @@ Help lists the keys and what each mark means.
 - **Terminal:** each action shows the letter that runs it. The number keys
   switch tabs, and `j` and `k` move up and down. ctrl+x tab moves focus from
   the prompt to the line above it, then to the panel, then back to the prompt.
-- **Claude desktop app:** you click. Type `/inbox` to open the pane.
+- **Claude desktop app:** you click. Type `/inbox` to open the pane. Clicks in
+  the pane are checked on the Claude Code engine 2.1.309 and later. On 2.1.295,
+  a click after a press could only give the pane its focus back.
 - **ChatGPT app:** you click, or press the same keys as in the terminal. The
   tab shows no letters.
 - **omp:** `/inbox` opens the panel over the conversation, and esc closes it.
