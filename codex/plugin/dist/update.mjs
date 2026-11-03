@@ -2371,6 +2371,15 @@ function isAgain(last, action, isOut) {
 }
 
 // ../hooks/pr-press.ts
+var RERUN_LABEL = "Re-run";
+var PR_FIX_LABELS = {
+  "pr-conflicts": "Resolve conflicts",
+  "check-fix": "Fix"
+};
+var PR_READ_FIRST_LABELS = {
+  ...PR_FIX_LABELS,
+  "check-rerun": RERUN_LABEL
+};
 function lastPressOf(presses, rowId) {
   const last = presses.lastActions[rowId];
   const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);

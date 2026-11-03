@@ -10,7 +10,8 @@ import { press, wakeForDone } from '../hooks/host-press'
 import { allRows } from '../hooks/rows'
 import { COMPARE_LIMIT_MS, NO_HOLDS } from '../hooks/timing'
 import { feedbackOf, feedbackText } from '../hooks/feedback'
-import { checkRowId, prMarkId } from '../hooks/pr-rows'
+import { checkRowId, prBlockRows, prMarkId } from '../hooks/pr-rows'
+import { checkActions } from '../hooks/pr-tab'
 import { fakeHost } from './session-fake-host'
 import { FIX_REF, BLOCKED_PR } from './session-helpers'
 
@@ -187,47 +188,103 @@ test('a fix press whose check of the PR fails sends nothing and says why on its 
   expect(await unread.shownOn(prMarkId(FIX_REF))).toBe('Could not refresh PR #12: HTTP 502')
 })
 
-test('Re-run on a cancelled check asks gh to re-run its run, fetches the PRs, and says on its row whether the re-run started', async () => {
+const RUN_77 = 'https://github.com/acme/app/actions/runs/77/job'
+
+async function cancelledRunHost(isRunningOnGitHub: () => boolean) {
   const { host } = fakeHost(async () => null)
   const ghRuns: string[][] = []
+  const refreshes: number[] = []
   let ghAnswer = { exitCode: 0, stdout: '', stderr: '' }
-  let refreshes = 0
+  let duringGh = async () => {}
+  const checks = [
+    { name: 'e2e', bucket: 'cancelled' as const, url: `${RUN_77}/9`, workflow: 'CI' },
+    { name: 'e2e-mac', bucket: 'cancelled' as const, url: `${RUN_77}/10`, workflow: 'CI' },
+  ]
   host.gh = {
     ...host.gh,
     find: async () => 'gh',
-    run: () => async args => (ghRuns.push(args), ghAnswer),
+    run: () => async args => {
+      ghRuns.push(args)
+      await duringGh()
+      return ghAnswer
+    },
   }
   host.refreshPrs = async () => {
-    refreshes += 1
-  }
-  const cancelled = {
-    name: 'e2e',
-    bucket: 'cancelled' as const,
-    url: 'https://github.com/acme/app/actions/runs/77/job/9',
-    workflow: 'CI',
+    refreshes.push(ghRuns.length)
+    const bucket = isRunningOnGitHub() ? ('pending' as const) : ('cancelled' as const)
+    const at = await host.now()
+    await host.update(s =>
+      withFetchedPrs(
+        s,
+        { [FIX_REF]: { ...BLOCKED_PR, checks: checks.map(c => ({ ...c, bucket })), fetchedAt: at } },
+        null,
+        false,
+      ),
+    )
   }
   await host.update(s => ({
     ...s,
     ledger: { ...s.ledger, prs: [FIX_REF] },
-    prViews: { ...s.prViews, views: { [FIX_REF]: { ...BLOCKED_PR, checks: [cancelled] } } },
+    prViews: { ...s.prViews, views: { [FIX_REF]: { ...BLOCKED_PR, checks } } },
   }))
-  const rowText = async () => {
+  const shownOn = async (rowId: string) => {
     const s = await host.read()
-    const id = checkRowId(FIX_REF, 'e2e')
-    const f = feedbackOf(id, s.lastActions[id], undefined, s.presence, await host.now())
+    const f = feedbackOf(rowId, s.lastActions[rowId], undefined, s.presence, await host.now())
     return f ? feedbackText(f, 'terminal') : null
   }
-  const rerun = () => press(host, { action: 'check-rerun', ref: FIX_REF, check: 'e2e' }, false, NO_HOLDS)
+  const rerun = (check: string) => press(host, { action: 'check-rerun', ref: FIX_REF, check }, false, NO_HOLDS)
+  const answer = (a: typeof ghAnswer) => {
+    ghAnswer = a
+  }
+  const whileGhRuns = (f: () => Promise<void>) => {
+    duringGh = f
+  }
 
-  expect((await rerun()).note).toBe(null)
-  expect(ghRuns).toEqual([['run', 'rerun', '77', '--failed', '-R', 'acme/app']])
-  expect(refreshes).toBe(1)
-  expect(await rowText()).toBe('✓ Started a re-run of CI')
+  return { host, ghRuns, refreshes, shownOn, rerun, answer, whileGhRuns }
+}
 
-  ghAnswer = { exitCode: 1, stdout: '', stderr: 'run 77 cannot be rerun; This workflow is already running\n' }
-  await rerun()
-  expect(refreshes).toBe(1)
-  expect(await rowText()).toBe(
-    'Could not start a re-run of CI: run 77 cannot be rerun; This workflow is already running',
+test('Re-run reads the PR on GitHub first, and starts nothing when the check is no longer cancelled there', async () => {
+  const t = await cancelledRunHost(() => true)
+
+  expect((await t.rerun('e2e')).note).toBe('stale')
+  expect(t.ghRuns).toEqual([])
+  expect(t.refreshes).toEqual([0])
+})
+
+test('Re-run asks gh to re-run the run, and the PR block says it started once the refresh shows the run running and drops the row', async () => {
+  let isStarted = false
+  const t = await cancelledRunHost(() => isStarted)
+  const sibling: { isOut?: boolean; note?: string | null } = {}
+  t.whileGhRuns(async () => {
+    t.whileGhRuns(async () => {})
+    const s = await t.host.read()
+    const pr = s.prViews.views[FIX_REF]!
+    const presses = { lastActions: s.lastActions, turns: s.presence, now: await t.host.now() }
+    sibling.isOut = checkActions(pr, pr.checks[1]!, presses).find(a => a.label === 'Re-run')?.isOut
+    sibling.note = (await t.rerun('e2e-mac')).note
+    isStarted = true
+  })
+
+  expect((await t.rerun('e2e')).note).toBe(null)
+  expect(t.ghRuns).toEqual([['run', 'rerun', '77', '--failed', '-R', 'acme/app']])
+  expect(sibling).toEqual({ isOut: true, note: 'stale' })
+  expect(t.refreshes).toEqual([0, 1])
+  const pr = (await t.host.read()).prViews.views[FIX_REF]!
+  expect(prBlockRows(pr, false, { thread: () => 'thread', check: c => c.name }).rows).toEqual([])
+  expect(await t.shownOn(prMarkId(FIX_REF))).toBe('✓ Started a re-run of CI')
+})
+
+test('Re-run reads GitHub refusing a run that is already running as started, and refreshes after any other refusal too', async () => {
+  const running = await cancelledRunHost(() => false)
+  running.answer({ exitCode: 1, stdout: '', stderr: 'run 77 cannot be rerun; This workflow is already running\n' })
+  await running.rerun('e2e')
+  expect(await running.shownOn(prMarkId(FIX_REF))).toBe('✓ Started a re-run of CI')
+
+  const refused = await cancelledRunHost(() => false)
+  refused.answer({ exitCode: 1, stdout: '', stderr: 'HTTP 403: Resource not accessible by integration\n' })
+  await refused.rerun('e2e')
+  expect(refused.refreshes).toEqual([0, 1])
+  expect(await refused.shownOn(checkRowId(FIX_REF, 'e2e'))).toBe(
+    'Could not start a re-run of CI: HTTP 403: Resource not accessible by integration',
   )
 })

@@ -19,8 +19,10 @@ import {
   PR_REFRESH,
   prPageEffect,
   prRetryOf,
+  RERUN_LABEL,
   rerunEffect,
   retryAction,
+  sameRunChecks,
   withOut,
 } from './pr-press'
 import type { Applied, PlannedPrAction, PrAction, PrPress } from './pr-press'
@@ -31,8 +33,6 @@ import type { Applied, PlannedPrAction, PrAction, PrPress } from './pr-press'
 const PR_REFRESH_LABEL = 'Refresh PRs'
 
 const DISMISS_MERGED_LABEL = 'Dismiss merged'
-
-const RERUN_LABEL = 'Re-run'
 
 export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrAction[] {
   const row = lastPressOf(presses, threadRowId(pr.ref, t.id))
@@ -73,13 +73,19 @@ export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrA
   ])
 }
 
-/** A failing check offers Fix. A cancelled one offers Re-run in Fix's place, when its run is a GitHub Actions run. */
+/**
+ * A failing check offers Fix. A cancelled one offers Re-run in Fix's place when `rerunEffect` allows. Re-run draws out
+ * while another row of its run has a re-run out, since that re-run covers this row too.
+ */
 export function checkActions(pr: PrView, c: PrCheck, presses: PressState): PrAction[] {
   const row = lastPressOf(presses, checkRowId(pr.ref, c.name))
   const on = { ref: pr.ref, check: c.name }
   const isCancelled = c.bucket === 'cancelled'
+  const isRunRerunOut = sameRunChecks(pr, c).some(
+    o => lastPressOf(presses, checkRowId(pr.ref, o.name)).out === 'check-rerun',
+  )
   const mainMove: PlannedPrAction[] = isCancelled
-    ? rerunEffect(c)
+    ? rerunEffect(pr, c)
       ? [
           {
             press: { action: 'check-rerun', ...on },
@@ -100,7 +106,7 @@ export function checkActions(pr: PrView, c: PrCheck, presses: PressState): PrAct
         },
       ]
 
-  return withOut(row, [
+  const actions = withOut(row, [
     ...retryAction(prRetryOf(row.last, pr.ref, null, c.name)),
     ...mainMove,
     {
@@ -112,6 +118,8 @@ export function checkActions(pr: PrView, c: PrCheck, presses: PressState): PrAct
       hotkey: 'o',
     },
   ])
+
+  return isRunRerunOut ? actions.map(a => (a.press.action === 'check-rerun' ? { ...a, isOut: true } : a)) : actions
 }
 
 /**
@@ -279,11 +287,14 @@ export function applyPrPress(
   const record = (rowId: string, kind: 'talk' | 'handoff' | 'mark', action: PrActionId, text: string) =>
     recordPress(kind, action, text, ctx, lastActions[rowId])
   const send = (text: string): Effect => ({ kind: 'send', text, by: null })
-  const local = (rowId: string, text: string, effect: Effect): Applied => {
+  const local = (rowIds: string[], text: string, effect: Effect): Applied => {
     const effects = [effect]
     const result = pendingResult(effects, ctx.now, ctx.localPressId)
+    const lasts = Object.fromEntries(
+      rowIds.map(id => [id, localLast(lastActions[id], { action: p.action, text }, result)]),
+    )
 
-    return applied({ lasts: { [rowId]: localLast(lastActions[rowId], { action: p.action, text }, result) }, effects })
+    return applied({ lasts, effects })
   }
   switch (p.action) {
     case 'thread-address':
@@ -294,7 +305,7 @@ export function applyPrPress(
       if (!t) return stale
       if (p.action === 'thread-address' && !t.isWaiting) return stale
       const id = prThreadId(pr, t)
-      if (p.action === 'thread-open') return local(id, 'Open', commentEffect(pr, t))
+      if (p.action === 'thread-open') return local([id], 'Open', commentEffect(pr, t))
       if (p.action === 'thread-address')
         return applied({
           lasts: { [id]: record(id, 'handoff', p.action, 'Address') },
@@ -338,9 +349,9 @@ export function applyPrPress(
         effects: [send(prompts.merge(pr))],
       })
     case 'pr-open':
-      return local(markId, 'Open PR', prPageEffect(pr))
+      return local([markId], 'Open PR', prPageEffect(pr))
     case 'pr-refresh':
-      return local(markId, PR_REFRESH_LABEL, PR_REFRESH)
+      return local([markId], PR_REFRESH_LABEL, PR_REFRESH)
     case 'pr-dismiss':
       if (!ledger.prs.includes(p.ref) || prState.branchRef === p.ref) return stale
       return applied({
@@ -357,15 +368,19 @@ export function applyPrPress(
       })
     }
     case 'check-rerun': {
-      const check = pr.checks.find(c => c.name === p.check && c.bucket === 'cancelled')
-      const rerun = check && rerunEffect(check)
-      if (!check || !rerun) return stale
-      return local(prCheckId(pr, check), RERUN_LABEL, rerun)
+      // The PR block shows the result too, since the row leaves once the refresh after the re-run finds it running.
+      const check = pr.checks.find(c => c.name === p.check)
+      const rerun = check && rerunEffect(pr, check)
+      const isRunRerunOut =
+        check !== undefined &&
+        sameRunChecks(pr, check).some(o => lastActions[prCheckId(pr, o)]?.result?.state === 'pending')
+      if (!check || !rerun || isRunRerunOut) return stale
+      return local([prCheckId(pr, check), markId], RERUN_LABEL, rerun)
     }
     case 'log': {
       const check = pr.checks.find(c => c.name === p.check)
       if (!check) return stale
-      return local(prCheckId(pr, check), 'Open log', logEffect(pr, check))
+      return local([prCheckId(pr, check)], 'Open log', logEffect(pr, check))
     }
   }
 }

@@ -215,7 +215,7 @@ describe('prs', () => {
     )
   })
 
-  test('a cancelled check reads as cancelled, still blocks the merge, and offers Re-run in place of Fix only when GitHub Actions ran it', () => {
+  test('a cancelled check reads as cancelled, still blocks the merge, and offers Re-run in place of Fix only when GitHub Actions ran it and no failing check shares its run', () => {
     const run = (name: string, conclusion: string, detailsUrl: string) => ({
       __typename: 'CheckRun',
       name,
@@ -233,6 +233,7 @@ describe('prs', () => {
         reviewDecision: '',
         statusCheckRollup: [
           run('lint', 'FAILURE', 'https://github.com/acme/greet/actions/runs/5/job/50'),
+          run('unit', 'CANCELLED', 'https://github.com/acme/greet/actions/runs/5/job/51'),
           run('e2e', 'CANCELLED', 'https://github.com/acme/greet/actions/runs/6/job/60'),
           run('deploy', 'CANCELLED', 'https://ci.example.com/builds/7'),
         ],
@@ -249,11 +250,12 @@ describe('prs', () => {
 
     expect(pr.checks.map(c => [c.name, c.bucket])).toEqual([
       ['lint', 'fail'],
+      ['unit', 'cancelled'],
       ['e2e', 'cancelled'],
       ['deploy', 'cancelled'],
     ])
-    expect(readiness(pr).text).toBe('Blocked: 1 failing check, 2 cancelled checks')
-    expect(checkRowText(pr.checks[1]!).meta).toBe('Cancelled after 3m 2s')
+    expect(readiness(pr).text).toBe('Blocked: 1 failing check, 3 cancelled checks')
+    expect(checkRowText(pr.checks[2]!).meta).toBe('Cancelled after 3m 2s')
     expect(buttons('lint')).toEqual([
       ['Fix', 'handoff', 'a'],
       ['Open log', 'local', 'o'],
@@ -262,6 +264,7 @@ describe('prs', () => {
       ['Re-run', 'local', 'a'],
       ['Open log', 'local', 'o'],
     ])
+    expect(buttons('unit')).toEqual([['Open log', 'local', 'o']])
     expect(buttons('deploy')).toEqual([['Open log', 'local', 'o']])
   })
 

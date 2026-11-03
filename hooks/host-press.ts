@@ -1,5 +1,5 @@
-import { fixCheckEffect, PR_FIX_LABELS, pressRowId, isPrPress, isPrFixPress } from './pr-press'
-import type { PrFixPress, PrPress } from './pr-press'
+import { readFirstEffect, PR_READ_FIRST_LABELS, pressRowId, isPrPress, isPrReadFirstPress } from './pr-press'
+import type { PrReadFirstPress, PrPress } from './pr-press'
 import { doneWake, markSentToAgent, refuseDoneNotification, withDeliveryId, withUnconfirmed } from './press-reducer'
 import type { Effect } from './press-reducer'
 import { finishedResult, withResult, runSends, runLocalEffects } from './press-effects'
@@ -114,7 +114,7 @@ type PressHost<S extends Session> = Pick<
   | 'settleWindowMs'
 >
 
-/** A fix press's check of the PR: the row's last press before it, and when its "Refreshing" result began. */
+/** A read-first press's check of the PR: the row's last press before it, and when its "Refreshing" result began. */
 type PrFixCheck = { rowId: string; before: LastAction | undefined; pendingAt: number; pressId: string }
 
 /** The row's last press as it was before the check, while the row still holds the check's result. */
@@ -127,13 +127,13 @@ function withoutCheck<S extends Session>(s: S, check: PrFixCheck | null): S {
 }
 
 /**
- * Reads the PR from GitHub before a fix press sends, while the row reads "Refreshing PR #12…". `stale` when the saved
+ * Reads the PR from GitHub before a read-first press applies, while the row reads "Refreshing PR #12…". `stale` when the saved
  * view already shows no problem. `unread` when the refresh did not read the PR, which the row's result then says.
  * Otherwise the check, for the press to apply on the refreshed view.
  */
 async function checkPrFirst<S extends Session>(
   host: PressHost<S>,
-  p: PrFixPress,
+  p: PrReadFirstPress,
   rowId: string,
   pressId: string,
   holds: Holds,
@@ -146,14 +146,14 @@ async function checkPrFirst<S extends Session>(
     const pr = s.prViews.views[p.ref]
     if (!pr || 'stale' in pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, host)) return s
     const before = s.lastActions[rowId]
-    const pending = pendingResult([fixCheckEffect(pr)], at, pressId)
+    const pending = pendingResult([readFirstEffect(pr)], at, pressId)
     checking.check = { rowId, before, pendingAt: at, pressId }
 
     return {
       ...s,
       lastActions: {
         ...s.lastActions,
-        [rowId]: localLast(before, { action: p.action, text: PR_FIX_LABELS[p.action] }, pending),
+        [rowId]: localLast(before, { action: p.action, text: PR_READ_FIRST_LABELS[p.action] }, pending),
       },
     }
   })
@@ -211,7 +211,7 @@ export async function startPress<S extends Session>(
       }
       if (e.kind === 'rerun') {
         const why = await rerunRun(host, e)
-        if (why === null) await host.refreshPrs()
+        await host.refreshPrs()
         return why
       }
       if (e.kind === 'copy') copy = { text: e.text, name: e.name }
@@ -232,7 +232,7 @@ export async function startPress<S extends Session>(
     },
   }
   const check =
-    isPrPress(p) && isPrFixPress(p) && !isStale
+    isPrPress(p) && isPrReadFirstPress(p) && !isStale
       ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err: unknown) => {
           error = `Not sent: ${err instanceof Error ? err.message : String(err)}`
           return 'unread' as const
@@ -324,7 +324,7 @@ export async function startPress<S extends Session>(
       } catch {
         isUnconfirmed = true
       }
-      await runLocalEffects(effectHost, r.effects, rowId, r.lasts[rowId]?.result)
+      await runLocalEffects(effectHost, r.effects, Object.keys(r.lasts), r.lasts[rowId]?.result)
 
       return { copy, error, note, isUnconfirmed, isRowFailed, wakesForDone: !isPrPress(p) && p.action === 'done' }
     },

@@ -101,12 +101,13 @@ export type EffectHost = {
 
 /**
  * When the press is a Local one, `pending` is the result it recorded on
- * `rowId`, and the result of how they went replaces it. Returns that result, or null for a press with no pending one.
+ * `rowIds`, and the result of how they went replaces it on each. Returns that result, or null for a press with no
+ * pending one.
  */
 export async function runLocalEffects(
   host: EffectHost,
   effects: Effect[],
-  rowId: string,
+  rowIds: string[],
   pending: LocalResult | undefined,
 ): Promise<LocalResult | null> {
   const errors: (string | null)[] = []
@@ -120,7 +121,7 @@ export async function runLocalEffects(
     }
   if (pending?.state !== 'pending') return null
   const result = finishedResult(pending, errors, await host.now())
-  await host.saveLasts(a => withResult(a, rowId, pending.at, result))
+  await host.saveLasts(a => rowIds.reduce((lasts, id) => withResult(lasts, id, pending.at, result), a))
 
   return result
 }

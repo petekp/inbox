@@ -46,11 +46,36 @@ export function logEffect(pr: PrView, check: PrCheck): Effect {
 
 const ACTIONS_RUN_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/actions\/runs\/(\d+)/
 
-/** The re-run of a cancelled check's workflow run, or null when the check is not from a GitHub Actions run. */
-export function rerunEffect(c: PrCheck): Extract<Effect, { kind: 'rerun' }> | null {
+export const RERUN_LABEL = 'Re-run'
+
+/** The GitHub Actions run a check's details link names, or null for a check another app ran. */
+function runOf(c: PrCheck): { repo: string; run: string } | null {
   const m = ACTIONS_RUN_URL.exec(c.url ?? '')
 
-  return m ? { kind: 'rerun', repo: m[1]!, run: m[2]!, name: c.workflow || c.name } : null
+  return m ? { repo: m[1]!, run: m[2]! } : null
+}
+
+function isSameRun(a: { repo: string; run: string }, b: { repo: string; run: string } | null): boolean {
+  return b !== null && a.repo === b.repo && a.run === b.run
+}
+
+/**
+ * The re-run a cancelled check offers, or null when it offers none: it is not cancelled, another app ran it, or a
+ * failing check shares its run. A failing job cancels the other jobs of its run, so that run needs Fix first.
+ */
+export function rerunEffect(pr: PrView, c: PrCheck): Extract<Effect, { kind: 'rerun' }> | null {
+  const run = c.bucket === 'cancelled' ? runOf(c) : null
+  if (!run) return null
+  const isCancelledByFailure = pr.checks.some(f => f.bucket === 'fail' && isSameRun(run, runOf(f)))
+
+  return isCancelledByFailure ? null : { kind: 'rerun', ...run, name: c.workflow || c.name }
+}
+
+/** The other checks of `c`'s run that offer Re-run too, since one re-run covers them all. */
+export function sameRunChecks(pr: PrView, c: PrCheck): PrCheck[] {
+  const run = runOf(c)
+
+  return run ? pr.checks.filter(o => o.name !== c.name && isSameRun(run, runOf(o)) && rerunEffect(pr, o)) : []
 }
 
 /**
@@ -61,8 +86,14 @@ export function rerunArgs(e: Extract<Effect, { kind: 'rerun' }>): string[] {
   return ['run', 'rerun', e.run, '--failed', '-R', e.repo]
 }
 
-/** A PR press that hands off a fix. The saved view can predate a push, so the press reads the PR from GitHub first. */
+/** A PR press that hands off a fix. */
 export type PrFixPress = { action: 'pr-conflicts'; ref: string } | { action: 'check-fix'; ref: string; check: string }
+
+/**
+ * A PR press that reads the PR from GitHub first: a fix press, and Re-run. The saved view can predate a push, or a
+ * re-run someone started on GitHub.
+ */
+export type PrReadFirstPress = PrFixPress | { action: 'check-rerun'; ref: string; check: string }
 
 /** The labels of the buttons that hand a PR's fix to the agent. */
 export const PR_FIX_LABELS: Record<PrFixPress['action'], string> = {
@@ -70,21 +101,27 @@ export const PR_FIX_LABELS: Record<PrFixPress['action'], string> = {
   'check-fix': 'Fix',
 }
 
-export function isPrFixPress(p: PrPress): p is PrFixPress {
-  return p.action === 'pr-conflicts' || p.action === 'check-fix'
+/** The labels of the buttons whose press reads the PR first. */
+export const PR_READ_FIRST_LABELS: Record<PrReadFirstPress['action'], string> = {
+  ...PR_FIX_LABELS,
+  'check-rerun': RERUN_LABEL,
 }
 
-/** The refresh a fix press runs before it sends, so its row reads "Refreshing PR #12…". */
-export function fixCheckEffect(pr: PrView): Effect {
+export function isPrReadFirstPress(p: PrPress): p is PrReadFirstPress {
+  return p.action === 'pr-conflicts' || p.action === 'check-fix' || p.action === 'check-rerun'
+}
+
+/** The refresh a press runs before it applies, so its row reads "Refreshing PR #12…". */
+export function readFirstEffect(pr: PrView): Effect {
   return { kind: 'refresh-prs', name: `PR #${pr.number}` }
 }
 
 /**
- * The open or refresh a PR press runs before any message: a Local press's open or refresh, or a fix press's
- * `fixCheckEffect`. Null for a press that only sends or marks, or whose row is gone.
+ * The open or refresh a PR press runs first: a Local press's open or refresh, or `readFirstEffect` for a press that
+ * reads the PR first. Null for a press that only sends or marks, or whose row is gone.
  */
 export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
-  if (isPrFixPress(p)) return fixCheckEffect(pr)
+  if (isPrReadFirstPress(p)) return readFirstEffect(pr)
   switch (p.action) {
     case 'thread-open': {
       const t = pr.threads.find(x => x.id === p.thread)
@@ -97,10 +134,6 @@ export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
     case 'log': {
       const check = pr.checks.find(c => c.name === p.check)
       return check ? logEffect(pr, check) : null
-    }
-    case 'check-rerun': {
-      const check = pr.checks.find(c => c.name === p.check && c.bucket === 'cancelled')
-      return check ? rerunEffect(check) : null
     }
     default:
       return null
