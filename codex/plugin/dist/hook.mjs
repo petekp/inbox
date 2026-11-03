@@ -1238,6 +1238,7 @@ var PR_MARKS = {
   failing: { text: FINDING_GROUPS.issue.mark, tone: "error" },
   cancelled: { text: "\u2298", tone: null }
 };
+var stoppedWords = (what) => `Stopped before it finished: ${what}`;
 var MARK_LEGEND = [
   {
     mark: RUNNING_MARK,
@@ -1255,7 +1256,7 @@ var MARK_LEGEND = [
   },
   { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
   { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
-  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: "Dropped before it was done" },
+  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords("dropped work") },
   { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: "Dismissed by you" },
   {
     mark: FINDING_GROUPS.issue.mark,
@@ -1267,7 +1268,7 @@ var MARK_LEGEND = [
     mark: PR_MARKS.cancelled.text,
     tone: PR_MARKS.cancelled.tone,
     isRunning: false,
-    words: "A cancelled check: its run stopped before it finished, and needs another run"
+    words: stoppedWords("a cancelled check, which needs another run")
   },
   {
     mark: FINDING_GROUPS.opportunity.mark,
