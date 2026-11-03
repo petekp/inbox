@@ -177,6 +177,19 @@ describe('the Herdr status line', () => {
     ).toBe('! Signed out: /login')
   })
 
+  test('publishes the focus apart from what waits, for a session that runs this one as a delegate, whatever leads the status line', () => {
+    const waiting = applyUpdate(EMPTY, parseReply(REPLY)!, 1, 1)
+    const head = { title: 'PDF export', description: 'Lay out the PDF export' }
+    const described = { ...waiting, overview: { ...EMPTY_SESSION_STATUS, head } }
+    const stop = { kind: 'sign-in' as const, detail: 'authentication_failed', resets: null, at: 1 }
+    const focusOf = (ledger: Ledger, s: Stop | null) =>
+      herdrTokens(ledger, s, sessionView({ ...emptySession(), ledger }, 3, 0), [])['inbox-focus']
+
+    expect(focusOf(described, null)).toBe('Lay out the PDF export')
+    expect(focusOf(described, stop)).toBe('Lay out the PDF export')
+    expect(focusOf(waiting, null)).toBeNull()
+  })
+
   test('tells a reached usage limit, with its reset time, from a busy server', () => {
     const limit = "You've hit your weekly limit · resets 7:33pm (America/Los_Angeles)"
     expect(stopKindOf('rate_limit', limit)).toBe('usage-limit')

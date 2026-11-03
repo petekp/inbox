@@ -4,6 +4,7 @@ import type { Run } from './gh'
 import type { SessionView } from './session-view'
 import { isWaitingRow } from './rows'
 import { ROW_TABS } from './tabs'
+import { clipLabel } from './text'
 
 /**
  * The pane tokens the inbox reports to Herdr, by name. A null value clears its token. Herdr takes token names of up to
@@ -17,6 +18,15 @@ const STATUS_TOKEN = 'inbox'
 
 const STOP_TOKEN = 'inbox-stop'
 
+/**
+ * What the session is focused on, from the Status head, whatever waits on the person. No sidebar row needs it: a
+ * session that runs this one as a Herdr delegate reads it to name the delegate's row.
+ */
+const FOCUS_TOKEN = 'inbox-focus'
+
+/** The longest token value Herdr takes. */
+const HERDR_VALUE_CHARS = 80
+
 /** Each row tab's token, which holds the tab's count alone, as "2". The README's Herdr config colors each count by its tab. */
 const COUNT_TOKENS: Record<Tab, string> = {
   needsYou: 'inbox-needs-you',
@@ -26,7 +36,7 @@ const COUNT_TOKENS: Record<Tab, string> = {
 
 /** Every token cleared, for a session that ends. */
 export const CLEARED_TOKENS: HerdrTokens = Object.fromEntries(
-  [STATUS_TOKEN, STOP_TOKEN, ...Object.values(COUNT_TOKENS)].map(name => [name, null]),
+  [STATUS_TOKEN, STOP_TOKEN, FOCUS_TOKEN, ...Object.values(COUNT_TOKENS)].map(name => [name, null]),
 )
 
 const HERDR_TIMEOUT_MS = 5000
@@ -42,29 +52,39 @@ export type HerdrStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown'
 
 const HERDR_STATUSES: readonly HerdrStatus[] = ['idle', 'working', 'blocked', 'done', 'unknown']
 
+/** What Herdr shows about an agent: what it does, and the focus its session publishes, if it runs the inbox. */
+export type HerdrAgent = { status: HerdrStatus; focus: string | null }
+
 /** How often a host asks Herdr about running delegates while its Status shows. */
 export const HERDR_CHECK_MS = 30_000
 
 /**
- * What Herdr shows each named agent doing, asked only while `o` holds a running delegate. Null when none runs, or
+ * What Herdr shows about each named agent, asked only while `o` holds a running delegate. Null when none runs, or
  * Herdr gave no answer. Herdr finds its session from the pane's environment, not the folder, so the command runs in
  * `/`, which always exists.
  */
-export async function delegatesInHerdr(o: SessionStatus | null, run: Run): Promise<Map<string, HerdrStatus> | null> {
+export async function delegatesInHerdr(o: SessionStatus | null, run: Run): Promise<Map<string, HerdrAgent> | null> {
   if (!hasRunningDelegate(o)) return null
   const r = await run(HERDR_AGENT_LIST, { cwd: '/', timeoutMs: HERDR_TIMEOUT_MS })
 
-  return r.code === 0 ? herdrStatuses(r.stdout) : null
+  return r.code === 0 ? herdrAgents(r.stdout) : null
 }
 
-/** Each named agent's status in what `herdr agent list` printed. Null when its output cannot be read. */
-function herdrStatuses(stdout: string): Map<string, HerdrStatus> | null {
+/** Each named agent in what `herdr agent list` printed. Null when its output cannot be read. */
+function herdrAgents(stdout: string): Map<string, HerdrAgent> | null {
   try {
     const agents: unknown = JSON.parse(stdout)?.result?.agents
     if (!Array.isArray(agents)) return null
-    const statusOf = (a: { agent_status?: unknown }) => HERDR_STATUSES.find(s => s === a?.agent_status) ?? 'unknown'
+    const agentOf = (a: { agent_status?: unknown; tokens?: Record<string, unknown> }): HerdrAgent => {
+      const focus = a?.tokens?.[FOCUS_TOKEN]
 
-    return new Map(agents.filter(a => typeof a?.name === 'string').map(a => [a.name as string, statusOf(a)]))
+      return {
+        status: HERDR_STATUSES.find(s => s === a?.agent_status) ?? 'unknown',
+        focus: typeof focus === 'string' && focus.trim() ? focus.trim() : null,
+      }
+    }
+
+    return new Map(agents.filter(a => typeof a?.name === 'string').map(a => [a.name as string, agentOf(a)]))
   } catch {
     return null
   }
@@ -134,6 +154,7 @@ export function herdrTokens(
     findings: view.findings.count,
     focus: focusOf(ledger.overview?.head ?? null),
   }
+  const focus = input.focus ? clipLabel(input.focus, HERDR_VALUE_CHARS) : null
   const counts = ROW_TABS.map(t => {
     const count = view[t.id].count
 
@@ -143,6 +164,7 @@ export function herdrTokens(
   return {
     [STATUS_TOKEN]: statusLine(stop, dialogs, input) || null,
     [STOP_TOKEN]: stop ? stopLine(stop) : null,
+    [FOCUS_TOKEN]: focus,
     ...Object.fromEntries(counts),
   }
 }

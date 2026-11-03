@@ -1,6 +1,5 @@
 import { expect, test } from 'claude-code/testing'
 
-import { childStarted } from '../hooks/children'
 import { parseStatus } from '../hooks/status'
 import type { Op } from '../hooks/status'
 import { lookEnded, lookStarted } from '../hooks/status-children'
@@ -76,11 +75,4 @@ knownFailing('#140: one ask holds up two subjects, and both show ◆', '#140', (
   )
 
   expect(marks).toEqual(['◆', '◆'])
-})
-
-knownFailing('#149: a delegate with no published focus shows its name in words', '#149', () => {
-  const o = childStarted(statusOf([]), { ref: 'herdr:pdf-layout', kind: 'delegate', name: 'pdf-layout' }, minutes(1))
-  const row = statusPage(sessionOf(o, [], 2), minutes(2)).rows.find(r => r.kind === 'child')
-
-  expect(row?.kind === 'child' ? row.name : '').toMatch(/^pdf layout$/i)
 })

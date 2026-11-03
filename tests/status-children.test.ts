@@ -10,8 +10,8 @@ import {
   subjectsText,
   withChild,
 } from '../hooks/status-children'
-import { delegatesSettled, delegatesStarted } from '../hooks/children'
-import type { HerdrStatus } from '../hooks/herdr'
+import { delegatesSettled, delegatesStarted, nameInWords } from '../hooks/children'
+import type { HerdrAgent, HerdrStatus } from '../hooks/herdr'
 import { CHILD_ROWS } from '../hooks/status-page-parts'
 import type { SessionStatus } from '../types'
 import { MIN, after, askItem, page, shape } from './status-helpers'
@@ -130,9 +130,9 @@ test('a delegate says what Herdr shows: nothing while it works, waiting while bl
   o = delegatesStarted(o, 'herdr agent start spare --cmd claude', 30 * MIN)
   o = after(o, 'LINK: c1 | s1\nLINK: c2 | s1', 30 * MIN)
   const herdr = (pdf: HerdrStatus) =>
-    new Map<string, HerdrStatus>([
-      ['pdf', pdf],
-      ['spare', 'idle'],
+    new Map<string, HerdrAgent>([
+      ['pdf', { status: pdf, focus: null }],
+      ['spare', { status: 'idle', focus: null }],
     ])
   const rows = (x: SessionStatus | null, now: number) => shape(page(x, now).rows)
 
@@ -300,4 +300,35 @@ test('a running child of a done subject in the done fold shows once, at the top 
 
   expect(rows.some(r => r.kind === 'done-fold')).toBe(true)
   expect(drawn.filter(r => r.kind === 'child').map(r => r.depth)).toEqual([0])
+})
+
+test('a child row says what its work does: a delegate shows the focus its session publishes to Herdr, else its name in words, and a subagent its description', () => {
+  let o = delegatesStarted(null, 'herdr agent start pdfx2 --cmd claude', 0)
+  o = delegatesStarted(o, 'herdr agent start release-notes --cmd claude', 0)
+  o = withChild(
+    o,
+    {
+      ref: 't1',
+      kind: 'subagent',
+      name: 'Review the sync engine diff',
+      startedAt: 0,
+      endedAt: null,
+      lastActivityAt: 0,
+    },
+    0,
+  )
+  const names = (x: SessionStatus | null) => page(x, 4 * MIN).rows.flatMap(r => (r.kind === 'child' ? [r.name] : []))
+
+  expect(names(o)).toEqual(['pdfx2', 'release notes', 'Review the sync engine diff'])
+  expect(['syncEngineFix', 'PDF_export', '--'].map(nameInWords)).toEqual(['sync engine fix', 'PDF export', '--'])
+  const agents = new Map<string, HerdrAgent>([
+    ['pdfx2', { status: 'working', focus: 'Lay out the PDF export' }],
+    ['release-notes', { status: 'unknown', focus: null }],
+  ])
+  const named = delegatesSettled(o, agents, MIN)
+  expect(names(named)).toEqual(['Lay out the PDF export', 'release notes', 'Review the sync engine diff'])
+  const ended = childEnded(named, 'herdr:pdfx2', 2 * MIN)
+  expect(names(delegatesStarted(ended, 'herdr agent prompt pdfx2 "go on"', 3 * MIN))).toContain(
+    'Lay out the PDF export',
+  )
 })

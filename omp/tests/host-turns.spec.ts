@@ -96,6 +96,7 @@ test('in a Herdr pane, each change reports the tab counts, a stop replaces them 
   const cleared = {
     inbox: null,
     'inbox-stop': null,
+    'inbox-focus': null,
     'inbox-needs-you': null,
     'inbox-findings': null,
     'inbox-prs': null,

@@ -58,7 +58,6 @@ Decided, and still to build:
 - The page names every piece finished since the person last saw it: #138.
 - A look marks as seen only the rows that were on screen: #139.
 - One ask holds up several subjects: #140.
-- A child row says in plain words what its work does: #149.
 - In Codex, a Status answer from before a clear stays out of the cleared session: #152.
 - An older Status answer never overwrites a newer one: #153.
 - The judge's instructions, in `evals/status-judge.md`.
