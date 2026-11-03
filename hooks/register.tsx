@@ -2885,12 +2885,12 @@ export const register: Register = on => {
     const isAgeInSide = look === 'terminal'
     const isAgeDropped = isNarrowDesktop || isAgeInSide
     const glued = (after: string) => after.replace(/(?<=.)[ \u2002]/gs, c => (c === ' ' ? '\u00a0' : '\u2007'))
-    // The Codex tab wraps a suffix too long for one line between words, so this does too. A glued suffix wider than a
-    // line together with the title's last word, which DOT's leading figure space holds to it, is broken mid-word.
+    // The Codex tab wraps a suffix too long for one line between words, so this does too. Claude Code's terminal
+    // wraps only at a plain space, not at DOT's en space, so a suffix that moves to the next line follows a plain one.
     const unbroken = (after: string, title: string, fits: (text: string) => boolean) => {
       const lastWord = title.slice(Math.max(0, title.trimEnd().lastIndexOf(' ') + 1))
       if (fits(lastWord + after)) return glued(after)
-      const dot = after.startsWith(DOT) ? DOT : ''
+      const dot = after.startsWith(DOT) ? `${DOT.trimEnd()} ` : ''
       const rest = after.slice(dot.length)
       const firstBreak = rest.indexOf(' ')
 
