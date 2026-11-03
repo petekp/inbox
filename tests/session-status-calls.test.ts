@@ -5,6 +5,7 @@ import { withChild } from '../hooks/status-children'
 import { applyStatus } from '../hooks/status-ops'
 import { CLAUDE_CODE } from '../hooks/model-text'
 import { STATUS_SYSTEM } from '../hooks/status-prompt'
+import { parseStatus } from '../hooks/status'
 import { emptySession } from '../hooks/session-files'
 import { cleared, noteActivity, notePrompt, turnEnded, turnStarted } from '../hooks/session-turns'
 import {
@@ -50,6 +51,15 @@ test('a Status answer is written to the ledger after later updates and clears a 
   expect(appliedStatus(emptySession(), answer, 3, 1000).ledger.overview).toBeNull()
   expect(failedStatus(emptySession(), null, 3, 900).overviewFailure).toBeNull()
   expect(cleared(failed).overviewFailure).toBeNull()
+})
+
+test('a Status answer or failure made for fewer applied turns than the last write is dropped', () => {
+  const later = { ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } }
+  const newer = appliedStatus(later, answer, 4, 1000)
+
+  expect(appliedStatus(newer, parseStatus('HEAD: Older | An older answer')!, 3, 1100)).toBe(newer)
+  expect(failedStatus(newer, null, 3, 1100)).toBe(newer)
+  expect(failedStatus(newer, null, 4, 1100).overviewFailure?.cause).toBe('no-answer')
 })
 
 test('a session whose only record is a Status has a ledger, is not unseen, is copied by a fork and is cleared', () => {
