@@ -2840,6 +2840,11 @@ function asksForSignIn(r) {
 function linkedPrs(prs, refs) {
   return [...prs.filter((r) => !refs.includes(r)), ...refs];
 }
+function tabPrs(links) {
+  const order = links.prOrder;
+  const ranked = (order?.refs ?? []).filter((ref) => !links.prs.includes(ref) && !order?.dismissed.includes(ref));
+  return [...links.prs, ...ranked];
+}
 function itemPrSteps(item, prState, linked) {
   const refs = prState.branchRef ? [...linked, prState.branchRef] : linked;
   return prSteps(item, refs.map((ref) => ({ ref, url: prState.views[ref]?.url ?? null })));
@@ -2850,7 +2855,7 @@ function isLeftOut(prState, ref) {
 }
 function splitLinked(prState, links) {
   const ranked = new Set(links.prOrder?.refs ?? []);
-  const shown = links.prs.filter((ref) => !isLeftOut(prState, ref));
+  const shown = tabPrs(links).filter((ref) => !isLeftOut(prState, ref));
   const unranked = shown.filter((ref) => !ranked.has(ref));
   const older = unranked.slice(0, Math.max(0, unranked.length - MAX_PRS));
   return { tracked: shown.filter((ref) => !older.includes(ref)), older };
@@ -2961,7 +2966,7 @@ function isTracked(prState, links, ref) {
   return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
 }
 function keepsView(prState, links, ref) {
-  return isTracked(prState, links, ref) || links.prs.includes(ref) && isLeftOut(prState, ref);
+  return isTracked(prState, links, ref) || tabPrs(links).includes(ref) && isLeftOut(prState, ref);
 }
 function dismissedAt(lastActions, ref) {
   const mark = lastActions[prMarkId(ref)];
@@ -3401,6 +3406,30 @@ function prBlockActions(pr, isThreadSent, branchRef, presses) {
     ]
   ]);
 }
+function withDismissed(ledger, refs) {
+  const order = ledger.prOrder;
+  const ranked = refs.filter((ref) => order?.refs.includes(ref) && !order.dismissed.includes(ref));
+  return {
+    ...ledger,
+    prs: ledger.prs.filter((r) => !refs.includes(r)),
+    prOrder: order && ranked.length > 0 ? { ...order, dismissed: [...order.dismissed, ...ranked] } : order
+  };
+}
+function dismissPress(ledger, ref, ctx, previous) {
+  const last = recordPress("mark", "pr-dismiss", PR_DISMISSED_LABEL, ctx, previous);
+  return ledger.prs.includes(ref) ? last : { ...last, isUnlinked: true };
+}
+function withUndismissed(ledger, ref, wasLinked) {
+  const order = ledger.prOrder;
+  const isDismissedFromOrder = order?.dismissed.includes(ref) === true;
+  if (!wasLinked && !isDismissedFromOrder)
+    return null;
+  return {
+    ...ledger,
+    prs: wasLinked ? [...ledger.prs, ref] : ledger.prs,
+    prOrder: order && isDismissedFromOrder ? { ...order, dismissed: order.dismissed.filter((r) => r !== ref) } : order
+  };
+}
 function isDismissedByMerged(pr, branchRef) {
   return pr.state === "MERGED" && pr.ref !== branchRef;
 }
@@ -3429,10 +3458,10 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
     if (refs.length === 0)
       return stale;
     return applied({
-      ledger: { ...ledger, prs: ledger.prs.filter((r) => !refs.includes(r)) },
+      ledger: withDismissed(ledger, refs),
       lasts: Object.fromEntries(refs.map((ref) => {
         const id = prMarkId(ref);
-        return [id, recordPress("mark", "pr-dismiss", PR_DISMISSED_LABEL, ctx, lastActions[id])];
+        return [id, dismissPress(ledger, ref, ctx, lastActions[id])];
       }))
     });
   }
@@ -3461,9 +3490,13 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
   const pr = prState.views[p.ref];
   const markId = prMarkId(p.ref);
   if (p.action === "pr-undo") {
-    if (!pr || isTracked(prState, ledger, p.ref) || lastActions[markId]?.action !== "pr-dismiss")
+    const dismissed = lastActions[markId];
+    if (!pr || isTracked(prState, ledger, p.ref) || dismissed?.action !== "pr-dismiss")
       return stale;
-    return applied({ ledger: { ...ledger, prs: [...ledger.prs, p.ref] }, drop: [markId] });
+    const back = withUndismissed(ledger, p.ref, dismissed.isUnlinked !== true);
+    if (!back)
+      return stale;
+    return applied({ ledger: back, drop: [markId] });
   }
   if (!pr || !isTracked(prState, ledger, p.ref))
     return stale;
@@ -3537,11 +3570,11 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
     case "pr-refresh":
       return local(markId, PR_REFRESH_LABEL, PR_REFRESH);
     case "pr-dismiss":
-      if (!ledger.prs.includes(p.ref) || prState.branchRef === p.ref)
+      if (!tabPrs(ledger).includes(p.ref) || prState.branchRef === p.ref)
         return stale;
       return applied({
-        ledger: { ...ledger, prs: ledger.prs.filter((r) => r !== p.ref) },
-        lasts: { [markId]: record(markId, "mark", p.action, PR_DISMISSED_LABEL) }
+        ledger: withDismissed(ledger, [p.ref]),
+        lasts: { [markId]: dismissPress(ledger, p.ref, ctx, lastActions[markId]) }
       });
     case "check-fix": {
       const check = pr.checks.find((c) => c.name === p.check && c.bucket === "fail");
@@ -4195,13 +4228,13 @@ function orderPrs(host, ledger, input, now) {
   const why = cut(input.why, MAX_ORDER_WHY);
   if (!why)
     return unchanged(ledger, "Not set: give why, the reason for this order.");
-  const added = refs.filter((ref) => !ledger.prs.includes(ref));
+  const onTab = tabPrs(ledger);
+  const added = refs.filter((ref) => !onTab.includes(ref));
   const addedText = added.length === 0 ? "" : added.length === 1 ? " 1 of them was not in the tab yet. It shows after the tab's next refresh, if the user wrote it and it is open." : ` ${added.length} of them were not in the tab yet. They show after the tab's next refresh, if the user wrote them and they are open.`;
   return {
     ledger: {
       ...ledger,
-      prs: linkedPrs(ledger.prs, added),
-      prOrder: { refs, label, why, statuses: {}, by: host.agent, at: now }
+      prOrder: { refs, label, why, statuses: {}, dismissed: [], by: host.agent, at: now }
     },
     result: `Set. These ${refs.length} PRs show first in ${host.prsIn}, in this order.${addedText}`,
     personLine: `PR order: ${label}, ${refs.length} ${refs.length === 1 ? "PR" : "PRs"}`
@@ -4768,7 +4801,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     lastActions,
     notes,
     turns: s.presence,
-    extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, l.prs)])),
+    extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
     settleWindowMs,
     status: perTurnStatus(update),
     now,
@@ -4828,7 +4861,7 @@ function pressOn(s, p, at, drawn, texts, localPressId) {
   const item = s.ledger.items.find((i) => i.id === p.id);
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
-    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : [],
+    extraSteps: item ? itemPrSteps(item, s.prViews, tabPrs(s.ledger)) : [],
     answerMessage: texts.answerMessage,
     comparePage: texts.comparePage
   });
@@ -6632,7 +6665,7 @@ function upgradeLedger(ledger) {
   const updates = typeof rest.updates === "number" ? rest.updates : card ? 1 : 0;
   return {
     ...rest,
-    prOrder: rest.prOrder ? { ...rest.prOrder, why: rest.prOrder.why ?? null, statuses: rest.prOrder.statuses ?? null } : null,
+    prOrder: rest.prOrder ? upgradePrOrder(rest.prOrder, rest.prs) : null,
     updates,
     overview: upgradeStatus(rest.overview),
     findings: [...rest.findings ?? [], ...notes ?? []],
@@ -6644,6 +6677,14 @@ function upgradeLedger(ledger) {
       how: d.how ?? howFromOutcome(d.outcome),
       ...d.item ? { item: upgradeItem(d.item) } : {}
     }))
+  };
+}
+function upgradePrOrder(order, prs) {
+  return {
+    ...order,
+    why: order.why ?? null,
+    statuses: order.statuses ?? null,
+    dismissed: order.dismissed ?? order.refs.filter((ref) => !prs.includes(ref))
   };
 }
 var ASKED_AS = /^asked as (i\d+)$/;

@@ -25,6 +25,8 @@ export type LastAction = {
   isKept?: true
   /** It repeated the latest action, so its button keeps reading "… again" while the press is out. */
   isRepeat?: true
+  /** A PR's Dismiss on a PR only the agent's order showed, so its Undo does not link it. Missing on a Dismiss of a linked PR. */
+  isUnlinked?: true
 }
 
 /**

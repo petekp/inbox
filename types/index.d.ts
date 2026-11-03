@@ -233,6 +233,8 @@ export type LastAction = {
   isKept?: true
   /** It repeated the latest action, so its button keeps reading "… again" while the press is out. */
   isRepeat?: true
+  /** A PR's Dismiss on a PR only the agent's order showed, so its Undo does not link it. Missing on a Dismiss of a linked PR. */
+  isUnlinked?: true
 }
 
 /**
@@ -366,13 +368,15 @@ export type RankedPrStatus = { status: PrStatus; threads: string[]; failing: str
  * The PRs an agent ranked, first to last, as "owner/repo#123", with its short name for the order, as "Merge in this
  * order", the reason it gave for the order, the agent's name, as "Claude", and when it set it. `statuses` holds each
  * ranked PR's status from the first view the tab had of it once the order was set. It is null on an order saved before
- * the inbox kept statuses, which never reads as changed.
+ * the inbox kept statuses, which never reads as changed. `dismissed` holds the ranked PRs the person dismissed from the
+ * tab, which keep their place in `refs` for Undo.
  */
 export type PrOrder = {
   refs: string[]
   label: string | null
   why: string | null
   statuses: Record<string, RankedPrStatus> | null
+  dismissed: string[]
   by: string
   at: number
 }
@@ -387,7 +391,7 @@ export type Ledger = {
   closedFindings: ClosedFinding[]
   /** PRs this session created or linked, as "owner/repo#123", until the person dismisses one. The PRs tab leaves out those `isLeftOut` names. */
   prs: string[]
-  /** The order the agent set for the PRs tab with `order_prs`, or null for the tab's own order. */
+  /** The order the agent set for the PRs tab with `order_prs`, or null for the tab's own order. The tab also shows the PRs it ranks, which are not in `prs` unless the session linked them. */
   prOrder: PrOrder | null
   nextId: number
   /** How many prompts the person has sent this session. */

@@ -37,6 +37,7 @@
         "label": "Merge in this order",
         "why": "#398 builds on #412.",
         "statuses": {},
+        "dismissed": [],
         "by": "Claude",
         "at": 0
       }
@@ -73,6 +74,7 @@
         "label": "Merge in this order",
         "why": "#398 is approved and green, and #405 waits on #412.",
         "statuses": {},
+        "dismissed": [],
         "by": "Claude",
         "at": 0
       }

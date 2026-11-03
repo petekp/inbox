@@ -3,7 +3,7 @@ import { closeByAgent } from './ledger-close'
 import { addAgentItem, addFinding } from './ledger-update'
 import { stepHelp } from './reply-parse'
 import type { Host } from './model-text'
-import { linkedPrs, MAX_ORDERED_PRS } from './pr-fetch'
+import { MAX_ORDERED_PRS, tabPrs } from './pr-fetch'
 import type { Closed, Help, Ledger } from '../types'
 
 const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'
@@ -308,8 +308,8 @@ function prNumber(value: unknown): number | null {
 }
 
 /**
- * Sets the PRs tab's order from an `order_prs` call, and links each PR it names that the session does not, so the tab
- * fetches it. An empty list clears the order.
+ * Sets the PRs tab's order from an `order_prs` call. The tab shows and fetches each PR the order ranks, without
+ * linking it, so a new order or an empty list, which clears it, takes the old order's PRs off the tab.
  */
 function orderPrs(host: Host, ledger: Ledger, input: Record<string, unknown>, now: number): ToolAnswer {
   if (!Array.isArray(input.numbers)) return unchanged(ledger, 'Not set: numbers must be a list of PR numbers.')
@@ -332,7 +332,8 @@ function orderPrs(host: Host, ledger: Ledger, input: Record<string, unknown>, no
   if (!label) return unchanged(ledger, 'Not set: give label, what the user does with the order.')
   const why = cut(input.why, MAX_ORDER_WHY)
   if (!why) return unchanged(ledger, 'Not set: give why, the reason for this order.')
-  const added = refs.filter(ref => !ledger.prs.includes(ref))
+  const onTab = tabPrs(ledger)
+  const added = refs.filter(ref => !onTab.includes(ref))
   const addedText =
     added.length === 0
       ? ''
@@ -343,8 +344,7 @@ function orderPrs(host: Host, ledger: Ledger, input: Record<string, unknown>, no
   return {
     ledger: {
       ...ledger,
-      prs: linkedPrs(ledger.prs, added),
-      prOrder: { refs, label, why, statuses: {}, by: host.agent, at: now },
+      prOrder: { refs, label, why, statuses: {}, dismissed: [], by: host.agent, at: now },
     },
     result: `Set. These ${refs.length} PRs show first in ${host.prsIn}, in this order.${addedText}`,
     personLine: `PR order: ${label}, ${refs.length} ${refs.length === 1 ? 'PR' : 'PRs'}`,

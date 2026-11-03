@@ -33,6 +33,14 @@ export function linkedPrs(prs: string[], refs: string[]): string[] {
   return [...prs.filter(r => !refs.includes(r)), ...refs]
 }
 
+/** The PRs on the tab: those the session linked, then those the agent's order ranks that the person did not dismiss. */
+export function tabPrs(links: PrLinks): string[] {
+  const order = links.prOrder
+  const ranked = (order?.refs ?? []).filter(ref => !links.prs.includes(ref) && !order?.dismissed.includes(ref))
+
+  return [...links.prs, ...ranked]
+}
+
 export function itemPrSteps(item: Item, prState: PrViews, linked: string[]): HelpStep[] {
   const refs = prState.branchRef ? [...linked, prState.branchRef] : linked
 
@@ -53,12 +61,12 @@ export function isLeftOut(prState: PrViews, ref: string): boolean {
 }
 
 /**
- * The linked PRs the tab tracks: those the agent's order ranks, and the newest `MAX_PRS` of the rest. `older` names
- * the rest, which the tab does not show.
+ * The PRs on the tab it tracks, by `tabPrs`: those the agent's order ranks, and the newest `MAX_PRS` of the rest.
+ * `older` names the rest, which the tab does not show.
  */
 export function splitLinked(prState: PrViews, links: PrLinks): { tracked: string[]; older: string[] } {
   const ranked = new Set(links.prOrder?.refs ?? [])
-  const shown = links.prs.filter(ref => !isLeftOut(prState, ref))
+  const shown = tabPrs(links).filter(ref => !isLeftOut(prState, ref))
   const unranked = shown.filter(ref => !ranked.has(ref))
   const older = unranked.slice(0, Math.max(0, unranked.length - MAX_PRS))
 

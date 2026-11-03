@@ -4,7 +4,7 @@ import type { Host } from './model-text'
 import { applyPrPress } from './pr-tab'
 import { isPrPress, pressRowId } from './pr-press'
 import { isViewKept } from './pr-views'
-import { itemPrSteps } from './pr-fetch'
+import { itemPrSteps, tabPrs } from './pr-fetch'
 import { withOrderStatuses } from './pr-order'
 import type { Applied, PrPress } from './pr-press'
 import { actionId } from './press-labels'
@@ -55,7 +55,7 @@ export function pressOn(
   const item = s.ledger.items.find(i => i.id === p.id)
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
-    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : [],
+    extraSteps: item ? itemPrSteps(item, s.prViews, tabPrs(s.ledger)) : [],
     answerMessage: texts.answerMessage,
     comparePage: texts.comparePage,
   })
