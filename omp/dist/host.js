@@ -2341,24 +2341,48 @@ function herdrReportKey(pane, tokens) {
   return herdrReport(pane, tokens).join(`
 `);
 }
+var HERDR_RETRY_MS = [5000, 30000, 120000];
 function herdrReporter() {
   let sent = null;
+  let retries = 0;
+  let isRetryWaiting = false;
   let sending = Promise.resolve();
-  return (run, report) => {
-    sending = sending.then(async () => {
-      const r = await report();
-      if (!r)
-        return;
-      const key = herdrReportKey(r.pane, r.tokens);
-      if (key === sent)
-        return;
-      sent = key;
-      await run(herdrReport(r.pane, r.tokens, r.seq), { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS });
-    }).catch(() => {
+  let newest = null;
+  const retryLater = (after) => {
+    const wait = HERDR_RETRY_MS[retries];
+    if (!after || isRetryWaiting || wait === undefined)
       return;
+    isRetryWaiting = true;
+    retries++;
+    after(wait, () => {
+      isRetryWaiting = false;
+      return newest ? reportToHerdr(newest.run, newest.report, newest.after) : Promise.resolve(false);
     });
-    return sending;
   };
+  const send = async (run, report, after) => {
+    const r = await report();
+    if (!r)
+      return false;
+    const key = herdrReportKey(r.pane, r.tokens);
+    if (key === sent)
+      return true;
+    sent = null;
+    const result = await run(herdrReport(r.pane, r.tokens, r.seq), { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS }).catch(() => null);
+    const isTaken = result?.code === 0;
+    if (isTaken) {
+      sent = key;
+      retries = 0;
+    } else
+      retryLater(after);
+    return isTaken;
+  };
+  const reportToHerdr = (run, report, after) => {
+    newest = { run, report, after };
+    const result = sending.then(() => send(run, report, after)).catch(() => false);
+    sending = result;
+    return result;
+  };
+  return reportToHerdr;
 }
 
 // ../hooks/ledger-prompt.ts
@@ -9380,7 +9404,7 @@ function sessionCalls(context) {
       const s = await readState(dir, id);
       const view = sessionView(s, deps.now(), deps.settleWindowMs, true);
       return { pane, tokens: herdrTokens(s.ledger, s.stop, view, []) };
-    }));
+    }, deps.after));
   }
   const resultsOrder = orderedKeys();
   function hostFor(ctx) {
@@ -9567,7 +9591,7 @@ function turnHandlers(context, sessions) {
     if (id !== memory.shownId || !pane)
       return;
     memory.shownId = null;
-    await reportToHerdr(run, async () => ({ pane, tokens: CLEARED_TOKENS }));
+    await reportToHerdr(run, async () => ({ pane, tokens: CLEARED_TOKENS }), deps.after);
   };
   const onBeforeAgentStart = async (event, ctx) => {
     if (isUnattended(ctx))
@@ -9738,6 +9762,7 @@ var defaultDeps = {
   background: (work) => void work.catch(() => {
     return;
   }),
+  after: (ms, fn) => void setTimeout(fn, ms).unref(),
   isUsageLimit: isUsageLimitOutcome,
   herdrPane: process.env.HERDR_PANE_ID || null
 };

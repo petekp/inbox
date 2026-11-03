@@ -62,7 +62,7 @@ export type HookDeps = {
   startUpdate: (sessionId: string) => void
   /** Starts the Status call a hook claimed for the running turn, in a process of its own. */
   startStatusRefresh: (sessionId: string) => void
-  onWrite: OnWrite
+  onWrite?: OnWrite
 }
 
 export async function handleHook(input: HookInput, deps: HookDeps): Promise<Record<string, unknown> | null> {
