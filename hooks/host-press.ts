@@ -111,6 +111,7 @@ type PressHost<S extends Session> = Pick<
   | 'isDeliveryHeldUntilRun'
   | 'answerMessage'
   | 'comparePage'
+  | 'compareInBackground'
   | 'settleWindowMs'
 >
 

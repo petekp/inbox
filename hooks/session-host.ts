@@ -101,6 +101,8 @@ export type SessionHost<S extends Session> = {
   answerMessage?: AnswerMessage
   /** The absolute path of the page template for a comparison, in the host's own folder. */
   comparePage: string
+  /** Whether a background subagent's report reaches the chat, from the host's `compare-in-background` support. */
+  compareInBackground: boolean
 }
 
 /** What a host's catch-up found: the model's answer to apply, or why there is none. */

@@ -57,6 +57,7 @@ export function pressed(s: SessionState, p: RowPress): PressResult {
     turnsStarted: s.presence.turnsStarted,
     extraSteps: [],
     comparePage: '/plugin/dist/compare-page.html',
+    compareInBackground: false,
   })
 }
 
