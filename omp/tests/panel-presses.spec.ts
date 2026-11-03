@@ -75,7 +75,7 @@ test('Discard on a held row drops the draft and records the discard', () => {
   const state = demoState(NOW)
   state.ledger = closeItem(state.ledger, 'd11', { how: 'claude', outcome: 'closed by omp: answered in chat' }, NOW)
   const holds = { replies: { d11: NOW }, discarded: {}, shownSince: NOW }
-  const held = { ...screenOf(), view: sessionView(state, NOW, SETTLED_MS, true, holds) }
+  const held = { ...screenOf(), view: sessionView(state, NOW, SETTLED_MS, holds) }
   const heldRow = waiting(held, 'd11')
   expect(heldRow.state.is).toBe('held')
   expect(plannedLabels(heldRow)).toEqual(['Reply', 'Discard'])
@@ -236,7 +236,7 @@ test('a failed send shows why and offers Try again first', () => {
     at: NOW,
     delivery: { state: 'failed', reason: 'omp is busy' },
   }
-  const screen = { ...screenOf(), view: sessionView(state, NOW, SETTLED_MS, true) }
+  const screen = { ...screenOf(), view: sessionView(state, NOW, SETTLED_MS) }
   const row = waiting(screen, 'i11')
   expect(text(screen, onRow(row))).toContain('Not sent: omp is busy')
   expect(buttonLine(screen, onRow(row))).toContain('Try again')

@@ -42,7 +42,7 @@ test('an order_prs call ranks its PRs above the rest, tracks one the session lac
   expect(order.result).toContain('1 of them was not in the tab yet')
   expect(order.state.ledger.prs).toEqual(s.ledger.prs)
   const fetched = withFetchedPrs(order.state, { 'acme/app#20': openPr(20) }, null, false)
-  const tab = (x: Session) => sessionView(x, at + 2 * 60_000, 1000, true, NO_HOLDS).prs
+  const tab = (x: Session) => sessionView(x, at + 2 * 60_000, 1000, NO_HOLDS).prs
   const ranks = (x: Session) => tab(x).drawn.map(d => [d.pr.number, d.rank])
 
   expect(ranks(fetched).slice(0, 4)).toEqual([
@@ -85,7 +85,7 @@ test('an order_prs call ranks its PRs above the rest, tracks one the session lac
   ).state
   const showing = { ...NO_HOLDS, shownSince: at - 1 }
   const settling = press(onlyRanked, { action: 'pr-dismiss', ref: 'acme/app#20' })
-  expect(sessionView(settling, at + 1000, 60_000, true, showing).prs.order?.title).toBe(
+  expect(sessionView(settling, at + 1000, 60_000, showing).prs.order?.title).toBe(
     `Review this first${DOT}set by Claude just now`,
   )
 
@@ -125,8 +125,7 @@ const orderedAndFetched = (s: Session, numbers: number[], at: number): Session =
   return withFetchedPrs(ordered, views, null, false)
 }
 
-const drawnNumbers = (s: Session, at: number) =>
-  sessionView(s, at, 1000, true, NO_HOLDS).prs.drawn.map(d => d.pr.number)
+const drawnNumbers = (s: Session, at: number) => sessionView(s, at, 1000, NO_HOLDS).prs.drawn.map(d => d.pr.number)
 
 test('clearing an order takes the PRs only it ranked off the tab, keeps a ranked PR the session linked, and frees their places under the PR limit', () => {
   const linked = Array.from({ length: MAX_PRS }, (_, n) => n + 1)
@@ -138,7 +137,7 @@ test('clearing an order takes the PRs only it ranked off the tab, keeps a ranked
   const cleared = recorded(CLAUDE_CODE, ordered, 'order_prs', { numbers: [] }, at).state
   expect(cleared.ledger.prs).toEqual(s.ledger.prs)
   expect(drawnNumbers(cleared, at).sort((a, b) => a - b)).toEqual(linked)
-  expect(sessionView(cleared, at, 1000, true, NO_HOLDS).prs.olderText).toBeNull()
+  expect(sessionView(cleared, at, 1000, NO_HOLDS).prs.olderText).toBeNull()
 })
 
 test('a new order takes the PRs only the order it replaces ranked off the tab, and keeps the session’s own PRs under the PR limit', () => {
@@ -152,7 +151,7 @@ test('a new order takes the PRs only the order it replaces ranked off the tab, a
   expect(drawnNumbers(replaced, at)).not.toContain(40)
   expect(drawnNumbers(replaced, at)).not.toContain(41)
   expect(drawnNumbers(replaced, at).sort((a, b) => a - b)).toEqual(linked)
-  expect(sessionView(replaced, at, 1000, true, NO_HOLDS).prs.olderText).toBeNull()
+  expect(sessionView(replaced, at, 1000, NO_HOLDS).prs.olderText).toBeNull()
 })
 
 const pressed = (s: Session, p: Parameters<typeof applyPrPress>[3], at: number) => {
@@ -212,7 +211,7 @@ test('an order reads as changed once a ranked open PR is newly blocked, gains a 
   const set = recorded(CLAUDE_CODE, s, 'order_prs', { ...order, numbers: [1, 2, 3, 4] }, at).state
   expect(Object.keys(set.ledger.prOrder?.statuses ?? {})).toEqual(refs.slice(0, 3))
   const view = (x: Session, shownSince: number | null = null) =>
-    sessionView(x, at + 60_000, 1000, true, { ...NO_HOLDS, shownSince }).prs.order
+    sessionView(x, at + 60_000, 1000, { ...NO_HOLDS, shownSince }).prs.order
   expect(view(set)?.changed).toBeNull()
 
   const failing: PrView = { ...openPr(1), checks: [{ name: 'lint', bucket: 'fail', url: null }] }

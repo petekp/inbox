@@ -28,7 +28,7 @@ export function demoSource(deps: {
 
   return {
     screen: async holds => ({
-      view: sessionView(state, deps.now(), deps.settleWindowMs, true, holds),
+      view: sessionView(state, deps.now(), deps.settleWindowMs, holds),
       modelName: deps.modelName,
       isGhMissing: false,
       isFetchingPrs: false,

@@ -105,7 +105,7 @@ export function sessionCalls(context: HostContext) {
         run,
         async () => {
           const s = await readState(dir, id)
-          const view = sessionView(s, deps.now(), deps.settleWindowMs, true)
+          const view = sessionView(s, deps.now(), deps.settleWindowMs)
 
           return { pane, tokens: herdrTokens(s.ledger, s.stop, view, []) }
         },
