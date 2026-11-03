@@ -90,7 +90,8 @@ function clipWords(text2, limit) {
   return words3.length <= limit ? words3.join(" ") : `${words3.slice(0, limit).join(" ")}\u2026`;
 }
 function words(text2) {
-  return new Set((text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
+  const matches = text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? [];
+  return new Set(matches.map((w) => w.replace(/^\.+|\.+$/g, "")).filter((w) => w !== "" && !STOP_WORDS.has(w)));
 }
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
@@ -271,16 +272,23 @@ function milestoneOf(saved) {
     closedAt: time(m.closedAt)
   };
 }
+function droppedMilestoneIds(milestones) {
+  return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
+}
 function goalFields(o, subjectIds) {
   const milestones = (Array.isArray(o.milestones) ? o.milestones : []).map(milestoneOf).filter((m) => m !== null);
-  const milestoneIds = new Set(milestones.map((m) => m.id));
+  const dropped = droppedMilestoneIds(milestones);
+  const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
   const serves = Object.fromEntries(
     savedServes.filter(
-      (e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || milestoneIds.has(e[1]))
+      (e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || liveIds.has(e[1]))
     )
   );
-  const declined = Array.isArray(o.declinedGoals) ? o.declinedGoals.filter((d) => typeof d === "string") : [];
+  const keys = (Array.isArray(o.declinedGoals) ? o.declinedGoals : []).flatMap(
+    (d) => typeof d === "string" ? [nameKey(d)] : []
+  );
+  const declined = [...new Set(keys)].filter((key) => key !== "");
   return {
     goal: goalOf(o.goal),
     proposedGoal: proposedOf(o.proposedGoal),
@@ -397,7 +405,11 @@ function upgradeStatus(saved) {
   const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
   const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
-  const askSubjects = Object.fromEntries(savedLinks.filter((e) => typeof e[1] === "string"));
+  const goal = goalFields(o, new Set(subjects.map((s) => s.id)));
+  const dropped = droppedMilestoneIds(goal.milestones);
+  const askSubjects = Object.fromEntries(
+    savedLinks.filter((e) => typeof e[1] === "string" && !dropped.has(e[1]))
+  );
   const look = o.look;
   const lookAt = time2(look?.startedAt);
   return {
@@ -409,7 +421,7 @@ function upgradeStatus(saved) {
     nextChildId: Math.max(time2(o.nextChildId) ?? 1, children.length + 1),
     lastLookAt: time2(o.lastLookAt),
     look: lookAt === null ? null : { startedAt: lookAt },
-    ...goalFields(o, new Set(subjects.map((s) => s.id)))
+    ...goal
   };
 }
 
@@ -1280,6 +1292,7 @@ function statusPage(s, now) {
     isLookAtEnd: true
   };
   const lookId = (id) => look === null ? null : id;
+  const foldCtx = { ...ctx, lookId: null, running: [] };
   const rows = [
     ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
     ...partRows(top.shown, ctx, 0)
@@ -1290,7 +1303,7 @@ function statusPage(s, now) {
       id: `${prefix}done`,
       depth,
       text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: ruledRows(partRows([...done].sort(pageOrder), { ...ctx, lookId: null }, depth + 1), false)
+      rows: ruledRows(partRows([...done].sort(pageOrder), foldCtx, depth + 1), false)
     }
   ];
   const foldRows = (prefix, p, depth) => [

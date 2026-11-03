@@ -62,12 +62,22 @@ export function findMilestone(o: SessionStatus, ref: string): Milestone | null {
   )
 }
 
+/** The milestone a SERVES or LINK line may link to: one `findMilestone` finds that is not dropped. */
+export function linkableMilestone(o: SessionStatus, ref: string): Milestone | null {
+  const m = findMilestone(o, ref)
+
+  return m && m.status !== 'dropped' ? m : null
+}
+
 /** A was line stays until the person has seen it. */
 function forgetSeenWas(m: Milestone, lastLookAt: number | null): void {
   if (lastLookAt !== null && m.changedAt <= lastLookAt) m.was = null
 }
 
-/** Moves a milestone as SET, DONE, DROP or WAS does a subject, under the same hold: a rewording keeps its text and time. */
+/**
+ * Moves a milestone as SET, DONE, DROP or WAS does a subject, under the same hold: a rewording keeps its text and time.
+ * A DROP passes the subjects and asks linked to the milestone to its INTO milestone, and with none unlinks them.
+ */
 export function moveMilestone(
   o: SessionStatus,
   m: Milestone,
@@ -81,18 +91,22 @@ export function moveMilestone(
     m.text = clipWords(op.text, TEXT_KEPT)
     m.closedAt = null
   } else if (op.kind === 'done') {
+    if (m.status === 'done') return
     m.status = 'done'
     if (op.text) m.text = clipWords(op.text, TEXT_KEPT)
     m.closedAt = now
   } else if (op.kind === 'drop') {
-    const target = op.into ? findMilestone(o, op.into) : null
+    const target = op.into ? linkableMilestone(o, op.into) : null
     m.status = 'dropped'
     m.text = clipWords(op.why, TEXT_KEPT)
     m.closedAt = now
-    if (target && target.id !== m.id) {
-      for (const [id, to] of Object.entries(o.serves)) if (to === m.id) o.serves[id] = target.id
-      for (const [ask, to] of Object.entries(o.askSubjects)) if (to === m.id) o.askSubjects[ask] = target.id
-    }
+    const into = target && target.id !== m.id ? target.id : null
+    for (const links of [o.serves, o.askSubjects])
+      for (const [id, to] of Object.entries(links)) {
+        if (to !== m.id) continue
+        if (into) links[id] = into
+        else delete links[id]
+      }
   } else {
     forgetSeenWas(m, o.lastLookAt)
     m.was = op.text
@@ -160,7 +174,7 @@ export function applyGoalOp(
   if (o.goal === null) return o
   if (op.kind === 'milestone') return addMilestone(o, op, now)
   const subject = findSubject(op.subject)
-  const milestone = op.milestone === null ? null : findMilestone(o, op.milestone)
+  const milestone = op.milestone === null ? null : linkableMilestone(o, op.milestone)
   if (!subject || (op.milestone !== null && !milestone)) return o
 
   return { ...o, serves: { ...o.serves, [subject.id]: milestone?.id ?? 'none' } }
