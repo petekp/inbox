@@ -78,8 +78,11 @@ export function clipWords(text: string, limit: number): string {
   return words.length <= limit ? words.join(' ') : `${words.slice(0, limit).join(' ')}…`
 }
 
+/** The content words of `text`, lower case. A dot inside a word stays, as in "1.4.2" or "file.ts", and one at either end goes. */
 export function words(text: string): Set<string> {
-  return new Set((text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter(w => !STOP_WORDS.has(w)))
+  const matches = text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []
+
+  return new Set(matches.map(w => w.replace(/^\.+|\.+$/g, '')).filter(w => w !== '' && !STOP_WORDS.has(w)))
 }
 
 export function nameKey(name: string): string {

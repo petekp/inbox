@@ -218,6 +218,8 @@ export function statusPage(
     isLookAtEnd: true,
   }
   const lookId = (id: string) => (look === null ? null : id)
+  /** A done fold's rows draw no child, since a child of a subject that is not shown is drawn at the top of the list. */
+  const foldCtx: ListContext = { ...ctx, lookId: null, running: [] }
   const rows: StatusRowParts[] = [
     ...running.filter(c => c.subjectId === null || !shownIds.has(c.subjectId)).map(c => childRow(c, null, 0)),
     ...partRows(top.shown, ctx, 0),
@@ -232,7 +234,7 @@ export function statusPage(
             id: `${prefix}done`,
             depth,
             text: `${done.length}${newClosed.some(x => x.status === 'done') ? ' more' : ''} done`,
-            rows: ruledRows(partRows([...done].sort(pageOrder), { ...ctx, lookId: null }, depth + 1), false),
+            rows: ruledRows(partRows([...done].sort(pageOrder), foldCtx, depth + 1), false),
           },
         ]
   /**

@@ -77,6 +77,11 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     answer: 'DONE: s1 | fast on large libraries\nSET: s2 | working | editing rank.ts',
     breaks: 'text-no-ids',
   },
+  'milestone-dropped': {
+    at: 0,
+    answer: GOOD_RUNS['milestone-dropped']![0]!.replace('SERVES: s2 | -\nSERVES: s3 | -\n', ''),
+    breaks: 'serves-linked',
+  },
 }
 
 test('a good run of each replay passes every rule that is built, at every step', async () => {
@@ -251,4 +256,21 @@ test('the head is a title and a one-line description', () => {
   const page = statusPage(sessionOf(statusOf([subject('s1', 'working', 'Sync engine', 'syncs', 0)]), [], 5), minutes(5))
 
   expect(page.head).toEqual({ title: 'Offline sync', description: 'Adding offline sync to the notes app' })
+})
+
+test('serves-linked counts a link to a dropped or unknown milestone as no link', () => {
+  const withGoal = SCENES['serves-linked']!.good!
+
+  expect(
+    failuresOf('serves-linked', s => {
+      withGoal(s)
+      s.after.milestones[1]!.status = 'dropped'
+    }),
+  ).not.toEqual([])
+  expect(
+    failuresOf('serves-linked', s => {
+      withGoal(s)
+      s.after.serves = { s1: 'm1', s2: 'm9' }
+    }),
+  ).not.toEqual([])
 })
