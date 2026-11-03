@@ -2078,6 +2078,7 @@ function emptySession() {
     stop: null,
     overviewFailure: null,
     lastOverviewCallAt: null,
+    overviewTurn: 0,
     hostTasks: [],
     dialogQuestions: []
   };
@@ -2144,6 +2145,7 @@ function sessionFields(saved, views) {
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
+    overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
@@ -3362,8 +3364,11 @@ function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ??
 }
 
 // ../hooks/session-status.ts
+function isStatusCallCurrent(s, appliedAfter) {
+  return s.presence.turnsApplied >= appliedAfter && s.overviewTurn <= appliedAfter;
+}
 function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overview?.goal?.setAt ?? null) {
-  if (s.presence.turnsApplied < appliedAfter) return s;
+  if (!isStatusCallCurrent(s, appliedAfter)) return s;
   return {
     ...s,
     ledger: {
@@ -3371,14 +3376,15 @@ function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overvi
       overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)), readSetAt)
     },
     overviewFailure: null,
-    lastOverviewCallAt: now
+    lastOverviewCallAt: now,
+    overviewTurn: appliedAfter
   };
 }
 var REFUSED_ANSWER_CHARS = 500;
 function failedStatus(s, text2, appliedAfter, now) {
-  if (s.presence.turnsApplied < appliedAfter) return s;
+  if (!isStatusCallCurrent(s, appliedAfter)) return s;
   const failure = text2 === null ? { at: now, cause: "no-answer", answer: null } : { at: now, cause: "refused", answer: text2.slice(0, REFUSED_ANSWER_CHARS) };
-  return { ...s, overviewFailure: failure, lastOverviewCallAt: now };
+  return { ...s, overviewFailure: failure, lastOverviewCallAt: now, overviewTurn: appliedAfter };
 }
 var STATUS_REFRESH_MS = 10 * 6e4;
 function needsCatchUp(s) {
@@ -3906,6 +3912,7 @@ async function attempt(host, ask, prompt) {
   };
 }
 async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
+  if (!isStatusCallCurrent(s, appliedAfter)) return;
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() };
   const prompt = statusCallPrompt(input, call.exchange);
   const attempts = [];
@@ -3920,7 +3927,7 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
   let isWritten = false;
   const after = await host.update((x) => {
     before = x.ledger.overview;
-    isWritten = x.presence.turnsApplied >= appliedAfter;
+    isWritten = isStatusCallCurrent(x, appliedAfter);
     const readSetAt = input.last?.goal?.setAt ?? null;
     return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now, readSetAt);
   });

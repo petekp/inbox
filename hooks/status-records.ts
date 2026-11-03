@@ -1,7 +1,7 @@
 import { askStatus, parseStatus } from './status'
 import { statusPrompt, statusMidTurnPrompt, statusCatchUpPrompt, STATUS_SYSTEM } from './status-prompt'
 import type { StatusCallInput } from './status-prompt'
-import { failedStatus, appliedStatus } from './session-status'
+import { failedStatus, appliedStatus, isStatusCallCurrent } from './session-status'
 import type { ClientId } from './clients'
 import type { Exchange, Session, SessionStatus, HostTask } from '../types'
 import type { Ask, UpdateHost, CallReport } from './session-host'
@@ -150,7 +150,8 @@ async function attempt(
 
 /**
  * Runs the Status call on the Status and asks in `s`, and writes its answer, or saves why it wrote nothing. An
- * answer that holds prose is asked once more. `appliedAfter` drops the write as `appliedStatus` does. With
+ * answer that holds prose is asked once more. `appliedAfter` drops the write as `appliedStatus` does, and skips the
+ * call when `s` already shows it would be dropped. With
  * `records`, it then writes the call's record in the background, and drops a failed write.
  */
 export async function askAndWriteStatus<S extends Session>(
@@ -160,6 +161,7 @@ export async function askAndWriteStatus<S extends Session>(
   tasks: HostTask[],
   appliedAfter: number,
 ): Promise<void> {
+  if (!isStatusCallCurrent(s, appliedAfter)) return
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() }
   const prompt = statusCallPrompt(input, call.exchange)
   const attempts: StatusAttempt[] = []
@@ -174,7 +176,7 @@ export async function askAndWriteStatus<S extends Session>(
   let isWritten = false
   const after = await host.update(x => {
     before = x.ledger.overview
-    isWritten = x.presence.turnsApplied >= appliedAfter
+    isWritten = isStatusCallCurrent(x, appliedAfter)
     const readSetAt = input.last?.goal?.setAt ?? null
     return answer === null
       ? failedStatus(x, last.text, appliedAfter, now)

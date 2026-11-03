@@ -188,6 +188,11 @@ export type Session = {
   overviewFailure: StatusFailure | null
   /** When a Status call last wrote, or failed, or started while a turn ran. Null before the first. Saved under the tab's earlier name. */
   lastOverviewCallAt: number | null
+  /**
+   * The `turnsApplied` that the Status call which last wrote, or failed, was made for. A call made for fewer turns is
+   * older, and writes nothing. Saved under the tab's earlier name.
+   */
+  overviewTurn: number
   /** The agent's own task list, when its host reports one. Empty when the agent keeps none. */
   hostTasks: HostTask[]
   /**
