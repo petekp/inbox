@@ -1,6 +1,5 @@
 import { expect, test } from 'claude-code/testing'
 
-import { childStarted } from '../hooks/children'
 import { lookEnded, lookStarted } from '../hooks/status-children'
 import { statusPage } from '../hooks/status-page'
 import type { SessionStatus, SubjectStatus } from '../types'
@@ -51,11 +50,4 @@ knownFailing('#139: a look marks as seen only the rows that were on screen', '#1
   const names = page.rows.map(r => (r.kind === 'subject' ? r.name : r.kind))
 
   expect(names.indexOf('Search speed')).toBeLessThan(names.indexOf('look'))
-})
-
-knownFailing('#149: a delegate with no published focus shows its name in words', '#149', () => {
-  const o = childStarted(statusOf([]), { ref: 'herdr:pdf-layout', kind: 'delegate', name: 'pdf-layout' }, minutes(1))
-  const row = statusPage(sessionOf(o, [], 2), minutes(2)).rows.find(r => r.kind === 'child')
-
-  expect(row?.kind === 'child' ? row.name : '').toMatch(/^pdf layout$/i)
 })

@@ -75,7 +75,7 @@ These run after every step of every replay, on the saved Status, the page `statu
 - No subject matches an ask, a finding, a task for the person or a standing rule in the fact list. No text restates an open ask or finding.
 - Each open ask is linked to every subject the fact list says it holds up, and to no other. A held subject's text names no decision, such as "needs your decision" or "your call".
 - Each running child is linked to the subject the fact list names.
-- A child's label is not its host's handle, joins no words with "-" or "_", and has at least two words. Until #149 is built, this is a known failing check for a delegate named by an id.
+- A child's label is not its host's handle, joins no words with "-" or "_", and has at least two words. The replays start their delegates with ids and show no Herdr focus, so this check stays known failing for them. The eval-trust follow-ups name the replay step it needs.
 - On a step the fact list marks as no news, no row's or milestone's last-changed time or place moves.
 - On a step the fact list marks as a change, each changed piece's last-changed time moves.
 - On a reversal step, the right subject has a was line, and on a step of plain progress no new was line appears.
@@ -154,8 +154,7 @@ These make no model calls.
 - **Known failing cases.** Each failure that code owns is a test marked as expected to fail, so `check.sh` stays green and turns red when the fix lands:
   - work filed for later closes with its own mark, #137;
   - the fold names every finished piece the person has not seen, #138;
-  - a look marks as seen only the rows that were on screen, #139;
-  - a delegate with no published focus shows its name in words, #149.
+  - a look marks as seen only the rows that were on screen, #139.
 
   The rules for the same changes in the replays name their issue too. Until it is built, such a rule's failures are listed apart and block nothing. A replay step marks a judge check the same way: at Replay A's checkpoints, the judge's marks check waits on #137, since filed work there can only close as ✓ or ✗.
 

@@ -13,12 +13,10 @@ From top to bottom:
 | Head | A title for what the session is focused on now, and a line under it on what the session is doing about it. The call is asked for a title of at most 3 words and a description of at most 8. Code clips them at 20 and 14. A head with no description yet shows its title alone until the next call writes one. | Model |
 | Subject rows | A mark and a short name, with `waiting` after the name while it waits on the person, and a few words on where it stands on the line under the name. The call is asked for a name of at most 3 words and a text of at most 4. Code clips them at 20 and 12. | The model writes the status, name and text. Code draws the mark and the stall word, and orders the rows by status, then by last change. |
 | Was line | The plan a change replaced, as "was: last-write-wins", or the pieces merged into this one, as "merged in: Banner on hover", until the person has seen it | The model writes it. Code shows it only until the person has looked. |
-| Child rows | Running work under its subject, named by the first line of the name its host gives it. A delegate shows what Herdr shows: `◆ … · waiting` at a question or an approval, and `✓ … · finished` once it stops, until the person has seen the Status. Running work shows no word. | Code, from host events and from Herdr. The model writes the link. |
+| Child rows | Running work under its subject. A subagent, background command or workflow run shows the first line of the description it was started with. A Herdr delegate shows the focus its own session publishes to Herdr as `inbox-focus`, or else its Herdr name in words. A delegate shows what Herdr shows: `◆ … · waiting` at a question or an approval, and `✓ … · finished` once it stops, until the person has seen the Status. Running work shows no word. | Code, from host events and from Herdr. The model writes the link. |
 | Seen line | Where the person last looked. Rows above it changed since. It is left out when nothing changed. | Code |
 | Folds | "○ N more" for the open subjects past 6 that the page does not draw. "▸ N done" for the done subjects not drawn as a row, or "▸ N more done" when a done row shows above it. It has no mark, and a press lists those rows under it. | Code |
 | Status line | "Last Status update failed. Changes from that reply may be missing." while the last call wrote nothing | Code |
-
-A decided change to this table, in "Not built yet": decision 21 names each child row in plain words. A Herdr delegate's name is often an id today.
 
 The marks:
 

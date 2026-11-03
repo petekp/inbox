@@ -71,7 +71,13 @@ export function sidebarTokens(): Record<string, string | null> {
   return sidebarReports().at(-1) ?? {}
 }
 
-export const NO_COUNTS = { 'inbox-stop': null, 'inbox-needs-you': null, 'inbox-findings': null, 'inbox-prs': null }
+export const NO_COUNTS = {
+  'inbox-stop': null,
+  'inbox-focus': null,
+  'inbox-needs-you': null,
+  'inbox-findings': null,
+  'inbox-prs': null,
+}
 
 export const SAVED_SESSION = {
   savedAt: 900_000,

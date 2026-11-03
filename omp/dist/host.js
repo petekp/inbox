@@ -281,10 +281,16 @@ function childStarted(o, { ref, kind, name }, at, {
   reportsActivity = true,
   delegateState = null
 } = {}) {
-  const line = name.trim().split(`
-`)[0] ?? "";
   const lastActivityAt = reportsActivity ? at : null;
-  return withChild(o, { ref, kind, name: clipLabel(line, NAME_CHARS), startedAt: at, endedAt: null, lastActivityAt, delegateState }, at);
+  return withChild(o, { ref, kind, name: childName(name), startedAt: at, endedAt: null, lastActivityAt, delegateState }, at);
+}
+function childName(text) {
+  return clipLabel(text.trim().split(`
+`)[0] ?? "", NAME_CHARS);
+}
+function nameInWords(name) {
+  const words = name.replace(/([a-z]{2,})(?=[A-Z][a-z])/g, "$1 ").split(/[-_\s]+/).filter(Boolean);
+  return words.join(" ") || name;
 }
 function childWorked(o, ref, at) {
   const saved = o?.children.find((c) => c.ref === ref)?.lastActivityAt ?? null;
@@ -312,7 +318,7 @@ function delegateRunning(o, step, at) {
   const known = o?.children.find((c) => c.ref === ref);
   const isRunning = known !== undefined && known.endedAt === null;
   if (!isRunning)
-    return childStarted(o, { ref, kind: "delegate", name: step.name }, at, {
+    return childStarted(o, { ref, kind: "delegate", name: known && known.name !== step.name ? known.name : nameInWords(step.name) }, at, {
       delegateState: step.isPrompt ? "working" : null
     });
   const active = childActive(o, ref, at);
@@ -352,14 +358,17 @@ var HERDR_PROMPT_SETTLE_MS = 15000;
 function hasRunningDelegate(o) {
   return o?.children.some((c) => c.kind === "delegate" && c.endedAt === null) ?? false;
 }
-function delegatesSettled(o, states, at) {
+function delegatesSettled(o, agents, at) {
   if (!o)
     return o;
-  const byRef = new Map([...states].map(([name, status]) => [delegateRef(name), status]));
-  const settled = (c) => {
-    if (c.kind !== "delegate" || c.endedAt !== null)
-      return c;
-    const status = byRef.get(c.ref);
+  const byRef = new Map([...agents].map(([name, agent]) => [delegateRef(name), agent]));
+  const settled = (running) => {
+    if (running.kind !== "delegate" || running.endedAt !== null)
+      return running;
+    const agent = byRef.get(running.ref);
+    const status = agent?.status;
+    const focus = agent?.focus ? childName(agent.focus) : null;
+    const c = focus && focus !== running.name ? { ...running, name: focus } : running;
     const isShownWorking = status === "working" || status === "blocked";
     if (isShownWorking)
       return c.delegateState === status ? c : { ...c, delegateState: status };
@@ -2279,12 +2288,14 @@ function outcomeLabel(c) {
 // ../hooks/herdr.ts
 var STATUS_TOKEN = "inbox";
 var STOP_TOKEN = "inbox-stop";
+var FOCUS_TOKEN = "inbox-focus";
+var HERDR_VALUE_CHARS = 80;
 var COUNT_TOKENS = {
   needsYou: "inbox-needs-you",
   findings: "inbox-findings",
   prs: "inbox-prs"
 };
-var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null]));
+var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, FOCUS_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null]));
 var HERDR_TIMEOUT_MS = 5000;
 var HERDR_AGENT_LIST = ["herdr", "agent", "list"];
 var HERDR_STATUSES = ["idle", "working", "blocked", "done", "unknown"];
@@ -2293,15 +2304,21 @@ async function delegatesInHerdr(o, run) {
   if (!hasRunningDelegate(o))
     return null;
   const r = await run(HERDR_AGENT_LIST, { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS });
-  return r.code === 0 ? herdrStatuses(r.stdout) : null;
+  return r.code === 0 ? herdrAgents(r.stdout) : null;
 }
-function herdrStatuses(stdout) {
+function herdrAgents(stdout) {
   try {
     const agents = JSON.parse(stdout)?.result?.agents;
     if (!Array.isArray(agents))
       return null;
-    const statusOf = (a) => HERDR_STATUSES.find((s) => s === a?.agent_status) ?? "unknown";
-    return new Map(agents.filter((a) => typeof a?.name === "string").map((a) => [a.name, statusOf(a)]));
+    const agentOf = (a) => {
+      const focus = a?.tokens?.[FOCUS_TOKEN];
+      return {
+        status: HERDR_STATUSES.find((s) => s === a?.agent_status) ?? "unknown",
+        focus: typeof focus === "string" && focus.trim() ? focus.trim() : null
+      };
+    };
+    return new Map(agents.filter((a) => typeof a?.name === "string").map((a) => [a.name, agentOf(a)]));
   } catch {
     return null;
   }
@@ -2346,6 +2363,7 @@ function herdrTokens(ledger, stop, view, dialogs) {
     findings: view.findings.count,
     focus: focusOf(ledger.overview?.head ?? null)
   };
+  const focus = input.focus ? clipLabel(input.focus, HERDR_VALUE_CHARS) : null;
   const counts = ROW_TABS.map((t) => {
     const count = view[t.id].count;
     return [COUNT_TOKENS[t.id], stop || count === 0 ? null : String(count)];
@@ -2353,6 +2371,7 @@ function herdrTokens(ledger, stop, view, dialogs) {
   return {
     [STATUS_TOKEN]: statusLine(stop, dialogs, input) || null,
     [STOP_TOKEN]: stop ? stopLine(stop) : null,
+    [FOCUS_TOKEN]: focus,
     ...Object.fromEntries(counts)
   };
 }
@@ -7709,6 +7728,7 @@ var CLIENTS = {
       },
       "herdr-sidebar": { kind: "full" },
       "status-children": { kind: "full" },
+      "child-names": { kind: "full" },
       "status-look-line": { kind: "full" },
       "status-row-rules": { kind: "full" },
       "status-failed-warning": { kind: "full" },
@@ -7805,6 +7825,7 @@ var CLIENTS = {
         kind: "different",
         reason: "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so background commands and workflows do not show. The end of a wait on a Herdr delegate is read at Stop."
       },
+      "child-names": { kind: "full" },
       "status-look-line": { kind: "full" },
       "status-row-rules": { kind: "full" },
       "status-failed-warning": { kind: "full" },
@@ -7895,6 +7916,7 @@ var CLIENTS = {
         kind: "different",
         reason: "omp's extension events report subagents and bash calls. omp's reference names no event for a background job or a workflow run, so those do not show."
       },
+      "child-names": { kind: "full" },
       "status-look-line": { kind: "full" },
       "status-row-rules": { kind: "full" },
       "status-failed-warning": { kind: "full" },

@@ -42,7 +42,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/status-children.ts` | Shared module. A child the host reports, and its end and activity. The text of the subjects, asks and running children that the Status call reads. When a look at the Status starts and ends. |
 | `hooks/status-upgrade.ts` | Shared module. `upgradeStatus`, which reads a saved Status from this build or an earlier one and leaves out anything wrongly shaped. |
 | `hooks/status-upgrade-goal.ts` | Shared module. The goal's fields of a saved Status, for `upgradeStatus`. Only an object loads as a goal. |
-| `hooks/children.ts` | Shared module. How each host's events become the Status tab's children: the task notice parser, the Herdr delegate steps, the end of a delegate Herdr no longer shows working, the cut-off at a reload, and the gate that limits how often a child's activity is saved. |
+| `hooks/children.ts` | Shared module. How each host's events become the Status tab's children: the task notice parser, the Herdr delegate steps, a delegate's name (its Herdr name in words, then the focus its session publishes), the end of a delegate Herdr no longer shows working, the cut-off at a reload, and the gate that limits how often a child's activity is saved. |
 | `hooks/model-text.ts` | Shared module. The guidance `guidanceText` builds, the `close` tool's description that carries it, and the `Host` and `Told` types. Each host's `Host` names its agent, surface and the `record` and `close` tools. |
 | `hooks/ledger-prompt.ts` | Shared module. What the ledger call reads: `systemText`, and the prompt `buildPrompt` builds from the ledger and the new exchange. |
 | `hooks/catch-up-text.ts` | Shared module. The ledger call's catch-up prompts, and the activity lines that a turn's tool calls and dialogs add. |
@@ -63,7 +63,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/host-press.ts` | Shared module. `press` and `startPress`, which run a press on a host's store, and `wakeForDone`, which tells the agent about rows closed with Done. |
 | `hooks/host-prs.ts` | Shared module. `fetchPrs`, which fetches a session's PRs through the host's gh, and `isPrFetchDue` and `prFetchTracker`, which say when to fetch again. |
 | `hooks/gh.ts` | Shared module. `ghFinder` finds a gh that starts, and `ghIn` runs it, over a host's command runner. `branchIn` reads a folder's git branch over the same runner. |
-| `hooks/herdr.ts` | Shared module. What a host reports to the Herdr pane it runs in: the `inbox` status line, the stop, and each row tab's count, as pane tokens in one `herdr pane report-metadata` command. Also `delegatesInHerdr`, which asks `herdr agent list` which delegates still run, only while one runs. |
+| `hooks/herdr.ts` | Shared module. What a host reports to the Herdr pane it runs in: the `inbox` status line, the stop, the session's focus, and each row tab's count, as pane tokens in one `herdr pane report-metadata` command. Also `delegatesInHerdr`, which asks `herdr agent list` what each delegate does and the focus its session publishes, only while one runs. |
 | `hooks/text.ts` | Shared module. Clipping, code-block formatting, relative ages and a turn's reply. |
 | `hooks/prs.ts` | Shared module. PR parsing, readiness and prompts. |
 | `hooks/pr-tab.ts` | Shared module. What each PR press does, in `applyPrPress`, and the PR button plans: `threadActions`, `checkActions`, `prBlockActions`, and `prTabActions` for the tab's own buttons. |

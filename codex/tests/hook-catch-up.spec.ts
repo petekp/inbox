@@ -48,6 +48,7 @@ test('a session resumed with earlier turns is marked behind at its first hook an
   const cleared = {
     inbox: null,
     'inbox-stop': null,
+    'inbox-focus': null,
     'inbox-needs-you': null,
     'inbox-findings': null,
     'inbox-prs': null,

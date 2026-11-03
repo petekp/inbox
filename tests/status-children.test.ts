@@ -10,8 +10,10 @@ import {
   subjectsText,
   withChild,
 } from '../hooks/status-children'
-import { delegatesSettled, delegatesStarted } from '../hooks/children'
-import type { HerdrStatus } from '../hooks/herdr'
+import { delegatesSettled, delegatesStarted, nameInWords } from '../hooks/children'
+import { delegatesInHerdr } from '../hooks/herdr'
+import type { HerdrAgent, HerdrStatus } from '../hooks/herdr'
+import type { Run } from '../hooks/gh'
 import { CHILD_ROWS } from '../hooks/status-page-parts'
 import type { SessionStatus } from '../types'
 import { MIN, after, askItem, page, shape } from './status-helpers'
@@ -130,9 +132,9 @@ test('a delegate says what Herdr shows: nothing while it works, waiting while bl
   o = delegatesStarted(o, 'herdr agent start spare --cmd claude', 30 * MIN)
   o = after(o, 'LINK: c1 | s1\nLINK: c2 | s1', 30 * MIN)
   const herdr = (pdf: HerdrStatus) =>
-    new Map<string, HerdrStatus>([
-      ['pdf', pdf],
-      ['spare', 'idle'],
+    new Map<string, HerdrAgent>([
+      ['pdf', { status: pdf, focus: null }],
+      ['spare', { status: 'idle', focus: null }],
     ])
   const rows = (x: SessionStatus | null, now: number) => shape(page(x, now).rows)
 
@@ -301,3 +303,69 @@ test('a running child of a done subject in the done fold shows once, at the top 
   expect(rows.some(r => r.kind === 'done-fold')).toBe(true)
   expect(drawn.filter(r => r.kind === 'child').map(r => r.depth)).toEqual([0])
 })
+
+test('a child row says what its work does: a delegate shows the focus its session publishes to Herdr, else its name in words, and a subagent its description', () => {
+  let o = delegatesStarted(null, 'herdr agent start pdfx2 --cmd claude', 0)
+  o = delegatesStarted(o, 'herdr agent start release-notes --cmd claude', 0)
+  o = withChild(
+    o,
+    {
+      ref: 't1',
+      kind: 'subagent',
+      name: 'Review the sync engine diff',
+      startedAt: 0,
+      endedAt: null,
+      lastActivityAt: 0,
+    },
+    0,
+  )
+  const delegateRow = {
+    ref: 'herdr:release-notes',
+    kind: 'delegate' as const,
+    name: '',
+    startedAt: 0,
+    endedAt: null,
+    lastActivityAt: 0,
+  }
+  const names = (x: SessionStatus | null) => page(x, 4 * MIN).rows.flatMap(r => (r.kind === 'child' ? [r.name] : []))
+
+  expect(names(o)).toEqual(['pdfx2', 'release notes', 'Review the sync engine diff'])
+  expect(['syncEngineFix', 'PDF_export', 'macOS-port', 'iOSApp', '--'].map(nameInWords)).toEqual([
+    'sync Engine Fix',
+    'PDF export',
+    'macOS port',
+    'iOSApp',
+    '--',
+  ])
+  const agents = new Map<string, HerdrAgent>([
+    ['pdfx2', { status: 'working', focus: 'Lay out the PDF export' }],
+    ['release-notes', { status: 'unknown', focus: null }],
+  ])
+  const named = delegatesSettled(o, agents, MIN)
+  expect(names(named)).toEqual(['Lay out the PDF export', 'release notes', 'Review the sync engine diff'])
+  const saved = childEnded(withChild(null, { ...delegateRow, name: 'release-notes' }, 0), 'herdr:release-notes', MIN)
+  expect(names(delegatesStarted(saved, 'herdr agent prompt release-notes "go on"', 2 * MIN))).toEqual(['release notes'])
+  const ended = childEnded(named, 'herdr:pdfx2', 2 * MIN)
+  expect(names(delegatesStarted(ended, 'herdr agent prompt pdfx2 "go on"', 3 * MIN))).toContain(
+    'Lay out the PDF export',
+  )
+})
+
+const LONG_FOCUS = `Lay out ${'the PDF export '.repeat(8)}`.trim()
+const MALFORMED_FOCUS: [string, unknown, string][] = [
+  ['a number', 5, 'pdfx2'],
+  ['blank', '   ', 'pdfx2'],
+  ['over 80 characters', LONG_FOCUS, `${LONG_FOCUS.slice(0, 79)}…`],
+  ['on several lines', 'Lay out the PDF export\nthen review it', 'Lay out the PDF export'],
+]
+
+for (const [kind, focus, drawn] of MALFORMED_FOCUS)
+  test(`a delegate whose published focus is ${kind} draws "${drawn.slice(0, 24)}"`, async () => {
+    const o = delegatesStarted(null, 'herdr agent prompt pdfx2 "go on"', 0)
+    const agents = [{ name: 'pdfx2', agent_status: 'working', tokens: { 'inbox-focus': focus } }]
+    const run: Run = async () => ({ code: 0, stdout: JSON.stringify({ result: { agents } }), stderr: '' })
+    const read = await delegatesInHerdr(o, run)
+    const named = delegatesSettled(o, read!, MIN)
+
+    expect(page(named, MIN).rows.flatMap(r => (r.kind === 'child' ? [r.name] : []))).toEqual([drawn])
+  })

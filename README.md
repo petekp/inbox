@@ -222,6 +222,7 @@ sidebar, as pane tokens:
 | `inbox` | What waits on you, in one line |
 | `inbox-needs-you`, `inbox-findings`, `inbox-prs` | The tab's count alone, such as `2`. `inbox-needs-you` is the Asks tab's, and `inbox-findings` the Finds tab's. Empty when the tab has nothing waiting. |
 | `inbox-stop` | Why the agent stopped. The count tokens stay empty until the stop clears, so the sidebar has room for it. |
+| `inbox-focus` | What the session is focused on, from its Status. A session that started this one as a Herdr delegate shows it as the delegate's row. No sidebar row needs it. |
 
 To tell the counts apart by each tab's color, add this row to `rows` under
 `[ui.sidebar.agents]` in Herdr's config:

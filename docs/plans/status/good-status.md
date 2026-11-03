@@ -123,7 +123,7 @@ A few words on what works, what is left or what it waits on, in the work's own t
 
 A delegate, subagent, background command or workflow run shows under the subject it works on while it runs. It says in a few plain words what it does. A delegate shows the focus its own session's Status publishes, and other running work shows the description it was started with. A delegate says when it waits at a question or has finished. Other running work shows no word, since its moving mark says it runs.
 
-Until decision 21 is built, a delegate shows its Herdr name, and a delegate whose name is an id fails this property. That is a known failing case for #149.
+A delegate whose session publishes no focus, such as one that does not run the inbox, shows its Herdr name in words. A name with nothing to split at, such as `pdfx2`, stays as it is and fails this property.
 
 - **Good:** `● Export button` with `└ ● Lay out the PDF export` under it.
 - **Good:** the same delegate, at an approval prompt, reads `◆ Lay out the PDF export · waiting`.

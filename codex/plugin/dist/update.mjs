@@ -3469,13 +3469,15 @@ function viewOf(s, now, holds = NO_HOLDS) {
 // ../hooks/herdr.ts
 var STATUS_TOKEN = "inbox";
 var STOP_TOKEN = "inbox-stop";
+var FOCUS_TOKEN = "inbox-focus";
+var HERDR_VALUE_CHARS = 80;
 var COUNT_TOKENS = {
   needsYou: "inbox-needs-you",
   findings: "inbox-findings",
   prs: "inbox-prs"
 };
 var CLEARED_TOKENS = Object.fromEntries(
-  [STATUS_TOKEN, STOP_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null])
+  [STATUS_TOKEN, STOP_TOKEN, FOCUS_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null])
 );
 var HERDR_TIMEOUT_MS = 5e3;
 function stopLine(stop) {
@@ -3512,6 +3514,7 @@ function herdrTokens(ledger, stop, view, dialogs) {
     findings: view.findings.count,
     focus: focusOf(ledger.overview?.head ?? null)
   };
+  const focus = input.focus ? clipLabel(input.focus, HERDR_VALUE_CHARS) : null;
   const counts = ROW_TABS.map((t) => {
     const count = view[t.id].count;
     return [COUNT_TOKENS[t.id], stop || count === 0 ? null : String(count)];
@@ -3519,6 +3522,7 @@ function herdrTokens(ledger, stop, view, dialogs) {
   return {
     [STATUS_TOKEN]: statusLine(stop, dialogs, input) || null,
     [STOP_TOKEN]: stop ? stopLine(stop) : null,
+    [FOCUS_TOKEN]: focus,
     ...Object.fromEntries(counts)
   };
 }

@@ -40,6 +40,7 @@ export type FeatureId =
   | 'dim-pressed-button'
   | 'herdr-sidebar'
   | 'status-children'
+  | 'child-names'
   | 'status-look-line'
   | 'status-row-rules'
   | 'status-failed-warning'
@@ -106,6 +107,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'herdr-sidebar': { kind: 'full' },
       'status-children': { kind: 'full' },
+      'child-names': { kind: 'full' },
       'status-look-line': { kind: 'full' },
       'status-row-rules': { kind: 'full' },
       'status-failed-warning': { kind: 'full' },
@@ -214,6 +216,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so background commands and workflows do not show. The end of a wait on a Herdr delegate is read at Stop.",
       },
+      'child-names': { kind: 'full' },
       'status-look-line': { kind: 'full' },
       'status-row-rules': { kind: 'full' },
       'status-failed-warning': { kind: 'full' },
@@ -315,6 +318,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           "omp's extension events report subagents and bash calls. omp's reference names no event for a background job or a workflow run, so those do not show.",
       },
+      'child-names': { kind: 'full' },
       'status-look-line': { kind: 'full' },
       'status-row-rules': { kind: 'full' },
       'status-failed-warning': { kind: 'full' },
