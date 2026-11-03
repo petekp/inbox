@@ -3409,17 +3409,65 @@ function callLines(p, hasCommandRows, cwd) {
   return line ? [line] : [];
 }
 
-// src/rollout-turns.ts
-var PLAN_TOOL = "update_plan";
-var MARKERS = [
-  '"task_started"',
-  DIALOG_TOOL,
+// src/rollout-unran.ts
+var UNRAN_MARKERS = [
   '"CommandExecution"',
+  '"FileChange"',
+  '"McpToolCall"',
   '"function_call',
   '"local_shell_call',
-  '"AgentMessage"',
-  '"assistant"'
+  '"custom_tool_call_output"'
 ];
+var UNRAN_OUTPUT = /^(?:(?:exec command|patch) rejected by user|(?:Command|Tool call) blocked by PreToolUse hook: )/;
+var BLOCKED_COMMAND = /^Command blocked by PreToolUse hook: [^\n]*?\. Command: ([^\n]+)/;
+var BLOCKED_TOOL = /^Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: (\S+)/;
+var SCRIPT_ERROR = "Script error: ";
+var toolLines = (tool) => {
+  const line = toolActivity(tool, {});
+  return line ? [line] : [];
+};
+var blockedLines = (output) => {
+  const command = BLOCKED_COMMAND.exec(output)?.[1];
+  const tool = BLOCKED_TOOL.exec(output)?.[1];
+  return command ? shellLines(command.trim()) : tool ? toolLines(tool) : [];
+};
+var editedLines = (changes) => Object.keys(record(changes)).map((path) => `edited ${path}`);
+function unranLines(rows) {
+  const ran = /* @__PURE__ */ new Set();
+  const unran = /* @__PURE__ */ new Set();
+  const note = (lines, didRun) => lines.forEach((line) => (didRun ? ran : unran).add(line));
+  const callCommands = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    const p = record(row.payload);
+    const item = record(p.item);
+    const isDeclined = item.status === "declined";
+    if (row.type === "event_msg" && p.type === "item_completed") {
+      if (item.type === "CommandExecution") note(shellLines(commandText(item.command)), !isDeclined);
+      else if (item.type === "FileChange") note(editedLines(item.changes), !isDeclined);
+      else if (item.type === "McpToolCall") note(toolLines(`mcp__${textOf2(item.server)}__${textOf2(item.tool)}`), true);
+      continue;
+    }
+    if (row.type !== "response_item") continue;
+    const callId = textOf2(p.call_id);
+    if (p.type === "function_call" || p.type === "local_shell_call") {
+      const command = callCommand(p);
+      if (command !== "" && callId !== "") callCommands.set(callId, command);
+    } else if (p.type === "function_call_output") {
+      const output = outputText(p.output);
+      const command = callCommands.get(callId);
+      if (command !== void 0) note(shellLines(command), !UNRAN_OUTPUT.test(output));
+      note(blockedLines(output), false);
+    } else if (p.type === "custom_tool_call_output") {
+      const output = Array.isArray(p.output) ? contentText(p.output) : textOf2(p.output);
+      if (output.startsWith(SCRIPT_ERROR)) note(blockedLines(output.slice(SCRIPT_ERROR.length)), false);
+    }
+  }
+  return [...unran].filter((line) => !ran.has(line));
+}
+
+// src/rollout-turns.ts
+var PLAN_TOOL = "update_plan";
+var MARKERS = ['"task_started"', DIALOG_TOOL, '"AgentMessage"', '"assistant"', ...UNRAN_MARKERS];
 var TURN_EVENT_KINDS = /* @__PURE__ */ new Map([
   ["task_started", "started"],
   ["task_complete", "completed"],
@@ -3439,7 +3487,7 @@ function turnEventOf(line) {
   }
 }
 function turnOf(lines, turnId) {
-  const none = { dialogs: [], commands: [], plan: null, texts: [] };
+  const none = { dialogs: [], commands: [], plan: null, texts: [], unran: [] };
   try {
     const byTurn = /* @__PURE__ */ new Map();
     const newTurn = () => ({
@@ -3449,7 +3497,8 @@ function turnOf(lines, turnId) {
       called: [],
       plan: null,
       itemTexts: [],
-      messageTexts: []
+      messageTexts: [],
+      rows: []
     });
     let current = "";
     let newest = "";
@@ -3471,7 +3520,9 @@ function turnOf(lines, turnId) {
       }
       const turn2 = byTurn.get(current) ?? newTurn();
       byTurn.set(current, turn2);
+      turn2.rows.push(row);
       if (row.type === "event_msg" && p.type === "item_completed" && p.item?.type === "CommandExecution") {
+        if (p.item.status === "declined") continue;
         const output = p.item.aggregated_output;
         turn2.executions.push({ command: commandText(p.item.command), output: isText(output) ? output : "" });
       } else if (row.type === "event_msg" && p.type === "item_completed" && p.item?.type === "AgentMessage") {
@@ -3503,7 +3554,8 @@ function turnOf(lines, turnId) {
       dialogs: turn.dialogs.filter((d) => d.questions.length > 0),
       commands: turn.executions.length > 0 ? turn.executions : turn.called,
       plan: turn.plan,
-      texts: turn.itemTexts.length > 0 ? turn.itemTexts : turn.messageTexts
+      texts: turn.itemTexts.length > 0 ? turn.itemTexts : turn.messageTexts,
+      unran: unranLines(turn.rows)
     };
   } catch {
     return none;
@@ -3513,6 +3565,7 @@ var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).
 function turnsOf(rows, cwd) {
   const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
   const hasCommandRows = rows.some((row) => isItem(row, "CommandExecution"));
+  const unran = new Set(unranLines(rows));
   const turns = [];
   const agentTurn = () => {
     const last = turns.at(-1);
@@ -3524,10 +3577,11 @@ function turnsOf(rows, cwd) {
   const person = (text2) => {
     if (text2 && !text2.startsWith("<")) turns.push({ role: "person", text: text2, activity: [] });
   };
-  const act = (lines) => {
+  const act = (all) => {
+    const lines = all.filter((line) => !unran.has(line));
     if (lines.length === 0) return;
     const turn = agentTurn();
-    turn.activity = lines.reduce((all, line) => addActivity(all, line), turn.activity);
+    turn.activity = lines.reduce((all2, line) => addActivity(all2, line), turn.activity);
   };
   for (const row of rows) {
     const p = record(row.payload);
@@ -3713,6 +3767,10 @@ function rolloutReads(path, tail) {
 }
 
 // src/hook.ts
+var withoutActivity = (s, lines) => {
+  const activity = s.turn.activity.filter((line) => !lines.includes(line));
+  return activity.length === s.turn.activity.length ? s : { ...s, turn: { ...s.turn, activity } };
+};
 async function handleHook(input, deps) {
   const id = input.session_id;
   const { dir, env, now } = deps;
@@ -3799,9 +3857,12 @@ async function handleHook(input, deps) {
       const hasWork = line !== null || agentId !== void 0 || isDelegateCommand;
       const isMainActivity = line !== null && agentId === void 0;
       let isClaimed = false;
+      const isStatusDue = isMainActivity && await read().then((s) => claimedStatusRefresh(s, now()) !== s);
+      const unran = isStatusDue ? turnOf(await rolloutTail(input.transcript_path), input.turn_id).unran : [];
       if (hasWork)
         await write((s) => {
-          const worked = withWork(line ? noteActivity(withRollout(s), line) : withRollout(s));
+          const kept = withoutActivity(withRollout(s), unran);
+          const worked = withWork(line ? noteActivity(kept, line) : kept);
           const claimed = isMainActivity ? claimedStatusRefresh(worked, now()) : worked;
           isClaimed = claimed !== worked;
           return claimed;
@@ -3834,14 +3895,14 @@ async function handleHook(input, deps) {
           () => null
         )
       ]);
-      const { dialogs, commands, plan, texts } = turnOf(tail, input.turn_id);
+      const { dialogs, commands, plan, texts, unran } = turnOf(tail, input.turn_id);
       const reply = turnReply(texts, input.last_assistant_message ?? "");
       const withHistory = await readHistoryAhead(() => before, tail);
       const lines = dialogs.map((d) => dialogActivity(d.questions, { kind: "open" }));
       const written = await write(async (s) => {
         const withLines = lines.reduce(
           (x, line) => noteActivity(x, line),
-          noteDialogs(withHost(await withHistory(s)), dialogs)
+          withoutActivity(noteDialogs(withHost(await withHistory(s)), dialogs), unran)
         );
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines);
         const waited = statusChanged(
