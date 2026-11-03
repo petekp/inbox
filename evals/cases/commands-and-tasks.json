@@ -312,5 +312,32 @@
         "kind": "task"
       }
     ]
+  },
+  {
+    "name": "pr-ready-left-to-person-is-question",
+    "about": "An outward act the reply leaves to the person, such as marking a draft PR ready, asks for their OK instead of becoming a task.",
+    "ledger": {
+      "turn": 8,
+      "nextId": 5,
+      "card": {
+        "goal": "Fix the reaction tooltip",
+        "done": ["Found the tooltip component"],
+        "now": "Fixing the tooltip text",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "the tooltip should only list the names",
+      "turn": 8,
+      "activity": ["edited src/discussion/ReactionTooltip.tsx", "ran: npm test -- discussion", "ran: git push"],
+      "reply": "Done: the tooltip now shows only the names, one per line, and the change is pushed to PR #3040.\n\nTypecheck, lint and the 150 discussion tests pass.\n\nThe PR is still a draft, so marking it ready for review is up to you."
+    },
+    "checks": [
+      {
+        "new": "ready|review",
+        "kind": "question"
+      }
+    ]
   }
 ]
