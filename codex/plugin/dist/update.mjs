@@ -4249,16 +4249,18 @@ var UNRAN_MARKERS = [
   '"custom_tool_call_output"'
 ];
 var UNRAN_OUTPUT = /^(?:(?:exec command|patch) rejected by user|(?:Command|Tool call) blocked by PreToolUse hook: )/;
-var BLOCKED_COMMAND = /Command blocked by PreToolUse hook: [^\n]*?\. Command: ([^\n]+)/g;
-var BLOCKED_TOOL = /Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: ([^\s]+)/g;
+var BLOCKED_COMMAND = /^Command blocked by PreToolUse hook: [^\n]*?\. Command: ([^\n]+)/;
+var BLOCKED_TOOL = /^Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: (\S+)/;
+var SCRIPT_ERROR = "Script error: ";
 var toolLines = (tool) => {
   const line = toolActivity(tool, {});
   return line ? [line] : [];
 };
-var blockedLines = (output) => [
-  ...[...output.matchAll(BLOCKED_COMMAND)].flatMap((m) => shellLines(m[1].trim())),
-  ...[...output.matchAll(BLOCKED_TOOL)].flatMap((m) => toolLines(m[1]))
-];
+var blockedLines = (output) => {
+  const command = BLOCKED_COMMAND.exec(output)?.[1];
+  const tool = BLOCKED_TOOL.exec(output)?.[1];
+  return command ? shellLines(command.trim()) : tool ? toolLines(tool) : [];
+};
 var editedLines = (changes) => Object.keys(record(changes)).map((path) => `edited ${path}`);
 function unranLines(rows) {
   const ran = /* @__PURE__ */ new Set();
@@ -4286,7 +4288,8 @@ function unranLines(rows) {
       if (command !== void 0) note(shellLines(command), !UNRAN_OUTPUT.test(output));
       note(blockedLines(output), false);
     } else if (p.type === "custom_tool_call_output") {
-      note(blockedLines(Array.isArray(p.output) ? contentText(p.output) : textOf(p.output)), false);
+      const output = Array.isArray(p.output) ? contentText(p.output) : textOf(p.output);
+      if (output.startsWith(SCRIPT_ERROR)) note(blockedLines(output.slice(SCRIPT_ERROR.length)), false);
     }
   }
   return [...unran].filter((line) => !ran.has(line));

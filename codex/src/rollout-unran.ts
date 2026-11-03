@@ -19,9 +19,15 @@ export const UNRAN_MARKERS = [
 /** Codex's answers to the model for a call that is not run through code mode and did not run. */
 const UNRAN_OUTPUT = /^(?:(?:exec command|patch) rejected by user|(?:Command|Tool call) blocked by PreToolUse hook: )/
 
-/** Codex's answer to the model when a PreToolUse hook blocks a call. The reason is the hook's own text. */
-const BLOCKED_COMMAND = /Command blocked by PreToolUse hook: [^\n]*?\. Command: ([^\n]+)/g
-const BLOCKED_TOOL = /Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: ([^\s]+)/g
+/**
+ * Codex's answer to the model when a PreToolUse hook blocks a call. The reason is the hook's own text. Only an output
+ * that starts with one counts, since a call that ran can print the same words.
+ */
+const BLOCKED_COMMAND = /^Command blocked by PreToolUse hook: [^\n]*?\. Command: ([^\n]+)/
+const BLOCKED_TOOL = /^Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: (\S+)/
+
+/** How a code-mode script's output starts when the script ended on an error it did not catch. */
+const SCRIPT_ERROR = 'Script error: '
 
 const toolLines = (tool: string): string[] => {
   const line = toolActivity(tool, {})
@@ -29,11 +35,13 @@ const toolLines = (tool: string): string[] => {
   return line ? [line] : []
 }
 
-/** The activity lines of the calls a tool output says a hook blocked. */
-const blockedLines = (output: string): string[] => [
-  ...[...output.matchAll(BLOCKED_COMMAND)].flatMap(m => shellLines(m[1]!.trim())),
-  ...[...output.matchAll(BLOCKED_TOOL)].flatMap(m => toolLines(m[1]!)),
-]
+/** The activity line of the call a tool output says a hook blocked, when the output starts with Codex's message. */
+const blockedLines = (output: string): string[] => {
+  const command = BLOCKED_COMMAND.exec(output)?.[1]
+  const tool = BLOCKED_TOOL.exec(output)?.[1]
+
+  return command ? shellLines(command.trim()) : tool ? toolLines(tool) : []
+}
 
 const editedLines = (changes: unknown): string[] => Object.keys(record(changes)).map(path => `edited ${path}`)
 
@@ -68,7 +76,8 @@ export function unranLines(rows: RolloutRow[]): string[] {
       if (command !== undefined) note(shellLines(command), !UNRAN_OUTPUT.test(output))
       note(blockedLines(output), false)
     } else if (p.type === 'custom_tool_call_output') {
-      note(blockedLines(Array.isArray(p.output) ? contentText(p.output) : textOf(p.output)), false)
+      const output = Array.isArray(p.output) ? contentText(p.output) : textOf(p.output)
+      if (output.startsWith(SCRIPT_ERROR)) note(blockedLines(output.slice(SCRIPT_ERROR.length)), false)
     }
   }
 

@@ -11,7 +11,7 @@ import { hookDeps, input, tempDir } from './helpers'
 
 const started = { type: 'event_msg', payload: { type: 'task_started', turn_id: 't1' } }
 
-const commandRow = (command: string, status: string) => ({
+const commandRow = (command: string, status?: string) => ({
   type: 'event_msg',
   payload: {
     type: 'item_completed',
@@ -116,6 +116,24 @@ test('a command still running when the turn ends, or that ran once and was decli
   const activity = await endedActivity(transcript, [bash(transcript, 'npm run dev'), bash(transcript, 'npm test')])
 
   assert.deepEqual(activity, ['ran: npm run dev', 'ran: npm test'])
+})
+
+test('a call that ran keeps its line when its output quotes a block message, and so does a row with no status', async () => {
+  const quote = 'Command blocked by PreToolUse hook: pushes wait for review. Command: git push'
+  const transcript = rollout([
+    started,
+    commandRow('npm test'),
+    scriptOutput(`Script completed\n${quote}`),
+    shellCall('c3', 'grep -r blocked docs'),
+    callOutput('c3', `docs/hooks.md: ${quote}`),
+  ])
+  const activity = await endedActivity(transcript, [
+    bash(transcript, 'git push'),
+    bash(transcript, 'npm test'),
+    bash(transcript, 'grep -r blocked docs'),
+  ])
+
+  assert.deepEqual(activity, ['ran: git push', 'ran: npm test', 'ran: grep -r blocked docs'])
 })
 
 test('a declined command leaves the activity before a Status call during the turn reads it', async () => {
