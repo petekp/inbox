@@ -27,6 +27,7 @@ import {
   RANK_AGAIN_ID,
   splitFollowUps,
   threadRowText,
+  isBlockPressShown,
 } from './pr-rows'
 import { checkActions, prBlockActions, threadActions } from './pr-tab'
 import { type DrawnPr, isDismissed } from './pr-views'
@@ -260,7 +261,8 @@ export function panePrBlocks({
     const { pr, checks, cancelled, threads } = b
     const { status, head: statusHead, unlisted } = readiness(pr, isThreadSent)
     const tone = PR_TONES[status]
-    const prLast = isDismissed(lastActions, pr.ref) ? null : lastActionText(prMarkId(pr.ref))
+    const isPrLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
+    const prLast = isPrLastShown ? lastActionText(prMarkId(pr.ref)) : null
     const prActions = prBlockActions(pr, isThreadSent, prState.branchRef, presses).map(a => prKeyAction(a, pr.ref))
 
     const titleLine = (

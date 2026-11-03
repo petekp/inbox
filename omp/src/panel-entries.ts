@@ -9,6 +9,7 @@ import {
   DISMISS_MERGED_ID,
   RANK_AGAIN_ID,
   prCheckId,
+  isBlockPressShown,
   prBlockRows,
   prMarkId,
   prRowWaits,
@@ -150,7 +151,8 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       continue
     }
     const { status, head, unlisted } = readiness(pr, isSent)
-    const f = isDismissed(lastActions, pr.ref) ? null : pressFeedback(screen, markId, now)
+    const isPrLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
+    const f = isPrLastShown ? pressFeedback(screen, markId, now) : null
     out.push({
       kind: 'row',
       line: {

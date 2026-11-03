@@ -39,6 +39,20 @@ export function prMarkId(ref: string): string {
   return `pr:${ref}`
 }
 
+/**
+ * Whether a PR block draws its last press. Re-run records its result on the block as well as on the check's row, since
+ * the fetch after a re-run drops the row once the run is running. While a check row of the block still holds that
+ * result, only the row draws it, so the rows under the block do not move while the press is out.
+ */
+export function isBlockPressShown(pr: PrView, lastActions: Record<string, LastAction>): boolean {
+  const result = lastActions[prMarkId(pr.ref)]?.result
+  if (result?.action !== 'check-rerun') return true
+  const isSamePress = (r: LastAction['result']) =>
+    r !== undefined && (r.pressId !== undefined ? r.pressId === result.pressId : r.at === result.at)
+
+  return !blockingChecks(pr).some(c => isSamePress(lastActions[prCheckId(pr, c)]?.result))
+}
+
 export const GH_MISSING_TEXT = 'The inbox could not find gh. It needs gh to read your PRs.'
 
 export const GH_SIGNED_OUT_TEXT = 'gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.'

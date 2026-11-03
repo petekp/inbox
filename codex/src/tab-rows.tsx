@@ -38,7 +38,7 @@ import { later, callTool } from './tab-host'
 import { revealSelected, drawIn } from './tab-motion'
 import { drawnTab, tabWaits, shownSettled, open, keepPressedOpen } from './tab-selection'
 import { applyView, replies, holds } from './tab-read'
-import { isNotSent, copy, startTyping, discardReply } from './tab-press'
+import { isNotSent, copy, startTyping, discardReply, lastPressKey } from './tab-press'
 import { resultHandle, inlineHtml } from './tab-parts'
 
 function isListed(v: View, id: string): boolean {
@@ -63,7 +63,12 @@ export async function act(
   const t = drawnTab()
   const wasWaiting =
     !!tabState.view && isRowTab(t) && tabWaits(tabState.view, t).some(r => r.id === rowId && r.isWaiting)
-  sending.set(rowId, { seq, pending, action: press.action === 'type' ? null : actionId(press) })
+  sending.set(rowId, {
+    seq,
+    pending,
+    action: press.action === 'type' ? null : actionId(press),
+    lastBefore: lastPressKey(tabState.view, rowId),
+  })
   errors.delete(rowId)
   notes.delete(rowId)
   copies.delete(rowId)
@@ -78,7 +83,8 @@ export async function act(
     if (tabState.isDisposed || generation !== tabState.viewGeneration) return
     if (r.copy) await copy(rowId, r.copy, isLatest)
     if (tabState.isDisposed || generation !== tabState.viewGeneration || !isLatest()) return
-    if (r.view) applyView(r.view, seq)
+    // A new request number, so this view replaces any view a poll read while the press was out.
+    if (r.view) applyView(r.view, ++tabState.requested)
     if (r.error && !(tabState.view && isNotSent(tabState.view, rowId))) errors.set(rowId, r.error)
     const isConfirmed = isPressConfirmed({ error: r.error, note: r.note, isUnconfirmed: r.delivery === 'unconfirmed' })
     // After the view, so `onSent` reads the rows as they are after the press.

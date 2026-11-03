@@ -14,6 +14,7 @@ import {
   prsEmptyText,
   prRefreshFailedText,
   threadSentIn,
+  isBlockPressShown,
 } from '../../hooks/pr-rows'
 import { isDismissed } from '../../hooks/pr-views'
 import { prRankText } from '../../hooks/pr-order'
@@ -25,6 +26,7 @@ import type { TabView as View } from './core'
 import type { RowTrack } from './rows'
 import { tabState, sending, SENDING, errors, undoing } from './tab-state'
 import type { Key, Row } from './tab-state'
+import { outPending } from './tab-press'
 import { selectedIndex, select } from './tab-selection'
 import { act, pressesOf, prKey, prPlan } from './tab-rows'
 import type { PrBlockPlan } from './tab-rows'
@@ -92,16 +94,16 @@ async function undoPr(id: string, ref: string) {
   }
 }
 
-function prLastLine(v: View, ref: string): { text: string; isError: boolean } | null {
-  return pressLine(v, prMarkId(ref), !isDismissed(v.lastActions, ref))
+function prLastLine(v: View, pr: PrView): { text: string; isError: boolean } | null {
+  return pressLine(v, prMarkId(pr.ref), !isDismissed(v.lastActions, pr.ref) && isBlockPressShown(pr, v.lastActions))
 }
 
 /** A press's status under its buttons. `showsLast` says whether it draws the row's last press once that is saved. */
 function pressLine(v: View, id: string, showsLast: boolean): { text: string; isError: boolean } | null {
-  if (sending.has(id)) {
-    const pending = sending.get(id)?.pending
-    return { text: pending ? feedbackText(pending, 'codex') : SENDING, isError: false }
-  }
+  const out = sending.get(id)
+  const pending = outPending(v, id)
+  if (pending) return { text: feedbackText(pending, 'codex'), isError: false }
+  if (out && out.pending === null) return { text: SENDING, isError: false }
   const error = errors.get(id)
   if (error) return { text: error, isError: true }
   const note = noteOf(id)
@@ -155,7 +157,7 @@ function PrBlock({
   const tone = PR_TONES[status]
   const id = prMarkId(pr.ref)
   const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v)).map(a => prKey(id, pr, a))
-  const last = prLastLine(v, pr.ref)
+  const last = prLastLine(v, pr)
 
   return (
     <section>

@@ -2759,6 +2759,13 @@ function checkRowId(ref, check) {
 function prMarkId(ref) {
   return `pr:${ref}`;
 }
+function isBlockPressShown(pr, lastActions) {
+  const result = lastActions[prMarkId(pr.ref)]?.result;
+  if (result?.action !== "check-rerun")
+    return true;
+  const isSamePress = (r) => r !== undefined && (r.pressId !== undefined ? r.pressId === result.pressId : r.at === result.at);
+  return !blockingChecks(pr).some((c) => isSamePress(lastActions[prCheckId(pr, c)]?.result));
+}
 var GH_MISSING_TEXT = "The inbox could not find gh. It needs gh to read your PRs.";
 var GH_SIGNED_OUT_TEXT = "gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.";
 function ghNoticeOf(gh) {
@@ -5681,7 +5688,8 @@ function prEntries(screen, ui, now) {
       continue;
     }
     const { status, head, unlisted } = readiness(pr, isSent);
-    const f = isDismissed(lastActions, pr.ref) ? null : pressFeedback(screen, markId, now);
+    const isPrLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions);
+    const f = isPrLastShown ? pressFeedback(screen, markId, now) : null;
     out.push({
       kind: "row",
       line: {

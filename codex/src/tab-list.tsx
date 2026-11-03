@@ -16,7 +16,7 @@ import { tabState, drafts, sending, SENDING, errors, copies, entering, undoing, 
 import type { Row, Entry, Lists } from './tab-state'
 import { reducedMotion, drawIn } from './tab-motion'
 import { drawnTab, shownSettled, selectedIndex, open, select, isOpenGuarded, rowActions } from './tab-selection'
-import { discardReply } from './tab-press'
+import { discardReply, outPending } from './tab-press'
 import { act, listsOf } from './tab-rows'
 import { feedbackLabel, noteOf, isFeedbackShown, MarkGlyph, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
 
@@ -111,8 +111,8 @@ export function ListRow({
   )
 
   const isPressing = sending.has(row.id)
-  const pending = sending.get(row.id)?.pending ?? null
-  const isSending = isPressing && pending === null
+  const pending = outPending(tabState.view, row.id)
+  const isSending = isPressing && sending.get(row.id)?.pending === null
   const f = isFeedbackShown(row) ? row.feedback : null
   const label = isSending ? null : pending ? feedbackText(pending, 'codex') : f ? feedbackLabel(row) : null
   const ageAt = !isPressing && f && hasAge(f) ? f.at : null
