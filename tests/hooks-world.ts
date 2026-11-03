@@ -77,7 +77,7 @@ export const w = new World()
 
 function gh(argv: readonly string[]) {
   const hit = w.ghAnswers.find(a => a.match(argv))
-  if (!hit && argv[0] === 'open')
+  if (!hit && (argv[0] === 'open' || argv[0] === 'herdr'))
     return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 
   return {

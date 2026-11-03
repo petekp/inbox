@@ -7,8 +7,9 @@ import { addAgentItem } from '../../hooks/ledger-update'
 import { STATUS_REFRESH_MS } from '../../hooks/session-status'
 import { handleHook } from '../src/hook'
 import type { HookInput } from '../src/hook'
-import { herdrOnWrite } from '../src/host'
+import { codexStore, herdrOnWrite } from '../src/host'
 import { readState, updateState } from '../src/state'
+import type { SessionState } from '../src/state'
 import { fakeRunner, hookDeps, input, tempDir } from './helpers'
 import { reportedTokens } from '../../tests/session-script'
 
@@ -174,4 +175,60 @@ test('a hook in a new process sends no Herdr report that would change nothing, a
   await handleHook(toolUse, hookProcess())
   assert.equal(herdr.calls.length, 2)
   assert.equal(reportedTokens(herdr.calls[1]!)['inbox-needs-you'], '1')
+})
+
+test('a Herdr report that fails to send is sent again at the next write, and saved only once Herdr takes it', async () => {
+  const dir = tempDir()
+  let isHerdrUp = false
+  const herdr = fakeRunner(() =>
+    isHerdrUp ? { code: 0, stdout: '', stderr: '' } : { code: 1, stdout: '', stderr: 'no server' },
+  )
+  let at = 100
+  const deps = { ...hookDeps(dir), onWrite: herdrOnWrite({ HERDR_PANE_ID: 'p1' }, herdr.exec, dir, () => ++at) }
+
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
+  assert.equal(herdr.calls.length, 1)
+  assert.equal((await readState(dir, 's1')).herdrReport, undefined)
+
+  isHerdrUp = true
+  await handleHook(input('PreToolUse', { tool_name: 'Bash', tool_input: { command: 'ls' } }), deps)
+  assert.equal(herdr.calls.length, 2)
+  assert.deepEqual(reportedTokens(herdr.calls[1]!), reportedTokens(herdr.calls[0]!))
+  assert.ok((await readState(dir, 's1')).herdrReport)
+})
+
+test('of two writes from separate processes, the later state’s Herdr report carries the higher seq, whichever sends first', async () => {
+  const dir = tempDir()
+  const herdr = fakeRunner(() => ({ code: 0, stdout: '', stderr: '' }))
+  let at = 100
+  const now = () => ++at
+  const env = { HERDR_PANE_ID: 'p1' }
+  const ask = (text: string) => (s: SessionState) => ({
+    ...s,
+    ledger: addAgentItem(s.ledger, { kind: 'question', ask: text, options: [], rec: null, helps: [] }, 1000).ledger,
+  })
+  let release = () => {}
+  const held = new Promise<void>(resolve => (release = resolve))
+  let markWritten = () => {}
+  const written = new Promise<void>(resolve => (markWritten = resolve))
+  const reportFirst = herdrOnWrite(env, herdr.exec, dir, now)
+  const first = codexStore(dir, 's1', now, async s => {
+    markWritten()
+    await held
+    await reportFirst(s)
+  })
+  const second = codexStore(dir, 's1', now, herdrOnWrite(env, herdr.exec, dir, now))
+
+  const firstWrite = first.update(ask('Ship it?'))
+  await written
+  await second.update(ask('Tag it?'))
+  release()
+  await firstWrite
+
+  const seqOf = (asks: string) => {
+    const report = herdr.calls.find(args => reportedTokens(args)['inbox-needs-you'] === asks)
+    return Number(report?.[report.indexOf('--seq') + 1])
+  }
+  assert.equal(herdr.calls.length, 2)
+  assert.ok(seqOf('1') < seqOf('2'))
 })

@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import { HERDR_RETRY_MS } from '../hooks/herdr'
 import { PRESS_GUARD_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
 import { BAND, PANE, selectRow, sidebarLines, sidebarTokens, NO_COUNTS } from './hooks-helpers'
@@ -147,4 +148,28 @@ test('the band keeps what the mods after the inbox draw there, with its counts a
     expect(await band.find({ text: 'Heads up' })).toBeDefined()
     await band.unmount()
   }
+})
+
+test('a sidebar report Herdr fails to take is sent again after each wait in HERDR_RETRY_MS, until Herdr takes it', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { HERDR_PANE_ID: 'p2' })
+  w.ghAnswers = [{ match: argv => argv[0] === 'herdr', stdout: '', exitCode: 1 }]
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const failed = sidebarLines().length
+  expect(failed).toBeGreaterThan(0)
+
+  await clock.advance(HERDR_RETRY_MS[0]!)
+  await clock.settle()
+  expect(sidebarLines()).toHaveLength(failed + 1)
+
+  w.ghAnswers = []
+  await clock.advance(HERDR_RETRY_MS[1]!)
+  await clock.settle()
+  expect(sidebarLines()).toHaveLength(failed + 2)
+  expect(sidebarTokens()).toEqual({ inbox: null, ...NO_COUNTS })
+
+  await clock.advance(HERDR_RETRY_MS[2]!)
+  await clock.settle()
+  expect(sidebarLines()).toHaveLength(failed + 2)
 })

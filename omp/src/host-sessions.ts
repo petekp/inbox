@@ -101,12 +101,16 @@ export function sessionCalls(context: HostContext) {
     const pane = deps.herdrPane
     if (!pane || id !== memory.shownId) return
     deps.background(
-      reportToHerdr(run, async () => {
-        const s = await readState(dir, id)
-        const view = sessionView(s, deps.now(), deps.settleWindowMs, true)
+      reportToHerdr(
+        run,
+        async () => {
+          const s = await readState(dir, id)
+          const view = sessionView(s, deps.now(), deps.settleWindowMs, true)
 
-        return { pane, tokens: herdrTokens(s.ledger, s.stop, view, []) }
-      }),
+          return { pane, tokens: herdrTokens(s.ledger, s.stop, view, []) }
+        },
+        deps.after,
+      ),
     )
   }
 

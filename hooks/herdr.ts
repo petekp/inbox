@@ -176,26 +176,66 @@ export function herdrReportKey(pane: string, tokens: HerdrTokens): string {
 type HerdrReport = { pane: string; tokens: HerdrTokens; seq?: number } | null
 
 /**
+ * The waits before each retry of a failed send, in order. A retry sends the newest report, and a send Herdr takes starts
+ * the waits over. After the last wait, only the next report asked for sends again.
+ */
+export const HERDR_RETRY_MS = [5_000, 30_000, 120_000]
+
+/** Runs `fn` once, `ms` from now. */
+type After = (ms: number, fn: () => void) => void
+
+/**
  * Sends reports one at a time, in the order they were asked for, with `run`. Each reads its pane and tokens when its
  * turn comes, so a later report never carries older tokens, and a report that would change nothing is skipped. Herdr
  * finds the pane from its id, so the command runs in `/`, as `delegatesInHerdr` does.
+ *
+ * A report counts as sent only when `run` exits 0. After a failed send, the next report is sent even when it matches
+ * the last one. With `after`, a failed send also schedules a retry after the next wait in `HERDR_RETRY_MS`, with one
+ * retry waiting at a time. Each call resolves true when Herdr took its report, or the last report Herdr took matches it.
  */
-export function herdrReporter(): (run: Run, report: () => Promise<HerdrReport>) => Promise<void> {
+export function herdrReporter(): (run: Run, report: () => Promise<HerdrReport>, after?: After) => Promise<boolean> {
   let sent: string | null = null
-  let sending: Promise<void> = Promise.resolve()
+  let retries = 0
+  let isRetryWaiting = false
+  let sending: Promise<unknown> = Promise.resolve()
+  let newest: { run: Run; report: () => Promise<HerdrReport>; after?: After } | null = null
 
-  return (run, report) => {
-    sending = sending
-      .then(async () => {
-        const r = await report()
-        if (!r) return
-        const key = herdrReportKey(r.pane, r.tokens)
-        if (key === sent) return
-        sent = key
-        await run(herdrReport(r.pane, r.tokens, r.seq), { cwd: '/', timeoutMs: HERDR_TIMEOUT_MS })
-      })
-      .catch(() => undefined)
-
-    return sending
+  const retryLater = (after: After | undefined) => {
+    const wait = HERDR_RETRY_MS[retries]
+    if (!after || isRetryWaiting || wait === undefined) return
+    isRetryWaiting = true
+    retries++
+    after(wait, () => {
+      isRetryWaiting = false
+      if (newest) void reportToHerdr(newest.run, newest.report, newest.after)
+    })
   }
+
+  const send = async (run: Run, report: () => Promise<HerdrReport>, after: After | undefined) => {
+    const r = await report()
+    if (!r) return false
+    const key = herdrReportKey(r.pane, r.tokens)
+    if (key === sent) return true
+    sent = null
+    const result = await run(herdrReport(r.pane, r.tokens, r.seq), { cwd: '/', timeoutMs: HERDR_TIMEOUT_MS }).catch(
+      () => null,
+    )
+    const isTaken = result?.code === 0
+    if (isTaken) {
+      sent = key
+      retries = 0
+    } else retryLater(after)
+
+    return isTaken
+  }
+
+  const reportToHerdr = (run: Run, report: () => Promise<HerdrReport>, after?: After) => {
+    newest = { run, report, after }
+    const result = sending.then(() => send(run, report, after)).catch(() => false)
+    sending = result
+
+    return result
+  }
+
+  return reportToHerdr
 }
