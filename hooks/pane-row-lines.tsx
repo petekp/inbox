@@ -28,7 +28,7 @@ import {
 } from './pane-sizes'
 import type { RowProps } from './row-client'
 import { DOT, type ResultMark, rowResultMark, type RowView, shortAgo } from './rows'
-import { LEADING_DOT, type TreePos, treeText } from './terminal-text'
+import { desktopSpanLines, LEADING_DOT, type TreePos, treeText } from './terminal-text'
 import { ago, clipLabel } from './text'
 import { resultGlyph, runningMark } from './timing'
 
@@ -302,21 +302,24 @@ export function paneRowLines({
     const at = f && hasAge(f) ? f.at : row.at
     return at === undefined ? '' : shortAgo(now - at)
   }
-  const rowClientProps = (row: Row): RowProps => {
+  const rowClientProps = (row: Row, textColumnPt: number): RowProps => {
     const f = feedbackLabel(row.id, row)
-    const text = row.line?.text ?? row.title
+    const before = row.line?.before ?? ''
+    const text = (row.line?.text ?? row.title).trim()
+    const [, ...titleSpans] = desktopSpanLines([{ text: before }, { text }], textColumnPt, row.hasSecondLine ? 4 : 2, {
+      isCutAtWord: true,
+    })
 
     return {
       markCells: DESKTOP_MARK_CELLS,
       sideCells: DESKTOP_SIDE_CELLS,
-      before: row.line?.before ?? '',
-      title: text.trim(),
+      before,
+      title: titleSpans.map(s => s.text).join(''),
       after: f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim(),
       note: holdsUpLineOf(row.view) ?? '',
       noteMark: holdsUpLineOf(row.view) ? { text: HELD_MARK.mark, color: pal.mark[HELD_MARK.tone] } : null,
       side: sideAge(row),
       padY: DESKTOP_ROW_PAD,
-      maxLines: row.hasSecondLine ? 4 : 2,
       charsPerCell: DESKTOP_CLIP_CHARS_PER_CELL,
       fallbackColumns: e.props.bodyColumns - 2,
       colors: {
