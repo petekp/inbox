@@ -1419,14 +1419,15 @@ function moveMilestone(o, m, op, now) {
 function addMilestone(o, op, now) {
   const known = findMilestone(o, op.name);
   if (known) {
+    const text2 = op.text || known.text;
     if (op.status === "done" || op.status === "dropped")
       moveMilestone(
         o,
         known,
-        op.status === "done" ? { kind: "done", ref: known.id, text: op.text } : { kind: "drop", ref: known.id, why: op.text, into: null },
+        op.status === "done" ? { kind: "done", ref: known.id, text: text2 } : { kind: "drop", ref: known.id, why: text2, into: null },
         now
       );
-    else moveMilestone(o, known, { kind: "set", ref: known.id, status: op.status, text: op.text }, now);
+    else moveMilestone(o, known, { kind: "set", ref: known.id, status: op.status, text: text2 }, now);
     return o;
   }
   const isFull = !o.goal.isAwaitingMilestones && o.milestones.filter((m2) => m2.status !== "dropped").length >= MILESTONES_MAX;

@@ -117,19 +117,21 @@ export function moveMilestone(
   m.changedAt = now
 }
 
+/** A MILESTONE line for a milestone the goal holds moves it, and one with no text keeps the text it has. */
 function addMilestone(o: SessionStatus, op: Extract<Op, { kind: 'milestone' }>, now: number): SessionStatus {
   const known = findMilestone(o, op.name)
   if (known) {
+    const text = op.text || known.text
     if (op.status === 'done' || op.status === 'dropped')
       moveMilestone(
         o,
         known,
         op.status === 'done'
-          ? { kind: 'done', ref: known.id, text: op.text }
-          : { kind: 'drop', ref: known.id, why: op.text, into: null },
+          ? { kind: 'done', ref: known.id, text }
+          : { kind: 'drop', ref: known.id, why: text, into: null },
         now,
       )
-    else moveMilestone(o, known, { kind: 'set', ref: known.id, status: op.status, text: op.text }, now)
+    else moveMilestone(o, known, { kind: 'set', ref: known.id, status: op.status, text }, now)
     return o
   }
   const isFull =

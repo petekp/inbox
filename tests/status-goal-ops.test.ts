@@ -218,6 +218,23 @@ test('a GOAL line that restates a goal just set gives its milestones, and the SE
   expect(stale.goal).toMatchObject({ isAwaitingMilestones: true })
 })
 
+test('a restated goal’s milestone keeps the text the goal before it gave that milestone, and a GOAL line for another goal while a goal waits is still a proposal', () => {
+  const described = after(withGoal(), 'SET: m1 | working | CSV and JSON work', 25)
+  const typed = setTypedGoal(withGoal(), 'Ship 2.6 with import', 30).status
+  const carried = setTypedGoal(described, 'Ship 2.6 with import', 30).status
+  const restated = after(carried, 'GOAL: Ship 2.6 with import | done Import works; queued 2.6 live', 40)
+  const other = after(typed, 'GOAL: Dark mode in 2.7 | working Dark theme; queued 2.7 live', 40)
+
+  expect(restated.goal).toMatchObject({ isAwaitingMilestones: false })
+  expect(restated.milestones.map(m => [m.name, m.status, m.text])).toEqual([
+    ['Import works', 'done', 'CSV and JSON work'],
+    ['2.6 live', 'queued', ''],
+  ])
+  expect(other.proposedGoal?.text).toBe('Dark mode in 2.7')
+  expect(other.goal).toMatchObject({ text: 'Ship 2.6 with import', isAwaitingMilestones: true })
+  expect(other.milestones).toEqual([])
+})
+
 test('a goal typed over a proposal declines it, one with the proposal’s words uses the proposal and its milestones, and Set as goal links no subject yet', () => {
   const o = proposed()
   const linked = after(withGoal(), 'SERVES: s1 | -\nGOAL: Ship 2.6 | queued Notes; queued Tag', 22)

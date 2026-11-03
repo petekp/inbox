@@ -1193,10 +1193,11 @@ function moveMilestone(o, m, op, now) {
 function addMilestone(o, op, now) {
   const known = findMilestone(o, op.name);
   if (known) {
+    const text = op.text || known.text;
     if (op.status === "done" || op.status === "dropped")
-      moveMilestone(o, known, op.status === "done" ? { kind: "done", ref: known.id, text: op.text } : { kind: "drop", ref: known.id, why: op.text, into: null }, now);
+      moveMilestone(o, known, op.status === "done" ? { kind: "done", ref: known.id, text } : { kind: "drop", ref: known.id, why: text, into: null }, now);
     else
-      moveMilestone(o, known, { kind: "set", ref: known.id, status: op.status, text: op.text }, now);
+      moveMilestone(o, known, { kind: "set", ref: known.id, status: op.status, text }, now);
     return o;
   }
   const isFull = !o.goal.isAwaitingMilestones && o.milestones.filter((m) => m.status !== "dropped").length >= MILESTONES_MAX;
