@@ -1,5 +1,6 @@
 import type { Closed, Item } from '../types'
 import type { Update } from './reply-parse'
+import { stem } from './status-limits'
 
 export function words(text: string): string[] {
   return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
@@ -47,8 +48,14 @@ export function keyWords(text: string): Set<string> {
 }
 
 export function restates(a: string, b: string): boolean {
-  const x = keyWords(a)
-  const y = keyWords(b)
+  return sharesKeyWords(keyWords(a), keyWords(b)) ?? sameAsk(a, b)
+}
+
+/**
+ * Whether two sets of key words share most of the smaller set and name the same numbers, or null when either set has
+ * fewer than two words, too few to tell.
+ */
+function sharesKeyWords(x: Set<string>, y: Set<string>): boolean | null {
   const fewer = Math.min(x.size, y.size)
   const shared = [...x].filter(w => y.has(w)).length
   const numbers = (words: Set<string>) =>
@@ -58,7 +65,7 @@ export function restates(a: string, b: string): boolean {
       .join(' ')
   if (numbers(x) !== '' && numbers(y) !== '' && numbers(x) !== numbers(y)) return false
 
-  return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b)
+  return fewer >= 2 ? shared / fewer >= 0.7 : null
 }
 
 /**
@@ -115,18 +122,48 @@ const GENERIC = new Set([
   'yet',
 ])
 
+const STATES = new Set(['new', 'current', 'existing', 'old', 'previous'])
+const QUESTIONS = new Set(['how', 'when', 'where', 'why', 'who', 'whether'])
+const PAST = new Set(['was', 'were', 'did', 'had'])
+const FUTURE = new Set(['will', 'shall'])
+
 /**
- * Whether `b` repeats `a` with no subject of its own: it restates `a`, and one of the two has no key word the other
- * lacks, apart from GENERIC words. "Which test runner should we choose?" repeats "Which test runner should we pick?",
- * and "Add a feature flag to the cache before merging?" repeats "Should I add a feature flag for the new cache?". But
- * "package.json has no engines field" does not repeat "package.json has no license field".
+ * Pairs of word groups that tell two asks apart when one ask's own words hold a word from one group and the other's
+ * hold a word from the other: "Migrate new accounts to SSO?" and "Migrate existing accounts to SSO?" are two asks.
+ */
+const CONTRASTS: [ReadonlySet<string>, ReadonlySet<string>][] = [
+  [STATES, STATES],
+  [QUESTIONS, QUESTIONS],
+  [PAST, FUTURE],
+]
+
+function contrasts(x: Set<string>, y: Set<string>): boolean {
+  const onlyX = [...x].filter(w => !y.has(w))
+  const onlyY = [...y].filter(w => !x.has(w))
+  const holds = (own: string[], group: ReadonlySet<string>) => own.some(w => group.has(w))
+
+  return CONTRASTS.some(
+    ([one, other]) => (holds(onlyX, one) && holds(onlyY, other)) || (holds(onlyX, other) && holds(onlyY, one)),
+  )
+}
+
+/**
+ * Whether `b` repeats `a` with no subject of its own: it restates `a`, the two hold no CONTRASTS, and one of the two
+ * has no key word the other lacks, apart from GENERIC words, once both are cut to their stems. "Which test runner
+ * should we choose?" repeats "Which test runner should we pick?", "Hotkeys vanished in ANSI mode" repeats "Hotkeys
+ * vanish in ANSI mode", and "Add a feature flag to the cache before merging?" repeats "Should I add a feature flag for
+ * the new cache?". But "package.json has no engines field" does not repeat "package.json has no license field". GENERIC
+ * and CONTRASTS words are matched as written, since `stem` cuts "existing" to "exist" and "will" to "wil".
  */
 export function repeatsSubject(a: string, b: string): boolean {
   const x = keyWords(a)
   const y = keyWords(b)
-  const within = (inner: Set<string>, outer: Set<string>) => [...inner].every(w => GENERIC.has(w) || outer.has(w))
+  const stemsOf = (words: Set<string>) => new Set([...words].map(stem))
+  const [xStems, yStems] = [stemsOf(x), stemsOf(y)]
+  const within = (inner: Set<string>, outer: Set<string>) => [...inner].every(w => GENERIC.has(w) || outer.has(stem(w)))
+  const isRestated = sharesKeyWords(xStems, yStems) === true
 
-  return sameAsk(a, b) || (restates(a, b) && (within(x, y) || within(y, x)))
+  return sameAsk(a, b) || (isRestated && !contrasts(x, y) && (within(x, yStems) || within(y, xStems)))
 }
 
 export function sameAsk(a: string, b: string): boolean {

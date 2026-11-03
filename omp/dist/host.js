@@ -431,14 +431,15 @@ function keyWords(text) {
   return new Set(words2(text).filter((w) => /\p{N}/u.test(w) || w.length > 2 && !FILLER.has(w)));
 }
 function restates(a, b) {
-  const x = keyWords(a);
-  const y = keyWords(b);
+  return sharesKeyWords(keyWords(a), keyWords(b)) ?? sameAsk(a, b);
+}
+function sharesKeyWords(x, y) {
   const fewer = Math.min(x.size, y.size);
   const shared = [...x].filter((w) => y.has(w)).length;
   const numbers = (words) => [...words].filter((w) => /\p{N}/u.test(w)).sort().join(" ");
   if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y))
     return false;
-  return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
+  return fewer >= 2 ? shared / fewer >= 0.7 : null;
 }
 var GENERIC = new Set([
   "which",
@@ -489,11 +490,29 @@ var GENERIC = new Set([
   "instead",
   "yet"
 ]);
+var STATES = new Set(["new", "current", "existing", "old", "previous"]);
+var QUESTIONS = new Set(["how", "when", "where", "why", "who", "whether"]);
+var PAST = new Set(["was", "were", "did", "had"]);
+var FUTURE = new Set(["will", "shall"]);
+var CONTRASTS = [
+  [STATES, STATES],
+  [QUESTIONS, QUESTIONS],
+  [PAST, FUTURE]
+];
+function contrasts(x, y) {
+  const onlyX = [...x].filter((w) => !y.has(w));
+  const onlyY = [...y].filter((w) => !x.has(w));
+  const holds = (own, group) => own.some((w) => group.has(w));
+  return CONTRASTS.some(([one, other]) => holds(onlyX, one) && holds(onlyY, other) || holds(onlyX, other) && holds(onlyY, one));
+}
 function repeatsSubject(a, b) {
   const x = keyWords(a);
   const y = keyWords(b);
-  const within = (inner, outer) => [...inner].every((w) => GENERIC.has(w) || outer.has(w));
-  return sameAsk(a, b) || restates(a, b) && (within(x, y) || within(y, x));
+  const stemsOf = (words) => new Set([...words].map(stem));
+  const [xStems, yStems] = [stemsOf(x), stemsOf(y)];
+  const within = (inner, outer) => [...inner].every((w) => GENERIC.has(w) || outer.has(stem(w)));
+  const isRestated = sharesKeyWords(xStems, yStems) === true;
+  return sameAsk(a, b) || isRestated && !contrasts(x, y) && (within(x, yStems) || within(y, xStems));
 }
 function sameAsk(a, b) {
   const norm = (s) => words2(s).join(" ");
