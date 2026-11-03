@@ -407,9 +407,11 @@ function upgradeStatus(saved) {
   const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
   const goal = goalFields(o, new Set(subjects.map((s) => s.id)));
   const dropped = droppedMilestoneIds(goal.milestones);
-  const askSubjects = Object.fromEntries(
-    savedLinks.filter((e) => typeof e[1] === "string" && !dropped.has(e[1]))
-  );
+  const askLinks = savedLinks.map(([ask, to]) => [
+    ask,
+    [to].flat().filter((id) => typeof id === "string" && !dropped.has(id))
+  ]);
+  const askSubjects = Object.fromEntries(askLinks.filter(([, ids]) => ids.length > 0));
   const look = o.look;
   const lookAt = time2(look?.startedAt);
   return {
@@ -1078,15 +1080,15 @@ var AWAITING_TEXT = "Milestones after the next reply";
 var PROPOSAL_LABEL = "Proposed goal \xB7 from your message";
 var NEW_GOAL_PROPOSAL_LABEL = "Proposed new goal \xB7 from your message";
 function oldestAsk(items, links, id) {
-  const oldest = items.filter((i) => links[i.id] === id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+  const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
 }
 function milestoneRow(m, o, items) {
   const isOpen2 = m.status !== "done" && m.status !== "dropped";
   const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
   const holds = items.filter((i) => {
-    const to = o.askSubjects[i.id];
-    return to === m.id || to !== void 0 && servingIds.has(to);
+    const to = o.askSubjects[i.id] ?? [];
+    return to.some((id) => id === m.id || servingIds.has(id));
   });
   const isHeld = isOpen2 && holds.length > 0;
   const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0);
@@ -2141,10 +2143,10 @@ function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
   return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
 }
-function heldSubjectOf(o, askId) {
-  const linkedId = o?.askSubjects[askId];
+function heldSubjectsOf(o, askId) {
   const milestones = o?.goal && !o.goal.isAwaitingMilestones ? o.milestones : [];
-  return [...o?.subjects ?? [], ...milestones].find((s) => s.id === linkedId && isOpen(s)) ?? null;
+  const linkable = [...o?.subjects ?? [], ...milestones];
+  return (o?.askSubjects[askId] ?? []).flatMap((id) => linkable.filter((s) => s.id === id && isOpen(s)));
 }
 function inboxView({
   ledger,
@@ -2233,14 +2235,14 @@ function inboxView({
     const last = lastActions[row.id];
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
     const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
-    const heldSubject = state.is === "open" ? heldSubjectOf(ledger.overview, row.id) : null;
+    const held2 = state.is === "open" ? heldSubjectsOf(ledger.overview, row.id) : [];
     return {
       ...row,
       state,
       feedback,
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
-      holdsUpLine: heldSubject ? `${HOLDS_UP_TEXT} ${heldSubject.name}` : null
+      holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.map((s) => s.name).join(", ")}` : null
     };
   };
   const itemRow = (item) => {

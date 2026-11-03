@@ -153,9 +153,12 @@ export function upgradeStatus(saved: unknown): SessionStatus | null {
   const savedLinks = typeof o.askSubjects === 'object' && o.askSubjects !== null ? Object.entries(o.askSubjects) : []
   const goal = goalFields(o, new Set(subjects.map(s => s.id)))
   const dropped = droppedMilestoneIds(goal.milestones)
-  const askSubjects = Object.fromEntries(
-    savedLinks.filter((e): e is [string, string] => typeof e[1] === 'string' && !dropped.has(e[1])),
-  )
+  // An earlier build kept one link per ask, as a bare id.
+  const askLinks = savedLinks.map(([ask, to]): [string, string[]] => [
+    ask,
+    [to].flat().filter((id): id is string => typeof id === 'string' && !dropped.has(id)),
+  ])
+  const askSubjects = Object.fromEntries(askLinks.filter(([, ids]) => ids.length > 0))
   const look = o.look as { startedAt?: unknown } | null | undefined
   const lookAt = time(look?.startedAt)
 

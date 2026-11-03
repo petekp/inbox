@@ -65,10 +65,12 @@ const NEW_GOAL_PROPOSAL_LABEL = 'Proposed new goal · from your message'
 /** The oldest open ask linked to `id`, a subject or a milestone. */
 export function oldestAsk(
   items: readonly Item[],
-  links: Readonly<Record<string, string>>,
+  links: Readonly<Record<string, readonly string[]>>,
   id: string,
 ): { id: string; kind: Item['kind'] } | null {
-  const oldest = items.filter(i => links[i.id] === id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0]
+  const oldest = items
+    .filter(i => links[i.id]?.includes(id))
+    .sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0]
 
   return oldest ? { id: oldest.id, kind: oldest.kind } : null
 }
@@ -77,8 +79,8 @@ function milestoneRow(m: Milestone, o: SessionStatus, items: readonly Item[]): M
   const isOpen = m.status !== 'done' && m.status !== 'dropped'
   const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => (to === m.id ? [id] : [])))
   const holds = items.filter(i => {
-    const to = o.askSubjects[i.id]
-    return to === m.id || (to !== undefined && servingIds.has(to))
+    const to = o.askSubjects[i.id] ?? []
+    return to.some(id => id === m.id || servingIds.has(id))
   })
   const isHeld = isOpen && holds.length > 0
   const isChanged = o.lastLookAt !== null && m.changedAt > o.lastLookAt && m.changedAt > (o.goal?.setAt ?? 0)

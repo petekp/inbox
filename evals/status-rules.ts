@@ -250,20 +250,20 @@ const FIXED_RULES: Rule[] = [
     id: 'asks-linked',
     reads: 'facts',
     property: 8,
-    text: 'Each open ask is linked to a subject it holds up, and an ask that holds up nothing is linked to none.',
+    text: 'Each open ask is linked only to subjects it holds up, and an ask that holds up nothing is linked to none.',
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       return result.facts.asks.flatMap(a => {
         const item = result.session.ledger.items.find(i => new RegExp(a.match, 'i').test(i.ask))
         if (!item) return [`no open ask like /${a.match}/`]
-        const linked = shownOf(o).find(s => s.id === o?.askSubjects[item.id])
+        const ids = o?.askSubjects[item.id] ?? []
+        const linked = shownOf(o).filter(s => ids.includes(s.id))
         const pieces = result.facts.pieces.filter(p => a.holdsUp.includes(p.id))
-        if (pieces.length === 0)
-          return linked ? [`"${item.ask}" holds up nothing, and is linked to ${label(linked)}`] : []
-        if (!linked) return [`"${item.ask}" is linked to no subject`]
-        return pieces.some(p => new RegExp(p.match, 'i').test(linked.name))
-          ? []
-          : [`"${item.ask}" is linked to ${label(linked)}, not ${pieces.map(p => p.names[0]).join(' or ')}`]
+        if (pieces.length === 0) return linked.map(s => `"${item.ask}" holds up nothing, and is linked to ${label(s)}`)
+        if (linked.length === 0) return [`"${item.ask}" is linked to no subject`]
+        return linked
+          .filter(s => !pieces.some(p => new RegExp(p.match, 'i').test(s.name)))
+          .map(s => `"${item.ask}" is linked to ${label(s)}, not ${pieces.map(p => p.names[0]).join(' or ')}`)
       })
     },
   },
@@ -272,14 +272,13 @@ const FIXED_RULES: Rule[] = [
     reads: 'facts',
     property: 8,
     text: 'An ask that holds up several pieces marks each of them.',
-    until: '#140',
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       return result.facts.asks
         .filter(a => a.holdsUp.length > 1)
         .flatMap(a => {
           const item = result.session.ledger.items.find(i => new RegExp(a.match, 'i').test(i.ask))
-          const linked = item ? [o?.askSubjects[item.id]].flat() : []
+          const linked = item ? (o?.askSubjects[item.id] ?? []) : []
           return result.facts.pieces
             .filter(p => a.holdsUp.includes(p.id))
             .filter(p => !subjectsFor(p, o).some(s => linked.includes(s.id)))

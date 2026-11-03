@@ -97,8 +97,8 @@ export type SessionStatus = {
   head: StatusHead | null
   subjects: Subject[]
   children: Child[]
-  /** The subject or milestone each ask holds up, by the ask's item id, as the Status call linked them. */
-  askSubjects: Record<string, string>
+  /** The subjects and milestones each ask holds up, by the ask's item id, in the order the Status call linked them. */
+  askSubjects: Record<string, string[]>
   nextId: number
   nextChildId: number
   goal: StatusGoal | null

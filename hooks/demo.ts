@@ -12,10 +12,13 @@ export function isDemoCopy(saved: unknown): saved is DemoCopy {
   if (!saved || typeof saved !== 'object') return false
   const d = saved as Record<string, unknown>
 
-  const hasStatus = typeof (d.ledger as { overview?: unknown } | null)?.overview === 'object'
+  const status = (d.ledger as { overview?: { askSubjects?: unknown } } | null)?.overview
+  const hasStatus = typeof status === 'object'
+  const hasLinkLists = Object.values(status?.askSubjects ?? {}).every(Array.isArray)
 
   return (
     hasStatus &&
+    hasLinkLists &&
     ['ledger', 'prViews', 'lastActions', 'notes', 'turns'].every(k => d[k] !== null && typeof d[k] === 'object')
   )
 }
@@ -146,7 +149,7 @@ export function demoView(now: number, agent: string): DemoCopy {
             delegateState: null,
           },
         ],
-        askSubjects: { d11: 's3', d14: 's2', d17: 's2' },
+        askSubjects: { d11: ['s3'], d14: ['s2'], d17: ['s2'] },
         nextId: 8,
         nextChildId: 6,
         lastLookAt: now - 30 * MIN,

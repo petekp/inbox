@@ -126,7 +126,7 @@ test('an open ask linked to an open subject marks it ◆ and stops its running m
   const held = page(o, MIN, { isTurnRunning: true }, [askItem('i1')]).rows[0]
   const answered = page(o, MIN, { isTurnRunning: true }, []).rows[0]
 
-  expect(o.askSubjects).toEqual({ i1: 's1' })
+  expect(o.askSubjects).toEqual({ i1: ['s1'] })
   expect(asksText(o, [askItem('i1'), askItem('i3')])).toBe('i1 | Ask i1? | s1\ni3 | Ask i3? | -')
   expect(held).toMatchObject({ mark: '◆', tone: 'needsYou', isRunning: false })
   expect(answered).toMatchObject({ mark: '●', tone: null, isRunning: true })

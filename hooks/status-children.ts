@@ -88,9 +88,11 @@ function servesText(o: SessionStatus, subjectId: string): string {
   return to === undefined ? '?' : to === 'none' ? '-' : to
 }
 
-/** The open asks as the call reads them, each with the subject it holds up. */
+/** The open asks as the call reads them, each with the subjects it holds up. */
 export function asksText(o: SessionStatus | null, asks: readonly Pick<Item, 'id' | 'ask'>[]): string {
-  return asks.map(a => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id] ?? '-'}`).join(NL)
+  return asks
+    .map(a => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id]?.join(', ') || '-'}`)
+    .join(NL)
 }
 
 /** The running children as the call reads them. */

@@ -16,6 +16,7 @@ import {
   findMilestone,
   hasSameWords,
   linkableMilestone,
+  linksWith,
   moveMilestone,
   settleGoal,
   withRestatedGoalAsMilestones,
@@ -178,9 +179,9 @@ export function applyOps(
       const child = o.children.find(c => c.id === op.ref)
       const subject = find(op.subject)
       const milestone = subject ? null : linkableMilestone(o, op.subject)
+      const linked = subject ?? milestone
       if (child && subject) child.subjectId = subject.id
-      else if (subject && askIds.has(op.ref)) o.askSubjects[op.ref] = subject.id
-      else if (milestone && askIds.has(op.ref)) o.askSubjects[op.ref] = milestone.id
+      else if (linked && askIds.has(op.ref)) o.askSubjects[op.ref] = linksWith(o.askSubjects[op.ref] ?? [], linked.id)
       markNamed(milestone)
     } else if (op.kind === 'new') {
       const known = find(op.name)
@@ -227,7 +228,8 @@ export function applyOps(
           forgetSeenWas(target)
           target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name
           target.changedAt = now
-          for (const [ask, id] of Object.entries(o.askSubjects)) if (id === s.id) o.askSubjects[ask] = target.id
+          for (const [ask, ids] of Object.entries(o.askSubjects))
+            if (ids.includes(s.id)) o.askSubjects[ask] = linksWith(ids, target.id).filter(id => id !== s.id)
         }
       } else {
         forgetSeenWas(s)

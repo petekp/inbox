@@ -62,6 +62,38 @@ test('the Status page draws each status with its mark and tone, and ◆ on a sub
   expect(allRows(sessionView(heldDone, 3000, 1000, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBeNull()
 })
 
+test('one ask linked to two subjects marks both ◆, and its Asks row names each open one', () => {
+  const asks = new Set([ITEM.id])
+  const linked = applyStatus(
+    null,
+    parseStatus(
+      [
+        'NEW: working | 2.4 release | build signed',
+        'NEW: working | Hotfix release | build signed',
+        `LINK: ${ITEM.id} | 2.4 release`,
+        `LINK: ${ITEM.id} | Hotfix release`,
+      ].join('\n'),
+    )!,
+    1000,
+    asks,
+  )
+  const sessionOf = (overview: typeof linked) => ({ ...emptySession(), ledger: { ...EMPTY, items: [ITEM], overview } })
+  const view = sessionView(sessionOf(linked), 3000, 1000, NO_HOLDS)
+  const oneDone = sessionView(
+    sessionOf(applyStatus(linked, parseStatus('DONE: s1 | shipped')!, 2000, asks)),
+    3000,
+    1000,
+    NO_HOLDS,
+  )
+
+  expect(view.statusPage.rows.flatMap(r => (r.kind === 'subject' ? [[r.name, r.mark]] : []))).toEqual([
+    ['2.4 release', '◆'],
+    ['Hotfix release', '◆'],
+  ])
+  expect(allRows(view).find(r => r.id === ITEM.id)?.holdsUpLine).toBe('Holds up 2.4 release, Hotfix release')
+  expect(allRows(oneDone).find(r => r.id === ITEM.id)?.holdsUpLine).toBe('Holds up Hotfix release')
+})
+
 test('a session saved by the Progress trial build loads without its results, subagents and stated step', () => {
   const saved = {
     ...emptySession(),

@@ -1,4 +1,5 @@
 import type { Replay } from './status-replay'
+import { askHoldsTwo } from './replays/ask-holds-two'
 import { catchUpFromEmpty } from './replays/catch-up-from-empty'
 import { catchUpShipped } from './replays/catch-up-shipped'
 import { coordinatorDay } from './replays/coordinator-day'
@@ -21,4 +22,5 @@ export const REPLAYS: Replay[] = [
   milestoneDropped,
   catchUpShipped,
   goalAwaitingMilestones,
+  askHoldsTwo,
 ]

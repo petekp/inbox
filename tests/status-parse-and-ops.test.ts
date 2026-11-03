@@ -75,19 +75,22 @@ test('a LINK ties a running child or an open ask to a subject, even one the same
   )
 
   expect(linked.children[0]?.subjectId).toBe('s1')
-  expect(linked.askSubjects).toEqual({ i1: 's1' })
+  expect(linked.askSubjects).toEqual({ i1: ['s1'] })
   expect(after(linked, 'NEW: queued | Docs | outline', 200).askSubjects).toEqual({})
 })
 
 test('a subject folded into another passes its linked asks to it', () => {
   const two = after(
     null,
-    'NEW: working | Offline mode | queue built\nNEW: working | Sync retry | backoff drafted\nLINK: i1 | s2',
+    'NEW: working | Offline mode | queue built\nNEW: working | Sync retry | backoff drafted\nLINK: i1 | s2\nLINK: i2 | s1\nLINK: i2 | s2',
     100,
-    new Set(['i1']),
+    new Set(['i1', 'i2']),
   )
 
-  expect(after(two, 'DROP: s2 | part of offline | INTO s1', 200, new Set(['i1'])).askSubjects).toEqual({ i1: 's1' })
+  expect(after(two, 'DROP: s2 | part of offline | INTO s1', 200, new Set(['i1', 'i2'])).askSubjects).toEqual({
+    i1: ['s1'],
+    i2: ['s1'],
+  })
 })
 
 test('a DONE may name a subject the same answer adds, even a name longer than the list keeps', () => {
