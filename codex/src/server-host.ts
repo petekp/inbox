@@ -25,7 +25,7 @@ import { pageName } from './server-tools'
 import { SETTLE_WINDOW_MS } from './settle'
 import { readState, updateState } from './state'
 import type { SessionState } from './state'
-import { newestTurnEvent, turnIn } from './transcript'
+import { newestTurnEvent, turnIn, withCurrentRollout } from './transcript'
 import { reconcileUpdateStatus } from './update'
 
 export function makeSessionHost(
@@ -84,9 +84,13 @@ export function makeSessionHost(
     }
   }
 
-  /** Sets whether a turn runs from the rollout's last turn row, read inside the state lock so no hook writes between. */
+  /**
+   * Sets whether a turn runs from the rollout's last turn row, read inside the state lock so no hook writes between.
+   * It first finds a rollout Codex moved again, so the reads after it use the path it saves.
+   */
   async function syncTurn(id: string): Promise<SessionState> {
-    return updateState(dir, id, async s => {
+    return updateState(dir, id, async saved => {
+      const s = await withCurrentRollout(saved)
       const newest = s.transcriptPath === null ? null : await newestTurnEvent(s.transcriptPath)
       if (newest !== null) newestTurns.set(id, newest.id)
       const isRunning = newest === null ? null : newest.kind === 'started'

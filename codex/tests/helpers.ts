@@ -1,6 +1,6 @@
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { HookDeps, HookInput } from '../src/hook'
@@ -74,6 +74,14 @@ export function rolloutAt(
   writeFileSync(path, ext === 'jsonl' ? [JSON.stringify({ ...row, payload }), ...rest].join('\n') : 'compressed')
 
   return path
+}
+
+export function movedRollout(path: string, home: string, folder: 'archived_sessions' | `sessions/${string}`): string {
+  const to = join(home, folder, basename(path))
+  mkdirSync(dirname(to), { recursive: true })
+  renameSync(path, to)
+
+  return to
 }
 
 export function ledgerOnly(ask: (prompt: string) => Promise<string | null>): Ask {

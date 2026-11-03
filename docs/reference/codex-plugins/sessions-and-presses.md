@@ -28,9 +28,16 @@ threads a root thread and its forks belong to. They differ after a fork.
   so the inbox reads the parent from the first row (`codex/src/rollout-rows.ts:forkedFromId`).
 - **A rollout is found by thread id.** [live] On the test Mac, rollouts are
   `${CODEX_HOME:-~/.codex}/sessions/YYYY/MM/DD/rollout-<timestamp>-<thread id>.jsonl`, and the first row, `session_meta`,
-  has `payload.id` equal to the thread id. Older files are compressed (`.zst`), and `archived_sessions` holds others.
-  The inbox reads neither (`codex/src/transcript.ts:rolloutFor`). The MCP server's environment names no Codex home, so
-  it uses `$CODEX_HOME`, else `~/.codex`.
+  has `payload.id` equal to the thread id. Older files are compressed (`.zst`), and the inbox does not read them
+  (`codex/src/transcript.ts:rolloutFor`). The MCP server's environment names no Codex home, so it uses
+  `$CODEX_HOME`, else `~/.codex`.
+- **Archiving a chat moves its rollout.** [live] Codex 0.164.0 on the test Mac: an archived chat's rollouts sit
+  directly in `${CODEX_HOME:-~/.codex}/archived_sessions/`, with no date folders, their file names kept, reverted
+  continuations included. Most there are compressed. The CLI has `codex archive` and `codex unarchive`, and the
+  app-server has `thread/archive` and `thread/unarchive` [binary strings]. A move either way leaves the saved rollout
+  path pointing at a file that is gone, and only a hook saves a new one. So when the saved file is gone, the inbox
+  looks the rollout up again by thread id under `sessions/`, then `archived_sessions/`, in the Codex home the saved
+  path was in, and saves the path it finds (`codex/src/transcript.ts:withCurrentRollout`).
 - **The tab catches a chat up when it opens.** [live] The tab's `tools/call inbox_view` carries `_meta.thread_id`,
   which equals the hooks' `session_id`. For a chat the inbox has never heard from, the server finds the rollout by that
   id, copies a fork's parent ledger, marks the ledger `behind` when the rollout has earlier turns, and starts the update

@@ -3402,29 +3402,42 @@ function rolloutOfLines(lines, cwd, currentTurnId) {
 }
 
 // src/transcript.ts
-import { open as open2, readdir as readdir2 } from "node:fs/promises";
-import { dirname as dirname2, join as join2 } from "node:path";
+import { open as open2, readdir as readdir2, stat as stat2 } from "node:fs/promises";
+import { basename as basename2, dirname as dirname2, join as join2 } from "node:path";
 async function namesIn(dir, pattern) {
   const names = await readdir2(dir).catch(() => []);
   return names.filter((n) => pattern.test(n)).sort().reverse();
 }
-async function newestRollout(sessions, isWanted) {
+var ROLLOUT_NAME = /^rollout-.+\.jsonl$/;
+async function newestRollout(codexHome, isWanted) {
+  const sessions = join2(codexHome, "sessions");
   for (const year of await namesIn(sessions, /^\d{4}$/))
     for (const month of await namesIn(join2(sessions, year), /^\d{2}$/))
       for (const day of await namesIn(join2(sessions, year, month), /^\d{2}$/)) {
         const folder = join2(sessions, year, month, day);
-        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isWanted);
+        const [name] = (await namesIn(folder, ROLLOUT_NAME)).filter(isWanted);
         if (name !== void 0) return join2(folder, name);
       }
-  return null;
+  const archive = join2(codexHome, "archived_sessions");
+  const [archived] = (await namesIn(archive, ROLLOUT_NAME)).filter(isWanted);
+  return archived === void 0 ? null : join2(archive, archived);
+}
+function codexHomeOf(path) {
+  const folder = dirname2(path);
+  if (basename2(folder) === "archived_sessions") return dirname2(folder);
+  const sessions = dirname2(dirname2(dirname2(folder)));
+  return basename2(sessions) === "sessions" ? dirname2(sessions) : null;
 }
 async function historyBase(path) {
   const base = (await readSessionMeta(path))?.payload?.history_base;
   const id = base?.thread_id;
   const end = base?.end_byte_offset;
-  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0) return null;
-  const sessions = dirname2(dirname2(dirname2(dirname2(path))));
-  const basePath = await newestRollout(sessions, (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`));
+  const codexHome = codexHomeOf(path);
+  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0 || codexHome === null) return null;
+  const basePath = await newestRollout(
+    codexHome,
+    (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`)
+  );
   return basePath === null ? null : { path: basePath, end };
 }
 var TAIL_BYTES = 4 * 1024 * 1024;

@@ -1,7 +1,7 @@
 // Reads Codex's session transcript, a JSONL file whose path every hook gets.
 
-import { open, readdir } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { open, readdir, stat } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
 
 import { forkedFromId, isExecMeta, readSessionMeta } from './rollout-rows'
 import { rolloutOfLines, turnEventOf, turnOf, turnRowsOf } from './rollout-turns'
@@ -17,30 +17,48 @@ async function namesIn(dir: string, pattern: RegExp): Promise<string[]> {
     .reverse()
 }
 
-/** The newest file under `sessions/YYYY/MM/DD/` whose name `isWanted` accepts. Null when there is none. */
-async function newestRollout(sessions: string, isWanted: (name: string) => boolean): Promise<string | null> {
+const ROLLOUT_NAME = /^rollout-.+\.jsonl$/
+
+/**
+ * The newest rollout in a Codex home whose name `isWanted` accepts. Codex keeps a chat's rollouts under
+ * `sessions/YYYY/MM/DD/`, and moves them, names kept, into the flat `archived_sessions/` when the chat is archived. A
+ * chat can be unarchived, so `sessions/` is read first. Null when there is none.
+ */
+async function newestRollout(codexHome: string, isWanted: (name: string) => boolean): Promise<string | null> {
+  const sessions = join(codexHome, 'sessions')
   for (const year of await namesIn(sessions, /^\d{4}$/))
     for (const month of await namesIn(join(sessions, year), /^\d{2}$/))
       for (const day of await namesIn(join(sessions, year, month), /^\d{2}$/)) {
         const folder = join(sessions, year, month, day)
-        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isWanted)
+        const [name] = (await namesIn(folder, ROLLOUT_NAME)).filter(isWanted)
         if (name !== undefined) return join(folder, name)
       }
+  const archive = join(codexHome, 'archived_sessions')
+  const [archived] = (await namesIn(archive, ROLLOUT_NAME)).filter(isWanted)
 
-  return null
+  return archived === undefined ? null : join(archive, archived)
+}
+
+/** The Codex home a rollout sits in, from its path under `sessions/YYYY/MM/DD/` or `archived_sessions/`. */
+function codexHomeOf(path: string): string | null {
+  const folder = dirname(path)
+  if (basename(folder) === 'archived_sessions') return dirname(folder)
+  const sessions = dirname(dirname(dirname(folder)))
+
+  return basename(sessions) === 'sessions' ? dirname(sessions) : null
 }
 
 /**
- * A chat's rollout, found by its thread id in Codex's `sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl`. A chat
- * Codex reverted continues in `rollout-<time>-<thread id>_<rollout id>.jsonl`, and the newest file wins: `readRollout`
- * reads the history it continues. Null when no readable file holds it, or when the newest one belongs to a subagent or
- * a run no person chats in. A rollout Codex has compressed (`.zst`) is not read. `cwd` is the folder the chat runs in,
- * from its first row.
+ * A chat's rollout, found by its thread id in Codex's `rollout-<time>-<thread id>.jsonl`, under `sessions/` or, for an
+ * archived chat, `archived_sessions/`. A chat Codex reverted continues in `rollout-<time>-<thread id>_<rollout
+ * id>.jsonl`, and the newest file wins: `readRollout` reads the history it continues. Null when no readable file holds
+ * it, or when the newest one belongs to a subagent or a run no person chats in. A rollout Codex has compressed (`.zst`)
+ * is not read. `cwd` is the folder the chat runs in, from its first row.
  */
 export async function rolloutFor(codexHome: string, threadId: string): Promise<{ path: string; cwd: string } | null> {
   if (threadId === '') return null
   const path = await newestRollout(
-    join(codexHome, 'sessions'),
+    codexHome,
     name => name.endsWith(`-${threadId}.jsonl`) || name.includes(`-${threadId}_`),
   )
   if (path === null) return null
@@ -48,6 +66,22 @@ export async function rolloutFor(codexHome: string, threadId: string): Promise<{
   const isOwnChat = meta !== null && !meta.payload?.parent_thread_id && !isExecMeta(meta)
 
   return isOwnChat ? { path, cwd: typeof meta.payload?.cwd === 'string' ? meta.payload.cwd : '' } : null
+}
+
+/**
+ * The session with its saved rollout path found again when the file is gone, because Codex archived or unarchived the
+ * chat and moved its rollout. The rollout is looked up by thread id in the Codex home the saved path was in. Unchanged
+ * when the saved file is there or no rollout is found.
+ */
+export async function withCurrentRollout<S extends { sessionId: string; transcriptPath: string | null }>(
+  s: S,
+): Promise<S> {
+  const saved = s.transcriptPath
+  if (saved === null || (await stat(saved).catch(() => null)) !== null) return s
+  const codexHome = codexHomeOf(saved)
+  const found = codexHome === null ? null : await rolloutFor(codexHome, s.sessionId)
+
+  return found === null || found.path === saved ? s : { ...s, transcriptPath: found.path }
 }
 
 /**
@@ -59,9 +93,12 @@ async function historyBase(path: string): Promise<{ path: string; end: number } 
   const base = (await readSessionMeta(path))?.payload?.history_base
   const id = base?.thread_id
   const end = base?.end_byte_offset
-  if (typeof id !== 'string' || id === '' || typeof end !== 'number' || end <= 0) return null
-  const sessions = dirname(dirname(dirname(dirname(path))))
-  const basePath = await newestRollout(sessions, name => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`))
+  const codexHome = codexHomeOf(path)
+  if (typeof id !== 'string' || id === '' || typeof end !== 'number' || end <= 0 || codexHome === null) return null
+  const basePath = await newestRollout(
+    codexHome,
+    name => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`),
+  )
 
   return basePath === null ? null : { path: basePath, end }
 }

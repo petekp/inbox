@@ -3,8 +3,8 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { readRollout, rolloutFor } from '../src/transcript'
-import { ROLLOUT_FIXTURE, rolloutAt, tempDir } from './helpers'
+import { readRollout, rolloutFor, withCurrentRollout } from '../src/transcript'
+import { movedRollout, ROLLOUT_FIXTURE, rolloutAt, tempDir } from './helpers'
 
 const rows = (...list: unknown[]) => list.map(row => (typeof row === 'string' ? row : JSON.stringify(row))).join('\n')
 
@@ -186,8 +186,12 @@ test('a reverted chat reads the kept turns of each rollout it continues, then it
   assert.deepEqual(await persons(second.path), [`Person: ${firstAsk}`, 'Person: Second ask', 'Person: Also reverted'])
   assert.deepEqual(await persons(third.path), [`Person: ${firstAsk}`, 'Person: Second ask', 'Person: Third ask'])
   assert.equal((await readRollout(third.path, '/repo'))?.earlierTurns, 3)
-  rmSync(first.path)
-  assert.deepEqual(await persons(third.path), ['Person: Second ask', 'Person: Third ask'])
+  const firstArchived = movedRollout(first.path, home, 'archived_sessions')
+  movedRollout(second.path, home, 'archived_sessions')
+  const thirdArchived = movedRollout(third.path, home, 'archived_sessions')
+  assert.deepEqual(await persons(thirdArchived), [`Person: ${firstAsk}`, 'Person: Second ask', 'Person: Third ask'])
+  rmSync(firstArchived)
+  assert.deepEqual(await persons(thirdArchived), ['Person: Second ask', 'Person: Third ask'])
 })
 
 test('rolloutFor finds a chat’s newest rollout by its thread id and reads its folder', async () => {
@@ -202,6 +206,27 @@ test('rolloutFor finds a chat’s newest rollout by its thread id and reads its 
   assert.equal(await rolloutFor(home, 'chat-3'), null)
   assert.equal(await rolloutFor(join(home, 'missing'), 'chat-1'), null)
   assert.equal(await rolloutFor(home, ''), null)
+})
+
+test('a saved rollout path that Codex archived, then unarchived, is found again by thread id', async () => {
+  const home = tempDir()
+  const saved = rolloutAt(home, 'chat-1', { cwd: '/repo' })
+  const state = { sessionId: 'chat-1', transcriptPath: saved }
+  assert.equal(await withCurrentRollout(state), state)
+
+  const archived = movedRollout(saved, home, 'archived_sessions')
+  assert.deepEqual(await rolloutFor(home, 'chat-1'), { path: archived, cwd: '/repo' })
+  const found = await withCurrentRollout(state)
+  assert.deepEqual(found, { sessionId: 'chat-1', transcriptPath: archived })
+
+  const unarchived = movedRollout(archived, home, 'sessions/2026/10/20')
+  assert.deepEqual(await withCurrentRollout(found), { sessionId: 'chat-1', transcriptPath: unarchived })
+  rmSync(unarchived)
+  assert.equal(await withCurrentRollout(found), found)
+  assert.deepEqual(await withCurrentRollout({ sessionId: 'chat-1', transcriptPath: null }), {
+    sessionId: 'chat-1',
+    transcriptPath: null,
+  })
 })
 
 test('rolloutFor skips a compressed rollout, a subagent’s and a codex exec run’s', async () => {

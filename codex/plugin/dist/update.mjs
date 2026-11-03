@@ -3492,7 +3492,7 @@ import {
   rename as rename2,
   rm,
   rmdir as rmdir2,
-  stat as stat2,
+  stat as stat3,
   symlink as symlink2,
   writeFile as writeFile2
 } from "node:fs/promises";
@@ -3899,8 +3899,8 @@ async function runUpdates(host) {
 }
 
 // src/transcript.ts
-import { open as open2, readdir as readdir2 } from "node:fs/promises";
-import { dirname as dirname2, join as join3 } from "node:path";
+import { open as open2, readdir as readdir2, stat as stat2 } from "node:fs/promises";
+import { basename as basename2, dirname as dirname2, join as join3 } from "node:path";
 
 // src/rollout-rows.ts
 import { open } from "node:fs/promises";
@@ -3919,6 +3919,9 @@ async function readSessionMeta(path) {
   } catch {
     return null;
   }
+}
+function isExecMeta(meta) {
+  return meta?.payload?.originator === "codex_exec" || meta?.payload?.source === "exec";
 }
 var isText = (v) => typeof v === "string";
 var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
@@ -4097,23 +4100,54 @@ async function namesIn(dir, pattern) {
   const names = await readdir2(dir).catch(() => []);
   return names.filter((n) => pattern.test(n)).sort().reverse();
 }
-async function newestRollout(sessions, isWanted) {
+var ROLLOUT_NAME = /^rollout-.+\.jsonl$/;
+async function newestRollout(codexHome, isWanted) {
+  const sessions = join3(codexHome, "sessions");
   for (const year of await namesIn(sessions, /^\d{4}$/))
     for (const month of await namesIn(join3(sessions, year), /^\d{2}$/))
       for (const day of await namesIn(join3(sessions, year, month), /^\d{2}$/)) {
         const folder = join3(sessions, year, month, day);
-        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isWanted);
+        const [name] = (await namesIn(folder, ROLLOUT_NAME)).filter(isWanted);
         if (name !== void 0) return join3(folder, name);
       }
-  return null;
+  const archive = join3(codexHome, "archived_sessions");
+  const [archived] = (await namesIn(archive, ROLLOUT_NAME)).filter(isWanted);
+  return archived === void 0 ? null : join3(archive, archived);
+}
+function codexHomeOf(path) {
+  const folder = dirname2(path);
+  if (basename2(folder) === "archived_sessions") return dirname2(folder);
+  const sessions = dirname2(dirname2(dirname2(folder)));
+  return basename2(sessions) === "sessions" ? dirname2(sessions) : null;
+}
+async function rolloutFor(codexHome, threadId) {
+  if (threadId === "") return null;
+  const path = await newestRollout(
+    codexHome,
+    (name) => name.endsWith(`-${threadId}.jsonl`) || name.includes(`-${threadId}_`)
+  );
+  if (path === null) return null;
+  const meta = await readSessionMeta(path);
+  const isOwnChat = meta !== null && !meta.payload?.parent_thread_id && !isExecMeta(meta);
+  return isOwnChat ? { path, cwd: typeof meta.payload?.cwd === "string" ? meta.payload.cwd : "" } : null;
+}
+async function withCurrentRollout(s) {
+  const saved = s.transcriptPath;
+  if (saved === null || await stat2(saved).catch(() => null) !== null) return s;
+  const codexHome = codexHomeOf(saved);
+  const found = codexHome === null ? null : await rolloutFor(codexHome, s.sessionId);
+  return found === null || found.path === saved ? s : { ...s, transcriptPath: found.path };
 }
 async function historyBase(path) {
   const base = (await readSessionMeta(path))?.payload?.history_base;
   const id = base?.thread_id;
   const end = base?.end_byte_offset;
-  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0) return null;
-  const sessions = dirname2(dirname2(dirname2(dirname2(path))));
-  const basePath = await newestRollout(sessions, (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`));
+  const codexHome = codexHomeOf(path);
+  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0 || codexHome === null) return null;
+  const basePath = await newestRollout(
+    codexHome,
+    (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`)
+  );
   return basePath === null ? null : { path: basePath, end };
 }
 var TAIL_BYTES = 4 * 1024 * 1024;
@@ -4211,7 +4245,7 @@ async function modelHome(dir, personHome) {
 async function keepNewerSignIn(link, auth) {
   const saved = await lstat2(link).catch(() => null);
   if (!saved?.isFile()) return;
-  const theirs = await stat2(auth);
+  const theirs = await stat3(auth);
   if (saved.mtimeMs > theirs.mtimeMs) await copyFile(link, auth);
 }
 var FAILURE_TAIL_CHARS = 2e3;
@@ -4299,20 +4333,27 @@ var refreshStatus2 = (dir, sessionId, ask, now, onWrite, records) => refreshStat
   inOrder: inOrderFor(dir, sessionId),
   records
 });
-var runUpdates2 = (dir, sessionId, ask, now, onWrite, records) => runUpdates({
-  ...codexStore(dir, sessionId, now, onWrite),
-  ask,
-  names: CODEX,
-  inOrder: inOrderFor(dir, sessionId),
-  records,
-  catchUp: async (s) => askOverConversation(
+var runUpdates2 = (dir, sessionId, ask, now, onWrite, records) => {
+  const store = codexStore(dir, sessionId, now, onWrite);
+  return runUpdates({
+    ...store,
     ask,
-    CODEX,
-    s,
-    screenText(CODEX, isTabOpen(s, now()), screenTabOf(s.shownTab)),
-    (await readRollout(s.transcriptPath, s.root))?.conversation ?? null
-  )
-});
+    names: CODEX,
+    inOrder: inOrderFor(dir, sessionId),
+    records,
+    catchUp: async (s) => {
+      const isMoved = await withCurrentRollout(s) !== s;
+      const path = isMoved ? (await store.update(withCurrentRollout)).transcriptPath : s.transcriptPath;
+      return askOverConversation(
+        ask,
+        CODEX,
+        s,
+        screenText(CODEX, isTabOpen(s, now()), screenTabOf(s.shownTab)),
+        (await readRollout(path, s.root))?.conversation ?? null
+      );
+    }
+  });
+};
 
 // src/detached-update.ts
 var STATUS_REFRESH = "status-refresh";
