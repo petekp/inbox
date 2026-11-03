@@ -38,29 +38,6 @@ export type SavedRecord = SavedSession & { savedAt: number }
 
 export const sessionKey = (id: string) => `s:${id}`
 
-/**
- * What the engine's store throws when another process holds the lock on its file. Only `set` and `delete` take the
- * lock, and the engine retries it for under a second before throwing.
- */
-const LOCK_HELD = 'Lock file is already being held'
-/** The waits before each retry of a store write that met a held lock, about two seconds in all. */
-export const LOCK_RETRY_WAITS_MS = [100, 200, 300, 500, 900]
-
-export const isLockHeld = (error: unknown) => error instanceof Error && error.message.includes(LOCK_HELD)
-
-export const savesBySession = new Map<string, Promise<void>>()
-export const prunedSaves = new Set<string>()
-export const savedRevisions = new Map<string, number>()
-
-export function track(id: string, write: Promise<void>) {
-  savesBySession.set(id, write)
-  void write
-    .finally(() => {
-      if (savesBySession.get(id) === write) savesBySession.delete(id)
-    })
-    .catch(() => undefined)
-}
-
 /** The conversations whose per-reply update runs now. */
 export const updating = exclusiveKeys()
 
