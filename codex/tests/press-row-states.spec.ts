@@ -75,7 +75,7 @@ test('a row turned around mid-move starts the new move at once, and with reduced
   assert.equal(stepRow(undefined, 'open', 0)?.state, 'open')
 })
 
-test('in the Codex tab, a PR row closes with its panel, leaves from its place with its group and title, a block’s press line grows in, a dismissed block settles under its settled line and grows back on Undo, the tab’s buttons leave with the last merged PR, and with reduced motion each move ends as it starts', async context => {
+test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR row closes with its panel, leaves from its place with its group and title, a block’s press line grows in, a dismissed block settles under its settled line and grows back on Undo, the tab’s buttons leave with the last merged PR, and with reduced motion each move ends as it starts', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const window = new Window()
   const animate = window.HTMLElement.prototype.animate
@@ -237,6 +237,16 @@ test('in the Codex tab, a PR row closes with its panel, leaves from its place wi
     await settle()
     assert.deepEqual(groups(), [`Failing checks${DOT}1`, `Cancelled checks${DOT}2`])
     assert.ok(entry('lint') && entry('e2e') && entry('e2e-mac'))
+    const selectedAfter = async (key: string) => {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      await settle()
+      return ['lint', 'e2e', 'e2e-mac'].filter(name => entry(name)!.querySelector('.row.selected'))
+    }
+    assert.deepEqual(await selectedAfter('j'), ['e2e'])
+    assert.deepEqual(await selectedAfter('j'), ['e2e-mac'])
+    assert.deepEqual(await selectedAfter('j'), ['lint'])
+    assert.deepEqual(await selectedAfter('k'), ['e2e-mac'])
+    assert.deepEqual(await selectedAfter('ArrowDown'), ['lint'])
     await open('e2e')
     await open('lint')
     assert.ok(entry('lint')!.querySelector('.row.selected .panel'))

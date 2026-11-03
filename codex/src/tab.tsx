@@ -3,6 +3,7 @@ import type { ComponentChildren } from 'preact'
 import { HELP_COPY, UNDO_KEY } from '../../hooks/help'
 import { versionLabel, DEMO_NOTICE, bannerOf, READING_TEXT } from '../../hooks/banners'
 import { isRowTab, shownTabs } from '../../hooks/tabs'
+import { steppedIndex } from '../../hooks/action-plan'
 import { tabState, handoff, root, instanceAbort } from './tab-state'
 import type { Kept, Lists } from './tab-state'
 import type { DrawnPrs } from './tab-pr-steps'
@@ -173,7 +174,7 @@ document.addEventListener(
     const move = e.key === 'j' || e.key === 'ArrowDown' ? 1 : e.key === 'k' || e.key === 'ArrowUp' ? -1 : 0
     if (move !== 0) {
       e.preventDefault()
-      select(t, rows, Math.max(0, Math.min(rows.length - 1, at + move)))
+      select(t, rows, steppedIndex(at, move, rows.length))
       revealSelected()
       return
     }

@@ -223,6 +223,17 @@ export function firstWaiting(rows: RowWait[]): string | null {
   return rows.find(r => r.isWaiting)?.id ?? null
 }
 
+/**
+ * The index `step` places from `at` in a list of `count`, wrapping past either end. With nothing selected, as `at` -1,
+ * a step forward selects the first and a step back the last. -1 for an empty list.
+ */
+export function steppedIndex(at: number, step: number, count: number): number {
+  if (count === 0) return -1
+  const from = at < 0 ? (step > 0 ? -1 : 0) : at
+
+  return (((from + step) % count) + count) % count
+}
+
 export function keptOpen(rows: RowWait[], added: readonly string[]): string | null {
   return firstWaiting(rows.filter(r => !added.includes(r.id)))
 }

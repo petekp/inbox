@@ -2438,7 +2438,7 @@ NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
   options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
   rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
   design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
-  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, edit a shared page) until the person agrees is a "decide" item ("Say when you want those committed"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
+  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
 UPDATE: <id> | <options> | <rec>
   For a "decide" item in <open> when the reply now offers it different answers, or states a recommendation for it that <open> does not show. options: the answers the person can now pick, as in NEW, or "-" to keep them. rec: as in NEW, or "-" to keep it. Rewording the question is not a change.
 HELP: <item> | <kind> | <value> | <name>
@@ -4653,6 +4653,12 @@ function actionsOf(row, last, state, feedback) {
 function firstWaiting(rows) {
   return rows.find((r) => r.isWaiting)?.id ?? null;
 }
+function steppedIndex(at, step, count) {
+  if (count === 0)
+    return -1;
+  const from = at < 0 ? step > 0 ? -1 : 0 : at;
+  return ((from + step) % count + count) % count;
+}
 function keptOpen(rows, added) {
   return firstWaiting(rows.filter((r) => !added.includes(r.id)));
 }
@@ -5929,7 +5935,6 @@ function entriesOf(screen, ui, tab, now) {
 }
 
 // src/panel-keys.ts
-var wrapIndex = (i, n) => (i % n + n) % n;
 function resolveSelected(lines, selectedId) {
   const selectable = lines.filter(isSelectable);
   const current = lines.find((l) => l.id === selectedId);
@@ -6034,13 +6039,13 @@ function handleKey(screen, ui, key, now, text) {
   const at = selectable.findIndex((l) => l.id === selected?.id);
   if ((key === "up" || key === "k" || key === "down" || key === "j") && selectable.length > 0) {
     const step = key === "up" || key === "k" ? -1 : 1;
-    return { ui: withSelection(base, selectable[wrapIndex(Math.max(0, at) + step, selectable.length)].id) };
+    return { ui: withSelection(base, selectable[steppedIndex(at, step, selectable.length)].id) };
   }
   const tabs = shown.map((t) => t.id);
   const pickedTab = shown.find((t) => t.hotkey === key);
   if (key === "tab" || key === "shift+tab") {
     const step = key === "tab" ? 1 : -1;
-    return { ui: withTab(base, tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)], now) };
+    return { ui: withTab(base, tabs[steppedIndex(tabs.indexOf(base.tab), step, tabs.length)], now) };
   }
   if (pickedTab)
     return { ui: withTab(base, pickedTab.id, now) };
@@ -6062,7 +6067,7 @@ function handleKey(screen, ui, key, now, text) {
   if (!selected || selected.buttons.length === 0 || isGuarded(base.openedAt, now))
     return { ui: base };
   if (key === "left" || key === "right") {
-    const index = wrapIndex(focusOf2(selected, base) + (key === "left" ? -1 : 1), selected.buttons.length);
+    const index = steppedIndex(focusOf2(selected, base), key === "left" ? -1 : 1, selected.buttons.length);
     return { ui: { ...base, focus: { rowId: selected.id, index } } };
   }
   const button = key === "enter" ? selected.buttons[focusOf2(selected, base)] : selected.buttons.find((b) => b.key === key);
@@ -6076,12 +6081,12 @@ function pageKey(screen, ui, key, now) {
     return null;
   if (key === "j" || key === "k") {
     const at = rows.findIndex((r) => r.id === row.id);
-    const to = rows[wrapIndex(at + (key === "k" ? -1 : 1), rows.length)].id;
+    const to = rows[steppedIndex(at, key === "k" ? -1 : 1, rows.length)].id;
     return { ui: { ...ui, selectedId: to, focus: null, pageReveal: to } };
   }
   const { keys } = row;
   if (key === "left" || key === "right") {
-    const index = wrapIndex(pageFocus(row, ui) + (key === "left" ? -1 : 1), keys.length);
+    const index = steppedIndex(pageFocus(row, ui), key === "left" ? -1 : 1, keys.length);
     return { ui: { ...ui, selectedId: row.id, focus: { rowId: row.id, index } } };
   }
   const pressed = key === "enter" ? keys[pageFocus(row, ui)] : keys.find((k) => k.hotkey === key);
