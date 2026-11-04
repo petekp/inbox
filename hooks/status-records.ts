@@ -4,7 +4,7 @@ import type { StatusCallInput } from './status-prompt'
 import { failedStatus, appliedStatus, isStatusCallCurrent } from './session-status'
 import type { ClientId } from './clients'
 import type { Exchange, Session, SessionStatus, HostTask } from '../types'
-import type { Ask, UpdateHost, CallReport } from './session-host'
+import type { Ask, UpdateHost, CallKind, CallReport } from './session-host'
 
 /**
  * What a Status call reads as its exchange: a reply's exchange, the running turn's work so far, or a whole
@@ -130,10 +130,11 @@ async function attempt(
   host: Pick<StatusHost<Session>, 'now'>,
   ask: Ask,
   prompt: string,
+  kind: CallKind,
 ): Promise<StatusAttempt & { text: string | null }> {
   const heard: { report?: CallReport; thrown?: string } = {}
   const startedAt = await host.now()
-  const text = await ask(prompt, STATUS_SYSTEM, r => (heard.report = r)).catch((err: unknown) => {
+  const text = await ask(prompt, STATUS_SYSTEM, kind, r => (heard.report = r)).catch((err: unknown) => {
     heard.thrown = err instanceof Error ? err.message : String(err)
     return null
   })
@@ -166,7 +167,8 @@ export async function askAndWriteStatus<S extends Session>(
   const prompt = statusCallPrompt(input, call.exchange)
   const attempts: StatusAttempt[] = []
   const { last } = await askStatus(async () => {
-    const { text, ...made } = await attempt(host, call.ask, prompt)
+    const kind = { call: 'status', reads: call.exchange.kind, isRetry: attempts.length > 0 } as const
+    const { text, ...made } = await attempt(host, call.ask, prompt, kind)
     attempts.push(made)
     return { text }
   })

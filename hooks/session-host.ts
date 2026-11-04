@@ -60,8 +60,27 @@ export function orderedKeys(): { run<T>(key: string, fn: () => Promise<T>): Prom
  */
 export type CallReport = { model: string; answeredBy?: string; error?: string }
 
-/** Calls the inbox model with `system` as its system text. Null when the call fails. `report` hears about the call. */
-export type Ask = (prompt: string, system: string, report?: (r: CallReport) => void) => Promise<string | null>
+/**
+ * Which call of an update a model call is. The ledger call reads a reply's exchange, with `isRetry` when the
+ * exchange's first call failed, or the whole conversation for a catch-up. The update flow keeps no mark of a repeated
+ * catch-up, so a catch-up says nothing of retries. The Status call reads a reply's exchange, the running turn or a
+ * catch-up's conversation, with `isRetry` when its first answer held prose.
+ */
+export type CallKind =
+  | { call: 'ledger'; reads: 'reply'; isRetry: boolean }
+  | { call: 'ledger'; reads: 'catch-up' }
+  | { call: 'status'; reads: 'reply' | 'mid-turn' | 'catch-up'; isRetry: boolean }
+
+/**
+ * Calls the inbox model with `system` as its system text, for the call `kind` names. Null when the call fails.
+ * `report` hears about the call.
+ */
+export type Ask = (
+  prompt: string,
+  system: string,
+  kind: CallKind,
+  report?: (r: CallReport) => void,
+) => Promise<string | null>
 
 /** Everything a host supplies to run one session. A function here takes the members it uses. */
 export type SessionHost<S extends Session> = {
@@ -151,7 +170,10 @@ export async function askOverConversation(
   conversation: string | null,
 ): Promise<CatchUpReply> {
   if (!conversation) return { kind: 'unreadable' }
-  const text = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names)).catch(() => null)
+  const text = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names), {
+    call: 'ledger',
+    reads: 'catch-up',
+  }).catch(() => null)
 
   return text === null
     ? { kind: 'failed' }
@@ -237,7 +259,8 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
             }
             const next = s.pending[0]!
             const promptAt = await host.now()
-            const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null)
+            const kind = { call: 'ledger', reads: 'reply', isRetry: next.failed === true } as const
+            const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names), kind).catch(() => null)
             const parsed = parsedReply(next.ex, reply)
             let isApplied = false as boolean
             const after = await host.update(async x => {

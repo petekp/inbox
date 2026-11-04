@@ -9,7 +9,7 @@ import { herdrOnWrite } from './host'
 import { readState } from './state'
 import { run } from './run'
 import { NEXT_BUILD_MARK } from '../../hooks/banners'
-import { codexAsk, statusRecords, recordModelFailure, refreshStatus, runUpdates } from './update'
+import { codexAsk, statusRecords, recordModelCall, refreshStatus, runUpdates } from './update'
 import { STATUS_REFRESH } from './detached-update'
 
 async function main() {
@@ -20,7 +20,7 @@ async function main() {
   const { cliPath } = await readState(dir, sessionId)
   const cli = cliPath ?? (await findCli(process.env, run, process.ppid))
   const personHome = process.env.CODEX_HOME || join(homedir(), '.codex')
-  const ask = codexAsk(run, cli, dir, personHome, recordModelFailure(dir, sessionId, Date.now))
+  const ask = codexAsk(run, cli, dir, personHome, recordModelCall(dir, sessionId, Date.now))
   const onWrite = herdrOnWrite(process.env, run, dir, Date.now)
   const records = existsSync(join(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : undefined
   if (isStatusRefresh) await refreshStatus(dir, sessionId, ask, Date.now, onWrite, records)

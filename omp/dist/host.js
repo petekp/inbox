@@ -8787,10 +8787,10 @@ async function writeStatusRecord(records, record) {
     });
   }
 }
-async function attempt(host, ask, prompt) {
+async function attempt(host, ask, prompt, kind) {
   const heard = {};
   const startedAt = await host.now();
-  const text = await ask(prompt, STATUS_SYSTEM, (r) => heard.report = r).catch((err) => {
+  const text = await ask(prompt, STATUS_SYSTEM, kind, (r) => heard.report = r).catch((err) => {
     heard.thrown = err instanceof Error ? err.message : String(err);
     return null;
   });
@@ -8810,7 +8810,8 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
   const prompt = statusCallPrompt(input, call.exchange);
   const attempts = [];
   const { last } = await askStatus(async () => {
-    const { text, ...made } = await attempt(host, call.ask, prompt);
+    const kind = { call: "status", reads: call.exchange.kind, isRetry: attempts.length > 0 };
+    const { text, ...made } = await attempt(host, call.ask, prompt, kind);
     attempts.push(made);
     return { text };
   });
@@ -8893,7 +8894,10 @@ function orderedKeys() {
 async function askOverConversation(ask, names, s, screen, conversation) {
   if (!conversation)
     return { kind: "unreadable" };
-  const text = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names)).catch(() => null);
+  const text = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names), {
+    call: "ledger",
+    reads: "catch-up"
+  }).catch(() => null);
   return text === null ? { kind: "failed" } : {
     kind: "reply",
     text,
@@ -8956,7 +8960,8 @@ async function runUpdates(host) {
             }
             const next = s.pending[0];
             const promptAt = await host.now();
-            const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null);
+            const kind = { call: "ledger", reads: "reply", isRetry: next.failed === true };
+            const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names), kind).catch(() => null);
             const parsed = parsedReply(next.ex, reply);
             let isApplied = false;
             const after = await host.update(async (x) => {
@@ -10220,7 +10225,7 @@ function createInbox(pi, deps = defaultDeps) {
     }
   };
   function askFor(ctx, id) {
-    return async (prompt, system, report) => {
+    return async (prompt, system, _kind, report) => {
       const model = inboxModel(ctx);
       if (!model) {
         report?.({ model: "none", error: "omp offers no model for the inbox" });

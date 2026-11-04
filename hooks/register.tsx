@@ -602,7 +602,7 @@ async function askInboxModel(
   prompt: string,
   system: string,
   timeoutMs: number,
-  report: Parameters<Ask>[2],
+  report: Parameters<Ask>[3],
 ): Promise<string | null> {
   const r = await $.model.complete({
     model: MODEL,
@@ -761,7 +761,7 @@ function sessionHost(
     },
     update: opts.update,
     exclusive: fn => updating.run(owner.id, fn),
-    ask: (prompt, system, report) => askInboxModel($, prompt, system, 45_000, report),
+    ask: (prompt, system, _kind, report) => askInboxModel($, prompt, system, 45_000, report),
     deliver: (_s, text, deliveryId) => deliver($, owner, text, deliveryId),
     isDeliveryHeldUntilRun: true,
     perform: async (_s, effect) => (opts.surface ? perform($, effect, opts.surface) : COPY_FAILURES['no-surface']),
@@ -881,7 +881,8 @@ async function redrawAfterReload($: EngineInterface) {
 function catchUpStatus($: EngineInterface, owner: Owner, transcript: string): StatusCall {
   return {
     exchange: { kind: 'catch-up', conversation: transcript },
-    ask: async (prompt, system, report) => (isCurrent(owner) ? askInboxModel($, prompt, system, 90_000, report) : null),
+    ask: async (prompt, system, _kind, report) =>
+      isCurrent(owner) ? askInboxModel($, prompt, system, 90_000, report) : null,
   }
 }
 

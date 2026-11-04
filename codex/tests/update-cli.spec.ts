@@ -7,11 +7,12 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import { readState, updateState } from '../src/state'
-import { codexAsk, recordModelFailure, runUpdates as runBothCalls } from '../src/update'
+import { codexAsk, recordModelCall, runUpdates as runBothCalls } from '../src/update'
 import { findCli } from '../src/cli'
 import { run } from '../src/run'
 import { TIMED_OUT_CODE } from '../../hooks/gh'
 import { STATUS_SYSTEM } from '../../hooks/status-prompt'
+import type { CallKind } from '../../hooks/session-host'
 import { fakeRunner, tempDir } from './helpers'
 import { ex, LEDGER_ANSWER } from './update-fixtures'
 
@@ -64,7 +65,7 @@ test('a failed update saves the CLI it ran, its exit code and the end of its std
       '/old/codex',
       dir,
       personHome,
-      recordModelFailure(dir, 's1', () => 7),
+      recordModelCall(dir, 's1', () => 7),
     ),
     () => 7,
   )
@@ -114,7 +115,7 @@ test('a reply with a NUL byte reaches codex on stdin, and both calls of its upda
       cli,
       dir,
       personHome,
-      recordModelFailure(dir, 's1', () => 7),
+      recordModelCall(dir, 's1', () => 7),
     ),
     () => 7,
   )
@@ -150,7 +151,7 @@ test('an update whose codex command cannot start saves why as its failure beside
       cli,
       dir,
       personHome,
-      recordModelFailure(dir, 's1', () => 7),
+      recordModelCall(dir, 's1', () => 7),
     ),
     () => 7,
   )
@@ -162,7 +163,7 @@ test('an update whose codex command cannot start saves why as its failure beside
   assert.match(s.lastModelFailure?.stderr ?? '', /null bytes/)
 })
 
-test('a failed update saves the signal that ended codex, the error of a codex that could not start, the timeout it ran out, which call failed and how long codex ran', async t => {
+test('a failed update saves the signal that ended codex, the error of a codex that could not start, the timeout it ran out, the call kind the update flow passed rather than one read from its system text, and how long codex ran', async t => {
   const dir = tempDir()
   const personHome = tempDir()
   const bin = tempDir()
@@ -176,7 +177,8 @@ test('a failed update saves the signal that ended codex, the error of a codex th
   )
   chmodSync(killed, 0o755)
   const timedOut = fakeRunner(() => ({ code: TIMED_OUT_CODE, stdout: '', stderr: '' })).exec
-  const failureWith = async (exec: Parameters<typeof codexAsk>[0], cli: string, system = 'ledger system') => {
+  const firstLedgerCall = { call: 'ledger', reads: 'reply', isRetry: false } as const
+  const failureWith = async (exec: Parameters<typeof codexAsk>[0], cli: string, kind: CallKind = firstLedgerCall) => {
     const errors: string[] = []
     let clock = 0
     await codexAsk(
@@ -184,16 +186,17 @@ test('a failed update saves the signal that ended codex, the error of a codex th
       cli,
       dir,
       personHome,
-      recordModelFailure(dir, 's1', () => 7),
+      recordModelCall(dir, 's1', () => 7),
       () => (clock += 40),
-    )('prompt', system, r => errors.push(r.error ?? ''))
+    )('prompt', STATUS_SYSTEM, kind, r => errors.push(r.error ?? ''))
 
     return { ...(await readState(dir, 's1')).lastModelFailure, error: errors[0] ?? '' }
   }
 
   const bySignal = await failureWith(run, killed)
   const unstartable = await failureWith(run, join(bin, 'missing-codex'))
-  const late = await failureWith(timedOut, killed, STATUS_SYSTEM)
+  const late = await failureWith(timedOut, killed, { call: 'status', reads: 'mid-turn', isRetry: true })
+  const catchUp = await failureWith(timedOut, killed, { call: 'ledger', reads: 'catch-up' })
 
   assert.deepEqual(
     [bySignal.code, bySignal.signal, bySignal.errorCode, bySignal.timeoutMs],
@@ -206,6 +209,44 @@ test('a failed update saves the signal that ended codex, the error of a codex th
   assert.match(unstartable.error, /^codex exec failed with ENOENT/)
   assert.deepEqual([late.code, late.signal, late.timeoutMs], [TIMED_OUT_CODE, null, 120_000])
   assert.match(late.error, /^codex exec timed out after 120 s/)
-  assert.deepEqual([bySignal.call, late.call], ['ledger', 'status'])
+  assert.deepEqual(
+    [bySignal, late, catchUp].map(f => [f.call, f.reads, f.isRetry]),
+    [
+      ['ledger', 'reply', false],
+      ['status', 'mid-turn', true],
+      ['ledger', 'catch-up', null],
+    ],
+  )
   assert.deepEqual([bySignal.elapsedMs, late.elapsedMs], [40, 40])
+})
+
+test('an answered call after a failure saves when the model recovered, and a later failure clears it, so the record tells a past failure from a current one', async t => {
+  const dir = tempDir()
+  const personHome = tempDir()
+  t.after(() => Promise.all([dir, personHome].map(d => rm(d, { recursive: true, force: true }))))
+  const codes = [1, 0, 0, 1]
+  const { exec } = fakeRunner(args => {
+    const code = codes.shift() ?? 0
+    if (code === 0) writeFileSync(args[args.indexOf('-o') + 1]!, 'answer')
+    return { code, stdout: '', stderr: code === 0 ? '' : 'ERROR: overloaded' }
+  })
+  let clock = 0
+  const ask = codexAsk(
+    exec,
+    '/codex',
+    dir,
+    personHome,
+    recordModelCall(dir, 's1', () => (clock += 10)),
+  )
+  const kind = { call: 'ledger', reads: 'reply', isRetry: false } as const
+  const after = async () => {
+    await ask('prompt', 'ledger system', kind)
+    const s = await readState(dir, 's1')
+    return [s.lastModelFailure?.at ?? null, s.modelRecoveredAt]
+  }
+
+  assert.deepEqual(await after(), [10, null])
+  assert.deepEqual(await after(), [10, 20])
+  assert.deepEqual(await after(), [10, 20])
+  assert.deepEqual(await after(), [30, null])
 })

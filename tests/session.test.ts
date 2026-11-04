@@ -4,9 +4,11 @@ import { flattenConversation } from '../hooks/conversation'
 import { emptySession } from '../hooks/session-files'
 import { noteCommandOutput } from '../hooks/session-turns'
 import { sessionView } from '../hooks/session-view'
-import { reconcileUpdateStatus, runUpdates } from '../hooks/session-host'
+import { askOverConversation, reconcileUpdateStatus, runUpdates } from '../hooks/session-host'
 import { cutOffUpdate } from '../hooks/mod-sessions'
-import type { CatchUpReply } from '../hooks/session-host'
+import type { CallKind, CatchUpReply } from '../hooks/session-host'
+import { CLAUDE_CODE } from '../hooks/model-text'
+import { STATUS_SYSTEM } from '../hooks/status-prompt'
 import type { StatusCall } from '../hooks/status-records'
 import { footerStatus } from '../hooks/view'
 import type { Session } from '../types'
@@ -215,6 +217,28 @@ test('an update cut off after one failure still reads as waiting to retry, not a
   const cutOff = cutOffUpdate({ ...running, presence: { ...running.presence, isUpdating: true } })
   expect(cutOff.presence).toMatchObject({ ledgerState: 'failed', failedAttempts: 1 })
   expect(shownStatus(cutOff).error).toMatch(/^Last update failed\. Items from that reply/)
+})
+
+test('each model call says which call of the update it is: a first try, the retry of a failed exchange, a Status call asked again after prose, and a catch-up', async () => {
+  const kinds: CallKind[] = []
+  const ledgerAnswers = [null, LEDGER_REPLY]
+  const statusAnswers = ['Here is where things stand.', 'NO CHANGE']
+  const { host } = fakeHost(async (_prompt, system, kind) => {
+    kinds.push(kind)
+    return (system === STATUS_SYSTEM ? statusAnswers : ledgerAnswers).shift() ?? null
+  })
+  await host.update(s => finishTurn(s, 'Which runtime?'))
+  await runUpdates({ ...host, catchUp: undefined })
+  await runUpdates({ ...host, catchUp: undefined })
+  await askOverConversation(host.ask, CLAUDE_CODE, await host.read(), '', 'Person: go')
+
+  expect(kinds).toEqual([
+    { call: 'ledger', reads: 'reply', isRetry: false },
+    { call: 'ledger', reads: 'reply', isRetry: true },
+    { call: 'status', reads: 'reply', isRetry: false },
+    { call: 'status', reads: 'reply', isRetry: true },
+    { call: 'ledger', reads: 'catch-up' },
+  ])
 })
 
 test('the conversation keeps its newest lines when it is too long, and leaves out the inbox notes', () => {

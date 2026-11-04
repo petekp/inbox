@@ -27,12 +27,11 @@ import {
 import type { Ask } from '../../hooks/session-host'
 import { refreshStatus as refreshSessionStatus } from '../../hooks/status-records'
 import type { StatusRecords, RecordFiles } from '../../hooks/status-records'
-import { STATUS_SYSTEM } from '../../hooks/status-prompt'
 import { screenTabOf } from '../../hooks/tabs'
 import { isTabOpen } from './core'
 import { codexStore } from './host'
 import type { OnWrite } from './host'
-import { statePath, updateState, withLock } from './state'
+import { readState, statePath, updateState, withLock } from './state'
 import type { ModelFailure, SessionState } from './state'
 import { CODEX } from './texts'
 import { readRollout, withCurrentRollout } from './transcript'
@@ -113,18 +112,18 @@ async function keepNewerSignIn(link: string, auth: string): Promise<void> {
 const FAILURE_TAIL_CHARS = 2000
 
 /**
- * Null when it fails, after passing the failure to `onFailure`. `personHome` is the person's Codex home, which holds
- * their sign-in. `now` times each run of the command.
+ * Null when it fails. Each call that runs passes its failure to `onCall`, or null when it answered. `personHome` is the
+ * person's Codex home, which holds their sign-in. `now` times each run of the command.
  */
 export function codexAsk(
   exec: RunWithInput,
   cli: string,
   dir: string,
   personHome: string,
-  onFailure: (failure: Omit<ModelFailure, 'at'>) => Promise<void> = async () => {},
+  onCall: (failure: Omit<ModelFailure, 'at'> | null) => Promise<void> = async () => {},
   now: () => number = Date.now,
 ): Ask {
-  return async (prompt, instructions, report) => {
+  return async (prompt, instructions, kind, report) => {
     const work = join(dir, 'exec')
     const system = join(dir, `inbox-system-${createHash('sha256').update(instructions).digest('hex').slice(0, 12)}.md`)
     const out = join(work, `reply-${randomUUID()}.txt`)
@@ -180,11 +179,13 @@ export function codexAsk(
         signal: r.signal ?? null,
         errorCode: r.errorCode ?? null,
         timeoutMs: r.code === TIMED_OUT_CODE ? TIMEOUT_MS : null,
-        call: instructions === STATUS_SYSTEM ? ('status' as const) : ('ledger' as const),
+        call: kind.call,
+        reads: kind.reads,
+        isRetry: 'isRetry' in kind ? kind.isRetry : null,
         elapsedMs,
       }
       report?.({ model: MODEL, ...(text === null ? { error: `codex exec ${endOf(failure)}: ${stderr.trim()}` } : {}) })
-      if (text === null) await onFailure(failure)
+      await onCall(text === null ? failure : null)
 
       return text
     }
@@ -205,11 +206,21 @@ function endOf(f: Omit<ModelFailure, 'at'>): string {
   return `exited ${f.code}`
 }
 
-/** Saves a failed call as the session's `lastModelFailure`. */
-export const recordModelFailure =
+/**
+ * Saves a failed call as the session's `lastModelFailure`, which clears `modelRecoveredAt`. An answered call sets
+ * `modelRecoveredAt` when a failure is saved and no call has answered since. The session is read first, so an answer
+ * takes the lock only when it saves.
+ */
+export const recordModelCall =
   (dir: string, sessionId: string, now: () => number) =>
-  async (failure: Omit<ModelFailure, 'at'>): Promise<void> => {
-    await updateState(dir, sessionId, s => ({ ...s, lastModelFailure: { ...failure, at: now() } }))
+  async (failure: Omit<ModelFailure, 'at'> | null): Promise<void> => {
+    const isRecovery = (s: SessionState) => s.lastModelFailure !== null && s.modelRecoveredAt === null
+    if (failure === null && !isRecovery(await readState(dir, sessionId))) return
+    await updateState(dir, sessionId, s => {
+      if (failure !== null) return { ...s, lastModelFailure: { ...failure, at: now() }, modelRecoveredAt: null }
+
+      return isRecovery(s) ? { ...s, modelRecoveredAt: now() } : s
+    })
   }
 
 export const reconcileUpdateStatus = (dir: string, sessionId: string): Promise<SessionState> =>

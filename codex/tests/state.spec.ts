@@ -305,12 +305,12 @@ test('tryWithLock preserves a nested lock timeout after acquiring its own lock',
   }
 })
 
-test('a file saved before the version, the rollout path, the dropped-reply flag, the covered turn and a failure’s signal, error code, timeout, call and elapsed time existed reads with their defaults, a save writes the session version, and its covered turn is the last recorded prompt’s, or the one before while that turn runs', async t => {
+test('a file saved before the version, the rollout path, the dropped-reply flag, the covered turn and a failure’s signal, error code, timeout, call kind and elapsed time and the recovery time existed reads with their defaults, a save writes the session version, and its covered turn is the last recorded prompt’s, or the one before while that turn runs', async t => {
   const dir = tempDir()
   t.after(() => rm(dir, { recursive: true, force: true }))
   const initial = await updateState(dir, 's1', s => s)
   assert.equal(JSON.parse(await readFile(statePath(dir, 's1'), 'utf8')).version, SESSION_VERSION)
-  const { version: _version, transcriptPath: _path, coveredTurn: _covered, ...older } = initial
+  const { version: _version, transcriptPath: _path, coveredTurn: _covered, modelRecoveredAt: _at, ...older } = initial
   const { hasDroppedReply: _flag, ...presence } = initial.presence
   const oldFailure = { at: 7, cli: '/apps/codex', code: -1, stderr: 'warning' }
   await writeFile(statePath(dir, 's1'), JSON.stringify({ ...older, presence, lastModelFailure: oldFailure }))
@@ -322,8 +322,11 @@ test('a file saved before the version, the rollout path, the dropped-reply flag,
     errorCode: null,
     timeoutMs: null,
     call: null,
+    reads: null,
+    isRetry: null,
     elapsedMs: null,
   })
+  assert.equal(read.modelRecoveredAt, null)
   assert.equal(read.version, SESSION_VERSION)
   assert.equal(read.transcriptPath, null)
   assert.equal(read.presence.hasDroppedReply, false)

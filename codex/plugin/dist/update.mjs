@@ -3004,6 +3004,7 @@ function emptyState(sessionId) {
     home: homedir2(),
     cliPath: null,
     lastModelFailure: null,
+    modelRecoveredAt: null,
     ...emptySession(),
     tabSeenAt: 0,
     shownTab: "needsYou",
@@ -3045,7 +3046,16 @@ function upgraded(saved, sessionId) {
     }),
     shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     heard,
-    lastModelFailure: saved.lastModelFailure ? { signal: null, errorCode: null, timeoutMs: null, call: null, elapsedMs: null, ...saved.lastModelFailure } : null,
+    lastModelFailure: saved.lastModelFailure ? {
+      signal: null,
+      errorCode: null,
+      timeoutMs: null,
+      call: null,
+      reads: null,
+      isRetry: null,
+      elapsedMs: null,
+      ...saved.lastModelFailure
+    } : null,
     coveredTurn: saved.coveredTurn !== void 0 ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null)
   };
 }
@@ -3978,10 +3988,10 @@ async function writeStatusRecord(records, record2) {
     await files.removeFolder(theirs).catch(() => void 0);
   }
 }
-async function attempt(host, ask, prompt) {
+async function attempt(host, ask, prompt, kind) {
   const heard = {};
   const startedAt = await host.now();
-  const text2 = await ask(prompt, STATUS_SYSTEM, (r) => heard.report = r).catch((err) => {
+  const text2 = await ask(prompt, STATUS_SYSTEM, kind, (r) => heard.report = r).catch((err) => {
     heard.thrown = err instanceof Error ? err.message : String(err);
     return null;
   });
@@ -4000,7 +4010,8 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
   const prompt = statusCallPrompt(input, call.exchange);
   const attempts = [];
   const { last } = await askStatus(async () => {
-    const { text: text2, ...made } = await attempt(host, call.ask, prompt);
+    const kind = { call: "status", reads: call.exchange.kind, isRetry: attempts.length > 0 };
+    const { text: text2, ...made } = await attempt(host, call.ask, prompt, kind);
     attempts.push(made);
     return { text: text2 };
   });
@@ -4059,7 +4070,10 @@ function orderedKeys() {
 }
 async function askOverConversation(ask, names, s, screen, conversation) {
   if (!conversation) return { kind: "unreadable" };
-  const text2 = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names)).catch(() => null);
+  const text2 = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names), {
+    call: "ledger",
+    reads: "catch-up"
+  }).catch(() => null);
   return text2 === null ? { kind: "failed" } : {
     kind: "reply",
     text: text2,
@@ -4102,7 +4116,8 @@ async function runUpdates(host) {
             }
             const next = s.pending[0];
             const promptAt = await host.now();
-            const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null);
+            const kind = { call: "ledger", reads: "reply", isRetry: next.failed === true };
+            const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names), kind).catch(() => null);
             const parsed = parsedReply(next.ex, reply);
             let isApplied = false;
             const after = await host.update(async (x) => {
@@ -4651,9 +4666,9 @@ async function keepNewerSignIn(link, auth) {
   if (saved.mtimeMs > theirs.mtimeMs) await copyFile(link, auth);
 }
 var FAILURE_TAIL_CHARS = 2e3;
-function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
+function codexAsk(exec, cli, dir, personHome, onCall = async () => {
 }, now = Date.now) {
-  return async (prompt, instructions, report) => {
+  return async (prompt, instructions, kind, report) => {
     const work = join4(dir, "exec");
     const system = join4(dir, `inbox-system-${createHash2("sha256").update(instructions).digest("hex").slice(0, 12)}.md`);
     const out = join4(work, `reply-${randomUUID2()}.txt`);
@@ -4708,11 +4723,13 @@ function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
         signal: r.signal ?? null,
         errorCode: r.errorCode ?? null,
         timeoutMs: r.code === TIMED_OUT_CODE ? TIMEOUT_MS : null,
-        call: instructions === STATUS_SYSTEM ? "status" : "ledger",
+        call: kind.call,
+        reads: kind.reads,
+        isRetry: "isRetry" in kind ? kind.isRetry : null,
         elapsedMs
       };
       report?.({ model: MODEL, ...text2 === null ? { error: `codex exec ${endOf(failure)}: ${stderr.trim()}` } : {} });
-      if (text2 === null) await onFailure(failure);
+      await onCall(text2 === null ? failure : null);
       return text2;
     }
     report?.({ model: MODEL, error: "codex exec refused every feature flag the inbox turns off" });
@@ -4727,8 +4744,13 @@ function endOf(f) {
   if (f.code === 0) return "exited 0 and wrote no reply";
   return `exited ${f.code}`;
 }
-var recordModelFailure = (dir, sessionId, now) => async (failure) => {
-  await updateState(dir, sessionId, (s) => ({ ...s, lastModelFailure: { ...failure, at: now() } }));
+var recordModelCall = (dir, sessionId, now) => async (failure) => {
+  const isRecovery = (s) => s.lastModelFailure !== null && s.modelRecoveredAt === null;
+  if (failure === null && !isRecovery(await readState(dir, sessionId))) return;
+  await updateState(dir, sessionId, (s) => {
+    if (failure !== null) return { ...s, lastModelFailure: { ...failure, at: now() }, modelRecoveredAt: null };
+    return isRecovery(s) ? { ...s, modelRecoveredAt: now() } : s;
+  });
 };
 var inOrderFor = (dir, sessionId) => (fn) => resultsOrder.run(
   statePath(dir, sessionId),
@@ -4789,7 +4811,7 @@ async function main() {
   const { cliPath } = await readState(dir, sessionId);
   const cli = cliPath ?? await findCli(process.env, run, process.ppid);
   const personHome = process.env.CODEX_HOME || join5(homedir3(), ".codex");
-  const ask = codexAsk(run, cli, dir, personHome, recordModelFailure(dir, sessionId, Date.now));
+  const ask = codexAsk(run, cli, dir, personHome, recordModelCall(dir, sessionId, Date.now));
   const onWrite = herdrOnWrite(process.env, run, dir, Date.now);
   const records = existsSync(join5(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : void 0;
   if (isStatusRefresh) await refreshStatus2(dir, sessionId, ask, Date.now, onWrite, records);

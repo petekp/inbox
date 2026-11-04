@@ -180,7 +180,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   function askFor(ctx: ExtensionContext, id: string): SessionHost<OmpState>['ask'] {
-    return async (prompt, system, report) => {
+    return async (prompt, system, _kind, report) => {
       const model = inboxModel(ctx)
       if (!model) {
         report?.({ model: 'none', error: 'omp offers no model for the inbox' })
