@@ -63,7 +63,7 @@ function withoutStalePending(lastActions: Record<string, LastAction>, now: numbe
  * on its own, otherwise by catching up. A Codex chat saved with no rollout path gets one from that reply's Stop hook,
  * which saves it before the update starts.
  */
-export function updateRecovery(s: Session): UpdateRecovery {
+function updateRecovery(s: Session): UpdateRecovery {
   const { presence } = s
   if (presence.ledgerState !== 'failed') return 'none'
   if (presence.isUpdating) return 'retrying'

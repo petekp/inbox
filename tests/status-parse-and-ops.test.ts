@@ -150,7 +150,7 @@ test('a trailing period is not part of a word, so a SET that adds one rewords an
   expect(after(one, 'SET: s1 | working | tests pass on 1.4.2', 3000).subjects[0]!.text).toBe('tests pass on 1.4.2')
 })
 
-test('a SET reopens a finished subject, even one folded into another, and a DONE on a done subject changes nothing', () => {
+test('a SET, a DONE or another DROP takes a folded subject out of its target, and a DONE on a done subject changes nothing', () => {
   const two = after(null, 'NEW: working | Login form | drafted\nNEW: working | Auth flow | drafted', 100)
   const reopened = after(after(two, 'DROP: s1 | part of auth | INTO s2', 200), 'SET: s1 | working | split out', 300)
   const done = after(two, 'DONE: s1 | shipped', 200)
@@ -166,4 +166,13 @@ test('a SET reopens a finished subject, even one folded into another, and a DONE
     changedAt: 200,
   })
   expect(after(folded, 'DONE: s1 | shipped', 300).subjects[0]).toMatchObject({ status: 'done', into: null })
+
+  const three = after(folded, 'NEW: working | Session store | drafted', 250)
+  const refolded = after(three, 'DROP: s1 | part of sessions | INTO s3', 300)
+  const dropped = after(refolded, 'DROP: s1 | not needed', 400)
+
+  expect(refolded.subjects.map(s => s.merged)).toEqual([null, null, 'Login form'])
+  expect(refolded.subjects[0]!.into).toBe('s3')
+  expect(dropped.subjects.map(s => s.merged)).toEqual([null, null, null])
+  expect(dropped.subjects[0]).toMatchObject({ status: 'dropped', into: null })
 })
