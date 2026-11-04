@@ -7,9 +7,9 @@ import * as zlib from 'node:zlib'
 /** Node reads zstd from 22.15 and 23.8. On an older Node, a compressed rollout is not read. */
 export const canReadZstd = typeof zlib.createZstdDecompress === 'function'
 
-export const isCompressed = (path: string): boolean => path.endsWith('.zst')
+const isCompressed = (path: string): boolean => path.endsWith('.zst')
 
-export type Bytes = { buf: Buffer; start: number }
+type Bytes = { buf: Buffer; start: number }
 
 /** The last `bytes` before `end` of a plain file, and the offset they start at. */
 async function plainBytesBefore(path: string, bytes: number, end: number): Promise<Bytes> {

@@ -2,11 +2,8 @@ import type { CSSProperties } from 'react'
 import { useEffect, useState } from 'react'
 import { cancelRender, continueRender, delayRender, staticFile } from 'remotion'
 
-/** A terminal take's entry in its video's takes.json, which record/cut.py writes from term.py's log. */
-export type TerminalTakeInfo = { src: string; kind: 'terminal'; cols: number; rows: number }
-
 /** A terminal take as cut.py writes it. `t` is seconds from the take's first screen. */
-export type TerminalClip = {
+type TerminalClip = {
   cols: number
   rows: number
   /** Each row as tmux captured it, with its colors as escape sequences, and the cursor's column, row and visibility. */
@@ -47,7 +44,7 @@ export const DARK_PALETTE: Palette = {
 
 /** The font a terminal take draws in, and the size of one cell, in pixels. */
 export type TerminalFont = { family: string; size: number; lineHeight: number }
-export const TERMINAL_FONT: TerminalFont = { family: 'Menlo, monospace', size: 24, lineHeight: 1.25 }
+const TERMINAL_FONT: TerminalFont = { family: 'Menlo, monospace', size: 24, lineHeight: 1.25 }
 
 const loading = new Map<string, Promise<TerminalClip>>()
 const loaded = new Map<string, TerminalClip>()
@@ -82,7 +79,7 @@ export function useTerminalClip(src: string): TerminalClip | undefined {
 let measure: CanvasRenderingContext2D | undefined
 const cellWidths = new Map<string, number>()
 /** The width of one cell in the font, measured once per font, so a run of text lands on its columns. */
-export function cellWidth(font: TerminalFont): number {
+function cellWidth(font: TerminalFont): number {
   const key = `${font.size}px ${font.family}`
   let width = cellWidths.get(key)
   if (width === undefined) {
@@ -92,11 +89,6 @@ export function cellWidth(font: TerminalFont): number {
     cellWidths.set(key, width)
   }
   return width
-}
-
-/** The take's size in pixels, drawn in `font`. */
-export function terminalSize(clip: { cols: number; rows: number }, font: TerminalFont) {
-  return { width: Math.ceil(clip.cols * cellWidth(font)), height: Math.ceil(clip.rows * font.size * font.lineHeight) }
 }
 
 /** The screen showing `t` seconds into the take: the last one that has started. */
@@ -224,7 +216,7 @@ function screenRuns(screen: Screen): Run[][] {
 }
 
 /** Splits one captured row into runs, applying its SGR sequences and dropping other escapes, such as OSC 8 links. */
-export function runsOf(line: string): Run[] {
+function runsOf(line: string): Run[] {
   const runs: Run[] = []
   let style: Style = {}
   let col = 0

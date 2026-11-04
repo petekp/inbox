@@ -185,7 +185,7 @@ test('a next build records a Status call in a file of its own: the exact prompt 
 })
 
 test('a failed Status call’s record holds the error the host reported, and a record that cannot be written leaves the update in place', async () => {
-  const { host } = fakeHost(async (_prompt, system, report) => {
+  const { host } = fakeHost(async (_prompt, system, _kind, report) => {
     if (system !== STATUS_SYSTEM) return LEDGER_REPLY
     report?.({ model: 'sonnet', error: 'api-error 529: overloaded' })
     return null

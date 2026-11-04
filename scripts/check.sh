@@ -3,7 +3,8 @@
 # limit, with scripts/check-sizes.mjs, its plugin structure with
 # `claude plugin validate`, the imports and docs that keep the three looks in
 # step, and the plugin directory's rules for the hooks module, with
-# scripts/check-structure.mjs, that the three plugin manifests give one version,
+# scripts/check-structure.mjs, that every export has an importer, with
+# scripts/check-exports.mjs, that the three plugin manifests give one version,
 # with scripts/check-versions.mjs, that the comparison page matches its parts, with
 # scripts/build-compare-page.mjs, that types/index.d.ts matches its parts, with
 # scripts/build-types.mjs, its types with tsc, and its tests with
@@ -47,6 +48,7 @@ check "file sizes" node "$DIR/scripts/check-sizes.mjs"
 
 check "plugin validate" claude plugin validate "$DIR"
 check "structure" node "$DIR/scripts/check-structure.mjs"
+check "exports" node "$DIR/scripts/check-exports.mjs"
 check "versions" node "$DIR/scripts/check-versions.mjs"
 check "compare page" node "$DIR/scripts/build-compare-page.mjs" --check
 check "types parts" node "$DIR/scripts/build-types.mjs" --check

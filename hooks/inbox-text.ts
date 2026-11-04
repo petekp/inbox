@@ -123,7 +123,7 @@ function statusSummaryLines(ledger: Ledger): string[] {
   ]
 }
 
-export const CARRY_TITLE =
+const CARRY_TITLE =
   'inbox: where the work stood at the last reply. The "inbox:" text beside this prompt lists what waits on the user and what was closed.'
 
 /** The mod's carry at a conversation's first prompt. The `inbox:` text beside that prompt already lists the open items and the closed ones. */
