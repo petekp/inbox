@@ -96,9 +96,9 @@ function sender(): { model: string; send: (onError: (error: string) => void) => 
     return {
       model: MODEL,
       send: onError =>
-        ask(record.prompt, record.system, r => r.error && onError(r.error)).finally(() =>
-          rmSync(data, { recursive: true, force: true }),
-        ),
+        ask(record.prompt, record.system, { call: 'status', reads: record.exchange.kind, isRetry: false }, r =>
+          r.error ? onError(r.error) : undefined,
+        ).finally(() => rmSync(data, { recursive: true, force: true })),
     }
   }
   const model = record.host === 'claude-code' ? CLAUDE_MODEL : asked?.match(/^anthropic\/(.+)$/)?.[1]

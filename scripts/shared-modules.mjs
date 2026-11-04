@@ -32,6 +32,7 @@ export const SHARED = [
   'model-text',
   'ledger-prompt',
   'catch-up-text',
+  'call-record',
   'status-prompt',
   'status-prompt-goal',
   'inbox-text',
