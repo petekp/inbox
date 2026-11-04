@@ -22,6 +22,7 @@ import {
 import { paneStatusGoal } from './pane-status-goal'
 import {
   desktopButtonLines,
+  desktopCountsLines,
   desktopFrameLines,
   desktopSpaceLines,
   desktopTextLines,
@@ -483,7 +484,12 @@ export function paneStatus(
         mark: null,
         content: {
           el: markRun(`status-${r.id}-counts`, r.counts, STALL_GAP, true),
-          lines: look === 'terminal' && countsCells(r.counts) < statusTextWidth(r.depth) ? exactly(1) : null,
+          lines:
+            look === 'desktop'
+              ? desktopCountsLines(r.counts, statusTextWidth(r.depth))
+              : countsCells(r.counts) < statusTextWidth(r.depth)
+                ? exactly(1)
+                : null,
         },
       })
 
