@@ -59,7 +59,7 @@ const PATCH_ARGUMENT = /tools\.apply_patch\(\s*("(?:[^"\\]|\\.)*")/
 const COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")/
 
 /** The command a code-mode `exec` script's input runs: the first `cmd:` it passes, or '' when it passes none. */
-export const scriptCommand = (input: string): string => literalValue(COMMAND_ARGUMENT.exec(input)?.[1]) ?? ''
+const scriptCommand = (input: string): string => literalValue(COMMAND_ARGUMENT.exec(input)?.[1]) ?? ''
 
 const COMMAND_KEY = /\bcmd["']?\s*:/g
 const COMMAND_ARGUMENTS = new RegExp(COMMAND_ARGUMENT.source, 'g')

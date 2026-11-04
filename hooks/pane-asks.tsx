@@ -98,8 +98,6 @@ export function paneAskRows(
   return { itemRow, findingRow }
 }
 
-export type PaneAskRows = ReturnType<typeof paneAskRows>
-
 export function paneAskTabs(
   {
     listColumns,

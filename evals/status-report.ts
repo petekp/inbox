@@ -23,7 +23,7 @@ export type ReplayRun = { agent: string; name: string; run: number; error: strin
 export type GradedCase = { replay: Replay; runs: ReplayRun[] }
 
 /** One test of the pass bar: a share of failures, which blocks at `blocksAt` failures or more. */
-export type LayerTest = { family: Family; name: string; failures: number; n: number; p0: number; blocksAt: number }
+type LayerTest = { family: Family; name: string; failures: number; n: number; p0: number; blocksAt: number }
 
 type Tally = 'pass' | 'fail' | null
 

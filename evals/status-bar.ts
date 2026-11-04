@@ -5,7 +5,7 @@
  */
 
 /** Each family's share of the 0.05 chance that a release run blocks with every rate at its tolerance. */
-export const FAMILY_ALPHA = { replay: 0.033, short: 0.007, spread: 0.007, judge: 0.003 } as const
+const FAMILY_ALPHA = { replay: 0.033, short: 0.007, spread: 0.007, judge: 0.003 } as const
 
 export type Family = keyof typeof FAMILY_ALPHA
 

@@ -26,7 +26,7 @@ import type { JudgeCheckId } from './status-judge'
 import { pageText } from './status-page-text'
 
 /** Something a host reports between calls, which the replay runs through the host's own reducers. */
-export type HostEvent =
+type HostEvent =
   | { child: 'start'; ref: string; kind: ChildKind; name: string; reportsActivity?: boolean }
   | { child: 'act'; ref: string }
   | { child: 'end'; ref: string }
@@ -40,7 +40,7 @@ export type HostEvent =
   | { press: 'type'; text: string }
 
 /** The Status call a step runs, and what it reads. */
-export type StepCall =
+type StepCall =
   | { kind: 'reply'; person: string | null; activity: string[]; reply: string; tasks?: HostTask[] }
   /** A call during a turn that started `turnStartedAt` minutes into the replay. */
   | { kind: 'mid-turn'; person: string | null; activity: string[]; turnStartedAt: number; tasks?: HostTask[] }
@@ -85,14 +85,14 @@ export type CallAnswer = { text: string | null; model?: string | null; outputTok
 export type ModelCall = (prompt: string, system: string, kind: CallLog['kind']) => Promise<CallAnswer>
 
 /** A host's limits on an inbox model call. An answer past them is dropped, as the host drops it. */
-export type Limits = { ms: number; outputTokens: number | null }
+type Limits = { ms: number; outputTokens: number | null }
 
 export const LIMITS: Record<Agent, Limits> = {
   claude: { ms: 45_000, outputTokens: 1600 },
   codex: { ms: 120_000, outputTokens: null },
 }
 
-export type ReplayDeps = {
+type ReplayDeps = {
   agent: Agent
   ask: ModelCall
   clock?: () => number

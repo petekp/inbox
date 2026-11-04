@@ -103,7 +103,7 @@ export type StatusPage = GoalParts & {
 }
 
 export const LOOK_TEXT = 'Last seen'
-export const OTHER_WORK = 'Other work'
+const OTHER_WORK = 'Other work'
 /** The dash the terminal and omp draw the look line's rule with. The rules between rows are solid, so the dashes mark this one out. */
 export const LOOK_DASH = '╌'
 /** What a subject's was line starts with, before the plan it replaces. */

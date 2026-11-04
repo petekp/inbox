@@ -9,7 +9,7 @@ import type { SessionState } from './state'
 import { rolloutFor, rolloutReads } from './transcript'
 
 /** The ledger's applied answers and the turns started, which change when the ledger or the chat moves on. */
-export const openCatchUpKey = (s: SessionState): string => `${s.ledger.updates}:${s.presence.turnsStarted}`
+const openCatchUpKey = (s: SessionState): string => `${s.ledger.updates}:${s.presence.turnsStarted}`
 
 /** Whether the tab's view starts a catch-up: the ledger failed or fell behind, no turn runs, and none was started for it. */
 const needsRetry = (s: SessionState): boolean =>

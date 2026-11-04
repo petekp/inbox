@@ -155,7 +155,7 @@ export function panePrRows(
   return { prKeyAction, checkRow, threadRow }
 }
 
-export type PanePrRows = ReturnType<typeof panePrRows>
+type PanePrRows = ReturnType<typeof panePrRows>
 
 export function panePrBlocks({
   look,

@@ -132,7 +132,7 @@ export function isAgentTool(name: string): name is AgentTool {
 }
 
 /** The person's latest press on each row, and when the running turn started, or null when the host did not say. */
-export type Presses = { lastActions: Record<string, LastAction>; turnStartedAt: number | null }
+type Presses = { lastActions: Record<string, LastAction>; turnStartedAt: number | null }
 
 /** The answer to a call of one of `agentTools`. */
 export function toolAnswer(

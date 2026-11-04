@@ -95,7 +95,7 @@ export type SessionState = Session & {
   writtenAt?: number
 }
 
-export type DelegateCall = { command: string; at: number; before: Child[] }
+type DelegateCall = { command: string; at: number; before: Child[] }
 
 /**
  * Codex skips a hook

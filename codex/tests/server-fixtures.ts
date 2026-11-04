@@ -74,7 +74,7 @@ export const GH_VIEW = JSON.stringify({
   reviewDecision: '',
   statusCheckRollup: [{ name: 'lint', conclusion: 'FAILURE', workflowName: 'CI' }],
 })
-export const GH_THREADS = JSON.stringify({
+const GH_THREADS = JSON.stringify({
   data: {
     viewer: { login: 'me' },
     repository: {

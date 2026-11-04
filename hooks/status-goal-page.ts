@@ -58,7 +58,7 @@ export type GoalParts = {
   proposal: ProposalBlock | null
 }
 
-export const AWAITING_TEXT = 'Milestones after the next reply'
+const AWAITING_TEXT = 'Milestones after the next reply'
 const PROPOSAL_LABEL = 'Proposed goal · from your message'
 const NEW_GOAL_PROPOSAL_LABEL = 'Proposed new goal · from your message'
 

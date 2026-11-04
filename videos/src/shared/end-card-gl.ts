@@ -5,7 +5,7 @@ import { GEIST_MONO, SANS } from './fonts'
 export type Frame = { width: number; height: number; fps: number; centerY: number; repoY: number }
 
 export const STREAMS = 27
-export const STRANDS = 3
+const STRANDS = 3
 
 export const WORD_SIZE = 220
 const wordFont = `600 ${WORD_SIZE}px ${GEIST_MONO}`
