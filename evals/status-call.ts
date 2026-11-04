@@ -3,7 +3,12 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { STATUS_SYSTEM } from '../hooks/status-prompt'
+import { hostStatusSystem } from '../hooks/status-prompt'
+import { CLAUDE_CODE } from '../hooks/model-text'
+import type { Host } from '../hooks/model-text'
+import type { ClientId } from '../hooks/clients'
+import { CODEX } from '../codex/src/texts'
+import { OMP } from '../omp/src/texts'
 import { parseStatus } from '../hooks/status'
 import { upgradeStatus } from '../hooks/status-upgrade'
 import { STATUS_RECORD_VERSION } from '../hooks/status-records'
@@ -67,12 +72,15 @@ function statusText(saved: SessionStatus | null): string {
   ].join('\n')
 }
 
-const isShippedSystem = record.system === STATUS_SYSTEM
+const HOSTS: Record<ClientId, Host> = { 'claude-code': CLAUDE_CODE, codex: CODEX, omp: OMP }
+const names = HOSTS[record.host]
+const shippedName = names.splitsPlanIntoSubjects ? 'PARTS_STATUS_SYSTEM' : 'STATUS_SYSTEM'
+const isShippedSystem = record.system === hostStatusSystem(names)
 console.log(`Status call: ${record.exchange.kind}, from ${record.host}, at ${when(record.at)}`)
 console.log(`Session: ${record.session}`)
 console.log(`File: ${file}`)
 console.log(`Parsed: ${yesNo(record.isParsed)}. Written: ${yesNo(record.isWritten)}.`)
-console.log(`System text: ${isShippedSystem ? "this checkout's STATUS_SYSTEM" : "not this checkout's STATUS_SYSTEM"}`)
+console.log(`System text: ${isShippedSystem ? '' : 'not '}this checkout's ${shippedName} for ${record.host}`)
 record.attempts.forEach((a, n) => {
   const by = a.answeredBy ? `, answered by ${a.answeredBy}` : ''
   console.log(`\n== Attempt ${n + 1}: ${a.model ?? 'model not given'}${by}, ${(a.ms / 1000).toFixed(1)} s ==`)
