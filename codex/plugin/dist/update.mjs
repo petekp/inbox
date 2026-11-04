@@ -3390,6 +3390,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
         s.changedAt = now;
       } else if (op.kind === "drop") {
         const target = op.into ? find(op.into) : null;
+        unfold(s);
         s.status = "dropped";
         s.text = clipWords(op.why, TEXT_KEPT);
         s.closedAt = now;
