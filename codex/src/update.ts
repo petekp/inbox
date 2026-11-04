@@ -237,6 +237,7 @@ export const refreshStatus = (
   refreshSessionStatus({
     ...codexStore(dir, sessionId, now, onWrite),
     ask,
+    names: CODEX,
     inOrder: inOrderFor(dir, sessionId),
     records,
   })

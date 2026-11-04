@@ -47,6 +47,11 @@ export type Host = {
   closeTool: string
   /** The first paragraph of `guidanceText`: what the inbox shows the person, and where. */
   intro: string
+  /**
+   * Whether the Status call is told to give each part of the plan the person would name its own subject, and that a
+   * session's own subagents keep a subject working. See "Differences on purpose" in docs/looks.md.
+   */
+  splitsPlanIntoSubjects: boolean
 }
 
 export const CLAUDE_CODE: Host = {
@@ -57,6 +62,7 @@ export const CLAUDE_CODE: Host = {
   prsIn: 'the PRs tab of the /inbox pane',
   recordTool: 'mcp__inbox__record',
   closeTool: 'mcp__inbox__close',
+  splitsPlanIntoSubjects: false,
   intro:
     "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox pane, and your findings, in the pane's Finds tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings.",
 }

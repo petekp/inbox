@@ -4,7 +4,7 @@ import { applyExchangeUpdate } from '../hooks/ledger-update'
 import { parseReply } from '../hooks/reply-parse'
 import { buildPrompt, systemText } from '../hooks/ledger-prompt'
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { STATUS_SYSTEM } from '../hooks/status-prompt'
+import { hostStatusSystem } from '../hooks/status-prompt'
 import { screenText } from '../hooks/inbox-text'
 import type { StatusCallInput } from '../hooks/status-prompt'
 import { askStatus, parseStatus } from '../hooks/status'
@@ -97,7 +97,7 @@ type ReplayDeps = {
   agent: Agent
   ask: ModelCall
   clock?: () => number
-  /** The Status call's system text in place of `STATUS_SYSTEM`, as for a copy without one of the goal's rules. */
+  /** The Status call's system text in place of the agent's host's, as for a copy without one of the goal's rules. */
   system?: string
 }
 
@@ -210,7 +210,12 @@ async function statusCall(
   const logs: CallLog[] = []
   const { last } = await askStatus(async () => {
     const kind = { call: 'status', reads: read.kind, isRetry: logs.length > 0 } as const
-    const answer = await timed(deps, kind, prompt, deps.system ?? STATUS_SYSTEM)
+    const answer = await timed(
+      deps,
+      kind,
+      prompt,
+      deps.system ?? hostStatusSystem(deps.agent === 'codex' ? CODEX : CLAUDE_CODE),
+    )
     logs.push(answer.log)
     return answer
   })

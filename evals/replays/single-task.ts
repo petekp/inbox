@@ -51,7 +51,7 @@ export const singleTask: Replay = {
           }),
         ],
       },
-      targets: ['proposal-when-stated', 'head-no-status', 'head-follows'],
+      targets: ['proposal-when-stated', 'head-no-status', 'head-follows', 'open-pieces-kept'],
     },
     {
       label: 'The person presses Set as goal on the offline sync proposal',

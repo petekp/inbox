@@ -126,4 +126,7 @@ export const GOOD_RUNS: Record<string, string[]> = {
     ].join('\n'),
     'NEW: working | 2.5 beta | signed, upload needs sign-in\nLINK: i1 | 2.5 beta',
   ],
+  'one-task-plan': [
+    'HEAD: Export tooltip | Adding a formats tooltip to the Export button\nNEW: working | Export tooltip | shows the formats on hover',
+  ],
 }
