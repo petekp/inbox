@@ -327,6 +327,16 @@ test('a file saved before the version, the rollout path, the dropped-reply flag,
     elapsedMs: null,
   })
   assert.equal(read.modelRecoveredAt, null)
+  const kindlessFailure = {
+    ...oldFailure,
+    signal: 'SIGTERM',
+    errorCode: null,
+    timeoutMs: null,
+    call: 'status',
+    elapsedMs: 40,
+  }
+  await writeFile(statePath(dir, 's1'), JSON.stringify({ ...older, presence, lastModelFailure: kindlessFailure }))
+  assert.deepEqual((await readState(dir, 's1')).lastModelFailure, { ...kindlessFailure, reads: null, isRetry: null })
   assert.equal(read.version, SESSION_VERSION)
   assert.equal(read.transcriptPath, null)
   assert.equal(read.presence.hasDroppedReply, false)

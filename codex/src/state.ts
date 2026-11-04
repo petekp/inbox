@@ -67,8 +67,8 @@ export type SessionState = Session & {
   /** The inbox model's last failed call. Null until a call fails. */
   lastModelFailure: ModelFailure | null
   /**
-   * When a call first answered after `lastModelFailure`. Null while every call since it has failed, before a call
-   * fails, and in a state saved before this field.
+   * When a call first answered after `lastModelFailure`. Null while every call since it has failed, and before a call
+   * fails. A state saved before this field reads null, and its next answered call sets it.
    */
   modelRecoveredAt: number | null
   tabSeenAt: number
