@@ -24,7 +24,7 @@ export const retiredSonnet: Model = {
 }
 export const smol: Model = { id: 'gpt-mini', name: 'GPT Mini', provider: 'openai', identity: {} }
 
-export type World = {
+type World = {
   dir: string
   clock: number
   handlers: Map<string, Handler>

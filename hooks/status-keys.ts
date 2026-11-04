@@ -8,7 +8,7 @@ import type { StatusPage, StatusRow } from './status-page'
  * goal, prefilled with `text`. `use-goal` and `decline-goal` answer the proposal. `toggle-fold` unfolds a done fold, or
  * folds it again, in the look that drew it. None sends a message.
  */
-export type StatusPress =
+type StatusPress =
   | { action: 'show-ask'; askId: string }
   | { action: 'type-goal'; text: string }
   | { action: 'use-goal' }

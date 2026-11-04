@@ -51,7 +51,7 @@ function sourceFiles(root, dir) {
   })
 }
 
-function localTarget(path) {
+export function localTarget(path) {
   if (existsSync(path) && statSync(path).isFile()) return realpathSync(path)
   const extension = path.match(/\.(?:[cm]?js|jsx)$/)?.[0]
   const base = extension ? path.slice(0, -extension.length) : path

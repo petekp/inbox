@@ -11,7 +11,7 @@ import { allRows } from '../hooks/rows'
 import { NO_HOLDS } from '../hooks/timing'
 import type { Effect } from '../hooks/press-reducer'
 
-export type ScriptedHost<S extends Session = Session> = {
+type ScriptedHost<S extends Session = Session> = {
   host: SessionHost<S> & Pick<UpdateHost<S>, 'inOrder'> & { names: Host }
   delivered: string[]
   performed: Extract<Effect, { kind: 'open' | 'copy' }>[]
@@ -58,7 +58,7 @@ export function fakeHostWith<S extends Session>(
   }
 }
 
-export type Equal = (actual: unknown, expected: unknown, label: string) => void
+type Equal = (actual: unknown, expected: unknown, label: string) => void
 
 const SETTLE_WINDOW_MS = 1000
 

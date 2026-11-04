@@ -89,7 +89,7 @@ export function rerunArgs(e: Extract<Effect, { kind: 'rerun' }>): string[] {
 }
 
 /** A PR press that hands off a fix. */
-export type PrFixPress = { action: 'pr-conflicts'; ref: string } | { action: 'check-fix'; ref: string; check: string }
+type PrFixPress = { action: 'pr-conflicts'; ref: string } | { action: 'check-fix'; ref: string; check: string }
 
 /**
  * A PR press that reads the PR from GitHub first: a fix press, and Re-run. The saved view can predate a push, or a

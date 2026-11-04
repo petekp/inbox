@@ -52,10 +52,10 @@ export const JUDGE_CHECKS = [
 export type JudgeCheckId = (typeof JUDGE_CHECKS)[number]['id']
 
 /** `n/a` when the page has nothing the check judges, such as no goal or no was line. */
-export type Verdict = 'pass' | 'fail' | 'n/a'
+type Verdict = 'pass' | 'fail' | 'n/a'
 
 /** What the judge reads at one checkpoint. */
-export type JudgeInput = {
+type JudgeInput = {
   /** The drawn page as plain text. */
   page: string
   /** The page at the last checkpoint, or null at the first. */

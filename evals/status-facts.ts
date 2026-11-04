@@ -2,7 +2,7 @@ import { IDLE_MARK, SUBJECT_MARKS } from '../hooks/help'
 import type { SubjectStatus } from '../types'
 
 /** What really happened to a piece of work at a step, as the case's author knows it. */
-export type PieceState = 'working' | 'queued' | 'set-aside' | 'waits-on-other' | 'done' | 'dropped' | 'filed'
+type PieceState = 'working' | 'queued' | 'set-aside' | 'waits-on-other' | 'done' | 'dropped' | 'filed'
 
 /** One piece of the session's work. */
 export type Piece = {
@@ -27,7 +27,7 @@ export type Piece = {
 }
 
 /** One milestone of the goal: an outcome the goal needs, by the fact's own id, not the call's. */
-export type MilestoneFact = {
+type MilestoneFact = {
   id: string
   name: string
   /** A case-insensitive pattern that this milestone's name matches, and no other milestone's. */
@@ -37,19 +37,19 @@ export type MilestoneFact = {
 }
 
 /** The goal the person set or accepted, and its milestones. */
-export type GoalFact = { text: string; match: string; milestones: MilestoneFact[] }
+type GoalFact = { text: string; match: string; milestones: MilestoneFact[] }
 
 /** An outcome with a finish line the person stated at a step, which a proposal should match. */
-export type GoalStated = { text: string; match: string }
+type GoalStated = { text: string; match: string }
 
 /** An open ask, and the pieces it holds up. */
-export type AskFact = { match: string; text: string; holdsUp: string[] }
+type AskFact = { match: string; text: string; holdsUp: string[] }
 
 /** Something the session mentions that is not a piece of its work. */
-export type NotWork = { kind: 'ask' | 'finding' | 'task' | 'rule'; text: string; match: string }
+type NotWork = { kind: 'ask' | 'finding' | 'task' | 'rule'; text: string; match: string }
 
 /** Running work, by its host handle: what it does, and the piece it serves. */
-export type ChildFact = { ref: string; does: string; serves: string }
+type ChildFact = { ref: string; does: string; serves: string }
 
 export type Facts = {
   /** What the session is focused on now. */

@@ -14,7 +14,7 @@ export type OmpContext = {
   setTimeout(callback: () => void, ms: number): unknown
 }
 
-export type Memory = {
+type Memory = {
   isGhMissing: boolean
   /** The session omp shows now. Only it reports to the pane. */
   shownId: string | null
