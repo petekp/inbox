@@ -46,6 +46,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/model-text.ts` | Shared module. The guidance `guidanceText` builds, the `close` tool's description that carries it, and the `Host` and `Told` types. Each host's `Host` names its agent, surface and the `record` and `close` tools. |
 | `hooks/ledger-prompt.ts` | Shared module. What the ledger call reads: `systemText`, and the prompt `buildPrompt` builds from the ledger and the new exchange. |
 | `hooks/catch-up-text.ts` | Shared module. The ledger call's catch-up prompts, and the activity lines that a turn's tool calls and dialogs add. |
+| `hooks/call-record.ts` | Shared module. Sends one model call and notes what the host reported, and saves a call with no usable answer, or the first usable answer after one, in its call's record in `callFailures`. |
 | `hooks/status-prompt.ts` | Shared module. What the Status call reads: `STATUS_SYSTEM`, and its prompts after a reply, during a long turn and for a catch-up. |
 | `hooks/status-prompt-goal.ts` | Shared module. What the Status call reads about the goal: its lines and input blocks, and its rules as named parts, so `statusSystem` can leave one out for an ablation. |
 | `hooks/inbox-text.ts` | Shared module. The `inbox:` texts beside a prompt, the state a new conversation starts with, and the question numbers a typed answer such as "1 yes" refers to. `screenText` tells the models whether the inbox is open, and on which tab. |

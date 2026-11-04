@@ -1530,6 +1530,8 @@ function withCheckKeys(s, views) {
 
 // ../hooks/session-files.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
+var NO_FAILURE = { lastFailure: null, recoveredAt: null };
+var NO_CALL_FAILURES = { ledger: NO_FAILURE, status: NO_FAILURE };
 var NO_TURN = { person: null, trigger: null, activity: [], press: null };
 function emptySession() {
   return {
@@ -1558,6 +1560,7 @@ function emptySession() {
     prViews: NO_PRS,
     stop: null,
     overviewFailure: null,
+    callFailures: NO_CALL_FAILURES,
     lastOverviewCallAt: null,
     overviewTurn: 0,
     hostTasks: [],
@@ -1625,6 +1628,7 @@ function sessionFields(saved, views) {
     },
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
+    callFailures: { ...NO_CALL_FAILURES, ...saved.callFailures },
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
@@ -2446,7 +2450,47 @@ function pruned(s) {
   };
 }
 
+// src/diagnostics.ts
+var DIAGNOSTIC_CHARS = 2e3;
+var ANSI_STYLE = /\x1b\[[0-9;]*m/g;
+var TIME = String.raw`^(?:\[[^\]]*\]\s*)?(?:\d{4}-\d\d-\d\dT\S*\s+)?`;
+var DIAGNOSTIC = new RegExp(
+  `${TIME}(?:(?:ERROR|WARNING|error|warning):|(?:ERROR|WARN)\\s|Unknown feature flag: |[\\w ]*stream error:)`
+);
+function diagnosticLines(stderr) {
+  return stderr.split("\n").map((line) => line.replace(ANSI_STYLE, "").trimEnd()).filter((line) => DIAGNOSTIC.test(line)).join("\n").slice(-DIAGNOSTIC_CHARS);
+}
+
 // src/state.ts
+function withSavedFailure(saved) {
+  const f = saved.lastModelFailure;
+  if (!f) return NO_CALL_FAILURES;
+  const call = f.call ?? "ledger";
+  const isLedgerFailing = saved.presence?.ledgerState === "failed" || (saved.pending ?? []).some((p) => p.failed);
+  const isFailing = call === "ledger" ? isLedgerFailing : Boolean(saved.overviewFailure);
+  return { ...NO_CALL_FAILURES, [call]: { lastFailure: callFailureOf(f), recoveredAt: isFailing ? null : f.at } };
+}
+function callFailureOf(f) {
+  return {
+    at: f.at,
+    call: f.call ?? null,
+    reads: f.reads ?? null,
+    isRetry: f.isRetry ?? null,
+    cause: f.code === 0 ? "no-reply" : "process",
+    model: null,
+    error: null,
+    answerChars: null,
+    ms: f.elapsedMs ?? null,
+    process: {
+      cli: f.cli,
+      code: f.code,
+      stderr: diagnosticLines(f.stderr),
+      signal: f.signal ?? null,
+      errorCode: f.errorCode ?? null,
+      timeoutMs: f.timeoutMs ?? null
+    }
+  };
+}
 var NOTHING_HEARD = {
   startAt: null,
   promptAt: null,
@@ -2464,7 +2508,6 @@ function emptyState(sessionId) {
     transcriptPath: null,
     home: homedir(),
     cliPath: null,
-    lastModelFailure: null,
     ...emptySession(),
     tabSeenAt: 0,
     shownTab: "needsYou",
@@ -2481,6 +2524,7 @@ function upgraded(saved, sessionId) {
   checkVersion(saved);
   const base = emptyState(sessionId);
   const {
+    lastModelFailure: _modelFailure,
     checks: _checks,
     snapshots: _snapshots,
     recordedRuns: _runs,
@@ -2506,7 +2550,7 @@ function upgraded(saved, sessionId) {
     }),
     shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     heard,
-    lastModelFailure: saved.lastModelFailure ? { signal: null, errorCode: null, timeoutMs: null, call: null, elapsedMs: null, ...saved.lastModelFailure } : null,
+    ...saved.callFailures ? {} : { callFailures: withSavedFailure(saved) },
     coveredTurn: saved.coveredTurn !== void 0 ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null)
   };
 }
@@ -4127,7 +4171,13 @@ var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve4) => {
     });
     child.stdin?.end(input);
   } catch (err) {
-    resolve4({ code: UNSTARTABLE_CODE, stdout: "", stderr: err instanceof Error ? err.message : String(err) });
+    const errorCode = err.code;
+    resolve4({
+      code: UNSTARTABLE_CODE,
+      stdout: "",
+      stderr: err instanceof Error ? err.message : String(err),
+      ...typeof errorCode === "string" ? { errorCode } : {}
+    });
   }
 });
 function exitCodeOf(err) {

@@ -42,7 +42,8 @@ Part of [the look map](../looks.md#files).
 | `codex/src/server-demo.ts` | Codex host. The demo session and its presses. |
 | `codex/src/server-main.ts` | Codex host. The loader that Codex starts once per app launch. |
 | `codex/src/server-handler.ts` | Codex host. The request handler the loader reloads. |
-| `codex/src/update.ts` | Codex host. Binds `hooks/session-host.ts` update flows to `codex exec`. Saves a failed call as the session's `lastModelFailure`. |
+| `codex/src/update.ts` | Codex host. Binds `hooks/session-host.ts` update flows to `codex exec`. Reports a failed call with its process, which the shared flow saves in `callFailures`. |
+| `codex/src/diagnostics.ts` | Codex host. Keeps only the diagnostic lines of a `codex exec` call's stderr, its errors and warnings. |
 | `codex/src/update-main.ts` | Codex host. Entry point for the update process. |
 | `codex/src/hook.ts` | Codex host. The hook logic that changes session state. |
 | `codex/src/hook-main.ts` | Codex host. Entry point for the hooks. |

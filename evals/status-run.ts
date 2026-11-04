@@ -34,6 +34,7 @@ import {
   unjudgedTargets,
 } from './status-report'
 import type { GradedCase, ReplayRun, StepRecord } from './status-report'
+import type { CallKind } from '../hooks/session-host'
 
 type RunRecord = Run & ReplayRun
 
@@ -169,11 +170,11 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
  * drop. Each Status call, a re-ask or a retry included, counts toward `STATUS_CALLS_MAX`.
  */
 function modelCall(agent: Agent): ModelCall {
-  const once = async (prompt: string, system: string): Promise<CallAnswer> => {
+  const once = async (prompt: string, system: string, kind: CallKind): Promise<CallAnswer> => {
     const started = Date.now()
     const answer =
       agent === 'codex'
-        ? { text: await askCodex(prompt, system), model: null, outputTokens: null }
+        ? { text: await askCodex(prompt, system, kind), model: null, outputTokens: null }
         : await claude(prompt, system)
     const isWithinTime = Date.now() - started <= LIMITS[agent].ms
     if (answer.text === null && isWithinTime) throw new Error(`${agent} gave no answer`)
@@ -183,10 +184,10 @@ function modelCall(agent: Agent): ModelCall {
 
   return async (prompt, system, kind) => {
     for (let tries = 0; ; tries++) {
-      if (kind === 'status' && ++statusCalls > STATUS_CALLS_MAX)
+      if (kind.call === 'status' && ++statusCalls > STATUS_CALLS_MAX)
         throw new BudgetError(`the run reached ${STATUS_CALLS_MAX} Status calls`)
       try {
-        return await once(prompt, system)
+        return await once(prompt, system, kind)
       } catch (e) {
         if (tries >= CALL_RETRIES) throw e
         await wait(CALL_RETRY_WAIT_MS * (tries + 1))
