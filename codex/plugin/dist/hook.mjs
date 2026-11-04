@@ -3481,11 +3481,14 @@ var PATCH_ARGUMENT = /tools\.apply_patch\(\s*("(?:[^"\\]|\\.)*")/;
 var COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")/;
 var scriptCommand = (input) => literalValue(COMMAND_ARGUMENT.exec(input)?.[1]) ?? "";
 var COMMAND_KEY = /\bcmd["']?\s*:/g;
+var COMMAND_CALL = /\bexec_command\b/g;
 var COMMAND_ARGUMENTS = new RegExp(COMMAND_ARGUMENT.source, "g");
-function soleScriptCommand(input) {
-  const literals = [...input.matchAll(COMMAND_ARGUMENTS)];
-  const isSole = literals.length === 1 && (input.match(COMMAND_KEY) ?? []).length === 1;
-  return isSole ? literalValue(literals[0]?.[1]) ?? "" : "";
+function scriptCommands(input) {
+  const commands = [...input.matchAll(COMMAND_ARGUMENTS)].map((literal) => literalValue(literal[1]) ?? "");
+  const keys = (input.match(COMMAND_KEY) ?? []).length;
+  const calls = (input.match(COMMAND_CALL) ?? []).length;
+  const isEachCallLiteral = commands.length === keys && commands.length === calls && !commands.includes("");
+  return isEachCallLiteral && new Set(commands).size === commands.length ? commands : null;
 }
 var shellLines = (command) => {
   const line = command === "" ? null : toolActivity("Bash", { command });
@@ -3530,7 +3533,12 @@ var BLOCKED_COMMAND = /^Command blocked by PreToolUse hook: [^\n]*?\. Command: (
 var BLOCKED_TOOL = /^Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: (\S+)/;
 var SCRIPT_FAILED = "Script failed\n";
 var SCRIPT_ERROR = /^Script error:\s*/;
-var SCRIPT_DECLINED = /^(?:exec_command|shell_command|shell) failed: [^\n]*Rejected\("rejected by user"\)(?:\n|$)/;
+var SCRIPT_DECLINED = /^exec_command failed: [^\n]*Rejected\(\\?"rejected by user\\?"\)/;
+function declinedScriptCommand(script, error) {
+  const isKnowable = SCRIPT_DECLINED.test(error) && script.declined.size === 0 && !script.isShared;
+  const unrecorded = isKnowable ? (script.commands ?? []).filter((command) => !script.recorded.has(command)) : [];
+  return unrecorded.length === 1 ? unrecorded[0] ?? "" : "";
+}
 function scriptError(output) {
   const parts = Array.isArray(output) ? output.map((part) => textOf2(record(part).text)) : [];
   const isFailed = parts.length > 1 && parts[0]?.startsWith(SCRIPT_FAILED) === true;
@@ -3538,6 +3546,7 @@ function scriptError(output) {
   const prefix = SCRIPT_ERROR.exec(last)?.[0];
   return prefix === void 0 ? "" : last.slice(prefix.length);
 }
+var scriptRan = (script) => (script?.commands ?? []).filter((command) => !script?.declined.has(command));
 var toolLines = (tool) => {
   const line = toolActivity(tool, {});
   return line ? [line] : [];
@@ -3559,13 +3568,18 @@ function unranCalls(rows) {
     delegateRefs(command).forEach((ref) => (didRun ? ranDelegates : unranDelegates).add(ref));
   };
   const callCommands = /* @__PURE__ */ new Map();
+  const scripts = /* @__PURE__ */ new Map();
+  const openCalls = /* @__PURE__ */ new Set();
   for (const row of rows) {
     const p = record(row.payload);
     const item = record(p.item);
     const isDeclined = item.status === "declined";
     if (row.type === "event_msg" && p.type === "item_completed") {
-      if (item.type === "CommandExecution") noteCommand(commandText(item.command), !isDeclined);
-      else if (item.type === "FileChange") note(editedLines(item.changes), !isDeclined);
+      if (item.type === "CommandExecution") {
+        const command = commandText(item.command);
+        noteCommand(command, !isDeclined);
+        scripts.forEach((script) => (isDeclined ? script.declined : script.recorded).add(command));
+      } else if (item.type === "FileChange") note(editedLines(item.changes), !isDeclined);
       else if (item.type === "McpToolCall") note(toolLines(`mcp__${textOf2(item.server)}__${textOf2(item.tool)}`), true);
       continue;
     }
@@ -3573,27 +3587,40 @@ function unranCalls(rows) {
     const callId = textOf2(p.call_id);
     let block = { commands: [], lines: [] };
     const isScript = p.type === "custom_tool_call" && p.name === "exec";
-    if (isScript || p.type === "function_call" || p.type === "local_shell_call") {
-      const command = isScript ? soleScriptCommand(textOf2(p.input)) : callCommand(p);
+    if (p.type === "function_call" || p.type === "local_shell_call" || p.type === "custom_tool_call") {
+      if (openCalls.size > 0) scripts.forEach((script) => script.isShared = true);
+      if (isScript) {
+        const commands = scriptCommands(textOf2(p.input));
+        scripts.set(callId, { commands, recorded: /* @__PURE__ */ new Set(), declined: /* @__PURE__ */ new Set(), isShared: openCalls.size > 0 });
+      }
+      const command = isScript ? "" : callCommand(p);
       if (command !== "" && callId !== "") callCommands.set(callId, command);
+      openCalls.add(callId);
     } else if (p.type === "function_call_output") {
+      openCalls.delete(callId);
       const output = outputText(p.output);
       const command = callCommands.get(callId);
       callCommands.delete(callId);
       if (command !== void 0) noteCommand(command, !isUnranOutput(output));
       block = blocked(output);
     } else if (p.type === "custom_tool_call_output") {
+      openCalls.delete(callId);
       const error = scriptError(p.output);
-      const command = callCommands.get(callId);
-      callCommands.delete(callId);
+      const script = scripts.get(callId);
+      scripts.delete(callId);
       block = blocked(error);
       const isBlockNamed = block.commands.length > 0 || block.lines.length > 0;
-      if (command !== void 0 && !isBlockNamed) noteCommand(command, !SCRIPT_DECLINED.test(error));
+      const declined = script && !isBlockNamed ? declinedScriptCommand(script, error) : "";
+      const unranCommands = /* @__PURE__ */ new Set([declined, ...block.commands]);
+      scriptRan(script).forEach((command) => noteCommand(command, !unranCommands.has(command)));
     }
     note(block.lines, false);
     block.commands.forEach((command) => noteCommand(command, false));
   }
   callCommands.forEach((command) => delegateRefs(command).forEach((ref) => ranDelegates.add(ref)));
+  scripts.forEach(
+    (script) => scriptRan(script).forEach((command) => delegateRefs(command).forEach((ref) => ranDelegates.add(ref)))
+  );
   return {
     lines: [...unran].filter((line) => !ran.has(line)),
     delegates: [...unranDelegates].filter((ref) => !ranDelegates.has(ref))

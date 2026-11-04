@@ -62,17 +62,20 @@ const COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")/
 export const scriptCommand = (input: string): string => literalValue(COMMAND_ARGUMENT.exec(input)?.[1]) ?? ''
 
 const COMMAND_KEY = /\bcmd["']?\s*:/g
+const COMMAND_CALL = /\bexec_command\b/g
 const COMMAND_ARGUMENTS = new RegExp(COMMAND_ARGUMENT.source, 'g')
 
 /**
- * The command of a code-mode script that runs one command, or '' when its input passes several `cmd:` or one that is
- * not a string literal.
+ * The commands a code-mode script's input runs, or null unless each `exec_command` in it passes its own `cmd:` and
+ * each `cmd:` is a string literal that no other `cmd:` repeats.
  */
-export function soleScriptCommand(input: string): string {
-  const literals = [...input.matchAll(COMMAND_ARGUMENTS)]
-  const isSole = literals.length === 1 && (input.match(COMMAND_KEY) ?? []).length === 1
+export function scriptCommands(input: string): string[] | null {
+  const commands = [...input.matchAll(COMMAND_ARGUMENTS)].map(literal => literalValue(literal[1]) ?? '')
+  const keys = (input.match(COMMAND_KEY) ?? []).length
+  const calls = (input.match(COMMAND_CALL) ?? []).length
+  const isEachCallLiteral = commands.length === keys && commands.length === calls && !commands.includes('')
 
-  return isSole ? (literalValue(literals[0]?.[1]) ?? '') : ''
+  return isEachCallLiteral && new Set(commands).size === commands.length ? commands : null
 }
 
 export const shellLines = (command: string): string[] => {

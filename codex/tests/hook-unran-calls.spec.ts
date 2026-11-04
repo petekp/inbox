@@ -61,7 +61,8 @@ const scriptOutput = (text: string, callId = 'c1') => {
   }
 }
 
-const SCRIPT_DECLINED = 'Script error: \nexec_command failed: Rejected("rejected by user")'
+const SCRIPT_DECLINED =
+  'Script error: \nexec_command failed: CreateProcess { message: "Rejected(\\"rejected by user\\")" }'
 
 const shellCall = (callId: string, command: string) => ({
   type: 'response_item',
@@ -133,25 +134,48 @@ test('a call a PreToolUse hook blocked leaves the ended turn activity, in code m
   assert.deepEqual(activity, ['ran: git status'])
 })
 
-test('a declined script with two commands, or a command that is not a literal, keeps every line', async () => {
+const twoCommands = (first: string, second: string) =>
+  `await tools.exec_command({cmd:${JSON.stringify(first)}});\nawait tools.exec_command({cmd:${JSON.stringify(second)}});\n`
+
+test('a declined script takes back the line of its one command with no row and keeps the lines of those that ran', async () => {
   const transcript = rollout([
     started,
-    script('c1', 'await tools.exec_command({cmd:"git status"});\nawait tools.exec_command({cmd:"git push"});\n'),
+    script('c1', twoCommands('git status', 'git push')),
+    commandRow('git status', 'completed'),
+    scriptOutput(SCRIPT_DECLINED, 'c1'),
+  ])
+  const activity = await endedActivity(transcript, [bash(transcript, 'git status'), bash(transcript, 'git push')])
+
+  assert.deepEqual(activity, ['ran: git status'])
+})
+
+test('a declined script keeps every line when more than one command could be the declined one', async () => {
+  const transcript = rollout([
+    started,
+    script('c1', twoCommands('npm run dev', 'git push')),
     scriptOutput(SCRIPT_DECLINED, 'c1'),
     script(
       'c2',
       'const c = "npm test";\nawait tools.exec_command({cmd:"npm ci"});\nawait tools.exec_command({cmd: c});\n',
     ),
+    commandRow('npm test', 'completed'),
     scriptOutput(SCRIPT_DECLINED, 'c2'),
+    script('c4', twoCommands('npm run build', 'gh pr create')),
+    shellCall('c5', 'ls'),
+    commandRow('npm run build', 'completed'),
+    callOutput('c5', ''),
+    scriptOutput(SCRIPT_DECLINED, 'c4'),
   ])
-  const activity = await endedActivity(transcript, [
-    bash(transcript, 'git status'),
-    bash(transcript, 'git push'),
-    bash(transcript, 'npm ci'),
-    bash(transcript, 'npm test'),
-  ])
+  const commands = ['npm run dev', 'git push', 'npm ci', 'npm test', 'gh pr create', 'npm run build']
+  const activity = await endedActivity(
+    transcript,
+    commands.map(command => bash(transcript, command)),
+  )
 
-  assert.deepEqual(activity, ['ran: git status', 'ran: git push', 'ran: npm ci', 'ran: npm test'])
+  assert.deepEqual(
+    activity,
+    commands.map(command => `ran: ${command}`),
+  )
 })
 
 test('a command the person declined inside a code-mode script leaves the ended turn activity', async () => {
