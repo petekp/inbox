@@ -44,9 +44,7 @@ test('on a next build, a look at the desktop Status counts as seen only the firs
   const look = await desktopLook($, on, 12)
 
   expect(look.lastLookAt).toBe(1_000_000 + LOOK_MIN_MS)
-  expect(look.seen.length).toBeGreaterThan(0)
-  expect(look.seen.length).toBeLessThan(12)
-  expect(look.seen).toEqual(look.ids.slice(0, look.seen.length))
+  expect(look.seen).toEqual(look.ids.slice(0, 3))
 })
 
 test('on a next build, a look at a desktop Status that fits the pane’s window counts every subject as seen', async ($, on) => {

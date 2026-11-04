@@ -2,8 +2,8 @@ import { expect, test } from 'claude-code/testing'
 import { noteStatusDrawn, takeShownRows } from '../hooks/pane-status-shown'
 import { exactly, type Lines, type RowTop } from '../hooks/pane-status-tops'
 
-const draw = (tops: Map<string, RowTop>, pageTop: Lines | null, offset: number, now: number) =>
-  noteStatusDrawn({ pageTop, tops, scroll: { offset, bodyRows: 4 }, now })
+const draw = (tops: Map<string, RowTop>, pageTop: Lines | null, offset: number, now: number, bodyRows = 4) =>
+  noteStatusDrawn({ pageTop, tops, scroll: { offset, bodyRows }, now })
 
 const exactTops = new Map<string, RowTop>([
   ['s1', exactly(0)],
@@ -47,4 +47,44 @@ test('a row the windows covered while scrolling counts as shown from when they s
   draw(tops, exactly(0), 0, 100)
   draw(tops, exactly(0), 5, 200)
   expect(takeShownRows()).toEqual({})
+})
+
+test('a row counts as shown only when its first line is whole in the window wherever in its range the page top sits', () => {
+  const tops = new Map<string, RowTop>([
+    ['s1', exactly(0)],
+    ['s2', exactly(1)],
+  ])
+  draw(tops, { least: 1, most: 3 }, 0, 100)
+  expect(takeShownRows()).toEqual({ s1: 100 })
+
+  draw(tops, { least: 1, most: 3 }, 2, 100)
+  expect(takeShownRows()).toEqual({ s2: 100 })
+})
+
+test('windows that only touch do not cover the line between them, and a widened page top needs its range more of overlap', () => {
+  draw(new Map([['edge', { least: 3, most: 4 }]]), exactly(0), 0, 100)
+  draw(new Map([['edge', { least: 3, most: 4 }]]), exactly(0), 4, 200)
+  expect(takeShownRows()).toEqual({})
+
+  const wide = new Map<string, RowTop>([['wide', { least: 1, most: 6 }]])
+  draw(wide, { least: 0, most: 2 }, 0, 100, 6)
+  draw(wide, { least: 0, most: 2 }, 4, 200, 6)
+  expect(takeShownRows()).toEqual({})
+
+  draw(wide, { least: 0, most: 2 }, 0, 100, 6)
+  draw(wide, { least: 0, most: 2 }, 3, 200, 6)
+  expect(takeShownRows()).toEqual({ wide: 100 })
+})
+
+test('a row added above the window after a scroll does not count as covered by the windows drawn before it', () => {
+  const before = new Map<string, RowTop>([['a', exactly(0)]])
+  const after = new Map<string, RowTop>([
+    ['a', exactly(0)],
+    ['b', exactly(2)],
+  ])
+  draw(before, exactly(0), 0, 100, 10)
+  draw(before, exactly(0), 5, 200, 10)
+  draw(after, exactly(0), 5, 300, 10)
+
+  expect(takeShownRows()).toEqual({ a: 100 })
 })
