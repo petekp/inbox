@@ -531,12 +531,23 @@ function contrasts(x, y) {
   const holds = (own, group) => own.some((w) => group.has(w));
   return CONTRASTS.some(([one, other]) => holds(onlyX, one) && holds(onlyY, other) || holds(onlyX, other) && holds(onlyY, one));
 }
+var SYNONYMS = [
+  ["vanish", "disappear"],
+  ["remove", "delete"],
+  ["folder", "directory", "directories"],
+  ["config", "configuration"]
+];
+var MEANING = new Map(SYNONYMS.flatMap((group) => group.map((w) => [stem(w), stem(group[0])])));
+function meaningOf(word) {
+  const s = stem(word);
+  return MEANING.get(s) ?? s;
+}
 function repeatsSubject(a, b) {
   const x = keyWords(a);
   const y = keyWords(b);
-  const stemsOf = (words) => new Set([...words].map(stem));
+  const stemsOf = (words) => new Set([...words].map(meaningOf));
   const [xStems, yStems] = [stemsOf(x), stemsOf(y)];
-  const within = (inner, outer) => [...inner].every((w) => GENERIC.has(w) || outer.has(stem(w)));
+  const within = (inner, outer) => [...inner].every((w) => GENERIC.has(w) || outer.has(meaningOf(w)));
   const isRestated = sharesKeyWords(xStems, yStems) === true;
   return sameAsk(a, b) || isRestated && !contrasts(x, y) && (within(x, yStems) || within(y, xStems));
 }

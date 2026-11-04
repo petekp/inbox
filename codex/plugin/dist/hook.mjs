@@ -97,6 +97,14 @@ function words(text2) {
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
 }
+var SUFFIXES = ["ing", "ed", "es", "s"];
+function stem(word) {
+  if (/\d/.test(word)) return word;
+  const suffix = SUFFIXES.find((s) => word.endsWith(s) && word.length - s.length >= 3) ?? "";
+  const cut = word.slice(0, word.length - suffix.length);
+  const base = cut.length > 3 && cut.endsWith("e") ? cut.slice(0, -1) : cut;
+  return base.replace(/([b-df-hj-np-tv-z])\1$/, "$1");
+}
 function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
@@ -147,6 +155,13 @@ function sharesKeyWords(x, y) {
   if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y)) return false;
   return fewer >= 2 ? shared / fewer >= 0.7 : null;
 }
+var SYNONYMS = [
+  ["vanish", "disappear"],
+  ["remove", "delete"],
+  ["folder", "directory", "directories"],
+  ["config", "configuration"]
+];
+var MEANING = new Map(SYNONYMS.flatMap((group) => group.map((w) => [stem(w), stem(group[0])])));
 function sameAsk(a, b) {
   const norm = (s) => words2(s).join(" ");
   return norm(a) !== "" && norm(a) === norm(b);

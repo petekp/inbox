@@ -241,12 +241,23 @@ function contrasts(x, y) {
     ([one, other]) => holds(onlyX, one) && holds(onlyY, other) || holds(onlyX, other) && holds(onlyY, one)
   );
 }
+var SYNONYMS = [
+  ["vanish", "disappear"],
+  ["remove", "delete"],
+  ["folder", "directory", "directories"],
+  ["config", "configuration"]
+];
+var MEANING = new Map(SYNONYMS.flatMap((group) => group.map((w) => [stem(w), stem(group[0])])));
+function meaningOf(word) {
+  const s = stem(word);
+  return MEANING.get(s) ?? s;
+}
 function repeatsSubject(a, b) {
   const x = keyWords(a);
   const y = keyWords(b);
-  const stemsOf = (words3) => new Set([...words3].map(stem));
+  const stemsOf = (words3) => new Set([...words3].map(meaningOf));
   const [xStems, yStems] = [stemsOf(x), stemsOf(y)];
-  const within = (inner, outer) => [...inner].every((w) => GENERIC.has(w) || outer.has(stem(w)));
+  const within = (inner, outer) => [...inner].every((w) => GENERIC.has(w) || outer.has(meaningOf(w)));
   const isRestated = sharesKeyWords(xStems, yStems) === true;
   return sameAsk(a, b) || isRestated && !contrasts(x, y) && (within(x, yStems) || within(y, xStems));
 }
