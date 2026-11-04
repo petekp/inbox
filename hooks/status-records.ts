@@ -4,7 +4,9 @@ import type { StatusCallInput } from './status-prompt'
 import { failedStatus, appliedStatus, isStatusCallCurrent } from './session-status'
 import type { ClientId } from './clients'
 import type { Exchange, Session, SessionStatus, HostTask } from '../types'
-import type { Ask, UpdateHost, CallReport } from './session-host'
+import type { Ask, UpdateHost, CallKind } from './session-host'
+import { heardCall, withCall } from './call-record'
+import type { HeardCall } from './call-record'
 
 /**
  * What a Status call reads as its exchange: a reply's exchange, the running turn's work so far, or a whole
@@ -125,26 +127,14 @@ export async function writeStatusRecord(records: StatusRecords, record: StatusRe
   }
 }
 
-/** Sends `prompt` once, and notes what the host says of the call. */
-async function attempt(
-  host: Pick<StatusHost<Session>, 'now'>,
-  ask: Ask,
-  prompt: string,
-): Promise<StatusAttempt & { text: string | null }> {
-  const heard: { report?: CallReport; thrown?: string } = {}
-  const startedAt = await host.now()
-  const text = await ask(prompt, STATUS_SYSTEM, r => (heard.report = r)).catch((err: unknown) => {
-    heard.thrown = err instanceof Error ? err.message : String(err)
-    return null
-  })
-
+/** A Status call record's account of one call the host heard. */
+function attemptOf({ text, report, thrown, ms }: HeardCall): StatusAttempt {
   return {
-    text,
-    model: heard.report?.model ?? null,
-    answeredBy: heard.report?.answeredBy ?? null,
+    model: report?.model ?? null,
+    answeredBy: report?.answeredBy ?? null,
     answer: text,
-    error: text === null ? (heard.thrown ?? heard.report?.error ?? 'no answer, and the host gave no reason') : null,
-    ms: (await host.now()) - startedAt,
+    error: text === null ? (thrown ?? report?.error ?? 'no answer, and the host gave no reason') : null,
+    ms,
   }
 }
 
@@ -164,17 +154,25 @@ export async function askAndWriteStatus<S extends Session>(
   if (!isStatusCallCurrent(s, appliedAfter)) return
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() }
   const prompt = statusCallPrompt(input, call.exchange)
-  const attempts: StatusAttempt[] = []
+  const heards: { kind: CallKind; heard: HeardCall }[] = []
   const { last } = await askStatus(async () => {
-    const { text, ...made } = await attempt(host, call.ask, prompt)
-    attempts.push(made)
-    return { text }
+    const kind = { call: 'status', reads: call.exchange.kind, isRetry: heards.length > 0 } as const
+    const heard = await heardCall(call.ask, prompt, STATUS_SYSTEM, kind, () => host.now())
+    heards.push({ kind, heard })
+    return heard
   })
+  const attempts = heards.map(h => attemptOf(h.heard))
   const answer = last.text === null ? null : parseStatus(last.text)
   const now = await host.now()
   let before: SessionStatus | null = null
   let isWritten = false
-  const after = await host.update(x => {
+  const noted = (current: S) =>
+    heards.reduce(
+      (x, h) => withCall(x, h.kind, h.heard, h.heard.text !== null && parseStatus(h.heard.text) !== null, now),
+      current,
+    )
+  const after = await host.update(current => {
+    const x = noted(current)
     before = x.ledger.overview
     isWritten = isStatusCallCurrent(x, appliedAfter)
     const readSetAt = input.last?.goal?.setAt ?? null

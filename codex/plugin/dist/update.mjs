@@ -2100,6 +2100,8 @@ function withCheckKeys(s, views) {
 
 // ../hooks/session-files.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
+var NO_FAILURE = { lastFailure: null, recoveredAt: null };
+var NO_CALL_FAILURES = { ledger: NO_FAILURE, status: NO_FAILURE };
 var NO_TURN = { person: null, trigger: null, activity: [], press: null };
 function emptySession() {
   return {
@@ -2128,6 +2130,7 @@ function emptySession() {
     prViews: NO_PRS,
     stop: null,
     overviewFailure: null,
+    callFailures: NO_CALL_FAILURES,
     lastOverviewCallAt: null,
     overviewTurn: 0,
     hostTasks: [],
@@ -2195,6 +2198,7 @@ function sessionFields(saved, views) {
     },
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
+    callFailures: { ...NO_CALL_FAILURES, ...saved.callFailures },
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
@@ -2985,7 +2989,47 @@ function pruned(s) {
   };
 }
 
+// src/diagnostics.ts
+var DIAGNOSTIC_CHARS = 2e3;
+var ANSI_STYLE = /\x1b\[[0-9;]*m/g;
+var TIME = String.raw`^(?:\[[^\]]*\]\s*)?(?:\d{4}-\d\d-\d\dT\S*\s+)?`;
+var DIAGNOSTIC = new RegExp(
+  `${TIME}(?:(?:ERROR|WARNING|error|warning):|(?:ERROR|WARN)\\s|Unknown feature flag: |[\\w ]*stream error:)`
+);
+function diagnosticLines(stderr) {
+  return stderr.split("\n").map((line) => line.replace(ANSI_STYLE, "").trimEnd()).filter((line) => DIAGNOSTIC.test(line)).join("\n").slice(-DIAGNOSTIC_CHARS);
+}
+
 // src/state.ts
+function withSavedFailure(saved) {
+  const f = saved.lastModelFailure;
+  if (!f) return NO_CALL_FAILURES;
+  const call = f.call ?? "ledger";
+  const isLedgerFailing = saved.presence?.ledgerState === "failed" || (saved.pending ?? []).some((p) => p.failed);
+  const isFailing = call === "ledger" ? isLedgerFailing : Boolean(saved.overviewFailure);
+  return { ...NO_CALL_FAILURES, [call]: { lastFailure: callFailureOf(f), recoveredAt: isFailing ? null : f.at } };
+}
+function callFailureOf(f) {
+  return {
+    at: f.at,
+    call: f.call ?? null,
+    reads: f.reads ?? null,
+    isRetry: f.isRetry ?? null,
+    cause: f.code === 0 ? "no-reply" : "process",
+    model: null,
+    error: null,
+    answerChars: null,
+    ms: f.elapsedMs ?? null,
+    process: {
+      cli: f.cli,
+      code: f.code,
+      stderr: diagnosticLines(f.stderr),
+      signal: f.signal ?? null,
+      errorCode: f.errorCode ?? null,
+      timeoutMs: f.timeoutMs ?? null
+    }
+  };
+}
 var NOTHING_HEARD = {
   startAt: null,
   promptAt: null,
@@ -3003,7 +3047,6 @@ function emptyState(sessionId) {
     transcriptPath: null,
     home: homedir2(),
     cliPath: null,
-    lastModelFailure: null,
     ...emptySession(),
     tabSeenAt: 0,
     shownTab: "needsYou",
@@ -3020,6 +3063,7 @@ function upgraded(saved, sessionId) {
   checkVersion(saved);
   const base = emptyState(sessionId);
   const {
+    lastModelFailure: _modelFailure,
     checks: _checks,
     snapshots: _snapshots,
     recordedRuns: _runs,
@@ -3045,7 +3089,7 @@ function upgraded(saved, sessionId) {
     }),
     shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     heard,
-    lastModelFailure: saved.lastModelFailure ? { signal: null, errorCode: null, timeoutMs: null, call: null, elapsedMs: null, ...saved.lastModelFailure } : null,
+    ...saved.callFailures ? {} : { callFailures: withSavedFailure(saved) },
     coveredTurn: saved.coveredTurn !== void 0 ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null)
   };
 }
@@ -3696,7 +3740,13 @@ var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve3) => {
     });
     child.stdin?.end(input);
   } catch (err) {
-    resolve3({ code: UNSTARTABLE_CODE, stdout: "", stderr: err instanceof Error ? err.message : String(err) });
+    const errorCode = err.code;
+    resolve3({
+      code: UNSTARTABLE_CODE,
+      stdout: "",
+      stderr: err instanceof Error ? err.message : String(err),
+      ...typeof errorCode === "string" ? { errorCode } : {}
+    });
   }
 });
 function exitCodeOf(err) {
@@ -3936,6 +3986,49 @@ function statusCatchUpPrompt(input, transcript) {
   ].join(NL4);
 }
 
+// ../hooks/call-record.ts
+var ERROR_CHARS = 500;
+async function askedCall(ask, prompt, system, kind) {
+  let report = null;
+  let thrown = null;
+  const text2 = await ask(prompt, system, kind, (r) => report = r).catch((err) => {
+    thrown = err instanceof Error ? err.message : String(err);
+    return null;
+  });
+  return { text: text2, report, thrown };
+}
+async function heardCall(ask, prompt, system, kind, now) {
+  const startedAt = await now();
+  const asked = await askedCall(ask, prompt, system, kind);
+  return { ...asked, ms: await now() - startedAt };
+}
+function failureOf(kind, heard, isParsed, at) {
+  if (heard.text !== null && isParsed) return null;
+  const { report, thrown, text: text2 } = heard;
+  const reason = thrown ?? report?.error ?? null;
+  const cause = text2 !== null ? "unparseable" : thrown !== null ? "error" : report?.cause ?? (reason ? "error" : "no-reply");
+  return {
+    at,
+    call: kind.call,
+    reads: kind.reads,
+    isRetry: "isRetry" in kind ? kind.isRetry : null,
+    cause,
+    model: report?.model ?? null,
+    error: text2 === null && reason ? reason.slice(0, ERROR_CHARS) : null,
+    answerChars: text2 === null ? null : text2.length,
+    ms: heard.ms,
+    process: text2 === null ? report?.process ?? null : null
+  };
+}
+function withCall(s, kind, heard, isParsed, at) {
+  const record2 = s.callFailures[kind.call];
+  const failure = failureOf(kind, heard, isParsed, at);
+  const isRecovery = !failure && record2.lastFailure !== null && record2.recoveredAt === null;
+  if (!failure && !isRecovery) return s;
+  const next = failure ? { lastFailure: failure, recoveredAt: null } : { ...record2, recoveredAt: at };
+  return { ...s, callFailures: { ...s.callFailures, [kind.call]: next } };
+}
+
 // ../hooks/status-records.ts
 function statusCallPrompt(input, read) {
   switch (read.kind) {
@@ -3979,37 +4072,37 @@ async function writeStatusRecord(records, record2) {
     await files.removeFolder(theirs).catch(() => void 0);
   }
 }
-async function attempt(host, ask, prompt) {
-  const heard = {};
-  const startedAt = await host.now();
-  const text2 = await ask(prompt, STATUS_SYSTEM, (r) => heard.report = r).catch((err) => {
-    heard.thrown = err instanceof Error ? err.message : String(err);
-    return null;
-  });
+function attemptOf({ text: text2, report, thrown, ms }) {
   return {
-    text: text2,
-    model: heard.report?.model ?? null,
-    answeredBy: heard.report?.answeredBy ?? null,
+    model: report?.model ?? null,
+    answeredBy: report?.answeredBy ?? null,
     answer: text2,
-    error: text2 === null ? heard.thrown ?? heard.report?.error ?? "no answer, and the host gave no reason" : null,
-    ms: await host.now() - startedAt
+    error: text2 === null ? thrown ?? report?.error ?? "no answer, and the host gave no reason" : null,
+    ms
   };
 }
 async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
   if (!isStatusCallCurrent(s, appliedAfter)) return;
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() };
   const prompt = statusCallPrompt(input, call.exchange);
-  const attempts = [];
+  const heards = [];
   const { last } = await askStatus(async () => {
-    const { text: text2, ...made } = await attempt(host, call.ask, prompt);
-    attempts.push(made);
-    return { text: text2 };
+    const kind = { call: "status", reads: call.exchange.kind, isRetry: heards.length > 0 };
+    const heard = await heardCall(call.ask, prompt, STATUS_SYSTEM, kind, () => host.now());
+    heards.push({ kind, heard });
+    return heard;
   });
+  const attempts = heards.map((h) => attemptOf(h.heard));
   const answer = last.text === null ? null : parseStatus(last.text);
   const now = await host.now();
   let before = null;
   let isWritten = false;
-  const after = await host.update((x) => {
+  const noted = (current) => heards.reduce(
+    (x, h) => withCall(x, h.kind, h.heard, h.heard.text !== null && parseStatus(h.heard.text) !== null, now),
+    current
+  );
+  const after = await host.update((current) => {
+    const x = noted(current);
     before = x.ledger.overview;
     isWritten = isStatusCallCurrent(x, appliedAfter);
     const readSetAt = input.last?.goal?.setAt ?? null;
@@ -4058,14 +4151,17 @@ function orderedKeys() {
     }
   };
 }
-async function askOverConversation(ask, names, s, screen, conversation) {
+var CATCH_UP_CALL = { call: "ledger", reads: "catch-up" };
+async function askOverConversation(host, names, s, screen, conversation) {
   if (!conversation) return { kind: "unreadable" };
-  const text2 = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names)).catch(() => null);
-  return text2 === null ? { kind: "failed" } : {
+  const prompt = transcriptCatchUpPrompt(s.ledger, screen, conversation);
+  const heard = await heardCall(host.ask, prompt, systemText(names), CATCH_UP_CALL, () => host.now());
+  return heard.text === null ? { kind: "failed", heard } : {
     kind: "reply",
-    text: text2,
+    text: heard.text,
     source: conversation,
-    statusCall: { exchange: { kind: "catch-up", conversation }, ask }
+    statusCall: { exchange: { kind: "catch-up", conversation }, ask: host.ask },
+    heard
   };
 }
 async function runUpdates(host) {
@@ -4087,30 +4183,34 @@ async function runUpdates(host) {
             const s = await host.update((x) => ({ ...x, presence: { ...x.presence, isUpdating: hasWork(x) } }));
             if (!hasWork(s)) break;
             if (wantsCatchUp(s)) {
-              const reply2 = await host.catchUp(s).catch(() => ({ kind: "failed" }));
-              if (reply2.kind === "unreadable") {
+              const reply = await host.catchUp(s).catch(() => ({ kind: "failed", heard: null }));
+              if (reply.kind === "unreadable") {
                 canCatchUp = false;
                 await host.update((x) => ({ ...x, presence: { ...x.presence, isConversationUnreadable: true } }));
                 continue;
               }
-              const parsed2 = reply2.kind === "reply" ? parseReply(reply2.text, reply2.source) : null;
+              const parsed2 = reply.kind === "reply" ? parseReply(reply.text, reply.source) : null;
               const at = await host.now();
-              const after2 = await host.update((x) => appliedCatchUp(x, s, parsed2, at));
+              const noted = (x) => reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed2 !== null, at) : x;
+              const after2 = await host.update((x) => appliedCatchUp(noted(x), s, parsed2, at));
               if (!parsed2) return "stop";
-              if (reply2.kind === "reply" && reply2.statusCall)
-                followUp(writeStatus(after2, reply2.statusCall, s.hostTasks));
+              if (reply.kind === "reply" && reply.statusCall)
+                followUp(writeStatus(after2, reply.statusCall, s.hostTasks));
               continue;
             }
             const next = s.pending[0];
             const promptAt = await host.now();
-            const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null);
-            const parsed = parsedReply(next.ex, reply);
+            const kind = { call: "ledger", reads: "reply", isRetry: next.failed === true };
+            const asked = await askedCall(host.ask, buildPrompt(s.ledger, next.ex), systemText(host.names), kind);
+            const parsed = parsedReply(next.ex, asked.text);
             let isApplied = false;
-            const after = await host.update(async (x) => {
+            const after = await host.update(async (current) => {
+              const at = await host.now();
+              const x = withCall(current, kind, { ...asked, ms: at - promptAt }, parsed !== null, at);
               isApplied = false;
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x;
               isApplied = parsed !== null;
-              return applied(x, parsed, await host.now(), promptAt);
+              return applied(x, parsed, at, promptAt);
             });
             if (isApplied)
               followUp(
@@ -4302,14 +4402,18 @@ var literalValue = (literal) => {
   }
 };
 var PATCH_ARGUMENT = /tools\.apply_patch\(\s*("(?:[^"\\]|\\.)*")/;
-var COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")/;
+var COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")(?=\s*[,})])/;
 var scriptCommand = (input) => literalValue(COMMAND_ARGUMENT.exec(input)?.[1]) ?? "";
-var COMMAND_KEY = /\bcmd["']?\s*:/g;
+var COMMAND_CALL = /\bexec_command\b/g;
 var COMMAND_ARGUMENTS = new RegExp(COMMAND_ARGUMENT.source, "g");
-function soleScriptCommand(input) {
-  const literals = [...input.matchAll(COMMAND_ARGUMENTS)];
-  const isSole = literals.length === 1 && (input.match(COMMAND_KEY) ?? []).length === 1;
-  return isSole ? literalValue(literals[0]?.[1]) ?? "" : "";
+var STRING_LITERALS = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
+var REPEATS = /=>|\bfunction\b|\b(?:for|while|do)\b/;
+function scriptCommands(input) {
+  const commands = [...input.matchAll(COMMAND_ARGUMENTS)].map((literal) => literalValue(literal[1]) ?? "");
+  const calls = (input.match(COMMAND_CALL) ?? []).length;
+  const isEachCallLiteral = commands.length === calls && !commands.includes("");
+  const canRepeat = REPEATS.test(input.replace(STRING_LITERALS, '""'));
+  return isEachCallLiteral && !canRepeat && new Set(commands).size === commands.length ? commands : null;
 }
 var shellLines = (command) => {
   const line = command === "" ? null : toolActivity("Bash", { command });
@@ -4354,7 +4458,12 @@ var BLOCKED_COMMAND = /^Command blocked by PreToolUse hook: [^\n]*?\. Command: (
 var BLOCKED_TOOL = /^Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: (\S+)/;
 var SCRIPT_FAILED = "Script failed\n";
 var SCRIPT_ERROR = /^Script error:\s*/;
-var SCRIPT_DECLINED = /^(?:exec_command|shell_command|shell) failed: [^\n]*Rejected\("rejected by user"\)(?:\n|$)/;
+var SCRIPT_DECLINED = /^exec_command failed: [^\n]*Rejected\(\\?"(?:exec command )?rejected by user\\?"\)/;
+function declinedScriptCommand(script, error) {
+  const isKnowable = SCRIPT_DECLINED.test(error) && !script.isShared;
+  const unrecorded = isKnowable ? (script.commands ?? []).filter((command) => !script.recorded.has(command)) : [];
+  return unrecorded.length === 1 ? unrecorded[0] ?? "" : "";
+}
 function scriptError(output) {
   const parts = Array.isArray(output) ? output.map((part) => textOf(record(part).text)) : [];
   const isFailed = parts.length > 1 && parts[0]?.startsWith(SCRIPT_FAILED) === true;
@@ -4362,6 +4471,7 @@ function scriptError(output) {
   const prefix = SCRIPT_ERROR.exec(last)?.[0];
   return prefix === void 0 ? "" : last.slice(prefix.length);
 }
+var scriptRan = (script) => (script?.commands ?? []).filter((command) => !script?.declined.has(command));
 var toolLines = (tool) => {
   const line = toolActivity(tool, {});
   return line ? [line] : [];
@@ -4383,13 +4493,18 @@ function unranCalls(rows) {
     delegateRefs(command).forEach((ref) => (didRun ? ranDelegates : unranDelegates).add(ref));
   };
   const callCommands = /* @__PURE__ */ new Map();
+  const scripts = /* @__PURE__ */ new Map();
+  const openCalls = /* @__PURE__ */ new Set();
   for (const row of rows) {
     const p = record(row.payload);
     const item = record(p.item);
     const isDeclined = item.status === "declined";
     if (row.type === "event_msg" && p.type === "item_completed") {
-      if (item.type === "CommandExecution") noteCommand(commandText2(item.command), !isDeclined);
-      else if (item.type === "FileChange") note(editedLines(item.changes), !isDeclined);
+      if (item.type === "CommandExecution") {
+        const command = commandText2(item.command);
+        noteCommand(command, !isDeclined);
+        scripts.forEach((script) => (isDeclined ? script.declined : script.recorded).add(command));
+      } else if (item.type === "FileChange") note(editedLines(item.changes), !isDeclined);
       else if (item.type === "McpToolCall") note(toolLines(`mcp__${textOf(item.server)}__${textOf(item.tool)}`), true);
       continue;
     }
@@ -4397,27 +4512,40 @@ function unranCalls(rows) {
     const callId = textOf(p.call_id);
     let block = { commands: [], lines: [] };
     const isScript = p.type === "custom_tool_call" && p.name === "exec";
-    if (isScript || p.type === "function_call" || p.type === "local_shell_call") {
-      const command = isScript ? soleScriptCommand(textOf(p.input)) : callCommand(p);
+    if (p.type === "function_call" || p.type === "local_shell_call" || p.type === "custom_tool_call") {
+      if (openCalls.size > 0) scripts.forEach((script) => script.isShared = true);
+      if (isScript) {
+        const commands = scriptCommands(textOf(p.input));
+        scripts.set(callId, { commands, recorded: /* @__PURE__ */ new Set(), declined: /* @__PURE__ */ new Set(), isShared: openCalls.size > 0 });
+      }
+      const command = isScript ? "" : callCommand(p);
       if (command !== "" && callId !== "") callCommands.set(callId, command);
+      openCalls.add(callId);
     } else if (p.type === "function_call_output") {
+      openCalls.delete(callId);
       const output = outputText(p.output);
       const command = callCommands.get(callId);
       callCommands.delete(callId);
       if (command !== void 0) noteCommand(command, !isUnranOutput(output));
       block = blocked(output);
     } else if (p.type === "custom_tool_call_output") {
+      openCalls.delete(callId);
       const error = scriptError(p.output);
-      const command = callCommands.get(callId);
-      callCommands.delete(callId);
+      const script = scripts.get(callId);
+      scripts.delete(callId);
       block = blocked(error);
       const isBlockNamed = block.commands.length > 0 || block.lines.length > 0;
-      if (command !== void 0 && !isBlockNamed) noteCommand(command, !SCRIPT_DECLINED.test(error));
+      const declined = script && !isBlockNamed ? declinedScriptCommand(script, error) : "";
+      const unranCommands = /* @__PURE__ */ new Set([declined, ...block.commands]);
+      scriptRan(script).forEach((command) => noteCommand(command, !unranCommands.has(command)));
     }
     note(block.lines, false);
     block.commands.forEach((command) => noteCommand(command, false));
   }
   callCommands.forEach((command) => delegateRefs(command).forEach((ref) => ranDelegates.add(ref)));
+  scripts.forEach(
+    (script) => scriptRan(script).forEach((command) => delegateRefs(command).forEach((ref) => ranDelegates.add(ref)))
+  );
   return {
     lines: [...unran].filter((line) => !ran.has(line)),
     delegates: [...unranDelegates].filter((ref) => !ranDelegates.has(ref))
@@ -4651,10 +4779,8 @@ async function keepNewerSignIn(link, auth) {
   const theirs = await stat4(auth);
   if (saved.mtimeMs > theirs.mtimeMs) await copyFile(link, auth);
 }
-var FAILURE_TAIL_CHARS = 2e3;
-function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
-}, now = Date.now) {
-  return async (prompt, instructions, report) => {
+function codexAsk(exec, cli, dir, personHome) {
+  return async (prompt, instructions, _kind, report) => {
     const work = join4(dir, "exec");
     const system = join4(dir, `inbox-system-${createHash2("sha256").update(instructions).digest("hex").slice(0, 12)}.md`);
     const out = join4(work, `reply-${randomUUID2()}.txt`);
@@ -4664,7 +4790,6 @@ function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
     let off = [...OFF];
     for (let tries = 0; tries <= OFF.length; tries += 1) {
       await rm(out, { force: true });
-      const startedAt = now();
       const r = await exec(
         [
           cli,
@@ -4693,7 +4818,6 @@ function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
         ],
         { cwd: work, timeoutMs: TIMEOUT_MS, env: home ? { CODEX_HOME: home } : {}, input: prompt }
       );
-      const elapsedMs = now() - startedAt;
       const unknown = r.stderr.match(/Unknown feature flag: (\S+)/)?.[1];
       if (r.code !== 0 && unknown && off.includes(unknown)) {
         off = off.filter((f) => f !== unknown);
@@ -4701,22 +4825,23 @@ function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
       }
       const text2 = r.code === 0 ? await readFile2(out, "utf8").catch(() => null) : null;
       await rm(out, { force: true });
-      const stderr = r.stderr.slice(-FAILURE_TAIL_CHARS);
-      const failure = {
+      if (text2 !== null) {
+        report?.({ model: MODEL });
+        return text2;
+      }
+      const process2 = {
         cli,
         code: r.code,
-        stderr,
+        stderr: diagnosticLines(r.stderr),
         signal: r.signal ?? null,
         errorCode: r.errorCode ?? null,
-        timeoutMs: r.code === TIMED_OUT_CODE ? TIMEOUT_MS : null,
-        call: instructions === STATUS_SYSTEM ? "status" : "ledger",
-        elapsedMs
+        timeoutMs: r.code === TIMED_OUT_CODE ? TIMEOUT_MS : null
       };
-      report?.({ model: MODEL, ...text2 === null ? { error: `codex exec ${endOf(failure)}: ${stderr.trim()}` } : {} });
-      if (text2 === null) await onFailure(failure);
-      return text2;
+      const error = `codex exec ${endOf(process2)}${process2.stderr ? `: ${process2.stderr}` : ""}`;
+      report?.({ model: MODEL, error, cause: r.code === 0 ? "no-reply" : "process", process: process2 });
+      return null;
     }
-    report?.({ model: MODEL, error: "codex exec refused every feature flag the inbox turns off" });
+    report?.({ model: MODEL, error: "codex exec refused every feature flag the inbox turns off", cause: "process" });
     return null;
   };
 }
@@ -4728,9 +4853,6 @@ function endOf(f) {
   if (f.code === 0) return "exited 0 and wrote no reply";
   return `exited ${f.code}`;
 }
-var recordModelFailure = (dir, sessionId, now) => async (failure) => {
-  await updateState(dir, sessionId, (s) => ({ ...s, lastModelFailure: { ...failure, at: now() } }));
-};
 var inOrderFor = (dir, sessionId) => (fn) => resultsOrder.run(
   statePath(dir, sessionId),
   () => withLock(`${statePath(dir, sessionId)}.results`, fn, RESULTS_WAIT_MS)
@@ -4768,7 +4890,7 @@ var runUpdates2 = (dir, sessionId, ask, now, onWrite, records) => {
       const isMoved = await withCurrentRollout(s) !== s;
       const path = isMoved ? (await store.update(withCurrentRollout)).transcriptPath : s.transcriptPath;
       return askOverConversation(
-        ask,
+        { ask, now: store.now },
         CODEX,
         s,
         screenText(CODEX, isTabOpen(s, now()), screenTabOf(s.shownTab)),
@@ -4790,7 +4912,7 @@ async function main() {
   const { cliPath } = await readState(dir, sessionId);
   const cli = cliPath ?? await findCli(process.env, run, process.ppid);
   const personHome = process.env.CODEX_HOME || join5(homedir3(), ".codex");
-  const ask = codexAsk(run, cli, dir, personHome, recordModelFailure(dir, sessionId, Date.now));
+  const ask = codexAsk(run, cli, dir, personHome);
   const onWrite = herdrOnWrite(process.env, run, dir, Date.now);
   const records = existsSync(join5(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : void 0;
   if (isStatusRefresh) await refreshStatus2(dir, sessionId, ask, Date.now, onWrite, records);
