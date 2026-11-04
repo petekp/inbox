@@ -1761,13 +1761,13 @@ function childRow(c, branch, depth) {
     branch
   };
 }
-function partRows(shown, c, depth) {
+function partRows(shown, c, depth, afterNew = []) {
   const rows = [];
   const lookRow = c.lookId === null ? null : { kind: "look", id: c.lookId, depth, text: c.lookText };
   const firstSeen = shown.findIndex((x) => !c.isNew(x));
   for (const [i, x] of shown.entries()) {
     const hasNewAbove = i > 0;
-    if (lookRow && i === firstSeen && hasNewAbove) rows.push(lookRow);
+    if (i === firstSeen && hasNewAbove) rows.push(...afterNew, ...lookRow ? [lookRow] : []);
     const under = c.running.filter((ch) => ch.subjectId === x.id);
     const shownUnder = under.slice(0, CHILD_ROWS);
     const isMore = under.length > CHILD_ROWS;
@@ -1802,6 +1802,7 @@ function partRows(shown, c, depth) {
       });
   }
   const isEveryShownNew = firstSeen === -1;
+  if (isEveryShownNew) rows.push(...afterNew);
   if (lookRow && c.isLookAtEnd && isEveryShownNew && shown.length > 0) rows.push(lookRow);
   return rows;
 }
@@ -1823,6 +1824,9 @@ var STATUS_FAILED = "Last Status update failed. Changes from that reply may be m
 var LOOK_TEXT = "Last seen";
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
+var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
+var NAMED_FOLD_NAMES = 2;
+var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function statusPage(s, now) {
   const o = s.ledger.overview;
@@ -1844,25 +1848,28 @@ function statusPage(s, now) {
   };
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
-  const newClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
+  const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
   const main2 = subjects.filter((x) => !isOther(x));
   const other = subjects.filter(isOther);
   const open2 = main2.filter(isOpen).sort(pageOrder);
   const foldable = open2.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open2.length - foldable.length)));
   const split = (part) => {
-    const newClosed = newClosedOf(part);
+    const unseenClosed = unseenClosedOf(part);
+    const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS);
     return {
       shown: [...part.filter((x) => isOpen(x) && !folded.includes(x)), ...newClosed].sort(pageOrder),
       newClosed,
+      named: unseenClosed.slice(NEW_CLOSED_ROWS),
       foldedOpen: part.filter((x) => folded.includes(x)),
-      foldedDone: part.filter((x) => x.status === "done" && !newClosed.includes(x))
+      foldedDone: part.filter((x) => x.status === "done" && !isNew(x))
     };
   };
   const top = split(main2.filter((x) => milestoneOf2(x) === null));
   const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main2.filter((x) => milestoneOf2(x) === m.id)));
-  const otherNewClosed = newClosedOf(other);
-  const isOtherFolded = (x) => isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === "done" && !otherNewClosed.includes(x);
+  const otherUnseenClosed = unseenClosedOf(other);
+  const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
+  const isOtherFolded = (x) => isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === "done" && !isNew(x);
   const otherFolded = other.filter(isOtherFolded);
   const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
   const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
@@ -1878,9 +1885,23 @@ function statusPage(s, now) {
   };
   const lookId = (id) => look === null ? null : id;
   const foldCtx = { ...ctx, lookId: null, running: [] };
+  const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
+    const names = named.filter((x) => x.status === status).map((x) => x.name);
+    const hidden = names.length - NAMED_FOLD_NAMES;
+    const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []];
+    return names.length === 0 ? [] : [
+      {
+        kind: "fold",
+        id: `${prefix}also-${status}`,
+        depth,
+        ...SUBJECT_MARKS[status],
+        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`
+      }
+    ];
+  });
   const rows = [
     ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
-    ...partRows(top.shown, ctx, 0)
+    ...partRows(top.shown, ctx, 0, namedFolds("", top.named, 0))
   ];
   const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
     {
@@ -1907,7 +1928,14 @@ function statusPage(s, now) {
   if (otherShown.length > 0 || otherFolded.length > 0) {
     if (rows.at(-1)?.kind === "look") rows.pop();
     rows.push({ kind: "part", id: "other", depth: 0, text: OTHER_WORK });
-    rows.push(...partRows(otherShown, { ...ctx, lookId: lookId("other-look") }, 0));
+    rows.push(
+      ...partRows(
+        otherShown,
+        { ...ctx, lookId: lookId("other-look") },
+        0,
+        namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)
+      )
+    );
     const otherFoldedOpen = otherFolded.filter(isOpen);
     if (otherFoldedOpen.length > 0)
       rows.push({ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFoldedOpen) });
@@ -1922,7 +1950,12 @@ function statusPage(s, now) {
   }
   const milestoneRows = (id, p) => ruledRows(
     [
-      ...partRows(p.shown, { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false }, 1),
+      ...partRows(
+        p.shown,
+        { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false },
+        1,
+        namedFolds(`${id}-`, p.named, 1)
+      ),
       ...foldRows(`${id}-`, p, 1)
     ],
     false
@@ -2990,7 +3023,8 @@ function emptyState(sessionId) {
     shownTab: "needsYou",
     heard: NOTHING_HEARD,
     coveredTurn: null,
-    openCatchUpKey: null
+    openCatchUpKey: null,
+    delegateCalls: []
   };
 }
 function statePath(dir, sessionId) {
@@ -3477,6 +3511,20 @@ function heardState(h) {
 }
 function viewOf(s, now, holds = NO_HOLDS) {
   return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds), heard: heardState(s.heard), at: now };
+}
+
+// ../hooks/children.ts
+var HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
+function delegateSteps(command) {
+  return [...command.matchAll(HERDR)].map(([, verb, name, args]) => ({
+    name,
+    isPrompt: verb === "prompt",
+    isWaitForEnd: verb === "wait" && !/--until working/.test(args ?? "")
+  }));
+}
+var delegateRef = (name) => `herdr:${name}`;
+function delegateRefs(command) {
+  return new Set(delegateSteps(command).map((step) => delegateRef(step.name)));
 }
 
 // ../hooks/herdr.ts
@@ -4267,6 +4315,14 @@ var literalValue = (literal) => {
 };
 var PATCH_ARGUMENT = /tools\.apply_patch\(\s*("(?:[^"\\]|\\.)*")/;
 var COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")/;
+var scriptCommand = (input) => literalValue(COMMAND_ARGUMENT.exec(input)?.[1]) ?? "";
+var COMMAND_KEY = /\bcmd["']?\s*:/g;
+var COMMAND_ARGUMENTS = new RegExp(COMMAND_ARGUMENT.source, "g");
+function soleScriptCommand(input) {
+  const literals = [...input.matchAll(COMMAND_ARGUMENTS)];
+  const isSole = literals.length === 1 && (input.match(COMMAND_KEY) ?? []).length === 1;
+  return isSole ? literalValue(literals[0]?.[1]) ?? "" : "";
+}
 var shellLines = (command) => {
   const line = command === "" ? null : toolActivity("Bash", { command });
   return line ? [line] : [];
@@ -4278,7 +4334,7 @@ function callLines(p, hasCommandRows, cwd) {
   if (p.type === "custom_tool_call" && name === "exec") {
     const input = textOf(p.input);
     const patch = literalValue(PATCH_ARGUMENT.exec(input)?.[1]);
-    const command = literalValue(COMMAND_ARGUMENT.exec(input)?.[1]);
+    const command = scriptCommand(input);
     return [...patch ? editLines(patch, cwd) : [], ...command && !hasCommandRows ? shellLines(command) : []];
   }
   if (p.type !== "function_call") return [];
@@ -4300,54 +4356,84 @@ var UNRAN_MARKERS = [
   '"FileChange"',
   '"McpToolCall"',
   '"function_call',
+  '"custom_tool_call"',
   '"local_shell_call',
   '"custom_tool_call_output"'
 ];
 var UNRAN_OUTPUT = /^(?:(?:exec command|patch) rejected by user|(?:Command|Tool call) blocked by PreToolUse hook: )/;
+var isUnranOutput = (output) => UNRAN_OUTPUT.test(output);
 var BLOCKED_COMMAND = /^Command blocked by PreToolUse hook: [^\n]*?\. Command: ([^\n]+)/;
 var BLOCKED_TOOL = /^Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: (\S+)/;
-var SCRIPT_ERROR = "Script error: ";
+var SCRIPT_FAILED = "Script failed\n";
+var SCRIPT_ERROR = /^Script error:\s*/;
+var SCRIPT_DECLINED = /^(?:exec_command|shell_command|shell) failed: [^\n]*Rejected\("rejected by user"\)(?:\n|$)/;
+function scriptError(output) {
+  const parts = Array.isArray(output) ? output.map((part) => textOf(record(part).text)) : [];
+  const isFailed = parts.length > 1 && parts[0]?.startsWith(SCRIPT_FAILED) === true;
+  const last = isFailed ? parts.at(-1) ?? "" : "";
+  const prefix = SCRIPT_ERROR.exec(last)?.[0];
+  return prefix === void 0 ? "" : last.slice(prefix.length);
+}
 var toolLines = (tool) => {
   const line = toolActivity(tool, {});
   return line ? [line] : [];
 };
-var blockedLines = (output) => {
-  const command = BLOCKED_COMMAND.exec(output)?.[1];
+var blocked = (output) => {
+  const command = BLOCKED_COMMAND.exec(output)?.[1]?.trim();
   const tool = BLOCKED_TOOL.exec(output)?.[1];
-  return command ? shellLines(command.trim()) : tool ? toolLines(tool) : [];
+  return command ? { commands: [command], lines: shellLines(command) } : { commands: [], lines: tool ? toolLines(tool) : [] };
 };
 var editedLines = (changes) => Object.keys(record(changes)).map((path) => `edited ${path}`);
-function unranLines(rows) {
+function unranCalls(rows) {
   const ran = /* @__PURE__ */ new Set();
   const unran = /* @__PURE__ */ new Set();
+  const ranDelegates = /* @__PURE__ */ new Set();
+  const unranDelegates = /* @__PURE__ */ new Set();
   const note = (lines, didRun) => lines.forEach((line) => (didRun ? ran : unran).add(line));
+  const noteCommand = (command, didRun) => {
+    note(shellLines(command), didRun);
+    delegateRefs(command).forEach((ref) => (didRun ? ranDelegates : unranDelegates).add(ref));
+  };
   const callCommands = /* @__PURE__ */ new Map();
   for (const row of rows) {
     const p = record(row.payload);
     const item = record(p.item);
     const isDeclined = item.status === "declined";
     if (row.type === "event_msg" && p.type === "item_completed") {
-      if (item.type === "CommandExecution") note(shellLines(commandText2(item.command)), !isDeclined);
+      if (item.type === "CommandExecution") noteCommand(commandText2(item.command), !isDeclined);
       else if (item.type === "FileChange") note(editedLines(item.changes), !isDeclined);
       else if (item.type === "McpToolCall") note(toolLines(`mcp__${textOf(item.server)}__${textOf(item.tool)}`), true);
       continue;
     }
     if (row.type !== "response_item") continue;
     const callId = textOf(p.call_id);
-    if (p.type === "function_call" || p.type === "local_shell_call") {
-      const command = callCommand(p);
+    let block = { commands: [], lines: [] };
+    const isScript = p.type === "custom_tool_call" && p.name === "exec";
+    if (isScript || p.type === "function_call" || p.type === "local_shell_call") {
+      const command = isScript ? soleScriptCommand(textOf(p.input)) : callCommand(p);
       if (command !== "" && callId !== "") callCommands.set(callId, command);
     } else if (p.type === "function_call_output") {
       const output = outputText(p.output);
       const command = callCommands.get(callId);
-      if (command !== void 0) note(shellLines(command), !UNRAN_OUTPUT.test(output));
-      note(blockedLines(output), false);
+      callCommands.delete(callId);
+      if (command !== void 0) noteCommand(command, !isUnranOutput(output));
+      block = blocked(output);
     } else if (p.type === "custom_tool_call_output") {
-      const output = Array.isArray(p.output) ? contentText(p.output) : textOf(p.output);
-      if (output.startsWith(SCRIPT_ERROR)) note(blockedLines(output.slice(SCRIPT_ERROR.length)), false);
+      const error = scriptError(p.output);
+      const command = callCommands.get(callId);
+      callCommands.delete(callId);
+      block = blocked(error);
+      const isBlockNamed = block.commands.length > 0 || block.lines.length > 0;
+      if (command !== void 0 && !isBlockNamed) noteCommand(command, !SCRIPT_DECLINED.test(error));
     }
+    note(block.lines, false);
+    block.commands.forEach((command) => noteCommand(command, false));
   }
-  return [...unran].filter((line) => !ran.has(line));
+  callCommands.forEach((command) => delegateRefs(command).forEach((ref) => ranDelegates.add(ref)));
+  return {
+    lines: [...unran].filter((line) => !ran.has(line)),
+    delegates: [...unranDelegates].filter((ref) => !ranDelegates.has(ref))
+  };
 }
 
 // src/rollout-turns.ts
@@ -4366,7 +4452,7 @@ var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).
 function turnsOf(rows, cwd) {
   const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
   const hasCommandRows = rows.some((row) => isItem(row, "CommandExecution"));
-  const unran = new Set(unranLines(rows));
+  const unran = new Set(unranCalls(rows).lines);
   const turns = [];
   const agentTurn = () => {
     const last = turns.at(-1);

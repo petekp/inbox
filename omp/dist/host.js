@@ -353,14 +353,19 @@ function delegatesRan(o, command, at) {
   return waitsOnDelegate(command) ? delegateWaitsEnded(o, command, at) : delegatesStarted(o, command, at);
 }
 function delegatesTakenBack(o, command, before, at) {
-  const refs = new Set(delegateSteps(command).map((step) => delegateRef(step.name)));
+  return delegateRowsTakenBack(o, delegateRefs(command), before?.children ?? [], at);
+}
+function delegateRefs(command) {
+  return new Set(delegateSteps(command).map((step) => delegateRef(step.name)));
+}
+function delegateRowsTakenBack(o, refs, before, at) {
   const isStartedByCommand = (c) => refs.has(c.ref) && c.startedAt === at;
   if (!o?.children.some(isStartedByCommand))
     return o;
   const children = o.children.flatMap((c) => {
     if (!isStartedByCommand(c))
       return [c];
-    const was = before?.children.find((x) => x.ref === c.ref);
+    const was = before.find((x) => x.ref === c.ref);
     return was ? [was] : [];
   });
   return { ...o, children };
@@ -1919,14 +1924,14 @@ function childRow(c, branch, depth) {
     branch
   };
 }
-function partRows(shown, c, depth) {
+function partRows(shown, c, depth, afterNew = []) {
   const rows = [];
   const lookRow = c.lookId === null ? null : { kind: "look", id: c.lookId, depth, text: c.lookText };
   const firstSeen = shown.findIndex((x) => !c.isNew(x));
   for (const [i, x] of shown.entries()) {
     const hasNewAbove = i > 0;
-    if (lookRow && i === firstSeen && hasNewAbove)
-      rows.push(lookRow);
+    if (i === firstSeen && hasNewAbove)
+      rows.push(...afterNew, ...lookRow ? [lookRow] : []);
     const under = c.running.filter((ch) => ch.subjectId === x.id);
     const shownUnder = under.slice(0, CHILD_ROWS);
     const isMore = under.length > CHILD_ROWS;
@@ -1959,6 +1964,8 @@ function partRows(shown, c, depth) {
       });
   }
   const isEveryShownNew = firstSeen === -1;
+  if (isEveryShownNew)
+    rows.push(...afterNew);
   if (lookRow && c.isLookAtEnd && isEveryShownNew && shown.length > 0)
     rows.push(lookRow);
   return rows;
@@ -1989,6 +1996,9 @@ var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " \xB7 ";
 var STATUS_TEXT_LINES = 3;
 var NEW_CLOSED_ROWS = 2;
+var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
+var NAMED_FOLD_NAMES = 2;
+var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function mergedLine(merged, fits) {
   return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
@@ -2018,25 +2028,28 @@ function statusPage(s, now) {
   };
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
-  const newClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
+  const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
   const main = subjects.filter((x) => !isOther(x));
   const other = subjects.filter(isOther);
   const open = main.filter(isOpen).sort(pageOrder);
   const foldable = open.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)));
   const split = (part) => {
-    const newClosed = newClosedOf(part);
+    const unseenClosed = unseenClosedOf(part);
+    const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS);
     return {
       shown: [...part.filter((x) => isOpen(x) && !folded.includes(x)), ...newClosed].sort(pageOrder),
       newClosed,
+      named: unseenClosed.slice(NEW_CLOSED_ROWS),
       foldedOpen: part.filter((x) => folded.includes(x)),
-      foldedDone: part.filter((x) => x.status === "done" && !newClosed.includes(x))
+      foldedDone: part.filter((x) => x.status === "done" && !isNew(x))
     };
   };
   const top = split(main.filter((x) => milestoneOf(x) === null));
   const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main.filter((x) => milestoneOf(x) === m.id)));
-  const otherNewClosed = newClosedOf(other);
-  const isOtherFolded = (x) => isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === "done" && !otherNewClosed.includes(x);
+  const otherUnseenClosed = unseenClosedOf(other);
+  const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
+  const isOtherFolded = (x) => isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === "done" && !isNew(x);
   const otherFolded = other.filter(isOtherFolded);
   const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
   const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
@@ -2052,9 +2065,23 @@ function statusPage(s, now) {
   };
   const lookId = (id) => look === null ? null : id;
   const foldCtx = { ...ctx, lookId: null, running: [] };
+  const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
+    const names = named.filter((x) => x.status === status).map((x) => x.name);
+    const hidden = names.length - NAMED_FOLD_NAMES;
+    const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []];
+    return names.length === 0 ? [] : [
+      {
+        kind: "fold",
+        id: `${prefix}also-${status}`,
+        depth,
+        ...SUBJECT_MARKS[status],
+        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`
+      }
+    ];
+  });
   const rows = [
     ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
-    ...partRows(top.shown, ctx, 0)
+    ...partRows(top.shown, ctx, 0, namedFolds("", top.named, 0))
   ];
   const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
     {
@@ -2082,14 +2109,14 @@ function statusPage(s, now) {
     if (rows.at(-1)?.kind === "look")
       rows.pop();
     rows.push({ kind: "part", id: "other", depth: 0, text: OTHER_WORK });
-    rows.push(...partRows(otherShown, { ...ctx, lookId: lookId("other-look") }, 0));
+    rows.push(...partRows(otherShown, { ...ctx, lookId: lookId("other-look") }, 0, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)));
     const otherFoldedOpen = otherFolded.filter(isOpen);
     if (otherFoldedOpen.length > 0)
       rows.push({ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFoldedOpen) });
     rows.push(...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0));
   }
   const milestoneRows = (id, p) => ruledRows([
-    ...partRows(p.shown, { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false }, 1),
+    ...partRows(p.shown, { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false }, 1, namedFolds(`${id}-`, p.named, 1)),
     ...foldRows(`${id}-`, p, 1)
   ], false);
   const g = goalParts.goal;
@@ -7805,6 +7832,7 @@ var CLIENTS = {
       "status-view-ask": { kind: "full" },
       "status-goal": { kind: "full" },
       "status-done-fold": { kind: "full" },
+      "status-named-fold": { kind: "full" },
       "seen-on-screen": { kind: "full" }
     }
   },
@@ -7890,11 +7918,11 @@ var CLIENTS = {
       "status-mid-turn-refresh": { kind: "full" },
       "ran-call-activity": {
         kind: "different",
-        reason: "Codex runs PreToolUse before a call is approved, so a call's line shows from then. Stop, and the tool call that claims a Status call during the turn, take back the lines of calls the rollout shows were declined or blocked. A declined MCP call keeps its line, and so does a call whose block a code-mode script catches."
+        reason: "Codex runs PreToolUse before a call is approved, so a call's line shows from then. Stop, and the tool call that claims a Status call during the turn, take back the lines of calls the rollout shows were declined or blocked, and of a declined command in a code-mode script with one command. A declined MCP call keeps its line, and so does a call whose block a code-mode script catches."
       },
       "ran-call-delegates": {
-        kind: "unsupported",
-        reason: "Codex runs PreToolUse before a call is approved, so a herdr command the person declines or a hook blocks still adds its delegate rows. PostToolUse cannot show which calls ran: Codex skips it for a command that runs longer than code mode's wait. The rollout check that takes back activity lines does not take back delegate rows yet."
+        kind: "different",
+        reason: "Codex runs PreToolUse before a call is approved, so a herdr command's delegate rows show from then. Stop, and the tool call that claims a Status call during the turn, take back the rows of each command the rollout shows was declined or blocked, and of a declined command in a code-mode script with one command. A code-mode call whose script catches the block keeps its rows."
       },
       "tool-result-line": {
         kind: "unsupported",
@@ -7918,6 +7946,7 @@ var CLIENTS = {
         kind: "different",
         reason: "A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking."
       },
+      "status-named-fold": { kind: "full" },
       "seen-on-screen": { kind: "full" }
     }
   },
@@ -7995,6 +8024,7 @@ var CLIENTS = {
       "status-view-ask": { kind: "full" },
       "status-goal": { kind: "full" },
       "status-done-fold": { kind: "full" },
+      "status-named-fold": { kind: "full" },
       "seen-on-screen": { kind: "full" }
     }
   }

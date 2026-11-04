@@ -37,10 +37,31 @@ const patchRow = (path: string, status: string) => ({
   },
 })
 
-const scriptOutput = (text: string) => ({
+const script = (callId: string, input: string) => ({
   type: 'response_item',
-  payload: { type: 'custom_tool_call_output', call_id: 'c1', output: [{ type: 'input_text', text }] },
+  payload: { type: 'custom_tool_call', name: 'exec', call_id: callId, input },
 })
+
+const scriptCall = (callId: string, command: string) =>
+  script(callId, `text(await tools.exec_command({cmd:${JSON.stringify(command)}}));\n`)
+
+const scriptOutput = (text: string, callId = 'c1') => {
+  const [status, ...printed] = text.split('\n')
+  const isFailed = status?.startsWith('Script error:') === true
+  const header = `${isFailed ? 'Script failed' : status}\nWall time 0.0 seconds\nOutput:\n`
+  const parts = isFailed ? [text] : printed
+
+  return {
+    type: 'response_item',
+    payload: {
+      type: 'custom_tool_call_output',
+      call_id: callId,
+      output: [header, ...parts].map(part => ({ type: 'input_text', text: part })),
+    },
+  }
+}
+
+const SCRIPT_DECLINED = 'Script error: \nexec_command failed: Rejected("rejected by user")'
 
 const shellCall = (callId: string, command: string) => ({
   type: 'response_item',
@@ -96,19 +117,54 @@ test('a command or patch the person declined leaves the ended turn activity', as
 test('a call a PreToolUse hook blocked leaves the ended turn activity, in code mode and as a direct call', async () => {
   const transcript = rollout([
     started,
+    script('c1', 'await tools.exec_command({cmd:"git status"});\nawait tools.exec_command({cmd:"git push"});\n'),
     scriptOutput('Script error: Command blocked by PreToolUse hook: pushes wait for review. Command: git push'),
     shellCall('c2', 'rm -rf build'),
     callOutput('c2', 'Command blocked by PreToolUse hook: no deletes. Command: rm -rf build'),
     scriptOutput('Script error: Tool call blocked by PreToolUse hook: read only. Tool: mcp__linear__save_issue'),
   ])
   const activity = await endedActivity(transcript, [
+    bash(transcript, 'git status'),
     bash(transcript, 'git push'),
     bash(transcript, 'rm -rf build'),
     input('PreToolUse', { tool_name: 'mcp__linear__save_issue', transcript_path: transcript, turn_id: 't1' }),
-    bash(transcript, 'git status'),
   ])
 
   assert.deepEqual(activity, ['ran: git status'])
+})
+
+test('a declined script with two commands, or a command that is not a literal, keeps every line', async () => {
+  const transcript = rollout([
+    started,
+    script('c1', 'await tools.exec_command({cmd:"git status"});\nawait tools.exec_command({cmd:"git push"});\n'),
+    scriptOutput(SCRIPT_DECLINED, 'c1'),
+    script(
+      'c2',
+      'const c = "npm test";\nawait tools.exec_command({cmd:"npm ci"});\nawait tools.exec_command({cmd: c});\n',
+    ),
+    scriptOutput(SCRIPT_DECLINED, 'c2'),
+  ])
+  const activity = await endedActivity(transcript, [
+    bash(transcript, 'git status'),
+    bash(transcript, 'git push'),
+    bash(transcript, 'npm ci'),
+    bash(transcript, 'npm test'),
+  ])
+
+  assert.deepEqual(activity, ['ran: git status', 'ran: git push', 'ran: npm ci', 'ran: npm test'])
+})
+
+test('a command the person declined inside a code-mode script leaves the ended turn activity', async () => {
+  const transcript = rollout([
+    started,
+    scriptCall('c1', 'git push'),
+    scriptOutput(SCRIPT_DECLINED, 'c1'),
+    scriptCall('c2', 'npm test'),
+    scriptOutput(`Script completed\n${SCRIPT_DECLINED}`, 'c2'),
+  ])
+  const activity = await endedActivity(transcript, [bash(transcript, 'git push'), bash(transcript, 'npm test')])
+
+  assert.deepEqual(activity, ['ran: npm test'])
 })
 
 test('a command still running when the turn ends, or that ran once and was declined once, keeps its line', async () => {
@@ -148,4 +204,67 @@ test('a declined command leaves the activity before a Status call during the tur
 
   assert.deepEqual(deps.refreshes, ['s1'])
   assert.deepEqual((await readState(dir, 's1')).turn.activity, ['ran: git status'])
+})
+
+const delegateRows = async (dir: string) =>
+  ((await readState(dir, 's1')).ledger.overview?.children ?? []).map(c => [c.name, c.endedAt === null, c.delegateState])
+
+test('a herdr command the person declined, in code mode too, or a hook blocked leaves no delegate row, and one that ran keeps its row', async () => {
+  const dir = tempDir()
+  const transcript = rollout([
+    started,
+    commandRow('herdr agent start alpha --cmd codex', 'declined'),
+    shellCall('c2', 'herdr agent start beta --cmd codex'),
+    callOutput('c2', 'Command blocked by PreToolUse hook: no agents. Command: herdr agent start beta --cmd codex'),
+    commandRow('herdr agent start gamma --cmd codex', 'completed'),
+    scriptCall('c3', 'herdr agent start kappa --cmd codex'),
+    scriptOutput(SCRIPT_DECLINED, 'c3'),
+  ])
+  await endedActivity(
+    transcript,
+    [
+      bash(transcript, 'herdr agent start alpha --cmd codex'),
+      bash(transcript, 'herdr agent start beta --cmd codex'),
+      bash(transcript, 'herdr agent start kappa --cmd codex'),
+      bash(transcript, 'herdr agent start gamma --cmd codex'),
+    ],
+    dir,
+  )
+
+  assert.deepEqual(await delegateRows(dir), [['gamma', true, null]])
+})
+
+test('a delegate row stays when another call names its agent and ran or still runs, and a declined prompt restores it', async () => {
+  const dir = tempDir()
+  const deps = hookDeps(dir)
+  const turn = async (id: string, rows: unknown[], commands: string[]) => {
+    const transcript = rollout([{ type: 'event_msg', payload: { type: 'task_started', turn_id: id } }, ...rows])
+    await handleHook(input('UserPromptSubmit', { prompt: 'Go', turn_id: id, transcript_path: transcript }), deps)
+    for (const command of commands)
+      await handleHook(input('PreToolUse', { tool_name: 'Bash', tool_input: { command }, turn_id: id }), deps)
+    await handleHook(input('Stop', { turn_id: id, transcript_path: transcript, last_assistant_message: 'Ok.' }), deps)
+  }
+  await turn(
+    't1',
+    [
+      commandRow('herdr agent start delta', 'declined'),
+      commandRow('herdr agent start delta --cmd codex', 'completed'),
+      commandRow('herdr agent wait delta', 'completed'),
+      commandRow('herdr agent prompt omega "go"', 'declined'),
+      shellCall('c4', 'herdr agent prompt omega "check"'),
+    ],
+    [
+      'herdr agent start delta',
+      'herdr agent start delta --cmd codex',
+      'herdr agent wait delta',
+      'herdr agent prompt omega "go"',
+      'herdr agent prompt omega "check"',
+    ],
+  )
+  await turn('t2', [commandRow('herdr agent prompt delta "again"', 'declined')], ['herdr agent prompt delta "again"'])
+
+  assert.deepEqual(await delegateRows(dir), [
+    ['delta', false, null],
+    ['omega', true, 'working'],
+  ])
 })

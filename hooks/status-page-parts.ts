@@ -80,16 +80,21 @@ export type ListContext = {
 
 /**
  * A part of the list at `depth`: its subjects in order, with their children one step in under them and the look line
- * between them.
+ * between them. `afterNew` follows the rows that changed since the last look, before the look line.
  */
-export function partRows(shown: Subject[], c: ListContext, depth: number): StatusRowParts[] {
+export function partRows(
+  shown: Subject[],
+  c: ListContext,
+  depth: number,
+  afterNew: StatusRowParts[] = [],
+): StatusRowParts[] {
   const rows: StatusRowParts[] = []
   const lookRow: StatusRowParts | null =
     c.lookId === null ? null : { kind: 'look', id: c.lookId, depth, text: c.lookText }
   const firstSeen = shown.findIndex(x => !c.isNew(x))
   for (const [i, x] of shown.entries()) {
     const hasNewAbove = i > 0
-    if (lookRow && i === firstSeen && hasNewAbove) rows.push(lookRow)
+    if (i === firstSeen && hasNewAbove) rows.push(...afterNew, ...(lookRow ? [lookRow] : []))
     const under = c.running.filter(ch => ch.subjectId === x.id)
     const shownUnder = under.slice(0, CHILD_ROWS)
     const isMore = under.length > CHILD_ROWS
@@ -124,6 +129,7 @@ export function partRows(shown: Subject[], c: ListContext, depth: number): Statu
       })
   }
   const isEveryShownNew = firstSeen === -1
+  if (isEveryShownNew) rows.push(...afterNew)
   if (lookRow && c.isLookAtEnd && isEveryShownNew && shown.length > 0) rows.push(lookRow)
 
   return rows

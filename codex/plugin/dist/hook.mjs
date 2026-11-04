@@ -1190,13 +1190,13 @@ function childRow(c, branch, depth) {
     branch
   };
 }
-function partRows(shown, c, depth) {
+function partRows(shown, c, depth, afterNew = []) {
   const rows = [];
   const lookRow = c.lookId === null ? null : { kind: "look", id: c.lookId, depth, text: c.lookText };
   const firstSeen = shown.findIndex((x) => !c.isNew(x));
   for (const [i, x] of shown.entries()) {
     const hasNewAbove = i > 0;
-    if (lookRow && i === firstSeen && hasNewAbove) rows.push(lookRow);
+    if (i === firstSeen && hasNewAbove) rows.push(...afterNew, ...lookRow ? [lookRow] : []);
     const under = c.running.filter((ch) => ch.subjectId === x.id);
     const shownUnder = under.slice(0, CHILD_ROWS);
     const isMore = under.length > CHILD_ROWS;
@@ -1231,6 +1231,7 @@ function partRows(shown, c, depth) {
       });
   }
   const isEveryShownNew = firstSeen === -1;
+  if (isEveryShownNew) rows.push(...afterNew);
   if (lookRow && c.isLookAtEnd && isEveryShownNew && shown.length > 0) rows.push(lookRow);
   return rows;
 }
@@ -1252,6 +1253,9 @@ var STATUS_FAILED = "Last Status update failed. Changes from that reply may be m
 var LOOK_TEXT = "Last seen";
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
+var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
+var NAMED_FOLD_NAMES = 2;
+var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function statusPage(s, now) {
   const o = s.ledger.overview;
@@ -1273,25 +1277,28 @@ function statusPage(s, now) {
   };
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
-  const newClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
+  const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
   const main2 = subjects.filter((x) => !isOther(x));
   const other = subjects.filter(isOther);
   const open2 = main2.filter(isOpen).sort(pageOrder);
   const foldable = open2.filter((x) => !isHeld(x) && !isNew(x) && !hasChildRow(x));
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open2.length - foldable.length)));
   const split = (part) => {
-    const newClosed = newClosedOf(part);
+    const unseenClosed = unseenClosedOf(part);
+    const newClosed = unseenClosed.slice(0, NEW_CLOSED_ROWS);
     return {
       shown: [...part.filter((x) => isOpen(x) && !folded.includes(x)), ...newClosed].sort(pageOrder),
       newClosed,
+      named: unseenClosed.slice(NEW_CLOSED_ROWS),
       foldedOpen: part.filter((x) => folded.includes(x)),
-      foldedDone: part.filter((x) => x.status === "done" && !newClosed.includes(x))
+      foldedDone: part.filter((x) => x.status === "done" && !isNew(x))
     };
   };
   const top = split(main2.filter((x) => milestoneOf2(x) === null));
   const underMilestones = (goalParts.goal?.milestones ?? []).map((m) => split(main2.filter((x) => milestoneOf2(x) === m.id)));
-  const otherNewClosed = newClosedOf(other);
-  const isOtherFolded = (x) => isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === "done" && !otherNewClosed.includes(x);
+  const otherUnseenClosed = unseenClosedOf(other);
+  const otherNewClosed = otherUnseenClosed.slice(0, NEW_CLOSED_ROWS);
+  const isOtherFolded = (x) => isOpen(x) ? !isHeld(x) && !isNew(x) && !hasChildRow(x) : x.status === "done" && !isNew(x);
   const otherFolded = other.filter(isOtherFolded);
   const otherShown = [...other.filter((x) => isOpen(x) && !otherFolded.includes(x)), ...otherNewClosed].sort(pageOrder);
   const shownIds = new Set([...top.shown, ...underMilestones.flatMap((p) => p.shown), ...otherShown].map((x) => x.id));
@@ -1307,9 +1314,23 @@ function statusPage(s, now) {
   };
   const lookId = (id) => look === null ? null : id;
   const foldCtx = { ...ctx, lookId: null, running: [] };
+  const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
+    const names = named.filter((x) => x.status === status).map((x) => x.name);
+    const hidden = names.length - NAMED_FOLD_NAMES;
+    const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []];
+    return names.length === 0 ? [] : [
+      {
+        kind: "fold",
+        id: `${prefix}also-${status}`,
+        depth,
+        ...SUBJECT_MARKS[status],
+        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`
+      }
+    ];
+  });
   const rows = [
     ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
-    ...partRows(top.shown, ctx, 0)
+    ...partRows(top.shown, ctx, 0, namedFolds("", top.named, 0))
   ];
   const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
     {
@@ -1336,7 +1357,14 @@ function statusPage(s, now) {
   if (otherShown.length > 0 || otherFolded.length > 0) {
     if (rows.at(-1)?.kind === "look") rows.pop();
     rows.push({ kind: "part", id: "other", depth: 0, text: OTHER_WORK });
-    rows.push(...partRows(otherShown, { ...ctx, lookId: lookId("other-look") }, 0));
+    rows.push(
+      ...partRows(
+        otherShown,
+        { ...ctx, lookId: lookId("other-look") },
+        0,
+        namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)
+      )
+    );
     const otherFoldedOpen = otherFolded.filter(isOpen);
     if (otherFoldedOpen.length > 0)
       rows.push({ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFoldedOpen) });
@@ -1351,7 +1379,12 @@ function statusPage(s, now) {
   }
   const milestoneRows = (id, p) => ruledRows(
     [
-      ...partRows(p.shown, { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false }, 1),
+      ...partRows(
+        p.shown,
+        { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false },
+        1,
+        namedFolds(`${id}-`, p.named, 1)
+      ),
       ...foldRows(`${id}-`, p, 1)
     ],
     false
@@ -2450,7 +2483,8 @@ function emptyState(sessionId) {
     shownTab: "needsYou",
     heard: NOTHING_HEARD,
     coveredTurn: null,
-    openCatchUpKey: null
+    openCatchUpKey: null,
+    delegateCalls: []
   };
 }
 function statePath(dir, sessionId) {
@@ -2969,6 +3003,19 @@ function delegatesStarted(o, command, at) {
 function delegateWaitsEnded(o, command, at) {
   return delegateSteps(command).filter((step) => step.isWaitForEnd).reduce((x, step) => childEnded(x, delegateRef(step.name), at), o);
 }
+function delegateRefs(command) {
+  return new Set(delegateSteps(command).map((step) => delegateRef(step.name)));
+}
+function delegateRowsTakenBack(o, refs, before, at) {
+  const isStartedByCommand = (c) => refs.has(c.ref) && c.startedAt === at;
+  if (!o?.children.some(isStartedByCommand)) return o;
+  const children = o.children.flatMap((c) => {
+    if (!isStartedByCommand(c)) return [c];
+    const was = before.find((x) => x.ref === c.ref);
+    return was ? [was] : [];
+  });
+  return { ...o, children };
+}
 var HERDR_PROMPT_SETTLE_MS = 15e3;
 function hasRunningDelegate(o) {
   return o?.children.some((c) => c.kind === "delegate" && c.endedAt === null) ?? false;
@@ -3240,6 +3287,25 @@ async function withMissedTurns(s, { reads, currentTurnId, canMarkBehind = true, 
   };
 }
 
+// src/delegate-calls.ts
+function delegateCallNoted(s, command, at) {
+  const refs = delegateRefs(command);
+  const before = (s.ledger.overview?.children ?? []).filter((c) => refs.has(c.ref));
+  const noted = { ...s, delegateCalls: [...s.delegateCalls, { command, at, before }] };
+  return statusChanged(noted, (o) => delegatesStarted(o, command, at));
+}
+function unranDelegatesTakenBack(s, refs) {
+  if (refs.length === 0) return s;
+  const unran = new Set(refs);
+  return statusChanged(
+    s,
+    (o) => s.delegateCalls.reduceRight((x, call) => {
+      const callRefs = new Set([...delegateRefs(call.command)].filter((ref) => unran.has(ref)));
+      return delegateRowsTakenBack(x, callRefs, call.before, call.at);
+    }, o)
+  );
+}
+
 // src/rollout-file.ts
 import { createReadStream } from "node:fs";
 import { open, stat as stat2 } from "node:fs/promises";
@@ -3426,6 +3492,14 @@ var literalValue = (literal) => {
 };
 var PATCH_ARGUMENT = /tools\.apply_patch\(\s*("(?:[^"\\]|\\.)*")/;
 var COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")/;
+var scriptCommand = (input) => literalValue(COMMAND_ARGUMENT.exec(input)?.[1]) ?? "";
+var COMMAND_KEY = /\bcmd["']?\s*:/g;
+var COMMAND_ARGUMENTS = new RegExp(COMMAND_ARGUMENT.source, "g");
+function soleScriptCommand(input) {
+  const literals = [...input.matchAll(COMMAND_ARGUMENTS)];
+  const isSole = literals.length === 1 && (input.match(COMMAND_KEY) ?? []).length === 1;
+  return isSole ? literalValue(literals[0]?.[1]) ?? "" : "";
+}
 var shellLines = (command) => {
   const line = command === "" ? null : toolActivity("Bash", { command });
   return line ? [line] : [];
@@ -3437,7 +3511,7 @@ function callLines(p, hasCommandRows, cwd) {
   if (p.type === "custom_tool_call" && name === "exec") {
     const input = textOf2(p.input);
     const patch = literalValue(PATCH_ARGUMENT.exec(input)?.[1]);
-    const command = literalValue(COMMAND_ARGUMENT.exec(input)?.[1]);
+    const command = scriptCommand(input);
     return [...patch ? editLines(patch, cwd) : [], ...command && !hasCommandRows ? shellLines(command) : []];
   }
   if (p.type !== "function_call") return [];
@@ -3459,54 +3533,84 @@ var UNRAN_MARKERS = [
   '"FileChange"',
   '"McpToolCall"',
   '"function_call',
+  '"custom_tool_call"',
   '"local_shell_call',
   '"custom_tool_call_output"'
 ];
 var UNRAN_OUTPUT = /^(?:(?:exec command|patch) rejected by user|(?:Command|Tool call) blocked by PreToolUse hook: )/;
+var isUnranOutput = (output) => UNRAN_OUTPUT.test(output);
 var BLOCKED_COMMAND = /^Command blocked by PreToolUse hook: [^\n]*?\. Command: ([^\n]+)/;
 var BLOCKED_TOOL = /^Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: (\S+)/;
-var SCRIPT_ERROR = "Script error: ";
+var SCRIPT_FAILED = "Script failed\n";
+var SCRIPT_ERROR = /^Script error:\s*/;
+var SCRIPT_DECLINED = /^(?:exec_command|shell_command|shell) failed: [^\n]*Rejected\("rejected by user"\)(?:\n|$)/;
+function scriptError(output) {
+  const parts = Array.isArray(output) ? output.map((part) => textOf2(record(part).text)) : [];
+  const isFailed = parts.length > 1 && parts[0]?.startsWith(SCRIPT_FAILED) === true;
+  const last = isFailed ? parts.at(-1) ?? "" : "";
+  const prefix = SCRIPT_ERROR.exec(last)?.[0];
+  return prefix === void 0 ? "" : last.slice(prefix.length);
+}
 var toolLines = (tool) => {
   const line = toolActivity(tool, {});
   return line ? [line] : [];
 };
-var blockedLines = (output) => {
-  const command = BLOCKED_COMMAND.exec(output)?.[1];
+var blocked = (output) => {
+  const command = BLOCKED_COMMAND.exec(output)?.[1]?.trim();
   const tool = BLOCKED_TOOL.exec(output)?.[1];
-  return command ? shellLines(command.trim()) : tool ? toolLines(tool) : [];
+  return command ? { commands: [command], lines: shellLines(command) } : { commands: [], lines: tool ? toolLines(tool) : [] };
 };
 var editedLines = (changes) => Object.keys(record(changes)).map((path) => `edited ${path}`);
-function unranLines(rows) {
+function unranCalls(rows) {
   const ran = /* @__PURE__ */ new Set();
   const unran = /* @__PURE__ */ new Set();
+  const ranDelegates = /* @__PURE__ */ new Set();
+  const unranDelegates = /* @__PURE__ */ new Set();
   const note = (lines, didRun) => lines.forEach((line) => (didRun ? ran : unran).add(line));
+  const noteCommand = (command, didRun) => {
+    note(shellLines(command), didRun);
+    delegateRefs(command).forEach((ref) => (didRun ? ranDelegates : unranDelegates).add(ref));
+  };
   const callCommands = /* @__PURE__ */ new Map();
   for (const row of rows) {
     const p = record(row.payload);
     const item = record(p.item);
     const isDeclined = item.status === "declined";
     if (row.type === "event_msg" && p.type === "item_completed") {
-      if (item.type === "CommandExecution") note(shellLines(commandText(item.command)), !isDeclined);
+      if (item.type === "CommandExecution") noteCommand(commandText(item.command), !isDeclined);
       else if (item.type === "FileChange") note(editedLines(item.changes), !isDeclined);
       else if (item.type === "McpToolCall") note(toolLines(`mcp__${textOf2(item.server)}__${textOf2(item.tool)}`), true);
       continue;
     }
     if (row.type !== "response_item") continue;
     const callId = textOf2(p.call_id);
-    if (p.type === "function_call" || p.type === "local_shell_call") {
-      const command = callCommand(p);
+    let block = { commands: [], lines: [] };
+    const isScript = p.type === "custom_tool_call" && p.name === "exec";
+    if (isScript || p.type === "function_call" || p.type === "local_shell_call") {
+      const command = isScript ? soleScriptCommand(textOf2(p.input)) : callCommand(p);
       if (command !== "" && callId !== "") callCommands.set(callId, command);
     } else if (p.type === "function_call_output") {
       const output = outputText(p.output);
       const command = callCommands.get(callId);
-      if (command !== void 0) note(shellLines(command), !UNRAN_OUTPUT.test(output));
-      note(blockedLines(output), false);
+      callCommands.delete(callId);
+      if (command !== void 0) noteCommand(command, !isUnranOutput(output));
+      block = blocked(output);
     } else if (p.type === "custom_tool_call_output") {
-      const output = Array.isArray(p.output) ? contentText(p.output) : textOf2(p.output);
-      if (output.startsWith(SCRIPT_ERROR)) note(blockedLines(output.slice(SCRIPT_ERROR.length)), false);
+      const error = scriptError(p.output);
+      const command = callCommands.get(callId);
+      callCommands.delete(callId);
+      block = blocked(error);
+      const isBlockNamed = block.commands.length > 0 || block.lines.length > 0;
+      if (command !== void 0 && !isBlockNamed) noteCommand(command, !SCRIPT_DECLINED.test(error));
     }
+    note(block.lines, false);
+    block.commands.forEach((command) => noteCommand(command, false));
   }
-  return [...unran].filter((line) => !ran.has(line));
+  callCommands.forEach((command) => delegateRefs(command).forEach((ref) => ranDelegates.add(ref)));
+  return {
+    lines: [...unran].filter((line) => !ran.has(line)),
+    delegates: [...unranDelegates].filter((ref) => !ranDelegates.has(ref))
+  };
 }
 
 // src/rollout-turns.ts
@@ -3531,7 +3635,7 @@ function turnEventOf(line) {
   }
 }
 function turnOf(lines, turnId) {
-  const none = { dialogs: [], commands: [], plan: null, texts: [], unran: [] };
+  const none = { dialogs: [], commands: [], plan: null, texts: [], unran: [], unranDelegates: [] };
   try {
     const byTurn = /* @__PURE__ */ new Map();
     const newTurn = () => ({
@@ -3588,18 +3692,21 @@ function turnOf(lines, turnId) {
         if (command !== "" && p.call_id) turn2.calls.set(p.call_id, { command, output: "" });
       } else if (row.type === "response_item" && p.type === "function_call_output" && p.call_id) {
         const call = turn2.calls.get(p.call_id);
-        if (call) turn2.called.push({ command: call.command, output: outputText(p.output) });
+        const output = outputText(p.output);
+        if (call && !isUnranOutput(output)) turn2.called.push({ command: call.command, output });
       }
     }
     const wanted = newest === "" ? "" : turnId ?? newest;
     const turn = byTurn.get(wanted);
     if (!turn) return none;
+    const unran = unranCalls(turn.rows);
     return {
       dialogs: turn.dialogs.filter((d) => d.questions.length > 0),
       commands: turn.executions.length > 0 ? turn.executions : turn.called,
       plan: turn.plan,
       texts: turn.itemTexts.length > 0 ? turn.itemTexts : turn.messageTexts,
-      unran: unranLines(turn.rows)
+      unran: unran.lines,
+      unranDelegates: unran.delegates
     };
   } catch {
     return none;
@@ -3609,7 +3716,7 @@ var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).
 function turnsOf(rows, cwd) {
   const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
   const hasCommandRows = rows.some((row) => isItem(row, "CommandExecution"));
-  const unran = new Set(unranLines(rows));
+  const unran = new Set(unranCalls(rows).lines);
   const turns = [];
   const agentTurn = () => {
     const last = turns.at(-1);
@@ -3878,7 +3985,7 @@ async function handleHook(input, deps) {
         const r = notePrompt2(withHost(await withHistory(s)), input.prompt ?? "", now());
         notes = r.notes;
         if (input.agent_id) return r.state;
-        const started = noteHook(turnStarted(r.state, now()), "prompt", now(), input.turn_id);
+        const started = noteHook(turnStarted({ ...r.state, delegateCalls: [] }, now()), "prompt", now(), input.turn_id);
         const isTyped = r.sentBy === null;
         return isTyped ? messageTyped(started, now()) : started;
       });
@@ -3897,15 +4004,17 @@ async function handleHook(input, deps) {
       const line = toolActivity(tool, toolInput);
       const agentId = input.agent_id;
       const isDelegateCommand = agentId === void 0 && delegateSteps(command).length > 0;
-      const withWork = (s) => statusChanged(s, (o) => agentId ? childWorked(o, agentId, now()) : delegatesStarted(o, command, now()));
+      const at = now();
+      const withWork = (s) => agentId ? statusChanged(s, (o) => childWorked(o, agentId, at)) : isDelegateCommand ? delegateCallNoted(s, command, at) : s;
       const hasWork = line !== null || agentId !== void 0 || isDelegateCommand;
       const isMainActivity = line !== null && agentId === void 0;
       let isClaimed = false;
       const isStatusDue = isMainActivity && await read().then((s) => claimedStatusRefresh(s, now()) !== s);
-      const unran = isStatusDue ? turnOf(await rolloutTail(input.transcript_path), input.turn_id).unran : [];
+      const turn = isStatusDue ? turnOf(await rolloutTail(input.transcript_path), input.turn_id) : null;
       if (hasWork)
         await write((s) => {
-          const kept = withoutActivity(withRollout(s), unran);
+          const withoutUnran = withoutActivity(withRollout(s), turn?.unran ?? []);
+          const kept = unranDelegatesTakenBack(withoutUnran, turn?.unranDelegates ?? []);
           const worked = withWork(line ? noteActivity(kept, line) : kept);
           const claimed = isMainActivity ? claimedStatusRefresh(worked, now()) : worked;
           isClaimed = claimed !== worked;
@@ -3939,7 +4048,7 @@ async function handleHook(input, deps) {
           () => null
         )
       ]);
-      const { dialogs, commands, plan, texts, unran } = turnOf(tail, input.turn_id);
+      const { dialogs, commands, plan, texts, unran, unranDelegates } = turnOf(tail, input.turn_id);
       const reply = turnReply(texts, input.last_assistant_message ?? "");
       const withHistory = await readHistoryAhead(() => before, tail);
       const lines = dialogs.map((d) => dialogActivity(d.questions, { kind: "open" }));
@@ -3948,7 +4057,8 @@ async function handleHook(input, deps) {
           (x, line) => noteActivity(x, line),
           withoutActivity(noteDialogs(withHost(await withHistory(s)), dialogs), unran)
         );
-        const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines);
+        const withRan = { ...unranDelegatesTakenBack(withLines, unranDelegates), delegateCalls: [] };
+        const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withRan);
         const waited = statusChanged(
           withOutput,
           (o) => commands.reduce((x, c) => delegateWaitsEnded(x, c.command, now()), o)

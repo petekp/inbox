@@ -5,7 +5,6 @@ import {
   childStarted,
   childWorked,
   delegatesSettled,
-  delegatesStarted,
   delegateSteps,
   delegateWaitsEnded,
 } from '../../hooks/children'
@@ -34,6 +33,7 @@ import { codexStore } from './host'
 import type { OnWrite } from './host'
 import type { SessionState } from './state'
 import { CODEX } from './texts'
+import { delegateCallNoted, unranDelegatesTakenBack } from './delegate-calls'
 import { rolloutMeta, subagentTaskName } from './rollout-rows'
 import { turnOf } from './rollout-turns'
 import { rolloutReads, rolloutTail } from './transcript'
@@ -156,7 +156,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         const r = notePrompt(withHost(await withHistory(s)), input.prompt ?? '', now())
         notes = r.notes
         if (input.agent_id) return r.state
-        const started = noteHook(turnStarted(r.state, now()), 'prompt', now(), input.turn_id)
+        const started = noteHook(turnStarted({ ...r.state, delegateCalls: [] }, now()), 'prompt', now(), input.turn_id)
         // Codex names no source for a prompt, so a prompt no press sent is one the person typed.
         const isTyped = r.sentBy === null
 
@@ -181,18 +181,24 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const line = toolActivity(tool, toolInput)
       const agentId = input.agent_id
       const isDelegateCommand = agentId === undefined && delegateSteps(command).length > 0
+      const at = now()
       const withWork = (s: SessionState) =>
-        statusChanged(s, o => (agentId ? childWorked(o, agentId, now()) : delegatesStarted(o, command, now())))
+        agentId
+          ? statusChanged(s, o => childWorked(o, agentId, at))
+          : isDelegateCommand
+            ? delegateCallNoted(s, command, at)
+            : s
       const hasWork = line !== null || agentId !== undefined || isDelegateCommand
       // Only the main agent's activity is what the Status call reads mid-turn, so only it claims the call.
       const isMainActivity = line !== null && agentId === undefined
       let isClaimed = false
-      // The Status call reads the turn's activity, so the lines of earlier calls that did not run come out first.
+      // The Status call reads the turn's activity and rows, so what earlier calls that did not run added comes out first.
       const isStatusDue = isMainActivity && (await read().then(s => claimedStatusRefresh(s, now()) !== s))
-      const unran = isStatusDue ? turnOf(await rolloutTail(input.transcript_path), input.turn_id).unran : []
+      const turn = isStatusDue ? turnOf(await rolloutTail(input.transcript_path), input.turn_id) : null
       if (hasWork)
         await write(s => {
-          const kept = withoutActivity(withRollout(s), unran)
+          const withoutUnran = withoutActivity(withRollout(s), turn?.unran ?? [])
+          const kept = unranDelegatesTakenBack(withoutUnran, turn?.unranDelegates ?? [])
           const worked = withWork(line ? noteActivity(kept, line) : kept)
           const claimed = isMainActivity ? claimedStatusRefresh(worked, now()) : worked
           isClaimed = claimed !== worked
@@ -231,7 +237,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
           () => null,
         ),
       ])
-      const { dialogs, commands, plan, texts, unran } = turnOf(tail, input.turn_id)
+      const { dialogs, commands, plan, texts, unran, unranDelegates } = turnOf(tail, input.turn_id)
       // Codex runs Stop without writing the rollout out first, so the rollout can lack the turn's last message.
       const reply = turnReply(texts, input.last_assistant_message ?? '')
       const withHistory = await readHistoryAhead(() => before, tail)
@@ -241,7 +247,8 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
           (x, line) => noteActivity(x, line),
           withoutActivity(noteDialogs(withHost(await withHistory(s)), dialogs), unran),
         )
-        const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines)
+        const withRan = { ...unranDelegatesTakenBack(withLines, unranDelegates), delegateCalls: [] }
+        const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withRan)
         // A wait on a delegate holds the turn, so the delegate's turn settled by Stop, where the turn's commands are read.
         const waited = statusChanged(withOutput, o =>
           commands.reduce((x, c) => delegateWaitsEnded(x, c.command, now()), o),

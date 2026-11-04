@@ -53,7 +53,8 @@ Part of [the look map](../looks.md#files).
 | `codex/src/rollout-rows.ts` | Codex host. The rollout's row types and the readers of a row's payload and text. Also reads the first row, `session_meta`. |
 | `codex/src/rollout-turns.ts` | Codex host. Finds the turns in the rollout's lines: a turn's dialogs, commands and plan, the conversation, and where each turn starts and ends. |
 | `codex/src/rollout-commands.ts` | Codex host. Reads the shell commands, patches and tool calls in rollout rows, and words them as activity lines. |
-| `codex/src/rollout-unran.ts` | Codex host. Finds the tool calls of a turn that did not run, because the person declined them or a hook blocked them, and gives their activity lines. |
+| `codex/src/rollout-unran.ts` | Codex host. Finds the tool calls of a turn that did not run, because the person declined them or a hook blocked them, and gives their activity lines and the delegates their herdr commands name. |
+| `codex/src/delegate-calls.ts` | Codex host. Keeps each `herdr agent` command's delegate rows as they were before the command, and puts them back when the command did not run. |
 | `codex/src/run.ts` | Codex host. Runs a command with Node. |
 | `codex/src/cli.ts` | Codex host. Finds the codex binary the app runs. The hooks, the server and the update process share it. |
 | `codex/src/dialogs.ts` | Codex host. Notes the dialogs a Codex turn opened, and words an inbox answer in the dialog's reply form. |

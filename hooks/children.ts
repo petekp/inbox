@@ -178,12 +178,26 @@ export function delegatesTakenBack(
   before: SessionStatus | null,
   at: number,
 ): SessionStatus | null {
-  const refs = new Set(delegateSteps(command).map(step => delegateRef(step.name)))
+  return delegateRowsTakenBack(o, delegateRefs(command), before?.children ?? [], at)
+}
+
+/** The refs of the delegates `command` starts, prompts or waits on. */
+export function delegateRefs(command: string): Set<string> {
+  return new Set(delegateSteps(command).map(step => delegateRef(step.name)))
+}
+
+/** `delegatesTakenBack` for the rows of `refs` alone, with `before` the rows as they were before the command. */
+export function delegateRowsTakenBack(
+  o: SessionStatus | null,
+  refs: ReadonlySet<string>,
+  before: readonly Child[],
+  at: number,
+): SessionStatus | null {
   const isStartedByCommand = (c: Child) => refs.has(c.ref) && c.startedAt === at
   if (!o?.children.some(isStartedByCommand)) return o
   const children = o.children.flatMap(c => {
     if (!isStartedByCommand(c)) return [c]
-    const was = before?.children.find(x => x.ref === c.ref)
+    const was = before.find(x => x.ref === c.ref)
 
     return was ? [was] : []
   })

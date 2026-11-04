@@ -12,10 +12,7 @@ class PaneState {
   inlineSize: string | null = null
   pendingUndoScroll: PendingUndoScroll | null = null
   undoScrollRevision = 0
-  /**
-   * The desktop app takes the focus off the pane when the Button holding it leaves the drawing, and
-   * the next click there only brings it back (anthropics/claude-code#100874).
-   */
+  /** The desktop app gives a field opened by a press the keys only through `$.ui.focus`, once the field is drawn. */
   focusedKey: string | null = null
   focusHint: string | null = null
   paneLook: ModLook = 'terminal'
