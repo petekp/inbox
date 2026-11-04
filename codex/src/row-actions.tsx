@@ -82,7 +82,7 @@ export function ledgerActions(
   return { keys: planned.keys.map(draw), more: planned.more.map(draw) }
 }
 
-export type Reply = {
+type Reply = {
   id: string
   hint: string
   draft: () => string

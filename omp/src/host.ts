@@ -180,17 +180,17 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   function askFor(ctx: ExtensionContext, id: string): SessionHost<OmpState>['ask'] {
-    return async (prompt, system, report) => {
+    return async (prompt, system, _kind, report) => {
       const model = inboxModel(ctx)
       if (!model) {
-        report?.({ model: 'none', error: 'omp offers no model for the inbox' })
+        report?.({ model: 'none', error: 'omp offers no model for the inbox', cause: 'error' })
         return null
       }
       const asked = `${model.provider}/${model.id}`
       try {
         const apiKey = await ctx.modelRegistry.getApiKey(model, id)
         if (!apiKey) {
-          report?.({ model: asked, error: 'omp has no sign-in for the model' })
+          report?.({ model: asked, error: 'omp has no sign-in for the model', cause: 'error' })
           return null
         }
         const reply = await deps.complete(
@@ -203,17 +203,25 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         )
         if (reply.stopReason === 'error' || reply.stopReason === 'aborted') {
           const status = reply.errorStatus === undefined ? '' : ` ${reply.errorStatus}`
-          report?.({ model: asked, error: `${reply.stopReason}${status}: ${reply.errorMessage ?? ''}`.trim() })
+          report?.({
+            model: asked,
+            error: `${reply.stopReason}${status}: ${reply.errorMessage ?? ''}`.trim(),
+            cause: 'error',
+          })
           return null
         }
         const text = reply.content.flatMap(b => (b.type === 'text' ? [b.text] : [])).join('')
         // `model` repeats the id asked for. `upstreamModel` names the model that answered, when omp can tell.
         const answeredBy = reply.upstreamModel === undefined ? {} : { answeredBy: reply.upstreamModel }
-        report?.({ model: asked, ...answeredBy, ...(text === '' ? { error: 'the reply held no text' } : {}) })
+        report?.({
+          model: asked,
+          ...answeredBy,
+          ...(text === '' ? { error: 'the reply held no text', cause: 'no-reply' as const } : {}),
+        })
 
         return text === '' ? null : text
       } catch (err) {
-        report?.({ model: asked, error: messageOf(err) })
+        report?.({ model: asked, error: messageOf(err), cause: 'error' })
         return null
       }
     }

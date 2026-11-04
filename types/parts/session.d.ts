@@ -108,6 +108,59 @@ export type HostTask = { id: string; text: string; status: HostTaskStatus }
  */
 export type StatusFailure = { at: number; cause: 'no-answer' | 'refused'; answer: string | null }
 
+/**
+ * Which call of an update a model call is. The ledger call reads a reply's exchange, with `isRetry` when the
+ * exchange's first call failed, or the whole conversation for a catch-up. The update flow keeps no mark of a repeated
+ * catch-up, so a catch-up says nothing of retries. The Status call reads a reply's exchange, the running turn or a
+ * catch-up's conversation, with `isRetry` when its first answer held prose.
+ */
+export type CallKind =
+  | { call: 'ledger'; reads: 'reply'; isRetry: boolean }
+  | { call: 'ledger'; reads: 'catch-up' }
+  | { call: 'status'; reads: 'reply' | 'mid-turn' | 'catch-up'; isRetry: boolean }
+
+/**
+ * A model call run as a process that failed: the binary it ran, its exit code, and the end of the diagnostic lines of
+ * its stderr, its errors and warnings. One that could not start has code -1 and its error's code as `errorCode` when
+ * it has one. One a signal ended has code -1 and the `signal`. One that timed out has code -2 and the `timeoutMs` it
+ * had.
+ */
+export type ProcessFailure = {
+  cli: string
+  code: number
+  stderr: string
+  signal: string | null
+  errorCode: string | null
+  timeoutMs: number | null
+}
+
+/**
+ * A model call that gave no usable answer. `cause` is `process` when the call's process failed, `error` when the
+ * call ended with an error, `no-reply` when it ended with no text, and `unparseable` when its text could not be read
+ * as an answer. `call`, `reads` and `isRetry` come from its `CallKind`; `isRetry` is null for a catch-up's ledger
+ * call. `error` is the start of the host's reason, `answerChars` the length of an unparseable answer, and `ms` how
+ * long the call ran. It keeps no prompt, answer or conversation text. A failure a Codex build saved before this
+ * record reads null for what it did not keep.
+ */
+export type CallFailure = {
+  at: number
+  call: CallKind['call'] | null
+  reads: CallKind['reads'] | null
+  isRetry: boolean | null
+  cause: 'process' | 'error' | 'no-reply' | 'unparseable'
+  model: string | null
+  error: string | null
+  answerChars: number | null
+  ms: number | null
+  process: ProcessFailure | null
+}
+
+/**
+ * One of the update's calls, the ledger call or the Status call: its last failure, and when a call of it first gave
+ * a usable answer after that. `recoveredAt` is null while every call since the failure has failed, and before one fails.
+ */
+export type CallRecord = { lastFailure: CallFailure | null; recoveredAt: number | null }
+
 /** One conversation's inbox: what every host saves and the shared session functions change. */
 export type Session = {
   ledger: Ledger
@@ -186,6 +239,8 @@ export type Session = {
   stop: Stop | null
   /** The last Status call that wrote nothing, until a later one writes. Saved under the tab's earlier name. */
   overviewFailure: StatusFailure | null
+  /** The inbox model's calls with no usable answer, one record for the ledger call and one for the Status call. */
+  callFailures: Record<CallKind['call'], CallRecord>
   /** When a Status call last wrote, or failed, or started while a turn ran. Null before the first. Saved under the tab's earlier name. */
   lastOverviewCallAt: number | null
   /**

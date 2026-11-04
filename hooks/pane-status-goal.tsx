@@ -379,5 +379,3 @@ export function paneStatusGoal(
       : goalKeys(page)
   return { goalAbove, setGoal, setGoalBare, markRun }
 }
-
-export type PaneStatusGoal = ReturnType<typeof paneStatusGoal>

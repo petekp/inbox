@@ -174,7 +174,7 @@ export function herdrTokens(
  * not. Herdr drops a report whose `seq` is not above the last one it took from this source, which orders reports that
  * separate processes send.
  */
-export function herdrReport(pane: string, tokens: HerdrTokens, seq?: number): string[] {
+function herdrReport(pane: string, tokens: HerdrTokens, seq?: number): string[] {
   return [
     'herdr',
     'pane',

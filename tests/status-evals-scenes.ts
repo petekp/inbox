@@ -40,7 +40,7 @@ export function sessionOf(o: SessionStatus, items: Item[], at: number): Session 
   }
 }
 
-export function ask(id: string, text: string): Item {
+function ask(id: string, text: string): Item {
   return {
     id,
     kind: 'question',

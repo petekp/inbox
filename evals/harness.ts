@@ -95,7 +95,7 @@ function version(cli: string): string | null {
   }
 }
 
-export type Provenance = {
+type Provenance = {
   commit: string
   isDirty: boolean
   /** `git diff HEAD` and the untracked files, when the tree had changes. */
@@ -223,8 +223,8 @@ export function writeResults(path: string, about: Provenance, results: unknown[]
 }
 
 /** A case's pass count from a run long enough to judge later runs by, keyed `<agent> <case>`. */
-export type Baseline = { passed: number; runs: number; commit: string; date: string; models: string[] }
-export type Baselines = Record<string, Baseline>
+type Baseline = { passed: number; runs: number; commit: string; date: string; models: string[] }
+type Baselines = Record<string, Baseline>
 
 const BASELINES = join(ROOT, 'evals', 'baselines.json')
 /**
@@ -248,7 +248,7 @@ const BASELINE_RUNS = 20
  * than `BASELINE_RUNS` runs, or with a run that could not be graded, keeps its earlier baseline. Returns why each such
  * case was skipped.
  */
-export function writeBaselines(suite: string, about: Provenance, results: Run[], names: string[]): string[] {
+function writeBaselines(suite: string, about: Provenance, results: Run[], names: string[]): string[] {
   const all: Record<string, Baselines> = existsSync(BASELINES) ? JSON.parse(readFileSync(BASELINES, 'utf8')) : {}
   const mine = { ...all[suite] }
   const skipped: string[] = []
@@ -293,13 +293,13 @@ function chanceOfAtMost(passed: number, runs: number, rate: number): number {
  * Whether a pass count is unlikely under the baseline's rate. The rate is smoothed, (passed + 1) / (runs + 2), so a
  * baseline of 20 of 20 does not flag every later miss.
  */
-export function isBelowBaseline(passed: number, runs: number, b: Baseline): boolean {
+function isBelowBaseline(passed: number, runs: number, b: Baseline): boolean {
   const rate = (b.passed + 1) / (b.runs + 2)
 
   return chanceOfAtMost(passed, runs, rate) < BELOW
 }
 
-export type Verdict = 'pass' | 'fail' | 'not run'
+type Verdict = 'pass' | 'fail' | 'not run'
 
 /**
  * Prints each case's result and returns the run's verdict: 'fail' when a graded case failed, else 'not run' when a
