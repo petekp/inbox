@@ -144,6 +144,20 @@ describe('reopening', () => {
     expect([reworded.isAdded, reworded.dismissed?.id]).toEqual([false, 'f1'])
   })
 
+  test('a dismissed finding blocks one that swaps a word for its synonym, but not one with a different word there', () => {
+    const finding = { kind: 'issue' as const, title: 'Hotkeys vanish in ANSI mode', detail: 'd', path: null, at: 1 }
+    const dismissed = closeFinding(
+      addFinding(EMPTY, finding).ledger,
+      'f1',
+      { how: 'dismissed', outcome: 'dismissed' },
+      5,
+    )
+    const swapped = addFinding(dismissed, { ...finding, title: 'Hotkeys disappear in ANSI mode', at: 6 })
+    expect([swapped.isAdded, swapped.dismissed?.id]).toEqual([false, 'f1'])
+    const other = addFinding(dismissed, { ...finding, title: 'Hotkeys lag in ANSI mode', at: 6 })
+    expect([other.isAdded, other.dismissed]).toEqual([true, null])
+  })
+
   test('a finding an item asks about closes into that item', () => {
     const finding = { kind: 'issue' as const, title: 'Research folder sits in the app', detail: 'd', path: null, at: 1 }
     const open = addFinding(addFinding(EMPTY, finding).ledger, { ...finding, title: 'Tabs unreadable' }).ledger

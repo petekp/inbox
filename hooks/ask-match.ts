@@ -148,19 +148,42 @@ function contrasts(x: Set<string>, y: Set<string>): boolean {
 }
 
 /**
+ * Groups of words that name the same thing in an ask or a finding about code, so swapping one for another keeps the
+ * subject. Each word is matched by its stem, so "vanished" counts as "vanish". A group holds only words that mean the
+ * same in every context: a pair like "slow" and "laggy" stays out when one can name a different problem.
+ */
+const SYNONYMS = [
+  ['vanish', 'disappear'],
+  ['remove', 'delete'],
+  ['folder', 'directory', 'directories'],
+  ['config', 'configuration'],
+]
+
+const MEANING = new Map(SYNONYMS.flatMap(group => group.map(w => [stem(w), stem(group[0]!)])))
+
+/** A word cut to its stem, with a SYNONYMS word replaced by the first word of its group. */
+function meaningOf(word: string): string {
+  const s = stem(word)
+
+  return MEANING.get(s) ?? s
+}
+
+/**
  * Whether `b` repeats `a` with no subject of its own: it restates `a`, the two hold no CONTRASTS, and one of the two
- * has no key word the other lacks, apart from GENERIC words, once both are cut to their stems. "Which test runner
- * should we choose?" repeats "Which test runner should we pick?", "Hotkeys vanished in ANSI mode" repeats "Hotkeys
- * vanish in ANSI mode", and "Add a feature flag to the cache before merging?" repeats "Should I add a feature flag for
- * the new cache?". But "package.json has no engines field" does not repeat "package.json has no license field". GENERIC
- * and CONTRASTS words are matched as written, since `stem` cuts "existing" to "exist" and "will" to "wil".
+ * has no key word the other lacks, apart from GENERIC words, once both are cut to their stems and SYNONYMS. "Which
+ * test runner should we choose?" repeats "Which test runner should we pick?", "Hotkeys vanished in ANSI mode" and
+ * "Hotkeys disappear in ANSI mode" repeat "Hotkeys vanish in ANSI mode", and "Add a feature flag to the cache before
+ * merging?" repeats "Should I add a feature flag for the new cache?". But "package.json has no engines field" does not
+ * repeat "package.json has no license field". GENERIC and CONTRASTS words are matched as written, since `stem` cuts
+ * "existing" to "exist" and "will" to "wil".
  */
 export function repeatsSubject(a: string, b: string): boolean {
   const x = keyWords(a)
   const y = keyWords(b)
-  const stemsOf = (words: Set<string>) => new Set([...words].map(stem))
+  const stemsOf = (words: Set<string>) => new Set([...words].map(meaningOf))
   const [xStems, yStems] = [stemsOf(x), stemsOf(y)]
-  const within = (inner: Set<string>, outer: Set<string>) => [...inner].every(w => GENERIC.has(w) || outer.has(stem(w)))
+  const within = (inner: Set<string>, outer: Set<string>) =>
+    [...inner].every(w => GENERIC.has(w) || outer.has(meaningOf(w)))
   const isRestated = sharesKeyWords(xStems, yStems) === true
 
   return sameAsk(a, b) || (isRestated && !contrasts(x, y) && (within(x, yStems) || within(y, xStems)))
