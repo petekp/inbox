@@ -16,14 +16,15 @@ let covered: { from: number; to: number; since: number; layout: string } | null 
  * The pane drew the Status at `now`: `pageTop` is the line of the pane's tree the Status page starts on, and `tops` each
  * subject row's first line from there, as the drawing counts them. A row counts as shown at `now` when its first line
  * is surely whole in the window. A row whose first line is surely in the lines the windows covered counts as shown at
- * `since`, since a draw showed it after then. A row whose line is not counted counts as shown, and so does every row
- * when `pageTop` is not counted.
+ * `since`, since a draw showed it after then. A row whose line is not counted, and every row when `pageTop` is not
+ * counted, counts as shown when `isUnplacedShown`, and is left out otherwise.
  */
 export function noteStatusDrawn(d: {
   pageTop: Lines | null
   tops: Map<string, RowTop>
   scroll: SiteScroll
   now: number
+  isUnplacedShown: boolean
 }) {
   const { pageTop, scroll, now } = d
   const from = scroll.offset
@@ -41,7 +42,7 @@ export function noteStatusDrawn(d: {
   covered = window
   for (const [id, top] of d.tops) {
     if (top === 'unknown' || pageTop === null) {
-      rows.set(id, now)
+      if (d.isUnplacedShown) rows.set(id, now)
       continue
     }
     const least = pageTop.least + top.least

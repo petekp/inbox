@@ -2,8 +2,14 @@ import { expect, test } from 'claude-code/testing'
 import { noteStatusDrawn, takeShownRows } from '../hooks/pane-status-shown'
 import { exactly, type Lines, type RowTop } from '../hooks/pane-status-tops'
 
-const draw = (tops: Map<string, RowTop>, pageTop: Lines | null, offset: number, now: number, bodyRows = 4) =>
-  noteStatusDrawn({ pageTop, tops, scroll: { offset, bodyRows }, now })
+const draw = (
+  tops: Map<string, RowTop>,
+  pageTop: Lines | null,
+  offset: number,
+  now: number,
+  bodyRows = 4,
+  isUnplacedShown = true,
+) => noteStatusDrawn({ pageTop, tops, scroll: { offset, bodyRows }, now, isUnplacedShown })
 
 const exactTops = new Map<string, RowTop>([
   ['s1', exactly(0)],
@@ -11,7 +17,7 @@ const exactTops = new Map<string, RowTop>([
   ['s3', 'unknown'],
 ])
 
-test('a Status row counts as shown while its first line is in the window, and a row whose line is not counted counts as shown', () => {
+test('a Status row counts as shown while its first line is in the window, and where rows with no known place count as shown, a row whose line is not counted does', () => {
   takeShownRows()
   draw(exactTops, exactly(2), 0, 100)
   draw(exactTops, exactly(2), 4, 200)
@@ -19,10 +25,19 @@ test('a Status row counts as shown while its first line is in the window, and a 
   expect(takeShownRows()).toEqual({ s1: 100, s2: 200, s3: 200 })
 })
 
-test('every Status row counts as shown when the lines above the Status are not counted', () => {
+test('where rows with no known place count as shown, every Status row does while the lines above the Status are not counted', () => {
   draw(exactTops, null, 0, 100)
 
   expect(takeShownRows()).toEqual({ s1: 100, s2: 100, s3: 100 })
+})
+
+test('where rows with no known place count as unseen, a row whose line is not counted, and every row while the lines above the Status are not counted, stay unseen', () => {
+  draw(exactTops, exactly(2), 0, 100, 4, false)
+  draw(exactTops, exactly(2), 4, 200, 4, false)
+  expect(takeShownRows()).toEqual({ s1: 100, s2: 200 })
+
+  draw(exactTops, null, 0, 100, 4, false)
+  expect(takeShownRows()).toEqual({})
 })
 
 test('a row whose first line may sit below the window or above it does not count as shown at that draw', () => {

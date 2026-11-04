@@ -3464,7 +3464,13 @@ export const register: Register = on => {
       const top = isChromeKnown ? tabLines + spaceLines : null
       const rounding = look === 'desktop' ? DESKTOP_OFFSET_ROUNDING : 0
       const pageTop = top === null ? null : { least: top - rounding, most: top + rounding }
-      noteStatusDrawn({ pageTop, tops: statusTops(), scroll: e.props.scroll, now })
+      noteStatusDrawn({
+        pageTop,
+        tops: statusTops(),
+        scroll: e.props.scroll,
+        now,
+        isUnplacedShown: look === 'terminal',
+      })
     }
     const tabView = isHelpShown
       ? helpView()
