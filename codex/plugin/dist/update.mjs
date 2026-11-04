@@ -3987,15 +3987,19 @@ function statusCatchUpPrompt(input, transcript) {
 
 // ../hooks/call-record.ts
 var ERROR_CHARS = 500;
-async function heardCall(ask, prompt, system, kind, now) {
+async function askedCall(ask, prompt, system, kind) {
   let report = null;
   let thrown = null;
-  const startedAt = await now();
   const text2 = await ask(prompt, system, kind, (r) => report = r).catch((err) => {
     thrown = err instanceof Error ? err.message : String(err);
     return null;
   });
-  return { text: text2, report, thrown, ms: await now() - startedAt };
+  return { text: text2, report, thrown };
+}
+async function heardCall(ask, prompt, system, kind, now) {
+  const startedAt = await now();
+  const asked = await askedCall(ask, prompt, system, kind);
+  return { ...asked, ms: await now() - startedAt };
 }
 function failureOf(kind, heard, isParsed, at) {
   if (heard.text !== null && isParsed) return null;
@@ -4196,22 +4200,16 @@ async function runUpdates(host) {
             const next = s.pending[0];
             const promptAt = await host.now();
             const kind = { call: "ledger", reads: "reply", isRetry: next.failed === true };
-            const heard = await heardCall(
-              host.ask,
-              buildPrompt(s.ledger, next.ex),
-              systemText(host.names),
-              kind,
-              () => host.now()
-            );
-            const parsed = parsedReply(next.ex, heard.text);
-            const calledAt = await host.now();
+            const asked = await askedCall(host.ask, buildPrompt(s.ledger, next.ex), systemText(host.names), kind);
+            const parsed = parsedReply(next.ex, asked.text);
             let isApplied = false;
             const after = await host.update(async (current) => {
-              const x = withCall(current, kind, heard, parsed !== null, calledAt);
+              const at = await host.now();
+              const x = withCall(current, kind, { ...asked, ms: at - promptAt }, parsed !== null, at);
               isApplied = false;
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x;
               isApplied = parsed !== null;
-              return applied(x, parsed, await host.now(), promptAt);
+              return applied(x, parsed, at, promptAt);
             });
             if (isApplied)
               followUp(

@@ -10,7 +10,7 @@ import { needsCatchUp, appliedCatchUp } from './session-status'
 import type { SendOutcome } from './session-presses'
 import type { CallKind, ProcessFailure, Session, HostTask } from '../types'
 import { askAndWriteStatus } from './status-records'
-import { heardCall, withCall } from './call-record'
+import { askedCall, heardCall, withCall } from './call-record'
 import type { HeardCall } from './call-record'
 import type { StatusCall, StatusRecords } from './status-records'
 
@@ -267,19 +267,17 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
             const next = s.pending[0]!
             const promptAt = await host.now()
             const kind = { call: 'ledger', reads: 'reply', isRetry: next.failed === true } as const
-            const heard = await heardCall(host.ask, buildPrompt(s.ledger, next.ex), systemText(host.names), kind, () =>
-              host.now(),
-            )
-            const parsed = parsedReply(next.ex, heard.text)
-            const calledAt = await host.now()
+            const asked = await askedCall(host.ask, buildPrompt(s.ledger, next.ex), systemText(host.names), kind)
+            const parsed = parsedReply(next.ex, asked.text)
             let isApplied = false as boolean
             const after = await host.update(async current => {
-              const x = withCall(current, kind, heard, parsed !== null, calledAt)
+              const at = await host.now()
+              const x = withCall(current, kind, { ...asked, ms: at - promptAt }, parsed !== null, at)
               isApplied = false
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x
               isApplied = parsed !== null
 
-              return applied(x, parsed, await host.now(), promptAt)
+              return applied(x, parsed, at, promptAt)
             })
             if (isApplied)
               followUp(

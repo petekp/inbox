@@ -10,7 +10,24 @@ const ERROR_CHARS = 500
  */
 export type HeardCall = { text: string | null; report: CallReport | null; thrown: string | null; ms: number }
 
-/** Sends one model call through `ask`, and notes what the host reports of it. */
+/** Sends one model call through `ask`, and notes what the host reports of it. The caller times the call. */
+export async function askedCall(
+  ask: Ask,
+  prompt: string,
+  system: string,
+  kind: CallKind,
+): Promise<Omit<HeardCall, 'ms'>> {
+  let report: CallReport | null = null
+  let thrown: string | null = null
+  const text = await ask(prompt, system, kind, r => (report = r)).catch((err: unknown) => {
+    thrown = err instanceof Error ? err.message : String(err)
+    return null
+  })
+
+  return { text, report, thrown }
+}
+
+/** Sends one model call through `ask`, notes what the host reports of it, and times it with `now`. */
 export async function heardCall(
   ask: Ask,
   prompt: string,
@@ -18,15 +35,10 @@ export async function heardCall(
   kind: CallKind,
   now: () => number | Promise<number>,
 ): Promise<HeardCall> {
-  let report: CallReport | null = null
-  let thrown: string | null = null
   const startedAt = await now()
-  const text = await ask(prompt, system, kind, r => (report = r)).catch((err: unknown) => {
-    thrown = err instanceof Error ? err.message : String(err)
-    return null
-  })
+  const asked = await askedCall(ask, prompt, system, kind)
 
-  return { text, report, thrown, ms: (await now()) - startedAt }
+  return { ...asked, ms: (await now()) - startedAt }
 }
 
 /** Why a call gave no usable answer, or null when it gave one. */
