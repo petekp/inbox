@@ -142,6 +142,13 @@ function fromLists(o: Record<string, unknown>): SessionStatus {
   }
 }
 
+/** The saved subjects a look missed, kept for the subjects in `ids`. A Status saved before them had none. */
+function missedOf(saved: unknown, ids: ReadonlySet<string>): Record<string, number | null> {
+  const entries = typeof saved === 'object' && saved !== null ? Object.entries(saved) : []
+
+  return Object.fromEntries(entries.filter(([id, at]) => ids.has(id) && (at === null || time(at) !== null)))
+}
+
 /** A saved Status, from this build or an earlier one, with anything wrongly shaped left out. Null for none. */
 export function upgradeStatus(saved: unknown): SessionStatus | null {
   const o = saved as Record<string, unknown> | null | undefined
@@ -170,6 +177,7 @@ export function upgradeStatus(saved: unknown): SessionStatus | null {
     nextId: Math.max(time(o.nextId) ?? 1, subjects.length + 1),
     nextChildId: Math.max(time(o.nextChildId) ?? 1, children.length + 1),
     lastLookAt: time(o.lastLookAt),
+    missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map(s => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
     ...goal,
   }

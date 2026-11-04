@@ -115,7 +115,7 @@ test('a DROP INTO folds a subject into another, which names it, and a WAS keeps 
   const folded = after(three, 'DROP: s2 | part of offline | INTO s1\nWAS: s1 | retry on its own', 200)
   const twice = after(folded, 'DROP: s3 | part of offline | INTO s1', 250)
   const finishedUnseen = after(twice, 'DONE: s1 | works offline', 300)
-  const seen = lookEnded(lookStarted(twice, 260), 260 + LOOK_MIN_MS)
+  const seen = lookEnded(lookStarted(twice, 260), 260 + LOOK_MIN_MS, 'all')
   const foldedAfterLook = after(
     after(seen, 'NEW: working | Retry limit | drafted', 300 + LOOK_MIN_MS),
     'DROP: s4 | part of offline | INTO s1',
@@ -154,7 +154,7 @@ test('a SET, a DONE or another DROP takes a folded subject out of its target, an
   const two = after(null, 'NEW: working | Login form | drafted\nNEW: working | Auth flow | drafted', 100)
   const reopened = after(after(two, 'DROP: s1 | part of auth | INTO s2', 200), 'SET: s1 | working | split out', 300)
   const done = after(two, 'DONE: s1 | shipped', 200)
-  const seen = lookEnded(lookStarted(done, 300), 300 + LOOK_MIN_MS)
+  const seen = lookEnded(lookStarted(done, 300), 300 + LOOK_MIN_MS, 'all')
   const folded = after(two, 'DROP: s1 | part of auth | INTO s2', 200)
 
   expect(reopened.subjects[0]).toMatchObject({ status: 'working', closedAt: null, into: null })

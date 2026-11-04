@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { LOOK_MIN_MS } from '../../hooks/status-children'
+import { isSubjectSeen, LOOK_MIN_MS } from '../../hooks/status-children'
 import { EMPTY_SESSION_STATUS } from '../../hooks/status-limits'
 import { NO_HOLDS } from '../../hooks/timing'
 import { createInbox } from '../src/host'
@@ -227,6 +227,42 @@ test('a look starts when the panel shows the Status and ends on another tab or w
   inbox.closePanel(makeCtx())
   await settle()
   expect(state().ledger.overview.look).toBeNull()
+})
+
+test('a look counts as seen only the Status subjects the panel reported on screen, on another tab and when the panel closes', async () => {
+  const inbox = createInbox(pi(), deps())
+  await prompt('hello')
+  const saved = state()
+  const subject = (id: string) => ({
+    id,
+    name: id,
+    status: 'working',
+    text: '',
+    was: null,
+    merged: null,
+    createdAt: 1,
+    changedAt: 1,
+    closedAt: null,
+    into: null,
+  })
+  const overview = { ...EMPTY_SESSION_STATUS, subjects: ['s1', 's2', 's3'].map(subject), nextId: 4 }
+  writeFileSync(join(w.dir, 'sessions', 's1.json'), JSON.stringify({ ...saved, ledger: { ...saved.ledger, overview } }))
+  await inbox.openPanel(makeCtx(), w.clock)
+  const look = async (shown: string[], end: () => void) => {
+    inbox.showTab(makeCtx(), 'overview', NO_HOLDS)
+    await settle()
+    inbox.showRows(makeCtx(), shown)
+    w.clock += LOOK_MIN_MS
+    end()
+    await settle()
+    const o = state().ledger.overview
+    return o.subjects
+      .filter((x: { id: string; changedAt: number }) => isSubjectSeen(o, x))
+      .map((x: { id: string }) => x.id)
+  }
+
+  expect(await look(['s1'], () => inbox.showTab(makeCtx(), 'needsYou', NO_HOLDS))).toEqual(['s1'])
+  expect(await look(['s2'], () => inbox.closePanel(makeCtx()))).toEqual(['s1', 's2'])
 })
 
 test('every row the agent closes while the panel shows its tab keeps its closed record through more closes than the Closed list keeps, until the panel closes', async () => {

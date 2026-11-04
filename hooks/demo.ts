@@ -153,6 +153,7 @@ export function demoView(now: number, agent: string): DemoCopy {
         nextId: 8,
         nextChildId: 6,
         lastLookAt: now - 30 * MIN,
+        missedInLastLook: {},
         look: null,
         goal: {
           text: 'Pinch ships in the beta',

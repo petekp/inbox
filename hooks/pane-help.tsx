@@ -56,16 +56,20 @@ export function paneHelp({
   const helpMarksSection = () =>
     section([
       groupTitle(HELP_COPY.marks, 0),
-      ...markLegend(isNextBuild).map(m =>
-        statusRowLine({
-          key: `help-mark-${m.mark}`,
-          mark: legendMark(m),
-          content: (
-            <Text color={pal.muted} wrap="wrap">
-              {m.words}
-            </Text>
-          ),
-        }),
+      ...markLegend(isNextBuild).map(
+        m =>
+          statusRowLine({
+            key: `help-mark-${m.mark}`,
+            mark: legendMark(m),
+            content: {
+              el: (
+                <Text color={pal.muted} wrap="wrap">
+                  {m.words}
+                </Text>
+              ),
+              lines: null,
+            },
+          }).el,
       ),
     ])
   /** Help in place of the tab's body: the keys where keys work, then the legend. A wide inline pane sets them side by side. */

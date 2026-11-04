@@ -4,7 +4,7 @@ import { Window } from 'happy-dom'
 import { EMPTY } from '../../hooks/ledger'
 import { closeItem } from '../../hooks/ledger-close'
 import { parseStatus } from '../../hooks/status'
-import { LOOK_MIN_MS } from '../../hooks/status-children'
+import { isSubjectSeen, LOOK_MIN_MS } from '../../hooks/status-children'
 import { applyStatus } from '../../hooks/status-ops'
 import { goalPressed } from '../../hooks/goal-press'
 import type { RowPress } from '../../hooks/presses'
@@ -13,6 +13,8 @@ import { shownTabs } from '../../hooks/tabs'
 import { CODEX } from '../src/texts'
 import { emptyState } from '../src/state'
 import { lookOnView, viewOf } from '../src/core'
+import type { SessionState } from '../src/state'
+import { noteShownRows, rowsInView, takeShownRows } from '../src/tab-shown'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
 
@@ -322,20 +324,65 @@ test('a look starts when the tab shows the Status, ends when it shows another ta
     ),
   }
   state.tabSeenAt = 1000
-  const open = lookOnView(state, 'overview', 2000)
+  const open = lookOnView(state, 'overview', 2000, {})
   assert.equal(open.ledger.overview?.look?.startedAt, 2000)
 
-  const seen = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 2000 + LOOK_MIN_MS)
+  const seen = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 2000 + LOOK_MIN_MS, {})
   assert.equal(seen.ledger.overview?.look, null)
   assert.equal(seen.ledger.overview?.lastLookAt, 2000 + LOOK_MIN_MS)
 
-  const passed = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 3000)
+  const passed = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 3000, {})
   assert.equal(passed.ledger.overview?.look, null)
   assert.equal(passed.ledger.overview?.lastLookAt, null)
 
-  const closed = lookOnView({ ...open, tabSeenAt: 2000 + LOOK_MIN_MS }, 'needsYou', 2000 + 60_000)
+  const closed = lookOnView({ ...open, tabSeenAt: 2000 + LOOK_MIN_MS }, 'needsYou', 2000 + 60_000, {})
   assert.equal(closed.ledger.overview?.lastLookAt, 2000 + LOOK_MIN_MS)
 
-  const never = lookOnView(state, 'needsYou', 2000)
+  const never = lookOnView(state, 'needsYou', 2000, {})
   assert.equal(never.ledger.overview?.lastLookAt, null)
+})
+
+test('a look counts as seen only the Status subjects the tab reported on screen, across its requests and when the pane closed, and not rows a later showing reported', () => {
+  const state = emptyState('look-rows')
+  state.ledger = {
+    ...EMPTY,
+    overview: applyStatus(
+      null,
+      parseStatus(
+        'NEW: working | Sync | under way\nNEW: working | Search | under way\nNEW: queued | Docs | after the code',
+      )!,
+      500,
+      new Set(),
+    ),
+  }
+  const seenOf = (s: SessionState) => {
+    const o = s.ledger.overview!
+    return o.subjects.filter(x => isSubjectSeen(o, x)).map(x => x.name)
+  }
+  const open = lookOnView({ ...state, tabSeenAt: 1000 }, 'overview', 1000, { s1: 1000 })
+  const scrolled = lookOnView({ ...open, tabSeenAt: 4000 }, 'overview', 4000, { s2: 3500 })
+  const ended = lookOnView({ ...scrolled, tabSeenAt: 7000 }, 'needsYou', 7000, {})
+  assert.deepEqual(seenOf(ended), ['Sync', 'Search'])
+  assert.deepEqual(ended.lookRows, {})
+
+  const reopened = lookOnView({ ...ended, tabSeenAt: 7000 }, 'overview', 8000, { s3: 8000 })
+  const afterClose = lookOnView({ ...reopened, tabSeenAt: 8000 + LOOK_MIN_MS }, 'overview', 90_000, { s1: 90_000 })
+  assert.deepEqual(seenOf(afterClose), ['Sync', 'Search', 'Docs'])
+  assert.deepEqual(afterClose.lookRows, { s1: 90_000 })
+})
+
+test('the tab reports as on screen the rows whose first line is inside its window, each with when it last was, until its next request', () => {
+  const rows = [
+    { id: 's1', top: -40 },
+    { id: 's2', top: 0 },
+    { id: 's3', top: 599 },
+    { id: 's4', top: 600 },
+  ]
+  assert.deepEqual(rowsInView(rows, 600), ['s2', 's3'])
+
+  takeShownRows()
+  noteShownRows(['s2', 's3'], 100)
+  noteShownRows(['s3', 's4'], 200)
+  assert.deepEqual(takeShownRows(), { s2: 100, s3: 200, s4: 200 })
+  assert.deepEqual(takeShownRows(), {})
 })

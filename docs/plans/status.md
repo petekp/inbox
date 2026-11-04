@@ -55,7 +55,7 @@ From `GLOSSARY.md`: SessionStatus, Head, Subject, Child, Stall words, Seen line,
 Decided, and still to build:
 
 - A closed mark and a fold of its own for work filed for later: #137.
-- A look marks as seen only the rows that were on screen: #139.
+- A look marks as seen only the rows that were on screen: #139. Every look does.
 - In Codex, a Status answer from before a clear stays out of the cleared session: #152.
 - An older Status answer never overwrites a newer one: #153.
 - The judge's instructions, in `evals/status-judge.md`.

@@ -24,6 +24,8 @@ import {
 } from './status-page'
 import { desktopSpanLines, type TerminalSpan, terminalSpanLines } from './terminal-text'
 import { cellWidth } from './text'
+import { desktopFrameLines, desktopTextLines, inkLines, plus } from './pane-status-tops'
+import type { Drawn, Lines } from './pane-status-tops'
 
 export function paneStatusLines({
   Box,
@@ -42,7 +44,15 @@ export function paneStatusLines({
   Pick<PaneRowKeys, 'desktopColumnPt'> &
   Pick<PaneRowLines, 'markWidth' | 'branch' | 'desktopHairline'>) {
   /** The head reads like a row: its title in bold, and its description muted on the line under it. */
-  const statusHead = (head: NonNullable<StatusPage['head']>) => {
+  const statusHead = (head: NonNullable<StatusPage['head']>): Drawn => {
+    const width = listColumns - TREE_LINE_AT
+    const textLines = (text: string) =>
+      look === 'desktop' ? desktopTextLines(text, desktopBlockWidth) : inkLines(text, width)
+    const titleAndDescription = plus(
+      textLines(head.title),
+      head.description ? textLines(head.description) : { least: 0, most: 0 },
+    )
+    const count = look === 'desktop' ? plus(titleAndDescription, desktopFrameLines(0)) : titleAndDescription
     const lines = (
       <Box flexDirection="column">
         <Text wrap="wrap" bold>
@@ -56,13 +66,17 @@ export function paneStatusLines({
       </Box>
     )
 
-    return look === 'desktop' ? (
-      desktopFrame({ key: 'status-head', padY: 0, markCells: 0, hasSide: false, children: lines })
-    ) : (
-      <Box key="status-head" paddingLeft={TREE_LINE_AT}>
-        {lines}
-      </Box>
-    )
+    return {
+      el:
+        look === 'desktop' ? (
+          desktopFrame({ key: 'status-head', padY: 0, markCells: 0, hasSide: false, children: lines })
+        ) : (
+          <Box key="status-head" paddingLeft={TREE_LINE_AT}>
+            {lines}
+          </Box>
+        ),
+      lines: count,
+    }
   }
   /** Where a Status row's mark sits in the terminal: in the head's column, so the list lines up with it. */
   const statusMarkAt = TREE_LINE_AT
@@ -71,20 +85,44 @@ export function paneStatusLines({
     look === 'desktop'
       ? desktopColumnPt(1 + DESKTOP_MARK_CELLS * (depth * 2 + 1)) + DESKTOP_SIDE_CELLS * DESKTOP_CELL_PT
       : listColumns - 1 - statusMarkAt - markWidth * (depth + 1)
+  /** The text column of a desktop block, which has no mark column, in points. */
+  const desktopBlockWidth = desktopColumnPt(0) + DESKTOP_SIDE_CELLS * DESKTOP_CELL_PT
   const fitsStatusLine = (depth: number) => (text: string) =>
     look === 'desktop' ? desktopTextPt(text) <= statusTextWidth(depth) : cellWidth(text) <= statusTextWidth(depth)
+  /**
+   * A Status text: on the terminal its lines, each already wrapped, and on desktop one line that desktop wraps in
+   * `widthPt`.
+   */
+  const wrappedText = (key: string, lines: TerminalSpan[][], widthPt: number): Drawn => {
+    const count: Lines =
+      look === 'desktop'
+        ? desktopTextLines(
+            lines
+              .flat()
+              .map(s => s.text)
+              .join(''),
+            widthPt,
+          )
+        : { least: lines.length, most: lines.length }
+
+    return {
+      el: (
+        <Box key={key}>
+          <Text wrap="wrap">{terminalText(lines)}</Text>
+        </Box>
+      ),
+      lines: count,
+    }
+  }
   /** One text of a Status line, wrapped to at most `limit` lines and cut with an ellipsis past them. */
-  const statusPageText = (key: string, spans: TerminalSpan[], depth: number, limit = STATUS_TEXT_LINES) => (
-    <Box key={key}>
-      <Text wrap="wrap">
-        {terminalText(
-          look === 'desktop'
-            ? [desktopSpanLines(spans, statusTextWidth(depth), limit)]
-            : terminalSpanLines(spans, statusTextWidth(depth), limit),
-        )}
-      </Text>
-    </Box>
-  )
+  const statusPageText = (key: string, spans: TerminalSpan[], depth: number, limit = STATUS_TEXT_LINES): Drawn =>
+    wrappedText(
+      key,
+      look === 'desktop'
+        ? [desktopSpanLines(spans, statusTextWidth(depth), limit)]
+        : terminalSpanLines(spans, statusTextWidth(depth), limit),
+      statusTextWidth(depth),
+    )
   /** A row's stall word in the stall's tone, never split by a wrap. */
   const stallSpan = (stall: StatusStall): TerminalSpan => {
     const text = look === 'desktop' ? stall.text.replaceAll(' ', '\u00a0') : stall.text
@@ -96,8 +134,7 @@ export function paneStatusLines({
    * A row's name with its stall word after `STALL_GAP`, on the line of the name's last word, which a wrap never
    * splits from them. `nameBeforeStall` cuts the name so the line fits `STATUS_TEXT_LINES`.
    */
-  const statusNameLine = (key: string, name: TerminalSpan, stall: StatusStall | null, depth: number) => {
-    if (!stall) return statusPageText(key, [name], depth)
+  const nameSpans = (name: TerminalSpan, stall: StatusStall, depth: number) => {
     const width = statusTextWidth(depth)
     const gap = look === 'desktop' ? STALL_GAP.replaceAll(' ', '\u00a0') : STALL_GAP
     const spans = (shown: string): TerminalSpan[] => [
@@ -116,13 +153,13 @@ export function paneStatusLines({
         : terminalSpanLines(spans(shown), width).length
     const shown = nameBeforeStall(name.text, x => lineCount(x) <= STATUS_TEXT_LINES)
 
-    return (
-      <Box key={key}>
-        <Text wrap="wrap">
-          {terminalText(look === 'desktop' ? [spans(shown)] : terminalSpanLines(spans(shown), width))}
-        </Text>
-      </Box>
-    )
+    return { spans: spans(shown), width }
+  }
+  const statusNameLine = (key: string, name: TerminalSpan, stall: StatusStall | null, depth: number): Drawn => {
+    if (!stall) return statusPageText(key, [name], depth)
+    const { spans, width } = nameSpans(name, stall, depth)
+
+    return wrappedText(key, look === 'desktop' ? [spans] : terminalSpanLines(spans, width), width)
   }
   /** A Status row frame's padding and 1 pt border above or below its text on desktop, in half lines. */
   const statusFrameEdge = STATUS_PAD_Y + 2 * DESKTOP_HAIR_LINES
@@ -165,7 +202,17 @@ export function paneStatusLines({
     )
   }
 
-  return { statusHead, statusMarkAt, fitsStatusLine, statusPageText, statusNameLine, statusFrameEdge, statusTree }
+  return {
+    statusHead,
+    statusMarkAt,
+    fitsStatusLine,
+    statusTextWidth,
+    desktopBlockWidth,
+    statusPageText,
+    statusNameLine,
+    statusFrameEdge,
+    statusTree,
+  }
 }
 
 export type PaneStatusLines = ReturnType<typeof paneStatusLines>

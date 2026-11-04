@@ -59,6 +59,7 @@ export type FeatureId =
   | 'status-goal'
   | 'status-done-fold'
   | 'status-named-fold'
+  | 'seen-on-screen'
 
 type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -131,6 +132,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-goal': { kind: 'full' },
       'status-done-fold': { kind: 'full' },
       'status-named-fold': { kind: 'full' },
+      'seen-on-screen': { kind: 'full' },
     },
   },
   codex: {
@@ -261,6 +263,7 @@ export const CLIENTS: Record<ClientId, Client> = {
           'A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking.',
       },
       'status-named-fold': { kind: 'full' },
+      'seen-on-screen': { kind: 'full' },
     },
   },
   omp: {
@@ -343,6 +346,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-goal': { kind: 'full' },
       'status-done-fold': { kind: 'full' },
       'status-named-fold': { kind: 'full' },
+      'seen-on-screen': { kind: 'full' },
     },
   },
 }

@@ -94,6 +94,7 @@ var EMPTY_SESSION_STATUS = {
   nextId: 1,
   nextChildId: 1,
   lastLookAt: null,
+  missedInLastLook: {},
   look: null,
   goal: null,
   proposedGoal: null,
@@ -157,8 +158,7 @@ function childEnded(o, ref, at) {
   return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
 }
 function subjectTouched(o, id, at) {
-  const isSeen = (s) => o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
-  const touched = (s) => isSeen(s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
+  const touched = (s) => isSubjectSeen(o, s) ? { ...s, was: null, merged: null, changedAt: at } : { ...s, changedAt: at };
   return id === null ? o : { ...o, subjects: o.subjects.map((s) => s.id === id ? touched(s) : s) };
 }
 function childActive(o, ref, at) {
@@ -185,11 +185,22 @@ function lookStarted(o, now) {
   return o === null || o.look !== null ? o : { ...o, look: { startedAt: now } };
 }
 var LOOK_MIN_MS = 5000;
-function lookEnded(o, at) {
+function subjectSeenAt(o, id) {
+  return id in o.missedInLastLook ? o.missedInLastLook[id] ?? null : o.lastLookAt;
+}
+function isSubjectSeen(o, s) {
+  const seenAt = subjectSeenAt(o, s.id);
+  return seenAt !== null && s.changedAt <= seenAt;
+}
+function lookEnded(o, at, shown) {
   if (o === null || o.look === null)
     return o;
   const isLongEnough = at - o.look.startedAt >= LOOK_MIN_MS;
-  return { ...o, lastLookAt: isLongEnough ? at : o.lastLookAt, look: null };
+  if (!isLongEnough)
+    return { ...o, look: null };
+  const isShown = (s) => shown === "all" || (shown[s.id] ?? -Infinity) >= s.changedAt;
+  const missed = o.subjects.filter((s) => s.into === null && !isShown(s)).map((s) => [s.id, subjectSeenAt(o, s.id)]);
+  return { ...o, lastLookAt: at, missedInLastLook: Object.fromEntries(missed), look: null };
 }
 
 // ../hooks/text.ts
@@ -2001,7 +2012,7 @@ function statusPage(s, now) {
   const o = s.ledger.overview;
   const look = o?.lastLookAt ?? null;
   const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
-  const isNew = (x) => look === null || x.changedAt > look;
+  const isNew = (x) => o === null || !isSubjectSeen(o, x);
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
   const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
@@ -6397,11 +6408,15 @@ function footer(d, isPageScrolling) {
     out.push(fit(hintLine, width), fit(` ${s.dim(model.trimEnd())}`, width));
   return out;
 }
+function pageWindowLines(lines, top, room) {
+  const end = Math.min(lines, room - 1 + top);
+  const start = end - (room - (top > 0 ? 1 : 0) - (lines - end > 0 ? 1 : 0));
+  return { start, end };
+}
 var moreLines = (arrow, n, s) => s.dim(`  ${arrow} ${n} more line${n === 1 ? "" : "s"}`);
 function pageWindow(body, top, room, s) {
-  const end = Math.min(body.length, room - 1 + top);
+  const { start, end } = pageWindowLines(body.length, top, room);
   const below = body.length - end;
-  const start = end - (room - (top > 0 ? 1 : 0) - (below > 0 ? 1 : 0));
   return [
     ...top > 0 ? [moreLines("\u2191", start, s)] : [],
     ...body.slice(start, end),
@@ -6481,6 +6496,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const pageSelected = isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId);
   let pageSelectedAt = null;
   let goalTitleAt = null;
+  const subjectAt = [];
   for (const e of entries) {
     if (e.kind === "heading")
       body.push(` ${e.mark ? `${leadPaint(e.mark, e.mark.text, style)} ` : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
@@ -6490,6 +6506,8 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
       const start = body.length;
       if (e.kind === "goal" && e.part.is === "title")
         goalTitleAt = start;
+      if (e.kind === "page" && e.row.kind === "subject")
+        subjectAt.push([e.row.id, start]);
       const id = e.kind === "page" ? e.row.id : goalPartId(e.part);
       const isSelected = id !== null && id === pageSelected?.id;
       body.push(...e.kind === "page" ? drawPageRow(e.row, d, isSelected) : drawGoalPart(e.part, d, isSelected));
@@ -6529,7 +6547,15 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const top = isRevealed ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop;
   const pageTop = isPage ? Math.min(Math.max(0, top), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop;
   const shown = !isOverflowing ? body : isPage ? pageWindow(body, pageTop, room, style) : scrolled(body, selectedAt, room, style);
-  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)), pageTop, isRevealed };
+  const isStatusShown = ui.tab === "overview" && !ui.isHelpShown;
+  const shownLines = isOverflowing ? pageWindowLines(body.length, pageTop, room) : { start: 0, end: body.length };
+  const shownSubjects = isStatusShown ? subjectAt.filter(([, at]) => at >= shownLines.start && at < shownLines.end).map(([id]) => id) : [];
+  return {
+    lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)),
+    pageTop,
+    isRevealed,
+    shownSubjects
+  };
 }
 function tallestTabHeight(screen, ui, width, now, style, height) {
   const heights = shownTabs(screen.isNextBuild === true).map((t) => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id, now), width, now, style, height).lines.length);
@@ -6637,6 +6663,8 @@ function createPanel(deps) {
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight);
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity));
       heldHeight = Math.max(heldHeight, drawn.lines.length);
+      if (drawn.shownSubjects.length > 0)
+        source.showedRows(drawn.shownSubjects);
       ui = { ...ui, pageTop: drawn.pageTop, pageReveal: drawn.isRevealed ? null : ui.pageReveal };
       return drawn.lines;
     },
@@ -6856,6 +6884,10 @@ function fromLists(o) {
     lastLookAt
   };
 }
+function missedOf(saved, ids) {
+  const entries = typeof saved === "object" && saved !== null ? Object.entries(saved) : [];
+  return Object.fromEntries(entries.filter(([id, at]) => ids.has(id) && (at === null || time2(at) !== null)));
+}
 function upgradeStatus(saved) {
   const o = saved;
   if (typeof o !== "object" || o === null)
@@ -6884,6 +6916,7 @@ function upgradeStatus(saved) {
     nextId: Math.max(time2(o.nextId) ?? 1, subjects.length + 1),
     nextChildId: Math.max(time2(o.nextChildId) ?? 1, children.length + 1),
     lastLookAt: time2(o.lastLookAt),
+    missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map((s) => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
     ...goal
   };
@@ -7302,6 +7335,7 @@ function demoView(now, agent) {
         nextId: 8,
         nextChildId: 6,
         lastLookAt: now - 30 * MIN,
+        missedInLastLook: {},
         look: null,
         goal: {
           text: "Pinch ships in the beta",
@@ -7802,7 +7836,8 @@ var CLIENTS = {
       "status-view-ask": { kind: "full" },
       "status-goal": { kind: "full" },
       "status-done-fold": { kind: "full" },
-      "status-named-fold": { kind: "full" }
+      "status-named-fold": { kind: "full" },
+      "seen-on-screen": { kind: "full" }
     }
   },
   codex: {
@@ -7915,7 +7950,8 @@ var CLIENTS = {
         kind: "different",
         reason: "A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking."
       },
-      "status-named-fold": { kind: "full" }
+      "status-named-fold": { kind: "full" },
+      "seen-on-screen": { kind: "full" }
     }
   },
   omp: {
@@ -7992,7 +8028,8 @@ var CLIENTS = {
       "status-view-ask": { kind: "full" },
       "status-goal": { kind: "full" },
       "status-done-fold": { kind: "full" },
-      "status-named-fold": { kind: "full" }
+      "status-named-fold": { kind: "full" },
+      "seen-on-screen": { kind: "full" }
     }
   }
 };
@@ -8315,8 +8352,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
   };
   const forgetSeenWas = (s) => {
-    const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
-    if (isSeen) {
+    if (isSubjectSeen(o, s)) {
       s.was = null;
       s.merged = null;
     }
@@ -8481,15 +8517,15 @@ function needsUpdate(s) {
 function lookStartedOn(s, now) {
   return statusChanged(s, (o) => lookStarted(o, now));
 }
-function lookEndedOn(s, at) {
-  return statusChanged(s, (o) => lookEnded(o, at));
+function lookEndedOn(s, at, shown) {
+  return statusChanged(s, (o) => lookEnded(o, at, shown));
 }
 function statusChanged(s, change) {
   const overview = change(s.ledger.overview);
   return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } };
 }
-function withLook(s, isStatusShown, now) {
-  return isStatusShown ? lookStartedOn(s, now) : lookEndedOn(s, now);
+function withLook(s, isStatusShown, now, shown) {
+  return isStatusShown ? lookStartedOn(s, now) : lookEndedOn(s, now, shown);
 }
 function hasLedger(s) {
   return !isBlankLedger(s.ledger);
@@ -9191,6 +9227,7 @@ function demoSource(deps) {
     fetchPrsWhenDue: () => {},
     checkDelegatesWhenDue: () => {},
     shown: () => {},
+    showedRows: () => {},
     onChange: (listener) => {
       listeners.add(listener);
       return () => void listeners.delete(listener);
@@ -9703,6 +9740,12 @@ async function press(host, p, isStale, holds) {
 function panelCalls(context, sessions) {
   const { deps, dir, openPanels, prFetches, listeners, memory, sendToAgent, modelNameOf } = context;
   const { change, hostFor, fetchPrsWhenDue, checkDelegatesWhenDue, wakeLater } = sessions;
+  const shownRows = new Map;
+  const takeShownRows = (id) => {
+    const rows = Object.fromEntries(shownRows.get(id) ?? []);
+    shownRows.delete(id);
+    return rows;
+  };
   const inbox = {
     screen: async (ctx, holds = NO_HOLDS) => {
       const id = sessionIdOf(ctx);
@@ -9733,15 +9776,26 @@ function panelCalls(context, sessions) {
       const isChanged = openPanels.get(id) !== tab;
       openPanels.set(id, tab);
       const now = deps.now();
-      if (isChanged)
-        deps.background(change(id, (s) => withHolds(withLook(s, tab === "overview", now), holds)));
+      if (isChanged) {
+        const shown = takeShownRows(id);
+        deps.background(change(id, (s) => withHolds(withLook(s, tab === "overview", now, shown), holds)));
+      }
       if (isChanged && tab === "overview")
         checkDelegatesWhenDue(ctx);
     },
     closePanel: (ctx) => {
       const id = sessionIdOf(ctx);
       openPanels.delete(id);
-      deps.background(change(id, (s) => ({ ...lookEndedOn(s, deps.now()), shownSince: null })));
+      const shown = takeShownRows(id);
+      deps.background(change(id, (s) => ({ ...lookEndedOn(s, deps.now(), shown), shownSince: null })));
+    },
+    showRows: (ctx, ids) => {
+      const id = sessionIdOf(ctx);
+      const rows = shownRows.get(id) ?? new Map;
+      const now = deps.now();
+      for (const row of ids)
+        rows.set(row, now);
+      shownRows.set(id, rows);
     },
     fetchPrsWhenDue,
     checkDelegatesWhenDue,
@@ -9770,6 +9824,7 @@ function panelCalls(context, sessions) {
     fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),
     checkDelegatesWhenDue: () => inbox.checkDelegatesWhenDue(ctx),
     shown: (tab, holds) => inbox.showTab(ctx, tab, holds),
+    showedRows: (ids) => inbox.showRows(ctx, ids),
     onChange: (listener) => inbox.onChange(ctx, listener)
   });
   return { inbox, liveSource };

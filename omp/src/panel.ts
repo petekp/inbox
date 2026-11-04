@@ -19,7 +19,7 @@ import { resolveSelected, withTab } from './panel-keys'
 import { STOP_ID, linesOf } from './panel-lines'
 import { drawGoalPart, goalPartId } from './panel-goal'
 import { drawPageRow, pageRule } from './panel-page'
-import { footer, pageWindow, scrolled, tabBar } from './panel-tabs'
+import { footer, pageWindow, pageWindowLines, scrolled, tabBar } from './panel-tabs'
 import { fit, indented, spread } from './panel-text'
 
 type ResumePress = { action: 'resume' }
@@ -164,7 +164,7 @@ export function drawPanel(
   style: Style,
   height?: number,
   minHeight = 0,
-): { lines: string[]; pageTop: number; isRevealed: boolean } {
+): { lines: string[]; pageTop: number; isRevealed: boolean; shownSubjects: string[] } {
   const d: Draw = { screen, ui, width, now, style }
   const entries = entriesOf(screen, ui, ui.tab, now)
   const selected = resolveSelected(linesOf(entries), ui.selectedId)
@@ -190,6 +190,8 @@ export function drawPanel(
     isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId)
   let pageSelectedAt: number[] | null = null
   let goalTitleAt: number | null = null
+  /** The line each Status subject row starts on. */
+  const subjectAt: [string, number][] = []
   for (const e of entries) {
     if (e.kind === 'heading')
       body.push(
@@ -199,6 +201,7 @@ export function drawPanel(
       if (e.kind === 'page' && e.row.isRuledAbove) body.push(pageRule(width, style))
       const start = body.length
       if (e.kind === 'goal' && e.part.is === 'title') goalTitleAt = start
+      if (e.kind === 'page' && e.row.kind === 'subject') subjectAt.push([e.row.id, start])
       const id = e.kind === 'page' ? e.row.id : goalPartId(e.part)
       const isSelected = id !== null && id === pageSelected?.id
       body.push(...(e.kind === 'page' ? drawPageRow(e.row, d, isSelected) : drawGoalPart(e.part, d, isSelected)))
@@ -267,7 +270,18 @@ export function drawPanel(
       ? pageWindow(body, pageTop, room, style)
       : scrolled(body, selectedAt, room, style)
 
-  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)), pageTop, isRevealed }
+  const isStatusShown = ui.tab === 'overview' && !ui.isHelpShown
+  const shownLines = isOverflowing ? pageWindowLines(body.length, pageTop, room) : { start: 0, end: body.length }
+  const shownSubjects = isStatusShown
+    ? subjectAt.filter(([, at]) => at >= shownLines.start && at < shownLines.end).map(([id]) => id)
+    : []
+
+  return {
+    lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)),
+    pageTop,
+    isRevealed,
+    shownSubjects,
+  }
 }
 
 /** The most lines a shown tab draws, each tab as switching to it would show it. */

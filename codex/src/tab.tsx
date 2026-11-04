@@ -5,6 +5,7 @@ import { versionLabel, DEMO_NOTICE, bannerOf, READING_TEXT } from '../../hooks/b
 import { isRowTab, shownTabs } from '../../hooks/tabs'
 import { steppedIndex } from '../../hooks/action-plan'
 import { tabState, handoff, root, instanceAbort } from './tab-state'
+import { noteShownRows, rowsInView, SUBJECT_ATTRIBUTE } from './tab-shown'
 import type { Kept, Lists } from './tab-state'
 import type { DrawnPrs } from './tab-pr-steps'
 import { later, dispose, request, applyHost, READ_TIMEOUT_MS } from './tab-host'
@@ -101,6 +102,7 @@ function draw() {
   wakeForMoves()
   render(<App lists={tabState.lastLists} prs={tabState.lastPrs} />, root)
   animateDraw(before, step?.changed ?? new Set())
+  noteStatusInView()
   const fieldToFocus =
     tabState.focusTyping && tabState.typing ? document.getElementById(`type-${tabState.typing}`) : null
   if (fieldToFocus) {
@@ -110,6 +112,18 @@ function draw() {
 }
 
 tabState.draw = draw
+
+/** Notes the Status subject rows on screen now, while the tab shows the real Status, for the look under way. The demo's ids name sample rows. */
+function noteStatusInView() {
+  if (!tabState.isActive || tabState.isDemo || tabState.tab !== 'overview' || tabState.isHelpShown) return
+  const rows = Array.from(root.querySelectorAll(`[${SUBJECT_ATTRIBUTE}]`), el => ({
+    id: el.getAttribute(SUBJECT_ATTRIBUTE) ?? '',
+    top: el.getBoundingClientRect().top,
+  }))
+  noteShownRows(rowsInView(rows, window.innerHeight), Date.now())
+}
+window.addEventListener('scroll', noteStatusInView, { passive: true, signal: instanceAbort.signal })
+window.addEventListener('resize', noteStatusInView, { passive: true, signal: instanceAbort.signal })
 
 let pressedAt: { x: number; y: number } | null = null
 document.addEventListener(

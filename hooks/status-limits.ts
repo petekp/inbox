@@ -56,6 +56,7 @@ export const EMPTY_SESSION_STATUS: SessionStatus = {
   nextId: 1,
   nextChildId: 1,
   lastLookAt: null,
+  missedInLastLook: {},
   look: null,
   goal: null,
   proposedGoal: null,

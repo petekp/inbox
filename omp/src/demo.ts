@@ -77,6 +77,7 @@ export function demoSource(deps: {
     fetchPrsWhenDue: () => {},
     checkDelegatesWhenDue: () => {},
     shown: () => {},
+    showedRows: () => {},
     onChange: listener => {
       listeners.add(listener)
 

@@ -157,7 +157,14 @@ import {
   prRowIds,
 } from './arrivals'
 import { parseInline } from './inline'
-import { DESKTOP_ROW_PAD, DESKTOP_WIDE_AT, INLINE_RAIL_AT, RAIL_GUTTER, TAB_PAD } from './pane-sizes'
+import {
+  DESKTOP_OFFSET_ROUNDING,
+  DESKTOP_ROW_PAD,
+  DESKTOP_WIDE_AT,
+  INLINE_RAIL_AT,
+  RAIL_GUTTER,
+  TAB_PAD,
+} from './pane-sizes'
 import { lookOf, paletteFor } from './palettes'
 import { animateRunningMarks } from './running-mark-timer'
 import { glued, type TerminalSpan, unbroken } from './terminal-text'
@@ -243,6 +250,8 @@ import {
   withoutRowActions,
 } from './mod-sessions'
 import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
+import { noteStatusDrawn, takeShownRows } from './pane-status-shown'
+import { desktopSpaceLines } from './pane-status-tops'
 import { changeSaved, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
 import { paneAskRows, paneAskTabs } from './pane-asks'
 import { paneRowKeys } from './pane-row-keys'
@@ -1116,7 +1125,8 @@ async function syncLook($: EngineInterface, isOpen?: boolean) {
   if (await read($, DEMO)) return
   const [page, isPaneOpen, now] = await Promise.all([readPage($), isOpen ?? isPaneShown($), $.clock.now()])
   const isShown = isPaneOpen && page === 'overview'
-  await commit($, currentOwner(), s => withLook(s, isShown, now)).catch(() => undefined)
+  const shown = isShown ? {} : takeShownRows()
+  await commit($, currentOwner(), s => withLook(s, isShown, now, shown)).catch(() => undefined)
   followDelegates($, isShown)
 }
 
@@ -2918,7 +2928,7 @@ export const register: Register = on => {
         ? { rowPad: 2 * DESKTOP_ROW_PAD, settledPad: 2 * DESKTOP_ROW_PAD, buttonGap: 1, isFoldGapped: false }
         : { rowPad: blankLine, settledPad: 0, buttonGap: 2, isFoldGapped: true }
     const [
-      { prViews: prState, lastActions, notes, turns, stop, view, showsDemoNotices, isUnread, now },
+      { prViews: prState, lastActions, notes, turns, stop, view, isDemo, showsDemoNotices, isUnread, now },
       savedTab,
       savedPage,
       selection,
@@ -3115,6 +3125,7 @@ export const register: Register = on => {
       textKey,
       keyBindings,
       keyLines,
+      terminalKeyCells,
       actionRows,
       rowActions,
       fieldActions,
@@ -3224,7 +3235,7 @@ export const register: Register = on => {
     const keyList = helpKeys(look, mod.isNextBuild, shownTab, statusPressRows.length > 0)
     const keyColumn = Math.max(0, ...keyList.map(k => cellWidth(k.keys))) + 2
 
-    const { banner, tabs, rail, statusBlock, footer } = paneFrame(
+    const { banner, tabs, rail, statusBlock, footer, isTabRowFit, desktopTabLines } = paneFrame(
       {
         ...client,
         e,
@@ -3259,9 +3270,11 @@ export const register: Register = on => {
       groupTitle,
       section,
       sections,
+      terminalSectionGap,
       titleGap,
       foldButton,
       foldRow,
+      desktopFoldLines,
       closedFold,
       undoPlace,
       settledContent,
@@ -3369,7 +3382,7 @@ export const register: Register = on => {
       branch,
       desktopHairline,
     })
-    const { statusRowLine, statusKeys, statusView } = paneStatus(
+    const { statusRowLine, statusKeys, statusView, statusTops } = paneStatus(
       {
         e,
         listColumns,
@@ -3391,11 +3404,15 @@ export const register: Register = on => {
         desktopFrame,
         keyRow,
         textKey,
+        keyLines,
+        terminalKeyCells,
         emptyState,
         sections,
+        terminalSectionGap,
         section,
         foldRow,
         foldButton,
+        desktopFoldLines,
         statusUnfolded,
       },
       handlers,
@@ -3457,6 +3474,25 @@ export const register: Register = on => {
     // A pane takes a key
     // only as a Button's hotkey, so the tab keys, j, k and the selected row's keys
     // are Buttons in a hidden Box.
+    const isLookCounted = isStatusShown && !isHelpShown && !isDemo
+    if (isLookCounted) {
+      // The lines above the Status: the tabs, unless the rail draws them beside it, and the space under them, which
+      // desktop counts in half lines.
+      const terminalTabLines = hasRail ? 0 : isTabRowFit ? (isInline ? 1 : 3) : null
+      const tabLines = look === 'desktop' ? (hasRail ? null : desktopTabLines) : terminalTabLines
+      const isChromeKnown = tabLines !== null && !statusBlock && !showsDemoNotices
+      const spaceLines = hasRail ? 0 : look === 'desktop' ? desktopSpaceLines(blankLine) : blankLine
+      const top = isChromeKnown ? tabLines + spaceLines : null
+      const rounding = look === 'desktop' ? DESKTOP_OFFSET_ROUNDING : 0
+      const pageTop = top === null ? null : { least: top - rounding, most: top + rounding }
+      noteStatusDrawn({
+        pageTop,
+        tops: statusTops(),
+        scroll: e.props.scroll,
+        now,
+        isUnplacedShown: look === 'terminal',
+      })
+    }
     const tabView = isHelpShown
       ? helpView()
       : isStatusShown

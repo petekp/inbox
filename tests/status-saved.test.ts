@@ -250,3 +250,14 @@ test('a saved Status loses its links to a dropped milestone, and its declined go
   expect(upgradeStatus(once)).toEqual(once)
   expect(reproposed.proposedGoal).toBeNull()
 })
+
+test('a Status saved before looks counted rows on screen counts every subject that changed by its last look as seen, and a saved missed row keeps its time while its subject lasts', () => {
+  const subject = (id: string, changedAt: number) => ({ id, name: id, status: 'working', text: '', changedAt })
+  const saved = { subjects: [subject('s1', 10), subject('s2', 30)], lastLookAt: 20 }
+
+  expect(upgradeStatus(saved)?.missedInLastLook).toEqual({})
+  expect(upgradeStatus({ ...saved, missedInLastLook: { s1: 5, s2: null, s9: 1, s3: 'x' } })?.missedInLastLook).toEqual({
+    s1: 5,
+    s2: null,
+  })
+})

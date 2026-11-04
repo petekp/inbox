@@ -17,6 +17,7 @@ import { closingFolds, drafts, errors, sending, statusUnfolded, tabState } from 
 import type { Key } from './tab-state'
 import { act } from './tab-rows'
 import { NameLine } from './tab-status-name'
+import { SUBJECT_ATTRIBUTE } from './tab-shown'
 import { revealSelected, toggleFold } from './tab-motion'
 import { switchTab, open } from './tab-selection'
 import { tabRows } from './tab-rows'
@@ -80,7 +81,11 @@ function StatusLine({ row }: { row: StatusRow }) {
     const keys = statusKeyPlan(row).map(statusKey)
 
     return (
-      <div class={row.hasChildren ? 'row has-children' : 'row'} style={depthStyle(row)}>
+      <div
+        class={row.hasChildren ? 'row has-children' : 'row'}
+        style={depthStyle(row)}
+        {...{ [SUBJECT_ATTRIBUTE]: row.id }}
+      >
         <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
           <MarkGlyph text={row.mark} />
         </span>

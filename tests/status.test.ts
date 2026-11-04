@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { asksText, lookEnded, lookStarted, LOOK_MIN_MS } from '../hooks/status-children'
 import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
-import { mergedLine, nameBeforeStall } from '../hooks/status-page'
+import { mergedLine, nameBeforeStall, statusPage } from '../hooks/status-page'
 import { statusKeyPlan } from '../hooks/status-keys'
 import {
   IDLE_MARK,
@@ -14,7 +14,9 @@ import {
   RUNNING_FRAMES,
   SUBJECT_MARKS,
 } from '../hooks/help'
-import type { Item } from '../types'
+import type { Item, SessionStatus } from '../types'
+import { minutes } from '../evals/status-replay'
+import { sessionOf, statusOf, subject } from './status-evals-scenes'
 import { MIN, after, askItem, page, shape } from './status-helpers'
 
 test('a look keeps the look line where it was until the look ends, and counts only once the Status showed for five seconds', () => {
@@ -23,8 +25,8 @@ test('a look keeps the look line where it was until the look ends, and counts on
 
   expect(looking.lastLookAt).toBe(50)
   expect(lookStarted(looking, 300)).toBe(looking)
-  expect(lookEnded(looking, 200 + LOOK_MIN_MS)).toMatchObject({ lastLookAt: 200 + LOOK_MIN_MS, look: null })
-  expect(lookEnded(looking, 199 + LOOK_MIN_MS)).toMatchObject({ lastLookAt: 50, look: null })
+  expect(lookEnded(looking, 200 + LOOK_MIN_MS, 'all')).toMatchObject({ lastLookAt: 200 + LOOK_MIN_MS, look: null })
+  expect(lookEnded(looking, 199 + LOOK_MIN_MS, 'all')).toMatchObject({ lastLookAt: 50, look: null })
   expect(lookStarted(null, 1)).toBeNull()
 })
 
@@ -250,4 +252,44 @@ test('the Help legend explains every mark a row or group title draws, once each'
   expect(new Set(explained).size).toBe(explained.length)
   expect([...drawn].sort()).toEqual([...explained].sort())
   expect(MARK_LEGEND.filter(m => m.isRunning).map(m => m.mark)).toEqual([RUNNING_FRAMES[0]])
+})
+
+const MANY = 40
+const manyChanged = () =>
+  statusOf(
+    Array.from({ length: MANY }, (_, n) => subject(`s${n + 1}`, 'working', `Piece ${n + 1}`, 'under way', 10)),
+    {
+      lastLookAt: minutes(0),
+    },
+  )
+const shownAt = (ids: string[], at: number) => Object.fromEntries(ids.map(id => [id, at]))
+const firstSix = Array.from({ length: 6 }, (_, n) => `s${n + 1}`)
+const namesAbove = (o: SessionStatus) => {
+  const rows = statusPage(sessionOf(o, [], 30), minutes(30)).rows
+  const lookAt = rows.findIndex(r => r.kind === 'look')
+  return lookAt === -1 ? null : rows.slice(0, lookAt).flatMap(r => (r.kind === 'subject' ? [r.id] : []))
+}
+
+test('a look that showed the first 6 of 40 changed rows leaves the other 34 above the look line', () => {
+  const looked = lookEnded(lookStarted(manyChanged(), minutes(20)), minutes(21), shownAt(firstSix, minutes(20)))!
+  const above = namesAbove(looked)
+
+  expect(above).toHaveLength(MANY - firstSix.length)
+  expect(above?.some(id => firstSix.includes(id))).toBe(false)
+})
+
+test('a row shown only before its subject changed stays above the look line, and a missed row stays unseen through a later look that misses it too', () => {
+  const first = lookEnded(lookStarted(manyChanged(), minutes(20)), minutes(21), shownAt(['s1', 's2'], minutes(5)))!
+  const second = lookEnded(lookStarted(first, minutes(25)), minutes(26), shownAt(['s3'], minutes(25)))!
+
+  expect(namesAbove(first)).toHaveLength(MANY)
+  expect(namesAbove(second)).toHaveLength(MANY - 1)
+  expect(second.missedInLastLook).toMatchObject({ s1: minutes(0), s40: minutes(0) })
+})
+
+test('a look that counts every row, as the desktop pane does, marks every subject seen', () => {
+  const looked = lookEnded(lookStarted(manyChanged(), minutes(20)), minutes(21), 'all')!
+
+  expect(looked.missedInLastLook).toEqual({})
+  expect(statusPage(sessionOf(looked, [], 30), minutes(30)).rows.some(r => r.kind === 'look')).toBe(false)
 })

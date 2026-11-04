@@ -34,6 +34,8 @@ export type PanelSource = {
    * panel holds in place, from when it began showing that tab.
    */
   shown(tab: ShownTab, holds: Holds): void
+  /** Tells the session which Status subject rows the panel has on screen now, for the look under way. */
+  showedRows(ids: string[]): void
   /** Calls `listener` after the session's saved state changes. Returns how to stop. */
   onChange(listener: () => void): () => void
 }
@@ -157,6 +159,7 @@ export function createPanel(deps: PanelDeps): Panel {
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight)
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity))
       heldHeight = Math.max(heldHeight, drawn.lines.length)
+      if (drawn.shownSubjects.length > 0) source.showedRows(drawn.shownSubjects)
       // A reveal waits for a draw that has its target, as after Set as goal, whose goal button comes with the next screen.
       ui = { ...ui, pageTop: drawn.pageTop, pageReveal: drawn.isRevealed ? null : ui.pageReveal }
 

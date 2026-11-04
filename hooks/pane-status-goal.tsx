@@ -7,6 +7,7 @@ import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
 import { paneState } from './mod-state'
 import {
+  DESKTOP_CELL_PT,
   DESKTOP_FIELD_PT,
   DESKTOP_MARK_CELLS,
   DESKTOP_REPLY_ROWS,
@@ -14,9 +15,20 @@ import {
   REPLY_ROWS,
   STATUS_PAD_Y,
 } from './pane-sizes'
-import { desktopLines } from './desktop-metrics'
+import { DESKTOP_BUTTON_EXTRA_PT, desktopLines, desktopTextPt } from './desktop-metrics'
 import { lineCount } from './terminal-text'
 import { cellWidth } from './text'
+import {
+  DESKTOP_BUTTON_LINES,
+  desktopFrameLines,
+  desktopSpaceLines,
+  desktopTextLines,
+  exactly,
+  inkLines,
+  plus,
+  stackedIn,
+} from './pane-status-tops'
+import type { Drawn, Lines } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import type { StatusTone } from './help'
 import type { MilestoneRow, ProposalBlock } from './status-goal-page'
@@ -35,12 +47,7 @@ import { STALL_GAP, WAS_PREFIX } from './status-page'
 import { ROW_COPY } from './rows'
 
 /** One line of the Status list, as `paneStatus` draws it, so milestones line up with subjects. */
-type StatusRowLine = (line: {
-  key: string
-  mark: JSX.Element | null
-  content: JSX.Element[]
-  isSelected?: boolean
-}) => JSX.Element
+type StatusRowLine = (line: { key: string; mark: JSX.Element | null; content: Drawn[]; isSelected?: boolean }) => Drawn
 
 /** The proposal, the goal and its milestones, and the goal's text field, in the terminal and desktop looks. */
 export function paneStatusGoal(
@@ -59,64 +66,84 @@ export function paneStatusGoal(
     statusMarkAt,
     statusNameLine,
     statusPageText,
+    desktopBlockWidth,
     markGlyph,
     markWidth,
     keyRow,
     textKey,
+    terminalKeyCells,
     desktopFrame,
   }: Pick<
     PaneBase,
     'e' | 'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'drafts' | 'listColumns' | 'now' | 'statusKeyRow'
   > &
-    Pick<PaneStatusLines, 'statusMarkAt' | 'statusNameLine' | 'statusPageText'> &
+    Pick<PaneStatusLines, 'statusMarkAt' | 'statusNameLine' | 'statusPageText' | 'desktopBlockWidth'> &
     Pick<PaneRowLines, 'markGlyph' | 'markWidth'> &
-    Pick<PaneRowKeys, 'keyRow' | 'textKey'> &
+    Pick<PaneRowKeys, 'keyRow' | 'textKey' | 'terminalKeyCells'> &
     Pick<PaneRowFrame, 'desktopFrame'>,
   { updateDrafts, updateTyping, sendTyped }: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped'>,
   {
     statusRowLine,
     statusKeys,
     statusRows,
+    keysRow,
   }: {
     statusRowLine: StatusRowLine
     statusKeys: (t: StatusKeyTarget) => KeyAction[]
-    statusRows: (rows: StatusRow[]) => JSX.Element[]
+    statusRows: (rows: StatusRow[]) => Drawn[]
+    keysRow: (t: StatusKeyTarget, width: number) => Drawn[]
   },
 ) {
   const isTypingGoal = Input !== null && typing === GOAL_KEYS_ID
   /** Lines at the head's column. The terminal marks the selected block with the selection color, as it does a row. */
-  const block = (key: string, children: JSX.Element[], isSelected = false) =>
-    look === 'desktop' ? (
-      desktopFrame({ key, padY: 0, markCells: 0, hasSide: false, children })
-    ) : (
-      <Box
-        key={key}
-        flexDirection="column"
-        paddingLeft={statusMarkAt}
-        backgroundColor={isSelected ? pal.selection : undefined}
-      >
-        {children}
-      </Box>
-    )
-  const muted = (key: string, text: string) => (
-    <Box key={key}>
-      <Text wrap="wrap" color={pal.muted}>
-        {text}
-      </Text>
-    </Box>
-  )
-  const bold = (key: string, text: string) => (
-    <Box key={key}>
-      <Text wrap="wrap" bold>
-        {text}
-      </Text>
-    </Box>
-  )
-  const keysLine = (target: StatusKeyTarget) => {
-    const keys = statusKeys(target)
+  const block = (key: string, parts: Drawn[], isSelected = false): Drawn => {
+    const children = parts.map(p => p.el)
+    const frame: Drawn[] = look === 'desktop' ? [{ el: <Box key={`${key}-frame`} />, lines: desktopFrameLines(0) }] : []
 
-    return keys.length > 0 ? [<Box key={`${target.id}-keys`}>{keyRow(target.id, keys)}</Box>] : []
+    return stackedIn(
+      look === 'desktop' ? (
+        desktopFrame({ key, padY: 0, markCells: 0, hasSide: false, children })
+      ) : (
+        <Box
+          key={key}
+          flexDirection="column"
+          paddingLeft={statusMarkAt}
+          backgroundColor={isSelected ? pal.selection : undefined}
+        >
+          {children}
+        </Box>
+      ),
+      [...parts, ...frame],
+    )
   }
+  /** The width of a block's text: the list's columns past the head's column, or its points on desktop. */
+  const blockWidth = look === 'desktop' ? desktopBlockWidth : listColumns - statusMarkAt
+  /** Text Claude Code or desktop wraps in a block. */
+  const wrapped = (el: JSX.Element, text: string): Drawn => ({
+    el,
+    lines: look === 'desktop' ? desktopTextLines(text, blockWidth) : inkLines(text, blockWidth),
+  })
+  const muted = (key: string, text: string) =>
+    wrapped(
+      <Box key={key}>
+        <Text wrap="wrap" color={pal.muted}>
+          {text}
+        </Text>
+      </Box>,
+      text,
+    )
+  const bold = (key: string, text: string) =>
+    wrapped(
+      <Box key={key}>
+        <Text wrap="wrap" bold>
+          {text}
+        </Text>
+      </Box>,
+      text,
+    )
+  /** An open field's height follows what is typed, so its lines are not counted. */
+  const uncounted = (el: JSX.Element): Drawn => ({ el, lines: null })
+  const keysLine = (target: StatusKeyTarget) => keysRow(target, blockWidth)
   const isSelected = (id: string) => look === 'terminal' && !isTypingGoal && statusKeyRow?.id === id
   const cancel: KeyAction = {
     key: `cancel-${GOAL_KEYS_ID}`,
@@ -157,21 +184,23 @@ export function paneStatusGoal(
    * The goal's text field, as many rows tall as `fieldRowCount` gives. Submitting sets the typed goal. When the prompt kept the
    * keys, a line under it says to click it.
    */
-  const fieldInput = () =>
+  const fieldInput = (): Drawn[] =>
     Input === null
       ? []
       : [
-          look === 'terminal' ? (
-            <Box key="goal-field" width={e.props.bodyColumns} flexShrink={0}>
-              {goalInput(Input)}
-            </Box>
-          ) : (
-            goalInput(Input)
+          uncounted(
+            look === 'terminal' ? (
+              <Box key="goal-field" width={e.props.bodyColumns} flexShrink={0}>
+                {goalInput(Input)}
+              </Box>
+            ) : (
+              goalInput(Input)
+            ),
           ),
           ...(paneState.fieldWithoutKeys === GOAL_KEYS_ID ? [muted('goal-field-click', ROW_COPY.clickField)] : []),
         ]
-  const fieldKeys = () =>
-    Input === null ? [] : [<Box key="goal-field-keys">{keyRow(`${GOAL_KEYS_ID}-field`, [cancel])}</Box>]
+  const fieldKeys = (): Drawn[] =>
+    Input === null ? [] : [uncounted(<Box key="goal-field-keys">{keyRow(`${GOAL_KEYS_ID}-field`, [cancel])}</Box>)]
   const field = () => [...fieldInput(), ...fieldKeys()]
   /** Marks in their tones, each with its text, on lines that wrap between them, as the Other work counts draw. */
   const markRun = (
@@ -200,23 +229,30 @@ export function paneStatusGoal(
    * A proposed milestone on its own line, its mark, name and spacing as a goal's milestone row draws them, so the list
    * keeps its place when the proposal becomes the goal. The block already starts at the mark's column.
    */
-  const proposedMilestone = (m: ProposalBlock['milestones'][number], n: number) => (
-    <Box
-      key={`goal-proposal-${n}`}
-      flexDirection="row"
-      alignItems="flex-start"
-      paddingY={look === 'desktop' ? STATUS_PAD_Y : 0}
-    >
-      <Box width={look === 'desktop' ? DESKTOP_MARK_CELLS + 1 : markWidth} flexShrink={0}>
-        {markGlyph({ text: m.mark, isRunning: false }, `goal-proposal-${n}`, m.tone ? pal.mark[m.tone] : pal.muted)}
-      </Box>
-      <Box flexDirection="column" flexShrink={1} flexGrow={1} minWidth={0}>
-        {statusNameLine(`goal-proposal-${n}-name`, { text: m.name }, null, 0)}
-      </Box>
-    </Box>
-  )
+  const proposedMilestone = (m: ProposalBlock['milestones'][number], n: number): Drawn => {
+    const name = statusNameLine(`goal-proposal-${n}-name`, { text: m.name }, null, 0)
+
+    return {
+      el: (
+        <Box
+          key={`goal-proposal-${n}`}
+          flexDirection="row"
+          alignItems="flex-start"
+          paddingY={look === 'desktop' ? STATUS_PAD_Y : 0}
+        >
+          <Box width={look === 'desktop' ? DESKTOP_MARK_CELLS + 1 : markWidth} flexShrink={0}>
+            {markGlyph({ text: m.mark, isRunning: false }, `goal-proposal-${n}`, m.tone ? pal.mark[m.tone] : pal.muted)}
+          </Box>
+          <Box flexDirection="column" flexShrink={1} flexGrow={1} minWidth={0}>
+            {name.el}
+          </Box>
+        </Box>
+      ),
+      lines: look === 'desktop' ? plus(name.lines, exactly(2 * desktopSpaceLines(STATUS_PAD_Y))) : name.lines,
+    }
+  }
   /** A milestone, then the work that serves it, one step in. */
-  const milestoneLines = (m: MilestoneRow) => [
+  const milestoneLines = (m: MilestoneRow): Drawn[] => [
     statusRowLine({
       key: `status-${m.id}`,
       mark: markGlyph({ text: m.mark, isRunning: false }, m.id, m.tone ? pal.mark[m.tone] : pal.muted),
@@ -237,7 +273,7 @@ export function paneStatusGoal(
    * the field takes the proposal's text's place, else the goal's, else Set a goal's under the head, and the buttons of
    * the proposal and the goal give way to it.
    */
-  const goalAbove = (page: StatusPage): { proposal: JSX.Element[]; goal: JSX.Element[] } => {
+  const goalAbove = (page: StatusPage): { proposal: Drawn[]; goal: Drawn[] } => {
     const p = page.proposal
     const g = page.goal
     const proposal = p
@@ -265,26 +301,34 @@ export function paneStatusGoal(
         block(
           'goal-title',
           [
-            <Box key="goal-label" flexDirection="row" flexWrap="wrap" alignItems="center">
-              <Text color={pal.muted}>{g.label}</Text>
-              {headerKeys.flatMap(k => [
-                <Text key={`goal-label-dot-${k.key}`} color={pal.muted}>
-                  {STALL_GAP}
-                </Text>,
-                textKey(GOAL_KEYS_ID, k),
-              ])}
-            </Box>,
+            {
+              el: (
+                <Box key="goal-label" flexDirection="row" flexWrap="wrap" alignItems="center">
+                  <Text color={pal.muted}>{g.label}</Text>
+                  {headerKeys.flatMap(k => [
+                    <Text key={`goal-label-dot-${k.key}`} color={pal.muted}>
+                      {STALL_GAP}
+                    </Text>,
+                    textKey(GOAL_KEYS_ID, k),
+                  ])}
+                </Box>
+              ),
+              lines: labelLines(g.label, headerKeys),
+            },
             ...(isTypingGoal && !p
               ? field()
               : [
-                  <Box key="goal-text">
-                    <Text wrap="wrap">
-                      <Text bold>{g.text}</Text>
-                      {g.count ? (
-                        <Text color={pal.muted}>{`${STALL_GAP}${g.count}`.replaceAll(' ', '\u00a0')}</Text>
-                      ) : null}
-                    </Text>
-                  </Box>,
+                  wrapped(
+                    <Box key="goal-text">
+                      <Text wrap="wrap">
+                        <Text bold>{g.text}</Text>
+                        {g.count ? (
+                          <Text color={pal.muted}>{`${STALL_GAP}${g.count}`.replaceAll(' ', '\u00a0')}</Text>
+                        ) : null}
+                      </Text>
+                    </Box>,
+                    `${g.text}${g.count ? `${STALL_GAP}${g.count}`.replaceAll(' ', '_') : ''}`,
+                  ),
                 ]),
             ...(g.was ? [muted('goal-was', `${WAS_PREFIX}${g.was}`)] : []),
             ...(g.now ? [muted('goal-now', g.now)] : []),
@@ -300,19 +344,37 @@ export function paneStatusGoal(
     }
   }
   const goalKeys = (page: StatusPage) => keysLine({ id: GOAL_KEYS_ID, keys: goalKeyPlan(page) })
+  /**
+   * The goal's label line: one line while its words and header keys fit, as its wrapping row draws them. On desktop a
+   * header key is a native button, so the line is as tall as a button.
+   */
+  const labelLines = (label: string, keys: KeyAction[]): Lines | null => {
+    if (keys.length === 0) return look === 'desktop' ? desktopTextLines(label, blockWidth) : inkLines(label, blockWidth)
+    if (look === 'desktop') {
+      const pt = keys.reduce(
+        (n, k) => n + desktopTextPt(STALL_GAP) + desktopTextPt(k.label) + DESKTOP_BUTTON_EXTRA_PT,
+        desktopTextPt(label),
+      )
+      return pt <= blockWidth - DESKTOP_CELL_PT ? { least: 1, most: DESKTOP_BUTTON_LINES } : null
+    }
+    const cells = keys.reduce((n, k) => n + cellWidth(STALL_GAP) + terminalKeyCells(k), cellWidth(label))
+    return cells < blockWidth ? exactly(1) : null
+  }
   /** Under the head, or under the empty state, while no goal is set: Set a goal, or the field it opened when no proposal shows. */
-  const setGoal = (page: StatusPage): JSX.Element[] => {
+  const setGoal = (page: StatusPage): Drawn[] => {
     const lines = page.goal !== null || page.proposal !== null ? [] : isTypingGoal ? field() : goalKeys(page)
 
     return lines.length > 0 ? [block(`status-${GOAL_KEYS_ID}`, lines, isSelected(GOAL_KEYS_ID))] : []
   }
   /** Set a goal, or the field it opened, with no frame, for the empty page's centred column. */
-  const setGoalBare = (page: StatusPage): JSX.Element[] =>
+  const setGoalBare = (page: StatusPage): Drawn[] =>
     isTypingGoal
       ? [
-          <Box key="goal-field-bare" flexDirection="column" width="100%">
-            {field()}
-          </Box>,
+          uncounted(
+            <Box key="goal-field-bare" flexDirection="column" width="100%">
+              {field().map(p => p.el)}
+            </Box>,
+          ),
         ]
       : goalKeys(page)
   return { goalAbove, setGoal, setGoalBare, markRun }
