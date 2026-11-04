@@ -11,7 +11,7 @@ import { codexAsk, runUpdates as runBothCalls } from '../src/update'
 import { findCli } from '../src/cli'
 import { run } from '../src/run'
 import { TIMED_OUT_CODE } from '../../hooks/gh'
-import { STATUS_SYSTEM } from '../../hooks/status-prompt'
+import { PARTS_STATUS_SYSTEM } from '../../hooks/status-prompt'
 import type { CallReport } from '../../hooks/session-host'
 import { fakeRunner, tempDir } from './helpers'
 import { ex, LEDGER_ANSWER } from './update-fixtures'
@@ -101,7 +101,9 @@ test('a reply with a NUL byte reaches codex on stdin, and both calls of its upda
   const answers = join(bin, 'answers.json')
   writeFileSync(
     answers,
-    JSON.stringify({ [STATUS_SYSTEM]: 'HEAD: Building the deploy script | Writing a script that deploys the app' }),
+    JSON.stringify({
+      [PARTS_STATUS_SYSTEM]: 'HEAD: Building the deploy script | Writing a script that deploys the app',
+    }),
   )
   writeFileSync(
     cli,

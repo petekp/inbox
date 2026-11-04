@@ -71,8 +71,11 @@ const without = (values.without?.split(',') ?? []) as GoalPartId[]
 const unknownParts = without.filter(id => !(id in GOAL_PARTS))
 if (unknownParts.length > 0)
   throw new Error(`Unknown --without ${unknownParts.join(', ')}. Use ${Object.keys(GOAL_PARTS).join(', ')}.`)
-/** The Status call's system text: the shipped one, or a copy without the goal rules `--without` names. */
-const statusSystemText = statusSystem(without)
+/** Each agent's Status call system text: its host's, or a copy without the goal rules `--without` names. */
+const statusSystemTexts: Record<Agent, string> = {
+  claude: statusSystem(without, CLAUDE_CODE.splitsPlanIntoSubjects),
+  codex: statusSystem(without, CODEX.splitsPlanIntoSubjects),
+}
 const judgeSets = values['judge-set'] === undefined ? [1, 2] : [Number(values['judge-set'])]
 if (!judgeSets.every(n => n === 1 || n === 2))
   throw new Error(`Unknown --judge-set ${values['judge-set']}. Use 1 or 2.`)
@@ -87,7 +90,8 @@ const about = provenance(
   values['judge-pages'] !== undefined ? 'status-judge' : 'status',
   { claude: 'claude', codex: codexCli },
   {
-    'status systemText': statusSystemText,
+    'status systemText': statusSystemTexts.claude,
+    'status systemText codex': statusSystemTexts.codex,
     'systemText claude': systemText(CLAUDE_CODE),
     'systemText codex': systemText(CODEX),
     judge: judgeSystem,
@@ -197,7 +201,7 @@ function modelCall(agent: Agent): ModelCall {
 }
 
 async function once(agent: Agent, replay: Replay, n: number): Promise<RunRecord> {
-  const steps = await runReplay(replay, { agent, ask: modelCall(agent), system: statusSystemText })
+  const steps = await runReplay(replay, { agent, ask: modelCall(agent), system: statusSystemTexts[agent] })
   const graded = gradeReplay(replay, steps)
   const records: StepRecord[] = []
   let previous: string | null = null

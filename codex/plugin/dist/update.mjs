@@ -3548,6 +3548,7 @@ var CODEX = {
   prsIn: "the PRs section of the Inbox tab",
   recordTool: "mcp__inbox__record",
   closeTool: "mcp__inbox__close",
+  splitsPlanIntoSubjects: true,
   intro: "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, and your findings, in the Inbox tab beside the conversation."
 };
 
@@ -3907,7 +3908,11 @@ function goalBlocks(o) {
 }
 
 // ../hooks/status-prompt.ts
-function statusSystem(without = []) {
+var PARTS_RULE = ` When the agent's plan or the person names several parts of the work that the person would each name on their own, such as a login screen, a password reset and a sign-out button, each part is its own subject, queued until it starts, and the head names the whole. Never write one subject that repeats the head and holds those parts in its text. A part gets its subject even when a milestone covers it: a milestone is an outcome the goal needs, never a copy of a subject. The steps of one part, such as making it, testing it and writing its docs, are not parts: they stay in that part's subject.`;
+var OWN_CHILDREN_RULE = ` Work this session's own subagents or background tasks do on it, such as a review, keeps it working.`;
+function statusSystem(without = [], splitsParts = false) {
+  const parts = splitsParts ? PARTS_RULE : "";
+  const ownChildren = splitsParts ? OWN_CHILDREN_RULE : "";
   return `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
 
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
@@ -3937,7 +3942,7 @@ LINK: running or ask id | subject id or name
 HEAD: title | description
 ${GOAL_LINES}
 
-A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. When the agent's plan or the person names several parts of the work that the person would each name on their own, such as a login screen, a password reset and a sign-out button, each part is its own subject, queued until it starts, and the head names the whole. Never write one subject that repeats the head and holds those parts in its text. A part gets its subject even when a milestone covers it: a milestone is an outcome the goal needs, never a copy of a subject. The steps of one part, such as making it, testing it and writing its docs, are not parts: they stay in that part's subject. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
+A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open.${parts} A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
 
 The name is a label of at most ${NAME_WORDS} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
 
@@ -3946,7 +3951,7 @@ The head says what the session is focused on now: the work the person would name
 Write every name, where it stands, the head, the goal and each milestone in plain spoken words, so someone who was not in the session gets it on one read: everyday words, and each thing named by what it is. Write "Phone sign-in | iPhone done, Android next", not "Mobile auth parity | iOS verified; Android pending".
 
 Status is one of: working, queued, waits-on-other.
-- working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask. Work this session's own subagents or background tasks do on it, such as a review, keeps it working. When the work stopped for another reason, it is queued, waits on something, or is done.
+- working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask.${ownChildren} When the work stopped for another reason, it is queued, waits on something, or is done.
 - queued: planned, not started.
 - waits-on-other: it waits on something other than the person, such as a build, a review or another session.
 
@@ -3966,6 +3971,10 @@ Goal:
 ${goalRules(without)}`;
 }
 var STATUS_SYSTEM = statusSystem();
+var PARTS_STATUS_SYSTEM = statusSystem([], true);
+function hostStatusSystem(names) {
+  return names.splitsPlanIntoSubjects ? PARTS_STATUS_SYSTEM : STATUS_SYSTEM;
+}
 function headText(o) {
   if (!o?.head) return "(none yet)";
   return `${o.head.title} | ${o.head.description || "(no description yet)"}`;
@@ -4109,10 +4118,11 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
   if (!isStatusCallCurrent(s, appliedAfter)) return;
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() };
   const prompt = statusCallPrompt(input, call.exchange);
+  const system = hostStatusSystem(host.names);
   const heards = [];
   const { last } = await askStatus(async () => {
     const kind = { call: "status", reads: call.exchange.kind, isRetry: heards.length > 0 };
-    const heard = await heardCall(call.ask, prompt, STATUS_SYSTEM, kind, () => host.now());
+    const heard = await heardCall(call.ask, prompt, system, kind, () => host.now());
     heards.push({ kind, heard });
     return heard;
   });
@@ -4138,7 +4148,7 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
     host: host.records.host,
     session: host.records.session,
     at: input.now,
-    system: STATUS_SYSTEM,
+    system,
     prompt,
     input,
     exchange: call.exchange,
@@ -4899,6 +4909,7 @@ var statusRecords = (dir, sessionId) => ({
 var refreshStatus2 = (dir, sessionId, ask, now, onWrite, records) => refreshStatus({
   ...codexStore(dir, sessionId, now, onWrite),
   ask,
+  names: CODEX,
   inOrder: inOrderFor(dir, sessionId),
   records
 });

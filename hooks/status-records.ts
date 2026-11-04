@@ -1,5 +1,5 @@
 import { askStatus, parseStatus } from './status'
-import { statusPrompt, statusMidTurnPrompt, statusCatchUpPrompt, STATUS_SYSTEM } from './status-prompt'
+import { statusPrompt, statusMidTurnPrompt, statusCatchUpPrompt, hostStatusSystem } from './status-prompt'
 import type { StatusCallInput } from './status-prompt'
 import { failedStatus, appliedStatus, isStatusCallCurrent } from './session-status'
 import type { ClientId } from './clients'
@@ -31,10 +31,13 @@ export function statusCallPrompt(input: StatusCallInput, read: StatusExchange): 
   }
 }
 
-/** A Status call: what it reads as its exchange, and the model call that sends its prompt with `STATUS_SYSTEM`. */
+/** A Status call: what it reads as its exchange, and the model call that sends its prompt with the host's Status system text. */
 export type StatusCall = { exchange: StatusExchange; ask: Ask }
 
-type StatusHost<S extends Session> = Pick<UpdateHost<S>, 'now' | 'read' | 'update' | 'ask' | 'inOrder' | 'records'>
+type StatusHost<S extends Session> = Pick<
+  UpdateHost<S>,
+  'now' | 'read' | 'update' | 'ask' | 'inOrder' | 'records' | 'names'
+>
 
 /** One model call of a Status call. An answer that holds prose is asked once more, so a call makes one or two. */
 type StatusAttempt = {
@@ -145,7 +148,7 @@ function attemptOf({ text, report, thrown, ms }: HeardCall): StatusAttempt {
  * `records`, it then writes the call's record in the background, and drops a failed write.
  */
 export async function askAndWriteStatus<S extends Session>(
-  host: Pick<StatusHost<S>, 'now' | 'update' | 'records'>,
+  host: Pick<StatusHost<S>, 'now' | 'update' | 'records' | 'names'>,
   s: S,
   call: StatusCall,
   tasks: HostTask[],
@@ -154,10 +157,11 @@ export async function askAndWriteStatus<S extends Session>(
   if (!isStatusCallCurrent(s, appliedAfter)) return
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() }
   const prompt = statusCallPrompt(input, call.exchange)
+  const system = hostStatusSystem(host.names)
   const heards: { kind: CallKind; heard: HeardCall }[] = []
   const { last } = await askStatus(async () => {
     const kind = { call: 'status', reads: call.exchange.kind, isRetry: heards.length > 0 } as const
-    const heard = await heardCall(call.ask, prompt, STATUS_SYSTEM, kind, () => host.now())
+    const heard = await heardCall(call.ask, prompt, system, kind, () => host.now())
     heards.push({ kind, heard })
     return heard
   })
@@ -186,7 +190,7 @@ export async function askAndWriteStatus<S extends Session>(
     host: host.records.host,
     session: host.records.session,
     at: input.now,
-    system: STATUS_SYSTEM,
+    system,
     prompt,
     input,
     exchange: call.exchange,

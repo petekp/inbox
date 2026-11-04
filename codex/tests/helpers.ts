@@ -6,7 +6,7 @@ import { zstdCompressSync } from 'node:zlib'
 
 import type { HookDeps, HookInput } from '../src/hook'
 import type { Run } from '../../hooks/gh'
-import { STATUS_SYSTEM } from '../../hooks/status-prompt'
+import { PARTS_STATUS_SYSTEM } from '../../hooks/status-prompt'
 import type { Ask } from '../../hooks/session-host'
 
 export function tempDir(): string {
@@ -86,5 +86,5 @@ export function movedRollout(path: string, home: string, folder: 'archived_sessi
 }
 
 export function ledgerOnly(ask: (prompt: string) => Promise<string | null>): Ask {
-  return (prompt, system) => (system === STATUS_SYSTEM ? Promise.resolve(null) : ask(prompt))
+  return (prompt, system) => (system === PARTS_STATUS_SYSTEM ? Promise.resolve(null) : ask(prompt))
 }

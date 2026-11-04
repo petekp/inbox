@@ -9,6 +9,7 @@ export const OMP: Host = {
   prsIn: 'the PRs tab of the /inbox panel',
   recordTool: 'record',
   closeTool: 'close',
+  splitsPlanIntoSubjects: false,
   intro:
     "The inbox extension shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox panel, and your findings, in the panel's Finds tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings.",
 }
