@@ -3533,7 +3533,7 @@ var BLOCKED_COMMAND = /^Command blocked by PreToolUse hook: [^\n]*?\. Command: (
 var BLOCKED_TOOL = /^Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: (\S+)/;
 var SCRIPT_FAILED = "Script failed\n";
 var SCRIPT_ERROR = /^Script error:\s*/;
-var SCRIPT_DECLINED = /^exec_command failed: [^\n]*Rejected\(\\?"rejected by user\\?"\)/;
+var SCRIPT_DECLINED = /^exec_command failed: [^\n]*Rejected\(\\?"(?:exec command )?rejected by user\\?"\)/;
 function declinedScriptCommand(script, error) {
   const isKnowable = SCRIPT_DECLINED.test(error) && script.declined.size === 0 && !script.isShared;
   const unrecorded = isKnowable ? (script.commands ?? []).filter((command) => !script.recorded.has(command)) : [];

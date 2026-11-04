@@ -42,7 +42,7 @@ const SCRIPT_ERROR = /^Script error:\s*/
  * The error a code-mode script ends on when the person declines one of its `exec_command` calls. Codex writes the
  * rejection as Rust debug text, as in `exec_command failed: CreateProcess { message: "Rejected(\"rejected by user\")" }`.
  */
-const SCRIPT_DECLINED = /^exec_command failed: [^\n]*Rejected\(\\?"rejected by user\\?"\)/
+const SCRIPT_DECLINED = /^exec_command failed: [^\n]*Rejected\(\\?"(?:exec command )?rejected by user\\?"\)/
 
 /**
  * A code-mode script whose output has not come yet. `recorded` holds the commands of the `CommandExecution` rows
@@ -52,9 +52,10 @@ const SCRIPT_DECLINED = /^exec_command failed: [^\n]*Rejected\(\\?"rejected by u
 type OpenScript = { commands: string[] | null; recorded: Set<string>; declined: Set<string>; isShared: boolean }
 
 /**
- * The command the person declined in a script that ended on `error`, or '' when that cannot be told. A declined
- * command gets no `CommandExecution` row, unless one marked declined. But a command still running when the script
- * ends has no row either. So the declined command is known only when it is the one command of the script with no row.
+ * The command the person declined in a script that ended on `error`, or '' when that cannot be told. A command Codex
+ * rejects before it starts gets no `CommandExecution` row, unless one marked declined. But a command still running
+ * when the script ends has no row either. So the declined command is known only when it is the one command of the
+ * script with no row.
  */
 function declinedScriptCommand(script: OpenScript, error: string): string {
   const isKnowable = SCRIPT_DECLINED.test(error) && script.declined.size === 0 && !script.isShared
