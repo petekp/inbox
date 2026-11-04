@@ -61,7 +61,8 @@ const scriptOutput = (text: string, callId = 'c1') => {
   }
 }
 
-const SCRIPT_DECLINED = 'Script error: \nexec_command failed: Rejected("rejected by user")'
+const SCRIPT_DECLINED =
+  'Script error: \nexec_command failed: CreateProcess { message: "Rejected(\\"rejected by user\\")" }'
 
 const shellCall = (callId: string, command: string) => ({
   type: 'response_item',
@@ -133,26 +134,111 @@ test('a call a PreToolUse hook blocked leaves the ended turn activity, in code m
   assert.deepEqual(activity, ['ran: git status'])
 })
 
-test('a declined script with two commands, or a command that is not a literal, keeps every line', async () => {
+const twoCommands = (first: string, second: string) =>
+  `await tools.exec_command({cmd:${JSON.stringify(first)}});\nawait tools.exec_command({cmd:${JSON.stringify(second)}});\n`
+
+test('a declined script takes back the line of its one command with no row and keeps the lines of those that ran', async () => {
   const transcript = rollout([
     started,
-    script('c1', 'await tools.exec_command({cmd:"git status"});\nawait tools.exec_command({cmd:"git push"});\n'),
+    script('c1', twoCommands('git status', 'git push')),
+    commandRow('git status', 'completed'),
     scriptOutput(SCRIPT_DECLINED, 'c1'),
-    script(
-      'c2',
-      'const c = "npm test";\nawait tools.exec_command({cmd:"npm ci"});\nawait tools.exec_command({cmd: c});\n',
-    ),
-    scriptOutput(SCRIPT_DECLINED, 'c2'),
   ])
-  const activity = await endedActivity(transcript, [
-    bash(transcript, 'git status'),
-    bash(transcript, 'git push'),
-    bash(transcript, 'npm ci'),
-    bash(transcript, 'npm test'),
-  ])
+  const activity = await endedActivity(transcript, [bash(transcript, 'git status'), bash(transcript, 'git push')])
 
-  assert.deepEqual(activity, ['ran: git status', 'ran: git push', 'ran: npm ci', 'ran: npm test'])
+  assert.deepEqual(activity, ['ran: git status'])
 })
+
+async function keptLines(rows: unknown[], commands: string[], error = SCRIPT_DECLINED) {
+  const transcript = rollout([started, ...rows, scriptOutput(error, 'c1')])
+  const activity = await endedActivity(
+    transcript,
+    commands.map(command => bash(transcript, command)),
+  )
+
+  assert.deepEqual(
+    activity,
+    commands.map(command => `ran: ${command}`),
+  )
+}
+
+test('a declined script keeps every line when two commands have no row', () =>
+  keptLines([script('c1', twoCommands('npm run dev', 'git push'))], ['npm run dev', 'git push']))
+
+test('a declined script keeps every line when a cmd is not a string literal', () =>
+  keptLines(
+    [
+      script(
+        'c1',
+        'const c = "npm test";\nawait tools.exec_command({cmd:"npm run dev"});\nawait tools.exec_command({cmd: c});\n',
+      ),
+      commandRow('npm test', 'completed'),
+    ],
+    ['npm run dev', 'npm test'],
+  ))
+
+test('a declined script keeps every line when a cmd joins a literal to more text', () =>
+  keptLines(
+    [
+      script('c1', 'await tools.exec_command({cmd:"npm test" + " --watch"});\nawait tools.exec_command({cmd:"ls"});\n'),
+      commandRow('ls', 'completed'),
+    ],
+    ['npm test', 'npm test --watch', 'ls'],
+  ))
+
+test('a declined script keeps every line when an exec_command call passes no cmd of its own', () =>
+  keptLines(
+    [
+      script(
+        'c1',
+        'await tools.exec_command({cmd:"npm run dev"});\nawait tools.exec_command(Object.fromEntries([["cmd", "npm test"]]));\n',
+      ),
+      commandRow('npm test', 'completed'),
+    ],
+    ['npm run dev', 'npm test'],
+  ))
+
+test('a declined script keeps every line when two cmds are the same', () =>
+  keptLines(
+    [
+      script('c1', `${twoCommands('git push', 'npm run dev')}await tools.exec_command({cmd:"git push"});\n`),
+      commandRow('git push', 'completed'),
+    ],
+    ['git push', 'npm run dev'],
+  ))
+
+test('a declined script keeps every line when a function could run a command twice', () =>
+  keptLines(
+    [
+      script(
+        'c1',
+        'const push = () => tools.exec_command({cmd:"git push"});\nawait tools.exec_command({cmd:"npm run dev"});\nawait push();\nawait push();\n',
+      ),
+      commandRow('git push', 'completed'),
+    ],
+    ['npm run dev', 'git push'],
+  ))
+
+test('a declined script keeps every line when another call ran alongside it', () =>
+  keptLines(
+    [
+      script('c1', twoCommands('npm run build', 'gh pr create')),
+      shellCall('c5', 'ls'),
+      commandRow('npm run build', 'completed'),
+      callOutput('c5', ''),
+    ],
+    ['npm run build', 'gh pr create'],
+  ))
+
+test('a script keeps every line when a call other than exec_command was declined', () =>
+  keptLines(
+    [
+      script('c1', `${twoCommands('npm run dev', 'npm test')}await tools.shell_command({command:"git push"});\n`),
+      commandRow('npm test', 'completed'),
+    ],
+    ['npm run dev', 'npm test'],
+    'Script error: \nshell_command failed: CreateProcess { message: "Rejected(\\"rejected by user\\")" }',
+  ))
 
 test('a command the person declined inside a code-mode script leaves the ended turn activity', async () => {
   const transcript = rollout([
