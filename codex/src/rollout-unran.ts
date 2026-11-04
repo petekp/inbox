@@ -53,12 +53,12 @@ type OpenScript = { commands: string[] | null; recorded: Set<string>; declined: 
 
 /**
  * The command the person declined in a script that ended on `error`, or '' when that cannot be told. A command Codex
- * rejects before it starts gets no `CommandExecution` row, unless one marked declined. But a command still running
+ * rejects before it starts gets no `CommandExecution` row, or one marked declined. But a command still running
  * when the script ends has no row either. So the declined command is known only when it is the one command of the
  * script with no row.
  */
 function declinedScriptCommand(script: OpenScript, error: string): string {
-  const isKnowable = SCRIPT_DECLINED.test(error) && script.declined.size === 0 && !script.isShared
+  const isKnowable = SCRIPT_DECLINED.test(error) && !script.isShared
   const unrecorded = isKnowable ? (script.commands ?? []).filter(command => !script.recorded.has(command)) : []
 
   return unrecorded.length === 1 ? (unrecorded[0] ?? '') : ''

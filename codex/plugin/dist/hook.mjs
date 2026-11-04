@@ -3478,17 +3478,18 @@ var literalValue = (literal) => {
   }
 };
 var PATCH_ARGUMENT = /tools\.apply_patch\(\s*("(?:[^"\\]|\\.)*")/;
-var COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")/;
+var COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")(?=\s*[,})])/;
 var scriptCommand = (input) => literalValue(COMMAND_ARGUMENT.exec(input)?.[1]) ?? "";
-var COMMAND_KEY = /\bcmd["']?\s*:/g;
 var COMMAND_CALL = /\bexec_command\b/g;
 var COMMAND_ARGUMENTS = new RegExp(COMMAND_ARGUMENT.source, "g");
+var STRING_LITERALS = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
+var REPEATS = /=>|\bfunction\b|\b(?:for|while|do)\b/;
 function scriptCommands(input) {
   const commands = [...input.matchAll(COMMAND_ARGUMENTS)].map((literal) => literalValue(literal[1]) ?? "");
-  const keys = (input.match(COMMAND_KEY) ?? []).length;
   const calls = (input.match(COMMAND_CALL) ?? []).length;
-  const isEachCallLiteral = commands.length === keys && commands.length === calls && !commands.includes("");
-  return isEachCallLiteral && new Set(commands).size === commands.length ? commands : null;
+  const isEachCallLiteral = commands.length === calls && !commands.includes("");
+  const canRepeat = REPEATS.test(input.replace(STRING_LITERALS, '""'));
+  return isEachCallLiteral && !canRepeat && new Set(commands).size === commands.length ? commands : null;
 }
 var shellLines = (command) => {
   const line = command === "" ? null : toolActivity("Bash", { command });
@@ -3535,7 +3536,7 @@ var SCRIPT_FAILED = "Script failed\n";
 var SCRIPT_ERROR = /^Script error:\s*/;
 var SCRIPT_DECLINED = /^exec_command failed: [^\n]*Rejected\(\\?"(?:exec command )?rejected by user\\?"\)/;
 function declinedScriptCommand(script, error) {
-  const isKnowable = SCRIPT_DECLINED.test(error) && script.declined.size === 0 && !script.isShared;
+  const isKnowable = SCRIPT_DECLINED.test(error) && !script.isShared;
   const unrecorded = isKnowable ? (script.commands ?? []).filter((command) => !script.recorded.has(command)) : [];
   return unrecorded.length === 1 ? unrecorded[0] ?? "" : "";
 }
