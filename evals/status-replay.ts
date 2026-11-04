@@ -13,6 +13,7 @@ import { emptySession } from '../hooks/session-files'
 import { appliedStatus, failedStatus } from '../hooks/session-status'
 import { statusCallPrompt } from '../hooks/status-records'
 import type { StatusExchange, StatusRecord } from '../hooks/status-records'
+import type { CallKind } from '../hooks/session-host'
 import { statusPage } from '../hooks/status-page'
 import { goalPressed } from '../hooks/goal-press'
 import { GOAL_KEYS_ID } from '../hooks/status-keys'
@@ -82,7 +83,7 @@ export type Agent = 'claude' | 'codex'
 export type CallAnswer = { text: string | null; model?: string | null; outputTokens?: number | null }
 
 /** One model call with `system` as its system text. `kind` says which of the inbox model's calls it is. */
-export type ModelCall = (prompt: string, system: string, kind: CallLog['kind']) => Promise<CallAnswer>
+export type ModelCall = (prompt: string, system: string, kind: CallKind) => Promise<CallAnswer>
 
 /** A host's limits on an inbox model call. An answer past them is dropped, as the host drops it. */
 type Limits = { ms: number; outputTokens: number | null }
@@ -167,7 +168,7 @@ function withEvent(s: Session, e: HostEvent, now: number): Session {
 
 async function timed(
   deps: ReplayDeps,
-  kind: CallLog['kind'],
+  kind: CallKind,
   prompt: string,
   system: string,
 ): Promise<CallAnswer & { log: CallLog }> {
@@ -184,7 +185,14 @@ async function timed(
         ? `wrote ${tokens} tokens, past the host's ${limits.outputTokens}`
         : null
   const text = overLimit === null ? answer.text : null
-  const log = { kind, answers: [answer.text], model: answer.model ?? null, ms, outputTokens: tokens, overLimit }
+  const log = {
+    kind: kind.call,
+    answers: [answer.text],
+    model: answer.model ?? null,
+    ms,
+    outputTokens: tokens,
+    overLimit,
+  }
 
   return { ...answer, text, log }
 }
@@ -201,7 +209,8 @@ async function statusCall(
   const prompt = statusCallPrompt(input, read)
   const logs: CallLog[] = []
   const { last } = await askStatus(async () => {
-    const answer = await timed(deps, 'status', prompt, deps.system ?? STATUS_SYSTEM)
+    const kind = { call: 'status', reads: read.kind, isRetry: logs.length > 0 } as const
+    const answer = await timed(deps, kind, prompt, deps.system ?? STATUS_SYSTEM)
     logs.push(answer.log)
     return answer
   })
@@ -267,7 +276,8 @@ async function runStep(
     let isLedgerApplied = true
     if (replay.hasLedgerCalls) {
       const host = deps.agent === 'codex' ? CODEX : CLAUDE_CODE
-      const ledgerAnswer = await timed(deps, 'ledger', buildPrompt(session.ledger, ex), systemText(host))
+      const kind = { call: 'ledger', reads: 'reply', isRetry: false } as const
+      const ledgerAnswer = await timed(deps, kind, buildPrompt(session.ledger, ex), systemText(host))
       calls.push(ledgerAnswer.log)
       const parsed =
         ledgerAnswer.text === null ? null : parseReply(ledgerAnswer.text, `${ex.reply}\n${ex.activity.join('\n')}`)

@@ -3,7 +3,7 @@
 
 import { toolActivity } from '../../hooks/catch-up-text'
 import { delegateRefs } from '../../hooks/children'
-import { callCommand, commandText, outputText, shellLines, soleScriptCommand } from './rollout-commands'
+import { callCommand, commandText, outputText, scriptCommands, shellLines } from './rollout-commands'
 import { record, textOf } from './rollout-rows'
 import type { RolloutRow } from './rollout-rows'
 
@@ -38,8 +38,31 @@ const BLOCKED_TOOL = /^Tool call blocked by PreToolUse hook: [^\n]*?\. Tool: (\S
 const SCRIPT_FAILED = 'Script failed\n'
 const SCRIPT_ERROR = /^Script error:\s*/
 
-/** The error a code-mode script ends on when the person declines one of its commands. */
-const SCRIPT_DECLINED = /^(?:exec_command|shell_command|shell) failed: [^\n]*Rejected\("rejected by user"\)(?:\n|$)/
+/**
+ * The error a code-mode script ends on when the person declines one of its `exec_command` calls. Codex writes the
+ * rejection as Rust debug text, as in `exec_command failed: CreateProcess { message: "Rejected(\"rejected by user\")" }`.
+ */
+const SCRIPT_DECLINED = /^exec_command failed: [^\n]*Rejected\(\\?"(?:exec command )?rejected by user\\?"\)/
+
+/**
+ * A code-mode script whose output has not come yet. `recorded` holds the commands of the `CommandExecution` rows
+ * written while it runs, and `declined` those of the rows marked declined. `isShared` is whether another call ran
+ * alongside it, so that rows written while it runs may be that call's.
+ */
+type OpenScript = { commands: string[] | null; recorded: Set<string>; declined: Set<string>; isShared: boolean }
+
+/**
+ * The command the person declined in a script that ended on `error`, or '' when that cannot be told. A command Codex
+ * rejects before it starts gets no `CommandExecution` row, or one marked declined. But a command still running
+ * when the script ends has no row either. So the declined command is known only when it is the one command of the
+ * script with no row.
+ */
+function declinedScriptCommand(script: OpenScript, error: string): string {
+  const isKnowable = SCRIPT_DECLINED.test(error) && !script.isShared
+  const unrecorded = isKnowable ? (script.commands ?? []).filter(command => !script.recorded.has(command)) : []
+
+  return unrecorded.length === 1 ? (unrecorded[0] ?? '') : ''
+}
 
 /** The error a code-mode script's output ends on, or '' when the script did not end on one. */
 function scriptError(output: unknown): string {
@@ -50,6 +73,10 @@ function scriptError(output: unknown): string {
 
   return prefix === undefined ? '' : last.slice(prefix.length)
 }
+
+/** A script's commands that may have run: each, save one a row marks declined. */
+const scriptRan = (script: OpenScript | undefined): string[] =>
+  (script?.commands ?? []).filter(command => !script?.declined.has(command))
 
 const toolLines = (tool: string): string[] => {
   const line = toolActivity(tool, {})
@@ -86,13 +113,18 @@ export function unranCalls(rows: RolloutRow[]): { lines: string[]; delegates: st
     delegateRefs(command).forEach(ref => (didRun ? ranDelegates : unranDelegates).add(ref))
   }
   const callCommands = new Map<string, string>()
+  const scripts = new Map<string, OpenScript>()
+  const openCalls = new Set<string>()
   for (const row of rows) {
     const p = record(row.payload)
     const item = record(p.item)
     const isDeclined = item.status === 'declined'
     if (row.type === 'event_msg' && p.type === 'item_completed') {
-      if (item.type === 'CommandExecution') noteCommand(commandText(item.command), !isDeclined)
-      else if (item.type === 'FileChange') note(editedLines(item.changes), !isDeclined)
+      if (item.type === 'CommandExecution') {
+        const command = commandText(item.command)
+        noteCommand(command, !isDeclined)
+        scripts.forEach(script => (isDeclined ? script.declined : script.recorded).add(command))
+      } else if (item.type === 'FileChange') note(editedLines(item.changes), !isDeclined)
       else if (item.type === 'McpToolCall') note(toolLines(`mcp__${textOf(item.server)}__${textOf(item.tool)}`), true)
       continue
     }
@@ -100,28 +132,41 @@ export function unranCalls(rows: RolloutRow[]): { lines: string[]; delegates: st
     const callId = textOf(p.call_id)
     let block = { commands: [] as string[], lines: [] as string[] }
     const isScript = p.type === 'custom_tool_call' && p.name === 'exec'
-    if (isScript || p.type === 'function_call' || p.type === 'local_shell_call') {
-      const command = isScript ? soleScriptCommand(textOf(p.input)) : callCommand(p)
+    if (p.type === 'function_call' || p.type === 'local_shell_call' || p.type === 'custom_tool_call') {
+      if (openCalls.size > 0) scripts.forEach(script => (script.isShared = true))
+      if (isScript) {
+        const commands = scriptCommands(textOf(p.input))
+        scripts.set(callId, { commands, recorded: new Set(), declined: new Set(), isShared: openCalls.size > 0 })
+      }
+      const command = isScript ? '' : callCommand(p)
       if (command !== '' && callId !== '') callCommands.set(callId, command)
+      openCalls.add(callId)
     } else if (p.type === 'function_call_output') {
+      openCalls.delete(callId)
       const output = outputText(p.output)
       const command = callCommands.get(callId)
       callCommands.delete(callId)
       if (command !== undefined) noteCommand(command, !isUnranOutput(output))
       block = blocked(output)
     } else if (p.type === 'custom_tool_call_output') {
+      openCalls.delete(callId)
       const error = scriptError(p.output)
-      const command = callCommands.get(callId)
-      callCommands.delete(callId)
+      const script = scripts.get(callId)
+      scripts.delete(callId)
       block = blocked(error)
       const isBlockNamed = block.commands.length > 0 || block.lines.length > 0
-      if (command !== undefined && !isBlockNamed) noteCommand(command, !SCRIPT_DECLINED.test(error))
+      const declined = script && !isBlockNamed ? declinedScriptCommand(script, error) : ''
+      const unranCommands = new Set([declined, ...block.commands])
+      scriptRan(script).forEach(command => noteCommand(command, !unranCommands.has(command)))
     }
     note(block.lines, false)
     block.commands.forEach(command => noteCommand(command, false))
   }
   // A call with no output yet still runs.
   callCommands.forEach(command => delegateRefs(command).forEach(ref => ranDelegates.add(ref)))
+  scripts.forEach(script =>
+    scriptRan(script).forEach(command => delegateRefs(command).forEach(ref => ranDelegates.add(ref))),
+  )
 
   return {
     lines: [...unran].filter(line => !ran.has(line)),
