@@ -172,7 +172,7 @@ export function sessionCalls(context: HostContext) {
       ...(deps.isNextBuild ? { records: statusRecords(dir, id) } : {}),
       catchUp: s =>
         askOverConversation(
-          host.ask,
+          host,
           OMP,
           s,
           screenText(OMP, openPanels.has(id), panelScreenTab(id)),

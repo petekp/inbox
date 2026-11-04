@@ -8,8 +8,10 @@ import type { AnswerMessage } from './press-messages'
 import { parsedReply, applied } from './session-turns'
 import { needsCatchUp, appliedCatchUp } from './session-status'
 import type { SendOutcome } from './session-presses'
-import type { Session, HostTask } from '../types'
+import type { CallKind, ProcessFailure, Session, HostTask } from '../types'
 import { askAndWriteStatus } from './status-records'
+import { heardCall, withCall } from './call-record'
+import type { HeardCall } from './call-record'
 import type { StatusCall, StatusRecords } from './status-records'
 
 type Exclusive<T> = { acquired: true; value: T } | { acquired: false }
@@ -54,22 +56,24 @@ export function orderedKeys(): { run<T>(key: string, fn: () => Promise<T>): Prom
   }
 }
 
-/**
- * What a host knows about one model call besides its answer: the model it asked for, the model that answered when
- * the host says, and why the call gave no answer.
- */
-export type CallReport = { model: string; answeredBy?: string; error?: string }
+export type { CallKind }
+
+/** The kind of a catch-up's ledger call. */
+export const CATCH_UP_CALL: CallKind = { call: 'ledger', reads: 'catch-up' }
 
 /**
- * Which call of an update a model call is. The ledger call reads a reply's exchange, with `isRetry` when the
- * exchange's first call failed, or the whole conversation for a catch-up. The update flow keeps no mark of a repeated
- * catch-up, so a catch-up says nothing of retries. The Status call reads a reply's exchange, the running turn or a
- * catch-up's conversation, with `isRetry` when its first answer held prose.
+ * What a host knows about one model call besides its answer: the model it asked for, the model that answered when
+ * the host says, and why the call gave no answer. `cause` says whether the call's process failed, the call ended with
+ * an error, or it ended with no text; absent, an `error` reads as an error and none as no text. `process` is the
+ * failed process, for a host that runs the call as one.
  */
-export type CallKind =
-  | { call: 'ledger'; reads: 'reply'; isRetry: boolean }
-  | { call: 'ledger'; reads: 'catch-up' }
-  | { call: 'status'; reads: 'reply' | 'mid-turn' | 'catch-up'; isRetry: boolean }
+export type CallReport = {
+  model: string
+  answeredBy?: string
+  error?: string
+  cause?: 'process' | 'error' | 'no-reply'
+  process?: ProcessFailure
+}
 
 /**
  * Calls the inbox model with `system` as its system text, for the call `kind` names. Null when the call fails.
@@ -124,15 +128,18 @@ export type SessionHost<S extends Session> = {
   compareInBackground: boolean
 }
 
-/** What a host's catch-up found: the model's answer to apply, or why there is none. */
+/**
+ * What a host's catch-up found: the model's answer to apply, or why there is none. `heard` is what the host gave for
+ * the model call, which is saved as `CallFailure` describes; null when no call ran.
+ */
 export type CatchUpReply =
   /**
    * `source` is the text the answer may quote code blocks from, or null when the model read the conversation itself.
    * `statusCall` is null when the host has nothing for the Status call to read, so it writes no Status.
    */
-  | { kind: 'reply'; text: string; source: string | null; statusCall: StatusCall | null }
+  | { kind: 'reply'; text: string; source: string | null; statusCall: StatusCall | null; heard: HeardCall | null }
   /** The model gave no answer. */
-  | { kind: 'failed' }
+  | { kind: 'failed'; heard: HeardCall | null }
   /** There is no conversation to read, so the pending exchanges run instead. */
   | { kind: 'unreadable' }
 
@@ -163,25 +170,24 @@ export type UpdateHost<S extends Session> = Pick<SessionHost<S>, 'now' | 'read' 
  * or empty `conversation` is unreadable. `screen` is what the person sees of the inbox.
  */
 export async function askOverConversation(
-  ask: Ask,
+  host: Pick<UpdateHost<Session>, 'ask' | 'now'>,
   names: Host,
   s: Session,
   screen: string,
   conversation: string | null,
 ): Promise<CatchUpReply> {
   if (!conversation) return { kind: 'unreadable' }
-  const text = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names), {
-    call: 'ledger',
-    reads: 'catch-up',
-  }).catch(() => null)
+  const prompt = transcriptCatchUpPrompt(s.ledger, screen, conversation)
+  const heard = await heardCall(host.ask, prompt, systemText(names), CATCH_UP_CALL, () => host.now())
 
-  return text === null
-    ? { kind: 'failed' }
+  return heard.text === null
+    ? { kind: 'failed', heard }
     : {
         kind: 'reply',
-        text,
+        text: heard.text,
         source: conversation,
-        statusCall: { exchange: { kind: 'catch-up', conversation }, ask },
+        statusCall: { exchange: { kind: 'catch-up', conversation }, ask: host.ask },
+        heard,
       }
 }
 
@@ -243,7 +249,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
             const s = await host.update(x => ({ ...x, presence: { ...x.presence, isUpdating: hasWork(x) } }))
             if (!hasWork(s)) break
             if (wantsCatchUp(s)) {
-              const reply = await host.catchUp!(s).catch((): CatchUpReply => ({ kind: 'failed' }))
+              const reply = await host.catchUp!(s).catch((): CatchUpReply => ({ kind: 'failed', heard: null }))
               if (reply.kind === 'unreadable') {
                 canCatchUp = false
                 await host.update(x => ({ ...x, presence: { ...x.presence, isConversationUnreadable: true } }))
@@ -251,7 +257,8 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
               }
               const parsed = reply.kind === 'reply' ? parseReply(reply.text, reply.source) : null
               const at = await host.now()
-              const after = await host.update(x => appliedCatchUp(x, s, parsed, at))
+              const noted = (x: S) => (reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed !== null, at) : x)
+              const after = await host.update(x => appliedCatchUp(noted(x), s, parsed, at))
               if (!parsed) return 'stop' as const
               if (reply.kind === 'reply' && reply.statusCall)
                 followUp(writeStatus(after, reply.statusCall, s.hostTasks))
@@ -260,10 +267,14 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
             const next = s.pending[0]!
             const promptAt = await host.now()
             const kind = { call: 'ledger', reads: 'reply', isRetry: next.failed === true } as const
-            const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names), kind).catch(() => null)
-            const parsed = parsedReply(next.ex, reply)
+            const heard = await heardCall(host.ask, buildPrompt(s.ledger, next.ex), systemText(host.names), kind, () =>
+              host.now(),
+            )
+            const parsed = parsedReply(next.ex, heard.text)
+            const calledAt = await host.now()
             let isApplied = false as boolean
-            const after = await host.update(async x => {
+            const after = await host.update(async current => {
+              const x = withCall(current, kind, heard, parsed !== null, calledAt)
               isApplied = false
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x
               isApplied = parsed !== null

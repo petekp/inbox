@@ -62,7 +62,8 @@ import {
   taskNotice,
   waitsOnDelegate,
 } from './children'
-import { runUpdates } from './session-host'
+import { CATCH_UP_CALL, runUpdates } from './session-host'
+import { heardCall } from './call-record'
 import { fetchPrs as fetchSessionPrs, isPrFetchDue } from './host-prs'
 import { tabPrs } from './pr-fetch'
 import { refreshStatus, type StatusCall, type StatusRecords, type RecordFiles } from './status-records'
@@ -891,7 +892,7 @@ function catchUpStatus($: EngineInterface, owner: Owner, transcript: string): St
  * is nothing to fork.
  */
 async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpReply> {
-  if (!isCurrent(owner)) return { kind: 'failed' }
+  if (!isCurrent(owner)) return { kind: 'failed', heard: null }
   const [{ ledger }, shown, transcript] = await Promise.all([
     read($, SESSION),
     screen($),
@@ -899,18 +900,37 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
   ])
   // The Status call reads the transcript.
   const statusCall = transcript ? catchUpStatus($, owner, transcript) : null
+  const forkedAt = await $.clock.now()
   const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
-  if (!isCurrent(owner)) return { kind: 'failed' }
-  if (forked.isAnswered) return { kind: 'reply', text: forked.text, source: null, statusCall }
+  if (!isCurrent(owner)) return { kind: 'failed', heard: null }
   // A fork has nothing to read until this process sends its first request,
   // as after a resume. The model then reads the transcript instead, uncached.
-  if (forked.reason !== 'nothing-to-fork') return { kind: 'failed' }
-  if (!transcript) return { kind: 'unreadable' }
-  const prompt = transcriptCatchUpPrompt(ledger, shown, transcript)
-  const text = await askInboxModel($, prompt, systemText(CLAUDE_CODE), 90_000, undefined)
-  if (!isCurrent(owner)) return { kind: 'failed' }
+  if (!forked.isAnswered && forked.reason === 'nothing-to-fork')
+    return transcriptReply($, owner, ledger, shown, transcript)
+  const text = forked.isAnswered ? forked.text : null
+  const heard = { text, report: callReport(forked), thrown: null, ms: (await $.clock.now()) - forkedAt }
 
-  return text === null ? { kind: 'failed' } : { kind: 'reply', text, source: transcript, statusCall }
+  return text === null ? { kind: 'failed', heard } : { kind: 'reply', text, source: null, statusCall, heard }
+}
+
+/** The model's answer to a catch-up over the transcript, for a conversation with nothing to fork. */
+async function transcriptReply(
+  $: EngineInterface,
+  owner: Owner,
+  ledger: Ledger,
+  shown: string,
+  transcript: string | null,
+): Promise<CatchUpReply> {
+  if (!transcript) return { kind: 'unreadable' }
+  const statusCall = catchUpStatus($, owner, transcript)
+  const prompt = transcriptCatchUpPrompt(ledger, shown, transcript)
+  const ask: Ask = (p, system, _kind, report) => askInboxModel($, p, system, 90_000, report)
+  const heard = await heardCall(ask, prompt, systemText(CLAUDE_CODE), CATCH_UP_CALL, () => $.clock.now())
+  if (!isCurrent(owner)) return { kind: 'failed', heard: null }
+
+  return heard.text === null
+    ? { kind: 'failed', heard }
+    : { kind: 'reply', text: heard.text, source: transcript, statusCall, heard }
 }
 
 /**

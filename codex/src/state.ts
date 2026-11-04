@@ -18,8 +18,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
 import { KEPT_SESSIONS } from '../../hooks/ledger'
-import type { Child, Exchange, Session } from '../../types'
-import type { CallKind } from '../../hooks/session-host'
+import type { CallFailure, CallKind, Child, Exchange, Session } from '../../types'
 import { checkVersion, SESSION_VERSION } from '../../hooks/session-version'
 import {
   emptySession,
@@ -28,31 +27,61 @@ import {
   sessionFile,
   staleSessionFiles,
   upgradeSession,
+  NO_CALL_FAILURES,
 } from '../../hooks/session-files'
 import { pruned } from '../../hooks/session-presses'
 import { isShownTab } from '../../hooks/tabs'
 import type { ShownTab } from '../../hooks/tabs'
 
-/**
- * A failed `codex exec` call: when it ended, the binary it ran, its exit code, and the end of its stderr. A call that
- * could not start has code -1, its error's message as `stderr` and the error's code as `errorCode` when it has one. A
- * call a signal ended has code -1 and the `signal`. A call that timed out has code -2 and the `timeoutMs` it had.
- * `call`, `reads` and `isRetry` say which call of the update it was, as `CallKind` gives them, and `elapsedMs` how
- * long the command ran. `isRetry` is null for a catch-up's ledger call. Records saved before these fields read null
- * for each, and a record saved before `reads` keeps the `call` it saved.
- */
-export type ModelFailure = {
+/** A failed `codex exec` call as builds before `callFailures` saved it, with the fields each build added. */
+type SavedModelFailure = {
   at: number
   cli: string
   code: number
   stderr: string
-  signal: string | null
-  errorCode: string | null
-  timeoutMs: number | null
-  call: CallKind['call'] | null
-  reads: CallKind['reads'] | null
-  isRetry: boolean | null
-  elapsedMs: number | null
+  signal?: string | null
+  errorCode?: string | null
+  timeoutMs?: number | null
+  call?: CallKind['call'] | null
+  reads?: CallKind['reads'] | null
+  isRetry?: boolean | null
+  elapsedMs?: number | null
+}
+
+/** The call records of a state an earlier build saved: its saved failure in its call's record, the ledger's when it named none. */
+function withSavedFailure(f: SavedModelFailure | null | undefined): Session['callFailures'] {
+  if (!f) return NO_CALL_FAILURES
+
+  return { ...NO_CALL_FAILURES, [f.call ?? 'ledger']: { lastFailure: callFailureOf(f), recoveredAt: null } }
+}
+
+/** How much of the last line of an earlier build's saved stderr is kept. */
+const OLD_STDERR_CHARS = 500
+
+/**
+ * An earlier build's saved failure as the shared record. That build kept its stderr unfiltered, so only the last line
+ * is kept, where codex prints the error.
+ */
+function callFailureOf(f: SavedModelFailure): CallFailure {
+  return {
+    at: f.at,
+    call: f.call ?? null,
+    reads: f.reads ?? null,
+    isRetry: f.isRetry ?? null,
+    cause: f.code === 0 ? 'no-reply' : 'process',
+    model: null,
+    error: null,
+    answerChars: null,
+    ms: f.elapsedMs ?? null,
+    process: {
+      cli: f.cli,
+      code: f.code,
+      stderr: f.stderr.trim().split('\n').at(-1)!.slice(0, OLD_STDERR_CHARS),
+      signal: f.signal ?? null,
+      errorCode: f.errorCode ?? null,
+      timeoutMs: f.timeoutMs ?? null,
+    },
+  }
 }
 
 export type SessionState = Session & {
@@ -64,13 +93,6 @@ export type SessionState = Session & {
   home: string
   /** The codex binary the desktop app runs, as a hook's environment names it or the server found it. */
   cliPath: string | null
-  /** The inbox model's last failed call. Null until a call fails. */
-  lastModelFailure: ModelFailure | null
-  /**
-   * When a call first answered after `lastModelFailure`. Null while every call since it has failed, and before a call
-   * fails. A state saved before this field reads null, and its next answered call sets it.
-   */
-  modelRecoveredAt: number | null
   tabSeenAt: number
   /** The tab the Inbox tab last showed, from its latest view request. Codex only. */
   shownTab: ShownTab
@@ -141,8 +163,6 @@ export function emptyState(sessionId: string): SessionState {
     transcriptPath: null,
     home: homedir(),
     cliPath: null,
-    lastModelFailure: null,
-    modelRecoveredAt: null,
     ...emptySession(),
     tabSeenAt: 0,
     shownTab: 'needsYou',
@@ -158,11 +178,8 @@ export function statePath(dir: string, sessionId: string): string {
 }
 
 /** State an earlier build saved, with the keys it kept for session checks and the claim send-back. */
-type Saved = Omit<Partial<SessionState>, 'turn' | 'pending' | 'sent' | 'lastModelFailure'> & {
-  lastModelFailure?:
-    | (Omit<ModelFailure, 'signal' | 'errorCode' | 'timeoutMs' | 'call' | 'reads' | 'isRetry' | 'elapsedMs'> &
-        Partial<ModelFailure>)
-    | null
+type Saved = Omit<Partial<SessionState>, 'turn' | 'pending' | 'sent'> & {
+  lastModelFailure?: SavedModelFailure | null
   sent?: (Omit<SessionState['sent'][number], 'row' | 'queuedId' | 'pressedAt' | 'deliveryId'> &
     Partial<SessionState['sent'][number]>)[]
   checks?: unknown
@@ -179,6 +196,7 @@ function upgraded(saved: Saved, sessionId: string): SessionState {
   checkVersion(saved)
   const base = emptyState(sessionId)
   const {
+    lastModelFailure: _modelFailure,
     checks: _checks,
     snapshots: _snapshots,
     recordedRuns: _runs,
@@ -209,18 +227,7 @@ function upgraded(saved: Saved, sessionId: string): SessionState {
     }),
     shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     heard,
-    lastModelFailure: saved.lastModelFailure
-      ? {
-          signal: null,
-          errorCode: null,
-          timeoutMs: null,
-          call: null,
-          reads: null,
-          isRetry: null,
-          elapsedMs: null,
-          ...saved.lastModelFailure,
-        }
-      : null,
+    ...(saved.callFailures ? {} : { callFailures: withSavedFailure(saved.lastModelFailure) }),
     coveredTurn: saved.coveredTurn !== undefined ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null),
   }
 }

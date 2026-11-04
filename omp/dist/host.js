@@ -7076,6 +7076,8 @@ function withCheckKeys(s, views) {
 
 // ../hooks/session-files.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
+var NO_FAILURE = { lastFailure: null, recoveredAt: null };
+var NO_CALL_FAILURES = { ledger: NO_FAILURE, status: NO_FAILURE };
 var NO_TURN = { person: null, trigger: null, activity: [], press: null };
 function emptySession() {
   return {
@@ -7104,6 +7106,7 @@ function emptySession() {
     prViews: NO_PRS,
     stop: null,
     overviewFailure: null,
+    callFailures: NO_CALL_FAILURES,
     lastOverviewCallAt: null,
     overviewTurn: 0,
     hostTasks: [],
@@ -7176,6 +7179,7 @@ function sessionFields(saved, views) {
     },
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
+    callFailures: { ...NO_CALL_FAILURES, ...saved.callFailures },
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
@@ -8737,6 +8741,47 @@ function statusCatchUpPrompt(input, transcript) {
   ].join(NL4);
 }
 
+// ../hooks/call-record.ts
+var ERROR_CHARS = 500;
+async function heardCall(ask, prompt, system, kind, now) {
+  let report = null;
+  let thrown = null;
+  const startedAt = await now();
+  const text = await ask(prompt, system, kind, (r) => report = r).catch((err) => {
+    thrown = err instanceof Error ? err.message : String(err);
+    return null;
+  });
+  return { text, report, thrown, ms: await now() - startedAt };
+}
+function failureOf(kind, heard, isParsed, at) {
+  if (heard.text !== null && isParsed)
+    return null;
+  const { report, thrown, text } = heard;
+  const reason = thrown ?? report?.error ?? null;
+  const cause = text !== null ? "unparseable" : thrown !== null ? "error" : report?.cause ?? (reason ? "error" : "no-reply");
+  return {
+    at,
+    call: kind.call,
+    reads: kind.reads,
+    isRetry: "isRetry" in kind ? kind.isRetry : null,
+    cause,
+    model: report?.model ?? null,
+    error: text === null && reason ? reason.slice(0, ERROR_CHARS) : null,
+    answerChars: text === null ? null : text.length,
+    ms: heard.ms,
+    process: text === null ? report?.process ?? null : null
+  };
+}
+function withCall(s, kind, heard, isParsed, at) {
+  const record = s.callFailures[kind.call];
+  const failure = failureOf(kind, heard, isParsed, at);
+  const isRecovery = !failure && record.lastFailure !== null && record.recoveredAt === null;
+  if (!failure && !isRecovery)
+    return s;
+  const next = failure ? { lastFailure: failure, recoveredAt: null } : { ...record, recoveredAt: at };
+  return { ...s, callFailures: { ...s.callFailures, [kind.call]: next } };
+}
+
 // ../hooks/status-records.ts
 function statusCallPrompt(input, read) {
   switch (read.kind) {
@@ -8787,20 +8832,13 @@ async function writeStatusRecord(records, record) {
     });
   }
 }
-async function attempt(host, ask, prompt, kind) {
-  const heard = {};
-  const startedAt = await host.now();
-  const text = await ask(prompt, STATUS_SYSTEM, kind, (r) => heard.report = r).catch((err) => {
-    heard.thrown = err instanceof Error ? err.message : String(err);
-    return null;
-  });
+function attemptOf({ text, report, thrown, ms }) {
   return {
-    text,
-    model: heard.report?.model ?? null,
-    answeredBy: heard.report?.answeredBy ?? null,
+    model: report?.model ?? null,
+    answeredBy: report?.answeredBy ?? null,
     answer: text,
-    error: text === null ? heard.thrown ?? heard.report?.error ?? "no answer, and the host gave no reason" : null,
-    ms: await host.now() - startedAt
+    error: text === null ? thrown ?? report?.error ?? "no answer, and the host gave no reason" : null,
+    ms
   };
 }
 async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
@@ -8808,18 +8846,21 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
     return;
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() };
   const prompt = statusCallPrompt(input, call.exchange);
-  const attempts = [];
+  const heards = [];
   const { last } = await askStatus(async () => {
-    const kind = { call: "status", reads: call.exchange.kind, isRetry: attempts.length > 0 };
-    const { text, ...made } = await attempt(host, call.ask, prompt, kind);
-    attempts.push(made);
-    return { text };
+    const kind = { call: "status", reads: call.exchange.kind, isRetry: heards.length > 0 };
+    const heard = await heardCall(call.ask, prompt, STATUS_SYSTEM, kind, () => host.now());
+    heards.push({ kind, heard });
+    return heard;
   });
+  const attempts = heards.map((h) => attemptOf(h.heard));
   const answer = last.text === null ? null : parseStatus(last.text);
   const now = await host.now();
   let before = null;
   let isWritten = false;
-  const after = await host.update((x) => {
+  const noted = (current) => heards.reduce((x, h) => withCall(x, h.kind, h.heard, h.heard.text !== null && parseStatus(h.heard.text) !== null, now), current);
+  const after = await host.update((current) => {
+    const x = noted(current);
     before = x.ledger.overview;
     isWritten = isStatusCallCurrent(x, appliedAfter);
     const readSetAt = input.last?.goal?.setAt ?? null;
@@ -8891,18 +8932,18 @@ function orderedKeys() {
     }
   };
 }
-async function askOverConversation(ask, names, s, screen, conversation) {
+var CATCH_UP_CALL = { call: "ledger", reads: "catch-up" };
+async function askOverConversation(host, names, s, screen, conversation) {
   if (!conversation)
     return { kind: "unreadable" };
-  const text = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names), {
-    call: "ledger",
-    reads: "catch-up"
-  }).catch(() => null);
-  return text === null ? { kind: "failed" } : {
+  const prompt = transcriptCatchUpPrompt(s.ledger, screen, conversation);
+  const heard = await heardCall(host.ask, prompt, systemText(names), CATCH_UP_CALL, () => host.now());
+  return heard.text === null ? { kind: "failed", heard } : {
     kind: "reply",
-    text,
+    text: heard.text,
     source: conversation,
-    statusCall: { exchange: { kind: "catch-up", conversation }, ask }
+    statusCall: { exchange: { kind: "catch-up", conversation }, ask: host.ask },
+    heard
   };
 }
 async function reconcileUpdateStatus(host) {
@@ -8943,7 +8984,7 @@ async function runUpdates(host) {
             if (!hasWork(s))
               break;
             if (wantsCatchUp(s)) {
-              const reply = await host.catchUp(s).catch(() => ({ kind: "failed" }));
+              const reply = await host.catchUp(s).catch(() => ({ kind: "failed", heard: null }));
               if (reply.kind === "unreadable") {
                 canCatchUp = false;
                 await host.update((x) => ({ ...x, presence: { ...x.presence, isConversationUnreadable: true } }));
@@ -8951,7 +8992,8 @@ async function runUpdates(host) {
               }
               const parsed = reply.kind === "reply" ? parseReply(reply.text, reply.source) : null;
               const at = await host.now();
-              const after = await host.update((x) => appliedCatchUp(x, s, parsed, at));
+              const noted = (x) => reply.heard ? withCall(x, CATCH_UP_CALL, reply.heard, parsed !== null, at) : x;
+              const after = await host.update((x) => appliedCatchUp(noted(x), s, parsed, at));
               if (!parsed)
                 return "stop";
               if (reply.kind === "reply" && reply.statusCall)
@@ -8961,10 +9003,12 @@ async function runUpdates(host) {
             const next = s.pending[0];
             const promptAt = await host.now();
             const kind = { call: "ledger", reads: "reply", isRetry: next.failed === true };
-            const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names), kind).catch(() => null);
-            const parsed = parsedReply(next.ex, reply);
+            const heard = await heardCall(host.ask, buildPrompt(s.ledger, next.ex), systemText(host.names), kind, () => host.now());
+            const parsed = parsedReply(next.ex, heard.text);
+            const calledAt = await host.now();
             let isApplied = false;
-            const after = await host.update(async (x) => {
+            const after = await host.update(async (current) => {
+              const x = withCall(current, kind, heard, parsed !== null, calledAt);
               isApplied = false;
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn)
                 return x;
@@ -9877,7 +9921,7 @@ function sessionCalls(context) {
       inOrder: (fn) => resultsOrder.run(id, fn),
       background: (results) => deps.background(results),
       ...deps.isNextBuild ? { records: statusRecords(dir, id) } : {},
-      catchUp: (s) => askOverConversation(host.ask, OMP, s, screenText(OMP, openPanels.has(id), panelScreenTab(id)), conversationText(ctx))
+      catchUp: (s) => askOverConversation(host, OMP, s, screenText(OMP, openPanels.has(id), panelScreenTab(id)), conversationText(ctx))
     };
   }
   async function catchUpUnseen(ctx) {
@@ -10228,14 +10272,14 @@ function createInbox(pi, deps = defaultDeps) {
     return async (prompt, system, _kind, report) => {
       const model = inboxModel(ctx);
       if (!model) {
-        report?.({ model: "none", error: "omp offers no model for the inbox" });
+        report?.({ model: "none", error: "omp offers no model for the inbox", cause: "error" });
         return null;
       }
       const asked = `${model.provider}/${model.id}`;
       try {
         const apiKey = await ctx.modelRegistry.getApiKey(model, id);
         if (!apiKey) {
-          report?.({ model: asked, error: "omp has no sign-in for the model" });
+          report?.({ model: asked, error: "omp has no sign-in for the model", cause: "error" });
           return null;
         }
         const reply = await deps.complete(model, {
@@ -10244,15 +10288,23 @@ function createInbox(pi, deps = defaultDeps) {
         }, { apiKey, signal: AbortSignal.timeout(INBOX_MODEL_TIMEOUT_MS) });
         if (reply.stopReason === "error" || reply.stopReason === "aborted") {
           const status = reply.errorStatus === undefined ? "" : ` ${reply.errorStatus}`;
-          report?.({ model: asked, error: `${reply.stopReason}${status}: ${reply.errorMessage ?? ""}`.trim() });
+          report?.({
+            model: asked,
+            error: `${reply.stopReason}${status}: ${reply.errorMessage ?? ""}`.trim(),
+            cause: "error"
+          });
           return null;
         }
         const text = reply.content.flatMap((b) => b.type === "text" ? [b.text] : []).join("");
         const answeredBy = reply.upstreamModel === undefined ? {} : { answeredBy: reply.upstreamModel };
-        report?.({ model: asked, ...answeredBy, ...text === "" ? { error: "the reply held no text" } : {} });
+        report?.({
+          model: asked,
+          ...answeredBy,
+          ...text === "" ? { error: "the reply held no text", cause: "no-reply" } : {}
+        });
         return text === "" ? null : text;
       } catch (err) {
-        report?.({ model: asked, error: messageOf(err) });
+        report?.({ model: asked, error: messageOf(err), cause: "error" });
         return null;
       }
     };

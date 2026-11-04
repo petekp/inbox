@@ -1530,6 +1530,8 @@ function withCheckKeys(s, views) {
 
 // ../hooks/session-files.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
+var NO_FAILURE = { lastFailure: null, recoveredAt: null };
+var NO_CALL_FAILURES = { ledger: NO_FAILURE, status: NO_FAILURE };
 var NO_TURN = { person: null, trigger: null, activity: [], press: null };
 function emptySession() {
   return {
@@ -1558,6 +1560,7 @@ function emptySession() {
     prViews: NO_PRS,
     stop: null,
     overviewFailure: null,
+    callFailures: NO_CALL_FAILURES,
     lastOverviewCallAt: null,
     overviewTurn: 0,
     hostTasks: [],
@@ -1625,6 +1628,7 @@ function sessionFields(saved, views) {
     },
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
+    callFailures: { ...NO_CALL_FAILURES, ...saved.callFailures },
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
@@ -2447,6 +2451,32 @@ function pruned(s) {
 }
 
 // src/state.ts
+function withSavedFailure(f) {
+  if (!f) return NO_CALL_FAILURES;
+  return { ...NO_CALL_FAILURES, [f.call ?? "ledger"]: { lastFailure: callFailureOf(f), recoveredAt: null } };
+}
+var OLD_STDERR_CHARS = 500;
+function callFailureOf(f) {
+  return {
+    at: f.at,
+    call: f.call ?? null,
+    reads: f.reads ?? null,
+    isRetry: f.isRetry ?? null,
+    cause: f.code === 0 ? "no-reply" : "process",
+    model: null,
+    error: null,
+    answerChars: null,
+    ms: f.elapsedMs ?? null,
+    process: {
+      cli: f.cli,
+      code: f.code,
+      stderr: f.stderr.trim().split("\n").at(-1).slice(0, OLD_STDERR_CHARS),
+      signal: f.signal ?? null,
+      errorCode: f.errorCode ?? null,
+      timeoutMs: f.timeoutMs ?? null
+    }
+  };
+}
 var NOTHING_HEARD = {
   startAt: null,
   promptAt: null,
@@ -2464,8 +2494,6 @@ function emptyState(sessionId) {
     transcriptPath: null,
     home: homedir(),
     cliPath: null,
-    lastModelFailure: null,
-    modelRecoveredAt: null,
     ...emptySession(),
     tabSeenAt: 0,
     shownTab: "needsYou",
@@ -2482,6 +2510,7 @@ function upgraded(saved, sessionId) {
   checkVersion(saved);
   const base = emptyState(sessionId);
   const {
+    lastModelFailure: _modelFailure,
     checks: _checks,
     snapshots: _snapshots,
     recordedRuns: _runs,
@@ -2507,16 +2536,7 @@ function upgraded(saved, sessionId) {
     }),
     shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     heard,
-    lastModelFailure: saved.lastModelFailure ? {
-      signal: null,
-      errorCode: null,
-      timeoutMs: null,
-      call: null,
-      reads: null,
-      isRetry: null,
-      elapsedMs: null,
-      ...saved.lastModelFailure
-    } : null,
+    ...saved.callFailures ? {} : { callFailures: withSavedFailure(saved.lastModelFailure) },
     coveredTurn: saved.coveredTurn !== void 0 ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null)
   };
 }

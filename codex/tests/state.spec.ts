@@ -305,29 +305,16 @@ test('tryWithLock preserves a nested lock timeout after acquiring its own lock',
   }
 })
 
-test('a file saved before the version, the rollout path, the dropped-reply flag, the covered turn and a failure’s signal, error code, timeout, call kind and elapsed time and the recovery time existed reads with their defaults, a save writes the session version, and its covered turn is the last recorded prompt’s, or the one before while that turn runs', async t => {
+test('a file saved before the version, the rollout path, the dropped-reply flag, the covered turn and the shared call failure existed reads with their defaults and its Codex failure as the shared record, a save writes the session version, and its covered turn is the last recorded prompt’s, or the one before while that turn runs', async t => {
   const dir = tempDir()
   t.after(() => rm(dir, { recursive: true, force: true }))
   const initial = await updateState(dir, 's1', s => s)
   assert.equal(JSON.parse(await readFile(statePath(dir, 's1'), 'utf8')).version, SESSION_VERSION)
-  const { version: _version, transcriptPath: _path, coveredTurn: _covered, modelRecoveredAt: _at, ...older } = initial
+  const { version: _version, transcriptPath: _path, coveredTurn: _covered, callFailures: _failures, ...older } = initial
   const { hasDroppedReply: _flag, ...presence } = initial.presence
-  const oldFailure = { at: 7, cli: '/apps/codex', code: -1, stderr: 'warning' }
+  const oldFailure = { at: 7, cli: '/apps/codex', code: -1, stderr: 'Should I deploy?\nwarning\n' }
   await writeFile(statePath(dir, 's1'), JSON.stringify({ ...older, presence, lastModelFailure: oldFailure }))
-
-  const read = await readState(dir, 's1')
-  assert.deepEqual(read.lastModelFailure, {
-    ...oldFailure,
-    signal: null,
-    errorCode: null,
-    timeoutMs: null,
-    call: null,
-    reads: null,
-    isRetry: null,
-    elapsedMs: null,
-  })
-  assert.equal(read.modelRecoveredAt, null)
-  const kindlessFailure = {
+  const kindedFailure = {
     ...oldFailure,
     signal: 'SIGTERM',
     errorCode: null,
@@ -335,8 +322,33 @@ test('a file saved before the version, the rollout path, the dropped-reply flag,
     call: 'status',
     elapsedMs: 40,
   }
-  await writeFile(statePath(dir, 's1'), JSON.stringify({ ...older, presence, lastModelFailure: kindlessFailure }))
-  assert.deepEqual((await readState(dir, 's1')).lastModelFailure, { ...kindlessFailure, reads: null, isRetry: null })
+  await writeFile(statePath(dir, 's4'), JSON.stringify({ ...older, sessionId: 's4', lastModelFailure: kindedFailure }))
+
+  const read = await readState(dir, 's1')
+  const failure = {
+    at: 7,
+    call: null,
+    reads: null,
+    isRetry: null,
+    cause: 'process',
+    model: null,
+    error: null,
+    answerChars: null,
+    ms: null,
+    process: { cli: '/apps/codex', code: -1, stderr: 'warning', signal: null, errorCode: null, timeoutMs: null },
+  }
+  assert.deepEqual(read.callFailures, {
+    ledger: { lastFailure: failure, recoveredAt: null },
+    status: { lastFailure: null, recoveredAt: null },
+  })
+  assert.deepEqual((await readState(dir, 's4')).callFailures, {
+    ledger: { lastFailure: null, recoveredAt: null },
+    status: {
+      lastFailure: { ...failure, call: 'status', ms: 40, process: { ...failure.process, signal: 'SIGTERM' } },
+      recoveredAt: null,
+    },
+  })
+  assert.equal('lastModelFailure' in (await updateState(dir, 's1', s => ({ ...s, tabSeenAt: 1 }))), false)
   assert.equal(read.version, SESSION_VERSION)
   assert.equal(read.transcriptPath, null)
   assert.equal(read.presence.hasDroppedReply, false)
