@@ -16,7 +16,7 @@ const ENTRY_POINTS = {
   'codex/src/tab.tsx': { names: '*', why: 'codex/build.mjs bundles it as the tab page script.' },
   'evals/omp-probe.ts': { names: ['default'], why: 'The agent suite loads it into omp with -e.' },
   'hooks/clients.ts': { names: ['CLIENTS', 'FeatureId'], why: 'scripts/structure/clients.mjs reads them.' },
-  'hooks/tones.ts': { names: '*', why: 'codex/build.mjs bundles it and reads its exports for the tab colors.' },
+  'hooks/tones.ts': { names: ['DARK_TONES', 'LIGHT_TONES'], why: 'codex/build.mjs reads them for the tab colors.' },
   'omp/src/host.ts': { names: ['default'], why: 'omp loads the built bundle and calls its default export.' },
   'types/index.d.ts': { names: '*', why: 'scripts/build-types.mjs builds it from types/parts for the mod.' },
   'videos/remotion.config.ts': { names: '*', why: 'Remotion loads it by name.' },

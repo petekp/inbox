@@ -10,7 +10,7 @@ The script also checks that omp's files import only shared modules, and that onl
 
 `omp/tests/session.spec.ts` runs the shared session script from `tests/session-script.ts` against omp's `SessionHost`. `omp/tests/panel.spec.ts` checks that the panel draws buttons in the shared plan order, in place of the demo test in `tests/hooks.test.ts`.
 
-`scripts/check-exports.mjs` fails on an export that no other file imports. It reads every source file outside `node_modules` and build output, and counts named, default, namespace, type and dynamic imports, re-exports, and a `module="./x-client.tsx"` attribute as importers. The hooks modules that `hooks/hooks.json` names are entry points. `ENTRY_POINTS` in `scripts/structure/exports.mjs` lists the other exports whose consumer is outside the repo's imports, each with that consumer. `codex/tests/structure.spec.ts` checks it against disposable fixtures.
+`scripts/check-exports.mjs` fails on an export that no other file imports. It reads every source file outside `node_modules`, folders whose names start with a dot, build output and `types/parts`, and counts named, default, namespace, type and dynamic imports, re-exports, and a `module="./x-client.tsx"` attribute as importers. The hooks modules that `hooks/hooks.json` names are entry points. `ENTRY_POINTS` in `scripts/structure/exports.mjs` lists the other exports whose consumer is outside the repo's imports, each with that consumer. `codex/tests/structure.spec.ts` checks it against disposable fixtures.
 
 `scripts/check-versions.mjs` checks that `.claude-plugin/plugin.json`, `codex/plugin/.codex-plugin/plugin.json` and `omp/package.json` give the same version. `codex/tests/versions.spec.ts` checks it against disposable manifests.
 
