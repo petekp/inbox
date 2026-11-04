@@ -2450,12 +2450,26 @@ function pruned(s) {
   };
 }
 
-// src/state.ts
-function withSavedFailure(f) {
-  if (!f) return NO_CALL_FAILURES;
-  return { ...NO_CALL_FAILURES, [f.call ?? "ledger"]: { lastFailure: callFailureOf(f), recoveredAt: null } };
+// src/diagnostics.ts
+var DIAGNOSTIC_CHARS = 2e3;
+var ANSI_STYLE = /\x1b\[[0-9;]*m/g;
+var TIME = String.raw`^(?:\[[^\]]*\]\s*)?(?:\d{4}-\d\d-\d\dT\S*\s+)?`;
+var DIAGNOSTIC = new RegExp(
+  `${TIME}(?:(?:ERROR|WARNING|error|warning):|(?:ERROR|WARN)\\s|Unknown feature flag: |[\\w ]*stream error:)`
+);
+function diagnosticLines(stderr) {
+  return stderr.split("\n").map((line) => line.replace(ANSI_STYLE, "").trimEnd()).filter((line) => DIAGNOSTIC.test(line)).join("\n").slice(-DIAGNOSTIC_CHARS);
 }
-var OLD_STDERR_CHARS = 500;
+
+// src/state.ts
+function withSavedFailure(saved) {
+  const f = saved.lastModelFailure;
+  if (!f) return NO_CALL_FAILURES;
+  const call = f.call ?? "ledger";
+  const isLedgerFailing = saved.presence?.ledgerState === "failed" || (saved.pending ?? []).some((p) => p.failed);
+  const isFailing = call === "ledger" ? isLedgerFailing : Boolean(saved.overviewFailure);
+  return { ...NO_CALL_FAILURES, [call]: { lastFailure: callFailureOf(f), recoveredAt: isFailing ? null : f.at } };
+}
 function callFailureOf(f) {
   return {
     at: f.at,
@@ -2470,7 +2484,7 @@ function callFailureOf(f) {
     process: {
       cli: f.cli,
       code: f.code,
-      stderr: f.stderr.trim().split("\n").at(-1).slice(0, OLD_STDERR_CHARS),
+      stderr: diagnosticLines(f.stderr),
       signal: f.signal ?? null,
       errorCode: f.errorCode ?? null,
       timeoutMs: f.timeoutMs ?? null
@@ -2536,7 +2550,7 @@ function upgraded(saved, sessionId) {
     }),
     shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     heard,
-    ...saved.callFailures ? {} : { callFailures: withSavedFailure(saved.lastModelFailure) },
+    ...saved.callFailures ? {} : { callFailures: withSavedFailure(saved) },
     coveredTurn: saved.coveredTurn !== void 0 ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null)
   };
 }
@@ -4129,7 +4143,13 @@ var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve4) => {
     });
     child.stdin?.end(input);
   } catch (err) {
-    resolve4({ code: UNSTARTABLE_CODE, stdout: "", stderr: err instanceof Error ? err.message : String(err) });
+    const errorCode = err.code;
+    resolve4({
+      code: UNSTARTABLE_CODE,
+      stdout: "",
+      stderr: err instanceof Error ? err.message : String(err),
+      ...typeof errorCode === "string" ? { errorCode } : {}
+    });
   }
 });
 function exitCodeOf(err) {

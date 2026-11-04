@@ -30,6 +30,7 @@ import {
   NO_CALL_FAILURES,
 } from '../../hooks/session-files'
 import { pruned } from '../../hooks/session-presses'
+import { diagnosticLines } from './diagnostics'
 import { isShownTab } from '../../hooks/tabs'
 import type { ShownTab } from '../../hooks/tabs'
 
@@ -48,20 +49,23 @@ type SavedModelFailure = {
   elapsedMs?: number | null
 }
 
-/** The call records of a state an earlier build saved: its saved failure in its call's record, the ledger's when it named none. */
-function withSavedFailure(f: SavedModelFailure | null | undefined): Session['callFailures'] {
+/**
+ * The call records of a state an earlier build saved: its saved failure in its call's record, the ledger's when it
+ * named none. The failure reads as recovered when the session shows its call working since: for the ledger call, a
+ * ledger that is not failed and no pending exchange that failed; for the Status call, no saved Status failure. That
+ * build did not save when the call recovered, so `recoveredAt` is the failure's own time.
+ */
+function withSavedFailure(saved: Saved): Session['callFailures'] {
+  const f = saved.lastModelFailure
   if (!f) return NO_CALL_FAILURES
+  const call = f.call ?? 'ledger'
+  const isLedgerFailing = saved.presence?.ledgerState === 'failed' || (saved.pending ?? []).some(p => p.failed)
+  const isFailing = call === 'ledger' ? isLedgerFailing : Boolean(saved.overviewFailure)
 
-  return { ...NO_CALL_FAILURES, [f.call ?? 'ledger']: { lastFailure: callFailureOf(f), recoveredAt: null } }
+  return { ...NO_CALL_FAILURES, [call]: { lastFailure: callFailureOf(f), recoveredAt: isFailing ? null : f.at } }
 }
 
-/** How much of the last line of an earlier build's saved stderr is kept. */
-const OLD_STDERR_CHARS = 500
-
-/**
- * An earlier build's saved failure as the shared record. That build kept its stderr unfiltered, so only the last line
- * is kept, where codex prints the error.
- */
+/** An earlier build's saved failure as the shared record. That build kept all of its stderr, so it is filtered here. */
 function callFailureOf(f: SavedModelFailure): CallFailure {
   return {
     at: f.at,
@@ -76,7 +80,7 @@ function callFailureOf(f: SavedModelFailure): CallFailure {
     process: {
       cli: f.cli,
       code: f.code,
-      stderr: f.stderr.trim().split('\n').at(-1)!.slice(0, OLD_STDERR_CHARS),
+      stderr: diagnosticLines(f.stderr),
       signal: f.signal ?? null,
       errorCode: f.errorCode ?? null,
       timeoutMs: f.timeoutMs ?? null,
@@ -188,7 +192,7 @@ type Saved = Omit<Partial<SessionState>, 'turn' | 'pending' | 'sent'> & {
   top?: unknown
   subagents?: unknown
   turn?: Partial<SessionState['turn']> & { sentBack?: unknown }
-  pending?: { ex: Exchange & { checks?: unknown }; turnsStarted: number }[]
+  pending?: { ex: Exchange & { checks?: unknown }; turnsStarted: number; failed?: true }[]
 }
 
 /** State saved by an earlier build, with any field it lacks, and without the keys it no longer has. */
@@ -227,7 +231,7 @@ function upgraded(saved: Saved, sessionId: string): SessionState {
     }),
     shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     heard,
-    ...(saved.callFailures ? {} : { callFailures: withSavedFailure(saved.lastModelFailure) }),
+    ...(saved.callFailures ? {} : { callFailures: withSavedFailure(saved) }),
     coveredTurn: saved.coveredTurn !== undefined ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null),
   }
 }

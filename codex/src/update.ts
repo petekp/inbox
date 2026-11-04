@@ -37,6 +37,7 @@ import type { ProcessFailure } from '../../types'
 import { CODEX } from './texts'
 import { readRollout, withCurrentRollout } from './transcript'
 import type { RunWithInput } from './run'
+import { diagnosticLines } from './diagnostics'
 
 /** The inbox model, at low reasoning effort. gpt-6-luna is faster but closed a finding the reply only mentioned. */
 export const MODEL = 'gpt-6.1-sol'
@@ -109,20 +110,6 @@ async function keepNewerSignIn(link: string, auth: string): Promise<void> {
   if (saved.mtimeMs > theirs.mtimeMs) await copyFile(link, auth)
 }
 
-/** How much of a failed call's stderr is kept: its end, where codex prints the error. */
-const FAILURE_TAIL_CHARS = 2000
-
-/** The end of a failed call's stderr, without any line that `prompt` holds. */
-function stderrTail(stderr: string, prompt: string): string {
-  const isPromptLine = (line: string) => line.trim() !== '' && prompt.includes(line.trim())
-
-  return stderr
-    .split('\n')
-    .filter(line => !isPromptLine(line))
-    .join('\n')
-    .slice(-FAILURE_TAIL_CHARS)
-}
-
 /**
  * Null when it fails. A failed call's report gives its process as `ProcessFailure` describes, with `cause` `process`
  * when the command failed and `no-reply` when it exited 0 and wrote no reply. `personHome` is the person's Codex home,
@@ -182,12 +169,12 @@ export function codexAsk(exec: RunWithInput, cli: string, dir: string, personHom
       const process: ProcessFailure = {
         cli,
         code: r.code,
-        stderr: stderrTail(r.stderr, prompt),
+        stderr: diagnosticLines(r.stderr),
         signal: r.signal ?? null,
         errorCode: r.errorCode ?? null,
         timeoutMs: r.code === TIMED_OUT_CODE ? TIMEOUT_MS : null,
       }
-      const error = `codex exec ${endOf(process)}: ${process.stderr.trim()}`
+      const error = `codex exec ${endOf(process)}${process.stderr ? `: ${process.stderr}` : ''}`
       report?.({ model: MODEL, error, cause: r.code === 0 ? 'no-reply' : 'process', process })
 
       return null

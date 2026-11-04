@@ -120,10 +120,10 @@ export type CallKind =
   | { call: 'status'; reads: 'reply' | 'mid-turn' | 'catch-up'; isRetry: boolean }
 
 /**
- * A model call run as a process that failed: the binary it ran, its exit code, and the end of its stderr with the
- * lines of its prompt left out. One that could not start has code -1, its error's message as `stderr` and the error's
- * code as `errorCode` when it has one. One a signal ended has code -1 and the `signal`. One that timed out has code
- * -2 and the `timeoutMs` it had.
+ * A model call run as a process that failed: the binary it ran, its exit code, and the end of the diagnostic lines of
+ * its stderr, its errors and warnings. One that could not start has code -1 and its error's code as `errorCode` when
+ * it has one. One a signal ended has code -1 and the `signal`. One that timed out has code -2 and the `timeoutMs` it
+ * had.
  */
 export type ProcessFailure = {
   cli: string

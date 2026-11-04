@@ -48,13 +48,24 @@ test('the update process runs the CLI its session saved, else the one its enviro
   assert.equal(await failedCli(null), '/missing/env/codex')
 })
 
-test('a failed update saves the CLI it ran, its exit code, the end of its stderr without the prompt’s lines, and which call failed, beside the failed state', async t => {
+test('a failed update saves the CLI it ran, its exit code, only the error and warning lines of its stderr, and which call failed, beside the failed state', async t => {
   const dir = tempDir()
   const personHome = tempDir()
   t.after(() => Promise.all([dir, personHome].map(d => rm(d, { recursive: true, force: true }))))
   await updateState(dir, 's1', s => ({ ...s, pending: [{ ex: ex(1, 'Should I deploy?'), turnsStarted: 1 }] }))
-  const error = 'ERROR: {"status":400,"error":{"code":"model_not_found"}}\n'
-  const stderr = `${'session header\n'.repeat(500)}Should I deploy?\n${error}`
+  const error = 'ERROR: {"status":400,"error":{"code":"model_not_found"}}'
+  const streamError = '2026-11-03T10:00:00.000Z ERROR codex_core::client: stream error: idle timeout, retrying 1/5'
+  const stderr = [
+    ...Array(500).fill('session header'),
+    'user',
+    'Should I deploy? The key is in .env as API_KEY=abc123',
+    'thinking',
+    '**Weighing the deploy** The person asked whether to deploy the app.',
+    streamError,
+    'codex',
+    'Deploy now? The person said the key is in .env.',
+    error,
+  ].join('\n')
   const { exec } = fakeRunner(() => ({ code: 1, stdout: '', stderr }))
 
   await runBothCalls(dir, 's1', codexAsk(exec, '/old/codex', dir, personHome), () => 7)
@@ -64,9 +75,8 @@ test('a failed update saves the CLI it ran, its exit code, the end of its stderr
   assert.equal(s.callFailures.ledger.lastFailure?.process?.cli, '/old/codex')
   assert.equal(s.callFailures.ledger.lastFailure?.process?.code, 1)
   assert.equal(s.callFailures.ledger.lastFailure?.at, 7)
-  assert.ok(s.callFailures.ledger.lastFailure?.process?.stderr.endsWith(error))
-  assert.ok(s.callFailures.ledger.lastFailure.process.stderr.length < stderr.length)
-  assert.ok(!s.callFailures.ledger.lastFailure.process.stderr.includes('Should I deploy?'))
+  assert.equal(s.callFailures.ledger.lastFailure?.process?.stderr, `${streamError}\n${error}`)
+  assert.doesNotMatch(JSON.stringify(s.callFailures), /deploy the app|API_KEY|Deploy now|Weighing/)
   assert.deepEqual(
     [
       s.callFailures.ledger.lastFailure.cause,
@@ -138,7 +148,8 @@ test('an update whose codex command cannot start saves why as its failure beside
   assert.equal(s.presence.ledgerState, 'failed')
   assert.equal(s.callFailures.ledger.lastFailure?.process?.cli, cli)
   assert.equal(s.callFailures.ledger.lastFailure?.process?.code, -1)
-  assert.match(s.callFailures.ledger.lastFailure?.process?.stderr ?? '', /null bytes/)
+  assert.equal(s.callFailures.ledger.lastFailure?.process?.errorCode, 'ERR_INVALID_ARG_VALUE')
+  assert.match(s.callFailures.ledger.lastFailure?.error ?? '', /^codex exec failed with ERR_INVALID_ARG_VALUE$/)
 })
 
 test('a failed codex call reports the signal that ended codex, the error of a codex that could not start, the timeout it ran out, and a codex that exited 0 with no reply as no reply', async t => {
@@ -179,7 +190,7 @@ test('a failed codex call reports the signal that ended codex, the error of a co
     [unstartable.cause, unstartable.code, unstartable.signal, unstartable.errorCode],
     ['process', -1, null, 'ENOENT'],
   )
-  assert.match(unstartable.stderr ?? '', /ENOENT/)
+  assert.equal(unstartable.stderr, '')
   assert.match(unstartable.error, /^codex exec failed with ENOENT/)
   assert.deepEqual([late.cause, late.code, late.signal, late.timeoutMs], ['process', TIMED_OUT_CODE, null, 120_000])
   assert.match(late.error, /^codex exec timed out after 120 s/)

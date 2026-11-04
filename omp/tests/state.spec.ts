@@ -95,7 +95,7 @@ test('a file from a newer version throws', async () => {
   await expect(readState(dir, 's1')).rejects.toThrow('Unsupported inbox state version: 2')
 })
 
-test('a file with no version and missing newer fields reads with their defaults, and its next save writes the session version', async () => {
+test('a file with no version and missing newer fields, such as the call failure records, reads with their defaults, and its next save writes the session version', async () => {
   const dir = tempDir()
   mkdirSync(join(dir, 'sessions'))
   writeFileSync(statePath(dir, 's1'), JSON.stringify({ presence: { turnsStarted: 4 } }))
@@ -115,6 +115,10 @@ test('a file with no version and missing newer fields reads with their defaults,
   })
   expect(state.pending).toEqual([])
   expect(state.prViews.isFetching).toBe(false)
+  expect(state.callFailures).toEqual({
+    ledger: { lastFailure: null, recoveredAt: null },
+    status: { lastFailure: null, recoveredAt: null },
+  })
   await updateState(dir, 's1', withTurns(5))
   expect(JSON.parse(readFileSync(statePath(dir, 's1'), 'utf8')).version).toBe(SESSION_VERSION)
 })
