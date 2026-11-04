@@ -1,5 +1,7 @@
 # Working on the inbox
 
+Read [docs/principles.md](docs/principles.md) first. It says what the inbox is for and how to decide how a feature should behave. Decide from it rather than asking the person.
+
 The inbox is drawn in four looks: the Claude Code terminal, the Claude desktop app's pane, the Codex tab, and omp's panel. Before you change the UI or a rule, read [docs/looks.md](docs/looks.md). It says which file owns each rule, where the looks differ on purpose, and what to check after each kind of change. [GLOSSARY.md](GLOSSARY.md) defines the terms.
 
 ## New features
