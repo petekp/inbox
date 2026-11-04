@@ -80,7 +80,7 @@ export const DESKTOP_BUTTON_LINES = DESKTOP_BUTTON_PT / DESKTOP_ROW_PT
  * The lines a desktop Box that wraps items `widthsPt` wide, `gapPt` apart, takes in a column about `widthPt` wide. Each
  * item moves to the next line whole when the room left on its line is narrower.
  */
-export function desktopWrapLines(widthsPt: number[], gapPt: number, widthPt: number): number {
+function desktopWrapLines(widthsPt: number[], gapPt: number, widthPt: number): number {
   const room = widthPt - DESKTOP_CELL_PT
   let lines = 1
   let used = 0
