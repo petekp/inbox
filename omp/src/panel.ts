@@ -6,7 +6,8 @@ import type { SessionView } from '../../hooks/session-view'
 import type { BannerTone, ToneName } from '../../hooks/tones'
 import { ago } from '../../hooks/text'
 import { DEMO_NOTICE, bannerOf, stopBanner, tabBarBanners, stopFix, stopText } from '../../hooks/banners'
-import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies } from '../../hooks/timing'
+import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies, nextFoldAt } from '../../hooks/timing'
+import type { ListInput } from '../../hooks/timing'
 import { shownTabs, isRowTab } from '../../hooks/tabs'
 import { bandCounts, noCountsText } from '../../hooks/band'
 import { footerStatus } from '../../hooks/view'
@@ -95,6 +96,8 @@ export type PanelUi = {
   shownSince: number
   /** Whether Help shows in place of the tab's lines. It scrolls with `pageTop`, and switching tabs closes it. */
   isHelpShown: boolean
+  /** The person's latest run of keys, which keeps a row due to fold in place until they stop. */
+  listInput: ListInput | null
 }
 
 export const INITIAL_UI: PanelUi = {
@@ -116,14 +119,20 @@ export const INITIAL_UI: PanelUi = {
   openedAt: 0,
   shownSince: 0,
   isHelpShown: false,
+  listInput: null,
 }
 
-export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded' | 'shownSince'>): Holds {
-  return { replies: heldReplies(ui.typing, ui.drafts), discarded: ui.discarded, shownSince: ui.shownSince }
+export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded' | 'shownSince' | 'listInput'>): Holds {
+  return {
+    replies: heldReplies(ui.typing, ui.drafts),
+    discarded: ui.discarded,
+    shownSince: ui.shownSince,
+    listInput: ui.listInput,
+  }
 }
 
 /**
- * True while the view changes with the clock alone: a settled row's Undo counting down, a local press's result
+ * True while the view changes with the clock alone: a settled row's Undo counting down or its fold coming due, a local press's result
  * showing, a send waiting to read as queued, or a notice. Changes the host saves arrive as events instead.
  */
 export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): boolean {
@@ -135,13 +144,11 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
       (l.delivery?.state === 'queued' && now - l.at < QUEUED_AFTER_MS),
   )
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
+  const settled = [...rows, ...view.prs.drawn].flatMap(r => (r.state.is === 'settled' ? [r.state] : []))
+  const placing = { lastTypedMessageAt: null, listInput: ui.listInput, now, settleWindowMs: SETTLED_MS }
+  const isFoldComing = nextFoldAt(settled, placing) !== null
 
-  return (
-    rows.some(r => r.state.is === 'settled' && r.state.canUndo) ||
-    view.prs.drawn.some(p => p.state.is === 'settled' && p.state.canUndo) ||
-    isPressMoving ||
-    isNoticeShown
-  )
+  return isFoldComing || isPressMoving || isNoticeShown
 }
 
 /** The notice for a press the row cannot show: a failed send, or a press whose row had changed. */

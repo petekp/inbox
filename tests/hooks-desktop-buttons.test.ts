@@ -3,11 +3,11 @@ import type { FoldProps } from '../hooks/fold-client'
 import type { LinksProps } from '../hooks/links-client'
 import type { RowProps } from '../hooks/row-client'
 import type { TabsProps } from '../hooks/tabs-client'
-import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
-import { w, world } from './hooks-world'
+import { FOLD_QUIET_MS, PRESS_GUARD_MS, QUEUED_AFTER_MS, SETTLED_MS } from '../hooks/timing'
+import { LEDGER_REPLY, w, arrive, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
-test('the desktop task keeps help before Done, puts Try again first when its send fails, and keeps Undo’s place after Done once Undo ends', async ($, on) => {
+test('the desktop task keeps help before Done, puts Try again first when its send fails, and keeps Undo’s place after Done once Undo ends while its message is on its way', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.paneState = { isShown: true, isFocused: true }
@@ -40,10 +40,13 @@ test('the desktop task keeps help before Done, puts Try again first when its sen
   const whileUndoLasts = await undoPlace()
   expect(whileUndoLasts).toBeDefined()
   expect(await pane.find({ key: 'undo-i1' })).toBeDefined()
+  w.submitAnswer = 'hold'
   await clock.advance(SETTLED_MS)
+  await clock.advance(QUEUED_AFTER_MS)
   expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
   expect(await pane.find({ key: 'undo-i1' })).toBeUndefined()
   expect(await undoPlace()).toEqual(whileUndoLasts)
+  await arrive($)
 })
 
 test('the desktop pane draws each action as one button and the tabs as one click region, with no keys and no close button of its own', async ($, on) => {
@@ -108,7 +111,7 @@ test('the desktop pane draws each action as one button and the tabs as one click
   })
   await $.tool.call({ tool: 'mcp__inbox__close', id: 'f3', reason: 'fixed' } as never)
   await clock.advance(9000)
-  expect(await pane.find({ key: 'settled-f3' })).toBeDefined()
+  expect(await pane.find({ key: 'settled-f3' })).toBeUndefined()
   await pane.pointer({ type: 'down', x: 1, y: 1.1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('needsYou')
@@ -138,4 +141,34 @@ test('the desktop pane draws each action as one button and the tabs as one click
   expect(await pane.find({ text: 'Hot.' })).toBeDefined()
 
   expect(await pane.find({ key: 'close-pane' })).toBeUndefined()
+})
+
+test('on desktop, the pointer moving over an open row keeps a closed row from folding without selecting that row, until it has been still for FOLD_QUIET_MS', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.surfaces = ['desktop']
+  w.ledgerReply = `${LEDGER_REPLY}\nNEW: decide | 3 | Add a --shout flag? | - | no`
+  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Three questions.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  w.paneState = { isShown: true, isFocused: true }
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 69 } })
+  const { tabs, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+  await pane.pointer({ type: 'down', x: tabs[0]!.width + gap + 1, y: 1.1, button: 'left', in: 'tabs' })
+  await clock.settle()
+  await pane.pointer({ type: 'down', x: 1, y: 1.1, button: 'left', in: 'tabs' })
+  await clock.settle()
+  await $.tool.call({ tool: 'mcp__inbox__close', id: 'i2', reason: 'settled in chat' } as never)
+  await clock.settle()
+  expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
+
+  await clock.advance(SETTLED_MS - 100)
+  await pane.pointer({ type: 'enter', x: 5, y: 0, in: 'select-i3' })
+  await clock.advance(200)
+  expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
+  expect((await pane.find({ key: 'select-i3' }))?.type).toBe('Client')
+  expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
+  await clock.advance(FOLD_QUIET_MS)
+  expect(await pane.find({ key: 'settled-i2' })).toBeUndefined()
 })

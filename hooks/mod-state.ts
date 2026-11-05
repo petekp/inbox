@@ -3,6 +3,7 @@ import type { Tab } from '../types'
 import type { RowRecord } from './arrivals'
 import type { PendingUndoScroll } from './pane-selection'
 import type { ModLook } from './rows'
+import type { ListInput } from './timing'
 
 class PaneState {
   recordedRows: { isDemo: boolean; ids: RowRecord<Tab> } | null = null
@@ -23,6 +24,9 @@ class PaneState {
   undoEnds = new Set<number>()
   isUndoLoopRunning = false
   compareRedrawAt: number | null = null
+  /** The person's latest run of input on the pane's list, which keeps a row due to fold in place. */
+  listInput: ListInput | null = null
+  foldRedrawAt: number | null = null
   herdrCheckTimer: Timer | null = null
 }
 

@@ -140,6 +140,8 @@ import {
   compareEndsAt,
   SETTLED_MS,
   keptDiscards,
+  nextFoldAt,
+  withListInput,
   type Holds,
 } from './timing'
 import { helpKeys, UNDO_KEY } from './help'
@@ -1211,7 +1213,27 @@ async function readHolds($: EngineInterface): Promise<Holds> {
     readShownSince($),
   ])
 
-  return { replies: heldReplies(typing, drafts), discarded, shownSince }
+  return { replies: heldReplies(typing, drafts), discarded, shownSince, listInput: paneState.listInput }
+}
+
+/** Notes a press, key, click or pointer move on the pane, so a row due to fold waits until the person stops. */
+async function noteListInput($: EngineInterface) {
+  paneState.listInput = withListInput(paneState.listInput, await $.clock.now())
+}
+
+/** Redraws when the next settled row or PR the view draws can fold. */
+function redrawAtNextFold($: EngineInterface, view: SessionView, lastTypedMessageAt: number | null, now: number) {
+  const settled = [...allRows(view), ...view.prs.drawn].flatMap(r => (r.state.is === 'settled' ? [r.state] : []))
+  const placing = { lastTypedMessageAt, listInput: paneState.listInput, now, settleWindowMs: SETTLED_MS }
+  const at = nextFoldAt(settled, placing)
+  const pending = paneState.foldRedrawAt
+  const isSooner = at !== null && at > now && (pending === null || pending <= now || at < pending)
+  if (!isSooner) return
+  paneState.foldRedrawAt = at
+  later($, at - now, async () => {
+    paneState.foldRedrawAt = null
+    await redraw($)
+  })
 }
 
 /** Opens the open pane again, without asking for the keyboard, once a reply field opened or closed. */
@@ -2010,6 +2032,7 @@ async function drawnState(
   const isUnread = demo === null && unreadable === conversation.id
 
   const view = sessionView(drawnSession(session, drawn, demo !== null, now), now, SETTLED_MS, holds, drawn.notes)
+  redrawAtNextFold($, view, presence.lastTypedMessageAt, now)
 
   return {
     ...drawn,
@@ -2743,7 +2766,8 @@ export const register: Register = on => {
     }
   })
 
-  on('ui.press', async (_$, e, next) => {
+  on('ui.press', async ($, e, next) => {
+    if (e.requestId === PANE) await noteListInput($)
     if (e.requestId === PANE && e.surface === 'terminal') {
       if (e.element.startsWith('fold-') || e.element === 'hide-demo') cancelUndoScroll()
       else suspendUndoReveal()
@@ -2755,15 +2779,26 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('ui.scroll', { requestId: PANE }, async (_$, e, next) => {
-    if (e.origin.kind === 'person') cancelUndoScroll()
+  on('ui.scroll', { requestId: PANE }, async ($, e, next) => {
+    if (e.origin.kind === 'person') {
+      cancelUndoScroll()
+      await noteListInput($)
+    }
     return next(e)
   })
 
   on('ui.message', async ($, e, next) => {
     const r = await next(e)
     if (e.requestId !== PANE) return r
-    const data = e.data as { tab?: unknown; isUnfolded?: unknown; hover?: unknown; key?: unknown } | null
+    await noteListInput($)
+    const data = e.data as {
+      tab?: unknown
+      isUnfolded?: unknown
+      hover?: unknown
+      key?: unknown
+      isPointer?: unknown
+    } | null
+    if (data?.isPointer === true) return r
     const shown = isShownTab(data?.tab) ? data.tab : null
     const followUp = typeof data?.key === 'string' ? followUpPresses.get(data.key) : undefined
     if (e.element === 'tabs' && shown) await showTab($, shown)

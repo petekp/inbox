@@ -36,6 +36,15 @@ export function rowFeedbackText(row: RowView, look: Look): string | null {
   return f.is === 'done' ? f.label : f.is === 'local' ? localText(f.result, look) : feedbackText(f, look)
 }
 
+/**
+ * Whether a row's press is under way: its talk press waits on the agent's reply, its message is sending, or its open or
+ * copy runs. While one is under way on a tab, no settled row there folds, so nothing shifts under the row being worked
+ * on. A queued or unconfirmed message does not count, since it can wait a whole turn or for good.
+ */
+export function isPressUnderWay(f: Feedback | null): boolean {
+  return f?.is === 'working' || f?.is === 'sending' || (f?.is === 'local' && f.result.state === 'pending')
+}
+
 export function feedbackOf(
   id: string,
   last: LastAction | undefined,

@@ -3,7 +3,7 @@ import { inPrOrder, rankOf } from './prs'
 import { closedRowState } from './rows'
 import { isSettledInPlace, isShownSince, isUndoLeft } from './timing'
 import type { SettledState } from './rows'
-import type { ViewInput } from './view'
+import type { Placing } from './timing'
 import { isLeftOut, splitLinked, tabPrs } from './pr-fetch'
 import type { PrLinks } from './pr-fetch'
 import { prMarkId } from './pr-rows'
@@ -90,10 +90,9 @@ export function drawnPrs(
   prState: PrViews,
   links: PrLinks,
   lastActions: Record<string, LastAction>,
-  now: number,
-  settleWindowMs: number,
-  placing: Pick<ViewInput, 'shownSince' | 'lastTypedMessageAt'>,
+  placing: Placing,
 ): DrawnPr[] {
+  const { now, settleWindowMs } = placing
   const ranked = links.prOrder?.refs ?? []
   const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr): Omit<DrawnPr, 'rank'>[] => {
     if (isTracked(prState, links, pr.ref)) return [{ pr, state: { is: 'open' } }]
@@ -101,7 +100,7 @@ export function drawnPrs(
     if (mark === null) return []
     const state = settledPrState(mark, now, settleWindowMs)
 
-    return isSettledInPlace(state, placing) ? [{ pr, state }] : []
+    return isSettledInPlace(state, placing, prMarkId(pr.ref)) ? [{ pr, state }] : []
   })
   let rank = 0
 

@@ -53,7 +53,7 @@ function ItemGroup({
 }) {
   const title = kind === 'question' ? 'Questions' : 'Tasks'
   const rest = staying(entries)
-  const closed = itemsClosed(v, kind, rest)
+  const closed = itemsClosed(v, kind, entries)
   const rows = rest.flatMap(x => ('row' in x ? [x.row] : []))
 
   return (
@@ -64,7 +64,7 @@ function ItemGroup({
         group={kind}
         empty={groupEmpty(title, rest)}
         closed={closed}
-        total={closedTotal(v.needsYou.closed[kind === 'question' ? 'questions' : 'tasks'], settledIn(rest))}
+        total={closedTotal(v.needsYou.closed[kind === 'question' ? 'questions' : 'tasks'], settledIn(entries))}
         now={now}
       />
     </section>
@@ -219,7 +219,7 @@ export function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number
 }
 
 export function Findings({ v, lists, now }: { v: View; lists: Lists; now: number }) {
-  const settled = settledIn(staying(lists.findings))
+  const settled = settledIn(lists.findings)
   const closedOf = (kind: Finding['kind']) => v.findings.closed.filter(f => f.kind === kind)
   const shown = (kind: Finding['kind']) =>
     closedShown(closedOf(kind), settled, closedAll.has(kind)).map(f => ({

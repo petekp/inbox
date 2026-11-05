@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { w, world } from './hooks-world'
-import { BAND, PANE, leaveAndReturn } from './hooks-helpers'
+import { BAND, PANE } from './hooks-helpers'
 
 test('the guidance reaches Claude in the close tool’s description and nowhere else, and every inbox tool loads with the session', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
@@ -17,7 +17,7 @@ test('the guidance reaches Claude in the close tool’s description and nowhere 
   expect([close, record, order].map(d => d.isDeferred)).toEqual([false, false, false])
 })
 
-test('a finding Claude records while the pane shows an empty tab brings the pane to it, and Fix hands it to Claude, settles its row as the choice made until the person leaves the tab, then moves it to the Closed fold even when Claude’s reply leaves it open', async ($, on) => {
+test('a finding Claude records while the pane shows an empty tab brings the pane to it, and Fix hands it to Claude, settles its row as the choice made until its Undo ends, then moves it to the Closed fold even when Claude’s reply leaves it open', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.paneState = { isShown: true, isFocused: true }
@@ -51,9 +51,6 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
   expect(await band.find({ text: /Finds 1/ })).toBeUndefined()
   await clock.advance(9000)
   expect(w.sent.at(-1)).toContain('Please address this finding you recorded:\nIssue: Retry loop never backs off')
-  expect(await pane.find({ key: 'settled-f1' })).toBeDefined()
-  expect(await pane.find({ key: 'undo-f1' })).toBeUndefined()
-  await leaveAndReturn(pane, clock, 'findings')
   expect(await pane.find({ key: 'settled-f1' })).toBeUndefined()
   expect(await pane.find({ text: /1 closed/ })).toBeDefined()
 
