@@ -2,7 +2,7 @@ import type { Closed, ClosedFinding, Finding, Item, Ledger } from '../types'
 import { keyWords, restates } from './ask-match'
 import type { Host } from './model-text'
 
-const MAX_CLOSED = 12
+export const MAX_CLOSED = 12
 
 export function closedRecord(item: Item, closing: Closing, now: number): Closed {
   const { id, kind, ask, label } = item
