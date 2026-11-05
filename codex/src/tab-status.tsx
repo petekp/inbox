@@ -301,7 +301,14 @@ function GoalSection({ page }: { page: StatusPage }) {
       <div class="goal-heading">
         <span class="goal-title">{g?.label ?? GOAL_HEADING}</span>
         <span class="goal-rule" />
-        {isTyping ? null : <Keys keys={goalKeyPlan(page)} />}
+        {isTyping ? null : (
+          <span class="goal-actions">
+            {goalKeyPlan(page).flatMap((k, n) => [
+              ...(n > 0 ? [<span class="muted">·</span>] : []),
+              <Keys key={k.label} keys={[k]} />,
+            ])}
+          </span>
+        )}
       </div>
       <div class="status-head goal">
         {isTyping ? <GoalField /> : text}

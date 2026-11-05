@@ -91,7 +91,9 @@ function textWithCount(g: GoalBlock, d: Draw): string[] {
  */
 function headingLines(part: GoalPart & { is: 'heading' }, d: Draw, isSelected: boolean): string[] {
   const { width, style: s } = d
-  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyPlan(part.page) }, d, isSelected, 1) : []
+  const keys = part.page
+    ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyPlan(part.page) }, d, isSelected, 1, s.dim('·'))
+    : []
   const right = width - 1
   const label = `${part.text} `
   const keysCells = keys.length === 1 ? visibleLength(keys[0]!) : Infinity

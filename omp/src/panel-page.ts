@@ -148,6 +148,7 @@ export function pageButtonLines(
   d: Draw,
   isSelected: boolean,
   textAt = PAGE_TEXT_AT,
+  between = '',
 ): string[] {
   const faces = target.keys.map((k): ButtonFace => ({
     label: k.label,
@@ -158,7 +159,7 @@ export function pageButtonLines(
   }))
   const focused = isSelected ? pageFocus(target, d.ui) : -1
 
-  return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style) : []
+  return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style, between) : []
 }
 
 /** A line on the Status page, laid out as the shared row says. */

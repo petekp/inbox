@@ -32,7 +32,7 @@ async function statusShown($: Engine, on: On) {
 test('on a next build, a goal the Status call writes shows at once under the Goal heading with its milestones, Edit and Remove draw at the right end of the heading row, the head draws as its Now line, and nothing is sent', async ($, on) => {
   const { pane } = await statusShown($, on)
 
-  expect((await pane.find({ key: 'goal-heading' }))?.text).toMatch(/^Goal ─+e: Edit\s*r: Remove$/)
+  expect((await pane.find({ key: 'goal-heading' }))?.text).toMatch(/^Goal ─+e: Edit · r: Remove$/)
   expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('e: Edit')
   expect((await pane.find({ key: 'remove-goal-goal' }))?.text).toBe('r: Remove')
   expect((await pane.find({ key: 'goal-text' }))?.text.replaceAll('\u00a0', ' ')).toBe(
@@ -50,7 +50,7 @@ test('on a next build, Remove goal leaves the Goal heading with the line that sa
   await pane.press({ key: 'remove-goal-goal-key' })
   await clock.settle()
   expect(await pane.find({ key: 'goal-text' })).toBeUndefined()
-  expect((await pane.find({ key: 'goal-heading' }))?.text).toMatch(/^Goal ─+u: Undon: New$/)
+  expect((await pane.find({ key: 'goal-heading' }))?.text).toMatch(/^Goal ─+u: Undo · n: New$/)
   expect((await pane.find({ key: 'goal-none' }))?.text).toBe(NO_GOAL_TEXT)
   expect(await pane.find({ key: 'status-head' })).toBeDefined()
   expect((await pane.find({ key: 'restore-goal-goal' }))?.text).toBe('u: Undo')
@@ -83,7 +83,7 @@ test('on a next build, in a narrow pane the goal’s buttons wrap under its head
   await clock.settle()
 
   expect((await narrow.find({ key: 'goal-heading-title' }))?.text).toMatch(/^Goal ─+$/)
-  expect((await narrow.find({ key: 'goal-heading-keys' }))?.text).toMatch(/Edit\s*(r: )?Remove$/)
+  expect((await narrow.find({ key: 'goal-heading-keys' }))?.text).toMatch(/Edit · (r: )?Remove$/)
   expect(await narrow.find({ key: 'goal-heading' })).toBeUndefined()
 })
 

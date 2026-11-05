@@ -3436,7 +3436,6 @@ export const register: Register = on => {
         foldButton,
         desktopFoldLines,
         statusUnfolded,
-        space,
       },
       handlers,
     )

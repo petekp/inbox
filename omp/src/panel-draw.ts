@@ -71,18 +71,25 @@ function buttonLines(line: Line, ui: PanelUi, indent: number, width: number, s: 
 }
 
 /** Buttons laid out in lines from `indent`, the one at `focused` drawn focused. -1 focuses none. */
-export function faceLines(buttons: ButtonFace[], focused: number, indent: number, width: number, s: Style): string[] {
+export function faceLines(
+  buttons: ButtonFace[],
+  focused: number,
+  indent: number,
+  width: number,
+  s: Style,
+  between = '',
+): string[] {
   const cells = buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)))
   const sizes = cells.map(visibleLength)
   const firstFollowUp = buttons.findIndex(b => b.isFollowUp)
   const keyCount = firstFollowUp < 0 ? cells.length : firstFollowUp
   const { lines } = actionLines(sizes.slice(0, keyCount), sizes.slice(keyCount), {
     width: width - indent,
-    gap: 0,
+    gap: visibleLength(between),
     separator: 0,
   })
 
-  return lines.map(at => ' '.repeat(indent) + at.map(i => cells[i]).join(''))
+  return lines.map(at => ' '.repeat(indent) + at.map(i => cells[i]).join(between))
 }
 
 /** `text` in a lead's tone. */

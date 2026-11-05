@@ -139,8 +139,14 @@
   flex: 1 0 32px;
   border-top: 1px solid var(--soft);
 }
+.status-page .goal-heading .goal-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
 .status-page .goal-heading .actions {
-  margin: 0 0 0 auto;
+  margin: 0;
 }
 /* The goal's count after its text, kept whole on the line with the text's last word. */
 .status-head h1 .count {

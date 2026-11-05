@@ -278,7 +278,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
       await new Promise<void>(resolve => setImmediate(resolve))
       await new Promise<void>(resolve => setImmediate(resolve))
     }
-    assert.equal(root.querySelector('.goal-heading')?.textContent, 'GoalEditRemove')
+    assert.equal(root.querySelector('.goal-heading')?.textContent, 'GoalEdit·Remove')
     assert.deepEqual(
       [...root.querySelectorAll('.status-head.goal > *')].map(e => e.textContent),
       ['Status tab shipped · 1 of 2 done', 'Now: Drawing the Status in the Codex tab'],

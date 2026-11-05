@@ -79,7 +79,6 @@ export function paneStatus(
     foldButton,
     desktopFoldLines,
     statusUnfolded,
-    space,
   }: Pick<
     PaneBase,
     | 'e'
@@ -96,7 +95,6 @@ export function paneStatus(
     | 'drafts'
     | 'now'
     | 'statusUnfolded'
-    | 'space'
   > &
     Pick<
       PaneStatusLines,
@@ -389,7 +387,6 @@ export function paneStatus(
       markGlyph,
       keyRow,
       terminalKeyCells,
-      space,
       desktopFrame,
     },
     handlers,

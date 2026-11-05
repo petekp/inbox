@@ -62,22 +62,10 @@ export function paneStatusGoal(
     markGlyph,
     keyRow,
     terminalKeyCells,
-    space,
     desktopFrame,
   }: Pick<
     PaneBase,
-    | 'e'
-    | 'look'
-    | 'Box'
-    | 'Text'
-    | 'pal'
-    | 'Input'
-    | 'typing'
-    | 'drafts'
-    | 'listColumns'
-    | 'now'
-    | 'statusKeyRow'
-    | 'space'
+    'e' | 'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'drafts' | 'listColumns' | 'now' | 'statusKeyRow'
   > &
     Pick<PaneStatusLines, 'statusMarkAt' | 'statusNameLine' | 'statusPageText' | 'desktopBlockWidth'> &
     Pick<PaneRowLines, 'markGlyph'> &
@@ -235,10 +223,31 @@ export function paneStatusGoal(
   ]
 
   /** The cells the terminal draws `keys` in on one line, or the points desktop draws them in. */
+  /** The cells the terminal draws `keys` in on one line, `STALL_GAP` between them, or the points desktop draws them in. */
   const keysWidth = (keys: KeyAction[]) =>
     look === 'desktop'
-      ? keys.reduce((n, k) => n + desktopTextPt(k.label) + DESKTOP_BUTTON_EXTRA_PT, (keys.length - 1) * DESKTOP_CELL_PT)
-      : keys.reduce((n, k) => n + terminalKeyCells(k), (keys.length - 1) * space.buttonGap)
+      ? keys.reduce(
+          (n, k) => n + desktopTextPt(k.label) + DESKTOP_BUTTON_EXTRA_PT,
+          (keys.length - 1) * desktopTextPt(STALL_GAP),
+        )
+      : keys.reduce((n, k) => n + terminalKeyCells(k), (keys.length - 1) * cellWidth(STALL_GAP))
+  /** The goal's buttons with a dim `STALL_GAP` between them, as the old "Goal · Edit" line drew them. */
+  const headingKeys = (keys: KeyAction[]) => (
+    <Box flexDirection="row" alignItems="center">
+      {keys.flatMap((k, n) => [
+        ...(n > 0
+          ? [
+              <Text key={`goal-key-gap-${n}`} color={pal.muted}>
+                {STALL_GAP}
+              </Text>,
+            ]
+          : []),
+        <Box key={`goal-key-${k.key}`} flexShrink={0}>
+          {keyRow(GOAL_KEYS_ID, [k])}
+        </Box>,
+      ])}
+    </Box>
+  )
   /** A rule between the heading's title and its buttons, filling the room left. The selection color hides the divider's, so a selected heading's rule is muted. */
   const headingRule = (key: string, cells: number) =>
     look === 'desktop' ? (
@@ -262,7 +271,7 @@ export function paneStatusGoal(
         {headingRule('goal-heading-rule', cells)}
         {withKeys ? (
           <Box flexShrink={0} marginLeft={look === 'terminal' ? 1 : 0}>
-            {keyRow(GOAL_KEYS_ID, keys)}
+            {headingKeys(keys)}
           </Box>
         ) : null}
       </Box>
@@ -282,7 +291,7 @@ export function paneStatusGoal(
               el: (
                 <Box key="goal-heading-keys" flexDirection="row">
                   <Box flexGrow={1} />
-                  <Box flexShrink={0}>{keyRow(GOAL_KEYS_ID, keys)}</Box>
+                  <Box flexShrink={0}>{headingKeys(keys)}</Box>
                 </Box>
               ),
               lines:

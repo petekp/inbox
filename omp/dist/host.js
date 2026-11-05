@@ -5610,7 +5610,7 @@ function lookLines(row, width, s) {
   const rule = `${" ".repeat(at)}${s.dim(`${LOOK_DASH.repeat(before)}${text}${LOOK_DASH.repeat(fill - before)}`)}`;
   return ["", rule, ...row.isLast ? [] : [""]];
 }
-function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT) {
+function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between = "") {
   const faces = target.keys.map((k) => ({
     label: k.label,
     key: isSelected ? k.hotkey : null,
@@ -5619,7 +5619,7 @@ function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT) {
     ...k.emphasis === "quiet" ? { isQuiet: true } : {}
   }));
   const focused = isSelected ? pageFocus(target, d.ui) : -1;
-  return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style) : [];
+  return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style, between) : [];
 }
 function drawPageRow(row, d, isSelected = false) {
   const { width, now, style: s } = d;
@@ -5724,7 +5724,7 @@ function textWithCount(g, d) {
 }
 function headingLines(part, d, isSelected) {
   const { width, style: s } = d;
-  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyPlan(part.page) }, d, isSelected, 1) : [];
+  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyPlan(part.page) }, d, isSelected, 1, s.dim("\xB7")) : [];
   const right = width - 1;
   const label = `${part.text} `;
   const keysCells = keys.length === 1 ? visibleLength(keys[0]) : Infinity;
@@ -6413,17 +6413,17 @@ function labelMark(b, room, s) {
 function buttonLines(line, ui, indent, width, s) {
   return faceLines(line.buttons, focusOf2(line, ui), indent, width, s);
 }
-function faceLines(buttons, focused, indent, width, s) {
+function faceLines(buttons, focused, indent, width, s, between = "") {
   const cells = buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)));
   const sizes = cells.map(visibleLength);
   const firstFollowUp = buttons.findIndex((b) => b.isFollowUp);
   const keyCount = firstFollowUp < 0 ? cells.length : firstFollowUp;
   const { lines } = actionLines(sizes.slice(0, keyCount), sizes.slice(keyCount), {
     width: width - indent,
-    gap: 0,
+    gap: visibleLength(between),
     separator: 0
   });
-  return lines.map((at) => " ".repeat(indent) + at.map((i) => cells[i]).join(""));
+  return lines.map((at) => " ".repeat(indent) + at.map((i) => cells[i]).join(between));
 }
 function leadPaint(lead, text, s) {
   return lead.tone === "dim" ? s.dim(text) : lead.tone ? s.tone(lead.tone, text) : text;

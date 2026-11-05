@@ -56,7 +56,7 @@ test('a set goal draws Edit and Remove at the right end of its Goal heading row,
   expect(goalKeyPlan(page).map(k => k.label)).toEqual(['Edit', 'Remove'])
   const lines = text(screen, onPage, 60).split('\n')
   const heading = lines.find(l => l.startsWith(' Goal ─'))!
-  expect(heading).toMatch(/^ Goal ─+ ↵ Edit +r Remove $/)
+  expect(heading).toMatch(/^ Goal ─+ ↵ Edit · r Remove $/)
   expect(heading.length).toBe(59)
   const order = [
     'Goal ─',
@@ -145,6 +145,6 @@ test('in a narrow panel, the goal’s buttons wrap under its heading’s rule, a
   const lines = text(withGoal(), onPage, 24).split('\n')
   const at = lineAt(lines, 'Goal ─')
   expect(lines[at]).toMatch(/^ Goal ─+$/)
-  expect(lines[at + 1]).toMatch(/^ +↵ Edit +r Remove $/)
+  expect(lines[at + 1]).toMatch(/^ +↵ Edit · r Remove $/)
   expect(lines[at + 1]!.length).toBe(23)
 })
