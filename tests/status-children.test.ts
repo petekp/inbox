@@ -193,7 +193,7 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
   ])
 })
 
-test('a child whose host reports no activity moves and shows no words for as long as it runs', () => {
+test('a child saved with no activity time moves and shows no words for as long as it runs', () => {
   const now = 100 * MIN
   const o = withChild(
     null,

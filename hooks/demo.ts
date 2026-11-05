@@ -112,7 +112,7 @@ export function demoView(now: number, agent: string): DemoCopy {
             subjectId: 's1',
             startedAt: now - 9 * MIN,
             endedAt: null,
-            lastActivityAt: null,
+            lastActivityAt: now - 9 * MIN,
             delegateState: 'blocked',
           },
           {

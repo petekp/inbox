@@ -24,8 +24,8 @@ export type Subject = {
 }
 
 /**
- * What kind of work runs apart from the session's own turn. A background command or a Monitor task is not a child: it
- * is how the agent watches work, and the work it watches has a row of its own.
+ * What kind of work runs apart from the session's own turn. A background command or a Monitor task is not a child: a
+ * delegate or subagent it watches has a row of its own, and a step it runs belongs to its subject's row.
  */
 export type ChildKind = 'subagent' | 'workflow' | 'delegate'
 
