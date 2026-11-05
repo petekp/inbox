@@ -7,6 +7,7 @@ import { parseStatus } from '../../hooks/status'
 import { isSubjectSeen, LOOK_MIN_MS } from '../../hooks/status-children'
 import { applyStatus } from '../../hooks/status-ops'
 import { goalPressed } from '../../hooks/goal-press'
+import { NO_GOAL_TEXT } from '../../hooks/status-goal-page'
 import type { RowPress } from '../../hooks/presses'
 import { recordItem } from '../../hooks/tools'
 import { shownTabs } from '../../hooks/tabs'
@@ -22,7 +23,7 @@ const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Status page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes, while a release build’s view draws Asks for it, only a next build names on an Asks row the subject it holds up, and a proposed goal, a set goal with Edit in its label line, its count after its text, its Now line and the field Edit opens draw in place', async context => {
+test('the Codex tab draws the Status page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes, while a release build’s view draws Asks for it, only a next build names on an Asks row the subject it holds up, and a proposed goal, a set goal with Edit on its heading row, its count after its text, its Now line and the field Edit opens draw in place', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const now = Date.now()
   const state = emptyState('overview')
@@ -177,7 +178,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.deepEqual(
       [...root.querySelectorAll('main button')].map(b => [b.textContent, b.className]),
       [
-        ['Set a goal', 'key ghost'],
+        ['New', 'key ghost'],
         ['View question', 'key'],
       ],
     )
@@ -254,41 +255,40 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.ok(![...root.querySelectorAll('main .mark')].some(m => m.textContent === '◆'))
     assert.deepEqual(
       [...root.querySelectorAll('main button')].map(b => b.textContent),
-      ['Set a goal'],
+      ['New'],
     )
+    assert.equal(root.querySelector('.goal-heading .goal-title')?.textContent, 'Goal')
+    assert.equal(root.querySelector('.goal-heading .actions')?.textContent, 'New')
+    assert.equal(root.querySelector('.status-head.goal p')?.textContent, NO_GOAL_TEXT)
 
-    const proposing = applyStatus(
+    const withGoal = applyStatus(
       state.ledger.overview,
-      parseStatus('GOAL: Status tab shipped | done Page; queued Label')!,
+      parseStatus(
+        'NEW: working | Status page | drawn\nNEW: queued | Tab label | not started\nGOAL: Status tab shipped | done Page; queued Label',
+      )!,
       now,
       new Set(),
     )!
-    state.ledger = { ...state.ledger, overview: proposing }
+    state.ledger = { ...state.ledger, overview: withGoal }
     await afterPoll()
     const buttons = () => [...root.querySelectorAll('main button')].map(b => b.textContent)
-    assert.deepEqual(
-      [...root.querySelectorAll('.goal-proposed > *')].map(e => e.textContent),
-      ['✓', 'Page', '○', 'Label'],
-    )
-    assert.deepEqual(buttons(), ['Set as goal', 'Edit', 'Not now'])
 
     const click = async (label: string) => {
       ;([...root.querySelectorAll('main button')].find(b => b.textContent === label) as HTMLElement).click()
       await new Promise<void>(resolve => setImmediate(resolve))
       await new Promise<void>(resolve => setImmediate(resolve))
     }
-    await click('Set as goal')
-    assert.deepEqual(presses, [{ action: 'use-goal', id: 'goal' }])
+    assert.equal(root.querySelector('.goal-heading')?.textContent, 'GoalEdit·Remove')
     assert.deepEqual(
       [...root.querySelectorAll('.status-head.goal > *')].map(e => e.textContent),
-      ['Goal · Edit', 'Status tab shipped · 1 of 2 done', 'Now: Drawing the Status in the Codex tab'],
+      ['Status tab shipped · 1 of 2 done', 'Now: Drawing the Status in the Codex tab'],
     )
     assert.equal(root.querySelector('.status-head:not(.goal)'), null)
-    assert.deepEqual(buttons(), ['Edit'])
+    assert.deepEqual(buttons(), ['Edit', 'Remove'])
     await click('Edit')
     assert.equal((root.querySelector('#type-goal') as HTMLInputElement | null)?.value, 'Status tab shipped')
     assert.equal(root.querySelector('.status-head.goal h1'), null)
-    assert.equal(root.querySelector('.status-head.goal p')?.textContent, 'Goal')
+    assert.equal(root.querySelector('.goal-heading')?.textContent, 'Goal')
     await click('Cancel')
     assert.equal(root.querySelector('#type-goal'), null)
     assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab shipped · 1 of 2 done')
@@ -297,11 +297,17 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     const field = window.document.querySelector('#type-goal')!
     Object.assign(field, { value: 'Status tab in the store' })
     field.dispatchEvent(new window.Event('input', { bubbles: true }))
-    await click('Set goal')
+    await click('Save')
     assert.deepEqual(presses.at(-1), { action: 'type', id: 'goal', text: 'Status tab in the store' })
     assert.equal(root.querySelector('#type-goal'), null)
     assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab in the store')
-    assert.equal(root.querySelector('.status-head.goal p:last-child')?.textContent, 'Milestones after the next reply')
+    assert.equal(
+      [...root.querySelectorAll('.status-head.goal p')].at(-1)?.textContent,
+      'Milestones after the next reply',
+    )
+
+    await click('Remove')
+    assert.deepEqual(presses.at(-1), { action: 'remove-goal', id: 'goal' })
   } finally {
     for (const key of Object.keys(windowTimers)) Reflect.deleteProperty(window, key)
     await window.happyDOM.abort()

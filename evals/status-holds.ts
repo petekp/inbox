@@ -24,27 +24,34 @@ function otherWorkIds(page: StatusPage): string[] {
 /** The holds the code keeps for the goal, checked at every step of every run. Any failure blocks. */
 export const HOLD_RULES: Rule[] = [
   hold({
-    id: 'goal-on-press',
+    id: 'typed-goal-kept',
     property: 14,
-    text: 'The goal changes only on a press.',
+    text: 'A typed goal that is not met, with linked work still open, changes only on a press.',
     failures: ({ step, result, before }) => {
-      const was = before.overview?.goal?.text ?? null
+      const o = before.overview
+      const g = o?.goal
+      if (!o || !g || g.source !== 'typed' || g.metAt !== null) return []
+      const isWorkOpen = o.subjects.some(s => isOpen(s) && o.milestones.some(m => m.id === o.serves[s.id]))
       const now = result.session.ledger.overview?.goal?.text ?? null
       const isPressed = (step.events ?? []).some(e => 'press' in e)
-      return was !== now && !isPressed ? [`the goal went from "${was}" to "${now}" with no press`] : []
+      return isWorkOpen && now !== g.text && !isPressed
+        ? [`the typed goal "${g.text}" went to "${now}" with no press`]
+        : []
     },
   }),
   hold({
-    id: 'proposal-not-repeated',
+    id: 'goal-not-repeated',
     property: 14,
-    text: 'No proposal restates the goal or a goal the person declined in its words.',
-    failures: ({ result }) => {
+    text: 'A goal set with no press restates neither the goal before it nor a goal the person removed.',
+    failures: ({ step, result, before }) => {
+      const was = before.overview?.goal ?? null
       const o = result.session.ledger.overview
-      const p = o?.proposedGoal
-      if (!o || !p) return []
-      const isGoal = o.goal !== null && restatesGoal(p.text, o.goal.text)
-      const isDeclined = o.declinedGoals.some(key => restatesGoal(p.text, key))
-      return isGoal || isDeclined ? [`proposed "${p.text}" again`] : []
+      const g = o?.goal
+      const isPressed = (step.events ?? []).some(e => 'press' in e)
+      if (!o || !g || isPressed || g.setAt === was?.setAt) return []
+      const isGoal = was !== null && restatesGoal(g.text, was.text)
+      const isRemoved = o.removedGoals.some(key => restatesGoal(g.text, key))
+      return isGoal || isRemoved ? [`set "${g.text}" again`] : []
     },
   }),
   hold({

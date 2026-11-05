@@ -13,8 +13,10 @@ export type Op =
   | { kind: 'head'; title: string; description: string }
   /** `ref` is a running child's id or an open ask's id. `subject` may name a milestone. */
   | { kind: 'link'; ref: string; subject: string }
-  /** A goal proposed from the person's own words, with the milestones it needs. Never a change to the goal. */
+  /** A goal the call sets from the session's work, with the milestones it needs. Code applies it only when it may. */
   | { kind: 'goal'; text: string; milestones: { status: SubjectStatus; name: string }[] }
+  /** Clears an inferred goal the session's work has left, when no next goal is clear. */
+  | { kind: 'retire'; why: string }
   | { kind: 'milestone'; status: SubjectStatus; name: string; text: string }
   /** `milestone` is null for work the goal does not need. */
   | { kind: 'serves'; subject: string; milestone: string | null }
@@ -23,7 +25,7 @@ export type Op =
 export type StatusAnswer = { kind: 'unchanged' } | { kind: 'ops'; ops: Op[] }
 
 const LINE =
-  /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|MILESTONE|SERVES)\s*(?::\s*(.*))?$/i
+  /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES)\s*(?::\s*(.*))?$/i
 
 function fields(value: string): string[] {
   return value.split('|').map(f => f.trim())
@@ -37,8 +39,8 @@ function anyStatus(s: string | undefined): SubjectStatus | null {
   return STATUSES.find(o => o === s?.toLowerCase()) ?? null
 }
 
-/** A proposal's milestones, as `status name; status name`. A milestone with no known status is left out. */
-function proposedMilestones(value: string | undefined): { status: SubjectStatus; name: string }[] {
+/** A GOAL line's milestones, as `status name; status name`. A milestone with no known status is left out. */
+function goalMilestones(value: string | undefined): { status: SubjectStatus; name: string }[] {
   return (value ?? '').split(';').flatMap(part => {
     const m = /^\s*(\S+)\s+(.+?)\s*$/.exec(part)
     const status = anyStatus(m?.[1])
@@ -69,7 +71,8 @@ function opOf(key: string, f: string[]): Op | null {
   if (key === 'WAS') return f[0] && f[1] ? { kind: 'was', ref: f[0], text: f[1] } : null
   if (key === 'HEAD') return f[0] ? { kind: 'head', title: f[0], description: f[1] ?? '' } : null
   if (key === 'LINK') return f[0] && f[1] ? { kind: 'link', ref: f[0], subject: f[1] } : null
-  if (key === 'GOAL') return f[0] ? { kind: 'goal', text: f[0], milestones: proposedMilestones(f[1]) } : null
+  if (key === 'GOAL') return f[0] ? { kind: 'goal', text: f[0], milestones: goalMilestones(f[1]) } : null
+  if (key === 'RETIRE') return { kind: 'retire', why: f[0] ?? '' }
   if (key === 'MILESTONE') {
     const status = anyStatus(f[0])
 

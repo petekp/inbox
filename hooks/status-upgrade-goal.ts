@@ -1,9 +1,9 @@
-import type { Milestone, ProposedGoal, SessionStatus, StatusGoal } from '../types'
-import { DECLINED_KEPT, MILESTONES_MAX, nameKey, STATUSES } from './status-limits'
+import type { GoalRemoved, Milestone, SessionStatus, StatusGoal } from '../types'
+import { nameKey, REMOVED_KEPT, STATUSES } from './status-limits'
 
 type GoalFields = Pick<
   SessionStatus,
-  'goal' | 'proposedGoal' | 'declinedGoals' | 'milestones' | 'nextMilestoneId' | 'serves'
+  'goal' | 'removedGoals' | 'goalRemoved' | 'milestones' | 'nextMilestoneId' | 'serves'
 >
 
 function time(value: unknown): number | null {
@@ -16,7 +16,8 @@ function nonEmpty(value: unknown): string | null {
 
 /**
  * The goal a saved Status holds. Only an object is a goal: an earlier build saved a string `goal` that the model
- * wrote, and that loads as the head, never as a goal.
+ * wrote, and that loads as the head, never as a goal. A goal saved before goals had a source loads as inferred, since
+ * most came from the call's proposals, except one waiting for its milestones: only a typed goal waits.
  */
 function goalOf(saved: unknown): StatusGoal | null {
   const g = saved as Partial<Record<keyof StatusGoal, unknown>> | null
@@ -24,28 +25,17 @@ function goalOf(saved: unknown): StatusGoal | null {
   const setAt = time(g?.setAt)
   if (typeof saved !== 'object' || text === null || setAt === null) return null
 
+  const isAwaitingMilestones = g?.isAwaitingMilestones === true
+  const isTyped = g?.source === 'typed' || (g?.source !== 'inferred' && isAwaitingMilestones)
+
   return {
     text,
     setAt,
     metAt: time(g?.metAt),
     was: nonEmpty(g?.was),
-    isAwaitingMilestones: g?.isAwaitingMilestones === true,
+    isAwaitingMilestones,
+    source: isTyped ? 'typed' : 'inferred',
   }
-}
-
-function proposedOf(saved: unknown): ProposedGoal | null {
-  const p = saved as Partial<Record<keyof ProposedGoal, unknown>> | null
-  const text = nonEmpty(p?.text)
-  const at = time(p?.at)
-  if (typeof saved !== 'object' || text === null || at === null) return null
-  const milestones = (Array.isArray(p?.milestones) ? p.milestones : []).flatMap((raw: unknown) => {
-    const m = raw as { name?: unknown; status?: unknown } | null
-    const name = nonEmpty(m?.name)
-    const status = STATUSES.find(x => x === m?.status)
-    return name && status ? [{ name, status }] : []
-  })
-
-  return { text, milestones: milestones.slice(0, MILESTONES_MAX), at }
 }
 
 function milestoneOf(saved: unknown): Milestone | null {
@@ -61,7 +51,32 @@ function milestoneOf(saved: unknown): Milestone | null {
     text: typeof m.text === 'string' ? m.text : '',
     was: nonEmpty(m.was),
     changedAt,
-    closedAt: time(m.closedAt),
+    closedAt: time(m.closedAt) ?? (status === 'done' || status === 'dropped' ? changedAt : null),
+  }
+}
+
+function milestonesOf(saved: unknown): Milestone[] {
+  return (Array.isArray(saved) ? saved : []).map(milestoneOf).filter((m): m is Milestone => m !== null)
+}
+
+const isStringRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/** A removed goal Undo can bring back, or null when it is missing or wrongly shaped. */
+function goalRemovedOf(saved: unknown): GoalRemoved | null {
+  const r = saved as Partial<Record<keyof GoalRemoved, unknown>> | null
+  const goal = goalOf(r?.goal)
+  if (goal === null || !isStringRecord(r?.serves) || !isStringRecord(r?.askSubjects)) return null
+  const serves = Object.entries(r.serves).filter((e): e is [string, string] => typeof e[1] === 'string')
+  const asks = Object.entries(r.askSubjects).filter(
+    (e): e is [string, string[]] => Array.isArray(e[1]) && e[1].every(x => typeof x === 'string'),
+  )
+
+  return {
+    goal,
+    milestones: milestonesOf(r.milestones),
+    serves: Object.fromEntries(serves),
+    askSubjects: Object.fromEntries(asks),
   }
 }
 
@@ -72,14 +87,13 @@ export function droppedMilestoneIds(milestones: readonly Milestone[]): Set<strin
 
 /**
  * The goal's fields of a saved Status, with anything wrongly shaped left out. A Status saved before the goal loads
- * with none, so its page shows as before, with Set a goal. A link to a subject or milestone the Status no longer
- * holds, or to a dropped milestone, is dropped. A declined goal's key is made again with the current `nameKey`, since
- * an earlier build kept a trailing period in it.
+ * with none, so its page shows as before, with New. A link to a subject or milestone the Status no longer
+ * holds, or to a dropped milestone, is dropped. A removed goal's key is made again with the current `nameKey`, since
+ * an earlier build kept a trailing period in it. A saved proposal is dropped, and the goals the person declined load as
+ * removed goals: the closest thing to a declined proposal now that the call sets goals itself.
  */
 export function goalFields(o: Record<string, unknown>, subjectIds: ReadonlySet<string>): GoalFields {
-  const milestones = (Array.isArray(o.milestones) ? o.milestones : [])
-    .map(milestoneOf)
-    .filter((m): m is Milestone => m !== null)
+  const milestones = milestonesOf(o.milestones)
   const dropped = droppedMilestoneIds(milestones)
   const liveIds = new Set(milestones.filter(m => !dropped.has(m.id)).map(m => m.id))
   const savedServes = typeof o.serves === 'object' && o.serves !== null ? Object.entries(o.serves) : []
@@ -89,15 +103,17 @@ export function goalFields(o: Record<string, unknown>, subjectIds: ReadonlySet<s
         subjectIds.has(e[0]) && typeof e[1] === 'string' && (e[1] === 'none' || liveIds.has(e[1])),
     ),
   )
-  const keys = (Array.isArray(o.declinedGoals) ? o.declinedGoals : []).flatMap((d: unknown) =>
-    typeof d === 'string' ? [nameKey(d)] : [],
-  )
-  const declined = [...new Set(keys)].filter(key => key !== '')
+  const saved = [
+    ...(Array.isArray(o.declinedGoals) ? o.declinedGoals : []),
+    ...(Array.isArray(o.removedGoals) ? o.removedGoals : []),
+  ]
+  const keys = saved.flatMap((d: unknown) => (typeof d === 'string' ? [nameKey(d)] : []))
+  const removed = [...new Set(keys)].filter(key => key !== '')
 
   return {
     goal: goalOf(o.goal),
-    proposedGoal: proposedOf(o.proposedGoal),
-    declinedGoals: declined.slice(-DECLINED_KEPT),
+    removedGoals: removed.slice(-REMOVED_KEPT),
+    goalRemoved: goalRemovedOf(o.goalRemoved),
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves,

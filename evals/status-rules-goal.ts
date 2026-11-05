@@ -1,5 +1,5 @@
 import { parseStatus } from '../hooks/status'
-import { isOpen, MILESTONES_MAX, MILESTONES_MIN } from '../hooks/status-limits'
+import { isOpen, MILESTONES_MAX, MILESTONES_MIN, nameKey } from '../hooks/status-limits'
 import { rightStatuses } from './status-facts'
 import { label, milestonesOf, subjectsFor } from './status-rule-helpers'
 import type { Rule, RuleContext } from './status-rules'
@@ -22,29 +22,28 @@ export const GOAL_RULES: Rule[] = [
     },
   },
   {
-    id: 'proposal-only-when-stated',
+    id: 'goal-only-when-clear',
     reads: 'facts',
-    opportunity: ctx => hasCall(ctx) && !ctx.result.facts.goalStated,
+    opportunity: ctx => hasCall(ctx) && !ctx.result.facts.goalClear,
     property: 14,
-    text: 'No proposal appears at a step where the person stated no new outcome with a finish line.',
+    text: 'No goal is set at a step that makes no next goal clear.',
     failures: ({ result, before }) => {
-      const proposed = result.session.ledger.overview?.proposedGoal ?? null
-      if (result.facts.goalStated) return []
-      return proposed && proposed.text !== before.overview?.proposedGoal?.text ? [`proposed "${proposed.text}"`] : []
+      const g = result.session.ledger.overview?.goal ?? null
+      if (result.facts.goalClear || !g || g.source !== 'inferred') return []
+      return g.setAt !== before.overview?.goal?.setAt ? [`set "${g.text}"`] : []
     },
   },
   {
-    id: 'proposal-when-stated',
+    id: 'goal-when-clear',
     reads: 'facts',
-    opportunity: ctx => hasCall(ctx) && !!ctx.result.facts.goalStated,
+    opportunity: ctx => hasCall(ctx) && !!ctx.result.facts.goalClear,
     property: 14,
-    text: 'A step where the person stated an outcome with a finish line shows a proposal of it, unless it is already the goal.',
+    text: 'A step that makes the next goal clear shows that goal.',
     failures: ({ result }) => {
-      const stated = result.facts.goalStated
-      const o = result.session.ledger.overview
-      if (!stated) return []
-      const isMatch = (text: string | undefined) => text !== undefined && new RegExp(stated.match, 'i').test(text)
-      return isMatch(o?.proposedGoal?.text) || isMatch(o?.goal?.text) ? [] : [`no proposal like /${stated.match}/`]
+      const clear = result.facts.goalClear
+      const g = result.session.ledger.overview?.goal
+      if (!clear) return []
+      return g && new RegExp(clear.match, 'i').test(g.text) ? [] : [`no goal like /${clear.match}/`]
     },
   },
   {
@@ -71,18 +70,17 @@ export const GOAL_RULES: Rule[] = [
     id: 'milestones-shape',
     reads: 'answer',
     property: 15,
-    text: `A goal or a proposal has ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones.`,
+    text: `A goal has ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, none named after a subject.`,
     failures: ({ result }) => {
       const o = result.session.ledger.overview
-      const counts = [
-        ...(o?.goal && !o.goal.isAwaitingMilestones
-          ? [{ text: o.goal.text, n: milestonesOf(o).filter(m => m.status !== 'dropped').length }]
-          : []),
-        ...(o?.proposedGoal ? [{ text: o.proposedGoal.text, n: o.proposedGoal.milestones.length }] : []),
+      if (!o?.goal || o.goal.isAwaitingMilestones) return []
+      const kept = milestonesOf(o).filter(m => m.status !== 'dropped')
+      const subjects = new Set(o.subjects.map(s => nameKey(s.name)))
+      const isCountWrong = kept.length < MILESTONES_MIN || kept.length > MILESTONES_MAX
+      return [
+        ...(isCountWrong ? [`${kept.length} milestones for "${o.goal.text}"`] : []),
+        ...kept.filter(m => subjects.has(nameKey(m.name))).map(m => `milestone "${m.name}" is named after a subject`),
       ]
-      return counts
-        .filter(c => c.n < MILESTONES_MIN || c.n > MILESTONES_MAX)
-        .map(c => `${c.n} milestones for "${c.text}"`)
     },
   },
   {

@@ -61,15 +61,12 @@ export function headWords(o: SessionStatus | null): string {
 export const milestonesOf = (o: SessionStatus | null): Milestone[] =>
   o?.goal && !o.goal.isAwaitingMilestones ? o.milestones : []
 
-/** Every milestone name the page shows: the goal's, then the proposal's. */
-export const milestoneNames = (o: SessionStatus | null): string[] => [
-  ...milestonesOf(o).map(m => m.name),
-  ...(o?.proposedGoal?.milestones.map(m => m.name) ?? []),
-]
+/** Every milestone name the page shows. */
+export const milestoneNames = (o: SessionStatus | null): string[] => milestonesOf(o).map(m => m.name)
 
 export function modelTexts(o: SessionStatus | null): string[] {
   const head = o?.head ? [o.head.title, o.head.description] : []
-  const goal = [o?.goal?.text ?? '', o?.proposedGoal?.text ?? '', ...milestoneNames(o)]
+  const goal = [o?.goal?.text ?? '', ...milestoneNames(o)]
   const milestones = milestonesOf(o).flatMap(m => [m.text, m.was ?? ''])
 
   return [...head, ...goal, ...milestones, ...shownOf(o).flatMap(s => [s.name, s.text, s.was ?? ''])].filter(Boolean)

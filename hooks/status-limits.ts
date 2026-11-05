@@ -17,11 +17,13 @@ export const DESCRIPTION_KEPT = 14
 export const ASK_READ_WORDS = 30
 /** Finished subjects the call reads, so it does not add one again. */
 export const FINISHED_READ = 10
-/** The most milestones a goal keeps, and the fewest a proposal needs. */
+/** The most milestones a goal keeps, and the fewest a GOAL line needs. */
 export const MILESTONES_MAX = 5
 export const MILESTONES_MIN = 2
-/** How many declined goals the call is told not to propose again. */
-export const DECLINED_KEPT = 10
+/** How long an inferred goal with no open linked work goes without moving forward before the work counts as having left it. */
+export const GOAL_LEFT_MS = 30 * 60_000
+/** How many removed goals the call is told not to set again. */
+export const REMOVED_KEPT = 10
 /** How long an ended child stays saved, so a delegate prompted again keeps its link. */
 export const CHILD_KEPT_MS = 24 * 60 * 60_000
 export const CHILDREN_KEPT = 50
@@ -59,8 +61,8 @@ export const EMPTY_SESSION_STATUS: SessionStatus = {
   missedInLastLook: {},
   look: null,
   goal: null,
-  proposedGoal: null,
-  declinedGoals: [],
+  removedGoals: [],
+  goalRemoved: null,
   milestones: [],
   nextMilestoneId: 1,
   serves: {},

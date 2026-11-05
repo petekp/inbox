@@ -43,8 +43,8 @@ var OPEN_SUBJECTS = 6;
 var NAME_KEPT = 20;
 var TEXT_KEPT = 12;
 var DESCRIPTION_KEPT = 14;
-var MILESTONES_MAX = 5;
-var DECLINED_KEPT = 10;
+var GOAL_LEFT_MS = 30 * 6e4;
+var REMOVED_KEPT = 10;
 var CHILD_KEPT_MS = 24 * 60 * 6e4;
 var CHILDREN_KEPT = 50;
 var STOP_WORDS = /* @__PURE__ */ new Set([
@@ -78,8 +78,8 @@ var EMPTY_SESSION_STATUS = {
   missedInLastLook: {},
   look: null,
   goal: null,
-  proposedGoal: null,
-  declinedGoals: [],
+  removedGoals: [],
+  goalRemoved: null,
   milestones: [],
   nextMilestoneId: 1,
   serves: {}
@@ -252,26 +252,16 @@ function goalOf(saved) {
   const text2 = nonEmpty(g?.text);
   const setAt = time(g?.setAt);
   if (typeof saved !== "object" || text2 === null || setAt === null) return null;
+  const isAwaitingMilestones = g?.isAwaitingMilestones === true;
+  const isTyped = g?.source === "typed" || g?.source !== "inferred" && isAwaitingMilestones;
   return {
     text: text2,
     setAt,
     metAt: time(g?.metAt),
     was: nonEmpty(g?.was),
-    isAwaitingMilestones: g?.isAwaitingMilestones === true
+    isAwaitingMilestones,
+    source: isTyped ? "typed" : "inferred"
   };
-}
-function proposedOf(saved) {
-  const p = saved;
-  const text2 = nonEmpty(p?.text);
-  const at = time(p?.at);
-  if (typeof saved !== "object" || text2 === null || at === null) return null;
-  const milestones = (Array.isArray(p?.milestones) ? p.milestones : []).flatMap((raw) => {
-    const m = raw;
-    const name = nonEmpty(m?.name);
-    const status = STATUSES.find((x) => x === m?.status);
-    return name && status ? [{ name, status }] : [];
-  });
-  return { text: text2, milestones: milestones.slice(0, MILESTONES_MAX), at };
 }
 function milestoneOf(saved) {
   const m = saved;
@@ -285,14 +275,33 @@ function milestoneOf(saved) {
     text: typeof m.text === "string" ? m.text : "",
     was: nonEmpty(m.was),
     changedAt,
-    closedAt: time(m.closedAt)
+    closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null)
+  };
+}
+function milestonesOf(saved) {
+  return (Array.isArray(saved) ? saved : []).map(milestoneOf).filter((m) => m !== null);
+}
+var isStringRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+function goalRemovedOf(saved) {
+  const r = saved;
+  const goal = goalOf(r?.goal);
+  if (goal === null || !isStringRecord(r?.serves) || !isStringRecord(r?.askSubjects)) return null;
+  const serves = Object.entries(r.serves).filter((e) => typeof e[1] === "string");
+  const asks = Object.entries(r.askSubjects).filter(
+    (e) => Array.isArray(e[1]) && e[1].every((x) => typeof x === "string")
+  );
+  return {
+    goal,
+    milestones: milestonesOf(r.milestones),
+    serves: Object.fromEntries(serves),
+    askSubjects: Object.fromEntries(asks)
   };
 }
 function droppedMilestoneIds(milestones) {
   return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
 }
 function goalFields(o, subjectIds) {
-  const milestones = (Array.isArray(o.milestones) ? o.milestones : []).map(milestoneOf).filter((m) => m !== null);
+  const milestones = milestonesOf(o.milestones);
   const dropped = droppedMilestoneIds(milestones);
   const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
@@ -301,14 +310,16 @@ function goalFields(o, subjectIds) {
       (e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || liveIds.has(e[1]))
     )
   );
-  const keys = (Array.isArray(o.declinedGoals) ? o.declinedGoals : []).flatMap(
-    (d) => typeof d === "string" ? [nameKey(d)] : []
-  );
-  const declined = [...new Set(keys)].filter((key) => key !== "");
+  const saved = [
+    ...Array.isArray(o.declinedGoals) ? o.declinedGoals : [],
+    ...Array.isArray(o.removedGoals) ? o.removedGoals : []
+  ];
+  const keys = saved.flatMap((d) => typeof d === "string" ? [nameKey(d)] : []);
+  const removed = [...new Set(keys)].filter((key) => key !== "");
   return {
     goal: goalOf(o.goal),
-    proposedGoal: proposedOf(o.proposedGoal),
-    declinedGoals: declined.slice(-DECLINED_KEPT),
+    removedGoals: removed.slice(-REMOVED_KEPT),
+    goalRemoved: goalRemovedOf(o.goalRemoved),
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves
@@ -344,7 +355,7 @@ function subjectOf(saved) {
     ...wasAndMerged(s.was, s.merged),
     createdAt: time2(s.createdAt) ?? changedAt,
     changedAt,
-    closedAt: time2(s.closedAt),
+    closedAt: time2(s.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
     into: typeof s.into === "string" ? s.into : null
   };
 }
@@ -964,37 +975,6 @@ function stepIconKind(step) {
   return first === "copy" || first === "terminal" ? "copy" : first === "open" || first === "link" ? "open" : void 0;
 }
 
-// ../hooks/pressed.ts
-function offersUndo(c) {
-  return c.how === "done" || c.how === "dismissed";
-}
-function isUndoable(c) {
-  return offersUndo(c) && !c.isSentToAgent;
-}
-function retryOf(id, last) {
-  if (!/^[if]\d+$/.test(id)) return null;
-  const step = /^step-(\d+)$/.exec(last.action);
-  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
-  switch (last.action) {
-    case "answer":
-      return { action: "answer", id, option: last.text };
-    case "explain":
-    case "compare":
-    case "address":
-    case "issue":
-    case "discuss":
-      return { action: last.action, id };
-    default:
-      return null;
-  }
-}
-function isRepeatOf(last, action) {
-  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
-}
-function isHeldSend(last) {
-  return last?.delivery?.state === "held";
-}
-
 // ../hooks/tabs.ts
 var TAB_NAMES = [
   { id: "overview", label: "Status", symbol: "\u{1F9ED}" },
@@ -1088,6 +1068,37 @@ var MARK_LEGEND = [
 ];
 var STATUS_ONLY_MARKS = /* @__PURE__ */ new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
 
+// ../hooks/pressed.ts
+function offersUndo(c) {
+  return c.how === "done" || c.how === "dismissed";
+}
+function isUndoable(c) {
+  return offersUndo(c) && !c.isSentToAgent;
+}
+function retryOf(id, last) {
+  if (!/^[if]\d+$/.test(id)) return null;
+  const step = /^step-(\d+)$/.exec(last.action);
+  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
+  switch (last.action) {
+    case "answer":
+      return { action: "answer", id, option: last.text };
+    case "explain":
+    case "compare":
+    case "address":
+    case "issue":
+    case "discuss":
+      return { action: last.action, id };
+    default:
+      return null;
+  }
+}
+function isRepeatOf(last, action) {
+  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
+}
+function isHeldSend(last) {
+  return last?.delivery?.state === "held";
+}
+
 // ../hooks/status-children.ts
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
@@ -1128,8 +1139,7 @@ function isSubjectSeen(o, s) {
 
 // ../hooks/status-goal-page.ts
 var AWAITING_TEXT = "Milestones after the next reply";
-var PROPOSAL_LABEL = "Proposed goal \xB7 from your message";
-var NEW_GOAL_PROPOSAL_LABEL = "Proposed new goal \xB7 from your message";
+var GOAL_HEADING = "Goal";
 function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
@@ -1159,14 +1169,7 @@ function milestoneRow(m, o, items) {
 }
 function goalPage(o, items) {
   const g = o?.goal ?? null;
-  const isBelowGoal = g !== null;
-  const proposal = o?.proposedGoal ? {
-    label: isBelowGoal ? NEW_GOAL_PROPOSAL_LABEL : PROPOSAL_LABEL,
-    isBelowGoal,
-    text: o.proposedGoal.text,
-    milestones: o.proposedGoal.milestones.map((m) => ({ ...SUBJECT_MARKS[m.status], name: m.name }))
-  } : null;
-  if (o === null || g === null) return { goal: null, proposal };
+  if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null };
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   const shown = o.milestones.filter(
@@ -1178,7 +1181,7 @@ function goalPage(o, items) {
   const head = o.head;
   return {
     goal: {
-      label: isMet ? "Goal met" : "Goal",
+      label: isMet ? "Goal met" : GOAL_HEADING,
       text: g.text,
       count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
       isMet,
@@ -1187,7 +1190,7 @@ function goalPage(o, items) {
       awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
     },
-    proposal
+    canRestoreGoal: false
   };
 }
 
@@ -1435,7 +1438,7 @@ function statusPage(s, now) {
   };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
-    isEmpty: head === null && rows.length === 0 && goal === null && goalParts.proposal === null,
+    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
     ...goalParts,
     goal,

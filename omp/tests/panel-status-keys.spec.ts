@@ -125,8 +125,9 @@ test('on a Status page taller than the panel, j and k scroll the newly selected 
     drawnFor(ui)
       .lines.map(strip)
       .some(l => l.includes('↵ View'))
-  expect(isFocusShown(onPage)).toBe(true)
-  const onS3 = keys(screen, onPage, 'j')
+  const opened = { ...onPage, pageTop: drawnFor({ ...onPage, pageReveal: true }).pageTop }
+  expect(isFocusShown(opened)).toBe(true)
+  const onS3 = keys(screen, opened, 'j')
   expect(isFocusShown({ ...onS3, pageReveal: null })).toBe(false)
   expect(isFocusShown(onS3)).toBe(true)
   const scrolled = { ...onS3, pageTop: drawnFor(onS3).pageTop, pageReveal: null }

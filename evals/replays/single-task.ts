@@ -3,12 +3,12 @@ import { NO_FACTS, piece } from './builders'
 
 /**
  * One task, with both calls: the ledger call opens, answers and dismisses each ask, and the Status call sees it. The
- * person states the goal in the first message, and the fixture accepts the proposal.
+ * person states the goal in the first message, and the Status call sets it.
  */
 export const singleTask: Replay = {
   name: 'single-task',
   about:
-    'One session adds offline sync to a notes app for 2.5: a goal accepted, a question answered, a plan reversed, a piece set aside, an explanation that changes nothing, a question dismissed, and parts whose states differ.',
+    'One session adds offline sync to a notes app for 2.5: a goal set, a question answered, a plan reversed, a piece set aside, an explanation that changes nothing, a question dismissed, and parts whose states differ.',
   hasLedgerCalls: true,
   start: { ledger: {}, facts: NO_FACTS },
   steps: [
@@ -26,38 +26,7 @@ export const singleTask: Replay = {
       facts: {
         focus: 'adding offline sync to the notes app',
         focusMatch: 'offline|sync',
-        goalStated: { text: 'Add offline sync, and ship it in 2.5', match: 'offline sync|2\\.5' },
-        pieces: [
-          piece({
-            id: 'engine',
-            names: ['Sync engine', 'Offline sync'],
-            match: 'engine|queue|offline sync',
-            state: 'working',
-            stands: 'queues edits offline',
-          }),
-          piece({
-            id: 'conflicts',
-            names: ['Sync conflicts'],
-            match: 'conflict',
-            state: 'queued',
-            stands: 'not started',
-          }),
-          piece({
-            id: 'toggle',
-            names: ['Sync toggle'],
-            match: 'toggle|setting',
-            state: 'queued',
-            stands: 'not started',
-          }),
-        ],
-      },
-      targets: ['proposal-when-stated', 'head-no-status', 'head-follows', 'open-pieces-kept'],
-    },
-    {
-      label: 'The person presses Set as goal on the offline sync proposal',
-      at: 10,
-      events: [{ press: 'use-goal' }],
-      facts: {
+        goalClear: { text: 'Add offline sync, and ship it in 2.5', match: 'offline sync|2\\.5' },
         goal: {
           text: 'Offline sync in 2.5',
           match: 'offline sync',
@@ -68,11 +37,33 @@ export const singleTask: Replay = {
           ],
         },
         pieces: [
-          { id: 'engine', serves: 'ms-offline' },
-          { id: 'conflicts', serves: 'ms-conflicts' },
-          { id: 'toggle', serves: 'ms-offline' },
+          piece({
+            id: 'engine',
+            names: ['Sync engine', 'Offline sync'],
+            match: 'engine|queue|offline sync',
+            state: 'working',
+            stands: 'queues edits offline',
+            serves: 'ms-offline',
+          }),
+          piece({
+            id: 'conflicts',
+            names: ['Sync conflicts'],
+            match: 'conflict',
+            state: 'queued',
+            stands: 'not started',
+            serves: 'ms-conflicts',
+          }),
+          piece({
+            id: 'toggle',
+            names: ['Sync toggle'],
+            match: 'toggle|setting',
+            state: 'queued',
+            stands: 'not started',
+            serves: 'ms-offline',
+          }),
         ],
       },
+      targets: ['goal-when-clear', 'milestones-shape', 'head-no-status', 'head-follows', 'open-pieces-kept'],
     },
     {
       label: 'The engine works. The agent fixes a lint error, runs two review subagents and asks about conflicts.',

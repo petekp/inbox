@@ -36,8 +36,8 @@ type HostEvent =
   /** An ask opens or closes, in a replay that runs no ledger call. */
   | { askOpens: { id: string; ask: string; kind?: Item['kind']; options?: string[] } }
   | { askCloses: string }
-  /** The person presses Set as goal or Not now on the proposal, or types a goal, through the host's own press. */
-  | { press: 'use-goal' | 'decline-goal' }
+  /** The person presses Remove goal, or types a goal, through the host's own press. */
+  | { press: 'remove-goal' }
   | { press: 'type'; text: string }
 
 /** The Status call a step runs, and what it reads. */
@@ -157,7 +157,7 @@ function withEvent(s: Session, e: HostEvent, now: number): Session {
     const press: RowPress =
       e.press === 'type' ? { action: 'type', id: GOAL_KEYS_ID, text: e.text } : { action: e.press, id: GOAL_KEYS_ID }
     const r = goalPressed(s.ledger, press, kind => ({ kind, action: GOAL_KEYS_ID, text: e.press, at: now }), now)
-    // A press on a proposal the model did not write finds nothing, as in the product; the step's rules report the miss.
+    // A Remove goal press with no goal set finds nothing, as in the product; the step's rules report the miss.
     return 'stale' in r ? s : { ...s, ledger: r.ledger }
   }
   if ('askOpens' in e)

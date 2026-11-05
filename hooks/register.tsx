@@ -142,7 +142,7 @@ import {
   keptDiscards,
   type Holds,
 } from './timing'
-import { helpKeys } from './help'
+import { helpKeys, UNDO_KEY } from './help'
 import { agentTools } from './tools'
 import type { AgentTool } from './tools'
 import type { ToolAnswer } from './tools'
@@ -3146,7 +3146,6 @@ export const register: Register = on => {
       desktopRowTextPt,
       desktopLabel,
       keyRow,
-      textKey,
       keyBindings,
       keyLines,
       terminalKeyCells,
@@ -3427,7 +3426,6 @@ export const register: Register = on => {
         markGlyph,
         desktopFrame,
         keyRow,
-        textKey,
         keyLines,
         terminalKeyCells,
         emptyState,
@@ -3492,7 +3490,14 @@ export const register: Register = on => {
       ...statusRowKeys,
       ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow(statusRowKeys)),
       ...(tab === 'prs' && !isHelpShown ? prOrderKeys : []),
-      undoKey(isListShown ? latestUndo(tabUndos(tab, lists, shownPrs)) : null, (p, surface) => runPress($, p, surface)),
+      // The goal's Undo takes the undo key on the Status, where no list row closes.
+      ...(statusRowKeys.some(k => k.hotkey === UNDO_KEY)
+        ? []
+        : [
+            undoKey(isListShown ? latestUndo(tabUndos(tab, lists, shownPrs)) : null, (p, surface) =>
+              runPress($, p, surface),
+            ),
+          ]),
     ]
 
     // A pane takes a key

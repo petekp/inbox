@@ -61,7 +61,8 @@ var ASK_READ_WORDS = 30;
 var FINISHED_READ = 10;
 var MILESTONES_MAX = 5;
 var MILESTONES_MIN = 2;
-var DECLINED_KEPT = 10;
+var GOAL_LEFT_MS = 30 * 6e4;
+var REMOVED_KEPT = 10;
 var CHILD_KEPT_MS = 24 * 60 * 6e4;
 var STOP_WORDS = /* @__PURE__ */ new Set([
   "a",
@@ -95,8 +96,8 @@ var EMPTY_SESSION_STATUS = {
   missedInLastLook: {},
   look: null,
   goal: null,
-  proposedGoal: null,
-  declinedGoals: [],
+  removedGoals: [],
+  goalRemoved: null,
   milestones: [],
   nextMilestoneId: 1,
   serves: {}
@@ -744,26 +745,16 @@ function goalOf(saved) {
   const text2 = nonEmpty(g?.text);
   const setAt = time(g?.setAt);
   if (typeof saved !== "object" || text2 === null || setAt === null) return null;
+  const isAwaitingMilestones = g?.isAwaitingMilestones === true;
+  const isTyped = g?.source === "typed" || g?.source !== "inferred" && isAwaitingMilestones;
   return {
     text: text2,
     setAt,
     metAt: time(g?.metAt),
     was: nonEmpty(g?.was),
-    isAwaitingMilestones: g?.isAwaitingMilestones === true
+    isAwaitingMilestones,
+    source: isTyped ? "typed" : "inferred"
   };
-}
-function proposedOf(saved) {
-  const p = saved;
-  const text2 = nonEmpty(p?.text);
-  const at = time(p?.at);
-  if (typeof saved !== "object" || text2 === null || at === null) return null;
-  const milestones = (Array.isArray(p?.milestones) ? p.milestones : []).flatMap((raw) => {
-    const m = raw;
-    const name = nonEmpty(m?.name);
-    const status = STATUSES.find((x) => x === m?.status);
-    return name && status ? [{ name, status }] : [];
-  });
-  return { text: text2, milestones: milestones.slice(0, MILESTONES_MAX), at };
 }
 function milestoneOf(saved) {
   const m = saved;
@@ -777,14 +768,33 @@ function milestoneOf(saved) {
     text: typeof m.text === "string" ? m.text : "",
     was: nonEmpty(m.was),
     changedAt,
-    closedAt: time(m.closedAt)
+    closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null)
+  };
+}
+function milestonesOf(saved) {
+  return (Array.isArray(saved) ? saved : []).map(milestoneOf).filter((m) => m !== null);
+}
+var isStringRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+function goalRemovedOf(saved) {
+  const r = saved;
+  const goal = goalOf(r?.goal);
+  if (goal === null || !isStringRecord(r?.serves) || !isStringRecord(r?.askSubjects)) return null;
+  const serves = Object.entries(r.serves).filter((e) => typeof e[1] === "string");
+  const asks = Object.entries(r.askSubjects).filter(
+    (e) => Array.isArray(e[1]) && e[1].every((x) => typeof x === "string")
+  );
+  return {
+    goal,
+    milestones: milestonesOf(r.milestones),
+    serves: Object.fromEntries(serves),
+    askSubjects: Object.fromEntries(asks)
   };
 }
 function droppedMilestoneIds(milestones) {
   return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
 }
 function goalFields(o, subjectIds) {
-  const milestones = (Array.isArray(o.milestones) ? o.milestones : []).map(milestoneOf).filter((m) => m !== null);
+  const milestones = milestonesOf(o.milestones);
   const dropped = droppedMilestoneIds(milestones);
   const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
@@ -793,14 +803,16 @@ function goalFields(o, subjectIds) {
       (e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || liveIds.has(e[1]))
     )
   );
-  const keys = (Array.isArray(o.declinedGoals) ? o.declinedGoals : []).flatMap(
-    (d) => typeof d === "string" ? [nameKey(d)] : []
-  );
-  const declined = [...new Set(keys)].filter((key) => key !== "");
+  const saved = [
+    ...Array.isArray(o.declinedGoals) ? o.declinedGoals : [],
+    ...Array.isArray(o.removedGoals) ? o.removedGoals : []
+  ];
+  const keys = saved.flatMap((d) => typeof d === "string" ? [nameKey(d)] : []);
+  const removed = [...new Set(keys)].filter((key) => key !== "");
   return {
     goal: goalOf(o.goal),
-    proposedGoal: proposedOf(o.proposedGoal),
-    declinedGoals: declined.slice(-DECLINED_KEPT),
+    removedGoals: removed.slice(-REMOVED_KEPT),
+    goalRemoved: goalRemovedOf(o.goalRemoved),
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves
@@ -836,7 +848,7 @@ function subjectOf(saved) {
     ...wasAndMerged(s.was, s.merged),
     createdAt: time2(s.createdAt) ?? changedAt,
     changedAt,
-    closedAt: time2(s.closedAt),
+    closedAt: time2(s.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
     into: typeof s.into === "string" ? s.into : null
   };
 }
@@ -1419,11 +1431,11 @@ function restatesGoal(text2, goal) {
   const hasNewNumber = own.some((w) => /\d/.test(w) && !theirs.has(w));
   return own.length > 0 && !hasNewNumber && shared >= RESTATED_SHARE * own.length;
 }
-function hasGoalMilestones(o, proposed) {
+function hasGoalMilestones(o, written) {
   if (o.goal === null || o.goal.isAwaitingMilestones) return false;
   const keys = (names) => names.map(nameKey).sort().join(NL);
   const kept = o.milestones.filter((m) => m.status !== "dropped").map((m) => m.name);
-  return kept.length > 0 && keys(kept) === keys(proposed.map((m) => m.name));
+  return kept.length > 0 && keys(kept) === keys(written.map((m) => m.name));
 }
 function hasSameWords(a, b) {
   const x = words(a);
@@ -1514,15 +1526,61 @@ function withRestatedGoalAsMilestones(o, ops, readSetAt) {
     (op) => op.kind === "goal" && restatesGoal(clipWords(op.text, DESCRIPTION_KEPT), g.text) ? op.milestones.map((m) => ({ kind: "milestone", status: m.status, name: m.name, text: "" })) : [op]
   );
 }
+function linkedSubjects(o) {
+  const live = new Set(o.milestones.filter((m) => m.status !== "dropped").map((m) => m.id));
+  return o.subjects.filter((s) => live.has(o.serves[s.id] ?? ""));
+}
+function lastProgressAt(o, g) {
+  const milestones = o.milestones.filter((m) => m.status !== "dropped").map((m) => m.changedAt);
+  const done = linkedSubjects(o).flatMap((s) => s.status === "done" && s.closedAt !== null ? [s.closedAt] : []);
+  return Math.max(g.setAt, ...milestones, ...done);
+}
+function mayReplaceGoal(o, kind, now) {
+  const g = o.goal;
+  if (g === null || g.metAt !== null) return kind === "goal";
+  const isWorkLeft = !linkedSubjects(o).some(isOpen) && now - lastProgressAt(o, g) >= GOAL_LEFT_MS;
+  return g.source === "inferred" && isWorkLeft;
+}
+function inferredGoal(o, text2, named, now) {
+  const milestones = named.map((m, n) => ({
+    id: `m${o.nextMilestoneId + n}`,
+    name: m.name,
+    status: m.status,
+    text: "",
+    was: null,
+    changedAt: now,
+    closedAt: isOpen(m) ? null : now
+  }));
+  const goal = {
+    text: text2,
+    setAt: now,
+    metAt: null,
+    was: o.goal?.text ?? null,
+    isAwaitingMilestones: false,
+    source: "inferred"
+  };
+  return withoutLinksTo(
+    { ...o, goal, goalRemoved: null, milestones, nextMilestoneId: o.nextMilestoneId + milestones.length, serves: {} },
+    milestones
+  );
+}
+function hasWorkForGoal(o) {
+  const held = new Set(linkedSubjects(o).map((s) => s.id));
+  return o.subjects.some((s) => isOpen(s) && !held.has(s.id));
+}
 function applyGoalOp(o, op, now, findSubject) {
   if (op.kind === "goal") {
     const text2 = clipWords(op.text, DESCRIPTION_KEPT);
     const milestones = op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }));
-    const isCurrent = o.goal !== null && (restatesGoal(text2, o.goal.text) || hasGoalMilestones(o, milestones));
-    const isDeclined = o.declinedGoals.some((key) => restatesGoal(text2, key));
-    if (op.milestones.length < MILESTONES_MIN || isCurrent || isDeclined) return o;
-    return { ...o, proposedGoal: { text: text2, milestones, at: now } };
+    const g = o.goal;
+    const isCurrent = g !== null && (restatesGoal(text2, g.text) || hasGoalMilestones(o, milestones));
+    const isPrevious = g?.was != null && restatesGoal(text2, g.was);
+    const isRemoved = o.removedGoals.some((key) => restatesGoal(text2, key));
+    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, "goal", now);
+    if (op.milestones.length < MILESTONES_MIN || isCurrent || isPrevious || isRemoved || !isAllowed) return o;
+    return inferredGoal(o, text2, milestones, now);
   }
+  if (op.kind === "retire") return mayReplaceGoal(o, "retire", now) ? withoutGoal(o) : o;
   if (o.goal === null) return o;
   if (op.kind === "milestone") return addMilestone(o, op, now);
   const subject = findSubject(op.subject);
@@ -1530,20 +1588,33 @@ function applyGoalOp(o, op, now, findSubject) {
   if (!subject || op.milestone !== null && !milestone) return o;
   return { ...o, serves: { ...o.serves, [subject.id]: milestone?.id ?? "none" } };
 }
-function settleGoal(o, now, readSetAt, named) {
-  if (o.goal === null) return o;
-  const setAt = o.goal.setAt;
-  const isSeen = o.lastLookAt !== null && setAt <= o.lastLookAt;
-  const isAnswerForNewGoal = o.goal.isAwaitingMilestones && readSetAt === setAt;
+function withWorkDoneMilestones(o, now) {
+  let isChanged = false;
+  const milestones = o.milestones.map((m) => {
+    if (!isOpen(m)) return m;
+    const linked = o.subjects.filter((s) => o.serves[s.id] === m.id);
+    const isWorkDone = linked.length > 0 && linked.every((s) => !isOpen(s)) && linked.some((s) => s.status === "done") && linked.some((s) => (s.closedAt ?? -Infinity) > m.changedAt);
+    if (!isWorkDone) return m;
+    isChanged = true;
+    return { ...m, status: "done", closedAt: now, changedAt: now, was: null };
+  });
+  return isChanged ? { ...o, milestones } : o;
+}
+function settleGoal(saved, now, readSetAt, named) {
+  const g = saved.goal;
+  if (g === null) return saved;
+  const o = g.isAwaitingMilestones ? saved : withWorkDoneMilestones(saved, now);
+  const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt;
+  const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt;
   const milestones = isAnswerForNewGoal ? o.milestones.filter((m) => named.has(m.id) && m.status !== "dropped").slice(0, MILESTONES_MAX) : o.milestones;
-  const isAwaiting = o.goal.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0);
+  const isAwaiting = g.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0);
   const kept = milestones.filter((m) => m.status !== "dropped");
   const isMet = !isAwaiting && kept.length > 0 && kept.every((m) => m.status === "done");
-  const was = isSeen ? null : o.goal.was;
-  const metAt = isMet ? o.goal.metAt ?? now : null;
-  const isSame = milestones.length === o.milestones.length && was === o.goal.was && isAwaiting === o.goal.isAwaitingMilestones && metAt === o.goal.metAt;
+  const was = isSeen ? null : g.was;
+  const metAt = isMet ? g.metAt ?? now : null;
+  const isSame = milestones.length === o.milestones.length && was === g.was && isAwaiting === g.isAwaitingMilestones && metAt === g.metAt;
   if (isSame) return o;
-  const settled = { ...o, milestones, goal: { ...o.goal, was, isAwaitingMilestones: isAwaiting, metAt } };
+  const settled = { ...o, milestones, goal: { ...g, was, isAwaitingMilestones: isAwaiting, metAt } };
   return isAnswerForNewGoal ? withoutLinksTo(settled, milestones) : settled;
 }
 var linksWith = (ids, id) => ids.includes(id) ? [...ids] : [...ids, id];
@@ -1557,36 +1628,8 @@ function withoutLinksTo(o, milestones) {
     askSubjects: Object.fromEntries(askLinks.filter(([, to]) => to.length > 0))
   };
 }
-
-// ../hooks/pressed.ts
-function offersUndo(c) {
-  return c.how === "done" || c.how === "dismissed";
-}
-function isUndoable(c) {
-  return offersUndo(c) && !c.isSentToAgent;
-}
-function retryOf(id, last) {
-  if (!/^[if]\d+$/.test(id)) return null;
-  const step = /^step-(\d+)$/.exec(last.action);
-  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
-  switch (last.action) {
-    case "answer":
-      return { action: "answer", id, option: last.text };
-    case "explain":
-    case "compare":
-    case "address":
-    case "issue":
-    case "discuss":
-      return { action: last.action, id };
-    default:
-      return null;
-  }
-}
-function isRepeatOf(last, action) {
-  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
-}
-function isHeldSend(last) {
-  return last?.delivery?.state === "held";
+function withoutGoal(o) {
+  return withoutLinksTo({ ...o, goal: null, milestones: [], serves: {} }, []);
 }
 
 // ../hooks/tabs.ts
@@ -1682,6 +1725,37 @@ var MARK_LEGEND = [
 ];
 var STATUS_ONLY_MARKS = /* @__PURE__ */ new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
 
+// ../hooks/pressed.ts
+function offersUndo(c) {
+  return c.how === "done" || c.how === "dismissed";
+}
+function isUndoable(c) {
+  return offersUndo(c) && !c.isSentToAgent;
+}
+function retryOf(id, last) {
+  if (!/^[if]\d+$/.test(id)) return null;
+  const step = /^step-(\d+)$/.exec(last.action);
+  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
+  switch (last.action) {
+    case "answer":
+      return { action: "answer", id, option: last.text };
+    case "explain":
+    case "compare":
+    case "address":
+    case "issue":
+    case "discuss":
+      return { action: last.action, id };
+    default:
+      return null;
+  }
+}
+function isRepeatOf(last, action) {
+  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
+}
+function isHeldSend(last) {
+  return last?.delivery?.state === "held";
+}
+
 // ../hooks/status-children.ts
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
@@ -1713,8 +1787,7 @@ function isSubjectSeen(o, s) {
 
 // ../hooks/status-goal-page.ts
 var AWAITING_TEXT = "Milestones after the next reply";
-var PROPOSAL_LABEL = "Proposed goal \xB7 from your message";
-var NEW_GOAL_PROPOSAL_LABEL = "Proposed new goal \xB7 from your message";
+var GOAL_HEADING = "Goal";
 function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
@@ -1744,14 +1817,7 @@ function milestoneRow(m, o, items) {
 }
 function goalPage(o, items) {
   const g = o?.goal ?? null;
-  const isBelowGoal = g !== null;
-  const proposal = o?.proposedGoal ? {
-    label: isBelowGoal ? NEW_GOAL_PROPOSAL_LABEL : PROPOSAL_LABEL,
-    isBelowGoal,
-    text: o.proposedGoal.text,
-    milestones: o.proposedGoal.milestones.map((m) => ({ ...SUBJECT_MARKS[m.status], name: m.name }))
-  } : null;
-  if (o === null || g === null) return { goal: null, proposal };
+  if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null };
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   const shown = o.milestones.filter(
@@ -1763,7 +1829,7 @@ function goalPage(o, items) {
   const head = o.head;
   return {
     goal: {
-      label: isMet ? "Goal met" : "Goal",
+      label: isMet ? "Goal met" : GOAL_HEADING,
       text: g.text,
       count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
       isMet,
@@ -1772,7 +1838,7 @@ function goalPage(o, items) {
       awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
     },
-    proposal
+    canRestoreGoal: false
   };
 }
 
@@ -2020,7 +2086,7 @@ function statusPage(s, now) {
   };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
-    isEmpty: head === null && rows.length === 0 && goal === null && goalParts.proposal === null,
+    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
     ...goalParts,
     goal,
@@ -3398,16 +3464,17 @@ function headAfter(last, op, work) {
 }
 var OP_ORDER = {
   none: 0,
-  head: 1,
   new: 0,
   set: 0,
   done: 0,
   drop: 0,
-  was: 1,
-  link: 2,
-  goal: 0,
-  milestone: 0,
-  serves: 2
+  goal: 1,
+  retire: 1,
+  milestone: 2,
+  head: 3,
+  was: 3,
+  link: 4,
+  serves: 4
 };
 function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
   let o = {
@@ -3451,7 +3518,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   const ordered = withRestatedGoalAsMilestones(last, ops, readSetAt).map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
   for (const { op } of ordered) {
     if (op.kind === "none") continue;
-    if (op.kind === "goal" || op.kind === "milestone" || op.kind === "serves") {
+    if (op.kind === "goal" || op.kind === "retire" || op.kind === "milestone" || op.kind === "serves") {
       o = applyGoalOp(o, op, now, find);
       if (op.kind === "milestone") markNamed(findMilestone(o, op.name));
       if (op.kind === "serves" && op.milestone !== null) markNamed(findMilestone(o, op.milestone));
@@ -3526,8 +3593,11 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   return settleGoal(o, now, readSetAt, named);
 }
 function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
-  if (answer.kind === "ops") return applyOps(last, answer.ops, now, askIds, readSetAt);
-  return last === null ? null : settleGoal(last, now, readSetAt, /* @__PURE__ */ new Set());
+  const o = answer.kind === "ops" ? applyOps(last, answer.ops, now, askIds, readSetAt) : last;
+  if (o === null) return null;
+  const settled = answer.kind === "ops" ? o : settleGoal(o, now, readSetAt, /* @__PURE__ */ new Set());
+  const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt;
+  return settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null };
 }
 
 // ../hooks/session-status.ts
@@ -3860,7 +3930,7 @@ import {
 import { dirname as dirname3, join as join4 } from "node:path";
 
 // ../hooks/status.ts
-var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|MILESTONE|SERVES)\s*(?::\s*(.*))?$/i;
+var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES)\s*(?::\s*(.*))?$/i;
 function fields(value) {
   return value.split("|").map((f) => f.trim());
 }
@@ -3870,7 +3940,7 @@ function openStatus(s) {
 function anyStatus(s) {
   return STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
 }
-function proposedMilestones(value) {
+function goalMilestones(value) {
   return (value ?? "").split(";").flatMap((part) => {
     const m = /^\s*(\S+)\s+(.+?)\s*$/.exec(part);
     const status = anyStatus(m?.[1]);
@@ -3897,7 +3967,8 @@ function opOf(key, f) {
   if (key === "WAS") return f[0] && f[1] ? { kind: "was", ref: f[0], text: f[1] } : null;
   if (key === "HEAD") return f[0] ? { kind: "head", title: f[0], description: f[1] ?? "" } : null;
   if (key === "LINK") return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
-  if (key === "GOAL") return f[0] ? { kind: "goal", text: f[0], milestones: proposedMilestones(f[1]) } : null;
+  if (key === "GOAL") return f[0] ? { kind: "goal", text: f[0], milestones: goalMilestones(f[1]) } : null;
+  if (key === "RETIRE") return { kind: "retire", why: f[0] ?? "" };
   if (key === "MILESTONE") {
     const status = anyStatus(f[0]);
     return status && f[1] ? { kind: "milestone", status, name: f[1], text: f[2] ?? "" } : null;
@@ -3928,23 +3999,27 @@ async function askStatus(ask) {
 }
 
 // ../hooks/status-prompt-goal.ts
+var NO_WORK_LINKED = "no work linked";
 var GOAL_LINES = `GOAL: outcome | status name; status name
+RETIRE: why the goal no longer fits the work
 MILESTONE: status | name | where it stands
 SERVES: subject id or name | milestone id or name, or - when the goal does not need it
-GOAL proposes one outcome with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, then its name: GOAL: 2.5 in the store | done Bug fixed; working Release built; queued Store review. It holds no date or time. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`;
-var GOAL_INPUT = `- <goal>: the outcome the person set for the work, when one is set. It says when the goal is met, and when it was just set, so its milestones still belong to the goal before it.
-- <milestones>: the outcomes the goal needs, one per line: id | status | name | where it stands
-- <proposed>: a goal you proposed that the person has not answered yet: outcome | its milestones
-- <declined>: goals the person declined, as their key words, one per line
+GOAL sets the goal, with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, then its name: GOAL: 2.5 in the store | done Bug fixed; working Release built; queued Store review. It holds no date or time. RETIRE clears the goal and sets none. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`;
+var GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is set. It says (typed) when the person typed it, (met) when every milestone is done, and (just set) when the person just typed it, so its milestones still belong to the goal before it.
+- <milestones>: the outcomes the goal needs, one per line: id | status | name | where it stands. A line ends with | ${NO_WORK_LINKED} when no subject serves it.
+- <removed>: goals the person removed, as their key words, one per line
 - While a goal is set, each line in <subjects> ends with the milestone the subject serves, - when the goal does not need it, or ? when it is not linked yet.`;
 var GOAL_PARTS = {
-  "goal-from-person": `Write GOAL only from what the person wrote in <person>, or in a catch-up, the person's own messages in <conversation>. Never propose from the agent's words in <reply>, <activity> or <tasks>, even when the agent writes "Goal:" or sums up the work.`,
+  "goal-when-clear": `Write GOAL when no goal is set, or when <goal> says met, once the session's work shows the one outcome it is for. The person may name it, or the open subjects and the agent's plan for them may lead to it. Never write GOAL from a summary of work that already finished.`,
   "goal-finish-line": `Write GOAL only for an outcome with a finish line, one someone could check as met or not, such as "2.5 in the store" or "the import ready to demo". A direction is not a goal: "make search faster", "every item should earn its place" or "keep the list tidy" get no GOAL.`,
-  "goal-not-again": `Never propose the goal in <goal>, a goal in <proposed>, or a goal in <declined> again, in the same words or in other words. A goal the person declined stays declined until they state it again as new work.`,
-  "goal-belongs-to-person": `The goal belongs to the person. GOAL only proposes: the person uses it, edits it or declines it. Never write GOAL to reword or update the goal in <goal>, and never write the goal into the head, a subject or a milestone.`,
-  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
+  "goal-wait": `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show a goal. A met goal stays on the page until the next one is set.`,
+  "goal-not-again": `Never write the goal in <goal> or a goal in <removed> again, in the same words or in other words. A goal the person removed stays removed until they type it.`,
+  "goal-typed-kept": `A goal marked (typed) is the person's. Never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
+  "goal-work-left": `When the session's work no longer moves a goal that is not typed forward, as when the person moved on to other work and the goal's open subjects went stale, close those subjects with DONE or DROP, then write GOAL for the outcome the work is for now, or RETIRE when none is clear. Never replace a goal while its work is still open.`,
+  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
+  "milestone-no-work": `A milestone marked ${NO_WORK_LINKED} has no subject serving it. Write SERVES for a subject whose work moves it forward, one under - included, DONE when the exchange shows it done, or DROP when the goal no longer needs it.`,
   "milestones-for-new-goal": `When <goal> says it was just set, its milestones belong to the goal before it, and each one your answer does not name goes. For each one the new goal still needs, write MILESTONE again with its name, status and text. Write MILESTONE for each outcome it needs that none covers, so the goal has ${MILESTONES_MIN} to ${MILESTONES_MAX}.`,
-  "serves-every-subject": `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work moves forward, or - when the goal does not need it. Change a link only when what the work is for changed. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`
+  "serves-every-subject": `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work moves forward, or - when the goal does not need it. With GOAL, write SERVES for every open subject, naming the new milestones. Change a link only when what the work is for changed, or when a subject under - moves a milestone forward. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`
 };
 function goalRules(without = []) {
   return Object.keys(GOAL_PARTS).filter((id) => !without.includes(id)).map((id) => `- ${GOAL_PARTS[id]}`).join(NL4);
@@ -3952,15 +4027,21 @@ function goalRules(without = []) {
 function goalBlocks(o) {
   if (o === null) return [];
   const g = o.goal;
-  const state = g?.isAwaitingMilestones ? " (just set)" : g?.metAt != null ? " (met)" : "";
-  const milestones = o.milestones.filter((m) => m.status !== "dropped").map((m) => `${m.id} | ${m.status} | ${m.name} | ${m.text || "-"}`);
-  const p = o.proposedGoal;
+  const marks = g ? [
+    ...g.source === "typed" ? ["typed"] : [],
+    ...g.isAwaitingMilestones ? ["just set"] : g.metAt != null ? ["met"] : []
+  ] : [];
+  const state = marks.length > 0 ? ` (${marks.join(", ")})` : "";
+  const served = new Set(Object.values(o.serves));
+  const milestones = o.milestones.filter((m) => m.status !== "dropped").map((m) => {
+    const isUnserved = m.status !== "done" && !served.has(m.id);
+    return `${m.id} | ${m.status} | ${m.name} | ${m.text || "-"}${isUnserved ? ` | ${NO_WORK_LINKED}` : ""}`;
+  });
   const block = (tag, body) => `<${tag}>${NL4}${body}${NL4}</${tag}>`;
   return [
     ...g ? [block("goal", `${g.text}${state}`)] : [],
     ...g && milestones.length > 0 ? [block("milestones", milestones.join(NL4))] : [],
-    ...p ? [block("proposed", `${p.text} | ${p.milestones.map((m) => `${m.status} ${m.name}`).join("; ")}`)] : [],
-    ...o.declinedGoals.length > 0 ? [block("declined", o.declinedGoals.join(NL4))] : []
+    ...o.removedGoals.length > 0 ? [block("removed", o.removedGoals.join(NL4))] : []
   ];
 }
 

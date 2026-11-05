@@ -63,10 +63,10 @@ function pressText(p) {
       return ISSUE_LABEL;
     case "step":
       return p.label;
-    case "use-goal":
-      return "Set as goal";
-    case "decline-goal":
-      return "Not now";
+    case "remove-goal":
+      return "Remove";
+    case "restore-goal":
+      return "Undo";
     default:
       return capitalized(p.action);
   }
@@ -223,7 +223,8 @@ var ASK_READ_WORDS = 30;
 var FINISHED_READ = 10;
 var MILESTONES_MAX = 5;
 var MILESTONES_MIN = 2;
-var DECLINED_KEPT = 10;
+var GOAL_LEFT_MS = 30 * 60000;
+var REMOVED_KEPT = 10;
 var CHILD_KEPT_MS = 24 * 60 * 60000;
 var CHILDREN_KEPT = 50;
 var STOP_WORDS = new Set([
@@ -259,8 +260,8 @@ var EMPTY_SESSION_STATUS = {
   missedInLastLook: {},
   look: null,
   goal: null,
-  proposedGoal: null,
-  declinedGoals: [],
+  removedGoals: [],
+  goalRemoved: null,
   milestones: [],
   nextMilestoneId: 1,
   serves: {}
@@ -1329,12 +1330,12 @@ function restatesGoal(text, goal) {
   const hasNewNumber = own.some((w) => /\d/.test(w) && !theirs.has(w));
   return own.length > 0 && !hasNewNumber && shared >= RESTATED_SHARE * own.length;
 }
-function hasGoalMilestones(o, proposed) {
+function hasGoalMilestones(o, written) {
   if (o.goal === null || o.goal.isAwaitingMilestones)
     return false;
   const keys = (names) => names.map(nameKey).sort().join(NL);
   const kept = o.milestones.filter((m) => m.status !== "dropped").map((m) => m.name);
-  return kept.length > 0 && keys(kept) === keys(proposed.map((m) => m.name));
+  return kept.length > 0 && keys(kept) === keys(written.map((m) => m.name));
 }
 function hasSameWords(a, b) {
   const x = words(a);
@@ -1431,16 +1432,61 @@ function withRestatedGoalAsMilestones(o, ops, readSetAt) {
     return ops;
   return ops.flatMap((op) => op.kind === "goal" && restatesGoal(clipWords(op.text, DESCRIPTION_KEPT), g.text) ? op.milestones.map((m) => ({ kind: "milestone", status: m.status, name: m.name, text: "" })) : [op]);
 }
+function linkedSubjects(o) {
+  const live = new Set(o.milestones.filter((m) => m.status !== "dropped").map((m) => m.id));
+  return o.subjects.filter((s) => live.has(o.serves[s.id] ?? ""));
+}
+function lastProgressAt(o, g) {
+  const milestones = o.milestones.filter((m) => m.status !== "dropped").map((m) => m.changedAt);
+  const done = linkedSubjects(o).flatMap((s) => s.status === "done" && s.closedAt !== null ? [s.closedAt] : []);
+  return Math.max(g.setAt, ...milestones, ...done);
+}
+function mayReplaceGoal(o, kind, now) {
+  const g = o.goal;
+  if (g === null || g.metAt !== null)
+    return kind === "goal";
+  const isWorkLeft = !linkedSubjects(o).some(isOpen) && now - lastProgressAt(o, g) >= GOAL_LEFT_MS;
+  return g.source === "inferred" && isWorkLeft;
+}
+function inferredGoal(o, text, named, now) {
+  const milestones = named.map((m, n) => ({
+    id: `m${o.nextMilestoneId + n}`,
+    name: m.name,
+    status: m.status,
+    text: "",
+    was: null,
+    changedAt: now,
+    closedAt: isOpen(m) ? null : now
+  }));
+  const goal = {
+    text,
+    setAt: now,
+    metAt: null,
+    was: o.goal?.text ?? null,
+    isAwaitingMilestones: false,
+    source: "inferred"
+  };
+  return withoutLinksTo({ ...o, goal, goalRemoved: null, milestones, nextMilestoneId: o.nextMilestoneId + milestones.length, serves: {} }, milestones);
+}
+function hasWorkForGoal(o) {
+  const held = new Set(linkedSubjects(o).map((s) => s.id));
+  return o.subjects.some((s) => isOpen(s) && !held.has(s.id));
+}
 function applyGoalOp(o, op, now, findSubject) {
   if (op.kind === "goal") {
     const text = clipWords(op.text, DESCRIPTION_KEPT);
     const milestones = op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }));
-    const isCurrent = o.goal !== null && (restatesGoal(text, o.goal.text) || hasGoalMilestones(o, milestones));
-    const isDeclined = o.declinedGoals.some((key) => restatesGoal(text, key));
-    if (op.milestones.length < MILESTONES_MIN || isCurrent || isDeclined)
+    const g = o.goal;
+    const isCurrent = g !== null && (restatesGoal(text, g.text) || hasGoalMilestones(o, milestones));
+    const isPrevious = g?.was != null && restatesGoal(text, g.was);
+    const isRemoved = o.removedGoals.some((key) => restatesGoal(text, key));
+    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, "goal", now);
+    if (op.milestones.length < MILESTONES_MIN || isCurrent || isPrevious || isRemoved || !isAllowed)
       return o;
-    return { ...o, proposedGoal: { text, milestones, at: now } };
+    return inferredGoal(o, text, milestones, now);
   }
+  if (op.kind === "retire")
+    return mayReplaceGoal(o, "retire", now) ? withoutGoal(o) : o;
   if (o.goal === null)
     return o;
   if (op.kind === "milestone")
@@ -1451,22 +1497,37 @@ function applyGoalOp(o, op, now, findSubject) {
     return o;
   return { ...o, serves: { ...o.serves, [subject.id]: milestone?.id ?? "none" } };
 }
-function settleGoal(o, now, readSetAt, named) {
-  if (o.goal === null)
-    return o;
-  const setAt = o.goal.setAt;
-  const isSeen = o.lastLookAt !== null && setAt <= o.lastLookAt;
-  const isAnswerForNewGoal = o.goal.isAwaitingMilestones && readSetAt === setAt;
+function withWorkDoneMilestones(o, now) {
+  let isChanged = false;
+  const milestones = o.milestones.map((m) => {
+    if (!isOpen(m))
+      return m;
+    const linked = o.subjects.filter((s) => o.serves[s.id] === m.id);
+    const isWorkDone = linked.length > 0 && linked.every((s) => !isOpen(s)) && linked.some((s) => s.status === "done") && linked.some((s) => (s.closedAt ?? -Infinity) > m.changedAt);
+    if (!isWorkDone)
+      return m;
+    isChanged = true;
+    return { ...m, status: "done", closedAt: now, changedAt: now, was: null };
+  });
+  return isChanged ? { ...o, milestones } : o;
+}
+function settleGoal(saved, now, readSetAt, named) {
+  const g = saved.goal;
+  if (g === null)
+    return saved;
+  const o = g.isAwaitingMilestones ? saved : withWorkDoneMilestones(saved, now);
+  const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt;
+  const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt;
   const milestones = isAnswerForNewGoal ? o.milestones.filter((m) => named.has(m.id) && m.status !== "dropped").slice(0, MILESTONES_MAX) : o.milestones;
-  const isAwaiting = o.goal.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0);
+  const isAwaiting = g.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0);
   const kept = milestones.filter((m) => m.status !== "dropped");
   const isMet = !isAwaiting && kept.length > 0 && kept.every((m) => m.status === "done");
-  const was = isSeen ? null : o.goal.was;
-  const metAt = isMet ? o.goal.metAt ?? now : null;
-  const isSame = milestones.length === o.milestones.length && was === o.goal.was && isAwaiting === o.goal.isAwaitingMilestones && metAt === o.goal.metAt;
+  const was = isSeen ? null : g.was;
+  const metAt = isMet ? g.metAt ?? now : null;
+  const isSame = milestones.length === o.milestones.length && was === g.was && isAwaiting === g.isAwaitingMilestones && metAt === g.metAt;
   if (isSame)
     return o;
-  const settled = { ...o, milestones, goal: { ...o.goal, was, isAwaitingMilestones: isAwaiting, metAt } };
+  const settled = { ...o, milestones, goal: { ...g, was, isAwaitingMilestones: isAwaiting, metAt } };
   return isAnswerForNewGoal ? withoutLinksTo(settled, milestones) : settled;
 }
 var linksWith = (ids, id) => ids.includes(id) ? [...ids] : [...ids, id];
@@ -1480,61 +1541,66 @@ function withoutLinksTo(o, milestones) {
     askSubjects: Object.fromEntries(askLinks.filter(([, to]) => to.length > 0))
   };
 }
-function useProposedGoal(o, now) {
-  const p = o.proposedGoal;
-  if (p === null)
-    return o;
-  const milestones = p.milestones.map((m, n) => ({
-    id: `m${o.nextMilestoneId + n}`,
-    name: m.name,
-    status: m.status,
-    text: "",
-    was: null,
-    changedAt: now,
-    closedAt: isOpen(m) ? null : now
-  }));
-  const goal = { text: p.text, setAt: now, metAt: null, was: o.goal?.text ?? null, isAwaitingMilestones: false };
-  return settleGoal(withoutLinksTo({
-    ...o,
-    goal,
-    proposedGoal: null,
-    milestones,
-    nextMilestoneId: o.nextMilestoneId + milestones.length,
-    serves: {}
-  }, milestones), now, null, new Set);
+function withoutGoal(o) {
+  return withoutLinksTo({ ...o, goal: null, milestones: [], serves: {} }, []);
 }
-function declineProposedGoal(o) {
-  if (o.proposedGoal === null)
+function removeGoal(o) {
+  const g = o.goal;
+  if (g === null)
     return o;
-  const declinedGoals = [...o.declinedGoals, nameKey(o.proposedGoal.text)].slice(-DECLINED_KEPT);
-  return { ...o, proposedGoal: null, declinedGoals };
+  const removedGoals = [...o.removedGoals.filter((k) => k !== nameKey(g.text)), nameKey(g.text)];
+  const goalRemoved = { goal: g, milestones: o.milestones, serves: o.serves, askSubjects: o.askSubjects };
+  return { ...withoutGoal(o), removedGoals: removedGoals.slice(-REMOVED_KEPT), goalRemoved };
+}
+function restoreGoal(o) {
+  const r = o.goalRemoved;
+  if (r === null || o.goal !== null)
+    return o;
+  const key = nameKey(r.goal.text);
+  const subjectIds = new Set(o.subjects.map((s) => s.id));
+  const serves = Object.fromEntries(Object.entries(r.serves).filter(([id]) => subjectIds.has(id)));
+  return {
+    ...o,
+    goal: r.goal,
+    milestones: r.milestones,
+    serves,
+    askSubjects: r.askSubjects,
+    removedGoals: o.removedGoals.filter((k) => k !== key),
+    goalRemoved: null
+  };
 }
 function setTypedGoal(o, text, now) {
   const typed = clipWords(text, DESCRIPTION_KEPT);
   if (typed === "")
     return o;
-  const p = o.proposedGoal;
-  if (p !== null && hasSameWords(p.text, typed)) {
-    const used = useProposedGoal(o, now);
-    return { ...used, goal: { ...used.goal, text: typed } };
-  }
-  const declined = declineProposedGoal(o);
-  const isReworded = o.goal !== null && hasSameWords(o.goal.text, typed);
+  const isReworded = o.goal !== null && o.goal.metAt === null && hasSameWords(o.goal.text, typed);
   if (isReworded)
-    return { ...declined, goal: { ...o.goal, text: typed } };
-  const goal = { text: typed, setAt: now, metAt: null, was: o.goal?.text ?? null, isAwaitingMilestones: true };
-  return { ...declined, goal, serves: {} };
+    return { ...o, goal: { ...o.goal, text: typed, source: "typed" } };
+  const goal = {
+    text: typed,
+    setAt: now,
+    metAt: null,
+    was: o.goal?.text ?? null,
+    isAwaitingMilestones: true,
+    source: "typed"
+  };
+  return { ...o, goal, goalRemoved: null, serves: {} };
 }
 
 // ../hooks/goal-press.ts
 function goalPressed(ledger, p, record, now) {
   const o = ledger.overview ?? EMPTY_SESSION_STATUS;
   const unchanged = { ledger, last: null, effects: [] };
-  if (p.action === "use-goal" || p.action === "decline-goal") {
-    if (o.proposedGoal === null)
+  if (p.action === "remove-goal") {
+    if (o.goal === null)
       return { stale: true };
-    const overview = p.action === "use-goal" ? useProposedGoal(o, now) : declineProposedGoal(o);
-    return { ledger: { ...ledger, overview }, last: record("mark"), effects: [] };
+    return { ledger: { ...ledger, overview: removeGoal(o) }, last: record("mark"), effects: [] };
+  }
+  if (p.action === "restore-goal") {
+    const restored = restoreGoal(o);
+    if (restored === o)
+      return { stale: true };
+    return { ledger: { ...ledger, overview: restored }, last: record("mark"), effects: [] };
   }
   if (p.action !== "type")
     return { stale: true };
@@ -1544,8 +1610,133 @@ function goalPressed(ledger, p, record, now) {
   return { ledger: { ...ledger, overview: typed }, last: record("mark"), effects: [] };
 }
 
+// ../hooks/help.ts
+var FINDING_GROUPS = {
+  issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
+  opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" }
+};
+var SUBJECT_MARKS = {
+  working: { mark: "\u25CF", tone: null },
+  queued: { mark: "\u25CB", tone: null },
+  "waits-on-other": { mark: "\u25CC", tone: null },
+  done: { mark: "\u2713", tone: "done" },
+  dropped: { mark: "\u2717", tone: null }
+};
+var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
+var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
+var RUNNING_MARK = RUNNING_FRAMES[0];
+var IDLE_MARK = { mark: "\u25D0", tone: null };
+var CLOSED_MARKS = {
+  handled: SUBJECT_MARKS.done.mark,
+  dismissed: "\u2715",
+  lapsed: SUBJECT_MARKS.dropped.mark
+};
+var PR_MARKS = {
+  waiting: { text: HELD_MARK.mark, tone: "needsYou" },
+  sent: { text: SUBJECT_MARKS.done.mark, tone: "done" },
+  failing: { text: FINDING_GROUPS.issue.mark, tone: "error" },
+  cancelled: { text: "\u2298", tone: null }
+};
+var stoppedWords = (what) => `Stopped before it finished: ${what}`;
+var MARK_LEGEND = [
+  {
+    mark: RUNNING_MARK,
+    tone: null,
+    isRunning: true,
+    words: "Working. It moves while the work runs or your message is on its way."
+  },
+  { mark: IDLE_MARK.mark, tone: null, isRunning: false, words: "Working, with nothing running right now" },
+  { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: "Queued: not started yet" },
+  {
+    mark: SUBJECT_MARKS["waits-on-other"].mark,
+    tone: null,
+    isRunning: false,
+    words: "Waits on something other than you, such as a build or a review"
+  },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
+  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords("dropped work") },
+  { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: "Dismissed by you" },
+  {
+    mark: FINDING_GROUPS.issue.mark,
+    tone: FINDING_GROUPS.issue.tone,
+    isRunning: false,
+    words: "Something is wrong: an issue or a failing check"
+  },
+  {
+    mark: PR_MARKS.cancelled.text,
+    tone: PR_MARKS.cancelled.tone,
+    isRunning: false,
+    words: stoppedWords("a cancelled check, which needs another run")
+  },
+  {
+    mark: FINDING_GROUPS.opportunity.mark,
+    tone: FINDING_GROUPS.opportunity.tone,
+    isRunning: false,
+    words: "Opportunity: something that could be better"
+  }
+];
+var STATUS_ONLY_MARKS = new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
+function markLegend(isNextBuild) {
+  return isNextBuild ? MARK_LEGEND : MARK_LEGEND.filter((m) => !STATUS_ONLY_MARKS.has(m.mark));
+}
+var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks", tabs: "Tabs" };
+function tabLegend(isNextBuild) {
+  return shownTabs(isNextBuild).map((t) => ({ keys: t.symbol, does: t.label }));
+}
+var UNDO_KEY = "u";
+var PR_TAB_HELP_KEYS = [{ keys: "g", does: "Rank the PRs again, once a ranked PR changed" }];
+function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
+  const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
+  const hasRows = isRowTab(tab);
+  const selectsStatusRows = tab === "overview" && hasStatusButtons;
+  const switchTabs = { keys: tabKeys, does: "Switch tabs" };
+  const prTabKeys = tab === "prs" ? PR_TAB_HELP_KEYS : [];
+  const undoKey = { keys: UNDO_KEY, does: "Undo the last close" };
+  switch (look) {
+    case "desktop":
+      return [];
+    case "terminal":
+      return [
+        switchTabs,
+        ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
+        ...hasRows ? [undoKey] : [],
+        ...prTabKeys,
+        { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
+      ];
+    case "codex":
+      return [
+        switchTabs,
+        ...hasRows ? [{ keys: "j k \u2191 \u2193", does: "Select the next or previous row" }, undoKey] : [],
+        ...prTabKeys,
+        { keys: "?", does: "Open or close help" },
+        { keys: "esc", does: "Close help, or leave a reply field" }
+      ];
+    case "omp":
+      return [
+        { keys: `tab ${tabKeys}`, does: "Switch tabs" },
+        ...hasRows ? [
+          { keys: "\u2191 \u2193 j k", does: "Move between rows" },
+          { keys: "\u2190 \u2192", does: "Pick a button" },
+          { keys: "\u21B5", does: "Press the picked button" },
+          { keys: "t", does: "Reply to the selected row" },
+          undoKey,
+          ...prTabKeys
+        ] : [
+          ...selectsStatusRows ? [
+            { keys: "j k", does: "Select the next or previous row with a button" },
+            { keys: "\u2190 \u2192", does: "Pick a button" },
+            { keys: "\u21B5", does: "Press the picked button" }
+          ] : [],
+          { keys: "\u2191 \u2193", does: "Scroll the page" }
+        ],
+        { keys: "?", does: "Open or close help" },
+        { keys: "esc", does: "Close help, then the panel" }
+      ];
+  }
+}
+
 // ../hooks/status-keys.ts
-var PROPOSAL_KEYS_ID = "proposal";
 var GOAL_KEYS_ID = "goal";
 var VIEW_ASK_LABELS = { question: "View question", task: "View task" };
 function viewAsk(ask) {
@@ -1573,56 +1764,43 @@ function statusKeyPlan(row) {
 function milestoneKeyPlan(m) {
   return m.ask === null ? [] : [viewAsk(m.ask)];
 }
-function proposalKeyPlan(page) {
-  if (page.proposal === null)
-    return [];
-  return [
-    { press: { action: "use-goal" }, label: "Set as goal", hotkey: "s", kind: "mark", emphasis: "primary" },
-    {
-      press: { action: "type-goal", text: page.proposal.text },
-      label: "Edit",
-      hotkey: "e",
-      kind: "view",
-      emphasis: "normal"
-    },
-    { press: { action: "decline-goal" }, label: "Not now", hotkey: "x", kind: "mark", emphasis: "normal" }
-  ];
-}
-function isGoalKeyInHeader(page) {
-  return page.goal !== null && !page.goal.isMet;
-}
+var REMOVE_GOAL = {
+  press: { action: "remove-goal" },
+  label: "Remove",
+  hotkey: "r",
+  kind: "mark",
+  emphasis: "quiet"
+};
+var RESTORE_GOAL = {
+  press: { action: "restore-goal" },
+  label: "Undo",
+  hotkey: UNDO_KEY,
+  kind: "mark",
+  emphasis: "normal"
+};
+var newGoal = (emphasis) => ({
+  press: { action: "type-goal", text: "" },
+  label: "New",
+  hotkey: "n",
+  kind: "view",
+  emphasis
+});
 function goalKeyPlan(page) {
-  if (page.proposal !== null)
-    return [];
   const g = page.goal;
   if (g === null)
-    return [
-      { press: { action: "type-goal", text: "" }, label: "Set a goal", hotkey: "s", kind: "view", emphasis: "quiet" }
-    ];
+    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal("quiet")];
   if (g.isMet)
-    return [
-      {
-        press: { action: "type-goal", text: "" },
-        label: "Set next goal",
-        hotkey: "g",
-        kind: "view",
-        emphasis: "normal"
-      }
-    ];
-  return [{ press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" }];
+    return [newGoal("normal"), REMOVE_GOAL];
+  return [
+    { press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
+    REMOVE_GOAL
+  ];
 }
 var rowTarget = (r) => ({ id: r.id, keys: statusKeyPlan(r) });
 function statusKeyRows(page) {
-  const proposal = { id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(page) };
-  const goal = { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) };
-  const isProposalBelowGoal = page.proposal?.isBelowGoal ?? false;
-  const isGoalFirst = isGoalKeyInHeader(page);
   return [
-    ...isProposalBelowGoal ? [] : [proposal],
-    ...isGoalFirst ? [goal] : [],
+    { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) },
     ...(page.goal?.milestones ?? []).flatMap((m) => [{ id: m.id, keys: milestoneKeyPlan(m) }, ...m.rows.map(rowTarget)]),
-    ...isGoalFirst ? [] : [goal],
-    ...isProposalBelowGoal ? [proposal] : [],
     ...page.rows.map(rowTarget)
   ].filter((t) => t.keys.length > 0);
 }
@@ -1632,7 +1810,7 @@ function statusSelected(page, selectedId) {
   const isFold = (t) => t.keys.some((k) => k.press.action === "toggle-fold");
   return targets.find((t) => t.id === selectedId) ?? targets.find(opensAsk) ?? targets.find((t) => !isFold(t)) ?? targets[0] ?? null;
 }
-var GOAL_FIELD = { placeholder: "An outcome to work toward", submit: "Set goal" };
+var GOAL_FIELD = { placeholder: "An outcome to work toward", submit: "Save" };
 
 // ../hooks/pressed.ts
 function offersUndo(c) {
@@ -1842,132 +2020,6 @@ function replyToClosed(ledger, p, last, answerMessage) {
   return { ledger, last, effects: [{ kind: "send", text, by: null }] };
 }
 
-// ../hooks/help.ts
-var FINDING_GROUPS = {
-  issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
-  opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" }
-};
-var SUBJECT_MARKS = {
-  working: { mark: "\u25CF", tone: null },
-  queued: { mark: "\u25CB", tone: null },
-  "waits-on-other": { mark: "\u25CC", tone: null },
-  done: { mark: "\u2713", tone: "done" },
-  dropped: { mark: "\u2717", tone: null }
-};
-var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
-var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
-var RUNNING_MARK = RUNNING_FRAMES[0];
-var IDLE_MARK = { mark: "\u25D0", tone: null };
-var CLOSED_MARKS = {
-  handled: SUBJECT_MARKS.done.mark,
-  dismissed: "\u2715",
-  lapsed: SUBJECT_MARKS.dropped.mark
-};
-var PR_MARKS = {
-  waiting: { text: HELD_MARK.mark, tone: "needsYou" },
-  sent: { text: SUBJECT_MARKS.done.mark, tone: "done" },
-  failing: { text: FINDING_GROUPS.issue.mark, tone: "error" },
-  cancelled: { text: "\u2298", tone: null }
-};
-var stoppedWords = (what) => `Stopped before it finished: ${what}`;
-var MARK_LEGEND = [
-  {
-    mark: RUNNING_MARK,
-    tone: null,
-    isRunning: true,
-    words: "Working. It moves while the work runs or your message is on its way."
-  },
-  { mark: IDLE_MARK.mark, tone: null, isRunning: false, words: "Working, with nothing running right now" },
-  { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: "Queued: not started yet" },
-  {
-    mark: SUBJECT_MARKS["waits-on-other"].mark,
-    tone: null,
-    isRunning: false,
-    words: "Waits on something other than you, such as a build or a review"
-  },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
-  { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
-  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords("dropped work") },
-  { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: "Dismissed by you" },
-  {
-    mark: FINDING_GROUPS.issue.mark,
-    tone: FINDING_GROUPS.issue.tone,
-    isRunning: false,
-    words: "Something is wrong: an issue or a failing check"
-  },
-  {
-    mark: PR_MARKS.cancelled.text,
-    tone: PR_MARKS.cancelled.tone,
-    isRunning: false,
-    words: stoppedWords("a cancelled check, which needs another run")
-  },
-  {
-    mark: FINDING_GROUPS.opportunity.mark,
-    tone: FINDING_GROUPS.opportunity.tone,
-    isRunning: false,
-    words: "Opportunity: something that could be better"
-  }
-];
-var STATUS_ONLY_MARKS = new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
-function markLegend(isNextBuild) {
-  return isNextBuild ? MARK_LEGEND : MARK_LEGEND.filter((m) => !STATUS_ONLY_MARKS.has(m.mark));
-}
-var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks", tabs: "Tabs" };
-function tabLegend(isNextBuild) {
-  return shownTabs(isNextBuild).map((t) => ({ keys: t.symbol, does: t.label }));
-}
-var UNDO_KEY = "u";
-var PR_TAB_HELP_KEYS = [{ keys: "g", does: "Rank the PRs again, once a ranked PR changed" }];
-function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
-  const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
-  const hasRows = isRowTab(tab);
-  const selectsStatusRows = tab === "overview" && hasStatusButtons;
-  const switchTabs = { keys: tabKeys, does: "Switch tabs" };
-  const prTabKeys = tab === "prs" ? PR_TAB_HELP_KEYS : [];
-  const undoKey = { keys: UNDO_KEY, does: "Undo the last close" };
-  switch (look) {
-    case "desktop":
-      return [];
-    case "terminal":
-      return [
-        switchTabs,
-        ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
-        ...hasRows ? [undoKey] : [],
-        ...prTabKeys,
-        { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
-      ];
-    case "codex":
-      return [
-        switchTabs,
-        ...hasRows ? [{ keys: "j k \u2191 \u2193", does: "Select the next or previous row" }, undoKey] : [],
-        ...prTabKeys,
-        { keys: "?", does: "Open or close help" },
-        { keys: "esc", does: "Close help, or leave a reply field" }
-      ];
-    case "omp":
-      return [
-        { keys: `tab ${tabKeys}`, does: "Switch tabs" },
-        ...hasRows ? [
-          { keys: "\u2191 \u2193 j k", does: "Move between rows" },
-          { keys: "\u2190 \u2192", does: "Pick a button" },
-          { keys: "\u21B5", does: "Press the picked button" },
-          { keys: "t", does: "Reply to the selected row" },
-          undoKey,
-          ...prTabKeys
-        ] : [
-          ...selectsStatusRows ? [
-            { keys: "j k", does: "Select the next or previous row with a button" },
-            { keys: "\u2190 \u2192", does: "Pick a button" },
-            { keys: "\u21B5", does: "Press the picked button" }
-          ] : [],
-          { keys: "\u2191 \u2193", does: "Scroll the page" }
-        ],
-        { keys: "?", does: "Open or close help" },
-        { keys: "esc", does: "Close help, then the panel" }
-      ];
-  }
-}
-
 // ../hooks/marks.ts
 function textMark(mark) {
   return mark === CLOSED_MARKS.lapsed ? "\u2298" : mark;
@@ -1975,8 +2027,8 @@ function textMark(mark) {
 
 // ../hooks/status-goal-page.ts
 var AWAITING_TEXT = "Milestones after the next reply";
-var PROPOSAL_LABEL = "Proposed goal \xB7 from your message";
-var NEW_GOAL_PROPOSAL_LABEL = "Proposed new goal \xB7 from your message";
+var GOAL_HEADING = "Goal";
+var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
 function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
@@ -2006,15 +2058,8 @@ function milestoneRow(m, o, items) {
 }
 function goalPage(o, items) {
   const g = o?.goal ?? null;
-  const isBelowGoal = g !== null;
-  const proposal = o?.proposedGoal ? {
-    label: isBelowGoal ? NEW_GOAL_PROPOSAL_LABEL : PROPOSAL_LABEL,
-    isBelowGoal,
-    text: o.proposedGoal.text,
-    milestones: o.proposedGoal.milestones.map((m) => ({ ...SUBJECT_MARKS[m.status], name: m.name }))
-  } : null;
   if (o === null || g === null)
-    return { goal: null, proposal };
+    return { goal: null, canRestoreGoal: o?.goalRemoved != null };
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   const shown = o.milestones.filter((m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt);
@@ -2024,7 +2069,7 @@ function goalPage(o, items) {
   const head = o.head;
   return {
     goal: {
-      label: isMet ? "Goal met" : "Goal",
+      label: isMet ? "Goal met" : GOAL_HEADING,
       text: g.text,
       count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
       isMet,
@@ -2033,7 +2078,7 @@ function goalPage(o, items) {
       awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
     },
-    proposal
+    canRestoreGoal: false
   };
 }
 
@@ -2279,7 +2324,7 @@ function statusPage(s, now) {
   };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
-    isEmpty: head === null && rows.length === 0 && goal === null && goalParts.proposal === null,
+    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
     ...goalParts,
     goal,
@@ -5550,6 +5595,10 @@ function withTree(lines, at, first, rest, s) {
 function pageRuleCells(width, textAt = PAGE_TEXT_AT) {
   return Math.max(0, width - textAt - 1);
 }
+function partHeading(text, width, s, at = PAGE_TEXT_AT) {
+  const label = `${text} `;
+  return `${" ".repeat(at)}${s.dim(label + "\u2500".repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label))))}`;
+}
 function pageRule(width, s) {
   return `${" ".repeat(PAGE_TEXT_AT)}${s.dim("\u2500".repeat(pageRuleCells(width)))}`;
 }
@@ -5561,7 +5610,7 @@ function lookLines(row, width, s) {
   const rule = `${" ".repeat(at)}${s.dim(`${LOOK_DASH.repeat(before)}${text}${LOOK_DASH.repeat(fill - before)}`)}`;
   return ["", rule, ...row.isLast ? [] : [""]];
 }
-function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT) {
+function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between = "") {
   const faces = target.keys.map((k) => ({
     label: k.label,
     key: isSelected ? k.hotkey : null,
@@ -5570,7 +5619,7 @@ function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT) {
     ...k.emphasis === "quiet" ? { isQuiet: true } : {}
   }));
   const focused = isSelected ? pageFocus(target, d.ui) : -1;
-  return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style) : [];
+  return faces.length > 0 ? faceLines(faces, focused, textAt - 1, d.width, d.style, between) : [];
 }
 function drawPageRow(row, d, isSelected = false) {
   const { width, now, style: s } = d;
@@ -5605,13 +5654,8 @@ function drawPageRow(row, d, isSelected = false) {
   }
   if (row.kind === "look")
     return lookLines(row, width, s);
-  if (row.kind === "part") {
-    const label = `${row.text} `;
-    return [
-      "",
-      `${" ".repeat(PAGE_TEXT_AT)}${s.dim(label + "\u2500".repeat(Math.max(4, pageRuleCells(width) - cellWidth(label))))}`
-    ];
-  }
+  if (row.kind === "part")
+    return ["", partHeading(row.text, width, s)];
   if (row.kind === "counts")
     return countLines(row.counts, textAt, width, s);
   return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim);
@@ -5637,38 +5681,28 @@ function countLines(counts, textAt, width, s) {
 
 // src/panel-goal.ts
 function goalPartId(part) {
-  if (part.is === "proposal")
-    return PROPOSAL_KEYS_ID;
   if (part.is === "milestone")
     return part.row.id;
-  if (part.is === "title")
-    return part.isKeyInHeader && !part.isTyping ? GOAL_KEYS_ID : null;
+  if (part.is === "heading")
+    return part.page ? GOAL_KEYS_ID : null;
   return part.is === "keys" ? GOAL_KEYS_ID : null;
 }
 var goalEntry = (part) => ({ kind: "goal", part });
-var blank = { kind: "note", text: "" };
-function goalAbove(page, typing, isUnfolded) {
+function goalSection(page, typing, isUnfolded) {
   const isTyping = typing === GOAL_KEYS_ID;
-  const proposal = page.proposal ? [goalEntry({ is: "proposal", proposal: page.proposal, page, isTyping })] : [];
   const g = page.goal;
-  if (g === null)
-    return proposal;
-  const isKeyInHeader = isGoalKeyInHeader(page);
-  const goal = [
-    goalEntry({ is: "title", goal: g, page, isTyping: isTyping && proposal.length === 0, isKeyInHeader }),
-    ...g.milestones.flatMap((row) => [
+  const milestones = g?.milestones ?? [];
+  return [
+    goalEntry({ is: "heading", text: g?.label ?? GOAL_HEADING, page: isTyping ? null : page }),
+    goalEntry({ is: "title", goal: g, isTyping }),
+    ...milestones.length > 0 ? [goalEntry({ is: "gap" })] : [],
+    ...milestones.flatMap((row) => [
       goalEntry({ is: "milestone", row }),
       ...unfoldedRows(row.rows, isUnfolded).map((r) => ({ kind: "page", row: r }))
-    ]),
-    ...isTyping || isKeyInHeader ? [] : [goalEntry({ is: "keys", page })]
+    ])
   ];
-  if (proposal.length === 0)
-    return goal;
-  return page.proposal?.isBelowGoal ? [...goal, blank, ...proposal] : [...proposal, blank, ...goal];
 }
 function setGoal(page, typing) {
-  if (page.goal !== null || page.proposal !== null)
-    return [];
   return [goalEntry(typing === GOAL_KEYS_ID ? { is: "field" } : { is: "keys", page })];
 }
 function fieldLines(d) {
@@ -5688,29 +5722,34 @@ function textWithCount(g, d) {
   const lines = wrapText(`${g.text}${tail}`, Math.max(10, width - PAGE_MARK_AT - 1));
   return lines.map((l) => " ".repeat(PAGE_MARK_AT) + (l.endsWith(tail) ? s.bold(l.slice(0, -tail.length)) + s.dim(tail.replaceAll(GLUE, " ")) : s.bold(l)));
 }
+function headingLines(part, d, isSelected) {
+  const { width, style: s } = d;
+  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyPlan(part.page) }, d, isSelected, 1, s.dim("\xB7")) : [];
+  const right = width - 1;
+  const label = `${part.text} `;
+  const keysCells = keys.length === 1 ? visibleLength(keys[0]) : Infinity;
+  const rule = right - PAGE_MARK_AT - cellWidth(label) - keysCells;
+  if (keys.length === 0 || rule < 4) {
+    const atRight = (l) => " ".repeat(Math.max(0, right - visibleLength(l))) + l;
+    return [partHeading(part.text, width, s, PAGE_MARK_AT), ...keys.map(atRight)];
+  }
+  return [`${" ".repeat(PAGE_MARK_AT)}${s.dim(label + "\u2500".repeat(rule))}${keys[0]}`];
+}
 function drawGoalPart(part, d, isSelected) {
   const { width, now, style: s } = d;
   const at = (text, paint, lines = STATUS_TEXT_LINES) => indented(text, PAGE_MARK_AT, width, lines, paint);
-  if (part.is === "proposal") {
-    const p = part.proposal;
-    return [
-      ...at(p.label, s.dim),
-      ...part.isTyping ? fieldLines(d) : at(p.text, s.bold, Infinity),
-      ...p.milestones.flatMap((m) => pageLine(d, PAGE_MARK_AT, paintMark({ ...m, isRunning: false }, now, s), m.name, (t) => t)),
-      ...part.isTyping ? [] : pageButtonLines({ id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(part.page) }, d, isSelected, PAGE_MARK_AT)
-    ];
-  }
+  if (part.is === "heading")
+    return headingLines(part, d, isSelected);
+  if (part.is === "gap")
+    return [""];
   if (part.is === "title") {
     const g = part.goal;
-    const keys = part.isKeyInHeader && !part.isTyping ? goalKeyPlan(part.page) : [];
-    const keyCells = pageButtonLines({ id: GOAL_KEYS_ID, keys }, d, isSelected, 1).join("");
-    const header = keys.length > 0 ? [`${" ".repeat(PAGE_MARK_AT)}${s.dim(`${g.label} \xB7`)}${keyCells}`] : at(g.label, s.dim);
+    const text = part.isTyping ? fieldLines(d) : g ? textWithCount(g, d) : at(NO_GOAL_TEXT, s.dim);
     return [
-      ...header,
-      ...part.isTyping ? fieldLines(d) : textWithCount(g, d),
-      ...g.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [],
-      ...g.now ? at(g.now, s.dim) : [],
-      ...g.awaiting ? at(g.awaiting, s.dim) : []
+      ...text,
+      ...g?.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [],
+      ...g?.now ? at(g.now, s.dim) : [],
+      ...g?.awaiting ? at(g.awaiting, s.dim) : []
     ];
   }
   if (part.is === "milestone") {
@@ -6126,9 +6165,7 @@ function pageEntries(page, typing, isUnfolded) {
     { kind: "note", text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
     ...description ? [{ kind: "note", text: description, indent: PAGE_MARK_AT }] : []
   ] : [];
-  const above = goalAbove(page, typing, isUnfolded);
-  const under = [...head, ...setGoal(page, typing)];
-  const top = above.length > 0 && under.length > 0 ? [...above, blank, ...under] : [...above, ...under];
+  const top = [...goalSection(page, typing, isUnfolded), ...head.length > 0 ? [blank, ...head] : []];
   const rows = unfoldedRows(page.rows, isUnfolded).map((row) => ({ kind: "page", row }));
   return top.length > 0 && rows.length > 0 ? [...top, blank, ...rows] : [...top, ...rows];
 }
@@ -6376,17 +6413,17 @@ function labelMark(b, room, s) {
 function buttonLines(line, ui, indent, width, s) {
   return faceLines(line.buttons, focusOf2(line, ui), indent, width, s);
 }
-function faceLines(buttons, focused, indent, width, s) {
+function faceLines(buttons, focused, indent, width, s, between = "") {
   const cells = buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)));
   const sizes = cells.map(visibleLength);
   const firstFollowUp = buttons.findIndex((b) => b.isFollowUp);
   const keyCount = firstFollowUp < 0 ? cells.length : firstFollowUp;
   const { lines } = actionLines(sizes.slice(0, keyCount), sizes.slice(keyCount), {
     width: width - indent,
-    gap: 0,
+    gap: visibleLength(between),
     separator: 0
   });
-  return lines.map((at) => " ".repeat(indent) + at.map((i) => cells[i]).join(""));
+  return lines.map((at) => " ".repeat(indent) + at.map((i) => cells[i]).join(between));
 }
 function leadPaint(lead, text, s) {
   return lead.tone === "dim" ? s.dim(text) : lead.tone ? s.tone(lead.tone, text) : text;
@@ -6640,7 +6677,6 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   let selectedAt = [0, 0];
   const pageSelected = isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId);
   let pageSelectedAt = null;
-  let goalTitleAt = null;
   const subjectAt = [];
   for (const e of entries) {
     if (e.kind === "heading")
@@ -6649,8 +6685,6 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
       if (e.kind === "page" && e.row.isRuledAbove)
         body.push(pageRule(width, style));
       const start = body.length;
-      if (e.kind === "goal" && e.part.is === "title")
-        goalTitleAt = start;
       if (e.kind === "page" && e.row.kind === "subject")
         subjectAt.push([e.row.id, start]);
       const id = e.kind === "page" ? e.row.id : goalPartId(e.part);
@@ -6685,9 +6719,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const room = roomBeside(foot);
   const blanks = (shown) => Array(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill("");
   const isOverflowing = body.length > room;
-  const [keysAt = 0, last = 0] = pageSelectedAt ?? [];
-  const goalTextAt = pageSelected?.id === GOAL_KEYS_ID ? goalTitleAt : null;
-  const first = goalTextAt !== null && last - goalTextAt + 3 <= room ? goalTextAt : keysAt;
+  const [first = 0, last = 0] = pageSelectedAt ?? [];
   const isRevealed = pageSelectedAt !== null && (ui.pageReveal === true || ui.pageReveal === pageSelected?.id);
   const top = isRevealed ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop;
   const pageTop = isPage ? Math.min(Math.max(0, top), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop;
@@ -6876,27 +6908,16 @@ function goalOf(saved) {
   const setAt = time(g?.setAt);
   if (typeof saved !== "object" || text === null || setAt === null)
     return null;
+  const isAwaitingMilestones = g?.isAwaitingMilestones === true;
+  const isTyped = g?.source === "typed" || g?.source !== "inferred" && isAwaitingMilestones;
   return {
     text,
     setAt,
     metAt: time(g?.metAt),
     was: nonEmpty(g?.was),
-    isAwaitingMilestones: g?.isAwaitingMilestones === true
+    isAwaitingMilestones,
+    source: isTyped ? "typed" : "inferred"
   };
-}
-function proposedOf(saved) {
-  const p = saved;
-  const text = nonEmpty(p?.text);
-  const at = time(p?.at);
-  if (typeof saved !== "object" || text === null || at === null)
-    return null;
-  const milestones = (Array.isArray(p?.milestones) ? p.milestones : []).flatMap((raw) => {
-    const m = raw;
-    const name = nonEmpty(m?.name);
-    const status = STATUSES.find((x) => x === m?.status);
-    return name && status ? [{ name, status }] : [];
-  });
-  return { text, milestones: milestones.slice(0, MILESTONES_MAX), at };
 }
 function milestoneOf(saved) {
   const m = saved;
@@ -6911,24 +6932,46 @@ function milestoneOf(saved) {
     text: typeof m.text === "string" ? m.text : "",
     was: nonEmpty(m.was),
     changedAt,
-    closedAt: time(m.closedAt)
+    closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null)
+  };
+}
+function milestonesOf(saved) {
+  return (Array.isArray(saved) ? saved : []).map(milestoneOf).filter((m) => m !== null);
+}
+var isStringRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+function goalRemovedOf(saved) {
+  const r = saved;
+  const goal = goalOf(r?.goal);
+  if (goal === null || !isStringRecord(r?.serves) || !isStringRecord(r?.askSubjects))
+    return null;
+  const serves = Object.entries(r.serves).filter((e) => typeof e[1] === "string");
+  const asks = Object.entries(r.askSubjects).filter((e) => Array.isArray(e[1]) && e[1].every((x) => typeof x === "string"));
+  return {
+    goal,
+    milestones: milestonesOf(r.milestones),
+    serves: Object.fromEntries(serves),
+    askSubjects: Object.fromEntries(asks)
   };
 }
 function droppedMilestoneIds(milestones) {
   return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
 }
 function goalFields(o, subjectIds) {
-  const milestones = (Array.isArray(o.milestones) ? o.milestones : []).map(milestoneOf).filter((m) => m !== null);
+  const milestones = milestonesOf(o.milestones);
   const dropped = droppedMilestoneIds(milestones);
   const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
   const serves = Object.fromEntries(savedServes.filter((e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || liveIds.has(e[1]))));
-  const keys = (Array.isArray(o.declinedGoals) ? o.declinedGoals : []).flatMap((d) => typeof d === "string" ? [nameKey(d)] : []);
-  const declined = [...new Set(keys)].filter((key) => key !== "");
+  const saved = [
+    ...Array.isArray(o.declinedGoals) ? o.declinedGoals : [],
+    ...Array.isArray(o.removedGoals) ? o.removedGoals : []
+  ];
+  const keys = saved.flatMap((d) => typeof d === "string" ? [nameKey(d)] : []);
+  const removed = [...new Set(keys)].filter((key) => key !== "");
   return {
     goal: goalOf(o.goal),
-    proposedGoal: proposedOf(o.proposedGoal),
-    declinedGoals: declined.slice(-DECLINED_KEPT),
+    removedGoals: removed.slice(-REMOVED_KEPT),
+    goalRemoved: goalRemovedOf(o.goalRemoved),
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves
@@ -6966,7 +7009,7 @@ function subjectOf(saved) {
     ...wasAndMerged(s.was, s.merged),
     createdAt: time2(s.createdAt) ?? changedAt,
     changedAt,
-    closedAt: time2(s.closedAt),
+    closedAt: time2(s.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
     into: typeof s.into === "string" ? s.into : null
   };
 }
@@ -7495,10 +7538,11 @@ function demoView(now, agent) {
           setAt: now - 60 * MIN,
           metAt: null,
           was: null,
-          isAwaitingMilestones: false
+          isAwaitingMilestones: false,
+          source: "inferred"
         },
-        proposedGoal: null,
-        declinedGoals: [],
+        removedGoals: [],
+        goalRemoved: null,
         milestones: [
           {
             id: "m1",
@@ -8481,16 +8525,17 @@ function headAfter(last, op, work) {
 }
 var OP_ORDER = {
   none: 0,
-  head: 1,
   new: 0,
   set: 0,
   done: 0,
   drop: 0,
-  was: 1,
-  link: 2,
-  goal: 0,
-  milestone: 0,
-  serves: 2
+  goal: 1,
+  retire: 1,
+  milestone: 2,
+  head: 3,
+  was: 3,
+  link: 4,
+  serves: 4
 };
 function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
   let o = {
@@ -8537,7 +8582,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   for (const { op } of ordered) {
     if (op.kind === "none")
       continue;
-    if (op.kind === "goal" || op.kind === "milestone" || op.kind === "serves") {
+    if (op.kind === "goal" || op.kind === "retire" || op.kind === "milestone" || op.kind === "serves") {
       o = applyGoalOp(o, op, now, find);
       if (op.kind === "milestone")
         markNamed(findMilestone(o, op.name));
@@ -8623,9 +8668,12 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   return settleGoal(o, now, readSetAt, named);
 }
 function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
-  if (answer.kind === "ops")
-    return applyOps(last, answer.ops, now, askIds, readSetAt);
-  return last === null ? null : settleGoal(last, now, readSetAt, new Set);
+  const o = answer.kind === "ops" ? applyOps(last, answer.ops, now, askIds, readSetAt) : last;
+  if (o === null)
+    return null;
+  const settled = answer.kind === "ops" ? o : settleGoal(o, now, readSetAt, new Set);
+  const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt;
+  return settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null };
 }
 
 // ../hooks/session-status.ts
@@ -8717,7 +8765,7 @@ function appliedCatchUp(s, begun, parsed, now) {
 }
 
 // ../hooks/status.ts
-var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|MILESTONE|SERVES)\s*(?::\s*(.*))?$/i;
+var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES)\s*(?::\s*(.*))?$/i;
 function fields(value) {
   return value.split("|").map((f) => f.trim());
 }
@@ -8727,7 +8775,7 @@ function openStatus(s) {
 function anyStatus(s) {
   return STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
 }
-function proposedMilestones(value) {
+function goalMilestones(value) {
   return (value ?? "").split(";").flatMap((part) => {
     const m = /^\s*(\S+)\s+(.+?)\s*$/.exec(part);
     const status = anyStatus(m?.[1]);
@@ -8761,7 +8809,9 @@ function opOf(key, f) {
   if (key === "LINK")
     return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
   if (key === "GOAL")
-    return f[0] ? { kind: "goal", text: f[0], milestones: proposedMilestones(f[1]) } : null;
+    return f[0] ? { kind: "goal", text: f[0], milestones: goalMilestones(f[1]) } : null;
+  if (key === "RETIRE")
+    return { kind: "retire", why: f[0] ?? "" };
   if (key === "MILESTONE") {
     const status = anyStatus(f[0]);
     return status && f[1] ? { kind: "milestone", status, name: f[1], text: f[2] ?? "" } : null;
@@ -8795,23 +8845,27 @@ async function askStatus(ask) {
 }
 
 // ../hooks/status-prompt-goal.ts
+var NO_WORK_LINKED = "no work linked";
 var GOAL_LINES = `GOAL: outcome | status name; status name
+RETIRE: why the goal no longer fits the work
 MILESTONE: status | name | where it stands
 SERVES: subject id or name | milestone id or name, or - when the goal does not need it
-GOAL proposes one outcome with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, then its name: GOAL: 2.5 in the store | done Bug fixed; working Release built; queued Store review. It holds no date or time. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`;
-var GOAL_INPUT = `- <goal>: the outcome the person set for the work, when one is set. It says when the goal is met, and when it was just set, so its milestones still belong to the goal before it.
-- <milestones>: the outcomes the goal needs, one per line: id | status | name | where it stands
-- <proposed>: a goal you proposed that the person has not answered yet: outcome | its milestones
-- <declined>: goals the person declined, as their key words, one per line
+GOAL sets the goal, with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, then its name: GOAL: 2.5 in the store | done Bug fixed; working Release built; queued Store review. It holds no date or time. RETIRE clears the goal and sets none. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`;
+var GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is set. It says (typed) when the person typed it, (met) when every milestone is done, and (just set) when the person just typed it, so its milestones still belong to the goal before it.
+- <milestones>: the outcomes the goal needs, one per line: id | status | name | where it stands. A line ends with | ${NO_WORK_LINKED} when no subject serves it.
+- <removed>: goals the person removed, as their key words, one per line
 - While a goal is set, each line in <subjects> ends with the milestone the subject serves, - when the goal does not need it, or ? when it is not linked yet.`;
 var GOAL_PARTS = {
-  "goal-from-person": `Write GOAL only from what the person wrote in <person>, or in a catch-up, the person's own messages in <conversation>. Never propose from the agent's words in <reply>, <activity> or <tasks>, even when the agent writes "Goal:" or sums up the work.`,
+  "goal-when-clear": `Write GOAL when no goal is set, or when <goal> says met, once the session's work shows the one outcome it is for. The person may name it, or the open subjects and the agent's plan for them may lead to it. Never write GOAL from a summary of work that already finished.`,
   "goal-finish-line": `Write GOAL only for an outcome with a finish line, one someone could check as met or not, such as "2.5 in the store" or "the import ready to demo". A direction is not a goal: "make search faster", "every item should earn its place" or "keep the list tidy" get no GOAL.`,
-  "goal-not-again": `Never propose the goal in <goal>, a goal in <proposed>, or a goal in <declined> again, in the same words or in other words. A goal the person declined stays declined until they state it again as new work.`,
-  "goal-belongs-to-person": `The goal belongs to the person. GOAL only proposes: the person uses it, edits it or declines it. Never write GOAL to reword or update the goal in <goal>, and never write the goal into the head, a subject or a milestone.`,
-  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
+  "goal-wait": `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show a goal. A met goal stays on the page until the next one is set.`,
+  "goal-not-again": `Never write the goal in <goal> or a goal in <removed> again, in the same words or in other words. A goal the person removed stays removed until they type it.`,
+  "goal-typed-kept": `A goal marked (typed) is the person's. Never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
+  "goal-work-left": `When the session's work no longer moves a goal that is not typed forward, as when the person moved on to other work and the goal's open subjects went stale, close those subjects with DONE or DROP, then write GOAL for the outcome the work is for now, or RETIRE when none is clear. Never replace a goal while its work is still open.`,
+  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
+  "milestone-no-work": `A milestone marked ${NO_WORK_LINKED} has no subject serving it. Write SERVES for a subject whose work moves it forward, one under - included, DONE when the exchange shows it done, or DROP when the goal no longer needs it.`,
   "milestones-for-new-goal": `When <goal> says it was just set, its milestones belong to the goal before it, and each one your answer does not name goes. For each one the new goal still needs, write MILESTONE again with its name, status and text. Write MILESTONE for each outcome it needs that none covers, so the goal has ${MILESTONES_MIN} to ${MILESTONES_MAX}.`,
-  "serves-every-subject": `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work moves forward, or - when the goal does not need it. Change a link only when what the work is for changed. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`
+  "serves-every-subject": `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work moves forward, or - when the goal does not need it. With GOAL, write SERVES for every open subject, naming the new milestones. Change a link only when what the work is for changed, or when a subject under - moves a milestone forward. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`
 };
 function goalRules(without = []) {
   return Object.keys(GOAL_PARTS).filter((id) => !without.includes(id)).map((id) => `- ${GOAL_PARTS[id]}`).join(NL4);
@@ -8820,15 +8874,21 @@ function goalBlocks(o) {
   if (o === null)
     return [];
   const g = o.goal;
-  const state = g?.isAwaitingMilestones ? " (just set)" : g?.metAt != null ? " (met)" : "";
-  const milestones = o.milestones.filter((m) => m.status !== "dropped").map((m) => `${m.id} | ${m.status} | ${m.name} | ${m.text || "-"}`);
-  const p = o.proposedGoal;
+  const marks = g ? [
+    ...g.source === "typed" ? ["typed"] : [],
+    ...g.isAwaitingMilestones ? ["just set"] : g.metAt != null ? ["met"] : []
+  ] : [];
+  const state = marks.length > 0 ? ` (${marks.join(", ")})` : "";
+  const served = new Set(Object.values(o.serves));
+  const milestones = o.milestones.filter((m) => m.status !== "dropped").map((m) => {
+    const isUnserved = m.status !== "done" && !served.has(m.id);
+    return `${m.id} | ${m.status} | ${m.name} | ${m.text || "-"}${isUnserved ? ` | ${NO_WORK_LINKED}` : ""}`;
+  });
   const block = (tag, body) => `<${tag}>${NL4}${body}${NL4}</${tag}>`;
   return [
     ...g ? [block("goal", `${g.text}${state}`)] : [],
     ...g && milestones.length > 0 ? [block("milestones", milestones.join(NL4))] : [],
-    ...p ? [block("proposed", `${p.text} | ${p.milestones.map((m) => `${m.status} ${m.name}`).join("; ")}`)] : [],
-    ...o.declinedGoals.length > 0 ? [block("declined", o.declinedGoals.join(NL4))] : []
+    ...o.removedGoals.length > 0 ? [block("removed", o.removedGoals.join(NL4))] : []
   ];
 }
 

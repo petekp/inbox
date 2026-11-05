@@ -2,17 +2,20 @@ import type { SessionStatus } from '../types'
 import { NL } from './ledger-prompt'
 import { MILESTONES_MAX, MILESTONES_MIN, NAME_WORDS, TEXT_WORDS } from './status-limits'
 
+/** The mark on a milestone line that no subject serves. */
+const NO_WORK_LINKED = 'no work linked'
+
 /** The lines the Status call writes for the goal, after the lines it writes for subjects. */
 export const GOAL_LINES = `GOAL: outcome | status name; status name
+RETIRE: why the goal no longer fits the work
 MILESTONE: status | name | where it stands
 SERVES: subject id or name | milestone id or name, or - when the goal does not need it
-GOAL proposes one outcome with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, then its name: GOAL: 2.5 in the store | done Bug fixed; working Release built; queued Store review. It holds no date or time. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`
+GOAL sets the goal, with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, then its name: GOAL: 2.5 in the store | done Bug fixed; working Release built; queued Store review. It holds no date or time. RETIRE clears the goal and sets none. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`
 
 /** The input blocks the goal adds, as the system text describes them. */
-export const GOAL_INPUT = `- <goal>: the outcome the person set for the work, when one is set. It says when the goal is met, and when it was just set, so its milestones still belong to the goal before it.
-- <milestones>: the outcomes the goal needs, one per line: id | status | name | where it stands
-- <proposed>: a goal you proposed that the person has not answered yet: outcome | its milestones
-- <declined>: goals the person declined, as their key words, one per line
+export const GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is set. It says (typed) when the person typed it, (met) when every milestone is done, and (just set) when the person just typed it, so its milestones still belong to the goal before it.
+- <milestones>: the outcomes the goal needs, one per line: id | status | name | where it stands. A line ends with | ${NO_WORK_LINKED} when no subject serves it.
+- <removed>: goals the person removed, as their key words, one per line
 - While a goal is set, each line in <subjects> ends with the milestone the subject serves, - when the goal does not need it, or ? when it is not linked yet.`
 
 /**
@@ -20,13 +23,16 @@ export const GOAL_INPUT = `- <goal>: the outcome the person set for the work, wh
  * The parts read in this order.
  */
 export const GOAL_PARTS = {
-  'goal-from-person': `Write GOAL only from what the person wrote in <person>, or in a catch-up, the person's own messages in <conversation>. Never propose from the agent's words in <reply>, <activity> or <tasks>, even when the agent writes "Goal:" or sums up the work.`,
+  'goal-when-clear': `Write GOAL when no goal is set, or when <goal> says met, once the session's work shows the one outcome it is for. The person may name it, or the open subjects and the agent's plan for them may lead to it. Never write GOAL from a summary of work that already finished.`,
   'goal-finish-line': `Write GOAL only for an outcome with a finish line, one someone could check as met or not, such as "2.5 in the store" or "the import ready to demo". A direction is not a goal: "make search faster", "every item should earn its place" or "keep the list tidy" get no GOAL.`,
-  'goal-not-again': `Never propose the goal in <goal>, a goal in <proposed>, or a goal in <declined> again, in the same words or in other words. A goal the person declined stays declined until they state it again as new work.`,
-  'goal-belongs-to-person': `The goal belongs to the person. GOAL only proposes: the person uses it, edits it or declines it. Never write GOAL to reword or update the goal in <goal>, and never write the goal into the head, a subject or a milestone.`,
-  'milestones-are-outcomes': `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
+  'goal-wait': `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show a goal. A met goal stays on the page until the next one is set.`,
+  'goal-not-again': `Never write the goal in <goal> or a goal in <removed> again, in the same words or in other words. A goal the person removed stays removed until they type it.`,
+  'goal-typed-kept': `A goal marked (typed) is the person's. Never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
+  'goal-work-left': `When the session's work no longer moves a goal that is not typed forward, as when the person moved on to other work and the goal's open subjects went stale, close those subjects with DONE or DROP, then write GOAL for the outcome the work is for now, or RETIRE when none is clear. Never replace a goal while its work is still open.`,
+  'milestones-are-outcomes': `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
+  'milestone-no-work': `A milestone marked ${NO_WORK_LINKED} has no subject serving it. Write SERVES for a subject whose work moves it forward, one under - included, DONE when the exchange shows it done, or DROP when the goal no longer needs it.`,
   'milestones-for-new-goal': `When <goal> says it was just set, its milestones belong to the goal before it, and each one your answer does not name goes. For each one the new goal still needs, write MILESTONE again with its name, status and text. Write MILESTONE for each outcome it needs that none covers, so the goal has ${MILESTONES_MIN} to ${MILESTONES_MAX}.`,
-  'serves-every-subject': `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work moves forward, or - when the goal does not need it. Change a link only when what the work is for changed. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`,
+  'serves-every-subject': `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work moves forward, or - when the goal does not need it. With GOAL, write SERVES for every open subject, naming the new milestones. Change a link only when what the work is for changed, or when a subject under - moves a milestone forward. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`,
 } as const
 
 export type GoalPartId = keyof typeof GOAL_PARTS
@@ -39,21 +45,29 @@ export function goalRules(without: readonly GoalPartId[] = []): string {
     .join(NL)
 }
 
-/** The goal's input blocks: the goal and its milestones, a proposal waiting for the person, and the declined goals. */
+/** The goal's input blocks: the goal and its milestones, and the removed goals. */
 export function goalBlocks(o: SessionStatus | null): string[] {
   if (o === null) return []
   const g = o.goal
-  const state = g?.isAwaitingMilestones ? ' (just set)' : g?.metAt != null ? ' (met)' : ''
+  const marks = g
+    ? [
+        ...(g.source === 'typed' ? ['typed'] : []),
+        ...(g.isAwaitingMilestones ? ['just set'] : g.metAt != null ? ['met'] : []),
+      ]
+    : []
+  const state = marks.length > 0 ? ` (${marks.join(', ')})` : ''
+  const served = new Set(Object.values(o.serves))
   const milestones = o.milestones
     .filter(m => m.status !== 'dropped')
-    .map(m => `${m.id} | ${m.status} | ${m.name} | ${m.text || '-'}`)
-  const p = o.proposedGoal
+    .map(m => {
+      const isUnserved = m.status !== 'done' && !served.has(m.id)
+      return `${m.id} | ${m.status} | ${m.name} | ${m.text || '-'}${isUnserved ? ` | ${NO_WORK_LINKED}` : ''}`
+    })
   const block = (tag: string, body: string) => `<${tag}>${NL}${body}${NL}</${tag}>`
 
   return [
     ...(g ? [block('goal', `${g.text}${state}`)] : []),
     ...(g && milestones.length > 0 ? [block('milestones', milestones.join(NL))] : []),
-    ...(p ? [block('proposed', `${p.text} | ${p.milestones.map(m => `${m.status} ${m.name}`).join('; ')}`)] : []),
-    ...(o.declinedGoals.length > 0 ? [block('declined', o.declinedGoals.join(NL))] : []),
+    ...(o.removedGoals.length > 0 ? [block('removed', o.removedGoals.join(NL))] : []),
   ]
 }

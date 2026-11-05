@@ -10,8 +10,10 @@ export type RowPress =
       id: string
     }
   | { action: 'step'; id: string; step: number; label: string }
-  /** Answers the Status page's proposed goal. `id` is `GOAL_KEYS_ID`. A typed goal is a `type` press on that id. */
-  | { action: 'use-goal' | 'decline-goal'; id: string }
+  /** Removes the Status page's goal. `id` is `GOAL_KEYS_ID`. A typed goal is a `type` press on that id. */
+  | { action: 'remove-goal'; id: string }
+  /** Undo of Remove goal: brings back the goal the person removed. `id` is `GOAL_KEYS_ID`. */
+  | { action: 'restore-goal'; id: string }
 
 export type PrActionId =
   | 'thread-address'

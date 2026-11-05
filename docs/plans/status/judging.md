@@ -44,7 +44,7 @@ A case is a starting state, then steps, with the fact list beside them.
 
 - **The starting state:** a saved ledger, with its Status, open asks and findings, and the session's presence.
 - **A step** has a time, and runs in this order:
-  - host events: a child starts, acts or ends, the person looks at the page for some seconds, or the person presses Set as goal or Not now or types a goal, through the host's own `goalPressed`;
+  - host events: a child starts, acts or ends, the person looks at the page for some seconds, or the person presses the goal's Remove or types a goal, through the host's own `goalPressed`;
   - fixture events, in a replay that skips the ledger call: an ask opens or closes;
   - at most one call: a reply, a mid-turn call or a catch-up, each with its exchange or conversation, or a recorded call's exchange as it was.
 - **The fact list** gives, for each step, the session's focus, the goal and each milestone's real state, every piece of work with its aliases, its real state and the milestone it serves, the asks and the pieces each holds up, the running work and the piece each serves, what is not work, and any goal the person stated at that step. A step lists only what it changes, and the pieces it changes are the step's changes.
@@ -63,7 +63,7 @@ A next build's record of a Status call holds the call's input as data: the Statu
 
 These run after every step of every replay, on the saved Status, the page `statusPage` draws, and the fact list:
 
-- No text the model writes holds a time word or a date: the head, the goal or a proposal, a milestone, a name, where it stands, or a was line.
+- No text the model writes holds a time word or a date: the head, the goal, a milestone, a name, where it stands, or a was line.
 - A name has at most 3 words, no "…" and no question mark. So do the head's title and a milestone's name.
 - The head has a title and a one-line description, and the description does not repeat the title.
 - A text names no command, file, hash, ticket or PR number, or count of tests, files, commits, lines, calls or checks.
@@ -86,16 +86,16 @@ These run after every step of every replay, on the saved Status, the page `statu
 The goal adds these:
 
 - The answer the host would apply, after its one re-ask, parses.
-- No proposal appears at a step where the person stated no new outcome with a finish line.
-- A step where the person stated one shows a proposal of it, unless it is already the goal.
+- No goal is set at a step that makes no next goal clear.
+- A step that makes the next goal clear, from the person's words or the work, shows that goal.
 - Each milestone in the fact list has a milestone with a mark its state allows.
-- A goal or a proposal has 2 to 5 milestones.
+- A goal has 2 to 5 milestones, none named after a subject.
 - A subject the goal needs is not under Other work, and one it does not need is not linked to a milestone.
 
 **The code holds** are checked at every step of every run, and any failure blocks:
 
-- The goal changes only on a press.
-- No proposal restates the goal or a declined goal in its words, as `restatesGoal` judges it.
+- A typed goal that is not met, with linked work still open, changes only on a press.
+- A goal set with no press restates neither the goal before it nor a goal the person removed, as `restatesGoal` judges it.
 - The goal shows met exactly while every milestone that is not dropped is done.
 - A milestone shows ◆ exactly while it is open and an open ask holds it up, itself or through a subject that serves it.
 - Under Other work, an open subject that changed since the person looked, or that an ask holds up, has its own row.
@@ -127,7 +127,7 @@ The judge calls 23 of the 24 pages right (`status-judge-2026-10-28T23-54-21.726Z
 A release run may block falsely with a chance of at most 0.05 when every rate sits at its tolerance. Each test is an exact binomial: it blocks when its failures would be that unlikely at its tolerance. The 0.05 is split across four layers, and within a layer each test gets an equal share.
 
 - **What counts.** An opportunity is one rule at one step in one run, where the step could make that rule newly fail. A rule that reads only text the model wrote has one where the step's answer wrote. A rule that reads the facts has one where the answer wrote or the facts changed. A failure counts at the step where it first appears. A failure that was already there at the last step with a call is carried, and the step is left out of that rule's count. Several failures of one rule at one step are one failure.
-- **The tolerances.** 0.10 for a rule, 0.20 for a missed proposal, and 0.15 for a judge check.
+- **The tolerances.** 0.10 for a rule, 0.20 for a missed goal, and 0.15 for a judge check.
 
 | Layer | Share | Each test |
 | --- | --- | --- |

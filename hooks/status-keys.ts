@@ -1,27 +1,27 @@
 import type { Item, PressKind } from '../types'
+import { UNDO_KEY } from './help'
 import type { ActionEmphasis } from './rows'
 import type { MilestoneRow } from './status-goal-page'
 import type { StatusPage, StatusRow } from './status-page'
 
 /**
  * A press on the Status page. `show-ask` opens Asks with that ask selected. `type-goal` opens Reply's field for the
- * goal, prefilled with `text`. `use-goal` and `decline-goal` answer the proposal. `toggle-fold` unfolds a done fold, or
+ * goal, prefilled with `text`. `remove-goal` removes the goal, and `restore-goal` is its Undo. `toggle-fold` unfolds a done fold, or
  * folds it again, in the look that drew it. None sends a message.
  */
 type StatusPress =
   | { action: 'show-ask'; askId: string }
   | { action: 'type-goal'; text: string }
-  | { action: 'use-goal' }
-  | { action: 'decline-goal' }
+  | { action: 'remove-goal' }
+  | { action: 'restore-goal' }
   | { action: 'toggle-fold'; foldId: string }
 
 export type StatusKey = { press: StatusPress; label: string; hotkey: string; kind: PressKind; emphasis: ActionEmphasis }
 
-/** What on the Status page has buttons: the proposal, the goal, a milestone or a row. Its id is the selection's. */
+/** What on the Status page has buttons: the goal, a milestone or a row. Its id is the selection's. */
 export type StatusKeyTarget = { id: string; keys: StatusKey[] }
 
-/** The id of the proposal's buttons and of the goal's, apart from row and milestone ids. */
-export const PROPOSAL_KEYS_ID = 'proposal'
+/** The id of the goal's buttons, apart from row and milestone ids. */
 export const GOAL_KEYS_ID = 'goal'
 
 /** The View button's label, by the kind of ask it opens. */
@@ -61,75 +61,57 @@ export function milestoneKeyPlan(m: MilestoneRow): StatusKey[] {
   return m.ask === null ? [] : [viewAsk(m.ask)]
 }
 
-/** The proposal's buttons, in the order every look draws them. Edit opens the field with the proposal in it. */
-export function proposalKeyPlan(page: StatusPage): StatusKey[] {
-  if (page.proposal === null) return []
-
-  return [
-    { press: { action: 'use-goal' }, label: 'Set as goal', hotkey: 's', kind: 'mark', emphasis: 'primary' },
-    {
-      press: { action: 'type-goal', text: page.proposal.text },
-      label: 'Edit',
-      hotkey: 'e',
-      kind: 'view',
-      emphasis: 'normal',
-    },
-    { press: { action: 'decline-goal' }, label: 'Not now', hotkey: 'x', kind: 'mark', emphasis: 'normal' },
-  ]
+const REMOVE_GOAL: StatusKey = {
+  press: { action: 'remove-goal' },
+  label: 'Remove',
+  hotkey: 'r',
+  kind: 'mark',
+  emphasis: 'quiet',
 }
 
-/**
- * Whether the goal's button draws in the goal's header line, as "Goal · Edit", rather than on its own line: while a goal
- * is set and not met. A met goal asks for the next one, so Set next goal stays a button under the milestones.
- */
-export function isGoalKeyInHeader(page: StatusPage): boolean {
-  return page.goal !== null && !page.goal.isMet
+const RESTORE_GOAL: StatusKey = {
+  press: { action: 'restore-goal' },
+  label: 'Undo',
+  hotkey: UNDO_KEY,
+  kind: 'mark',
+  emphasis: 'normal',
 }
 
+/** New: opens an empty goal field. Its words leave out "goal", since the buttons sit on the Goal heading. */
+const newGoal = (emphasis: StatusKey['emphasis']): StatusKey => ({
+  press: { action: 'type-goal', text: '' },
+  label: 'New',
+  hotkey: 'n',
+  kind: 'view',
+  emphasis,
+})
+
 /**
- * The goal's button: Set a goal before one is set, Edit while one is, and Set next goal once it is met. Set a goal and
- * Edit are quiet, since a missing goal holds up no work and a set one needs no change. While a proposal shows there is
- * none: its Edit types a goal.
+ * The goal's buttons, drawn on the goal's heading row: New before a goal is set, after Undo while a removed goal can
+ * come back, then Edit while one is set, or New once it is met, then Remove. New with no goal, Edit and Remove are
+ * quiet, since a missing goal holds up no work and a set one needs no change.
  */
 export function goalKeyPlan(page: StatusPage): StatusKey[] {
-  if (page.proposal !== null) return []
   const g = page.goal
-  if (g === null)
-    return [
-      { press: { action: 'type-goal', text: '' }, label: 'Set a goal', hotkey: 's', kind: 'view', emphasis: 'quiet' },
-    ]
-  if (g.isMet)
-    return [
-      {
-        press: { action: 'type-goal', text: '' },
-        label: 'Set next goal',
-        hotkey: 'g',
-        kind: 'view',
-        emphasis: 'normal',
-      },
-    ]
+  if (g === null) return [...(page.canRestoreGoal ? [RESTORE_GOAL] : []), newGoal('quiet')]
+  if (g.isMet) return [newGoal('normal'), REMOVE_GOAL]
 
-  return [{ press: { action: 'type-goal', text: g.text }, label: 'Edit', hotkey: 'e', kind: 'view', emphasis: 'quiet' }]
+  return [
+    { press: { action: 'type-goal', text: g.text }, label: 'Edit', hotkey: 'e', kind: 'view', emphasis: 'quiet' },
+    REMOVE_GOAL,
+  ]
 }
 
 const rowTarget = (r: StatusRow): StatusKeyTarget => ({ id: r.id, keys: statusKeyPlan(r) })
 
 /**
- * Everything on the Status page with buttons, in the order the looks draw them: the targets j and k move between. A
- * milestone's rows follow it.
+ * Everything on the Status page with buttons, in the order the looks draw them: the targets j and k move between. The
+ * goal's buttons come first, as its section does, and a milestone's rows follow it.
  */
 export function statusKeyRows(page: StatusPage): StatusKeyTarget[] {
-  const proposal = { id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(page) }
-  const goal = { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) }
-  const isProposalBelowGoal = page.proposal?.isBelowGoal ?? false
-  const isGoalFirst = isGoalKeyInHeader(page)
-
   return [
-    ...(isProposalBelowGoal ? [] : [proposal]),
-    ...(isGoalFirst ? [goal] : []),
+    { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) },
     ...(page.goal?.milestones ?? []).flatMap(m => [{ id: m.id, keys: milestoneKeyPlan(m) }, ...m.rows.map(rowTarget)]),
-    ...(isGoalFirst ? [] : [goal]),
-    ...(isProposalBelowGoal ? [proposal] : []),
     ...page.rows.map(rowTarget),
   ].filter(t => t.keys.length > 0)
 }
@@ -137,7 +119,7 @@ export function statusKeyRows(page: StatusPage): StatusKeyTarget[] {
 /**
  * The target whose keys work: the selected one while it still has buttons, else the first that opens an ask, else the
  * first that is not a done fold, else the first. An ask holds up work and a missing goal does not, so View wins over
- * Set a goal. A done fold holds up nothing, so Set next goal wins over a milestone's fold above it.
+ * New.
  */
 export function statusSelected(page: StatusPage, selectedId: string | null): StatusKeyTarget | null {
   const targets = statusKeyRows(page)
@@ -154,4 +136,4 @@ export function statusSelected(page: StatusPage, selectedId: string | null): Sta
 }
 
 /** The goal's text field: its placeholder, and the label of the button that sets what it holds. */
-export const GOAL_FIELD = { placeholder: 'An outcome to work toward', submit: 'Set goal' } as const
+export const GOAL_FIELD = { placeholder: 'An outcome to work toward', submit: 'Save' } as const
