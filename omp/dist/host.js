@@ -1558,6 +1558,7 @@ function recordPress(kind, action, text, ctx, previous) {
 function held(last, message, by, ctx) {
   return { ...last, delivery: { state: "held", message, until: ctx.now + ctx.holdMs, by } };
 }
+var fixSentOutcome = (findingId) => `fix sent for ${findingId}`;
 function isHeldSend(last) {
   return last?.delivery?.state === "held";
 }
@@ -1570,8 +1571,12 @@ function pressed(ledger, last, p, ctx) {
     return goalPressed(ledger, p, record, ctx.now);
   if (p.action === "undo") {
     const isOpenFinding = ledger.findings.some((f) => f.id === p.id);
-    if (isOpenFinding && last?.action === "address" && isHeldSend(last))
-      return { ...unchanged, dropLast: true };
+    if (isOpenFinding && last?.action === "address" && isHeldSend(last)) {
+      const asker = ledger.closed.findLast((c) => c.outcome === fixSentOutcome(p.id) && c.at === last.at);
+      if (!asker)
+        return { ...unchanged, dropLast: true };
+      return { ...unchanged, ledger: reopenItem(ledger, asker.id), reopenedId: asker.id, dropLast: true };
+    }
     if (isOpenFinding && last?.action === "address" && !last.isKept)
       return { ...unchanged, last: { ...last, isKept: true } };
     if (ledger.items.some((i) => i.id === p.id) || isOpenFinding)
@@ -1601,7 +1606,7 @@ function pressed(ledger, last, p, ctx) {
         const asker = ledger.items.find((i) => i.id === finding.askedAs);
         return asker ? {
           ...sent,
-          ledger: closeItem(ledger, asker.id, { how: "update", outcome: `fix sent for ${finding.id}` }, ctx.now)
+          ledger: closeItem(ledger, asker.id, { how: "update", outcome: fixSentOutcome(finding.id) }, ctx.now)
         } : sent;
       }
       case "issue":
@@ -9598,7 +9603,10 @@ function dueRows(s, now) {
 async function releaseHeldSends(host, current) {
   const due = dueRows(current ?? await host.read(), await host.now());
   for (const id of due)
-    await releaseOne(host, id);
+    await releaseOne(host, id, false);
+}
+async function releaseHeldSendEarly(host, id) {
+  await releaseOne(host, id, true);
 }
 function refusedHeld(s, id, reason) {
   const last = s.lastActions[id];
@@ -9610,14 +9618,14 @@ function refusedHeld(s, id, reason) {
     ledger: last.kind === "mark" ? reopenOnFailure(s.ledger, id, last.at) : s.ledger
   };
 }
-async function releaseOne(host, id) {
+async function releaseOne(host, id, isEarly) {
   let attempt = null;
   const started = host.update(async (s) => {
     attempt = null;
     const last = s.lastActions[id];
     const held = last?.delivery;
     const now = await host.now();
-    if (!last || held?.state !== "held" || held.until > now)
+    if (!last || held?.state !== "held" || held.until > now && !isEarly)
       return s;
     await host.prepare?.(s);
     const deliveryId = host.newId();
@@ -9774,6 +9782,9 @@ async function checkPrFirst(host, p, rowId, pressId, holds) {
 }
 async function startPress(host, p, isStale, holds) {
   const rowId = pressRowId(p);
+  const isSecondPressOnHeld = !isPrPress(p) && p.action !== "undo" && isHeldSend((await host.read()).lastActions[rowId]);
+  if (isSecondPressOnHeld && !isStale)
+    await releaseHeldSendEarly(host, rowId);
   const localPressId = host.newId();
   let isUnconfirmed = false;
   let isRowFailed = false;
