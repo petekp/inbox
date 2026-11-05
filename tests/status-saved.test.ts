@@ -155,6 +155,20 @@ test('a saved Status drops subjects and children it cannot read, reads a delegat
   expect(upgradeStatus({ role: 'session' })).toBeNull()
 })
 
+test('a closed subject or milestone saved before closedAt was kept closes at its last change', () => {
+  const o = upgradeStatus({
+    ...EMPTY_SESSION_STATUS,
+    subjects: [
+      { id: 's1', name: 'A', status: 'done', text: 'shipped', changedAt: 5 },
+      { id: 's2', name: 'B', status: 'working', text: 'b', changedAt: 6 },
+    ],
+    milestones: [{ id: 'm1', name: 'M', status: 'done', text: '', was: null, changedAt: 4 }],
+  })!
+
+  expect(o.subjects.map(x => x.closedAt)).toEqual([5, null])
+  expect(o.milestones[0]?.closedAt).toBe(4)
+})
+
 test('a Status saved before the goal loads with no goal, milestones or links', () => {
   const saved = upgradeStatus({ head: null, subjects: [], children: [], askSubjects: {}, nextId: 1, nextChildId: 1 })
 

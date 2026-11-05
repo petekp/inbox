@@ -343,12 +343,13 @@ export function paneStatus(
     lines: look === 'desktop' ? desktopTextLines(text, statusTextWidth(depth)) : inkLines(text, statusTextWidth(depth)),
   })
   /**
-   * Removes the goal, then selects Set a goal, scrolls to it and focuses it. The pressed button is gone, and the
-   * terminal would move its focus to the next button drawn.
+   * Removes the goal and selects its Undo, or brings it back and selects Edit, then scrolls to the button and focuses
+   * it. The pressed button is gone, and the terminal would move its focus to the next button drawn.
    */
-  const removeGoal = async (surface: UiPressArgument['surface']) => {
-    await runPress({ action: 'remove-goal', id: GOAL_KEYS_ID }, surface)
-    await selectStatusRow(GOAL_KEYS_ID, `type-goal-${GOAL_KEYS_ID}`)
+  const pressGoal = async (action: 'remove-goal' | 'restore-goal', surface: UiPressArgument['surface']) => {
+    await runPress({ action, id: GOAL_KEYS_ID }, surface)
+    const next = action === 'remove-goal' ? 'restore-goal' : 'type-goal'
+    await selectStatusRow(GOAL_KEYS_ID, `${next}-${GOAL_KEYS_ID}`)
   }
   /** A target's buttons from its plan. Only the selected target's keys press it, so only that one names its keys. */
   const statusKeys = (t: StatusKeyTarget): KeyAction[] =>
@@ -365,7 +366,7 @@ export function paneStatus(
             ? startTyping(GOAL_KEYS_ID, press.text)
             : press.action === 'toggle-fold'
               ? toggleFold(press.foldId)
-              : removeGoal(p.surface),
+              : pressGoal(press.action, p.surface),
     }))
   const { goalAbove, setGoal, setGoalBare, markRun } = paneStatusGoal(
     {

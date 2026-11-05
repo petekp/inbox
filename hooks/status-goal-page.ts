@@ -43,6 +43,8 @@ export type GoalBlock = {
 /** The goal's parts of the Status page. */
 export type GoalParts = {
   goal: GoalBlock | null
+  /** Whether Undo can bring back the goal the person removed. */
+  canRestoreGoal: boolean
 }
 
 const AWAITING_TEXT = 'Milestones after the next reply'
@@ -88,7 +90,7 @@ function milestoneRow(m: Milestone, o: SessionStatus, items: readonly Item[]): M
 /** The goal block with its Now line, from the saved Status and the open asks. */
 export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalParts {
   const g = o?.goal ?? null
-  if (o === null || g === null) return { goal: null }
+  if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null }
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt)
   const kept = o.milestones.filter(m => m.status !== 'dropped')
   const shown = o.milestones.filter(
@@ -110,5 +112,6 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalP
       awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestones: g.isAwaitingMilestones ? [] : shown.map(m => milestoneRow(m, o, items)),
     },
+    canRestoreGoal: false,
   }
 }

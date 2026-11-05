@@ -17,6 +17,8 @@ export function pressText(p: RowPress): string {
       return p.label
     case 'remove-goal':
       return 'Remove goal'
+    case 'restore-goal':
+      return 'Undo'
     default:
       return capitalized(p.action)
   }

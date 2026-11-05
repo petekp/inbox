@@ -71,6 +71,7 @@ export function overview(o: Pick<SessionStatus, 'head' | 'subjects'> & Partial<S
     look: null,
     goal: null,
     removedGoals: [],
+    goalRemoved: null,
     milestones: [],
     nextMilestoneId: 1,
     serves: {},

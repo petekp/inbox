@@ -1,7 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
 import { parseStatus } from '../hooks/status'
-import { removeGoal, setTypedGoal } from '../hooks/status-goal-ops'
+import { removeGoal, restoreGoal, setTypedGoal } from '../hooks/status-goal-ops'
+import { GOAL_LEFT_MS } from '../hooks/status-limits'
 import { applyStatus } from '../hooks/status-ops'
 import { statusPrompt, statusSystem } from '../hooks/status-prompt'
 import { GOAL_PARTS } from '../hooks/status-prompt-goal'
@@ -71,7 +72,7 @@ test('a GOAL line that restates the goal, names its milestones or restates a rem
     after(
       done,
       'NEW: working | Grouping | drafted\nGOAL: Import ready to demo in 2.7 | queued Grouping; queued 2.7 cut',
-      40,
+      30 + GOAL_LEFT_MS,
     ).goal,
   ).toMatchObject({
     text: 'Import ready to demo in 2.7',
@@ -79,20 +80,26 @@ test('a GOAL line that restates the goal, names its milestones or restates a rem
   })
 })
 
-test('a GOAL or RETIRE line replaces an inferred goal only once none of its linked work is open, read after the same answer closed it', () => {
+test('a GOAL or RETIRE line replaces an inferred goal only once none of its linked work is open and it has not moved forward for GOAL_LEFT_MS, and never with the goal it replaced', () => {
   const linked = after(withGoal(), 'SERVES: s1 | m2\nSERVES: s2 | m3', 30)
   const next = 'GOAL: Search under 100 ms | working Index rebuilt; queued 2.7 live'
   const work = 'NEW: working | Search index | rebuilt\nNEW: queued | Ranking | not started'
+  const betweenMilestones = after(linked, 'DONE: s1 | merged\nDROP: s2 | not needed', 40)
+  const later = 40 + GOAL_LEFT_MS
+  const replaced = after(betweenMilestones, `${work}\n${next}`, later)
 
-  expect(after(linked, `${work}\n${next}`, 40).goal?.text).toBe('Import ready to demo')
-  expect(after(linked, `DONE: s1 | merged\n${work}\n${next}`, 40).goal?.text).toBe('Import ready to demo')
-  expect(after(linked, `${next}\nDONE: s1 | merged\nDROP: s2 | not needed\n${work}`, 40).goal).toMatchObject({
-    text: 'Search under 100 ms',
-    was: 'Import ready to demo',
-    source: 'inferred',
-  })
-  expect(after(linked, 'RETIRE: moved on', 40).goal).not.toBeNull()
-  expect(after(linked, 'DONE: s1 | merged\nDROP: s2 | not needed\nRETIRE: moved on', 40)).toMatchObject({
+  expect(after(linked, `${work}\n${next}`, later).goal?.text).toBe('Import ready to demo')
+  expect(after(linked, `DONE: s1 | merged\nDROP: s2 | not needed\n${work}\n${next}`, 40).goal?.text).toBe(
+    'Import ready to demo',
+  )
+  expect(after(betweenMilestones, `${work}\n${next}`, later - 1).goal?.text).toBe('Import ready to demo')
+  expect(replaced.goal).toMatchObject({ text: 'Search under 100 ms', was: 'Import ready to demo', source: 'inferred' })
+  expect(after(replaced, 'GOAL: Import ready to demo | queued A; queued B', later + GOAL_LEFT_MS).goal?.text).toBe(
+    'Search under 100 ms',
+  )
+  expect(after(betweenMilestones, `${work}\n${next}\nRETIRE: moved on`, later).goal?.text).toBe('Search under 100 ms')
+  expect(after(betweenMilestones, 'RETIRE: moved on', later - 1).goal).not.toBeNull()
+  expect(after(betweenMilestones, 'RETIRE: moved on', later)).toMatchObject({
     goal: null,
     milestones: [],
     serves: {},
@@ -151,12 +158,25 @@ test('code closes a milestone once its linked work closed with one done, and lea
   expect(more.goal?.metAt).toBeNull()
 })
 
-test('Remove goal clears the goal, its milestones and links, and the call does not set it again', () => {
-  const removed = removeGoal(after(withGoal(), 'SERVES: s1 | m2\nLINK: i1 | m2', 30, new Set(['i1'])))
+test('Remove goal clears the goal, its milestones and links, and the call does not set it again, until Undo brings them back', () => {
+  const linked = after(withGoal(), 'SERVES: s1 | m2\nLINK: i1 | m2', 30, new Set(['i1']))
+  const removed = removeGoal(linked)
+  const noChange = parseStatus('NO CHANGE')!
 
   expect(removed).toMatchObject({ goal: null, milestones: [], serves: {}, askSubjects: {} })
   expect(removed.removedGoals).toEqual(['demo import ready'])
   expect(removeGoal(removed)).toBe(removed)
+  expect(restoreGoal(removed)).toEqual({ ...linked, goalRemoved: null })
+  expect(applyStatus(removed, noChange, 40, NO_ASKS, linked.goal!.setAt)?.goalRemoved).not.toBeNull()
+  expect(applyStatus(removed, noChange, 40, NO_ASKS, null)?.goalRemoved).toBeNull()
+  expect(setTypedGoal(removed, 'Ship 2.6', 40).goalRemoved).toBeNull()
+})
+
+test('typing a met goal again sets a new goal that is not met', () => {
+  const met = after(withGoal(), 'DONE: m2 | named\nDONE: m3 | written', 30)
+  const typed = setTypedGoal(met, 'Import ready to demo', 40)
+
+  expect(typed.goal).toMatchObject({ setAt: 40, metAt: null, isAwaitingMilestones: true, source: 'typed' })
 })
 
 test('milestones need a goal, move by id under the rewording hold, and stop at five', () => {
@@ -202,15 +222,12 @@ test('the goal is met once every milestone left is done, and unmet when one open
 })
 
 test('a typed goal unlinks every subject and waits until an answer from a call that read it keeps a milestone, and a rewording keeps its milestones and links and sends nothing', () => {
-  const met = after(
-    after(withGoal(), 'SERVES: s1 | m1\nSERVES: s2 | -', 22),
-    'DONE: m2 | named\nDONE: m3 | written',
-    25,
-  )
+  const linked = after(withGoal(), 'SERVES: s1 | m1\nSERVES: s2 | -', 22)
+  const met = after(linked, 'DONE: m2 | named\nDONE: m3 | written', 25)
   const typed = setTypedGoal(met, 'Ship 2.6 with import', 30)
   const answered = applyStatus(typed, parseStatus('NO CHANGE')!, 40, NO_ASKS)!
   const stale = applyStatus(typed, parseStatus('SET: m1 | working | redone')!, 40, NO_ASKS, met.goal!.setAt)!
-  const reworded = setTypedGoal(met, 'Demo import ready', 30)
+  const reworded = setTypedGoal(linked, 'Demo import ready', 30)
 
   expect(met.goal?.metAt).toBe(25)
   expect(typed.goal).toMatchObject({

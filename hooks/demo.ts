@@ -164,6 +164,7 @@ export function demoView(now: number, agent: string): DemoCopy {
           source: 'inferred',
         },
         removedGoals: [],
+        goalRemoved: null,
         milestones: [
           {
             id: 'm1',

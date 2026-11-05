@@ -43,6 +43,7 @@ var OPEN_SUBJECTS = 6;
 var NAME_KEPT = 20;
 var TEXT_KEPT = 12;
 var DESCRIPTION_KEPT = 14;
+var GOAL_LEFT_MS = 30 * 6e4;
 var REMOVED_KEPT = 10;
 var CHILD_KEPT_MS = 24 * 60 * 6e4;
 var CHILDREN_KEPT = 50;
@@ -78,6 +79,7 @@ var EMPTY_SESSION_STATUS = {
   look: null,
   goal: null,
   removedGoals: [],
+  goalRemoved: null,
   milestones: [],
   nextMilestoneId: 1,
   serves: {}
@@ -273,14 +275,33 @@ function milestoneOf(saved) {
     text: typeof m.text === "string" ? m.text : "",
     was: nonEmpty(m.was),
     changedAt,
-    closedAt: time(m.closedAt)
+    closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null)
+  };
+}
+function milestonesOf(saved) {
+  return (Array.isArray(saved) ? saved : []).map(milestoneOf).filter((m) => m !== null);
+}
+var isStringRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+function goalRemovedOf(saved) {
+  const r = saved;
+  const goal = goalOf(r?.goal);
+  if (goal === null || !isStringRecord(r?.serves) || !isStringRecord(r?.askSubjects)) return null;
+  const serves = Object.entries(r.serves).filter((e) => typeof e[1] === "string");
+  const asks = Object.entries(r.askSubjects).filter(
+    (e) => Array.isArray(e[1]) && e[1].every((x) => typeof x === "string")
+  );
+  return {
+    goal,
+    milestones: milestonesOf(r.milestones),
+    serves: Object.fromEntries(serves),
+    askSubjects: Object.fromEntries(asks)
   };
 }
 function droppedMilestoneIds(milestones) {
   return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
 }
 function goalFields(o, subjectIds) {
-  const milestones = (Array.isArray(o.milestones) ? o.milestones : []).map(milestoneOf).filter((m) => m !== null);
+  const milestones = milestonesOf(o.milestones);
   const dropped = droppedMilestoneIds(milestones);
   const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
@@ -298,6 +319,7 @@ function goalFields(o, subjectIds) {
   return {
     goal: goalOf(o.goal),
     removedGoals: removed.slice(-REMOVED_KEPT),
+    goalRemoved: goalRemovedOf(o.goalRemoved),
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves
@@ -333,7 +355,7 @@ function subjectOf(saved) {
     ...wasAndMerged(s.was, s.merged),
     createdAt: time2(s.createdAt) ?? changedAt,
     changedAt,
-    closedAt: time2(s.closedAt),
+    closedAt: time2(s.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
     into: typeof s.into === "string" ? s.into : null
   };
 }
@@ -932,34 +954,6 @@ function stepIconKind(step) {
   return first === "copy" || first === "terminal" ? "copy" : first === "open" || first === "link" ? "open" : void 0;
 }
 
-// ../hooks/pressed.ts
-function offersUndo(c) {
-  return c.how === "done" || c.how === "dismissed";
-}
-function isUndoable(c) {
-  return offersUndo(c) && !c.isSentToAgent;
-}
-function retryOf(id, last) {
-  if (!/^[if]\d+$/.test(id)) return null;
-  const step = /^step-(\d+)$/.exec(last.action);
-  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
-  switch (last.action) {
-    case "answer":
-      return { action: "answer", id, option: last.text };
-    case "explain":
-    case "compare":
-    case "address":
-    case "issue":
-    case "discuss":
-      return { action: last.action, id };
-    default:
-      return null;
-  }
-}
-function isRepeatOf(last, action) {
-  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
-}
-
 // ../hooks/tabs.ts
 var TAB_NAMES = [
   { id: "overview", label: "Status", symbol: "\u{1F9ED}" },
@@ -1053,6 +1047,34 @@ var MARK_LEGEND = [
 ];
 var STATUS_ONLY_MARKS = /* @__PURE__ */ new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
 
+// ../hooks/pressed.ts
+function offersUndo(c) {
+  return c.how === "done" || c.how === "dismissed";
+}
+function isUndoable(c) {
+  return offersUndo(c) && !c.isSentToAgent;
+}
+function retryOf(id, last) {
+  if (!/^[if]\d+$/.test(id)) return null;
+  const step = /^step-(\d+)$/.exec(last.action);
+  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
+  switch (last.action) {
+    case "answer":
+      return { action: "answer", id, option: last.text };
+    case "explain":
+    case "compare":
+    case "address":
+    case "issue":
+    case "discuss":
+      return { action: last.action, id };
+    default:
+      return null;
+  }
+}
+function isRepeatOf(last, action) {
+  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
+}
+
 // ../hooks/status-children.ts
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
@@ -1122,7 +1144,7 @@ function milestoneRow(m, o, items) {
 }
 function goalPage(o, items) {
   const g = o?.goal ?? null;
-  if (o === null || g === null) return { goal: null };
+  if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null };
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   const shown = o.milestones.filter(
@@ -1142,7 +1164,8 @@ function goalPage(o, items) {
       now: head ? `Now: ${head.description || head.title}` : null,
       awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
-    }
+    },
+    canRestoreGoal: false
   };
 }
 
@@ -1390,7 +1413,7 @@ function statusPage(s, now) {
   };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
-    isEmpty: head === null && rows.length === 0 && goal === null,
+    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
     ...goalParts,
     goal,

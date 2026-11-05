@@ -61,6 +61,7 @@ var ASK_READ_WORDS = 30;
 var FINISHED_READ = 10;
 var MILESTONES_MAX = 5;
 var MILESTONES_MIN = 2;
+var GOAL_LEFT_MS = 30 * 60000;
 var REMOVED_KEPT = 10;
 var CHILD_KEPT_MS = 24 * 60 * 60000;
 var CHILDREN_KEPT = 50;
@@ -98,6 +99,7 @@ var EMPTY_SESSION_STATUS = {
   look: null,
   goal: null,
   removedGoals: [],
+  goalRemoved: null,
   milestones: [],
   nextMilestoneId: 1,
   serves: {}
@@ -704,6 +706,8 @@ function pressText(p) {
       return p.label;
     case "remove-goal":
       return "Remove goal";
+    case "restore-goal":
+      return "Undo";
     default:
       return capitalized(p.action);
   }
@@ -1266,11 +1270,17 @@ function linkedSubjects(o) {
   const live = new Set(o.milestones.filter((m) => m.status !== "dropped").map((m) => m.id));
   return o.subjects.filter((s) => live.has(o.serves[s.id] ?? ""));
 }
-function mayReplaceGoal(o, kind) {
+function lastProgressAt(o, g) {
+  const milestones = o.milestones.filter((m) => m.status !== "dropped").map((m) => m.changedAt);
+  const done = linkedSubjects(o).flatMap((s) => s.status === "done" && s.closedAt !== null ? [s.closedAt] : []);
+  return Math.max(g.setAt, ...milestones, ...done);
+}
+function mayReplaceGoal(o, kind, now) {
   const g = o.goal;
   if (g === null || g.metAt !== null)
     return kind === "goal";
-  return g.source === "inferred" && !linkedSubjects(o).some(isOpen);
+  const isWorkLeft = !linkedSubjects(o).some(isOpen) && now - lastProgressAt(o, g) >= GOAL_LEFT_MS;
+  return g.source === "inferred" && isWorkLeft;
 }
 function inferredGoal(o, text, named, now) {
   const milestones = named.map((m, n) => ({
@@ -1290,7 +1300,7 @@ function inferredGoal(o, text, named, now) {
     isAwaitingMilestones: false,
     source: "inferred"
   };
-  return withoutLinksTo({ ...o, goal, milestones, nextMilestoneId: o.nextMilestoneId + milestones.length, serves: {} }, milestones);
+  return withoutLinksTo({ ...o, goal, goalRemoved: null, milestones, nextMilestoneId: o.nextMilestoneId + milestones.length, serves: {} }, milestones);
 }
 function hasWorkForGoal(o) {
   const held = new Set(linkedSubjects(o).map((s) => s.id));
@@ -1300,15 +1310,17 @@ function applyGoalOp(o, op, now, findSubject) {
   if (op.kind === "goal") {
     const text = clipWords(op.text, DESCRIPTION_KEPT);
     const milestones = op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }));
-    const isCurrent = o.goal !== null && (restatesGoal(text, o.goal.text) || hasGoalMilestones(o, milestones));
+    const g = o.goal;
+    const isCurrent = g !== null && (restatesGoal(text, g.text) || hasGoalMilestones(o, milestones));
+    const isPrevious = g?.was != null && restatesGoal(text, g.was);
     const isRemoved = o.removedGoals.some((key) => restatesGoal(text, key));
-    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, "goal");
-    if (op.milestones.length < MILESTONES_MIN || isCurrent || isRemoved || !isAllowed)
+    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, "goal", now);
+    if (op.milestones.length < MILESTONES_MIN || isCurrent || isPrevious || isRemoved || !isAllowed)
       return o;
     return inferredGoal(o, text, milestones, now);
   }
   if (op.kind === "retire")
-    return mayReplaceGoal(o, "retire") ? withoutGoal(o) : o;
+    return mayReplaceGoal(o, "retire", now) ? withoutGoal(o) : o;
   if (o.goal === null)
     return o;
   if (op.kind === "milestone")
@@ -1367,16 +1379,35 @@ function withoutGoal(o) {
   return withoutLinksTo({ ...o, goal: null, milestones: [], serves: {} }, []);
 }
 function removeGoal(o) {
-  if (o.goal === null)
+  const g = o.goal;
+  if (g === null)
     return o;
-  const removedGoals = [...o.removedGoals.filter((k) => k !== nameKey(o.goal.text)), nameKey(o.goal.text)];
-  return { ...withoutGoal(o), removedGoals: removedGoals.slice(-REMOVED_KEPT) };
+  const removedGoals = [...o.removedGoals.filter((k) => k !== nameKey(g.text)), nameKey(g.text)];
+  const goalRemoved = { goal: g, milestones: o.milestones, serves: o.serves, askSubjects: o.askSubjects };
+  return { ...withoutGoal(o), removedGoals: removedGoals.slice(-REMOVED_KEPT), goalRemoved };
+}
+function restoreGoal(o) {
+  const r = o.goalRemoved;
+  if (r === null || o.goal !== null)
+    return o;
+  const key = nameKey(r.goal.text);
+  const subjectIds = new Set(o.subjects.map((s) => s.id));
+  const serves = Object.fromEntries(Object.entries(r.serves).filter(([id]) => subjectIds.has(id)));
+  return {
+    ...o,
+    goal: r.goal,
+    milestones: r.milestones,
+    serves,
+    askSubjects: r.askSubjects,
+    removedGoals: o.removedGoals.filter((k) => k !== key),
+    goalRemoved: null
+  };
 }
 function setTypedGoal(o, text, now) {
   const typed = clipWords(text, DESCRIPTION_KEPT);
   if (typed === "")
     return o;
-  const isReworded = o.goal !== null && hasSameWords(o.goal.text, typed);
+  const isReworded = o.goal !== null && o.goal.metAt === null && hasSameWords(o.goal.text, typed);
   if (isReworded)
     return { ...o, goal: { ...o.goal, text: typed, source: "typed" } };
   const goal = {
@@ -1387,7 +1418,7 @@ function setTypedGoal(o, text, now) {
     isAwaitingMilestones: true,
     source: "typed"
   };
-  return { ...o, goal, serves: {} };
+  return { ...o, goal, goalRemoved: null, serves: {} };
 }
 
 // ../hooks/goal-press.ts
@@ -1399,12 +1430,186 @@ function goalPressed(ledger, p, record, now) {
       return { stale: true };
     return { ledger: { ...ledger, overview: removeGoal(o) }, last: record("mark"), effects: [] };
   }
+  if (p.action === "restore-goal") {
+    const restored = restoreGoal(o);
+    if (restored === o)
+      return { stale: true };
+    return { ledger: { ...ledger, overview: restored }, last: record("mark"), effects: [] };
+  }
   if (p.action !== "type")
     return { stale: true };
   const typed = setTypedGoal(o, p.text, now);
   if (typed === o)
     return unchanged;
   return { ledger: { ...ledger, overview: typed }, last: record("mark"), effects: [] };
+}
+
+// ../hooks/tabs.ts
+var TAB_NAMES = [
+  { id: "overview", label: "Status", symbol: "\uD83E\uDDED" },
+  { id: "needsYou", label: "Asks", symbol: "\uD83D\uDE4B" },
+  { id: "findings", label: "Finds", symbol: "\uD83D\uDD0D" },
+  { id: "prs", label: "PRs", symbol: "\uD83D\uDD00" }
+];
+var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
+var NEXT_BUILD_TABS = numbered(TAB_NAMES);
+var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
+function shownTabs(isNextBuild) {
+  return isNextBuild ? NEXT_BUILD_TABS : RELEASE_TABS;
+}
+function inboxCommandText(isNextBuild) {
+  return isNextBuild ? "Show where this session stands and what waits on you" : "Show this session's questions, tasks, findings and PRs";
+}
+var TAB_NAMINGS = ["words", "symbols"];
+function tabName(tab, naming) {
+  return naming === "words" ? tab.label : tab.symbol;
+}
+function fitTabs(layouts, fits) {
+  for (const naming of TAB_NAMINGS)
+    for (const layout of layouts)
+      if (fits(naming, layout))
+        return { naming, layout };
+  return { naming: "symbols", layout: layouts.at(-1) };
+}
+function tabBadge(id, counts) {
+  return isRowTab(id) && counts[id] > 0 ? String(counts[id]) : null;
+}
+function isListedTab(tab) {
+  return tab === "needsYou" || tab === "findings";
+}
+function isRowTab(tab) {
+  return tab !== "overview";
+}
+function screenTabOf(tab) {
+  return { label: TAB_NAMES.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
+}
+var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
+var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
+
+// ../hooks/help.ts
+var FINDING_GROUPS = {
+  issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
+  opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" }
+};
+var SUBJECT_MARKS = {
+  working: { mark: "\u25CF", tone: null },
+  queued: { mark: "\u25CB", tone: null },
+  "waits-on-other": { mark: "\u25CC", tone: null },
+  done: { mark: "\u2713", tone: "done" },
+  dropped: { mark: "\u2717", tone: null }
+};
+var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
+var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
+var RUNNING_MARK = RUNNING_FRAMES[0];
+var IDLE_MARK = { mark: "\u25D0", tone: null };
+var CLOSED_MARKS = {
+  handled: SUBJECT_MARKS.done.mark,
+  dismissed: "\u2715",
+  lapsed: SUBJECT_MARKS.dropped.mark
+};
+var PR_MARKS = {
+  waiting: { text: HELD_MARK.mark, tone: "needsYou" },
+  sent: { text: SUBJECT_MARKS.done.mark, tone: "done" },
+  failing: { text: FINDING_GROUPS.issue.mark, tone: "error" },
+  cancelled: { text: "\u2298", tone: null }
+};
+var stoppedWords = (what) => `Stopped before it finished: ${what}`;
+var MARK_LEGEND = [
+  {
+    mark: RUNNING_MARK,
+    tone: null,
+    isRunning: true,
+    words: "Working. It moves while the work runs or your message is on its way."
+  },
+  { mark: IDLE_MARK.mark, tone: null, isRunning: false, words: "Working, with nothing running right now" },
+  { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: "Queued: not started yet" },
+  {
+    mark: SUBJECT_MARKS["waits-on-other"].mark,
+    tone: null,
+    isRunning: false,
+    words: "Waits on something other than you, such as a build or a review"
+  },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
+  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords("dropped work") },
+  { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: "Dismissed by you" },
+  {
+    mark: FINDING_GROUPS.issue.mark,
+    tone: FINDING_GROUPS.issue.tone,
+    isRunning: false,
+    words: "Something is wrong: an issue or a failing check"
+  },
+  {
+    mark: PR_MARKS.cancelled.text,
+    tone: PR_MARKS.cancelled.tone,
+    isRunning: false,
+    words: stoppedWords("a cancelled check, which needs another run")
+  },
+  {
+    mark: FINDING_GROUPS.opportunity.mark,
+    tone: FINDING_GROUPS.opportunity.tone,
+    isRunning: false,
+    words: "Opportunity: something that could be better"
+  }
+];
+var STATUS_ONLY_MARKS = new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
+function markLegend(isNextBuild) {
+  return isNextBuild ? MARK_LEGEND : MARK_LEGEND.filter((m) => !STATUS_ONLY_MARKS.has(m.mark));
+}
+var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks" };
+var UNDO_KEY = "u";
+var PR_TAB_HELP_KEYS = [
+  { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
+  { keys: "m", does: "Dismiss the merged PRs" }
+];
+function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
+  const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
+  const hasRows = isRowTab(tab);
+  const selectsStatusRows = tab === "overview" && hasStatusButtons;
+  const switchTabs = { keys: tabKeys, does: "Switch tabs" };
+  const prTabKeys = tab === "prs" ? PR_TAB_HELP_KEYS : [];
+  const undoKey = { keys: UNDO_KEY, does: "Undo the last close" };
+  switch (look) {
+    case "desktop":
+      return [];
+    case "terminal":
+      return [
+        switchTabs,
+        ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
+        ...hasRows ? [undoKey] : [],
+        ...prTabKeys,
+        { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
+      ];
+    case "codex":
+      return [
+        switchTabs,
+        ...hasRows ? [{ keys: "j k \u2191 \u2193", does: "Select the next or previous row" }, undoKey] : [],
+        ...prTabKeys,
+        { keys: "?", does: "Open or close help" },
+        { keys: "esc", does: "Close help, or leave a reply field" }
+      ];
+    case "omp":
+      return [
+        { keys: `tab ${tabKeys}`, does: "Switch tabs" },
+        ...hasRows ? [
+          { keys: "\u2191 \u2193 j k", does: "Move between rows" },
+          { keys: "\u2190 \u2192", does: "Pick a button" },
+          { keys: "\u21B5", does: "Press the picked button" },
+          { keys: "r", does: "Reply to the selected row" },
+          undoKey,
+          ...prTabKeys
+        ] : [
+          ...selectsStatusRows ? [
+            { keys: "j k", does: "Select the next or previous row with a button" },
+            { keys: "\u2190 \u2192", does: "Pick a button" },
+            { keys: "\u21B5", does: "Press the picked button" }
+          ] : [],
+          { keys: "\u2191 \u2193", does: "Scroll the page" }
+        ],
+        { keys: "?", does: "Open or close help" },
+        { keys: "esc", does: "Close help, then the panel" }
+      ];
+  }
 }
 
 // ../hooks/status-keys.ts
@@ -1445,10 +1650,18 @@ var REMOVE_GOAL = {
   kind: "mark",
   emphasis: "quiet"
 };
+var RESTORE_GOAL = {
+  press: { action: "restore-goal" },
+  label: "Undo",
+  hotkey: UNDO_KEY,
+  kind: "mark",
+  emphasis: "normal"
+};
 function goalKeyPlan(page) {
   const g = page.goal;
   if (g === null)
     return [
+      ...page.canRestoreGoal ? [RESTORE_GOAL] : [],
       { press: { action: "type-goal", text: "" }, label: "Set a goal", hotkey: "s", kind: "view", emphasis: "quiet" }
     ];
   if (g.isMet)
@@ -1676,174 +1889,6 @@ function replyToClosed(ledger, p, last, answerMessage) {
   return { ledger, last, effects: [{ kind: "send", text, by: null }] };
 }
 
-// ../hooks/tabs.ts
-var TAB_NAMES = [
-  { id: "overview", label: "Status", symbol: "\uD83E\uDDED" },
-  { id: "needsYou", label: "Asks", symbol: "\uD83D\uDE4B" },
-  { id: "findings", label: "Finds", symbol: "\uD83D\uDD0D" },
-  { id: "prs", label: "PRs", symbol: "\uD83D\uDD00" }
-];
-var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
-var NEXT_BUILD_TABS = numbered(TAB_NAMES);
-var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
-function shownTabs(isNextBuild) {
-  return isNextBuild ? NEXT_BUILD_TABS : RELEASE_TABS;
-}
-function inboxCommandText(isNextBuild) {
-  return isNextBuild ? "Show where this session stands and what waits on you" : "Show this session's questions, tasks, findings and PRs";
-}
-var TAB_NAMINGS = ["words", "symbols"];
-function tabName(tab, naming) {
-  return naming === "words" ? tab.label : tab.symbol;
-}
-function fitTabs(layouts, fits) {
-  for (const naming of TAB_NAMINGS)
-    for (const layout of layouts)
-      if (fits(naming, layout))
-        return { naming, layout };
-  return { naming: "symbols", layout: layouts.at(-1) };
-}
-function tabBadge(id, counts) {
-  return isRowTab(id) && counts[id] > 0 ? String(counts[id]) : null;
-}
-function isListedTab(tab) {
-  return tab === "needsYou" || tab === "findings";
-}
-function isRowTab(tab) {
-  return tab !== "overview";
-}
-function screenTabOf(tab) {
-  return { label: TAB_NAMES.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
-}
-var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
-var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
-
-// ../hooks/help.ts
-var FINDING_GROUPS = {
-  issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
-  opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" }
-};
-var SUBJECT_MARKS = {
-  working: { mark: "\u25CF", tone: null },
-  queued: { mark: "\u25CB", tone: null },
-  "waits-on-other": { mark: "\u25CC", tone: null },
-  done: { mark: "\u2713", tone: "done" },
-  dropped: { mark: "\u2717", tone: null }
-};
-var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
-var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
-var RUNNING_MARK = RUNNING_FRAMES[0];
-var IDLE_MARK = { mark: "\u25D0", tone: null };
-var CLOSED_MARKS = {
-  handled: SUBJECT_MARKS.done.mark,
-  dismissed: "\u2715",
-  lapsed: SUBJECT_MARKS.dropped.mark
-};
-var PR_MARKS = {
-  waiting: { text: HELD_MARK.mark, tone: "needsYou" },
-  sent: { text: SUBJECT_MARKS.done.mark, tone: "done" },
-  failing: { text: FINDING_GROUPS.issue.mark, tone: "error" },
-  cancelled: { text: "\u2298", tone: null }
-};
-var stoppedWords = (what) => `Stopped before it finished: ${what}`;
-var MARK_LEGEND = [
-  {
-    mark: RUNNING_MARK,
-    tone: null,
-    isRunning: true,
-    words: "Working. It moves while the work runs or your message is on its way."
-  },
-  { mark: IDLE_MARK.mark, tone: null, isRunning: false, words: "Working, with nothing running right now" },
-  { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: "Queued: not started yet" },
-  {
-    mark: SUBJECT_MARKS["waits-on-other"].mark,
-    tone: null,
-    isRunning: false,
-    words: "Waits on something other than you, such as a build or a review"
-  },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
-  { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
-  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords("dropped work") },
-  { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: "Dismissed by you" },
-  {
-    mark: FINDING_GROUPS.issue.mark,
-    tone: FINDING_GROUPS.issue.tone,
-    isRunning: false,
-    words: "Something is wrong: an issue or a failing check"
-  },
-  {
-    mark: PR_MARKS.cancelled.text,
-    tone: PR_MARKS.cancelled.tone,
-    isRunning: false,
-    words: stoppedWords("a cancelled check, which needs another run")
-  },
-  {
-    mark: FINDING_GROUPS.opportunity.mark,
-    tone: FINDING_GROUPS.opportunity.tone,
-    isRunning: false,
-    words: "Opportunity: something that could be better"
-  }
-];
-var STATUS_ONLY_MARKS = new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
-function markLegend(isNextBuild) {
-  return isNextBuild ? MARK_LEGEND : MARK_LEGEND.filter((m) => !STATUS_ONLY_MARKS.has(m.mark));
-}
-var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks" };
-var UNDO_KEY = "u";
-var PR_TAB_HELP_KEYS = [
-  { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
-  { keys: "m", does: "Dismiss the merged PRs" }
-];
-function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
-  const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
-  const hasRows = isRowTab(tab);
-  const selectsStatusRows = tab === "overview" && hasStatusButtons;
-  const switchTabs = { keys: tabKeys, does: "Switch tabs" };
-  const prTabKeys = tab === "prs" ? PR_TAB_HELP_KEYS : [];
-  const undoKey = { keys: UNDO_KEY, does: "Undo the last close" };
-  switch (look) {
-    case "desktop":
-      return [];
-    case "terminal":
-      return [
-        switchTabs,
-        ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
-        ...hasRows ? [undoKey] : [],
-        ...prTabKeys,
-        { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
-      ];
-    case "codex":
-      return [
-        switchTabs,
-        ...hasRows ? [{ keys: "j k \u2191 \u2193", does: "Select the next or previous row" }, undoKey] : [],
-        ...prTabKeys,
-        { keys: "?", does: "Open or close help" },
-        { keys: "esc", does: "Close help, or leave a reply field" }
-      ];
-    case "omp":
-      return [
-        { keys: `tab ${tabKeys}`, does: "Switch tabs" },
-        ...hasRows ? [
-          { keys: "\u2191 \u2193 j k", does: "Move between rows" },
-          { keys: "\u2190 \u2192", does: "Pick a button" },
-          { keys: "\u21B5", does: "Press the picked button" },
-          { keys: "r", does: "Reply to the selected row" },
-          undoKey,
-          ...prTabKeys
-        ] : [
-          ...selectsStatusRows ? [
-            { keys: "j k", does: "Select the next or previous row with a button" },
-            { keys: "\u2190 \u2192", does: "Pick a button" },
-            { keys: "\u21B5", does: "Press the picked button" }
-          ] : [],
-          { keys: "\u2191 \u2193", does: "Scroll the page" }
-        ],
-        { keys: "?", does: "Open or close help" },
-        { keys: "esc", does: "Close help, then the panel" }
-      ];
-  }
-}
-
 // ../hooks/marks.ts
 function textMark(mark) {
   return mark === CLOSED_MARKS.lapsed ? "\u2298" : mark;
@@ -1881,7 +1926,7 @@ function milestoneRow(m, o, items) {
 function goalPage(o, items) {
   const g = o?.goal ?? null;
   if (o === null || g === null)
-    return { goal: null };
+    return { goal: null, canRestoreGoal: o?.goalRemoved != null };
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   const shown = o.milestones.filter((m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt);
@@ -1899,7 +1944,8 @@ function goalPage(o, items) {
       now: head ? `Now: ${head.description || head.title}` : null,
       awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
-    }
+    },
+    canRestoreGoal: false
   };
 }
 
@@ -2145,7 +2191,7 @@ function statusPage(s, now) {
   };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
-    isEmpty: head === null && rows.length === 0 && goal === null,
+    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
     ...goalParts,
     goal,
@@ -6750,14 +6796,32 @@ function milestoneOf(saved) {
     text: typeof m.text === "string" ? m.text : "",
     was: nonEmpty(m.was),
     changedAt,
-    closedAt: time(m.closedAt)
+    closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null)
+  };
+}
+function milestonesOf(saved) {
+  return (Array.isArray(saved) ? saved : []).map(milestoneOf).filter((m) => m !== null);
+}
+var isStringRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+function goalRemovedOf(saved) {
+  const r = saved;
+  const goal = goalOf(r?.goal);
+  if (goal === null || !isStringRecord(r?.serves) || !isStringRecord(r?.askSubjects))
+    return null;
+  const serves = Object.entries(r.serves).filter((e) => typeof e[1] === "string");
+  const asks = Object.entries(r.askSubjects).filter((e) => Array.isArray(e[1]) && e[1].every((x) => typeof x === "string"));
+  return {
+    goal,
+    milestones: milestonesOf(r.milestones),
+    serves: Object.fromEntries(serves),
+    askSubjects: Object.fromEntries(asks)
   };
 }
 function droppedMilestoneIds(milestones) {
   return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
 }
 function goalFields(o, subjectIds) {
-  const milestones = (Array.isArray(o.milestones) ? o.milestones : []).map(milestoneOf).filter((m) => m !== null);
+  const milestones = milestonesOf(o.milestones);
   const dropped = droppedMilestoneIds(milestones);
   const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
@@ -6771,6 +6835,7 @@ function goalFields(o, subjectIds) {
   return {
     goal: goalOf(o.goal),
     removedGoals: removed.slice(-REMOVED_KEPT),
+    goalRemoved: goalRemovedOf(o.goalRemoved),
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves
@@ -6808,7 +6873,7 @@ function subjectOf(saved) {
     ...wasAndMerged(s.was, s.merged),
     createdAt: time2(s.createdAt) ?? changedAt,
     changedAt,
-    closedAt: time2(s.closedAt),
+    closedAt: time2(s.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
     into: typeof s.into === "string" ? s.into : null
   };
 }
@@ -7341,6 +7406,7 @@ function demoView(now, agent) {
           source: "inferred"
         },
         removedGoals: [],
+        goalRemoved: null,
         milestones: [
           {
             id: "m1",
@@ -8465,9 +8531,12 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   return settleGoal(o, now, readSetAt, named);
 }
 function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
-  if (answer.kind === "ops")
-    return applyOps(last, answer.ops, now, askIds, readSetAt);
-  return last === null ? null : settleGoal(last, now, readSetAt, new Set);
+  const o = answer.kind === "ops" ? applyOps(last, answer.ops, now, askIds, readSetAt) : last;
+  if (o === null)
+    return null;
+  const settled = answer.kind === "ops" ? o : settleGoal(o, now, readSetAt, new Set);
+  const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt;
+  return settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null };
 }
 
 // ../hooks/session-status.ts

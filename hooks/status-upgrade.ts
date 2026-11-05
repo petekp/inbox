@@ -50,7 +50,7 @@ function subjectOf(saved: unknown): Subject | null {
     ...wasAndMerged(s.was, s.merged),
     createdAt: time(s.createdAt) ?? changedAt,
     changedAt,
-    closedAt: time(s.closedAt),
+    closedAt: time(s.closedAt) ?? (status === 'done' || status === 'dropped' ? changedAt : null),
     into: typeof s.into === 'string' ? s.into : null,
   }
 }

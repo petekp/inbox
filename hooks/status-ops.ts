@@ -248,7 +248,10 @@ export function applyOps(
   return settleGoal(o, now, readSetAt, named)
 }
 
-/** The Status after an answer, applied at `now`. `askIds` are the open asks. */
+/**
+ * The Status after an answer, applied at `now`. `askIds` are the open asks. A removed goal's Undo lasts until an answer
+ * from a call that did not read that goal applies: the call moved on from it.
+ */
 export function applyStatus(
   last: SessionStatus | null,
   answer: StatusAnswer,
@@ -256,7 +259,10 @@ export function applyStatus(
   askIds: ReadonlySet<string>,
   readSetAt: number | null = last?.goal?.setAt ?? null,
 ): SessionStatus | null {
-  if (answer.kind === 'ops') return applyOps(last, answer.ops, now, askIds, readSetAt)
+  const o = answer.kind === 'ops' ? applyOps(last, answer.ops, now, askIds, readSetAt) : last
+  if (o === null) return null
+  const settled = answer.kind === 'ops' ? o : settleGoal(o, now, readSetAt, new Set())
+  const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt
 
-  return last === null ? null : settleGoal(last, now, readSetAt, new Set())
+  return settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null }
 }

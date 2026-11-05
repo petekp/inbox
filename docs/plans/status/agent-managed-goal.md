@@ -32,7 +32,7 @@ none ──GOAL──▶ set ──every milestone done──▶ met ──GOAL�
 - **Set.** The call moves milestones with SET, DONE, DROP, MILESTONE and SERVES, as today. A milestone closes when its linked work closes (below).
 - **Met.** Code marks the goal met when every kept milestone is done, as today. The page shows "Goal met". The goal stays until the call or the person sets the next one. RETIRE does not apply to a met goal.
 - **Next goal.** The call writes GOAL for the next goal when the session shows one. When it does not, it writes nothing and waits. The met goal keeps showing.
-- **Work left the goal.** For an inferred goal that is not met, the call may write GOAL to replace it, or RETIRE to clear it, once no linked subject is open. Code enforces that (below).
+- **Work left the goal.** For an inferred goal that is not met, the call may write GOAL to replace it, or RETIRE to clear it, once no linked subject is open and the goal has not moved forward for 30 minutes. Code enforces that (below).
 
 ## When a goal counts as reliably inferred
 
@@ -82,9 +82,9 @@ The rule the call reads: "Code closes a milestone once all its linked work is do
 
 - No goal is set (GOAL only).
 - The goal is met (GOAL only). RETIRE never clears a met goal: it stays until the next one is set.
-- The goal is inferred, and no linked subject is open: none is working, waiting on someone or queued.
+- The goal is inferred, no linked subject is open, and the goal has not moved forward for `GOAL_LEFT_MS`, 30 minutes. It moves forward when it is set, when a milestone that is not dropped changes, and when a linked subject is done. Dropped work is not progress.
 
-Otherwise it drops the line. Queued work counts, so parking the goal's work for a side fix keeps the goal. When the old goal's linked work is stale, the prompt tells the call to close it with DONE or DROP in the same answer. The ranking applies those lines before the guard reads them.
+Otherwise it drops the line. Queued work counts, so parking the goal's work for a side fix keeps the goal. The 30 minutes keep a goal between milestones: when one milestone's work is done and the next has none yet, the goal stays while other work runs for a while. They also keep a goal just set, so a GOAL and a RETIRE in one answer leave the new goal. A GOAL line that restates the goal's was line, the goal it replaced, is dropped too, so two goals cannot take turns. When the old goal's linked work is stale, the prompt tells the call to close it with DONE or DROP in the same answer. The ranking applies those lines before the guard reads them.
 
 A typed goal that is not met is never replaced or cleared by the call, as `docs/principles.md` principle 8 says.
 
@@ -100,17 +100,19 @@ Today's `serves-every-subject` says "change a link only when what the work is fo
 
 ## A typed goal
 
-The goal's field works as today: Set a goal with no goal, Edit while one is set, Set next goal once one is met. Typing a goal replaces any goal at once, inferred or typed, met or not. `setTypedGoal` keeps today's behavior without its proposal branches. A rewording keeps the milestones, and a new goal waits for its milestones from the next call (`isAwaitingMilestones`, `milestones-for-new-goal`).
+The goal's field works as today: Set a goal with no goal, Edit while one is set, Set next goal once one is met. Typing a goal replaces any goal at once, inferred or typed, met or not. `setTypedGoal` keeps today's behavior without its proposal branches. A rewording of a goal that is not met keeps the milestones. A new goal, or a met goal typed again, waits for its milestones from the next call (`isAwaitingMilestones`, `milestones-for-new-goal`).
 
 Every typed goal is saved with `source: 'typed'`, a rewording of an inferred goal included, so an edit makes the goal the person's.
 
 `<goal>` shows `(typed)` after a typed goal. The rule: a typed goal is the person's. Never reword, replace or retire it before it is met. Move its milestones as any goal's.
 
-A typed goal can stall when a milestone has no linked work. The `no work linked` mark asks the call to link, close or drop that milestone, so the goal can still be met. When its work stops altogether, the 2-hour guard lets the call replace or retire it.
+A typed goal can stall when a milestone has no linked work. The `no work linked` mark asks the call to link, close or drop that milestone, so the goal can still be met. When its work stops altogether, it stays until its milestones are done or the person edits or removes it.
 
 ## A removed goal
 
 The person removes a goal with a new Remove goal button beside Edit. The goal and its milestones go, every link goes, and the goal's key words join `removedGoals`, the last 10. `<removed>` lists them, and code drops a GOAL that restates one. The call may still infer a different goal later.
+
+Remove goal offers Undo in its place, beside Set a goal. Undo brings back the goal, its milestones and their links, and takes the goal out of `removedGoals`. `goalRemoved` holds them until a goal is set or the answer of a Status call that did not read the removed goal applies. Row Undos last a few seconds. This one lasts until the call moves on, so no look needs a timer, and a slip of the `r` key is never final before the person sees it.
 
 Saving the field empty does not work as a removal. In every look an empty field refuses to submit today: `sendTyped` in `hooks/register.tsx` (terminal and desktop) refocuses the field, the Codex tab's form returns, and `handleKey` in `omp/src/panel-keys.ts` ignores enter. Changing that in four looks also makes an accidental empty enter delete the goal.
 
@@ -127,9 +129,9 @@ A goal the call retires does not join `removedGoals`: the work left it, the pers
 | `milestones-are-outcomes` | Kept. Adds: never name a milestone after a subject |
 | `milestones-for-new-goal` | Kept, for a typed goal |
 | `serves-every-subject` | Kept, with the check of `-` links above |
-| — | New `goal-when-met`: when <goal> says met, write GOAL for the next goal once it is clear, and nothing until then |
+| — | New `goal-wait`: when the next goal is not clear, write no GOAL and wait. `goal-when-clear` covers a met goal's next one |
 | — | New `goal-work-left`: when the session's work no longer moves an inferred goal forward, close its stale linked subjects, then replace it with GOAL, or write RETIRE when no next goal is clear |
-| — | New `milestone-reopen`: code closes a milestone when its work closes, and the call reopens it when work is left. New `no-work-linked` for the mark. |
+| — | `milestones-are-outcomes` adds: code closes a milestone when its work closes, and the call reopens it with SET when work is left. New `milestone-no-work` for the mark. |
 | `proposedGoal`, `<proposed>`, Set as goal, Not now, the proposal's Edit, `ProposalBlock`, `useProposedGoal` (its milestone-saving part moves into `applyGoalOp`), `declineProposedGoal` | Deleted |
 | `withRestatedGoalAsMilestones` | Kept |
 | `declinedGoals`, `<declined>` | Renamed `removedGoals`, `<removed>` |
@@ -168,7 +170,7 @@ Replays to add, each with synthetic content:
 | `milestone-work-done` | 1. A milestone whose two subjects are done, still working. A second with one done and one working subject. A subject wrongly under Other work that serves the second. An exchange that names neither milestone. | The first milestone is done. The second is not. The stray subject links to the second. |
 | `goal-met-next` | 1. The last milestone's work finishes. 2. The person asks for the next release, with a finish line and several pieces. | Step 1: goal met. Step 2: a new goal is set, with no press, and the old one is its was line. |
 | `goal-from-work` | 1. No goal. The person says "keep going". The agent's reply plans three pieces toward one outcome with a finish line, and starts the first. | A goal is set from the work, with no words from the person naming it. |
-| `goal-unclear` | 1. A met goal. The person asks for two small unrelated fixes. | No new goal. The met goal stays. |
+| `goal-wait` | 1. A met goal. The person asks for two small unrelated fixes. | No new goal. The met goal stays. |
 | `no-goal-yet` | From no goal: 1. One small bug fix. 2. Chit-chat about the code. 3. A coordinator's unrelated items. | No goal at any step. |
 | `goal-work-left` | 1. An inferred goal A whose work is all done. The person starts work B with a finish line. 2. Parked: a goal B with queued work, and the person asks for a side fix. 3. The person resumes B. | Step 1: B replaces A. Step 2: B stays. Step 3: B stays, with its milestone ids and links. |
 | `typed-goal-kept` | 1. A typed goal with its work queued. The person starts different work with a finish line. | The typed goal stays. |

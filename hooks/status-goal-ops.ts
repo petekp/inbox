@@ -3,6 +3,7 @@ import type { Op } from './status'
 import {
   clipWords,
   DESCRIPTION_KEPT,
+  GOAL_LEFT_MS,
   isOpen,
   MILESTONES_MAX,
   MILESTONES_MIN,
@@ -179,14 +180,28 @@ function linkedSubjects(o: SessionStatus): Subject[] {
 }
 
 /**
- * Whether a GOAL or RETIRE line may replace or clear the goal: a GOAL while none is set or once the goal is met, and
- * either for an inferred goal none of whose linked work is open. A typed goal is the person's until it is met.
+ * When the goal last moved forward: when it was set, a milestone that is not dropped changed, or a linked subject was
+ * done. Dropping work is not progress, so a goal whose last work was dropped counts from its last real step.
  */
-function mayReplaceGoal(o: SessionStatus, kind: 'goal' | 'retire'): boolean {
+function lastProgressAt(o: SessionStatus, g: StatusGoal): number {
+  const milestones = o.milestones.filter(m => m.status !== 'dropped').map(m => m.changedAt)
+  const done = linkedSubjects(o).flatMap(s => (s.status === 'done' && s.closedAt !== null ? [s.closedAt] : []))
+
+  return Math.max(g.setAt, ...milestones, ...done)
+}
+
+/**
+ * Whether a GOAL or RETIRE line may replace or clear the goal: a GOAL while none is set or once the goal is met, and
+ * either for an inferred goal the work has left. The work has left it when none of its linked work is open and it has
+ * not moved forward for `GOAL_LEFT_MS`, so a goal between milestones, or one just set, stays. A typed goal is the
+ * person's until it is met.
+ */
+function mayReplaceGoal(o: SessionStatus, kind: 'goal' | 'retire', now: number): boolean {
   const g = o.goal
   if (g === null || g.metAt !== null) return kind === 'goal'
+  const isWorkLeft = !linkedSubjects(o).some(isOpen) && now - lastProgressAt(o, g) >= GOAL_LEFT_MS
 
-  return g.source === 'inferred' && !linkedSubjects(o).some(isOpen)
+  return g.source === 'inferred' && isWorkLeft
 }
 
 /** The goal a GOAL line sets, with its milestones as it wrote them and no subject linked yet. */
@@ -215,7 +230,7 @@ function inferredGoal(
   }
 
   return withoutLinksTo(
-    { ...o, goal, milestones, nextMilestoneId: o.nextMilestoneId + milestones.length, serves: {} },
+    { ...o, goal, goalRemoved: null, milestones, nextMilestoneId: o.nextMilestoneId + milestones.length, serves: {} },
     milestones,
   )
 }
@@ -232,8 +247,9 @@ function hasWorkForGoal(o: SessionStatus): boolean {
 
 /**
  * Applies a GOAL, RETIRE, MILESTONE or SERVES line. A GOAL line sets the goal when `mayReplaceGoal` allows it,
- * `hasWorkForGoal` holds, it has `MILESTONES_MIN` milestones, and it restates neither the
- * goal nor a removed one, in its words or its milestones. RETIRE clears the goal when `mayReplaceGoal` allows it.
+ * `hasWorkForGoal` holds, it has `MILESTONES_MIN` milestones, and it restates neither the goal, in its words or its
+ * milestones, nor the goal it replaced, nor a removed one. RETIRE clears the goal when `mayReplaceGoal` allows it, so
+ * never a goal the same answer set.
  * Milestones and links need a goal.
  */
 export function applyGoalOp(
@@ -247,14 +263,16 @@ export function applyGoalOp(
     const milestones = op.milestones
       .slice(0, MILESTONES_MAX)
       .map(m => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }))
-    const isCurrent = o.goal !== null && (restatesGoal(text, o.goal.text) || hasGoalMilestones(o, milestones))
+    const g = o.goal
+    const isCurrent = g !== null && (restatesGoal(text, g.text) || hasGoalMilestones(o, milestones))
+    const isPrevious = g?.was != null && restatesGoal(text, g.was)
     const isRemoved = o.removedGoals.some(key => restatesGoal(text, key))
-    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, 'goal')
-    if (op.milestones.length < MILESTONES_MIN || isCurrent || isRemoved || !isAllowed) return o
+    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, 'goal', now)
+    if (op.milestones.length < MILESTONES_MIN || isCurrent || isPrevious || isRemoved || !isAllowed) return o
 
     return inferredGoal(o, text, milestones, now)
   }
-  if (op.kind === 'retire') return mayReplaceGoal(o, 'retire') ? withoutGoal(o) : o
+  if (op.kind === 'retire') return mayReplaceGoal(o, 'retire', now) ? withoutGoal(o) : o
   if (o.goal === null) return o
   if (op.kind === 'milestone') return addMilestone(o, op, now)
   const subject = findSubject(op.subject)
@@ -347,23 +365,44 @@ function withoutGoal(o: SessionStatus): SessionStatus {
   return withoutLinksTo({ ...o, goal: null, milestones: [], serves: {} }, [])
 }
 
-/** Remove goal: the goal goes, and the call is told not to set it again. */
+/** Remove goal: the goal goes, the call is told not to set it again, and Undo can bring it back. */
 export function removeGoal(o: SessionStatus): SessionStatus {
-  if (o.goal === null) return o
-  const removedGoals = [...o.removedGoals.filter(k => k !== nameKey(o.goal!.text)), nameKey(o.goal.text)]
+  const g = o.goal
+  if (g === null) return o
+  const removedGoals = [...o.removedGoals.filter(k => k !== nameKey(g.text)), nameKey(g.text)]
+  const goalRemoved = { goal: g, milestones: o.milestones, serves: o.serves, askSubjects: o.askSubjects }
 
-  return { ...withoutGoal(o), removedGoals: removedGoals.slice(-REMOVED_KEPT) }
+  return { ...withoutGoal(o), removedGoals: removedGoals.slice(-REMOVED_KEPT), goalRemoved }
+}
+
+/** Undo of Remove goal: the goal comes back with its milestones and links, and the call may set it again. */
+export function restoreGoal(o: SessionStatus): SessionStatus {
+  const r = o.goalRemoved
+  if (r === null || o.goal !== null) return o
+  const key = nameKey(r.goal.text)
+  const subjectIds = new Set(o.subjects.map(s => s.id))
+  const serves = Object.fromEntries(Object.entries(r.serves).filter(([id]) => subjectIds.has(id)))
+
+  return {
+    ...o,
+    goal: r.goal,
+    milestones: r.milestones,
+    serves,
+    askSubjects: r.askSubjects,
+    removedGoals: o.removedGoals.filter(k => k !== key),
+    goalRemoved: null,
+  }
 }
 
 /**
- * A goal the person typed, which makes the goal theirs. A rewording of the goal keeps its milestones and needs no
- * message. Any other goal replaces it, unlinks every subject, and carries the milestones until the Status call that
+ * A goal the person typed, which makes the goal theirs. A rewording of a goal that is not met keeps its milestones and
+ * needs no message. A met goal typed again is a new goal. Any other goal replaces it, unlinks every subject, and carries the milestones until the Status call that
  * reads it keeps the ones it names. The page draws none of them until then.
  */
 export function setTypedGoal(o: SessionStatus, text: string, now: number): SessionStatus {
   const typed = clipWords(text, DESCRIPTION_KEPT)
   if (typed === '') return o
-  const isReworded = o.goal !== null && hasSameWords(o.goal.text, typed)
+  const isReworded = o.goal !== null && o.goal.metAt === null && hasSameWords(o.goal.text, typed)
   if (isReworded) return { ...o, goal: { ...o.goal!, text: typed, source: 'typed' } }
   const goal: StatusGoal = {
     text: typed,
@@ -374,5 +413,5 @@ export function setTypedGoal(o: SessionStatus, text: string, now: number): Sessi
     source: 'typed',
   }
 
-  return { ...o, goal, serves: {} }
+  return { ...o, goal, goalRemoved: null, serves: {} }
 }

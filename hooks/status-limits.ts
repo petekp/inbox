@@ -20,6 +20,8 @@ export const FINISHED_READ = 10
 /** The most milestones a goal keeps, and the fewest a GOAL line needs. */
 export const MILESTONES_MAX = 5
 export const MILESTONES_MIN = 2
+/** How long an inferred goal with no open linked work goes without moving forward before the work counts as having left it. */
+export const GOAL_LEFT_MS = 30 * 60_000
 /** How many removed goals the call is told not to set again. */
 export const REMOVED_KEPT = 10
 /** How long an ended child stays saved, so a delegate prompted again keeps its link. */
@@ -60,6 +62,7 @@ export const EMPTY_SESSION_STATUS: SessionStatus = {
   look: null,
   goal: null,
   removedGoals: [],
+  goalRemoved: null,
   milestones: [],
   nextMilestoneId: 1,
   serves: {},

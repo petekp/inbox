@@ -86,6 +86,14 @@ export type Milestone = {
 /** What a subject serves: one milestone by its id, or `none` for work the goal does not need. */
 export type Serves = string | 'none'
 
+/** A goal the person removed, with its milestones and the links to them, so Undo can bring it back. */
+export type GoalRemoved = {
+  goal: StatusGoal
+  milestones: Milestone[]
+  serves: Record<string, Serves>
+  askSubjects: Record<string, string[]>
+}
+
 /** The Status tab's list. The Status call changes it by id; code keeps the order and every time. */
 export type SessionStatus = {
   /** Null until the Status call writes it. */
@@ -99,6 +107,8 @@ export type SessionStatus = {
   goal: StatusGoal | null
   /** The name keys of goals the person removed, newest last, so the call does not set them again. */
   removedGoals: string[]
+  /** The goal the person last removed, while Undo can bring it back: until a goal is set or a Status call applies. */
+  goalRemoved: GoalRemoved | null
   milestones: Milestone[]
   nextMilestoneId: number
   /** What each subject serves, by subject id, as the Status call linked them. A subject with no entry is not linked yet. */

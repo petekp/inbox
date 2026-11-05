@@ -61,6 +61,7 @@ var ASK_READ_WORDS = 30;
 var FINISHED_READ = 10;
 var MILESTONES_MAX = 5;
 var MILESTONES_MIN = 2;
+var GOAL_LEFT_MS = 30 * 6e4;
 var REMOVED_KEPT = 10;
 var CHILD_KEPT_MS = 24 * 60 * 6e4;
 var STOP_WORDS = /* @__PURE__ */ new Set([
@@ -96,6 +97,7 @@ var EMPTY_SESSION_STATUS = {
   look: null,
   goal: null,
   removedGoals: [],
+  goalRemoved: null,
   milestones: [],
   nextMilestoneId: 1,
   serves: {}
@@ -750,14 +752,33 @@ function milestoneOf(saved) {
     text: typeof m.text === "string" ? m.text : "",
     was: nonEmpty(m.was),
     changedAt,
-    closedAt: time(m.closedAt)
+    closedAt: time(m.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null)
+  };
+}
+function milestonesOf(saved) {
+  return (Array.isArray(saved) ? saved : []).map(milestoneOf).filter((m) => m !== null);
+}
+var isStringRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+function goalRemovedOf(saved) {
+  const r = saved;
+  const goal = goalOf(r?.goal);
+  if (goal === null || !isStringRecord(r?.serves) || !isStringRecord(r?.askSubjects)) return null;
+  const serves = Object.entries(r.serves).filter((e) => typeof e[1] === "string");
+  const asks = Object.entries(r.askSubjects).filter(
+    (e) => Array.isArray(e[1]) && e[1].every((x) => typeof x === "string")
+  );
+  return {
+    goal,
+    milestones: milestonesOf(r.milestones),
+    serves: Object.fromEntries(serves),
+    askSubjects: Object.fromEntries(asks)
   };
 }
 function droppedMilestoneIds(milestones) {
   return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
 }
 function goalFields(o, subjectIds) {
-  const milestones = (Array.isArray(o.milestones) ? o.milestones : []).map(milestoneOf).filter((m) => m !== null);
+  const milestones = milestonesOf(o.milestones);
   const dropped = droppedMilestoneIds(milestones);
   const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
@@ -775,6 +796,7 @@ function goalFields(o, subjectIds) {
   return {
     goal: goalOf(o.goal),
     removedGoals: removed.slice(-REMOVED_KEPT),
+    goalRemoved: goalRemovedOf(o.goalRemoved),
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves
@@ -810,7 +832,7 @@ function subjectOf(saved) {
     ...wasAndMerged(s.was, s.merged),
     createdAt: time2(s.createdAt) ?? changedAt,
     changedAt,
-    closedAt: time2(s.closedAt),
+    closedAt: time2(s.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
     into: typeof s.into === "string" ? s.into : null
   };
 }
@@ -1469,10 +1491,16 @@ function linkedSubjects(o) {
   const live = new Set(o.milestones.filter((m) => m.status !== "dropped").map((m) => m.id));
   return o.subjects.filter((s) => live.has(o.serves[s.id] ?? ""));
 }
-function mayReplaceGoal(o, kind) {
+function lastProgressAt(o, g) {
+  const milestones = o.milestones.filter((m) => m.status !== "dropped").map((m) => m.changedAt);
+  const done = linkedSubjects(o).flatMap((s) => s.status === "done" && s.closedAt !== null ? [s.closedAt] : []);
+  return Math.max(g.setAt, ...milestones, ...done);
+}
+function mayReplaceGoal(o, kind, now) {
   const g = o.goal;
   if (g === null || g.metAt !== null) return kind === "goal";
-  return g.source === "inferred" && !linkedSubjects(o).some(isOpen);
+  const isWorkLeft = !linkedSubjects(o).some(isOpen) && now - lastProgressAt(o, g) >= GOAL_LEFT_MS;
+  return g.source === "inferred" && isWorkLeft;
 }
 function inferredGoal(o, text2, named, now) {
   const milestones = named.map((m, n) => ({
@@ -1493,7 +1521,7 @@ function inferredGoal(o, text2, named, now) {
     source: "inferred"
   };
   return withoutLinksTo(
-    { ...o, goal, milestones, nextMilestoneId: o.nextMilestoneId + milestones.length, serves: {} },
+    { ...o, goal, goalRemoved: null, milestones, nextMilestoneId: o.nextMilestoneId + milestones.length, serves: {} },
     milestones
   );
 }
@@ -1505,13 +1533,15 @@ function applyGoalOp(o, op, now, findSubject) {
   if (op.kind === "goal") {
     const text2 = clipWords(op.text, DESCRIPTION_KEPT);
     const milestones = op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }));
-    const isCurrent = o.goal !== null && (restatesGoal(text2, o.goal.text) || hasGoalMilestones(o, milestones));
+    const g = o.goal;
+    const isCurrent = g !== null && (restatesGoal(text2, g.text) || hasGoalMilestones(o, milestones));
+    const isPrevious = g?.was != null && restatesGoal(text2, g.was);
     const isRemoved = o.removedGoals.some((key) => restatesGoal(text2, key));
-    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, "goal");
-    if (op.milestones.length < MILESTONES_MIN || isCurrent || isRemoved || !isAllowed) return o;
+    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, "goal", now);
+    if (op.milestones.length < MILESTONES_MIN || isCurrent || isPrevious || isRemoved || !isAllowed) return o;
     return inferredGoal(o, text2, milestones, now);
   }
-  if (op.kind === "retire") return mayReplaceGoal(o, "retire") ? withoutGoal(o) : o;
+  if (op.kind === "retire") return mayReplaceGoal(o, "retire", now) ? withoutGoal(o) : o;
   if (o.goal === null) return o;
   if (op.kind === "milestone") return addMilestone(o, op, now);
   const subject = findSubject(op.subject);
@@ -1561,34 +1591,6 @@ function withoutLinksTo(o, milestones) {
 }
 function withoutGoal(o) {
   return withoutLinksTo({ ...o, goal: null, milestones: [], serves: {} }, []);
-}
-
-// ../hooks/pressed.ts
-function offersUndo(c) {
-  return c.how === "done" || c.how === "dismissed";
-}
-function isUndoable(c) {
-  return offersUndo(c) && !c.isSentToAgent;
-}
-function retryOf(id, last) {
-  if (!/^[if]\d+$/.test(id)) return null;
-  const step = /^step-(\d+)$/.exec(last.action);
-  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
-  switch (last.action) {
-    case "answer":
-      return { action: "answer", id, option: last.text };
-    case "explain":
-    case "compare":
-    case "address":
-    case "issue":
-    case "discuss":
-      return { action: last.action, id };
-    default:
-      return null;
-  }
-}
-function isRepeatOf(last, action) {
-  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
 }
 
 // ../hooks/tabs.ts
@@ -1684,6 +1686,34 @@ var MARK_LEGEND = [
 ];
 var STATUS_ONLY_MARKS = /* @__PURE__ */ new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
 
+// ../hooks/pressed.ts
+function offersUndo(c) {
+  return c.how === "done" || c.how === "dismissed";
+}
+function isUndoable(c) {
+  return offersUndo(c) && !c.isSentToAgent;
+}
+function retryOf(id, last) {
+  if (!/^[if]\d+$/.test(id)) return null;
+  const step = /^step-(\d+)$/.exec(last.action);
+  if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
+  switch (last.action) {
+    case "answer":
+      return { action: "answer", id, option: last.text };
+    case "explain":
+    case "compare":
+    case "address":
+    case "issue":
+    case "discuss":
+      return { action: last.action, id };
+    default:
+      return null;
+  }
+}
+function isRepeatOf(last, action) {
+  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
+}
+
 // ../hooks/status-children.ts
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
@@ -1744,7 +1774,7 @@ function milestoneRow(m, o, items) {
 }
 function goalPage(o, items) {
   const g = o?.goal ?? null;
-  if (o === null || g === null) return { goal: null };
+  if (o === null || g === null) return { goal: null, canRestoreGoal: o?.goalRemoved != null };
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   const shown = o.milestones.filter(
@@ -1764,7 +1794,8 @@ function goalPage(o, items) {
       now: head ? `Now: ${head.description || head.title}` : null,
       awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
-    }
+    },
+    canRestoreGoal: false
   };
 }
 
@@ -2012,7 +2043,7 @@ function statusPage(s, now) {
   };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
-    isEmpty: head === null && rows.length === 0 && goal === null,
+    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
     ...goalParts,
     goal,
@@ -3519,8 +3550,11 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   return settleGoal(o, now, readSetAt, named);
 }
 function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
-  if (answer.kind === "ops") return applyOps(last, answer.ops, now, askIds, readSetAt);
-  return last === null ? null : settleGoal(last, now, readSetAt, /* @__PURE__ */ new Set());
+  const o = answer.kind === "ops" ? applyOps(last, answer.ops, now, askIds, readSetAt) : last;
+  if (o === null) return null;
+  const settled = answer.kind === "ops" ? o : settleGoal(o, now, readSetAt, /* @__PURE__ */ new Set());
+  const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt;
+  return settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null };
 }
 
 // ../hooks/session-status.ts

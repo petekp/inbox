@@ -41,13 +41,19 @@ test('on a next build, a goal the Status call writes shows at once with its mile
   expect(w.sent).toEqual([])
 })
 
-test('on a next build, Remove goal clears the goal and selects Set a goal, which opens an empty goal field that sets the typed goal and waits for its milestones', async ($, on) => {
+test('on a next build, Remove goal clears the goal and offers Undo, which brings it back, then Set a goal, which opens an empty goal field that sets the typed goal and waits for its milestones', async ($, on) => {
   const { clock, pane } = await statusShown($, on)
 
   await pane.press({ key: 'remove-goal-goal-key' })
   await clock.settle()
   expect(await pane.find({ key: 'goal-text' })).toBeUndefined()
   expect(await pane.find({ key: 'status-head' })).toBeDefined()
+  expect((await pane.find({ key: 'restore-goal-goal' }))?.text).toBe('u: Undo')
+  await pane.press({ key: 'restore-goal-goal-key' })
+  await clock.settle()
+  expect((await pane.find({ key: 'goal-m1-name' }))?.text).toBe('Fixes built')
+  await pane.press({ key: 'remove-goal-goal-key' })
+  await clock.settle()
   expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('s: Set a goal')
 
   await pane.press({ key: 'type-goal-goal-key' })

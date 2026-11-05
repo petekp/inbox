@@ -1,17 +1,19 @@
 import type { Item, PressKind } from '../types'
+import { UNDO_KEY } from './help'
 import type { ActionEmphasis } from './rows'
 import type { MilestoneRow } from './status-goal-page'
 import type { StatusPage, StatusRow } from './status-page'
 
 /**
  * A press on the Status page. `show-ask` opens Asks with that ask selected. `type-goal` opens Reply's field for the
- * goal, prefilled with `text`. `remove-goal` removes the goal. `toggle-fold` unfolds a done fold, or
+ * goal, prefilled with `text`. `remove-goal` removes the goal, and `restore-goal` is its Undo. `toggle-fold` unfolds a done fold, or
  * folds it again, in the look that drew it. None sends a message.
  */
 type StatusPress =
   | { action: 'show-ask'; askId: string }
   | { action: 'type-goal'; text: string }
   | { action: 'remove-goal' }
+  | { action: 'restore-goal' }
   | { action: 'toggle-fold'; foldId: string }
 
 export type StatusKey = { press: StatusPress; label: string; hotkey: string; kind: PressKind; emphasis: ActionEmphasis }
@@ -76,14 +78,24 @@ const REMOVE_GOAL: StatusKey = {
   emphasis: 'quiet',
 }
 
+const RESTORE_GOAL: StatusKey = {
+  press: { action: 'restore-goal' },
+  label: 'Undo',
+  hotkey: UNDO_KEY,
+  kind: 'mark',
+  emphasis: 'normal',
+}
+
 /**
- * The goal's buttons: Set a goal before one is set, then Edit while one is, or Set next goal once it is met, then Remove
- * goal. Set a goal, Edit and Remove goal are quiet, since a missing goal holds up no work and a set one needs no change.
+ * The goal's buttons: Set a goal before one is set, after Undo while a removed goal can come back, then Edit while one
+ * is set, or Set next goal once it is met, then Remove goal. Set a goal, Edit and Remove goal are quiet, since a
+ * missing goal holds up no work and a set one needs no change.
  */
 export function goalKeyPlan(page: StatusPage): StatusKey[] {
   const g = page.goal
   if (g === null)
     return [
+      ...(page.canRestoreGoal ? [RESTORE_GOAL] : []),
       { press: { action: 'type-goal', text: '' }, label: 'Set a goal', hotkey: 's', kind: 'view', emphasis: 'quiet' },
     ]
   if (g.isMet)

@@ -1,11 +1,11 @@
 import type { LastAction, Ledger } from '../types'
 import type { PressResult } from './press-reducer'
 import type { RowPress } from './presses'
-import { removeGoal, setTypedGoal } from './status-goal-ops'
+import { removeGoal, restoreGoal, setTypedGoal } from './status-goal-ops'
 import { EMPTY_SESSION_STATUS } from './status-limits'
 
 /**
- * A press on the Status page's goal: Remove goal, or a goal the person typed. Each changes the saved Status at once
+ * A press on the Status page's goal: Remove goal, its Undo, or a goal the person typed. Each changes the saved Status at once
  * and sends nothing. A typed goal that rewords the goal keeps its milestones. A goal typed
  * before the first Status starts one.
  */
@@ -21,6 +21,12 @@ export function goalPressed(
     if (o.goal === null) return { stale: true }
 
     return { ledger: { ...ledger, overview: removeGoal(o) }, last: record('mark'), effects: [] }
+  }
+  if (p.action === 'restore-goal') {
+    const restored = restoreGoal(o)
+    if (restored === o) return { stale: true }
+
+    return { ledger: { ...ledger, overview: restored }, last: record('mark'), effects: [] }
   }
   if (p.action !== 'type') return { stale: true }
   const typed = setTypedGoal(o, p.text, now)
