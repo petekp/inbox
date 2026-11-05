@@ -39,8 +39,8 @@ type MilestoneFact = {
 /** The goal the person set or accepted, and its milestones. */
 type GoalFact = { text: string; match: string; milestones: MilestoneFact[] }
 
-/** An outcome with a finish line the person stated at a step, which a proposal should match. */
-type GoalStated = { text: string; match: string }
+/** An outcome with a finish line that a step makes clear, from the person's words or the work, which a goal set there should match. */
+type GoalClear = { text: string; match: string }
 
 /** An open ask, and the pieces it holds up. */
 type AskFact = { match: string; text: string; holdsUp: string[] }
@@ -64,8 +64,8 @@ export type Facts = {
   children: ChildFact[]
   /** The goal as the session holds it. None when no goal is set. */
   goal?: GoalFact | null
-  /** What the person stated as a goal at this step. Null at a step where they stated none. */
-  goalStated?: GoalStated | null
+  /** The next goal this step makes clear. Null at a step where none is clear. */
+  goalClear?: GoalClear | null
   /** The ids of pieces and milestones whose state, place or plan changed at this step. Empty when nothing changed. */
   changed: string[]
 }
@@ -85,7 +85,7 @@ export type FactsChange = {
   goal?: GoalFact | null
   /** Milestones of the goal whose facts change: a known id updates it. */
   milestones?: (Partial<MilestoneFact> & { id: string })[]
-  goalStated?: GoalStated
+  goalClear?: GoalClear
 }
 
 const CHANGING_KEYS = ['state', 'stands', 'parts', 'was', 'merged', 'serves'] as const
@@ -131,7 +131,7 @@ export function factsAfter(before: Facts, change: FactsChange | undefined): Fact
     notWork: [...before.notWork, ...(change?.notWork ?? [])],
     children: change?.children ?? before.children,
     goal: goalAfter(before.goal, change, changed),
-    goalStated: change?.goalStated ?? null,
+    goalClear: change?.goalClear ?? null,
     changed,
   }
 }
@@ -205,7 +205,7 @@ export function factsText(f: Facts): string {
         ),
       ]
     : ['Goal: none set']
-  const stated = f.goalStated ? [`The person stated a goal at this step: ${f.goalStated.text}`] : []
+  const stated = f.goalClear ? [`This step makes the next goal clear: ${f.goalClear.text}`] : []
 
   return [
     ...goal,

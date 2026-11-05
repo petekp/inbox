@@ -1,7 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
 import { parseStatus } from '../hooks/status'
-import { declineProposedGoal, setTypedGoal, useProposedGoal } from '../hooks/status-goal-ops'
+import { removeGoal, restoreGoal, setTypedGoal } from '../hooks/status-goal-ops'
+import { GOAL_LEFT_MS } from '../hooks/status-limits'
 import { applyStatus } from '../hooks/status-ops'
 import { statusPrompt, statusSystem } from '../hooks/status-prompt'
 import { GOAL_PARTS } from '../hooks/status-prompt-goal'
@@ -9,15 +10,13 @@ import type { GoalPartId } from '../hooks/status-prompt-goal'
 import type { SessionStatus } from '../types'
 import { after, NO_ASKS, opsOf } from './status-helpers'
 
-const PROPOSE = 'GOAL: Import ready to demo | done Import works; working Error messages; queued Demo script'
+const GOAL = 'GOAL: Import ready to demo | done Import works; working Error messages; queued Demo script'
+const WORK = 'NEW: working | Import | CSV works\nNEW: queued | Dark mode | not started'
 
-const proposed = (): SessionStatus =>
-  after(null, `NEW: working | Import | CSV works\nNEW: queued | Dark mode | not started\n${PROPOSE}`, 10)
+const withGoal = (): SessionStatus => after(null, `${WORK}\n${GOAL}`, 20)
 
-const withGoal = (): SessionStatus => useProposedGoal(proposed(), 20)
-
-test('reads GOAL, MILESTONE and SERVES lines, leaving out a proposed milestone with no known status', () => {
-  expect(opsOf(`${PROPOSE}; soon Polish`)).toEqual([
+test('reads GOAL, RETIRE, MILESTONE and SERVES lines, leaving out a GOAL milestone with no known status', () => {
+  expect(opsOf(`${GOAL}; soon Polish\nRETIRE: work moved to search`)).toEqual([
     {
       kind: 'goal',
       text: 'Import ready to demo',
@@ -27,6 +26,7 @@ test('reads GOAL, MILESTONE and SERVES lines, leaving out a proposed milestone w
         { status: 'queued', name: 'Demo script' },
       ],
     },
+    { kind: 'retire', why: 'work moved to search' },
   ])
   expect(opsOf('MILESTONE: working | Error messages | bad rows named\nSERVES: s1 | m1\nSERVES: s2 | -')).toEqual([
     { kind: 'milestone', status: 'working', name: 'Error messages', text: 'bad rows named' },
@@ -35,52 +35,7 @@ test('reads GOAL, MILESTONE and SERVES lines, leaving out a proposed milestone w
   ])
 })
 
-test('a GOAL line proposes and never sets the goal, and one with under two milestones, the current goal or a declined one, however long, is not proposed', () => {
-  const o = proposed()
-  const long = `GOAL: ${'every word of this goal counts toward the limit on how long a goal may read'} | queued A; queued B`
-  const declinedLong = declineProposedGoal(after(null, long, 10))
-
-  expect(o.goal).toBeNull()
-  expect(o.proposedGoal?.text).toBe('Import ready to demo')
-  expect(after(null, 'GOAL: Ship 2.6 | queued Release notes', 10).proposedGoal).toBeNull()
-  expect(after(withGoal(), 'GOAL: Import, ready to demo | queued A; queued B', 30).proposedGoal).toBeNull()
-  expect(after(withGoal(), 'GOAL: Ship 2.6 | queued Release notes; queued Tag', 30).goal?.text).toBe(
-    'Import ready to demo',
-  )
-  expect(after(declineProposedGoal(o), PROPOSE, 30).proposedGoal).toBeNull()
-  expect(declinedLong.declinedGoals).toHaveLength(1)
-  expect(after(declinedLong, long, 20).proposedGoal).toBeNull()
-})
-
-test('a proposal that rewords the goal or a declined goal, or names the goal’s milestones, is not proposed, and a next goal that shares a few words is', () => {
-  const typed = setTypedGoal(
-    after(null, 'NEW: working | Import | CSV works', 10),
-    'Ship 2.6 with the import feature and recent fixes',
-    20,
-  )
-  const declined = declineProposedGoal(proposed())
-
-  expect(typed.goal?.isAwaitingMilestones).toBe(true)
-  expect(
-    after(typed, 'GOAL: 2.6 shipped with the import feature | working Import landed; queued 2.6 cut', 30).proposedGoal,
-  ).toBeNull()
-  expect(
-    after(typed, 'GOAL: Ship 2.7 with PR grouping | queued Grouping built; queued 2.7 cut', 30).proposedGoal?.text,
-  ).toBe('Ship 2.7 with PR grouping')
-  expect(
-    after(typed, 'GOAL: Ship 2.7 with the import feature and recent fixes | queued Fixes; queued 2.7 cut', 30)
-      .proposedGoal,
-  ).not.toBeNull()
-  expect(
-    after(withGoal(), 'GOAL: CSV import done | queued Demo script; done Import works; working Error messages', 30)
-      .proposedGoal,
-  ).toBeNull()
-  expect(
-    after(declined, 'GOAL: Import demo-ready | working Import works; queued Demo script', 30).proposedGoal,
-  ).toBeNull()
-})
-
-test('Set as goal takes the proposed milestones with their states, and Not now remembers the goal', () => {
+test('a GOAL line sets an inferred goal with its milestones, and none with under two milestones, or for work that is all closed', () => {
   const o = withGoal()
 
   expect(o.goal).toEqual({
@@ -89,14 +44,139 @@ test('Set as goal takes the proposed milestones with their states, and Not now r
     metAt: null,
     was: null,
     isAwaitingMilestones: false,
+    source: 'inferred',
   })
   expect(o.milestones.map(m => [m.id, m.name, m.status])).toEqual([
     ['m1', 'Import works', 'done'],
     ['m2', 'Error messages', 'working'],
     ['m3', 'Demo script', 'queued'],
   ])
-  expect(o.proposedGoal).toBeNull()
-  expect(declineProposedGoal(proposed())).toMatchObject({ proposedGoal: null, declinedGoals: ['demo import ready'] })
+  expect(after(null, `${WORK}\nGOAL: Ship 2.6 | queued Release notes`, 10).goal).toBeNull()
+  expect(after(null, `NEW: working | Import | CSV works\n${GOAL}`, 10).goal).not.toBeNull()
+  expect(after(null, `NEW: working | Import | CSV works\nDONE: Import | shipped\n${GOAL}`, 10).goal).toBeNull()
+  expect(after(null, `${WORK}\nDONE: s1 | shipped\n${GOAL}`, 10).goal).not.toBeNull()
+  expect(after(null, `${WORK}\nDONE: s1 | shipped\nDONE: s2 | shipped\n${GOAL}`, 10).goal).toBeNull()
+})
+
+test('a GOAL line that restates the goal, names its milestones or restates a removed goal changes nothing, and a next goal that shares a few words is set', () => {
+  const done = after(withGoal(), 'SERVES: s1 | m2\nSERVES: s2 | -\nDONE: s1 | shipped', 30)
+  const removed = after(removeGoal(withGoal()), 'NEW: working | Search | index drafted', 40)
+
+  expect(after(done, 'GOAL: Import, ready to demo | queued A; queued B', 40).goal?.setAt).toBe(20)
+  expect(
+    after(done, 'GOAL: CSV import done | queued Demo script; done Import works; working Error messages', 40).goal
+      ?.setAt,
+  ).toBe(20)
+  expect(after(removed, 'GOAL: Import demo-ready | working Import works; queued Demo script', 50).goal).toBeNull()
+  expect(
+    after(
+      done,
+      'NEW: working | Grouping | drafted\nGOAL: Import ready to demo in 2.7 | queued Grouping; queued 2.7 cut',
+      30 + GOAL_LEFT_MS,
+    ).goal,
+  ).toMatchObject({
+    text: 'Import ready to demo in 2.7',
+    was: 'Import ready to demo',
+  })
+})
+
+test('a GOAL or RETIRE line replaces an inferred goal only once none of its linked work is open and it has not moved forward for GOAL_LEFT_MS, and never with the goal it replaced', () => {
+  const linked = after(withGoal(), 'SERVES: s1 | m2\nSERVES: s2 | m3', 30)
+  const next = 'GOAL: Search under 100 ms | working Index rebuilt; queued 2.7 live'
+  const work = 'NEW: working | Search index | rebuilt\nNEW: queued | Ranking | not started'
+  const betweenMilestones = after(linked, 'DONE: s1 | merged\nDROP: s2 | not needed', 40)
+  const later = 40 + GOAL_LEFT_MS
+  const replaced = after(betweenMilestones, `${work}\n${next}`, later)
+
+  expect(after(linked, `${work}\n${next}`, later).goal?.text).toBe('Import ready to demo')
+  expect(after(linked, `DONE: s1 | merged\nDROP: s2 | not needed\n${work}\n${next}`, 40).goal?.text).toBe(
+    'Import ready to demo',
+  )
+  expect(after(betweenMilestones, `${work}\n${next}`, later - 1).goal?.text).toBe('Import ready to demo')
+  expect(replaced.goal).toMatchObject({ text: 'Search under 100 ms', was: 'Import ready to demo', source: 'inferred' })
+  expect(after(replaced, 'GOAL: Import ready to demo | queued A; queued B', later + GOAL_LEFT_MS).goal?.text).toBe(
+    'Search under 100 ms',
+  )
+  expect(after(betweenMilestones, `${work}\n${next}\nRETIRE: moved on`, later).goal?.text).toBe('Search under 100 ms')
+  expect(after(betweenMilestones, 'RETIRE: moved on', later - 1).goal).not.toBeNull()
+  expect(after(betweenMilestones, 'RETIRE: moved on', later)).toMatchObject({
+    goal: null,
+    milestones: [],
+    serves: {},
+  })
+})
+
+test('a met goal takes a next GOAL at once and refuses RETIRE', () => {
+  const met = after(withGoal(), 'DONE: m2 | named\nDONE: m3 | written', 30)
+  const next = after(met, 'GOAL: Search under 100 ms | working Index rebuilt; queued 2.7 live', 40)
+
+  expect(met.goal?.metAt).toBe(30)
+  expect(after(met, 'RETIRE: done', 40).goal?.metAt).toBe(30)
+  expect(next.goal).toMatchObject({ text: 'Search under 100 ms', metAt: null, was: 'Import ready to demo' })
+  expect(next.milestones.map(m => m.id)).toEqual(['m4', 'm5'])
+})
+
+test('a typed goal is neither replaced nor retired before it is met, and takes a next GOAL once it is', () => {
+  const typed = after(
+    setTypedGoal(withGoal(), 'Ship 2.6 with import', 30),
+    'MILESTONE: queued | 2.6 live | not started\nMILESTONE: queued | Notes out | not started\nSERVES: s1 | 2.6 live',
+    40,
+  )
+  const idle = after(typed, 'DONE: s1 | shipped\nDROP: s2 | not needed\nNEW: working | Search | index drafted', 50)
+  const next = 'GOAL: Search under 100 ms | working Index rebuilt; queued 2.7 live'
+  const met = after(after(idle, 'DONE: Notes out | written\nNEW: queued | Ranking | not started', 60), next, 70)
+
+  expect(typed.goal?.source).toBe('typed')
+  expect(after(idle, 'RETIRE: moved on', 1e9).goal?.text).toBe('Ship 2.6 with import')
+  expect(after(idle, `NEW: queued | Ranking | not started\n${next}`, 1e9).goal?.text).toBe('Ship 2.6 with import')
+  expect(met.goal).toMatchObject({ text: 'Search under 100 ms', source: 'inferred' })
+})
+
+test('code closes a milestone once its linked work closed with one done, and leaves one the call opened again until more of its work closes', () => {
+  const linked = after(
+    withGoal(),
+    'SERVES: s1 | m2\nSERVES: s2 | m3\nNEW: queued | Docs | not started\nSERVES: s3 | m2',
+    30,
+  )
+  const closed = after(linked, 'DONE: s1 | merged\nDROP: s3 | not needed\nDROP: s2 | not needed', 40)
+  const reopened = after(closed, 'SET: m2 | working | Excel errors left', 50)
+  const more = after(
+    after(reopened, 'NEW: working | Excel errors | named\nSERVES: s4 | m2', 60),
+    'DONE: s4 | named',
+    70,
+  )
+
+  expect(closed.milestones.map(m => [m.id, m.status])).toEqual([
+    ['m1', 'done'],
+    ['m2', 'done'],
+    ['m3', 'queued'],
+  ])
+  expect(
+    applyStatus(reopened, parseStatus('NO CHANGE')!, 55, NO_ASKS)!.milestones.find(m => m.id === 'm2')?.status,
+  ).toBe('working')
+  expect(more.milestones.find(m => m.id === 'm2')).toMatchObject({ status: 'done', closedAt: 70 })
+  expect(more.goal?.metAt).toBeNull()
+})
+
+test('Remove goal clears the goal, its milestones and links, and the call does not set it again, until Undo brings them back', () => {
+  const linked = after(withGoal(), 'SERVES: s1 | m2\nLINK: i1 | m2', 30, new Set(['i1']))
+  const removed = removeGoal(linked)
+  const noChange = parseStatus('NO CHANGE')!
+
+  expect(removed).toMatchObject({ goal: null, milestones: [], serves: {}, askSubjects: {} })
+  expect(removed.removedGoals).toEqual(['demo import ready'])
+  expect(removeGoal(removed)).toBe(removed)
+  expect(restoreGoal(removed)).toEqual({ ...linked, goalRemoved: null })
+  expect(applyStatus(removed, noChange, 40, NO_ASKS, linked.goal!.setAt)?.goalRemoved).not.toBeNull()
+  expect(applyStatus(removed, noChange, 40, NO_ASKS, null)?.goalRemoved).toBeNull()
+  expect(setTypedGoal(removed, 'Ship 2.6', 40).goalRemoved).toBeNull()
+})
+
+test('typing a met goal again sets a new goal that is not met', () => {
+  const met = after(withGoal(), 'DONE: m2 | named\nDONE: m3 | written', 30)
+  const typed = setTypedGoal(met, 'Import ready to demo', 40)
+
+  expect(typed.goal).toMatchObject({ setAt: 40, metAt: null, isAwaitingMilestones: true, source: 'typed' })
 })
 
 test('milestones need a goal, move by id under the rewording hold, and stop at five', () => {
@@ -142,15 +222,12 @@ test('the goal is met once every milestone left is done, and unmet when one open
 })
 
 test('a typed goal unlinks every subject and waits until an answer from a call that read it keeps a milestone, and a rewording keeps its milestones and links and sends nothing', () => {
-  const met = after(
-    after(withGoal(), 'SERVES: s1 | m1\nSERVES: s2 | -', 22),
-    'DONE: m2 | named\nDONE: m3 | written',
-    25,
-  )
+  const linked = after(withGoal(), 'SERVES: s1 | m1\nSERVES: s2 | -', 22)
+  const met = after(linked, 'DONE: m2 | named\nDONE: m3 | written', 25)
   const typed = setTypedGoal(met, 'Ship 2.6 with import', 30)
   const answered = applyStatus(typed, parseStatus('NO CHANGE')!, 40, NO_ASKS)!
   const stale = applyStatus(typed, parseStatus('SET: m1 | working | redone')!, 40, NO_ASKS, met.goal!.setAt)!
-  const reworded = setTypedGoal(met, 'Demo import ready', 30)
+  const reworded = setTypedGoal(linked, 'Demo import ready', 30)
 
   expect(met.goal?.metAt).toBe(25)
   expect(typed.goal).toMatchObject({
@@ -167,8 +244,14 @@ test('a typed goal unlinks every subject and waits until an answer from a call t
     isAwaitingMilestones: false,
     metAt: null,
   })
+  expect(typed.goal?.source).toBe('typed')
   expect(reworded.serves).toEqual({ s1: 'm1', s2: 'none' })
-  expect(reworded.goal).toMatchObject({ text: 'Demo import ready', setAt: 20, isAwaitingMilestones: false })
+  expect(reworded.goal).toMatchObject({
+    text: 'Demo import ready',
+    setAt: 20,
+    isAwaitingMilestones: false,
+    source: 'typed',
+  })
 })
 
 test('the answer that reads a typed goal keeps the milestones it names, and the dropped and unnamed ones of the goal before go and never fill its five places', () => {
@@ -211,12 +294,11 @@ test('a GOAL line that restates a goal just set gives its milestones, and the SE
   ])
   expect(answered.goal).toMatchObject({ text: 'Ship 2.6 with import', isAwaitingMilestones: false })
   expect(answered.serves).toEqual({ s1: answered.milestones[0]!.id })
-  expect(answered.proposedGoal).toBeNull()
   expect(stale.milestones.map(m => m.name)).toEqual(typed.milestones.map(m => m.name))
   expect(stale.goal).toMatchObject({ isAwaitingMilestones: true })
 })
 
-test('a restated goal’s milestone keeps the text the goal before it gave that milestone, and a GOAL line for another goal while a goal waits is still a proposal', () => {
+test('a restated goal’s milestone keeps the text the goal before it gave that milestone, and a GOAL line for another goal while a typed goal waits changes nothing', () => {
   const described = after(withGoal(), 'SET: m1 | working | CSV and JSON work', 25)
   const typed = setTypedGoal(withGoal(), 'Ship 2.6 with import', 30)
   const carried = setTypedGoal(described, 'Ship 2.6 with import', 30)
@@ -228,23 +310,8 @@ test('a restated goal’s milestone keeps the text the goal before it gave that 
     ['Import works', 'done', 'CSV and JSON work'],
     ['2.6 live', 'queued', ''],
   ])
-  expect(other.proposedGoal?.text).toBe('Dark mode in 2.7')
   expect(other.goal).toMatchObject({ text: 'Ship 2.6 with import', isAwaitingMilestones: true })
   expect(other.milestones).toEqual([])
-})
-
-test('a goal typed over a proposal declines it, one with the proposal’s words uses the proposal and its milestones, and Set as goal links no subject yet', () => {
-  const o = proposed()
-  const linked = after(withGoal(), 'SERVES: s1 | -\nGOAL: Ship 2.6 | queued Notes; queued Tag', 22)
-
-  expect(setTypedGoal(o, 'Ship 2.6', 30)).toMatchObject({ proposedGoal: null })
-  expect(setTypedGoal(o, 'Ship 2.6', 30).declinedGoals).toHaveLength(1)
-  const typed = setTypedGoal(o, 'Demo ready: import', 30)
-  expect(typed).toMatchObject({ proposedGoal: null, declinedGoals: [] })
-  expect(typed.goal).toMatchObject({ text: 'Demo ready: import', isAwaitingMilestones: false })
-  expect(typed.milestones.map(m => m.name)).toEqual(useProposedGoal(o, 30).milestones.map(m => m.name))
-  expect(linked.serves).toEqual({ s1: 'none' })
-  expect(useProposedGoal(linked, 40).serves).toEqual({})
 })
 
 test("the replaced goal's was line goes once the person has looked", () => {
@@ -254,9 +321,15 @@ test("the replaced goal's was line goes once the person has looked", () => {
   expect(seen?.goal?.was).toBeNull()
 })
 
-test("the call reads the goal, its milestones, each subject's link and the declined goals, and a copy of the system text can leave out any one goal rule", () => {
-  const linked = declineProposedGoal(
-    after(withGoal(), 'SERVES: s1 | m1\nGOAL: Dark mode shipped | queued Theme built; queued Theme released', 22),
+test("the call reads the goal, its milestones, each subject's link and the removed goals, and a copy of the system text can leave out any one goal rule", () => {
+  const linked = {
+    ...after(withGoal(), 'SERVES: s1 | m1', 22),
+    removedGoals: ['dark mode shipped'],
+  }
+  const typed = after(
+    setTypedGoal(linked, 'Ship 2.6 with import', 25),
+    'MILESTONE: queued | 2.6 live | not started',
+    26,
   )
   const exchange = {
     person: 'Go on',
@@ -269,13 +342,16 @@ test("the call reads the goal, its milestones, each subject's link and the decli
     tasks: [],
   }
   const prompt = statusPrompt({ last: linked, asks: [], tasks: [], now: 30 }, exchange)
-  const noGoal = statusPrompt({ last: proposed(), asks: [], tasks: [], now: 30 }, exchange)
+  const noGoal = statusPrompt({ last: after(null, WORK, 10), asks: [], tasks: [], now: 30 }, exchange)
+  const typedPrompt = statusPrompt({ last: typed, asks: [], tasks: [], now: 30 }, exchange)
 
   expect(prompt).toMatch(/<goal>\nImport ready to demo\n<\/goal>/)
-  expect(prompt).toMatch(/m2 \| working \| Error messages \| -/)
+  expect(prompt).toMatch(/m1 \| done \| Import works \| -\n/)
+  expect(prompt).toMatch(/m2 \| working \| Error messages \| - \| no work linked\n/)
+  expect(typedPrompt).toMatch(/<goal>\nShip 2.6 with import \(typed\)\n<\/goal>/)
   expect(prompt).toMatch(/s1 \| working \| Import \| CSV works \| m1\n/)
   expect(prompt).toMatch(/s2 \| queued \| Dark mode \| not started \| \?\n/)
-  expect(prompt).toMatch(/<declined>\ndark mode shipped\n<\/declined>/)
+  expect(prompt).toMatch(/<removed>\ndark mode shipped\n<\/removed>/)
   expect(noGoal).not.toMatch(/<goal>|<milestones>|\| \?\n/)
   for (const id of Object.keys(GOAL_PARTS) as GoalPartId[]) {
     const others = (Object.keys(GOAL_PARTS) as GoalPartId[]).filter(x => x !== id)

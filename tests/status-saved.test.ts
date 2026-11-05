@@ -155,13 +155,27 @@ test('a saved Status drops subjects and children it cannot read, reads a delegat
   expect(upgradeStatus({ role: 'session' })).toBeNull()
 })
 
-test('a Status saved before the goal loads with no goal, milestones, proposal or links', () => {
+test('a closed subject or milestone saved before closedAt was kept closes at its last change', () => {
+  const o = upgradeStatus({
+    ...EMPTY_SESSION_STATUS,
+    subjects: [
+      { id: 's1', name: 'A', status: 'done', text: 'shipped', changedAt: 5 },
+      { id: 's2', name: 'B', status: 'working', text: 'b', changedAt: 6 },
+    ],
+    milestones: [{ id: 'm1', name: 'M', status: 'done', text: '', was: null, changedAt: 4 }],
+  })!
+
+  expect(o.subjects.map(x => x.closedAt)).toEqual([5, null])
+  expect(o.milestones[0]?.closedAt).toBe(4)
+})
+
+test('a Status saved before the goal loads with no goal, milestones or links', () => {
   const saved = upgradeStatus({ head: null, subjects: [], children: [], askSubjects: {}, nextId: 1, nextChildId: 1 })
 
   expect(saved).toEqual(EMPTY_SESSION_STATUS)
 })
 
-test('a saved goal keeps its milestones and proposal, and drops what it cannot read or what links to nothing', () => {
+test('a saved goal keeps its milestones, loads as typed while it waits for them, and drops its proposal, what it cannot read and what links to nothing', () => {
   const subject = {
     id: 's1',
     name: 'Import',
@@ -207,13 +221,10 @@ test('a saved goal keeps its milestones and proposal, and drops what it cannot r
     metAt: null,
     was: 'Import built',
     isAwaitingMilestones: true,
+    source: 'typed',
   })
-  expect(saved?.proposedGoal).toEqual({
-    text: 'Demo on Friday',
-    milestones: [{ name: 'Import works', status: 'done' }],
-    at: 6,
-  })
-  expect(saved?.declinedGoals).toEqual(Array.from({ length: 10 }, (_, n) => `${n + 2} goal`))
+  expect(Object.keys(saved ?? {})).not.toContain('proposedGoal')
+  expect(saved?.removedGoals).toEqual(Array.from({ length: 10 }, (_, n) => `${n + 2} goal`))
   expect(saved?.milestones).toEqual([milestone])
   expect(saved?.nextMilestoneId).toBe(2)
   expect(saved?.serves).toEqual({ s1: 'm1' })
@@ -224,7 +235,7 @@ test('a goal with no text or time is no goal', () => {
   expect(upgradeStatus({ ...EMPTY_SESSION_STATUS, goal: { text: 'Ship it' } })?.goal).toBeNull()
 })
 
-test('a saved Status loses its links to a dropped milestone, and its declined goals lose a trailing period and stay declined, the same on every load', () => {
+test('a saved Status loses its links to a dropped milestone, its goal with no source loads as inferred, and its declined goals lose a trailing period and load as removed, the same on every load', () => {
   const at = { was: null, changedAt: 5, closedAt: null }
   const saved = {
     ...EMPTY_SESSION_STATUS,
@@ -240,15 +251,17 @@ test('a saved Status loses its links to a dropped milestone, and its declined go
     declinedGoals: ['demo import ready.', 'demo import ready', 'web on beta'],
   }
   const once = upgradeStatus(saved)!
-  const reproposed = after(once, 'GOAL: Import ready to demo. | working Notes import; queued Demo run', 10)
+  const unset = { ...once, goal: null, milestones: [], serves: {} }
+  const again = after(unset, 'GOAL: Import ready to demo. | working Notes import; queued Demo run', 10)
 
-  expect({ serves: once.serves, asks: once.askSubjects, declined: once.declinedGoals }).toEqual({
+  expect({ serves: once.serves, asks: once.askSubjects, removed: once.removedGoals }).toEqual({
     serves: { s1: 'm1' },
     asks: { i2: ['s1'] },
-    declined: ['demo import ready', 'beta web'],
+    removed: ['demo import ready', 'beta web'],
   })
+  expect(once.goal?.source).toBe('inferred')
   expect(upgradeStatus(once)).toEqual(once)
-  expect(reproposed.proposedGoal).toBeNull()
+  expect(again.goal).toBeNull()
 })
 
 test('a Status saved before looks counted rows on screen counts every subject that changed by its last look as seen, and a saved missed row keeps its time while its subject lasts', () => {

@@ -91,21 +91,23 @@ function headAfter(last: StatusHead | null, op: Extract<Op, { kind: 'head' }>, w
 }
 
 /**
- * Subject changes first, then reversals and the head, then links, so a WAS or LINK can name a subject the same answer
- * added, and the head reads the subjects as the answer left them.
+ * Subject changes first, then the goal, then milestones, then reversals and the head, then links. So the goal's guard
+ * reads the subjects as the answer left them, a MILESTONE line adds to a goal the same answer set, a WAS or LINK can
+ * name a subject the same answer added, and the head reads the subjects as the answer left them.
  */
 const OP_ORDER: Record<Op['kind'], number> = {
   none: 0,
-  head: 1,
   new: 0,
   set: 0,
   done: 0,
   drop: 0,
-  was: 1,
-  link: 2,
-  goal: 0,
-  milestone: 0,
-  serves: 2,
+  goal: 1,
+  retire: 1,
+  milestone: 2,
+  head: 3,
+  was: 3,
+  link: 4,
+  serves: 4,
 }
 
 /**
@@ -170,7 +172,7 @@ export function applyOps(
     .sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
   for (const { op } of ordered) {
     if (op.kind === 'none') continue
-    if (op.kind === 'goal' || op.kind === 'milestone' || op.kind === 'serves') {
+    if (op.kind === 'goal' || op.kind === 'retire' || op.kind === 'milestone' || op.kind === 'serves') {
       o = applyGoalOp(o, op, now, find)
       if (op.kind === 'milestone') markNamed(findMilestone(o, op.name))
       if (op.kind === 'serves' && op.milestone !== null) markNamed(findMilestone(o, op.milestone))
@@ -246,7 +248,10 @@ export function applyOps(
   return settleGoal(o, now, readSetAt, named)
 }
 
-/** The Status after an answer, applied at `now`. `askIds` are the open asks. */
+/**
+ * The Status after an answer, applied at `now`. `askIds` are the open asks. A removed goal's Undo lasts until an answer
+ * from a call that did not read that goal applies: the call moved on from it.
+ */
 export function applyStatus(
   last: SessionStatus | null,
   answer: StatusAnswer,
@@ -254,7 +259,10 @@ export function applyStatus(
   askIds: ReadonlySet<string>,
   readSetAt: number | null = last?.goal?.setAt ?? null,
 ): SessionStatus | null {
-  if (answer.kind === 'ops') return applyOps(last, answer.ops, now, askIds, readSetAt)
+  const o = answer.kind === 'ops' ? applyOps(last, answer.ops, now, askIds, readSetAt) : last
+  if (o === null) return null
+  const settled = answer.kind === 'ops' ? o : settleGoal(o, now, readSetAt, new Set())
+  const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt
 
-  return last === null ? null : settleGoal(last, now, readSetAt, new Set())
+  return settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null }
 }

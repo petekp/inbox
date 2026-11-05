@@ -161,9 +161,10 @@ export function demoView(now: number, agent: string): DemoCopy {
           metAt: null,
           was: null,
           isAwaitingMilestones: false,
+          source: 'inferred',
         },
-        proposedGoal: null,
-        declinedGoals: [],
+        removedGoals: [],
+        goalRemoved: null,
         milestones: [
           {
             id: 'm1',

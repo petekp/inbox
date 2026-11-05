@@ -71,7 +71,6 @@ export function paneStatus(
     markGlyph,
     desktopFrame,
     keyRow,
-    textKey,
     emptyState,
     sections,
     section,
@@ -111,7 +110,7 @@ export function paneStatus(
     > &
     Pick<PaneRowLines, 'markWidth' | 'desktopHairline' | 'markGlyph'> &
     Pick<PaneRowFrame, 'desktopFrame'> &
-    Pick<PaneRowKeys, 'keyRow' | 'textKey' | 'keyLines' | 'terminalKeyCells'> &
+    Pick<PaneRowKeys, 'keyRow' | 'keyLines' | 'terminalKeyCells'> &
     Pick<PaneAskTabs, 'emptyState'> &
     Pick<PaneRowParts, 'sections' | 'section' | 'terminalSectionGap' | 'foldRow' | 'foldButton' | 'desktopFoldLines'>,
   handlers: Pick<
@@ -220,7 +219,7 @@ export function paneStatus(
   }
   /** Other work's line: the space above it, its name, then a solid rule to the end of the list's columns. */
   const statusPartLine = (id: string, text: string) => {
-    const above = gap('part-above')
+    const above = [gap('part-above')]
     const line = oneLine(
       look === 'desktop' ? (
         <Box flexDirection="row" alignItems="center" marginLeft={desktopStatusRuleLeft} paddingY={statusFrameEdge}>
@@ -241,10 +240,10 @@ export function paneStatus(
 
     return stackedIn(
       <Box key={`status-${id}`} flexDirection="column">
-        {above.el}
+        {above.map(p => p.el)}
         {line.el}
       </Box>,
-      [above, line],
+      [...above, line],
     )
   }
   /** One line of the Status tab's list: a mark and its text, `depth` steps in. Each step sits under the text of the row it hangs from. */
@@ -343,12 +342,13 @@ export function paneStatus(
     lines: look === 'desktop' ? desktopTextLines(text, statusTextWidth(depth)) : inkLines(text, statusTextWidth(depth)),
   })
   /**
-   * Answers the proposal, then selects the goal's button, scrolls to it and focuses it. The pressed button is gone, and
-   * the terminal would move its focus to the next button drawn, a milestone's View.
+   * Removes the goal and selects its Undo, or brings it back and selects Edit, then scrolls to the button and focuses
+   * it. The pressed button is gone, and the terminal would move its focus to the next button drawn.
    */
-  const answerProposal = async (action: 'use-goal' | 'decline-goal', surface: UiPressArgument['surface']) => {
+  const pressGoal = async (action: 'remove-goal' | 'restore-goal', surface: UiPressArgument['surface']) => {
     await runPress({ action, id: GOAL_KEYS_ID }, surface)
-    await selectStatusRow(GOAL_KEYS_ID, `type-goal-${GOAL_KEYS_ID}`)
+    const next = action === 'remove-goal' ? 'restore-goal' : 'type-goal'
+    await selectStatusRow(GOAL_KEYS_ID, `${next}-${GOAL_KEYS_ID}`)
   }
   /** A target's buttons from its plan. Only the selected target's keys press it, so only that one names its keys. */
   const statusKeys = (t: StatusKeyTarget): KeyAction[] =>
@@ -365,9 +365,9 @@ export function paneStatus(
             ? startTyping(GOAL_KEYS_ID, press.text)
             : press.action === 'toggle-fold'
               ? toggleFold(press.foldId)
-              : answerProposal(press.action, p.surface),
+              : pressGoal(press.action, p.surface),
     }))
-  const { goalAbove, setGoal, setGoalBare, markRun } = paneStatusGoal(
+  const { goalSection, setGoalBare, markRun } = paneStatusGoal(
     {
       e,
       look,
@@ -385,14 +385,12 @@ export function paneStatus(
       statusPageText,
       desktopBlockWidth,
       markGlyph,
-      markWidth,
       keyRow,
-      textKey,
       terminalKeyCells,
       desktopFrame,
     },
     handlers,
-    { statusRowLine, statusKeys, statusRows: rows => statusRows(rows), keysRow },
+    { statusRowLine, statusRows: rows => statusRows(rows), keysRow, statusKeys },
   )
   const statusMark = (r: Pick<StatusRow & { kind: 'subject' }, 'id' | 'mark' | 'tone' | 'isRunning'>) =>
     markGlyph({ text: r.mark, isRunning: r.isRunning }, r.id, r.tone ? pal.mark[r.tone] : pal.muted)
@@ -523,11 +521,8 @@ export function paneStatus(
         ),
         tops: new Map(),
       }
-    const { proposal, goal } = goalAbove(page)
-    const head = page.goal === null && page.head ? statusHead(page.head) : null
-    const headLines = [...(head ? [head] : []), ...setGoal(page)]
-    const goalParts = page.proposal?.isBelowGoal ? [goal, proposal] : [proposal, goal]
-    const parts = [...goalParts, headLines, ...(page.rows.length > 0 ? [statusRows(page.rows)] : [])]
+    const head = page.goal === null && page.head ? [statusHead(page.head)] : []
+    const parts = [goalSection(page), head, ...(page.rows.length > 0 ? [statusRows(page.rows)] : [])]
     const shown = parts
       .filter(lines => lines.length > 0)
       .map(lines => stackedIn(section(lines.map(p => p.el)), [...desktopSectionPad, ...lines]))

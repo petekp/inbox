@@ -1,25 +1,26 @@
-import type { Milestone, SessionStatus, Subject } from '../types'
+import type { Milestone, SessionStatus, StatusGoal, Subject } from '../types'
 import type { Op } from './status'
 import {
   clipWords,
-  DECLINED_KEPT,
   DESCRIPTION_KEPT,
+  GOAL_LEFT_MS,
   isOpen,
   MILESTONES_MAX,
   MILESTONES_MIN,
   NAME_KEPT,
   nameKey,
   NL,
+  REMOVED_KEPT,
   stems,
   TEXT_KEPT,
   words,
 } from './status-limits'
 
-/** The share of a proposal's words, as stems, that a goal must hold for the proposal to restate it. */
+/** The share of a GOAL line's words, as stems, that a goal must hold for the line to restate it. */
 const RESTATED_SHARE = 0.8
 
 /**
- * Whether a proposed goal restates `goal`, a goal's text or a declined goal's key: most of its words are the goal's
+ * Whether a GOAL line's text restates `goal`, a goal's text or a removed goal's key: most of its words are the goal's
  * once cut to their stems, and it names no number the goal does not, since another version is another goal.
  */
 export function restatesGoal(text: string, goal: string): boolean {
@@ -32,15 +33,15 @@ export function restatesGoal(text: string, goal: string): boolean {
 }
 
 /**
- * Whether proposed milestones are the current goal's, by name key. A goal that waits for its milestones still holds
+ * Whether a GOAL line's milestones are the current goal's, by name key. A goal that waits for its milestones still holds
  * the milestones of the goal before it, so it has none to compare.
  */
-function hasGoalMilestones(o: SessionStatus, proposed: readonly { name: string }[]): boolean {
+function hasGoalMilestones(o: SessionStatus, written: readonly { name: string }[]): boolean {
   if (o.goal === null || o.goal.isAwaitingMilestones) return false
   const keys = (names: string[]) => names.map(nameKey).sort().join(NL)
   const kept = o.milestones.filter(m => m.status !== 'dropped').map(m => m.name)
 
-  return kept.length > 0 && keys(kept) === keys(proposed.map(m => m.name))
+  return kept.length > 0 && keys(kept) === keys(written.map(m => m.name))
 }
 
 /** Whether two texts have the same content words, in any order. */
@@ -157,7 +158,7 @@ function addMilestone(o: SessionStatus, op: Extract<Op, { kind: 'milestone' }>, 
 
 /**
  * The answer with each GOAL line that restates a goal just set, from a call that read that goal, read as MILESTONE
- * lines for its milestones. The call meant them as the goal's milestones, and the goal stays as the person set it.
+ * lines for its milestones. The call meant them as the goal's milestones, and the goal stays as the person typed it.
  */
 export function withRestatedGoalAsMilestones(o: SessionStatus | null, ops: Op[], readSetAt: number | null): Op[] {
   const g = o?.goal
@@ -171,15 +172,89 @@ export function withRestatedGoalAsMilestones(o: SessionStatus | null, ops: Op[],
   )
 }
 
+/** The subjects linked to one of the goal's milestones that is not dropped. */
+function linkedSubjects(o: SessionStatus): Subject[] {
+  const live = new Set(o.milestones.filter(m => m.status !== 'dropped').map(m => m.id))
+
+  return o.subjects.filter(s => live.has(o.serves[s.id] ?? ''))
+}
+
 /**
- * Applies a GOAL, MILESTONE or SERVES line. A GOAL line only ever proposes: the goal itself changes on a press alone.
- * A proposal with fewer than `MILESTONES_MIN` milestones, or one that restates the current goal or a declined one, in
- * its words or its milestones, is dropped.
+ * When the goal last moved forward: when it was set, a milestone that is not dropped changed, or a linked subject was
+ * done. Dropping work is not progress, so a goal whose last work was dropped counts from its last real step.
+ */
+function lastProgressAt(o: SessionStatus, g: StatusGoal): number {
+  const milestones = o.milestones.filter(m => m.status !== 'dropped').map(m => m.changedAt)
+  const done = linkedSubjects(o).flatMap(s => (s.status === 'done' && s.closedAt !== null ? [s.closedAt] : []))
+
+  return Math.max(g.setAt, ...milestones, ...done)
+}
+
+/**
+ * Whether a GOAL or RETIRE line may replace or clear the goal: a GOAL while none is set or once the goal is met, and
+ * either for an inferred goal the work has left. The work has left it when none of its linked work is open and it has
+ * not moved forward for `GOAL_LEFT_MS`, so a goal between milestones, or one just set, stays. A typed goal is the
+ * person's until it is met.
+ */
+function mayReplaceGoal(o: SessionStatus, kind: 'goal' | 'retire', now: number): boolean {
+  const g = o.goal
+  if (g === null || g.metAt !== null) return kind === 'goal'
+  const isWorkLeft = !linkedSubjects(o).some(isOpen) && now - lastProgressAt(o, g) >= GOAL_LEFT_MS
+
+  return g.source === 'inferred' && isWorkLeft
+}
+
+/** The goal a GOAL line sets, with its milestones as it wrote them and no subject linked yet. */
+function inferredGoal(
+  o: SessionStatus,
+  text: string,
+  named: readonly { name: string; status: Milestone['status'] }[],
+  now: number,
+): SessionStatus {
+  const milestones: Milestone[] = named.map((m, n) => ({
+    id: `m${o.nextMilestoneId + n}`,
+    name: m.name,
+    status: m.status,
+    text: '',
+    was: null,
+    changedAt: now,
+    closedAt: isOpen(m) ? null : now,
+  }))
+  const goal: StatusGoal = {
+    text,
+    setAt: now,
+    metAt: null,
+    was: o.goal?.text ?? null,
+    isAwaitingMilestones: false,
+    source: 'inferred',
+  }
+
+  return withoutLinksTo(
+    { ...o, goal, goalRemoved: null, milestones, nextMilestoneId: o.nextMilestoneId + milestones.length, serves: {} },
+    milestones,
+  )
+}
+
+/**
+ * Whether the session holds open work for a new goal: an open subject the current goal does not hold, once the answer's
+ * subject lines apply. So a fix the same answer finished gets no goal.
+ */
+function hasWorkForGoal(o: SessionStatus): boolean {
+  const held = new Set(linkedSubjects(o).map(s => s.id))
+
+  return o.subjects.some(s => isOpen(s) && !held.has(s.id))
+}
+
+/**
+ * Applies a GOAL, RETIRE, MILESTONE or SERVES line. A GOAL line sets the goal when `mayReplaceGoal` allows it,
+ * `hasWorkForGoal` holds, it has `MILESTONES_MIN` milestones, and it restates neither the goal, in its words or its
+ * milestones, nor the goal it replaced, nor a removed one. RETIRE clears the goal when `mayReplaceGoal` allows it, so
+ * never a goal the same answer set.
  * Milestones and links need a goal.
  */
 export function applyGoalOp(
   o: SessionStatus,
-  op: Extract<Op, { kind: 'goal' | 'milestone' | 'serves' }>,
+  op: Extract<Op, { kind: 'goal' | 'retire' | 'milestone' | 'serves' }>,
   now: number,
   findSubject: (ref: string) => Subject | null,
 ): SessionStatus {
@@ -188,12 +263,16 @@ export function applyGoalOp(
     const milestones = op.milestones
       .slice(0, MILESTONES_MAX)
       .map(m => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }))
-    const isCurrent = o.goal !== null && (restatesGoal(text, o.goal.text) || hasGoalMilestones(o, milestones))
-    const isDeclined = o.declinedGoals.some(key => restatesGoal(text, key))
-    if (op.milestones.length < MILESTONES_MIN || isCurrent || isDeclined) return o
+    const g = o.goal
+    const isCurrent = g !== null && (restatesGoal(text, g.text) || hasGoalMilestones(o, milestones))
+    const isPrevious = g?.was != null && restatesGoal(text, g.was)
+    const isRemoved = o.removedGoals.some(key => restatesGoal(text, key))
+    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, 'goal', now)
+    if (op.milestones.length < MILESTONES_MIN || isCurrent || isPrevious || isRemoved || !isAllowed) return o
 
-    return { ...o, proposedGoal: { text, milestones, at: now } }
+    return inferredGoal(o, text, milestones, now)
   }
+  if (op.kind === 'retire') return mayReplaceGoal(o, 'retire', now) ? withoutGoal(o) : o
   if (o.goal === null) return o
   if (op.kind === 'milestone') return addMilestone(o, op, now)
   const subject = findSubject(op.subject)
@@ -204,38 +283,63 @@ export function applyGoalOp(
 }
 
 /**
+ * Closes each open milestone whose linked work closed: at least one subject is linked, every one is closed and one is
+ * done, and one closed after the milestone last changed. A milestone the call opened again after its work closed
+ * stays open until another linked subject closes.
+ */
+function withWorkDoneMilestones(o: SessionStatus, now: number): SessionStatus {
+  let isChanged = false
+  const milestones = o.milestones.map(m => {
+    if (!isOpen(m)) return m
+    const linked = o.subjects.filter(s => o.serves[s.id] === m.id)
+    const isWorkDone =
+      linked.length > 0 &&
+      linked.every(s => !isOpen(s)) &&
+      linked.some(s => s.status === 'done') &&
+      linked.some(s => (s.closedAt ?? -Infinity) > m.changedAt)
+    if (!isWorkDone) return m
+    isChanged = true
+    return { ...m, status: 'done' as const, closedAt: now, changedAt: now, was: null }
+  })
+
+  return isChanged ? { ...o, milestones } : o
+}
+
+/**
  * The goal once an answer has applied. A typed goal carries the milestones of the goal before it until an answer from a
  * call that read this goal applies: that answer keeps up to `MILESTONES_MAX` of the milestones it names in `named` and
- * has not dropped, and the rest go. While the goal waits, the carried milestones do not count toward that limit. Until it keeps one, the goal still waits for its milestones. The was line goes once the person has seen it,
+ * has not dropped, and the rest go. While the goal waits, the carried milestones do not count toward that limit. Until it keeps one, the goal still waits for its milestones. Otherwise each milestone whose linked work closed is
+ * closed, as `withWorkDoneMilestones` says. The was line goes once the person has seen it,
  * and the goal is met while every milestone that is not dropped is done. Met follows the milestones, so a milestone
  * that opens again unmeets it. `readSetAt` is when the goal the call read was set, or null when it read none: a call
  * that read an earlier goal wrote for that goal.
  */
 export function settleGoal(
-  o: SessionStatus,
+  saved: SessionStatus,
   now: number,
   readSetAt: number | null,
   named: ReadonlySet<string>,
 ): SessionStatus {
-  if (o.goal === null) return o
-  const setAt = o.goal.setAt
-  const isSeen = o.lastLookAt !== null && setAt <= o.lastLookAt
-  const isAnswerForNewGoal = o.goal.isAwaitingMilestones && readSetAt === setAt
+  const g = saved.goal
+  if (g === null) return saved
+  const o = g.isAwaitingMilestones ? saved : withWorkDoneMilestones(saved, now)
+  const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt
+  const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt
   const milestones = isAnswerForNewGoal
     ? o.milestones.filter(m => named.has(m.id) && m.status !== 'dropped').slice(0, MILESTONES_MAX)
     : o.milestones
-  const isAwaiting = o.goal.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0)
+  const isAwaiting = g.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0)
   const kept = milestones.filter(m => m.status !== 'dropped')
   const isMet = !isAwaiting && kept.length > 0 && kept.every(m => m.status === 'done')
-  const was = isSeen ? null : o.goal.was
-  const metAt = isMet ? (o.goal.metAt ?? now) : null
+  const was = isSeen ? null : g.was
+  const metAt = isMet ? (g.metAt ?? now) : null
   const isSame =
     milestones.length === o.milestones.length &&
-    was === o.goal.was &&
-    isAwaiting === o.goal.isAwaitingMilestones &&
-    metAt === o.goal.metAt
+    was === g.was &&
+    isAwaiting === g.isAwaitingMilestones &&
+    metAt === g.metAt
   if (isSame) return o
-  const settled = { ...o, milestones, goal: { ...o.goal, was, isAwaitingMilestones: isAwaiting, metAt } }
+  const settled = { ...o, milestones, goal: { ...g, was, isAwaitingMilestones: isAwaiting, metAt } }
 
   return isAnswerForNewGoal ? withoutLinksTo(settled, milestones) : settled
 }
@@ -256,66 +360,58 @@ function withoutLinksTo(o: SessionStatus, milestones: readonly Milestone[]): Ses
   }
 }
 
-/** Set as goal: the proposal becomes the goal, with its milestones as it proposed them and no subject linked yet. */
-export function useProposedGoal(o: SessionStatus, now: number): SessionStatus {
-  const p = o.proposedGoal
-  if (p === null) return o
-  const milestones: Milestone[] = p.milestones.map((m, n) => ({
-    id: `m${o.nextMilestoneId + n}`,
-    name: m.name,
-    status: m.status,
-    text: '',
-    was: null,
-    changedAt: now,
-    closedAt: isOpen(m) ? null : now,
-  }))
-  const goal = { text: p.text, setAt: now, metAt: null, was: o.goal?.text ?? null, isAwaitingMilestones: false }
-
-  return settleGoal(
-    withoutLinksTo(
-      {
-        ...o,
-        goal,
-        proposedGoal: null,
-        milestones,
-        nextMilestoneId: o.nextMilestoneId + milestones.length,
-        serves: {},
-      },
-      milestones,
-    ),
-    now,
-    null,
-    new Set(),
-  )
+/** The Status with no goal: its milestones go, and so do the links to them. */
+function withoutGoal(o: SessionStatus): SessionStatus {
+  return withoutLinksTo({ ...o, goal: null, milestones: [], serves: {} }, [])
 }
 
-/** Not now: the proposal goes, and the call is told not to propose it again. */
-export function declineProposedGoal(o: SessionStatus): SessionStatus {
-  if (o.proposedGoal === null) return o
-  const declinedGoals = [...o.declinedGoals, nameKey(o.proposedGoal.text)].slice(-DECLINED_KEPT)
+/** Remove goal: the goal goes, the call is told not to set it again, and Undo can bring it back. */
+export function removeGoal(o: SessionStatus): SessionStatus {
+  const g = o.goal
+  if (g === null) return o
+  const removedGoals = [...o.removedGoals.filter(k => k !== nameKey(g.text)), nameKey(g.text)]
+  const goalRemoved = { goal: g, milestones: o.milestones, serves: o.serves, askSubjects: o.askSubjects }
 
-  return { ...o, proposedGoal: null, declinedGoals }
+  return { ...withoutGoal(o), removedGoals: removedGoals.slice(-REMOVED_KEPT), goalRemoved }
+}
+
+/** Undo of Remove goal: the goal comes back with its milestones and links, and the call may set it again. */
+export function restoreGoal(o: SessionStatus): SessionStatus {
+  const r = o.goalRemoved
+  if (r === null || o.goal !== null) return o
+  const key = nameKey(r.goal.text)
+  const subjectIds = new Set(o.subjects.map(s => s.id))
+  const serves = Object.fromEntries(Object.entries(r.serves).filter(([id]) => subjectIds.has(id)))
+
+  return {
+    ...o,
+    goal: r.goal,
+    milestones: r.milestones,
+    serves,
+    askSubjects: r.askSubjects,
+    removedGoals: o.removedGoals.filter(k => k !== key),
+    goalRemoved: null,
+  }
 }
 
 /**
- * A goal the person typed. One with a proposal's words uses the proposal and its milestones, as Set as goal does. Any
- * other declines a proposal. A rewording of the goal keeps its milestones and needs no message. Any other goal replaces
- * it, unlinks every subject, and carries the milestones until the Status call that reads it keeps the ones it names. The
- * page draws none of them until then.
+ * A goal the person typed, which makes the goal theirs. A rewording of a goal that is not met keeps its milestones and
+ * needs no message. A met goal typed again is a new goal. Any other goal replaces it, unlinks every subject, and carries the milestones until the Status call that
+ * reads it keeps the ones it names. The page draws none of them until then.
  */
 export function setTypedGoal(o: SessionStatus, text: string, now: number): SessionStatus {
   const typed = clipWords(text, DESCRIPTION_KEPT)
   if (typed === '') return o
-  const p = o.proposedGoal
-  if (p !== null && hasSameWords(p.text, typed)) {
-    const used = useProposedGoal(o, now)
-
-    return { ...used, goal: { ...used.goal!, text: typed } }
+  const isReworded = o.goal !== null && o.goal.metAt === null && hasSameWords(o.goal.text, typed)
+  if (isReworded) return { ...o, goal: { ...o.goal!, text: typed, source: 'typed' } }
+  const goal: StatusGoal = {
+    text: typed,
+    setAt: now,
+    metAt: null,
+    was: o.goal?.text ?? null,
+    isAwaitingMilestones: true,
+    source: 'typed',
   }
-  const declined = declineProposedGoal(o)
-  const isReworded = o.goal !== null && hasSameWords(o.goal.text, typed)
-  if (isReworded) return { ...declined, goal: { ...o.goal!, text: typed } }
-  const goal = { text: typed, setAt: now, metAt: null, was: o.goal?.text ?? null, isAwaitingMilestones: true }
 
-  return { ...declined, goal, serves: {} }
+  return { ...o, goal, goalRemoved: null, serves: {} }
 }

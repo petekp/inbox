@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 
 import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
-import { goalKeyPlan, proposalKeyPlan, statusKeyRows } from '../../hooks/status-keys'
+import { goalKeyPlan, statusKeyRows } from '../../hooks/status-keys'
 import { sessionView } from '../../hooks/session-view'
 import type { SessionStatus } from '../../types'
 import { demoState } from '../src/demo'
@@ -18,17 +18,6 @@ const screenWith = (fields: Partial<SessionStatus>) => {
 
   return screenOf({ view: sessionView({ ...s, ledger: { ...s.ledger, overview } }, NOW, SETTLED_MS, NO_HOLDS) })
 }
-const proposing = () =>
-  screenWith({
-    proposedGoal: {
-      text: 'Pilot ready to announce',
-      milestones: [
-        { name: 'Fixes built', status: 'done' },
-        { name: 'Announced', status: 'queued' },
-      ],
-      at: NOW - MIN,
-    },
-  })
 const withGoal = () =>
   screenWith({
     goal: {
@@ -37,6 +26,7 @@ const withGoal = () =>
       metAt: null,
       was: null,
       isAwaitingMilestones: false,
+      source: 'inferred',
     },
     milestones: [
       { id: 'm1', name: 'Fixes built', status: 'done', text: '', was: null, changedAt: NOW - 50 * MIN, closedAt: null },
@@ -54,46 +44,22 @@ const withGoal = () =>
   })
 const lineAt = (lines: string[], s: string) => lines.findIndex(l => l.includes(s))
 
-test('a proposed goal draws above the head with its milestones’ marks and its buttons in the plan’s order, selected first when no ask holds anything up, and no Set a goal while it shows', () => {
-  const screen = proposing()
-  const page = screen.view.statusPage
-  expect(statusKeyRows(page).map(t => t.id)).toEqual(['proposal', 'done'])
-  const lines = text(screen, onPage).split('\n')
-  const order = ['Proposed goal · from your message', 'Pilot ready to announce', '✓ Fixes built', '○ Announced']
-  const at = order.map(s => lineAt(lines, s))
-  expect(at).toEqual([...at].sort((a, b) => a - b))
-  expect(at[3]).toBe(at[2]! + 1)
-  expect(at[3]).toBeLessThan(lineAt(lines, page.head!.title))
-  const buttons = lines[at[3]! + 1]!
-  const labels = proposalKeyPlan(page).map(k => k.label)
-  expect(labels).toEqual(['Set as goal', 'Edit', 'Not now'])
-  expect(labels.map(l => buttons.indexOf(l))).toEqual(labels.map(l => buttons.indexOf(l)).sort((a, b) => a - b))
-  expect(buttons).toContain('↵ Set as goal')
-  expect(buttons).toContain('e Edit')
-  expect(lines.some(l => l.includes('Set a goal'))).toBe(false)
+test('Remove presses the goal by its key and selects the goal’s place, where Undo and New then show', () => {
+  const removed = handleKey(withGoal(), onPage, 'r', NOW)
+  expect(removed.press).toEqual({ action: 'remove-goal', id: 'goal' })
+  expect(removed.ui).toMatchObject({ selectedId: 'goal', pageReveal: 'goal' })
 })
 
-test('Set as goal and Not now press the goal by their keys or Enter and select the goal’s button, and Edit opens the goal field with the proposal in it', () => {
-  const screen = proposing()
-  expect(handleKey(screen, onPage, 's', NOW).press).toEqual({ action: 'use-goal', id: 'goal' })
-  expect(handleKey(screen, onPage, 'enter', NOW).press).toEqual({ action: 'use-goal', id: 'goal' })
-  expect(handleKey(screen, onPage, 'x', NOW).press).toEqual({ action: 'decline-goal', id: 'goal' })
-  expect(handleKey(screen, onPage, 's', NOW).ui).toMatchObject({ selectedId: 'goal', pageReveal: 'goal' })
-  const editing = handleKey(screen, onPage, 'e', NOW)
-  expect(editing.press).toBeUndefined()
-  expect(editing.ui).toMatchObject({
-    typing: 'goal',
-    drafts: { goal: { text: 'Pilot ready to announce', since: NOW } },
-  })
-})
-
-test('a set goal draws Edit beside its label, its text with its count, the head as its Now line under its text, and then its milestones', () => {
+test('a set goal draws Edit and Remove at the right end of its Goal heading row, then its text with its count, the head as its Now line, and its milestones', () => {
   const screen = withGoal()
   const page = screen.view.statusPage
-  expect(goalKeyPlan(page).map(k => k.label)).toEqual(['Edit'])
-  const lines = text(screen, onPage).split('\n')
+  expect(goalKeyPlan(page).map(k => k.label)).toEqual(['Edit', 'Remove'])
+  const lines = text(screen, onPage, 60).split('\n')
+  const heading = lines.find(l => l.startsWith(' Goal ─'))!
+  expect(heading).toMatch(/^ Goal ─+ ↵ Edit · r Remove $/)
+  expect(heading.length).toBe(59)
   const order = [
-    'Goal · ↵ Edit',
+    'Goal ─',
     'Pilot ready to announce · 1 of 2 done',
     `Now: ${page.head!.description}`,
     '✓ Fixes built',
@@ -102,11 +68,11 @@ test('a set goal draws Edit beside its label, its text with its count, the head 
   ]
   const at = order.map(s => lineAt(lines, s))
   expect(at).toEqual([...at].sort((a, b) => a - b))
-  expect(lines.slice(at[5]! + 1).some(l => l.includes('Edit'))).toBe(false)
+  expect(lines.slice(at[0]! + 1).some(l => l.includes('Edit'))).toBe(false)
   expect(lineAt(lines, page.head!.title)).toBe(-1)
 })
 
-test('e on the goal’s Edit opens the field with the goal in it in place of the goal’s text, leaving its label as Goal, Enter sets what was typed, and Escape keeps the draft', () => {
+test('e on the goal’s Edit opens the field with the goal in it in place of the goal’s text, leaving its heading as Goal, Enter sets what was typed, and Escape keeps the draft', () => {
   const screen = withGoal()
   const typing = keys(screen, onPage, 'e')
   expect(typing).toMatchObject({ typing: 'goal', drafts: { goal: { text: 'Pilot ready to announce' } } })
@@ -115,8 +81,8 @@ test('e on the goal’s Edit opens the field with the goal in it in place of the
   expect(lines.some(l => l.includes('An outcome to work toward:'))).toBe(true)
   expect(lines.some(l => l.includes('Pilot ready to ann'))).toBe(true)
   expect(lines.some(l => l.includes('Edit'))).toBe(false)
-  expect(lines.some(l => l.trim() === 'Goal')).toBe(true)
-  expect(lines.at(-1)).toContain('↵ Set goal')
+  expect(lines.some(l => /^ Goal ─+$/.test(l))).toBe(true)
+  expect(lines.at(-1)).toContain('↵ Save')
   expect(handleKey(screen, edited, 'enter', NOW).press).toEqual({
     action: 'type',
     id: 'goal',
@@ -125,18 +91,21 @@ test('e on the goal’s Edit opens the field with the goal in it in place of the
   const cancelled = handleKey(screen, edited, 'escape', NOW).ui
   expect(cancelled.typing).toBeNull()
   expect(cancelled.drafts.goal?.text).toBe('Pilot ready to ann')
-  expect(text(screen, cancelled)).toContain('Goal · ↵ Edit')
+  expect(text(screen, cancelled)).toContain('↵ Edit')
 })
 
-test('Set a goal is the only button on a page with no goal and no held subject, and is selected ahead of the done fold: it is keyed, up and down still scroll, and s opens an empty goal field under the head', () => {
+test('New is the only button on a page with no goal and no held subject, at the right end of the Goal heading row above the line that says no goal is set, and is selected ahead of the done fold: it is keyed, up and down still scroll, and n opens an empty goal field above the head', () => {
   const screen = screenWith({})
   expect(statusKeyRows(screen.view.statusPage).map(t => t.id)).toEqual(['goal', 'done'])
-  expect(text(screen, onPage)).toContain('↵ Set a goal')
+  const shown = text(screen, onPage).split('\n')
+  expect(lineAt(shown, 'Goal ─')).toBe(lineAt(shown, '↵ New'))
+  expect(lineAt(shown, '↵ New')).toBeLessThan(lineAt(shown, 'No goal yet.'))
+  expect(lineAt(shown, 'No goal yet.')).toBeLessThan(lineAt(shown, screen.view.statusPage.head!.title))
   expect(keys(screen, onPage, 'down').pageTop).toBe(1)
-  const typing = keys(screen, onPage, 's')
+  const typing = keys(screen, onPage, 'n')
   expect(typing).toMatchObject({ typing: 'goal', drafts: { goal: { text: '' } } })
   const lines = text(screen, typing).split('\n')
-  expect(lineAt(lines, 'An outcome to work toward:')).toBeGreaterThan(lineAt(lines, screen.view.statusPage.head!.title))
+  expect(lineAt(lines, 'An outcome to work toward:')).toBeLessThan(lineAt(lines, screen.view.statusPage.head!.title))
 })
 
 test('with a goal set, subjects that serve none of its milestones draw under the Other work rule, and the seen open ones fold into a count by mark, with the done ones in a done fold after it', () => {
@@ -150,6 +119,7 @@ test('with a goal set, subjects that serve none of its milestones draw under the
       metAt: null,
       was: null,
       isAwaitingMilestones: true,
+      source: 'typed',
     },
   })
   const lines = text(screen, onPage, 60).split('\n')
@@ -164,9 +134,17 @@ test('with a goal set, subjects that serve none of its milestones draw under the
   expect(lineAt(lines, '1 waiting')).toBeGreaterThan(lineAt(lines, 'Other work'))
 })
 
-test('in a short panel, after Set as goal the goal’s text shows with its selected Edit, even from a page scrolled past it', () => {
-  const used = handleKey(proposing(), { ...onPage, selectedId: 'proposal', pageTop: 4 }, 's', NOW).ui
-  const lines = drawPanel(withGoal(), used, 60, NOW, style, 14).lines.map(strip)
-  expect(lineAt(lines, 'Pilot ready to announce')).toBeGreaterThan(-1)
-  expect(lineAt(lines, 'Goal · ↵ Edit')).toBeGreaterThan(-1)
+test('in a short panel, after Remove its New shows, even from a page scrolled past it', () => {
+  const removed = handleKey(withGoal(), { ...onPage, selectedId: 'goal', pageTop: 4 }, 'r', NOW).ui
+  const lines = drawPanel(screenWith({}), removed, 60, NOW, style, 14).lines.map(strip)
+  expect(lineAt(lines, 'Pilot ready to announce')).toBe(-1)
+  expect(lineAt(lines, 'New')).toBeGreaterThan(-1)
+})
+
+test('in a narrow panel, the goal’s buttons wrap under its heading’s rule, at the right edge, with nothing cut', () => {
+  const lines = text(withGoal(), onPage, 24).split('\n')
+  const at = lineAt(lines, 'Goal ─')
+  expect(lines[at]).toMatch(/^ Goal ─+$/)
+  expect(lines[at + 1]).toMatch(/^ +↵ Edit · r Remove $/)
+  expect(lines[at + 1]!.length).toBe(23)
 })

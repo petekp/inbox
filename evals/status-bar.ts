@@ -10,7 +10,7 @@ const FAMILY_ALPHA = { replay: 0.033, short: 0.007, spread: 0.007, judge: 0.003 
 export type Family = keyof typeof FAMILY_ALPHA
 
 /** The failure rate each kind of test allows. */
-export const TOLERANCE = { modelRule: 0.1, missedProposal: 0.2, judgeCheck: 0.15 } as const
+export const TOLERANCE = { modelRule: 0.1, missedGoal: 0.2, judgeCheck: 0.15 } as const
 
 function choose(n: number, k: number): number {
   let c = 1

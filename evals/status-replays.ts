@@ -3,7 +3,14 @@ import { askHoldsTwo } from './replays/ask-holds-two'
 import { catchUpFromEmpty } from './replays/catch-up-from-empty'
 import { catchUpShipped } from './replays/catch-up-shipped'
 import { coordinatorDay } from './replays/coordinator-day'
-import { declinedGoal } from './replays/declined-goal'
+import { removedGoal } from './replays/removed-goal'
+import { goalFromWork } from './replays/goal-from-work'
+import { goalMetNext } from './replays/goal-met-next'
+import { goalWait } from './replays/goal-wait'
+import { goalWorkLeft } from './replays/goal-work-left'
+import { milestoneWorkDone } from './replays/milestone-work-done'
+import { noGoalYet } from './replays/no-goal-yet'
+import { typedGoalKept } from './replays/typed-goal-kept'
 import { goalAwaitingMilestones } from './replays/goal-awaiting-milestones'
 import { goalOnBusyPage } from './replays/goal-on-busy-page'
 import { longTurn } from './replays/long-turn'
@@ -17,7 +24,7 @@ export const REPLAYS: Replay[] = [
   singleTask,
   longTurn,
   catchUpFromEmpty,
-  declinedGoal,
+  removedGoal,
   goalOnBusyPage,
   midTurnActivity,
   milestoneDropped,
@@ -25,4 +32,11 @@ export const REPLAYS: Replay[] = [
   goalAwaitingMilestones,
   askHoldsTwo,
   oneTaskPlan,
+  milestoneWorkDone,
+  goalMetNext,
+  goalWait,
+  noGoalYet,
+  goalFromWork,
+  goalWorkLeft,
+  typedGoalKept,
 ]

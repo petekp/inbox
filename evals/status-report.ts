@@ -39,7 +39,7 @@ export function stepName(replay: Replay, i: number): string {
 }
 
 function toleranceOf(id: string): number {
-  if (id === 'proposal-when-stated') return TOLERANCE.missedProposal
+  if (id === 'goal-when-clear') return TOLERANCE.missedGoal
 
   return JUDGE_ONLY.has(id) ? TOLERANCE.judgeCheck : TOLERANCE.modelRule
 }

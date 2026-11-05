@@ -124,16 +124,29 @@
 .status-head p {
   margin: 0;
 }
-/* A goal, or a proposed one: its label, then its text as the head's title. */
-.status-head.goal p + h1,
-.status-head.goal p + .actions {
-  margin-top: 2px;
+/* The goal's heading row: its title where the goal's text starts, a rule, then the goal's buttons at the right edge.
+   The buttons wrap under the rule, still at the right, when they do not fit beside it. */
+.status-page .goal-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 4px;
+  padding: 0 14px 0 var(--mark-x);
+  color: var(--muted);
 }
-.status-head .text-key {
-  cursor: pointer;
+.status-page .goal-heading .goal-rule {
+  flex: 1 0 32px;
+  border-top: 1px solid var(--soft);
 }
-.status-head .text-key:hover {
-  color: var(--text);
+.status-page .goal-heading .goal-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.status-page .goal-heading .actions {
+  margin: 0;
 }
 /* The goal's count after its text, kept whole on the line with the text's last word. */
 .status-head h1 .count {
@@ -143,17 +156,9 @@
 .status-head .actions {
   margin-top: 6px;
 }
-.status-head.goal + .list,
-.goal-proposed {
-  margin-top: 4px;
-}
-/* Each proposed milestone on its own line, spaced and in the columns of the goal's milestone rows. The head already starts at the marks' column. */
-.goal-proposed {
-  display: grid;
-  grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr);
-}
-.goal-proposed > * {
-  padding: var(--status-row-pad) 0;
+/* A blank line's space between the goal's buttons and its milestones, as the terminal and omp leave. */
+.status-head.goal + .list {
+  margin-top: var(--look-gap);
 }
 /* A changed milestone's name, bold without the gap and stall word after it. */
 .status-page .content.changed > .clamp:first-child,
