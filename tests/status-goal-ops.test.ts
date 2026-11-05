@@ -66,7 +66,13 @@ test('a GOAL line that restates the goal, names its milestones or restates a rem
       ?.setAt,
   ).toBe(20)
   expect(after(removed, 'GOAL: Import demo-ready | working Import works; queued Demo script', 50).goal).toBeNull()
-  expect(after(done, 'NEW: working | Grouping | drafted\nGOAL: Import ready to demo in 2.7 | queued Grouping; queued 2.7 cut', 40).goal).toMatchObject({
+  expect(
+    after(
+      done,
+      'NEW: working | Grouping | drafted\nGOAL: Import ready to demo in 2.7 | queued Grouping; queued 2.7 cut',
+      40,
+    ).goal,
+  ).toMatchObject({
     text: 'Import ready to demo in 2.7',
     was: 'Import ready to demo',
   })
@@ -137,7 +143,9 @@ test('code closes a milestone once its linked work closed with one done, and lea
     ['m2', 'done'],
     ['m3', 'queued'],
   ])
-  expect(applyStatus(reopened, parseStatus('NO CHANGE')!, 55, NO_ASKS)!.milestones.find(m => m.id === 'm2')?.status).toBe('working')
+  expect(
+    applyStatus(reopened, parseStatus('NO CHANGE')!, 55, NO_ASKS)!.milestones.find(m => m.id === 'm2')?.status,
+  ).toBe('working')
   expect(more.milestones.find(m => m.id === 'm2')).toMatchObject({ status: 'done', closedAt: 70 })
   expect(more.goal?.metAt).toBeNull()
 })

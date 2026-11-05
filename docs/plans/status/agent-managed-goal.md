@@ -1,6 +1,6 @@
 # The inbox model manages the goal
 
-Status: decided, being built. Revised after one review, with the coordinator's decisions.
+Status: built
 
 ## The change
 
