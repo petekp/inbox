@@ -9,24 +9,16 @@ const ACTIVITY_SAVE_MS = 30_000
 /** The longest name a child keeps. Each look cuts it to one line. */
 const NAME_CHARS = 80
 
-/**
- * The child starts at `at`, named by the first line of `name`. A child whose activity the host does not report, such
- * as a background command, starts with no activity time.
- */
+/** The child starts at `at`, named by the first line of `name`. */
 export function childStarted(
   o: SessionStatus | null,
   { ref, kind, name }: Pick<Child, 'ref' | 'kind' | 'name'>,
   at: number,
-  {
-    reportsActivity = true,
-    delegateState = null,
-  }: { reportsActivity?: boolean; delegateState?: DelegateState | null } = {},
+  delegateState: DelegateState | null = null,
 ): SessionStatus {
-  const lastActivityAt = reportsActivity ? at : null
-
   return withChild(
     o,
-    { ref, kind, name: childName(name), startedAt: at, endedAt: null, lastActivityAt, delegateState },
+    { ref, kind, name: childName(name), startedAt: at, endedAt: null, lastActivityAt: at, delegateState },
     at,
   )
 }
@@ -69,7 +61,7 @@ function childrenEnded(o: SessionStatus | null, isEnded: (c: Child) => boolean, 
   return { ...o, children: o.children.map(c => (isEnding(c) ? { ...c, endedAt: at } : c)) }
 }
 
-/** What a background task's notification says: the ids it names, and whether the task ended. */
+/** What a task notification says: the ids it names, and whether the task ended. */
 type TaskNotice = { ids: string[]; hasEnded: boolean }
 
 const TAG = (name: string) => new RegExp(`<${name}>([^<]*)</${name}>`)
@@ -127,9 +119,7 @@ function delegateRunning(o: SessionStatus | null, step: DelegateStep, at: number
       o,
       { ref, kind: 'delegate', name: known && known.name !== step.name ? known.name : nameInWords(step.name) },
       at,
-      {
-        delegateState: step.isPrompt ? 'working' : null,
-      },
+      step.isPrompt ? 'working' : null,
     )
   const active = childActive(o, ref, at)
 
