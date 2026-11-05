@@ -40,7 +40,7 @@ The call writes GOAL only when all of these hold:
 
 1. **It has a finish line**: someone could check it as met or not. "Make search faster" does not. This is today's `goal-finish-line` rule.
 2. **The session's open work points to it.** The person may name the outcome, or the work may show it: the open subjects and the agent's plan for them lead to one outcome. A summary of work that already finished never counts.
-3. **It spans real work**: at least two subjects that are not dropped and not linked to the current goal, one of them open, once the answer's own lines apply. Code enforces this, so one bug fix gets no goal. Finished subjects count, so a goal the person states after part of its work is done can still be set.
+3. **It has open work**: an open subject the current goal does not hold, once the answer's subject lines apply. Code enforces this, so a fix the same answer finished gets no goal. The goal's own plan of 2 to 5 milestones is the size check. Code does not count subjects, because the Status call often writes a plan's pieces as one subject, and a subject count then refused a goal the person had just named.
 4. **It has 2 to 5 milestones**, each an outcome and not a subject's name. Code drops a GOAL line with fewer, as today.
 5. **It is not the current goal or a removed goal**, in the same words or other words. Code drops one that restates either, by the key-word check that today drops a restated or declined proposal.
 
@@ -197,4 +197,4 @@ The coordinator decided these from the project's principles: agents manage the g
 4. No label on an inferred goal.
 5. A stalled typed goal gets the `no work linked` mark. The coordinator also allowed retiring it after 2 hours with none of its work open. `docs/principles.md` principle 8, merged later, says a typed goal is not replaced before it is met, so the build follows the principle and leaves that out.
 6. A met goal stays until the next one is set.
-7. Goals may be inferred from the work, gated by two or more subjects outside the current goal, one of them open. The gate first counted only open subjects. That blocked a goal the person stated after most of its work had finished, as in Replay C's catch-up.
+7. Goals may be inferred from the work. Code needs an open subject outside the current goal, and the GOAL line's plan of 2 to 5 milestones. The `goal-wait` rule keeps a goal off one small fix, chat or unrelated small asks, and `no-goal-yet` tests it. A gate of two subjects outside the current goal refused the new goal in `goal-work-left` on Sonnet in 3 of 3 runs, because Sonnet wrote the plan's two pieces as one subject (`status-2026-11-05T00-14-34.920Z.json`).

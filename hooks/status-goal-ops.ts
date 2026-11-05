@@ -3,7 +3,6 @@ import type { Op } from './status'
 import {
   clipWords,
   DESCRIPTION_KEPT,
-  GOAL_SUBJECTS_MIN,
   isOpen,
   MILESTONES_MAX,
   MILESTONES_MIN,
@@ -222,14 +221,13 @@ function inferredGoal(
 }
 
 /**
- * Whether the session holds enough work for a new goal: `GOAL_SUBJECTS_MIN` subjects that are not dropped and not
- * linked to the current goal, one of them open. Work the current goal already holds does not count toward the next.
+ * Whether the session holds open work for a new goal: an open subject the current goal does not hold, once the answer's
+ * subject lines apply. So a fix the same answer finished gets no goal.
  */
 function hasWorkForGoal(o: SessionStatus): boolean {
   const held = new Set(linkedSubjects(o).map(s => s.id))
-  const work = o.subjects.filter(s => s.status !== 'dropped' && !held.has(s.id))
 
-  return work.length >= GOAL_SUBJECTS_MIN && work.some(isOpen)
+  return o.subjects.some(s => isOpen(s) && !held.has(s.id))
 }
 
 /**

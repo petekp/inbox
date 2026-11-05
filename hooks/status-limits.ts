@@ -22,8 +22,6 @@ export const MILESTONES_MAX = 5
 export const MILESTONES_MIN = 2
 /** How many removed goals the call is told not to set again. */
 export const REMOVED_KEPT = 10
-/** The fewest subjects a new goal needs to span, one of them open, so one small fix gets none. */
-export const GOAL_SUBJECTS_MIN = 2
 /** How long an ended child stays saved, so a delegate prompted again keeps its link. */
 export const CHILD_KEPT_MS = 24 * 60 * 60_000
 export const CHILDREN_KEPT = 50

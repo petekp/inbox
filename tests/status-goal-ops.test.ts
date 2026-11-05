@@ -34,7 +34,7 @@ test('reads GOAL, RETIRE, MILESTONE and SERVES lines, leaving out a GOAL milesto
   ])
 })
 
-test('a GOAL line sets an inferred goal with its milestones, and none with under two milestones, or for one subject, or for work that is all closed', () => {
+test('a GOAL line sets an inferred goal with its milestones, and none with under two milestones, or for work that is all closed', () => {
   const o = withGoal()
 
   expect(o.goal).toEqual({
@@ -51,7 +51,8 @@ test('a GOAL line sets an inferred goal with its milestones, and none with under
     ['m3', 'Demo script', 'queued'],
   ])
   expect(after(null, `${WORK}\nGOAL: Ship 2.6 | queued Release notes`, 10).goal).toBeNull()
-  expect(after(null, `NEW: working | Import | CSV works\n${GOAL}`, 10).goal).toBeNull()
+  expect(after(null, `NEW: working | Import | CSV works\n${GOAL}`, 10).goal).not.toBeNull()
+  expect(after(null, `NEW: working | Import | CSV works\nDONE: Import | shipped\n${GOAL}`, 10).goal).toBeNull()
   expect(after(null, `${WORK}\nDONE: s1 | shipped\n${GOAL}`, 10).goal).not.toBeNull()
   expect(after(null, `${WORK}\nDONE: s1 | shipped\nDONE: s2 | shipped\n${GOAL}`, 10).goal).toBeNull()
 })
