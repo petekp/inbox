@@ -62,7 +62,6 @@ var FINISHED_READ = 10;
 var MILESTONES_MAX = 5;
 var MILESTONES_MIN = 2;
 var REMOVED_KEPT = 10;
-var GOAL_SUBJECTS_MIN = 2;
 var CHILD_KEPT_MS = 24 * 60 * 6e4;
 var STOP_WORDS = /* @__PURE__ */ new Set([
   "a",
@@ -1500,8 +1499,7 @@ function inferredGoal(o, text2, named, now) {
 }
 function hasWorkForGoal(o) {
   const held = new Set(linkedSubjects(o).map((s) => s.id));
-  const work = o.subjects.filter((s) => s.status !== "dropped" && !held.has(s.id));
-  return work.length >= GOAL_SUBJECTS_MIN && work.some(isOpen);
+  return o.subjects.some((s) => isOpen(s) && !held.has(s.id));
 }
 function applyGoalOp(o, op, now, findSubject) {
   if (op.kind === "goal") {
