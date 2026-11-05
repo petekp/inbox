@@ -94,6 +94,25 @@ describe('buildPrompt', () => {
     expect(prompt).toContain('edited file-399.ts')
     expect(prompt).toContain('…[cut]')
   })
+
+  test('lists only the most recently dismissed findings in a session that dismissed many', () => {
+    const closedFindings = Array.from({ length: 40 }, (_, i) => ({
+      id: `f${i}`,
+      kind: 'issue' as const,
+      title: `Problem number ${i}`,
+      detail: '',
+      path: null,
+      at: i,
+      how: 'dismissed' as const,
+      outcome: 'dismissed',
+      closedAt: i,
+    }))
+    const ex = { person: 'go', trigger: null, activity: [], reply: 'ok', turn: 1, press: null, screen: '', tasks: [] }
+    const prompt = buildPrompt({ ...EMPTY, closedFindings }, ex)
+    expect(prompt).toContain('Problem number 39 →')
+    expect(prompt).not.toContain('Problem number 0 →')
+    expect(prompt.split('\n').filter(l => l.startsWith('issue: Problem number')).length).toBeLessThan(40)
+  })
 })
 
 describe('guidedCloseDescription', () => {
