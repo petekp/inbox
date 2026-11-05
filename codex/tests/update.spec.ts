@@ -99,7 +99,10 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     lastTypedMessageAt: null,
   })
   assert.equal(viewOf(kept, 5).status.isUpdating, false)
-  assert.match(viewOf(kept, 5).status.error ?? '', /^Last update failed\..*tries again after the agent's next reply/)
+  assert.match(
+    viewOf(kept, 5).status.error ?? '',
+    /^The inbox couldn't update from the agent's last reply\..*tries again after the next reply/,
+  )
   assert.equal(
     viewOf({ ...kept, pending: [...kept.pending, { ex: ex(3, 'More work.'), turnsStarted: 3 }] }, 5).status.isUpdating,
     false,
@@ -137,7 +140,7 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
   assert.equal(viewOf(dropped, 6).status.isUpdating, false)
   assert.match(
     viewOf(dropped, 6).status.error ?? '',
-    /^Last update failed\. The inbox cannot read this conversation right now.*tries again after the agent's next reply\.$/,
+    /^The inbox couldn't read this conversation\..*tries again after the next reply\.$/,
   )
 })
 
@@ -264,7 +267,10 @@ test('view polls preserve live worker activity and reconcile a killed worker wit
   await exited
   const stopped = await poll()
   assert.equal(stopped.status.isUpdating, false)
-  assert.match(stopped.status.error ?? '', /^Last update failed\..*tries again after the agent's next reply/)
+  assert.match(
+    stopped.status.error ?? '',
+    /^The inbox couldn't update from the agent's last reply\..*tries again after the next reply/,
+  )
   const state = await readState(dir, 's1')
   assert.equal(state.presence.isUpdating, false)
   assert.equal(state.pending.length, 1)

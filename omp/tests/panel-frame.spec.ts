@@ -41,7 +41,7 @@ test('the demo says its presses send nothing', () => {
   expect(text(screenOf({ isDemo: true }), INITIAL_UI)).toContain('Buttons here send nothing.')
 })
 
-test('the band shows both counts with their labels at full brightness, and how to open the inbox', () => {
+test('the band shows the counts with their labels at full brightness, and how to open the inbox', () => {
   const screen = screenOf()
   const line = bandLines(screen, 80, NOW, style)[0]!
   const dimmed = [...line.matchAll(/\x1b\[2m(.*?)\x1b\[22m/g)].map(m => m[1])
@@ -53,6 +53,12 @@ test('the band shows both counts with their labels at full brightness, and how t
   expect([...bandLines(empty, 80, NOW, style)[0]!.matchAll(/\x1b\[2m(.*?)\x1b\[22m/g)].map(m => m[1])).toContain(
     'Nothing needed',
   )
+  const withPr = { ...empty, view: { ...empty.view, prs: { ...empty.view.prs, count: 1 } } }
+  expect(strip(bandLines(withPr, 80, NOW, style)[0]!)).toContain('PRs 1')
+  const failed = { ...empty, view: { ...empty.view, status: { ...empty.view.status, error: 'failed' } } }
+  expect(strip(bandLines(failed, 80, NOW, style)[0]!)).toContain('May be out of date')
+  expect(text(failed, INITIAL_UI)).toContain('May be out of date')
+  expect(strip(bandLines({ ...empty, isReadFailed: true }, 80, NOW, style)[0]!)).toContain('May be out of date')
 })
 
 test('no drawn line is wider than the panel, and a short panel keeps the selected row in view', () => {
