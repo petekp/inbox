@@ -40,6 +40,7 @@ const placing = (now: number, more: Partial<Placing> = {}): Placing => ({
   listInput: null,
   now,
   settleWindowMs: SETTLED_MS,
+  isPressOut: false,
   ...more,
 })
 
@@ -58,17 +59,26 @@ test('a row that comes due while the person keeps using the list waits until the
   expect(isSettledInPlace(settled, placing(due + FOLD_QUIET_MS + 1, { listInput: later }))).toBe(false)
 })
 
-test('a row whose send is pending stays past the settle window, and a message typed after its Undo ended folds it before the window', () => {
+test('a row whose message is on its way stays past the settle window, a refused or unconfirmed one folds then, and a message typed after its Undo ended folds a row before the window', () => {
   expect(isSettledInPlace({ ...settled, delivery: 'queued' }, placing(AT + 10 * SETTLED_MS))).toBe(true)
-  expect(isSettledInPlace({ ...settled, delivery: 'unconfirmed' }, placing(AT + 10 * SETTLED_MS))).toBe(true)
+  expect(isSettledInPlace({ ...settled, delivery: 'unconfirmed' }, placing(AT + SETTLED_MS))).toBe(false)
+  const refused = { error: 'blocked', canUndo: false }
+  expect(isSettledInPlace({ ...settled, delivery: refused }, placing(AT + SETTLED_MS))).toBe(false)
   expect(isSettledInPlace(settled, placing(AT + 20, { lastTypedMessageAt: AT + 10 }))).toBe(false)
   expect(isSettledInPlace({ ...settled, canUndo: true }, placing(AT + 20, { lastTypedMessageAt: AT + 10 }))).toBe(true)
 })
 
-test('the next fold time is a row’s due time, then the end of the person’s use of the list, and none for a row whose send is pending', () => {
+test('the next fold time is a row’s due time, then the end of the person’s use of the list, and none for a row whose message is on its way', () => {
   const due = AT + SETTLED_MS
   expect(nextFoldAt([settled], placing(AT))).toBe(due)
   const run = withListInput(null, due - 100)
   expect(nextFoldAt([settled], placing(due + 50, { listInput: run }))).toBe(due - 100 + FOLD_QUIET_MS)
   expect(nextFoldAt([{ ...settled, delivery: 'queued' }], placing(due + 50))).toBeNull()
+})
+
+test('a press under way on the tab keeps every due row in place, and a look that still shows a row’s Undo keeps that row', () => {
+  const due = AT + SETTLED_MS
+  expect(isSettledInPlace(settled, placing(due + 10 * SETTLED_MS, { isPressOut: true }))).toBe(true)
+  expect(isSettledInPlace(settled, placing(due + 1, { undoShown: ['i1'] }), 'i1')).toBe(true)
+  expect(isSettledInPlace(settled, placing(due + 1, { undoShown: ['i1'] }), 'i2')).toBe(false)
 })

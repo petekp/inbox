@@ -6,7 +6,7 @@ import type { Holds } from '../../hooks/timing'
 import { capitalized } from '../../hooks/press-labels'
 import { newRows, openRows } from './arrivals'
 import type { TabView as View } from './core'
-import { POLL_MS, settledIds, settledSeen } from './settle'
+import { POLL_MS, settledIds, settledSeen, undoShownIds } from './settle'
 import { tabState, selection, drafts, entering } from './tab-state'
 import { later, callTool, READ_TIMEOUT_MS } from './tab-host'
 import { drawIn } from './tab-motion'
@@ -114,5 +114,6 @@ export function holds(): Holds {
     discarded: tabState.discarded,
     shownSince: tabState.shownSince,
     listInput: listInput(Date.now()),
+    undoShown: undoShownIds(tabState.seen, Date.now()),
   }
 }

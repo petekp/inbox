@@ -53,7 +53,7 @@ function ItemGroup({
 }) {
   const title = kind === 'question' ? 'Questions' : 'Tasks'
   const rest = staying(entries)
-  const closed = itemsClosed(v, kind, rest)
+  const closed = itemsClosed(v, kind, entries)
   const rows = rest.flatMap(x => ('row' in x ? [x.row] : []))
 
   return (

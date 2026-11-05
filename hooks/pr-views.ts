@@ -100,7 +100,7 @@ export function drawnPrs(
     if (mark === null) return []
     const state = settledPrState(mark, now, settleWindowMs)
 
-    return isSettledInPlace(state, placing) ? [{ pr, state }] : []
+    return isSettledInPlace(state, placing, prMarkId(pr.ref)) ? [{ pr, state }] : []
   })
   let rank = 0
 

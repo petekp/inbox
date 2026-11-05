@@ -7,9 +7,20 @@ let input: ListInput | null = null
 let isPointerOnList = false
 let wake: number | undefined
 
-/** The person's input on the list. A pointer resting on the list counts as input now, so rows never fold under it. */
+/**
+ * The person's input on the list. A pointer resting on the list counts as input now, so rows never fold under it, but
+ * only while this page is the active, visible tab: a hidden or replaced page gets no pointerleave.
+ */
 export function listInput(now: number): ListInput | null {
-  return isPointerOnList && input ? { since: input.since, last: now } : input
+  const isPointerShown = isPointerOnList && tabState.isActive && document.visibilityState === 'visible'
+
+  return isPointerShown && input ? { since: input.since, last: now } : input
+}
+
+/** Ends a pointer the page can no longer see, as when Codex hides the tab or the window loses focus. */
+function pointerGone() {
+  if (isPointerOnList) note()
+  isPointerOnList = false
 }
 
 /** Notes an input, and draws again once the list has been quiet for FOLD_QUIET_MS, when a held row can fold. */
@@ -38,11 +49,12 @@ document.addEventListener(
   options,
 )
 
-document.documentElement.addEventListener(
-  'pointerleave',
+document.documentElement.addEventListener('pointerleave', pointerGone, options)
+window.addEventListener('blur', pointerGone, options)
+document.addEventListener(
+  'visibilitychange',
   () => {
-    if (isPointerOnList) note()
-    isPointerOnList = false
+    if (document.visibilityState !== 'visible') pointerGone()
   },
   options,
 )

@@ -11,7 +11,7 @@ import { isShownEmpty } from './arrivals'
 import type { TabView as View } from './core'
 import { drawnSettled } from './settle'
 import { listInput } from './list-input'
-import { tabState, selection, unfolded, undoing, drawnRows } from './tab-state'
+import { tabState, selection, unfolded, undoing, drawnRows, sending } from './tab-state'
 import type { Key, Row } from './tab-state'
 import { drawIn } from './tab-motion'
 
@@ -45,7 +45,12 @@ export function tabWaits(v: View, t: Tab): RowWait[] {
 export function shownSettled(v: View): Set<string> {
   const now = Date.now()
 
-  return drawnSettled(v, tabState.shownSince, undoing, { seen: tabState.seen, input: listInput(now), now })
+  return drawnSettled(v, tabState.shownSince, undoing, {
+    seen: tabState.seen,
+    input: listInput(now),
+    now,
+    isLocalPressOut: sending.size > 0,
+  })
 }
 
 export function selectedIndex(rows: Row[], t: Tab, v: View): number {

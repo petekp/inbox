@@ -156,3 +156,27 @@ test(
     expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('▸ 2 closed')
   },
 )
+
+test('an Explain under way on the tab keeps a closed row in place past its fold time, until the agent answers', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: true, isFocused: true }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+
+  await pane.press({ key: 'dismiss-i1' })
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'explain-i2-key' })
+  await clock.settle()
+  expect(await pane.find({ text: /Explaining…/ })).toBeDefined()
+  await clock.advance(SETTLED_MS + FOLD_QUIET_MS)
+  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+
+  await $.turn.start({ text: w.sent.at(-1) ?? '', turnId: 't2' })
+  await $.turn.complete({ answer: 'Node is simpler.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
+  await clock.settle()
+  expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
+})

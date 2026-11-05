@@ -24,7 +24,7 @@ import { isSettledInPlace, canUndoClose, isUndoLeft, pendingDeliveryAt } from '.
 import type { ListInput } from './timing'
 import { closedRowState, optionDescriptionsOf, isWaitingRow, outcomeLabel, closedMark, recLineOf } from './rows'
 import type { RowView, ClosedDelivery, ResultMark, RowState } from './rows'
-import { DONE_LABELS, fixLabel, feedbackIn, pressFeedbackIn } from './feedback'
+import { DONE_LABELS, feedbackOf, fixLabel, feedbackIn, isPressUnderWay, pressFeedbackIn } from './feedback'
 import type { ShownTab } from './tabs'
 import { actionsOf } from './action-plan'
 
@@ -54,6 +54,11 @@ export type ViewInput = {
   lastTypedMessageAt: number | null
   /** The person's latest run of input on the list the look shows. Null when the look knows of none. */
   listInput: ListInput | null
+  /**
+   * The settled rows and PRs whose Undo the look still shows, by id. The Codex tab times Undo from its own first read of
+   * a row, so it names them and the server keeps them in place. Other looks pass none.
+   */
+  undoShown?: string[]
 }
 
 export type InboxView = {
@@ -62,8 +67,10 @@ export type InboxView = {
     questions: RowView[]
     tasks: RowView[]
     closed: { questions: ClosedView<Closed>[]; tasks: ClosedView<Closed>[] }
+    /** Whether a press is under way on a row of the tab, which keeps every settled row there in place. */
+    isPressOut: boolean
   }
-  findings: { count: number; rows: RowView[]; closed: ClosedView<ClosedFinding>[] }
+  findings: { count: number; rows: RowView[]; closed: ClosedView<ClosedFinding>[]; isPressOut: boolean }
   status: ItemStatus
 }
 
@@ -101,10 +108,34 @@ export function inboxView({
   shownSince,
   lastTypedMessageAt,
   listInput,
+  undoShown,
 }: ViewInput): InboxView {
-  const placing = { shownSince, lastTypedMessageAt, listInput, now, settleWindowMs }
-  const isInPlace = (at: number, canUndo: boolean, last?: LastAction) =>
-    isSettledInPlace({ at, canUndo, delivery: pendingDeliveryAt(last, now) }, placing)
+  const isFindingId = (id: string) =>
+    ledger.findings.some(f => f.id === id) || ledger.closedFindings.some(f => f.id === id)
+  const isItemId = (id: string) => ledger.items.some(i => i.id === id) || ledger.closed.some(c => c.id === id)
+  const isPressOutWhere = (isOnTab: (id: string) => boolean) =>
+    Object.entries(lastActions).some(
+      ([id, last]) => isOnTab(id) && isPressUnderWay(feedbackOf(id, last, undefined, turns, now)),
+    )
+  const placingOn = (isPressOut: boolean) => ({
+    shownSince,
+    lastTypedMessageAt,
+    listInput,
+    now,
+    settleWindowMs,
+    undoShown,
+    isPressOut,
+  })
+  const placingFor = {
+    needsYou: placingOn(isPressOutWhere(isItemId)),
+    findings: placingOn(isPressOutWhere(isFindingId)),
+  }
+  const isInPlace = (id: string, at: number, canUndo: boolean, last?: LastAction) =>
+    isSettledInPlace(
+      { at, canUndo, delivery: pendingDeliveryAt(last, now) },
+      isFindingId(id) ? placingFor.findings : placingFor.needsYou,
+      id,
+    )
   const pressedSend = (c: Closed | ClosedFinding) => {
     const last = lastActions[c.id]
 
@@ -119,7 +150,7 @@ export function inboxView({
     return last?.action === 'type' &&
       last.at >= closedAt(c) &&
       last.delivery?.state !== 'failed' &&
-      isInPlace(last.at, false, last)
+      isInPlace(c.id, last.at, false, last)
       ? last
       : null
   }
@@ -140,7 +171,7 @@ export function inboxView({
     return (
       replyAfter(c) !== null ||
       (!isDiscarded(c) &&
-        (isHeld(c) || isInPlace(at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs), pressedSend(c))))
+        (isHeld(c) || isInPlace(c.id, at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs), pressedSend(c))))
     )
   }
   const placedItems = new Map(
@@ -149,7 +180,7 @@ export function inboxView({
   const isFixSettled = (id: string) => {
     const last = lastActions[id]
 
-    return isFixSent(last) && !isInPlace(last.at, isUndoLeft(last.at, now, settleWindowMs), last)
+    return isFixSent(last) && !isInPlace(id, last.at, isUndoLeft(last.at, now, settleWindowMs), last)
   }
   const placedFindings = new Map(
     ledger.closedFindings.filter(f => !isOpen(f.id) && !isFixSettled(f.id) && isPlaced(f)).map(f => [f.id, f] as const),
@@ -302,9 +333,11 @@ export function inboxView({
       questions: questionRows,
       tasks: taskRows,
       closed: { questions: closed.filter(d => d.kind === 'question'), tasks: closed.filter(d => d.kind === 'task') },
+      isPressOut: placingFor.needsYou.isPressOut,
     },
     findings: {
       count: findingRows.filter(isWaitingRow).length,
+      isPressOut: placingFor.findings.isPressOut,
       rows: findingRows,
       closed: [
         ...ledger.closedFindings

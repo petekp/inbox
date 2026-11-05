@@ -2124,12 +2124,13 @@ function foldDueAt(state, lastTypedMessageAt, settleWindowMs) {
   const isTypedSince = lastTypedMessageAt !== null && lastTypedMessageAt > state.at;
   return isTypedSince && !state.canUndo ? lastTypedMessageAt : state.at + settleWindowMs;
 }
-function isSendPending(state) {
-  return state.delivery !== null && state.delivery !== "held";
+function isSendOnItsWay(delivery) {
+  return delivery === "sending" || delivery === "queued";
 }
-function isSettledInPlace(state, { shownSince, lastTypedMessageAt, listInput, now, settleWindowMs }) {
+function isSettledInPlace(state, { shownSince, lastTypedMessageAt, listInput, now, settleWindowMs, undoShown, isPressOut: isPressOut2 }, id) {
   const dueAt = foldDueAt(state, lastTypedMessageAt, settleWindowMs);
-  const isWaiting = now < dueAt || isSendPending(state) || isListInUseSince(listInput, dueAt, now);
+  const isUndoShown = id !== void 0 && (undoShown ?? []).includes(id);
+  const isWaiting = now < dueAt || isUndoShown || isSendOnItsWay(state.delivery) || isPressOut2 || isListInUseSince(listInput, dueAt, now);
   return isShownSince(state.at, shownSince) && isWaiting;
 }
 function isUndoLeft(at, now, settleWindowMs) {
@@ -2576,7 +2577,7 @@ function drawnPrs(prState, links, lastActions, placing) {
     const mark = dismissal(lastActions, pr.ref);
     if (mark === null) return [];
     const state = settledPrState(mark, now, settleWindowMs);
-    return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
+    return isSettledInPlace(state, placing, prMarkId(pr.ref)) ? [{ pr, state }] : [];
   });
   let rank = 0;
   return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
@@ -2588,6 +2589,9 @@ function isPrRowId(id) {
 }
 
 // ../hooks/feedback.ts
+function isPressUnderWay(f) {
+  return f?.is === "working" || f?.is === "sending" || f?.is === "local" && f.result.state === "pending";
+}
 function feedbackOf(id, last, note, turns, now, reportedAt) {
   const result = last?.result;
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
@@ -2879,10 +2883,32 @@ function inboxView({
   discarded,
   shownSince,
   lastTypedMessageAt,
-  listInput
+  listInput,
+  undoShown
 }) {
-  const placing = { shownSince, lastTypedMessageAt, listInput, now, settleWindowMs };
-  const isInPlace = (at, canUndo, last) => isSettledInPlace({ at, canUndo, delivery: pendingDeliveryAt(last, now) }, placing);
+  const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
+  const isItemId = (id) => ledger.items.some((i) => i.id === id) || ledger.closed.some((c) => c.id === id);
+  const isPressOutWhere = (isOnTab) => Object.entries(lastActions).some(
+    ([id, last]) => isOnTab(id) && isPressUnderWay(feedbackOf(id, last, void 0, turns, now))
+  );
+  const placingOn = (isPressOut2) => ({
+    shownSince,
+    lastTypedMessageAt,
+    listInput,
+    now,
+    settleWindowMs,
+    undoShown,
+    isPressOut: isPressOut2
+  });
+  const placingFor = {
+    needsYou: placingOn(isPressOutWhere(isItemId)),
+    findings: placingOn(isPressOutWhere(isFindingId))
+  };
+  const isInPlace = (id, at, canUndo, last) => isSettledInPlace(
+    { at, canUndo, delivery: pendingDeliveryAt(last, now) },
+    isFindingId(id) ? placingFor.findings : placingFor.needsYou,
+    id
+  );
   const pressedSend = (c) => {
     const last = lastActions[c.id];
     return (c.how === "answered" || c.how === "done") && last?.kind === "mark" && last.at === closedAt(c) ? last : void 0;
@@ -2890,7 +2916,7 @@ function inboxView({
   const isOpen2 = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
   const replyAfter = (c) => {
     const last = lastActions[c.id];
-    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(last.at, false, last) ? last : null;
+    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(c.id, last.at, false, last) ? last : null;
   };
   const isPressedAnswer = (c) => c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
   const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || isPressedAnswer(c);
@@ -2902,14 +2928,14 @@ function inboxView({
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
   const isPlaced = (c) => {
     const at = closedAt(c);
-    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs), pressedSend(c)));
+    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(c.id, at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs), pressedSend(c)));
   };
   const placedItems = new Map(
     ledger.closed.filter((d) => d.item && !isOpen2(d.id) && isPlaced(d)).map((d) => [d.id, d])
   );
   const isFixSettled = (id) => {
     const last = lastActions[id];
-    return isFixSent(last) && !isInPlace(last.at, isUndoLeft(last.at, now, settleWindowMs), last);
+    return isFixSent(last) && !isInPlace(id, last.at, isUndoLeft(last.at, now, settleWindowMs), last);
   };
   const placedFindings = new Map(
     ledger.closedFindings.filter((f) => !isOpen2(f.id) && !isFixSettled(f.id) && isPlaced(f)).map((f) => [f.id, f])
@@ -3031,10 +3057,12 @@ function inboxView({
       count: counted.length,
       questions: questionRows,
       tasks: taskRows,
-      closed: { questions: closed.filter((d) => d.kind === "question"), tasks: closed.filter((d) => d.kind === "task") }
+      closed: { questions: closed.filter((d) => d.kind === "question"), tasks: closed.filter((d) => d.kind === "task") },
+      isPressOut: placingFor.needsYou.isPressOut
     },
     findings: {
       count: findingRows.filter(isWaitingRow).length,
+      isPressOut: placingFor.findings.isPressOut,
       rows: findingRows,
       closed: [
         ...ledger.closedFindings.filter((f) => !held.has(f.id)).map((f) => ({ ...f, outcomeLabel: outcomeLabel(f), delivery: null, mark: closedMark(closedState(f), null) })),
@@ -3099,13 +3127,18 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     statusPage: statusPage(s, now)
   };
 }
-function prTabOf(s, lastActions, now, { shownSince, listInput }, settleWindowMs) {
+function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, settleWindowMs) {
+  const isPressOut2 = Object.entries(lastActions).some(
+    ([id, last]) => isPrRowId(id) && isPressUnderWay(feedbackOf(id, last, void 0, s.presence, now))
+  );
   const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
     shownSince,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
     listInput,
     now,
-    settleWindowMs
+    settleWindowMs,
+    undoShown,
+    isPressOut: isPressOut2
   });
   const isSent = threadSentIn(lastActions);
   return {
@@ -3119,7 +3152,8 @@ function prTabOf(s, lastActions, now, { shownSince, listInput }, settleWindowMs)
       { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
       shownSince
     ),
-    isGhSignedOut: s.prViews.isGhSignedOut === true
+    isGhSignedOut: s.prViews.isGhSignedOut === true,
+    isPressOut: isPressOut2
   };
 }
 

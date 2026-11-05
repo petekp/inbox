@@ -6,9 +6,8 @@ import type { SessionView } from '../../hooks/session-view'
 import type { BannerTone, ToneName } from '../../hooks/tones'
 import { ago } from '../../hooks/text'
 import { DEMO_NOTICE, bannerOf, stopBanner, tabBarBanners, stopFix, stopText } from '../../hooks/banners'
-import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies, isSendPending } from '../../hooks/timing'
+import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies, nextFoldAt } from '../../hooks/timing'
 import type { ListInput } from '../../hooks/timing'
-import type { RowState } from '../../hooks/rows'
 import { shownTabs, isRowTab } from '../../hooks/tabs'
 import { bandCounts, noCountsText } from '../../hooks/band'
 import { footerStatus } from '../../hooks/view'
@@ -132,9 +131,6 @@ export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded' | 's
   }
 }
 
-/** A settled row whose Undo counts down, or whose fold comes due on the clock. One whose send is pending waits on events. */
-const isFolding = (state: RowState) => state.is === 'settled' && (state.canUndo || !isSendPending(state))
-
 /**
  * True while the view changes with the clock alone: a settled row's Undo counting down or its fold coming due, a local press's result
  * showing, a send waiting to read as queued, or a notice. Changes the host saves arrive as events instead.
@@ -148,10 +144,11 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
       (l.delivery?.state === 'queued' && now - l.at < QUEUED_AFTER_MS),
   )
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
+  const settled = [...rows, ...view.prs.drawn].flatMap(r => (r.state.is === 'settled' ? [r.state] : []))
+  const placing = { lastTypedMessageAt: null, listInput: ui.listInput, now, settleWindowMs: SETTLED_MS }
+  const isFoldComing = nextFoldAt(settled, placing) !== null
 
-  return (
-    rows.some(r => isFolding(r.state)) || view.prs.drawn.some(p => isFolding(p.state)) || isPressMoving || isNoticeShown
-  )
+  return isFoldComing || isPressMoving || isNoticeShown
 }
 
 /** The notice for a press the row cannot show: a failed send, or a press whose row had changed. */

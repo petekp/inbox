@@ -99,6 +99,7 @@ export function holdsOf(args: Record<string, unknown>): Holds {
     discarded: times(args.discarded),
     shownSince,
     listInput: listInputOf(args.listInput),
+    undoShown: Array.isArray(args.undoShown) ? args.undoShown.filter(x => typeof x === 'string') : [],
   }
 }
 
