@@ -15,7 +15,7 @@ export function systemText(host: Host): string {
 Input:
 - <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design
 - <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
-- <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
+- <decided>: items and findings the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again in other words.
 - <person>: what the person just sent, and the commands they ran themselves: "$ cmd" for a shell command, with its output, and "/name" for a slash command
 - <activity>: what the agent did this turn (files edited, commands, URLs)
 - <reply>: what the agent said this turn, in order
@@ -36,7 +36,7 @@ NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
   options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
   rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
   design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
-  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
+  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; news of a PR's failing checks, conflicts, review threads or readiness to merge, and offers to handle them, since ${host.prsIn} shows each with its own press; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
 UPDATE: <id> | <options> | <rec>
   For a "decide" item in <open> when the reply now offers it different answers, or states a recommendation for it that <open> does not show. options: the answers the person can now pick, as in NEW, or "-" to keep them. rec: as in NEW, or "-" to keep it. Rewording the question is not a change.
 HELP: <item> | <kind> | <value> | <name>
@@ -67,12 +67,15 @@ export function ledgerBlocks(ledger: Ledger): string[] {
   const closed = ledger.closed
     .filter(d => d.how !== 'expired' && !isAskedForChoices(d))
     .map(d => `${d.ask} → ${outcomeText(d)}`)
-    .join(NL)
+  const dismissedFindings = ledger.closedFindings
+    .filter(f => f.how === 'dismissed')
+    .map(f => `${f.kind}: ${f.title} → ${outcomeText(f)}`)
+  const decided = [...closed, ...dismissedFindings].join(NL)
 
   return [
     `<open>${NL}${open}${NL}</open>`,
     `<findings>${NL}${findings}${NL}</findings>`,
-    `<decided>${NL}${closed}${NL}</decided>`,
+    `<decided>${NL}${decided}${NL}</decided>`,
   ]
 }
 
@@ -92,7 +95,7 @@ export function personText(person: string | null, trigger: string | null): strin
   return person ?? `(The person sent nothing. The turn was started by: ${trigger ?? 'unknown'}.)`
 }
 
-export function outcomeText(d: Closed): string {
+export function outcomeText(d: Pick<Closed, 'how' | 'outcome'>): string {
   if (d.how === 'dismissed') return 'dismissed by the user'
   if (d.how === 'expired') return 'expired before the user answered'
 

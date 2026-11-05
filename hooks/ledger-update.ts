@@ -1,5 +1,6 @@
-import type { Closed, ClosedFinding, Exchange, Finding, Item, Ledger, Press, PressKind } from '../types'
+import type { Closed, Exchange, Finding, Item, Ledger, Press, PressKind } from '../types'
 import {
+  dismissedFindingOf,
   matchOpen,
   recommendedOption,
   repeatsClosed,
@@ -20,12 +21,25 @@ const STALE_AFTER = 12
  */
 const UNFOUNDED_MOOT =
   /^no longer applies:.*(\b(not|never) (related|relevant|addressed|mentioned|discussed|answered|raised|part of)\b|\bunrelated\b|\b(still|stays) open\b|\boutside (the|this)\b|\bnothing\b.*\b(touch|address|mention|relate))/i
+/**
+ * A FIXED outcome that says the person put the finding off rather than that a change fixed it. systemText says to
+ * write no FIXED line then, and the finding stays open until the person dismisses it.
+ */
+const PUT_OFF = /\b(dismiss(ed)?|declined?|later|not now|set aside|put off|deferred|postponed|can wait|won'?t fix)\b/i
 export const EXPIRED = 'expired, unanswered'
 const MAX_FINDINGS = 30
 
 /** The recommendation of a question asked again: the stated one when it names one of `options`, else the old one when it still does. */
 function restatedRec(options: string[], old: string | null, stated: string | null): string | null {
   return recommendedOption(options, stated) ?? recommendedOption(options, old)
+}
+
+/** `item` with recommendation `rec`, and `reason` as its reason when given. A reason given for another option is dropped. */
+function withRec(item: Item, rec: string | null, reason?: string): Item {
+  const { recReason, ...rest } = item
+  const kept = reason ?? (rec === item.rec ? recReason : undefined)
+
+  return { ...rest, rec, ...(rec && kept ? { recReason: kept } : {}) }
 }
 
 /** The kind of each press that sends a message. A Talk press asks about its row, which its reply leaves open. */
@@ -71,8 +85,12 @@ function isPersonsAnswer(outcome: string): boolean {
  */
 export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number, promptAt = now): Ledger {
   const stillAsked = new Set(u.updated.filter(c => c.options || c.rec).map(c => c.id))
+  const isPutOffFinding = (c: Update['closed'][number]) =>
+    ledger.findings.some(f => f.id === c.id) && PUT_OFF.test(c.outcome)
   const closing = new Map(
-    u.closed.filter(c => !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome)).map(c => [c.id, c.outcome]),
+    u.closed
+      .filter(c => !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome) && !isPutOffFinding(c))
+      .map(c => [c.id, c.outcome]),
   )
   const closed = [...ledger.closed]
   const items: Item[] = []
@@ -94,7 +112,7 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
   const addedIds: (string | null)[] = []
   const created = new Set<string>()
   for (const a of u.added) {
-    if (repeatsClosed(ledger.closed, a, promptAt)) {
+    if (repeatsClosed(ledger.closed, a, promptAt, ledger.closedFindings)) {
       addedIds.push(null)
       continue
     }
@@ -102,9 +120,8 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
     const restated = items[at]
     if (restated) {
       items[at] = {
-        ...restated,
+        ...withRec(restated, restatedRec(restated.options, restated.rec, a.rec)),
         helps: a.helps.reduce((all, h) => withHelp(all, h), restated.helps),
-        rec: restatedRec(restated.options, restated.rec, a.rec),
         ...(a.isDesignChoice ? { isDesignChoice: true } : {}),
       }
       addedIds.push(restated.id)
@@ -178,13 +195,13 @@ function withUpdate(item: Item, updated: Update['updated']): Item {
   if (!change || item.kind !== 'question') return item
   const options = change.options ?? item.options
 
-  return { ...item, options, rec: restatedRec(options, item.rec, change.rec) }
+  return withRec({ ...item, options }, restatedRec(options, item.rec, change.rec))
 }
 
 /**
  * Adds a finding Claude recorded. One whose title matches an open finding, or
  * rewords an open item's ask, is skipped, so one thing shows in one list. So is
- * one that repeats a finding the person dismissed (`dismissed` is that record) as
+ * one that repeats a finding or an ask the person dismissed (`dismissed` is that record) as
  * `repeatsSubject` says; a finding that expired
  * or was closed as fixed can be recorded again. When the list is full, the
  * oldest finding closes as expired to make room.
@@ -192,12 +209,20 @@ function withUpdate(item: Item, updated: Update['updated']): Item {
 export function addFinding(
   ledger: Ledger,
   finding: Omit<Finding, 'id'>,
-): { ledger: Ledger; id: string; isAdded: boolean; expired: Finding | null; dismissed: ClosedFinding | null } {
+): {
+  ledger: Ledger
+  id: string
+  isAdded: boolean
+  expired: Finding | null
+  dismissed: Pick<Closed, 'id' | 'outcome'> | null
+} {
   const same =
     ledger.findings.find(f => sameAsk(f.title, finding.title)) ?? ledger.items.find(i => restates(i.ask, finding.title))
   if (same) return { ledger, id: same.id, isAdded: false, expired: null, dismissed: null }
   const dismissed =
-    ledger.closedFindings.findLast(f => f.how === 'dismissed' && repeatsSubject(f.title, finding.title)) ?? null
+    dismissedFindingOf(ledger.closedFindings, finding.title) ??
+    ledger.closed.findLast(c => c.how === 'dismissed' && repeatsSubject(c.ask, finding.title)) ??
+    null
   if (dismissed) return { ledger, id: dismissed.id, isAdded: false, expired: null, dismissed }
   const id = `f${ledger.nextId}`
   const expired = ledger.findings.length >= MAX_FINDINGS ? ledger.findings[0]! : null
@@ -215,18 +240,28 @@ export function addFinding(
 type AgentItemResult =
   | { ledger: Ledger; is: 'added'; id: string; expired: Item | null }
   /** `newRec` is the recommendation the record changed the item to, or null when it kept the item's own. */
-  | { ledger: Ledger; is: 'open'; id: string; addedSteps: number; isNewlyMarked: boolean; newRec: string | null }
-  | { ledger: Ledger; is: 'closed'; record: Closed }
+  | {
+      ledger: Ledger
+      is: 'open'
+      id: string
+      addedSteps: number
+      isNewlyMarked: boolean
+      newRec: string | null
+      isNewReason: boolean
+    }
+  /** `record` is the closed item it repeats, or the dismissed finding it raises again. */
+  | { ledger: Ledger; is: 'closed'; record: Pick<Closed, 'how' | 'outcome'> }
 
 /**
  * Adds a question or task the agent recorded. One that an open item restates adds its steps and its design-choice mark
  * to that item, gives it the recommendation when that names one of the item's options, and stamps its `reportedAt`.
- * One that repeats a closed item is skipped, unless that item expired or the agent closed it.
+ * One that repeats a closed item is skipped, unless that item expired or the agent closed it. So is one that raises a
+ * finding the person dismissed.
  * The list keeps its newest MAX_OPEN items. A finding the new ask restates closes, so one thing shows in one list.
  */
 export function addAgentItem(
   ledger: Ledger,
-  entry: Pick<Item, 'kind' | 'ask' | 'options' | 'rec' | 'helps' | 'isDesignChoice'>,
+  entry: Pick<Item, 'kind' | 'ask' | 'options' | 'rec' | 'recReason' | 'helps' | 'isDesignChoice'>,
   now: number,
 ): AgentItemResult {
   const candidate = { ...entry, label: null }
@@ -237,7 +272,9 @@ export function addAgentItem(
     const helps = entry.helps.reduce(withHelp, openItem.helps)
     const isDesignChoice = openItem.isDesignChoice === true || entry.isDesignChoice === true
     const rec = restatedRec(openItem.options, openItem.rec, entry.rec)
-    const reported = { ...openItem, helps, isDesignChoice, rec, reportedAt: now }
+    const reason =
+      entry.recReason && rec === recommendedOption(openItem.options, entry.rec) ? entry.recReason : undefined
+    const reported = { ...withRec(openItem, rec, reason), helps, isDesignChoice, reportedAt: now }
     const items = ledger.items.map(i => (i === openItem ? reported : i))
 
     return {
@@ -247,10 +284,13 @@ export function addAgentItem(
       addedSteps: helps.length - openItem.helps.length,
       isNewlyMarked: isDesignChoice && openItem.isDesignChoice !== true,
       newRec: rec !== openItem.rec ? rec : null,
+      isNewReason: reason !== undefined && reason !== openItem.recReason,
     }
   }
   const isAskable = (c: Closed) => c.how === 'expired' || c.how === 'claude'
-  const repeated = ledger.closed.findLast(c => !isAskable(c) && repeatsSettled(c, candidate))
+  const repeated =
+    ledger.closed.findLast(c => !isAskable(c) && repeatsSettled(c, candidate)) ??
+    dismissedFindingOf(ledger.closedFindings, entry.ask)
   if (repeated) return { ledger, is: 'closed', record: repeated }
 
   const id = `i${ledger.nextId}`

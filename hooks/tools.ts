@@ -4,7 +4,7 @@ import { addAgentItem, addFinding } from './ledger-update'
 import { stepHelp } from './reply-parse'
 import type { Host } from './model-text'
 import { MAX_ORDERED_PRS, tabPrs } from './pr-fetch'
-import type { Closed, Help, LastAction, Ledger } from '../types'
+import type { Closed, Help, Item, LastAction, Ledger } from '../types'
 
 const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'
 
@@ -31,6 +31,11 @@ const RECORD_SCHEMA = {
       type: 'string',
       description:
         'For a question: the option you recommend, copied from options. Leave it out when you recommend none.',
+    },
+    why: {
+      type: 'string',
+      description:
+        'For a question with rec: why you recommend it, as a short clause of at most 12 words, such as "it keeps the old API".',
     },
     steps: {
       type: 'array',
@@ -104,9 +109,9 @@ function orderDescription(host: Host): string {
 
 function recordDescription(host: Host): string {
   return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing.
-- question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
+- question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec with why when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
 - task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
-- finding: something outside the current task that deserves their attention. It waits in ${host.findingsIn} until it is closed, and the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, once you have checked it. Leave out style nits, anything the user already decided, todos or ideas the user mentioned, problems in your own change, progress, and anything only the user can do or decide: handle those in your reply, or record them as a question or task.
+- finding: something outside the current task that deserves their attention. It waits in ${host.findingsIn} until it is closed, and the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, once you have checked it. Leave out style nits, a PR's checks, conflicts, review threads or readiness, which ${host.prsIn} shows, anything the user already decided, todos or ideas the user mentioned, problems in your own change, progress, and anything only the user can do or decide: handle those in your reply, or record them as a question or task.
 Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.`
 }
 
@@ -161,6 +166,7 @@ const MAX_ASK = 200
 const MAX_OPTION = 60
 const MAX_OPTIONS = 8
 const MAX_STEPS = 3
+const MAX_REASON = 120
 
 function list(value: unknown, max: number, each: number): string[] {
   return Array.isArray(value)
@@ -193,6 +199,7 @@ export function recordItem(host: Host, ledger: Ledger, input: Record<string, unk
   const recInput = input.kind === 'question' ? cut(input.rec, MAX_OPTION) : ''
   const rec = recInput === '' ? null : recommendedOption(options, recInput)
   if (recInput !== '' && rec === null) return unchanged(ledger, 'Not recorded: rec must be one of the options.')
+  const recReason = rec ? cut(input.why, MAX_REASON).replace(/^because\s+/i, '') : ''
   const steps = list(input.steps, MAX_STEPS + 3, 4000)
   const isUsable = (h: Help) => input.kind === 'task' || h.kind === 'open' || h.kind === 'link'
   const helps = steps
@@ -207,12 +214,15 @@ export function recordItem(host: Host, ledger: Ledger, input: Record<string, unk
       : ''
 
   const isDesignChoice = input.kind === 'question' && input.design_choice === true
-  const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps, isDesignChoice }, now)
+  const kind: Item['kind'] = input.kind
+  const entry = { kind, ask, options, rec, helps, isDesignChoice, ...(recReason ? { recReason } : {}) }
+  const r = addAgentItem(ledger, entry, now)
   if (r.is === 'open') {
     const changes = [
       ...(r.addedSteps > 0 ? ['added its new steps'] : []),
       ...(r.isNewlyMarked ? ['marked it as a design choice'] : []),
       ...(r.newRec ? [`changed its recommendation to ${r.newRec}`] : []),
+      ...(r.isNewReason ? ['gave its recommendation your reason'] : []),
     ]
     const updated = changes.length > 0 ? ` and ${changes.join(' and ')}` : ''
 
@@ -226,9 +236,25 @@ export function recordItem(host: Host, ledger: Ledger, input: Record<string, unk
     result:
       `Recorded. The user sees it in ${host.surface}.` +
       leftOut +
+      missingText(r.ledger.items.find(i => i.id === r.id)) +
       (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ''),
     personLine: `${input.kind === 'question' ? 'Question' : 'Task'}: ${ask}`,
   }
+}
+
+/**
+ * What a recorded question or task lacks for the user to act on it in one press, said so the agent can record it
+ * again with it. A task may have no command, file or link, so its sentence says when to add one.
+ */
+function missingText(item: Item | undefined): string {
+  if (item?.kind === 'task')
+    return item.helps.length === 0
+      ? ' It has no steps: when a command, file or link would help the user do it, record it again with steps.'
+      : ''
+  if (!item) return ''
+  if (!item.rec) return ' It has no rec: when you can recommend an option, record it again with rec and why.'
+
+  return item.recReason ? '' : ' It has no why: record it again with why, so the user sees your reason.'
 }
 
 function recordFinding(host: Host, ledger: Ledger, input: Record<string, unknown>, now: number): ToolAnswer {

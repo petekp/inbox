@@ -28,7 +28,7 @@ export function latestBatch(ledger: Ledger): Item[] {
 function describe(item: Item): string {
   const parts = [`"${item.ask}"`]
   if (item.options.length > 0) parts.push(`options: ${item.options.join(' / ')}`)
-  if (item.rec) parts.push(`recommended: ${item.rec}`)
+  if (item.rec) parts.push(`recommended: ${item.rec}${item.recReason ? `, because ${item.recReason}` : ''}`)
   if (item.kind === 'task') parts.push('an action for the user')
 
   return parts.join('; ')

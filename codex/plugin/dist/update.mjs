@@ -270,10 +270,13 @@ function matchOpen(items, a, sameBatch = /* @__PURE__ */ new Set()) {
     (i) => i.id === a.label || sameAsk(i.ask, a.ask) || !sameBatch.has(i.id) && i.kind === a.kind && restates(i.ask, a.ask)
   );
 }
-function repeatsClosed(closed, a, since) {
+function repeatsClosed(closed, a, since, closedFindings = []) {
   const recent = closed.filter((c) => c.at >= since && !isAskedForChoices(c));
   const settled = closed.filter((c) => c.at < since && c.how !== "expired");
-  return matchOpen(recent, a) >= 0 || a.label !== null && recent.some((c) => c.label === a.label) || settled.some((c) => repeatsSettled(c, a));
+  return matchOpen(recent, a) >= 0 || a.label !== null && recent.some((c) => c.label === a.label) || settled.some((c) => repeatsSettled(c, a)) || dismissedFindingOf(closedFindings, a.ask) !== void 0;
+}
+function dismissedFindingOf(closedFindings, ask) {
+  return closedFindings.findLast((f) => f.how === "dismissed" && repeatsSubject(f.title, ask));
 }
 var LIST_CHOICES = "List the choices";
 function isAskedForChoices(c) {
@@ -287,6 +290,7 @@ function repeatsSettled(c, a) {
 
 // ../hooks/ledger-close.ts
 var MAX_CLOSED = 12;
+var MAX_DISMISSED = 50;
 function closedRecord(item, closing, now) {
   const { id, kind, ask, label } = item;
   return { id, kind, ask, ...label ? { label } : {}, ...closing, at: now, item };
@@ -336,7 +340,10 @@ function asksAbout(item, finding, isClaimed = false) {
   return [...prNumbers(`${finding.title} ${finding.detail}`)].some((n) => itemPrs.has(n));
 }
 function pruneClosed(ledger, keep) {
-  const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id));
+  const pruned2 = (records) => {
+    const dismissed = new Set(records.filter((r) => r.how === "dismissed").slice(-MAX_DISMISSED));
+    return records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id) || dismissed.has(r));
+  };
   return { ...ledger, closed: pruned2(ledger.closed), closedFindings: pruned2(ledger.closedFindings) };
 }
 function idNumber(id) {
@@ -590,9 +597,15 @@ function todoAsk(work) {
 var MAX_OPEN = 20;
 var STALE_AFTER = 12;
 var UNFOUNDED_MOOT = /^no longer applies:.*(\b(not|never) (related|relevant|addressed|mentioned|discussed|answered|raised|part of)\b|\bunrelated\b|\b(still|stays) open\b|\boutside (the|this)\b|\bnothing\b.*\b(touch|address|mention|relate))/i;
+var PUT_OFF2 = /\b(dismiss(ed)?|declined?|later|not now|set aside|put off|deferred|postponed|can wait|won'?t fix)\b/i;
 var EXPIRED = "expired, unanswered";
 function restatedRec(options, old, stated) {
   return recommendedOption(options, stated) ?? recommendedOption(options, old);
+}
+function withRec(item, rec, reason) {
+  const { recReason, ...rest } = item;
+  const kept = reason ?? (rec === item.rec ? recReason : void 0);
+  return { ...rest, rec, ...rec && kept ? { recReason: kept } : {} };
 }
 var SENT_PRESS_KINDS = {
   answer: "mark",
@@ -618,8 +631,9 @@ function isPersonsAnswer(outcome) {
 }
 function applyUpdate(ledger, u, now, turn, promptAt = now) {
   const stillAsked = new Set(u.updated.filter((c) => c.options || c.rec).map((c) => c.id));
+  const isPutOffFinding = (c) => ledger.findings.some((f) => f.id === c.id) && PUT_OFF2.test(c.outcome);
   const closing = new Map(
-    u.closed.filter((c) => !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome)).map((c) => [c.id, c.outcome])
+    u.closed.filter((c) => !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome) && !isPutOffFinding(c)).map((c) => [c.id, c.outcome])
   );
   const closed = [...ledger.closed];
   const items = [];
@@ -638,7 +652,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
   const addedIds = [];
   const created = /* @__PURE__ */ new Set();
   for (const a of u.added) {
-    if (repeatsClosed(ledger.closed, a, promptAt)) {
+    if (repeatsClosed(ledger.closed, a, promptAt, ledger.closedFindings)) {
       addedIds.push(null);
       continue;
     }
@@ -646,9 +660,8 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     const restated = items[at];
     if (restated) {
       items[at] = {
-        ...restated,
+        ...withRec(restated, restatedRec(restated.options, restated.rec, a.rec)),
         helps: a.helps.reduce((all, h) => withHelp(all, h), restated.helps),
-        rec: restatedRec(restated.options, restated.rec, a.rec),
         ...a.isDesignChoice ? { isDesignChoice: true } : {}
       };
       addedIds.push(restated.id);
@@ -713,7 +726,7 @@ function withUpdate(item, updated) {
   const change = updated.findLast((c) => c.id === item.id);
   if (!change || item.kind !== "question") return item;
   const options = change.options ?? item.options;
-  return { ...item, options, rec: restatedRec(options, item.rec, change.rec) };
+  return withRec({ ...item, options }, restatedRec(options, item.rec, change.rec));
 }
 
 // ../hooks/status-upgrade-goal.ts
@@ -1012,7 +1025,7 @@ function systemText(host) {
 Input:
 - <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design
 - <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
-- <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
+- <decided>: items and findings the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again in other words.
 - <person>: what the person just sent, and the commands they ran themselves: "$ cmd" for a shell command, with its output, and "/name" for a slash command
 - <activity>: what the agent did this turn (files edited, commands, URLs)
 - <reply>: what the agent said this turn, in order
@@ -1033,7 +1046,7 @@ NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
   options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
   rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
   design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
-  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
+  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; news of a PR's failing checks, conflicts, review threads or readiness to merge, and offers to handle them, since ${host.prsIn} shows each with its own press; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
 UPDATE: <id> | <options> | <rec>
   For a "decide" item in <open> when the reply now offers it different answers, or states a recommendation for it that <open> does not show. options: the answers the person can now pick, as in NEW, or "-" to keep them. rec: as in NEW, or "-" to keep it. Rewording the question is not a change.
 HELP: <item> | <kind> | <value> | <name>
@@ -1057,11 +1070,13 @@ function ledgerBlocks(ledger) {
     (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`
   ).join(NL4);
   const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL4);
-  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL4);
+  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`);
+  const dismissedFindings = ledger.closedFindings.filter((f) => f.how === "dismissed").map((f) => `${f.kind}: ${f.title} \u2192 ${outcomeText(f)}`);
+  const decided = [...closed, ...dismissedFindings].join(NL4);
   return [
     `<open>${NL4}${open2}${NL4}</open>`,
     `<findings>${NL4}${findings}${NL4}</findings>`,
-    `<decided>${NL4}${closed}${NL4}</decided>`
+    `<decided>${NL4}${decided}${NL4}</decided>`
   ];
 }
 function buildPrompt(ledger, ex) {
@@ -2044,6 +2059,9 @@ var ROW_COPY = {
   relevantFile: "Relevant file: ",
   allOptions: (count) => `All ${count} options`
 };
+function recLineOf(item) {
+  return item?.rec && item.recReason ? `Why ${item.rec}: ${item.recReason}` : null;
+}
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
   if (!descriptions) return [];
@@ -2842,7 +2860,8 @@ function inboxView({
       feedback,
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
-      holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.map((s) => s.name).join(", ")}` : null
+      holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.map((s) => s.name).join(", ")}` : null,
+      recLine: state.is === "open" ? recLineOf(row.item) : null
     };
   };
   const itemRow = (item) => {

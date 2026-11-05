@@ -3,6 +3,8 @@ import { keyWords, restates } from './ask-match'
 import type { Host } from './model-text'
 
 const MAX_CLOSED = 12
+/** How many dismissed records each closed list keeps past MAX_CLOSED, so a dismissed ask or finding is not raised again. */
+const MAX_DISMISSED = 50
 
 export function closedRecord(item: Item, closing: Closing, now: number): Closed {
   const { id, kind, ask, label } = item
@@ -111,12 +113,16 @@ export function asksAbout(item: Pick<Item, 'ask' | 'label'>, finding: Finding, i
 }
 
 /**
- * Cuts each closed list to its newest MAX_CLOSED records, and keeps every older record whose id is in `keep`.
- * closeItem, closeFinding and applyUpdate do not cut, so each host runs this on every ledger it commits.
+ * Cuts each closed list to its newest MAX_CLOSED records, and keeps every older record whose id is in `keep`, and the
+ * newest MAX_DISMISSED records the person dismissed. closeItem, closeFinding and applyUpdate do not cut, so each host
+ * runs this on every ledger it commits.
  */
 export function pruneClosed(ledger: Ledger, keep: ReadonlySet<string>): Ledger {
-  const pruned = <T extends { id: string }>(records: T[]) =>
-    records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id))
+  const pruned = <T extends Pick<Closed, 'id' | 'how'>>(records: T[]) => {
+    const dismissed = new Set(records.filter(r => r.how === 'dismissed').slice(-MAX_DISMISSED))
+
+    return records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id) || dismissed.has(r))
+  }
 
   return { ...ledger, closed: pruned(ledger.closed), closedFindings: pruned(ledger.closedFindings) }
 }

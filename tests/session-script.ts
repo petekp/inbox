@@ -96,7 +96,11 @@ export async function runSessionScript<S extends Session>(makeHost: MakeHost<S>,
     toolAnswer = r.result
     return r.state
   })
-  equal(toolAnswer, 'Recorded. The user sees it in the /inbox pane.', 'the record call answer')
+  equal(
+    toolAnswer,
+    'Recorded. The user sees it in the /inbox pane. It has no steps: when a command, file or link would help the user do it, record it again with steps.',
+    'the record call answer',
+  )
   equal(
     await snapshot(),
     { ...base, rows: ['Try the CLI by hand: open'], turns: { turnsStarted: 1, turnsApplied: 0 } },

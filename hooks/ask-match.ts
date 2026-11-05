@@ -1,4 +1,4 @@
-import type { Closed, Item } from '../types'
+import type { Closed, ClosedFinding, Item } from '../types'
 import type { Update } from './reply-parse'
 import { stem } from './status-limits'
 
@@ -215,17 +215,29 @@ export function matchOpen(
 
 /**
  * An ask closed this turn repeats on its label too. An expired one from before can be asked again, as in addAgentItem.
- * An ask closed before the prompt repeats a settled item as `repeatsSettled` says.
+ * An ask closed before the prompt repeats a settled item as `repeatsSettled` says. An ask that raises a finding the
+ * person dismissed repeats it too.
  */
-export function repeatsClosed(closed: Closed[], a: Update['added'][number], since: number): boolean {
+export function repeatsClosed(
+  closed: Closed[],
+  a: Update['added'][number],
+  since: number,
+  closedFindings: ClosedFinding[] = [],
+): boolean {
   const recent = closed.filter(c => c.at >= since && !isAskedForChoices(c))
   const settled = closed.filter(c => c.at < since && c.how !== 'expired')
 
   return (
     matchOpen(recent, a) >= 0 ||
     (a.label !== null && recent.some(c => c.label === a.label)) ||
-    settled.some(c => repeatsSettled(c, a))
+    settled.some(c => repeatsSettled(c, a)) ||
+    dismissedFindingOf(closedFindings, a.ask) !== undefined
   )
+}
+
+/** The finding the person dismissed that `ask` raises again, as `repeatsSubject` says of its title. */
+export function dismissedFindingOf(closedFindings: ClosedFinding[], ask: string): ClosedFinding | undefined {
+  return closedFindings.findLast(f => f.how === 'dismissed' && repeatsSubject(f.title, ask))
 }
 
 /** The answer the inbox model offers when an ask names no choices. It asks for the same question again, with them. */
