@@ -10,7 +10,7 @@ import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies } from '../../hooks/timing'
 import { shownTabs, isRowTab } from '../../hooks/tabs'
 import { bandCounts, noCountsText } from '../../hooks/band'
 import { footerStatus } from '../../hooks/view'
-import { GOAL_KEYS_ID, statusSelected } from '../../hooks/status-keys'
+import { statusSelected } from '../../hooks/status-keys'
 import type { Holds } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import { bannerLines, boxed, drawLine, leadPaint, paintMark } from './panel-draw'
@@ -200,7 +200,6 @@ export function drawPanel(
   const pageSelected =
     isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId)
   let pageSelectedAt: number[] | null = null
-  let goalTitleAt: number | null = null
   /** The line each Status subject row starts on. */
   const subjectAt: [string, number][] = []
   for (const e of entries) {
@@ -211,7 +210,6 @@ export function drawPanel(
     else if (e.kind === 'page' || e.kind === 'goal') {
       if (e.kind === 'page' && e.row.isRuledAbove) body.push(pageRule(width, style))
       const start = body.length
-      if (e.kind === 'goal' && e.part.is === 'title') goalTitleAt = start
       if (e.kind === 'page' && e.row.kind === 'subject') subjectAt.push([e.row.id, start])
       const id = e.kind === 'page' ? e.row.id : goalPartId(e.part)
       const isSelected = id !== null && id === pageSelected?.id
@@ -267,10 +265,7 @@ export function drawPanel(
   const blanks = (shown: string[]) =>
     Array<string>(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill('')
   const isOverflowing = body.length > room
-  const [keysAt = 0, last = 0] = pageSelectedAt ?? []
-  // The goal's button reveals the goal's text above it too, when both fit.
-  const goalTextAt = pageSelected?.id === GOAL_KEYS_ID ? goalTitleAt : null
-  const first = goalTextAt !== null && last - goalTextAt + 3 <= room ? goalTextAt : keysAt
+  const [first = 0, last = 0] = pageSelectedAt ?? []
   // In view between the ↑ line above and the ↓ line below, which `pageWindow` draws while the page runs past them.
   const isRevealed = pageSelectedAt !== null && (ui.pageReveal === true || ui.pageReveal === pageSelected?.id)
   const top = isRevealed ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop

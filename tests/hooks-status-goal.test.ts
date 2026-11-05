@@ -29,12 +29,12 @@ async function statusShown($: Engine, on: On) {
   return { clock, pane }
 }
 
-test('on a next build, a goal the Status call writes shows at once under the Goal heading with its milestones, Edit and Remove goal draw as its buttons, the head draws as its Now line, and nothing is sent', async ($, on) => {
+test('on a next build, a goal the Status call writes shows at once under the Goal heading with its milestones, Edit and Remove draw at the right end of the heading row, the head draws as its Now line, and nothing is sent', async ($, on) => {
   const { pane } = await statusShown($, on)
 
-  expect((await pane.find({ key: 'status-goal-heading' }))?.text).toMatch(/^Goal ─+$/)
+  expect((await pane.find({ key: 'goal-heading' }))?.text).toMatch(/^Goal ─+e: Edit\s*r: Remove$/)
   expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('e: Edit')
-  expect((await pane.find({ key: 'remove-goal-goal' }))?.text).toBe('r: Remove goal')
+  expect((await pane.find({ key: 'remove-goal-goal' }))?.text).toBe('r: Remove')
   expect((await pane.find({ key: 'goal-text' }))?.text.replaceAll('\u00a0', ' ')).toBe(
     'Pilot ready to announce · 1 of 2 done',
   )
@@ -44,22 +44,24 @@ test('on a next build, a goal the Status call writes shows at once under the Goa
   expect(w.sent).toEqual([])
 })
 
-test('on a next build, Remove goal leaves the Goal heading with the line that says no goal is set and offers Undo, which brings the goal back, then Set goal, which opens an empty goal field that sets the typed goal and waits for its milestones', async ($, on) => {
+test('on a next build, Remove goal leaves the Goal heading with the line that says no goal is set and offers Undo, which brings the goal back, then New, which opens an empty goal field that sets the typed goal and waits for its milestones', async ($, on) => {
   const { clock, pane } = await statusShown($, on)
 
   await pane.press({ key: 'remove-goal-goal-key' })
   await clock.settle()
   expect(await pane.find({ key: 'goal-text' })).toBeUndefined()
-  expect((await pane.find({ key: 'status-goal-heading' }))?.text).toMatch(/^Goal ─+$/)
+  expect((await pane.find({ key: 'goal-heading' }))?.text).toMatch(/^Goal ─+u: Undon: New$/)
   expect((await pane.find({ key: 'goal-none' }))?.text).toBe(NO_GOAL_TEXT)
   expect(await pane.find({ key: 'status-head' })).toBeDefined()
   expect((await pane.find({ key: 'restore-goal-goal' }))?.text).toBe('u: Undo')
+  const hotkeys = (await pane.findAll({ type: 'Button' })).flatMap(b => (b.props.hotkey ? [b.props.hotkey] : []))
+  expect(hotkeys.filter(k => k === 'u')).toHaveLength(1)
   await pane.press({ key: 'restore-goal-goal-key' })
   await clock.settle()
   expect((await pane.find({ key: 'goal-m1-name' }))?.text).toBe('Fixes built')
   await pane.press({ key: 'remove-goal-goal-key' })
   await clock.settle()
-  expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('s: Set goal')
+  expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('n: New')
 
   await pane.press({ key: 'type-goal-goal-key' })
   await clock.settle()
@@ -73,6 +75,18 @@ test('on a next build, Remove goal leaves the Goal heading with the line that sa
   expect(w.sent).toEqual([])
 })
 
+test('on a next build, in a narrow pane the goal’s buttons wrap under its heading’s rule, at the right edge, with nothing cut', async ($, on) => {
+  const { clock, pane } = await statusShown($, on)
+  await pane.unmount()
+  const narrow = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 24 } })
+  await narrow.press({ key: 'tab-key-overview' })
+  await clock.settle()
+
+  expect((await narrow.find({ key: 'goal-heading-title' }))?.text).toMatch(/^Goal ─+$/)
+  expect((await narrow.find({ key: 'goal-heading-keys' }))?.text).toMatch(/Edit\s*(r: )?Remove$/)
+  expect(await narrow.find({ key: 'goal-heading' })).toBeUndefined()
+})
+
 test('on a next build, the goal’s Edit opens the field with the goal in it in place of the goal’s text, leaves the heading as Goal and gives the field the keys, and Cancel closes it and keeps the goal', async ($, on) => {
   const { clock, pane } = await statusShown($, on)
 
@@ -83,7 +97,7 @@ test('on a next build, the goal’s Edit opens the field with the goal in it in 
   expect(w.paneOpens.at(-1)?.closeOnEscape).toBeUndefined()
   expect(await pane.find({ key: 'goal-text' })).toBeUndefined()
   expect(await pane.find({ key: 'type-goal-goal' })).toBeUndefined()
-  expect((await pane.find({ key: 'status-goal-heading' }))?.text).toMatch(/^Goal ─+$/)
+  expect((await pane.find({ key: 'goal-heading-title' }))?.text).toMatch(/^Goal ─+$/)
   await pane.press({ key: 'cancel-goal' })
   await clock.settle()
   expect(await replyField(pane, 'goal')).toBeUndefined()
@@ -92,7 +106,7 @@ test('on a next build, the goal’s Edit opens the field with the goal in it in 
   )
 })
 
-test('on a next build, Set goal on the empty Status page sets the typed goal before any Status call', async ($, on) => {
+test('on a next build, New on the empty Status page sets the typed goal before any Status call', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.files = ['/.next-build']
@@ -102,7 +116,7 @@ test('on a next build, Set goal on the empty Status page sets the typed goal bef
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
 
-  expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('s: Set goal')
+  expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('n: New')
   await pane.press({ key: 'type-goal-goal-key' })
   await clock.settle()
   await pane.input({ key: await replyKey(pane, 'goal'), text: 'Greeting CLI on npm' })

@@ -63,7 +63,7 @@ export function milestoneKeyPlan(m: MilestoneRow): StatusKey[] {
 
 const REMOVE_GOAL: StatusKey = {
   press: { action: 'remove-goal' },
-  label: 'Remove goal',
+  label: 'Remove',
   hotkey: 'r',
   kind: 'mark',
   emphasis: 'quiet',
@@ -77,29 +77,24 @@ const RESTORE_GOAL: StatusKey = {
   emphasis: 'normal',
 }
 
+/** New: opens an empty goal field. Its words leave out "goal", since the buttons sit on the Goal heading. */
+const newGoal = (emphasis: StatusKey['emphasis']): StatusKey => ({
+  press: { action: 'type-goal', text: '' },
+  label: 'New',
+  hotkey: 'n',
+  kind: 'view',
+  emphasis,
+})
+
 /**
- * The goal's buttons, drawn under the goal's section heading as a row's buttons: Set goal before one is set, after
- * Undo while a removed goal can come back, then Edit while one is set, or Set next goal once it is met, then Remove
- * goal. Set goal, Edit and Remove goal are quiet, since a missing goal holds up no work and a set one needs no change.
+ * The goal's buttons, drawn on the goal's heading row: New before a goal is set, after Undo while a removed goal can
+ * come back, then Edit while one is set, or New once it is met, then Remove. New with no goal, Edit and Remove are
+ * quiet, since a missing goal holds up no work and a set one needs no change.
  */
 export function goalKeyPlan(page: StatusPage): StatusKey[] {
   const g = page.goal
-  if (g === null)
-    return [
-      ...(page.canRestoreGoal ? [RESTORE_GOAL] : []),
-      { press: { action: 'type-goal', text: '' }, label: 'Set goal', hotkey: 's', kind: 'view', emphasis: 'quiet' },
-    ]
-  if (g.isMet)
-    return [
-      {
-        press: { action: 'type-goal', text: '' },
-        label: 'Set next goal',
-        hotkey: 'g',
-        kind: 'view',
-        emphasis: 'normal',
-      },
-      REMOVE_GOAL,
-    ]
+  if (g === null) return [...(page.canRestoreGoal ? [RESTORE_GOAL] : []), newGoal('quiet')]
+  if (g.isMet) return [newGoal('normal'), REMOVE_GOAL]
 
   return [
     { press: { action: 'type-goal', text: g.text }, label: 'Edit', hotkey: 'e', kind: 'view', emphasis: 'quiet' },
@@ -124,7 +119,7 @@ export function statusKeyRows(page: StatusPage): StatusKeyTarget[] {
 /**
  * The target whose keys work: the selected one while it still has buttons, else the first that opens an ask, else the
  * first that is not a done fold, else the first. An ask holds up work and a missing goal does not, so View wins over
- * Set goal.
+ * New.
  */
 export function statusSelected(page: StatusPage, selectedId: string | null): StatusKeyTarget | null {
   const targets = statusKeyRows(page)
@@ -141,4 +136,4 @@ export function statusSelected(page: StatusPage, selectedId: string | null): Sta
 }
 
 /** The goal's text field: its placeholder, and the label of the button that sets what it holds. */
-export const GOAL_FIELD = { placeholder: 'An outcome to work toward', submit: 'Set goal' } as const
+export const GOAL_FIELD = { placeholder: 'An outcome to work toward', submit: 'Save' } as const

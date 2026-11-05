@@ -189,7 +189,7 @@ function StatusLine({ row }: { row: StatusRow }) {
   )
 }
 
-/** The goal's text field, with Set goal and Cancel. It stays open, its buttons out, until the server confirms the goal. */
+/** The goal's text field, with Save and Cancel. It stays open, its buttons out, until the server confirms the goal. */
 function GoalField() {
   const draft = () => drafts.get(GOAL_KEYS_ID)?.text ?? ''
   const isOut = sending.has(GOAL_KEYS_ID)
@@ -274,9 +274,10 @@ function MilestoneLine({ m }: { m: MilestoneRow }) {
 }
 
 /**
- * The goal's section, first on every page that is not empty: its heading, drawn as Other work's is, then the goal's text
- * with its was, Now and awaiting lines, or the line that says no goal is set, then the goal's buttons as a row's, then
- * the milestones. While the person types a goal, the field takes the text's place and the buttons'.
+ * The goal's section, first on every page that is not empty: its heading row, the title, a rule and the goal's buttons at
+ * the right edge, then the goal's text with its was, Now and awaiting lines, or the line that says no goal is set, then
+ * the milestones. While the person types a goal, the field takes the text's place and the buttons leave the heading.
+ * The buttons wrap under the rule, still at the right, when they do not fit beside the title.
  */
 function GoalSection({ page }: { page: StatusPage }) {
   const g = page.goal
@@ -297,8 +298,10 @@ function GoalSection({ page }: { page: StatusPage }) {
 
   return (
     <section>
-      <div class="row part-line goal-heading">
-        <div class="part-rule">{g?.label ?? GOAL_HEADING}</div>
+      <div class="goal-heading">
+        <span class="goal-title">{g?.label ?? GOAL_HEADING}</span>
+        <span class="goal-rule" />
+        {isTyping ? null : <Keys keys={goalKeyPlan(page)} />}
       </div>
       <div class="status-head goal">
         {isTyping ? <GoalField /> : text}
@@ -310,7 +313,6 @@ function GoalSection({ page }: { page: StatusPage }) {
         ) : null}
         {g?.now ? <p class="muted">{g.now}</p> : null}
         {g?.awaiting ? <p class="muted">{g.awaiting}</p> : null}
-        {isTyping ? null : <Keys keys={goalKeyPlan(page)} />}
         <GoalError />
       </div>
       {g && g.milestones.length > 0 ? (
@@ -325,7 +327,7 @@ function GoalSection({ page }: { page: StatusPage }) {
   )
 }
 
-/** Set goal, or the field it opened, under the empty page's centred text. */
+/** New, or the field it opened, under the empty page's centred text. */
 function SetGoal({ page }: { page: StatusPage }) {
   return (
     <div class="status-head">
@@ -335,7 +337,7 @@ function SetGoal({ page }: { page: StatusPage }) {
   )
 }
 
-/** Why the last goal press failed, drawn in the goal's section, or under Set goal on the empty page. */
+/** Why the last goal press failed, drawn in the goal's section, or under New on the empty page. */
 function GoalError() {
   const error = errors.get(GOAL_KEYS_ID)
 

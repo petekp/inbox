@@ -66,6 +66,7 @@ export function paneStatus(
     statusHead,
     markWidth,
     keyLines,
+    terminalKeyCells,
     desktopHairline,
     markGlyph,
     desktopFrame,
@@ -78,6 +79,7 @@ export function paneStatus(
     foldButton,
     desktopFoldLines,
     statusUnfolded,
+    space,
   }: Pick<
     PaneBase,
     | 'e'
@@ -94,6 +96,7 @@ export function paneStatus(
     | 'drafts'
     | 'now'
     | 'statusUnfolded'
+    | 'space'
   > &
     Pick<
       PaneStatusLines,
@@ -109,7 +112,7 @@ export function paneStatus(
     > &
     Pick<PaneRowLines, 'markWidth' | 'desktopHairline' | 'markGlyph'> &
     Pick<PaneRowFrame, 'desktopFrame'> &
-    Pick<PaneRowKeys, 'keyRow' | 'keyLines'> &
+    Pick<PaneRowKeys, 'keyRow' | 'keyLines' | 'terminalKeyCells'> &
     Pick<PaneAskTabs, 'emptyState'> &
     Pick<PaneRowParts, 'sections' | 'section' | 'terminalSectionGap' | 'foldRow' | 'foldButton' | 'desktopFoldLines'>,
   handlers: Pick<
@@ -216,21 +219,12 @@ export function paneStatus(
       parts,
     )
   }
-  /**
-   * A section's heading, then a solid rule to the end of the list's columns. Other work's has space above it and starts
-   * at the text column. The goal's starts the page, at the goal's text's column.
-   */
-  const statusPartLine = (id: string, text: string, isGoal = false) => {
-    const above = isGoal ? [] : [gap('part-above')]
-    const at = isGoal ? statusMarkAt : statusRuleAt
+  /** Other work's line: the space above it, its name, then a solid rule to the end of the list's columns. */
+  const statusPartLine = (id: string, text: string) => {
+    const above = [gap('part-above')]
     const line = oneLine(
       look === 'desktop' ? (
-        <Box
-          flexDirection="row"
-          alignItems="center"
-          marginLeft={desktopStatusRuleLeft - (isGoal ? DESKTOP_MARK_CELLS : 0)}
-          paddingY={statusFrameEdge}
-        >
+        <Box flexDirection="row" alignItems="center" marginLeft={desktopStatusRuleLeft} paddingY={statusFrameEdge}>
           <Box flexShrink={0} paddingRight={1}>
             <Text color={pal.muted}>{text}</Text>
           </Box>
@@ -238,9 +232,9 @@ export function paneStatus(
         </Box>
       ) : (
         <Box flexDirection="row">
-          <Box width={at} flexShrink={0} />
+          <Box width={statusRuleAt} flexShrink={0} />
           <Text color={pal.muted}>{`${text} `}</Text>
-          <Text color={pal.divider}>{'─'.repeat(Math.max(4, listColumns - at - cellWidth(text) - 1))}</Text>
+          <Text color={pal.divider}>{'─'.repeat(Math.max(4, statusRuleCells - cellWidth(text) - 1))}</Text>
         </Box>
       ),
       desktopEdgedLine,
@@ -394,10 +388,12 @@ export function paneStatus(
       desktopBlockWidth,
       markGlyph,
       keyRow,
+      terminalKeyCells,
+      space,
       desktopFrame,
     },
     handlers,
-    { statusRowLine, statusRows: rows => statusRows(rows), keysRow, statusPartLine },
+    { statusRowLine, statusRows: rows => statusRows(rows), keysRow, statusKeys },
   )
   const statusMark = (r: Pick<StatusRow & { kind: 'subject' }, 'id' | 'mark' | 'tone' | 'isRunning'>) =>
     markGlyph({ text: r.mark, isRunning: r.isRunning }, r.id, r.tone ? pal.mark[r.tone] : pal.muted)

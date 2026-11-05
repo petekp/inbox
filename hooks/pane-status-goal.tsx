@@ -6,12 +6,27 @@ import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
 import { paneState } from './mod-state'
-import { DESKTOP_FIELD_PT, DESKTOP_LINE_PT, DESKTOP_REPLY_ROWS, fieldRows, REPLY_ROWS } from './pane-sizes'
-import { desktopLines } from './desktop-metrics'
+import {
+  DESKTOP_CELL_PT,
+  DESKTOP_FIELD_PT,
+  DESKTOP_HAIR_LINES,
+  DESKTOP_LINE_PT,
+  DESKTOP_REPLY_ROWS,
+  fieldRows,
+  REPLY_ROWS,
+} from './pane-sizes'
+import { DESKTOP_BUTTON_EXTRA_PT, desktopLines, desktopTextPt } from './desktop-metrics'
 import { LOOK_GAP_PT } from './layout'
 import { lineCount } from './terminal-text'
 import { cellWidth } from './text'
-import { desktopFrameLines, desktopTextLines, exactly, inkLines, stackedIn } from './pane-status-tops'
+import {
+  DESKTOP_BUTTON_LINES,
+  desktopFrameLines,
+  desktopTextLines,
+  exactly,
+  inkLines,
+  stackedIn,
+} from './pane-status-tops'
 import type { Drawn } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import type { StatusTone } from './help'
@@ -46,24 +61,37 @@ export function paneStatusGoal(
     desktopBlockWidth,
     markGlyph,
     keyRow,
+    terminalKeyCells,
+    space,
     desktopFrame,
   }: Pick<
     PaneBase,
-    'e' | 'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'drafts' | 'listColumns' | 'now' | 'statusKeyRow'
+    | 'e'
+    | 'look'
+    | 'Box'
+    | 'Text'
+    | 'pal'
+    | 'Input'
+    | 'typing'
+    | 'drafts'
+    | 'listColumns'
+    | 'now'
+    | 'statusKeyRow'
+    | 'space'
   > &
     Pick<PaneStatusLines, 'statusMarkAt' | 'statusNameLine' | 'statusPageText' | 'desktopBlockWidth'> &
     Pick<PaneRowLines, 'markGlyph'> &
-    Pick<PaneRowKeys, 'keyRow'> &
+    Pick<PaneRowKeys, 'keyRow' | 'terminalKeyCells'> &
     Pick<PaneRowFrame, 'desktopFrame'>,
   { updateDrafts, updateTyping, sendTyped }: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped'>,
   {
     statusRowLine,
     statusRows,
     keysRow,
-    statusPartLine,
+    statusKeys,
   }: {
     statusRowLine: StatusRowLine
-    statusPartLine: (id: string, text: string, isGoal?: boolean) => Drawn
+    statusKeys: (t: StatusKeyTarget) => KeyAction[]
     statusRows: (rows: StatusRow[]) => Drawn[]
     keysRow: (t: StatusKeyTarget, width: number) => Drawn[]
   },
@@ -116,7 +144,7 @@ export function paneStatusGoal(
     kind: 'view',
     onPress: () => void updateTyping(t => (t === GOAL_KEYS_ID ? null : t)),
   }
-  const submitLabel = look === 'desktop' ? GOAL_FIELD.submit : 'set'
+  const submitLabel = look === 'desktop' ? GOAL_FIELD.submit : 'save'
   /** The terminal draws `⏎` and the submit label beside the field. */
   const terminalFieldColumns = listColumns - statusMarkAt - cellWidth(`⏎ ${submitLabel}`) - 1
   /** A terminal field that passes one row takes all `REPLY_ROWS`, as the reply field does in `paneRows`. */
@@ -206,11 +234,72 @@ export function paneStatusGoal(
     ...statusRows(m.rows),
   ]
 
+  /** The cells the terminal draws `keys` in on one line, or the points desktop draws them in. */
+  const keysWidth = (keys: KeyAction[]) =>
+    look === 'desktop'
+      ? keys.reduce((n, k) => n + desktopTextPt(k.label) + DESKTOP_BUTTON_EXTRA_PT, (keys.length - 1) * DESKTOP_CELL_PT)
+      : keys.reduce((n, k) => n + terminalKeyCells(k), (keys.length - 1) * space.buttonGap)
+  /** A rule between the heading's title and its buttons, filling the room left. The selection color hides the divider's, so a selected heading's rule is muted. */
+  const headingRule = (key: string, cells: number) =>
+    look === 'desktop' ? (
+      <Box key={key} flexGrow={1} marginX={1} height={DESKTOP_HAIR_LINES} backgroundColor={pal.divider} />
+    ) : (
+      <Text key={key} color={isSelected(GOAL_KEYS_ID) ? pal.muted : pal.divider}>
+        {` ${'─'.repeat(Math.max(4, cells))}`}
+      </Text>
+    )
   /**
-   * The goal's section, first on every page that is not empty: its heading, drawn as Other work's is, then the goal's
-   * text with its was, Now and awaiting lines, or the line that says no goal is set, then the goal's buttons as a row's,
-   * then a blank line and the milestones. While the person types a goal, the field and its Cancel take the text's
-   * place, and the buttons leave.
+   * The goal's heading row: its title, a rule, then the goal's buttons at the right edge. When the buttons do not fit
+   * beside the title with a short rule, the rule runs to the edge and the buttons wrap under it, still at the right.
+   */
+  const goalHeading = (label: string, keys: KeyAction[]): Drawn[] => {
+    const titleWidth = look === 'desktop' ? desktopTextPt(label) : cellWidth(label)
+    const minRule = look === 'desktop' ? 4 * DESKTOP_CELL_PT : 6
+    const isBeside = keys.length > 0 && titleWidth + minRule + keysWidth(keys) <= blockWidth
+    const row = (cells: number, withKeys: boolean): JSX.Element => (
+      <Box key={withKeys ? 'goal-heading' : 'goal-heading-title'} flexDirection="row" alignItems="center">
+        <Text color={pal.muted}>{label}</Text>
+        {headingRule('goal-heading-rule', cells)}
+        {withKeys ? (
+          <Box flexShrink={0} marginLeft={look === 'terminal' ? 1 : 0}>
+            {keyRow(GOAL_KEYS_ID, keys)}
+          </Box>
+        ) : null}
+      </Box>
+    )
+    if (isBeside)
+      return [
+        {
+          el: row(blockWidth - titleWidth - keysWidth(keys) - 2, true),
+          lines: look === 'desktop' ? { least: 1, most: DESKTOP_BUTTON_LINES } : exactly(1),
+        },
+      ]
+    const keysUnder: Drawn[] =
+      keys.length === 0
+        ? []
+        : [
+            {
+              el: (
+                <Box key="goal-heading-keys" flexDirection="row">
+                  <Box flexGrow={1} />
+                  <Box flexShrink={0}>{keyRow(GOAL_KEYS_ID, keys)}</Box>
+                </Box>
+              ),
+              lines:
+                look === 'desktop'
+                  ? { least: 1, most: DESKTOP_BUTTON_LINES }
+                  : keysWidth(keys) <= blockWidth
+                    ? exactly(1)
+                    : null,
+            },
+          ]
+    return [{ el: row(blockWidth - titleWidth - 1, false), lines: exactly(1) }, ...keysUnder]
+  }
+  /**
+   * The goal's section, first on every page that is not empty: its heading row with the goal's buttons at its right,
+   * then the goal's text with its was, Now and awaiting lines, or the line that says no goal is set, then a blank line
+   * and the milestones. While the person types a goal, the field and its Cancel take the text's place, and the buttons
+   * leave the heading.
    */
   const goalSection = (page: StatusPage): Drawn[] => {
     const g = page.goal
@@ -225,19 +314,19 @@ export function paneStatusGoal(
           `${g.text}${g.count ? `${STALL_GAP}${g.count}`.replaceAll(' ', '_') : ''}`,
         )
       : muted('goal-none', NO_GOAL_TEXT)
+    const keys = isTypingGoal ? [] : statusKeys({ id: GOAL_KEYS_ID, keys: goalKeyPlan(page) })
     const body = [
+      ...goalHeading(g?.label ?? GOAL_HEADING, keys),
       ...(isTypingGoal ? field() : [goalText]),
       ...(g?.was ? [muted('goal-was', `${WAS_PREFIX}${g.was}`)] : []),
       ...(g?.now ? [muted('goal-now', g.now)] : []),
       ...(g?.awaiting ? [muted('goal-awaiting', g.awaiting)] : []),
-      ...(isTypingGoal ? [] : goalKeys(page)),
     ]
     const milestones = g?.milestones ?? []
     /** A blank line in the terminal, and on desktop the space Codex leaves there, `LOOK_GAP_PT`. */
     const milestoneGap = look === 'terminal' ? 1 : LOOK_GAP_PT / DESKTOP_LINE_PT
 
     return [
-      statusPartLine(`${GOAL_KEYS_ID}-heading`, g?.label ?? GOAL_HEADING, true),
       block(`status-${GOAL_KEYS_ID}`, body, isSelected(GOAL_KEYS_ID)),
       ...(milestones.length > 0
         ? [{ el: <Box key="goal-gap" height={milestoneGap} />, lines: exactly(milestoneGap) }]
@@ -246,7 +335,7 @@ export function paneStatusGoal(
     ]
   }
   const goalKeys = (page: StatusPage) => keysLine({ id: GOAL_KEYS_ID, keys: goalKeyPlan(page) })
-  /** Set goal, or the field it opened, with no frame, for the empty page's centred column. */
+  /** New, or the field it opened, with no frame, for the empty page's centred column. */
   const setGoalBare = (page: StatusPage): Drawn[] =>
     isTypingGoal
       ? [

@@ -201,6 +201,7 @@ export function paneRowKeys(
     keyRow,
     keyBindings,
     keyLines,
+    terminalKeyCells,
     actionRows,
     rowActions,
     fieldActions,

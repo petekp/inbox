@@ -121,7 +121,7 @@ A goal the person typed in the goal's field, or an inferred goal they edited.
 It stays until it is met.
 
 **Removed goal**:
-A goal the person cleared with Remove goal. The inbox model does not set it
+A goal the person cleared with the goal's Remove button. The inbox model does not set it
 again, in the same words or in other words.
 
 **Milestone**:

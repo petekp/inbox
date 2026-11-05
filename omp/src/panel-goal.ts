@@ -9,14 +9,15 @@ import type { Draw } from './panel-draw'
 import type { Entry } from './panel-lines'
 import { PAGE_MARK_AT, PAGE_TEXT_AT } from './panel-entries'
 import { GLUE, pageButtonLines, pageLine, partHeading } from './panel-page'
-import { indented, wrapText } from './panel-text'
+import { indented, visibleLength, wrapText } from './panel-text'
+import { cellWidth } from '../../hooks/text'
 
 /**
- * A part of the goal's section on the Status page: its heading, the goal's text with its was, Now and awaiting lines,
- * its buttons, the blank line before the milestones, a milestone, or the field on the empty page.
+ * A part of the goal's section on the Status page: its heading row with the goal's buttons, the goal's text with its
+ * was, Now and awaiting lines, the blank line before the milestones, a milestone, or on the empty page New or its field.
  */
 export type GoalPart =
-  | { is: 'heading'; text: string }
+  | { is: 'heading'; text: string; page: StatusPage | null }
   | { is: 'title'; goal: GoalBlock | null; isTyping: boolean }
   | { is: 'milestone'; row: MilestoneRow }
   | { is: 'keys'; page: StatusPage }
@@ -26,15 +27,16 @@ export type GoalPart =
 /** The id of the Status target a part draws the buttons of, or null for a part with none. */
 export function goalPartId(part: GoalPart): string | null {
   if (part.is === 'milestone') return part.row.id
+  if (part.is === 'heading') return part.page ? GOAL_KEYS_ID : null
   return part.is === 'keys' ? GOAL_KEYS_ID : null
 }
 
 const goalEntry = (part: GoalPart): Entry => ({ kind: 'goal', part })
 
 /**
- * The goal's section, first on every page that is not empty: its heading, drawn as Other work's is, then the goal's
- * text, or the line that says no goal is set, then its buttons as a row's, then a blank line and the milestones, each
- * with the rows of its work. While the person types a goal, the field takes the text's place, and the buttons leave.
+ * The goal's section, first on every page that is not empty: its heading row with the goal's buttons at the right
+ * edge, then the goal's text, or the line that says no goal is set, then a blank line and the milestones, each with the
+ * rows of its work. While the person types a goal, the field takes the text's place, and the buttons leave.
  */
 export function goalSection(page: StatusPage, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
   const isTyping = typing === GOAL_KEYS_ID
@@ -42,9 +44,8 @@ export function goalSection(page: StatusPage, typing: string | null, isUnfolded:
   const milestones = g?.milestones ?? []
 
   return [
-    goalEntry({ is: 'heading', text: g?.label ?? GOAL_HEADING }),
+    goalEntry({ is: 'heading', text: g?.label ?? GOAL_HEADING, page: isTyping ? null : page }),
     goalEntry({ is: 'title', goal: g, isTyping }),
-    ...(isTyping ? [] : [goalEntry({ is: 'keys', page })]),
     ...(milestones.length > 0 ? [goalEntry({ is: 'gap' })] : []),
     ...milestones.flatMap(row => [
       goalEntry({ is: 'milestone', row }),
@@ -53,7 +54,7 @@ export function goalSection(page: StatusPage, typing: string | null, isUnfolded:
   ]
 }
 
-/** Under the empty state: Set goal, or the field it opened. */
+/** Under the empty state: New, or the field it opened. */
 export function setGoal(page: StatusPage, typing: string | null): Entry[] {
   return [goalEntry(typing === GOAL_KEYS_ID ? { is: 'field' } : { is: 'keys', page })]
 }
@@ -84,11 +85,31 @@ function textWithCount(g: GoalBlock, d: Draw): string[] {
   )
 }
 
+/**
+ * The goal's heading row: its title, a rule, then the goal's buttons at the right edge. When the buttons do not fit
+ * beside the title with a short rule, the rule runs to the edge and the buttons wrap under it, still at the right.
+ */
+function headingLines(part: GoalPart & { is: 'heading' }, d: Draw, isSelected: boolean): string[] {
+  const { width, style: s } = d
+  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyPlan(part.page) }, d, isSelected, 1) : []
+  const right = width - 1
+  const label = `${part.text} `
+  const keysCells = keys.length === 1 ? visibleLength(keys[0]!) : Infinity
+  const rule = right - PAGE_MARK_AT - cellWidth(label) - keysCells
+  if (keys.length === 0 || rule < 4) {
+    const atRight = (l: string) => ' '.repeat(Math.max(0, right - visibleLength(l))) + l
+
+    return [partHeading(part.text, width, s, PAGE_MARK_AT), ...keys.map(atRight)]
+  }
+
+  return [`${' '.repeat(PAGE_MARK_AT)}${s.dim(label + '─'.repeat(rule))}${keys[0]}`]
+}
+
 export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): string[] {
   const { width, now, style: s } = d
   const at = (text: string, paint: (t: string) => string, lines = STATUS_TEXT_LINES) =>
     indented(text, PAGE_MARK_AT, width, lines, paint)
-  if (part.is === 'heading') return [partHeading(part.text, width, s, PAGE_MARK_AT)]
+  if (part.is === 'heading') return headingLines(part, d, isSelected)
   if (part.is === 'gap') return ['']
   if (part.is === 'title') {
     const g = part.goal

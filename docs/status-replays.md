@@ -4,7 +4,7 @@ The cases that judge the Status tab. [How the Status is judged](plans/status/jud
 
 Three replays and thirteen short cases run 3 times each on Sonnet and on Codex, and three short cases run 5 times each. Fixed rules and code holds check the page after every step. The judge reads a few checkpoints. Each call has its host's limits: 45 seconds and 1600 output tokens for Claude, 120 seconds for Codex. A call past its limit fails, as it would in the host: the page stays as it was, and the status line says so.
 
-A step with no call, or a step before its call, can press a goal button as the person would: Remove goal, or a typed goal. It runs through the host's own press.
+A step with no call, or a step before its call, can press a goal button as the person would: Remove, or a typed goal. It runs through the host's own press.
 
 **Replay A: a coordinator's day.** Status calls only, 11 of them. The fixture opens and closes the asks. It starts from a busy page last seen two hours earlier: the goal "Notes 2.4 in the store" with three milestones, one done, a head about shipping 2.4, seven open pieces, three done, two running delegates and one open ask. The export button sits under Other work. One delegate's Herdr name is an id, and its session publishes its focus.
 
@@ -55,7 +55,7 @@ The person's "speed up search on large libraries" at steps 1 and 2 is a directio
 | Case | Runs | What happens | What it checks |
 | --- | --- | --- | --- |
 | `catch-up-from-empty` | 3 | A catch-up of a conversation the inbox never saw, from an empty page. Images attach, and PDFs wait on a question. | The question links to the feature. A finished part drawn as its own row is not ●. |
-| `removed-goal` | 5 | The Status call set "Import ready to demo". The person presses Remove goal, then says "Let's get the import demo-ready." | No goal is set: not the removed one in other words, nor another. |
+| `removed-goal` | 5 | The Status call set "Import ready to demo". The person presses the goal's Remove, then says "Let's get the import demo-ready." | No goal is set: not the removed one in other words, nor another. |
 | `milestone-work-done` | 3 | A goal with three milestones. Step 1: a reply about one milestone's work, while another's work all finished and a third's subject sits under Other work. Step 2: the person finds more work on the finished one. | Step 1: code closes the finished milestone, the other stays open, and the stray subject links to its milestone. Step 2: the milestone opens again, with the new work linked to it. |
 | `goal-met-next` | 3 | Step 1: the last milestone's work ships. Step 2: the person asks for 2.6 with widgets and a dark theme. | Step 1: the goal is met and no next goal is set. Step 2: the 2.6 goal is set with no press, and every new piece links to it. |
 | `goal-wait` | 3 | A met goal. The person asks for a typo fix and a look at a slow share sheet. | No goal is set, and the met goal stays. |

@@ -28,7 +28,7 @@ none ──GOAL──▶ set ──every milestone done──▶ met ──GOAL�
  └──────────── the person presses Remove goal
 ```
 
-- **None.** The call writes GOAL once the next goal can be reliably inferred (below). Until then the goal's section shows its heading, a line saying no goal is set yet, and Set goal.
+- **None.** The call writes GOAL once the next goal can be reliably inferred (below). Until then the goal's section shows its heading, a line saying no goal is set yet, and New on the heading row.
 - **Set.** The call moves milestones with SET, DONE, DROP, MILESTONE and SERVES, as today. A milestone closes when its linked work closes (below).
 - **Met.** Code marks the goal met when every kept milestone is done, as today. The page shows "Goal met". The goal stays until the call or the person sets the next one. RETIRE does not apply to a met goal.
 - **Next goal.** The call writes GOAL for the next goal when the session shows one. When it does not, it writes nothing and waits. The met goal keeps showing.
@@ -100,7 +100,7 @@ Today's `serves-every-subject` says "change a link only when what the work is fo
 
 ## A typed goal
 
-The goal's field works as today: Set goal with no goal, Edit while one is set, Set next goal once one is met. Typing a goal replaces any goal at once, inferred or typed, met or not. `setTypedGoal` keeps today's behavior without its proposal branches. A rewording of a goal that is not met keeps the milestones. A new goal, or a met goal typed again, waits for its milestones from the next call (`isAwaitingMilestones`, `milestones-for-new-goal`).
+The goal's field works as today: New with no goal, Edit while one is set, New once one is met. The buttons sit on the Goal heading row, so their labels leave out "goal", and the field's submit reads Save. Typing a goal replaces any goal at once, inferred or typed, met or not. `setTypedGoal` keeps today's behavior without its proposal branches. A rewording of a goal that is not met keeps the milestones. A new goal, or a met goal typed again, waits for its milestones from the next call (`isAwaitingMilestones`, `milestones-for-new-goal`).
 
 Every typed goal is saved with `source: 'typed'`, a rewording of an inferred goal included, so an edit makes the goal the person's.
 
@@ -110,9 +110,9 @@ A typed goal can stall when a milestone has no linked work. The `no work linked`
 
 ## A removed goal
 
-The person removes a goal with a new Remove goal button beside Edit. The goal and its milestones go, every link goes, and the goal's key words join `removedGoals`, the last 10. `<removed>` lists them, and code drops a GOAL that restates one. The call may still infer a different goal later.
+The person removes a goal with a new Remove button beside Edit. The goal and its milestones go, every link goes, and the goal's key words join `removedGoals`, the last 10. `<removed>` lists them, and code drops a GOAL that restates one. The call may still infer a different goal later.
 
-Remove goal offers Undo in its place, beside Set goal. Undo brings back the goal, its milestones and their links, and takes the goal out of `removedGoals`. `goalRemoved` holds them until a goal is set or the answer of a Status call that did not read the removed goal applies. Row Undos last a few seconds. This one lasts until the call moves on, so no look needs a timer, and a slip of the `r` key is never final before the person sees it.
+Remove offers Undo in its place, beside New. Undo brings back the goal, its milestones and their links, and takes the goal out of `removedGoals`. `goalRemoved` holds them until a goal is set or the answer of a Status call that did not read the removed goal applies. Row Undos last a few seconds. This one lasts until the call moves on, so no look needs a timer, and a slip of the `r` key is never final before the person sees it.
 
 Saving the field empty does not work as a removal. In every look an empty field refuses to submit today: `sendTyped` in `hooks/register.tsx` (terminal and desktop) refocuses the field, the Codex tab's form returns, and `handleKey` in `omp/src/panel-keys.ts` ignores enter. Changing that in four looks also makes an accidental empty enter delete the goal.
 

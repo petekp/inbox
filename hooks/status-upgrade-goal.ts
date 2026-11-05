@@ -87,7 +87,7 @@ export function droppedMilestoneIds(milestones: readonly Milestone[]): Set<strin
 
 /**
  * The goal's fields of a saved Status, with anything wrongly shaped left out. A Status saved before the goal loads
- * with none, so its page shows as before, with Set goal. A link to a subject or milestone the Status no longer
+ * with none, so its page shows as before, with New. A link to a subject or milestone the Status no longer
  * holds, or to a dropped milestone, is dropped. A removed goal's key is made again with the current `nameKey`, since
  * an earlier build kept a trailing period in it. A saved proposal is dropped, and the goals the person declined load as
  * removed goals: the closest thing to a declined proposal now that the call sets goals itself.

@@ -64,7 +64,7 @@ function pressText(p) {
     case "step":
       return p.label;
     case "remove-goal":
-      return "Remove goal";
+      return "Remove";
     case "restore-goal":
       return "Undo";
     default:
@@ -1766,7 +1766,7 @@ function milestoneKeyPlan(m) {
 }
 var REMOVE_GOAL = {
   press: { action: "remove-goal" },
-  label: "Remove goal",
+  label: "Remove",
   hotkey: "r",
   kind: "mark",
   emphasis: "quiet"
@@ -1778,24 +1778,19 @@ var RESTORE_GOAL = {
   kind: "mark",
   emphasis: "normal"
 };
+var newGoal = (emphasis) => ({
+  press: { action: "type-goal", text: "" },
+  label: "New",
+  hotkey: "n",
+  kind: "view",
+  emphasis
+});
 function goalKeyPlan(page) {
   const g = page.goal;
   if (g === null)
-    return [
-      ...page.canRestoreGoal ? [RESTORE_GOAL] : [],
-      { press: { action: "type-goal", text: "" }, label: "Set goal", hotkey: "s", kind: "view", emphasis: "quiet" }
-    ];
+    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal("quiet")];
   if (g.isMet)
-    return [
-      {
-        press: { action: "type-goal", text: "" },
-        label: "Set next goal",
-        hotkey: "g",
-        kind: "view",
-        emphasis: "normal"
-      },
-      REMOVE_GOAL
-    ];
+    return [newGoal("normal"), REMOVE_GOAL];
   return [
     { press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
     REMOVE_GOAL
@@ -1815,7 +1810,7 @@ function statusSelected(page, selectedId) {
   const isFold = (t) => t.keys.some((k) => k.press.action === "toggle-fold");
   return targets.find((t) => t.id === selectedId) ?? targets.find(opensAsk) ?? targets.find((t) => !isFold(t)) ?? targets[0] ?? null;
 }
-var GOAL_FIELD = { placeholder: "An outcome to work toward", submit: "Set goal" };
+var GOAL_FIELD = { placeholder: "An outcome to work toward", submit: "Save" };
 
 // ../hooks/pressed.ts
 function offersUndo(c) {
@@ -5688,6 +5683,8 @@ function countLines(counts, textAt, width, s) {
 function goalPartId(part) {
   if (part.is === "milestone")
     return part.row.id;
+  if (part.is === "heading")
+    return part.page ? GOAL_KEYS_ID : null;
   return part.is === "keys" ? GOAL_KEYS_ID : null;
 }
 var goalEntry = (part) => ({ kind: "goal", part });
@@ -5696,9 +5693,8 @@ function goalSection(page, typing, isUnfolded) {
   const g = page.goal;
   const milestones = g?.milestones ?? [];
   return [
-    goalEntry({ is: "heading", text: g?.label ?? GOAL_HEADING }),
+    goalEntry({ is: "heading", text: g?.label ?? GOAL_HEADING, page: isTyping ? null : page }),
     goalEntry({ is: "title", goal: g, isTyping }),
-    ...isTyping ? [] : [goalEntry({ is: "keys", page })],
     ...milestones.length > 0 ? [goalEntry({ is: "gap" })] : [],
     ...milestones.flatMap((row) => [
       goalEntry({ is: "milestone", row }),
@@ -5726,11 +5722,24 @@ function textWithCount(g, d) {
   const lines = wrapText(`${g.text}${tail}`, Math.max(10, width - PAGE_MARK_AT - 1));
   return lines.map((l) => " ".repeat(PAGE_MARK_AT) + (l.endsWith(tail) ? s.bold(l.slice(0, -tail.length)) + s.dim(tail.replaceAll(GLUE, " ")) : s.bold(l)));
 }
+function headingLines(part, d, isSelected) {
+  const { width, style: s } = d;
+  const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyPlan(part.page) }, d, isSelected, 1) : [];
+  const right = width - 1;
+  const label = `${part.text} `;
+  const keysCells = keys.length === 1 ? visibleLength(keys[0]) : Infinity;
+  const rule = right - PAGE_MARK_AT - cellWidth(label) - keysCells;
+  if (keys.length === 0 || rule < 4) {
+    const atRight = (l) => " ".repeat(Math.max(0, right - visibleLength(l))) + l;
+    return [partHeading(part.text, width, s, PAGE_MARK_AT), ...keys.map(atRight)];
+  }
+  return [`${" ".repeat(PAGE_MARK_AT)}${s.dim(label + "\u2500".repeat(rule))}${keys[0]}`];
+}
 function drawGoalPart(part, d, isSelected) {
   const { width, now, style: s } = d;
   const at = (text, paint, lines = STATUS_TEXT_LINES) => indented(text, PAGE_MARK_AT, width, lines, paint);
   if (part.is === "heading")
-    return [partHeading(part.text, width, s, PAGE_MARK_AT)];
+    return headingLines(part, d, isSelected);
   if (part.is === "gap")
     return [""];
   if (part.is === "title") {
@@ -6668,7 +6677,6 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   let selectedAt = [0, 0];
   const pageSelected = isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId);
   let pageSelectedAt = null;
-  let goalTitleAt = null;
   const subjectAt = [];
   for (const e of entries) {
     if (e.kind === "heading")
@@ -6677,8 +6685,6 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
       if (e.kind === "page" && e.row.isRuledAbove)
         body.push(pageRule(width, style));
       const start = body.length;
-      if (e.kind === "goal" && e.part.is === "title")
-        goalTitleAt = start;
       if (e.kind === "page" && e.row.kind === "subject")
         subjectAt.push([e.row.id, start]);
       const id = e.kind === "page" ? e.row.id : goalPartId(e.part);
@@ -6713,9 +6719,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const room = roomBeside(foot);
   const blanks = (shown) => Array(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill("");
   const isOverflowing = body.length > room;
-  const [keysAt = 0, last = 0] = pageSelectedAt ?? [];
-  const goalTextAt = pageSelected?.id === GOAL_KEYS_ID ? goalTitleAt : null;
-  const first = goalTextAt !== null && last - goalTextAt + 3 <= room ? goalTextAt : keysAt;
+  const [first = 0, last = 0] = pageSelectedAt ?? [];
   const isRevealed = pageSelectedAt !== null && (ui.pageReveal === true || ui.pageReveal === pageSelected?.id);
   const top = isRevealed ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop;
   const pageTop = isPage ? Math.min(Math.max(0, top), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop;

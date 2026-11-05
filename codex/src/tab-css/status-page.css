@@ -124,12 +124,23 @@
 .status-head p {
   margin: 0;
 }
-/* The goal's heading starts the page, so it has no space above it, and starts where the goal's text does. */
-.status-page .row.part-line.goal-heading {
-  margin-top: 0;
+/* The goal's heading row: its title where the goal's text starts, a rule, then the goal's buttons at the right edge.
+   The buttons wrap under the rule, still at the right, when they do not fit beside it. */
+.status-page .goal-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 4px;
+  padding: 0 14px 0 var(--mark-x);
+  color: var(--muted);
 }
-.status-page .goal-heading .part-rule {
-  margin-left: var(--mark-x);
+.status-page .goal-heading .goal-rule {
+  flex: 1 0 32px;
+  border-top: 1px solid var(--soft);
+}
+.status-page .goal-heading .actions {
+  margin: 0 0 0 auto;
 }
 /* The goal's count after its text, kept whole on the line with the text's last word. */
 .status-head h1 .count {

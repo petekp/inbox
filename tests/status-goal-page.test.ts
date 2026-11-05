@@ -44,7 +44,7 @@ test('a goal shows how far the work is after its text, its Edit comes before its
   ])
   expect(p.goal?.milestones[1]?.ask).toEqual({ id: 'i1', kind: 'question' })
   expect(statusKeyRows(p).map(t => [t.id, t.keys.map(k => k.label)])).toEqual([
-    ['goal', ['Edit', 'Remove goal']],
+    ['goal', ['Edit', 'Remove']],
     ['m2', ['View question']],
     ['s2', ['View question']],
   ])
@@ -164,7 +164,7 @@ test('a typed goal waits for its milestones, and a goal whose milestones are all
     statusKeyRows(page(met, 55))
       .find(t => t.id === 'goal')
       ?.keys.map(k => k.label),
-  ).toEqual(['Set next goal', 'Remove goal'])
+  ).toEqual(['New', 'Remove'])
 })
 
 test('an ask linked to a milestone names it as what it holds up, and milestones made with the goal draw as unchanged', () => {
