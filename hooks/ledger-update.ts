@@ -1,7 +1,8 @@
-import type { Closed, Exchange, Finding, Item, Ledger, Press, PressKind } from '../types'
+import type { Closed, ClosedFinding, Exchange, Finding, Item, Ledger, Press, PressKind } from '../types'
 import {
   dismissedFindingOf,
   matchOpen,
+  raisesOnly,
   recommendedOption,
   repeatsClosed,
   repeatsSettled,
@@ -25,7 +26,8 @@ const UNFOUNDED_MOOT =
  * A FIXED outcome that says the person put the finding off rather than that a change fixed it. systemText says to
  * write no FIXED line then, and the finding stays open until the person dismisses it.
  */
-const PUT_OFF = /\b(dismiss(ed)?|declined?|later|not now|set aside|put off|deferred|postponed|can wait|won'?t fix)\b/i
+const PUT_OFF =
+  /^\s*(?:(?:the )?(?:user|person) )?(?:dismissed|declined|deferred (?:to|until|till|for)|postponed|put (?:it )?off|set aside|not now|later\b|can wait|won'?t fix|skipped)|\b(?:user|person) (?:said|says|asked|wants|chose|decided|declined|dismissed|deferred|put it off)\b/i
 export const EXPIRED = 'expired, unanswered'
 const MAX_FINDINGS = 30
 
@@ -220,8 +222,8 @@ export function addFinding(
     ledger.findings.find(f => sameAsk(f.title, finding.title)) ?? ledger.items.find(i => restates(i.ask, finding.title))
   if (same) return { ledger, id: same.id, isAdded: false, expired: null, dismissed: null }
   const dismissed =
-    dismissedFindingOf(ledger.closedFindings, finding.title) ??
-    ledger.closed.findLast(c => c.how === 'dismissed' && repeatsSubject(c.ask, finding.title)) ??
+    ledger.closedFindings.findLast(f => f.how === 'dismissed' && repeatsSubject(f.title, finding.title)) ??
+    ledger.closed.findLast(c => c.how === 'dismissed' && raisesOnly(c.ask, finding.title)) ??
     null
   if (dismissed) return { ledger, id: dismissed.id, isAdded: false, expired: null, dismissed }
   const id = `f${ledger.nextId}`
@@ -250,7 +252,7 @@ type AgentItemResult =
       isNewReason: boolean
     }
   /** `record` is the closed item it repeats, or the dismissed finding it raises again. */
-  | { ledger: Ledger; is: 'closed'; record: Pick<Closed, 'how' | 'outcome'> }
+  | { ledger: Ledger; is: 'closed'; record: Closed | ClosedFinding }
 
 /**
  * Adds a question or task the agent recorded. One that an open item restates adds its steps and its design-choice mark

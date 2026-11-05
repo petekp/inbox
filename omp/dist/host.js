@@ -564,7 +564,14 @@ function repeatsClosed(closed, a, since, closedFindings = []) {
   return matchOpen(recent, a) >= 0 || a.label !== null && recent.some((c) => c.label === a.label) || settled.some((c) => repeatsSettled(c, a)) || dismissedFindingOf(closedFindings, a.ask) !== undefined;
 }
 function dismissedFindingOf(closedFindings, ask) {
-  return closedFindings.findLast((f) => f.how === "dismissed" && repeatsSubject(f.title, ask));
+  return closedFindings.findLast((f) => f.how === "dismissed" && raisesOnly(f.title, ask));
+}
+function raisesOnly(a, b) {
+  const x = keyWords(a);
+  const y = keyWords(b);
+  const xStems = new Set([...x].map(meaningOf));
+  const isRestated = sharesKeyWords(xStems, new Set([...y].map(meaningOf))) === true;
+  return sameAsk(a, b) || isRestated && !contrasts(x, y) && [...y].every((w) => GENERIC.has(w) || xStems.has(meaningOf(w)));
 }
 var LIST_CHOICES = "List the choices";
 function isAskedForChoices(c) {
@@ -2526,7 +2533,7 @@ NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
   options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
   rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
   design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
-  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; news of a PR's failing checks, conflicts, review threads or readiness to merge, and offers to handle them, since ${host.prsIn} shows each with its own press; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
+  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; news of a PR's failing checks, conflicts or review threads, and offers to fix them, since ${host.prsIn} shows each with its own press; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
 UPDATE: <id> | <options> | <rec>
   For a "decide" item in <open> when the reply now offers it different answers, or states a recommendation for it that <open> does not show. options: the answers the person can now pick, as in NEW, or "-" to keep them. rec: as in NEW, or "-" to keep it. Rewording the question is not a change.
 HELP: <item> | <kind> | <value> | <name>
@@ -4021,7 +4028,7 @@ function stepHelp(step) {
 var MAX_OPEN = 20;
 var STALE_AFTER = 12;
 var UNFOUNDED_MOOT = /^no longer applies:.*(\b(not|never) (related|relevant|addressed|mentioned|discussed|answered|raised|part of)\b|\bunrelated\b|\b(still|stays) open\b|\boutside (the|this)\b|\bnothing\b.*\b(touch|address|mention|relate))/i;
-var PUT_OFF2 = /\b(dismiss(ed)?|declined?|later|not now|set aside|put off|deferred|postponed|can wait|won'?t fix)\b/i;
+var PUT_OFF2 = /^\s*(?:(?:the )?(?:user|person) )?(?:dismissed|declined|deferred (?:to|until|till|for)|postponed|put (?:it )?off|set aside|not now|later\b|can wait|won'?t fix|skipped)|\b(?:user|person) (?:said|says|asked|wants|chose|decided|declined|dismissed|deferred|put it off)\b/i;
 var EXPIRED = "expired, unanswered";
 var MAX_FINDINGS = 30;
 function restatedRec(options, old, stated) {
@@ -4154,7 +4161,7 @@ function addFinding(ledger, finding) {
   const same = ledger.findings.find((f) => sameAsk(f.title, finding.title)) ?? ledger.items.find((i) => restates(i.ask, finding.title));
   if (same)
     return { ledger, id: same.id, isAdded: false, expired: null, dismissed: null };
-  const dismissed = dismissedFindingOf(ledger.closedFindings, finding.title) ?? ledger.closed.findLast((c) => c.how === "dismissed" && repeatsSubject(c.ask, finding.title)) ?? null;
+  const dismissed = ledger.closedFindings.findLast((f) => f.how === "dismissed" && repeatsSubject(f.title, finding.title)) ?? ledger.closed.findLast((c) => c.how === "dismissed" && raisesOnly(c.ask, finding.title)) ?? null;
   if (dismissed)
     return { ledger, id: dismissed.id, isAdded: false, expired: null, dismissed };
   const id = `f${ledger.nextId}`;
@@ -4368,7 +4375,7 @@ function recordItem(host, ledger, input, now) {
     return unchanged(r.ledger, `Already open, so this record updated it${updated}.${leftOut}`);
   }
   if (r.is === "closed")
-    return unchanged(ledger, `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`);
+    return unchanged(ledger, "title" in r.record ? `Not recorded: the user dismissed the finding "${r.record.title}", which this raises. Ask about it only if they bring it up.` : `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`);
   return {
     ledger: r.ledger,
     result: `Recorded. The user sees it in ${host.surface}.` + leftOut + missingText(r.ledger.items.find((i) => i.id === r.id)) + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ""),
@@ -8202,7 +8209,7 @@ The latest "inbox:" text beside the user's prompt is the current state. It lists
 
 Close with ${host.closeTool}:
 - When the user's message answers an open item, close it first, before other work, with their answer, and say in your reply what you took their answer to be.
-- When an item is done or no longer applies, close it with a short reason, without waiting to be asked. Close a finding only when a change fixed it or the user drops it, not when they put it off.
+- When an item is done or no longer applies, close it with a short reason, without waiting to be asked. Close a finding only when a change fixed it, not when the user puts it off.
 The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`;
 }
 

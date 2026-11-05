@@ -229,7 +229,12 @@ export function recordItem(host: Host, ledger: Ledger, input: Record<string, unk
     return unchanged(r.ledger, `Already open, so this record updated it${updated}.${leftOut}`)
   }
   if (r.is === 'closed')
-    return unchanged(ledger, `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`)
+    return unchanged(
+      ledger,
+      'title' in r.record
+        ? `Not recorded: the user dismissed the finding "${r.record.title}", which this raises. Ask about it only if they bring it up.`
+        : `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`,
+    )
 
   return {
     ledger: r.ledger,

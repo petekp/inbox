@@ -235,9 +235,25 @@ export function repeatsClosed(
   )
 }
 
-/** The finding the person dismissed that `ask` raises again, as `repeatsSubject` says of its title. */
+/**
+ * The finding the person dismissed that `ask` raises again: `ask` restates its title and names nothing the title
+ * lacks, apart from GENERIC words. "Add tests for the parser?" raises "Missing tests for the parser", but "Add the
+ * missing tests for the release script?" does not raise "Missing tests".
+ */
 export function dismissedFindingOf(closedFindings: ClosedFinding[], ask: string): ClosedFinding | undefined {
-  return closedFindings.findLast(f => f.how === 'dismissed' && repeatsSubject(f.title, ask))
+  return closedFindings.findLast(f => f.how === 'dismissed' && raisesOnly(f.title, ask))
+}
+
+/** Whether `b` restates `a`, holds no CONTRASTS with it, and has no key word `a` lacks, apart from GENERIC words. */
+export function raisesOnly(a: string, b: string): boolean {
+  const x = keyWords(a)
+  const y = keyWords(b)
+  const xStems = new Set([...x].map(meaningOf))
+  const isRestated = sharesKeyWords(xStems, new Set([...y].map(meaningOf))) === true
+
+  return (
+    sameAsk(a, b) || (isRestated && !contrasts(x, y) && [...y].every(w => GENERIC.has(w) || xStems.has(meaningOf(w))))
+  )
 }
 
 /** The answer the inbox model offers when an ask names no choices. It asks for the same question again, with them. */

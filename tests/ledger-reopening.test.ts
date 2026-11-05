@@ -89,6 +89,8 @@ describe('reopening', () => {
       'f1',
       'f2',
     ])
+    for (const outcome of ['Dismiss button now closes the dialog', 'moved the null check later in init'])
+      expect(applyUpdate(open, parseReply(`FIXED: f2 | ${outcome}`)!, 6, 1).findings.map(f => f.id)).toEqual(['f1'])
     for (const outcome of ['dismissed by the user', 'user declined', 'later', 'not now', 'deferred to next sprint'])
       expect(applyUpdate(open, parseReply(`FIXED: f2 | ${outcome}`)!, 6, 1).findings.map(f => f.id)).toEqual([
         'f1',
@@ -120,6 +122,8 @@ describe('reopening', () => {
       applyUpdate(dismissed, parseReply('NEW: decide | - | Add tests for the parser? | Yes / No | -')!, 4, 3, 3).items,
     ).toEqual([])
     expect(addAgentItem(dismissed, { ...question, ask: 'Add a CLI flag for verbose logs?' }, 3).is).toBe('added')
+    const wider = 'Add the missing tests for the parser and the release script before v2?'
+    expect(addAgentItem(dismissed, { ...question, ask: wider }, 3).is).toBe('added')
     expect(addFinding(dismissed, { ...finding, title: 'The parser is missing tests' }).isAdded).toBe(false)
   })
 

@@ -2779,7 +2779,7 @@ The latest "inbox:" text beside the user's prompt is the current state. It lists
 
 Close with ${host.closeTool}:
 - When the user's message answers an open item, close it first, before other work, with their answer, and say in your reply what you took their answer to be.
-- When an item is done or no longer applies, close it with a short reason, without waiting to be asked. Close a finding only when a change fixed it or the user drops it, not when they put it off.
+- When an item is done or no longer applies, close it with a short reason, without waiting to be asked. Close a finding only when a change fixed it, not when the user puts it off.
 The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`;
 }
 
