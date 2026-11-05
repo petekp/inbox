@@ -211,11 +211,11 @@ describe('prs', () => {
       run('lint', 'SUCCESS', '2026-10-08T09:05:00Z'),
     ])
     expect(readiness({ ...rerunPassed, threads: [], isYours: true, wasSeenOpen: true, error: null }).text).toBe(
-      'Blocked: changes requested',
+      'Waiting on the reviewer: changes requested',
     )
   })
 
-  test('a cancelled check reads as cancelled, still blocks the merge, and offers Re-run in place of Fix only when GitHub Actions ran it and no failing check shares its run', () => {
+  test('a cancelled check reads as cancelled, still blocks the merge, and offers Re-run in place of Fix only when GitHub Actions ran it and no failing check shares its run; one a failing check cancelled folds under it and waits on its Fix', () => {
     const run = (name: string, conclusion: string, detailsUrl: string) => ({
       __typename: 'CheckRun',
       name,
@@ -254,8 +254,11 @@ describe('prs', () => {
       ['e2e', 'cancelled'],
       ['deploy', 'cancelled'],
     ])
-    expect(readiness(pr).text).toBe('Blocked: 1 failing check, 3 cancelled checks')
-    expect(checkRowText(pr.checks[2]!).meta).toBe('Cancelled after 3m 2s')
+    expect(readiness(pr).text).toBe('Blocked: 1 failing check, 2 cancelled checks')
+    expect(checkRowText(pr, pr.checks[2]!)).toMatchObject({ meta: 'Cancelled after 3m 2s', fold: null })
+    expect(checkRowText(pr, pr.checks[1]!).fold).toEqual({
+      note: 'Stopped when CI / lint failed. Fixing that one runs this again.',
+    })
     expect(buttons('lint')).toEqual([
       ['Fix', 'handoff', 'a'],
       ['Open log', 'local', 'o'],

@@ -28,7 +28,9 @@ import { pressRowId, type PrPress } from './pr-press'
 import type { RowPress } from './presses'
 import {
   canUndoRefused,
+  closedLineAction,
   DOT,
+  ROW_COPY,
   earlierLabel,
   foldLabel,
   type ResultMark,
@@ -82,7 +84,7 @@ export function paneRowParts(
     > &
     Pick<PaneRowFrame, 'desktopFrame'> &
     Pick<PaneRowLines, 'treeRow' | 'ToneSvg' | 'desktopHairline' | 'markGlyph' | 'markWidth'>,
-  { updateUnfolded, runPress }: Pick<PaneHandlers, 'updateUnfolded' | 'runPress'>,
+  { updateUnfolded, updateClosedAll, runPress }: Pick<PaneHandlers, 'updateUnfolded' | 'updateClosedAll' | 'runPress'>,
 ) {
   const groupEmpty = (title: string) =>
     look === 'desktop'
@@ -181,8 +183,21 @@ export function paneRowParts(
     ) : (
       label
     )
-  const refusedUndo = (d: ClosedLine) =>
-    canUndoRefused(d.delivery) ? undoButton({ id: d.id, action: 'undo' }, null) : null
+  /** A Closed line's press: the Undo of a refused notification, or Reopen on a row the person dismissed. */
+  const lineAction = (d: ClosedLine) => {
+    const action = closedLineAction(d)
+    if (!action) return null
+    if (canUndoRefused(d.delivery)) return undoButton(action.press, null)
+    return (
+      <Box key={`reopen-${d.id}`} flexDirection="row">
+        <Button
+          key={`reopen-${d.id}`}
+          label={look === 'desktop' ? action.label : ` ${action.label} `}
+          onPress={(press: { surface: UiPressArgument['surface'] }) => void runPress(action.press, press.surface)}
+        />
+      </Box>
+    )
+  }
   const closedRow = (d: ClosedLine, pos: TreePos) =>
     look === 'desktop'
       ? desktopFrame({
@@ -199,7 +214,7 @@ export function paneRowParts(
             <Text wrap="wrap" color={pal.age}>
               {settledLabel(d.outcomeLabel, d.delivery)}
             </Text>,
-            refusedUndo(d),
+            lineAction(d),
           ],
         })
       : treeRow(
@@ -218,7 +233,7 @@ export function paneRowParts(
                   {settledLabel(d.outcomeLabel, d.delivery)}
                 </Text>,
               )}
-              {refusedUndo(d)}
+              {lineAction(d)}
             </Box>
             <Box width={TERMINAL_SIDE_CELLS - 1} flexShrink={0} justifyContent="flex-end">
               <Text color={pal.age}>{shortAgo(now - d.at)}</Text>
@@ -276,6 +291,16 @@ export function paneRowParts(
   /** The lines a desktop fold row takes: its chevron's height, in the pane's scroll rows. */
   const desktopFoldLines: Lines | null =
     hasClient && 'Svg' in elements ? exactly((2 * ROW_PAD_PT + DESKTOP_LINE_PT) / DESKTOP_ROW_PT) : null
+  /** The button that lists the rest of a Closed fold. */
+  const earlierButton = (kind: FoldKind, label: string) => (
+    <Button
+      plain
+      dimColor
+      key={`earlier-${kind}`}
+      label={label}
+      onPress={() => void updateClosedAll(a => (a.includes(kind) ? a : [...a, kind]))}
+    />
+  )
   const closedFold = (kind: FoldKind, closed: ClosedLine[], total: number, isUnfolded: boolean) => {
     const earlier = earlierLabel(total, closed.length)
     return closed.length === 0
@@ -286,7 +311,11 @@ export function paneRowParts(
             kind,
             foldLabel(total),
             isUnfolded,
-            () => void updateUnfolded(u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind])),
+            () =>
+              void Promise.all([
+                updateUnfolded(u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind])),
+                updateClosedAll(a => a.filter(k => k !== kind)),
+              ]),
           ),
           ...(isUnfolded && look !== 'desktop' && !isInline
             ? [
@@ -304,12 +333,12 @@ export function paneRowParts(
                       indent: DESKTOP_MARK_CELLS,
                       isMarkHung: false,
                       padY: space.rowPad / 2,
-                      children: <Text color={pal.age}>{earlier}</Text>,
+                      children: earlierButton(kind, earlier),
                     })
                   : treeRow(
                       childPos(closed.length, closed.length + 1),
                       null,
-                      <Text color={pal.age}>{earlier}</Text>,
+                      earlierButton(kind, earlier),
                       `earlier-${kind}`,
                       1,
                     ),
@@ -320,7 +349,7 @@ export function paneRowParts(
   const svgClientElements = hasClient && 'Svg' in elements ? elements : null
   const undoButton = (undo: RowPress | PrPress, at: number | null) => {
     const key = `undo-${pressRowId(undo)}`
-    const label = ` ↺ ${UNDO_KEY}: Undo `
+    const label = ` ↺ ${UNDO_KEY}: ${ROW_COPY.undo} `
     const onPress = (press: { surface: UiPressArgument['surface'] }) => runPress(undo, press.surface)
     if (svgClientElements) {
       followUpPresses.set(key, onPress)
@@ -329,7 +358,7 @@ export function paneRowParts(
         <Box key={`${key}-${at}`} width={UNDO_CELLS} height={UNDO_HEIGHT_PT / DESKTOP_LINE_PT}>
           <svgClientElements.Svg
             source={undoSvg(leftMs / SETTLED_MS, leftMs)}
-            alt="Undo"
+            alt={ROW_COPY.undo}
             width={UNDO_CELLS * DESKTOP_CELL_PT}
             height={UNDO_HEIGHT_PT}
           />

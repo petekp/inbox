@@ -150,6 +150,7 @@ test('a refused Done attempt cannot change a later close of the same task', () =
       extraSteps: [],
       comparePage: '/plugin/dist/compare-page.html',
       compareInBackground: false,
+      holdMs: 1000,
     },
   )
   assert.ok(!('stale' in first))
@@ -165,6 +166,7 @@ test('a refused Done attempt cannot change a later close of the same task', () =
       extraSteps: [],
       comparePage: '/plugin/dist/compare-page.html',
       compareInBackground: false,
+      holdMs: 1000,
     },
   )
   assert.ok(!('stale' in undo))
@@ -178,6 +180,7 @@ test('a refused Done attempt cannot change a later close of the same task', () =
       extraSteps: [],
       comparePage: '/plugin/dist/compare-page.html',
       compareInBackground: false,
+      holdMs: 1000,
     },
   )
   assert.ok(!('stale' in second))

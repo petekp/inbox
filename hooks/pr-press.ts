@@ -4,7 +4,8 @@ import type { PrActionId, RowPress } from './presses'
 import { isAgain, outAction, pressFeedbackIn, pressOutAction } from './feedback'
 import type { ActionEmphasis } from './rows'
 import type { PressState } from './feedback'
-import { checkRowId, DISMISS_MERGED_ID, prMarkId, RANK_AGAIN_ID, threadRowId } from './pr-rows'
+import { checkRowId, prMarkId, RANK_AGAIN_ID, threadRowId } from './pr-rows'
+import { failedSibling, isSameRun, runOf } from './pr-checks'
 import { checkKey } from './prs'
 
 /** Fetches every PR the session tracks, so the row reads "Refreshing PRs…". */
@@ -18,11 +19,10 @@ export type PrPress =
     }
   /** `check` is the check's `checkKey`. */
   | { action: 'check-fix' | 'check-rerun' | 'log'; ref: string; check: string }
-  | { action: 'pr-dismiss-merged' }
   | { action: 'pr-rank-again' }
 
 export function isPrPress(p: RowPress | PrPress): p is PrPress {
-  return 'ref' in p || p.action === 'pr-dismiss-merged' || p.action === 'pr-rank-again'
+  return 'ref' in p || p.action === 'pr-rank-again'
 }
 
 /**
@@ -46,20 +46,7 @@ export function logEffect(pr: PrView, check: PrCheck): Effect {
   return { kind: 'open', target: check.url ?? pr.url, name: check.url ? 'the log' : `PR #${pr.number}` }
 }
 
-const ACTIONS_RUN_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/actions\/runs\/(\d+)/
-
 export const RERUN_LABEL = 'Re-run'
-
-/** The GitHub Actions run a check's details link names, or null for a check another app ran. */
-function runOf(c: PrCheck): { repo: string; run: string } | null {
-  const m = ACTIONS_RUN_URL.exec(c.url ?? '')
-
-  return m ? { repo: m[1]!, run: m[2]! } : null
-}
-
-function isSameRun(a: { repo: string; run: string }, b: { repo: string; run: string } | null): boolean {
-  return b !== null && a.repo === b.repo && a.run === b.run
-}
 
 /**
  * The re-run a cancelled check offers, or null when it offers none: it is not cancelled, another app ran it, or a
@@ -68,9 +55,8 @@ function isSameRun(a: { repo: string; run: string }, b: { repo: string; run: str
 export function rerunEffect(pr: PrView, c: PrCheck): Extract<Effect, { kind: 'rerun' }> | null {
   const run = c.bucket === 'cancelled' ? runOf(c) : null
   if (!run) return null
-  const isCancelledByFailure = pr.checks.some(f => f.bucket === 'fail' && isSameRun(run, runOf(f)))
 
-  return isCancelledByFailure ? null : { kind: 'rerun', ...run, name: c.workflow || c.name }
+  return failedSibling(pr, c) ? null : { kind: 'rerun', ...run, name: c.workflow || c.name }
 }
 
 /** The other checks of `c`'s run that offer Re-run too, since one re-run covers them all. */
@@ -143,7 +129,6 @@ export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
 }
 
 function prRowId(p: PrPress): string {
-  if (p.action === 'pr-dismiss-merged') return DISMISS_MERGED_ID
   if (p.action === 'pr-rank-again') return RANK_AGAIN_ID
   if ('check' in p) return checkRowId(p.ref, p.check)
   if ('thread' in p) return threadRowId(p.ref, p.thread)

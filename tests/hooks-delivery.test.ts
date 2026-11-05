@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { PRESS_GUARD_MS, QUEUED_AFTER_MS } from '../hooks/timing'
+import { PRESS_GUARD_MS, QUEUED_AFTER_MS, SETTLED_MS } from '../hooks/timing'
+import { RUNNING_FRAMES } from '../hooks/help'
 import { w, arrive, arriveFirst, world } from './hooks-world'
 import { BAND, PANE, selectRow, replyKey } from './hooks-helpers'
 
@@ -72,7 +73,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   await arrive($)
   await clock.settle()
   await selectRow(pane, 'i1')
-  expect(await pane.find({ text: /^Explaining…$/ })).toBeDefined()
+  expect(await pane.find({ text: new RegExp(`^[${RUNNING_FRAMES.join('')}] Explaining…$`) })).toBeDefined()
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
 
   w.submitAnswer = { drop: 'a hook refused it' }
@@ -85,7 +86,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   expect(await pane.find({ key: 'row-i1' })).toBeDefined()
   expect(drafts).toEqual({ i1: { text: 'Deno, actually', since: expect.any(Number) } })
   await pane.press({ key: 'answer-i1-0' })
-  await clock.settle()
+  await clock.advance(SETTLED_MS)
   expect(w.sent.at(-1)).toBe('Re "Use Node or Python?": Node')
   expect(await pane.find({ key: 'row-i1' })).toBeDefined()
   expect(await pane.find({ text: 'Not sent: a hook refused it' })).toBeDefined()

@@ -41,7 +41,7 @@ The look draws the buttons each shared plan lists, in the plan's order. It style
 | --- | --- |
 | `shownTabs`, `tabBadge` | A row of tab buttons with counts |
 | `rowKeyPlan(r).keys`, then `.more` | Buttons in one wrapping row, the follow-ups after the keys, as the Codex tab orders them |
-| `threadActions`, `checkActions`, `prBlockActions`, `prTabActions` | Buttons under each PR thread, check and PR block, and in the PRs tab's header |
+| `threadActions`, `checkActions`, `prBlockActions` | Buttons under each PR thread, check and PR block |
 | `statusKeyPlan` | The View button on a Status subject |
 | `helpKeys(look)` | The Help page's key list |
 

@@ -18,7 +18,7 @@ import { baseName } from './open-targets'
 import { stepsOf } from './help-steps'
 import type { HelpStep } from './help-steps'
 import { isFixSent, isHandedOff } from './last-actions'
-import { isUndoable } from './pressed'
+import { isHeldSend, isUndoable } from './pressed'
 import { FINDING_GROUPS } from './help'
 import { isSettledInPlace, canUndoClose, isUndoLeft, pendingDeliveryAt } from './timing'
 import { closedRowState, optionDescriptionsOf, isWaitingRow, outcomeLabel, closedMark, recLineOf } from './rows'
@@ -111,10 +111,11 @@ export function inboxView({
       ? last
       : null
   }
-  const isOwnClose = (c: Closed | ClosedFinding) =>
-    c.how === 'done' ||
-    c.how === 'dismissed' ||
-    (c.how === 'answered' && lastActions[c.id]?.kind === 'mark' && lastActions[c.id]?.at === closedAt(c))
+  const isPressedAnswer = (c: Closed | ClosedFinding) =>
+    c.how === 'answered' && lastActions[c.id]?.kind === 'mark' && lastActions[c.id]?.at === closedAt(c)
+  const isOwnClose = (c: Closed | ClosedFinding) => c.how === 'done' || c.how === 'dismissed' || isPressedAnswer(c)
+  const isAnswerHeld = (c: Closed | ClosedFinding) =>
+    isPressedAnswer(c) && isHeldSend(lastActions[c.id]) && isUndoLeft(closedAt(c), now, settleWindowMs)
   const isHeld = (c: Closed | ClosedFinding) => {
     const since = replies[c.id]
 
@@ -126,7 +127,7 @@ export function inboxView({
 
     return (
       replyAfter(c) !== null ||
-      (!isDiscarded(c) && (isHeld(c) || isInPlace(at, canUndoClose(c, at, now, settleWindowMs))))
+      (!isDiscarded(c) && (isHeld(c) || isInPlace(at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs))))
     )
   }
   const placedItems = new Map(
@@ -171,6 +172,7 @@ export function inboxView({
           : (closed.how === 'answered' || closed.how === 'done') && last?.kind === 'mark' && last.at === at
             ? pendingDeliveryAt(last, now)
             : null,
+        isPressedAnswer(closed),
       )
     }
 

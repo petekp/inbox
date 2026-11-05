@@ -3,7 +3,6 @@ import { bannerOf } from '../../hooks/banners'
 import type { SettledState } from '../../hooks/rows'
 import { prBlockActions } from '../../hooks/pr-tab'
 import {
-  DISMISS_MERGED_ID,
   RANK_AGAIN_ID,
   ghNoticeOf,
   PR_GROUP_TITLES,
@@ -27,18 +26,9 @@ import { KeyButton, ResultMarkView, GroupTitle, UndoPlace, Banner } from './tab-
 import { ListRow } from './tab-list'
 import { pressLine } from './tab-pr-lines'
 import type { PressLine } from './tab-pr-lines'
-import { PR_GROUPS, PR_TAB_ACTIONS_MOTION, prBlockMotion, prGroupMotion, prLineMotion } from './tab-pr-steps'
+import { PR_GROUPS, prBlockMotion, prGroupMotion, prLineMotion } from './tab-pr-steps'
 import type { DrawnPrBlock, DrawnPrs, PrGroup } from './tab-pr-steps'
 import type { RowTrack } from './rows'
-
-/** The PRs tab's own buttons, drawn after its PR blocks. */
-export function prTabKeys(v: View): Key[] {
-  return tabKeys(v.prs.tabActions)
-}
-
-function tabKeys(actions: PrAction[]): Key[] {
-  return actions.map(a => tabKey(DISMISS_MERGED_ID, a))
-}
 
 /** The order's changed line's buttons: Rank again. */
 export function prOrderKeys(v: View): Key[] {
@@ -149,7 +139,7 @@ function PrEntry({ b, v, prs, now }: { b: DrawnPrBlock; v: View; prs: DrawnPrs; 
 }
 
 function PrHead({ v, pr, rank }: DrawnPrBlock & { v: View }) {
-  const { status, head, unlisted } = readiness(pr, threadSentIn(v.lastActions))
+  const { status, head, unlisted } = readiness(pr, threadSentIn(v.lastActions), 'Codex')
   const tone = PR_TONES[status]
 
   return (
@@ -262,8 +252,6 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
         <div class="muted">{empty.hint}</div>
       </div>
     )
-  const tabActions = prs.tabActions
-  const areTabActionsLeaving = v.prs.tabActions.length === 0
 
   return (
     <main>
@@ -276,17 +264,6 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
       {prs.blocks.map(b => (
         <PrEntry key={prMarkId(b.pr.ref)} b={b} v={v} prs={prs} now={now} />
       ))}
-      {tabActions ? (
-        <section class="pr-entry" data-motion={PR_TAB_ACTIONS_MOTION}>
-          <div class="pr-entry-content" inert={areTabActionsLeaving}>
-            <div class="pr-actions keys">
-              {tabKeys(tabActions).map(k => (
-                <KeyButton k={k} />
-              ))}
-            </div>
-          </div>
-        </section>
-      ) : null}
       {v.prs.olderText ? (
         <section>
           <div class="group-title muted">{v.prs.olderText}</div>

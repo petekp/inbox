@@ -29,6 +29,9 @@ export function boxed(inner: string[], tone: BannerTone, width: number, s: Style
   ]
 }
 
+/** The most lines a selected review thread's comment takes. */
+const BODY_LINES = 8
+
 const LEAD_TONES: Record<BannerTone, Tone | null> = { error: 'error', warning: 'needsYou', notice: null }
 
 /** A banner's lines: its lead in bold, in the tone's color, then its body, wrapped inside the box. */
@@ -164,6 +167,7 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
         ? indented(recLine, indent, width, 3, s.dim)
         : [fit(`${' '.repeat(indent)}${s.dim(recLine)}`, width)]),
     )
+  if (line.body && isSelected) out.push(...indented(line.body, indent, width, BODY_LINES, t => t))
   if (line.detail && (isSelected || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
   if (!isSelected) return out
   if (line.file) out.push(' '.repeat(indent) + s.tone('accent', line.file))

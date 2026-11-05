@@ -23,10 +23,10 @@ import {
   waiting,
 } from './panel-harness'
 
-test('r opens a reply field in place of the buttons, and Enter sends the typed words as a type press', () => {
+test('t opens a reply field in place of the buttons, and Enter sends the typed words as a type press', () => {
   const screen = screenOf()
   const row = firstQuestion(screen)
-  let ui = handleKey(screen, onRow(row), 'r', NOW).ui
+  let ui = handleKey(screen, onRow(row), 't', NOW).ui
   expect(ui.typing).toBe(row.id)
   for (const ch of 'hi!') ui = handleKey(screen, ui, ch, NOW, ch).ui
   ui = handleKey(screen, ui, 'backspace', NOW).ui
@@ -42,7 +42,7 @@ test('r opens a reply field in place of the buttons, and Enter sends the typed w
 
 test('Enter in an empty reply field sends nothing', () => {
   const screen = screenOf()
-  const ui = handleKey(screen, onRow(firstQuestion(screen)), 'r', NOW).ui
+  const ui = handleKey(screen, onRow(firstQuestion(screen)), 't', NOW).ui
   const result = handleKey(screen, ui, 'enter', NOW)
   expect(result.press).toBeUndefined()
   expect(result.ui.typing).not.toBeNull()
@@ -51,7 +51,7 @@ test('Enter in an empty reply field sends nothing', () => {
 test('Esc in the reply field closes the field and keeps the draft held', () => {
   const screen = screenOf()
   const row = firstQuestion(screen)
-  let ui = handleKey(screen, onRow(row), 'r', NOW).ui
+  let ui = handleKey(screen, onRow(row), 't', NOW).ui
   ui = handleKey(screen, ui, 'o', NOW, 'o').ui
   const cancelled = handleKey(screen, ui, 'escape', NOW)
   expect(cancelled.close).toBeUndefined()
@@ -64,7 +64,7 @@ test('Esc in the reply field closes the field and keeps the draft held', () => {
 test('keys in the reply field never switch tabs or move the selection', () => {
   const screen = screenOf()
   const row = firstQuestion(screen)
-  const ui = handleKey(screen, onRow(row), 'r', NOW).ui
+  const ui = handleKey(screen, onRow(row), 't', NOW).ui
   const typed = handleKey(screen, ui, '2', NOW, '2').ui
   expect(typed.tab).toBe('needsYou')
   expect(typed.drafts[row.id]?.text).toBe('2')
@@ -209,9 +209,9 @@ test('Enter opens a folded row again, and moving off it folds it', async () => {
   const { row, screen } = await afterReply()
   expect(handleKey(screen, onRow(row), 'b', NOW).press).toBeUndefined()
   const opened = keys(screen, onRow(row), 'enter')
-  expect(text(screen, opened)).toContain('r Reply')
+  expect(text(screen, opened)).toContain('t Reply')
   expect(keys(screen, opened, 'down', 'up').opened).toBeNull()
-  expect(text(screen, keys(screen, opened, 'down', 'up'))).not.toContain('r Reply')
+  expect(text(screen, keys(screen, opened, 'down', 'up'))).not.toContain('t Reply')
 })
 
 test('a dismissed PR shows its label dim, as a dismissed row does, with Undo, and u returns pr-undo', async () => {

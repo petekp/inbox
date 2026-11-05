@@ -1,4 +1,4 @@
-import type { Closed, LastAction, Ledger, LocalResult } from '../types'
+import type { Closed, LastAction, Ledger, LocalResult, Press } from '../types'
 import { stepEffects, stepsOf } from './help-steps'
 import type { HelpStep } from './help-steps'
 import { closeFinding, closeItem, reopenFinding, reopenItem } from './ledger-close'
@@ -102,17 +102,33 @@ export function recordPress(
   }
 }
 
-export function pressed(
-  ledger: Ledger,
-  last: LastAction | undefined,
-  p: RowPress,
-  ctx: PressTexts & {
-    now: number
-    turnsStarted: number
-    extraSteps: HelpStep[]
-    localPressId?: string
-  },
-): PressResult {
+/** `holdMs` is how long an answer or a Fix waits before it sends, so Undo can take it back: the settle window. */
+export type PressContext = PressTexts & {
+  now: number
+  turnsStarted: number
+  extraSteps: HelpStep[]
+  holdMs: number
+  localPressId?: string
+}
+
+/** `last` with its message held until Undo ends. Nothing leaves until the host releases it. */
+function held(
+  last: LastAction,
+  message: string,
+  by: Press | null,
+  ctx: Pick<PressContext, 'now' | 'holdMs'>,
+): LastAction {
+  return { ...last, delivery: { state: 'held', message, until: ctx.now + ctx.holdMs, by } }
+}
+
+/** How the question that asked for a finding closes when the person presses the finding's Fix. */
+const fixSentOutcome = (findingId: string) => `fix sent for ${findingId}`
+
+export function isHeldSend(last: LastAction | undefined): boolean {
+  return last?.delivery?.state === 'held'
+}
+
+export function pressed(ledger: Ledger, last: LastAction | undefined, p: RowPress, ctx: PressContext): PressResult {
   const stale = { stale: true as const }
   const answerMessage = ctx.answerMessage ?? messages.answer
   const record = (kind: LastAction['kind']) => recordPress(kind, actionId(p), pressText(p), ctx, last)
@@ -120,10 +136,21 @@ export function pressed(
   if (p.id === GOAL_KEYS_ID) return goalPressed(ledger, p, record, ctx.now)
 
   if (p.action === 'undo') {
-    if (ledger.findings.some(f => f.id === p.id) && last?.action === 'address' && !last.isKept)
+    const isOpenFinding = ledger.findings.some(f => f.id === p.id)
+    if (isOpenFinding && last?.action === 'address' && isHeldSend(last)) {
+      const asker = ledger.closed.findLast(c => c.outcome === fixSentOutcome(p.id) && c.at === last.at)
+
+      if (!asker) return { ...unchanged, dropLast: true }
+
+      return { ...unchanged, ledger: reopenItem(ledger, asker.id), reopenedId: asker.id, dropLast: true }
+    }
+    if (isOpenFinding && last?.action === 'address' && !last.isKept)
       return { ...unchanged, last: { ...last, isKept: true } }
-    if (ledger.items.some(i => i.id === p.id) || ledger.findings.some(f => f.id === p.id)) return stale
+    if (ledger.items.some(i => i.id === p.id) || isOpenFinding) return stale
     const closed = ledger.closed.findLast(c => c.id === p.id)
+    const isHeldAnswer = closed?.how === 'answered' && isHeldSend(last) && last?.at === closed.at
+    if (closed?.item && isHeldAnswer)
+      return { ...unchanged, ledger: reopenItem(ledger, p.id), reopenedId: p.id, dropLast: true }
     if (closed?.item && isUndoable(closed)) return { ...unchanged, ledger: reopenItem(ledger, p.id), reopenedId: p.id }
     const closedFinding = ledger.closedFindings.findLast(f => f.id === p.id)
     if (closedFinding && isUndoable(closedFinding))
@@ -140,13 +167,14 @@ export function pressed(
     })
     switch (p.action) {
       case 'address': {
-        const sent = sendFinding('handoff', messages.finding(finding, 'address'))
+        const text = messages.finding(finding, 'address')
+        const sent = { ledger, last: held(record('handoff'), text, null, ctx), effects: [] }
         const asker = ledger.items.find(i => i.id === finding.askedAs)
 
         return asker
           ? {
               ...sent,
-              ledger: closeItem(ledger, asker.id, { how: 'update', outcome: `fix sent for ${finding.id}` }, ctx.now),
+              ledger: closeItem(ledger, asker.id, { how: 'update', outcome: fixSentOutcome(finding.id) }, ctx.now),
             }
           : sent
       }
@@ -175,8 +203,8 @@ export function pressed(
   if (!item) return p.action === 'type' ? replyToClosed(ledger, p, record('handoff'), answerMessage) : stale
   const answered = (answer: string): PressResult => ({
     ledger: closeItem(ledger, item.id, { how: 'answered', outcome: answer }, ctx.now),
-    last: record('mark'),
-    effects: [{ kind: 'send', text: answerMessage(item, answer), by: { id: item.id, action: 'answer' } }],
+    last: held(record('mark'), answerMessage(item, answer), { id: item.id, action: 'answer' }, ctx),
+    effects: [],
   })
   switch (p.action) {
     case 'answer':

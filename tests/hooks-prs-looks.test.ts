@@ -5,7 +5,7 @@ import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
 for (const look of ['terminal', 'desktop'] as const) {
-  test(`in the ${look} look, Dismiss merged draws after the PR blocks while a merged PR shows, and settles each merged PR with its own Undo`, async ($, on) => {
+  test(`in the ${look} look, a fetch that finds PRs merged while the PRs tab shows settles each block as Merged with its own Undo`, async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
     world($, on, [])
     const states: Record<number, string> = { 12: 'OPEN', 14: 'OPEN', 15: 'OPEN' }
@@ -44,9 +44,6 @@ for (const look of ['terminal', 'desktop'] as const) {
       reason: 'answer',
     })
     await clock.settle()
-    states[12] = 'MERGED'
-    states[14] = 'MERGED'
-    await clock.advance(3 * 60_000)
     await $.command.run({ command: 'inbox', args: '' } as never)
     await clock.settle()
     w.paneState = { isShown: true, isFocused: true }
@@ -54,41 +51,39 @@ for (const look of ['terminal', 'desktop'] as const) {
       look === 'terminal'
         ? await $.ui.mount(PANE)
         : await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 120 } })
-    if (look === 'terminal') await pane.press({ key: 'tab-prs' })
-    else {
+    const show = async (id: string) => {
+      if (look === 'terminal') return pane.press({ key: `tab-${id}` })
       const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
       const x = bar
         .slice(
           0,
-          bar.findIndex(t => t.id === 'prs'),
+          bar.findIndex(t => t.id === id),
         )
         .reduce((sum, t) => sum + t.width + gap, 0)
-      await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
-    }
-    await clock.settle()
-    const buttonKeys = async () =>
-      (await pane.findAll({ type: 'Button' })).map(b => b.key ?? '').filter(k => !k.endsWith('-key'))
-    const keys = await buttonKeys()
-    expect(keys.filter(k => k === 'dismiss-merged-tab')).toHaveLength(1)
-    expect(keys.indexOf('dismiss-merged-tab')).toBeGreaterThan(
-      Math.max(...keys.flatMap((k, n) => (/-acme\/greet#\d+$/.test(k) ? [n] : []))),
-    )
-    const linked = () => (JSON.parse(w.stored.get('s:session-1') ?? '{}') as { ledger?: { prs: string[] } }).ledger?.prs
 
-    await clock.advance(PRESS_GUARD_MS)
-    await pane.press({ key: 'dismiss-merged-tab' })
+      return pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+    }
+    await show('prs')
+    await clock.settle()
+    const linked = () => (JSON.parse(w.stored.get('s:session-1') ?? '{}') as { ledger?: { prs: string[] } }).ledger?.prs
+    expect(linked()).toEqual(['acme/greet#12', 'acme/greet#14', 'acme/greet#15'])
+
+    states[12] = 'MERGED'
+    states[14] = 'MERGED'
+    await show('needsYou')
+    await show('prs')
     await clock.settle()
     expect(linked()).toEqual(['acme/greet#15'])
     expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
     expect(await pane.find({ key: 'settled-pr:acme/greet#14' })).toBeDefined()
-    expect(await buttonKeys()).not.toContain('dismiss-merged-tab')
+    expect(await pane.find({ text: /Merged/ })).toBeDefined()
     if (look === 'desktop') return
+    await clock.advance(PRESS_GUARD_MS)
     await pane.press({ key: 'undo-pr:acme/greet#12' })
     await clock.settle()
     expect(linked()).toEqual(['acme/greet#15', 'acme/greet#12'])
     expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeUndefined()
     expect(await pane.find({ key: 'settled-pr:acme/greet#14' })).toBeDefined()
-    expect(await buttonKeys()).toContain('dismiss-merged-tab')
   })
 }
 
@@ -195,16 +190,16 @@ for (const look of ['terminal', 'desktop'] as const) {
 
     states[14] = 'MERGED'
     await clock.advance(3 * 60_000)
-    expect(await heads()).toEqual(['1. #15', '2. #12', '#16', '#14'])
+    expect(await heads()).toEqual(['1. #15', '2. #12', '#16'])
 
     await pane.press({ key: 'dismiss-pr-acme/greet#15' })
     await clock.settle()
     expect(await pane.find({ key: 'settled-pr:acme/greet#15' })).toBeDefined()
-    expect(await heads()).toEqual(['2. #12', '#16', '#14'])
+    expect(await heads()).toEqual(['2. #12', '#16'])
     if (look === 'terminal') {
       await pane.press({ key: 'undo-pr:acme/greet#15' })
       await clock.settle()
-      expect(await heads()).toEqual(['1. #15', '2. #12', '#16', '#14'])
+      expect(await heads()).toEqual(['1. #15', '2. #12', '#16'])
     }
 
     await $.tool.call({ tool: 'mcp__inbox__order_prs', numbers: [] })
