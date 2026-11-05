@@ -200,4 +200,7 @@ export const GOOD_RUNS: Record<string, string[]> = {
   'one-task-plan': [
     'HEAD: Export tooltip | Adding a formats tooltip to the Export button\nNEW: working | Export tooltip | shows the formats on hover',
   ],
+  'idle-work': [
+    'DONE: s1 | iPad crash fixed\nSET: s4 | waits-on-other | fast on big libraries, waits on review\nNEW: working | Retry button | broken on web again\nNEW: working | PR 3655 | waits on review',
+  ],
 }

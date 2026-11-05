@@ -3509,8 +3509,12 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
   };
   const closedUnseen = (name) => {
-    const key = nameKey(clipWords(name, NAME_KEPT));
-    return o.subjects.findLast((s) => !isOpen(s) && nameKey(s.name) === key && !isSubjectSeen(o, s)) ?? null;
+    const said = words(clipWords(name, NAME_KEPT));
+    const repeats = (s) => {
+      const own = [...words(s.name)];
+      return nameKey(s.name) === nameKey([...said].join(" ")) || own.length >= 2 && own.every((w) => said.has(w));
+    };
+    return o.subjects.findLast((s) => !isOpen(s) && !isSubjectSeen(o, s) && repeats(s)) ?? null;
   };
   const forgetSeenWas2 = (s) => {
     if (isSubjectSeen(o, s)) {
@@ -4116,11 +4120,11 @@ Status is one of: working, queued, waits-on-other.
 - waits-on-other: it waits on something other than the person, such as a build, a review or another session.
 
 Rules:
-- Change a subject by its id. Write NEW only when no subject in <subjects> covers it.
+- Change a subject by its id. Write NEW only when no subject in <subjects> covers it. When work in <finished> comes back, SET its id to reopen it.
 - When work started and finished in this exchange, write NEW for it, then DONE with its name.
 - Write SET only when where a subject stands changed. Never reword a subject that did not change.
 - Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
-- A working subject whose last change is a day or more ago, that this exchange does not work on, and that no item in <asks> or <running> holds up, has ended or been left behind: write DONE when its work finished, or DROP with why, such as "work moved on". Queued and waits-on-other subjects stay until the work says otherwise.
+- Check how long ago each working subject in <subjects> last changed. One that changed a day or more ago, that this exchange does not work on, and that no item in <asks> or <running> holds up, has ended or been left behind: write DONE when where it stands says it works or is fixed, else DROP with why, such as "work moved on". Never SET it to keep it working. Queued and waits-on-other subjects stay until the work says otherwise.
 - When the person files a piece for later, out of this session's plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
 - Write LINK for each item in <asks> that has no subject yet, or when another subject's work also waits on it, one line for each subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.

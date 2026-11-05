@@ -22,7 +22,7 @@ test('NO CHANGE keeps the list, an answer with no operation cannot be read, and 
   ])
 })
 
-test('a NEW that names a subject finished since the last look reopens it, and one finished before the look is new work', () => {
+test('a NEW that repeats the name of a subject finished since the last look reopens it, and one finished before the look is new work', () => {
   const done = after(null, 'NEW: working | Retry button | built\nDONE: s1 | merged', 100)
   const reopened = after(done, 'NEW: working | retry button | fails on web', 200)
 
@@ -31,6 +31,9 @@ test('a NEW that names a subject finished since the last look reopens it, and on
   ])
   const seen = after({ ...done, lastLookAt: 150 }, 'NEW: working | Retry button | fails on web', 200)
   expect(seen.subjects.map(s => `${s.id} ${s.status}`)).toEqual(['s1 done', 's2 working'])
+  expect(after(done, 'NEW: working | Retry button bug | fails on web', 200).subjects.map(s => s.id)).toEqual(['s1'])
+  const oneWord = after(null, 'NEW: working | Search | fast\nDONE: s1 | shipped', 100)
+  expect(after(oneWord, 'NEW: working | Search filters | planned', 200).subjects.map(s => s.id)).toEqual(['s1', 's2'])
 })
 
 test('a NEW or a HEAD named only by a PR or issue number changes nothing, and a name that also names the work is kept', () => {

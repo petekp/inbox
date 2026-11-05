@@ -140,6 +140,11 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     answer: `${GOOD_RUNS['one-task-plan']![0]!}\nNEW: working | Tooltip test | being written`,
     breaks: 'piece-once',
   },
+  'idle-work': {
+    at: 0,
+    answer: GOOD_RUNS['idle-work']![0]!.replace('NEW: working | Retry button |', 'NEW: working | Web retry bug |'),
+    breaks: 'marks-true',
+  },
 }
 
 test('a good run of each replay passes every rule that is built, at every step', async () => {
