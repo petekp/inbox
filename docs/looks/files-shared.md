@@ -64,6 +64,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/host-press.ts` | Shared module. `press` and `startPress`, which run a press on a host's store, and `wakeForDone`, which tells the agent about rows closed with Done. |
 | `hooks/host-prs.ts` | Shared module. `fetchPrs`, which fetches a session's PRs through the host's gh, and `isPrFetchDue` and `prFetchTracker`, which say when to fetch again. |
 | `hooks/gh.ts` | Shared module. `ghFinder` finds a gh that starts, and `ghIn` runs it, over a host's command runner. `branchIn` reads a folder's git branch over the same runner. |
+| `hooks/band.ts` | Shared module. The band's counts, whether the rows may be missing some, and what the band reads with no counts: "Nothing needed" or "May be out of date". |
 | `hooks/herdr.ts` | Shared module. What a host reports to the Herdr pane it runs in: the `inbox` status line, the stop, the session's focus, and each row tab's count, as pane tokens in one `herdr pane report-metadata` command. Also `delegatesInHerdr`, which asks `herdr agent list` what each delegate does and the focus its session publishes, only while one runs. |
 | `hooks/text.ts` | Shared module. Clipping, code-block formatting, relative ages and a turn's reply. |
 | `hooks/prs.ts` | Shared module. PR parsing, readiness and prompts. |

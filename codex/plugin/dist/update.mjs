@@ -1267,7 +1267,7 @@ function readiness(pr, isSent = () => false) {
   const listed = [];
   if (pr.state === "MERGED") return result("merged", "Merged");
   if (pr.state !== "OPEN") return result("closed", "Closed");
-  const { fail: failing, cancelled, pending } = checkCounts(pr);
+  const { pass: passing, fail: failing, cancelled, pending } = checkCounts(pr);
   const waiting = waitingThreads(pr);
   const open2 = threadsOnYou(pr, isSent).length;
   const sent = waiting.filter((t) => isSent(pr, t)).length;
@@ -1285,7 +1285,8 @@ function readiness(pr, isSent = () => false) {
     row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to Claude` : null),
     row(changed > 0 ? `${plural(changed, "thread", "threads")} on changed lines` : null),
     pr.reviewDecision === "REVIEW_REQUIRED" ? "needs approval" : null,
-    pending > 0 ? `${pending} ${pending === 1 ? "check" : "checks"} running` : null
+    pending > 0 ? `${pending} ${pending === 1 ? "check" : "checks"} running` : null,
+    pr.mergeable === "UNKNOWN" ? "GitHub is still checking for conflicts" : null
   ].filter(isPresent);
   if (pr.isDraft) return result("draft", "Draft", [...onYou, ...onOthers]);
   if (onYou.length > 0) return result("blocked", "Blocked", onYou);
@@ -1294,7 +1295,11 @@ function readiness(pr, isSent = () => false) {
   return result(
     "ready",
     "Ready to merge",
-    [...isApproved ? ["approved"] : [], "checks pass", "no threads waiting on you"],
+    [
+      ...isApproved ? ["approved"] : [],
+      passing > 0 ? "checks pass" : "no checks reported",
+      "no threads waiting on you"
+    ],
     isApproved ? ": " : ", "
   );
 }
@@ -1831,7 +1836,7 @@ function ruledRows(rows, isRuled) {
 }
 
 // ../hooks/status-page.ts
-var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
 var LOOK_TEXT = "Last seen";
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
@@ -2921,11 +2926,11 @@ function heldLabel(c) {
   if (c.how === "answered") return `Answered: ${c.outcome}`;
   return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
 }
-var NEXT_TRY = " The inbox tries again after the agent's next reply.";
+var NEXT_TRY = " It tries again after the next reply.";
 var FAILED_UPDATE_TEXT = {
-  waiting: `Last update failed. Items from that reply may be missing.${NEXT_TRY}`,
-  "failed-again": `Last update failed, and its retry failed too. Items from recent replies may be missing.${NEXT_TRY}`,
-  unreadable: `Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing.${NEXT_TRY}`
+  waiting: `The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing.${NEXT_TRY}`,
+  "failed-again": `The inbox couldn't update from the agent's recent replies, even on a retry. Questions, tasks and findings from them may be missing.${NEXT_TRY}`,
+  unreadable: `The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing.${NEXT_TRY}`
 };
 function perTurnStatus(isUpdating, recovery) {
   const error = recovery === "none" || recovery === "retrying" ? null : FAILED_UPDATE_TEXT[recovery];
@@ -3492,7 +3497,7 @@ function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ??
 function isStatusCallCurrent(s, appliedAfter) {
   return s.presence.turnsApplied >= appliedAfter && s.overviewTurn <= appliedAfter;
 }
-function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overview?.goal?.setAt ?? null) {
+function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overview?.goal?.setAt ?? null, isCatchUp = false) {
   if (!isStatusCallCurrent(s, appliedAfter)) return s;
   return {
     ...s,
@@ -3500,7 +3505,7 @@ function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overvi
       ...s.ledger,
       overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)), readSetAt)
     },
-    overviewFailure: null,
+    overviewFailure: isCatchUp ? null : s.overviewFailure,
     lastOverviewCallAt: now,
     overviewTurn: appliedAfter
   };
@@ -3515,7 +3520,8 @@ var STATUS_REFRESH_MS = 10 * 6e4;
 function needsCatchUp(s) {
   const { presence } = s;
   const hasUnappliedTurn = s.pending.length === 0 && s.turn.person === null && presence.turnsStarted > presence.turnsApplied;
-  return presence.ledgerState !== "current" || hasUnappliedTurn;
+  const hasMissedStatus = s.overviewFailure !== null && (s.pending.length > 0 || hasUnappliedTurn);
+  return presence.ledgerState !== "current" || hasUnappliedTurn || hasMissedStatus;
 }
 var pendingKey = (p) => `${p.turnsStarted}:${p.ex.turn}`;
 function appliedCatchUp(s, begun, parsed, now) {
@@ -3570,6 +3576,18 @@ function viewOf(s, now, holds = NO_HOLDS) {
   return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds), heard: heardState(s.heard), at: now };
 }
 
+// ../hooks/banners.ts
+var NEXT_BUILD_MARK = ".next-build";
+var MAYBE_STALE_TEXT = "May be out of date";
+
+// ../hooks/band.ts
+function isMaybeStale(view, isReadFailed = false) {
+  return isReadFailed || view.status.error !== null || view.status.isRetrying;
+}
+function bandCounts(view) {
+  return ROW_TABS.map((t) => ({ id: t.id, label: t.label, count: view[t.id].count })).filter((c) => c.count > 0);
+}
+
 // ../hooks/children.ts
 var HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
 function delegateSteps(command) {
@@ -3617,10 +3635,10 @@ function statusLine(stop, dialogs, input) {
   if (stop) return stopLine(stop);
   const dialog = dialogs[0];
   if (dialog) return dialogText(dialog);
-  const { firstAsk, asks, findings, focus } = input;
+  const { firstAsk, asks, findings, focus, stale } = input;
   if (firstAsk !== null) return asks > 1 ? `${asks} \xB7 ${firstAsk}` : firstAsk;
   const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? "" : "s"}`;
-  return [focus, findingsText].filter(Boolean).join(" \xB7 ");
+  return [stale, focus, findingsText].filter(Boolean).join(" \xB7 ");
 }
 function focusOf(head) {
   return head ? head.description || head.title : null;
@@ -3630,7 +3648,8 @@ function herdrTokens(ledger, stop, view, dialogs) {
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
-    focus: focusOf(ledger.overview?.head ?? null)
+    focus: focusOf(ledger.overview?.head ?? null),
+    stale: bandCounts(view).length === 0 && isMaybeStale(view) ? MAYBE_STALE_TEXT : null
   };
   const focus = input.focus ? clipLabel(input.focus, HERDR_VALUE_CHARS) : null;
   const counts = ROW_TABS.map((t) => {
@@ -3779,9 +3798,6 @@ function exitCodeOf(err) {
   if (err.killed) return TIMED_OUT_CODE;
   return typeof err.code === "number" ? err.code : UNSTARTABLE_CODE;
 }
-
-// ../hooks/banners.ts
-var NEXT_BUILD_MARK = ".next-build";
 
 // src/update.ts
 import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
@@ -4140,7 +4156,7 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
     before = x.ledger.overview;
     isWritten = isStatusCallCurrent(x, appliedAfter);
     const readSetAt = input.last?.goal?.setAt ?? null;
-    return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now, readSetAt);
+    return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now, readSetAt, call.exchange.kind === "catch-up");
   });
   if (!host.records) return;
   const record2 = {

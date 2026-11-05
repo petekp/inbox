@@ -108,6 +108,7 @@ import { statusKeyRows, statusSelected } from './status-keys'
 import { footerStatus } from './view'
 import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, type RowView } from './rows'
 import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf, NEXT_BUILD_MARK } from './banners'
+import { bandCounts, isMaybeStale, noCountsText } from './band'
 import {
   drawnLists,
   rowKeyPlan,
@@ -123,7 +124,6 @@ import {
 import {
   isRowTab,
   isShownTab,
-  LISTED_TABS,
   screenTabOf,
   shownTabs,
   drawnTabOf,
@@ -2820,16 +2820,19 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!mod.isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [{ ledger, stop, view, showsDemoNotices, now }, theme] = await Promise.all([drawnState($), read($, THEME)])
-    if (!stop && isBlankLedger(ledger)) return next(e)
+    const [{ ledger, stop, view, showsDemoNotices, isUnread, now }, theme] = await Promise.all([
+      drawnState($),
+      read($, THEME),
+    ])
+    if (!stop && isBlankLedger(ledger) && !isMaybeStale(view, isUnread)) return next(e)
     // Every mod shares the band, and a tree without the drawing from next(e)
     // hides what the mods after this one draw there.
     const theirs = await next(e)
     const pal = paletteFor(theme, lookOf(e.surface))
-    const counts = LISTED_TABS.filter(t => view[t.id].count > 0).map(t => (
+    const counts = bandCounts(view).map(c => (
       <Text>
-        <Text>{t.label} </Text>
-        <Text color={pal.tone[t.id] ?? pal.mark[t.id]}>{view[t.id].count}</Text>
+        <Text>{c.label} </Text>
+        <Text color={pal.tone[c.id] ?? pal.mark[c.id]}>{c.count}</Text>
       </Text>
     ))
 
@@ -2843,7 +2846,7 @@ export const register: Register = on => {
             {counts.length > 0 ? (
               counts.flatMap((p, n) => (n === 0 ? [p] : [<Text dimColor>{DOT}</Text>, p]))
             ) : (
-              <Text dimColor>Nothing needed</Text>
+              <Text dimColor>{noCountsText(view, isUnread)}</Text>
             )}
           </Text>
         </Box>

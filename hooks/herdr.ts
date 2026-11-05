@@ -1,4 +1,6 @@
 import type { Dialog, Ledger, SessionStatus, StatusHead, Stop, Tab } from '../types'
+import { bandCounts, isMaybeStale } from './band'
+import { MAYBE_STALE_TEXT } from './banners'
 import { hasRunningDelegate, onceEvery } from './children'
 import type { Run } from './gh'
 import type { SessionView } from './session-view'
@@ -117,19 +119,25 @@ function dialogText(dialog: Dialog): string {
 
 /**
  * What the status line reads when no stop or dialog leads it: the first ask that waits, how many asks and findings
- * wait, and what the session is focused on.
+ * wait, what the session is focused on, and `MAYBE_STALE_TEXT` when the band shows it.
  */
-type StatusInput = { firstAsk: string | null; asks: number; findings: number; focus: string | null }
+type StatusInput = {
+  firstAsk: string | null
+  asks: number
+  findings: number
+  focus: string | null
+  stale: string | null
+}
 
 function statusLine(stop: Stop | null, dialogs: readonly Dialog[], input: StatusInput): string {
   if (stop) return stopLine(stop)
   const dialog = dialogs[0]
   if (dialog) return dialogText(dialog)
-  const { firstAsk, asks, findings, focus } = input
+  const { firstAsk, asks, findings, focus, stale } = input
   if (firstAsk !== null) return asks > 1 ? `${asks} · ${firstAsk}` : firstAsk
   const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? '' : 's'}`
 
-  return [focus, findingsText].filter(Boolean).join(' · ')
+  return [stale, focus, findingsText].filter(Boolean).join(' · ')
 }
 
 /** The head's description, which says what the session does, or its title when it has none. */
@@ -153,6 +161,7 @@ export function herdrTokens(
     asks: view.needsYou.count,
     findings: view.findings.count,
     focus: focusOf(ledger.overview?.head ?? null),
+    stale: bandCounts(view).length === 0 && isMaybeStale(view) ? MAYBE_STALE_TEXT : null,
   }
   const focus = input.focus ? clipLabel(input.focus, HERDR_VALUE_CHARS) : null
   const counts = ROW_TABS.map(t => {
