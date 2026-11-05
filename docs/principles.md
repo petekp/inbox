@@ -41,14 +41,14 @@ The Status page is a guide to where the session has been, where it is and where 
 
 Balance the long arc with what happened recently. The latest turn must not crowd out the session's direction.
 
-Time belongs on the page where it carries meaning: when the last thing happened, how long something has stalled, how far apart things were. Leave out times that only record events. A coordinator session that runs other sessions shows a higher-level view. Its children's asks show in its inbox as its own, and their work rolls up into its Status page.
+Time belongs on the page where it carries meaning: when the last thing happened, how long something has stalled, how far apart things were. Leave out times that only record events. Code, not the model, can write these times, such as how long a row has been idle. A coordinator session that runs other sessions shows a higher-level view. Its children's asks show in its inbox as its own, and their work rolls up into its Status page.
 
 ### 3. Anticipate the next action
 
 Every row anticipates what the person needs to act on it.
 
 - A question carries the options and the one the agent recommends, with the reason.
-- A task carries what the person needs to do it: the link, the file, or the command to copy.
+- A task carries what the person needs to do it: the link, the file, or the command to copy, when one exists. Otherwise it says exactly what to do and how the agent will learn it is done.
 - A row that waits on the person offers the press that moves it forward, not just a status word.
 - A row that asks the person to check or do something says how the result gets back to the agent.
 
@@ -60,11 +60,11 @@ The inbox catches problems and opportunities: a bug, a risk, missing tests, a be
 
 ### 5. Handled things settle, and stay reachable
 
-When something is handled, it collapses. It keeps a short record of what was chosen and when, with Undo where that makes sense. A review thread that was addressed folds away. Nothing is left hanging after the person acts, and nothing they might need is lost: what folds away can be opened again.
+When something is handled, it collapses. It keeps a short record of what was chosen and when, with Undo where that makes sense. A review thread that was addressed folds away. Nothing is left hanging after the person acts, and nothing they might need is lost: what folds away can be opened again. A dismissed row can be reopened for the rest of the session, and recent closed rows stay in view.
 
 ### 6. Every press answers at once, and honestly
 
-Every press shows that it registered, as soon as it is pressed. Without that, people press again and again. The feedback is small and stays on the row; it does not add a new line of text. It is also honest about timing: "Explaining…" while the agent works, and a ✓ only once the agent has answered. A working mark keeps moving while the work runs.
+Every press shows that it registered, as soon as it is pressed. Without that, people press again and again. The feedback is small and stays on the row; it does not add a new line of text. It is also honest about timing. A press that asks the agent to explain or discuss reads "Explaining…" while the agent works, and shows a ✓ only once the agent has answered. A press that hands work to the agent shows a ✓ when the hand-off is made, since that is what the press did. A working mark keeps moving while the work runs.
 
 ### 7. A correctable guess beats a question
 
@@ -76,7 +76,7 @@ The inbox is an intelligent surface, not a rigid form. Design for judgment: rule
 
 What the person set or dismissed stays that way. The person can dismiss any row with one press, and need not deal with it. A goal they typed is not replaced before it is met. A question they dismissed does not come back in other words. The model closes a finding when it is fixed, never because the person said it can wait.
 
-The inbox also stays in its lane. Text it sends an agent says what a press means and nothing more. It does not set policy the person decides elsewhere, such as whether to reply to review comments. Where another tool already does a job well, such as routing links to a browser, the inbox leaves it to that tool.
+The inbox also stays in its lane. Text it sends an agent says what a press means and nothing more. It may state the limits of the press's own act, such as "don't post it" on a drafted reply, but never the person's general workflow, such as whether to ask before pushing. Examples in the guidance agents read use steps people rarely hand to an agent, such as merging or messaging someone. It does not set policy the person decides elsewhere, such as whether to reply to review comments. Where another tool already does a job well, such as routing links to a browser, the inbox leaves it to that tool.
 
 ### 9. Trust is the product
 
@@ -84,7 +84,7 @@ An inbox that is stale, or wrongly empty, is worse than none: the person stops b
 
 ### 10. Native to each host, the same everywhere
 
-Each look feels native to its host app: the terminal, the Claude app's pane, the Codex tab, omp's panel. Each uses its host's own controls. Under the look, the behavior is the same: the same words, the same buttons in the same order, the same states. Switching between hosts should feel natural. A difference not written down in [looks.md](looks.md) "Differences on purpose", with a real host limit as its reason, is drift.
+Each look feels native to its host app: the terminal, the Claude app's pane, the Codex tab, omp's panel. Each uses its host's own controls. Under the look, the behavior is the same: the same words, the same actions in the same order, the same states. A host with no buttons, such as omp's key-driven panel, offers the same actions as keys. Switching between hosts should feel natural. A difference not written down in [looks.md](looks.md) "Differences on purpose", with a real host limit as its reason, is drift.
 
 Design every feature for every host from the start. Doing a host later is not a reason to leave it out.
 
