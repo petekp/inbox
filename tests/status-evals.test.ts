@@ -145,6 +145,11 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     answer: GOOD_RUNS['idle-work']![0]!.replace('NEW: working | Retry button |', 'NEW: working | Web retry bug |'),
     breaks: 'marks-true',
   },
+  'stale-goal': {
+    at: 3,
+    answer: GOOD_RUNS['stale-goal']![3]!.replace(/\nRETIRE: [^\n]*/, ''),
+    breaks: 'goal-left',
+  },
 }
 
 test('a good run of each replay passes every rule that is built, at every step', async () => {

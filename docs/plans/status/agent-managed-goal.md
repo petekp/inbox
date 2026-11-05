@@ -132,6 +132,9 @@ A goal the call retires does not join `removedGoals`: the work left it, the pers
 | — | New `goal-wait`: when the next goal is not clear, write no GOAL and wait. `goal-when-clear` covers a met goal's next one |
 | — | New `goal-work-left`: when the session's work no longer moves an inferred goal forward, close its stale linked subjects, then replace it with GOAL, or write RETIRE when no next goal is clear |
 | — | `milestones-are-outcomes` adds: code closes a milestone when its work closes, and the call reopens it with SET when work is left. New `milestone-no-work` for the mark. |
+| — | New `serves-in-outcome`: a subject serves a milestone only when finishing it is part of the milestone's named outcome. A broad name such as "Cleanup done" is not a home for later work, which gets `-`. `milestone-no-work` and `serves-every-subject` say "part of its outcome" too. |
+| — | New `goal-outcome-happened`: when the exchange shows the goal's outcome happened, write DONE for each open milestone, so the goal is met. Prompt only: code cannot read the exchange. |
+| `goal-work-left` | Kept. `<goal>` says `(no work for 55m)` once `goalLeftFor` finds the work has left the goal, the same test that lets GOAL or RETIRE apply, and the rule tells the call to write one of them for a goal so marked. |
 | `proposedGoal`, `<proposed>`, Set as goal, Not now, the proposal's Edit, `ProposalBlock`, `useProposedGoal` (its milestone-saving part moves into `applyGoalOp`), `declineProposedGoal` | Deleted |
 | `withRestatedGoalAsMilestones` | Kept |
 | `declinedGoals`, `<declined>` | Renamed `removedGoals`, `<removed>` |

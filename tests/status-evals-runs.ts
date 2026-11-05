@@ -203,4 +203,19 @@ export const GOOD_RUNS: Record<string, string[]> = {
   'idle-work': [
     'DONE: s1 | iPad crash fixed\nSET: s4 | waits-on-other | fast on big libraries, waits on review\nNEW: working | Retry button | broken on web again\nNEW: working | PR 3655 | waits on review',
   ],
+  'stale-goal': [
+    [
+      'HEAD: Onboarding tour | Redoing the first-launch tour for beta testers',
+      'NEW: working | Onboarding tour | welcome screen in, two screens and skip left',
+      'SERVES: Onboarding tour | -',
+    ].join('\n'),
+    'DONE: s2 | merged\nSET: s4 | working | three screens in, skip button left',
+    [
+      'NEW: queued | Share sheet hang | not started',
+      'SERVES: Share sheet hang | -',
+      'SET: s4 | working | runs end to end, small phone check left',
+    ].join('\n'),
+    'DONE: s4 | fits a small phone\nRETIRE: the work moved to the tour and the share sheet',
+    'HEAD: Share sheet hang | Fixing the share sheet hang on iPad\nSET: s5 | working | waits on a thumbnail on iPad',
+  ],
 }

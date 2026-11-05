@@ -22,6 +22,19 @@ export const GOAL_RULES: Rule[] = [
     },
   },
   {
+    id: 'goal-left',
+    reads: 'facts',
+    opportunity: ctx => hasCall(ctx) && ctx.result.facts.goal?.isLeft === true,
+    property: 14,
+    text: 'A goal the facts say the work has left is retired or met, not still open.',
+    failures: ({ result }) => {
+      const left = result.facts.goal
+      const g = result.session.ledger.overview?.goal
+      if (!left?.isLeft || !g || g.metAt !== null || !new RegExp(left.match, 'i').test(g.text)) return []
+      return [`"${g.text}" is still open`]
+    },
+  },
+  {
     id: 'goal-only-when-clear',
     reads: 'facts',
     opportunity: ctx => hasCall(ctx) && !ctx.result.facts.goalClear,

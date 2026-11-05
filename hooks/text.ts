@@ -99,12 +99,16 @@ function graphemeCells(grapheme: string): number {
   return EMOJI.test(grapheme) || WIDE.test(grapheme) ? 2 : 1
 }
 
-export function ago(ms: number): string {
-  const min = Math.round(ms / 60000)
-  if (min < 1) return 'just now'
-  if (min < 60) return `${min}m ago`
+/** A length of time in its largest unit, as "55m", "3h" or "2d". Under a minute, "1m". */
+export function duration(ms: number): string {
+  const min = Math.max(1, Math.round(ms / 60000))
+  if (min < 60) return `${min}m`
   const h = Math.round(min / 60)
-  if (h < 48) return `${h}h ago`
+  if (h < 48) return `${h}h`
 
-  return `${Math.round(h / 24)}d ago`
+  return `${Math.round(h / 24)}d`
+}
+
+export function ago(ms: number): string {
+  return Math.round(ms / 60000) < 1 ? 'just now' : `${duration(ms)} ago`
 }

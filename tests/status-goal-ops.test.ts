@@ -344,8 +344,13 @@ test("the call reads the goal, its milestones, each subject's link and the remov
   const prompt = statusPrompt({ last: linked, asks: [], tasks: [], now: 30 }, exchange)
   const noGoal = statusPrompt({ last: after(null, WORK, 10), asks: [], tasks: [], now: 30 }, exchange)
   const typedPrompt = statusPrompt({ last: typed, asks: [], tasks: [], now: 30 }, exchange)
+  const idle = after(linked, 'DONE: s1 | shipped\nDROP: s2 | not needed', 40)
+  const leftPrompt = statusPrompt({ last: idle, asks: [], tasks: [], now: 40 + GOAL_LEFT_MS }, exchange)
+  const keptPrompt = statusPrompt({ last: idle, asks: [], tasks: [], now: 40 + GOAL_LEFT_MS - 1 }, exchange)
 
   expect(prompt).toMatch(/<goal>\nImport ready to demo\n<\/goal>/)
+  expect(leftPrompt).toMatch(/<goal>\nImport ready to demo \(no work for 30m\)\n<\/goal>/)
+  expect(keptPrompt).toMatch(/<goal>\nImport ready to demo\n<\/goal>/)
   expect(prompt).toMatch(/m1 \| done \| Import works \| -\n/)
   expect(prompt).toMatch(/m2 \| working \| Error messages \| - \| no work linked\n/)
   expect(typedPrompt).toMatch(/<goal>\nShip 2.6 with import \(typed\)\n<\/goal>/)

@@ -106,7 +106,7 @@ function statusBlocks({ last, asks, tasks, now }: StatusCallInput): string[] {
   const list = tasksText(tasks)
 
   return [
-    ...goalBlocks(last),
+    ...goalBlocks(last, now),
     `<head>${NL}${headText(last)}${NL}</head>`,
     `<subjects>${NL}${open}${NL}</subjects>`,
     ...(finished === '' ? [] : [`<finished>${NL}${finished}${NL}</finished>`]),

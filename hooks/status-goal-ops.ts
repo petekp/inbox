@@ -191,17 +191,25 @@ function lastProgressAt(o: SessionStatus, g: StatusGoal): number {
 }
 
 /**
- * Whether a GOAL or RETIRE line may replace or clear the goal: a GOAL while none is set or once the goal is met, and
- * either for an inferred goal the work has left. The work has left it when none of its linked work is open and it has
- * not moved forward for `GOAL_LEFT_MS`, so a goal between milestones, or one just set, stays. A typed goal is the
- * person's until it is met.
+ * How long the work has left the goal, in ms, or null while it has not. The work has left an inferred goal that is not
+ * met when none of its linked work is open and it has not moved forward for `GOAL_LEFT_MS`, so a goal between
+ * milestones, or one just set, stays. A typed goal is the person's until it is met. The Status call reads this time,
+ * and a GOAL or RETIRE line may replace or clear the goal while it is set.
  */
+export function goalLeftFor(o: SessionStatus, now: number): number | null {
+  const g = o.goal
+  if (g === null || g.metAt !== null || g.source !== 'inferred' || linkedSubjects(o).some(isOpen)) return null
+  const left = now - lastProgressAt(o, g)
+
+  return left >= GOAL_LEFT_MS ? left : null
+}
+
+/** Whether a GOAL or RETIRE line may replace or clear the goal: a GOAL while none is set or once the goal is met, and either once the work has left it. */
 function mayReplaceGoal(o: SessionStatus, kind: 'goal' | 'retire', now: number): boolean {
   const g = o.goal
   if (g === null || g.metAt !== null) return kind === 'goal'
-  const isWorkLeft = !linkedSubjects(o).some(isOpen) && now - lastProgressAt(o, g) >= GOAL_LEFT_MS
 
-  return g.source === 'inferred' && isWorkLeft
+  return goalLeftFor(o, now) !== null
 }
 
 /** The goal a GOAL line sets, with its milestones as it wrote them and no subject linked yet. */

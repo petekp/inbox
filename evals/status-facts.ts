@@ -36,8 +36,11 @@ type MilestoneFact = {
   alsoRight?: SubjectStatus[]
 }
 
-/** The goal the person set or accepted, and its milestones. */
-type GoalFact = { text: string; match: string; milestones: MilestoneFact[] }
+/**
+ * The goal as the session holds it, and its milestones. `isLeft` says the work has left it: the page shows it met or
+ * shows no goal, and its milestones' states no longer matter.
+ */
+type GoalFact = { text: string; match: string; milestones: MilestoneFact[]; isLeft?: true }
 
 /** An outcome with a finish line that a step makes clear, from the person's words or the work, which a goal set there should match. */
 type GoalClear = { text: string; match: string }
@@ -196,7 +199,7 @@ export function factsText(f: Facts): string {
 
   const goal = f.goal
     ? [
-        `Goal: ${f.goal.text}`,
+        `Goal: ${f.goal.text}${f.goal.isLeft ? ' (the work has left it: the page shows it met, or shows no goal)' : ''}`,
         'Milestones:',
         list(
           f.goal.milestones.map(
