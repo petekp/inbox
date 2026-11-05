@@ -326,7 +326,7 @@ describe('prs', () => {
     })
     expect(readiness({ ...onOthers, checks: [], threads: [] }, sent)).toMatchObject({
       status: 'ready',
-      text: 'Ready to merge: approved, no checks reported, no threads waiting on you',
+      text: 'Ready to merge: approved, no checks ran, no threads waiting on you',
     })
     const passed = onOthers.checks.map(c => ({ ...c, bucket: 'pass' as const }))
     expect(readiness({ ...onOthers, checks: passed, threads: [] }, sent).text).toBe(

@@ -321,7 +321,7 @@ export function readiness(
     'Ready to merge',
     [
       ...(isApproved ? ['approved'] : []),
-      passing > 0 ? 'checks pass' : 'no checks reported',
+      passing > 0 ? 'checks pass' : 'no checks ran',
       'no threads waiting on you',
     ],
     isApproved ? ': ' : ', ',
