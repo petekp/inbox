@@ -277,5 +277,42 @@
         "dropped": 0
       }
     ]
+  },
+  {
+    "name": "dismissed-finding-not-asked-again",
+    "about": "A reply that asks about a finding the person dismissed adds no question.",
+    "ledger": {
+      "turn": 7,
+      "nextId": 8,
+      "card": {
+        "goal": "Ship the greeting CLI v1",
+        "done": ["Arg parser fixed"],
+        "now": "Writing the release notes",
+        "running": []
+      },
+      "items": [],
+      "findings": [],
+      "closed": [],
+      "closedFindings": [
+        {
+          "id": "f5",
+          "kind": "opportunity",
+          "title": "Arg parser has no tests for quoted values",
+          "detail": "A regression in quoting would go unnoticed.",
+          "path": "src/args.ts",
+          "at": 1,
+          "how": "dismissed",
+          "outcome": "dismissed",
+          "closedAt": 5
+        }
+      ]
+    },
+    "exchange": {
+      "person": "write the release notes for v1",
+      "turn": 7,
+      "activity": ["edited CHANGELOG.md"],
+      "reply": "The release notes for v1 are in CHANGELOG.md. One more thing: the arg parser still has no tests for quoted values. Do you want me to add them before the release?"
+    },
+    "checks": [{ "notNew": "test|quot|pars" }, { "dropped": 0 }]
   }
 ]

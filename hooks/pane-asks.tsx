@@ -46,6 +46,17 @@ export function paneAskRows(
     const asked = r.at === null ? undefined : `${DOT}${ago(now - r.at)}`
     const isHandedOff = r.state.is === 'handedOff'
     const holdsUpLine = holdsUpLineOf(r)
+    const holdsUp = holdsUpLine ? (
+      <Text color={pal.muted} wrap="wrap">
+        <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
+        {holdsUpLine}
+      </Text>
+    ) : null
+    const recLine = r.recLine ? (
+      <Text color={pal.muted} wrap="wrap">
+        {r.recLine}
+      </Text>
+    ) : null
 
     return {
       id: r.id,
@@ -55,16 +66,18 @@ export function paneAskRows(
       title: rowTitle(r, look),
       titleAfter: asked,
       ...(r.at === null ? {} : { at: r.at }),
-      ...(holdsUpLine
+      ...(holdsUp && recLine
         ? {
             subtitle: (
-              <Text color={pal.muted} wrap="wrap">
-                <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
-                {holdsUpLine}
-              </Text>
+              <Box flexDirection="column">
+                {holdsUp}
+                {recLine}
+              </Box>
             ),
           }
-        : {}),
+        : holdsUp || recLine
+          ? { subtitle: holdsUp ?? recLine! }
+          : {}),
       hasSecondLine: r.replyKind === 'answer',
       body: null,
       keys: () => rowKeyActions(r, optionsShown.includes(r.id)).keys,

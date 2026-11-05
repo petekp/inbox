@@ -269,6 +269,11 @@ export function paneRowLines({
             </Text>
           </Box>
         ) : null}
+        {row.view?.recLine ? (
+          <Box paddingLeft={line.before?.length ?? 0}>
+            <Text color={pal.muted}>{clipLabel(row.view.recLine, Math.max(12, width))}</Text>
+          </Box>
+        ) : null}
       </Box>
     )
   }
@@ -318,6 +323,7 @@ export function paneRowLines({
       after: f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim(),
       note: holdsUpLineOf(row.view) ?? '',
       noteMark: holdsUpLineOf(row.view) ? { text: HELD_MARK.mark, color: pal.mark[HELD_MARK.tone] } : null,
+      recNote: row.view?.recLine ?? '',
       side: sideAge(row),
       padY: DESKTOP_ROW_PAD,
       charsPerCell: DESKTOP_CLIP_CHARS_PER_CELL,

@@ -36,7 +36,7 @@ test('the same prompt text typed again after a turn counts as a new turn', async
 test('a record call shows in the next prompt as a hidden message', async () => {
   createInbox(pi(), deps())
   await prompt('Add a greeting CLI')
-  const answer = await record({ kind: 'task', ask: 'Try the CLI by hand' })
+  const answer = await record({ kind: 'task', ask: 'Try the CLI by hand', steps: ['node greet.mjs'] })
   expect(answer.content[0].text).toBe('Recorded. The user sees it in the /inbox panel.')
   expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Try the CLI by hand'])
 
@@ -60,7 +60,7 @@ test('record, close and order_prs are registered with the shared schemas and sta
 
 test('a close call closes the recorded item', async () => {
   createInbox(pi(), deps())
-  await record({ kind: 'task', ask: 'Try the CLI by hand' })
+  await record({ kind: 'task', ask: 'Try the CLI by hand', steps: ['node greet.mjs'] })
   const id = state().ledger.items[0].id
   const answer = await w.tools
     .get('close')
@@ -78,13 +78,13 @@ test("record and close draw the person's line under the call while the agent rea
   const close = (args: Record<string, unknown>) =>
     w.tools.get('close').execute('call', args, undefined, undefined, makeCtx())
 
-  const recorded = await record({ kind: 'task', ask: 'Try the CLI by hand' })
+  const recorded = await record({ kind: 'task', ask: 'Try the CLI by hand', steps: ['node greet.mjs'] })
   expect(recorded.content[0].text).toBe('Recorded. The user sees it in the /inbox panel.')
   expect(drawn('record', recorded)).toEqual(['Task: Try the CLI by hand'])
   expect(w.tools.get('record').describeResult(recorded).body).toEqual([
     { k: 'text', p: { text: 'Task: Try the CLI by hand' } },
   ])
-  const again = await record({ kind: 'task', ask: 'Try the CLI by hand' })
+  const again = await record({ kind: 'task', ask: 'Try the CLI by hand', steps: ['node greet.mjs'] })
   expect(drawn('record', again)).toEqual([])
   expect(w.tools.get('record').describeResult(again).body).toBeUndefined()
 

@@ -40,6 +40,8 @@ export type Row = {
   meta?: string
   /** The open subjects an ask holds up, as "Holds up Offline sync, Hotfix release". */
   holdsUp?: string
+  /** Why the agent recommends an answer, as "Why Redis: it survives restarts". */
+  recLine?: string
   age?: string
   body?: JSX.Element | null
   keys: Key[]

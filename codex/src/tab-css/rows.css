@@ -131,7 +131,8 @@
 .row.collapsed:not(:hover) .line .meta {
   color: var(--age);
 }
-.line .holds-up {
+.line .holds-up,
+.line .rec-line {
   display: block;
   color: var(--muted);
   font-weight: 400;
@@ -142,6 +143,9 @@
 .row.selected .line .meta,
 .row.closing .line .meta {
   display: none;
+}
+.row.selected .line .rec-line {
+  white-space: normal;
 }
 .row.closing .closed-only,
 .row.collapsed:not(.closing) .open-only {

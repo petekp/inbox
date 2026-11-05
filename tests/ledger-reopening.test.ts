@@ -2,8 +2,8 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { CLAUDE_CODE } from '../hooks/model-text'
 import { EMPTY } from '../hooks/ledger'
-import { closeByAgent, closeFinding, closeItem, reopenFinding, reopenItem } from '../hooks/ledger-close'
-import { addFinding, applyUpdate } from '../hooks/ledger-update'
+import { closeByAgent, closeFinding, closeItem, pruneClosed, reopenFinding, reopenItem } from '../hooks/ledger-close'
+import { addAgentItem, addFinding, applyUpdate } from '../hooks/ledger-update'
 import { parseReply } from '../hooks/reply-parse'
 import { recordClose } from '../hooks/tools'
 import type { Item } from '../types'
@@ -89,6 +89,57 @@ describe('reopening', () => {
       'f1',
       'f2',
     ])
+    for (const outcome of ['Dismiss button now closes the dialog', 'moved the null check later in init'])
+      expect(applyUpdate(open, parseReply(`FIXED: f2 | ${outcome}`)!, 6, 1).findings.map(f => f.id)).toEqual(['f1'])
+    for (const outcome of ['dismissed by the user', 'user declined', 'later', 'not now', 'deferred to next sprint'])
+      expect(applyUpdate(open, parseReply(`FIXED: f2 | ${outcome}`)!, 6, 1).findings.map(f => f.id)).toEqual([
+        'f1',
+        'f2',
+      ])
+  })
+
+  test('a question or finding that raises a finding the person dismissed is not added', () => {
+    const finding = {
+      kind: 'opportunity' as const,
+      title: 'Missing tests for the parser',
+      detail: 'A regression would go unnoticed.',
+      path: null,
+      at: 1,
+    }
+    const dismissed = {
+      ...closeFinding(addFinding({ ...EMPTY, turn: 2 }, finding).ledger, 'f1', { how: 'dismissed', outcome: '' }, 2),
+      turn: 3,
+    }
+    const question = {
+      kind: 'question' as const,
+      ask: 'Add tests for the parser?',
+      options: ['Yes', 'No'],
+      rec: null,
+      helps: [],
+    }
+    expect(addAgentItem(dismissed, question, 3)).toMatchObject({ is: 'closed', record: { how: 'dismissed' } })
+    expect(
+      applyUpdate(dismissed, parseReply('NEW: decide | - | Add tests for the parser? | Yes / No | -')!, 4, 3, 3).items,
+    ).toEqual([])
+    expect(addAgentItem(dismissed, { ...question, ask: 'Add a CLI flag for verbose logs?' }, 3).is).toBe('added')
+    const wider = 'Add the missing tests for the parser and the release script before v2?'
+    expect(addAgentItem(dismissed, { ...question, ask: wider }, 3).is).toBe('added')
+    expect(addFinding(dismissed, { ...finding, title: 'The parser is missing tests' }).isAdded).toBe(false)
+  })
+
+  test('the closed lists keep what the person dismissed past the newest 12', () => {
+    const finding = { kind: 'issue' as const, title: 'Old dismissed thing', detail: 'd', path: null, at: 1 }
+    let ledger = closeFinding(addFinding(EMPTY, finding).ledger, 'f1', { how: 'dismissed', outcome: '' }, 1)
+    for (let n = 0; n < 15; n += 1)
+      ledger = closeFinding(
+        addFinding(ledger, { ...finding, title: `Other ${n}` }).ledger,
+        `f${n + 2}`,
+        { how: 'update', outcome: 'fixed' },
+        2,
+      )
+    const pruned = pruneClosed(ledger, new Set())
+    expect(pruned.closedFindings.length).toBe(13)
+    expect(pruned.closedFindings[0]!.id).toBe('f1')
   })
 
   test('a finding added to a full list closes the oldest as expired, so it stays in Closed', () => {
