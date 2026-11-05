@@ -1295,11 +1295,7 @@ function readiness(pr, isSent = () => false) {
   return result(
     "ready",
     "Ready to merge",
-    [
-      ...isApproved ? ["approved"] : [],
-      passing > 0 ? "checks pass" : "no checks ran",
-      "no threads waiting on you"
-    ],
+    [...isApproved ? ["approved"] : [], passing > 0 ? "checks pass" : "no checks ran", "no threads waiting on you"],
     isApproved ? ": " : ", "
   );
 }

@@ -1144,11 +1144,7 @@ function readiness(pr, isSent = () => false) {
   if (onOthers.length > 0)
     return result("waiting", "Waiting", onOthers);
   const isApproved = pr.reviewDecision === "APPROVED";
-  return result("ready", "Ready to merge", [
-    ...isApproved ? ["approved"] : [],
-    passing > 0 ? "checks pass" : "no checks ran",
-    "no threads waiting on you"
-  ], isApproved ? ": " : ", ");
+  return result("ready", "Ready to merge", [...isApproved ? ["approved"] : [], passing > 0 ? "checks pass" : "no checks ran", "no threads waiting on you"], isApproved ? ": " : ", ");
 }
 var STATUS_ORDER = { blocked: 0, ready: 1, draft: 2, waiting: 3, merged: 4, closed: 5 };
 function rankOf(pr, ranked) {
