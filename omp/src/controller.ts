@@ -5,7 +5,7 @@ import { isPressConfirmed } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
 import { showsRunningMark } from '../../hooks/session-view'
 import { READING_TEXT } from '../../hooks/banners'
-import { compareEndsAt, RUNNING_FRAME_MS } from '../../hooks/timing'
+import { compareEndsAt, RUNNING_FRAME_MS, withListInput } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import { INITIAL_UI, drawPanel, holdsOf, isAnimating, noticeFor, tallestTabHeight } from './panel'
@@ -175,8 +175,9 @@ export function createPanel(deps: PanelDeps): Panel {
     },
     handleInput(key, text) {
       if (screen === null) return
-      const result = handleKey(screen, ui, key, deps.now(), text)
-      ui = result.ui
+      const now = deps.now()
+      const result = handleKey(screen, ui, key, now, text)
+      ui = { ...result.ui, listInput: withListInput(ui.listInput, now) }
       source.shown(ui.tab, holdsOf(ui))
       if (result.close) deps.close()
       if (result.press) void press(result.press)

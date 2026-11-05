@@ -41,6 +41,8 @@ export type RowState =
       offersUndo: boolean
       delivery: ClosedDelivery
       closedAs: ClosedState
+      /** The words of a reply sent after the close, which the label reads with. */
+      reply?: string
     }
 
 export type SettledState = Extract<RowState, { is: 'settled' }>
@@ -289,8 +291,45 @@ export function shortAgo(ms: number): string {
   return age === 'just now' ? 'now' : age.replace(/ ago$/, '')
 }
 
-export function deliveryLabel(state: 'queued' | 'unconfirmed', label: string): string {
-  return state === 'queued' ? `Queued: ${label}` : `Not confirmed: ${label}`
+/** A sent message's step on its way to the agent, as its row reads it. `arrived` covers a message with no delivery record. */
+type SendStep = 'sending' | 'queued' | 'unconfirmed' | 'arrived'
+
+function sendStepOf(delivery: ClosedDelivery): SendStep {
+  return delivery === 'queued' || delivery === 'unconfirmed' ? delivery : delivery === 'sending' ? 'sending' : 'arrived'
+}
+
+/** A reply's words on one line: its line breaks and runs of spaces become one space. */
+function replyLine(words: string): string {
+  return words.replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * What a press reads at each step of its message's way. `label` is what it reads at rest: the answer chosen, or its
+ * done label, as "Replied". A reply reads with the words the person typed in every step, and names itself, since
+ * free words have no button on the row to recognize them by. An answer's option is one of the row's own buttons.
+ */
+export function deliveryLabel(step: SendStep, label: string, reply?: string): string {
+  if (reply !== undefined) {
+    const words = replyLine(reply)
+    switch (step) {
+      case 'sending':
+        return `Sending reply: ${words}`
+      case 'queued':
+        return `Queued reply: ${words}`
+      case 'unconfirmed':
+        return `Reply not confirmed: ${words}`
+      case 'arrived':
+        return `Replied: ${words}`
+    }
+  }
+  switch (step) {
+    case 'queued':
+      return `Queued: ${label}`
+    case 'unconfirmed':
+      return `Not confirmed: ${label}`
+    default:
+      return label
+  }
 }
 
 /** A settled row's mark: the one its line in the Closed list draws, so a row keeps its mark when it folds. */
@@ -318,9 +357,10 @@ export function settledTone(state: Pick<SettledState, 'delivery' | 'closedAs'>):
   return state.delivery === null && state.closedAs === 'handled' ? 'done' : 'muted'
 }
 
-export function settledLabel(label: string, delivery: ClosedDelivery): string {
+/** A settled row's label with its message's step, as "Queued: Yes", or a reply's words as "Replied: Call it hello". */
+export function settledLabel(label: string, delivery: ClosedDelivery, reply?: string): string {
   if (delivery && typeof delivery === 'object') return `${label} · Not sent: ${delivery.error}`
-  return delivery === null || delivery === 'held' || delivery === 'sending' ? label : deliveryLabel(delivery, label)
+  return deliveryLabel(sendStepOf(delivery), label, reply)
 }
 
 /** A closed record's outcome as a look shows it. A finding a question replaced says where it went. */

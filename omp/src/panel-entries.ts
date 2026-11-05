@@ -143,7 +143,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
           title: pr.title,
           isDim: true,
           settled: {
-            label: settledLabel(state.label, state.delivery),
+            label: settledLabel(state.label, state.delivery, state.reply),
             tone: settledTone(state),
             undo: state.canUndo ? { action: 'pr-undo', ref: pr.ref } : null,
             at: state.at,

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 
 import { agentTools } from '../../hooks/tools'
 import { isShownTab } from '../../hooks/tabs'
-import type { Holds } from '../../hooks/timing'
+import type { Holds, ListInput } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import { CODEX, INBOX_DESCRIPTION, VIEW_DESCRIPTION } from './texts'
 
@@ -94,7 +94,21 @@ export function shownRowsOf(args: Record<string, unknown>): Record<string, numbe
 export function holdsOf(args: Record<string, unknown>): Holds {
   const shownSince = typeof args.shownSince === 'number' && Number.isFinite(args.shownSince) ? args.shownSince : null
 
-  return { replies: times(args.replies), discarded: times(args.discarded), shownSince }
+  return {
+    replies: times(args.replies),
+    discarded: times(args.discarded),
+    shownSince,
+    listInput: listInputOf(args.listInput),
+    undoShown: Array.isArray(args.undoShown) ? args.undoShown.filter(x => typeof x === 'string') : [],
+  }
+}
+
+function listInputOf(raw: unknown): ListInput | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const { since, last } = raw as Record<string, unknown>
+  const isTime = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x)
+
+  return isTime(since) && isTime(last) ? { since, last } : null
 }
 
 /** The tab the page says it shows, or null for anything that is not a tab. */

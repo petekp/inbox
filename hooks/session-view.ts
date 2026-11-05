@@ -6,6 +6,8 @@ import { prOrderView } from './pr-order'
 import type { DrawnPr } from './pr-views'
 import type { PrOrderView } from './pr-order'
 import { prNeedsYou } from './prs'
+import { isPrRowId } from './presses'
+import { feedbackOf, isPressUnderWay } from './feedback'
 import { MARK_LEGEND } from './help'
 import { hasRunningMark, NO_HOLDS } from './timing'
 import { inboxView, perTurnStatus } from './view'
@@ -31,6 +33,8 @@ type PrTab = {
   order: PrOrderView | null
   /** Whether gh asked for a sign-in at the last fetch it answered. */
   isGhSignedOut: boolean
+  /** Whether a press is under way on a PR row, which keeps every settled PR block in place. */
+  isPressOut: boolean
 }
 
 export type SessionView = InboxView & {
@@ -95,7 +99,7 @@ export function sessionView(
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now, holds.shownSince, settleWindowMs),
+    prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
     statusPage: statusPage(s, now),
   }
 }
@@ -121,12 +125,20 @@ function prTabOf(
   s: Session,
   lastActions: Record<string, LastAction>,
   now: number,
-  shownSince: number | null,
+  { shownSince, listInput, undoShown }: Holds,
   settleWindowMs: number,
 ): PrTab {
-  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, now, settleWindowMs, {
+  const isPressOut = Object.entries(lastActions).some(
+    ([id, last]) => isPrRowId(id) && isPressUnderWay(feedbackOf(id, last, undefined, s.presence, now)),
+  )
+  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
     shownSince,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
+    listInput,
+    now,
+    settleWindowMs,
+    undoShown,
+    isPressOut,
   })
   const isSent = threadSentIn(lastActions)
 
@@ -142,5 +154,6 @@ function prTabOf(
       shownSince,
     ),
     isGhSignedOut: s.prViews.isGhSignedOut === true,
+    isPressOut,
   }
 }

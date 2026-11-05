@@ -132,9 +132,13 @@ test('Esc closes the panel', async () => {
   expect(calls.closes).toBe(1)
 })
 
-test('the redraw timer runs only while something on the screen moves, as a settled row’s Undo', async () => {
+test('the redraw timer runs only while something on the screen moves, as a settled row before it folds', async () => {
   const { panel, timers, advance, source } = open()
   await panel.start()
+  expect(live(timers, 200)).toHaveLength(1)
+  advance(SETTLED_MS + 1000)
+  live(timers, 200)[0]!.fn()
+  await flush()
   expect(live(timers, 200)).toHaveLength(0)
   await source.press({ action: 'done', id: 'd14' }, NO_HOLDS)
   await flush()

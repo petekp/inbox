@@ -60,7 +60,7 @@ The inbox catches problems and opportunities: a bug, a risk, missing tests, a be
 
 ### 5. Handled things settle, and stay reachable
 
-When something is handled, it collapses. It keeps a short record of what was chosen and when, with Undo where that makes sense. A review thread that was addressed folds away. Nothing is left hanging after the person acts, and nothing they might need is lost: what folds away can be opened again. A dismissed row can be reopened for the rest of the session, and recent closed rows stay in view.
+When something is handled, it collapses. It keeps a short record of what was chosen and when, with Undo where that makes sense. A review thread that was addressed folds away. Nothing is left hanging after the person acts, and nothing they might need is lost: what folds away can be opened again. A dismissed row can be reopened for the rest of the session, and recent closed rows stay in view a moment, then fold where they can be opened again.
 
 ### 6. Every press answers at once, and honestly
 

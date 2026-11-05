@@ -113,7 +113,7 @@ test('an open subject unchanged for a day reads how long it has been idle, in wh
   )
   const child = {
     ref: 't1',
-    kind: 'background' as const,
+    kind: 'subagent' as const,
     name: 'reindex',
     startedAt: 0,
     endedAt: null,

@@ -108,21 +108,15 @@ export function endedAgentOf(result: unknown): string | undefined {
   return agent && 'agentId' in agent && !isRunningOn ? agent.agentId : undefined
 }
 
-/** The child a finished Monitor or Workflow call started: its background task, or its workflow run. */
-export function startedTaskOf(
-  tool: 'Monitor' | 'Workflow',
+/** The workflow run a finished Workflow call started. */
+export function startedWorkflowOf(
   result: unknown,
   description: string | undefined,
 ): Pick<Child, 'ref' | 'kind' | 'name'> | null {
-  const workflow = tool === 'Workflow' ? toolRecord('Workflow', result) : undefined
-  const taskId = workflow?.taskId ?? (tool === 'Monitor' ? toolRecord('Monitor', result)?.taskId : undefined)
-  if (!taskId) return null
+  const workflow = toolRecord('Workflow', result)
+  if (!workflow?.taskId) return null
 
-  return {
-    ref: taskId,
-    kind: workflow ? 'workflow' : 'background',
-    name: workflow?.workflowName ?? description ?? tool,
-  }
+  return { ref: workflow.taskId, kind: 'workflow', name: workflow.workflowName ?? description ?? 'Workflow' }
 }
 
 /** The child an agent's work belongs to: the subagent itself, or the workflow or subagent that spawned it. */

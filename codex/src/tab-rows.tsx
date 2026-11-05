@@ -34,6 +34,8 @@ import type { PressReply } from './server'
 import { PRESS_TIMEOUT_MS } from '../../hooks/session-view'
 import { tabState, selection, drafts, optionsShown, sending, errors, notes, copies, undoing } from './tab-state'
 import type { Key, Row, Lists } from './tab-state'
+import { isTabInPlace } from './settle'
+import { listInput } from './list-input'
 import { later, callTool } from './tab-host'
 import { revealSelected, drawIn } from './tab-motion'
 import { drawnTab, tabWaits, shownSettled, open, keepPressedOpen } from './tab-selection'
@@ -316,8 +318,19 @@ export type PrBlockPlan = DrawnPr & ReturnType<typeof prBlockRows<Row>>
 
 export function prPlan(v: View): { blocks: PrBlockPlan[]; rows: Row[] } {
   const blocks: PrBlockPlan[] = []
+  const now = Date.now()
+  const placing = {
+    shownSince: tabState.shownSince,
+    seen: tabState.seen,
+    input: listInput(now),
+    now,
+    isPressOut: v.prs.isPressOut || sending.size > 0,
+  }
   for (const d of v.prs.drawn) {
-    if (!isDrawnInPlace(d, tabState.shownSince) && !undoing.has(prMarkId(d.pr.ref))) continue
+    const id = prMarkId(d.pr.ref)
+    const isShown =
+      d.state.is === 'settled' ? isTabInPlace(id, d.state, placing) : isDrawnInPlace(d, tabState.shownSince)
+    if (!isShown && !undoing.has(id)) continue
     blocks.push({
       ...d,
       ...prBlockRows(d.pr, d.state.is === 'settled', {

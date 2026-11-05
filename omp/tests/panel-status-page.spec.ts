@@ -86,7 +86,7 @@ test('on the Status page, a row’s stall word follows its name on the line of i
   const wide = text(screenOf(), onPage, 80).split('\n')
   expect(wide.some(l => l.includes('Tune how hard a pinch must be · waiting'))).toBe(true)
   expect(wide.some(l => l.includes('Time the fade-out · finished'))).toBe(true)
-  expect(wide.some(l => l.includes('Watch the pairing log') && !l.includes(' · '))).toBe(true)
+  expect(wide.some(l => l.includes('Search the pairing errors') && !l.includes(' · '))).toBe(true)
   expect(wide.some(l => l.includes('Glasses trial') && !l.includes(' · '))).toBe(true)
 
   for (const width of [26, 28, 30, 34, 40, 50]) {

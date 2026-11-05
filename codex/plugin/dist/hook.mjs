@@ -328,7 +328,7 @@ function goalFields(o, subjectIds) {
 }
 
 // ../hooks/status-upgrade.ts
-var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
+var CHILD_KINDS = ["subagent", "workflow", "delegate"];
 var DELEGATE_STATES = ["working", "blocked", "finished"];
 function text(value) {
   return typeof value === "string" ? value : "";
@@ -1474,13 +1474,26 @@ function pendingDeliveryAt(last, now) {
   if (last?.delivery?.state !== "queued") return null;
   return isQueuedAt(last, now) ? "queued" : "sending";
 }
-var NO_HOLDS = { replies: {}, discarded: {}, shownSince: null };
+var FOLD_QUIET_MS = 1e3;
+function isListInUseSince(input, at, now) {
+  return input !== null && now - input.last < FOLD_QUIET_MS && input.since <= at;
+}
+var NO_HOLDS = { replies: {}, discarded: {}, shownSince: null, listInput: null };
 function isShownSince(at, shownSince) {
   return shownSince !== null && at >= shownSince;
 }
-function isSettledInPlace(state, { shownSince, lastTypedMessageAt }) {
+function foldDueAt(state, lastTypedMessageAt, settleWindowMs) {
   const isTypedSince = lastTypedMessageAt !== null && lastTypedMessageAt > state.at;
-  return isShownSince(state.at, shownSince) && (state.canUndo || !isTypedSince);
+  return isTypedSince && !state.canUndo ? lastTypedMessageAt : state.at + settleWindowMs;
+}
+function isSendOnItsWay(delivery) {
+  return delivery === "sending" || delivery === "queued";
+}
+function isSettledInPlace(state, { shownSince, lastTypedMessageAt, listInput, now, settleWindowMs, undoShown, isPressOut: isPressOut2 }, id) {
+  const dueAt = foldDueAt(state, lastTypedMessageAt, settleWindowMs);
+  const isUndoShown = id !== void 0 && (undoShown ?? []).includes(id);
+  const isWaiting = now < dueAt || isUndoShown || isSendOnItsWay(state.delivery) || isPressOut2 || isListInUseSince(listInput, dueAt, now);
+  return isShownSince(state.at, shownSince) && isWaiting;
 }
 function isUndoLeft(at, now, settleWindowMs) {
   return now - at < settleWindowMs;
@@ -1536,6 +1549,32 @@ function isWaitingRow(row) {
 var RUNNING_RESULT = { text: RUNNING_MARK, isRunning: true };
 function isSendMoving(delivery) {
   return delivery === "sending" || delivery === "queued";
+}
+function replyLine(words3) {
+  return words3.replace(/\s+/g, " ").trim();
+}
+function deliveryLabel(step, label, reply) {
+  if (reply !== void 0) {
+    const words3 = replyLine(reply);
+    switch (step) {
+      case "sending":
+        return `Sending reply: ${words3}`;
+      case "queued":
+        return `Queued reply: ${words3}`;
+      case "unconfirmed":
+        return `Reply not confirmed: ${words3}`;
+      case "arrived":
+        return `Replied: ${words3}`;
+    }
+  }
+  switch (step) {
+    case "queued":
+      return `Queued: ${label}`;
+    case "unconfirmed":
+      return `Not confirmed: ${label}`;
+    default:
+      return label;
+  }
 }
 function closedMark(state, delivery) {
   if (isSendMoving(delivery)) return RUNNING_RESULT;
@@ -1949,14 +1988,15 @@ function settledPrState(mark, now, settleWindowMs) {
   const state = closedRowState(closed, mark.at, now, settleWindowMs, null);
   return { ...state, canUndo: isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true };
 }
-function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
+function drawnPrs(prState, links, lastActions, placing) {
+  const { now, settleWindowMs } = placing;
   const ranked = links.prOrder?.refs ?? [];
   const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr) => {
     if (isTracked(prState, links, pr.ref)) return [{ pr, state: { is: "open" } }];
     const mark = dismissal(lastActions, pr.ref);
     if (mark === null) return [];
     const state = settledPrState(mark, now, settleWindowMs);
-    return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
+    return isSettledInPlace(state, placing, prMarkId(pr.ref)) ? [{ pr, state }] : [];
   });
   let rank = 0;
   return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
@@ -1968,6 +2008,9 @@ function isPrRowId(id) {
 }
 
 // ../hooks/feedback.ts
+function isPressUnderWay(f) {
+  return f?.is === "working" || f?.is === "sending" || f?.is === "local" && f.result.state === "pending";
+}
 function feedbackOf(id, last, note, turns, now, reportedAt) {
   const result = last?.result;
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
@@ -1976,7 +2019,8 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   if (!last || last.kind === "local") return null;
   const delivery = last.delivery;
   const pending = pendingDeliveryAt(last, now);
-  if (pending === "queued" || pending === "unconfirmed") return { is: pending, label: last.text, at: last.at };
+  if (pending === "queued" || pending === "unconfirmed")
+    return { is: pending, label: deliveryLabel(pending, last.text, last.reply), at: last.at };
   if (delivery?.state === "failed") return { is: "notSent", reason: delivery.reason, retry: retryOf(id, last) };
   const isAwaiting = isAwaitingReply(last, turns);
   const isUnreported = last.action === "compare" && !(reportedAt !== void 0 && reportedAt >= last.at);
@@ -1984,13 +2028,14 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const working = WORKING_LABELS[last.action];
   if (last.kind === "talk" && working && (isAwaiting || isUnreported && !isPastLimit))
     return { is: "working", label: working, at: last.at };
-  if (pending === "sending") return { is: "sending", label: last.text, at: last.at };
+  if (pending === "sending")
+    return { is: "sending", label: deliveryLabel("sending", last.text, last.reply), at: last.at };
   if (isUnreported) return { is: "noComparison", at: last.at };
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last)) return { is: "stillOpen", at: last.at };
   const isHandedStep = last.kind === "handoff" && last.action.startsWith("step-");
   return {
     is: "done",
-    label: DONE_LABELS[last.action]?.(last.text) ?? last.text,
+    label: deliveryLabel("arrived", doneLabel(last), last.reply),
     at: last.at,
     ...isHandedStep ? { isHandedStep: true } : {},
     ...STILL_WAITING_AFTER.has(last.action) ? { isStillWaiting: true } : {}
@@ -2032,6 +2077,9 @@ var DONE_LABELS = {
   "check-fix": () => "Asked to fix",
   "pr-rank-again": () => "Ranked"
 };
+function doneLabel(last) {
+  return DONE_LABELS[last.action]?.(last.text) ?? last.text;
+}
 var STILL_WAITING_AFTER = /* @__PURE__ */ new Set(["check-fix"]);
 function isPressOut(f) {
   return f?.is === "working" || f?.is === "sending" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
@@ -2258,13 +2306,41 @@ function inboxView({
   replies,
   discarded,
   shownSince,
-  lastTypedMessageAt
+  lastTypedMessageAt,
+  listInput,
+  undoShown
 }) {
-  const isInPlace = (at, canUndo) => isSettledInPlace({ at, canUndo }, { shownSince, lastTypedMessageAt });
+  const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
+  const isItemId = (id) => ledger.items.some((i) => i.id === id) || ledger.closed.some((c) => c.id === id);
+  const isPressOutWhere = (isOnTab) => Object.entries(lastActions).some(
+    ([id, last]) => isOnTab(id) && isPressUnderWay(feedbackOf(id, last, void 0, turns, now))
+  );
+  const placingOn = (isPressOut2) => ({
+    shownSince,
+    lastTypedMessageAt,
+    listInput,
+    now,
+    settleWindowMs,
+    undoShown,
+    isPressOut: isPressOut2
+  });
+  const placingFor = {
+    needsYou: placingOn(isPressOutWhere(isItemId)),
+    findings: placingOn(isPressOutWhere(isFindingId))
+  };
+  const isInPlace = (id, at, canUndo, last) => isSettledInPlace(
+    { at, canUndo, delivery: pendingDeliveryAt(last, now) },
+    isFindingId(id) ? placingFor.findings : placingFor.needsYou,
+    id
+  );
+  const pressedSend = (c) => {
+    const last = lastActions[c.id];
+    return (c.how === "answered" || c.how === "done") && last?.kind === "mark" && last.at === closedAt(c) ? last : void 0;
+  };
   const isOpen2 = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
   const replyAfter = (c) => {
     const last = lastActions[c.id];
-    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(last.at, false) ? last : null;
+    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(c.id, last.at, false, last) ? last : null;
   };
   const isPressedAnswer = (c) => c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
   const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || isPressedAnswer(c);
@@ -2276,14 +2352,14 @@ function inboxView({
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
   const isPlaced = (c) => {
     const at = closedAt(c);
-    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs)));
+    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(c.id, at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs), pressedSend(c)));
   };
   const placedItems = new Map(
     ledger.closed.filter((d) => d.item && !isOpen2(d.id) && isPlaced(d)).map((d) => [d.id, d])
   );
   const isFixSettled = (id) => {
     const last = lastActions[id];
-    return isFixSent(last) && !isInPlace(last.at, isUndoLeft(last.at, now, settleWindowMs));
+    return isFixSent(last) && !isInPlace(id, last.at, isUndoLeft(last.at, now, settleWindowMs), last);
   };
   const placedFindings = new Map(
     ledger.closedFindings.filter((f) => !isOpen2(f.id) && !isFixSettled(f.id) && isPlaced(f)).map((f) => [f.id, f])
@@ -2295,17 +2371,17 @@ function inboxView({
     const closed2 = placedItems.get(id) ?? placedFindings.get(id);
     if (closed2) {
       const at = closedAt(closed2);
-      const last2 = lastActions[id];
       const reply = replyAfter(closed2);
       if (reply)
         return {
           is: "settled",
-          label: DONE_LABELS[reply.action]?.(reply.text) ?? reply.text,
+          label: doneLabel(reply),
           at: reply.at,
           canUndo: false,
           offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
-          closedAs: closedState(closed2)
+          closedAs: closedState(closed2),
+          ...reply.reply !== void 0 ? { reply: reply.reply } : {}
         };
       if (isHeld(closed2)) return { is: "held", label: heldLabel(closed2), at };
       return closedRowState(
@@ -2313,7 +2389,7 @@ function inboxView({
         at,
         now,
         settleWindowMs,
-        "doneNotification" in closed2 && closed2.doneNotification?.error !== void 0 ? { error: closed2.doneNotification.error, canUndo: isUndoable(closed2) } : (closed2.how === "answered" || closed2.how === "done") && last2?.kind === "mark" && last2.at === at ? pendingDeliveryAt(last2, now) : null,
+        "doneNotification" in closed2 && closed2.doneNotification?.error !== void 0 ? { error: closed2.doneNotification.error, canUndo: isUndoable(closed2) } : pendingDeliveryAt(pressedSend(closed2), now),
         isPressedAnswer(closed2)
       );
     }
@@ -2406,10 +2482,12 @@ function inboxView({
       count: counted.length,
       questions: questionRows,
       tasks: taskRows,
-      closed: { questions: closed.filter((d) => d.kind === "question"), tasks: closed.filter((d) => d.kind === "task") }
+      closed: { questions: closed.filter((d) => d.kind === "question"), tasks: closed.filter((d) => d.kind === "task") },
+      isPressOut: placingFor.needsYou.isPressOut
     },
     findings: {
       count: findingRows.filter(isWaitingRow).length,
+      isPressOut: placingFor.findings.isPressOut,
       rows: findingRows,
       closed: [
         ...ledger.closedFindings.filter((f) => !held.has(f.id)).map((f) => ({ ...f, outcomeLabel: outcomeLabel(f), delivery: null, mark: closedMark(closedState(f), null) })),
@@ -2470,14 +2548,22 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now, holds.shownSince, settleWindowMs),
+    prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
     statusPage: statusPage(s, now)
   };
 }
-function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
-  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, now, settleWindowMs, {
+function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, settleWindowMs) {
+  const isPressOut2 = Object.entries(lastActions).some(
+    ([id, last]) => isPrRowId(id) && isPressUnderWay(feedbackOf(id, last, void 0, s.presence, now))
+  );
+  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
     shownSince,
-    lastTypedMessageAt: s.presence.lastTypedMessageAt
+    lastTypedMessageAt: s.presence.lastTypedMessageAt,
+    listInput,
+    now,
+    settleWindowMs,
+    undoShown,
+    isPressOut: isPressOut2
   });
   const isSent = threadSentIn(lastActions);
   return {
@@ -2491,7 +2577,8 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
       { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
       shownSince
     ),
-    isGhSignedOut: s.prViews.isGhSignedOut === true
+    isGhSignedOut: s.prViews.isGhSignedOut === true,
+    isPressOut: isPressOut2
   };
 }
 
@@ -3048,14 +3135,10 @@ function bandCounts(view) {
 // ../hooks/children.ts
 var ACTIVITY_SAVE_MS = 3e4;
 var NAME_CHARS = 80;
-function childStarted(o, { ref, kind, name }, at, {
-  reportsActivity = true,
-  delegateState = null
-} = {}) {
-  const lastActivityAt = reportsActivity ? at : null;
+function childStarted(o, { ref, kind, name }, at, delegateState = null) {
   return withChild(
     o,
-    { ref, kind, name: childName(name), startedAt: at, endedAt: null, lastActivityAt, delegateState },
+    { ref, kind, name: childName(name), startedAt: at, endedAt: null, lastActivityAt: at, delegateState },
     at
   );
 }
@@ -3094,9 +3177,7 @@ function delegateRunning(o, step, at) {
       o,
       { ref, kind: "delegate", name: known && known.name !== step.name ? known.name : nameInWords(step.name) },
       at,
-      {
-        delegateState: step.isPrompt ? "working" : null
-      }
+      step.isPrompt ? "working" : null
     );
   const active = childActive(o, ref, at);
   return step.isPrompt ? delegateStateSet(active, ref, "working") : active;

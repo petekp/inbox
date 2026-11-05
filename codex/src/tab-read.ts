@@ -6,10 +6,11 @@ import type { Holds } from '../../hooks/timing'
 import { capitalized } from '../../hooks/press-labels'
 import { newRows, openRows } from './arrivals'
 import type { TabView as View } from './core'
-import { POLL_MS, settledIds, settledSeen } from './settle'
+import { POLL_MS, settledIds, settledSeen, undoShownIds } from './settle'
 import { tabState, selection, drafts, entering } from './tab-state'
 import { later, callTool, READ_TIMEOUT_MS } from './tab-host'
 import { drawIn } from './tab-motion'
+import { listInput } from './list-input'
 import { follow, tabWaits } from './tab-selection'
 import { PAGE, swapPage } from './tab-swap'
 import { takeShownRows } from './tab-shown'
@@ -108,5 +109,11 @@ export function replies(): Record<string, number> {
 export function holds(): Holds {
   tabState.discarded = keptDiscards(tabState.discarded, tabState.shownSince)
 
-  return { replies: replies(), discarded: tabState.discarded, shownSince: tabState.shownSince }
+  return {
+    replies: replies(),
+    discarded: tabState.discarded,
+    shownSince: tabState.shownSince,
+    listInput: listInput(Date.now()),
+    undoShown: undoShownIds(tabState.seen, Date.now()),
+  }
 }

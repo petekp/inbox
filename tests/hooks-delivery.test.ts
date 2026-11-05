@@ -69,7 +69,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   w.inFlight.push(pane.input({ key: await replyKey(pane, 'i2'), text: 'yes' }))
   await clock.settle()
   await clock.advance(QUEUED_AFTER_MS)
-  expect(await pane.find({ text: /Queued:\sReply/ })).toBeDefined()
+  expect(await pane.find({ text: /Queued reply: yes/ })).toBeDefined()
   await arrive($)
   await clock.settle()
   await selectRow(pane, 'i1')
@@ -137,7 +137,7 @@ test('a reply another plugin rewrote to the text of a pending press reads Not co
   w.submitAnswer = { rewrite: w.held[0]!.text }
   await pane.input({ key: await replyKey(pane, 'i2'), text: 'greet is fine' })
   await clock.settle()
-  expect(await pane.find({ text: /Not\s+confirmed/ })).toBeDefined()
+  expect(await pane.find({ text: /Reply not confirmed: greet is fine/ })).toBeDefined()
   expect(drafts).toEqual({ i2: { text: 'greet is fine', since: expect.any(Number) } })
   await arrive($)
 })

@@ -14,6 +14,7 @@ export type Feedback =
   | { is: 'working'; label: string; at: number }
   | { is: 'stillOpen'; at: number }
   | { is: 'noComparison'; at: number }
+  /** The labels of a message on its way read as the row draws them, from `deliveryLabel`, as "Queued: Yes" or "Queued reply: Call it hello". */
   | { is: 'sending'; label: string; at: number }
   | { is: 'queued'; label: string; at: number }
   | { is: 'unconfirmed'; label: string; at: number }
@@ -36,6 +37,15 @@ export function rowFeedbackText(row: RowView, look: Look): string | null {
   return f.is === 'done' ? f.label : f.is === 'local' ? localText(f.result, look) : feedbackText(f, look)
 }
 
+/**
+ * Whether a row's press is under way: its talk press waits on the agent's reply, its message is sending, or its open or
+ * copy runs. While one is under way on a tab, no settled row there folds, so nothing shifts under the row being worked
+ * on. A queued or unconfirmed message does not count, since it can wait a whole turn or for good.
+ */
+export function isPressUnderWay(f: Feedback | null): boolean {
+  return f?.is === 'working' || f?.is === 'sending' || (f?.is === 'local' && f.result.state === 'pending')
+}
+
 export function feedbackOf(
   id: string,
   last: LastAction | undefined,
@@ -51,7 +61,8 @@ export function feedbackOf(
   if (!last || last.kind === 'local') return null
   const delivery = last.delivery
   const pending = pendingDeliveryAt(last, now)
-  if (pending === 'queued' || pending === 'unconfirmed') return { is: pending, label: last.text, at: last.at }
+  if (pending === 'queued' || pending === 'unconfirmed')
+    return { is: pending, label: deliveryLabel(pending, last.text, last.reply), at: last.at }
   if (delivery?.state === 'failed') return { is: 'notSent', reason: delivery.reason, retry: retryOf(id, last) }
   const isAwaiting = isAwaitingReply(last, turns)
   const isUnreported = last.action === 'compare' && !(reportedAt !== undefined && reportedAt >= last.at)
@@ -59,7 +70,8 @@ export function feedbackOf(
   const working = WORKING_LABELS[last.action]
   if (last.kind === 'talk' && working && (isAwaiting || (isUnreported && !isPastLimit)))
     return { is: 'working', label: working, at: last.at }
-  if (pending === 'sending') return { is: 'sending', label: last.text, at: last.at }
+  if (pending === 'sending')
+    return { is: 'sending', label: deliveryLabel('sending', last.text, last.reply), at: last.at }
   if (isUnreported) return { is: 'noComparison', at: last.at }
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last)) return { is: 'stillOpen', at: last.at }
 
@@ -67,7 +79,7 @@ export function feedbackOf(
 
   return {
     is: 'done',
-    label: DONE_LABELS[last.action]?.(last.text) ?? last.text,
+    label: deliveryLabel('arrived', doneLabel(last), last.reply),
     at: last.at,
     ...(isHandedStep ? { isHandedStep: true as const } : {}),
     ...(STILL_WAITING_AFTER.has(last.action) ? { isStillWaiting: true as const } : {}),
@@ -121,7 +133,7 @@ const WORKING_LABELS: Record<string, string> = {
   'pr-rank-again': 'Ranking…',
 }
 
-export const DONE_LABELS: Record<string, (text: string) => string> = {
+const DONE_LABELS: Record<string, (text: string) => string> = {
   address: () => 'Handed off',
   issue: () => 'Asked to file',
   discuss: () => 'Discussed',
@@ -137,6 +149,11 @@ export const DONE_LABELS: Record<string, (text: string) => string> = {
   'pr-address-all': text => text.replace(/^Address\b/, 'Addressed'),
   'check-fix': () => 'Asked to fix',
   'pr-rank-again': () => 'Ranked',
+}
+
+/** What a press reads once its message arrived, before a reply's words: "Replied", "Explained", or the label pressed. */
+export function doneLabel(last: Pick<LastAction, 'action' | 'text'>): string {
+  return DONE_LABELS[last.action]?.(last.text) ?? last.text
 }
 
 /** Presses after which their row still waits on the person, as a failing check does after Fix. */
@@ -258,9 +275,9 @@ export function feedbackText(f: Feedback, look: Look): string {
     case 'sending':
       return f.label
     case 'queued':
-      return deliveryLabel(f.is, f.label)
+      return f.label
     case 'unconfirmed':
-      return deliveryLabel(f.is, f.label)
+      return f.label
     case 'notSent':
       return `Not sent: ${f.reason}`
     case 'done':

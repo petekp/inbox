@@ -68,7 +68,7 @@ test('on the Status in the terminal, the rows under a subject hang from its mark
   expect(await tree('c1')).toEqual(['├─', '│', '│'])
   expect(await tree('c3')).toEqual(['├─', '│', '│'])
   expect(await tree('c4')).toEqual(['└─', ' ', ' '])
-  expect(await tree('c2')).toEqual(['└─', ' ', ' '])
+  expect(await tree('c5')).toEqual(['└─', ' ', ' '])
   expect(await tree('s3')).toBeUndefined()
   expect((await textLines('c3')).length).toBeGreaterThan(1)
   await pane.redraw({ ...PANE.props, bodyColumns: 120 })

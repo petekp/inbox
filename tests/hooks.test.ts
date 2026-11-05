@@ -40,6 +40,7 @@ test('no two buttons on a row share a hotkey, for every row kind in the demo', a
     discarded: {},
     shownSince: 1_000_000,
     lastTypedMessageAt: null,
+    listInput: null,
     now: 1_000_000,
   })
   const itemRows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows].map(row => {
@@ -88,6 +89,7 @@ for (const isNextBuild of [false, true])
       discarded: {},
       shownSince: 1_000_000,
       lastTypedMessageAt: null,
+      listInput: null,
     })
     const TITLE_START = 20
     const expectedLabels = (row: (typeof view.findings.rows)[number]) => {

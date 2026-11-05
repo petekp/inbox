@@ -27,6 +27,7 @@ export type FeatureId =
   | 'exchange-trigger'
   | 'settle-window'
   | 'fold-on-typed-message'
+  | 'fold-waits-for-list-use'
   | 'version-label'
   | 'status-tab'
   | 'turn-working'
@@ -90,6 +91,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'exchange-trigger': { kind: 'full' },
       'settle-window': { kind: 'full' },
       'fold-on-typed-message': { kind: 'full' },
+      'fold-waits-for-list-use': {
+        kind: 'different',
+        reason:
+          'The terminal reports no pointer, so a row due to fold waits only on presses, keys and scrolls. On desktop a settled row is drawn as text, which reports no pointer, so a row waits on presses and on pointer moves over open rows.',
+      },
       'version-label': { kind: 'full' },
       'status-tab': { kind: 'full' },
       'turn-working': { kind: 'full' },
@@ -189,6 +195,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason: 'The tab only learns of a close at its next poll, so the server offers Undo for two polls longer.',
       },
       'fold-on-typed-message': { kind: 'full' },
+      'fold-waits-for-list-use': { kind: 'full' },
       'version-label': { kind: 'full' },
       'status-tab': { kind: 'full' },
       'turn-working': {
@@ -220,7 +227,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-children': {
         kind: 'different',
         reason:
-          "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so background commands and workflows do not show. The end of a wait on a Herdr delegate is read at Stop.",
+          "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so workflows do not show. The end of a wait on a Herdr delegate is read at Stop.",
       },
       'child-names': { kind: 'full' },
       'status-look-line': { kind: 'full' },
@@ -300,6 +307,10 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'settle-window': { kind: 'full' },
       'fold-on-typed-message': { kind: 'full' },
+      'fold-waits-for-list-use': {
+        kind: 'different',
+        reason: "omp's panel takes keys only, so a row due to fold waits on keys.",
+      },
       'version-label': {
         kind: 'different',
         reason: "omp's panel footer ends with the inbox model's name, so the version follows it there.",
@@ -325,7 +336,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-children': {
         kind: 'different',
         reason:
-          "omp's extension events report subagents and bash calls. omp's reference names no event for a background job or a workflow run, so those do not show.",
+          "omp's extension events report subagents and bash calls. omp's reference names no event for a workflow run, so those do not show.",
       },
       'child-names': { kind: 'full' },
       'status-look-line': { kind: 'full' },

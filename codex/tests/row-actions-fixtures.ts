@@ -40,6 +40,7 @@ export function task() {
     discarded: {},
     shownSince: null,
     lastTypedMessageAt: null,
+    listInput: null,
   })
   return { ledger, row: view.needsYou.tasks[0]! }
 }

@@ -12,7 +12,7 @@ import {
 } from './status-limits'
 import type { OpenStatus } from './status-limits'
 
-const CHILD_KINDS: readonly ChildKind[] = ['subagent', 'background', 'workflow', 'delegate']
+const CHILD_KINDS: readonly ChildKind[] = ['subagent', 'workflow', 'delegate']
 const DELEGATE_STATES: readonly DelegateState[] = ['working', 'blocked', 'finished']
 
 function text(value: unknown): string {
@@ -55,6 +55,7 @@ function subjectOf(saved: unknown): Subject | null {
   }
 }
 
+/** A saved child, or null for one wrongly shaped or of a kind no build makes now, such as an earlier build's `background` command. */
 function childOf(saved: unknown): Child | null {
   const c = saved as Partial<Record<keyof Child, unknown>> | null
   const kind = CHILD_KINDS.find(k => k === c?.kind)

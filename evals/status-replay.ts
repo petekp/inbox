@@ -28,7 +28,7 @@ import { pageText } from './status-page-text'
 
 /** Something a host reports between calls, which the replay runs through the host's own reducers. */
 type HostEvent =
-  | { child: 'start'; ref: string; kind: ChildKind; name: string; reportsActivity?: boolean }
+  | { child: 'start'; ref: string; kind: ChildKind; name: string }
   | { child: 'act'; ref: string }
   | { child: 'end'; ref: string }
   /** The person shows the Status tab for this many seconds. */
@@ -150,7 +150,7 @@ function withEvent(s: Session, e: HostEvent, now: number): Session {
   const o = s.ledger.overview
   const withStatus = (overview: Ledger['overview']) => ({ ...s, ledger: { ...s.ledger, overview } })
   if ('child' in e) {
-    if (e.child === 'start') return withStatus(childStarted(o, e, now, { reportsActivity: e.reportsActivity ?? true }))
+    if (e.child === 'start') return withStatus(childStarted(o, e, now))
     return withStatus(e.child === 'act' ? childWorked(o, e.ref, now) : childEnded(o, e.ref, now))
   }
   if ('look' in e) return withStatus(lookEnded(lookStarted(o, now), now + e.look * 1000, 'all'))

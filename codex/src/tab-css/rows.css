@@ -94,6 +94,12 @@
 .line .after {
   color: var(--muted);
 }
+/* A collapsed row's status takes one line, cut with an ellipsis, as its meta and Why lines do. */
+.row.collapsed .line .after {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .row.collapsed .line .after:not(.tone-error) {
   color: var(--age);
 }

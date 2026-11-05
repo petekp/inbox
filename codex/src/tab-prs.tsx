@@ -59,7 +59,8 @@ function SettledPr({ pr, state }: { pr: PrView; state: SettledState }) {
             <span class="what">
               <span class="tone-prs">#{pr.number}</span> {pr.title}
             </span>
-            <span class="outcome-label">{`${DOT}${settledLabel(state.label, state.delivery)}`}</span>
+            <span class="muted">{DOT}</span>
+            <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>
             {error ? <span class="tone-error">{`${DOT}${error}`}</span> : null}
           </div>
           <UndoPlace

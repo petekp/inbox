@@ -47,11 +47,16 @@ becomes a settled row. After Discard, it folds at once.
 
 **Settled row**:
 A row drawn in place with its result after the person pressed it or the agent
-closed it, such as "Done" or "Closed by Claude: fixed". It stays until the
-person sends a message they typed, switches tab or closes the inbox, then
-folds into the Closed fold or leaves the list. A message a press sent does not
-fold it. Where its press allows Undo, it offers Undo for `SETTLED_MS` after
-the close, and stays through a typed message until Undo ends.
+closed it, such as "Done" or "Closed by Claude: fixed". It stays for
+`SETTLED_MS` after the close, then folds into the Closed fold or leaves the
+list. Where its press allows Undo, it offers Undo for that time. It folds
+sooner when the person switches tab, closes the inbox, or sends a message they
+typed once its Undo has ended. A message a press sent does not fold it. It
+stays past that time while its message is on its way to the agent, and while
+a press is under way on a row of its tab. It also waits while the person is
+using the list, until `FOLD_QUIET_MS` after their last press, key, scroll or
+pointer move. A refused or unconfirmed message does not hold it: its Closed
+line shows what happened.
 
 **Mark**:
 The glyph before a row or a group title that says where its work stands or what
@@ -132,9 +137,10 @@ model opens it again when work is left.
 _Avoid_: step, phase
 
 **Child**:
-Work that runs apart from the session's turn: a subagent, a background command
-or task, a workflow run, or a Herdr delegate. It shows under its subject while
-it runs, and leaves when it ends. A delegate that finished stays, reading
+Work that runs apart from the session's turn: a subagent, a workflow run or a
+Herdr delegate. A background command or Monitor task is not one: it is how the
+agent watches work, and the work it watches has its own row. A child shows under
+its subject while it runs, and leaves when it ends. A delegate that finished stays, reading
 "finished", until the person has seen the Status. Code follows it from the
 host's events and from Herdr. The inbox model only links it to a subject.
 _Avoid_: subitem, job

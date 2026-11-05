@@ -19,7 +19,7 @@ The facts have these parts:
 - `Pieces of work:` one line per piece. Each line gives the piece's name, then `(also called …)` with the other names the conversation used for it, then its state, then where it stands. A line may add `Parts:` with the state of each part, `Plan changed; it was …` with the plan that the last change replaced, `Merged into it: …` with the pieces merged into this one, `Its row may also show …` with other marks that fit the piece as well as its state's own, `It serves the milestone …` or `The goal does not need it.`, and `Changed at this step.`
 - `Open asks:` each open question or task for the person, in quotes, and the pieces it holds up.
 - `Not work:` things the session mentioned that are not pieces of its work. Each has a kind: `ask`, `finding`, `task` for a task only the person can do, or `rule` for a standing rule.
-- `Running work:` each delegate, subagent, background command or workflow run, as what it does and the piece it serves.
+- `Running work:` each delegate, subagent or workflow run, as what it does and the piece it serves.
 
 A piece's state is one of these: being worked on now; not started yet; set aside, not being worked on now; waits on something outside the session; delivered; dropped; filed for later. A piece is open when it is not delivered, dropped or filed for later, and not merged into another piece.
 

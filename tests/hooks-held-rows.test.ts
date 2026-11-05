@@ -1,9 +1,9 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { PRESS_GUARD_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
-import { BAND, PANE, selectRow, leaveAndReturn, replyField, replyKey } from './hooks-helpers'
+import { BAND, PANE, selectRow, replyField, replyKey } from './hooks-helpers'
 
-test('a question Claude closes while the person types an answer stays in place with its field and words, out of the count, until its answer sends and the person types their next message, then folds into Closed', async ($, on) => {
+test('a question Claude closes while the person types an answer stays in place with its field and words, out of the count, until its answer sends, then settles and folds into Closed', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('ui.focus', () => ({}))
@@ -42,12 +42,9 @@ test('a question Claude closes while the person types an answer stays in place w
   expect(w.sent.at(-1)).toBe('Re "Name the command greet?": Call it hello')
   expect(await replyField(pane, 'i2')).toBeUndefined()
   expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
-  expect(await pane.find({ text: /^Replied$/ })).toBeDefined()
-  expect((await pane.find({ key: 'settled-i2' }))?.text).toMatch(/⊘\s*Replied/)
+  expect(await pane.find({ text: /^Replied: Call it hello$/ })).toBeDefined()
+  expect((await pane.find({ key: 'settled-i2' }))?.text).toMatch(/⊘\s*Replied: Call it hello/)
   await clock.advance(9000)
-  expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
-  await $.prompt.submit({ text: 'what is next?', wait: false, origin: { kind: 'composer' } })
-  await clock.settle()
   expect(await pane.find({ key: 'row-i2' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-i2' })).toBeUndefined()
   expect(await pane.find({ text: /1 closed/ })).toBeDefined()
@@ -108,7 +105,6 @@ test('a held row and the rows that closed while the tab shows stay in place, and
   expect(await pane.find({ text: /Renew the domain/ })).toBeDefined()
   w.ledgerReply = others.map(id => `CLOSED: ${id} | done`).join('\n')
   await reply('all done', 't3')
-  await clock.advance(9000)
 
   expect(await pane.find({ key: 'settled-i3' })).toBeDefined()
   expect(await pane.find({ key: 'settled-i15' })).toBeDefined()
@@ -166,9 +162,6 @@ test('Discard ends a held row’s reply and folds it into Closed at once, and a 
   await clock.settle()
   expect(await pane.find({ key: 'undo-i1' })).toBeDefined()
   await clock.advance(9000)
-  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
-  expect(await pane.find({ key: 'undo-i1' })).toBeUndefined()
-  await leaveAndReturn(pane, clock, 'needsYou')
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
   expect(await pane.find({ text: /2 closed/ })).toBeDefined()

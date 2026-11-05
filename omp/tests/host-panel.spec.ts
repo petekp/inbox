@@ -275,7 +275,7 @@ test('every row the agent closes while the panel shows its tab keeps its closed 
     await w.tools.get('close').execute('call', { id, reason: 'done' }, undefined, undefined, makeCtx())
 
   expect(state().ledger.closed.map((c: { id: string }) => c.id)).toEqual(ids)
-  const shown = await inbox.screen(makeCtx(), { replies: {}, discarded: {}, shownSince: openedAt })
+  const shown = await inbox.screen(makeCtx(), { replies: {}, discarded: {}, shownSince: openedAt, listInput: null })
   expect(shown.view.needsYou.tasks.filter(r => r.state.is === 'settled').map(r => r.id)).toEqual(ids)
 
   inbox.closePanel(makeCtx())
