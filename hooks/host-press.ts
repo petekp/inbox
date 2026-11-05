@@ -6,7 +6,7 @@ import { finishedResult, withResult, runSends, runLocalEffects } from './press-e
 import { rerunRun } from './host-prs'
 import type { EffectHost } from './press-effects'
 import { recordPress, pendingResult, localLast, withLasts, isHeldSend } from './pressed'
-import { releaseHeldSends } from './held-sends'
+import { releaseHeldSendEarly, releaseHeldSends } from './held-sends'
 import type { RowPress } from './presses'
 import { completedAttempt, withHolds, pressOn } from './session-presses'
 import type { Pressed } from './session-presses'
@@ -113,6 +113,7 @@ type PressHost<S extends Session> = Pick<
   | 'read'
   | 'update'
   | 'deliver'
+  | 'prepare'
   | 'perform'
   | 'refreshPrs'
   | 'gh'
@@ -204,6 +205,8 @@ export async function startPress<S extends Session>(
   holds: Holds,
 ): Promise<StartedPress> {
   const rowId = pressRowId(p)
+  const isSecondPressOnHeld = !isPrPress(p) && p.action !== 'undo' && isHeldSend((await host.read()).lastActions[rowId])
+  if (isSecondPressOnHeld && !isStale) await releaseHeldSendEarly(host, rowId)
   const localPressId = host.newId()
   let isUnconfirmed = false
   let isRowFailed = false

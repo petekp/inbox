@@ -123,11 +123,19 @@ describe('a finding replaced by a question', () => {
     expect(upgradeLedger(fixed).closedFindings[0]?.askedAs).toBeUndefined()
   })
 
-  test('Fix on a finding closes the question that asks about it', () => {
+  test('Fix on a finding closes the question that asks about it, and Undo while the Fix is held reopens that question', () => {
     const linked = reopenFinding(asked(), 'f1')
     const r = applyPress(linked, undefined, { action: 'address', id: 'f1' }, ctx)
     if ('stale' in r) throw new Error('stale')
     expect([r.ledger.items, r.ledger.closed.map(c => c.id), r.last?.delivery?.state]).toEqual([[], ['i2'], 'held'])
+    const undone = applyPress(r.ledger, r.last ?? undefined, { action: 'undo', id: 'f1' }, ctx)
+    if ('stale' in undone) throw new Error('stale')
+    expect([undone.ledger.items.map(i => i.id), undone.ledger.closed, undone.dropLast, undone.effects]).toEqual([
+      ['i2'],
+      [],
+      true,
+      [],
+    ])
   })
 })
 

@@ -22,7 +22,15 @@ function dueRows(s: Session, now: number): string[] {
  */
 export async function releaseHeldSends<S extends Session>(host: ReleaseHost<S>, current?: S): Promise<void> {
   const due = dueRows(current ?? (await host.read()), await host.now())
-  for (const id of due) await releaseOne(host, id)
+  for (const id of due) await releaseOne(host, id, false)
+}
+
+/**
+ * Sends row `id`'s held message now, before Undo's window ends. A second press on the row replaces its last press, so
+ * the held message goes first or it would never go.
+ */
+export async function releaseHeldSendEarly<S extends Session>(host: ReleaseHost<S>, id: string): Promise<void> {
+  await releaseOne(host, id, true)
 }
 
 /** Marks a held row Not sent with `reason`, and reopens an answer it closed, as a refused send does. */
@@ -37,7 +45,7 @@ function refusedHeld<S extends Session>(s: S, id: string, reason: string): S {
   }
 }
 
-async function releaseOne<S extends Session>(host: ReleaseHost<S>, id: string): Promise<void> {
+async function releaseOne<S extends Session>(host: ReleaseHost<S>, id: string, isEarly: boolean): Promise<void> {
   let attempt: { deliveryId: string; text: string; at: number } | null = null
   const started = host.update(async s => {
     // A host may run the change again on a newer session, where Undo or another release already took the row.
@@ -45,7 +53,7 @@ async function releaseOne<S extends Session>(host: ReleaseHost<S>, id: string): 
     const last = s.lastActions[id]
     const held = last?.delivery
     const now = await host.now()
-    if (!last || held?.state !== 'held' || held.until > now) return s
+    if (!last || held?.state !== 'held' || (held.until > now && !isEarly)) return s
     await host.prepare?.(s)
     const deliveryId = host.newId()
     attempt = { deliveryId, text: held.message, at: last.at }

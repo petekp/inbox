@@ -121,6 +121,9 @@ function held(
   return { ...last, delivery: { state: 'held', message, until: ctx.now + ctx.holdMs, by } }
 }
 
+/** How the question that asked for a finding closes when the person presses the finding's Fix. */
+const fixSentOutcome = (findingId: string) => `fix sent for ${findingId}`
+
 export function isHeldSend(last: LastAction | undefined): boolean {
   return last?.delivery?.state === 'held'
 }
@@ -134,7 +137,13 @@ export function pressed(ledger: Ledger, last: LastAction | undefined, p: RowPres
 
   if (p.action === 'undo') {
     const isOpenFinding = ledger.findings.some(f => f.id === p.id)
-    if (isOpenFinding && last?.action === 'address' && isHeldSend(last)) return { ...unchanged, dropLast: true }
+    if (isOpenFinding && last?.action === 'address' && isHeldSend(last)) {
+      const asker = ledger.closed.findLast(c => c.outcome === fixSentOutcome(p.id) && c.at === last.at)
+
+      if (!asker) return { ...unchanged, dropLast: true }
+
+      return { ...unchanged, ledger: reopenItem(ledger, asker.id), reopenedId: asker.id, dropLast: true }
+    }
     if (isOpenFinding && last?.action === 'address' && !last.isKept)
       return { ...unchanged, last: { ...last, isKept: true } }
     if (ledger.items.some(i => i.id === p.id) || isOpenFinding) return stale
@@ -165,7 +174,7 @@ export function pressed(ledger: Ledger, last: LastAction | undefined, p: RowPres
         return asker
           ? {
               ...sent,
-              ledger: closeItem(ledger, asker.id, { how: 'update', outcome: `fix sent for ${finding.id}` }, ctx.now),
+              ledger: closeItem(ledger, asker.id, { how: 'update', outcome: fixSentOutcome(finding.id) }, ctx.now),
             }
           : sent
       }

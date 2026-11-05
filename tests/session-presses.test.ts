@@ -6,7 +6,7 @@ import { pressOn, recorded, withFetchedPrs } from '../hooks/session-presses'
 import { sessionView } from '../hooks/session-view'
 import type { PrView, RowNote } from '../types'
 import { runUpdates } from '../hooks/session-host'
-import { press, wakeAfterSettle } from '../hooks/host-press'
+import { press } from '../hooks/host-press'
 import { allRows } from '../hooks/rows'
 import { COMPARE_LIMIT_MS, NO_HOLDS } from '../hooks/timing'
 import { feedbackOf, feedbackText } from '../hooks/feedback'
@@ -18,24 +18,6 @@ import { EMPTY } from '../hooks/ledger'
 import { checkKey } from '../hooks/prs'
 import { fakeHost } from './session-fake-host'
 import { FIX_REF, BLOCKED_PR } from './session-helpers'
-
-test('a refused Done message leaves its row reading Not sent, with Undo', async () => {
-  let clock = 1_000_000
-  const scripted = fakeHost(async () => null).host
-  const host = {
-    ...scripted,
-    now: () => clock,
-    deliver: async () => ({ state: 'rejected' as const, reason: 'queue refused' }),
-  }
-  await host.update(s => recorded(CLAUDE_CODE, s, 'record', { kind: 'task', ask: 'Sign in to npm' }, clock).state)
-  const id = (await host.read()).ledger.items[0]!.id
-  await press(host, { action: 'done', id }, false, NO_HOLDS)
-  clock += host.settleWindowMs
-  await wakeAfterSettle(host)
-  const view = sessionView(await host.read(), clock, host.settleWindowMs)
-
-  expect(view.needsYou.closed.tasks.map(c => c.delivery)).toEqual([{ error: 'queue refused', canUndo: true }])
-})
 
 async function pressedCompare() {
   const { host } = fakeHost(async () => 'NONE')

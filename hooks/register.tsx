@@ -1113,6 +1113,7 @@ function openPane($: EngineInterface, isFieldOpen = false) {
     .then(async () => {
       await syncShown($, { isOpen: true })
       await syncLook($, true)
+      await wakeForHeldSends($)
     })
     .catch(() => undefined)
 
@@ -1682,6 +1683,17 @@ async function wakeAfterSettle($: EngineInterface) {
   await wakeSessionAfterSettle(hostOf($, currentOwner()))
 }
 
+/**
+ * Sends the held messages that are due, and wakes again when the next one falls due. A load or a pane opening calls
+ * it, since the timer a press started does not survive a reload.
+ */
+async function wakeForHeldSends($: EngineInterface) {
+  await wakeAfterSettle($)
+  const [{ lastActions }, now] = await Promise.all([read($, SESSION), $.clock.now()])
+  const dueTimes = Object.values(lastActions).flatMap(a => (a.delivery?.state === 'held' ? [a.delivery.until] : []))
+  if (dueTimes.length > 0) later($, Math.max(0, Math.min(...dueTimes) - now), () => wakeAfterSettle($))
+}
+
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
   const mayStayOnRow = isPrPress(p)
     ? ['pr-open', 'pr-refresh', 'thread-open', 'log', 'check-rerun'].includes(p.action)
@@ -2197,6 +2209,7 @@ async function applyConversation(
   if (!isLoading()) return
   if (needsCatchUp) await catchUpNow($)
   void publishStatus($)
+  void wakeForHeldSends($).catch(() => undefined)
   if (tabPrs(ledger).length > 0) void fetchPrs($, false)
 }
 
