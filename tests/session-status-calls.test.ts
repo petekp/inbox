@@ -83,6 +83,27 @@ test('a failed Status call makes the next reply catch up over the conversation o
   expect(after.ledger.overview?.head?.title).toBe('Work offline')
 })
 
+test('a Status call that keeps failing catches up at the next reply, then waits two replies before the next catch-up', async () => {
+  const catchUps: number[] = []
+  const { host } = fakeHost(async (_prompt, system) => (system === STATUS_SYSTEM ? null : LEDGER_REPLY))
+  const catchUp = async (s: Session) => {
+    catchUps.push(s.presence.turnsStarted)
+    return {
+      kind: 'reply' as const,
+      text: LEDGER_REPLY,
+      source: 'Person: go',
+      statusCall: { exchange: { kind: 'catch-up' as const, conversation: 'Person: go' }, ask: async () => null },
+      heard: null,
+    }
+  }
+  for (const reply of ['Which runtime?', 'Python, then.', 'Done.', 'Shipped.', 'Anything else?']) {
+    await host.update(s => finishTurn(s, reply))
+    await runUpdates({ ...host, catchUp })
+  }
+  expect(catchUps).toEqual([2, 4])
+  expect((await host.read()).overviewFailure).toMatchObject({ catchUpsFailed: 2, catchUpTurn: 4 })
+})
+
 test('a Status answer or failure made for fewer applied turns than the last write is dropped', () => {
   const later = { ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } }
   const newer = appliedStatus(later, answer, 4, 1000)

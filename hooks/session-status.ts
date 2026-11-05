@@ -49,14 +49,27 @@ const REFUSED_ANSWER_CHARS = 500
 
 /**
  * Saves why the Status call for an applied update wrote nothing: `text` is its last answer, or null when it gave
- * none. `appliedAfter` drops the failure as `appliedStatus` drops an answer.
+ * none. `appliedAfter` drops the failure as `appliedStatus` drops an answer. A failed catch-up adds one to the
+ * standing failure's `catchUpsFailed`.
  */
-export function failedStatus<S extends Session>(s: S, text: string | null, appliedAfter: number, now: number): S {
+export function failedStatus<S extends Session>(
+  s: S,
+  text: string | null,
+  appliedAfter: number,
+  now: number,
+  isCatchUp = false,
+): S {
   if (!isStatusCallCurrent(s, appliedAfter)) return s
+  const before = s.overviewFailure
+  const tries = isCatchUp
+    ? { catchUpsFailed: (before?.catchUpsFailed ?? 0) + 1, catchUpTurn: s.presence.turnsStarted }
+    : before?.catchUpsFailed
+      ? { catchUpsFailed: before.catchUpsFailed, catchUpTurn: before.catchUpTurn ?? 0 }
+      : {}
   const failure: StatusFailure =
     text === null
-      ? { at: now, cause: 'no-answer', answer: null }
-      : { at: now, cause: 'refused', answer: text.slice(0, REFUSED_ANSWER_CHARS) }
+      ? { at: now, cause: 'no-answer', answer: null, ...tries }
+      : { at: now, cause: 'refused', answer: text.slice(0, REFUSED_ANSWER_CHARS), ...tries }
 
   return { ...s, overviewFailure: failure, lastOverviewCallAt: now, overviewTurn: appliedAfter }
 }
@@ -80,13 +93,18 @@ export function claimedStatusRefresh<S extends Session>(s: S, now: number): S {
 /**
  * Whether the ledger or the Status may have missed a turn: a failed or behind update, turns that started with no
  * exchange waiting, or a failed Status call while a new exchange waits. Not while a turn runs, since that turn has not
- * ended yet. A Status failure waits for a new exchange, so a failed catch-up is tried once per reply.
+ * ended yet. A Status failure catches up at the next reply. After each failed catch-up, the next waits twice as many
+ * turns: 2, then 4, then 8.
  */
 export function needsCatchUp(s: Session): boolean {
   const { presence } = s
   const hasUnappliedTurn =
     s.pending.length === 0 && s.turn.person === null && presence.turnsStarted > presence.turnsApplied
-  const hasMissedStatus = s.overviewFailure !== null && (s.pending.length > 0 || hasUnappliedTurn)
+  const failure = s.overviewFailure
+  const isStatusCatchUpDue =
+    failure !== null &&
+    (!failure.catchUpsFailed || presence.turnsStarted - (failure.catchUpTurn ?? 0) >= 2 ** failure.catchUpsFailed)
+  const hasMissedStatus = isStatusCatchUpDue && (s.pending.length > 0 || hasUnappliedTurn)
 
   return presence.ledgerState !== 'current' || hasUnappliedTurn || hasMissedStatus
 }
