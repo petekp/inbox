@@ -2,7 +2,7 @@
 
 The cases that judge the Status tab. [How the Status is judged](plans/status/judging.md) gives the fixed rules, the code holds, the judge and the pass bar.
 
-Three replays and twelve short cases run 3 times each on Sonnet and on Codex, and three short cases run 5 times each. Fixed rules and code holds check the page after every step. The judge reads a few checkpoints. Each call has its host's limits: 45 seconds and 1600 output tokens for Claude, 120 seconds for Codex. A call past its limit fails, as it would in the host: the page stays as it was, and the status line says so.
+Three replays and thirteen short cases run 3 times each on Sonnet and on Codex, and three short cases run 5 times each. Fixed rules and code holds check the page after every step. The judge reads a few checkpoints. Each call has its host's limits: 45 seconds and 1600 output tokens for Claude, 120 seconds for Codex. A call past its limit fails, as it would in the host: the page stays as it was, and the status line says so.
 
 A step with no call, or a step before its call, can press a goal button as the person would: Remove goal, or a typed goal. It runs through the host's own press.
 
@@ -69,6 +69,7 @@ The person's "speed up search on large libraries" at steps 1 and 2 is a directio
 | `catch-up-shipped` | 3 | A goal with two milestones. A catch-up reads a conversation in which two pieces were merged and shipped. | Both pieces close as ✓, not as dropped, and their milestone closes. |
 | `goal-awaiting-milestones` | 3 | 14 open subjects, none linked, and a goal the person typed that an unreadable answer left with no milestones. One reply. | The goal gets its milestones. A GOAL line that restates the goal gives the goal its milestones. |
 | `ask-holds-two` | 3 | Two releases, each with a signed build. Step 1: neither can upload until the person signs in to App Store Connect, and that task opens. Step 2: a TestFlight beta starts, and its upload waits on the same sign-in. | Step 1 links the task to both releases, so both show ◆. Step 2 links it to the beta too. |
+| `one-task-plan` | 3 | One small task: a tooltip on the Export button, planned as make it, test it and note it in the changelog. One reply. | The plan's steps stay in one subject. |
 
 `removed-goal`, `goal-on-busy-page` and `mid-turn-activity` are judged on each model apart. The others are judged with the replays: both models' runs together.
 

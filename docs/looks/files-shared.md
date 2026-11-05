@@ -47,7 +47,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/ledger-prompt.ts` | Shared module. What the ledger call reads: `systemText`, and the prompt `buildPrompt` builds from the ledger and the new exchange. |
 | `hooks/catch-up-text.ts` | Shared module. The ledger call's catch-up prompts, and the activity lines that a turn's tool calls and dialogs add. |
 | `hooks/call-record.ts` | Shared module. Sends one model call and notes what the host reported, and saves a call with no usable answer, or the first usable answer after one, in its call's record in `callFailures`. |
-| `hooks/status-prompt.ts` | Shared module. What the Status call reads: `STATUS_SYSTEM`, and its prompts after a reply, during a long turn and for a catch-up. |
+| `hooks/status-prompt.ts` | Shared module. What the Status call reads: `STATUS_SYSTEM`, or for a host with `splitsPlanIntoSubjects` `PARTS_STATUS_SYSTEM`, and its prompts after a reply, during a long turn and for a catch-up. |
 | `hooks/status-prompt-goal.ts` | Shared module. What the Status call reads about the goal: its lines and input blocks, and its rules as named parts, so `statusSystem` can leave one out for an ablation. |
 | `hooks/inbox-text.ts` | Shared module. The `inbox:` texts beside a prompt, the state a new conversation starts with, and the question numbers a typed answer such as "1 yes" refers to. `screenText` tells the models whether the inbox is open, and on which tab. |
 | `hooks/session-version.ts` | Shared module. The version every host writes on a session it saves, and `checkVersion`, which Codex and omp run when they read one. |

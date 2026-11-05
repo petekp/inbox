@@ -16,6 +16,7 @@ import { goalOnBusyPage } from './replays/goal-on-busy-page'
 import { longTurn } from './replays/long-turn'
 import { midTurnActivity } from './replays/mid-turn-activity'
 import { milestoneDropped } from './replays/milestone-dropped'
+import { oneTaskPlan } from './replays/one-task-plan'
 import { singleTask } from './replays/single-task'
 
 export const REPLAYS: Replay[] = [
@@ -30,6 +31,7 @@ export const REPLAYS: Replay[] = [
   catchUpShipped,
   goalAwaitingMilestones,
   askHoldsTwo,
+  oneTaskPlan,
   milestoneWorkDone,
   goalMetNext,
   goalWait,

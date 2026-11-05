@@ -337,6 +337,7 @@ async function noteActivity($: EngineInterface, line: string) {
   if (isClaimed)
     void refreshStatus({
       ...hostOf($, owner),
+      names: CLAUDE_CODE,
       inOrder: fn => resultsOrder.run(owner.id, fn),
       records: recordsOf($, owner),
     })

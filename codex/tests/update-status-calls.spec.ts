@@ -6,7 +6,7 @@ import { parseStatus } from '../../hooks/status'
 import { appliedStatus } from '../../hooks/session-status'
 import { readState, statePath, updateState, withLock } from '../src/state'
 import { runUpdates as runBothCalls } from '../src/update'
-import { STATUS_SYSTEM } from '../../hooks/status-prompt'
+import { PARTS_STATUS_SYSTEM } from '../../hooks/status-prompt'
 import { tempDir } from './helpers'
 import { ex, LEDGER_ANSWER } from './update-fixtures'
 
@@ -23,7 +23,7 @@ async function updateWithStatus(answer: string | null) {
     async (_prompt, system) => {
       systems.push(system)
 
-      return system === STATUS_SYSTEM ? answer : LEDGER_ANSWER
+      return system === PARTS_STATUS_SYSTEM ? answer : LEDGER_ANSWER
     },
     () => 5,
   )
@@ -42,7 +42,7 @@ test('a reply’s Status comes from the separate Status call, after the ledger u
     ['Deploy now?'],
   )
   assert.equal(systems.length, 2)
-  assert.ok(systems.includes(STATUS_SYSTEM))
+  assert.ok(systems.includes(PARTS_STATUS_SYSTEM))
 })
 
 test('a failed Status call leaves the ledger update applied with no Status', async () => {
@@ -88,7 +88,7 @@ test('a ledger update shows before its Status call returns', async () => {
     dir,
     's1',
     async (prompt, system) => {
-      if (system !== STATUS_SYSTEM) return 'CLOSED: i2 | MIT'
+      if (system !== PARTS_STATUS_SYSTEM) return 'CLOSED: i2 | MIT'
       statusPrompt = prompt
       asked()
 
@@ -126,14 +126,14 @@ test('a ledger call with no answer runs no Status call', async () => {
     async (_prompt, system) => {
       systems.push(system)
 
-      return system === STATUS_SYSTEM
+      return system === PARTS_STATUS_SYSTEM
         ? 'HEAD: Building the deploy script | Writing a script that deploys the app'
         : null
     },
     () => 5,
   )
 
-  assert.equal(systems.includes(STATUS_SYSTEM), false)
+  assert.equal(systems.includes(PARTS_STATUS_SYSTEM), false)
   assert.equal((await readState(dir, 's1')).ledger.overview, null)
 })
 
@@ -155,7 +155,7 @@ test('Status calls run one after another, and the second reads the first one’s
     dir,
     's1',
     async (prompt, system) => {
-      if (system !== STATUS_SYSTEM) {
+      if (system !== PARTS_STATUS_SYSTEM) {
         ledgerCalls += 1
 
         return `NEW: do | - | Task ${ledgerCalls} | - | -`
@@ -204,7 +204,7 @@ test('three Status calls write in the order their updates landed', async () => {
     dir,
     's1',
     async (_prompt, system) => {
-      if (system !== STATUS_SYSTEM) return 'NONE'
+      if (system !== PARTS_STATUS_SYSTEM) return 'NONE'
       statusCalls += 1
       const mine = statusCalls
       if (mine === 1) await held
@@ -240,7 +240,7 @@ test('an update’s Status call waits while another process holds the Status cal
       dir,
       's1',
       async (prompt, system) => {
-        if (system !== STATUS_SYSTEM) return 'NEW: do | - | Roll back | - | -'
+        if (system !== PARTS_STATUS_SYSTEM) return 'NEW: do | - | Roll back | - | -'
         statusPrompts.push(prompt)
 
         return 'HEAD: Rollback script built | Rolling back a bad deploy'
@@ -282,7 +282,7 @@ async function olderCallLandsAfterNewer(t: { after: (fn: () => Promise<void>) =>
     running = runBothCalls(
       dir,
       's1',
-      async (_prompt, system) => (system === STATUS_SYSTEM ? olderAnswer : 'NONE'),
+      async (_prompt, system) => (system === PARTS_STATUS_SYSTEM ? olderAnswer : 'NONE'),
       () => 5,
     )
     let shown = await readState(dir, 's1')

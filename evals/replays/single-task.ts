@@ -63,7 +63,7 @@ export const singleTask: Replay = {
           }),
         ],
       },
-      targets: ['goal-when-clear', 'milestones-shape', 'head-no-status', 'head-follows'],
+      targets: ['goal-when-clear', 'milestones-shape', 'head-no-status', 'head-follows', 'open-pieces-kept'],
     },
     {
       label: 'The engine works. The agent fixes a lint error, runs two review subagents and asks about conflicts.',

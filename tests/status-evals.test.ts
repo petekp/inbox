@@ -135,6 +135,11 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     answer: 'NEW: working | 2.5 beta | signed, upload needs sign-in',
     breaks: 'ask-holds-several',
   },
+  'one-task-plan': {
+    at: 0,
+    answer: `${GOOD_RUNS['one-task-plan']![0]!}\nNEW: working | Tooltip test | being written`,
+    breaks: 'piece-once',
+  },
 }
 
 test('a good run of each replay passes every rule that is built, at every step', async () => {
