@@ -43,7 +43,7 @@ A model writes the head's words, and each row's name, status, where it stands an
 6. **The Seen line:** `── Last seen`. The rows above it changed since the person last looked.
 7. **Folds:** `○ 3 more` counts open rows that are not drawn. Its `○` does not mean each of them is queued. `▸ 4 done` or `▸ 4 more done` counts delivered pieces that are not drawn. The `▸` is a closed fold the person can open to list them, not a mark.
 8. **Other work:** while a goal is set, `── Other work` starts the part of the list the goal does not need, with its own subject rows and its own Seen line. It may end by counting the open rows it does not draw, by mark, as `● 2 working · ◌ 1 waiting`, then its own fold of delivered pieces, as `▸ 3 done`. Subject rows after the goal block and above `── Other work` are work not linked to a milestone yet.
-9. **The status line:** after a blank line at the end, `Last Status update failed. Changes from that reply may be missing.`
+9. **The status line:** after a blank line at the end, `The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.`
 
 Below the Seen line, a finished row shows only its mark and its name, and no row shows its was line. That is how the page is drawn, and it is not a failure.
 

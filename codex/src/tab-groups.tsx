@@ -10,6 +10,7 @@ import {
   shortAgo,
 } from '../../hooks/rows'
 import { emptyText, groupEmptyText } from '../../hooks/banners'
+import { isMaybeStale } from '../../hooks/band'
 import { entryId, settledIn } from '../../hooks/action-plan'
 import { FINDING_GROUPS } from '../../hooks/help'
 import type { ResultMark } from '../../hooks/rows'
@@ -174,7 +175,7 @@ export function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number
       </div>
     ) : (
       <div class="empty">
-        <div class="title">{emptyText('needsYou', 'Codex').title}</div>
+        <div class="title">{emptyText('needsYou', 'Codex', isMaybeStale(v)).title}</div>
         <div class="muted">{emptyText('needsYou', 'Codex').hint}</div>
       </div>
     )
@@ -211,7 +212,7 @@ export function Findings({ v, lists, now }: { v: View; lists: Lists; now: number
   if (isNothing && closedTotal(v.findings.closed, settled) === 0)
     return (
       <div class="empty">
-        <div class="title">{emptyText('findings', 'Codex').title}</div>
+        <div class="title">{emptyText('findings', 'Codex', isMaybeStale(v)).title}</div>
         <div class="muted">{emptyText('findings', 'Codex').hint}</div>
       </div>
     )

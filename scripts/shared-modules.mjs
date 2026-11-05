@@ -71,6 +71,7 @@ export const SHARED = [
   'rows',
   'feedback',
   'banners',
+  'band',
   'tabs',
   'status-page',
   'status-page-parts',

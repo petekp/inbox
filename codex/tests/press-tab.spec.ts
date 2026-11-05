@@ -19,7 +19,7 @@ test('the tab reports active work separately from pending exchanges and failed u
   assert.equal(viewOf(waiting, 60).status.isUpdating, false)
   assert.match(
     viewOf(waiting, 60).status.error ?? '',
-    /^Last update failed\..*tries again after the agent's next reply/,
+    /^The inbox couldn't update from the agent's last reply\..*tries again after the next reply/,
   )
   const running = { ...waiting, presence: { ...waiting.presence, isUpdating: true } }
   assert.deepEqual(viewOf(running, 60).status, { isUpdating: true, isRetrying: true, error: null })
@@ -27,7 +27,7 @@ test('the tab reports active work separately from pending exchanges and failed u
   assert.deepEqual(viewOf(scheduled, 60).status, { isUpdating: false, isRetrying: false, error: null })
   assert.equal(
     viewOf(s, 60).status.error,
-    "Last update failed. Items from that reply may be missing. The inbox tries again after the agent's next reply.",
+    "The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing. It tries again after the next reply.",
   )
 })
 
