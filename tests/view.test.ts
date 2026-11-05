@@ -41,7 +41,7 @@ const placing = (now: number, more: Partial<Placing> = {}): Placing => ({
   listInput: null,
   now,
   settleWindowMs: SETTLED_MS,
-  isPressOut: false,
+  pressOutSince: null,
   ...more,
 })
 
@@ -77,11 +77,28 @@ test('the next fold time is a row’s due time, then the end of the person’s u
   expect(nextFoldAt([{ ...settled, delivery: 'queued' }], placing(due + 50))).toBeNull()
 })
 
-test('a press under way on the tab keeps every due row in place, and a look that still shows a row’s Undo keeps that row', () => {
+test('a press begun before a row came due keeps it in place until the press ends, and a look that still shows a row’s Undo keeps that row', () => {
   const due = AT + SETTLED_MS
-  expect(isSettledInPlace(settled, placing(due + 10 * SETTLED_MS, { isPressOut: true }))).toBe(true)
+  expect(isSettledInPlace(settled, placing(due + 10 * SETTLED_MS, { pressOutSince: due - 1 }))).toBe(true)
+  expect(isSettledInPlace(settled, placing(due + 10 * SETTLED_MS, { pressOutSince: due }))).toBe(true)
+  expect(isSettledInPlace(settled, placing(due + 10 * SETTLED_MS, { pressOutSince: null }))).toBe(false)
   expect(isSettledInPlace(settled, placing(due + 1, { undoShown: ['i1'] }), 'i1')).toBe(true)
   expect(isSettledInPlace(settled, placing(due + 1, { undoShown: ['i1'] }), 'i2')).toBe(false)
+})
+
+test('a folded row stays folded: a press on another row, a Talk press or list input that begins after it came due does not bring it back', () => {
+  const due = AT + SETTLED_MS
+  const later = due + 60_000
+  expect(isSettledInPlace(settled, placing(later, { pressOutSince: due + 1 }))).toBe(false)
+  expect(isSettledInPlace(settled, placing(later, { pressOutSince: later - 100 }))).toBe(false)
+  expect(isSettledInPlace(settled, placing(later, { listInput: withListInput(null, later - 100) }))).toBe(false)
+  const typedAt = AT + 1000
+  const typed = { lastTypedMessageAt: typedAt }
+  expect(isSettledInPlace(settled, placing(typedAt + 1, typed))).toBe(false)
+  expect(isSettledInPlace(settled, placing(later, { ...typed, pressOutSince: typedAt + 1 }))).toBe(false)
+  expect(isSettledInPlace(settled, placing(later, { lastTypedMessageAt: later - 1, pressOutSince: due + 1 }))).toBe(
+    false,
+  )
 })
 
 test('a reply reads with the words the person typed at every step of its way, on one line, and an answer reads as its option', () => {
