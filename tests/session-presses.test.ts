@@ -198,7 +198,7 @@ async function blockedPrHost(refreshed: (pr: PrView, at: number) => PrView, star
       if (text) shownWhileRefreshing.push(text)
     }
     const at = await host.now()
-    await host.update(s => withFetchedPrs(s, { [FIX_REF]: refreshed(s.prViews.views[FIX_REF]!, at) }, null, false))
+    await host.update(s => withFetchedPrs(s, { [FIX_REF]: refreshed(s.prViews.views[FIX_REF]!, at) }, null, false, at))
   }
 
   return { host, delivered, shownWhileRefreshing, shownOn }
@@ -276,6 +276,7 @@ async function cancelledRunHost(isRunningOnGitHub: () => boolean) {
         { [FIX_REF]: { ...BLOCKED_PR, checks: checks.map(c => ({ ...c, bucket })), fetchedAt: at } },
         null,
         false,
+        at,
       ),
     )
   }

@@ -10,12 +10,14 @@ import {
   threadRowText,
   threadSentIn,
 } from '../../hooks/pr-rows'
-import { cancelledChecks, failingChecks, waitingThreads } from '../../hooks/prs'
+import { cancelledChecks, failingChecks } from '../../hooks/pr-checks'
+import { waitingThreads } from '../../hooks/prs'
 import { ago } from '../../hooks/text'
 import type { LastAction, PrOrder } from '../../types'
 import { rankedStatusOf } from '../../hooks/pr-order'
 import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
 import { helpKeys } from '../../hooks/help'
+import { withFetchedPrs } from '../../hooks/session-presses'
 import { sessionView } from '../../hooks/session-view'
 import { demoState } from '../src/demo'
 import { INITIAL_UI } from '../src/panel'
@@ -23,18 +25,6 @@ import type { PanelScreen } from '../src/panel'
 import { handleKey } from '../src/panel-keys'
 import { emptyState } from '../src/state'
 import { drawn, ESC, NOW, screenOf, text } from './panel-harness'
-
-function withMerged(refs: string[]): PanelScreen {
-  const s = demoState(NOW)
-  const views = Object.fromEntries(
-    Object.entries(s.prViews.views).map(([ref, v]) => [
-      ref,
-      refs.includes(ref) ? { ...v, state: 'MERGED' as const } : v,
-    ]),
-  )
-
-  return screenOf({ view: sessionView({ ...s, prViews: { ...s.prViews, views } }, NOW, SETTLED_MS, NO_HOLDS) })
-}
 
 function withOrder(prOrder: Partial<PrOrder>, lastActions: Record<string, LastAction> = {}): PanelScreen {
   const s = demoState(NOW)
@@ -109,27 +99,15 @@ test('a ranked PR that changed since the order draws the changed line with Rank 
   expect(helpKeys('omp', false, 'prs', false).map(k => k.keys)).toContain('g')
 })
 
-test('Dismiss merged draws after the PR blocks, and m from any row or Enter on it returns the press', () => {
-  const screen = withMerged(['acme/visor#29', 'acme/visor#33'])
-  const ui = { ...INITIAL_UI, tab: 'prs' as const }
-  const lines = text(screen, ui).split('\n')
-  const at = lines.findIndex(l => l.includes('m Dismiss merged'))
-  expect(at).toBeGreaterThan(lines.findLastIndex(l => /#(29|31|33) /.test(l)))
-  const onThread = {
-    ...ui,
-    selectedId: screen.view.prs.drawn.flatMap(d => waitingThreads(d.pr).map(t => `${d.pr.ref} thread ${t.id}`))[0]!,
-  }
-  expect(handleKey(screen, onThread, 'm', NOW).press).toEqual({ action: 'pr-dismiss-merged' })
-  expect(handleKey(screen, { ...ui, selectedId: 'pr:merged' }, 'enter', NOW).press).toEqual({
-    action: 'pr-dismiss-merged',
-  })
-})
-
-test('Dismiss merged does not show when the only merged PR is the branch’s own', () => {
-  const screen = withMerged(['acme/visor#31'])
-  const ui = { ...INITIAL_UI, tab: 'prs' as const }
-  expect(text(screen, ui)).not.toContain('Dismiss merged')
-  expect(handleKey(screen, ui, 'm', NOW).press).toBeUndefined()
+test('a PR a fetch finds merged settles as ✓ Merged while the PRs tab shows, and u presses its Undo', () => {
+  const s = demoState(NOW)
+  const merged = { 'acme/visor#29': { ...s.prViews.views['acme/visor#29']!, state: 'MERGED' as const } }
+  const settled = withFetchedPrs(s, merged, s.prViews.branchRef, false, NOW)
+  const holds = { ...NO_HOLDS, shownSince: NOW - 1 }
+  const screen = screenOf({ view: sessionView(settled, NOW, SETTLED_MS, holds) })
+  const ui = { ...INITIAL_UI, tab: 'prs' as const, shownSince: NOW - 1 }
+  expect(text(screen, ui)).toMatch(/#29 .*✓ Merged/)
+  expect(handleKey(screen, ui, 'u', NOW).press).toEqual({ action: 'pr-undo', ref: 'acme/visor#29' })
 })
 
 function withLast(screen: PanelScreen, id: string, last: LastAction): PanelScreen {

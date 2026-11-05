@@ -1,4 +1,5 @@
 import type { PrCheck, PrStatus, PrThread, PrView } from '../types'
+import { blockingChecks } from './pr-checks'
 import { clip } from './text'
 
 const NL = '\n'
@@ -249,10 +250,7 @@ export function threadsOnYou(pr: PrView, isSent: IsThreadSent): PrThread[] {
 export function prNeedsYou(pr: PrView, isSent: IsThreadSent): boolean {
   return (
     pr.state === 'OPEN' &&
-    (pr.mergeable === 'CONFLICTING' ||
-      blockingChecks(pr).length > 0 ||
-      pr.reviewDecision === 'CHANGES_REQUESTED' ||
-      threadsOnYou(pr, isSent).length > 0)
+    (pr.mergeable === 'CONFLICTING' || blockingChecks(pr).length > 0 || threadsOnYou(pr, isSent).length > 0)
   )
 }
 
@@ -292,7 +290,8 @@ export function readiness(
   const listed: string[] = []
   if (pr.state === 'MERGED') return result('merged', 'Merged')
   if (pr.state !== 'OPEN') return result('closed', 'Closed')
-  const { fail: failing, cancelled, pending } = checkCounts(pr)
+  const { fail: failing, pending } = checkCounts(pr)
+  const cancelled = blockingChecks(pr).length - failing
   const waiting = waitingThreads(pr)
   const open = threadsOnYou(pr, isSent).length
   const sent = waiting.filter(t => isSent(pr, t)).length
@@ -408,19 +407,6 @@ export function threadWhere(t: PrThread, path = t.path): string {
 export function took(ms: number): string {
   const secs = Math.max(0, Math.round(ms / 1000))
   return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`
-}
-
-export function failingChecks(pr: PrView): PrCheck[] {
-  return pr.checks.filter(c => c.bucket === 'fail')
-}
-
-export function cancelledChecks(pr: PrView): PrCheck[] {
-  return pr.checks.filter(c => c.bucket === 'cancelled')
-}
-
-/** The checks that wait on the person, in the order the PR block lists them: failing, then cancelled. */
-export function blockingChecks(pr: PrView): PrCheck[] {
-  return [...failingChecks(pr), ...cancelledChecks(pr)]
 }
 
 const COMMENT_MAX = 2000

@@ -105,7 +105,6 @@ export const PR_KEYS: Record<PrPress['action'], string> = {
   'pr-refresh': 'refresh',
   'pr-dismiss': 'dismiss-pr',
   'pr-undo': 'undo-pr',
-  'pr-dismiss-merged': 'dismiss-merged',
   'pr-rank-again': 'rank-again',
   'check-fix': 'fix',
   'check-rerun': 'rerun',

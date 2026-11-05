@@ -2,18 +2,8 @@ import type { Delivery, LastAction, PrCheck, PrStatus, PrThread, PrView } from '
 import { baseName } from './open-targets'
 import { isFoldingPress } from './last-actions'
 import { clipLabel } from './text'
-import {
-  blockingChecks,
-  cancelledChecks,
-  commentLine,
-  commentParts,
-  failingChecks,
-  THREAD_TITLE_CHARS,
-  threadWhere,
-  took,
-  waitingThreads,
-  checkKey,
-} from './prs'
+import { blockingChecks, cancelledChecks, failedSibling, failingChecks } from './pr-checks'
+import { commentLine, commentParts, THREAD_TITLE_CHARS, threadWhere, took, waitingThreads, checkKey } from './prs'
 import type { IsThreadSent } from './prs'
 import { DOT } from './rows'
 import { PR_MARKS, RUNNING_MARK } from './help'
@@ -94,9 +84,6 @@ export function prRefreshFailedText(error: string): string {
 /** The row id of Rank again's press. It starts with `pr:`, as a PR's mark id does, so no host takes it for an Asks row. */
 export const RANK_AGAIN_ID = 'pr:order'
 
-/** The row id of the PRs tab's Dismiss merged press. It starts with `pr:`, as a PR's mark id does, so no host takes it for an Asks row. */
-export const DISMISS_MERGED_ID = 'pr:merged'
-
 export const PR_GROUP_TITLES = { threads: 'Review threads', checks: 'Failing checks', cancelled: 'Cancelled checks' }
 
 /** A PR block's rows by group, and all of them in drawn order. A settled block draws none. */
@@ -164,13 +151,22 @@ function threadMark(delivery: Delivery | null | undefined): PrRowMark {
   return { ...PR_MARKS.sent, isDone: true, isRunning: false }
 }
 
-/** What a failing or cancelled check's row says. `lead` names its workflow, drawn before the check's name. */
-export function checkRowText(c: PrCheck): { mark: PrRowMark; lead: string | null; title: string; meta: string } {
+/**
+ * What a failing or cancelled check's row says. `lead` names its workflow, drawn before the check's name. A check a
+ * failing sibling cancelled folds to one line that names the sibling, since Fix on that one runs this one again.
+ */
+export function checkRowText(
+  pr: PrView,
+  c: PrCheck,
+): { mark: PrRowMark; lead: string | null; title: string; meta: string; fold: { note: string } | null } {
+  const sibling = failedSibling(pr, c)
+
   return {
     mark: { ...(c.bucket === 'cancelled' ? PR_MARKS.cancelled : PR_MARKS.failing), isDone: false, isRunning: false },
     lead: c.workflow || null,
     title: c.name,
     meta: checkRunText(c),
+    fold: sibling ? { note: `Stopped when ${checkKey(sibling)} failed. Fixing that one runs this again.` } : null,
   }
 }
 

@@ -110,7 +110,6 @@ export type PaneBase = {
   needsYouGroups: ((typeof NEEDS_YOU_GROUPS)[number] & { entries: DrawnEntry<Row>[]; rows: Row[] })[]
   findingEntries: DrawnEntry<Row>[]
   prGroups: (SessionView['prs']['drawn'][number] & ReturnType<typeof prBlockRows<Row>>)[]
-  prTabKeys: KeyAction[]
   prOrderKeys: KeyAction[]
   badgeOf: (id: ShownTab) => string | null
   tabTone: (id: ShownTab) => string | undefined

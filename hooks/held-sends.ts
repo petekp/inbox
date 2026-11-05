@@ -4,7 +4,7 @@ import { completedAttempt } from './session-presses'
 import type { SendOutcome } from './session-presses'
 import type { SessionHost } from './session-host'
 
-export type ReleaseHost<S extends Session> = Pick<
+type ReleaseHost<S extends Session> = Pick<
   SessionHost<S>,
   'now' | 'read' | 'update' | 'deliver' | 'prepare' | 'newId' | 'isDeliveryHeldUntilRun'
 >

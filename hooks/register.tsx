@@ -75,7 +75,7 @@ import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
 import { isPrPress, pressRowId, type Applied, type PrPress } from './pr-press'
 import { openPrViews } from './pr-views'
-import { prBlockRows, prMarkId, threadSentIn } from './pr-rows'
+import { prBlockRows, threadSentIn } from './pr-rows'
 import { prRefs, prNeedsYou } from './prs'
 import { EMPTY, isBlankLedger } from './ledger'
 import { closeItem } from './ledger-close'
@@ -1766,10 +1766,6 @@ async function undoKeyAfterPress(
   if (surface !== 'terminal' || !paneState.isInlineTerminalPane) return null
   const { view } = await drawnState($)
   if (isPrPress(p)) {
-    if (p.action === 'pr-dismiss-merged') {
-      const nearest = view.prs.drawn.filter(x => x.state.is === 'settled' && x.state.canUndo).at(-1)
-      return nearest ? `undo-${prMarkId(nearest.pr.ref)}` : null
-    }
     if (p.action !== 'pr-dismiss') return null
     return view.prs.drawn.some(x => x.pr.ref === p.ref && x.state.is === 'settled') ? `undo-${pressRowId(p)}` : null
   }
@@ -3096,7 +3092,6 @@ export const register: Register = on => {
         check: c => checkRow(d.pr, c),
       }),
     }))
-    const prTabKeys = view.prs.tabActions.map(a => prKeyAction(a, 'tab'))
     const prOrderKeys = (view.prs.order?.changed?.actions ?? []).map(a => prKeyAction(a, 'order'))
     const rows: Record<Tab, Row[]> = {
       needsYou: lists.byTab.needsYou,
@@ -3357,7 +3352,6 @@ export const register: Register = on => {
       Button,
       view,
       prOrderKeys,
-      prTabKeys,
       prGroups,
       section,
       undoPlace,
@@ -3475,7 +3469,7 @@ export const register: Register = on => {
     const rowKeys = [
       ...statusRowKeys,
       ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow(statusRowKeys)),
-      ...(tab === 'prs' && !isHelpShown ? [...prOrderKeys, ...prTabKeys] : []),
+      ...(tab === 'prs' && !isHelpShown ? prOrderKeys : []),
       undoKey(isListShown ? latestUndo(tabUndos(tab, lists, shownPrs)) : null, (p, surface) => runPress($, p, surface)),
     ]
 

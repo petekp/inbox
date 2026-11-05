@@ -1,7 +1,7 @@
 import { linkDialogs } from './dialogs'
 import { closedAt, pruneClosed } from './ledger-close'
 import type { Host } from './model-text'
-import { applyPrPress } from './pr-tab'
+import { applyPrPress, withFinishedPrsSettled } from './pr-tab'
 import { isPrPress, pressRowId } from './pr-press'
 import { isViewKept } from './pr-views'
 import { itemPrSteps, tabPrs } from './pr-fetch'
@@ -175,13 +175,16 @@ export function withFetchedPrs<S extends Session>(
   fetched: PrViews['views'],
   branchRef: string | null,
   isGhSignedOut: boolean | null,
+  now: number,
 ): S {
   const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true
   const views = { ...s.prViews.views, ...fetched }
+  const { ledger, lastActions } = withFinishedPrsSettled(s, fetched, { now, turnsStarted: s.presence.turnsStarted })
 
   return {
     ...s,
-    ledger: withOrderStatuses(s.ledger, views),
+    lastActions,
+    ledger: withOrderStatuses(ledger, views),
     prViews: {
       views,
       branchRef,

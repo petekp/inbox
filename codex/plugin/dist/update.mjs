@@ -1218,6 +1218,29 @@ function tasksText(tasks) {
   return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL5);
 }
 
+// ../hooks/pr-checks.ts
+function failingChecks(pr) {
+  return pr.checks.filter((c) => c.bucket === "fail");
+}
+function cancelledChecks(pr) {
+  return pr.checks.filter((c) => c.bucket === "cancelled");
+}
+var ACTIONS_RUN_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/actions\/runs\/(\d+)/;
+function runOf(c) {
+  const m = ACTIONS_RUN_URL.exec(c.url ?? "");
+  return m ? { repo: m[1], run: m[2] } : null;
+}
+function isSameRun(a, b) {
+  return b !== null && a.repo === b.repo && a.run === b.run;
+}
+function failedSibling(pr, c) {
+  const run2 = c.bucket === "cancelled" ? runOf(c) : null;
+  return run2 ? pr.checks.find((f) => f.bucket === "fail" && isSameRun(run2, runOf(f))) ?? null : null;
+}
+function blockingChecks(pr) {
+  return [...failingChecks(pr), ...cancelledChecks(pr).filter((c) => !failedSibling(pr, c))];
+}
+
 // ../hooks/prs.ts
 function namedPrs(text2, refs) {
   const numbers = new Set([...text2.matchAll(/#(\d+)\b/g)].map((m) => m[1]));
@@ -1245,7 +1268,7 @@ function threadsOnYou(pr, isSent) {
   return waitingThreads(pr).filter((t) => !t.isLinesChanged && !isSent(pr, t));
 }
 function prNeedsYou(pr, isSent) {
-  return pr.state === "OPEN" && (pr.mergeable === "CONFLICTING" || blockingChecks(pr).length > 0 || pr.reviewDecision === "CHANGES_REQUESTED" || threadsOnYou(pr, isSent).length > 0);
+  return pr.state === "OPEN" && (pr.mergeable === "CONFLICTING" || blockingChecks(pr).length > 0 || threadsOnYou(pr, isSent).length > 0);
 }
 function checkCounts(pr) {
   const counts = { pass: 0, fail: 0, cancelled: 0, pending: 0, skip: 0 };
@@ -1267,7 +1290,8 @@ function readiness(pr, isSent = () => false, agent = "Claude") {
   const listed = [];
   if (pr.state === "MERGED") return result("merged", "Merged");
   if (pr.state !== "OPEN") return result("closed", "Closed");
-  const { fail: failing, cancelled, pending } = checkCounts(pr);
+  const { fail: failing, pending } = checkCounts(pr);
+  const cancelled = blockingChecks(pr).length - failing;
   const waiting = waitingThreads(pr);
   const open2 = threadsOnYou(pr, isSent).length;
   const sent = waiting.filter((t) => isSent(pr, t)).length;
@@ -1318,15 +1342,6 @@ function inPrOrder(prs, ranked = []) {
   return [...prs].sort(
     (a, b) => byPlace(a, b) || status.get(a) - status.get(b) || b.number - a.number || a.ref.localeCompare(b.ref)
   );
-}
-function failingChecks(pr) {
-  return pr.checks.filter((c) => c.bucket === "fail");
-}
-function cancelledChecks(pr) {
-  return pr.checks.filter((c) => c.bucket === "cancelled");
-}
-function blockingChecks(pr) {
-  return [...failingChecks(pr), ...cancelledChecks(pr)];
 }
 
 // ../hooks/open-targets.ts
@@ -2426,15 +2441,20 @@ var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds
 
 // ../hooks/pr-views.ts
 var PR_DISMISSED_LABEL = "Dismissed";
+var PR_MERGED_LABEL = "Merged";
+var PR_CLOSED_LABEL = "Closed";
 function isTracked(prState, links, ref) {
   return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
 }
 function keepsView(prState, links, ref) {
   return isTracked(prState, links, ref) || tabPrs(links).includes(ref) && isLeftOut(prState, ref);
 }
-function dismissedAt(lastActions, ref) {
+function dismissal(lastActions, ref) {
   const mark = lastActions[prMarkId(ref)];
-  return mark?.action === "pr-dismiss" ? mark.at : null;
+  return mark?.action === "pr-dismiss" ? mark : null;
+}
+function dismissedAt(lastActions, ref) {
+  return dismissal(lastActions, ref)?.at ?? null;
 }
 function isViewKept(prState, links, lastActions, ref, shownSince) {
   const at = dismissedAt(lastActions, ref);
@@ -2443,14 +2463,18 @@ function isViewKept(prState, links, lastActions, ref, shownSince) {
 function openPrViews(drawn) {
   return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
 }
-var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
+function settledPrState(mark, now, settleWindowMs) {
+  const closed = mark.text === PR_MERGED_LABEL ? { how: "update", outcome: PR_MERGED_LABEL } : mark.text === PR_CLOSED_LABEL ? { how: "expired", outcome: PR_CLOSED_LABEL } : { how: "dismissed", outcome: PR_DISMISSED_LABEL };
+  const state = closedRowState(closed, mark.at, now, settleWindowMs, null);
+  return { ...state, canUndo: isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true };
+}
 function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
   const ranked = links.prOrder?.refs ?? [];
   const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr) => {
     if (isTracked(prState, links, pr.ref)) return [{ pr, state: { is: "open" } }];
-    const at = dismissedAt(lastActions, pr.ref);
-    if (at === null) return [];
-    const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null);
+    const mark = dismissal(lastActions, pr.ref);
+    if (mark === null) return [];
+    const state = settledPrState(mark, now, settleWindowMs);
     return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
   });
   let rank = 0;
@@ -2616,25 +2640,6 @@ function prOrderActions(row) {
       hotkey: "g"
     }
   ]);
-}
-
-// ../hooks/pr-tab.ts
-var DISMISS_MERGED_LABEL = "Dismiss merged";
-function isDismissedByMerged(pr, branchRef) {
-  return pr.state === "MERGED" && pr.ref !== branchRef;
-}
-function prTabActions(drawn, branchRef) {
-  const hasMerged = drawn.some((d) => d.state.is === "open" && isDismissedByMerged(d.pr, branchRef));
-  return hasMerged ? [
-    {
-      press: { action: "pr-dismiss-merged" },
-      label: DISMISS_MERGED_LABEL,
-      kind: "mark",
-      emphasis: "normal",
-      hotkey: "m",
-      isOut: false
-    }
-  ] : [];
 }
 
 // ../hooks/tools.ts
@@ -3004,7 +3009,6 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
       { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
       shownSince
     ),
-    tabActions: prTabActions(drawn, s.prViews.branchRef),
     isGhSignedOut: s.prViews.isGhSignedOut === true
   };
 }

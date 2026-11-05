@@ -115,11 +115,8 @@ export function tabLegend(isNextBuild: boolean): HelpKey[] {
 /** The key that presses Undo, which no row's selection holds: a closed row settles and the selection moves on. */
 export const UNDO_KEY = 'u'
 
-/** The PRs tab's own keys, which `hooks/pr-order.ts:prOrderActions` and `hooks/pr-tab.ts:prTabActions` bind from any row of the tab. */
-const PR_TAB_HELP_KEYS: HelpKey[] = [
-  { keys: 'g', does: 'Rank the PRs again, once a ranked PR changed' },
-  { keys: 'm', does: 'Dismiss the merged PRs' },
-]
+/** The PRs tab's own key, which `hooks/pr-order.ts:prOrderActions` binds from any row of the tab. */
+const PR_TAB_HELP_KEYS: HelpKey[] = [{ keys: 'g', does: 'Rank the PRs again, once a ranked PR changed' }]
 
 /**
  * The keys a look's Help lists, for the tab Help opened over. `hasStatusButtons` says the Status has a row with a

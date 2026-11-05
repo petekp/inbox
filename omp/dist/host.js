@@ -802,6 +802,29 @@ ${asks.map((a) => `- ${a}`).join(`
   }
 };
 
+// ../hooks/pr-checks.ts
+function failingChecks(pr) {
+  return pr.checks.filter((c) => c.bucket === "fail");
+}
+function cancelledChecks(pr) {
+  return pr.checks.filter((c) => c.bucket === "cancelled");
+}
+var ACTIONS_RUN_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/actions\/runs\/(\d+)/;
+function runOf(c) {
+  const m = ACTIONS_RUN_URL.exec(c.url ?? "");
+  return m ? { repo: m[1], run: m[2] } : null;
+}
+function isSameRun(a, b) {
+  return b !== null && a.repo === b.repo && a.run === b.run;
+}
+function failedSibling(pr, c) {
+  const run = c.bucket === "cancelled" ? runOf(c) : null;
+  return run ? pr.checks.find((f) => f.bucket === "fail" && isSameRun(run, runOf(f))) ?? null : null;
+}
+function blockingChecks(pr) {
+  return [...failingChecks(pr), ...cancelledChecks(pr).filter((c) => !failedSibling(pr, c))];
+}
+
 // ../hooks/prs.ts
 var NL3 = `
 `;
@@ -956,7 +979,7 @@ function threadsOnYou(pr, isSent) {
   return waitingThreads(pr).filter((t) => !t.isLinesChanged && !isSent(pr, t));
 }
 function prNeedsYou(pr, isSent) {
-  return pr.state === "OPEN" && (pr.mergeable === "CONFLICTING" || blockingChecks(pr).length > 0 || pr.reviewDecision === "CHANGES_REQUESTED" || threadsOnYou(pr, isSent).length > 0);
+  return pr.state === "OPEN" && (pr.mergeable === "CONFLICTING" || blockingChecks(pr).length > 0 || threadsOnYou(pr, isSent).length > 0);
 }
 function checkCounts(pr) {
   const counts = { pass: 0, fail: 0, cancelled: 0, pending: 0, skip: 0 };
@@ -981,7 +1004,8 @@ function readiness(pr, isSent = () => false, agent = "Claude") {
     return result("merged", "Merged");
   if (pr.state !== "OPEN")
     return result("closed", "Closed");
-  const { fail: failing, cancelled, pending } = checkCounts(pr);
+  const { fail: failing, pending } = checkCounts(pr);
+  const cancelled = blockingChecks(pr).length - failing;
   const waiting = waitingThreads(pr);
   const open = threadsOnYou(pr, isSent).length;
   const sent = waiting.filter((t) => isSent(pr, t)).length;
@@ -1051,15 +1075,6 @@ function threadWhere(t, path = t.path) {
 function took(ms) {
   const secs = Math.max(0, Math.round(ms / 1000));
   return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
-}
-function failingChecks(pr) {
-  return pr.checks.filter((c) => c.bucket === "fail");
-}
-function cancelledChecks(pr) {
-  return pr.checks.filter((c) => c.bucket === "cancelled");
-}
-function blockingChecks(pr) {
-  return [...failingChecks(pr), ...cancelledChecks(pr)];
 }
 var COMMENT_MAX = 2000;
 function threadText(t) {
@@ -1793,10 +1808,7 @@ function tabLegend(isNextBuild) {
   return shownTabs(isNextBuild).map((t) => ({ keys: t.symbol, does: t.label }));
 }
 var UNDO_KEY = "u";
-var PR_TAB_HELP_KEYS = [
-  { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
-  { keys: "m", does: "Dismiss the merged PRs" }
-];
+var PR_TAB_HELP_KEYS = [{ keys: "g", does: "Rank the PRs again, once a ranked PR changed" }];
 function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
   const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
   const hasRows = isRowTab(tab);
@@ -2953,7 +2965,6 @@ function prRefreshFailedText(error) {
   return `Last refresh failed: ${error}`;
 }
 var RANK_AGAIN_ID = "pr:order";
-var DISMISS_MERGED_ID = "pr:merged";
 var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks", cancelled: "Cancelled checks" };
 function prBlockRows(pr, isSettled, rowOf) {
   const threads = isSettled ? [] : waitingThreads(pr).map(rowOf.thread);
@@ -2984,12 +2995,14 @@ function threadMark(delivery) {
     return { text: "", tone: null, isDone: false, isRunning: false };
   return { ...PR_MARKS.sent, isDone: true, isRunning: false };
 }
-function checkRowText(c) {
+function checkRowText(pr, c) {
+  const sibling = failedSibling(pr, c);
   return {
     mark: { ...c.bucket === "cancelled" ? PR_MARKS.cancelled : PR_MARKS.failing, isDone: false, isRunning: false },
     lead: c.workflow || null,
     title: c.name,
-    meta: checkRunText(c)
+    meta: checkRunText(c),
+    fold: sibling ? { note: `Stopped when ${checkKey(sibling)} failed. Fixing that one runs this again.` } : null
   };
 }
 var PR_QUOTE_CHARS = 1200;
@@ -3159,15 +3172,20 @@ function limitedTo(limit) {
 
 // ../hooks/pr-views.ts
 var PR_DISMISSED_LABEL = "Dismissed";
+var PR_MERGED_LABEL = "Merged";
+var PR_CLOSED_LABEL = "Closed";
 function isTracked(prState, links, ref) {
   return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
 }
 function keepsView(prState, links, ref) {
   return isTracked(prState, links, ref) || tabPrs(links).includes(ref) && isLeftOut(prState, ref);
 }
-function dismissedAt(lastActions, ref) {
+function dismissal(lastActions, ref) {
   const mark = lastActions[prMarkId(ref)];
-  return mark?.action === "pr-dismiss" ? mark.at : null;
+  return mark?.action === "pr-dismiss" ? mark : null;
+}
+function dismissedAt(lastActions, ref) {
+  return dismissal(lastActions, ref)?.at ?? null;
 }
 function isDismissed(lastActions, ref) {
   return dismissedAt(lastActions, ref) !== null;
@@ -3179,16 +3197,20 @@ function isViewKept(prState, links, lastActions, ref, shownSince) {
 function openPrViews(drawn) {
   return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
 }
-var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
+function settledPrState(mark, now, settleWindowMs) {
+  const closed = mark.text === PR_MERGED_LABEL ? { how: "update", outcome: PR_MERGED_LABEL } : mark.text === PR_CLOSED_LABEL ? { how: "expired", outcome: PR_CLOSED_LABEL } : { how: "dismissed", outcome: PR_DISMISSED_LABEL };
+  const state = closedRowState(closed, mark.at, now, settleWindowMs, null);
+  return { ...state, canUndo: isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true };
+}
 function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
   const ranked = links.prOrder?.refs ?? [];
   const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr) => {
     if (isTracked(prState, links, pr.ref))
       return [{ pr, state: { is: "open" } }];
-    const at = dismissedAt(lastActions, pr.ref);
-    if (at === null)
+    const mark = dismissal(lastActions, pr.ref);
+    if (mark === null)
       return [];
-    const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null);
+    const state = settledPrState(mark, now, settleWindowMs);
     return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
   });
   let rank = 0;
@@ -3356,7 +3378,7 @@ function feedbackText(f, look) {
 // ../hooks/pr-press.ts
 var PR_REFRESH = { kind: "refresh-prs", name: "PRs" };
 function isPrPress(p) {
-  return "ref" in p || p.action === "pr-dismiss-merged" || p.action === "pr-rank-again";
+  return "ref" in p || p.action === "pr-rank-again";
 }
 function commentEffect(pr, t) {
   return { kind: "open", target: t.reply?.url || t.url || pr.url, name: "the comment" };
@@ -3367,21 +3389,12 @@ function prPageEffect(pr) {
 function logEffect(pr, check) {
   return { kind: "open", target: check.url ?? pr.url, name: check.url ? "the log" : `PR #${pr.number}` };
 }
-var ACTIONS_RUN_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/actions\/runs\/(\d+)/;
 var RERUN_LABEL = "Re-run";
-function runOf(c) {
-  const m = ACTIONS_RUN_URL.exec(c.url ?? "");
-  return m ? { repo: m[1], run: m[2] } : null;
-}
-function isSameRun(a, b) {
-  return b !== null && a.repo === b.repo && a.run === b.run;
-}
 function rerunEffect(pr, c) {
   const run = c.bucket === "cancelled" ? runOf(c) : null;
   if (!run)
     return null;
-  const isCancelledByFailure = pr.checks.some((f) => f.bucket === "fail" && isSameRun(run, runOf(f)));
-  return isCancelledByFailure ? null : { kind: "rerun", ...run, name: c.workflow || c.name };
+  return failedSibling(pr, c) ? null : { kind: "rerun", ...run, name: c.workflow || c.name };
 }
 function sameRunChecks(pr, c) {
   const run = runOf(c);
@@ -3405,8 +3418,6 @@ function readFirstEffect(pr) {
   return { kind: "refresh-prs", name: `PR #${pr.number}` };
 }
 function prRowId(p) {
-  if (p.action === "pr-dismiss-merged")
-    return DISMISS_MERGED_ID;
   if (p.action === "pr-rank-again")
     return RANK_AGAIN_ID;
   if ("check" in p)
@@ -3521,7 +3532,6 @@ function prOrderActions(row) {
 
 // ../hooks/pr-tab.ts
 var PR_REFRESH_LABEL = "Refresh PRs";
-var DISMISS_MERGED_LABEL = "Dismiss merged";
 function threadActions(pr, t, presses) {
   const row = lastPressOf(presses, threadRowId(pr.ref, t.id));
   const on = { ref: pr.ref, thread: t.id };
@@ -3669,21 +3679,19 @@ function withUndismissed(ledger, ref, wasLinked) {
     prOrder: order && isDismissedFromOrder ? { ...order, dismissed: order.dismissed.filter((r) => r !== ref) } : order
   };
 }
-function isDismissedByMerged(pr, branchRef) {
-  return pr.state === "MERGED" && pr.ref !== branchRef;
-}
-function prTabActions(drawn, branchRef) {
-  const hasMerged = drawn.some((d) => d.state.is === "open" && isDismissedByMerged(d.pr, branchRef));
-  return hasMerged ? [
-    {
-      press: { action: "pr-dismiss-merged" },
-      label: DISMISS_MERGED_LABEL,
-      kind: "mark",
-      emphasis: "normal",
-      hotkey: "m",
-      isOut: false
-    }
-  ] : [];
+function withFinishedPrsSettled(s, fetched, ctx) {
+  const finished = Object.values(fetched).filter((pr) => pr.state !== "OPEN" && s.prViews.views[pr.ref]?.state === "OPEN" && pr.ref !== s.prViews.branchRef && tabPrs(s.ledger).includes(pr.ref));
+  if (finished.length === 0)
+    return { ledger: s.ledger, lastActions: s.lastActions };
+  const lasts = finished.map((pr) => {
+    const id = prMarkId(pr.ref);
+    const label = pr.state === "MERGED" ? PR_MERGED_LABEL : PR_CLOSED_LABEL;
+    return [id, { ...dismissPress(s.ledger, pr.ref, ctx, s.lastActions[id]), text: label }];
+  });
+  return {
+    ledger: withDismissed(s.ledger, finished.map((pr) => pr.ref)),
+    lastActions: { ...s.lastActions, ...Object.fromEntries(lasts) }
+  };
 }
 function applyPrPress(ledger, prState, lastActions, p, ctx) {
   const stale = { stale: true };
@@ -3692,18 +3700,6 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
     const lasts = Object.fromEntries(Object.entries(a.lasts ?? {}).map(([id, l]) => [id, withQueued(l, effects)]));
     return { ledger, drop: [], ...a, lasts, effects };
   };
-  if (p.action === "pr-dismiss-merged") {
-    const refs = Object.values(prState.views).filter((pr) => isTracked(prState, ledger, pr.ref) && isDismissedByMerged(pr, prState.branchRef)).map((pr) => pr.ref);
-    if (refs.length === 0)
-      return stale;
-    return applied({
-      ledger: withDismissed(ledger, refs),
-      lasts: Object.fromEntries(refs.map((ref) => {
-        const id = prMarkId(ref);
-        return [id, dismissPress(ledger, ref, ctx, lastActions[id])];
-      }))
-    });
-  }
   if (p.action === "pr-rank-again") {
     const order = ledger.prOrder;
     if (!order)
@@ -4560,7 +4556,10 @@ function followTo(tabs, shown, isShownEmpty, rows) {
 function prRowIds(drawn) {
   return drawn.flatMap(({ pr, state }) => [
     prMarkId(pr.ref),
-    ...state.is === "settled" ? [] : [...waitingThreads(pr).map((t) => prThreadId(pr, t)), ...blockingChecks(pr).map((c) => prCheckId(pr, c))]
+    ...state.is === "settled" ? [] : [
+      ...waitingThreads(pr).map((t) => prThreadId(pr, t)),
+      ...[...failingChecks(pr), ...cancelledChecks(pr)].map((c) => prCheckId(pr, c))
+    ]
   ]);
 }
 function isPrsTabEmpty(drawnCount, isFetching) {
@@ -5125,7 +5124,6 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
     count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger),
     order: prOrderView(s.ledger.prOrder, drawn, { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now }, shownSince),
-    tabActions: prTabActions(drawn, s.prViews.branchRef),
     isGhSignedOut: s.prViews.isGhSignedOut === true
   };
 }
@@ -5215,12 +5213,14 @@ function pruned(s) {
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
   };
 }
-function withFetchedPrs(s, fetched, branchRef, isGhSignedOut) {
+function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now) {
   const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true;
   const views = { ...s.prViews.views, ...fetched };
+  const { ledger, lastActions } = withFinishedPrsSettled(s, fetched, { now, turnsStarted: s.presence.turnsStarted });
   return {
     ...s,
-    ledger: withOrderStatuses(s.ledger, views),
+    lastActions,
+    ledger: withOrderStatuses(ledger, views),
     prViews: {
       views,
       branchRef,
@@ -5291,7 +5291,8 @@ async function fetchPrs(host, findsBranchPr) {
       fetch = await fetchWith(refound);
   }
   const { views: fetched, branchRef, isGhSignedOut } = fetch;
-  await host.update((cur) => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut));
+  const at = await host.now();
+  await host.update((cur) => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut, at));
 }
 var ALREADY_RUNNING = /already running/i;
 async function rerunRun(host, e) {
@@ -5987,7 +5988,7 @@ function prEntries(screen, ui, now) {
     };
     const checkEntry = (c) => {
       const id = prCheckId(pr, c);
-      const text = checkRowText(c);
+      const text = checkRowText(pr, c);
       const feedback = pressFeedback(screen, id, now, text.mark.isDone);
       return {
         kind: "row",
@@ -5996,7 +5997,9 @@ function prEntries(screen, ui, now) {
           depth: 1,
           lead: markLead(text.mark),
           title: text.lead ? `${text.lead} / ${text.title}` : text.title,
-          detail: text.meta,
+          isDim: text.fold !== null,
+          isFolded: text.fold !== null,
+          detail: [text.meta, text.fold?.note].filter(Boolean).join(" \xB7 "),
           age: doneAt(feedback) ?? c.finishedAt ?? null,
           feedback,
           buttons: prButtons(checkActions(pr, c, presses)),
@@ -6016,12 +6019,6 @@ function prEntries(screen, ui, now) {
       out.push(...entries);
     }
   }
-  const tabButtons = prButtons(prs.tabActions);
-  if (tabButtons.length > 0)
-    out.push({
-      kind: "row",
-      line: { ...blankLine(DISMISS_MERGED_ID), buttons: tabButtons, isWaiting: false, isTabButtons: true }
-    });
   if (prs.olderText)
     out.push({ kind: "note", text: prs.olderText });
   return out;
@@ -7908,7 +7905,6 @@ var CLIENTS = {
       "ran-call-delegates": { kind: "full" },
       "tool-result-line": { kind: "full" },
       "status-call-records": { kind: "full" },
-      "dismiss-merged-prs": { kind: "full" },
       "pr-order": { kind: "full" },
       "pr-rank-again": { kind: "full" },
       "pr-check-rerun": { kind: "full" },
@@ -8016,7 +8012,6 @@ var CLIENTS = {
         reason: "Codex draws an MCP tool call's result from its content, which is the text the model reads. structuredContent reaches the model too, and _meta reaches only an MCP App view, so a result has no field for the person alone."
       },
       "status-call-records": { kind: "full" },
-      "dismiss-merged-prs": { kind: "full" },
       "pr-order": { kind: "full" },
       "pr-rank-again": { kind: "full" },
       "pr-check-rerun": { kind: "full" },
@@ -8100,7 +8095,6 @@ var CLIENTS = {
       "ran-call-delegates": { kind: "full" },
       "tool-result-line": { kind: "full" },
       "status-call-records": { kind: "full" },
-      "dismiss-merged-prs": { kind: "full" },
       "pr-order": { kind: "full" },
       "pr-rank-again": { kind: "full" },
       "pr-check-rerun": { kind: "full" },

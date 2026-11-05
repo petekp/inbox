@@ -3,9 +3,7 @@ import { drawnPrs, openPrViews } from './pr-views'
 import { isPrTabRunning, threadSentIn } from './pr-rows'
 import { itemPrSteps, olderPrsText, tabPrs } from './pr-fetch'
 import { prOrderView } from './pr-order'
-import { prTabActions } from './pr-tab'
 import type { DrawnPr } from './pr-views'
-import type { PrAction } from './pr-press'
 import type { PrOrderView } from './pr-order'
 import { prNeedsYou } from './prs'
 import { MARK_LEGEND } from './help'
@@ -31,8 +29,6 @@ type PrTab = {
   olderText: string | null
   /** The agent's order of the PRs, drawn above them, or null while it ranks no block the tab draws. `prOrderView`. */
   order: PrOrderView | null
-  /** The tab's own buttons, drawn after its PR blocks. `prTabActions`. */
-  tabActions: PrAction[]
   /** Whether gh asked for a sign-in at the last fetch it answered. */
   isGhSignedOut: boolean
 }
@@ -145,7 +141,6 @@ function prTabOf(
       { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
       shownSince,
     ),
-    tabActions: prTabActions(drawn, s.prViews.branchRef),
     isGhSignedOut: s.prViews.isGhSignedOut === true,
   }
 }

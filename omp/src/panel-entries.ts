@@ -6,7 +6,6 @@ import {
   PR_GROUP_TITLES,
   PR_TONES,
   checkRowText,
-  DISMISS_MERGED_ID,
   RANK_AGAIN_ID,
   prCheckId,
   isBlockPressShown,
@@ -194,7 +193,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
     }
     const checkEntry = (c: PrCheck): Entry => {
       const id = prCheckId(pr, c)
-      const text = checkRowText(c)
+      const text = checkRowText(pr, c)
       const feedback = pressFeedback(screen, id, now, text.mark.isDone)
       return {
         kind: 'row',
@@ -203,7 +202,9 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
           depth: 1,
           lead: markLead(text.mark),
           title: text.lead ? `${text.lead} / ${text.title}` : text.title,
-          detail: text.meta,
+          isDim: text.fold !== null,
+          isFolded: text.fold !== null,
+          detail: [text.meta, text.fold?.note].filter(Boolean).join(' · '),
           age: doneAt(feedback) ?? c.finishedAt ?? null,
           feedback,
           buttons: prButtons(checkActions(pr, c, presses)),
@@ -222,12 +223,6 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       out.push(...entries)
     }
   }
-  const tabButtons = prButtons(prs.tabActions)
-  if (tabButtons.length > 0)
-    out.push({
-      kind: 'row',
-      line: { ...blankLine(DISMISS_MERGED_ID), buttons: tabButtons, isWaiting: false, isTabButtons: true },
-    })
   if (prs.olderText) out.push({ kind: 'note', text: prs.olderText })
 
   return out

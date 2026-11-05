@@ -1,6 +1,7 @@
 import type { PrOrder, PrView, RankedPrStatus } from '../types'
 import { ago } from './text'
-import { blockingChecks, checkKey, inPrOrder, rankOf, readiness, waitingThreads } from './prs'
+import { blockingChecks } from './pr-checks'
+import { checkKey, inPrOrder, rankOf, readiness, waitingThreads } from './prs'
 import { DOT } from './rows'
 import { isShownSince } from './timing'
 import type { PressState } from './feedback'
