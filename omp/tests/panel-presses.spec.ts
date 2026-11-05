@@ -169,13 +169,13 @@ test('an opened handed-off row whose reply is on its way starts the status under
   const handedOff: RowView = {
     ...row,
     state: { is: 'handedOff' },
-    feedback: { is: 'queued', label: 'go with B', at: NOW },
+    feedback: { is: 'queued', label: 'Queued reply: go with B', at: NOW },
   }
   const questions = base.view.needsYou.questions.map(r => (r.id === row.id ? handedOff : r))
   const screen = { ...base, view: { ...base.view, needsYou: { ...base.view.needsYou, questions } } }
   const lines = text(screen, { ...onRow(row), opened: row.id }).split('\n')
-  const status = lines.findIndex(l => l.includes('Queued: go with B'))
-  expect(lines[status]).toMatch(/[●◉◎] Queued: go with B/)
+  const status = lines.findIndex(l => l.includes('Queued reply: go with B'))
+  expect(lines[status]).toMatch(/[●◉◎] Queued reply: go with B/)
   expect(status).toBeGreaterThan(lines.findIndex(l => l.includes('↵ ')))
 })
 
@@ -190,7 +190,7 @@ test('a reply folds its row to one line with its mark and label, and the selecti
   const { row, screen } = await afterReply()
   const lines = text(screen, onRow(row)).split('\n')
   const at = lines.findIndex(l => l.includes(row.title))
-  expect(lines[at]).toMatch(/❯ .*✓ Replied/)
+  expect(lines[at]).toMatch(/❯ .*✓ Replied: go with B/)
   expect(lines[at + 1]).not.toContain('↵')
 
   const moved = afterHandOff(screen, onRow(row), row.id, NOW)

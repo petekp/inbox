@@ -233,6 +233,8 @@ export type LastAction = {
   action: string
   /** The label of the action pressed, as in "Discuss". */
   text: string
+  /** The words the person typed, on a reply. Missing on a reply saved before the inbox kept them, which reads without them. */
+  reply?: string
   at: number
   /** Order of presses in the Claude host while their saves may overlap. */
   pressOrder?: number

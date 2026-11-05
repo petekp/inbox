@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { actionLines } from '../hooks/action-plan'
+import { deliveryLabel, settledLabel } from '../hooks/rows'
 import { FOLD_QUIET_MS, SETTLED_MS, isSettledInPlace, nextFoldAt, withListInput } from '../hooks/timing'
 import type { ListInput, Placing } from '../hooks/timing'
 
@@ -81,4 +82,30 @@ test('a press under way on the tab keeps every due row in place, and a look that
   expect(isSettledInPlace(settled, placing(due + 10 * SETTLED_MS, { isPressOut: true }))).toBe(true)
   expect(isSettledInPlace(settled, placing(due + 1, { undoShown: ['i1'] }), 'i1')).toBe(true)
   expect(isSettledInPlace(settled, placing(due + 1, { undoShown: ['i1'] }), 'i2')).toBe(false)
+})
+
+test('a reply reads with the words the person typed at every step of its way, on one line, and an answer reads as its option', () => {
+  const words = 'Go with Redis,\n  it survives restarts.\n\nKeep the  old API.'
+  const line = 'Go with Redis, it survives restarts. Keep the old API.'
+  expect(deliveryLabel('sending', 'Reply', words)).toBe(`Sending reply: ${line}`)
+  expect(deliveryLabel('queued', 'Reply', words)).toBe(`Queued reply: ${line}`)
+  expect(deliveryLabel('unconfirmed', 'Reply', words)).toBe(`Reply not confirmed: ${line}`)
+  expect(deliveryLabel('arrived', 'Replied', words)).toBe(`Replied: ${line}`)
+
+  expect(deliveryLabel('sending', 'Yes')).toBe('Yes')
+  expect(deliveryLabel('queued', 'Yes')).toBe('Queued: Yes')
+  expect(deliveryLabel('unconfirmed', 'Yes')).toBe('Not confirmed: Yes')
+  expect(deliveryLabel('arrived', 'Yes')).toBe('Yes')
+
+  expect(deliveryLabel('queued', 'Reply')).toBe('Queued: Reply')
+  expect(deliveryLabel('arrived', 'Replied')).toBe('Replied')
+})
+
+test('a settled row reads its reply’s words with its message’s step, and a refused message with why', () => {
+  expect(settledLabel('Replied', 'queued', 'Call it hello')).toBe('Queued reply: Call it hello')
+  expect(settledLabel('Replied', 'sending', 'Call it hello')).toBe('Sending reply: Call it hello')
+  expect(settledLabel('Replied', null, 'Call it hello')).toBe('Replied: Call it hello')
+  expect(settledLabel('Yes', 'held')).toBe('Yes')
+  expect(settledLabel('Yes', 'unconfirmed')).toBe('Not confirmed: Yes')
+  expect(settledLabel('Yes', { error: 'a hook refused it', canUndo: true })).toBe('Yes · Not sent: a hook refused it')
 })

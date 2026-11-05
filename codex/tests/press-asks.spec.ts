@@ -52,7 +52,7 @@ test('a run step hands the task to Codex: it folds until the turn it started is 
   assert.deepEqual(folded.needsYou.tasks[0]?.state, { is: 'handedOff' })
   assert.deepEqual(viewOf(s, 50 + QUEUED_AFTER_MS).needsYou.tasks[0]?.feedback, {
     is: 'queued',
-    label: 'Run seed script',
+    label: 'Queued: Run seed script',
     at: 50,
   })
   assert.deepEqual(rowResultMark(folded.needsYou.tasks[0]!), { text: '●', isRunning: true })
@@ -170,7 +170,7 @@ test('an open or copy on a handed-off task keeps it folded and out of the count,
   assert.equal(viewOf(done, 60).needsYou.tasks[0]?.feedback?.is, 'local')
   assert.deepEqual(viewOf(done, 55 + SETTLED_MS).needsYou.tasks[0]?.feedback, {
     is: 'queued',
-    label: 'Run seed script',
+    label: 'Queued: Run seed script',
     at: 50,
   })
 })

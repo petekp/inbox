@@ -97,6 +97,7 @@ test('a row Codex closes while the person types a reply stays held in place, out
       offersUndo: false,
       delivery: 'queued',
       closedAs: 'handled',
+      reply: 'Fix add.js after all',
     },
   )
   const later = 70 + SETTLE_WINDOW_MS

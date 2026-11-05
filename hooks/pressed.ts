@@ -131,7 +131,10 @@ export function isHeldSend(last: LastAction | undefined): boolean {
 export function pressed(ledger: Ledger, last: LastAction | undefined, p: RowPress, ctx: PressContext): PressResult {
   const stale = { stale: true as const }
   const answerMessage = ctx.answerMessage ?? messages.answer
-  const record = (kind: LastAction['kind']) => recordPress(kind, actionId(p), pressText(p), ctx, last)
+  const record = (kind: LastAction['kind']): LastAction => ({
+    ...recordPress(kind, actionId(p), pressText(p), ctx, last),
+    ...(p.action === 'type' ? { reply: p.text.trim() } : {}),
+  })
   const unchanged = { ledger, last: null, effects: [] }
   if (p.id === GOAL_KEYS_ID) return goalPressed(ledger, p, record, ctx.now)
 

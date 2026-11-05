@@ -24,7 +24,7 @@ import { isSettledInPlace, canUndoClose, isUndoLeft, pendingDeliveryAt } from '.
 import type { ListInput } from './timing'
 import { closedRowState, optionDescriptionsOf, isWaitingRow, outcomeLabel, closedMark, recLineOf } from './rows'
 import type { RowView, ClosedDelivery, ResultMark, RowState } from './rows'
-import { DONE_LABELS, feedbackOf, fixLabel, feedbackIn, isPressUnderWay, pressFeedbackIn } from './feedback'
+import { doneLabel, feedbackOf, fixLabel, feedbackIn, isPressUnderWay, pressFeedbackIn } from './feedback'
 import type { ShownTab } from './tabs'
 import { actionsOf } from './action-plan'
 
@@ -196,12 +196,13 @@ export function inboxView({
       if (reply)
         return {
           is: 'settled',
-          label: DONE_LABELS[reply.action]?.(reply.text) ?? reply.text,
+          label: doneLabel(reply),
           at: reply.at,
           canUndo: false,
           offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
           closedAs: closedState(closed),
+          ...(reply.reply !== undefined ? { reply: reply.reply } : {}),
         }
       if (isHeld(closed)) return { is: 'held', label: heldLabel(closed), at }
 

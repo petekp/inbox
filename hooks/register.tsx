@@ -3341,6 +3341,7 @@ export const register: Register = on => {
       {
         ...client,
         look,
+        listColumns,
         Text,
         pal,
         Box,

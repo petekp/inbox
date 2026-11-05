@@ -1540,6 +1540,32 @@ var RUNNING_RESULT = { text: RUNNING_MARK, isRunning: true };
 function isSendMoving(delivery) {
   return delivery === "sending" || delivery === "queued";
 }
+function replyLine(words3) {
+  return words3.replace(/\s+/g, " ").trim();
+}
+function deliveryLabel(step, label, reply) {
+  if (reply !== void 0) {
+    const words3 = replyLine(reply);
+    switch (step) {
+      case "sending":
+        return `Sending reply: ${words3}`;
+      case "queued":
+        return `Queued reply: ${words3}`;
+      case "unconfirmed":
+        return `Reply not confirmed: ${words3}`;
+      case "arrived":
+        return `Replied: ${words3}`;
+    }
+  }
+  switch (step) {
+    case "queued":
+      return `Queued: ${label}`;
+    case "unconfirmed":
+      return `Not confirmed: ${label}`;
+    default:
+      return label;
+  }
+}
 function closedMark(state, delivery) {
   if (isSendMoving(delivery)) return RUNNING_RESULT;
   return { text: delivery === null ? CLOSED_MARKS[state] : "", isRunning: false };
@@ -1983,7 +2009,8 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   if (!last || last.kind === "local") return null;
   const delivery = last.delivery;
   const pending = pendingDeliveryAt(last, now);
-  if (pending === "queued" || pending === "unconfirmed") return { is: pending, label: last.text, at: last.at };
+  if (pending === "queued" || pending === "unconfirmed")
+    return { is: pending, label: deliveryLabel(pending, last.text, last.reply), at: last.at };
   if (delivery?.state === "failed") return { is: "notSent", reason: delivery.reason, retry: retryOf(id, last) };
   const isAwaiting = isAwaitingReply(last, turns);
   const isUnreported = last.action === "compare" && !(reportedAt !== void 0 && reportedAt >= last.at);
@@ -1991,13 +2018,14 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const working = WORKING_LABELS[last.action];
   if (last.kind === "talk" && working && (isAwaiting || isUnreported && !isPastLimit))
     return { is: "working", label: working, at: last.at };
-  if (pending === "sending") return { is: "sending", label: last.text, at: last.at };
+  if (pending === "sending")
+    return { is: "sending", label: deliveryLabel("sending", last.text, last.reply), at: last.at };
   if (isUnreported) return { is: "noComparison", at: last.at };
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last)) return { is: "stillOpen", at: last.at };
   const isHandedStep = last.kind === "handoff" && last.action.startsWith("step-");
   return {
     is: "done",
-    label: DONE_LABELS[last.action]?.(last.text) ?? last.text,
+    label: deliveryLabel("arrived", doneLabel(last), last.reply),
     at: last.at,
     ...isHandedStep ? { isHandedStep: true } : {},
     ...STILL_WAITING_AFTER.has(last.action) ? { isStillWaiting: true } : {}
@@ -2039,6 +2067,9 @@ var DONE_LABELS = {
   "check-fix": () => "Asked to fix",
   "pr-rank-again": () => "Ranked"
 };
+function doneLabel(last) {
+  return DONE_LABELS[last.action]?.(last.text) ?? last.text;
+}
 var STILL_WAITING_AFTER = /* @__PURE__ */ new Set(["check-fix"]);
 function isPressOut(f) {
   return f?.is === "working" || f?.is === "sending" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
@@ -2334,12 +2365,13 @@ function inboxView({
       if (reply)
         return {
           is: "settled",
-          label: DONE_LABELS[reply.action]?.(reply.text) ?? reply.text,
+          label: doneLabel(reply),
           at: reply.at,
           canUndo: false,
           offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
-          closedAs: closedState(closed2)
+          closedAs: closedState(closed2),
+          ...reply.reply !== void 0 ? { reply: reply.reply } : {}
         };
       if (isHeld(closed2)) return { is: "held", label: heldLabel(closed2), at };
       return closedRowState(
