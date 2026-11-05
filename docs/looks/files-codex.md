@@ -29,6 +29,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/rows.ts` | Codex adapter. The motion state machine for rows. |
 | `codex/src/arrivals.ts` | Codex adapter. The tab's rows, tabs and empty-tab rule, built on `hooks/arrivals.ts`. |
 | `codex/src/settle.ts` | Codex adapter. Polling, the settled rows the tab draws, and how long the tab offers Undo. |
+| `codex/src/list-input.ts` | Codex adapter. The person's presses, keys, scrolls and pointer on the list, which keep a row due to fold in place. |
 | `codex/src/undo-key.ts` | Codex adapter. The undo key: presses the Undo the shared rule picks, by the tab's own Undo timing. |
 | `codex/src/texts.ts` | Codex adapter. Texts only Codex reads, and the `CODEX` host. |
 | `codex/src/core.ts` | Codex host. Codex bindings over `hooks/session-turns.ts`, `hooks/session-status.ts` and `hooks/session-view.ts`, the tab view and tab helpers. |

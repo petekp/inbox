@@ -87,8 +87,8 @@ test('a row Codex closes while the person types a reply stays held in place, out
   assert.deepEqual(r.effects, [{ kind: 'send', text: 'Re "Fix add.js or the test?": Fix add.js after all', by: null }])
   const replied = { ...closed, lastActions: { i1: r.last! } }
   assert.deepEqual(
-    viewOf(replied, 70 + QUEUED_AFTER_MS, { replies: { i1: 40 }, discarded: {}, shownSince: 40 }).needsYou.questions[0]
-      ?.state,
+    viewOf(replied, 70 + QUEUED_AFTER_MS, { replies: { i1: 40 }, discarded: {}, shownSince: 40, listInput: null })
+      .needsYou.questions[0]?.state,
     {
       is: 'settled',
       label: 'Replied',

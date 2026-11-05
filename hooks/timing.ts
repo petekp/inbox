@@ -50,10 +50,31 @@ export function isGuarded(openedAt: number, now: number): boolean {
   return openedAt > 0 && now - openedAt < PRESS_GUARD_MS
 }
 
-/** What a look holds in place besides the session: the rows replies hold, and the rows closed while it shows them. */
-export type Holds = Pick<ViewInput, 'replies' | 'discarded' | 'shownSince'>
+/** How long the list stays in use after the person's last press, key, click or pointer move on it. */
+export const FOLD_QUIET_MS = 1000
 
-export const NO_HOLDS: Holds = { replies: {}, discarded: {}, shownSince: null }
+/** The person's latest run of input on the list: when it began, and its last input. A gap of FOLD_QUIET_MS ends a run. */
+export type ListInput = { since: number; last: number }
+
+/** `input` with one more input at `at`. */
+export function withListInput(input: ListInput | null, at: number): ListInput {
+  const isSameRun = input !== null && at - input.last < FOLD_QUIET_MS
+
+  return isSameRun ? { since: input.since, last: Math.max(at, input.last) } : { since: at, last: at }
+}
+
+/** Whether the person has been using the list without a break since `at`, so a row due then waits to fold. */
+export function isListInUseSince(input: ListInput | null, at: number, now: number): boolean {
+  return input !== null && now - input.last < FOLD_QUIET_MS && input.since <= at
+}
+
+/**
+ * What a look holds in place besides the session: the rows replies hold, the rows closed while it shows them, and the
+ * person's input on the list, which keeps due rows from folding under it.
+ */
+export type Holds = Pick<ViewInput, 'replies' | 'discarded' | 'shownSince' | 'listInput'>
+
+export const NO_HOLDS: Holds = { replies: {}, discarded: {}, shownSince: null, listInput: null }
 
 /**
  * Whether the look has shown its tab since `at`. Every row that closed or was pressed since then can still be drawn in
@@ -64,17 +85,62 @@ export function isShownSince(at: number, shownSince: number | null): boolean {
 }
 
 /**
- * Whether a settled row stays in place, with its result. It stays while the look shows the tab it settled on, until
- * the person sends a message they typed. While its Undo lasts, it stays through that message and folds when Undo ends.
- * Leaving the tab, by switching tab or closing the inbox, folds it at once.
+ * When a settled row comes due to fold: `settleWindowMs` after it settled, or at a message the person typed after it
+ * once Undo no longer lasts.
  */
-export function isSettledInPlace(
+function foldDueAt(
   state: Pick<SettledState, 'at' | 'canUndo'>,
-  { shownSince, lastTypedMessageAt }: Pick<ViewInput, 'shownSince' | 'lastTypedMessageAt'>,
-): boolean {
+  lastTypedMessageAt: number | null,
+  settleWindowMs: number,
+): number {
   const isTypedSince = lastTypedMessageAt !== null && lastTypedMessageAt > state.at
 
-  return isShownSince(state.at, shownSince) && (state.canUndo || !isTypedSince)
+  return isTypedSince && !state.canUndo ? lastTypedMessageAt : state.at + settleWindowMs
+}
+
+export type Placing = Pick<ViewInput, 'shownSince' | 'lastTypedMessageAt' | 'listInput' | 'now' | 'settleWindowMs'>
+
+/**
+ * Whether what a settled row sent has yet to reach the agent: on its way, unconfirmed, or refused. The row waits in place
+ * until it arrives or the person acts on it, since its result is not final.
+ */
+export function isSendPending(state: Pick<SettledState, 'delivery'>): boolean {
+  return state.delivery !== null && state.delivery !== 'held'
+}
+
+/**
+ * Whether a settled row stays in place, with its result. It stays while the look shows the tab it settled on, until it
+ * comes due by `foldDueAt`, and folds into its group's Closed fold then. A row due while the person is using the list
+ * waits until they stop for FOLD_QUIET_MS, so a row never moves under a press, and a row waits while its send is
+ * pending. Leaving the tab, by switching tab or closing the inbox, folds it at once.
+ */
+export function isSettledInPlace(
+  state: Pick<SettledState, 'at' | 'canUndo' | 'delivery'>,
+  { shownSince, lastTypedMessageAt, listInput, now, settleWindowMs }: Placing,
+): boolean {
+  const dueAt = foldDueAt(state, lastTypedMessageAt, settleWindowMs)
+  const isWaiting = now < dueAt || isSendPending(state) || isListInUseSince(listInput, dueAt, now)
+
+  return isShownSince(state.at, shownSince) && isWaiting
+}
+
+/**
+ * When the next of `settled` can fold, so a look redraws then: a row's due time, or the end of the person's use of the
+ * list for a row that waits on it. A row whose send is pending folds once the send arrives, which redraws anyway.
+ */
+export function nextFoldAt(
+  settled: Pick<SettledState, 'at' | 'canUndo' | 'delivery'>[],
+  { lastTypedMessageAt, listInput, now, settleWindowMs }: Omit<Placing, 'shownSince'>,
+): number | null {
+  const times = settled.flatMap(state => {
+    const dueAt = foldDueAt(state, lastTypedMessageAt, settleWindowMs)
+    if (dueAt > now) return [dueAt]
+    if (isSendPending(state) || listInput === null) return []
+
+    return [listInput.last + FOLD_QUIET_MS]
+  })
+
+  return times.length > 0 ? Math.min(...times) : null
 }
 
 /**

@@ -1,7 +1,9 @@
 import { prMarkId } from '../../hooks/pr-rows'
 import type { SessionView } from '../../hooks/session-view'
 import { allRows, settledRowIds } from '../../hooks/rows'
-import { isDrawnInPlace, SETTLED_MS } from '../../hooks/timing'
+import type { RowView } from '../../hooks/rows'
+import { isDrawnInPlace, isListInUseSince, isSendPending, SETTLED_MS } from '../../hooks/timing'
+import type { ListInput } from '../../hooks/timing'
 import type { InboxView } from '../../hooks/view'
 
 export const POLL_MS = 3000
@@ -20,13 +22,31 @@ export function settledSeen(seen: ReadonlyMap<string, number>, listed: string[],
 }
 
 /**
- * The settled rows the tab draws in place: those the view lists, less any that settled before the tab showed its tab,
- * which the view read before a switch still lists. A row whose Undo is out stays.
+ * Whether a settled row the tab first listed at `seenAt` stays in place: for `SETTLED_MS`, as long as Undo lasts, and
+ * then while the person keeps using the list, as `hooks/timing.ts:isSettledInPlace` says. A row whose send is pending
+ * also stays, as there.
  */
-export function drawnSettled(v: InboxView, shownSince: number, undoing: ReadonlySet<string> = new Set()): Set<string> {
+function isSeenInPlace(seenAt: number, input: ListInput | null, now: number): boolean {
+  return now - seenAt < SETTLED_MS || isListInUseSince(input, seenAt + SETTLED_MS, now)
+}
+
+/**
+ * The settled rows the tab draws in place: those the view lists and `isSeenInPlace` keeps, less any that settled before
+ * the tab showed its tab, which the view read before a switch still lists. A row whose Undo is out stays.
+ */
+export function drawnSettled(
+  v: InboxView,
+  shownSince: number,
+  undoing: ReadonlySet<string> = new Set(),
+  { seen = new Map<string, number>(), input = null as ListInput | null, now = Date.now() } = {},
+): Set<string> {
+  const isInPlace = (r: RowView) =>
+    isDrawnInPlace(r, shownSince) &&
+    ((r.state.is === 'settled' && isSendPending(r.state)) || isSeenInPlace(seen.get(r.id) ?? now, input, now))
+
   return new Set(
     allRows(v)
-      .filter(r => r.state.is === 'settled' && (undoing.has(r.id) || isDrawnInPlace(r, shownSince)))
+      .filter(r => r.state.is === 'settled' && (undoing.has(r.id) || isInPlace(r)))
       .map(r => r.id),
   )
 }

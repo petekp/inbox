@@ -30,6 +30,7 @@ test(
       discarded: {},
       shownSince: 1_000_000,
       lastTypedMessageAt: null,
+      listInput: null,
     })
     const row = view.findings.rows.find(r => r.state.is === 'open')!
     const plan = rowKeyPlan(row, false)

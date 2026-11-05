@@ -21,6 +21,7 @@ import { isFixSent, isHandedOff } from './last-actions'
 import { isHeldSend, isUndoable } from './pressed'
 import { FINDING_GROUPS } from './help'
 import { isSettledInPlace, canUndoClose, isUndoLeft, pendingDeliveryAt } from './timing'
+import type { ListInput } from './timing'
 import { closedRowState, optionDescriptionsOf, isWaitingRow, outcomeLabel, closedMark } from './rows'
 import type { RowView, ClosedDelivery, ResultMark, RowState } from './rows'
 import { DONE_LABELS, fixLabel, feedbackIn, pressFeedbackIn } from './feedback'
@@ -51,6 +52,8 @@ export type ViewInput = {
   shownSince: number | null
   /** When the person last sent a message they typed, from `Session.presence`. */
   lastTypedMessageAt: number | null
+  /** The person's latest run of input on the list the look shows. Null when the look knows of none. */
+  listInput: ListInput | null
 }
 
 export type InboxView = {
@@ -97,9 +100,18 @@ export function inboxView({
   discarded,
   shownSince,
   lastTypedMessageAt,
+  listInput,
 }: ViewInput): InboxView {
-  const isInPlace = (at: number, canUndo: boolean) =>
-    isSettledInPlace({ at, canUndo }, { shownSince, lastTypedMessageAt })
+  const placing = { shownSince, lastTypedMessageAt, listInput, now, settleWindowMs }
+  const isInPlace = (at: number, canUndo: boolean, last?: LastAction) =>
+    isSettledInPlace({ at, canUndo, delivery: pendingDeliveryAt(last, now) }, placing)
+  const pressedSend = (c: Closed | ClosedFinding) => {
+    const last = lastActions[c.id]
+
+    return (c.how === 'answered' || c.how === 'done') && last?.kind === 'mark' && last.at === closedAt(c)
+      ? last
+      : undefined
+  }
   const isOpen = (id: string) => ledger.items.some(i => i.id === id) || ledger.findings.some(f => f.id === id)
   const replyAfter = (c: Closed | ClosedFinding) => {
     const last = lastActions[c.id]
@@ -107,7 +119,7 @@ export function inboxView({
     return last?.action === 'type' &&
       last.at >= closedAt(c) &&
       last.delivery?.state !== 'failed' &&
-      isInPlace(last.at, false)
+      isInPlace(last.at, false, last)
       ? last
       : null
   }
@@ -127,7 +139,8 @@ export function inboxView({
 
     return (
       replyAfter(c) !== null ||
-      (!isDiscarded(c) && (isHeld(c) || isInPlace(at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs))))
+      (!isDiscarded(c) &&
+        (isHeld(c) || isInPlace(at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs), pressedSend(c))))
     )
   }
   const placedItems = new Map(
@@ -136,7 +149,7 @@ export function inboxView({
   const isFixSettled = (id: string) => {
     const last = lastActions[id]
 
-    return isFixSent(last) && !isInPlace(last.at, isUndoLeft(last.at, now, settleWindowMs))
+    return isFixSent(last) && !isInPlace(last.at, isUndoLeft(last.at, now, settleWindowMs), last)
   }
   const placedFindings = new Map(
     ledger.closedFindings.filter(f => !isOpen(f.id) && !isFixSettled(f.id) && isPlaced(f)).map(f => [f.id, f] as const),
@@ -148,7 +161,6 @@ export function inboxView({
     const closed = placedItems.get(id) ?? placedFindings.get(id)
     if (closed) {
       const at = closedAt(closed)
-      const last = lastActions[id]
       const reply = replyAfter(closed)
       if (reply)
         return {
@@ -169,9 +181,7 @@ export function inboxView({
         settleWindowMs,
         'doneNotification' in closed && closed.doneNotification?.error !== undefined
           ? { error: closed.doneNotification.error, canUndo: isUndoable(closed) }
-          : (closed.how === 'answered' || closed.how === 'done') && last?.kind === 'mark' && last.at === at
-            ? pendingDeliveryAt(last, now)
-            : null,
+          : pendingDeliveryAt(pressedSend(closed), now),
         isPressedAnswer(closed),
       )
     }

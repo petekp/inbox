@@ -95,7 +95,7 @@ export function sessionView(
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now, holds.shownSince, settleWindowMs),
+    prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
     statusPage: statusPage(s, now),
   }
 }
@@ -121,12 +121,15 @@ function prTabOf(
   s: Session,
   lastActions: Record<string, LastAction>,
   now: number,
-  shownSince: number | null,
+  { shownSince, listInput }: Holds,
   settleWindowMs: number,
 ): PrTab {
-  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, now, settleWindowMs, {
+  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
     shownSince,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
+    listInput,
+    now,
+    settleWindowMs,
   })
   const isSent = threadSentIn(lastActions)
 

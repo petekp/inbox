@@ -10,6 +10,7 @@ import { ARRIVAL_TABS, followTo } from '../../hooks/arrivals'
 import { isShownEmpty } from './arrivals'
 import type { TabView as View } from './core'
 import { drawnSettled } from './settle'
+import { listInput } from './list-input'
 import { tabState, selection, unfolded, undoing, drawnRows } from './tab-state'
 import type { Key, Row } from './tab-state'
 import { drawIn } from './tab-motion'
@@ -42,7 +43,9 @@ export function tabWaits(v: View, t: Tab): RowWait[] {
 }
 
 export function shownSettled(v: View): Set<string> {
-  return drawnSettled(v, tabState.shownSince, undoing)
+  const now = Date.now()
+
+  return drawnSettled(v, tabState.shownSince, undoing, { seen: tabState.seen, input: listInput(now), now })
 }
 
 export function selectedIndex(rows: Row[], t: Tab, v: View): number {

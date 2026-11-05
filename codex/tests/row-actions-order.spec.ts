@@ -93,6 +93,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
     discarded: {},
     shownSince: null,
     lastTypedMessageAt: null,
+    listInput: null,
   }).needsYou.questions[0]!
   let allOptions = false
   let answer: PressResult | null = null
@@ -147,6 +148,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
     discarded: {},
     shownSince: null,
     lastTypedMessageAt: null,
+    listInput: null,
   }).findings.rows[0]!
   let discussion: PressResult | null = null
   const followUps = ledgerActions(finding, false, null, {

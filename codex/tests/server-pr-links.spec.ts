@@ -10,7 +10,7 @@ import { fakeRunner, tempDir } from './helpers'
 import { GH_VIEW, ghAnswer, prServer, viewAfterFetch } from './server-fixtures'
 import type { PrReply, PrView } from './server-fixtures'
 
-test('dismissing a linked PR unlinks it and settles its block as a dismissed row, until the tab shows another tab', async () => {
+test('dismissing a linked PR unlinks it and settles its block as a dismissed row, which folds when the settle window ends unless the person is still using the list, and its view goes once the tab shows another tab', async () => {
   let t = 100
   const dir = tempDir()
   await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
@@ -54,8 +54,11 @@ test('dismissing a linked PR unlinks it and settles its block as a dismissed row
   t += SETTLED_MS + POLL_MS
   assert.deepEqual(undoOf((await call('inbox_view', { shownSince: 0 })).result.structuredContent), [['settled', true]])
   t += SETTLE_WINDOW_MS
-  const stayed = await call('inbox_view', { shownSince: 0 })
-  assert.deepEqual(undoOf(stayed.result.structuredContent), [['settled', false]])
+  const inUse = { since: 100 + SETTLE_WINDOW_MS - 1, last: t }
+  const held = await call('inbox_view', { shownSince: 0, listInput: inUse })
+  assert.deepEqual(undoOf(held.result.structuredContent), [['settled', false]])
+  const folded = await call('inbox_view', { shownSince: 0 })
+  assert.equal(drawn(folded.result.structuredContent).includes(ref), false)
   assert.ok(ref in (await readState(dir, 's1')).prViews.views)
   const switched = await call('inbox_view', { shownSince: t })
   assert.equal(drawn(switched.result.structuredContent).includes(ref), false)

@@ -33,6 +33,9 @@ export type RowProps = {
 type State = { hover: boolean; pressed: boolean }
 
 const MIN_TITLE = 12
+/** How many pointer moves pass between two posts that tell the hooks module the pointer is still on the list. */
+const MOVES_PER_POINTER_POST = 8
+let movesSincePost = 0
 const FRAME_CELLS = 4
 
 function clipAtSpace(text: string, max: number): string {
@@ -61,7 +64,13 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
       set({ hover: true, pressed: true })
       surface.post({})
     } else if (e.type === 'up') set({ hover: inside, pressed: false })
-    else if (e.type === 'move' || e.type === 'enter') set({ hover: inside, pressed: surface.state?.pressed ?? false })
+    else if (e.type === 'move' || e.type === 'enter') {
+      set({ hover: inside, pressed: surface.state?.pressed ?? false })
+      if (e.type === 'enter' || ++movesSincePost >= MOVES_PER_POINTER_POST) {
+        movesSincePost = 0
+        surface.post({ isPointer: true })
+      }
+    }
   })
 
   const columns = surface.columns || props.fallbackColumns

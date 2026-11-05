@@ -89,7 +89,7 @@ test('Resolve conflicts reads the PR from GitHub before it sends: it reads Refre
   expect(await pane.find({ text: /^This changed before your press\. Nothing was sent\.$/ })).toBeDefined()
 })
 
-test('a PR’s Dismiss settles its block until the person types their next message or leaves the tab, with Undo that brings it back, a ready PR’s Merge asks Claude unless it stopped being ready, and a fetch keeps a Dismiss made while it ran, and the branch PR when its lookup fails', async ($, on) => {
+test('a PR’s Dismiss settles its block until its Undo ends, with Undo that brings it back, a ready PR’s Merge asks Claude unless it stopped being ready, and a fetch keeps a Dismiss made while it ran, and the branch PR when its lookup fails', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let decision = 'APPROVED'
@@ -195,10 +195,6 @@ test('a PR’s Dismiss settles its block until the person types their next messa
   await clock.advance(2600)
   expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
   await clock.advance(SETTLED_MS)
-  expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
-  expect(await pane.find({ key: 'undo-pr:acme/greet#12' })).toBeUndefined()
-  await $.prompt.submit({ text: 'what is next?', wait: false, origin: { kind: 'composer' } })
-  await clock.settle()
   expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeUndefined()
   await leaveAndReturn(pane, clock, 'prs')
 

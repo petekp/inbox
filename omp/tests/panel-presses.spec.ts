@@ -2,7 +2,6 @@ import { expect, test } from 'bun:test'
 
 import { closeItem } from '../../hooks/ledger-close'
 import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
-import { shownTabs } from '../../hooks/tabs'
 import type { RowView } from '../../hooks/rows'
 import { sessionView } from '../../hooks/session-view'
 import { demoSource, demoState } from '../src/demo'
@@ -74,7 +73,7 @@ test('keys in the reply field never switch tabs or move the selection', () => {
 test('Discard on a held row drops the draft and records the discard', () => {
   const state = demoState(NOW)
   state.ledger = closeItem(state.ledger, 'd11', { how: 'claude', outcome: 'closed by omp: answered in chat' }, NOW)
-  const holds = { replies: { d11: NOW }, discarded: {}, shownSince: NOW }
+  const holds = { replies: { d11: NOW }, discarded: {}, shownSince: NOW, listInput: null }
   const held = { ...screenOf(), view: sessionView(state, NOW, SETTLED_MS, holds) }
   const heldRow = waiting(held, 'd11')
   expect(heldRow.state.is).toBe('held')
@@ -125,24 +124,18 @@ test('after the reply, an explained row that stays open reads its result', async
   expect(text(screen, onRow(waiting(screen, 'd11')))).toContain('✓ Explained')
 })
 
-test('a row closed with Done shows its label and Undo, u returns the undo press, and the row stays after Undo ends, through its own tab’s key, until the panel switches tab', async () => {
+test('a row closed with Done shows its label and Undo, u returns the undo press, and the row folds into its Closed line when Undo ends', async () => {
   const demo = await afterPresses({ action: 'done', id: 'd14' })
   const screen = await demo.screen()
   const out = text(screen, INITIAL_UI)
   expect(out).toMatch(/Put on the glasses and pair them with this Mac\s+✓ Done\s+u Undo/)
+  expect(out).toContain('1 closed')
   for (const width of [30, 46])
     expect(text(screen, INITIAL_UI, width), `at ${width} columns`).toMatch(/Put on the .*… {2}✓ Do/)
   expect(handleKey(screen, INITIAL_UI, 'u', NOW).press).toEqual({ action: 'undo', id: 'd14' })
-  const later = await demo.advance()
-  expect(text(later, INITIAL_UI)).toMatch(/Put on the glasses and pair them with this Mac\s+✓ Done/)
-  expect(text(later, INITIAL_UI)).not.toContain('u Undo')
-  expect(text(later, INITIAL_UI)).toContain('1 closed')
-  const ownKey = shownTabs(later.isNextBuild === true).find(t => t.id === INITIAL_UI.tab)!.hotkey
-  expect(text(later, handleKey(later, INITIAL_UI, ownKey, NOW + 1).ui)).toContain('Put on the glasses')
-  const away = handleKey(later, INITIAL_UI, 'tab', NOW + 1).ui
-  const back = handleKey(later, away, 'shift+tab', NOW + 1).ui
-  expect(text(later, back)).not.toContain('Put on the glasses')
-  expect(text(later, back)).toContain('2 closed')
+  const later = text(await demo.advance(), INITIAL_UI)
+  expect(later).not.toContain('Put on the glasses')
+  expect(later).toContain('2 closed')
 })
 
 test('a settled row is skipped when moving and the selection leaves it', async () => {
