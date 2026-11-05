@@ -4,6 +4,7 @@ import type { StatusStall } from '../../hooks/status-page'
 const STALL_CLASS: Record<StatusStall['tone'], string> = {
   needsYou: 'tone-needsYou',
   done: 'tone-done',
+  muted: 'muted',
 }
 
 /** A name's words before its last, with the space after them, and its last word, which stays with the stall word. */

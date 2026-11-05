@@ -5,15 +5,47 @@ import { lookEnded, lookStarted, LOOK_MIN_MS, withChild } from '../hooks/status-
 import { applyOps, applyStatus } from '../hooks/status-ops'
 import { opsOf, NO_ASKS, after, page } from './status-helpers'
 
-test('NO CHANGE keeps the list, and an empty answer or one holding prose cannot be read', () => {
+test('NO CHANGE keeps the list, an answer with no operation cannot be read, and a mixed answer keeps its operations', () => {
   const last = after(null, 'NEW: working | Offline mode | sync queue built', 0)
 
   expect(applyStatus(last, parseStatus('NO CHANGE')!, 5, NO_ASKS)).toBe(last)
   expect(parseStatus('UNCHANGED')).toEqual({ kind: 'unchanged' })
   expect(parseStatus(null)).toBeNull()
   expect(parseStatus('')).toBeNull()
-  expect(parseStatus('SET: s1 | done | built\nCorrection: the status was wrong.\nDONE: s1 | built')).toBeNull()
   expect(parseStatus('SET: s1 | finished | built')).toBeNull()
+  expect(parseStatus('Here are the changes:\nNothing else.')).toBeNull()
+  expect(
+    opsOf('Here are the changes:\nSET: s1 | queued | next up\nSET: s1 | finished | built\nDONE: s2 | shipped'),
+  ).toEqual([
+    { kind: 'set', ref: 's1', status: 'queued', text: 'next up' },
+    { kind: 'done', ref: 's2', text: 'shipped' },
+  ])
+})
+
+test('a NEW that repeats the name of a subject finished since the last look reopens it, and one finished before the look is new work', () => {
+  const done = after(null, 'NEW: working | Retry button | built\nDONE: s1 | merged', 100)
+  const reopened = after(done, 'NEW: working | retry button | fails on web', 200)
+
+  expect(reopened.subjects).toEqual([
+    expect.objectContaining({ id: 's1', status: 'working', text: 'fails on web', closedAt: null, changedAt: 200 }),
+  ])
+  const seen = after({ ...done, lastLookAt: 150 }, 'NEW: working | Retry button | fails on web', 200)
+  expect(seen.subjects.map(s => `${s.id} ${s.status}`)).toEqual(['s1 done', 's2 working'])
+  expect(after(done, 'NEW: working | Retry button bug | fails on web', 200).subjects.map(s => s.id)).toEqual(['s1'])
+  const oneWord = after(null, 'NEW: working | Search | fast\nDONE: s1 | shipped', 100)
+  expect(after(oneWord, 'NEW: working | Search filters | planned', 200).subjects.map(s => s.id)).toEqual(['s1', 's2'])
+})
+
+test('a NEW or a HEAD named only by a PR or issue number changes nothing, and a name that also names the work is kept', () => {
+  const last = after(null, 'HEAD: Offline sync | Adding offline sync', 100)
+  const o = after(
+    last,
+    'NEW: working | #3655 | fixes pushed\nNEW: working | PR3655 | review\nNEW: queued | issue 12 | -\nHEAD: PR #3655 | Fixing the PR\nNEW: working | 2.5 release | notes drafted\nNEW: working | 502 | gateway errors',
+    200,
+  )
+
+  expect(o.subjects.map(s => s.name)).toEqual(['2.5 release', '502'])
+  expect(o.head).toEqual(last.head)
 })
 
 test('reads each operation, tolerating bullets, and takes SET with done as DONE', () => {

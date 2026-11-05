@@ -24,6 +24,8 @@ export const MILESTONES_MIN = 2
 export const GOAL_LEFT_MS = 30 * 60_000
 /** How many removed goals the call is told not to set again. */
 export const REMOVED_KEPT = 10
+/** How long an open subject goes without a change before its row says how long it has been idle, as "idle 2d". */
+export const IDLE_AFTER_MS = 24 * 60 * 60_000
 /** How long an ended child stays saved, so a delegate prompted again keeps its link. */
 export const CHILD_KEPT_MS = 24 * 60 * 60_000
 export const CHILDREN_KEPT = 50
@@ -86,6 +88,23 @@ export function words(text: string): Set<string> {
   const matches = text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []
 
   return new Set(matches.map(w => w.replace(/^\.+|\.+$/g, '')).filter(w => w !== '' && !STOP_WORDS.has(w)))
+}
+
+/** The words that only say what kind of number follows, as in "PR 3655" or "issue #12". */
+const NUMBER_KINDS = new Set(['pr', 'prs', 'pull', 'request', 'issue', 'issues', 'ticket', 'gh'])
+
+/**
+ * Whether `name` is only a PR or issue number, as "#3655", "PR 3655", "PR3655" or "issue 12": it names no work. A
+ * bare number, as "502", may name work, so it needs a # or a kind word.
+ */
+export function isNumberOnly(name: string): boolean {
+  const all = [...words(name)]
+  const isTagged = (w: string) => /^(#|pr|gh-?)\d+$/.test(w)
+  const isBare = (w: string) => /^\d+$/.test(w)
+  const hasKind = all.some(w => NUMBER_KINDS.has(w))
+  const isNumber = (w: string) => isTagged(w) || (hasKind && isBare(w))
+
+  return all.some(isNumber) && all.every(w => isNumber(w) || NUMBER_KINDS.has(w))
 }
 
 export function nameKey(name: string): string {

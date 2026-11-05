@@ -146,12 +146,13 @@ host's events and from Herdr. The inbox model only links it to a subject.
 _Avoid_: subitem, job
 
 **Stall words**:
-The word after a Status row's name when its work waits on the person or has
-finished. A subject held by an open question or task reads "waiting", in the
-needs-you tone, and so does a delegate while Herdr shows it at a question or an
-approval. A finished delegate reads "finished". A row waiting on someone else
-and a row whose work moves show no word. No row shows a time. The code calls
-them `stall`.
+The words after a Status row's name when its work waits on the person, has
+finished, or has stalled. A subject held by an open question or task reads
+"waiting", in the needs-you tone, and so does a delegate while Herdr shows it at
+a question or an approval. A finished delegate reads "finished". An open subject
+with no change for a day or more, and no child of it running, reads how long it
+has been idle, as "idle 2d", muted. Other rows show no word. The code calls them
+`stall`.
 _Avoid_: age
 
 **Seen line**:

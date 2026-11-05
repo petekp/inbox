@@ -9,6 +9,7 @@ import {
   isOpen,
   NL,
 } from './status-limits'
+import { ago } from './text'
 
 export function isChildRunning(c: Pick<Child, 'startedAt' | 'endedAt'>, now: number): boolean {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now)
@@ -67,11 +68,16 @@ export function childActive(o: SessionStatus | null, ref: string, at: number): S
   return changedChild(o, ref, c => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }))
 }
 
-/** The subjects as the call reads them: open ones with ids, and finished names it must not add again. */
-export function subjectsText(o: SessionStatus | null): { open: string; finished: string } {
+/**
+ * The subjects as the call reads them at `now`: open ones with ids and how long ago each last changed, and finished
+ * names it must not add again.
+ */
+export function subjectsText(o: SessionStatus | null, now: number): { open: string; finished: string } {
   const subjects = o?.subjects ?? []
   const serves = (id: string) => (o?.goal ? ` | ${servesText(o, id)}` : '')
-  const open = subjects.filter(isOpen).map(s => `${s.id} | ${s.status} | ${s.name} | ${s.text || '-'}${serves(s.id)}`)
+  const open = subjects
+    .filter(isOpen)
+    .map(s => `${s.id} | ${s.status} | ${s.name} | ${s.text || '-'} | ${ago(now - s.changedAt)}${serves(s.id)}`)
   const finished = subjects
     .filter(s => !isOpen(s))
     .slice(-FINISHED_READ)

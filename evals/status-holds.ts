@@ -1,6 +1,6 @@
 import { HELD_MARK } from '../hooks/help'
 import { restatesGoal } from '../hooks/status-goal-ops'
-import { isOpen } from '../hooks/status-limits'
+import { isNumberOnly, isOpen } from '../hooks/status-limits'
 import { statusListRows } from '../hooks/status-page'
 import type { StatusPage } from '../hooks/status-page'
 import type { Rule } from './status-rules'
@@ -21,8 +21,18 @@ function otherWorkIds(page: StatusPage): string[] {
   return page.rows.slice(start).flatMap(r => (r.kind === 'subject' ? [r.id] : []))
 }
 
-/** The holds the code keeps for the goal, checked at every step of every run. Any failure blocks. */
+/** The holds the code keeps, checked at every step of every run. Any failure blocks. */
 export const HOLD_RULES: Rule[] = [
+  hold({
+    id: 'no-number-names',
+    property: 6,
+    text: 'No open subject and no head is named only by a PR or issue number.',
+    failures: ({ result }) => {
+      const o = result.session.ledger.overview
+      const names = [...(o?.subjects ?? []).filter(isOpen).map(s => s.name), ...(o?.head ? [o.head.title] : [])]
+      return names.filter(isNumberOnly).map(name => `named by a number: "${name}"`)
+    },
+  }),
   hold({
     id: 'typed-goal-kept',
     property: 14,

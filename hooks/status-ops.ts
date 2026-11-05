@@ -5,6 +5,7 @@ import {
   clipWords,
   DESCRIPTION_KEPT,
   EMPTY_SESSION_STATUS,
+  isNumberOnly,
   isOpen,
   NAME_KEPT,
   nameKey,
@@ -135,6 +136,20 @@ export function applyOps(
 
     return o.subjects.find(s => s.id === ref) ?? o.subjects.find(s => isOpen(s) && nameKey(s.name) === key) ?? null
   }
+  /**
+   * The subject that closed since the person last looked whose name `name` repeats, the latest first: the same key
+   * words, or every word of a name of two words or more, as "Retry button bug" repeats "Retry button". A NEW for it
+   * reopens it, so the page shows one row for the piece, not one for each time it finished.
+   */
+  const closedUnseen = (name: string) => {
+    const said = words(clipWords(name, NAME_KEPT))
+    const repeats = (s: Subject) => {
+      const own = [...words(s.name)]
+      return nameKey(s.name) === nameKey([...said].join(' ')) || (own.length >= 2 && own.every(w => said.has(w)))
+    }
+
+    return o.subjects.findLast(s => !isOpen(s) && !isSubjectSeen(o, s) && repeats(s)) ?? null
+  }
   /** A was line and a merged line stay until the person has seen them. The page shows them only on rows that changed since the last look. */
   const forgetSeenWas = (s: Subject) => {
     if (isSubjectSeen(o, s)) {
@@ -176,8 +191,9 @@ export function applyOps(
       o = applyGoalOp(o, op, now, find)
       if (op.kind === 'milestone') markNamed(findMilestone(o, op.name))
       if (op.kind === 'serves' && op.milestone !== null) markNamed(findMilestone(o, op.milestone))
-    } else if (op.kind === 'head') o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now))
-    else if (op.kind === 'link') {
+    } else if (op.kind === 'head') {
+      if (!isNumberOnly(op.title)) o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now))
+    } else if (op.kind === 'link') {
       const child = o.children.find(c => c.id === op.ref)
       const subject = find(op.subject)
       const milestone = subject ? null : linkableMilestone(o, op.subject)
@@ -186,9 +202,11 @@ export function applyOps(
       else if (linked && askIds.has(op.ref)) o.askSubjects[op.ref] = linksWith(o.askSubjects[op.ref] ?? [], linked.id)
       markNamed(milestone)
     } else if (op.kind === 'new') {
+      if (isNumberOnly(op.name)) continue
       const known = find(op.name)
-      if (known && isOpen(known)) {
-        set(known, op.status, op.text)
+      const repeated = known && isOpen(known) ? known : closedUnseen(op.name)
+      if (repeated) {
+        set(repeated, op.status, op.text)
         continue
       }
       const s: Subject = {

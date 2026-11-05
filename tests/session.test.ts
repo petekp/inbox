@@ -244,7 +244,7 @@ test('an update cut off after one failure still reads as waiting to retry, not a
   expect(shownStatus(cutOff).error).toMatch(/^The inbox couldn't update from the agent's last reply\./)
 })
 
-test('each model call says which call of the update it is: a first try, the retry of a failed exchange, a Status call asked again after prose, and a catch-up', async () => {
+test('each model call says which call of the update it is: a first try, the retry of a failed exchange, a Status call asked again after an answer with no operation, and a catch-up', async () => {
   const kinds: CallKind[] = []
   const ledgerAnswers = [null, LEDGER_REPLY]
   const statusAnswers = ['Here is where things stand.', 'NO CHANGE']

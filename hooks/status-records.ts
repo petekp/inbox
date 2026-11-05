@@ -39,7 +39,7 @@ type StatusHost<S extends Session> = Pick<
   'now' | 'read' | 'update' | 'ask' | 'inOrder' | 'records' | 'names'
 >
 
-/** One model call of a Status call. An answer that holds prose is asked once more, so a call makes one or two. */
+/** One model call of a Status call. An answer with no operation is asked once more, so a call makes one or two. */
 type StatusAttempt = {
   /** The model the host asked for, and the one that answered. Null when the host does not say. */
   model: string | null
@@ -143,7 +143,7 @@ function attemptOf({ text, report, thrown, ms }: HeardCall): StatusAttempt {
 
 /**
  * Runs the Status call on the Status and asks in `s`, and writes its answer, or saves why it wrote nothing. An
- * answer that holds prose is asked once more. `appliedAfter` drops the write as `appliedStatus` does, and skips the
+ * answer with no operation is asked once more. `appliedAfter` drops the write as `appliedStatus` does, and skips the
  * call when `s` already shows it would be dropped. With
  * `records`, it then writes the call's record in the background, and drops a failed write.
  */

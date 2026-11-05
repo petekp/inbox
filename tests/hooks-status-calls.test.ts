@@ -50,9 +50,9 @@ test('a failed Status call leaves the ledger update applied and no Status, and s
   expect(overviewFailure).toMatchObject({ cause: 'no-answer', answer: null })
 })
 
-test('a Status answer that holds prose is asked once more, and the second answer applies', async ($, on) => {
+test('a Status answer with no operation is asked once more, and the second answer applies', async ($, on) => {
   const { ledger, overviewFailure } = await replyWithStatus($, on, [
-    'The person wants a CLI.\nHEAD: Adding a greeting CLI | Building a CLI that greets by name',
+    'The person wants a CLI.',
     'HEAD: Adding a greeting CLI | Building a CLI that greets by name',
   ])
 

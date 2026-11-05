@@ -343,4 +343,9 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
       s.page = p => (p.rows = p.rows.filter(r => !(r.kind === 'fold' && r.id === 'also-dropped')))
     },
   },
+  'no-number-names': {
+    bad: s => {
+      s1Of(s).name = 'PR 3655'
+    },
+  },
 }
