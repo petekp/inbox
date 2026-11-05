@@ -211,7 +211,7 @@ describe('prs', () => {
       run('lint', 'SUCCESS', '2026-10-08T09:05:00Z'),
     ])
     expect(readiness({ ...rerunPassed, threads: [], isYours: true, wasSeenOpen: true, error: null }).text).toBe(
-      'Blocked: changes requested',
+      'Waiting on the reviewer: changes requested',
     )
   })
 

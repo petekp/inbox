@@ -274,12 +274,15 @@ function plural(count: number, one: string, many: string): string {
 /**
  * "Blocked" names only what waits on the person,
  * since the rows under the block list each check and thread. Once nothing does, "Waiting" names what waits on
- * others: a thread sent to Claude or on changed lines, which is still open on GitHub, an approval, a running check.
+ * others: a thread sent to the agent or on changed lines, which is still open on GitHub, an approval, a running check.
+ * Requested changes block only while something else waits on the person. After that only the reviewer can clear
+ * them, so the PR reads "Waiting on the reviewer". `agent` names the host's agent, as in "sent to Codex".
  * `text` is the whole line. `head` is its status words, as "Blocked". `unlisted` is the reasons no row below the block lists.
  */
 export function readiness(
   pr: PrView,
   isSent: IsThreadSent = () => false,
+  agent = 'Claude',
 ): { status: PrStatus; text: string; head: string; unlisted: string[] } {
   const result = (status: PrStatus, head: string, reasonList: string[] = [], joint = ': ') => {
     const reasons = reasonList.join(', ')
@@ -296,22 +299,27 @@ export function readiness(
   const changed = waiting.filter(t => t.isLinesChanged && !isSent(pr, t)).length
   const isPresent = (b: string | null): b is string => b !== null
   const row = (r: string | null) => (r === null ? r : (listed.push(r), r))
-  const onYou = [
+  const checksAndConflicts = [
     pr.mergeable === 'CONFLICTING' ? `conflicts with ${pr.base}` : null,
     row(failing > 0 ? plural(failing, 'failing check', 'failing checks') : null),
     row(cancelled > 0 ? plural(cancelled, 'cancelled check', 'cancelled checks') : null),
-    pr.reviewDecision === 'CHANGES_REQUESTED' ? 'changes requested' : null,
-    row(open > 0 ? threadsWaiting(open) : null),
-  ].filter(isPresent)
+  ]
+  const threadsOnPerson = row(open > 0 ? threadsWaiting(open) : null)
+  const isChangesRequested = pr.reviewDecision === 'CHANGES_REQUESTED'
+  const isAnythingOnPerson = [...checksAndConflicts, threadsOnPerson].some(isPresent)
+  const changes = isChangesRequested ? 'changes requested' : null
+  const onYou = isAnythingOnPerson ? [...checksAndConflicts, changes, threadsOnPerson].filter(isPresent) : []
   const onOthers = [
-    row(sent > 0 ? `${plural(sent, 'thread', 'threads')} sent to Claude` : null),
+    row(sent > 0 ? `${plural(sent, 'thread', 'threads')} sent to ${agent}` : null),
     row(changed > 0 ? `${plural(changed, 'thread', 'threads')} on changed lines` : null),
     pr.reviewDecision === 'REVIEW_REQUIRED' ? 'needs approval' : null,
     pending > 0 ? `${pending} ${pending === 1 ? 'check' : 'checks'} running` : null,
   ].filter(isPresent)
 
-  if (pr.isDraft) return result('draft', 'Draft', [...onYou, ...onOthers])
+  if (pr.isDraft)
+    return result('draft', 'Draft', [...(isAnythingOnPerson ? onYou : [changes].filter(isPresent)), ...onOthers])
   if (onYou.length > 0) return result('blocked', 'Blocked', onYou)
+  if (isChangesRequested) return result('waiting', 'Waiting on the reviewer', ['changes requested', ...onOthers])
   if (onOthers.length > 0) return result('waiting', 'Waiting', onOthers)
   const isApproved = pr.reviewDecision === 'APPROVED'
 

@@ -159,3 +159,12 @@ export async function viewAfterFetch(call: (name: string, args: Record<string, u
 
   return call('inbox_view', {})
 }
+
+type Call = (name: string, args: Record<string, unknown>, meta: Record<string, unknown>) => Promise<unknown>
+
+/** Asks for a view, as the tab's next poll does. A view sends each answer or Fix whose Undo window has passed. */
+export async function pollTab(call: Call): Promise<void> {
+  await call('inbox_view', {}, { thread_id: 's1' })
+}
+
+export const queueCalls = (calls: string[][]) => calls.filter(c => c[1] === 'queue')

@@ -336,7 +336,7 @@ function asksAbout(item, finding, isClaimed = false) {
   return [...prNumbers(`${finding.title} ${finding.detail}`)].some((n) => itemPrs.has(n));
 }
 function pruneClosed(ledger, keep) {
-  const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id));
+  const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id) || r.how === "dismissed");
   return { ...ledger, closed: pruned2(ledger.closed), closedFindings: pruned2(ledger.closedFindings) };
 }
 function idNumber(id) {
@@ -1258,7 +1258,7 @@ function threadsWaiting(count) {
 function plural(count, one, many) {
   return `${count} ${count === 1 ? one : many}`;
 }
-function readiness(pr, isSent = () => false) {
+function readiness(pr, isSent = () => false, agent = "Claude") {
   const result = (status, head, reasonList = [], joint = ": ") => {
     const reasons = reasonList.join(", ");
     const unlisted = status === "ready" ? [] : reasonList.filter((r) => !listed.includes(r));
@@ -1274,21 +1274,26 @@ function readiness(pr, isSent = () => false) {
   const changed = waiting.filter((t) => t.isLinesChanged && !isSent(pr, t)).length;
   const isPresent = (b) => b !== null;
   const row = (r) => r === null ? r : (listed.push(r), r);
-  const onYou = [
+  const checksAndConflicts = [
     pr.mergeable === "CONFLICTING" ? `conflicts with ${pr.base}` : null,
     row(failing > 0 ? plural(failing, "failing check", "failing checks") : null),
-    row(cancelled > 0 ? plural(cancelled, "cancelled check", "cancelled checks") : null),
-    pr.reviewDecision === "CHANGES_REQUESTED" ? "changes requested" : null,
-    row(open2 > 0 ? threadsWaiting(open2) : null)
-  ].filter(isPresent);
+    row(cancelled > 0 ? plural(cancelled, "cancelled check", "cancelled checks") : null)
+  ];
+  const threadsOnPerson = row(open2 > 0 ? threadsWaiting(open2) : null);
+  const isChangesRequested = pr.reviewDecision === "CHANGES_REQUESTED";
+  const isAnythingOnPerson = [...checksAndConflicts, threadsOnPerson].some(isPresent);
+  const changes = isChangesRequested ? "changes requested" : null;
+  const onYou = isAnythingOnPerson ? [...checksAndConflicts, changes, threadsOnPerson].filter(isPresent) : [];
   const onOthers = [
-    row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to Claude` : null),
+    row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to ${agent}` : null),
     row(changed > 0 ? `${plural(changed, "thread", "threads")} on changed lines` : null),
     pr.reviewDecision === "REVIEW_REQUIRED" ? "needs approval" : null,
     pending > 0 ? `${pending} ${pending === 1 ? "check" : "checks"} running` : null
   ].filter(isPresent);
-  if (pr.isDraft) return result("draft", "Draft", [...onYou, ...onOthers]);
+  if (pr.isDraft)
+    return result("draft", "Draft", [...isAnythingOnPerson ? onYou : [changes].filter(isPresent), ...onOthers]);
   if (onYou.length > 0) return result("blocked", "Blocked", onYou);
+  if (isChangesRequested) return result("waiting", "Waiting on the reviewer", ["changes requested", ...onOthers]);
   if (onOthers.length > 0) return result("waiting", "Waiting", onOthers);
   const isApproved = pr.reviewDecision === "APPROVED";
   return result(
@@ -1545,6 +1550,9 @@ function retryOf(id, last) {
 }
 function isRepeatOf(last, action) {
   return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
+}
+function isHeldSend(last) {
+  return last?.delivery?.state === "held";
 }
 
 // ../hooks/tabs.ts
@@ -1999,6 +2007,7 @@ function isQueuedAt(last, now) {
   return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
 }
 function pendingDeliveryAt(last, now) {
+  if (last?.delivery?.state === "held") return "held";
   if (last?.delivery?.state === "unconfirmed") return "unconfirmed";
   if (last?.delivery?.state !== "queued") return null;
   return isQueuedAt(last, now) ? "queued" : "sending";
@@ -2024,13 +2033,14 @@ var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 var OPTIONS_FOLD_AT = 5;
 var OPTION_LABEL_CHARS = 32;
 var DOT = "\u2007\xB7\u2002";
-function closedRowState(closed, at, now, settleWindowMs, delivery) {
+function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnswer = false) {
+  const canUndoAnswer = isPressedAnswer && delivery === "held" && isUndoLeft(at, now, settleWindowMs);
   return {
     is: "settled",
     label: outcomeLabel(closed),
     at,
-    canUndo: canUndoClose(closed, at, now, settleWindowMs),
-    offersUndo: offersUndo(closed),
+    canUndo: canUndoAnswer || canUndoClose(closed, at, now, settleWindowMs),
+    offersUndo: isPressedAnswer || offersUndo(closed),
     closedAs: closedState(closed),
     delivery
   };
@@ -2042,7 +2052,9 @@ var ROW_COPY = {
   discard: "Discard",
   clickField: "Click the field to type",
   relevantFile: "Relevant file: ",
-  allOptions: (count) => `All ${count} options`
+  allOptions: (count) => `All ${count} options`,
+  undo: "Undo",
+  reopen: "Reopen"
 };
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
@@ -2696,7 +2708,7 @@ function actionsOf(row, last, state, feedback) {
       isOut: out === pressAction
     };
   };
-  if (state.is === "settled") return state.canUndo ? [action({ action: "undo", id }, "Undo", "view")] : [];
+  if (state.is === "settled") return state.canUndo ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [];
   if (state.is === "held")
     return [
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
@@ -2768,7 +2780,9 @@ function inboxView({
     const last = lastActions[c.id];
     return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(last.at, false) ? last : null;
   };
-  const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
+  const isPressedAnswer = (c) => c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
+  const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || isPressedAnswer(c);
+  const isAnswerHeld = (c) => isPressedAnswer(c) && isHeldSend(lastActions[c.id]) && isUndoLeft(closedAt(c), now, settleWindowMs);
   const isHeld = (c) => {
     const since = replies[c.id];
     return since !== void 0 && since <= closedAt(c) && !isOwnClose(c);
@@ -2776,7 +2790,7 @@ function inboxView({
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
   const isPlaced = (c) => {
     const at = closedAt(c);
-    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(at, canUndoClose(c, at, now, settleWindowMs)));
+    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs)));
   };
   const placedItems = new Map(
     ledger.closed.filter((d) => d.item && !isOpen2(d.id) && isPlaced(d)).map((d) => [d.id, d])
@@ -2813,7 +2827,8 @@ function inboxView({
         at,
         now,
         settleWindowMs,
-        "doneNotification" in closed2 && closed2.doneNotification?.error !== void 0 ? { error: closed2.doneNotification.error, canUndo: isUndoable(closed2) } : (closed2.how === "answered" || closed2.how === "done") && last2?.kind === "mark" && last2.at === at ? pendingDeliveryAt(last2, now) : null
+        "doneNotification" in closed2 && closed2.doneNotification?.error !== void 0 ? { error: closed2.doneNotification.error, canUndo: isUndoable(closed2) } : (closed2.how === "answered" || closed2.how === "done") && last2?.kind === "mark" && last2.at === at ? pendingDeliveryAt(last2, now) : null,
+        isPressedAnswer(closed2)
       );
     }
     const last = lastActions[id];

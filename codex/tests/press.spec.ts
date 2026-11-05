@@ -13,7 +13,7 @@ import { notePrompt, viewOf } from '../src/core'
 import { SETTLE_WINDOW_MS } from '../src/settle'
 import type { SessionState } from '../src/state'
 import { CODEX } from '../src/texts'
-import { after, pressed, SHOWN, withItems } from './press-fixtures'
+import { after, pressed, released, SHOWN, withItems } from './press-fixtures'
 
 test('Dismiss merged dismisses every merged PR but the branch’s own, each with its own Undo, and is stale once none is left', () => {
   const d = demoView(100, 'Codex')
@@ -63,14 +63,11 @@ test('Fix hands a finding off and settles it as the choice made, each press with
   }
   const r = pressed(s, { action: 'address', id: 'f3' })
   assert.ok(!('stale' in r))
-  assert.deepEqual(r.effects, [
-    {
-      kind: 'send',
-      text: 'Please address this finding you recorded:\nIssue: No lint script\nOnly tests run.',
-      by: null,
-    },
-  ])
-  const sent = after(s, { action: 'address', id: 'f3' })
+  assert.deepEqual(r.effects, [])
+  const message = r.last?.delivery?.state === 'held' ? r.last.delivery.message : ''
+  assert.equal(message, 'Please address this finding you recorded:\nIssue: No lint script\nOnly tests run.')
+  const held = after(s, { action: 'address', id: 'f3' })
+  const sent = released(held, 'f3')
   const folded = viewOf(sent, 60, SHOWN).findings
   assert.deepEqual(
     folded.rows.map(r => [r.id, r.state.is, r.feedback && feedbackText(r.feedback, 'codex')]),
@@ -86,9 +83,9 @@ test('Fix hands a finding off and settles it as the choice made, each press with
 
     return [mark.isRunning ? 'running' : mark.text, settledLabel(row.state.label, row.state.delivery)]
   }
+  assert.deepEqual(drawnAt(held, 60), ['', 'Fix'])
   assert.deepEqual(drawnAt(sent, 60), ['running', 'Fix'])
   assert.deepEqual(drawnAt(sent, 50 + QUEUED_AFTER_MS), ['running', 'Queued: Fix'])
-  const message = r.effects[0]?.kind === 'send' ? r.effects[0].text : ''
   assert.deepEqual(drawnAt({ ...sent, lastActions: withArrival(sent.lastActions, message) }, 80), ['✓', 'Fix'])
   const started = notePrompt(sent, 'Please address this finding you recorded:', 70).state
   const applied = { ...started, presence: { ...started.presence, turnsApplied: started.presence.turnsStarted } }
@@ -222,7 +219,13 @@ test('Dismiss settles a row in place with Undo, and Undo puts it back open where
   assert.deepEqual(undone.ledger.closed, [])
   assert.ok('stale' in pressed(undone, { action: 'undo', id: 'i1' }))
   const answered = after(s, { action: 'answer', id: 'i1', option: 'Fix add.js' })
-  assert.ok('stale' in pressed(answered, { action: 'undo', id: 'i1' }))
+  const takenBack = pressed(answered, { action: 'undo', id: 'i1' })
+  assert.ok(!('stale' in takenBack) && takenBack.dropLast === true)
+  assert.deepEqual(
+    takenBack.ledger.items.map(i => i.id),
+    ['i1', 'i2'],
+  )
+  assert.ok('stale' in pressed(released(answered, 'i1'), { action: 'undo', id: 'i1' }))
   const closedByCodex = {
     ...s,
     ledger: recordClose(CODEX, s.ledger, { id: 'i2', reason: 'done' }, 50, { lastActions: {}, turnStartedAt: null })

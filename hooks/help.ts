@@ -103,9 +103,14 @@ export function markLegend(isNextBuild: boolean): readonly LegendEntry[] {
   return isNextBuild ? MARK_LEGEND : MARK_LEGEND.filter(m => !STATUS_ONLY_MARKS.has(m.mark))
 }
 
-export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', marks: 'Marks' } as const
+export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', marks: 'Marks', tabs: 'Tabs' } as const
 
 export type HelpKey = { keys: string; does: string }
+
+/** The symbol each tab draws where its name does not fit, with its name, in Help's key layout. */
+export function tabLegend(isNextBuild: boolean): HelpKey[] {
+  return shownTabs(isNextBuild).map(t => ({ keys: t.symbol, does: t.label }))
+}
 
 /** The key that presses Undo, which no row's selection holds: a closed row settles and the selection moves on. */
 export const UNDO_KEY = 'u'
@@ -157,7 +162,7 @@ export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasSta
               { keys: '↑ ↓ j k', does: 'Move between rows' },
               { keys: '← →', does: 'Pick a button' },
               { keys: '↵', does: 'Press the picked button' },
-              { keys: 'r', does: 'Reply to the selected row' },
+              { keys: 't', does: 'Reply to the selected row' },
               undoKey,
               ...prTabKeys,
             ]

@@ -645,7 +645,7 @@ function asksAbout(item, finding, isClaimed = false) {
   return [...prNumbers(`${finding.title} ${finding.detail}`)].some((n) => itemPrs.has(n));
 }
 function pruneClosed(ledger, keep) {
-  const pruned = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id));
+  const pruned = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id) || r.how === "dismissed");
   return { ...ledger, closed: pruned(ledger.closed), closedFindings: pruned(ledger.closedFindings) };
 }
 function idNumber(id) {
@@ -970,7 +970,7 @@ function threadsWaiting(count) {
 function plural(count, one, many) {
   return `${count} ${count === 1 ? one : many}`;
 }
-function readiness(pr, isSent = () => false) {
+function readiness(pr, isSent = () => false, agent = "Claude") {
   const result = (status, head, reasonList = [], joint = ": ") => {
     const reasons = reasonList.join(", ");
     const unlisted = status === "ready" ? [] : reasonList.filter((r) => !listed.includes(r));
@@ -988,23 +988,28 @@ function readiness(pr, isSent = () => false) {
   const changed = waiting.filter((t) => t.isLinesChanged && !isSent(pr, t)).length;
   const isPresent = (b) => b !== null;
   const row = (r) => r === null ? r : (listed.push(r), r);
-  const onYou = [
+  const checksAndConflicts = [
     pr.mergeable === "CONFLICTING" ? `conflicts with ${pr.base}` : null,
     row(failing > 0 ? plural(failing, "failing check", "failing checks") : null),
-    row(cancelled > 0 ? plural(cancelled, "cancelled check", "cancelled checks") : null),
-    pr.reviewDecision === "CHANGES_REQUESTED" ? "changes requested" : null,
-    row(open > 0 ? threadsWaiting(open) : null)
-  ].filter(isPresent);
+    row(cancelled > 0 ? plural(cancelled, "cancelled check", "cancelled checks") : null)
+  ];
+  const threadsOnPerson = row(open > 0 ? threadsWaiting(open) : null);
+  const isChangesRequested = pr.reviewDecision === "CHANGES_REQUESTED";
+  const isAnythingOnPerson = [...checksAndConflicts, threadsOnPerson].some(isPresent);
+  const changes = isChangesRequested ? "changes requested" : null;
+  const onYou = isAnythingOnPerson ? [...checksAndConflicts, changes, threadsOnPerson].filter(isPresent) : [];
   const onOthers = [
-    row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to Claude` : null),
+    row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to ${agent}` : null),
     row(changed > 0 ? `${plural(changed, "thread", "threads")} on changed lines` : null),
     pr.reviewDecision === "REVIEW_REQUIRED" ? "needs approval" : null,
     pending > 0 ? `${pending} ${pending === 1 ? "check" : "checks"} running` : null
   ].filter(isPresent);
   if (pr.isDraft)
-    return result("draft", "Draft", [...onYou, ...onOthers]);
+    return result("draft", "Draft", [...isAnythingOnPerson ? onYou : [changes].filter(isPresent), ...onOthers]);
   if (onYou.length > 0)
     return result("blocked", "Blocked", onYou);
+  if (isChangesRequested)
+    return result("waiting", "Waiting on the reviewer", ["changes requested", ...onOthers]);
   if (onOthers.length > 0)
     return result("waiting", "Waiting", onOthers);
   const isApproved = pr.reviewDecision === "APPROVED";
@@ -1535,6 +1540,12 @@ function recordPress(kind, action, text, ctx, previous) {
     ...isRepeatOf(previous, action) ? { isRepeat: true } : {}
   };
 }
+function held(last, message, by, ctx) {
+  return { ...last, delivery: { state: "held", message, until: ctx.now + ctx.holdMs, by } };
+}
+function isHeldSend(last) {
+  return last?.delivery?.state === "held";
+}
 function pressed(ledger, last, p, ctx) {
   const stale = { stale: true };
   const answerMessage = ctx.answerMessage ?? messages.answer;
@@ -1543,11 +1554,17 @@ function pressed(ledger, last, p, ctx) {
   if (p.id === GOAL_KEYS_ID)
     return goalPressed(ledger, p, record, ctx.now);
   if (p.action === "undo") {
-    if (ledger.findings.some((f) => f.id === p.id) && last?.action === "address" && !last.isKept)
+    const isOpenFinding = ledger.findings.some((f) => f.id === p.id);
+    if (isOpenFinding && last?.action === "address" && isHeldSend(last))
+      return { ...unchanged, dropLast: true };
+    if (isOpenFinding && last?.action === "address" && !last.isKept)
       return { ...unchanged, last: { ...last, isKept: true } };
-    if (ledger.items.some((i) => i.id === p.id) || ledger.findings.some((f) => f.id === p.id))
+    if (ledger.items.some((i) => i.id === p.id) || isOpenFinding)
       return stale;
     const closed = ledger.closed.findLast((c) => c.id === p.id);
+    const isHeldAnswer = closed?.how === "answered" && isHeldSend(last) && last?.at === closed.at;
+    if (closed?.item && isHeldAnswer)
+      return { ...unchanged, ledger: reopenItem(ledger, p.id), reopenedId: p.id, dropLast: true };
     if (closed?.item && isUndoable(closed))
       return { ...unchanged, ledger: reopenItem(ledger, p.id), reopenedId: p.id };
     const closedFinding = ledger.closedFindings.findLast((f) => f.id === p.id);
@@ -1564,7 +1581,8 @@ function pressed(ledger, last, p, ctx) {
     });
     switch (p.action) {
       case "address": {
-        const sent = sendFinding("handoff", messages.finding(finding, "address"));
+        const text = messages.finding(finding, "address");
+        const sent = { ledger, last: held(record("handoff"), text, null, ctx), effects: [] };
         const asker = ledger.items.find((i) => i.id === finding.askedAs);
         return asker ? {
           ...sent,
@@ -1596,8 +1614,8 @@ function pressed(ledger, last, p, ctx) {
     return p.action === "type" ? replyToClosed(ledger, p, record("handoff"), answerMessage) : stale;
   const answered = (answer) => ({
     ledger: closeItem(ledger, item.id, { how: "answered", outcome: answer }, ctx.now),
-    last: record("mark"),
-    effects: [{ kind: "send", text: answerMessage(item, answer), by: { id: item.id, action: "answer" } }]
+    last: held(record("mark"), answerMessage(item, answer), { id: item.id, action: "answer" }, ctx),
+    effects: []
   });
   switch (p.action) {
     case "answer":
@@ -1770,7 +1788,10 @@ var STATUS_ONLY_MARKS = new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJ
 function markLegend(isNextBuild) {
   return isNextBuild ? MARK_LEGEND : MARK_LEGEND.filter((m) => !STATUS_ONLY_MARKS.has(m.mark));
 }
-var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks" };
+var HELP_COPY = { open: "Help", close: "\u2715 Close help", keys: "Keys", marks: "Marks", tabs: "Tabs" };
+function tabLegend(isNextBuild) {
+  return shownTabs(isNextBuild).map((t) => ({ keys: t.symbol, does: t.label }));
+}
 var UNDO_KEY = "u";
 var PR_TAB_HELP_KEYS = [
   { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
@@ -1809,7 +1830,7 @@ function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
           { keys: "\u2191 \u2193 j k", does: "Move between rows" },
           { keys: "\u2190 \u2192", does: "Pick a button" },
           { keys: "\u21B5", does: "Press the picked button" },
-          { keys: "r", does: "Reply to the selected row" },
+          { keys: "t", does: "Reply to the selected row" },
           undoKey,
           ...prTabKeys
         ] : [
@@ -2166,6 +2187,8 @@ function isQueuedAt(last, now) {
   return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
 }
 function pendingDeliveryAt(last, now) {
+  if (last?.delivery?.state === "held")
+    return "held";
   if (last?.delivery?.state === "unconfirmed")
     return "unconfirmed";
   if (last?.delivery?.state !== "queued")
@@ -2219,13 +2242,14 @@ var NEEDS_YOU_GROUPS = [
   { kind: "task", title: "Tasks", list: "tasks" }
 ];
 var CLOSED_SHOWN = 3;
-function closedRowState(closed, at, now, settleWindowMs, delivery) {
+function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnswer = false) {
+  const canUndoAnswer = isPressedAnswer && delivery === "held" && isUndoLeft(at, now, settleWindowMs);
   return {
     is: "settled",
     label: outcomeLabel(closed),
     at,
-    canUndo: canUndoClose(closed, at, now, settleWindowMs),
-    offersUndo: offersUndo(closed),
+    canUndo: canUndoAnswer || canUndoClose(closed, at, now, settleWindowMs),
+    offersUndo: isPressedAnswer || offersUndo(closed),
     closedAs: closedState(closed),
     delivery
   };
@@ -2238,8 +2262,18 @@ var ROW_COPY = {
   discard: "Discard",
   clickField: "Click the field to type",
   relevantFile: "Relevant file: ",
-  allOptions: (count) => `All ${count} options`
+  allOptions: (count) => `All ${count} options`,
+  undo: "Undo",
+  reopen: "Reopen"
 };
+function resumeLabel(isSending) {
+  return isSending ? "Resuming\u2026" : "Resume";
+}
+function closedLineAction(d) {
+  if (canUndoRefused(d.delivery))
+    return { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } };
+  return d.how === "dismissed" ? { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } } : null;
+}
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
   if (!descriptions)
@@ -2281,6 +2315,8 @@ function rowResultMark(row) {
   if (row.state.is === "settled")
     return settledMark(row.state);
   const f = row.feedback;
+  if (row.state.is === "open" && f?.is === "working")
+    return RUNNING_RESULT;
   if (row.state.is !== "handedOff" || !f)
     return null;
   if (f.is === "sending" || f.is === "queued")
@@ -2296,8 +2332,9 @@ function allRows(v) {
 function settledRowIds(rows) {
   return rows.filter((r) => r.state.is === "settled").map((r) => r.id);
 }
-function closedShown(closed, drawnSettled) {
-  return closed.filter((d) => !drawnSettled.has(d.id)).slice(0, CLOSED_SHOWN);
+function closedShown(closed, drawnSettled, isAllShown = false) {
+  const listed = closed.filter((d) => !drawnSettled.has(d.id));
+  return isAllShown ? listed : listed.slice(0, CLOSED_SHOWN);
 }
 function closedTotal(closed, drawnSettled) {
   return closed.filter((d) => !drawnSettled.has(d.id)).length;
@@ -2306,7 +2343,7 @@ function foldLabel(total) {
   return `${total} closed`;
 }
 function earlierLabel(total, shown) {
-  return total > shown ? `${total - shown} earlier` : null;
+  return total > shown ? `Show ${total - shown} earlier` : null;
 }
 function deliveryLabel(state, label) {
   return state === "queued" ? `Queued: ${label}` : `Not confirmed: ${label}`;
@@ -2328,7 +2365,7 @@ function settledTone(state) {
 function settledLabel(label, delivery) {
   if (delivery && typeof delivery === "object")
     return `${label} \xB7 Not sent: ${delivery.error}`;
-  return delivery === null || delivery === "sending" ? label : deliveryLabel(delivery, label);
+  return delivery === null || delivery === "held" || delivery === "sending" ? label : deliveryLabel(delivery, label);
 }
 function outcomeLabel(c) {
   return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
@@ -2955,6 +2992,7 @@ function checkRowText(c) {
     meta: checkRunText(c)
   };
 }
+var PR_QUOTE_CHARS = 1200;
 function checkRunText(c) {
   const ended = c.bucket === "cancelled" ? "Cancelled" : "Failed";
   return c.startedAt !== undefined && c.finishedAt !== undefined ? `${ended} after ${took(c.finishedAt - c.startedAt)}` : ended;
@@ -4711,7 +4749,7 @@ function actionsOf(row, last, state, feedback) {
     };
   };
   if (state.is === "settled")
-    return state.canUndo ? [action({ action: "undo", id }, "Undo", "view")] : [];
+    return state.canUndo ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [];
   if (state.is === "held")
     return [
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
@@ -4857,7 +4895,9 @@ function inboxView({
     const last = lastActions[c.id];
     return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(last.at, false) ? last : null;
   };
-  const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
+  const isPressedAnswer = (c) => c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
+  const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || isPressedAnswer(c);
+  const isAnswerHeld = (c) => isPressedAnswer(c) && isHeldSend(lastActions[c.id]) && isUndoLeft(closedAt(c), now, settleWindowMs);
   const isHeld = (c) => {
     const since = replies[c.id];
     return since !== undefined && since <= closedAt(c) && !isOwnClose(c);
@@ -4865,7 +4905,7 @@ function inboxView({
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
   const isPlaced = (c) => {
     const at = closedAt(c);
-    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(at, canUndoClose(c, at, now, settleWindowMs)));
+    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs)));
   };
   const placedItems = new Map(ledger.closed.filter((d) => d.item && !isOpen(d.id) && isPlaced(d)).map((d) => [d.id, d]));
   const isFixSettled = (id) => {
@@ -4894,7 +4934,7 @@ function inboxView({
         };
       if (isHeld(closed))
         return { is: "held", label: heldLabel(closed), at };
-      return closedRowState(closed, at, now, settleWindowMs, "doneNotification" in closed && closed.doneNotification?.error !== undefined ? { error: closed.doneNotification.error, canUndo: isUndoable(closed) } : (closed.how === "answered" || closed.how === "done") && last?.kind === "mark" && last.at === at ? pendingDeliveryAt(last, now) : null);
+      return closedRowState(closed, at, now, settleWindowMs, "doneNotification" in closed && closed.doneNotification?.error !== undefined ? { error: closed.doneNotification.error, canUndo: isUndoable(closed) } : (closed.how === "answered" || closed.how === "done") && last?.kind === "mark" && last.at === at ? pendingDeliveryAt(last, now) : null, isPressedAnswer(closed));
     }
     const last = lastActions[id];
     const sent = ledger.findings.find((f) => f.id === id);
@@ -5109,6 +5149,7 @@ function pressOn(s, p, at, drawn, texts, localPressId) {
   const item = s.ledger.items.find((i) => i.id === p.id);
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
+    holdMs: drawn.settleWindowMs,
     extraSteps: item ? itemPrSteps(item, s.prViews, tabPrs(s.ledger)) : [],
     answerMessage: texts.answerMessage,
     comparePage: texts.comparePage,
@@ -5119,7 +5160,7 @@ function pressOn(s, p, at, drawn, texts, localPressId) {
   return {
     ledger: r.ledger,
     lasts: r.last ? { [p.id]: r.last } : {},
-    drop: [],
+    drop: r.dropLast ? [p.id] : [],
     effects: r.effects,
     ...r.reopenedId ? { reopenedId: r.reopenedId } : {}
   };
@@ -5622,7 +5663,6 @@ function drawGoalPart(part, d, isSelected) {
 
 // src/panel-lines.ts
 var AGENT = "omp";
-var REPLY_KEY = "r";
 var INDENT = 7;
 var UNLED_INDENT = INDENT - 3;
 var STOP_ID = "stop";
@@ -5643,6 +5683,8 @@ var blankLine = (id) => ({
   buttons: [],
   row: null,
   fold: null,
+  earlierOf: null,
+  body: null,
   isStatic: false,
   isWaiting: true,
   isDetailShown: false,
@@ -5656,16 +5698,25 @@ function feedbackTone(f) {
     return "done";
   return null;
 }
-function rowButtons(row) {
-  const { keys, more } = rowKeyPlan(row, true);
+function rowButtons(row, isAllShown) {
+  const { keys, more } = rowKeyPlan(row, isAllShown);
   const recommended = row.item?.rec;
   return [...keys, ...more].flatMap((k) => {
     if (k.slot === "allOptions")
-      return [];
+      return [
+        {
+          label: k.label,
+          key: null,
+          press: { action: "all-options", id: row.id },
+          isRecommended: false,
+          isFollowUp: false,
+          isQuiet: true
+        }
+      ];
     if (k.slot === "retry")
       return [{ label: k.label, key: null, press: k.press, isRecommended: false, isFollowUp: false }];
     const { press } = k.action;
-    const key = press.action === "type" ? REPLY_KEY : k.hotkey ?? null;
+    const key = k.hotkey ?? null;
     return [
       {
         label: k.action.label,
@@ -5688,7 +5739,7 @@ function prButtons(actions) {
     isOut: a.isOut
   }));
 }
-function lineOfRow(row) {
+function lineOfRow(row, isAllShown) {
   const feedbackLabel = rowFeedbackText(row, AGENT);
   const f = row.feedback;
   const state = row.state;
@@ -5709,7 +5760,7 @@ function lineOfRow(row) {
       undo: state.canUndo && undo ? undo.press : null,
       at: state.at
     } : null,
-    buttons: state.is === "settled" ? [] : rowButtons(row),
+    buttons: state.is === "settled" ? [] : rowButtons(row, isAllShown),
     row,
     isWaiting: isWaitingRow(row),
     isFolded: state.is === "handedOff"
@@ -5720,14 +5771,8 @@ var isGroupEmpty = (g) => g.rows.length === 0 && closedTotal(g.closed, settledIn
 var closedId = (id) => `closed ${id}`;
 var foldId = (kind) => `fold ${kind}`;
 function closedLines(d) {
-  const canUndo = canUndoRefused(d.delivery);
-  const undo = {
-    label: "Undo",
-    key: null,
-    press: { id: d.id, action: "undo" },
-    isRecommended: false,
-    isFollowUp: false
-  };
+  const action = closedLineAction(d);
+  const buttons = action ? [{ label: action.label, key: null, press: action.press, isRecommended: false, isFollowUp: false }] : [];
   return {
     ...blankLine(closedId(d.id)),
     depth: 1,
@@ -5737,18 +5782,18 @@ function closedLines(d) {
     isDim: true,
     age: d.at,
     feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: null, source: null },
-    buttons: canUndo ? [undo] : [],
-    isStatic: !canUndo,
+    buttons,
+    isStatic: buttons.length === 0,
     isWaiting: false
   };
 }
-function groupEntries(g, unfolded) {
+function groupEntries(g, { unfolded, closedAll, optionsShown }) {
   const settled = settledIn(g);
   const total = closedTotal(g.closed, settled);
   const out = [
     { kind: "heading", text: g.title, count: waitingCount(g.rows), ...g.mark ? { mark: g.mark } : {} }
   ];
-  out.push(...g.rows.map((row) => ({ kind: "row", line: lineOfRow(row) })));
+  out.push(...g.rows.map((row) => ({ kind: "row", line: lineOfRow(row, optionsShown.includes(row.id)) })));
   if (g.rows.length === 0)
     out.push({ kind: "note", text: groupEmptyText(g.title), indent: 3 });
   if (total === 0)
@@ -5767,11 +5812,21 @@ function groupEntries(g, unfolded) {
   });
   if (!isUnfolded)
     return out;
-  const shown = closedShown(g.closed, settled);
+  const shown = closedShown(g.closed, settled, closedAll.includes(g.kind));
   out.push(...shown.map((d) => ({ kind: "row", line: closedLines(d) })));
   const earlier = earlierLabel(total, shown.length);
   if (earlier)
-    out.push({ kind: "note", text: earlier, indent: 5 });
+    out.push({
+      kind: "row",
+      line: {
+        ...blankLine(`earlier ${g.kind}`),
+        depth: 1,
+        title: earlier,
+        isDim: true,
+        earlierOf: g.kind,
+        isWaiting: false
+      }
+    });
   return out;
 }
 function pressFeedback(screen, id, now, isMarkDone = false) {
@@ -5792,7 +5847,7 @@ function stopEntries(screen, ui) {
   const canResume = isResumable(stop);
   const resuming = ui.resuming?.stopAt === stop.at ? ui.resuming : null;
   const resume = {
-    label: resuming?.is === "sending" ? "Resuming\u2026" : "Resume",
+    label: resumeLabel(resuming?.is === "sending"),
     key: null,
     press: { action: "resume" },
     isRecommended: true,
@@ -5839,7 +5894,7 @@ function rowEntries(screen, ui, tab) {
       { kind: "note", text: empty.hint, isWhole: true }
     ];
   }
-  return [...stops, ...groups.flatMap((g) => groupEntries(g, ui.unfolded))];
+  return [...stops, ...groups.flatMap((g) => groupEntries(g, ui))];
 }
 function prEntries(screen, ui, now) {
   const { prs, lastActions, turns } = screen.view;
@@ -5890,7 +5945,7 @@ function prEntries(screen, ui, now) {
       });
       continue;
     }
-    const { status, head, unlisted } = readiness(pr, isSent);
+    const { status, head, unlisted } = readiness(pr, isSent, AGENT);
     const isPrLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions);
     const f = isPrLastShown ? pressFeedback(screen, markId, now) : null;
     out.push({
@@ -5920,6 +5975,7 @@ function prEntries(screen, ui, now) {
           lead: markLead(text.mark),
           title: text.title,
           isDim: text.fold !== null,
+          body: clipLabel(commentParts(t.body).rest, PR_QUOTE_CHARS) || null,
           detail: [text.meta, text.fold?.note].filter(Boolean).join(" \xB7 ") || null,
           age: doneAt(feedback) ?? t.at,
           feedback,
@@ -6023,7 +6079,10 @@ function helpEntries(screen, tab) {
     ...keys.map((key) => ({ kind: "key", key, column })),
     { kind: "note", text: "" },
     { kind: "heading", text: HELP_COPY.marks },
-    ...markLegend(screen.isNextBuild === true).map((entry) => ({ kind: "legend", entry }))
+    ...markLegend(screen.isNextBuild === true).map((entry) => ({ kind: "legend", entry })),
+    { kind: "note", text: "" },
+    { kind: "heading", text: HELP_COPY.tabs },
+    ...tabLegend(screen.isNextBuild === true).map((key) => ({ kind: "key", key, column: Math.max(column, 4) }))
   ];
 }
 function entriesOf(screen, ui, tab, now) {
@@ -6076,6 +6135,10 @@ function activate(screen, ui, line, button, now) {
   const { press } = button;
   if (button.isOut)
     return { ui };
+  if (press.action === "all-options") {
+    const index = line.buttons.findIndex((b) => b.press === press);
+    return { ui: { ...ui, optionsShown: [...ui.optionsShown, press.id], focus: { rowId: line.id, index } } };
+  }
   if (press.action === "resume") {
     const { stop } = screen;
     const isSending = ui.resuming?.is === "sending" && ui.resuming.stopAt === stop?.at;
@@ -6160,8 +6223,10 @@ function handleKey(screen, ui, key, now, text) {
   if (selected?.fold && key === "enter") {
     const kind = selected.fold;
     const unfolded = base.unfolded.includes(kind) ? base.unfolded.filter((k) => k !== kind) : [...base.unfolded, kind];
-    return { ui: { ...base, unfolded } };
+    return { ui: { ...base, unfolded, closedAll: base.closedAll.filter((k) => k !== kind) } };
   }
+  if (selected?.earlierOf && key === "enter")
+    return { ui: { ...base, closedAll: [...base.closedAll, selected.earlierOf] } };
   if (selected && isShut(selected, base))
     return key === "enter" ? { ui: { ...base, opened: selected.id } } : { ui: base };
   if (!selected || selected.buttons.length === 0 || isGuarded(base.openedAt, now))
@@ -6223,6 +6288,7 @@ function boxed(inner, tone, width, s) {
     s.banner(tone, "line", `\u2570${"\u2500".repeat(width - 2)}\u256F`)
   ];
 }
+var BODY_LINES = 8;
 var LEAD_TONES = { error: "error", warning: "needsYou", notice: null };
 function bannerLines(b, width, s) {
   const text = b.body ? `${b.lead} ${b.body}` : b.lead;
@@ -6311,6 +6377,8 @@ function drawLine(line, isSelected, d) {
   const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null;
   if (holdsUp)
     out.push(fit(`${" ".repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width));
+  if (line.body && isSelected)
+    out.push(...indented(line.body, indent, width, BODY_LINES, (t) => t));
   if (line.detail && (isSelected || line.isDetailShown))
     out.push(...indented(line.detail, indent, width, 4, s.dim));
   if (!isSelected)
@@ -6464,6 +6532,8 @@ var INITIAL_UI = {
   discarded: {},
   notice: null,
   unfolded: [],
+  closedAll: [],
+  optionsShown: [],
   statusUnfolded: [],
   resuming: null,
   opened: null,
@@ -6646,6 +6716,8 @@ function createPanel(deps) {
   async function press(p) {
     if (p.action === "resume")
       return resume();
+    if (p.action === "all-options")
+      return;
     const rowId = pressRowId(p);
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now());
     const sentDraft = !isPrPress(p) && p.action === "type" ? ui.drafts[p.id] : undefined;
@@ -9525,7 +9597,87 @@ function activityHandlers(context, sessions) {
   return { onSubagentLifecycle, onSubagentProgress, onToolExecutionStart, onToolExecutionEnd, onToolResult };
 }
 
+// ../hooks/held-sends.ts
+function dueRows(s, now) {
+  return Object.entries(s.lastActions).filter(([, a]) => a.delivery?.state === "held" && a.delivery.until <= now).map(([id]) => id);
+}
+async function releaseHeldSends(host, current) {
+  const due = dueRows(current ?? await host.read(), await host.now());
+  for (const id of due)
+    await releaseOne(host, id);
+}
+function refusedHeld(s, id, reason) {
+  const last = s.lastActions[id];
+  if (last?.delivery?.state !== "held")
+    return s;
+  return {
+    ...s,
+    lastActions: { ...s.lastActions, [id]: { ...last, delivery: { state: "failed", reason } } },
+    ledger: last.kind === "mark" ? reopenOnFailure(s.ledger, id, last.at) : s.ledger
+  };
+}
+async function releaseOne(host, id) {
+  let attempt = null;
+  const started = host.update(async (s) => {
+    attempt = null;
+    const last = s.lastActions[id];
+    const held = last?.delivery;
+    const now = await host.now();
+    if (!last || held?.state !== "held" || held.until > now)
+      return s;
+    await host.prepare?.(s);
+    const deliveryId = host.newId();
+    attempt = { deliveryId, text: held.message, at: last.at };
+    const state = host.isDeliveryHeldUntilRun ? "queued" : "unconfirmed";
+    return {
+      ...s,
+      lastActions: { ...s.lastActions, [id]: { ...last, delivery: { state, message: held.message, id: deliveryId } } },
+      sent: [
+        ...s.sent,
+        {
+          text: held.message,
+          press: held.by,
+          at: now,
+          row: id,
+          queuedId: null,
+          pressedAt: last.at,
+          deliveryId,
+          phase: "attempting"
+        }
+      ]
+    };
+  });
+  const why = await started.then(() => null, (err) => err instanceof Error ? err.message : String(err));
+  if (why !== null) {
+    await host.update((s) => refusedHeld(s, id, why));
+    return;
+  }
+  const sending = attempt;
+  if (!sending)
+    return;
+  const outcome = await host.deliver(await host.read(), sending.text, sending.deliveryId).catch((err) => ({ state: "unconfirmed", reason: err instanceof Error ? err.message : String(err) }));
+  await host.update((s) => {
+    const after = completedAttempt(s, sending.deliveryId, outcome);
+    if (outcome.state === "unconfirmed")
+      return { ...after, lastActions: withUnconfirmed(after.lastActions, sending.text, sending.at, sending.deliveryId) };
+    if (outcome.state !== "rejected")
+      return after;
+    const lastActions = withFailure(after.lastActions, [id], sending.at, outcome.reason, sending.deliveryId);
+    const last = lastActions[id];
+    const isRowFailed = last?.delivery?.state === "failed" && last.delivery.id === sending.deliveryId;
+    return {
+      ...after,
+      lastActions,
+      ledger: isRowFailed && last.kind === "mark" ? reopenOnFailure(after.ledger, id, sending.at) : after.ledger
+    };
+  });
+}
+
 // ../hooks/host-press.ts
+async function wakeAfterSettle(host, current) {
+  await releaseHeldSends(host, current);
+  await wakeForDone(host);
+}
 async function wakeForDone(host, current) {
   const check = async (s) => doneWake(s.ledger, {
     now: await host.now(),
@@ -9679,7 +9831,7 @@ async function startPress(host, p, isStale, holds) {
         note: check === "stale" ? "stale" : null,
         isUnconfirmed,
         isRowFailed,
-        wakesForDone: false
+        wakesAfterSettle: false
       })
     };
   await host.update(async (saved) => {
@@ -9732,7 +9884,7 @@ async function startPress(host, p, isStale, holds) {
   if (!r || at === undefined)
     return {
       effects: null,
-      finish: async () => ({ copy, error, note, isUnconfirmed, isRowFailed, wakesForDone: false })
+      finish: async () => ({ copy, error, note, isUnconfirmed, isRowFailed, wakesAfterSettle: false })
     };
   return {
     effects: r.effects,
@@ -9749,7 +9901,9 @@ async function startPress(host, p, isStale, holds) {
         isUnconfirmed = true;
       }
       await runLocalEffects(effectHost, r.effects, Object.keys(r.lasts), r.lasts[rowId]?.result);
-      return { copy, error, note, isUnconfirmed, isRowFailed, wakesForDone: !isPrPress(p) && p.action === "done" };
+      const isDone = !isPrPress(p) && p.action === "done";
+      const isHeld = Object.values(r.lasts).some(isHeldSend);
+      return { copy, error, note, isUnconfirmed, isRowFailed, wakesAfterSettle: isDone || isHeld };
     }
   };
 }
@@ -9785,7 +9939,7 @@ function panelCalls(context, sessions) {
       const id = sessionIdOf(ctx);
       openPanels.set(id, "needsYou");
       deps.background(change(id, (s) => ({ ...s, shownSince: openedAt })));
-      await wakeForDone(hostFor(ctx)).catch(() => {
+      await wakeAfterSettle(hostFor(ctx)).catch(() => {
         return;
       });
       fetchPrsWhenDue(ctx);
@@ -9829,7 +9983,7 @@ function panelCalls(context, sessions) {
     },
     press: async (ctx, p, holds) => {
       const outcome = await press(hostFor(ctx), p, false, holds);
-      if (outcome.wakesForDone)
+      if (outcome.wakesAfterSettle)
         wakeLater(ctx);
       return outcome;
     },
@@ -10061,7 +10215,7 @@ function sessionCalls(context) {
     })());
   }
   function wakeLater(ctx) {
-    ctx.setTimeout(() => deps.background(wakeForDone(hostFor(ctx))), deps.settleWindowMs + WAKE_MARGIN_MS);
+    ctx.setTimeout(() => deps.background(wakeAfterSettle(hostFor(ctx))), deps.settleWindowMs + WAKE_MARGIN_MS);
   }
   return {
     change,
@@ -10262,7 +10416,7 @@ function turnHandlers(context, sessions) {
     const host = hostFor(ctx);
     if (needsUpdate(written))
       deps.background(runUpdates(updateHostFor(ctx)));
-    deps.background(wakeForDone(host));
+    deps.background(wakeAfterSettle(host));
   };
   return {
     start,

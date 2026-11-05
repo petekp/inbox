@@ -1,6 +1,7 @@
 import type { RenderSurface, UiCopyResult, UiPressArgument } from 'claude-code'
 import type { Draft, PressKind } from '../types'
 import type { PrPress } from './pr-press'
+import { ROW_COPY } from './rows'
 import type { ActionEmphasis, ActionIcon } from './rows'
 import type { ShownUndo } from './action-plan'
 import { UNDO_KEY } from './help'
@@ -83,7 +84,7 @@ export function undoKey(
 ): KeyAction {
   return {
     key: 'last-undo',
-    label: 'Undo',
+    label: ROW_COPY.undo,
     hotkey: UNDO_KEY,
     kind: 'view',
     onPress: p => (undo ? run(undo.press, p.surface) : undefined),

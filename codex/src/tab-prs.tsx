@@ -149,7 +149,7 @@ function PrEntry({ b, v, prs, now }: { b: DrawnPrBlock; v: View; prs: DrawnPrs; 
 }
 
 function PrHead({ v, pr, rank }: DrawnPrBlock & { v: View }) {
-  const { status, head, unlisted } = readiness(pr, threadSentIn(v.lastActions))
+  const { status, head, unlisted } = readiness(pr, threadSentIn(v.lastActions), 'Codex')
   const tone = PR_TONES[status]
 
   return (

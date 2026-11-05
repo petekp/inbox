@@ -17,6 +17,7 @@ describe('a finding replaced by a question', () => {
   const ctx = {
     now: 9,
     turnsStarted: 1,
+    holdMs: 1000,
     extraSteps: [],
     comparePage: '/plugin/hooks/compare-page.html',
     compareInBackground: true,
@@ -126,7 +127,7 @@ describe('a finding replaced by a question', () => {
     const linked = reopenFinding(asked(), 'f1')
     const r = applyPress(linked, undefined, { action: 'address', id: 'f1' }, ctx)
     if ('stale' in r) throw new Error('stale')
-    expect([r.ledger.items, r.ledger.closed.map(c => c.id), r.effects.map(e => e.kind)]).toEqual([[], ['i2'], ['send']])
+    expect([r.ledger.items, r.ledger.closed.map(c => c.id), r.last?.delivery?.state]).toEqual([[], ['i2'], 'held'])
   })
 })
 

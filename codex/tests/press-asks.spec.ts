@@ -14,12 +14,16 @@ import { emptyState } from '../src/state'
 import type { SessionState } from '../src/state'
 import { after, pressed, withItems } from './press-fixtures'
 
-test('an answer names its option by text: it closes the question and sends the answer as a press', () => {
+test('an answer names its option by text: it closes the question and holds the answer for the Undo window', () => {
   const r = pressed(withItems(), { action: 'answer', id: 'i1', option: 'Fix add.js' })
   assert.ok(!('stale' in r))
-  assert.deepEqual(r.effects, [
-    { kind: 'send', text: 'Re "Fix add.js or the test?": Fix add.js', by: { id: 'i1', action: 'answer' } },
-  ])
+  assert.deepEqual(r.effects, [])
+  assert.deepEqual(r.last?.delivery, {
+    state: 'held',
+    message: 'Re "Fix add.js or the test?": Fix add.js',
+    until: r.last?.at === undefined ? NaN : r.last.at + 1000,
+    by: { id: 'i1', action: 'answer' },
+  })
   assert.deepEqual(
     r.ledger.closed.map(d => [d.id, d.outcome, d.how]),
     [['i1', 'Fix add.js', 'answered']],

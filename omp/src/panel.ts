@@ -23,7 +23,9 @@ import { footer, pageWindow, pageWindowLines, scrolled, tabBar } from './panel-t
 import { fit, indented, spread } from './panel-text'
 
 type ResumePress = { action: 'resume' }
-export type PanelPress = RowPress | PrPress | ResumePress
+/** Shows every option of a question whose options fold. The panel handles it, so no host sees it. */
+type OptionsPress = { action: 'all-options'; id: string }
+export type PanelPress = RowPress | PrPress | ResumePress | OptionsPress
 
 /** What the panel draws: the session's view and the host facts the shared view does not hold. */
 export type PanelScreen = {
@@ -67,6 +69,10 @@ export type PanelUi = {
   notice: { text: string; at: number; isError: boolean } | null
   /** The groups whose closed rows show. Each starts folded. */
   unfolded: FoldKind[]
+  /** The groups whose earlier Closed lines the person opened. Folding the group closes them again. */
+  closedAll: FoldKind[]
+  /** The questions whose folded options the person opened. */
+  optionsShown: string[]
   /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
   statusUnfolded: string[]
   /** A Resume press for the stop that began at `stopAt`. */
@@ -97,6 +103,8 @@ export const INITIAL_UI: PanelUi = {
   discarded: {},
   notice: null,
   unfolded: [],
+  closedAll: [],
+  optionsShown: [],
   statusUnfolded: [],
   resuming: null,
   opened: null,

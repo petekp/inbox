@@ -12,6 +12,7 @@ import {
   isBlockPressShown,
   prBlockRows,
   prMarkId,
+  PR_QUOTE_CHARS,
   prRowWaits,
   prThreadId,
   threadRowText,
@@ -22,12 +23,12 @@ import { prRankText } from '../../hooks/pr-order'
 import type { PrRowMark } from '../../hooks/pr-rows'
 import type { PrCheck, PrThread } from '../../types'
 import type { PrOrderView } from '../../hooks/pr-order'
-import { readiness } from '../../hooks/prs'
+import { commentParts, readiness } from '../../hooks/prs'
 import { capitalized } from '../../hooks/press-labels'
-import { cellWidth } from '../../hooks/text'
-import { settledTone, NEEDS_YOU_GROUPS, settledMark, settledLabel } from '../../hooks/rows'
+import { cellWidth, clipLabel } from '../../hooks/text'
+import { settledTone, NEEDS_YOU_GROUPS, settledMark, settledLabel, resumeLabel } from '../../hooks/rows'
 import { bannerOf, emptyText, isResumable, stopFix, stopText } from '../../hooks/banners'
-import { FINDING_GROUPS, HELP_COPY, helpKeys, markLegend } from '../../hooks/help'
+import { FINDING_GROUPS, HELP_COPY, helpKeys, markLegend, tabLegend } from '../../hooks/help'
 import { isDrawnInPlace, runningMark } from '../../hooks/timing'
 import { isRowTab } from '../../hooks/tabs'
 import { statusKeyRows } from '../../hooks/status-keys'
@@ -45,7 +46,7 @@ function stopEntries(screen: PanelScreen, ui: PanelUi): Entry[] {
   const canResume = isResumable(stop)
   const resuming = ui.resuming?.stopAt === stop.at ? ui.resuming : null
   const resume: Button = {
-    label: resuming?.is === 'sending' ? 'Resuming…' : 'Resume',
+    label: resumeLabel(resuming?.is === 'sending'),
     key: null,
     press: { action: 'resume' },
     isRecommended: true,
@@ -102,7 +103,7 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
         ]
   }
 
-  return [...stops, ...groups.flatMap(g => groupEntries(g, ui.unfolded))]
+  return [...stops, ...groups.flatMap(g => groupEntries(g, ui))]
 }
 
 function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
@@ -151,7 +152,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       })
       continue
     }
-    const { status, head, unlisted } = readiness(pr, isSent)
+    const { status, head, unlisted } = readiness(pr, isSent, AGENT)
     const isPrLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
     const f = isPrLastShown ? pressFeedback(screen, markId, now) : null
     out.push({
@@ -181,6 +182,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
           lead: markLead(text.mark),
           title: text.title,
           isDim: text.fold !== null,
+          body: clipLabel(commentParts(t.body).rest, PR_QUOTE_CHARS) || null,
           detail: [text.meta, text.fold?.note].filter(Boolean).join(' · ') || null,
           age: doneAt(feedback) ?? t.at,
           feedback,
@@ -285,7 +287,7 @@ function pageEntries(page: StatusPage, typing: string | null, isUnfolded: (id: s
   return top.length > 0 && rows.length > 0 ? [...top, blank, ...rows] : [...top, ...rows]
 }
 
-/** Help in place of the tab's lines: the keys the panel takes, then what each mark means. */
+/** Help in place of the tab's lines: the keys the panel takes, what each mark means, then each tab's symbol. */
 function helpEntries(screen: PanelScreen, tab: ShownTab): Entry[] {
   const keys = helpKeys('omp', screen.isNextBuild === true, tab, statusKeyRows(screen.view.statusPage).length > 0)
   const column = Math.max(...keys.map(k => cellWidth(k.keys))) + 2
@@ -296,6 +298,9 @@ function helpEntries(screen: PanelScreen, tab: ShownTab): Entry[] {
     { kind: 'note', text: '' },
     { kind: 'heading', text: HELP_COPY.marks },
     ...markLegend(screen.isNextBuild === true).map((entry): Entry => ({ kind: 'legend', entry })),
+    { kind: 'note', text: '' },
+    { kind: 'heading', text: HELP_COPY.tabs },
+    ...tabLegend(screen.isNextBuild === true).map((key): Entry => ({ kind: 'key', key, column: Math.max(column, 4) })),
   ]
 }
 

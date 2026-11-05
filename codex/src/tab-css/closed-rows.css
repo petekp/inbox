@@ -124,3 +124,13 @@
     transform: scaleX(0);
   }
 }
+/* "Show 4 earlier" lists the rest of a Closed fold. Its whole line takes the click. */
+button.earlier {
+  display: block;
+  width: 100%;
+  text-align: left;
+  color: var(--muted);
+}
+button.earlier:hover {
+  color: var(--text);
+}

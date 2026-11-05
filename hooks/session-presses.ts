@@ -55,6 +55,7 @@ export function pressOn(
   const item = s.ledger.items.find(i => i.id === p.id)
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
+    holdMs: drawn.settleWindowMs,
     extraSteps: item ? itemPrSteps(item, s.prViews, tabPrs(s.ledger)) : [],
     answerMessage: texts.answerMessage,
     comparePage: texts.comparePage,
@@ -65,7 +66,7 @@ export function pressOn(
   return {
     ledger: r.ledger,
     lasts: r.last ? { [p.id]: r.last } : {},
-    drop: [],
+    drop: r.dropLast ? [p.id] : [],
     effects: r.effects,
     ...(r.reopenedId ? { reopenedId: r.reopenedId } : {}),
   }

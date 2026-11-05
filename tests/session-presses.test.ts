@@ -6,7 +6,7 @@ import { pressOn, recorded, withFetchedPrs } from '../hooks/session-presses'
 import { sessionView } from '../hooks/session-view'
 import type { PrView, RowNote } from '../types'
 import { runUpdates } from '../hooks/session-host'
-import { press, wakeForDone } from '../hooks/host-press'
+import { press, wakeAfterSettle } from '../hooks/host-press'
 import { allRows } from '../hooks/rows'
 import { COMPARE_LIMIT_MS, NO_HOLDS } from '../hooks/timing'
 import { feedbackOf, feedbackText } from '../hooks/feedback'
@@ -31,7 +31,7 @@ test('a refused Done message leaves its row reading Not sent, with Undo', async 
   const id = (await host.read()).ledger.items[0]!.id
   await press(host, { action: 'done', id }, false, NO_HOLDS)
   clock += host.settleWindowMs
-  await wakeForDone(host)
+  await wakeAfterSettle(host)
   const view = sessionView(await host.read(), clock, host.settleWindowMs)
 
   expect(view.needsYou.closed.tasks.map(c => c.delivery)).toEqual([{ error: 'queue refused', canUndo: true }])

@@ -259,7 +259,7 @@ export function panePrBlocks({
   const prBlock = (b: DrawnPr & { rows: Row[]; checks: Row[]; cancelled: Row[]; threads: Row[] }) => {
     if (b.state.is === 'settled') return settledPrBlock(b.pr, b.state)
     const { pr, checks, cancelled, threads } = b
-    const { status, head: statusHead, unlisted } = readiness(pr, isThreadSent)
+    const { status, head: statusHead, unlisted } = readiness(pr, isThreadSent, 'Claude')
     const tone = PR_TONES[status]
     const isPrLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
     const prLast = isPrLastShown ? lastActionText(prMarkId(pr.ref)) : null

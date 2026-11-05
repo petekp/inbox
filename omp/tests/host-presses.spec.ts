@@ -33,6 +33,7 @@ test('only what the person submits in the editor counts as a typed message, not 
   const { inbox, id } = await withQuestion()
   const typedAt = () => state().presence.lastTypedMessageAt
   await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await afterSettle()
   await prompt(w.sent[0]!.text)
   await call('input', { type: 'input', text: 'from a client', source: 'rpc' })
   await call('input', { type: 'input', text: 'from an extension', source: 'extension' })
@@ -45,7 +46,13 @@ test('only what the person submits in the editor counts as a typed message, not 
   expect(typedAt()).toBeGreaterThan(first!)
 })
 
-test('an answer press sends one follow-up while a turn runs, and the arriving prompt matches it', async () => {
+async function afterSettle() {
+  w.clock += 5000
+  w.timers.at(-1)!.fn()
+  await settle()
+}
+
+test('an answer press sends one follow-up once Undo ends, and the arriving prompt matches it', async () => {
   const { inbox, id } = await withQuestion()
   const outcome = await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
   expect(outcome).toEqual({
@@ -54,8 +61,10 @@ test('an answer press sends one follow-up while a turn runs, and the arriving pr
     note: null,
     isUnconfirmed: false,
     isRowFailed: false,
-    wakesForDone: false,
+    wakesAfterSettle: true,
   })
+  expect(w.sent).toEqual([])
+  await afterSettle()
   expect(w.sent).toEqual([{ text: 'Re "Use Node or Python?": Node', options: { deliverAs: 'followUp' } }])
   expect(state().sent.map((x: { phase: string }) => x.phase)).toEqual(['accepted'])
 
@@ -69,6 +78,7 @@ test('an answer press sends one follow-up while a turn runs, and the arriving pr
 test('a follow-up that starts inside a running turn matches its press once', async () => {
   const { inbox, id } = await withQuestion()
   await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await afterSettle()
   const started = {
     type: 'message_start',
     message: { role: 'user', content: [{ type: 'text', text: w.sent[0]!.text }] },
@@ -93,6 +103,7 @@ test('a press queued during a turn gets its own update, after one for the reply 
   await call('agent_start', { type: 'agent_start' })
   await call('message_end', { type: 'message_end', message: assistantMessage(opened) })
   await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await afterSettle()
   const pressed = w.sent[0]!.text
   await prompt(pressed)
   await call('message_start', { type: 'message_start', message: userMessage(pressed) })
@@ -127,6 +138,7 @@ test('two presses that start before any new reply share one turn and its reply',
   await call('agent_start', { type: 'agent_start' })
   await call('message_end', { type: 'message_end', message: assistantMessage('Test added.') })
   await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await afterSettle()
   await inbox.press(makeCtx(), { action: 'explain', id: task }, NO_HOLDS)
   const answered = w.sent[0]!.text
   const explained = w.sent[1]!.text
@@ -173,6 +185,7 @@ test('a press while the agent is idle sends the message with no delivery option'
   const { inbox, id } = await withQuestion()
   w.isIdle = true
   await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await afterSettle()
   expect(w.sent[0]!.options).toBeUndefined()
 })
 

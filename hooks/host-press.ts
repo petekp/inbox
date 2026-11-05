@@ -5,7 +5,8 @@ import type { Effect } from './press-reducer'
 import { finishedResult, withResult, runSends, runLocalEffects } from './press-effects'
 import { rerunRun } from './host-prs'
 import type { EffectHost } from './press-effects'
-import { recordPress, pendingResult, localLast, withLasts } from './pressed'
+import { recordPress, pendingResult, localLast, withLasts, isHeldSend } from './pressed'
+import { releaseHeldSends } from './held-sends'
 import type { RowPress } from './presses'
 import { completedAttempt, withHolds, pressOn } from './session-presses'
 import type { Pressed } from './session-presses'
@@ -19,11 +20,19 @@ type WakeHost<S extends Session> = Pick<
 >
 
 /**
- * Tells the agent about rows closed with Done once their settle window has passed and no main-agent turn runs. A
- * refused message marks those rows with why, so they read "Not sent" and offer Undo. `current` is the session when the
- * host has just read it.
+ * Runs what waited for the settle window to pass: the answers and Fixes held for Undo, then the Done message.
+ * `current` is the session when the host has just read it.
  */
-export async function wakeForDone<S extends Session>(host: WakeHost<S>, current?: S): Promise<void> {
+export async function wakeAfterSettle<S extends Session>(host: WakeHost<S>, current?: S): Promise<void> {
+  await releaseHeldSends(host, current)
+  await wakeForDone(host)
+}
+
+/**
+ * Tells the agent about rows closed with Done once their settle window has passed and no main-agent turn runs. A
+ * refused message marks those rows with why, so they read "Not sent" and offer Undo.
+ */
+async function wakeForDone<S extends Session>(host: WakeHost<S>, current?: S): Promise<void> {
   const check = async (s: S) =>
     doneWake(s.ledger, {
       now: await host.now(),
@@ -94,8 +103,8 @@ export type PressOutcome = {
   isUnconfirmed: boolean
   /** The message was refused, and the pressed row still reads that failure, since no later press replaced it. */
   isRowFailed: boolean
-  /** The press closed a row with Done. Call `wakeForDone` once the settle window has passed. */
-  wakesForDone: boolean
+  /** The press closed a row with Done or held its message for Undo. Call `wakeAfterSettle` once the settle window has passed. */
+  wakesAfterSettle: boolean
 }
 
 type PressHost<S extends Session> = Pick<
@@ -248,7 +257,7 @@ export async function startPress<S extends Session>(
         note: check === 'stale' ? 'stale' : null,
         isUnconfirmed,
         isRowFailed,
-        wakesForDone: false,
+        wakesAfterSettle: false,
       }),
     }
   await host
@@ -309,7 +318,7 @@ export async function startPress<S extends Session>(
   if (!r || at === undefined)
     return {
       effects: null,
-      finish: async () => ({ copy, error, note, isUnconfirmed, isRowFailed, wakesForDone: false }),
+      finish: async () => ({ copy, error, note, isUnconfirmed, isRowFailed, wakesAfterSettle: false }),
     }
 
   return {
@@ -327,7 +336,10 @@ export async function startPress<S extends Session>(
       }
       await runLocalEffects(effectHost, r.effects, Object.keys(r.lasts), r.lasts[rowId]?.result)
 
-      return { copy, error, note, isUnconfirmed, isRowFailed, wakesForDone: !isPrPress(p) && p.action === 'done' }
+      const isDone = !isPrPress(p) && p.action === 'done'
+      const isHeld = Object.values(r.lasts).some(isHeldSend)
+
+      return { copy, error, note, isUnconfirmed, isRowFailed, wakesAfterSettle: isDone || isHeld }
     },
   }
 }

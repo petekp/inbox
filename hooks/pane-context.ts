@@ -88,6 +88,8 @@ export type PaneBase = {
   typing: string | null
   drafts: Record<string, Draft>
   unfolded: FoldKind[]
+  /** The Closed folds whose earlier lines the person opened. */
+  closedAll: FoldKind[]
   statusUnfolded: string[]
   foldHover: string | null
   isHelpShown: boolean
@@ -147,4 +149,5 @@ export type PaneHandlers = {
   updateHelpShown: (fn: (isShown: boolean) => boolean) => Promise<unknown>
   updateUnfolded: (fn: (unfolded: FoldKind[]) => FoldKind[]) => Promise<unknown>
   updateStatusUnfolded: (fn: (unfolded: string[]) => string[]) => Promise<unknown>
+  updateClosedAll: (fn: (closedAll: FoldKind[]) => FoldKind[]) => Promise<unknown>
 }
