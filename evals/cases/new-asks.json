@@ -338,5 +338,30 @@
       "reply": "Checking whether the old release failed the same way. Did v2.3.0 fail the scroll test too?\n\nIt did: v2.3.0 fails the same scroll test, so the failure is older than the upgrade.\n\nThe scroll test fails on both versions because it waits a fixed 100 ms for the list to render. It is a flaky test, not a regression from the upgrade."
     },
     "checks": [{ "added": 0 }]
+  },
+  {
+    "name": "pr-check-news-not-asked",
+    "about": "News of a PR's failing check and conflict, and an offer to fix them, add no item: the PRs tab shows each with its own press.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 4,
+      "card": {
+        "goal": "Add CSV export to the reports page",
+        "done": ["Export button added"],
+        "now": "Opened the export PR",
+        "running": []
+      },
+      "items": [],
+      "findings": [],
+      "closed": [],
+      "prs": ["acme/reports#41"]
+    },
+    "exchange": {
+      "person": "open a PR for the export work",
+      "turn": 5,
+      "activity": ["ran: gh pr create --fill", "ran: gh pr checks 41"],
+      "reply": "Opened PR #41: https://github.com/acme/reports/pull/41. The lint check failed on an unused import in export.ts, and the PR now conflicts with main in reports.ts. Want me to fix the lint failure and resolve the conflict?"
+    },
+    "checks": [{ "added": 0 }]
   }
 ]

@@ -182,6 +182,7 @@ export function ListRow({
               <span class="tone-needsYou">{HELD_MARK.mark}</span> {row.holdsUp}
             </span>
           ) : null}
+          {row.recLine ? <span class="rec-line">{row.recLine}</span> : null}
         </button>
       </div>
       <span class="side" data-room={SENDING}>

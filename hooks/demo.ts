@@ -205,6 +205,7 @@ export function demoView(now: number, agent: string): DemoCopy {
           ask: 'Dismiss a glance with a pinch, or a flick of the wrist?',
           options: ['Pinch', 'Flick'],
           rec: 'Pinch',
+          recReason: 'a flick fires by accident while walking',
           isDesignChoice: true,
           helps: [],
           turn: 14,

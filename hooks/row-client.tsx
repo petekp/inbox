@@ -11,6 +11,8 @@ export type RowProps = {
   note: string
   /** A mark before the note, in its own color. */
   noteMark: { text: string; color: string | null } | null
+  /** A muted line under the note: why the agent recommends an answer, or empty for none. */
+  recNote: string
   side: string
   /** Lines of padding above and below the text. */
   padY: number
@@ -78,6 +80,7 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
   const perLine = Math.floor(textCells * props.charsPerCell)
   const after = clipAtSpace(props.after, perLine)
   const note = clipAtSpace(props.note, perLine - (props.noteMark ? props.noteMark.text.length + 1 : 0))
+  const recNote = clipAtSpace(props.recNote, perLine)
   const background = pressed ? props.colors.pressed : hover ? props.colors.hover : null
   const isRaised = background !== null && background === props.colors.hover
   const color = (own: string | null) => (isRaised && props.colors.hoverText ? props.colors.hoverText : own)
@@ -125,6 +128,7 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
                 }),
               ]
             : []),
+          ...(recNote ? [Text({ wrap: 'truncate-end', ...colored(props.colors.muted), children: recNote })] : []),
         ],
       }),
       Box({

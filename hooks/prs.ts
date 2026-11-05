@@ -429,7 +429,7 @@ export const prompts = {
   resolve: (pr: PrView) =>
     [
       `PR #${pr.number} (${pr.url}) conflicts with ${pr.base}. Update its branch from ${pr.base}, resolve the conflicts, and verify.`,
-      'Ask me before you push, and tell me how you resolved each conflict.',
+      'Tell me how you resolved each conflict.',
     ].join(NL),
   address: (pr: PrView, threads: PrThread[]) =>
     [
@@ -454,7 +454,7 @@ export const prompts = {
   fixCheck: (pr: PrView, c: PrCheck) =>
     [
       `The ${c.workflow ? `${c.workflow} / ` : ''}${c.name} check failed on PR #${pr.number} (${pr.url}). Read its log${c.url ? ` (${c.url})` : ''}, find the cause, fix it in code, and verify.`,
-      'Ask me before you push, and tell me what failed and what you changed.',
+      'Tell me what failed and what you changed.',
     ].join(NL),
   discuss: (pr: PrView, t: PrThread) =>
     [

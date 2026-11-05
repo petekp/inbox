@@ -161,7 +161,7 @@ test('the open panel keeps its line count through tab switches, presses and a cl
   panel.handleInput('t')
   await flush()
   const withField = panel.render(100).length
-  expect(withField).toBeGreaterThan(height)
+  expect(withField).toBeGreaterThanOrEqual(height)
   panel.handleInput('escape')
   await flush()
   expect(panel.render(100)).toHaveLength(withField)

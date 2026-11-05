@@ -160,6 +160,13 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   // A next build draws the Status, so only it names the subject an ask holds up.
   const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null
   if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width))
+  const recLine = line.row?.recLine
+  if (recLine)
+    out.push(
+      ...(isSelected
+        ? indented(recLine, indent, width, 3, s.dim)
+        : [fit(`${' '.repeat(indent)}${s.dim(recLine)}`, width)]),
+    )
   if (line.body && isSelected) out.push(...indented(line.body, indent, width, BODY_LINES, t => t))
   if (line.detail && (isSelected || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
   if (!isSelected) return out

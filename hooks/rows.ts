@@ -145,6 +145,12 @@ export type RowView = {
    * A look draws it on a next build, which draws the Status.
    */
   holdsUpLine: string | null
+  /** "Why", the recommended option and the agent's reason for it, on a question whose record gave one. */
+  recLine: string | null
+}
+
+export function recLineOf(item: Item | null): string | null {
+  return item?.rec && item.recReason ? `Why ${item.rec}: ${item.recReason}` : null
 }
 
 type OptionDescription = { label: string; description: string; isFolded: boolean }

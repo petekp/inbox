@@ -22,7 +22,7 @@ import { isHeldSend, isUndoable } from './pressed'
 import { FINDING_GROUPS } from './help'
 import { isSettledInPlace, canUndoClose, isUndoLeft, pendingDeliveryAt } from './timing'
 import type { ListInput } from './timing'
-import { closedRowState, optionDescriptionsOf, isWaitingRow, outcomeLabel, closedMark } from './rows'
+import { closedRowState, optionDescriptionsOf, isWaitingRow, outcomeLabel, closedMark, recLineOf } from './rows'
 import type { RowView, ClosedDelivery, ResultMark, RowState } from './rows'
 import { DONE_LABELS, fixLabel, feedbackIn, pressFeedbackIn } from './feedback'
 import type { ShownTab } from './tabs'
@@ -202,7 +202,7 @@ export function inboxView({
     return isHandedOff(last, turns) ? { is: 'handedOff' } : { is: 'open' }
   }
   const rowOf = (
-    row: Omit<RowView, 'state' | 'feedback' | 'actions' | 'optionDescriptions' | 'holdsUpLine'>,
+    row: Omit<RowView, 'state' | 'feedback' | 'actions' | 'optionDescriptions' | 'holdsUpLine' | 'recLine'>,
   ): RowView => {
     const state = stateOf(row.id)
     const last = lastActions[row.id]
@@ -219,6 +219,7 @@ export function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map(s => s.name).join(', ')}` : null,
+      recLine: state.is === 'open' ? recLineOf(row.item) : null,
     }
   }
   const itemRow = (item: Item): RowView => {
