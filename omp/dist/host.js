@@ -2700,8 +2700,8 @@ Write plainly. No jargon, no filler, no markdown.`;
 function ledgerBlocks(ledger) {
   const open = ledger.items.map((i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`).join(NL4);
   const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL4);
-  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`);
-  const dismissedFindings = ledger.closedFindings.filter((f) => f.how === "dismissed").map((f) => `${f.kind}: ${f.title} \u2192 ${outcomeText(f)}`);
+  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).slice(-MAX_CLOSED).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`);
+  const dismissedFindings = ledger.closedFindings.filter((f) => f.how === "dismissed").slice(-MAX_CLOSED).map((f) => `${f.kind}: ${f.title} \u2192 ${outcomeText(f)}`);
   const decided = [...closed, ...dismissedFindings].join(NL4);
   return [
     `<open>${NL4}${open}${NL4}</open>`,
