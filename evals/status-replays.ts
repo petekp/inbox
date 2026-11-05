@@ -8,6 +8,7 @@ import { goalFromWork } from './replays/goal-from-work'
 import { goalMetNext } from './replays/goal-met-next'
 import { goalWait } from './replays/goal-wait'
 import { goalWorkLeft } from './replays/goal-work-left'
+import { idleWork } from './replays/idle-work'
 import { milestoneWorkDone } from './replays/milestone-work-done'
 import { noGoalYet } from './replays/no-goal-yet'
 import { typedGoalKept } from './replays/typed-goal-kept'
@@ -39,4 +40,5 @@ export const REPLAYS: Replay[] = [
   goalFromWork,
   goalWorkLeft,
   typedGoalKept,
+  idleWork,
 ]

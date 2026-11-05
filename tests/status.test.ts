@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { asksText, lookEnded, lookStarted, LOOK_MIN_MS } from '../hooks/status-children'
+import { asksText, lookEnded, lookStarted, LOOK_MIN_MS, withChild } from '../hooks/status-children'
 import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
 import { mergedLine, nameBeforeStall, statusPage } from '../hooks/status-page'
 import { statusKeyPlan } from '../hooks/status-keys'
@@ -84,7 +84,7 @@ test('each side of the look line lists held, working, waiting, queued, then fini
   ])
 })
 
-test('only a subject an open ask holds up reads waiting, in the needs-you tone, with no time, and one waiting on someone else shows no word', () => {
+test('only a subject an open ask holds up reads waiting, in the needs-you tone, with no time, and one waiting on someone else shows no word until it idles', () => {
   const o = after(
     null,
     'NEW: waits-on-other | Review | sent for review\nNEW: working | Sync | needs a pick\nNEW: queued | Docs | not started\nLINK: i1 | s2\nLINK: i2 | s2',
@@ -101,6 +101,38 @@ test('only a subject an open ask holds up reads waiting, in the needs-you tone, 
   expect(stalls(20 * MIN)).toEqual(waiting)
   expect(stalls(2 * 60 * MIN)).toEqual(waiting)
   expect(shape(page(o, 2 * 60 * MIN, {}, asks).rows)[1]).toBe('◌ Review: sent for review')
+})
+
+test('an open subject unchanged for a day reads how long it has been idle, in whole days, muted, unless its work runs or an ask holds it', () => {
+  const DAY = 24 * 60 * MIN
+  const o = after(
+    null,
+    'NEW: working | Sync | needs a pick\nNEW: working | Search | index built\nNEW: queued | Docs | not started\nDONE: Docs | written\nNEW: waits-on-other | Review | sent\nLINK: i1 | s1',
+    0,
+    new Set(['i1']),
+  )
+  const child = {
+    ref: 't1',
+    kind: 'background' as const,
+    name: 'reindex',
+    startedAt: 0,
+    endedAt: null,
+    lastActivityAt: 0,
+  }
+  const running = { ...withChild(o, child, 0), children: [{ ...withChild(o, child, 0).children[0]!, subjectId: 's2' }] }
+  const stalls = (now: number, turn = false) =>
+    page(running, now, { isTurnRunning: turn }, [askItem('i1')]).rows.flatMap(r =>
+      r.kind === 'subject' ? [`${r.name}: ${r.stall?.text ?? '-'}${r.stall ? ` (${r.stall.tone})` : ''}`] : [],
+    )
+
+  expect(stalls(DAY - MIN)).toEqual(['Sync: waiting (needsYou)', 'Search: -', 'Review: -', 'Docs: -'])
+  expect(stalls(2 * DAY + 5 * 60 * MIN)).toEqual([
+    'Sync: waiting (needsYou)',
+    'Search: -',
+    'Review: idle 2d (muted)',
+    'Docs: -',
+  ])
+  expect(stalls(2 * DAY, true)).toContain('Review: idle 2d (muted)')
 })
 
 test('a name before its stall word is cut at a word with an ellipsis until both fit, and keeps its first word when nothing fits', () => {

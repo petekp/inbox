@@ -42,7 +42,8 @@ type HostEvent =
 
 /** The Status call a step runs, and what it reads. */
 type StepCall =
-  | { kind: 'reply'; person: string | null; activity: string[]; reply: string; tasks?: HostTask[] }
+  /** `answer` stands in for the model's, for a code path no model writes on cue, such as an answer with stray prose. */
+  | { kind: 'reply'; person: string | null; activity: string[]; reply: string; tasks?: HostTask[]; answer?: string }
   /** A call during a turn that started `turnStartedAt` minutes into the replay. */
   | { kind: 'mid-turn'; person: string | null; activity: string[]; turnStartedAt: number; tasks?: HostTask[] }
   | { kind: 'catch-up'; conversation: string }
@@ -294,7 +295,10 @@ async function runStep(
       presence: { ...session.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt: now },
     }
     if (isLedgerApplied) {
-      const r = await statusCall(deps, session, { kind: 'reply', exchange: ex }, ex.tasks, now)
+      const fixed = call.answer
+      const statusDeps =
+        fixed === undefined ? deps : { ...deps, ask: async () => ({ text: fixed, model: 'fixed answer' }) }
+      const r = await statusCall(statusDeps, session, { kind: 'reply', exchange: ex }, ex.tasks, now)
       ;({ session, isFailed: isStatusFailed } = r)
       calls.push(r.log)
     }

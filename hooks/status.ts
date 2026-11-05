@@ -88,34 +88,30 @@ function opOf(key: string, f: string[]): Op | null {
 }
 
 /**
- * Parses the Status call's answer. Null when it is empty, or when any line is not an operation: an answer that
- * holds prose has more than once corrected itself partway, and applying any of it could apply the wrong half.
+ * Parses the Status call's answer. A line that is not an operation is left out, so a stray line of prose does not
+ * throw away the lines around it. Null when no line is an operation.
  */
 export function parseStatus(text: string | null): StatusAnswer | null {
-  const ops: Op[] = []
-  for (const raw of (text ?? '').split(NL)) {
-    const line = raw.trim()
-    if (line === '') continue
-    const m = LINE.exec(line)
+  const ops = (text ?? '').split(NL).flatMap(raw => {
+    const m = LINE.exec(raw.trim())
     const op = m ? opOf(m[1]!.toUpperCase().replace(' ', ''), fields(m[2] ?? '')) : null
-    if (op === null) return null
-    ops.push(op)
-  }
+    return op === null ? [] : [op]
+  })
   if (ops.length === 0) return null
 
   return ops.every(o => o.kind === 'none') ? { kind: 'unchanged' } : { kind: 'ops', ops }
 }
 
 /**
- * Asks the Status call through `ask`, and once more when the answer holds prose, as `parseStatus` refuses it. A
- * call that gives no text is not asked again. Returns the first answer and the one to apply, which are the same when
+ * Asks the Status call through `ask`, and once more when the answer holds no operation, as `parseStatus` refuses it.
+ * A call that gives no text is not asked again. Returns the first answer and the one to apply, which are the same when
  * the call was asked once.
  */
 export async function askStatus<T extends { text: string | null }>(
   ask: () => Promise<T>,
 ): Promise<{ first: T; last: T }> {
   const first = await ask()
-  const holdsProse = first.text !== null && parseStatus(first.text) === null
+  const isUnreadable = first.text !== null && parseStatus(first.text) === null
 
-  return { first, last: holdsProse ? await ask() : first }
+  return { first, last: isUnreadable ? await ask() : first }
 }

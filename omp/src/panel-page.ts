@@ -76,7 +76,7 @@ function stalledName(
   const tail = `${STALL_GAP}${stall.text}`.replaceAll(' ', GLUE)
   const wrapped = (shown: string) => wrapText(`${shown}${tail}`, room)
   const lines = wrapped(nameBeforeStall(name, shown => wrapped(shown).length <= STATUS_TEXT_LINES))
-  const words = s.tone(stall.tone, stall.text)
+  const words = stall.tone === 'muted' ? s.dim(stall.text) : s.tone(stall.tone, stall.text)
 
   return lines.map(l =>
     l.endsWith(tail)

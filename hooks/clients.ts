@@ -60,6 +60,7 @@ export type FeatureId =
   | 'status-done-fold'
   | 'status-named-fold'
   | 'seen-on-screen'
+  | 'status-idle-age'
 
 type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -133,6 +134,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-done-fold': { kind: 'full' },
       'status-named-fold': { kind: 'full' },
       'seen-on-screen': { kind: 'full' },
+      'status-idle-age': { kind: 'full' },
     },
   },
   codex: {
@@ -264,6 +266,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'status-named-fold': { kind: 'full' },
       'seen-on-screen': { kind: 'full' },
+      'status-idle-age': { kind: 'full' },
     },
   },
   omp: {
@@ -347,6 +350,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-done-fold': { kind: 'full' },
       'status-named-fold': { kind: 'full' },
       'seen-on-screen': { kind: 'full' },
+      'status-idle-age': { kind: 'full' },
     },
   },
 }

@@ -173,4 +173,4 @@ These make no model calls.
 | The judge's check on both page sets, 24 pages | 0 | 0 | 24 |
 | **Total** | **214** | **54** | **82** |
 
-An answer that holds prose is asked once more, and a call that fails outside the model is tried again. The runner stops at 220 Status calls, so 6 calls are left for both.
+An answer with no operation is asked once more, and a call that fails outside the model is tried again. The runner stops at 220 Status calls, so 6 calls are left for both.

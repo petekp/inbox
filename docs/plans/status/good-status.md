@@ -181,11 +181,12 @@ When the session drops one approach for another, the person sees both until they
 
 #### 13. The page is current, and says when it is not
 
-The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. When an update fails, the page says so. The page shows no times, so none goes stale. A row's place follows its status and when its work last changed, so on a current page a row that did not change stays where it was.
+The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. When an update fails, the page says so. The only time a row shows is how long an open subject has been idle, past a day, which code writes, so none goes stale. A row's place follows its status and when its work last changed, so on a current page a row that did not change stays where it was.
 
 - **Good:** three hours into a turn, `● Sync conflicts: cause unknown` stays where it was, because the last update found nothing new.
 - **Good:** `◌ 2.4 release: in store review`, while the build waits for review.
 - **Good:** "Last Status update failed. Changes from that reply may be missing."
 - **Bad:** the agent finished the conflicts work two hours into a three-hour turn, and the row still reads ●, since no update ran during the turn.
-- **Bad:** `● Export button: works on web  2h`. No row shows a time.
+- **Good:** `○ Dark mode · idle 3d`, set aside three days ago.
+- **Bad:** `● Export button: works on web  2h`. A row shows no time but how long it has been idle, and only past a day.
 - **Bad:** `2.4 release: goes out tomorrow`, read two days later.

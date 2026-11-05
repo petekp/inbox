@@ -45,6 +45,7 @@ var TEXT_KEPT = 12;
 var DESCRIPTION_KEPT = 14;
 var GOAL_LEFT_MS = 30 * 6e4;
 var REMOVED_KEPT = 10;
+var IDLE_AFTER_MS = 24 * 60 * 6e4;
 var CHILD_KEPT_MS = 24 * 60 * 6e4;
 var CHILDREN_KEPT = 50;
 var STOP_WORDS = /* @__PURE__ */ new Set([
@@ -1211,6 +1212,13 @@ function countsByMark(folded) {
 function isFinishedUnseen(c, lastLookAt) {
   return c.delegateState === "finished" && c.endedAt !== null && (lastLookAt === null || c.endedAt > lastLookAt);
 }
+var DAY_MS = 24 * 60 * 6e4;
+function subjectStall(x, isHeld, isWorkRunning, now) {
+  if (isHeld) return { text: "waiting", tone: "needsYou" };
+  const idleMs = now - x.changedAt;
+  const isIdle = isOpen(x) && !isWorkRunning && idleMs >= IDLE_AFTER_MS;
+  return isIdle ? { text: `idle ${Math.floor(idleMs / DAY_MS)}d`, tone: "muted" } : null;
+}
 function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
@@ -1244,6 +1252,7 @@ function partRows(shown, c, depth, afterNew = []) {
     const isMore = under.length > CHILD_ROWS;
     const isRunning = x.status === "working" && !c.isHeld(x) && (c.isTurnRunning || under.some(isChildWorking));
     const isIdle = x.status === "working" && !isRunning;
+    const isWorkRunning = isRunning || under.some((ch) => ch.endedAt === null);
     rows.push({
       kind: "subject",
       id: x.id,
@@ -1252,7 +1261,7 @@ function partRows(shown, c, depth, afterNew = []) {
       isRunning,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? x.text || null : null,
-      stall: c.isHeld(x) ? { text: "waiting", tone: "needsYou" } : null,
+      stall: subjectStall(x, c.isHeld(x), isWorkRunning, c.now),
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,
       hasChildren: under.length > 0,
@@ -1350,6 +1359,7 @@ function statusPage(s, now) {
     oldestAskOf,
     running,
     isTurnRunning: s.presence.isTurnRunning,
+    now,
     lookId: look === null ? null : "look",
     lookText: LOOK_TEXT,
     isLookAtEnd: true

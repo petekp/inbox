@@ -349,8 +349,8 @@ test("the call reads the goal, its milestones, each subject's link and the remov
   expect(prompt).toMatch(/m1 \| done \| Import works \| -\n/)
   expect(prompt).toMatch(/m2 \| working \| Error messages \| - \| no work linked\n/)
   expect(typedPrompt).toMatch(/<goal>\nShip 2.6 with import \(typed\)\n<\/goal>/)
-  expect(prompt).toMatch(/s1 \| working \| Import \| CSV works \| m1\n/)
-  expect(prompt).toMatch(/s2 \| queued \| Dark mode \| not started \| \?\n/)
+  expect(prompt).toMatch(/s1 \| working \| Import \| CSV works \| just now \| m1\n/)
+  expect(prompt).toMatch(/s2 \| queued \| Dark mode \| not started \| just now \| \?\n/)
   expect(prompt).toMatch(/<removed>\ndark mode shipped\n<\/removed>/)
   expect(noGoal).not.toMatch(/<goal>|<milestones>|\| \?\n/)
   for (const id of Object.keys(GOAL_PARTS) as GoalPartId[]) {

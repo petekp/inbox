@@ -15,8 +15,11 @@ const STATUS_FAILED =
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
 export type StatusBranch = 'mid' | 'last'
 
-/** The word after a row's name: "waiting" in the needs-you tone while it waits on the person, or "finished". */
-export type StatusStall = { text: string; tone: 'needsYou' | 'done' }
+/**
+ * The words after a row's name: "waiting" in the needs-you tone while it waits on the person, "finished" in the done
+ * tone, or how long an open subject has been idle, muted, as "idle 2d".
+ */
+export type StatusStall = { text: string; tone: 'needsYou' | 'done' | 'muted' }
 
 /**
  * One line of the Status's list, in the order to draw it. Each look lays out the parts; none chooses them. A subject
@@ -43,7 +46,7 @@ export type StatusRowParts = {
       name: string
       /** Where it stands. Null for a finished row below the look line, which the person has seen. */
       text: string | null
-      /** "waiting" while an open ask holds it up. */
+      /** "waiting" while an open ask holds it up, else how long it has been idle, past `IDLE_AFTER_MS`. */
       stall: StatusStall | null
       /** The names of the subjects merged into it, while the person has not seen them. */
       merged: string | null
@@ -234,6 +237,7 @@ export function statusPage(
     oldestAskOf,
     running,
     isTurnRunning: s.presence.isTurnRunning,
+    now,
     lookId: look === null ? null : 'look',
     lookText: LOOK_TEXT,
     isLookAtEnd: true,

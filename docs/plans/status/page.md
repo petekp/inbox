@@ -11,7 +11,7 @@ From top to bottom:
 | Part | What it shows | Who writes it |
 | --- | --- | --- |
 | Head | A title for what the session is focused on now, and a line under it on what the session is doing about it. The call is asked for a title of at most 3 words and a description of at most 8. Code clips them at 20 and 14. A head with no description yet shows its title alone until the next call writes one. | Model |
-| Subject rows | A mark and a short name, with `waiting` after the name while it waits on the person, and a few words on where it stands on the line under the name. The call is asked for a name of at most 3 words and a text of at most 4. Code clips them at 20 and 12. | The model writes the status, name and text. Code draws the mark and the stall word, and orders the rows by status, then by last change. |
+| Subject rows | A mark and a short name, with `waiting` after the name while it waits on the person, or how long it has been idle, as `idle 2d`, once an open subject has had no change for a day and no child of it runs, and a few words on where it stands on the line under the name. The call is asked for a name of at most 3 words and a text of at most 4. Code clips them at 20 and 12. | The model writes the status, name and text. Code draws the mark and the stall word, and orders the rows by status, then by last change. |
 | Was line | The plan a change replaced, as "was: last-write-wins", or the pieces merged into this one, as "merged in: Banner on hover", until the person has seen it | The model writes it. Code shows it only until the person has looked. |
 | Child rows | Running work under its subject. A subagent, background command or workflow run shows the first line of the description it was started with. A Herdr delegate shows the focus its own session publishes to Herdr as `inbox-focus`, or else its Herdr name in words. A delegate shows what Herdr shows: `◆ … · waiting` at a question or an approval, and `✓ … · finished` once it stops, until the person has seen the Status. Running work shows no word. | Code, from host events and from Herdr. The model writes the link. |
 | Seen line | Where the person last looked. Rows above it changed since. It is left out when nothing changed. | Code |
@@ -50,7 +50,7 @@ Before any work, the page reads: "What this session's work is for, where each pa
 - **After each reply.** The ledger call runs first, then the Status call. A failed ledger call skips it.
 - **What the Status call reads:**
   - the head;
-  - the open subjects, each with its id, status, name and text;
+  - the open subjects, each with its id, status, name, text and how long ago it last changed;
   - the names of the last 10 finished subjects, so it does not add one again;
   - each open ask's id, its first 30 words and its linked subject;
   - the running children;
@@ -58,9 +58,10 @@ Before any work, the page reads: "What this session's work is for, where each pa
   - the person's message, the agent's tool activity and the reply.
 - **What it answers:** edits by id, one per line: add a subject, update one, finish one, drop one or drop it into another, write a was line, link an ask or a child, write the head. Or `UNCHANGED`. `hooks/status.ts` parses the answer, and `hooks/status-ops.ts` applies it.
 - **What code does with it:**
-  - A new subject whose name holds the same key words as an open one updates that one.
+  - A new subject whose name holds the same key words as an open one updates that one. One that matches a subject finished since the person last looked reopens that subject, so the page shows the piece once.
+  - A new subject or a head named only by a PR or issue number, such as "#3655" or "PR 3655", changes nothing: a number names no work, and the PRs tab shows the PR.
   - An update that keeps the status and has the same content words, in any order, keeps the old text and its place. A head that keeps its title, or that comes with finished work and none under way, keeps the old head.
-  - An answer that holds any line that is not an edit is asked once more. If that fails too, the page stays as it was and the status line says so.
+  - A line that is not an edit is left out, and the answer's edits apply. An answer with no edit is asked once more. If that fails too, the page stays as it was and the status line says so.
 - **During a long turn.** The main agent's next tool call, once 10 minutes have passed since the turn began and since the last Status call, starts a Status call. That call reads the person's message and the turn's activity so far.
 - **On a catch-up.** The call reads the whole conversation and edits the current subjects.
 

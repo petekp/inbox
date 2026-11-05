@@ -32,7 +32,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/ledger-close.ts` | Shared module. Closing and reopening items and findings, pruning closed records, and whether a closed record counts as handled, dismissed or lapsed. |
 | `hooks/ledger-update.ts` | Shared module. Applying a parsed update to the ledger, and adding findings and the items the agent records. |
 | `hooks/host-tasks.ts` | Shared module. The agent's own task list: how each host's tool calls become `Session.hostTasks`, and the `<tasks>` lines the Status call reads. |
-| `hooks/status.ts` | Shared module. The parser for the Status call's lines, and `askStatus`, which asks the call again when its answer holds prose. |
+| `hooks/status.ts` | Shared module. The parser for the Status call's lines, and `askStatus`, which asks the call again when its answer holds no operation. A line that is not an operation is left out. |
 | `hooks/status-limits.ts` | Shared module. The Status's limits on words, subjects and children, `EMPTY_SESSION_STATUS`, `isOpen`, and the helpers that clip a text and compare subject names. |
 | `hooks/status-ops.ts` | Shared module. How an answer changes the saved Status: `applyOps`, `applyStatus`, and when a HEAD line replaces the head. |
 | `hooks/status-goal-ops.ts` | Shared module. How an answer and the goal's presses change the goal: GOAL and RETIRE lines and when code takes them, MILESTONE and SERVES lines, milestones moved by id and closed when their work closes, met, Remove goal and its Undo, and a typed goal. |

@@ -536,7 +536,7 @@ export type StatusFailure = {
  * Which call of an update a model call is. The ledger call reads a reply's exchange, with `isRetry` when the
  * exchange's first call failed, or the whole conversation for a catch-up. The update flow keeps no mark of a repeated
  * catch-up, so a catch-up says nothing of retries. The Status call reads a reply's exchange, the running turn or a
- * catch-up's conversation, with `isRetry` when its first answer held prose.
+ * catch-up's conversation, with `isRetry` when its first answer held no operation.
  */
 export type CallKind =
   | { call: 'ledger'; reads: 'reply'; isRetry: boolean }
