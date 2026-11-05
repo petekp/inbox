@@ -100,7 +100,7 @@ export const GOAL_RULES: Rule[] = [
     id: 'serves-linked',
     reads: 'facts',
     property: 16,
-    text: 'Each subject the facts say what it serves is linked: one the goal needs to a milestone, and one it does not need to Other work.',
+    text: 'Each subject the facts say what it serves is linked: one the goal needs to a milestone, and one it does not need to Other work. A piece with a second right link may take either.',
     failures: ({ step, result }) => {
       const o = result.session.ledger.overview
       if (!o?.goal || o.goal.isAwaitingMilestones) return []
@@ -113,10 +113,11 @@ export const GOAL_RULES: Rule[] = [
                 const link = o.serves[s.id]
                 const isLive = link === 'none' || o.milestones.some(m => m.id === link && m.status !== 'dropped')
                 if (!isLive) return step.call ? [`${label(s)} is not linked`] : []
-                if (p.serves === 'none' && link !== 'none')
-                  return [`${label(s)} serves a milestone, and the goal does not need it`]
-                return p.serves !== 'none' && link === 'none'
-                  ? [`${label(s)} is under Other work, and the goal needs it`]
+                const isNoneRight = p.serves === 'none' || p.servesAlso === 'none'
+                const isMilestoneRight = p.serves !== 'none' || (p.servesAlso !== undefined && p.servesAlso !== 'none')
+                if (!isNoneRight && link === 'none') return [`${label(s)} is under Other work, and the goal needs it`]
+                return !isMilestoneRight && link !== 'none'
+                  ? [`${label(s)} serves a milestone, and the goal does not need it`]
                   : []
               }),
       )

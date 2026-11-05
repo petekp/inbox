@@ -24,6 +24,8 @@ export type Piece = {
   alsoRight?: SubjectStatus[]
   /** The id of the goal's milestone this piece serves, or `none` for work the goal does not need. */
   serves?: string
+  /** A link that is also right, as `none` for a piece that a milestone's outcome covers only loosely. */
+  servesAlso?: string
 }
 
 /** One milestone of the goal: an outcome the goal needs, by the fact's own id, not the call's. */
@@ -185,12 +187,14 @@ export function factsText(f: Facts): string {
       s === 'working' ? [SUBJECT_MARKS.working.mark, IDLE_MARK.mark] : [SUBJECT_MARKS[s].mark],
     )
     const alsoRight = alsoMarks.length > 0 ? ` Its row may also show ${alsoMarks.join(' or ')}.` : ''
+    const link = (to: string) =>
+      to === 'none' ? 'the goal does not need it' : `it serves the milestone ${milestoneName(to)}`
     const serves =
       p.serves === undefined
         ? ''
-        : p.serves === 'none'
-          ? ' The goal does not need it.'
-          : ` It serves the milestone ${milestoneName(p.serves)}.`
+        : p.servesAlso === undefined
+          ? ` ${link(p.serves)[0]!.toUpperCase()}${link(p.serves).slice(1)}.`
+          : ` Either ${link(p.serves)}, or ${link(p.servesAlso)}.`
 
     return `- ${p.names[0]}${also}: ${STATE_TEXT[p.state]}. ${p.stands}.${parts}${was}${merged}${alsoRight}${serves}${isChanged}`
   }

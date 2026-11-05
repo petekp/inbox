@@ -4,19 +4,30 @@ import { minutes } from '../status-replay'
 import type { Replay } from '../status-replay'
 import { goal, milestone, NO_FACTS, overview, subject } from './builders'
 
-type Row = [id: string, status: SubjectStatus, name: string, text: string, match: string, serves: string]
+type Row = [
+  id: string,
+  status: SubjectStatus,
+  name: string,
+  text: string,
+  match: string,
+  serves: string,
+  servesAlso?: string,
+]
 
-/** The busy page's open work: nine pieces the goal needs, three per milestone, and nine it does not. */
+/**
+ * The busy page's open work: nine pieces the goal needs, three per milestone, and nine it does not. Live cursors and
+ * the feedback form are only loosely part of their milestone's outcome, so Other work is right for them too.
+ */
 const ROWS: Row[] = [
   ['share', 'working', 'Share sheet', 'opens from any notebook', 'share sheet', 'ms-shared'],
   ['invite', 'working', 'Invite links', 'link made, not opened yet', 'invite', 'ms-shared'],
   ['roles', 'queued', 'Access roles', 'viewer and editor planned', 'roles', 'ms-shared'],
-  ['cursors', 'queued', 'Live cursors', 'design picked', 'cursor', 'ms-merge'],
+  ['cursors', 'queued', 'Live cursors', 'design picked', 'cursor', 'ms-merge', 'none'],
   ['merging', 'queued', 'Edit merging', 'not started', 'merging', 'ms-merge'],
   ['offline', 'queued', 'Offline edits', 'after edit merging', 'offline', 'ms-merge'],
   ['build', 'queued', 'Beta build', 'not started', 'beta build', 'ms-testers'],
   ['testers', 'queued', 'Tester group', 'twelve testers named', 'tester', 'ms-testers'],
-  ['feedback', 'queued', 'Feedback form', 'draft written', 'feedback', 'ms-testers'],
+  ['feedback', 'queued', 'Feedback form', 'draft written', 'feedback', 'ms-testers', 'none'],
   ['dark', 'queued', 'Dark mode', 'design picked', 'dark', 'none'],
   ['widgets', 'queued', 'Widgets', 'not started', 'widget', 'none'],
   ['export', 'queued', 'Export folder', 'cause found', 'export', 'none'],
@@ -28,13 +39,14 @@ const ROWS: Row[] = [
   ['crashes', 'working', 'Crash reports', 'one crash on tablets', 'crash', 'none'],
 ]
 
-const pieceOf = ([id, status, name, text, match, serves]: Row): Piece => ({
+const pieceOf = ([id, status, name, text, match, serves, servesAlso]: Row): Piece => ({
   id,
   names: [name],
   match,
   state: status === 'queued' ? 'queued' : status === 'working' ? 'working' : 'waits-on-other',
   stands: text,
   serves,
+  ...(servesAlso === undefined ? {} : { servesAlso }),
 })
 
 /** A page with 18 open subjects and a goal the person just accepted, so no subject is linked yet. */
