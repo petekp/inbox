@@ -72,8 +72,15 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* One line, cut with an ellipsis: a reply's words follow the title, or take a line of their own when they do not fit beside it. */
 .settled .outcome-label {
   color: var(--muted);
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 /* The pill keeps the line's height, so the row does not grow. */
 .key.undo {

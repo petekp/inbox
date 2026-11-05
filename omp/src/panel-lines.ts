@@ -202,7 +202,7 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
     settled:
       state.is === 'settled'
         ? {
-            label: settledLabel(state.label, state.delivery),
+            label: settledLabel(state.label, state.delivery, state.reply),
             tone: settledTone(state),
             undo: state.canUndo && undo ? undo.press : null,
             at: state.at,

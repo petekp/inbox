@@ -1883,7 +1883,10 @@ function isHeldSend(last) {
 function pressed(ledger, last, p, ctx) {
   const stale = { stale: true };
   const answerMessage = ctx.answerMessage ?? messages.answer;
-  const record = (kind) => recordPress(kind, actionId(p), pressText(p), ctx, last);
+  const record = (kind) => ({
+    ...recordPress(kind, actionId(p), pressText(p), ctx, last),
+    ...p.action === "type" ? { reply: p.text.trim() } : {}
+  });
   const unchanged = { ledger, last: null, effects: [] };
   if (p.id === GOAL_KEYS_ID)
     return goalPressed(ledger, p, record, ctx.now);
@@ -2541,8 +2544,34 @@ function foldLabel(total) {
 function earlierLabel(total, shown) {
   return total > shown ? `Show ${total - shown} earlier` : null;
 }
-function deliveryLabel(state, label) {
-  return state === "queued" ? `Queued: ${label}` : `Not confirmed: ${label}`;
+function sendStepOf(delivery) {
+  return delivery === "queued" || delivery === "unconfirmed" ? delivery : delivery === "sending" ? "sending" : "arrived";
+}
+function replyLine(words) {
+  return words.replace(/\s+/g, " ").trim();
+}
+function deliveryLabel(step, label, reply) {
+  if (reply !== undefined) {
+    const words = replyLine(reply);
+    switch (step) {
+      case "sending":
+        return `Sending reply: ${words}`;
+      case "queued":
+        return `Queued reply: ${words}`;
+      case "unconfirmed":
+        return `Reply not confirmed: ${words}`;
+      case "arrived":
+        return `Replied: ${words}`;
+    }
+  }
+  switch (step) {
+    case "queued":
+      return `Queued: ${label}`;
+    case "unconfirmed":
+      return `Not confirmed: ${label}`;
+    default:
+      return label;
+  }
 }
 function settledMark(state) {
   return closedMark(state.closedAs, state.delivery);
@@ -2558,10 +2587,10 @@ function canUndoRefused(delivery) {
 function settledTone(state) {
   return state.delivery === null && state.closedAs === "handled" ? "done" : "muted";
 }
-function settledLabel(label, delivery) {
+function settledLabel(label, delivery, reply) {
   if (delivery && typeof delivery === "object")
     return `${label} \xB7 Not sent: ${delivery.error}`;
-  return delivery === null || delivery === "held" || delivery === "sending" ? label : deliveryLabel(delivery, label);
+  return deliveryLabel(sendStepOf(delivery), label, reply);
 }
 function outcomeLabel(c) {
   return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
@@ -3436,7 +3465,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const delivery = last.delivery;
   const pending = pendingDeliveryAt(last, now);
   if (pending === "queued" || pending === "unconfirmed")
-    return { is: pending, label: last.text, at: last.at };
+    return { is: pending, label: deliveryLabel(pending, last.text, last.reply), at: last.at };
   if (delivery?.state === "failed")
     return { is: "notSent", reason: delivery.reason, retry: retryOf(id, last) };
   const isAwaiting = isAwaitingReply(last, turns);
@@ -3446,7 +3475,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   if (last.kind === "talk" && working && (isAwaiting || isUnreported && !isPastLimit))
     return { is: "working", label: working, at: last.at };
   if (pending === "sending")
-    return { is: "sending", label: last.text, at: last.at };
+    return { is: "sending", label: deliveryLabel("sending", last.text, last.reply), at: last.at };
   if (isUnreported)
     return { is: "noComparison", at: last.at };
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last))
@@ -3454,7 +3483,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const isHandedStep = last.kind === "handoff" && last.action.startsWith("step-");
   return {
     is: "done",
-    label: DONE_LABELS[last.action]?.(last.text) ?? last.text,
+    label: deliveryLabel("arrived", doneLabel(last), last.reply),
     at: last.at,
     ...isHandedStep ? { isHandedStep: true } : {},
     ...STILL_WAITING_AFTER.has(last.action) ? { isStillWaiting: true } : {}
@@ -3498,6 +3527,9 @@ var DONE_LABELS = {
   "check-fix": () => "Asked to fix",
   "pr-rank-again": () => "Ranked"
 };
+function doneLabel(last) {
+  return DONE_LABELS[last.action]?.(last.text) ?? last.text;
+}
 var STILL_WAITING_AFTER = new Set(["check-fix"]);
 function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";
@@ -3548,9 +3580,9 @@ function feedbackText(f, look) {
     case "sending":
       return f.label;
     case "queued":
-      return deliveryLabel(f.is, f.label);
+      return f.label;
     case "unconfirmed":
-      return deliveryLabel(f.is, f.label);
+      return f.label;
     case "notSent":
       return `Not sent: ${f.reason}`;
     case "done":
@@ -5164,12 +5196,13 @@ function inboxView({
       if (reply)
         return {
           is: "settled",
-          label: DONE_LABELS[reply.action]?.(reply.text) ?? reply.text,
+          label: doneLabel(reply),
           at: reply.at,
           canUndo: false,
           offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
-          closedAs: closedState(closed)
+          closedAs: closedState(closed),
+          ...reply.reply !== undefined ? { reply: reply.reply } : {}
         };
       if (isHeld(closed))
         return { is: "held", label: heldLabel(closed), at };
@@ -5920,7 +5953,7 @@ function lineOfRow(row, isAllShown) {
     file: row.fileName,
     feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackTone(f), source: f } : null,
     settled: state.is === "settled" ? {
-      label: settledLabel(state.label, state.delivery),
+      label: settledLabel(state.label, state.delivery, state.reply),
       tone: settledTone(state),
       undo: state.canUndo && undo ? undo.press : null,
       at: state.at
@@ -6101,7 +6134,7 @@ function prEntries(screen, ui, now) {
           title: pr.title,
           isDim: true,
           settled: {
-            label: settledLabel(state.label, state.delivery),
+            label: settledLabel(state.label, state.delivery, state.reply),
             tone: settledTone(state),
             undo: state.canUndo ? { action: "pr-undo", ref: pr.ref } : null,
             at: state.at

@@ -229,7 +229,7 @@ export function panePrBlocks({
           children: [
             <Text wrap="wrap">
               {what}
-              <Text color={pal.muted}>{`${DOT}${settledLabel(state.label, state.delivery)}`}</Text>
+              <Text color={pal.muted}>{`${DOT}${settledLabel(state.label, state.delivery, state.reply)}`}</Text>
             </Text>,
           ],
         }),

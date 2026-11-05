@@ -143,11 +143,11 @@ test('in a theme without tone colors, a replied question’s ✓ takes the done 
           .filter((c): c is Drawn => typeof c === 'object')
           .reduce<Drawn | undefined>((found, c) => found ?? markIn(c), undefined)
   const doneMark = async () => markIn(await pane.find({ key: 'row-i1' }))?.props.color
-  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/✓ Replied/)
+  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/✓ Replied: Deno/)
   expect(await doneMark()).toBe('success')
 
   await selectRow(pane, 'i2')
-  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/✓ Replied/)
+  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/✓ Replied: Deno/)
   expect(await doneMark()).toBe('success')
 })
 

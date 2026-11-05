@@ -277,10 +277,8 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
         <div class="settled-head">
           <div class="settled-line">
             <span class="what">{r.title}</span>
-            <span class="outcome-label">
-              {DOT}
-              {settledLabel(state.label, state.delivery)}
-            </span>
+            <span class="muted">{DOT}</span>
+            <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>
             {error ? (
               <span class="tone-error">
                 {DOT}

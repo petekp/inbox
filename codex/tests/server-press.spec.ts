@@ -195,7 +195,7 @@ test('a press reads Explaining… at once, Queued once its message waits QUEUED_
   )
   assert.deepEqual(viewOf(s, 100 + QUEUED_AFTER_MS).needsYou.questions[0]?.feedback, {
     is: 'queued',
-    label: 'Explain',
+    label: 'Queued: Explain',
     at: 100,
   })
   const arrived = notePrompt(s, s.sent[0]!.text, 200).state

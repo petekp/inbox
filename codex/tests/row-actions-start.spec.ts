@@ -133,7 +133,7 @@ test('the built tab starts without randomUUID and reloads without losing its hos
     button('Reply')!.click()
     assert.equal(document.querySelector('input')?.value, 'Keep these exact words')
     button('Send')!.click()
-    await until(() => document.getElementById('app')?.textContent?.includes('Not confirmed') ?? false)
+    await until(() => document.getElementById('app')?.textContent?.includes('Reply not confirmed') ?? false)
     assert.match(document.querySelector('.row.selected')?.textContent ?? '', /Check the build/)
     button('Reply')!.click()
     assert.equal(document.querySelector('input')?.value, 'Keep these exact words')

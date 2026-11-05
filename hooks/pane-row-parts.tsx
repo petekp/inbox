@@ -2,6 +2,7 @@ import type { UiPressArgument } from 'claude-code'
 import type { FoldKind } from '../types'
 import { groupEmptyText } from './banners'
 import { chevronSvg, RESULT_MARK_CELLS, toneSvg, undoSvg } from './desktop-svg'
+import { DESKTOP_CLIP_CHARS_PER_CELL } from './desktop-metrics'
 import type { FoldProps } from './fold-client'
 import { ROW_PAD_PT } from './layout'
 import type { Tone } from './palettes'
@@ -43,6 +44,7 @@ import {
   shortAgo,
 } from './rows'
 import type { TreePos } from './terminal-text'
+import { clipLabel } from './text'
 import { SETTLED_MS } from './timing'
 import type { UndoProps } from './undo-client'
 
@@ -51,6 +53,7 @@ export function paneRowParts(
     hasClient,
     elements,
     look,
+    listColumns,
     Text,
     pal,
     Box,
@@ -71,6 +74,7 @@ export function paneRowParts(
     Pick<
       PaneBase,
       | 'look'
+      | 'listColumns'
       | 'Text'
       | 'pal'
       | 'Box'
@@ -404,7 +408,7 @@ export function paneRowParts(
     ) : null
   const settledContent = (
     what: string,
-    { label, at, delivery, closedAs }: SettledState,
+    { label, at, delivery, closedAs, reply }: SettledState,
     undo: RowPress | PrPress | null,
     mark: ResultMark | null,
   ) => (
@@ -427,14 +431,20 @@ export function paneRowParts(
           mark,
           `settled-${what}`,
           pal.muted,
-          <Text wrap="wrap" color={settledTone({ delivery, closedAs }) === 'done' ? pal.tone.done : pal.muted}>
-            {settledLabel(label, delivery)}
+          <Text wrap="truncate-end" color={settledTone({ delivery, closedAs }) === 'done' ? pal.tone.done : pal.muted}>
+            {settledLabel(label, delivery, reply)}
           </Text>,
         )}
         {undo ? undoButton(undo, at) : null}
       </Box>
     </Box>
   )
+  /** Desktop draws a settled label in its title's wrapping Text, so a long one, such as a reply's words, is cut to one line's characters. */
+  const desktopSettledLabel = (state: SettledState) =>
+    clipLabel(
+      settledLabel(state.label, state.delivery, state.reply),
+      Math.max(12, Math.floor((listColumns - 1) * DESKTOP_CLIP_CHARS_PER_CELL)),
+    )
   const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos: TreePos) => {
     const undo = r.actions.find(a => a.press.action === 'undo')?.press ?? null
     const mark = settledMark(state)
@@ -449,7 +459,7 @@ export function paneRowParts(
         children: [
           <Text wrap="wrap">
             {r.title}
-            <Text color={pal.muted}>{`${DOT}${settledLabel(state.label, state.delivery)}`}</Text>
+            <Text color={pal.muted}>{`${DOT}${desktopSettledLabel(state)}`}</Text>
           </Text>,
         ],
       })
