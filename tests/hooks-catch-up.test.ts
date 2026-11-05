@@ -25,7 +25,7 @@ test('resumed into a conversation it cannot fork yet, it catches up from the tra
   )
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeDefined()
-  expect(await pane.find({ text: /update failed/ })).toBeUndefined()
+  expect(await pane.find({ text: /couldn't update/ })).toBeUndefined()
 })
 
 test('a catch-up writes its Status with a separate call over the transcript', async ($, on) => {
@@ -159,7 +159,7 @@ test('after a failed update, the next reply catches up over the whole conversati
   w.ledgerReply = 'not a ledger'
   await $.turn.complete({ answer: 'Using Node.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
   await clock.settle()
-  expect(await pane.find({ text: /update failed/ })).toBeDefined()
+  expect(await pane.find({ text: /couldn't update/ })).toBeDefined()
   await $.turn.complete({
     answer: 'Fixed the README too.',
     durationMs: 5,
@@ -173,7 +173,7 @@ test('after a failed update, the next reply catches up over the whole conversati
   expect(await pane.find({ text: /^Node$/ })).toBeDefined()
   expect(await pane.find({ text: /Name the command greet\?/ })).toBeDefined()
   expect(await pane.find({ text: /Review the welcome copy/ })).toBeDefined()
-  expect(await pane.find({ text: /update failed/ })).toBeUndefined()
+  expect(await pane.find({ text: /couldn't update/ })).toBeUndefined()
   await clock.advance(1)
   await pane.press({ key: 'tab-findings' })
   await clock.settle()

@@ -373,12 +373,14 @@ export function applyPrPress(
         effects: [send(prompts.address(pr, waiting))],
       })
     }
-    case 'pr-merge':
-      if (readiness(pr, threadSentIn(lastActions)).status !== 'ready') return stale
+    case 'pr-merge': {
+      const shown = readiness(pr, threadSentIn(lastActions))
+      if (shown.status !== 'ready') return stale
       return applied({
         lasts: { [markId]: record(markId, 'handoff', p.action, 'Merge') },
-        effects: [send(prompts.merge(pr))],
+        effects: [send(prompts.merge(pr, shown.text))],
       })
+    }
     case 'pr-open':
       return local([markId], 'Open PR', prPageEffect(pr))
     case 'pr-refresh':

@@ -862,7 +862,7 @@ function readiness(pr, isSent = () => false, agent = "Claude") {
   const listed = [];
   if (pr.state === "MERGED") return result("merged", "Merged");
   if (pr.state !== "OPEN") return result("closed", "Closed");
-  const { fail: failing, pending } = checkCounts(pr);
+  const { pass: passing, fail: failing, pending } = checkCounts(pr);
   const cancelled = blockingChecks(pr).length - failing;
   const waiting = waitingThreads(pr);
   const open2 = threadsOnYou(pr, isSent).length;
@@ -884,7 +884,8 @@ function readiness(pr, isSent = () => false, agent = "Claude") {
     row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to ${agent}` : null),
     row(changed > 0 ? `${plural(changed, "thread", "threads")} on changed lines` : null),
     pr.reviewDecision === "REVIEW_REQUIRED" ? "needs approval" : null,
-    pending > 0 ? `${pending} ${pending === 1 ? "check" : "checks"} running` : null
+    pending > 0 ? `${pending} ${pending === 1 ? "check" : "checks"} running` : null,
+    pr.mergeable === "UNKNOWN" ? "GitHub is still checking for conflicts" : null
   ].filter(isPresent);
   if (pr.isDraft)
     return result("draft", "Draft", [...isAnythingOnPerson ? onYou : [changes].filter(isPresent), ...onOthers]);
@@ -895,7 +896,7 @@ function readiness(pr, isSent = () => false, agent = "Claude") {
   return result(
     "ready",
     "Ready to merge",
-    [...isApproved ? ["approved"] : [], "checks pass", "no threads waiting on you"],
+    [...isApproved ? ["approved"] : [], passing > 0 ? "checks pass" : "no checks ran", "no threads waiting on you"],
     isApproved ? ": " : ", "
   );
 }
@@ -1287,7 +1288,7 @@ function ruledRows(rows, isRuled) {
 }
 
 // ../hooks/status-page.ts
-var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
 var LOOK_TEXT = "Last seen";
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
@@ -2405,11 +2406,11 @@ function heldLabel(c) {
   if (c.how === "answered") return `Answered: ${c.outcome}`;
   return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
 }
-var NEXT_TRY = " The inbox tries again after the agent's next reply.";
+var NEXT_TRY = " It tries again after the next reply.";
 var FAILED_UPDATE_TEXT = {
-  waiting: `Last update failed. Items from that reply may be missing.${NEXT_TRY}`,
-  "failed-again": `Last update failed, and its retry failed too. Items from recent replies may be missing.${NEXT_TRY}`,
-  unreadable: `Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing.${NEXT_TRY}`
+  waiting: `The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing.${NEXT_TRY}`,
+  "failed-again": `The inbox couldn't update from the agent's recent replies, even on a retry. Questions, tasks and findings from them may be missing.${NEXT_TRY}`,
+  unreadable: `The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing.${NEXT_TRY}`
 };
 function perTurnStatus(isUpdating, recovery) {
   const error = recovery === "none" || recovery === "retrying" ? null : FAILED_UPDATE_TEXT[recovery];
@@ -3016,6 +3017,17 @@ function viewOf(s, now, holds = NO_HOLDS) {
   return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds), heard: heardState(s.heard), at: now };
 }
 
+// ../hooks/banners.ts
+var MAYBE_STALE_TEXT = "May be out of date";
+
+// ../hooks/band.ts
+function isMaybeStale(view, isReadFailed = false) {
+  return isReadFailed || view.status.error !== null || view.status.isRetrying;
+}
+function bandCounts(view) {
+  return ROW_TABS.map((t) => ({ id: t.id, label: t.label, count: view[t.id].count })).filter((c) => c.count > 0);
+}
+
 // ../hooks/children.ts
 var ACTIVITY_SAVE_MS = 3e4;
 var NAME_CHARS = 80;
@@ -3183,20 +3195,21 @@ function statusLine(stop, dialogs, input) {
   if (stop) return stopLine(stop);
   const dialog = dialogs[0];
   if (dialog) return dialogText(dialog);
-  const { firstAsk, asks, findings, focus } = input;
+  const { firstAsk, asks, findings, focus, stale } = input;
   if (firstAsk !== null) return asks > 1 ? `${asks} \xB7 ${firstAsk}` : firstAsk;
   const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? "" : "s"}`;
-  return [focus, findingsText].filter(Boolean).join(" \xB7 ");
+  return [stale, focus, findingsText].filter(Boolean).join(" \xB7 ");
 }
 function focusOf(head) {
   return head ? head.description || head.title : null;
 }
-function herdrTokens(ledger, stop, view, dialogs) {
+function herdrTokens(ledger, stop, view, dialogs, isReadFailed = false) {
   const input = {
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
-    focus: focusOf(ledger.overview?.head ?? null)
+    focus: focusOf(ledger.overview?.head ?? null),
+    stale: bandCounts(view).length === 0 && isMaybeStale(view, isReadFailed) ? MAYBE_STALE_TEXT : null
   };
   const focus = input.focus ? clipLabel(input.focus, HERDR_VALUE_CHARS) : null;
   const counts = ROW_TABS.map((t) => {

@@ -7,7 +7,8 @@ import type { BannerTone, ToneName } from '../../hooks/tones'
 import { ago } from '../../hooks/text'
 import { DEMO_NOTICE, bannerOf, stopBanner, tabBarBanners, stopFix, stopText } from '../../hooks/banners'
 import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies } from '../../hooks/timing'
-import { LISTED_TABS, shownTabs, isRowTab } from '../../hooks/tabs'
+import { shownTabs, isRowTab } from '../../hooks/tabs'
+import { bandCounts, noCountsText } from '../../hooks/band'
 import { footerStatus } from '../../hooks/view'
 import { GOAL_KEYS_ID, statusSelected } from '../../hooks/status-keys'
 import type { Holds } from '../../hooks/timing'
@@ -39,6 +40,8 @@ export type PanelScreen = {
   version: string
   isNextBuild?: boolean
   isDemo?: boolean
+  /** The last read of the session failed, so the screen is the one before it. */
+  isReadFailed?: boolean
 }
 
 export type Tone = ToneName | 'accent' | 'sep'
@@ -308,13 +311,10 @@ export function tallestTabHeight(
   return Math.max(...heights)
 }
 
-/** The band above the prompt: the two counts, and under them why the last turn stopped. */
+/** The band above the prompt: the counts, and under them why the last turn stopped. */
 export function bandLines(screen: PanelScreen, width: number, now: number, style: Style): string[] {
-  const { needsYou, findings } = screen.view
-  const counts = LISTED_TABS.map(t => ({ t, count: t.id === 'needsYou' ? needsYou.count : findings.count }))
-    .filter(x => x.count > 0)
-    .map(x => `${x.t.label} ${style.tone(x.t.id, String(x.count))}`)
-  const left = ` ${counts.length > 0 ? counts.join(` ${style.tone('sep', '·')} `) : style.dim('Nothing needed')}`
+  const counts = bandCounts(screen.view).map(c => `${c.label} ${style.tone(c.id, String(c.count))}`)
+  const left = ` ${counts.length > 0 ? counts.join(` ${style.tone('sep', '·')} `) : style.dim(noCountsText(screen.view, screen.isReadFailed))}`
   const countLine = spread(left, style.dim('/inbox to open '), width)
   const { stop } = screen
   if (!stop) return [countLine]

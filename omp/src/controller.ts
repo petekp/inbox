@@ -112,7 +112,14 @@ export function createPanel(deps: PanelDeps): Panel {
   async function refresh(pressedId?: string): Promise<void> {
     const mine = ++version
     const next = await source.screen(holdsOf(ui)).catch(() => null)
-    if (mine !== version || next === null) return
+    if (mine !== version) return
+    if (next === null) {
+      if (screen && !screen.isReadFailed) {
+        screen = { ...screen, isReadFailed: true }
+        deps.requestRender()
+      }
+      return
+    }
     screen = next
     const followed = followRows(next, ui, seen, isOpening, deps.now())
     ui = pressedId === undefined ? followed.ui : afterHandOff(next, followed.ui, pressedId, deps.now())

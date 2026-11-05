@@ -511,7 +511,18 @@ export type HostTask = { id: string; text: string; status: HostTaskStatus }
  * Why a Status call wrote nothing. `no-answer`: the call gave no text. `refused`: it answered twice with text the
  * parser refused, and `answer` holds the start of the second answer.
  */
-export type StatusFailure = { at: number; cause: 'no-answer' | 'refused'; answer: string | null }
+/**
+ * A Status call that wrote nothing. `catchUpsFailed` counts the catch-ups that failed while it stood, and
+ * `catchUpTurn` is `turnsStarted` at the last of them, so the next catch-up waits longer after each (`needsCatchUp`).
+ * Saved failures from before these fields read as none.
+ */
+export type StatusFailure = {
+  at: number
+  cause: 'no-answer' | 'refused'
+  answer: string | null
+  catchUpsFailed?: number
+  catchUpTurn?: number
+}
 
 /**
  * Which call of an update a model call is. The ledger call reads a reply's exchange, with `isRetry` when the

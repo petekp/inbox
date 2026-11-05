@@ -290,7 +290,7 @@ export function readiness(
   const listed: string[] = []
   if (pr.state === 'MERGED') return result('merged', 'Merged')
   if (pr.state !== 'OPEN') return result('closed', 'Closed')
-  const { fail: failing, pending } = checkCounts(pr)
+  const { pass: passing, fail: failing, pending } = checkCounts(pr)
   const cancelled = blockingChecks(pr).length - failing
   const waiting = waitingThreads(pr)
   const open = threadsOnYou(pr, isSent).length
@@ -313,6 +313,7 @@ export function readiness(
     row(changed > 0 ? `${plural(changed, 'thread', 'threads')} on changed lines` : null),
     pr.reviewDecision === 'REVIEW_REQUIRED' ? 'needs approval' : null,
     pending > 0 ? `${pending} ${pending === 1 ? 'check' : 'checks'} running` : null,
+    pr.mergeable === 'UNKNOWN' ? 'GitHub is still checking for conflicts' : null,
   ].filter(isPresent)
 
   if (pr.isDraft)
@@ -325,7 +326,7 @@ export function readiness(
   return result(
     'ready',
     'Ready to merge',
-    [...(isApproved ? ['approved'] : []), 'checks pass', 'no threads waiting on you'],
+    [...(isApproved ? ['approved'] : []), passing > 0 ? 'checks pass' : 'no checks ran', 'no threads waiting on you'],
     isApproved ? ': ' : ', ',
   )
 }
@@ -444,9 +445,9 @@ export const prompts = {
       '',
       threadText(t),
     ].join(NL),
-  merge: (pr: PrView) =>
+  merge: (pr: PrView, shown: string) =>
     [
-      `Merge PR #${pr.number} (${pr.url}) into ${pr.base}. When I pressed this, its checks passed and no review threads waited on me.`,
+      `Merge PR #${pr.number} (${pr.url}) into ${pr.base}. When I pressed this, the inbox read "${shown}".`,
       "Check that it is still mergeable, merge it with the repo's usual merge method, and tell me the result.",
       'If it is not mergeable, or merging would need a bypass or a force, stop and tell me instead.',
     ].join(NL),

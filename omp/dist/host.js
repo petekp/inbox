@@ -49,6 +49,168 @@ function ghIn(exec, bin, cwd, onUnstartable) {
   };
 }
 
+// ../hooks/press-labels.ts
+function actionId(p) {
+  return p.action === "step" ? `step-${p.step}` : p.action;
+}
+function pressText(p) {
+  switch (p.action) {
+    case "answer":
+      return p.option;
+    case "type":
+      return "Reply";
+    case "issue":
+      return ISSUE_LABEL;
+    case "step":
+      return p.label;
+    case "use-goal":
+      return "Set as goal";
+    case "decline-goal":
+      return "Not now";
+    default:
+      return capitalized(p.action);
+  }
+}
+function capitalized(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+var ISSUE_LABEL = "File issue";
+
+// ../hooks/banners.ts
+function groupEmptyText(title) {
+  return `No open ${title.toLowerCase()}`;
+}
+var RESUME_TEXT = "Continue";
+function isResumable(stop) {
+  return stop.kind === "api-error";
+}
+function stopText(stop) {
+  switch (stop.kind) {
+    case "sign-in":
+      return "sign-in expired";
+    case "billing":
+      return "billing problem";
+    case "usage-limit":
+      return "usage limit reached";
+    default:
+      return stop.detail === "rate_limit" ? "the API is limiting requests" : stop.detail === "overloaded" ? "the API is overloaded" : `API error (${stop.detail})`;
+  }
+}
+function stopFix(stop) {
+  switch (stop.kind) {
+    case "sign-in":
+      return "Run /login, then send a message to resume.";
+    case "billing":
+      return "Check billing in the Claude console, then resume.";
+    case "usage-limit":
+      return stop.resets ? `Resume after ${stop.resets}.` : "Resume when the limit resets.";
+    default:
+      return "Send a message to resume.";
+  }
+}
+var BANNER_TONES = {
+  demo: "notice",
+  "update-failed": "warning",
+  "tools-refused": "error",
+  "read-failed": "error",
+  stopped: "error",
+  "gh-missing": "warning",
+  "gh-signed-out": "warning",
+  "press-note": "notice",
+  "press-failed": "error",
+  "hooks-trust": "error",
+  "server-gone": "error",
+  "server-load-failed": "error",
+  "server-builds-differ": "warning",
+  "tab-update-failed": "warning"
+};
+function bannerOf(kind, text) {
+  const end = text.indexOf(". ");
+  const lead = end < 0 ? text : text.slice(0, end + 1);
+  const body = end < 0 ? null : text.slice(end + 2);
+  return { kind, tone: BANNER_TONES[kind], lead, body };
+}
+function stopBanner(stop) {
+  const why = `${capitalized(stopText(stop))}.`;
+  return {
+    kind: "stopped",
+    tone: BANNER_TONES.stopped,
+    lead: "Stopped",
+    body: isResumable(stop) ? why : `${why} ${stopFix(stop)}`
+  };
+}
+function tabBarBanners(host, statusError, pressNote) {
+  return [
+    ...host,
+    ...statusError ? [bannerOf("update-failed", statusError)] : [],
+    ...pressNote ? [bannerOf(pressNote.isError ? "press-failed" : "press-note", pressNote.text)] : []
+  ];
+}
+var DEMO_NOTICE = "Sample entries. Buttons here send nothing.";
+var READING_TEXT = "Reading the inbox\u2026";
+var NEXT_BUILD_MARK = ".next-build";
+function versionLabel(version, isNextBuild) {
+  return isNextBuild ? `v${version} \xB7 next` : `v${version}`;
+}
+var MAYBE_STALE_TEXT = "May be out of date";
+function emptyText(tab, agent, isStale = false) {
+  const text = tab === "needsYou" ? { title: "Nothing needed", hint: `${agent}'s questions and the tasks only you can do show up here.` } : { title: "No findings yet", hint: `${agent} flags issues and opportunities it spots beyond your task.` };
+  return isStale ? { ...text, title: MAYBE_STALE_TEXT } : text;
+}
+
+// ../hooks/tabs.ts
+var TAB_NAMES = [
+  { id: "overview", label: "Status", symbol: "\uD83E\uDDED" },
+  { id: "needsYou", label: "Asks", symbol: "\uD83D\uDE4B" },
+  { id: "findings", label: "Finds", symbol: "\uD83D\uDD0D" },
+  { id: "prs", label: "PRs", symbol: "\uD83D\uDD00" }
+];
+var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
+var NEXT_BUILD_TABS = numbered(TAB_NAMES);
+var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
+function shownTabs(isNextBuild) {
+  return isNextBuild ? NEXT_BUILD_TABS : RELEASE_TABS;
+}
+function inboxCommandText(isNextBuild) {
+  return isNextBuild ? "Show where this session stands and what waits on you" : "Show this session's questions, tasks, findings and PRs";
+}
+var TAB_NAMINGS = ["words", "symbols"];
+function tabName(tab, naming) {
+  return naming === "words" ? tab.label : tab.symbol;
+}
+function fitTabs(layouts, fits) {
+  for (const naming of TAB_NAMINGS)
+    for (const layout of layouts)
+      if (fits(naming, layout))
+        return { naming, layout };
+  return { naming: "symbols", layout: layouts.at(-1) };
+}
+function tabBadge(id, counts) {
+  return isRowTab(id) && counts[id] > 0 ? String(counts[id]) : null;
+}
+function isListedTab(tab) {
+  return tab === "needsYou" || tab === "findings";
+}
+function isRowTab(tab) {
+  return tab !== "overview";
+}
+function screenTabOf(tab) {
+  return { label: TAB_NAMES.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
+}
+var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
+var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
+
+// ../hooks/band.ts
+function isMaybeStale(view, isReadFailed = false) {
+  return isReadFailed || view.status.error !== null || view.status.isRetrying;
+}
+function bandCounts(view) {
+  return ROW_TABS.map((t) => ({ id: t.id, label: t.label, count: view[t.id].count })).filter((c) => c.count > 0);
+}
+function noCountsText(view, isReadFailed = false) {
+  return isMaybeStale(view, isReadFailed) ? MAYBE_STALE_TEXT : "Nothing needed";
+}
+
 // ../hooks/status-limits.ts
 var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
@@ -689,33 +851,6 @@ function isLapsed(d) {
   return closedState(d) !== "handled";
 }
 
-// ../hooks/press-labels.ts
-function actionId(p) {
-  return p.action === "step" ? `step-${p.step}` : p.action;
-}
-function pressText(p) {
-  switch (p.action) {
-    case "answer":
-      return p.option;
-    case "type":
-      return "Reply";
-    case "issue":
-      return ISSUE_LABEL;
-    case "step":
-      return p.label;
-    case "use-goal":
-      return "Set as goal";
-    case "decline-goal":
-      return "Not now";
-    default:
-      return capitalized(p.action);
-  }
-}
-function capitalized(text) {
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-var ISSUE_LABEL = "File issue";
-
 // ../hooks/open-targets.ts
 function baseName(path) {
   return path.replace(/\/+$/, "").split("/").pop() ?? path;
@@ -1004,7 +1139,7 @@ function readiness(pr, isSent = () => false, agent = "Claude") {
     return result("merged", "Merged");
   if (pr.state !== "OPEN")
     return result("closed", "Closed");
-  const { fail: failing, pending } = checkCounts(pr);
+  const { pass: passing, fail: failing, pending } = checkCounts(pr);
   const cancelled = blockingChecks(pr).length - failing;
   const waiting = waitingThreads(pr);
   const open = threadsOnYou(pr, isSent).length;
@@ -1026,7 +1161,8 @@ function readiness(pr, isSent = () => false, agent = "Claude") {
     row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to ${agent}` : null),
     row(changed > 0 ? `${plural(changed, "thread", "threads")} on changed lines` : null),
     pr.reviewDecision === "REVIEW_REQUIRED" ? "needs approval" : null,
-    pending > 0 ? `${pending} ${pending === 1 ? "check" : "checks"} running` : null
+    pending > 0 ? `${pending} ${pending === 1 ? "check" : "checks"} running` : null,
+    pr.mergeable === "UNKNOWN" ? "GitHub is still checking for conflicts" : null
   ].filter(isPresent);
   if (pr.isDraft)
     return result("draft", "Draft", [...isAnythingOnPerson ? onYou : [changes].filter(isPresent), ...onOthers]);
@@ -1037,7 +1173,7 @@ function readiness(pr, isSent = () => false, agent = "Claude") {
   if (onOthers.length > 0)
     return result("waiting", "Waiting", onOthers);
   const isApproved = pr.reviewDecision === "APPROVED";
-  return result("ready", "Ready to merge", [...isApproved ? ["approved"] : [], "checks pass", "no threads waiting on you"], isApproved ? ": " : ", ");
+  return result("ready", "Ready to merge", [...isApproved ? ["approved"] : [], passing > 0 ? "checks pass" : "no checks ran", "no threads waiting on you"], isApproved ? ": " : ", ");
 }
 var STATUS_ORDER = { blocked: 0, ready: 1, draft: 2, waiting: 3, merged: 4, closed: 5 };
 function rankOf(pr, ranked) {
@@ -1099,8 +1235,8 @@ var prompts = {
     "",
     threadText(t)
   ].join(NL3),
-  merge: (pr) => [
-    `Merge PR #${pr.number} (${pr.url}) into ${pr.base}. When I pressed this, its checks passed and no review threads waited on me.`,
+  merge: (pr, shown) => [
+    `Merge PR #${pr.number} (${pr.url}) into ${pr.base}. When I pressed this, the inbox read "${shown}".`,
     "Check that it is still mergeable, merge it with the repo's usual merge method, and tell me the result.",
     "If it is not mergeable, or merging would need a bypass or a force, stop and tell me instead."
   ].join(NL3),
@@ -1696,48 +1832,6 @@ function replyToClosed(ledger, p, last, answerMessage) {
   return { ledger, last, effects: [{ kind: "send", text, by: null }] };
 }
 
-// ../hooks/tabs.ts
-var TAB_NAMES = [
-  { id: "overview", label: "Status", symbol: "\uD83E\uDDED" },
-  { id: "needsYou", label: "Asks", symbol: "\uD83D\uDE4B" },
-  { id: "findings", label: "Finds", symbol: "\uD83D\uDD0D" },
-  { id: "prs", label: "PRs", symbol: "\uD83D\uDD00" }
-];
-var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
-var NEXT_BUILD_TABS = numbered(TAB_NAMES);
-var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
-function shownTabs(isNextBuild) {
-  return isNextBuild ? NEXT_BUILD_TABS : RELEASE_TABS;
-}
-function inboxCommandText(isNextBuild) {
-  return isNextBuild ? "Show where this session stands and what waits on you" : "Show this session's questions, tasks, findings and PRs";
-}
-var TAB_NAMINGS = ["words", "symbols"];
-function tabName(tab, naming) {
-  return naming === "words" ? tab.label : tab.symbol;
-}
-function fitTabs(layouts, fits) {
-  for (const naming of TAB_NAMINGS)
-    for (const layout of layouts)
-      if (fits(naming, layout))
-        return { naming, layout };
-  return { naming: "symbols", layout: layouts.at(-1) };
-}
-function tabBadge(id, counts) {
-  return isRowTab(id) && counts[id] > 0 ? String(counts[id]) : null;
-}
-function isListedTab(tab) {
-  return tab === "needsYou" || tab === "findings";
-}
-function isRowTab(tab) {
-  return tab !== "overview";
-}
-function screenTabOf(tab) {
-  return { label: TAB_NAMES.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
-}
-var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
-var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
-
 // ../hooks/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
@@ -2036,7 +2130,7 @@ function unfoldedRows(rows, isUnfolded) {
 }
 
 // ../hooks/status-page.ts
-var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
 var LOOK_TEXT = "Last seen";
 var OTHER_WORK = "Other work";
 var LOOK_DASH = "\u254C";
@@ -2450,21 +2544,22 @@ function statusLine(stop, dialogs, input) {
   const dialog = dialogs[0];
   if (dialog)
     return dialogText(dialog);
-  const { firstAsk, asks, findings, focus } = input;
+  const { firstAsk, asks, findings, focus, stale } = input;
   if (firstAsk !== null)
     return asks > 1 ? `${asks} \xB7 ${firstAsk}` : firstAsk;
   const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? "" : "s"}`;
-  return [focus, findingsText].filter(Boolean).join(" \xB7 ");
+  return [stale, focus, findingsText].filter(Boolean).join(" \xB7 ");
 }
 function focusOf(head) {
   return head ? head.description || head.title : null;
 }
-function herdrTokens(ledger, stop, view, dialogs) {
+function herdrTokens(ledger, stop, view, dialogs, isReadFailed = false) {
   const input = {
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
-    focus: focusOf(ledger.overview?.head ?? null)
+    focus: focusOf(ledger.overview?.head ?? null),
+    stale: bandCounts(view).length === 0 && isMaybeStale(view, isReadFailed) ? MAYBE_STALE_TEXT : null
   };
   const focus = input.focus ? clipLabel(input.focus, HERDR_VALUE_CHARS) : null;
   const counts = ROW_TABS.map((t) => {
@@ -3799,13 +3894,15 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
         effects: [send(prompts.address(pr, waiting))]
       });
     }
-    case "pr-merge":
-      if (readiness(pr, threadSentIn(lastActions)).status !== "ready")
+    case "pr-merge": {
+      const shown = readiness(pr, threadSentIn(lastActions));
+      if (shown.status !== "ready")
         return stale;
       return applied({
         lasts: { [markId]: record(markId, "handoff", p.action, "Merge") },
-        effects: [send(prompts.merge(pr))]
+        effects: [send(prompts.merge(pr, shown.text))]
       });
+    }
     case "pr-open":
       return local([markId], "Open PR", prPageEffect(pr));
     case "pr-refresh":
@@ -5053,11 +5150,11 @@ function footerStatus(tab, status, prs, statusPageError) {
   const error = (tab === "overview" ? statusPageError : null) ?? status.error;
   return { text: status.isRetrying ? RETRYING_TEXT : status.isUpdating ? UPDATING_TEXT : null, error };
 }
-var NEXT_TRY = " The inbox tries again after the agent's next reply.";
+var NEXT_TRY = " It tries again after the next reply.";
 var FAILED_UPDATE_TEXT = {
-  waiting: `Last update failed. Items from that reply may be missing.${NEXT_TRY}`,
-  "failed-again": `Last update failed, and its retry failed too. Items from recent replies may be missing.${NEXT_TRY}`,
-  unreadable: `Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing.${NEXT_TRY}`
+  waiting: `The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing.${NEXT_TRY}`,
+  "failed-again": `The inbox couldn't update from the agent's recent replies, even on a retry. Questions, tasks and findings from them may be missing.${NEXT_TRY}`,
+  unreadable: `The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing.${NEXT_TRY}`
 };
 function perTurnStatus(isUpdating, recovery) {
   const error = recovery === "none" || recovery === "retrying" ? null : FAILED_UPDATE_TEXT[recovery];
@@ -5309,86 +5406,6 @@ async function rerunRun(host, e) {
     return null;
   return r.exitCode === TIMED_OUT_CODE ? GH_TIMED_OUT_TEXT : r.stderr.trim().split(`
 `)[0] || `gh exited with ${r.exitCode}`;
-}
-
-// ../hooks/banners.ts
-function groupEmptyText(title) {
-  return `No open ${title.toLowerCase()}`;
-}
-var RESUME_TEXT = "Continue";
-function isResumable(stop) {
-  return stop.kind === "api-error";
-}
-function stopText(stop) {
-  switch (stop.kind) {
-    case "sign-in":
-      return "sign-in expired";
-    case "billing":
-      return "billing problem";
-    case "usage-limit":
-      return "usage limit reached";
-    default:
-      return stop.detail === "rate_limit" ? "the API is limiting requests" : stop.detail === "overloaded" ? "the API is overloaded" : `API error (${stop.detail})`;
-  }
-}
-function stopFix(stop) {
-  switch (stop.kind) {
-    case "sign-in":
-      return "Run /login, then send a message to resume.";
-    case "billing":
-      return "Check billing in the Claude console, then resume.";
-    case "usage-limit":
-      return stop.resets ? `Resume after ${stop.resets}.` : "Resume when the limit resets.";
-    default:
-      return "Send a message to resume.";
-  }
-}
-var BANNER_TONES = {
-  demo: "notice",
-  "update-failed": "warning",
-  "tools-refused": "error",
-  "read-failed": "error",
-  stopped: "error",
-  "gh-missing": "warning",
-  "gh-signed-out": "warning",
-  "press-note": "notice",
-  "press-failed": "error",
-  "hooks-trust": "error",
-  "server-gone": "error",
-  "server-load-failed": "error",
-  "server-builds-differ": "warning",
-  "tab-update-failed": "warning"
-};
-function bannerOf(kind, text) {
-  const end = text.indexOf(". ");
-  const lead = end < 0 ? text : text.slice(0, end + 1);
-  const body = end < 0 ? null : text.slice(end + 2);
-  return { kind, tone: BANNER_TONES[kind], lead, body };
-}
-function stopBanner(stop) {
-  const why = `${capitalized(stopText(stop))}.`;
-  return {
-    kind: "stopped",
-    tone: BANNER_TONES.stopped,
-    lead: "Stopped",
-    body: isResumable(stop) ? why : `${why} ${stopFix(stop)}`
-  };
-}
-function tabBarBanners(host, statusError, pressNote) {
-  return [
-    ...host,
-    ...statusError ? [bannerOf("update-failed", statusError)] : [],
-    ...pressNote ? [bannerOf(pressNote.isError ? "press-failed" : "press-note", pressNote.text)] : []
-  ];
-}
-var DEMO_NOTICE = "Sample entries. Buttons here send nothing.";
-var READING_TEXT = "Reading the inbox\u2026";
-var NEXT_BUILD_MARK = ".next-build";
-function versionLabel(version, isNextBuild) {
-  return isNextBuild ? `v${version} \xB7 next` : `v${version}`;
-}
-function emptyText(tab, agent) {
-  return tab === "needsYou" ? { title: "Nothing needed", hint: `${agent}'s questions and the tasks only you can do show up here.` } : { title: "No findings yet", hint: `${agent} flags issues and opportunities it spots beyond your task.` };
 }
 
 // src/panel-text.ts
@@ -5894,7 +5911,7 @@ function rowEntries(screen, ui, tab) {
   }));
   const stops = tab === "needsYou" ? stopEntries(screen, ui) : [];
   if (groups.every(isGroupEmpty)) {
-    const empty = emptyText(tab, AGENT);
+    const empty = emptyText(tab, AGENT, isMaybeStale(view, screen.isReadFailed));
     return stops.length > 0 ? stops : [
       { kind: "note", text: empty.title, isStrong: true },
       { kind: "note", text: empty.hint, isWhole: true }
@@ -6645,9 +6662,8 @@ function tallestTabHeight(screen, ui, width, now, style, height) {
   return Math.max(...heights);
 }
 function bandLines(screen, width, now, style) {
-  const { needsYou, findings } = screen.view;
-  const counts = LISTED_TABS.map((t) => ({ t, count: t.id === "needsYou" ? needsYou.count : findings.count })).filter((x) => x.count > 0).map((x) => `${x.t.label} ${style.tone(x.t.id, String(x.count))}`);
-  const left = ` ${counts.length > 0 ? counts.join(` ${style.tone("sep", "\xB7")} `) : style.dim("Nothing needed")}`;
+  const counts = bandCounts(screen.view).map((c) => `${c.label} ${style.tone(c.id, String(c.count))}`);
+  const left = ` ${counts.length > 0 ? counts.join(` ${style.tone("sep", "\xB7")} `) : style.dim(noCountsText(screen.view, screen.isReadFailed))}`;
   const countLine = spread(left, style.dim("/inbox to open "), width);
   const { stop } = screen;
   if (!stop)
@@ -6698,8 +6714,15 @@ function createPanel(deps) {
   async function refresh(pressedId) {
     const mine = ++version;
     const next = await source.screen(holdsOf(ui)).catch(() => null);
-    if (mine !== version || next === null)
+    if (mine !== version)
       return;
+    if (next === null) {
+      if (screen && !screen.isReadFailed) {
+        screen = { ...screen, isReadFailed: true };
+        deps.requestRender();
+      }
+      return;
+    }
     screen = next;
     const followed = followRows(next, ui, seen, isOpening, deps.now());
     ui = pressedId === undefined ? followed.ui : afterHandOff(next, followed.ui, pressedId, deps.now());
@@ -8560,7 +8583,7 @@ function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ??
 function isStatusCallCurrent(s, appliedAfter) {
   return s.presence.turnsApplied >= appliedAfter && s.overviewTurn <= appliedAfter;
 }
-function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overview?.goal?.setAt ?? null) {
+function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overview?.goal?.setAt ?? null, isCatchUp = false) {
   if (!isStatusCallCurrent(s, appliedAfter))
     return s;
   return {
@@ -8569,16 +8592,18 @@ function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overvi
       ...s.ledger,
       overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)), readSetAt)
     },
-    overviewFailure: null,
+    overviewFailure: isCatchUp ? null : s.overviewFailure,
     lastOverviewCallAt: now,
     overviewTurn: appliedAfter
   };
 }
 var REFUSED_ANSWER_CHARS = 500;
-function failedStatus(s, text, appliedAfter, now) {
+function failedStatus(s, text, appliedAfter, now, isCatchUp = false) {
   if (!isStatusCallCurrent(s, appliedAfter))
     return s;
-  const failure = text === null ? { at: now, cause: "no-answer", answer: null } : { at: now, cause: "refused", answer: text.slice(0, REFUSED_ANSWER_CHARS) };
+  const before = s.overviewFailure;
+  const tries = isCatchUp ? { catchUpsFailed: (before?.catchUpsFailed ?? 0) + 1, catchUpTurn: s.presence.turnsStarted } : before?.catchUpsFailed ? { catchUpsFailed: before.catchUpsFailed, catchUpTurn: before.catchUpTurn ?? 0 } : {};
+  const failure = text === null ? { at: now, cause: "no-answer", answer: null, ...tries } : { at: now, cause: "refused", answer: text.slice(0, REFUSED_ANSWER_CHARS), ...tries };
   return { ...s, overviewFailure: failure, lastOverviewCallAt: now, overviewTurn: appliedAfter };
 }
 var STATUS_REFRESH_MS = 10 * 60000;
@@ -8591,7 +8616,10 @@ function claimedStatusRefresh(s, now) {
 function needsCatchUp(s) {
   const { presence } = s;
   const hasUnappliedTurn = s.pending.length === 0 && s.turn.person === null && presence.turnsStarted > presence.turnsApplied;
-  return presence.ledgerState !== "current" || hasUnappliedTurn;
+  const failure = s.overviewFailure;
+  const isStatusCatchUpDue = failure !== null && (!failure.catchUpsFailed || presence.turnsStarted - (failure.catchUpTurn ?? 0) >= 2 ** failure.catchUpsFailed);
+  const hasMissedStatus = isStatusCatchUpDue && (s.pending.length > 0 || hasUnappliedTurn);
+  return presence.ledgerState !== "current" || hasUnappliedTurn || hasMissedStatus;
 }
 function needsUpdate(s) {
   return s.pending.length > 0 || s.presence.ledgerState !== "current";
@@ -8996,7 +9024,7 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
     before = x.ledger.overview;
     isWritten = isStatusCallCurrent(x, appliedAfter);
     const readSetAt = input.last?.goal?.setAt ?? null;
-    return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now, readSetAt);
+    return answer === null ? failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === "catch-up") : appliedStatus(x, answer, appliedAfter, now, readSetAt, call.exchange.kind === "catch-up");
   });
   if (!host.records)
     return;
@@ -9263,7 +9291,7 @@ var OMP = {
   recordTool: "record",
   closeTool: "close",
   splitsPlanIntoSubjects: false,
-  intro: "The inbox extension shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox panel, and your findings, in the panel's Finds tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings."
+  intro: "The inbox extension shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox panel, and your findings, in the panel's Finds tab. A band above their prompt shows only counts: one for your questions and their tasks together, one for your findings, and one for their PRs that wait on them."
 };
 var TOOL_LABELS = {
   record: "Inbox record",
@@ -10646,7 +10674,10 @@ function createInbox(pi, deps = defaultDeps) {
         screen = next;
         tui.requestRender();
       }).catch(() => {
-        return;
+        if (screen && !screen.isReadFailed) {
+          screen = { ...screen, isReadFailed: true };
+          tui.requestRender();
+        }
       });
       refresh();
       const stop = inbox.onChange(ctx, () => void refresh());

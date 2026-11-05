@@ -40,17 +40,68 @@ const withStatus = (s: Session): Session => ({
   ledger: { ...EMPTY, overview: applyStatus(null, answer, 1000, new Set()) },
 })
 
-test('a Status answer is written to the ledger after later updates and clears a saved failure, and both are dropped when their update is gone', () => {
+test('a Status answer is written to the ledger after later updates, only a catch-up answer clears a saved failure, and both are dropped when their update is gone', () => {
   const later = { ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } }
   const failed = failedStatus(later, 'The person wants a CLI.', 3, 900)
 
   expect(failed.overviewFailure).toEqual({ at: 900, cause: 'refused', answer: 'The person wants a CLI.' })
   expect(failedStatus(later, null, 3, 900).overviewFailure).toEqual({ at: 900, cause: 'no-answer', answer: null })
   expect(appliedStatus(failed, answer, 3, 1000).ledger.overview?.head?.title).toBe('Work offline')
-  expect(appliedStatus(failed, answer, 3, 1000).overviewFailure).toBeNull()
+  expect(appliedStatus(failed, answer, 3, 1000).overviewFailure).toEqual(failed.overviewFailure)
+  expect(appliedStatus(failed, answer, 3, 1000, null, true).overviewFailure).toBeNull()
   expect(appliedStatus(emptySession(), answer, 3, 1000).ledger.overview).toBeNull()
   expect(failedStatus(emptySession(), null, 3, 900).overviewFailure).toBeNull()
   expect(cleared(failed).overviewFailure).toBeNull()
+})
+
+test('a failed Status call makes the next reply catch up over the conversation once, and that catch-up clears the failure', async () => {
+  const catchUps: string[] = []
+  const { host } = fakeHost(async (_prompt, system) => (system === STATUS_SYSTEM ? null : LEDGER_REPLY))
+  const statusAnswer = 'HEAD: Work offline | Letting the app work without a connection'
+  const catchUp = async () => {
+    catchUps.push('catch-up')
+    const ask = async () => statusAnswer
+    return {
+      kind: 'reply' as const,
+      text: LEDGER_REPLY,
+      source: 'Person: go',
+      statusCall: { exchange: { kind: 'catch-up' as const, conversation: 'Person: go' }, ask },
+      heard: null,
+    }
+  }
+  await host.update(s => finishTurn(s, 'Which runtime?'))
+  await runUpdates(host)
+  expect((await host.read()).overviewFailure?.cause).toBe('no-answer')
+  await runUpdates({ ...host, catchUp })
+  expect(catchUps).toHaveLength(0)
+
+  await host.update(s => finishTurn(s, 'Python, then.'))
+  await runUpdates({ ...host, catchUp })
+  const after = await host.read()
+  expect(catchUps).toHaveLength(1)
+  expect(after.overviewFailure).toBeNull()
+  expect(after.ledger.overview?.head?.title).toBe('Work offline')
+})
+
+test('a Status call that keeps failing catches up at the next reply, then waits two replies before the next catch-up', async () => {
+  const catchUps: number[] = []
+  const { host } = fakeHost(async (_prompt, system) => (system === STATUS_SYSTEM ? null : LEDGER_REPLY))
+  const catchUp = async (s: Session) => {
+    catchUps.push(s.presence.turnsStarted)
+    return {
+      kind: 'reply' as const,
+      text: LEDGER_REPLY,
+      source: 'Person: go',
+      statusCall: { exchange: { kind: 'catch-up' as const, conversation: 'Person: go' }, ask: async () => null },
+      heard: null,
+    }
+  }
+  for (const reply of ['Which runtime?', 'Python, then.', 'Done.', 'Shipped.', 'Anything else?']) {
+    await host.update(s => finishTurn(s, reply))
+    await runUpdates({ ...host, catchUp })
+  }
+  expect(catchUps).toEqual([2, 4])
+  expect((await host.read()).overviewFailure).toMatchObject({ catchUpsFailed: 2, catchUpTurn: 4 })
 })
 
 test('a Status answer or failure made for fewer applied turns than the last write is dropped', () => {

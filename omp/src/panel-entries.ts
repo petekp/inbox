@@ -27,6 +27,7 @@ import { capitalized } from '../../hooks/press-labels'
 import { cellWidth, clipLabel } from '../../hooks/text'
 import { settledTone, NEEDS_YOU_GROUPS, settledMark, settledLabel, resumeLabel } from '../../hooks/rows'
 import { bannerOf, emptyText, isResumable, stopFix, stopText } from '../../hooks/banners'
+import { isMaybeStale } from '../../hooks/band'
 import { FINDING_GROUPS, HELP_COPY, helpKeys, markLegend, tabLegend } from '../../hooks/help'
 import { isDrawnInPlace, runningMark } from '../../hooks/timing'
 import { isRowTab } from '../../hooks/tabs'
@@ -92,7 +93,7 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
         }))
   const stops = tab === 'needsYou' ? stopEntries(screen, ui) : []
   if (groups.every(isGroupEmpty)) {
-    const empty = emptyText(tab, AGENT)
+    const empty = emptyText(tab, AGENT, isMaybeStale(view, screen.isReadFailed))
 
     return stops.length > 0
       ? stops

@@ -11,7 +11,7 @@ export const OMP: Host = {
   closeTool: 'close',
   splitsPlanIntoSubjects: false,
   intro:
-    "The inbox extension shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox panel, and your findings, in the panel's Finds tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings.",
+    "The inbox extension shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox panel, and your findings, in the panel's Finds tab. A band above their prompt shows only counts: one for your questions and their tasks together, one for your findings, and one for their PRs that wait on them.",
 }
 
 /** The names omp shows for the inbox's tools. */

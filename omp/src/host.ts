@@ -342,7 +342,12 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
               screen = next
               tui.requestRender()
             })
-            .catch(() => undefined)
+            .catch(() => {
+              if (screen && !screen.isReadFailed) {
+                screen = { ...screen, isReadFailed: true }
+                tui.requestRender()
+              }
+            })
         void refresh()
         const stop = inbox.onChange(ctx, () => void refresh())
 
