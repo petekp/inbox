@@ -110,6 +110,16 @@ function pageRuleCells(width: number, textAt = PAGE_TEXT_AT): number {
   return Math.max(0, width - textAt - 1)
 }
 
+/**
+ * A section's heading: its name at `at`, then a solid rule. Other work's starts at the text column, and the goal's at
+ * the head's column, where the goal's text starts.
+ */
+export function partHeading(text: string, width: number, s: Style, at = PAGE_TEXT_AT): string {
+  const label = `${text} `
+
+  return `${' '.repeat(at)}${s.dim(label + '─'.repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label))))}`
+}
+
 /** The rule above a Status row that starts an item. */
 export function pageRule(width: number, s: Style): string {
   return `${' '.repeat(PAGE_TEXT_AT)}${s.dim('─'.repeat(pageRuleCells(width)))}`
@@ -196,14 +206,7 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
       : pageLine(d, at, s.dim(chevron), row.text, s.dim)
   }
   if (row.kind === 'look') return lookLines(row, width, s)
-  if (row.kind === 'part') {
-    const label = `${row.text} `
-
-    return [
-      '',
-      `${' '.repeat(PAGE_TEXT_AT)}${s.dim(label + '─'.repeat(Math.max(4, pageRuleCells(width) - cellWidth(label))))}`,
-    ]
-  }
+  if (row.kind === 'part') return ['', partHeading(row.text, width, s)]
   if (row.kind === 'counts') return countLines(row.counts, textAt, width, s)
   return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim)
 }

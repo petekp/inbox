@@ -44,7 +44,7 @@ test('on a next build, a look at the desktop Status counts as seen only the firs
   const look = await desktopLook($, on, 12)
 
   expect(look.lastLookAt).toBe(1_000_000 + LOOK_MIN_MS)
-  expect(look.seen).toEqual(look.ids.slice(0, 3))
+  expect(look.seen).toEqual(look.ids.slice(0, 2))
 })
 
 test('on a next build, a look at a desktop Status that fits the pane’s window counts every subject as seen', async ($, on) => {
@@ -80,7 +80,7 @@ test('on a next build, a look at the terminal Status counts as seen only the sub
   await clock.settle()
 
   const o = seen as unknown as SessionStatus
-  const inWindow = [0, 1, 8, 9, 10, 11].map(n => o.subjects[n]!.id)
+  const inWindow = [0, 7, 8, 9, 10].map(n => o.subjects[n]!.id)
   expect(o.lastLookAt).toBe(1_000_000 + LOOK_MIN_MS)
   expect(o.subjects.filter(x => isSubjectSeen(o, x)).map(x => x.id)).toEqual(inWindow)
 })

@@ -1115,6 +1115,7 @@ function isSubjectSeen(o, s) {
 
 // ../hooks/status-goal-page.ts
 var AWAITING_TEXT = "Milestones after the next reply";
+var GOAL_HEADING = "Goal";
 function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
@@ -1156,7 +1157,7 @@ function goalPage(o, items) {
   const head = o.head;
   return {
     goal: {
-      label: isMet ? "Goal met" : "Goal",
+      label: isMet ? "Goal met" : GOAL_HEADING,
       text: g.text,
       count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
       isMet,

@@ -216,7 +216,7 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
     return { ui: { ...ui, selectedId: row.id, typing: GOAL_KEYS_ID, focus: null, drafts } }
   }
 
-  // The goal goes with the press, so Set a goal, which then shows, takes the selection.
+  // The goal's buttons change with the press, so the goal's place keeps the selection: Undo after Remove goal.
   return {
     ui: { ...ui, selectedId: GOAL_KEYS_ID, focus: null, pageReveal: GOAL_KEYS_ID },
     press: { action: press.action, id: GOAL_KEYS_ID },

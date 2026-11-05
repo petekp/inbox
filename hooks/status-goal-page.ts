@@ -25,7 +25,7 @@ export type MilestoneRow = {
 
 /** The goal and where the work stands against it. */
 export type GoalBlock = {
-  /** "Goal", or "Goal met". */
+  /** The section's heading: `GOAL_HEADING`, or "Goal met". */
   label: string
   text: string
   /** "1 of 5 done", drawn after the goal's text. Null once the goal is met and while its milestones are not written. */
@@ -48,6 +48,10 @@ export type GoalParts = {
 }
 
 const AWAITING_TEXT = 'Milestones after the next reply'
+/** The heading of the goal's section while no goal is met: the same with a goal or without one. */
+export const GOAL_HEADING = 'Goal'
+/** The dim line under the goal's heading while no goal is set. */
+export const NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed."
 
 /** The oldest open ask linked to `id`, a subject or a milestone. */
 export function oldestAsk(
@@ -103,7 +107,7 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalP
 
   return {
     goal: {
-      label: isMet ? 'Goal met' : 'Goal',
+      label: isMet ? 'Goal met' : GOAL_HEADING,
       text: g.text,
       count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
       isMet,

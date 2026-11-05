@@ -36,7 +36,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/status-limits.ts` | Shared module. The Status's limits on words, subjects and children, `EMPTY_SESSION_STATUS`, `isOpen`, and the helpers that clip a text and compare subject names. |
 | `hooks/status-ops.ts` | Shared module. How an answer changes the saved Status: `applyOps`, `applyStatus`, and when a HEAD line replaces the head. |
 | `hooks/status-goal-ops.ts` | Shared module. How an answer and the goal's presses change the goal: GOAL and RETIRE lines and when code takes them, MILESTONE and SERVES lines, milestones moved by id and closed when their work closes, met, Remove goal and its Undo, and a typed goal. |
-| `hooks/status-goal-page.ts` | Shared module. The goal's parts of the Status page: the goal block with its Now line and its milestone rows. |
+| `hooks/status-goal-page.ts` | Shared module. The goal's parts of the Status page: the goal block with its Now line and its milestone rows, the section's heading, and the line drawn while no goal is set. |
 | `hooks/status-keys.ts` | Shared module. The Status page's buttons: View on a held subject or milestone, the goal's buttons, the order j and k move through them, and which one is selected. |
 | `hooks/goal-press.ts` | Shared module. Remove goal, its Undo and a typed goal as presses on the id `goal`, for `pressed`. |
 | `hooks/status-children.ts` | Shared module. A child the host reports, and its end and activity. The text of the subjects, asks and running children that the Status call reads. When a look at the Status starts and ends. |

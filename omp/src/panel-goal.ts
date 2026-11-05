@@ -1,5 +1,6 @@
-import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, isGoalKeyInHeader, milestoneKeyPlan } from '../../hooks/status-keys'
+import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan } from '../../hooks/status-keys'
 import type { GoalBlock, MilestoneRow } from '../../hooks/status-goal-page'
+import { GOAL_HEADING, NO_GOAL_TEXT } from '../../hooks/status-goal-page'
 import { STALL_GAP, STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
 import { unfoldedRows } from '../../hooks/status-page-parts'
 import type { StatusPage } from '../../hooks/status-page'
@@ -7,52 +8,53 @@ import { paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import type { Entry } from './panel-lines'
 import { PAGE_MARK_AT, PAGE_TEXT_AT } from './panel-entries'
-import { GLUE, pageButtonLines, pageLine } from './panel-page'
+import { GLUE, pageButtonLines, pageLine, partHeading } from './panel-page'
 import { indented, wrapText } from './panel-text'
 
 /**
- * A part of the goal on the Status page: the goal's lines with its Now line, a milestone, its buttons, or its field.
- * The goal's lines draw its buttons in their header while `isGoalKeyInHeader`.
+ * A part of the goal's section on the Status page: its heading, the goal's text with its was, Now and awaiting lines,
+ * its buttons, the blank line before the milestones, a milestone, or the field on the empty page.
  */
 export type GoalPart =
-  | { is: 'title'; goal: GoalBlock; page: StatusPage; isTyping: boolean; isKeyInHeader: boolean }
+  | { is: 'heading'; text: string }
+  | { is: 'title'; goal: GoalBlock | null; isTyping: boolean }
   | { is: 'milestone'; row: MilestoneRow }
   | { is: 'keys'; page: StatusPage }
+  | { is: 'gap' }
   | { is: 'field' }
 
 /** The id of the Status target a part draws the buttons of, or null for a part with none. */
 export function goalPartId(part: GoalPart): string | null {
   if (part.is === 'milestone') return part.row.id
-  if (part.is === 'title') return part.isKeyInHeader && !part.isTyping ? GOAL_KEYS_ID : null
   return part.is === 'keys' ? GOAL_KEYS_ID : null
 }
 
 const goalEntry = (part: GoalPart): Entry => ({ kind: 'goal', part })
 
 /**
- * What the page draws above the head: the goal, its milestones each with the rows of its work, and its buttons. While
- * the person types a goal, the field takes the goal's text's place, and the buttons leave.
+ * The goal's section, first on every page that is not empty: its heading, drawn as Other work's is, then the goal's
+ * text, or the line that says no goal is set, then its buttons as a row's, then a blank line and the milestones, each
+ * with the rows of its work. While the person types a goal, the field takes the text's place, and the buttons leave.
  */
-export function goalAbove(page: StatusPage, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
+export function goalSection(page: StatusPage, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
   const isTyping = typing === GOAL_KEYS_ID
   const g = page.goal
-  if (g === null) return []
-  const isKeyInHeader = isGoalKeyInHeader(page)
+  const milestones = g?.milestones ?? []
 
   return [
-    goalEntry({ is: 'title', goal: g, page, isTyping, isKeyInHeader }),
-    ...g.milestones.flatMap(row => [
+    goalEntry({ is: 'heading', text: g?.label ?? GOAL_HEADING }),
+    goalEntry({ is: 'title', goal: g, isTyping }),
+    ...(isTyping ? [] : [goalEntry({ is: 'keys', page })]),
+    ...(milestones.length > 0 ? [goalEntry({ is: 'gap' })] : []),
+    ...milestones.flatMap(row => [
       goalEntry({ is: 'milestone', row }),
       ...unfoldedRows(row.rows, isUnfolded).map((r): Entry => ({ kind: 'page', row: r })),
     ]),
-    ...(isTyping || isKeyInHeader ? [] : [goalEntry({ is: 'keys', page })]),
   ]
 }
 
-/** Under the head, or under the empty state, while no goal is set: Set a goal, or the field it opened. */
+/** Under the empty state: Set goal, or the field it opened. */
 export function setGoal(page: StatusPage, typing: string | null): Entry[] {
-  if (page.goal !== null) return []
-
   return [goalEntry(typing === GOAL_KEYS_ID ? { is: 'field' } : { is: 'keys', page })]
 }
 
@@ -86,19 +88,17 @@ export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): stri
   const { width, now, style: s } = d
   const at = (text: string, paint: (t: string) => string, lines = STATUS_TEXT_LINES) =>
     indented(text, PAGE_MARK_AT, width, lines, paint)
+  if (part.is === 'heading') return [partHeading(part.text, width, s, PAGE_MARK_AT)]
+  if (part.is === 'gap') return ['']
   if (part.is === 'title') {
     const g = part.goal
-    const keys = part.isKeyInHeader && !part.isTyping ? goalKeyPlan(part.page) : []
-    const keyCells = pageButtonLines({ id: GOAL_KEYS_ID, keys }, d, isSelected, 1).join('')
-    const header =
-      keys.length > 0 ? [`${' '.repeat(PAGE_MARK_AT)}${s.dim(`${g.label} ·`)}${keyCells}`] : at(g.label, s.dim)
+    const text = part.isTyping ? fieldLines(d) : g ? textWithCount(g, d) : at(NO_GOAL_TEXT, s.dim)
 
     return [
-      ...header,
-      ...(part.isTyping ? fieldLines(d) : textWithCount(g, d)),
-      ...(g.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : []),
-      ...(g.now ? at(g.now, s.dim) : []),
-      ...(g.awaiting ? at(g.awaiting, s.dim) : []),
+      ...text,
+      ...(g?.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : []),
+      ...(g?.now ? at(g.now, s.dim) : []),
+      ...(g?.awaiting ? at(g.awaiting, s.dim) : []),
     ]
   }
   if (part.is === 'milestone') {

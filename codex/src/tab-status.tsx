@@ -1,14 +1,8 @@
 import { Icon, RowActions } from './row-actions'
 import { mergedLine, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
-import {
-  GOAL_FIELD,
-  GOAL_KEYS_ID,
-  goalKeyPlan,
-  isGoalKeyInHeader,
-  milestoneKeyPlan,
-  statusKeyPlan,
-} from '../../hooks/status-keys'
+import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan, statusKeyPlan } from '../../hooks/status-keys'
 import type { MilestoneRow } from '../../hooks/status-goal-page'
+import { GOAL_HEADING, NO_GOAL_TEXT } from '../../hooks/status-goal-page'
 import { ROW_COPY } from '../../hooks/rows'
 import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
@@ -280,51 +274,46 @@ function MilestoneLine({ m }: { m: MilestoneRow }) {
 }
 
 /**
- * The goal with its milestones, above the head. While the person types a goal, the field takes the goal's text's place,
- * and the goal's buttons give way to it.
+ * The goal's section, first on every page that is not empty: its heading, drawn as Other work's is, then the goal's text
+ * with its was, Now and awaiting lines, or the line that says no goal is set, then the goal's buttons as a row's, then
+ * the milestones. While the person types a goal, the field takes the text's place and the buttons'.
  */
-function GoalAbove({ page }: { page: StatusPage }) {
+function GoalSection({ page }: { page: StatusPage }) {
   const g = page.goal
   const isTyping = tabState.typing === GOAL_KEYS_ID
-  const isKeyInHeader = isGoalKeyInHeader(page)
-  const headerKeys = isKeyInHeader && !isTyping ? goalKeyPlan(page) : []
-  if (g === null) return null
+  const text = g ? (
+    <h1>
+      {g.text}
+      {g.count ? (
+        <span class="muted count">
+          {STALL_GAP}
+          {g.count}
+        </span>
+      ) : null}
+    </h1>
+  ) : (
+    <p class="muted">{NO_GOAL_TEXT}</p>
+  )
 
   return (
     <section>
+      <div class="row part-line goal-heading">
+        <div class="part-rule">{g?.label ?? GOAL_HEADING}</div>
+      </div>
       <div class="status-head goal">
-        <p class="muted">
-          {g.label}
-          {headerKeys.map(k => [
-            STALL_GAP,
-            <button key={k.label} type="button" class="text-key" onClick={() => statusKey(k).run()}>
-              {k.label}
-            </button>,
-          ])}
-        </p>
-        {isTyping ? (
-          <GoalField />
-        ) : (
-          <h1>
-            {g.text}
-            {g.count ? (
-              <span class="muted count">
-                {STALL_GAP}
-                {g.count}
-              </span>
-            ) : null}
-          </h1>
-        )}
-        {g.was ? (
+        {isTyping ? <GoalField /> : text}
+        {g?.was ? (
           <p class="muted">
             {WAS_PREFIX}
             {g.was}
           </p>
         ) : null}
-        {g.now ? <p class="muted">{g.now}</p> : null}
-        {g.awaiting ? <p class="muted">{g.awaiting}</p> : null}
+        {g?.now ? <p class="muted">{g.now}</p> : null}
+        {g?.awaiting ? <p class="muted">{g.awaiting}</p> : null}
+        {isTyping ? null : <Keys keys={goalKeyPlan(page)} />}
+        <GoalError />
       </div>
-      {g.milestones.length > 0 ? (
+      {g && g.milestones.length > 0 ? (
         <div class="list">
           {g.milestones.flatMap(m => [
             <MilestoneLine key={m.id} m={m} />,
@@ -332,20 +321,12 @@ function GoalAbove({ page }: { page: StatusPage }) {
           ])}
         </div>
       ) : null}
-      {isTyping || isKeyInHeader ? null : (
-        <div class="status-head">
-          <Keys keys={goalKeyPlan(page)} />
-        </div>
-      )}
-      <GoalError />
     </section>
   )
 }
 
-/** Under the head, or the empty state, while no goal is set: Set a goal, or the field it opened. */
+/** Set goal, or the field it opened, under the empty page's centred text. */
 function SetGoal({ page }: { page: StatusPage }) {
-  if (page.goal !== null) return null
-
   return (
     <div class="status-head">
       {tabState.typing === GOAL_KEYS_ID ? <GoalField /> : <Keys keys={goalKeyPlan(page)} />}
@@ -354,7 +335,7 @@ function SetGoal({ page }: { page: StatusPage }) {
   )
 }
 
-/** Why the last goal press failed. Set a goal or the goal draws it, whichever the page shows. */
+/** Why the last goal press failed, drawn in the goal's section, or under Set goal on the empty page. */
 function GoalError() {
   const error = errors.get(GOAL_KEYS_ID)
 
@@ -380,13 +361,8 @@ export function StatusTab({ page }: { page: StatusPage }) {
 
   return (
     <main class="status-page">
-      <GoalAbove page={page} />
-      {head || page.goal === null ? (
-        <section>
-          {head}
-          <SetGoal page={page} />
-        </section>
-      ) : null}
+      <GoalSection page={page} />
+      {head ? <section>{head}</section> : null}
       {page.rows.length > 0 ? (
         <section>
           <div class="list">

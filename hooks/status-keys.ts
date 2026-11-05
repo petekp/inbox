@@ -61,15 +61,6 @@ export function milestoneKeyPlan(m: MilestoneRow): StatusKey[] {
   return m.ask === null ? [] : [viewAsk(m.ask)]
 }
 
-/**
- * Whether the goal's buttons draw in the goal's header line, as "Goal · Edit · Remove goal", rather than on their own
- * line: while a goal is set and not met. A met goal offers the next one, so Set next goal stays a button under the
- * milestones.
- */
-export function isGoalKeyInHeader(page: StatusPage): boolean {
-  return page.goal !== null && !page.goal.isMet
-}
-
 const REMOVE_GOAL: StatusKey = {
   press: { action: 'remove-goal' },
   label: 'Remove goal',
@@ -87,16 +78,16 @@ const RESTORE_GOAL: StatusKey = {
 }
 
 /**
- * The goal's buttons: Set a goal before one is set, after Undo while a removed goal can come back, then Edit while one
- * is set, or Set next goal once it is met, then Remove goal. Set a goal, Edit and Remove goal are quiet, since a
- * missing goal holds up no work and a set one needs no change.
+ * The goal's buttons, drawn under the goal's section heading as a row's buttons: Set goal before one is set, after
+ * Undo while a removed goal can come back, then Edit while one is set, or Set next goal once it is met, then Remove
+ * goal. Set goal, Edit and Remove goal are quiet, since a missing goal holds up no work and a set one needs no change.
  */
 export function goalKeyPlan(page: StatusPage): StatusKey[] {
   const g = page.goal
   if (g === null)
     return [
       ...(page.canRestoreGoal ? [RESTORE_GOAL] : []),
-      { press: { action: 'type-goal', text: '' }, label: 'Set a goal', hotkey: 's', kind: 'view', emphasis: 'quiet' },
+      { press: { action: 'type-goal', text: '' }, label: 'Set goal', hotkey: 's', kind: 'view', emphasis: 'quiet' },
     ]
   if (g.isMet)
     return [
@@ -119,17 +110,13 @@ export function goalKeyPlan(page: StatusPage): StatusKey[] {
 const rowTarget = (r: StatusRow): StatusKeyTarget => ({ id: r.id, keys: statusKeyPlan(r) })
 
 /**
- * Everything on the Status page with buttons, in the order the looks draw them: the targets j and k move between. A
- * milestone's rows follow it.
+ * Everything on the Status page with buttons, in the order the looks draw them: the targets j and k move between. The
+ * goal's buttons come first, as its section does, and a milestone's rows follow it.
  */
 export function statusKeyRows(page: StatusPage): StatusKeyTarget[] {
-  const goal = { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) }
-  const isGoalFirst = isGoalKeyInHeader(page)
-
   return [
-    ...(isGoalFirst ? [goal] : []),
+    { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) },
     ...(page.goal?.milestones ?? []).flatMap(m => [{ id: m.id, keys: milestoneKeyPlan(m) }, ...m.rows.map(rowTarget)]),
-    ...(isGoalFirst ? [] : [goal]),
     ...page.rows.map(rowTarget),
   ].filter(t => t.keys.length > 0)
 }
@@ -137,7 +124,7 @@ export function statusKeyRows(page: StatusPage): StatusKeyTarget[] {
 /**
  * The target whose keys work: the selected one while it still has buttons, else the first that opens an ask, else the
  * first that is not a done fold, else the first. An ask holds up work and a missing goal does not, so View wins over
- * Set a goal. A done fold holds up nothing, so Set next goal wins over a milestone's fold above it.
+ * Set goal.
  */
 export function statusSelected(page: StatusPage, selectedId: string | null): StatusKeyTarget | null {
   const targets = statusKeyRows(page)

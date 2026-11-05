@@ -66,12 +66,10 @@ export function paneStatus(
     statusHead,
     markWidth,
     keyLines,
-    terminalKeyCells,
     desktopHairline,
     markGlyph,
     desktopFrame,
     keyRow,
-    textKey,
     emptyState,
     sections,
     section,
@@ -111,7 +109,7 @@ export function paneStatus(
     > &
     Pick<PaneRowLines, 'markWidth' | 'desktopHairline' | 'markGlyph'> &
     Pick<PaneRowFrame, 'desktopFrame'> &
-    Pick<PaneRowKeys, 'keyRow' | 'textKey' | 'keyLines' | 'terminalKeyCells'> &
+    Pick<PaneRowKeys, 'keyRow' | 'keyLines'> &
     Pick<PaneAskTabs, 'emptyState'> &
     Pick<PaneRowParts, 'sections' | 'section' | 'terminalSectionGap' | 'foldRow' | 'foldButton' | 'desktopFoldLines'>,
   handlers: Pick<
@@ -218,12 +216,21 @@ export function paneStatus(
       parts,
     )
   }
-  /** Other work's line: the space above it, its name, then a solid rule to the end of the list's columns. */
-  const statusPartLine = (id: string, text: string) => {
-    const above = gap('part-above')
+  /**
+   * A section's heading, then a solid rule to the end of the list's columns. Other work's has space above it and starts
+   * at the text column. The goal's starts the page, at the goal's text's column.
+   */
+  const statusPartLine = (id: string, text: string, isGoal = false) => {
+    const above = isGoal ? [] : [gap('part-above')]
+    const at = isGoal ? statusMarkAt : statusRuleAt
     const line = oneLine(
       look === 'desktop' ? (
-        <Box flexDirection="row" alignItems="center" marginLeft={desktopStatusRuleLeft} paddingY={statusFrameEdge}>
+        <Box
+          flexDirection="row"
+          alignItems="center"
+          marginLeft={desktopStatusRuleLeft - (isGoal ? DESKTOP_MARK_CELLS : 0)}
+          paddingY={statusFrameEdge}
+        >
           <Box flexShrink={0} paddingRight={1}>
             <Text color={pal.muted}>{text}</Text>
           </Box>
@@ -231,9 +238,9 @@ export function paneStatus(
         </Box>
       ) : (
         <Box flexDirection="row">
-          <Box width={statusRuleAt} flexShrink={0} />
+          <Box width={at} flexShrink={0} />
           <Text color={pal.muted}>{`${text} `}</Text>
-          <Text color={pal.divider}>{'─'.repeat(Math.max(4, statusRuleCells - cellWidth(text) - 1))}</Text>
+          <Text color={pal.divider}>{'─'.repeat(Math.max(4, listColumns - at - cellWidth(text) - 1))}</Text>
         </Box>
       ),
       desktopEdgedLine,
@@ -241,10 +248,10 @@ export function paneStatus(
 
     return stackedIn(
       <Box key={`status-${id}`} flexDirection="column">
-        {above.el}
+        {above.map(p => p.el)}
         {line.el}
       </Box>,
-      [above, line],
+      [...above, line],
     )
   }
   /** One line of the Status tab's list: a mark and its text, `depth` steps in. Each step sits under the text of the row it hangs from. */
@@ -368,7 +375,7 @@ export function paneStatus(
               ? toggleFold(press.foldId)
               : pressGoal(press.action, p.surface),
     }))
-  const { goalAbove, setGoal, setGoalBare, markRun } = paneStatusGoal(
+  const { goalSection, setGoalBare, markRun } = paneStatusGoal(
     {
       e,
       look,
@@ -387,12 +394,10 @@ export function paneStatus(
       desktopBlockWidth,
       markGlyph,
       keyRow,
-      textKey,
-      terminalKeyCells,
       desktopFrame,
     },
     handlers,
-    { statusRowLine, statusKeys, statusRows: rows => statusRows(rows), keysRow },
+    { statusRowLine, statusRows: rows => statusRows(rows), keysRow, statusPartLine },
   )
   const statusMark = (r: Pick<StatusRow & { kind: 'subject' }, 'id' | 'mark' | 'tone' | 'isRunning'>) =>
     markGlyph({ text: r.mark, isRunning: r.isRunning }, r.id, r.tone ? pal.mark[r.tone] : pal.muted)
@@ -523,10 +528,8 @@ export function paneStatus(
         ),
         tops: new Map(),
       }
-    const goal = goalAbove(page)
-    const head = page.goal === null && page.head ? statusHead(page.head) : null
-    const headLines = [...(head ? [head] : []), ...setGoal(page)]
-    const parts = [goal, headLines, ...(page.rows.length > 0 ? [statusRows(page.rows)] : [])]
+    const head = page.goal === null && page.head ? [statusHead(page.head)] : []
+    const parts = [goalSection(page), head, ...(page.rows.length > 0 ? [statusRows(page.rows)] : [])]
     const shown = parts
       .filter(lines => lines.length > 0)
       .map(lines => stackedIn(section(lines.map(p => p.el)), [...desktopSectionPad, ...lines]))

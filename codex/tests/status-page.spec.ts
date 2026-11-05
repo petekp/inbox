@@ -7,6 +7,7 @@ import { parseStatus } from '../../hooks/status'
 import { isSubjectSeen, LOOK_MIN_MS } from '../../hooks/status-children'
 import { applyStatus } from '../../hooks/status-ops'
 import { goalPressed } from '../../hooks/goal-press'
+import { NO_GOAL_TEXT } from '../../hooks/status-goal-page'
 import type { RowPress } from '../../hooks/presses'
 import { recordItem } from '../../hooks/tools'
 import { shownTabs } from '../../hooks/tabs'
@@ -169,6 +170,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
         [...(r.querySelector('.content')?.children ?? [])].map(line => line.textContent),
       ]),
       [
+        [undefined, undefined, []],
         ['mark tone-needsYou', '◆', ['Label · waiting', 'pick one', 'View question']],
         ['mark running', '●', ['omp panel', 'reading the draw code']],
         ['mark done', '✓', ['Page', 'built']],
@@ -177,7 +179,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.deepEqual(
       [...root.querySelectorAll('main button')].map(b => [b.textContent, b.className]),
       [
-        ['Set a goal', 'key ghost'],
+        ['Set goal', 'key ghost'],
         ['View question', 'key'],
       ],
     )
@@ -254,8 +256,10 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.ok(![...root.querySelectorAll('main .mark')].some(m => m.textContent === '◆'))
     assert.deepEqual(
       [...root.querySelectorAll('main button')].map(b => b.textContent),
-      ['Set a goal'],
+      ['Set goal'],
     )
+    assert.equal(root.querySelector('.goal-heading')?.textContent, 'Goal')
+    assert.equal(root.querySelector('.status-head.goal p')?.textContent, NO_GOAL_TEXT)
 
     const withGoal = applyStatus(
       state.ledger.overview,
@@ -274,16 +278,17 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
       await new Promise<void>(resolve => setImmediate(resolve))
       await new Promise<void>(resolve => setImmediate(resolve))
     }
+    assert.equal(root.querySelector('.goal-heading')?.textContent, 'Goal')
     assert.deepEqual(
       [...root.querySelectorAll('.status-head.goal > *')].map(e => e.textContent),
-      ['Goal · Edit · Remove goal', 'Status tab shipped · 1 of 2 done', 'Now: Drawing the Status in the Codex tab'],
+      ['Status tab shipped · 1 of 2 done', 'Now: Drawing the Status in the Codex tab', 'EditRemove goal'],
     )
     assert.equal(root.querySelector('.status-head:not(.goal)'), null)
     assert.deepEqual(buttons(), ['Edit', 'Remove goal'])
     await click('Edit')
     assert.equal((root.querySelector('#type-goal') as HTMLInputElement | null)?.value, 'Status tab shipped')
     assert.equal(root.querySelector('.status-head.goal h1'), null)
-    assert.equal(root.querySelector('.status-head.goal p')?.textContent, 'Goal')
+    assert.equal(root.querySelector('.goal-heading')?.textContent, 'Goal')
     await click('Cancel')
     assert.equal(root.querySelector('#type-goal'), null)
     assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab shipped · 1 of 2 done')
@@ -296,7 +301,10 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.deepEqual(presses.at(-1), { action: 'type', id: 'goal', text: 'Status tab in the store' })
     assert.equal(root.querySelector('#type-goal'), null)
     assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab in the store')
-    assert.equal(root.querySelector('.status-head.goal p:last-child')?.textContent, 'Milestones after the next reply')
+    assert.equal(
+      [...root.querySelectorAll('.status-head.goal p')].at(-1)?.textContent,
+      'Milestones after the next reply',
+    )
 
     await click('Remove goal')
     assert.deepEqual(presses.at(-1), { action: 'remove-goal', id: 'goal' })

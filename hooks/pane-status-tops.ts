@@ -74,7 +74,7 @@ export const desktopSpaceLines = (cells: number) => cells / 2
 export const desktopFrameLines = (padY: number) => exactly(2 * desktopSpaceLines(padY) + 2 * DESKTOP_HAIR_LINES)
 
 /** A line of native buttons on desktop: as tall as a button, and at least a line of text. */
-export const DESKTOP_BUTTON_LINES = DESKTOP_BUTTON_PT / DESKTOP_ROW_PT
+const DESKTOP_BUTTON_LINES = DESKTOP_BUTTON_PT / DESKTOP_ROW_PT
 
 /**
  * The lines a desktop Box that wraps items `widthsPt` wide, `gapPt` apart, takes in a column about `widthPt` wide. Each

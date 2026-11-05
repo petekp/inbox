@@ -31,7 +31,7 @@ import { FINDING_GROUPS, HELP_COPY, helpKeys, markLegend } from '../../hooks/hel
 import { isDrawnInPlace, runningMark } from '../../hooks/timing'
 import { isRowTab } from '../../hooks/tabs'
 import { statusKeyRows } from '../../hooks/status-keys'
-import { goalAbove, setGoal } from './panel-goal'
+import { goalSection, setGoal } from './panel-goal'
 import { unfoldedRows } from '../../hooks/status-page-parts'
 import type { StatusPage } from '../../hooks/status-page'
 import type { ShownTab } from '../../hooks/tabs'
@@ -277,9 +277,7 @@ function pageEntries(page: StatusPage, typing: string | null, isUnfolded: (id: s
           ...(description ? [{ kind: 'note' as const, text: description, indent: PAGE_MARK_AT }] : []),
         ]
       : []
-  const above = goalAbove(page, typing, isUnfolded)
-  const under = [...head, ...setGoal(page, typing)]
-  const top = above.length > 0 && under.length > 0 ? [...above, blank, ...under] : [...above, ...under]
+  const top = [...goalSection(page, typing, isUnfolded), ...(head.length > 0 ? [blank, ...head] : [])]
   const rows = unfoldedRows(page.rows, isUnfolded).map((row): Entry => ({ kind: 'page', row }))
 
   return top.length > 0 && rows.length > 0 ? [...top, blank, ...rows] : [...top, ...rows]

@@ -1640,9 +1640,6 @@ function statusKeyPlan(row) {
 function milestoneKeyPlan(m) {
   return m.ask === null ? [] : [viewAsk(m.ask)];
 }
-function isGoalKeyInHeader(page) {
-  return page.goal !== null && !page.goal.isMet;
-}
 var REMOVE_GOAL = {
   press: { action: "remove-goal" },
   label: "Remove goal",
@@ -1662,7 +1659,7 @@ function goalKeyPlan(page) {
   if (g === null)
     return [
       ...page.canRestoreGoal ? [RESTORE_GOAL] : [],
-      { press: { action: "type-goal", text: "" }, label: "Set a goal", hotkey: "s", kind: "view", emphasis: "quiet" }
+      { press: { action: "type-goal", text: "" }, label: "Set goal", hotkey: "s", kind: "view", emphasis: "quiet" }
     ];
   if (g.isMet)
     return [
@@ -1682,12 +1679,9 @@ function goalKeyPlan(page) {
 }
 var rowTarget = (r) => ({ id: r.id, keys: statusKeyPlan(r) });
 function statusKeyRows(page) {
-  const goal = { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) };
-  const isGoalFirst = isGoalKeyInHeader(page);
   return [
-    ...isGoalFirst ? [goal] : [],
+    { id: GOAL_KEYS_ID, keys: goalKeyPlan(page) },
     ...(page.goal?.milestones ?? []).flatMap((m) => [{ id: m.id, keys: milestoneKeyPlan(m) }, ...m.rows.map(rowTarget)]),
-    ...isGoalFirst ? [] : [goal],
     ...page.rows.map(rowTarget)
   ].filter((t) => t.keys.length > 0);
 }
@@ -1896,6 +1890,8 @@ function textMark(mark) {
 
 // ../hooks/status-goal-page.ts
 var AWAITING_TEXT = "Milestones after the next reply";
+var GOAL_HEADING = "Goal";
+var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
 function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
@@ -1936,7 +1932,7 @@ function goalPage(o, items) {
   const head = o.head;
   return {
     goal: {
-      label: isMet ? "Goal met" : "Goal",
+      label: isMet ? "Goal met" : GOAL_HEADING,
       text: g.text,
       count: isMet || isAwaiting ? null : `${done} of ${kept.length} done`,
       isMet,
@@ -5498,6 +5494,10 @@ function withTree(lines, at, first, rest, s) {
 function pageRuleCells(width, textAt = PAGE_TEXT_AT) {
   return Math.max(0, width - textAt - 1);
 }
+function partHeading(text, width, s, at = PAGE_TEXT_AT) {
+  const label = `${text} `;
+  return `${" ".repeat(at)}${s.dim(label + "\u2500".repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label))))}`;
+}
 function pageRule(width, s) {
   return `${" ".repeat(PAGE_TEXT_AT)}${s.dim("\u2500".repeat(pageRuleCells(width)))}`;
 }
@@ -5553,13 +5553,8 @@ function drawPageRow(row, d, isSelected = false) {
   }
   if (row.kind === "look")
     return lookLines(row, width, s);
-  if (row.kind === "part") {
-    const label = `${row.text} `;
-    return [
-      "",
-      `${" ".repeat(PAGE_TEXT_AT)}${s.dim(label + "\u2500".repeat(Math.max(4, pageRuleCells(width) - cellWidth(label))))}`
-    ];
-  }
+  if (row.kind === "part")
+    return ["", partHeading(row.text, width, s)];
   if (row.kind === "counts")
     return countLines(row.counts, textAt, width, s);
   return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim);
@@ -5587,29 +5582,25 @@ function countLines(counts, textAt, width, s) {
 function goalPartId(part) {
   if (part.is === "milestone")
     return part.row.id;
-  if (part.is === "title")
-    return part.isKeyInHeader && !part.isTyping ? GOAL_KEYS_ID : null;
   return part.is === "keys" ? GOAL_KEYS_ID : null;
 }
 var goalEntry = (part) => ({ kind: "goal", part });
-function goalAbove(page, typing, isUnfolded) {
+function goalSection(page, typing, isUnfolded) {
   const isTyping = typing === GOAL_KEYS_ID;
   const g = page.goal;
-  if (g === null)
-    return [];
-  const isKeyInHeader = isGoalKeyInHeader(page);
+  const milestones = g?.milestones ?? [];
   return [
-    goalEntry({ is: "title", goal: g, page, isTyping, isKeyInHeader }),
-    ...g.milestones.flatMap((row) => [
+    goalEntry({ is: "heading", text: g?.label ?? GOAL_HEADING }),
+    goalEntry({ is: "title", goal: g, isTyping }),
+    ...isTyping ? [] : [goalEntry({ is: "keys", page })],
+    ...milestones.length > 0 ? [goalEntry({ is: "gap" })] : [],
+    ...milestones.flatMap((row) => [
       goalEntry({ is: "milestone", row }),
       ...unfoldedRows(row.rows, isUnfolded).map((r) => ({ kind: "page", row: r }))
-    ]),
-    ...isTyping || isKeyInHeader ? [] : [goalEntry({ is: "keys", page })]
+    ])
   ];
 }
 function setGoal(page, typing) {
-  if (page.goal !== null)
-    return [];
   return [goalEntry(typing === GOAL_KEYS_ID ? { is: "field" } : { is: "keys", page })];
 }
 function fieldLines(d) {
@@ -5632,17 +5623,18 @@ function textWithCount(g, d) {
 function drawGoalPart(part, d, isSelected) {
   const { width, now, style: s } = d;
   const at = (text, paint, lines = STATUS_TEXT_LINES) => indented(text, PAGE_MARK_AT, width, lines, paint);
+  if (part.is === "heading")
+    return [partHeading(part.text, width, s, PAGE_MARK_AT)];
+  if (part.is === "gap")
+    return [""];
   if (part.is === "title") {
     const g = part.goal;
-    const keys = part.isKeyInHeader && !part.isTyping ? goalKeyPlan(part.page) : [];
-    const keyCells = pageButtonLines({ id: GOAL_KEYS_ID, keys }, d, isSelected, 1).join("");
-    const header = keys.length > 0 ? [`${" ".repeat(PAGE_MARK_AT)}${s.dim(`${g.label} \xB7`)}${keyCells}`] : at(g.label, s.dim);
+    const text = part.isTyping ? fieldLines(d) : g ? textWithCount(g, d) : at(NO_GOAL_TEXT, s.dim);
     return [
-      ...header,
-      ...part.isTyping ? fieldLines(d) : textWithCount(g, d),
-      ...g.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [],
-      ...g.now ? at(g.now, s.dim) : [],
-      ...g.awaiting ? at(g.awaiting, s.dim) : []
+      ...text,
+      ...g?.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [],
+      ...g?.now ? at(g.now, s.dim) : [],
+      ...g?.awaiting ? at(g.awaiting, s.dim) : []
     ];
   }
   if (part.is === "milestone") {
@@ -6047,9 +6039,7 @@ function pageEntries(page, typing, isUnfolded) {
     { kind: "note", text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
     ...description ? [{ kind: "note", text: description, indent: PAGE_MARK_AT }] : []
   ] : [];
-  const above = goalAbove(page, typing, isUnfolded);
-  const under = [...head, ...setGoal(page, typing)];
-  const top = above.length > 0 && under.length > 0 ? [...above, blank, ...under] : [...above, ...under];
+  const top = [...goalSection(page, typing, isUnfolded), ...head.length > 0 ? [blank, ...head] : []];
   const rows = unfoldedRows(page.rows, isUnfolded).map((row) => ({ kind: "page", row }));
   return top.length > 0 && rows.length > 0 ? [...top, blank, ...rows] : [...top, ...rows];
 }
