@@ -236,7 +236,7 @@ export function paneAskTabs(
         ]
       : []
     if (isNothing && !stop && unread.length === 0)
-      return emptyState(emptyText('needsYou', 'Claude', isMaybeStale(view)))
+      return emptyState(emptyText('needsYou', 'Claude', isMaybeStale(view, isUnread)))
     const outside = stop
       ? [
           section(
@@ -266,7 +266,7 @@ export function paneAskTabs(
   const findingsView = () => {
     const settled = settledIn(findingEntries)
     if (findingEntries.length === 0 && closedTotal(view.findings.closed, settled) === 0)
-      return emptyState(emptyText('findings', 'Claude', isMaybeStale(view)))
+      return emptyState(emptyText('findings', 'Claude', isMaybeStale(view, isUnread)))
     const groups = lists.findingGroups.map(g => {
       const closedOf = view.findings.closed.filter(f => f.kind === g.kind)
       const closed = closedShown(closedOf, settled).map(f => ({

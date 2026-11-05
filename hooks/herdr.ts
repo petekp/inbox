@@ -155,13 +155,14 @@ export function herdrTokens(
   stop: Stop | null,
   view: SessionView,
   dialogs: readonly Dialog[],
+  isReadFailed = false,
 ): HerdrTokens {
   const input: StatusInput = {
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
     focus: focusOf(ledger.overview?.head ?? null),
-    stale: bandCounts(view).length === 0 && isMaybeStale(view) ? MAYBE_STALE_TEXT : null,
+    stale: bandCounts(view).length === 0 && isMaybeStale(view, isReadFailed) ? MAYBE_STALE_TEXT : null,
   }
   const focus = input.focus ? clipLabel(input.focus, HERDR_VALUE_CHARS) : null
   const counts = ROW_TABS.map(t => {

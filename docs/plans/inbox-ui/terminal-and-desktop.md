@@ -23,7 +23,7 @@ May be out of date                                      [Open inbox]
 Demo: Asks 7 · Finds 4                      [Hide demo] [Open inbox]
 ```
 
-A count of zero drops out. With no counts, the line reads "Nothing needed", or "May be out of date" while an update has failed or is being retried, or the inbox could not be read. The Asks and Finds empty states take the same title then. During `/inbox demo` the line starts with "Demo:", so the sample counts do not pass for real ones.
+A count of zero drops out. With no counts, the line reads "Nothing needed", or "May be out of date" while an update has failed or is being retried, or the inbox could not be read. The Asks and Finds empty states take the same title then. A failed Status update does not change the band: the band counts asks, findings and PRs, and the Status page shows its own warning. During `/inbox demo` the line starts with "Demo:", so the sample counts do not pass for real ones.
 
 A stop draws a second line under the counts, so [Open inbox] does not move. It starts with "Stopped 1m ago:" in red. An API error adds [Resume], which reads "Resuming…" under the same key while it sends.
 

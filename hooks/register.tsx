@@ -355,10 +355,16 @@ function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
       const pane = await $.env.get('HERDR_PANE_ID')
       if (!pane) return null
       if (isEnding) return { pane, tokens: CLEARED_TOKENS }
-      const [session, dialogs, now] = await Promise.all([read($, SESSION), read($, DIALOGS), $.clock.now()])
+      const [session, dialogs, unreadable, now] = await Promise.all([
+        read($, SESSION),
+        read($, DIALOGS),
+        read($, UNREADABLE),
+        $.clock.now(),
+      ])
       const view = sessionView(session, now, SETTLED_MS)
+      const isUnread = unreadable === conversation.id
 
-      return { pane, tokens: herdrTokens(session.ledger, session.stop, view, dialogs) }
+      return { pane, tokens: herdrTokens(session.ledger, session.stop, view, dialogs, isUnread) }
     },
     (ms, fn) => void $.clock.after(ms, fn),
   )

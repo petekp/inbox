@@ -93,7 +93,7 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
         }))
   const stops = tab === 'needsYou' ? stopEntries(screen, ui) : []
   if (groups.every(isGroupEmpty)) {
-    const empty = emptyText(tab, AGENT, isMaybeStale(view))
+    const empty = emptyText(tab, AGENT, isMaybeStale(view, screen.isReadFailed))
 
     return stops.length > 0
       ? stops

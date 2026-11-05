@@ -2499,13 +2499,13 @@ function statusLine(stop, dialogs, input) {
 function focusOf(head) {
   return head ? head.description || head.title : null;
 }
-function herdrTokens(ledger, stop, view, dialogs) {
+function herdrTokens(ledger, stop, view, dialogs, isReadFailed = false) {
   const input = {
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
     focus: focusOf(ledger.overview?.head ?? null),
-    stale: bandCounts(view).length === 0 && isMaybeStale(view) ? MAYBE_STALE_TEXT : null
+    stale: bandCounts(view).length === 0 && isMaybeStale(view, isReadFailed) ? MAYBE_STALE_TEXT : null
   };
   const focus = input.focus ? clipLabel(input.focus, HERDR_VALUE_CHARS) : null;
   const counts = ROW_TABS.map((t) => {
@@ -5850,7 +5850,7 @@ function rowEntries(screen, ui, tab) {
   }));
   const stops = tab === "needsYou" ? stopEntries(screen, ui) : [];
   if (groups.every(isGroupEmpty)) {
-    const empty = emptyText(tab, AGENT, isMaybeStale(view));
+    const empty = emptyText(tab, AGENT, isMaybeStale(view, screen.isReadFailed));
     return stops.length > 0 ? stops : [
       { kind: "note", text: empty.title, isStrong: true },
       { kind: "note", text: empty.hint, isWhole: true }
@@ -6591,7 +6591,7 @@ function tallestTabHeight(screen, ui, width, now, style, height) {
 }
 function bandLines(screen, width, now, style) {
   const counts = bandCounts(screen.view).map((c) => `${c.label} ${style.tone(c.id, String(c.count))}`);
-  const left = ` ${counts.length > 0 ? counts.join(` ${style.tone("sep", "\xB7")} `) : style.dim(noCountsText(screen.view))}`;
+  const left = ` ${counts.length > 0 ? counts.join(` ${style.tone("sep", "\xB7")} `) : style.dim(noCountsText(screen.view, screen.isReadFailed))}`;
   const countLine = spread(left, style.dim("/inbox to open "), width);
   const { stop } = screen;
   if (!stop)
@@ -6642,8 +6642,15 @@ function createPanel(deps) {
   async function refresh(pressedId) {
     const mine = ++version;
     const next = await source.screen(holdsOf(ui)).catch(() => null);
-    if (mine !== version || next === null)
+    if (mine !== version)
       return;
+    if (next === null) {
+      if (screen && !screen.isReadFailed) {
+        screen = { ...screen, isReadFailed: true };
+        deps.requestRender();
+      }
+      return;
+    }
     screen = next;
     const followed = followRows(next, ui, seen, isOpening, deps.now());
     ui = pressedId === undefined ? followed.ui : afterHandOff(next, followed.ui, pressedId, deps.now());
@@ -8520,10 +8527,12 @@ function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overvi
   };
 }
 var REFUSED_ANSWER_CHARS = 500;
-function failedStatus(s, text, appliedAfter, now) {
+function failedStatus(s, text, appliedAfter, now, isCatchUp = false) {
   if (!isStatusCallCurrent(s, appliedAfter))
     return s;
-  const failure = text === null ? { at: now, cause: "no-answer", answer: null } : { at: now, cause: "refused", answer: text.slice(0, REFUSED_ANSWER_CHARS) };
+  const before = s.overviewFailure;
+  const tries = isCatchUp ? { catchUpsFailed: (before?.catchUpsFailed ?? 0) + 1, catchUpTurn: s.presence.turnsStarted } : before?.catchUpsFailed ? { catchUpsFailed: before.catchUpsFailed, catchUpTurn: before.catchUpTurn ?? 0 } : {};
+  const failure = text === null ? { at: now, cause: "no-answer", answer: null, ...tries } : { at: now, cause: "refused", answer: text.slice(0, REFUSED_ANSWER_CHARS), ...tries };
   return { ...s, overviewFailure: failure, lastOverviewCallAt: now, overviewTurn: appliedAfter };
 }
 var STATUS_REFRESH_MS = 10 * 60000;
@@ -8536,7 +8545,9 @@ function claimedStatusRefresh(s, now) {
 function needsCatchUp(s) {
   const { presence } = s;
   const hasUnappliedTurn = s.pending.length === 0 && s.turn.person === null && presence.turnsStarted > presence.turnsApplied;
-  const hasMissedStatus = s.overviewFailure !== null && (s.pending.length > 0 || hasUnappliedTurn);
+  const failure = s.overviewFailure;
+  const isStatusCatchUpDue = failure !== null && (!failure.catchUpsFailed || presence.turnsStarted - (failure.catchUpTurn ?? 0) >= 2 ** failure.catchUpsFailed);
+  const hasMissedStatus = isStatusCatchUpDue && (s.pending.length > 0 || hasUnappliedTurn);
   return presence.ledgerState !== "current" || hasUnappliedTurn || hasMissedStatus;
 }
 function needsUpdate(s) {
@@ -8942,7 +8953,7 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
     before = x.ledger.overview;
     isWritten = isStatusCallCurrent(x, appliedAfter);
     const readSetAt = input.last?.goal?.setAt ?? null;
-    return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now, readSetAt, call.exchange.kind === "catch-up");
+    return answer === null ? failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === "catch-up") : appliedStatus(x, answer, appliedAfter, now, readSetAt, call.exchange.kind === "catch-up");
   });
   if (!host.records)
     return;
@@ -10504,7 +10515,10 @@ function createInbox(pi, deps = defaultDeps) {
         screen = next;
         tui.requestRender();
       }).catch(() => {
-        return;
+        if (screen && !screen.isReadFailed) {
+          screen = { ...screen, isReadFailed: true };
+          tui.requestRender();
+        }
       });
       refresh();
       const stop = inbox.onChange(ctx, () => void refresh());

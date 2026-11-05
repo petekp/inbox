@@ -38,6 +38,8 @@ export type PanelScreen = {
   version: string
   isNextBuild?: boolean
   isDemo?: boolean
+  /** The last read of the session failed, so the screen is the one before it. */
+  isReadFailed?: boolean
 }
 
 export type Tone = ToneName | 'accent' | 'sep'
@@ -304,7 +306,7 @@ export function tallestTabHeight(
 /** The band above the prompt: the counts, and under them why the last turn stopped. */
 export function bandLines(screen: PanelScreen, width: number, now: number, style: Style): string[] {
   const counts = bandCounts(screen.view).map(c => `${c.label} ${style.tone(c.id, String(c.count))}`)
-  const left = ` ${counts.length > 0 ? counts.join(` ${style.tone('sep', '·')} `) : style.dim(noCountsText(screen.view))}`
+  const left = ` ${counts.length > 0 ? counts.join(` ${style.tone('sep', '·')} `) : style.dim(noCountsText(screen.view, screen.isReadFailed))}`
   const countLine = spread(left, style.dim('/inbox to open '), width)
   const { stop } = screen
   if (!stop) return [countLine]

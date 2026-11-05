@@ -3507,16 +3507,20 @@ function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overvi
   };
 }
 var REFUSED_ANSWER_CHARS = 500;
-function failedStatus(s, text2, appliedAfter, now) {
+function failedStatus(s, text2, appliedAfter, now, isCatchUp = false) {
   if (!isStatusCallCurrent(s, appliedAfter)) return s;
-  const failure = text2 === null ? { at: now, cause: "no-answer", answer: null } : { at: now, cause: "refused", answer: text2.slice(0, REFUSED_ANSWER_CHARS) };
+  const before = s.overviewFailure;
+  const tries = isCatchUp ? { catchUpsFailed: (before?.catchUpsFailed ?? 0) + 1, catchUpTurn: s.presence.turnsStarted } : before?.catchUpsFailed ? { catchUpsFailed: before.catchUpsFailed, catchUpTurn: before.catchUpTurn ?? 0 } : {};
+  const failure = text2 === null ? { at: now, cause: "no-answer", answer: null, ...tries } : { at: now, cause: "refused", answer: text2.slice(0, REFUSED_ANSWER_CHARS), ...tries };
   return { ...s, overviewFailure: failure, lastOverviewCallAt: now, overviewTurn: appliedAfter };
 }
 var STATUS_REFRESH_MS = 10 * 6e4;
 function needsCatchUp(s) {
   const { presence } = s;
   const hasUnappliedTurn = s.pending.length === 0 && s.turn.person === null && presence.turnsStarted > presence.turnsApplied;
-  const hasMissedStatus = s.overviewFailure !== null && (s.pending.length > 0 || hasUnappliedTurn);
+  const failure = s.overviewFailure;
+  const isStatusCatchUpDue = failure !== null && (!failure.catchUpsFailed || presence.turnsStarted - (failure.catchUpTurn ?? 0) >= 2 ** failure.catchUpsFailed);
+  const hasMissedStatus = isStatusCatchUpDue && (s.pending.length > 0 || hasUnappliedTurn);
   return presence.ledgerState !== "current" || hasUnappliedTurn || hasMissedStatus;
 }
 var pendingKey = (p) => `${p.turnsStarted}:${p.ex.turn}`;
@@ -3639,13 +3643,13 @@ function statusLine(stop, dialogs, input) {
 function focusOf(head) {
   return head ? head.description || head.title : null;
 }
-function herdrTokens(ledger, stop, view, dialogs) {
+function herdrTokens(ledger, stop, view, dialogs, isReadFailed = false) {
   const input = {
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
     focus: focusOf(ledger.overview?.head ?? null),
-    stale: bandCounts(view).length === 0 && isMaybeStale(view) ? MAYBE_STALE_TEXT : null
+    stale: bandCounts(view).length === 0 && isMaybeStale(view, isReadFailed) ? MAYBE_STALE_TEXT : null
   };
   const focus = input.focus ? clipLabel(input.focus, HERDR_VALUE_CHARS) : null;
   const counts = ROW_TABS.map((t) => {
@@ -4152,7 +4156,7 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
     before = x.ledger.overview;
     isWritten = isStatusCallCurrent(x, appliedAfter);
     const readSetAt = input.last?.goal?.setAt ?? null;
-    return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now, readSetAt, call.exchange.kind === "catch-up");
+    return answer === null ? failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === "catch-up") : appliedStatus(x, answer, appliedAfter, now, readSetAt, call.exchange.kind === "catch-up");
   });
   if (!host.records) return;
   const record2 = {

@@ -58,6 +58,7 @@ test('the band shows the counts with their labels at full brightness, and how to
   const failed = { ...empty, view: { ...empty.view, status: { ...empty.view.status, error: 'failed' } } }
   expect(strip(bandLines(failed, 80, NOW, style)[0]!)).toContain('May be out of date')
   expect(text(failed, INITIAL_UI)).toContain('May be out of date')
+  expect(strip(bandLines({ ...empty, isReadFailed: true }, 80, NOW, style)[0]!)).toContain('May be out of date')
 })
 
 test('no drawn line is wider than the panel, and a short panel keeps the selected row in view', () => {
