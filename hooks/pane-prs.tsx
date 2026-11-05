@@ -14,7 +14,6 @@ import { prRankText } from './pr-order'
 import type { PrAction, PrPress } from './pr-press'
 import {
   checkRowText,
-  DISMISS_MERGED_ID,
   ghNoticeOf,
   PR_GROUP_TITLES,
   PR_QUOTE_CHARS,
@@ -72,9 +71,10 @@ export function panePrRows(
     }
   }
   const checkRow = (pr: PrView, c: PrCheck): Row => {
-    const { mark, lead, title, meta } = checkRowText(c)
+    const { mark, lead, title, meta, fold } = checkRowText(pr, c)
     return {
       id: prCheckId(pr, c),
+      ...(fold ? { fold } : {}),
       handle: mark.text,
       handleTone: mark.tone ?? undefined,
       isMarkDone: mark.isDone,
@@ -171,7 +171,6 @@ export function panePrBlocks({
   Button,
   view,
   prOrderKeys,
-  prTabKeys,
   prGroups,
   section,
   undoPlace,
@@ -204,7 +203,6 @@ export function panePrBlocks({
   | 'Button'
   | 'view'
   | 'prOrderKeys'
-  | 'prTabKeys'
   | 'prGroups'
 > &
   Pick<PaneRowParts, 'section' | 'undoPlace' | 'settledContent' | 'groupTitle' | 'titleGap' | 'sections'> &
@@ -259,7 +257,7 @@ export function panePrBlocks({
   const prBlock = (b: DrawnPr & { rows: Row[]; checks: Row[]; cancelled: Row[]; threads: Row[] }) => {
     if (b.state.is === 'settled') return settledPrBlock(b.pr, b.state)
     const { pr, checks, cancelled, threads } = b
-    const { status, head: statusHead, unlisted } = readiness(pr, isThreadSent)
+    const { status, head: statusHead, unlisted } = readiness(pr, isThreadSent, 'Claude')
     const tone = PR_TONES[status]
     const isPrLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
     const prLast = isPrLastShown ? lastActionText(prMarkId(pr.ref)) : null
@@ -369,8 +367,6 @@ export function panePrBlocks({
 
     return prTabLine('pr-order', lines)
   }
-  const prTabButtons = () =>
-    prTabKeys.length === 0 ? [] : prTabLine('pr-tab-actions', keyRow(DISMISS_MERGED_ID, prTabKeys))
   const prsView = () =>
     prGroups.length === 0 ? (
       <Box flexDirection="column" flexGrow={1}>
@@ -382,7 +378,6 @@ export function panePrBlocks({
           ...(ghNotice ? [section(banner(bannerOf(ghNotice.kind, ghNotice.text)))] : []),
           ...prOrderLines(),
           ...prGroups.map(prBlock),
-          ...prTabButtons(),
           ...olderPrs(),
         ],
         2,

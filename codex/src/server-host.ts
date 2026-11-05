@@ -12,7 +12,7 @@ import type { RowPress } from '../../hooks/presses'
 import { turnEnded, turnStarted } from '../../hooks/session-turns'
 import type { SendOutcome } from '../../hooks/session-presses'
 import { fetchPrs, prFetchTracker } from '../../hooks/host-prs'
-import { press, wakeForDone as wakeSessionForDone } from '../../hooks/host-press'
+import { press, wakeAfterSettle as wakeSessionAfterSettle } from '../../hooks/host-press'
 import type { SessionHost } from '../../hooks/session-host'
 import { NO_HOLDS } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
@@ -114,8 +114,8 @@ export function makeSessionHost(
     })
   }
 
-  const wakeForDone = async (id: string) => {
-    await wakeSessionForDone(hostFor(id), await syncTurn(id))
+  const wakeAfterSettle = async (id: string) => {
+    await wakeSessionAfterSettle(hostFor(id), await syncTurn(id))
   }
 
   function fetchPrsWhenDue(id: string, s: SessionState) {
@@ -160,8 +160,9 @@ export function makeSessionHost(
     if (!isPrPress(p) && (p.action === 'answer' || p.action === 'type'))
       await linkRunningDialogs(id, p.id).catch(() => undefined)
     const outcome = await press(hostFor(id), p, thread !== id, holds)
-    if (outcome.wakesForDone) setTimeout(() => void wakeForDone(id).catch(() => undefined), SETTLE_WINDOW_MS).unref()
-    const { isUnconfirmed, wakesForDone: _wakes, ...rest } = outcome
+    if (outcome.wakesAfterSettle)
+      setTimeout(() => void wakeAfterSettle(id).catch(() => undefined), SETTLE_WINDOW_MS).unref()
+    const { isUnconfirmed, wakesAfterSettle: _wakes, ...rest } = outcome
 
     return {
       view: await served(await readState(dir, id), id, false, holds),
@@ -180,5 +181,5 @@ export function makeSessionHost(
   }
   const open = (s: SessionState, target: string) => openTarget(deps.exec, files, target, s.root, s.home)
 
-  return { wakeForDone, fetchPrsWhenDue, served, onPress }
+  return { wakeAfterSettle, fetchPrsWhenDue, served, onPress }
 }

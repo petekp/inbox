@@ -1,5 +1,4 @@
 import { prMarkId } from '../../hooks/pr-rows'
-import type { PrAction } from '../../hooks/pr-press'
 import type { TabView as View } from './core'
 import { stepRow } from './rows'
 import type { RowTarget, RowTrack } from './rows'
@@ -33,21 +32,16 @@ export type DrawnPrBlock = PrBlockPlan & {
  */
 export type OpenPrBlock = { block: DrawnPrBlock; tracks: Map<string, RowTrack> }
 
-/**
- * The PRs tab as the tab draws it: its blocks, the rows the view lists, the open row, and the tab's own buttons,
- * which keep their last actions while they leave.
- */
+/** The PRs tab as the tab draws it: its blocks, the rows the view lists, and the open row. */
 export type DrawnPrs = {
   blocks: DrawnPrBlock[]
   rows: Row[]
   openId: string | undefined
-  tabActions: PrAction[] | null
 }
 
 export const prBlockMotion = (blockId: string) => `block-${blockId}`
 export const prGroupMotion = (blockId: string, group: PrGroup) => `group-${blockId}-${group}`
 export const prLineMotion = (blockId: string) => `line-${blockId}`
-export const PR_TAB_ACTIONS_MOTION = 'pr-tab-actions'
 
 /**
  * Steps every PR block, row, group and press line the PRs tab draws through the row states, as `stepLists` does for
@@ -115,8 +109,5 @@ export function stepPrs(v: View, now: number, changed: Set<string>, kept: Set<st
 
     return [{ ...b, drawn: empty, line: null, wasOpen: track.hasPanel ? (wasOpen ?? null) : null }]
   })
-  const tabActions = v.prs.tabActions.length > 0 ? v.prs.tabActions : (last?.tabActions ?? [])
-  const isTabActionsShown = step(PR_TAB_ACTIONS_MOTION, v.prs.tabActions.length > 0 ? 'closed' : 'gone', last !== null)
-
-  return { blocks: drawnBlocks, rows, openId, tabActions: isTabActionsShown ? tabActions : null }
+  return { blocks: drawnBlocks, rows, openId }
 }

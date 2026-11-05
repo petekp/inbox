@@ -67,7 +67,7 @@ import { heardCall } from './call-record'
 import { fetchPrs as fetchSessionPrs, isPrFetchDue } from './host-prs'
 import { tabPrs } from './pr-fetch'
 import { refreshStatus, type StatusCall, type StatusRecords, type RecordFiles } from './status-records'
-import { startPress, wakeForDone as wakeSessionForDone } from './host-press'
+import { startPress, wakeAfterSettle as wakeSessionAfterSettle } from './host-press'
 import type { Ask, CatchUpReply, SessionHost } from './session-host'
 import { callReport, MODEL } from './inbox-model'
 import { demoView, isDemoCopy } from './demo'
@@ -75,7 +75,7 @@ import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
 import { isPrPress, pressRowId, type Applied, type PrPress } from './pr-press'
 import { openPrViews } from './pr-views'
-import { prBlockRows, prMarkId, threadSentIn } from './pr-rows'
+import { prBlockRows, threadSentIn } from './pr-rows'
 import { prRefs, prNeedsYou } from './prs'
 import { EMPTY, isBlankLedger } from './ledger'
 import { closeItem } from './ledger-close'
@@ -106,8 +106,9 @@ import { openTarget, type PathProbe } from './open-targets'
 import type { RowPress } from './presses'
 import { statusKeyRows, statusSelected } from './status-keys'
 import { footerStatus } from './view'
-import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, type RowView } from './rows'
+import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, resumeLabel, type RowView } from './rows'
 import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf, NEXT_BUILD_MARK } from './banners'
+import { bandCounts, isMaybeStale, noCountsText } from './band'
 import {
   drawnLists,
   rowKeyPlan,
@@ -123,7 +124,6 @@ import {
 import {
   isRowTab,
   isShownTab,
-  LISTED_TABS,
   screenTabOf,
   shownTabs,
   drawnTabOf,
@@ -291,6 +291,8 @@ const AWAY = atom({ plugin: 'inbox', key: 'away' } as const, PRESENT)
 const UNREADABLE = atom({ plugin: 'inbox', key: 'unreadable' } as const, null as string | null)
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as FoldKind[])
 const STATUS_UNFOLDED = atom({ plugin: 'inbox', key: 'statusUnfolded' } as const, [] as string[])
+/** The Closed folds whose earlier lines the person opened. */
+const CLOSED_ALL = atom({ plugin: 'inbox', key: 'closedAll' } as const, [] as FoldKind[])
 const FOLD_HOVER = atom({ plugin: 'inbox', key: 'foldHover' } as const, null as string | null)
 const OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
 /** Switching tabs or closing the pane closes Help. */
@@ -355,10 +357,16 @@ function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
       const pane = await $.env.get('HERDR_PANE_ID')
       if (!pane) return null
       if (isEnding) return { pane, tokens: CLEARED_TOKENS }
-      const [session, dialogs, now] = await Promise.all([read($, SESSION), read($, DIALOGS), $.clock.now()])
+      const [session, dialogs, unreadable, now] = await Promise.all([
+        read($, SESSION),
+        read($, DIALOGS),
+        read($, UNREADABLE),
+        $.clock.now(),
+      ])
       const view = sessionView(session, now, SETTLED_MS)
+      const isUnread = unreadable === conversation.id
 
-      return { pane, tokens: herdrTokens(session.ledger, session.stop, view, dialogs) }
+      return { pane, tokens: herdrTokens(session.ledger, session.stop, view, dialogs, isUnread) }
     },
     (ms, fn) => void $.clock.after(ms, fn),
   )
@@ -1111,6 +1119,7 @@ function openPane($: EngineInterface, isFieldOpen = false) {
     .then(async () => {
       await syncShown($, { isOpen: true })
       await syncLook($, true)
+      await wakeForHeldSends($)
     })
     .catch(() => undefined)
 
@@ -1675,9 +1684,20 @@ async function pollPrs($: EngineInterface) {
 }
 
 /** Takes a dismissed PR off the tab once its row settles, unless it is still tracked or the Dismiss was undone. */
-/** Tells Claude about rows closed with Done once their settle window has passed, unless a turn runs. */
-async function wakeForDone($: EngineInterface) {
-  await wakeSessionForDone(hostOf($, currentOwner()))
+/** Sends the answers and Fixes held for Undo, and tells Claude about rows closed with Done, once their settle window has passed. */
+async function wakeAfterSettle($: EngineInterface) {
+  await wakeSessionAfterSettle(hostOf($, currentOwner()))
+}
+
+/**
+ * Sends the held messages that are due, and wakes again when the next one falls due. A load or a pane opening calls
+ * it, since the timer a press started does not survive a reload.
+ */
+async function wakeForHeldSends($: EngineInterface) {
+  await wakeAfterSettle($)
+  const [{ lastActions }, now] = await Promise.all([read($, SESSION), $.clock.now()])
+  const dueTimes = Object.values(lastActions).flatMap(a => (a.delivery?.state === 'held' ? [a.delivery.until] : []))
+  if (dueTimes.length > 0) later($, Math.max(0, Math.min(...dueTimes) - now), () => wakeAfterSettle($))
 }
 
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
@@ -1738,13 +1758,13 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   const canRevealUndo = undoKey !== null && undoRevision === paneState.undoScrollRevision
   const { isMoved, undoBlock } = await openAfterClose($, rowId, wasWaiting, canRevealUndo)
   if (canRevealUndo) await keepUndoVisible($, undoKey, undoBlock, now, undoRevision)
-  if (!isPrPress(p) && p.action === 'done') later($, SETTLED_MS, () => wakeForDone($))
   if (!isPrPress(p) && p.action === 'compare') void redrawAtCompareEnd($).catch(() => undefined)
   if (!isPrPress(p) && p.action === 'undo') await selectRestored($, p.id)
   // A success note clears SETTLED_MS after its effects finish, when its result is stamped, and a message still on its
   // way after QUEUED_AFTER_MS reads Queued from then. A fresh value is what redraws the pane at each.
   if (sends) later($, QUEUED_AFTER_MS, () => redraw($))
   const outcome = await started.finish()
+  if (outcome.wakesAfterSettle) later($, SETTLED_MS, () => wakeAfterSettle($))
   if (effects.some(effect => effect.kind !== 'send')) later($, SETTLED_MS, () => redraw($))
   if (!isPressConfirmed(outcome)) await keepReply()
   if (!outcome.isRowFailed) return
@@ -1764,10 +1784,6 @@ async function undoKeyAfterPress(
   if (surface !== 'terminal' || !paneState.isInlineTerminalPane) return null
   const { view } = await drawnState($)
   if (isPrPress(p)) {
-    if (p.action === 'pr-dismiss-merged') {
-      const nearest = view.prs.drawn.filter(x => x.state.is === 'settled' && x.state.canUndo).at(-1)
-      return nearest ? `undo-${prMarkId(nearest.pr.ref)}` : null
-    }
     if (p.action !== 'pr-dismiss') return null
     return view.prs.drawn.some(x => x.pr.ref === p.ref && x.state.is === 'settled') ? `undo-${pressRowId(p)}` : null
   }
@@ -2199,6 +2215,7 @@ async function applyConversation(
   if (!isLoading()) return
   if (needsCatchUp) await catchUpNow($)
   void publishStatus($)
+  void wakeForHeldSends($).catch(() => undefined)
   if (tabPrs(ledger).length > 0) void fetchPrs($, false)
 }
 
@@ -2263,6 +2280,7 @@ async function forgetRowState($: EngineInterface) {
     update($, TYPING, () => null),
     update($, UNFOLDED, () => []),
     update($, STATUS_UNFOLDED, () => []),
+    update($, CLOSED_ALL, () => []),
     update($, OPTIONS_SHOWN, () => []),
     update($, DRAFTS, () => ({})),
     update($, DISCARDED, () => ({})),
@@ -2645,7 +2663,7 @@ export const register: Register = on => {
       return root ? placed(withDelegates, root, branch) : withDelegates
     })
     if (e.reason === 'error' && !sessionState.hasStopFromError) await setStopFromLastReply($)
-    void wakeForDone($).catch(() => undefined)
+    void wakeAfterSettle($).catch(() => undefined)
     void followNewRows($).catch(() => undefined)
     const reply = turnReply([turnReply(sessionState.stepTexts, e.answer), sessionState.turnBox ?? ''])
     const isAnswered = e.reason === 'answer' && reply !== ''
@@ -2820,16 +2838,19 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!mod.isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [{ ledger, stop, view, showsDemoNotices, now }, theme] = await Promise.all([drawnState($), read($, THEME)])
-    if (!stop && isBlankLedger(ledger)) return next(e)
+    const [{ ledger, stop, view, showsDemoNotices, isUnread, now }, theme] = await Promise.all([
+      drawnState($),
+      read($, THEME),
+    ])
+    if (!stop && isBlankLedger(ledger) && !isMaybeStale(view, isUnread)) return next(e)
     // Every mod shares the band, and a tree without the drawing from next(e)
     // hides what the mods after this one draw there.
     const theirs = await next(e)
     const pal = paletteFor(theme, lookOf(e.surface))
-    const counts = LISTED_TABS.filter(t => view[t.id].count > 0).map(t => (
+    const counts = bandCounts(view).map(c => (
       <Text>
-        <Text>{t.label} </Text>
-        <Text color={pal.tone[t.id] ?? pal.mark[t.id]}>{view[t.id].count}</Text>
+        <Text>{c.label} </Text>
+        <Text color={pal.tone[c.id] ?? pal.mark[c.id]}>{c.count}</Text>
       </Text>
     ))
 
@@ -2843,7 +2864,7 @@ export const register: Register = on => {
             {counts.length > 0 ? (
               counts.flatMap((p, n) => (n === 0 ? [p] : [<Text dimColor>{DOT}</Text>, p]))
             ) : (
-              <Text dimColor>Nothing needed</Text>
+              <Text dimColor>{noCountsText(view, isUnread)}</Text>
             )}
           </Text>
         </Box>
@@ -2878,7 +2899,7 @@ export const register: Register = on => {
         {canResume ? (
           <Button
             key="resume"
-            label={sessionState.resuming?.is === 'sending' ? 'Resuming…' : 'Resume'}
+            label={resumeLabel(sessionState.resuming?.is === 'sending')}
             onPress={() => void resume($)}
           />
         ) : null}
@@ -2943,6 +2964,7 @@ export const register: Register = on => {
       termProgram,
       statusSelection,
       statusUnfolded,
+      closedAll,
     ] = await Promise.all([
       drawnState($),
       read($, TAB),
@@ -2958,6 +2980,7 @@ export const register: Register = on => {
       $.env.get('TERM_PROGRAM'),
       read($, STATUS_SELECTION),
       read($, STATUS_UNFOLDED),
+      read($, CLOSED_ALL),
       // A redraw loop on desktop blocks clicks, as `redrawWhileUndoLasts` says.
       look === 'terminal' ? read($, RUNNING_FRAME) : null,
     ])
@@ -3058,6 +3081,7 @@ export const register: Register = on => {
       updateHelpShown: fn => update($, IS_HELP_SHOWN, fn),
       updateUnfolded: fn => update($, UNFOLDED, fn),
       updateStatusUnfolded: fn => update($, STATUS_UNFOLDED, fn),
+      updateClosedAll: fn => update($, CLOSED_ALL, fn),
       runPress: (p, surface) => runPress($, p, surface),
       readAgain: () => readAgain($),
       resume: () => resume($),
@@ -3090,7 +3114,6 @@ export const register: Register = on => {
         check: c => checkRow(d.pr, c),
       }),
     }))
-    const prTabKeys = view.prs.tabActions.map(a => prKeyAction(a, 'tab'))
     const prOrderKeys = (view.prs.order?.changed?.actions ?? []).map(a => prKeyAction(a, 'order'))
     const rows: Record<Tab, Row[]> = {
       needsYou: lists.byTab.needsYou,
@@ -3314,6 +3337,7 @@ export const register: Register = on => {
         view,
         isUnread,
         unfolded,
+        closedAll,
         Button,
         stop,
         glued,
@@ -3348,7 +3372,6 @@ export const register: Register = on => {
       Button,
       view,
       prOrderKeys,
-      prTabKeys,
       prGroups,
       section,
       undoPlace,
@@ -3464,7 +3487,7 @@ export const register: Register = on => {
     const rowKeys = [
       ...statusRowKeys,
       ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow(statusRowKeys)),
-      ...(tab === 'prs' && !isHelpShown ? [...prOrderKeys, ...prTabKeys] : []),
+      ...(tab === 'prs' && !isHelpShown ? prOrderKeys : []),
       undoKey(isListShown ? latestUndo(tabUndos(tab, lists, shownPrs)) : null, (p, surface) => runPress($, p, surface)),
     ]
 

@@ -139,6 +139,8 @@ export type Item = {
   options: string[]
   /** The option the agent recommended, exactly as `options` has it. */
   rec: string | null
+  /** Why the agent recommended `rec`, as a short clause, when its record gave a reason. Cleared when `rec` changes. */
+  recReason?: string
   helps: Help[]
   /** The person-prompt count when the agent asked it. */
   turn: number
@@ -249,11 +251,12 @@ export type LastAction = {
 }
 
 /**
- * A sent message's way to the agent: queued after sending, unconfirmed when
- * an identical arrival cannot identify its press, arrived when identified,
+ * A sent message's way to the agent: held while Undo can still take the press back, so nothing has left yet,
+ * queued after sending, unconfirmed when an identical arrival cannot identify its press, arrived when identified,
  * or failed when it will not enter.
  */
 export type Delivery =
+  | { state: 'held'; message: string; until: number; by: Press | null }
   | { state: 'queued'; message: string; id?: string }
   | { state: 'unconfirmed'; message: string; id?: string }
   | { state: 'arrived' }
@@ -516,7 +519,18 @@ export type HostTask = { id: string; text: string; status: HostTaskStatus }
  * Why a Status call wrote nothing. `no-answer`: the call gave no text. `refused`: it answered twice with text the
  * parser refused, and `answer` holds the start of the second answer.
  */
-export type StatusFailure = { at: number; cause: 'no-answer' | 'refused'; answer: string | null }
+/**
+ * A Status call that wrote nothing. `catchUpsFailed` counts the catch-ups that failed while it stood, and
+ * `catchUpTurn` is `turnsStarted` at the last of them, so the next catch-up waits longer after each (`needsCatchUp`).
+ * Saved failures from before these fields read as none.
+ */
+export type StatusFailure = {
+  at: number
+  cause: 'no-answer' | 'refused'
+  answer: string | null
+  catchUpsFailed?: number
+  catchUpTurn?: number
+}
 
 /**
  * Which call of an update a model call is. The ledger call reads a reply's exchange, with `isRetry` when the
@@ -704,6 +718,8 @@ declare module 'claude-code' {
       notes: Record<string, RowNote>
       /** The Asks groups and the kinds of finding whose closed items show. Each starts folded. */
       unfolded: FoldKind[]
+      /** The Closed folds whose earlier lines the person opened. */
+      closedAll: FoldKind[]
       /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
       statusUnfolded: string[]
       /** The fold under the pointer on desktop: an Asks fold's kind, or `status-` and a Status fold's id. */

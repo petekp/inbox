@@ -73,6 +73,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
         extraSteps: [],
         comparePage: '/plugin/dist/compare-page.html',
         compareInBackground: false,
+        holdMs: 1000,
       })
       assert.ok(!('stale' in applied))
       state.ledger = applied.ledger
@@ -214,6 +215,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
           extraSteps: [],
           comparePage: '/plugin/dist/compare-page.html',
           compareInBackground: false,
+          holdMs: 1000,
         },
       )
       assert.ok(!('stale' in doneElsewhere))

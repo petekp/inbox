@@ -140,7 +140,8 @@ Questions the agent asked you, and tasks only you can do.
 The agent doesn't have to do anything special to put a question here. After
 each reply, a model reads what the agent wrote and records each question in
 it, with its possible answers. The agent's recommended answer comes first.
-Press an answer and it goes to the agent as your message. You can also type
+Press an answer and it goes to the agent as your message, a few seconds later,
+so Undo can take back a wrong press. You can also type
 your own reply, or press Explain to have the agent say more before you decide.
 
 When a question is a design choice, such as two layouts or two ways to build a
@@ -174,8 +175,8 @@ Blocked, Ready or Waiting, and lists what blocks it: review comments waiting
 on you, failing checks and merge conflicts. Buttons hand the work to the
 agent: address one review comment or all of them, draft a reply, fix a
 failing check, resolve conflicts, or merge. Fix and Resolve conflicts show only
-while GitHub still shows the problem. Dismiss merged clears every merged PR at
-once, except your current branch's own.
+while GitHub still shows the problem. A PR that merges or closes leaves the tab
+on its own, with Undo to keep it there.
 
 Your agent can also put the PRs in an order, such as which to merge first. The
 tab then lists them first, numbered, under what the order is for and why. When
@@ -185,7 +186,8 @@ a ranked PR changes, the tab says so and offers Rank again.
 
 When you answer a question in your own message, a task gets done, or the
 agent fixes a finding, the inbox closes the item. Closed items fold away under
-the open ones, each with how it ended.
+the open ones, each with how it ended. One you dismissed keeps Reopen there for
+the rest of the session.
 
 The agent reads the inbox too. Beside each of your prompts, it sees what's
 still open and what you answered, even after the conversation is compacted.

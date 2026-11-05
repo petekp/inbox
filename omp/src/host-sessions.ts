@@ -14,7 +14,7 @@ import { delegatesSettled } from '../../hooks/children'
 import { askOverConversation, orderedKeys, reconcileUpdateStatus, runUpdates } from '../../hooks/session-host'
 import type { SessionHost, UpdateHost } from '../../hooks/session-host'
 import { fetchPrs } from '../../hooks/host-prs'
-import { wakeForDone } from '../../hooks/host-press'
+import { wakeAfterSettle } from '../../hooks/host-press'
 import type { StatusRecords, RecordFiles } from '../../hooks/status-records'
 import { screenTabOf } from '../../hooks/tabs'
 import { openTarget } from './commands'
@@ -248,7 +248,7 @@ export function sessionCalls(context: HostContext) {
   }
 
   function wakeLater(ctx: OmpContext): void {
-    ctx.setTimeout(() => deps.background(wakeForDone(hostFor(ctx))), deps.settleWindowMs + WAKE_MARGIN_MS)
+    ctx.setTimeout(() => deps.background(wakeAfterSettle(hostFor(ctx))), deps.settleWindowMs + WAKE_MARGIN_MS)
   }
 
   return {

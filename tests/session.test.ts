@@ -157,7 +157,7 @@ test('a dropped reply keeps the warning through later good updates, until a catc
   const kept = await host.read()
   expect(kept.ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?'])
   expect(sessionView(kept, 0, host.settleWindowMs).status.error).toMatch(
-    /^Last update failed, and its retry failed too\..*tries again after the agent's next reply\.$/,
+    /^The inbox couldn't update from the agent's recent replies, even on a retry\..*tries again after the next reply\.$/,
   )
 
   await runUpdates({
@@ -177,7 +177,7 @@ test('a failed catch-up waits for the next reply, says when a retry fails again,
   await host.update(s => ({ ...s, presence: { ...s.presence, ledgerState: 'behind' as const } }))
   await runUpdates({ ...host, ...reading({ kind: 'failed', heard: null }, calls) })
   expect(shownStatus(await host.read()).error).toBe(
-    "Last update failed. Items from that reply may be missing. The inbox tries again after the agent's next reply.",
+    "The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing. It tries again after the next reply.",
   )
 
   let duringRetry: ReturnType<typeof shownStatus> | null = null
@@ -190,7 +190,7 @@ test('a failed catch-up waits for the next reply, says when a retry fails again,
   })
   expect(duringRetry).toEqual({ text: 'Retrying the last update…', error: null })
   expect(shownStatus(await host.read()).error).toBe(
-    "Last update failed, and its retry failed too. Items from recent replies may be missing. The inbox tries again after the agent's next reply.",
+    "The inbox couldn't update from the agent's recent replies, even on a retry. Questions, tasks and findings from them may be missing. It tries again after the next reply.",
   )
 
   await runUpdates({
@@ -207,7 +207,7 @@ test('a catch-up that cannot read the conversation still promises the next retry
 
   await runUpdates({ ...host, ...reading({ kind: 'unreadable' }, calls) })
   expect(shownStatus(await host.read()).error).toBe(
-    "Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing. The inbox tries again after the agent's next reply.",
+    "The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing. It tries again after the next reply.",
   )
 
   await runUpdates({
@@ -225,7 +225,7 @@ test('a pending exchange is retried on its own, so an unreadable conversation st
   await runUpdates({ ...host, catchUp: undefined })
   await host.update(s => ({ ...s, presence: { ...s.presence, isConversationUnreadable: true } }))
   expect(shownStatus(await host.read()).error).toBe(
-    "Last update failed. Items from that reply may be missing. The inbox tries again after the agent's next reply.",
+    "The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing. It tries again after the next reply.",
   )
 })
 
@@ -236,12 +236,12 @@ test('an update cut off after one failure still reads as waiting to retry, not a
   await host.update(s => ({ ...s, presence: { ...s.presence, isUpdating: true } }))
   await reconcileUpdateStatus(host)
   expect((await host.read()).pending[0]?.failed).toBe(true)
-  expect(shownStatus(await host.read()).error).toMatch(/^Last update failed\. Items from that reply/)
+  expect(shownStatus(await host.read()).error).toMatch(/^The inbox couldn't update from the agent's last reply\./)
 
   const running = { ...(await host.read()), pending: [] }
   const cutOff = cutOffUpdate({ ...running, presence: { ...running.presence, isUpdating: true } })
   expect(cutOff.presence).toMatchObject({ ledgerState: 'failed', failedAttempts: 1 })
-  expect(shownStatus(cutOff).error).toMatch(/^Last update failed\. Items from that reply/)
+  expect(shownStatus(cutOff).error).toMatch(/^The inbox couldn't update from the agent's last reply\./)
 })
 
 test('each model call says which call of the update it is: a first try, the retry of a failed exchange, a Status call asked again after prose, and a catch-up', async () => {

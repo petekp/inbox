@@ -18,10 +18,10 @@ import { baseName } from './open-targets'
 import { stepsOf } from './help-steps'
 import type { HelpStep } from './help-steps'
 import { isFixSent, isHandedOff } from './last-actions'
-import { isUndoable } from './pressed'
+import { isHeldSend, isUndoable } from './pressed'
 import { FINDING_GROUPS } from './help'
 import { isSettledInPlace, canUndoClose, isUndoLeft, pendingDeliveryAt } from './timing'
-import { closedRowState, optionDescriptionsOf, isWaitingRow, outcomeLabel, closedMark } from './rows'
+import { closedRowState, optionDescriptionsOf, isWaitingRow, outcomeLabel, closedMark, recLineOf } from './rows'
 import type { RowView, ClosedDelivery, ResultMark, RowState } from './rows'
 import { DONE_LABELS, fixLabel, feedbackIn, pressFeedbackIn } from './feedback'
 import type { ShownTab } from './tabs'
@@ -111,10 +111,11 @@ export function inboxView({
       ? last
       : null
   }
-  const isOwnClose = (c: Closed | ClosedFinding) =>
-    c.how === 'done' ||
-    c.how === 'dismissed' ||
-    (c.how === 'answered' && lastActions[c.id]?.kind === 'mark' && lastActions[c.id]?.at === closedAt(c))
+  const isPressedAnswer = (c: Closed | ClosedFinding) =>
+    c.how === 'answered' && lastActions[c.id]?.kind === 'mark' && lastActions[c.id]?.at === closedAt(c)
+  const isOwnClose = (c: Closed | ClosedFinding) => c.how === 'done' || c.how === 'dismissed' || isPressedAnswer(c)
+  const isAnswerHeld = (c: Closed | ClosedFinding) =>
+    isPressedAnswer(c) && isHeldSend(lastActions[c.id]) && isUndoLeft(closedAt(c), now, settleWindowMs)
   const isHeld = (c: Closed | ClosedFinding) => {
     const since = replies[c.id]
 
@@ -126,7 +127,7 @@ export function inboxView({
 
     return (
       replyAfter(c) !== null ||
-      (!isDiscarded(c) && (isHeld(c) || isInPlace(at, canUndoClose(c, at, now, settleWindowMs))))
+      (!isDiscarded(c) && (isHeld(c) || isInPlace(at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs))))
     )
   }
   const placedItems = new Map(
@@ -171,6 +172,7 @@ export function inboxView({
           : (closed.how === 'answered' || closed.how === 'done') && last?.kind === 'mark' && last.at === at
             ? pendingDeliveryAt(last, now)
             : null,
+        isPressedAnswer(closed),
       )
     }
 
@@ -190,7 +192,7 @@ export function inboxView({
     return isHandedOff(last, turns) ? { is: 'handedOff' } : { is: 'open' }
   }
   const rowOf = (
-    row: Omit<RowView, 'state' | 'feedback' | 'actions' | 'optionDescriptions' | 'holdsUpLine'>,
+    row: Omit<RowView, 'state' | 'feedback' | 'actions' | 'optionDescriptions' | 'holdsUpLine' | 'recLine'>,
   ): RowView => {
     const state = stateOf(row.id)
     const last = lastActions[row.id]
@@ -207,6 +209,7 @@ export function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map(s => s.name).join(', ')}` : null,
+      recLine: state.is === 'open' ? recLineOf(row.item) : null,
     }
   }
   const itemRow = (item: Item): RowView => {
@@ -338,12 +341,12 @@ export function footerStatus(
  */
 export type UpdateRecovery = 'none' | 'waiting' | 'retrying' | 'failed-again' | 'unreadable'
 
-const NEXT_TRY = " The inbox tries again after the agent's next reply."
+const NEXT_TRY = ' It tries again after the next reply.'
 
 const FAILED_UPDATE_TEXT: Record<Exclude<UpdateRecovery, 'none' | 'retrying'>, string> = {
-  waiting: `Last update failed. Items from that reply may be missing.${NEXT_TRY}`,
-  'failed-again': `Last update failed, and its retry failed too. Items from recent replies may be missing.${NEXT_TRY}`,
-  unreadable: `Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing.${NEXT_TRY}`,
+  waiting: `The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing.${NEXT_TRY}`,
+  'failed-again': `The inbox couldn't update from the agent's recent replies, even on a retry. Questions, tasks and findings from them may be missing.${NEXT_TRY}`,
+  unreadable: `The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing.${NEXT_TRY}`,
 }
 
 export function perTurnStatus(isUpdating: boolean, recovery: UpdateRecovery): ItemStatus {

@@ -112,7 +112,14 @@ export function createPanel(deps: PanelDeps): Panel {
   async function refresh(pressedId?: string): Promise<void> {
     const mine = ++version
     const next = await source.screen(holdsOf(ui)).catch(() => null)
-    if (mine !== version || next === null) return
+    if (mine !== version) return
+    if (next === null) {
+      if (screen && !screen.isReadFailed) {
+        screen = { ...screen, isReadFailed: true }
+        deps.requestRender()
+      }
+      return
+    }
     screen = next
     const followed = followRows(next, ui, seen, isOpening, deps.now())
     ui = pressedId === undefined ? followed.ui : afterHandOff(next, followed.ui, pressedId, deps.now())
@@ -132,6 +139,7 @@ export function createPanel(deps: PanelDeps): Panel {
 
   async function press(p: PanelPress): Promise<void> {
     if (p.action === 'resume') return resume()
+    if (p.action === 'all-options') return
     const rowId = pressRowId(p)
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now())
     const sentDraft = !isPrPress(p) && p.action === 'type' ? ui.drafts[p.id] : undefined

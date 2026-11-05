@@ -1,4 +1,4 @@
-import type { Closed, Item } from '../types'
+import type { Closed, ClosedFinding, Item } from '../types'
 import type { Update } from './reply-parse'
 import { stem } from './status-limits'
 
@@ -215,16 +215,44 @@ export function matchOpen(
 
 /**
  * An ask closed this turn repeats on its label too. An expired one from before can be asked again, as in addAgentItem.
- * An ask closed before the prompt repeats a settled item as `repeatsSettled` says.
+ * An ask closed before the prompt repeats a settled item as `repeatsSettled` says. An ask that raises a finding the
+ * person dismissed repeats it too.
  */
-export function repeatsClosed(closed: Closed[], a: Update['added'][number], since: number): boolean {
+export function repeatsClosed(
+  closed: Closed[],
+  a: Update['added'][number],
+  since: number,
+  closedFindings: ClosedFinding[] = [],
+): boolean {
   const recent = closed.filter(c => c.at >= since && !isAskedForChoices(c))
   const settled = closed.filter(c => c.at < since && c.how !== 'expired')
 
   return (
     matchOpen(recent, a) >= 0 ||
     (a.label !== null && recent.some(c => c.label === a.label)) ||
-    settled.some(c => repeatsSettled(c, a))
+    settled.some(c => repeatsSettled(c, a)) ||
+    dismissedFindingOf(closedFindings, a.ask) !== undefined
+  )
+}
+
+/**
+ * The finding the person dismissed that `ask` raises again: `ask` restates its title and names nothing the title
+ * lacks, apart from GENERIC words. "Add tests for the parser?" raises "Missing tests for the parser", but "Add the
+ * missing tests for the release script?" does not raise "Missing tests".
+ */
+export function dismissedFindingOf(closedFindings: ClosedFinding[], ask: string): ClosedFinding | undefined {
+  return closedFindings.findLast(f => f.how === 'dismissed' && raisesOnly(f.title, ask))
+}
+
+/** Whether `b` restates `a`, holds no CONTRASTS with it, and has no key word `a` lacks, apart from GENERIC words. */
+export function raisesOnly(a: string, b: string): boolean {
+  const x = keyWords(a)
+  const y = keyWords(b)
+  const xStems = new Set([...x].map(meaningOf))
+  const isRestated = sharesKeyWords(xStems, new Set([...y].map(meaningOf))) === true
+
+  return (
+    sameAsk(a, b) || (isRestated && !contrasts(x, y) && [...y].every(w => GENERIC.has(w) || xStems.has(meaningOf(w))))
   )
 }
 

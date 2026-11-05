@@ -32,13 +32,14 @@ function isQueuedAt(last: LastAction | undefined, now: number): boolean {
 }
 
 /**
- * A send still on its way. For its first QUEUED_AFTER_MS a queued send reads as sending, so a send that the agent takes
- * at once never reads Queued. Neither reads as delivered, so neither draws a ✓.
+ * A send still on its way, or held for Undo before it leaves. For its first QUEUED_AFTER_MS a queued send reads as
+ * sending, so a send that the agent takes at once never reads Queued. None reads as delivered, so none draws a ✓.
  */
 export function pendingDeliveryAt(
   last: LastAction | undefined,
   now: number,
-): 'sending' | 'queued' | 'unconfirmed' | null {
+): 'held' | 'sending' | 'queued' | 'unconfirmed' | null {
+  if (last?.delivery?.state === 'held') return 'held'
   if (last?.delivery?.state === 'unconfirmed') return 'unconfirmed'
   if (last?.delivery?.state !== 'queued') return null
   return isQueuedAt(last, now) ? 'queued' : 'sending'

@@ -1,6 +1,6 @@
 import { Icon } from './row-actions'
 import {
-  canUndoRefused,
+  closedLineAction,
   closedShown,
   closedTotal,
   earlierLabel,
@@ -10,13 +10,14 @@ import {
   shortAgo,
 } from '../../hooks/rows'
 import { emptyText, groupEmptyText } from '../../hooks/banners'
+import { isMaybeStale } from '../../hooks/band'
 import { entryId, settledIn } from '../../hooks/action-plan'
 import { FINDING_GROUPS } from '../../hooks/help'
 import type { ResultMark } from '../../hooks/rows'
 import type { Finding } from '../../types'
 import type { FoldGroup } from './arrivals'
 import type { TabView as View } from './core'
-import { unfolded, sending, closingFolds, drawnRows } from './tab-state'
+import { unfolded, closedAll, sending, closingFolds, drawnRows, tabState } from './tab-state'
 import type { Row, Entry, Lists } from './tab-state'
 import { toggleFold } from './tab-motion'
 import { act } from './tab-rows'
@@ -24,8 +25,11 @@ import { ResultMarkView, GroupTitle } from './tab-parts'
 import { Entries } from './tab-list'
 
 function itemsClosed(v: View, kind: 'question' | 'task', entries: Entry[]): ClosedLine[] {
-  return closedShown(v.needsYou.closed[kind === 'question' ? 'questions' : 'tasks'], settledIn(entries)).map(d => ({
+  const closed = v.needsYou.closed[kind === 'question' ? 'questions' : 'tasks']
+
+  return closedShown(closed, settledIn(entries), closedAll.has(kind)).map(d => ({
     id: d.id,
+    how: d.how,
     ask: d.ask,
     outcomeLabel: d.outcomeLabel,
     mark: d.mark,
@@ -81,6 +85,7 @@ function groupEmpty(title: string, rest: Entry[]): GroupEmpty | null {
 
 type ClosedLine = {
   id: string
+  how: Parameters<typeof closedLineAction>[0]['how']
   ask: string
   outcomeLabel: string
   mark: ResultMark
@@ -115,7 +120,15 @@ function GroupEnd({
             </div>
           ) : null}
           {total > 0 ? (
-            <button type="button" class="fold" data-fold={group} onClick={() => toggleFold(group, unfolded)}>
+            <button
+              type="button"
+              class="fold"
+              data-fold={group}
+              onClick={() => {
+                closedAll.delete(group)
+                toggleFold(group, unfolded)
+              }}
+            >
               <Icon name={isUnfolded ? 'down' : 'right'} />
               {foldLabel(total)}
             </button>
@@ -124,28 +137,38 @@ function GroupEnd({
       </div>
       {isListed ? (
         <div class="list closed-list" data-motion={`closed-${group}`}>
-          {closed.map(d => (
-            <div class="entry" key={`closed-${d.id}`}>
-              <div class="row">
-                <ResultMarkView mark={d.mark} />
-                <div class="content tight">
-                  <div class="muted">{d.ask}</div>
-                  <div class="outcome">{settledLabel(d.outcomeLabel, d.delivery)}</div>
-                  {canUndoRefused(d.delivery) ? (
-                    <button
-                      type="button"
-                      disabled={sending.has(d.id)}
-                      onClick={() => act(d.id, { id: d.id, action: 'undo' })}
-                    >
-                      Undo
-                    </button>
-                  ) : null}
+          {closed.map(d => {
+            const action = closedLineAction(d)
+            return (
+              <div class="entry" key={`closed-${d.id}`}>
+                <div class="row">
+                  <ResultMarkView mark={d.mark} />
+                  <div class="content tight">
+                    <div class="muted">{d.ask}</div>
+                    <div class="outcome">{settledLabel(d.outcomeLabel, d.delivery)}</div>
+                    {action ? (
+                      <button type="button" disabled={sending.has(d.id)} onClick={() => act(d.id, action.press)}>
+                        {action.label}
+                      </button>
+                    ) : null}
+                  </div>
+                  <span class="side">{shortAgo(now - d.at)}</span>
                 </div>
-                <span class="side">{shortAgo(now - d.at)}</span>
               </div>
-            </div>
-          ))}
-          {earlier ? <div class="earlier muted">{earlier}</div> : null}
+            )
+          })}
+          {earlier ? (
+            <button
+              type="button"
+              class="earlier"
+              onClick={() => {
+                closedAll.add(group)
+                tabState.draw()
+              }}
+            >
+              {earlier}
+            </button>
+          ) : null}
         </div>
       ) : null}
     </>
@@ -174,7 +197,7 @@ export function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number
       </div>
     ) : (
       <div class="empty">
-        <div class="title">{emptyText('needsYou', 'Codex').title}</div>
+        <div class="title">{emptyText('needsYou', 'Codex', isMaybeStale(v)).title}</div>
         <div class="muted">{emptyText('needsYou', 'Codex').hint}</div>
       </div>
     )
@@ -199,8 +222,9 @@ export function Findings({ v, lists, now }: { v: View; lists: Lists; now: number
   const settled = settledIn(staying(lists.findings))
   const closedOf = (kind: Finding['kind']) => v.findings.closed.filter(f => f.kind === kind)
   const shown = (kind: Finding['kind']) =>
-    closedShown(closedOf(kind), settled).map(f => ({
+    closedShown(closedOf(kind), settled, closedAll.has(kind)).map(f => ({
       id: f.id,
+      how: f.how,
       ask: f.title,
       outcomeLabel: f.outcomeLabel,
       mark: f.mark,
@@ -211,7 +235,7 @@ export function Findings({ v, lists, now }: { v: View; lists: Lists; now: number
   if (isNothing && closedTotal(v.findings.closed, settled) === 0)
     return (
       <div class="empty">
-        <div class="title">{emptyText('findings', 'Codex').title}</div>
+        <div class="title">{emptyText('findings', 'Codex', isMaybeStale(v)).title}</div>
         <div class="muted">{emptyText('findings', 'Codex').hint}</div>
       </div>
     )

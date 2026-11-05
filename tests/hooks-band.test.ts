@@ -224,3 +224,38 @@ test('a Herdr report taken by a retry starts the waits over for the next failure
   expect(herdr.sends).toHaveLength(3)
   expect(herdr.waited).toEqual([HERDR_RETRY_MS[0], HERDR_RETRY_MS[0]])
 })
+
+test('while an update has failed, the band, the empty Asks tab and the sidebar line read May be out of date, until an update lands', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { HERDR_PANE_ID: 'p1' })
+  on('model.fork', () => ({
+    value: {
+      isAnswered: true,
+      text: 'NONE',
+      usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    },
+  }))
+  const reply = async (text: string, turnId: string) => {
+    await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
+    await $.turn.start({ text, turnId })
+    await $.turn.complete({ answer: 'Done.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+    await clock.settle()
+  }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  w.ledgerReply = 'The person asked for a greeting.'
+  await reply('add a greeting cli', 't1')
+
+  const pane = await $.ui.mount(PANE)
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  expect(await band.find({ text: /May be out of date/ })).toBeDefined()
+  expect(await band.find({ text: /Nothing needed/ })).toBeUndefined()
+  expect(await pane.find({ text: /May be out of date/ })).toBeDefined()
+  expect(sidebarLines().at(-1)).toBe('May be out of date')
+
+  await reply('go on', 't2')
+  expect(await band.find({ text: /May be out of date/ })).toBeUndefined()
+  expect(await pane.find({ text: /Nothing needed/ })).toBeDefined()
+  expect(await pane.find({ text: /May be out of date/ })).toBeUndefined()
+  expect(sidebarLines().at(-1)).toBe('')
+})

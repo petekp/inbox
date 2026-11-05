@@ -7,6 +7,8 @@ export type Item = {
   options: string[]
   /** The option the agent recommended, exactly as `options` has it. */
   rec: string | null
+  /** Why the agent recommended `rec`, as a short clause, when its record gave a reason. Cleared when `rec` changes. */
+  recReason?: string
   helps: Help[]
   /** The person-prompt count when the agent asked it. */
   turn: number

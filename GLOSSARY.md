@@ -168,8 +168,9 @@ own.
 _Avoid_: done row, done count
 
 **Band**:
-In Claude Code, the line above the prompt with the Asks and Finds
-counts and [Open inbox]. When the session stops, a second line says why, with
+In Claude Code, the line above the prompt with the Asks, Finds and PRs
+counts and [Open inbox]. With no counts it reads "Nothing needed", or "May be
+out of date" while rows may be missing. When the session stops, a second line says why, with
 [Resume] after an API error. Codex has no band. omp has a band with the same
 counts and no button, which says `/inbox` opens the panel.
 

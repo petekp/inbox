@@ -41,14 +41,16 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /Finds 1/ })).toBeDefined()
 
+  const sentBefore = w.sent.length
   await pane.press({ key: 'address-f1' })
-  expect(w.sent.at(-1)).toContain('Please address this finding you recorded:\nIssue: Retry loop never backs off')
   await clock.settle()
+  expect(w.sent).toHaveLength(sentBefore)
   expect(await pane.find({ key: 'settled-f1' })).toBeDefined()
   expect(await pane.find({ text: /^Fix$/ })).toBeDefined()
   expect(await pane.find({ key: 'undo-f1' })).toBeDefined()
   expect(await band.find({ text: /Finds 1/ })).toBeUndefined()
   await clock.advance(9000)
+  expect(w.sent.at(-1)).toContain('Please address this finding you recorded:\nIssue: Retry loop never backs off')
   expect(await pane.find({ key: 'settled-f1' })).toBeDefined()
   expect(await pane.find({ key: 'undo-f1' })).toBeUndefined()
   await leaveAndReturn(pane, clock, 'findings')
@@ -89,6 +91,7 @@ test('a question Claude records waits in the pane with its recommendation, a rep
     ask: 'Which cache should the API use?',
     options: ['Redis', 'In-memory'],
     rec: 'Redis',
+    why: 'it survives restarts',
   } as const
   const r = await $.tool.call(question)
   expect(r.result).toBe('Recorded. The user sees it in the /inbox pane.')
@@ -119,9 +122,16 @@ test('a question Claude records waits in the pane with its recommendation, a rep
   const placement = { tool: 'mcp__inbox__record', kind: 'question', ask: 'Where should the job run?' } as const
   await $.tool.call({ ...placement, options: ['List the choices'] })
   await $.tool.call({ tool: 'mcp__inbox__close', id: 'i3', answer: 'List the choices' })
-  expect((await $.tool.call({ ...placement, options: ['Nightly', 'Hourly'], rec: 'Nightly' })).result).toBe(
-    'Recorded. The user sees it in the /inbox pane.',
-  )
+  expect(
+    (
+      await $.tool.call({
+        ...placement,
+        options: ['Nightly', 'Hourly'],
+        rec: 'Nightly',
+        why: 'traffic is low at night',
+      })
+    ).result,
+  ).toBe('Recorded. The user sees it in the /inbox pane.')
 })
 
 test("the result under a record or close call reads the person's line, nothing when the call changed nothing, and the agent's text in the ctrl+o transcript", async ($, on) => {

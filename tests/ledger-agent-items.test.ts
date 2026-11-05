@@ -26,6 +26,27 @@ describe('items the agent recorded', () => {
     expect(answered.closed.map(c => [c.id, c.outcome, c.how])).toEqual([['i1', 'Redis', 'update']])
   })
 
+  test('a recommendation keeps its reason until it moves to another option, and the answer names what a row lacks', () => {
+    const input = { kind: 'question', ask: ask.ask, options: ask.options }
+    const bare = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, input, 1000)
+    expect(bare.result).toContain('It has no rec')
+    const why = recordItem(
+      CLAUDE_CODE,
+      bare.ledger,
+      { ...input, rec: 'Redis', why: 'because it survives restarts' },
+      1100,
+    )
+    expect(why.result).not.toContain('It has no')
+    expect(why.ledger.items[0]).toMatchObject({ rec: 'Redis', recReason: 'it survives restarts' })
+    const kept = applyUpdate(why.ledger, parseReply('UPDATE: i1 | - | Redis')!, 1200, 1)
+    expect(kept.items[0]!.recReason).toBe('it survives restarts')
+    const moved = applyUpdate(why.ledger, parseReply('UPDATE: i1 | - | Memcached')!, 1200, 1)
+    expect(moved.items[0]).toMatchObject({ rec: 'Memcached' })
+    expect(moved.items[0]!.recReason).toBeUndefined()
+    const task = recordItem(CLAUDE_CODE, EMPTY, { kind: 'task', ask: 'Plug in the test phone' }, 1000)
+    expect(task.result).toContain('It has no steps')
+  })
+
   test("one stays open after 12 prompts, when the update's items expire", () => {
     const both = applyUpdate(recorded(), parseReply('NEW: do | - | Sign in to npm | - | -')!, 1500, 1)
     const later = applyUpdate({ ...both, turn: 14 }, parseReply('NONE')!, 2000, 14)

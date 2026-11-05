@@ -271,10 +271,20 @@ function matchOpen(items, a, sameBatch = /* @__PURE__ */ new Set()) {
     (i) => i.id === a.label || sameAsk(i.ask, a.ask) || !sameBatch.has(i.id) && i.kind === a.kind && restates(i.ask, a.ask)
   );
 }
-function repeatsClosed(closed, a, since) {
+function repeatsClosed(closed, a, since, closedFindings = []) {
   const recent = closed.filter((c) => c.at >= since && !isAskedForChoices(c));
   const settled = closed.filter((c) => c.at < since && c.how !== "expired");
-  return matchOpen(recent, a) >= 0 || a.label !== null && recent.some((c) => c.label === a.label) || settled.some((c) => repeatsSettled(c, a));
+  return matchOpen(recent, a) >= 0 || a.label !== null && recent.some((c) => c.label === a.label) || settled.some((c) => repeatsSettled(c, a)) || dismissedFindingOf(closedFindings, a.ask) !== void 0;
+}
+function dismissedFindingOf(closedFindings, ask) {
+  return closedFindings.findLast((f) => f.how === "dismissed" && raisesOnly(f.title, ask));
+}
+function raisesOnly(a, b) {
+  const x = keyWords(a);
+  const y = keyWords(b);
+  const xStems = new Set([...x].map(meaningOf));
+  const isRestated = sharesKeyWords(xStems, new Set([...y].map(meaningOf))) === true;
+  return sameAsk(a, b) || isRestated && !contrasts(x, y) && [...y].every((w) => GENERIC.has(w) || xStems.has(meaningOf(w)));
 }
 var LIST_CHOICES = "List the choices";
 function isAskedForChoices(c) {
@@ -337,7 +347,7 @@ function asksAbout(item, finding, isClaimed = false) {
   return [...prNumbers(`${finding.title} ${finding.detail}`)].some((n) => itemPrs.has(n));
 }
 function pruneClosed(ledger, keep) {
-  const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id));
+  const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id) || r.how === "dismissed");
   return { ...ledger, closed: pruned2(ledger.closed), closedFindings: pruned2(ledger.closedFindings) };
 }
 function idNumber(id) {
@@ -591,9 +601,15 @@ function todoAsk(work) {
 var MAX_OPEN = 20;
 var STALE_AFTER = 12;
 var UNFOUNDED_MOOT = /^no longer applies:.*(\b(not|never) (related|relevant|addressed|mentioned|discussed|answered|raised|part of)\b|\bunrelated\b|\b(still|stays) open\b|\boutside (the|this)\b|\bnothing\b.*\b(touch|address|mention|relate))/i;
+var PUT_OFF2 = /^\s*(?:(?:the )?(?:user|person) )?(?:dismissed|declined|deferred (?:to|until|till|for)|postponed|put (?:it )?off|set aside|not now|later\b|can wait|won'?t fix|skipped)|\b(?:user|person) (?:said|says|asked|wants|chose|decided|declined|dismissed|deferred|put it off)\b/i;
 var EXPIRED = "expired, unanswered";
 function restatedRec(options, old, stated) {
   return recommendedOption(options, stated) ?? recommendedOption(options, old);
+}
+function withRec(item, rec, reason) {
+  const { recReason, ...rest } = item;
+  const kept = reason ?? (rec === item.rec ? recReason : void 0);
+  return { ...rest, rec, ...rec && kept ? { recReason: kept } : {} };
 }
 var SENT_PRESS_KINDS = {
   answer: "mark",
@@ -619,8 +635,9 @@ function isPersonsAnswer(outcome) {
 }
 function applyUpdate(ledger, u, now, turn, promptAt = now) {
   const stillAsked = new Set(u.updated.filter((c) => c.options || c.rec).map((c) => c.id));
+  const isPutOffFinding = (c) => ledger.findings.some((f) => f.id === c.id) && PUT_OFF2.test(c.outcome);
   const closing = new Map(
-    u.closed.filter((c) => !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome)).map((c) => [c.id, c.outcome])
+    u.closed.filter((c) => !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome) && !isPutOffFinding(c)).map((c) => [c.id, c.outcome])
   );
   const closed = [...ledger.closed];
   const items = [];
@@ -639,7 +656,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
   const addedIds = [];
   const created = /* @__PURE__ */ new Set();
   for (const a of u.added) {
-    if (repeatsClosed(ledger.closed, a, promptAt)) {
+    if (repeatsClosed(ledger.closed, a, promptAt, ledger.closedFindings)) {
       addedIds.push(null);
       continue;
     }
@@ -647,9 +664,8 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     const restated = items[at];
     if (restated) {
       items[at] = {
-        ...restated,
+        ...withRec(restated, restatedRec(restated.options, restated.rec, a.rec)),
         helps: a.helps.reduce((all, h) => withHelp(all, h), restated.helps),
-        rec: restatedRec(restated.options, restated.rec, a.rec),
         ...a.isDesignChoice ? { isDesignChoice: true } : {}
       };
       addedIds.push(restated.id);
@@ -714,7 +730,7 @@ function withUpdate(item, updated) {
   const change = updated.findLast((c) => c.id === item.id);
   if (!change || item.kind !== "question") return item;
   const options = change.options ?? item.options;
-  return { ...item, options, rec: restatedRec(options, item.rec, change.rec) };
+  return withRec({ ...item, options }, restatedRec(options, item.rec, change.rec));
 }
 
 // ../hooks/status-upgrade-goal.ts
@@ -1024,7 +1040,7 @@ function systemText(host) {
 Input:
 - <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design
 - <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
-- <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
+- <decided>: items and findings the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again in other words.
 - <person>: what the person just sent, and the commands they ran themselves: "$ cmd" for a shell command, with its output, and "/name" for a slash command
 - <activity>: what the agent did this turn (files edited, commands, URLs)
 - <reply>: what the agent said this turn, in order
@@ -1045,7 +1061,7 @@ NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
   options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
   rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
   design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
-  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
+  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; news of a PR's failing checks, conflicts or review threads, and offers to fix them, since ${host.prsIn} shows each with its own press; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
 UPDATE: <id> | <options> | <rec>
   For a "decide" item in <open> when the reply now offers it different answers, or states a recommendation for it that <open> does not show. options: the answers the person can now pick, as in NEW, or "-" to keep them. rec: as in NEW, or "-" to keep it. Rewording the question is not a change.
 HELP: <item> | <kind> | <value> | <name>
@@ -1069,11 +1085,13 @@ function ledgerBlocks(ledger) {
     (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`
   ).join(NL4);
   const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL4);
-  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL4);
+  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`);
+  const dismissedFindings = ledger.closedFindings.filter((f) => f.how === "dismissed").map((f) => `${f.kind}: ${f.title} \u2192 ${outcomeText(f)}`);
+  const decided = [...closed, ...dismissedFindings].join(NL4);
   return [
     `<open>${NL4}${open2}${NL4}</open>`,
     `<findings>${NL4}${findings}${NL4}</findings>`,
-    `<decided>${NL4}${closed}${NL4}</decided>`
+    `<decided>${NL4}${decided}${NL4}</decided>`
   ];
 }
 function buildPrompt(ledger, ex) {
@@ -1230,6 +1248,29 @@ function tasksText(tasks) {
   return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL5);
 }
 
+// ../hooks/pr-checks.ts
+function failingChecks(pr) {
+  return pr.checks.filter((c) => c.bucket === "fail");
+}
+function cancelledChecks(pr) {
+  return pr.checks.filter((c) => c.bucket === "cancelled");
+}
+var ACTIONS_RUN_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/actions\/runs\/(\d+)/;
+function runOf(c) {
+  const m = ACTIONS_RUN_URL.exec(c.url ?? "");
+  return m ? { repo: m[1], run: m[2] } : null;
+}
+function isSameRun(a, b) {
+  return b !== null && a.repo === b.repo && a.run === b.run;
+}
+function failedSibling(pr, c) {
+  const run2 = c.bucket === "cancelled" ? runOf(c) : null;
+  return run2 ? pr.checks.find((f) => f.bucket === "fail" && isSameRun(run2, runOf(f))) ?? null : null;
+}
+function blockingChecks(pr) {
+  return [...failingChecks(pr), ...cancelledChecks(pr).filter((c) => !failedSibling(pr, c))];
+}
+
 // ../hooks/prs.ts
 function namedPrs(text2, refs) {
   const numbers = new Set([...text2.matchAll(/#(\d+)\b/g)].map((m) => m[1]));
@@ -1257,7 +1298,7 @@ function threadsOnYou(pr, isSent) {
   return waitingThreads(pr).filter((t) => !t.isLinesChanged && !isSent(pr, t));
 }
 function prNeedsYou(pr, isSent) {
-  return pr.state === "OPEN" && (pr.mergeable === "CONFLICTING" || blockingChecks(pr).length > 0 || pr.reviewDecision === "CHANGES_REQUESTED" || threadsOnYou(pr, isSent).length > 0);
+  return pr.state === "OPEN" && (pr.mergeable === "CONFLICTING" || blockingChecks(pr).length > 0 || threadsOnYou(pr, isSent).length > 0);
 }
 function checkCounts(pr) {
   const counts = { pass: 0, fail: 0, cancelled: 0, pending: 0, skip: 0 };
@@ -1270,7 +1311,7 @@ function threadsWaiting(count) {
 function plural(count, one, many) {
   return `${count} ${count === 1 ? one : many}`;
 }
-function readiness(pr, isSent = () => false) {
+function readiness(pr, isSent = () => false, agent = "Claude") {
   const result = (status, head, reasonList = [], joint = ": ") => {
     const reasons = reasonList.join(", ");
     const unlisted = status === "ready" ? [] : reasonList.filter((r) => !listed.includes(r));
@@ -1279,34 +1320,41 @@ function readiness(pr, isSent = () => false) {
   const listed = [];
   if (pr.state === "MERGED") return result("merged", "Merged");
   if (pr.state !== "OPEN") return result("closed", "Closed");
-  const { fail: failing, cancelled, pending } = checkCounts(pr);
+  const { pass: passing, fail: failing, pending } = checkCounts(pr);
+  const cancelled = blockingChecks(pr).length - failing;
   const waiting = waitingThreads(pr);
   const open2 = threadsOnYou(pr, isSent).length;
   const sent = waiting.filter((t) => isSent(pr, t)).length;
   const changed = waiting.filter((t) => t.isLinesChanged && !isSent(pr, t)).length;
   const isPresent = (b) => b !== null;
   const row = (r) => r === null ? r : (listed.push(r), r);
-  const onYou = [
+  const checksAndConflicts = [
     pr.mergeable === "CONFLICTING" ? `conflicts with ${pr.base}` : null,
     row(failing > 0 ? plural(failing, "failing check", "failing checks") : null),
-    row(cancelled > 0 ? plural(cancelled, "cancelled check", "cancelled checks") : null),
-    pr.reviewDecision === "CHANGES_REQUESTED" ? "changes requested" : null,
-    row(open2 > 0 ? threadsWaiting(open2) : null)
-  ].filter(isPresent);
+    row(cancelled > 0 ? plural(cancelled, "cancelled check", "cancelled checks") : null)
+  ];
+  const threadsOnPerson = row(open2 > 0 ? threadsWaiting(open2) : null);
+  const isChangesRequested = pr.reviewDecision === "CHANGES_REQUESTED";
+  const isAnythingOnPerson = [...checksAndConflicts, threadsOnPerson].some(isPresent);
+  const changes = isChangesRequested ? "changes requested" : null;
+  const onYou = isAnythingOnPerson ? [...checksAndConflicts, changes, threadsOnPerson].filter(isPresent) : [];
   const onOthers = [
-    row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to Claude` : null),
+    row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to ${agent}` : null),
     row(changed > 0 ? `${plural(changed, "thread", "threads")} on changed lines` : null),
     pr.reviewDecision === "REVIEW_REQUIRED" ? "needs approval" : null,
-    pending > 0 ? `${pending} ${pending === 1 ? "check" : "checks"} running` : null
+    pending > 0 ? `${pending} ${pending === 1 ? "check" : "checks"} running` : null,
+    pr.mergeable === "UNKNOWN" ? "GitHub is still checking for conflicts" : null
   ].filter(isPresent);
-  if (pr.isDraft) return result("draft", "Draft", [...onYou, ...onOthers]);
+  if (pr.isDraft)
+    return result("draft", "Draft", [...isAnythingOnPerson ? onYou : [changes].filter(isPresent), ...onOthers]);
   if (onYou.length > 0) return result("blocked", "Blocked", onYou);
+  if (isChangesRequested) return result("waiting", "Waiting on the reviewer", ["changes requested", ...onOthers]);
   if (onOthers.length > 0) return result("waiting", "Waiting", onOthers);
   const isApproved = pr.reviewDecision === "APPROVED";
   return result(
     "ready",
     "Ready to merge",
-    [...isApproved ? ["approved"] : [], "checks pass", "no threads waiting on you"],
+    [...isApproved ? ["approved"] : [], passing > 0 ? "checks pass" : "no checks ran", "no threads waiting on you"],
     isApproved ? ": " : ", "
   );
 }
@@ -1325,15 +1373,6 @@ function inPrOrder(prs, ranked = []) {
   return [...prs].sort(
     (a, b) => byPlace(a, b) || status.get(a) - status.get(b) || b.number - a.number || a.ref.localeCompare(b.ref)
   );
-}
-function failingChecks(pr) {
-  return pr.checks.filter((c) => c.bucket === "fail");
-}
-function cancelledChecks(pr) {
-  return pr.checks.filter((c) => c.bucket === "cancelled");
-}
-function blockingChecks(pr) {
-  return [...failingChecks(pr), ...cancelledChecks(pr)];
 }
 
 // ../hooks/open-targets.ts
@@ -1713,6 +1752,9 @@ function retryOf(id, last) {
 function isRepeatOf(last, action) {
   return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
 }
+function isHeldSend(last) {
+  return last?.delivery?.state === "held";
+}
 
 // ../hooks/status-children.ts
 function isChildRunning(c, now) {
@@ -1897,7 +1939,7 @@ function ruledRows(rows, isRuled) {
 }
 
 // ../hooks/status-page.ts
-var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
 var LOOK_TEXT = "Last seen";
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
@@ -2065,6 +2107,7 @@ function isQueuedAt(last, now) {
   return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
 }
 function pendingDeliveryAt(last, now) {
+  if (last?.delivery?.state === "held") return "held";
   if (last?.delivery?.state === "unconfirmed") return "unconfirmed";
   if (last?.delivery?.state !== "queued") return null;
   return isQueuedAt(last, now) ? "queued" : "sending";
@@ -2090,13 +2133,14 @@ var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 var OPTIONS_FOLD_AT = 5;
 var OPTION_LABEL_CHARS = 32;
 var DOT = "\u2007\xB7\u2002";
-function closedRowState(closed, at, now, settleWindowMs, delivery) {
+function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnswer = false) {
+  const canUndoAnswer = isPressedAnswer && delivery === "held" && isUndoLeft(at, now, settleWindowMs);
   return {
     is: "settled",
     label: outcomeLabel(closed),
     at,
-    canUndo: canUndoClose(closed, at, now, settleWindowMs),
-    offersUndo: offersUndo(closed),
+    canUndo: canUndoAnswer || canUndoClose(closed, at, now, settleWindowMs),
+    offersUndo: isPressedAnswer || offersUndo(closed),
     closedAs: closedState(closed),
     delivery
   };
@@ -2108,8 +2152,13 @@ var ROW_COPY = {
   discard: "Discard",
   clickField: "Click the field to type",
   relevantFile: "Relevant file: ",
-  allOptions: (count) => `All ${count} options`
+  allOptions: (count) => `All ${count} options`,
+  undo: "Undo",
+  reopen: "Reopen"
 };
+function recLineOf(item) {
+  return item?.rec && item.recReason ? `Why ${item.rec}: ${item.recReason}` : null;
+}
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
   if (!descriptions) return [];
@@ -2480,15 +2529,20 @@ var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds
 
 // ../hooks/pr-views.ts
 var PR_DISMISSED_LABEL = "Dismissed";
+var PR_MERGED_LABEL = "Merged";
+var PR_CLOSED_LABEL = "Closed";
 function isTracked(prState, links, ref) {
   return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
 }
 function keepsView(prState, links, ref) {
   return isTracked(prState, links, ref) || tabPrs(links).includes(ref) && isLeftOut(prState, ref);
 }
-function dismissedAt(lastActions, ref) {
+function dismissal(lastActions, ref) {
   const mark = lastActions[prMarkId(ref)];
-  return mark?.action === "pr-dismiss" ? mark.at : null;
+  return mark?.action === "pr-dismiss" ? mark : null;
+}
+function dismissedAt(lastActions, ref) {
+  return dismissal(lastActions, ref)?.at ?? null;
 }
 function isViewKept(prState, links, lastActions, ref, shownSince) {
   const at = dismissedAt(lastActions, ref);
@@ -2497,14 +2551,18 @@ function isViewKept(prState, links, lastActions, ref, shownSince) {
 function openPrViews(drawn) {
   return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
 }
-var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
+function settledPrState(mark, now, settleWindowMs) {
+  const closed = mark.text === PR_MERGED_LABEL ? { how: "update", outcome: PR_MERGED_LABEL } : mark.text === PR_CLOSED_LABEL ? { how: "expired", outcome: PR_CLOSED_LABEL } : { how: "dismissed", outcome: PR_DISMISSED_LABEL };
+  const state = closedRowState(closed, mark.at, now, settleWindowMs, null);
+  return { ...state, canUndo: isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true };
+}
 function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
   const ranked = links.prOrder?.refs ?? [];
   const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr) => {
     if (isTracked(prState, links, pr.ref)) return [{ pr, state: { is: "open" } }];
-    const at = dismissedAt(lastActions, pr.ref);
-    if (at === null) return [];
-    const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null);
+    const mark = dismissal(lastActions, pr.ref);
+    if (mark === null) return [];
+    const state = settledPrState(mark, now, settleWindowMs);
     return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
   });
   let rank = 0;
@@ -2672,25 +2730,6 @@ function prOrderActions(row) {
   ]);
 }
 
-// ../hooks/pr-tab.ts
-var DISMISS_MERGED_LABEL = "Dismiss merged";
-function isDismissedByMerged(pr, branchRef) {
-  return pr.state === "MERGED" && pr.ref !== branchRef;
-}
-function prTabActions(drawn, branchRef) {
-  const hasMerged = drawn.some((d) => d.state.is === "open" && isDismissedByMerged(d.pr, branchRef));
-  return hasMerged ? [
-    {
-      press: { action: "pr-dismiss-merged" },
-      label: DISMISS_MERGED_LABEL,
-      kind: "mark",
-      emphasis: "normal",
-      hotkey: "m",
-      isOut: false
-    }
-  ] : [];
-}
-
 // ../hooks/tools.ts
 var ORDER_SCHEMA = {
   type: "object",
@@ -2762,7 +2801,7 @@ function actionsOf(row, last, state, feedback) {
       isOut: out === pressAction
     };
   };
-  if (state.is === "settled") return state.canUndo ? [action({ action: "undo", id }, "Undo", "view")] : [];
+  if (state.is === "settled") return state.canUndo ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [];
   if (state.is === "held")
     return [
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
@@ -2834,7 +2873,9 @@ function inboxView({
     const last = lastActions[c.id];
     return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(last.at, false) ? last : null;
   };
-  const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
+  const isPressedAnswer = (c) => c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
+  const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || isPressedAnswer(c);
+  const isAnswerHeld = (c) => isPressedAnswer(c) && isHeldSend(lastActions[c.id]) && isUndoLeft(closedAt(c), now, settleWindowMs);
   const isHeld = (c) => {
     const since = replies[c.id];
     return since !== void 0 && since <= closedAt(c) && !isOwnClose(c);
@@ -2842,7 +2883,7 @@ function inboxView({
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
   const isPlaced = (c) => {
     const at = closedAt(c);
-    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(at, canUndoClose(c, at, now, settleWindowMs)));
+    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs)));
   };
   const placedItems = new Map(
     ledger.closed.filter((d) => d.item && !isOpen2(d.id) && isPlaced(d)).map((d) => [d.id, d])
@@ -2879,7 +2920,8 @@ function inboxView({
         at,
         now,
         settleWindowMs,
-        "doneNotification" in closed2 && closed2.doneNotification?.error !== void 0 ? { error: closed2.doneNotification.error, canUndo: isUndoable(closed2) } : (closed2.how === "answered" || closed2.how === "done") && last2?.kind === "mark" && last2.at === at ? pendingDeliveryAt(last2, now) : null
+        "doneNotification" in closed2 && closed2.doneNotification?.error !== void 0 ? { error: closed2.doneNotification.error, canUndo: isUndoable(closed2) } : (closed2.how === "answered" || closed2.how === "done") && last2?.kind === "mark" && last2.at === at ? pendingDeliveryAt(last2, now) : null,
+        isPressedAnswer(closed2)
       );
     }
     const last = lastActions[id];
@@ -2908,7 +2950,8 @@ function inboxView({
       feedback,
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
-      holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.map((s) => s.name).join(", ")}` : null
+      holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.map((s) => s.name).join(", ")}` : null,
+      recLine: state.is === "open" ? recLineOf(row.item) : null
     };
   };
   const itemRow = (item) => {
@@ -2987,11 +3030,11 @@ function heldLabel(c) {
   if (c.how === "answered") return `Answered: ${c.outcome}`;
   return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
 }
-var NEXT_TRY = " The inbox tries again after the agent's next reply.";
+var NEXT_TRY = " It tries again after the next reply.";
 var FAILED_UPDATE_TEXT = {
-  waiting: `Last update failed. Items from that reply may be missing.${NEXT_TRY}`,
-  "failed-again": `Last update failed, and its retry failed too. Items from recent replies may be missing.${NEXT_TRY}`,
-  unreadable: `Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing.${NEXT_TRY}`
+  waiting: `The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing.${NEXT_TRY}`,
+  "failed-again": `The inbox couldn't update from the agent's recent replies, even on a retry. Questions, tasks and findings from them may be missing.${NEXT_TRY}`,
+  unreadable: `The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing.${NEXT_TRY}`
 };
 function perTurnStatus(isUpdating, recovery) {
   const error = recovery === "none" || recovery === "retrying" ? null : FAILED_UPDATE_TEXT[recovery];
@@ -3055,7 +3098,6 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
       { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
       shownSince
     ),
-    tabActions: prTabActions(drawn, s.prViews.branchRef),
     isGhSignedOut: s.prViews.isGhSignedOut === true
   };
 }
@@ -3562,7 +3604,7 @@ function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ??
 function isStatusCallCurrent(s, appliedAfter) {
   return s.presence.turnsApplied >= appliedAfter && s.overviewTurn <= appliedAfter;
 }
-function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overview?.goal?.setAt ?? null) {
+function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overview?.goal?.setAt ?? null, isCatchUp = false) {
   if (!isStatusCallCurrent(s, appliedAfter)) return s;
   return {
     ...s,
@@ -3570,22 +3612,27 @@ function appliedStatus(s, answer, appliedAfter, now, readSetAt = s.ledger.overvi
       ...s.ledger,
       overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)), readSetAt)
     },
-    overviewFailure: null,
+    overviewFailure: isCatchUp ? null : s.overviewFailure,
     lastOverviewCallAt: now,
     overviewTurn: appliedAfter
   };
 }
 var REFUSED_ANSWER_CHARS = 500;
-function failedStatus(s, text2, appliedAfter, now) {
+function failedStatus(s, text2, appliedAfter, now, isCatchUp = false) {
   if (!isStatusCallCurrent(s, appliedAfter)) return s;
-  const failure = text2 === null ? { at: now, cause: "no-answer", answer: null } : { at: now, cause: "refused", answer: text2.slice(0, REFUSED_ANSWER_CHARS) };
+  const before = s.overviewFailure;
+  const tries = isCatchUp ? { catchUpsFailed: (before?.catchUpsFailed ?? 0) + 1, catchUpTurn: s.presence.turnsStarted } : before?.catchUpsFailed ? { catchUpsFailed: before.catchUpsFailed, catchUpTurn: before.catchUpTurn ?? 0 } : {};
+  const failure = text2 === null ? { at: now, cause: "no-answer", answer: null, ...tries } : { at: now, cause: "refused", answer: text2.slice(0, REFUSED_ANSWER_CHARS), ...tries };
   return { ...s, overviewFailure: failure, lastOverviewCallAt: now, overviewTurn: appliedAfter };
 }
 var STATUS_REFRESH_MS = 10 * 6e4;
 function needsCatchUp(s) {
   const { presence } = s;
   const hasUnappliedTurn = s.pending.length === 0 && s.turn.person === null && presence.turnsStarted > presence.turnsApplied;
-  return presence.ledgerState !== "current" || hasUnappliedTurn;
+  const failure = s.overviewFailure;
+  const isStatusCatchUpDue = failure !== null && (!failure.catchUpsFailed || presence.turnsStarted - (failure.catchUpTurn ?? 0) >= 2 ** failure.catchUpsFailed);
+  const hasMissedStatus = isStatusCatchUpDue && (s.pending.length > 0 || hasUnappliedTurn);
+  return presence.ledgerState !== "current" || hasUnappliedTurn || hasMissedStatus;
 }
 var pendingKey = (p) => `${p.turnsStarted}:${p.ex.turn}`;
 function appliedCatchUp(s, begun, parsed, now) {
@@ -3640,6 +3687,18 @@ function viewOf(s, now, holds = NO_HOLDS) {
   return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds), heard: heardState(s.heard), at: now };
 }
 
+// ../hooks/banners.ts
+var NEXT_BUILD_MARK = ".next-build";
+var MAYBE_STALE_TEXT = "May be out of date";
+
+// ../hooks/band.ts
+function isMaybeStale(view, isReadFailed = false) {
+  return isReadFailed || view.status.error !== null || view.status.isRetrying;
+}
+function bandCounts(view) {
+  return ROW_TABS.map((t) => ({ id: t.id, label: t.label, count: view[t.id].count })).filter((c) => c.count > 0);
+}
+
 // ../hooks/children.ts
 var HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
 function delegateSteps(command) {
@@ -3687,20 +3746,21 @@ function statusLine(stop, dialogs, input) {
   if (stop) return stopLine(stop);
   const dialog = dialogs[0];
   if (dialog) return dialogText(dialog);
-  const { firstAsk, asks, findings, focus } = input;
+  const { firstAsk, asks, findings, focus, stale } = input;
   if (firstAsk !== null) return asks > 1 ? `${asks} \xB7 ${firstAsk}` : firstAsk;
   const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? "" : "s"}`;
-  return [focus, findingsText].filter(Boolean).join(" \xB7 ");
+  return [stale, focus, findingsText].filter(Boolean).join(" \xB7 ");
 }
 function focusOf(head) {
   return head ? head.description || head.title : null;
 }
-function herdrTokens(ledger, stop, view, dialogs) {
+function herdrTokens(ledger, stop, view, dialogs, isReadFailed = false) {
   const input = {
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
-    focus: focusOf(ledger.overview?.head ?? null)
+    focus: focusOf(ledger.overview?.head ?? null),
+    stale: bandCounts(view).length === 0 && isMaybeStale(view, isReadFailed) ? MAYBE_STALE_TEXT : null
   };
   const focus = input.focus ? clipLabel(input.focus, HERDR_VALUE_CHARS) : null;
   const counts = ROW_TABS.map((t) => {
@@ -3849,9 +3909,6 @@ function exitCodeOf(err) {
   if (err.killed) return TIMED_OUT_CODE;
   return typeof err.code === "number" ? err.code : UNSTARTABLE_CODE;
 }
-
-// ../hooks/banners.ts
-var NEXT_BUILD_MARK = ".next-build";
 
 // src/update.ts
 import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
@@ -4221,7 +4278,7 @@ async function askAndWriteStatus(host, s, call, tasks, appliedAfter) {
     before = x.ledger.overview;
     isWritten = isStatusCallCurrent(x, appliedAfter);
     const readSetAt = input.last?.goal?.setAt ?? null;
-    return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now, readSetAt);
+    return answer === null ? failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === "catch-up") : appliedStatus(x, answer, appliedAfter, now, readSetAt, call.exchange.kind === "catch-up");
   });
   if (!host.records) return;
   const record2 = {

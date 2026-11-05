@@ -7,7 +7,7 @@ import type { HelpStep } from './help-steps'
 import type { RowPress } from './presses'
 import { offersUndo } from './pressed'
 import { RUNNING_MARK, SUBJECT_MARKS, CLOSED_MARKS } from './help'
-import { canUndoClose } from './timing'
+import { canUndoClose, isUndoLeft } from './timing'
 import type { Feedback } from './feedback'
 import type { InboxView } from './view'
 
@@ -26,7 +26,7 @@ export const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; list: 'quest
 
 export const CLOSED_SHOWN = 3
 
-export type ClosedDelivery = 'sending' | 'queued' | 'unconfirmed' | { error: string; canUndo: boolean } | null
+export type ClosedDelivery = 'held' | 'sending' | 'queued' | 'unconfirmed' | { error: string; canUndo: boolean } | null
 
 export type RowState =
   | { is: 'open' }
@@ -45,20 +45,26 @@ export type RowState =
 
 export type SettledState = Extract<RowState, { is: 'settled' }>
 
-/** The state of a row closed at `at`, drawn in place with its outcome. Its close sets whether it offers Undo. */
+/**
+ * The state of a row closed at `at`, drawn in place with its outcome. Its close sets whether it offers Undo. An
+ * answer pressed in the inbox offers it too, while its message waits for the settle window to pass.
+ */
 export function closedRowState(
   closed: Pick<Closed, 'how' | 'outcome' | 'isSentToAgent'> & { askedAs?: string },
   at: number,
   now: number,
   settleWindowMs: number,
   delivery: ClosedDelivery,
+  isPressedAnswer = false,
 ): SettledState {
+  const canUndoAnswer = isPressedAnswer && delivery === 'held' && isUndoLeft(at, now, settleWindowMs)
+
   return {
     is: 'settled',
     label: outcomeLabel(closed),
     at,
-    canUndo: canUndoClose(closed, at, now, settleWindowMs),
-    offersUndo: offersUndo(closed),
+    canUndo: canUndoAnswer || canUndoClose(closed, at, now, settleWindowMs),
+    offersUndo: isPressedAnswer || offersUndo(closed),
     closedAs: closedState(closed),
     delivery,
   }
@@ -80,7 +86,27 @@ export const ROW_COPY = {
   clickField: 'Click the field to type',
   relevantFile: 'Relevant file: ',
   allOptions: (count: number) => `All ${count} options`,
+  undo: 'Undo',
+  reopen: 'Reopen',
 } as const
+
+/** The stop banner's button: Resume, and Resuming… while its message is on its way. */
+export function resumeLabel(isSending: boolean): string {
+  return isSending ? 'Resuming…' : 'Resume'
+}
+
+/**
+ * The press a Closed line offers: Undo after its notification was refused, else Reopen on a row the person dismissed,
+ * which stays reachable for the rest of the session. Reopening loses nothing, since a dismissal sent nothing.
+ */
+export function closedLineAction(d: {
+  id: string
+  how: Closed['how']
+  delivery: ClosedDelivery
+}): { label: string; press: RowPress } | null {
+  if (canUndoRefused(d.delivery)) return { label: ROW_COPY.undo, press: { id: d.id, action: 'undo' } }
+  return d.how === 'dismissed' ? { label: ROW_COPY.reopen, press: { id: d.id, action: 'undo' } } : null
+}
 
 export type ActionView = {
   press: RowPress
@@ -119,6 +145,12 @@ export type RowView = {
    * A look draws it on a next build, which draws the Status.
    */
   holdsUpLine: string | null
+  /** "Why", the recommended option and the agent's reason for it, on a question whose record gave one. */
+  recLine: string | null
+}
+
+export function recLineOf(item: Item | null): string | null {
+  return item?.rec && item.recReason ? `Why ${item.rec}: ${item.recReason}` : null
 }
 
 type OptionDescription = { label: string; description: string; isFolded: boolean }
@@ -200,11 +232,13 @@ const RUNNING_RESULT: ResultMark = { text: RUNNING_MARK, isRunning: true }
 /**
  * A row's result mark: a settled row's, or a handed-off row's, which runs while its message is on its way and is ✓
  * once its press is done. It is blank otherwise, as while the message is unconfirmed, and keeps its place, so the
- * result does not move when its mark arrives. Null on an open row.
+ * result does not move when its mark arrives. An open row's runs while the agent works on its Talk press, as beside
+ * "Explaining…", so a long reply never looks like a stuck press. Null on any other open row.
  */
 export function rowResultMark(row: Pick<RowView, 'state' | 'feedback'>): ResultMark | null {
   if (row.state.is === 'settled') return settledMark(row.state)
   const f = row.feedback
+  if (row.state.is === 'open' && f?.is === 'working') return RUNNING_RESULT
   if (row.state.is !== 'handedOff' || !f) return null
   if (f.is === 'sending' || f.is === 'queued') return RUNNING_RESULT
   return isHandedOffDone(row)
@@ -225,8 +259,15 @@ export function settledRowIds(rows: RowView[]): string[] {
   return rows.filter(r => r.state.is === 'settled').map(r => r.id)
 }
 
-export function closedShown<T extends { id: string }>(closed: readonly T[], drawnSettled: ReadonlySet<string>): T[] {
-  return closed.filter(d => !drawnSettled.has(d.id)).slice(0, CLOSED_SHOWN)
+/** The Closed lines a fold lists: the newest CLOSED_SHOWN, or every one once the person opened the earlier ones. */
+export function closedShown<T extends { id: string }>(
+  closed: readonly T[],
+  drawnSettled: ReadonlySet<string>,
+  isAllShown = false,
+): T[] {
+  const listed = closed.filter(d => !drawnSettled.has(d.id))
+
+  return isAllShown ? listed : listed.slice(0, CLOSED_SHOWN)
 }
 
 export function closedTotal(closed: { id: string }[], drawnSettled: ReadonlySet<string>): number {
@@ -237,8 +278,9 @@ export function foldLabel(total: number): string {
   return `${total} closed`
 }
 
+/** The button under a Closed list that lists the rest of it, or null when the list shows every line. */
 export function earlierLabel(total: number, shown: number): string | null {
-  return total > shown ? `${total - shown} earlier` : null
+  return total > shown ? `Show ${total - shown} earlier` : null
 }
 
 export function shortAgo(ms: number): string {
@@ -278,7 +320,7 @@ export function settledTone(state: Pick<SettledState, 'delivery' | 'closedAs'>):
 
 export function settledLabel(label: string, delivery: ClosedDelivery): string {
   if (delivery && typeof delivery === 'object') return `${label} · Not sent: ${delivery.error}`
-  return delivery === null || delivery === 'sending' ? label : deliveryLabel(delivery, label)
+  return delivery === null || delivery === 'held' || delivery === 'sending' ? label : deliveryLabel(delivery, label)
 }
 
 /** A closed record's outcome as a look shows it. A finding a question replaced says where it went. */

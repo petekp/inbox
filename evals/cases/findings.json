@@ -324,5 +324,37 @@
         "open": "f5"
       }
     ]
+  },
+  {
+    "name": "deferred-finding-stays-open",
+    "about": "A finding the person defers, which the reply says it left for later, stays open: it closes only when a change fixes it.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Ship the greeting CLI v1",
+        "done": ["Arg parser fixed"],
+        "now": "Preparing the release",
+        "running": []
+      },
+      "items": [],
+      "findings": [
+        {
+          "id": "f5",
+          "kind": "opportunity",
+          "title": "Arg parser has no tests for quoted values",
+          "detail": "A regression in quoting would go unnoticed.",
+          "path": "src/args.ts",
+          "at": 1
+        }
+      ]
+    },
+    "exchange": {
+      "person": "not now on the parser tests, we'll do them after the release. go ahead and tag v1",
+      "turn": 6,
+      "activity": ["ran: git tag v1.0.0", "ran: git push origin v1.0.0"],
+      "reply": "Tagged v1.0.0 and pushed the tag. The parser tests are deferred until after the release, as you asked."
+    },
+    "checks": [{ "open": "f5" }]
   }
 ]

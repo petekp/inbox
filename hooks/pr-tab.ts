@@ -1,4 +1,4 @@
-import type { LastAction, Ledger, PrCheck, PrThread, PrView, PrViews } from '../types'
+import type { LastAction, Ledger, PrCheck, PrThread, PrView, PrViews, Session } from '../types'
 import { withQueued } from './press-reducer'
 import type { Effect } from './press-reducer'
 import { localLast, pendingResult, recordPress } from './pressed'
@@ -7,9 +7,8 @@ import { checkKey, inPrOrder, parseRef, prompts, rankOf, readiness, threadsOnYou
 import type { IsThreadSent } from './prs'
 import type { PressState } from './feedback'
 import { prCheckId, prMarkId, prThreadId, RANK_AGAIN_ID, threadRowId, threadSentIn } from './pr-rows'
-import { isTracked, PR_DISMISSED_LABEL } from './pr-views'
+import { isTracked, PR_CLOSED_LABEL, PR_DISMISSED_LABEL, PR_MERGED_LABEL } from './pr-views'
 import { tabPrs } from './pr-fetch'
-import type { DrawnPr } from './pr-views'
 import { changedRankedPrs, RANK_AGAIN_LABEL } from './pr-order'
 import {
   again,
@@ -32,8 +31,6 @@ import type { Applied, PlannedPrAction, PrAction, PrPress } from './pr-press'
  * The button under a failed refresh. It is not "Try again", since a failed send on the same block draws that.
  */
 const PR_REFRESH_LABEL = 'Refresh PRs'
-
-const DISMISS_MERGED_LABEL = 'Dismiss merged'
 
 export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrAction[] {
   const row = lastPressOf(presses, threadRowId(pr.ref, t.id))
@@ -231,38 +228,45 @@ function withUndismissed(ledger: Ledger, ref: string, wasLinked: boolean): Ledge
   }
 }
 
-/** Whether Dismiss merged dismisses the PR. The branch's own PR has no Dismiss, so it is left. */
-function isDismissedByMerged(pr: PrView, branchRef: string | null): boolean {
-  return pr.state === 'MERGED' && pr.ref !== branchRef
-}
-
 /**
- * The PRs tab's own buttons, drawn after its PR blocks: Dismiss merged, while the tab draws a merged PR it can
- * dismiss. It dismisses each as the PR's own Dismiss does, so each settles with its own Undo.
+ * The session after a fetch: each tab PR the fetch first finds merged or closed leaves the tab as Dismiss would take
+ * it, so its block settles with "Merged" or "Closed" and offers Undo, which keeps it on the tab. Nothing waits on the
+ * person for a finished PR. The branch's own PR stays, since the tab shows it while the branch has it.
  */
-export function prTabActions(drawn: DrawnPr[], branchRef: string | null): PrAction[] {
-  const hasMerged = drawn.some(d => d.state.is === 'open' && isDismissedByMerged(d.pr, branchRef))
+export function withFinishedPrsSettled(
+  s: Pick<Session, 'ledger' | 'prViews' | 'lastActions'>,
+  fetched: PrViews['views'],
+  ctx: { now: number; turnsStarted: number },
+): { ledger: Ledger; lastActions: Record<string, LastAction> } {
+  const finished = Object.values(fetched).filter(
+    pr =>
+      pr.state !== 'OPEN' &&
+      s.prViews.views[pr.ref]?.state === 'OPEN' &&
+      pr.ref !== s.prViews.branchRef &&
+      tabPrs(s.ledger).includes(pr.ref),
+  )
+  if (finished.length === 0) return { ledger: s.ledger, lastActions: s.lastActions }
+  const lasts = finished.map(pr => {
+    const id = prMarkId(pr.ref)
+    const label = pr.state === 'MERGED' ? PR_MERGED_LABEL : PR_CLOSED_LABEL
 
-  return hasMerged
-    ? [
-        {
-          press: { action: 'pr-dismiss-merged' },
-          label: DISMISS_MERGED_LABEL,
-          kind: 'mark',
-          emphasis: 'normal',
-          hotkey: 'm',
-          isOut: false,
-        },
-      ]
-    : []
+    return [id, { ...dismissPress(s.ledger, pr.ref, ctx, s.lastActions[id]), text: label }] as const
+  })
+
+  return {
+    ledger: withDismissed(
+      s.ledger,
+      finished.map(pr => pr.ref),
+    ),
+    lastActions: { ...s.lastActions, ...Object.fromEntries(lasts) },
+  }
 }
 
 /**
  * Pure. Stale when the PR
  * is no longer tracked or drawn, its thread or check is gone, or what the
  * press acts on is over: the PR no longer conflicts, or no thread waits on the
- * person. Undo is stale unless the PR's block still holds its Dismiss and `withUndismissed` brings it back. Dismiss
- * merged is stale when no PR it dismisses is left.
+ * person. Undo is stale unless the PR's block still holds its Dismiss and `withUndismissed` brings it back.
  */
 export function applyPrPress(
   ledger: Ledger,
@@ -277,21 +281,6 @@ export function applyPrPress(
     const lasts = Object.fromEntries(Object.entries(a.lasts ?? {}).map(([id, l]) => [id, withQueued(l, effects)]))
 
     return { ledger, drop: [], ...a, lasts, effects }
-  }
-  if (p.action === 'pr-dismiss-merged') {
-    const refs = Object.values(prState.views)
-      .filter(pr => isTracked(prState, ledger, pr.ref) && isDismissedByMerged(pr, prState.branchRef))
-      .map(pr => pr.ref)
-    if (refs.length === 0) return stale
-    return applied({
-      ledger: withDismissed(ledger, refs),
-      lasts: Object.fromEntries(
-        refs.map(ref => {
-          const id = prMarkId(ref)
-          return [id, dismissPress(ledger, ref, ctx, lastActions[id])]
-        }),
-      ),
-    })
   }
   if (p.action === 'pr-rank-again') {
     const order = ledger.prOrder
@@ -384,12 +373,14 @@ export function applyPrPress(
         effects: [send(prompts.address(pr, waiting))],
       })
     }
-    case 'pr-merge':
-      if (readiness(pr, threadSentIn(lastActions)).status !== 'ready') return stale
+    case 'pr-merge': {
+      const shown = readiness(pr, threadSentIn(lastActions))
+      if (shown.status !== 'ready') return stale
       return applied({
         lasts: { [markId]: record(markId, 'handoff', p.action, 'Merge') },
-        effects: [send(prompts.merge(pr))],
+        effects: [send(prompts.merge(pr, shown.text))],
       })
+    }
     case 'pr-open':
       return local([markId], 'Open PR', prPageEffect(pr))
     case 'pr-refresh':

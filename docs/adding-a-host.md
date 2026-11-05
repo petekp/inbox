@@ -39,7 +39,7 @@ The host's state type extends `Session` from `types/index.d.ts`. It adds its own
 | The person sends a message they typed | `hooks/session-turns.ts:messageTyped` saves its time, and the rows that settled before it fold. A host never calls it for a message a press sent. |
 | The agent uses a tool | `hooks/catch-up-text.ts:toolActivity` and `hooks/session-turns.ts:noteActivity` add a line of turn activity. |
 | The agent calls `record` or `close` | `hooks/session-presses.ts:recorded`, with the answer from `hooks/tools.ts`: the text the agent reads, and the person's line, which the host draws under the call. |
-| A turn ends | `hooks/session-turns.ts:endTurn` queues the exchange. Then `hooks/session-host.ts:runUpdates` runs the inbox model on it, or catches up when `needsCatchUp` says the ledger may have missed a turn, and `hooks/host-press.ts:wakeForDone` tells the agent about rows closed with Done. |
+| A turn ends | `hooks/session-turns.ts:endTurn` queues the exchange. Then `hooks/session-host.ts:runUpdates` runs the inbox model on it, or catches up when `needsCatchUp` says the ledger may have missed a turn, and `hooks/host-press.ts:wakeAfterSettle` sends the answers and Fixes held for Undo and tells the agent about rows closed with Done. |
 | The person presses a button | `hooks/host-press.ts:press` applies it, saves a sent record before delivery, delivers, and runs local effects. |
 | The PRs tab opens | `hooks/host-prs.ts:fetchPrs` fetches through the host's gh. |
 | A look draws | `hooks/session-view.ts:sessionView` builds the view. |

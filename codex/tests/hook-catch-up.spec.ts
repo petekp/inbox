@@ -150,7 +150,7 @@ test('a failed chat saved with no rollout path promises the retry, and the next 
     transcriptPath: null,
     presence: { ...s.presence, ledgerState: 'failed', failedAttempts: 1 },
   }))
-  assert.match(viewOf(await readState(dir, 's1'), 5).status.error ?? '', /tries again after the agent's next reply\.$/)
+  assert.match(viewOf(await readState(dir, 's1'), 5).status.error ?? '', /tries again after the next reply\.$/)
 
   await handleHook(input('UserPromptSubmit', { prompt: 'What now?', turn_id: 't9', transcript_path: transcript }), deps)
   await handleHook(

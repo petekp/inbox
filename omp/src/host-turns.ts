@@ -6,7 +6,7 @@ import { messageTyped, notePrompt, turnStarted, placed, cutOffTurn } from '../..
 import { needsUpdate, statusChanged } from '../../hooks/session-status'
 import { childrenCutOff, delegatesSettled } from '../../hooks/children'
 import { runUpdates } from '../../hooks/session-host'
-import { wakeForDone } from '../../hooks/host-press'
+import { wakeAfterSettle } from '../../hooks/host-press'
 import { turnReply } from '../../hooks/text'
 import { readState } from './state'
 import { OMP } from './texts'
@@ -223,7 +223,7 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     if (!written) return
     const host = hostFor(ctx)
     if (needsUpdate(written)) deps.background(runUpdates(updateHostFor(ctx)))
-    deps.background(wakeForDone(host))
+    deps.background(wakeAfterSettle(host))
   }
 
   return {

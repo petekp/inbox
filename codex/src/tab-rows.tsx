@@ -168,6 +168,7 @@ function itemRow(v: View, r: RowView): Row {
     title: r.title,
     // A next build draws the Status, so only it names the subject an ask holds up.
     ...(v.isNextBuild === true && r.holdsUpLine ? { holdsUp: r.holdsUpLine } : {}),
+    ...(r.recLine ? { recLine: r.recLine } : {}),
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
     ...(described.length > 0
       ? {
@@ -291,11 +292,12 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
 
 function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
   const id = prCheckId(pr, c)
-  const text = checkRowText(c)
+  const text = checkRowText(pr, c)
   const ran = text.meta
 
   return {
     id,
+    ...(text.fold ? { fold: text.fold } : {}),
     handle: text.mark.text,
     handleTone: text.mark.tone ?? undefined,
     isMarkDone: text.mark.isDone,

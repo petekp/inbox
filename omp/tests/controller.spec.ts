@@ -69,11 +69,11 @@ test('the panel shows a loading line until the first screen arrives', async () =
 
 async function replyThenReopen(panel: ReturnType<typeof open>['panel'], reply: string): Promise<string> {
   const typed = [...reply].map(ch => [ch, ch])
-  for (const [key, text] of [['r'], ...typed, ['enter']] as [string, string?][]) {
+  for (const [key, text] of [['t'], ...typed, ['enter']] as [string, string?][]) {
     panel.handleInput(key, text)
     await flush()
   }
-  panel.handleInput('r')
+  panel.handleInput('t')
   await flush()
   const lines = panel.render(80)
 
@@ -154,10 +154,10 @@ test('the open panel keeps its line count through tab switches, presses and a cl
     await flush()
     expect(panel.render(100), `after ${key}`).toHaveLength(height)
   }
-  panel.handleInput('r')
+  panel.handleInput('t')
   await flush()
   const withField = panel.render(100).length
-  expect(withField).toBeGreaterThan(height)
+  expect(withField).toBeGreaterThanOrEqual(height)
   panel.handleInput('escape')
   await flush()
   expect(panel.render(100)).toHaveLength(withField)

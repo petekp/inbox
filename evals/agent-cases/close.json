@@ -375,5 +375,24 @@
         "noIds": true
       }
     ]
+  },
+  {
+    "name": "put-off-finding-stays-open",
+    "about": "A finding the user puts off is not closed: a finding closes only when a change fixed it.",
+    "ledger": {
+      "nextId": 3,
+      "findings": [
+        {
+          "id": "f2",
+          "kind": "opportunity",
+          "title": "Arg parser has no tests for quoted values",
+          "detail": "A regression in quoting would go unnoticed.",
+          "path": "src/args.ts",
+          "at": 1
+        }
+      ]
+    },
+    "prompt": "Not now on the parser tests finding, we'll get to it after the release. Write me a one-line release note for v1: it adds the greet command.",
+    "checks": [{ "calls": "close", "count": 0 }, { "noIds": true }]
   }
 ]

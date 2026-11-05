@@ -69,6 +69,11 @@ export function afterHandOff(screen: PanelScreen, ui: PanelUi, id: string, now: 
 function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button, now: number): KeyResult {
   const { press } = button
   if (button.isOut) return { ui }
+  if (press.action === 'all-options') {
+    const index = line.buttons.findIndex(b => b.press === press)
+
+    return { ui: { ...ui, optionsShown: [...ui.optionsShown, press.id], focus: { rowId: line.id, index } } }
+  }
   if (press.action === 'resume') {
     const { stop } = screen
     const isSending = ui.resuming?.is === 'sending' && ui.resuming.stopAt === stop?.at
@@ -161,8 +166,10 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
     const kind = selected.fold
     const unfolded = base.unfolded.includes(kind) ? base.unfolded.filter(k => k !== kind) : [...base.unfolded, kind]
 
-    return { ui: { ...base, unfolded } }
+    return { ui: { ...base, unfolded, closedAll: base.closedAll.filter(k => k !== kind) } }
   }
+  if (selected?.earlierOf && key === 'enter')
+    return { ui: { ...base, closedAll: [...base.closedAll, selected.earlierOf] } }
   if (selected && isShut(selected, base))
     return key === 'enter' ? { ui: { ...base, opened: selected.id } } : { ui: base }
   if (!selected || selected.buttons.length === 0 || isGuarded(base.openedAt, now)) return { ui: base }

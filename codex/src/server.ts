@@ -82,7 +82,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   const catchUpOnOpen = makeCatchUpOnOpen(deps)
 
   const currentPage = async () => (await deps.devPage?.()) ?? deps.tabHtml
-  const { wakeForDone, fetchPrsWhenDue, served, onPress } = makeSessionHost(
+  const { wakeAfterSettle, fetchPrsWhenDue, served, onPress } = makeSessionHost(
     deps,
     newestTurns,
     hooksTrustNow,
@@ -133,7 +133,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         const holds = holdsOf(args)
         if (args.demo === true)
           return { ...text('Inbox demo'), structuredContent: await served(demoOf(id), id, true, holds) }
-        await wakeForDone(id).catch(() => undefined)
+        await wakeAfterSettle(id).catch(() => undefined)
         await catchUpOnOpen(id).catch(() => undefined)
         const sentTab = shownTabOf(args.tab)
         const s = await updateState(dir, id, s => {

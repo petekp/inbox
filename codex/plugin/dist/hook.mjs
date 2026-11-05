@@ -170,7 +170,7 @@ function sameAsk(a, b) {
 // ../hooks/ledger-close.ts
 var MAX_CLOSED = 12;
 function pruneClosed(ledger, keep) {
-  const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id));
+  const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id) || r.how === "dismissed");
   return { ...ledger, closed: pruned2(ledger.closed), closedFindings: pruned2(ledger.closedFindings) };
 }
 function idNumber(id) {
@@ -567,7 +567,7 @@ function latestBatch(ledger) {
 function describe(item) {
   const parts = [`"${item.ask}"`];
   if (item.options.length > 0) parts.push(`options: ${item.options.join(" / ")}`);
-  if (item.rec) parts.push(`recommended: ${item.rec}`);
+  if (item.rec) parts.push(`recommended: ${item.rec}${item.recReason ? `, because ${item.recReason}` : ""}`);
   if (item.kind === "task") parts.push("an action for the user");
   return parts.join("; ");
 }
@@ -797,6 +797,29 @@ function upgradeHostTasks(saved) {
   });
 }
 
+// ../hooks/pr-checks.ts
+function failingChecks(pr) {
+  return pr.checks.filter((c) => c.bucket === "fail");
+}
+function cancelledChecks(pr) {
+  return pr.checks.filter((c) => c.bucket === "cancelled");
+}
+var ACTIONS_RUN_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/actions\/runs\/(\d+)/;
+function runOf(c) {
+  const m = ACTIONS_RUN_URL.exec(c.url ?? "");
+  return m ? { repo: m[1], run: m[2] } : null;
+}
+function isSameRun(a, b) {
+  return b !== null && a.repo === b.repo && a.run === b.run;
+}
+function failedSibling(pr, c) {
+  const run2 = c.bucket === "cancelled" ? runOf(c) : null;
+  return run2 ? pr.checks.find((f) => f.bucket === "fail" && isSameRun(run2, runOf(f))) ?? null : null;
+}
+function blockingChecks(pr) {
+  return [...failingChecks(pr), ...cancelledChecks(pr).filter((c) => !failedSibling(pr, c))];
+}
+
 // ../hooks/prs.ts
 var PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
 function prRefs(text2) {
@@ -828,7 +851,7 @@ function threadsOnYou(pr, isSent) {
   return waitingThreads(pr).filter((t) => !t.isLinesChanged && !isSent(pr, t));
 }
 function prNeedsYou(pr, isSent) {
-  return pr.state === "OPEN" && (pr.mergeable === "CONFLICTING" || blockingChecks(pr).length > 0 || pr.reviewDecision === "CHANGES_REQUESTED" || threadsOnYou(pr, isSent).length > 0);
+  return pr.state === "OPEN" && (pr.mergeable === "CONFLICTING" || blockingChecks(pr).length > 0 || threadsOnYou(pr, isSent).length > 0);
 }
 function checkCounts(pr) {
   const counts = { pass: 0, fail: 0, cancelled: 0, pending: 0, skip: 0 };
@@ -841,7 +864,7 @@ function threadsWaiting(count) {
 function plural(count, one, many) {
   return `${count} ${count === 1 ? one : many}`;
 }
-function readiness(pr, isSent = () => false) {
+function readiness(pr, isSent = () => false, agent = "Claude") {
   const result = (status, head, reasonList = [], joint = ": ") => {
     const reasons = reasonList.join(", ");
     const unlisted = status === "ready" ? [] : reasonList.filter((r) => !listed.includes(r));
@@ -850,34 +873,41 @@ function readiness(pr, isSent = () => false) {
   const listed = [];
   if (pr.state === "MERGED") return result("merged", "Merged");
   if (pr.state !== "OPEN") return result("closed", "Closed");
-  const { fail: failing, cancelled, pending } = checkCounts(pr);
+  const { pass: passing, fail: failing, pending } = checkCounts(pr);
+  const cancelled = blockingChecks(pr).length - failing;
   const waiting = waitingThreads(pr);
   const open2 = threadsOnYou(pr, isSent).length;
   const sent = waiting.filter((t) => isSent(pr, t)).length;
   const changed = waiting.filter((t) => t.isLinesChanged && !isSent(pr, t)).length;
   const isPresent = (b) => b !== null;
   const row = (r) => r === null ? r : (listed.push(r), r);
-  const onYou = [
+  const checksAndConflicts = [
     pr.mergeable === "CONFLICTING" ? `conflicts with ${pr.base}` : null,
     row(failing > 0 ? plural(failing, "failing check", "failing checks") : null),
-    row(cancelled > 0 ? plural(cancelled, "cancelled check", "cancelled checks") : null),
-    pr.reviewDecision === "CHANGES_REQUESTED" ? "changes requested" : null,
-    row(open2 > 0 ? threadsWaiting(open2) : null)
-  ].filter(isPresent);
+    row(cancelled > 0 ? plural(cancelled, "cancelled check", "cancelled checks") : null)
+  ];
+  const threadsOnPerson = row(open2 > 0 ? threadsWaiting(open2) : null);
+  const isChangesRequested = pr.reviewDecision === "CHANGES_REQUESTED";
+  const isAnythingOnPerson = [...checksAndConflicts, threadsOnPerson].some(isPresent);
+  const changes = isChangesRequested ? "changes requested" : null;
+  const onYou = isAnythingOnPerson ? [...checksAndConflicts, changes, threadsOnPerson].filter(isPresent) : [];
   const onOthers = [
-    row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to Claude` : null),
+    row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to ${agent}` : null),
     row(changed > 0 ? `${plural(changed, "thread", "threads")} on changed lines` : null),
     pr.reviewDecision === "REVIEW_REQUIRED" ? "needs approval" : null,
-    pending > 0 ? `${pending} ${pending === 1 ? "check" : "checks"} running` : null
+    pending > 0 ? `${pending} ${pending === 1 ? "check" : "checks"} running` : null,
+    pr.mergeable === "UNKNOWN" ? "GitHub is still checking for conflicts" : null
   ].filter(isPresent);
-  if (pr.isDraft) return result("draft", "Draft", [...onYou, ...onOthers]);
+  if (pr.isDraft)
+    return result("draft", "Draft", [...isAnythingOnPerson ? onYou : [changes].filter(isPresent), ...onOthers]);
   if (onYou.length > 0) return result("blocked", "Blocked", onYou);
+  if (isChangesRequested) return result("waiting", "Waiting on the reviewer", ["changes requested", ...onOthers]);
   if (onOthers.length > 0) return result("waiting", "Waiting", onOthers);
   const isApproved = pr.reviewDecision === "APPROVED";
   return result(
     "ready",
     "Ready to merge",
-    [...isApproved ? ["approved"] : [], "checks pass", "no threads waiting on you"],
+    [...isApproved ? ["approved"] : [], passing > 0 ? "checks pass" : "no checks ran", "no threads waiting on you"],
     isApproved ? ": " : ", "
   );
 }
@@ -896,15 +926,6 @@ function inPrOrder(prs, ranked = []) {
   return [...prs].sort(
     (a, b) => byPlace(a, b) || status.get(a) - status.get(b) || b.number - a.number || a.ref.localeCompare(b.ref)
   );
-}
-function failingChecks(pr) {
-  return pr.checks.filter((c) => c.bucket === "fail");
-}
-function cancelledChecks(pr) {
-  return pr.checks.filter((c) => c.bucket === "cancelled");
-}
-function blockingChecks(pr) {
-  return [...failingChecks(pr), ...cancelledChecks(pr)];
 }
 
 // ../hooks/open-targets.ts
@@ -1073,6 +1094,9 @@ function retryOf(id, last) {
 }
 function isRepeatOf(last, action) {
   return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
+}
+function isHeldSend(last) {
+  return last?.delivery?.state === "held";
 }
 
 // ../hooks/status-children.ts
@@ -1267,7 +1291,7 @@ function ruledRows(rows, isRuled) {
 }
 
 // ../hooks/status-page.ts
-var STATUS_FAILED = "Last Status update failed. Changes from that reply may be missing.";
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
 var LOOK_TEXT = "Last seen";
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
@@ -1435,6 +1459,7 @@ function isQueuedAt(last, now) {
   return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
 }
 function pendingDeliveryAt(last, now) {
+  if (last?.delivery?.state === "held") return "held";
   if (last?.delivery?.state === "unconfirmed") return "unconfirmed";
   if (last?.delivery?.state !== "queued") return null;
   return isQueuedAt(last, now) ? "queued" : "sending";
@@ -1460,13 +1485,14 @@ var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 var OPTIONS_FOLD_AT = 5;
 var OPTION_LABEL_CHARS = 32;
 var DOT = "\u2007\xB7\u2002";
-function closedRowState(closed, at, now, settleWindowMs, delivery) {
+function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnswer = false) {
+  const canUndoAnswer = isPressedAnswer && delivery === "held" && isUndoLeft(at, now, settleWindowMs);
   return {
     is: "settled",
     label: outcomeLabel(closed),
     at,
-    canUndo: canUndoClose(closed, at, now, settleWindowMs),
-    offersUndo: offersUndo(closed),
+    canUndo: canUndoAnswer || canUndoClose(closed, at, now, settleWindowMs),
+    offersUndo: isPressedAnswer || offersUndo(closed),
     closedAs: closedState(closed),
     delivery
   };
@@ -1478,8 +1504,13 @@ var ROW_COPY = {
   discard: "Discard",
   clickField: "Click the field to type",
   relevantFile: "Relevant file: ",
-  allOptions: (count) => `All ${count} options`
+  allOptions: (count) => `All ${count} options`,
+  undo: "Undo",
+  reopen: "Reopen"
 };
+function recLineOf(item) {
+  return item?.rec && item.recReason ? `Why ${item.rec}: ${item.recReason}` : null;
+}
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
   if (!descriptions) return [];
@@ -1881,15 +1912,20 @@ var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds
 
 // ../hooks/pr-views.ts
 var PR_DISMISSED_LABEL = "Dismissed";
+var PR_MERGED_LABEL = "Merged";
+var PR_CLOSED_LABEL = "Closed";
 function isTracked(prState, links, ref) {
   return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
 }
 function keepsView(prState, links, ref) {
   return isTracked(prState, links, ref) || tabPrs(links).includes(ref) && isLeftOut(prState, ref);
 }
-function dismissedAt(lastActions, ref) {
+function dismissal(lastActions, ref) {
   const mark = lastActions[prMarkId(ref)];
-  return mark?.action === "pr-dismiss" ? mark.at : null;
+  return mark?.action === "pr-dismiss" ? mark : null;
+}
+function dismissedAt(lastActions, ref) {
+  return dismissal(lastActions, ref)?.at ?? null;
 }
 function isViewKept(prState, links, lastActions, ref, shownSince) {
   const at = dismissedAt(lastActions, ref);
@@ -1898,14 +1934,18 @@ function isViewKept(prState, links, lastActions, ref, shownSince) {
 function openPrViews(drawn) {
   return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
 }
-var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
+function settledPrState(mark, now, settleWindowMs) {
+  const closed = mark.text === PR_MERGED_LABEL ? { how: "update", outcome: PR_MERGED_LABEL } : mark.text === PR_CLOSED_LABEL ? { how: "expired", outcome: PR_CLOSED_LABEL } : { how: "dismissed", outcome: PR_DISMISSED_LABEL };
+  const state = closedRowState(closed, mark.at, now, settleWindowMs, null);
+  return { ...state, canUndo: isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true };
+}
 function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
   const ranked = links.prOrder?.refs ?? [];
   const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr) => {
     if (isTracked(prState, links, pr.ref)) return [{ pr, state: { is: "open" } }];
-    const at = dismissedAt(lastActions, pr.ref);
-    if (at === null) return [];
-    const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null);
+    const mark = dismissal(lastActions, pr.ref);
+    if (mark === null) return [];
+    const state = settledPrState(mark, now, settleWindowMs);
     return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
   });
   let rank = 0;
@@ -2073,25 +2113,6 @@ function prOrderActions(row) {
   ]);
 }
 
-// ../hooks/pr-tab.ts
-var DISMISS_MERGED_LABEL = "Dismiss merged";
-function isDismissedByMerged(pr, branchRef) {
-  return pr.state === "MERGED" && pr.ref !== branchRef;
-}
-function prTabActions(drawn, branchRef) {
-  const hasMerged = drawn.some((d) => d.state.is === "open" && isDismissedByMerged(d.pr, branchRef));
-  return hasMerged ? [
-    {
-      press: { action: "pr-dismiss-merged" },
-      label: DISMISS_MERGED_LABEL,
-      kind: "mark",
-      emphasis: "normal",
-      hotkey: "m",
-      isOut: false
-    }
-  ] : [];
-}
-
 // ../hooks/tools.ts
 var ORDER_SCHEMA = {
   type: "object",
@@ -2163,7 +2184,7 @@ function actionsOf(row, last, state, feedback) {
       isOut: out === pressAction
     };
   };
-  if (state.is === "settled") return state.canUndo ? [action({ action: "undo", id }, "Undo", "view")] : [];
+  if (state.is === "settled") return state.canUndo ? [action({ action: "undo", id }, ROW_COPY.undo, "view")] : [];
   if (state.is === "held")
     return [
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
@@ -2235,7 +2256,9 @@ function inboxView({
     const last = lastActions[c.id];
     return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(last.at, false) ? last : null;
   };
-  const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
+  const isPressedAnswer = (c) => c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
+  const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || isPressedAnswer(c);
+  const isAnswerHeld = (c) => isPressedAnswer(c) && isHeldSend(lastActions[c.id]) && isUndoLeft(closedAt(c), now, settleWindowMs);
   const isHeld = (c) => {
     const since = replies[c.id];
     return since !== void 0 && since <= closedAt(c) && !isOwnClose(c);
@@ -2243,7 +2266,7 @@ function inboxView({
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
   const isPlaced = (c) => {
     const at = closedAt(c);
-    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(at, canUndoClose(c, at, now, settleWindowMs)));
+    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs)));
   };
   const placedItems = new Map(
     ledger.closed.filter((d) => d.item && !isOpen2(d.id) && isPlaced(d)).map((d) => [d.id, d])
@@ -2280,7 +2303,8 @@ function inboxView({
         at,
         now,
         settleWindowMs,
-        "doneNotification" in closed2 && closed2.doneNotification?.error !== void 0 ? { error: closed2.doneNotification.error, canUndo: isUndoable(closed2) } : (closed2.how === "answered" || closed2.how === "done") && last2?.kind === "mark" && last2.at === at ? pendingDeliveryAt(last2, now) : null
+        "doneNotification" in closed2 && closed2.doneNotification?.error !== void 0 ? { error: closed2.doneNotification.error, canUndo: isUndoable(closed2) } : (closed2.how === "answered" || closed2.how === "done") && last2?.kind === "mark" && last2.at === at ? pendingDeliveryAt(last2, now) : null,
+        isPressedAnswer(closed2)
       );
     }
     const last = lastActions[id];
@@ -2309,7 +2333,8 @@ function inboxView({
       feedback,
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
-      holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.map((s) => s.name).join(", ")}` : null
+      holdsUpLine: held2.length > 0 ? `${HOLDS_UP_TEXT} ${held2.map((s) => s.name).join(", ")}` : null,
+      recLine: state.is === "open" ? recLineOf(row.item) : null
     };
   };
   const itemRow = (item) => {
@@ -2388,11 +2413,11 @@ function heldLabel(c) {
   if (c.how === "answered") return `Answered: ${c.outcome}`;
   return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
 }
-var NEXT_TRY = " The inbox tries again after the agent's next reply.";
+var NEXT_TRY = " It tries again after the next reply.";
 var FAILED_UPDATE_TEXT = {
-  waiting: `Last update failed. Items from that reply may be missing.${NEXT_TRY}`,
-  "failed-again": `Last update failed, and its retry failed too. Items from recent replies may be missing.${NEXT_TRY}`,
-  unreadable: `Last update failed. The inbox cannot read this conversation right now, so items from that reply may be missing.${NEXT_TRY}`
+  waiting: `The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing.${NEXT_TRY}`,
+  "failed-again": `The inbox couldn't update from the agent's recent replies, even on a retry. Questions, tasks and findings from them may be missing.${NEXT_TRY}`,
+  unreadable: `The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing.${NEXT_TRY}`
 };
 function perTurnStatus(isUpdating, recovery) {
   const error = recovery === "none" || recovery === "retrying" ? null : FAILED_UPDATE_TEXT[recovery];
@@ -2456,7 +2481,6 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
       { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
       shownSince
     ),
-    tabActions: prTabActions(drawn, s.prViews.branchRef),
     isGhSignedOut: s.prViews.isGhSignedOut === true
   };
 }
@@ -2754,15 +2778,15 @@ function guidanceText(host) {
   return `# Inbox
 ${host.intro}
 
-When you ask the user to decide something, say which option you recommend and why, in one clause ("I'd go with B: it keeps the old API"). If you cannot recommend one, say what would decide it.
+When a choice can be inferred from the work or is easy to undo, make it and say what you chose. When you ask the user to decide something, say which option you recommend and why, in one clause ("I'd go with B: it keeps the old API"). If you cannot recommend one, say what would decide it.
 
-Before you hand the user a step, take it yourself when your tools reach it, such as running a command, reloading or checking a page, or reading a log. When the step changes something other people see, such as marking a PR ready or pushing, ask for their OK as a question and take the step when they say yes. Record a task only for a step your tools cannot reach, and say in your reply why you cannot take it.
+Before you hand the user a step, take it yourself when your tools reach it, such as running a command, reloading or checking a page, or reading a log. When the step changes something other people see, such as merging, releasing or messaging someone, ask for their OK as a question and take the step when they say yes. Record a task only for a step your tools cannot reach, and say in your reply why you cannot take it.
 
 When you ask the user to do something, such as review a page, sign in or run a command, give them what they need in the same reply: the link, file path or command, what to do there, and how the result gets back to you. If the result would stay where you cannot read it, such as in their browser, give them a way to send it to you.
 
-Ask in your reply as a direct question, and record the same ask in that turn with ${host.recordTool}, so it stays in the inbox after the conversation moves on. Record a decision, an approval or information you need as a question, with its options and the one you recommend. Record an act you hold until the user says so the same way. Record a step only the user can take as a task, with its steps. Record each one once. Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.
+Ask in your reply as a direct question, and record the same ask in that turn with ${host.recordTool}, so it stays in the inbox after the conversation moves on. Record a decision, an approval or information you need as a question, with its options and the one you recommend. Record an act you hold until the user says so the same way. Record a step only the user can take as a task, with its steps. Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.
 
-A finding is something you noticed that deserves the user's attention but is outside the current task: a bug, a risk, missing tests, tech debt, or a chance to improve something. Check it once before you record it, by reading the code or running a quick command, so the finding says what is true. Record it with ${host.recordTool} as a finding, then go on with the task; fixing it waits until the user asks. Record one too when you work around a problem instead of fixing it, such as copying files by hand because a tool does not reach them, and when part of your change cannot be checked from where you are. State those in your reply as well. Mention any other finding only when it bears on what the user asked.
+A finding is something you noticed that deserves the user's attention but is outside the current task: a bug, a risk, missing tests, tech debt, or a chance to improve something. Record it with ${host.recordTool} as a finding, then go on with the task; fixing it waits until the user asks. Record one too when you work around a problem instead of fixing it, such as copying files by hand because a tool does not reach them, and when part of your change cannot be checked from where you are. State those in your reply as well. Mention any other finding only when it bears on what the user asked.
 
 These are not findings. Handle them in the task and your reply instead:
 - A problem in your own change or inside the task: fix it.
@@ -2770,11 +2794,11 @@ These are not findings. Handle them in the task and your reply instead:
 - Progress, status, or an approach you tried and dropped: say it.
 - Something only the user can do or decide, such as an approval, a sign-in or a choice: ask it, and record it as a question or task.
 
-The latest "inbox:" text beside the user's prompt is the current state. It lists every open item and finding with its id, such as (close id: i35), and anything it does not list is closed. Check it before telling the user that something is open or waits on them. The ids are for the inbox tools only. The user never sees them, so never write one to the user, not even in parentheses: name an item or finding by what it says, as "the deploy task" or "the migration finding".
+The latest "inbox:" text beside the user's prompt is the current state. It lists every open item and finding with its id, such as (close id: i35), and anything it does not list is closed. Check it before telling the user that something is open or waits on them. The user never sees the ids, so never write one to the user, not even in parentheses: name an item or finding by what it says, as "the deploy task" or "the migration finding".
 
 Close with ${host.closeTool}:
 - When the user's message answers an open item, close it first, before other work, with their answer, and say in your reply what you took their answer to be.
-- When an item or finding is done or no longer applies, close it with a short reason, without waiting to be asked.
+- When an item is done or no longer applies, close it with a short reason, without waiting to be asked. Close a finding only when a change fixed it, not when the user puts it off.
 The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`;
 }
 
@@ -3000,6 +3024,17 @@ function viewOf(s, now, holds = NO_HOLDS) {
   return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds), heard: heardState(s.heard), at: now };
 }
 
+// ../hooks/banners.ts
+var MAYBE_STALE_TEXT = "May be out of date";
+
+// ../hooks/band.ts
+function isMaybeStale(view, isReadFailed = false) {
+  return isReadFailed || view.status.error !== null || view.status.isRetrying;
+}
+function bandCounts(view) {
+  return ROW_TABS.map((t) => ({ id: t.id, label: t.label, count: view[t.id].count })).filter((c) => c.count > 0);
+}
+
 // ../hooks/children.ts
 var ACTIVITY_SAVE_MS = 3e4;
 var NAME_CHARS = 80;
@@ -3167,20 +3202,21 @@ function statusLine(stop, dialogs, input) {
   if (stop) return stopLine(stop);
   const dialog = dialogs[0];
   if (dialog) return dialogText(dialog);
-  const { firstAsk, asks, findings, focus } = input;
+  const { firstAsk, asks, findings, focus, stale } = input;
   if (firstAsk !== null) return asks > 1 ? `${asks} \xB7 ${firstAsk}` : firstAsk;
   const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? "" : "s"}`;
-  return [focus, findingsText].filter(Boolean).join(" \xB7 ");
+  return [stale, focus, findingsText].filter(Boolean).join(" \xB7 ");
 }
 function focusOf(head) {
   return head ? head.description || head.title : null;
 }
-function herdrTokens(ledger, stop, view, dialogs) {
+function herdrTokens(ledger, stop, view, dialogs, isReadFailed = false) {
   const input = {
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
-    focus: focusOf(ledger.overview?.head ?? null)
+    focus: focusOf(ledger.overview?.head ?? null),
+    stale: bandCounts(view).length === 0 && isMaybeStale(view, isReadFailed) ? MAYBE_STALE_TEXT : null
   };
   const focus = input.focus ? clipLabel(input.focus, HERDR_VALUE_CHARS) : null;
   const counts = ROW_TABS.map((t) => {

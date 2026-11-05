@@ -1,5 +1,6 @@
 import { rowsIn, settledIn } from './action-plan'
 import { bannerOf, emptyText, isResumable, READING_TEXT, stopBanner } from './banners'
+import { isMaybeStale } from './band'
 import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
 import { FINDING_GROUPS, HELD_MARK } from './help'
 import { READ_FAILED_TEXT } from './mod-sessions'
@@ -10,7 +11,17 @@ import { childPos, holdsUpLineOf, type PaneRowLines } from './pane-row-lines'
 import type { PaneRowParts } from './pane-row-parts'
 import type { PaneRows } from './pane-rows'
 import { ROW_COLUMNS } from './pane-sizes'
-import { closedShown, closedTotal, DOT, replyHint, ROW_COPY, rowTitle, type RowView, waitingCount } from './rows'
+import {
+  closedShown,
+  closedTotal,
+  DOT,
+  replyHint,
+  resumeLabel,
+  ROW_COPY,
+  rowTitle,
+  type RowView,
+  waitingCount,
+} from './rows'
 import { type TerminalSpan, terminalTextLines } from './terminal-text'
 import { ago } from './text'
 
@@ -35,6 +46,17 @@ export function paneAskRows(
     const asked = r.at === null ? undefined : `${DOT}${ago(now - r.at)}`
     const isHandedOff = r.state.is === 'handedOff'
     const holdsUpLine = holdsUpLineOf(r)
+    const holdsUp = holdsUpLine ? (
+      <Text color={pal.muted} wrap="wrap">
+        <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
+        {holdsUpLine}
+      </Text>
+    ) : null
+    const recLine = r.recLine ? (
+      <Text color={pal.muted} wrap="wrap">
+        {r.recLine}
+      </Text>
+    ) : null
 
     return {
       id: r.id,
@@ -44,16 +66,18 @@ export function paneAskRows(
       title: rowTitle(r, look),
       titleAfter: asked,
       ...(r.at === null ? {} : { at: r.at }),
-      ...(holdsUpLine
+      ...(holdsUp && recLine
         ? {
             subtitle: (
-              <Text color={pal.muted} wrap="wrap">
-                <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
-                {holdsUpLine}
-              </Text>
+              <Box flexDirection="column">
+                {holdsUp}
+                {recLine}
+              </Box>
             ),
           }
-        : {}),
+        : holdsUp || recLine
+          ? { subtitle: holdsUp ?? recLine! }
+          : {}),
       hasSecondLine: r.replyKind === 'answer',
       body: null,
       keys: () => rowKeyActions(r, optionsShown.includes(r.id)).keys,
@@ -111,6 +135,7 @@ export function paneAskTabs(
     view,
     isUnread,
     unfolded,
+    closedAll,
     Button,
     stop,
     glued,
@@ -140,6 +165,7 @@ export function paneAskTabs(
     | 'view'
     | 'isUnread'
     | 'unfolded'
+    | 'closedAll'
     | 'Button'
     | 'stop'
     | 'glued'
@@ -200,7 +226,7 @@ export function paneAskTabs(
   const needsYouView = () => {
     const groups = needsYouGroups.flatMap(g => {
       const { entries } = g
-      const closed = closedShown(view.needsYou.closed[g.list], settledIn(entries))
+      const closed = closedShown(view.needsYou.closed[g.list], settledIn(entries), closedAll.includes(g.kind))
       if (isUnread) return []
       const isUnfolded = unfolded.includes(g.kind)
       const open = divided(
@@ -234,7 +260,8 @@ export function paneAskTabs(
           ),
         ]
       : []
-    if (isNothing && !stop && unread.length === 0) return emptyState(emptyText('needsYou', 'Claude'))
+    if (isNothing && !stop && unread.length === 0)
+      return emptyState(emptyText('needsYou', 'Claude', isMaybeStale(view, isUnread)))
     const outside = stop
       ? [
           section(
@@ -250,7 +277,7 @@ export function paneAskTabs(
               action: isResumable(stop) ? (
                 <Button
                   key="resume"
-                  label={sessionState.resuming?.is === 'sending' ? 'Resuming…' : 'Resume'}
+                  label={resumeLabel(sessionState.resuming?.is === 'sending')}
                   onPress={() => void resume()}
                 />
               ) : null,
@@ -264,11 +291,12 @@ export function paneAskTabs(
   const findingsView = () => {
     const settled = settledIn(findingEntries)
     if (findingEntries.length === 0 && closedTotal(view.findings.closed, settled) === 0)
-      return emptyState(emptyText('findings', 'Claude'))
+      return emptyState(emptyText('findings', 'Claude', isMaybeStale(view, isUnread)))
     const groups = lists.findingGroups.map(g => {
       const closedOf = view.findings.closed.filter(f => f.kind === g.kind)
-      const closed = closedShown(closedOf, settled).map(f => ({
+      const closed = closedShown(closedOf, settled, closedAll.includes(g.kind)).map(f => ({
         id: f.id,
+        how: f.how,
         ask: f.title,
         at: f.closedAt,
         outcomeLabel: f.outcomeLabel,
