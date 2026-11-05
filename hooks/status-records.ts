@@ -182,7 +182,7 @@ export async function askAndWriteStatus<S extends Session>(
     const readSetAt = input.last?.goal?.setAt ?? null
     return answer === null
       ? failedStatus(x, last.text, appliedAfter, now)
-      : appliedStatus(x, answer, appliedAfter, now, readSetAt)
+      : appliedStatus(x, answer, appliedAfter, now, readSetAt, call.exchange.kind === 'catch-up')
   })
   if (!host.records) return
   const record: StatusRecord = {

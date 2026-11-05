@@ -19,7 +19,8 @@ export function isStatusCallCurrent(s: Session, appliedAfter: number): boolean {
 
 /**
  * Writes the Status call's answer for an update that is already applied. `appliedAfter` is the session's
- * `turnsApplied` when the update landed. The answer is dropped unless `isStatusCallCurrent`.
+ * `turnsApplied` when the update landed. The answer is dropped unless `isStatusCallCurrent`. A saved failure stays
+ * until a catch-up call writes, since only a catch-up reads the exchange the failed call missed.
  */
 export function appliedStatus<S extends Session>(
   s: S,
@@ -27,6 +28,7 @@ export function appliedStatus<S extends Session>(
   appliedAfter: number,
   now: number,
   readSetAt: number | null = s.ledger.overview?.goal?.setAt ?? null,
+  isCatchUp = false,
 ): S {
   if (!isStatusCallCurrent(s, appliedAfter)) return s
 
@@ -36,7 +38,7 @@ export function appliedStatus<S extends Session>(
       ...s.ledger,
       overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map(i => i.id)), readSetAt),
     },
-    overviewFailure: null,
+    overviewFailure: isCatchUp ? null : s.overviewFailure,
     lastOverviewCallAt: now,
     overviewTurn: appliedAfter,
   }
@@ -76,15 +78,17 @@ export function claimedStatusRefresh<S extends Session>(s: S, now: number): S {
 }
 
 /**
- * Whether the ledger may have missed a turn: a failed or behind update, or turns that started with no exchange
- * waiting. Not while a turn runs, since that turn has not ended yet.
+ * Whether the ledger or the Status may have missed a turn: a failed or behind update, turns that started with no
+ * exchange waiting, or a failed Status call while a new exchange waits. Not while a turn runs, since that turn has not
+ * ended yet. A Status failure waits for a new exchange, so a failed catch-up is tried once per reply.
  */
 export function needsCatchUp(s: Session): boolean {
   const { presence } = s
   const hasUnappliedTurn =
     s.pending.length === 0 && s.turn.person === null && presence.turnsStarted > presence.turnsApplied
+  const hasMissedStatus = s.overviewFailure !== null && (s.pending.length > 0 || hasUnappliedTurn)
 
-  return presence.ledgerState !== 'current' || hasUnappliedTurn
+  return presence.ledgerState !== 'current' || hasUnappliedTurn || hasMissedStatus
 }
 
 /** Whether a host that cannot read the whole conversation still has something to run: an exchange, or a ledger that is not current. */
