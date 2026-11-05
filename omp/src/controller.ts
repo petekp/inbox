@@ -139,6 +139,7 @@ export function createPanel(deps: PanelDeps): Panel {
 
   async function press(p: PanelPress): Promise<void> {
     if (p.action === 'resume') return resume()
+    if (p.action === 'all-options') return
     const rowId = pressRowId(p)
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now())
     const sentDraft = !isPrPress(p) && p.action === 'type' ? ui.drafts[p.id] : undefined

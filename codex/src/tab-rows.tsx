@@ -291,11 +291,12 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
 
 function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
   const id = prCheckId(pr, c)
-  const text = checkRowText(c)
+  const text = checkRowText(pr, c)
   const ran = text.meta
 
   return {
     id,
+    ...(text.fold ? { fold: text.fold } : {}),
     handle: text.mark.text,
     handleTone: text.mark.tone ?? undefined,
     isMarkDone: text.mark.isDone,

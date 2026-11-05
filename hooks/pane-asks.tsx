@@ -11,7 +11,17 @@ import { childPos, holdsUpLineOf, type PaneRowLines } from './pane-row-lines'
 import type { PaneRowParts } from './pane-row-parts'
 import type { PaneRows } from './pane-rows'
 import { ROW_COLUMNS } from './pane-sizes'
-import { closedShown, closedTotal, DOT, replyHint, ROW_COPY, rowTitle, type RowView, waitingCount } from './rows'
+import {
+  closedShown,
+  closedTotal,
+  DOT,
+  replyHint,
+  resumeLabel,
+  ROW_COPY,
+  rowTitle,
+  type RowView,
+  waitingCount,
+} from './rows'
 import { type TerminalSpan, terminalTextLines } from './terminal-text'
 import { ago } from './text'
 
@@ -112,6 +122,7 @@ export function paneAskTabs(
     view,
     isUnread,
     unfolded,
+    closedAll,
     Button,
     stop,
     glued,
@@ -141,6 +152,7 @@ export function paneAskTabs(
     | 'view'
     | 'isUnread'
     | 'unfolded'
+    | 'closedAll'
     | 'Button'
     | 'stop'
     | 'glued'
@@ -201,7 +213,7 @@ export function paneAskTabs(
   const needsYouView = () => {
     const groups = needsYouGroups.flatMap(g => {
       const { entries } = g
-      const closed = closedShown(view.needsYou.closed[g.list], settledIn(entries))
+      const closed = closedShown(view.needsYou.closed[g.list], settledIn(entries), closedAll.includes(g.kind))
       if (isUnread) return []
       const isUnfolded = unfolded.includes(g.kind)
       const open = divided(
@@ -252,7 +264,7 @@ export function paneAskTabs(
               action: isResumable(stop) ? (
                 <Button
                   key="resume"
-                  label={sessionState.resuming?.is === 'sending' ? 'Resuming…' : 'Resume'}
+                  label={resumeLabel(sessionState.resuming?.is === 'sending')}
                   onPress={() => void resume()}
                 />
               ) : null,
@@ -269,8 +281,9 @@ export function paneAskTabs(
       return emptyState(emptyText('findings', 'Claude', isMaybeStale(view, isUnread)))
     const groups = lists.findingGroups.map(g => {
       const closedOf = view.findings.closed.filter(f => f.kind === g.kind)
-      const closed = closedShown(closedOf, settled).map(f => ({
+      const closed = closedShown(closedOf, settled, closedAll.includes(g.kind)).map(f => ({
         id: f.id,
+        how: f.how,
         ask: f.title,
         at: f.closedAt,
         outcomeLabel: f.outcomeLabel,

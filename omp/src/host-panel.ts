@@ -6,7 +6,7 @@ import { lookEndedOn, withLook } from '../../hooks/session-status'
 import type { ShownRows } from '../../hooks/status-children'
 import { withHolds } from '../../hooks/session-presses'
 import { sessionView } from '../../hooks/session-view'
-import { press, wakeForDone } from '../../hooks/host-press'
+import { press, wakeAfterSettle } from '../../hooks/host-press'
 import type { PressOutcome } from '../../hooks/host-press'
 import { NO_HOLDS } from '../../hooks/timing'
 import { RESUME_TEXT } from '../../hooks/banners'
@@ -77,7 +77,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
       const id = sessionIdOf(ctx)
       openPanels.set(id, 'needsYou')
       deps.background(change(id, s => ({ ...s, shownSince: openedAt })))
-      await wakeForDone(hostFor(ctx)).catch(() => undefined)
+      await wakeAfterSettle(hostFor(ctx)).catch(() => undefined)
       fetchPrsWhenDue(ctx)
     },
     showTab: (ctx, tab, holds) => {
@@ -117,7 +117,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
     },
     press: async (ctx, p, holds) => {
       const outcome = await press(hostFor(ctx), p, false, holds)
-      if (outcome.wakesForDone) wakeLater(ctx)
+      if (outcome.wakesAfterSettle) wakeLater(ctx)
 
       return outcome
     },

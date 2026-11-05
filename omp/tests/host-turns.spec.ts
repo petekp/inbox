@@ -30,7 +30,7 @@ test('Done schedules the wake and the wake tells the agent after the settle wind
   await settle()
   const id = state().ledger.items[0].id
   const outcome = await inbox.press(makeCtx(), { action: 'done', id }, NO_HOLDS)
-  expect(outcome.wakesForDone).toBe(true)
+  expect(outcome.wakesAfterSettle).toBe(true)
   expect(w.timers).toHaveLength(1)
   expect(w.timers[0]!.ms).toBeGreaterThan(1000)
   expect(w.sent).toEqual([])

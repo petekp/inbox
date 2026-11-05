@@ -60,6 +60,8 @@ export const selection: Record<Tab, { id: string; openedAt: number; index?: numb
 export const drafts = new Map<string, Draft>()
 export const optionsShown = new Set<string>()
 export const unfolded = new Set<FoldGroup>()
+/** The Closed folds whose earlier lines the person opened. */
+export const closedAll = new Set<FoldGroup>()
 /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
 export const statusUnfolded = new Set<string>()
 /**

@@ -75,7 +75,7 @@ test('a row turned around mid-move starts the new move at once, and with reduced
   assert.equal(stepRow(undefined, 'open', 0)?.state, 'open')
 })
 
-test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR row closes with its panel, leaves from its place with its group and title, a block’s press line grows in, a dismissed block settles under its settled line and grows back on Undo, the tab’s buttons leave with the last merged PR, and with reduced motion each move ends as it starts', async context => {
+test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR row closes with its panel, leaves from its place with its group and title, a block’s press line grows in, a dismissed block settles under its settled line and grows back on Undo, a merged block’s Dismiss settles it and it leaves with its view, and with reduced motion each move ends as it starts', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const window = new Window()
   const animate = window.HTMLElement.prototype.animate
@@ -229,7 +229,6 @@ test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR
     )
   const isSettlingOverBlock = (n: number) =>
     !!block(n).querySelector('.settled-line') && !!block(n).querySelector('.closing[inert] .pr-actions')
-  const tabButtons = () => root.querySelector<HTMLElement>('[data-motion="pr-tab-actions"]')
   const line = () => root.querySelector('.pr-last')?.textContent ?? null
   const isLineGrowing = () => (root.querySelector('.pr-last')?.parentElement?.getAnimations().length ?? 0) > 0
   try {
@@ -319,13 +318,10 @@ test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR
     assert.ok(isMoving(block(15)))
     await after(MOVE_MS + 100)
     assert.ok(!isMoving(block(15)))
-    await press(tabButtons()!, 'Dismiss merged')
-    assert.ok(isSettlingOverBlock(13) && isSettlingOverBlock(14))
-    assert.ok(tabButtons()!.querySelector('[inert] .pr-actions'))
-    assert.ok(isMoving(tabButtons()!))
-    await after(EXIT_MS + 100)
-    assert.equal(tabButtons(), null)
-    assert.ok(!isSettlingOverBlock(13) && !isSettlingOverBlock(14))
+    await press(block(13), 'Dismiss')
+    assert.ok(isSettlingOverBlock(13))
+    await after(MOVE_MS + 100)
+    assert.ok(!isSettlingOverBlock(13))
     state.prViews = {
       ...state.prViews,
       views: Object.fromEntries(Object.entries(state.prViews.views).filter(([r]) => r !== 'acme/app#13')),

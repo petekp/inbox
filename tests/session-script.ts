@@ -4,7 +4,7 @@ import { recorded } from '../hooks/session-presses'
 import { sessionView } from '../hooks/session-view'
 import type { Session } from '../types'
 import { orderedKeys, runUpdates } from '../hooks/session-host'
-import { press } from '../hooks/host-press'
+import { press, wakeAfterSettle } from '../hooks/host-press'
 import type { Ask, SessionHost, UpdateHost } from '../hooks/session-host'
 import type { Host } from '../hooks/model-text'
 import { allRows } from '../hooks/rows'
@@ -125,9 +125,21 @@ export async function runSessionScript<S extends Session>(makeHost: MakeHost<S>,
   const answered = await press(host, { action: 'answer', id: questionId, option: 'Node' }, false, holds)
   equal(
     answered,
-    { copy: null, error: null, note: null, isUnconfirmed: false, isRowFailed: false, wakesForDone: false },
+    { copy: null, error: null, note: null, isUnconfirmed: false, isRowFailed: false, wakesAfterSettle: true },
     'the answer press',
   )
+  equal(
+    await snapshot(),
+    {
+      ...base,
+      rows: ['Use Node or Python?: settled', 'Try the CLI by hand: open'],
+      lastDeliveries: { [questionId]: 'held' },
+      turns: { turnsStarted: 1, turnsApplied: 1 },
+    },
+    'while Undo can take the answer back',
+  )
+
+  await wakeAfterSettle({ ...host, now: async () => (await host.now()) + SETTLE_WINDOW_MS })
   equal(
     await snapshot(),
     {
@@ -138,7 +150,7 @@ export async function runSessionScript<S extends Session>(makeHost: MakeHost<S>,
       delivered: [ANSWER],
       turns: { turnsStarted: 1, turnsApplied: 1 },
     },
-    'after the press sends',
+    'after the settle window sends it',
   )
 
   await host.update(s => notePrompt(CLAUDE_CODE, s, delivered[0]!, false).state)
@@ -156,7 +168,7 @@ export async function runSessionScript<S extends Session>(makeHost: MakeHost<S>,
 
   const taskId = await idOf('task')
   const done = await press(host, { action: 'done', id: taskId }, false, holds)
-  equal(done.wakesForDone, true, 'Done asks for a wake')
+  equal(done.wakesAfterSettle, true, 'Done asks for a wake')
   const undone = await press(host, { action: 'undo', id: taskId }, false, holds)
   equal(undone.note, null, 'Undo on the task')
   equal((await snapshot()).rows, ['Use Node or Python?: settled', 'Try the CLI by hand: open'], 'after Undo')

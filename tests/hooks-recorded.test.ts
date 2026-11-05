@@ -41,14 +41,16 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /Finds 1/ })).toBeDefined()
 
+  const sentBefore = w.sent.length
   await pane.press({ key: 'address-f1' })
-  expect(w.sent.at(-1)).toContain('Please address this finding you recorded:\nIssue: Retry loop never backs off')
   await clock.settle()
+  expect(w.sent).toHaveLength(sentBefore)
   expect(await pane.find({ key: 'settled-f1' })).toBeDefined()
   expect(await pane.find({ text: /^Fix$/ })).toBeDefined()
   expect(await pane.find({ key: 'undo-f1' })).toBeDefined()
   expect(await band.find({ text: /Finds 1/ })).toBeUndefined()
   await clock.advance(9000)
+  expect(w.sent.at(-1)).toContain('Please address this finding you recorded:\nIssue: Retry loop never backs off')
   expect(await pane.find({ key: 'settled-f1' })).toBeDefined()
   expect(await pane.find({ key: 'undo-f1' })).toBeUndefined()
   await leaveAndReturn(pane, clock, 'findings')

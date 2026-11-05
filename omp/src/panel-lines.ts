@@ -2,7 +2,7 @@ import type { GoalPart } from './panel-goal'
 import type { FoldKind } from '../../types'
 import type { PrAction } from '../../hooks/pr-press'
 import {
-  canUndoRefused,
+  closedLineAction,
   settledTone,
   closedShown,
   closedTotal,
@@ -25,7 +25,6 @@ import type { HelpKey, LegendEntry } from '../../hooks/help'
 import type { PanelPress, PanelScreen, PanelUi, Tone } from './panel'
 
 export const AGENT = 'omp'
-const REPLY_KEY = 'r'
 export const INDENT = 7
 /** Where a line with no lead indents its detail and buttons: one cell in from its title. */
 export const UNLED_INDENT = INDENT - 3
@@ -73,6 +72,10 @@ export type Line = {
   row: RowView | null
   /** The group a Closed line folds. Enter unfolds or folds it. */
   fold: FoldKind | null
+  /** The group whose earlier Closed lines this line lists. Enter lists them. */
+  earlierOf: FoldKind | null
+  /** Text the selected line shows under its title, as a review comment past its first line. */
+  body: string | null
   /** A line the selection skips: a closed row with nothing to press, or a stop with no Resume. */
   isStatic: boolean
   /** Whether the line waits on the person, so a default selection may land on it. */
@@ -118,6 +121,8 @@ export const blankLine = (id: string): Line => ({
   buttons: [],
   row: null,
   fold: null,
+  earlierOf: null,
+  body: null,
   isStatic: false,
   isWaiting: true,
   isDetailShown: false,
@@ -132,16 +137,26 @@ function feedbackTone(f: Feedback): Tone | null {
   return null
 }
 
-function rowButtons(row: RowView): Button[] {
-  const { keys, more } = rowKeyPlan(row, true)
+function rowButtons(row: RowView, isAllShown: boolean): Button[] {
+  const { keys, more } = rowKeyPlan(row, isAllShown)
   const recommended = row.item?.rec
 
   return [...keys, ...more].flatMap((k): Button[] => {
-    if (k.slot === 'allOptions') return []
+    if (k.slot === 'allOptions')
+      return [
+        {
+          label: k.label,
+          key: null,
+          press: { action: 'all-options', id: row.id },
+          isRecommended: false,
+          isFollowUp: false,
+          isQuiet: true,
+        },
+      ]
     if (k.slot === 'retry')
       return [{ label: k.label, key: null, press: k.press, isRecommended: false, isFollowUp: false }]
     const { press } = k.action
-    const key = press.action === 'type' ? REPLY_KEY : (k.hotkey ?? null)
+    const key = k.hotkey ?? null
 
     return [
       {
@@ -167,7 +182,7 @@ export function prButtons(actions: PrAction[]): Button[] {
   }))
 }
 
-function lineOfRow(row: RowView): Line {
+function lineOfRow(row: RowView, isAllShown: boolean): Line {
   const feedbackLabel = rowFeedbackText(row, AGENT)
   const f = row.feedback
   const state = row.state
@@ -193,7 +208,7 @@ function lineOfRow(row: RowView): Line {
             at: state.at,
           }
         : null,
-    buttons: state.is === 'settled' ? [] : rowButtons(row),
+    buttons: state.is === 'settled' ? [] : rowButtons(row, isAllShown),
     row,
     isWaiting: isWaitingRow(row),
     isFolded: state.is === 'handedOff',
@@ -202,6 +217,7 @@ function lineOfRow(row: RowView): Line {
 
 type ClosedLine = {
   id: string
+  how: Parameters<typeof closedLineAction>[0]['how']
   title: string
   at: number
   outcomeLabel: string
@@ -218,14 +234,10 @@ const closedId = (id: string) => `closed ${id}`
 const foldId = (kind: FoldKind) => `fold ${kind}`
 
 function closedLines(d: ClosedLine): Line {
-  const canUndo = canUndoRefused(d.delivery)
-  const undo: Button = {
-    label: 'Undo',
-    key: null,
-    press: { id: d.id, action: 'undo' },
-    isRecommended: false,
-    isFollowUp: false,
-  }
+  const action = closedLineAction(d)
+  const buttons: Button[] = action
+    ? [{ label: action.label, key: null, press: action.press, isRecommended: false, isFollowUp: false }]
+    : []
 
   return {
     ...blankLine(closedId(d.id)),
@@ -236,19 +248,22 @@ function closedLines(d: ClosedLine): Line {
     isDim: true,
     age: d.at,
     feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: null, source: null },
-    buttons: canUndo ? [undo] : [],
-    isStatic: !canUndo,
+    buttons,
+    isStatic: buttons.length === 0,
     isWaiting: false,
   }
 }
 
-export function groupEntries(g: Group, unfolded: readonly FoldKind[]): Entry[] {
+export function groupEntries(
+  g: Group,
+  { unfolded, closedAll, optionsShown }: Pick<PanelUi, 'unfolded' | 'closedAll' | 'optionsShown'>,
+): Entry[] {
   const settled = settledIn(g)
   const total = closedTotal(g.closed, settled)
   const out: Entry[] = [
     { kind: 'heading', text: g.title, count: waitingCount(g.rows), ...(g.mark ? { mark: g.mark } : {}) },
   ]
-  out.push(...g.rows.map((row): Entry => ({ kind: 'row', line: lineOfRow(row) })))
+  out.push(...g.rows.map((row): Entry => ({ kind: 'row', line: lineOfRow(row, optionsShown.includes(row.id)) })))
   if (g.rows.length === 0) out.push({ kind: 'note', text: groupEmptyText(g.title), indent: 3 })
   if (total === 0) return out
   const isUnfolded = unfolded.includes(g.kind)
@@ -264,10 +279,21 @@ export function groupEntries(g: Group, unfolded: readonly FoldKind[]): Entry[] {
     },
   })
   if (!isUnfolded) return out
-  const shown = closedShown(g.closed, settled)
+  const shown = closedShown(g.closed, settled, closedAll.includes(g.kind))
   out.push(...shown.map((d): Entry => ({ kind: 'row', line: closedLines(d) })))
   const earlier = earlierLabel(total, shown.length)
-  if (earlier) out.push({ kind: 'note', text: earlier, indent: 5 })
+  if (earlier)
+    out.push({
+      kind: 'row',
+      line: {
+        ...blankLine(`earlier ${g.kind}`),
+        depth: 1,
+        title: earlier,
+        isDim: true,
+        earlierOf: g.kind,
+        isWaiting: false,
+      },
+    })
 
   return out
 }

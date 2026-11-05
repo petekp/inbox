@@ -27,7 +27,7 @@ test('an empty Asks tab explains itself', () => {
   expect(text(empty, INITIAL_UI)).toContain('Nothing needed')
 })
 
-test('Enter on a Closed line shows the newest closed rows and how many are earlier, and Enter again folds them', () => {
+test('Enter on a Closed line shows the newest closed rows, Enter on the earlier line lists the rest, a dismissed one offers Reopen, and Enter on the fold folds them', () => {
   const screen = screenOf()
   const settled = new Set(screen.view.needsYou.questions.filter(r => r.state.is === 'settled').map(r => r.id))
   const closed = screen.view.needsYou.closed.questions.filter(d => !settled.has(d.id))
@@ -38,8 +38,14 @@ test('Enter on a Closed line shows the newest closed rows and how many are earli
   for (const d of closed.slice(0, CLOSED_SHOWN)) expect(shown).toContain(d.ask)
   expect(shown).not.toContain(closed[CLOSED_SHOWN]!.ask)
   expect(shown).toContain(earlierLabel(closed.length, CLOSED_SHOWN)!)
-  const firstTask = screen.view.needsYou.tasks.find(r => r.state.is !== 'settled')!
-  expect(keys(screen, unfolded, 'down').selectedId).toBe(firstTask.id)
+  const dismissed = closed.slice(0, CLOSED_SHOWN).find(d => d.how === 'dismissed')!
+  const onDismissed = keys(screen, unfolded, 'down')
+  expect(onDismissed.selectedId).toBe(`closed ${dismissed.id}`)
+  expect(handleKey(screen, onDismissed, 'enter', NOW).press).toEqual({ id: dismissed.id, action: 'undo' })
+  expect(text(screen, onDismissed)).toContain('Reopen')
+  const all = keys(screen, { ...unfolded, selectedId: 'earlier question' }, 'enter')
+  for (const d of closed) expect(text(screen, all)).toContain(d.ask)
+  expect(text(screen, all)).not.toContain(earlierLabel(closed.length, CLOSED_SHOWN)!)
   expect(text(screen, keys(screen, unfolded, 'enter'))).not.toContain(closed[0]!.ask)
 })
 

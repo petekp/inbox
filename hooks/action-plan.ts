@@ -117,7 +117,7 @@ export function actionsOf(
       isOut: out === pressAction,
     }
   }
-  if (state.is === 'settled') return state.canUndo ? [action({ action: 'undo', id }, 'Undo', 'view')] : []
+  if (state.is === 'settled') return state.canUndo ? [action({ action: 'undo', id }, ROW_COPY.undo, 'view')] : []
   if (state.is === 'held')
     return [
       action({ action: 'type', id, text: '' }, 'Reply', 'handoff'),

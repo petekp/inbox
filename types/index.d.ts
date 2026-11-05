@@ -243,11 +243,12 @@ export type LastAction = {
 }
 
 /**
- * A sent message's way to the agent: queued after sending, unconfirmed when
- * an identical arrival cannot identify its press, arrived when identified,
+ * A sent message's way to the agent: held while Undo can still take the press back, so nothing has left yet,
+ * queued after sending, unconfirmed when an identical arrival cannot identify its press, arrived when identified,
  * or failed when it will not enter.
  */
 export type Delivery =
+  | { state: 'held'; message: string; until: number; by: Press | null }
   | { state: 'queued'; message: string; id?: string }
   | { state: 'unconfirmed'; message: string; id?: string }
   | { state: 'arrived' }
@@ -709,6 +710,8 @@ declare module 'claude-code' {
       notes: Record<string, RowNote>
       /** The Asks groups and the kinds of finding whose closed items show. Each starts folded. */
       unfolded: FoldKind[]
+      /** The Closed folds whose earlier lines the person opened. */
+      closedAll: FoldKind[]
       /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
       statusUnfolded: string[]
       /** The fold under the pointer on desktop: an Asks fold's kind, or `status-` and a Status fold's id. */

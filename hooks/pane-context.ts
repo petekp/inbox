@@ -88,6 +88,8 @@ export type PaneBase = {
   typing: string | null
   drafts: Record<string, Draft>
   unfolded: FoldKind[]
+  /** The Closed folds whose earlier lines the person opened. */
+  closedAll: FoldKind[]
   statusUnfolded: string[]
   foldHover: string | null
   isHelpShown: boolean
@@ -108,7 +110,6 @@ export type PaneBase = {
   needsYouGroups: ((typeof NEEDS_YOU_GROUPS)[number] & { entries: DrawnEntry<Row>[]; rows: Row[] })[]
   findingEntries: DrawnEntry<Row>[]
   prGroups: (SessionView['prs']['drawn'][number] & ReturnType<typeof prBlockRows<Row>>)[]
-  prTabKeys: KeyAction[]
   prOrderKeys: KeyAction[]
   badgeOf: (id: ShownTab) => string | null
   tabTone: (id: ShownTab) => string | undefined
@@ -147,4 +148,5 @@ export type PaneHandlers = {
   updateHelpShown: (fn: (isShown: boolean) => boolean) => Promise<unknown>
   updateUnfolded: (fn: (unfolded: FoldKind[]) => FoldKind[]) => Promise<unknown>
   updateStatusUnfolded: (fn: (unfolded: string[]) => string[]) => Promise<unknown>
+  updateClosedAll: (fn: (closedAll: FoldKind[]) => FoldKind[]) => Promise<unknown>
 }

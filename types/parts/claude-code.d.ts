@@ -39,6 +39,8 @@ declare module 'claude-code' {
       notes: Record<string, RowNote>
       /** The Asks groups and the kinds of finding whose closed items show. Each starts folded. */
       unfolded: FoldKind[]
+      /** The Closed folds whose earlier lines the person opened. */
+      closedAll: FoldKind[]
       /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
       statusUnfolded: string[]
       /** The fold under the pointer on desktop: an Asks fold's kind, or `status-` and a Status fold's id. */

@@ -50,7 +50,6 @@ export type FeatureId =
   | 'ran-call-delegates'
   | 'tool-result-line'
   | 'status-call-records'
-  | 'dismiss-merged-prs'
   | 'pr-order'
   | 'pr-rank-again'
   | 'pr-check-rerun'
@@ -119,7 +118,6 @@ export const CLIENTS: Record<ClientId, Client> = {
       'ran-call-delegates': { kind: 'full' },
       'tool-result-line': { kind: 'full' },
       'status-call-records': { kind: 'full' },
-      'dismiss-merged-prs': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
       'pr-check-rerun': { kind: 'full' },
@@ -242,7 +240,6 @@ export const CLIENTS: Record<ClientId, Client> = {
           "Codex draws an MCP tool call's result from its content, which is the text the model reads. structuredContent reaches the model too, and _meta reaches only an MCP App view, so a result has no field for the person alone.",
       },
       'status-call-records': { kind: 'full' },
-      'dismiss-merged-prs': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
       'pr-check-rerun': { kind: 'full' },
@@ -334,7 +331,6 @@ export const CLIENTS: Record<ClientId, Client> = {
       'ran-call-delegates': { kind: 'full' },
       'tool-result-line': { kind: 'full' },
       'status-call-records': { kind: 'full' },
-      'dismiss-merged-prs': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
       'pr-check-rerun': { kind: 'full' },

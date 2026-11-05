@@ -1,4 +1,5 @@
-import { blockingChecks, waitingThreads } from './prs'
+import { cancelledChecks, failingChecks } from './pr-checks'
+import { waitingThreads } from './prs'
 import { prCheckId, prMarkId, prThreadId } from './pr-rows'
 import type { DrawnPr } from './pr-views'
 import { closedShown, NEEDS_YOU_GROUPS, rowResultMark, settledRowIds } from './rows'
@@ -65,7 +66,10 @@ export function closedGroups(
     : NEEDS_YOU_GROUPS.map(g => ({ isUnfolded: isUnfolded(g.kind), rows: v.needsYou.closed[g.list] }))
 }
 
-/** Whether a row tab draws a running mark: a row whose answer is on its way, or such a line in an unfolded Closed list. */
+/**
+ * Whether a row tab draws a running mark: a row whose answer is on its way or whose Talk press the agent works on, or
+ * such a line in an unfolded Closed list.
+ */
 export function isRowTabRunning(v: InboxView, tab: ListedTab, isUnfolded: (kind: FoldKind) => boolean): boolean {
   const rows = tab === 'needsYou' ? [...v.needsYou.questions, ...v.needsYou.tasks] : v.findings.rows
   const settled = new Set(settledRowIds(rows))
@@ -115,7 +119,10 @@ export function prRowIds(drawn: readonly DrawnPr[]): string[] {
     prMarkId(pr.ref),
     ...(state.is === 'settled'
       ? []
-      : [...waitingThreads(pr).map(t => prThreadId(pr, t)), ...blockingChecks(pr).map(c => prCheckId(pr, c))]),
+      : [
+          ...waitingThreads(pr).map(t => prThreadId(pr, t)),
+          ...[...failingChecks(pr), ...cancelledChecks(pr)].map(c => prCheckId(pr, c)),
+        ]),
   ])
 }
 
