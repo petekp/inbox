@@ -327,7 +327,7 @@ function goalFields(o, subjectIds) {
 }
 
 // ../hooks/status-upgrade.ts
-var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
+var CHILD_KINDS = ["subagent", "workflow", "delegate"];
 var DELEGATE_STATES = ["working", "blocked", "finished"];
 function text(value) {
   return typeof value === "string" ? value : "";
@@ -3093,14 +3093,10 @@ function bandCounts(view) {
 // ../hooks/children.ts
 var ACTIVITY_SAVE_MS = 3e4;
 var NAME_CHARS = 80;
-function childStarted(o, { ref, kind, name }, at, {
-  reportsActivity = true,
-  delegateState = null
-} = {}) {
-  const lastActivityAt = reportsActivity ? at : null;
+function childStarted(o, { ref, kind, name }, at, delegateState = null) {
   return withChild(
     o,
-    { ref, kind, name: childName(name), startedAt: at, endedAt: null, lastActivityAt, delegateState },
+    { ref, kind, name: childName(name), startedAt: at, endedAt: null, lastActivityAt: at, delegateState },
     at
   );
 }
@@ -3139,9 +3135,7 @@ function delegateRunning(o, step, at) {
       o,
       { ref, kind: "delegate", name: known && known.name !== step.name ? known.name : nameInWords(step.name) },
       at,
-      {
-        delegateState: step.isPrompt ? "working" : null
-      }
+      step.isPrompt ? "working" : null
     );
   const active = childActive(o, ref, at);
   return step.isPrompt ? delegateStateSet(active, ref, "working") : active;

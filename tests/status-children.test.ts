@@ -21,7 +21,7 @@ import { MIN, after, askItem, page, shape } from './status-helpers'
 test('the call reads open subjects with ids, finished ones by name, and running children with their links', () => {
   const o = withChild(
     after(null, 'NEW: working | Offline mode | queue built\nNEW: queued | Docs | not started', 100),
-    { ref: 't1', kind: 'background', name: 'npm test', startedAt: 150, endedAt: null, lastActivityAt: 150 },
+    { ref: 't1', kind: 'subagent', name: 'npm test', startedAt: 150, endedAt: null, lastActivityAt: 150 },
     150,
   )
   const closed = after(o, 'DONE: s2 | written', 200)
@@ -31,7 +31,7 @@ test('the call reads open subjects with ids, finished ones by name, and running 
     finished: 's2 | done | Docs',
   })
   expect(subjectsText(null).open).toBe('(none yet)')
-  expect(runningText(closed, 300)).toBe('c1 | background | npm test | -')
+  expect(runningText(closed, 300)).toBe('c1 | subagent | npm test | -')
   expect(runningText(childEnded(closed, 't1', 250), 300)).toBe('')
 })
 
@@ -92,7 +92,7 @@ test('running children sit under their subject, at most three, each tied to it a
     after(null, 'NEW: working | Offline mode | queue built', 10 * MIN),
     {
       ref: 'q',
-      kind: 'background',
+      kind: 'delegate',
       name: 'Tail the log',
       startedAt: 0,
       endedAt: null,
@@ -197,7 +197,7 @@ test('a child whose host reports no activity moves and shows no words for as lon
   const now = 100 * MIN
   const o = withChild(
     null,
-    { ref: 'bg', kind: 'background', name: 'npm test', startedAt: 40 * MIN, endedAt: null, lastActivityAt: null },
+    { ref: 'bg', kind: 'delegate', name: 'npm test', startedAt: 40 * MIN, endedAt: null, lastActivityAt: null },
     now,
   )
 

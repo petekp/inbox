@@ -105,17 +105,6 @@ export function demoView(now: number, agent: string): DemoCopy {
             delegateState: null,
           },
           {
-            id: 'c2',
-            ref: 'demo-log',
-            kind: 'background',
-            name: 'Watch the pairing log',
-            subjectId: 's2',
-            startedAt: now - 50 * MIN,
-            endedAt: null,
-            lastActivityAt: null,
-            delegateState: null,
-          },
-          {
             id: 'c3',
             ref: 'demo-tuning',
             kind: 'delegate',

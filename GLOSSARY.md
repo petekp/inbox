@@ -137,9 +137,10 @@ model opens it again when work is left.
 _Avoid_: step, phase
 
 **Child**:
-Work that runs apart from the session's turn: a subagent, a background command
-or task, a workflow run, or a Herdr delegate. It shows under its subject while
-it runs, and leaves when it ends. A delegate that finished stays, reading
+Work that runs apart from the session's turn: a subagent, a workflow run or a
+Herdr delegate. A background command or Monitor task is not one: it is how the
+agent watches work, and the work it watches has its own row. A child shows under
+its subject while it runs, and leaves when it ends. A delegate that finished stays, reading
 "finished", until the person has seen the Status. Code follows it from the
 host's events and from Herdr. The inbox model only links it to a subject.
 _Avoid_: subitem, job
