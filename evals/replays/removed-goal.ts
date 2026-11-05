@@ -66,7 +66,9 @@ export const removedGoal: Replay = {
       },
       facts: {
         goal: null,
-        pieces: [{ id: 'evernote', state: 'done', stands: 'notes, tags and attachments import', alsoRight: ['working'] }],
+        pieces: [
+          { id: 'evernote', state: 'done', stands: 'notes, tags and attachments import', alsoRight: ['working'] },
+        ],
       },
       targets: ['goal-only-when-clear'],
     },
