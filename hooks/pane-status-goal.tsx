@@ -6,8 +6,9 @@ import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
 import { paneState } from './mod-state'
-import { DESKTOP_FIELD_PT, DESKTOP_REPLY_ROWS, fieldRows, REPLY_ROWS } from './pane-sizes'
+import { DESKTOP_FIELD_PT, DESKTOP_LINE_PT, DESKTOP_REPLY_ROWS, fieldRows, REPLY_ROWS } from './pane-sizes'
 import { desktopLines } from './desktop-metrics'
+import { LOOK_GAP_PT } from './layout'
 import { lineCount } from './terminal-text'
 import { cellWidth } from './text'
 import { desktopFrameLines, desktopTextLines, exactly, inkLines, stackedIn } from './pane-status-tops'
@@ -232,12 +233,14 @@ export function paneStatusGoal(
       ...(isTypingGoal ? [] : goalKeys(page)),
     ]
     const milestones = g?.milestones ?? []
+    /** A blank line in the terminal, and on desktop the space Codex leaves there, `LOOK_GAP_PT`. */
+    const milestoneGap = look === 'terminal' ? 1 : LOOK_GAP_PT / DESKTOP_LINE_PT
 
     return [
       statusPartLine(`${GOAL_KEYS_ID}-heading`, g?.label ?? GOAL_HEADING, true),
       block(`status-${GOAL_KEYS_ID}`, body, isSelected(GOAL_KEYS_ID)),
-      ...(milestones.length > 0 && look === 'terminal'
-        ? [{ el: <Box key="goal-gap" height={1} />, lines: exactly(1) }]
+      ...(milestones.length > 0
+        ? [{ el: <Box key="goal-gap" height={milestoneGap} />, lines: exactly(milestoneGap) }]
         : []),
       ...milestones.flatMap(milestoneLines),
     ]
