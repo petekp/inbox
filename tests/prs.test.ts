@@ -324,7 +324,18 @@ describe('prs', () => {
       status: 'waiting',
       text: 'Waiting: 1 thread sent to Claude, needs approval',
     })
-    expect(readiness({ ...onOthers, checks: [], threads: [] }, sent).status).toBe('ready')
+    expect(readiness({ ...onOthers, checks: [], threads: [] }, sent)).toMatchObject({
+      status: 'ready',
+      text: 'Ready to merge: approved, no checks reported, no threads waiting on you',
+    })
+    const passed = onOthers.checks.map(c => ({ ...c, bucket: 'pass' as const }))
+    expect(readiness({ ...onOthers, checks: passed, threads: [] }, sent).text).toBe(
+      'Ready to merge: approved, checks pass, no threads waiting on you',
+    )
+    expect(readiness({ ...onOthers, checks: passed, threads: [], mergeable: 'UNKNOWN' }, sent)).toMatchObject({
+      status: 'waiting',
+      text: 'Waiting: GitHub is still checking for conflicts',
+    })
   })
 
   test('PRs that wait on the person come first, then those waiting on others, then finished ones, newest first within each, and an order puts its open PRs first', () => {
