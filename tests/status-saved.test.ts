@@ -75,7 +75,7 @@ test('a goal string an earlier model wrote becomes the head with no description 
   expect(upgradeStatus({ head, subjects: [] })?.head).toEqual(head)
 })
 
-test('a saved Status drops subjects and children it cannot read, reads a delegate state it does not know as none, and nothing else is a Status', () => {
+test('a saved Status drops subjects and children it cannot read and the background children an earlier build made, reads a delegate state it does not know as none, and nothing else is a Status', () => {
   const saved = {
     ...EMPTY_SESSION_STATUS,
     subjects: [
@@ -90,6 +90,7 @@ test('a saved Status drops subjects and children it cannot read, reads a delegat
       { id: 'c2', kind: 'robot' },
       { id: 'c3', ref: 'herdr:a', kind: 'delegate', name: 'a', startedAt: 2, delegateState: 'blocked' },
       { id: 'c4', ref: 'herdr:b', kind: 'delegate', name: 'b', startedAt: 3, delegateState: 'asleep' },
+      { id: 'c5', ref: 'b1', kind: 'background', name: 'npm test', startedAt: 4 },
     ],
     look: { startedAt: 'soon' },
   }

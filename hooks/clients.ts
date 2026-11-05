@@ -225,7 +225,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-children': {
         kind: 'different',
         reason:
-          "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so background commands and workflows do not show. The end of a wait on a Herdr delegate is read at Stop.",
+          "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so workflows do not show. The end of a wait on a Herdr delegate is read at Stop.",
       },
       'child-names': { kind: 'full' },
       'status-look-line': { kind: 'full' },
@@ -333,7 +333,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-children': {
         kind: 'different',
         reason:
-          "omp's extension events report subagents and bash calls. omp's reference names no event for a background job or a workflow run, so those do not show.",
+          "omp's extension events report subagents and bash calls. omp's reference names no event for a workflow run, so those do not show.",
       },
       'child-names': { kind: 'full' },
       'status-look-line': { kind: 'full' },

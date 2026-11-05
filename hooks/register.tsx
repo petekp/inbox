@@ -227,7 +227,7 @@ import {
   permissionText,
   reportToHerdr,
   spawnedBy,
-  startedTaskOf,
+  startedWorkflowOf,
   toolRecord,
   workflowTasks,
 } from './mod-records'
@@ -2546,10 +2546,7 @@ export const register: Register = on => {
       const waitsOn = steps.filter(step => step.isWaitForEnd).map(step => step.name)
       if (taskId && isDelegateCommand) {
         for (const name of waitsOn) for (const id of [taskId, e.tool_use_id]) if (id) delegateWaits.set(id, name)
-      } else if (taskId) {
-        const child = { ref: taskId, kind: 'background', name: e.description || e.command } as const
-        await noteChild($, (o, at) => childStarted(o, child, at, { reportsActivity: false }))
-      } else if (waitsOn.length > 0) {
+      } else if (!taskId && waitsOn.length > 0) {
         await noteChild($, (o, at) => delegateWaitsEnded(o, e.command, at))
       }
 
@@ -2562,11 +2559,11 @@ export const register: Register = on => {
 
       return ran
     }
-    if (e.tool === 'Monitor' || e.tool === 'Workflow') {
+    if (e.tool === 'Workflow') {
       const ran = await run()
-      const child = startedTaskOf(e.tool, ran.result, e.description)
+      const child = startedWorkflowOf(ran.result, e.description)
       if (child) {
-        if (child.kind === 'workflow' && e.tool_use_id) workflowTasks.set(e.tool_use_id, child.ref)
+        if (e.tool_use_id) workflowTasks.set(e.tool_use_id, child.ref)
         await noteChild($, (o, at) => childStarted(o, child, at))
       }
 

@@ -21,8 +21,11 @@ export type Subject = {
   into: string | null
 }
 
-/** What kind of work runs apart from the session's own turn. */
-export type ChildKind = 'subagent' | 'background' | 'workflow' | 'delegate'
+/**
+ * What kind of work runs apart from the session's own turn. A background command or a Monitor task is not a child: a
+ * delegate or subagent it watches has a row of its own, and a step it runs belongs to its subject's row.
+ */
+export type ChildKind = 'subagent' | 'workflow' | 'delegate'
 
 /** Work that runs apart from the turn. Code sets every field from the host's events except `subjectId`, which the Status call links. */
 export type Child = {
@@ -34,7 +37,7 @@ export type Child = {
   subjectId: string | null
   startedAt: number
   endedAt: number | null
-  /** When it last did anything. Null when the host reports no activity for its kind. */
+  /** When it last did anything, from its start. Null in a Status an earlier build saved. */
   lastActivityAt: number | null
   /**
    * What a delegate does: `working` once this session prompted it or Herdr showed it working, `blocked` while Herdr

@@ -820,7 +820,7 @@ function goalFields(o, subjectIds) {
 }
 
 // ../hooks/status-upgrade.ts
-var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
+var CHILD_KINDS = ["subagent", "workflow", "delegate"];
 var DELEGATE_STATES = ["working", "blocked", "finished"];
 function text(value) {
   return typeof value === "string" ? value : "";

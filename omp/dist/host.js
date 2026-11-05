@@ -451,12 +451,8 @@ function ago(ms) {
 // ../hooks/children.ts
 var ACTIVITY_SAVE_MS = 30000;
 var NAME_CHARS = 80;
-function childStarted(o, { ref, kind, name }, at, {
-  reportsActivity = true,
-  delegateState = null
-} = {}) {
-  const lastActivityAt = reportsActivity ? at : null;
-  return withChild(o, { ref, kind, name: childName(name), startedAt: at, endedAt: null, lastActivityAt, delegateState }, at);
+function childStarted(o, { ref, kind, name }, at, delegateState = null) {
+  return withChild(o, { ref, kind, name: childName(name), startedAt: at, endedAt: null, lastActivityAt: at, delegateState }, at);
 }
 function childName(text) {
   return clipLabel(text.trim().split(`
@@ -492,9 +488,7 @@ function delegateRunning(o, step, at) {
   const known = o?.children.find((c) => c.ref === ref);
   const isRunning = known !== undefined && known.endedAt === null;
   if (!isRunning)
-    return childStarted(o, { ref, kind: "delegate", name: known && known.name !== step.name ? known.name : nameInWords(step.name) }, at, {
-      delegateState: step.isPrompt ? "working" : null
-    });
+    return childStarted(o, { ref, kind: "delegate", name: known && known.name !== step.name ? known.name : nameInWords(step.name) }, at, step.isPrompt ? "working" : null);
   const active = childActive(o, ref, at);
   return step.isPrompt ? delegateStateSet(active, ref, "working") : active;
 }
@@ -7089,7 +7083,7 @@ function goalFields(o, subjectIds) {
 }
 
 // ../hooks/status-upgrade.ts
-var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
+var CHILD_KINDS = ["subagent", "workflow", "delegate"];
 var DELEGATE_STATES = ["working", "blocked", "finished"];
 function text(value) {
   return typeof value === "string" ? value : "";
@@ -7593,17 +7587,6 @@ function demoView(now, agent) {
             delegateState: null
           },
           {
-            id: "c2",
-            ref: "demo-log",
-            kind: "background",
-            name: "Watch the pairing log",
-            subjectId: "s2",
-            startedAt: now - 50 * MIN,
-            endedAt: null,
-            lastActivityAt: null,
-            delegateState: null
-          },
-          {
             id: "c3",
             ref: "demo-tuning",
             kind: "delegate",
@@ -7611,7 +7594,7 @@ function demoView(now, agent) {
             subjectId: "s1",
             startedAt: now - 9 * MIN,
             endedAt: null,
-            lastActivityAt: null,
+            lastActivityAt: now - 9 * MIN,
             delegateState: "blocked"
           },
           {
@@ -8225,7 +8208,7 @@ var CLIENTS = {
       },
       "status-children": {
         kind: "different",
-        reason: "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so background commands and workflows do not show. The end of a wait on a Herdr delegate is read at Stop."
+        reason: "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so workflows do not show. The end of a wait on a Herdr delegate is read at Stop."
       },
       "child-names": { kind: "full" },
       "status-look-line": { kind: "full" },
@@ -8322,7 +8305,7 @@ var CLIENTS = {
       "herdr-sidebar": { kind: "full" },
       "status-children": {
         kind: "different",
-        reason: "omp's extension events report subagents and bash calls. omp's reference names no event for a background job or a workflow run, so those do not show."
+        reason: "omp's extension events report subagents and bash calls. omp's reference names no event for a workflow run, so those do not show."
       },
       "child-names": { kind: "full" },
       "status-look-line": { kind: "full" },
