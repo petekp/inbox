@@ -340,7 +340,7 @@ export function statusPage(
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null
 
   return {
-    isEmpty: head === null && rows.length === 0 && goal === null && goalParts.proposal === null,
+    isEmpty: head === null && rows.length === 0 && goal === null,
     head,
     ...goalParts,
     goal,

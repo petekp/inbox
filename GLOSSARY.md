@@ -104,6 +104,33 @@ Its row then has a View question or View task button, which opens Asks with
 the oldest of those items selected.
 _Avoid_: workstream, stream, item (an item is a question or task)
 
+**Goal**:
+The one outcome the session's work is for, with a finish line someone could
+check, such as "2.5 in the store". It has 2 to 5 milestones. The Status draws
+it above the head, and the head becomes its Now line. It is met once every
+milestone it keeps is done, and a met goal stays until the next one is set.
+_Avoid_: target, objective
+
+**Inferred goal**:
+A goal the inbox model set from the session, from the person's words or the
+work itself, with no press. The model replaces it with the next goal once it is
+met, or once none of its linked work is open and the work has moved on.
+
+**Typed goal**:
+A goal the person typed in the goal's field, or an inferred goal they edited.
+It stays until it is met.
+
+**Removed goal**:
+A goal the person cleared with Remove goal. The inbox model does not set it
+again, in the same words or in other words.
+
+**Milestone**:
+An outcome a goal needs, such as "Sync fixed". Subjects link to it with SERVES,
+and a subject the goal does not need sits under Other work. Code closes a
+milestone once all its linked subjects are closed and one is done, and the
+model opens it again when work is left.
+_Avoid_: step, phase
+
 **Child**:
 Work that runs apart from the session's turn: a subagent, a background command
 or task, a workflow run, or a Herdr delegate. It shows under its subject while

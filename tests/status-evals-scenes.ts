@@ -156,6 +156,7 @@ function withGoal(s: Scene) {
     metAt: null,
     was: null,
     isAwaitingMilestones: false,
+    source: 'inferred',
   }
   s.after.milestones = [
     milestone('m1', 'Edits survive offline', 'working'),
@@ -174,15 +175,19 @@ function withGoal(s: Scene) {
   s.facts.pieces[1]!.serves = 'resolved'
 }
 
-function withProposal(s: Scene, names: string[]) {
-  s.after.proposedGoal = {
-    text: 'Offline sync in both stores',
-    milestones: names.map(name => ({ name, status: 'queued' as SubjectStatus })),
-    at: minutes(10),
+/** A typed goal before the step, with its work open, and none after it. */
+function withTypedGoalBefore(s: Scene) {
+  withGoal(s)
+  s.before = {
+    ...s.before,
+    goal: { ...s.after.goal!, source: 'typed' },
+    milestones: s.after.milestones,
+    serves: s.after.serves,
   }
+  s.after.goal = null
 }
 
-const STATED = { text: 'Get offline sync into both stores', match: 'offline sync' }
+const CLEAR = { text: 'Get offline sync into both stores', match: 'offline sync' }
 
 const s1Of = (s: Scene) => s.after.subjects[0]!
 const s2Of = (s: Scene) => s.after.subjects[1]!
@@ -229,13 +234,13 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     good: s => (s.calls = [statusCall('SET: s1 | working | syncs on reconnect')]),
     bad: s => (s.calls = [statusCall('The engine now syncs on reconnect.')]),
   },
-  'proposal-only-when-stated': { bad: s => withProposal(s, ['Edits survive offline', 'Conflicts resolved']) },
-  'proposal-when-stated': {
+  'goal-only-when-clear': { bad: withGoal },
+  'goal-when-clear': {
     good: s => {
-      s.facts.goalStated = STATED
-      withProposal(s, ['Edits survive offline', 'Conflicts resolved'])
+      s.facts.goalClear = CLEAR
+      withGoal(s)
     },
-    bad: s => (s.facts.goalStated = STATED),
+    bad: s => (s.facts.goalClear = CLEAR),
   },
   'milestones-true': {
     good: withGoal,
@@ -244,7 +249,13 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
       s.after.milestones[1]!.status = 'done'
     },
   },
-  'milestones-shape': { bad: s => withProposal(s, ['Edits survive offline']) },
+  'milestones-shape': {
+    good: withGoal,
+    bad: s => {
+      withGoal(s)
+      s.after.milestones[1]!.name = 'Sync conflicts'
+    },
+  },
   'serves-linked': {
     good: withGoal,
     bad: s => {
@@ -252,17 +263,18 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
       s.after.serves = { s2: 'm2' }
     },
   },
-  'goal-on-press': {
+  'typed-goal-kept': {
     good: s => {
-      withGoal(s)
-      s.step.events = [{ press: 'use-goal' }]
+      withTypedGoalBefore(s)
+      s.step.events = [{ press: 'type', text: 'Sync in the web app' }]
     },
-    bad: withGoal,
+    bad: withTypedGoalBefore,
   },
-  'proposal-not-repeated': {
+  'goal-not-repeated': {
+    good: withGoal,
     bad: s => {
-      withProposal(s, ['Edits survive offline', 'Conflicts resolved'])
-      s.after.declinedGoals = [nameKey(s.after.proposedGoal!.text)]
+      withGoal(s)
+      s.after.removedGoals = [nameKey(s.after.goal!.text)]
     },
   },
   'met-follows': {

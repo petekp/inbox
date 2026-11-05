@@ -56,23 +56,20 @@ export type StatusHead = {
 
 export type DelegateState = 'working' | 'blocked' | 'finished'
 
-/** The outcome the person set for the session's work. Only a press sets or changes it. */
+/** Who set the goal: the Status call, from the session's work, or the person, by typing it. */
+export type GoalSource = 'inferred' | 'typed'
+
+/** The outcome the session's work is for. The Status call sets and replaces an inferred goal, and the person types one. */
 export type StatusGoal = {
   text: string
   setAt: number
-  /** When every milestone was first done together. Code sets it, and the goal stays until the person replaces it. */
+  /** When every milestone was first done together. Code sets it, and the goal stays until a next goal replaces it. */
   metAt: number | null
   /** The goal this one replaced, shown until the person looks. */
   was: string | null
   /** Whether the milestones still belong to an earlier goal, until a Status call after this goal was set has written. */
   isAwaitingMilestones: boolean
-}
-
-/** A goal the Status call proposed from the person's own words, waiting for the person to use it, edit it or decline it. */
-export type ProposedGoal = {
-  text: string
-  milestones: { name: string; status: SubjectStatus }[]
-  at: number
+  source: GoalSource
 }
 
 /** An outcome the goal needs. The Status call writes and moves it by id, as it does a subject. */
@@ -102,9 +99,8 @@ export type SessionStatus = {
   nextId: number
   nextChildId: number
   goal: StatusGoal | null
-  proposedGoal: ProposedGoal | null
-  /** The name keys of goals the person declined, newest last, so the call does not propose them again. */
-  declinedGoals: string[]
+  /** The name keys of goals the person removed, newest last, so the call does not set them again. */
+  removedGoals: string[]
   milestones: Milestone[]
   nextMilestoneId: number
   /** What each subject serves, by subject id, as the Status call linked them. A subject with no entry is not linked yet. */

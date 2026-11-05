@@ -343,11 +343,11 @@ export function paneStatus(
     lines: look === 'desktop' ? desktopTextLines(text, statusTextWidth(depth)) : inkLines(text, statusTextWidth(depth)),
   })
   /**
-   * Answers the proposal, then selects the goal's button, scrolls to it and focuses it. The pressed button is gone, and
-   * the terminal would move its focus to the next button drawn, a milestone's View.
+   * Removes the goal, then selects Set a goal, scrolls to it and focuses it. The pressed button is gone, and the
+   * terminal would move its focus to the next button drawn.
    */
-  const answerProposal = async (action: 'use-goal' | 'decline-goal', surface: UiPressArgument['surface']) => {
-    await runPress({ action, id: GOAL_KEYS_ID }, surface)
+  const removeGoal = async (surface: UiPressArgument['surface']) => {
+    await runPress({ action: 'remove-goal', id: GOAL_KEYS_ID }, surface)
     await selectStatusRow(GOAL_KEYS_ID, `type-goal-${GOAL_KEYS_ID}`)
   }
   /** A target's buttons from its plan. Only the selected target's keys press it, so only that one names its keys. */
@@ -365,7 +365,7 @@ export function paneStatus(
             ? startTyping(GOAL_KEYS_ID, press.text)
             : press.action === 'toggle-fold'
               ? toggleFold(press.foldId)
-              : answerProposal(press.action, p.surface),
+              : removeGoal(p.surface),
     }))
   const { goalAbove, setGoal, setGoalBare, markRun } = paneStatusGoal(
     {
@@ -385,7 +385,6 @@ export function paneStatus(
       statusPageText,
       desktopBlockWidth,
       markGlyph,
-      markWidth,
       keyRow,
       textKey,
       terminalKeyCells,
@@ -523,11 +522,10 @@ export function paneStatus(
         ),
         tops: new Map(),
       }
-    const { proposal, goal } = goalAbove(page)
+    const goal = goalAbove(page)
     const head = page.goal === null && page.head ? statusHead(page.head) : null
     const headLines = [...(head ? [head] : []), ...setGoal(page)]
-    const goalParts = page.proposal?.isBelowGoal ? [goal, proposal] : [proposal, goal]
-    const parts = [...goalParts, headLines, ...(page.rows.length > 0 ? [statusRows(page.rows)] : [])]
+    const parts = [goal, headLines, ...(page.rows.length > 0 ? [statusRows(page.rows)] : [])]
     const shown = parts
       .filter(lines => lines.length > 0)
       .map(lines => stackedIn(section(lines.map(p => p.el)), [...desktopSectionPad, ...lines]))

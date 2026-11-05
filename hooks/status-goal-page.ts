@@ -40,27 +40,12 @@ export type GoalBlock = {
   milestones: MilestoneRow[]
 }
 
-/** A goal the Status call proposed from the person's words, for the person to use, edit or decline. */
-export type ProposalBlock = {
-  label: string
-  /**
-   * Whether it draws below the goal in effect, its milestones and its button, so the person reads that goal first and
-   * then what would replace it. With no goal set, it draws first.
-   */
-  isBelowGoal: boolean
-  text: string
-  milestones: { mark: string; tone: StatusTone; name: string }[]
-}
-
 /** The goal's parts of the Status page. */
 export type GoalParts = {
   goal: GoalBlock | null
-  proposal: ProposalBlock | null
 }
 
 const AWAITING_TEXT = 'Milestones after the next reply'
-const PROPOSAL_LABEL = 'Proposed goal · from your message'
-const NEW_GOAL_PROPOSAL_LABEL = 'Proposed new goal · from your message'
 
 /** The oldest open ask linked to `id`, a subject or a milestone. */
 export function oldestAsk(
@@ -100,19 +85,10 @@ function milestoneRow(m: Milestone, o: SessionStatus, items: readonly Item[]): M
   }
 }
 
-/** The goal block with its Now line, and the proposal, from the saved Status and the open asks. */
+/** The goal block with its Now line, from the saved Status and the open asks. */
 export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalParts {
   const g = o?.goal ?? null
-  const isBelowGoal = g !== null
-  const proposal: ProposalBlock | null = o?.proposedGoal
-    ? {
-        label: isBelowGoal ? NEW_GOAL_PROPOSAL_LABEL : PROPOSAL_LABEL,
-        isBelowGoal,
-        text: o.proposedGoal.text,
-        milestones: o.proposedGoal.milestones.map(m => ({ ...SUBJECT_MARKS[m.status], name: m.name })),
-      }
-    : null
-  if (o === null || g === null) return { goal: null, proposal }
+  if (o === null || g === null) return { goal: null }
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt)
   const kept = o.milestones.filter(m => m.status !== 'dropped')
   const shown = o.milestones.filter(
@@ -134,6 +110,5 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalP
       awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestones: g.isAwaitingMilestones ? [] : shown.map(m => milestoneRow(m, o, items)),
     },
-    proposal,
   }
 }

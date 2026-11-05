@@ -43,8 +43,7 @@ var OPEN_SUBJECTS = 6;
 var NAME_KEPT = 20;
 var TEXT_KEPT = 12;
 var DESCRIPTION_KEPT = 14;
-var MILESTONES_MAX = 5;
-var DECLINED_KEPT = 10;
+var REMOVED_KEPT = 10;
 var CHILD_KEPT_MS = 24 * 60 * 6e4;
 var CHILDREN_KEPT = 50;
 var STOP_WORDS = /* @__PURE__ */ new Set([
@@ -78,8 +77,7 @@ var EMPTY_SESSION_STATUS = {
   missedInLastLook: {},
   look: null,
   goal: null,
-  proposedGoal: null,
-  declinedGoals: [],
+  removedGoals: [],
   milestones: [],
   nextMilestoneId: 1,
   serves: {}
@@ -252,26 +250,16 @@ function goalOf(saved) {
   const text2 = nonEmpty(g?.text);
   const setAt = time(g?.setAt);
   if (typeof saved !== "object" || text2 === null || setAt === null) return null;
+  const isAwaitingMilestones = g?.isAwaitingMilestones === true;
+  const isTyped = g?.source === "typed" || g?.source !== "inferred" && isAwaitingMilestones;
   return {
     text: text2,
     setAt,
     metAt: time(g?.metAt),
     was: nonEmpty(g?.was),
-    isAwaitingMilestones: g?.isAwaitingMilestones === true
+    isAwaitingMilestones,
+    source: isTyped ? "typed" : "inferred"
   };
-}
-function proposedOf(saved) {
-  const p = saved;
-  const text2 = nonEmpty(p?.text);
-  const at = time(p?.at);
-  if (typeof saved !== "object" || text2 === null || at === null) return null;
-  const milestones = (Array.isArray(p?.milestones) ? p.milestones : []).flatMap((raw) => {
-    const m = raw;
-    const name = nonEmpty(m?.name);
-    const status = STATUSES.find((x) => x === m?.status);
-    return name && status ? [{ name, status }] : [];
-  });
-  return { text: text2, milestones: milestones.slice(0, MILESTONES_MAX), at };
 }
 function milestoneOf(saved) {
   const m = saved;
@@ -301,14 +289,15 @@ function goalFields(o, subjectIds) {
       (e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || liveIds.has(e[1]))
     )
   );
-  const keys = (Array.isArray(o.declinedGoals) ? o.declinedGoals : []).flatMap(
-    (d) => typeof d === "string" ? [nameKey(d)] : []
-  );
-  const declined = [...new Set(keys)].filter((key) => key !== "");
+  const saved = [
+    ...Array.isArray(o.declinedGoals) ? o.declinedGoals : [],
+    ...Array.isArray(o.removedGoals) ? o.removedGoals : []
+  ];
+  const keys = saved.flatMap((d) => typeof d === "string" ? [nameKey(d)] : []);
+  const removed = [...new Set(keys)].filter((key) => key !== "");
   return {
     goal: goalOf(o.goal),
-    proposedGoal: proposedOf(o.proposedGoal),
-    declinedGoals: declined.slice(-DECLINED_KEPT),
+    removedGoals: removed.slice(-REMOVED_KEPT),
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves
@@ -1104,8 +1093,6 @@ function isSubjectSeen(o, s) {
 
 // ../hooks/status-goal-page.ts
 var AWAITING_TEXT = "Milestones after the next reply";
-var PROPOSAL_LABEL = "Proposed goal \xB7 from your message";
-var NEW_GOAL_PROPOSAL_LABEL = "Proposed new goal \xB7 from your message";
 function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
@@ -1135,14 +1122,7 @@ function milestoneRow(m, o, items) {
 }
 function goalPage(o, items) {
   const g = o?.goal ?? null;
-  const isBelowGoal = g !== null;
-  const proposal = o?.proposedGoal ? {
-    label: isBelowGoal ? NEW_GOAL_PROPOSAL_LABEL : PROPOSAL_LABEL,
-    isBelowGoal,
-    text: o.proposedGoal.text,
-    milestones: o.proposedGoal.milestones.map((m) => ({ ...SUBJECT_MARKS[m.status], name: m.name }))
-  } : null;
-  if (o === null || g === null) return { goal: null, proposal };
+  if (o === null || g === null) return { goal: null };
   const isWasShown = g.was !== null && (o.lastLookAt === null || g.setAt > o.lastLookAt);
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   const shown = o.milestones.filter(
@@ -1162,8 +1142,7 @@ function goalPage(o, items) {
       now: head ? `Now: ${head.description || head.title}` : null,
       awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestones: g.isAwaitingMilestones ? [] : shown.map((m) => milestoneRow(m, o, items))
-    },
-    proposal
+    }
   };
 }
 
@@ -1411,7 +1390,7 @@ function statusPage(s, now) {
   };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
-    isEmpty: head === null && rows.length === 0 && goal === null && goalParts.proposal === null,
+    isEmpty: head === null && rows.length === 0 && goal === null,
     head,
     ...goalParts,
     goal,

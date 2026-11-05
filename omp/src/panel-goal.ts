@@ -1,13 +1,5 @@
-import {
-  GOAL_FIELD,
-  GOAL_KEYS_ID,
-  goalKeyPlan,
-  isGoalKeyInHeader,
-  milestoneKeyPlan,
-  PROPOSAL_KEYS_ID,
-  proposalKeyPlan,
-} from '../../hooks/status-keys'
-import type { GoalBlock, MilestoneRow, ProposalBlock } from '../../hooks/status-goal-page'
+import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, isGoalKeyInHeader, milestoneKeyPlan } from '../../hooks/status-keys'
+import type { GoalBlock, MilestoneRow } from '../../hooks/status-goal-page'
 import { STALL_GAP, STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
 import { unfoldedRows } from '../../hooks/status-page-parts'
 import type { StatusPage } from '../../hooks/status-page'
@@ -19,12 +11,10 @@ import { GLUE, pageButtonLines, pageLine } from './panel-page'
 import { indented, wrapText } from './panel-text'
 
 /**
- * A part of the goal on the Status page: the proposal, the goal's lines with its Now line, a milestone, its button, or
- * its field.
- * The goal's lines draw its button in their header while `isGoalKeyInHeader`.
+ * A part of the goal on the Status page: the goal's lines with its Now line, a milestone, its buttons, or its field.
+ * The goal's lines draw its buttons in their header while `isGoalKeyInHeader`.
  */
 export type GoalPart =
-  | { is: 'proposal'; proposal: ProposalBlock; page: StatusPage; isTyping: boolean }
   | { is: 'title'; goal: GoalBlock; page: StatusPage; isTyping: boolean; isKeyInHeader: boolean }
   | { is: 'milestone'; row: MilestoneRow }
   | { is: 'keys'; page: StatusPage }
@@ -32,43 +22,36 @@ export type GoalPart =
 
 /** The id of the Status target a part draws the buttons of, or null for a part with none. */
 export function goalPartId(part: GoalPart): string | null {
-  if (part.is === 'proposal') return PROPOSAL_KEYS_ID
   if (part.is === 'milestone') return part.row.id
   if (part.is === 'title') return part.isKeyInHeader && !part.isTyping ? GOAL_KEYS_ID : null
   return part.is === 'keys' ? GOAL_KEYS_ID : null
 }
 
 const goalEntry = (part: GoalPart): Entry => ({ kind: 'goal', part })
-const blank: Entry = { kind: 'note', text: '' }
 
 /**
- * What the page draws above the head: the goal, its milestones each with the rows of its work, and its button, and a
- * proposal, which comes first only
- * while no goal is set. While the person types a goal, the field takes the proposal's text's place, else the goal's,
- * and the buttons of both leave.
+ * What the page draws above the head: the goal, its milestones each with the rows of its work, and its buttons. While
+ * the person types a goal, the field takes the goal's text's place, and the buttons leave.
  */
 export function goalAbove(page: StatusPage, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
   const isTyping = typing === GOAL_KEYS_ID
-  const proposal = page.proposal ? [goalEntry({ is: 'proposal', proposal: page.proposal, page, isTyping })] : []
   const g = page.goal
-  if (g === null) return proposal
+  if (g === null) return []
   const isKeyInHeader = isGoalKeyInHeader(page)
-  const goal = [
-    goalEntry({ is: 'title', goal: g, page, isTyping: isTyping && proposal.length === 0, isKeyInHeader }),
+
+  return [
+    goalEntry({ is: 'title', goal: g, page, isTyping, isKeyInHeader }),
     ...g.milestones.flatMap(row => [
       goalEntry({ is: 'milestone', row }),
       ...unfoldedRows(row.rows, isUnfolded).map((r): Entry => ({ kind: 'page', row: r })),
     ]),
     ...(isTyping || isKeyInHeader ? [] : [goalEntry({ is: 'keys', page })]),
   ]
-  if (proposal.length === 0) return goal
-
-  return page.proposal?.isBelowGoal ? [...goal, blank, ...proposal] : [...proposal, blank, ...goal]
 }
 
-/** Under the head, or under the empty state, while no goal is set: Set a goal, or the field it opened when no proposal shows. */
+/** Under the head, or under the empty state, while no goal is set: Set a goal, or the field it opened. */
 export function setGoal(page: StatusPage, typing: string | null): Entry[] {
-  if (page.goal !== null || page.proposal !== null) return []
+  if (page.goal !== null) return []
 
   return [goalEntry(typing === GOAL_KEYS_ID ? { is: 'field' } : { is: 'keys', page })]
 }
@@ -103,20 +86,6 @@ export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): stri
   const { width, now, style: s } = d
   const at = (text: string, paint: (t: string) => string, lines = STATUS_TEXT_LINES) =>
     indented(text, PAGE_MARK_AT, width, lines, paint)
-  if (part.is === 'proposal') {
-    const p = part.proposal
-
-    return [
-      ...at(p.label, s.dim),
-      ...(part.isTyping ? fieldLines(d) : at(p.text, s.bold, Infinity)),
-      ...p.milestones.flatMap(m =>
-        pageLine(d, PAGE_MARK_AT, paintMark({ ...m, isRunning: false }, now, s), m.name, t => t),
-      ),
-      ...(part.isTyping
-        ? []
-        : pageButtonLines({ id: PROPOSAL_KEYS_ID, keys: proposalKeyPlan(part.page) }, d, isSelected, PAGE_MARK_AT)),
-    ]
-  }
   if (part.is === 'title') {
     const g = part.goal
     const keys = part.isKeyInHeader && !part.isTyping ? goalKeyPlan(part.page) : []

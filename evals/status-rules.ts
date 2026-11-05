@@ -113,7 +113,7 @@ const FIXED_RULES: Rule[] = [
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       const head = o?.head ? [o.head.title, o.head.description] : []
-      const goals = [o?.goal?.text ?? '', o?.proposedGoal?.text ?? '']
+      const goals = [o?.goal?.text ?? '']
       const pieces = [...shownOf(o), ...milestonesOf(o)].flatMap(s => [s.name, s.text])
 
       return [...head, ...goals, ...pieces].filter(t => t.includes(';')).map(t => `semicolon: "${t}"`)
@@ -331,9 +331,7 @@ const FIXED_RULES: Rule[] = [
           return old.changedAt === x.changedAt ? [] : [`moved "${x.name}"`]
         })
       }
-      const goalMoved =
-        (o?.goal?.text ?? null) !== (before.overview?.goal?.text ?? null) ||
-        (o?.proposedGoal?.text ?? null) !== (before.overview?.proposedGoal?.text ?? null)
+      const goalMoved = (o?.goal?.text ?? null) !== (before.overview?.goal?.text ?? null)
       return [
         ...moved(shownOf(o), shownOf(before.overview)),
         ...moved(milestonesOf(o), milestonesOf(before.overview)),
@@ -345,12 +343,16 @@ const FIXED_RULES: Rule[] = [
     id: 'changes-move',
     reads: 'facts',
     property: 10,
-    text: "On a step that changed work, each changed piece's last-changed time moves.",
+    text: "On a step that changed work, each changed piece's last-changed time moves. A new link alone moves nothing.",
     failures: ({ step, result }) => {
       if (!step.call) return []
+      const isLinkOnly = (id: string) => {
+        const change = step.facts?.pieces?.find(p => p.id === id)
+        return change !== undefined && Object.keys(change).every(k => k === 'id' || k === 'serves')
+      }
       return result.facts.changed.flatMap(id => {
         const piece = result.facts.pieces.find(p => p.id === id)
-        if (piece === undefined) return []
+        if (piece === undefined || isLinkOnly(id)) return []
         const subjects = subjectsFor(piece, result.session.ledger.overview)
         return subjects.some(s => s.changedAt === result.now) ? [] : [`${piece.names[0]} changed, and no row moved`]
       })

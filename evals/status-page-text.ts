@@ -41,10 +41,8 @@ function rowText(r: StatusRow): string[] {
   }
 }
 
-/** The goal with its Now line and its milestones, each with its rows under it, and a proposal, in the order the looks draw them. */
+/** The goal with its Now line and its milestones, each with its rows under it, in the order the looks draw them. */
 function goalText(page: StatusPage): string[] {
-  const p = page.proposal
-  const proposal = p ? [p.label, p.text, ...p.milestones.map(m => `${m.mark} ${m.name}`)] : []
   const g = page.goal
   const goal = g
     ? [
@@ -61,9 +59,7 @@ function goalText(page: StatusPage): string[] {
       ]
     : []
 
-  const parts = p?.isBelowGoal ? [goal, proposal] : [proposal, goal]
-
-  return parts.filter(lines => lines.length > 0).flatMap((lines, n) => (n > 0 ? ['', ...lines] : lines))
+  return goal
 }
 
 /** The Status page as plain text, in the order every look draws it, with no styling. */

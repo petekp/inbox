@@ -257,34 +257,29 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
       ['Set a goal'],
     )
 
-    const proposing = applyStatus(
+    const withGoal = applyStatus(
       state.ledger.overview,
-      parseStatus('GOAL: Status tab shipped | done Page; queued Label')!,
+      parseStatus(
+        'NEW: working | Status page | drawn\nNEW: queued | Tab label | not started\nGOAL: Status tab shipped | done Page; queued Label',
+      )!,
       now,
       new Set(),
     )!
-    state.ledger = { ...state.ledger, overview: proposing }
+    state.ledger = { ...state.ledger, overview: withGoal }
     await afterPoll()
     const buttons = () => [...root.querySelectorAll('main button')].map(b => b.textContent)
-    assert.deepEqual(
-      [...root.querySelectorAll('.goal-proposed > *')].map(e => e.textContent),
-      ['✓', 'Page', '○', 'Label'],
-    )
-    assert.deepEqual(buttons(), ['Set as goal', 'Edit', 'Not now'])
 
     const click = async (label: string) => {
       ;([...root.querySelectorAll('main button')].find(b => b.textContent === label) as HTMLElement).click()
       await new Promise<void>(resolve => setImmediate(resolve))
       await new Promise<void>(resolve => setImmediate(resolve))
     }
-    await click('Set as goal')
-    assert.deepEqual(presses, [{ action: 'use-goal', id: 'goal' }])
     assert.deepEqual(
       [...root.querySelectorAll('.status-head.goal > *')].map(e => e.textContent),
-      ['Goal · Edit', 'Status tab shipped · 1 of 2 done', 'Now: Drawing the Status in the Codex tab'],
+      ['Goal · Edit · Remove goal', 'Status tab shipped · 1 of 2 done', 'Now: Drawing the Status in the Codex tab'],
     )
     assert.equal(root.querySelector('.status-head:not(.goal)'), null)
-    assert.deepEqual(buttons(), ['Edit'])
+    assert.deepEqual(buttons(), ['Edit', 'Remove goal'])
     await click('Edit')
     assert.equal((root.querySelector('#type-goal') as HTMLInputElement | null)?.value, 'Status tab shipped')
     assert.equal(root.querySelector('.status-head.goal h1'), null)
@@ -302,6 +297,9 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.equal(root.querySelector('#type-goal'), null)
     assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab in the store')
     assert.equal(root.querySelector('.status-head.goal p:last-child')?.textContent, 'Milestones after the next reply')
+
+    await click('Remove goal')
+    assert.deepEqual(presses.at(-1), { action: 'remove-goal', id: 'goal' })
   } finally {
     for (const key of Object.keys(windowTimers)) Reflect.deleteProperty(window, key)
     await window.happyDOM.abort()

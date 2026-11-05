@@ -6,7 +6,6 @@ import {
   goalKeyPlan,
   isGoalKeyInHeader,
   milestoneKeyPlan,
-  proposalKeyPlan,
   statusKeyPlan,
 } from '../../hooks/status-keys'
 import type { MilestoneRow } from '../../hooks/status-goal-page'
@@ -51,7 +50,7 @@ function openGoalField(text: string) {
   tabState.draw()
 }
 
-/** A Status key as a tab key. Set as goal and Not now draw out while the goal's press is on its way. */
+/** A Status key as a tab key. Remove goal draws out while the goal's press is on its way. */
 function statusKey({ press, label, emphasis }: StatusKey): Key {
   if (press.action === 'show-ask') return { label, emphasis, run: () => showAsk(press.askId) }
   if (press.action === 'toggle-fold') return { label, emphasis, run: () => toggleStatusFold(press.foldId) }
@@ -281,35 +280,17 @@ function MilestoneLine({ m }: { m: MilestoneRow }) {
 }
 
 /**
- * The goal with its milestones, and a proposal, above the head. The proposal comes first only while no goal is set.
- * While the person types a goal, the field takes the proposal's text's place, else the goal's, and the proposal's and
- * the goal's buttons give way to it.
+ * The goal with its milestones, above the head. While the person types a goal, the field takes the goal's text's place,
+ * and the goal's buttons give way to it.
  */
 function GoalAbove({ page }: { page: StatusPage }) {
-  const p = page.proposal
   const g = page.goal
   const isTyping = tabState.typing === GOAL_KEYS_ID
   const isKeyInHeader = isGoalKeyInHeader(page)
   const headerKeys = isKeyInHeader && !isTyping ? goalKeyPlan(page) : []
-  const proposal = p ? (
-    <section>
-      <div class="status-head goal">
-        <p class="muted">{p.label}</p>
-        {isTyping ? <GoalField /> : <h1>{p.text}</h1>}
-        <div class="goal-proposed">
-          {p.milestones.flatMap((m, n) => [
-            <span key={`mark-${n}`} class={markClassOf(m.tone, false)}>
-              <MarkGlyph text={m.mark} />
-            </span>,
-            <NameLine key={`name-${n}`} name={m.name} stall={null} />,
-          ])}
-        </div>
-        {isTyping ? null : <Keys keys={proposalKeyPlan(page)} />}
-      </div>
-      {p.isBelowGoal ? <GoalError /> : null}
-    </section>
-  ) : null
-  const goal = g ? (
+  if (g === null) return null
+
+  return (
     <section>
       <div class="status-head goal">
         <p class="muted">
@@ -321,7 +302,7 @@ function GoalAbove({ page }: { page: StatusPage }) {
             </button>,
           ])}
         </p>
-        {isTyping && !p ? (
+        {isTyping ? (
           <GoalField />
         ) : (
           <h1>
@@ -356,27 +337,14 @@ function GoalAbove({ page }: { page: StatusPage }) {
           <Keys keys={goalKeyPlan(page)} />
         </div>
       )}
-      {p?.isBelowGoal ? null : <GoalError />}
+      <GoalError />
     </section>
-  ) : null
-
-  return p?.isBelowGoal ? (
-    <>
-      {goal}
-      {proposal}
-    </>
-  ) : (
-    <>
-      {proposal}
-      {goal}
-    </>
   )
 }
 
-/** Under the head, or the empty state, while no goal is set: Set a goal, or the field it opened when no proposal shows. */
+/** Under the head, or the empty state, while no goal is set: Set a goal, or the field it opened. */
 function SetGoal({ page }: { page: StatusPage }) {
   if (page.goal !== null) return null
-  if (page.proposal !== null) return <GoalError />
 
   return (
     <div class="status-head">

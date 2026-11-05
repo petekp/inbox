@@ -51,7 +51,7 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     at: 1,
     answer: GOOD_RUNS['coordinator-day']![1]!.replace(
       'DONE: s6 | filed for later',
-      'SET: s6 | queued | filed for later',
+      'SET: s6 | queued | filed for later\nSERVES: s6 | -',
     ),
     breaks: 'marks-true',
   },
@@ -62,10 +62,45 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     answer: GOOD_RUNS['catch-up-from-empty']![0]!.replace('DONE: Image attachments | show inline\n', ''),
     breaks: 'piece-once',
   },
-  'declined-goal': {
+  'removed-goal': {
+    at: 0,
+    answer: `${GOOD_RUNS['removed-goal']![0]!}\nGOAL: Attachments import shipped | working Attachments in; queued Import live`,
+    breaks: 'goal-only-when-clear',
+  },
+  'milestone-work-done': {
+    at: 0,
+    answer: 'SET: s4 | working | recent after pinned, title matches left',
+    breaks: 'serves-linked',
+  },
+  'goal-met-next': {
     at: 1,
-    answer: `${GOOD_RUNS['declined-goal']![1]!}\nGOAL: Import set for the demo | working Notes import; queued Progress bar`,
-    breaks: 'proposal-only-when-stated',
+    answer: GOOD_RUNS['goal-met-next']![1]!.replace(/^HEAD: [^\n]*\n/, ''),
+    breaks: 'head-follows',
+  },
+  'goal-wait': {
+    at: 0,
+    answer: `${GOOD_RUNS['goal-wait']![0]!}\nSET: m2 | working | hotfix`,
+    breaks: 'milestones-true',
+  },
+  'no-goal-yet': {
+    at: 2,
+    answer: `${GOOD_RUNS['no-goal-yet']![2]!}\nGOAL: Upkeep done | working Docs current; queued Library bumped`,
+    breaks: 'goal-only-when-clear',
+  },
+  'goal-from-work': {
+    at: 0,
+    answer: GOOD_RUNS['goal-from-work']![0]!.replace(/\nGOAL: [^\n]*/, ''),
+    breaks: 'goal-when-clear',
+  },
+  'goal-work-left': {
+    at: 0,
+    answer: GOOD_RUNS['goal-work-left']![0]!.replace(/\nSERVES: [^\n]*/g, ''),
+    breaks: 'serves-linked',
+  },
+  'typed-goal-kept': {
+    at: 0,
+    answer: `${GOOD_RUNS['typed-goal-kept']![0]!}\nSERVES: Dark theme colors | m1`,
+    breaks: 'serves-linked',
   },
   'goal-on-busy-page': {
     at: 0,

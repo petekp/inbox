@@ -12,7 +12,7 @@ const NOTES_25 = {
   ],
 }
 
-/** A coordinator's day: Status calls only, from a busy page. The fixture opens and closes the asks and presses the goal. */
+/** A coordinator's day: Status calls only, from a busy page. The fixture opens and closes the asks and types a goal. */
 export const coordinatorDay: Replay = {
   name: 'coordinator-day',
   about:
@@ -72,8 +72,10 @@ export const coordinatorDay: Replay = {
         focus: 'fixing notes that vanish after archiving, then shipping 2.5',
         focusMatch: '2\\.5|vanish|archiv',
         pastMatch: '2\\.4',
-        goalStated: { text: 'Fix the vanishing notes, then ship 2.5', match: '2\\.5' },
+        goalClear: { text: 'Fix the vanishing notes, then ship 2.5', match: '2\\.5' },
+        goal: NOTES_25,
         pieces: [
+          ...['merge', 'r24', 'crash', 'login', 'backup'].map(id => ({ id, serves: 'none' })),
           { id: 'dark', state: 'filed', stands: 'filed for later' },
           { id: 'widgets', state: 'filed', stands: 'filed for later' },
           piece({
@@ -82,15 +84,24 @@ export const coordinatorDay: Replay = {
             match: 'vanish|archiv',
             state: 'working',
             stands: 'cause unknown',
+            serves: 'ms-vanish',
           }),
-          piece({ id: 'r25', names: ['2.5 release'], match: '2\\.5', state: 'queued', stands: 'after the bug fix' }),
+          piece({
+            id: 'r25',
+            names: ['2.5 release'],
+            match: '2\\.5',
+            state: 'queued',
+            stands: 'after the bug fix',
+            serves: 'ms-live25',
+          }),
         ],
         children: [{ ref: 'herdr:vn2', does: 'Fix notes that vanish after archiving', serves: 'vanish' }],
       },
       checkpoint: true,
       judgeUntil: { marks: '#137' },
       targets: [
-        'proposal-when-stated',
+        'goal-when-clear',
+        'milestones-shape',
         'head-follows',
         'open-pieces-kept',
         'marks-true',
@@ -98,19 +109,6 @@ export const coordinatorDay: Replay = {
         'child-labels',
         'head',
       ],
-    },
-    {
-      label: 'The person presses Set as goal on the 2.5 proposal',
-      at: 60,
-      events: [{ press: 'use-goal' }],
-      facts: {
-        goal: NOTES_25,
-        pieces: [
-          ...['merge', 'r24', 'crash', 'login', 'backup'].map(id => ({ id, serves: 'none' })),
-          { id: 'vanish', serves: 'ms-vanish' },
-          { id: 'r25', serves: 'ms-live25' },
-        ],
-      },
     },
     {
       label: 'The delegate calls it the archive bug, and the person asks for a long extra on the same fix',

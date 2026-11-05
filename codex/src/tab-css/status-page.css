@@ -143,17 +143,8 @@
 .status-head .actions {
   margin-top: 6px;
 }
-.status-head.goal + .list,
-.goal-proposed {
+.status-head.goal + .list {
   margin-top: 4px;
-}
-/* Each proposed milestone on its own line, spaced and in the columns of the goal's milestone rows. The head already starts at the marks' column. */
-.goal-proposed {
-  display: grid;
-  grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr);
-}
-.goal-proposed > * {
-  padding: var(--status-row-pad) 0;
 }
 /* A changed milestone's name, bold without the gap and stall word after it. */
 .status-page .content.changed > .clamp:first-child,
