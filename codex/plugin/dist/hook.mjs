@@ -1495,7 +1495,7 @@ function earliestOf(times) {
   return known.length > 0 ? Math.min(...known) : null;
 }
 function isSendOnItsWay(delivery) {
-  return delivery === "sending" || delivery === "queued";
+  return delivery === "held" || delivery === "sending" || delivery === "queued";
 }
 function isSettledInPlace(state, { shownSince, lastTypedMessageAt, listInput, now, settleWindowMs, undoShown, pressOutSince }, id) {
   const dueAt = foldDueAt(state, lastTypedMessageAt, settleWindowMs);
