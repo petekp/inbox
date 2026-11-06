@@ -1448,16 +1448,17 @@ function lastProgressAt(o, g) {
 }
 function goalLeftFor(o, now) {
   const g = o.goal;
-  const kept = o.milestones.filter((m) => m.status !== "dropped");
-  const isMet = g?.metAt !== null || kept.length > 0 && kept.every((m) => m.status === "done");
-  if (g === null || isMet || g.source !== "inferred" || linkedSubjects(o).some(isOpen))
+  if (g === null || isGoalMet(o) || g.source !== "inferred" || linkedSubjects(o).some(isOpen))
     return null;
   const left = now - lastProgressAt(o, g);
   return left >= GOAL_LEFT_MS ? left : null;
 }
+function isGoalMet(o) {
+  const kept = o.milestones.filter((m) => m.status !== "dropped");
+  return o.goal?.metAt != null || kept.length > 0 && kept.every((m) => m.status === "done");
+}
 function mayReplaceGoal(o, kind, now) {
-  const g = o.goal;
-  if (g === null || g.metAt !== null)
+  if (o.goal === null || isGoalMet(o))
     return kind === "goal";
   return goalLeftFor(o, now) !== null;
 }
