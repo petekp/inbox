@@ -7,9 +7,9 @@ import type { DrawnPr } from './pr-views'
 import type { PrOrderView } from './pr-order'
 import { prNeedsYou } from './prs'
 import { isPrRowId } from './presses'
-import { feedbackOf, isPressUnderWay } from './feedback'
+import { feedbackOf, pressUnderWaySince } from './feedback'
 import { MARK_LEGEND } from './help'
-import { hasRunningMark, NO_HOLDS } from './timing'
+import { earliestOf, hasRunningMark, NO_HOLDS } from './timing'
 import { inboxView, perTurnStatus } from './view'
 import type { UpdateRecovery } from './view'
 import { isRowTab } from './tabs'
@@ -33,8 +33,8 @@ type PrTab = {
   order: PrOrderView | null
   /** Whether gh asked for a sign-in at the last fetch it answered. */
   isGhSignedOut: boolean
-  /** Whether a press is under way on a PR row, which keeps every settled PR block in place. */
-  isPressOut: boolean
+  /** When the oldest press still under way on a PR row began, or null. A settled PR block that was in place then waits for it. */
+  pressOutSince: number | null
 }
 
 export type SessionView = InboxView & {
@@ -128,8 +128,10 @@ function prTabOf(
   { shownSince, listInput, undoShown }: Holds,
   settleWindowMs: number,
 ): PrTab {
-  const isPressOut = Object.entries(lastActions).some(
-    ([id, last]) => isPrRowId(id) && isPressUnderWay(feedbackOf(id, last, undefined, s.presence, now)),
+  const pressOutSince = earliestOf(
+    Object.entries(lastActions).map(([id, last]) =>
+      isPrRowId(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, s.presence, now)) : null,
+    ),
   )
   const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
     shownSince,
@@ -138,7 +140,7 @@ function prTabOf(
     now,
     settleWindowMs,
     undoShown,
-    isPressOut,
+    pressOutSince,
   })
   const isSent = threadSentIn(lastActions)
 
@@ -154,6 +156,6 @@ function prTabOf(
       shownSince,
     ),
     isGhSignedOut: s.prViews.isGhSignedOut === true,
-    isPressOut,
+    pressOutSince,
   }
 }
