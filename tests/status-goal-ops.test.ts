@@ -102,6 +102,7 @@ test('a GOAL or RETIRE line replaces an inferred goal only once none of its link
   )
   expect(after(betweenMilestones, `${work}\n${next}\nRETIRE: moved on`, later).goal?.text).toBe('Search under 100 ms')
   expect(after(betweenMilestones, 'RETIRE: moved on', later - 1).goal).not.toBeNull()
+  expect(after(betweenMilestones, 'DROP: m3 | not shipping\nRETIRE: not going out', later).goal).toBeNull()
   expect(after(betweenMilestones, 'RETIRE: moved on', later)).toMatchObject({
     goal: null,
     milestones: [],

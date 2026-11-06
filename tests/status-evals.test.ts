@@ -146,8 +146,13 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     breaks: 'marks-true',
   },
   'stale-goal': {
-    at: 3,
-    answer: GOOD_RUNS['stale-goal']![3]!.replace(/\nRETIRE: [^\n]*/, ''),
+    at: 4,
+    answer: GOOD_RUNS['stale-goal']![4]!.replace(/^DONE: m3 [^\n]*\n/, ''),
+    breaks: 'goal-left',
+  },
+  'goal-outcome-dropped': {
+    at: 4,
+    answer: GOOD_RUNS['goal-outcome-dropped']![4]!.replace(/\nRETIRE: [^\n]*/, ''),
     breaks: 'goal-left',
   },
 }

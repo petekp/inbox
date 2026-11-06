@@ -30,7 +30,8 @@ export const GOAL_RULES: Rule[] = [
     failures: ({ result }) => {
       const left = result.facts.goal
       const g = result.session.ledger.overview?.goal
-      if (!left?.isLeft || !g || g.metAt !== null || !new RegExp(left.match, 'i').test(g.text)) return []
+      if (!left?.isLeft || !g || !new RegExp(left.match, 'i').test(g.text)) return []
+      if (g.metAt !== null) return left.isDropped ? [`"${g.text}" reads met after the person dropped its outcome`] : []
       return [`"${g.text}" is still open`]
     },
   },
@@ -39,14 +40,14 @@ export const GOAL_RULES: Rule[] = [
     reads: 'facts',
     opportunity: ctx => {
       const g = ctx.result.facts.goal
-      return hasCall(ctx) && g != null && !g.isLeft && g.text === ctx.before.facts.goal?.text
+      return hasCall(ctx) && g != null && !g.isLeft && !g.mayEnd && g.text === ctx.before.facts.goal?.text
     },
     property: 14,
     text: 'A goal the facts keep, met or not, stays on the page.',
     failures: ({ result, before }) => {
       const kept = result.facts.goal
       const g = result.session.ledger.overview?.goal
-      if (!kept || kept.isLeft || kept.text !== before.facts.goal?.text) return []
+      if (!kept || kept.isLeft || kept.mayEnd || kept.text !== before.facts.goal?.text) return []
       return g && new RegExp(kept.match, 'i').test(g.text) ? [] : [`the goal "${kept.text}" went`]
     },
   },

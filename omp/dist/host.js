@@ -1457,10 +1457,10 @@ function isGoalMet(o) {
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   return o.goal?.metAt != null || kept.length > 0 && kept.every((m) => m.status === "done");
 }
-function mayReplaceGoal(o, kind, now) {
-  if (o.goal === null || isGoalMet(o))
-    return kind === "goal";
-  return goalLeftFor(o, now) !== null;
+function mayReplaceGoal(o, start, kind, now) {
+  const may = (s) => s.goal === null || isGoalMet(s) ? kind === "goal" : goalLeftFor(s, now) !== null;
+  const isSameGoal = o.goal?.setAt === start.goal?.setAt;
+  return may(o) || start !== o && isSameGoal && may(start);
 }
 function inferredGoal(o, text, named, now) {
   const milestones = named.map((m, n) => ({
@@ -1486,7 +1486,7 @@ function hasWorkForGoal(o) {
   const held = new Set(linkedSubjects(o).map((s) => s.id));
   return o.subjects.some((s) => isOpen(s) && !held.has(s.id));
 }
-function applyGoalOp(o, op, now, findSubject) {
+function applyGoalOp(o, op, now, findSubject, start = o) {
   if (op.kind === "goal") {
     const text = clipWords(op.text, DESCRIPTION_KEPT);
     const milestones = op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }));
@@ -1494,13 +1494,13 @@ function applyGoalOp(o, op, now, findSubject) {
     const isCurrent = g !== null && (restatesGoal(text, g.text) || hasGoalMilestones(o, milestones));
     const isPrevious = g?.was != null && restatesGoal(text, g.was);
     const isRemoved = o.removedGoals.some((key) => restatesGoal(text, key));
-    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, "goal", now);
+    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, start, "goal", now);
     if (op.milestones.length < MILESTONES_MIN || isCurrent || isPrevious || isRemoved || !isAllowed)
       return o;
     return inferredGoal(o, text, milestones, now);
   }
   if (op.kind === "retire")
-    return mayReplaceGoal(o, "retire", now) ? withoutGoal(o) : o;
+    return mayReplaceGoal(o, start, "retire", now) ? withoutGoal(o) : o;
   if (o.goal === null)
     return o;
   if (op.kind === "milestone")
@@ -8726,7 +8726,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     if (op.kind === "none")
       continue;
     if (op.kind === "goal" || op.kind === "retire" || op.kind === "milestone" || op.kind === "serves") {
-      o = applyGoalOp(o, op, now, find);
+      o = applyGoalOp(o, op, now, find, last ?? o);
       if (op.kind === "milestone")
         markNamed(findMilestone(o, op.name));
       if (op.kind === "serves" && op.milestone !== null)

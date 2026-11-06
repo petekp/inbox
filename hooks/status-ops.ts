@@ -188,7 +188,7 @@ export function applyOps(
   for (const { op } of ordered) {
     if (op.kind === 'none') continue
     if (op.kind === 'goal' || op.kind === 'retire' || op.kind === 'milestone' || op.kind === 'serves') {
-      o = applyGoalOp(o, op, now, find)
+      o = applyGoalOp(o, op, now, find, last ?? o)
       if (op.kind === 'milestone') markNamed(findMilestone(o, op.name))
       if (op.kind === 'serves' && op.milestone !== null) markNamed(findMilestone(o, op.milestone))
     } else if (op.kind === 'head') {

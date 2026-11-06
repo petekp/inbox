@@ -42,7 +42,25 @@ type MilestoneFact = {
  * The goal as the session holds it, and its milestones. `isLeft` says the work has left it: the page shows it met or
  * shows no goal, and its milestones' states no longer matter.
  */
-type GoalFact = { text: string; match: string; milestones: MilestoneFact[]; isLeft?: true }
+/** The note after a goal's text on what the page may show for it. */
+function goalNote(g: GoalFact): string {
+  if (g.isDropped) return ' (the person dropped its outcome: the page shows no goal)'
+  if (g.isLeft) return ' (the work has left it: the page shows it met, or shows no goal)'
+
+  return g.mayEnd ? ' (the work has paused on it: the page may keep it, or show it met or no goal)' : ''
+}
+
+type GoalFact = {
+  text: string
+  match: string
+  milestones: MilestoneFact[]
+  /** The work has left it: the page shows it met, or shows no goal. */
+  isLeft?: true
+  /** The person dropped its outcome: the page shows no goal, met or not. Needs `isLeft`. */
+  isDropped?: true
+  /** The work has paused on it: the page may keep it, or show it met or no goal. */
+  mayEnd?: true
+}
 
 /** An outcome with a finish line that a step makes clear, from the person's words or the work, which a goal set there should match. */
 type GoalClear = { text: string; match: string }
@@ -203,7 +221,7 @@ export function factsText(f: Facts): string {
 
   const goal = f.goal
     ? [
-        `Goal: ${f.goal.text}${f.goal.isLeft ? ' (the work has left it: the page shows it met, or shows no goal)' : ''}`,
+        `Goal: ${f.goal.text}${goalNote(f.goal)}`,
         'Milestones:',
         list(
           f.goal.milestones.map(

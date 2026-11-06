@@ -215,11 +215,17 @@ function isGoalMet(o: SessionStatus): boolean {
   return o.goal?.metAt != null || (kept.length > 0 && kept.every(m => m.status === 'done'))
 }
 
-/** Whether a GOAL or RETIRE line may replace or clear the goal: a GOAL while none is set or once the goal is met, and either once the work has left it. */
-function mayReplaceGoal(o: SessionStatus, kind: 'goal' | 'retire', now: number): boolean {
-  if (o.goal === null || isGoalMet(o)) return kind === 'goal'
+/**
+ * Whether a GOAL or RETIRE line may replace or clear the goal: a GOAL while none is set or once the goal is met, and
+ * either once the work has left it. The page is read as the answer's earlier lines left it, and as the answer found
+ * it, so a DROP or DONE line in the same answer never closes a gate that was open. A goal the same answer set is read
+ * only as it stands, so a RETIRE after it never clears it.
+ */
+function mayReplaceGoal(o: SessionStatus, start: SessionStatus, kind: 'goal' | 'retire', now: number): boolean {
+  const may = (s: SessionStatus) => (s.goal === null || isGoalMet(s) ? kind === 'goal' : goalLeftFor(s, now) !== null)
+  const isSameGoal = o.goal?.setAt === start.goal?.setAt
 
-  return goalLeftFor(o, now) !== null
+  return may(o) || (start !== o && isSameGoal && may(start))
 }
 
 /** The goal a GOAL line sets, with its milestones as it wrote them and no subject linked yet. */
@@ -275,6 +281,7 @@ export function applyGoalOp(
   op: Extract<Op, { kind: 'goal' | 'retire' | 'milestone' | 'serves' }>,
   now: number,
   findSubject: (ref: string) => Subject | null,
+  start: SessionStatus = o,
 ): SessionStatus {
   if (op.kind === 'goal') {
     const text = clipWords(op.text, DESCRIPTION_KEPT)
@@ -285,12 +292,12 @@ export function applyGoalOp(
     const isCurrent = g !== null && (restatesGoal(text, g.text) || hasGoalMilestones(o, milestones))
     const isPrevious = g?.was != null && restatesGoal(text, g.was)
     const isRemoved = o.removedGoals.some(key => restatesGoal(text, key))
-    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, 'goal', now)
+    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, start, 'goal', now)
     if (op.milestones.length < MILESTONES_MIN || isCurrent || isPrevious || isRemoved || !isAllowed) return o
 
     return inferredGoal(o, text, milestones, now)
   }
-  if (op.kind === 'retire') return mayReplaceGoal(o, 'retire', now) ? withoutGoal(o) : o
+  if (op.kind === 'retire') return mayReplaceGoal(o, start, 'retire', now) ? withoutGoal(o) : o
   if (o.goal === null) return o
   if (op.kind === 'milestone') return addMilestone(o, op, now)
   const subject = findSubject(op.subject)
