@@ -175,10 +175,15 @@ function withGoal(s: Scene) {
   s.facts.pieces[1]!.serves = 'resolved'
 }
 
-/** An inferred goal before the step and still after it, which the facts say the work has left. */
-function withLeftGoal(s: Scene) {
+/** The same inferred goal before the step and after it, with its work open. */
+function withGoalBefore(s: Scene) {
   withGoal(s)
   s.before = { ...s.before, goal: s.after.goal, milestones: s.after.milestones, serves: s.after.serves }
+}
+
+/** An inferred goal before the step and still after it, which the facts say the work has left. */
+function withLeftGoal(s: Scene) {
+  withGoalBefore(s)
   s.facts.goal = { ...s.facts.goal!, milestones: [], isLeft: true }
 }
 
@@ -240,6 +245,15 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
   'answer-readable': {
     good: s => (s.calls = [statusCall('SET: s1 | working | syncs on reconnect')]),
     bad: s => (s.calls = [statusCall('The engine now syncs on reconnect.')]),
+  },
+  'goal-kept': {
+    good: withGoalBefore,
+    bad: s => {
+      withGoalBefore(s)
+      s.after.goal = null
+      s.after.milestones = []
+      s.after.serves = {}
+    },
   },
   'goal-left': {
     good: s => {

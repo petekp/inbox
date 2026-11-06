@@ -35,6 +35,22 @@ export const GOAL_RULES: Rule[] = [
     },
   },
   {
+    id: 'goal-kept',
+    reads: 'facts',
+    opportunity: ctx => {
+      const g = ctx.result.facts.goal
+      return hasCall(ctx) && g != null && !g.isLeft && g.text === ctx.before.facts.goal?.text
+    },
+    property: 14,
+    text: 'A goal the facts keep, met or not, stays on the page.',
+    failures: ({ result, before }) => {
+      const kept = result.facts.goal
+      const g = result.session.ledger.overview?.goal
+      if (!kept || kept.isLeft || kept.text !== before.facts.goal?.text) return []
+      return g && new RegExp(kept.match, 'i').test(g.text) ? [] : [`the goal "${kept.text}" went`]
+    },
+  },
+  {
     id: 'goal-only-when-clear',
     reads: 'facts',
     opportunity: ctx => hasCall(ctx) && !ctx.result.facts.goalClear,

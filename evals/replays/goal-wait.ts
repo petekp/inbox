@@ -19,7 +19,7 @@ export const goalWait: Replay = {
             subject('s2', 'done', 'Store release', 'live in the store', -20),
           ],
           lastLookAt: minutes(-10),
-          goal: goal('Notes 2.5 in the store', -120),
+          goal: { ...goal('Notes 2.5 in the store', -120), metAt: minutes(-20) },
           milestones: [
             milestone('m1', 'done', 'Sync fixed', '', -90),
             milestone('m2', 'done', '2.5 published', 'live in the store', -20),
@@ -91,7 +91,7 @@ export const goalWait: Replay = {
           }),
         ],
       },
-      targets: ['goal-only-when-clear', 'milestones-true'],
+      targets: ['goal-only-when-clear', 'milestones-true', 'goal-kept'],
     },
   ],
 }

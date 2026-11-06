@@ -193,12 +193,15 @@ function lastProgressAt(o: SessionStatus, g: StatusGoal): number {
 /**
  * How long the work has left the goal, in ms, or null while it has not. The work has left an inferred goal that is not
  * met when none of its linked work is open and it has not moved forward for `GOAL_LEFT_MS`, so a goal between
- * milestones, or one just set, stays. A typed goal is the person's until it is met. The Status call reads this time,
- * and a GOAL or RETIRE line may replace or clear the goal while it is set.
+ * milestones, or one just set, stays. A goal whose milestones are all done is met, whether or not a saved copy holds
+ * its met time. A typed goal is the person's until it is met. The Status call reads this time, and a GOAL or RETIRE
+ * line may replace or clear the goal while it is set.
  */
 export function goalLeftFor(o: SessionStatus, now: number): number | null {
   const g = o.goal
-  if (g === null || g.metAt !== null || g.source !== 'inferred' || linkedSubjects(o).some(isOpen)) return null
+  const kept = o.milestones.filter(m => m.status !== 'dropped')
+  const isMet = g?.metAt !== null || (kept.length > 0 && kept.every(m => m.status === 'done'))
+  if (g === null || isMet || g.source !== 'inferred' || linkedSubjects(o).some(isOpen)) return null
   const left = now - lastProgressAt(o, g)
 
   return left >= GOAL_LEFT_MS ? left : null
