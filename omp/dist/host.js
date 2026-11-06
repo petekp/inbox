@@ -10451,6 +10451,8 @@ function panelCalls(context, sessions) {
       }
       if (isChanged && tab === "overview")
         checkDelegatesWhenDue(ctx);
+      if (isChanged && tab === "prs")
+        fetchPrsWhenDue(ctx, true);
     },
     closePanel: (ctx) => {
       const id = sessionIdOf(ctx);
