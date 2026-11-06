@@ -77,7 +77,8 @@ class ModState {
   /** Where a next build keeps its Status call records, or null on a release build. */
   statusRecordsFolder: string | null = null
   fetchingPrs: Promise<void> = Promise.resolve()
-  nextFetchFindsBranchPr: boolean | null = null
+  /** The ask of the fetch that runs next, or null when none waits. A second ask joins it. */
+  nextFetch: { findsBranchPr: boolean; isPress: boolean } | null = null
   prFetchEndedAt: number | undefined
 }
 

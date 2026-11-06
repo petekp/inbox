@@ -108,3 +108,8 @@ export function ago(ms: number): string {
 
   return `${Math.round(h / 24)}d ago`
 }
+
+/** A time of day in the person's locale, as "4:46 PM". */
+export function clockTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+}

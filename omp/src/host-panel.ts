@@ -32,7 +32,7 @@ export type Inbox = {
   closePanel(ctx: OmpContext): void
   /** Notes that the panel has the Status subject rows `ids` on screen now, for the look under way. */
   showRows(ctx: OmpContext, ids: string[]): void
-  fetchPrsWhenDue(ctx: OmpContext): void
+  fetchPrsWhenDue(ctx: OmpContext, isTabShown: boolean): void
   /**
    * Asks Herdr about the running delegates at most each `HERDR_CHECK_MS`, so a delegate's row follows Herdr while the
    * session waits. The panel asks while it shows the Status.
@@ -78,7 +78,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
       openPanels.set(id, 'needsYou')
       deps.background(change(id, s => ({ ...s, shownSince: openedAt })))
       await wakeAfterSettle(hostFor(ctx)).catch(() => undefined)
-      fetchPrsWhenDue(ctx)
+      fetchPrsWhenDue(ctx, false)
     },
     showTab: (ctx, tab, holds) => {
       const id = sessionIdOf(ctx)
@@ -91,6 +91,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
         deps.background(change(id, s => withHolds(withLook(s, tab === 'overview', now, shown), holds)))
       }
       if (isChanged && tab === 'overview') checkDelegatesWhenDue(ctx)
+      if (isChanged && tab === 'prs') fetchPrsWhenDue(ctx, true)
     },
     closePanel: ctx => {
       const id = sessionIdOf(ctx)
@@ -132,7 +133,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
       return { error: outcome.error, note: outcome.note, isUnconfirmed: outcome.isUnconfirmed }
     },
     resume: async () => inbox.resume(ctx),
-    fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),
+    fetchPrsWhenDue: isTabShown => inbox.fetchPrsWhenDue(ctx, isTabShown),
     checkDelegatesWhenDue: () => inbox.checkDelegatesWhenDue(ctx),
     shown: (tab, holds) => inbox.showTab(ctx, tab, holds),
     showedRows: ids => inbox.showRows(ctx, ids),

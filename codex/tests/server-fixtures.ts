@@ -2,6 +2,9 @@ import type { Feedback } from '../../hooks/feedback'
 import { makeServer } from '../src/server'
 import { updateState } from '../src/state'
 import { fakeRunner, tempDir } from './helpers'
+import { prNodeOf, prsAnswerOf } from '../../tests/gh-answers'
+import type { ThreadsJson, ViewJson } from '../../tests/gh-answers'
+import type { PrFetchFailure } from '../../types'
 
 export async function setup(
   queueCode: number,
@@ -107,6 +110,8 @@ export type PrView = {
     }[]
     count: number
     isGhSignedOut: boolean
+    failure: PrFetchFailure | null
+    refresh: { text: string | null; actions: { label: string }[]; showsPress: boolean } | null
     order: {
       title: string
       why: string | null
@@ -145,19 +150,33 @@ export async function prServer(
   return { dir, calls: runner.calls, call }
 }
 
+/** The threads of the one PR, as the old threads answer gave them. */
+const THREADS = (JSON.parse(GH_THREADS) as { data: { repository: { pullRequest: ThreadsJson } } }).data.repository
+  .pullRequest
+
+/** The PRs query's answer with `view(number)` for each queried PR, and the fixture's threads on each. */
+export function prsAnswer(args: string[], view: (number: number) => string): string {
+  return prsAnswerOf(
+    (args[4] ?? '').slice('query='.length),
+    number => ({ node: prNodeOf(JSON.parse(view(Number(number))) as ViewJson, THREADS) }),
+    'me',
+  )
+}
+
 export const ghAnswer = (args: string[]) => {
   if (args[0] === 'gh' && args[1] === 'pr') return { code: 0, stdout: GH_VIEW, stderr: '' }
-  if (args[0] === 'gh') return { code: 0, stdout: args.includes('api') ? GH_THREADS : 'gh 2.0', stderr: '' }
+  if (args[0] === 'gh' && args[2] === 'graphql') return { code: 0, stdout: prsAnswer(args, () => GH_VIEW), stderr: '' }
+  if (args[0] === 'gh') return { code: 0, stdout: args.includes('api') ? '{}' : 'gh 2.0', stderr: '' }
   return { code: 0, stdout: 'Queued message q1\n', stderr: '' }
 }
 
 export const PRS_STALE_MS = 3 * 60_000
 
 export async function viewAfterFetch(call: (name: string, args: Record<string, unknown>) => Promise<PrReply>) {
-  await call('inbox_view', {})
+  await call('inbox_view', { tab: 'prs' })
   await new Promise(resolve => setTimeout(resolve, 50))
 
-  return call('inbox_view', {})
+  return call('inbox_view', { tab: 'prs' })
 }
 
 type Call = (name: string, args: Record<string, unknown>, meta: Record<string, unknown>) => Promise<unknown>

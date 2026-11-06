@@ -256,7 +256,7 @@ export function prKey(rowId: string, pr: PrView, a: PrAction): Key {
   }
 }
 
-function pendingLocal(effect: Effect): Feedback {
+export function pendingLocal(effect: Effect): Feedback {
   return { is: 'local', result: pendingResult([effect], Date.now()) }
 }
 

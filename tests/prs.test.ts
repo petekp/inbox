@@ -1,16 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import {
-  inPrOrder,
-  commentLine,
-  prRefs,
-  prNeedsYou,
-  prompts,
-  readThreadsAnswer,
-  readView,
-  readableComment,
-  readiness,
-} from '../hooks/prs'
+import { inPrOrder, commentLine, prRefs, prNeedsYou, prompts, readableComment, readiness } from '../hooks/prs'
+import { readPrNode } from '../hooks/pr-query'
+import { prNodeOf } from './gh-answers'
 import { checkActions } from '../hooks/pr-tab'
 import { checkRowText } from '../hooks/pr-rows'
 
@@ -123,6 +115,23 @@ const THREADS = JSON.stringify({
   },
 })
 
+type ThreadsAnswer = {
+  data: { viewer?: { login: string }; repository: { pullRequest: Parameters<typeof prNodeOf>[1] } }
+}
+
+/** The PR's view from `view`, as `gh pr view --json` prints it, and `threads`, as the one-PR threads query answered. */
+function readPr(view: string, threads = THREADS) {
+  const { data } = JSON.parse(threads) as ThreadsAnswer
+
+  return readPrNode(
+    'acme/greet#12',
+    prNodeOf(JSON.parse(view), data.repository.pullRequest),
+    data.viewer?.login,
+    undefined,
+    null,
+  )
+}
+
 describe('prs', () => {
   test('a review comment reads without the HTML and badges review bots add', () => {
     const body =
@@ -135,8 +144,8 @@ describe('prs', () => {
   })
 
   test('a PR press quotes each review comment line and clips a long comment', () => {
-    const view = readView('acme/greet#12', VIEW)!
-    const [thread] = readThreadsAnswer(THREADS).threads
+    const view = readPr(VIEW)
+    const [thread] = readPr(VIEW).threads
     const long = { ...thread!, body: `First line\nSecond line ${'x'.repeat(3000)}`, reply: null }
     const message = prompts.address({ ...view, threads: [], isYours: true, wasSeenOpen: true, error: null }, [long])
     expect(message).toContain('> First line\n> Second line')
@@ -151,7 +160,7 @@ describe('prs', () => {
   })
 
   test('reads checks and open threads; threads where someone else spoke last block the merge', () => {
-    const view = readView('acme/greet#12', VIEW)!
+    const view = readPr(VIEW)
     expect(view.checks.map(c => [c.name, c.bucket])).toEqual([
       ['lint', 'fail'],
       ['test', 'pending'],
@@ -162,7 +171,7 @@ describe('prs', () => {
       [undefined, undefined, undefined],
       [undefined, undefined, undefined],
     ])
-    const threads = readThreadsAnswer(THREADS).threads
+    const threads = readPr(VIEW).threads
     expect(threads[0]?.reply?.body).toBe('Quote the name.')
     expect(threads.map(t => t.at)).toEqual([Date.parse('2026-10-08T09:30:00Z'), null, null])
     expect(threads[0]?.reply?.at).toBe(Date.parse('2026-10-08T10:00:00Z'))
@@ -186,8 +195,7 @@ describe('prs', () => {
       ...(startedAt ? { startedAt, completedAt: startedAt } : {}),
       detailsUrl: `https://github.com/acme/greet/actions/runs/${name}-${conclusion}`,
     })
-    const viewWith = (rollup: object[]) =>
-      readView('acme/greet#12', JSON.stringify({ ...JSON.parse(VIEW), statusCheckRollup: rollup }))!
+    const viewWith = (rollup: object[]) => readPr(JSON.stringify({ ...JSON.parse(VIEW), statusCheckRollup: rollup }))
     const checks = (rollup: object[]) => viewWith(rollup).checks.map(c => [c.workflow, c.name, c.bucket])
 
     expect(
@@ -226,8 +234,7 @@ describe('prs', () => {
       completedAt: '2026-10-08T09:03:02Z',
       detailsUrl,
     })
-    const view = readView(
-      'acme/greet#12',
+    const view = readPr(
       JSON.stringify({
         ...JSON.parse(VIEW),
         reviewDecision: '',
@@ -238,7 +245,7 @@ describe('prs', () => {
           run('deploy', 'CANCELLED', 'https://ci.example.com/builds/7'),
         ],
       }),
-    )!
+    )
     const pr = { ...view, threads: [], isYours: true, wasSeenOpen: true, error: null }
     const presses = { lastActions: {}, turns: { turnsStarted: 0, turnsApplied: 0 }, now: 0 }
     const buttons = (name: string) =>
@@ -302,15 +309,15 @@ describe('prs', () => {
           },
         },
       })
-    expect(readThreadsAnswer(outdated('2026-10-08T11:00:00Z')).threads[0]?.isLinesChanged).toBe(true)
-    expect(readThreadsAnswer(outdated('2026-10-08T13:00:00Z')).threads[0]?.isLinesChanged).toBe(false)
+    expect(readPr(VIEW, outdated('2026-10-08T11:00:00Z')).threads[0]?.isLinesChanged).toBe(true)
+    expect(readPr(VIEW, outdated('2026-10-08T13:00:00Z')).threads[0]?.isLinesChanged).toBe(false)
   })
 
   test('a thread sent to Claude stops waiting on the person and waits on others; a failing check always waits', () => {
-    const view = readView('acme/greet#12', VIEW)!
+    const view = readPr(VIEW)
     const pr = {
       ...view,
-      threads: readThreadsAnswer(THREADS).threads.slice(0, 1),
+      threads: readPr(VIEW).threads.slice(0, 1),
       isYours: true,
       wasSeenOpen: true,
       error: null,
@@ -342,7 +349,7 @@ describe('prs', () => {
   })
 
   test('PRs that wait on the person come first, then those waiting on others, then finished ones, newest first within each, and an order puts its open PRs first', () => {
-    const view = readView('acme/greet#12', VIEW)!
+    const view = readPr(VIEW)
     const base = {
       ...view,
       checks: [],

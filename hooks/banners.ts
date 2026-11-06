@@ -53,6 +53,8 @@ export type BannerKind =
   | 'stopped'
   | 'gh-missing'
   | 'gh-signed-out'
+  | 'gh-limited'
+  | 'gh-failed'
   | 'press-note'
   | 'press-failed'
   | 'hooks-trust'
@@ -73,6 +75,8 @@ const BANNER_TONES: Record<BannerKind, BannerTone> = {
   stopped: 'error',
   'gh-missing': 'warning',
   'gh-signed-out': 'warning',
+  'gh-limited': 'warning',
+  'gh-failed': 'warning',
   'press-note': 'notice',
   'press-failed': 'error',
   'hooks-trust': 'error',

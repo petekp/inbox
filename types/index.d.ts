@@ -474,7 +474,22 @@ export type PrViews = {
   isGhMissing?: boolean
   /** Set by the last fetch whose gh runs answered: whether one of them asked for a sign-in. */
   isGhSignedOut?: boolean
+  /** Why the last fetch read none of the PRs. Null, or absent, once a fetch reads them again. */
+  failure?: PrFetchFailure | null
+  /** Why each tracked PR that has no view could not be read, by ref, from the last fetch that tried. */
+  unread?: Record<string, string>
 }
+
+/**
+ * A cause that stopped a whole fetch, so every PR keeps its last view: GitHub's hourly limit is used up until
+ * `resetsAt`, null when GitHub did not say; GitHub could not be reached; gh did not answer in time; or GitHub answered
+ * with an error, whose first line is `text`. `at` is when the fetch failed.
+ */
+export type PrFetchFailure =
+  | { kind: 'limit'; at: number; resetsAt: number | null }
+  | { kind: 'unreachable'; at: number }
+  | { kind: 'timed-out'; at: number }
+  | { kind: 'error'; at: number; text: string }
 
 /**
  * The turns started in this session, and how many of them reached the

@@ -185,7 +185,7 @@ function retryHeld(e: SaveEngine, id: string, entry: Held) {
 }
 
 /** Runs `write`, and again after each wait in `LOCK_RETRY_WAITS_MS` while the store's lock is held. */
-async function whileLockHeld<T>(e: SaveEngine, write: () => Promise<T>): Promise<T> {
+export async function whileLockHeld<T>(e: Pick<SaveEngine, 'sleep'>, write: () => Promise<T>): Promise<T> {
   for (const ms of LOCK_RETRY_WAITS_MS) {
     try {
       return await write()

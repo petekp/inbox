@@ -193,10 +193,10 @@ test('PR buttons follow the shared plan order for the block, its threads and its
   const isSent = threadSentIn(lastActions)
   const presses = { lastActions, turns, now: NOW }
   const block = prBlockActions(pr, isSent, prs.branchRef, presses)
-  expect(block.slice(0, 2).map(a => a.label)).toEqual(['Refresh PRs', 'Try again'])
-  expect(text(screen, { ...INITIAL_UI, tab: 'prs', selectedId: prMarkId(ref) })).toContain(
-    'Last refresh failed: HTTP 502',
-  )
+  expect(block.slice(0, 2).map(a => a.label)).toEqual(['Try again', 'Resolve conflicts'])
+  const lines = text(screen, { ...INITIAL_UI, tab: 'prs', selectedId: prMarkId(ref) }).split('\n')
+  expect(lines.findIndex(l => l.includes('Refresh PRs'))).toBeLessThan(lines.findIndex(l => l.includes(pr.title)))
+  expect(lines.join('\n')).toContain('Last refresh failed: HTTP 502')
   const plans = [
     block,
     ...waitingThreads(pr).map(t => threadActions(pr, t, presses)),
