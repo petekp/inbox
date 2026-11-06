@@ -2,6 +2,8 @@ import type { Engine, MockClock } from 'claude-code/testing'
 import type { On, PaneOpenArgs, PromptOrigin, RenderSurface } from 'claude-code'
 import { GH_TIMEOUT_MS } from '../hooks/gh'
 import { STATUS_SYSTEM } from '../hooks/status-prompt'
+import { prNodeOf, prsAnswerOf, queriedPrs } from './gh-answers'
+import type { PrAnswer, ThreadsJson, ViewJson } from './gh-answers'
 
 export const LEDGER_REPLY = `NEW: decide | 1 | Use Node or Python? | Node / Python | Node
 NEW: decide | 2 | Name the command greet? | - | yes`
@@ -75,11 +77,9 @@ class World {
 
 export const w = new World()
 
-function gh(argv: readonly string[]) {
-  const hit = w.ghAnswers.find(a => a.match(argv))
-  if (!hit && (argv[0] === 'open' || argv[0] === 'herdr'))
-    return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
+type GhAnswer = World['ghAnswers'][number]
 
+function answerOf(hit: GhAnswer | undefined) {
   return {
     exitCode: hit?.exitCode ?? (hit && !hit.fails ? 0 : 1),
     stdout: hit && !hit.fails ? hit.stdout : '',
@@ -87,6 +87,86 @@ function gh(argv: readonly string[]) {
     isStdoutTruncated: false,
     isStderrTruncated: false,
   }
+}
+
+const isPrsQuery = (argv: readonly string[]) =>
+  argv[1] === 'api' && argv[2] === 'graphql' && /^query=query \{ viewer/.test(argv[4] ?? '')
+
+/** Whether a graphql answer is in the old one-PR threads form, which the PRs query's answer is then built from. */
+function isThreadsAnswer(hit: GhAnswer): boolean {
+  try {
+    return (
+      hit.fails === undefined &&
+      'pullRequest' in (JSON.parse(hit.stdout) as { data: { repository: object } }).data.repository
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The PRs query's answer, built from the answers a test gives for each PR in the old form: `gh pr view` by number,
+ * and the one-PR threads query. A PR with no view answer is one GitHub does not find, and one whose view fails
+ * carries that failure. Each view's `hold` waits as it did for its own run.
+ */
+async function prsQueryAnswer(argv: readonly string[]) {
+  const query = (argv[4] ?? '').slice('query='.length)
+  const prs = queriedPrs(query)
+  const answers = new Map<string, PrAnswer>()
+  let viewer: string | undefined
+  for (const { repo, number } of prs) {
+    const [owner, name] = repo.split('/')
+    const viewHit = w.ghAnswers.find(a => a.match(['gh', 'pr', 'view', number, '-R', repo, '--json', 'url']))
+    await viewHit?.hold?.()
+    const threadsArgv = [
+      'gh',
+      'api',
+      'graphql',
+      '-f',
+      'query=threads',
+      '-F',
+      `owner=${owner}`,
+      '-F',
+      `repo=${name}`,
+      '-F',
+      `number=${number}`,
+    ]
+    const threadsHit = w.ghAnswers.find(a => a.match(threadsArgv))
+    const threads =
+      threadsHit && !threadsHit.fails
+        ? (
+            JSON.parse(threadsHit.stdout) as {
+              data: { viewer?: { login: string }; repository: { pullRequest: ThreadsJson } }
+            }
+          ).data
+        : null
+    viewer ??= threads?.viewer?.login
+    const key = `${repo}#${number}`
+    if (!viewHit) answers.set(key, null)
+    else if (viewHit.fails !== undefined) answers.set(key, { error: viewHit.fails })
+    else
+      answers.set(key, {
+        node: prNodeOf(JSON.parse(viewHit.stdout) as ViewJson, threads?.repository.pullRequest ?? {}),
+      })
+  }
+
+  return {
+    exitCode: [...answers.values()].every(a => a && 'node' in a) ? 0 : 1,
+    stdout: prsAnswerOf(query, (number, repo) => answers.get(`${repo}#${number}`) ?? null, viewer),
+    stderr: '',
+    isStdoutTruncated: false,
+    isStderrTruncated: false,
+  }
+}
+
+async function gh(argv: readonly string[]) {
+  const hit = w.ghAnswers.find(a => a.match(argv))
+  if (isPrsQuery(argv) && (!hit || isThreadsAnswer(hit))) return prsQueryAnswer(argv)
+  await hit?.hold?.()
+  if (!hit && (argv[0] === 'open' || argv[0] === 'herdr'))
+    return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
+
+  return answerOf(hit)
 }
 
 async function runBeforeAct() {
@@ -250,8 +330,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
       await w.slowGhClock.sleep(GH_TIMEOUT_MS)
       return { deny: 'killed at the timeout' }
     }
-    await w.ghAnswers.find(a => a.match(e.argv))?.hold?.()
-    return { value: gh(e.argv) }
+    return { value: await gh(e.argv) }
   })
   on('model.complete', async (_$, e) => {
     const isStatusCall =

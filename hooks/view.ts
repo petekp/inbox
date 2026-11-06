@@ -20,11 +20,11 @@ import type { HelpStep } from './help-steps'
 import { isFixSent, isHandedOff } from './last-actions'
 import { isHeldSend, isUndoable } from './pressed'
 import { FINDING_GROUPS } from './help'
-import { isSettledInPlace, canUndoClose, isUndoLeft, pendingDeliveryAt } from './timing'
+import { isSettledInPlace, canUndoClose, isUndoLeft, pendingDeliveryAt, earliestOf } from './timing'
 import type { ListInput } from './timing'
 import { closedRowState, optionDescriptionsOf, isWaitingRow, outcomeLabel, closedMark, recLineOf } from './rows'
 import type { RowView, ClosedDelivery, ResultMark, RowState } from './rows'
-import { doneLabel, feedbackOf, fixLabel, feedbackIn, isPressUnderWay, pressFeedbackIn } from './feedback'
+import { doneLabel, feedbackOf, fixLabel, feedbackIn, pressUnderWaySince, pressFeedbackIn } from './feedback'
 import type { ShownTab } from './tabs'
 import { actionsOf } from './action-plan'
 
@@ -67,10 +67,10 @@ export type InboxView = {
     questions: RowView[]
     tasks: RowView[]
     closed: { questions: ClosedView<Closed>[]; tasks: ClosedView<Closed>[] }
-    /** Whether a press is under way on a row of the tab, which keeps every settled row there in place. */
-    isPressOut: boolean
+    /** When the oldest press still under way on a row of the tab began, or null. A settled row there that was in place then waits for it. */
+    pressOutSince: number | null
   }
-  findings: { count: number; rows: RowView[]; closed: ClosedView<ClosedFinding>[]; isPressOut: boolean }
+  findings: { count: number; rows: RowView[]; closed: ClosedView<ClosedFinding>[]; pressOutSince: number | null }
   status: ItemStatus
 }
 
@@ -113,22 +113,24 @@ export function inboxView({
   const isFindingId = (id: string) =>
     ledger.findings.some(f => f.id === id) || ledger.closedFindings.some(f => f.id === id)
   const isItemId = (id: string) => ledger.items.some(i => i.id === id) || ledger.closed.some(c => c.id === id)
-  const isPressOutWhere = (isOnTab: (id: string) => boolean) =>
-    Object.entries(lastActions).some(
-      ([id, last]) => isOnTab(id) && isPressUnderWay(feedbackOf(id, last, undefined, turns, now)),
+  const pressOutSinceWhere = (isOnTab: (id: string) => boolean) =>
+    earliestOf(
+      Object.entries(lastActions).map(([id, last]) =>
+        isOnTab(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, turns, now)) : null,
+      ),
     )
-  const placingOn = (isPressOut: boolean) => ({
+  const placingOn = (pressOutSince: number | null) => ({
     shownSince,
     lastTypedMessageAt,
     listInput,
     now,
     settleWindowMs,
     undoShown,
-    isPressOut,
+    pressOutSince,
   })
   const placingFor = {
-    needsYou: placingOn(isPressOutWhere(isItemId)),
-    findings: placingOn(isPressOutWhere(isFindingId)),
+    needsYou: placingOn(pressOutSinceWhere(isItemId)),
+    findings: placingOn(pressOutSinceWhere(isFindingId)),
   }
   const isInPlace = (id: string, at: number, canUndo: boolean, last?: LastAction) =>
     isSettledInPlace(
@@ -334,11 +336,11 @@ export function inboxView({
       questions: questionRows,
       tasks: taskRows,
       closed: { questions: closed.filter(d => d.kind === 'question'), tasks: closed.filter(d => d.kind === 'task') },
-      isPressOut: placingFor.needsYou.isPressOut,
+      pressOutSince: placingFor.needsYou.pressOutSince,
     },
     findings: {
       count: findingRows.filter(isWaitingRow).length,
-      isPressOut: placingFor.findings.isPressOut,
+      pressOutSince: placingFor.findings.pressOutSince,
       rows: findingRows,
       closed: [
         ...ledger.closedFindings

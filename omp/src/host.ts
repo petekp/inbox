@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { NO_PR_SHARED } from '../../hooks/pr-fetch'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -249,7 +250,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     listeners: new Map(),
     reportToHerdr: herdrReporter(),
     run,
-    memory: { isGhMissing: false, shownId: null, framesFor: null },
+    memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null },
     sendToAgent,
     askFor,
     dropTools,

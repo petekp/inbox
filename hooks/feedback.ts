@@ -38,12 +38,15 @@ export function rowFeedbackText(row: RowView, look: Look): string | null {
 }
 
 /**
- * Whether a row's press is under way: its talk press waits on the agent's reply, its message is sending, or its open or
- * copy runs. While one is under way on a tab, no settled row there folds, so nothing shifts under the row being worked
- * on. A queued or unconfirmed message does not count, since it can wait a whole turn or for good.
+ * When a row's press under way began, or null while none is: its talk press waits on the agent's reply, its message is
+ * sending, or its open or copy runs. A settled row on its tab that was still in place when the press began waits for it
+ * to end, so nothing shifts under the row being worked on. A queued or unconfirmed message does not count, since it can
+ * wait a whole turn or for good.
  */
-export function isPressUnderWay(f: Feedback | null): boolean {
-  return f?.is === 'working' || f?.is === 'sending' || (f?.is === 'local' && f.result.state === 'pending')
+export function pressUnderWaySince(f: Feedback | null): number | null {
+  if (f?.is === 'working' || f?.is === 'sending') return f.at
+
+  return f?.is === 'local' && f.result.state === 'pending' ? f.result.at : null
 }
 
 export function feedbackOf(

@@ -4,7 +4,7 @@ import { allRows, DOT, replyHint, ROW_COPY, shortAgo, shownOptionDescriptions } 
 import { drawnLists, rowAfterClose } from '../../hooks/action-plan'
 import { isRowTab } from '../../hooks/tabs'
 import { feedbackOf } from '../../hooks/feedback'
-import { isDrawnInPlace, SETTLED_MS } from '../../hooks/timing'
+import { earliestOf, isDrawnInPlace, SETTLED_MS } from '../../hooks/timing'
 import type { Feedback, PressState } from '../../hooks/feedback'
 import type { RowView } from '../../hooks/rows'
 import { actionId } from '../../hooks/press-labels'
@@ -32,7 +32,18 @@ import type { Finding, PrCheck, PrThread, PrView, Tab } from '../../types'
 import type { TabView as View } from './core'
 import type { PressReply } from './server'
 import { PRESS_TIMEOUT_MS } from '../../hooks/session-view'
-import { tabState, selection, drafts, optionsShown, sending, errors, notes, copies, undoing } from './tab-state'
+import {
+  tabState,
+  selection,
+  drafts,
+  optionsShown,
+  sending,
+  sendingSince,
+  errors,
+  notes,
+  copies,
+  undoing,
+} from './tab-state'
 import type { Key, Row, Lists } from './tab-state'
 import { isTabInPlace } from './settle'
 import { listInput } from './list-input'
@@ -67,6 +78,7 @@ export async function act(
     !!tabState.view && isRowTab(t) && tabWaits(tabState.view, t).some(r => r.id === rowId && r.isWaiting)
   sending.set(rowId, {
     seq,
+    since: Date.now(),
     pending,
     action: press.action === 'type' ? null : actionId(press),
     lastBefore: lastPressKey(tabState.view, rowId),
@@ -244,7 +256,7 @@ export function prKey(rowId: string, pr: PrView, a: PrAction): Key {
   }
 }
 
-function pendingLocal(effect: Effect): Feedback {
+export function pendingLocal(effect: Effect): Feedback {
   return { is: 'local', result: pendingResult([effect], Date.now()) }
 }
 
@@ -324,7 +336,7 @@ export function prPlan(v: View): { blocks: PrBlockPlan[]; rows: Row[] } {
     seen: tabState.seen,
     input: listInput(now),
     now,
-    isPressOut: v.prs.isPressOut || sending.size > 0,
+    pressOutSince: earliestOf([v.prs.pressOutSince, sendingSince()]),
   }
   for (const d of v.prs.drawn) {
     const id = prMarkId(d.pr.ref)

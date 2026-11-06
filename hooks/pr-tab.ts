@@ -6,7 +6,8 @@ import type { PrActionId } from './presses'
 import { checkKey, inPrOrder, parseRef, prompts, rankOf, readiness, threadsOnYou } from './prs'
 import type { IsThreadSent } from './prs'
 import type { PressState } from './feedback'
-import { prCheckId, prMarkId, prThreadId, RANK_AGAIN_ID, threadRowId, threadSentIn } from './pr-rows'
+import { prCheckId, prMarkId, PR_REFRESH_ID, prThreadId, RANK_AGAIN_ID, threadRowId, threadSentIn } from './pr-rows'
+import { PR_REFRESH_LABEL } from './pr-refresh'
 import { isTracked, PR_CLOSED_LABEL, PR_DISMISSED_LABEL, PR_MERGED_LABEL } from './pr-views'
 import { tabPrs } from './pr-fetch'
 import { changedRankedPrs, RANK_AGAIN_LABEL } from './pr-order'
@@ -26,11 +27,6 @@ import {
   withOut,
 } from './pr-press'
 import type { Applied, PlannedPrAction, PrAction, PrPress } from './pr-press'
-
-/**
- * The button under a failed refresh. It is not "Try again", since a failed send on the same block draws that.
- */
-const PR_REFRESH_LABEL = 'Refresh PRs'
 
 export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrAction[] {
   const row = lastPressOf(presses, threadRowId(pr.ref, t.id))
@@ -161,17 +157,6 @@ export function prBlockActions(
   ]
 
   return withOut(row, [
-    ...(pr.error
-      ? [
-          {
-            press: { action: 'pr-refresh' as const, ref: pr.ref },
-            label: PR_REFRESH_LABEL,
-            kind: 'local' as const,
-            emphasis: 'normal' as const,
-            icon: 'retry' as const,
-          },
-        ]
-      : []),
     ...retryAction(prRetryOf(row.last, pr.ref, null)),
     ...moves.map((m, n): PlannedPrAction => ({ ...m, emphasis: n === 0 ? 'primary' : 'normal' })),
     { press: { action: 'pr-open', ref: pr.ref }, label: 'Open PR', kind: 'local', emphasis: 'normal', icon: 'open' },
@@ -304,6 +289,13 @@ export function applyPrPress(
       ],
     })
   }
+  if (p.action === 'pr-refresh') {
+    const effects = [PR_REFRESH]
+    const result = pendingResult(effects, ctx.now, ctx.localPressId)
+    const last = localLast(lastActions[PR_REFRESH_ID], { action: p.action, text: PR_REFRESH_LABEL }, result)
+
+    return applied({ lasts: { [PR_REFRESH_ID]: last }, effects })
+  }
   const pr = prState.views[p.ref]
   const markId = prMarkId(p.ref)
   if (p.action === 'pr-undo') {
@@ -383,8 +375,6 @@ export function applyPrPress(
     }
     case 'pr-open':
       return local([markId], 'Open PR', prPageEffect(pr))
-    case 'pr-refresh':
-      return local([markId], PR_REFRESH_LABEL, PR_REFRESH)
     case 'pr-dismiss':
       if (!tabPrs(ledger).includes(p.ref) || prState.branchRef === p.ref) return stale
       return applied({

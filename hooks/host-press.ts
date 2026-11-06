@@ -4,6 +4,7 @@ import { doneWake, markSentToAgent, refuseDoneNotification, withDeliveryId, with
 import type { Effect } from './press-reducer'
 import { finishedResult, withResult, runSends, runLocalEffects } from './press-effects'
 import { rerunRun } from './host-prs'
+import { refreshProblem } from './pr-refresh'
 import type { EffectHost } from './press-effects'
 import { recordPress, pendingResult, localLast, withLasts, isHeldSend } from './pressed'
 import { releaseHeldSendEarly, releaseHeldSends } from './held-sends'
@@ -220,7 +221,9 @@ export async function startPress<S extends Session>(
     perform: async e => {
       if (e.kind === 'refresh-prs') {
         await host.refreshPrs()
-        return null
+        const after = await host.read()
+        const isGhMissing = after.prViews.isGhMissing === true || (await host.gh.find()) === null
+        return refreshProblem({ ...after.prViews, isGhMissing }, after.ledger)
       }
       if (e.kind === 'rerun') {
         const why = await rerunRun(host, e)

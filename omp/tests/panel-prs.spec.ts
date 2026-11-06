@@ -5,6 +5,7 @@ import {
   GH_SIGNED_OUT_TEXT,
   prCheckId,
   prMarkId,
+  PR_REFRESH_ID,
   prsEmptyHint,
   prThreadId,
   threadRowText,
@@ -131,14 +132,22 @@ test('a local press reads its pending and failed results on the PR block', () =>
     },
   })
   expect(text(pending, ui)).toContain(`Opening PR #${block.number}…`)
-  const refreshing = withLast(screen, id, {
+  const refreshing = withLast(screen, PR_REFRESH_ID, {
     kind: 'local',
     action: 'pr-refresh',
     text: 'Refresh PRs',
     at: NOW,
     result: { state: 'pending', at: NOW, parts: [{ kind: 'refresh-prs', name: 'PRs', error: null, isCommand: false }] },
   })
-  expect(text(refreshing, ui)).toContain('Refreshing PRs…')
+  expect(
+    text(refreshing, ui)
+      .split('\n')
+      .findIndex(l => l.includes('Refreshing PRs…')),
+  ).toBeLessThan(
+    text(refreshing, ui)
+      .split('\n')
+      .findIndex(l => /#\d+ /.test(l)),
+  )
   const failed = withLast(screen, id, {
     kind: 'local',
     action: 'pr-open',

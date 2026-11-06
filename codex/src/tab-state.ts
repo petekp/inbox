@@ -1,4 +1,5 @@
 import type { JSX } from 'preact'
+import { earliestOf } from '../../hooks/timing'
 import type { IconName } from './row-actions'
 import type { ActionEmphasis, RowView } from '../../hooks/rows'
 import type { DrawnEntry, DrawnLists } from '../../hooks/action-plan'
@@ -67,14 +68,20 @@ export const closedAll = new Set<FoldGroup>()
 /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
 export const statusUnfolded = new Set<string>()
 /**
- * The latest press on its way, by row id: its request number, its pending Local result or null for a message, which
- * reads SENDING, and its action, so its button draws as out before the view says so. A reply's action is null, since
- * a reply is never out. `lastBefore` is the row's saved last press when the press started, from `lastPressKey`.
+ * The latest press on its way, by row id: its request number, when it began on the tab's clock, its pending Local
+ * result or null for a message, which reads SENDING, and its action, so its button draws as out before the view says
+ * so. A reply's action is null, since a reply is never out. `lastBefore` is the row's saved last press when the press
+ * started, from `lastPressKey`.
  */
 export const sending = new Map<
   string,
-  { seq: number; pending: Feedback | null; action: string | null; lastBefore: string }
+  { seq: number; since: number; pending: Feedback | null; action: string | null; lastBefore: string }
 >()
+
+/** When the oldest press the tab has not heard back on began, or null while none is out. */
+export function sendingSince(): number | null {
+  return earliestOf([...sending.values()].map(s => s.since))
+}
 export const SENDING = 'Sending…'
 export const errors = new Map<string, string>()
 export const notes = new Map<string, { text: string; at: number }>()

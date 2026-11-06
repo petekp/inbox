@@ -4,6 +4,7 @@ import type { SettledState } from '../../hooks/rows'
 import { prBlockActions } from '../../hooks/pr-tab'
 import {
   RANK_AGAIN_ID,
+  PR_REFRESH_ID,
   ghNoticeOf,
   PR_GROUP_TITLES,
   PR_TONES,
@@ -21,8 +22,10 @@ import type { TabView as View } from './core'
 import { tabState, sending, errors, undoing, drawnRows } from './tab-state'
 import type { Key, Row } from './tab-state'
 import { select } from './tab-selection'
-import { act, pressesOf, prKey } from './tab-rows'
+import { act, pendingLocal, pressesOf, prKey } from './tab-rows'
 import { KeyButton, ResultMarkView, GroupTitle, UndoPlace, Banner } from './tab-parts'
+import { PR_REFRESH } from '../../hooks/pr-press'
+import type { PrRefreshView } from '../../hooks/pr-refresh'
 import { ListRow } from './tab-list'
 import { pressLine } from './tab-pr-lines'
 import type { PressLine } from './tab-pr-lines'
@@ -108,6 +111,31 @@ function PrOrderLines({ v, order }: { v: View; order: PrOrderView }) {
           ) : null}
         </div>
       ) : null}
+      {last ? <PrLine line={last} /> : null}
+    </section>
+  )
+}
+
+/** The line under the notices while a PR could not be read: which ones, Refresh PRs, and its press status. */
+function PrRefreshLine({ v, refresh }: { v: View; refresh: PrRefreshView }) {
+  const keys = refresh.actions.map(a => ({
+    ...tabKey(PR_REFRESH_ID, a),
+    run: () => void act(PR_REFRESH_ID, a.press, undefined, pendingLocal(PR_REFRESH)),
+  }))
+  const last = pressLine(v, PR_REFRESH_ID, refresh.showsPress)
+
+  return (
+    <section class="pr-order">
+      <div class="pr-order-changed">
+        {refresh.text ? <span>{refresh.text}</span> : null}
+        {keys.length > 0 ? (
+          <span class="pr-actions keys">
+            {keys.map(k => (
+              <KeyButton k={k} />
+            ))}
+          </span>
+        ) : null}
+      </div>
       {last ? <PrLine line={last} /> : null}
     </section>
   )
@@ -243,15 +271,18 @@ function PrRows({
 }
 
 export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
-  const ghState = { isGhMissing: v.isGhMissing, isGhSignedOut: v.prs.isGhSignedOut }
+  const ghState = { isGhMissing: v.isGhMissing, isGhSignedOut: v.prs.isGhSignedOut, failure: v.prs.failure }
   const ghNotice = ghNoticeOf(ghState)
   const empty = prsEmptyText({ isFetching: v.isFetchingPrs, ...ghState }, 'chat')
   if (prs.blocks.length === 0)
     return (
-      <div class="empty">
-        <div class="title">{empty.title}</div>
-        <div class="muted">{empty.hint}</div>
-      </div>
+      <main>
+        <div class="empty">
+          <div class="title">{empty.title}</div>
+          <div class="muted">{empty.hint}</div>
+        </div>
+        {v.prs.refresh ? <PrRefreshLine v={v} refresh={v.prs.refresh} /> : null}
+      </main>
     )
 
   return (
@@ -261,6 +292,7 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
           <Banner banner={bannerOf(ghNotice.kind, ghNotice.text)} />
         </div>
       ) : null}
+      {v.prs.refresh ? <PrRefreshLine v={v} refresh={v.prs.refresh} /> : null}
       {v.prs.order ? <PrOrderLines v={v} order={v.prs.order} /> : null}
       {prs.blocks.map(b => (
         <PrEntry key={prMarkId(b.pr.ref)} b={b} v={v} prs={prs} now={now} />

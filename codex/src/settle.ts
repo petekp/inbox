@@ -2,7 +2,14 @@ import { prMarkId } from '../../hooks/pr-rows'
 import type { SessionView } from '../../hooks/session-view'
 import { allRows, settledRowIds } from '../../hooks/rows'
 import type { SettledState } from '../../hooks/rows'
-import { isDrawnInPlace, isListInUseSince, isSendOnItsWay, SETTLED_MS } from '../../hooks/timing'
+import {
+  earliestOf,
+  isDrawnInPlace,
+  isListInUseSince,
+  isPressOutSince,
+  isSendOnItsWay,
+  SETTLED_MS,
+} from '../../hooks/timing'
 import type { ListInput } from '../../hooks/timing'
 import type { InboxView } from '../../hooks/view'
 
@@ -21,22 +28,25 @@ export function settledSeen(seen: ReadonlyMap<string, number>, listed: string[],
   return new Map(listed.map(id => [id, seen.get(id) ?? now]))
 }
 
-/**
- * Whether a settled row the tab first listed at `seenAt` has outlasted its fold time: `SETTLED_MS`, as long as Undo
- * lasts, and then while the person keeps using the list, as `hooks/timing.ts:isSettledInPlace` says.
- */
-function isSeenInPlace(seenAt: number, input: ListInput | null, now: number): boolean {
-  return now - seenAt < SETTLED_MS || isListInUseSince(input, seenAt + SETTLED_MS, now)
-}
-
 /** What the tab reads to place a settled row or PR block on its own clock. */
 type TabPlacing = {
   shownSince: number
   seen: ReadonlyMap<string, number>
   input: ListInput | null
   now: number
-  /** Whether a press is under way on the row's tab, from the view or a press the tab has not heard back on. */
-  isPressOut: boolean
+  /** When the oldest press still under way on the row's tab began, from the view or a press the tab has not heard back on, or null. */
+  pressOutSince: number | null
+}
+
+/**
+ * Whether a settled row the tab first listed at `seenAt` has not outlasted its fold time: `SETTLED_MS`, as long as Undo
+ * lasts, and then while a press begun before that is still out or the person has been using the list since before it,
+ * as `hooks/timing.ts:isSettledInPlace` says. A press or input begun after it folded leaves it folded.
+ */
+function isSeenInPlace(seenAt: number, { input, now, pressOutSince }: TabPlacing): boolean {
+  const dueAt = seenAt + SETTLED_MS
+
+  return now < dueAt || isPressOutSince(pressOutSince, dueAt) || isListInUseSince(input, dueAt, now)
 }
 
 /**
@@ -44,13 +54,15 @@ type TabPlacing = {
  * the first view that listed it, less any that settled before the tab showed its tab.
  */
 export function isTabInPlace(id: string, state: SettledState, p: TabPlacing): boolean {
-  const isWaiting =
-    isSendOnItsWay(state.delivery) || p.isPressOut || isSeenInPlace(p.seen.get(id) ?? p.now, p.input, p.now)
+  const isWaiting = isSendOnItsWay(state.delivery) || isSeenInPlace(p.seen.get(id) ?? p.now, p)
 
   return isDrawnInPlace({ state }, p.shownSince) && isWaiting
 }
 
-/** The settled rows the tab draws in place, by `isTabInPlace`. A row whose Undo is out stays. */
+/**
+ * The settled rows the tab draws in place, by `isTabInPlace`. A row whose Undo is out stays. `localPressSince` is when
+ * the oldest press the tab has not heard back on began, or null.
+ */
 export function drawnSettled(
   v: InboxView,
   shownSince: number,
@@ -59,11 +71,17 @@ export function drawnSettled(
     seen = new Map<string, number>(),
     input = null as ListInput | null,
     now = Date.now(),
-    isLocalPressOut = false,
+    localPressSince = null as number | null,
   } = {},
 ): Set<string> {
-  const placing = (isPressOut: boolean) => ({ shownSince, seen, input, now, isPressOut: isPressOut || isLocalPressOut })
-  const byTab = { needsYou: placing(v.needsYou.isPressOut), findings: placing(v.findings.isPressOut) }
+  const placing = (pressOutSince: number | null): TabPlacing => ({
+    shownSince,
+    seen,
+    input,
+    now,
+    pressOutSince: earliestOf([pressOutSince, localPressSince]),
+  })
+  const byTab = { needsYou: placing(v.needsYou.pressOutSince), findings: placing(v.findings.pressOutSince) }
 
   return new Set(
     allRows(v)

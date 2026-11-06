@@ -5,11 +5,13 @@ import { itemPrSteps, olderPrsText, tabPrs } from './pr-fetch'
 import { prOrderView } from './pr-order'
 import type { DrawnPr } from './pr-views'
 import type { PrOrderView } from './pr-order'
+import { prRefreshView } from './pr-refresh'
+import type { PrRefreshView } from './pr-refresh'
 import { prNeedsYou } from './prs'
 import { isPrRowId } from './presses'
-import { feedbackOf, isPressUnderWay } from './feedback'
+import { feedbackOf, pressUnderWaySince } from './feedback'
 import { MARK_LEGEND } from './help'
-import { hasRunningMark, NO_HOLDS } from './timing'
+import { earliestOf, hasRunningMark, NO_HOLDS } from './timing'
 import { inboxView, perTurnStatus } from './view'
 import type { UpdateRecovery } from './view'
 import { isRowTab } from './tabs'
@@ -18,7 +20,7 @@ import type { InboxView } from './view'
 import type { StatusPage } from './status-page'
 import type { Holds } from './timing'
 import type { ShownTab } from './tabs'
-import type { FoldKind, LastAction, RowNote, Session, Turns } from '../types'
+import type { FoldKind, LastAction, PrFetchFailure, RowNote, Session, Turns } from '../types'
 
 export const PRESS_TIMEOUT_MS = 60_000
 
@@ -33,8 +35,12 @@ type PrTab = {
   order: PrOrderView | null
   /** Whether gh asked for a sign-in at the last fetch it answered. */
   isGhSignedOut: boolean
-  /** Whether a press is under way on a PR row, which keeps every settled PR block in place. */
-  isPressOut: boolean
+  /** Why the last fetch read none of the PRs, or null. */
+  failure: PrFetchFailure | null
+  /** The line at the top of the tab while a PR could not be read, with Refresh PRs, or null. `prRefreshView`. */
+  refresh: PrRefreshView | null
+  /** When the oldest press still under way on a PR row began, or null. A settled PR block that was in place then waits for it. */
+  pressOutSince: number | null
 }
 
 export type SessionView = InboxView & {
@@ -128,8 +134,10 @@ function prTabOf(
   { shownSince, listInput, undoShown }: Holds,
   settleWindowMs: number,
 ): PrTab {
-  const isPressOut = Object.entries(lastActions).some(
-    ([id, last]) => isPrRowId(id) && isPressUnderWay(feedbackOf(id, last, undefined, s.presence, now)),
+  const pressOutSince = earliestOf(
+    Object.entries(lastActions).map(([id, last]) =>
+      isPrRowId(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, s.presence, now)) : null,
+    ),
   )
   const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
     shownSince,
@@ -138,7 +146,7 @@ function prTabOf(
     now,
     settleWindowMs,
     undoShown,
-    isPressOut,
+    pressOutSince,
   })
   const isSent = threadSentIn(lastActions)
 
@@ -154,6 +162,13 @@ function prTabOf(
       shownSince,
     ),
     isGhSignedOut: s.prViews.isGhSignedOut === true,
-    isPressOut,
+    failure: s.prViews.failure ?? null,
+    refresh: prRefreshView(
+      { ...s.prViews, isGhMissing: s.prViews.isGhMissing === true },
+      s.ledger,
+      { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
+      shownSince,
+    ),
+    pressOutSince,
   }
 }

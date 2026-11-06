@@ -1,4 +1,5 @@
 import type { herdrReporter } from '../../hooks/herdr'
+import type { PrShared } from '../../hooks/pr-fetch'
 import type { Run } from '../../hooks/gh'
 import type { SessionHost } from '../../hooks/session-host'
 import type { prFetchTracker } from '../../hooks/host-prs'
@@ -16,6 +17,8 @@ export type OmpContext = {
 
 type Memory = {
   isGhMissing: boolean
+  /** What every session of this omp shares about GitHub: views read lately, and the last limit error. */
+  prShared: PrShared
   /** The session omp shows now. Only it reports to the pane. */
   shownId: string | null
   /** The session the main agent runs. A `task:subagent:*` frame names no session, and only the main agent's own subagents send one here. */

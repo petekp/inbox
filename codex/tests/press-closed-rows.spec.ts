@@ -31,6 +31,30 @@ test('the tab draws a settled row while it shows the tab the row closed in, and 
   )
 })
 
+test('the tab keeps a folded row folded when a press begins on another row after it came due, and holds a row a press begun before that still waits on', () => {
+  const s = withItems()
+  const dismissed = after(s, { action: 'dismiss', id: 'i1' })
+  const v = viewOf(dismissed, 60, { ...NO_HOLDS, shownSince: 40 })
+  assert.equal(v.needsYou.questions[0]?.state.is, 'settled')
+  const seenAt = 100
+  const due = seenAt + SETTLED_MS
+  const seen = new Map([['i1', seenAt]])
+  const drawn = (now: number, pressOutSince: number | null) => {
+    const withPress = { ...v, needsYou: { ...v.needsYou, pressOutSince } }
+
+    return [...drawnSettled(withPress, 40, new Set(), { seen, now })]
+  }
+  assert.deepEqual(drawn(due - 1, null), ['i1'])
+  assert.deepEqual(drawn(due + 60_000, due - 1), ['i1'])
+  assert.deepEqual(drawn(due + 60_000, due + 1), [])
+  assert.deepEqual(drawn(due + 60_000, null), [])
+  const local = (now: number, localPressSince: number | null) => [
+    ...drawnSettled(v, 40, new Set(), { seen, now, localPressSince }),
+  ]
+  assert.deepEqual(local(due + 60_000, due - 1), ['i1'])
+  assert.deepEqual(local(due + 60_000, due + 1), [])
+})
+
 test('a row Codex closes while the person types a reply stays held in place, out of the count and the Closed fold, Discard folds it at once, and its reply sends and settles it as Replied', () => {
   const s = withItems()
   const closed = {

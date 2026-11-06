@@ -1,16 +1,31 @@
-import type { Item, Ledger, PrView, PrViews } from '../types'
+import type { Item, Ledger, PrFetchFailure, PrView, PrViews } from '../types'
 import { GH_TIMEOUT_MS, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import { prSteps } from './help-steps'
 import type { HelpStep } from './help-steps'
-import { isKeptPr, parseRef, prRefs, readThreadsAnswer, readView, THREADS_QUERY, VIEW_FIELDS } from './prs'
+import {
+  asksForSignIn,
+  limitResetOf,
+  PRS_PER_QUERY,
+  prsQuery,
+  readPrNode,
+  readPrsAnswer,
+  runFailureOf,
+} from './pr-query'
+import { isKeptPr, parseRef, prRefs } from './prs'
 
 export const MAX_PRS = 12
 
 /** The most PRs an agent's order can rank. They are tracked beyond `MAX_PRS`. */
 export const MAX_ORDERED_PRS = 30
 
-/** How many gh runs a fetch has going at once. */
-export const GH_RUNS_AT_ONCE = 8
+/** How long a view read by any session of the host stands in for a fresh read, in a fetch no press asked for. */
+export const PR_SHARED_MS = 120_000
+
+/** How often a closed PR is read again, since one can be reopened, but rarely and never in a hurry. */
+export const CLOSED_PR_REFRESH_MS = 60 * 60_000
+
+/** How long a fetch waits after a limit error whose reset time GitHub did not give. */
+export const LIMIT_RETRY_MS = 5 * 60_000
 
 /** The ledger's PR links, and the agent's order of them. */
 export type PrLinks = Pick<Ledger, 'prs' | 'prOrder'>
@@ -18,16 +33,16 @@ export type PrLinks = Pick<Ledger, 'prs' | 'prOrder'>
 /** Runs gh with these arguments in the session's folder. A run that cannot start or does not finish ends with code -1. */
 export type GhRun = (args: string[]) => Promise<{ exitCode: number; stdout: string; stderr: string }>
 
-/** gh's exit code for a command that needs a sign-in when gh has no token, as `gh help exit-codes` says. */
-const GH_SIGN_IN_CODE = 4
-
 /**
- * Whether gh's answer asks for a sign-in: gh has no token, or GitHub refused the token with HTTP 401, as it does for
- * an expired or revoked one.
+ * What every session of a host shares about GitHub: the views any of them read lately, and the limit error the last
+ * one met, so one limit stops every session's polling until it resets.
  */
-function asksForSignIn(r: { exitCode: number; stderr: string }): boolean {
-  return r.exitCode === GH_SIGN_IN_CODE || (r.exitCode !== 0 && /\bHTTP 401\b/.test(r.stderr))
-}
+export type PrShared = { views: Record<string, PrView>; limit: Extract<PrFetchFailure, { kind: 'limit' }> | null }
+
+export const NO_PR_SHARED: PrShared = { views: {}, limit: null }
+
+/** How a fetch was asked for: whether it looks up the branch's PR, and whether a press asked for it. */
+export type FetchAsk = { findsBranchPr: boolean; isPress: boolean }
 
 export function linkedPrs(prs: string[], refs: string[]): string[] {
   return [...prs.filter(r => !refs.includes(r)), ...refs]
@@ -54,7 +69,7 @@ export function itemPrSteps(item: Item, prState: PrViews, linked: string[]): Hel
  * A linked PR the tab leaves out for good, by `isKeptPr`: its view says someone else wrote it, or that it was merged
  * or closed before a fetch found it open. A fetch skips it, and a task naming it keeps its Open PR step.
  */
-export function isLeftOut(prState: PrViews, ref: string): boolean {
+export function isLeftOut(prState: Pick<PrViews, 'views'>, ref: string): boolean {
   const view = prState.views[ref]
 
   return view !== undefined && !isKeptPr(view)
@@ -64,7 +79,7 @@ export function isLeftOut(prState: PrViews, ref: string): boolean {
  * The PRs on the tab it tracks, by `tabPrs`: those the agent's order ranks, and the newest `MAX_PRS` of the rest.
  * `older` names the rest, which the tab does not show.
  */
-export function splitLinked(prState: PrViews, links: PrLinks): { tracked: string[]; older: string[] } {
+export function splitLinked(prState: Pick<PrViews, 'views'>, links: PrLinks): { tracked: string[]; older: string[] } {
   const ranked = new Set(links.prOrder?.refs ?? [])
   const shown = tabPrs(links).filter(ref => !isLeftOut(prState, ref))
   const unranked = shown.filter(ref => !ranked.has(ref))
@@ -81,103 +96,150 @@ export function olderPrsText(prState: PrViews, links: PrLinks): string | null {
   return `${older.length} older ${older.length === 1 ? 'PR' : 'PRs'} not shown: ${numbers.join(', ')}`
 }
 
+/** Whether the limit failure still stops fetches at `now`: until it resets, or `LIMIT_RETRY_MS` when GitHub gave no reset. */
+export function isLimitInForce(limit: Extract<PrFetchFailure, { kind: 'limit' }> | null, now: number): boolean {
+  if (!limit) return false
+
+  return now < (limit.resetsAt ?? limit.at + LIMIT_RETRY_MS)
+}
+
 /**
- * Only `findsBranchPr` asks gh which PR the branch has; otherwise the last one found is refreshed by its ref.
- * `isGhSignedOut` says whether a gh run asked for a sign-in, and is null when no run gave an answer.
+ * Whether a tracked PR's saved view needs no read: a merged PR is final, and a closed one is read again only every
+ * `CLOSED_PR_REFRESH_MS`, unless a press asks. A view with an error is read again, since the error may have passed.
+ */
+function isSettledView(view: PrView | undefined, ask: FetchAsk, now: number): boolean {
+  if (!view || view.error !== null) return false
+  if (view.state === 'MERGED') return true
+
+  return view.state !== 'OPEN' && !ask.isPress && now - (view.fetchedAt ?? 0) < CLOSED_PR_REFRESH_MS
+}
+
+/**
+ * Whether a shared view stands in for a read now: another session read it within `PR_SHARED_MS` and since this
+ * session last read the PR, and no press asked. This session's own last read never stands in, so a fetch it asks
+ * for reads GitHub as it did before sharing.
+ */
+function isSharedFresh(
+  view: PrView | undefined,
+  previous: PrView | undefined,
+  ask: FetchAsk,
+  now: number,
+): view is PrView {
+  if (view === undefined || ask.isPress) return false
+  const readAt = view.fetchedAt ?? 0
+
+  return now - readAt < PR_SHARED_MS && readAt > (previous?.fetchedAt ?? 0)
+}
+
+type Fetched = {
+  views: Record<string, PrView>
+  branchRef: string | null
+  /** Whether a gh run asked for a sign-in; null when no run gave an answer. */
+  isGhSignedOut: boolean | null
+  /** Why no PR could be read, or null when the fetch read what it asked for, or asked for nothing. */
+  failure: PrFetchFailure | null
+  /** The refs whose views this fetch read from GitHub, for the host's shared views. */
+  read: string[]
+  /** Why each PR with no view could not be read, by ref. */
+  unread: Record<string, string>
+}
+
+/**
+ * Reads the PRs the session tracks, in one GraphQL query for every `PRS_PER_QUERY` of them. Only `findsBranchPr`
+ * asks gh which PR the branch has, with one more gh run; otherwise the last one found is read by its ref. A merged
+ * PR is not read again, a closed one only now and then, and a view in `shared` that another session read lately,
+ * and since this session last read the PR, stands in for a read, unless a press asked. A PR gh could not read keeps its last view: with the reason on it when
+ * the cause is its own, and with none when the whole fetch failed, since `failure` then says why once.
  */
 export async function fetchTracked(
   run: GhRun,
   state: PrViews,
   links: PrLinks,
-  findsBranchPr: boolean,
+  ask: FetchAsk,
   now: () => number | Promise<number>,
-): Promise<{ views: Record<string, PrView>; branchRef: string | null; isGhSignedOut: boolean | null }> {
+  shared: Record<string, PrView> = {},
+): Promise<Fetched> {
   let isGhSignedOut: boolean | null = null
-  const runs = limitedTo(GH_RUNS_AT_ONCE)
+  let failure: PrFetchFailure | null = null
+  let lookupFailure: PrFetchFailure | null = null
   const gh: GhRun = async args => {
-    const r = await runs(() => run(args))
+    const r = await run(args)
     const isAnswer = r.exitCode !== UNSTARTABLE_CODE && r.exitCode !== TIMED_OUT_CODE
     if (isAnswer) isGhSignedOut = isGhSignedOut === true || asksForSignIn(r)
 
     return r
   }
   const { tracked } = splitLinked(state, links)
-  const branchTarget = findsBranchPr ? null : state.branchRef
-  const isBranchLinked = branchTarget !== null && tracked.includes(branchTarget)
-  const [branch, ...rest] = await Promise.all([
-    findsBranchPr || (branchTarget && !isBranchLinked)
-      ? fetchPr(gh, branchTarget, state.views, state.branchRef, now)
-      : null,
-    ...tracked.map(ref => fetchPr(gh, ref, state.views, null, now)),
-  ])
+  const at = await now()
+  const branchRef = ask.findsBranchPr
+    ? await branchPrRef(gh, state.branchRef, at, f => (lookupFailure = f))
+    : state.branchRef
+  const refs = [...new Set(branchRef ? [...tracked, branchRef] : tracked)]
   const views: Record<string, PrView> = {}
-  for (const v of [...rest, branch]) if (v) views[v.ref] = v
+  const toRead: string[] = []
+  for (const ref of refs) {
+    const previous = state.views[ref]
+    const fresh = shared[ref]
+    if (isSettledView(previous, ask, at)) continue
+    if (isSharedFresh(fresh, previous, ask, at)) views[ref] = withSeen(fresh, previous)
+    else toRead.push(ref)
+  }
+  const read: string[] = []
+  const unread: Record<string, string> = {}
+  let isAnswered = false
+  for (let n = 0; n < toRead.length; n += PRS_PER_QUERY) {
+    const chunk = toRead.slice(n, n + PRS_PER_QUERY)
+    const r = await gh(['api', 'graphql', '-f', `query=${prsQuery(chunk)}`])
+    const fetchedAt = await now()
+    const chunkFailure = runFailureOf(r, TIMED_OUT_CODE, fetchedAt)
+    const answer = chunkFailure ? null : readPrsAnswer(r.stdout, chunk)
+    if (!answer) {
+      failure ??= chunkFailure ?? { kind: 'error', at: fetchedAt, text: "GitHub's answer could not be read" }
+      continue
+    }
+    isAnswered = true
+    for (const ref of chunk) {
+      const previous = state.views[ref]
+      const { node, error, threadsError } = answer.prs[ref]!
+      if (node) {
+        read.push(ref)
+        views[ref] = withSeen({ ...readPrNode(ref, node, answer.viewer, previous, threadsError), fetchedAt }, previous)
+      } else if (previous) views[ref] = { ...previous, error }
+      else if (error) unread[ref] = error
+    }
+  }
+  // The lookup's failure counts only when no query answered, since a query reads the known branch PR without it.
+  if (failure === null && !isAnswered && lookupFailure) failure = lookupFailure
+  if (failure?.kind === 'limit' && failure.resetsAt === null) {
+    const limits = await gh(['api', 'rate_limit'])
+    failure = { ...failure, resetsAt: limits.exitCode === 0 ? limitResetOf(limits.stdout) : null }
+  }
 
-  return { views, branchRef: findsBranchPr ? (branch?.ref ?? null) : state.branchRef, isGhSignedOut }
+  return { views, branchRef, isGhSignedOut, failure, read, unread }
+}
+
+/** `view` as this session keeps it: seen open once this fetch, or one before it in this session, found it open. */
+function withSeen(view: Omit<PrView, 'wasSeenOpen'>, previous: PrView | undefined): PrView {
+  return { ...view, wasSeenOpen: view.state === 'OPEN' || previous?.wasSeenOpen === true }
 }
 
 /**
- * `target` is "owner/repo#123", or null for
- * the current branch's PR, whose ref is known only from gh's answer.
- * `knownBranchRef` is the branch's PR as of the last fetch: it stays the
- * branch's PR when the lookup fails for any reason but "no pull requests found".
- * A PR that gh could not read because it asked for a sign-in keeps its last view, since the PRs tab's sign-in notice
- * says why. A view's `fetchedAt` is the time `now` reads once gh answers.
+ * The ref of the branch's PR, from gh. `known` is the branch's PR as of the last fetch: it stays the branch's PR when
+ * the lookup fails for any reason but "no pull requests found", and `onFailure` hears why.
  */
-async function fetchPr(
+async function branchPrRef(
   gh: GhRun,
-  target: string | null,
-  views: Record<string, PrView>,
-  knownBranchRef: string | null,
-  now: () => number | Promise<number>,
-): Promise<PrView | null> {
-  const threadsOf = (ref: string) => {
-    const r = parseRef(ref)
-    return gh([
-      'api',
-      'graphql',
-      '-f',
-      `query=${THREADS_QUERY}`,
-      '-F',
-      `owner=${r.owner}`,
-      '-F',
-      `repo=${r.name}`,
-      '-F',
-      `number=${r.number}`,
-    ])
-  }
-  const t = target ? parseRef(target) : null
-  const [view, early] = await Promise.all([
-    gh(['pr', 'view', ...(t ? [t.number, '-R', t.repo] : []), '--json', VIEW_FIELDS]),
-    target ? threadsOf(target) : null,
-  ])
-  const fetchedAt = await now()
-  const hasNoPr = view.exitCode !== 0 && /no pull requests found/i.test(view.stderr)
-  const ref = target ?? (view.exitCode === 0 ? urlRef(view.stdout) : hasNoPr ? null : knownBranchRef)
-  if (!ref) return null
-  const previous = views[ref]
-  const base = view.exitCode === 0 ? readView(ref, view.stdout) : null
-  if (!base) {
-    if (!previous || asksForSignIn(view)) return previous ?? null
+  known: string | null,
+  at: number,
+  onFailure: (f: PrFetchFailure) => void,
+): Promise<string | null> {
+  const r = await gh(['pr', 'view', '--json', 'url'])
+  if (r.exitCode === 0) return urlRef(r.stdout) ?? known
+  if (/no pull requests found/i.test(r.stderr)) return null
+  const why = asksForSignIn(r) ? null : runFailureOf(r, TIMED_OUT_CODE, at)
+  if (why) onFailure(why)
 
-    const error =
-      view.exitCode === TIMED_OUT_CODE
-        ? GH_TIMED_OUT_TEXT
-        : view.stderr.trim().split('\n')[0] || 'gh could not read the PR'
-
-    return { ...previous, error }
-  }
-  const threads = early ?? (await threadsOf(ref))
-  const answer = threads.exitCode === 0 ? readThreadsAnswer(threads.stdout) : null
-
-  return {
-    ...base,
-    threads: answer?.threads ?? previous?.threads ?? [],
-    isYours: answer?.isYours ?? previous?.isYours ?? null,
-    wasSeenOpen: base.state === 'OPEN' || previous?.wasSeenOpen === true,
-    error: answer ? null : 'could not read review threads',
-    fetchedAt,
-  }
+  return known
 }
 
 function urlRef(json: string): string | null {
@@ -189,20 +251,3 @@ function urlRef(json: string): string | null {
 }
 
 export const GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} seconds`
-
-/** Runs at most `limit` of the calls it is given at once, starting each in the order it was given. */
-function limitedTo(limit: number): <T>(call: () => Promise<T>) => Promise<T> {
-  let running = 0
-  const waiting: (() => void)[] = []
-
-  return async call => {
-    if (running >= limit) await new Promise<void>(go => waiting.push(go))
-    running += 1
-    try {
-      return await call()
-    } finally {
-      running -= 1
-      waiting.shift()?.()
-    }
-  }
-}

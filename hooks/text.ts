@@ -112,3 +112,8 @@ export function duration(ms: number): string {
 export function ago(ms: number): string {
   return Math.round(ms / 60000) < 1 ? 'just now' : `${duration(ms)} ago`
 }
+
+/** A time of day in the person's locale, as "4:46 PM". */
+export function clockTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+}

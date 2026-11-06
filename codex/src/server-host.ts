@@ -12,6 +12,8 @@ import type { RowPress } from '../../hooks/presses'
 import { turnEnded, turnStarted } from '../../hooks/session-turns'
 import type { SendOutcome } from '../../hooks/session-presses'
 import { fetchPrs, prFetchTracker } from '../../hooks/host-prs'
+import { NO_PR_SHARED } from '../../hooks/pr-fetch'
+import type { PrShared } from '../../hooks/pr-fetch'
 import { press, wakeAfterSettle as wakeSessionAfterSettle } from '../../hooks/host-press'
 import type { SessionHost } from '../../hooks/session-host'
 import { NO_HOLDS } from '../../hooks/timing'
@@ -41,6 +43,7 @@ export function makeSessionHost(
   const gh = ghFinder(deps.exec)
   const prFetches = prFetchTracker(now)
   let isGhMissing = false
+  let prShared: PrShared = NO_PR_SHARED
 
   async function queueMessage(s: SessionState, message: string, resolvedCli?: string): Promise<SendOutcome> {
     let cli: string
@@ -71,8 +74,14 @@ export function makeSessionHost(
       },
       deliver: (s, message) => queueMessage(s, message, preparedCli),
       perform: async (s, e) => (e.kind === 'copy' ? null : open(s, e.target)),
-      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true)),
+      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true, true)),
       gh: {
+        shared: {
+          read: async () => prShared,
+          write: async change => {
+            prShared = change(prShared)
+          },
+        },
         find: gh.find,
         forget: gh.forget,
         run: (s, bin, onUnstartable) => ghIn(deps.exec, bin, s.root, onUnstartable),
@@ -119,7 +128,7 @@ export function makeSessionHost(
   }
 
   function fetchPrsWhenDue(id: string, s: SessionState) {
-    void prFetches.fetchWhenDue(id, s, () => fetchPrs(hostFor(id), true))
+    void prFetches.fetchWhenDue(id, s, s.shownTab === 'prs', () => fetchPrs(hostFor(id), true))
   }
 
   const served = async (s: SessionState, id: string, isDemo = false, holds: Holds = NO_HOLDS): Promise<TabView> => {

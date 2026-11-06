@@ -23,6 +23,7 @@ import {
   prRefreshFailedText,
   prsEmptyText,
   prThreadId,
+  PR_REFRESH_ID,
   RANK_AGAIN_ID,
   splitFollowUps,
   threadRowText,
@@ -171,6 +172,7 @@ export function panePrBlocks({
   Button,
   view,
   prOrderKeys,
+  prRefreshKeys,
   prGroups,
   section,
   undoPlace,
@@ -203,6 +205,7 @@ export function panePrBlocks({
   | 'Button'
   | 'view'
   | 'prOrderKeys'
+  | 'prRefreshKeys'
   | 'prGroups'
 > &
   Pick<PaneRowParts, 'section' | 'undoPlace' | 'settledContent' | 'groupTitle' | 'titleGap' | 'sections'> &
@@ -326,7 +329,11 @@ export function panePrBlocks({
       ...prRowGroup(PR_GROUP_TITLES.cancelled, cancelled, `${pr.ref}-cancelled`),
     ])
   }
-  const ghState = { isGhMissing: Boolean(prState.isGhMissing), isGhSignedOut: Boolean(prState.isGhSignedOut) }
+  const ghState = {
+    isGhMissing: Boolean(prState.isGhMissing),
+    isGhSignedOut: Boolean(prState.isGhSignedOut),
+    failure: prState.failure ?? null,
+  }
   const ghNotice = ghNoticeOf(ghState)
   const prTabLine = (key: string, content: JSX.Element) => [
     section(
@@ -367,15 +374,40 @@ export function panePrBlocks({
 
     return prTabLine('pr-order', lines)
   }
+  /** The line under the notices while a PR could not be read: which ones, Refresh PRs, and its press status. */
+  const prRefreshLines = () => {
+    const refresh = view.prs.refresh
+    if (!refresh) return []
+    const pressed = refresh.showsPress ? lastActionText(PR_REFRESH_ID) : null
+    const lines = (
+      <Box flexDirection="column">
+        <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap}>
+          {refresh.text ? <Text wrap="wrap">{refresh.text}</Text> : null}
+          {prRefreshKeys.length > 0 ? keyRow(PR_REFRESH_ID, prRefreshKeys) : null}
+        </Box>
+        {pressed ? (
+          <Text color={pressed.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
+            {pressed.text}
+          </Text>
+        ) : null}
+      </Box>
+    )
+
+    return prTabLine('pr-refresh', lines)
+  }
   const prsView = () =>
     prGroups.length === 0 ? (
       <Box flexDirection="column" flexGrow={1}>
-        {emptyState(prsEmptyText({ isFetching: prState.isFetching, ...ghState }, 'session'))}
+        {emptyState(
+          prsEmptyText({ isFetching: prState.isFetching, ...ghState }, 'session'),
+          view.prs.refresh ? prRefreshLines() : [],
+        )}
       </Box>
     ) : (
       sections(
         [
           ...(ghNotice ? [section(banner(bannerOf(ghNotice.kind, ghNotice.text)))] : []),
+          ...prRefreshLines(),
           ...prOrderLines(),
           ...prGroups.map(prBlock),
           ...olderPrs(),

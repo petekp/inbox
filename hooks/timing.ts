@@ -85,47 +85,63 @@ export function isShownSince(at: number, shownSince: number | null): boolean {
 }
 
 /**
- * When a settled row comes due to fold: `settleWindowMs` after it settled, or at a message the person typed after it
- * once Undo no longer lasts.
+ * When a settled row comes due to fold: `settleWindowMs` after it settled, or sooner, at a message the person typed
+ * after it once Undo no longer lasts. A message typed later never moves it, so a hold that began after the row folded
+ * cannot bring it back.
  */
 function foldDueAt(
   state: Pick<SettledState, 'at' | 'canUndo'>,
   lastTypedMessageAt: number | null,
   settleWindowMs: number,
 ): number {
+  const windowEndsAt = state.at + settleWindowMs
   const isTypedSince = lastTypedMessageAt !== null && lastTypedMessageAt > state.at
 
-  return isTypedSince && !state.canUndo ? lastTypedMessageAt : state.at + settleWindowMs
+  return isTypedSince && !state.canUndo ? Math.min(lastTypedMessageAt, windowEndsAt) : windowEndsAt
+}
+
+/** Whether a press still under way, begun at `pressOutSince`, had begun by `at`, so a row due then waits for it to end. */
+export function isPressOutSince(pressOutSince: number | null, at: number): boolean {
+  return pressOutSince !== null && pressOutSince <= at
+}
+
+/** The earliest of `times`, or null when none is known. */
+export function earliestOf(times: (number | null)[]): number | null {
+  const known = times.filter((t): t is number => t !== null)
+
+  return known.length > 0 ? Math.min(...known) : null
 }
 
 /**
- * What places a settled row: the look's showing and the person's input from the view's input, and whether a press is out
- * on any row of the row's tab, which `inboxView` works out.
+ * What places a settled row: the look's showing and the person's input from the view's input, and when the oldest press
+ * still under way on a row of the row's tab began, which `inboxView` works out, or null while none is.
  */
 export type Placing = Pick<
   ViewInput,
   'shownSince' | 'lastTypedMessageAt' | 'listInput' | 'now' | 'settleWindowMs' | 'undoShown'
-> & { isPressOut: boolean }
+> & { pressOutSince: number | null }
 
 /**
- * Whether a row's message is still on its way to the agent. Every look and the view read this one test. A row whose
- * message was refused or could not be confirmed is not on its way: it folds once Undo ends, and its Closed line shows
- * what happened.
+ * Whether a row's message is still on its way to the agent: held for Undo, or sent and not yet taken. Every look and
+ * the view read this one test. A held message counts from its press until its host records the send, so the row keeps
+ * its place through the moment Undo ends, when a redraw can come before the release. A row whose message was refused
+ * or could not be confirmed is not on its way: it folds once Undo ends, and its Closed line shows what happened.
  */
 export function isSendOnItsWay(delivery: ClosedDelivery): boolean {
-  return delivery === 'sending' || delivery === 'queued'
+  return delivery === 'held' || delivery === 'sending' || delivery === 'queued'
 }
 
 /**
  * Whether a settled row stays in place, with its result. It stays while the look shows the tab it settled on, until it
  * comes due by `foldDueAt`, and folds into its group's Closed fold then. A due row waits while its message is on its way,
- * while a press is out on a row of its tab, and while the person is using the list, until they stop for FOLD_QUIET_MS,
- * so nothing moves under a press. A row whose Undo the look still shows, named by `id` in `undoShown`, stays too.
- * Leaving the tab, by switching tab or closing the inbox, folds it at once.
+ * while a press begun before it came due is still out on a row of its tab, and while the person has been using the list
+ * since before then, until they stop for FOLD_QUIET_MS, so nothing moves under a press. A hold keeps only a row that has
+ * not folded yet: a press or input that begins after the row came due leaves it folded. A row whose Undo the look still
+ * shows, named by `id` in `undoShown`, stays too. Leaving the tab, by switching tab or closing the inbox, folds it at once.
  */
 export function isSettledInPlace(
   state: Pick<SettledState, 'at' | 'canUndo' | 'delivery'>,
-  { shownSince, lastTypedMessageAt, listInput, now, settleWindowMs, undoShown, isPressOut }: Placing,
+  { shownSince, lastTypedMessageAt, listInput, now, settleWindowMs, undoShown, pressOutSince }: Placing,
   id?: string,
 ): boolean {
   const dueAt = foldDueAt(state, lastTypedMessageAt, settleWindowMs)
@@ -134,7 +150,7 @@ export function isSettledInPlace(
     now < dueAt ||
     isUndoShown ||
     isSendOnItsWay(state.delivery) ||
-    isPressOut ||
+    isPressOutSince(pressOutSince, dueAt) ||
     isListInUseSince(listInput, dueAt, now)
 
   return isShownSince(state.at, shownSince) && isWaiting

@@ -5,11 +5,11 @@ import { emptySession } from '../hooks/session-files'
 import { recorded, withFetchedPrs } from '../hooks/session-presses'
 import { sessionView } from '../hooks/session-view'
 import type { PrView, Session } from '../types'
-import { isPrFetchDue, prFetchTracker } from '../hooks/host-prs'
+import { isPrFetchDue, prFetchTracker, PRS_HIDDEN_REFRESH_MS } from '../hooks/host-prs'
 import { DOT } from '../hooks/rows'
 import { NO_HOLDS } from '../hooks/timing'
 import { applyPrPress } from '../hooks/pr-tab'
-import { fetchTracked, GH_RUNS_AT_ONCE, MAX_PRS } from '../hooks/pr-fetch'
+import { MAX_PRS } from '../hooks/pr-fetch'
 import { FIX_REF, BLOCKED_PR } from './session-helpers'
 
 const openPr = (number: number): PrView => ({
@@ -301,39 +301,21 @@ test('an order reads as changed once a ranked open PR is newly blocked, gains a 
   expect(withFetchedPrs(old, { 'acme/app#3': failing }, null, false, 1).ledger.prOrder?.statuses).toBeNull()
 })
 
-test('a fetch of many PRs runs at most GH_RUNS_AT_ONCE gh runs at once, and reads every PR', async () => {
-  let running = 0
-  let most = 0
-  const run = async (args: string[]) => {
-    running += 1
-    most = Math.max(most, running)
-    for (let n = 0; n < 3; n++) await Promise.resolve()
-    running -= 1
-    const number = Number(args[2])
-    const view = { number, title: `Work ${number}`, url: `https://github.com/acme/app/pull/${number}`, state: 'OPEN' }
-
-    return { exitCode: 0, stdout: args[0] === 'pr' ? JSON.stringify(view) : '{"data":{}}', stderr: '' }
-  }
-  const refs = Array.from({ length: 20 }, (_, n) => `acme/app#${n + 1}`)
-  const order = { refs, label: null, why: null, statuses: null, dismissed: [], by: 'Claude', at: 0 }
-  const state = { views: {}, branchRef: null, isFetching: false }
-  const fetched = await fetchTracked(run, state, { prs: refs, prOrder: order }, false, () => 5)
-
-  expect(Object.keys(fetched.views)).toHaveLength(20)
-  expect(most).toBe(GH_RUNS_AT_ONCE)
-})
-
-test('PRs are due for a fetch 15 seconds after the last once the agent replied since it, and otherwise after 2 minutes', () => {
+test('PRs are due for a fetch 15 seconds after the last once the agent replied since it, and otherwise after 2 minutes while the PRs tab is shown, or 10 minutes while it is not', () => {
   const s = {
     ...emptySession(),
     ledger: { ...emptySession().ledger, prs: [FIX_REF] },
     prViews: { ...emptySession().prViews, views: { [FIX_REF]: BLOCKED_PR } },
   }
   const repliedAt = (at: number | null) => ({ ...s, presence: { ...s.presence, lastReplyAt: at } })
-  expect(isPrFetchDue(repliedAt(1_005_000), 1_000_000, 1_015_000)).toBe(true)
-  expect(isPrFetchDue(repliedAt(1_005_000), 1_000_000, 1_014_000)).toBe(false)
-  expect(isPrFetchDue(repliedAt(999_000), 1_000_000, 1_015_000)).toBe(false)
-  expect(isPrFetchDue(repliedAt(null), 1_000_000, 1_120_000)).toBe(true)
+  expect(isPrFetchDue(repliedAt(1_005_000), 1_000_000, 1_015_000, true)).toBe(true)
+  expect(isPrFetchDue(repliedAt(1_005_000), 1_000_000, 1_015_000, false)).toBe(true)
+  expect(isPrFetchDue(repliedAt(1_005_000), 1_000_000, 1_014_000, true)).toBe(false)
+  expect(isPrFetchDue(repliedAt(999_000), 1_000_000, 1_015_000, true)).toBe(false)
+  expect(isPrFetchDue(repliedAt(null), 1_000_000, 1_120_000, true)).toBe(true)
+  expect(isPrFetchDue(repliedAt(null), 1_000_000, 1_120_000, false)).toBe(false)
+  expect(isPrFetchDue(repliedAt(null), 1_000_000, 1_000_000 + PRS_HIDDEN_REFRESH_MS - 1, false)).toBe(false)
+  expect(isPrFetchDue(repliedAt(null), 1_000_000, 1_000_000 + PRS_HIDDEN_REFRESH_MS, false)).toBe(true)
 })
 
 test('a fetch a press asks for while another runs starts once that one ends, and presses during one fetch share the next', async () => {

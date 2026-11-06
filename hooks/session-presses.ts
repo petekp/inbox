@@ -18,7 +18,7 @@ import { isShownSince } from './timing'
 import { outAction, pressFeedbackIn } from './feedback'
 import type { Holds } from './timing'
 import type { RowState } from './rows'
-import type { PrViews, Session } from '../types'
+import type { PrFetchFailure, PrViews, Session } from '../types'
 import { sessionView } from './session-view'
 
 export type Pressed = Exclude<Applied, { stale: true }>
@@ -176,10 +176,13 @@ export function withFetchedPrs<S extends Session>(
   branchRef: string | null,
   isGhSignedOut: boolean | null,
   now: number,
+  failure: PrFetchFailure | null = null,
+  unread: Record<string, string> = {},
 ): S {
   const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true
   const views = { ...s.prViews.views, ...fetched }
   const { ledger, lastActions } = withFinishedPrsSettled(s, fetched, { now, turnsStarted: s.presence.turnsStarted })
+  const stillUnread = Object.fromEntries(Object.entries(unread).filter(([ref]) => !(ref in views)))
 
   return {
     ...s,
@@ -190,6 +193,8 @@ export function withFetchedPrs<S extends Session>(
       branchRef,
       isFetching: false,
       ...(isSignedOut ? { isGhSignedOut: true } : {}),
+      ...(failure ? { failure } : {}),
+      ...(Object.keys(stillUnread).length > 0 ? { unread: stillUnread } : {}),
     },
   }
 }
