@@ -93,12 +93,16 @@ test('a GOAL or RETIRE line replaces an inferred goal only once none of its link
     'Import ready to demo',
   )
   expect(after(betweenMilestones, `${work}\n${next}`, later - 1).goal?.text).toBe('Import ready to demo')
+  expect(after(linked, `DONE: m2 | merged\nDROP: m3 | not needed\n${work}\n${next}`, 40).goal?.text).toBe(
+    'Search under 100 ms',
+  )
   expect(replaced.goal).toMatchObject({ text: 'Search under 100 ms', was: 'Import ready to demo', source: 'inferred' })
   expect(after(replaced, 'GOAL: Import ready to demo | queued A; queued B', later + GOAL_LEFT_MS).goal?.text).toBe(
     'Search under 100 ms',
   )
   expect(after(betweenMilestones, `${work}\n${next}\nRETIRE: moved on`, later).goal?.text).toBe('Search under 100 ms')
   expect(after(betweenMilestones, 'RETIRE: moved on', later - 1).goal).not.toBeNull()
+  expect(after(betweenMilestones, 'DROP: m3 | not shipping\nRETIRE: not going out', later).goal).toBeNull()
   expect(after(betweenMilestones, 'RETIRE: moved on', later)).toMatchObject({
     goal: null,
     milestones: [],
@@ -344,8 +348,22 @@ test("the call reads the goal, its milestones, each subject's link and the remov
   const prompt = statusPrompt({ last: linked, asks: [], tasks: [], now: 30 }, exchange)
   const noGoal = statusPrompt({ last: after(null, WORK, 10), asks: [], tasks: [], now: 30 }, exchange)
   const typedPrompt = statusPrompt({ last: typed, asks: [], tasks: [], now: 30 }, exchange)
+  const idle = after(linked, 'DONE: s1 | shipped\nDROP: s2 | not needed', 40)
+  const leftPrompt = statusPrompt({ last: idle, asks: [], tasks: [], now: 40 + GOAL_LEFT_MS }, exchange)
+  const keptPrompt = statusPrompt({ last: idle, asks: [], tasks: [], now: 40 + GOAL_LEFT_MS - 1 }, exchange)
+
+  const savedMet = {
+    ...idle,
+    goal: { ...idle.goal!, metAt: null },
+    milestones: idle.milestones.map(m => ({ ...m, status: 'done' as const })),
+  }
+  const savedMetPrompt = statusPrompt({ last: savedMet, asks: [], tasks: [], now: 40 + GOAL_LEFT_MS }, exchange)
 
   expect(prompt).toMatch(/<goal>\nImport ready to demo\n<\/goal>/)
+  expect(leftPrompt).toMatch(/<goal>\nImport ready to demo \(no work for 30m\)\n<\/goal>/)
+  expect(keptPrompt).toMatch(/<goal>\nImport ready to demo\n<\/goal>/)
+  expect(savedMetPrompt).toMatch(/<goal>\nImport ready to demo\n<\/goal>/)
+  expect(after(savedMet, 'RETIRE: moved on', 40 + GOAL_LEFT_MS).goal).not.toBeNull()
   expect(prompt).toMatch(/m1 \| done \| Import works \| -\n/)
   expect(prompt).toMatch(/m2 \| working \| Error messages \| - \| no work linked\n/)
   expect(typedPrompt).toMatch(/<goal>\nShip 2.6 with import \(typed\)\n<\/goal>/)

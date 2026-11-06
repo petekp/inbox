@@ -22,6 +22,36 @@ export const GOAL_RULES: Rule[] = [
     },
   },
   {
+    id: 'goal-left',
+    reads: 'facts',
+    opportunity: ctx => hasCall(ctx) && ctx.result.facts.goal?.isLeft === true,
+    property: 14,
+    text: 'A goal the facts say the work has left is retired or met, not still open.',
+    failures: ({ result }) => {
+      const left = result.facts.goal
+      const g = result.session.ledger.overview?.goal
+      if (!left?.isLeft || !g || !new RegExp(left.match, 'i').test(g.text)) return []
+      if (g.metAt !== null) return left.isDropped ? [`"${g.text}" reads met after the person dropped its outcome`] : []
+      return [`"${g.text}" is still open`]
+    },
+  },
+  {
+    id: 'goal-kept',
+    reads: 'facts',
+    opportunity: ctx => {
+      const g = ctx.result.facts.goal
+      return hasCall(ctx) && g != null && !g.isLeft && !g.mayEnd && g.text === ctx.before.facts.goal?.text
+    },
+    property: 14,
+    text: 'A goal the facts keep, met or not, stays on the page.',
+    failures: ({ result, before }) => {
+      const kept = result.facts.goal
+      const g = result.session.ledger.overview?.goal
+      if (!kept || kept.isLeft || kept.mayEnd || kept.text !== before.facts.goal?.text) return []
+      return g && new RegExp(kept.match, 'i').test(g.text) ? [] : [`the goal "${kept.text}" went`]
+    },
+  },
+  {
     id: 'goal-only-when-clear',
     reads: 'facts',
     opportunity: ctx => hasCall(ctx) && !ctx.result.facts.goalClear,
@@ -87,7 +117,7 @@ export const GOAL_RULES: Rule[] = [
     id: 'serves-linked',
     reads: 'facts',
     property: 16,
-    text: 'Each subject the facts say what it serves is linked: one the goal needs to a milestone, and one it does not need to Other work.',
+    text: 'Each subject the facts say what it serves is linked: one the goal needs to a milestone, and one it does not need to Other work. A piece with a second right link may take either.',
     failures: ({ step, result }) => {
       const o = result.session.ledger.overview
       if (!o?.goal || o.goal.isAwaitingMilestones) return []
@@ -100,10 +130,11 @@ export const GOAL_RULES: Rule[] = [
                 const link = o.serves[s.id]
                 const isLive = link === 'none' || o.milestones.some(m => m.id === link && m.status !== 'dropped')
                 if (!isLive) return step.call ? [`${label(s)} is not linked`] : []
-                if (p.serves === 'none' && link !== 'none')
-                  return [`${label(s)} serves a milestone, and the goal does not need it`]
-                return p.serves !== 'none' && link === 'none'
-                  ? [`${label(s)} is under Other work, and the goal needs it`]
+                const isNoneRight = p.serves === 'none' || p.servesAlso === 'none'
+                const isMilestoneRight = p.serves !== 'none' || (p.servesAlso !== undefined && p.servesAlso !== 'none')
+                if (!isNoneRight && link === 'none') return [`${label(s)} is under Other work, and the goal needs it`]
+                return !isMilestoneRight && link !== 'none'
+                  ? [`${label(s)} serves a milestone, and the goal does not need it`]
                   : []
               }),
       )

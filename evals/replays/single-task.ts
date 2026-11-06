@@ -29,7 +29,7 @@ export const singleTask: Replay = {
         goalClear: { text: 'Add offline sync, and ship it in 2.5', match: 'offline sync|2\\.5' },
         goal: {
           text: 'Offline sync in 2.5',
-          match: 'offline sync',
+          match: 'offline sync|2\\.5',
           milestones: [
             { id: 'ms-offline', name: 'Works offline', match: 'offline', state: 'working' },
             { id: 'ms-conflicts', name: 'Conflicts handled', match: 'conflict', state: 'queued' },

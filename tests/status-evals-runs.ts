@@ -3,6 +3,22 @@ const servesLines = [
   ...Array.from({ length: 9 }, () => '-'),
 ].map((to, n) => `SERVES: s${n + 1} | ${to}`)
 
+/** The answers for the four steps `stale-goal` and `goal-outcome-dropped` share. Step 4 keeps the goal, which the facts allow. */
+const STALE_GOAL_ANSWERS = [
+  [
+    'HEAD: Onboarding tour | Redoing the first-launch tour for beta testers',
+    'NEW: working | Onboarding tour | welcome screen in, two screens and skip left',
+    'SERVES: Onboarding tour | -',
+  ].join('\n'),
+  'DONE: s2 | merged\nSET: s4 | working | three screens in, skip button left',
+  [
+    'NEW: queued | Share sheet hang | not started',
+    'SERVES: Share sheet hang | -',
+    'SET: s4 | working | runs end to end, small phone check left',
+  ].join('\n'),
+  'DONE: s4 | fits a small phone',
+]
+
 export const GOOD_RUNS: Record<string, string[]> = {
   'coordinator-day': [
     'DONE: s1 | merges edits on reconnect\nDONE: s2 | live in both stores\nDONE: m2 | merges edits on reconnect\nDONE: m3 | live in both stores\nSERVES: s4 | -\nSERVES: s5 | -\nSERVES: s6 | -\nSERVES: s7 | -',
@@ -202,5 +218,22 @@ export const GOOD_RUNS: Record<string, string[]> = {
   ],
   'idle-work': [
     'DONE: s1 | iPad crash fixed\nSET: s4 | waits-on-other | fast on big libraries, waits on review\nNEW: working | Retry button | broken on web again\nNEW: working | PR 3655 | waits on review',
+  ],
+  'stale-goal': [
+    ...STALE_GOAL_ANSWERS,
+    [
+      'DONE: m3 | live in the store',
+      'HEAD: Share sheet hang | Fixing the share sheet hang on iPad',
+      'SET: s5 | working | waits on a thumbnail on iPad',
+    ].join('\n'),
+  ],
+  'goal-outcome-dropped': [
+    ...STALE_GOAL_ANSWERS,
+    [
+      'DROP: m3 | no 2.5 store release',
+      'RETIRE: 2.5 is not going to the store',
+      'HEAD: Share sheet hang | Fixing the share sheet hang on iPad',
+      'SET: s5 | working | waits on a thumbnail on iPad',
+    ].join('\n'),
   ],
 }

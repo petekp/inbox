@@ -24,6 +24,8 @@ export type Piece = {
   alsoRight?: SubjectStatus[]
   /** The id of the goal's milestone this piece serves, or `none` for work the goal does not need. */
   serves?: string
+  /** A link that is also right, as `none` for a piece that a milestone's outcome covers only loosely. */
+  servesAlso?: string
 }
 
 /** One milestone of the goal: an outcome the goal needs, by the fact's own id, not the call's. */
@@ -36,8 +38,29 @@ type MilestoneFact = {
   alsoRight?: SubjectStatus[]
 }
 
-/** The goal the person set or accepted, and its milestones. */
-type GoalFact = { text: string; match: string; milestones: MilestoneFact[] }
+/**
+ * The goal as the session holds it, and its milestones. `isLeft` says the work has left it: the page shows it met or
+ * shows no goal, and its milestones' states no longer matter.
+ */
+/** The note after a goal's text on what the page may show for it. */
+function goalNote(g: GoalFact): string {
+  if (g.isDropped) return ' (the person dropped its outcome: the page shows no goal)'
+  if (g.isLeft) return ' (the work has left it: the page shows it met, or shows no goal)'
+
+  return g.mayEnd ? ' (the work has paused on it: the page may keep it, or show it met or no goal)' : ''
+}
+
+type GoalFact = {
+  text: string
+  match: string
+  milestones: MilestoneFact[]
+  /** The work has left it: the page shows it met, or shows no goal. */
+  isLeft?: true
+  /** The person dropped its outcome: the page shows no goal, met or not. Needs `isLeft`. */
+  isDropped?: true
+  /** The work has paused on it: the page may keep it, or show it met or no goal. */
+  mayEnd?: true
+}
 
 /** An outcome with a finish line that a step makes clear, from the person's words or the work, which a goal set there should match. */
 type GoalClear = { text: string; match: string }
@@ -182,12 +205,14 @@ export function factsText(f: Facts): string {
       s === 'working' ? [SUBJECT_MARKS.working.mark, IDLE_MARK.mark] : [SUBJECT_MARKS[s].mark],
     )
     const alsoRight = alsoMarks.length > 0 ? ` Its row may also show ${alsoMarks.join(' or ')}.` : ''
+    const link = (to: string) =>
+      to === 'none' ? 'the goal does not need it' : `it serves the milestone ${milestoneName(to)}`
     const serves =
       p.serves === undefined
         ? ''
-        : p.serves === 'none'
-          ? ' The goal does not need it.'
-          : ` It serves the milestone ${milestoneName(p.serves)}.`
+        : p.servesAlso === undefined
+          ? ` ${link(p.serves)[0]!.toUpperCase()}${link(p.serves).slice(1)}.`
+          : ` Either ${link(p.serves)}, or ${link(p.servesAlso)}.`
 
     return `- ${p.names[0]}${also}: ${STATE_TEXT[p.state]}. ${p.stands}.${parts}${was}${merged}${alsoRight}${serves}${isChanged}`
   }
@@ -196,7 +221,7 @@ export function factsText(f: Facts): string {
 
   const goal = f.goal
     ? [
-        `Goal: ${f.goal.text}`,
+        `Goal: ${f.goal.text}${goalNote(f.goal)}`,
         'Milestones:',
         list(
           f.goal.milestones.map(

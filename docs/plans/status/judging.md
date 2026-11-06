@@ -91,6 +91,8 @@ The goal adds these:
 - Each milestone in the fact list has a milestone with a mark its state allows.
 - A goal has 2 to 5 milestones, none named after a subject.
 - A subject the goal needs is not under Other work, and one it does not need is not linked to a milestone.
+- A goal the fact list marks as left by the work is retired or met, not still open. One whose outcome the person dropped is retired, not shown met.
+- A goal the fact list keeps, met or not, stays on the page. One the work has paused on may stay or end.
 
 **The code holds** are checked at every step of every run, and any failure blocks:
 

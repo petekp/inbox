@@ -191,17 +191,41 @@ function lastProgressAt(o: SessionStatus, g: StatusGoal): number {
 }
 
 /**
- * Whether a GOAL or RETIRE line may replace or clear the goal: a GOAL while none is set or once the goal is met, and
- * either for an inferred goal the work has left. The work has left it when none of its linked work is open and it has
- * not moved forward for `GOAL_LEFT_MS`, so a goal between milestones, or one just set, stays. A typed goal is the
- * person's until it is met.
+ * How long the work has left the goal, in ms, or null while it has not. The work has left an inferred goal that is not
+ * met when none of its linked work is open and it has not moved forward for `GOAL_LEFT_MS`, so a goal between
+ * milestones, or one just set, stays. A goal whose milestones are all done is met, whether or not a saved copy holds
+ * its met time. A typed goal is the person's until it is met. The Status call reads this time, and a GOAL or RETIRE
+ * line may replace or clear the goal while it is set.
  */
-function mayReplaceGoal(o: SessionStatus, kind: 'goal' | 'retire', now: number): boolean {
+export function goalLeftFor(o: SessionStatus, now: number): number | null {
   const g = o.goal
-  if (g === null || g.metAt !== null) return kind === 'goal'
-  const isWorkLeft = !linkedSubjects(o).some(isOpen) && now - lastProgressAt(o, g) >= GOAL_LEFT_MS
+  if (g === null || isGoalMet(o) || g.source !== 'inferred' || linkedSubjects(o).some(isOpen)) return null
+  const left = now - lastProgressAt(o, g)
 
-  return g.source === 'inferred' && isWorkLeft
+  return left >= GOAL_LEFT_MS ? left : null
+}
+
+/**
+ * Whether the goal is met: it holds its met time, or every milestone it keeps is done, as after a DROP in the same
+ * answer closes the last open one, before `settleGoal` writes the time.
+ */
+function isGoalMet(o: SessionStatus): boolean {
+  const kept = o.milestones.filter(m => m.status !== 'dropped')
+
+  return o.goal?.metAt != null || (kept.length > 0 && kept.every(m => m.status === 'done'))
+}
+
+/**
+ * Whether a GOAL or RETIRE line may replace or clear the goal: a GOAL while none is set or once the goal is met, and
+ * either once the work has left it. The page is read as the answer's earlier lines left it, and as the answer found
+ * it, so a DROP or DONE line in the same answer never closes a gate that was open. A goal the same answer set is read
+ * only as it stands, so a RETIRE after it never clears it.
+ */
+function mayReplaceGoal(o: SessionStatus, start: SessionStatus, kind: 'goal' | 'retire', now: number): boolean {
+  const may = (s: SessionStatus) => (s.goal === null || isGoalMet(s) ? kind === 'goal' : goalLeftFor(s, now) !== null)
+  const isSameGoal = o.goal?.setAt === start.goal?.setAt
+
+  return may(o) || (start !== o && isSameGoal && may(start))
 }
 
 /** The goal a GOAL line sets, with its milestones as it wrote them and no subject linked yet. */
@@ -257,6 +281,7 @@ export function applyGoalOp(
   op: Extract<Op, { kind: 'goal' | 'retire' | 'milestone' | 'serves' }>,
   now: number,
   findSubject: (ref: string) => Subject | null,
+  start: SessionStatus = o,
 ): SessionStatus {
   if (op.kind === 'goal') {
     const text = clipWords(op.text, DESCRIPTION_KEPT)
@@ -267,12 +292,12 @@ export function applyGoalOp(
     const isCurrent = g !== null && (restatesGoal(text, g.text) || hasGoalMilestones(o, milestones))
     const isPrevious = g?.was != null && restatesGoal(text, g.was)
     const isRemoved = o.removedGoals.some(key => restatesGoal(text, key))
-    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, 'goal', now)
+    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, start, 'goal', now)
     if (op.milestones.length < MILESTONES_MIN || isCurrent || isPrevious || isRemoved || !isAllowed) return o
 
     return inferredGoal(o, text, milestones, now)
   }
-  if (op.kind === 'retire') return mayReplaceGoal(o, 'retire', now) ? withoutGoal(o) : o
+  if (op.kind === 'retire') return mayReplaceGoal(o, start, 'retire', now) ? withoutGoal(o) : o
   if (o.goal === null) return o
   if (op.kind === 'milestone') return addMilestone(o, op, now)
   const subject = findSubject(op.subject)

@@ -223,13 +223,15 @@ function clipLabel(text2, max) {
 }
 var graphemes = new Intl.Segmenter(void 0, { granularity: "grapheme" });
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
-function ago(ms) {
-  const min = Math.round(ms / 6e4);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min}m ago`;
+function duration(ms) {
+  const min = Math.max(1, Math.round(ms / 6e4));
+  if (min < 60) return `${min}m`;
   const h = Math.round(min / 60);
-  if (h < 48) return `${h}h ago`;
-  return `${Math.round(h / 24)}d ago`;
+  if (h < 48) return `${h}h`;
+  return `${Math.round(h / 24)}d`;
+}
+function ago(ms) {
+  return Math.round(ms / 6e4) < 1 ? "just now" : `${duration(ms)} ago`;
 }
 function clockTime(ms) {
   return new Date(ms).toLocaleTimeString(void 0, { hour: "numeric", minute: "2-digit" });

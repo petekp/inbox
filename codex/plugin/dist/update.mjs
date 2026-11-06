@@ -423,13 +423,15 @@ function clipMiddle(text2, max, head) {
 }
 var graphemes = new Intl.Segmenter(void 0, { granularity: "grapheme" });
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
-function ago(ms) {
-  const min = Math.round(ms / 6e4);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min}m ago`;
+function duration(ms) {
+  const min = Math.max(1, Math.round(ms / 6e4));
+  if (min < 60) return `${min}m`;
   const h = Math.round(min / 60);
-  if (h < 48) return `${h}h ago`;
-  return `${Math.round(h / 24)}d ago`;
+  if (h < 48) return `${h}h`;
+  return `${Math.round(h / 24)}d`;
+}
+function ago(ms) {
+  return Math.round(ms / 6e4) < 1 ? "just now" : `${duration(ms)} ago`;
 }
 function clockTime(ms) {
   return new Date(ms).toLocaleTimeString(void 0, { hour: "numeric", minute: "2-digit" });
@@ -1553,11 +1555,20 @@ function lastProgressAt(o, g) {
   const done = linkedSubjects(o).flatMap((s) => s.status === "done" && s.closedAt !== null ? [s.closedAt] : []);
   return Math.max(g.setAt, ...milestones, ...done);
 }
-function mayReplaceGoal(o, kind, now) {
+function goalLeftFor(o, now) {
   const g = o.goal;
-  if (g === null || g.metAt !== null) return kind === "goal";
-  const isWorkLeft = !linkedSubjects(o).some(isOpen) && now - lastProgressAt(o, g) >= GOAL_LEFT_MS;
-  return g.source === "inferred" && isWorkLeft;
+  if (g === null || isGoalMet(o) || g.source !== "inferred" || linkedSubjects(o).some(isOpen)) return null;
+  const left = now - lastProgressAt(o, g);
+  return left >= GOAL_LEFT_MS ? left : null;
+}
+function isGoalMet(o) {
+  const kept = o.milestones.filter((m) => m.status !== "dropped");
+  return o.goal?.metAt != null || kept.length > 0 && kept.every((m) => m.status === "done");
+}
+function mayReplaceGoal(o, start, kind, now) {
+  const may = (s) => s.goal === null || isGoalMet(s) ? kind === "goal" : goalLeftFor(s, now) !== null;
+  const isSameGoal = o.goal?.setAt === start.goal?.setAt;
+  return may(o) || start !== o && isSameGoal && may(start);
 }
 function inferredGoal(o, text2, named, now) {
   const milestones = named.map((m, n) => ({
@@ -1586,7 +1597,7 @@ function hasWorkForGoal(o) {
   const held = new Set(linkedSubjects(o).map((s) => s.id));
   return o.subjects.some((s) => isOpen(s) && !held.has(s.id));
 }
-function applyGoalOp(o, op, now, findSubject) {
+function applyGoalOp(o, op, now, findSubject, start = o) {
   if (op.kind === "goal") {
     const text2 = clipWords(op.text, DESCRIPTION_KEPT);
     const milestones = op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }));
@@ -1594,11 +1605,11 @@ function applyGoalOp(o, op, now, findSubject) {
     const isCurrent = g !== null && (restatesGoal(text2, g.text) || hasGoalMilestones(o, milestones));
     const isPrevious = g?.was != null && restatesGoal(text2, g.was);
     const isRemoved = o.removedGoals.some((key) => restatesGoal(text2, key));
-    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, "goal", now);
+    const isAllowed = hasWorkForGoal(o) && mayReplaceGoal(o, start, "goal", now);
     if (op.milestones.length < MILESTONES_MIN || isCurrent || isPrevious || isRemoved || !isAllowed) return o;
     return inferredGoal(o, text2, milestones, now);
   }
-  if (op.kind === "retire") return mayReplaceGoal(o, "retire", now) ? withoutGoal(o) : o;
+  if (op.kind === "retire") return mayReplaceGoal(o, start, "retire", now) ? withoutGoal(o) : o;
   if (o.goal === null) return o;
   if (op.kind === "milestone") return addMilestone(o, op, now);
   const subject = findSubject(op.subject);
@@ -3719,7 +3730,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   for (const { op } of ordered) {
     if (op.kind === "none") continue;
     if (op.kind === "goal" || op.kind === "retire" || op.kind === "milestone" || op.kind === "serves") {
-      o = applyGoalOp(o, op, now, find);
+      o = applyGoalOp(o, op, now, find, last ?? o);
       if (op.kind === "milestone") markNamed(findMilestone(o, op.name));
       if (op.kind === "serves" && op.milestone !== null) markNamed(findMilestone(o, op.milestone));
     } else if (op.kind === "head") {
@@ -4204,7 +4215,7 @@ RETIRE: why the goal no longer fits the work
 MILESTONE: status | name | where it stands
 SERVES: subject id or name | milestone id or name, or - when the goal does not need it
 GOAL sets the goal, with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, then its name: GOAL: 2.5 in the store | done Bug fixed; working Release built; queued Store review. It holds no date or time. RETIRE clears the goal and sets none. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`;
-var GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is set. It says (typed) when the person typed it, (met) when every milestone is done, and (just set) when the person just typed it, so its milestones still belong to the goal before it.
+var GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is set. It says (typed) when the person typed it, (met) when every milestone is done, (just set) when the person just typed it, so its milestones still belong to the goal before it, and (no work for 2h), with the time, once none of its linked work is open and nothing has moved it for that long: the work has left it.
 - <milestones>: the outcomes the goal needs, one per line: id | status | name | where it stands. A line ends with | ${NO_WORK_LINKED} when no subject serves it.
 - <removed>: goals the person removed, as their key words, one per line
 - While a goal is set, each line in <subjects> ends with the milestone the subject serves, - when the goal does not need it, or ? when it is not linked yet.`;
@@ -4214,21 +4225,25 @@ var GOAL_PARTS = {
   "goal-wait": `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show a goal. A met goal stays on the page until the next one is set.`,
   "goal-not-again": `Never write the goal in <goal> or a goal in <removed> again, in the same words or in other words. A goal the person removed stays removed until they type it.`,
   "goal-typed-kept": `A goal marked (typed) is the person's. Never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
-  "goal-work-left": `When the session's work no longer moves a goal that is not typed forward, as when the person moved on to other work and the goal's open subjects went stale, close those subjects with DONE or DROP, then write GOAL for the outcome the work is for now, or RETIRE when none is clear. Never replace a goal while its work is still open.`,
-  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
-  "milestone-no-work": `A milestone marked ${NO_WORK_LINKED} has no subject serving it. Write SERVES for a subject whose work moves it forward, one under - included, DONE when the exchange shows it done, or DROP when the goal no longer needs it.`,
+  "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when the release it names shipped or the feature it names merged, write DONE for each milestone still open, with where it ended, so the goal is met. Never leave a milestone open for an outcome that already happened.`,
+  "goal-work-left": `When the session's work no longer moves a goal that is not typed forward, as when the person moved on to other work and the goal's open subjects went stale, close those subjects with DONE or DROP, then write GOAL for the outcome the work is for now, or RETIRE when none is clear. When the line in <goal> ends with (no work for a time), the work has left the goal, whatever its milestones say: write RETIRE for it in the same answer as the subject lines, or GOAL when the work shows the next goal. Never replace a goal while its work is still open.`,
+  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. A done subject stays done: new work on the same outcome is a NEW subject, never that one set working again. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
+  "milestone-no-work": `A milestone marked ${NO_WORK_LINKED} has no subject serving it. Write SERVES for a subject whose work is part of its outcome, one under - included, DONE when the exchange shows it done, or DROP when the goal no longer needs it. When no open subject is part of it, link nothing: an empty milestone is never a reason to link other work to it.`,
   "milestones-for-new-goal": `When <goal> says it was just set, its milestones belong to the goal before it, and each one your answer does not name goes. For each one the new goal still needs, write MILESTONE again with its name, status and text. Write MILESTONE for each outcome it needs that none covers, so the goal has ${MILESTONES_MIN} to ${MILESTONES_MAX}.`,
-  "serves-every-subject": `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work moves forward, or - when the goal does not need it. With GOAL, write SERVES for every open subject, naming the new milestones. Change a link only when what the work is for changed, or when a subject under - moves a milestone forward. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`
+  "serves-every-subject": `While a goal is set, write SERVES for each subject marked ? in <subjects> and for each NEW subject, even when nothing else changed, naming the milestone its work is part of, or - when the goal does not need it. With GOAL, write SERVES for every open subject, naming the new milestones. Change a link only when what the work is for changed, or when a subject under - turns out to be part of a milestone. Write LINK with a milestone id for an ask that holds up the milestone itself, not one subject.`,
+  "serves-in-outcome": `A subject serves a milestone only when finishing it is part of that milestone's named outcome, as a crash fix is part of "Launch crash fixed" and a store listing is part of "2.5 published". Work that merely goes on while a milestone is open is not part of it, and a broad name such as "Cleanup done" or "Fixes landed" is not a home for whatever comes later: write - for that work, even when nothing else serves the goal.`
 };
 function goalRules(without = []) {
   return Object.keys(GOAL_PARTS).filter((id) => !without.includes(id)).map((id) => `- ${GOAL_PARTS[id]}`).join(NL4);
 }
-function goalBlocks(o) {
+function goalBlocks(o, now) {
   if (o === null) return [];
   const g = o.goal;
+  const left = goalLeftFor(o, now);
   const marks = g ? [
     ...g.source === "typed" ? ["typed"] : [],
-    ...g.isAwaitingMilestones ? ["just set"] : g.metAt != null ? ["met"] : []
+    ...g.isAwaitingMilestones ? ["just set"] : g.metAt != null ? ["met"] : [],
+    ...left === null ? [] : [`no work for ${duration(left)}`]
   ] : [];
   const state = marks.length > 0 ? ` (${marks.join(", ")})` : "";
   const served = new Set(Object.values(o.serves));
@@ -4285,7 +4300,7 @@ The name is a label of at most ${NAME_WORDS} words, the handle the person would 
 
 The head says what the session is focused on now: the work the person would name if asked what this session is doing. It may cover several subjects. Its title is a label of at most ${NAME_WORDS} words, like a subject's name, such as "Offline sync" or "2.5 release". Its description is at most ${DESCRIPTION_WORDS} words on what the session is doing about that focus, such as "Adding offline sync to the notes app" or "Fixing the sync bug, then shipping 2.5". The description never repeats the title, and never says where one piece stands, such as "PR ready for review". The head follows the same rules on time words as where it stands.
 
-Write every name, where it stands, the head, the goal and each milestone in plain spoken words, so someone who was not in the session gets it on one read: everyday words, and each thing named by what it is. Write "Phone sign-in | iPhone done, Android next", not "Mobile auth parity | iOS verified; Android pending".
+Write every name, where it stands, the head, the goal and each milestone in plain spoken words, so someone who was not in the session gets it on one read: everyday words, and each thing named by what it is. Write "Phone sign-in | iPhone done, Android next", not "Mobile auth parity | iOS verified; Android pending". Never join two phrases with a semicolon: write a comma.
 
 Status is one of: working, queued, waits-on-other.
 - working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask.${ownChildren} When the work stopped for another reason, it is queued, waits on something, or is done.
@@ -4323,7 +4338,7 @@ function statusBlocks({ last, asks, tasks, now }) {
   const held = asksText(last, asks);
   const list = tasksText(tasks);
   return [
-    ...goalBlocks(last),
+    ...goalBlocks(last, now),
     `<head>${NL4}${headText(last)}${NL4}</head>`,
     `<subjects>${NL4}${open2}${NL4}</subjects>`,
     ...finished === "" ? [] : [`<finished>${NL4}${finished}${NL4}</finished>`],

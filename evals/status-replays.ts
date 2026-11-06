@@ -19,6 +19,8 @@ import { midTurnActivity } from './replays/mid-turn-activity'
 import { milestoneDropped } from './replays/milestone-dropped'
 import { oneTaskPlan } from './replays/one-task-plan'
 import { singleTask } from './replays/single-task'
+import { goalOutcomeDropped } from './replays/goal-outcome-dropped'
+import { staleGoal } from './replays/stale-goal'
 
 export const REPLAYS: Replay[] = [
   coordinatorDay,
@@ -41,4 +43,6 @@ export const REPLAYS: Replay[] = [
   goalWorkLeft,
   typedGoalKept,
   idleWork,
+  staleGoal,
+  goalOutcomeDropped,
 ]
