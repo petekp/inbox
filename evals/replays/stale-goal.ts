@@ -140,7 +140,7 @@ export const staleGoal: Replay = {
           piece({
             id: 'share',
             names: ['Share sheet hang'],
-            match: 'share',
+            match: 'shar',
             state: 'queued',
             stands: 'not started',
             serves: 'none',
