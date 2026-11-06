@@ -1,10 +1,30 @@
-import type { GoalRemoved, Milestone, SessionStatus, StatusGoal } from '../types'
+import type { GoalRefusal, GoalRemoved, Milestone, SessionStatus, StatusGoal } from '../types'
 import { nameKey, REMOVED_KEPT, STATUSES } from './status-limits'
 
 type GoalFields = Pick<
   SessionStatus,
-  'goal' | 'removedGoals' | 'goalRemoved' | 'milestones' | 'nextMilestoneId' | 'serves'
+  'goal' | 'removedGoals' | 'goalRemoved' | 'milestones' | 'nextMilestoneId' | 'serves' | 'goalRefused'
 >
+
+const REFUSAL_LINES: readonly GoalRefusal['line'][] = ['goal', 'retire']
+const REFUSAL_WHYS: readonly GoalRefusal['why'][] = [
+  'typed',
+  'met',
+  'work-open',
+  'moved',
+  'no-work',
+  'restates',
+  'few-milestones',
+]
+
+/** A saved refusal, or null for none or one wrongly shaped. */
+function goalRefusedOf(saved: unknown): GoalRefusal | null {
+  const r = saved as Partial<Record<keyof GoalRefusal, unknown>> | null
+  const line = REFUSAL_LINES.find(x => x === r?.line)
+  const why = REFUSAL_WHYS.find(x => x === r?.why)
+
+  return line && why ? { line, why } : null
+}
 
 function time(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
@@ -117,5 +137,6 @@ export function goalFields(o: Record<string, unknown>, subjectIds: ReadonlySet<s
     milestones,
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves,
+    goalRefused: goalRefusedOf(o.goalRefused),
   }
 }

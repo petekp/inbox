@@ -227,6 +227,24 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'SET: s5 | working | waits on a thumbnail on iPad',
     ].join('\n'),
   ],
+  'next-release': [
+    [
+      'RETIRE: 2.5 work moved on',
+      'HEAD: Share extension | Starting 2.6 with a Safari share extension',
+      'NEW: working | Share extension | makes a note from Safari, images left',
+    ].join('\n'),
+    'SET: s5 | working | works from Safari and Photos',
+    [
+      'DONE: s5 | works from Safari and Photos',
+      'NEW: working | TestFlight build | signs, upload next',
+      'GOAL: Share extension in the 2.6 beta | done Extension works; working 2.6 beta up',
+      'HEAD: 2.6 beta | Getting the share extension into the TestFlight beta',
+      'SERVES: s5 | Extension works',
+      'SERVES: s6 | 2.6 beta up',
+      'SERVES: s3 | -',
+      'SERVES: s4 | -',
+    ].join('\n'),
+  ],
   'goal-outcome-dropped': [
     ...STALE_GOAL_ANSWERS,
     [

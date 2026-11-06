@@ -68,6 +68,7 @@ export const EMPTY_SESSION_STATUS: SessionStatus = {
   milestones: [],
   nextMilestoneId: 1,
   serves: {},
+  goalRefused: null,
 }
 
 export type OpenStatus = Exclude<SubjectStatus, 'done' | 'dropped'>
@@ -105,6 +106,18 @@ export function isNumberOnly(name: string): boolean {
   const isNumber = (w: string) => isTagged(w) || (hasKind && isBare(w))
 
   return all.some(isNumber) && all.every(w => isNumber(w) || NUMBER_KINDS.has(w))
+}
+
+/** A word that names a version, as "2.5", "0.3.0" or "v1.2". */
+const VERSION = /^v?\d+(\.\d+)+$/
+
+/** Whether `name` and `other` each name a version and share none, as "2.6 beta" and "2.5 published" do. */
+export function namesOtherVersion(name: string, other: string): boolean {
+  const versions = (text: string) => [...words(text)].filter(w => VERSION.test(w)).map(w => w.replace(/^v/, ''))
+  const mine = versions(name)
+  const theirs = new Set(versions(other))
+
+  return mine.length > 0 && theirs.size > 0 && !mine.some(v => theirs.has(v))
 }
 
 export function nameKey(name: string): string {
