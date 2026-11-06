@@ -238,13 +238,13 @@ export function sessionCalls(context: HostContext) {
     )
   }
 
-  function fetchPrsWhenDue(ctx: OmpContext): void {
+  function fetchPrsWhenDue(ctx: OmpContext, isTabShown: boolean): void {
     const id = sessionIdOf(ctx)
     if (prFetches.isFetching(id)) return
     deps.background(
       (async () => {
         const host = hostFor(ctx)
-        const fetching = prFetches.fetchWhenDue(id, await host.read(), () => fetchPrs(host, true))
+        const fetching = prFetches.fetchWhenDue(id, await host.read(), isTabShown, () => fetchPrs(host, true))
         if (!fetching) return
         notifyChanged(id)
         await fetching

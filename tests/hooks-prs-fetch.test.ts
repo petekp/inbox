@@ -4,6 +4,7 @@ import { GH_TIMEOUT_MS } from '../hooks/gh'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 import { PR_POLL_MS } from '../hooks/mod-sessions'
+import { PRS_HIDDEN_REFRESH_MS } from '../hooks/host-prs'
 
 test('opening the PRs tab while another PR fetch runs still finds the branch’s PR', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -264,7 +265,8 @@ test('a session whose only PRs an order ranks fetches them when a turn ends, on 
     await $.turn.complete({ answer: 'Ranked it.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   })
   expect(turnFetched).toBe(true)
-  expect(await fetches40(() => clock.advance(PR_POLL_MS))).toBe(true)
+  expect(await fetches40(() => clock.advance(PR_POLL_MS))).toBe(false)
+  expect(await fetches40(() => clock.advance(PRS_HIDDEN_REFRESH_MS - PR_POLL_MS))).toBe(true)
 
   await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
   await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })

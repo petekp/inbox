@@ -173,10 +173,10 @@ export const ghAnswer = (args: string[]) => {
 export const PRS_STALE_MS = 3 * 60_000
 
 export async function viewAfterFetch(call: (name: string, args: Record<string, unknown>) => Promise<PrReply>) {
-  await call('inbox_view', {})
+  await call('inbox_view', { tab: 'prs' })
   await new Promise(resolve => setTimeout(resolve, 50))
 
-  return call('inbox_view', {})
+  return call('inbox_view', { tab: 'prs' })
 }
 
 type Call = (name: string, args: Record<string, unknown>, meta: Record<string, unknown>) => Promise<unknown>

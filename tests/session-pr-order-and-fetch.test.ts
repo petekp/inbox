@@ -5,7 +5,7 @@ import { emptySession } from '../hooks/session-files'
 import { recorded, withFetchedPrs } from '../hooks/session-presses'
 import { sessionView } from '../hooks/session-view'
 import type { PrView, Session } from '../types'
-import { isPrFetchDue, prFetchTracker } from '../hooks/host-prs'
+import { isPrFetchDue, prFetchTracker, PRS_HIDDEN_REFRESH_MS } from '../hooks/host-prs'
 import { DOT } from '../hooks/rows'
 import { NO_HOLDS } from '../hooks/timing'
 import { applyPrPress } from '../hooks/pr-tab'
@@ -301,17 +301,21 @@ test('an order reads as changed once a ranked open PR is newly blocked, gains a 
   expect(withFetchedPrs(old, { 'acme/app#3': failing }, null, false, 1).ledger.prOrder?.statuses).toBeNull()
 })
 
-test('PRs are due for a fetch 15 seconds after the last once the agent replied since it, and otherwise after 2 minutes', () => {
+test('PRs are due for a fetch 15 seconds after the last once the agent replied since it, and otherwise after 2 minutes while the PRs tab is shown, or 10 minutes while it is not', () => {
   const s = {
     ...emptySession(),
     ledger: { ...emptySession().ledger, prs: [FIX_REF] },
     prViews: { ...emptySession().prViews, views: { [FIX_REF]: BLOCKED_PR } },
   }
   const repliedAt = (at: number | null) => ({ ...s, presence: { ...s.presence, lastReplyAt: at } })
-  expect(isPrFetchDue(repliedAt(1_005_000), 1_000_000, 1_015_000)).toBe(true)
-  expect(isPrFetchDue(repliedAt(1_005_000), 1_000_000, 1_014_000)).toBe(false)
-  expect(isPrFetchDue(repliedAt(999_000), 1_000_000, 1_015_000)).toBe(false)
-  expect(isPrFetchDue(repliedAt(null), 1_000_000, 1_120_000)).toBe(true)
+  expect(isPrFetchDue(repliedAt(1_005_000), 1_000_000, 1_015_000, true)).toBe(true)
+  expect(isPrFetchDue(repliedAt(1_005_000), 1_000_000, 1_015_000, false)).toBe(true)
+  expect(isPrFetchDue(repliedAt(1_005_000), 1_000_000, 1_014_000, true)).toBe(false)
+  expect(isPrFetchDue(repliedAt(999_000), 1_000_000, 1_015_000, true)).toBe(false)
+  expect(isPrFetchDue(repliedAt(null), 1_000_000, 1_120_000, true)).toBe(true)
+  expect(isPrFetchDue(repliedAt(null), 1_000_000, 1_120_000, false)).toBe(false)
+  expect(isPrFetchDue(repliedAt(null), 1_000_000, 1_000_000 + PRS_HIDDEN_REFRESH_MS - 1, false)).toBe(false)
+  expect(isPrFetchDue(repliedAt(null), 1_000_000, 1_000_000 + PRS_HIDDEN_REFRESH_MS, false)).toBe(true)
 })
 
 test('a fetch a press asks for while another runs starts once that one ends, and presses during one fetch share the next', async () => {

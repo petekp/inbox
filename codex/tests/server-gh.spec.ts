@@ -9,14 +9,15 @@ import type { LastAction, Session } from '../../types'
 import { readState } from '../src/state'
 import { run } from '../src/run'
 import { ghAnswer, PRS_STALE_MS, prServer, viewAfterFetch } from './server-fixtures'
+import { PRS_HIDDEN_REFRESH_MS } from '../../hooks/host-prs'
 
 test('a view starts a fetch of the session’s PRs through gh in its folder, and the next view shows them', async () => {
   const { dir, calls, call } = await prServer(ghAnswer)
-  const first = await call('inbox_view', {})
+  const first = await call('inbox_view', { tab: 'prs' })
   assert.equal(first.result.structuredContent.isFetchingPrs, true)
   assert.deepEqual(first.result.structuredContent.prs.drawn, [])
   await new Promise(resolve => setTimeout(resolve, 50))
-  const next = await call('inbox_view', {})
+  const next = await call('inbox_view', { tab: 'prs' })
   const { prs, isFetchingPrs } = next.result.structuredContent
   assert.equal(isFetchingPrs, false)
   assert.deepEqual(
@@ -30,9 +31,9 @@ test('a view starts a fetch of the session’s PRs through gh in its folder, and
 
 test('a view says gh was not found when no gh can start', async () => {
   const { call } = await prServer(() => ({ code: -1, stdout: '', stderr: '' }))
-  await call('inbox_view', {})
+  await call('inbox_view', { tab: 'prs' })
   await new Promise(resolve => setTimeout(resolve, 50))
-  const next = await call('inbox_view', {})
+  const next = await call('inbox_view', { tab: 'prs' })
   assert.equal(next.result.structuredContent.isGhMissing, true)
   assert.deepEqual(next.result.structuredContent.prs.drawn, [])
 })
@@ -41,9 +42,9 @@ test('gh is found in the Homebrew folder when it is not on the PATH', async () =
   const { calls, call } = await prServer(args =>
     args[0] === 'gh' ? { code: -1, stdout: '', stderr: '' } : ghAnswer(['gh', ...args.slice(1)]),
   )
-  await call('inbox_view', {})
+  await call('inbox_view', { tab: 'prs' })
   await new Promise(resolve => setTimeout(resolve, 50))
-  const next = await call('inbox_view', {})
+  const next = await call('inbox_view', { tab: 'prs' })
   assert.equal(next.result.structuredContent.isGhMissing, false)
   assert.equal(next.result.structuredContent.prs.drawn.length, 1)
   assert.ok(calls.some(c => c[0] === '/opt/homebrew/bin/gh' && c[1] === 'pr'))
@@ -177,4 +178,23 @@ test('a fetch GitHub answers with an error keeps the PRs, says so once at the to
   assert.equal(s.prViews.failure ?? null, null)
   assert.equal(feedback(s), '✓ Refreshed PRs')
   assert.equal(r.result.structuredContent.view.prs.refresh, null)
+})
+
+test('a view polls the PRs again after 2 minutes while the PRs tab is shown, and after 10 minutes while another tab is', async () => {
+  let at = 100
+  const { call, calls } = await prServer(ghAnswer, () => at)
+  const queries = () => calls.filter(c => c[0] === 'gh' && c[2] === 'graphql').length
+  await viewAfterFetch(call)
+  assert.equal(queries(), 1)
+  at += PRS_STALE_MS
+  await call('inbox_view', { tab: 'needsYou' })
+  await new Promise(resolve => setTimeout(resolve, 50))
+  assert.equal(queries(), 1)
+  at += PRS_HIDDEN_REFRESH_MS - PRS_STALE_MS
+  await call('inbox_view', { tab: 'needsYou' })
+  await new Promise(resolve => setTimeout(resolve, 50))
+  assert.equal(queries(), 2)
+  at += PRS_STALE_MS
+  await viewAfterFetch(call)
+  assert.equal(queries(), 3)
 })

@@ -26,7 +26,7 @@ export type PanelSource = {
   ): Promise<{ error: string | null; note: 'stale' | null; isUnconfirmed: boolean }>
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
   resume(): Promise<string | null>
-  fetchPrsWhenDue(): void
+  fetchPrsWhenDue(isTabShown: boolean): void
   /** Asks Herdr about the running delegates, when a check is due. */
   checkDelegatesWhenDue(): void
   /**
@@ -186,7 +186,7 @@ export function createPanel(deps: PanelDeps): Panel {
     },
     async start() {
       stops.push(source.onChange(() => void refresh()))
-      const prs = timers.every(() => source.fetchPrsWhenDue(), PRS_CHECK_MS)
+      const prs = timers.every(() => source.fetchPrsWhenDue(ui.tab === 'prs'), PRS_CHECK_MS)
       stops.push(() => timers.stop(prs))
       const delegates = timers.every(() => {
         if (ui.tab === 'overview') source.checkDelegatesWhenDue()

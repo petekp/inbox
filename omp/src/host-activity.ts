@@ -126,7 +126,7 @@ export function activityHandlers(context: HostContext, sessions: SessionCalls) {
       } catch {
         return
       }
-      if (isLinked) fetchPrsWhenDue(ctx)
+      if (isLinked) fetchPrsWhenDue(ctx, false)
       return
     }
     if (event.toolName !== 'ask') return

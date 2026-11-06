@@ -7,30 +7,33 @@ import type { Session } from '../types'
 import type { SessionHost } from './session-host'
 
 const PRS_REFRESH_MS = 120_000
+/** How old the PRs may get while the PRs tab is not shown, where they only feed the counts. */
+export const PRS_HIDDEN_REFRESH_MS = 10 * 60_000
 const NEW_PR_FETCH_MS = 15_000
 
 /**
  * True when the PRs are due for a fetch: none was fetched yet, the last is old, or, once `NEW_PR_FETCH_MS` has passed
  * since the last, a new tracked PR waits for its first or the agent replied since, as after a push that fixed a PR.
+ * The last is old after `PRS_REFRESH_MS` while the PRs tab is shown, and after `PRS_HIDDEN_REFRESH_MS` while it is
+ * not, since every session spends from one GitHub budget and a hidden tab's PRs only feed the counts.
  */
-export function isPrFetchDue(s: Session, lastFetchedAt: number | undefined, now: number): boolean {
+export function isPrFetchDue(s: Session, lastFetchedAt: number | undefined, now: number, isTabShown: boolean): boolean {
   if (lastFetchedAt === undefined) return true
   const hasNewPr = splitLinked(s.prViews, s.ledger).tracked.some(ref => !(ref in s.prViews.views))
   const hasReplySince = (s.presence.lastReplyAt ?? 0) > lastFetchedAt
+  const refreshMs = isTabShown ? PRS_REFRESH_MS : PRS_HIDDEN_REFRESH_MS
 
-  return (
-    now - lastFetchedAt >= PRS_REFRESH_MS || ((hasNewPr || hasReplySince) && now - lastFetchedAt >= NEW_PR_FETCH_MS)
-  )
+  return now - lastFetchedAt >= refreshMs || ((hasNewPr || hasReplySince) && now - lastFetchedAt >= NEW_PR_FETCH_MS)
 }
 
 /** Which sessions have a PR fetch running, and when each last ended. */
 export function prFetchTracker(now: () => number): {
   isFetching(id: string): boolean
   /**
-   * Runs `fetch` when no fetch is running for `id` and `isPrFetchDue` says the PRs are due. Returns the run, which
-   * never rejects, or null when nothing started.
+   * Runs `fetch` when no fetch is running for `id` and `isPrFetchDue` says the PRs are due, with `isTabShown` saying
+   * whether the session's PRs tab is shown. Returns the run, which never rejects, or null when nothing started.
    */
-  fetchWhenDue(id: string, s: Session, fetch: () => Promise<void>): Promise<void> | null
+  fetchWhenDue(id: string, s: Session, isTabShown: boolean, fetch: () => Promise<void>): Promise<void> | null
   /**
    * Runs `fetch` as a press asks: now, or once the fetch running for `id` ends, since that fetch may have read the PRs
    * before the press. Presses during one running fetch share the fetch after it. Returns the run, which never rejects.
@@ -54,8 +57,8 @@ export function prFetchTracker(now: () => number): {
 
   return {
     isFetching: id => running.has(id),
-    fetchWhenDue: (id, s, fetch) =>
-      running.has(id) || !isPrFetchDue(s, endedAt.get(id), now()) ? null : start(id, fetch),
+    fetchWhenDue: (id, s, isTabShown, fetch) =>
+      running.has(id) || !isPrFetchDue(s, endedAt.get(id), now(), isTabShown) ? null : start(id, fetch),
     fetchNow: (id, fetch) => {
       const current = running.get(id)
       if (!current) return start(id, fetch)

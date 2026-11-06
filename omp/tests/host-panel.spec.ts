@@ -52,12 +52,12 @@ test('opening the panel finds gh signed out, and a later fetch that gh answers w
 
   w.execResults.set('gh', { code: 1, stderr: 'no pull requests found for branch "main"' })
   w.clock += 130_000
-  inbox.fetchPrsWhenDue(makeCtx())
+  inbox.fetchPrsWhenDue(makeCtx(), true)
   await settle()
   expect((await inbox.screen(makeCtx())).view.prs.isGhSignedOut).toBe(false)
 })
 
-test('opening the panel finds gh and fetches PRs again only after the refresh interval', async () => {
+test('opening the panel finds gh and fetches PRs again only after the refresh interval, which the hidden PRs tab does not reach at 2 minutes', async () => {
   const inbox = createInbox(pi(), deps())
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
   const ghCalls = (sub: string) => w.execCalls.filter(c => c.args[0] === sub).length
@@ -67,12 +67,16 @@ test('opening the panel finds gh and fetches PRs again only after the refresh in
   expect(ghCalls('pr')).toBe(1)
   expect((await inbox.screen(makeCtx())).isGhMissing).toBe(false)
 
-  inbox.fetchPrsWhenDue(makeCtx())
+  inbox.fetchPrsWhenDue(makeCtx(), true)
   await settle()
   expect(ghCalls('pr')).toBe(1)
 
   w.clock += 130_000
-  inbox.fetchPrsWhenDue(makeCtx())
+  inbox.fetchPrsWhenDue(makeCtx(), false)
+  await settle()
+  expect(ghCalls('pr')).toBe(1)
+
+  inbox.fetchPrsWhenDue(makeCtx(), true)
   await settle()
   expect(ghCalls('pr')).toBe(2)
   expect(ghCalls('--version')).toBe(1)

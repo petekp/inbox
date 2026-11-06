@@ -1701,13 +1701,16 @@ async function fetchPrsNow($: EngineInterface, ask: FetchAsk) {
 }
 
 async function pollPrs($: EngineInterface) {
-  const [away, { ledger, prViews }, findsBranchPr] = await Promise.all([
+  const [away, session, isTabShown, now] = await Promise.all([
     read($, AWAY),
     read($, SESSION),
     isPrsTabShown($),
+    $.clock.now(),
   ])
-  if (away.isAway || (!findsBranchPr && tabPrs(ledger).length === 0 && prViews.branchRef === null)) return
-  await fetchPrs($, findsBranchPr)
+  const { ledger, prViews } = session
+  if (away.isAway || (!isTabShown && tabPrs(ledger).length === 0 && prViews.branchRef === null)) return
+  if (!isPrFetchDue(session, mod.prFetchEndedAt, now, isTabShown)) return
+  await fetchPrs($, isTabShown)
 }
 
 /** Takes a dismissed PR off the tab once its row settles, unless it is still tracked or the Dismiss was undone. */
@@ -2708,8 +2711,9 @@ export const register: Register = on => {
     const after = await read($, SESSION)
     const linksNewPr = prRefs(reply).some(ref => !before.ledger.prs.includes(ref))
     const tracksPrs = tabPrs(after.ledger).length > 0 || after.prViews.branchRef !== null
-    if (linksNewPr || (tracksPrs && isPrFetchDue(after, mod.prFetchEndedAt, now)))
-      void fetchPrs($, await isPrsTabShown($))
+    const isTabShown = await isPrsTabShown($)
+    if (linksNewPr || (tracksPrs && isPrFetchDue(after, mod.prFetchEndedAt, now, isTabShown)))
+      void fetchPrs($, isTabShown)
 
     return r
   })

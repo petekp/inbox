@@ -5715,13 +5715,15 @@ function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now, failure = nul
 
 // ../hooks/host-prs.ts
 var PRS_REFRESH_MS = 120000;
+var PRS_HIDDEN_REFRESH_MS = 10 * 60000;
 var NEW_PR_FETCH_MS = 15000;
-function isPrFetchDue(s, lastFetchedAt, now) {
+function isPrFetchDue(s, lastFetchedAt, now, isTabShown) {
   if (lastFetchedAt === undefined)
     return true;
   const hasNewPr = splitLinked(s.prViews, s.ledger).tracked.some((ref) => !(ref in s.prViews.views));
   const hasReplySince = (s.presence.lastReplyAt ?? 0) > lastFetchedAt;
-  return now - lastFetchedAt >= PRS_REFRESH_MS || (hasNewPr || hasReplySince) && now - lastFetchedAt >= NEW_PR_FETCH_MS;
+  const refreshMs = isTabShown ? PRS_REFRESH_MS : PRS_HIDDEN_REFRESH_MS;
+  return now - lastFetchedAt >= refreshMs || (hasNewPr || hasReplySince) && now - lastFetchedAt >= NEW_PR_FETCH_MS;
 }
 function prFetchTracker(now) {
   const running = new Map;
@@ -5739,7 +5741,7 @@ function prFetchTracker(now) {
   };
   return {
     isFetching: (id) => running.has(id),
-    fetchWhenDue: (id, s, fetch) => running.has(id) || !isPrFetchDue(s, endedAt.get(id), now()) ? null : start(id, fetch),
+    fetchWhenDue: (id, s, isTabShown, fetch) => running.has(id) || !isPrFetchDue(s, endedAt.get(id), now(), isTabShown) ? null : start(id, fetch),
     fetchNow: (id, fetch) => {
       const current = running.get(id);
       if (!current)
@@ -7206,7 +7208,7 @@ function createPanel(deps) {
     },
     async start() {
       stops.push(source.onChange(() => void refresh()));
-      const prs = timers.every(() => source.fetchPrsWhenDue(), PRS_CHECK_MS);
+      const prs = timers.every(() => source.fetchPrsWhenDue(ui.tab === "prs"), PRS_CHECK_MS);
       stops.push(() => timers.stop(prs));
       const delegates = timers.every(() => {
         if (ui.tab === "overview")
@@ -10063,7 +10065,7 @@ function activityHandlers(context, sessions) {
         return;
       }
       if (isLinked)
-        fetchPrsWhenDue(ctx);
+        fetchPrsWhenDue(ctx, false);
       return;
     }
     if (event.toolName !== "ask")
@@ -10434,7 +10436,7 @@ function panelCalls(context, sessions) {
       await wakeAfterSettle(hostFor(ctx)).catch(() => {
         return;
       });
-      fetchPrsWhenDue(ctx);
+      fetchPrsWhenDue(ctx, false);
     },
     showTab: (ctx, tab, holds) => {
       const id = sessionIdOf(ctx);
@@ -10488,7 +10490,7 @@ function panelCalls(context, sessions) {
       return { error: outcome.error, note: outcome.note, isUnconfirmed: outcome.isUnconfirmed };
     },
     resume: async () => inbox.resume(ctx),
-    fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),
+    fetchPrsWhenDue: (isTabShown) => inbox.fetchPrsWhenDue(ctx, isTabShown),
     checkDelegatesWhenDue: () => inbox.checkDelegatesWhenDue(ctx),
     shown: (tab, holds) => inbox.showTab(ctx, tab, holds),
     showedRows: (ids) => inbox.showRows(ctx, ids),
@@ -10698,13 +10700,13 @@ function sessionCalls(context) {
         await change(id, (s) => statusChanged(s, (o) => delegatesSettled(o, states, deps.now())));
     })());
   }
-  function fetchPrsWhenDue(ctx) {
+  function fetchPrsWhenDue(ctx, isTabShown) {
     const id = sessionIdOf(ctx);
     if (prFetches.isFetching(id))
       return;
     deps.background((async () => {
       const host = hostFor(ctx);
-      const fetching = prFetches.fetchWhenDue(id, await host.read(), () => fetchPrs(host, true));
+      const fetching = prFetches.fetchWhenDue(id, await host.read(), isTabShown, () => fetchPrs(host, true));
       if (!fetching)
         return;
       notifyChanged(id);
