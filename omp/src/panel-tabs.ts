@@ -112,7 +112,7 @@ export function tabBar(d: Draw): string {
     findings: screen.view.findings.count,
     prs: screen.view.prs.count,
   }
-  const tabs: TabCell[] = shownTabs(screen.isNextBuild === true).map(t => ({
+  const tabs: TabCell[] = shownTabs().map(t => ({
     ...t,
     tone: isRowTab(t.id) ? t.id : null,
     badge: tabBadge(t.id, counts),

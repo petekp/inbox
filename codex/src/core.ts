@@ -130,7 +130,7 @@ export type View = SessionView & {
  * `serverBuild` is the fingerprint build.mjs stamped into the running server. `serverLoadError` says why a newer
  * build of the server did not load. `isPluginFolderGone` says the server found no installed copy of itself, as after
  * an uninstall. `hooksTrust` says why Codex is not running the inbox's hooks, when Codex's own list of hooks names the
- * cause. `isNextBuild` says the installed copy holds `NEXT_BUILD_MARK`.
+ * cause. `isNextBuild` says the installed copy holds `NEXT_BUILD_MARK`, which adds "next" to the version label.
  */
 export type TabView = View & {
   hooksTrust?: HooksTrust

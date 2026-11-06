@@ -48,10 +48,9 @@ test('/inbox opens on the tab that has rows when the tab it would show is empty'
   expect(await pane.find({ key: 'address-f1' })).toBeDefined()
 })
 
-test('on a next build, at 20 desktop columns the tabs show their symbols with their counts, at 69 their words, and the Status page draws there', async ($, on) => {
+test('at 20 desktop columns the tabs show their symbols with their counts, at 69 their words, and the Status page draws there', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.statusReply =
     'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime\nNEW: working | Plan | being written\nDONE: s2 | written'
   w.surfaces = ['desktop']
@@ -71,10 +70,10 @@ test('on a next build, at 20 desktop columns the tabs show their symbols with th
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 20 } })
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   expect((await tabBar()).tabs.map(t => [t.id, t.label, t.badge])).toEqual(
-    shownTabs(true).map(t => [t.id, t.symbol, t.id === 'needsYou' ? '2' : t.id === 'findings' ? '1' : null]),
+    shownTabs().map(t => [t.id, t.symbol, t.id === 'needsYou' ? '2' : t.id === 'findings' ? '1' : null]),
   )
   await pane.redraw({ ...PANE.props, bodyColumns: 69 })
-  expect((await tabBar()).tabs.map(t => t.label)).toEqual(shownTabs(true).map(t => t.label))
+  expect((await tabBar()).tabs.map(t => t.label)).toEqual(shownTabs().map(t => t.label))
   expect((await tabBar()).isEachFramed).toBe(true)
 
   const { tabs, gap } = await tabBar()
@@ -91,37 +90,35 @@ test('on a next build, at 20 desktop columns the tabs show their symbols with th
   expect(await pane.find({ key: 'select-f3' })).toBeUndefined()
 })
 
-for (const isNextBuild of [false, true])
-  test(`on a ${isNextBuild ? 'next' : 'release'} build, the terminal tabs show their words down to the narrowest pane they fit, docked and inline, and their symbols below it`, async ($, on) => {
-    const tabs = shownTabs(isNextBuild)
-    expect(['✅', '👩‍💻', ...shownTabs(true).map(t => t.symbol)].map(cellWidth)).toEqual([2, 2, 2, 2, 2, 2])
-    mock.clock(on, { now: 1_000_000 })
-    world($, on, [])
-    w.files = isNextBuild ? ['/.next-build'] : []
-    await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-    for (const placement of ['dock', 'inline'] as const) {
-      const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, placement } })
-      const names = async (bodyColumns: number) => {
-        await pane.redraw({ ...PANE.props, placement, bodyColumns })
-        const buttons = await pane.findAll({ type: 'Button' })
+test('the terminal tabs show their words down to the narrowest pane they fit, docked and inline, and their symbols below it', async ($, on) => {
+  const tabs = shownTabs()
+  expect(['✅', '👩‍💻', ...tabs.map(t => t.symbol)].map(cellWidth)).toEqual([2, 2, 2, 2, 2, 2])
+  mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  for (const placement of ['dock', 'inline'] as const) {
+    const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, placement } })
+    const names = async (bodyColumns: number) => {
+      await pane.redraw({ ...PANE.props, placement, bodyColumns })
+      const buttons = await pane.findAll({ type: 'Button' })
 
-        return tabs.flatMap(t => buttons.filter(b => b.key === `tab-${t.id}`).map(b => [t, b.props.label] as const))
-      }
-      expect((await pane.findAll({ type: 'Button' })).some(b => b.key === 'tab-overview')).toBe(isNextBuild)
-      const namings = []
-      for (let bodyColumns = 79; bodyColumns >= 14; bodyColumns--) {
-        const drawn = await names(bodyColumns)
-        expect(drawn.length).toBeGreaterThan(0)
-        const isWords = drawn.every(([t, label]) => label === t.label)
-        if (!isWords) for (const [t, label] of drawn) expect(label).toBe(t.symbol)
-        namings.push(isWords)
-      }
-      expect(namings[0]).toBe(true)
-      expect(namings.at(-1)).toBe(false)
-      expect(namings.indexOf(false)).toBe(namings.lastIndexOf(true) + 1)
-      await pane.unmount()
+      return tabs.flatMap(t => buttons.filter(b => b.key === `tab-${t.id}`).map(b => [t, b.props.label] as const))
     }
-  })
+    expect((await pane.findAll({ type: 'Button' })).some(b => b.key === 'tab-overview')).toBe(true)
+    const namings = []
+    for (let bodyColumns = 79; bodyColumns >= 14; bodyColumns--) {
+      const drawn = await names(bodyColumns)
+      expect(drawn.length).toBeGreaterThan(0)
+      const isWords = drawn.every(([t, label]) => label === t.label)
+      if (!isWords) for (const [t, label] of drawn) expect(label).toBe(t.symbol)
+      namings.push(isWords)
+    }
+    expect(namings[0]).toBe(true)
+    expect(namings.at(-1)).toBe(false)
+    expect(namings.indexOf(false)).toBe(namings.lastIndexOf(true) + 1)
+    await pane.unmount()
+  }
+})
 
 test('a PR that arrives while the Asks tab is empty moves the pane to the PRs tab', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -184,28 +181,26 @@ test('a PR that arrives while the Asks tab is empty moves the pane to the PRs ta
   expect(await pane.find({ text: /Add a greeting CLI/ })).toBeDefined()
 })
 
-for (const isNextBuild of [false, true])
-  test(`on a ${isNextBuild ? 'next' : 'release'} build, the desktop tabs fit one line at the narrowest dock, by their words, and narrower still they wrap, each line within the pane, and a tab on the second line takes its click`, async ($, on) => {
-    const clock = mock.clock(on, { now: 1_000_000 })
-    world($, on, [])
-    w.files = isNextBuild ? ['/.next-build'] : []
-    w.surfaces = ['desktop']
-    await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
-    const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 26 } })
-    const tabBar = async () => await pane.find({ key: 'tabs' })
-    const narrowest = (await tabBar())?.props.props as TabsProps
-    expect(narrowest.tabs.map(t => t.id)).toEqual(shownTabs(isNextBuild).map(t => t.id))
-    if (isNextBuild) expect(narrowest.tabs.map(t => t.label)).toEqual(shownTabs(true).map(t => t.label))
-    expect(tabLines(narrowest.tabs, narrowest.gap, narrowest.columns)).toHaveLength(1)
-    await pane.redraw({ ...PANE.props, bodyColumns: 12 })
-    const { tabs, gap, columns } = (await tabBar())?.props.props as TabsProps
-    const lines = tabLines(tabs, gap, columns)
-    expect(lines.length).toBeGreaterThan(1)
-    for (const line of lines)
-      expect(line.reduce((sum, t) => sum + t.width, gap * (line.length - 1))).toBeLessThanOrEqual(columns)
-    expect((await tabBar())?.props.height).toBe(TAB_HEIGHT * lines.length)
-    const last = lines.at(-1)![0]!
-    await pane.pointer({ type: 'down', x: 1, y: TAB_HEIGHT * (lines.length - 1) + 1, button: 'left', in: 'tabs' })
-    await clock.settle()
-    expect(((await tabBar())?.props.props as TabsProps).shown).toBe(last.id)
-  })
+test('the desktop tabs fit one line at the narrowest dock, by their words, and narrower still they wrap, each line within the pane, and a tab on the second line takes its click', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.surfaces = ['desktop']
+  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 26 } })
+  const tabBar = async () => await pane.find({ key: 'tabs' })
+  const narrowest = (await tabBar())?.props.props as TabsProps
+  expect(narrowest.tabs.map(t => t.id)).toEqual(shownTabs().map(t => t.id))
+  expect(narrowest.tabs.map(t => t.label)).toEqual(shownTabs().map(t => t.label))
+  expect(tabLines(narrowest.tabs, narrowest.gap, narrowest.columns)).toHaveLength(1)
+  await pane.redraw({ ...PANE.props, bodyColumns: 12 })
+  const { tabs, gap, columns } = (await tabBar())?.props.props as TabsProps
+  const lines = tabLines(tabs, gap, columns)
+  expect(lines.length).toBeGreaterThan(1)
+  for (const line of lines)
+    expect(line.reduce((sum, t) => sum + t.width, gap * (line.length - 1))).toBeLessThanOrEqual(columns)
+  expect((await tabBar())?.props.height).toBe(TAB_HEIGHT * lines.length)
+  const last = lines.at(-1)![0]!
+  await pane.pointer({ type: 'down', x: 1, y: TAB_HEIGHT * (lines.length - 1) + 1, button: 'left', in: 'tabs' })
+  await clock.settle()
+  expect(((await tabBar())?.props.props as TabsProps).shown).toBe(last.id)
+})

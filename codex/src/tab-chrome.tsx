@@ -1,5 +1,5 @@
 import { ago } from '../../hooks/text'
-import { HELP_COPY, helpKeys, markLegend, tabLegend } from '../../hooks/help'
+import { HELP_COPY, helpKeys, MARK_LEGEND, tabLegend } from '../../hooks/help'
 import { bannerOf, tabBarBanners } from '../../hooks/banners'
 import { DOT, ROW_COPY } from '../../hooks/rows'
 import { isRowTab, shownTabs, tabBadge } from '../../hooks/tabs'
@@ -15,8 +15,8 @@ import { read } from './tab-read'
 import { pulseInStep, MarkGlyph, legendMarkClass, GroupTitle, Banner } from './tab-parts'
 
 /** Help in place of the tab's body: the keys this tab takes, then what each mark means. */
-export function HelpPage({ v }: { v: View }) {
-  const keys = helpKeys('codex', v.isNextBuild === true, drawnTab(), false)
+export function HelpPage() {
+  const keys = helpKeys('codex', drawnTab(), false)
 
   return (
     <main class="status-page help">
@@ -34,7 +34,7 @@ export function HelpPage({ v }: { v: View }) {
       <section>
         <GroupTitle title={HELP_COPY.marks} count={0} />
         <div class="list">
-          {markLegend(v.isNextBuild === true).map(m => (
+          {MARK_LEGEND.map(m => (
             <div key={m.mark} class="row">
               <span class={legendMarkClass(m)} ref={m.isRunning ? pulseInStep : undefined}>
                 <MarkGlyph text={m.mark} />
@@ -47,7 +47,7 @@ export function HelpPage({ v }: { v: View }) {
       <section>
         <GroupTitle title={HELP_COPY.tabs} count={0} />
         <div class="help-keys">
-          {tabLegend(v.isNextBuild === true).flatMap(t => [
+          {tabLegend().flatMap(t => [
             <b key={`${t.keys}-symbol`}>{t.keys}</b>,
             <span key={`${t.keys}-name`} class="muted">
               {t.does}
@@ -101,7 +101,7 @@ export function TabBar({ v }: { v: View }) {
   return (
     <nav>
       <div class="tabs">
-        {shownTabs(v.isNextBuild === true).map(t => (
+        {shownTabs().map(t => (
           <button
             type="button"
             class={`tab ${shown === t.id ? 'shown' : ''}`}

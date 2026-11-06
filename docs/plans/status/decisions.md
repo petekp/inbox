@@ -46,8 +46,9 @@ Status: built.
 16. **Evals are a cheap check that a failure seen in real use does not come back.** They run at each release, within about 200 Status calls. Fixed rules check what code can measure. A model judge checks what only reading can tell. The judge is first checked against hand-written good and bad pages that the author of its instructions never sees.
     - Reason: the person's daily use of next builds and reports from users are the main signal. The evals only keep a fixed failure fixed. The old Status cases passed 42 of 42 while a live Status kept a goal about a release that had shipped, and listed one piece of work under two names. Each case checked one rule of the Status prompt, most of them in a single exchange.
     - This reverses the decision to check the tab with fixed rules only.
-17. **Only next builds draw the tab.**
-    - Reason: it is not ready to release. A release build treats a saved Status tab as unknown and shows its first tab.
+17. **Every build draws the tab.**
+    - Reason: the tab is ready to release, from 0.4.0. The inbox still opens on Asks when something waits on the person, so updating moves Asks to key 2 and puts the Status on key 1.
+    - This reverses the decision to draw the tab on next builds only while it was not ready.
 18. **The page has no identity line, and the Status call writes no role.**
     - Reason: the line takes space without telling sessions apart. Folder, branch and role are often the same across sessions, and each host already names the session in its own window, tab or title. Nothing else drew the role.
 19. **The head is a title and a one-line description of what the session is focused on now.** The title is short, like a row's name. The page has no live line.

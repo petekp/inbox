@@ -95,21 +95,13 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
   },
 ]
 
-/** Marks only the Status tab draws, which a release build does not show. */
-const STATUS_ONLY_MARKS = new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS['waits-on-other'].mark])
-
-/** The marks a build's Help explains: a release build leaves out the ones only the Status tab draws. */
-export function markLegend(isNextBuild: boolean): readonly LegendEntry[] {
-  return isNextBuild ? MARK_LEGEND : MARK_LEGEND.filter(m => !STATUS_ONLY_MARKS.has(m.mark))
-}
-
 export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', marks: 'Marks', tabs: 'Tabs' } as const
 
 export type HelpKey = { keys: string; does: string }
 
 /** The symbol each tab draws where its name does not fit, with its name, in Help's key layout. */
-export function tabLegend(isNextBuild: boolean): HelpKey[] {
-  return shownTabs(isNextBuild).map(t => ({ keys: t.symbol, does: t.label }))
+export function tabLegend(): HelpKey[] {
+  return shownTabs().map(t => ({ keys: t.symbol, does: t.label }))
 }
 
 /** The key that presses Undo, which no row's selection holds: a closed row settles and the selection moves on. */
@@ -123,8 +115,8 @@ const PR_TAB_HELP_KEYS: HelpKey[] = [{ keys: 'g', does: 'Rank the PRs again, onc
  * button, which the terminal and omp select with j and k. Desktop takes no keys, so its Help lists marks only. Each
  * look binds these keys in its own adapter.
  */
-export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasStatusButtons: boolean): HelpKey[] {
-  const tabKeys = shownTabs(isNextBuild)
+export function helpKeys(look: Look, tab: ShownTab, hasStatusButtons: boolean): HelpKey[] {
+  const tabKeys = shownTabs()
     .map(t => t.hotkey)
     .join(' ')
   const hasRows = isRowTab(tab)
