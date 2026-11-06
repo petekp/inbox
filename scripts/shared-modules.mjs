@@ -38,6 +38,8 @@ export const SHARED = [
   'inbox-text',
   'pr-tab',
   'pr-fetch',
+  'pr-query',
+  'pr-refresh',
   'pr-rows',
   'pr-views',
   'pr-order',

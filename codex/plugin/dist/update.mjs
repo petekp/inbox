@@ -431,6 +431,9 @@ function ago(ms) {
   if (h < 48) return `${h}h ago`;
   return `${Math.round(h / 24)}d ago`;
 }
+function clockTime(ms) {
+  return new Date(ms).toLocaleTimeString(void 0, { hour: "numeric", minute: "2-digit" });
+}
 
 // ../hooks/reply-parse.ts
 var NL3 = "\n";
@@ -1385,19 +1388,15 @@ function inPrOrder(prs, ranked = []) {
   );
 }
 
+// ../hooks/presses.ts
+function isPrRowId(id) {
+  return id.startsWith("pr:") || id.includes(" ");
+}
+
 // ../hooks/open-targets.ts
 function baseName(path) {
   return path.replace(/\/+$/, "").split("/").pop() ?? path;
 }
-
-// ../hooks/press-labels.ts
-function actionId(p) {
-  return p.action === "step" ? `step-${p.step}` : p.action;
-}
-function capitalized(text2) {
-  return text2.charAt(0).toUpperCase() + text2.slice(1);
-}
-var ISSUE_LABEL = "File issue";
 
 // ../hooks/help-steps.ts
 function helpLabel(help) {
@@ -1431,6 +1430,15 @@ function stepIconKind(step) {
   const first = step.step[0]?.kind;
   return first === "copy" || first === "terminal" ? "copy" : first === "open" || first === "link" ? "open" : void 0;
 }
+
+// ../hooks/press-labels.ts
+function actionId(p) {
+  return p.action === "step" ? `step-${p.step}` : p.action;
+}
+function capitalized(text2) {
+  return text2.charAt(0).toUpperCase() + text2.slice(1);
+}
+var ISSUE_LABEL = "File issue";
 
 // ../hooks/status-goal-ops.ts
 var RESTATED_SHARE = 0.8;
@@ -2249,6 +2257,216 @@ function outcomeLabel(c) {
   return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
 }
 
+// ../hooks/feedback.ts
+function pressUnderWaySince(f) {
+  if (f?.is === "working" || f?.is === "sending") return f.at;
+  return f?.is === "local" && f.result.state === "pending" ? f.result.at : null;
+}
+function feedbackOf(id, last, note, turns, now, reportedAt) {
+  const result = last?.result;
+  if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
+    return { is: "note", note: note.note, at: note.at };
+  if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) return { is: "local", result };
+  if (!last || last.kind === "local") return null;
+  const delivery = last.delivery;
+  const pending = pendingDeliveryAt(last, now);
+  if (pending === "queued" || pending === "unconfirmed")
+    return { is: pending, label: deliveryLabel(pending, last.text, last.reply), at: last.at };
+  if (delivery?.state === "failed") return { is: "notSent", reason: delivery.reason, retry: retryOf(id, last) };
+  const isAwaiting = isAwaitingReply(last, turns);
+  const isUnreported = last.action === "compare" && !(reportedAt !== void 0 && reportedAt >= last.at);
+  const isPastLimit = now - last.at >= COMPARE_LIMIT_MS;
+  const working = WORKING_LABELS[last.action];
+  if (last.kind === "talk" && working && (isAwaiting || isUnreported && !isPastLimit))
+    return { is: "working", label: working, at: last.at };
+  if (pending === "sending")
+    return { is: "sending", label: deliveryLabel("sending", last.text, last.reply), at: last.at };
+  if (isUnreported) return { is: "noComparison", at: last.at };
+  if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last)) return { is: "stillOpen", at: last.at };
+  const isHandedStep = last.kind === "handoff" && last.action.startsWith("step-");
+  return {
+    is: "done",
+    label: deliveryLabel("arrived", doneLabel(last), last.reply),
+    at: last.at,
+    ...isHandedStep ? { isHandedStep: true } : {},
+    ...STILL_WAITING_AFTER.has(last.action) ? { isStillWaiting: true } : {}
+  };
+}
+function feedbackIn(id, state, last, note, turns, now, reportedAt) {
+  if (state.is === "settled") return null;
+  const f = feedbackOf(id, last, note, turns, now, reportedAt);
+  if (state.is !== "held") return f;
+  const isFailedReply = f?.is === "notSent" && last?.action === "type" && last.at >= state.at;
+  return f?.is === "note" || isFailedReply ? f : { is: "closed", label: state.label, at: state.at };
+}
+function pressFeedbackIn(id, state, last, turns, now, reportedAt) {
+  return feedbackIn(id, state, last, void 0, turns, now, reportedAt);
+}
+var fixLabel = (f) => f.kind === "opportunity" ? "Do it" : "Fix";
+var WORKING_LABELS = {
+  explain: "Explaining\u2026",
+  compare: "Comparing\u2026",
+  discuss: "Discussing\u2026",
+  "thread-discuss": "Discussing\u2026",
+  "thread-draft": "Drafting a reply\u2026",
+  "pr-rank-again": "Ranking\u2026"
+};
+var DONE_LABELS = {
+  address: () => "Handed off",
+  issue: () => "Asked to file",
+  discuss: () => "Discussed",
+  explain: () => "Explained",
+  compare: () => "Compared",
+  dismiss: () => "Dismissed",
+  type: () => "Replied",
+  "thread-address": () => "Addressed",
+  "thread-discuss": () => "Discussed",
+  "thread-draft": () => "Drafted a reply",
+  "pr-conflicts": () => "Asked to resolve conflicts",
+  "pr-merge": () => "Asked to merge",
+  "pr-address-all": (text2) => text2.replace(/^Address\b/, "Addressed"),
+  "check-fix": () => "Asked to fix",
+  "pr-rank-again": () => "Ranked"
+};
+function doneLabel(last) {
+  return DONE_LABELS[last.action]?.(last.text) ?? last.text;
+}
+var STILL_WAITING_AFTER = /* @__PURE__ */ new Set(["check-fix"]);
+function isPressOut(f) {
+  return f?.is === "working" || f?.is === "sending" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
+}
+function pressOutAction(last, f) {
+  if (!isPressOut(f)) return null;
+  return (f?.is === "local" ? f.result.action : last?.action) ?? null;
+}
+function outAction(last, f) {
+  const action = f?.is === "unconfirmed" ? null : pressOutAction(last, f);
+  return action === "type" ? null : action;
+}
+function isAgain(last, action, isOut) {
+  return isRepeatOf(last, action) && (!isOut || last?.isRepeat === true);
+}
+
+// ../hooks/gh.ts
+var GH_TIMEOUT_MS = 2e4;
+var UNSTARTABLE_CODE = -1;
+var TIMED_OUT_CODE = -2;
+
+// ../hooks/pr-fetch.ts
+var MAX_PRS = 12;
+var MAX_ORDERED_PRS = 30;
+var CLOSED_PR_REFRESH_MS = 60 * 6e4;
+var LIMIT_RETRY_MS = 5 * 6e4;
+function tabPrs(links) {
+  const order = links.prOrder;
+  const ranked = (order?.refs ?? []).filter((ref) => !links.prs.includes(ref) && !order?.dismissed.includes(ref));
+  return [...links.prs, ...ranked];
+}
+function itemPrSteps(item, prState, linked) {
+  const refs = prState.branchRef ? [...linked, prState.branchRef] : linked;
+  return prSteps(
+    item,
+    refs.map((ref) => ({ ref, url: prState.views[ref]?.url ?? null }))
+  );
+}
+function isLeftOut(prState, ref) {
+  const view = prState.views[ref];
+  return view !== void 0 && !isKeptPr(view);
+}
+function splitLinked(prState, links) {
+  const ranked = new Set(links.prOrder?.refs ?? []);
+  const shown = tabPrs(links).filter((ref) => !isLeftOut(prState, ref));
+  const unranked = shown.filter((ref) => !ranked.has(ref));
+  const older = unranked.slice(0, Math.max(0, unranked.length - MAX_PRS));
+  return { tracked: shown.filter((ref) => !older.includes(ref)), older };
+}
+function olderPrsText(prState, links) {
+  const { older } = splitLinked(prState, links);
+  if (older.length === 0) return null;
+  const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
+  return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
+}
+var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds`;
+
+// ../hooks/pr-press.ts
+var RERUN_LABEL = "Re-run";
+var PR_FIX_LABELS = {
+  "pr-conflicts": "Resolve conflicts",
+  "check-fix": "Fix"
+};
+var PR_READ_FIRST_LABELS = {
+  ...PR_FIX_LABELS,
+  "check-rerun": RERUN_LABEL
+};
+function lastPressOf(presses, rowId) {
+  const last = presses.lastActions[rowId];
+  const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
+  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
+}
+function withOut(row, actions) {
+  return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
+}
+
+// ../hooks/pr-refresh.ts
+var PR_REFRESH_LABEL = "Refresh PRs";
+function fetchFailureWords(f) {
+  switch (f.kind) {
+    case "limit":
+      return f.resetsAt === null ? "GitHub's limit is used up" : `GitHub's limit resets at ${clockTime(f.resetsAt)}`;
+    case "unreachable":
+      return "could not reach GitHub";
+    case "timed-out":
+      return GH_TIMED_OUT_TEXT;
+    case "error":
+      return f.text;
+  }
+}
+function tabWideProblem(prs) {
+  if (prs.isGhMissing) return "gh was not found";
+  if (prs.isGhSignedOut) return "gh is not signed in";
+  return prs.failure ? fetchFailureWords(prs.failure) : null;
+}
+function unreadPrs(prs, links) {
+  const { tracked } = splitLinked(prs, links);
+  const refs = prs.branchRef && !tracked.includes(prs.branchRef) ? [...tracked, prs.branchRef] : tracked;
+  return refs.flatMap((ref) => {
+    const view = prs.views[ref];
+    if (view?.error) return [{ ref, why: view.error, hasBlock: true }];
+    const why = view ? null : prs.unread?.[ref];
+    return why ? [{ ref, why, hasBlock: false }] : [];
+  });
+}
+function refreshProblem(prs, links) {
+  const tabWide = tabWideProblem(prs);
+  if (tabWide) return tabWide;
+  const unread = unreadPrs(prs, links);
+  const [only] = unread;
+  if (!only) return null;
+  if (unread.length === 1)
+    return `#${parseRef(only.ref).number} could not be read${only.hasBlock ? "" : `: ${only.why}`}`;
+  const numbers = unread.map((u) => `#${parseRef(u.ref).number}`);
+  const last = numbers.pop();
+  return `${numbers.join(", ")} and ${last} could not be read`;
+}
+function prRefreshView(prs, links, presses, shownSince) {
+  const problem = refreshProblem(prs, links);
+  const row = lastPressOf(presses, PR_REFRESH_ID);
+  const feedback = pressFeedbackIn(PR_REFRESH_ID, { is: "open" }, row.last, presses.turns, presses.now);
+  const isMadeGood = problem === null && feedback?.is === "local" && feedback.result.state === "failed";
+  const isPressShown = feedback !== null && !isMadeGood && row.last !== void 0 && (row.pressing !== null || isShownSince(row.last.at, shownSince));
+  if (problem === null && !isPressShown) return null;
+  return {
+    text: problem !== null && tabWideProblem(prs) === null ? problem : null,
+    actions: problem === null ? [] : prRefreshActions(row),
+    showsPress: isPressShown
+  };
+}
+function prRefreshActions(row) {
+  return withOut(row, [
+    { press: { action: "pr-refresh" }, label: PR_REFRESH_LABEL, kind: "local", emphasis: "normal", icon: "retry" }
+  ]);
+}
+
 // ../hooks/pr-rows.ts
 function prThreadId(pr, t) {
   return threadRowId(pr.ref, t.id);
@@ -2263,6 +2481,7 @@ function prMarkId(ref) {
   return `pr:${ref}`;
 }
 var RANK_AGAIN_ID = "pr:order";
+var PR_REFRESH_ID = "pr:refresh";
 function threadSentIn(lastActions) {
   return (pr, t) => {
     const last = lastActions[prThreadId(pr, t)];
@@ -2554,45 +2773,6 @@ function linkDialogs(s) {
   return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
 }
 
-// ../hooks/gh.ts
-var GH_TIMEOUT_MS = 2e4;
-var UNSTARTABLE_CODE = -1;
-var TIMED_OUT_CODE = -2;
-
-// ../hooks/pr-fetch.ts
-var MAX_PRS = 12;
-var MAX_ORDERED_PRS = 30;
-function tabPrs(links) {
-  const order = links.prOrder;
-  const ranked = (order?.refs ?? []).filter((ref) => !links.prs.includes(ref) && !order?.dismissed.includes(ref));
-  return [...links.prs, ...ranked];
-}
-function itemPrSteps(item, prState, linked) {
-  const refs = prState.branchRef ? [...linked, prState.branchRef] : linked;
-  return prSteps(
-    item,
-    refs.map((ref) => ({ ref, url: prState.views[ref]?.url ?? null }))
-  );
-}
-function isLeftOut(prState, ref) {
-  const view = prState.views[ref];
-  return view !== void 0 && !isKeptPr(view);
-}
-function splitLinked(prState, links) {
-  const ranked = new Set(links.prOrder?.refs ?? []);
-  const shown = tabPrs(links).filter((ref) => !isLeftOut(prState, ref));
-  const unranked = shown.filter((ref) => !ranked.has(ref));
-  const older = unranked.slice(0, Math.max(0, unranked.length - MAX_PRS));
-  return { tracked: shown.filter((ref) => !older.includes(ref)), older };
-}
-function olderPrsText(prState, links) {
-  const { older } = splitLinked(prState, links);
-  if (older.length === 0) return null;
-  const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
-  return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
-}
-var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds`;
-
 // ../hooks/pr-views.ts
 var PR_DISMISSED_LABEL = "Dismissed";
 var PR_MERGED_LABEL = "Merged";
@@ -2634,120 +2814,6 @@ function drawnPrs(prState, links, lastActions, placing) {
   });
   let rank = 0;
   return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
-}
-
-// ../hooks/presses.ts
-function isPrRowId(id) {
-  return id.startsWith("pr:") || id.includes(" ");
-}
-
-// ../hooks/feedback.ts
-function pressUnderWaySince(f) {
-  if (f?.is === "working" || f?.is === "sending") return f.at;
-  return f?.is === "local" && f.result.state === "pending" ? f.result.at : null;
-}
-function feedbackOf(id, last, note, turns, now, reportedAt) {
-  const result = last?.result;
-  if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
-    return { is: "note", note: note.note, at: note.at };
-  if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) return { is: "local", result };
-  if (!last || last.kind === "local") return null;
-  const delivery = last.delivery;
-  const pending = pendingDeliveryAt(last, now);
-  if (pending === "queued" || pending === "unconfirmed")
-    return { is: pending, label: deliveryLabel(pending, last.text, last.reply), at: last.at };
-  if (delivery?.state === "failed") return { is: "notSent", reason: delivery.reason, retry: retryOf(id, last) };
-  const isAwaiting = isAwaitingReply(last, turns);
-  const isUnreported = last.action === "compare" && !(reportedAt !== void 0 && reportedAt >= last.at);
-  const isPastLimit = now - last.at >= COMPARE_LIMIT_MS;
-  const working = WORKING_LABELS[last.action];
-  if (last.kind === "talk" && working && (isAwaiting || isUnreported && !isPastLimit))
-    return { is: "working", label: working, at: last.at };
-  if (pending === "sending")
-    return { is: "sending", label: deliveryLabel("sending", last.text, last.reply), at: last.at };
-  if (isUnreported) return { is: "noComparison", at: last.at };
-  if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last)) return { is: "stillOpen", at: last.at };
-  const isHandedStep = last.kind === "handoff" && last.action.startsWith("step-");
-  return {
-    is: "done",
-    label: deliveryLabel("arrived", doneLabel(last), last.reply),
-    at: last.at,
-    ...isHandedStep ? { isHandedStep: true } : {},
-    ...STILL_WAITING_AFTER.has(last.action) ? { isStillWaiting: true } : {}
-  };
-}
-function feedbackIn(id, state, last, note, turns, now, reportedAt) {
-  if (state.is === "settled") return null;
-  const f = feedbackOf(id, last, note, turns, now, reportedAt);
-  if (state.is !== "held") return f;
-  const isFailedReply = f?.is === "notSent" && last?.action === "type" && last.at >= state.at;
-  return f?.is === "note" || isFailedReply ? f : { is: "closed", label: state.label, at: state.at };
-}
-function pressFeedbackIn(id, state, last, turns, now, reportedAt) {
-  return feedbackIn(id, state, last, void 0, turns, now, reportedAt);
-}
-var fixLabel = (f) => f.kind === "opportunity" ? "Do it" : "Fix";
-var WORKING_LABELS = {
-  explain: "Explaining\u2026",
-  compare: "Comparing\u2026",
-  discuss: "Discussing\u2026",
-  "thread-discuss": "Discussing\u2026",
-  "thread-draft": "Drafting a reply\u2026",
-  "pr-rank-again": "Ranking\u2026"
-};
-var DONE_LABELS = {
-  address: () => "Handed off",
-  issue: () => "Asked to file",
-  discuss: () => "Discussed",
-  explain: () => "Explained",
-  compare: () => "Compared",
-  dismiss: () => "Dismissed",
-  type: () => "Replied",
-  "thread-address": () => "Addressed",
-  "thread-discuss": () => "Discussed",
-  "thread-draft": () => "Drafted a reply",
-  "pr-conflicts": () => "Asked to resolve conflicts",
-  "pr-merge": () => "Asked to merge",
-  "pr-address-all": (text2) => text2.replace(/^Address\b/, "Addressed"),
-  "check-fix": () => "Asked to fix",
-  "pr-rank-again": () => "Ranked"
-};
-function doneLabel(last) {
-  return DONE_LABELS[last.action]?.(last.text) ?? last.text;
-}
-var STILL_WAITING_AFTER = /* @__PURE__ */ new Set(["check-fix"]);
-function isPressOut(f) {
-  return f?.is === "working" || f?.is === "sending" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
-}
-function pressOutAction(last, f) {
-  if (!isPressOut(f)) return null;
-  return (f?.is === "local" ? f.result.action : last?.action) ?? null;
-}
-function outAction(last, f) {
-  const action = f?.is === "unconfirmed" ? null : pressOutAction(last, f);
-  return action === "type" ? null : action;
-}
-function isAgain(last, action, isOut) {
-  return isRepeatOf(last, action) && (!isOut || last?.isRepeat === true);
-}
-
-// ../hooks/pr-press.ts
-var RERUN_LABEL = "Re-run";
-var PR_FIX_LABELS = {
-  "pr-conflicts": "Resolve conflicts",
-  "check-fix": "Fix"
-};
-var PR_READ_FIRST_LABELS = {
-  ...PR_FIX_LABELS,
-  "check-rerun": RERUN_LABEL
-};
-function lastPressOf(presses, rowId) {
-  const last = presses.lastActions[rowId];
-  const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
-  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
-}
-function withOut(row, actions) {
-  return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
 }
 
 // ../hooks/pr-order.ts
@@ -3217,6 +3283,13 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
       shownSince
     ),
     isGhSignedOut: s.prViews.isGhSignedOut === true,
+    failure: s.prViews.failure ?? null,
+    refresh: prRefreshView(
+      { ...s.prViews, isGhMissing: s.prViews.isGhMissing === true },
+      s.ledger,
+      { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
+      shownSince
+    ),
     pressOutSince
   };
 }

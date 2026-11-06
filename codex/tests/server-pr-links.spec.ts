@@ -7,7 +7,7 @@ import { makeServer } from '../src/server'
 import { POLL_MS, SETTLE_WINDOW_MS } from '../src/settle'
 import { readState, updateState } from '../src/state'
 import { fakeRunner, tempDir } from './helpers'
-import { GH_VIEW, ghAnswer, prServer, viewAfterFetch } from './server-fixtures'
+import { GH_VIEW, ghAnswer, prsAnswer, prServer, viewAfterFetch } from './server-fixtures'
 import type { PrReply, PrView } from './server-fixtures'
 
 test('dismissing a linked PR unlinks it and settles its block as a dismissed row, which folds when the settle window ends unless the person is still using the list or the tab still shows its Undo, and its view goes once the tab shows another tab', async () => {
@@ -83,10 +83,10 @@ test('an order_prs call ranks the PRs it names without linking them, the next vi
     })
   }
   const { dir, call } = await prServer(
-    args => {
-      const named = args[0] === 'gh' && args[1] === 'pr' ? args.find(a => /^\d+$/.test(a)) : undefined
-      return named ? { code: 0, stdout: view(Number(named)), stderr: '' } : ghAnswer(args)
-    },
+    args =>
+      args[0] === 'gh' && args[2] === 'graphql'
+        ? { code: 0, stdout: prsAnswer(args, view), stderr: '' }
+        : ghAnswer(args),
     () => at,
   )
   const set = (await call('order_prs', {

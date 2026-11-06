@@ -7,6 +7,7 @@ import {
   PR_TONES,
   checkRowText,
   RANK_AGAIN_ID,
+  PR_REFRESH_ID,
   prCheckId,
   isBlockPressShown,
   prBlockRows,
@@ -22,6 +23,7 @@ import { prRankText } from '../../hooks/pr-order'
 import type { PrRowMark } from '../../hooks/pr-rows'
 import type { PrCheck, PrThread } from '../../types'
 import type { PrOrderView } from '../../hooks/pr-order'
+import type { PrRefreshView } from '../../hooks/pr-refresh'
 import { commentParts, readiness } from '../../hooks/prs'
 import { capitalized } from '../../hooks/press-labels'
 import { cellWidth, clipLabel } from '../../hooks/text'
@@ -117,16 +119,18 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
     tone: mark.tone ?? (mark.isRunning || !mark.text ? 'sep' : 'dim'),
   })
   const out: Entry[] = []
-  const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut }
+  const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut, failure: prs.failure }
   if (prs.drawn.length === 0) {
     const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, ...ghState }, 'session')
     return [
       { kind: 'note', text: empty.title, isStrong: true },
       { kind: 'note', text: empty.hint, isWhole: true },
+      ...(prs.refresh ? refreshEntries(screen, prs.refresh, now) : []),
     ]
   }
   const ghNotice = ghNoticeOf(ghState)
   if (ghNotice) out.push({ kind: 'banner', banner: bannerOf(ghNotice.kind, ghNotice.text) })
+  if (prs.refresh) out.push(...refreshEntries(screen, prs.refresh, now))
   if (prs.order) out.push(...orderEntries(screen, prs.order, now))
   for (const d of prs.drawn) {
     const { pr, state } = d
@@ -227,6 +231,27 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
   if (prs.olderText) out.push({ kind: 'note', text: prs.olderText })
 
   return out
+}
+
+/** The line under the notices while a PR could not be read: which ones, Refresh PRs, and its press status. */
+function refreshEntries(screen: PanelScreen, refresh: PrRefreshView, now: number): Entry[] {
+  const buttons = prButtons(refresh.actions)
+
+  return [
+    {
+      kind: 'row',
+      line: {
+        ...blankLine(PR_REFRESH_ID),
+        lead: null,
+        title: refresh.text ?? '',
+        feedback: refresh.showsPress ? pressFeedback(screen, PR_REFRESH_ID, now) : null,
+        buttons,
+        isStatic: buttons.length === 0,
+        isWaiting: false,
+        isTabButtons: buttons.length > 0,
+      },
+    },
+  ]
 }
 
 /** The order's title, the agent's reason under it, and the changed line with Rank again and its press status. */

@@ -4,7 +4,7 @@ import type { PrActionId, RowPress } from './presses'
 import { isAgain, outAction, pressFeedbackIn, pressOutAction } from './feedback'
 import type { ActionEmphasis } from './rows'
 import type { PressState } from './feedback'
-import { checkRowId, prMarkId, RANK_AGAIN_ID, threadRowId } from './pr-rows'
+import { checkRowId, prMarkId, PR_REFRESH_ID, RANK_AGAIN_ID, threadRowId } from './pr-rows'
 import { failedSibling, isSameRun, runOf } from './pr-checks'
 import { checkKey } from './prs'
 
@@ -13,16 +13,15 @@ export const PR_REFRESH: Effect = { kind: 'refresh-prs', name: 'PRs' }
 
 export type PrPress =
   | { action: 'thread-address' | 'thread-draft' | 'thread-discuss' | 'thread-open'; ref: string; thread: string }
-  | {
-      action: 'pr-conflicts' | 'pr-address-all' | 'pr-merge' | 'pr-open' | 'pr-refresh' | 'pr-dismiss' | 'pr-undo'
-      ref: string
-    }
+  | { action: 'pr-conflicts' | 'pr-address-all' | 'pr-merge' | 'pr-open' | 'pr-dismiss' | 'pr-undo'; ref: string }
   /** `check` is the check's `checkKey`. */
   | { action: 'check-fix' | 'check-rerun' | 'log'; ref: string; check: string }
+  /** The tab's own presses, on its lines above the PR blocks. */
   | { action: 'pr-rank-again' }
+  | { action: 'pr-refresh' }
 
 export function isPrPress(p: RowPress | PrPress): p is PrPress {
-  return 'ref' in p || p.action === 'pr-rank-again'
+  return 'ref' in p || p.action === 'pr-rank-again' || p.action === 'pr-refresh'
 }
 
 /**
@@ -117,8 +116,6 @@ export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
     }
     case 'pr-open':
       return prPageEffect(pr)
-    case 'pr-refresh':
-      return PR_REFRESH
     case 'log': {
       const check = pr.checks.find(c => checkKey(c) === p.check)
       return check ? logEffect(pr, check) : null
@@ -130,6 +127,7 @@ export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
 
 function prRowId(p: PrPress): string {
   if (p.action === 'pr-rank-again') return RANK_AGAIN_ID
+  if (p.action === 'pr-refresh') return PR_REFRESH_ID
   if ('check' in p) return checkRowId(p.ref, p.check)
   if ('thread' in p) return threadRowId(p.ref, p.thread)
 

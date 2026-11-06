@@ -33,6 +33,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/mod-records.ts` | Mod only. What the mod tracks about tool calls, subagents, workflows and Herdr delegates. That includes which calls ran, and the child a finished Agent or Workflow call ended or started. Also the text a permission dialog shows for a tool call. |
 | `hooks/mod-saves.ts` | Mod only. Saves to the engine store and reads of saved sessions. A save retries while another process holds the store's lock. When a write to a conversation off screen meets the lock through every retry, the changed session is held in memory and tried again in the background, for up to 10 minutes. Later writes and reads of that session start from it, until a newer save of the conversation lands. |
 | `hooks/mod-sessions.ts` | Mod only. Which conversation a session write belongs to, and the per-conversation queues for updates and Status calls. |
+| `hooks/mod-pr-shared.ts` | Mod only. `prSharedStore`: the views and the limit error every Claude Code session shares, in one engine store key. |
 | `hooks/mod-state.ts` | Mod only. The values the hooks module keeps between events, in three holders: `paneState` for the drawn pane, `sessionState` for the conversation the session runs, and `mod` for the rest of the process. A reload that runs the modules again resets them. |
 | `hooks/tabs-client.tsx` | Mod only. A Client region for the desktop tab bar, so each tab takes clicks over its whole shape. |
 | `hooks/row-client.tsx` | Mod only. A Client region for a closed row in the desktop pane. |

@@ -66,6 +66,8 @@ import { CATCH_UP_CALL, runUpdates } from './session-host'
 import { heardCall } from './call-record'
 import { fetchPrs as fetchSessionPrs, isPrFetchDue } from './host-prs'
 import { tabPrs } from './pr-fetch'
+import type { FetchAsk } from './pr-fetch'
+import { prSharedStore } from './mod-pr-shared'
 import { refreshStatus, type StatusCall, type StatusRecords, type RecordFiles } from './status-records'
 import { startPress, wakeAfterSettle as wakeSessionAfterSettle } from './host-press'
 import type { Ask, CatchUpReply, SessionHost } from './session-host'
@@ -788,6 +790,7 @@ function sessionHost(
     perform: async (_s, effect) => (opts.surface ? perform($, effect, opts.surface) : COPY_FAILURES['no-surface']),
     refreshPrs: opts.refreshPrs,
     gh: {
+      shared: prSharedStore(saveEngine($)),
       find: async () => {
         if (ghFound === undefined) ghFound = (await isGhUnstartable($)) ? null : 'gh'
         return ghFound
@@ -1000,7 +1003,7 @@ function hostOf($: EngineInterface, owner: Owner, surface?: UiPressArgument['sur
       void commit($, owner, s =>
         s.prViews.isGhMissing === isGhMissing ? s : { ...s, prViews: { ...s.prViews, isGhMissing } },
       ).catch(() => undefined),
-    refreshPrs: () => fetchPrs($, true),
+    refreshPrs: () => fetchPrs($, true, true),
   })
 }
 
@@ -1665,32 +1668,34 @@ function markFetching($: EngineInterface, isFetching: boolean) {
  * Fetches the session's PRs, one fetch at a time. A fetch asked for while one runs follows it, and finds the
  * branch's PR when any of the asks wanted it.
  */
-function fetchPrs($: EngineInterface, findsBranchPr: boolean): Promise<void> {
-  if (mod.nextFetchFindsBranchPr !== null) {
-    mod.nextFetchFindsBranchPr ||= findsBranchPr
+function fetchPrs($: EngineInterface, findsBranchPr: boolean, isPress = false): Promise<void> {
+  const waiting = mod.nextFetch
+  if (waiting) {
+    waiting.findsBranchPr ||= findsBranchPr
+    waiting.isPress ||= isPress
     return mod.fetchingPrs
   }
-  mod.nextFetchFindsBranchPr = findsBranchPr
+  mod.nextFetch = { findsBranchPr, isPress }
   mod.fetchingPrs = mod.fetchingPrs
     .then(() => {
-      const finds = mod.nextFetchFindsBranchPr ?? false
-      mod.nextFetchFindsBranchPr = null
-      return fetchPrsNow($, finds)
+      const ask = mod.nextFetch ?? { findsBranchPr: false, isPress: false }
+      mod.nextFetch = null
+      return fetchPrsNow($, ask)
     })
     .catch(() => undefined)
 
   return mod.fetchingPrs
 }
 
-async function fetchPrsNow($: EngineInterface, findsBranchPr: boolean) {
+async function fetchPrsNow($: EngineInterface, ask: FetchAsk) {
   const owner = currentOwner()
   await markFetching($, true)
   try {
-    await fetchSessionPrs(hostOf($, owner), findsBranchPr)
+    await fetchSessionPrs(hostOf($, owner), ask.findsBranchPr, ask.isPress)
   } finally {
     mod.prFetchEndedAt = await $.clock.now()
     // Fetches run one at a time across conversations, so the drawn session reads whether one still runs.
-    await markFetching($, mod.nextFetchFindsBranchPr !== null)
+    await markFetching($, mod.nextFetch !== null)
   }
   void followNewRows($).catch(() => undefined)
 }
@@ -3147,6 +3152,7 @@ export const register: Register = on => {
       }),
     }))
     const prOrderKeys = (view.prs.order?.changed?.actions ?? []).map(a => prKeyAction(a, 'order'))
+    const prRefreshKeys = (view.prs.refresh?.actions ?? []).map(a => prKeyAction(a, 'prs'))
     const rows: Record<Tab, Row[]> = {
       needsYou: lists.byTab.needsYou,
       findings: lists.byTab.findings,
@@ -3406,6 +3412,7 @@ export const register: Register = on => {
       Button,
       view,
       prOrderKeys,
+      prRefreshKeys,
       prGroups,
       section,
       undoPlace,

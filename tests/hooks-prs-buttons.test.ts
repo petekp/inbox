@@ -202,16 +202,21 @@ test('a PR’s Dismiss settles its block until its Undo ends, with Undo that bri
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
 
   expect(await pane.find({ text: 'Last refresh failed: HTTP 502' })).toBeDefined()
-  expect((await pane.find({ key: 'refresh-acme/greet#13' }))?.props.label).toBe('Refresh PRs')
+  expect(await pane.find({ text: '#13 could not be read' })).toBeDefined()
+  expect((await pane.find({ key: 'refresh-prs' }))?.props.label).toBe('Refresh PRs')
+  expect(await pane.find({ key: 'refresh-acme/greet#13' })).toBeUndefined()
+  await pane.press({ key: 'refresh-prs' })
+  await clock.settle()
+  expect(await pane.find({ text: 'Could not refresh PRs: #13 could not be read' })).toBeDefined()
   branchFails = undefined
   branchHold = true
-  const lookups = () => w.ran.filter(argv => argv[0] === 'gh' && argv.includes('view')).length
+  const lookups = () => w.ran.filter(argv => argv[0] === 'gh' && argv.includes('graphql')).length
   const before = lookups()
-  const refreshing = pane.press({ key: 'refresh-acme/greet#13' })
+  const refreshing = pane.press({ key: 'refresh-prs' })
   await clock.settle()
   expect(await pane.find({ text: 'Last refresh failed: HTTP 502' })).toBeDefined()
   expect(await pane.find({ text: 'Refreshing PRs…' })).toBeDefined()
-  expect(await pane.find({ key: 'refresh-acme/greet#13' })).toBeDefined()
+  expect(await pane.find({ key: 'refresh-prs' })).toBeDefined()
   branchHold = false
   releaseBranch()
   await refreshing
@@ -219,6 +224,6 @@ test('a PR’s Dismiss settles its block until its Undo ends, with Undo that bri
   expect(lookups()).toBe(before + 1)
   expect(await pane.find({ text: '✓ Refreshed PRs' })).toBeDefined()
   expect(await pane.find({ text: /Last refresh failed/ })).toBeUndefined()
-  expect(await pane.find({ key: 'refresh-acme/greet#13' })).toBeUndefined()
+  expect(await pane.find({ key: 'refresh-prs' })).toBeUndefined()
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
 })

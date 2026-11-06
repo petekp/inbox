@@ -1,4 +1,4 @@
-import { splitLinked, fetchTracked, GH_TIMED_OUT_TEXT } from './pr-fetch'
+import { splitLinked, fetchTracked, GH_TIMED_OUT_TEXT, isLimitInForce, NO_PR_SHARED } from './pr-fetch'
 import { TIMED_OUT_CODE } from './gh'
 import { rerunArgs } from './pr-press'
 import type { Effect } from './press-reducer'
@@ -72,15 +72,31 @@ export function prFetchTracker(now: () => number): {
   }
 }
 
+/** How long a view stays in the host's shared views after it was read. */
+const SHARED_KEEP_MS = 60 * 60_000
+
 /**
  * Fetches the PRs the session tracks and merges them in. `findsBranchPr` also looks up the current branch's PR.
+ * `isPress` says a press asked, so every tracked PR is read now, even under a limit error, whose answer says
+ * whether the limit still holds. Otherwise a view another session of the host read lately stands in, and a limit
+ * error any session met stops the fetch until the limit resets, with the limit shown in this session's views.
  * Returns without fetching when gh cannot start.
  */
 export async function fetchPrs<S extends Session>(
   host: Pick<SessionHost<S>, 'now' | 'read' | 'update' | 'gh'>,
   findsBranchPr: boolean,
+  isPress = false,
 ): Promise<void> {
   const s = await host.read()
+  const shared = (await host.gh.shared?.read()) ?? NO_PR_SHARED
+  const now = await host.now()
+  if (!isPress && isLimitInForce(shared.limit, now)) {
+    const limit = shared.limit
+    await host.update(cur =>
+      cur.prViews.failure?.at === limit?.at ? cur : { ...cur, prViews: { ...cur.prViews, failure: limit } },
+    )
+    return
+  }
   const bin = await host.gh.find()
   host.gh.noteMissing(bin === null)
   if (bin === null) return
@@ -92,8 +108,9 @@ export async function fetchPrs<S extends Session>(
       }),
       s.prViews,
       s.ledger,
-      findsBranchPr,
+      { findsBranchPr, isPress },
       () => host.now(),
+      shared.views,
     )
   let fetch = await fetchWith(bin)
   if (sawUnstartable) {
@@ -103,9 +120,17 @@ export async function fetchPrs<S extends Session>(
     if (refound === null) return
     if (refound !== bin) fetch = await fetchWith(refound)
   }
-  const { views: fetched, branchRef, isGhSignedOut } = fetch
+  const { views: fetched, branchRef, isGhSignedOut, failure, read, unread } = fetch
   const at = await host.now()
-  await host.update(cur => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut, at))
+  await host.gh.shared?.write(cur => ({
+    views: Object.fromEntries(
+      [...Object.entries(cur.views), ...read.map(ref => [ref, fetched[ref]!] as const)].filter(
+        ([, view]) => at - (view.fetchedAt ?? 0) < SHARED_KEEP_MS,
+      ),
+    ),
+    limit: failure?.kind === 'limit' ? failure : failure === null ? null : cur.limit,
+  }))
+  await host.update(cur => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut, at, failure, unread))
 }
 
 /**

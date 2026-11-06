@@ -2,7 +2,7 @@ import { parseReply } from './reply-parse'
 import { systemText, buildPrompt } from './ledger-prompt'
 import { transcriptCatchUpPrompt } from './catch-up-text'
 import type { Host } from './model-text'
-import type { GhRun } from './pr-fetch'
+import type { GhRun, PrShared } from './pr-fetch'
 import type { Effect } from './press-reducer'
 import type { AnswerMessage } from './press-messages'
 import { parsedReply, applied } from './session-turns'
@@ -104,9 +104,20 @@ export type SessionHost<S extends Session> = {
   prepare?(s: S): Promise<void>
   /** Opens a link or path, or copies text. Returns why it could not, or null. */
   perform(s: S, effect: Extract<Effect, { kind: 'open' | 'copy' }>): Promise<string | null>
-  /** Fetches the session's PRs, and resolves once that fetch ends. A failed fetch resolves too, since each PR's own error says why. */
+  /**
+   * Fetches the session's PRs as a press asks, and resolves once that fetch ends. A failed fetch resolves too: the
+   * session's `prViews` then says why, which the press's result reads.
+   */
   refreshPrs(): Promise<void>
   gh: {
+    /**
+     * What every session of the host shares about GitHub, so a view one session read lately serves the others, and
+     * one limit error stops them all. Absent in a host whose sessions share nothing.
+     */
+    shared?: {
+      read(): Promise<PrShared>
+      write(change: (s: PrShared) => PrShared): Promise<void>
+    }
     /** The gh to run, or null when none starts. */
     find(): Promise<string | null>
     /** Drops the gh `find` kept, so the next call looks again. */

@@ -1,4 +1,5 @@
-import type { Delivery, LastAction, PrCheck, PrStatus, PrThread, PrView } from '../types'
+import type { Delivery, LastAction, PrCheck, PrFetchFailure, PrStatus, PrThread, PrView } from '../types'
+import { fetchFailureNotice } from './pr-refresh'
 import { baseName } from './open-targets'
 import { isFoldingPress } from './last-actions'
 import { clipLabel } from './text'
@@ -49,13 +50,19 @@ export const GH_MISSING_TEXT = 'The inbox could not find gh. It needs gh to read
 
 export const GH_SIGNED_OUT_TEXT = 'gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.'
 
-/** Why gh cannot read the PRs, as the PRs tab says it, or null when nothing stops it. A missing gh comes first. */
+/**
+ * Why the PRs cannot be read, as the PRs tab says it once at the top, or null when nothing stops it. A missing gh
+ * comes first, then a sign-in, then the cause that stopped the last fetch, such as GitHub's limit.
+ */
 export function ghNoticeOf(gh: {
   isGhMissing: boolean
   isGhSignedOut: boolean
-}): { kind: Extract<BannerKind, 'gh-missing' | 'gh-signed-out'>; text: string } | null {
+  failure?: PrFetchFailure | null
+}): { kind: Extract<BannerKind, 'gh-missing' | 'gh-signed-out' | 'gh-limited' | 'gh-failed'>; text: string } | null {
   if (gh.isGhMissing) return { kind: 'gh-missing', text: GH_MISSING_TEXT }
   if (gh.isGhSignedOut) return { kind: 'gh-signed-out', text: GH_SIGNED_OUT_TEXT }
+  if (gh.failure)
+    return { kind: gh.failure.kind === 'limit' ? 'gh-limited' : 'gh-failed', text: fetchFailureNotice(gh.failure) }
 
   return null
 }
@@ -81,8 +88,9 @@ export function prRefreshFailedText(error: string): string {
   return `Last refresh failed: ${error}`
 }
 
-/** The row id of Rank again's press. It starts with `pr:`, as a PR's mark id does, so no host takes it for an Asks row. */
+/** The row ids of the tab's own presses. Each starts with `pr:`, as a PR's mark id does, so no host takes it for an Asks row. */
 export const RANK_AGAIN_ID = 'pr:order'
+export const PR_REFRESH_ID = 'pr:refresh'
 
 export const PR_GROUP_TITLES = { threads: 'Review threads', checks: 'Failing checks', cancelled: 'Cancelled checks' }
 

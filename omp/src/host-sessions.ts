@@ -134,8 +134,14 @@ export function sessionCalls(context: HostContext) {
       },
       perform: async (_s, effect) =>
         effect.kind === 'copy' ? deps.copy(effect.text) : openTarget(run, effect.target, ctx.cwd, deps.home),
-      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true)),
+      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true, true)),
       gh: {
+        shared: {
+          read: async () => memory.prShared,
+          write: async change => {
+            memory.prShared = change(memory.prShared)
+          },
+        },
         find: gh.find,
         forget: gh.forget,
         run: (_s, bin, onUnstartable) => ghIn(run, bin, ctx.cwd, onUnstartable),

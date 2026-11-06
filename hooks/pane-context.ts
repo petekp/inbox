@@ -111,6 +111,7 @@ export type PaneBase = {
   findingEntries: DrawnEntry<Row>[]
   prGroups: (SessionView['prs']['drawn'][number] & ReturnType<typeof prBlockRows<Row>>)[]
   prOrderKeys: KeyAction[]
+  prRefreshKeys: KeyAction[]
   badgeOf: (id: ShownTab) => string | null
   tabTone: (id: ShownTab) => string | undefined
   tabText: (id: ShownTab, name: string) => string

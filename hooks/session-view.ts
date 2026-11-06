@@ -5,6 +5,8 @@ import { itemPrSteps, olderPrsText, tabPrs } from './pr-fetch'
 import { prOrderView } from './pr-order'
 import type { DrawnPr } from './pr-views'
 import type { PrOrderView } from './pr-order'
+import { prRefreshView } from './pr-refresh'
+import type { PrRefreshView } from './pr-refresh'
 import { prNeedsYou } from './prs'
 import { isPrRowId } from './presses'
 import { feedbackOf, pressUnderWaySince } from './feedback'
@@ -18,7 +20,7 @@ import type { InboxView } from './view'
 import type { StatusPage } from './status-page'
 import type { Holds } from './timing'
 import type { ShownTab } from './tabs'
-import type { FoldKind, LastAction, RowNote, Session, Turns } from '../types'
+import type { FoldKind, LastAction, PrFetchFailure, RowNote, Session, Turns } from '../types'
 
 export const PRESS_TIMEOUT_MS = 60_000
 
@@ -33,6 +35,10 @@ type PrTab = {
   order: PrOrderView | null
   /** Whether gh asked for a sign-in at the last fetch it answered. */
   isGhSignedOut: boolean
+  /** Why the last fetch read none of the PRs, or null. */
+  failure: PrFetchFailure | null
+  /** The line at the top of the tab while a PR could not be read, with Refresh PRs, or null. `prRefreshView`. */
+  refresh: PrRefreshView | null
   /** When the oldest press still under way on a PR row began, or null. A settled PR block that was in place then waits for it. */
   pressOutSince: number | null
 }
@@ -156,6 +162,13 @@ function prTabOf(
       shownSince,
     ),
     isGhSignedOut: s.prViews.isGhSignedOut === true,
+    failure: s.prViews.failure ?? null,
+    refresh: prRefreshView(
+      { ...s.prViews, isGhMissing: s.prViews.isGhMissing === true },
+      s.ledger,
+      { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
+      shownSince,
+    ),
     pressOutSince,
   }
 }

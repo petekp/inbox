@@ -9,7 +9,7 @@ import { isPrFetchDue, prFetchTracker } from '../hooks/host-prs'
 import { DOT } from '../hooks/rows'
 import { NO_HOLDS } from '../hooks/timing'
 import { applyPrPress } from '../hooks/pr-tab'
-import { fetchTracked, GH_RUNS_AT_ONCE, MAX_PRS } from '../hooks/pr-fetch'
+import { MAX_PRS } from '../hooks/pr-fetch'
 import { FIX_REF, BLOCKED_PR } from './session-helpers'
 
 const openPr = (number: number): PrView => ({
@@ -299,28 +299,6 @@ test('an order reads as changed once a ranked open PR is newly blocked, gains a 
   }
   expect(view(old)).toEqual({ title: `Merge in this order${DOT}set by Claude 1m ago`, why: null, changed: null })
   expect(withFetchedPrs(old, { 'acme/app#3': failing }, null, false, 1).ledger.prOrder?.statuses).toBeNull()
-})
-
-test('a fetch of many PRs runs at most GH_RUNS_AT_ONCE gh runs at once, and reads every PR', async () => {
-  let running = 0
-  let most = 0
-  const run = async (args: string[]) => {
-    running += 1
-    most = Math.max(most, running)
-    for (let n = 0; n < 3; n++) await Promise.resolve()
-    running -= 1
-    const number = Number(args[2])
-    const view = { number, title: `Work ${number}`, url: `https://github.com/acme/app/pull/${number}`, state: 'OPEN' }
-
-    return { exitCode: 0, stdout: args[0] === 'pr' ? JSON.stringify(view) : '{"data":{}}', stderr: '' }
-  }
-  const refs = Array.from({ length: 20 }, (_, n) => `acme/app#${n + 1}`)
-  const order = { refs, label: null, why: null, statuses: null, dismissed: [], by: 'Claude', at: 0 }
-  const state = { views: {}, branchRef: null, isFetching: false }
-  const fetched = await fetchTracked(run, state, { prs: refs, prOrder: order }, false, () => 5)
-
-  expect(Object.keys(fetched.views)).toHaveLength(20)
-  expect(most).toBe(GH_RUNS_AT_ONCE)
 })
 
 test('PRs are due for a fetch 15 seconds after the last once the agent replied since it, and otherwise after 2 minutes', () => {

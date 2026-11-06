@@ -55,6 +55,7 @@ export type FeatureId =
   | 'pr-order'
   | 'pr-rank-again'
   | 'pr-check-rerun'
+  | 'pr-fetch-notice'
   | 'help-page'
   | 'status-view-ask'
   | 'status-goal'
@@ -130,6 +131,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
       'pr-check-rerun': { kind: 'full' },
+      'pr-fetch-notice': { kind: 'full' },
       'help-page': {
         kind: 'different',
         reason:
@@ -255,6 +257,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
       'pr-check-rerun': { kind: 'full' },
+      'pr-fetch-notice': { kind: 'full' },
       'help-page': { kind: 'full' },
       'status-view-ask': {
         kind: 'different',
@@ -352,6 +355,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
       'pr-check-rerun': { kind: 'full' },
+      'pr-fetch-notice': { kind: 'full' },
       'help-page': {
         kind: 'different',
         reason: 'The panel takes keys only, so `?` opens Help, and no button does.',
