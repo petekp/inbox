@@ -144,10 +144,22 @@ test('a SERVES line whose subject names another version than its milestone links
   expect(same.serves).toMatchObject({ s5: 'm4', s3: 'm2' })
 })
 
-test('a saved refusal loads when it is well formed, and as none otherwise', () => {
+test('a saved refusal loads when it is well formed, and as none otherwise, and a typed goal clears one', () => {
   const saved = { ...stuck(), goalRefused: { line: 'retire', why: 'moved' } }
 
   expect(upgradeStatus(saved)?.goalRefused).toEqual({ line: 'retire', why: 'moved' })
   expect(upgradeStatus({ ...saved, goalRefused: { line: 'retire', why: 'tired' } })?.goalRefused).toBeNull()
   expect(upgradeStatus({ ...saved, goalRefused: undefined })?.goalRefused).toBeNull()
+  expect(setTypedGoal(upgradeStatus(saved)!, 'Ship 2.6 with sharing', 40 * MIN).goalRefused).toBeNull()
+})
+
+test('a saved link from a subject to a milestone of another version loads as none, so the goal it held comes unstuck', () => {
+  const o = after(stuck(), 'NEW: working | 2.6 beta | share extension in', 31 * MIN)
+  const saved = { ...o, serves: { ...o.serves, s3: 'm4' } }
+  const loaded = upgradeStatus(saved)!
+  const later = 31 * MIN + GOAL_LEFT_MS
+
+  expect(loaded.serves).toMatchObject({ s3: 'none' })
+  expect(goalBlock(loaded, later)).toBe('Notes 2.5 in the store (no work for 31m)')
+  expect(after(loaded, 'RETIRE: moved on', later).goal).toBeNull()
 })

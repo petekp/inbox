@@ -832,15 +832,19 @@ function goalRemovedOf(saved) {
 function droppedMilestoneIds(milestones) {
   return new Set(milestones.filter((m) => m.status === "dropped").map((m) => m.id));
 }
-function goalFields(o, subjectIds) {
+function goalFields(o, subjects) {
   const milestones = milestonesOf(o.milestones);
   const dropped = droppedMilestoneIds(milestones);
-  const liveIds = new Set(milestones.filter((m) => !dropped.has(m.id)).map((m) => m.id));
+  const live = new Map(milestones.filter((m) => !dropped.has(m.id)).map((m) => [m.id, m]));
+  const names = new Map(subjects.map((s) => [s.id, s.name]));
   const savedServes = typeof o.serves === "object" && o.serves !== null ? Object.entries(o.serves) : [];
   const serves = Object.fromEntries(
     savedServes.filter(
-      (e) => subjectIds.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || liveIds.has(e[1]))
-    )
+      (e) => names.has(e[0]) && typeof e[1] === "string" && (e[1] === "none" || live.has(e[1]))
+    ).map(([id, to]) => {
+      const milestone = live.get(to);
+      return [id, milestone && namesOtherVersion(names.get(id), milestone.name) ? "none" : to];
+    })
   );
   const saved = [
     ...Array.isArray(o.declinedGoals) ? o.declinedGoals : [],
@@ -969,7 +973,7 @@ function upgradeStatus(saved) {
   const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
   const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
-  const goal = goalFields(o, new Set(subjects.map((s) => s.id)));
+  const goal = goalFields(o, subjects);
   const dropped = droppedMilestoneIds(goal.milestones);
   const askLinks = savedLinks.map(([ask, to]) => [
     ask,

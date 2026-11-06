@@ -394,5 +394,5 @@ export function setTypedGoal(o: SessionStatus, text: string, now: number): Sessi
     source: 'typed',
   }
 
-  return { ...o, goal, goalRemoved: null, serves: {} }
+  return { ...o, goal, goalRemoved: null, goalRefused: null, serves: {} }
 }

@@ -129,7 +129,7 @@ export const nextRelease: Replay = {
           'Good to know 2.5 is out. Images now come through as attachments on the note, and the extension works end to end from Safari and Photos.',
       },
       facts: {
-        pieces: [{ id: 'share', stands: 'works from Safari and Photos' }],
+        pieces: [{ id: 'share', stands: 'works from Safari and Photos', alsoRight: ['done'] }],
       },
       targets: ['goal-left', 'goal-only-when-clear'],
     },
