@@ -115,7 +115,6 @@ test('a herdr wait shows its delegate running while it waits, for a delegate wit
 test('while the Status shows a running delegate, the inbox asks Herdr each HERDR_CHECK_MS, with no turn ending, and stops once the Status hides', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   const herdrAsks = () => w.ran.filter(argv => argv.join(' ') === 'herdr agent list').length
   const answer = (agent_status: string) =>
     w.ghAnswers.unshift({
@@ -154,7 +153,6 @@ test('while the Status shows a running delegate, the inbox asks Herdr each HERDR
 test('a delegate named by an id draws the focus its own session publishes to Herdr once Herdr shows it', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })

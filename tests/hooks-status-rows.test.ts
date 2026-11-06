@@ -7,7 +7,6 @@ import { PANE } from './hooks-helpers'
 test('on the Status, where a subject stands goes under its name, wraps to three lines at the docked width and is cut with an ellipsis past them, and a merged line is cut to one line at a phrase, in the terminal and on desktop', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
   const name = 'Help text for every greeting command'
   const text = 'being written with examples, defaults, descriptions, environment variables, configuration precedence'
@@ -54,7 +53,6 @@ test('on the Status, where a subject stands goes under its name, wraps to three 
 test('on the Status in the terminal, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: 'demo' } as never)
@@ -78,7 +76,6 @@ test('on the Status in the terminal, the rows under a subject hang from its mark
 test('on the Status, a rule sets each item apart in the docked terminal and on desktop, and the inline pane draws none', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   w.paneState = { isShown: true, isFocused: true }
   w.statusReply = [
     'HEAD: Adding a greeting CLI | Building a CLI that greets by name',
@@ -118,7 +115,6 @@ test('on the Status, a rule sets each item apart in the docked terminal and on d
 test('on the Status, the look line is a dashed rule, unlike the solid rules between items, with a blank line above and below it in the terminal and space above and below it on desktop', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.files = ['/.next-build']
   expect(LOOK_DASH).not.toBe('─')
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })

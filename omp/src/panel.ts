@@ -39,6 +39,7 @@ export type PanelScreen = {
   /** Why the last turn stopped, until the next turn starts. */
   stop: Stop | null
   version: string
+  /** Whether the extension's folder holds `NEXT_BUILD_MARK`, which adds "next" to the version label. */
   isNextBuild?: boolean
   isDemo?: boolean
   /** The last read of the session failed, so the screen is the one before it. */
@@ -306,7 +307,7 @@ export function tallestTabHeight(
   style: Style,
   height?: number,
 ): number {
-  const heights = shownTabs(screen.isNextBuild === true).map(
+  const heights = shownTabs().map(
     t => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id, now), width, now, style, height).lines.length,
   )
 

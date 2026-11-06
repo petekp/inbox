@@ -97,7 +97,7 @@ test('a ranked PR that changed since the order draws the changed line with Rank 
   const at = narrow.findIndex(l => l.includes('1 PR changed since'))
   expect(narrow[at]).toContain('g Rank again')
   expect(narrow[at + 1]?.trim()).toBe('Ranking…')
-  expect(helpKeys('omp', false, 'prs', false).map(k => k.keys)).toContain('g')
+  expect(helpKeys('omp', 'prs', false).map(k => k.keys)).toContain('g')
 })
 
 test('a PR a fetch finds merged settles as ✓ Merged while the PRs tab shows, and u presses its Undo', () => {

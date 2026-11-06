@@ -15,10 +15,11 @@ import { drawn, ESC, firstQuestion, keys, NOW, onPage, screenOf, strip, text } f
 
 test('the selected tab draws inverse and the others draw their counts', () => {
   const screen = screenOf()
-  const bar = drawn(screen, keys(screen, INITIAL_UI, '2'))[1]!
-  expect(bar).toContain(`${ESC}7m${ESC}1m [2] Finds ${screen.view.findings.count} `)
-  expect(strip(bar)).toContain(`[1] Asks ${screen.view.needsYou.count}`)
-  expect(strip(bar)).toContain(`[3] PRs ${screen.view.prs.count}`)
+  const bar = drawn(screen, keys(screen, INITIAL_UI, '3'))[1]!
+  expect(bar).toContain(`${ESC}7m${ESC}1m [3] Finds ${screen.view.findings.count} `)
+  expect(strip(bar)).toContain('[1] Status')
+  expect(strip(bar)).toContain(`[2] Asks ${screen.view.needsYou.count}`)
+  expect(strip(bar)).toContain(`[4] PRs ${screen.view.prs.count}`)
   expect(strip(bar)).toContain('esc to close')
 })
 
@@ -116,41 +117,39 @@ test('rows that arrive while the Status page shows leave the panel on the page',
   expect(followRows(findingsOnly(), opened.ui, opened.seen, false, NOW).ui).toEqual(onPage)
 })
 
-for (const isNextBuild of [false, true])
-  test(`on a ${isNextBuild ? 'next' : 'release'} build, a narrowing tab line drops the brackets, then names every tab by its symbol, and draws no zero count`, () => {
-    const tabs = shownTabs(isNextBuild)
-    const zeros = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, NO_HOLDS), isNextBuild })
-    for (const screen of [screenOf({ isNextBuild }), zeros])
-      for (const shown of tabs) {
-        const ui = { ...INITIAL_UI, tab: shown.id }
-        const wordsAt = cellWidth(tabLine(screen, ui, 200)) + 1
-        expect(tabLine(screen, ui, wordsAt)).toContain(`[${shown.hotkey}] ${shown.label}`)
-        const bare = tabLine(screen, ui, wordsAt - 1)
-        expect(bare).not.toContain('[')
-        expect(bare).toContain(`${shown.hotkey} ${shown.label}`)
-        const symbolsAt = cellWidth(bare) - 1
-        const symbols = tabLine(screen, ui, symbolsAt)
-        expect(symbols.replace(/[[\]]/g, '')).toContain(`${shown.hotkey} ${shown.symbol}`)
-        if (isNextBuild) expect(symbols).toContain(`[${shown.hotkey}] ${shown.symbol}`)
-        if (screen === zeros) expect(tabLine(screen, ui, 200)).not.toMatch(/ 0 /)
-        for (const width of isNextBuild ? [34, symbolsAt] : [symbolsAt]) {
-          const line = tabLine(screen, ui, width).replace(/[[\]]/g, '')
-          expect(line).not.toContain('…')
-          for (const t of tabs) {
-            expect(line).toContain(`${t.hotkey} ${t.symbol}`)
-            expect(line).not.toContain(t.label)
-          }
+test('a narrowing tab line drops the brackets, then names every tab by its symbol, and draws no zero count', () => {
+  const tabs = shownTabs()
+  const zeros = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, NO_HOLDS) })
+  for (const screen of [screenOf(), zeros])
+    for (const shown of tabs) {
+      const ui = { ...INITIAL_UI, tab: shown.id }
+      const wordsAt = cellWidth(tabLine(screen, ui, 200)) + 1
+      expect(tabLine(screen, ui, wordsAt)).toContain(`[${shown.hotkey}] ${shown.label}`)
+      const bare = tabLine(screen, ui, wordsAt - 1)
+      expect(bare).not.toContain('[')
+      expect(bare).toContain(`${shown.hotkey} ${shown.label}`)
+      const symbolsAt = cellWidth(bare) - 1
+      const symbols = tabLine(screen, ui, symbolsAt)
+      expect(symbols.replace(/[[\]]/g, '')).toContain(`${shown.hotkey} ${shown.symbol}`)
+      expect(symbols).toContain(`[${shown.hotkey}] ${shown.symbol}`)
+      if (screen === zeros) expect(tabLine(screen, ui, 200)).not.toMatch(/ 0 /)
+      for (const width of [34, symbolsAt]) {
+        const line = tabLine(screen, ui, width).replace(/[[\]]/g, '')
+        expect(line).not.toContain('…')
+        for (const t of tabs) {
+          expect(line).toContain(`${t.hotkey} ${t.symbol}`)
+          expect(line).not.toContain(t.label)
         }
-        expect(tabLine(screen, ui, 200)).not.toContain(isNextBuild ? '[5]' : 'Status')
       }
-  })
+      expect(tabLine(screen, ui, 200)).not.toContain('[5]')
+    }
+})
 
 test('the tab line counts each symbol as two cells, so it fits the panel and keeps "esc to close" whole', () => {
-  for (const isNextBuild of [false, true])
-    for (const shown of shownTabs(isNextBuild))
-      for (let width = 34; width <= 120; width++) {
-        const bar = strip(drawn(screenOf({ isNextBuild }), { ...INITIAL_UI, tab: shown.id }, width)[1]!)
-        expect(cellWidth(bar)).toBeLessThanOrEqual(width)
-        if (bar.includes('esc')) expect(bar.trimEnd()).toEndWith('esc to close')
-      }
+  for (const shown of shownTabs())
+    for (let width = 34; width <= 120; width++) {
+      const bar = strip(drawn(screenOf(), { ...INITIAL_UI, tab: shown.id }, width)[1]!)
+      expect(cellWidth(bar)).toBeLessThanOrEqual(width)
+      if (bar.includes('esc')) expect(bar.trimEnd()).toEndWith('esc to close')
+    }
 })

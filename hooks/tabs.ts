@@ -21,27 +21,15 @@ const TAB_NAMES: readonly TabName[] = [
 const numbered = (tabs: readonly TabName[]): readonly DrawnTab[] =>
   tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }))
 
-const NEXT_BUILD_TABS = numbered(TAB_NAMES)
-const RELEASE_TABS = numbered(TAB_NAMES.filter(t => t.id !== 'overview'))
+const SHOWN_TABS = numbered(TAB_NAMES)
 
-/** The tabs a build draws, in order, each keyed by its place. Only a next build draws the Status. */
-export function shownTabs(isNextBuild: boolean): readonly DrawnTab[] {
-  return isNextBuild ? NEXT_BUILD_TABS : RELEASE_TABS
+/** The tabs every look draws, in order, each keyed by its place. */
+export function shownTabs(): readonly DrawnTab[] {
+  return SHOWN_TABS
 }
 
-/** The `/inbox` command's description: what the build's tabs show. */
-export function inboxCommandText(isNextBuild: boolean): string {
-  return isNextBuild
-    ? 'Show where this session stands and what waits on you'
-    : "Show this session's questions, tasks, findings and PRs"
-}
-
-/** The tab a build draws for a saved or sent one: that tab when the build draws it, else the build's first tab. */
-export function drawnTabOf(tab: ShownTab, isNextBuild: boolean): ShownTab {
-  const tabs = shownTabs(isNextBuild)
-
-  return tabs.some(t => t.id === tab) ? tab : tabs[0]!.id
-}
+/** The `/inbox` command's description: what the tabs show. */
+export const INBOX_COMMAND_TEXT = 'Show where this session stands and what waits on you'
 
 /** How a look names its tabs: by their words, or by their symbols. */
 export type TabNaming = 'words' | 'symbols'

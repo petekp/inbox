@@ -124,7 +124,7 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   // The Status lists no lines, and its selection is a Status row's id.
   const base: PanelUi = isPage ? ui : { ...ui, selectedId: selected?.id ?? null }
   if (base.typing !== null) return typingKey(base, base.typing, key, now, text)
-  const shown = shownTabs(screen.isNextBuild === true)
+  const shown = shownTabs()
   const isTabKey = key === 'tab' || key === 'shift+tab' || shown.some(t => t.hotkey === key)
   if (key === '?' || (base.isHelpShown && key === 'escape'))
     return { ui: { ...base, isHelpShown: key === '?' && !base.isHelpShown, pageTop: 0 } }

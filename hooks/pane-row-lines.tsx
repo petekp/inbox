@@ -12,7 +12,6 @@ import {
   rowFeedbackText,
 } from './feedback'
 import { HELD_MARK } from './help'
-import { mod } from './mod-state'
 import type { PaneBase, PaneClient, Row } from './pane-context'
 import {
   DESKTOP_CELL_PT,
@@ -32,8 +31,7 @@ import { desktopSpanLines, LEADING_DOT, type TreePos, treeText } from './termina
 import { ago, clipLabel } from './text'
 import { resultGlyph, runningMark } from './timing'
 
-/** A next build draws the Status, so only it names the subject an ask holds up. */
-export const holdsUpLineOf = (r: RowView | undefined) => (mod.isNextBuild ? (r?.holdsUpLine ?? null) : null)
+export const holdsUpLineOf = (r: RowView | undefined) => r?.holdsUpLine ?? null
 
 export const childPos = (n: number, count: number): TreePos => (n === count - 1 ? 'last' : 'mid')
 

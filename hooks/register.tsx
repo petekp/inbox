@@ -123,16 +123,7 @@ import {
   latestUndo,
   type PlannedKey,
 } from './action-plan'
-import {
-  isRowTab,
-  isShownTab,
-  screenTabOf,
-  shownTabs,
-  drawnTabOf,
-  tabBadge,
-  inboxCommandText,
-  type ShownTab,
-} from './tabs'
+import { isRowTab, isShownTab, screenTabOf, shownTabs, tabBadge, INBOX_COMMAND_TEXT, type ShownTab } from './tabs'
 import {
   heldReplies,
   isGuarded,
@@ -1329,11 +1320,9 @@ async function writeRowTab($: EngineInterface, tab: Tab) {
   await syncShown($)
 }
 
-/** The page tab the pane shows, or null. A saved page this build does not draw reads as null and stays saved. */
-async function readPage($: EngineInterface): Promise<PageTab | null> {
-  const page = await read($, PAGE)
-
-  return page !== null && drawnTabOf(page, mod.isNextBuild) === page ? page : null
+/** The page tab the pane shows, or null while a row tab shows. */
+function readPage($: EngineInterface): Promise<PageTab | null> {
+  return read($, PAGE)
 }
 
 /** The shown row tab; null while the Status page shows, where no row is drawn, selected or scrolled to. */
@@ -2073,10 +2062,8 @@ function readIsNextBuild($: EngineInterface): Promise<boolean> {
   return $.fs.exists(`${$.plugin.root}/${NEXT_BUILD_MARK}`).catch(() => false)
 }
 
-async function registerInboxCommand($: EngineInterface) {
-  const description = inboxCommandText(await readIsNextBuild($))
-
-  return $.command.register({ name: 'inbox', description, immediate: true }).catch(() => undefined)
+function registerInboxCommand($: EngineInterface) {
+  return $.command.register({ name: 'inbox', description: INBOX_COMMAND_TEXT, immediate: true }).catch(() => undefined)
 }
 
 /**
@@ -2115,8 +2102,7 @@ async function readVersion($: EngineInterface) {
 }
 
 async function initializeInbox($: EngineInterface) {
-  // A hot reload keeps state an older build wrote. Draws start once isOn is set, and they read the current shape and
-  // the tabs that the next-build mark decides.
+  // A hot reload keeps state an older build wrote. Draws start once isOn is set, and they read the current shape.
   await Promise.all([upgradeState($), readVersion($)])
   mod.isOn = true
   mod.toolsRefused = false
@@ -3028,7 +3014,7 @@ export const register: Register = on => {
     const tab: Tab = isShownTab(savedTab) && isRowTab(savedTab) ? savedTab : 'needsYou'
     const isStatusShown = savedPage === 'overview'
     const shownTab: ShownTab = isStatusShown ? 'overview' : tab
-    const tabList = shownTabs(mod.isNextBuild)
+    const tabList = shownTabs()
     if (look === 'terminal')
       animateRunningMarks(
         showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)),
@@ -3297,7 +3283,7 @@ export const register: Register = on => {
       .map(([, n]) => n)
       .sort((a, b) => b.at - a.at)[0]
 
-    const keyList = helpKeys(look, mod.isNextBuild, shownTab, statusPressRows.length > 0)
+    const keyList = helpKeys(look, shownTab, statusPressRows.length > 0)
     const keyColumn = Math.max(0, ...keyList.map(k => cellWidth(k.keys))) + 2
 
     const { banner, tabs, rail, statusBlock, footer, isTabRowFit, desktopTabLines } = paneFrame(
@@ -3485,7 +3471,6 @@ export const register: Register = on => {
     )
 
     const { helpView } = paneHelp({
-      isNextBuild: mod.isNextBuild,
       pal,
       keyList,
       Box,

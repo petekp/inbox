@@ -134,28 +134,26 @@ test('a button letter presses that button', () => {
   expect(handleKey(screen, onRow(row), 'x', NOW).press).toEqual({ action: 'dismiss', id: row.id })
 })
 
-for (const isNextBuild of [false, true])
-  test(`on a ${isNextBuild ? 'next' : 'release'} build, Tab and Shift+Tab cycle through the build's tabs in order, and each digit picks its tab`, () => {
-    const screen = screenOf({ isNextBuild })
-    const tabs = shownTabs(isNextBuild)
-    const ids = tabs.map(t => t.id)
-    expect(ids.includes('overview')).toBe(isNextBuild)
-    const start = ids.indexOf(INITIAL_UI.tab)
-    const cycled = ids.map((_, n) => keys(screen, INITIAL_UI, ...ids.slice(0, n).map(() => 'tab')).tab)
-    expect(cycled).toEqual([...ids.slice(start), ...ids.slice(0, start)])
-    expect(keys(screen, INITIAL_UI, ...ids.map(() => 'tab')).tab).toBe(INITIAL_UI.tab)
-    expect(keys(screen, INITIAL_UI, 'shift+tab').tab).toBe(ids.at(start - 1)!)
-    for (const t of tabs) expect(keys(screen, keys(screen, INITIAL_UI, 'tab'), t.hotkey).tab).toBe(t.id)
-    expect(keys(screen, INITIAL_UI, '1').tab).toBe(isNextBuild ? 'overview' : 'needsYou')
-    expect(keys(screen, INITIAL_UI, String(tabs.length + 1)).tab).toBe(INITIAL_UI.tab)
-  })
+test('Tab and Shift+Tab cycle through the tabs in order, and each digit picks its tab', () => {
+  const screen = screenOf()
+  const tabs = shownTabs()
+  const ids = tabs.map(t => t.id)
+  expect(ids[0]).toBe('overview')
+  const start = ids.indexOf(INITIAL_UI.tab)
+  const cycled = ids.map((_, n) => keys(screen, INITIAL_UI, ...ids.slice(0, n).map(() => 'tab')).tab)
+  expect(cycled).toEqual([...ids.slice(start), ...ids.slice(0, start)])
+  expect(keys(screen, INITIAL_UI, ...ids.map(() => 'tab')).tab).toBe(INITIAL_UI.tab)
+  expect(keys(screen, INITIAL_UI, 'shift+tab').tab).toBe(ids.at(start - 1)!)
+  for (const t of tabs) expect(keys(screen, keys(screen, INITIAL_UI, 'tab'), t.hotkey).tab).toBe(t.id)
+  expect(keys(screen, INITIAL_UI, '1').tab).toBe('overview')
+  expect(keys(screen, INITIAL_UI, String(tabs.length + 1)).tab).toBe(INITIAL_UI.tab)
+})
 
-for (const isNextBuild of [false, true])
-  test(`on a ${isNextBuild ? 'next' : 'release'} build, an Asks row ${isNextBuild ? 'names' : 'leaves out'} the open subject it holds up`, () => {
-    const shown = text(screenOf({ isNextBuild }), { ...INITIAL_UI, tab: 'needsYou' })
+test('an Asks row names the open subject it holds up', () => {
+  const shown = text(screenOf(), { ...INITIAL_UI, tab: 'needsYou' })
 
-    expect(shown.includes('Holds up Glasses pairing')).toBe(isNextBuild)
-  })
+  expect(shown).toContain('Holds up Glasses pairing')
+})
 
 test('moving through rows wraps from the last to the first, and stops on each Closed line', () => {
   const screen = screenOf()

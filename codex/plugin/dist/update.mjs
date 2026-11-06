@@ -1669,8 +1669,7 @@ var TAB_NAMES = [
   { id: "prs", label: "PRs", symbol: "\u{1F500}" }
 ];
 var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
-var NEXT_BUILD_TABS = numbered(TAB_NAMES);
-var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
+var SHOWN_TABS = numbered(TAB_NAMES);
 function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";
 }
@@ -1752,7 +1751,6 @@ var MARK_LEGEND = [
     words: "Opportunity: something that could be better"
   }
 ];
-var STATUS_ONLY_MARKS = /* @__PURE__ */ new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
 
 // ../hooks/pressed.ts
 function offersUndo(c) {
