@@ -161,7 +161,6 @@ export const singleTask: Replay = {
             state: 'working',
             stands: 'first version',
             serves: 'ms-offline',
-            servesAlso: 'none',
           }),
         ],
       },

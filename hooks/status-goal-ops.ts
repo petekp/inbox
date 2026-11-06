@@ -199,18 +199,25 @@ function lastProgressAt(o: SessionStatus, g: StatusGoal): number {
  */
 export function goalLeftFor(o: SessionStatus, now: number): number | null {
   const g = o.goal
-  const kept = o.milestones.filter(m => m.status !== 'dropped')
-  const isMet = g?.metAt !== null || (kept.length > 0 && kept.every(m => m.status === 'done'))
-  if (g === null || isMet || g.source !== 'inferred' || linkedSubjects(o).some(isOpen)) return null
+  if (g === null || isGoalMet(o) || g.source !== 'inferred' || linkedSubjects(o).some(isOpen)) return null
   const left = now - lastProgressAt(o, g)
 
   return left >= GOAL_LEFT_MS ? left : null
 }
 
+/**
+ * Whether the goal is met: it holds its met time, or every milestone it keeps is done, as after a DROP in the same
+ * answer closes the last open one, before `settleGoal` writes the time.
+ */
+function isGoalMet(o: SessionStatus): boolean {
+  const kept = o.milestones.filter(m => m.status !== 'dropped')
+
+  return o.goal?.metAt != null || (kept.length > 0 && kept.every(m => m.status === 'done'))
+}
+
 /** Whether a GOAL or RETIRE line may replace or clear the goal: a GOAL while none is set or once the goal is met, and either once the work has left it. */
 function mayReplaceGoal(o: SessionStatus, kind: 'goal' | 'retire', now: number): boolean {
-  const g = o.goal
-  if (g === null || g.metAt !== null) return kind === 'goal'
+  if (o.goal === null || isGoalMet(o)) return kind === 'goal'
 
   return goalLeftFor(o, now) !== null
 }

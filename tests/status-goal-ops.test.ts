@@ -93,6 +93,9 @@ test('a GOAL or RETIRE line replaces an inferred goal only once none of its link
     'Import ready to demo',
   )
   expect(after(betweenMilestones, `${work}\n${next}`, later - 1).goal?.text).toBe('Import ready to demo')
+  expect(after(linked, `DONE: m2 | merged\nDROP: m3 | not needed\n${work}\n${next}`, 40).goal?.text).toBe(
+    'Search under 100 ms',
+  )
   expect(replaced.goal).toMatchObject({ text: 'Search under 100 ms', was: 'Import ready to demo', source: 'inferred' })
   expect(after(replaced, 'GOAL: Import ready to demo | queued A; queued B', later + GOAL_LEFT_MS).goal?.text).toBe(
     'Search under 100 ms',
