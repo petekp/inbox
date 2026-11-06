@@ -122,12 +122,13 @@ export type Placing = Pick<
 > & { pressOutSince: number | null }
 
 /**
- * Whether a row's message is still on its way to the agent. Every look and the view read this one test. A row whose
- * message was refused or could not be confirmed is not on its way: it folds once Undo ends, and its Closed line shows
- * what happened.
+ * Whether a row's message is still on its way to the agent: held for Undo, or sent and not yet taken. Every look and
+ * the view read this one test. A held message counts from its press until its host records the send, so the row keeps
+ * its place through the moment Undo ends, when a redraw can come before the release. A row whose message was refused
+ * or could not be confirmed is not on its way: it folds once Undo ends, and its Closed line shows what happened.
  */
 export function isSendOnItsWay(delivery: ClosedDelivery): boolean {
-  return delivery === 'sending' || delivery === 'queued'
+  return delivery === 'held' || delivery === 'sending' || delivery === 'queued'
 }
 
 /**

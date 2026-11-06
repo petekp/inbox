@@ -62,6 +62,7 @@ test('a row that comes due while the person keeps using the list waits until the
 
 test('a row whose message is on its way stays past the settle window, a refused or unconfirmed one folds then, and a message typed after its Undo ended folds a row before the window', () => {
   expect(isSettledInPlace({ ...settled, delivery: 'queued' }, placing(AT + 10 * SETTLED_MS))).toBe(true)
+  expect(isSettledInPlace({ ...settled, delivery: 'held' }, placing(AT + SETTLED_MS))).toBe(true)
   expect(isSettledInPlace({ ...settled, delivery: 'unconfirmed' }, placing(AT + SETTLED_MS))).toBe(false)
   const refused = { error: 'blocked', canUndo: false }
   expect(isSettledInPlace({ ...settled, delivery: refused }, placing(AT + SETTLED_MS))).toBe(false)
@@ -75,6 +76,7 @@ test('the next fold time is a row’s due time, then the end of the person’s u
   const run = withListInput(null, due - 100)
   expect(nextFoldAt([settled], placing(due + 50, { listInput: run }))).toBe(due - 100 + FOLD_QUIET_MS)
   expect(nextFoldAt([{ ...settled, delivery: 'queued' }], placing(due + 50))).toBeNull()
+  expect(nextFoldAt([{ ...settled, delivery: 'held' }], placing(due + 50, { listInput: run }))).toBeNull()
 })
 
 test('a press begun before a row came due keeps it in place until the press ends, and a look that still shows a row’s Undo keeps that row', () => {
