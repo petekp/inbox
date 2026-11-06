@@ -47,7 +47,7 @@ Status: built.
     - Reason: the person's daily use of next builds and reports from users are the main signal. The evals only keep a fixed failure fixed. The old Status cases passed 42 of 42 while a live Status kept a goal about a release that had shipped, and listed one piece of work under two names. Each case checked one rule of the Status prompt, most of them in a single exchange.
     - This reverses the decision to check the tab with fixed rules only.
 17. **Every build draws the tab.**
-    - Reason: the tab is ready to release, from 0.4.0. The inbox still opens on Asks when something waits on the person, so updating moves Asks to key 2 and puts the Status on key 1.
+    - Reason: the tab is ready to release, from 0.4.0. Updating moves Asks to key 2 and puts the Status on key 1; which tab the inbox opens on does not change.
     - This reverses the decision to draw the tab on next builds only while it was not ready.
 18. **The page has no identity line, and the Status call writes no role.**
     - Reason: the line takes space without telling sessions apart. Folder, branch and role are often the same across sessions, and each host already names the session in its own window, tab or title. Nothing else drew the role.

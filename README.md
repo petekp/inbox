@@ -127,23 +127,23 @@ The PRs tab needs the GitHub CLI, `gh`, signed in.
 ## Using it
 
 Type `/inbox` in Claude Code or omp, or open the Inbox tab in the ChatGPT app. The
-inbox has four tabs: Status, Asks, Finds and PRs. It opens on Asks when
-something waits on you.
+inbox has four tabs: Status, Asks, Finds and PRs.
 
 ### Status
 
 Where the session's work stands, for someone coming back to it cold. The page
 names what the session is focused on now, then each part of the work with
-where it stands and how long ago it changed. Subagents and other work running
-under a part show beneath it. A part that waits on a question or task of yours
-says so, and View opens that question. A line marks where you last looked, so
+where it stands. A part idle for a day says how long. Subagents and other work
+running under a part show beneath it. A part that waits on a question or task
+of yours says so, and View opens it. A line marks where you last looked, so
 what changed since then sits above it. Finished work folds into a count you can
 open.
 
 You can set a goal with a finish line, such as "2.5 in the store". The page
 then groups the work under the goal's milestones, and the inbox keeps the goal
-and its milestones current. A goal the inbox inferred can be edited or removed,
-and one you typed stays until it is met.
+and its milestones current. You can edit or remove the goal at any time. One
+you typed stays until it is met. One the inbox inferred moves on when the work
+does.
 
 The page is a guide to the work, not a log. The second model call after each
 reply writes it. When that call fails, the page says so.
