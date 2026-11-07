@@ -1,4 +1,4 @@
-import { recommendedOption } from './ask-match'
+import { isQuestionBack, recommendedOption } from './ask-match'
 import { closeByAgent, reopenItem } from './ledger-close'
 import { addAgentItem, addFinding } from './ledger-update'
 import { stepHelp } from './reply-parse'
@@ -356,6 +356,12 @@ export function recordClose(
     return unchanged(ledger, "Not closed: give the id, and the user's answer or a reason.")
   if (answer === '' && isRecordedAfterCompare(ledger, id, presses))
     return unchanged(ledger, 'Not closed: your record updated this question, and it stays open for the user.')
+  const item = ledger.items.find(i => i.id === id)
+  if (item?.kind === 'question' && answer !== '' && isQuestionBack(answer, item.options))
+    return unchanged(
+      ledger,
+      'Not closed: the user asked a question back, so it stays open. Answer them in your reply, and close it when they decide.',
+    )
   const r = closeByAgent(host, ledger, id, answer ? { answer } : { reason }, now)
   if (r.closed && 'item' in r.closed)
     return {

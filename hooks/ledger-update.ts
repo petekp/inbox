@@ -1,6 +1,7 @@
 import type { Closed, ClosedFinding, Exchange, Finding, Item, Ledger, Press, PressKind } from '../types'
 import {
   dismissedFindingOf,
+  isQuestionBack,
   matchOpen,
   raisesOnly,
   recommendedOption,
@@ -83,7 +84,8 @@ function isPersonsAnswer(outcome: string): boolean {
  * `promptAt` is when the update's prompt was built. A NEW line that repeats an
  * item closed since then is dropped: the person answered it while the model ran.
  * The agent closes the items it recorded with its close tool, so a CLOSED line
- * closes one of those only with the person's answer.
+ * closes one of those only with the person's answer. A question back is not an
+ * answer, so it closes no question.
  */
 export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number, promptAt = now): Ledger {
   const stillAsked = new Set(u.updated.filter(c => c.options || c.rec).map(c => c.id))
@@ -99,7 +101,10 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
   for (const item of ledger.items) {
     const outcome = closing.get(item.id)
     const helps = u.helped.filter(h => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps)
-    const isClosing = outcome !== undefined && (item.from !== 'record' || isPersonsAnswer(outcome))
+    const isQuestionBackOutcome =
+      outcome !== undefined && item.kind === 'question' && isQuestionBack(outcome, item.options)
+    const isClosing =
+      outcome !== undefined && !isQuestionBackOutcome && (item.from !== 'record' || isPersonsAnswer(outcome))
     if (isClosing) closed.push(closedRecord(item, { outcome, how: 'update' }, now))
     else items.push(withUpdate({ ...item, helps }, u.updated))
   }

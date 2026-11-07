@@ -1,4 +1,5 @@
 import type { Finding, Item } from '../types'
+import { isQuestionBack } from './ask-match'
 
 function findingBody(finding: Finding): string[] {
   return [
@@ -47,7 +48,11 @@ function quotedAsk(item: Item): string {
 }
 
 export const messages = {
-  answer: (item: Item, answer: string) => `Re "${item.ask}": ${answer}`,
+  /** A typed question back goes as a question about the ask, so the agent answers it instead of closing the ask with it. */
+  answer: (item: Item, answer: string) =>
+    isQuestionBack(answer, item.options)
+      ? `About this question you asked me: ${answer}\n${quotedAsk(item)}`
+      : `Re "${item.ask}": ${answer}`,
   explain: (item: Item) => {
     const what =
       item.kind === 'task'

@@ -63,6 +63,7 @@ export type FeatureId =
   | 'status-named-fold'
   | 'seen-on-screen'
   | 'status-idle-age'
+  | 'question-back-stays-open'
 
 type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -143,6 +144,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-named-fold': { kind: 'full' },
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
+      'question-back-stays-open': { kind: 'full' },
     },
   },
   codex: {
@@ -277,6 +279,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-named-fold': { kind: 'full' },
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
+      'question-back-stays-open': {
+        kind: 'different',
+        reason:
+          "A typed reply to a question linked to an open Codex dialog goes in the dialog's reply form, question or not, since that form is what closes the dialog. The close refusal and the update rule apply as everywhere.",
+      },
     },
   },
   omp: {
@@ -366,6 +373,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-named-fold': { kind: 'full' },
       'seen-on-screen': { kind: 'full' },
       'status-idle-age': { kind: 'full' },
+      'question-back-stays-open': { kind: 'full' },
     },
   },
 }

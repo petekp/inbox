@@ -156,6 +156,11 @@ function recommendedOption(options, rec) {
   const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
   return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
 }
+var QUESTION_WORD = /^\s*(?:what|why|how|which|where|who)\b/i;
+function isQuestionBack(answer, options) {
+  const text2 = answer.trim();
+  return text2.endsWith("?") && (QUESTION_WORD.test(text2) || recommendedOption(options, text2) === null);
+}
 var FILLER = /* @__PURE__ */ new Set([
   "the",
   "and",
@@ -659,7 +664,8 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
   for (const item of ledger.items) {
     const outcome = closing.get(item.id);
     const helps = u.helped.filter((h) => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps);
-    const isClosing = outcome !== void 0 && (item.from !== "record" || isPersonsAnswer(outcome));
+    const isQuestionBackOutcome = outcome !== void 0 && item.kind === "question" && isQuestionBack(outcome, item.options);
+    const isClosing = outcome !== void 0 && !isQuestionBackOutcome && (item.from !== "record" || isPersonsAnswer(outcome));
     if (isClosing) closed.push(closedRecord(item, { outcome, how: "update" }, now));
     else items.push(withUpdate({ ...item, helps }, u.updated));
   }
