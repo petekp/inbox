@@ -30,6 +30,7 @@ One line per check, in any order:
 ```text
 <check id> | pass | <the fact the verdict rests on>
 <check id> | fail | <the fact the verdict rests on>
+<check id> | n/a | <what the page lacks>
 ```
 
 `parseJudgeAnswer` ignores every other line. An answer that leaves out a check, or gives one check twice, cannot be read, and counts as a wrong verdict on every check.
@@ -39,5 +40,5 @@ One line per check, in any order:
 The judge reads each part as it is, so a part has no title line or link back to this file.
 
 1. [`context.md`](status-judge/context.md): the judge's task, what it gets, how the page is drawn, and how to work.
-2. [`checks.md`](status-judge/checks.md): the eight checks, with examples that pass and fail.
+2. [`checks.md`](status-judge/checks.md): each check, with examples that pass and fail, and when a check has nothing to judge.
 3. [`answer.md`](status-judge/answer.md): the answer format, with an example.

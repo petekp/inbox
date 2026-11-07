@@ -6,10 +6,13 @@ import {
   PR_GROUP_TITLES,
   PR_TONES,
   checkRowText,
-  DISMISS_MERGED_ID,
   RANK_AGAIN_ID,
+  PR_REFRESH_ID,
   prCheckId,
+  isBlockPressShown,
+  prBlockRows,
   prMarkId,
+  PR_QUOTE_CHARS,
   prRowWaits,
   prThreadId,
   threadRowText,
@@ -18,16 +21,21 @@ import {
 import { isDismissed, openPrViews } from '../../hooks/pr-views'
 import { prRankText } from '../../hooks/pr-order'
 import type { PrRowMark } from '../../hooks/pr-rows'
+import type { PrCheck, PrThread } from '../../types'
 import type { PrOrderView } from '../../hooks/pr-order'
-import { failingChecks, readiness, waitingThreads } from '../../hooks/prs'
+import type { PrRefreshView } from '../../hooks/pr-refresh'
+import { commentParts, readiness } from '../../hooks/prs'
 import { capitalized } from '../../hooks/press-labels'
-import { cellWidth } from '../../hooks/text'
-import { settledTone, NEEDS_YOU_GROUPS, settledMark, settledLabel } from '../../hooks/rows'
+import { cellWidth, clipLabel } from '../../hooks/text'
+import { settledTone, NEEDS_YOU_GROUPS, settledMark, settledLabel, resumeLabel } from '../../hooks/rows'
 import { bannerOf, emptyText, isResumable, stopFix, stopText } from '../../hooks/banners'
-import { FINDING_GROUPS, HELP_COPY, helpKeys, MARK_LEGEND } from '../../hooks/help'
+import { isMaybeStale } from '../../hooks/band'
+import { FINDING_GROUPS, HELP_COPY, helpKeys, markLegend, tabLegend } from '../../hooks/help'
 import { isDrawnInPlace, runningMark } from '../../hooks/timing'
 import { isRowTab } from '../../hooks/tabs'
-import { statusKeyRows } from '../../hooks/action-plan'
+import { statusKeyRows } from '../../hooks/status-keys'
+import { goalSection, setGoal } from './panel-goal'
+import { unfoldedRows } from '../../hooks/status-page-parts'
 import type { StatusPage } from '../../hooks/status-page'
 import type { ShownTab } from '../../hooks/tabs'
 import { AGENT, STOP_ID, blankLine, doneAt, groupEntries, isGroupEmpty, prButtons, pressFeedback } from './panel-lines'
@@ -40,7 +48,7 @@ function stopEntries(screen: PanelScreen, ui: PanelUi): Entry[] {
   const canResume = isResumable(stop)
   const resuming = ui.resuming?.stopAt === stop.at ? ui.resuming : null
   const resume: Button = {
-    label: resuming?.is === 'sending' ? 'Resuming…' : 'Resume',
+    label: resumeLabel(resuming?.is === 'sending'),
     key: null,
     press: { action: 'resume' },
     isRecommended: true,
@@ -87,7 +95,7 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
         }))
   const stops = tab === 'needsYou' ? stopEntries(screen, ui) : []
   if (groups.every(isGroupEmpty)) {
-    const empty = emptyText(tab, AGENT)
+    const empty = emptyText(tab, AGENT, isMaybeStale(view, screen.isReadFailed))
 
     return stops.length > 0
       ? stops
@@ -97,7 +105,7 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
         ]
   }
 
-  return [...stops, ...groups.flatMap(g => groupEntries(g, ui.unfolded))]
+  return [...stops, ...groups.flatMap(g => groupEntries(g, ui))]
 }
 
 function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
@@ -108,19 +116,21 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
   const isWaiting = (id: string) => waits.some(w => w.id === id && w.isWaiting)
   const markLead = (mark: PrRowMark): Lead => ({
     text: mark.isRunning ? runningMark(now) : mark.text,
-    tone: mark.tone ?? 'sep',
+    tone: mark.tone ?? (mark.isRunning || !mark.text ? 'sep' : 'dim'),
   })
   const out: Entry[] = []
-  const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut }
+  const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut, failure: prs.failure }
   if (prs.drawn.length === 0) {
     const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, ...ghState }, 'session')
     return [
       { kind: 'note', text: empty.title, isStrong: true },
       { kind: 'note', text: empty.hint, isWhole: true },
+      ...(prs.refresh ? refreshEntries(screen, prs.refresh, now) : []),
     ]
   }
   const ghNotice = ghNoticeOf(ghState)
   if (ghNotice) out.push({ kind: 'banner', banner: bannerOf(ghNotice.kind, ghNotice.text) })
+  if (prs.refresh) out.push(...refreshEntries(screen, prs.refresh, now))
   if (prs.order) out.push(...orderEntries(screen, prs.order, now))
   for (const d of prs.drawn) {
     const { pr, state } = d
@@ -137,16 +147,18 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
           title: pr.title,
           isDim: true,
           settled: {
-            label: settledLabel(state.label, state.delivery),
+            label: settledLabel(state.label, state.delivery, state.reply),
             tone: settledTone(state),
             undo: state.canUndo ? { action: 'pr-undo', ref: pr.ref } : null,
+            at: state.at,
           },
         },
       })
       continue
     }
-    const { status, head, unlisted } = readiness(pr, isSent)
-    const f = isDismissed(lastActions, pr.ref) ? null : pressFeedback(screen, markId, now)
+    const { status, head, unlisted } = readiness(pr, isSent, AGENT)
+    const isPrLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
+    const f = isPrLastShown ? pressFeedback(screen, markId, now) : null
     out.push({
       kind: 'row',
       line: {
@@ -162,13 +174,11 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
         isWaiting: false,
       },
     })
-    const threads = waitingThreads(pr)
-    if (threads.length > 0) out.push({ kind: 'heading', text: PR_GROUP_TITLES.threads, count: threads.length })
-    for (const t of threads) {
+    const threadEntry = (t: PrThread): Entry => {
       const id = prThreadId(pr, t)
       const text = threadRowText(pr, t, lastActions)
       const feedback = pressFeedback(screen, id, now, text.mark.isDone)
-      out.push({
+      return {
         kind: 'row',
         line: {
           ...blankLine(id),
@@ -176,46 +186,72 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
           lead: markLead(text.mark),
           title: text.title,
           isDim: text.fold !== null,
+          body: clipLabel(commentParts(t.body).rest, PR_QUOTE_CHARS) || null,
           detail: [text.meta, text.fold?.note].filter(Boolean).join(' · ') || null,
-          age: doneAt(feedback),
+          age: doneAt(feedback) ?? t.at,
           feedback,
           buttons: prButtons(threadActions(pr, t, presses)),
           isWaiting: isWaiting(id),
           isFolded: text.fold !== null,
         },
-      })
+      }
     }
-    const checks = failingChecks(pr)
-    if (checks.length > 0) out.push({ kind: 'heading', text: PR_GROUP_TITLES.checks, count: checks.length })
-    for (const c of checks) {
+    const checkEntry = (c: PrCheck): Entry => {
       const id = prCheckId(pr, c)
-      const text = checkRowText(c)
+      const text = checkRowText(pr, c)
       const feedback = pressFeedback(screen, id, now, text.mark.isDone)
-      out.push({
+      return {
         kind: 'row',
         line: {
           ...blankLine(id),
           depth: 1,
           lead: markLead(text.mark),
           title: text.lead ? `${text.lead} / ${text.title}` : text.title,
-          detail: text.meta,
-          age: doneAt(feedback),
+          isDim: text.fold !== null,
+          isFolded: text.fold !== null,
+          detail: [text.meta, text.fold?.note].filter(Boolean).join(' · '),
+          age: doneAt(feedback) ?? c.finishedAt ?? null,
           feedback,
           buttons: prButtons(checkActions(pr, c, presses)),
           isWaiting: isWaiting(id),
         },
-      })
+      }
+    }
+    const rows = prBlockRows(pr, false, { thread: threadEntry, check: checkEntry })
+    const groups = [
+      { title: PR_GROUP_TITLES.threads, entries: rows.threads },
+      { title: PR_GROUP_TITLES.checks, entries: rows.checks },
+      { title: PR_GROUP_TITLES.cancelled, entries: rows.cancelled },
+    ]
+    for (const { title, entries } of groups) {
+      if (entries.length > 0) out.push({ kind: 'heading', text: title, count: entries.length })
+      out.push(...entries)
     }
   }
-  const tabButtons = prButtons(prs.tabActions)
-  if (tabButtons.length > 0)
-    out.push({
-      kind: 'row',
-      line: { ...blankLine(DISMISS_MERGED_ID), buttons: tabButtons, isWaiting: false, isTabButtons: true },
-    })
   if (prs.olderText) out.push({ kind: 'note', text: prs.olderText })
 
   return out
+}
+
+/** The line under the notices while a PR could not be read: which ones, Refresh PRs, and its press status. */
+function refreshEntries(screen: PanelScreen, refresh: PrRefreshView, now: number): Entry[] {
+  const buttons = prButtons(refresh.actions)
+
+  return [
+    {
+      kind: 'row',
+      line: {
+        ...blankLine(PR_REFRESH_ID),
+        lead: null,
+        title: refresh.text ?? '',
+        feedback: refresh.showsPress ? pressFeedback(screen, PR_REFRESH_ID, now) : null,
+        buttons,
+        isStatic: buttons.length === 0,
+        isWaiting: false,
+        isTabButtons: buttons.length > 0,
+      },
+    },
+  ]
 }
 
 /** The order's title, the agent's reason under it, and the changed line with Rank again and its press status. */
@@ -248,25 +284,29 @@ export const PAGE_TEXT_AT = PAGE_MARK_AT + 2
 /** Where the mark of a child under a subject sits: after the tree's arm, which starts under the subject's mark. */
 export const PAGE_CHILD_AT = PAGE_MARK_AT + 3
 
-function pageEntries(page: StatusPage): Entry[] {
+function pageEntries(page: StatusPage, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
+  const blank: Entry = { kind: 'note', text: '' }
   if (page.isEmpty)
     return [
       { kind: 'note', text: page.empty.title, isStrong: true },
       { kind: 'note', text: page.empty.hint, isWhole: true },
+      ...setGoal(page, typing),
     ]
   const description = page.head?.description
-  const head: Entry[] = page.head
-    ? [
-        { kind: 'note', text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
-        ...(description ? [{ kind: 'note' as const, text: description, indent: PAGE_MARK_AT }] : []),
-      ]
-    : []
-  const rows = page.rows.map((row): Entry => ({ kind: 'page', row }))
+  const head: Entry[] =
+    page.goal === null && page.head
+      ? [
+          { kind: 'note', text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
+          ...(description ? [{ kind: 'note' as const, text: description, indent: PAGE_MARK_AT }] : []),
+        ]
+      : []
+  const top = [...goalSection(page, typing, isUnfolded), ...(head.length > 0 ? [blank, ...head] : [])]
+  const rows = unfoldedRows(page.rows, isUnfolded).map((row): Entry => ({ kind: 'page', row }))
 
-  return head.length > 0 && rows.length > 0 ? [...head, { kind: 'note', text: '' }, ...rows] : [...head, ...rows]
+  return top.length > 0 && rows.length > 0 ? [...top, blank, ...rows] : [...top, ...rows]
 }
 
-/** Help in place of the tab's lines: the keys the panel takes, then what each mark means. */
+/** Help in place of the tab's lines: the keys the panel takes, what each mark means, then each tab's symbol. */
 function helpEntries(screen: PanelScreen, tab: ShownTab): Entry[] {
   const keys = helpKeys('omp', screen.isNextBuild === true, tab, statusKeyRows(screen.view.statusPage).length > 0)
   const column = Math.max(...keys.map(k => cellWidth(k.keys))) + 2
@@ -276,13 +316,16 @@ function helpEntries(screen: PanelScreen, tab: ShownTab): Entry[] {
     ...keys.map((key): Entry => ({ kind: 'key', key, column })),
     { kind: 'note', text: '' },
     { kind: 'heading', text: HELP_COPY.marks },
-    ...MARK_LEGEND.map((entry): Entry => ({ kind: 'legend', entry })),
+    ...markLegend(screen.isNextBuild === true).map((entry): Entry => ({ kind: 'legend', entry })),
+    { kind: 'note', text: '' },
+    { kind: 'heading', text: HELP_COPY.tabs },
+    ...tabLegend(screen.isNextBuild === true).map((key): Entry => ({ kind: 'key', key, column: Math.max(column, 4) })),
   ]
 }
 
 export function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: number): Entry[] {
   if (ui.isHelpShown && tab === ui.tab) return helpEntries(screen, tab)
-  if (!isRowTab(tab)) return pageEntries(screen.view.statusPage)
+  if (!isRowTab(tab)) return pageEntries(screen.view.statusPage, ui.typing, id => ui.statusUnfolded.includes(id))
 
   return tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab)
 }

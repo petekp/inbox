@@ -3,9 +3,10 @@ import { version } from '../package.json'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
 import { lookEndedOn, withLook } from '../../hooks/session-status'
+import type { ShownRows } from '../../hooks/status-children'
 import { withHolds } from '../../hooks/session-presses'
 import { sessionView } from '../../hooks/session-view'
-import { press, wakeForDone } from '../../hooks/host-press'
+import { press, wakeAfterSettle } from '../../hooks/host-press'
 import type { PressOutcome } from '../../hooks/host-press'
 import { NO_HOLDS } from '../../hooks/timing'
 import { RESUME_TEXT } from '../../hooks/banners'
@@ -29,7 +30,9 @@ export type Inbox = {
   /** Records the tab an open panel shows. A new tab saves `holds`, with the showing the panel started. */
   showTab(ctx: OmpContext, tab: ShownTab, holds: Holds): void
   closePanel(ctx: OmpContext): void
-  fetchPrsWhenDue(ctx: OmpContext): void
+  /** Notes that the panel has the Status subject rows `ids` on screen now, for the look under way. */
+  showRows(ctx: OmpContext, ids: string[]): void
+  fetchPrsWhenDue(ctx: OmpContext, isTabShown: boolean): void
   /**
    * Asks Herdr about the running delegates at most each `HERDR_CHECK_MS`, so a delegate's row follows Herdr while the
    * session waits. The panel asks while it shows the Status.
@@ -46,6 +49,14 @@ export type Inbox = {
 export function panelCalls(context: HostContext, sessions: SessionCalls) {
   const { deps, dir, openPanels, prFetches, listeners, memory, sendToAgent, modelNameOf } = context
   const { change, hostFor, fetchPrsWhenDue, checkDelegatesWhenDue, wakeLater } = sessions
+  /** When each Status subject row was last on screen in each session's look under way, by session id. */
+  const shownRows = new Map<string, Map<string, number>>()
+  /** The rows the session's look showed. The next look starts with none. */
+  const takeShownRows = (id: string): ShownRows => {
+    const rows = Object.fromEntries(shownRows.get(id) ?? [])
+    shownRows.delete(id)
+    return rows
+  }
 
   const inbox: Inbox = {
     screen: async (ctx, holds = NO_HOLDS) => {
@@ -53,7 +64,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
       const s = await readState(dir, id)
 
       return {
-        view: sessionView(s, deps.now(), deps.settleWindowMs, true, holds),
+        view: sessionView(s, deps.now(), deps.settleWindowMs, holds),
         modelName: modelNameOf(ctx),
         isGhMissing: memory.isGhMissing,
         isFetchingPrs: prFetches.isFetching(id),
@@ -66,8 +77,8 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
       const id = sessionIdOf(ctx)
       openPanels.set(id, 'needsYou')
       deps.background(change(id, s => ({ ...s, shownSince: openedAt })))
-      await wakeForDone(hostFor(ctx)).catch(() => undefined)
-      fetchPrsWhenDue(ctx)
+      await wakeAfterSettle(hostFor(ctx)).catch(() => undefined)
+      fetchPrsWhenDue(ctx, false)
     },
     showTab: (ctx, tab, holds) => {
       const id = sessionIdOf(ctx)
@@ -75,13 +86,25 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
       const isChanged = openPanels.get(id) !== tab
       openPanels.set(id, tab)
       const now = deps.now()
-      if (isChanged) deps.background(change(id, s => withHolds(withLook(s, tab === 'overview', now), holds)))
+      if (isChanged) {
+        const shown = takeShownRows(id)
+        deps.background(change(id, s => withHolds(withLook(s, tab === 'overview', now, shown), holds)))
+      }
       if (isChanged && tab === 'overview') checkDelegatesWhenDue(ctx)
+      if (isChanged && tab === 'prs') fetchPrsWhenDue(ctx, true)
     },
     closePanel: ctx => {
       const id = sessionIdOf(ctx)
       openPanels.delete(id)
-      deps.background(change(id, s => ({ ...lookEndedOn(s, deps.now()), shownSince: null })))
+      const shown = takeShownRows(id)
+      deps.background(change(id, s => ({ ...lookEndedOn(s, deps.now(), shown), shownSince: null })))
+    },
+    showRows: (ctx, ids) => {
+      const id = sessionIdOf(ctx)
+      const rows = shownRows.get(id) ?? new Map<string, number>()
+      const now = deps.now()
+      for (const row of ids) rows.set(row, now)
+      shownRows.set(id, rows)
     },
     fetchPrsWhenDue,
     checkDelegatesWhenDue,
@@ -95,7 +118,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
     },
     press: async (ctx, p, holds) => {
       const outcome = await press(hostFor(ctx), p, false, holds)
-      if (outcome.wakesForDone) wakeLater(ctx)
+      if (outcome.wakesAfterSettle) wakeLater(ctx)
 
       return outcome
     },
@@ -110,9 +133,10 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
       return { error: outcome.error, note: outcome.note, isUnconfirmed: outcome.isUnconfirmed }
     },
     resume: async () => inbox.resume(ctx),
-    fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),
+    fetchPrsWhenDue: isTabShown => inbox.fetchPrsWhenDue(ctx, isTabShown),
     checkDelegatesWhenDue: () => inbox.checkDelegatesWhenDue(ctx),
     shown: (tab, holds) => inbox.showTab(ctx, tab, holds),
+    showedRows: ids => inbox.showRows(ctx, ids),
     onChange: listener => inbox.onChange(ctx, listener),
   })
 

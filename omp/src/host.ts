@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { NO_PR_SHARED } from '../../hooks/pr-fetch'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -66,6 +67,8 @@ export type HostDeps = {
   copy: (text: string) => Promise<string | null>
   /** Runs work the handler that started it does not wait for. */
   background: (work: Promise<unknown>) => void
+  /** Runs `fn` once, `ms` from now, without keeping omp running. */
+  after: (ms: number, fn: () => Promise<unknown>) => void
   /** Whether a failed request hit the account's usage limit, by omp's own rule. */
   isUsageLimit: (status: number | undefined, message: string) => Promise<boolean>
   /** The Herdr pane omp runs in, from `HERDR_PANE_ID`, or null outside Herdr. */
@@ -118,6 +121,7 @@ const defaultDeps: HostDeps = {
   complete: defaultComplete,
   copy: copyToClipboard,
   background: work => void work.catch(() => undefined),
+  after: (ms, fn) => void setTimeout(fn, ms).unref(),
   isUsageLimit: isUsageLimitOutcome,
   herdrPane: process.env.HERDR_PANE_ID || null,
 }
@@ -177,17 +181,17 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   function askFor(ctx: ExtensionContext, id: string): SessionHost<OmpState>['ask'] {
-    return async (prompt, system, report) => {
+    return async (prompt, system, _kind, report) => {
       const model = inboxModel(ctx)
       if (!model) {
-        report?.({ model: 'none', error: 'omp offers no model for the inbox' })
+        report?.({ model: 'none', error: 'omp offers no model for the inbox', cause: 'error' })
         return null
       }
       const asked = `${model.provider}/${model.id}`
       try {
         const apiKey = await ctx.modelRegistry.getApiKey(model, id)
         if (!apiKey) {
-          report?.({ model: asked, error: 'omp has no sign-in for the model' })
+          report?.({ model: asked, error: 'omp has no sign-in for the model', cause: 'error' })
           return null
         }
         const reply = await deps.complete(
@@ -200,17 +204,25 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         )
         if (reply.stopReason === 'error' || reply.stopReason === 'aborted') {
           const status = reply.errorStatus === undefined ? '' : ` ${reply.errorStatus}`
-          report?.({ model: asked, error: `${reply.stopReason}${status}: ${reply.errorMessage ?? ''}`.trim() })
+          report?.({
+            model: asked,
+            error: `${reply.stopReason}${status}: ${reply.errorMessage ?? ''}`.trim(),
+            cause: 'error',
+          })
           return null
         }
         const text = reply.content.flatMap(b => (b.type === 'text' ? [b.text] : [])).join('')
         // `model` repeats the id asked for. `upstreamModel` names the model that answered, when omp can tell.
         const answeredBy = reply.upstreamModel === undefined ? {} : { answeredBy: reply.upstreamModel }
-        report?.({ model: asked, ...answeredBy, ...(text === '' ? { error: 'the reply held no text' } : {}) })
+        report?.({
+          model: asked,
+          ...answeredBy,
+          ...(text === '' ? { error: 'the reply held no text', cause: 'no-reply' as const } : {}),
+        })
 
         return text === '' ? null : text
       } catch (err) {
-        report?.({ model: asked, error: messageOf(err) })
+        report?.({ model: asked, error: messageOf(err), cause: 'error' })
         return null
       }
     }
@@ -238,7 +250,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     listeners: new Map(),
     reportToHerdr: herdrReporter(),
     run,
-    memory: { isGhMissing: false, shownId: null, framesFor: null },
+    memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null },
     sendToAgent,
     askFor,
     dropTools,
@@ -331,7 +343,12 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
               screen = next
               tui.requestRender()
             })
-            .catch(() => undefined)
+            .catch(() => {
+              if (screen && !screen.isReadFailed) {
+                screen = { ...screen, isReadFailed: true }
+                tui.requestRender()
+              }
+            })
         void refresh()
         const stop = inbox.onChange(ctx, () => void refresh())
 

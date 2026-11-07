@@ -1,9 +1,9 @@
 import { expect, test } from 'claude-code/testing'
 
-import { asksText, lookEnded, lookStarted, LOOK_MIN_MS } from '../hooks/status-children'
+import { asksText, lookEnded, lookStarted, LOOK_MIN_MS, withChild } from '../hooks/status-children'
 import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
-import { mergedLine, nameBeforeStall } from '../hooks/status-page'
-import { statusKeyPlan } from '../hooks/action-plan'
+import { mergedLine, nameBeforeStall, statusPage } from '../hooks/status-page'
+import { statusKeyPlan } from '../hooks/status-keys'
 import {
   IDLE_MARK,
   CLOSED_MARKS,
@@ -14,7 +14,9 @@ import {
   RUNNING_FRAMES,
   SUBJECT_MARKS,
 } from '../hooks/help'
-import type { Item } from '../types'
+import type { Item, SessionStatus } from '../types'
+import { minutes } from '../evals/status-replay'
+import { sessionOf, statusOf, subject } from './status-evals-scenes'
 import { MIN, after, askItem, page, shape } from './status-helpers'
 
 test('a look keeps the look line where it was until the look ends, and counts only once the Status showed for five seconds', () => {
@@ -23,8 +25,8 @@ test('a look keeps the look line where it was until the look ends, and counts on
 
   expect(looking.lastLookAt).toBe(50)
   expect(lookStarted(looking, 300)).toBe(looking)
-  expect(lookEnded(looking, 200 + LOOK_MIN_MS)).toMatchObject({ lastLookAt: 200 + LOOK_MIN_MS, look: null })
-  expect(lookEnded(looking, 199 + LOOK_MIN_MS)).toMatchObject({ lastLookAt: 50, look: null })
+  expect(lookEnded(looking, 200 + LOOK_MIN_MS, 'all')).toMatchObject({ lastLookAt: 200 + LOOK_MIN_MS, look: null })
+  expect(lookEnded(looking, 199 + LOOK_MIN_MS, 'all')).toMatchObject({ lastLookAt: 50, look: null })
   expect(lookStarted(null, 1)).toBeNull()
 })
 
@@ -82,7 +84,7 @@ test('each side of the look line lists held, working, waiting, queued, then fini
   ])
 })
 
-test('only a subject an open ask holds up reads waiting, in the needs-you tone, with no time, and one waiting on someone else shows no word', () => {
+test('only a subject an open ask holds up reads waiting, in the needs-you tone, with no time, and one waiting on someone else shows no word until it idles', () => {
   const o = after(
     null,
     'NEW: waits-on-other | Review | sent for review\nNEW: working | Sync | needs a pick\nNEW: queued | Docs | not started\nLINK: i1 | s2\nLINK: i2 | s2',
@@ -99,6 +101,38 @@ test('only a subject an open ask holds up reads waiting, in the needs-you tone, 
   expect(stalls(20 * MIN)).toEqual(waiting)
   expect(stalls(2 * 60 * MIN)).toEqual(waiting)
   expect(shape(page(o, 2 * 60 * MIN, {}, asks).rows)[1]).toBe('◌ Review: sent for review')
+})
+
+test('an open subject unchanged for a day reads how long it has been idle, in whole days, muted, unless its work runs or an ask holds it', () => {
+  const DAY = 24 * 60 * MIN
+  const o = after(
+    null,
+    'NEW: working | Sync | needs a pick\nNEW: working | Search | index built\nNEW: queued | Docs | not started\nDONE: Docs | written\nNEW: waits-on-other | Review | sent\nLINK: i1 | s1',
+    0,
+    new Set(['i1']),
+  )
+  const child = {
+    ref: 't1',
+    kind: 'subagent' as const,
+    name: 'reindex',
+    startedAt: 0,
+    endedAt: null,
+    lastActivityAt: 0,
+  }
+  const running = { ...withChild(o, child, 0), children: [{ ...withChild(o, child, 0).children[0]!, subjectId: 's2' }] }
+  const stalls = (now: number, turn = false) =>
+    page(running, now, { isTurnRunning: turn }, [askItem('i1')]).rows.flatMap(r =>
+      r.kind === 'subject' ? [`${r.name}: ${r.stall?.text ?? '-'}${r.stall ? ` (${r.stall.tone})` : ''}`] : [],
+    )
+
+  expect(stalls(DAY - MIN)).toEqual(['Sync: waiting (needsYou)', 'Search: -', 'Review: -', 'Docs: -'])
+  expect(stalls(2 * DAY + 5 * 60 * MIN)).toEqual([
+    'Sync: waiting (needsYou)',
+    'Search: -',
+    'Review: idle 2d (muted)',
+    'Docs: -',
+  ])
+  expect(stalls(2 * DAY, true)).toContain('Review: idle 2d (muted)')
 })
 
 test('a name before its stall word is cut at a word with an ellipsis until both fit, and keeps its first word when nothing fits', () => {
@@ -126,7 +160,7 @@ test('an open ask linked to an open subject marks it ◆ and stops its running m
   const held = page(o, MIN, { isTurnRunning: true }, [askItem('i1')]).rows[0]
   const answered = page(o, MIN, { isTurnRunning: true }, []).rows[0]
 
-  expect(o.askSubjects).toEqual({ i1: 's1' })
+  expect(o.askSubjects).toEqual({ i1: ['s1'] })
   expect(asksText(o, [askItem('i1'), askItem('i3')])).toBe('i1 | Ask i1? | s1\ni3 | Ask i3? | -')
   expect(held).toMatchObject({ mark: '◆', tone: 'needsYou', isRunning: false })
   expect(answered).toMatchObject({ mark: '●', tone: null, isRunning: true })
@@ -148,7 +182,9 @@ test('a subject that open asks hold up offers View on the oldest ask, named for 
     i3: askItem('i3'),
   }
   const viewOf = (items: Item[]) =>
-    page(o, 10 * MIN, {}, items).rows.map(r => statusKeyPlan(r).map(k => `${r.id} ${k.label} ${k.press.askId}`))
+    page(o, 10 * MIN, {}, items).rows.map(r =>
+      statusKeyPlan(r).map(k => `${r.id} ${k.label} ${k.press.action === 'show-ask' ? k.press.askId : ''}`),
+    )
 
   expect(viewOf([asks.i1, asks.i2])).toEqual([['s1 View task i2'], []])
   expect(viewOf([asks.i1, asks.i2, asks.i3])).toEqual([['s1 View question i3'], []])
@@ -169,27 +205,68 @@ test('a page with no head and no rows shows its empty state, even while a turn r
   )
 })
 
-test('finished work folds into a count once seen, keeping at most two new finished rows', () => {
+test('work closed since the last look shows as two rows, the rest is named in a fold for each status above the look line, and finished work folds into a count once seen', () => {
   const now = 100 * MIN
   const opened = after(
     null,
-    ['NEW: working | One | a', 'NEW: working | Two | b', 'NEW: working | Three | c', 'NEW: working | Four | d'].join(
-      '\n',
-    ),
+    [
+      'NEW: working | One | a',
+      'NEW: working | Two | b',
+      'NEW: working | Three | c',
+      'NEW: working | Four | d',
+      'NEW: working | Five | e',
+      'NEW: working | Six | f',
+    ].join('\n'),
     10 * MIN,
   )
   const old = after(opened, 'DONE: s1 | done a', 20 * MIN)
-  const fresh = after(
-    after(after(old, 'DONE: s2 | done b', 70 * MIN), 'DONE: s3 | done c', 80 * MIN),
+  const fresh = [
+    'DONE: s2 | done b',
+    'DROP: s6 | not needed',
+    'DONE: s5 | done e',
+    'DONE: s3 | done c',
     'DONE: s4 | done d',
-    90 * MIN,
-  )
+  ].reduce((o, line, n) => after(o, line, (65 + 5 * n) * MIN), old)
 
   expect(shape(page({ ...fresh, lastLookAt: 60 * MIN }, now).rows)).toEqual([
     '✓ Four: done d',
     '✓ Three: done c',
+    '✓ Also done: Five, Two',
+    '✗ Also dropped: Six',
     '-- Last seen',
-    '✓ 2 more done',
+    '▸ 1 more done',
+  ])
+})
+
+test('when every row on the page closed since the last look, the named fold ends the rows, above the look line', () => {
+  const opened = after(
+    null,
+    ['NEW: working | One | a', 'NEW: working | Two | b', 'NEW: working | Three | c'].join('\n'),
+    10 * MIN,
+  )
+  const closed = ['DONE: s1 | done a', 'DONE: s2 | done b', 'DONE: s3 | done c'].reduce(
+    (o, line, n) => after(o, line, (20 + 10 * n) * MIN),
+    opened,
+  )
+
+  expect(shape(page({ ...closed, lastLookAt: 15 * MIN }, 60 * MIN).rows)).toEqual([
+    '✓ Three: done c',
+    '✓ Two: done b',
+    '✓ Also done: One',
+    '-- Last seen',
+  ])
+})
+
+test('a named line shows two names, the newest first, and counts the rest as +N more', () => {
+  const names = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven']
+  const opened = after(null, names.map(n => `NEW: working | ${n} | x`).join('\n'), 10 * MIN)
+  const closed = names.reduce((o, _, n) => after(o, `DONE: s${n + 1} | done`, (20 + 5 * n) * MIN), opened)
+
+  expect(shape(page({ ...closed, lastLookAt: 15 * MIN }, 90 * MIN).rows)).toEqual([
+    '✓ Seven: done',
+    '✓ Six: done',
+    '✓ Also done: Five, Four, +3 more',
+    '-- Last seen',
   ])
 })
 
@@ -207,4 +284,44 @@ test('the Help legend explains every mark a row or group title draws, once each'
   expect(new Set(explained).size).toBe(explained.length)
   expect([...drawn].sort()).toEqual([...explained].sort())
   expect(MARK_LEGEND.filter(m => m.isRunning).map(m => m.mark)).toEqual([RUNNING_FRAMES[0]])
+})
+
+const MANY = 40
+const manyChanged = () =>
+  statusOf(
+    Array.from({ length: MANY }, (_, n) => subject(`s${n + 1}`, 'working', `Piece ${n + 1}`, 'under way', 10)),
+    {
+      lastLookAt: minutes(0),
+    },
+  )
+const shownAt = (ids: string[], at: number) => Object.fromEntries(ids.map(id => [id, at]))
+const firstSix = Array.from({ length: 6 }, (_, n) => `s${n + 1}`)
+const namesAbove = (o: SessionStatus) => {
+  const rows = statusPage(sessionOf(o, [], 30), minutes(30)).rows
+  const lookAt = rows.findIndex(r => r.kind === 'look')
+  return lookAt === -1 ? null : rows.slice(0, lookAt).flatMap(r => (r.kind === 'subject' ? [r.id] : []))
+}
+
+test('a look that showed the first 6 of 40 changed rows leaves the other 34 above the look line', () => {
+  const looked = lookEnded(lookStarted(manyChanged(), minutes(20)), minutes(21), shownAt(firstSix, minutes(20)))!
+  const above = namesAbove(looked)
+
+  expect(above).toHaveLength(MANY - firstSix.length)
+  expect(above?.some(id => firstSix.includes(id))).toBe(false)
+})
+
+test('a row shown only before its subject changed stays above the look line, and a missed row stays unseen through a later look that misses it too', () => {
+  const first = lookEnded(lookStarted(manyChanged(), minutes(20)), minutes(21), shownAt(['s1', 's2'], minutes(5)))!
+  const second = lookEnded(lookStarted(first, minutes(25)), minutes(26), shownAt(['s3'], minutes(25)))!
+
+  expect(namesAbove(first)).toHaveLength(MANY)
+  expect(namesAbove(second)).toHaveLength(MANY - 1)
+  expect(second.missedInLastLook).toMatchObject({ s1: minutes(0), s40: minutes(0) })
+})
+
+test('a look that counts every row, as the desktop pane does, marks every subject seen', () => {
+  const looked = lookEnded(lookStarted(manyChanged(), minutes(20)), minutes(21), 'all')!
+
+  expect(looked.missedInLastLook).toEqual({})
+  expect(statusPage(sessionOf(looked, [], 30), minutes(30)).rows.some(r => r.kind === 'look')).toBe(false)
 })

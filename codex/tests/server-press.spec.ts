@@ -3,25 +3,32 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
+import { parseStatus } from '../../hooks/status'
+import { applyStatus } from '../../hooks/status-ops'
 import { QUEUED_AFTER_MS } from '../../hooks/timing'
 import { notePrompt, viewOf } from '../src/core'
 import { makeServer } from '../src/server'
 import { readState, updateState } from '../src/state'
+import { SETTLE_WINDOW_MS } from '../src/settle'
 import { handleHook } from '../src/hook'
 import { findCli, queueResumeCheck } from '../src/cli'
 import { fakeRunner, hookDeps, input, tempDir } from './helpers'
-import { ANSWER, setup } from './server-fixtures'
+import { ANSWER, pollTab, queueCalls, setup } from './server-fixtures'
 
-test('a press sends its message into the tab’s thread with the codex binary the hooks saw, and the next prompt reads it as a press', async () => {
-  const { dir, calls, call } = await setup(0)
+test('an answer waits out its Undo window, then goes into the tab’s thread with the codex binary the hooks saw, and the next prompt reads it as a press', async () => {
+  let at = 100
+  const { dir, calls, call } = await setup(0, () => at)
   const r = await call('inbox_press', { ...ANSWER, shownSince: 0 }, { thread_id: 's1' })
   assert.equal(r.result.structuredContent.error, null)
   assert.equal(r.result.structuredContent.note, null)
-  assert.deepEqual(calls, [['/apps/codex', 'queue', '--thread', 's1', '--message', 'Re "Ship it?": Yes']])
+  assert.deepEqual(queueCalls(calls), [])
   assert.deepEqual(
     r.result.structuredContent.view.needsYou.questions.map(q => [q.id, q.state.is]),
     [['i1', 'settled']],
   )
+  at += SETTLE_WINDOW_MS
+  await pollTab(call)
+  assert.deepEqual(queueCalls(calls), [['/apps/codex', 'queue', '--thread', 's1', '--message', 'Re "Ship it?": Yes']])
   const s = await readState(dir, 's1')
   assert.equal(s.sent[0]?.text, 'Re "Ship it?": Yes')
 
@@ -42,7 +49,8 @@ test('a press passes --resume only to a codex whose queue help lists it, and ask
     helpRuns.push(args[0]!)
     return { code: 0, stdout: helps[args[0]!]!, stderr: '' }
   })
-  const queueCalls = async (cli: string) => {
+  const queuedBy = async (cli: string) => {
+    let at = 100
     const { dir } = await setup(0)
     await updateState(dir, 's1', s => ({
       ...s,
@@ -57,7 +65,7 @@ test('a press passes --resume only to a codex whose queue help lists it, and ask
     const handle = makeServer({
       comparePage: '/plugin/dist/compare-page.html',
       dir,
-      now: () => 100,
+      now: () => at,
       exec: runner.exec,
       tabHtml: '<html></html>',
       fallbackCli: async () => 'codex',
@@ -74,12 +82,19 @@ test('a press passes --resume only to a codex whose queue help lists it, and ask
           _meta: { thread_id: 's1' },
         },
       })
+    at += SETTLE_WINDOW_MS
+    await handle({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'inbox_view', arguments: {}, _meta: { thread_id: 's1' } },
+    })
 
-    return runner.calls
+    return queueCalls(runner.calls)
   }
 
-  const newer = await queueCalls('/apps/codex-0.166')
-  const older = await queueCalls('/apps/codex-0.164')
+  const newer = await queuedBy('/apps/codex-0.166')
+  const older = await queuedBy('/apps/codex-0.164')
   assert.equal(newer.length, 2)
   assert.equal(older.length, 2)
   assert.deepEqual(newer[0], [
@@ -117,7 +132,8 @@ test('a press drawn in another thread, or on a row that changed, reads stale and
 })
 
 test('an answer pressed while the turn that opened a dialog still runs goes in the form the Codex app reads as the dialog’s answer, reads Queued, and arrives as the press', async () => {
-  const { dir, calls, call } = await setup(0)
+  let at = 100
+  const { dir, calls, call } = await setup(0, () => at)
   const transcript = join(tempDir(), 'rollout.jsonl')
   const questions = [
     { title: 'Which name?', options: ['Ada', 'Grace'] },
@@ -147,7 +163,9 @@ test('an answer pressed while the turn that opened a dialog still runs goes in t
     heard: { ...s.heard, promptAt: 1 },
   }))
   await call('inbox_press', ANSWER, { thread_id: 's1' })
-  const message = calls[0]?.[5] ?? ''
+  at += SETTLE_WINDOW_MS
+  await pollTab(call)
+  const message = queueCalls(calls)[0]?.[5] ?? ''
   const open = '<send_user_message_question_reply>'
   const close = '</send_user_message_question_reply>'
   assert.ok(message.startsWith(open) && message.endsWith(close))
@@ -177,7 +195,7 @@ test('a press reads Explaining… at once, Queued once its message waits QUEUED_
   )
   assert.deepEqual(viewOf(s, 100 + QUEUED_AFTER_MS).needsYou.questions[0]?.feedback, {
     is: 'queued',
-    label: 'Explain',
+    label: 'Queued: Explain',
     at: 100,
   })
   const arrived = notePrompt(s, s.sent[0]!.text, 200).state
@@ -190,18 +208,20 @@ test('a press reads Explaining… at once, Queued once its message waits QUEUED_
   assert.deepEqual(viewOf(replied, 300).needsYou.questions[0]?.feedback, { is: 'done', label: 'Explained', at: 100 })
 })
 
-test('a press rejected before queue starts reopens its question and offers Try again', async () => {
+test('an answer refused before queue starts reopens its question and offers Try again', async () => {
+  let at = 100
   const { dir, call, calls } = await setup(
     0,
-    () => 100,
+    () => at,
     async () => {
       throw new Error('codex binary missing')
     },
   )
   await updateState(dir, 's1', s => ({ ...s, cliPath: null }))
-  const r = await call('inbox_press', ANSWER, { thread_id: 's1' })
-  assert.match(r.result.structuredContent.error ?? '', /Not sent: codex binary missing/)
-  const question = r.result.structuredContent.view.needsYou.questions[0]
+  await call('inbox_press', ANSWER, { thread_id: 's1' })
+  at += SETTLE_WINDOW_MS
+  await pollTab(call)
+  const question = viewOf(await readState(dir, 's1'), at).needsYou.questions[0]
   assert.equal(question?.state.is, 'open')
   assert.deepEqual(question?.feedback, {
     is: 'notSent',
@@ -211,19 +231,21 @@ test('a press rejected before queue starts reopens its question and offers Try a
   const s = await readState(dir, 's1')
   assert.deepEqual(s.sent, [])
   assert.deepEqual(s.ledger.closed, [])
-  assert.deepEqual(calls, [])
+  assert.deepEqual(queueCalls(calls), [])
 })
 
-test('a queue command failure leaves the accepted press unconfirmed without retrying it', async () => {
-  const { dir, call, calls } = await setup(1)
+test('a queue command failure leaves the released answer unconfirmed without retrying it', async () => {
+  let at = 100
+  const { dir, call, calls } = await setup(1, () => at)
   const r = await call('inbox_press', ANSWER, { thread_id: 's1' })
   assert.equal(r.result.structuredContent.error, null)
-  assert.equal((r.result.structuredContent as unknown as { delivery: string }).delivery, 'unconfirmed')
+  at += SETTLE_WINDOW_MS
+  await pollTab(call)
   const s = await readState(dir, 's1')
   assert.equal(s.ledger.closed[0]?.id, 'i1')
   assert.equal(s.lastActions.i1?.delivery?.state, 'unconfirmed')
   assert.equal(s.sent[0]?.phase, 'uncertain')
-  assert.equal(calls.length, 1)
+  assert.equal(queueCalls(calls).length, 1)
   const observed = notePrompt(s, s.sent[0]!.text, 200).state
   assert.equal(observed.sent.length, 1)
   assert.equal(observed.lastActions.i1?.delivery?.state, 'unconfirmed')
@@ -236,4 +258,59 @@ test('a server whose environment names no CLI runs its parent when that is a cod
   assert.equal(await findCli({}, exec, 42), '/apps/CodexCLI.app/Contents/MacOS/codex')
   assert.equal(await findCli({}, exec, 43), 'codex')
   assert.equal(await findCli({ CODEX_APP_RUNTIME_CLI_PATH: '/app/codex' }, exec, 43), '/app/codex')
+})
+
+test('on a next build, Remove goal clears the goal the Status call set and a typed goal sets one, each saved at once and sent nowhere', async () => {
+  const { dir, calls, call } = await setup(
+    0,
+    () => 100,
+    async () => 'codex',
+    true,
+  )
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: {
+      ...s.ledger,
+      overview: applyStatus(
+        null,
+        parseStatus(
+          'HEAD: Pilot | Shipping it\nNEW: working | Fixes | built\nNEW: queued | Announcement | not started\nGOAL: Pilot ready to announce | done Fixes built; queued Announced',
+        )!,
+        50,
+        new Set(),
+      ),
+    },
+  }))
+  const goalOf = async () => (await readState(dir, 's1')).ledger.overview
+  assert.deepEqual(
+    [(await goalOf())?.goal?.text, (await goalOf())?.milestones.map(m => m.name)],
+    ['Pilot ready to announce', ['Fixes built', 'Announced']],
+  )
+  const removed = await call(
+    'inbox_press',
+    { press: { action: 'remove-goal', id: 'goal' }, thread: 's1' },
+    { thread_id: 's1' },
+  )
+  assert.equal(removed.result.structuredContent.error, null)
+  assert.deepEqual([(await goalOf())?.goal, (await goalOf())?.removedGoals], [null, ['announce pilot ready']])
+
+  await call(
+    'inbox_press',
+    { press: { action: 'type', id: 'goal', text: 'Pilot live for every team' }, thread: 's1' },
+    { thread_id: 's1' },
+  )
+  assert.deepEqual(
+    [(await goalOf())?.goal?.text, (await goalOf())?.goal?.isAwaitingMilestones],
+    ['Pilot live for every team', true],
+  )
+  assert.deepEqual(calls, [])
+})
+
+test('a Compare press in Codex asks for the comparison in the agent’s own turn, not in a background subagent', async () => {
+  const { calls, call } = await setup(0)
+  await call('inbox_press', { ...ANSWER, press: { action: 'compare', id: 'i1' }, shownSince: 0 }, { thread_id: 's1' })
+  const message = calls.at(-1)!.at(-1)!
+
+  assert.match(message, /Do it now, and reply with the result before this turn ends/)
+  assert.doesNotMatch(message, /hand it this work/)
 })

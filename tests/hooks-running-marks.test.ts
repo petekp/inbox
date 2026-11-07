@@ -1,10 +1,10 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { RUNNING_FRAME_MS, runningMark } from '../hooks/timing'
+import { RUNNING_FRAME_MS, SETTLED_MS, runningMark } from '../hooks/timing'
 import { IDLE_MARK, RUNNING_FRAMES } from '../hooks/help'
 import { w, arrive, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
-test('an answer on its way runs its mark each frame in the terminal and as an Svg on desktop, and shows ✓ once it arrives', async ($, on) => {
+test('an answer on its way runs its mark each frame in the terminal and as an Svg on desktop, holds the row in place until it arrives, then folds it into Closed with ✓', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('ui.focus', () => ({}))
@@ -21,6 +21,9 @@ test('an answer on its way runs its mark each frame in the terminal and as an Sv
   await clock.settle()
   const markOf = async () =>
     [...((await pane.find({ key: 'settled-i1' }))?.text ?? '')].filter(c => RUNNING_FRAMES.some(f => f === c)).join('')
+  expect(await markOf()).toBe('')
+  expect((await pane.find({ key: 'settled-i1' }))?.text).not.toMatch(/✓/)
+  await clock.advance(SETTLED_MS)
   const drawn: string[] = []
   const moving: string[] = []
   for (let n = 0; n < RUNNING_FRAMES.length; n++) {
@@ -38,8 +41,9 @@ test('an answer on its way runs its mark each frame in the terminal and as an Sv
 
   await arrive($)
   await clock.settle()
-  expect(await markOf()).toBe('')
-  expect((await pane.find({ key: 'settled-i1' }))?.text).toMatch(/✓\s*Node/)
+  expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
+  await pane.press({ key: 'fold-question' })
+  expect((await pane.find({ key: 'closed-i1' }))?.text).toMatch(/✓\s*Node/)
 })
 
 test('a working subject’s mark on the Status moves each frame only while a turn runs, and a queued subject’s never does', async ($, on) => {

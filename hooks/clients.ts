@@ -27,6 +27,7 @@ export type FeatureId =
   | 'exchange-trigger'
   | 'settle-window'
   | 'fold-on-typed-message'
+  | 'fold-waits-for-list-use'
   | 'version-label'
   | 'status-tab'
   | 'turn-working'
@@ -40,20 +41,28 @@ export type FeatureId =
   | 'dim-pressed-button'
   | 'herdr-sidebar'
   | 'status-children'
+  | 'child-names'
   | 'status-look-line'
   | 'status-row-rules'
   | 'status-failed-warning'
   | 'asks-holds-up-line'
+  | 'asks-rec-reason-line'
   | 'status-mid-turn-refresh'
   | 'ran-call-activity'
   | 'ran-call-delegates'
   | 'tool-result-line'
   | 'status-call-records'
-  | 'dismiss-merged-prs'
   | 'pr-order'
   | 'pr-rank-again'
+  | 'pr-check-rerun'
+  | 'pr-fetch-notice'
   | 'help-page'
   | 'status-view-ask'
+  | 'status-goal'
+  | 'status-done-fold'
+  | 'status-named-fold'
+  | 'seen-on-screen'
+  | 'status-idle-age'
 
 type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -83,6 +92,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'exchange-trigger': { kind: 'full' },
       'settle-window': { kind: 'full' },
       'fold-on-typed-message': { kind: 'full' },
+      'fold-waits-for-list-use': {
+        kind: 'different',
+        reason:
+          'The terminal reports no pointer, so a row due to fold waits only on presses, keys and scrolls. On desktop a settled row is drawn as text, which reports no pointer, so a row waits on presses and on pointer moves over open rows.',
+      },
       'version-label': { kind: 'full' },
       'status-tab': { kind: 'full' },
       'turn-working': { kind: 'full' },
@@ -103,24 +117,32 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'herdr-sidebar': { kind: 'full' },
       'status-children': { kind: 'full' },
+      'child-names': { kind: 'full' },
       'status-look-line': { kind: 'full' },
       'status-row-rules': { kind: 'full' },
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
+      'asks-rec-reason-line': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
       'ran-call-activity': { kind: 'full' },
       'ran-call-delegates': { kind: 'full' },
       'tool-result-line': { kind: 'full' },
       'status-call-records': { kind: 'full' },
-      'dismiss-merged-prs': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
+      'pr-check-rerun': { kind: 'full' },
+      'pr-fetch-notice': { kind: 'full' },
       'help-page': {
         kind: 'different',
         reason:
           "The engine binds only a digit or a lowercase letter as a Button's hotkey, so no key opens the terminal's Help. The desktop pane takes no keys, so its Help lists only the marks.",
       },
       'status-view-ask': { kind: 'full' },
+      'status-goal': { kind: 'full' },
+      'status-done-fold': { kind: 'full' },
+      'status-named-fold': { kind: 'full' },
+      'seen-on-screen': { kind: 'full' },
+      'status-idle-age': { kind: 'full' },
     },
   },
   codex: {
@@ -128,7 +150,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'catch-up': {
         kind: 'different',
         reason:
-          'Codex runs no hook when a chat is opened. A resumed chat catches up when its Inbox tab opens, and at the hook its next message runs if the tab stays closed.',
+          'Codex runs no hook when a chat is opened. A resumed chat catches up when its Inbox tab opens, and at the hook its next message runs if the tab stays closed. A chat whose ledger failed or fell behind, such as an archived chat that runs no hooks, also catches up when its tab opens, once until the ledger or the chat moves on.',
       },
       'failed-update-recovery': { kind: 'full' },
       'ledger-behind-state': {
@@ -175,6 +197,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason: 'The tab only learns of a close at its next poll, so the server offers Undo for two polls longer.',
       },
       'fold-on-typed-message': { kind: 'full' },
+      'fold-waits-for-list-use': { kind: 'full' },
       'version-label': { kind: 'full' },
       'status-tab': { kind: 'full' },
       'turn-working': {
@@ -191,7 +214,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'compare-in-background': {
         kind: 'different',
         reason:
-          "Codex's subagents are experimental and off by default, and no source says one can report after the agent's turn ends, so a comparison runs in the turn.",
+          "When a Codex subagent ends, Codex queues its result for the main agent and starts no turn for it. So a result that arrives after the agent's turn has ended does not reach the chat on its own, and the Compare message asks for the comparison in the agent's own turn.",
       },
       'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
@@ -206,22 +229,24 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-children': {
         kind: 'different',
         reason:
-          "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so background commands and workflows do not show. The end of a wait on a Herdr delegate is read at Stop.",
+          "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so workflows do not show. The end of a wait on a Herdr delegate is read at Stop.",
       },
+      'child-names': { kind: 'full' },
       'status-look-line': { kind: 'full' },
       'status-row-rules': { kind: 'full' },
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
+      'asks-rec-reason-line': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
       'ran-call-activity': {
-        kind: 'unsupported',
+        kind: 'different',
         reason:
-          "Codex runs PreToolUse before a call is approved, so a call the person declines or a hook blocks still adds its activity line. PostToolUse cannot show which calls ran: Codex skips it for a command that runs longer than code mode's wait. GitHub issue #213 tracks a fix.",
+          "Codex runs PreToolUse before a call is approved, so a call's line shows from then. Stop, and the tool call that claims a Status call during the turn, take back the lines of calls the rollout shows were declined or blocked. In a code-mode script that ends on a declined command, the error does not name the command, so the declined one is the only command with no row while the script ran. When more than one has none, as when another still runs, every line stays. A declined MCP call keeps its line, and so does a call whose block a code-mode script catches.",
       },
       'ran-call-delegates': {
-        kind: 'unsupported',
+        kind: 'different',
         reason:
-          "Codex runs PreToolUse before a call is approved, so a herdr command the person declines or a hook blocks still adds its delegate rows. PostToolUse cannot show which calls ran: Codex skips it for a command that runs longer than code mode's wait. GitHub issue #213 tracks a fix.",
+          "Codex runs PreToolUse before a call is approved, so a herdr command's delegate rows show from then. Stop, and the tool call that claims a Status call during the turn, take back the rows of each command the rollout shows was declined or blocked. In a code-mode script that ends on a declined command, that is the only command with no row while the script ran. When more than one has none, every row stays. A code-mode call whose script catches the block keeps its rows.",
       },
       'tool-result-line': {
         kind: 'unsupported',
@@ -229,15 +254,29 @@ export const CLIENTS: Record<ClientId, Client> = {
           "Codex draws an MCP tool call's result from its content, which is the text the model reads. structuredContent reaches the model too, and _meta reaches only an MCP App view, so a result has no field for the person alone.",
       },
       'status-call-records': { kind: 'full' },
-      'dismiss-merged-prs': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
+      'pr-check-rerun': { kind: 'full' },
+      'pr-fetch-notice': { kind: 'full' },
       'help-page': { kind: 'full' },
       'status-view-ask': {
         kind: 'different',
         reason:
           "Pete's choice: View takes clicks only, with no key. The Codex Status has no row selection and is used by clicking.",
       },
+      'status-goal': {
+        kind: 'different',
+        reason:
+          "The goal's buttons take clicks only, as View does: the Codex Status has no row selection and is used by clicking.",
+      },
+      'status-done-fold': {
+        kind: 'different',
+        reason:
+          'A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking.',
+      },
+      'status-named-fold': { kind: 'full' },
+      'seen-on-screen': { kind: 'full' },
+      'status-idle-age': { kind: 'full' },
     },
   },
   omp: {
@@ -271,6 +310,10 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'settle-window': { kind: 'full' },
       'fold-on-typed-message': { kind: 'full' },
+      'fold-waits-for-list-use': {
+        kind: 'different',
+        reason: "omp's panel takes keys only, so a row due to fold waits on keys.",
+      },
       'version-label': {
         kind: 'different',
         reason: "omp's panel footer ends with the inbox model's name, so the version follows it there.",
@@ -296,25 +339,38 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-children': {
         kind: 'different',
         reason:
-          "omp's extension events report subagents and bash calls. omp's reference names no event for a background job or a workflow run, so those do not show.",
+          "omp's extension events report subagents and bash calls. omp's reference names no event for a workflow run, so those do not show.",
       },
+      'child-names': { kind: 'full' },
       'status-look-line': { kind: 'full' },
       'status-row-rules': { kind: 'full' },
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
+      'asks-rec-reason-line': { kind: 'full' },
       'status-mid-turn-refresh': { kind: 'full' },
       'ran-call-activity': { kind: 'full' },
       'ran-call-delegates': { kind: 'full' },
       'tool-result-line': { kind: 'full' },
       'status-call-records': { kind: 'full' },
-      'dismiss-merged-prs': { kind: 'full' },
       'pr-order': { kind: 'full' },
       'pr-rank-again': { kind: 'full' },
+      'pr-check-rerun': { kind: 'full' },
+      'pr-fetch-notice': { kind: 'full' },
       'help-page': {
         kind: 'different',
         reason: 'The panel takes keys only, so `?` opens Help, and no button does.',
       },
       'status-view-ask': { kind: 'full' },
+      'status-goal': { kind: 'full' },
+      'status-done-fold': { kind: 'full' },
+      'status-named-fold': { kind: 'full' },
+      'seen-on-screen': { kind: 'full' },
+      'status-idle-age': { kind: 'full' },
     },
   },
+}
+
+/** Whether a Compare press on `client` may hand its work to a background subagent, whose report reaches the chat. */
+export function isCompareInBackground(client: ClientId): boolean {
+  return CLIENTS[client].support['compare-in-background'].kind === 'full'
 }

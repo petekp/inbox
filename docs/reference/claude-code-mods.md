@@ -13,7 +13,7 @@ Versions on 2026-10-08:
 | Mods reference | "as of v2.1.290" | [R] |
 | Local engine types | Header read 2.1.293, 2.1.294 and 2.1.295 at different times that day | Live, `.claude-plugin/types/claude-code/index.d.ts:1` |
 | Minimum for mods | Terminal 2.1.287, desktop 2.1.286 | [O#turn-mods-on-or-off] |
-| Minimum for the inbox's code | 2.1.292 (`cache` blocks in `$.model.complete`) | [CL#2-1-292]; `hooks/register.tsx:askLedgerModel` |
+| Minimum for the inbox's code | 2.1.292 (`cache` blocks in `$.model.complete`) | [CL#2-1-292]; `hooks/register.tsx:askInboxModel` |
 | Repo | `main` at `55ab122` | Live `git log` |
 
 ### Key constraints

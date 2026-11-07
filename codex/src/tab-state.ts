@@ -1,4 +1,5 @@
 import type { JSX } from 'preact'
+import { earliestOf } from '../../hooks/timing'
 import type { IconName } from './row-actions'
 import type { ActionEmphasis, RowView } from '../../hooks/rows'
 import type { DrawnEntry, DrawnLists } from '../../hooks/action-plan'
@@ -9,6 +10,7 @@ import type { FoldGroup, SeenRows } from './arrivals'
 import type { TabView as View } from './core'
 import type { RowTrack } from '../../hooks/row-motion'
 import type { HostContext } from './tab-host'
+import type { DrawnPrs, OpenPrBlock } from './tab-pr-steps'
 
 export type Tone = 'needsYou' | 'issue' | 'findings' | 'done' | 'error'
 
@@ -37,8 +39,10 @@ export type Row = {
   lead?: string
   title: string
   meta?: string
-  /** The open subject an ask holds up, as "Holds up Offline sync". */
+  /** The open subjects an ask holds up, as "Holds up Offline sync, Hotfix release". */
   holdsUp?: string
+  /** Why the agent recommends an answer, as "Why Redis: it survives restarts". */
+  recLine?: string
   age?: string
   body?: JSX.Element | null
   keys: Key[]
@@ -59,20 +63,35 @@ export const selection: Record<Tab, { id: string; openedAt: number; index?: numb
 export const drafts = new Map<string, Draft>()
 export const optionsShown = new Set<string>()
 export const unfolded = new Set<FoldGroup>()
+/** The Closed folds whose earlier lines the person opened. */
+export const closedAll = new Set<FoldGroup>()
+/** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
+export const statusUnfolded = new Set<string>()
 /**
- * The latest press on its way, by row id: its request number, its pending Local result or null for a message, which
- * reads SENDING, and its action, so its button draws as out before the view says so. A reply's action is null, since
- * a reply is never out.
+ * The latest press on its way, by row id: its request number, when it began on the tab's clock, its pending Local
+ * result or null for a message, which reads SENDING, and its action, so its button draws as out before the view says
+ * so. A reply's action is null, since a reply is never out. `lastBefore` is the row's saved last press when the press
+ * started, from `lastPressKey`.
  */
-export const sending = new Map<string, { seq: number; pending: Feedback | null; action: string | null }>()
+export const sending = new Map<
+  string,
+  { seq: number; since: number; pending: Feedback | null; action: string | null; lastBefore: string }
+>()
+
+/** When the oldest press the tab has not heard back on began, or null while none is out. */
+export function sendingSince(): number | null {
+  return earliestOf([...sending.values()].map(s => s.since))
+}
 export const SENDING = 'Sending…'
 export const errors = new Map<string, string>()
 export const notes = new Map<string, { text: string; at: number }>()
 export const copies = new Map<string, { name: string; text: string }>()
 export const entering = new Set<string>()
 export const undoing = new Set<string>()
-export const closingFolds = new Set<FoldGroup>()
-type DrawnRow = { track: RowTrack; openRow?: Row }
+/** Folds whose list still shrinks after a press folded them, by the list's motion key after `closed-`. */
+export const closingFolds = new Set<string>()
+/** A row's or PR block's track, and what it drew open, which it still draws while its height shrinks over it. */
+type DrawnRow = { track: RowTrack; openRow?: Row; openBlock?: OpenPrBlock }
 export const drawnRows = new Map<string, DrawnRow>()
 
 export type Kept = {
@@ -89,6 +108,8 @@ export type Kept = {
   unfolded: (FoldGroup | 'finding')[]
   /** Missing on a state an earlier page kept. */
   shownSince?: number
+  /** Missing on a state an earlier page kept. */
+  statusUnfolded?: string[]
 }
 export type CandidatePage = {
   initialize: () => Promise<boolean>
@@ -142,6 +163,8 @@ class TabState {
   seen = new Map<string, number>()
   rowsSeen: SeenRows = {}
   lastLists: Lists | null = null
+  /** The PRs tab as the last draw drew it, or null when that draw showed another tab. */
+  lastPrs: DrawnPrs | null = null
   requested = 0
   shown = 0
   activePresses = 0

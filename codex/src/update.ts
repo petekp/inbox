@@ -16,6 +16,7 @@ import {
 } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
+import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
 import { screenText } from '../../hooks/inbox-text'
 import {
   askOverConversation,
@@ -30,11 +31,13 @@ import { screenTabOf } from '../../hooks/tabs'
 import { isTabOpen } from './core'
 import { codexStore } from './host'
 import type { OnWrite } from './host'
-import { statePath, updateState, withLock } from './state'
-import type { ModelFailure, SessionState } from './state'
+import { statePath, withLock } from './state'
+import type { SessionState } from './state'
+import type { ProcessFailure } from '../../types'
 import { CODEX } from './texts'
-import { readRollout } from './transcript'
+import { readRollout, withCurrentRollout } from './transcript'
 import type { RunWithInput } from './run'
+import { diagnosticLines } from './diagnostics'
 
 /** The inbox model, at low reasoning effort. gpt-6-luna is faster but closed a finding the reply only mentioned. */
 export const MODEL = 'gpt-6.1-sol'
@@ -107,21 +110,13 @@ async function keepNewerSignIn(link: string, auth: string): Promise<void> {
   if (saved.mtimeMs > theirs.mtimeMs) await copyFile(link, auth)
 }
 
-/** How much of a failed call's stderr is kept: its end, where codex prints the error. */
-const FAILURE_TAIL_CHARS = 2000
-
 /**
- * Null when it fails, after passing the failure to `onFailure`. `personHome` is the person's Codex home, which holds
- * their sign-in.
+ * Null when it fails. A failed call's report gives its process as `ProcessFailure` describes, with `cause` `process`
+ * when the command failed and `no-reply` when it exited 0 and wrote no reply. `personHome` is the person's Codex home,
+ * which holds their sign-in.
  */
-export function codexAsk(
-  exec: RunWithInput,
-  cli: string,
-  dir: string,
-  personHome: string,
-  onFailure: (failure: Omit<ModelFailure, 'at'>) => Promise<void> = async () => {},
-): Ask {
-  return async (prompt, instructions, report) => {
+export function codexAsk(exec: RunWithInput, cli: string, dir: string, personHome: string): Ask {
+  return async (prompt, instructions, _kind, report) => {
     const work = join(dir, 'exec')
     const system = join(dir, `inbox-system-${createHash('sha256').update(instructions).digest('hex').slice(0, 12)}.md`)
     const out = join(work, `reply-${randomUUID()}.txt`)
@@ -167,24 +162,39 @@ export function codexAsk(
       }
       const text = r.code === 0 ? await readFile(out, 'utf8').catch(() => null) : null
       await rm(out, { force: true })
-      const stderr = r.stderr.slice(-FAILURE_TAIL_CHARS)
-      report?.({ model: MODEL, ...(text === null ? { error: `codex exec exited ${r.code}: ${stderr.trim()}` } : {}) })
-      if (text === null) await onFailure({ cli, code: r.code, stderr })
+      if (text !== null) {
+        report?.({ model: MODEL })
+        return text
+      }
+      const process: ProcessFailure = {
+        cli,
+        code: r.code,
+        stderr: diagnosticLines(r.stderr),
+        signal: r.signal ?? null,
+        errorCode: r.errorCode ?? null,
+        timeoutMs: r.code === TIMED_OUT_CODE ? TIMEOUT_MS : null,
+      }
+      const error = `codex exec ${endOf(process)}${process.stderr ? `: ${process.stderr}` : ''}`
+      report?.({ model: MODEL, error, cause: r.code === 0 ? 'no-reply' : 'process', process })
 
-      return text
+      return null
     }
-    report?.({ model: MODEL, error: 'codex exec refused every feature flag the inbox turns off' })
+    report?.({ model: MODEL, error: 'codex exec refused every feature flag the inbox turns off', cause: 'process' })
 
     return null
   }
 }
 
-/** Saves a failed call as the session's `lastModelFailure`. */
-export const recordModelFailure =
-  (dir: string, sessionId: string, now: () => number) =>
-  async (failure: Omit<ModelFailure, 'at'>): Promise<void> => {
-    await updateState(dir, sessionId, s => ({ ...s, lastModelFailure: { ...failure, at: now() } }))
-  }
+/** How a failed call ended, as "timed out after 120 s", "was ended by SIGTERM" or "failed with ENOENT". */
+function endOf(f: ProcessFailure): string {
+  if (f.timeoutMs !== null) return `timed out after ${f.timeoutMs / 1000} s`
+  if (f.signal) return `was ended by ${f.signal}`
+  if (f.errorCode) return `failed with ${f.errorCode}`
+  if (f.code === UNSTARTABLE_CODE) return 'could not start'
+  if (f.code === 0) return 'exited 0 and wrote no reply'
+
+  return `exited ${f.code}`
+}
 
 export const reconcileUpdateStatus = (dir: string, sessionId: string): Promise<SessionState> =>
   reconcileStatus(codexStore(dir, sessionId, Date.now))
@@ -227,6 +237,7 @@ export const refreshStatus = (
   refreshSessionStatus({
     ...codexStore(dir, sessionId, now, onWrite),
     ask,
+    names: CODEX,
     inOrder: inOrderFor(dir, sessionId),
     records,
   })
@@ -238,19 +249,26 @@ export const runUpdates = (
   now: () => number,
   onWrite?: OnWrite,
   records?: StatusRecords,
-): Promise<void> =>
-  runSessionUpdates({
-    ...codexStore(dir, sessionId, now, onWrite),
+): Promise<void> => {
+  const store = codexStore(dir, sessionId, now, onWrite)
+
+  return runSessionUpdates({
+    ...store,
     ask,
     names: CODEX,
     inOrder: inOrderFor(dir, sessionId),
     records,
-    catchUp: async s =>
-      askOverConversation(
-        ask,
+    catchUp: async s => {
+      const isMoved = (await withCurrentRollout(s)) !== s
+      const path = isMoved ? (await store.update(withCurrentRollout)).transcriptPath : s.transcriptPath
+
+      return askOverConversation(
+        { ask, now: store.now },
         CODEX,
         s,
         screenText(CODEX, isTabOpen(s, now()), screenTabOf(s.shownTab)),
-        (await readRollout(s.transcriptPath, s.root))?.conversation ?? null,
-      ),
+        (await readRollout(path, s.root))?.conversation ?? null,
+      )
+    },
   })
+}

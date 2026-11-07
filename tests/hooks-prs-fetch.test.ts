@@ -3,6 +3,8 @@ import type { TabsProps } from '../hooks/tabs-client'
 import { GH_TIMEOUT_MS } from '../hooks/gh'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
+import { PR_POLL_MS } from '../hooks/mod-sessions'
+import { PRS_HIDDEN_REFRESH_MS } from '../hooks/host-prs'
 
 test('opening the PRs tab while another PR fetch runs still finds the branch’s PR', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -48,7 +50,7 @@ test('opening the PRs tab while another PR fetch runs still finds the branch’s
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
 })
 
-test('the PRs tab shows a linked PR only when the viewer wrote it and a fetch found it open, and keeps it once it merges, while a task naming a teammate’s PR keeps its Open PR step', async ($, on) => {
+test('the PRs tab shows a linked PR only when the viewer wrote it and a fetch found it open, and settles it as Merged once a fetch finds it merged while the tab shows, while a task naming a teammate’s PR keeps its Open PR step', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.ledgerReply = 'NEW: do | - | Review #20 | - | -'
@@ -95,6 +97,7 @@ test('the PRs tab shows a linked PR only when the viewer wrote it and a fetch fo
     reason: 'answer',
   })
   await clock.settle()
+  w.paneState = { isShown: true, isFocused: true }
   const pane = await $.ui.mount(PANE)
   expect((await pane.find({ key: 'help-i1-0-key' }))?.props.label).toBe('Open PR #20')
   await pane.press({ key: 'tab-prs' })
@@ -213,3 +216,70 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await pane.find({ text: notice })).toBeUndefined()
   })
 }
+
+test('a session whose only PRs an order ranks fetches them when a turn ends, on the poll, when it loads again, and when [Try again] reads it', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let fetches = 0
+  w.ghAnswers.push(
+    {
+      match: argv => argv.includes('view') && argv.includes('40') && ++fetches > 0,
+      stdout: JSON.stringify({
+        number: 40,
+        title: 'Ranked work',
+        url: 'https://github.com/acme/greet/pull/40',
+        isDraft: false,
+        state: 'OPEN',
+        baseRefName: 'main',
+        mergeable: 'MERGEABLE',
+        reviewDecision: '',
+        statusCheckRollup: [],
+      }),
+    },
+    {
+      match: argv => argv.includes('graphql'),
+      stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+    },
+  )
+  const fetches40 = async (step: () => Promise<unknown>) => {
+    const before = fetches
+    await step()
+    await clock.settle()
+    return fetches > before
+  }
+  const switchTo = async (from: string, to: string) => {
+    await $.session.end({ reason: 'resume', sessionId: from, resume: { id: from } })
+    await $.classic.SessionStart({ source: 'resume', session_id: to })
+  }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const turnFetched = await fetches40(async () => {
+    await $.prompt.submit({ text: 'rank them', wait: false, origin: { kind: 'composer' } })
+    await $.tool.call({
+      tool: 'mcp__inbox__order_prs',
+      repo: 'acme/greet',
+      numbers: [40],
+      label: 'Review this',
+      why: 'It is small.',
+    })
+    await $.turn.complete({ answer: 'Ranked it.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  })
+  expect(turnFetched).toBe(true)
+  expect(await fetches40(() => clock.advance(PR_POLL_MS))).toBe(false)
+  expect(await fetches40(() => clock.advance(PRS_HIDDEN_REFRESH_MS - PR_POLL_MS))).toBe(true)
+
+  await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
+  await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })
+  await clock.settle()
+  expect(await fetches40(() => switchTo('session-2', 'session-1'))).toBe(true)
+
+  const pane = await $.ui.mount(PANE)
+  await switchTo('session-1', 'session-2')
+  await clock.settle()
+  w.storeRefusal = 'the store is busy'
+  await switchTo('session-2', 'session-1')
+  await clock.settle()
+  expect(await pane.find({ text: 'Could not read the inbox.' })).toBeDefined()
+  w.storeRefusal = undefined
+  expect(await fetches40(() => pane.press({ key: 'read-again' }))).toBe(true)
+})

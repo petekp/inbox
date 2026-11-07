@@ -1,10 +1,10 @@
 import { recommendedOption } from './ask-match'
-import { closeByAgent } from './ledger-close'
+import { closeByAgent, reopenItem } from './ledger-close'
 import { addAgentItem, addFinding } from './ledger-update'
 import { stepHelp } from './reply-parse'
 import type { Host } from './model-text'
-import { linkedPrs, MAX_ORDERED_PRS } from './pr-fetch'
-import type { Closed, Help, Ledger } from '../types'
+import { MAX_ORDERED_PRS, tabPrs } from './pr-fetch'
+import type { Closed, Help, Item, LastAction, Ledger } from '../types'
 
 const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'
 
@@ -31,6 +31,11 @@ const RECORD_SCHEMA = {
       type: 'string',
       description:
         'For a question: the option you recommend, copied from options. Leave it out when you recommend none.',
+    },
+    why: {
+      type: 'string',
+      description:
+        'For a question with rec: why you recommend it, as a short clause of at most 12 words, such as "it keeps the old API".',
     },
     steps: {
       type: 'array',
@@ -104,9 +109,9 @@ function orderDescription(host: Host): string {
 
 function recordDescription(host: Host): string {
   return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing.
-- question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
+- question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec with why when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
 - task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
-- finding: something outside the current task that deserves their attention. It waits in ${host.findingsIn} until it is closed, and the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, once you have checked it. Leave out style nits, anything the user already decided, todos or ideas the user mentioned, problems in your own change, progress, and anything only the user can do or decide: handle those in your reply, or record them as a question or task.
+- finding: something outside the current task that deserves their attention. It waits in ${host.findingsIn} until it is closed, and the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, once you have checked it. Leave out style nits, a PR's checks, conflicts, review threads or readiness, which ${host.prsIn} shows, anything the user already decided, todos or ideas the user mentioned, problems in your own change, progress, and anything only the user can do or decide: handle those in your reply, or record them as a question or task.
 Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.`
 }
 
@@ -131,6 +136,9 @@ export function isAgentTool(name: string): name is AgentTool {
   return (AGENT_TOOLS as readonly string[]).includes(name)
 }
 
+/** The person's latest press on each row, and when the running turn started, or null when the host did not say. */
+type Presses = { lastActions: Record<string, LastAction>; turnStartedAt: number | null }
+
 /** The answer to a call of one of `agentTools`. */
 export function toolAnswer(
   host: Host,
@@ -138,12 +146,13 @@ export function toolAnswer(
   tool: AgentTool,
   input: Record<string, unknown>,
   now: number,
+  presses: Presses,
 ): ToolAnswer {
   switch (tool) {
     case 'record':
-      return recordItem(host, ledger, input, now)
+      return recordAfterCompare(host, ledger, input, now, presses) ?? recordItem(host, ledger, input, now)
     case 'close':
-      return recordClose(host, ledger, input, now)
+      return recordClose(host, ledger, input, now, presses)
     case 'order_prs':
       return orderPrs(host, ledger, input, now)
   }
@@ -157,6 +166,7 @@ const MAX_ASK = 200
 const MAX_OPTION = 60
 const MAX_OPTIONS = 8
 const MAX_STEPS = 3
+const MAX_REASON = 120
 
 function list(value: unknown, max: number, each: number): string[] {
   return Array.isArray(value)
@@ -189,6 +199,7 @@ export function recordItem(host: Host, ledger: Ledger, input: Record<string, unk
   const recInput = input.kind === 'question' ? cut(input.rec, MAX_OPTION) : ''
   const rec = recInput === '' ? null : recommendedOption(options, recInput)
   if (recInput !== '' && rec === null) return unchanged(ledger, 'Not recorded: rec must be one of the options.')
+  const recReason = rec ? cut(input.why, MAX_REASON).replace(/^because\s+/i, '') : ''
   const steps = list(input.steps, MAX_STEPS + 3, 4000)
   const isUsable = (h: Help) => input.kind === 'task' || h.kind === 'open' || h.kind === 'link'
   const helps = steps
@@ -203,28 +214,52 @@ export function recordItem(host: Host, ledger: Ledger, input: Record<string, unk
       : ''
 
   const isDesignChoice = input.kind === 'question' && input.design_choice === true
-  const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps, isDesignChoice }, now)
+  const kind: Item['kind'] = input.kind
+  const entry = { kind, ask, options, rec, helps, isDesignChoice, ...(recReason ? { recReason } : {}) }
+  const r = addAgentItem(ledger, entry, now)
   if (r.is === 'open') {
     const changes = [
       ...(r.addedSteps > 0 ? ['added its new steps'] : []),
       ...(r.isNewlyMarked ? ['marked it as a design choice'] : []),
       ...(r.newRec ? [`changed its recommendation to ${r.newRec}`] : []),
+      ...(r.isNewReason ? ['gave its recommendation your reason'] : []),
     ]
     const updated = changes.length > 0 ? ` and ${changes.join(' and ')}` : ''
 
     return unchanged(r.ledger, `Already open, so this record updated it${updated}.${leftOut}`)
   }
   if (r.is === 'closed')
-    return unchanged(ledger, `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`)
+    return unchanged(
+      ledger,
+      'title' in r.record
+        ? `Not recorded: the user dismissed the finding "${r.record.title}", which this raises. Ask about it only if they bring it up.`
+        : `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`,
+    )
 
   return {
     ledger: r.ledger,
     result:
       `Recorded. The user sees it in ${host.surface}.` +
       leftOut +
+      missingText(r.ledger.items.find(i => i.id === r.id)) +
       (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ''),
     personLine: `${input.kind === 'question' ? 'Question' : 'Task'}: ${ask}`,
   }
+}
+
+/**
+ * What a recorded question or task lacks for the user to act on it in one press, said so the agent can record it
+ * again with it. A task may have no command, file or link, so its sentence says when to add one.
+ */
+function missingText(item: Item | undefined): string {
+  if (item?.kind === 'task')
+    return item.helps.length === 0
+      ? ' It has no steps: when a command, file or link would help the user do it, record it again with steps.'
+      : ''
+  if (!item) return ''
+  if (!item.rec) return ' It has no rec: when you can recommend an option, record it again with rec and why.'
+
+  return item.recReason ? '' : ' It has no why: record it again with why, so the user sees your reason.'
 }
 
 function recordFinding(host: Host, ledger: Ledger, input: Record<string, unknown>, now: number): ToolAnswer {
@@ -268,12 +303,59 @@ function closedHow(c: Pick<Closed, 'how' | 'outcome'>): string {
   }
 }
 
-export function recordClose(host: Host, ledger: Ledger, input: Record<string, unknown>, now: number): ToolAnswer {
+/** Whether `at` falls in the running turn, after the person's Compare press on `id`. */
+function isAfterCompareThisTurn(id: string, at: number, presses: Presses): boolean {
+  const last = presses.lastActions[id]
+
+  return last?.action === 'compare' && at >= Math.max(last.at, presses.turnStartedAt ?? last.at)
+}
+
+/**
+ * Whether the agent recorded `id` again this turn, after the person pressed Compare on it. That record updated the open
+ * question, so a close with a reason would only replace it with a copy.
+ */
+function isRecordedAfterCompare(ledger: Ledger, id: string, presses: Presses): boolean {
+  const item = ledger.items.find(i => i.id === id)
+  if (item?.kind !== 'question' || item.reportedAt === undefined) return false
+
+  return isAfterCompareThisTurn(id, item.reportedAt, presses)
+}
+
+/**
+ * A record of a question the agent closed with a reason this turn, after the person pressed Compare on it. The question
+ * reopens and the record updates it, as when the close comes after the record. Null when no such question matches.
+ */
+function recordAfterCompare(
+  host: Host,
+  ledger: Ledger,
+  input: Record<string, unknown>,
+  now: number,
+  presses: Presses,
+): ToolAnswer | null {
+  const isClosedAfterCompare = (c: Closed) =>
+    c.how === 'claude' && c.kind === 'question' && isAfterCompareThisTurn(c.id, c.at, presses)
+  const closed = ledger.closed.findLast(isClosedAfterCompare)
+  if (!closed) return null
+  const r = recordItem(host, reopenItem(ledger, closed.id), input, now)
+  const isUpdated = r.ledger.items.some(i => i.id === closed.id && i.reportedAt === now)
+
+  return isUpdated ? r : null
+}
+
+export function recordClose(
+  host: Host,
+  ledger: Ledger,
+  input: Record<string, unknown>,
+  now: number,
+  presses: Presses,
+): ToolAnswer {
   const id = cut(input.id, 80).replace(/^\[|\]$/g, '')
   const answer = cut(input.answer, 80)
   const reason = cut(input.reason, 80)
   if (id === '' || (answer === '' && reason === ''))
     return unchanged(ledger, "Not closed: give the id, and the user's answer or a reason.")
+  if (answer === '' && isRecordedAfterCompare(ledger, id, presses))
+    return unchanged(ledger, 'Not closed: your record updated this question, and it stays open for the user.')
   const r = closeByAgent(host, ledger, id, answer ? { answer } : { reason }, now)
   if (r.closed && 'item' in r.closed)
     return {
@@ -308,8 +390,8 @@ function prNumber(value: unknown): number | null {
 }
 
 /**
- * Sets the PRs tab's order from an `order_prs` call, and links each PR it names that the session does not, so the tab
- * fetches it. An empty list clears the order.
+ * Sets the PRs tab's order from an `order_prs` call. The tab shows and fetches each PR the order ranks, without
+ * linking it, so a new order or an empty list, which clears it, takes the old order's PRs off the tab.
  */
 function orderPrs(host: Host, ledger: Ledger, input: Record<string, unknown>, now: number): ToolAnswer {
   if (!Array.isArray(input.numbers)) return unchanged(ledger, 'Not set: numbers must be a list of PR numbers.')
@@ -332,7 +414,8 @@ function orderPrs(host: Host, ledger: Ledger, input: Record<string, unknown>, no
   if (!label) return unchanged(ledger, 'Not set: give label, what the user does with the order.')
   const why = cut(input.why, MAX_ORDER_WHY)
   if (!why) return unchanged(ledger, 'Not set: give why, the reason for this order.')
-  const added = refs.filter(ref => !ledger.prs.includes(ref))
+  const onTab = tabPrs(ledger)
+  const added = refs.filter(ref => !onTab.includes(ref))
   const addedText =
     added.length === 0
       ? ''
@@ -343,8 +426,7 @@ function orderPrs(host: Host, ledger: Ledger, input: Record<string, unknown>, no
   return {
     ledger: {
       ...ledger,
-      prs: linkedPrs(ledger.prs, added),
-      prOrder: { refs, label, why, statuses: {}, by: host.agent, at: now },
+      prOrder: { refs, label, why, statuses: {}, dismissed: [], by: host.agent, at: now },
     },
     result: `Set. These ${refs.length} PRs show first in ${host.prsIn}, in this order.${addedText}`,
     personLine: `PR order: ${label}, ${refs.length} ${refs.length === 1 ? 'PR' : 'PRs'}`,

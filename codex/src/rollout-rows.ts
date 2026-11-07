@@ -1,4 +1,4 @@
-import { open } from 'node:fs/promises'
+import { firstBytes } from './rollout-file'
 
 type SessionMeta = {
   type?: string
@@ -7,6 +7,7 @@ type SessionMeta = {
     source?: string
     forked_from_id?: unknown
     parent_thread_id?: unknown
+    agent_path?: unknown
     cwd?: unknown
     history_base?: { thread_id?: unknown; end_byte_offset?: unknown }
   }
@@ -15,17 +16,10 @@ type SessionMeta = {
 /** The rollout's first row, `session_meta`. Null when the file or the row cannot be read. */
 export async function readSessionMeta(path: string): Promise<SessionMeta | null> {
   try {
-    const file = await open(path, 'r')
-    try {
-      const buf = Buffer.alloc(64 * 1024)
-      const { bytesRead } = await file.read(buf, 0, buf.length, 0)
-      const first = buf.subarray(0, bytesRead).toString('utf8').split('\n')[0] ?? ''
-      const meta = JSON.parse(first) as SessionMeta
+    const first = (await firstBytes(path, 64 * 1024)).toString('utf8').split('\n')[0] ?? ''
+    const meta = JSON.parse(first) as SessionMeta
 
-      return meta.type === 'session_meta' ? meta : null
-    } finally {
-      await file.close()
-    }
+    return meta.type === 'session_meta' ? meta : null
   } catch {
     return null
   }
@@ -67,6 +61,18 @@ export async function forkedFromId(path: string): Promise<string | null> {
   return typeof id === 'string' && id !== '' ? id : null
 }
 
+/**
+ * The task name a subagent was spawned with, in words: the last part of `agent_path`, `/root/<task_name>`, in its own
+ * rollout's first row. Null when the row names none.
+ */
+export async function subagentTaskName(path: string): Promise<string | null> {
+  const agentPath = (await readSessionMeta(path))?.payload?.agent_path
+  const taskName = isText(agentPath) ? (agentPath.split('/').pop() ?? '') : ''
+  const words = taskName.replace(/[_-]+/g, ' ').trim()
+
+  return words === '' ? null : words
+}
+
 export type RowPayload = NonNullable<TranscriptLine['payload']>
 
 export type TranscriptLine = {
@@ -81,7 +87,7 @@ export type TranscriptLine = {
     action?: { command?: unknown }
     role?: string
     content?: unknown
-    item?: { type?: string; command?: unknown; aggregated_output?: unknown; content?: unknown }
+    item?: { type?: string; status?: unknown; command?: unknown; aggregated_output?: unknown; content?: unknown }
   }
 }
 

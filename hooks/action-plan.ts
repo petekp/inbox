@@ -1,15 +1,16 @@
-import type { Item, PressKind, Finding, LastAction } from '../types'
+import type { Item, PressKind, Finding, LastAction, Tab } from '../types'
 import { clipLabel } from './text'
 import { actionId, ISSUE_LABEL } from './press-labels'
 import { stepIconKind } from './help-steps'
 import type { HelpStep } from './help-steps'
 import type { RowPress } from './presses'
+import type { PrPress } from './pr-press'
+import type { DrawnPr } from './pr-views'
 import { FINDING_GROUPS } from './help'
 import { ROW_COPY, OPTIONS_FOLD_AT, OPTION_LABEL_CHARS, isWaitingRow } from './rows'
 import type { RowState, ActionView, RowView, SettledState } from './rows'
 import { pressOutAction, outAction, isAgain, fixLabel } from './feedback'
 import type { Feedback } from './feedback'
-import type { StatusRow, StatusPage } from './status-page'
 import type { InboxView } from './view'
 
 // The digits switch tabs, and the letters left out are the
@@ -42,6 +43,35 @@ const ACTION_KEYS: Partial<Record<RowPress['action'], string>> = {
   discuss: 'd',
   dismiss: 'x',
   discard: 'x',
+}
+
+export type ShownUndo = { press: RowPress | PrPress; at: number }
+
+/** The Undo the undo key presses: the one of the shown tab's Undos whose row closed last. */
+export function latestUndo<U extends { at: number }>(undos: readonly U[]): U | null {
+  return undos.reduce<U | null>((latest, u) => (latest === null || u.at >= latest.at ? u : latest), null)
+}
+
+/** The Undos a row tab draws: one on each settled row or PR that still offers it. */
+export function tabUndos(tab: Tab, lists: DrawnLists<unknown>, prs: readonly DrawnPr[]): ShownUndo[] {
+  return tab === 'prs'
+    ? prUndos(prs)
+    : listUndos(tab === 'needsYou' ? [...lists.questions, ...lists.tasks] : lists.findings)
+}
+
+function listUndos(entries: readonly DrawnEntry<unknown>[]): ShownUndo[] {
+  return entries.flatMap(x => {
+    const undo = 'settled' in x ? x.settled.actions.find(a => a.press.action === 'undo') : undefined
+    return undo && 'settled' in x ? [{ press: undo.press, at: x.state.at }] : []
+  })
+}
+
+function prUndos(prs: readonly DrawnPr[]): ShownUndo[] {
+  return prs.flatMap(d =>
+    d.state.is === 'settled' && d.state.canUndo
+      ? [{ press: { action: 'pr-undo', ref: d.pr.ref }, at: d.state.at }]
+      : [],
+  )
 }
 
 export function actionsOf(
@@ -87,7 +117,7 @@ export function actionsOf(
       isOut: out === pressAction,
     }
   }
-  if (state.is === 'settled') return state.canUndo ? [action({ action: 'undo', id }, 'Undo', 'view')] : []
+  if (state.is === 'settled') return state.canUndo ? [action({ action: 'undo', id }, ROW_COPY.undo, 'view')] : []
   if (state.is === 'held')
     return [
       action({ action: 'type', id, text: '' }, 'Reply', 'handoff'),
@@ -193,6 +223,17 @@ export function firstWaiting(rows: RowWait[]): string | null {
   return rows.find(r => r.isWaiting)?.id ?? null
 }
 
+/**
+ * The index `step` places from `at` in a list of `count`, wrapping past either end. With nothing selected, as `at` -1,
+ * a step forward selects the first and a step back the last. -1 for an empty list.
+ */
+export function steppedIndex(at: number, step: number, count: number): number {
+  if (count === 0) return -1
+  const from = at < 0 ? (step > 0 ? -1 : 0) : at
+
+  return (((from + step) % count) + count) % count
+}
+
 export function keptOpen(rows: RowWait[], added: readonly string[]): string | null {
   return firstWaiting(rows.filter(r => !added.includes(r.id)))
 }
@@ -265,40 +306,6 @@ export function rowKeyPlan(r: RowView, isAllShown: boolean): { keys: PlannedKey[
   }
 
   return { keys, more }
-}
-
-/** A press on a Status row. `show-ask` opens Asks with that ask selected, and sends nothing. */
-type StatusPress = { action: 'show-ask'; askId: string }
-
-type StatusKey = { press: StatusPress; label: string; hotkey: string; kind: PressKind }
-
-/** The View button's label, by the kind of ask it opens. */
-const VIEW_ASK_LABELS: Record<Item['kind'], string> = { question: 'View question', task: 'View task' }
-
-/** A Status row's buttons, in the order every look draws them. A row with none takes no press. */
-export function statusKeyPlan(row: StatusRow): StatusKey[] {
-  if (row.kind !== 'subject' || row.ask === null) return []
-
-  return [
-    {
-      press: { action: 'show-ask', askId: row.ask.id },
-      label: VIEW_ASK_LABELS[row.ask.kind],
-      hotkey: 'v',
-      kind: 'view',
-    },
-  ]
-}
-
-/** The Status rows that have buttons, in page order: the rows j and k move between. */
-export function statusKeyRows(page: StatusPage): StatusRow[] {
-  return page.rows.filter(r => statusKeyPlan(r).length > 0)
-}
-
-/** The Status row whose keys work: the selected row while it still has buttons, else the first row that has. */
-export function statusSelected(page: StatusPage, selectedId: string | null): StatusRow | null {
-  const rows = statusKeyRows(page)
-
-  return rows.find(r => r.id === selectedId) ?? rows[0] ?? null
 }
 
 /** Widths in a look's own unit. `separator` is the extra room a look draws between the buttons and the follow-ups when they share a line. */

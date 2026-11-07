@@ -31,9 +31,39 @@ test('the tab draws a settled row while it shows the tab the row closed in, and 
   )
 })
 
+test('the tab keeps a folded row folded when a press begins on another row after it came due, and holds a row a press begun before that still waits on', () => {
+  const s = withItems()
+  const dismissed = after(s, { action: 'dismiss', id: 'i1' })
+  const v = viewOf(dismissed, 60, { ...NO_HOLDS, shownSince: 40 })
+  assert.equal(v.needsYou.questions[0]?.state.is, 'settled')
+  const seenAt = 100
+  const due = seenAt + SETTLED_MS
+  const seen = new Map([['i1', seenAt]])
+  const drawn = (now: number, pressOutSince: number | null) => {
+    const withPress = { ...v, needsYou: { ...v.needsYou, pressOutSince } }
+
+    return [...drawnSettled(withPress, 40, new Set(), { seen, now })]
+  }
+  assert.deepEqual(drawn(due - 1, null), ['i1'])
+  assert.deepEqual(drawn(due + 60_000, due - 1), ['i1'])
+  assert.deepEqual(drawn(due + 60_000, due + 1), [])
+  assert.deepEqual(drawn(due + 60_000, null), [])
+  const local = (now: number, localPressSince: number | null) => [
+    ...drawnSettled(v, 40, new Set(), { seen, now, localPressSince }),
+  ]
+  assert.deepEqual(local(due + 60_000, due - 1), ['i1'])
+  assert.deepEqual(local(due + 60_000, due + 1), [])
+})
+
 test('a row Codex closes while the person types a reply stays held in place, out of the count and the Closed fold, Discard folds it at once, and its reply sends and settles it as Replied', () => {
   const s = withItems()
-  const closed = { ...s, ledger: recordClose(CODEX, s.ledger, { id: 'i1', reason: 'settled in chat' }, 50).ledger }
+  const closed = {
+    ...s,
+    ledger: recordClose(CODEX, s.ledger, { id: 'i1', reason: 'settled in chat' }, 50, {
+      lastActions: {},
+      turnStartedAt: null,
+    }).ledger,
+  }
   const held = viewOf(closed, 50 + SETTLE_WINDOW_MS + 1, { ...NO_HOLDS, replies: { i1: 40 } }).needsYou
   assert.deepEqual(
     held.questions.map(r => [r.id, r.state, r.feedback, r.actions.map(a => [a.label, a.kind])]),
@@ -72,6 +102,8 @@ test('a row Codex closes while the person types a reply stays held in place, out
       turnsStarted: 1,
       extraSteps: [],
       comparePage: '/plugin/dist/compare-page.html',
+      compareInBackground: false,
+      holdMs: 1000,
     },
   )
   assert.ok(!('stale' in r))
@@ -79,8 +111,8 @@ test('a row Codex closes while the person types a reply stays held in place, out
   assert.deepEqual(r.effects, [{ kind: 'send', text: 'Re "Fix add.js or the test?": Fix add.js after all', by: null }])
   const replied = { ...closed, lastActions: { i1: r.last! } }
   assert.deepEqual(
-    viewOf(replied, 70 + QUEUED_AFTER_MS, { replies: { i1: 40 }, discarded: {}, shownSince: 40 }).needsYou.questions[0]
-      ?.state,
+    viewOf(replied, 70 + QUEUED_AFTER_MS, { replies: { i1: 40 }, discarded: {}, shownSince: 40, listInput: null })
+      .needsYou.questions[0]?.state,
     {
       is: 'settled',
       label: 'Replied',
@@ -89,6 +121,7 @@ test('a row Codex closes while the person types a reply stays held in place, out
       offersUndo: false,
       delivery: 'queued',
       closedAs: 'handled',
+      reply: 'Fix add.js after all',
     },
   )
   const later = 70 + SETTLE_WINDOW_MS
@@ -107,7 +140,10 @@ test('a held finding’s reply sends what a reply to the open finding sends, and
     { kind: 'finding', finding_kind: 'issue', title: 'No lint script', detail: 'Only tests run.' },
     10,
   ).ledger
-  const closed = recordClose(CODEX, recorded, { id: 'f3', reason: 'added one' }, 50).ledger
+  const closed = recordClose(CODEX, recorded, { id: 'f3', reason: 'added one' }, 50, {
+    lastActions: {},
+    turnStartedAt: null,
+  }).ledger
   const r = applyPress(
     closed,
     undefined,
@@ -117,6 +153,8 @@ test('a held finding’s reply sends what a reply to the open finding sends, and
       turnsStarted: 1,
       extraSteps: [],
       comparePage: '/plugin/dist/compare-page.html',
+      compareInBackground: false,
+      holdMs: 1000,
     },
   )
   assert.ok(!('stale' in r))
@@ -144,14 +182,26 @@ test('a held finding’s reply sends what a reply to the open finding sends, and
 })
 
 test('Codex closing an item reads as Codex in its outcome', () => {
-  const r = recordClose(CODEX, withItems().ledger, { id: 'i1', reason: 'no longer applies' }, 50)
+  const r = recordClose(CODEX, withItems().ledger, { id: 'i1', reason: 'no longer applies' }, 50, {
+    lastActions: {},
+    turnStartedAt: null,
+  })
   assert.equal(r.ledger.closed[0]?.outcome, 'closed by Codex: no longer applies')
   assert.equal(
-    recordClose(CODEX, withItems().ledger, { id: 'i9', reason: 'x' }, 50).result.startsWith('Not closed'),
+    recordClose(CODEX, withItems().ledger, { id: 'i9', reason: 'x' }, 50, {
+      lastActions: {},
+      turnStartedAt: null,
+    }).result.startsWith('Not closed'),
     true,
   )
-  const closed = recordClose(CODEX, withItems().ledger, { id: 'i1', reason: 'a' }, 50)
-  const again = recordClose(CODEX, closed.ledger, { id: 'i1', answer: 'b' }, 60)
+  const closed = recordClose(CODEX, withItems().ledger, { id: 'i1', reason: 'a' }, 50, {
+    lastActions: {},
+    turnStartedAt: null,
+  })
+  const again = recordClose(CODEX, closed.ledger, { id: 'i1', answer: 'b' }, 60, {
+    lastActions: {},
+    turnStartedAt: null,
+  })
   assert.equal(again.result, 'Already closed: you closed it earlier.')
   assert.equal(again.ledger, closed.ledger)
 })

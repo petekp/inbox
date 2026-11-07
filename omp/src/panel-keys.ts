@@ -1,15 +1,15 @@
 import { isPrPress } from '../../hooks/pr-press'
 import { keptDiscards, isGuarded } from '../../hooks/timing'
 import { shownTabs, isRowTab } from '../../hooks/tabs'
-import { firstWaiting, rowAfterClose, statusKeyPlan, statusKeyRows, statusSelected } from '../../hooks/action-plan'
-import type { StatusRow } from '../../hooks/status-page'
+import { firstWaiting, latestUndo, rowAfterClose, steppedIndex } from '../../hooks/action-plan'
+import { UNDO_KEY } from '../../hooks/help'
+import { GOAL_KEYS_ID, statusKeyRows, statusSelected } from '../../hooks/status-keys'
+import type { StatusKeyTarget } from '../../hooks/status-keys'
 import type { ShownTab } from '../../hooks/tabs'
 import { entriesOf } from './panel-entries'
 import { isSelectable, isShut, linesOf, waitsOf } from './panel-lines'
 import type { Button, Line } from './panel-lines'
 import type { PanelPress, PanelScreen, PanelUi } from './panel'
-
-const wrapIndex = (i: number, n: number) => ((i % n) + n) % n
 
 export function resolveSelected(lines: Line[], selectedId: string | null): Line | null {
   const selectable = lines.filter(isSelectable)
@@ -42,6 +42,7 @@ export const withTab = (ui: PanelUi, tab: ShownTab, now: number): PanelUi => ({
   ...withSelection(ui, null),
   tab,
   pageTop: 0,
+  pageReveal: isRowTab(tab) ? null : true,
   shownSince: tab === ui.tab ? ui.shownSince : now,
   isHelpShown: false,
 })
@@ -68,6 +69,11 @@ export function afterHandOff(screen: PanelScreen, ui: PanelUi, id: string, now: 
 function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button, now: number): KeyResult {
   const { press } = button
   if (button.isOut) return { ui }
+  if (press.action === 'all-options') {
+    const index = line.buttons.findIndex(b => b.press === press)
+
+    return { ui: { ...ui, optionsShown: [...ui.optionsShown, press.id], focus: { rowId: line.id, index } } }
+  }
   if (press.action === 'resume') {
     const { stop } = screen
     const isSending = ui.resuming?.is === 'sending' && ui.resuming.stopAt === stop?.at
@@ -136,22 +142,22 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   if ((key === 'up' || key === 'k' || key === 'down' || key === 'j') && selectable.length > 0) {
     const step = key === 'up' || key === 'k' ? -1 : 1
 
-    return { ui: withSelection(base, selectable[wrapIndex(Math.max(0, at) + step, selectable.length)]!.id) }
+    return { ui: withSelection(base, selectable[steppedIndex(at, step, selectable.length)]!.id) }
   }
   const tabs = shown.map(t => t.id)
   const pickedTab = shown.find(t => t.hotkey === key)
   if (key === 'tab' || key === 'shift+tab') {
     const step = key === 'tab' ? 1 : -1
 
-    return { ui: withTab(base, tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)]!, now) }
+    return { ui: withTab(base, tabs[steppedIndex(tabs.indexOf(base.tab), step, tabs.length)]!, now) }
   }
   if (pickedTab) return { ui: withTab(base, pickedTab.id, now) }
-  if (key === 'u') {
-    const undoable = lines.filter(l => l.settled?.undo).at(-1)
-    const press = undoable?.settled?.undo
-    if (undoable && press) return { ui: withSelection(base, undoable.id), press }
+  if (key === UNDO_KEY) {
+    const undoable = latestUndo(
+      lines.flatMap(l => (l.settled?.undo ? [{ id: l.id, press: l.settled.undo, at: l.settled.at }] : [])),
+    )
 
-    return { ui: base }
+    return undoable ? { ui: withSelection(base, undoable.id), press: undoable.press } : { ui: base }
   }
   const tabLine = lines.find(l => l.isTabButtons && l.buttons.some(b => b.key === key))
   const tabButton = tabLine?.buttons.find(b => b.key === key)
@@ -160,13 +166,15 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
     const kind = selected.fold
     const unfolded = base.unfolded.includes(kind) ? base.unfolded.filter(k => k !== kind) : [...base.unfolded, kind]
 
-    return { ui: { ...base, unfolded } }
+    return { ui: { ...base, unfolded, closedAll: base.closedAll.filter(k => k !== kind) } }
   }
+  if (selected?.earlierOf && key === 'enter')
+    return { ui: { ...base, closedAll: [...base.closedAll, selected.earlierOf] } }
   if (selected && isShut(selected, base))
     return key === 'enter' ? { ui: { ...base, opened: selected.id } } : { ui: base }
   if (!selected || selected.buttons.length === 0 || isGuarded(base.openedAt, now)) return { ui: base }
   if (key === 'left' || key === 'right') {
-    const index = wrapIndex(focusOf(selected, base) + (key === 'left' ? -1 : 1), selected.buttons.length)
+    const index = steppedIndex(focusOf(selected, base), key === 'left' ? -1 : 1, selected.buttons.length)
 
     return { ui: { ...base, focus: { rowId: selected.id, index } } }
   }
@@ -176,8 +184,9 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
 }
 
 /**
- * A key on the Status page, or null when the page leaves it to the panel. While a row has buttons, j and k move the
- * selection between those rows and up and down still scroll. Enter and the buttons' keys press the selected row's.
+ * A key on the Status page, or null when the page leaves it to the panel. While a target has buttons, j and k move the
+ * selection between those targets and up and down still scroll. Enter and the buttons' keys press the selected
+ * target's. View shows Asks, a goal button that types opens the goal's field with its text, and the rest are presses.
  */
 function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): KeyResult | null {
   const page = screen.view.statusPage
@@ -186,21 +195,40 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
   if (!row) return null
   if (key === 'j' || key === 'k') {
     const at = rows.findIndex(r => r.id === row.id)
-    const to = rows[wrapIndex(at + (key === 'k' ? -1 : 1), rows.length)]!.id
+    const to = rows[steppedIndex(at, key === 'k' ? -1 : 1, rows.length)]!.id
 
     return { ui: { ...ui, selectedId: to, focus: null, pageReveal: to } }
   }
-  const keys = statusKeyPlan(row)
+  const { keys } = row
   if (key === 'left' || key === 'right') {
-    const index = wrapIndex(pageFocus(row, ui) + (key === 'left' ? -1 : 1), keys.length)
+    const index = steppedIndex(pageFocus(row, ui), key === 'left' ? -1 : 1, keys.length)
 
     return { ui: { ...ui, selectedId: row.id, focus: { rowId: row.id, index } } }
   }
   const pressed = key === 'enter' ? keys[pageFocus(row, ui)] : keys.find(k => k.hotkey === key)
   if (!pressed) return null
+  const { press } = pressed
+  if (press.action === 'show-ask')
+    return { ui: { ...withTab(ui, 'needsYou', now), selectedId: press.askId, openedAt: now } }
+  if (press.action === 'toggle-fold') {
+    const { foldId } = press
+    const isShown = ui.statusUnfolded.includes(foldId)
+    const statusUnfolded = isShown ? ui.statusUnfolded.filter(id => id !== foldId) : [...ui.statusUnfolded, foldId]
 
-  return { ui: { ...withTab(ui, 'needsYou', now), selectedId: pressed.press.askId, openedAt: now } }
+    return { ui: { ...ui, selectedId: row.id, statusUnfolded } }
+  }
+  if (press.action === 'type-goal') {
+    const drafts = { ...ui.drafts, [GOAL_KEYS_ID]: { text: press.text, since: now } }
+
+    return { ui: { ...ui, selectedId: row.id, typing: GOAL_KEYS_ID, focus: null, drafts } }
+  }
+
+  // The goal's buttons change with the press, so the goal's place keeps the selection: Undo after Remove.
+  return {
+    ui: { ...ui, selectedId: GOAL_KEYS_ID, focus: null, pageReveal: GOAL_KEYS_ID },
+    press: { action: press.action, id: GOAL_KEYS_ID },
+  }
 }
 
-export const pageFocus = (row: StatusRow, ui: PanelUi): number =>
-  ui.focus?.rowId === row.id ? Math.min(ui.focus.index, statusKeyPlan(row).length - 1) : 0
+export const pageFocus = (target: StatusKeyTarget, ui: PanelUi): number =>
+  ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0

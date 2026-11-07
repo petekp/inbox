@@ -2,7 +2,6 @@ import { atom, read, update } from 'claude-code'
 import type {
   EngineInterface,
   Register,
-  Timer,
   RenderSurface,
   UiPressArgument,
   UiScrollBlock,
@@ -17,9 +16,6 @@ import type {
   FoldKind,
   Ledger,
   OldPresence,
-  PrCheck,
-  PrThread,
-  PrView,
   PrViews,
   LastAction,
   SessionStatus,
@@ -28,33 +24,29 @@ import type {
   SentPrompt,
   Stop,
   Tab,
+  Session,
 } from '../types'
-import { childEnded } from './status'
+import { childEnded } from './status-children'
+import { claimedStatusRefresh, forkedFrom, statusChanged, withLook } from './session-status'
 import {
-  claimedStatusRefresh,
   cleared,
   commandFindings,
-  emptySession,
   endTurn,
-  forkedFrom,
   messageTyped,
   noteActivity as noteTurnActivity,
-  pressOn,
   recordPrompt,
-  recorded,
-  sessionView,
   startTurn,
   turnEnded,
   turnStarted,
   placed,
-  pruned,
-  upgradeSession,
   cutOffTurn,
-  statusChanged,
-  withLook,
   withNewPrRefs,
-  showsRunningMark,
-} from './session'
+  type SentBy,
+} from './session-turns'
+import { emptySession, upgradeSession, type SavedSession } from './session-files'
+import { pressOn, recorded, pruned, type SendOutcome } from './session-presses'
+import { isCompareInBackground } from './clients'
+import { sessionView, showsRunningMark, type SessionView } from './session-view'
 import {
   childrenCutOff,
   childStarted,
@@ -70,71 +62,30 @@ import {
   taskNotice,
   waitsOnDelegate,
 } from './children'
-import type { SavedSession, SendOutcome, SentBy, Session, SessionView } from './session'
-import {
-  fetchPrs as fetchSessionPrs,
-  isPrFetchDue,
-  refreshStatus,
-  runUpdates,
-  startPress,
-  wakeForDone as wakeSessionForDone,
-} from './session-host'
-import type { Ask, CallReport, CatchUpReply, StatusCall, StatusRecords, RecordFiles, SessionHost } from './session-host'
-import { SESSION_VERSION } from './session-version'
+import { CATCH_UP_CALL, runUpdates } from './session-host'
+import { heardCall } from './call-record'
+import { fetchPrs as fetchSessionPrs, isPrFetchDue } from './host-prs'
+import { tabPrs } from './pr-fetch'
+import type { FetchAsk } from './pr-fetch'
+import { prSharedStore } from './mod-pr-shared'
+import { refreshStatus, type StatusCall, type StatusRecords, type RecordFiles } from './status-records'
+import { startPress, wakeAfterSettle as wakeSessionAfterSettle } from './host-press'
+import type { Ask, CatchUpReply, SessionHost } from './session-host'
+import { callReport, MODEL } from './inbox-model'
 import { demoView, isDemoCopy } from './demo'
 import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
-import {
-  checkActions,
-  checkRowText,
-  PR_QUOTE_CHARS,
-  splitFollowUps,
-  isDismissed,
-  isPrPress,
-  openPrViews,
-  prRankText,
-  PR_GROUP_TITLES,
-  PR_TONES,
-  prBlockActions,
-  prCheckId,
-  DISMISS_MERGED_ID,
-  RANK_AGAIN_ID,
-  prMarkId,
-  pressRowId,
-  prThreadId,
-  threadActions,
-  threadRowText,
-  threadSentIn,
-  ghNoticeOf,
-  prsEmptyText,
-  prRefreshFailedText,
-} from './pr-tab'
-import type { Applied, DrawnPr, PrAction, PrPress } from './pr-tab'
-import {
-  commentLine,
-  commentParts,
-  failingChecks,
-  prRefs,
-  prNeedsYou,
-  readableComment,
-  readiness,
-  threadWhere,
-  waitingThreads,
-} from './prs'
-import { EMPTY, KEPT_SESSIONS, closeItem, isBlankLedger, readKind, tasksRunBy } from './ledger'
-import {
-  statusCarryText,
-  catchUpPrompt,
-  CLAUDE_CODE,
-  dialogActivity,
-  dialogQuestions,
-  guidedCloseDescription,
-  screenText,
-  systemText,
-  toolActivity,
-  transcriptCatchUpPrompt,
-  type ScreenTab,
-} from './model-text'
+import { isPrPress, pressRowId, type Applied, type PrPress } from './pr-press'
+import { openPrViews } from './pr-views'
+import { prBlockRows, threadSentIn } from './pr-rows'
+import { prRefs, prNeedsYou } from './prs'
+import { EMPTY, isBlankLedger } from './ledger'
+import { closeItem } from './ledger-close'
+import { tasksRunBy } from './reply-parse'
+import { CLAUDE_CODE, guidedCloseDescription } from './model-text'
+import { statusCarryText, screenText, type ScreenTab } from './inbox-text'
+import { catchUpPrompt, dialogActivity, dialogQuestions, toolActivity, transcriptCatchUpPrompt } from './catch-up-text'
+import { systemText } from './ledger-prompt'
 import {
   commandRowLine,
   dialogOutcome,
@@ -146,127 +97,59 @@ import {
   TURN_BOX_TOOL,
   turnBoxText,
 } from './claude'
-import {
-  DESKTOP_BUTTON_EXTRA_PT,
-  DESKTOP_CHARS_PER_CELL,
-  DESKTOP_CLIP_CHARS_PER_CELL,
-  desktopLines,
-  desktopTextPt,
-} from './desktop-metrics'
 import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
 import { CLEARED_TOKENS, delegatesInHerdr, HERDR_CHECK_MS, herdrTokens } from './herdr'
-import { ago, cellWidth, clipLabel, turnReply } from './text'
-import { COMPARE_PAGE_FILE, demoAfterPress, demoReplied, demoSent, isPressConfirmed, openTarget } from './presses'
-import type { DemoSent, Effect, PathProbe, RowPress } from './presses'
+import { ago, cellWidth, turnReply } from './text'
+import { COMPARE_PAGE_FILE } from './press-messages'
+import { demoAfterPress, demoReplied, demoSent, type DemoSent } from './press-effects'
+import { isPressConfirmed, type Effect } from './press-reducer'
+import { openTarget, type PathProbe } from './open-targets'
+import type { RowPress } from './presses'
+import { statusKeyRows, statusSelected } from './status-keys'
+import { footerStatus } from './view'
+import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, resumeLabel, type RowView } from './rows'
+import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf, NEXT_BUILD_MARK } from './banners'
+import { bandCounts, isMaybeStale, noCountsText } from './band'
 import {
-  closedShown,
-  DOT,
-  NEEDS_YOU_GROUPS,
-  isResumable,
-  RESUME_TEXT,
-  stopFix,
-  stopText,
   drawnLists,
-  emptyText,
+  rowKeyPlan,
+  rowsIn,
+  firstWaiting,
+  keptOpen,
+  rowAfterClose,
+  steppedIndex,
+  tabUndos,
+  latestUndo,
+  type PlannedKey,
+} from './action-plan'
+import {
   isRowTab,
   isShownTab,
-  LISTED_TABS,
   screenTabOf,
   shownTabs,
   drawnTabOf,
-  fitTabs,
   tabBadge,
-  tabName,
-  canUndoRefused,
-  settledMark,
-  settledTone,
-  DEMO_NOTICE,
-  bannerOf,
-  stopBanner,
-  tabBarBanners,
-  groupEmptyText,
-  closedTotal,
-  earlierLabel,
-  foldLabel,
-  feedbackOf,
-  feedbackText,
-  markedFeedbackText,
-  fieldExit,
-  hasAge,
+  inboxCommandText,
+  type ShownTab,
+} from './tabs'
+import {
   heldReplies,
-  isAfterTitle,
-  isFailure,
-  isStatusUnderActions,
-  waitingCount,
-  FINDING_GROUPS,
   isGuarded,
   PERMISSION_FALLBACK_DELAY_MS,
   PRESS_GUARD_MS,
   QUEUED_AFTER_MS,
   compareEndsAt,
-  rowKeyPlan,
-  statusKeyPlan,
-  statusKeyRows,
-  statusSelected,
-  actionLines,
-  settledLabel,
-  actionLabel,
-  replyHint,
-  rowTitle,
-  resultGlyph,
-  rowResultMark,
-  rowFeedbackText,
-  ROW_COPY,
-  READING_TEXT,
-  rowsIn,
-  LOOK_DASH,
-  mergedLine,
-  nameBeforeStall,
-  STALL_GAP,
-  WAS_PREFIX,
-  inboxCommandText,
-  runningMark,
-  MARK_LEGEND,
-  HELD_MARK,
-  HELP_COPY,
-  helpKeys,
   SETTLED_MS,
-  settledIn,
-  settledRowIds,
-  allRows,
-  firstWaiting,
-  footerStatus,
-  type BannerView,
   keptDiscards,
-  keptOpen,
-  NEXT_BUILD_MARK,
-  STATUS_TEXT_LINES,
-  rowAfterClose,
-  shortAgo,
-  shownOptionDescriptions,
-  versionLabel,
-} from './view'
-import type {
-  DrawnEntry,
-  Holds,
-  ModLook,
-  PlannedKey,
-  StatusBranch,
-  StatusPage,
-  StatusRow,
-  StatusStall,
-  RowView,
-  ResultMark,
-  LegendEntry,
-  SettledState,
-  ShownTab,
-  TabNaming,
-} from './view'
+  nextFoldAt,
+  withListInput,
+  type Holds,
+} from './timing'
+import { helpKeys, UNDO_KEY } from './help'
 import { agentTools } from './tools'
 import type { AgentTool } from './tools'
 import type { ToolAnswer } from './tools'
-import type { UndoProps } from './undo-client'
 import {
   ARRIVAL_TABS,
   closedGroups,
@@ -276,75 +159,20 @@ import {
   listedRowIds,
   openRowIds,
   prRowIds,
-  recordRows,
 } from './arrivals'
 import { parseInline } from './inline'
-import type { RowRecord } from './arrivals'
-import { BANNER_GAP_PT, BANNER_PAD_Y_PT, LOOK_GAP_PT, ROW_PAD_PT } from './layout'
-import { markShape } from './marks'
-import type { BannerTone } from './tones'
-import type { FoldProps } from './fold-client'
-import type { LinksProps } from './links-client'
-import type { RowProps } from './row-client'
-import { TAB_HEIGHT, tabLines, type TabsProps } from './tabs-client'
 import {
-  DESKTOP_ARM_GAP,
-  DESKTOP_CELL_PT,
-  DESKTOP_DASH_GAP_PT,
-  DESKTOP_DASH_PT,
-  DESKTOP_HAIR_CELLS,
-  DESKTOP_HAIR_LINES,
-  DESKTOP_LINE_PT,
-  DESKTOP_LINK_GAP_CELLS,
-  DESKTOP_MARK_CELLS,
-  DESKTOP_REPLY_ROWS,
+  DESKTOP_OFFSET_ROUNDING,
   DESKTOP_ROW_PAD,
-  DESKTOP_SIDE_CELLS,
-  DESKTOP_TAB_PAD,
-  DESKTOP_TREE_AT,
   DESKTOP_WIDE_AT,
-  desktopTabSizes,
-  FRAME_INSET_PT,
-  FRAMED_TAB_LAYOUTS,
   INLINE_RAIL_AT,
-  INLINE_TAB_GAPS,
   RAIL_GUTTER,
-  REPLY_ROWS,
-  ROW_COLUMNS,
-  SELECTED_GAP_PT,
-  STATUS_PAD_Y,
   TAB_PAD,
-  TERMINAL_SIDE_CELLS,
-  TREE_LINE_AT,
-  UNDO_CELLS,
-  UNDO_HEIGHT_PT,
 } from './pane-sizes'
-import { lookOf, paletteFor, type Tone } from './palettes'
+import { lookOf, paletteFor } from './palettes'
 import { animateRunningMarks } from './running-mark-timer'
+import { glued, type TerminalSpan, unbroken } from './terminal-text'
 import {
-  chevronSvg,
-  MUTED_MARK,
-  mutedMarkSvg,
-  RESULT_MARK_CELLS,
-  RUNNING_SVG_CELLS,
-  runningSvg,
-  toneSvg,
-  undoSvg,
-} from './desktop-svg'
-import {
-  desktopSpanLines,
-  LEADING_DOT,
-  lineCount,
-  SELECTION_BAR,
-  type TerminalSpan,
-  terminalSpanLines,
-  terminalTextLines,
-  type TreePos,
-  treeText,
-} from './terminal-text'
-import {
-  type ClosedLine,
-  FOLD_KINDS,
   lastUndoEnd,
   NO_CURSOR,
   NO_SELECTION,
@@ -356,6 +184,7 @@ import {
   settledScrollKey,
   type Showing,
   type Shown,
+  newRows,
   tabRowIds,
   tabWaits,
   UNDO_REDRAW_STEPS,
@@ -372,7 +201,8 @@ import {
   openedField,
   openFields,
   paneHasKeys,
-  PR_KEYS,
+  closeKeysWithoutRow,
+  undoKey,
 } from './pane-keys'
 import {
   arrived,
@@ -399,14 +229,12 @@ import {
   permissionText,
   reportToHerdr,
   spawnedBy,
-  startedTaskOf,
+  startedWorkflowOf,
   toolRecord,
-  TOOLS_REFUSED_TEXT,
   workflowTasks,
 } from './mod-records'
 import {
   AWAY_MS,
-  CAN_CATCH_UP,
   type Changed,
   conversation,
   currentOwner,
@@ -414,25 +242,34 @@ import {
   DESKTOP_APP_ENTRYPOINTS,
   drawnSession,
   isCurrent,
-  isLockHeld,
-  LOCK_RETRY_WAITS_MS,
   MAX_TRIES,
   type ModSession,
   NO_SESSION,
   type Owner,
   PR_POLL_MS,
   PRESENT,
-  prunedSaves,
-  READ_FAILED_TEXT,
   resultsOrder,
   type SavedRecord,
-  savedRevisions,
-  savesBySession,
-  sessionKey,
-  track,
   updating,
   withoutRowActions,
 } from './mod-sessions'
+import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
+import { noteStatusDrawn, takeShownRows } from './pane-status-shown'
+import { desktopSpaceLines } from './pane-status-tops'
+import { changeSaved, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
+import { paneAskRows, paneAskTabs } from './pane-asks'
+import { paneRowKeys } from './pane-row-keys'
+import { paneRowLines } from './pane-row-lines'
+import { paneRowFrame } from './pane-row-frame'
+import { paneRows } from './pane-rows'
+import { paneFrame } from './pane-frame'
+import { paneRowParts } from './pane-row-parts'
+import type { PaneClient, PaneHandlers, Row } from './pane-context'
+import { panePrBlocks, panePrRows } from './pane-prs'
+import { paneStatusLines } from './pane-status-lines'
+import { paneStatus } from './pane-status'
+import { paneHelp } from './pane-help'
+import { foldOf, upgradedUnfolded, withFold } from './fold-keys'
 
 const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
 /**
@@ -457,7 +294,10 @@ const SESSION = atom({ plugin: 'inbox', key: 'session' } as const, NO_SESSION)
 const AWAY = atom({ plugin: 'inbox', key: 'away' } as const, PRESENT)
 const UNREADABLE = atom({ plugin: 'inbox', key: 'unreadable' } as const, null as string | null)
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as FoldKind[])
-const FOLD_HOVER = atom({ plugin: 'inbox', key: 'foldHover' } as const, null as FoldKind | null)
+const STATUS_UNFOLDED = atom({ plugin: 'inbox', key: 'statusUnfolded' } as const, [] as string[])
+/** The Closed folds whose earlier lines the person opened. */
+const CLOSED_ALL = atom({ plugin: 'inbox', key: 'closedAll' } as const, [] as FoldKind[])
+const FOLD_HOVER = atom({ plugin: 'inbox', key: 'foldHover' } as const, null as string | null)
 const OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
 /** Switching tabs or closing the pane closes Help. */
 const IS_HELP_SHOWN = atom({ plugin: 'inbox', key: 'isHelpShown' } as const, false)
@@ -475,66 +315,10 @@ const PERSON_LINES = atom({ plugin: 'inbox', key: 'personLines' } as const, {} a
 
 const PANE = 'inbox'
 
-/** The conversation whose first prompt has had the Status tab's headline and status carried beside it. */
-let carriedFor: string | null = null
-/** Why the last conversation ended, until the next conversation loads. */
-let endReason: string | null = null
-let isOn = false
-let turningOn: Promise<void> | null = null
-let intervals: Timer[] = []
-let stepTexts: string[] = []
-/** True once an API error has set this turn's stop. */
-let hasStopFromError = false
-let turnBox: string | null = null
-let isDialogDismissed = false
-/** True once a classic.PermissionRequest hook has run, which makes the tool.check fallback unnecessary. */
-let hasPermissionRequestHook = false
-let fetchingPrs: Promise<void> = Promise.resolve()
-let nextFetchFindsBranchPr: boolean | null = null
-let prFetchEndedAt: number | undefined
-let recordedRows: { isDemo: boolean; ids: RowRecord<Tab> } | null = null
-let isInlinePane = false
-let isInlineTerminalPane = false
-let terminalInlineSize: string | null = null
-let inlineSize: string | null = null
-let pendingUndoScroll: PendingUndoScroll | null = null
-let undoScrollRevision = 0
-function cancelUndoScroll(): number {
-  pendingUndoScroll = null
-  return ++undoScrollRevision
-}
-function suspendUndoReveal(): number {
-  if (pendingUndoScroll) pendingUndoScroll.revealUndo = false
-  return ++undoScrollRevision
-}
-let loadRevision = 0
-let applyingConversation: Promise<void> = Promise.resolve()
-let queue: Promise<void> = Promise.resolve()
-let shellCommand: string | null = null
-let toolsRefused = false
-let isReadingAgain = false
-let version: string | null = null
-let isNextBuild = false
-/** Where a next build keeps its Status call records, or null on a release build. */
-let statusRecordsFolder: string | null = null
-/**
- * The desktop app takes the focus off the pane when the Button holding it leaves the drawing, and
- * the next click there only brings it back (anthropics/claude-code#100874).
- */
-let focusedKey: string | null = null
-let focusHint: string | null = null
-let paneLook: ModLook = 'terminal'
-
-let resuming: { is: 'sending' } | { is: 'refused'; why: string } | null = null
-let stopGeneration = 0
-let paneClosesOnEscape = true
-/** The row whose field opened while the keys stayed elsewhere, as over text in the prompt. */
-let fieldWithoutKeys: string | null = null
-
 function resetTurn() {
-  stepTexts = []
-  turnBox = null
-  isDialogDismissed = false
+  sessionState.stepTexts = []
+  sessionState.turnBox = null
+  sessionState.isDialogDismissed = false
 }
 
 /** Adds the person's words to the turn, as a shell command row does. */
@@ -559,6 +343,7 @@ async function noteActivity($: EngineInterface, line: string) {
   if (isClaimed)
     void refreshStatus({
       ...hostOf($, owner),
+      names: CLAUDE_CODE,
       inOrder: fn => resultsOrder.run(owner.id, fn),
       records: recordsOf($, owner),
     })
@@ -569,22 +354,32 @@ async function syncTheme($: EngineInterface) {
   await update($, THEME, () => (typeof theme === 'string' ? theme : ''))
 }
 
-function publishStatus($: EngineInterface, isEnding = false): Promise<void> {
-  return reportToHerdr(processRun($), async () => {
-    const pane = await $.env.get('HERDR_PANE_ID')
-    if (!pane) return null
-    if (isEnding) return { pane, tokens: CLEARED_TOKENS }
-    const [session, dialogs, now] = await Promise.all([read($, SESSION), read($, DIALOGS), $.clock.now()])
-    const view = sessionView(session, now, SETTLED_MS, CAN_CATCH_UP)
+function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
+  return reportToHerdr(
+    processRun($),
+    async () => {
+      const pane = await $.env.get('HERDR_PANE_ID')
+      if (!pane) return null
+      if (isEnding) return { pane, tokens: CLEARED_TOKENS }
+      const [session, dialogs, unreadable, now] = await Promise.all([
+        read($, SESSION),
+        read($, DIALOGS),
+        read($, UNREADABLE),
+        $.clock.now(),
+      ])
+      const view = sessionView(session, now, SETTLED_MS)
+      const isUnread = unreadable === conversation.id
 
-    return { pane, tokens: herdrTokens(session.ledger, session.stop, view, dialogs) }
-  })
+      return { pane, tokens: herdrTokens(session.ledger, session.stop, view, dialogs, isUnread) }
+    },
+    (ms, fn) => void $.clock.after(ms, fn),
+  )
 }
 
 async function setStop($: EngineInterface, stop: Stop | null) {
   if (stop === null && (await read($, SESSION)).stop === null) return
-  stopGeneration++
-  resuming = null
+  sessionState.stopGeneration++
+  sessionState.resuming = null
   await commit($, currentOwner(), s => ({ ...s, stop }))
   void publishStatus($)
 }
@@ -613,7 +408,7 @@ async function waitForPermission($: EngineInterface, id: string, tool: string, r
       return
     }
     await $.clock.sleep(PERMISSION_FALLBACK_DELAY_MS)
-    if (!askedCalls.has(id) || hasPermissionRequestHook) return
+    if (!askedCalls.has(id) || mod.hasPermissionRequestHook) return
     await openDialog($, { kind: 'permission', text: permissionText(tool, input), key })
   } catch {
     askedCalls.delete(id)
@@ -638,16 +433,16 @@ function redraw($: EngineInterface) {
 
 async function resume($: EngineInterface) {
   // [Resume] keeps its key while it reads "Resuming…", so a second press lands here.
-  if (resuming?.is === 'sending') return
+  if (sessionState.resuming?.is === 'sending') return
   const owner = currentOwner()
-  const generation = stopGeneration
-  const isSameStop = () => isCurrent(owner) && generation === stopGeneration
-  resuming = { is: 'sending' }
+  const generation = sessionState.stopGeneration
+  const isSameStop = () => isCurrent(owner) && generation === sessionState.stopGeneration
+  sessionState.resuming = { is: 'sending' }
   await redraw($)
   if (!isSameStop()) return
   const sent = await deliver($, owner, RESUME_TEXT, crypto.randomUUID())
   if (sent.state === 'rejected' && isSameStop()) {
-    resuming = { is: 'refused', why: sent.reason }
+    sessionState.resuming = { is: 'refused', why: sent.reason }
     await redraw($)
   }
 }
@@ -779,7 +574,7 @@ async function changeSession(
   held: Set<string>,
 ): Promise<Changed> {
   for (let tries = 0; tries < MAX_TRIES; tries++) {
-    if (!isCurrent(owner)) return changeSaved($, owner.id, change)
+    if (!isCurrent(owner)) return changeSaved(saveEngine($), owner.id, change)
     const drawn = await read($, SESSION)
     // A hot reload can leave a session an earlier build wrote. The fetch that is running still runs.
     const upgraded = upgradeSession(drawn)
@@ -802,169 +597,44 @@ async function changeSession(
     })
     const written = landed as ModSession | null
     if (!written) continue
-    if (!isTurnOnly && (await read($, UNREADABLE)) !== owner.id) await save($, owner, written)
+    if (!isTurnOnly && (await read($, UNREADABLE)) !== owner.id) await save(saveEngine($), owner, written)
     return { before, after: written, isDrawn: isCurrent(owner) }
   }
   throw new Error('The session kept changing under this write.')
 }
 
-/**
- * Changes a conversation's saved session, after its pending saves, and prunes it with `pruned`. The pane draws another
- * conversation, so this one holds no rows and has no showing. A session the store cannot read stays as it is.
- */
-async function changeSaved(
-  $: EngineInterface,
-  id: string,
-  change: (s: Session) => Session | Promise<Session>,
-): Promise<Changed> {
-  savedWrites++
-  // The read, the change and the write run in the save queue, so two changes to one saved session cannot both
-  // start from the same read.
-  // A retry reads again, so it cannot write over a save another process made meanwhile.
-  const changed = saving.then(() =>
-    whileLockHeld($, async (): Promise<Changed> => {
-      const saved = await readSaved($, id)
-      if (!saved?.session) return { before: emptySession(), after: emptySession(), isDrawn: false }
-      const before = upgradeSession(saved.session)
-      const result = await change(before)
-      if (result === before) return { before, after: before, isDrawn: false }
-      const after = pruned({ ...result, heldRows: [], shownSince: null })
-      await $.store.set(sessionKey(id), { version: SESSION_VERSION, savedAt: saved.session.savedAt, ...after })
-
-      return { before, after, isDrawn: false }
-    }).catch((error: unknown): Changed => {
-      if (!isLockHeld(error)) throw error
-      logSaveFailure($, id, error)
-      return { before: emptySession(), after: emptySession(), isDrawn: false }
-    }),
-  )
-  const write = changed.then(() => undefined)
-  saving = write.catch(() => undefined)
-  track(id, write)
-
-  return changed
-}
-
-/** Runs `write`, and again after each wait in `LOCK_RETRY_WAITS_MS` while the store's lock is held. */
-async function whileLockHeld<T>($: EngineInterface, write: () => Promise<T>): Promise<T> {
-  for (const ms of LOCK_RETRY_WAITS_MS) {
-    try {
-      return await write()
-    } catch (error) {
-      if (!isLockHeld(error)) throw error
-      await $.clock.sleep(ms)
-    }
-  }
-  return write()
-}
-
-function logSaveFailure($: EngineInterface, id: string, error: unknown) {
-  $.ui.log(`inbox: saving session ${id} failed: ${error instanceof Error ? error.message : String(error)}`, {
-    to: 'debug',
-  })
-}
-
-let saving: Promise<void> = Promise.resolve()
-/** How many changes went to a saved session that is not drawn, so a load can tell its read is out of date. */
-let savedWrites = 0
-
-/**
- * Saves a conversation's session, once every earlier save has landed. A save older than one already resolved is
- * skipped. The first save of each conversation also deletes the oldest saved sessions beyond the newest `KEPT_SESSIONS`.
- */
-function save($: EngineInterface, owner: Owner, s: ModSession): Promise<void> {
-  const key = sessionKey(owner.id)
-  const generation = `${owner.id}:${owner.generation}`
-  savedRevisions.set(generation, Math.max(savedRevisions.get(generation) ?? 0, s.revision))
-  const { revision: _revision, ...session } = s
-  const setAndPrune = Promise.all([saving, $.clock.now()]).then(async ([, savedAt]) => {
-    if (s.revision < (savedRevisions.get(generation) ?? 0)) return
-    await whileLockHeld($, () => $.store.set(key, { version: SESSION_VERSION, savedAt, ...session }))
-    if (prunedSaves.has(generation)) return
-    const keys = await $.store.keys()
-    const sessions = keys.filter(k => k.startsWith('s:'))
-    const ages = await Promise.all(
-      sessions.map(async candidate => {
-        try {
-          const saved = (await $.store.get(candidate)) as SavedRecord | undefined
-          return saved && Number.isFinite(saved.savedAt) && saved.ledger && typeof saved.ledger === 'object'
-            ? { key: candidate, savedAt: saved.savedAt }
-            : null
-        } catch {
-          return null
-        }
-      }),
-    )
-    const stale = ages
-      .filter((entry): entry is { key: string; savedAt: number } => entry !== null && entry.key !== key)
-      .sort((a, b) => a.savedAt - b.savedAt || a.key.localeCompare(b.key))
-      .slice(0, Math.max(0, sessions.length - KEPT_SESSIONS))
-      .map(entry => entry.key)
-    // `p:` keys held the last-session offer, which earlier builds saved per folder.
-    await Promise.all(
-      [...stale, ...keys.filter(k => k.startsWith('p:'))].map(old => whileLockHeld($, () => $.store.delete(old))),
-    )
-    prunedSaves.add(generation)
-  })
-  const write = setAndPrune.catch((error: unknown) => {
-    // The session stays drawn, and the conversation's next save writes it whole.
-    if (!isLockHeld(error)) throw error
-    logSaveFailure($, owner.id, error)
-  })
-  saving = write.catch(() => undefined)
-  track(owner.id, write)
-
-  return write
-}
-
-/** A conversation's saved session, or `{ session: undefined }` when none is saved. Null when the store cannot read it. */
-async function readSaved($: EngineInterface, id: string): Promise<{ session: SavedRecord | undefined } | null> {
-  try {
-    return { session: (await $.store.get(sessionKey(id))) as SavedRecord | undefined }
-  } catch {
-    return null
+/** The store, clock and debug log calls that `hooks/mod-saves.ts` makes. */
+function saveEngine($: EngineInterface): SaveEngine {
+  return {
+    store: {
+      get: key => $.store.get(key),
+      set: (key, value) => $.store.set(key, value),
+      delete: key => $.store.delete(key),
+      keys: () => $.store.keys(),
+    },
+    sleep: ms => $.clock.sleep(ms),
+    now: () => $.clock.now(),
+    after: (ms, fn) => $.clock.after(ms, fn),
+    log: text => $.ui.log(text, { to: 'debug' }),
   }
 }
 
-/** A conversation's saved session, once its pending saves have landed. */
-async function readSettled($: EngineInterface, id: string) {
-  await savesBySession.get(id)?.catch(() => undefined)
-
-  return readSaved($, id)
-}
-
-const MODEL = 'sonnet'
-
-type ModelResult = Awaited<ReturnType<EngineInterface['model']['fork']>>
-
-function askLedgerModel($: EngineInterface, prompt: string, system: string, timeoutMs: number): Promise<ModelResult> {
-  return $.model.complete({
-    model: MODEL,
-    system: [{ text: system, cache: true as const }],
-    prompt,
-    maxTokens: 1600,
-    effort: 'low',
-    timeoutMs,
-  })
-}
-
-/** The engine does not say which model answered. */
-function callReport(r: ModelResult): CallReport {
-  if (r.isAnswered) return { model: MODEL }
-  const error = r.reason === 'api-error' ? `api-error ${r.status ?? 'with no response'}: ${r.error}` : r.reason
-
-  return { model: MODEL, error }
-}
-
-/** Calls the inbox model as `askLedgerModel` does, reports the call, and returns the answer. */
+/** Calls the inbox model, reports the call, and returns the answer. */
 async function askInboxModel(
   $: EngineInterface,
   prompt: string,
   system: string,
   timeoutMs: number,
-  report: Parameters<Ask>[2],
+  report: Parameters<Ask>[3],
 ): Promise<string | null> {
-  const r = await askLedgerModel($, prompt, system, timeoutMs)
+  const r = await $.model.complete({
+    model: MODEL,
+    system: [{ text: system, cache: true }],
+    prompt,
+    maxTokens: 1600,
+    effort: 'low',
+    timeoutMs,
+  })
   report?.(callReport(r))
   return r.isAnswered ? r.text : null
 }
@@ -1109,17 +779,18 @@ function sessionHost(
     now: () => $.clock.now(),
     read: async () => {
       if (isCurrent(owner)) return upgradeSession(await read($, SESSION))
-      const saved = await readSettled($, owner.id)
+      const saved = await readSettled(saveEngine($), owner.id)
       return saved?.session ? upgradeSession(saved.session) : emptySession()
     },
     update: opts.update,
     exclusive: fn => updating.run(owner.id, fn),
-    ask: (prompt, system, report) => askInboxModel($, prompt, system, 45_000, report),
+    ask: (prompt, system, _kind, report) => askInboxModel($, prompt, system, 45_000, report),
     deliver: (_s, text, deliveryId) => deliver($, owner, text, deliveryId),
     isDeliveryHeldUntilRun: true,
     perform: async (_s, effect) => (opts.surface ? perform($, effect, opts.surface) : COPY_FAILURES['no-surface']),
     refreshPrs: opts.refreshPrs,
     gh: {
+      shared: prSharedStore(saveEngine($)),
       find: async () => {
         if (ghFound === undefined) ghFound = (await isGhUnstartable($)) ? null : 'gh'
         return ghFound
@@ -1132,6 +803,7 @@ function sessionHost(
     },
     settleWindowMs: opts.settleWindowMs,
     comparePage: comparePagePath($),
+    compareInBackground: isCompareInBackground('claude-code'),
     newId: () => crypto.randomUUID(),
   }
 }
@@ -1168,26 +840,32 @@ async function commit(
   return after
 }
 
-let undoRedrawsUntil = -Infinity
-
-/** Redraws the pane while Undo lasts, to `expiresAt`, unless a redraw already runs to then or later. */
+/** At `expiresAt`, redraws the pane and runs that Undo's end work. On the terminal, one loop redraws to the last end. */
 function redrawWhileUndoLasts($: EngineInterface, expiresAt: number) {
-  if (expiresAt <= undoRedrawsUntil) return
-  undoRedrawsUntil = expiresAt
+  const ends = paneState.undoEnds
+  if (ends.has(expiresAt)) return
+  ends.add(expiresAt)
+  const redrawAll = () => Promise.all([redraw($), update($, DEMO, d => d && { ...d })])
   // Desktop redraws once, when Undo ends: while the terminal's steps redrew every 213 ms there, clicks on the
   // pane's Buttons, Undo among them, did nothing.
-  void (async () => {
-    const startedAt = await $.clock.now()
-    const remaining = Math.max(0, expiresAt - startedAt)
-    const steps =
-      paneLook === 'desktop' ? 1 : Math.max(1, Math.ceil(remaining / Math.ceil(SETTLED_MS / UNDO_REDRAW_STEPS)))
-    for (let n = 1; n <= steps; n++) {
-      await $.clock.sleep(Math.max(0, Math.ceil(startedAt + (n * remaining) / steps - (await $.clock.now()))))
-      await Promise.all([redraw($), update($, DEMO, d => d && { ...d })])
-    }
+  if (paneState.paneLook === 'terminal' && !paneState.isUndoLoopRunning) {
+    paneState.isUndoLoopRunning = true
+    void (async () => {
+      const stepMs = Math.ceil(SETTLED_MS / UNDO_REDRAW_STEPS)
+      try {
+        while ((await $.clock.now()) + stepMs < Math.max(...ends)) await $.clock.sleep(stepMs).then(redrawAll)
+      } finally {
+        paneState.isUndoLoopRunning = false
+      }
+    })().catch(() => undefined)
+  }
+  later($, 0, async () => {
+    await $.clock.sleep(Math.max(0, expiresAt - (await $.clock.now())))
+    ends.delete(expiresAt)
+    await redrawAll()
     await openLeftRows($)
     await finishPendingUndoScroll($)
-  })().catch(() => undefined)
+  })
 }
 
 function later($: EngineInterface, waitMs: number, run: () => unknown) {
@@ -1197,16 +875,14 @@ function later($: EngineInterface, waitMs: number, run: () => unknown) {
   })().catch(() => undefined)
 }
 
-let compareRedrawAt: number | null = null
-
 /** Redraws when the soonest Compare press reaches its limit, then waits for the next one. */
 async function redrawAtCompareEnd($: EngineInterface) {
   const { lastActions, now } = await drawnState($)
   const at = compareEndsAt(lastActions, now)
-  if (at === null || (compareRedrawAt !== null && compareRedrawAt <= at)) return
-  compareRedrawAt = at
+  if (at === null || (paneState.compareRedrawAt !== null && paneState.compareRedrawAt <= at)) return
+  paneState.compareRedrawAt = at
   later($, at - now, async () => {
-    compareRedrawAt = null
+    paneState.compareRedrawAt = null
     await redraw($)
     await redrawAtCompareEnd($)
   })
@@ -1229,7 +905,8 @@ async function redrawAfterReload($: EngineInterface) {
 function catchUpStatus($: EngineInterface, owner: Owner, transcript: string): StatusCall {
   return {
     exchange: { kind: 'catch-up', conversation: transcript },
-    ask: async (prompt, system, report) => (isCurrent(owner) ? askInboxModel($, prompt, system, 90_000, report) : null),
+    ask: async (prompt, system, _kind, report) =>
+      isCurrent(owner) ? askInboxModel($, prompt, system, 90_000, report) : null,
   }
 }
 
@@ -1238,7 +915,7 @@ function catchUpStatus($: EngineInterface, owner: Owner, transcript: string): St
  * is nothing to fork.
  */
 async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpReply> {
-  if (!isCurrent(owner)) return { kind: 'failed' }
+  if (!isCurrent(owner)) return { kind: 'failed', heard: null }
   const [{ ledger }, shown, transcript] = await Promise.all([
     read($, SESSION),
     screen($),
@@ -1246,17 +923,37 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
   ])
   // The Status call reads the transcript.
   const statusCall = transcript ? catchUpStatus($, owner, transcript) : null
+  const forkedAt = await $.clock.now()
   const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
-  if (!isCurrent(owner)) return { kind: 'failed' }
-  if (forked.isAnswered) return { kind: 'reply', text: forked.text, source: null, statusCall }
+  if (!isCurrent(owner)) return { kind: 'failed', heard: null }
   // A fork has nothing to read until this process sends its first request,
   // as after a resume. The model then reads the transcript instead, uncached.
-  if (forked.reason !== 'nothing-to-fork') return { kind: 'failed' }
-  if (!transcript) return { kind: 'unreadable' }
-  const r = await askLedgerModel($, transcriptCatchUpPrompt(ledger, shown, transcript), systemText(CLAUDE_CODE), 90_000)
-  if (!isCurrent(owner)) return { kind: 'failed' }
+  if (!forked.isAnswered && forked.reason === 'nothing-to-fork')
+    return transcriptReply($, owner, ledger, shown, transcript)
+  const text = forked.isAnswered ? forked.text : null
+  const heard = { text, report: callReport(forked), thrown: null, ms: (await $.clock.now()) - forkedAt }
 
-  return r.isAnswered ? { kind: 'reply', text: r.text, source: transcript, statusCall } : { kind: 'failed' }
+  return text === null ? { kind: 'failed', heard } : { kind: 'reply', text, source: null, statusCall, heard }
+}
+
+/** The model's answer to a catch-up over the transcript, for a conversation with nothing to fork. */
+async function transcriptReply(
+  $: EngineInterface,
+  owner: Owner,
+  ledger: Ledger,
+  shown: string,
+  transcript: string | null,
+): Promise<CatchUpReply> {
+  if (!transcript) return { kind: 'unreadable' }
+  const statusCall = catchUpStatus($, owner, transcript)
+  const prompt = transcriptCatchUpPrompt(ledger, shown, transcript)
+  const ask: Ask = (p, system, _kind, report) => askInboxModel($, p, system, 90_000, report)
+  const heard = await heardCall(ask, prompt, systemText(CLAUDE_CODE), CATCH_UP_CALL, () => $.clock.now())
+  if (!isCurrent(owner)) return { kind: 'failed', heard: null }
+
+  return heard.text === null
+    ? { kind: 'failed', heard }
+    : { kind: 'reply', text: heard.text, source: transcript, statusCall, heard }
 }
 
 /**
@@ -1276,7 +973,7 @@ async function catchUpNow($: EngineInterface) {
  */
 function updateLedger($: EngineInterface) {
   const owner = currentOwner()
-  queue = queue.then(async () => {
+  mod.queue = mod.queue.then(async () => {
     if (!isCurrent(owner)) return
     await runUpdates({
       ...hostOf($, owner),
@@ -1289,11 +986,11 @@ function updateLedger($: EngineInterface) {
     if (isCurrent(owner)) void publishStatus($)
   })
   // A rejected link would skip every later update, so the chain swallows it.
-  queue = queue.catch(() => undefined)
+  mod.queue = mod.queue.catch(() => undefined)
 }
 
 function recordsOf($: EngineInterface, owner: Owner): StatusRecords | undefined {
-  return statusRecordsFolder === null ? undefined : statusRecords($, statusRecordsFolder, owner)
+  return mod.statusRecordsFolder === null ? undefined : statusRecords($, mod.statusRecordsFolder, owner)
 }
 
 /** The mod's SessionHost for `owner`'s conversation. A press passes its surface, which copies go to. */
@@ -1306,7 +1003,7 @@ function hostOf($: EngineInterface, owner: Owner, surface?: UiPressArgument['sur
       void commit($, owner, s =>
         s.prViews.isGhMissing === isGhMissing ? s : { ...s, prViews: { ...s.prViews, isGhMissing } },
       ).catch(() => undefined),
-    refreshPrs: () => fetchPrs($, true),
+    refreshPrs: () => fetchPrs($, true, true),
   })
 }
 
@@ -1371,12 +1068,7 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
         Object.entries(cursors).map(([t, c]) => [t, { ...c, openedAt: c.openedAt ?? 0 }]),
       ) as Record<Tab, Cursor>
     }),
-    // Old builds saved the group kinds as `decide` and `do`, and the Finds tab's one fold as `finding`, now one per kind.
-    update($, UNFOLDED, u =>
-      u.flatMap((k: string): FoldKind[] =>
-        k === 'finding' ? ['issue', 'opportunity'] : k === 'issue' || k === 'opportunity' ? [k] : [readKind(k)],
-      ),
-    ),
+    update($, UNFOLDED, upgradedUnfolded),
     // A demo an earlier build seeded may lack a field this one draws, so it ends; /inbox demo seeds a new one.
     update($, DEMO, d => (d === null || isDemoCopy(d) ? d : null)),
     // A draft saved as bare text began before now, so a row that closed before this load stays closed.
@@ -1421,7 +1113,7 @@ async function runTool(
  * and the pane's render closes the field.
  */
 function openPane($: EngineInterface, isFieldOpen = false) {
-  paneClosesOnEscape = !isFieldOpen
+  paneState.paneClosesOnEscape = !isFieldOpen
   const opened = $.ui.open({
     id: PANE,
     title: 'Inbox',
@@ -1432,6 +1124,7 @@ function openPane($: EngineInterface, isFieldOpen = false) {
     .then(async () => {
       await syncShown($, { isOpen: true })
       await syncLook($, true)
+      await wakeForHeldSends($)
     })
     .catch(() => undefined)
 
@@ -1447,10 +1140,10 @@ async function syncLook($: EngineInterface, isOpen?: boolean) {
   if (await read($, DEMO)) return
   const [page, isPaneOpen, now] = await Promise.all([readPage($), isOpen ?? isPaneShown($), $.clock.now()])
   const isShown = isPaneOpen && page === 'overview'
-  await commit($, currentOwner(), s => withLook(s, isShown, now)).catch(() => undefined)
+  const shown = isShown ? {} : takeShownRows()
+  await commit($, currentOwner(), s => withLook(s, isShown, now, shown)).catch(() => undefined)
   followDelegates($, isShown)
 }
-let herdrCheckTimer: Timer | null = null
 
 /**
  * Asks Herdr about the running delegates each `HERDR_CHECK_MS` while the Status shows, and once as it starts to
@@ -1459,17 +1152,17 @@ let herdrCheckTimer: Timer | null = null
  */
 function followDelegates($: EngineInterface, isShown: boolean) {
   if (!isShown) {
-    herdrCheckTimer?.cancel()
-    herdrCheckTimer = null
+    paneState.herdrCheckTimer?.cancel()
+    paneState.herdrCheckTimer = null
     return
   }
   void checkDelegates($).catch(() => undefined)
-  herdrCheckTimer ??= $.clock.every(HERDR_CHECK_MS, () => {
+  paneState.herdrCheckTimer ??= $.clock.every(HERDR_CHECK_MS, () => {
     void (async () => {
       const isStillShown = (await readPage($)) === 'overview' && (await isPaneShown($))
       if (isStillShown && !(await read($, DEMO))) return checkDelegates($)
-      herdrCheckTimer?.cancel()
-      herdrCheckTimer = null
+      paneState.herdrCheckTimer?.cancel()
+      paneState.herdrCheckTimer = null
     })().catch(() => undefined)
   })
 }
@@ -1523,14 +1216,34 @@ async function readHolds($: EngineInterface): Promise<Holds> {
     readShownSince($),
   ])
 
-  return { replies: heldReplies(typing, drafts), discarded, shownSince }
+  return { replies: heldReplies(typing, drafts), discarded, shownSince, listInput: paneState.listInput }
+}
+
+/** Notes a press, key, click or pointer move on the pane, so a row due to fold waits until the person stops. */
+async function noteListInput($: EngineInterface) {
+  paneState.listInput = withListInput(paneState.listInput, await $.clock.now())
+}
+
+/** Redraws when the next settled row or PR the view draws can fold. */
+function redrawAtNextFold($: EngineInterface, view: SessionView, lastTypedMessageAt: number | null, now: number) {
+  const settled = [...allRows(view), ...view.prs.drawn].flatMap(r => (r.state.is === 'settled' ? [r.state] : []))
+  const placing = { lastTypedMessageAt, listInput: paneState.listInput, now, settleWindowMs: SETTLED_MS }
+  const at = nextFoldAt(settled, placing)
+  const pending = paneState.foldRedrawAt
+  const isSooner = at !== null && at > now && (pending === null || pending <= now || at < pending)
+  if (!isSooner) return
+  paneState.foldRedrawAt = at
+  later($, at - now, async () => {
+    paneState.foldRedrawAt = null
+    await redraw($)
+  })
 }
 
 /** Opens the open pane again, without asking for the keyboard, once a reply field opened or closed. */
 async function matchPaneEscape($: EngineInterface) {
   const closesOnEscape = (await read($, TYPING)) === null
-  if (closesOnEscape === paneClosesOnEscape) return
-  paneClosesOnEscape = closesOnEscape
+  if (closesOnEscape === paneState.paneClosesOnEscape) return
+  paneState.paneClosesOnEscape = closesOnEscape
   if (!(await $.ui.panes()).some(p => p.id === PANE)) return
   await $.ui.open({ id: PANE, title: 'Inbox', ...(closesOnEscape ? { closeOnEscape: true as const } : {}) })
 }
@@ -1572,9 +1285,13 @@ async function sendTyped($: EngineInterface, id: string, text: string, surface: 
   else await focusField($, id)
 }
 
-async function startTyping($: EngineInterface, id: string) {
+/** Opens `id`'s field with its draft, or with `seed` as a fresh one, and gives it the keys. */
+async function startTyping($: EngineInterface, id: string, seed?: string) {
+  paneState.focusHint = `type-${id}`
   const now = await $.clock.now()
-  const drafts = await update($, DRAFTS, d => (d[id] ? d : { ...d, [id]: { text: '', since: now } }))
+  const drafts = await update($, DRAFTS, d =>
+    d[id] && seed === undefined ? d : { ...d, [id]: { text: seed ?? '', since: now } },
+  )
   openFields.set(id, openedField(id, drafts[id]))
   await keepPressedOpen($, id)
   await update($, TYPING, () => id)
@@ -1601,8 +1318,8 @@ async function focusField($: EngineInterface, id: string) {
   )
   // A deny also comes when the field's `autoFocus` took the keys first, so the pane says whether it has them.
   const isWithoutKeys = !isMoved && (await $.ui.panes()).some(p => p.id === PANE && !p.isFocused)
-  if (isWithoutKeys === (fieldWithoutKeys === id)) return
-  fieldWithoutKeys = isWithoutKeys ? id : null
+  if (isWithoutKeys === (paneState.fieldWithoutKeys === id)) return
+  paneState.fieldWithoutKeys = isWithoutKeys ? id : null
   await redraw($)
 }
 
@@ -1616,7 +1333,7 @@ async function writeRowTab($: EngineInterface, tab: Tab) {
 async function readPage($: EngineInterface): Promise<PageTab | null> {
   const page = await read($, PAGE)
 
-  return page !== null && drawnTabOf(page, isNextBuild) === page ? page : null
+  return page !== null && drawnTabOf(page, mod.isNextBuild) === page ? page : null
 }
 
 /** The shown row tab; null while the Status page shows, where no row is drawn, selected or scrolled to. */
@@ -1653,7 +1370,7 @@ async function findPrs($: EngineInterface) {
 
 async function select($: EngineInterface, tab: Tab, id: string, index: number, scroll = true) {
   if (scroll) {
-    if (pendingUndoScroll && pendingUndoScroll.tab === tab) suspendUndoReveal()
+    if (paneState.pendingUndoScroll && paneState.pendingUndoScroll.tab === tab) suspendUndoReveal()
     else cancelUndoScroll()
   }
   const openedAt = await $.clock.now()
@@ -1681,33 +1398,35 @@ async function scrollToKey(
   return false
 }
 
-async function selectStatusRow($: EngineInterface, id: string) {
+async function selectStatusRow($: EngineInterface, id: string, focusKey?: string) {
   await update($, STATUS_SELECTION, () => id)
-  await scrollToKey($, `status-${id}`, 'nearest')
+  const isDrawn = await scrollToKey($, `status-${id}`, 'nearest')
+  if (isDrawn && focusKey) await $.ui.focus({ requestId: PANE, key: focusKey }).catch(() => {})
 }
 
 async function scrollToRow($: EngineInterface, id: string) {
-  await scrollToKey($, `view-${id}`, isInlinePane ? 'start' : 'nearest')
+  await scrollToKey($, `view-${id}`, paneState.isInlinePane ? 'start' : 'nearest')
 }
 
 async function revealPendingUndo($: EngineInterface): Promise<boolean> {
-  const pending = pendingUndoScroll
-  if (!pending || !pending.revealUndo || !isInlineTerminalPane || pending.sessionId !== conversation.id) return false
+  const pending = paneState.pendingUndoScroll
+  if (!pending || !pending.revealUndo || !paneState.isInlineTerminalPane || pending.sessionId !== conversation.id)
+    return false
   const [tab, selection, drawn] = await Promise.all([readRowTab($), read($, SELECTION), drawnState($)])
-  if (pendingUndoScroll !== pending || tab === null) return false
+  if (paneState.pendingUndoScroll !== pending || tab === null) return false
   if (tab !== pending.tab || !sameCursor(selection[tab], pending.cursor) || drawn.now >= pending.expiresAt) return false
   const prs = drawn.view.prs.drawn
   const key = settledScrollKey(
     pending.key,
-    settledLayoutId(tab, drawn.view, prs, drawn.lastActions, drawn.notes, drawn.now, terminalInlineSize),
+    settledLayoutId(tab, drawn.view, prs, drawn.lastActions, drawn.notes, drawn.now, paneState.terminalInlineSize),
   )
-  return scrollToKey($, key, pending.block, () => pendingUndoScroll === pending && pending.revealUndo, 5)
+  return scrollToKey($, key, pending.block, () => paneState.pendingUndoScroll === pending && pending.revealUndo, 5)
 }
 
 async function keepUndoVisible($: EngineInterface, key: string, block: UiScrollBlock, at: number, revision: number) {
-  if (revision !== undoScrollRevision) return
+  if (revision !== paneState.undoScrollRevision) return
   const [tab, selection] = await Promise.all([readRowTab($), read($, SELECTION)])
-  if (revision !== undoScrollRevision || tab === null) return
+  if (revision !== paneState.undoScrollRevision || tab === null) return
   const pending: PendingUndoScroll = {
     key,
     tab,
@@ -1717,18 +1436,18 @@ async function keepUndoVisible($: EngineInterface, key: string, block: UiScrollB
     sessionId: conversation.id,
     revealUndo: true,
   }
-  pendingUndoScroll = pending
+  paneState.pendingUndoScroll = pending
   await revealPendingUndo($)
 }
 
 async function finishPendingUndoScroll($: EngineInterface) {
-  const pending = pendingUndoScroll
+  const pending = paneState.pendingUndoScroll
   if (!pending) return
-  const revision = undoScrollRevision
+  const revision = paneState.undoScrollRevision
   const [tab, selection, drawn] = await Promise.all([readRowTab($), read($, SELECTION), drawnState($)])
-  if (pendingUndoScroll !== pending || revision !== undoScrollRevision) return
+  if (paneState.pendingUndoScroll !== pending || revision !== paneState.undoScrollRevision) return
   const cursor = tab === null ? NO_CURSOR : selection[tab]
-  if (tab !== null && tab === pending.tab && isInlineTerminalPane && conversation.id === pending.sessionId) {
+  if (tab !== null && tab === pending.tab && paneState.isInlineTerminalPane && conversation.id === pending.sessionId) {
     const prs = drawn.view.prs.drawn
     const openId =
       cursor.id ??
@@ -1739,31 +1458,41 @@ async function finishPendingUndoScroll($: EngineInterface) {
     if (baseKey) {
       const key = settledScrollKey(
         baseKey,
-        settledLayoutId(tab, drawn.view, prs, drawn.lastActions, drawn.notes, drawn.now, terminalInlineSize),
+        settledLayoutId(tab, drawn.view, prs, drawn.lastActions, drawn.notes, drawn.now, paneState.terminalInlineSize),
       )
-      await scrollToKey($, key, block, () => pendingUndoScroll === pending && revision === undoScrollRevision, 5)
+      await scrollToKey(
+        $,
+        key,
+        block,
+        () => paneState.pendingUndoScroll === pending && revision === paneState.undoScrollRevision,
+        5,
+      )
     }
   }
-  if (drawn.now >= pending.expiresAt && pendingUndoScroll === pending && revision === undoScrollRevision)
-    pendingUndoScroll = null
+  if (
+    drawn.now >= pending.expiresAt &&
+    paneState.pendingUndoScroll === pending &&
+    revision === paneState.undoScrollRevision
+  )
+    paneState.pendingUndoScroll = null
 }
 
 async function scrollToOpenRow($: EngineInterface, tab: Tab, surface?: RenderSurface) {
-  const revision = undoScrollRevision
+  const revision = paneState.undoScrollRevision
   if (surface !== 'desktop' && (await revealPendingUndo($))) return
-  if (revision !== undoScrollRevision) return
-  if (isInlinePane) {
+  if (revision !== paneState.undoScrollRevision) return
+  if (paneState.isInlinePane) {
     const [selection, { view, lastActions }] = await Promise.all([read($, SELECTION), drawnState($)])
     const prViews = openPrViews(view.prs.drawn)
     const cursor = selection[tab]
     const id = cursor.id ?? (cursor.openedAt === 0 ? firstWaiting(tabWaits(tab, view, prViews, lastActions)) : null)
-    if (revision !== undoScrollRevision) return
+    if (revision !== paneState.undoScrollRevision) return
     if (id !== null) {
-      await scrollToKey($, `view-${id}`, 'start', () => revision === undoScrollRevision)
+      await scrollToKey($, `view-${id}`, 'start', () => revision === paneState.undoScrollRevision)
       return
     }
   }
-  if (revision !== undoScrollRevision) return
+  if (revision !== paneState.undoScrollRevision) return
   await $.ui.scroll({ in: PANE, to: 'start' }).catch(() => undefined)
 }
 
@@ -1773,9 +1502,6 @@ async function selectClicked($: EngineInterface, id: string) {
   const prViews = openPrViews(view.prs.drawn)
   const index = tabRowIds(view, prViews)[tab].indexOf(id)
   if (index < 0 || isGuarded(selection[tab].openedAt, now)) return
-  // The Client leaves the drawing as its row opens, so the focus repair moves the focus to the row's first action.
-  focusedKey = `select-${id}`
-  focusHint = null
   await select($, tab, id, index)
 }
 
@@ -1784,29 +1510,22 @@ async function showAsk($: EngineInterface, askId: string) {
   const { view } = await drawnState($)
   const prViews = openPrViews(view.prs.drawn)
   const index = Math.max(0, tabRowIds(view, prViews).needsYou.indexOf(askId))
-  focusedKey = `select-${askId}`
-  focusHint = null
   await select($, 'needsYou', askId, index, false)
   await showTab($, 'needsYou')
   await scrollToRow($, askId)
 }
 
-/**
- * A set, not a toggle: a second
- * click before the redraw posts the same state, so a double-click leaves the fold unfolded.
- */
-async function setFold($: EngineInterface, kind: string, isUnfolded: unknown) {
-  const fold = FOLD_KINDS.find(k => k === kind)
-  if (fold === undefined || typeof isUnfolded !== 'boolean') return
-  await update($, UNFOLDED, u =>
-    u.includes(fold) === isUnfolded ? u : isUnfolded ? [...u, fold] : u.filter(k => k !== fold),
-  )
+/** A set, not a toggle: a second click before the redraw posts the same state, so a double-click leaves it unfolded. */
+async function setFold($: EngineInterface, key: string, isUnfolded: unknown) {
+  const fold = foldOf(key)
+  if (!fold || typeof isUnfolded !== 'boolean') return
+  await ('kind' in fold
+    ? update($, UNFOLDED, u => withFold(u, fold.kind, isUnfolded))
+    : update($, STATUS_UNFOLDED, u => withFold(u, fold.statusId, isUnfolded)))
 }
 
-async function setFoldHover($: EngineInterface, kind: string, isHover: boolean) {
-  const fold = FOLD_KINDS.find(k => k === kind)
-  if (fold === undefined) return
-  await update($, FOLD_HOVER, hovered => (isHover ? fold : hovered === fold ? null : hovered))
+async function setFoldHover($: EngineInterface, key: string, isHover: boolean) {
+  if (foldOf(key)) await update($, FOLD_HOVER, hovered => (isHover ? key : hovered === key ? null : hovered))
 }
 
 async function openLeftRows($: EngineInterface) {
@@ -1846,13 +1565,6 @@ async function keepPressedOpen($: EngineInterface, id: string) {
   )
 }
 
-function newRows(isDemo: boolean, current: Record<Tab, string[] | null>): Record<Tab, string[]> {
-  const { seen, added } = recordRows(recordedRows?.isDemo === isDemo ? recordedRows.ids : {}, current)
-  recordedRows = { isDemo, ids: seen }
-
-  return added
-}
-
 async function jumpTo($: EngineInterface, tab: Tab) {
   cancelUndoScroll()
   await writeRowTab($, tab)
@@ -1876,7 +1588,7 @@ async function followNewRows($: EngineInterface, isOpening = false) {
   const prs = view.prs.drawn
   const prViews = openPrViews(prs)
   const ids = tabRowIds(view, prViews)
-  if (isOpening) recordedRows = null
+  if (isOpening) paneState.recordedRows = null
   const added = newRows(isDemo, {
     ...listedRowIds(view),
     prs: prState.isFetching ? null : prRowIds(prs),
@@ -1892,7 +1604,7 @@ async function followNewRows($: EngineInterface, isOpening = false) {
       for (const { t, cursor } of keeps) if (s[t].id === null && s[t].openedAt === 0) kept[t] = cursor
       return kept
     })
-    if (isInlinePane && keeps.some(k => k.t === tab)) void scrollToOpenRow($, tab)
+    if (paneState.isInlinePane && keeps.some(k => k.t === tab)) void scrollToOpenRow($, tab)
   }
   const settled = new Set(settledRowIds(allRows(view)))
   const isEmpty =
@@ -1956,55 +1668,71 @@ function markFetching($: EngineInterface, isFetching: boolean) {
  * Fetches the session's PRs, one fetch at a time. A fetch asked for while one runs follows it, and finds the
  * branch's PR when any of the asks wanted it.
  */
-function fetchPrs($: EngineInterface, findsBranchPr: boolean): Promise<void> {
-  if (nextFetchFindsBranchPr !== null) {
-    nextFetchFindsBranchPr ||= findsBranchPr
-    return fetchingPrs
+function fetchPrs($: EngineInterface, findsBranchPr: boolean, isPress = false): Promise<void> {
+  const waiting = mod.nextFetch
+  if (waiting) {
+    waiting.findsBranchPr ||= findsBranchPr
+    waiting.isPress ||= isPress
+    return mod.fetchingPrs
   }
-  nextFetchFindsBranchPr = findsBranchPr
-  fetchingPrs = fetchingPrs
+  mod.nextFetch = { findsBranchPr, isPress }
+  mod.fetchingPrs = mod.fetchingPrs
     .then(() => {
-      const finds = nextFetchFindsBranchPr ?? false
-      nextFetchFindsBranchPr = null
-      return fetchPrsNow($, finds)
+      const ask = mod.nextFetch ?? { findsBranchPr: false, isPress: false }
+      mod.nextFetch = null
+      return fetchPrsNow($, ask)
     })
     .catch(() => undefined)
 
-  return fetchingPrs
+  return mod.fetchingPrs
 }
 
-async function fetchPrsNow($: EngineInterface, findsBranchPr: boolean) {
+async function fetchPrsNow($: EngineInterface, ask: FetchAsk) {
   const owner = currentOwner()
   await markFetching($, true)
   try {
-    await fetchSessionPrs(hostOf($, owner), findsBranchPr)
+    await fetchSessionPrs(hostOf($, owner), ask.findsBranchPr, ask.isPress)
   } finally {
-    prFetchEndedAt = await $.clock.now()
+    mod.prFetchEndedAt = await $.clock.now()
     // Fetches run one at a time across conversations, so the drawn session reads whether one still runs.
-    await markFetching($, nextFetchFindsBranchPr !== null)
+    await markFetching($, mod.nextFetch !== null)
   }
   void followNewRows($).catch(() => undefined)
 }
 
 async function pollPrs($: EngineInterface) {
-  const [away, { ledger, prViews }, findsBranchPr] = await Promise.all([
+  const [away, session, isTabShown, now] = await Promise.all([
     read($, AWAY),
     read($, SESSION),
     isPrsTabShown($),
+    $.clock.now(),
   ])
-  if (away.isAway || (!findsBranchPr && ledger.prs.length === 0 && prViews.branchRef === null)) return
-  await fetchPrs($, findsBranchPr)
+  const { ledger, prViews } = session
+  if (away.isAway || (!isTabShown && tabPrs(ledger).length === 0 && prViews.branchRef === null)) return
+  if (!isPrFetchDue(session, mod.prFetchEndedAt, now, isTabShown)) return
+  await fetchPrs($, isTabShown)
 }
 
 /** Takes a dismissed PR off the tab once its row settles, unless it is still tracked or the Dismiss was undone. */
-/** Tells Claude about rows closed with Done once their settle window has passed, unless a turn runs. */
-async function wakeForDone($: EngineInterface) {
-  await wakeSessionForDone(hostOf($, currentOwner()))
+/** Sends the answers and Fixes held for Undo, and tells Claude about rows closed with Done, once their settle window has passed. */
+async function wakeAfterSettle($: EngineInterface) {
+  await wakeSessionAfterSettle(hostOf($, currentOwner()))
+}
+
+/**
+ * Sends the held messages that are due, and wakes again when the next one falls due. A load or a pane opening calls
+ * it, since the timer a press started does not survive a reload.
+ */
+async function wakeForHeldSends($: EngineInterface) {
+  await wakeAfterSettle($)
+  const [{ lastActions }, now] = await Promise.all([read($, SESSION), $.clock.now()])
+  const dueTimes = Object.values(lastActions).flatMap(a => (a.delivery?.state === 'held' ? [a.delivery.until] : []))
+  if (dueTimes.length > 0) later($, Math.max(0, Math.min(...dueTimes) - now), () => wakeAfterSettle($))
 }
 
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
   const mayStayOnRow = isPrPress(p)
-    ? ['pr-open', 'pr-refresh', 'thread-open', 'log'].includes(p.action)
+    ? ['pr-open', 'pr-refresh', 'thread-open', 'log', 'check-rerun'].includes(p.action)
     : p.action === 'step'
   const undoRevision = mayStayOnRow ? suspendUndoReveal() : cancelUndoScroll()
   const rowId = pressRowId(p)
@@ -2057,16 +1785,16 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
       : undefined,
   ])
   const undoKey = await undoKeyAfterPress($, p, surface)
-  const canRevealUndo = undoKey !== null && undoRevision === undoScrollRevision
+  const canRevealUndo = undoKey !== null && undoRevision === paneState.undoScrollRevision
   const { isMoved, undoBlock } = await openAfterClose($, rowId, wasWaiting, canRevealUndo)
   if (canRevealUndo) await keepUndoVisible($, undoKey, undoBlock, now, undoRevision)
-  if (!isPrPress(p) && p.action === 'done') later($, SETTLED_MS, () => wakeForDone($))
   if (!isPrPress(p) && p.action === 'compare') void redrawAtCompareEnd($).catch(() => undefined)
   if (!isPrPress(p) && p.action === 'undo') await selectRestored($, p.id)
   // A success note clears SETTLED_MS after its effects finish, when its result is stamped, and a message still on its
   // way after QUEUED_AFTER_MS reads Queued from then. A fresh value is what redraws the pane at each.
   if (sends) later($, QUEUED_AFTER_MS, () => redraw($))
   const outcome = await started.finish()
+  if (outcome.wakesAfterSettle) later($, SETTLED_MS, () => wakeAfterSettle($))
   if (effects.some(effect => effect.kind !== 'send')) later($, SETTLED_MS, () => redraw($))
   if (!isPressConfirmed(outcome)) await keepReply()
   if (!outcome.isRowFailed) return
@@ -2083,13 +1811,9 @@ async function undoKeyAfterPress(
   p: RowPress | PrPress,
   surface: UiPressArgument['surface'],
 ): Promise<string | null> {
-  if (surface !== 'terminal' || !isInlineTerminalPane) return null
+  if (surface !== 'terminal' || !paneState.isInlineTerminalPane) return null
   const { view } = await drawnState($)
   if (isPrPress(p)) {
-    if (p.action === 'pr-dismiss-merged') {
-      const nearest = view.prs.drawn.filter(x => x.state.is === 'settled' && x.state.canUndo).at(-1)
-      return nearest ? `undo-${prMarkId(nearest.pr.ref)}` : null
-    }
     if (p.action !== 'pr-dismiss') return null
     return view.prs.drawn.some(x => x.pr.ref === p.ref && x.state.is === 'settled') ? `undo-${pressRowId(p)}` : null
   }
@@ -2177,7 +1901,7 @@ async function runDemoPress(
       p,
       now,
       { settleWindowMs: SETTLED_MS, holds },
-      { comparePage: comparePagePath($) },
+      { comparePage: comparePagePath($), compareInBackground: isCompareInBackground('claude-code') },
     )
     applied = r
     const { [rowId]: _replaced, ...notes } = d.notes
@@ -2198,7 +1922,7 @@ async function runDemoPress(
   if (!('stale' in pressed) && !isPrPress(p) && p.action === 'undo') await selectRestored($, p.id)
   if (!('stale' in pressed)) {
     const undoKey = await undoKeyAfterPress($, p, surface)
-    const canRevealUndo = undoKey !== null && undoRevision === undoScrollRevision
+    const canRevealUndo = undoKey !== null && undoRevision === paneState.undoScrollRevision
     const { undoBlock } = await openAfterClose($, rowId, wasWaiting, canRevealUndo)
     if (canRevealUndo) await keepUndoVisible($, undoKey, undoBlock, now, undoRevision)
   }
@@ -2315,14 +2039,8 @@ async function drawnState(
 
   const isUnread = demo === null && unreadable === conversation.id
 
-  const view = sessionView(
-    drawnSession(session, drawn, demo !== null, now),
-    now,
-    SETTLED_MS,
-    CAN_CATCH_UP,
-    holds,
-    drawn.notes,
-  )
+  const view = sessionView(drawnSession(session, drawn, demo !== null, now), now, SETTLED_MS, holds, drawn.notes)
+  redrawAtNextFold($, view, presence.lastTypedMessageAt, now)
 
   return {
     ...drawn,
@@ -2375,12 +2093,12 @@ async function isStartedByDesktopApp($: EngineInterface) {
 }
 
 function ensureOn($: EngineInterface): Promise<void> {
-  return turningOn ?? (isOn ? Promise.resolve() : turnOn($))
+  return mod.turningOn ?? (mod.isOn ? Promise.resolve() : turnOn($))
 }
 
 function turnOn($: EngineInterface): Promise<void> {
-  return (turningOn ??= initializeInbox($).finally(() => {
-    turningOn = null
+  return (mod.turningOn ??= initializeInbox($).finally(() => {
+    mod.turningOn = null
   }))
 }
 
@@ -2388,33 +2106,32 @@ async function readVersion($: EngineInterface) {
   try {
     const manifest: unknown = JSON.parse(await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`))
     const stated = (manifest as { version?: unknown } | null)?.version
-    version = typeof stated === 'string' ? stated : null
+    mod.version = typeof stated === 'string' ? stated : null
   } catch {
-    version = null
+    mod.version = null
   }
-  isNextBuild = await readIsNextBuild($)
-  statusRecordsFolder = isNextBuild ? await recordsFolder($).catch(() => null) : null
+  mod.isNextBuild = await readIsNextBuild($)
+  mod.statusRecordsFolder = mod.isNextBuild ? await recordsFolder($).catch(() => null) : null
 }
 
 async function initializeInbox($: EngineInterface) {
   // A hot reload keeps state an older build wrote. Draws start once isOn is set, and they read the current shape and
   // the tabs that the next-build mark decides.
   await Promise.all([upgradeState($), readVersion($)])
-  isOn = true
-  toolsRefused = false
-  compareRedrawAt = null
-  undoRedrawsUntil = -Infinity
+  mod.isOn = true
+  mod.toolsRefused = false
+  paneState.compareRedrawAt = null
   const refused = () => {
-    toolsRefused = true
+    mod.toolsRefused = true
   }
   await Promise.all([
     registerInboxCommand($),
     ...agentTools(CLAUDE_CODE).map(tool => $.tool.register(tool).catch(refused)),
   ])
   // A pane kept across a hot reload is already drawn.
-  if (toolsRefused) await redrawPane($)
-  for (const interval of intervals) interval.cancel()
-  intervals = [
+  if (mod.toolsRefused) await redrawPane($)
+  for (const interval of mod.intervals) interval.cancel()
+  mod.intervals = [
     $.clock.every(60_000, () => {
       void tick($)
     }),
@@ -2423,7 +2140,9 @@ async function initializeInbox($: EngineInterface) {
     }),
   ]
   await loadConversation($, await $.session.id())
-  // After loadConversation, which brings saved state up to date.
+  // After loadConversation, which brings saved state up to date. A band or pane drawn while the mod was off read no
+  // state, so no state write draws it again.
+  $.ui.invalidate('ui.render')
   await redrawAfterReload($)
 }
 
@@ -2433,23 +2152,23 @@ async function initializeInbox($: EngineInterface) {
  * id without a session.start.
  */
 function loadConversation($: EngineInterface, id: string, forkedFrom?: string): Promise<void> {
-  const revision = ++loadRevision
+  const revision = ++sessionState.loadRevision
   return prepareConversation($, id, revision, forkedFrom)
 }
 
 async function prepareConversation($: EngineInterface, id: string, revision: number, forkedFrom?: string) {
-  const writesAtRead = savedWrites
-  const [sessionRoot, saved] = await Promise.all([$.session.root(), readSettled($, id)])
-  if (revision !== loadRevision) return
-  const applying = applyingConversation.then(async () => {
-    if (revision !== loadRevision) return
+  const writesAtRead = sessionState.savedWrites
+  const [sessionRoot, saved] = await Promise.all([$.session.root(), readSettled(saveEngine($), id)])
+  if (revision !== sessionState.loadRevision) return
+  const applying = sessionState.applyingConversation.then(async () => {
+    if (revision !== sessionState.loadRevision) return
     // A write to a saved session after the read above, such as a refused Done message, is read again.
-    const latest = writesAtRead === savedWrites ? saved : await readSettled($, id)
+    const latest = writesAtRead === sessionState.savedWrites ? saved : await readSettled(saveEngine($), id)
     // A fork continues its parent's inbox, so a new id with no saved state starts from the parent's.
-    const parent = latest?.session || !forkedFrom ? null : await readSettled($, forkedFrom)
+    const parent = latest?.session || !forkedFrom ? null : await readSettled(saveEngine($), forkedFrom)
     await applyConversation($, id, revision, sessionRoot, latest, parent?.session)
   })
-  applyingConversation = applying.catch(() => undefined)
+  sessionState.applyingConversation = applying.catch(() => undefined)
   return applying
 }
 
@@ -2491,15 +2210,15 @@ async function applyConversation(
   saved: { session: SavedRecord | undefined } | null,
   parent?: SavedRecord,
 ) {
-  if (revision !== loadRevision) return
-  const isLoading = () => revision === loadRevision && conversation.id === id
+  if (revision !== sessionState.loadRevision) return
+  const isLoading = () => revision === sessionState.loadRevision && conversation.id === id
   cancelUndoScroll()
-  stopGeneration++
-  resuming = null
+  sessionState.stopGeneration++
+  sessionState.resuming = null
   conversation.id = id
   conversation.root = sessionRoot
-  recordedRows = null
-  isReadingAgain = false
+  paneState.recordedRows = null
+  sessionState.isReadingAgain = false
   // A reload stops any update the previous load had running, and state outlives
   // it, so an update in flight at load was cut off: record it as failed.
   // The theme read at the start is gone after /clear, so each conversation reads it.
@@ -2508,7 +2227,7 @@ async function applyConversation(
   // The pane now shows another conversation, so it starts a new showing.
   await syncShown($, { since: loadedAt })
   await replaceDrawn($, s => statusChanged(cutOffTurn(cutOffUpdate(s)), o => childrenCutOff(o, loadedAt)))
-  if (revision !== loadRevision) return
+  if (revision !== sessionState.loadRevision) return
   void notePlace($)
   const isFresh = isBlankLedger(current)
   const isUnread =
@@ -2527,7 +2246,8 @@ async function applyConversation(
   if (!isLoading()) return
   if (needsCatchUp) await catchUpNow($)
   void publishStatus($)
-  if (ledger.prs.length > 0) void fetchPrs($, false)
+  void wakeForHeldSends($).catch(() => undefined)
+  if (tabPrs(ledger).length > 0) void fetchPrs($, false)
 }
 
 /**
@@ -2590,6 +2310,8 @@ async function forgetRowState($: EngineInterface) {
     update($, SELECTION, () => NO_SELECTION),
     update($, TYPING, () => null),
     update($, UNFOLDED, () => []),
+    update($, STATUS_UNFOLDED, () => []),
+    update($, CLOSED_ALL, () => []),
     update($, OPTIONS_SHOWN, () => []),
     update($, DRAFTS, () => ({})),
     update($, DISCARDED, () => ({})),
@@ -2599,17 +2321,17 @@ async function forgetRowState($: EngineInterface) {
 }
 
 async function readAgain($: EngineInterface) {
-  if (isReadingAgain) return
-  isReadingAgain = true
+  if (sessionState.isReadingAgain) return
+  sessionState.isReadingAgain = true
   const id = conversation.id
   if ((await read($, UNREADABLE)) !== id) {
-    isReadingAgain = false
+    sessionState.isReadingAgain = false
     return
   }
   await redrawPane($)
-  const saved = await readSaved($, id)
+  const saved = await readSaved(saveEngine($), id)
   if (conversation.id !== id) return
-  isReadingAgain = false
+  sessionState.isReadingAgain = false
   if (saved !== null) {
     await update($, UNREADABLE, () => null)
     const current = (await read($, SESSION)).ledger
@@ -2620,7 +2342,7 @@ async function readAgain($: EngineInterface) {
     if ((hasRun && saved.session) || (isBlankLedger(ledger) && (await $.session.turns().catch(() => 0)) > 0))
       await catchUpNow($)
     void publishStatus($)
-    if (ledger.prs.length > 0) void fetchPrs($, false)
+    if (tabPrs(ledger).length > 0) void fetchPrs($, false)
     void followNewRows($).catch(() => undefined)
   }
   await redrawPane($)
@@ -2654,18 +2376,18 @@ export const register: Register = on => {
     // $.session.id() still names the previous conversation here, so the new id comes
     // from the event. A start with --resume also raises this, for the conversation
     // session.start already loaded.
-    if (isOn && e.session_id !== conversation.id)
+    if (mod.isOn && e.session_id !== conversation.id)
       await loadConversation($, e.session_id, e.source === 'fork' ? conversation.id : undefined)
 
     return r
   })
 
   on('session.end', async ($, e, next) => {
-    endReason = e.reason
-    loadRevision++
-    stopGeneration++
-    resuming = null
-    if (isOn) {
+    sessionState.endReason = e.reason
+    sessionState.loadRevision++
+    sessionState.stopGeneration++
+    sessionState.resuming = null
+    if (mod.isOn) {
       await Promise.all([
         replaceDrawn($, s => (s.stop ? { ...s, stop: null } : s)),
         update($, DIALOGS, () => []),
@@ -2675,7 +2397,7 @@ export const register: Register = on => {
       ])
     }
     // /clear, /resume and /branch (which reports resume) go on in this process with another conversation.
-    if (isOn && (e.reason === 'clear' || e.reason === 'resume')) {
+    if (mod.isOn && (e.reason === 'clear' || e.reason === 'resume')) {
       conversation.generation += 1
       await Promise.all([
         replaceDrawn($, s => {
@@ -2693,7 +2415,7 @@ export const register: Register = on => {
         update($, AWAY, a => ({ ...a, isAway: false })),
       ])
       resetTurn()
-      shellCommand = null
+      sessionState.shellCommand = null
       forgetStored()
     }
 
@@ -2701,13 +2423,13 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    if (!isOn) return next(e)
+    if (!mod.isOn) return next(e)
     // Where a guard skips classic.SessionStart, the first prompt after /clear, /resume or /branch is what shows the
     // session has changed conversations. A reload that classic.SessionStart already did leaves the ids equal.
     const sessionId = await $.session.id()
     if (sessionId !== conversation.id) {
-      const parent = endReason === 'resume' ? conversation.id : undefined
-      endReason = null
+      const parent = sessionState.endReason === 'resume' ? conversation.id : undefined
+      sessionState.endReason = null
       await loadConversation($, sessionId, parent || undefined)
     }
     const origin = e.origin
@@ -2729,8 +2451,8 @@ export const register: Register = on => {
     }
 
     const notes = await notePrompt($, e.text, { isTyped })
-    if (carriedFor !== conversation.id) {
-      carriedFor = conversation.id
+    if (sessionState.carriedFor !== conversation.id) {
+      sessionState.carriedFor = conversation.id
       const carry = statusCarryText((await read($, SESSION)).ledger)
       if (carry) notes.unshift(carry)
     }
@@ -2740,20 +2462,20 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     if (e.agentId) {
-      if (isOn) await noteAgentWork($, e.agentId)
+      if (mod.isOn) await noteAgentWork($, e.agentId)
       return next(e)
     }
     resetTurn()
-    hasStopFromError = false
+    sessionState.hasStopFromError = false
     // Counted here, before the
     // turn can end, since a reload can cut off its end-of-turn hook.
-    if (isOn) {
+    if (mod.isOn) {
       const before = await read($, SESSION)
       const startedAt = await $.clock.now()
       await commit($, currentOwner(), s => turnStarted(startTurn(s), startedAt))
       if (before.stop) {
-        stopGeneration++
-        resuming = null
+        sessionState.stopGeneration++
+        sessionState.resuming = null
         void publishStatus($)
       }
     }
@@ -2764,7 +2486,7 @@ export const register: Register = on => {
   on('agent.spawn', async ($, e, next) => {
     const r = await next(e)
     const agentId = r.deny === undefined ? r.agentId : undefined
-    if (!isOn || !agentId || e.isTeammate) return r
+    if (!mod.isOn || !agentId || e.isTeammate) return r
     const parent = e.parentAgentId ?? (e.workflow ? e.tool_use_id : undefined)
     if (parent) {
       spawnedBy.set(agentId, parent)
@@ -2795,7 +2517,7 @@ export const register: Register = on => {
   }))
 
   on('tool.call', async ($, e, next) => {
-    if (!isOn) return next(e)
+    if (!mod.isOn) return next(e)
     const { tool: _tool, tool_use_id: _id, agentId: _agent, ...input } = e as unknown as Record<string, unknown>
     const key = callKey(String(e.tool), input)
     const activity = e.agentId ? null : toolActivity(String(e.tool), input)
@@ -2813,7 +2535,7 @@ export const register: Register = on => {
       await noteAgentWork($, e.agentId)
       return run()
     }
-    if (String(e.tool) === TURN_BOX_TOOL) turnBox = turnBoxText(input) ?? turnBox
+    if (String(e.tool) === TURN_BOX_TOOL) sessionState.turnBox = turnBoxText(input) ?? sessionState.turnBox
     if (e.tool === 'Bash') {
       const steps = delegateSteps(e.command)
       const isDelegateCommand = steps.length > 0
@@ -2832,10 +2554,7 @@ export const register: Register = on => {
       const waitsOn = steps.filter(step => step.isWaitForEnd).map(step => step.name)
       if (taskId && isDelegateCommand) {
         for (const name of waitsOn) for (const id of [taskId, e.tool_use_id]) if (id) delegateWaits.set(id, name)
-      } else if (taskId) {
-        const child = { ref: taskId, kind: 'background', name: e.description || e.command } as const
-        await noteChild($, (o, at) => childStarted(o, child, at, { reportsActivity: false }))
-      } else if (waitsOn.length > 0) {
+      } else if (!taskId && waitsOn.length > 0) {
         await noteChild($, (o, at) => delegateWaitsEnded(o, e.command, at))
       }
 
@@ -2848,11 +2567,11 @@ export const register: Register = on => {
 
       return ran
     }
-    if (e.tool === 'Monitor' || e.tool === 'Workflow') {
+    if (e.tool === 'Workflow') {
       const ran = await run()
-      const child = startedTaskOf(e.tool, ran.result, e.description)
+      const child = startedWorkflowOf(ran.result, e.description)
       if (child) {
-        if (child.kind === 'workflow' && e.tool_use_id) workflowTasks.set(e.tool_use_id, child.ref)
+        if (e.tool_use_id) workflowTasks.set(e.tool_use_id, child.ref)
         await noteChild($, (o, at) => childStarted(o, child, at))
       }
 
@@ -2866,7 +2585,7 @@ export const register: Register = on => {
       const outcome = dialogOutcome(ran)
       const asked = dialogQuestions(input.questions)
       const wasDismissed = outcome.kind === 'dismissed'
-      if (wasDismissed) isDialogDismissed = true
+      if (wasDismissed) sessionState.isDialogDismissed = true
       const line = dialogActivity(asked, outcome)
       await commit($, currentOwner(), s => {
         const noted = noteTurnActivity(s, line)
@@ -2891,18 +2610,18 @@ export const register: Register = on => {
   })
 
   on('classic.PostToolUse', async (_$, e, next) => {
-    if (isOn) noteRanCall(e.tool_use_id, e.tool_name)
+    if (mod.isOn) noteRanCall(e.tool_use_id, e.tool_name)
     return next(e)
   })
   on('classic.PostToolUseFailure', async (_$, e, next) => {
-    if (isOn) noteRanCall(e.tool_use_id, e.tool_name)
+    if (mod.isOn) noteRanCall(e.tool_use_id, e.tool_name)
     return next(e)
   })
 
   // A question dialog opens from its own tool call, which also raises a permission request.
   on('classic.PermissionRequest', async ($, e, next) => {
-    hasPermissionRequestHook = true
-    if (isOn && e.tool_name !== 'AskUserQuestion') {
+    mod.hasPermissionRequestHook = true
+    if (mod.isOn && e.tool_name !== 'AskUserQuestion') {
       const input = (e.tool_input ?? {}) as Record<string, unknown>
       await openDialog($, {
         kind: 'permission',
@@ -2918,7 +2637,7 @@ export const register: Register = on => {
   // directory accepts a permission hook only when it returns next(e) itself, so waitForPermission
   // asks for the verdict with a query of its own.
   on('tool.check', async ($, e, next) => {
-    const mayShowRow = isOn && !hasPermissionRequestHook && !e.agentId && e.tool !== 'AskUserQuestion'
+    const mayShowRow = mod.isOn && !mod.hasPermissionRequestHook && !e.agentId && e.tool !== 'AskUserQuestion'
     if (mayShowRow && e.tool_use_id) void waitForPermission($, e.tool_use_id, e.tool, e.input)
 
     return next(e)
@@ -2926,8 +2645,8 @@ export const register: Register = on => {
 
   on('classic.StopFailure', async ($, e, next) => {
     const r = await next(e)
-    if (!isOn || e.agent_id) return r
-    hasStopFromError = true
+    if (!mod.isOn || e.agent_id) return r
+    sessionState.hasStopFromError = true
     const message = e.last_assistant_message ?? ''
     await setStop($, {
       kind: stopKindOf(String(e.error), message),
@@ -2940,9 +2659,9 @@ export const register: Register = on => {
   })
 
   on('turn.step', async function* (_$, e, next) {
-    if (!isOn || e.agentId) return yield* next(e)
+    if (!mod.isOn || e.agentId) return yield* next(e)
     const response = yield* next(e)
-    stepTexts.push(response.answer)
+    sessionState.stepTexts.push(response.answer)
 
     return response
   })
@@ -2952,7 +2671,7 @@ export const register: Register = on => {
     if (e.agentId) return r
     askedCalls.clear()
     await closeDialogs($, null)
-    if (!isOn) return r
+    if (!mod.isOn) return r
     const endedAt = await $.clock.now()
     const root = conversation.root
     const run = processRun($)
@@ -2971,12 +2690,12 @@ export const register: Register = on => {
         : withSubagents
       return root ? placed(withDelegates, root, branch) : withDelegates
     })
-    if (e.reason === 'error' && !hasStopFromError) await setStopFromLastReply($)
-    void wakeForDone($).catch(() => undefined)
+    if (e.reason === 'error' && !sessionState.hasStopFromError) await setStopFromLastReply($)
+    void wakeAfterSettle($).catch(() => undefined)
     void followNewRows($).catch(() => undefined)
-    const reply = turnReply([turnReply(stepTexts, e.answer), turnBox ?? ''])
+    const reply = turnReply([turnReply(sessionState.stepTexts, e.answer), sessionState.turnBox ?? ''])
     const isAnswered = e.reason === 'answer' && reply !== ''
-    if (!isAnswered && !isDialogDismissed) return r
+    if (!isAnswered && !sessionState.isDialogDismissed) return r
 
     const [screenTab, isShown, now, before] = await Promise.all([
       shownScreenTab($),
@@ -2984,15 +2703,17 @@ export const register: Register = on => {
       $.clock.now(),
       read($, SESSION),
     ])
-    const queuesEmptyReply = isDialogDismissed
+    const queuesEmptyReply = sessionState.isDialogDismissed
     resetTurn()
     await update($, AWAY, a => ({ ...a, lastActiveAt: now }))
     await commit($, currentOwner(), s => endTurn(CLAUDE_CODE, s, reply, isShown, { tab: screenTab, queuesEmptyReply }))
     updateLedger($)
     const after = await read($, SESSION)
     const linksNewPr = prRefs(reply).some(ref => !before.ledger.prs.includes(ref))
-    const tracksPrs = after.ledger.prs.length > 0 || after.prViews.branchRef !== null
-    if (linksNewPr || (tracksPrs && isPrFetchDue(after, prFetchEndedAt, now))) void fetchPrs($, await isPrsTabShown($))
+    const tracksPrs = tabPrs(after.ledger).length > 0 || after.prViews.branchRef !== null
+    const isTabShown = await isPrsTabShown($)
+    if (linksNewPr || (tracksPrs && isPrFetchDue(after, mod.prFetchEndedAt, now, isTabShown)))
+      void fetchPrs($, isTabShown)
 
     return r
   })
@@ -3001,7 +2722,7 @@ export const register: Register = on => {
     'session.append',
     { door: ['prompt', 'delivery'], origin: { kind: 'plugin', name: 'inbox' } },
     async ($, e, next) => {
-      if (!isOn || e.agentId) return next(e)
+      if (!mod.isOn || e.agentId) return next(e)
       const text = messageText(e.message)
       const count = noteStored(text)
       const notes = await notePrompt($, text, { match: current => arrived(current, text, count) })
@@ -3013,18 +2734,18 @@ export const register: Register = on => {
 
   on('session.append', { door: 'command' }, async ($, e, next) => {
     const r = await next(e)
-    if (!isOn || e.agentId) return r
+    if (!mod.isOn || e.agentId) return r
     const row = readCommandRow(messageText(e.message))
     if (!row) return r
     const line = commandRowLine(row)
     if (line) await notePerson($, line)
     if (row.kind === 'shell') {
-      shellCommand = row.command
+      sessionState.shellCommand = row.command
     } else if (row.kind === 'output') {
       // The row has no exit code, so only a run with nothing on stderr closes a
       // task here.
-      if (shellCommand && !row.stderr) await closeTasksRunBy($, shellCommand)
-      shellCommand = null
+      if (sessionState.shellCommand && !row.stderr) await closeTasksRunBy($, sessionState.shellCommand)
+      sessionState.shellCommand = null
     } else if (row.name === 'login' && (await read($, SESSION)).stop?.kind === 'sign-in') {
       await setStop($, null)
     }
@@ -3033,7 +2754,7 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'inbox' }, async ($, e) => {
-    if (!isOn && !turningOn && e.origin.kind !== 'composer') return {}
+    if (!mod.isOn && !mod.turningOn && e.origin.kind !== 'composer') return {}
     await ensureOn($)
     const isShown = (await read($, DEMO)) !== null
     const args = e.args.trim().split(/\s+/).join(' ')
@@ -3051,27 +2772,39 @@ export const register: Register = on => {
     }
   })
 
-  on('ui.press', async (_$, e, next) => {
+  on('ui.press', async ($, e, next) => {
+    if (e.requestId === PANE) await noteListInput($)
     if (e.requestId === PANE && e.surface === 'terminal') {
       if (e.element.startsWith('fold-') || e.element === 'hide-demo') cancelUndoScroll()
       else suspendUndoReveal()
     }
     if (e.requestId === PANE && e.surface === 'desktop') {
-      focusedKey = e.element
-      focusHint = focusHintFor(e.element)
+      paneState.focusedKey = e.element
+      paneState.focusHint = focusHintFor(e.element)
     }
     return next(e)
   })
 
-  on('ui.scroll', { requestId: PANE }, async (_$, e, next) => {
-    if (e.origin.kind === 'person') cancelUndoScroll()
+  on('ui.scroll', { requestId: PANE }, async ($, e, next) => {
+    if (e.origin.kind === 'person') {
+      cancelUndoScroll()
+      await noteListInput($)
+    }
     return next(e)
   })
 
   on('ui.message', async ($, e, next) => {
     const r = await next(e)
     if (e.requestId !== PANE) return r
-    const data = e.data as { tab?: unknown; isUnfolded?: unknown; hover?: unknown; key?: unknown } | null
+    await noteListInput($)
+    const data = e.data as {
+      tab?: unknown
+      isUnfolded?: unknown
+      hover?: unknown
+      key?: unknown
+      isPointer?: unknown
+    } | null
+    if (data?.isPointer === true) return r
     const shown = isShownTab(data?.tab) ? data.tab : null
     const followUp = typeof data?.key === 'string' ? followUpPresses.get(data.key) : undefined
     if (e.element === 'tabs' && shown) await showTab($, shown)
@@ -3084,9 +2817,9 @@ export const register: Register = on => {
         surface: e.surface,
       })
     else if (e.element.startsWith('links-') && followUp && typeof data?.key === 'string') {
-      // The Client is not a focusable key, so the next drawing moves the focus, to the hint first.
-      focusedKey = e.element
-      focusHint = focusHintFor(data.key)
+      // The Client is not a focusable key, so the next drawing moves the focus to the hint, when it is drawn.
+      paneState.focusedKey = e.element
+      paneState.focusHint = focusHintFor(data.key)
       followUp({
         plugin: 'inbox',
         element: data.key,
@@ -3117,14 +2850,14 @@ export const register: Register = on => {
   // A running tool row means the permission step is over: the dialog was answered or the
   // auto-mode classifier approved the call.
   on('ui.render', { component: 'ToolUse' }, ($, e, next) => {
-    if (isOn && e.props.isRunning) endWaitFor($, e.props.tool_use_id)
+    if (mod.isOn && e.props.isRunning) endWaitFor($, e.props.tool_use_id)
 
     return next(e)
   })
 
   // A call folded into a collapsed group draws no ToolUse row; the group carries its state.
   on('ui.render', { component: 'ToolGroup' }, ($, e, next) => {
-    if (isOn) for (const call of e.props.calls) if (call.isRunning) endWaitFor($, call.tool_use_id)
+    if (mod.isOn) for (const call of e.props.calls) if (call.isRunning) endWaitFor($, call.tool_use_id)
 
     return next(e)
   })
@@ -3132,7 +2865,7 @@ export const register: Register = on => {
   // The ctrl+o transcript draws the text the agent read.
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
     const isInboxTool = [RECORD_TOOL, CLOSE_TOOL, ORDER_TOOL].includes(e.props.tool)
-    if (!isOn || !isInboxTool || e.props.isExpanded || e.props.isErrored) return next(e)
+    if (!mod.isOn || !isInboxTool || e.props.isExpanded || e.props.isErrored) return next(e)
     const line = (await read($, PERSON_LINES))[e.props.tool_use_id]
     if (line === undefined) {
       const { Box } = $.ui.resolve(e)
@@ -3144,18 +2877,21 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (!isOn || e.props.hasSurvey) return next(e)
+    if (!mod.isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [{ ledger, stop, view, showsDemoNotices, now }, theme] = await Promise.all([drawnState($), read($, THEME)])
-    if (!stop && isBlankLedger(ledger)) return next(e)
+    const [{ ledger, stop, view, showsDemoNotices, isUnread, now }, theme] = await Promise.all([
+      drawnState($),
+      read($, THEME),
+    ])
+    if (!stop && isBlankLedger(ledger) && !isMaybeStale(view, isUnread)) return next(e)
     // Every mod shares the band, and a tree without the drawing from next(e)
     // hides what the mods after this one draw there.
     const theirs = await next(e)
     const pal = paletteFor(theme, lookOf(e.surface))
-    const counts = LISTED_TABS.filter(t => view[t.id].count > 0).map(t => (
+    const counts = bandCounts(view).map(c => (
       <Text>
-        <Text>{t.label} </Text>
-        <Text color={pal.tone[t.id] ?? pal.mark[t.id]}>{view[t.id].count}</Text>
+        <Text>{c.label} </Text>
+        <Text color={pal.tone[c.id] ?? pal.mark[c.id]}>{c.count}</Text>
       </Text>
     ))
 
@@ -3169,7 +2905,7 @@ export const register: Register = on => {
             {counts.length > 0 ? (
               counts.flatMap((p, n) => (n === 0 ? [p] : [<Text dimColor>{DOT}</Text>, p]))
             ) : (
-              <Text dimColor>Nothing needed</Text>
+              <Text dimColor>{noCountsText(view, isUnread)}</Text>
             )}
           </Text>
         </Box>
@@ -3188,7 +2924,7 @@ export const register: Register = on => {
     // An API error resumes from
     // [Resume], which keeps its key while it sends, so the desktop app keeps the band's focus.
     const canResume = isResumable(stop)
-    const notSent = canResume && resuming?.is === 'refused' ? `Not sent: ${resuming.why}` : ''
+    const notSent = canResume && sessionState.resuming?.is === 'refused' ? `Not sent: ${sessionState.resuming.why}` : ''
     const isNotSentOwnRow = notSent !== '' && e.surface === 'desktop' && e.props.maxRows > 2
     const fix = canResume ? '' : stopFix(stop)
     const inlineNotSent = isNotSentOwnRow ? '' : notSent
@@ -3204,7 +2940,7 @@ export const register: Register = on => {
         {canResume ? (
           <Button
             key="resume"
-            label={resuming?.is === 'sending' ? 'Resuming…' : 'Resume'}
+            label={resumeLabel(sessionState.resuming?.is === 'sending')}
             onPress={() => void resume($)}
           />
         ) : null}
@@ -3236,32 +2972,18 @@ export const register: Register = on => {
     const { Box, Button, Link, Markdown, Text } = elements
     // Desktop draws every Button as a native button, and only clicks reach the pane: no letters, key hints or hidden hotkeys.
     const look = lookOf(e.surface)
-    paneLook = look
+    paneState.paneLook = look
     const hasClient = look === 'desktop' && 'Client' in elements
     // The mobile app draws no text field, so there the typed reply is not offered.
     const Input = 'Input' in elements ? elements.Input : null
     const isNarrowDesktop = look === 'desktop' && e.props.bodyColumns < DESKTOP_WIDE_AT
     const isAgeInSide = look === 'terminal'
     const isAgeDropped = isNarrowDesktop || isAgeInSide
-    const glued = (after: string) => after.replace(/(?<=.)[ \u2002]/gs, c => (c === ' ' ? '\u00a0' : '\u2007'))
-    // The Codex tab wraps a suffix too long for one line between words, so this does too. A glued suffix wider than a
-    // line together with the title's last word, which DOT's leading figure space holds to it, is broken mid-word.
-    const unbroken = (after: string, title: string, fits: (text: string) => boolean) => {
-      const lastWord = title.slice(Math.max(0, title.trimEnd().lastIndexOf(' ') + 1))
-      if (fits(lastWord + after)) return glued(after)
-      const dot = after.startsWith(DOT) ? DOT : ''
-      const rest = after.slice(dot.length)
-      const firstBreak = rest.indexOf(' ')
-
-      return (
-        dot + (fits(rest) || firstBreak < 0 ? glued(rest) : glued(rest.slice(0, firstBreak)) + rest.slice(firstBreak))
-      )
-    }
     const isInline = e.props.placement === 'inline'
-    isInlinePane = isInline
+    paneState.isInlinePane = isInline
     if (e.surface === 'terminal') {
-      isInlineTerminalPane = isInline
-      if (!isInline && pendingUndoScroll) cancelUndoScroll()
+      paneState.isInlineTerminalPane = isInline
+      if (!isInline && paneState.pendingUndoScroll) cancelUndoScroll()
     }
     const blankLine = isInline ? 0 : 1
     const space =
@@ -3269,18 +2991,21 @@ export const register: Register = on => {
         ? { rowPad: 2 * DESKTOP_ROW_PAD, settledPad: 2 * DESKTOP_ROW_PAD, buttonGap: 1, isFoldGapped: false }
         : { rowPad: blankLine, settledPad: 0, buttonGap: 2, isFoldGapped: true }
     const [
-      { prViews: prState, lastActions, notes, turns, stop, view, showsDemoNotices, isUnread, now },
+      { prViews: prState, lastActions, notes, turns, stop, view, isDemo, showsDemoNotices, isUnread, now },
       savedTab,
       savedPage,
       selection,
       theme,
       typing,
+      drafts,
       unfolded,
       foldHover,
       isHelpShown,
       optionsShown,
       termProgram,
       statusSelection,
+      statusUnfolded,
+      closedAll,
     ] = await Promise.all([
       drawnState($),
       read($, TAB),
@@ -3288,19 +3013,22 @@ export const register: Register = on => {
       read($, SELECTION),
       read($, THEME),
       read($, TYPING),
+      read($, DRAFTS),
       read($, UNFOLDED),
       read($, FOLD_HOVER),
       read($, IS_HELP_SHOWN),
       read($, OPTIONS_SHOWN),
       $.env.get('TERM_PROGRAM'),
       read($, STATUS_SELECTION),
+      read($, STATUS_UNFOLDED),
+      read($, CLOSED_ALL),
       // A redraw loop on desktop blocks clicks, as `redrawWhileUndoLasts` says.
       look === 'terminal' ? read($, RUNNING_FRAME) : null,
     ])
     const tab: Tab = isShownTab(savedTab) && isRowTab(savedTab) ? savedTab : 'needsYou'
     const isStatusShown = savedPage === 'overview'
     const shownTab: ShownTab = isStatusShown ? 'overview' : tab
-    const tabList = shownTabs(isNextBuild)
+    const tabList = shownTabs(mod.isNextBuild)
     if (look === 'terminal')
       animateRunningMarks(
         showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)),
@@ -3311,23 +3039,22 @@ export const register: Register = on => {
     const undoEnd = lastUndoEnd(view)
     if (undoEnd !== null) redrawWhileUndoLasts($, undoEnd)
     // A hot reload keeps TYPING but empties openFields, so an open field takes its key and seed again here.
-    if (typing !== null && !openFields.has(typing))
-      openFields.set(typing, openedField(typing, (await read($, DRAFTS))[typing]))
-    if (e.props.isFocused || typing !== fieldWithoutKeys) fieldWithoutKeys = null
+    if (typing !== null && !openFields.has(typing)) openFields.set(typing, openedField(typing, drafts[typing]))
+    if (e.props.isFocused || typing !== paneState.fieldWithoutKeys) paneState.fieldWithoutKeys = null
     // Escape, or a click outside the pane, closes the field and keeps its draft, as Cancel does.
     if (isKeyboardHandedBack && typing !== null) later($, 0, () => update($, TYPING, t => (t === typing ? null : t)))
-    if ((typing === null) !== paneClosesOnEscape) later($, 0, () => matchPaneEscape($))
+    if ((typing === null) !== paneState.paneClosesOnEscape) later($, 0, () => matchPaneEscape($))
     const size = isInline ? `${e.props.bodyColumns}x${e.props.scroll.bodyRows}` : null
-    if (e.surface === 'terminal') terminalInlineSize = size
-    if (size !== null && inlineSize !== null && size !== inlineSize) {
-      const revision = undoScrollRevision
+    if (e.surface === 'terminal') paneState.terminalInlineSize = size
+    if (size !== null && paneState.inlineSize !== null && size !== paneState.inlineSize) {
+      const revision = paneState.undoScrollRevision
       later($, RESIZE_SCROLL_MS, () =>
-        revision === undoScrollRevision && !isStatusShown ? scrollToOpenRow($, tab, e.surface) : undefined,
+        revision === paneState.undoScrollRevision && !isStatusShown ? scrollToOpenRow($, tab, e.surface) : undefined,
       )
     }
-    inlineSize = size
+    paneState.inlineSize = size
     const shownPrs = view.prs.drawn
-    const settledLayout = settledLayoutId(tab, view, shownPrs, lastActions, notes, now, terminalInlineSize)
+    const settledLayout = settledLayoutId(tab, view, shownPrs, lastActions, notes, now, paneState.terminalInlineSize)
     const prViews = shownPrs.map(x => x.pr)
     const pal = paletteFor(theme, look)
     const inlineText = (text: string) =>
@@ -3379,198 +3106,39 @@ export const register: Register = on => {
     }
     const raiseEdge = { dimColor: false, color: pal.raised, inverse: false }
 
-    type Row = {
-      id: string
-      /**
-       * Set on an Asks or Finds row. The terminal draws it with no mark column, so its text starts at the tree's arm, and
-       * its result mark before its result. Desktop draws its result mark in the mark column.
-       */
-      view?: RowView
-      handle: string
-      /** A Button takes no color, so this handle is Text and only the row's text selects it. */
-      handleTone?: Tone
-      /** Desktop draws its running dot in place of `handle`. The terminal's `handle` is already the frame. */
-      isHandleRunning?: boolean
-      /** A PR row's mark says its work is done. */
-      isMarkDone?: boolean
-      title: string
-      titleAfter?: string
-      at?: number
-      subtitle?: JSX.Element
-      line?: { before?: string; text: string; after?: string; afterTone?: Tone; age?: string }
-      hasSecondLine?: boolean
-      body?: JSX.Element | null
-      clippedBody?: (lines: number, width: number) => JSX.Element | null
-      keys: () => KeyAction[]
-      moreKeys?: () => KeyAction[]
-      typeHint?: string
-      fold?: { note?: string }
+    const client: PaneClient = hasClient ? { hasClient: true, elements } : { hasClient: false, elements }
+    const handlers: PaneHandlers = {
+      rowKeyActions: (r, isAllShown) => rowKeyActions($, r, isAllShown),
+      unlessGuarded: (rowId, press, onPress) => unlessGuarded($, rowId, press, onPress),
+      sendDraft: (id, surface) => sendDraft($, id, surface),
+      discardReply: id => discardReply($, id),
+      startTyping: (id, seed) => startTyping($, id, seed),
+      selectStatusRow: (id, focusKey) => selectStatusRow($, id, focusKey),
+      updateTyping: fn => update($, TYPING, fn),
+      updateDrafts: fn => update($, DRAFTS, fn),
+      sendTyped: (id, text, surface) => sendTyped($, id, text, surface),
+      select: (tab, id, index) => select($, tab, id, index),
+      showTab: tab => showTab($, tab),
+      updateHelpShown: fn => update($, IS_HELP_SHOWN, fn),
+      updateUnfolded: fn => update($, UNFOLDED, fn),
+      updateStatusUnfolded: fn => update($, STATUS_UNFOLDED, fn),
+      updateClosedAll: fn => update($, CLOSED_ALL, fn),
+      runPress: (p, surface) => runPress($, p, surface),
+      readAgain: () => readAgain($),
+      resume: () => resume($),
+      showAsk: askId => showAsk($, askId),
     }
-    /** A next build draws the Status, so only it names the subject an ask holds up. */
-    const holdsUpLineOf = (r: RowView | undefined) => (isNextBuild ? (r?.holdsUpLine ?? null) : null)
-    const itemRow = (r: RowView): Row => {
-      const asked = r.at === null ? undefined : `${DOT}${ago(now - r.at)}`
-      const isHandedOff = r.state.is === 'handedOff'
-      const holdsUpLine = holdsUpLineOf(r)
-
-      return {
-        id: r.id,
-        view: r,
-        handle: '',
-        ...(isHandedOff ? { fold: {} } : {}),
-        title: rowTitle(r, look),
-        titleAfter: asked,
-        ...(r.at === null ? {} : { at: r.at }),
-        ...(holdsUpLine
-          ? {
-              subtitle: (
-                <Text color={pal.muted} wrap="wrap">
-                  <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
-                  {holdsUpLine}
-                </Text>
-              ),
-            }
-          : {}),
-        hasSecondLine: r.replyKind === 'answer',
-        body: null,
-        keys: () => rowKeyActions($, r, optionsShown.includes(r.id)).keys,
-        moreKeys: () => rowKeyActions($, r, optionsShown.includes(r.id)).more,
-        typeHint: replyHint(r, 'Claude'),
-      }
-    }
-    const findingBody = (detail: string, path: string | null, fitted?: TerminalSpan[][]) => (
-      <Box flexDirection="column" rowGap={blankLine}>
-        <Text wrap="wrap">{fitted ? terminalText(fitted) : inlineText(detail)}</Text>
-        {path ? (
-          <Text wrap="wrap">
-            <Text color={pal.muted}>{ROW_COPY.relevantFile}</Text>
-            <Text color="permission">{path}</Text>
-          </Text>
-        ) : null}
-      </Box>
+    const { itemRow, findingRow } = paneAskRows(
+      { now, look, Text, pal, optionsShown, Box, blankLine, terminalText, inlineText },
+      handlers,
     )
-    const findingRow = (r: RowView): Row => ({
-      id: r.id,
-      view: r,
-      at: r.at ?? undefined,
-      handle: '',
-      ...(r.state.is === 'handedOff' ? { fold: {} } : {}),
-      title: r.title,
-      titleAfter: `${DOT}${ago(now - (r.at ?? now))}`,
-      line: { text: r.title },
-      body: findingBody(r.detail ?? '', r.fileName),
-      clippedBody: (lines, width) =>
-        lines < 1
-          ? null
-          : findingBody(
-              r.detail ?? '',
-              lines > 1 ? r.fileName : null,
-              terminalTextLines(r.detail ?? '', width, Math.max(1, lines - (r.fileName && lines > 1 ? 1 : 0))),
-            ),
-      typeHint: replyHint(r, 'Claude'),
-      keys: () => rowKeyActions($, r, true).keys,
-      moreKeys: () => rowKeyActions($, r, true).more,
-    })
     const isThreadSent = threadSentIn(lastActions)
     const presses = { lastActions, turns, now }
-    const prPress = (p: PrPress) => (press: UiPressArgument) => runPress($, p, press.surface)
-    const prKeyAction = (a: PrAction, row: string): KeyAction => {
-      // A failed send's Try again repeats its button's press, so it needs a key of its own.
-      const isResend = a.isRetry === true
+    const { prKeyAction, checkRow, threadRow } = panePrRows(
+      { Text, pal, presses, Link, Box, Markdown, terminalText, lastActions, look, now },
+      handlers,
+    )
 
-      return {
-        key: `${isResend ? 'retry' : PR_KEYS[a.press.action]}-${row}`,
-        label: a.label,
-        emphasis: a.emphasis,
-        kind: a.kind,
-        ...(a.icon ? { icon: ACTION_GLYPHS[a.icon] } : {}),
-        ...(a.hotkey ? { hotkey: a.hotkey } : {}),
-        isOut: a.isOut,
-        onPress: prPress(a.press),
-      }
-    }
-    const checkRow = (pr: PrView, c: PrCheck): Row => {
-      const { mark, lead, title, meta } = checkRowText(c)
-      return {
-        id: prCheckId(pr, c),
-        handle: mark.text,
-        handleTone: mark.tone ?? undefined,
-        isMarkDone: mark.isDone,
-        title,
-        ...(c.finishedAt !== undefined ? { at: c.finishedAt } : {}),
-        line: { ...(lead ? { before: `${lead} / ` } : {}), text: title, after: meta },
-        subtitle: <Text color={pal.muted}>{lead ? `${lead}${DOT}${meta}` : meta}</Text>,
-        body: null,
-        keys: () => checkActions(pr, c, presses).map(a => prKeyAction(a, `${pr.ref}-${c.name}`)),
-      }
-    }
-    const threadRow = (pr: PrView, t: PrThread): Row => {
-      const id = prThreadId(pr, t)
-      const { rest } = commentParts(t.body)
-      const where = (
-        <Text color={pal.muted} wrap="wrap">
-          <Link href={t.reply?.url || t.url}>
-            <Text underline>{threadWhere(t)}</Text>
-          </Link>
-          {DOT}@{t.author}
-        </Text>
-      )
-      const comment = (
-        <Box flexDirection="column">
-          {rest ? <Markdown text={clipLabel(rest, PR_QUOTE_CHARS)} /> : null}
-          {where}
-          {t.reply ? (
-            <Markdown text={`**@${t.reply.author}:** ${clipLabel(readableComment(t.reply.body), PR_QUOTE_CHARS)}`} />
-          ) : null}
-        </Box>
-      )
-      const replyText = t.reply ? `@${t.reply.author}: ${readableComment(t.reply.body)}` : ''
-      const clippedComment = (lines: number, width: number) => {
-        if (lines < 1) return null
-        const restLines = terminalTextLines(rest, width).length
-        const replyLines = terminalTextLines(replyText, width).length
-        const rawTextLines = lineCount(rest, width) + 1 + lineCount(replyText, width)
-        if (rawTextLines <= lines && restLines + 1 + replyLines <= lines) return comment
-        const restShown = Math.min(restLines, lines - 1)
-        const replyShown = Math.min(replyLines, lines - 1 - restShown)
-
-        return (
-          <Box flexDirection="column">
-            {rest && restShown > 0 ? (
-              <Text wrap="wrap">{terminalText(terminalTextLines(rest, width, restShown))}</Text>
-            ) : null}
-            {where}
-            {replyShown > 0 ? (
-              <Text wrap="wrap">{terminalText(terminalTextLines(replyText, width, replyShown))}</Text>
-            ) : null}
-          </Box>
-        )
-      }
-      const text = threadRowText(pr, t, lastActions)
-      const actions = splitFollowUps(threadActions(pr, t, presses))
-
-      return {
-        id,
-        handle: text.mark.isRunning && look !== 'desktop' ? runningMark(now) : text.mark.text,
-        handleTone: text.mark.tone ?? undefined,
-        ...(text.mark.isRunning ? { isHandleRunning: true } : {}),
-        isMarkDone: text.mark.isDone,
-        ...(text.fold ? { fold: text.fold } : {}),
-        title: text.title,
-        ...(t.at === null ? {} : { at: t.at }),
-        line: {
-          before: '',
-          text: commentLine(t.body),
-          after: text.meta,
-        },
-        body: comment,
-        clippedBody: clippedComment,
-        keys: () => actions.keys.map(a => prKeyAction(a, t.id)),
-        moreKeys: () => actions.more.map(a => prKeyAction(a, t.id)),
-      }
-    }
-
-    type Entry = DrawnEntry<Row>
     // The Status and Help draw no rows, so none are built while either shows.
     const isListShown = !isStatusShown && !isHelpShown
     const lists = drawnLists(
@@ -3580,15 +3148,15 @@ export const register: Register = on => {
     )
     const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({ ...g, entries: lists[g.list], rows: rowsIn(lists[g.list]) }))
     const findingEntries = lists.findings
-    const prGroups = (isListShown ? shownPrs : [])
-      .map(d => ({
-        ...d,
-        checks: d.state.is === 'settled' ? [] : failingChecks(d.pr).map(c => checkRow(d.pr, c)),
-        threads: d.state.is === 'settled' ? [] : waitingThreads(d.pr).map(t => threadRow(d.pr, t)),
-      }))
-      .map(g => ({ ...g, rows: [...g.threads, ...g.checks] }))
-    const prTabKeys = view.prs.tabActions.map(a => prKeyAction(a, 'tab'))
+    const prGroups = (isListShown ? shownPrs : []).map(d => ({
+      ...d,
+      ...prBlockRows(d.pr, d.state.is === 'settled', {
+        thread: t => threadRow(d.pr, t),
+        check: c => checkRow(d.pr, c),
+      }),
+    }))
     const prOrderKeys = (view.prs.order?.changed?.actions ?? []).map(a => prKeyAction(a, 'order'))
+    const prRefreshKeys = (view.prs.refresh?.actions ?? []).map(a => prKeyAction(a, 'prs'))
     const rows: Record<Tab, Row[]> = {
       needsYou: lists.byTab.needsYou,
       findings: lists.byTab.findings,
@@ -3615,799 +3183,104 @@ export const register: Register = on => {
     const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection) : null
     const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage) : []
 
-    const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
-      actionLabel({ label: a.label, isPrimary: a.variant === 'primary' })
-    const desktopTextColumns = (markCells: number) => listColumns - markCells - DESKTOP_SIDE_CELLS - 1
-    // A desktop text column after `markCells`, less a cell, since the measured column ran up to 10 pt narrower than this.
-    const desktopColumnPt = (markCells: number) => desktopTextColumns(markCells) * DESKTOP_CELL_PT - 2 * FRAME_INSET_PT
-    const desktopRowTextPt = desktopColumnPt(DESKTOP_MARK_CELLS)
-    const desktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) =>
-      a.icon ? `${a.icon} ${shownLabel(a)}` : shownLabel(a)
-    // A native Button cuts a label wider than its row.
-    const fittedDesktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) => {
-      const icon = a.icon ? `${a.icon} ` : ''
-      const fits = (label: string) => desktopTextPt(icon + label) + DESKTOP_BUTTON_EXTRA_PT <= desktopRowTextPt
-
-      return icon + actionLabel({ label: a.label, isPrimary: a.variant === 'primary' }, fits)
-    }
-    const keyedButton =
-      (rowId: string, isFollowUp = false) =>
-      ({ hotkey, kind: _kind, emphasis, icon, isOut = false, ...action }: KeyAction) => {
-        const { label: _label, ...unlabeled } = action
-        const isDim = isOpenGuarded || isOut
-
-        return look === 'desktop' ? (
-          <Button
-            {...action}
-            {...(isFollowUp ? { plain: true } : emphasis === 'primary' ? { variant: 'primary' as const } : {})}
-            label={fittedDesktopLabel({ ...action, ...(icon ? { icon } : {}) })}
-            {...(isDim ? { dimColor: true } : {})}
-            onPress={press => unlessGuarded($, rowId, press, action.onPress)}
-          />
-        ) : (
-          <Box key={`keyed-${action.key}`} flexDirection="row">
-            <Button
-              plain
-              {...unlabeled}
-              {...(isDim ? { dimColor: true } : {})}
-              hover={{ color: pal.muted, inverse: true }}
-              onPress={press => unlessGuarded($, rowId, press, action.onPress)}
-            >
-              {hotkey ? (
-                <Text color={pal.key} dimColor={isDim} hover={{ color: pal.muted, inverse: true }}>
-                  {hotkey}
-                </Text>
-              ) : null}
-              {hotkey ? `: ${shownLabel(action)}` : shownLabel(action)}
-            </Button>
-          </Box>
-        )
-      }
-    // Emptied here, after the drawing's reads, so a click that lands while they run still finds the last presses.
-    followUpPresses.clear()
-    const followUpLinks = (rowId: string, more: KeyAction[]) => {
-      if (!hasClient) return null
-      for (const a of more) followUpPresses.set(a.key, press => unlessGuarded($, rowId, press, a.onPress))
-      const props: LinksProps = {
-        links: more.map(a => {
-          const label = desktopLabel(a)
-          return {
-            key: a.key,
-            label,
-            width: desktopTextPt(label) / DESKTOP_CELL_PT,
-            ...(a.isOut ? { isOut: true } : {}),
-          }
-        }),
-        gap: DESKTOP_LINK_GAP_CELLS,
-        fallbackColumns: desktopTextColumns(DESKTOP_MARK_CELLS),
-        isGuarded: isOpenGuarded,
-        colors: { muted: pal.muted, hover: null },
-      }
-
-      const linksWidth = Math.ceil(props.links.reduce((sum, l) => sum + l.width, props.gap * (props.links.length - 1)))
-
-      // A Client takes no flexShrink or minWidth, so this Box gives it the room left on its line. In the Claude app,
-      // the wrapping row moves a Box this wide to the next line whole when the room left is narrower, and then shrinks
-      // it to the line.
-      return (
-        <Box flexGrow={1} flexShrink={1} minWidth={0} width={linksWidth}>
-          <elements.Client key={`links-${rowId}`} module="./links-client.tsx" width="100%" props={props} />
-        </Box>
-      )
-    }
-    const keyRow = (rowId: string, keys: KeyAction[], more: KeyAction[] = []) => (
-      <Box
-        flexDirection="row"
-        flexWrap="wrap"
-        alignItems="center"
-        columnGap={space.buttonGap}
-        rowGap={look === 'desktop' ? 1 : 0}
-      >
-        {keys.map(keyedButton(rowId))}
-        {look === 'terminal' && keys.length > 0 && more.length > 0 ? <Text color={pal.muted}>·</Text> : null}
-        {more.length > 0 ? (followUpLinks(rowId, more) ?? more.map(keyedButton(rowId, true))) : null}
-      </Box>
+    const {
+      desktopColumnPt,
+      desktopRowTextPt,
+      desktopLabel,
+      keyRow,
+      keyBindings,
+      keyLines,
+      terminalKeyCells,
+      actionRows,
+      rowActions,
+      fieldActions,
+    } = paneRowKeys(
+      { ...client, listColumns, isOpenGuarded, look, Button, Box, pal, Text, space, Input, typing },
+      handlers,
     )
-    const keyBindings = (keys: KeyAction[], suffix = '') =>
-      keys.flatMap(({ key, hotkey, kind: _kind, emphasis: _emphasis, icon: _icon, isOut: _isOut, ...k }) =>
-        hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} label={shownLabel(k)} />] : [],
-      )
-    const terminalKeyCells = (k: KeyAction) => (k.hotkey ? k.hotkey.length + 2 : 0) + cellWidth(shownLabel(k))
-    const terminalActionLines = (keys: KeyAction[], more: KeyAction[], width: number) =>
-      actionLines(keys.map(terminalKeyCells), more.map(terminalKeyCells), {
-        width,
-        gap: space.buttonGap,
-        // keyRow's `·` and the gap after it.
-        separator: 1 + space.buttonGap,
-      })
-    const keyLines = (keys: KeyAction[], more: KeyAction[], width: number) =>
-      terminalActionLines(keys, more, width).lines.length
-    // Desktop's links Box wraps as a whole by its own width, so only the terminal draws a second row.
-    const actionRows = (rowId: string, keys: KeyAction[], more: KeyAction[], terminalWidth: number) =>
-      look === 'terminal' && terminalActionLines(keys, more, terminalWidth).isFollowUpLineNew ? (
-        <Box flexDirection="column">
-          {keyRow(rowId, keys)}
-          {keyRow(rowId, [], more)}
-        </Box>
-      ) : (
-        keyRow(rowId, keys, more)
-      )
-    const pressable = (keys: KeyAction[]) => keys.filter(k => Input || !k.key.startsWith('typekey-'))
-    const rowActions = (row: Row): { keys: KeyAction[]; more: KeyAction[] } => {
-      if (Input && row.typeHint && typing === row.id) return { keys: [], more: [] }
-
-      return {
-        keys: pressable(row.keys()),
-        more: pressable(row.moreKeys?.() ?? []),
-      }
-    }
-    const fieldActions = (row: Row): KeyAction[] => [
+    const {
+      feedbackLabel,
+      lastActionText,
+      pressedAge,
+      branch,
+      desktopHairline,
+      columnsFor,
+      markWidth,
+      treeRow,
+      divided,
+      withDoneMark,
+      unselectedLine,
+      ToneSvg,
+      svgCell,
+      gutterMark,
+      toned,
+      sideAge,
+      rowClientProps,
+      withSideAge,
+      markGlyph,
+    } = paneRowLines({
+      ...client,
+      lastActions,
+      notes,
+      turns,
+      now,
+      look,
+      isAgeDropped,
+      pal,
+      Box,
+      Text,
+      e,
+      isInline,
+      isAgeInSide,
+      listColumns,
+      Button,
+    })
+    const { desktopFrame } = paneRowFrame({ space, Box })
+    const { listRow } = paneRows(
       {
-        key: `send-${row.id}`,
-        label: ROW_COPY.send,
-        kind: 'handoff',
-        onPress: press => sendDraft($, row.id, press.surface),
+        ...client,
+        indexOf,
+        at,
+        Box,
+        space,
+        Text,
+        pal,
+        Input,
+        typing,
+        drafts,
+        look,
+        now,
+        isAgeInSide,
+        listColumns,
+        unbroken,
+        isInline,
+        e,
+        optionsShown,
+        blankLine,
+        Button,
+        tab,
+        settledLayout,
+        columnsFor,
+        gutterMark,
+        toned,
+        rowClientProps,
+        feedbackLabel,
+        pressedAge,
+        withDoneMark,
+        sideAge,
+        withSideAge,
+        unselectedLine,
+        branch,
+        rowActions,
+        desktopRowTextPt,
+        keyLines,
+        keyRow,
+        fieldActions,
+        actionRows,
+        desktopFrame,
       },
-      row.view && fieldExit(row.view) === 'discard'
-        ? {
-            key: `discard-${row.id}`,
-            label: ROW_COPY.discard,
-            kind: 'view',
-            onPress: () => void discardReply($, row.id),
-          }
-        : {
-            key: `cancel-${row.id}`,
-            label: ROW_COPY.cancel,
-            kind: 'view',
-            onPress: () => void update($, TYPING, t => (t === row.id ? null : t)),
-          },
-    ]
-    const feedbackLabel = (id: string, row?: Row) => {
-      const f = row?.view ? row.view.feedback : feedbackOf(id, lastActions[id], notes[id], turns, now)
-      if (!f) return null
-      const mark = look === 'terminal' && row?.view ? rowResultMark(row.view) : null
-      const lead = mark === null ? '' : `${resultGlyph(mark, now)} `
-
-      return hasAge(f)
-        ? {
-            text: `${lead}${row?.view ? rowFeedbackText(row.view, look)! : markedFeedbackText(f, row?.isMarkDone ?? false, look)}`,
-            age: ago(now - f.at),
-            isAfterTitle: true,
-            isFailure: false,
-            doneMark: mark?.tone === 'done' ? mark.text : null,
-            feedback: f,
-          }
-        : {
-            text: `${lead}${row?.view ? rowFeedbackText(row.view, look)! : feedbackText(f, look)}`,
-            age: '',
-            isAfterTitle: isAfterTitle(f),
-            isFailure: isFailure(f),
-            doneMark: null,
-            feedback: f,
-          }
-    }
-    const lastActionText = (id: string) => {
-      const f = feedbackLabel(id)
-
-      return f ? { text: [f.text, f.age].filter(Boolean).join(DOT), isFailure: f.isFailure } : null
-    }
-    const pressedAge = (row: Row) => {
-      const f = feedbackLabel(row.id, row)
-
-      return f?.isAfterTitle ? `${DOT}${[f.text, isAgeDropped ? '' : f.age].filter(Boolean).join(' ')}` : null
-    }
-    // The row clips, not this Box: once its row scrolled out of view,
-    // Claude Code drew lines this Box clipped elsewhere in the pane (anthropics/claude-code#100030).
-    // Desktop draws no tree: its lines differ in height, so stacked glyphs break into separate bars.
-    const branch = (pos: TreePos, lead = 0, left = TREE_LINE_AT, color = pal.line, top = 0, key?: string) =>
-      look === 'desktop' ? null : (
-        <Box key={key} position="absolute" top={top} bottom={0} left={left} width={2}>
-          <Text color={color}>{treeText(pos, lead)}</Text>
-        </Box>
-      )
-    /** A 1 pt line in the divider color on desktop, `across` the pane or `down` it. */
-    const desktopHairline = (
-      key: string,
-      direction: 'across' | 'down',
-      box: { marginTop?: number; marginBottom?: number; marginLeft?: number; width?: number } = {},
-    ) => (
-      <Box
-        key={key}
-        {...(direction === 'across' ? { height: DESKTOP_HAIR_LINES } : { width: DESKTOP_HAIR_CELLS })}
-        backgroundColor={pal.divider}
-        {...box}
-      />
+      handlers,
     )
-    const columnsFor = (row: Pick<Row, 'view'>) => {
-      const base = look === 'desktop' ? ROW_COLUMNS.desktop : ROW_COLUMNS.tree
-      return row.view && look === 'terminal' ? { ...base, textAt: base.handleAt } : base
-    }
-    const markColumns = look === 'desktop' ? ROW_COLUMNS.desktop : ROW_COLUMNS.tree
-    const markWidth = markColumns.textAt - markColumns.handleAt
-    const treeRow = (
-      pos: TreePos | null,
-      marker: JSX.Element | null,
-      content: JSX.Element,
-      key?: string,
-      depth = 0,
-      lead = markColumns.handleAt + markWidth * depth,
-    ) => (
-      <Box key={key} flexDirection="row" alignItems="flex-start" overflow="hidden">
-        <Box width={lead} flexShrink={0} />
-        {marker ? (
-          <Box width={markWidth} flexShrink={0}>
-            {marker}
-          </Box>
-        ) : null}
-        <Box flexDirection="column" flexShrink={1} flexGrow={1} paddingRight={1}>
-          {content}
-        </Box>
-        {pos ? branch(pos, 0, TREE_LINE_AT + markWidth * depth) : null}
-      </Box>
-    )
-    const childPos = (n: number, count: number): TreePos => (n === count - 1 ? 'last' : 'mid')
-    const rule = (inset: number) => (
-      <Text color={pal.divider}>{'─'.repeat(Math.max(0, e.props.bodyColumns - inset))}</Text>
-    )
-    // Desktop draws text in a proportional font, where a run of ─ sized in cells overflows the
-    // row and wraps into a second line, so there the rows sit flush and each pads itself.
-    const divided = (rowEls: JSX.Element[], group: string, textAt: number = ROW_COLUMNS.tree.textAt) =>
-      rowEls.flatMap((el, n) =>
-        n === 0 || isInline || look === 'desktop'
-          ? [el]
-          : [
-              <Box key={`divider-${group}-${n}`} flexDirection="row">
-                <Box width={TREE_LINE_AT} flexShrink={0} />
-                <Box width={textAt - TREE_LINE_AT} flexShrink={0}>
-                  <Text color={pal.line}>│</Text>
-                </Box>
-                {rule(textAt + 2)}
-              </Box>,
-              el,
-            ],
-      )
-    const buttonFrame = look === 'desktop' ? 2 : 0
-    const closedLine = (row: Row) => {
-      const plain = row.line ?? { text: row.title, age: row.titleAfter }
-      const f = feedbackLabel(row.id, row)
-      if (f)
-        return {
-          ...plain,
-          after: `${DOT}${[f.text, isAgeDropped ? '' : f.age].filter(Boolean).join(' ')}`,
-          afterTone: f.isFailure ? ('error' as const) : undefined,
-          afterDoneMark: f.doneMark,
-        }
-
-      return {
-        ...plain,
-        after: [plain.after, isAgeDropped ? '' : plain.age].filter(Boolean).join('') || undefined,
-        afterDoneMark: null,
-      }
-    }
-    /** A feedback text with its done mark in the done mark's color, which every palette defines. */
-    const withDoneMark = (text: string, doneMark: string | null | undefined) => {
-      const at = doneMark ? text.indexOf(doneMark) : -1
-      if (!doneMark || at < 0) return text
-
-      return [
-        text.slice(0, at),
-        <Text key="done" color={pal.mark.done}>
-          {doneMark}
-        </Text>,
-        text.slice(at + doneMark.length),
-      ]
-    }
-    const unselectedLine = (row: Row, onPress: (press: UiPressArgument) => void, inset: number) => {
-      const line = closedLine(row)
-      const before = line.before?.length ?? 0
-      const side = isAgeInSide ? TERMINAL_SIDE_CELLS : 0
-      const width = listColumns - 1 - inset - side - before
-      const perCell = look === 'desktop' ? DESKTOP_CHARS_PER_CELL : 1
-      const budget = Math.floor((listColumns - 1 - inset - side - buttonFrame) * perCell) - before
-      const isAfterCutting = line.after !== undefined && line.text.trim().length > budget - line.after.length
-      const meta =
-        look === 'terminal' && line.after && (!LEADING_DOT.test(line.after) || isAfterCutting)
-          ? line.after.replace(LEADING_DOT, '')
-          : null
-      const room = Math.max(12, budget - (meta ? 0 : (line.after?.length ?? 0)))
-      const text = line.text.trim()
-      const space = text.lastIndexOf(' ', room)
-      const isWrapped = look === 'terminal' && row.hasSecondLine === true && text.length > room && space > 0
-      const first = isWrapped ? text.slice(0, space) : clipLabel(text, room)
-      const second = isWrapped ? clipLabel(text.slice(space + 1), Math.max(12, width)) : null
-      const afterRoom = budget - first.length
-      const after = meta
-        ? undefined
-        : look === 'desktop' && line.after && line.after.length > afterRoom
-          ? afterRoom >= 2
-            ? clipLabel(line.after, afterRoom)
-            : undefined
-          : line.after
-      const hover = second ? { hover: { scope: `title-${row.id}`.slice(0, 64), inverse: true } } : {}
-      const holdsUpLine = holdsUpLineOf(row.view)
-
-      return (
-        <Box flexDirection="column">
-          <Box flexDirection="row">
-            {line.before ? (
-              <Box flexShrink={0}>
-                <Text color={pal.muted}>{line.before}</Text>
-              </Box>
-            ) : null}
-            <Box flexShrink={0}>
-              <Button plain key={`title-${row.id}`} label={first} {...hover} onPress={onPress} />
-            </Box>
-            {after ? (
-              <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
-                {withDoneMark(after, line.afterDoneMark)}
-              </Text>
-            ) : null}
-          </Box>
-          {second ? (
-            <Box paddingLeft={line.before?.length ?? 0}>
-              <Button plain key={`title-${row.id}-2`} label={second} {...hover} onPress={onPress} />
-            </Box>
-          ) : null}
-          {meta ? (
-            <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
-              {withDoneMark(meta, line.afterDoneMark)}
-            </Text>
-          ) : null}
-          {holdsUpLine ? (
-            <Box paddingLeft={line.before?.length ?? 0}>
-              <Text color={pal.muted}>
-                <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
-                {clipLabel(holdsUpLine, Math.max(12, width - 2))}
-              </Text>
-            </Box>
-          ) : null}
-        </Box>
-      )
-    }
-    const ToneSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
-    /** A desktop mark drawn as an Svg `cells` wide, or null outside desktop. */
-    const svgCell = (source: string, alt: string, key?: string, cells = 1) =>
-      ToneSvg ? (
-        <Box key={key} width={cells} height={1} flexShrink={0}>
-          <ToneSvg source={source} alt={alt} width={cells * DESKTOP_CELL_PT} height={DESKTOP_LINE_PT} />
-        </Box>
-      ) : null
-    /** An Asks or Finds row's result mark in the desktop mark column, or null when it has none. */
-    const gutterMark = (row: Row) => {
-      const mark = look === 'desktop' && row.view ? rowResultMark(row.view) : null
-      if (mark?.tone && ToneSvg) return svgCell(toneSvg(mark.tone, mark.text), mark.text)
-      return mark ? markGlyph(mark, `gutter-${row.id}`, mark.tone ? pal.mark[mark.tone] : pal.muted) : null
-    }
-    const runningDot = (id: string, glyph: string, color: string) =>
-      svgCell(runningSvg(now), glyph, `${id}-mark`, RUNNING_SVG_CELLS) ?? (
-        <Text color={color}>{look === 'terminal' ? runningMark(now) : glyph}</Text>
-      )
-    const toned = (row: Row) => {
-      if (look === 'desktop' && row.isHandleRunning) return runningDot(`handle-${row.id}`, row.handle, pal.muted)
-      if (ToneSvg === null || !row.handle || !row.handleTone) return null
-      return svgCell(toneSvg(row.handleTone, row.handle), row.handle)
-    }
-    const sideAge = (row: Row) => {
-      const f = row.view ? row.view.feedback : feedbackOf(row.id, lastActions[row.id], notes[row.id], turns, now)
-      const at = f && hasAge(f) ? f.at : row.at
-      return at === undefined ? '' : shortAgo(now - at)
-    }
-    const rowClientProps = (row: Row): RowProps => {
-      const f = feedbackLabel(row.id, row)
-      const text = row.line?.text ?? row.title
-
-      return {
-        markCells: DESKTOP_MARK_CELLS,
-        sideCells: DESKTOP_SIDE_CELLS,
-        before: row.line?.before ?? '',
-        title: text.trim(),
-        after: f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim(),
-        note: holdsUpLineOf(row.view) ?? '',
-        noteMark: holdsUpLineOf(row.view) ? { text: HELD_MARK.mark, color: pal.mark[HELD_MARK.tone] } : null,
-        side: sideAge(row),
-        padY: DESKTOP_ROW_PAD,
-        maxLines: row.hasSecondLine ? 4 : 2,
-        charsPerCell: DESKTOP_CLIP_CHARS_PER_CELL,
-        fallbackColumns: e.props.bodyColumns - 2,
-        colors: {
-          muted: pal.muted,
-          after: f?.isFailure ? (pal.tone.error ?? null) : pal.muted,
-          afterHover: f?.isFailure ? (pal.tone.error ?? null) : pal.muted,
-          side: pal.age,
-          hover: pal.raised,
-          hoverText: pal.raisedText ?? null,
-          pressed: pal.selection ?? pal.raised,
-        },
-      }
-    }
-    const desktopFrame = ({
-      key,
-      mark = null,
-      side = null,
-      fill,
-      padY = space.rowPad,
-      isSideCentered = false,
-      indent = 0,
-      isMarkHung = true,
-      markCells = DESKTOP_MARK_CELLS,
-      gapY = 0,
-      tree = null,
-      hasSide = true,
-      children,
-    }: {
-      key?: string
-      mark?: JSX.Element | null
-      side?: JSX.Element | null
-      /** Whether it keeps the side column, so its text lines up with rows that show an age there. */
-      hasSide?: boolean
-      /** An absolute Box in the mark column, which the frame stretches to the row's height. */
-      tree?: JSX.Element | null
-      fill?: string | undefined
-      padY?: number
-      /** Centers the side and the mark with its text on each other, for a side taller than a line of text, as Undo is. */
-      isSideCentered?: boolean
-      indent?: number
-      isMarkHung?: boolean
-      markCells?: number
-      /** Space above and below the frame, in the hooks tree's half lines. */
-      gapY?: number
-      children: JSX.Element | (JSX.Element | null)[]
-    }) => {
-      const markColumn = (
-        <Box key="mark" width={indent + markCells + (isMarkHung ? 0 : 1)} flexShrink={0} paddingLeft={indent}>
-          {tree}
-          {mark ? (
-            <Box position="absolute" top={0} left={isMarkHung ? indent - 1 : indent}>
-              {mark}
-            </Box>
-          ) : null}
-        </Box>
-      )
-      const textColumn = (
-        <Box key="text" flexDirection="column" flexShrink={1} flexGrow={1} minWidth={0}>
-          {children}
-        </Box>
-      )
-      return (
-        <Box
-          key={key}
-          flexDirection="row"
-          alignItems={isSideCentered ? 'center' : tree ? 'stretch' : 'flex-start'}
-          marginY={gapY}
-          borderStyle="single"
-          borderColor="#0000"
-          paddingY={padY}
-          {...(fill ? { backgroundColor: fill } : {})}
-        >
-          {isSideCentered ? (
-            <Box flexDirection="row" alignItems="flex-start" flexShrink={1} flexGrow={1} minWidth={0}>
-              {markColumn}
-              {textColumn}
-            </Box>
-          ) : (
-            [markColumn, textColumn]
-          )}
-          {hasSide ? (
-            <Box
-              minWidth={DESKTOP_SIDE_CELLS}
-              flexShrink={0}
-              flexDirection="row"
-              justifyContent="flex-end"
-              alignItems="flex-start"
-              paddingLeft={1}
-            >
-              {side}
-            </Box>
-          ) : null}
-        </Box>
-      )
-    }
-    const withSideAge = (row: Row, line: JSX.Element) =>
-      isAgeInSide ? (
-        <Box flexDirection="row">
-          <Box flexGrow={1} flexShrink={1}>
-            {line}
-          </Box>
-          <Box width={TERMINAL_SIDE_CELLS - 1} flexShrink={0} justifyContent="flex-end">
-            <Text color={pal.age}>{sideAge(row)}</Text>
-          </Box>
-        </Box>
-      ) : (
-        line
-      )
-    const listRow = (row: Row, tree: TreePos) => {
-      const columns = columnsFor(row)
-      const index = indexOf.get(row.id) ?? -1
-      const isSelected = index === at
-      // On desktop a Client takes a click on every cell of the row, where a Button takes one only on its label.
-      if (!isSelected && hasClient) {
-        const gutter = gutterMark(row)
-        return (
-          <Box key={`row-${row.id}`} flexDirection="row" overflow="hidden">
-            {row.handle || gutter ? (
-              <Box
-                position="absolute"
-                top={0}
-                left={0}
-                paddingLeft={(FRAME_INSET_PT - DESKTOP_CELL_PT) / DESKTOP_CELL_PT}
-                paddingTop={space.rowPad}
-              >
-                {gutter ?? toned(row) ?? (
-                  <Text color={row.handleTone ? pal.mark[row.handleTone] : undefined}>{row.handle}</Text>
-                )}
-              </Box>
-            ) : null}
-            <Box position="relative" width="100%">
-              <elements.Client
-                key={`select-${row.id}`}
-                module="./row-client.tsx"
-                width="100%"
-                props={rowClientProps(row)}
-              />
-            </Box>
-          </Box>
-        )
-      }
-      const { keys, more } = isSelected ? rowActions(row) : { keys: [], more: [] }
-      const isTyping = Input !== null && !!row.typeHint && typing === row.id
-      const field =
-        Input && isTyping ? (
-          <Input
-            key={fieldKey(row.id)}
-            placeholder={row.typeHint}
-            {...(openFields.get(row.id)?.seed ? { value: openFields.get(row.id)?.seed } : {})}
-            submitLabel={look === 'desktop' ? ROW_COPY.send : 'send'}
-            autoFocus
-            {...(look === 'terminal' ? { rows: REPLY_ROWS } : look === 'desktop' ? { rows: DESKTOP_REPLY_ROWS } : {})}
-            onInput={(value: string) =>
-              void update($, DRAFTS, d => ({ ...d, [row.id]: { text: value, since: d[row.id]?.since ?? now } }))
-            }
-            onSubmit={(value: string, submit) => sendTyped($, row.id, value, submit.surface)}
-          />
-        ) : null
-      const f = feedbackLabel(row.id, row)
-      const isStatusUnder = f !== null && isStatusUnderActions(f.feedback, isSelected)
-      const titleAfter = (isStatusUnder ? null : pressedAge(row)) ?? (isAgeInSide ? undefined : row.titleAfter)
-      const status = [
-        ...(row.fold?.note ? [{ text: row.fold.note, color: pal.muted }] : []),
-        ...(f && !f.isAfterTitle ? [{ text: f.text, color: f.isFailure ? pal.tone.error : pal.muted }] : []),
-        ...(isTyping && fieldWithoutKeys === row.id ? [{ text: ROW_COPY.clickField, color: pal.muted }] : []),
-      ]
-
-      const textWidth = listColumns - 1 - columns.textAt
-      const titleWidth = textWidth - TERMINAL_SIDE_CELLS
-      const fitsTitleLine = (text: string) =>
-        look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt : text.length <= titleWidth
-      const shownAfter = titleAfter ? unbroken(titleAfter, row.title, fitsTitleLine) : ''
-      const bodyLines =
-        isSelected && isInline && look === 'terminal' && row.clippedBody
-          ? e.props.scroll.bodyRows -
-            2 * space.rowPad -
-            lineCount(`${row.title}${shownAfter}`, titleWidth) -
-            status.length -
-            keyLines(keys, more, textWidth) -
-            (isStatusUnder ? lineCount(f.text, textWidth) : 0)
-          : null
-      const body =
-        bodyLines !== null && row.clippedBody && row.body ? row.clippedBody(bodyLines, textWidth) : (row.body ?? null)
-      const described = row.view ? shownOptionDescriptions(row.view, optionsShown.includes(row.id)) : []
-      const descriptionsBlock =
-        described.length > 0 ? (
-          <Box flexDirection="column" marginTop={blankLine}>
-            {described.map(o => {
-              const line = clipLabel(`${o.label}: ${o.description}`, look === 'desktop' ? titleWidth : textWidth)
-              return (
-                <Text wrap="truncate-end">
-                  <Text>{line.slice(0, o.label.length)}</Text>
-                  <Text color={pal.muted}>{line.slice(o.label.length)}</Text>
-                </Text>
-              )
-            })}
-          </Box>
-        ) : null
-      const keysBlock = (
-        <Box flexDirection="column" marginTop={blankLine}>
-          {isTyping ? (
-            look === 'desktop' ? (
-              <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap} rowGap={1}>
-                <Box flexShrink={1} minWidth={0} overflow="hidden">
-                  {field}
-                </Box>
-                {/* The desktop Input supplies its own Send button. */}
-                {keyRow(
-                  row.id,
-                  fieldActions(row).filter(a => !a.key.startsWith('send-')),
-                )}
-              </Box>
-            ) : (
-              [field, keyRow(row.id, fieldActions(row))]
-            )
-          ) : (
-            actionRows(row.id, keys, more, textWidth)
-          )}
-          {isStatusUnder ? (
-            <Text color={pal.muted} wrap="wrap">
-              {withDoneMark(f.text, f.doneMark)}
-            </Text>
-          ) : null}
-        </Box>
-      )
-      // The `view-` Box is what select() scrolls into view. Drawn on the selected row alone, so the key exists only
-      // once that row has redrawn expanded.
-      if (look === 'desktop' && isSelected)
-        return desktopFrame({
-          key: `row-${row.id}`,
-          markCells: DESKTOP_MARK_CELLS,
-          mark: row.view
-            ? gutterMark(row)
-            : (toned(row) ??
-              (row.handleTone ? (
-                <Text color={pal.mark[row.handleTone]}>{row.handle}</Text>
-              ) : (
-                <Text>{row.handle}</Text>
-              ))),
-          side: <Text color={pal.age}>{sideAge(row)}</Text>,
-          fill: pal.selection,
-          gapY: (2 * SELECTED_GAP_PT) / DESKTOP_LINE_PT,
-          children: [
-            <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />,
-            <Text wrap="wrap">
-              <Text bold>{row.title}</Text>
-              {f?.isAfterTitle && !isStatusUnder ? (
-                <Text color={pal.muted}>{unbroken(`${DOT}${f.text}`, row.title, fitsTitleLine)}</Text>
-              ) : null}
-            </Text>,
-            row.subtitle ?? null,
-            row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
-            descriptionsBlock,
-            status.length > 0 ? (
-              <Box flexDirection="column" marginTop={blankLine}>
-                {status.map(st => (
-                  <Text color={st.color} wrap="wrap">
-                    {st.text}
-                  </Text>
-                ))}
-              </Box>
-            ) : null,
-            keysBlock,
-          ],
-        })
-
-      return (
-        <Box
-          key={`row-${row.id}`}
-          flexDirection="row"
-          alignItems="flex-start"
-          overflow="hidden"
-          backgroundColor={isSelected ? pal.selection : undefined}
-        >
-          <Box width={columns.lead} flexShrink={0} />
-          {row.view && look === 'terminal' ? null : (
-            <Box
-              width={columns.textAt - columns.lead}
-              flexShrink={0}
-              paddingLeft={columns.handleAt - columns.lead}
-              paddingY={isSelected ? space.rowPad : 0}
-            >
-              {row.handleTone ? (
-                <Text color={pal.mark[row.handleTone]}>{row.handle}</Text>
-              ) : look === 'desktop' ? (
-                (gutterMark(row) ?? <Text>{row.handle}</Text>)
-              ) : (
-                <Button
-                  plain
-                  key={`select-${row.id}`}
-                  label={row.handle || ' '}
-                  onPress={() => void select($, tab, row.id, index)}
-                />
-              )}
-            </Box>
-          )}
-          {isSelected ? (
-            <Box flexDirection="column" flexShrink={1} flexGrow={1} paddingRight={1} paddingY={space.rowPad}>
-              {withSideAge(
-                row,
-                <Text wrap="wrap">
-                  <Text bold>{row.title}</Text>
-                  {titleAfter ? (
-                    <Text color={pal.muted}>{withDoneMark(shownAfter, isStatusUnder ? null : f?.doneMark)}</Text>
-                  ) : null}
-                </Text>,
-              )}
-              {row.subtitle}
-              {body ? <Box marginTop={blankLine}>{body}</Box> : null}
-              {descriptionsBlock}
-              {status.length > 0 ? (
-                <Box flexDirection="column" marginTop={blankLine}>
-                  {status.map(s => (
-                    <Text color={s.color} wrap="wrap">
-                      {s.text}
-                    </Text>
-                  ))}
-                </Box>
-              ) : null}
-              {keysBlock}
-            </Box>
-          ) : (
-            <Box flexShrink={1} flexGrow={1} paddingRight={1}>
-              {unselectedLine(row, () => void select($, tab, row.id, index), columns.textAt)}
-            </Box>
-          )}
-          {isAgeInSide && !isSelected ? (
-            <Box
-              width={TERMINAL_SIDE_CELLS}
-              flexShrink={0}
-              justifyContent="flex-end"
-              paddingRight={1}
-              paddingTop={isSelected ? space.rowPad : 0}
-            >
-              <Text color={pal.age}>{sideAge(row)}</Text>
-            </Box>
-          ) : null}
-          {isSelected ? branch(tree, blankLine, TREE_LINE_AT, pal.selectionLine ?? pal.line) : branch(tree, 0)}
-          {isSelected && look === 'terminal' ? (
-            <Box
-              key={settledScrollKey(`view-${row.id}`, settledLayout)}
-              position="absolute"
-              top={0}
-              bottom={0}
-              left={0}
-              width={1}
-            />
-          ) : null}
-          {/* What select() scrolls into view. Drawn on the selected row alone, so the key exists
-          only once that row has redrawn expanded. */}
-          {isSelected ? (
-            <Box
-              key={`view-${row.id}`}
-              position="absolute"
-              top={0}
-              bottom={0}
-              left={0}
-              width={1}
-              // Desktop draws a column of ▌ as broken dashes, so there the bar is the Box's own fill.
-              {...(look === 'desktop' && !pal.selection ? { backgroundColor: pal.key } : {})}
-            >
-              {pal.selection || look === 'desktop' ? null : <Text color={pal.key}>{SELECTION_BAR}</Text>}
-            </Box>
-          ) : null}
-        </Box>
-      )
-    }
-    const emptyState = ({ title, hint: text = '' }: { title: string; hint?: string }) => {
-      const wrap = (width: number) => {
-        const lines: string[] = []
-        for (const word of text.split(' ').filter(Boolean)) {
-          const last = lines.at(-1)
-          if (last !== undefined && last.length + 1 + word.length <= width) lines[lines.length - 1] = `${last} ${word}`
-          else lines.push(word)
-        }
-
-        return lines
-      }
-      const room = listColumns - 4
-      const most = Math.min(46, look === 'desktop' ? Math.floor(room * DESKTOP_CHARS_PER_CELL) : room)
-      const count = wrap(most).length
-      let width = Math.ceil(text.length / Math.max(count, 1))
-      while (width < most && wrap(width).length > count) width++
-      const lines = wrap(width)
-      const align = isInline ? 'flex-start' : 'center'
-
-      return (
-        <Box flexDirection="column" flexGrow={1} justifyContent={align} alignItems={align}>
-          <Box flexDirection="column" alignItems={align} paddingLeft={isInline ? 1 : 0}>
-            <Text bold>{title}</Text>
-            {lines.length > 0 ? (
-              <Box flexDirection="column" alignItems={align} marginTop={blankLine}>
-                {lines.map(line => (
-                  <Text color={pal.muted}>{line}</Text>
-                ))}
-              </Box>
-            ) : null}
-          </Box>
-        </Box>
-      )
-    }
 
     const shownStatus = footerStatus(
       shownTab,
@@ -4424,1344 +3297,218 @@ export const register: Register = on => {
       .map(([, n]) => n)
       .sort((a, b) => b.at - a.at)[0]
 
-    const keyList = helpKeys(look, isNextBuild, shownTab, statusPressRows.length > 0)
+    const keyList = helpKeys(look, mod.isNextBuild, shownTab, statusPressRows.length > 0)
     const keyColumn = Math.max(0, ...keyList.map(k => cellWidth(k.keys))) + 2
 
-    const tabColumns = e.props.bodyColumns - 2
-    const tabSizes = desktopTabSizes(
-      tabList.map(t => ({ ...t, badge: badgeOf(t.id), isShown: t.id === shownTab })),
-      tabColumns,
-    )
-    const tabProps: TabsProps | null = hasClient
-      ? {
-          tabs: tabList.map((t, n) => ({
-            id: t.id,
-            label: tabName(t, tabSizes.naming),
-            badge: badgeOf(t.id),
-            badgeColor: isRowTab(t.id) ? (pal.tone[t.id] ?? pal.mark[t.id]) : null,
-            width: tabSizes.widths[n]!,
-          })),
-          shown: shownTab,
-          gap: tabSizes.gap,
-          isEachFramed: tabSizes.isEachFramed,
-          columns: tabColumns,
-          colors: {
-            tab: pal.tab ?? null,
-            raised: pal.raised,
-            raisedText: pal.raisedText ?? null,
-            muted: pal.muted,
-          },
-        }
-      : null
-    const leadColor: Record<BannerTone, string | undefined> = {
-      error: pal.tone.error ?? pal.mark.error,
-      warning: pal.tone.needsYou ?? pal.mark.needsYou,
-      notice: undefined,
-    }
-    /**
-     * A banner as a rounded box. The terminal paints a Box's fill inside its border, so a docked banner's fill sits
-     * inside its rounded border. The inline pane draws the fill alone, so a tab still fits its height.
-     */
-    const banner = (
-      b: BannerView,
-      more: {
-        /** Drawn in place of the bold lead, as while a press runs. */
-        lead?: JSX.Element
-        after?: JSX.Element
-        isBodyBelow?: boolean
-        extra?: JSX.Element | null
-        action?: JSX.Element | null
-      } = {},
-    ) => {
-      const { line, fill } = pal.banner[b.tone]
-      const frame =
-        look === 'desktop'
-          ? { borderStyle: 'single', borderColor: line, paddingY: (2 * BANNER_PAD_Y_PT) / DESKTOP_LINE_PT }
-          : isInline
-            ? { paddingX: 1 }
-            : { borderStyle: 'round', borderColor: line, paddingX: 1 }
-      const lead = more.lead ?? (
-        <Text bold color={leadColor[b.tone]}>
-          {b.lead}
-        </Text>
-      )
-      const isActionBelow = isNarrowDesktop && Boolean(more.action)
-
-      return (
-        <Box
-          key={`banner-${b.kind}`}
-          {...(isActionBelow
-            ? { flexDirection: 'column', alignItems: 'flex-start', rowGap: (2 * BANNER_PAD_Y_PT) / DESKTOP_LINE_PT }
-            : { flexDirection: 'row', alignItems: 'center', columnGap: 2 })}
-          {...frame}
-          {...(fill ? { backgroundColor: fill } : {})}
-        >
-          <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
-            <Text wrap="wrap">
-              {lead}
-              {more.after ?? null}
-              {b.body && !more.isBodyBelow ? ` ${b.body}` : ''}
-            </Text>
-            {b.body && more.isBodyBelow ? <Text wrap="wrap">{b.body}</Text> : null}
-            {more.extra ?? null}
-          </Box>
-          {more.action ? <Box flexShrink={0}>{more.action}</Box> : null}
-        </Box>
-      )
-    }
-    const statusLines = tabBarBanners(
-      toolsRefused ? [bannerOf('tools-refused', TOOLS_REFUSED_TEXT)] : [],
-      shownStatus.error,
-      lineNote
-        ? { text: feedbackText({ is: 'note', note: lineNote.note, at: lineNote.at }, look), isError: false }
-        : null,
-    ).map(b => banner(b))
-    const namesWidth = (naming: TabNaming) =>
-      tabList.reduce((sum, t) => sum + cellWidth(tabText(t.id, tabName(t, naming))), 0)
-    const framedTabs = fitTabs(
-      FRAMED_TAB_LAYOUTS,
-      (naming, r) =>
-        namesWidth(naming) + 2 * r.pad.length * tabList.length + r.gap * (tabList.length - 1) <=
-        e.props.bodyColumns - 1 - r.right,
-    )
-    const { pad } = framedTabs.layout
-    const inlineTabs = fitTabs(
-      INLINE_TAB_GAPS,
-      (naming, gap) => namesWidth(naming) + gap * (tabList.length - 1) <= e.props.bodyColumns - 3,
-    )
-    const tabNaming = isInline ? inlineTabs.naming : look === 'desktop' ? tabSizes.naming : framedTabs.naming
-    const hasTabLine = !isInline && look !== 'desktop'
-    const tabLine = pal.tab ?? pal.divider
-    // Terminal.app draws block characters from its font, which leaves a seam between a half block and the filled
-    // line beside it. There a tab is its filled name line alone.
-    const hasHalfLines = termProgram !== 'Apple_Terminal'
-    const tabs = (
-      <Box
-        paddingLeft={isInline ? 2 : 1}
-        paddingRight={isInline ? 1 : framedTabs.layout.right}
-        flexDirection="row"
-        {...(hasTabLine ? { overflow: 'hidden' as const } : {})}
-      >
-        {/* ─ draws at the middle of its cell, where the tabs' ▀ ends, and the tabs draw over it. The tabs' Box
-            clips it, as a row clips the tree (anthropics/claude-code#100030). */}
-        {hasTabLine ? (
-          <Box position="absolute" bottom={0} left={0} right={0} height={1}>
-            <Text color={tabLine}>{'─'.repeat(e.props.bodyColumns)}</Text>
-          </Box>
-        ) : null}
-        <Box
-          flexDirection="row"
-          flexWrap="wrap"
-          columnGap={isInline ? inlineTabs.layout : look === 'desktop' ? 2 : framedTabs.layout.gap}
-        >
-          {hasClient && tabProps ? (
-            <elements.Client
-              key="tabs"
-              module="./tabs-client.tsx"
-              height={TAB_HEIGHT * tabLines(tabProps.tabs, tabProps.gap, tabProps.columns).length}
-              props={tabProps}
-            />
-          ) : null}
-          {tabProps
-            ? null
-            : tabList.map(t => {
-                const { id } = t
-                const label = tabName(t, tabNaming)
-                const badge = badgeOf(id)
-
-                if (isInline)
-                  return (
-                    <Box key={`tab-block-${id}`} flexDirection="row">
-                      {shownTab === id ? (
-                        <Text bold underline>
-                          {label}
-                        </Text>
-                      ) : (
-                        <Button plain key={`tab-${id}`} label={label} onPress={() => void showTab($, id)} />
-                      )}
-                      {badge !== null ? (
-                        <Text bold={shownTab === id} color={tabTone(id)}>
-                          {' '}
-                          {badge}
-                        </Text>
-                      ) : null}
-                    </Box>
-                  )
-
-                const width = cellWidth(tabText(id, label)) + 2 * pad.length
-
-                // The key stays the
-                // same in every drawing: the app takes the focus off the pane when the element holding
-                // it leaves, and the next click would only bring it back.
-                // A Button sizes to its label, so non-breaking spaces widen the tab; plain spaces would collapse.
-                // A native tab element would replace this (anthropics/claude-code#100890).
-                if (look === 'desktop')
-                  return (
-                    <Button
-                      key={`tab-${id}`}
-                      label={`${DESKTOP_TAB_PAD}${badge === null ? label : `${label} ${badge}`}${DESKTOP_TAB_PAD}`}
-                      {...(shownTab === id ? { variant: 'primary' as const } : {})}
-                      onPress={() => void showTab($, id)}
-                    />
-                  )
-
-                if (shownTab === id)
-                  return (
-                    <Box flexDirection="column" flexShrink={0}>
-                      <Text color={pal.raised}>{(hasHalfLines ? '▄' : ' ').repeat(width)}</Text>
-                      <Text backgroundColor={pal.raised}>
-                        {pad}
-                        <Text bold color={pal.raisedText} backgroundColor={pal.raised}>
-                          {label}
-                        </Text>
-                        {badge !== null ? (
-                          <Text bold color={tabTone(id) ?? pal.raisedText} backgroundColor={pal.raised}>
-                            {' '}
-                            {badge}
-                          </Text>
-                        ) : null}
-                        {pad}
-                      </Text>
-                      {hasHalfLines ? (
-                        <Text color={pal.raised}>{'▀'.repeat(width)}</Text>
-                      ) : (
-                        <Text color={tabLine}>{'─'.repeat(width)}</Text>
-                      )}
-                    </Box>
-                  )
-
-                const show = () => void showTab($, id)
-                const edgeFill = hasHalfLines ? pal.tab : undefined
-                const edgeHover = edgeFill ? raiseEdge : { inverse: false }
-
-                return (
-                  <Box key={`tab-block-${id}`} flexDirection="column" flexShrink={0}>
-                    <Button plain key={`tab-${id}-above`} hover={edgeHover} onPress={show}>
-                      {edgeFill ? (
-                        <Text color={edgeFill} hover={raiseEdge}>
-                          {'▄'.repeat(width)}
-                        </Text>
-                      ) : (
-                        ' '.repeat(width)
-                      )}
-                    </Button>
-                    <Box flexDirection="row" backgroundColor={pal.tab}>
-                      {pad ? <Button plain key={`tab-${id}-before`} label={pad} hover={raise} onPress={show} /> : null}
-                      <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
-                      {badge !== null ? (
-                        <Text color={tabTone(id)} hover={raise}>
-                          {' '}
-                          {badge}
-                        </Text>
-                      ) : null}
-                      {pad ? <Button plain key={`tab-${id}-after`} label={pad} hover={raise} onPress={show} /> : null}
-                    </Box>
-                    <Button plain key={`tab-${id}-below`} hover={edgeHover} onPress={show}>
-                      {edgeFill ? (
-                        <Text color={edgeFill} hover={raiseEdge}>
-                          {'▀'.repeat(width)}
-                        </Text>
-                      ) : (
-                        <Text color={tabLine}>{'─'.repeat(width)}</Text>
-                      )}
-                    </Button>
-                  </Box>
-                )
-              })}
-        </Box>
-      </Box>
-    )
-    const faint = (text: string) =>
-      look === 'desktop' ? <Text color={pal.age}>{text}</Text> : <Text dimColor>{text}</Text>
-    const statusText = faint(status)
-    const versionText = version ? faint(versionLabel(version, isNextBuild)) : null
-    const rail = (
-      <Box flexDirection="column" flexShrink={0} paddingLeft={1} marginRight={RAIL_GUTTER}>
-        {tabList.map(({ id, label }) => {
-          const badge = badgeOf(id)
-          const fill = ' '.repeat(railWidth - cellWidth(tabText(id, label)) - TAB_PAD.length)
-          if (shownTab === id)
-            return (
-              <Text key={`rail-${id}`} backgroundColor={pal.raised}>
-                {TAB_PAD}
-                <Text bold color={pal.raisedText} backgroundColor={pal.raised}>
-                  {label}
-                </Text>
-                {badge !== null ? (
-                  <Text bold color={tabTone(id) ?? pal.raisedText} backgroundColor={pal.raised}>
-                    {' '}
-                    {badge}
-                  </Text>
-                ) : null}
-                {fill}
-              </Text>
-            )
-          const show = () => void showTab($, id)
-
-          return (
-            <Box key={`rail-${id}`} flexDirection="row">
-              <Button plain key={`tab-${id}-before`} label={TAB_PAD} hover={raise} onPress={show} />
-              <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
-              {badge !== null ? (
-                <Button plain key={`tab-${id}-count`} hover={raise} onPress={show}>
-                  <Text color={tabTone(id)}> {badge}</Text>
-                </Button>
-              ) : null}
-              <Button plain key={`tab-${id}-after`} label={fill} hover={raise} onPress={show} />
-            </Box>
-          )
-        })}
-      </Box>
-    )
-    const statusBlock = statusLines.some(Boolean) ? (
-      <Box
-        flexDirection="column"
-        rowGap={look === 'desktop' ? (2 * BANNER_GAP_PT) / DESKTOP_LINE_PT : isInline ? 0 : 1}
-        paddingX={hasRail ? 1 : isInline ? 2 : 1}
-        paddingTop={hasRail ? 0 : 1}
-      >
-        {statusLines}
-      </Box>
-    ) : null
-    const footer = (
-      <Box flexDirection="column" paddingX={1} paddingTop={blankLine}>
-        <Box flexDirection="row" paddingX={1} justifyContent="space-between" columnGap={3}>
-          {/* The same key in both states, so a desktop pane keeps its focus on the Button. */}
-          <Button
-            plain
-            dimColor={look !== 'desktop'}
-            key="help"
-            label={isHelpShown ? HELP_COPY.close : HELP_COPY.open}
-            onPress={() => void update($, IS_HELP_SHOWN, shown => !shown)}
-          />
-          <Box flexDirection="row" columnGap={2}>
-            {statusText}
-            {versionText}
-          </Box>
-        </Box>
-      </Box>
+    const { banner, tabs, rail, statusBlock, footer, isTabRowFit, desktopTabLines } = paneFrame(
+      {
+        ...client,
+        e,
+        tabList,
+        badgeOf,
+        shownTab,
+        pal,
+        look,
+        isInline,
+        Text,
+        isNarrowDesktop,
+        Box,
+        shownStatus,
+        lineNote,
+        tabText,
+        termProgram,
+        Button,
+        tabTone,
+        raiseEdge,
+        raise,
+        status,
+        railWidth,
+        hasRail,
+        blankLine,
+        isHelpShown,
+      },
+      handlers,
     )
 
-    const groupEmpty = (title: string) =>
-      look === 'desktop'
-        ? desktopFrame({
-            key: `empty-${title}`,
-            children: <Text color={pal.muted}>{groupEmptyText(title)}</Text>,
-          })
-        : treeRow('last', null, <Text color={pal.muted}>{`  ${groupEmptyText(title)}`}</Text>, `empty-${title}`)
-    /** A Finds group's title leads with its kind's mark, since its rows draw none. */
-    const groupTitle = (title: string, count: number, mark?: { mark: string; tone: Tone }) => {
-      const words = (
-        <Text>
-          <Text bold>{title}</Text>
-          {count > 0 ? <Text color={pal.muted}>{`${DOT}${count}`}</Text> : null}
-        </Text>
-      )
-      const lead = mark ? (
-        <Box width={RESULT_MARK_CELLS} flexShrink={0}>
-          {ToneSvg ? (
-            <ToneSvg
-              source={toneSvg(mark.tone, mark.mark)}
-              alt={mark.mark}
-              width={DESKTOP_CELL_PT}
-              height={DESKTOP_LINE_PT}
-            />
-          ) : (
-            <Text color={pal.mark[mark.tone]}>{mark.mark}</Text>
-          )}
-        </Box>
-      ) : null
-      const line = lead ? (
-        <Box flexDirection="row">
-          {lead}
-          {words}
-        </Box>
-      ) : (
-        words
-      )
-
-      return look === 'desktop' ? (
-        desktopFrame({ padY: 0, mark: lead, children: words })
-      ) : (
-        <Box paddingLeft={TREE_LINE_AT}>{line}</Box>
-      )
-    }
-    const section = (children: JSX.Element | JSX.Element[]) =>
-      look === 'desktop' ? (
-        <Box flexDirection="column" paddingTop={blankLine}>
-          {children}
-        </Box>
-      ) : (
-        <Box flexDirection="column">{children}</Box>
-      )
-    const sections = (list: JSX.Element[], space = 1) => (
-      <Box flexDirection="column" flexGrow={1} gap={look === 'desktop' ? 0 : isInline ? 1 : 2}>
-        {look === 'desktop'
-          ? list.flatMap((el, n) =>
-              n === 0
-                ? [el]
-                : [
-                    desktopHairline(`rule-${n}`, 'across', {
-                      marginTop: space,
-                      marginBottom: space - blankLine,
-                      marginLeft: FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS,
-                    }),
-                    el,
-                  ],
-            )
-          : list}
-      </Box>
+    const {
+      groupEmpty,
+      groupTitle,
+      section,
+      sections,
+      terminalSectionGap,
+      titleGap,
+      foldButton,
+      foldRow,
+      desktopFoldLines,
+      closedFold,
+      undoPlace,
+      settledContent,
+      settledRow,
+    } = paneRowParts(
+      {
+        ...client,
+        look,
+        listColumns,
+        Text,
+        pal,
+        Box,
+        blankLine,
+        isInline,
+        space,
+        now,
+        foldHover,
+        Button,
+        settledLayout,
+        desktopFrame,
+        treeRow,
+        ToneSvg,
+        desktopHairline,
+        markGlyph,
+        markWidth,
+      },
+      handlers,
     )
-    const titleGap = (hasChildren = true) =>
-      isInline
-        ? []
-        : look === 'desktop'
-          ? [<Box paddingTop={(2 * ROW_PAD_PT) / DESKTOP_LINE_PT} />]
-          : [
-              <Box paddingLeft={TREE_LINE_AT}>
-                <Text color={pal.line}>{hasChildren ? '│' : ' '}</Text>
-              </Box>,
-            ]
-    const markGlyph = (mark: ResultMark, key: string, color: string) => {
-      if (mark.isRunning) return runningDot(key, mark.text, color)
-      // An Svg cannot read a theme key, so one takes the muted mark's colors.
-      const { light, dark } = color.startsWith('#') ? { light: color, dark: color } : MUTED_MARK
-      const drawn = ToneSvg ? mutedMarkSvg(mark.text, light, dark) : null
-      if (drawn) return svgCell(drawn.source, mark.text, `${key}-mark`, drawn.cells)
-      return <Text color={color}>{mark.text || ' '}</Text>
-    }
-    /** A result mark and the space after it, before its label. A blank mark keeps its place, so the label stays put. */
-    const resultLead = (mark: ResultMark, key: string, color: string) => (
-      <Box key={`${key}-lead`} width={RESULT_MARK_CELLS} flexShrink={0}>
-        {markGlyph(mark, key, color)}
-      </Box>
+    const { emptyState, needsYouView, findingsView } = paneAskTabs(
+      {
+        listColumns,
+        look,
+        isInline,
+        Box,
+        Text,
+        blankLine,
+        pal,
+        needsYouGroups,
+        view,
+        isUnread,
+        unfolded,
+        closedAll,
+        Button,
+        stop,
+        glued,
+        now,
+        findingEntries,
+        lists,
+        divided,
+        listRow,
+        settledRow,
+        closedFold,
+        section,
+        groupTitle,
+        titleGap,
+        groupEmpty,
+        sections,
+        banner,
+      },
+      handlers,
     )
-    const resultLine = (mark: ResultMark | null, key: string, markColor: string, label: JSX.Element) =>
-      mark ? (
-        <Box flexDirection="row" flexShrink={1}>
-          {resultLead(mark, key, markColor)}
-          {label}
-        </Box>
-      ) : (
-        label
-      )
-    const refusedUndo = (d: ClosedLine) =>
-      canUndoRefused(d.delivery) ? undoButton({ id: d.id, action: 'undo' }, null) : null
-    const closedRow = (d: ClosedLine, pos: TreePos) =>
-      look === 'desktop'
-        ? desktopFrame({
-            key: `closed-${d.id}`,
-            indent: DESKTOP_MARK_CELLS,
-            isMarkHung: false,
-            padY: space.rowPad / 2,
-            mark: markGlyph(d.mark, `closed-${d.id}`, pal.age),
-            side: <Text color={pal.age}>{shortAgo(now - d.at)}</Text>,
-            children: [
-              <Text wrap="wrap" color={pal.muted}>
-                {d.ask}
-              </Text>,
-              <Text wrap="wrap" color={pal.age}>
-                {settledLabel(d.outcomeLabel, d.delivery)}
-              </Text>,
-              refusedUndo(d),
-            ],
-          })
-        : treeRow(
-            pos,
-            null,
-            <Box flexDirection="row">
-              <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-                <Text wrap="wrap" color={pal.muted}>
-                  {d.ask}
-                </Text>
-                {resultLine(
-                  d.mark,
-                  `closed-${d.id}`,
-                  pal.muted,
-                  <Text wrap="wrap" color={pal.age}>
-                    {settledLabel(d.outcomeLabel, d.delivery)}
-                  </Text>,
-                )}
-                {refusedUndo(d)}
-              </Box>
-              <Box width={TERMINAL_SIDE_CELLS - 1} flexShrink={0} justifyContent="flex-end">
-                <Text color={pal.age}>{shortAgo(now - d.at)}</Text>
-              </Box>
-            </Box>,
-            `closed-${d.id}`,
-            1,
-          )
-    // On desktop a Client takes a click on every cell of the line, where a Button takes one only on its label.
-    const foldRow = (kind: FoldKind, count: number, isUnfolded: boolean) =>
-      hasClient ? (
-        <Box key={`fold-row-${kind}`} flexDirection="row" overflow="hidden">
-          {'Svg' in elements ? (
-            <elements.Svg
-              source={chevronSvg(isUnfolded, foldHover === kind)}
-              alt={isUnfolded ? 'Unfolded' : 'Folded'}
-              width={FRAME_INSET_PT + DESKTOP_MARK_CELLS * DESKTOP_CELL_PT}
-              height={2 * ROW_PAD_PT + DESKTOP_LINE_PT}
-            />
-          ) : null}
-          <Box position="absolute" top={0} left={0} width="100%">
-            <elements.Client
-              key={`fold-${kind}`}
-              module="./fold-client.tsx"
-              width="100%"
-              props={
-                {
-                  markCells: DESKTOP_MARK_CELLS,
-                  label: foldLabel(count),
-                  isUnfolded,
-                  padY: DESKTOP_ROW_PAD,
-                  colors: {
-                    rest: isInline ? null : (pal.card ?? null),
-                    text: pal.age,
-                    hoverText: 'text',
-                  },
-                } satisfies FoldProps
-              }
-            />
-          </Box>
-        </Box>
-      ) : (
-        treeRow(
-          null,
-          null,
-          <Box flexDirection="row">
-            <Button
-              plain
-              dimColor
-              key={`fold-${kind}`}
-              label={`${isUnfolded ? '▾' : '▸'} ${foldLabel(count)}`}
-              onPress={() =>
-                void update($, UNFOLDED, u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind]))
-              }
-            />
-          </Box>,
-          `fold-row-${kind}`,
-        )
-      )
-    const closedFold = (kind: FoldKind, closed: ClosedLine[], total: number, isUnfolded: boolean) => {
-      const earlier = earlierLabel(total, closed.length)
-      return closed.length === 0
-        ? []
-        : [
-            ...(space.isFoldGapped ? titleGap(false) : []),
-            foldRow(kind, total, isUnfolded),
-            ...(isUnfolded && look !== 'desktop' && !isInline
-              ? [
-                  <Box key={`fold-gap-${kind}`} paddingLeft={TREE_LINE_AT + markWidth}>
-                    <Text color={pal.line}>│</Text>
-                  </Box>,
-                ]
-              : []),
-            ...(isUnfolded ? closed.map((d, n) => closedRow(d, childPos(n, closed.length + (earlier ? 1 : 0)))) : []),
-            ...(isUnfolded && earlier
-              ? [
-                  look === 'desktop'
-                    ? desktopFrame({
-                        key: `earlier-${kind}`,
-                        indent: DESKTOP_MARK_CELLS,
-                        isMarkHung: false,
-                        padY: space.rowPad / 2,
-                        children: <Text color={pal.age}>{earlier}</Text>,
-                      })
-                    : treeRow(
-                        childPos(closed.length, closed.length + 1),
-                        null,
-                        <Text color={pal.age}>{earlier}</Text>,
-                        `earlier-${kind}`,
-                        1,
-                      ),
-                ]
-              : []),
-          ]
-    }
-    const svgClientElements = hasClient && 'Svg' in elements ? elements : null
-    const undoButton = (undo: RowPress | PrPress, at: number | null) => {
-      const key = `undo-${pressRowId(undo)}`
-      const label = ' ↺ Undo '
-      const onPress = (press: { surface: UiPressArgument['surface'] }) => runPress($, undo, press.surface)
-      if (svgClientElements) {
-        followUpPresses.set(key, onPress)
-        const leftMs = at === null ? 0 : Math.max(0, SETTLED_MS - (now - at))
-        return (
-          <Box key={`${key}-${at}`} width={UNDO_CELLS} height={UNDO_HEIGHT_PT / DESKTOP_LINE_PT}>
-            <svgClientElements.Svg
-              source={undoSvg(leftMs / SETTLED_MS, leftMs)}
-              alt="Undo"
-              width={UNDO_CELLS * DESKTOP_CELL_PT}
-              height={UNDO_HEIGHT_PT}
-            />
-            <Box position="absolute" top={0} left={0}>
-              <svgClientElements.Client
-                key={key}
-                module="./undo-client.tsx"
-                width={UNDO_CELLS}
-                height={UNDO_HEIGHT_PT / DESKTOP_LINE_PT}
-                props={{ pressKey: key, hover: 'rgba(128, 128, 128, 0.12)' } satisfies UndoProps}
-              />
-            </Box>
-          </Box>
-        )
-      }
-      if (look !== 'terminal' || at === null) return <Button key={key} label="↺ Undo" onPress={onPress} />
-      const cells = [...label]
-      const filled = Math.ceil((Math.max(0, SETTLED_MS - (now - at)) / SETTLED_MS) * cells.length)
 
-      return (
-        <Button key={key} onPress={onPress}>
-          <Text backgroundColor={pal.divider}>{cells.slice(0, filled).join('')}</Text>
-          <Text>{cells.slice(filled).join('')}</Text>
-        </Button>
-      )
-    }
-    // A desktop title wraps beside Undo, so Undo's place keeps its size after Undo ends and the title keeps its wrap.
-    const undoPlace = (id: string, undo: RowPress | PrPress | null, at: number, offersUndo: boolean) =>
-      svgClientElements && offersUndo ? (
-        <Box key={`undo-place-${id}`} width={UNDO_CELLS} height={UNDO_HEIGHT_PT / DESKTOP_LINE_PT}>
-          {undo ? undoButton(undo, at) : null}
-        </Box>
-      ) : undo ? (
-        undoButton(undo, at)
-      ) : null
-    const settledContent = (
-      what: string,
-      { label, at, delivery, closedAs }: SettledState,
-      undo: RowPress | PrPress | null,
-      mark: ResultMark | null,
-    ) => (
-      <Box flexDirection="column">
-        <Text wrap="truncate-end" color={pal.muted}>
-          {what}
-        </Text>
-        <Box position="relative" flexDirection="row" columnGap={2}>
-          {undo ? (
-            <Box
-              key={settledScrollKey(`undo-${pressRowId(undo)}`, settledLayout)}
-              position="absolute"
-              top={0}
-              bottom={0}
-              left={0}
-              width={1}
-            />
-          ) : null}
-          {resultLine(
-            mark,
-            `settled-${what}`,
-            pal.muted,
-            <Text wrap="wrap" color={settledTone({ delivery, closedAs }) === 'done' ? pal.tone.done : pal.muted}>
-              {settledLabel(label, delivery)}
-            </Text>,
-          )}
-          {undo ? undoButton(undo, at) : null}
-        </Box>
-      </Box>
+    const { prsView } = panePrBlocks({
+      look,
+      pal,
+      Text,
+      Box,
+      blankLine,
+      isThreadSent,
+      lastActions,
+      prState,
+      presses,
+      space,
+      Button,
+      view,
+      prOrderKeys,
+      prRefreshKeys,
+      prGroups,
+      section,
+      undoPlace,
+      settledContent,
+      groupTitle,
+      titleGap,
+      sections,
+      desktopFrame,
+      markGlyph,
+      divided,
+      lastActionText,
+      listRow,
+      prKeyAction,
+      desktopLabel,
+      keyRow,
+      emptyState,
+      banner,
+    })
+
+    const statusLines = paneStatusLines({
+      Box,
+      Text,
+      pal,
+      look,
+      listColumns,
+      terminalText,
+      desktopFrame,
+      desktopColumnPt,
+      markWidth,
+      branch,
+      desktopHairline,
+    })
+    const { statusRowLine, statusKeys, statusView, statusTops } = paneStatus(
+      {
+        e,
+        listColumns,
+        look,
+        Box,
+        Text,
+        pal,
+        statusKeyRow,
+        view,
+        isInline,
+        ...statusLines,
+        Input,
+        typing,
+        drafts,
+        now,
+        markWidth,
+        desktopHairline,
+        markGlyph,
+        desktopFrame,
+        keyRow,
+        keyLines,
+        terminalKeyCells,
+        emptyState,
+        sections,
+        terminalSectionGap,
+        section,
+        foldRow,
+        foldButton,
+        desktopFoldLines,
+        statusUnfolded,
+      },
+      handlers,
     )
-    const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos: TreePos) => {
-      const undo = r.actions.find(a => a.press.action === 'undo')?.press ?? null
-      const mark = settledMark(state)
-      if (look === 'desktop')
-        return desktopFrame({
-          key: `settled-${r.id}`,
-          markCells: DESKTOP_MARK_CELLS,
-          mark: markGlyph(mark, `settled-${r.id}`, pal.muted),
-          side: undoPlace(r.id, undo, state.at, state.offersUndo),
-          padY: space.settledPad,
-          isSideCentered: true,
-          children: [
-            <Text wrap="wrap">
-              {r.title}
-              <Text color={pal.muted}>{`${DOT}${settledLabel(state.label, state.delivery)}`}</Text>
-            </Text>,
-          ],
-        })
-      return (
-        <Box key={`settled-${r.id}`} flexDirection="column" paddingY={space.settledPad}>
-          {treeRow(pos, null, settledContent(rowTitle(r, look), state, undo, mark))}
-        </Box>
-      )
-    }
-    const needsYouView = () => {
-      const groups = needsYouGroups.flatMap(g => {
-        const { entries } = g
-        const closed = closedShown(view.needsYou.closed[g.list], settledIn(entries))
-        if (isUnread) return []
-        const isUnfolded = unfolded.includes(g.kind)
-        const open = divided(
-          entries.map((x, n) =>
-            'row' in x ? listRow(x.row, childPos(n, entries.length)) : settledRow(x, childPos(n, entries.length)),
-          ),
-          g.kind,
-          ROW_COLUMNS.tree.handleAt,
-        )
-        const tail = closedFold(
-          g.kind,
-          closed,
-          closedTotal(view.needsYou.closed[g.list], settledIn(entries)),
-          isUnfolded,
-        )
 
-        return [
-          section([
-            groupTitle(g.title, waitingCount(g.rows.map(r => r.view))),
-            ...titleGap(),
-            ...(open.length > 0 ? open : [groupEmpty(g.title)]),
-            ...tail,
-          ]),
-        ]
-      })
-      const isNothing = needsYouGroups.every(
-        g => g.entries.length === 0 && closedTotal(view.needsYou.closed[g.list], settledIn(g.entries)) === 0,
-      )
-      const unread = isUnread
-        ? [
-            section(
-              banner(bannerOf('read-failed', READ_FAILED_TEXT), {
-                ...(isReadingAgain ? { lead: <Text color={pal.muted}>{READING_TEXT}</Text> } : {}),
-                action: <Button key="read-again" label="Try again" onPress={() => void readAgain($)} />,
-              }),
-            ),
-          ]
-        : []
-      if (isNothing && !stop && unread.length === 0) return emptyState(emptyText('needsYou', 'Claude'))
-      const outside = stop
-        ? [
-            section(
-              banner(stopBanner(stop), {
-                after: <Text color={pal.muted}>{glued(`${DOT}${ago(now - stop.at)}`)}</Text>,
-                isBodyBelow: true,
-                extra:
-                  resuming?.is === 'refused' ? (
-                    <Text color={pal.tone.error} wrap="wrap">
-                      Not sent: {resuming.why}
-                    </Text>
-                  ) : null,
-                action: isResumable(stop) ? (
-                  <Button
-                    key="resume"
-                    label={resuming?.is === 'sending' ? 'Resuming…' : 'Resume'}
-                    onPress={() => void resume($)}
-                  />
-                ) : null,
-              }),
-            ),
-          ]
-        : []
-
-      return sections([...outside, ...unread, ...groups])
-    }
-
-    const findingsView = () => {
-      const settled = settledIn(findingEntries)
-      if (findingEntries.length === 0 && closedTotal(view.findings.closed, settled) === 0)
-        return emptyState(emptyText('findings', 'Claude'))
-      const groups = lists.findingGroups.map(g => {
-        const closedOf = view.findings.closed.filter(f => f.kind === g.kind)
-        const closed = closedShown(closedOf, settled).map(f => ({
-          id: f.id,
-          ask: f.title,
-          at: f.closedAt,
-          outcomeLabel: f.outcomeLabel,
-          delivery: f.delivery,
-          mark: f.mark,
-        }))
-        return section([
-          groupTitle(g.title, waitingCount(rowsIn(g.entries).map(r => r.view)), FINDING_GROUPS[g.kind]),
-          ...titleGap(),
-          ...(g.entries.length === 0 ? [groupEmpty(g.title)] : []),
-          ...divided(
-            g.entries.map((x, n) =>
-              'row' in x ? listRow(x.row, childPos(n, g.entries.length)) : settledRow(x, childPos(n, g.entries.length)),
-            ),
-            g.kind,
-            ROW_COLUMNS.tree.handleAt,
-          ),
-          ...closedFold(g.kind, closed, closedTotal(closedOf, settled), unfolded.includes(g.kind)),
-        ])
-      })
-
-      return sections(groups)
-    }
-
-    const settledPrBlock = (pr: PrView, state: SettledState) => {
-      const what = `#${pr.number} ${pr.title}`
-      const undo: PrPress | null = state.canUndo ? { action: 'pr-undo', ref: pr.ref } : null
-      const key = `settled-pr:${pr.ref}`
-      const mark = settledMark(state)
-      if (look === 'desktop')
-        return section(
-          desktopFrame({
-            key,
-            mark: markGlyph(mark, key, pal.muted),
-            side: undoPlace(prMarkId(pr.ref), undo, state.at, state.offersUndo),
-            padY: 0,
-            isSideCentered: true,
-            children: [
-              <Text wrap="wrap">
-                {what}
-                <Text color={pal.muted}>{`${DOT}${settledLabel(state.label, state.delivery)}`}</Text>
-              </Text>,
-            ],
-          }),
-        )
-
-      return section(
-        <Box key={key} paddingLeft={1}>
-          {settledContent(what, state, undo, mark)}
-        </Box>,
-      )
-    }
-    const prRowGroup = (title: string, group: Row[], key: string) =>
-      group.length === 0
-        ? []
-        : [
-            <Box key={`group-${key}`} marginTop={blankLine}>
-              {groupTitle(title, group.length)}
-            </Box>,
-            ...(look === 'desktop' ? [] : titleGap()),
-            ...divided(
-              group.map((r, n) => listRow(r, childPos(n, group.length))),
-              key,
-            ),
-          ]
-    const prBlock = (b: DrawnPr & { rows: Row[]; checks: Row[]; threads: Row[] }) => {
-      if (b.state.is === 'settled') return settledPrBlock(b.pr, b.state)
-      const { pr, checks, threads } = b
-      const { status, head: statusHead, unlisted } = readiness(pr, isThreadSent)
-      const tone = PR_TONES[status]
-      const prLast = isDismissed(lastActions, pr.ref) ? null : lastActionText(prMarkId(pr.ref))
-      const prActions = prBlockActions(pr, isThreadSent, prState.branchRef, presses).map(a => prKeyAction(a, pr.ref))
-
-      const titleLine = (
-        <Text wrap="wrap">
-          {b.rank === null ? null : <Text color={pal.muted}>{prRankText(b.rank)}</Text>}
-          <Text color={look === 'desktop' ? pal.mark.prs : pal.tone.prs}>{`#${pr.number}\u2002`}</Text>
-          <Text bold>{pr.title}</Text>
-          <Text color={tone ? (pal.tone[tone] ?? pal.mark[tone]) : pal.muted}>{`\u2002${statusHead}`}</Text>
-          <Text color={pal.muted}>{unlisted.map(r => `${DOT}${r}`).join('')}</Text>
-        </Text>
-      )
-      const statusBlock = (
-        <Box flexDirection="column">
-          {pr.error ? (
-            <Box flexDirection="column">
-              <Text color={pal.tone.error} wrap="wrap">
-                {prRefreshFailedText(pr.error)}
-              </Text>
-            </Box>
-          ) : null}
-          <Box
-            flexDirection="row"
-            flexWrap="wrap"
-            columnGap={space.buttonGap}
-            rowGap={look === 'desktop' ? 1 : 0}
-            marginTop={blankLine}
-          >
-            {prActions.map(a =>
-              a.emphasis === 'quiet' ? (
-                <Button key={a.key} plain dimColor label={a.label} onPress={a.onPress} />
-              ) : look === 'desktop' ? (
-                <Button
-                  key={a.key}
-                  label={desktopLabel(a)}
-                  {...(a.emphasis === 'primary' ? { variant: 'primary' as const } : {})}
-                  {...(a.isOut ? { dimColor: true } : {})}
-                  onPress={a.onPress}
-                />
-              ) : (
-                <Button key={a.key} label={a.label} {...(a.isOut ? { dimColor: true } : {})} onPress={a.onPress} />
-              ),
-            )}
-          </Box>
-          {prLast ? (
-            <Box marginTop={look === 'desktop' ? 1 : 0}>
-              <Text color={prLast.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
-                {prLast.text}
-              </Text>
-            </Box>
-          ) : null}
-        </Box>
-      )
-
-      return section([
-        ...(look === 'desktop'
-          ? [
-              desktopFrame({ key: `pr-title-${pr.ref}`, padY: 0, children: titleLine }),
-              desktopFrame({ key: `pr-status-${pr.ref}`, padY: 0, children: statusBlock }),
-            ]
-          : [<Box paddingLeft={1}>{titleLine}</Box>, <Box paddingLeft={1}>{statusBlock}</Box>]),
-        ...prRowGroup(PR_GROUP_TITLES.threads, threads, `${pr.ref}-threads`),
-        ...prRowGroup(PR_GROUP_TITLES.checks, checks, `${pr.ref}-checks`),
-      ])
-    }
-    const ghState = { isGhMissing: Boolean(prState.isGhMissing), isGhSignedOut: Boolean(prState.isGhSignedOut) }
-    const ghNotice = ghNoticeOf(ghState)
-    const prTabLine = (key: string, content: JSX.Element) => [
-      section(
-        look === 'desktop' ? desktopFrame({ key, padY: 0, children: content }) : <Box paddingLeft={1}>{content}</Box>,
-      ),
-    ]
-    const mutedLine = (text: string) => (
-      <Text color={pal.muted} wrap="wrap">
-        {text}
-      </Text>
-    )
-    const olderPrs = () => (view.prs.olderText ? prTabLine('older-prs', mutedLine(view.prs.olderText)) : [])
-    /** The order's title, the agent's reason under it, and the changed line with Rank again and its press status. */
-    const prOrderLines = () => {
-      const order = view.prs.order
-      if (!order) return []
-      const changed = order.changed
-      const pressed = changed?.showsPress ? lastActionText(RANK_AGAIN_ID) : null
-      const lines = (
-        <Box flexDirection="column">
-          <Text wrap="wrap">{order.title}</Text>
-          {order.why ? mutedLine(order.why) : null}
-          {changed ? (
-            <Box flexDirection="column" marginTop={look === 'desktop' ? 1 : 0}>
-              <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap}>
-                {changed.text ? <Text wrap="wrap">{changed.text}</Text> : null}
-                {prOrderKeys.length > 0 ? keyRow(RANK_AGAIN_ID, prOrderKeys) : null}
-              </Box>
-              {pressed ? (
-                <Text color={pressed.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
-                  {pressed.text}
-                </Text>
-              ) : null}
-            </Box>
-          ) : null}
-        </Box>
-      )
-
-      return prTabLine('pr-order', lines)
-    }
-    const prTabButtons = () =>
-      prTabKeys.length === 0 ? [] : prTabLine('pr-tab-actions', keyRow(DISMISS_MERGED_ID, prTabKeys))
-    const prsView = () =>
-      prGroups.length === 0 ? (
-        <Box flexDirection="column" flexGrow={1}>
-          {emptyState(prsEmptyText({ isFetching: prState.isFetching, ...ghState }, 'session'))}
-        </Box>
-      ) : (
-        sections(
-          [
-            ...(ghNotice ? [section(banner(bannerOf(ghNotice.kind, ghNotice.text)))] : []),
-            ...prOrderLines(),
-            ...prGroups.map(prBlock),
-            ...prTabButtons(),
-            ...olderPrs(),
-          ],
-          2,
-        )
-      )
-
-    /** The head reads like a row: its title in bold, and its description muted on the line under it. */
-    const statusHead = (head: NonNullable<StatusPage['head']>) => {
-      const lines = (
-        <Box flexDirection="column">
-          <Text wrap="wrap" bold>
-            {head.title}
-          </Text>
-          {head.description ? (
-            <Text wrap="wrap" color={pal.muted}>
-              {head.description}
-            </Text>
-          ) : null}
-        </Box>
-      )
-
-      return look === 'desktop' ? (
-        desktopFrame({ key: 'status-head', padY: 0, markCells: 0, hasSide: false, children: lines })
-      ) : (
-        <Box key="status-head" paddingLeft={TREE_LINE_AT}>
-          {lines}
-        </Box>
-      )
-    }
-    /** Where a Status row's mark sits in the terminal: in the head's column, so the list lines up with it. */
-    const statusMarkAt = TREE_LINE_AT
-    /** The text column of a Status line at `depth`, in cells on the terminal and in points on desktop. */
-    const statusTextWidth = (depth: number) =>
-      look === 'desktop'
-        ? desktopColumnPt(1 + DESKTOP_MARK_CELLS * (depth * 2 + 1)) + DESKTOP_SIDE_CELLS * DESKTOP_CELL_PT
-        : listColumns - 1 - statusMarkAt - markWidth * (depth + 1)
-    const fitsStatusLine = (depth: number) => (text: string) =>
-      look === 'desktop' ? desktopTextPt(text) <= statusTextWidth(depth) : cellWidth(text) <= statusTextWidth(depth)
-    /** One text of a Status line, wrapped to at most `limit` lines and cut with an ellipsis past them. */
-    const statusPageText = (key: string, spans: TerminalSpan[], depth: number, limit = STATUS_TEXT_LINES) => (
-      <Box key={key}>
-        <Text wrap="wrap">
-          {terminalText(
-            look === 'desktop'
-              ? [desktopSpanLines(spans, statusTextWidth(depth), limit)]
-              : terminalSpanLines(spans, statusTextWidth(depth), limit),
-          )}
-        </Text>
-      </Box>
-    )
-    /** A row's stall word in the stall's tone, never split by a wrap. */
-    const stallSpan = (stall: StatusStall): TerminalSpan => {
-      const text = look === 'desktop' ? stall.text.replaceAll(' ', '\u00a0') : stall.text
-      const tone = stall.tone === 'needsYou' ? { isNeedsYou: true as const } : { isDone: true as const }
-
-      return { text, isUnbroken: true, ...tone }
-    }
-    /**
-     * A row's name with its stall word after `STALL_GAP`, on the line of the name's last word, which a wrap never
-     * splits from them. `nameBeforeStall` cuts the name so the line fits `STATUS_TEXT_LINES`.
-     */
-    const statusNameLine = (key: string, name: TerminalSpan, stall: StatusStall | null, depth: number) => {
-      if (!stall) return statusPageText(key, [name], depth)
-      const width = statusTextWidth(depth)
-      const gap = look === 'desktop' ? STALL_GAP.replaceAll(' ', '\u00a0') : STALL_GAP
-      const spans = (shown: string): TerminalSpan[] => [
-        { ...name, text: shown },
-        { text: gap, isMuted: true, isUnbroken: true },
-        stallSpan(stall),
-      ]
-      const lineCount = (shown: string) =>
-        look === 'desktop'
-          ? desktopLines(
-              spans(shown)
-                .map(s => s.text)
-                .join(''),
-              width,
-            ).length
-          : terminalSpanLines(spans(shown), width).length
-      const shown = nameBeforeStall(name.text, x => lineCount(x) <= STATUS_TEXT_LINES)
-
-      return (
-        <Box key={key}>
-          <Text wrap="wrap">
-            {terminalText(look === 'desktop' ? [spans(shown)] : terminalSpanLines(spans(shown), width))}
-          </Text>
-        </Box>
-      )
-    }
-    /** A Status row frame's padding and 1 pt border above or below its text on desktop, in half lines. */
-    const statusFrameEdge = STATUS_PAD_Y + 2 * DESKTOP_HAIR_LINES
-    /**
-     * The line that ties the rows under a subject to it, in the subject's mark column. `down` runs from under the
-     * subject's mark to the end of its row. `mid` and `last` reach across to a child's mark, and `mid` runs on to the
-     * next row, so a row that wraps keeps the line beside each of its lines.
-     */
-    const statusTree = (key: string, shape: 'down' | StatusBranch) => {
-      if (look === 'terminal')
-        return shape === 'down'
-          ? branch('pass', 0, statusMarkAt, pal.line, 1, key)
-          : branch(shape, 0, statusMarkAt, pal.line, 0, key)
-      // The line spans the mark column, which spans the frame's content. To meet the next row's line, each end reaches
-      // over the frame's padding and its border.
-      const reach = -statusFrameEdge
-      const firstLineMiddle = 0.5
-      const hair = (key: string, grow: boolean, ends: { marginTop?: number; marginBottom?: number }) => (
-        <Box key={key} flexDirection="row" {...(grow ? { flexGrow: 1 } : { height: firstLineMiddle })}>
-          {desktopHairline('line', 'down', ends)}
-        </Box>
-      )
-      const arm = DESKTOP_MARK_CELLS * 2 - DESKTOP_TREE_AT - DESKTOP_ARM_GAP
-      const parts =
-        shape === 'down'
-          ? [<Box key="under-mark" height={firstLineMiddle + 0.4} />, hair('down', true, { marginBottom: reach })]
-          : [
-              hair('to-arm', false, { marginTop: reach }),
-              desktopHairline('arm', 'across', { width: arm }),
-              ...(shape === 'mid' ? [hair('on', true, { marginBottom: reach })] : []),
-            ]
-
-      return (
-        <Box key={key} position="absolute" top={0} bottom={0} left={0} flexDirection="row">
-          <Box width={DESKTOP_TREE_AT - DESKTOP_HAIR_CELLS / 2} flexShrink={0} />
-          <Box flexDirection="column" flexShrink={0}>
-            {parts}
-          </Box>
-        </Box>
-      )
-    }
-    // A Status rule starts at the text column, as the rules between sections and between Asks rows do. In the
-    // terminal it stops at the end of the list's columns. On desktop it runs to the pane's edge.
-    const statusRuleAt = statusMarkAt + markWidth
-    const statusRuleCells = Math.max(0, listColumns - statusRuleAt)
-    const desktopStatusRuleLeft = FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS
-    /** The rule above a Status row that starts an item. */
-    const statusRule = (id: string) =>
-      look === 'desktop' ? (
-        desktopHairline(`status-rule-${id}`, 'across', { marginLeft: desktopStatusRuleLeft })
-      ) : (
-        <Box key={`status-rule-${id}`} flexDirection="row">
-          <Box width={statusRuleAt} flexShrink={0} />
-          <Text color={pal.divider}>{'─'.repeat(statusRuleCells)}</Text>
-        </Box>
-      )
-    /**
-     * A dashed 1 pt line on desktop, about `cells` wide: dashes that grow to share the room, so the line fills it at any
-     * width. Desktop has no dashed border, and a run of a dash glyph wraps.
-     */
-    const desktopDashes = (key: string, cells: number) => {
-      const count = Math.max(1, Math.round((cells * DESKTOP_CELL_PT) / (DESKTOP_DASH_PT + DESKTOP_DASH_GAP_PT)))
-      const dashes = Array.from({ length: count }, (_, n) => [
-        ...(n > 0 ? [<Box key={`dash-gap-${n}`} width={DESKTOP_DASH_GAP_PT / DESKTOP_CELL_PT} flexShrink={0} />] : []),
-        <Box key={`dash-${n}`} flexGrow={1} height={DESKTOP_HAIR_LINES} backgroundColor={pal.divider} />,
-      ]).flat()
-
-      return (
-        <Box key={key} flexGrow={1} flexDirection="row" height={DESKTOP_HAIR_LINES}>
-          {dashes}
-        </Box>
-      )
-    }
-    /**
-     * The look line: "Last seen" in the middle of a dashed rule that spans what the rule above a row spans, with space
-     * above it, and below it unless it ends the list.
-     */
-    const statusLookLine = (text: string, isLast: boolean) => {
-      // The terminal draws whole lines, so its space is a blank line.
-      const gap = (key: string) => <Box key={key} height={look === 'desktop' ? LOOK_GAP_PT / DESKTOP_LINE_PT : 1} />
-      const label = ` ${text} `
-      const fill = Math.max(4, statusRuleCells - cellWidth(label))
-      const before = Math.floor(fill / 2)
-      const ruleCells = (listColumns - desktopStatusRuleLeft - 2 - text.length / DESKTOP_CHARS_PER_CELL) / 2
-      // On desktop it sits outside a frame, whose border would inset the rule's right end, so the padding stands in for
-      // the frame's.
-      const rule =
-        look === 'desktop' ? (
-          <Box flexDirection="row" alignItems="center" marginLeft={desktopStatusRuleLeft} paddingY={statusFrameEdge}>
-            {desktopDashes('look-before', ruleCells)}
-            <Box flexShrink={0} paddingX={1}>
-              <Text color={pal.muted}>{text}</Text>
-            </Box>
-            {desktopDashes('look-after', ruleCells)}
-          </Box>
-        ) : (
-          <Box flexDirection="row">
-            <Box width={statusRuleAt} flexShrink={0} />
-            <Text color={pal.divider}>{`${LOOK_DASH.repeat(before)}${label}${LOOK_DASH.repeat(fill - before)}`}</Text>
-          </Box>
-        )
-
-      return (
-        <Box key="status-look" flexDirection="column">
-          {gap('look-above')}
-          {rule}
-          {isLast ? null : gap('look-below')}
-        </Box>
-      )
-    }
-    /** One line of the Status tab's list: a mark and its text. `depth` 1 sits under a subject's text. */
-    const statusRowLine = ({
-      key,
-      depth = 0,
-      mark,
-      content,
-      tree = null,
-      isSelected = false,
-    }: {
-      key: string
-      depth?: number
-      mark: JSX.Element | null
-      content: JSX.Element | JSX.Element[]
-      tree?: JSX.Element | null
-      /** The row whose keys work, which the terminal marks with the selection bar, as on a row tab. */
-      isSelected?: boolean
-    }) =>
-      look === 'desktop' ? (
-        desktopFrame({
-          key,
-          indent: DESKTOP_MARK_CELLS * (depth * 2),
-          isMarkHung: false,
-          padY: STATUS_PAD_Y,
-          hasSide: false,
-          mark,
-          tree,
-          children: Array.isArray(content) ? content : [content],
-        })
-      ) : (
-        <Box
-          key={key}
-          flexDirection="row"
-          alignItems="flex-start"
-          overflow="hidden"
-          backgroundColor={isSelected ? pal.selection : undefined}
-        >
-          <Box width={statusMarkAt + markWidth * depth} flexShrink={0} />
-          <Box width={markWidth} flexShrink={0}>
-            {mark}
-          </Box>
-          <Box flexDirection="column" flexShrink={1} flexGrow={1}>
-            {content}
-          </Box>
-          {tree}
-          {isSelected ? (
-            <Box position="absolute" top={0} bottom={0} left={0} width={1}>
-              {pal.selection ? null : <Text color={pal.key}>{SELECTION_BAR}</Text>}
-            </Box>
-          ) : null}
-        </Box>
-      )
-    /** A Status row's buttons from its plan. Only the selected row's key presses it, so only that row names its key. */
-    const statusKeys = (r: StatusRow): KeyAction[] =>
-      statusKeyPlan(r).map(k => ({
-        key: `${k.press.action}-${r.id}`,
-        label: k.label,
-        kind: k.kind,
-        ...(r.id === statusKeyRow?.id ? { hotkey: k.hotkey } : {}),
-        onPress: () => showAsk($, k.press.askId),
-      }))
-    const statusMark = (r: Pick<StatusRow & { kind: 'subject' }, 'id' | 'mark' | 'tone' | 'isRunning'>) =>
-      markGlyph({ text: r.mark, isRunning: r.isRunning }, r.id, r.tone ? pal.mark[r.tone] : pal.muted)
-    const statusRow = (r: StatusRow) => {
-      if (r.kind === 'subject') {
-        const keys = statusKeys(r)
-        const mark = statusMark(r)
-        const content = [
-          statusNameLine(`status-${r.id}-name`, { text: r.name }, r.stall, 0),
-          ...(r.text ? [statusPageText(`status-${r.id}-text`, [{ text: r.text, isMuted: true }], 0)] : []),
-          ...(r.merged
-            ? [
-                statusPageText(
-                  `status-${r.id}-merged`,
-                  [{ text: mergedLine(r.merged, fitsStatusLine(0)), isMuted: true }],
-                  0,
-                ),
-              ]
-            : []),
-          ...(r.was
-            ? [statusPageText(`status-${r.id}-was`, [{ text: `${WAS_PREFIX}${r.was}`, isMuted: true }], 0)]
-            : []),
-          ...(keys.length > 0 ? [<Box key={`status-${r.id}-keys`}>{keyRow(r.id, keys)}</Box>] : []),
-        ]
-
-        return statusRowLine({
-          key: `status-${r.id}`,
-          mark,
-          content,
-          tree: r.hasChildren ? statusTree(`status-${r.id}-tree`, 'down') : null,
-          isSelected: look === 'terminal' && r.id === statusKeyRow?.id,
-        })
-      }
-      if (r.kind === 'child') {
-        const mark = statusMark(r)
-        const depth = r.branch === null ? 0 : 1
-
-        return statusRowLine({
-          key: `status-${r.id}`,
-          depth,
-          mark,
-          content: statusNameLine(`status-${r.id}-name`, { text: r.name, isMuted: true }, r.stall, depth),
-          tree: r.branch ? statusTree(`status-${r.id}-tree`, r.branch) : null,
-        })
-      }
-      if (r.kind === 'more')
-        return statusRowLine({
-          key: `status-${r.id}`,
-          depth: 1,
-          mark: null,
-          content: <Text color={pal.muted}>{r.text}</Text>,
-          tree: statusTree(`status-${r.id}-tree`, r.branch),
-        })
-      if (r.kind === 'look') return statusLookLine(r.text, r.isLast)
-
-      return statusRowLine({
-        key: `status-${r.id}`,
-        mark: <Text color={r.tone ? pal.mark[r.tone] : pal.muted}>{r.mark}</Text>,
-        content: <Text color={pal.muted}>{r.text}</Text>,
-      })
-    }
-    const statusView = () => {
-      const page = view.statusPage
-      if (page.isEmpty)
-        return (
-          <Box flexDirection="column" flexGrow={1}>
-            {emptyState(page.empty)}
-          </Box>
-        )
-
-      return sections([
-        ...(page.head ? [statusHead(page.head)] : []),
-        ...(page.rows.length > 0
-          ? [
-              section(
-                page.rows.flatMap(r => {
-                  const isRuleDrawn = r.isRuledAbove && !isInline
-
-                  return isRuleDrawn ? [statusRule(r.id), statusRow(r)] : [statusRow(r)]
-                }),
-              ),
-            ]
-          : []),
-      ])
-    }
-
-    /** A legend mark, drawn as rows draw it: the running mark moves, and desktop draws a shape where it has one. */
-    const legendMark = (m: LegendEntry) => {
-      if (ToneSvg && m.tone && markShape(m.mark, DESKTOP_LINE_PT / 2) !== null)
-        return svgCell(toneSvg(m.tone, m.mark), m.mark)
-
-      return markGlyph(
-        { text: m.mark, isRunning: m.isRunning },
-        `legend-${m.mark}`,
-        m.tone ? pal.mark[m.tone] : pal.muted,
-      )
-    }
-    const helpKeysSection = () =>
-      section([
-        groupTitle(HELP_COPY.keys, 0),
-        ...keyList.map(k => (
-          <Box key={`help-key-${k.keys}`} flexDirection="row" paddingLeft={TREE_LINE_AT}>
-            <Box width={keyColumn} flexShrink={0}>
-              <Text bold>{k.keys}</Text>
-            </Box>
-            <Box flexShrink={1}>
-              <Text color={pal.muted} wrap="wrap">
-                {k.does}
-              </Text>
-            </Box>
-          </Box>
-        )),
-      ])
-    const helpMarksSection = () =>
-      section([
-        groupTitle(HELP_COPY.marks, 0),
-        ...MARK_LEGEND.map(m =>
-          statusRowLine({
-            key: `help-mark-${m.mark}`,
-            mark: legendMark(m),
-            content: (
-              <Text color={pal.muted} wrap="wrap">
-                {m.words}
-              </Text>
-            ),
-          }),
-        ),
-      ])
-    /** Help in place of the tab's body: the keys where keys work, then the legend. A wide inline pane sets them side by side. */
-    const helpView = () => {
-      if (keyList.length === 0) return sections([helpMarksSection()])
-      if (hasRail)
-        return (
-          <Box flexDirection="row" columnGap={4} flexGrow={1}>
-            <Box flexDirection="column" width="50%" flexShrink={1}>
-              {helpKeysSection()}
-            </Box>
-            <Box flexDirection="column" width="50%" flexShrink={1}>
-              {helpMarksSection()}
-            </Box>
-          </Box>
-        )
-
-      return sections([helpKeysSection(), helpMarksSection()])
-    }
+    const { helpView } = paneHelp({
+      isNextBuild: mod.isNextBuild,
+      pal,
+      keyList,
+      Box,
+      keyColumn,
+      Text,
+      hasRail,
+      ToneSvg,
+      svgCell,
+      markGlyph,
+      section,
+      groupTitle,
+      sections,
+      statusRowLine,
+    })
 
     const move = (step: number) => {
-      const to = Math.min(Math.max(at + step, 0), ids.length - 1)
+      const to = steppedIndex(at, step, ids.length)
       void select($, tab, ids[to] ?? '', to)
     }
     const canMove = !isStatusShown && !isHelpShown && (ids.length > 1 || (at < 0 && ids.length > 0))
     const moveStatus = (step: number) => {
       const from = statusPressRows.findIndex(r => r.id === statusKeyRow?.id)
-      const to = statusPressRows[Math.min(Math.max(from + step, 0), statusPressRows.length - 1)]
+      const to = statusPressRows[steppedIndex(from, step, statusPressRows.length)]
       if (to) void selectStatusRow($, to.id)
     }
     const moveBy = (by: number) =>
@@ -5782,22 +3529,43 @@ export const register: Register = on => {
 
     const selectedRow = isStatusShown || isHelpShown ? undefined : rows[tab][at]
     const selectedActions = selectedRow ? rowActions(selectedRow) : null
-    const closeKeysWithoutRow: KeyAction[] = ['d', 'x'].map(hotkey => ({
-      key: `no-row-${hotkey}`,
-      label: 'Close',
-      hotkey,
-      kind: 'view',
-      onPress: () => undefined,
-    }))
+    const statusRowKeys = statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []
     const rowKeys = [
-      ...(statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []),
-      ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow),
-      ...(tab === 'prs' && !isHelpShown ? [...prOrderKeys, ...prTabKeys] : []),
+      ...statusRowKeys,
+      ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow(statusRowKeys)),
+      ...(tab === 'prs' && !isHelpShown ? prOrderKeys : []),
+      // The goal's Undo takes the undo key on the Status, where no list row closes.
+      ...(statusRowKeys.some(k => k.hotkey === UNDO_KEY)
+        ? []
+        : [
+            undoKey(isListShown ? latestUndo(tabUndos(tab, lists, shownPrs)) : null, (p, surface) =>
+              runPress($, p, surface),
+            ),
+          ]),
     ]
 
     // A pane takes a key
     // only as a Button's hotkey, so the tab keys, j, k and the selected row's keys
     // are Buttons in a hidden Box.
+    const isLookCounted = isStatusShown && !isHelpShown && !isDemo
+    if (isLookCounted) {
+      // The lines above the Status: the tabs, unless the rail draws them beside it, and the space under them, which
+      // desktop counts in half lines.
+      const terminalTabLines = hasRail ? 0 : isTabRowFit ? (isInline ? 1 : 3) : null
+      const tabLines = look === 'desktop' ? (hasRail ? null : desktopTabLines) : terminalTabLines
+      const isChromeKnown = tabLines !== null && !statusBlock && !showsDemoNotices
+      const spaceLines = hasRail ? 0 : look === 'desktop' ? desktopSpaceLines(blankLine) : blankLine
+      const top = isChromeKnown ? tabLines + spaceLines : null
+      const rounding = look === 'desktop' ? DESKTOP_OFFSET_ROUNDING : 0
+      const pageTop = top === null ? null : { least: top - rounding, most: top + rounding }
+      noteStatusDrawn({
+        pageTop,
+        tops: statusTops(),
+        scroll: e.props.scroll,
+        now,
+        isUnplacedShown: look === 'terminal',
+      })
+    }
     const tabView = isHelpShown
       ? helpView()
       : isStatusShown
@@ -5845,14 +3613,16 @@ export const register: Register = on => {
         )}
       </Box>
     )
-    if (look === 'desktop' && focusedKey !== null) {
+    if (look === 'desktop' && paneState.focusedKey !== null) {
       const keys = focusKeys(drawn)
-      const hint = focusHint?.startsWith('type-') ? fieldKey(focusHint.slice('type-'.length)) : focusHint
+      const hint = paneState.focusHint?.startsWith('type-')
+        ? fieldKey(paneState.focusHint.slice('type-'.length))
+        : paneState.focusHint
       const opensField = hint?.startsWith('type-') && keys.has(hint)
-      if (!keys.has(focusedKey) || opensField) {
-        const focusKey = [hint, rowKeys[0]?.key, ...keys].find((k): k is string => !!k && keys.has(k)) ?? null
-        focusedKey = focusKey
-        focusHint = null
+      if (!keys.has(paneState.focusedKey) || opensField) {
+        const focusKey = hint && keys.has(hint) ? hint : null
+        paneState.focusedKey = focusKey
+        paneState.focusHint = null
         // After this hook returns, since a focus asked from inside a drawing's own hook cannot wait on it.
         if (focusKey) later($, 0, () => $.ui.focus({ requestId: PANE, key: focusKey }))
       }

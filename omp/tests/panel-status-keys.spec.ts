@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test'
 
 import { SETTLED_MS, NO_HOLDS, PRESS_GUARD_MS } from '../../hooks/timing'
 import { shownTabs } from '../../hooks/tabs'
-import { statusKeyPlan, statusKeyRows } from '../../hooks/action-plan'
+import { statusKeyPlan, statusKeyRows } from '../../hooks/status-keys'
+import { statusListRows } from '../../hooks/status-page'
 import type { StatusRow } from '../../hooks/status-page'
 import { sessionView } from '../../hooks/session-view'
 import { demoState } from '../src/demo'
@@ -11,27 +12,20 @@ import type { PanelUi } from '../src/panel'
 import { handleKey } from '../src/panel-keys'
 import { keys, labelOf, NOW, onPage, screenOf, strip, style, text } from './panel-harness'
 
+const goallessScreen = () => {
+  const s = demoState(NOW)
+  const overview = { ...s.ledger.overview!, goal: null, milestones: [], serves: {} }
+
+  return screenOf({ view: sessionView({ ...s, ledger: { ...s.ledger, overview } }, NOW, SETTLED_MS, NO_HOLDS) })
+}
 const unheldScreen = () => {
   const s = demoState(NOW)
   const ledger = { ...s.ledger, overview: { ...s.ledger.overview!, askSubjects: {} } }
 
-  return screenOf({ view: sessionView({ ...s, ledger }, NOW, SETTLED_MS, true, NO_HOLDS) })
+  return screenOf({ view: sessionView({ ...s, ledger }, NOW, SETTLED_MS, NO_HOLDS) })
 }
 
-test('keys on a Status page with no buttons select nothing and press nothing, and the footer offers only tab', () => {
-  const screen = unheldScreen()
-  for (const key of ['up', 'down', 'j', 'k', 'left', 'right', 'enter', 'u', 'r', 'd', 'x', 'a']) {
-    const result = handleKey(screen, onPage, key, NOW)
-    expect(result.press).toBeUndefined()
-    expect({ ...result.ui, pageTop: 0 }).toEqual(onPage)
-  }
-  const footer = text(screen, onPage).split('\n').at(-1)!
-  expect(footer).toContain('tab switch')
-  expect(footer).not.toContain('↵ press')
-  expect(footer).not.toContain('scroll')
-})
-
-test('on a Status page taller than the panel, each ↑↓ or j/k press shows one more or one fewer line, up to its last line', () => {
+test('on a Status page taller than the panel, each ↑↓ press shows one more or one fewer line, up to its last line', () => {
   const screen = screenOf()
   const height = 14
   const bodyOf = (lines: string[]) => {
@@ -59,16 +53,13 @@ test('on a Status page taller than the panel, each ↑↓ or j/k press shows one
   expect(down.pageTop).toBe(2)
   expect(keys(screen, down, 'up').pageTop).toBe(1)
   expect(keys(screen, down, 'up', 'up', 'up').pageTop).toBe(0)
-  const unheld = unheldScreen()
-  expect(keys(unheld, onPage, 'j', 'j').pageTop).toBe(2)
-  expect(keys(unheld, keys(unheld, onPage, 'j', 'j'), 'k').pageTop).toBe(1)
 })
 
 test('on the Status page, a subject an open ask holds up draws View, named for the ask’s kind, under its text in the plan’s order, and only the selected row draws it focused and keyed', () => {
-  const screen = screenOf()
+  const screen = goallessScreen()
   const page = screen.view.statusPage
-  const held = statusKeyRows(page)
-  expect(held.map(r => r.id)).toEqual(['s2', 's3'])
+  const held = page.rows.filter(r => r.kind === 'subject' && statusKeyPlan(r).length > 0)
+  expect(statusKeyRows(page).map(t => t.id)).toEqual(['goal', 's2', 's3', 'done'])
   const lines = text(screen, onPage).split('\n')
   const nameAt = (row: StatusRow) => lines.findIndex(l => l.includes(labelOf(row)))
   const buttonAt = (row: StatusRow) => lines.findIndex((l, n) => n > nameAt(row) && l.includes('View '))
@@ -89,14 +80,15 @@ test('on the Status page, a subject an open ask holds up draws View, named for t
   const moved = text(screen, second).split('\n')
   expect(moved[buttonAt(held[0]!)]).not.toContain('↵')
   expect(moved[buttonAt(held[1]!)]).toContain('↵ View question')
-  expect(keys(screen, second, 'j').selectedId).toBe('s2')
-  expect(keys(screen, onPage, 'k').selectedId).toBe('s3')
+  expect(keys(screen, second, 'j').selectedId).toBe('done')
+  expect(keys(screen, second, 'j', 'j').selectedId).toBe('goal')
+  expect(keys(screen, onPage, 'k').selectedId).toBe('goal')
   expect(text(screen, onPage).split('\n').at(-1)).toContain('j k select')
   expect(text(unheldScreen(), onPage)).not.toContain('View ')
 })
 
 test('View on a Status row shows Asks with the oldest ask that holds it up selected, by its key or Enter, sends nothing, and holds the ask’s buttons through a second Enter', () => {
-  const screen = screenOf()
+  const screen = goallessScreen()
   for (const key of ['v', 'enter']) {
     const result = handleKey(screen, onPage, key, NOW)
     expect(result.press).toBeUndefined()
@@ -114,11 +106,11 @@ test('a Status row’s View leaves once its asks close, and the selection moves 
   const s = demoState(NOW)
   const items = s.ledger.items.filter(i => i.id !== 'd11')
   const screen = screenOf({
-    view: sessionView({ ...s, ledger: { ...s.ledger, items } }, NOW, SETTLED_MS, true, NO_HOLDS),
+    view: sessionView({ ...s, ledger: { ...s.ledger, items } }, NOW, SETTLED_MS, NO_HOLDS),
   })
   const onS3 = { ...onPage, selectedId: 's3' }
   const lines = text(screen, onS3).split('\n')
-  const s3 = screen.view.statusPage.rows.find(r => r.id === 's3')!
+  const s3 = statusListRows(screen.view.statusPage).find(r => r.id === 's3')!
   expect(s3).toMatchObject({ ask: null, mark: '○' })
   expect(lines.filter(l => l.includes('View '))).toHaveLength(1)
   expect(lines.find(l => l.includes('View '))).toContain('↵ View task')
@@ -126,15 +118,16 @@ test('a Status row’s View leaves once its asks close, and the selection moves 
 })
 
 test('on a Status page taller than the panel, j and k scroll the newly selected row into view', () => {
-  const screen = screenOf()
+  const screen = goallessScreen()
   const height = 14
   const drawnFor = (ui: PanelUi) => drawPanel(screen, ui, 80, NOW, style, height)
   const isFocusShown = (ui: PanelUi) =>
     drawnFor(ui)
       .lines.map(strip)
       .some(l => l.includes('↵ View'))
-  expect(isFocusShown(onPage)).toBe(true)
-  const onS3 = keys(screen, onPage, 'j')
+  const opened = { ...onPage, pageTop: drawnFor({ ...onPage, pageReveal: true }).pageTop }
+  expect(isFocusShown(opened)).toBe(true)
+  const onS3 = keys(screen, opened, 'j')
   expect(isFocusShown({ ...onS3, pageReveal: null })).toBe(false)
   expect(isFocusShown(onS3)).toBe(true)
   const scrolled = { ...onS3, pageTop: drawnFor(onS3).pageTop, pageReveal: null }
@@ -149,4 +142,39 @@ test('changing the shown tab starts the Status page at its top', () => {
   const scrolled = { ...onPage, pageTop: 3 }
   for (const key of ['tab', 'shift+tab', ...shownTabs(true).map(t => t.hotkey)])
     expect(keys(screen, scrolled, key).pageTop).toBe(0)
+})
+
+test('in a short panel, switching to the Status page scrolls its first selected row into view', () => {
+  const screen = screenOf({ isNextBuild: true })
+  const page = keys(
+    screen,
+    { ...onPage, tab: 'needsYou' },
+    ...shownTabs(true)
+      .filter(t => t.id === 'overview')
+      .map(t => t.hotkey),
+  )
+  const lines = drawPanel(screen, page, 60, NOW, style, 14).lines.map(strip)
+  expect(page.tab).toBe('overview')
+  expect(lines.some(l => l.includes('↵ View'))).toBe(true)
+})
+
+test('on the Status page, j reaches the done fold after the rows with buttons, Enter lists its finished rows one step in under ▾, and f folds them again', () => {
+  const screen = goallessScreen()
+  const fold = screen.view.statusPage.rows.find(r => r.kind === 'done-fold')!
+  const finished = fold.kind === 'done-fold' ? fold.rows : []
+  const onFold = keys(screen, onPage, 'j', 'j')
+  expect(onFold.selectedId).toBe(fold.id)
+  const folded = text(screen, onFold).split('\n')
+  expect(folded.filter(l => l.includes(`▸ ${labelOf(fold)}`))).toHaveLength(1)
+  expect(finished.length).toBeGreaterThan(0)
+
+  const unfolded = keys(screen, onFold, 'enter')
+  const lines = text(screen, unfolded).split('\n')
+  const foldAt = lines.findIndex(l => l.includes(`▾ ${labelOf(fold)}`))
+  expect(foldAt).toBeGreaterThan(-1)
+  expect(lines.slice(foldAt + 1, foldAt + 1 + finished.length).map(l => l.trim())).toEqual(
+    finished.map(r => `✓ ${labelOf(r)}`),
+  )
+  expect(lines[foldAt + 1]!.indexOf('✓')).toBe(lines[foldAt]!.indexOf('▾') + 2)
+  expect(text(screen, keys(screen, unfolded, 'f'))).toBe(text(screen, onFold))
 })

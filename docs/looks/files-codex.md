@@ -17,17 +17,23 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-list.tsx` | Codex adapter. A list's rows: the motion state of each, the row line, its open panel, and settled rows with Undo. |
 | `codex/src/tab-groups.tsx` | Codex adapter. The Asks and Finds tabs: their groups, empty lines and Closed folds. |
 | `codex/src/tab-prs.tsx` | Codex adapter. The PRs tab: PR blocks, their keys, the order lines, and settled PRs. |
-| `codex/src/tab-status.tsx` | Codex adapter. The Status tab and the fitting of its names and lines to the width. |
+| `codex/src/tab-pr-steps.ts` | Codex adapter. The motion state of each PR block, PR row, PR group, press line and the tab's own buttons on the PRs tab, through the row states. |
+| `codex/src/tab-pr-lines.ts` | Codex adapter. The press status under a PR block's buttons and under the order's changed line. |
+| `codex/src/tab-status.tsx` | Codex adapter. The Status tab: its rows, the goal and its milestones, the goal's text field, and the fitting of merged lines to the width. |
+| `codex/src/tab-shown.ts` | Codex adapter. The Status subject rows the tab had on screen since its last view request, which the request sends. |
+| `codex/src/tab-status-name.tsx` | Codex adapter. A Status row's name line, cut so that it and its stall word fit the lines it may take. |
 | `codex/src/tab-chrome.tsx` | Codex adapter. The tab bar, the footer's status, Help, and the demo toggle. |
 | `codex/src/row-actions.tsx` | Codex adapter. Maps shared actions to buttons and draws reply fields. Its production components have mounted tests. |
 | `codex/src/tab.html` | Codex adapter. The tab's page shell. `codex/build.mjs` replaces each `/*TAB_CSS:name*/` line with `tab-css/name.css`, so the shell sets the order the styles apply in. |
 | `codex/src/tab-css/` | Codex adapter. The tab's styles, one file per concern. |
 | `codex/src/arrivals.ts` | Codex adapter. The tab's rows, tabs and empty-tab rule, built on `hooks/arrivals.ts`. |
 | `codex/src/settle.ts` | Codex adapter. Polling, the settled rows the tab draws, and how long the tab offers Undo. |
+| `codex/src/list-input.ts` | Codex adapter. The person's presses, keys, scrolls and pointer on the list, which keep a row due to fold in place. |
+| `codex/src/undo-key.ts` | Codex adapter. The undo key: presses the Undo the shared rule picks, by the tab's own Undo timing. |
 | `codex/src/texts.ts` | Codex adapter. Texts only Codex reads, and the `CODEX` host. |
 | `codex/src/core.ts` | Codex host. Codex bindings over `hooks/session-turns.ts`, `hooks/session-status.ts` and `hooks/session-view.ts`, the tab view and tab helpers. |
 | `codex/src/data-dir.ts` | Codex host. The data folder and the dev build, which the loader reads. It imports no shared module, so a shared-module change leaves the loader's bundle unchanged. |
-| `codex/src/state.ts` | Codex host. One JSON state file per session, under a lock. `SessionState` extends the shared `Session` from `hooks/session.ts`. |
+| `codex/src/state.ts` | Codex host. One JSON state file per session, under a lock. `SessionState` extends the shared `Session` from `types/index.d.ts`. |
 | `codex/src/host.ts` | Codex host. `codexStore`, the Codex store that `hooks/session-host.ts` runs on. |
 | `codex/src/server.ts` | Codex host. The MCP server: `makeServer`, which takes `ServerDeps` and answers each JSON-RPC call. |
 | `codex/src/server-tools.ts` | Codex host. The tools and tab page the server lists, and the readers of a call's session, turn and arguments. |
@@ -37,15 +43,19 @@ Part of [the look map](../looks.md#files).
 | `codex/src/server-demo.ts` | Codex host. The demo session and its presses. |
 | `codex/src/server-main.ts` | Codex host. The loader that Codex starts once per app launch. |
 | `codex/src/server-handler.ts` | Codex host. The request handler the loader reloads. |
-| `codex/src/update.ts` | Codex host. Binds `hooks/session-host.ts` update flows to `codex exec`. Saves a failed call as the session's `lastModelFailure`. |
+| `codex/src/update.ts` | Codex host. Binds `hooks/session-host.ts` update flows to `codex exec`. Reports a failed call with its process, which the shared flow saves in `callFailures`. |
+| `codex/src/diagnostics.ts` | Codex host. Keeps only the diagnostic lines of a `codex exec` call's stderr, its errors and warnings. |
 | `codex/src/update-main.ts` | Codex host. Entry point for the update process. |
 | `codex/src/hook.ts` | Codex host. The hook logic that changes session state. |
 | `codex/src/hook-main.ts` | Codex host. Entry point for the hooks. |
 | `codex/src/demo.ts` | Codex host. Turns the shared demo data into a session. |
 | `codex/src/transcript.ts` | Codex host. Reads the Codex session transcript, which Codex calls the rollout. Finds a chat's rollout and reads its tail and history. |
+| `codex/src/rollout-file.ts` | Codex host. Reads a rollout file's bytes: its start, or its end before an offset. Streams a rollout Codex compressed with zstd, and keeps the end of a few once read. |
 | `codex/src/rollout-rows.ts` | Codex host. The rollout's row types and the readers of a row's payload and text. Also reads the first row, `session_meta`. |
 | `codex/src/rollout-turns.ts` | Codex host. Finds the turns in the rollout's lines: a turn's dialogs, commands and plan, the conversation, and where each turn starts and ends. |
 | `codex/src/rollout-commands.ts` | Codex host. Reads the shell commands, patches and tool calls in rollout rows, and words them as activity lines. |
+| `codex/src/rollout-unran.ts` | Codex host. Finds the tool calls of a turn that did not run, because the person declined them or a hook blocked them, and gives their activity lines and the delegates their herdr commands name. |
+| `codex/src/delegate-calls.ts` | Codex host. Keeps each `herdr agent` command's delegate rows as they were before the command, and puts them back when the command did not run. |
 | `codex/src/run.ts` | Codex host. Runs a command with Node. |
 | `codex/src/cli.ts` | Codex host. Finds the codex binary the app runs. The hooks, the server and the update process share it. |
 | `codex/src/dialogs.ts` | Codex host. Notes the dialogs a Codex turn opened, and words an inbox answer in the dialog's reply form. |

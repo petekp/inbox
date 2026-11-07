@@ -2,7 +2,6 @@ import { expect, test } from 'bun:test'
 
 import { closeItem } from '../../hooks/ledger-close'
 import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
-import { shownTabs } from '../../hooks/tabs'
 import type { RowView } from '../../hooks/rows'
 import { sessionView } from '../../hooks/session-view'
 import { demoSource, demoState } from '../src/demo'
@@ -23,10 +22,10 @@ import {
   waiting,
 } from './panel-harness'
 
-test('r opens a reply field in place of the buttons, and Enter sends the typed words as a type press', () => {
+test('t opens a reply field in place of the buttons, and Enter sends the typed words as a type press', () => {
   const screen = screenOf()
   const row = firstQuestion(screen)
-  let ui = handleKey(screen, onRow(row), 'r', NOW).ui
+  let ui = handleKey(screen, onRow(row), 't', NOW).ui
   expect(ui.typing).toBe(row.id)
   for (const ch of 'hi!') ui = handleKey(screen, ui, ch, NOW, ch).ui
   ui = handleKey(screen, ui, 'backspace', NOW).ui
@@ -42,7 +41,7 @@ test('r opens a reply field in place of the buttons, and Enter sends the typed w
 
 test('Enter in an empty reply field sends nothing', () => {
   const screen = screenOf()
-  const ui = handleKey(screen, onRow(firstQuestion(screen)), 'r', NOW).ui
+  const ui = handleKey(screen, onRow(firstQuestion(screen)), 't', NOW).ui
   const result = handleKey(screen, ui, 'enter', NOW)
   expect(result.press).toBeUndefined()
   expect(result.ui.typing).not.toBeNull()
@@ -51,7 +50,7 @@ test('Enter in an empty reply field sends nothing', () => {
 test('Esc in the reply field closes the field and keeps the draft held', () => {
   const screen = screenOf()
   const row = firstQuestion(screen)
-  let ui = handleKey(screen, onRow(row), 'r', NOW).ui
+  let ui = handleKey(screen, onRow(row), 't', NOW).ui
   ui = handleKey(screen, ui, 'o', NOW, 'o').ui
   const cancelled = handleKey(screen, ui, 'escape', NOW)
   expect(cancelled.close).toBeUndefined()
@@ -64,7 +63,7 @@ test('Esc in the reply field closes the field and keeps the draft held', () => {
 test('keys in the reply field never switch tabs or move the selection', () => {
   const screen = screenOf()
   const row = firstQuestion(screen)
-  const ui = handleKey(screen, onRow(row), 'r', NOW).ui
+  const ui = handleKey(screen, onRow(row), 't', NOW).ui
   const typed = handleKey(screen, ui, '2', NOW, '2').ui
   expect(typed.tab).toBe('needsYou')
   expect(typed.drafts[row.id]?.text).toBe('2')
@@ -74,8 +73,8 @@ test('keys in the reply field never switch tabs or move the selection', () => {
 test('Discard on a held row drops the draft and records the discard', () => {
   const state = demoState(NOW)
   state.ledger = closeItem(state.ledger, 'd11', { how: 'claude', outcome: 'closed by omp: answered in chat' }, NOW)
-  const holds = { replies: { d11: NOW }, discarded: {}, shownSince: NOW }
-  const held = { ...screenOf(), view: sessionView(state, NOW, SETTLED_MS, true, holds) }
+  const holds = { replies: { d11: NOW }, discarded: {}, shownSince: NOW, listInput: null }
+  const held = { ...screenOf(), view: sessionView(state, NOW, SETTLED_MS, holds) }
   const heldRow = waiting(held, 'd11')
   expect(heldRow.state.is).toBe('held')
   expect(plannedLabels(heldRow)).toEqual(['Reply', 'Discard'])
@@ -125,24 +124,18 @@ test('after the reply, an explained row that stays open reads its result', async
   expect(text(screen, onRow(waiting(screen, 'd11')))).toContain('✓ Explained')
 })
 
-test('a row closed with Done shows its label and Undo, u returns the undo press, and the row stays after Undo ends, through its own tab’s key, until the panel switches tab', async () => {
+test('a row closed with Done shows its label and Undo, u returns the undo press, and the row folds into its Closed line when Undo ends', async () => {
   const demo = await afterPresses({ action: 'done', id: 'd14' })
   const screen = await demo.screen()
   const out = text(screen, INITIAL_UI)
   expect(out).toMatch(/Put on the glasses and pair them with this Mac\s+✓ Done\s+u Undo/)
+  expect(out).toContain('1 closed')
   for (const width of [30, 46])
     expect(text(screen, INITIAL_UI, width), `at ${width} columns`).toMatch(/Put on the .*… {2}✓ Do/)
   expect(handleKey(screen, INITIAL_UI, 'u', NOW).press).toEqual({ action: 'undo', id: 'd14' })
-  const later = await demo.advance()
-  expect(text(later, INITIAL_UI)).toMatch(/Put on the glasses and pair them with this Mac\s+✓ Done/)
-  expect(text(later, INITIAL_UI)).not.toContain('u Undo')
-  expect(text(later, INITIAL_UI)).toContain('1 closed')
-  const ownKey = shownTabs(later.isNextBuild === true).find(t => t.id === INITIAL_UI.tab)!.hotkey
-  expect(text(later, handleKey(later, INITIAL_UI, ownKey, NOW + 1).ui)).toContain('Put on the glasses')
-  const away = handleKey(later, INITIAL_UI, 'tab', NOW + 1).ui
-  const back = handleKey(later, away, 'shift+tab', NOW + 1).ui
-  expect(text(later, back)).not.toContain('Put on the glasses')
-  expect(text(later, back)).toContain('2 closed')
+  const later = text(await demo.advance(), INITIAL_UI)
+  expect(later).not.toContain('Put on the glasses')
+  expect(later).toContain('2 closed')
 })
 
 test('a settled row is skipped when moving and the selection leaves it', async () => {
@@ -176,13 +169,13 @@ test('an opened handed-off row whose reply is on its way starts the status under
   const handedOff: RowView = {
     ...row,
     state: { is: 'handedOff' },
-    feedback: { is: 'queued', label: 'go with B', at: NOW },
+    feedback: { is: 'queued', label: 'Queued reply: go with B', at: NOW },
   }
   const questions = base.view.needsYou.questions.map(r => (r.id === row.id ? handedOff : r))
   const screen = { ...base, view: { ...base.view, needsYou: { ...base.view.needsYou, questions } } }
   const lines = text(screen, { ...onRow(row), opened: row.id }).split('\n')
-  const status = lines.findIndex(l => l.includes('Queued: go with B'))
-  expect(lines[status]).toMatch(/[●◉◎] Queued: go with B/)
+  const status = lines.findIndex(l => l.includes('Queued reply: go with B'))
+  expect(lines[status]).toMatch(/[●◉◎] Queued reply: go with B/)
   expect(status).toBeGreaterThan(lines.findIndex(l => l.includes('↵ ')))
 })
 
@@ -197,7 +190,7 @@ test('a reply folds its row to one line with its mark and label, and the selecti
   const { row, screen } = await afterReply()
   const lines = text(screen, onRow(row)).split('\n')
   const at = lines.findIndex(l => l.includes(row.title))
-  expect(lines[at]).toMatch(/❯ .*✓ Replied/)
+  expect(lines[at]).toMatch(/❯ .*✓ Replied: go with B/)
   expect(lines[at + 1]).not.toContain('↵')
 
   const moved = afterHandOff(screen, onRow(row), row.id, NOW)
@@ -209,9 +202,9 @@ test('Enter opens a folded row again, and moving off it folds it', async () => {
   const { row, screen } = await afterReply()
   expect(handleKey(screen, onRow(row), 'b', NOW).press).toBeUndefined()
   const opened = keys(screen, onRow(row), 'enter')
-  expect(text(screen, opened)).toContain('r Reply')
+  expect(text(screen, opened)).toContain('t Reply')
   expect(keys(screen, opened, 'down', 'up').opened).toBeNull()
-  expect(text(screen, keys(screen, opened, 'down', 'up'))).not.toContain('r Reply')
+  expect(text(screen, keys(screen, opened, 'down', 'up'))).not.toContain('t Reply')
 })
 
 test('a dismissed PR shows its label dim, as a dismissed row does, with Undo, and u returns pr-undo', async () => {
@@ -236,7 +229,7 @@ test('a failed send shows why and offers Try again first', () => {
     at: NOW,
     delivery: { state: 'failed', reason: 'omp is busy' },
   }
-  const screen = { ...screenOf(), view: sessionView(state, NOW, SETTLED_MS, true) }
+  const screen = { ...screenOf(), view: sessionView(state, NOW, SETTLED_MS) }
   const row = waiting(screen, 'i11')
   expect(text(screen, onRow(row))).toContain('Not sent: omp is busy')
   expect(buttonLine(screen, onRow(row))).toContain('Try again')

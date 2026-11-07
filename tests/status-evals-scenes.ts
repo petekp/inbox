@@ -1,11 +1,13 @@
 import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
 import { emptySession } from '../hooks/session-files'
-import type { Session } from '../hooks/session'
-import { statusPage } from '../hooks/status-page'
-import type { Item, SessionStatus, Subject, SubjectStatus } from '../types'
+import { statusListRows, statusPage } from '../hooks/status-page'
+import type { StatusPage } from '../hooks/status-page'
+import { HELD_MARK } from '../hooks/help'
+import { nameKey } from '../hooks/status-limits'
+import type { Item, Session, SessionStatus, Subject, SubjectStatus } from '../types'
 import type { Facts } from '../evals/status-facts'
 import { minutes } from '../evals/status-replay'
-import type { Step, StepResult } from '../evals/status-replay'
+import type { CallLog, Step, StepResult } from '../evals/status-replay'
 import type { RuleContext } from '../evals/status-rules'
 
 export function subject(id: string, status: SubjectStatus, name: string, text: string, changedAt: number): Subject {
@@ -38,7 +40,7 @@ export function sessionOf(o: SessionStatus, items: Item[], at: number): Session 
   }
 }
 
-export function ask(id: string, text: string): Item {
+function ask(id: string, text: string): Item {
   return {
     id,
     kind: 'question',
@@ -60,6 +62,9 @@ export type Scene = {
   facts: Facts
   step: Step
   isStatusFailed: boolean
+  calls?: CallLog[]
+  /** Breaks the drawn page, for a code hold the page code itself would never break. */
+  page?: (p: StatusPage) => void
 }
 
 export function baseScene(): Scene {
@@ -73,7 +78,7 @@ export function baseScene(): Scene {
       subject('s2', 'queued', 'Sync conflicts', 'not started', 0),
     ],
     {
-      askSubjects: { i1: 's2' },
+      askSubjects: { i1: ['s2'] },
       nextChildId: 2,
       children: [
         {
@@ -114,6 +119,7 @@ export function baseScene(): Scene {
 export function contextOf(scene: Scene): RuleContext {
   const session = sessionOf(scene.after, scene.items, 10)
   const page = statusPage(session, minutes(10))
+  scene.page?.(page)
   const result: StepResult = {
     index: 0,
     label: scene.step.label,
@@ -122,7 +128,7 @@ export function contextOf(scene: Scene): RuleContext {
     page,
     text: '',
     facts: scene.facts,
-    calls: [],
+    calls: scene.calls ?? [],
     isStatusFailed: scene.isStatusFailed,
   }
   const beforeFacts = { ...scene.facts, changed: [] }
@@ -130,18 +136,83 @@ export function contextOf(scene: Scene): RuleContext {
   return { step: scene.step, result, before: { overview: scene.before, facts: beforeFacts } }
 }
 
+function statusCall(answer: string): CallLog {
+  return { kind: 'status', answers: [answer], model: null, ms: 0, outputTokens: null, overLimit: null }
+}
+
+function withGoal(s: Scene) {
+  const milestone = (id: string, name: string, status: SubjectStatus) => ({
+    id,
+    name,
+    status,
+    text: 'under way',
+    was: null,
+    changedAt: minutes(0),
+    closedAt: null,
+  })
+  s.after.goal = {
+    text: 'Offline sync in both stores',
+    setAt: minutes(0),
+    metAt: null,
+    was: null,
+    isAwaitingMilestones: false,
+    source: 'inferred',
+  }
+  s.after.milestones = [
+    milestone('m1', 'Edits survive offline', 'working'),
+    milestone('m2', 'Conflicts resolved', 'queued'),
+  ]
+  s.after.serves = { s1: 'm1', s2: 'm2' }
+  s.facts.goal = {
+    text: 'Offline sync in both stores',
+    match: 'offline sync',
+    milestones: [
+      { id: 'survive', name: 'Edits survive offline', match: 'survive', state: 'working' },
+      { id: 'resolved', name: 'Conflicts resolved', match: 'conflict', state: 'queued' },
+    ],
+  }
+  s.facts.pieces[0]!.serves = 'survive'
+  s.facts.pieces[1]!.serves = 'resolved'
+}
+
+/** The same inferred goal before the step and after it, with its work open. */
+function withGoalBefore(s: Scene) {
+  withGoal(s)
+  s.before = { ...s.before, goal: s.after.goal, milestones: s.after.milestones, serves: s.after.serves }
+}
+
+/** An inferred goal before the step and still after it, which the facts say the work has left. */
+function withLeftGoal(s: Scene) {
+  withGoalBefore(s)
+  s.facts.goal = { ...s.facts.goal!, milestones: [], isLeft: true }
+}
+
+/** A typed goal before the step, with its work open, and none after it. */
+function withTypedGoalBefore(s: Scene) {
+  withGoal(s)
+  s.before = {
+    ...s.before,
+    goal: { ...s.after.goal!, source: 'typed' },
+    milestones: s.after.milestones,
+    serves: s.after.serves,
+  }
+  s.after.goal = null
+}
+
+const CLEAR = { text: 'Get offline sync into both stores', match: 'offline sync' }
+
 const s1Of = (s: Scene) => s.after.subjects[0]!
 const s2Of = (s: Scene) => s.after.subjects[1]!
 
 export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene) => void }> = {
   'no-time-words': { bad: s => (s1Of(s).text = 'synced 5m ago') },
   'short-names': { bad: s => (s1Of(s).name = 'The offline sync engine work') },
-  'text-is-state': { bad: s => (s1Of(s).text = 'tests running') },
+  'text-no-ids': { bad: s => (s1Of(s).text = 'retries in sync-queue.ts') },
+  'no-semicolons': { bad: s => (s1Of(s).text = 'engine done; retries left') },
   'head-no-status': { bad: s => (s.after.head = { title: 'Offline sync', description: 'Offline sync ready' }) },
   'head-follows': { bad: s => (s.after.head = { title: 'Lint error', description: 'Fixing the lint error' }) },
   'no-duplicates': { bad: s => s.after.subjects.push(subject('s3', 'working', 'Sync engine work', 'tests', 10)) },
   'piece-once': { bad: s => s.after.subjects.push(subject('s3', 'working', 'Engine queue', 'syncs', 10)) },
-  'open-not-over': { bad: s => (s1Of(s).text = 'shipped to users') },
   'open-pieces-kept': { bad: s => s.after.subjects.pop() },
   'marks-true': { bad: s => (s2Of(s).status = 'working') },
   'not-work': {
@@ -151,7 +222,7 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     },
   },
   'held-text': { bad: s => (s2Of(s).text = 'needs your decision') },
-  'asks-linked': { bad: s => (s.after.askSubjects = { i1: 's1' }) },
+  'asks-linked': { bad: s => (s.after.askSubjects = { i1: ['s1'] }) },
   'ask-holds-several': { bad: s => (s.facts.asks[0]!.holdsUp = ['conflicts', 'engine']) },
   'children-linked': { bad: s => (s.after.children[0]!.subjectId = 's2') },
   'child-labels': { bad: s => (s.after.children[0]!.name = 'pdfx2') },
@@ -171,80 +242,140 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
       s2Of(s).status = 'done'
     },
   },
+  'answer-readable': {
+    good: s => (s.calls = [statusCall('SET: s1 | working | syncs on reconnect')]),
+    bad: s => (s.calls = [statusCall('The engine now syncs on reconnect.')]),
+  },
+  'goal-kept': {
+    good: withGoalBefore,
+    bad: s => {
+      withGoalBefore(s)
+      s.after.goal = null
+      s.after.milestones = []
+      s.after.serves = {}
+    },
+  },
+  'goal-left': {
+    good: s => {
+      withLeftGoal(s)
+      s.after.goal = null
+      s.after.milestones = []
+      s.after.serves = {}
+    },
+    bad: withLeftGoal,
+  },
+  'goal-only-when-clear': { bad: withGoal },
+  'goal-when-clear': {
+    good: s => {
+      s.facts.goalClear = CLEAR
+      withGoal(s)
+    },
+    bad: s => (s.facts.goalClear = CLEAR),
+  },
+  'milestones-true': {
+    good: withGoal,
+    bad: s => {
+      withGoal(s)
+      s.after.milestones[1]!.status = 'done'
+    },
+  },
+  'milestones-shape': {
+    good: withGoal,
+    bad: s => {
+      withGoal(s)
+      s.after.milestones[1]!.name = 'Sync conflicts'
+    },
+  },
+  'serves-linked': {
+    good: withGoal,
+    bad: s => {
+      withGoal(s)
+      s.after.serves = { s2: 'm2' }
+    },
+  },
+  'typed-goal-kept': {
+    good: s => {
+      withTypedGoalBefore(s)
+      s.step.events = [{ press: 'type', text: 'Sync in the web app' }]
+    },
+    bad: withTypedGoalBefore,
+  },
+  'goal-not-repeated': {
+    good: withGoal,
+    bad: s => {
+      withGoal(s)
+      s.after.removedGoals = [nameKey(s.after.goal!.text)]
+    },
+  },
+  'met-follows': {
+    good: s => {
+      withGoal(s)
+      for (const m of s.after.milestones) m.status = 'done'
+      s.after.goal!.metAt = minutes(10)
+    },
+    bad: s => {
+      withGoal(s)
+      for (const m of s.after.milestones) m.status = 'done'
+    },
+  },
+  'held-milestone': {
+    good: withGoal,
+    bad: s => {
+      withGoal(s)
+      s.page = p => (p.goal!.milestones[0]!.mark = HELD_MARK.mark)
+    },
+  },
+  'other-work-shows-news': {
+    good: s => {
+      withGoal(s)
+      s.after.serves.s1 = 'none'
+    },
+    bad: s => {
+      withGoal(s)
+      s.after.serves.s1 = 'none'
+      s.page = p => (p.rows = p.rows.filter(r => !(r.kind === 'subject' && r.id === 's1')))
+    },
+  },
+  'unlinked-in-main': {
+    good: s => {
+      withGoal(s)
+      s.after.serves.s1 = 'none'
+    },
+    bad: s => {
+      withGoal(s)
+      s.after.serves.s1 = 'none'
+      s.page = p => {
+        const s2 = statusListRows(p).find(r => r.kind === 'subject' && r.id === 's2')!
+        p.rows.push({ ...s2, depth: 0 })
+      }
+    },
+  },
   'finished-named': {
+    good: s => {
+      s.after.subjects.push(
+        subject('s3', 'done', 'Login timeout', 'fixed', 8),
+        subject('s4', 'done', 'Crash on launch', 'fixed', 9),
+        subject('s5', 'done', 'Backup restore', 'works', 10),
+        subject('s6', 'dropped', 'Offline banner', 'not needed', 7),
+        subject('s7', 'done', 'Sync merge', 'merges', 11),
+        subject('s8', 'done', 'Search speed', 'faster', 12),
+      )
+    },
     bad: s => {
       s.after.subjects.push(
         subject('s3', 'done', 'Login timeout', 'fixed', 8),
         subject('s4', 'done', 'Crash on launch', 'fixed', 9),
         subject('s5', 'done', 'Backup restore', 'works', 10),
+        subject('s6', 'dropped', 'Offline banner', 'not needed', 7),
+        subject('s7', 'done', 'Sync merge', 'merges', 11),
+        subject('s8', 'done', 'Search speed', 'faster', 12),
       )
+      s.page = p => (p.rows = p.rows.filter(r => !(r.kind === 'fold' && r.id === 'also-dropped')))
     },
   },
-}
-
-export const GOOD_RUNS: Record<string, string[]> = {
-  'coordinator-day': [
-    'DONE: s1 | merges edits on reconnect',
-    'DONE: s2 | live in both stores',
-    [
-      'HEAD: Vanishing notes | Fixing the archive bug, then shipping 2.5',
-      'DONE: s6 | filed for later',
-      'DONE: s7 | filed for later',
-      'NEW: working | Vanishing notes | cause unknown',
-      'NEW: queued | 2.5 release | after the bug fix',
-      'LINK: c3 | Vanishing notes',
-    ].join('\n'),
-    'SET: s11 | working | cause found',
-    'LINK: i2 | 2.5 release',
-    'SET: s12 | queued | waits for the archive fix',
-    'UNCHANGED',
-    'UNCHANGED',
-    'SET: s11 | working | fix in review\nLINK: c4 | Vanishing notes',
-    'DONE: s11 | fixed\nSET: s12 | working | release candidate on the way\nHEAD: 2.5 release | Shipping 2.5 to both stores',
-    'NEW: queued | Export folder | cause found',
-    'DONE: s12 | live in both stores',
-    'SET: s13 | working | setting moves to a file\nHEAD: Export folder | Fixing the export folder on Windows',
-    'DONE: s13 | keeps the folder after an update\nSET: s5 | working | index rebuilds on each keystroke\nHEAD: Search speed | Speeding up note search',
-    'SET: s5 | working | fast on large libraries',
-  ],
-  'single-task': [
-    'NONE',
-    [
-      'HEAD: Offline sync | Adding offline sync to the notes app',
-      'NEW: working | Sync engine | queues edits offline',
-      'NEW: queued | Sync conflicts | not started',
-      'NEW: queued | Sync toggle | not started',
-    ].join('\n'),
-    'NEW: decide | - | Last-write-wins or manual merge for conflicts? | Last-write-wins / Manual merge | -',
-    'SET: s1 | working | syncs on reconnect\nLINK: c1 | Sync engine\nLINK: c2 | Sync engine\nLINK: i1 | Sync conflicts',
-    'CLOSED: i1 | manual merge',
-    'SET: s2 | working | manual merge under way',
-    'NONE',
-    'SET: s2 | working | last-write-wins with backup\nWAS: s2 | manual merge',
-    'NONE',
-    'SET: s2 | working | works on both test devices\nSET: s3 | queued | set aside\nNEW: working | Offline banner | first version',
-    'NONE',
-    'UNCHANGED',
-    'NEW: decide | - | Should the offline banner show on web too? | Yes / No | -',
-    'SET: s4 | working | shows on phones\nLINK: i2 | Offline banner',
-    'CLOSED: i2 | the person dropped it',
-    'DONE: s4 | shows on phones\nSET: s1 | working | Android syncs; iOS loses last edit',
-    'NONE',
-    'DONE: s1 | syncs after a crash on Android and iOS',
-  ],
-  'long-turn': [
-    'DONE: s1 | fast on large libraries\nSET: s2 | working | under way',
-    'UNCHANGED',
-    'SET: s2 | working | sorts by last edit',
-    'DONE: s2 | pinned first, then by last edit\nSET: s3 | working | short typos match',
-  ],
-  'catch-up-from-empty': [
-    [
-      'HEAD: Attachments | Attaching images and PDFs to notes',
-      'NEW: working | Image attachments | show inline',
-      'NEW: working | PDF attachments | attach as a file row',
-      'DONE: Image attachments | show inline',
-      'LINK: i1 | PDF attachments',
-    ].join('\n'),
-  ],
+  'no-number-names': {
+    bad: s => {
+      s1Of(s).name = 'PR 3655'
+    },
+  },
 }

@@ -1,9 +1,8 @@
 import type { Delivery, LastAction, Ledger, Press, RowNote } from '../types'
-import type { HelpStep } from './help-steps'
 import { reopenItem } from './ledger-close'
 import { messages } from './press-messages'
-import type { PressTexts } from './press-messages'
 import { pressed } from './pressed'
+import type { PressContext } from './pressed'
 import type { RowPress } from './presses'
 
 export type Effect =
@@ -11,13 +10,14 @@ export type Effect =
   | { kind: 'open'; target: string; name: string }
   | { kind: 'copy'; text: string; name: string; isCommand: boolean }
   | { kind: 'refresh-prs'; name: string }
+  | { kind: 'rerun'; repo: string; run: string; name: string }
 
 /**
  * `last` null leaves the row's last action as it was.
  * `stale` when the row the press was drawn for is gone or changed under it.
  */
 export type PressResult =
-  { ledger: Ledger; last: LastAction | null; effects: Effect[]; reopenedId?: string } | { stale: true }
+  { ledger: Ledger; last: LastAction | null; effects: Effect[]; reopenedId?: string; dropLast?: true } | { stale: true }
 
 export function doneWake(
   ledger: Ledger,
@@ -80,17 +80,7 @@ export function isPressConfirmed(outcome: {
 /**
  * Pure: it reads only its arguments.
  */
-export function applyPress(
-  ledger: Ledger,
-  last: LastAction | undefined,
-  p: RowPress,
-  ctx: PressTexts & {
-    now: number
-    turnsStarted: number
-    extraSteps: HelpStep[]
-    localPressId?: string
-  },
-): PressResult {
+export function applyPress(ledger: Ledger, last: LastAction | undefined, p: RowPress, ctx: PressContext): PressResult {
   const r = pressed(ledger, last, p, ctx)
 
   return 'stale' in r || !r.last ? r : { ...r, last: withQueued(r.last, r.effects) }

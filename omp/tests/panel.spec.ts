@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test'
 
 import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
 import { prMarkId, threadSentIn } from '../../hooks/pr-rows'
-import { failingChecks, waitingThreads } from '../../hooks/prs'
+import { blockingChecks } from '../../hooks/pr-checks'
+import { waitingThreads } from '../../hooks/prs'
 import { SETTLED_MS } from '../../hooks/timing'
 import { shownTabs } from '../../hooks/tabs'
 import { rowKeyPlan } from '../../hooks/action-plan'
@@ -186,20 +187,20 @@ test('PR buttons follow the shared plan order for the block, its threads and its
     at: NOW,
     delivery: { state: 'failed', reason: 'omp is busy' },
   }
-  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, true) })
+  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS) })
   const { lastActions, turns, prs } = screen.view
   const { pr } = prs.drawn[0]!
   const isSent = threadSentIn(lastActions)
   const presses = { lastActions, turns, now: NOW }
   const block = prBlockActions(pr, isSent, prs.branchRef, presses)
-  expect(block.slice(0, 2).map(a => a.label)).toEqual(['Refresh PRs', 'Try again'])
-  expect(text(screen, { ...INITIAL_UI, tab: 'prs', selectedId: prMarkId(ref) })).toContain(
-    'Last refresh failed: HTTP 502',
-  )
+  expect(block.slice(0, 2).map(a => a.label)).toEqual(['Try again', 'Resolve conflicts'])
+  const lines = text(screen, { ...INITIAL_UI, tab: 'prs', selectedId: prMarkId(ref) }).split('\n')
+  expect(lines.findIndex(l => l.includes('Refresh PRs'))).toBeLessThan(lines.findIndex(l => l.includes(pr.title)))
+  expect(lines.join('\n')).toContain('Last refresh failed: HTTP 502')
   const plans = [
     block,
     ...waitingThreads(pr).map(t => threadActions(pr, t, presses)),
-    ...failingChecks(pr).map(c => checkActions(pr, c, presses)),
+    ...blockingChecks(pr).map(c => checkActions(pr, c, presses)),
   ]
   expect(plans.length).toBeGreaterThan(3)
   let ui: PanelUi = { ...INITIAL_UI, tab: 'prs', selectedId: prMarkId(pr.ref) }
@@ -214,4 +215,19 @@ test('PR buttons follow the shared plan order for the block, its threads and its
     }
     ui = keys(screen, ui, 'down')
   }
+})
+
+test('a row keeps its age at a narrow width and beside a long outcome, and its title and status shorten instead', () => {
+  const ui: PanelUi = { ...INITIAL_UI, unfolded: ['question', 'task', 'issue', 'opportunity'] }
+  const ages = (width: number) =>
+    (['needsYou', 'findings'] as const).flatMap(
+      tab => text(screenOf(), { ...ui, tab }, width).match(/\d+[mh] ago|just now/g) ?? [],
+    )
+  const wide = ages(200)
+
+  expect(wide.length).toBeGreaterThan(10)
+  expect(ages(90)).toEqual(wide)
+  expect(ages(48)).toEqual(wide)
+  for (const line of text(screenOf(), { ...ui, tab: 'needsYou' }, 48).split('\n'))
+    expect(strip(line).length).toBeLessThanOrEqual(48)
 })

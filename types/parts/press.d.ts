@@ -12,6 +12,8 @@ export type LastAction = {
   action: string
   /** The label of the action pressed, as in "Discuss". */
   text: string
+  /** The words the person typed, on a reply. Missing on a reply saved before the inbox kept them, which reads without them. */
+  reply?: string
   at: number
   /** Order of presses in the Claude host while their saves may overlap. */
   pressOrder?: number
@@ -25,14 +27,17 @@ export type LastAction = {
   isKept?: true
   /** It repeated the latest action, so its button keeps reading "… again" while the press is out. */
   isRepeat?: true
+  /** A PR's Dismiss on a PR only the agent's order showed, so its Undo does not link it. Missing on a Dismiss of a linked PR. */
+  isUnlinked?: true
 }
 
 /**
- * A sent message's way to the agent: queued after sending, unconfirmed when
- * an identical arrival cannot identify its press, arrived when identified,
+ * A sent message's way to the agent: held while Undo can still take the press back, so nothing has left yet,
+ * queued after sending, unconfirmed when an identical arrival cannot identify its press, arrived when identified,
  * or failed when it will not enter.
  */
 export type Delivery =
+  | { state: 'held'; message: string; until: number; by: Press | null }
   | { state: 'queued'; message: string; id?: string }
   | { state: 'unconfirmed'; message: string; id?: string }
   | { state: 'arrived' }
@@ -42,7 +47,7 @@ export type Delivery =
 export type SentPrompt = { id: string; sessionId: string; text: string; pressedAt: number | null }
 
 export type LocalPart = {
-  kind: 'open' | 'copy' | 'refresh-prs'
+  kind: 'open' | 'copy' | 'refresh-prs' | 'rerun'
   name: string
   /** A command only the person can run, so the row says where to run it. */
   isCommand: boolean

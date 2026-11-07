@@ -1,8 +1,10 @@
 #!/bin/sh
-# Checks the mod: formatting with Prettier, its plugin structure with
+# Checks the mod: formatting with Prettier, that no file is over its token
+# limit, with scripts/check-sizes.mjs, its plugin structure with
 # `claude plugin validate`, the imports and docs that keep the three looks in
 # step, and the plugin directory's rules for the hooks module, with
-# scripts/check-structure.mjs, that the three plugin manifests give one version,
+# scripts/check-structure.mjs, that every export has an importer, with
+# scripts/check-exports.mjs, that the three plugin manifests give one version,
 # with scripts/check-versions.mjs, that the comparison page matches its parts, with
 # scripts/build-compare-page.mjs, that types/index.d.ts matches its parts, with
 # scripts/build-types.mjs, its types with tsc, and its tests with
@@ -42,8 +44,11 @@ before=$status
 check "prettier" npx -y "$PRETTIER" --check .
 [ "$status" = "$before" ] || echo "      Fix: npx -y $PRETTIER --write ."
 
+check "file sizes" node "$DIR/scripts/check-sizes.mjs"
+
 check "plugin validate" claude plugin validate "$DIR"
 check "structure" node "$DIR/scripts/check-structure.mjs"
+check "exports" node "$DIR/scripts/check-exports.mjs"
 check "versions" node "$DIR/scripts/check-versions.mjs"
 check "compare page" node "$DIR/scripts/build-compare-page.mjs" --check
 check "types parts" node "$DIR/scripts/build-types.mjs" --check
@@ -72,8 +77,8 @@ if [ -d "$DIR/codex/node_modules" ]; then
     check "codex bundles" npm --prefix "$DIR/codex" run --silent check
     check "codex types" npm --prefix "$DIR/codex" run --silent types
     check "codex tests" npm --prefix "$DIR/codex" test --silent
-    # The eval case files, with no model calls: every saved ledger loads, and every Compare case checks that the
-    # agent closes nothing. The check is TypeScript, so Codex's esbuild bundles it first.
+    # The eval case files, with no model calls: every saved ledger loads, and every Compare case gives its press and
+    # checks that no close of the agent's takes effect. The check is TypeScript, so Codex's esbuild bundles it first.
     cases=$(mktemp -d)
     check "eval cases" sh -c '"$1/codex/node_modules/.bin/esbuild" "$1/evals/check-cases.ts" --bundle --platform=node \
         --format=esm --outfile="$2/check-cases.mjs" --log-level=warning && node "$2/check-cases.mjs" "$1"' _ "$DIR" "$cases"

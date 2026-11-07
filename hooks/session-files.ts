@@ -1,11 +1,14 @@
 import { EMPTY, KEPT_SESSIONS, upgradeLedger } from './ledger'
 import { TOLD_NOTHING } from './inbox-text'
-import type { Told } from './model-text'
 import { upgradeLastActions } from './last-actions'
 import { upgradeHostTasks } from './host-tasks'
-import type { PrViews, Session, TurnDialogQuestion } from '../types'
+import { withCheckKeys } from './saved-check-keys'
+import type { PrView, PrViews, Session, Told, TurnDialogQuestion } from '../types'
 
 const NO_PRS: PrViews = { views: {}, branchRef: null, isFetching: false }
+
+const NO_FAILURE = { lastFailure: null, recoveredAt: null }
+export const NO_CALL_FAILURES: Session['callFailures'] = { ledger: NO_FAILURE, status: NO_FAILURE }
 
 export const NO_TURN: Session['turn'] = { person: null, trigger: null, activity: [], press: null }
 
@@ -19,6 +22,8 @@ export function emptySession(): Session {
       turnsApplied: 0,
       ledgerState: 'current',
       hasDroppedReply: false,
+      failedAttempts: 0,
+      isConversationUnreadable: false,
       isUpdating: false,
       isTurnRunning: false,
       turnStartedAt: null,
@@ -34,7 +39,9 @@ export function emptySession(): Session {
     prViews: NO_PRS,
     stop: null,
     overviewFailure: null,
+    callFailures: NO_CALL_FAILURES,
     lastOverviewCallAt: null,
+    overviewTurn: 0,
     hostTasks: [],
     dialogQuestions: [],
   }
@@ -95,8 +102,13 @@ function withoutStatedStep(presence: SavedSession['presence']): SavedSession['pr
  * row and delivery fields existed changes no row when its message arrives.
  */
 export function upgradeSession(saved: SavedSession): Session {
-  const base = emptySession()
   const views = saved.prViews?.views ?? {}
+
+  return withCheckKeys(sessionFields(saved, views), views)
+}
+
+function sessionFields(saved: SavedSession, views: Record<string, PrView>): Session {
+  const base = emptySession()
 
   return {
     ledger: saved.ledger
@@ -142,7 +154,9 @@ export function upgradeSession(saved: SavedSession): Session {
     },
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
+    callFailures: { ...NO_CALL_FAILURES, ...saved.callFailures },
     lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
+    overviewTurn: saved.overviewTurn ?? 0,
     hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map(q => ({ ...q, descriptions: q.descriptions ?? {} })),
   }

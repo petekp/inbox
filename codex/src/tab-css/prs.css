@@ -30,7 +30,7 @@
   margin-top: 8px;
 }
 .pr-last {
-  margin-top: 6px;
+  padding-top: 6px;
 }
 .pr-groups {
   margin-top: 12px;
@@ -39,8 +39,8 @@
   --mark-x: 41px;
   --text-x: 67px;
 }
-.pr-groups .group-title + .list {
-  margin-bottom: 6px;
+.pr-group .list {
+  padding-bottom: 6px;
 }
 .link {
   padding: 0;
@@ -51,4 +51,19 @@
 }
 .link:hover {
   text-decoration-color: currentColor;
+}
+/* A block's padding is inside the element that animates, so the block's height is its content's height. */
+section.pr-entry {
+  padding: 0;
+}
+.pr-entry-content {
+  padding: 10px 0;
+}
+/*
+ * A settling block's settled line has a row's padding, so the block it drew open keeps its place under it. That
+ * block fades while the height shrinks, since the settled block's padding would still show its top.
+ */
+.pr-was-open {
+  margin-top: calc(-2 * var(--row-pad));
+  animation: fade-out var(--move) forwards;
 }

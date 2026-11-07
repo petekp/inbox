@@ -47,11 +47,16 @@ becomes a settled row. After Discard, it folds at once.
 
 **Settled row**:
 A row drawn in place with its result after the person pressed it or the agent
-closed it, such as "Done" or "Closed by Claude: fixed". It stays until the
-person sends a message they typed, switches tab or closes the inbox, then
-folds into the Closed fold or leaves the list. A message a press sent does not
-fold it. Where its press allows Undo, it offers Undo for `SETTLED_MS` after
-the close, and stays through a typed message until Undo ends.
+closed it, such as "Done" or "Closed by Claude: fixed". It stays for
+`SETTLED_MS` after the close, then folds into the Closed fold or leaves the
+list. Where its press allows Undo, it offers Undo for that time. It folds
+sooner when the person switches tab, closes the inbox, or sends a message they
+typed once its Undo has ended. A message a press sent does not fold it. It
+stays past that time while its message is on its way to the agent, and while
+a press is under way on a row of its tab. It also waits while the person is
+using the list, until `FOLD_QUIET_MS` after their last press, key, scroll or
+pointer move. A refused or unconfirmed message does not hold it: its Closed
+line shows what happened.
 
 **Mark**:
 The glyph before a row or a group title that says where its work stands or what
@@ -60,7 +65,7 @@ draws it. `MARK_LEGEND` in `hooks/help.ts` lists them all.
 
 **Result mark**:
 The mark of what came of a row: ✓ when handled, ✕ when dismissed, ✗ when it
-lapsed, as when the agent closed it because the work overtook it. It runs, as
+lapsed (⊘ in the terminal and omp), as when the agent closed it because the work overtook it. It runs, as
 a Status mark does, while what the row sent is on its way to the agent.
 
 **Finding**:
@@ -104,36 +109,76 @@ Its row then has a View question or View task button, which opens Asks with
 the oldest of those items selected.
 _Avoid_: workstream, stream, item (an item is a question or task)
 
+**Goal**:
+The one outcome the session's work is for, with a finish line someone could
+check, such as "2.5 in the store". It has 2 to 5 milestones. The Status draws
+it above the head, and the head becomes its Now line. It is met once every
+milestone it keeps is done, and a met goal stays until the next one is set.
+_Avoid_: target, objective
+
+**Inferred goal**:
+A goal the inbox model set from the session, from the person's words or the
+work itself, with no press. The model replaces it with the next goal once it is
+met, or once none of its linked work is open and the work has moved on.
+
+**Typed goal**:
+A goal the person typed in the goal's field, or an inferred goal they edited.
+It stays until it is met.
+
+**Removed goal**:
+A goal the person cleared with the goal's Remove button. The inbox model does not set it
+again, in the same words or in other words.
+
+**Milestone**:
+An outcome a goal needs, such as "Sync fixed". Subjects link to it with SERVES,
+only when finishing the subject is part of the milestone's outcome, and a
+subject the goal does not need sits under Other work. Code closes a milestone
+once all its linked subjects are closed and one is done, and the model opens it
+again when work is left.
+_Avoid_: step, phase
+
 **Child**:
-Work that runs apart from the session's turn: a subagent, a background command
-or task, a workflow run, or a Herdr delegate. It shows under its subject while
-it runs, and leaves when it ends. A delegate that finished stays, reading
+Work that runs apart from the session's turn: a subagent, a workflow run or a
+Herdr delegate. A background command or Monitor task is not one: it is how the
+agent watches work, and the work it watches has its own row. A child shows under
+its subject while it runs, and leaves when it ends. A delegate that finished stays, reading
 "finished", until the person has seen the Status. Code follows it from the
 host's events and from Herdr. The inbox model only links it to a subject.
 _Avoid_: subitem, job
 
 **Stall words**:
-The word after a Status row's name when its work waits on the person or has
-finished. A subject held by an open question or task reads "waiting", in the
-needs-you tone, and so does a delegate while Herdr shows it at a question or an
-approval. A finished delegate reads "finished". A row waiting on someone else
-and a row whose work moves show no word. No row shows a time. The code calls
-them `stall`.
+The words after a Status row's name when its work waits on the person, has
+finished, or has stalled. A subject held by an open question or task reads
+"waiting", in the needs-you tone, and so does a delegate while Herdr shows it at
+a question or an approval. A finished delegate reads "finished". An open subject
+with no change for a day or more, and no child of it running, reads how long it
+has been idle, as "idle 2d", muted. Other rows show no word. The code calls them
+`stall`.
 _Avoid_: age
 
 **Seen line**:
 The rule labeled "Last seen" on the Status, at the time the person last left the
 page after it showed for at least five seconds. A shorter pass through the tab
-leaves the line where it was. A row above it changed since then. Every open row
+leaves the line where it was. A row above it changed since the person last saw
+it, in the last look that showed its row. Every open row
 shows where it stands, above or below the line. A row below it leaves out its
 merged and was lines, and a finished row below it shows only its mark and name. When no row
 changed since then, the page draws no line. The code calls it the look line,
 after `lastLookAt`.
 _Avoid_: "you looked" line
 
+**Done fold**:
+The line on the Status that counts seen finished work it does not draw, as "3
+done", after a chevron and with no mark. Pressing it lists those rows under it,
+one step in, as the Closed fold lists closed items, and pressing it again folds
+them. The list after the goal, each milestone and Other work each have their
+own.
+_Avoid_: done row, done count
+
 **Band**:
-In Claude Code, the line above the prompt with the Asks and Finds
-counts and [Open inbox]. When the session stops, a second line says why, with
+In Claude Code, the line above the prompt with the Asks, Finds and PRs
+counts and [Open inbox]. With no counts it reads "Nothing needed", or "May be
+out of date" while rows may be missing. When the session stops, a second line says why, with
 [Resume] after an API error. Codex has no band. omp has a band with the same
 counts and no button, which says `/inbox` opens the panel.
 
@@ -190,12 +235,13 @@ The order an agent set for the PRs tab with `order_prs`, first to last, such as
 a merge ranking. Its open PRs draw first, each with its rank, under a line that
 names what the person does with the order, as "Merge in this order", and the
 agent that set it. The agent's reason for the order draws under that line. The
-other PRs follow in the tab's own order. The conversation saves it as
-`Ledger.prOrder`.
+other PRs follow in the tab's own order. The order does not link the PRs it
+ranks, so clearing or replacing it takes the PRs only it ranked off the tab.
+The conversation saves it as `Ledger.prOrder`.
 _Avoid_: ranking, as the stored thing
 
 **Changed since**:
-A ranked open PR whose status, waiting threads or failing checks differ from
+A ranked open PR whose status, waiting threads or failing or cancelled checks differ from
 what the PR order recorded for it. The order records each ranked PR's status
 when it is set, or at the PR's first fetch after. The tab then reads "2 PRs
 changed since", with Rank again, which asks the agent to rank the PRs again.
@@ -218,9 +264,11 @@ A file in `hooks/` that every host consumes, directly or through a build.
 It imports only other shared modules and the shared types.
 
 **Adapter**:
-The code that draws the shared view in one look: `hooks/register.tsx` for the
-terminal and desktop looks, `codex/src/tab.tsx` for the Codex tab,
-`omp/src/panel.ts` for the omp panel.
+The code that draws the shared view in one look. For the terminal and desktop
+looks, it is `hooks/register.tsx` and the `hooks/pane-*.tsx` files. For the
+Codex tab, it is `codex/src/tab.tsx`, the other `codex/src/tab-*` files,
+`codex/src/row-actions.tsx` and the styles in `codex/src/tab-css/`. For the omp
+panel, it is `omp/src/panel.ts` and the other `omp/src/panel-*.ts` files.
 
 **Difference on purpose**:
 A behavior that differs between looks because one look cannot do something,
@@ -239,8 +287,8 @@ nothing of, though it already has turns. The next update catches up. Only
 **Dropped reply**:
 An exchange whose update failed twice, so its reply never reached the ledger.
 `presence.hasDroppedReply` keeps the "may be missing" warning until a catch-up
-covers it. A host that cannot read its conversation has no catch-up, so the
-warning stays until a clear.
+covers it. While a catch-up cannot read the conversation, the warning says so,
+and the next update tries again.
 
 **Next build**:
 A checkout that follows the `next` branch and holds `NEXT_BUILD_MARK`, a file

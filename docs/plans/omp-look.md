@@ -17,7 +17,7 @@ Each step passes `./scripts/check.sh` and leaves the shipped hosts working, so t
 
 ## Parts
 
-- [Step 1, the shared session modules](omp-look/step-1-shared-modules.md): `hooks/session.ts` and `hooks/session-host.ts`.
+- [Step 1, the shared session modules](omp-look/step-1-shared-modules.md): the session modules and `hooks/session-host.ts`.
 - [Step 2, the omp host and look](omp-look/step-2-omp-host.md): omp's events, the look, and the choices made.
 - [Step 4, the mod on the shared session modules](omp-look/step-4-mod-on-shared-modules.md): The gap list, how the mod saves its session, what people will notice, and the build order.
 

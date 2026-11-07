@@ -1,23 +1,26 @@
 import { isRowTabRunning } from './arrivals'
 import { drawnPrs, openPrViews } from './pr-views'
 import { isPrTabRunning, threadSentIn } from './pr-rows'
-import { itemPrSteps, olderPrsText } from './pr-fetch'
+import { itemPrSteps, olderPrsText, tabPrs } from './pr-fetch'
 import { prOrderView } from './pr-order'
-import { prTabActions } from './pr-tab'
 import type { DrawnPr } from './pr-views'
-import type { PrAction } from './pr-press'
 import type { PrOrderView } from './pr-order'
+import { prRefreshView } from './pr-refresh'
+import type { PrRefreshView } from './pr-refresh'
 import { prNeedsYou } from './prs'
+import { isPrRowId } from './presses'
+import { feedbackOf, pressUnderWaySince } from './feedback'
 import { MARK_LEGEND } from './help'
-import { hasRunningMark, NO_HOLDS } from './timing'
+import { earliestOf, hasRunningMark, NO_HOLDS } from './timing'
 import { inboxView, perTurnStatus } from './view'
+import type { UpdateRecovery } from './view'
 import { isRowTab } from './tabs'
 import { statusPage } from './status-page'
 import type { InboxView } from './view'
 import type { StatusPage } from './status-page'
 import type { Holds } from './timing'
 import type { ShownTab } from './tabs'
-import type { FoldKind, LastAction, RowNote, Session, Turns } from '../types'
+import type { FoldKind, LastAction, PrFetchFailure, RowNote, Session, Turns } from '../types'
 
 export const PRESS_TIMEOUT_MS = 60_000
 
@@ -30,10 +33,14 @@ type PrTab = {
   olderText: string | null
   /** The agent's order of the PRs, drawn above them, or null while it ranks no block the tab draws. `prOrderView`. */
   order: PrOrderView | null
-  /** The tab's own buttons, drawn after its PR blocks. `prTabActions`. */
-  tabActions: PrAction[]
   /** Whether gh asked for a sign-in at the last fetch it answered. */
   isGhSignedOut: boolean
+  /** Why the last fetch read none of the PRs, or null. */
+  failure: PrFetchFailure | null
+  /** The line at the top of the tab while a PR could not be read, with Refresh PRs, or null. `prRefreshView`. */
+  refresh: PrRefreshView | null
+  /** When the oldest press still under way on a PR row began, or null. A settled PR block that was in place then waits for it. */
+  pressOutSince: number | null
 }
 
 export type SessionView = InboxView & {
@@ -58,33 +65,37 @@ function withoutStalePending(lastActions: Record<string, LastAction>, now: numbe
 }
 
 /**
- * `canCatchUp` says whether the host can read the whole conversation. Its next update then retries a failed ledger,
- * even with no exchange waiting. A host that cannot retries only when an exchange is pending.
+ * Where the session's failed ledger update stands. Every host retries after the agent's next reply: a pending exchange
+ * on its own, otherwise by catching up. A Codex chat saved with no rollout path gets one from that reply's Stop hook,
+ * which saves it before the update starts.
  */
+function updateRecovery(s: Session): UpdateRecovery {
+  const { presence } = s
+  if (presence.ledgerState !== 'failed') return 'none'
+  if (presence.isUpdating) return 'retrying'
+  if (s.pending.length === 0 && presence.isConversationUnreadable) return 'unreadable'
+
+  return presence.failedAttempts > 1 ? 'failed-again' : 'waiting'
+}
+
 export function sessionView(
   s: Session,
   now: number,
   settleWindowMs: number,
-  canCatchUp: boolean,
   holds: Holds = NO_HOLDS,
   notes: Record<string, RowNote> = {},
 ): SessionView {
   const l = s.ledger
   const lastActions = withoutStalePending(s.lastActions, now)
-  const update = {
-    isUpdating: s.presence.isUpdating,
-    isFailed: s.presence.ledgerState === 'failed',
-    retries: canCatchUp || s.pending.length > 0,
-  }
 
   const inbox = inboxView({
     ledger: l,
     lastActions,
     notes,
     turns: s.presence,
-    extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s.prViews, l.prs)])),
+    extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
     settleWindowMs,
-    status: perTurnStatus(update),
+    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s)),
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
@@ -94,7 +105,7 @@ export function sessionView(
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now, holds.shownSince, settleWindowMs),
+    prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
     statusPage: statusPage(s, now),
   }
 }
@@ -120,12 +131,22 @@ function prTabOf(
   s: Session,
   lastActions: Record<string, LastAction>,
   now: number,
-  shownSince: number | null,
+  { shownSince, listInput, undoShown }: Holds,
   settleWindowMs: number,
 ): PrTab {
-  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, now, settleWindowMs, {
+  const pressOutSince = earliestOf(
+    Object.entries(lastActions).map(([id, last]) =>
+      isPrRowId(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, s.presence, now)) : null,
+    ),
+  )
+  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
     shownSince,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
+    listInput,
+    now,
+    settleWindowMs,
+    undoShown,
+    pressOutSince,
   })
   const isSent = threadSentIn(lastActions)
 
@@ -140,7 +161,14 @@ function prTabOf(
       { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
       shownSince,
     ),
-    tabActions: prTabActions(drawn, s.prViews.branchRef),
     isGhSignedOut: s.prViews.isGhSignedOut === true,
+    failure: s.prViews.failure ?? null,
+    refresh: prRefreshView(
+      { ...s.prViews, isGhMissing: s.prViews.isGhMissing === true },
+      s.ledger,
+      { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
+      shownSince,
+    ),
+    pressOutSince,
   }
 }

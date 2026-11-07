@@ -17,12 +17,18 @@ test('the tab reports active work separately from pending exchanges and failed u
   const waiting = endTurn(s, 'Done.', 50)
   assert.equal(waiting.pending.length, 1)
   assert.equal(viewOf(waiting, 60).status.isUpdating, false)
-  assert.match(viewOf(waiting, 60).status.error ?? '', /Last update failed.*retries after your next message/)
+  assert.match(
+    viewOf(waiting, 60).status.error ?? '',
+    /^The inbox couldn't update from the agent's last reply\..*tries again after the next reply/,
+  )
   const running = { ...waiting, presence: { ...waiting.presence, isUpdating: true } }
-  assert.deepEqual(viewOf(running, 60).status, { isUpdating: true, error: null })
+  assert.deepEqual(viewOf(running, 60).status, { isUpdating: true, isRetrying: true, error: null })
   const scheduled = { ...waiting, presence: { ...waiting.presence, ledgerState: 'current' as const } }
-  assert.deepEqual(viewOf(scheduled, 60).status, { isUpdating: false, error: null })
-  assert.equal(viewOf(s, 60).status.error, 'Last update failed. Items from that reply may be missing.')
+  assert.deepEqual(viewOf(scheduled, 60).status, { isUpdating: false, isRetrying: false, error: null })
+  assert.equal(
+    viewOf(s, 60).status.error,
+    "The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing. It tries again after the next reply.",
+  )
 })
 
 test('the tab says the hooks were not heard when none ran, when a tool call comes in a turn no prompt recorded, or when two prompts saw no Stop', () => {
@@ -86,7 +92,10 @@ test('the tab moves from an empty Asks to Finds when it opens on a finding or a 
   assert.equal(followed({ ...withFinding, heard: NOTHING_HEARD }), null)
   assert.equal(followed({ ...withFinding, ledger: withItems().ledger }), null)
   assert.deepEqual(newRows(next.seen, viewOf(withFinding, 30), false).added, { needsYou: [], findings: [], prs: [] })
-  const closed = recordClose(CODEX, withFinding.ledger, { id: 'f1', reason: 'fixed' }, 30)
+  const closed = recordClose(CODEX, withFinding.ledger, { id: 'f1', reason: 'fixed' }, 30, {
+    lastActions: {},
+    turnStartedAt: null,
+  })
   const afterClose = { ...withFinding, ledger: closed.ledger }
   const settled = viewOf(afterClose, 31, { ...NO_HOLDS, shownSince: 20 })
   assert.equal(isShownEmpty(settled, 'findings', new Set(['f1']), new Set(), false), false)

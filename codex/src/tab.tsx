@@ -1,10 +1,13 @@
 import { render } from 'preact'
 import type { ComponentChildren } from 'preact'
-import { HELP_COPY } from '../../hooks/help'
+import { HELP_COPY, UNDO_KEY } from '../../hooks/help'
 import { versionLabel, DEMO_NOTICE, bannerOf, READING_TEXT } from '../../hooks/banners'
 import { isRowTab, shownTabs } from '../../hooks/tabs'
+import { steppedIndex } from '../../hooks/action-plan'
 import { tabState, handoff, root, instanceAbort } from './tab-state'
+import { noteShownRows, rowsInView, SUBJECT_ATTRIBUTE } from './tab-shown'
 import type { Kept, Lists } from './tab-state'
+import type { DrawnPrs } from './tab-pr-steps'
 import { later, dispose, request, applyHost, READ_TIMEOUT_MS } from './tab-host'
 import type { HostContext } from './tab-host'
 import { measure, animateDraw, revealSelected, applyPageVariables, wakeForMoves } from './tab-motion'
@@ -15,8 +18,9 @@ import { tabRows } from './tab-rows'
 import { Banner } from './tab-parts'
 import { stepLists } from './tab-list'
 import { NeedsYou, Findings } from './tab-groups'
-import { prTabKeys, prOrderKeys, Prs } from './tab-prs'
+import { prOrderKeys, Prs } from './tab-prs'
 import { StatusTab } from './tab-status'
+import { pressUndoKey } from './undo-key'
 import { HelpPage, Status, TabBar, toggleDemo } from './tab-chrome'
 
 let isLoadingShown = false
@@ -26,7 +30,7 @@ let hostContext: HostContext = {}
 
 const LOADING_DELAY_MS = 300
 
-function App({ lists }: { lists: Lists | null }): ComponentChildren {
+function App({ lists, prs }: { lists: Lists | null; prs: DrawnPrs | null }): ComponentChildren {
   if (!tabState.view || !lists)
     return tabState.readError !== null ? (
       <Banner
@@ -56,7 +60,9 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
       ) : shown === 'findings' ? (
         <Findings v={v} lists={lists} now={now} />
       ) : shown === 'prs' ? (
-        <Prs v={v} now={now} />
+        prs ? (
+          <Prs v={v} prs={prs} now={now} />
+        ) : null
       ) : (
         <StatusTab page={v.statusPage} />
       )}
@@ -92,9 +98,11 @@ function draw() {
   const before = measure()
   const step = tabState.view ? stepLists(tabState.view) : null
   tabState.lastLists = step?.lists ?? null
+  tabState.lastPrs = step?.prs ?? null
   wakeForMoves()
-  render(<App lists={tabState.lastLists} />, root)
+  render(<App lists={tabState.lastLists} prs={tabState.lastPrs} />, root)
   animateDraw(before, step?.changed ?? new Set())
+  noteStatusInView()
   const fieldToFocus =
     tabState.focusTyping && tabState.typing ? document.getElementById(`type-${tabState.typing}`) : null
   if (fieldToFocus) {
@@ -104,6 +112,18 @@ function draw() {
 }
 
 tabState.draw = draw
+
+/** Notes the Status subject rows on screen now, while the tab shows the real Status, for the look under way. The demo's ids name sample rows. */
+function noteStatusInView() {
+  if (!tabState.isActive || tabState.isDemo || tabState.tab !== 'overview' || tabState.isHelpShown) return
+  const rows = Array.from(root.querySelectorAll(`[${SUBJECT_ATTRIBUTE}]`), el => ({
+    id: el.getAttribute(SUBJECT_ATTRIBUTE) ?? '',
+    top: el.getBoundingClientRect().top,
+  }))
+  noteShownRows(rowsInView(rows, window.innerHeight), Date.now())
+}
+window.addEventListener('scroll', noteStatusInView, { passive: true, signal: instanceAbort.signal })
+window.addEventListener('resize', noteStatusInView, { passive: true, signal: instanceAbort.signal })
 
 let pressedAt: { x: number; y: number } | null = null
 document.addEventListener(
@@ -154,10 +174,7 @@ document.addEventListener(
     }
     const t = drawnTab()
     if (tabState.isHelpShown || !isRowTab(t)) return
-    const tabKey =
-      t === 'prs'
-        ? [...prOrderKeys(tabState.view), ...prTabKeys(tabState.view)].find(x => x.hotkey === e.key)
-        : undefined
+    const tabKey = t === 'prs' ? prOrderKeys(tabState.view).find(x => x.hotkey === e.key) : undefined
     if (tabKey) {
       e.preventDefault()
       if (!tabKey.isOut) tabKey.run()
@@ -168,8 +185,12 @@ document.addEventListener(
     const move = e.key === 'j' || e.key === 'ArrowDown' ? 1 : e.key === 'k' || e.key === 'ArrowUp' ? -1 : 0
     if (move !== 0) {
       e.preventDefault()
-      select(t, rows, Math.max(0, Math.min(rows.length - 1, at + move)))
+      select(t, rows, steppedIndex(at, move, rows.length))
       revealSelected()
+      return
+    }
+    if (e.key === UNDO_KEY) {
+      if (pressUndoKey(tabState.view, t)) e.preventDefault()
       return
     }
     const row = rows[at]

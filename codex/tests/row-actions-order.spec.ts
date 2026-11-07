@@ -34,6 +34,8 @@ test('the Codex renderer preserves retry, folded-option and finding action order
           turnsStarted: 1,
           extraSteps: [],
           comparePage: '/plugin/dist/compare-page.html',
+          compareInBackground: false,
+          holdMs: 1000,
         })
         assert.ok(!('stale' in result))
         retried = result
@@ -85,12 +87,13 @@ test('the Codex renderer preserves retry, folded-option and finding action order
     turns: { turnsStarted: 1, turnsApplied: 1 },
     extraSteps: {},
     settleWindowMs: 5120,
-    status: { isUpdating: false, error: null },
+    status: { isUpdating: false, isRetrying: false, error: null },
     now: 10,
     replies: {},
     discarded: {},
     shownSince: null,
     lastTypedMessageAt: null,
+    listInput: null,
   }).needsYou.questions[0]!
   let allOptions = false
   let answer: PressResult | null = null
@@ -102,6 +105,8 @@ test('the Codex renderer preserves retry, folded-option and finding action order
           turnsStarted: 1,
           extraSteps: [],
           comparePage: '/plugin/dist/compare-page.html',
+          compareInBackground: false,
+          holdMs: 1000,
         })
       },
       reply: () => {},
@@ -137,12 +142,13 @@ test('the Codex renderer preserves retry, folded-option and finding action order
     turns: { turnsStarted: 1, turnsApplied: 1 },
     extraSteps: {},
     settleWindowMs: 5120,
-    status: { isUpdating: false, error: null },
+    status: { isUpdating: false, isRetrying: false, error: null },
     now: 10,
     replies: {},
     discarded: {},
     shownSince: null,
     lastTypedMessageAt: null,
+    listInput: null,
   }).findings.rows[0]!
   let discussion: PressResult | null = null
   const followUps = ledgerActions(finding, false, null, {
@@ -152,6 +158,8 @@ test('the Codex renderer preserves retry, folded-option and finding action order
         turnsStarted: 1,
         extraSteps: [],
         comparePage: '/plugin/dist/compare-page.html',
+        compareInBackground: false,
+        holdMs: 1000,
       })
     },
     reply: () => {},

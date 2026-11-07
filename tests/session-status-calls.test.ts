@@ -5,6 +5,7 @@ import { withChild } from '../hooks/status-children'
 import { applyStatus } from '../hooks/status-ops'
 import { CLAUDE_CODE } from '../hooks/model-text'
 import { STATUS_SYSTEM } from '../hooks/status-prompt'
+import { parseStatus } from '../hooks/status'
 import { emptySession } from '../hooks/session-files'
 import { cleared, noteActivity, notePrompt, turnEnded, turnStarted } from '../hooks/session-turns'
 import {
@@ -17,7 +18,7 @@ import {
   STATUS_REFRESH_MS,
 } from '../hooks/session-status'
 import { sessionView } from '../hooks/session-view'
-import type { Session } from '../hooks/session'
+import type { Session } from '../types'
 import { runUpdates } from '../hooks/session-host'
 import {
   STATUS_RECORD_VERSION,
@@ -39,17 +40,77 @@ const withStatus = (s: Session): Session => ({
   ledger: { ...EMPTY, overview: applyStatus(null, answer, 1000, new Set()) },
 })
 
-test('a Status answer is written to the ledger after later updates and clears a saved failure, and both are dropped when their update is gone', () => {
+test('a Status answer is written to the ledger after later updates, only a catch-up answer clears a saved failure, and both are dropped when their update is gone', () => {
   const later = { ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } }
   const failed = failedStatus(later, 'The person wants a CLI.', 3, 900)
 
   expect(failed.overviewFailure).toEqual({ at: 900, cause: 'refused', answer: 'The person wants a CLI.' })
   expect(failedStatus(later, null, 3, 900).overviewFailure).toEqual({ at: 900, cause: 'no-answer', answer: null })
   expect(appliedStatus(failed, answer, 3, 1000).ledger.overview?.head?.title).toBe('Work offline')
-  expect(appliedStatus(failed, answer, 3, 1000).overviewFailure).toBeNull()
+  expect(appliedStatus(failed, answer, 3, 1000).overviewFailure).toEqual(failed.overviewFailure)
+  expect(appliedStatus(failed, answer, 3, 1000, null, true).overviewFailure).toBeNull()
   expect(appliedStatus(emptySession(), answer, 3, 1000).ledger.overview).toBeNull()
   expect(failedStatus(emptySession(), null, 3, 900).overviewFailure).toBeNull()
   expect(cleared(failed).overviewFailure).toBeNull()
+})
+
+test('a failed Status call makes the next reply catch up over the conversation once, and that catch-up clears the failure', async () => {
+  const catchUps: string[] = []
+  const { host } = fakeHost(async (_prompt, system) => (system === STATUS_SYSTEM ? null : LEDGER_REPLY))
+  const statusAnswer = 'HEAD: Work offline | Letting the app work without a connection'
+  const catchUp = async () => {
+    catchUps.push('catch-up')
+    const ask = async () => statusAnswer
+    return {
+      kind: 'reply' as const,
+      text: LEDGER_REPLY,
+      source: 'Person: go',
+      statusCall: { exchange: { kind: 'catch-up' as const, conversation: 'Person: go' }, ask },
+      heard: null,
+    }
+  }
+  await host.update(s => finishTurn(s, 'Which runtime?'))
+  await runUpdates(host)
+  expect((await host.read()).overviewFailure?.cause).toBe('no-answer')
+  await runUpdates({ ...host, catchUp })
+  expect(catchUps).toHaveLength(0)
+
+  await host.update(s => finishTurn(s, 'Python, then.'))
+  await runUpdates({ ...host, catchUp })
+  const after = await host.read()
+  expect(catchUps).toHaveLength(1)
+  expect(after.overviewFailure).toBeNull()
+  expect(after.ledger.overview?.head?.title).toBe('Work offline')
+})
+
+test('a Status call that keeps failing catches up at the next reply, then waits two replies before the next catch-up', async () => {
+  const catchUps: number[] = []
+  const { host } = fakeHost(async (_prompt, system) => (system === STATUS_SYSTEM ? null : LEDGER_REPLY))
+  const catchUp = async (s: Session) => {
+    catchUps.push(s.presence.turnsStarted)
+    return {
+      kind: 'reply' as const,
+      text: LEDGER_REPLY,
+      source: 'Person: go',
+      statusCall: { exchange: { kind: 'catch-up' as const, conversation: 'Person: go' }, ask: async () => null },
+      heard: null,
+    }
+  }
+  for (const reply of ['Which runtime?', 'Python, then.', 'Done.', 'Shipped.', 'Anything else?']) {
+    await host.update(s => finishTurn(s, reply))
+    await runUpdates({ ...host, catchUp })
+  }
+  expect(catchUps).toEqual([2, 4])
+  expect((await host.read()).overviewFailure).toMatchObject({ catchUpsFailed: 2, catchUpTurn: 4 })
+})
+
+test('a Status answer or failure made for fewer applied turns than the last write is dropped', () => {
+  const later = { ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } }
+  const newer = appliedStatus(later, answer, 4, 1000)
+
+  expect(appliedStatus(newer, parseStatus('HEAD: Older | An older answer')!, 3, 1100)).toBe(newer)
+  expect(failedStatus(newer, null, 3, 1100)).toBe(newer)
+  expect(failedStatus(newer, null, 4, 1100).overviewFailure?.cause).toBe('no-answer')
 })
 
 test('a session whose only record is a Status has a ledger, is not unseen, is copied by a fork and is cleared', () => {
@@ -70,7 +131,7 @@ test('a session whose only record is a Status has a ledger, is not unseen, is co
 })
 
 test('the Status page is empty for a new session, and while its first turn runs, until the Status has a head', () => {
-  const view = (s: Session) => sessionView(s, 10_000, 1000, true, NO_HOLDS).statusPage
+  const view = (s: Session) => sessionView(s, 10_000, 1000, NO_HOLDS).statusPage
   const idle = emptySession()
 
   expect(view(idle).isEmpty).toBe(true)
@@ -175,7 +236,7 @@ test('a next build records a Status call in a file of its own: the exact prompt 
 })
 
 test('a failed Status call’s record holds the error the host reported, and a record that cannot be written leaves the update in place', async () => {
-  const { host } = fakeHost(async (_prompt, system, report) => {
+  const { host } = fakeHost(async (_prompt, system, _kind, report) => {
     if (system !== STATUS_SYSTEM) return LEDGER_REPLY
     report?.({ model: 'sonnet', error: 'api-error 529: overloaded' })
     return null
@@ -253,7 +314,7 @@ test('a failed Status call shows in the status line on the Status tab, in place 
     0,
     900,
   )
-  const v = sessionView(failed, 1000, 1000, true, NO_HOLDS)
+  const v = sessionView(failed, 1000, 1000, NO_HOLDS)
   const prs = { isFetching: false, hasPrs: false }
 
   expect(v.statusPage.error).not.toBeNull()

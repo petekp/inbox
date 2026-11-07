@@ -2,6 +2,7 @@ import { mkdir, readdir, rm, rmdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import { flattenConversation } from '../../hooks/conversation'
+import { isCompareInBackground } from '../../hooks/clients'
 import { screenText } from '../../hooks/inbox-text'
 import type { ScreenTab } from '../../hooks/inbox-text'
 import { ghFinder, ghIn } from '../../hooks/gh'
@@ -13,7 +14,7 @@ import { delegatesSettled } from '../../hooks/children'
 import { askOverConversation, orderedKeys, reconcileUpdateStatus, runUpdates } from '../../hooks/session-host'
 import type { SessionHost, UpdateHost } from '../../hooks/session-host'
 import { fetchPrs } from '../../hooks/host-prs'
-import { wakeForDone } from '../../hooks/host-press'
+import { wakeAfterSettle } from '../../hooks/host-press'
 import type { StatusRecords, RecordFiles } from '../../hooks/status-records'
 import { screenTabOf } from '../../hooks/tabs'
 import { openTarget } from './commands'
@@ -101,12 +102,16 @@ export function sessionCalls(context: HostContext) {
     const pane = deps.herdrPane
     if (!pane || id !== memory.shownId) return
     deps.background(
-      reportToHerdr(run, async () => {
-        const s = await readState(dir, id)
-        const view = sessionView(s, deps.now(), deps.settleWindowMs, true)
+      reportToHerdr(
+        run,
+        async () => {
+          const s = await readState(dir, id)
+          const view = sessionView(s, deps.now(), deps.settleWindowMs)
 
-        return { pane, tokens: herdrTokens(s.ledger, s.stop, view, []) }
-      }),
+          return { pane, tokens: herdrTokens(s.ledger, s.stop, view, []) }
+        },
+        deps.after,
+      ),
     )
   }
 
@@ -129,8 +134,14 @@ export function sessionCalls(context: HostContext) {
       },
       perform: async (_s, effect) =>
         effect.kind === 'copy' ? deps.copy(effect.text) : openTarget(run, effect.target, ctx.cwd, deps.home),
-      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true)),
+      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true, true)),
       gh: {
+        shared: {
+          read: async () => memory.prShared,
+          write: async change => {
+            memory.prShared = change(memory.prShared)
+          },
+        },
         find: gh.find,
         forget: gh.forget,
         run: (_s, bin, onUnstartable) => ghIn(run, bin, ctx.cwd, onUnstartable),
@@ -141,6 +152,7 @@ export function sessionCalls(context: HostContext) {
       settleWindowMs: deps.settleWindowMs,
       newId: deps.newId,
       comparePage: deps.comparePage,
+      compareInBackground: isCompareInBackground('omp'),
     }
   }
 
@@ -166,7 +178,7 @@ export function sessionCalls(context: HostContext) {
       ...(deps.isNextBuild ? { records: statusRecords(dir, id) } : {}),
       catchUp: s =>
         askOverConversation(
-          host.ask,
+          host,
           OMP,
           s,
           screenText(OMP, openPanels.has(id), panelScreenTab(id)),
@@ -226,13 +238,13 @@ export function sessionCalls(context: HostContext) {
     )
   }
 
-  function fetchPrsWhenDue(ctx: OmpContext): void {
+  function fetchPrsWhenDue(ctx: OmpContext, isTabShown: boolean): void {
     const id = sessionIdOf(ctx)
     if (prFetches.isFetching(id)) return
     deps.background(
       (async () => {
         const host = hostFor(ctx)
-        const fetching = prFetches.fetchWhenDue(id, await host.read(), () => fetchPrs(host, true))
+        const fetching = prFetches.fetchWhenDue(id, await host.read(), isTabShown, () => fetchPrs(host, true))
         if (!fetching) return
         notifyChanged(id)
         await fetching
@@ -242,7 +254,7 @@ export function sessionCalls(context: HostContext) {
   }
 
   function wakeLater(ctx: OmpContext): void {
-    ctx.setTimeout(() => deps.background(wakeForDone(hostFor(ctx))), deps.settleWindowMs + WAKE_MARGIN_MS)
+    ctx.setTimeout(() => deps.background(wakeAfterSettle(hostFor(ctx))), deps.settleWindowMs + WAKE_MARGIN_MS)
   }
 
   return {

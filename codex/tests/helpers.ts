@@ -1,11 +1,12 @@
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { zstdCompressSync } from 'node:zlib'
 
 import type { HookDeps, HookInput } from '../src/hook'
 import type { Run } from '../../hooks/gh'
-import { STATUS_SYSTEM } from '../../hooks/status-prompt'
+import { PARTS_STATUS_SYSTEM } from '../../hooks/status-prompt'
 import type { Ask } from '../../hooks/session-host'
 
 export function tempDir(): string {
@@ -32,7 +33,6 @@ export function hookDeps(dir: string, now = () => 1000): HookDeps & { updates: s
     now,
     startUpdate: id => updates.push(id),
     startStatusRefresh: id => refreshes.push(id),
-    onWrite: async () => {},
     run: async () => ({ code: 1, stdout: '', stderr: 'not in Herdr' }),
     updates,
     refreshes,
@@ -71,11 +71,20 @@ export function rolloutAt(
     folder,
     `rollout-${day.replaceAll('/', '-')}T05-01-10-${threadId}${rolloutId ? `_${rolloutId}` : ''}.${ext}`,
   )
-  writeFileSync(path, ext === 'jsonl' ? [JSON.stringify({ ...row, payload }), ...rest].join('\n') : 'compressed')
+  const text = [JSON.stringify({ ...row, payload }), ...rest].join('\n')
+  writeFileSync(path, ext === 'jsonl.zst' ? zstdCompressSync(text) : text)
 
   return path
 }
 
+export function movedRollout(path: string, home: string, folder: 'archived_sessions' | `sessions/${string}`): string {
+  const to = join(home, folder, basename(path))
+  mkdirSync(dirname(to), { recursive: true })
+  renameSync(path, to)
+
+  return to
+}
+
 export function ledgerOnly(ask: (prompt: string) => Promise<string | null>): Ask {
-  return (prompt, system) => (system === STATUS_SYSTEM ? Promise.resolve(null) : ask(prompt))
+  return (prompt, system) => (system === PARTS_STATUS_SYSTEM ? Promise.resolve(null) : ask(prompt))
 }

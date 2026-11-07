@@ -1,9 +1,9 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { PRESS_GUARD_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
-import { BAND, PANE, selectRow, leaveAndReturn, replyField, replyKey } from './hooks-helpers'
+import { BAND, PANE, selectRow, replyField, replyKey } from './hooks-helpers'
 
-test('a question Claude closes while the person types an answer stays in place with its field and words, out of the count, until its answer sends and the person types their next message, then folds into Closed', async ($, on) => {
+test('a question Claude closes while the person types an answer stays in place with its field and words, out of the count, until its answer sends, then settles and folds into Closed', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('ui.focus', () => ({}))
@@ -42,17 +42,14 @@ test('a question Claude closes while the person types an answer stays in place w
   expect(w.sent.at(-1)).toBe('Re "Name the command greet?": Call it hello')
   expect(await replyField(pane, 'i2')).toBeUndefined()
   expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
-  expect(await pane.find({ text: /^Replied$/ })).toBeDefined()
-  expect((await pane.find({ key: 'settled-i2' }))?.text).toMatch(/✗\s*Replied/)
+  expect(await pane.find({ text: /^Replied: Call it hello$/ })).toBeDefined()
+  expect((await pane.find({ key: 'settled-i2' }))?.text).toMatch(/⊘\s*Replied: Call it hello/)
   await clock.advance(9000)
-  expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
-  await $.prompt.submit({ text: 'what is next?', wait: false, origin: { kind: 'composer' } })
-  await clock.settle()
   expect(await pane.find({ key: 'row-i2' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-i2' })).toBeUndefined()
   expect(await pane.find({ text: /1 closed/ })).toBeDefined()
   await pane.press({ key: 'fold-question' })
-  expect((await pane.find({ key: 'closed-i2' }))?.text).toMatch(/✗\s*Closed\sby\sClaude/)
+  expect((await pane.find({ key: 'closed-i2' }))?.text).toMatch(/⊘\s*Closed\sby\sClaude/)
 })
 
 test('a held row and the rows that closed while the tab shows stay in place, and the reply still sends, after more items close than the Closed list keeps', async ($, on) => {
@@ -108,7 +105,6 @@ test('a held row and the rows that closed while the tab shows stay in place, and
   expect(await pane.find({ text: /Renew the domain/ })).toBeDefined()
   w.ledgerReply = others.map(id => `CLOSED: ${id} | done`).join('\n')
   await reply('all done', 't3')
-  await clock.advance(9000)
 
   expect(await pane.find({ key: 'settled-i3' })).toBeDefined()
   expect(await pane.find({ key: 'settled-i15' })).toBeDefined()
@@ -166,10 +162,40 @@ test('Discard ends a held row’s reply and folds it into Closed at once, and a 
   await clock.settle()
   expect(await pane.find({ key: 'undo-i1' })).toBeDefined()
   await clock.advance(9000)
-  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
-  expect(await pane.find({ key: 'undo-i1' })).toBeUndefined()
-  await leaveAndReturn(pane, clock, 'needsYou')
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
   expect(await pane.find({ text: /2 closed/ })).toBeDefined()
+})
+
+test('a held row’s label that does not fit after its title’s last word follows a plain space, where the terminal can break the line, and stays glued to the title where it fits', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('ui.focus', () => ({}))
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 38 } })
+  await selectRow(pane, 'i2')
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'typekey-i2' })
+  await pane.input({ key: await replyKey(pane, 'i2'), text: 'Call it hello', kind: 'change' })
+  await $.tool.call({ tool: 'mcp__inbox__close', id: 'i2', answer: '--shout' } as never)
+  await clock.settle()
+  const label = async (drawn: { findAll(q: { type: 'Text'; text: RegExp }): Promise<{ text: string }[]> }) =>
+    (await drawn.findAll({ type: 'Text', text: /^ ·.Answered: --shout$/ })).map(t => t.text)
+
+  expect(await label(pane)).toEqual([' · Answered: --shout'])
+  await pane.redraw({ ...PANE.props, bodyColumns: 80 })
+  expect(await label(pane)).toEqual([' · Answered: --shout'])
+  await pane.unmount()
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 120 } })
+  await selectRow(desktop, 'i2')
+  expect(await label(desktop)).toEqual([' · Answered: --shout'])
 })

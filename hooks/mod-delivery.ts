@@ -1,5 +1,5 @@
 import type { SessionAppendMessage } from 'claude-code'
-import type { Session } from './session'
+import type { Session } from '../types'
 import type { SentBy } from './session-turns'
 import type { SendOutcome } from './session-presses'
 import { withArrival, withRewrite, withUnconfirmed } from './press-reducer'
@@ -22,7 +22,7 @@ export function uncertainRecord(text: string): Session['sent'][number] {
   }
 }
 
-export function isUntracked(record: Session['sent'][number]): boolean {
+function isUntracked(record: Session['sent'][number]): boolean {
   return record.phase === 'uncertain' && record.deliveryId === null
 }
 

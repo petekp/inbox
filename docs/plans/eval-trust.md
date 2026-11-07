@@ -10,7 +10,7 @@ Every release relies on the two eval suites in `./scripts/eval.sh` (AGENTS.md, "
 | --- | --- |
 | The model suite's Claude calls load the person's own `CLAUDE.md` | `claude -p` without `--setting-sources ''` read the runner's private rules: a probe asked for its instructions and got their first line. Results depend on whose machine ran them. |
 | The Codex calls load the person's `~/.codex/AGENTS.md` | The agent suite links it into each run's `CODEX_HOME`. The model suite's call, the product's own `codexAsk`, reads it too, despite `--ignore-user-config` and `project_doc_max_bytes=0`. So does every user's inbox model in Codex. |
-| The model suite runs Sonnet at the CLI's default effort | The product runs it at `effort: 'low'` (`hooks/register.tsx:askLedgerModel`). The eval is kinder than the product. |
+| The model suite runs Sonnet at the CLI's default effort | The product runs it at `effort: 'low'` (`hooks/register.tsx:askInboxModel`). The eval is kinder than the product. |
 | The model suite grades with `applyUpdate` | The product applies `applyExchangeUpdate`, which keeps an item the person asked to explain open. The eval is stricter than the product there. |
 | `--agent omp` in the model suite runs Claude and labels it omp | `run.ts` casts any value to an agent. An unknown `--case` name is dropped, and a selection with no cases passes. |
 | A run records no commit, date or model id, and writes results only with `--out` | No log can say what it tested. |

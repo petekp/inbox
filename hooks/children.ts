@@ -1,6 +1,6 @@
 import type { Child, DelegateState, SessionStatus } from '../types'
 import { childActive, childEnded, subjectTouched, withChild } from './status-children'
-import type { HerdrStatus } from './herdr'
+import type { HerdrAgent } from './herdr'
 import { clipLabel } from './text'
 
 /** How long a child's newer activity waits before it is saved again. The page shows ages in whole minutes. */
@@ -9,27 +9,37 @@ const ACTIVITY_SAVE_MS = 30_000
 /** The longest name a child keeps. Each look cuts it to one line. */
 const NAME_CHARS = 80
 
-/**
- * The child starts at `at`, named by the first line of `name`. A child whose activity the host does not report, such
- * as a background command, starts with no activity time.
- */
+/** The child starts at `at`, named by the first line of `name`. */
 export function childStarted(
   o: SessionStatus | null,
   { ref, kind, name }: Pick<Child, 'ref' | 'kind' | 'name'>,
   at: number,
-  {
-    reportsActivity = true,
-    delegateState = null,
-  }: { reportsActivity?: boolean; delegateState?: DelegateState | null } = {},
+  delegateState: DelegateState | null = null,
 ): SessionStatus {
-  const line = name.trim().split('\n')[0] ?? ''
-  const lastActivityAt = reportsActivity ? at : null
-
   return withChild(
     o,
-    { ref, kind, name: clipLabel(line, NAME_CHARS), startedAt: at, endedAt: null, lastActivityAt, delegateState },
+    { ref, kind, name: childName(name), startedAt: at, endedAt: null, lastActivityAt: at, delegateState },
     at,
   )
+}
+
+/** The first line of `text`, cut to `NAME_CHARS`. */
+function childName(text: string): string {
+  return clipLabel(text.trim().split('\n')[0] ?? '', NAME_CHARS)
+}
+
+/**
+ * A delegate's Herdr name in words, split at each `-` and `_`, and where two or more lowercase letters meet a capital
+ * and a lowercase letter, so `pdf-layout` reads "pdf layout" and `pdfLayout` reads "pdf Layout". Capitals stay as
+ * written, so `macOS-port` reads "macOS port" and `iOSApp` stays as it is, as does `pdfx2`.
+ */
+export function nameInWords(name: string): string {
+  const words = name
+    .replace(/([a-z]{2,})(?=[A-Z][a-z])/g, '$1 ')
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+
+  return words.join(' ') || name
 }
 
 /**
@@ -51,7 +61,7 @@ function childrenEnded(o: SessionStatus | null, isEnded: (c: Child) => boolean, 
   return { ...o, children: o.children.map(c => (isEnding(c) ? { ...c, endedAt: at } : c)) }
 }
 
-/** What a background task's notification says: the ids it names, and whether the task ended. */
+/** What a task notification says: the ids it names, and whether the task ended. */
 type TaskNotice = { ids: string[]; hasEnded: boolean }
 
 const TAG = (name: string) => new RegExp(`<${name}>([^<]*)</${name}>`)
@@ -95,17 +105,22 @@ export function delegateSteps(command: string): DelegateStep[] {
 export const delegateRef = (name: string) => `herdr:${name}`
 
 /**
- * The delegate a step names runs from `at`. A delegate prompted again keeps its id and link, and a new run starts its
- * age over. A prompt shows it working, so it can read finished once Herdr shows it ready.
+ * The delegate a step names runs from `at`. A delegate prompted again keeps its id, name and link, and a new run starts
+ * its age over. A delegate is named by its Herdr name in words until Herdr shows its focus, and one saved under its
+ * bare Herdr name takes the words when it runs again. A prompt shows it working, so it can read finished once Herdr
+ * shows it ready.
  */
 function delegateRunning(o: SessionStatus | null, step: DelegateStep, at: number): SessionStatus | null {
   const ref = delegateRef(step.name)
   const known = o?.children.find(c => c.ref === ref)
   const isRunning = known !== undefined && known.endedAt === null
   if (!isRunning)
-    return childStarted(o, { ref, kind: 'delegate', name: step.name }, at, {
-      delegateState: step.isPrompt ? 'working' : null,
-    })
+    return childStarted(
+      o,
+      { ref, kind: 'delegate', name: known && known.name !== step.name ? known.name : nameInWords(step.name) },
+      at,
+      step.isPrompt ? 'working' : null,
+    )
   const active = childActive(o, ref, at)
 
   return step.isPrompt ? delegateStateSet(active, ref, 'working') : active
@@ -153,12 +168,26 @@ export function delegatesTakenBack(
   before: SessionStatus | null,
   at: number,
 ): SessionStatus | null {
-  const refs = new Set(delegateSteps(command).map(step => delegateRef(step.name)))
+  return delegateRowsTakenBack(o, delegateRefs(command), before?.children ?? [], at)
+}
+
+/** The refs of the delegates `command` starts, prompts or waits on. */
+export function delegateRefs(command: string): Set<string> {
+  return new Set(delegateSteps(command).map(step => delegateRef(step.name)))
+}
+
+/** `delegatesTakenBack` for the rows of `refs` alone, with `before` the rows as they were before the command. */
+export function delegateRowsTakenBack(
+  o: SessionStatus | null,
+  refs: ReadonlySet<string>,
+  before: readonly Child[],
+  at: number,
+): SessionStatus | null {
   const isStartedByCommand = (c: Child) => refs.has(c.ref) && c.startedAt === at
   if (!o?.children.some(isStartedByCommand)) return o
   const children = o.children.flatMap(c => {
     if (!isStartedByCommand(c)) return [c]
-    const was = before?.children.find(x => x.ref === c.ref)
+    const was = before.find(x => x.ref === c.ref)
 
     return was ? [was] : []
   })
@@ -175,20 +204,24 @@ export function hasRunningDelegate(o: SessionStatus | null): boolean {
 }
 
 /**
- * Each running delegate after Herdr's `states`, read at `at`, by agent name. A delegate Herdr shows working or blocked
- * takes that state. One Herdr shows ready, or no longer lists, ended then. One that is ready after it worked finished,
- * and its subject changed then, so the subject shows above the look line. Herdr's `unknown` changes nothing.
+ * Each running delegate after Herdr's `agents`, read at `at`, by agent name. A delegate whose session publishes a focus
+ * takes it as its name. A delegate Herdr shows working or blocked takes that state. One Herdr shows ready, or no longer
+ * lists, ended then. One that is ready after it worked finished, and its subject changed then, so the subject shows
+ * above the look line. Herdr's `unknown` changes nothing.
  */
 export function delegatesSettled(
   o: SessionStatus | null,
-  states: ReadonlyMap<string, HerdrStatus>,
+  agents: ReadonlyMap<string, HerdrAgent>,
   at: number,
 ): SessionStatus | null {
   if (!o) return o
-  const byRef = new Map([...states].map(([name, status]) => [delegateRef(name), status]))
-  const settled = (c: Child): Child => {
-    if (c.kind !== 'delegate' || c.endedAt !== null) return c
-    const status = byRef.get(c.ref)
+  const byRef = new Map([...agents].map(([name, agent]) => [delegateRef(name), agent]))
+  const settled = (running: Child): Child => {
+    if (running.kind !== 'delegate' || running.endedAt !== null) return running
+    const agent = byRef.get(running.ref)
+    const status = agent?.status
+    const focus = agent?.focus ? childName(agent.focus) : null
+    const c = focus && focus !== running.name ? { ...running, name: focus } : running
     const isShownWorking = status === 'working' || status === 'blocked'
     if (isShownWorking) return c.delegateState === status ? c : { ...c, delegateState: status }
     const isSettling = at - (c.lastActivityAt ?? c.startedAt) < HERDR_PROMPT_SETTLE_MS

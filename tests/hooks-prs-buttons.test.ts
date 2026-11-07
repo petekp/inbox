@@ -89,7 +89,7 @@ test('Resolve conflicts reads the PR from GitHub before it sends: it reads Refre
   expect(await pane.find({ text: /^This changed before your press\. Nothing was sent\.$/ })).toBeDefined()
 })
 
-test('a PR’s Dismiss settles its block until the person types their next message or leaves the tab, with Undo that brings it back, a ready PR’s Merge asks Claude unless it stopped being ready, and a fetch keeps a Dismiss made while it ran, and the branch PR when its lookup fails', async ($, on) => {
+test('a PR’s Dismiss settles its block until its Undo ends, with Undo that brings it back, a ready PR’s Merge asks Claude unless it stopped being ready, and a fetch keeps a Dismiss made while it ran, and the branch PR when its lookup fails', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let decision = 'APPROVED'
@@ -195,10 +195,6 @@ test('a PR’s Dismiss settles its block until the person types their next messa
   await clock.advance(2600)
   expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
   await clock.advance(SETTLED_MS)
-  expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
-  expect(await pane.find({ key: 'undo-pr:acme/greet#12' })).toBeUndefined()
-  await $.prompt.submit({ text: 'what is next?', wait: false, origin: { kind: 'composer' } })
-  await clock.settle()
   expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeUndefined()
   await leaveAndReturn(pane, clock, 'prs')
 
@@ -206,16 +202,21 @@ test('a PR’s Dismiss settles its block until the person types their next messa
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
 
   expect(await pane.find({ text: 'Last refresh failed: HTTP 502' })).toBeDefined()
-  expect((await pane.find({ key: 'refresh-acme/greet#13' }))?.props.label).toBe('Refresh PRs')
+  expect(await pane.find({ text: '#13 could not be read' })).toBeDefined()
+  expect((await pane.find({ key: 'refresh-prs' }))?.props.label).toBe('Refresh PRs')
+  expect(await pane.find({ key: 'refresh-acme/greet#13' })).toBeUndefined()
+  await pane.press({ key: 'refresh-prs' })
+  await clock.settle()
+  expect(await pane.find({ text: 'Could not refresh PRs: #13 could not be read' })).toBeDefined()
   branchFails = undefined
   branchHold = true
-  const lookups = () => w.ran.filter(argv => argv[0] === 'gh' && argv.includes('view')).length
+  const lookups = () => w.ran.filter(argv => argv[0] === 'gh' && argv.includes('graphql')).length
   const before = lookups()
-  const refreshing = pane.press({ key: 'refresh-acme/greet#13' })
+  const refreshing = pane.press({ key: 'refresh-prs' })
   await clock.settle()
   expect(await pane.find({ text: 'Last refresh failed: HTTP 502' })).toBeDefined()
   expect(await pane.find({ text: 'Refreshing PRs…' })).toBeDefined()
-  expect(await pane.find({ key: 'refresh-acme/greet#13' })).toBeDefined()
+  expect(await pane.find({ key: 'refresh-prs' })).toBeDefined()
   branchHold = false
   releaseBranch()
   await refreshing
@@ -223,6 +224,6 @@ test('a PR’s Dismiss settles its block until the person types their next messa
   expect(lookups()).toBe(before + 1)
   expect(await pane.find({ text: '✓ Refreshed PRs' })).toBeDefined()
   expect(await pane.find({ text: /Last refresh failed/ })).toBeUndefined()
-  expect(await pane.find({ key: 'refresh-acme/greet#13' })).toBeUndefined()
+  expect(await pane.find({ key: 'refresh-prs' })).toBeUndefined()
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
 })

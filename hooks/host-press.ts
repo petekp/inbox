@@ -1,10 +1,13 @@
-import { fixCheckEffect, PR_FIX_LABELS, pressRowId, isPrPress, isPrFixPress } from './pr-press'
-import type { PrFixPress, PrPress } from './pr-press'
+import { readFirstEffect, PR_READ_FIRST_LABELS, pressRowId, isPrPress, isPrReadFirstPress } from './pr-press'
+import type { PrReadFirstPress, PrPress } from './pr-press'
 import { doneWake, markSentToAgent, refuseDoneNotification, withDeliveryId, withUnconfirmed } from './press-reducer'
 import type { Effect } from './press-reducer'
 import { finishedResult, withResult, runSends, runLocalEffects } from './press-effects'
+import { rerunRun } from './host-prs'
+import { refreshProblem } from './pr-refresh'
 import type { EffectHost } from './press-effects'
-import { recordPress, pendingResult, localLast, withLasts } from './pressed'
+import { recordPress, pendingResult, localLast, withLasts, isHeldSend } from './pressed'
+import { releaseHeldSendEarly, releaseHeldSends } from './held-sends'
 import type { RowPress } from './presses'
 import { completedAttempt, withHolds, pressOn } from './session-presses'
 import type { Pressed } from './session-presses'
@@ -18,11 +21,19 @@ type WakeHost<S extends Session> = Pick<
 >
 
 /**
- * Tells the agent about rows closed with Done once their settle window has passed and no main-agent turn runs. A
- * refused message marks those rows with why, so they read "Not sent" and offer Undo. `current` is the session when the
- * host has just read it.
+ * Runs what waited for the settle window to pass: the answers and Fixes held for Undo, then the Done message.
+ * `current` is the session when the host has just read it.
  */
-export async function wakeForDone<S extends Session>(host: WakeHost<S>, current?: S): Promise<void> {
+export async function wakeAfterSettle<S extends Session>(host: WakeHost<S>, current?: S): Promise<void> {
+  await releaseHeldSends(host, current)
+  await wakeForDone(host)
+}
+
+/**
+ * Tells the agent about rows closed with Done once their settle window has passed and no main-agent turn runs. A
+ * refused message marks those rows with why, so they read "Not sent" and offer Undo.
+ */
+async function wakeForDone<S extends Session>(host: WakeHost<S>, current?: S): Promise<void> {
   const check = async (s: S) =>
     doneWake(s.ledger, {
       now: await host.now(),
@@ -93,8 +104,8 @@ export type PressOutcome = {
   isUnconfirmed: boolean
   /** The message was refused, and the pressed row still reads that failure, since no later press replaced it. */
   isRowFailed: boolean
-  /** The press closed a row with Done. Call `wakeForDone` once the settle window has passed. */
-  wakesForDone: boolean
+  /** The press closed a row with Done or held its message for Undo. Call `wakeAfterSettle` once the settle window has passed. */
+  wakesAfterSettle: boolean
 }
 
 type PressHost<S extends Session> = Pick<
@@ -103,16 +114,19 @@ type PressHost<S extends Session> = Pick<
   | 'read'
   | 'update'
   | 'deliver'
+  | 'prepare'
   | 'perform'
   | 'refreshPrs'
+  | 'gh'
   | 'newId'
   | 'isDeliveryHeldUntilRun'
   | 'answerMessage'
   | 'comparePage'
+  | 'compareInBackground'
   | 'settleWindowMs'
 >
 
-/** A fix press's check of the PR: the row's last press before it, and when its "Refreshing" result began. */
+/** A read-first press's check of the PR: the row's last press before it, and when its "Refreshing" result began. */
 type PrFixCheck = { rowId: string; before: LastAction | undefined; pendingAt: number; pressId: string }
 
 /** The row's last press as it was before the check, while the row still holds the check's result. */
@@ -125,13 +139,13 @@ function withoutCheck<S extends Session>(s: S, check: PrFixCheck | null): S {
 }
 
 /**
- * Reads the PR from GitHub before a fix press sends, while the row reads "Refreshing PR #12…". `stale` when the saved
+ * Reads the PR from GitHub before a read-first press applies, while the row reads "Refreshing PR #12…". `stale` when the saved
  * view already shows no problem. `unread` when the refresh did not read the PR, which the row's result then says.
  * Otherwise the check, for the press to apply on the refreshed view.
  */
 async function checkPrFirst<S extends Session>(
   host: PressHost<S>,
-  p: PrFixPress,
+  p: PrReadFirstPress,
   rowId: string,
   pressId: string,
   holds: Holds,
@@ -144,14 +158,14 @@ async function checkPrFirst<S extends Session>(
     const pr = s.prViews.views[p.ref]
     if (!pr || 'stale' in pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, host)) return s
     const before = s.lastActions[rowId]
-    const pending = pendingResult([fixCheckEffect(pr)], at, pressId)
+    const pending = pendingResult([readFirstEffect(pr)], at, pressId)
     checking.check = { rowId, before, pendingAt: at, pressId }
 
     return {
       ...s,
       lastActions: {
         ...s.lastActions,
-        [rowId]: localLast(before, { action: p.action, text: PR_FIX_LABELS[p.action] }, pending),
+        [rowId]: localLast(before, { action: p.action, text: PR_READ_FIRST_LABELS[p.action] }, pending),
       },
     }
   })
@@ -192,6 +206,8 @@ export async function startPress<S extends Session>(
   holds: Holds,
 ): Promise<StartedPress> {
   const rowId = pressRowId(p)
+  const isSecondPressOnHeld = !isPrPress(p) && p.action !== 'undo' && isHeldSend((await host.read()).lastActions[rowId])
+  if (isSecondPressOnHeld && !isStale) await releaseHeldSendEarly(host, rowId)
   const localPressId = host.newId()
   let isUnconfirmed = false
   let isRowFailed = false
@@ -205,7 +221,14 @@ export async function startPress<S extends Session>(
     perform: async e => {
       if (e.kind === 'refresh-prs') {
         await host.refreshPrs()
-        return null
+        const after = await host.read()
+        const isGhMissing = after.prViews.isGhMissing === true || (await host.gh.find()) === null
+        return refreshProblem({ ...after.prViews, isGhMissing }, after.ledger)
+      }
+      if (e.kind === 'rerun') {
+        const why = await rerunRun(host, e)
+        await host.refreshPrs()
+        return why
       }
       if (e.kind === 'copy') copy = { text: e.text, name: e.name }
       return host.perform(await host.read(), e)
@@ -225,7 +248,7 @@ export async function startPress<S extends Session>(
     },
   }
   const check =
-    isPrPress(p) && isPrFixPress(p) && !isStale
+    isPrPress(p) && isPrReadFirstPress(p) && !isStale
       ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err: unknown) => {
           error = `Not sent: ${err instanceof Error ? err.message : String(err)}`
           return 'unread' as const
@@ -240,7 +263,7 @@ export async function startPress<S extends Session>(
         note: check === 'stale' ? 'stale' : null,
         isUnconfirmed,
         isRowFailed,
-        wakesForDone: false,
+        wakesAfterSettle: false,
       }),
     }
   await host
@@ -301,7 +324,7 @@ export async function startPress<S extends Session>(
   if (!r || at === undefined)
     return {
       effects: null,
-      finish: async () => ({ copy, error, note, isUnconfirmed, isRowFailed, wakesForDone: false }),
+      finish: async () => ({ copy, error, note, isUnconfirmed, isRowFailed, wakesAfterSettle: false }),
     }
 
   return {
@@ -317,9 +340,12 @@ export async function startPress<S extends Session>(
       } catch {
         isUnconfirmed = true
       }
-      await runLocalEffects(effectHost, r.effects, rowId, r.lasts[rowId]?.result)
+      await runLocalEffects(effectHost, r.effects, Object.keys(r.lasts), r.lasts[rowId]?.result)
 
-      return { copy, error, note, isUnconfirmed, isRowFailed, wakesForDone: !isPrPress(p) && p.action === 'done' }
+      const isDone = !isPrPress(p) && p.action === 'done'
+      const isHeld = Object.values(r.lasts).some(isHeldSend)
+
+      return { copy, error, note, isUnconfirmed, isRowFailed, wakesAfterSettle: isDone || isHeld }
     },
   }
 }

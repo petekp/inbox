@@ -1,16 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import {
-  inPrOrder,
-  commentLine,
-  prRefs,
-  prNeedsYou,
-  prompts,
-  readThreadsAnswer,
-  readView,
-  readableComment,
-  readiness,
-} from '../hooks/prs'
+import { inPrOrder, commentLine, prRefs, prNeedsYou, prompts, readableComment, readiness } from '../hooks/prs'
+import { readPrNode } from '../hooks/pr-query'
+import { prNodeOf } from './gh-answers'
+import { checkActions } from '../hooks/pr-tab'
+import { checkRowText } from '../hooks/pr-rows'
 
 const VIEW = JSON.stringify({
   number: 12,
@@ -121,6 +115,23 @@ const THREADS = JSON.stringify({
   },
 })
 
+type ThreadsAnswer = {
+  data: { viewer?: { login: string }; repository: { pullRequest: Parameters<typeof prNodeOf>[1] } }
+}
+
+/** The PR's view from `view`, as `gh pr view --json` prints it, and `threads`, as the one-PR threads query answered. */
+function readPr(view: string, threads = THREADS) {
+  const { data } = JSON.parse(threads) as ThreadsAnswer
+
+  return readPrNode(
+    'acme/greet#12',
+    prNodeOf(JSON.parse(view), data.repository.pullRequest),
+    data.viewer?.login,
+    undefined,
+    null,
+  )
+}
+
 describe('prs', () => {
   test('a review comment reads without the HTML and badges review bots add', () => {
     const body =
@@ -133,8 +144,8 @@ describe('prs', () => {
   })
 
   test('a PR press quotes each review comment line and clips a long comment', () => {
-    const view = readView('acme/greet#12', VIEW)!
-    const [thread] = readThreadsAnswer(THREADS).threads
+    const view = readPr(VIEW)
+    const [thread] = readPr(VIEW).threads
     const long = { ...thread!, body: `First line\nSecond line ${'x'.repeat(3000)}`, reply: null }
     const message = prompts.address({ ...view, threads: [], isYours: true, wasSeenOpen: true, error: null }, [long])
     expect(message).toContain('> First line\n> Second line')
@@ -149,7 +160,7 @@ describe('prs', () => {
   })
 
   test('reads checks and open threads; threads where someone else spoke last block the merge', () => {
-    const view = readView('acme/greet#12', VIEW)!
+    const view = readPr(VIEW)
     expect(view.checks.map(c => [c.name, c.bucket])).toEqual([
       ['lint', 'fail'],
       ['test', 'pending'],
@@ -160,7 +171,7 @@ describe('prs', () => {
       [undefined, undefined, undefined],
       [undefined, undefined, undefined],
     ])
-    const threads = readThreadsAnswer(THREADS).threads
+    const threads = readPr(VIEW).threads
     expect(threads[0]?.reply?.body).toBe('Quote the name.')
     expect(threads.map(t => t.at)).toEqual([Date.parse('2026-10-08T09:30:00Z'), null, null])
     expect(threads[0]?.reply?.at).toBe(Date.parse('2026-10-08T10:00:00Z'))
@@ -184,8 +195,7 @@ describe('prs', () => {
       ...(startedAt ? { startedAt, completedAt: startedAt } : {}),
       detailsUrl: `https://github.com/acme/greet/actions/runs/${name}-${conclusion}`,
     })
-    const viewWith = (rollup: object[]) =>
-      readView('acme/greet#12', JSON.stringify({ ...JSON.parse(VIEW), statusCheckRollup: rollup }))!
+    const viewWith = (rollup: object[]) => readPr(JSON.stringify({ ...JSON.parse(VIEW), statusCheckRollup: rollup }))
     const checks = (rollup: object[]) => viewWith(rollup).checks.map(c => [c.workflow, c.name, c.bucket])
 
     expect(
@@ -209,8 +219,63 @@ describe('prs', () => {
       run('lint', 'SUCCESS', '2026-10-08T09:05:00Z'),
     ])
     expect(readiness({ ...rerunPassed, threads: [], isYours: true, wasSeenOpen: true, error: null }).text).toBe(
-      'Blocked: changes requested',
+      'Waiting on the reviewer: changes requested',
     )
+  })
+
+  test('a cancelled check reads as cancelled, still blocks the merge, and offers Re-run in place of Fix only when GitHub Actions ran it and no failing check shares its run; one a failing check cancelled folds under it and waits on its Fix', () => {
+    const run = (name: string, conclusion: string, detailsUrl: string) => ({
+      __typename: 'CheckRun',
+      name,
+      workflowName: 'CI',
+      status: 'COMPLETED',
+      conclusion,
+      startedAt: '2026-10-08T09:00:00Z',
+      completedAt: '2026-10-08T09:03:02Z',
+      detailsUrl,
+    })
+    const view = readPr(
+      JSON.stringify({
+        ...JSON.parse(VIEW),
+        reviewDecision: '',
+        statusCheckRollup: [
+          run('lint', 'FAILURE', 'https://github.com/acme/greet/actions/runs/5/job/50'),
+          run('unit', 'CANCELLED', 'https://github.com/acme/greet/actions/runs/5/job/51'),
+          run('e2e', 'CANCELLED', 'https://github.com/acme/greet/actions/runs/6/job/60'),
+          run('deploy', 'CANCELLED', 'https://ci.example.com/builds/7'),
+        ],
+      }),
+    )
+    const pr = { ...view, threads: [], isYours: true, wasSeenOpen: true, error: null }
+    const presses = { lastActions: {}, turns: { turnsStarted: 0, turnsApplied: 0 }, now: 0 }
+    const buttons = (name: string) =>
+      checkActions(
+        pr,
+        pr.checks.find(c => c.name === name)!,
+        presses,
+      ).map(a => [a.label, a.kind, a.hotkey ?? null])
+
+    expect(pr.checks.map(c => [c.name, c.bucket])).toEqual([
+      ['lint', 'fail'],
+      ['unit', 'cancelled'],
+      ['e2e', 'cancelled'],
+      ['deploy', 'cancelled'],
+    ])
+    expect(readiness(pr).text).toBe('Blocked: 1 failing check, 2 cancelled checks')
+    expect(checkRowText(pr, pr.checks[2]!)).toMatchObject({ meta: 'Cancelled after 3m 2s', fold: null })
+    expect(checkRowText(pr, pr.checks[1]!).fold).toEqual({
+      note: 'Stopped when CI / lint failed. Fixing that one runs this again.',
+    })
+    expect(buttons('lint')).toEqual([
+      ['Fix', 'handoff', 'a'],
+      ['Open log', 'local', 'o'],
+    ])
+    expect(buttons('e2e')).toEqual([
+      ['Re-run', 'local', 'a'],
+      ['Open log', 'local', 'o'],
+    ])
+    expect(buttons('unit')).toEqual([['Open log', 'local', 'o']])
+    expect(buttons('deploy')).toEqual([['Open log', 'local', 'o']])
   })
 
   test('an outdated thread waits again when someone replies after the latest commit', () => {
@@ -244,15 +309,15 @@ describe('prs', () => {
           },
         },
       })
-    expect(readThreadsAnswer(outdated('2026-10-08T11:00:00Z')).threads[0]?.isLinesChanged).toBe(true)
-    expect(readThreadsAnswer(outdated('2026-10-08T13:00:00Z')).threads[0]?.isLinesChanged).toBe(false)
+    expect(readPr(VIEW, outdated('2026-10-08T11:00:00Z')).threads[0]?.isLinesChanged).toBe(true)
+    expect(readPr(VIEW, outdated('2026-10-08T13:00:00Z')).threads[0]?.isLinesChanged).toBe(false)
   })
 
   test('a thread sent to Claude stops waiting on the person and waits on others; a failing check always waits', () => {
-    const view = readView('acme/greet#12', VIEW)!
+    const view = readPr(VIEW)
     const pr = {
       ...view,
-      threads: readThreadsAnswer(THREADS).threads.slice(0, 1),
+      threads: readPr(VIEW).threads.slice(0, 1),
       isYours: true,
       wasSeenOpen: true,
       error: null,
@@ -269,11 +334,22 @@ describe('prs', () => {
       status: 'waiting',
       text: 'Waiting: 1 thread sent to Claude, needs approval',
     })
-    expect(readiness({ ...onOthers, checks: [], threads: [] }, sent).status).toBe('ready')
+    expect(readiness({ ...onOthers, checks: [], threads: [] }, sent)).toMatchObject({
+      status: 'ready',
+      text: 'Ready to merge: approved, no checks ran, no threads waiting on you',
+    })
+    const passed = onOthers.checks.map(c => ({ ...c, bucket: 'pass' as const }))
+    expect(readiness({ ...onOthers, checks: passed, threads: [] }, sent).text).toBe(
+      'Ready to merge: approved, checks pass, no threads waiting on you',
+    )
+    expect(readiness({ ...onOthers, checks: passed, threads: [], mergeable: 'UNKNOWN' }, sent)).toMatchObject({
+      status: 'waiting',
+      text: 'Waiting: GitHub is still checking for conflicts',
+    })
   })
 
   test('PRs that wait on the person come first, then those waiting on others, then finished ones, newest first within each, and an order puts its open PRs first', () => {
-    const view = readView('acme/greet#12', VIEW)!
+    const view = readPr(VIEW)
     const base = {
       ...view,
       checks: [],

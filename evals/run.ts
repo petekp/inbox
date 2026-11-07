@@ -11,9 +11,8 @@ import { CLAUDE_CODE } from '../hooks/model-text'
 import { screenText } from '../hooks/inbox-text'
 import { transcriptCatchUpPrompt } from '../hooks/catch-up-text'
 import { CODEX } from '../codex/src/texts'
-import type { Exchange } from '../hooks/ledger'
 import type { Update } from '../hooks/reply-parse'
-import type { Ledger } from '../types'
+import type { Exchange, Ledger } from '../types'
 import { run } from '../codex/src/run'
 import { codexAsk, MODEL } from '../codex/src/update'
 import { claude, CLAUDE_MODEL } from './claude-model'
@@ -65,7 +64,7 @@ type Case = {
 
 const MIN = 0.75
 const NOW = 100
-/** The mod's limits on the inbox model's call, in `askLedgerModel` and its caller in `hooks/register.tsx`. */
+/** The mod's limits on the inbox model's call, in `askInboxModel` in `hooks/register.tsx`. */
 const MOD_TIMEOUT_MS = 45_000
 const MOD_MAX_TOKENS = 1600
 
@@ -227,7 +226,11 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
   const host = agent === 'codex' ? CODEX : CLAUDE_CODE
   const ask = (input: string, system: string): Promise<Answer> =>
     agent === 'codex'
-      ? askCodex(input, system).then(text => ({ text, model: null, outputTokens: null }))
+      ? askCodex(input, system, { call: 'ledger', reads: 'reply', isRetry: false }).then(text => ({
+          text,
+          model: null,
+          outputTokens: null,
+        }))
       : claude(input, system)
   const runInfo = { ...job(agent, c, n), attempts: 1, earlier: [], durationMs: 0 }
   const prompt =

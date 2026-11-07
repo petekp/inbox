@@ -4,13 +4,18 @@ import { Window } from 'happy-dom'
 import { EMPTY } from '../../hooks/ledger'
 import { closeItem } from '../../hooks/ledger-close'
 import { parseStatus } from '../../hooks/status'
-import { LOOK_MIN_MS } from '../../hooks/status-children'
+import { isSubjectSeen, LOOK_MIN_MS } from '../../hooks/status-children'
 import { applyStatus } from '../../hooks/status-ops'
+import { goalPressed } from '../../hooks/goal-press'
+import { NO_GOAL_TEXT } from '../../hooks/status-goal-page'
+import type { RowPress } from '../../hooks/presses'
 import { recordItem } from '../../hooks/tools'
 import { shownTabs } from '../../hooks/tabs'
 import { CODEX } from '../src/texts'
 import { emptyState } from '../src/state'
 import { lookOnView, viewOf } from '../src/core'
+import type { SessionState } from '../src/state'
+import { noteShownRows, rowsInView, takeShownRows } from '../src/tab-shown'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
 
@@ -18,7 +23,7 @@ const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Status page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes, while a release build’s view draws Asks for it, and only a next build names on an Asks row the subject it holds up', async context => {
+test('the Codex tab draws the Status page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes, while a release build’s view draws Asks for it, only a next build names on an Asks row the subject it holds up, and a proposed goal, a set goal with Edit on its heading row, its count after its text, its Now line and the field Edit opens draw in place', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const now = Date.now()
   const state = emptyState('overview')
@@ -85,30 +90,39 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
   for (const [key, value] of Object.entries(windowTimers))
     Object.defineProperty(window, key, { value, writable: true, configurable: true })
   const sentTabs: unknown[] = []
+  const presses: RowPress[] = []
   let isOlderServer = false
   let isNextBuild = true
   window.parent.postMessage = message => {
     const request = message as {
       id?: number
       method: string
-      params?: { name?: string; arguments?: { tab?: unknown } }
+      params?: { name?: string; arguments?: { tab?: unknown; press?: RowPress } }
     }
     if (request.id === undefined) return
     let result: unknown
+    const viewNow = (): TabView => ({
+      ...viewOf(state, Date.now()),
+      thread: state.sessionId,
+      devPage: 'status-page',
+      serverBuild: SERVER_BUILD,
+      isFetchingPrs: false,
+      isGhMissing: false,
+      ...(isNextBuild ? { isNextBuild: true } : {}),
+    })
     if (request.method === 'ui/initialize') result = {}
     else if (request.params?.name === 'inbox_view') {
       sentTabs.push(request.params.arguments?.tab)
-      const view: TabView = {
-        ...viewOf(state, Date.now()),
-        thread: state.sessionId,
-        devPage: 'status-page',
-        serverBuild: SERVER_BUILD,
-        isFetchingPrs: false,
-        isGhMissing: false,
-        ...(isNextBuild ? { isNextBuild: true } : {}),
-      }
+      const view = viewNow()
       if (isOlderServer) Reflect.deleteProperty(view, 'statusPage')
       result = { structuredContent: view }
+    } else if (request.params?.name === 'inbox_press' && request.params.arguments?.press) {
+      const press = request.params.arguments.press
+      presses.push(press)
+      const at = Date.now()
+      const r = goalPressed(state.ledger, press, kind => ({ kind, action: press.action, text: '', at }), at)
+      if ('ledger' in r) state.ledger = r.ledger
+      result = { structuredContent: { view: viewNow(), error: null, note: null } }
     } else throw new Error(`Unexpected request: ${request.method} ${request.params?.name ?? ''}`)
     queueMicrotask(() =>
       window.dispatchEvent(new window.MessageEvent('message', { data: { jsonrpc: '2.0', id: request.id, result } })),
@@ -162,8 +176,11 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
       ],
     )
     assert.deepEqual(
-      [...root.querySelectorAll('main button')].map(b => b.textContent),
-      ['View question'],
+      [...root.querySelectorAll('main button')].map(b => [b.textContent, b.className]),
+      [
+        ['New', 'key ghost'],
+        ['View question', 'key'],
+      ],
     )
 
     key('j')
@@ -191,7 +208,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.equal(root.querySelector('main .holds-up')?.textContent, '◆ Holds up Label')
     key('1')
     assert.equal(shownTab(), 'Status')
-    ;(root.querySelector('main.status-page .actions button') as HTMLElement).click()
+    ;(root.querySelector('main.status-page .list .actions button') as HTMLElement).click()
     assert.equal(shownTab(), 'Asks1')
     assert.match(root.querySelector('.row.selected')?.textContent ?? '', /Which label\?/)
     key('1')
@@ -236,7 +253,61 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     assert.equal(shownTab(), 'Status')
     assert.ok(root.querySelector('.status-head'))
     assert.ok(![...root.querySelectorAll('main .mark')].some(m => m.textContent === '◆'))
-    assert.equal(root.querySelectorAll('main button').length, 0)
+    assert.deepEqual(
+      [...root.querySelectorAll('main button')].map(b => b.textContent),
+      ['New'],
+    )
+    assert.equal(root.querySelector('.goal-heading .goal-title')?.textContent, 'Goal')
+    assert.equal(root.querySelector('.goal-heading .actions')?.textContent, 'New')
+    assert.equal(root.querySelector('.status-head.goal p')?.textContent, NO_GOAL_TEXT)
+
+    const withGoal = applyStatus(
+      state.ledger.overview,
+      parseStatus(
+        'NEW: working | Status page | drawn\nNEW: queued | Tab label | not started\nGOAL: Status tab shipped | done Page; queued Label',
+      )!,
+      now,
+      new Set(),
+    )!
+    state.ledger = { ...state.ledger, overview: withGoal }
+    await afterPoll()
+    const buttons = () => [...root.querySelectorAll('main button')].map(b => b.textContent)
+
+    const click = async (label: string) => {
+      ;([...root.querySelectorAll('main button')].find(b => b.textContent === label) as HTMLElement).click()
+      await new Promise<void>(resolve => setImmediate(resolve))
+      await new Promise<void>(resolve => setImmediate(resolve))
+    }
+    assert.equal(root.querySelector('.goal-heading')?.textContent, 'GoalEdit·Remove')
+    assert.deepEqual(
+      [...root.querySelectorAll('.status-head.goal > *')].map(e => e.textContent),
+      ['Status tab shipped · 1 of 2 done', 'Now: Drawing the Status in the Codex tab'],
+    )
+    assert.equal(root.querySelector('.status-head:not(.goal)'), null)
+    assert.deepEqual(buttons(), ['Edit', 'Remove'])
+    await click('Edit')
+    assert.equal((root.querySelector('#type-goal') as HTMLInputElement | null)?.value, 'Status tab shipped')
+    assert.equal(root.querySelector('.status-head.goal h1'), null)
+    assert.equal(root.querySelector('.goal-heading')?.textContent, 'Goal')
+    await click('Cancel')
+    assert.equal(root.querySelector('#type-goal'), null)
+    assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab shipped · 1 of 2 done')
+
+    await click('Edit')
+    const field = window.document.querySelector('#type-goal')!
+    Object.assign(field, { value: 'Status tab in the store' })
+    field.dispatchEvent(new window.Event('input', { bubbles: true }))
+    await click('Save')
+    assert.deepEqual(presses.at(-1), { action: 'type', id: 'goal', text: 'Status tab in the store' })
+    assert.equal(root.querySelector('#type-goal'), null)
+    assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab in the store')
+    assert.equal(
+      [...root.querySelectorAll('.status-head.goal p')].at(-1)?.textContent,
+      'Milestones after the next reply',
+    )
+
+    await click('Remove')
+    assert.deepEqual(presses.at(-1), { action: 'remove-goal', id: 'goal' })
   } finally {
     for (const key of Object.keys(windowTimers)) Reflect.deleteProperty(window, key)
     await window.happyDOM.abort()
@@ -259,20 +330,65 @@ test('a look starts when the tab shows the Status, ends when it shows another ta
     ),
   }
   state.tabSeenAt = 1000
-  const open = lookOnView(state, 'overview', 2000)
+  const open = lookOnView(state, 'overview', 2000, {})
   assert.equal(open.ledger.overview?.look?.startedAt, 2000)
 
-  const seen = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 2000 + LOOK_MIN_MS)
+  const seen = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 2000 + LOOK_MIN_MS, {})
   assert.equal(seen.ledger.overview?.look, null)
   assert.equal(seen.ledger.overview?.lastLookAt, 2000 + LOOK_MIN_MS)
 
-  const passed = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 3000)
+  const passed = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 3000, {})
   assert.equal(passed.ledger.overview?.look, null)
   assert.equal(passed.ledger.overview?.lastLookAt, null)
 
-  const closed = lookOnView({ ...open, tabSeenAt: 2000 + LOOK_MIN_MS }, 'needsYou', 2000 + 60_000)
+  const closed = lookOnView({ ...open, tabSeenAt: 2000 + LOOK_MIN_MS }, 'needsYou', 2000 + 60_000, {})
   assert.equal(closed.ledger.overview?.lastLookAt, 2000 + LOOK_MIN_MS)
 
-  const never = lookOnView(state, 'needsYou', 2000)
+  const never = lookOnView(state, 'needsYou', 2000, {})
   assert.equal(never.ledger.overview?.lastLookAt, null)
+})
+
+test('a look counts as seen only the Status subjects the tab reported on screen, across its requests and when the pane closed, and not rows a later showing reported', () => {
+  const state = emptyState('look-rows')
+  state.ledger = {
+    ...EMPTY,
+    overview: applyStatus(
+      null,
+      parseStatus(
+        'NEW: working | Sync | under way\nNEW: working | Search | under way\nNEW: queued | Docs | after the code',
+      )!,
+      500,
+      new Set(),
+    ),
+  }
+  const seenOf = (s: SessionState) => {
+    const o = s.ledger.overview!
+    return o.subjects.filter(x => isSubjectSeen(o, x)).map(x => x.name)
+  }
+  const open = lookOnView({ ...state, tabSeenAt: 1000 }, 'overview', 1000, { s1: 1000 })
+  const scrolled = lookOnView({ ...open, tabSeenAt: 4000 }, 'overview', 4000, { s2: 3500 })
+  const ended = lookOnView({ ...scrolled, tabSeenAt: 7000 }, 'needsYou', 7000, {})
+  assert.deepEqual(seenOf(ended), ['Sync', 'Search'])
+  assert.deepEqual(ended.lookRows, {})
+
+  const reopened = lookOnView({ ...ended, tabSeenAt: 7000 }, 'overview', 8000, { s3: 8000 })
+  const afterClose = lookOnView({ ...reopened, tabSeenAt: 8000 + LOOK_MIN_MS }, 'overview', 90_000, { s1: 90_000 })
+  assert.deepEqual(seenOf(afterClose), ['Sync', 'Search', 'Docs'])
+  assert.deepEqual(afterClose.lookRows, { s1: 90_000 })
+})
+
+test('the tab reports as on screen the rows whose first line is inside its window, each with when it last was, until its next request', () => {
+  const rows = [
+    { id: 's1', top: -40 },
+    { id: 's2', top: 0 },
+    { id: 's3', top: 599 },
+    { id: 's4', top: 600 },
+  ]
+  assert.deepEqual(rowsInView(rows, 600), ['s2', 's3'])
+
+  takeShownRows()
+  noteShownRows(['s2', 's3'], 100)
+  noteShownRows(['s3', 's4'], 200)
+  assert.deepEqual(takeShownRows(), { s2: 100, s3: 200, s4: 200 })
+  assert.deepEqual(takeShownRows(), {})
 })

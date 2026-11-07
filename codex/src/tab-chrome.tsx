@@ -1,5 +1,5 @@
 import { ago } from '../../hooks/text'
-import { HELP_COPY, helpKeys, MARK_LEGEND } from '../../hooks/help'
+import { HELP_COPY, helpKeys, markLegend, tabLegend } from '../../hooks/help'
 import { bannerOf, tabBarBanners } from '../../hooks/banners'
 import { DOT, ROW_COPY } from '../../hooks/rows'
 import { isRowTab, shownTabs, tabBadge } from '../../hooks/tabs'
@@ -34,7 +34,7 @@ export function HelpPage({ v }: { v: View }) {
       <section>
         <GroupTitle title={HELP_COPY.marks} count={0} />
         <div class="list">
-          {MARK_LEGEND.map(m => (
+          {markLegend(v.isNextBuild === true).map(m => (
             <div key={m.mark} class="row">
               <span class={legendMarkClass(m)} ref={m.isRunning ? pulseInStep : undefined}>
                 <MarkGlyph text={m.mark} />
@@ -42,6 +42,17 @@ export function HelpPage({ v }: { v: View }) {
               <div class="content tight muted">{m.words}</div>
             </div>
           ))}
+        </div>
+      </section>
+      <section>
+        <GroupTitle title={HELP_COPY.tabs} count={0} />
+        <div class="help-keys">
+          {tabLegend(v.isNextBuild === true).flatMap(t => [
+            <b key={`${t.keys}-symbol`}>{t.keys}</b>,
+            <span key={`${t.keys}-name`} class="muted">
+              {t.does}
+            </span>,
+          ])}
         </div>
       </section>
     </main>

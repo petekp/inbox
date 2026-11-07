@@ -6,9 +6,9 @@ Status: built. Merged to main in #5.
 
 ## Step 1: shared session modules
 
-### `hooks/session.ts`
+### The session modules
 
-A shared module holding a session's state and the pure changes to it.
+Shared modules holding a session's state and the pure changes to it. `Session` is in `types/index.d.ts`. The changes are in `hooks/session-files.ts`, `hooks/session-turns.ts`, `hooks/session-status.ts`, `hooks/session-presses.ts` and `hooks/session-view.ts`.
 
 `Session` holds the fields of `SessionState` in `codex/src/state.ts` that do not depend on Codex:
 
@@ -46,7 +46,7 @@ Whether a look is open is a host fact, so `notePrompt`, `endTurn` and `viewOf` t
 
 ### `hooks/session-host.ts`
 
-A shared module holding the `SessionHost` type and the async work that runs through it. `SessionHost` is everything a host supplies to run one session. Each function takes only the members it uses. The `Host` names and whether the inbox is open are arguments to the functions in `hooks/session.ts`, not members:
+A shared module holding the `SessionHost` type and the async work that runs through it. `SessionHost` is everything a host supplies to run one session. Each function takes only the members it uses. The `Host` names and whether the inbox is open are arguments to the functions in the session modules, not members:
 
 | Member | What the host does | Codex | omp |
 | --- | --- | --- | --- |

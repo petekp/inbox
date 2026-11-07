@@ -46,7 +46,7 @@ test('t opens a field for the person’s own words: a question’s words go to C
   expect((await replyField(pane, 'i1'))?.props.value).toBe('Deno, actually')
   await pane.press({ key: 'send-i1' })
   expect(w.sent.at(-1)).toBe('Re "Use Node or Python?": Deno, actually')
-  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/^Use Node or Python\?\s·\s✓ Replied/)
+  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/^Use Node or Python\?\s·\s✓ Replied: Deno, actually/)
   await $.tool.call({ tool: 'mcp__inbox__close', id: 'i1', answer: 'Deno' } as never)
   await clock.settle()
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
@@ -58,7 +58,7 @@ test('t opens a field for the person’s own words: a question’s words go to C
     'About this finding you recorded:\nIssue: README is stale\nIt names the old command.\n\nFix it after the CLI ships.',
   )
   await clock.settle()
-  expect(await pane.find({ text: /Replied/ })).toBeDefined()
+  expect(await pane.find({ text: /Replied: Fix it after the CLI ships\./ })).toBeDefined()
   await clock.advance(9000)
   expect(await pane.find({ text: /README is stale/ })).toBeDefined()
 })

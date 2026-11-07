@@ -1,11 +1,3 @@
-export { openTarget } from './open-targets'
-export type { PathProbe } from './open-targets'
-export { isPressConfirmed } from './press-reducer'
-export type { Effect } from './press-reducer'
-export { demoAfterPress, demoReplied, demoSent } from './press-effects'
-export type { DemoSent } from './press-effects'
-export { COMPARE_PAGE_FILE } from './press-messages'
-
 export function isPrRowId(id: string): boolean {
   return id.startsWith('pr:') || id.includes(' ')
 }
@@ -18,6 +10,10 @@ export type RowPress =
       id: string
     }
   | { action: 'step'; id: string; step: number; label: string }
+  /** Removes the Status page's goal. `id` is `GOAL_KEYS_ID`. A typed goal is a `type` press on that id. */
+  | { action: 'remove-goal'; id: string }
+  /** Undo of Remove goal: brings back the goal the person removed. `id` is `GOAL_KEYS_ID`. */
+  | { action: 'restore-goal'; id: string }
 
 export type PrActionId =
   | 'thread-address'
@@ -32,4 +28,5 @@ export type PrActionId =
   | 'pr-dismiss'
   | 'pr-rank-again'
   | 'check-fix'
+  | 'check-rerun'
   | 'log'

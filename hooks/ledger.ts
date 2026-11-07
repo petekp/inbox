@@ -1,14 +1,9 @@
-import type { Closed, ClosedFinding, Finding, Item, Ledger } from '../types'
+import type { Closed, ClosedFinding, Finding, Item, Ledger, PrOrder } from '../types'
 
-export type { Exchange, Press } from '../types'
 import { recommendedOption } from './ask-match'
 import { EXPIRED } from './ledger-update'
 import { readKind } from './reply-parse'
 import { upgradeStatus } from './status-upgrade'
-
-export { isAskedForChoices, LIST_CHOICES } from './ask-match'
-export { closeItem } from './ledger-close'
-export { readKind, tasksRunBy } from './reply-parse'
 
 /** How many saved sessions each host keeps; the newest by save time. */
 export const KEPT_SESSIONS = 40
@@ -27,9 +22,10 @@ export const EMPTY: Ledger = {
   updates: 0,
 }
 
-/** Whether nothing has been recorded: no model answer applied, no Status, no item and no finding. */
+/** Whether nothing has been recorded: no model answer applied, no Status or goal, no item and no finding. */
 export function isBlankLedger(ledger: Ledger): boolean {
-  const isStatusBlank = !ledger.overview || (ledger.overview.head === null && ledger.overview.subjects.length === 0)
+  const o = ledger.overview
+  const isStatusBlank = !o || (o.head === null && o.subjects.length === 0 && o.goal === null)
 
   return ledger.updates === 0 && isStatusBlank && ledger.items.length === 0 && ledger.findings.length === 0
 }
@@ -58,9 +54,7 @@ export function upgradeLedger(ledger: Ledger): Ledger {
 
   return {
     ...rest,
-    prOrder: rest.prOrder
-      ? { ...rest.prOrder, why: rest.prOrder.why ?? null, statuses: rest.prOrder.statuses ?? null }
-      : null,
+    prOrder: rest.prOrder ? upgradePrOrder(rest.prOrder, rest.prs) : null,
     updates,
     overview: upgradeStatus(rest.overview),
     findings: [...(rest.findings ?? []), ...(notes ?? [])],
@@ -73,6 +67,19 @@ export function upgradeLedger(ledger: Ledger): Ledger {
       how: d.how ?? howFromOutcome(d.outcome),
       ...(d.item ? { item: upgradeItem(d.item) } : {}),
     })),
+  }
+}
+
+/**
+ * An order saved before the inbox kept `dismissed` linked every PR it ranked, so a ranked PR missing from `prs` was
+ * dismissed. Its PRs stay linked, since nothing tells which of them the session also linked itself.
+ */
+function upgradePrOrder(order: PrOrder, prs: string[]): PrOrder {
+  return {
+    ...order,
+    why: order.why ?? null,
+    statuses: order.statuses ?? null,
+    dismissed: order.dismissed ?? order.refs.filter(ref => !prs.includes(ref)),
   }
 }
 

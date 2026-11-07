@@ -1,12 +1,10 @@
-import { ago } from '../../hooks/text'
 import { settledMark, DOT, settledLabel } from '../../hooks/rows'
 import { bannerOf } from '../../hooks/banners'
-import { feedbackOf, feedbackText, hasAge, isFailure } from '../../hooks/feedback'
 import type { SettledState } from '../../hooks/rows'
 import { prBlockActions } from '../../hooks/pr-tab'
 import {
-  DISMISS_MERGED_ID,
   RANK_AGAIN_ID,
+  PR_REFRESH_ID,
   ghNoticeOf,
   PR_GROUP_TITLES,
   PR_TONES,
@@ -15,26 +13,25 @@ import {
   prRefreshFailedText,
   threadSentIn,
 } from '../../hooks/pr-rows'
-import { isDismissed } from '../../hooks/pr-views'
 import { prRankText } from '../../hooks/pr-order'
 import type { PrOrderView } from '../../hooks/pr-order'
 import type { PrAction } from '../../hooks/pr-press'
 import { readiness } from '../../hooks/prs'
 import type { PrView } from '../../types'
 import type { TabView as View } from './core'
-import type { RowTrack } from '../../hooks/row-motion'
-import { tabState, sending, SENDING, errors, undoing } from './tab-state'
+import { tabState, sending, errors, undoing, drawnRows } from './tab-state'
 import type { Key, Row } from './tab-state'
-import { selectedIndex, select } from './tab-selection'
-import { act, pressesOf, prKey, prPlan } from './tab-rows'
-import type { PrBlockPlan } from './tab-rows'
-import { KeyButton, noteOf, ResultMarkView, GroupTitle, UndoPlace, Banner } from './tab-parts'
+import { select } from './tab-selection'
+import { act, pendingLocal, pressesOf, prKey } from './tab-rows'
+import { KeyButton, ResultMarkView, GroupTitle, UndoPlace, Banner } from './tab-parts'
+import { PR_REFRESH } from '../../hooks/pr-press'
+import type { PrRefreshView } from '../../hooks/pr-refresh'
 import { ListRow } from './tab-list'
-
-/** The PRs tab's own buttons, drawn after its PR blocks. */
-export function prTabKeys(v: View): Key[] {
-  return v.prs.tabActions.map(a => tabKey(DISMISS_MERGED_ID, a))
-}
+import { pressLine } from './tab-pr-lines'
+import type { PressLine } from './tab-pr-lines'
+import { PR_GROUPS, prBlockMotion, prGroupMotion, prLineMotion } from './tab-pr-steps'
+import type { DrawnPrBlock, DrawnPrs, PrGroup } from './tab-pr-steps'
+import type { RowTrack } from '../../hooks/row-motion'
 
 /** The order's changed line's buttons: Rank again. */
 export function prOrderKeys(v: View): Key[] {
@@ -65,7 +62,8 @@ function SettledPr({ pr, state }: { pr: PrView; state: SettledState }) {
             <span class="what">
               <span class="tone-prs">#{pr.number}</span> {pr.title}
             </span>
-            <span class="outcome-label">{`${DOT}${settledLabel(state.label, state.delivery)}`}</span>
+            <span class="muted">{DOT}</span>
+            <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>
             {error ? <span class="tone-error">{`${DOT}${error}`}</span> : null}
           </div>
           <UndoPlace
@@ -81,7 +79,7 @@ function SettledPr({ pr, state }: { pr: PrView; state: SettledState }) {
   )
 }
 
-async function undoPr(id: string, ref: string) {
+export async function undoPr(id: string, ref: string) {
   if (undoing.has(id)) return
   undoing.add(id)
   try {
@@ -90,27 +88,6 @@ async function undoPr(id: string, ref: string) {
     undoing.delete(id)
     tabState.draw()
   }
-}
-
-function prLastLine(v: View, ref: string): { text: string; isError: boolean } | null {
-  return pressLine(v, prMarkId(ref), !isDismissed(v.lastActions, ref))
-}
-
-/** A press's status under its buttons. `showsLast` says whether it draws the row's last press once that is saved. */
-function pressLine(v: View, id: string, showsLast: boolean): { text: string; isError: boolean } | null {
-  if (sending.has(id)) {
-    const pending = sending.get(id)?.pending
-    return { text: pending ? feedbackText(pending, 'codex') : SENDING, isError: false }
-  }
-  const error = errors.get(id)
-  if (error) return { text: error, isError: true }
-  const note = noteOf(id)
-  if (note) return { text: note, isError: false }
-  const f = showsLast ? feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at) : null
-  if (!f) return null
-  const text = feedbackText(f, 'codex')
-
-  return { text: hasAge(f) ? `${text}${DOT}${ago(v.at - f.at)}` : text, isError: isFailure(f) }
 }
 
 /** The order's title, the agent's reason under it, and the changed line with Rank again and its press status. */
@@ -134,99 +111,179 @@ function PrOrderLines({ v, order }: { v: View; order: PrOrderView }) {
           ) : null}
         </div>
       ) : null}
-      {last ? <div class={last.isError ? 'pr-last tone-error' : 'pr-last muted'}>{last.text}</div> : null}
+      {last ? <PrLine line={last} /> : null}
     </section>
   )
 }
 
-function PrBlock({
-  v,
-  pr,
-  threads,
-  checks,
-  rank,
-  openId,
-  all,
-  now,
-}: PrBlockPlan & { v: View; openId: string | undefined; all: Row[]; now: number }) {
-  const isSent = threadSentIn(v.lastActions)
-  const { status, head, unlisted } = readiness(pr, isSent)
-  const tone = PR_TONES[status]
-  const id = prMarkId(pr.ref)
-  const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v)).map(a => prKey(id, pr, a))
-  const last = prLastLine(v, pr.ref)
+/** The line under the notices while a PR could not be read: which ones, Refresh PRs, and its press status. */
+function PrRefreshLine({ v, refresh }: { v: View; refresh: PrRefreshView }) {
+  const keys = refresh.actions.map(a => ({
+    ...tabKey(PR_REFRESH_ID, a),
+    run: () => void act(PR_REFRESH_ID, a.press, undefined, pendingLocal(PR_REFRESH)),
+  }))
+  const last = pressLine(v, PR_REFRESH_ID, refresh.showsPress)
 
   return (
-    <section>
-      <div class="pr-head">
-        {rank === null ? null : <span class="rank muted">{prRankText(rank)}</span>}
-        <span class="tone-prs num">#{pr.number}</span> {pr.title}{' '}
-        <span class={tone ? `pr-verdict tone-${tone}` : 'pr-verdict muted'}>{head}</span>
-        <span class="pr-verdict muted">{unlisted.map(r => `${DOT}${r}`).join('')}</span>
+    <section class="pr-order">
+      <div class="pr-order-changed">
+        {refresh.text ? <span>{refresh.text}</span> : null}
+        {keys.length > 0 ? (
+          <span class="pr-actions keys">
+            {keys.map(k => (
+              <KeyButton k={k} />
+            ))}
+          </span>
+        ) : null}
       </div>
+      {last ? <PrLine line={last} /> : null}
+    </section>
+  )
+}
+
+/**
+ * A PR block in the form its track draws. A settling block draws its settled line over the body it last drew open,
+ * inert, while its height shrinks over it. A block leaving after the view dropped it draws its last form. The body
+ * stays the same element from open to settling, so the rows still moving in it finish their own moves.
+ */
+function PrEntry({ b, v, prs, now }: { b: DrawnPrBlock; v: View; prs: DrawnPrs; now: number }) {
+  const was = b.wasOpen
+  const settled = b.state.is === 'settled' ? b.state : null
+  const shown = was?.block ?? b
+  const hasBody = !settled || was !== null
+  const bodyClass = !was ? 'pr-body' : settled ? 'pr-body pr-was-open closing' : 'pr-body closing'
+
+  return (
+    <section class="pr-entry" data-motion={prBlockMotion(prMarkId(b.pr.ref))}>
+      <div class="pr-entry-content">
+        {settled ? <SettledPr key="settled" pr={b.pr} state={settled} /> : <PrHead key="head" v={v} {...shown} />}
+        {hasBody ? (
+          <div key="body" class={bodyClass} inert={was !== null}>
+            <PrBody {...shown} v={v} prs={prs} now={now} tracks={was?.tracks} />
+          </div>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function PrHead({ v, pr, rank }: DrawnPrBlock & { v: View }) {
+  const { status, head, unlisted } = readiness(pr, threadSentIn(v.lastActions), 'Codex')
+  const tone = PR_TONES[status]
+
+  return (
+    <div class="pr-head">
+      {rank === null ? null : <span class="rank muted">{prRankText(rank)}</span>}
+      <span class="tone-prs num">#{pr.number}</span> {pr.title}{' '}
+      <span class={tone ? `pr-verdict tone-${tone}` : 'pr-verdict muted'}>{head}</span>
+      <span class="pr-verdict muted">{unlisted.map(r => `${DOT}${r}`).join('')}</span>
+    </div>
+  )
+}
+
+/**
+ * An open block's buttons, press line and groups. With `tracks`, the body a settling or leaving block still draws:
+ * each row keeps the form it had, and no part takes a new move.
+ */
+function PrBody({
+  v,
+  pr,
+  drawn,
+  line,
+  prs,
+  now,
+  tracks,
+}: DrawnPrBlock & { v: View; prs: DrawnPrs; now: number; tracks?: Map<string, RowTrack> }) {
+  const isSent = threadSentIn(v.lastActions)
+  const id = prMarkId(pr.ref)
+  const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v)).map(a => prKey(id, pr, a))
+
+  return (
+    <>
       {pr.error ? <div class="pr-status tone-error">{prRefreshFailedText(pr.error)}</div> : null}
       <div class="pr-actions keys">
         {keys.map(k => (
           <KeyButton k={k} />
         ))}
       </div>
-      {last ? <div class={last.isError ? 'pr-last tone-error' : 'pr-last muted'}>{last.text}</div> : null}
+      {line ? (
+        <div data-motion={tracks ? undefined : prLineMotion(id)}>
+          <PrLine line={line} />
+        </div>
+      ) : null}
       <div class="pr-groups">
-        <PrRows title={PR_GROUP_TITLES.threads} rows={threads} all={all} openId={openId} now={now} />
-        <PrRows title={PR_GROUP_TITLES.checks} rows={checks} all={all} openId={openId} now={now} />
-      </div>
-    </section>
-  )
-}
-
-function PrRows({
-  title,
-  rows,
-  all,
-  openId,
-  now,
-}: {
-  title: string
-  rows: Row[]
-  all: Row[]
-  openId: string | undefined
-  now: number
-}) {
-  if (rows.length === 0) return null
-
-  return (
-    <>
-      <GroupTitle title={title} count={rows.length} />
-      <div class="list">
-        {rows.map(row => {
-          const isOpen = row.id === openId
-          const track: RowTrack = { state: isOpen ? 'open' : 'closed', since: 0, hasPanel: isOpen }
-
-          return (
-            <div class="entry" key={row.id}>
-              <ListRow row={row} track={track} now={now} onSelect={() => select('prs', all, all.indexOf(row))} />
-            </div>
-          )
-        })}
+        {PR_GROUPS.map(group => (
+          <PrRows
+            key={group}
+            motion={tracks ? undefined : prGroupMotion(id, group)}
+            group={group}
+            rows={drawn[group]}
+            prs={prs}
+            now={now}
+            tracks={tracks}
+          />
+        ))}
       </div>
     </>
   )
 }
 
-export function Prs({ v, now }: { v: View; now: number }) {
-  const { blocks, rows } = prPlan(v)
-  const ghState = { isGhMissing: v.isGhMissing, isGhSignedOut: v.prs.isGhSignedOut }
+function PrLine({ line }: { line: PressLine }) {
+  return <div class={line.isError ? 'pr-last tone-error' : 'pr-last muted'}>{line.text}</div>
+}
+
+/** A PR group's title and rows, the rows still leaving among them. The title counts only the rows the view lists. */
+function PrRows({
+  motion,
+  group,
+  rows,
+  prs,
+  now,
+  tracks,
+}: {
+  motion: string | undefined
+  group: PrGroup
+  rows: Row[] | null
+  prs: DrawnPrs
+  now: number
+  tracks: Map<string, RowTrack> | undefined
+}) {
+  if (!rows) return null
+  const listed = rows.filter(r => prs.rows.includes(r))
+
+  return (
+    <div class="pr-group" data-motion={motion}>
+      <GroupTitle title={PR_GROUP_TITLES[group]} count={listed.length} />
+      <div class="list">
+        {rows.map(row => (
+          <div class="entry" key={row.id} data-motion={tracks ? undefined : row.id}>
+            <ListRow
+              row={row}
+              track={tracks?.get(row.id) ?? drawnRows.get(row.id)!.track}
+              now={now}
+              onSelect={() => select('prs', prs.rows, prs.rows.indexOf(row))}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
+  const ghState = { isGhMissing: v.isGhMissing, isGhSignedOut: v.prs.isGhSignedOut, failure: v.prs.failure }
   const ghNotice = ghNoticeOf(ghState)
   const empty = prsEmptyText({ isFetching: v.isFetchingPrs, ...ghState }, 'chat')
-  if (blocks.length === 0)
+  if (prs.blocks.length === 0)
     return (
-      <div class="empty">
-        <div class="title">{empty.title}</div>
-        <div class="muted">{empty.hint}</div>
-      </div>
+      <main>
+        <div class="empty">
+          <div class="title">{empty.title}</div>
+          <div class="muted">{empty.hint}</div>
+        </div>
+        {v.prs.refresh ? <PrRefreshLine v={v} refresh={v.prs.refresh} /> : null}
+      </main>
     )
-  const openId = rows[selectedIndex(rows, 'prs', v)]?.id
-  const tabKeys = prTabKeys(v)
 
   return (
     <main>
@@ -235,25 +292,11 @@ export function Prs({ v, now }: { v: View; now: number }) {
           <Banner banner={bannerOf(ghNotice.kind, ghNotice.text)} />
         </div>
       ) : null}
+      {v.prs.refresh ? <PrRefreshLine v={v} refresh={v.prs.refresh} /> : null}
       {v.prs.order ? <PrOrderLines v={v} order={v.prs.order} /> : null}
-      {blocks.map(b =>
-        b.state.is === 'settled' ? (
-          <section>
-            <SettledPr pr={b.pr} state={b.state} />
-          </section>
-        ) : (
-          <PrBlock {...b} v={v} openId={openId} all={rows} now={now} />
-        ),
-      )}
-      {tabKeys.length > 0 ? (
-        <section>
-          <div class="pr-actions keys">
-            {tabKeys.map(k => (
-              <KeyButton k={k} />
-            ))}
-          </div>
-        </section>
-      ) : null}
+      {prs.blocks.map(b => (
+        <PrEntry key={prMarkId(b.pr.ref)} b={b} v={v} prs={prs} now={now} />
+      ))}
       {v.prs.olderText ? (
         <section>
           <div class="group-title muted">{v.prs.olderText}</div>

@@ -26,6 +26,7 @@ describe('herdrLabels', () => {
     expect(herdrLabels({ ...CLEARED_TOKENS, inbox: '2 · Ship it?', 'inbox-needs-you': '2' })).toEqual({
       'inbox.status': '2 · Ship it?',
       'inbox.stop': '',
+      'inbox.focus': '',
       'inbox.needs-you': '2',
       'inbox.findings': '',
       'inbox.prs': '',

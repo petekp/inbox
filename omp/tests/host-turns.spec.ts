@@ -30,7 +30,7 @@ test('Done schedules the wake and the wake tells the agent after the settle wind
   await settle()
   const id = state().ledger.items[0].id
   const outcome = await inbox.press(makeCtx(), { action: 'done', id }, NO_HOLDS)
-  expect(outcome.wakesForDone).toBe(true)
+  expect(outcome.wakesAfterSettle).toBe(true)
   expect(w.timers).toHaveLength(1)
   expect(w.timers[0]!.ms).toBeGreaterThan(1000)
   expect(w.sent).toEqual([])
@@ -96,6 +96,7 @@ test('in a Herdr pane, each change reports the tab counts, a stop replaces them 
   const cleared = {
     inbox: null,
     'inbox-stop': null,
+    'inbox-focus': null,
     'inbox-needs-you': null,
     'inbox-findings': null,
     'inbox-prs': null,
@@ -185,6 +186,27 @@ test('a subagent runs as a child from its started frame to its end, its progress
     ['Map the repo', false],
     ['task', false],
   ])
+})
+
+test('a Herdr report that failed before the person switched sessions is retried with the session now shown', async () => {
+  const retries: (() => Promise<unknown>)[] = []
+  createInbox(pi(), { ...deps(), herdrPane: 'p1', after: (_ms, retry) => void retries.push(retry) })
+  await call('session_start', { type: 'session_start' })
+  await settle()
+  w.execResults.set('herdr', { code: 1 })
+  await record({ kind: 'question', ask: 'Ship it?', options: ['yes', 'no'] })
+  await settle()
+  expect(herdrReports().at(-1)?.tokens.inbox).toBe('Ship it?')
+  expect(retries).toHaveLength(1)
+
+  await call('session_switch', { type: 'session_switch', reason: 'new' }, makeCtx('s2'))
+  await settle()
+  w.execResults.delete('herdr')
+  const reports = herdrReports().length
+  await retries.shift()!()
+
+  expect(herdrReports()).toHaveLength(reports + 1)
+  expect(herdrReports().at(-1)?.tokens).toMatchObject({ inbox: null, 'inbox-needs-you': null })
 })
 
 test('a Herdr delegate runs as a child from the bash call that starts it until a wait on it returns, or Herdr shows it no longer working at the turn’s end', async () => {

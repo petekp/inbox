@@ -4,23 +4,24 @@ import type { PrActionId, RowPress } from './presses'
 import { isAgain, outAction, pressFeedbackIn, pressOutAction } from './feedback'
 import type { ActionEmphasis } from './rows'
 import type { PressState } from './feedback'
-import { checkRowId, DISMISS_MERGED_ID, prMarkId, RANK_AGAIN_ID, threadRowId } from './pr-rows'
+import { checkRowId, prMarkId, PR_REFRESH_ID, RANK_AGAIN_ID, threadRowId } from './pr-rows'
+import { failedSibling, isSameRun, runOf } from './pr-checks'
+import { checkKey } from './prs'
 
 /** Fetches every PR the session tracks, so the row reads "Refreshing PRs…". */
 export const PR_REFRESH: Effect = { kind: 'refresh-prs', name: 'PRs' }
 
 export type PrPress =
   | { action: 'thread-address' | 'thread-draft' | 'thread-discuss' | 'thread-open'; ref: string; thread: string }
-  | {
-      action: 'pr-conflicts' | 'pr-address-all' | 'pr-merge' | 'pr-open' | 'pr-refresh' | 'pr-dismiss' | 'pr-undo'
-      ref: string
-    }
-  | { action: 'check-fix' | 'log'; ref: string; check: string }
-  | { action: 'pr-dismiss-merged' }
+  | { action: 'pr-conflicts' | 'pr-address-all' | 'pr-merge' | 'pr-open' | 'pr-dismiss' | 'pr-undo'; ref: string }
+  /** `check` is the check's `checkKey`. */
+  | { action: 'check-fix' | 'check-rerun' | 'log'; ref: string; check: string }
+  /** The tab's own presses, on its lines above the PR blocks. */
   | { action: 'pr-rank-again' }
+  | { action: 'pr-refresh' }
 
 export function isPrPress(p: RowPress | PrPress): p is PrPress {
-  return 'ref' in p || p.action === 'pr-dismiss-merged' || p.action === 'pr-rank-again'
+  return 'ref' in p || p.action === 'pr-rank-again' || p.action === 'pr-refresh'
 }
 
 /**
@@ -44,8 +45,42 @@ export function logEffect(pr: PrView, check: PrCheck): Effect {
   return { kind: 'open', target: check.url ?? pr.url, name: check.url ? 'the log' : `PR #${pr.number}` }
 }
 
-/** A PR press that hands off a fix. The saved view can predate a push, so the press reads the PR from GitHub first. */
-export type PrFixPress = { action: 'pr-conflicts'; ref: string } | { action: 'check-fix'; ref: string; check: string }
+export const RERUN_LABEL = 'Re-run'
+
+/**
+ * The re-run a cancelled check offers, or null when it offers none: it is not cancelled, another app ran it, or a
+ * failing check shares its run. A failing job cancels the other jobs of its run, so that run needs Fix first.
+ */
+export function rerunEffect(pr: PrView, c: PrCheck): Extract<Effect, { kind: 'rerun' }> | null {
+  const run = c.bucket === 'cancelled' ? runOf(c) : null
+  if (!run) return null
+
+  return failedSibling(pr, c) ? null : { kind: 'rerun', ...run, name: c.workflow || c.name }
+}
+
+/** The other checks of `c`'s run that offer Re-run too, since one re-run covers them all. */
+export function sameRunChecks(pr: PrView, c: PrCheck): PrCheck[] {
+  const run = runOf(c)
+
+  return run ? pr.checks.filter(o => checkKey(o) !== checkKey(c) && isSameRun(run, runOf(o)) && rerunEffect(pr, o)) : []
+}
+
+/**
+ * The gh arguments that re-run a workflow run's failed and cancelled jobs, and the jobs that need them. GitHub keeps
+ * the jobs that passed, and refuses the re-run while the run is still running.
+ */
+export function rerunArgs(e: Extract<Effect, { kind: 'rerun' }>): string[] {
+  return ['run', 'rerun', e.run, '--failed', '-R', e.repo]
+}
+
+/** A PR press that hands off a fix. */
+type PrFixPress = { action: 'pr-conflicts'; ref: string } | { action: 'check-fix'; ref: string; check: string }
+
+/**
+ * A PR press that reads the PR from GitHub first: a fix press, and Re-run. The saved view can predate a push, or a
+ * re-run someone started on GitHub.
+ */
+export type PrReadFirstPress = PrFixPress | { action: 'check-rerun'; ref: string; check: string }
 
 /** The labels of the buttons that hand a PR's fix to the agent. */
 export const PR_FIX_LABELS: Record<PrFixPress['action'], string> = {
@@ -53,21 +88,27 @@ export const PR_FIX_LABELS: Record<PrFixPress['action'], string> = {
   'check-fix': 'Fix',
 }
 
-export function isPrFixPress(p: PrPress): p is PrFixPress {
-  return p.action === 'pr-conflicts' || p.action === 'check-fix'
+/** The labels of the buttons whose press reads the PR first. */
+export const PR_READ_FIRST_LABELS: Record<PrReadFirstPress['action'], string> = {
+  ...PR_FIX_LABELS,
+  'check-rerun': RERUN_LABEL,
 }
 
-/** The refresh a fix press runs before it sends, so its row reads "Refreshing PR #12…". */
-export function fixCheckEffect(pr: PrView): Effect {
+export function isPrReadFirstPress(p: PrPress): p is PrReadFirstPress {
+  return p.action === 'pr-conflicts' || p.action === 'check-fix' || p.action === 'check-rerun'
+}
+
+/** The refresh a press runs before it applies, so its row reads "Refreshing PR #12…". */
+export function readFirstEffect(pr: PrView): Effect {
   return { kind: 'refresh-prs', name: `PR #${pr.number}` }
 }
 
 /**
- * The open or refresh a PR press runs before any message: a Local press's open or refresh, or a fix press's
- * `fixCheckEffect`. Null for a press that only sends or marks, or whose row is gone.
+ * The open or refresh a PR press runs first: a Local press's open or refresh, or `readFirstEffect` for a press that
+ * reads the PR first. Null for a press that only sends or marks, or whose row is gone.
  */
 export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
-  if (isPrFixPress(p)) return fixCheckEffect(pr)
+  if (isPrReadFirstPress(p)) return readFirstEffect(pr)
   switch (p.action) {
     case 'thread-open': {
       const t = pr.threads.find(x => x.id === p.thread)
@@ -75,10 +116,8 @@ export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
     }
     case 'pr-open':
       return prPageEffect(pr)
-    case 'pr-refresh':
-      return PR_REFRESH
     case 'log': {
-      const check = pr.checks.find(c => c.name === p.check)
+      const check = pr.checks.find(c => checkKey(c) === p.check)
       return check ? logEffect(pr, check) : null
     }
     default:
@@ -87,8 +126,8 @@ export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
 }
 
 function prRowId(p: PrPress): string {
-  if (p.action === 'pr-dismiss-merged') return DISMISS_MERGED_ID
   if (p.action === 'pr-rank-again') return RANK_AGAIN_ID
+  if (p.action === 'pr-refresh') return PR_REFRESH_ID
   if ('check' in p) return checkRowId(p.ref, p.check)
   if ('thread' in p) return threadRowId(p.ref, p.thread)
 

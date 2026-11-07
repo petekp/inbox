@@ -16,13 +16,15 @@ import { tabState, drafts, sending, SENDING, errors, copies, entering, undoing, 
 import type { Row, Entry, Lists } from './tab-state'
 import { reducedMotion, drawIn } from './tab-motion'
 import { drawnTab, shownSettled, selectedIndex, open, select, isOpenGuarded, rowActions } from './tab-selection'
-import { discardReply } from './tab-press'
+import { discardReply, outPending } from './tab-press'
 import { act, listsOf } from './tab-rows'
-import { feedbackLabel, noteOf, isFeedbackShown, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
+import { stepPrs } from './tab-pr-steps'
+import type { DrawnPrs } from './tab-pr-steps'
+import { feedbackLabel, noteOf, isFeedbackShown, MarkGlyph, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
 
 const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as const
 
-export function stepLists(v: View): { lists: Lists; changed: Set<string> } {
+export function stepLists(v: View): { lists: Lists; prs: DrawnPrs | null; changed: Set<string> } {
   const now = Date.now()
   const lists = listsOf(v, shownSettled(v))
   const t = drawnTab()
@@ -30,6 +32,7 @@ export function stepLists(v: View): { lists: Lists; changed: Set<string> } {
   const openId = isRowTab(t) ? rows[selectedIndex(rows, t, v)]?.id : undefined
   const changed = new Set<string>()
   const kept = new Set<string>()
+  const prs = t === 'prs' ? stepPrs(v, now, changed, kept) : null
   for (const group of (Object.keys(LIST_OF) as Group[]).filter(g => TAB_OF[g] === t)) {
     const listed = lists[LIST_OF[group]]
     const listedIds = new Set(listed.map(entryId))
@@ -66,10 +69,10 @@ export function stepLists(v: View): { lists: Lists; changed: Set<string> } {
     entries: lists.findings.filter(x => ('row' in x ? x.row.kind : x.settled.finding?.kind) === g.kind),
   }))
   for (const id of [...drawnRows.keys()]) if (!kept.has(id)) drawnRows.delete(id)
-  return { lists, changed }
+  return { lists, prs, changed }
 }
 
-async function undo(r: RowView) {
+export async function undo(r: RowView) {
   if (undoing.has(r.id)) return
   const t = TAB_OF[r.type]
   undoing.add(r.id)
@@ -86,6 +89,15 @@ async function undo(r: RowView) {
     }
     tabState.draw()
   }
+}
+
+/** What a row's line and side column draw, in its open form or its closed one. */
+type LineForm = {
+  isOpen: boolean
+  sideLabel: string | null
+  statusUnder: string | null
+  last: string | null
+  side: string | null | undefined
 }
 
 export function ListRow({
@@ -106,21 +118,41 @@ export function ListRow({
       class={`mark ${row.handleTone ?? ''}${row.isHandleRunning ? ' running' : ''}`}
       ref={row.isHandleRunning ? pulseInStep : undefined}
     >
-      {row.handle}
+      <MarkGlyph text={row.handle} />
     </span>
   )
 
   const isPressing = sending.has(row.id)
-  const pending = sending.get(row.id)?.pending ?? null
-  const isSending = isPressing && pending === null
+  const pending = outPending(tabState.view, row.id)
+  const isSending = isPressing && sending.get(row.id)?.pending === null
   const f = isFeedbackShown(row) ? row.feedback : null
   const label = isSending ? null : pending ? feedbackText(pending, 'codex') : f ? feedbackLabel(row) : null
   const ageAt = !isPressing && f && hasAge(f) ? f.at : null
-  const isInSide = ageAt !== null && !isSelected && !isClosing && f?.is !== 'queued' && f?.is !== 'unconfirmed'
-  const statusUnder = !isSending && isStatusUnderActions(pending ?? f, isSelected || isClosing) ? label : null
-  const last = isInSide || statusUnder ? null : label
-  const side = isSending ? SENDING : ageAt !== null ? shortAgo(now - ageAt) : last ? null : row.age
+  const lineForm = (isOpen: boolean): LineForm => {
+    const isInSide = ageAt !== null && !isOpen && f?.is !== 'queued' && f?.is !== 'unconfirmed'
+    const statusUnder = !isSending && isStatusUnderActions(pending ?? f, isOpen) ? label : null
+    const last = isInSide || statusUnder ? null : label
+    const side = isSending ? SENDING : ageAt !== null ? shortAgo(now - ageAt) : last ? null : row.age
+
+    return { isOpen, sideLabel: isInSide ? label : null, statusUnder, last, side }
+  }
+  const drawn = lineForm(isSelected || isClosing)
+  // A closing row also draws its closed line, hidden, so that collapse() measures the height it comes to rest at.
+  const closed = isClosing ? lineForm(false) : null
   const afterTone = !isPressing && isFailure(row.feedback) ? 'error' : undefined
+  const after = (form: LineForm, only = '') =>
+    form.last ? (
+      <span class={`after ${afterTone ? `tone-${afterTone}` : ''}${only}`}>
+        {form.isOpen ? `${DOT}${form.last}` : form.last}
+      </span>
+    ) : null
+  const side = (form: LineForm) => (
+    <>
+      {form.sideLabel ? <span class="side-label">{form.sideLabel}</span> : null}
+      {form.side}
+    </>
+  )
+  const isSideSplit = closed !== null && (closed.side !== drawn.side || closed.sideLabel !== drawn.sideLabel)
 
   return (
     <div
@@ -143,23 +175,27 @@ export function ListRow({
             {row.title}
           </span>
           {row.meta ? <span class="meta">{row.meta}</span> : null}
-          {last ? (
-            <span class={`after ${afterTone ? `tone-${afterTone}` : ''}`}>
-              {isSelected || isClosing ? `${DOT}${last}` : last}
-            </span>
-          ) : null}
+          {after(drawn, closed ? ' open-only' : '')}
+          {closed ? after(closed, ' closed-only') : null}
           {row.holdsUp ? (
             <span class="holds-up">
               <span class="tone-needsYou">{HELD_MARK.mark}</span> {row.holdsUp}
             </span>
           ) : null}
+          {row.recLine ? <span class="rec-line">{row.recLine}</span> : null}
         </button>
       </div>
       <span class="side" data-room={SENDING}>
-        {isInSide ? <span class="side-label">{label}</span> : null}
-        {side}
+        {isSideSplit ? (
+          <>
+            <span class="open-only">{side(drawn)}</span>
+            <span class="closed-only">{side(closed)}</span>
+          </>
+        ) : (
+          side(drawn)
+        )}
       </span>
-      {isSelected || isClosing ? <Panel row={row} isClosing={isClosing} status={statusUnder} /> : null}
+      {isSelected || isClosing ? <Panel row={row} isClosing={isClosing} status={drawn.statusUnder} /> : null}
     </div>
   )
 }
@@ -241,10 +277,8 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
         <div class="settled-head">
           <div class="settled-line">
             <span class="what">{r.title}</span>
-            <span class="outcome-label">
-              {DOT}
-              {settledLabel(state.label, state.delivery)}
-            </span>
+            <span class="muted">{DOT}</span>
+            <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>
             {error ? (
               <span class="tone-error">
                 {DOT}

@@ -14,12 +14,16 @@ import { emptyState } from '../src/state'
 import type { SessionState } from '../src/state'
 import { after, pressed, withItems } from './press-fixtures'
 
-test('an answer names its option by text: it closes the question and sends the answer as a press', () => {
+test('an answer names its option by text: it closes the question and holds the answer for the Undo window', () => {
   const r = pressed(withItems(), { action: 'answer', id: 'i1', option: 'Fix add.js' })
   assert.ok(!('stale' in r))
-  assert.deepEqual(r.effects, [
-    { kind: 'send', text: 'Re "Fix add.js or the test?": Fix add.js', by: { id: 'i1', action: 'answer' } },
-  ])
+  assert.deepEqual(r.effects, [])
+  assert.deepEqual(r.last?.delivery, {
+    state: 'held',
+    message: 'Re "Fix add.js or the test?": Fix add.js',
+    until: r.last?.at === undefined ? NaN : r.last.at + 1000,
+    by: { id: 'i1', action: 'answer' },
+  })
   assert.deepEqual(
     r.ledger.closed.map(d => [d.id, d.outcome, d.how]),
     [['i1', 'Fix add.js', 'answered']],
@@ -48,7 +52,7 @@ test('a run step hands the task to Codex: it folds until the turn it started is 
   assert.deepEqual(folded.needsYou.tasks[0]?.state, { is: 'handedOff' })
   assert.deepEqual(viewOf(s, 50 + QUEUED_AFTER_MS).needsYou.tasks[0]?.feedback, {
     is: 'queued',
-    label: 'Run seed script',
+    label: 'Queued: Run seed script',
     at: 50,
   })
   assert.deepEqual(rowResultMark(folded.needsYou.tasks[0]!), { text: '●', isRunning: true })
@@ -166,7 +170,7 @@ test('an open or copy on a handed-off task keeps it folded and out of the count,
   assert.equal(viewOf(done, 60).needsYou.tasks[0]?.feedback?.is, 'local')
   assert.deepEqual(viewOf(done, 55 + SETTLED_MS).needsYou.tasks[0]?.feedback, {
     is: 'queued',
-    label: 'Run seed script',
+    label: 'Queued: Run seed script',
     at: 50,
   })
 })

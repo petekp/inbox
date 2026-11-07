@@ -19,7 +19,7 @@ export type ClosedFinding = Finding & Pick<Closed, 'how' | 'outcome'> & { closed
 
 export type PrCheck = {
   name: string
-  bucket: 'pass' | 'fail' | 'pending' | 'skip'
+  bucket: 'pass' | 'fail' | 'cancelled' | 'pending' | 'skip'
   url: string | null
   /** The GitHub Actions workflow that ran it, such as "CI". Absent for a commit status, and on a check saved before the mod kept it. */
   workflow?: string
@@ -77,7 +77,7 @@ export type PrStatus = 'ready' | 'blocked' | 'waiting' | 'draft' | 'merged' | 'c
 
 /**
  * What a ranked PR's block showed: its status, read without sent threads, and the ids of its waiting threads and the
- * names of its failing checks.
+ * `checkKey`s of its failing and cancelled checks.
  */
 export type RankedPrStatus = { status: PrStatus; threads: string[]; failing: string[] }
 
@@ -85,13 +85,15 @@ export type RankedPrStatus = { status: PrStatus; threads: string[]; failing: str
  * The PRs an agent ranked, first to last, as "owner/repo#123", with its short name for the order, as "Merge in this
  * order", the reason it gave for the order, the agent's name, as "Claude", and when it set it. `statuses` holds each
  * ranked PR's status from the first view the tab had of it once the order was set. It is null on an order saved before
- * the inbox kept statuses, which never reads as changed.
+ * the inbox kept statuses, which never reads as changed. `dismissed` holds the ranked PRs the person dismissed from the
+ * tab, which keep their place in `refs` for Undo.
  */
 export type PrOrder = {
   refs: string[]
   label: string | null
   why: string | null
   statuses: Record<string, RankedPrStatus> | null
+  dismissed: string[]
   by: string
   at: number
 }
@@ -106,7 +108,7 @@ export type Ledger = {
   closedFindings: ClosedFinding[]
   /** PRs this session created or linked, as "owner/repo#123", until the person dismisses one. The PRs tab leaves out those `isLeftOut` names. */
   prs: string[]
-  /** The order the agent set for the PRs tab with `order_prs`, or null for the tab's own order. */
+  /** The order the agent set for the PRs tab with `order_prs`, or null for the tab's own order. The tab also shows the PRs it ranks, which are not in `prs` unless the session linked them. */
   prOrder: PrOrder | null
   nextId: number
   /** How many prompts the person has sent this session. */

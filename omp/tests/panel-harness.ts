@@ -22,7 +22,7 @@ export const style: Style = {
 export const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
 
 export const screenOf = (overrides: Partial<PanelScreen> = {}, holds = NO_HOLDS): PanelScreen => ({
-  view: sessionView(demoState(NOW), NOW, SETTLED_MS, true, holds),
+  view: sessionView(demoState(NOW), NOW, SETTLED_MS, holds),
   modelName: 'Claude Sonnet 4.5',
   isGhMissing: false,
   isFetchingPrs: false,
@@ -60,4 +60,9 @@ export function buttonLine(screen: PanelScreen, ui: PanelUi): string {
 
 export const onPage: PanelUi = { ...INITIAL_UI, tab: 'overview' }
 
-export const labelOf = (row: StatusRow) => (row.kind === 'subject' || row.kind === 'child' ? row.name : row.text)
+export const labelOf = (row: StatusRow) =>
+  row.kind === 'subject' || row.kind === 'child'
+    ? row.name
+    : row.kind === 'counts'
+      ? row.counts.map(c => c.text).join(' · ')
+      : row.text

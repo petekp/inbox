@@ -1,10 +1,10 @@
 import { linkDialogs } from './dialogs'
 import { closedAt, pruneClosed } from './ledger-close'
 import type { Host } from './model-text'
-import { applyPrPress } from './pr-tab'
+import { applyPrPress, withFinishedPrsSettled } from './pr-tab'
 import { isPrPress, pressRowId } from './pr-press'
 import { isViewKept } from './pr-views'
-import { itemPrSteps } from './pr-fetch'
+import { itemPrSteps, tabPrs } from './pr-fetch'
 import { withOrderStatuses } from './pr-order'
 import type { Applied, PrPress } from './pr-press'
 import { actionId } from './press-labels'
@@ -18,7 +18,7 @@ import { isShownSince } from './timing'
 import { outAction, pressFeedbackIn } from './feedback'
 import type { Holds } from './timing'
 import type { RowState } from './rows'
-import type { PrViews, Session } from '../types'
+import type { PrFetchFailure, PrViews, Session } from '../types'
 import { sessionView } from './session-view'
 
 export type Pressed = Exclude<Applied, { stale: true }>
@@ -32,7 +32,7 @@ type DrawnWith = { settleWindowMs: number; holds: Holds }
  */
 function isRepeatWhileOut(s: Session, p: RowPress | PrPress, at: number, drawn: DrawnWith): boolean {
   const rowId = pressRowId(p)
-  const view = sessionView(s, at, drawn.settleWindowMs, false, drawn.holds)
+  const view = sessionView(s, at, drawn.settleWindowMs, drawn.holds)
   const row = allRows(view).find(r => r.id === rowId)
   const last = view.lastActions[rowId]
   const state: RowState = row?.state ?? { is: 'open' }
@@ -55,16 +55,18 @@ export function pressOn(
   const item = s.ledger.items.find(i => i.id === p.id)
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
-    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : [],
+    holdMs: drawn.settleWindowMs,
+    extraSteps: item ? itemPrSteps(item, s.prViews, tabPrs(s.ledger)) : [],
     answerMessage: texts.answerMessage,
     comparePage: texts.comparePage,
+    compareInBackground: texts.compareInBackground,
   })
   if ('stale' in r) return r
 
   return {
     ledger: r.ledger,
     lasts: r.last ? { [p.id]: r.last } : {},
-    drop: [],
+    drop: r.dropLast ? [p.id] : [],
     effects: r.effects,
     ...(r.reopenedId ? { reopenedId: r.reopenedId } : {}),
   }
@@ -127,7 +129,8 @@ export function recorded<S extends Session>(
   args: Record<string, unknown>,
   now: number,
 ): { state: S } & Omit<ToolAnswer, 'ledger'> {
-  const r = toolAnswer(host, s.ledger, tool, args, now)
+  const presses = { lastActions: s.lastActions, turnStartedAt: s.presence.turnStartedAt }
+  const r = toolAnswer(host, s.ledger, tool, args, now, presses)
   const ledger = withOrderStatuses(r.ledger, s.prViews.views)
 
   return { state: linkDialogs({ ...s, ledger }), result: r.result, personLine: r.personLine }
@@ -172,18 +175,26 @@ export function withFetchedPrs<S extends Session>(
   fetched: PrViews['views'],
   branchRef: string | null,
   isGhSignedOut: boolean | null,
+  now: number,
+  failure: PrFetchFailure | null = null,
+  unread: Record<string, string> = {},
 ): S {
   const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true
   const views = { ...s.prViews.views, ...fetched }
+  const { ledger, lastActions } = withFinishedPrsSettled(s, fetched, { now, turnsStarted: s.presence.turnsStarted })
+  const stillUnread = Object.fromEntries(Object.entries(unread).filter(([ref]) => !(ref in views)))
 
   return {
     ...s,
-    ledger: withOrderStatuses(s.ledger, views),
+    lastActions,
+    ledger: withOrderStatuses(ledger, views),
     prViews: {
       views,
       branchRef,
       isFetching: false,
       ...(isSignedOut ? { isGhSignedOut: true } : {}),
+      ...(failure ? { failure } : {}),
+      ...(Object.keys(stillUnread).length > 0 ? { unread: stillUnread } : {}),
     },
   }
 }

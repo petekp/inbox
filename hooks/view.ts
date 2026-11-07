@@ -18,111 +18,18 @@ import { baseName } from './open-targets'
 import { stepsOf } from './help-steps'
 import type { HelpStep } from './help-steps'
 import { isFixSent, isHandedOff } from './last-actions'
-import { isUndoable } from './pressed'
+import { isHeldSend, isUndoable } from './pressed'
 import { FINDING_GROUPS } from './help'
-import { isSettledInPlace, canUndoClose, isUndoLeft, pendingDeliveryAt } from './timing'
-import { closedRowState, optionDescriptionsOf, isWaitingRow, outcomeLabel, closedMark } from './rows'
+import { isSettledInPlace, canUndoClose, isUndoLeft, pendingDeliveryAt, earliestOf } from './timing'
+import type { ListInput } from './timing'
+import { closedRowState, optionDescriptionsOf, isWaitingRow, outcomeLabel, closedMark, recLineOf } from './rows'
 import type { RowView, ClosedDelivery, ResultMark, RowState } from './rows'
-import { DONE_LABELS, fixLabel, feedbackIn, pressFeedbackIn } from './feedback'
+import { doneLabel, feedbackOf, fixLabel, feedbackIn, pressUnderWaySince, pressFeedbackIn } from './feedback'
 import type { ShownTab } from './tabs'
 import { actionsOf } from './action-plan'
 
-export {
-  PERMISSION_FALLBACK_DELAY_MS,
-  PRESS_GUARD_MS,
-  QUEUED_AFTER_MS,
-  SETTLED_MS,
-  compareEndsAt,
-  heldReplies,
-  isGuarded,
-  keptDiscards,
-  resultGlyph,
-  runningMark,
-} from './timing'
-export type { Holds } from './timing'
-export {
-  DOT,
-  NEEDS_YOU_GROUPS,
-  ROW_COPY,
-  actionLabel,
-  allRows,
-  canUndoRefused,
-  closedShown,
-  closedTotal,
-  earlierLabel,
-  fieldExit,
-  foldLabel,
-  replyHint,
-  rowResultMark,
-  rowTitle,
-  settledLabel,
-  settledMark,
-  settledRowIds,
-  settledTone,
-  shortAgo,
-  shownOptionDescriptions,
-  waitingCount,
-} from './rows'
-export type { ModLook, ResultMark, RowView, SettledState } from './rows'
-export {
-  feedbackOf,
-  feedbackText,
-  hasAge,
-  isAfterTitle,
-  isFailure,
-  isStatusUnderActions,
-  markedFeedbackText,
-  rowFeedbackText,
-} from './feedback'
-export {
-  DEMO_NOTICE,
-  NEXT_BUILD_MARK,
-  READING_TEXT,
-  RESUME_TEXT,
-  bannerOf,
-  emptyText,
-  groupEmptyText,
-  isResumable,
-  stopBanner,
-  stopFix,
-  stopText,
-  tabBarBanners,
-  versionLabel,
-} from './banners'
-export type { BannerView } from './banners'
-export {
-  LISTED_TABS,
-  drawnTabOf,
-  fitTabs,
-  inboxCommandText,
-  isRowTab,
-  isShownTab,
-  screenTabOf,
-  shownTabs,
-  tabBadge,
-  tabName,
-} from './tabs'
-export type { ShownTab, TabNaming } from './tabs'
-export { FINDING_GROUPS, HELD_MARK, HELP_COPY, MARK_LEGEND, helpKeys } from './help'
-export type { LegendEntry } from './help'
-export { LOOK_DASH, STALL_GAP, STATUS_TEXT_LINES, WAS_PREFIX, mergedLine, nameBeforeStall } from './status-page'
-export type { StatusBranch, StatusPage, StatusRow, StatusStall } from './status-page'
-export {
-  actionLines,
-  drawnLists,
-  firstWaiting,
-  keptOpen,
-  rowAfterClose,
-  rowKeyPlan,
-  rowsIn,
-  settledIn,
-  statusKeyPlan,
-  statusKeyRows,
-  statusSelected,
-} from './action-plan'
-export type { DrawnEntry, PlannedKey } from './action-plan'
-
-type ItemStatus = { isUpdating: boolean; error: string | null }
+/** `isRetrying`: the update that runs retries a failed one. */
+type ItemStatus = { isUpdating: boolean; isRetrying: boolean; error: string | null }
 
 export type ViewInput = {
   ledger: Ledger
@@ -145,6 +52,13 @@ export type ViewInput = {
   shownSince: number | null
   /** When the person last sent a message they typed, from `Session.presence`. */
   lastTypedMessageAt: number | null
+  /** The person's latest run of input on the list the look shows. Null when the look knows of none. */
+  listInput: ListInput | null
+  /**
+   * The settled rows and PRs whose Undo the look still shows, by id. The Codex tab times Undo from its own first read of
+   * a row, so it names them and the server keeps them in place. Other looks pass none.
+   */
+  undoShown?: string[]
 }
 
 export type InboxView = {
@@ -153,17 +67,17 @@ export type InboxView = {
     questions: RowView[]
     tasks: RowView[]
     closed: { questions: ClosedView<Closed>[]; tasks: ClosedView<Closed>[] }
+    /** When the oldest press still under way on a row of the tab began, or null. A settled row there that was in place then waits for it. */
+    pressOutSince: number | null
   }
-  findings: { count: number; rows: RowView[]; closed: ClosedView<ClosedFinding>[] }
+  findings: { count: number; rows: RowView[]; closed: ClosedView<ClosedFinding>[]; pressOutSince: number | null }
   status: ItemStatus
 }
 
 /** A closed entry as a look draws it. `mark` is `closedMark` of the entry and its delivery. */
 type ClosedView<T> = T & { delivery: ClosedDelivery; outcomeLabel: string; mark: ResultMark }
 
-const UPDATE_FAILED = 'Last update failed. Items from that reply may be missing.'
 const HOLDS_UP_TEXT = 'Holds up'
-const UPDATE_RETRIES = ' It retries after your next message.'
 
 function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[] } {
   const newestReplyFirst = (kind: Item['kind']) =>
@@ -172,11 +86,12 @@ function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[] } {
   return { questions: newestReplyFirst('question'), tasks: newestReplyFirst('task') }
 }
 
-/** The open subject the Status call linked an ask to, by the ask's id. */
-function heldSubjectOf(o: SessionStatus | null, askId: string): Subject | null {
-  const subjectId = o?.askSubjects[askId]
+/** The open subjects, and open milestones of a set goal, the Status call linked an ask to, by the ask's id. */
+function heldSubjectsOf(o: SessionStatus | null, askId: string): Pick<Subject, 'name'>[] {
+  const milestones = o?.goal && !o.goal.isAwaitingMilestones ? o.milestones : []
+  const linkable = [...(o?.subjects ?? []), ...milestones]
 
-  return o?.subjects.find(s => s.id === subjectId && isOpen(s)) ?? null
+  return (o?.askSubjects[askId] ?? []).flatMap(id => linkable.filter(s => s.id === id && isOpen(s)))
 }
 
 export function inboxView({
@@ -192,9 +107,44 @@ export function inboxView({
   discarded,
   shownSince,
   lastTypedMessageAt,
+  listInput,
+  undoShown,
 }: ViewInput): InboxView {
-  const isInPlace = (at: number, canUndo: boolean) =>
-    isSettledInPlace({ at, canUndo }, { shownSince, lastTypedMessageAt })
+  const isFindingId = (id: string) =>
+    ledger.findings.some(f => f.id === id) || ledger.closedFindings.some(f => f.id === id)
+  const isItemId = (id: string) => ledger.items.some(i => i.id === id) || ledger.closed.some(c => c.id === id)
+  const pressOutSinceWhere = (isOnTab: (id: string) => boolean) =>
+    earliestOf(
+      Object.entries(lastActions).map(([id, last]) =>
+        isOnTab(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, turns, now)) : null,
+      ),
+    )
+  const placingOn = (pressOutSince: number | null) => ({
+    shownSince,
+    lastTypedMessageAt,
+    listInput,
+    now,
+    settleWindowMs,
+    undoShown,
+    pressOutSince,
+  })
+  const placingFor = {
+    needsYou: placingOn(pressOutSinceWhere(isItemId)),
+    findings: placingOn(pressOutSinceWhere(isFindingId)),
+  }
+  const isInPlace = (id: string, at: number, canUndo: boolean, last?: LastAction) =>
+    isSettledInPlace(
+      { at, canUndo, delivery: pendingDeliveryAt(last, now) },
+      isFindingId(id) ? placingFor.findings : placingFor.needsYou,
+      id,
+    )
+  const pressedSend = (c: Closed | ClosedFinding) => {
+    const last = lastActions[c.id]
+
+    return (c.how === 'answered' || c.how === 'done') && last?.kind === 'mark' && last.at === closedAt(c)
+      ? last
+      : undefined
+  }
   const isOpen = (id: string) => ledger.items.some(i => i.id === id) || ledger.findings.some(f => f.id === id)
   const replyAfter = (c: Closed | ClosedFinding) => {
     const last = lastActions[c.id]
@@ -202,14 +152,15 @@ export function inboxView({
     return last?.action === 'type' &&
       last.at >= closedAt(c) &&
       last.delivery?.state !== 'failed' &&
-      isInPlace(last.at, false)
+      isInPlace(c.id, last.at, false, last)
       ? last
       : null
   }
-  const isOwnClose = (c: Closed | ClosedFinding) =>
-    c.how === 'done' ||
-    c.how === 'dismissed' ||
-    (c.how === 'answered' && lastActions[c.id]?.kind === 'mark' && lastActions[c.id]?.at === closedAt(c))
+  const isPressedAnswer = (c: Closed | ClosedFinding) =>
+    c.how === 'answered' && lastActions[c.id]?.kind === 'mark' && lastActions[c.id]?.at === closedAt(c)
+  const isOwnClose = (c: Closed | ClosedFinding) => c.how === 'done' || c.how === 'dismissed' || isPressedAnswer(c)
+  const isAnswerHeld = (c: Closed | ClosedFinding) =>
+    isPressedAnswer(c) && isHeldSend(lastActions[c.id]) && isUndoLeft(closedAt(c), now, settleWindowMs)
   const isHeld = (c: Closed | ClosedFinding) => {
     const since = replies[c.id]
 
@@ -221,7 +172,8 @@ export function inboxView({
 
     return (
       replyAfter(c) !== null ||
-      (!isDiscarded(c) && (isHeld(c) || isInPlace(at, canUndoClose(c, at, now, settleWindowMs))))
+      (!isDiscarded(c) &&
+        (isHeld(c) || isInPlace(c.id, at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs), pressedSend(c))))
     )
   }
   const placedItems = new Map(
@@ -230,7 +182,7 @@ export function inboxView({
   const isFixSettled = (id: string) => {
     const last = lastActions[id]
 
-    return isFixSent(last) && !isInPlace(last.at, isUndoLeft(last.at, now, settleWindowMs))
+    return isFixSent(last) && !isInPlace(id, last.at, isUndoLeft(last.at, now, settleWindowMs), last)
   }
   const placedFindings = new Map(
     ledger.closedFindings.filter(f => !isOpen(f.id) && !isFixSettled(f.id) && isPlaced(f)).map(f => [f.id, f] as const),
@@ -242,17 +194,17 @@ export function inboxView({
     const closed = placedItems.get(id) ?? placedFindings.get(id)
     if (closed) {
       const at = closedAt(closed)
-      const last = lastActions[id]
       const reply = replyAfter(closed)
       if (reply)
         return {
           is: 'settled',
-          label: DONE_LABELS[reply.action]?.(reply.text) ?? reply.text,
+          label: doneLabel(reply),
           at: reply.at,
           canUndo: false,
           offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
           closedAs: closedState(closed),
+          ...(reply.reply !== undefined ? { reply: reply.reply } : {}),
         }
       if (isHeld(closed)) return { is: 'held', label: heldLabel(closed), at }
 
@@ -263,9 +215,8 @@ export function inboxView({
         settleWindowMs,
         'doneNotification' in closed && closed.doneNotification?.error !== undefined
           ? { error: closed.doneNotification.error, canUndo: isUndoable(closed) }
-          : (closed.how === 'answered' || closed.how === 'done') && last?.kind === 'mark' && last.at === at
-            ? pendingDeliveryAt(last, now)
-            : null,
+          : pendingDeliveryAt(pressedSend(closed), now),
+        isPressedAnswer(closed),
       )
     }
 
@@ -285,7 +236,7 @@ export function inboxView({
     return isHandedOff(last, turns) ? { is: 'handedOff' } : { is: 'open' }
   }
   const rowOf = (
-    row: Omit<RowView, 'state' | 'feedback' | 'actions' | 'optionDescriptions' | 'holdsUpLine'>,
+    row: Omit<RowView, 'state' | 'feedback' | 'actions' | 'optionDescriptions' | 'holdsUpLine' | 'recLine'>,
   ): RowView => {
     const state = stateOf(row.id)
     const last = lastActions[row.id]
@@ -293,7 +244,7 @@ export function inboxView({
     // A button must keep its width while its press is out, or the buttons after it can move to another line.
     const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt))
 
-    const heldSubject = state.is === 'open' ? heldSubjectOf(ledger.overview, row.id) : null
+    const held = state.is === 'open' ? heldSubjectsOf(ledger.overview, row.id) : []
 
     return {
       ...row,
@@ -301,7 +252,8 @@ export function inboxView({
       feedback,
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
-      holdsUpLine: heldSubject ? `${HOLDS_UP_TEXT} ${heldSubject.name}` : null,
+      holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map(s => s.name).join(', ')}` : null,
+      recLine: state.is === 'open' ? recLineOf(row.item) : null,
     }
   }
   const itemRow = (item: Item): RowView => {
@@ -384,9 +336,11 @@ export function inboxView({
       questions: questionRows,
       tasks: taskRows,
       closed: { questions: closed.filter(d => d.kind === 'question'), tasks: closed.filter(d => d.kind === 'task') },
+      pressOutSince: placingFor.needsYou.pressOutSince,
     },
     findings: {
       count: findingRows.filter(isWaitingRow).length,
+      pressOutSince: placingFor.findings.pressOutSince,
       rows: findingRows,
       closed: [
         ...ledger.closedFindings
@@ -406,6 +360,7 @@ function heldLabel(c: Pick<Closed, 'how' | 'outcome'>): string {
 }
 
 const UPDATING_TEXT = 'Updating…'
+const RETRYING_TEXT = 'Retrying the last update…'
 const REFRESHING_PRS_TEXT = 'Refreshing PRs…'
 
 /**
@@ -422,12 +377,26 @@ export function footerStatus(
   if (tab === 'prs') return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null }
   const error = (tab === 'overview' ? statusPageError : null) ?? status.error
 
-  return { text: status.isUpdating ? UPDATING_TEXT : null, error }
+  return { text: status.isRetrying ? RETRYING_TEXT : status.isUpdating ? UPDATING_TEXT : null, error }
 }
 
-export function perTurnStatus(update: { isUpdating: boolean; isFailed: boolean; retries: boolean }): ItemStatus {
-  return {
-    isUpdating: update.isUpdating,
-    error: update.isFailed && !update.isUpdating ? UPDATE_FAILED + (update.retries ? UPDATE_RETRIES : '') : null,
-  }
+/**
+ * Where a failed ledger update stands. `waiting`: the host retries after the agent's next reply. `retrying`: an
+ * update runs now. `failed-again`: a retry failed too, and the host tries again. `unreadable`: the last catch-up could
+ * not read the conversation, and the next update tries again.
+ */
+export type UpdateRecovery = 'none' | 'waiting' | 'retrying' | 'failed-again' | 'unreadable'
+
+const NEXT_TRY = ' It tries again after the next reply.'
+
+const FAILED_UPDATE_TEXT: Record<Exclude<UpdateRecovery, 'none' | 'retrying'>, string> = {
+  waiting: `The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing.${NEXT_TRY}`,
+  'failed-again': `The inbox couldn't update from the agent's recent replies, even on a retry. Questions, tasks and findings from them may be missing.${NEXT_TRY}`,
+  unreadable: `The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing.${NEXT_TRY}`,
+}
+
+export function perTurnStatus(isUpdating: boolean, recovery: UpdateRecovery): ItemStatus {
+  const error = recovery === 'none' || recovery === 'retrying' ? null : FAILED_UPDATE_TEXT[recovery]
+
+  return { isUpdating, isRetrying: recovery === 'retrying', error }
 }

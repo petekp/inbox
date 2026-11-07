@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { PRESS_GUARD_MS, QUEUED_AFTER_MS, SETTLED_MS } from '../hooks/timing'
+import { FOLD_QUIET_MS, PRESS_GUARD_MS, QUEUED_AFTER_MS, SETTLED_MS } from '../hooks/timing'
 import { w, arrive, world } from './hooks-world'
-import { BAND, PANE, selectRow, leaveAndReturn } from './hooks-helpers'
+import { BAND, PANE, selectRow } from './hooks-helpers'
 
 test('Claude closes an item or finding that no longer applies, by the id it reads beside the prompt', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -66,8 +66,6 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   expect((await close({ id: 'f3', reason: 'fixed again' })).result).toBe('Already closed: you closed it earlier.')
 
   await clock.advance(9000)
-  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
-  await leaveAndReturn(pane, clock, 'needsYou')
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
   expect(await pane.find({ text: /^Deno$/ })).toBeUndefined()
   await pane.press({ key: 'fold-question' })
@@ -86,7 +84,7 @@ test('Claude closes an item or finding that no longer applies, by the id it read
 })
 
 test(
-  'Dismiss settles a question in place with Undo, which brings it back open and selected, a second close reaches Claude too, and a message typed while Undo lasts folds the row when Undo ends',
+  'Dismiss settles a question in place with Undo, which brings it back open and selected, a second close reaches Claude too, the row folds into Closed when Undo ends but waits while the person presses on the list, and a message typed while Undo lasts folds the row when Undo ends',
   { timeoutMs: 20_000 },
   async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
@@ -130,15 +128,19 @@ test(
     await pane.press({ key: 'dismiss-i1-key' })
     expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
     expect(await prompt('and now?')).toContain(closedLine)
-    await pane.press({ key: 'undo-i1' })
+    expect((await pane.find({ key: 'last-undo-key' }))?.props.hotkey).toBe('u')
+    await pane.press({ key: 'last-undo-key' })
+    expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
     await clock.advance(500)
     expect((await pane.find({ key: 'dismiss-i1' }))?.props.dimColor).toBeUndefined()
     await pane.press({ key: 'dismiss-i1' })
     expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
-    await clock.advance(SETTLED_MS)
+    await clock.advance(SETTLED_MS - 100)
+    await pane.press({ key: 'next' })
+    await clock.advance(200)
     expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
     expect(await pane.find({ key: 'undo-i1' })).toBeUndefined()
-    await leaveAndReturn(pane, clock, 'needsYou')
+    await clock.advance(FOLD_QUIET_MS)
     expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
     expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('▸ 1 closed')
     expect(await pane.find({ key: 'explain-i2-key' })).toBeDefined()
@@ -154,3 +156,27 @@ test(
     expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('▸ 2 closed')
   },
 )
+
+test('an Explain under way on the tab keeps a closed row in place past its fold time, until the agent answers', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: true, isFocused: true }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+
+  await pane.press({ key: 'dismiss-i1' })
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'explain-i2-key' })
+  await clock.settle()
+  expect(await pane.find({ text: /Explaining…/ })).toBeDefined()
+  await clock.advance(SETTLED_MS + FOLD_QUIET_MS)
+  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+
+  await $.turn.start({ text: w.sent.at(-1) ?? '', turnId: 't2' })
+  await $.turn.complete({ answer: 'Node is simpler.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
+  await clock.settle()
+  expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
+})

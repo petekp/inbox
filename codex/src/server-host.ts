@@ -3,6 +3,7 @@ import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
 
 import { ghFinder, ghIn } from '../../hooks/gh'
+import { isCompareInBackground } from '../../hooks/clients'
 import { isPrPress } from '../../hooks/pr-press'
 import type { PrPress } from '../../hooks/pr-press'
 import { openTarget } from '../../hooks/open-targets'
@@ -11,7 +12,9 @@ import type { RowPress } from '../../hooks/presses'
 import { turnEnded, turnStarted } from '../../hooks/session-turns'
 import type { SendOutcome } from '../../hooks/session-presses'
 import { fetchPrs, prFetchTracker } from '../../hooks/host-prs'
-import { press, wakeForDone as wakeSessionForDone } from '../../hooks/host-press'
+import { NO_PR_SHARED } from '../../hooks/pr-fetch'
+import type { PrShared } from '../../hooks/pr-fetch'
+import { press, wakeAfterSettle as wakeSessionAfterSettle } from '../../hooks/host-press'
 import type { SessionHost } from '../../hooks/session-host'
 import { NO_HOLDS } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
@@ -25,8 +28,10 @@ import { pageName } from './server-tools'
 import { SETTLE_WINDOW_MS } from './settle'
 import { readState, updateState } from './state'
 import type { SessionState } from './state'
-import { newestTurnEvent, turnIn } from './transcript'
+import { newestTurnEvent, turnIn, withCurrentRollout } from './transcript'
 import { reconcileUpdateStatus } from './update'
+
+const ROLLOUT_LOOKUP_MS = 60_000
 
 export function makeSessionHost(
   deps: ServerDeps,
@@ -38,6 +43,7 @@ export function makeSessionHost(
   const gh = ghFinder(deps.exec)
   const prFetches = prFetchTracker(now)
   let isGhMissing = false
+  let prShared: PrShared = NO_PR_SHARED
 
   async function queueMessage(s: SessionState, message: string, resolvedCli?: string): Promise<SendOutcome> {
     let cli: string
@@ -68,8 +74,14 @@ export function makeSessionHost(
       },
       deliver: (s, message) => queueMessage(s, message, preparedCli),
       perform: async (s, e) => (e.kind === 'copy' ? null : open(s, e.target)),
-      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true)),
+      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true, true)),
       gh: {
+        shared: {
+          read: async () => prShared,
+          write: async change => {
+            prShared = change(prShared)
+          },
+        },
         find: gh.find,
         forget: gh.forget,
         run: (s, bin, onUnstartable) => ghIn(deps.exec, bin, s.root, onUnstartable),
@@ -81,12 +93,27 @@ export function makeSessionHost(
       newId: randomUUID,
       answerMessage,
       comparePage: deps.comparePage,
+      compareInBackground: isCompareInBackground('codex'),
     }
   }
 
-  /** Sets whether a turn runs from the rollout's last turn row, read inside the state lock so no hook writes between. */
+  /** When each chat last looked for a rollout Codex moved. A miss walks every day folder, and the tab polls often. */
+  const rolloutLookups = new Map<string, number>()
+  const currentRollout = async (s: SessionState): Promise<SessionState> => {
+    const last = rolloutLookups.get(s.sessionId)
+    if (last !== undefined && now() - last < ROLLOUT_LOOKUP_MS) return s
+    rolloutLookups.set(s.sessionId, now())
+
+    return withCurrentRollout(s)
+  }
+
+  /**
+   * Sets whether a turn runs from the rollout's last turn row, read inside the state lock so no hook writes between.
+   * It first finds a rollout Codex moved again, so the reads after it use the path it saves.
+   */
   async function syncTurn(id: string): Promise<SessionState> {
-    return updateState(dir, id, async s => {
+    return updateState(dir, id, async saved => {
+      const s = await currentRollout(saved)
       const newest = s.transcriptPath === null ? null : await newestTurnEvent(s.transcriptPath)
       if (newest !== null) newestTurns.set(id, newest.id)
       const isRunning = newest === null ? null : newest.kind === 'started'
@@ -96,12 +123,12 @@ export function makeSessionHost(
     })
   }
 
-  const wakeForDone = async (id: string) => {
-    await wakeSessionForDone(hostFor(id), await syncTurn(id))
+  const wakeAfterSettle = async (id: string) => {
+    await wakeSessionAfterSettle(hostFor(id), await syncTurn(id))
   }
 
   function fetchPrsWhenDue(id: string, s: SessionState) {
-    void prFetches.fetchWhenDue(id, s, () => fetchPrs(hostFor(id), true))
+    void prFetches.fetchWhenDue(id, s, s.shownTab === 'prs', () => fetchPrs(hostFor(id), true))
   }
 
   const served = async (s: SessionState, id: string, isDemo = false, holds: Holds = NO_HOLDS): Promise<TabView> => {
@@ -142,8 +169,9 @@ export function makeSessionHost(
     if (!isPrPress(p) && (p.action === 'answer' || p.action === 'type'))
       await linkRunningDialogs(id, p.id).catch(() => undefined)
     const outcome = await press(hostFor(id), p, thread !== id, holds)
-    if (outcome.wakesForDone) setTimeout(() => void wakeForDone(id).catch(() => undefined), SETTLE_WINDOW_MS).unref()
-    const { isUnconfirmed, wakesForDone: _wakes, ...rest } = outcome
+    if (outcome.wakesAfterSettle)
+      setTimeout(() => void wakeAfterSettle(id).catch(() => undefined), SETTLE_WINDOW_MS).unref()
+    const { isUnconfirmed, wakesAfterSettle: _wakes, ...rest } = outcome
 
     return {
       view: await served(await readState(dir, id), id, false, holds),
@@ -162,5 +190,5 @@ export function makeSessionHost(
   }
   const open = (s: SessionState, target: string) => openTarget(deps.exec, files, target, s.root, s.home)
 
-  return { wakeForDone, fetchPrsWhenDue, served, onPress }
+  return { wakeAfterSettle, fetchPrsWhenDue, served, onPress }
 }

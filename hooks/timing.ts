@@ -1,7 +1,9 @@
 import type { LastAction, Draft, Closed } from '../types'
 import { isUndoable } from './pressed'
 import { RUNNING_FRAMES } from './help'
-import type { SettledState, RowView, ResultMark } from './rows'
+import { textMark } from './marks'
+import type { ClosedDelivery, SettledState, RowView, ResultMark } from './rows'
+import { statusListRows } from './status-page'
 import type { StatusPage } from './status-page'
 import type { ViewInput } from './view'
 
@@ -30,13 +32,14 @@ function isQueuedAt(last: LastAction | undefined, now: number): boolean {
 }
 
 /**
- * A send still on its way. For its first QUEUED_AFTER_MS a queued send reads as sending, so a send that the agent takes
- * at once never reads Queued. Neither reads as delivered, so neither draws a ✓.
+ * A send still on its way, or held for Undo before it leaves. For its first QUEUED_AFTER_MS a queued send reads as
+ * sending, so a send that the agent takes at once never reads Queued. None reads as delivered, so none draws a ✓.
  */
 export function pendingDeliveryAt(
   last: LastAction | undefined,
   now: number,
-): 'sending' | 'queued' | 'unconfirmed' | null {
+): 'held' | 'sending' | 'queued' | 'unconfirmed' | null {
+  if (last?.delivery?.state === 'held') return 'held'
   if (last?.delivery?.state === 'unconfirmed') return 'unconfirmed'
   if (last?.delivery?.state !== 'queued') return null
   return isQueuedAt(last, now) ? 'queued' : 'sending'
@@ -47,10 +50,31 @@ export function isGuarded(openedAt: number, now: number): boolean {
   return openedAt > 0 && now - openedAt < PRESS_GUARD_MS
 }
 
-/** What a look holds in place besides the session: the rows replies hold, and the rows closed while it shows them. */
-export type Holds = Pick<ViewInput, 'replies' | 'discarded' | 'shownSince'>
+/** How long the list stays in use after the person's last press, key, click or pointer move on it. */
+export const FOLD_QUIET_MS = 1000
 
-export const NO_HOLDS: Holds = { replies: {}, discarded: {}, shownSince: null }
+/** The person's latest run of input on the list: when it began, and its last input. A gap of FOLD_QUIET_MS ends a run. */
+export type ListInput = { since: number; last: number }
+
+/** `input` with one more input at `at`. */
+export function withListInput(input: ListInput | null, at: number): ListInput {
+  const isSameRun = input !== null && at - input.last < FOLD_QUIET_MS
+
+  return isSameRun ? { since: input.since, last: Math.max(at, input.last) } : { since: at, last: at }
+}
+
+/** Whether the person has been using the list without a break since `at`, so a row due then waits to fold. */
+export function isListInUseSince(input: ListInput | null, at: number, now: number): boolean {
+  return input !== null && now - input.last < FOLD_QUIET_MS && input.since <= at
+}
+
+/**
+ * What a look holds in place besides the session: the rows replies hold, the rows closed while it shows them, and the
+ * person's input on the list, which keeps due rows from folding under it.
+ */
+export type Holds = Pick<ViewInput, 'replies' | 'discarded' | 'shownSince' | 'listInput' | 'undoShown'>
+
+export const NO_HOLDS: Holds = { replies: {}, discarded: {}, shownSince: null, listInput: null }
 
 /**
  * Whether the look has shown its tab since `at`. Every row that closed or was pressed since then can still be drawn in
@@ -61,17 +85,101 @@ export function isShownSince(at: number, shownSince: number | null): boolean {
 }
 
 /**
- * Whether a settled row stays in place, with its result. It stays while the look shows the tab it settled on, until
- * the person sends a message they typed. While its Undo lasts, it stays through that message and folds when Undo ends.
- * Leaving the tab, by switching tab or closing the inbox, folds it at once.
+ * When a settled row comes due to fold: `settleWindowMs` after it settled, or sooner, at a message the person typed
+ * after it once Undo no longer lasts. A message typed later never moves it, so a hold that began after the row folded
+ * cannot bring it back.
  */
-export function isSettledInPlace(
+function foldDueAt(
   state: Pick<SettledState, 'at' | 'canUndo'>,
-  { shownSince, lastTypedMessageAt }: Pick<ViewInput, 'shownSince' | 'lastTypedMessageAt'>,
-): boolean {
+  lastTypedMessageAt: number | null,
+  settleWindowMs: number,
+): number {
+  const windowEndsAt = state.at + settleWindowMs
   const isTypedSince = lastTypedMessageAt !== null && lastTypedMessageAt > state.at
 
-  return isShownSince(state.at, shownSince) && (state.canUndo || !isTypedSince)
+  return isTypedSince && !state.canUndo ? Math.min(lastTypedMessageAt, windowEndsAt) : windowEndsAt
+}
+
+/** Whether a press still under way, begun at `pressOutSince`, had begun by `at`, so a row due then waits for it to end. */
+export function isPressOutSince(pressOutSince: number | null, at: number): boolean {
+  return pressOutSince !== null && pressOutSince <= at
+}
+
+/** The earliest of `times`, or null when none is known. */
+export function earliestOf(times: (number | null)[]): number | null {
+  const known = times.filter((t): t is number => t !== null)
+
+  return known.length > 0 ? Math.min(...known) : null
+}
+
+/**
+ * What places a settled row: the look's showing and the person's input from the view's input, and when the oldest press
+ * still under way on a row of the row's tab began, which `inboxView` works out, or null while none is.
+ */
+export type Placing = Pick<
+  ViewInput,
+  'shownSince' | 'lastTypedMessageAt' | 'listInput' | 'now' | 'settleWindowMs' | 'undoShown'
+> & { pressOutSince: number | null }
+
+/**
+ * Whether a row's message is still on its way to the agent: held for Undo, or sent and not yet taken. Every look and
+ * the view read this one test. A held message counts from its press until its host records the send, so the row keeps
+ * its place through the moment Undo ends, when a redraw can come before the release. A row whose message was refused
+ * or could not be confirmed is not on its way: it folds once Undo ends, and its Closed line shows what happened.
+ */
+export function isSendOnItsWay(delivery: ClosedDelivery): boolean {
+  return delivery === 'held' || delivery === 'sending' || delivery === 'queued'
+}
+
+/**
+ * Whether a settled row stays in place, with its result. It stays while the look shows the tab it settled on, until it
+ * comes due by `foldDueAt`, and folds into its group's Closed fold then. A due row waits while its message is on its way,
+ * while a press begun before it came due is still out on a row of its tab, and while the person has been using the list
+ * since before then, until they stop for FOLD_QUIET_MS, so nothing moves under a press. A hold keeps only a row that has
+ * not folded yet: a press or input that begins after the row came due leaves it folded. A row whose Undo the look still
+ * shows, named by `id` in `undoShown`, stays too. Leaving the tab, by switching tab or closing the inbox, folds it at once.
+ */
+export function isSettledInPlace(
+  state: Pick<SettledState, 'at' | 'canUndo' | 'delivery'>,
+  { shownSince, lastTypedMessageAt, listInput, now, settleWindowMs, undoShown, pressOutSince }: Placing,
+  id?: string,
+): boolean {
+  const dueAt = foldDueAt(state, lastTypedMessageAt, settleWindowMs)
+  const isUndoShown = id !== undefined && (undoShown ?? []).includes(id)
+  const isWaiting =
+    now < dueAt ||
+    isUndoShown ||
+    isSendOnItsWay(state.delivery) ||
+    isPressOutSince(pressOutSince, dueAt) ||
+    isListInUseSince(listInput, dueAt, now)
+
+  return isShownSince(state.at, shownSince) && isWaiting
+}
+
+/**
+ * When the next of `settled` can fold, so a look redraws then: a row's due time, or the end of the person's use of the
+ * list. A row that waits on its message or on a press folds when that changes, which redraws anyway. Null when no
+ * fold comes due on the clock.
+ */
+export function nextFoldAt(
+  settled: Pick<SettledState, 'at' | 'canUndo' | 'delivery'>[],
+  {
+    lastTypedMessageAt,
+    listInput,
+    now,
+    settleWindowMs,
+  }: Pick<Placing, 'lastTypedMessageAt' | 'listInput' | 'now' | 'settleWindowMs'>,
+): number | null {
+  const times = settled.flatMap(state => {
+    const dueAt = foldDueAt(state, lastTypedMessageAt, settleWindowMs)
+    if (dueAt > now) return [dueAt]
+    const quietAt = listInput === null ? null : listInput.last + FOLD_QUIET_MS
+    const isQuietLater = quietAt !== null && quietAt > now
+
+    return !isSendOnItsWay(state.delivery) && isQuietLater ? [quietAt] : []
+  })
+
+  return times.length > 0 ? Math.min(...times) : null
 }
 
 /**
@@ -114,7 +222,7 @@ export const RUNNING_FRAME_MS = 300
 export const RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS
 
 export function hasRunningMark(page: StatusPage): boolean {
-  return page.rows.some(r => (r.kind === 'subject' || r.kind === 'child') && r.isRunning)
+  return statusListRows(page).some(r => (r.kind === 'subject' || r.kind === 'child') && r.isRunning)
 }
 
 /** A running row's mark at `now`. Every mark on a page takes its frame from the clock, so all of them move together. */
@@ -124,5 +232,5 @@ export function runningMark(now: number): string {
 
 /** A result mark's glyph in the text looks at `now`. A blank mark keeps its place, so the result stays put when its mark arrives. */
 export function resultGlyph(mark: ResultMark, now: number): string {
-  return mark.isRunning ? runningMark(now) : mark.text || ' '
+  return mark.isRunning ? runningMark(now) : textMark(mark.text) || ' '
 }

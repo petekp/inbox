@@ -1,5 +1,6 @@
-import type { Closed, Item } from '../types'
+import type { Closed, ClosedFinding, Item } from '../types'
 import type { Update } from './reply-parse'
+import { stem } from './status-limits'
 
 export function words(text: string): string[] {
   return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
@@ -47,8 +48,14 @@ export function keyWords(text: string): Set<string> {
 }
 
 export function restates(a: string, b: string): boolean {
-  const x = keyWords(a)
-  const y = keyWords(b)
+  return sharesKeyWords(keyWords(a), keyWords(b)) ?? sameAsk(a, b)
+}
+
+/**
+ * Whether two sets of key words share most of the smaller set and name the same numbers, or null when either set has
+ * fewer than two words, too few to tell.
+ */
+function sharesKeyWords(x: Set<string>, y: Set<string>): boolean | null {
   const fewer = Math.min(x.size, y.size)
   const shared = [...x].filter(w => y.has(w)).length
   const numbers = (words: Set<string>) =>
@@ -58,7 +65,7 @@ export function restates(a: string, b: string): boolean {
       .join(' ')
   if (numbers(x) !== '' && numbers(y) !== '' && numbers(x) !== numbers(y)) return false
 
-  return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b)
+  return fewer >= 2 ? shared / fewer >= 0.7 : null
 }
 
 /**
@@ -115,18 +122,71 @@ const GENERIC = new Set([
   'yet',
 ])
 
+const STATES = new Set(['new', 'current', 'existing', 'old', 'previous'])
+const QUESTIONS = new Set(['how', 'when', 'where', 'why', 'who', 'whether'])
+const PAST = new Set(['was', 'were', 'did', 'had'])
+const FUTURE = new Set(['will', 'shall'])
+
 /**
- * Whether `b` repeats `a` with no subject of its own: it restates `a`, and one of the two has no key word the other
- * lacks, apart from GENERIC words. "Which test runner should we choose?" repeats "Which test runner should we pick?",
- * and "Add a feature flag to the cache before merging?" repeats "Should I add a feature flag for the new cache?". But
- * "package.json has no engines field" does not repeat "package.json has no license field".
+ * Pairs of word groups that tell two asks apart when one ask's own words hold a word from one group and the other's
+ * hold a word from the other: "Migrate new accounts to SSO?" and "Migrate existing accounts to SSO?" are two asks.
+ */
+const CONTRASTS: [ReadonlySet<string>, ReadonlySet<string>][] = [
+  [STATES, STATES],
+  [QUESTIONS, QUESTIONS],
+  [PAST, FUTURE],
+]
+
+function contrasts(x: Set<string>, y: Set<string>): boolean {
+  const onlyX = [...x].filter(w => !y.has(w))
+  const onlyY = [...y].filter(w => !x.has(w))
+  const holds = (own: string[], group: ReadonlySet<string>) => own.some(w => group.has(w))
+
+  return CONTRASTS.some(
+    ([one, other]) => (holds(onlyX, one) && holds(onlyY, other)) || (holds(onlyX, other) && holds(onlyY, one)),
+  )
+}
+
+/**
+ * Groups of words that name the same thing in an ask or a finding about code, so swapping one for another keeps the
+ * subject. Each word is matched by its stem, so "vanished" counts as "vanish". A group holds only words that mean the
+ * same in every context: a pair like "slow" and "laggy" stays out when one can name a different problem.
+ */
+const SYNONYMS = [
+  ['vanish', 'disappear'],
+  ['remove', 'delete'],
+  ['folder', 'directory', 'directories'],
+  ['config', 'configuration'],
+]
+
+const MEANING = new Map(SYNONYMS.flatMap(group => group.map(w => [stem(w), stem(group[0]!)])))
+
+/** A word cut to its stem, with a SYNONYMS word replaced by the first word of its group. */
+function meaningOf(word: string): string {
+  const s = stem(word)
+
+  return MEANING.get(s) ?? s
+}
+
+/**
+ * Whether `b` repeats `a` with no subject of its own: it restates `a`, the two hold no CONTRASTS, and one of the two
+ * has no key word the other lacks, apart from GENERIC words, once both are cut to their stems and SYNONYMS. "Which
+ * test runner should we choose?" repeats "Which test runner should we pick?", "Hotkeys vanished in ANSI mode" and
+ * "Hotkeys disappear in ANSI mode" repeat "Hotkeys vanish in ANSI mode", and "Add a feature flag to the cache before
+ * merging?" repeats "Should I add a feature flag for the new cache?". But "package.json has no engines field" does not
+ * repeat "package.json has no license field". GENERIC and CONTRASTS words are matched as written, since `stem` cuts
+ * "existing" to "exist" and "will" to "wil".
  */
 export function repeatsSubject(a: string, b: string): boolean {
   const x = keyWords(a)
   const y = keyWords(b)
-  const within = (inner: Set<string>, outer: Set<string>) => [...inner].every(w => GENERIC.has(w) || outer.has(w))
+  const stemsOf = (words: Set<string>) => new Set([...words].map(meaningOf))
+  const [xStems, yStems] = [stemsOf(x), stemsOf(y)]
+  const within = (inner: Set<string>, outer: Set<string>) =>
+    [...inner].every(w => GENERIC.has(w) || outer.has(meaningOf(w)))
+  const isRestated = sharesKeyWords(xStems, yStems) === true
 
-  return sameAsk(a, b) || (restates(a, b) && (within(x, y) || within(y, x)))
+  return sameAsk(a, b) || (isRestated && !contrasts(x, y) && (within(x, yStems) || within(y, xStems)))
 }
 
 export function sameAsk(a: string, b: string): boolean {
@@ -155,16 +215,44 @@ export function matchOpen(
 
 /**
  * An ask closed this turn repeats on its label too. An expired one from before can be asked again, as in addAgentItem.
- * An ask closed before the prompt repeats a settled item as `repeatsSettled` says.
+ * An ask closed before the prompt repeats a settled item as `repeatsSettled` says. An ask that raises a finding the
+ * person dismissed repeats it too.
  */
-export function repeatsClosed(closed: Closed[], a: Update['added'][number], since: number): boolean {
+export function repeatsClosed(
+  closed: Closed[],
+  a: Update['added'][number],
+  since: number,
+  closedFindings: ClosedFinding[] = [],
+): boolean {
   const recent = closed.filter(c => c.at >= since && !isAskedForChoices(c))
   const settled = closed.filter(c => c.at < since && c.how !== 'expired')
 
   return (
     matchOpen(recent, a) >= 0 ||
     (a.label !== null && recent.some(c => c.label === a.label)) ||
-    settled.some(c => repeatsSettled(c, a))
+    settled.some(c => repeatsSettled(c, a)) ||
+    dismissedFindingOf(closedFindings, a.ask) !== undefined
+  )
+}
+
+/**
+ * The finding the person dismissed that `ask` raises again: `ask` restates its title and names nothing the title
+ * lacks, apart from GENERIC words. "Add tests for the parser?" raises "Missing tests for the parser", but "Add the
+ * missing tests for the release script?" does not raise "Missing tests".
+ */
+export function dismissedFindingOf(closedFindings: ClosedFinding[], ask: string): ClosedFinding | undefined {
+  return closedFindings.findLast(f => f.how === 'dismissed' && raisesOnly(f.title, ask))
+}
+
+/** Whether `b` restates `a`, holds no CONTRASTS with it, and has no key word `a` lacks, apart from GENERIC words. */
+export function raisesOnly(a: string, b: string): boolean {
+  const x = keyWords(a)
+  const y = keyWords(b)
+  const xStems = new Set([...x].map(meaningOf))
+  const isRestated = sharesKeyWords(xStems, new Set([...y].map(meaningOf))) === true
+
+  return (
+    sameAsk(a, b) || (isRestated && !contrasts(x, y) && [...y].every(w => GENERIC.has(w) || xStems.has(meaningOf(w))))
   )
 }
 

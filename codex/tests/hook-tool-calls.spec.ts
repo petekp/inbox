@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { writeFileSync } from 'node:fs'
+import { statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
@@ -7,8 +7,9 @@ import { addAgentItem } from '../../hooks/ledger-update'
 import { STATUS_REFRESH_MS } from '../../hooks/session-status'
 import { handleHook } from '../src/hook'
 import type { HookInput } from '../src/hook'
-import { herdrOnWrite } from '../src/host'
-import { readState, updateState } from '../src/state'
+import { codexStore, herdrOnWrite } from '../src/host'
+import { readState, statePath, updateState } from '../src/state'
+import type { SessionState } from '../src/state'
 import { fakeRunner, hookDeps, input, tempDir } from './helpers'
 import { reportedTokens } from '../../tests/session-script'
 
@@ -52,6 +53,24 @@ test('a subagent runs as a child from SubagentStart to SubagentStop, its tool ca
   clock = 12000
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'resume' }), deps)
   assert.equal((await children())[1]?.[1], 12000)
+})
+
+test('a subagent is named by the task name in its own rollout, and never by the default role', async () => {
+  const dir = tempDir()
+  const deps = hookDeps(dir)
+  const rollout = (agentPath?: string) => {
+    const path = join(tempDir(), 'rollout.jsonl')
+    writeFileSync(path, `${JSON.stringify({ type: 'session_meta', payload: { agent_path: agentPath } })}\n`)
+    return path
+  }
+
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
+  const named = { agent_id: 'a', agent_type: 'default', transcript_path: rollout('/root/fix_login_test') }
+  await handleHook(input('SubagentStart', named), deps)
+  await handleHook(input('SubagentStart', { agent_id: 'b', agent_type: 'default', transcript_path: rollout() }), deps)
+  const names = ((await readState(dir, 's1')).ledger.overview?.children ?? []).map(c => c.name)
+
+  assert.deepEqual(names, ['fix login test', 'subagent'])
 })
 
 test('a Herdr delegate runs as a child from the command that starts it until a turn that waited on it ends, or Herdr shows it no longer working at a turn’s end', async () => {
@@ -156,4 +175,107 @@ test('a hook in a new process sends no Herdr report that would change nothing, a
   await handleHook(toolUse, hookProcess())
   assert.equal(herdr.calls.length, 2)
   assert.equal(reportedTokens(herdr.calls[1]!)['inbox-needs-you'], '1')
+  const [firstSeq, secondSeq] = herdr.calls.map(args => Number(args[args.indexOf('--seq') + 1]))
+  assert.ok(firstSeq! < secondSeq!)
+})
+
+test('a Herdr report that fails to send is sent again at the next write, and saved only once Herdr takes it', async () => {
+  const dir = tempDir()
+  let isHerdrUp = false
+  const herdr = fakeRunner(() =>
+    isHerdrUp ? { code: 0, stdout: '', stderr: '' } : { code: 1, stdout: '', stderr: 'no server' },
+  )
+  let at = 100
+  const deps = { ...hookDeps(dir), onWrite: herdrOnWrite({ HERDR_PANE_ID: 'p1' }, herdr.exec, dir, () => ++at) }
+
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
+  assert.equal(herdr.calls.length, 1)
+  assert.equal((await readState(dir, 's1')).herdrReport, undefined)
+
+  isHerdrUp = true
+  await handleHook(input('PreToolUse', { tool_name: 'Bash', tool_input: { command: 'ls' } }), deps)
+  assert.equal(herdr.calls.length, 2)
+  assert.deepEqual(reportedTokens(herdr.calls[1]!), reportedTokens(herdr.calls[0]!))
+  assert.ok((await readState(dir, 's1')).herdrReport)
+})
+
+const HERDR_ENV = { HERDR_PANE_ID: 'p1' }
+
+const addAsk = (text: string) => (s: SessionState) => ({
+  ...s,
+  ledger: addAgentItem(s.ledger, { kind: 'question', ask: text, options: [], rec: null, helps: [] }, 1000).ledger,
+})
+
+function herdrThatOrdersBySeq() {
+  let lastSeq = -Infinity
+  let shown: Record<string, string | null> = {}
+  const herdr = fakeRunner(args => {
+    const seq = Number(args[args.indexOf('--seq') + 1])
+    if (seq > lastSeq) {
+      lastSeq = seq
+      shown = reportedTokens(args)
+    }
+    return { code: 0, stdout: '', stderr: '' }
+  })
+
+  return { ...herdr, shown: () => shown }
+}
+
+test('of two writes from separate processes, Herdr shows the later state, whichever report sends first', async () => {
+  const dir = tempDir()
+  const herdr = herdrThatOrdersBySeq()
+  let at = 100
+  const now = () => ++at
+  let release = () => {}
+  const held = new Promise<void>(resolve => (release = resolve))
+  let markWritten = () => {}
+  const written = new Promise<void>(resolve => (markWritten = resolve))
+  const reportFirst = herdrOnWrite(HERDR_ENV, herdr.exec, dir, now)!
+  const first = codexStore(dir, 's1', now, async s => {
+    markWritten()
+    await held
+    await reportFirst(s)
+  })
+  const second = codexStore(dir, 's1', now, herdrOnWrite(HERDR_ENV, herdr.exec, dir, now))
+
+  const firstWrite = first.update(addAsk('Ship it?'))
+  await written
+  await second.update(addAsk('Tag it?'))
+  release()
+  await firstWrite
+
+  assert.equal(herdr.calls.length, 2)
+  assert.equal(herdr.shown()['inbox-needs-you'], '2')
+})
+
+test('an update that changes nothing reports a change the MCP server made, and Herdr shows it', async () => {
+  const dir = tempDir()
+  const herdr = herdrThatOrdersBySeq()
+  let at = 100
+  const now = () => ++at
+  const store = () => codexStore(dir, 's1', now, herdrOnWrite(HERDR_ENV, herdr.exec, dir, now))
+
+  await store().update(addAsk('Ship it?'))
+  await updateState(dir, 's1', addAsk('Tag it?'))
+  await store().update(s => s)
+
+  assert.equal(herdr.calls.length, 2)
+  assert.equal(herdr.shown()['inbox-needs-you'], '2')
+})
+
+test('outside Herdr, an update that changes nothing writes nothing', async () => {
+  const dir = tempDir()
+  const store = codexStore(
+    dir,
+    's1',
+    () => 1000,
+    herdrOnWrite({}, fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec, dir, () => 1000),
+  )
+  await store.update(addAsk('Ship it?'))
+  const written = statSync(statePath(dir, 's1')).ino
+
+  await store.update(s => s)
+
+  assert.equal(statSync(statePath(dir, 's1')).ino, written)
+  assert.equal((await readState(dir, 's1')).writtenAt, undefined)
 })

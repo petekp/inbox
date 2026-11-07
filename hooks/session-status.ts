@@ -3,26 +3,44 @@ import { isBlankLedger } from './ledger'
 import { applyUpdate } from './ledger-update'
 import type { Update } from './reply-parse'
 import { lookEnded, lookStarted } from './status-children'
+import type { ShownRows } from './status-children'
 import { applyStatus } from './status-ops'
 import type { StatusAnswer } from './status'
 import type { Ledger, SessionStatus, StatusFailure, Session } from '../types'
 
 /**
- * Writes the Status call's answer for an update that is already applied. `appliedAfter` is the session's
- * `turnsApplied` when the update landed. The answer is dropped when the session now has fewer applied turns than that:
- * it was replaced by one that never applied this update.
+ * Whether a Status call made for `appliedAfter` applied turns may still write. It may not when the session now has
+ * fewer applied turns, since it was replaced by one that never applied that update, or when a call made for more
+ * turns already wrote, since Codex update processes can run their Status calls in either order.
  */
-export function appliedStatus<S extends Session>(s: S, answer: StatusAnswer, appliedAfter: number, now: number): S {
-  if (s.presence.turnsApplied < appliedAfter) return s
+export function isStatusCallCurrent(s: Session, appliedAfter: number): boolean {
+  return s.presence.turnsApplied >= appliedAfter && s.overviewTurn <= appliedAfter
+}
+
+/**
+ * Writes the Status call's answer for an update that is already applied. `appliedAfter` is the session's
+ * `turnsApplied` when the update landed. The answer is dropped unless `isStatusCallCurrent`. A saved failure stays
+ * until a catch-up call writes, since only a catch-up reads the exchange the failed call missed.
+ */
+export function appliedStatus<S extends Session>(
+  s: S,
+  answer: StatusAnswer,
+  appliedAfter: number,
+  now: number,
+  readSetAt: number | null = s.ledger.overview?.goal?.setAt ?? null,
+  isCatchUp = false,
+): S {
+  if (!isStatusCallCurrent(s, appliedAfter)) return s
 
   return {
     ...s,
     ledger: {
       ...s.ledger,
-      overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map(i => i.id))),
+      overview: applyStatus(s.ledger.overview, answer, now, new Set(s.ledger.items.map(i => i.id)), readSetAt),
     },
-    overviewFailure: null,
+    overviewFailure: isCatchUp ? null : s.overviewFailure,
     lastOverviewCallAt: now,
+    overviewTurn: appliedAfter,
   }
 }
 
@@ -31,16 +49,29 @@ const REFUSED_ANSWER_CHARS = 500
 
 /**
  * Saves why the Status call for an applied update wrote nothing: `text` is its last answer, or null when it gave
- * none. `appliedAfter` drops the failure as `appliedStatus` drops an answer.
+ * none. `appliedAfter` drops the failure as `appliedStatus` drops an answer. A failed catch-up adds one to the
+ * standing failure's `catchUpsFailed`.
  */
-export function failedStatus<S extends Session>(s: S, text: string | null, appliedAfter: number, now: number): S {
-  if (s.presence.turnsApplied < appliedAfter) return s
+export function failedStatus<S extends Session>(
+  s: S,
+  text: string | null,
+  appliedAfter: number,
+  now: number,
+  isCatchUp = false,
+): S {
+  if (!isStatusCallCurrent(s, appliedAfter)) return s
+  const before = s.overviewFailure
+  const tries = isCatchUp
+    ? { catchUpsFailed: (before?.catchUpsFailed ?? 0) + 1, catchUpTurn: s.presence.turnsStarted }
+    : before?.catchUpsFailed
+      ? { catchUpsFailed: before.catchUpsFailed, catchUpTurn: before.catchUpTurn ?? 0 }
+      : {}
   const failure: StatusFailure =
     text === null
-      ? { at: now, cause: 'no-answer', answer: null }
-      : { at: now, cause: 'refused', answer: text.slice(0, REFUSED_ANSWER_CHARS) }
+      ? { at: now, cause: 'no-answer', answer: null, ...tries }
+      : { at: now, cause: 'refused', answer: text.slice(0, REFUSED_ANSWER_CHARS), ...tries }
 
-  return { ...s, overviewFailure: failure, lastOverviewCallAt: now }
+  return { ...s, overviewFailure: failure, lastOverviewCallAt: now, overviewTurn: appliedAfter }
 }
 
 /** How long a running turn goes between Status calls. */
@@ -60,15 +91,22 @@ export function claimedStatusRefresh<S extends Session>(s: S, now: number): S {
 }
 
 /**
- * Whether the ledger may have missed a turn: a failed or behind update, or turns that started with no exchange
- * waiting. Not while a turn runs, since that turn has not ended yet.
+ * Whether the ledger or the Status may have missed a turn: a failed or behind update, turns that started with no
+ * exchange waiting, or a failed Status call while a new exchange waits. Not while a turn runs, since that turn has not
+ * ended yet. A Status failure catches up at the next reply. After each failed catch-up, the next waits twice as many
+ * turns: 2, then 4, then 8.
  */
 export function needsCatchUp(s: Session): boolean {
   const { presence } = s
   const hasUnappliedTurn =
     s.pending.length === 0 && s.turn.person === null && presence.turnsStarted > presence.turnsApplied
+  const failure = s.overviewFailure
+  const isStatusCatchUpDue =
+    failure !== null &&
+    (!failure.catchUpsFailed || presence.turnsStarted - (failure.catchUpTurn ?? 0) >= 2 ** failure.catchUpsFailed)
+  const hasMissedStatus = isStatusCatchUpDue && (s.pending.length > 0 || hasUnappliedTurn)
 
-  return presence.ledgerState !== 'current' || hasUnappliedTurn
+  return presence.ledgerState !== 'current' || hasUnappliedTurn || hasMissedStatus
 }
 
 /** Whether a host that cannot read the whole conversation still has something to run: an exchange, or a ledger that is not current. */
@@ -81,9 +119,9 @@ function lookStartedOn<S extends { ledger: Ledger }>(s: S, now: number): S {
   return statusChanged(s, o => lookStarted(o, now))
 }
 
-/** The Status tab stopped being shown at `at`: the look ends. */
-export function lookEndedOn<S extends { ledger: Ledger }>(s: S, at: number): S {
-  return statusChanged(s, o => lookEnded(o, at))
+/** The Status tab stopped being shown at `at`: the look ends, and counts the subjects `shown` names as seen. */
+export function lookEndedOn<S extends { ledger: Ledger }>(s: S, at: number, shown: ShownRows): S {
+  return statusChanged(s, o => lookEnded(o, at, shown))
 }
 
 /** The session with its Status after `change`, or the same session when the Status did not change. */
@@ -96,9 +134,9 @@ export function statusChanged<S extends { ledger: Ledger }>(
   return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } }
 }
 
-/** Starts a look while the Status is shown, and ends it otherwise. */
-export function withLook<S extends { ledger: Ledger }>(s: S, isStatusShown: boolean, now: number): S {
-  return isStatusShown ? lookStartedOn(s, now) : lookEndedOn(s, now)
+/** Starts a look while the Status is shown, and ends it otherwise, with the rows `shown` says it showed. */
+export function withLook<S extends { ledger: Ledger }>(s: S, isStatusShown: boolean, now: number, shown: ShownRows): S {
+  return isStatusShown ? lookStartedOn(s, now) : lookEndedOn(s, now, shown)
 }
 
 /** Whether the session has anything recorded: an applied update, an item, a finding or a Status. */
@@ -149,6 +187,8 @@ export function appliedCatchUp<S extends Session>(s: S, begun: Session, parsed: 
       ...s.presence,
       ledgerState: parsed ? 'current' : 'failed',
       hasDroppedReply: parsed ? false : s.presence.hasDroppedReply,
+      failedAttempts: parsed ? 0 : s.presence.failedAttempts + 1,
+      isConversationUnreadable: false,
       turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted),
     },
   })

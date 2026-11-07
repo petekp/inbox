@@ -32,7 +32,7 @@ From `GLOSSARY.md`: SessionStatus, Head, Subject, Child, Stall words, Seen line,
 - **Where it stands:** the few words on the line under a subject's name.
 - **Was line:** a line under a subject that names the plan a change replaced, as "was: last-write-wins", or a piece merged into it, as "merged in: Banner on hover".
 - **Link:** the Status call's tie from an open ask or a child to the subject it belongs to.
-- **Fold:** one line that stands for several rows: "✓ 3 done" or "○ 2 more".
+- **Fold:** one line that stands for several rows: "○ 2 more", or a done fold, "▸ 3 done", which a press opens to list them.
 - **Last changed:** when a subject's status or meaning last changed. It sets which side of the Seen line a row sits on, and its place among rows of the same status.
 - **Last checked:** when an Status call last read the work, whatever it answered.
 - **Property:** something true of a good Status that a person can check by reading the page, knowing what happened in the session.
@@ -55,10 +55,7 @@ From `GLOSSARY.md`: SessionStatus, Head, Subject, Child, Stall words, Seen line,
 Decided, and still to build:
 
 - A closed mark and a fold of its own for work filed for later: #137.
-- The page names every piece finished since the person last saw it: #138.
-- A look marks as seen only the rows that were on screen: #139.
-- One ask holds up several subjects: #140.
-- A child row says in plain words what its work does: #149.
+- A look marks as seen only the rows that were on screen: #139. Every look does.
 - In Codex, a Status answer from before a clear stays out of the cleared session: #152.
 - An older Status answer never overwrites a newer one: #153.
 - The judge's instructions, in `evals/status-judge.md`.

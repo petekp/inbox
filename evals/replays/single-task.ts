@@ -1,11 +1,14 @@
 import type { Replay } from '../status-replay'
 import { NO_FACTS, piece } from './builders'
 
-/** One task, with both calls: the ledger call opens, answers and dismisses each ask, and the Status call sees it. */
+/**
+ * One task, with both calls: the ledger call opens, answers and dismisses each ask, and the Status call sees it. The
+ * person states the goal in the first message, and the Status call sets it.
+ */
 export const singleTask: Replay = {
   name: 'single-task',
   about:
-    'One session adds offline sync to a notes app: a question answered, a plan reversed, a piece set aside, an explanation that changes nothing, a question dismissed, and parts whose states differ.',
+    'One session adds offline sync to a notes app for 2.5: a goal set, a question answered, a plan reversed, a piece set aside, an explanation that changes nothing, a question dismissed, and parts whose states differ.',
   hasLedgerCalls: true,
   start: { ledger: {}, facts: NO_FACTS },
   steps: [
@@ -15,7 +18,7 @@ export const singleTask: Replay = {
       call: {
         kind: 'reply',
         person:
-          'Add offline sync to the notes app: notes should save without a connection, and sync once it comes back.',
+          'Add offline sync to the notes app, and ship it in 2.5: notes should save without a connection, and sync once it comes back.',
         activity: ['Read src/notes/store.ts', 'Edited src/sync/queue.ts'],
         reply:
           'Plan: a sync engine that queues edits made offline, conflict handling for edits made on two devices, and a settings toggle to turn sync off. I started on the engine: it now queues edits in a local store.',
@@ -23,6 +26,16 @@ export const singleTask: Replay = {
       facts: {
         focus: 'adding offline sync to the notes app',
         focusMatch: 'offline|sync',
+        goalClear: { text: 'Add offline sync, and ship it in 2.5', match: 'offline sync|2\\.5' },
+        goal: {
+          text: 'Offline sync in 2.5',
+          match: 'offline sync|2\\.5',
+          milestones: [
+            { id: 'ms-offline', name: 'Works offline', match: 'offline', state: 'working' },
+            { id: 'ms-conflicts', name: 'Conflicts handled', match: 'conflict', state: 'queued' },
+            { id: 'ms-live', name: '2.5 live', match: '2\\.5', state: 'queued' },
+          ],
+        },
         pieces: [
           piece({
             id: 'engine',
@@ -30,6 +43,7 @@ export const singleTask: Replay = {
             match: 'engine|queue|offline sync',
             state: 'working',
             stands: 'queues edits offline',
+            serves: 'ms-offline',
           }),
           piece({
             id: 'conflicts',
@@ -37,6 +51,7 @@ export const singleTask: Replay = {
             match: 'conflict',
             state: 'queued',
             stands: 'not started',
+            serves: 'ms-conflicts',
           }),
           piece({
             id: 'toggle',
@@ -44,10 +59,11 @@ export const singleTask: Replay = {
             match: 'toggle|setting',
             state: 'queued',
             stands: 'not started',
+            serves: 'ms-offline',
           }),
         ],
       },
-      targets: ['head-no-status', 'head-follows'],
+      targets: ['goal-when-clear', 'milestones-shape', 'head-no-status', 'head-follows', 'open-pieces-kept'],
     },
     {
       label: 'The engine works. The agent fixes a lint error, runs two review subagents and asks about conflicts.',
@@ -82,7 +98,7 @@ export const singleTask: Replay = {
           { ref: 'toolu_b', does: 'Check sync engine edge cases', serves: 'engine' },
         ],
       },
-      targets: ['head-follows', 'children-linked', 'asks-linked', 'held-text', 'not-work'],
+      targets: ['head-follows', 'children-linked', 'asks-linked', 'serves-linked', 'held-text', 'not-work'],
     },
     {
       label: 'The person answers "manual merge"',
@@ -100,6 +116,7 @@ export const singleTask: Replay = {
       },
       facts: {
         pieces: [{ id: 'conflicts', state: 'working', stands: 'manual merge under way' }],
+        milestones: [{ id: 'ms-conflicts', state: 'working' }],
         asks: [],
         children: [],
       },
@@ -143,10 +160,11 @@ export const singleTask: Replay = {
             match: 'banner',
             state: 'working',
             stands: 'first version',
+            serves: 'ms-offline',
           }),
         ],
       },
-      targets: ['was-on-reversal', 'open-pieces-kept', 'marks-true'],
+      targets: ['was-on-reversal', 'open-pieces-kept', 'marks-true', 'serves-linked'],
     },
     {
       label: 'The person asks how the backup copy is named and why the plan changed. Nothing is decided.',
@@ -212,8 +230,9 @@ export const singleTask: Replay = {
       },
       facts: {
         pieces: [{ id: 'engine', state: 'done', stands: 'syncs after a crash on Android and iOS', parts: undefined }],
+        milestones: [{ id: 'ms-offline', state: 'done' }],
       },
-      targets: ['marks-true', 'changes-move'],
+      targets: ['marks-true', 'milestones-true', 'changes-move'],
     },
   ],
 }

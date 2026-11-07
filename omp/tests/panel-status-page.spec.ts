@@ -8,13 +8,21 @@ import { sessionView } from '../../hooks/session-view'
 import { cellWidth } from '../../hooks/text'
 import { render } from '../src/panel'
 import type { Style } from '../src/panel'
+import { demoState } from '../src/demo'
 import { emptyState } from '../src/state'
 import { drawn, ESC, labelOf, NOW, onPage, screenOf, strip, style, text } from './panel-harness'
 
 const toneNamed: Style = { ...style, tone: (name, s) => `<${name}>${s}</${name}>` }
 
+function noGoalScreen() {
+  const state = demoState(NOW)
+  const o = state.ledger.overview!
+  state.ledger = { ...state.ledger, overview: { ...o, goal: null, milestones: [], serves: {} } }
+  return screenOf({ view: sessionView(state, NOW, SETTLED_MS, NO_HOLDS) })
+}
+
 test('the Status page shows the head’s title and description, then its rows in order, each subject’s marks in the head’s column, where it stands under its name and its was line under that, and Last seen in the middle of its dashed rule with a blank line above and below it', () => {
-  const screen = screenOf()
+  const screen = noGoalScreen()
   const page = screen.view.statusPage
   const lines = text(screen, onPage).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
@@ -61,7 +69,7 @@ test('on the Status page, the rows under a subject hang from its mark, ├─ fo
     at('Review the'),
     at('Tune how hard'),
     at('Time the'),
-    at('Fade-out'),
+    at('Flick decided'),
   ]
   const col = lines[subject]!.search(/\S/)
   const glyphs = (from: number, to: number) => lines.slice(from, to).map(l => l.slice(col, col + 2))
@@ -78,7 +86,7 @@ test('on the Status page, a row’s stall word follows its name on the line of i
   const wide = text(screenOf(), onPage, 80).split('\n')
   expect(wide.some(l => l.includes('Tune how hard a pinch must be · waiting'))).toBe(true)
   expect(wide.some(l => l.includes('Time the fade-out · finished'))).toBe(true)
-  expect(wide.some(l => l.includes('Watch the pairing log') && !l.includes(' · '))).toBe(true)
+  expect(wide.some(l => l.includes('Search the pairing errors') && !l.includes(' · '))).toBe(true)
   expect(wide.some(l => l.includes('Glasses trial') && !l.includes(' · '))).toBe(true)
 
   for (const width of [26, 28, 30, 34, 40, 50]) {
@@ -89,7 +97,7 @@ test('on the Status page, a row’s stall word follows its name on the line of i
 })
 
 test('on the Status page, a rule from the text column sets each item apart, with none inside a subject’s tree or beside the look line', () => {
-  const lines = text(screenOf(), onPage, 40).split('\n')
+  const lines = text(noGoalScreen(), onPage, 40).split('\n')
   const subject = lines.find(l => l.includes('Dismiss gesture'))!
   const rule = new RegExp(`^ {${subject.indexOf('Dismiss')}}─+$`)
   const rowsAfterRules = lines.flatMap((l, n) => (rule.test(l) ? [lines[n + 1]!] : []))
@@ -107,7 +115,7 @@ test('on the Status page, a subject’s name stays plain, and where it stands go
     ...state.ledger,
     overview: applyStatus(null, parseStatus(`NEW: working | ${name} | ${where}`)!, NOW, new Set()),
   }
-  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, true, NO_HOLDS) })
+  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, NO_HOLDS) })
   const raw = drawn(screen, onPage, 34)
   const first = raw.findIndex(l => strip(l).includes('Help text'))
   const subject = raw.slice(first, first + 2 + STATUS_TEXT_LINES + 1).map(strip)
@@ -137,7 +145,7 @@ test('each subject’s mark takes its tone, and a mark with no tone is muted', (
 })
 
 test('a Status page with nothing yet reads its empty text', () => {
-  const screen = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
+  const screen = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, NO_HOLDS) })
   const { empty } = screen.view.statusPage
   expect(screen.view.statusPage.isEmpty).toBe(true)
   expect(text(screen, onPage)).toContain(empty.title)

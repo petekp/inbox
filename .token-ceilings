@@ -1,0 +1,4 @@
+# Files allowed over the 5,000-token limit (tokens = bytes / 4), each with the
+# most tokens it may hold. One "path ceiling" entry per line. The pre-commit
+# hook and scripts/check-sizes.mjs both read this file.
+hooks/register.tsx 34146

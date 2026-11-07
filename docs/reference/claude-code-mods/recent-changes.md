@@ -26,7 +26,7 @@ The changelog page "is generated from the CHANGELOG.md on GitHub". On 2026-10-08
 
 ### What this means for the inbox's minimum engine
 
-- `askLedgerModel` sends `system` as a block array with `cache: true` (`hooks/register.tsx:askLedgerModel`). That form arrived in 2.1.292. [CL#2-1-292]
+- `askInboxModel` sends `system` as a block array with `cache: true` (`hooks/register.tsx:askInboxModel`). That form arrived in 2.1.292. [CL#2-1-292]
 - README says "built and tested with Claude Code 2.1.292" (`README.md:20`).
 - The desktop app keeps a 2.1.289 engine on disk next to 2.1.293 (live). Inference: a Code-mode session on 2.1.289 may fail the per-turn call or lose caching. The sessions running on 2026-10-08 used 2.1.293.
 - The inbox sets `isDeferred: false` through `tool.describe` (`hooks/register.tsx:on('tool.describe')`). The changelog and the mods API page date only the `$.tool.register` field (2.1.293, "earlier versions ignore it"). When `tool.describe` gained it is unknown.
@@ -107,7 +107,7 @@ the version each names, and the Claude Code changelog.
   while leaving the message queued when pressed while those hooks were
   running." The mod's `prompt.submit` hook is not idempotent. Each run adds one
   to `ledger.turn` and appends the text to `turn.person`
-  (`hooks/session.ts:recordPrompt`), and `PromptSubmitInput` has no prompt id
+  (`hooks/session-turns.ts:recordPrompt`), and `PromptSubmitInput` has no prompt id
   to dedupe by. So on 2.1.308 and earlier, a restarted hook could count one
   message twice. From 2.1.309 it runs once. The mod does not use
   `prompt.compose` or `prompt.context`. Not reproduced live; no change.

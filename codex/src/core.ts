@@ -18,15 +18,24 @@ export function isTabOpen(s: SessionState, now: number): boolean {
 }
 
 /**
- * A view request from the Inbox tab, which names the tab it shows. A look ends when the tab shows another tab, and also
- * when requests stopped for a while, since the pane was closed: it then ended when the last request came. A look
- * starts when the tab shows the Status.
+ * A view request from the Inbox tab, which names the tab it shows, and when it last had each Status subject row on
+ * screen since its last request. A look ends when the tab shows another tab, and also when requests stopped for a
+ * while, since the pane was closed: it then ended when the last request came. A look starts when the tab shows the
+ * Status. Each look counts the rows its requests reported.
  */
-export function lookOnView(s: SessionState, shownTab: SessionState['shownTab'], now: number): SessionState {
+export function lookOnView(
+  s: SessionState,
+  shownTab: SessionState['shownTab'],
+  now: number,
+  rows: Record<string, number>,
+): SessionState {
   const wasClosed = s.tabSeenAt > 0 && !isTabOpen(s, now)
-  const closed = wasClosed ? lookEndedOn(s, s.tabSeenAt) : s
+  const closed = wasClosed ? { ...lookEndedOn(s, s.tabSeenAt, s.lookRows), lookRows: {} } : s
+  const lookRows = { ...closed.lookRows }
+  for (const [id, at] of Object.entries(rows)) lookRows[id] = Math.max(lookRows[id] ?? at, at)
+  const isStatusShown = shownTab === 'overview'
 
-  return withLook(closed, shownTab === 'overview', now)
+  return { ...withLook(closed, isStatusShown, now, lookRows), lookRows: isStatusShown ? lookRows : {} }
 }
 
 export function notePrompt(
@@ -136,7 +145,5 @@ export type TabView = View & {
 }
 
 export function viewOf(s: SessionState, now: number, holds: Holds = NO_HOLDS): View {
-  const canCatchUp = s.transcriptPath !== null
-
-  return { ...sessionView(s, now, SETTLE_WINDOW_MS, canCatchUp, holds), heard: heardState(s.heard), at: now }
+  return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds), heard: heardState(s.heard), at: now }
 }

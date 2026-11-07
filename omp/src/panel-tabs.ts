@@ -15,7 +15,9 @@ import type { ToneName } from '../../hooks/tones'
 import { ROW_COPY } from '../../hooks/rows'
 import { shownTabs, tabBadge, fitTabs, tabName, isRowTab } from '../../hooks/tabs'
 import { footerStatus } from '../../hooks/view'
-import { keptOpen, statusKeyRows } from '../../hooks/action-plan'
+import { keptOpen } from '../../hooks/action-plan'
+import { GOAL_FIELD, GOAL_KEYS_ID, statusKeyRows, statusSelected } from '../../hooks/status-keys'
+import type { StatusPage } from '../../hooks/status-page'
 import { versionLabel } from '../../hooks/banners'
 import type { ShownTab, TabNaming } from '../../hooks/tabs'
 import type { Draw } from './panel-draw'
@@ -135,13 +137,13 @@ export function footer(d: Draw, isPageScrolling: boolean): string[] {
   if (status.text) out.push(` ${s.dim(status.text)}`)
   const hints =
     ui.typing !== null
-      ? [`↵ ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`]
+      ? [`↵ ${ui.typing === GOAL_KEYS_ID ? GOAL_FIELD.submit : ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`]
       : ui.isHelpShown
         ? [...(isPageScrolling ? ['↑↓ scroll'] : []), 'esc close help']
         : isRowTab(ui.tab)
           ? ['←→ pick', '↵ press', '↑↓ move', 'tab switch', '? help']
           : [
-              ...(statusKeyRows(screen.view.statusPage).length > 0 ? ['j k select', '↵ press'] : []),
+              ...statusHints(screen.view.statusPage, ui.selectedId),
               ...(isPageScrolling ? ['↑↓ scroll'] : []),
               'tab switch',
               '? help',
@@ -155,6 +157,14 @@ export function footer(d: Draw, isPageScrolling: boolean): string[] {
   return out
 }
 
+/** The lines of a page `lines` long that `pageWindow` shows, from `start` up to `end`. */
+export function pageWindowLines(lines: number, top: number, room: number): { start: number; end: number } {
+  const end = Math.min(lines, room - 1 + top)
+  const start = end - (room - (top > 0 ? 1 : 0) - (lines - end > 0 ? 1 : 0))
+
+  return { start, end }
+}
+
 const moreLines = (arrow: string, n: number, s: Style) => s.dim(`  ${arrow} ${n} more line${n === 1 ? '' : 's'}`)
 
 /**
@@ -162,9 +172,8 @@ const moreLines = (arrow: string, n: number, s: Style) => s.dim(`  ${arrow} ${n}
  * first press also hides the line the "↑" line takes, and the press before the end leaves "↓ 1 more line".
  */
 export function pageWindow(body: string[], top: number, room: number, s: Style): string[] {
-  const end = Math.min(body.length, room - 1 + top)
+  const { start, end } = pageWindowLines(body.length, top, room)
   const below = body.length - end
-  const start = end - (room - (top > 0 ? 1 : 0) - (below > 0 ? 1 : 0))
 
   return [
     ...(top > 0 ? [moreLines('↑', start, s)] : []),
@@ -183,4 +192,12 @@ export function scrolled(body: string[], selectedAt: number[], room: number, s: 
   if (end < body.length) clip[clip.length - 1] = s.dim(`  ↓ ${body.length - end} more lines`)
 
   return clip
+}
+
+/** The Status's key hints: j and k while a target has buttons, and ←→ while the selected one has more than one. */
+function statusHints(page: StatusPage, selectedId: string | null): string[] {
+  if (statusKeyRows(page).length === 0) return []
+  const isPicking = (statusSelected(page, selectedId)?.keys.length ?? 0) > 1
+
+  return ['j k select', ...(isPicking ? ['←→ pick'] : []), '↵ press']
 }

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { LOOK_MIN_MS } from '../../hooks/status-children'
+import { isSubjectSeen, LOOK_MIN_MS } from '../../hooks/status-children'
 import { EMPTY_SESSION_STATUS } from '../../hooks/status-limits'
 import { NO_HOLDS } from '../../hooks/timing'
 import { createInbox } from '../src/host'
@@ -52,12 +52,12 @@ test('opening the panel finds gh signed out, and a later fetch that gh answers w
 
   w.execResults.set('gh', { code: 1, stderr: 'no pull requests found for branch "main"' })
   w.clock += 130_000
-  inbox.fetchPrsWhenDue(makeCtx())
+  inbox.fetchPrsWhenDue(makeCtx(), true)
   await settle()
   expect((await inbox.screen(makeCtx())).view.prs.isGhSignedOut).toBe(false)
 })
 
-test('opening the panel finds gh and fetches PRs again only after the refresh interval', async () => {
+test('opening the panel finds gh and fetches PRs again only after the refresh interval, which the hidden PRs tab does not reach at 2 minutes', async () => {
   const inbox = createInbox(pi(), deps())
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
   const ghCalls = (sub: string) => w.execCalls.filter(c => c.args[0] === sub).length
@@ -67,12 +67,16 @@ test('opening the panel finds gh and fetches PRs again only after the refresh in
   expect(ghCalls('pr')).toBe(1)
   expect((await inbox.screen(makeCtx())).isGhMissing).toBe(false)
 
-  inbox.fetchPrsWhenDue(makeCtx())
+  inbox.fetchPrsWhenDue(makeCtx(), true)
   await settle()
   expect(ghCalls('pr')).toBe(1)
 
   w.clock += 130_000
-  inbox.fetchPrsWhenDue(makeCtx())
+  inbox.fetchPrsWhenDue(makeCtx(), false)
+  await settle()
+  expect(ghCalls('pr')).toBe(1)
+
+  inbox.fetchPrsWhenDue(makeCtx(), true)
   await settle()
   expect(ghCalls('pr')).toBe(2)
   expect(ghCalls('--version')).toBe(1)
@@ -229,6 +233,42 @@ test('a look starts when the panel shows the Status and ends on another tab or w
   expect(state().ledger.overview.look).toBeNull()
 })
 
+test('a look counts as seen only the Status subjects the panel reported on screen, on another tab and when the panel closes', async () => {
+  const inbox = createInbox(pi(), deps())
+  await prompt('hello')
+  const saved = state()
+  const subject = (id: string) => ({
+    id,
+    name: id,
+    status: 'working',
+    text: '',
+    was: null,
+    merged: null,
+    createdAt: 1,
+    changedAt: 1,
+    closedAt: null,
+    into: null,
+  })
+  const overview = { ...EMPTY_SESSION_STATUS, subjects: ['s1', 's2', 's3'].map(subject), nextId: 4 }
+  writeFileSync(join(w.dir, 'sessions', 's1.json'), JSON.stringify({ ...saved, ledger: { ...saved.ledger, overview } }))
+  await inbox.openPanel(makeCtx(), w.clock)
+  const look = async (shown: string[], end: () => void) => {
+    inbox.showTab(makeCtx(), 'overview', NO_HOLDS)
+    await settle()
+    inbox.showRows(makeCtx(), shown)
+    w.clock += LOOK_MIN_MS
+    end()
+    await settle()
+    const o = state().ledger.overview
+    return o.subjects
+      .filter((x: { id: string; changedAt: number }) => isSubjectSeen(o, x))
+      .map((x: { id: string }) => x.id)
+  }
+
+  expect(await look(['s1'], () => inbox.showTab(makeCtx(), 'needsYou', NO_HOLDS))).toEqual(['s1'])
+  expect(await look(['s2'], () => inbox.closePanel(makeCtx()))).toEqual(['s1', 's2'])
+})
+
 test('every row the agent closes while the panel shows its tab keeps its closed record through more closes than the Closed list keeps, until the panel closes', async () => {
   const inbox = createInbox(pi(), deps())
   for (let n = 0; n < 14; n++) await record({ kind: 'task', ask: `Task ${n}` })
@@ -239,7 +279,7 @@ test('every row the agent closes while the panel shows its tab keeps its closed 
     await w.tools.get('close').execute('call', { id, reason: 'done' }, undefined, undefined, makeCtx())
 
   expect(state().ledger.closed.map((c: { id: string }) => c.id)).toEqual(ids)
-  const shown = await inbox.screen(makeCtx(), { replies: {}, discarded: {}, shownSince: openedAt })
+  const shown = await inbox.screen(makeCtx(), { replies: {}, discarded: {}, shownSince: openedAt, listInput: null })
   expect(shown.view.needsYou.tasks.filter(r => r.state.is === 'settled').map(r => r.id)).toEqual(ids)
 
   inbox.closePanel(makeCtx())

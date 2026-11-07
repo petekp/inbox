@@ -213,6 +213,16 @@ describe('applyUpdate', () => {
         'Add a feature flag to the cache before merging?',
         'Should I add a feature flag for the new search index?',
       ],
+      [
+        'Migrate new accounts to SSO?',
+        'Should I migrate the new accounts to SSO?',
+        'Migrate existing accounts to SSO?',
+      ],
+      [
+        'Should I fix the hotkeys that vanish in ANSI mode?',
+        'Should I fix the hotkeys that disappear in ANSI mode?',
+        'Should I fix the hotkeys that lag in ANSI mode?',
+      ],
     ] as const) {
       const asked = addAgentItem({ ...EMPTY, turn: 1 }, question(first), 1).ledger
       const dismissed = { ...closeItem(asked, 'i1', { how: 'dismissed', outcome: 'dismissed' }, 2), turn: 2 }

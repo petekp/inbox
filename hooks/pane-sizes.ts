@@ -6,12 +6,43 @@ import { TAB_COUNT_GAP } from './tabs-client'
 
 export const REPLY_ROWS = 3
 export const DESKTOP_REPLY_ROWS = 2
+/** The Claude app's Input keeps this width whatever room its Box gives, unless an `overflow="hidden"` Box shrinks it. */
+export const DESKTOP_FIELD_PT = 180
+
+/**
+ * The rows a text field needs to show `text` whole, from 1 up to `most`: each of its lines takes the rows `lineRows`
+ * counts, and at least one.
+ */
+export function fieldRows(text: string, lineRows: (line: string) => number, most: number): number {
+  const rows = text.split('\n').reduce((n, line) => n + Math.max(1, lineRows(line)), 0)
+
+  return Math.min(most, rows)
+}
 export const DESKTOP_WIDE_AT = 50
 export const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
 export const DESKTOP_LINE_PT = 19
-// One column of `bodyColumns` in the Claude app pane, in points: 15.8 px at 2x.
-export const DESKTOP_CELL_PT = 7.9
+/**
+ * A row of the desktop pane's scroll, the unit of its `scroll.offset` and `bodyRows`: one line of text, in points,
+ * measured on app 4.4212.0 with engine 2.1.309.
+ */
+export const DESKTOP_ROW_PT = 20
+/**
+ * How far the desktop pane's `scroll.offset` may be from where its page sits, in rows. It reports whole rows, as 19 at
+ * the end of a page 47.85 rows tall, scrolled 18.85 (app 4.4212.0, engine 2.1.309). That is one sample, and a height
+ * rounded up can put the offset nearly a row off at the end of a page.
+ */
+export const DESKTOP_OFFSET_ROUNDING = 1
+/** A native Button's height on desktop, in points, as measured in the pane for the desktop Undo. */
+export const DESKTOP_BUTTON_PT = 23
+/**
+ * One column of `bodyColumns` in the Claude app pane, in points, measured on app 3.6556.2 with engine 2.1.308. The
+ * engine reports the pane in columns only, so this cannot be measured at run time.
+ * Remeasure it with the steps in docs/reference/claude-desktop-app/what-desktop-draws-layout.md.
+ */
+export const DESKTOP_CELL_PT = 8.8
 export const DESKTOP_LINK_GAP_CELLS = 1.5
+/** Room a link takes past its label's estimated width. At the estimate alone, app 3.6556.2 cut a link's label, as "Re…". */
+export const DESKTOP_LINK_SLACK_CELLS = 0.5
 export const UNDO_CELLS = 9
 export const UNDO_HEIGHT_PT = 23
 /**
@@ -38,8 +69,8 @@ export const DESKTOP_ARM_GAP = 0.4
 export const DESKTOP_DASH_PT = 3
 export const DESKTOP_DASH_GAP_PT = 3
 export const STATUS_PAD_Y = STATUS_ROW_PAD_PT / DESKTOP_LINE_PT
-// How far a row frame's transparent border insets its content, in points.
-export const FRAME_INSET_PT = 13.2
+/** How far a row frame's transparent border insets its content on each side, in points, measured on app 3.6556.2. */
+export const FRAME_INSET_PT = 17.6
 export const DESKTOP_SIDE_CELLS = 5
 export const TERMINAL_SIDE_CELLS = 5
 export const SELECTED_GAP_PT = 3

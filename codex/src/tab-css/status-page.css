@@ -21,8 +21,9 @@
 .status-page .content {
   overflow-wrap: anywhere;
 }
-.status-page .row.child {
-  padding-left: var(--text-x);
+/* A row `--depth` steps in. Each step is the mark column's width, so a row sits under the text of the row it hangs from. */
+.status-page .row {
+  padding-left: calc(var(--mark-x) + var(--depth, 0) * var(--step));
 }
 .status-page .content > .actions {
   margin-top: 6px;
@@ -36,8 +37,9 @@
 .status-page .unbroken {
   white-space: nowrap;
 }
-/* The tree line runs under the middle of a subject's mark, and its arm reaches to a child's mark. */
+/* The tree line runs under the middle of a subject's mark, and its arm reaches to a child's mark, a step in. */
 .status-page .list {
+  --step: calc(var(--text-x) - var(--mark-x));
   --mark-middle: 6px;
   --arm-gap: 2px;
   --tree-x: calc(var(--mark-x) + var(--mark-middle));
@@ -53,8 +55,12 @@
 .status-page .row.branch-last::before {
   content: '';
   position: absolute;
-  left: var(--tree-x);
+  left: calc(var(--tree-x) + var(--depth, 0) * var(--step));
   border-left: 1px solid var(--tree-line);
+}
+.status-page .row.branch-mid::before,
+.status-page .row.branch-last::before {
+  left: calc(var(--tree-x) + (var(--depth) - 1) * var(--step));
 }
 .status-page .row.has-children::before {
   top: calc(var(--status-row-pad) + 1lh);
@@ -72,7 +78,7 @@
 .status-page .row.branch-last::after {
   content: '';
   position: absolute;
-  left: var(--tree-x);
+  left: calc(var(--tree-x) + (var(--depth) - 1) * var(--step));
   top: calc(var(--status-row-pad) + 0.5lh);
   width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
   border-top: 1px solid var(--tree-line);
@@ -101,7 +107,7 @@
 }
 .status-page .status-rule,
 .status-page .look-rule {
-  margin-left: var(--text-x);
+  margin-left: calc(var(--text-x) + var(--depth, 0) * var(--step));
 }
 .status-page .look-rule::before,
 .status-page .look-rule::after {
@@ -117,4 +123,91 @@
 }
 .status-head p {
   margin: 0;
+}
+/* The goal's heading row: its title where the goal's text starts, a rule, then the goal's buttons at the right edge.
+   The buttons wrap under the rule, still at the right, when they do not fit beside it. */
+.status-page .goal-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 4px;
+  padding: 0 14px 0 var(--mark-x);
+  color: var(--muted);
+}
+.status-page .goal-heading .goal-rule {
+  flex: 1 0 32px;
+  border-top: 1px solid var(--soft);
+}
+.status-page .goal-heading .goal-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.status-page .goal-heading .actions {
+  margin: 0;
+}
+/* The goal's count after its text, kept whole on the line with the text's last word. */
+.status-head h1 .count {
+  font-weight: 400;
+  white-space: nowrap;
+}
+.status-head .actions {
+  margin-top: 6px;
+}
+/* A blank line's space between the goal's buttons and its milestones, as the terminal and omp leave. */
+.status-head.goal + .list {
+  margin-top: var(--look-gap);
+}
+/* A changed milestone's name, bold without the gap and stall word after it. */
+.status-page .content.changed > .clamp:first-child,
+.status-page .content.changed > :first-child .head,
+.status-page .content.changed > :first-child .last {
+  font-weight: 600;
+}
+/* "Other work" at the text column, then a solid rule to the tab's edge. */
+.status-page .row.part-line {
+  padding-left: 0;
+  padding-right: 0;
+  margin-top: var(--look-gap);
+}
+.status-page .part-rule {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: var(--text-x);
+  color: var(--muted);
+}
+.status-page .part-rule::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--soft);
+}
+/* Set a goal under the empty page's centred text. */
+.empty .status-head {
+  padding: 0;
+}
+.empty .actions,
+.empty .keys,
+.empty .goal-field {
+  justify-content: center;
+}
+.goal-field {
+  flex-wrap: wrap;
+}
+.goal-field input {
+  flex: 1 1 18em;
+}
+.field-keys {
+  display: flex;
+  gap: 6px;
+}
+/* A done fold draws as the Closed fold does: its chevron in the mark column and its count at the text column. */
+.status-page .row.fold-row {
+  display: block;
+}
+.status-page .fold-row .fold {
+  margin: 0 0 0 -1px;
 }

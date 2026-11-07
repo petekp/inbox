@@ -1,18 +1,18 @@
 import type { Child, ChildKind, DelegateState, SessionStatus, StatusHead, Subject, SubjectStatus } from '../types'
+import { droppedMilestoneIds, goalFields } from './status-upgrade-goal'
 import {
   clipWords,
   DESCRIPTION_KEPT,
   EMPTY_SESSION_STATUS,
   NAME_KEPT,
   nameKey,
-  OPEN_STATUSES,
+  STATUSES,
   OPEN_SUBJECTS,
   TEXT_KEPT,
 } from './status-limits'
 import type { OpenStatus } from './status-limits'
 
-const STATUSES: readonly SubjectStatus[] = [...OPEN_STATUSES, 'done', 'dropped']
-const CHILD_KINDS: readonly ChildKind[] = ['subagent', 'background', 'workflow', 'delegate']
+const CHILD_KINDS: readonly ChildKind[] = ['subagent', 'workflow', 'delegate']
 const DELEGATE_STATES: readonly DelegateState[] = ['working', 'blocked', 'finished']
 
 function text(value: unknown): string {
@@ -50,11 +50,12 @@ function subjectOf(saved: unknown): Subject | null {
     ...wasAndMerged(s.was, s.merged),
     createdAt: time(s.createdAt) ?? changedAt,
     changedAt,
-    closedAt: time(s.closedAt),
+    closedAt: time(s.closedAt) ?? (status === 'done' || status === 'dropped' ? changedAt : null),
     into: typeof s.into === 'string' ? s.into : null,
   }
 }
 
+/** A saved child, or null for one wrongly shaped or of a kind no build makes now, such as an earlier build's `background` command. */
 function childOf(saved: unknown): Child | null {
   const c = saved as Partial<Record<keyof Child, unknown>> | null
   const kind = CHILD_KINDS.find(k => k === c?.kind)
@@ -142,6 +143,13 @@ function fromLists(o: Record<string, unknown>): SessionStatus {
   }
 }
 
+/** The saved subjects a look missed, kept for the subjects in `ids`. A Status saved before them had none. */
+function missedOf(saved: unknown, ids: ReadonlySet<string>): Record<string, number | null> {
+  const entries = typeof saved === 'object' && saved !== null ? Object.entries(saved) : []
+
+  return Object.fromEntries(entries.filter(([id, at]) => ids.has(id) && (at === null || time(at) !== null)))
+}
+
 /** A saved Status, from this build or an earlier one, with anything wrongly shaped left out. Null for none. */
 export function upgradeStatus(saved: unknown): SessionStatus | null {
   const o = saved as Record<string, unknown> | null | undefined
@@ -151,7 +159,14 @@ export function upgradeStatus(saved: unknown): SessionStatus | null {
   const subjects = o.subjects.map(subjectOf).filter((s): s is Subject => s !== null)
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c): c is Child => c !== null) : []
   const savedLinks = typeof o.askSubjects === 'object' && o.askSubjects !== null ? Object.entries(o.askSubjects) : []
-  const askSubjects = Object.fromEntries(savedLinks.filter((e): e is [string, string] => typeof e[1] === 'string'))
+  const goal = goalFields(o, new Set(subjects.map(s => s.id)))
+  const dropped = droppedMilestoneIds(goal.milestones)
+  // An earlier build kept one link per ask, as a bare id.
+  const askLinks = savedLinks.map(([ask, to]): [string, string[]] => [
+    ask,
+    [to].flat().filter((id): id is string => typeof id === 'string' && !dropped.has(id)),
+  ])
+  const askSubjects = Object.fromEntries(askLinks.filter(([, ids]) => ids.length > 0))
   const look = o.look as { startedAt?: unknown } | null | undefined
   const lookAt = time(look?.startedAt)
 
@@ -163,6 +178,8 @@ export function upgradeStatus(saved: unknown): SessionStatus | null {
     nextId: Math.max(time(o.nextId) ?? 1, subjects.length + 1),
     nextChildId: Math.max(time(o.nextChildId) ?? 1, children.length + 1),
     lastLookAt: time(o.lastLookAt),
+    missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map(s => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
+    ...goal,
   }
 }

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 
 import { API, isFunction, nameOf, propertyOf, ts } from './ts.mjs'
 
@@ -30,6 +30,10 @@ function hooksModules(root) {
 }
 
 const lineOf = (source, node) => source.getLineAndCharacterOfPosition(node.getStart()).line + 1
+const placeOf = (source, node) =>
+  node.getSourceFile() === source
+    ? `line ${lineOf(source, node)}`
+    : `${relative(dirname(source.fileName), node.getSourceFile().fileName)}:${lineOf(node.getSourceFile(), node)}`
 const unwrapped = node =>
   ts.isParenthesizedExpression(node) ||
   ts.isAsExpression(node) ||
@@ -132,6 +136,60 @@ function returnedFunctionOf(node) {
   return null
 }
 
+const engineNamesOf = source =>
+  new Set(
+    source.statements
+      .filter(node => ts.isImportDeclaration(node) && node.moduleSpecifier.text === 'claude-code')
+      .flatMap(node => [...(node.importClause?.namedBindings?.elements ?? [])])
+      .filter(element => (element.propertyName ?? element.name).text === 'EngineInterface')
+      .map(element => element.name.text),
+  )
+
+function typeAliasOf(project, reference) {
+  const symbol = project.checker.getSymbolAtLocation(reference.typeName)
+  const isImported = (symbol?.declarations ?? []).some(d => ts.isImportSpecifier(d.resolve(project)))
+  const target = isImported ? project.checker.getAliasedSymbol(symbol) : symbol
+
+  return (target?.declarations ?? []).map(d => d.resolve(project)).find(d => d && ts.isTypeAliasDeclaration(d)) ?? null
+}
+
+/**
+ * The first type in `fn`'s signature, or in a type alias it names from any file, that indexes into the engine's
+ * interface, as `EngineInterface['model']`. The directory refused each call that passed `$` to such a function. That
+ * the type is the cause is inferred; no scan has confirmed it.
+ */
+function engineIndexIn(project, fn) {
+  const seen = new Set()
+  const find = node => {
+    if (ts.isIndexedAccessTypeNode(node)) {
+      let object = node.objectType
+      while (ts.isIndexedAccessTypeNode(object) || ts.isParenthesizedTypeNode(object))
+        object = ts.isIndexedAccessTypeNode(object) ? object.objectType : object.type
+      const isEngine =
+        ts.isTypeReferenceNode(object) && engineNamesOf(node.getSourceFile()).has(object.typeName.getText())
+      if (isEngine) return node
+    }
+    const alias = ts.isTypeReferenceNode(node) ? typeAliasOf(project, node) : null
+    if (alias && !seen.has(alias)) {
+      seen.add(alias)
+      const found = find(alias.type)
+      if (found) return found
+    }
+    let found = null
+    node.forEachChild(child => {
+      found ??= find(child)
+    })
+    return found
+  }
+  const types = [...fn.parameters.map(p => p.type), fn.type].filter(Boolean)
+  for (const type of types) {
+    const found = find(type)
+    if (found) return found
+  }
+
+  return null
+}
+
 function answersOf(hook) {
   if (!ts.isBlock(hook.body)) return [{ at: hook.body, value: hook.body }]
   const found = []
@@ -215,6 +273,17 @@ export function checkHooksModules(root, errors) {
             argument,
             'MOD_CAPABILITY_USE_NOT_PLAIN',
             `passes \`$\` to \`${callee.text}\`, and line ${lineOf(source, rebinding)} binds \`${callee.text}\` again. The directory reads the names in a file without scopes, so it cannot tell which \`${callee.text}\` this is. Rename that binding.`,
+          )
+        const receiver =
+          !refusal && ts.isIdentifier(callee)
+            ? source.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === callee.text)
+            : null
+        const engineIndex = receiver ? engineIndexIn(project, receiver) : null
+        if (engineIndex)
+          report(
+            argument,
+            'MOD_CAPABILITY_USE_NOT_PLAIN',
+            `passes \`$\` to \`${callee.text}\`, whose signature reaches into the engine's interface with \`${snippet(engineIndex)}\` at ${placeOf(source, engineIndex)}. The directory refused every call to such a function. Name the type the engine exports, such as \`ModelCompleteResult\`, instead.`,
           )
         const returned = returnedFunctionOf(argument)
         if (returned)

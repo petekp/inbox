@@ -4,7 +4,8 @@ import { actionLabel, replyHint } from '../../hooks/rows'
 import { actionLines } from '../../hooks/action-plan'
 import { isStatusUnderActions } from '../../hooks/feedback'
 import { resultGlyph, runningMark } from '../../hooks/timing'
-import { HELD_MARK } from '../../hooks/help'
+import { HELD_MARK, UNDO_KEY } from '../../hooks/help'
+import { textMark } from '../../hooks/marks'
 import type { BannerView } from '../../hooks/banners'
 import type { ResultMark } from '../../hooks/rows'
 import { focusOf } from './panel-keys'
@@ -28,6 +29,9 @@ export function boxed(inner: string[], tone: BannerTone, width: number, s: Style
   ]
 }
 
+/** The most lines a selected review thread's comment takes. */
+const BODY_LINES = 8
+
 const LEAD_TONES: Record<BannerTone, Tone | null> = { error: 'error', warning: 'needsYou', notice: null }
 
 /** A banner's lines: its lead in bold, in the tone's color, then its body, wrapped inside the box. */
@@ -49,7 +53,7 @@ export function bannerLines(b: BannerView, width: number, s: Style): string[] {
 function buttonCell(b: ButtonFace, isFocused: boolean, s: Style, mark = ''): string {
   if (isFocused) return s.inverse(b.isOut ? s.dim(` ↵ ${b.label}${mark} `) : s.bold(` ↵ ${b.label}${mark} `))
   if (b.isOut && !b.isFollowUp) return s.dim(b.key ? ` ${b.key} ${b.label}${mark} ` : ` ${b.label}${mark} `)
-  if (b.isFollowUp) return s.dim(b.key ? ` ${b.key} ${b.label} ` : ` ${b.label} `)
+  if (b.isFollowUp || b.isQuiet) return s.dim(b.key ? ` ${b.key} ${b.label} ` : ` ${b.label} `)
   const label = (b.isRecommended ? s.underline(b.label) : b.label) + mark
 
   return b.key ? ` ${s.bold(b.key)} ${label} ` : ` ${label} `
@@ -67,26 +71,35 @@ function buttonLines(line: Line, ui: PanelUi, indent: number, width: number, s: 
 }
 
 /** Buttons laid out in lines from `indent`, the one at `focused` drawn focused. -1 focuses none. */
-export function faceLines(buttons: ButtonFace[], focused: number, indent: number, width: number, s: Style): string[] {
+export function faceLines(
+  buttons: ButtonFace[],
+  focused: number,
+  indent: number,
+  width: number,
+  s: Style,
+  between = '',
+): string[] {
   const cells = buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)))
   const sizes = cells.map(visibleLength)
   const firstFollowUp = buttons.findIndex(b => b.isFollowUp)
   const keyCount = firstFollowUp < 0 ? cells.length : firstFollowUp
   const { lines } = actionLines(sizes.slice(0, keyCount), sizes.slice(keyCount), {
     width: width - indent,
-    gap: 0,
+    gap: visibleLength(between),
     separator: 0,
   })
 
-  return lines.map(at => ' '.repeat(indent) + at.map(i => cells[i]).join(''))
+  return lines.map(at => ' '.repeat(indent) + at.map(i => cells[i]).join(between))
+}
+
+/** `text` in a lead's tone. */
+export function leadPaint(lead: Lead, text: string, s: Style): string {
+  return lead.tone === 'dim' ? s.dim(text) : lead.tone ? s.tone(lead.tone, text) : text
 }
 
 /** A lead and the space after it, or nothing for a line with no lead. */
 function leadText(lead: Lead | null, s: Style): string {
-  if (lead === null) return ''
-  const padded = lead.text.padEnd(2)
-
-  return `${lead.tone ? s.tone(lead.tone, padded) : padded} `
+  return lead === null ? '' : `${leadPaint(lead, lead.text.padEnd(2), s)} `
 }
 
 /** A result mark and the space after it. */
@@ -102,7 +115,7 @@ export function feedbackPaint(tone: Tone | null, s: Style) {
 
 /** A Status row's or legend entry's mark. A running mark draws the frame at `now`. */
 export function paintMark(m: { mark: string; tone: Tone | null; isRunning: boolean }, now: number, s: Style): string {
-  return feedbackPaint(m.tone, s)(m.isRunning ? runningMark(now) : m.mark)
+  return feedbackPaint(m.tone, s)(m.isRunning ? runningMark(now) : textMark(m.mark))
 }
 
 export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
@@ -135,24 +148,33 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       : null
   const mark = markText(line.mark, now, s)
   const after = line.settled
-    ? `  ${mark}${line.settled.tone === 'done' ? s.tone('done', line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim('u Undo')}` : ''}`
+    ? `  ${mark}${line.settled.tone === 'done' ? s.tone('done', line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ''}`
     : line.feedback && !statusUnder
       ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}`
       : ''
   // omp marks a selected item with ❯, its `nav.cursor` symbol, and keeps ▸ and ▾ for expand and collapse.
   const cursor = isSelected ? s.tone('accent', '❯') : ' '
   const head = ` ${' '.repeat(pad)}${cursor} ${line.rank ? s.dim(line.rank) : ''}${leadText(line.lead, s)}`
+  const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
+  const besideAge = age ? width - visibleLength(`  ${age} `) : width
   const shownTitle = line.mark
-    ? cutTitle(line.title, width - visibleLength(head) - visibleLength(status) - visibleLength(after))
+    ? cutTitle(line.title, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after))
     : line.title
   const title = line.isDim ? s.dim(shownTitle) : isSelected ? s.bold(shownTitle) : shownTitle
-  const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
-  out.push(spread(`${head}${title}${status}${after}`, `${age} `, width))
+  out.push(spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width))
   if (line.settled || isShut(line, ui)) return out
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad
   // A next build draws the Status, so only it names the subject an ask holds up.
   const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null
   if (holdsUp) out.push(fit(`${' '.repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width))
+  const recLine = line.row?.recLine
+  if (recLine)
+    out.push(
+      ...(isSelected
+        ? indented(recLine, indent, width, 3, s.dim)
+        : [fit(`${' '.repeat(indent)}${s.dim(recLine)}`, width)]),
+    )
+  if (line.body && isSelected) out.push(...indented(line.body, indent, width, BODY_LINES, t => t))
   if (line.detail && (isSelected || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
   if (!isSelected) return out
   if (line.file) out.push(' '.repeat(indent) + s.tone('accent', line.file))

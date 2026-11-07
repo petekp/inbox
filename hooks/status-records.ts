@@ -1,10 +1,12 @@
 import { askStatus, parseStatus } from './status'
-import { statusPrompt, statusMidTurnPrompt, statusCatchUpPrompt, STATUS_SYSTEM } from './status-prompt'
+import { statusPrompt, statusMidTurnPrompt, statusCatchUpPrompt, hostStatusSystem } from './status-prompt'
 import type { StatusCallInput } from './status-prompt'
-import { failedStatus, appliedStatus } from './session-status'
+import { failedStatus, appliedStatus, isStatusCallCurrent } from './session-status'
 import type { ClientId } from './clients'
 import type { Exchange, Session, SessionStatus, HostTask } from '../types'
-import type { Ask, UpdateHost, CallReport } from './session-host'
+import type { Ask, UpdateHost, CallKind } from './session-host'
+import { heardCall, withCall } from './call-record'
+import type { HeardCall } from './call-record'
 
 /**
  * What a Status call reads as its exchange: a reply's exchange, the running turn's work so far, or a whole
@@ -29,12 +31,15 @@ export function statusCallPrompt(input: StatusCallInput, read: StatusExchange): 
   }
 }
 
-/** A Status call: what it reads as its exchange, and the model call that sends its prompt with `STATUS_SYSTEM`. */
+/** A Status call: what it reads as its exchange, and the model call that sends its prompt with the host's Status system text. */
 export type StatusCall = { exchange: StatusExchange; ask: Ask }
 
-type StatusHost<S extends Session> = Pick<UpdateHost<S>, 'now' | 'read' | 'update' | 'ask' | 'inOrder' | 'records'>
+type StatusHost<S extends Session> = Pick<
+  UpdateHost<S>,
+  'now' | 'read' | 'update' | 'ask' | 'inOrder' | 'records' | 'names'
+>
 
-/** One model call of a Status call. An answer that holds prose is asked once more, so a call makes one or two. */
+/** One model call of a Status call. An answer with no operation is asked once more, so a call makes one or two. */
 type StatusAttempt = {
   /** The model the host asked for, and the one that answered. Null when the host does not say. */
   model: string | null
@@ -125,57 +130,59 @@ export async function writeStatusRecord(records: StatusRecords, record: StatusRe
   }
 }
 
-/** Sends `prompt` once, and notes what the host says of the call. */
-async function attempt(
-  host: Pick<StatusHost<Session>, 'now'>,
-  ask: Ask,
-  prompt: string,
-): Promise<StatusAttempt & { text: string | null }> {
-  const heard: { report?: CallReport; thrown?: string } = {}
-  const startedAt = await host.now()
-  const text = await ask(prompt, STATUS_SYSTEM, r => (heard.report = r)).catch((err: unknown) => {
-    heard.thrown = err instanceof Error ? err.message : String(err)
-    return null
-  })
-
+/** A Status call record's account of one call the host heard. */
+function attemptOf({ text, report, thrown, ms }: HeardCall): StatusAttempt {
   return {
-    text,
-    model: heard.report?.model ?? null,
-    answeredBy: heard.report?.answeredBy ?? null,
+    model: report?.model ?? null,
+    answeredBy: report?.answeredBy ?? null,
     answer: text,
-    error: text === null ? (heard.thrown ?? heard.report?.error ?? 'no answer, and the host gave no reason') : null,
-    ms: (await host.now()) - startedAt,
+    error: text === null ? (thrown ?? report?.error ?? 'no answer, and the host gave no reason') : null,
+    ms,
   }
 }
 
 /**
  * Runs the Status call on the Status and asks in `s`, and writes its answer, or saves why it wrote nothing. An
- * answer that holds prose is asked once more. `appliedAfter` drops the write as `appliedStatus` does. With
+ * answer with no operation is asked once more. `appliedAfter` drops the write as `appliedStatus` does, and skips the
+ * call when `s` already shows it would be dropped. With
  * `records`, it then writes the call's record in the background, and drops a failed write.
  */
 export async function askAndWriteStatus<S extends Session>(
-  host: Pick<StatusHost<S>, 'now' | 'update' | 'records'>,
+  host: Pick<StatusHost<S>, 'now' | 'update' | 'records' | 'names'>,
   s: S,
   call: StatusCall,
   tasks: HostTask[],
   appliedAfter: number,
 ): Promise<void> {
+  if (!isStatusCallCurrent(s, appliedAfter)) return
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() }
   const prompt = statusCallPrompt(input, call.exchange)
-  const attempts: StatusAttempt[] = []
+  const system = hostStatusSystem(host.names)
+  const heards: { kind: CallKind; heard: HeardCall }[] = []
   const { last } = await askStatus(async () => {
-    const { text, ...made } = await attempt(host, call.ask, prompt)
-    attempts.push(made)
-    return { text }
+    const kind = { call: 'status', reads: call.exchange.kind, isRetry: heards.length > 0 } as const
+    const heard = await heardCall(call.ask, prompt, system, kind, () => host.now())
+    heards.push({ kind, heard })
+    return heard
   })
+  const attempts = heards.map(h => attemptOf(h.heard))
   const answer = last.text === null ? null : parseStatus(last.text)
   const now = await host.now()
   let before: SessionStatus | null = null
   let isWritten = false
-  const after = await host.update(x => {
+  const noted = (current: S) =>
+    heards.reduce(
+      (x, h) => withCall(x, h.kind, h.heard, h.heard.text !== null && parseStatus(h.heard.text) !== null, now),
+      current,
+    )
+  const after = await host.update(current => {
+    const x = noted(current)
     before = x.ledger.overview
-    isWritten = x.presence.turnsApplied >= appliedAfter
-    return answer === null ? failedStatus(x, last.text, appliedAfter, now) : appliedStatus(x, answer, appliedAfter, now)
+    isWritten = isStatusCallCurrent(x, appliedAfter)
+    const readSetAt = input.last?.goal?.setAt ?? null
+    return answer === null
+      ? failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === 'catch-up')
+      : appliedStatus(x, answer, appliedAfter, now, readSetAt, call.exchange.kind === 'catch-up')
   })
   if (!host.records) return
   const record: StatusRecord = {
@@ -183,7 +190,7 @@ export async function askAndWriteStatus<S extends Session>(
     host: host.records.host,
     session: host.records.session,
     at: input.now,
-    system: STATUS_SYSTEM,
+    system,
     prompt,
     input,
     exchange: call.exchange,

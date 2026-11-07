@@ -56,7 +56,31 @@ const literalValue = (literal: string | undefined): string | null => {
 }
 
 const PATCH_ARGUMENT = /tools\.apply_patch\(\s*("(?:[^"\\]|\\.)*")/
-const COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")/
+/** A `cmd:` whose whole value is one string literal. A literal joined to more, as in `"npm test" + flags`, is not. */
+const COMMAND_ARGUMENT = /\bcmd:\s*("(?:[^"\\]|\\.)*")(?=\s*[,})])/
+
+/** The command a code-mode `exec` script's input runs: the first `cmd:` it passes, or '' when it passes none. */
+const scriptCommand = (input: string): string => literalValue(COMMAND_ARGUMENT.exec(input)?.[1]) ?? ''
+
+const COMMAND_CALL = /\bexec_command\b/g
+const COMMAND_ARGUMENTS = new RegExp(COMMAND_ARGUMENT.source, 'g')
+const STRING_LITERALS = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g
+/** Code that can run a call more than once: a function, which may be called again, or a loop. */
+const REPEATS = /=>|\bfunction\b|\b(?:for|while|do)\b/
+
+/**
+ * The commands a code-mode script's input runs, each at most once, or null unless each `exec_command` in it passes
+ * its own `cmd:`, each `cmd:` is a string literal that no other `cmd:` repeats, and no function or loop could run one
+ * twice.
+ */
+export function scriptCommands(input: string): string[] | null {
+  const commands = [...input.matchAll(COMMAND_ARGUMENTS)].map(literal => literalValue(literal[1]) ?? '')
+  const calls = (input.match(COMMAND_CALL) ?? []).length
+  const isEachCallLiteral = commands.length === calls && !commands.includes('')
+  const canRepeat = REPEATS.test(input.replace(STRING_LITERALS, '""'))
+
+  return isEachCallLiteral && !canRepeat && new Set(commands).size === commands.length ? commands : null
+}
 
 export const shellLines = (command: string): string[] => {
   const line = command === '' ? null : toolActivity('Bash', { command })
@@ -77,7 +101,7 @@ export function callLines(p: Payload, hasCommandRows: boolean, cwd: string): str
   if (p.type === 'custom_tool_call' && name === 'exec') {
     const input = textOf(p.input)
     const patch = literalValue(PATCH_ARGUMENT.exec(input)?.[1])
-    const command = literalValue(COMMAND_ARGUMENT.exec(input)?.[1])
+    const command = scriptCommand(input)
 
     return [...(patch ? editLines(patch, cwd) : []), ...(command && !hasCommandRows ? shellLines(command) : [])]
   }

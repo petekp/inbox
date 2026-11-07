@@ -57,7 +57,7 @@ test('a release build saves its first tab for a Status the page names, and start
     )
     await updateState(server.dir, 's1', s => ({
       ...s,
-      ledger: { ...s.ledger, overview: { ...EMPTY_SESSION_STATUS, headline: 'h' } },
+      ledger: { ...s.ledger, overview: { ...EMPTY_SESSION_STATUS, head: { title: 'h', description: '' } } },
     }))
     await server.call('inbox_view', { tab: 'overview' }, { thread_id: 's1' })
 

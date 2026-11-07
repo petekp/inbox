@@ -4,7 +4,7 @@ import { allRows, DOT, replyHint, ROW_COPY, shortAgo, shownOptionDescriptions } 
 import { drawnLists, rowAfterClose } from '../../hooks/action-plan'
 import { isRowTab } from '../../hooks/tabs'
 import { feedbackOf } from '../../hooks/feedback'
-import { isDrawnInPlace, SETTLED_MS } from '../../hooks/timing'
+import { earliestOf, isDrawnInPlace, SETTLED_MS } from '../../hooks/timing'
 import type { Feedback, PressState } from '../../hooks/feedback'
 import type { RowView } from '../../hooks/rows'
 import { actionId } from '../../hooks/press-labels'
@@ -16,6 +16,7 @@ import type { RowPress } from '../../hooks/presses'
 import { checkActions, threadActions } from '../../hooks/pr-tab'
 import {
   checkRowText,
+  prBlockRows,
   PR_QUOTE_CHARS,
   splitFollowUps,
   prCheckId,
@@ -26,18 +27,31 @@ import {
 import { prPressEffect } from '../../hooks/pr-press'
 import type { DrawnPr } from '../../hooks/pr-views'
 import type { PrAction, PrPress } from '../../hooks/pr-press'
-import { commentParts, failingChecks, readableComment, threadWhere, waitingThreads } from '../../hooks/prs'
+import { commentParts, readableComment, threadWhere } from '../../hooks/prs'
 import type { Finding, PrCheck, PrThread, PrView, Tab } from '../../types'
 import type { TabView as View } from './core'
 import type { PressReply } from './server'
 import { PRESS_TIMEOUT_MS } from '../../hooks/session-view'
-import { tabState, selection, drafts, optionsShown, sending, errors, notes, copies, undoing } from './tab-state'
+import {
+  tabState,
+  selection,
+  drafts,
+  optionsShown,
+  sending,
+  sendingSince,
+  errors,
+  notes,
+  copies,
+  undoing,
+} from './tab-state'
 import type { Key, Row, Lists } from './tab-state'
+import { isTabInPlace } from './settle'
+import { listInput } from './list-input'
 import { later, callTool } from './tab-host'
 import { revealSelected, drawIn } from './tab-motion'
 import { drawnTab, tabWaits, shownSettled, open, keepPressedOpen } from './tab-selection'
 import { applyView, replies, holds } from './tab-read'
-import { isNotSent, copy, startTyping, discardReply } from './tab-press'
+import { isNotSent, copy, startTyping, discardReply, lastPressKey } from './tab-press'
 import { resultHandle, inlineHtml } from './tab-parts'
 
 function isListed(v: View, id: string): boolean {
@@ -62,7 +76,13 @@ export async function act(
   const t = drawnTab()
   const wasWaiting =
     !!tabState.view && isRowTab(t) && tabWaits(tabState.view, t).some(r => r.id === rowId && r.isWaiting)
-  sending.set(rowId, { seq, pending, action: press.action === 'type' ? null : actionId(press) })
+  sending.set(rowId, {
+    seq,
+    since: Date.now(),
+    pending,
+    action: press.action === 'type' ? null : actionId(press),
+    lastBefore: lastPressKey(tabState.view, rowId),
+  })
   errors.delete(rowId)
   notes.delete(rowId)
   copies.delete(rowId)
@@ -77,7 +97,8 @@ export async function act(
     if (tabState.isDisposed || generation !== tabState.viewGeneration) return
     if (r.copy) await copy(rowId, r.copy, isLatest)
     if (tabState.isDisposed || generation !== tabState.viewGeneration || !isLatest()) return
-    if (r.view) applyView(r.view, seq)
+    // A new request number, so this view replaces any view a poll read while the press was out.
+    if (r.view) applyView(r.view, ++tabState.requested)
     if (r.error && !(tabState.view && isNotSent(tabState.view, rowId))) errors.set(rowId, r.error)
     const isConfirmed = isPressConfirmed({ error: r.error, note: r.note, isUnconfirmed: r.delivery === 'unconfirmed' })
     // After the view, so `onSent` reads the rows as they are after the press.
@@ -161,6 +182,7 @@ function itemRow(v: View, r: RowView): Row {
     title: r.title,
     // A next build draws the Status, so only it names the subject an ask holds up.
     ...(v.isNextBuild === true && r.holdsUpLine ? { holdsUp: r.holdsUpLine } : {}),
+    ...(r.recLine ? { recLine: r.recLine } : {}),
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
     ...(described.length > 0
       ? {
@@ -234,7 +256,7 @@ export function prKey(rowId: string, pr: PrView, a: PrAction): Key {
   }
 }
 
-function pendingLocal(effect: Effect): Feedback {
+export function pendingLocal(effect: Effect): Feedback {
   return { is: 'local', result: pendingResult([effect], Date.now()) }
 }
 
@@ -284,11 +306,12 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
 
 function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
   const id = prCheckId(pr, c)
-  const text = checkRowText(c)
+  const text = checkRowText(pr, c)
   const ran = text.meta
 
   return {
     id,
+    ...(text.fold ? { fold: text.fold } : {}),
     handle: text.mark.text,
     handleTone: text.mark.tone ?? undefined,
     isMarkDone: text.mark.isDone,
@@ -303,24 +326,33 @@ function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
   }
 }
 
-export type PrBlockPlan = DrawnPr & { threads: Row[]; checks: Row[] }
+export type PrBlockPlan = DrawnPr & ReturnType<typeof prBlockRows<Row>>
 
 export function prPlan(v: View): { blocks: PrBlockPlan[]; rows: Row[] } {
   const blocks: PrBlockPlan[] = []
+  const now = Date.now()
+  const placing = {
+    shownSince: tabState.shownSince,
+    seen: tabState.seen,
+    input: listInput(now),
+    now,
+    pressOutSince: earliestOf([v.prs.pressOutSince, sendingSince()]),
+  }
   for (const d of v.prs.drawn) {
-    if (!isDrawnInPlace(d, tabState.shownSince) && !undoing.has(prMarkId(d.pr.ref))) continue
-    blocks.push(
-      d.state.is === 'settled'
-        ? { ...d, threads: [], checks: [] }
-        : {
-            ...d,
-            threads: waitingThreads(d.pr).map(t => prThreadRow(v, d.pr, t)),
-            checks: failingChecks(d.pr).map(c => prCheckRow(v, d.pr, c)),
-          },
-    )
+    const id = prMarkId(d.pr.ref)
+    const isShown =
+      d.state.is === 'settled' ? isTabInPlace(id, d.state, placing) : isDrawnInPlace(d, tabState.shownSince)
+    if (!isShown && !undoing.has(id)) continue
+    blocks.push({
+      ...d,
+      ...prBlockRows(d.pr, d.state.is === 'settled', {
+        thread: t => prThreadRow(v, d.pr, t),
+        check: c => prCheckRow(v, d.pr, c),
+      }),
+    })
   }
 
-  return { blocks, rows: blocks.flatMap(b => [...b.threads, ...b.checks]) }
+  return { blocks, rows: blocks.flatMap(b => b.rows) }
 }
 
 function prRows(v: View): Row[] {

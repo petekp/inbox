@@ -1,4 +1,4 @@
-import { CLOSED_MARKS, SUBJECT_MARKS } from './help'
+import { CLOSED_MARKS, PR_MARKS, SUBJECT_MARKS } from './help'
 
 const STROKE = 'fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"'
 
@@ -24,8 +24,17 @@ export function markShape(mark: string, midY: number): string | null {
 }
 
 /**
+ * The glyph the terminal and omp draw for a mark. macOS Terminal's default font, SF Mono, draws ✗ as ×. It has no ✕,
+ * so Terminal falls back to Menlo, which draws the same ×, and a cancelled row would look dismissed. Menlo draws ⊘ as a
+ * slashed circle.
+ */
+export function textMark(mark: string): string {
+  return mark === CLOSED_MARKS.lapsed ? '⊘' : mark
+}
+
+/**
  * A cancelled row's ✗ in the desktop pane and the Codex tab, in the same 8-point box. The system font draws ✗ the
- * same as ✕, so this draws the ballot X a monospace font draws: a long, heavy upstroke crossed by a shorter stroke.
+ * same as ✕, so this draws a ballot X: a long, heavy upstroke crossed by a shorter stroke.
  */
 function cancelledMarkShape(midY: number): string {
   const t = midY - 4
@@ -56,11 +65,27 @@ function waitingMarkShape(circleMid: Point): string {
 }
 
 /**
+ * ⊘, a cancelled check, in the desktop pane and the Codex tab. The system font draws ⊘ thin and smaller than ○, so this
+ * draws a ring as wide as the font's ○, crossed by a slash from lower left to upper right.
+ */
+function cancelledCheckShape(circleMid: Point): string {
+  const radius = 4.85
+  const reach = radius * Math.SQRT1_2
+  const at = (dx: number, dy: number) => `${(circleMid.x + dx).toFixed(2)},${(circleMid.y + dy).toFixed(2)}`
+
+  return (
+    `<circle cx="${circleMid.x}" cy="${circleMid.y}" r="${radius}" ${STROKE} stroke-width="1.4"/>` +
+    `<path d="M${at(-reach, reach)} L${at(reach, -reach)}" ${STROKE} stroke-width="1.4"/>`
+  )
+}
+
+/**
  * A muted mark's shape where the system font draws it badly, or null where the font's glyph serves. `circleMid` is
  * where the look's font centres ○ in the mark's box, measured in that look.
  */
 export function mutedMarkShape(mark: string, midY: number, circleMid: Point): string | null {
   if (mark === CLOSED_MARKS.lapsed) return cancelledMarkShape(midY)
   if (mark === SUBJECT_MARKS['waits-on-other'].mark) return waitingMarkShape(circleMid)
+  if (mark === PR_MARKS.cancelled.text) return cancelledCheckShape(circleMid)
   return null
 }

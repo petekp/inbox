@@ -6,23 +6,28 @@ import type { SessionView } from '../../hooks/session-view'
 import type { BannerTone, ToneName } from '../../hooks/tones'
 import { ago } from '../../hooks/text'
 import { DEMO_NOTICE, bannerOf, stopBanner, tabBarBanners, stopFix, stopText } from '../../hooks/banners'
-import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies } from '../../hooks/timing'
-import { LISTED_TABS, shownTabs, isRowTab } from '../../hooks/tabs'
+import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies, nextFoldAt } from '../../hooks/timing'
+import type { ListInput } from '../../hooks/timing'
+import { shownTabs, isRowTab } from '../../hooks/tabs'
+import { bandCounts, noCountsText } from '../../hooks/band'
 import { footerStatus } from '../../hooks/view'
-import { statusSelected } from '../../hooks/action-plan'
+import { statusSelected } from '../../hooks/status-keys'
 import type { Holds } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
-import { bannerLines, boxed, drawLine, paintMark } from './panel-draw'
+import { bannerLines, boxed, drawLine, leadPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import { PAGE_MARK_AT, PAGE_TEXT_AT, entriesOf } from './panel-entries'
 import { resolveSelected, withTab } from './panel-keys'
 import { STOP_ID, linesOf } from './panel-lines'
+import { drawGoalPart, goalPartId } from './panel-goal'
 import { drawPageRow, pageRule } from './panel-page'
-import { footer, pageWindow, scrolled, tabBar } from './panel-tabs'
+import { footer, pageWindow, pageWindowLines, scrolled, tabBar } from './panel-tabs'
 import { fit, indented, spread } from './panel-text'
 
 type ResumePress = { action: 'resume' }
-export type PanelPress = RowPress | PrPress | ResumePress
+/** Shows every option of a question whose options fold. The panel handles it, so no host sees it. */
+type OptionsPress = { action: 'all-options'; id: string }
+export type PanelPress = RowPress | PrPress | ResumePress | OptionsPress
 
 /** What the panel draws: the session's view and the host facts the shared view does not hold. */
 export type PanelScreen = {
@@ -36,6 +41,8 @@ export type PanelScreen = {
   version: string
   isNextBuild?: boolean
   isDemo?: boolean
+  /** The last read of the session failed, so the screen is the one before it. */
+  isReadFailed?: boolean
 }
 
 export type Tone = ToneName | 'accent' | 'sep'
@@ -66,14 +73,20 @@ export type PanelUi = {
   notice: { text: string; at: number; isError: boolean } | null
   /** The groups whose closed rows show. Each starts folded. */
   unfolded: FoldKind[]
+  /** The groups whose earlier Closed lines the person opened. Folding the group closes them again. */
+  closedAll: FoldKind[]
+  /** The questions whose folded options the person opened. */
+  optionsShown: string[]
+  /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
+  statusUnfolded: string[]
   /** A Resume press for the stop that began at `stopAt`. */
   resuming: { stopAt: number; is: 'sending' } | { stopAt: number; is: 'refused'; why: string } | null
   /** A handed-off row the person opened again with Enter. Moving the selection off it folds it again. */
   opened: string | null
   /** How many lines of the Status page are scrolled above the panel. Drawing clamps it to the page's end. */
   pageTop: number
-  /** The Status row the next draw scrolls into view, after j or k selects it. */
-  pageReveal: string | null
+  /** The Status row the next draw scrolls into view, after j or k selects it. `true` is the selected row, as when the page shows. */
+  pageReveal: string | true | null
   /**
    * When a Status press selected the shown row, as View does. The row's buttons ignore keys until
    * `PRESS_GUARD_MS` has passed, so a second Enter does not press the row it opened.
@@ -83,6 +96,8 @@ export type PanelUi = {
   shownSince: number
   /** Whether Help shows in place of the tab's lines. It scrolls with `pageTop`, and switching tabs closes it. */
   isHelpShown: boolean
+  /** The person's latest run of keys, which keeps a row due to fold in place until they stop. */
+  listInput: ListInput | null
 }
 
 export const INITIAL_UI: PanelUi = {
@@ -94,6 +109,9 @@ export const INITIAL_UI: PanelUi = {
   discarded: {},
   notice: null,
   unfolded: [],
+  closedAll: [],
+  optionsShown: [],
+  statusUnfolded: [],
   resuming: null,
   opened: null,
   pageTop: 0,
@@ -101,14 +119,20 @@ export const INITIAL_UI: PanelUi = {
   openedAt: 0,
   shownSince: 0,
   isHelpShown: false,
+  listInput: null,
 }
 
-export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded' | 'shownSince'>): Holds {
-  return { replies: heldReplies(ui.typing, ui.drafts), discarded: ui.discarded, shownSince: ui.shownSince }
+export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded' | 'shownSince' | 'listInput'>): Holds {
+  return {
+    replies: heldReplies(ui.typing, ui.drafts),
+    discarded: ui.discarded,
+    shownSince: ui.shownSince,
+    listInput: ui.listInput,
+  }
 }
 
 /**
- * True while the view changes with the clock alone: a settled row's Undo counting down, a local press's result
+ * True while the view changes with the clock alone: a settled row's Undo counting down or its fold coming due, a local press's result
  * showing, a send waiting to read as queued, or a notice. Changes the host saves arrive as events instead.
  */
 export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): boolean {
@@ -120,13 +144,11 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
       (l.delivery?.state === 'queued' && now - l.at < QUEUED_AFTER_MS),
   )
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
+  const settled = [...rows, ...view.prs.drawn].flatMap(r => (r.state.is === 'settled' ? [r.state] : []))
+  const placing = { lastTypedMessageAt: null, listInput: ui.listInput, now, settleWindowMs: SETTLED_MS }
+  const isFoldComing = nextFoldAt(settled, placing) !== null
 
-  return (
-    rows.some(r => r.state.is === 'settled' && r.state.canUndo) ||
-    view.prs.drawn.some(p => p.state.is === 'settled' && p.state.canUndo) ||
-    isPressMoving ||
-    isNoticeShown
-  )
+  return isFoldComing || isPressMoving || isNoticeShown
 }
 
 /** The notice for a press the row cannot show: a failed send, or a press whose row had changed. */
@@ -160,7 +182,7 @@ export function drawPanel(
   style: Style,
   height?: number,
   minHeight = 0,
-): { lines: string[]; pageTop: number } {
+): { lines: string[]; pageTop: number; isRevealed: boolean; shownSubjects: string[] } {
   const d: Draw = { screen, ui, width, now, style }
   const entries = entriesOf(screen, ui, ui.tab, now)
   const selected = resolveSelected(linesOf(entries), ui.selectedId)
@@ -182,18 +204,23 @@ export function drawPanel(
   ]
   const body: string[] = []
   let selectedAt = [0, 0]
-  const pageSelected = isRowTab(ui.tab) ? null : statusSelected(screen.view.statusPage, ui.selectedId)
+  const pageSelected =
+    isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId)
   let pageSelectedAt: number[] | null = null
+  /** The line each Status subject row starts on. */
+  const subjectAt: [string, number][] = []
   for (const e of entries) {
     if (e.kind === 'heading')
       body.push(
-        ` ${e.mark ? `${e.mark.tone ? style.tone(e.mark.tone, e.mark.text) : e.mark.text} ` : ''}${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`,
+        ` ${e.mark ? `${leadPaint(e.mark, e.mark.text, style)} ` : ''}${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`,
       )
-    else if (e.kind === 'page') {
-      if (e.row.isRuledAbove) body.push(pageRule(width, style))
+    else if (e.kind === 'page' || e.kind === 'goal') {
+      if (e.kind === 'page' && e.row.isRuledAbove) body.push(pageRule(width, style))
       const start = body.length
-      const isSelected = e.row.id === pageSelected?.id
-      body.push(...drawPageRow(e.row, d, isSelected))
+      if (e.kind === 'page' && e.row.kind === 'subject') subjectAt.push([e.row.id, start])
+      const id = e.kind === 'page' ? e.row.id : goalPartId(e.part)
+      const isSelected = id !== null && id === pageSelected?.id
+      body.push(...(e.kind === 'page' ? drawPageRow(e.row, d, isSelected) : drawGoalPart(e.part, d, isSelected)))
       if (isSelected) pageSelectedAt = [start, body.length - 1]
     } else if (e.kind === 'banner') body.push(...bannerLines(e.banner, width, style))
     else if (e.kind === 'key')
@@ -247,10 +274,8 @@ export function drawPanel(
   const isOverflowing = body.length > room
   const [first = 0, last = 0] = pageSelectedAt ?? []
   // In view between the ↑ line above and the ↓ line below, which `pageWindow` draws while the page runs past them.
-  const top =
-    pageSelectedAt && ui.pageReveal === pageSelected?.id
-      ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1))
-      : ui.pageTop
+  const isRevealed = pageSelectedAt !== null && (ui.pageReveal === true || ui.pageReveal === pageSelected?.id)
+  const top = isRevealed ? Math.min(Math.max(ui.pageTop, last - room + 2), Math.max(0, first - 1)) : ui.pageTop
   const pageTop = isPage ? Math.min(Math.max(0, top), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop
   const shown = !isOverflowing
     ? body
@@ -258,7 +283,18 @@ export function drawPanel(
       ? pageWindow(body, pageTop, room, style)
       : scrolled(body, selectedAt, room, style)
 
-  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)), pageTop }
+  const isStatusShown = ui.tab === 'overview' && !ui.isHelpShown
+  const shownLines = isOverflowing ? pageWindowLines(body.length, pageTop, room) : { start: 0, end: body.length }
+  const shownSubjects = isStatusShown
+    ? subjectAt.filter(([, at]) => at >= shownLines.start && at < shownLines.end).map(([id]) => id)
+    : []
+
+  return {
+    lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)),
+    pageTop,
+    isRevealed,
+    shownSubjects,
+  }
 }
 
 /** The most lines a shown tab draws, each tab as switching to it would show it. */
@@ -277,13 +313,10 @@ export function tallestTabHeight(
   return Math.max(...heights)
 }
 
-/** The band above the prompt: the two counts, and under them why the last turn stopped. */
+/** The band above the prompt: the counts, and under them why the last turn stopped. */
 export function bandLines(screen: PanelScreen, width: number, now: number, style: Style): string[] {
-  const { needsYou, findings } = screen.view
-  const counts = LISTED_TABS.map(t => ({ t, count: t.id === 'needsYou' ? needsYou.count : findings.count }))
-    .filter(x => x.count > 0)
-    .map(x => `${x.t.label} ${style.tone(x.t.id, String(x.count))}`)
-  const left = ` ${counts.length > 0 ? counts.join(` ${style.tone('sep', '·')} `) : style.dim('Nothing needed')}`
+  const counts = bandCounts(screen.view).map(c => `${c.label} ${style.tone(c.id, String(c.count))}`)
+  const left = ` ${counts.length > 0 ? counts.join(` ${style.tone('sep', '·')} `) : style.dim(noCountsText(screen.view, screen.isReadFailed))}`
   const countLine = spread(left, style.dim('/inbox to open '), width)
   const { stop } = screen
   if (!stop) return [countLine]

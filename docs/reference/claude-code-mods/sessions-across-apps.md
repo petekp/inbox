@@ -34,6 +34,7 @@ Part of [Claude Code mods](../claude-code-mods.md).
 - "If you resume the same session in two terminals without forking, messages from both interleave into one transcript". [SE#branch-a-session] Inference: a ledger keyed by session id can see two live processes for one id.
 - `-p` and SDK sessions are left "out of the session picker and out of `claude --continue`". [SE#resume-a-session] Inference: desktop Code-mode sessions, being SDK-style, are excluded too; "a desktop-app session resumes in the desktop app". [SE#name-your-sessions]
 - A resume restores history, model, agent and permission mode, but `--mcp-config`, `--settings`, `--plugin-dir`, `--fallback-model` and `--add-dir` "must be passed again". [SE#what-a-resumed-session-restores]
+- A resume also keeps the tool schemas from the conversation's first request, so a mod's tools keep the schema of the build that started the conversation. See [`$.tool.register`](api.md#toolregister-and-commandregister).
 - Names are not stable keys: default names (`my-app-3f`) change on `/rename` or plan accept, and duplicates get suffixes. Use the full `sessionId`. [SE#name-your-sessions]
 
 ### `claude agents --json`: the supported session list

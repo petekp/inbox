@@ -12,7 +12,7 @@ Each host publishes its session to a file. The mod reads that file and builds th
 
 - **Where.** `<app home>/inbox/sessions/<session id>.json`. The app home is `$HERDR_APP_HOME`, or `~/.config/herdr-app` when that is unset. An app terminal inherits `HERDR_APP_HOME` when the app was started with it, as the spike's was. One folder holds both directions, because a mod may read anywhere in the home folder but may write only under the app home.
 - **When.** After every saved change to the session, at session start, and at session end. A host publishes only when `HC_TERMINAL_ID` is set, which means it runs in a Herdr app terminal. At session end the host deletes its file.
-- **What.** A versioned envelope around the shared `Session` from `hooks/session.ts`:
+- **What.** A versioned envelope around the shared `Session` from `types/index.d.ts`:
 
   ```json
   { "format": 1, "host": "claude-code", "agent": "Claude", "sessionId": "…", "terminal": "t1", "writtenAt": 0, "session": {} }
@@ -24,7 +24,7 @@ Each host publishes its session to a file. The mod reads that file and builds th
 
 ### Who computes the view
 
-The mod calls `sessionView(session, Date.now(), SETTLED_MS, canCatchUp, holds)` at each draw, from the published session. A host could publish a finished view instead, but a view is stale the moment it is written: ages, Undo countdowns, settle windows and running marks all depend on the time of the draw. Publishing the session keeps them live without a host waking up.
+The mod calls `sessionView(session, Date.now(), SETTLED_MS, holds)` at each draw, from the published session. A host could publish a finished view instead, but a view is stale the moment it is written: ages, Undo countdowns, settle windows and running marks all depend on the time of the draw. Publishing the session keeps them live without a host waking up.
 
 The mod learns of a write from `watchFolder`, which reported each write about 170 ms after it in the spike. That was the largest fixed part of a press's delay. A host that already sets labels could also set `inbox.revision` after each write: a label change re-renders the mod with no file watch in between, and the mod then reads the file. The probe saw one render per label change but did not time it. Whether that is worth one `hc label` call per write is for the build to measure.
 

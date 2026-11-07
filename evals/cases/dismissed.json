@@ -202,5 +202,117 @@
         "dropped": 0
       }
     ]
+  },
+  {
+    "name": "dismissed-question-synonym-swap-stays-closed",
+    "about": "A dismissed question asked again with a synonym in place of one of its words is not added.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 6,
+      "card": {
+        "goal": "Ship the 1.4 release",
+        "done": ["Fixed the ANSI color fallback"],
+        "now": "Bumping the version",
+        "running": []
+      },
+      "items": [],
+      "closed": [
+        {
+          "id": "i5",
+          "kind": "question",
+          "ask": "Should I fix the hotkeys that vanish in ANSI mode?",
+          "how": "dismissed",
+          "outcome": "dismissed",
+          "at": 4
+        }
+      ]
+    },
+    "exchange": {
+      "person": "not now, just bump the version",
+      "turn": 5,
+      "activity": ["edited: package.json"],
+      "reply": "Bumped the version to 1.4.0. Should I fix the hotkeys that disappear in ANSI mode before the release? It is a two-line change in the key handler."
+    },
+    "checks": [
+      {
+        "notNew": "hotkey|ansi"
+      }
+    ]
+  },
+  {
+    "name": "dismissed-question-nearby-subject-added",
+    "about": "A question that shares all but one word of a dismissed question, where that word names a different problem, is added.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 6,
+      "card": {
+        "goal": "Ship the 1.4 release",
+        "done": ["Fixed the ANSI color fallback"],
+        "now": "Testing ANSI mode",
+        "running": []
+      },
+      "items": [],
+      "closed": [
+        {
+          "id": "i5",
+          "kind": "question",
+          "ask": "Should I fix the hotkeys that vanish in ANSI mode?",
+          "how": "dismissed",
+          "outcome": "dismissed",
+          "at": 4
+        }
+      ]
+    },
+    "exchange": {
+      "person": "leave the vanishing hotkeys, keep testing ANSI mode",
+      "turn": 5,
+      "activity": ["ran: npm run test:ansi"],
+      "reply": "Left the vanishing hotkeys alone. The ANSI tests pass, but the hotkeys that still work lag about a second in ANSI mode. Should I fix the hotkeys that lag in ANSI mode before the release?"
+    },
+    "checks": [
+      {
+        "new": "lag"
+      },
+      {
+        "dropped": 0
+      }
+    ]
+  },
+  {
+    "name": "dismissed-finding-not-asked-again",
+    "about": "A reply that asks about a finding the person dismissed adds no question.",
+    "ledger": {
+      "turn": 7,
+      "nextId": 8,
+      "card": {
+        "goal": "Ship the greeting CLI v1",
+        "done": ["Arg parser fixed"],
+        "now": "Writing the release notes",
+        "running": []
+      },
+      "items": [],
+      "findings": [],
+      "closed": [],
+      "closedFindings": [
+        {
+          "id": "f5",
+          "kind": "opportunity",
+          "title": "Arg parser has no tests for quoted values",
+          "detail": "A regression in quoting would go unnoticed.",
+          "path": "src/args.ts",
+          "at": 1,
+          "how": "dismissed",
+          "outcome": "dismissed",
+          "closedAt": 5
+        }
+      ]
+    },
+    "exchange": {
+      "person": "write the release notes for v1",
+      "turn": 7,
+      "activity": ["edited CHANGELOG.md"],
+      "reply": "The release notes for v1 are in CHANGELOG.md. One more thing: the arg parser still has no tests for quoted values. Do you want me to add them before the release?"
+    },
+    "checks": [{ "notNew": "test|quot|pars" }, { "dropped": 0 }]
   }
 ]

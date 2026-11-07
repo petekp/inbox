@@ -130,7 +130,8 @@ Type `/inbox` in Claude Code or omp, or open the Inbox tab in the ChatGPT app. T
 inbox has three tabs: Asks, Finds and PRs. A build that follows the `next`
 branch also shows a Status tab before them: what the session is focused on now, each part
 of the work with how long ago it changed, the subagents and other work running
-under each part, and a line where you last looked.
+under each part, and a line where you last looked. You can set a goal there, and
+the page then groups the work under the goal's milestones.
 
 ### Asks
 
@@ -139,7 +140,8 @@ Questions the agent asked you, and tasks only you can do.
 The agent doesn't have to do anything special to put a question here. After
 each reply, a model reads what the agent wrote and records each question in
 it, with its possible answers. The agent's recommended answer comes first.
-Press an answer and it goes to the agent as your message. You can also type
+Press an answer and it goes to the agent as your message, a few seconds later,
+so Undo can take back a wrong press. You can also type
 your own reply, or press Explain to have the agent say more before you decide.
 
 When a question is a design choice, such as two layouts or two ways to build a
@@ -153,7 +155,8 @@ reads "No comparison came back", and you can press Compare again.
 
 A task is something like signing in or adding an API key. It comes with
 buttons for its steps, such as copying a command or opening a file. In Claude
-Code, running the command with `!` closes the task once it succeeds.
+Code, running the command with `!` closes the task once it succeeds. Dismiss
+drops a task you won't do, without a message to the agent.
 
 ### Finds
 
@@ -171,13 +174,20 @@ Pull requests from this session and your current branch. Each one is marked
 Blocked, Ready or Waiting, and lists what blocks it: review comments waiting
 on you, failing checks and merge conflicts. Buttons hand the work to the
 agent: address one review comment or all of them, draft a reply, fix a
-failing check, resolve conflicts, or merge.
+failing check, resolve conflicts, or merge. Fix and Resolve conflicts show only
+while GitHub still shows the problem. A PR that merges or closes leaves the tab
+on its own, with Undo to keep it there.
+
+Your agent can also put the PRs in an order, such as which to merge first. The
+tab then lists them first, numbered, under what the order is for and why. When
+a ranked PR changes, the tab says so and offers Rank again.
 
 ### It keeps itself up to date
 
 When you answer a question in your own message, a task gets done, or the
 agent fixes a finding, the inbox closes the item. Closed items fold away under
-the open ones, each with how it ended.
+the open ones, each with how it ended. One you dismissed keeps Reopen there for
+the rest of the session.
 
 The agent reads the inbox too. Beside each of your prompts, it sees what's
 still open and what you answered, even after the conversation is compacted.
@@ -187,16 +197,20 @@ the agent replies, then "✓ Discussed".
 
 ### In each app
 
-- **Terminal:** each action shows the letter that runs it. `1` to `4`
+Help lists the keys and what each mark means.
+
+- **Terminal:** each action shows the letter that runs it. The number keys
   switch tabs, and `j` and `k` move up and down. ctrl+x tab moves focus from
   the prompt to the line above it, then to the panel, then back to the prompt.
-- **Claude desktop app:** you click. Type `/inbox` to open the pane.
+- **Claude desktop app:** you click. Type `/inbox` to open the pane. Clicks in
+  the pane are checked on the Claude Code engine 2.1.309 and later. On 2.1.295,
+  a click after a press could only give the pane its focus back.
 - **ChatGPT app:** you click, or press the same keys as in the terminal. The
   tab shows no letters.
 - **omp:** `/inbox` opens the panel over the conversation, and esc closes it.
   Each action shows the letter that runs it, and Reply is `r`. Arrow keys move
   between rows and between a row's buttons, and enter presses the focused
-  button. Tab, or `1` to `4`, switch tabs.
+  button. Tab, or the number keys, switch tabs.
 
 In Claude Code, a line above your prompt counts what needs you and the
 findings waiting, with a button that opens the panel. When Claude stops on an
@@ -212,6 +226,7 @@ sidebar, as pane tokens:
 | `inbox` | What waits on you, in one line |
 | `inbox-needs-you`, `inbox-findings`, `inbox-prs` | The tab's count alone, such as `2`. `inbox-needs-you` is the Asks tab's, and `inbox-findings` the Finds tab's. Empty when the tab has nothing waiting. |
 | `inbox-stop` | Why the agent stopped. The count tokens stay empty until the stop clears, so the sidebar has room for it. |
+| `inbox-focus` | What the session is focused on, from its Status. A session that started this one as a Herdr delegate shows it as the delegate's row. No sidebar row needs it. |
 
 To tell the counts apart by each tab's color, add this row to `rows` under
 `[ui.sidebar.agents]` in Herdr's config:
@@ -365,7 +380,7 @@ with that Bun version installed.
 Try a build in omp with a fresh `HOME`, so it cannot touch your own omp
 settings or inbox: `env HOME=/path/to/empty/folder omp -e omp/src/host.ts`.
 
-`./scripts/check.sh` runs Prettier, `claude plugin validate`, a type check and
+`./scripts/check.sh` runs Prettier, a file-size check, `claude plugin validate`, a type check and
 the tests, and checks the Codex bundles and the omp bundle are current. The type check needs the
 types Claude Code writes to `.claude-plugin/types/` the first time it loads
 the mod.

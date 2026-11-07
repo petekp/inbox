@@ -1,4 +1,5 @@
 import type { PrPress } from '../../hooks/pr-press'
+import { isCompareInBackground } from '../../hooks/clients'
 import { demoAfterPress, demoReplied, demoSent } from '../../hooks/press-effects'
 import type { RowPress } from '../../hooks/presses'
 import { pressOn } from '../../hooks/session-presses'
@@ -27,7 +28,16 @@ export function makeDemo(
     const s = demoOf(id)
     const r =
       thread === id
-        ? pressOn(s, p, now(), { settleWindowMs: SETTLE_WINDOW_MS, holds }, { comparePage: deps.comparePage })
+        ? pressOn(
+            s,
+            p,
+            now(),
+            { settleWindowMs: SETTLE_WINDOW_MS, holds },
+            {
+              comparePage: deps.comparePage,
+              compareInBackground: isCompareInBackground('codex'),
+            },
+          )
         : ({ stale: true } as const)
     if ('stale' in r) return { view: await served(s, id, true, holds), copy: null, error: null, note: 'stale' }
     const after = demoAfterPress(

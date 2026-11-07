@@ -18,7 +18,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
 import { KEPT_SESSIONS } from '../../hooks/ledger'
-import type { Exchange } from '../../hooks/ledger'
+import type { CallFailure, CallKind, Child, Exchange, Session } from '../../types'
 import { checkVersion, SESSION_VERSION } from '../../hooks/session-version'
 import {
   emptySession,
@@ -27,17 +27,66 @@ import {
   sessionFile,
   staleSessionFiles,
   upgradeSession,
+  NO_CALL_FAILURES,
 } from '../../hooks/session-files'
 import { pruned } from '../../hooks/session-presses'
-import type { Session } from '../../hooks/session'
+import { diagnosticLines } from './diagnostics'
 import { isShownTab } from '../../hooks/tabs'
 import type { ShownTab } from '../../hooks/tabs'
 
+/** A failed `codex exec` call as builds before `callFailures` saved it, with the fields each build added. */
+type SavedModelFailure = {
+  at: number
+  cli: string
+  code: number
+  stderr: string
+  signal?: string | null
+  errorCode?: string | null
+  timeoutMs?: number | null
+  call?: CallKind['call'] | null
+  reads?: CallKind['reads'] | null
+  isRetry?: boolean | null
+  elapsedMs?: number | null
+}
+
 /**
- * A failed `codex exec` call: when it ended, the binary it ran, its exit code, and the end of its stderr. A call that
- * threw has code -1 and its error's message as `stderr`.
+ * The call records of a state an earlier build saved: its saved failure in its call's record, the ledger's when it
+ * named none. The failure reads as recovered when the session shows its call working since: for the ledger call, a
+ * ledger that is not failed and no pending exchange that failed; for the Status call, no saved Status failure. That
+ * build did not save when the call recovered, so `recoveredAt` is the failure's own time.
  */
-export type ModelFailure = { at: number; cli: string; code: number; stderr: string }
+function withSavedFailure(saved: Saved): Session['callFailures'] {
+  const f = saved.lastModelFailure
+  if (!f) return NO_CALL_FAILURES
+  const call = f.call ?? 'ledger'
+  const isLedgerFailing = saved.presence?.ledgerState === 'failed' || (saved.pending ?? []).some(p => p.failed)
+  const isFailing = call === 'ledger' ? isLedgerFailing : Boolean(saved.overviewFailure)
+
+  return { ...NO_CALL_FAILURES, [call]: { lastFailure: callFailureOf(f), recoveredAt: isFailing ? null : f.at } }
+}
+
+/** An earlier build's saved failure as the shared record. That build kept all of its stderr, so it is filtered here. */
+function callFailureOf(f: SavedModelFailure): CallFailure {
+  return {
+    at: f.at,
+    call: f.call ?? null,
+    reads: f.reads ?? null,
+    isRetry: f.isRetry ?? null,
+    cause: f.code === 0 ? 'no-reply' : 'process',
+    model: null,
+    error: null,
+    answerChars: null,
+    ms: f.elapsedMs ?? null,
+    process: {
+      cli: f.cli,
+      code: f.code,
+      stderr: diagnosticLines(f.stderr),
+      signal: f.signal ?? null,
+      errorCode: f.errorCode ?? null,
+      timeoutMs: f.timeoutMs ?? null,
+    },
+  }
+}
 
 export type SessionState = Session & {
   version: typeof SESSION_VERSION
@@ -48,9 +97,9 @@ export type SessionState = Session & {
   home: string
   /** The codex binary the desktop app runs, as a hook's environment names it or the server found it. */
   cliPath: string | null
-  /** The inbox model's last failed call. Null until a call fails. */
-  lastModelFailure: ModelFailure | null
   tabSeenAt: number
+  /** When the Inbox tab last had each Status subject row on screen in the look under way, by the row's id. Codex only. */
+  lookRows: Record<string, number>
   /** The tab the Inbox tab last showed, from its latest view request. Codex only. */
   shownTab: ShownTab
   heard: Heard
@@ -60,11 +109,30 @@ export type SessionState = Session & {
    */
   coveredTurn: string | null
   /**
-   * The newest report a hook or an update sent to the session's Herdr pane: its key from `herdrReportKey`, and its
-   * `seq`. Each runs in its own process, so this is how a later one knows its report would change nothing.
+   * The ledger and turns, from `openCatchUpKey`, when the tab's view last started a catch-up for a ledger that failed or
+   * fell behind. The view starts another only once the ledger takes an answer or a turn starts. Null until one starts.
+   */
+  openCatchUpKey: string | null
+  /**
+   * The running turn's `herdr agent` commands, oldest first: each with when PreToolUse noted its delegates, and the
+   * rows those delegates had before. Codex runs PreToolUse before a call is approved, so the rows of a command that
+   * did not run go back to these.
+   */
+  delegateCalls: DelegateCall[]
+  /**
+   * The newest report Herdr took from a hook or an update: its key from `herdrReportKey`, and its `seq`. Each runs in
+   * its own process, so this is how a later one knows its report would change nothing.
    */
   herdrReport?: { key: string; seq: number }
+  /**
+   * When a hook or an update in a Herdr pane last changed this state, in ms, and always above the change before it. Each
+   * of their changes sets it, even one that changes nothing else. A Herdr report of the state carries it as `seq`, so
+   * Herdr drops a report of an earlier state that arrives after a later one.
+   */
+  writtenAt?: number
 }
+
+type DelegateCall = { command: string; at: number; before: Child[] }
 
 /**
  * Codex skips a hook
@@ -101,12 +169,14 @@ export function emptyState(sessionId: string): SessionState {
     transcriptPath: null,
     home: homedir(),
     cliPath: null,
-    lastModelFailure: null,
     ...emptySession(),
     tabSeenAt: 0,
+    lookRows: {},
     shownTab: 'needsYou',
     heard: NOTHING_HEARD,
     coveredTurn: null,
+    openCatchUpKey: null,
+    delegateCalls: [],
   }
 }
 
@@ -116,6 +186,7 @@ export function statePath(dir: string, sessionId: string): string {
 
 /** State an earlier build saved, with the keys it kept for session checks and the claim send-back. */
 type Saved = Omit<Partial<SessionState>, 'turn' | 'pending' | 'sent'> & {
+  lastModelFailure?: SavedModelFailure | null
   sent?: (Omit<SessionState['sent'][number], 'row' | 'queuedId' | 'pressedAt' | 'deliveryId'> &
     Partial<SessionState['sent'][number]>)[]
   checks?: unknown
@@ -124,7 +195,7 @@ type Saved = Omit<Partial<SessionState>, 'turn' | 'pending' | 'sent'> & {
   top?: unknown
   subagents?: unknown
   turn?: Partial<SessionState['turn']> & { sentBack?: unknown }
-  pending?: { ex: Exchange & { checks?: unknown }; turnsStarted: number }[]
+  pending?: { ex: Exchange & { checks?: unknown }; turnsStarted: number; failed?: true }[]
 }
 
 /** State saved by an earlier build, with any field it lacks, and without the keys it no longer has. */
@@ -132,6 +203,7 @@ function upgraded(saved: Saved, sessionId: string): SessionState {
   checkVersion(saved)
   const base = emptyState(sessionId)
   const {
+    lastModelFailure: _modelFailure,
     checks: _checks,
     snapshots: _snapshots,
     recordedRuns: _runs,
@@ -162,6 +234,7 @@ function upgraded(saved: Saved, sessionId: string): SessionState {
     }),
     shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     heard,
+    ...(saved.callFailures ? {} : { callFailures: withSavedFailure(saved) }),
     coveredTurn: saved.coveredTurn !== undefined ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null),
   }
 }

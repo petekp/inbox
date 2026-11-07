@@ -29,13 +29,13 @@ Part of [Claude Code mods](../claude-code-mods.md).
 - `hotkey` is "one digit or one lowercase letter". Shift+w counts as `"w"`. "When two buttons in one drawing name the same `hotkey`, the later one gets it." "A digit `hotkey` on a button in the band also fires when the user types that digit alone into an empty prompt and pauses." [IF; R#elements; T: `ButtonProps.hotkey`]
 - `action` "names one of Claude Code's own keybinding actions". Types: it applies "on the terminal while mounted". [R#elements; T: `ButtonProps.action`]
 - Types only:
-  - `variant?: 'primary' | 'secondary'`. Desktop draws "its own primary button". "`plain` wins". The inbox uses `variant="primary"` (`hooks/register.tsx:keyedButton`).
+  - `variant?: 'primary' | 'secondary'`. Desktop draws "its own primary button". "`plain` wins". The inbox uses `variant="primary"` (`hooks/pane-row-keys.tsx:keyedButton`).
   - `role?: 'dismiss'`: desktop draws "its native close control at the site's trailing edge"; the terminal ignores it.
   - `hover?`: "Refused outside a keyed Box unless it names a `scope`."
   - `plain`: "A desktop draws its native button either way."
   - 2.1.295 only: "Children of strings and `Text` (a chip, a dim part) are drawn in its place". `key` defaults to "the `label`, or the one string child". 2.1.294 allowed only "the one string child".
-- In the terminal, the inbox draws each pane key as a `plain` Button that holds a `Text` letter and the label `": Label"`, with no hotkey (`hooks/register.tsx:keyedButton`). The Buttons that carry the hotkeys sit in a `<Box display="none">` (`hooks/register.tsx:keyBindings`). `display` is in the types, not the docs.
-  - On desktop, `hooks/register.tsx:keyedButton` draws only a native Button per action, with no letter and no hidden Box. Whether desktop honors hotkeys on hidden Buttons is unknown.
+- In the terminal, the inbox draws each pane key as a `plain` Button that holds a `Text` letter and the label `": Label"`, with no hotkey (`hooks/pane-row-keys.tsx:keyedButton`). The Buttons that carry the hotkeys sit in a `<Box display="none">` (`hooks/pane-row-keys.tsx:keyBindings`). `display` is in the types, not the docs.
+  - On desktop, `hooks/pane-row-keys.tsx:keyedButton` draws only a native Button per action, with no letter and no hidden Box. Whether desktop honors hotkeys on hidden Buttons is unknown.
 
 ## Input and Select
 

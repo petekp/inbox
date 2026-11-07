@@ -27,7 +27,7 @@ test('Claude Code task calls build the agent task list the Status call reads', a
   expect(after && JSON.parse(after[1]).hostTasks[1].status).toBe('pending')
 })
 
-test('a subagent, a background command, a Monitor and a Workflow each run as a child on the Status until their result or notice ends them', async ($, on) => {
+test('a subagent and a Workflow each run as a child on the Status until their result or notice ends them, and a background command or a Monitor makes none', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   const running = () =>
@@ -71,8 +71,6 @@ test('a subagent, a background command, a Monitor and a Workflow each run as a c
   await clock.settle()
   expect(running()).toEqual([
     ['subagent', 'Review the diff'],
-    ['background', 'Run the tests'],
-    ['background', 'Watch the deploy'],
     ['workflow', 'review-changes'],
   ])
 
@@ -90,7 +88,6 @@ test('a subagent, a background command, a Monitor and a Workflow each run as a c
   const activeAt = (name: string) => childrenOf(w.stored).find(c => c.name === name)?.lastActivityAt
   expect(activeAt('review-changes')).toBe(clock.now())
   expect(activeAt('Review the diff')).toBe(clock.now())
-  expect(activeAt('Run the tests')).toBeNull()
 
   for (const [id, status] of [
     ['a1', 'completed'],

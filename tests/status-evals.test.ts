@@ -10,8 +10,10 @@ import type { JudgePage } from '../evals/status-judge'
 import { minutes, replayFromRecord, runReplay } from '../evals/status-replay'
 import type { ModelCall, Replay } from '../evals/status-replay'
 import { REPLAYS } from '../evals/status-replays'
-import { blockingFailures, gradeReplay, gradeStep, RULES } from '../evals/status-rules'
-import { subject, statusOf, sessionOf, baseScene, contextOf, SCENES, GOOD_RUNS } from './status-evals-scenes'
+import { blockingFailures, gradeReplay, gradeStep, tally } from '../evals/status-grade'
+import { RULES } from '../evals/status-rules'
+import { subject, statusOf, sessionOf, baseScene, contextOf, SCENES } from './status-evals-scenes'
+import { GOOD_RUNS } from './status-evals-runs'
 import type { Scene } from './status-evals-scenes'
 
 function failuresOf(rule: string, change?: (s: Scene) => void): string[] {
@@ -46,10 +48,10 @@ async function gradedRun(replay: Replay, answers: string[]) {
 
 const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> = {
   'coordinator-day': {
-    at: 2,
-    answer: GOOD_RUNS['coordinator-day']![2]!.replace(
+    at: 1,
+    answer: GOOD_RUNS['coordinator-day']![1]!.replace(
       'DONE: s6 | filed for later',
-      'SET: s6 | queued | filed for later',
+      'SET: s6 | queued | filed for later\nSERVES: s6 | -',
     ),
     breaks: 'marks-true',
   },
@@ -59,6 +61,99 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     at: 0,
     answer: GOOD_RUNS['catch-up-from-empty']![0]!.replace('DONE: Image attachments | show inline\n', ''),
     breaks: 'piece-once',
+  },
+  'removed-goal': {
+    at: 0,
+    answer: `${GOOD_RUNS['removed-goal']![0]!}\nGOAL: Attachments import shipped | working Attachments in; queued Import live`,
+    breaks: 'goal-only-when-clear',
+  },
+  'milestone-work-done': {
+    at: 0,
+    answer: 'SET: s4 | working | recent after pinned, title matches left',
+    breaks: 'serves-linked',
+  },
+  'goal-met-next': {
+    at: 1,
+    answer: GOOD_RUNS['goal-met-next']![1]!.replace(/^HEAD: [^\n]*\n/, ''),
+    breaks: 'head-follows',
+  },
+  'goal-wait': {
+    at: 0,
+    answer: `${GOOD_RUNS['goal-wait']![0]!}\nSET: m2 | working | hotfix`,
+    breaks: 'milestones-true',
+  },
+  'no-goal-yet': {
+    at: 2,
+    answer: `${GOOD_RUNS['no-goal-yet']![2]!}\nGOAL: Upkeep done | working Docs current; queued Library bumped`,
+    breaks: 'goal-only-when-clear',
+  },
+  'goal-from-work': {
+    at: 0,
+    answer: GOOD_RUNS['goal-from-work']![0]!.replace(/\nGOAL: [^\n]*/, ''),
+    breaks: 'goal-when-clear',
+  },
+  'goal-work-left': {
+    at: 0,
+    answer: GOOD_RUNS['goal-work-left']![0]!.replace(/\nSERVES: [^\n]*/g, ''),
+    breaks: 'serves-linked',
+  },
+  'typed-goal-kept': {
+    at: 0,
+    answer: `${GOOD_RUNS['typed-goal-kept']![0]!}\nSERVES: Dark theme colors | m1`,
+    breaks: 'serves-linked',
+  },
+  'goal-on-busy-page': {
+    at: 0,
+    answer: GOOD_RUNS['goal-on-busy-page']![0]!.replace('SERVES: s1 | m1', 'SERVES: s1 | -'),
+    breaks: 'serves-linked',
+  },
+  'mid-turn-activity': {
+    at: 0,
+    answer: 'DONE: s1 | fast on large libraries\nSET: s2 | working | editing rank.ts',
+    breaks: 'text-no-ids',
+  },
+  'milestone-dropped': {
+    at: 0,
+    answer: GOOD_RUNS['milestone-dropped']![0]!.replace('SERVES: s2 | -\nSERVES: s3 | -\n', ''),
+    breaks: 'serves-linked',
+  },
+  'catch-up-shipped': {
+    at: 0,
+    answer: GOOD_RUNS['catch-up-shipped']![0]!.replace(
+      'DONE: s1 | merged and shipped in the 2.5 beta',
+      'DROP: s1 | merged and shipped',
+    ),
+    breaks: 'marks-true',
+  },
+  'goal-awaiting-milestones': {
+    at: 0,
+    answer: 'DONE: s3 | merged\nSET: s4 | working | wider layout in',
+    breaks: 'milestones-true',
+  },
+  'ask-holds-two': {
+    at: 1,
+    answer: 'NEW: working | 2.5 beta | signed, upload needs sign-in',
+    breaks: 'ask-holds-several',
+  },
+  'one-task-plan': {
+    at: 0,
+    answer: `${GOOD_RUNS['one-task-plan']![0]!}\nNEW: working | Tooltip test | being written`,
+    breaks: 'piece-once',
+  },
+  'idle-work': {
+    at: 0,
+    answer: GOOD_RUNS['idle-work']![0]!.replace('NEW: working | Retry button |', 'NEW: working | Web retry bug |'),
+    breaks: 'marks-true',
+  },
+  'stale-goal': {
+    at: 4,
+    answer: GOOD_RUNS['stale-goal']![4]!.replace(/^DONE: m3 [^\n]*\n/, ''),
+    breaks: 'goal-left',
+  },
+  'goal-outcome-dropped': {
+    at: 4,
+    answer: GOOD_RUNS['goal-outcome-dropped']![4]!.replace(/\nRETIRE: [^\n]*/, ''),
+    breaks: 'goal-left',
   },
 }
 
@@ -91,6 +186,20 @@ test('a bad run of each replay fails the rule it breaks at the step it breaks, a
     })
     expect({ replay: r.name, failed: steps[answerStep]!.failed }).toEqual({ replay: r.name, failed: [bad.breaks] })
   }
+})
+
+test('a failure left on the page counts once, at the step where it first appears, and later steps carry it', async () => {
+  const r = REPLAYS.find(x => x.name === 'coordinator-day')!
+  const bad = BAD_RUNS[r.name]!
+  const answers = [...GOOD_RUNS[r.name]!]
+  answers[bad.at] = bad.answer
+  const marks = gradeReplay(r, await runReplay(r, { agent: 'claude', ask: scripted(answers) })).map(results =>
+    results.find(x => x.rule === bad.breaks)!,
+  )
+  const failing = marks.flatMap((m, n) => (m.failures.length > 0 ? [n] : []))
+  expect(failing.length).toBeGreaterThan(1)
+  expect(marks.map(tally).filter(t => t === 'fail')).toHaveLength(1)
+  expect(failing.slice(1).map(n => marks[n]!.fresh)).toEqual(failing.slice(1).map(() => []))
 })
 
 const RULE_IDS = new Set<string>(RULES.map(r => r.id))
@@ -201,6 +310,10 @@ test('a page is called right only when the judge fails just the check a bad page
   expect(pageMistakes(page, verdicts(['marks']))).toEqual([])
   expect(pageMistakes(page, verdicts([]))).toEqual(['marks: pass, expected fail'])
   expect(pageMistakes(page, verdicts(['marks', 'head']))).toEqual(['head: fail, expected pass'])
+  const noGoal: JudgePage = { ...page, breaks: null, na: ['goal'] }
+  const withNa = parseJudgeAnswer(JUDGE_CHECKS.map(c => `${c.id} | ${c.id === 'goal' ? 'n/a' : 'pass'} | x`).join('\n'))
+  expect(pageMistakes(noGoal, withNa)).toEqual([])
+  expect(pageMistakes(noGoal, verdicts([]))).toEqual(['goal: pass, expected n/a'])
 })
 
 test('the facts read the same pieces, asks and running work the judge is told about', () => {
@@ -216,4 +329,21 @@ test('the head is a title and a one-line description', () => {
   const page = statusPage(sessionOf(statusOf([subject('s1', 'working', 'Sync engine', 'syncs', 0)]), [], 5), minutes(5))
 
   expect(page.head).toEqual({ title: 'Offline sync', description: 'Adding offline sync to the notes app' })
+})
+
+test('serves-linked counts a link to a dropped or unknown milestone as no link', () => {
+  const withGoal = SCENES['serves-linked']!.good!
+
+  expect(
+    failuresOf('serves-linked', s => {
+      withGoal(s)
+      s.after.milestones[1]!.status = 'dropped'
+    }),
+  ).not.toEqual([])
+  expect(
+    failuresOf('serves-linked', s => {
+      withGoal(s)
+      s.after.serves = { s1: 'm1', s2: 'm9' }
+    }),
+  ).not.toEqual([])
 })

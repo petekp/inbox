@@ -9,7 +9,7 @@ import { w, world } from './hooks-world'
 import { PANE, selectRow, leaveAndReturn, replyKey } from './hooks-helpers'
 
 test(
-  'in the terminal and desktop looks, an open row’s follow-ups are never split between rows: the terminal gives them a row of their own when they do not fit after its buttons, and desktop’s links box asks for the width of all of them',
+  'in the terminal and desktop looks, an open row’s follow-ups are never split between rows: the terminal gives them a row of their own when they do not fit after its buttons, and desktop draws Reply as a Button and its links box asks for the width of the rest',
   { timeoutMs: 20_000 },
   async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
@@ -24,12 +24,13 @@ test(
       turns,
       extraSteps: {},
       settleWindowMs: SETTLED_MS,
-      status: perTurnStatus({ isUpdating: false, isFailed: false, retries: true }),
+      status: perTurnStatus(false, 'none'),
       now: 1_000_000,
       replies: {},
       discarded: {},
       shownSince: 1_000_000,
       lastTypedMessageAt: null,
+      listInput: null,
     })
     const row = view.findings.rows.find(r => r.state.is === 'open')!
     const plan = rowKeyPlan(row, false)
@@ -91,7 +92,10 @@ test(
           const followUpButtons = (await pane.findAll({ type: 'Button' })).filter(b =>
             followUpLabels.some(l => holds(shownLabels(b), l)),
           )
-          expect(followUpButtons, `desktop at ${columns} columns draws its follow-ups as links`).toHaveLength(0)
+          expect(
+            followUpButtons.map(b => shownLabels(b).join('')),
+            `desktop at ${columns} columns draws its follow-ups but Reply as links`,
+          ).toEqual(['Reply'])
           const linksBox = (await pane.findAll({ type: 'Box' })).find(b =>
             b.children.some(c => (c as { props?: { key?: string } }).props?.key === `links-${row.id}`),
           )!
@@ -139,11 +143,11 @@ test('in a theme without tone colors, a replied question’s ✓ takes the done 
           .filter((c): c is Drawn => typeof c === 'object')
           .reduce<Drawn | undefined>((found, c) => found ?? markIn(c), undefined)
   const doneMark = async () => markIn(await pane.find({ key: 'row-i1' }))?.props.color
-  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/✓ Replied/)
+  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/✓ Replied: Deno/)
   expect(await doneMark()).toBe('success')
 
   await selectRow(pane, 'i2')
-  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/✓ Replied/)
+  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/✓ Replied: Deno/)
   expect(await doneMark()).toBe('success')
 })
 
@@ -181,4 +185,34 @@ test('on desktop, a cancelled question’s ✗ is drawn as a shape and a dismiss
   expect(cancelledMark?.props.alt).toBe('✗')
   expect((await desktop.find({ key: 'closed-i1' }))?.text).toMatch(/✕/)
   expect(await desktop.find({ key: 'closed-i1-mark' })).toBeUndefined()
+})
+
+test('on desktop at 30 and 56 columns, an unselected row’s title keeps every word its two lines hold, and is cut only past them: between words, or inside a word only when one word is wider than a line', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: true, isFocused: true }
+  w.surfaces = ['desktop']
+  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+  const titles = [
+    'Rebuild the bundles',
+    'Snoozed glances come back after a restart',
+    'Snoozed glances come back after a restart, so a glance snoozed for an hour returns at once in the view',
+    'The saved layout keeps snoozed glances, and a restart shows them again, so a glance snoozed for an hour returns at once.',
+    'Put on the glasses and pair them with this Mac',
+    'hooks/pane-row-lines.tsx:rowClientProps/desktopSpanLines/terminalText',
+    'Put on the glasses and pair them with this Mac, then check the glances outdoors',
+  ]
+  for (const ask of titles) await $.tool.call({ tool: 'mcp__inbox__record', kind: 'task', ask })
+  await clock.settle()
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 30 } })
+  const shownTitle = async (id: string) => (await pane.find({ type: 'Text', in: `select-${id}` }))?.text
+
+  expect(await shownTitle('i2')).toBe(titles[1])
+  expect(await shownTitle('i5')).toBe(titles[4])
+  expect(await shownTitle('i6')).toMatch(/^hooks\/pane-row-lines\S+…$/)
+  expect(await shownTitle('i7')).toBe('Put on the glasses and pair them with this…')
+  expect(await shownTitle('i4')).toMatch(/…$/)
+  await pane.redraw({ ...PANE.props, bodyColumns: 56 })
+  expect(await shownTitle('i3')).toBe(titles[2])
+  expect(await shownTitle('i4')).toMatch(/…$/)
 })

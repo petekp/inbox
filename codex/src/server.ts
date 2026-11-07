@@ -14,7 +14,17 @@ import type { HooksTrust } from './hook-trust'
 import { makeCatchUpOnOpen } from './server-catch-up'
 import { makeDemo } from './server-demo'
 import { makeSessionHost } from './server-host'
-import { holdsOf, sessionOf, shownTabOf, stamped, TAB_ADDRESS, TAB_MIME, TOOLS, turnOf } from './server-tools'
+import {
+  holdsOf,
+  sessionOf,
+  shownRowsOf,
+  shownTabOf,
+  stamped,
+  TAB_ADDRESS,
+  TAB_MIME,
+  TOOLS,
+  turnOf,
+} from './server-tools'
 import { makeHooksTrustNow } from './server-trust'
 import { pruneSessions, readState, updateState } from './state'
 import type { SessionState } from './state'
@@ -72,7 +82,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   const catchUpOnOpen = makeCatchUpOnOpen(deps)
 
   const currentPage = async () => (await deps.devPage?.()) ?? deps.tabHtml
-  const { wakeForDone, fetchPrsWhenDue, served, onPress } = makeSessionHost(
+  const { wakeAfterSettle, fetchPrsWhenDue, served, onPress } = makeSessionHost(
     deps,
     newestTurns,
     hooksTrustNow,
@@ -123,13 +133,14 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         const holds = holdsOf(args)
         if (args.demo === true)
           return { ...text('Inbox demo'), structuredContent: await served(demoOf(id), id, true, holds) }
-        await wakeForDone(id).catch(() => undefined)
+        await wakeAfterSettle(id).catch(() => undefined)
         await catchUpOnOpen(id).catch(() => undefined)
         const sentTab = shownTabOf(args.tab)
         const s = await updateState(dir, id, s => {
           const shownTab = drawnTabOf(sentTab ?? s.shownTab, deps.isNextBuild === true)
 
-          return { ...withHolds(lookOnView(s, shownTab, now()), holds), tabSeenAt: now(), shownTab }
+          const looked = lookOnView(s, shownTab, now(), shownRowsOf(args))
+          return { ...withHolds(looked, holds), tabSeenAt: now(), shownTab }
         })
         fetchPrsWhenDue(id, s)
         checkDelegatesWhenDue(id, s)

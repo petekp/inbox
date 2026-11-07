@@ -1,4 +1,4 @@
-import type { Exchange } from '../../hooks/ledger'
+import type { Exchange } from '../../types'
 
 export const ex = (turn: number, reply: string): Exchange => ({
   person: 'go',

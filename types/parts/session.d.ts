@@ -56,7 +56,22 @@ export type PrViews = {
   isGhMissing?: boolean
   /** Set by the last fetch whose gh runs answered: whether one of them asked for a sign-in. */
   isGhSignedOut?: boolean
+  /** Why the last fetch read none of the PRs. Null, or absent, once a fetch reads them again. */
+  failure?: PrFetchFailure | null
+  /** Why each tracked PR that has no view could not be read, by ref, from the last fetch that tried. */
+  unread?: Record<string, string>
 }
+
+/**
+ * A cause that stopped a whole fetch, so every PR keeps its last view: GitHub's hourly limit is used up until
+ * `resetsAt`, null when GitHub did not say; GitHub could not be reached; gh did not answer in time; or GitHub answered
+ * with an error, whose first line is `text`. `at` is when the fetch failed.
+ */
+export type PrFetchFailure =
+  | { kind: 'limit'; at: number; resetsAt: number | null }
+  | { kind: 'unreachable'; at: number }
+  | { kind: 'timed-out'; at: number }
+  | { kind: 'error'; at: number; text: string }
 
 /**
  * The turns started in this session, and how many of them reached the
@@ -106,7 +121,71 @@ export type HostTask = { id: string; text: string; status: HostTaskStatus }
  * Why a Status call wrote nothing. `no-answer`: the call gave no text. `refused`: it answered twice with text the
  * parser refused, and `answer` holds the start of the second answer.
  */
-export type StatusFailure = { at: number; cause: 'no-answer' | 'refused'; answer: string | null }
+/**
+ * A Status call that wrote nothing. `catchUpsFailed` counts the catch-ups that failed while it stood, and
+ * `catchUpTurn` is `turnsStarted` at the last of them, so the next catch-up waits longer after each (`needsCatchUp`).
+ * Saved failures from before these fields read as none.
+ */
+export type StatusFailure = {
+  at: number
+  cause: 'no-answer' | 'refused'
+  answer: string | null
+  catchUpsFailed?: number
+  catchUpTurn?: number
+}
+
+/**
+ * Which call of an update a model call is. The ledger call reads a reply's exchange, with `isRetry` when the
+ * exchange's first call failed, or the whole conversation for a catch-up. The update flow keeps no mark of a repeated
+ * catch-up, so a catch-up says nothing of retries. The Status call reads a reply's exchange, the running turn or a
+ * catch-up's conversation, with `isRetry` when its first answer held no operation.
+ */
+export type CallKind =
+  | { call: 'ledger'; reads: 'reply'; isRetry: boolean }
+  | { call: 'ledger'; reads: 'catch-up' }
+  | { call: 'status'; reads: 'reply' | 'mid-turn' | 'catch-up'; isRetry: boolean }
+
+/**
+ * A model call run as a process that failed: the binary it ran, its exit code, and the end of the diagnostic lines of
+ * its stderr, its errors and warnings. One that could not start has code -1 and its error's code as `errorCode` when
+ * it has one. One a signal ended has code -1 and the `signal`. One that timed out has code -2 and the `timeoutMs` it
+ * had.
+ */
+export type ProcessFailure = {
+  cli: string
+  code: number
+  stderr: string
+  signal: string | null
+  errorCode: string | null
+  timeoutMs: number | null
+}
+
+/**
+ * A model call that gave no usable answer. `cause` is `process` when the call's process failed, `error` when the
+ * call ended with an error, `no-reply` when it ended with no text, and `unparseable` when its text could not be read
+ * as an answer. `call`, `reads` and `isRetry` come from its `CallKind`; `isRetry` is null for a catch-up's ledger
+ * call. `error` is the start of the host's reason, `answerChars` the length of an unparseable answer, and `ms` how
+ * long the call ran. It keeps no prompt, answer or conversation text. A failure a Codex build saved before this
+ * record reads null for what it did not keep.
+ */
+export type CallFailure = {
+  at: number
+  call: CallKind['call'] | null
+  reads: CallKind['reads'] | null
+  isRetry: boolean | null
+  cause: 'process' | 'error' | 'no-reply' | 'unparseable'
+  model: string | null
+  error: string | null
+  answerChars: number | null
+  ms: number | null
+  process: ProcessFailure | null
+}
+
+/**
+ * One of the update's calls, the ledger call or the Status call: its last failure, and when a call of it first gave
+ * a usable answer after that. `recoveredAt` is null while every call since the failure has failed, and before one fails.
+ */
+export type CallRecord = { lastFailure: CallFailure | null; recoveredAt: number | null }
 
 /** One conversation's inbox: what every host saves and the shared session functions change. */
 export type Session = {
@@ -132,6 +211,10 @@ export type Session = {
      * keeps `failed` until a catch-up covers it.
      */
     hasDroppedReply: boolean
+    /** Update attempts in a row whose model answer failed since the ledger was last current, retries included. */
+    failedAttempts: number
+    /** The last catch-up could not read the conversation. The next update tries again, and a catch-up that reads it clears this. */
+    isConversationUnreadable: boolean
     isUpdating: boolean
     /** Whether the main agent's turn runs. A subagent's turn does not set it. */
     isTurnRunning: boolean
@@ -182,8 +265,15 @@ export type Session = {
   stop: Stop | null
   /** The last Status call that wrote nothing, until a later one writes. Saved under the tab's earlier name. */
   overviewFailure: StatusFailure | null
+  /** The inbox model's calls with no usable answer, one record for the ledger call and one for the Status call. */
+  callFailures: Record<CallKind['call'], CallRecord>
   /** When a Status call last wrote, or failed, or started while a turn ran. Null before the first. Saved under the tab's earlier name. */
   lastOverviewCallAt: number | null
+  /**
+   * The `turnsApplied` that the Status call which last wrote, or failed, was made for. A call made for fewer turns is
+   * older, and writes nothing. Saved under the tab's earlier name.
+   */
+  overviewTurn: number
   /** The agent's own task list, when its host reports one. Empty when the agent keeps none. */
   hostTasks: HostTask[]
   /**

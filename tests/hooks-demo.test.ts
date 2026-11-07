@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import { demoView } from '../hooks/demo'
 import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
-import { BAND, PANE, leaveAndReturn, replyKey } from './hooks-helpers'
+import { BAND, PANE, replyKey } from './hooks-helpers'
 
 test(
   '/inbox demo shows sample entries in every tab, presses change only its copy, the reply to a press leaves the sample’s hand-off waiting, and [Hide demo] goes back',
@@ -99,8 +99,8 @@ test(
     await clock.advance(PRESS_GUARD_MS)
     await pane.press({ key: 'done-d14' })
     await clock.advance(SETTLED_MS)
-    expect(await pane.find({ key: 'settled-d14' })).toBeDefined()
-    expect(await pane.find({ key: 'undo-d14' })).toBeUndefined()
+    expect(await pane.find({ key: 'settled-d14' })).toBeUndefined()
+    expect(await pane.find({ text: doneTask })).toBeUndefined()
     expect(await pane.find({ text: /Still open/ })).toBeDefined()
     expect(await band.find({ text: /Asks 5/ })).toBeDefined()
     expect(w.sent).toEqual([])
@@ -114,8 +114,7 @@ test(
     await pane.press({ key: `dismiss-pr-${linkedRef}` })
     expect(await pane.find({ key: `settled-pr:${linkedRef}` })).toBeDefined()
     await clock.advance(SETTLED_MS)
-    expect(await pane.find({ key: `undo-pr:${linkedRef}` })).toBeUndefined()
-    await leaveAndReturn(pane, clock, 'prs')
+    expect(await pane.find({ key: `settled-pr:${linkedRef}` })).toBeUndefined()
     expect(await pane.find({ text: literal(demo.prViews.views[linkedRef]!.title) })).toBeUndefined()
     await pane.press({ key: 'tab-needsYou' })
     expect(await pane.find({ key: 'settled-d10' })).toBeUndefined()
