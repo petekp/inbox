@@ -80,7 +80,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/pr-press.ts` | Shared module. The PR press types, the open or refresh each press runs, the row each press records on, and the helpers the PR button plans share, which add "again" to a label, add Try again, and mark the button whose press is out. |
 | `hooks/tools.ts` | Shared module. The record and close tools, and `agentTools`, the one list of their names, descriptions and schemas that every host and eval probe registers. Each call's answer holds the text the agent reads and the line the person sees under the call. |
 | `hooks/demo.ts` | Shared module. Sample data for `/inbox demo` and the Codex demo. |
-| `hooks/dialogs.ts` | Shared module. Notes the questions of a Codex dialog or a dismissed dialog, and links each to the inbox question that copies it: a Codex dialog's link, and the dialog's option descriptions. |
+| `hooks/dialogs.ts` | Shared module. Notes the questions of a Codex dialog, or of a dialog the person answered or dismissed, and links each to the inbox question that copies it: a Codex dialog's link, the dialog's option descriptions, and the close of an answered dialog's copy with the person's answer. |
 | `hooks/layout.ts` | Shared module. Sizes the desktop look and the Codex tab share. |
 | `hooks/marks.ts` | Shared module. Shapes and glyphs for marks a font draws poorly: desktop draws its toned Svg marks from `markShape`, desktop and Codex draw ✗, ◌ and ⊘ from `mutedMarkShape`, and the terminal and omp draw ✗ as ⊘ from `textMark`. |
 | `hooks/tones.ts` | Shared module. Status colors for native marks and terminal palettes. The Codex build writes them into CSS, and omp draws them as true color. Also the banner tints the terminal and omp draw. |

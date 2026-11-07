@@ -3215,7 +3215,7 @@ function asCopyOf(item, q) {
     ...descriptions ? { optionDescriptions: descriptions } : {}
   };
 }
-function linkDialogs(s) {
+function linkDialogs(s, now = Date.now()) {
   if (s.dialogQuestions.length === 0)
     return s;
   let items = s.ledger.items;
@@ -3227,12 +3227,29 @@ function linkDialogs(s) {
     const copy = copyOf(q, turnItems, s.dialogQuestions.filter((o) => o.turn === q.turn));
     if (!copy || copy.dialog || linked.has(copy.id))
       return q;
+    if (q.answer !== undefined && !restates(copy.ask, q.question))
+      return q;
     linked.add(copy.id);
     items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
     return { ...q, itemId: copy.id };
   });
   const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
-  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+  const ledger = questions.reduce((l, q) => q.answer !== undefined && q.itemId !== null && l.items.some((i) => i.id === q.itemId) ? closeItem(l, q.itemId, { how: "answered", outcome: q.answer }, now) : l, { ...s.ledger, items });
+  return { ...s, ledger, dialogQuestions: kept };
+}
+var ANSWER_PREFIX = /^\s*user (?:has )?(?:answered|selected):?\s*/i;
+var MAX_DIALOG_ANSWER = 80;
+function answerOf(q, text) {
+  const named = q?.options.filter((o) => text.toLowerCase().includes(optionKey(o))) ?? [];
+  const [only] = named;
+  if (only && named.length === 1)
+    return only.replace(RECOMMENDED_SUFFIX, "").trim();
+  return text.replace(ANSWER_PREFIX, "").trim().slice(0, MAX_DIALOG_ANSWER);
+}
+function noteAnsweredDialog(s, questions, text, now) {
+  const answer = answerOf(questions.length === 1 ? questions[0] : null, text);
+  const added = questions.map((q, index) => ({ ...q, callId: null, index, turn: s.ledger.turn, itemId: null, answer }));
+  return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] }, now);
 }
 function noteDialog(s, callId, questions) {
   const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
@@ -5685,7 +5702,16 @@ function recorded(host, s, tool, args, now) {
   const presses = { lastActions: s.lastActions, turnStartedAt: s.presence.turnStartedAt };
   const r = toolAnswer(host, s.ledger, tool, args, now, presses);
   const ledger = withOrderStatuses(r.ledger, s.prViews.views);
-  return { state: linkDialogs({ ...s, ledger }), result: r.result, personLine: r.personLine };
+  const state = linkDialogs({ ...s, ledger }, now);
+  const answered = ledger.items.find((i) => !state.ledger.items.some((o) => o.id === i.id));
+  if (!answered)
+    return { state, result: r.result, personLine: r.personLine };
+  const outcome = state.ledger.closed.findLast((c) => c.id === answered.id)?.outcome ?? "";
+  return {
+    state,
+    result: `Not shown as open: the user already answered this in your dialog (${outcome}), so it closed with that answer.`,
+    personLine: `Closed: ${answered.ask}`
+  };
 }
 function withHolds(s, holds) {
   return { ...s, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince };
@@ -8320,6 +8346,7 @@ var CLIENTS = {
         kind: "different",
         reason: "The dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close."
       },
+      "dialog-answer-closes-copy": { kind: "full" },
       "dialog-descriptions": { kind: "full" },
       "tool-output-urls": { kind: "full" },
       "pr-link-from-output": { kind: "full" },
@@ -8398,6 +8425,10 @@ var CLIENTS = {
         reason: "Codex's dialog tool returns at once and the answer arrives later as a user message, so a dialog is noted as open and its outcome is never recorded."
       },
       "dialog-answer": { kind: "full" },
+      "dialog-answer-closes-copy": {
+        kind: "different",
+        reason: "Codex's dialog tool returns before the person answers, so the inbox sees no answer when the dialog ends. The copy stays open until the person's reply in the dialog's form arrives, and the agent closes it then."
+      },
       "dialog-descriptions": { kind: "full" },
       "tool-output-urls": { kind: "full" },
       "pr-link-from-output": {
@@ -8509,6 +8540,7 @@ var CLIENTS = {
         kind: "different",
         reason: "The ask dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close."
       },
+      "dialog-answer-closes-copy": { kind: "full" },
       "dialog-descriptions": { kind: "full" },
       "tool-output-urls": { kind: "full" },
       "pr-link-from-output": { kind: "full" },
@@ -10087,9 +10119,12 @@ function activityHandlers(context, sessions) {
     const questions = dialogQuestions(event.input.questions);
     const outcome = askOutcome(event);
     const line = dialogActivity(questions, outcome);
+    const endedAt = deps.now();
     await change(sessionIdOf(ctx), (s) => {
       const noted = noteActivity(s, line);
-      return outcome.kind === "dismissed" ? noteDialog(noted, null, questions) : noted;
+      if (outcome.kind === "dismissed")
+        return noteDialog(noted, null, questions);
+      return outcome.kind === "answered" ? noteAnsweredDialog(noted, questions, outcome.answer, endedAt) : noted;
     }).catch(() => {
       return;
     });

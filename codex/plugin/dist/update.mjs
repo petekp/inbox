@@ -315,6 +315,13 @@ function closedRecord(item, closing, now) {
 function closedFindingRecord(finding, closing, now, askedAs) {
   return { ...finding, ...askedAs ? { askedAs } : {}, ...closing, closedAt: now };
 }
+function closeItem(ledger, id, closing, now) {
+  const records = ledger.items.filter((i) => i.id === id).map((i) => closedRecord(i, closing, now));
+  return reopenAskedFindings(
+    { ...ledger, items: ledger.items.filter((i) => i.id !== id), closed: [...ledger.closed, ...records] },
+    records
+  );
+}
 function closeFinding(ledger, id, closing, now, askedAs) {
   const finding = ledger.findings.find((f) => f.id === id);
   if (!finding) return ledger;
@@ -2763,7 +2770,7 @@ function asCopyOf(item, q) {
     ...descriptions ? { optionDescriptions: descriptions } : {}
   };
 }
-function linkDialogs(s) {
+function linkDialogs(s, now = Date.now()) {
   if (s.dialogQuestions.length === 0) return s;
   let items = s.ledger.items;
   const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
@@ -2776,12 +2783,17 @@ function linkDialogs(s) {
       s.dialogQuestions.filter((o) => o.turn === q.turn)
     );
     if (!copy || copy.dialog || linked.has(copy.id)) return q;
+    if (q.answer !== void 0 && !restates(copy.ask, q.question)) return q;
     linked.add(copy.id);
     items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
     return { ...q, itemId: copy.id };
   });
   const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
-  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+  const ledger = questions.reduce(
+    (l, q) => q.answer !== void 0 && q.itemId !== null && l.items.some((i) => i.id === q.itemId) ? closeItem(l, q.itemId, { how: "answered", outcome: q.answer }, now) : l,
+    { ...s.ledger, items }
+  );
+  return { ...s, ledger, dialogQuestions: kept };
 }
 
 // ../hooks/pr-views.ts
