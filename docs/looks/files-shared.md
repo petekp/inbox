@@ -79,6 +79,8 @@ Part of [the look map](../looks.md#files).
 | `hooks/pr-order.ts` | Shared module. The agent's PR order: the rank before a PR's number, the order's lines above the PR blocks, the statuses it records, and its Rank again button. |
 | `hooks/pr-press.ts` | Shared module. The PR press types, the open or refresh each press runs, the row each press records on, and the helpers the PR button plans share, which add "again" to a label, add Try again, and mark the button whose press is out. |
 | `hooks/tools.ts` | Shared module. The record and close tools, and `agentTools`, the one list of their names, descriptions and schemas that every host and eval probe registers. Each call's answer holds the text the agent reads and the line the person sees under the call. |
+| `hooks/tool-schemas.ts` | Shared module. The input schemas of the record, close and order_prs tools, with the description of each argument the agent reads. |
+| `hooks/question-checks.ts` | Shared module. A recorded question's body, its context and a note on each option, and how a record of the open question replaces them. What a recorded question or task lacks, which the record tool's answer names so the agent can record it again, including an approval with nothing to look at. |
 | `hooks/demo.ts` | Shared module. Sample data for `/inbox demo` and the Codex demo. |
 | `hooks/dialogs.ts` | Shared module. Notes the questions of a Codex dialog or a dismissed dialog, and links each to the inbox question that copies it: a Codex dialog's link, and the dialog's option descriptions. |
 | `hooks/layout.ts` | Shared module. Sizes the desktop look and the Codex tab share. |

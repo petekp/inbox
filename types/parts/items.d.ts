@@ -4,6 +4,8 @@ export type Item = {
   /** The agent's own number or id for it ("1", "D3"), so "1. yes" maps back. */
   label: string | null
   ask: string
+  /** Why the agent asked a question, from its record's `context`. A record of the open question replaces it. */
+  context?: string
   options: string[]
   /** The option the agent recommended, exactly as `options` has it. */
   rec: string | null
@@ -29,7 +31,8 @@ export type Item = {
   /** When the agent last recorded it again while it was open, as it does to report a comparison. */
   reportedAt?: number
   /**
-   * Each option's description, by its label as `options` has it, from a dismissed dialog question this item copies.
+   * What picking each option does, by its label as `options` has it: from the `option_notes` of the agent's records,
+   * else from a dialog question this item copies.
    */
   optionDescriptions?: Record<string, string>
 }

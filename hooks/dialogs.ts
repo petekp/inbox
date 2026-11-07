@@ -36,8 +36,11 @@ function copyOf(q: AskedQuestion, items: Item[], questions: AskedQuestion[]): It
   return restated.length === 1 ? asked : null
 }
 
-/** The descriptions of `options`, by their labels, from a dialog question's descriptions. Null when none match. */
-function descriptionsFor(options: string[], descriptions: Record<string, string>): Record<string, string> | null {
+/** The descriptions of `options`, by their labels, from descriptions by other labels for them. Null when none match. */
+export function descriptionsFor(
+  options: string[],
+  descriptions: Record<string, string>,
+): Record<string, string> | null {
   const byKey = new Map(Object.entries(descriptions).map(([label, text]) => [optionKey(label), text]))
   const matched = options.flatMap(o => {
     const text = byKey.get(optionKey(o))
@@ -47,14 +50,17 @@ function descriptionsFor(options: string[], descriptions: Record<string, string>
   return matched.length > 0 ? Object.fromEntries(matched) : null
 }
 
-/** The item as a copy of `q`: linked to its Codex dialog question, and given its option descriptions. */
+/**
+ * The item as a copy of `q`: linked to its Codex dialog question, and given its option descriptions. The notes the
+ * agent's record gave win over the dialog's.
+ */
 function asCopyOf(item: Item, q: TurnDialogQuestion): Item {
   const descriptions = descriptionsFor(item.options, q.descriptions)
 
   return {
     ...item,
     ...(q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } }),
-    ...(descriptions ? { optionDescriptions: descriptions } : {}),
+    ...(descriptions ? { optionDescriptions: { ...descriptions, ...item.optionDescriptions } } : {}),
   }
 }
 
