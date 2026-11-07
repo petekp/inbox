@@ -1,6 +1,6 @@
 # Readable questions
 
-Status: building
+Status: building. Change 2's record fields, storage and notes on what is missing are built, and so is change 3. The context line's drawing waits on Pete's pick of placement.
 
 A question in the inbox should be answerable from its row alone. Three changes make the inbox hold the agent to that. Pete chose this shape on 2026-11-07 over refusing a bare record: the inbox records what the agent gives, draws it, and nags for what is missing. It refuses only a close whose answer is a question.
 
