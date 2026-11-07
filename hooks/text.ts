@@ -71,12 +71,35 @@ const segmenter =
     ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
     : null
 
+/** The jamo Hangul is written with, in the basic and extended blocks, grouped as Unicode's grapheme rules group them. */
+const LEADING_JAMO = String.raw`[\u1100-\u115F\uA960-\uA97C]`
+const VOWEL_JAMO = String.raw`[\u1160-\u11A7\uD7B0-\uD7C6]`
+const TRAILING_JAMO = String.raw`[\u11A8-\u11FF\uD7CB-\uD7FB]`
+const SYLLABLE = String.raw`[\uAC00-\uD7A3]`
+
+/** The precomposed syllables with no trailing consonant: every 28th from U+AC00, for 19 leading consonants times 21 vowels. */
+const OPEN_SYLLABLE = `[${Array.from({ length: 19 * 21 }, (_, i) => String.fromCharCode(0xac00 + i * 28)).join('')}]`
+
 /**
- * A grapheme where `Intl.Segmenter` is missing, as in Herdr's mod runtime: a base character keeps its combining marks
- * and emoji modifiers, and U+200D joins the next character to it.
+ * One Hangul syllable as Unicode's grapheme rules join it: leading consonants, then vowels or a precomposed syllable,
+ * then trailing consonants. Only a syllable with no trailing consonant takes more vowels.
  */
-const GRAPHEME =
-  /[\p{M}\p{Emoji_Modifier}\u200D]+|[^\p{M}\p{Emoji_Modifier}\u200D](?:[\p{M}\p{Emoji_Modifier}]|\u200D[^\p{M}\p{Emoji_Modifier}\u200D]?)*/gu
+const HANGUL = `(?:${LEADING_JAMO}*(?:${VOWEL_JAMO}+|${OPEN_SYLLABLE}${VOWEL_JAMO}*|${SYLLABLE})${TRAILING_JAMO}*|${LEADING_JAMO}+|${TRAILING_JAMO}+)`
+
+/** Two regional indicators, which draw one flag. A third starts the next flag. */
+const FLAG = String.raw`[\u{1F1E6}-\u{1F1FF}]{2}`
+
+/** What stays with the character before it: combining marks, emoji modifiers, and the tag characters of a flag such as England's. */
+const EXTEND = String.raw`\p{M}\p{Emoji_Modifier}\u{E0020}-\u{E007F}`
+
+/**
+ * A grapheme where `Intl.Segmenter` is missing, as in Herdr's mod runtime: a flag, a Hangul syllable or one character,
+ * with what extends it. U+200D joins the next character to it.
+ */
+const GRAPHEME = new RegExp(
+  String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^${EXTEND}\u200D])(?:[${EXTEND}]|\u200D[^${EXTEND}\u200D]?)*`,
+  'gu',
+)
 
 /** The characters a reader sees in `text`, in order. */
 function graphemesOf(text: string): string[] {

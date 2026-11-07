@@ -9,6 +9,12 @@ const SAMPLES = [
   '👩🏽‍💻 at work, 👍🏿 done',
   '❤️ and ✔︎ marks',
   '漢字のタイトル',
+  '🇯🇵 and 🇺🇸🇬🇧',
+  '🇺🇸🇬🇧🇫 odd run',
+  '🏴󠁧󠁢󠁳󠁣󠁴󠁿 Scotland',
+  '한국어 제목'.normalize('NFD'),
+  '한 하ᅡ 한ᅡ',
+  'ᅡᆫ and ꥠힰퟋ',
 ]
 
 async function loadWithoutIntl(): Promise<typeof withSegmenter> {
@@ -22,7 +28,7 @@ async function loadWithoutIntl(): Promise<typeof withSegmenter> {
   }
 }
 
-test('without Intl, text cuts where Intl.Segmenter cuts it, for combining marks and joined emoji', async () => {
+test('without Intl, text cuts where Intl.Segmenter cuts it, for combining marks, joined emoji, flags and Hangul jamo', async () => {
   const fallback = await loadWithoutIntl()
   for (const text of SAMPLES) {
     const cells = withSegmenter.cellWidth(text)
