@@ -3479,6 +3479,9 @@ function goalPage(o, items) {
 // ../hooks/status-page-parts.ts
 var CHILD_ROWS = 3;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
+var NEW_TEXT = "New";
+var newSinceText = (agoText) => `New since you looked ${agoText}`;
+var EARLIER_TEXT = "Earlier";
 var COUNT_WORDS = {
   working: "working",
   "waits-on-other": "waiting",
@@ -3525,13 +3528,17 @@ function childRow(c, branch, depth) {
   };
 }
 function partRows(shown, c, depth, afterNew = []) {
-  const rows = [];
-  const lookRow = c.lookId === null ? null : { kind: "look", id: c.lookId, depth, text: c.lookText };
   const firstSeen = shown.findIndex((x) => !c.isNew(x));
+  const isEveryShownNew = firstSeen === -1;
+  const hasNew = shown.length > 0 && firstSeen !== 0;
+  const hasRowsAfterNew = !isEveryShownNew || c.hasRowsAfter;
+  const ids = hasNew && (hasRowsAfterNew || c.isNewHeadingAlone) ? c.headingIds : null;
+  const earlierRow = ids && hasRowsAfterNew ? [{ kind: "heading", id: ids.earlier, depth, text: EARLIER_TEXT, hasSpaceAbove: true }] : [];
+  const rows = ids ? [{ kind: "heading", id: ids.new, depth, text: NEW_TEXT, hasSpaceAbove: true }] : [];
   for (const [i, x] of shown.entries()) {
     const hasNewAbove = i > 0;
     if (i === firstSeen && hasNewAbove)
-      rows.push(...afterNew, ...lookRow ? [lookRow] : []);
+      rows.push(...afterNew, ...earlierRow);
     const under = c.running.filter((ch) => ch.subjectId === x.id);
     const shownUnder = under.slice(0, CHILD_ROWS);
     const isMore = under.length > CHILD_ROWS;
@@ -3564,16 +3571,13 @@ function partRows(shown, c, depth, afterNew = []) {
         branch: "last"
       });
   }
-  const isEveryShownNew = firstSeen === -1;
   if (isEveryShownNew)
-    rows.push(...afterNew);
-  if (lookRow && c.isLookAtEnd && isEveryShownNew && shown.length > 0)
-    rows.push(lookRow);
+    rows.push(...afterNew, ...earlierRow);
   return rows;
 }
 function isItemAfterItem(row, prev) {
   const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
-  const isLine = (r) => r.kind === "look" || r.kind === "part";
+  const isLine = (r) => r.kind === "heading" || r.kind === "part";
   return prev !== undefined && !isLine(prev) && !isLine(row) && !isUnderSubject;
 }
 function ruledRows(rows, isRuled) {
@@ -3589,9 +3593,7 @@ function unfoldedRows(rows, isUnfolded) {
 
 // ../hooks/status-page.ts
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
-var LOOK_TEXT = "Last seen";
 var OTHER_WORK = "Other work";
-var LOOK_DASH = "\u254C";
 var WAS_PREFIX = "was: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " \xB7 ";
@@ -3662,12 +3664,12 @@ function statusPage(s, now) {
     running,
     isTurnRunning: s.presence.isTurnRunning,
     now,
-    lookId: look === null ? null : "look",
-    lookText: LOOK_TEXT,
-    isLookAtEnd: true
+    headingIds: null,
+    hasRowsAfter: false,
+    isNewHeadingAlone: true
   };
-  const lookId = (id) => look === null ? null : id;
-  const foldCtx = { ...ctx, lookId: null, running: [] };
+  const headingIds = (prefix) => look === null ? null : { new: `${prefix}new`, earlier: `${prefix}earlier` };
+  const foldCtx = { ...ctx, running: [] };
   const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
     const closed = named.filter((x) => x.status === status);
     const names = closed.map((x) => x.name);
@@ -3684,10 +3686,6 @@ function statusPage(s, now) {
       }
     ];
   });
-  const rows = [
-    ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
-    ...partRows(top.shown, ctx, 0, namedFolds("", top.named, 0))
-  ];
   const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
     {
       kind: "done-fold",
@@ -3710,39 +3708,55 @@ function statusPage(s, now) {
     ] : [],
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
   ];
-  rows.push(...foldRows("", top, 0));
+  const topFolds = foldRows("", top, 0);
+  const rows = [
+    ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
+    ...partRows(top.shown, { ...ctx, headingIds: headingIds(""), hasRowsAfter: topFolds.length > 0 }, 0, namedFolds("", top.named, 0)),
+    ...topFolds
+  ];
   if (otherShown.length > 0 || otherFolded.length > 0) {
-    if (rows.at(-1)?.kind === "look")
-      rows.pop();
-    rows.push({ kind: "part", id: "other", depth: 0, text: OTHER_WORK });
-    rows.push(...partRows(otherShown, { ...ctx, lookId: lookId("other-look") }, 0, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)));
     const otherFoldedOpen = otherFolded.filter(isOpen);
-    if (otherFoldedOpen.length > 0)
-      rows.push({ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFoldedOpen) });
-    rows.push(...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0));
+    const otherFolds = [
+      ...otherFoldedOpen.length > 0 ? [{ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFoldedOpen) }] : [],
+      ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0)
+    ];
+    rows.push({ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...partRows(otherShown, { ...ctx, headingIds: headingIds("other-"), hasRowsAfter: otherFolds.length > 0 }, 0, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)), ...otherFolds);
   }
-  const milestoneRows = (id, p) => ruledRows([
-    ...partRows(p.shown, { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false }, 1, namedFolds(`${id}-`, p.named, 1)),
-    ...foldRows(`${id}-`, p, 1)
-  ], false);
-  const g = goalParts.goal;
-  const goal = g && {
-    ...g,
-    milestones: g.milestones.map((m, n) => ({ ...m, rows: milestoneRows(m.id, underMilestones[n]) }))
+  const milestoneRows = (id, p) => {
+    const folds = foldRows(`${id}-`, p, 1);
+    const parts = { headingIds: headingIds(`${id}-`), hasRowsAfter: folds.length > 0, isNewHeadingAlone: false };
+    return ruledRows([...partRows(p.shown, { ...ctx, ...parts }, 1, namedFolds(`${id}-`, p.named, 1)), ...folds], false);
   };
+  const g = goalParts.goal;
+  const sinceText = look === null ? NEW_TEXT : newSinceText(ago(now - look));
+  const [milestones, listRows] = withSinceOnFirstNew((g?.milestones ?? []).map((m, n) => milestoneRows(m.id, underMilestones[n])), ruledRows(rows, true), sinceText);
+  const goal = g && { ...g, milestones: g.milestones.map((m, n) => ({ ...m, rows: milestones[n] })) };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
     isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
     ...goalParts,
     goal,
-    rows: ruledRows(rows, true),
+    rows: listRows,
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: "Status",
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
     }
   };
+}
+function withSinceOnFirstNew(milestones, rows, sinceText) {
+  let isSaid = false;
+  const said = (list) => list.map((r) => {
+    if (isSaid || r.kind !== "heading" || r.text !== NEW_TEXT)
+      return r;
+    isSaid = true;
+    return { ...r, text: sinceText };
+  });
+  const saidMilestones = milestones.map(said);
+  const [first, ...rest] = said(rows);
+  const startsList = first?.kind === "heading" ? { ...first, hasSpaceAbove: false } : first;
+  return [saidMilestones, startsList ? [startsList, ...rest] : []];
 }
 function seenSubjectIds(row) {
   return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
@@ -6467,13 +6481,12 @@ function partHeading(text, width, s, at = PAGE_TEXT_AT) {
 function pageRule(width, s) {
   return `${" ".repeat(PAGE_TEXT_AT)}${s.dim("\u2500".repeat(pageRuleCells(width)))}`;
 }
-function lookLines(row, width, s) {
-  const text = ` ${row.text} `;
+function headingLines(row, width, s) {
   const at = markAt(row.depth) + PAGE_TEXT_AT - PAGE_MARK_AT;
-  const fill = Math.max(4, pageRuleCells(width, at) - cellWidth(text));
-  const before = Math.floor(fill / 2);
-  const rule = `${" ".repeat(at)}${s.dim(`${LOOK_DASH.repeat(before)}${text}${LOOK_DASH.repeat(fill - before)}`)}`;
-  return ["", rule, ...row.isLast ? [] : [""]];
+  const cells = pageRuleCells(width, at);
+  const fill = cells - cellWidth(row.text) - 1;
+  const heading = fill > 0 ? [`${" ".repeat(at)}${s.dim(`${row.text} ${"\u2500".repeat(fill)}`)}`] : wrapText(row.text, Math.max(1, cells)).map((l) => `${" ".repeat(at)}${s.dim(l)}`);
+  return [...row.hasSpaceAbove ? [""] : [], ...heading, ...row.isLast ? [] : [""]];
 }
 function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between = "") {
   const faces = target.keys.map((k) => ({
@@ -6517,8 +6530,8 @@ function drawPageRow(row, d, isSelected = false) {
     const chevron = d.ui.statusUnfolded.includes(row.id) ? "\u25BE" : "\u25B8";
     return isSelected ? pageLine(d, at, s.tone("accent", chevron), row.text, s.bold) : pageLine(d, at, s.dim(chevron), row.text, s.dim);
   }
-  if (row.kind === "look")
-    return lookLines(row, width, s);
+  if (row.kind === "heading")
+    return headingLines(row, width, s);
   if (row.kind === "part")
     return ["", partHeading(row.text, width, s)];
   if (row.kind === "counts")
@@ -6587,7 +6600,7 @@ function textWithCount(g, d) {
   const lines = wrapText(`${g.text}${tail}`, Math.max(10, width - PAGE_MARK_AT - 1));
   return lines.map((l) => " ".repeat(PAGE_MARK_AT) + (l.endsWith(tail) ? s.bold(l.slice(0, -tail.length)) + s.dim(tail.replaceAll(GLUE, " ")) : s.bold(l)));
 }
-function headingLines(part, d, isSelected) {
+function headingLines2(part, d, isSelected) {
   const { width, style: s } = d;
   const keys = part.page ? pageButtonLines({ id: GOAL_KEYS_ID, keys: goalKeyPlan(part.page) }, d, isSelected, 1, s.dim("\xB7")) : [];
   const right = width - 1;
@@ -6604,7 +6617,7 @@ function drawGoalPart(part, d, isSelected) {
   const { width, now, style: s } = d;
   const at = (text, paint, lines = STATUS_TEXT_LINES) => indented(text, PAGE_MARK_AT, width, lines, paint);
   if (part.is === "heading")
-    return headingLines(part, d, isSelected);
+    return headingLines2(part, d, isSelected);
   if (part.is === "gap")
     return [""];
   if (part.is === "title") {
@@ -8382,7 +8395,7 @@ var CLIENTS = {
       "herdr-sidebar": { kind: "full" },
       "status-children": { kind: "full" },
       "child-names": { kind: "full" },
-      "status-look-line": { kind: "full" },
+      "status-new-headings": { kind: "full" },
       "status-row-rules": { kind: "full" },
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
@@ -8484,7 +8497,7 @@ var CLIENTS = {
         reason: "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so workflows do not show. The end of a wait on a Herdr delegate is read at Stop."
       },
       "child-names": { kind: "full" },
-      "status-look-line": { kind: "full" },
+      "status-new-headings": { kind: "full" },
       "status-row-rules": { kind: "full" },
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
@@ -8583,7 +8596,7 @@ var CLIENTS = {
         reason: "omp's extension events report subagents and bash calls. omp's reference names no event for a workflow run, so those do not show."
       },
       "child-names": { kind: "full" },
-      "status-look-line": { kind: "full" },
+      "status-new-headings": { kind: "full" },
       "status-row-rules": { kind: "full" },
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },

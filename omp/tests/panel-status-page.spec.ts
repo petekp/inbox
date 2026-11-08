@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import { parseStatus } from '../../hooks/status'
 import { applyStatus } from '../../hooks/status-ops'
 import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
-import { STATUS_TEXT_LINES, LOOK_DASH } from '../../hooks/status-page'
+import { STATUS_TEXT_LINES } from '../../hooks/status-page'
 import { sessionView } from '../../hooks/session-view'
 import { cellWidth } from '../../hooks/text'
 import { render } from '../src/panel'
@@ -21,7 +21,7 @@ function noGoalScreen() {
   return screenOf({ view: sessionView(state, NOW, SETTLED_MS, NO_HOLDS) })
 }
 
-test('the Status page shows the head’s title and description, then its rows in order, each subject’s marks in the head’s column, where it stands under its name and its was line under that, and Last seen in the middle of its dashed rule with a blank line above and below it', () => {
+test('the Status page shows the head’s title and description, then its rows in order, each subject’s marks in the head’s column, where it stands under its name and its was line under that, and the New and Earlier headings each before a solid rule with a blank line above and below it', () => {
   const screen = noGoalScreen()
   const page = screen.view.statusPage
   const lines = text(screen, onPage).split('\n')
@@ -39,26 +39,38 @@ test('the Status page shows the head’s title and description, then its rows in
     expect(lines[at(row.name) + 1]).toContain(row.text!)
     expect(lines[at(row.name) + 2]).toContain(`was: ${row.was}`)
   }
-  const seenAt = at(' Last seen ')
-  const [left, right] = lines[seenAt]!.trim().split(' Last seen ')
-  expect(left!.length - right!.length).toBeLessThanOrEqual(1)
-  expect(LOOK_DASH).not.toBe('─')
-  expect(left).toMatch(new RegExp(`^${LOOK_DASH}+$`))
-  expect([lines[seenAt - 1], lines[seenAt + 1]].map(l => l!.trim())).toEqual(['', ''])
+  const newAt = at('New since you looked ')
+  const earlierAt = lines.findIndex(l => l.trim().startsWith('Earlier '))
+  expect(newAt).toBeLessThan(earlierAt)
+  for (const n of [newAt, earlierAt]) {
+    expect(lines[n]!.trim()).toMatch(/^(New since you looked \S+ ago|Earlier) ─+$/)
+    expect([lines[n - 1], lines[n + 1]].map(l => l!.trim())).toEqual(['', ''])
+  }
+  expect(lines[newAt]!.trimEnd().length).toBe(lines[earlierAt]!.trimEnd().length)
 })
 
-test('on the Status page, Last seen at the end of the list leaves no blank line below it', () => {
+test('on the Status page, a heading at the end of the list leaves no blank line below it', () => {
   const screen = screenOf()
   const page = screen.view.statusPage
-  const through = page.rows.findIndex(r => r.kind === 'look')
-  const rows = page.rows.slice(0, through + 1).map(r => ({ ...r, isLast: r.kind === 'look' }))
+  const through = page.rows.findIndex(r => r.kind === 'heading')
+  const rows = page.rows.slice(0, through + 1).map(r => ({ ...r, isLast: r.kind === 'heading' }))
   const ending = { ...screen, view: { ...screen.view, statusPage: { ...page, rows } } }
   const lines = text(ending, onPage).split('\n')
-  const seenAt = lines.findIndex(l => l.includes(' Last seen '))
+  const headingAt = lines.findIndex(l => l.includes('New since you looked '))
 
-  expect(lines[seenAt - 1]!.trim()).toBe('')
-  expect(lines[seenAt + 1]).not.toBe(undefined)
-  expect(lines[seenAt + 1]!.trim()).not.toBe('')
+  expect(lines[headingAt - 1]!.trim()).toBe('')
+  expect(lines[headingAt + 1]).not.toBe(undefined)
+  expect(lines[headingAt + 1]!.trim()).not.toBe('')
+})
+
+test('on a Status page too narrow for a rule beside it, the New heading wraps with no rule and stays inside the panel', () => {
+  const width = 24
+  const lines = text(noGoalScreen(), onPage, width).split('\n')
+  const newAt = lines.findIndex(l => l.includes('New since'))
+
+  expect(lines[newAt]).not.toContain('─')
+  expect(lines.slice(newAt, newAt + 2).join(' ')).toMatch(/New since you\s+looked/)
+  expect(lines.every(l => cellWidth(l) <= width)).toBe(true)
 })
 
 test('on the Status page, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', () => {
@@ -96,7 +108,7 @@ test('on the Status page, a row’s stall word follows its name on the line of i
   }
 })
 
-test('on the Status page, a rule from the text column sets each item apart, with none inside a subject’s tree or beside the look line', () => {
+test('on the Status page, a rule from the text column sets each item apart, with none inside a subject’s tree or beside a heading', () => {
   const lines = text(noGoalScreen(), onPage, 40).split('\n')
   const subject = lines.find(l => l.includes('Dismiss gesture'))!
   const rule = new RegExp(`^ {${subject.indexOf('Dismiss')}}─+$`)

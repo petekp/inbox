@@ -9,6 +9,13 @@ export const CHILD_ROWS = 3
 
 const CHILD_MARK: { mark: string; tone: StatusTone } = { mark: SUBJECT_MARKS.working.mark, tone: null }
 
+/** The heading over the rows that changed since the last look, in every part after the first that has one. */
+export const NEW_TEXT = 'New'
+/** The first New heading on the page, which says how long ago the person last looked. */
+export const newSinceText = (agoText: string) => `New since you looked ${agoText}`
+/** The heading over the rows after the changed ones in a part. */
+const EARLIER_TEXT = 'Earlier'
+
 /** The words a `counts` row gives each mark. */
 const COUNT_WORDS: Record<'working' | 'waits-on-other' | 'queued', string> = {
   working: 'working',
@@ -83,19 +90,18 @@ export type ListContext = {
   running: Child[]
   isTurnRunning: boolean
   now: number
-  /** The id of the part's look line, or null while the person has never looked. */
-  lookId: string | null
-  lookText: string
-  /**
-   * Whether the look line ends a part whose rows all changed. It does in a part folds can follow. Under a milestone it
-   * only splits changed rows from seen ones, so a page of busy milestones does not draw a look line under each.
-   */
-  isLookAtEnd: boolean
+  /** The ids of the part's New and Earlier headings, or null while the person has never looked. */
+  headingIds: { new: string; earlier: string } | null
+  /** Whether rows follow the part's list, such as its folds, so an Earlier heading has rows under it though every row the list shows changed. */
+  hasRowsAfter: boolean
+  /** Whether the part draws its New heading when nothing follows its changed rows. A milestone does not, so a page of busy milestones does not draw a heading under each. */
+  isNewHeadingAlone: boolean
 }
 
 /**
- * A part of the list at `depth`: its subjects in order, with their children one step in under them and the look line
- * between them. `afterNew` follows the rows that changed since the last look, before the look line.
+ * A part of the list at `depth`: its subjects in order, with their children one step in under them. While some of them
+ * changed since the last look, the New heading starts the part and the Earlier heading starts what follows the changed
+ * rows. `afterNew` follows the changed rows, before the Earlier heading.
  */
 export function partRows(
   shown: Subject[],
@@ -103,13 +109,19 @@ export function partRows(
   depth: number,
   afterNew: StatusRowParts[] = [],
 ): StatusRowParts[] {
-  const rows: StatusRowParts[] = []
-  const lookRow: StatusRowParts | null =
-    c.lookId === null ? null : { kind: 'look', id: c.lookId, depth, text: c.lookText }
   const firstSeen = shown.findIndex(x => !c.isNew(x))
+  const isEveryShownNew = firstSeen === -1
+  const hasNew = shown.length > 0 && firstSeen !== 0
+  const hasRowsAfterNew = !isEveryShownNew || c.hasRowsAfter
+  const ids = hasNew && (hasRowsAfterNew || c.isNewHeadingAlone) ? c.headingIds : null
+  const earlierRow: StatusRowParts[] =
+    ids && hasRowsAfterNew ? [{ kind: 'heading', id: ids.earlier, depth, text: EARLIER_TEXT, hasSpaceAbove: true }] : []
+  const rows: StatusRowParts[] = ids
+    ? [{ kind: 'heading', id: ids.new, depth, text: NEW_TEXT, hasSpaceAbove: true }]
+    : []
   for (const [i, x] of shown.entries()) {
     const hasNewAbove = i > 0
-    if (i === firstSeen && hasNewAbove) rows.push(...afterNew, ...(lookRow ? [lookRow] : []))
+    if (i === firstSeen && hasNewAbove) rows.push(...afterNew, ...earlierRow)
     const under = c.running.filter(ch => ch.subjectId === x.id)
     const shownUnder = under.slice(0, CHILD_ROWS)
     const isMore = under.length > CHILD_ROWS
@@ -144,18 +156,16 @@ export function partRows(
         branch: 'last',
       })
   }
-  const isEveryShownNew = firstSeen === -1
-  if (isEveryShownNew) rows.push(...afterNew)
-  if (lookRow && c.isLookAtEnd && isEveryShownNew && shown.length > 0) rows.push(lookRow)
+  if (isEveryShownNew) rows.push(...afterNew, ...earlierRow)
 
   return rows
 }
 
-/** Whether `row` starts an item after another, with no look line between them. */
+/** Whether `row` starts an item after another, with no heading between them. */
 function isItemAfterItem(row: StatusRowParts, prev: StatusRowParts | undefined): boolean {
   const isUnderSubject = row.kind === 'more' || (row.kind === 'child' && row.branch !== null)
 
-  const isLine = (r: StatusRowParts) => r.kind === 'look' || r.kind === 'part'
+  const isLine = (r: StatusRowParts) => r.kind === 'heading' || r.kind === 'part'
 
   return prev !== undefined && !isLine(prev) && !isLine(row) && !isUnderSubject
 }

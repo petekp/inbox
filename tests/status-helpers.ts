@@ -53,7 +53,7 @@ export const shape = (rows: StatusRow[]) =>
       ? `${r.mark} ${r.name}${r.text ? `: ${r.text}` : ''}${r.stall ? ` · ${r.stall.text}` : ''}${r.hasChildren ? ' ┐' : ''}`
       : r.kind === 'child'
         ? `${r.branch ? ARMS[r.branch] : ''}${r.mark} ${r.name}${r.stall ? ` · ${r.stall.text}` : ''}`
-        : r.kind === 'look'
+        : r.kind === 'heading'
           ? `-- ${r.text}`
           : r.kind === 'more'
             ? `${ARMS[r.branch]}${r.text}`

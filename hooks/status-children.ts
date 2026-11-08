@@ -53,7 +53,7 @@ export function childEnded(o: SessionStatus | null, ref: string, at: number): Se
 }
 
 /**
- * The subject with `id` changed at `at`, as when a child under it finished, so it shows above the look line again. Its
+ * The subject with `id` changed at `at`, as when a child under it finished, so it shows under the New heading again. Its
  * was and merged lines go once the person has seen them, as for a change the Status call makes.
  */
 export function subjectTouched(o: SessionStatus, id: string | null, at: number): SessionStatus {
@@ -108,12 +108,12 @@ export function runningText(o: SessionStatus | null, now: number): string {
     .join(NL)
 }
 
-/** The Status tab is shown. The look line stays where it was until the look ends, so the page keeps its order. */
+/** The Status tab is shown. The New and Earlier headings stay where they were until the look ends, so the page keeps its order. */
 export function lookStarted(o: SessionStatus | null, now: number): SessionStatus | null {
   return o === null || o.look !== null ? o : { ...o, look: { startedAt: now } }
 }
 
-/** How long the Status must show before it counts as a look, so a pass through the tab keeps the look line. */
+/** How long the Status must show before it counts as a look, so a pass through the tab keeps the headings where they were. */
 export const LOOK_MIN_MS = 5_000
 
 /**
@@ -138,7 +138,7 @@ export function isSubjectSeen(o: SessionStatus, s: Pick<Subject, 'id' | 'changed
 export type ShownRows = Record<string, number> | 'all'
 
 /**
- * The Status tab is no longer shown, at `at`. A look shorter than `LOOK_MIN_MS` leaves the look line where it was. A
+ * The Status tab is no longer shown, at `at`. A look shorter than `LOOK_MIN_MS` leaves the headings where they were. A
  * longer one counts each subject as seen when `shown` says its row was on screen at any point after the subject last
  * changed, even for a moment during a scroll. Every other subject keeps when the person last saw it.
  */

@@ -156,16 +156,19 @@ has been idle, as "idle 2d", muted. Other rows show no word. The code calls them
 `stall`.
 _Avoid_: age
 
-**Seen line**:
-The rule labeled "Last seen" on the Status, at the time the person last left the
-page after it showed for at least five seconds. A shorter pass through the tab
-leaves the line where it was. A row above it changed since the person last saw
-it, in the last look that showed its row. Every open row
-shows where it stands, above or below the line. A row below it leaves out its
-merged and was lines, and a finished row below it shows only its mark and name. When no row
-changed since then, the page draws no line. The code calls it the look line,
-after `lastLookAt`.
-_Avoid_: "you looked" line
+**New and Earlier headings**:
+Two headings on the Status that split the rows at the person's last look. The
+last look is the last time the person left the page after it showed for at
+least five seconds. A shorter pass through the tab leaves the headings where
+they were. "New" tops the rows that changed since the person last saw them, in
+the last look that showed their row. "Earlier" tops the rest. The first New
+heading on the page, in draw order, says how long ago that look was, as "New
+since you looked 2h ago". Every open row shows where it stands under either
+heading. A row under Earlier leaves out its merged and was lines, and a
+finished row there shows only its mark and name. When no row changed since the
+last look, or before the first look, the page draws no headings. The code calls
+the row kind `heading`, and the last look `lastLookAt`.
+_Avoid_: Seen line, look line, "Last seen"
 
 **Done fold**:
 The line on the Status that counts seen finished work it does not draw, as "3

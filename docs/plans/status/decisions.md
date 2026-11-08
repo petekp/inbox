@@ -6,7 +6,7 @@ Status: built.
 
 ## Decisions
 
-1. **One list of subjects, with no sections. On each side of the Seen line, rows are ordered by status, then newest change first.** The order is: held by an open ask (◆), working (●), waits on something other than the person (◌), queued (○), then done (✓) and dropped (✗).
+1. **One list of subjects, with no sections. Under each of the New and Earlier headings, rows are ordered by status, then newest change first.** The order is: held by an open ask (◆), working (●), waits on something other than the person (◌), queued (○), then done (✓) and dropped (✗).
    - Reason: each piece of work shows once, with its change attached. The earlier six-section page showed one subject in up to six places. Each part reads from what needs the person to what is finished.
    - This replaces ordering each side of the line by last change alone. That put a queued row whose text had just changed above work that had finished, so the marks ran out of order down the page.
 2. **The inbox model edits subjects by id. Code applies each edit.**
@@ -34,7 +34,7 @@ Status: built.
 10. **The page updates after each reply, and during a long turn once 10 minutes have passed.**
     - Reason: between replies, a long turn left the rows hours old.
 11. **A look counts once the tab has shown for 5 seconds, and it marks as seen only the rows that were on screen.**
-    - Reason: a pass through the tab on the way to another one moved the Seen line past changes the person never read. A long page can hold rows the person never scrolled to.
+    - Reason: a pass through the tab on the way to another one moved the headings past changes the person never read. A long page can hold rows the person never scrolled to.
 12. **The model reads the work from the exchange.** A host's own task list is extra input.
     - Reason: Claude Code and Codex offer no task list by default, so work read only from a task list would be missing there. `docs/reference/task-lists.md` has the sources.
 13. **No step tool.** The agent is not asked to report its steps.

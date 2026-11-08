@@ -14,8 +14,8 @@ From top to bottom:
 | Subject rows | A mark and a short name, with `waiting` after the name while it waits on the person, or how long it has been idle, as `idle 2d`, once an open subject has had no change for a day and no child of it runs, and a few words on where it stands on the line under the name. The call is asked for a name of at most 3 words and a text of at most 4. Code clips them at 20 and 12. | The model writes the status, name and text. Code draws the mark and the stall word, and orders the rows by status, then by last change. |
 | Was line | The plan a change replaced, as "was: last-write-wins", or the pieces merged into this one, as "merged in: Banner on hover", until the person has seen it | The model writes it. Code shows it only until the person has looked. |
 | Child rows | Running work under its subject. A subagent or workflow run shows the first line of the description it was started with. A Herdr delegate shows the focus its own session publishes to Herdr as `inbox-focus`, or else its Herdr name in words. A delegate shows what Herdr shows: `◆ … · waiting` at a question or an approval, and `✓ … · finished` once it stops, until the person has seen the Status. Running work shows no word. | Code, from host events and from Herdr. The model writes the link. |
-| Seen line | Where the person last looked. Rows above it changed since. It is left out when nothing changed. | Code |
-| Folds | "○ N more" for the open subjects past 6 that the page does not draw. Work that closed since the last look shows as at most 2 rows. The rest is named above the Seen line, in one fold for each status: "✓ Also done: Sync merge, Search speed, +3 more" and "✗ Also dropped: Flick option". Each fold shows the two newest names and counts the rest. "▸ N done" for the seen done subjects, or "▸ N more done" when a done row shows above it. The done fold has no mark, and a press lists its rows under it. | Code |
+| New and Earlier headings | Where the person last looked. "New since you looked 2h ago" tops the rows that changed since, and "Earlier" the rest. Both are left out when nothing changed. | Code |
+| Folds | "○ N more" for the open subjects past 6 that the page does not draw. Work that closed since the last look shows as at most 2 rows. The rest is named under the New heading, in one fold for each status: "✓ Also done: Sync merge, Search speed, +3 more" and "✗ Also dropped: Flick option". Each fold shows the two newest names and counts the rest. "▸ N done" for the seen done subjects, or "▸ N more done" when a done row shows above it. The done fold has no mark, and a press lists its rows under it. | Code |
 | Status line | "Last Status update failed. Changes from that reply may be missing." while the last call wrote nothing | Code |
 
 The marks:
@@ -33,9 +33,9 @@ The marks:
 More rules of the drawn page, all in `hooks/status-page.ts:statusPage`:
 
 - A subject's text wraps to at most 3 lines.
-- On each side of the Seen line, rows run ◆, ●, ◌, ○, then ✓ and ✗ together, each group newest change first.
+- Under each heading, rows run ◆, ●, ◌, ○, then ✓ and ✗ together, each group newest change first.
 - At most 2 finished rows show, both changed since the last look. The rest fold into the count. Property 10 asks for more; see "Not built yet".
-- Below the Seen line, an open row keeps where it stands, and drops its was line.
+- Under the Earlier heading, an open row keeps where it stands, and drops its was line.
 - At most 3 children show under one subject. The rest read "+ 2 more running".
 - A child whose subject is not shown, or that has no link yet, sits at the top of the list.
 - At most 6 open rows show, the number the Status call is told to keep. The rest fold into "○ N more", taken from the rows the page would draw last: queued rows first, then rows that wait on others, then working rows.

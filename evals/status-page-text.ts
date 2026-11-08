@@ -1,4 +1,4 @@
-import { LOOK_TEXT, mergedLine, STALL_GAP, WAS_PREFIX } from '../hooks/status-page'
+import { mergedLine, STALL_GAP, WAS_PREFIX } from '../hooks/status-page'
 import type { StatusPage, StatusRow, StatusStall } from '../hooks/status-page'
 
 /** A row's name, with its stall word after it. */
@@ -28,8 +28,8 @@ function rowText(r: StatusRow): string[] {
     }
     case 'more':
       return [`${'  '.repeat(r.depth - 1)}  └ ${r.text}`]
-    case 'look':
-      return [`${pad}── ${LOOK_TEXT}`]
+    case 'heading':
+      return [`${pad}── ${r.text}`]
     case 'fold':
       return [`${pad}${r.mark} ${r.text}`]
     case 'done-fold':

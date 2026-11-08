@@ -19,7 +19,7 @@ import { minutes } from '../evals/status-replay'
 import { sessionOf, statusOf, subject } from './status-evals-scenes'
 import { MIN, after, askItem, page, shape } from './status-helpers'
 
-test('a look keeps the look line where it was until the look ends, and counts only once the Status showed for five seconds', () => {
+test('a look keeps the headings where they were until the look ends, and counts only once the Status showed for five seconds', () => {
   const o = { ...after(null, 'NEW: working | Offline mode | queue built', 100), lastLookAt: 50 }
   const looking = lookStarted(o, 200)!
 
@@ -30,7 +30,7 @@ test('a look keeps the look line where it was until the look ends, and counts on
   expect(lookStarted(null, 1)).toBeNull()
 })
 
-test('an open row below the look line keeps where it stands but not its was line', () => {
+test('an open row under the Earlier heading keeps where it stands but not its was line', () => {
   const now = 100 * MIN
   const o = after(
     after(
@@ -46,8 +46,9 @@ test('an open row below the look line keeps where it stands but not its was line
 
   expect(p.head?.title).toBe('Work offline')
   expect(shape(p.rows)).toEqual([
+    '-- New since you looked 50m ago',
     '◆ Offline mode: needs a sync pick · waiting',
-    '-- Last seen',
+    '-- Earlier',
     '○ Docs: outline ready',
   ])
   const seenAt = { ...after(o, 'WAS: s2 | sync on every save', 90 * MIN, new Set(['i1'])), lastLookAt: 95 * MIN }
@@ -56,7 +57,7 @@ test('an open row below the look line keeps where it stands but not its was line
   expect(seen[0]).toMatchObject({ kind: 'subject', was: null })
 })
 
-test('each side of the look line lists held, working, waiting, queued, then finished rows, newest change first within each', () => {
+test('under each of the New and Earlier headings the page lists held, working, waiting, queued, then finished rows, newest change first within each', () => {
   let o = after(null, 'NEW: working | Seen work | old step\nNEW: queued | Seen queue | later', 10 * MIN)
   o = after(
     o,
@@ -72,13 +73,14 @@ test('each side of the look line lists held, working, waiting, queued, then fini
   const rows = page({ ...o, lastLookAt: 50 * MIN }, 86 * MIN, {}, [askItem('i1'), askItem('i2')]).rows
 
   expect(shape(rows)).toEqual([
+    '-- New since you looked 36m ago',
     '◆ Flick: needs a pick · waiting',
     '◐ Sync: step two',
     '◐ Export: step one',
     '◌ Review: sent for review',
     '○ Help menu: outline ready',
     '✓ Banner: shipped',
-    '-- Last seen',
+    '-- Earlier',
     '◆ Seen queue: later · waiting',
     '○ 1 more',
   ])
@@ -192,7 +194,7 @@ test('a subject that open asks hold up offers View on the oldest ask, named for 
   expect(viewOf([])).toEqual([[], []])
 })
 
-test('with no look yet every row is new, so the page draws no look line and shows where each stands', () => {
+test('with no look yet every row is new, so the page draws no headings and shows where each stands', () => {
   const o = after(null, 'NEW: working | Offline mode | queue built', 10 * MIN)
 
   expect(shape(page(o, 12 * MIN).rows)).toEqual(['◐ Offline mode: queue built'])
@@ -205,7 +207,7 @@ test('a page with no head and no rows shows its empty state, even while a turn r
   )
 })
 
-test('work closed since the last look shows as two rows, the rest is named in a fold for each status above the look line, and finished work folds into a count once seen', () => {
+test('work closed since the last look shows as two rows, the rest is named in a fold for each status under the New heading, and finished work folds into a count once seen', () => {
   const now = 100 * MIN
   const opened = after(
     null,
@@ -229,16 +231,17 @@ test('work closed since the last look shows as two rows, the rest is named in a 
   ].reduce((o, line, n) => after(o, line, (65 + 5 * n) * MIN), old)
 
   expect(shape(page({ ...fresh, lastLookAt: 60 * MIN }, now).rows)).toEqual([
+    '-- New since you looked 40m ago',
     '✓ Four: done d',
     '✓ Three: done c',
     '✓ Also done: Five, Two',
     '✗ Also dropped: Six',
-    '-- Last seen',
+    '-- Earlier',
     '▸ 1 more done',
   ])
 })
 
-test('when every row on the page closed since the last look, the named fold ends the rows, above the look line', () => {
+test('when every row on the page closed since the last look, the New heading tops them, the named fold ends them, and no Earlier heading follows', () => {
   const opened = after(
     null,
     ['NEW: working | One | a', 'NEW: working | Two | b', 'NEW: working | Three | c'].join('\n'),
@@ -250,14 +253,14 @@ test('when every row on the page closed since the last look, the named fold ends
   )
 
   expect(shape(page({ ...closed, lastLookAt: 15 * MIN }, 60 * MIN).rows)).toEqual([
+    '-- New since you looked 45m ago',
     '✓ Three: done c',
     '✓ Two: done b',
     '✓ Also done: One',
-    '-- Last seen',
   ])
 })
 
-test('a look that showed a named fold counts as seen the work it names and the work its +N more counts, so the page after draws no look line and folds that work into its done count', () => {
+test('a look that showed a named fold counts as seen the work it names and the work its +N more counts, so the page after draws no headings and folds that work into its done count', () => {
   const opened = after(
     null,
     ['One', 'Two', 'Three', 'Four', 'Five', 'Six'].map((name, n) => `NEW: working | ${name} | step ${n}`).join('\n'),
@@ -270,10 +273,11 @@ test('a look that showed a named fold counts as seen the work it names and the w
   const before = { ...closed, lastLookAt: 15 * MIN }
   const rows = page(before, 60 * MIN).rows
   expect(shape(rows)).toEqual([
+    '-- New since you looked 45m ago',
     '✓ Five: e',
     '✓ Four: d',
     '✓ Also done: Three, Two, +1 more',
-    '-- Last seen',
+    '-- Earlier',
     '◐ Six: step 5',
   ])
 
@@ -288,10 +292,10 @@ test('a named line shows two names, the newest first, and counts the rest as +N 
   const closed = names.reduce((o, _, n) => after(o, `DONE: s${n + 1} | done`, (20 + 5 * n) * MIN), opened)
 
   expect(shape(page({ ...closed, lastLookAt: 15 * MIN }, 90 * MIN).rows)).toEqual([
+    '-- New since you looked 1h ago',
     '✓ Seven: done',
     '✓ Six: done',
     '✓ Also done: Five, Four, +3 more',
-    '-- Last seen',
   ])
 })
 
@@ -323,11 +327,13 @@ const shownAt = (ids: string[], at: number) => Object.fromEntries(ids.map(id => 
 const firstSix = Array.from({ length: 6 }, (_, n) => `s${n + 1}`)
 const namesAbove = (o: SessionStatus) => {
   const rows = statusPage(sessionOf(o, [], 30), minutes(30)).rows
-  const lookAt = rows.findIndex(r => r.kind === 'look')
-  return lookAt === -1 ? null : rows.slice(0, lookAt).flatMap(r => (r.kind === 'subject' ? [r.id] : []))
+  const newAt = rows.findIndex(r => r.kind === 'heading' && r.text !== 'Earlier')
+  const earlierAt = rows.findIndex(r => r.kind === 'heading' && r.text === 'Earlier')
+  const under = rows.slice(newAt + 1, earlierAt === -1 ? rows.length : earlierAt)
+  return newAt === -1 ? null : under.flatMap(r => (r.kind === 'subject' ? [r.id] : []))
 }
 
-test('a look that showed the first 6 of 40 changed rows leaves the other 34 above the look line', () => {
+test('a look that showed the first 6 of 40 changed rows leaves the other 34 under the New heading', () => {
   const looked = lookEnded(lookStarted(manyChanged(), minutes(20)), minutes(21), shownAt(firstSix, minutes(20)))!
   const above = namesAbove(looked)
 
@@ -335,7 +341,7 @@ test('a look that showed the first 6 of 40 changed rows leaves the other 34 abov
   expect(above?.some(id => firstSix.includes(id))).toBe(false)
 })
 
-test('a row shown only before its subject changed stays above the look line, and a missed row stays unseen through a later look that misses it too', () => {
+test('a row shown only before its subject changed stays under the New heading, and a missed row stays unseen through a later look that misses it too', () => {
   const first = lookEnded(lookStarted(manyChanged(), minutes(20)), minutes(21), shownAt(['s1', 's2'], minutes(5)))!
   const second = lookEnded(lookStarted(first, minutes(25)), minutes(26), shownAt(['s3'], minutes(25)))!
 
@@ -348,5 +354,5 @@ test('a look that counts every row, as the desktop pane does, marks every subjec
   const looked = lookEnded(lookStarted(manyChanged(), minutes(20)), minutes(21), 'all')!
 
   expect(looked.missedInLastLook).toEqual({})
-  expect(statusPage(sessionOf(looked, [], 30), minutes(30)).rows.some(r => r.kind === 'look')).toBe(false)
+  expect(statusPage(sessionOf(looked, [], 30), minutes(30)).rows.some(r => r.kind === 'heading')).toBe(false)
 })

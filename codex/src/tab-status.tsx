@@ -147,10 +147,13 @@ function StatusLine({ row }: { row: StatusRow }) {
       </>
     )
   }
-  if (row.kind === 'look')
+  if (row.kind === 'heading')
     return (
-      <div class={`row look-line${row.isLast ? ' last' : ''}`} style={depthStyle(row)}>
-        <div class="look-rule">{row.text}</div>
+      <div
+        class={`row heading-line${row.hasSpaceAbove ? '' : ' first'}${row.isLast ? ' last' : ''}`}
+        style={depthStyle(row)}
+      >
+        <div class="heading-rule">{row.text}</div>
       </div>
     )
   if (row.kind === 'part')

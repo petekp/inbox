@@ -18,6 +18,7 @@ A good page after the person was away two hours, drawn as decided:
 Offline sync
 Adding offline sync to the notes app
 
+New since you looked 2h ago ──────────
 ◆ Sync conflicts · waiting
   merge logic ready
 ● Export button
@@ -26,7 +27,7 @@ Adding offline sync to the notes app
   └ ✓ Check the print styles · finished
 ✓ Sync engine
   syncs on reconnect
-── Last seen ─────────────────────────
+Earlier ──────────────────────────────
 ◌ 2.4 release
   in store review
 ▸ 2 more done
@@ -152,22 +153,22 @@ The Status shows the work. Asks and Finds show the person's to-dos. A row held u
 
 ### What moved since I last looked?
 
-#### 10. Every real change shows above the Seen line, on its piece of work
+#### 10. Every real change shows under the New heading, on its piece of work
 
-Back after a break, the person learns from the rows above the Seen line what finished, started, stalled or changed course, without reading the conversation. Each change sits on the row of the piece it changed. Every piece that finished since the person last saw it is named. A row counts as seen only once it was on screen.
+Back after a break, the person learns from the rows under the New heading what finished, started, stalled or changed course, without reading the conversation. Each change sits on the row of the piece it changed. Every piece that finished since the person last saw it is named. A row counts as seen only once it was on screen.
 
 - **Good:** the sample page above. The conflicts work and the sync engine changed since the look, and the export did not.
-- **Bad:** 2.4 shipped, but `2.4 release` still sits below the Seen line with its old text.
+- **Bad:** 2.4 shipped, but `2.4 release` still sits under the Earlier heading with its old text.
 - **Bad:** six pieces finished while the person was away. The page names two and folds the release into "▸ 4 more done".
 - **Bad:** forty pieces finished. The person saw the first six rows and left, and the page now treats all forty as seen.
 
 #### 11. Nothing moves that did not change
 
-A reply that changed nothing about the work leaves every row and the Seen line where they were. So a row above the line always means a change. A choice the person makes is a change.
+A reply that changed nothing about the work leaves every row and the headings where they were. So a row under the New heading always means a change. A choice the person makes is a change.
 
 - **Good:** the agent explains how export picks a file name, and nothing is decided. The page stays as it was.
-- **Good:** the person picks "Save as PDF" as the export button's label. The export row says so, and moves above the Seen line.
-- **Bad:** `Export button: works on web, iOS left` becomes `web done, iOS remaining`, and moves above the Seen line.
+- **Good:** the person picks "Save as PDF" as the export button's label. The export row says so, and moves under the New heading.
+- **Bad:** `Export button: works on web, iOS left` becomes `web done, iOS remaining`, and moves under the New heading.
 
 #### 12. A change of plan says what it replaced
 

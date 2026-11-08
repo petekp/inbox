@@ -78,7 +78,7 @@ test('on a next build, a look starts when the Status page shows, the page shows 
   expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('n: New')
 })
 
-test('on a next build, a look at the Status that ends while a Status call is out keeps its Seen line, and the answer that lands after it shows above the line', async ($, on) => {
+test('on a next build, a look at the Status that ends while a Status call is out keeps its headings, and the answer that lands after it shows under the New heading', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.files = ['/.next-build']
@@ -117,7 +117,7 @@ test('on a next build, a look at the Status that ends while a Status call is out
 
   expect(session!.ledger.overview).toMatchObject({ lastLookAt: seenAt, look: null })
   const rows = statusPage(session!, clock.now()).rows
-  expect(rows.map(r => (r.kind === 'subject' ? r.name : r.kind))).toEqual(['Command', 'look', 'Plan'])
+  expect(rows.map(r => (r.kind === 'subject' ? r.name : r.kind))).toEqual(['heading', 'Command', 'heading', 'Plan'])
 })
 
 test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Status page shows Asks, tells Claude so, starts no look, stays saved, and names no subject an ask holds up', async ($, on) => {

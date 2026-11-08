@@ -207,7 +207,7 @@ export function hasRunningDelegate(o: SessionStatus | null): boolean {
  * Each running delegate after Herdr's `agents`, read at `at`, by agent name. A delegate whose session publishes a focus
  * takes it as its name. A delegate Herdr shows working or blocked takes that state. One Herdr shows ready, or no longer
  * lists, ended then. One that is ready after it worked finished, and its subject changed then, so the subject shows
- * above the look line. Herdr's `unknown` changes nothing.
+ * under the New heading. Herdr's `unknown` changes nothing.
  */
 export function delegatesSettled(
   o: SessionStatus | null,

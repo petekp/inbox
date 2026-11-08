@@ -42,7 +42,7 @@ export type FeatureId =
   | 'herdr-sidebar'
   | 'status-children'
   | 'child-names'
-  | 'status-look-line'
+  | 'status-new-headings'
   | 'status-row-rules'
   | 'status-failed-warning'
   | 'asks-holds-up-line'
@@ -118,7 +118,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'herdr-sidebar': { kind: 'full' },
       'status-children': { kind: 'full' },
       'child-names': { kind: 'full' },
-      'status-look-line': { kind: 'full' },
+      'status-new-headings': { kind: 'full' },
       'status-row-rules': { kind: 'full' },
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
@@ -232,7 +232,7 @@ export const CLIENTS: Record<ClientId, Client> = {
           "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so workflows do not show. The end of a wait on a Herdr delegate is read at Stop.",
       },
       'child-names': { kind: 'full' },
-      'status-look-line': { kind: 'full' },
+      'status-new-headings': { kind: 'full' },
       'status-row-rules': { kind: 'full' },
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },
@@ -342,7 +342,7 @@ export const CLIENTS: Record<ClientId, Client> = {
           "omp's extension events report subagents and bash calls. omp's reference names no event for a workflow run, so those do not show.",
       },
       'child-names': { kind: 'full' },
-      'status-look-line': { kind: 'full' },
+      'status-new-headings': { kind: 'full' },
       'status-row-rules': { kind: 'full' },
       'status-failed-warning': { kind: 'full' },
       'asks-holds-up-line': { kind: 'full' },

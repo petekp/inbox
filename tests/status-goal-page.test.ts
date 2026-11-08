@@ -67,8 +67,32 @@ test('work that serves a milestone draws under it one step in, and work the goal
   expect(shape(p.rows)).toEqual(['== Other work', '● 1 working · ○ 1 queued'])
   expect(shape(page(changed, 60, {}, [askItem('i1')]).rows)).toEqual([
     '== Other work',
+    '-- New since you looked just now',
     '◐ Logo refresh: new logo drawn',
-    '-- Last seen',
+    '-- Earlier',
+    '● 1 working',
+  ])
+})
+
+test('a milestone whose rows all changed since the last look draws no headings, and the time moves to the next New heading', () => {
+  const seen = { ...linked(), lastLookAt: 35 }
+  const changed = after(
+    seen,
+    'SET: s1 | working | bad rows named\nSET: s2 | queued | outline written\nSET: s4 | working | new logo drawn',
+    50,
+    new Set(['i1']),
+  )
+  const p = page(changed, 60, {}, [askItem('i1')])
+
+  expect(shape(p.goal?.milestones[1]?.rows ?? [])).toEqual([
+    '◆ Error copy: outline written · waiting',
+    '◐ CSV import: bad rows named',
+  ])
+  expect(shape(p.rows)).toEqual([
+    '== Other work',
+    '-- New since you looked just now',
+    '◐ Logo refresh: new logo drawn',
+    '-- Earlier',
     '● 1 working',
   ])
 })
@@ -78,8 +102,9 @@ test('finished work under a milestone shows as a row until the person looks, the
   const rowsOf = (o: SessionStatus) => page(o, 80, {}, [askItem('i1')]).goal?.milestones[1]?.rows ?? []
 
   expect(shape(rowsOf(finished))).toEqual([
+    '-- New since you looked just now',
     '✓ CSV import: import ships',
-    '-- Last seen',
+    '-- Earlier',
     '◆ Error copy: not started · waiting',
   ])
   expect(shape(rowsOf({ ...finished, lastLookAt: 70 }))).toEqual(['◆ Error copy: not started · waiting', '▸ 1 done'])
@@ -96,7 +121,7 @@ test('finished work under a milestone shows as a row until the person looks, the
   ).toBe(false)
 })
 
-test('under a milestone and under Other work, closed work past two rows that the person has not seen is named above the look line', () => {
+test('under a milestone and under Other work, closed work past two rows that the person has not seen is named under the New heading', () => {
   const more = after(
     { ...linked(), lastLookAt: 35 },
     [
@@ -124,19 +149,20 @@ test('under a milestone and under Other work, closed work past two rows that the
   const p = page(closed, 80, {}, [askItem('i1')])
 
   expect(shape(p.goal?.milestones[1]?.rows ?? [])).toEqual([
+    '-- New since you looked just now',
     '✓ Sniffer: sniffs',
     '✓ Parser: parses',
     '✓ Also done: CSV import',
-    '-- Last seen',
+    '-- Earlier',
     '◆ Error copy: not started · waiting',
   ])
   expect(shape(p.rows)).toEqual([
     '== Other work',
+    '-- New',
     '✓ Fonts: fonts ship',
     '✓ Logo refresh: logo ships',
     '✓ Also done: Dark mode',
     '✗ Also dropped: Icons',
-    '-- Last seen',
   ])
 })
 
@@ -181,7 +207,7 @@ test('an ask linked to a milestone names it as what it holds up, and milestones 
   ).toEqual([false, true, false])
 })
 
-test('the look line that would end the main list gives way to the Other work rule', () => {
+test('a main list whose rows are all new draws the New heading and no Earlier heading before the Other work rule', () => {
   const seen: SessionStatus = { ...linked(), serves: { s3: 'none', s4: 'none' }, lastLookAt: 35 }
   const changed = after(
     seen,
@@ -191,6 +217,7 @@ test('the look line that would end the main list gives way to the Other work rul
   )
 
   expect(shape(page(changed, 60, {}, [askItem('i1')]).rows)).toEqual([
+    '-- New since you looked just now',
     '◆ Error copy: outline written · waiting',
     '◐ CSV import: bad rows named',
     '== Other work',

@@ -14,7 +14,7 @@ A step with no call, or a step before its call, can press a goal button as the p
 | 3 | The person files dark mode and widgets for later, and asks for a fix to the vanishing-notes bug, then 2.5. A delegate starts on the bug. | Checkpoint. The met 2.4 goal makes way for a 2.5 goal, set with no press, with every subject linked. The head leaves 2.4. Both filed pieces close. The delegate sits under the bug, in plain words. |
 | 4 | The delegate calls it "the archive bug", and the person asks for a long extra on the same fix | One piece, not two. The fix links to its milestone, and the pieces the goal does not need link to Other work. |
 | 5 | The coordinator asks whether 2.5 waits for the fix. The ask opens. | ◆ on 2.5 only. Its text does not restate the question. |
-| Look | The person answers in the inbox, and reads the page | No call. The ask closes, and the Seen line moves. |
+| Look | The person answers in the inbox, and reads the page | No call. The ask closes, and the New and Earlier headings move. |
 | 8 | The coordinator records a flaky test elsewhere as a finding | No subject for it, and nothing moves |
 | 9 | The fix's PR opens, and a reviewer subagent starts | Checkpoint. No new "PR" piece. The text says the state of the fix. The reviewer sits under the fix. |
 | 10 | The PR merges, and 2.5 prep starts | The fix and its milestone close. The head's title leaves the fix. |

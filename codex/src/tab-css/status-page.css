@@ -83,17 +83,20 @@
   width: calc(var(--text-x) - var(--tree-x) - var(--arm-gap));
   border-top: 1px solid var(--tree-line);
 }
-/* "Last seen" in the middle of a dashed rule that spans what the rule above a row spans: from the text column to the tab's edge. */
-.status-page .row.look-line {
+/* A heading's text, then a solid rule to the tab's edge, from the text column at the row's depth, as the rule above a row spans. */
+.status-page .row.heading-line {
   padding-left: 0;
   padding-right: 0;
   margin-top: var(--look-gap);
   margin-bottom: var(--look-gap);
 }
-.status-page .row.look-line.last {
+.status-page .row.heading-line.first {
+  margin-top: 0;
+}
+.status-page .row.heading-line.last {
   margin-bottom: 0;
 }
-.status-page .look-rule {
+.status-page .heading-rule {
   grid-column: 1 / -1;
   display: flex;
   flex-direction: row;
@@ -106,14 +109,13 @@
   background: var(--soft);
 }
 .status-page .status-rule,
-.status-page .look-rule {
+.status-page .heading-rule {
   margin-left: calc(var(--text-x) + var(--depth, 0) * var(--step));
 }
-.status-page .look-rule::before,
-.status-page .look-rule::after {
+.status-page .heading-rule::after {
   content: '';
   flex: 1;
-  border-top: 1px dashed var(--soft);
+  border-top: 1px solid var(--soft);
 }
 .status-head h1 {
   margin: 0;

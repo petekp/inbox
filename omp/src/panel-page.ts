@@ -1,14 +1,7 @@
 import { cellWidth, cutForEllipsis } from '../../hooks/text'
 import { statusKeyPlan } from '../../hooks/status-keys'
 import type { StatusKeyTarget } from '../../hooks/status-keys'
-import {
-  mergedLine,
-  nameBeforeStall,
-  STATUS_TEXT_LINES,
-  STALL_GAP,
-  WAS_PREFIX,
-  LOOK_DASH,
-} from '../../hooks/status-page'
+import { mergedLine, nameBeforeStall, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
 import type { StatusBranch, StatusRow, StatusStall } from '../../hooks/status-page'
 import { faceLines, feedbackPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
@@ -126,17 +119,20 @@ export function pageRule(width: number, s: Style): string {
 }
 
 /**
- * The look line: "Last seen" in the middle of a dashed rule that spans what `pageRule` spans, with a blank line above
- * it, and below it unless it ends the list.
+ * A heading over the rows that changed since the last look, or over the rows after them: its text, then a solid rule to
+ * where `pageRule` ends, at the row's depth, with a blank line above it unless it starts the list, and below it unless
+ * it ends the list. Text too wide for a rule beside it wraps with no rule.
  */
-function lookLines(row: StatusRow & { kind: 'look' }, width: number, s: Style): string[] {
-  const text = ` ${row.text} `
+function headingLines(row: StatusRow & { kind: 'heading' }, width: number, s: Style): string[] {
   const at = markAt(row.depth) + PAGE_TEXT_AT - PAGE_MARK_AT
-  const fill = Math.max(4, pageRuleCells(width, at) - cellWidth(text))
-  const before = Math.floor(fill / 2)
-  const rule = `${' '.repeat(at)}${s.dim(`${LOOK_DASH.repeat(before)}${text}${LOOK_DASH.repeat(fill - before)}`)}`
+  const cells = pageRuleCells(width, at)
+  const fill = cells - cellWidth(row.text) - 1
+  const heading =
+    fill > 0
+      ? [`${' '.repeat(at)}${s.dim(`${row.text} ${'─'.repeat(fill)}`)}`]
+      : wrapText(row.text, Math.max(1, cells)).map(l => `${' '.repeat(at)}${s.dim(l)}`)
 
-  return ['', rule, ...(row.isLast ? [] : [''])]
+  return [...(row.hasSpaceAbove ? [''] : []), ...heading, ...(row.isLast ? [] : [''])]
 }
 
 /**
@@ -206,7 +202,7 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
       ? pageLine(d, at, s.tone('accent', chevron), row.text, s.bold)
       : pageLine(d, at, s.dim(chevron), row.text, s.dim)
   }
-  if (row.kind === 'look') return lookLines(row, width, s)
+  if (row.kind === 'heading') return headingLines(row, width, s)
   if (row.kind === 'part') return ['', partHeading(row.text, width, s)]
   if (row.kind === 'counts') return countLines(row.counts, textAt, width, s)
   return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim)

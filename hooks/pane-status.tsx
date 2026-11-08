@@ -1,5 +1,4 @@
 import type { UiPressArgument } from 'claude-code'
-import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
 import { foldKey } from './fold-keys'
 import { LOOK_GAP_PT } from './layout'
 import type { PaneAskTabs } from './pane-asks'
@@ -11,8 +10,6 @@ import type { PaneRowLines } from './pane-row-lines'
 import type { PaneRowParts } from './pane-row-parts'
 import {
   DESKTOP_CELL_PT,
-  DESKTOP_DASH_GAP_PT,
-  DESKTOP_DASH_PT,
   DESKTOP_HAIR_LINES,
   DESKTOP_LINE_PT,
   DESKTOP_MARK_CELLS,
@@ -35,15 +32,7 @@ import {
 import type { Drawn, RowTop } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from './status-keys'
-import {
-  LOOK_DASH,
-  mergedLine,
-  seenSubjectIds,
-  STALL_GAP,
-  type StatusCount,
-  type StatusRow,
-  WAS_PREFIX,
-} from './status-page'
+import { mergedLine, seenSubjectIds, STALL_GAP, type StatusCount, type StatusRow, WAS_PREFIX } from './status-page'
 import { unfoldedRows } from './status-page-parts'
 import { SELECTION_BAR } from './terminal-text'
 import { cellWidth } from './text'
@@ -165,23 +154,6 @@ export function paneStatus(
   })
   /** A line of text that never wraps, in a Box padded by a frame's edge above and below, as a frame's text sits. */
   const desktopEdgedLine = 1 + 2 * desktopSpaceLines(statusFrameEdge)
-  /**
-   * A dashed 1 pt line on desktop, about `cells` wide: dashes that grow to share the room, so the line fills it at any
-   * width. Desktop has no dashed border, and a run of a dash glyph wraps.
-   */
-  const desktopDashes = (key: string, cells: number) => {
-    const count = Math.max(1, Math.round((cells * DESKTOP_CELL_PT) / (DESKTOP_DASH_PT + DESKTOP_DASH_GAP_PT)))
-    const dashes = Array.from({ length: count }, (_, n) => [
-      ...(n > 0 ? [<Box key={`dash-gap-${n}`} width={DESKTOP_DASH_GAP_PT / DESKTOP_CELL_PT} flexShrink={0} />] : []),
-      <Box key={`dash-${n}`} flexGrow={1} height={DESKTOP_HAIR_LINES} backgroundColor={pal.divider} />,
-    ]).flat()
-
-    return (
-      <Box key={key} flexGrow={1} flexDirection="row" height={DESKTOP_HAIR_LINES}>
-        {dashes}
-      </Box>
-    )
-  }
   /** The space above a labeled rule. The terminal draws whole lines, so its space is a blank line. */
   const gap = (key: string) =>
     oneLine(
@@ -189,34 +161,44 @@ export function paneStatus(
       LOOK_GAP_PT / DESKTOP_LINE_PT,
     )
   /**
-   * The look line: "Last seen" in the middle of a dashed rule that spans what the rule above a row spans, with space
-   * above it, and below it unless it ends the list. At `depth` it starts that many steps in, as the rows beside it do.
+   * A heading over the rows that changed since the last look, or over the rows after them: space above it unless it
+   * starts the list, its text, then a solid rule to the end of the list's columns, and space below it unless it ends the
+   * list. At `depth` it starts
+   * that many steps in, as the rows under it do. In the terminal, text too wide for a rule beside it draws alone and
+   * may wrap.
    */
-  const statusLookLine = (id: string, text: string, isLast: boolean, depth: number) => {
-    const label = ` ${text} `
-    const fill = Math.max(4, statusRuleCells - markWidth * depth - cellWidth(label))
-    const before = Math.floor(fill / 2)
-    const desktopLeft = desktopStatusRuleLeft + DESKTOP_MARK_CELLS * 2 * depth
-    const ruleCells = (listColumns - desktopLeft - 2 - text.length / DESKTOP_CHARS_PER_CELL) / 2
-    // On desktop it sits outside a frame, whose border would inset the rule's right end, so the padding stands in for
-    // the frame's.
-    const rule =
-      look === 'desktop' ? (
-        <Box flexDirection="row" alignItems="center" marginLeft={desktopLeft} paddingY={statusFrameEdge}>
-          {desktopDashes('look-before', ruleCells)}
-          <Box flexShrink={0} paddingX={1}>
-            <Text color={pal.muted}>{text}</Text>
-          </Box>
-          {desktopDashes('look-after', ruleCells)}
-        </Box>
-      ) : (
-        <Box flexDirection="row">
-          <Box width={statusRuleAt + markWidth * depth} flexShrink={0} />
-          <Text color={pal.divider}>{`${LOOK_DASH.repeat(before)}${label}${LOOK_DASH.repeat(fill - before)}`}</Text>
-        </Box>
-      )
-
-    const parts = [gap('look-above'), oneLine(rule, desktopEdgedLine), ...(isLast ? [] : [gap('look-below')])]
+  const statusHeadingLine = (id: string, text: string, hasSpaceAbove: boolean, isLast: boolean, depth: number) => {
+    const cells = statusRuleCells - markWidth * depth
+    const fill = cells - cellWidth(text) - 1
+    const line: Drawn =
+      look === 'desktop'
+        ? oneLine(
+            <Box
+              flexDirection="row"
+              alignItems="center"
+              marginLeft={desktopStatusRuleLeft + DESKTOP_MARK_CELLS * 2 * depth}
+              paddingY={statusFrameEdge}
+            >
+              <Box flexShrink={0} paddingRight={1}>
+                <Text color={pal.muted}>{text}</Text>
+              </Box>
+              <Box flexGrow={1} height={DESKTOP_HAIR_LINES} backgroundColor={pal.divider} />
+            </Box>,
+            desktopEdgedLine,
+          )
+        : {
+            el: (
+              <Box flexDirection="row">
+                <Box width={statusRuleAt + markWidth * depth} flexShrink={0} />
+                <Box width={fill > 0 ? cellWidth(text) : cells} flexShrink={0}>
+                  <Text color={pal.muted}>{text}</Text>
+                </Box>
+                {fill > 0 ? <Text color={pal.divider}>{` ${'─'.repeat(fill)}`}</Text> : null}
+              </Box>
+            ),
+            lines: fill > 0 ? exactly(1) : inkLines(text, cells),
+          }
+    const parts = [...(hasSpaceAbove ? [gap('heading-above')] : []), line, ...(isLast ? [] : [gap('heading-below')])]
 
     return stackedIn(
       <Box key={`status-${id}`} flexDirection="column">
@@ -481,7 +463,7 @@ export function paneStatus(
             isFold: true,
           })
     }
-    if (r.kind === 'look') return statusLookLine(r.id, r.text, r.isLast, r.depth)
+    if (r.kind === 'heading') return statusHeadingLine(r.id, r.text, r.hasSpaceAbove, r.isLast, r.depth)
     if (r.kind === 'part') return statusPartLine(r.id, r.text)
     if (r.kind === 'counts')
       return statusRowLine({

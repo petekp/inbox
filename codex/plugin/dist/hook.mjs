@@ -1244,6 +1244,9 @@ function goalPage(o, items) {
 // ../hooks/status-page-parts.ts
 var CHILD_ROWS = 3;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
+var NEW_TEXT = "New";
+var newSinceText = (agoText) => `New since you looked ${agoText}`;
+var EARLIER_TEXT = "Earlier";
 var COUNT_WORDS = {
   working: "working",
   "waits-on-other": "waiting",
@@ -1287,12 +1290,16 @@ function childRow(c, branch, depth) {
   };
 }
 function partRows(shown, c, depth, afterNew = []) {
-  const rows = [];
-  const lookRow = c.lookId === null ? null : { kind: "look", id: c.lookId, depth, text: c.lookText };
   const firstSeen = shown.findIndex((x) => !c.isNew(x));
+  const isEveryShownNew = firstSeen === -1;
+  const hasNew = shown.length > 0 && firstSeen !== 0;
+  const hasRowsAfterNew = !isEveryShownNew || c.hasRowsAfter;
+  const ids = hasNew && (hasRowsAfterNew || c.isNewHeadingAlone) ? c.headingIds : null;
+  const earlierRow = ids && hasRowsAfterNew ? [{ kind: "heading", id: ids.earlier, depth, text: EARLIER_TEXT, hasSpaceAbove: true }] : [];
+  const rows = ids ? [{ kind: "heading", id: ids.new, depth, text: NEW_TEXT, hasSpaceAbove: true }] : [];
   for (const [i, x] of shown.entries()) {
     const hasNewAbove = i > 0;
-    if (i === firstSeen && hasNewAbove) rows.push(...afterNew, ...lookRow ? [lookRow] : []);
+    if (i === firstSeen && hasNewAbove) rows.push(...afterNew, ...earlierRow);
     const under = c.running.filter((ch) => ch.subjectId === x.id);
     const shownUnder = under.slice(0, CHILD_ROWS);
     const isMore = under.length > CHILD_ROWS;
@@ -1327,14 +1334,12 @@ function partRows(shown, c, depth, afterNew = []) {
         branch: "last"
       });
   }
-  const isEveryShownNew = firstSeen === -1;
-  if (isEveryShownNew) rows.push(...afterNew);
-  if (lookRow && c.isLookAtEnd && isEveryShownNew && shown.length > 0) rows.push(lookRow);
+  if (isEveryShownNew) rows.push(...afterNew, ...earlierRow);
   return rows;
 }
 function isItemAfterItem(row, prev) {
   const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
-  const isLine = (r) => r.kind === "look" || r.kind === "part";
+  const isLine = (r) => r.kind === "heading" || r.kind === "part";
   return prev !== void 0 && !isLine(prev) && !isLine(row) && !isUnderSubject;
 }
 function ruledRows(rows, isRuled) {
@@ -1347,7 +1352,6 @@ function ruledRows(rows, isRuled) {
 
 // ../hooks/status-page.ts
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
-var LOOK_TEXT = "Last seen";
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
 var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
@@ -1407,12 +1411,12 @@ function statusPage(s, now) {
     running,
     isTurnRunning: s.presence.isTurnRunning,
     now,
-    lookId: look === null ? null : "look",
-    lookText: LOOK_TEXT,
-    isLookAtEnd: true
+    headingIds: null,
+    hasRowsAfter: false,
+    isNewHeadingAlone: true
   };
-  const lookId = (id) => look === null ? null : id;
-  const foldCtx = { ...ctx, lookId: null, running: [] };
+  const headingIds = (prefix) => look === null ? null : { new: `${prefix}new`, earlier: `${prefix}earlier` };
+  const foldCtx = { ...ctx, running: [] };
   const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
     const closed = named.filter((x) => x.status === status);
     const names = closed.map((x) => x.name);
@@ -1429,10 +1433,6 @@ function statusPage(s, now) {
       }
     ];
   });
-  const rows = [
-    ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
-    ...partRows(top.shown, ctx, 0, namedFolds("", top.named, 0))
-  ];
   const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
     {
       kind: "done-fold",
@@ -1455,60 +1455,77 @@ function statusPage(s, now) {
     ] : [],
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
   ];
-  rows.push(...foldRows("", top, 0));
+  const topFolds = foldRows("", top, 0);
+  const rows = [
+    ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
+    ...partRows(
+      top.shown,
+      { ...ctx, headingIds: headingIds(""), hasRowsAfter: topFolds.length > 0 },
+      0,
+      namedFolds("", top.named, 0)
+    ),
+    ...topFolds
+  ];
   if (otherShown.length > 0 || otherFolded.length > 0) {
-    if (rows.at(-1)?.kind === "look") rows.pop();
-    rows.push({ kind: "part", id: "other", depth: 0, text: OTHER_WORK });
-    rows.push(
-      ...partRows(
-        otherShown,
-        { ...ctx, lookId: lookId("other-look") },
-        0,
-        namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)
-      )
-    );
     const otherFoldedOpen = otherFolded.filter(isOpen);
-    if (otherFoldedOpen.length > 0)
-      rows.push({ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFoldedOpen) });
-    rows.push(
+    const otherFolds = [
+      ...otherFoldedOpen.length > 0 ? [{ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFoldedOpen) }] : [],
       ...doneFold(
         "other-",
         otherFolded.filter((x) => x.status === "done"),
         otherNewClosed,
         0
       )
+    ];
+    rows.push(
+      { kind: "part", id: "other", depth: 0, text: OTHER_WORK },
+      ...partRows(
+        otherShown,
+        { ...ctx, headingIds: headingIds("other-"), hasRowsAfter: otherFolds.length > 0 },
+        0,
+        namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)
+      ),
+      ...otherFolds
     );
   }
-  const milestoneRows = (id, p) => ruledRows(
-    [
-      ...partRows(
-        p.shown,
-        { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false },
-        1,
-        namedFolds(`${id}-`, p.named, 1)
-      ),
-      ...foldRows(`${id}-`, p, 1)
-    ],
-    false
-  );
-  const g = goalParts.goal;
-  const goal = g && {
-    ...g,
-    milestones: g.milestones.map((m, n) => ({ ...m, rows: milestoneRows(m.id, underMilestones[n]) }))
+  const milestoneRows = (id, p) => {
+    const folds = foldRows(`${id}-`, p, 1);
+    const parts = { headingIds: headingIds(`${id}-`), hasRowsAfter: folds.length > 0, isNewHeadingAlone: false };
+    return ruledRows([...partRows(p.shown, { ...ctx, ...parts }, 1, namedFolds(`${id}-`, p.named, 1)), ...folds], false);
   };
+  const g = goalParts.goal;
+  const sinceText = look === null ? NEW_TEXT : newSinceText(ago(now - look));
+  const [milestones, listRows] = withSinceOnFirstNew(
+    (g?.milestones ?? []).map((m, n) => milestoneRows(m.id, underMilestones[n])),
+    ruledRows(rows, true),
+    sinceText
+  );
+  const goal = g && { ...g, milestones: g.milestones.map((m, n) => ({ ...m, rows: milestones[n] })) };
   const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
     isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
     ...goalParts,
     goal,
-    rows: ruledRows(rows, true),
+    rows: listRows,
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: "Status",
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
     }
   };
+}
+function withSinceOnFirstNew(milestones, rows, sinceText) {
+  let isSaid = false;
+  const said = (list) => list.map((r) => {
+    if (isSaid || r.kind !== "heading" || r.text !== NEW_TEXT) return r;
+    isSaid = true;
+    return { ...r, text: sinceText };
+  });
+  const saidMilestones = milestones.map(said);
+  const [first, ...rest] = said(rows);
+  const startsList = first?.kind === "heading" ? { ...first, hasSpaceAbove: false } : first;
+  return [saidMilestones, startsList ? [startsList, ...rest] : []];
 }
 
 // ../hooks/timing.ts
