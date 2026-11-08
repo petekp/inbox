@@ -257,6 +257,7 @@ import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } fro
 import { noteStatusDrawn, takeShownRows } from './pane-status-shown'
 import { desktopSpaceLines } from './pane-status-tops'
 import { changeSaved, isLastSaveRefused, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
+import { runningSessions } from './running-sessions'
 import { paneAskRows, paneAskTabs } from './pane-asks'
 import { paneRowKeys } from './pane-row-keys'
 import { paneRowLines } from './pane-row-lines'
@@ -603,7 +604,7 @@ async function changeSession(
   throw new Error('The session kept changing under this write.')
 }
 
-/** The store, clock and debug log calls that `hooks/mod-saves.ts` makes. */
+/** The store, clock, debug log and running-conversation calls that `hooks/mod-saves.ts` makes. */
 function saveEngine($: EngineInterface): SaveEngine {
   return {
     store: {
@@ -616,6 +617,14 @@ function saveEngine($: EngineInterface): SaveEngine {
     now: () => $.clock.now(),
     after: (ms, fn) => $.clock.after(ms, fn),
     log: text => $.ui.log(text, { to: 'debug' }),
+    runningSessions: () =>
+      runningSessions({
+        configFolder: () => configFolder($),
+        sessionId: () => $.session.id(),
+        list: folder => $.fs.list(folder),
+        read: path => $.fs.read(path),
+        run: (argv, init) => $.process.run(argv, init),
+      }).catch(() => null),
   }
 }
 
@@ -649,10 +658,16 @@ function recordFiles($: EngineInterface): RecordFiles {
   }
 }
 
+/** Claude Code's configuration folder: `CLAUDE_CONFIG_DIR`, else `~/.claude`. */
+async function configFolder($: EngineInterface): Promise<string | null> {
+  const home = await $.env.get('HOME')
+
+  return (await $.env.get('CLAUDE_CONFIG_DIR')) || (home ? `${home}/.claude` : null)
+}
+
 /** The folder a next build keeps its Status call records in, under Claude Code's configuration folder. */
 async function recordsFolder($: EngineInterface): Promise<string | null> {
-  const home = await $.env.get('HOME')
-  const config = (await $.env.get('CLAUDE_CONFIG_DIR')) || (home ? `${home}/.claude` : null)
+  const config = await configFolder($)
 
   return config ? `${config}/plugins/data/inbox/overview-calls` : null
 }

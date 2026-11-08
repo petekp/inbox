@@ -52,6 +52,10 @@ class World {
 
   files: string[] = []
 
+  sessionFiles: { pid: number; sessionId: string }[] | undefined
+  endedPids: number[] = []
+  isPsMissing = false
+
   copied: string[] = []
   toasts: string[] = []
 
@@ -77,6 +81,21 @@ class World {
 }
 
 export const w = new World()
+
+const CONFIG_DIR = '/tmp/claude-config'
+
+const sessionFiles = () => w.sessionFiles ?? [{ pid: 100, sessionId: w.sessionId }]
+
+function psAnswer(argv: readonly string[]) {
+  const live = (argv[2] ?? '').split(',').filter(pid => !w.endedPids.includes(Number(pid)))
+  return {
+    exitCode: live.length > 0 ? 0 : 1,
+    stdout: live.map(pid => `  ${pid}\n`).join(''),
+    stderr: '',
+    isStdoutTruncated: false,
+    isStderrTruncated: false,
+  }
+}
 
 type GhAnswer = World['ghAnswers'][number]
 
@@ -236,6 +255,9 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.sessionId = 'session-1'
   w.surfaces = []
   w.files = []
+  w.sessionFiles = undefined
+  w.endedPids = []
+  w.isPsMissing = false
   w.copied = []
   w.toasts = []
   w.theme = ''
@@ -306,7 +328,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   on('session.id', () => ({ value: w.sessionId }))
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
   on('session.root', () => ({ value: '/tmp/project' }))
-  on('env.get', (_$, e) => ({ value: vars[e.name] }))
+  on('env.get', (_$, e) => ({ value: e.name in vars || e.name !== 'CLAUDE_CONFIG_DIR' ? vars[e.name] : CONFIG_DIR }))
   on('command.register', (_$, e) => (w.commandRefusal ? { deny: w.commandRefusal } : { value: { command: e.name } }))
   on('tool.register', (_$, e) =>
     w.toolRefusal ? { deny: w.toolRefusal } : { value: { tool: `mcp__inbox__${e.name}` } },
@@ -329,12 +351,20 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
     return { value: { isCopied: true as const } }
   })
   on('fs.exists', (_$, e) => ({ value: w.files.some(f => e.path.endsWith(f)) }))
+  on('fs.list', (_$, e) => {
+    if (e.path !== `${CONFIG_DIR}/sessions`) return { deny: `ENOENT: ${e.path}` }
+    const entry = (name: string) => ({ name, kind: 'file' as const, size: 1, mtimeMs: 1, isLink: false })
+    return { value: sessionFiles().flatMap(f => [entry(`${f.pid}.json`), entry(`${f.pid}.key`)]) }
+  })
   on('fs.read', (_$, e) => {
+    const file = sessionFiles().find(f => e.path === `${CONFIG_DIR}/sessions/${f.pid}.json`)
+    if (file) return { value: JSON.stringify({ ...file, cwd: '/tmp/project', status: 'busy', updatedAt: 1 }) }
     if (!e.path.endsWith('/.claude-plugin/plugin.json')) throw new Error(`ENOENT: ${e.path}`)
     return { value: JSON.stringify({ name: 'inbox', version: '1.2.3' }) }
   })
   on('fs.stat', () => ({ value: { kind: 'file' as const, size: 1, mtimeMs: 1, isLink: false } }))
   on('process.run', async (_$, e) => {
+    if (e.argv[0] === 'ps') return w.isPsMissing ? { deny: 'spawn ps ENOENT' } : { value: psAnswer(e.argv) }
     w.ran.push([...e.argv])
     if (w.isGhMissing && e.argv[0] === 'gh') throw new Error('spawn gh ENOENT')
     if (w.slowGhClock && e.argv[0] === 'gh') {
