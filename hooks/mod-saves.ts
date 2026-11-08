@@ -1,4 +1,4 @@
-import type { Session } from '../types'
+import type { PrView, Session } from '../types'
 import { KEPT_SESSIONS } from './ledger'
 import { dropUnreadSharedViews } from './mod-pr-shared'
 import { type Changed, type ModSession, type Owner, type SavedRecord, sessionKey } from './mod-sessions'
@@ -20,27 +20,44 @@ const refusedAsFull = new Set<string>()
 export const SAVED_PR_VIEWS_MAX = 75_000
 
 /**
- * `s` as the store keeps it: its PR views cut to `SAVED_PR_VIEWS_MAX` characters. Merged and closed PRs go first, then
- * the open PRs read longest ago.
+ * A PR's view without its checks and threads, which are nearly all of its size. Its state and `wasSeenOpen` stay, so
+ * a PR that merges before the session loads still settles as merged. With no `fetchedAt`, the next fetch reads an
+ * open or closed PR again.
+ */
+function slimView(view: PrView): PrView {
+  const { fetchedAt: _fetchedAt, ...rest } = view
+
+  return { ...rest, checks: [], threads: [] }
+}
+
+/**
+ * `s` as the store keeps it: its PR views within `SAVED_PR_VIEWS_MAX` characters. Merged and closed PRs give up their
+ * checks and threads first, then the open PRs read longest ago. Only when that is not enough do whole views go, in the
+ * same order.
  */
 function forStore(s: Session): Session {
-  const views = Object.entries(s.prViews.views).map(([ref, view]) => ({ ref, view, size: JSON.stringify(view).length }))
-  let size = views.reduce((n, v) => n + v.size, 0)
+  const views = { ...s.prViews.views }
+  const sizeOf = (view: PrView) => JSON.stringify(view).length
+  let size = Object.values(views).reduce((n, view) => n + sizeOf(view), 0)
   if (size <= SAVED_PR_VIEWS_MAX) return s
-  const firstToGo = [...views].sort(
+  const firstToGo = Object.keys(views).sort(
     (a, b) =>
-      Number(a.view.state === 'OPEN') - Number(b.view.state === 'OPEN') ||
-      (a.view.fetchedAt ?? 0) - (b.view.fetchedAt ?? 0),
+      Number(views[a]!.state === 'OPEN') - Number(views[b]!.state === 'OPEN') ||
+      (views[a]!.fetchedAt ?? 0) - (views[b]!.fetchedAt ?? 0),
   )
-  const dropped = new Set<string>()
-  for (const v of firstToGo) {
+  for (const ref of firstToGo) {
     if (size <= SAVED_PR_VIEWS_MAX) break
-    dropped.add(v.ref)
-    size -= v.size
+    const slim = slimView(views[ref]!)
+    size -= sizeOf(views[ref]!) - sizeOf(slim)
+    views[ref] = slim
   }
-  const kept = views.filter(v => !dropped.has(v.ref)).map(v => [v.ref, v.view] as const)
+  for (const ref of firstToGo) {
+    if (size <= SAVED_PR_VIEWS_MAX) break
+    size -= sizeOf(views[ref]!)
+    delete views[ref]
+  }
 
-  return { ...s, prViews: { ...s.prViews, views: Object.fromEntries(kept) } }
+  return { ...s, prViews: { ...s.prViews, views } }
 }
 
 function track(id: string, write: Promise<void>) {
