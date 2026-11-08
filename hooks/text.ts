@@ -89,8 +89,11 @@ const HANGUL = `(?:${LEADING_JAMO}*(?:${VOWEL_JAMO}+|${OPEN_SYLLABLE}${VOWEL_JAM
 /** Two regional indicators, which draw one flag. A third starts the next flag. */
 const FLAG = String.raw`[\u{1F1E6}-\u{1F1FF}]{2}`
 
-/** What stays with the character before it: combining marks, emoji modifiers, and the tag characters of a flag such as England's. */
-const EXTEND = String.raw`\p{M}\p{Emoji_Modifier}\u{E0020}-\u{E007F}`
+/**
+ * What stays with the character before it: combining marks, emoji modifiers, the tag characters of a flag such as
+ * England's, ZWNJ, the halfwidth katakana voiced marks, and Thai and Lao SARA AM.
+ */
+const EXTEND = String.raw`\p{M}\p{Emoji_Modifier}\u{E0020}-\u{E007F}‌ﾞﾟำຳ`
 
 /**
  * A grapheme where `Intl.Segmenter` is missing, as in Herdr's mod runtime: a flag, a Hangul syllable or one character,

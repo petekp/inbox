@@ -15,6 +15,9 @@ const SAMPLES = [
   '한국어 제목'.normalize('NFD'),
   '한 하ᅡ 한ᅡ',
   'ᅡᆫ and ꥠힰퟋ',
+  'می‌خواهم',
+  'ｶﾞｷﾞ ﾊﾟ',
+  'น้ำ ຄຳ',
 ]
 
 async function loadWithoutIntl(): Promise<typeof withSegmenter> {
