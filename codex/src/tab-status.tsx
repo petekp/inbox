@@ -1,5 +1,5 @@
 import { Icon, RowActions } from './row-actions'
-import { mergedLine, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
+import { mergedLine, seenSubjectIds, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
 import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyPlan, milestoneKeyPlan, statusKeyPlan } from '../../hooks/status-keys'
 import type { MilestoneRow } from '../../hooks/status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT } from '../../hooks/status-goal-page'
@@ -10,7 +10,7 @@ import { closingFolds, drafts, errors, sending, statusUnfolded, tabState } from 
 import type { Key } from './tab-state'
 import { act } from './tab-rows'
 import { NameLine } from './tab-status-name'
-import { SUBJECT_ATTRIBUTE } from './tab-shown'
+import { SUBJECTS_ATTRIBUTE } from './tab-shown'
 import { revealSelected, toggleFold } from './tab-motion'
 import { switchTab, open } from './tab-selection'
 import { tabRows } from './tab-rows'
@@ -77,7 +77,7 @@ function StatusLine({ row }: { row: StatusRow }) {
       <div
         class={row.hasChildren ? 'row has-children' : 'row'}
         style={depthStyle(row)}
-        {...{ [SUBJECT_ATTRIBUTE]: row.id }}
+        {...{ [SUBJECTS_ATTRIBUTE]: row.id }}
       >
         <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
           <MarkGlyph text={row.mark} />
@@ -179,8 +179,14 @@ function StatusLine({ row }: { row: StatusRow }) {
       </div>
     )
 
+  const subjects = seenSubjectIds(row)
+
   return (
-    <div class="row" style={depthStyle(row)}>
+    <div
+      class="row"
+      style={depthStyle(row)}
+      {...(subjects.length > 0 ? { [SUBJECTS_ATTRIBUTE]: subjects.join(' ') } : {})}
+    >
       <span class={markClassOf(row.tone, false)}>
         <MarkGlyph text={row.mark} />
       </span>

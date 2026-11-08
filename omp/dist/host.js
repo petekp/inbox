@@ -3599,6 +3599,7 @@ var STATUS_TEXT_LINES = 3;
 var NEW_CLOSED_ROWS = 2;
 var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
 var NAMED_FOLD_NAMES = 2;
+var IS_FOLD_MORE_SEEN = true;
 var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function mergedLine(merged, fits) {
@@ -3668,7 +3669,8 @@ function statusPage(s, now) {
   const lookId = (id) => look === null ? null : id;
   const foldCtx = { ...ctx, lookId: null, running: [] };
   const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
-    const names = named.filter((x) => x.status === status).map((x) => x.name);
+    const closed = named.filter((x) => x.status === status);
+    const names = closed.map((x) => x.name);
     const hidden = names.length - NAMED_FOLD_NAMES;
     const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []];
     return names.length === 0 ? [] : [
@@ -3677,7 +3679,8 @@ function statusPage(s, now) {
         id: `${prefix}also-${status}`,
         depth,
         ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`
+        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`,
+        subjectIds: (IS_FOLD_MORE_SEEN ? closed : closed.slice(0, NAMED_FOLD_NAMES)).map((x) => x.id)
       }
     ];
   });
@@ -3701,7 +3704,8 @@ function statusPage(s, now) {
         id: `${prefix}open`,
         depth,
         ...SUBJECT_MARKS.queued,
-        text: `${p.foldedOpen.length} more`
+        text: `${p.foldedOpen.length} more`,
+        subjectIds: []
       }
     ] : [],
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
@@ -3739,6 +3743,9 @@ function statusPage(s, now) {
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
     }
   };
+}
+function seenSubjectIds(row) {
+  return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
 }
 function statusListRows(page) {
   return [...(page.goal?.milestones ?? []).flatMap((m) => m.rows), ...page.rows];
@@ -7573,8 +7580,8 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
       if (e.kind === "page" && e.row.isRuledAbove)
         body.push(pageRule(width, style));
       const start = body.length;
-      if (e.kind === "page" && e.row.kind === "subject")
-        subjectAt.push([e.row.id, start]);
+      if (e.kind === "page")
+        subjectAt.push(...seenSubjectIds(e.row).map((id) => [id, start]));
       const id = e.kind === "page" ? e.row.id : goalPartId(e.part);
       const isSelected = id !== null && id === pageSelected?.id;
       body.push(...e.kind === "page" ? drawPageRow(e.row, d, isSelected) : drawGoalPart(e.part, d, isSelected));

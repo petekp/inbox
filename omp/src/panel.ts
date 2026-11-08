@@ -12,6 +12,7 @@ import { shownTabs, isRowTab } from '../../hooks/tabs'
 import { bandCounts, noCountsText } from '../../hooks/band'
 import { footerStatus } from '../../hooks/view'
 import { statusSelected } from '../../hooks/status-keys'
+import { seenSubjectIds } from '../../hooks/status-page'
 import type { Holds } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import { bannerLines, boxed, drawLine, leadPaint, paintMark } from './panel-draw'
@@ -207,7 +208,7 @@ export function drawPanel(
   const pageSelected =
     isRowTab(ui.tab) || ui.typing !== null ? null : statusSelected(screen.view.statusPage, ui.selectedId)
   let pageSelectedAt: number[] | null = null
-  /** The line each Status subject row starts on. */
+  /** The line each subject a Status row stands for starts on. */
   const subjectAt: [string, number][] = []
   for (const e of entries) {
     if (e.kind === 'heading')
@@ -217,7 +218,7 @@ export function drawPanel(
     else if (e.kind === 'page' || e.kind === 'goal') {
       if (e.kind === 'page' && e.row.isRuledAbove) body.push(pageRule(width, style))
       const start = body.length
-      if (e.kind === 'page' && e.row.kind === 'subject') subjectAt.push([e.row.id, start])
+      if (e.kind === 'page') subjectAt.push(...seenSubjectIds(e.row).map(id => [id, start] as [string, number]))
       const id = e.kind === 'page' ? e.row.id : goalPartId(e.part)
       const isSelected = id !== null && id === pageSelected?.id
       body.push(...(e.kind === 'page' ? drawPageRow(e.row, d, isSelected) : drawGoalPart(e.part, d, isSelected)))

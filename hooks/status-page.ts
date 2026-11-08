@@ -78,7 +78,15 @@ export type StatusRowParts = {
    * Rows folded into one line: open rows into a count, as "○ 2 more", or work that closed since the last look past the
    * rows drawn for it, named, as "✓ Also done: Sync merge, Search speed".
    */
-  | { kind: 'fold'; id: string; mark: string; tone: StatusTone; text: string }
+  | {
+      kind: 'fold'
+      id: string
+      mark: string
+      tone: StatusTone
+      text: string
+      /** The work a named fold stands for, which a look that shows it counts as seen. None for the open fold. */
+      subjectIds: string[]
+    }
   /**
    * Seen finished rows folded into a count, as "3 done", or "3 more done" while finished rows still show above it. It
    * draws as the Closed fold does, with no mark. While the person has it unfolded, a look draws its `rows` after it, one
@@ -128,6 +136,8 @@ export const NAMED_FOLD_TEXT = { done: 'Also done: ', dropped: 'Also dropped: ' 
  * dock, so omp, which cuts a row's text past that many lines, shows the whole line there too.
  */
 const NAMED_FOLD_NAMES = 2
+/** Whether a look that shows a named fold counts the work in its "+N more" as seen, as it does the work it names. */
+const IS_FOLD_MORE_SEEN = true
 /** What ends a named fold that holds more names than it shows. */
 export const namedFoldMore = (n: number) => `+${n} more`
 
@@ -248,7 +258,8 @@ export function statusPage(
   /** A part's closed work past its rows that the person has not seen, named in one fold for each closed status. */
   const namedFolds = (prefix: string, named: Subject[], depth: number): StatusRowParts[] =>
     (['done', 'dropped'] as const).flatMap(status => {
-      const names = named.filter(x => x.status === status).map(x => x.name)
+      const closed = named.filter(x => x.status === status)
+      const names = closed.map(x => x.name)
       const hidden = names.length - NAMED_FOLD_NAMES
       const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...(hidden > 0 ? [namedFoldMore(hidden)] : [])]
       return names.length === 0
@@ -260,6 +271,7 @@ export function statusPage(
               depth,
               ...SUBJECT_MARKS[status],
               text: `${NAMED_FOLD_TEXT[status]}${shown.join(', ')}`,
+              subjectIds: (IS_FOLD_MORE_SEEN ? closed : closed.slice(0, NAMED_FOLD_NAMES)).map(x => x.id),
             },
           ]
     })
@@ -293,6 +305,7 @@ export function statusPage(
             depth,
             ...SUBJECT_MARKS.queued,
             text: `${p.foldedOpen.length} more`,
+            subjectIds: [],
           },
         ]
       : []),
@@ -356,6 +369,11 @@ export function statusPage(
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts.",
     },
   }
+}
+
+/** The subjects a look counts as seen while `row` is on screen. */
+export function seenSubjectIds(row: StatusRow): string[] {
+  return row.kind === 'subject' ? [row.id] : row.kind === 'fold' ? row.subjectIds : []
 }
 
 /** Every row of the Status's list in the order the looks draw them: each milestone's rows, then the list after the goal. */
