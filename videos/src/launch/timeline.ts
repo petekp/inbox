@@ -1,7 +1,7 @@
 // The launch video's beats, from the shot list in docs/plans/launch-video.md: each beat's length, its caption,
 // and what the screen shows from which second.
 
-import { EXIT_MS } from '../../../codex/src/rows'
+import { EXIT_MS } from '../../../hooks/row-motion'
 import { SETTLED_MS } from '../../../hooks/timing'
 import type { RowLines } from '../shared/EndCard'
 import type { CameraMove, Point, Rect } from '../shared/geometry'
