@@ -221,7 +221,19 @@ function clip(text2, max) {
 function clipLabel(text2, max) {
   return text2.length > max ? `${text2.slice(0, max - 1)}\u2026` : text2;
 }
-var graphemes = new Intl.Segmenter(void 0, { granularity: "grapheme" });
+var segmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter(void 0, { granularity: "grapheme" }) : null;
+var LEADING_JAMO = String.raw`[\u1100-\u115F\uA960-\uA97C]`;
+var VOWEL_JAMO = String.raw`[\u1160-\u11A7\uD7B0-\uD7C6]`;
+var TRAILING_JAMO = String.raw`[\u11A8-\u11FF\uD7CB-\uD7FB]`;
+var SYLLABLE = String.raw`[\uAC00-\uD7A3]`;
+var OPEN_SYLLABLE = `[${Array.from({ length: 19 * 21 }, (_, i) => String.fromCharCode(44032 + i * 28)).join("")}]`;
+var HANGUL = `(?:${LEADING_JAMO}*(?:${VOWEL_JAMO}+|${OPEN_SYLLABLE}${VOWEL_JAMO}*|${SYLLABLE})${TRAILING_JAMO}*|${LEADING_JAMO}+|${TRAILING_JAMO}+)`;
+var FLAG = String.raw`[\u{1F1E6}-\u{1F1FF}]{2}`;
+var EXTEND = String.raw`\p{M}\p{Emoji_Modifier}\u{E0020}-\u{E007F}‌ﾞﾟำຳ`;
+var GRAPHEME = new RegExp(
+  String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^${EXTEND}\u200D])(?:[${EXTEND}]|\u200D[^${EXTEND}\u200D]?)*`,
+  "gu"
+);
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
 function duration(ms) {
   const min = Math.max(1, Math.round(ms / 6e4));
@@ -3467,6 +3479,7 @@ function herdrReporter() {
   };
   return reportToHerdr;
 }
+var SESSION_FIELDS = Object.keys(emptySession());
 
 // src/host.ts
 function codexStore(dir, sessionId, now, onWrite) {

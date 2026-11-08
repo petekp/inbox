@@ -1,7 +1,7 @@
 import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import { BANNER_GAP_PT, BANNER_PAD_Y_PT, LOOK_GAP_PT, STATUS_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
-import { ENTER_MS, EXIT_MS, isMoving, MOVE_MS, ROW_STATE_MS } from './rows'
-import type { RowState } from './rows'
+import { ENTER_MS, EXIT_MS, isMoving, MOVE_MS, ROW_STATE_MS } from '../../hooks/row-motion'
+import type { RowState } from '../../hooks/row-motion'
 import { tabState, sending, entering, closingFolds, drawnRows, root, animations } from './tab-state'
 import { later, cancelTimer } from './tab-host'
 
