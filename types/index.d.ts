@@ -702,13 +702,6 @@ export type Session = {
 }
 
 declare module 'claude-code' {
-  /**
-   * The inbox's `order_prs` call, as `hooks/tools.ts:ORDER_SCHEMA` gives it. A session writes the MCP tool types only
-   * for the tools it had connected, so an older build's session leaves this one out.
-   */
-  interface McpToolInputs {
-    mcp__inbox__order_prs: { repo?: string; numbers: number[]; label?: string; why?: string }
-  }
   interface PluginState {
     inbox: {
       /** The Claude Code theme in use, such as `dark` or `light-ansi`; '' until read. */
@@ -768,6 +761,39 @@ declare module 'claude-code' {
       lastActions: Record<string, LastAction>
       sent: SentPrompt[]
       untrackedSent: { sessionId: string; text: string }[]
+    }
+  }
+}
+
+// Built by scripts/build-tool-inputs.mjs from the schemas in hooks/tools.ts. Edit a schema, then run it and
+// scripts/build-types.mjs.
+
+declare module 'claude-code' {
+  /** The arguments of the agent's tools, as their schemas in `hooks/tools.ts` give them. */
+  interface McpToolInputs {
+    mcp__inbox__record: {
+      kind: 'question' | 'task' | 'finding'
+      ask?: string
+      options?: string[]
+      rec?: string
+      why?: string
+      steps?: string[]
+      design_choice?: boolean
+      finding_kind?: 'issue' | 'opportunity'
+      title?: string
+      detail?: string
+      path?: string
+    }
+    mcp__inbox__close: {
+      id: string
+      answer?: string
+      reason?: string
+    }
+    mcp__inbox__order_prs: {
+      repo?: string
+      numbers: number[]
+      label?: string
+      why?: string
     }
   }
 }
