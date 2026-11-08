@@ -5525,7 +5525,8 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map((s) => s.name).join(", ")}` : null,
-      recLine: state.is === "open" ? recLineOf(row.item) : null
+      recLine: state.is === "open" ? recLineOf(row.item) : null,
+      contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
   };
   const itemRow = (item) => {
@@ -6896,6 +6897,9 @@ function drawLine(line, isSelected, d) {
   if (line.settled || isShut(line, ui))
     return out;
   const indent = (line.lead === null ? UNLED_INDENT : INDENT) + pad;
+  const contextLine = isSelected ? line.row?.contextLine : null;
+  if (contextLine)
+    out.push(...indented(contextLine, indent, width, Infinity, s.dim));
   const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null;
   if (holdsUp)
     out.push(fit(`${" ".repeat(indent)}${s.tone(HELD_MARK.tone, HELD_MARK.mark)} ${s.dim(holdsUp)}`, width));
@@ -8005,6 +8009,7 @@ function demoView(now, agent) {
           label: "1",
           from: "update",
           ask: "Dismiss a glance with a pinch, or a flick of the wrist?",
+          context: "A glance stays up until it times out, and testers asked for a way to clear it sooner.",
           options: ["Pinch", "Flick"],
           rec: "Pinch",
           recReason: "a flick fires by accident while walking",
@@ -8446,6 +8451,7 @@ var CLIENTS = {
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
       "asks-rec-reason-line": { kind: "full" },
+      "asks-context-line": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
       "ran-call-activity": { kind: "full" },
       "ran-call-delegates": { kind: "full" },
@@ -8549,6 +8555,7 @@ var CLIENTS = {
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
       "asks-rec-reason-line": { kind: "full" },
+      "asks-context-line": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
       "ran-call-activity": {
         kind: "different",
@@ -8652,6 +8659,7 @@ var CLIENTS = {
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
       "asks-rec-reason-line": { kind: "full" },
+      "asks-context-line": { kind: "full" },
       "status-mid-turn-refresh": { kind: "full" },
       "ran-call-activity": { kind: "full" },
       "ran-call-delegates": { kind: "full" },

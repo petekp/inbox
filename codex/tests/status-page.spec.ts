@@ -23,7 +23,7 @@ const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Status page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes, while a release build’s view draws Asks for it, only a next build names on an Asks row the subject it holds up, and a proposed goal, a set goal with Edit on its heading row, its count after its text, its Now line and the field Edit opens draw in place', async context => {
+test('the Codex tab draws the Status page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes and draws the ask’s context first under its title, while a release build’s view draws Asks for it, only a next build names on an Asks row the subject it holds up, and a proposed goal, a set goal with Edit on its heading row, its count after its text, its Now line and the field Edit opens draw in place', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const now = Date.now()
   const state = emptyState('overview')
@@ -31,7 +31,7 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
   const asked = recordItem(
     CODEX,
     EMPTY,
-    { kind: 'question', ask: 'Which label?', options: ['Tab', 'Page'] },
+    { kind: 'question', ask: 'Which label?', context: 'The new tab needs a one-word name.', options: ['Tab', 'Page'] },
     now,
   ).ledger
   const shownStatus = {
@@ -211,6 +211,11 @@ test('the Codex tab draws the Status page from a next build’s view, and new ro
     ;(root.querySelector('main.status-page .list .actions button') as HTMLElement).click()
     assert.equal(shownTab(), 'Asks1')
     assert.match(root.querySelector('.row.selected')?.textContent ?? '', /Which label\?/)
+    assert.deepEqual(
+      [...(root.querySelector('.row.selected .line')?.children ?? [])].map(c => c.className),
+      ['text', 'context-line', 'holds-up'],
+    )
+    assert.equal(root.querySelector('.row.selected .context-line')?.textContent, 'The new tab needs a one-word name.')
     key('1')
     assert.equal(shownTab(), 'Status')
 

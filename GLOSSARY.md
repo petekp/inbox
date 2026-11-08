@@ -17,6 +17,18 @@ _Avoid_: Needs you, waiting
 Something the agent asked that only the person can answer.
 _Avoid_: decide, decision
 
+**Context**:
+Why the agent asked a question, in at most 20 words, from the `context` the
+agent gave when it recorded the question. The question's row draws it first
+under its title while the row is selected.
+_Avoid_: background, body
+
+**Option note**:
+What picking one of a question's options does, in at most 12 words. The agent
+gives one for each option when it records the question, and a dialog's option
+descriptions fill in where it gave none. The selected row draws each one beside
+its option's name. Stored as `Item.optionDescriptions`.
+
 **Design choice**:
 A question whose options the agent could try and show side by side, such as
 two layouts. The agent marks it when it records the question, and the inbox

@@ -177,6 +177,7 @@ export function ListRow({
           {row.meta ? <span class="meta">{row.meta}</span> : null}
           {after(drawn, closed ? ' open-only' : '')}
           {closed ? after(closed, ' closed-only') : null}
+          {row.context ? <span class="context-line">{row.context}</span> : null}
           {row.holdsUp ? (
             <span class="holds-up">
               <span class="tone-needsYou">{HELD_MARK.mark}</span> {row.holdsUp}

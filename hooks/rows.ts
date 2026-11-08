@@ -149,6 +149,11 @@ export type RowView = {
   holdsUpLine: string | null
   /** "Why", the recommended option and the agent's reason for it, on a question whose record gave one. */
   recLine: string | null
+  /**
+   * Why the agent asked, on an open question whose record gave a context. A look draws it whole, first under the
+   * title, on the selected row only.
+   */
+  contextLine: string | null
 }
 
 export function recLineOf(item: Item | null): string | null {
