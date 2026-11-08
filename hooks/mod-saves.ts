@@ -1,24 +1,18 @@
 import type { Session } from '../types'
 import { KEPT_SESSIONS } from './ledger'
+import { dropUnreadSharedViews } from './mod-pr-shared'
 import { type Changed, type ModSession, type Owner, type SavedRecord, sessionKey } from './mod-sessions'
 import { sessionState } from './mod-state'
+import { isLockHeld, isStoreFull, whileLockHeld } from './mod-store'
 import { emptySession, upgradeSession } from './session-files'
 import { pruned } from './session-presses'
 import { SESSION_VERSION } from './session-version'
 
-/**
- * What the engine's store throws when another process holds the lock on its file. Only `set` and `delete` take the
- * lock, and the engine retries it for under a second before throwing.
- */
-const LOCK_HELD = 'Lock file is already being held'
-/** The waits before each retry of a store write that met a held lock, about two seconds in all. */
-const LOCK_RETRY_WAITS_MS = [100, 200, 300, 500, 900]
-
-const isLockHeld = (error: unknown) => error instanceof Error && error.message.includes(LOCK_HELD)
-
 const savesBySession = new Map<string, Promise<void>>()
 const prunedSaves = new Set<string>()
 const savedRevisions = new Map<string, number>()
+/** The conversations whose last save the store refused as full, so the drawn session is newer than the saved one. */
+const refusedAsFull = new Set<string>()
 
 function track(id: string, write: Promise<void>) {
   savesBySession.set(id, write)
@@ -91,7 +85,26 @@ async function sessionToChange(e: SaveEngine, id: string) {
 }
 
 function writeSaved(e: SaveEngine, id: string, savedAt: number, s: Session) {
-  return e.store.set(sessionKey(id), { version: SESSION_VERSION, savedAt, ...s })
+  return setMakingRoom(e, sessionKey(id), { version: SESSION_VERSION, savedAt, ...s }, write => write())
+}
+
+/**
+ * Sets `key` through `tries`. When the store refuses the set as full, drops the shared PR views no fetch reads and
+ * tries once more.
+ */
+async function setMakingRoom(
+  e: SaveEngine,
+  key: string,
+  value: unknown,
+  tries: (write: () => Promise<void>) => Promise<void>,
+) {
+  const set = () => tries(() => e.store.set(key, value))
+  try {
+    await set()
+  } catch (error) {
+    if (!isStoreFull(error) || !(await dropUnreadSharedViews(e))) throw error
+    await set()
+  }
 }
 
 /**
@@ -184,19 +197,6 @@ function retryHeld(e: SaveEngine, id: string, entry: Held) {
   track(id, write)
 }
 
-/** Runs `write`, and again after each wait in `LOCK_RETRY_WAITS_MS` while the store's lock is held. */
-export async function whileLockHeld<T>(e: Pick<SaveEngine, 'sleep'>, write: () => Promise<T>): Promise<T> {
-  for (const ms of LOCK_RETRY_WAITS_MS) {
-    try {
-      return await write()
-    } catch (error) {
-      if (!isLockHeld(error)) throw error
-      await e.sleep(ms)
-    }
-  }
-  return write()
-}
-
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 function logSaveFailure(e: SaveEngine, id: string, error: unknown) {
@@ -206,6 +206,8 @@ function logSaveFailure(e: SaveEngine, id: string, error: unknown) {
 /**
  * Saves a conversation's session, once every earlier save has landed. A save older than one already resolved is
  * skipped. The first save of each conversation also deletes the oldest saved sessions beyond the newest `KEPT_SESSIONS`.
+ * A save the store refuses as full, even once the shared PR views no fetch reads are gone, is logged and leaves
+ * `isLastSaveRefused` true, so the drawn session goes on and its next save writes it whole.
  */
 export function save(e: SaveEngine, owner: Owner, s: ModSession): Promise<void> {
   const key = sessionKey(owner.id)
@@ -214,7 +216,8 @@ export function save(e: SaveEngine, owner: Owner, s: ModSession): Promise<void> 
   const { revision: _revision, ...session } = s
   const setAndPrune = Promise.all([sessionState.saving, e.now()]).then(async ([, savedAt]) => {
     if (s.revision < (savedRevisions.get(generation) ?? 0)) return
-    await whileLockHeld(e, () => e.store.set(key, { version: SESSION_VERSION, savedAt, ...session }))
+    await setMakingRoom(e, key, { version: SESSION_VERSION, savedAt, ...session }, write => whileLockHeld(e, write))
+    refusedAsFull.delete(owner.id)
     // The drawn session was read with any held session of this conversation, so this save holds it too.
     dropHeldNow(owner.id)
     if (prunedSaves.has(generation)) return
@@ -245,7 +248,8 @@ export function save(e: SaveEngine, owner: Owner, s: ModSession): Promise<void> 
   })
   const write = setAndPrune.catch((error: unknown) => {
     // The session stays drawn, and the conversation's next save writes it whole.
-    if (!isLockHeld(error)) throw error
+    if (isStoreFull(error)) refusedAsFull.add(owner.id)
+    else if (!isLockHeld(error)) throw error
     logSaveFailure(e, owner.id, error)
   })
   sessionState.saving = write.catch(() => undefined)
@@ -253,6 +257,9 @@ export function save(e: SaveEngine, owner: Owner, s: ModSession): Promise<void> 
 
   return write
 }
+
+/** Whether the store refused the conversation's last save as full, so a restart would lose its newest changes. */
+export const isLastSaveRefused = (id: string) => refusedAsFull.has(id)
 
 /** A conversation's saved session, or `{ session: undefined }` when none is saved. Null when the store cannot read it. */
 export async function readSaved(e: SaveEngine, id: string): Promise<{ session: SavedRecord | undefined } | null> {
