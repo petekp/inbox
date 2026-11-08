@@ -62,6 +62,7 @@ The person's "speed up search on large libraries" at steps 1 and 2 is a directio
 | `no-goal-yet` | 3 | No goal. Step 1: one small fix. Step 2: a question about the code. Step 3: a coordinator reports three unrelated items. | No goal at any step. |
 | `goal-from-work` | 3 | No goal. The person says "Keep going", and the agent plans the rest of export for 3.2. | A goal is set from the work, and every piece links to it. |
 | `goal-work-left` | 3 | An inferred goal with its last work queued. Step 1: the person shelves it for search in 3.1. Step 2: a side fix parks the search work. Step 3: the person returns to search. | Step 1: the old goal's work closes and the search goal replaces it. Steps 2 and 3: the search goal stays. |
+| `goal-typed-while-running` | 3 | A met goal. The person asks for 2.6 with widgets and a dark theme, and types the goal "Widgets and dark mode for every user" while the Status call for that reply runs. The call read the met goal. | The typed goal stays, though the call writes a GOAL line for 2.6. |
 | `typed-goal-kept` | 3 | A typed goal with its work queued. The person asks for dark mode in 3.1 first. | The typed goal stays. |
 | `goal-on-busy-page` | 5 | 18 open subjects and a goal just accepted, none linked. One reply. | Every subject is linked, to a milestone or to Other work |
 | `mid-turn-activity` | 5 | Replay C's first step, judged per model | Checkpoint. Where it stands says the state, not the activity. |

@@ -125,6 +125,14 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
     ),
     breaks: 'marks-true',
   },
+  'goal-typed-while-running': {
+    at: 0,
+    answer: GOOD_RUNS['goal-typed-while-running']![0]!.replace(
+      'NEW: working | Notes widget',
+      'NEW: queued | Notes widget',
+    ),
+    breaks: 'marks-true',
+  },
   'goal-awaiting-milestones': {
     at: 0,
     answer: 'DONE: s3 | merged\nSET: s4 | working | wider layout in',
