@@ -1565,8 +1565,11 @@ function lastProgressAt(o, g) {
   return Math.max(g.setAt, ...kept.map((m) => m.changedAt), ...done);
 }
 function isGoalMet(o) {
+  const g = o.goal;
+  if (g === null || g.isAwaitingMilestones)
+    return false;
   const kept = o.milestones.filter((m) => m.status !== "dropped");
-  return o.goal?.metAt != null || kept.length > 0 && kept.every((m) => m.status === "done");
+  return g.metAt != null || kept.length > 0 && kept.every((m) => m.status === "done");
 }
 function goalLeftFor(o, now) {
   const g = o.goal;

@@ -123,6 +123,26 @@ test('each refused GOAL or RETIRE line is saved with why, the next call reads it
   expect(after(stuck(), `DONE: m4 | live\n${NEW_WORK}\n${NEXT}`, 35 * MIN).goalRefused).toBeNull()
 })
 
+test('a GOAL line does not replace a goal the person typed after a met goal, whichever goal its call read', () => {
+  const at = 25 * MIN
+  const met = after(
+    linked(),
+    'DONE: m2 | merged\nDONE: m3 | landed\nDONE: m4 | live\nDONE: s1 | merged\nDONE: s2 | landed',
+    at,
+  )
+  const typed = setTypedGoal(met, 'Ship the iPad app', at + MIN)
+
+  for (const readSetAt of [met.goal!.setAt, typed.goal!.setAt]) {
+    const o = applyStatus(typed, parseStatus(`${NEW_WORK}\n${NEXT}`)!, at + 2 * MIN, NO_ASKS, readSetAt)
+
+    expect({ readSetAt, goal: o?.goal?.text, refused: o?.goalRefused }).toEqual({
+      readSetAt,
+      goal: 'Ship the iPad app',
+      refused: { line: 'goal', why: 'typed' },
+    })
+  }
+})
+
 test('a refusal for work that moved shows only while the work has not left the goal', () => {
   const o = after(stuck(), 'RETIRE: moved on', 30 * MIN + 24 * MIN)
   const later = 30 * MIN + GOAL_LEFT_MS
