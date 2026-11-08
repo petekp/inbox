@@ -10252,9 +10252,11 @@ async function wakeForDone(host, current) {
   const sending = attempt;
   if (!sending)
     return;
-  const outcome = await host.deliver(await host.read(), sending.text, sending.deliveryId);
+  const outcome = await host.deliver(await host.read(), sending.text, sending.deliveryId).catch((err) => ({ state: "unconfirmed", reason: err instanceof Error ? err.message : String(err) }));
   await host.update((s) => {
     const after = completedAttempt(s, sending.deliveryId, outcome);
+    if (outcome.state === "unconfirmed")
+      return { ...after, lastActions: withUnconfirmed(after.lastActions, sending.text, undefined, sending.deliveryId) };
     if (outcome.state !== "rejected")
       return after;
     const woken = after.ledger.closed.filter((c) => c.doneNotification?.id === sending.deliveryId);

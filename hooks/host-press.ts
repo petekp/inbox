@@ -17,7 +17,7 @@ import { recordPress, pendingResult, localLast, withLasts, isHeldSend } from './
 import { releaseHeldSendEarly, releaseHeldSends } from './held-sends'
 import type { RowPress } from './presses'
 import { completedAttempt, withHolds, pressOn } from './session-presses'
-import type { Pressed } from './session-presses'
+import type { Pressed, SendOutcome } from './session-presses'
 import type { Holds } from './timing'
 import type { Session, RowNote, LastAction } from '../types'
 import type { SessionHost } from './session-host'
@@ -93,9 +93,13 @@ async function wakeForDone<S extends Session>(host: WakeHost<S>, current?: S): P
   })
   const sending = attempt as { deliveryId: string; text: string } | null
   if (!sending) return
-  const outcome = await host.deliver(await host.read(), sending.text, sending.deliveryId)
+  const outcome: SendOutcome = await host
+    .deliver(await host.read(), sending.text, sending.deliveryId)
+    .catch((err: unknown) => ({ state: 'unconfirmed', reason: err instanceof Error ? err.message : String(err) }))
   await host.update(s => {
     const after = completedAttempt(s, sending.deliveryId, outcome)
+    if (outcome.state === 'unconfirmed')
+      return { ...after, lastActions: withUnconfirmed(after.lastActions, sending.text, undefined, sending.deliveryId) }
     if (outcome.state !== 'rejected') return after
     const woken = after.ledger.closed.filter(c => c.doneNotification?.id === sending.deliveryId)
     const lastActions = woken.reduce(

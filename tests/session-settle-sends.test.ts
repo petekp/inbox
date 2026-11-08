@@ -29,6 +29,32 @@ for (const isDeliveryHeldUntilRun of [false, true])
     expect(view.needsYou.closed.tasks.map(c => c.delivery)).toEqual([{ error: 'queue refused', canUndo: true }])
   })
 
+for (const isDeliveryHeldUntilRun of [false, true])
+  test(`a Done message whose send throws folds its row, and its Closed line and sent record read not confirmed, when delivery is held until run: ${isDeliveryHeldUntilRun}`, async () => {
+    let clock = 1_000_000
+    const scripted = fakeHost(async () => null).host
+    const host = {
+      ...scripted,
+      now: () => clock,
+      isDeliveryHeldUntilRun,
+      deliver: async () => {
+        throw new Error('the session went away')
+      },
+    }
+    const holds = { ...NO_HOLDS, shownSince: clock }
+    await host.update(s => recorded(CLAUDE_CODE, s, 'record', { kind: 'task', ask: 'Sign in to npm' }, clock).state)
+    const id = (await host.read()).ledger.items[0]!.id
+    await press(host, { action: 'done', id }, false, holds)
+    clock += host.settleWindowMs
+    await wakeAfterSettle(host)
+    const s = await host.read()
+    const view = sessionView(s, clock, host.settleWindowMs, holds)
+
+    expect(view.needsYou.tasks.map(r => r.id)).toEqual([])
+    expect(view.needsYou.closed.tasks.map(c => c.delivery)).toEqual(['unconfirmed'])
+    expect(s.sent.map(x => x.phase)).toEqual(['uncertain'])
+  })
+
 test('a typed reply to a question while its answer is held for Undo sends the answer first, then the reply', async () => {
   const clock = 1_000_000
   const sent: string[] = []
