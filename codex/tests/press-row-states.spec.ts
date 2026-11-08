@@ -10,8 +10,8 @@ import { viewOf } from '../src/core'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
 import { NO_HOLDS } from '../../hooks/timing'
-import { EXIT_MS, MOVE_MS, ROW_STATE_MS, stepRow } from '../src/rows'
-import type { RowState, RowTarget, RowTrack } from '../src/rows'
+import { EXIT_MS, MOVE_MS, ROW_STATE_MS, stepRow } from '../../hooks/row-motion'
+import type { RowState, RowTarget, RowTrack } from '../../hooks/row-motion'
 
 const ROW_STATES: RowState[] = [
   'entering',

@@ -2,7 +2,7 @@
 
 Status: built.
 
-Every row in the Codex tab moves through one state machine, in `codex/src/rows.ts`. The machine decides what each row draws and which animation runs. Before it, that decision was spread over separate sets in `codex/src/tab.tsx`, and each fix covered one transition.
+Every row in the Codex tab moves through one state machine, in `hooks/row-motion.ts`. The machine decides what each row draws and which animation runs. Before it, that decision was spread over separate sets in `codex/src/tab.tsx`, and each fix covered one transition.
 
 ## What it fixed
 
