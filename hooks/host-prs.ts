@@ -1,4 +1,4 @@
-import { splitLinked, fetchTracked, GH_TIMED_OUT_TEXT, isLimitInForce, NO_PR_SHARED } from './pr-fetch'
+import { splitLinked, fetchTracked, GH_TIMED_OUT_TEXT, isLimitInForce, NO_PR_SHARED, PR_SHARED_MS } from './pr-fetch'
 import { TIMED_OUT_CODE } from './gh'
 import { rerunArgs } from './pr-press'
 import type { Effect } from './press-reducer'
@@ -75,9 +75,6 @@ export function prFetchTracker(now: () => number): {
   }
 }
 
-/** How long a view stays in the host's shared views after it was read. */
-const SHARED_KEEP_MS = 60 * 60_000
-
 /**
  * Fetches the PRs the session tracks and merges them in. `findsBranchPr` also looks up the current branch's PR.
  * `isPress` says a press asked, so every tracked PR is read now, even under a limit error, whose answer says
@@ -128,7 +125,7 @@ export async function fetchPrs<S extends Session>(
   await host.gh.shared?.write(cur => ({
     views: Object.fromEntries(
       [...Object.entries(cur.views), ...read.map(ref => [ref, fetched[ref]!] as const)].filter(
-        ([, view]) => at - (view.fetchedAt ?? 0) < SHARED_KEEP_MS,
+        ([, view]) => at - (view.fetchedAt ?? 0) < PR_SHARED_MS,
       ),
     ),
     limit: failure?.kind === 'limit' ? failure : failure === null ? null : cur.limit,
