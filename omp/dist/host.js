@@ -6306,7 +6306,6 @@ function prFetchTracker(now) {
     }
   };
 }
-var SHARED_KEEP_MS = 60 * 60000;
 async function fetchPrs(host, findsBranchPr, isPress = false) {
   const s = await host.read();
   const shared = await host.gh.shared?.read() ?? NO_PR_SHARED;
@@ -6337,7 +6336,7 @@ async function fetchPrs(host, findsBranchPr, isPress = false) {
   const { views: fetched, branchRef, isGhSignedOut, failure, read, unread } = fetch;
   const at = await host.now();
   await host.gh.shared?.write((cur) => ({
-    views: Object.fromEntries([...Object.entries(cur.views), ...read.map((ref) => [ref, fetched[ref]])].filter(([, view]) => at - (view.fetchedAt ?? 0) < SHARED_KEEP_MS)),
+    views: Object.fromEntries([...Object.entries(cur.views), ...read.map((ref) => [ref, fetched[ref]])].filter(([, view]) => at - (view.fetchedAt ?? 0) < PR_SHARED_MS)),
     limit: failure?.kind === "limit" ? failure : failure === null ? null : cur.limit
   }));
   await host.update((cur) => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut, at, failure, unread));

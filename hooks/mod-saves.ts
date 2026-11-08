@@ -13,6 +13,35 @@ const prunedSaves = new Set<string>()
 const savedRevisions = new Map<string, number>()
 /** The conversations whose last save the store refused as full, so the drawn session is newer than the saved one. */
 const refusedAsFull = new Set<string>()
+/**
+ * The most characters of PR views a saved session keeps, so the sessions every Claude Code session saves fit in the
+ * engine store's 4 MiB together. A session that loads reads the PRs it lacks from GitHub again.
+ */
+export const SAVED_PR_VIEWS_MAX = 75_000
+
+/**
+ * `s` as the store keeps it: its PR views cut to `SAVED_PR_VIEWS_MAX` characters. Merged and closed PRs go first, then
+ * the open PRs read longest ago.
+ */
+function forStore(s: Session): Session {
+  const views = Object.entries(s.prViews.views).map(([ref, view]) => ({ ref, view, size: JSON.stringify(view).length }))
+  let size = views.reduce((n, v) => n + v.size, 0)
+  if (size <= SAVED_PR_VIEWS_MAX) return s
+  const firstToGo = [...views].sort(
+    (a, b) =>
+      Number(a.view.state === 'OPEN') - Number(b.view.state === 'OPEN') ||
+      (a.view.fetchedAt ?? 0) - (b.view.fetchedAt ?? 0),
+  )
+  const dropped = new Set<string>()
+  for (const v of firstToGo) {
+    if (size <= SAVED_PR_VIEWS_MAX) break
+    dropped.add(v.ref)
+    size -= v.size
+  }
+  const kept = views.filter(v => !dropped.has(v.ref)).map(v => [v.ref, v.view] as const)
+
+  return { ...s, prViews: { ...s.prViews, views: Object.fromEntries(kept) } }
+}
 
 function track(id: string, write: Promise<void>) {
   savesBySession.set(id, write)
@@ -85,7 +114,7 @@ async function sessionToChange(e: SaveEngine, id: string) {
 }
 
 function writeSaved(e: SaveEngine, id: string, savedAt: number, s: Session) {
-  return setMakingRoom(e, sessionKey(id), { version: SESSION_VERSION, savedAt, ...s }, write => write())
+  return setMakingRoom(e, sessionKey(id), { version: SESSION_VERSION, savedAt, ...forStore(s) }, write => write())
 }
 
 /**
@@ -216,7 +245,8 @@ export function save(e: SaveEngine, owner: Owner, s: ModSession): Promise<void> 
   const { revision: _revision, ...session } = s
   const setAndPrune = Promise.all([sessionState.saving, e.now()]).then(async ([, savedAt]) => {
     if (s.revision < (savedRevisions.get(generation) ?? 0)) return
-    await setMakingRoom(e, key, { version: SESSION_VERSION, savedAt, ...session }, write => whileLockHeld(e, write))
+    const record = { version: SESSION_VERSION, savedAt, ...forStore(session) }
+    await setMakingRoom(e, key, record, write => whileLockHeld(e, write))
     refusedAsFull.delete(owner.id)
     // The drawn session was read with any held session of this conversation, so this save holds it too.
     dropHeldNow(owner.id)

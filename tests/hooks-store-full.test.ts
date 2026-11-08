@@ -1,8 +1,11 @@
 import { expect, mock, test } from 'claude-code/testing'
+import { SAVED_PR_VIEWS_MAX } from '../hooks/mod-saves'
+import { SESSION_VERSION } from '../hooks/session-version'
 import { SETTLED_MS } from '../hooks/timing'
 import { NOT_SAVED } from '../hooks/tools'
+import type { Session } from '../types'
 import { storedLength, w, world } from './hooks-world'
-import { BAND, PANE, replyKey } from './hooks-helpers'
+import { BAND, PANE, replyKey, SAVED_SESSION } from './hooks-helpers'
 
 const FINDING = {
   tool: 'mcp__inbox__record',
@@ -70,4 +73,55 @@ test('a full store makes room by dropping the shared PR views no fetch reads any
   expect(r.result).toBe('Recorded. The user sees it in the Finds tab of the /inbox pane.')
   expect(Object.keys(JSON.parse(w.stored.get('gh:shared') ?? '{}').views)).toEqual(['acme/app#2'])
   expect(w.stored.get('s:session-1')).toContain('Retry loop never backs off')
+})
+
+test('a save keeps its PR views within the cap, dropping merged and closed PRs first and then the open PRs read longest ago, while the drawn session keeps them all', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.isGhMissing = true
+  let drawn: Session | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
+    drawn = e.value as never
+    return next(e)
+  })
+  const share = Math.ceil(SAVED_PR_VIEWS_MAX / 4)
+  const view = (n: number, state: string, readAgo: number) => ({
+    ref: `acme/app#${n}`,
+    number: n,
+    title: 'x'.repeat(share),
+    url: `https://github.com/acme/app/pull/${n}`,
+    isDraft: false,
+    state,
+    base: 'main',
+    mergeable: 'MERGEABLE',
+    reviewDecision: null,
+    checks: [],
+    threads: [],
+    isYours: true,
+    error: null,
+    fetchedAt: 1_000_000 - readAgo,
+    wasSeenOpen: true,
+  })
+  const views = [
+    view(1, 'MERGED', 1_000),
+    view(2, 'OPEN', 5_000),
+    view(3, 'OPEN', 100),
+    view(4, 'OPEN', 200),
+    view(5, 'CLOSED', 0),
+    view(6, 'OPEN', 300),
+  ]
+  const saved = {
+    ...SAVED_SESSION,
+    version: SESSION_VERSION,
+    ledger: { ...SAVED_SESSION.ledger, prs: views.map(v => v.ref) },
+    prViews: { views: Object.fromEntries(views.map(v => [v.ref, v])), branchRef: null, isFetching: false },
+  }
+  w.stored.set('s:session-1', JSON.stringify(saved))
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+
+  await $.tool.call(FINDING)
+  const kept = JSON.parse(w.stored.get('s:session-1') ?? '{}').prViews.views
+  expect(Object.keys(kept)).toEqual(['acme/app#3', 'acme/app#4', 'acme/app#6'])
+  expect(Object.keys((drawn as Session | null)?.prViews.views ?? {})).toHaveLength(6)
 })
