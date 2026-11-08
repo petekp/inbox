@@ -6549,14 +6549,14 @@ var goalEntry = (part) => ({ kind: "goal", part });
 function goalSection(page, typing, isUnfolded) {
   const isTyping = typing === GOAL_KEYS_ID;
   const g = page.goal;
-  const milestones = g?.milestones ?? [];
+  const gap = goalEntry({ is: "gap" });
   return [
     goalEntry({ is: "heading", text: g?.label ?? GOAL_HEADING, page: isTyping ? null : page }),
     goalEntry({ is: "title", goal: g, isTyping }),
-    ...milestones.length > 0 ? [goalEntry({ is: "gap" })] : [],
-    ...milestones.flatMap((row) => [
+    ...(g?.milestones ?? []).flatMap((row) => [
+      gap,
       goalEntry({ is: "milestone", row }),
-      ...unfoldedRows(row.rows, isUnfolded).map((r) => ({ kind: "page", row: r }))
+      ...row.rows.length > 0 ? [gap, ...unfoldedRows(row.rows, isUnfolded).map((r) => ({ kind: "page", row: r }))] : []
     ])
   ];
 }

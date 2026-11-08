@@ -5,8 +5,9 @@ export const ROW_PAD_PT = 8
 export const STATUS_ROW_PAD_PT = 19 / 4
 
 /**
- * The space above and below the Status page's look line, in points: half the desktop pane's 19-point line, past a
- * row's padding. The terminal and omp draw whole lines, so they leave a blank line.
+ * The space where the terminal and omp leave a blank line on the Status page, in points: above and below the look line,
+ * above Other work, before each milestone, and between a milestone and the rows under it. It is half the desktop pane's
+ * 19-point line, past a row's padding.
  */
 export const LOOK_GAP_PT = 19 / 2
 
