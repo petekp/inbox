@@ -183,6 +183,9 @@ function list(value: unknown, max: number, each: number): string[] {
  */
 export type ToolAnswer = { ledger: Ledger; result: string; personLine: string | null }
 
+/** What follows an answer whose change the user sees now, when the store refused to save the session as full. */
+export const NOT_SAVED = "Not saved: the inbox's store is full, so this change is lost if this session restarts."
+
 function unchanged(ledger: Ledger, result: string): ToolAnswer {
   return { ledger, result, personLine: null }
 }

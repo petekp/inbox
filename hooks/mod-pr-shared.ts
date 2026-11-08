@@ -1,7 +1,7 @@
 import type { Session } from '../types'
-import { whileLockHeld } from './mod-saves'
 import type { SaveEngine } from './mod-saves'
-import { NO_PR_SHARED } from './pr-fetch'
+import { whileLockHeld } from './mod-store'
+import { NO_PR_SHARED, PR_SHARED_MS } from './pr-fetch'
 import type { PrShared } from './pr-fetch'
 import type { SessionHost } from './session-host'
 
@@ -37,5 +37,31 @@ export function prSharedStore(
         e.log(`inbox: saving the shared PR views failed: ${err instanceof Error ? err.message : String(err)}`)
       }
     },
+  }
+}
+
+/**
+ * Drops each shared view read `PR_SHARED_MS` or longer ago, since a fetch takes a shared view in place of a read only
+ * within that time. Returns whether any went. A failure is logged, and drops nothing.
+ */
+export async function dropUnreadSharedViews(e: Pick<SaveEngine, 'store' | 'sleep' | 'log' | 'now'>): Promise<boolean> {
+  try {
+    const now = await e.now()
+
+    return await whileLockHeld(e, async () => {
+      const shared = await e.store.get(PR_SHARED_KEY)
+      if (!isPrShared(shared)) return false
+      const kept = Object.entries(shared.views).filter(([, view]) => now - (view.fetchedAt ?? 0) < PR_SHARED_MS)
+      if (kept.length === Object.keys(shared.views).length) return false
+      await e.store.set(PR_SHARED_KEY, { ...shared, views: Object.fromEntries(kept) })
+
+      return true
+    })
+  } catch (err) {
+    e.log(
+      `inbox: dropping the shared PR views no fetch reads failed: ${err instanceof Error ? err.message : String(err)}`,
+    )
+
+    return false
   }
 }
