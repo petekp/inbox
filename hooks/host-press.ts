@@ -1,6 +1,13 @@
 import { readFirstEffect, PR_READ_FIRST_LABELS, pressRowId, isPrPress, isPrReadFirstPress } from './pr-press'
 import type { PrReadFirstPress, PrPress } from './pr-press'
-import { doneWake, markSentToAgent, refuseDoneNotification, withDeliveryId, withUnconfirmed } from './press-reducer'
+import {
+  doneWake,
+  markSentToAgent,
+  refuseDoneNotification,
+  withDeliveryId,
+  withFailure,
+  withUnconfirmed,
+} from './press-reducer'
 import type { Effect } from './press-reducer'
 import { finishedResult, withResult, runSends, runLocalEffects } from './press-effects'
 import { rerunRun } from './host-prs'
@@ -89,10 +96,14 @@ async function wakeForDone<S extends Session>(host: WakeHost<S>, current?: S): P
   const outcome = await host.deliver(await host.read(), sending.text, sending.deliveryId)
   await host.update(s => {
     const after = completedAttempt(s, sending.deliveryId, outcome)
+    if (outcome.state !== 'rejected') return after
+    const woken = after.ledger.closed.filter(c => c.doneNotification?.id === sending.deliveryId)
+    const lastActions = woken.reduce(
+      (actions, c) => withFailure(actions, [c.id], c.at, outcome.reason, sending.deliveryId),
+      after.lastActions,
+    )
 
-    return outcome.state === 'rejected'
-      ? { ...after, ledger: refuseDoneNotification(after.ledger, sending.deliveryId, outcome.reason) }
-      : after
+    return { ...after, lastActions, ledger: refuseDoneNotification(after.ledger, sending.deliveryId, outcome.reason) }
   })
 }
 
