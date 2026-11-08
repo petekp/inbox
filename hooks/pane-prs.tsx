@@ -320,8 +320,8 @@ export function panePrBlocks({
     return section([
       ...(look === 'desktop'
         ? [
-            desktopFrame({ key: `pr-title-${pr.ref}`, padY: 0, children: titleLine }),
-            desktopFrame({ key: `pr-status-${pr.ref}`, padY: 0, children: statusBlock }),
+            desktopFrame({ key: `pr-title-${pr.ref}`, padY: 0, hasSide: false, children: titleLine }),
+            desktopFrame({ key: `pr-status-${pr.ref}`, padY: 0, hasSide: false, children: statusBlock }),
           ]
         : [<Box paddingLeft={1}>{titleLine}</Box>, <Box paddingLeft={1}>{statusBlock}</Box>]),
       ...prRowGroup(PR_GROUP_TITLES.threads, threads, `${pr.ref}-threads`),
