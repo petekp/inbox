@@ -67,6 +67,7 @@ class World {
   storeSetLockHeld = 0
   storeLockedKey: string | undefined
   isStoreLocked = false
+  storeLimit: number | undefined
   logged: string[] = []
   toolRefusal: string | undefined
   commandRefusal: string | undefined
@@ -190,6 +191,10 @@ async function storeHeld($: Engine, prompt: (typeof w.held)[number]) {
   prompt.release()
 }
 
+export function storedLength(stored: Map<string, string> = w.stored): number {
+  return `{${[...stored].map(([key, json]) => `${JSON.stringify(key)}:${json}`).join(',')}}`.length
+}
+
 export async function arrive($: Engine) {
   const prompts = w.held
   w.held = []
@@ -243,6 +248,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.storeSetLockHeld = 0
   w.storeLockedKey = undefined
   w.isStoreLocked = false
+  w.storeLimit = undefined
   w.logged = []
   w.toolRefusal = undefined
   w.commandRefusal = undefined
@@ -263,6 +269,11 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
       w.storeSetLockHeld--
       return { deny: 'Lock file is already being held' }
     }
+    const length = storedLength(new Map(w.stored).set(e.key, JSON.stringify(e.value)))
+    if (w.storeLimit !== undefined && length > w.storeLimit)
+      return {
+        deny: `inbox@inline: $.store.set: the store would be ${length} characters, over the ${w.storeLimit} limit`,
+      }
     w.stored.set(e.key, JSON.stringify(e.value))
     return { value: undefined }
   })
