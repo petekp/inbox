@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import { DESKTOP_MARK_CELLS, DESKTOP_SIDE_CELLS } from '../hooks/pane-sizes'
 import type { TabsProps } from '../hooks/tabs-client'
 import { PRESS_GUARD_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
@@ -209,3 +210,84 @@ for (const look of ['terminal', 'desktop'] as const) {
     expect(await heads()).not.toContain('#15')
   })
 }
+
+test('in the desktop look, an open PR block’s title and status lines keep only the mark column beside their text at every docked width, so its buttons get the rest of the row, and a dismissed block keeps the side column for Undo', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.ghAnswers.push(
+    {
+      match: argv => argv.includes('view') && argv.includes('12'),
+      stdout: JSON.stringify({
+        number: 12,
+        title: 'Add a greeting CLI',
+        url: 'https://github.com/acme/greet/pull/12',
+        isDraft: false,
+        state: 'OPEN',
+        baseRefName: 'main',
+        mergeable: 'MERGEABLE',
+        reviewDecision: 'APPROVED',
+        statusCheckRollup: [],
+      }),
+    },
+    {
+      match: argv => argv.includes('graphql'),
+      stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+    },
+  )
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'open the PR', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Opened https://github.com/acme/greet/pull/12.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  await $.command.run({ command: 'inbox', args: '' } as never)
+  await clock.settle()
+  w.paneState = { isShown: true, isFocused: true }
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 42 } })
+  const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+  const x = bar
+    .slice(
+      0,
+      bar.findIndex(t => t.id === 'prs'),
+    )
+    .reduce((sum, t) => sum + t.width + gap, 0)
+  await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+  await clock.settle()
+
+  type Drawn = { type: string; props: Record<string, unknown>; children?: unknown[] }
+  const within = (node: unknown): Drawn[] =>
+    typeof node === 'object' && node !== null
+      ? [node as Drawn, ...((node as Drawn).children ?? []).flatMap(within)]
+      : []
+  const cellsBesideText = (frame: Drawn | undefined) =>
+    (frame?.children ?? [])
+      .map(c => (c as Drawn).props)
+      .filter(p => p.key !== 'text')
+      .reduce((sum, p) => sum + Number(p.width ?? p.minWidth ?? 0), 0)
+  for (const bodyColumns of [26, 30, 36, 42, 50]) {
+    await pane.redraw({ ...PANE.props, bodyColumns })
+    const title = (await pane.find({ key: 'pr-title-acme/greet#12' })) as Drawn | undefined
+    const status = (await pane.find({ key: 'pr-status-acme/greet#12' })) as Drawn | undefined
+    expect([cellsBesideText(title), cellsBesideText(status)], `${bodyColumns} columns`).toEqual([
+      DESKTOP_MARK_CELLS,
+      DESKTOP_MARK_CELLS,
+    ])
+    expect(
+      within(status)
+        .filter(n => n.type === 'Button')
+        .map(n => n.props.key),
+      `${bodyColumns} columns`,
+    ).toEqual(['merge-acme/greet#12', 'open-acme/greet#12', 'dismiss-pr-acme/greet#12'])
+  }
+
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'dismiss-pr-acme/greet#12' })
+  await clock.settle()
+  const settled = await pane.find({ key: 'settled-pr:acme/greet#12' })
+  const side = within(settled).find(n => n.type === 'Box' && n.props.minWidth === DESKTOP_SIDE_CELLS)
+  expect(within(side).some(n => n.props.key === 'undo-pr:acme/greet#12')).toBe(true)
+})
