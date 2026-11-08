@@ -41,6 +41,7 @@ const withGoal = () =>
       },
     ],
     nextMilestoneId: 3,
+    serves: { s5: 'm2' },
   })
 const lineAt = (lines: string[], s: string) => lines.findIndex(l => l.includes(s))
 
@@ -50,7 +51,7 @@ test('Remove presses the goal by its key and selects the goal’s place, where U
   expect(removed.ui).toMatchObject({ selectedId: 'goal', pageReveal: 'goal' })
 })
 
-test('a set goal draws Edit and Remove at the right end of its Goal heading row, then its text with its count, the head as its Now line, and its milestones', () => {
+test('a set goal draws Edit and Remove at the right end of its Goal heading row, then its text with its count, the head as its Now line, and its milestones, each after a blank line, with a blank line before the work under it', () => {
   const screen = withGoal()
   const page = screen.view.statusPage
   expect(goalKeyPlan(page).map(k => k.label)).toEqual(['Edit', 'Remove'])
@@ -65,9 +66,15 @@ test('a set goal draws Edit and Remove at the right end of its Goal heading row,
     '✓ Fixes built',
     '○ Announced',
     'after deploy',
+    '◌ Glasses trial',
   ]
   const at = order.map(s => lineAt(lines, s))
   expect(at).toEqual([...at].sort((a, b) => a - b))
+  expect(['✓ Fixes built', '○ Announced', '◌ Glasses trial'].map(s => lines[lineAt(lines, s) - 1])).toEqual([
+    '',
+    '',
+    '',
+  ])
   expect(lines.slice(at[0]! + 1).some(l => l.includes('Edit'))).toBe(false)
   expect(lineAt(lines, page.head!.title)).toBe(-1)
 })

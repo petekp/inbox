@@ -79,7 +79,7 @@ test('on the Status page, the rows under a subject hang from its mark, ├─ fo
   expect(glyphs(first, mid)).toEqual(['├─', ...Array<string>(mid - first - 1).fill('│ ')])
   expect(glyphs(mid, last)).toEqual(['├─', ...Array<string>(last - mid - 1).fill('│ ')])
   expect(last - mid).toBeGreaterThan(1)
-  expect(glyphs(last, next)).toEqual(['└─', ...Array<string>(next - last - 1).fill('  ')])
+  expect(glyphs(last, next).map(g => g.trim())).toEqual(['└─', ...Array<string>(next - last - 1).fill('')])
 })
 
 test('on the Status page, a row’s stall word follows its name on the line of its last word, at every width, and running work and work waiting on someone else show none', () => {
