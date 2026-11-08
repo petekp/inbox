@@ -147,7 +147,7 @@ import {
   type Holds,
 } from './timing'
 import { helpKeys, UNDO_KEY } from './help'
-import { agentTools } from './tools'
+import { agentTools, NOT_SAVED } from './tools'
 import type { AgentTool } from './tools'
 import type { ToolAnswer } from './tools'
 import {
@@ -256,7 +256,7 @@ import {
 import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
 import { noteStatusDrawn, takeShownRows } from './pane-status-shown'
 import { desktopSpaceLines } from './pane-status-tops'
-import { changeSaved, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
+import { changeSaved, isLastSaveRefused, readSaved, readSettled, save, type SaveEngine } from './mod-saves'
 import { paneAskRows, paneAskTabs } from './pane-asks'
 import { paneRowKeys } from './pane-row-keys'
 import { paneRowLines } from './pane-row-lines'
@@ -1089,8 +1089,9 @@ async function runTool(
   toolUseId: string | undefined,
 ): Promise<string> {
   const now = await $.clock.now()
+  const owner = currentOwner()
   let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
-  await commit($, currentOwner(), s => {
+  await commit($, owner, s => {
     const r = recorded(CLAUDE_CODE, s, tool, input, now)
     answer = r
     return r.state
@@ -1100,8 +1101,9 @@ async function runTool(
     await update($, PERSON_LINES, lines =>
       Object.fromEntries([...Object.entries(lines), [toolUseId, personLine]].slice(-MAX_PERSON_LINES)),
     )
+  const isChangeUnsaved = personLine !== null && isLastSaveRefused(owner.id)
 
-  return answer.result
+  return isChangeUnsaved ? `${answer.result} ${NOT_SAVED}` : answer.result
 }
 
 /**
