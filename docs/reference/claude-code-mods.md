@@ -27,6 +27,18 @@ Versions on 2026-10-08:
 7. **`$.store` is one JSON file per plugin id, shared by every session, with no atomic update.** "A `get` followed by a `set` isn't atomic." [IF] The cap is 4 MiB. [R#limits] Live file names show the key is the plugin id (`inbox@inline`), not the name.
 8. **Engine versions differ by client and lag each other.** The desktop app downloads its own engine and updates it separately. [desktop#claude-code-version-in-the-code-tab] One changelog entry says its fix reaches the app only "once Desktop bundles this CLI version". [CL#2-1-269] Inference: every engine fix reaches Code mode only when the app downloads that engine. The type check runs against whichever engine last wrote the gitignored types.
 
+### The sessions folder
+
+Read from Claude Code 2.1.319 on this Mac on 2026-11-07. No public doc or engine type describes it, and no `$` call lists sessions. [T] So the format can change in any release.
+
+- Each running Claude Code process keeps `<config>/sessions/<pid>.json`, where `<config>` is `CLAUDE_CONFIG_DIR` or else `~/.claude`. A `<pid>.<hex>.key` file sits beside each one. The inbox does not read the `.key` files, which hold a peer token.
+- The JSON had these fields: `pid`, `sessionId`, `cwd`, `startedAt`, `procStart`, `version`, `kind`, `entrypoint`, `pidDomain`, `status`, `statusUpdatedAt`, `updatedAt`, `name`, `nameSource`, `nameSince`, `peerProtocol`, `peerFeatures`, `messagingSocketPath`, `bridgeSessionId` and `asksForConvertedSkills`. The inbox reads only `pid` and `sessionId`.
+- `sessionId` is the conversation the process runs now. Of 48 processes started with `--resume <id>`, 7 had another id in their file, so the file follows a `/clear` or a fork. Which of the two changed each one was not checked.
+- All 66 files named a live process. Inference: Claude Code deletes its file when the process exits. Unknown: whether a file is left behind when a process is killed.
+- `procStart` is the start time in UTC, as in `Sat Nov  7 18:08:55 2026`. `ps -o lstart=` prints it in local time. The inbox does not compare them, so a pid that a new process reuses keeps an ended conversation's saved session.
+- `kind` and `entrypoint` were `interactive` and `cli`, and once `sdk-cli`. Unknown: whether the desktop app's engine writes here, since it ran no session during the check, and whether `$.process.run`, which the types mark "CLI only", runs there.
+- The inbox reads the folder in `hooks/running-sessions.ts:runningSessions`. A conversation is running when a file names it and `ps` lists that file's pid. When `ps` cannot run, or does not list this process, every file counts as running. When the folder cannot be read or no file names this process's conversation, the prune in `hooks/mod-saves.ts:pruneSaves` counts every other saved session as ended, and `dropEndedSaves` deletes none.
+
 ### How to read this page
 
 - Each fact carries its source in brackets. A short key such as `[O#where-mods-run]` names a page and its section; "Sources" at the end maps each key to its URL.

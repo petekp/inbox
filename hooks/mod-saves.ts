@@ -52,7 +52,7 @@ function track(id: string, write: Promise<void>) {
     .catch(() => undefined)
 }
 
-/** The engine calls a save makes: the store, the clock and the debug log. */
+/** The engine calls a save makes: the store, the clock, the debug log and which conversations run. */
 export type SaveEngine = {
   store: {
     get: (key: string) => Promise<unknown>
@@ -64,6 +64,8 @@ export type SaveEngine = {
   now: () => Promise<number>
   after: (ms: number, fn: () => void) => { cancel: () => void }
   log: (text: string) => void
+  /** The ids of the conversations running in any Claude Code process, or null when they cannot be told. */
+  runningSessions: () => Promise<ReadonlySet<string> | null>
 }
 
 /**
@@ -119,7 +121,8 @@ function writeSaved(e: SaveEngine, id: string, savedAt: number, s: Session) {
 
 /**
  * Sets `key` through `tries`. When the store refuses the set as full, drops the shared PR views no fetch reads and
- * tries once more.
+ * tries again. When it is still full, deletes the saved sessions of the conversations that have ended, oldest first,
+ * until they free the value's size, and tries once more. A running conversation's saved session is never deleted.
  */
 async function setMakingRoom(
   e: SaveEngine,
@@ -129,11 +132,83 @@ async function setMakingRoom(
 ) {
   const set = () => tries(() => e.store.set(key, value))
   try {
-    await set()
+    return await set()
   } catch (error) {
-    if (!isStoreFull(error) || !(await dropUnreadSharedViews(e))) throw error
+    if (!isStoreFull(error)) throw error
+    if (await dropUnreadSharedViews(e)) {
+      try {
+        return await set()
+      } catch (again) {
+        if (!isStoreFull(again)) throw again
+      }
+    }
+    const isRoomMade = await dropEndedSaves(e, key, JSON.stringify(value).length).catch((dropError: unknown) => {
+      e.log(`inbox: deleting ended sessions' saves to make room failed: ${errorText(dropError)}`)
+      return false
+    })
+    if (!isRoomMade) throw error
     await set()
   }
+}
+
+/** A saved session's key, save time and size. Null when its save time cannot be read. */
+async function savedAge(e: SaveEngine, key: string): Promise<{ key: string; savedAt: number; size: number } | null> {
+  try {
+    const saved = (await e.store.get(key)) as SavedRecord | undefined
+    const isReadable = saved && Number.isFinite(saved.savedAt) && saved.ledger && typeof saved.ledger === 'object'
+
+    return isReadable ? { key, savedAt: saved.savedAt, size: JSON.stringify(saved).length } : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The saved sessions besides `keep` whose conversations are not running, and their count. With `running` null, only
+ * `keep`'s conversation counts as running. `saves` are those whose save time can be read, oldest first.
+ */
+async function endedSaves(e: SaveEngine, keys: string[], keep: string, running: ReadonlySet<string> | null) {
+  const ended = keys.filter(k => k.startsWith('s:') && k !== keep && !running?.has(k.slice('s:'.length)))
+  const ages = await Promise.all(ended.map(k => savedAge(e, k)))
+  const saves = ages.filter(age => age !== null).sort((a, b) => a.savedAt - b.savedAt || a.key.localeCompare(b.key))
+
+  return { count: ended.length, saves }
+}
+
+/**
+ * Deletes the saved sessions of ended conversations besides `keep`, oldest first, until they free `size` characters.
+ * Deletes none when which conversations run cannot be told. Whether it deleted any.
+ */
+async function dropEndedSaves(e: SaveEngine, keep: string, size: number): Promise<boolean> {
+  const running = await e.runningSessions()
+  if (!running) return false
+  const { saves } = await endedSaves(e, await e.store.keys(), keep, running)
+  const dropped: string[] = []
+  for (let freed = 0; freed < size && dropped.length < saves.length;) {
+    const next = saves[dropped.length]!
+    dropped.push(next.key)
+    freed += next.size
+  }
+  await Promise.all(dropped.map(old => whileLockHeld(e, () => e.store.delete(old))))
+  if (dropped.length > 0) e.log(`inbox: the store was full, so it deleted ${dropped.length} ended sessions' saves`)
+
+  return dropped.length > 0
+}
+
+/**
+ * Deletes the oldest saved sessions of ended conversations beyond the newest `KEPT_SESSIONS`, and the `p:` keys. A
+ * running conversation's saved session stays, and so does one whose save time cannot be read.
+ */
+async function pruneSaves(e: SaveEngine, keep: string) {
+  const keys = await e.store.keys()
+  const running = await e.runningSessions()
+  if (!running) e.log('inbox: which sessions run could not be told, so the prune counts every other one as ended')
+  const { count, saves } = await endedSaves(e, keys, keep, running)
+  const stale = saves.slice(0, Math.max(0, count - KEPT_SESSIONS)).map(age => age.key)
+  // `p:` keys held the last-session offer, which earlier builds saved per folder.
+  await Promise.all(
+    [...stale, ...keys.filter(k => k.startsWith('p:'))].map(old => whileLockHeld(e, () => e.store.delete(old))),
+  )
 }
 
 /**
@@ -234,8 +309,8 @@ function logSaveFailure(e: SaveEngine, id: string, error: unknown) {
 
 /**
  * Saves a conversation's session, once every earlier save has landed. A save older than one already resolved is
- * skipped. The first save of each conversation also deletes the oldest saved sessions beyond the newest `KEPT_SESSIONS`.
- * A save the store refuses as full, even once the shared PR views no fetch reads are gone, is logged and leaves
+ * skipped. The first save of each conversation also prunes the saved sessions of ended conversations, with `pruneSaves`.
+ * A save the store refuses as full, even once `setMakingRoom` has made what room it can, is logged and leaves
  * `isLastSaveRefused` true, so the drawn session goes on and its next save writes it whole.
  */
 export function save(e: SaveEngine, owner: Owner, s: ModSession): Promise<void> {
@@ -251,29 +326,7 @@ export function save(e: SaveEngine, owner: Owner, s: ModSession): Promise<void> 
     // The drawn session was read with any held session of this conversation, so this save holds it too.
     dropHeldNow(owner.id)
     if (prunedSaves.has(generation)) return
-    const keys = await e.store.keys()
-    const sessions = keys.filter(k => k.startsWith('s:'))
-    const ages = await Promise.all(
-      sessions.map(async candidate => {
-        try {
-          const saved = (await e.store.get(candidate)) as SavedRecord | undefined
-          return saved && Number.isFinite(saved.savedAt) && saved.ledger && typeof saved.ledger === 'object'
-            ? { key: candidate, savedAt: saved.savedAt }
-            : null
-        } catch {
-          return null
-        }
-      }),
-    )
-    const stale = ages
-      .filter((entry): entry is { key: string; savedAt: number } => entry !== null && entry.key !== key)
-      .sort((a, b) => a.savedAt - b.savedAt || a.key.localeCompare(b.key))
-      .slice(0, Math.max(0, sessions.length - KEPT_SESSIONS))
-      .map(entry => entry.key)
-    // `p:` keys held the last-session offer, which earlier builds saved per folder.
-    await Promise.all(
-      [...stale, ...keys.filter(k => k.startsWith('p:'))].map(old => whileLockHeld(e, () => e.store.delete(old))),
-    )
+    await pruneSaves(e, key)
     prunedSaves.add(generation)
   })
   const write = setAndPrune.catch((error: unknown) => {
