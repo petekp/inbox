@@ -36,7 +36,7 @@ export type HostContext = {
   reportToHerdr: ReturnType<typeof herdrReporter>
   run: Run
   memory: Memory
-  sendToAgent(ctx: OmpContext, text: string): string | null
+  sendToAgent(ctx: OmpContext, text: string): Promise<string | null>
   askFor(ctx: OmpContext, id: string): SessionHost<OmpState>['ask']
   dropTools(): Promise<void>
   showBand(ctx: OmpContext): void

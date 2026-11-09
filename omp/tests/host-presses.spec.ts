@@ -189,6 +189,29 @@ test('a press while the agent is idle sends the message with no delivery option'
   expect(w.sent[0]!.options).toBeUndefined()
 })
 
+test("a press omp drops before a run starts is not counted as sent, and its row shows omp's reason", async () => {
+  const { inbox, id } = await withQuestion()
+  w.sendAnswer = () => Promise.reject(new Error('Session cost cap of $5.00 reached'))
+  await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await afterSettle()
+  expect(w.sent).toHaveLength(1)
+  expect(state().sent).toEqual([])
+  expect(JSON.stringify(state().lastActions)).toContain('Session cost cap of $5.00 reached')
+})
+
+test('a press sent while the agent is idle counts as sent once its run starts, before the run ends', async () => {
+  const { inbox, id } = await withQuestion()
+  w.isIdle = true
+  w.sendAnswer = () => new Promise(() => {})
+  await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  w.clock += 5000
+  w.timers.at(-1)!.fn()
+  for (let waited = 0; w.sent.length === 0 && waited < 200; waited += 1) await new Promise(r => setTimeout(r, 5))
+  await call('agent_start', { type: 'agent_start' })
+  await settle()
+  expect(state().sent.map((x: { phase: string }) => x.phase)).toEqual(['accepted'])
+})
+
 test('a press for a row that is gone reports it stale and sends nothing', async () => {
   const { inbox } = await withQuestion()
   const outcome = await inbox.press(makeCtx(), { action: 'answer', id: 'nope', option: 'Node' }, NO_HOLDS)

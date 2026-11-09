@@ -169,15 +169,41 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     }
   }
 
-  /** Sends text to the agent as if the person typed it. Returns why it could not, or null. */
-  const sendToAgent = (ctx: ExtensionContext, text: string): string | null => {
-    try {
-      pi.sendUserMessage(text, ctx.isIdle() ? undefined : { deliverAs: 'followUp' })
+  /** The sends of each session that wait for its next run to start. */
+  const runStartWaiters = new Map<string, Set<() => void>>()
 
-      return null
+  /**
+   * Sends text to the agent as if the person typed it. Returns why it could not, or null. From omp 18.18.2,
+   * `sendUserMessage` rejects when omp drops the message before a run starts, as for the cost cap. Sent while the
+   * agent is idle, it settles only when the whole run ends, so this also returns null once the session's next run
+   * starts. omp 18.18.1 and older return nothing, and a send that does not throw has gone.
+   */
+  const sendToAgent = async (ctx: ExtensionContext, text: string): Promise<string | null> => {
+    const id = sessionIdOf(ctx)
+    const waiters = runStartWaiters.get(id) ?? new Set<() => void>()
+    runStartWaiters.set(id, waiters)
+    let started = () => {}
+    const runStarted = new Promise<null>(resolve => {
+      started = () => resolve(null)
+    })
+    waiters.add(started)
+    try {
+      const options = ctx.isIdle() ? undefined : { deliverAs: 'followUp' as const }
+      const sent = Promise.resolve(pi.sendUserMessage(text, options)).then(
+        () => null,
+        (err: unknown) => messageOf(err),
+      )
+
+      return await Promise.race([sent, runStarted])
     } catch (err) {
       return messageOf(err)
+    } finally {
+      waiters.delete(started)
     }
+  }
+
+  const onRunStart = (ctx: ExtensionContext) => {
+    for (const started of runStartWaiters.get(sessionIdOf(ctx)) ?? []) started()
   }
 
   function askFor(ctx: ExtensionContext, id: string): SessionHost<OmpState>['ask'] {
@@ -279,7 +305,11 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   pi.on('session_shutdown', turns.onSessionShutdown)
   pi.on('before_agent_start', turns.onBeforeAgentStart)
   pi.on('input', turns.onInput)
-  pi.on('agent_start', turns.onAgentStart)
+  pi.on('agent_start', (event, ctx) => {
+    onRunStart(ctx)
+
+    return turns.onAgentStart(event, ctx)
+  })
   pi.on('turn_start', turns.onTurnStart)
   pi.on('tool_execution_start', activity.onToolExecutionStart)
   pi.on('tool_execution_end', activity.onToolExecutionEnd)
