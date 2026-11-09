@@ -10132,12 +10132,14 @@ function askOutcome(event) {
 `);
   if (event.isError || text === "")
     return { kind: "dismissed" };
+  if (Array.isArray(details.answers) && details.answers.length === 0)
+    return null;
   const answer = formAnswerText(details.answers) ?? text;
   return { kind: details.timedOut === true ? "timed-out" : "answered", answer };
 }
 function isDismissedAsk(message) {
   const m = message;
-  return m?.role === "toolResult" && m.toolName === "ask" && Array.isArray(m.content) && askOutcome({ content: m.content, isError: m.isError === true, details: m.details }).kind === "dismissed";
+  return m?.role === "toolResult" && m.toolName === "ask" && Array.isArray(m.content) && askOutcome({ content: m.content, isError: m.isError === true, details: m.details })?.kind === "dismissed";
 }
 
 // src/host-context.ts
@@ -10203,7 +10205,8 @@ function conversationOf(entries) {
         return [];
       const input = block.arguments ?? {};
       const result = typeof block.id === "string" ? results.get(block.id) : undefined;
-      const line = block.name === "ask" ? dialogActivity(askQuestions(input), result ? askOutcome({ ...result, content: result.content, isError: result.isError === true }) : { kind: "open" }) : activityOf(block.name, input);
+      const outcome = block.name === "ask" && result ? askOutcome({ ...result, content: result.content, isError: result.isError === true }) : { kind: "open" };
+      const line = block.name !== "ask" ? activityOf(block.name, input) : outcome ? dialogActivity(askQuestions(input), outcome) : null;
       return line ? [line] : [];
     });
     return [{ role: "agent", text: textOfBlocks(m.content), activity }];
@@ -10314,8 +10317,10 @@ function activityHandlers(context, sessions) {
     }
     if (event.toolName !== "ask")
       return;
-    const questions = askQuestions(event.input);
     const outcome = askOutcome(event);
+    if (!outcome)
+      return;
+    const questions = askQuestions(event.input);
     const line = dialogActivity(questions, outcome);
     await change(sessionIdOf(ctx), (s) => {
       const noted = noteActivity(s, line);

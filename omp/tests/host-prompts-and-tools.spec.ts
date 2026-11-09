@@ -215,3 +215,17 @@ test('an HTML form ask becomes turn activity with each field as a question, the 
     `${asked}; it timed out while the user was away, so the user did not answer; it went on with: ${answered}`,
   ])
 })
+
+test('a form ask omp never showed, since it has no named control, adds no dialog line and notes no dialog question', async () => {
+  createInbox(pi(), deps())
+  await prompt('hello')
+  await call('tool_result', {
+    toolName: 'ask',
+    input: { html: '<form><p>Which runtime?</p><input type="radio" value="node"> Node</form>' },
+    content: [{ type: 'text', text: 'Error: the form has no named controls.' }],
+    isError: false,
+    details: { answers: [] },
+  })
+  expect(state().turn.activity).toEqual([])
+  expect(state().dialogQuestions).toEqual([])
+})

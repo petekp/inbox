@@ -94,15 +94,16 @@ export function conversationOf(entries: readonly unknown[]): Turn[] {
         if (block.type !== 'toolCall' || typeof block.name !== 'string') return []
         const input = (block.arguments ?? {}) as Record<string, unknown>
         const result = typeof block.id === 'string' ? results.get(block.id) : undefined
+        const outcome =
+          block.name === 'ask' && result
+            ? askOutcome({ ...result, content: result.content as never, isError: result.isError === true })
+            : { kind: 'open' as const }
         const line =
-          block.name === 'ask'
-            ? dialogActivity(
-                askQuestions(input),
-                result
-                  ? askOutcome({ ...result, content: result.content as never, isError: result.isError === true })
-                  : { kind: 'open' },
-              )
-            : activityOf(block.name, input)
+          block.name !== 'ask'
+            ? activityOf(block.name, input)
+            : outcome
+              ? dialogActivity(askQuestions(input), outcome)
+              : null
 
         return line ? [line] : []
       },
