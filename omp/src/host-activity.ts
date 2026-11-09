@@ -130,8 +130,9 @@ export function activityHandlers(context: HostContext, sessions: SessionCalls) {
       return
     }
     if (event.toolName !== 'ask') return
-    const questions = askQuestions(event.input)
     const outcome = askOutcome(event)
+    if (!outcome) return
+    const questions = askQuestions(event.input)
     const line = dialogActivity(questions, outcome)
     await change(sessionIdOf(ctx), s => {
       const noted = noteActivity(s, line)

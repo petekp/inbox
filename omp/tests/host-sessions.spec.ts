@@ -127,6 +127,17 @@ const earlierBranch = () => [
     details: { answers: [{ name: 'command', question: 'Command name', answer: 'hello' }] },
     isError: false,
   }),
+  message({
+    role: 'assistant',
+    content: [{ type: 'toolCall', id: 'c5', name: 'ask', arguments: { html: '<form><p>Ready?</p></form>' } }],
+  }),
+  message({
+    role: 'toolResult',
+    toolCallId: 'c5',
+    content: [{ type: 'text', text: 'Error: the form has no named controls.' }],
+    details: { answers: [] },
+    isError: false,
+  }),
   message({ role: 'assistant', content: [{ type: 'text', text: 'The plan is written.' }] }),
 ]
 

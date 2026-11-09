@@ -40,15 +40,19 @@ function formAnswerText(answers: unknown): string | null {
   return answered.length > 0 ? answered.join(', ') : null
 }
 
-/** How an `ask` dialog ended, from its tool result. A cancel is an error result, or one with no text. */
+/**
+ * How an `ask` dialog ended, from its tool result. A cancel is an error result, or one with no text. Null when omp
+ * showed no form: from omp 18.18.3, a form with no named control comes back at once with no answers.
+ */
 export function askOutcome(event: {
   content: { type: string; text?: string }[]
   isError: boolean
   details?: unknown
-}): DialogOutcome {
+}): DialogOutcome | null {
   const details = (event.details ?? {}) as { timedOut?: unknown; answers?: unknown }
   const text = event.content.flatMap(b => (b.type === 'text' && b.text ? [b.text] : [])).join('\n')
   if (event.isError || text === '') return { kind: 'dismissed' }
+  if (Array.isArray(details.answers) && details.answers.length === 0) return null
   const answer = formAnswerText(details.answers) ?? text
 
   return { kind: details.timedOut === true ? 'timed-out' : 'answered', answer }
@@ -62,6 +66,6 @@ export function isDismissedAsk(message: unknown): boolean {
     m?.role === 'toolResult' &&
     m.toolName === 'ask' &&
     Array.isArray(m.content) &&
-    askOutcome({ content: m.content, isError: m.isError === true, details: m.details }).kind === 'dismissed'
+    askOutcome({ content: m.content, isError: m.isError === true, details: m.details })?.kind === 'dismissed'
   )
 }
