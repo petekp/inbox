@@ -1,7 +1,7 @@
 import type { Turn } from '../../hooks/conversation'
-import { dialogActivity, dialogQuestions } from '../../hooks/catch-up-text'
+import { dialogActivity } from '../../hooks/catch-up-text'
 import { clip } from '../../hooks/text'
-import { activityOf, askOutcome } from './tool-calls'
+import { activityOf, askOutcome, askQuestions } from './tool-calls'
 import type { Stop } from '../../types'
 import type { HostDeps } from './host'
 
@@ -97,7 +97,7 @@ export function conversationOf(entries: readonly unknown[]): Turn[] {
         const line =
           block.name === 'ask'
             ? dialogActivity(
-                dialogQuestions(input.questions),
+                askQuestions(input),
                 result
                   ? askOutcome({ ...result, content: result.content as never, isError: result.isError === true })
                   : { kind: 'open' },
