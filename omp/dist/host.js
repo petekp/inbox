@@ -10872,7 +10872,7 @@ function sessionCalls(context) {
       exclusive: (fn) => exclusiveRun(dir, id, fn),
       ask: askFor(ctx, id),
       deliver: async (_s, text) => {
-        const why = sendToAgent(ctx, text);
+        const why = await sendToAgent(ctx, text);
         return why === null ? { state: "accepted", queuedId: null } : { state: "rejected", reason: why };
       },
       perform: async (_s, effect) => effect.kind === "copy" ? deps.copy(effect.text) : openTarget2(run, effect.target, ctx.cwd, deps.home),
@@ -11252,13 +11252,29 @@ function createInbox(pi, deps = defaultDeps) {
       return { code: UNSTARTABLE_CODE, stdout: "", stderr: messageOf(err) };
     }
   };
-  const sendToAgent = (ctx, text) => {
+  const runStartWaiters = new Map;
+  const sendToAgent = async (ctx, text) => {
+    const id = sessionIdOf(ctx);
+    const waiters = runStartWaiters.get(id) ?? new Set;
+    runStartWaiters.set(id, waiters);
+    let started = () => {};
+    const runStarted = new Promise((resolve) => {
+      started = () => resolve(null);
+    });
+    waiters.add(started);
     try {
-      pi.sendUserMessage(text, ctx.isIdle() ? undefined : { deliverAs: "followUp" });
-      return null;
+      const options = ctx.isIdle() ? undefined : { deliverAs: "followUp" };
+      const sent = Promise.resolve(pi.sendUserMessage(text, options)).then(() => null, (err) => messageOf(err));
+      return await Promise.race([sent, runStarted]);
     } catch (err) {
       return messageOf(err);
+    } finally {
+      waiters.delete(started);
     }
+  };
+  const onRunStart = (ctx) => {
+    for (const started of runStartWaiters.get(sessionIdOf(ctx)) ?? [])
+      started();
   };
   function askFor(ctx, id) {
     return async (prompt, system, _kind, report) => {
@@ -11344,7 +11360,10 @@ function createInbox(pi, deps = defaultDeps) {
   pi.on("session_shutdown", turns.onSessionShutdown);
   pi.on("before_agent_start", turns.onBeforeAgentStart);
   pi.on("input", turns.onInput);
-  pi.on("agent_start", turns.onAgentStart);
+  pi.on("agent_start", (event, ctx) => {
+    onRunStart(ctx);
+    return turns.onAgentStart(event, ctx);
+  });
   pi.on("turn_start", turns.onTurnStart);
   pi.on("tool_execution_start", activity.onToolExecutionStart);
   pi.on("tool_execution_end", activity.onToolExecutionEnd);

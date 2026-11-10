@@ -43,7 +43,7 @@ export type Inbox = {
   /** Applies a press for the session. */
   press(ctx: OmpContext, p: RowPress | PrPress, holds: Holds): Promise<PressOutcome>
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
-  resume(ctx: OmpContext): string | null
+  resume(ctx: OmpContext): Promise<string | null>
 }
 
 export function panelCalls(context: HostContext, sessions: SessionCalls) {
