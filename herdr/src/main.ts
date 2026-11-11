@@ -160,7 +160,7 @@ export default class Inbox extends View {
     for (const out of this.outs)
       if (out.takenAt === null && (await readTextFile(out.path).catch(() => null)) === null) out.takenAt = now
     const view = sessionView(this.read.session, now, SETTLED_MS, this.holds(now), this.notes)
-    const settled = settleOuts(this.outs, view, now, this.read.envelope.agent)
+    const settled = settleOuts(this.outs, view, this.read.lastPress, now, this.read.envelope.agent)
     this.outs = settled.outs
     this.notes = { ...this.notes, ...settled.notes }
     this.errors = { ...this.errors, ...settled.errors }

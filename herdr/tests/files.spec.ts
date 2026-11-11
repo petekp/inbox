@@ -10,11 +10,20 @@ test('a published session reads back with its source and its rows', () => {
   expect(read.envelope).toMatchObject({ host: 'claude-code', agent: AGENT, sessionId: 's1', terminal: 't1' })
   expect(read.session.ledger.items.length).toBeGreaterThan(0)
   expect(read.isTrimmed).toBe(false)
+  expect(read.lastPress).toBeNull()
 })
 
 test('a session the host trimmed to fit reads as trimmed', () => {
   const read = readSession(demoEnvelopeText({ trimmed: true }))
   expect(read.is === 'read' && read.isTrimmed).toBe(true)
+})
+
+test('the host’s last press reads back, and one in an unknown shape reads as none', () => {
+  const lastPress = { id: 'p1', outcome: 'stale' } as const
+  const read = readSession(demoEnvelopeText({ lastPress }))
+  expect(read.is === 'read' && read.lastPress).toEqual(lastPress)
+  const odd = readSession(demoEnvelopeText({ lastPress: { id: 'p1', outcome: 'lost' } }))
+  expect(odd.is === 'read' && odd.lastPress).toBeNull()
 })
 
 test('the file of a session lives under the app home’s inbox folder, named by its id', () => {

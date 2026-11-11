@@ -49,13 +49,26 @@ function outOn(rowId: string, overrides: Partial<Out> = {}): Out {
 test('a press ends when its row changes, reads stale once the host took it unchanged, and gives up unanswered', () => {
   const { view } = demoScreen()
   const rowId = view.needsYou.questions[0]!.id
-  expect(settleOuts([outOn(rowId, { before: 'other' })], view, NOW, AGENT).outs).toEqual([])
-  const waiting = settleOuts([outOn(rowId)], view, NOW + 100, AGENT)
+  expect(settleOuts([outOn(rowId, { before: 'other' })], view, null, NOW, AGENT).outs).toEqual([])
+  const waiting = settleOuts([outOn(rowId)], view, null, NOW + 100, AGENT)
   expect(waiting.outs.length).toBe(1)
-  const taken = settleOuts([outOn(rowId, { takenAt: NOW })], view, NOW + STALE_AFTER_TAKEN_MS, AGENT)
+  const taken = settleOuts([outOn(rowId, { takenAt: NOW })], view, null, NOW + STALE_AFTER_TAKEN_MS, AGENT)
   expect(taken.notes[rowId]?.note).toBe('stale')
-  const lost = settleOuts([outOn(rowId)], view, NOW + GIVE_UP_MS, AGENT)
+  const lost = settleOuts([outOn(rowId)], view, null, NOW + GIVE_UP_MS, AGENT)
   expect(lost.errors[rowId]).toContain(AGENT)
+})
+
+test('the host’s last press ends the press it names at once, as applied or as stale', () => {
+  const { view } = demoScreen()
+  const rowId = view.needsYou.questions[0]!.id
+  const out = outOn(rowId)
+  const applied = settleOuts([out], view, { id: out.pressId, outcome: 'applied' }, NOW + 100, AGENT)
+  expect(applied).toEqual({ outs: [], notes: {}, errors: {} })
+  const stale = settleOuts([out], view, { id: out.pressId, outcome: 'stale' }, NOW + 100, AGENT)
+  expect(stale.outs).toEqual([])
+  expect(stale.notes[rowId]?.note).toBe('stale')
+  const other = settleOuts([out], view, { id: 'another press', outcome: 'applied' }, NOW + 100, AGENT)
+  expect(other.outs).toEqual([out])
 })
 
 test('a pressed button and those with its action draw out, and its row reads Sending… until the press settles', () => {

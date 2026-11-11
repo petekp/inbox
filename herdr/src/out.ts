@@ -8,6 +8,7 @@ import type { SessionView } from '../../hooks/session-view'
 import { GOAL_KEYS_ID } from '../../hooks/status-keys'
 import type { RowNote } from '../../types'
 import type { Block, Button } from './blocks'
+import type { LastPress } from './files'
 
 /** What an out press's row reads until a publish shows the press, as the Codex tab's. */
 export const SENDING = 'Sending…'
@@ -55,13 +56,24 @@ type Settled = {
 }
 
 /**
- * The presses still out after a read of the session. A press ends when the row changed, as its last press or its
- * state. One the host took without a change was stale, and gets the shared stale note. One with no answer by
- * `GIVE_UP_MS` reads as not applied.
+ * The presses still out after a read of the session. The host's `lastPress` ends the press it names: applied, or
+ * stale when its row had already changed, which gets the shared stale note. It names only the last press, so another
+ * press ends when its row changed, as its last press or its state, and one the host took without a change was stale.
+ * One with no answer by `GIVE_UP_MS` reads as not applied.
  */
-export function settleOuts(outs: readonly Out[], view: SessionView, now: number, agent: string): Settled {
+export function settleOuts(
+  outs: readonly Out[],
+  view: SessionView,
+  lastPress: LastPress | null,
+  now: number,
+  agent: string,
+): Settled {
   const settled: Settled = { outs: [], notes: {}, errors: {} }
   for (const out of outs) {
+    if (lastPress?.id === out.pressId) {
+      if (lastPress.outcome === 'stale') settled.notes[out.rowId] = { note: 'stale', at: now }
+      continue
+    }
     if (rowSignature(view, out.rowId) !== out.before) continue
     if (out.takenAt !== null && now - out.takenAt >= STALE_AFTER_TAKEN_MS)
       settled.notes[out.rowId] = { note: 'stale', at: now }

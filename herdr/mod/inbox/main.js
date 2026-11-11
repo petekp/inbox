@@ -3740,6 +3740,11 @@ function isSessionChange(changed, appHome, sessionId) {
 }
 var isRecord = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
 var SOURCE_FIELDS = ["host", "agent", "sessionId", "terminal"];
+function lastPressOf2(x) {
+  if (!isRecord(x) || typeof x.id !== "string")
+    return null;
+  return x.outcome === "applied" || x.outcome === "stale" ? { id: x.id, outcome: x.outcome } : null;
+}
 function readSession(text) {
   if (text === null)
     return { is: "missing" };
@@ -3768,7 +3773,8 @@ function readSession(text) {
     is: "read",
     envelope,
     session: upgradeSession(file.session),
-    isTrimmed: file.trimmed === true
+    isTrimmed: file.trimmed === true,
+    lastPress: lastPressOf2(file.lastPress)
   };
 }
 
@@ -3979,9 +3985,14 @@ function rowSignature(view, rowId) {
   const goal = rowId === GOAL_KEYS_ID ? view.statusPage.goal?.text ?? null : null;
   return JSON.stringify([view.lastActions[rowId] ?? null, state, goal]);
 }
-function settleOuts(outs, view, now, agent) {
+function settleOuts(outs, view, lastPress, now, agent) {
   const settled = { outs: [], notes: {}, errors: {} };
   for (const out of outs) {
+    if (lastPress?.id === out.pressId) {
+      if (lastPress.outcome === "stale")
+        settled.notes[out.rowId] = { note: "stale", at: now };
+      continue;
+    }
     if (rowSignature(view, out.rowId) !== out.before)
       continue;
     if (out.takenAt !== null && now - out.takenAt >= STALE_AFTER_TAKEN_MS)
@@ -4357,7 +4368,7 @@ class Inbox extends View {
       if (out.takenAt === null && await readTextFile(out.path).catch(() => null) === null)
         out.takenAt = now;
     const view = sessionView(this.read.session, now, SETTLED_MS, this.holds(now), this.notes);
-    const settled = settleOuts(this.outs, view, now, this.read.envelope.agent);
+    const settled = settleOuts(this.outs, view, this.read.lastPress, now, this.read.envelope.agent);
     this.outs = settled.outs;
     this.notes = { ...this.notes, ...settled.notes };
     this.errors = { ...this.errors, ...settled.errors };
