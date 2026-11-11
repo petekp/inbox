@@ -7,6 +7,7 @@ Part of [the look map](../looks.md#files).
 | `omp/src/host.ts` | omp host. The only file that imports omp's packages. It binds the calls that need omp's types into a `HostContext`, and wires omp's events to the handlers in the `host-*.ts` files. It also registers the `record` and `close` tools and the `/inbox` command, and shows the band and the panel. |
 | `omp/src/host-context.ts` | omp host. `HostContext`, what `createInbox` holds for the handler files, and `OmpContext`, the part of omp's context they read. |
 | `omp/src/host-sessions.ts` | omp host. The session calls the handler files share: saving a change, omp's `SessionHost` and update host, catching up over the branch, and the PR and Herdr checks when due. |
+| `omp/src/host-presses.ts` | omp host. `ompPresses`: in a Herdr app terminal, watches the shown session's press folder and applies each press the Herdr look writes. Also `herdrLog`, the log of why a Herdr report or press failed. |
 | `omp/src/host-turns.ts` | omp host. The handlers for omp's session and turn events: a session's start and shutdown, a prompt's arrival, the reply, and the turn's end. |
 | `omp/src/host-activity.ts` | omp host. The handlers for the main agent's activity: subagent frames, tool calls, and bash calls that wait on Herdr delegates. |
 | `omp/src/host-panel.ts` | omp host. The `Inbox` calls the panel makes on the host, and the live source the panel draws from. |

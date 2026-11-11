@@ -123,7 +123,7 @@ export type PressOutcome = {
   wakesAfterSettle: boolean
 }
 
-type PressHost<S extends Session> = Pick<
+export type PressHost<S extends Session> = Pick<
   SessionHost<S>,
   | 'now'
   | 'read'

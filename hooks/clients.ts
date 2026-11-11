@@ -40,6 +40,8 @@ export type FeatureId =
   | 'tab-symbols'
   | 'dim-pressed-button'
   | 'herdr-sidebar'
+  | 'herdr-look'
+  | 'herdr-open'
   | 'status-children'
   | 'child-names'
   | 'status-look-line'
@@ -117,6 +119,8 @@ export const CLIENTS: Record<ClientId, Client> = {
           "The desktop app's Button has no disabled state. `dimColor` fades only its label, and a click still shows the native press highlight before the shared press path ignores it.",
       },
       'herdr-sidebar': { kind: 'full' },
+      'herdr-look': { kind: 'full' },
+      'herdr-open': { kind: 'full' },
       'status-children': { kind: 'full' },
       'child-names': { kind: 'full' },
       'status-look-line': { kind: 'full' },
@@ -226,7 +230,16 @@ export const CLIENTS: Record<ClientId, Client> = {
       'herdr-sidebar': {
         kind: 'different',
         reason:
-          "Only Codex's hooks and the update a hook starts know the Herdr pane, so a record or close during a turn reaches the sidebar at the next hook. Codex finds no stops, and runs no hook when a session ends.",
+          "In a Herdr pane, only Codex's hooks and the update a hook starts report, so a record or close during a turn reaches the sidebar at the next hook. In a Herdr app terminal, the MCP server labels too. Codex finds no stops, and runs no hook when a session ends, so its tokens or labels stay.",
+      },
+      'herdr-look': {
+        kind: 'different',
+        reason: 'Codex runs no hook when a session ends, so its published file stays.',
+      },
+      'herdr-open': {
+        kind: 'unsupported',
+        reason:
+          'The Codex CLI has no action that opens the inbox. A Codex plugin adds skills, MCP servers and hooks but no slash command, and the Inbox tab shows only in the Codex app. A `$inbox` skill that has the model call an MCP tool could open the Herdr look, but only after a model turn, so the press could not show what it did at once. It is left as an option.',
       },
       'status-children': {
         kind: 'different',
@@ -343,6 +356,8 @@ export const CLIENTS: Record<ClientId, Client> = {
           'The panel already draws a follow-up such as Discuss dim, and has no dimmer style, so an out follow-up looks as it does at rest until it is focused. Its key still does nothing.',
       },
       'herdr-sidebar': { kind: 'full' },
+      'herdr-look': { kind: 'full' },
+      'herdr-open': { kind: 'full' },
       'status-children': {
         kind: 'different',
         reason:

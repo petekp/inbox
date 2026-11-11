@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { NO_PR_SHARED } from '../../hooks/pr-fetch'
 import { existsSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,7 +12,10 @@ import type { AssistantMessage, Context, Model } from '@oh-my-pi/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 
 import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
-import { herdrReporter } from '../../hooks/herdr'
+import { herdrReporter, herdrTarget } from '../../hooks/herdr'
+import type { HerdrTarget } from '../../hooks/herdr'
+import { herdrPanelOpener } from '../../hooks/herdr-open'
+import type { PressFile } from '../../hooks/herdr-press-file'
 import type { Run } from '../../hooks/gh'
 import { COMPARE_PAGE_FILE } from '../../hooks/press-messages'
 import { recorded } from '../../hooks/session-presses'
@@ -32,7 +36,8 @@ import type { OmpState } from './state'
 import { OMP, TOOL_LABELS } from './texts'
 import { activityHandlers } from './host-activity'
 import { isUnattended, sessionIdOf } from './host-context'
-import type { HostContext } from './host-context'
+import type { HostContext, OmpContext } from './host-context'
+import { herdrLog, ompPresses } from './host-presses'
 import { panelCalls } from './host-panel'
 import type { Inbox } from './host-panel'
 import { sessionCalls } from './host-sessions'
@@ -71,8 +76,8 @@ export type HostDeps = {
   after: (ms: number, fn: () => Promise<unknown>) => void
   /** Whether a failed request hit the account's usage limit, by omp's own rule. */
   isUsageLimit: (status: number | undefined, message: string) => Promise<boolean>
-  /** The Herdr pane omp runs in, from `HERDR_PANE_ID`, or null outside Herdr. */
-  herdrPane: string | null
+  /** The Herdr pane or app terminal omp runs in, from `herdrTarget`, or null outside Herdr. */
+  herdrTarget: HerdrTarget | null
 }
 
 async function defaultComplete(
@@ -123,7 +128,7 @@ const defaultDeps: HostDeps = {
   background: work => void work.catch(() => undefined),
   after: (ms, fn) => void setTimeout(fn, ms).unref(),
   isUsageLimit: isUsageLimitOutcome,
-  herdrPane: process.env.HERDR_PANE_ID || null,
+  herdrTarget: herdrTarget(process.env),
 }
 
 const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err))
@@ -267,6 +272,11 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     return model ? (model.name ?? model.id) : null
   }
 
+  const logHerdr = herdrLog(dir)
+  const applyHerdrPress = async (ctx: OmpContext, file: PressFile) => {
+    await inbox.press(ctx, file.press, file.holds, file)
+  }
+
   const context: HostContext = {
     deps,
     dir,
@@ -274,9 +284,11 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     prepared: new Set(),
     prFetches: prFetchTracker(deps.now),
     listeners: new Map(),
-    reportToHerdr: herdrReporter(),
+    reportToHerdr: herdrReporter(logHerdr),
+    logHerdr,
+    presses: ompPresses(deps.herdrTarget, (ctx, file) => applyHerdrPress(ctx, file), logHerdr),
     run,
-    memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null },
+    memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null, shownCwd: null },
     sendToAgent,
     askFor,
     dropTools,
@@ -438,10 +450,18 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     }
   }
 
+  const openHerdrPanel = herdrPanelOpener()
+  const isFile = (path: string) => stat(path).then(s => s.isFile())
+
   pi.registerCommand('inbox', {
     description: inboxCommandText(deps.isNextBuild),
     handler: async (args, ctx) => {
       const isDemo = args.trim() === 'demo'
+      const target = deps.herdrTarget
+      const isHerdrApp = ctx.mode === 'tui' && !args.trim() && target?.kind === 'terminal'
+      const herdr = isHerdrApp ? await openHerdrPanel({ run, isFile }, target) : null
+      if (herdr) ctx.ui.notify(herdr.text, herdr.isShown ? 'info' : 'warning')
+      if (herdr?.isShown) return
       if (ctx.mode === 'tui') return openPanelUi(ctx, isDemo)
       const screen = isDemo
         ? await demoSource({

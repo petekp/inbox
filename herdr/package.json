@@ -1,0 +1,18 @@
+{
+  "name": "inbox-herdr",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "The inbox's look in the Herdr app: a Herdr app mod built on the shared modules in ../hooks",
+  "scripts": {
+    "build": "bun build.ts",
+    "check": "bun build.ts --check",
+    "test": "bun test tests",
+    "types": "bun herdr-types.ts && tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@oven/bun-darwin-aarch64": "1.4.4",
+    "@types/bun": "1.3.0",
+    "typescript": "7.0.2"
+  }
+}

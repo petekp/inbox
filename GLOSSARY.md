@@ -249,15 +249,25 @@ changed since", with Rank again, which asks the agent to rank the PRs again.
 ### Looks and hosts
 
 **Look**:
-One of the four ways the inbox is drawn: `terminal` in the Claude Code
+One of the five ways the inbox is drawn: `terminal` in the Claude Code
 terminal, `desktop` in the pane of the Claude desktop app's Code sessions,
-`codex` in the Codex tab, and `omp` in omp's panel. `Look` in `hooks/rows.ts`.
+`codex` in the Codex tab, `omp` in omp's panel, and `herdr` in a pane of the
+Herdr app. `Look` in `hooks/rows.ts`.
 _Avoid_: client, surface
 
 **Host**:
 The program that runs the inbox code. Claude Code runs the mod, which draws
 the terminal and desktop looks. Codex runs the plugin, which draws the Codex
-tab. omp runs the extension in `omp/`, which draws the omp panel.
+tab. omp runs the extension in `omp/`, which draws the omp panel. The Herdr
+look has no host of its own: a host running in a Herdr app terminal publishes
+its session, and the Herdr app runs the mod in `herdr/`, which draws it.
+
+**Published session**:
+The file a host writes for the Herdr look at
+`<app home>/inbox/sessions/<session id>.json`, after each saved change. It
+holds the session with its source: the host, the agent, the session id, the
+terminal, and the project folder when the host knows it. The terminal's `inbox.session` label names it. `HerdrEnvelope` in
+`hooks/herdr.ts`.
 
 **Shared module**:
 A file in `hooks/` that every host consumes, directly or through a build.
@@ -269,6 +279,7 @@ looks, it is `hooks/register.tsx` and the `hooks/pane-*.tsx` files. For the
 Codex tab, it is `codex/src/tab.tsx`, the other `codex/src/tab-*` files,
 `codex/src/row-actions.tsx` and the styles in `codex/src/tab-css/`. For the omp
 panel, it is `omp/src/panel.ts` and the other `omp/src/panel-*.ts` files.
+For the Herdr look, it is the files in `herdr/src`.
 
 **Difference on purpose**:
 A behavior that differs between looks because one look cannot do something,

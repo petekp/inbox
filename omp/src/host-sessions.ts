@@ -1,4 +1,4 @@
-import { mkdir, readdir, rm, rmdir, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, rename, rm, rmdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import { flattenConversation } from '../../hooks/conversation'
@@ -6,7 +6,9 @@ import { isCompareInBackground } from '../../hooks/clients'
 import { screenText } from '../../hooks/inbox-text'
 import type { ScreenTab } from '../../hooks/inbox-text'
 import { ghFinder, ghIn } from '../../hooks/gh'
-import { delegatesInHerdr, herdrCheckGate, herdrTokens } from '../../hooks/herdr'
+import { CLEARED_TOKENS, delegatesInHerdr, herdrCheckGate, herdrTokens } from '../../hooks/herdr'
+import { publishedSession, unpublishSession } from '../../hooks/herdr-app'
+import type { PublishFiles } from '../../hooks/herdr-app'
 import { endTurn, turnEnded } from '../../hooks/session-turns'
 import { forkedFrom, hasLedger, isUnseen, statusChanged } from '../../hooks/session-status'
 import { sessionView } from '../../hooks/session-view'
@@ -31,6 +33,17 @@ const WAKE_MARGIN_MS = 250
 /** The session id in a session file's name, `<timestamp>_<sessionId>.jsonl`. Null for any other name. */
 function sessionIdInFile(file: string): string | null {
   return /(?:^|[\\/])[^_\\/]+_([^\\/]+)\.jsonl$/.exec(file)?.[1] ?? null
+}
+
+/** Node's file calls for publishing a session. The move is a rename, which replaces the file in one step. */
+const publishFiles: PublishFiles = {
+  write: async (path, text) => {
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, text)
+  },
+  move: (from, to) => rename(from, to),
+  remove: path => rm(path, { force: true }),
+  removeFolder: path => rm(path, { recursive: true, force: true }),
 }
 
 const recordFiles: RecordFiles = {
@@ -98,20 +111,61 @@ export function sessionCalls(context: HostContext) {
 
   const gh = ghFinder(run)
 
-  function reportCounts(id: string): void {
-    const pane = deps.herdrPane
-    if (!pane || id !== memory.shownId) return
+  /**
+   * Reports the session omp shows to the Herdr pane or app terminal it runs in. In an app terminal, each report's turn
+   * first publishes the session for the Herdr look, so the files land in the order of the changes. The labels name the
+   * session only once its file is written. `left` is a session omp no longer shows, whose file that turn removes first.
+   */
+  function reportCounts(id: string, left?: string): void {
+    const target = deps.herdrTarget
+    if (!target || id !== memory.shownId) return
+    const appHome = target.kind === 'terminal' ? target.appHome : null
     deps.background(
       reportToHerdr(
         run,
         async () => {
+          if (appHome && left) await unpublishSession(publishFiles, appHome, left).catch(() => undefined)
           const s = await readState(dir, id)
-          const view = sessionView(s, deps.now(), deps.settleWindowMs)
+          const now = deps.now()
+          const isPublished =
+            target.kind === 'terminal' &&
+            (await publishedSession(
+              publishFiles,
+              appHome,
+              {
+                host: 'omp',
+                agent: OMP.agent,
+                sessionId: id,
+                terminal: target.terminal,
+                writtenAt: now,
+                projectFolder: memory.shownCwd?.(),
+              },
+              s,
+              context.logHerdr,
+            ))
+          const view = sessionView(s, now, deps.settleWindowMs)
 
-          return { pane, tokens: herdrTokens(s.ledger, s.stop, view, []) }
+          return { target, tokens: herdrTokens(s.ledger, s.stop, view, []), session: isPublished ? id : null }
         },
         deps.after,
       ),
+    )
+  }
+
+  /** Removes the session's published file and clears every token and label, as omp shuts down. */
+  function reportEnded(id: string): Promise<boolean> {
+    const target = deps.herdrTarget
+    if (!target) return Promise.resolve(false)
+    const appHome = target.kind === 'terminal' ? target.appHome : null
+
+    return reportToHerdr(
+      run,
+      async () => {
+        if (appHome) await unpublishSession(publishFiles, appHome, id).catch(() => undefined)
+
+        return { target, tokens: CLEARED_TOKENS, session: null }
+      },
+      deps.after,
     )
   }
 
@@ -263,6 +317,7 @@ export function sessionCalls(context: HostContext) {
     hostFor,
     updateHostFor,
     reportCounts,
+    reportEnded,
     prepare,
     continueFork,
     catchUpUnseen,

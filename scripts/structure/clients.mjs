@@ -47,8 +47,18 @@ function parityRecord(root) {
   }
 }
 
-const TABLE_PARTS = { main: 'docs/looks/differences-*.md', omp: 'docs/looks/differences-omp*.md' }
-const tableOf = part => (part.startsWith('docs/looks/differences-omp') ? 'omp' : 'main')
+/** The Differences on purpose tables: the main one, omp's, and the Herdr look's, each told apart by its parts' names. */
+const TABLE_PARTS = {
+  main: 'docs/looks/differences-*.md',
+  omp: 'docs/looks/differences-omp*.md',
+  herdr: 'docs/looks/differences-herdr*.md',
+}
+const tableOf = part =>
+  part.startsWith('docs/looks/differences-omp')
+    ? 'omp'
+    : part.startsWith('docs/looks/differences-herdr')
+      ? 'herdr'
+      : 'main'
 
 function differenceRows(root, table) {
   return lookParts(root, 'differences-')
@@ -70,7 +80,7 @@ export function checkClients(root, errors) {
     if (!FEATURE_ID.test(id))
       errors.push(`hooks/clients.ts has feature id '${id}'. Use lowercase words joined by hyphens.`)
   const named = {}
-  for (const table of new Set(Object.values(DIFFERENCE_TABLES))) {
+  for (const table of Object.keys(TABLE_PARTS)) {
     const rows = differenceRows(root, table)
     named[table] = new Set(rows.map(row => row.id))
     for (const { id, part } of rows)

@@ -6,6 +6,7 @@ import type { prFetchTracker } from '../../hooks/host-prs'
 import type { ShownTab } from '../../hooks/tabs'
 import type { OmpState } from './state'
 import type { HostDeps } from './host'
+import type { OmpPresses } from './host-presses'
 
 /** The slice of omp's extension context the handlers read. */
 export type OmpContext = {
@@ -23,6 +24,8 @@ type Memory = {
   shownId: string | null
   /** The session the main agent runs. A `task:subagent:*` frame names no session, and only the main agent's own subagents send one here. */
   framesFor: string | null
+  /** The working folder of the session omp shows, read when asked, which its presses open paths against. */
+  shownCwd: (() => string) | null
 }
 
 export type HostContext = {
@@ -34,6 +37,10 @@ export type HostContext = {
   prFetches: ReturnType<typeof prFetchTracker>
   listeners: Map<string, Set<() => void>>
   reportToHerdr: ReturnType<typeof herdrReporter>
+  /** Says why Herdr's labels or published file did not change. */
+  logHerdr: (text: string) => void
+  /** Follows the presses the Herdr look writes for the session omp shows. */
+  presses: OmpPresses
   run: Run
   memory: Memory
   sendToAgent(ctx: OmpContext, text: string): Promise<string | null>

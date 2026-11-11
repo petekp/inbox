@@ -17,6 +17,13 @@ codex/test-dist/
 # The omp extension's tools
 omp/node_modules
 
+# The Herdr look's tools, and the Herdr app's own type files that herdr/herdr-types.ts copies in
+herdr/node_modules
+herdr/.herdr-types/
+# `herdr-app check` writes the app's types and an editor config into the mod folder it checks
+herdr/mod/inbox/gpui-kit.d.ts
+herdr/mod/inbox/jsconfig.json
+
 # The tab page `npm --prefix codex run dev` keeps built
 codex/.dev/
 
