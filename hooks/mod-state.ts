@@ -82,6 +82,8 @@ class ModState {
   prFetchEndedAt: number | undefined
   /** Stops following the presses the Herdr look writes, in a Herdr app terminal. */
   stopHerdrPresses: (() => void) | null = null
+  /** Why the last turn-on could not install or update the inbox's Herdr mod, or null. */
+  herdrModFailure: string | null = null
 }
 
 export const mod = new ModState()

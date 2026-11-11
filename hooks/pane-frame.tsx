@@ -158,7 +158,10 @@ export function paneFrame(
     )
   }
   const statusLines = tabBarBanners(
-    mod.toolsRefused ? [bannerOf('tools-refused', TOOLS_REFUSED_TEXT)] : [],
+    [
+      ...(mod.toolsRefused ? [bannerOf('tools-refused', TOOLS_REFUSED_TEXT)] : []),
+      ...(mod.herdrModFailure ? [bannerOf('herdr-mod-failed', mod.herdrModFailure)] : []),
+    ],
     shownStatus.error,
     lineNote
       ? { text: feedbackText({ is: 'note', note: lineNote.note, at: lineNote.at }, look), isError: false }

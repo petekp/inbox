@@ -88,11 +88,23 @@ async function savedAnswer(files: ModFiles, appHome: string): Promise<ModAnswer 
   }
 }
 
-const temporaryName = (name: string) => `${name}.${Math.random().toString(36).slice(2)}.tmp`
+/** A name beside `name` for a write that moves into place, with the time the host wrote it. */
+const temporaryName = (name: string, at: number) =>
+  `${name}.${Math.round(at)}-${Math.random().toString(36).slice(2)}.tmp`
+
+/** A temporary file or folder an install, update or answer writes under `<app home>/inbox/`, with its write time. */
+const MOD_TEMPORARY = /^herdr-mod(?:\.json)?\.(\d{1,15})-[a-z0-9]{1,20}\.tmp$/
+
+/** When a host wrote `name`, a temporary file or folder of the mod's under `<app home>/inbox/`, or null if it is not one. */
+export function modTemporaryWrittenAt(name: string): number | null {
+  const match = MOD_TEMPORARY.exec(name)
+
+  return match ? Number(match[1]) : null
+}
 
 async function saveAnswer(files: ModFiles, appHome: string, answer: ModAnswer, at: number) {
   const path = answerPath(appHome)
-  const temporary = temporaryName(path)
+  const temporary = temporaryName(path, at)
   await files.write(temporary, `${JSON.stringify({ format: ANSWER_FORMAT, answer, at })}\n`)
   await files.move(temporary, path)
 }
@@ -113,8 +125,14 @@ function modStep(installed: InstalledMod, answer: ModAnswer | null, bundled: Bun
  * whole after every step and Herdr reloads it in place. Either does nothing when another host got there first,
  * including when that makes the install's move fail.
  */
-async function writeMod(files: ModFiles, appHome: string, bundled: BundledMod, step: 'install' | 'update') {
-  const name = temporaryName('herdr-mod')
+async function writeMod(
+  files: ModFiles,
+  appHome: string,
+  bundled: BundledMod,
+  step: 'install' | 'update',
+  now: number,
+) {
+  const name = temporaryName('herdr-mod', now)
   const temporary = `${appHome}/inbox/${name}`
   const target = modFolder(appHome)
   try {
@@ -165,16 +183,16 @@ export async function keepHerdrModCurrent(
     .then(([installed, answer]) => modStep(installed, answer, bundled))
     .catch((err: unknown) => new Error(message(err)))
   if (step instanceof Error)
-    return { is: 'failed', text: `Could not read the Herdr app's mods folder: ${step.message}` }
+    return { is: 'failed', text: `Could not read the Herdr app's mods folder. ${step.message}` }
   if (step === null) return { is: 'current' }
   if (step === 'ask') return { is: 'ask' }
   try {
-    await writeMod(files, appHome, bundled, step)
+    await writeMod(files, appHome, bundled, step, now)
     if (step === 'install') await saveAnswer(files, appHome, 'installed', now)
 
     return { is: step === 'install' ? 'installed' : 'updated' }
   } catch (err) {
-    return { is: 'failed', text: `Could not ${step} the inbox mod in Herdr: ${message(err)}` }
+    return { is: 'failed', text: `Could not ${step} the inbox mod in Herdr. ${message(err)}` }
   }
 }
 
@@ -192,7 +210,7 @@ export async function answerHerdrMod(
   try {
     await saveAnswer(files, appHome, isYes ? 'yes' : 'no', now)
   } catch (err) {
-    return { is: 'failed', text: `Could not save the answer about the inbox mod in Herdr: ${message(err)}` }
+    return { is: 'failed', text: `Could not save the answer about the inbox mod in Herdr. ${message(err)}` }
   }
 
   return isYes ? keepHerdrModCurrent(files, appHome, bundledFolder, now) : { is: 'current' }

@@ -896,7 +896,8 @@ var BANNER_TONES = {
   "server-gone": "error",
   "server-load-failed": "error",
   "server-builds-differ": "warning",
-  "tab-update-failed": "warning"
+  "tab-update-failed": "warning",
+  "herdr-mod-failed": "warning"
 };
 function bannerOf(kind, text) {
   const end = text.indexOf(". ");
@@ -7760,7 +7761,8 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const rule = style.dim("\u2500".repeat(width));
   const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.statusPage.error);
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS;
-  const banners = tabBarBanners([], status.error, isNoticeShown ? ui.notice : null);
+  const host = screen.herdrModFailure ? [bannerOf("herdr-mod-failed", screen.herdrModFailure)] : [];
+  const banners = tabBarBanners(host, status.error, isNoticeShown ? ui.notice : null);
   const head = [
     ...screen.isDemo ? bannerLines(bannerOf("demo", DEMO_NOTICE), width, style) : [],
     rule,
@@ -8692,7 +8694,7 @@ var CLIENTS = {
       },
       "herdr-install": {
         kind: "different",
-        reason: "The Codex CLI shows no inbox where the install question could show: a Codex plugin adds no slash command, and the Inbox tab shows only in the Codex app. Codex updates an installed inbox build, and installs after a yes another host saved."
+        reason: "The Codex CLI shows no inbox where the install question could show: a Codex plugin adds no slash command, and the Inbox tab shows only in the Codex app. Codex updates an installed inbox build, and installs after a yes another host saved. A failed install or update goes only to its log."
       },
       "status-children": {
         kind: "different",
@@ -11157,10 +11159,15 @@ async function savedAnswer(files, appHome) {
     return null;
   }
 }
-var temporaryName = (name) => `${name}.${Math.random().toString(36).slice(2)}.tmp`;
+var temporaryName = (name, at) => `${name}.${Math.round(at)}-${Math.random().toString(36).slice(2)}.tmp`;
+var MOD_TEMPORARY = /^herdr-mod(?:\.json)?\.(\d{1,15})-[a-z0-9]{1,20}\.tmp$/;
+function modTemporaryWrittenAt(name) {
+  const match = MOD_TEMPORARY.exec(name);
+  return match ? Number(match[1]) : null;
+}
 async function saveAnswer(files, appHome, answer, at) {
   const path = answerPath(appHome);
-  const temporary = temporaryName(path);
+  const temporary = temporaryName(path, at);
   await files.write(temporary, `${JSON.stringify({ format: ANSWER_FORMAT, answer, at })}
 `);
   await files.move(temporary, path);
@@ -11172,8 +11179,8 @@ function modStep(installed, answer, bundled) {
     return null;
   return bundled.builtAt > (installed.builtAt ?? "") ? "update" : null;
 }
-async function writeMod(files, appHome, bundled, step) {
-  const name = temporaryName("herdr-mod");
+async function writeMod(files, appHome, bundled, step, now) {
+  const name = temporaryName("herdr-mod", now);
   const temporary = `${appHome}/inbox/${name}`;
   const target = modFolder(appHome);
   try {
@@ -11211,18 +11218,18 @@ async function keepHerdrModCurrent(files, appHome, bundledFolder, now) {
     return { is: "failed", text: `Could not read the inbox mod for Herdr in ${bundledFolder}.` };
   const step = await Promise.all([installedMod(files, appHome), savedAnswer(files, appHome)]).then(([installed, answer]) => modStep(installed, answer, bundled)).catch((err) => new Error(message2(err)));
   if (step instanceof Error)
-    return { is: "failed", text: `Could not read the Herdr app's mods folder: ${step.message}` };
+    return { is: "failed", text: `Could not read the Herdr app's mods folder. ${step.message}` };
   if (step === null)
     return { is: "current" };
   if (step === "ask")
     return { is: "ask" };
   try {
-    await writeMod(files, appHome, bundled, step);
+    await writeMod(files, appHome, bundled, step, now);
     if (step === "install")
       await saveAnswer(files, appHome, "installed", now);
     return { is: step === "install" ? "installed" : "updated" };
   } catch (err) {
-    return { is: "failed", text: `Could not ${step} the inbox mod in Herdr: ${message2(err)}` };
+    return { is: "failed", text: `Could not ${step} the inbox mod in Herdr. ${message2(err)}` };
   }
 }
 
@@ -11282,6 +11289,17 @@ async function sweepPublished(files, appHome, labelled, ownTerminal, now) {
   }
   return removed;
 }
+async function sweepModTemporaries(files, appHome, now) {
+  const folder = `${appHome}/inbox`;
+  const names = await files.list(folder).catch(() => []);
+  const stale = names.filter((name) => {
+    const at = modTemporaryWrittenAt(name);
+    return at !== null && now - at >= SWEEP_AFTER_MS;
+  });
+  for (const name of stale)
+    await files.removeFolder(`${folder}/${name}`);
+  return stale.length;
+}
 
 // ../hooks/herdr-start.ts
 var message3 = (err) => err instanceof Error ? err.message : String(err);
@@ -11294,6 +11312,9 @@ function modLine(result) {
 }
 async function sweep(run, files, target, now, log) {
   const { appHome, hc: hcs, terminal } = target;
+  const temporaries = await sweepModTemporaries(files, appHome, now);
+  if (temporaries > 0)
+    log(`Removed ${temporaries} temporary ${temporaries === 1 ? "copy" : "copies"} an unfinished inbox mod install left.`);
   const labelled = await labelledSessions(run, hcs);
   if (!labelled)
     return log(`Left old inbox session files in place: no hc listed Herdr's terminals. Tried ${hcs.join(", then ")}.`);
@@ -11351,13 +11372,13 @@ var startFiles = {
   move: (from, to) => rename2(from, to),
   remove: (path) => rm(path, { force: true }),
   removeFolder: (path) => rm(path, { recursive: true, force: true }),
-  list: async (folder) => (await readdir2(folder, { withFileTypes: true })).filter((e) => e.isFile()).map((e) => e.name)
+  list: async (folder) => (await readdir2(folder, { withFileTypes: true })).filter((e) => e.isFile() || e.isDirectory()).map((e) => e.name)
 };
 async function startOmpInHerdrApp(target, run, log) {
   if (target?.kind !== "terminal")
-    return;
+    return null;
   const bundled = join2(dirname(fileURLToPath(import.meta.url)), "herdr-mod");
-  await startInHerdrApp(run, startFiles, target, bundled, Date.now(), log);
+  return startInHerdrApp(run, startFiles, target, bundled, Date.now(), log);
 }
 var message4 = (err) => err instanceof Error ? err.message : String(err);
 function ompPresses(target, apply, log) {
@@ -11426,6 +11447,7 @@ function panelCalls(context, sessions) {
         view: sessionView(s, deps.now(), deps.settleWindowMs, holds),
         modelName: modelNameOf(ctx),
         isGhMissing: memory.isGhMissing,
+        herdrModFailure: memory.herdrModFailure,
         isFetchingPrs: prFetches.isFetching(id),
         stop: s.stop,
         version,
@@ -12131,7 +12153,14 @@ function createInbox(pi, deps = defaultDeps) {
     logHerdr,
     presses: ompPresses(deps.herdrTarget, (ctx, file) => applyHerdrPress(ctx, file), logHerdr),
     run,
-    memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null, shownCwd: null },
+    memory: {
+      isGhMissing: false,
+      prShared: NO_PR_SHARED,
+      shownId: null,
+      framesFor: null,
+      shownCwd: null,
+      herdrModFailure: null
+    },
     sendToAgent,
     askFor,
     dropTools,
@@ -12152,7 +12181,7 @@ function createInbox(pi, deps = defaultDeps) {
   let isHerdrStarted = false;
   pi.on("session_start", (_event, ctx) => {
     if (!isHerdrStarted)
-      startOmpInHerdrApp(deps.herdrTarget, run, logHerdr).catch(() => {
+      startOmpInHerdrApp(deps.herdrTarget, run, logHerdr).then((result) => void (context.memory.herdrModFailure = result?.is === "failed" ? result.text : null)).catch(() => {
         return;
       });
     isHerdrStarted = true;

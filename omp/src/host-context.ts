@@ -26,6 +26,8 @@ type Memory = {
   framesFor: string | null
   /** The working folder of the session omp shows, read when asked, which its presses open paths against. */
   shownCwd: (() => string) | null
+  /** Why this omp could not install or update the inbox's Herdr mod at its start, or null. */
+  herdrModFailure: string | null
 }
 
 export type HostContext = {

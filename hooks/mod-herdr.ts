@@ -26,6 +26,7 @@ import type { ModFiles } from './herdr-install'
 import { startInHerdrApp } from './herdr-start'
 import type { SweepFiles } from './herdr-sweep'
 import { CLAUDE_CODE } from './model-text'
+import { mod } from './mod-state'
 import { sessionView } from './session-view'
 import { SETTLED_MS } from './timing'
 
@@ -71,7 +72,8 @@ function herdrFiles(calls: HerdrCalls): PublishFiles & PressFiles & ModFiles & S
   return {
     write: calls.write,
     read: calls.read,
-    list: async folder => (await calls.list(folder)).filter(e => e.kind === 'file').map(e => e.name),
+    list: async folder =>
+      (await calls.list(folder)).filter(e => e.kind === 'file' || e.kind === 'dir').map(e => e.name),
     move: (from, to) => runOrThrow(['mv', '-f', '--', from, to]),
     remove: path => runOrThrow(['rm', '-f', '--', path]),
     removeFolder: path => runOrThrow(['rm', '-rf', '--', path]),
@@ -124,13 +126,20 @@ export function openInHerdr(calls: HerdrCalls): Promise<HerdrOpened> | HerdrOpen
 
 /**
  * In a Herdr app terminal, keeps the inbox's mod in the app current with the one this install holds, and removes the
- * published sessions no live terminal can show, as `startInHerdrApp` says. The mod runs it as it turns on.
+ * published sessions no live terminal can show, as `startInHerdrApp` says. The mod runs it as it turns on. A failed
+ * install or update shows as a banner until the next turn-on, and `redraw` runs when that banner changes.
  */
-export async function startInHerdr(calls: HerdrCalls): Promise<void> {
+export async function startInHerdr(calls: HerdrCalls, redraw: () => unknown): Promise<void> {
   const target = await targetOf(calls)
   if (target?.kind !== 'terminal') return
   const files = herdrFiles(calls)
-  await startInHerdrApp(calls.run, files, target, `${calls.pluginRoot}/herdr/mod/inbox`, await calls.now(), calls.log)
+  const bundled = `${calls.pluginRoot}/herdr/mod/inbox`
+  const result = await startInHerdrApp(calls.run, files, target, bundled, await calls.now(), calls.log)
+  const failure = result?.is === 'failed' ? result.text : null
+  if (failure !== mod.herdrModFailure) {
+    mod.herdrModFailure = failure
+    redraw()
+  }
   if (appTerminal) appTerminal.hasMod = await hasHerdrMod(openCalls(calls).isFile, target)
 }
 

@@ -44,6 +44,8 @@ export type PanelScreen = {
   isDemo?: boolean
   /** The last read of the session failed, so the screen is the one before it. */
   isReadFailed?: boolean
+  /** Why this omp could not install or update the inbox's Herdr mod, or null. */
+  herdrModFailure?: string | null
 }
 
 export type Tone = ToneName | 'accent' | 'sep'
@@ -195,7 +197,8 @@ export function drawPanel(
     screen.view.statusPage.error,
   )
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
-  const banners = tabBarBanners([], status.error, isNoticeShown ? ui.notice : null)
+  const host = screen.herdrModFailure ? [bannerOf('herdr-mod-failed', screen.herdrModFailure)] : []
+  const banners = tabBarBanners(host, status.error, isNoticeShown ? ui.notice : null)
   const head = [
     ...(screen.isDemo ? bannerLines(bannerOf('demo', DEMO_NOTICE), width, style) : []),
     rule,

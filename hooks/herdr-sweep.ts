@@ -1,6 +1,7 @@
 import type { Run } from './gh'
 import { HERDR_FORMAT, publishedSessionsFolder, SESSION_LABEL } from './herdr'
 import { unpublishSession } from './herdr-app'
+import { modTemporaryWrittenAt } from './herdr-install'
 import type { PublishFiles } from './herdr-app'
 import { isSessionFile } from './session-files'
 
@@ -70,7 +71,7 @@ function published(text: string | null, sessionId: string): { terminal: unknown;
   }
 }
 
-/** The file calls a sweep needs. `list` gives a folder's file names. */
+/** The file calls a sweep needs. `list` gives the names of a folder's files and folders. */
 export type SweepFiles = Pick<PublishFiles, 'remove' | 'removeFolder'> & {
   list: (folder: string) => Promise<readonly string[]>
   read: (path: string) => Promise<string>
@@ -103,4 +104,21 @@ export async function sweepPublished(
   }
 
   return removed
+}
+
+/**
+ * Removes each temporary file or folder an install, update or answer left in `<app home>/inbox/` over
+ * `SWEEP_AFTER_MS` before `now`, as when its host stopped mid-write. Resolves with how many it removed.
+ */
+export async function sweepModTemporaries(files: SweepFiles, appHome: string, now: number): Promise<number> {
+  const folder = `${appHome}/inbox`
+  const names = await files.list(folder).catch(() => [])
+  const stale = names.filter(name => {
+    const at = modTemporaryWrittenAt(name)
+
+    return at !== null && now - at >= SWEEP_AFTER_MS
+  })
+  for (const name of stale) await files.removeFolder(`${folder}/${name}`)
+
+  return stale.length
 }

@@ -10,7 +10,7 @@ import type { HerdrTarget } from '../../hooks/herdr'
 import type { PressFile } from '../../hooks/herdr-press-file'
 import { followPresses, isPublishedHere, pressDrainer, pressFileProblem } from '../../hooks/herdr-app'
 import type { PressFiles } from '../../hooks/herdr-app'
-import type { ModFiles } from '../../hooks/herdr-install'
+import type { HerdrModResult, ModFiles } from '../../hooks/herdr-install'
 import { startInHerdrApp } from '../../hooks/herdr-start'
 import type { SweepFiles } from '../../hooks/herdr-sweep'
 import { sessionIdOf } from './host-context'
@@ -65,7 +65,8 @@ const startFiles: ModFiles & SweepFiles = {
   move: (from, to) => rename(from, to),
   remove: path => rm(path, { force: true }),
   removeFolder: path => rm(path, { recursive: true, force: true }),
-  list: async folder => (await readdir(folder, { withFileTypes: true })).filter(e => e.isFile()).map(e => e.name),
+  list: async folder =>
+    (await readdir(folder, { withFileTypes: true })).filter(e => e.isFile() || e.isDirectory()).map(e => e.name),
 }
 
 /**
@@ -73,10 +74,14 @@ const startFiles: ModFiles & SweepFiles = {
  * `dist/herdr-mod`, and removes the published sessions no live terminal can show, as `startInHerdrApp` says. Does
  * nothing outside an app terminal.
  */
-export async function startOmpInHerdrApp(target: HerdrTarget | null, run: Run, log: (text: string) => void) {
-  if (target?.kind !== 'terminal') return
+export async function startOmpInHerdrApp(
+  target: HerdrTarget | null,
+  run: Run,
+  log: (text: string) => void,
+): Promise<HerdrModResult | null> {
+  if (target?.kind !== 'terminal') return null
   const bundled = join(dirname(fileURLToPath(import.meta.url)), 'herdr-mod')
-  await startInHerdrApp(run, startFiles, target, bundled, Date.now(), log)
+  return startInHerdrApp(run, startFiles, target, bundled, Date.now(), log)
 }
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))

@@ -4,7 +4,7 @@ import { herdrTarget } from '../hooks/herdr'
 import { answerHerdrMod, builtAtLine, keepHerdrModCurrent } from '../hooks/herdr-install'
 import type { ModFiles } from '../hooks/herdr-install'
 import { startInHerdrApp } from '../hooks/herdr-start'
-import { labelledSessions, sweepPublished, SWEEP_AFTER_MS } from '../hooks/herdr-sweep'
+import { labelledSessions, sweepModTemporaries, sweepPublished, SWEEP_AFTER_MS } from '../hooks/herdr-sweep'
 import type { SweepFiles } from '../hooks/herdr-sweep'
 
 const BANNER = '// Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.'
@@ -58,10 +58,7 @@ function disk(initial: Record<string, string> = {}, links: string[] = []) {
       for (const p of under(path)) files.delete(p)
       folders.delete(path)
     },
-    list: async folder =>
-      under(folder)
-        .map(p => p.slice(folder.length + 1))
-        .filter(name => !name.includes('/')),
+    list: async folder => [...new Set(under(folder).map(p => p.slice(folder.length + 1).split('/')[0]!))],
   }
 
   return { calls, files, moves, failMoveTo: (name: string, before?: () => void) => void (failMove = { name, before }) }
@@ -139,7 +136,7 @@ describe('keepHerdrModCurrent', () => {
 
     expect(await keepHerdrModCurrent(d.calls, '/app', '/plugin/mod', 5)).toEqual({
       is: 'failed',
-      text: 'Could not update the inbox mod in Herdr: EACCES',
+      text: 'Could not update the inbox mod in Herdr. EACCES',
     })
     expect(d.files.get('/app/mods/inbox/main.js')).toBe(build(OLD, 'old()'))
     expect([...d.files.keys()].filter(p => p.endsWith('.tmp') || p.includes('.tmp/'))).toEqual([])
@@ -194,6 +191,38 @@ describe('sweepPublished', () => {
       '/app/inbox/sessions/renamed.json',
       '/app/inbox/sessions/shown.json',
       '/app/inbox/sessions/young.json',
+    ])
+  })
+  test('removes only session files, press folders and old mod temporaries inside the inbox folder, whatever the names hold', async () => {
+    const fresh = `herdr-mod.${now - 1000}-cd.tmp`
+    const names = [
+      ...['../../../etc.json', '..json', '.json', 'a/../../b.json', '/etc.json', 'x\n.json', '..', '.', '', 'ok.json'],
+      ...['../herdr-mod.1-ab.tmp', 'herdr-mod.1-ab.tmp/../..', ' herdr-mod.1-ab.tmp', 'herdr-mod.1-ab.tmp\0'],
+      ...['herdr-mod.1-ab.tmp', 'herdr-mod.json.1-ab.tmp', fresh],
+    ]
+    const removed: string[] = []
+    const files: SweepFiles = {
+      list: async () => names,
+      read: async path =>
+        envelope(
+          path
+            .split('/')
+            .pop()!
+            .replace(/\.json$/, ''),
+          0,
+        ),
+      remove: async path => void removed.push(path),
+      removeFolder: async path => void removed.push(path),
+    }
+
+    await sweepPublished(files, '/app', new Set(), 't1', now)
+    await sweepModTemporaries(files, '/app', now)
+
+    expect(removed.sort()).toEqual([
+      '/app/inbox/herdr-mod.1-ab.tmp',
+      '/app/inbox/herdr-mod.json.1-ab.tmp',
+      '/app/inbox/presses/ok',
+      '/app/inbox/sessions/ok.json',
     ])
   })
 })

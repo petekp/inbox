@@ -2134,7 +2134,7 @@ async function initializeInbox($: EngineInterface) {
     }),
   ]
   await loadConversation($, await $.session.id())
-  void startInHerdr(herdrCalls($))
+  void startInHerdr(herdrCalls($), () => redrawPane($))
   mod.stopHerdrPresses?.()
   mod.stopHerdrPresses = await listenForHerdrPresses(
     herdrCalls($),

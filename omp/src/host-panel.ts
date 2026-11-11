@@ -69,6 +69,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
         view: sessionView(s, deps.now(), deps.settleWindowMs, holds),
         modelName: modelNameOf(ctx),
         isGhMissing: memory.isGhMissing,
+        herdrModFailure: memory.herdrModFailure,
         isFetchingPrs: prFetches.isFetching(id),
         stop: s.stop,
         version,

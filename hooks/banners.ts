@@ -62,6 +62,7 @@ export type BannerKind =
   | 'server-load-failed'
   | 'server-builds-differ'
   | 'tab-update-failed'
+  | 'herdr-mod-failed'
 
 /**
  * Error: the inbox cannot do its job, or the turn stopped, until something changes. Warning: part of the inbox is
@@ -84,6 +85,7 @@ const BANNER_TONES: Record<BannerKind, BannerTone> = {
   'server-load-failed': 'error',
   'server-builds-differ': 'warning',
   'tab-update-failed': 'warning',
+  'herdr-mod-failed': 'warning',
 }
 
 /** A message about the inbox's own state, or the turn's stop. Each look draws it as a tinted box, the lead in bold. */

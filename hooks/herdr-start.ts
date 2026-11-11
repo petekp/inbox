@@ -2,7 +2,7 @@ import type { Run } from './gh'
 import type { HerdrTarget } from './herdr'
 import { keepHerdrModCurrent } from './herdr-install'
 import type { HerdrModResult, ModFiles } from './herdr-install'
-import { labelledSessions, sweepPublished } from './herdr-sweep'
+import { labelledSessions, sweepModTemporaries, sweepPublished } from './herdr-sweep'
 import type { SweepFiles } from './herdr-sweep'
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
@@ -15,7 +15,10 @@ function modLine(result: HerdrModResult): string | null {
   return result.is === 'updated' ? 'Updated the inbox mod in Herdr to a newer build.' : null
 }
 
-/** Removes the published sessions no live terminal names, and logs what it removed or why it could not look. */
+/**
+ * Removes the mod's old temporary files and the published sessions no live terminal names, and logs what it removed
+ * or why it could not look.
+ */
 async function sweep(
   run: Run,
   files: SweepFiles,
@@ -24,6 +27,11 @@ async function sweep(
   log: (text: string) => void,
 ) {
   const { appHome, hc: hcs, terminal } = target
+  const temporaries = await sweepModTemporaries(files, appHome, now)
+  if (temporaries > 0)
+    log(
+      `Removed ${temporaries} temporary ${temporaries === 1 ? 'copy' : 'copies'} an unfinished inbox mod install left.`,
+    )
   const labelled = await labelledSessions(run, hcs)
   if (!labelled)
     return log(`Left old inbox session files in place: no hc listed Herdr's terminals. Tried ${hcs.join(', then ')}.`)
@@ -34,7 +42,7 @@ async function sweep(
 
 /**
  * What a host does once when it starts in a Herdr app terminal: keeps the inbox's mod in the app current with the one
- * in `bundledFolder`, and removes the published sessions no live terminal can show. Each logs what it did, and a
+ * in `bundledFolder`, and removes the published sessions no live terminal can show and the mod's old temporary files. Each logs what it did, and a
  * failure says why. Resolves with what it did about the mod, so a host can ask the person when the result is `ask`,
  * and null when the app has no settings folder.
  */

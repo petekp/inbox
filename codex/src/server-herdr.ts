@@ -40,7 +40,8 @@ const startFiles: ModFiles & SweepFiles = {
   move: (from, to) => rename(from, to),
   remove: path => rm(path, { force: true }),
   removeFolder: path => rm(path, { recursive: true, force: true }),
-  list: async folder => (await readdir(folder, { withFileTypes: true })).filter(e => e.isFile()).map(e => e.name),
+  list: async folder =>
+    (await readdir(folder, { withFileTypes: true })).filter(e => e.isFile() || e.isDirectory()).map(e => e.name),
 }
 
 /**

@@ -244,7 +244,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'herdr-install': {
         kind: 'different',
         reason:
-          'The Codex CLI shows no inbox where the install question could show: a Codex plugin adds no slash command, and the Inbox tab shows only in the Codex app. Codex updates an installed inbox build, and installs after a yes another host saved.',
+          'The Codex CLI shows no inbox where the install question could show: a Codex plugin adds no slash command, and the Inbox tab shows only in the Codex app. Codex updates an installed inbox build, and installs after a yes another host saved. A failed install or update goes only to its log.',
       },
       'status-children': {
         kind: 'different',

@@ -288,7 +288,14 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     logHerdr,
     presses: ompPresses(deps.herdrTarget, (ctx, file) => applyHerdrPress(ctx, file), logHerdr),
     run,
-    memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null, shownCwd: null },
+    memory: {
+      isGhMissing: false,
+      prShared: NO_PR_SHARED,
+      shownId: null,
+      framesFor: null,
+      shownCwd: null,
+      herdrModFailure: null,
+    },
     sendToAgent,
     askFor,
     dropTools,
@@ -311,7 +318,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   pi.events.on('task:subagent:progress', activity.onSubagentProgress)
   let isHerdrStarted = false
   pi.on('session_start', (_event, ctx) => {
-    if (!isHerdrStarted) void startOmpInHerdrApp(deps.herdrTarget, run, logHerdr).catch(() => undefined)
+    if (!isHerdrStarted)
+      void startOmpInHerdrApp(deps.herdrTarget, run, logHerdr)
+        .then(result => void (context.memory.herdrModFailure = result?.is === 'failed' ? result.text : null))
+        .catch(() => undefined)
     isHerdrStarted = true
     return start(ctx)
   })
