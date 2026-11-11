@@ -5,7 +5,14 @@ import { localTarget } from './imports.mjs'
 import { API, nameOf, ts } from './ts.mjs'
 
 /** Build output, and types/parts, which scripts/build-types.mjs joins into types/index.d.ts instead of importing. */
-const SKIPPED_DIRS = new Set(['codex/plugin/dist', 'codex/test-dist', 'omp/dist', 'types/parts', 'videos/out'])
+const SKIPPED_DIRS = new Set([
+  'codex/plugin/dist',
+  'codex/test-dist',
+  'herdr/mod',
+  'omp/dist',
+  'types/parts',
+  'videos/out',
+])
 
 /**
  * Exports whose consumer is outside the repo's imports: a host or a tool loads the file, or a script reads it as text.
@@ -15,6 +22,7 @@ const ENTRY_POINTS = {
   'codex/src/server-handler.ts': { names: '*', why: 'codex/src/server-main.ts loads the built handler by URL.' },
   'codex/src/tab.tsx': { names: '*', why: 'codex/build.mjs bundles it as the tab page script.' },
   'evals/omp-probe.ts': { names: ['default'], why: 'The agent suite loads it into omp with -e.' },
+  'herdr/src/main.ts': { names: ['default'], why: 'The Herdr app loads the built mod and renders its default export.' },
   'hooks/clients.ts': { names: ['CLIENTS', 'FeatureId'], why: 'scripts/structure/clients.mjs reads them.' },
   'hooks/tones.ts': { names: ['DARK_TONES', 'LIGHT_TONES'], why: 'codex/build.mjs reads them for the tab colors.' },
   'omp/src/host.ts': { names: ['default'], why: 'omp loads the built bundle and calls its default export.' },

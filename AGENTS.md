@@ -2,7 +2,7 @@
 
 Read [docs/principles.md](docs/principles.md) first. It says what the inbox is for and how to decide how a feature should behave. Decide from it rather than asking the person.
 
-The inbox is drawn in four looks: the Claude Code terminal, the Claude desktop app's pane, the Codex tab, and omp's panel. Before you change the UI or a rule, read [docs/looks.md](docs/looks.md). It says which file owns each rule, where the looks differ on purpose, and what to check after each kind of change. [GLOSSARY.md](GLOSSARY.md) defines the terms.
+The inbox is drawn in five looks: the Claude Code terminal, the Claude desktop app's pane, the Codex tab, omp's panel, and a pane of the Herdr app. Before you change the UI or a rule, read [docs/looks.md](docs/looks.md). It says which file owns each rule, where the looks differ on purpose, and what to check after each kind of change. [GLOSSARY.md](GLOSSARY.md) defines the terms.
 
 ## New features
 
@@ -16,7 +16,7 @@ The inbox is drawn in four looks: the Claude Code terminal, the Claude desktop a
 - The repo is public. Keep private paths, other people's names and session content out of commits.
 - Run `./scripts/check.sh` after every change.
 - Keep each file at 5,000 tokens or under, counting tokens as bytes / 4. `.token-ceilings` lists the files allowed over it, each with the most tokens it may hold. `scripts/check-sizes.mjs` fails on a file over its limit. Split a file that grows past it.
-- Change shared behavior in the owner listed in `docs/looks.md`. Adapters map shared row and action descriptions to native controls. Hosts run events, storage and effects. Rebuild the Codex bundles after a shared-module change with `npm --prefix codex run build`, and the omp bundle with `npm --prefix omp run build`.
+- Change shared behavior in the owner listed in `docs/looks.md`. Adapters map shared row and action descriptions to native controls. Hosts run events, storage and effects. Rebuild the Codex bundles after a shared-module change with `npm --prefix codex run build`, the omp bundle with `npm --prefix omp run build`, and the Herdr mod with `npm --prefix herdr run build`.
 - To bring `next` into a branch, run `./scripts/merge-next.sh`. It merges `origin/next`, rebuilds the bundles from the merged sources and runs `./scripts/check.sh`.
 - When you finish a change to a shared module or a look's drawing code, say for each look whether the change applies and what you checked there. A difference between looks that is not in the "Differences on purpose" table in `docs/looks.md` is drift: fix it, or add it to the table with its reason.
 - Before you bump the version, run every check in [docs/release.md](docs/release.md).

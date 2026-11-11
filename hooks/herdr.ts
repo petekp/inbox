@@ -352,13 +352,13 @@ export function herdrLabels(tokens: HerdrTokens): Record<string, string> {
 }
 
 /** The format of the session file a host publishes and of the press file the Herdr look writes. */
-const HERDR_FORMAT = 1
+export const HERDR_FORMAT = 1
 
 /** Who publishes a session for the Herdr look, and when. `agent` is the name the shared texts use, as in "Tell Claude". */
 export type EnvelopeSource = { host: ClientId; agent: string; sessionId: string; terminal: string; writtenAt: number }
 
 /** The file a host publishes for the Herdr look. */
-type HerdrEnvelope = EnvelopeSource & { format: typeof HERDR_FORMAT; session: Session }
+export type HerdrEnvelope = EnvelopeSource & { format: typeof HERDR_FORMAT; session: Session }
 
 const SESSION_FIELDS = Object.keys(emptySession())
 
