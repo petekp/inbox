@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import type { PressFile } from '../../hooks/herdr'
+import type { PressFile } from '../../hooks/herdr-press-file'
 import { makeServer } from '../src/server'
 import { followCodexPresses } from '../src/server-herdr'
 import { readState, updateState } from '../src/state'
@@ -58,6 +58,32 @@ test("the server applies presses for this terminal's Codex sessions, at start an
       ['s1', 'p4'],
     ])
     assert.ok(others.every(path => existsSync(path)))
+  } finally {
+    stop?.()
+  }
+})
+
+test('a press folder named outside the session-id rule, or a press file too large to read, stops no other press', async () => {
+  const appHome = tempDir()
+  publish(appHome, 's1', 'codex', 't1')
+  mkdirSync(join(appHome, 'inbox/presses/a.b'), { recursive: true })
+  const large = join(appHome, 'inbox/presses/s1/large.json')
+  mkdirSync(join(appHome, 'inbox/presses/s1'), { recursive: true })
+  writeFileSync(large, 'x'.repeat(65 * 1024))
+  const waiting = writePress(appHome, 's1', 'p1')
+  const applied: string[] = []
+  const logged: string[] = []
+  const stop = followCodexPresses(
+    { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: appHome, HOME: '/home/person' },
+    async (_sessionId: string, file: PressFile) => {
+      applied.push(file.id)
+    },
+    text => logged.push(text),
+  )
+  try {
+    await until(() => !existsSync(waiting) && !existsSync(large))
+    assert.deepEqual(applied, ['p1'])
+    assert.deepEqual(logged, ['Herdr press large.json refused: not read: over 65536 bytes'])
   } finally {
     stop?.()
   }

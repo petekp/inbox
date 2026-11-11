@@ -4818,87 +4818,25 @@ var SESSION_FIELDS = Object.keys(emptySession());
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
   const { lastHerdrPress } = session;
+  const { projectFolder, ...rest } = source;
   return {
     format: HERDR_FORMAT,
-    ...source,
+    ...rest,
+    ...projectFolder?.startsWith("/") && { projectFolder },
     ...isTrimmed && { trimmed: true },
     ...lastHerdrPress && { lastPress: lastHerdrPress },
     session: shared
   };
 }
-var PRESS_TARGETS = {
-  answer: "id",
-  type: "id",
-  explain: "id",
-  compare: "id",
-  done: "id",
-  dismiss: "id",
-  address: "id",
-  issue: "id",
-  discuss: "id",
-  undo: "id",
-  discard: "id",
-  step: "id",
-  "remove-goal": "id",
-  "restore-goal": "id",
-  "thread-address": "ref",
-  "thread-draft": "ref",
-  "thread-discuss": "ref",
-  "thread-open": "ref",
-  "pr-conflicts": "ref",
-  "pr-address-all": "ref",
-  "pr-merge": "ref",
-  "pr-open": "ref",
-  "pr-dismiss": "ref",
-  "pr-undo": "ref",
-  "check-fix": "ref",
-  "check-rerun": "ref",
-  log: "ref",
-  "pr-rank-again": null,
-  "pr-refresh": null
-};
-var isRecord = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
-var isTimes = (x) => isRecord(x) && Object.values(x).every((at) => typeof at === "number");
-function pressProblem(press) {
-  if (!isRecord(press) || typeof press.action !== "string")
-    return "press has no action";
-  if (!Object.hasOwn(PRESS_TARGETS, press.action))
-    return `unknown action ${press.action}`;
-  const target = PRESS_TARGETS[press.action];
-  return target === null || typeof press[target] === "string" ? null : `${press.action} has no ${target}`;
+function publishedSessionsFolder(appHome) {
+  return `${appHome}/inbox/sessions`;
 }
-function holdsProblem(holds) {
-  if (!isRecord(holds))
-    return "no holds";
-  if (!isTimes(holds.replies) || !isTimes(holds.discarded))
-    return "holds without replies or discarded times";
-  return holds.shownSince === null || typeof holds.shownSince === "number" ? null : "holds without shownSince";
+function publishedSessionPath(appHome, sessionId) {
+  return `${publishedSessionsFolder(appHome)}/${sessionFile(sessionId)}`;
 }
-function resultProblem(result) {
-  if (result === undefined)
-    return null;
-  return isRecord(result) && (result.error === null || typeof result.error === "string") ? null : "result without error";
-}
-function pressFile(text) {
-  let file;
-  try {
-    file = JSON.parse(text);
-  } catch {
-    return { ok: false, reason: "not JSON" };
-  }
-  if (!isRecord(file))
-    return { ok: false, reason: "not an object" };
-  if (file.format !== HERDR_FORMAT)
-    return { ok: false, reason: `unknown format ${String(file.format)}` };
-  if (typeof file.id !== "string" || file.id === "")
-    return { ok: false, reason: "no id" };
-  if (typeof file.pressedAt !== "number" || !Number.isFinite(file.pressedAt))
-    return { ok: false, reason: "no pressedAt" };
-  const reason = pressProblem(file.press) ?? holdsProblem(file.holds) ?? resultProblem(file.result);
-  if (reason)
-    return { ok: false, reason };
-  const read = file;
-  return { ok: true, file: { ...read, holds: { ...read.holds, listInput: null } } };
+function pressFolder(appHome, sessionId) {
+  sessionFile(sessionId);
+  return `${appHome}/inbox/presses/${sessionId}`;
 }
 
 // ../hooks/catch-up-text.ts
@@ -10487,8 +10425,84 @@ function activityHandlers(context, sessions) {
 
 // src/host-presses.ts
 import { watch } from "fs";
-import { appendFile, mkdir as mkdir2, readdir as readdir2, readFile as readFile2, rm, stat as stat2, writeFile as writeFile2 } from "fs/promises";
+import { appendFile, mkdir as mkdir2, readdir as readdir2, readFile as readFile2, rename as rename2, rm, stat as stat2, writeFile as writeFile2 } from "fs/promises";
 import { join as join2 } from "path";
+
+// ../hooks/herdr-press-file.ts
+var PRESS_TARGETS = {
+  answer: "id",
+  type: "id",
+  explain: "id",
+  compare: "id",
+  done: "id",
+  dismiss: "id",
+  address: "id",
+  issue: "id",
+  discuss: "id",
+  undo: "id",
+  discard: "id",
+  step: "id",
+  "remove-goal": "id",
+  "restore-goal": "id",
+  "thread-address": "ref",
+  "thread-draft": "ref",
+  "thread-discuss": "ref",
+  "thread-open": "ref",
+  "pr-conflicts": "ref",
+  "pr-address-all": "ref",
+  "pr-merge": "ref",
+  "pr-open": "ref",
+  "pr-dismiss": "ref",
+  "pr-undo": "ref",
+  "check-fix": "ref",
+  "check-rerun": "ref",
+  log: "ref",
+  "pr-rank-again": null,
+  "pr-refresh": null
+};
+var isRecord = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
+var isTimes = (x) => isRecord(x) && Object.values(x).every((at) => typeof at === "number");
+function pressProblem(press) {
+  if (!isRecord(press) || typeof press.action !== "string")
+    return "press has no action";
+  if (!Object.hasOwn(PRESS_TARGETS, press.action))
+    return `unknown action ${press.action}`;
+  const target = PRESS_TARGETS[press.action];
+  return target === null || typeof press[target] === "string" ? null : `${press.action} has no ${target}`;
+}
+function holdsProblem(holds) {
+  if (!isRecord(holds))
+    return "no holds";
+  if (!isTimes(holds.replies) || !isTimes(holds.discarded))
+    return "holds without replies or discarded times";
+  return holds.shownSince === null || typeof holds.shownSince === "number" ? null : "holds without shownSince";
+}
+function resultProblem(result) {
+  if (result === undefined)
+    return null;
+  return isRecord(result) && (result.error === null || typeof result.error === "string") ? null : "result without error";
+}
+function pressFile(text) {
+  let file;
+  try {
+    file = JSON.parse(text);
+  } catch {
+    return { ok: false, reason: "not JSON" };
+  }
+  if (!isRecord(file))
+    return { ok: false, reason: "not an object" };
+  if (file.format !== HERDR_FORMAT)
+    return { ok: false, reason: `unknown format ${String(file.format)}` };
+  if (typeof file.id !== "string" || file.id === "")
+    return { ok: false, reason: "no id" };
+  if (typeof file.pressedAt !== "number" || !Number.isFinite(file.pressedAt))
+    return { ok: false, reason: "no pressedAt" };
+  const reason = pressProblem(file.press) ?? holdsProblem(file.holds) ?? resultProblem(file.result);
+  if (reason)
+    return { ok: false, reason };
+  const read = file;
+  return { ok: true, file: { ...read, holds: { ...read.holds, listInput: null } } };
+}
 
 // ../hooks/held-sends.ts
 function dueRows(s, now) {
@@ -10819,14 +10833,21 @@ async function press(host, p, isStale, holds) {
 }
 
 // ../hooks/herdr-app.ts
+var PRESS_FILE_LIMIT_BYTES = 64 * 1024;
+function pressFileProblem(info) {
+  if (!info.isFile())
+    return "not a file";
+  return info.size > PRESS_FILE_LIMIT_BYTES ? `over ${PRESS_FILE_LIMIT_BYTES} bytes` : null;
+}
+async function isPublishedHere(read, appHome, sessionId, host, terminal) {
+  try {
+    const envelope = JSON.parse(await read(publishedSessionPath(appHome, sessionId)));
+    return envelope?.host === host && envelope.terminal === terminal;
+  } catch {
+    return false;
+  }
+}
 var PUBLISH_LIMIT_BYTES = 1024 * 1024;
-function publishedSessionPath(appHome, sessionId) {
-  return `${appHome}/inbox/sessions/${sessionFile(sessionId)}`;
-}
-function pressFolder(appHome, sessionId) {
-  sessionFile(sessionId);
-  return `${appHome}/inbox/presses/${sessionId}`;
-}
 function utf8Bytes(text) {
   let bytes = 0;
   for (const char of text) {
@@ -10848,15 +10869,20 @@ function withoutFoldedClosed(s) {
     }
   };
 }
-function publishedText(source, session) {
+function publishedText(source, session, log) {
   const text = JSON.stringify(herdrEnvelope(source, session));
-  return isOverLimit(text) ? JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session), true)) : text;
+  if (!isOverLimit(text))
+    return text;
+  const trimmed = JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session), true));
+  if (isOverLimit(trimmed))
+    log(`Herdr publish is over ${PUBLISH_LIMIT_BYTES} bytes after trimming, so the look cannot read it`);
+  return trimmed;
 }
-async function publishSession(files, appHome, source, session) {
+async function publishSession(files, appHome, source, session, log) {
   const path = publishedSessionPath(appHome, source.sessionId);
   const temporary = `${path}.${source.writtenAt}-${Math.random().toString(36).slice(2)}.tmp`;
   try {
-    await files.write(temporary, publishedText(source, session));
+    await files.write(temporary, publishedText(source, session, log));
     await files.move(temporary, path);
   } catch (err) {
     await files.remove(temporary).catch(() => {
@@ -10868,50 +10894,56 @@ async function publishSession(files, appHome, source, session) {
 function publishedSession(files, appHome, source, session, log) {
   if (!appHome)
     return Promise.resolve(false);
-  return publishSession(files, appHome, source, session).then(() => true, (err) => {
+  return publishSession(files, appHome, source, session, log).then(() => true, (err) => {
     log(`Herdr publish failed: ${err instanceof Error ? err.message : String(err)}`);
     return false;
   });
 }
 async function unpublishSession(files, appHome, sessionId) {
-  return files.remove(publishedSessionPath(appHome, sessionId));
+  await Promise.all([
+    files.remove(publishedSessionPath(appHome, sessionId)),
+    files.removeFolder(pressFolder(appHome, sessionId))
+  ]);
 }
-var REMEMBERED_PRESSES = 200;
+var LOGGED_CHARS = 100;
 var message = (err) => err instanceof Error ? err.message : String(err);
-function pressDrainer(files, apply, log) {
-  const applied = [];
+var logged = (text) => clipLabel(text, LOGGED_CHARS);
+function pressDrainer(files, owns, apply, log) {
+  const takenMark = `.${Math.random().toString(36).slice(2)}.taken`;
   const draining = new Map;
   const drainOnce = async (folder, sessionId) => {
     const names = [...await files.list(folder).catch(() => [])].filter((name) => name.endsWith(".json")).sort();
+    if (names.length === 0 || !await owns(sessionId).catch(() => false))
+      return;
     const waiting = [];
     for (const name of names) {
       const path = `${folder}/${name}`;
-      const text = await files.read(path).catch(() => null);
-      if (text === null)
+      const taken = `${path}${takenMark}`;
+      if (!await files.move(path, taken).then(() => true, () => false))
         continue;
-      const read = pressFile(text);
+      const read = await files.read(taken).then(pressFile, (err) => ({
+        ok: false,
+        reason: `not read: ${message(err)}`
+      }));
       if (read.ok)
-        waiting.push({ path, file: read.file });
+        waiting.push({ path, taken, file: read.file });
       else {
-        log(`Herdr press ${name} refused: ${read.reason}`);
-        await files.remove(path).catch(() => {
+        log(`Herdr press ${logged(name)} refused: ${logged(read.reason)}`);
+        await files.remove(taken).catch(() => {
           return;
         });
       }
     }
-    for (const { path, file } of waiting.sort((a, b) => a.file.pressedAt - b.file.pressedAt)) {
-      if (!applied.includes(file.id)) {
-        const isTaken = await apply(sessionId, file).catch((err) => {
-          log(`Herdr press ${file.id} failed: ${message(err)}`);
-          return true;
-        });
-        if (!isTaken)
-          continue;
-        applied.push(file.id);
-        if (applied.length > REMEMBERED_PRESSES)
-          applied.shift();
+    for (const { path, taken, file } of waiting.sort((a, b) => a.file.pressedAt - b.file.pressedAt)) {
+      const isTaken = await apply(sessionId, file).catch((err) => {
+        log(`Herdr press ${logged(file.id)} failed: ${message(err)}`);
+        return true;
+      });
+      if (isTaken) {
+        await files.remove(taken).catch((err) => log(`Herdr press ${logged(file.id)} not removed: ${message(err)}`));
+      } else {
+        await files.move(taken, path).catch((err) => log(`Herdr press ${logged(file.id)} not put back: ${message(err)}`));
       }
-      await files.remove(path).catch((err) => log(`Herdr press ${file.id} not removed: ${message(err)}`));
     }
   };
   return async (appHome, sessionId) => {
@@ -10971,7 +11003,13 @@ function herdrLog(dir) {
 }
 var pressFiles = {
   list: (folder) => readdir2(folder),
-  read: (path) => readFile2(path, "utf8"),
+  read: async (path) => {
+    const problem = pressFileProblem(await stat2(path));
+    if (problem)
+      throw new Error(problem);
+    return readFile2(path, "utf8");
+  },
+  move: (from, to) => rename2(from, to),
   remove: (path) => rm(path, { force: true })
 };
 var message2 = (err) => err instanceof Error ? err.message : String(err);
@@ -10986,7 +11024,7 @@ function ompPresses(target, apply, log) {
       stop();
       if (target?.kind !== "terminal" || !target.appHome)
         return;
-      const { appHome } = target;
+      const { appHome, terminal } = target;
       const id = sessionIdOf(ctx);
       let folder;
       try {
@@ -10994,7 +11032,7 @@ function ompPresses(target, apply, log) {
       } catch (err) {
         return log(`Herdr presses not read: ${message2(err)}`);
       }
-      const drain = pressDrainer(pressFiles, async (_id, file) => {
+      const drain = pressDrainer(pressFiles, (sessionId) => isPublishedHere((path) => readFile2(path, "utf8"), appHome, sessionId, "omp", terminal), async (_id, file) => {
         await apply(ctx, file);
         return true;
       }, log);
@@ -11120,7 +11158,7 @@ function panelCalls(context, sessions) {
 }
 
 // src/host-sessions.ts
-import { mkdir as mkdir3, readdir as readdir3, rename as rename2, rm as rm2, rmdir, writeFile as writeFile3 } from "fs/promises";
+import { mkdir as mkdir3, readdir as readdir3, rename as rename3, rm as rm2, rmdir, writeFile as writeFile3 } from "fs/promises";
 import { dirname, join as join3 } from "path";
 
 // ../hooks/conversation.ts
@@ -11176,8 +11214,9 @@ var publishFiles = {
     await mkdir3(dirname(path), { recursive: true });
     await writeFile3(path, text);
   },
-  move: (from, to) => rename2(from, to),
-  remove: (path) => rm2(path, { force: true })
+  move: (from, to) => rename3(from, to),
+  remove: (path) => rm2(path, { force: true }),
+  removeFolder: (path) => rm2(path, { recursive: true, force: true })
 };
 var recordFiles = {
   write: async (path, text) => {
@@ -11235,7 +11274,14 @@ function sessionCalls(context) {
         });
       const s = await readState(dir, id);
       const now = deps.now();
-      const isPublished = target.kind === "terminal" && await publishedSession(publishFiles, appHome, { host: "omp", agent: OMP.agent, sessionId: id, terminal: target.terminal, writtenAt: now }, s, context.logHerdr);
+      const isPublished = target.kind === "terminal" && await publishedSession(publishFiles, appHome, {
+        host: "omp",
+        agent: OMP.agent,
+        sessionId: id,
+        terminal: target.terminal,
+        writtenAt: now,
+        projectFolder: s.place?.folder
+      }, s, context.logHerdr);
       const view = sessionView(s, now, deps.settleWindowMs);
       return { target, tokens: herdrTokens(s.ledger, s.stop, view, []), session: isPublished ? id : null };
     }, deps.after));

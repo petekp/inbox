@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 import { UNSTARTABLE_CODE } from '../hooks/gh'
 import type { Run } from '../hooks/gh'
-import { CLEARED_TOKENS, herdrEnvelope, herdrLabels, herdrReporter, herdrTarget, pressFile } from '../hooks/herdr'
+import { CLEARED_TOKENS, herdrEnvelope, herdrLabels, herdrReporter, herdrTarget } from '../hooks/herdr'
+import { pressFile } from '../hooks/herdr-press-file'
 import type { EnvelopeSource } from '../hooks/herdr'
 import { publishSession } from '../hooks/herdr-app'
 import type { PublishFiles } from '../hooks/herdr-app'
@@ -47,12 +48,13 @@ describe('publishSession', () => {
         throw new Error('disk full')
       },
       move: async () => undefined,
+      removeFolder: async () => undefined,
       remove: async path => {
         delete files[path]
       },
     }
 
-    const failure = await publishSession(publishFiles, '/app', SOURCE, emptySession()).catch(
+    const failure = await publishSession(publishFiles, '/app', SOURCE, emptySession(), () => undefined).catch(
       (err: Error) => err.message,
     )
     expect(failure).toBe('disk full')
@@ -127,6 +129,13 @@ describe('herdrEnvelope', () => {
       ...SOURCE,
       session: JSON.parse(JSON.stringify(session)),
     })
+  })
+
+  test('carries the project folder only when it is an absolute path', () => {
+    const folderOf = (projectFolder: string) =>
+      herdrEnvelope({ ...SOURCE, projectFolder }, emptySession()).projectFolder
+
+    expect([folderOf('/work/app'), folderOf('work/app'), folderOf('')]).toEqual(['/work/app', undefined, undefined])
   })
 })
 

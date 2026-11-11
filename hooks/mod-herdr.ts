@@ -11,7 +11,14 @@ import {
   herdrTokens,
 } from './herdr'
 import type { HerdrAgent } from './herdr'
-import { followPresses, PRESS_POLL_MS, pressDrainer, publishedSession, unpublishSession } from './herdr-app'
+import {
+  followPresses,
+  isPublishedHere,
+  PRESS_POLL_MS,
+  pressDrainer,
+  publishedSession,
+  unpublishSession,
+} from './herdr-app'
 import type { ApplyPress, PressFiles, PublishFiles } from './herdr-app'
 import { CLAUDE_CODE } from './model-text'
 import { sessionView } from './session-view'
@@ -46,7 +53,7 @@ const isHerdrCheckDue = herdrCheckGate()
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
-/** The engine has no call that moves or removes a file, so those run `mv` and `rm`. */
+/** The engine has no call that moves or removes a file, so those run `mv` and `rm`. A `mv` whose file is gone fails. */
 function herdrFiles(calls: HerdrCalls): PublishFiles & PressFiles {
   const runOrThrow = async (argv: string[]) => {
     const r = await calls.run(argv, { cwd: '/', timeoutMs: FILE_TIMEOUT_MS })
@@ -59,6 +66,7 @@ function herdrFiles(calls: HerdrCalls): PublishFiles & PressFiles {
     list: async folder => (await calls.list(folder)).filter(e => e.kind === 'file').map(e => e.name),
     move: (from, to) => runOrThrow(['mv', '-f', '--', from, to]),
     remove: path => runOrThrow(['rm', '-f', '--', path]),
+    removeFolder: path => runOrThrow(['rm', '-rf', '--', path]),
   }
 }
 
@@ -100,7 +108,14 @@ export function publishToHerdr(
         (await publishedSession(
           files,
           appHome,
-          { host: 'claude-code', agent: CLAUDE_CODE.agent, sessionId: id, terminal: target.terminal, writtenAt: now },
+          {
+            host: 'claude-code',
+            agent: CLAUDE_CODE.agent,
+            sessionId: id,
+            terminal: target.terminal,
+            writtenAt: now,
+            projectFolder: session.place?.folder,
+          },
           session,
           calls.log,
         ))
@@ -128,11 +143,11 @@ function wakeLabelIn(line: string, terminal: string): string | null {
 }
 
 /**
- * In a Herdr app terminal, applies the presses the Herdr look writes for the conversation `sessionId` names. After
- * writing a press file, the look sets the `inbox.press` label on the terminal. The mod follows the terminal's label
- * changes with `hc events`, and reads the press folder at once, when `hc events` first prints, when the label changes,
- * and every `PRESS_POLL_MS`, in case it missed one. When `hc events` ends, the mod follows again after `PRESS_POLL_MS`. Resolves with how to stop. Outside
- * an app terminal it does nothing.
+ * In a Herdr app terminal, applies the presses the Herdr look writes for the conversation `sessionId` names, while its
+ * published file names this terminal. After writing a press file, the look sets the `inbox.press` label on the
+ * terminal. The mod follows the terminal's label changes with `hc events`, and reads the press folder at once, when
+ * `hc events` first prints, when the label changes, and every `PRESS_POLL_MS`, in case it missed one. Resolves with how
+ * to stop. Outside an app terminal it does nothing.
  */
 export async function listenForHerdrPresses(
   calls: HerdrCalls,
@@ -142,7 +157,13 @@ export async function listenForHerdrPresses(
   const target = await targetOf(calls)
   const appHome = target?.kind === 'terminal' ? target.appHome : null
   if (target?.kind !== 'terminal' || !appHome) return () => undefined
-  const drain = pressDrainer(herdrFiles(calls), apply, calls.log)
+  const { terminal } = target
+  const drain = pressDrainer(
+    herdrFiles(calls),
+    id => isPublishedHere(calls.read, appHome, id, 'claude-code', terminal),
+    apply,
+    calls.log,
+  )
 
   return followPresses(
     () => drain(appHome, sessionId()),
@@ -155,38 +176,41 @@ export async function listenForHerdrPresses(
   )
 }
 
-/** Follows the terminal's `inbox.press` label with `hc events`, and calls `wake` each time it changes. */
+/**
+ * Follows the terminal's `inbox.press` label with `hc events`, and calls `wake` each time it changes. An `hc` that does
+ * not start, or ends before it prints, as one without `events` does, gives way to the next. When every `hc` has ended,
+ * the mod follows again after `PRESS_POLL_MS`.
+ */
 function followWakeLabel(calls: HerdrCalls, target: { terminal: string; hc: readonly string[] }, wake: () => void) {
   let isStopped = false
   let events: AsyncIterator<{ text: string }, unknown> | null = null
   let lastWake: string | null = null
 
-  const follow = async () => {
-    for (const hc of target.hc) {
-      if (isStopped) return
+  const followWith = async (hc: string): Promise<boolean> => {
+    let hasPrinted = false
+    let pending = ''
+    try {
       const stream = calls.spawn([hc, 'events', '--terminal', target.terminal])
       events = stream
-      let pending = ''
-      try {
-        for (
-          let piece = await stream.next(), isFirst = true;
-          !piece.done;
-          piece = await stream.next(), isFirst = false
-        ) {
-          if (isFirst) wake()
-          const lines = (pending + piece.value.text).split('\n')
-          pending = lines.pop() ?? ''
-          for (const line of lines) {
-            const value = wakeLabelIn(line, target.terminal)
-            if (value && value !== lastWake) wake()
-            if (value) lastWake = value
-          }
+      for (let piece = await stream.next(); !piece.done; piece = await stream.next()) {
+        if (!hasPrinted) wake()
+        hasPrinted = true
+        const lines = (pending + piece.value.text).split('\n')
+        pending = lines.pop() ?? ''
+        for (const line of lines) {
+          const value = wakeLabelIn(line, target.terminal)
+          if (value && value !== lastWake) wake()
+          if (value) lastWake = value
         }
-        break
-      } catch (err) {
-        calls.log(`Herdr presses: ${hc} events did not start: ${message(err)}`)
       }
+    } catch (err) {
+      calls.log(`Herdr presses: ${hc} events failed: ${message(err)}`)
     }
+
+    return hasPrinted
+  }
+  const follow = async () => {
+    for (const hc of target.hc) if (isStopped || (await followWith(hc))) break
     if (!isStopped) calls.after(PRESS_POLL_MS, () => void follow())
   }
   void follow()

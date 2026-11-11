@@ -18,7 +18,7 @@ import { press, wakeAfterSettle as wakeSessionAfterSettle } from '../../hooks/ho
 import type { SessionHost } from '../../hooks/session-host'
 import { NO_HOLDS } from '../../hooks/timing'
 import { applyLookPress } from '../../hooks/herdr-app'
-import type { PressFile } from '../../hooks/herdr'
+import type { PressFile } from '../../hooks/herdr-press-file'
 import type { Holds } from '../../hooks/timing'
 import { viewOf } from './core'
 import type { TabView } from './core'

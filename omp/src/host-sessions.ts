@@ -43,6 +43,7 @@ const publishFiles: PublishFiles = {
   },
   move: (from, to) => rename(from, to),
   remove: path => rm(path, { force: true }),
+  removeFolder: path => rm(path, { recursive: true, force: true }),
 }
 
 const recordFiles: RecordFiles = {
@@ -131,7 +132,14 @@ export function sessionCalls(context: HostContext) {
             (await publishedSession(
               publishFiles,
               appHome,
-              { host: 'omp', agent: OMP.agent, sessionId: id, terminal: target.terminal, writtenAt: now },
+              {
+                host: 'omp',
+                agent: OMP.agent,
+                sessionId: id,
+                terminal: target.terminal,
+                writtenAt: now,
+                projectFolder: s.place?.folder,
+              },
               s,
               context.logHerdr,
             ))

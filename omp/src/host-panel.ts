@@ -2,7 +2,7 @@ import { version } from '../package.json'
 
 import type { PrPress } from '../../hooks/pr-press'
 import { applyLookPress } from '../../hooks/herdr-app'
-import type { PressFile } from '../../hooks/herdr'
+import type { PressFile } from '../../hooks/herdr-press-file'
 import type { RowPress } from '../../hooks/presses'
 import { lookEndedOn, withLook } from '../../hooks/session-status'
 import type { ShownRows } from '../../hooks/status-children'

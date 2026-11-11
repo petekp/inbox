@@ -99,7 +99,8 @@ import {
 } from './claude'
 import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
-import { delegatesInHerdr, type PressFile } from './herdr'
+import { delegatesInHerdr } from './herdr'
+import type { PressFile } from './herdr-press-file'
 import { applyLookPress } from './herdr-app'
 import {
   followDelegates as followHerdrDelegates,

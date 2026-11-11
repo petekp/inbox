@@ -264,6 +264,9 @@ test('in a Herdr app terminal, a press the look ran itself records its result an
   const target = { kind: 'terminal', terminal: 't1', appHome, hc: ['hc'] } as const
   const { inbox, stepPress } = await withSteps({ ...deps(), herdrTarget: target })
   await call('session_start', { type: 'session_start' })
+  const sessionFile = join(appHome, 'inbox/sessions/s1.json')
+  for (let waited = 0; !existsSync(sessionFile) && waited < 2000; waited += 10) await Bun.sleep(10)
+  expect(existsSync(sessionFile)).toBe(true)
   const folder = join(appHome, 'inbox/presses/s1')
   mkdirSync(folder, { recursive: true })
   const press = {
@@ -283,7 +286,7 @@ test('in a Herdr app terminal, a press the look ran itself records its result an
   expect(w.execCalls.filter(c => c.command === 'open')).toEqual([])
   const screen = await inbox.screen(makeCtx())
   expect(JSON.stringify(screen.view.lastActions[screen.view.needsYou.tasks[0]!.id]?.result)).toContain('no browser')
-  const published = () => JSON.parse(readFileSync(join(appHome, 'inbox/sessions/s1.json'), 'utf8'))
+  const published = () => JSON.parse(readFileSync(sessionFile, 'utf8'))
   expect(published().lastPress).toEqual({ id: 'p1', outcome: 'applied' })
 
   await record({ kind: 'task', ask: 'Write the notes' })

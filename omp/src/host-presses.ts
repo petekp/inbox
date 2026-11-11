@@ -1,10 +1,12 @@
 import { watch } from 'node:fs'
 import type { FSWatcher } from 'node:fs'
-import { appendFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import type { HerdrTarget, PressFile } from '../../hooks/herdr'
-import { followPresses, pressDrainer, pressFolder } from '../../hooks/herdr-app'
+import { pressFolder } from '../../hooks/herdr'
+import type { HerdrTarget } from '../../hooks/herdr'
+import type { PressFile } from '../../hooks/herdr-press-file'
+import { followPresses, isPublishedHere, pressDrainer, pressFileProblem } from '../../hooks/herdr-app'
 import type { PressFiles } from '../../hooks/herdr-app'
 import { sessionIdOf } from './host-context'
 import type { OmpContext } from './host-context'
@@ -33,7 +35,13 @@ export function herdrLog(dir: string): (text: string) => void {
 
 const pressFiles: PressFiles = {
   list: folder => readdir(folder),
-  read: path => readFile(path, 'utf8'),
+  read: async path => {
+    const problem = pressFileProblem(await stat(path))
+    if (problem) throw new Error(problem)
+
+    return readFile(path, 'utf8')
+  },
+  move: (from, to) => rename(from, to),
   remove: path => rm(path, { force: true }),
 }
 
@@ -67,7 +75,7 @@ export function ompPresses(
     follow: ctx => {
       stop()
       if (target?.kind !== 'terminal' || !target.appHome) return
-      const { appHome } = target
+      const { appHome, terminal } = target
       const id = sessionIdOf(ctx)
       let folder: string
       try {
@@ -77,6 +85,7 @@ export function ompPresses(
       }
       const drain = pressDrainer(
         pressFiles,
+        sessionId => isPublishedHere(path => readFile(path, 'utf8'), appHome, sessionId, 'omp', terminal),
         async (_id, file) => {
           await apply(ctx, file)
           return true

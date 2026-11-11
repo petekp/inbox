@@ -1,16 +1,23 @@
 import { watch } from 'node:fs'
 import type { FSWatcher } from 'node:fs'
-import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { herdrTarget } from '../../hooks/herdr'
-import type { PressFile } from '../../hooks/herdr'
-import { followPresses, pressDrainer, publishedSessionPath } from '../../hooks/herdr-app'
+import type { PressFile } from '../../hooks/herdr-press-file'
+import { followPresses, isPublishedHere, pressDrainer, pressFileProblem } from '../../hooks/herdr-app'
 import type { PressFiles } from '../../hooks/herdr-app'
+import { isSessionFile } from '../../hooks/session-files'
 
 const pressFiles: PressFiles = {
   list: folder => readdir(folder),
-  read: path => readFile(path, 'utf8'),
+  read: async path => {
+    const problem = pressFileProblem(await stat(path))
+    if (problem) throw new Error(problem)
+
+    return readFile(path, 'utf8')
+  },
+  move: (from, to) => rename(from, to),
   remove: path => rm(path, { force: true }),
 }
 
@@ -33,17 +40,9 @@ export function followCodexPresses(
   const { appHome, terminal } = target
   const root = join(appHome, 'inbox', 'presses')
 
-  const isThisTerminals = async (id: string) => {
-    const text = await readFile(publishedSessionPath(appHome, id), 'utf8').catch(() => null)
-    try {
-      const envelope = text === null ? null : (JSON.parse(text) as { host?: unknown; terminal?: unknown })
-      return envelope?.host === 'codex' && envelope.terminal === terminal
-    } catch {
-      return false
-    }
-  }
   const drain = pressDrainer(
     pressFiles,
+    id => isPublishedHere(path => readFile(path, 'utf8'), appHome, id, 'codex', terminal),
     async (id, file) => {
       await apply(id, file)
       return true
@@ -52,9 +51,9 @@ export function followCodexPresses(
   )
   const drainAll = async () => {
     const folders = await readdir(root, { withFileTypes: true }).catch(() => [])
-    const ids = folders.filter(entry => entry.isDirectory()).map(entry => entry.name)
-    const owned = await Promise.all(ids.map(async id => ((await isThisTerminals(id)) ? [id] : [])))
-    await Promise.all(owned.flat().map(id => drain(appHome, id)))
+    const ids = folders.filter(entry => entry.isDirectory() && isSessionFile(`${entry.name}.json`)).map(e => e.name)
+    const drains = await Promise.allSettled(ids.map(id => drain(appHome, id)))
+    for (const d of drains) if (d.status === 'rejected') log(`Herdr presses not read: ${message(d.reason)}`)
   }
   const watchFolder = (wake: () => void) => {
     let isStopped = false

@@ -52,6 +52,7 @@ const publishFiles: PublishFiles = {
   },
   move: (from, to) => rename(from, to),
   remove: path => rm(path, { force: true }),
+  removeFolder: path => rm(path, { recursive: true, force: true }),
 }
 
 /** The most `herdr.log` holds before the next line starts it over. */
@@ -110,7 +111,14 @@ export function herdrOnWrite(
         (await publishedSession(
           publishFiles,
           target.appHome,
-          { host: 'codex', agent: CODEX.agent, sessionId: id, terminal: target.terminal, writtenAt: seq },
+          {
+            host: 'codex',
+            agent: CODEX.agent,
+            sessionId: id,
+            terminal: target.terminal,
+            writtenAt: seq,
+            projectFolder: s.root,
+          },
           s,
           log,
         ))

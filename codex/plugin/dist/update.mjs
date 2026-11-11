@@ -4125,23 +4125,29 @@ var SESSION_FIELDS = Object.keys(emptySession());
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
   const { lastHerdrPress } = session;
+  const { projectFolder, ...rest } = source;
   return {
     format: HERDR_FORMAT,
-    ...source,
+    ...rest,
+    ...projectFolder?.startsWith("/") && { projectFolder },
     ...isTrimmed && { trimmed: true },
     ...lastHerdrPress && { lastPress: lastHerdrPress },
     session: shared
   };
+}
+function publishedSessionsFolder(appHome) {
+  return `${appHome}/inbox/sessions`;
+}
+function publishedSessionPath(appHome, sessionId) {
+  return `${publishedSessionsFolder(appHome)}/${sessionFile(sessionId)}`;
 }
 
 // ../hooks/host-prs.ts
 var PRS_HIDDEN_REFRESH_MS = 10 * 6e4;
 
 // ../hooks/herdr-app.ts
+var PRESS_FILE_LIMIT_BYTES = 64 * 1024;
 var PUBLISH_LIMIT_BYTES = 1024 * 1024;
-function publishedSessionPath(appHome, sessionId) {
-  return `${appHome}/inbox/sessions/${sessionFile(sessionId)}`;
-}
 function utf8Bytes(text2) {
   let bytes = 0;
   for (const char of text2) {
@@ -4163,15 +4169,19 @@ function withoutFoldedClosed(s) {
     }
   };
 }
-function publishedText(source, session) {
+function publishedText(source, session, log) {
   const text2 = JSON.stringify(herdrEnvelope(source, session));
-  return isOverLimit(text2) ? JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session), true)) : text2;
+  if (!isOverLimit(text2)) return text2;
+  const trimmed = JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session), true));
+  if (isOverLimit(trimmed))
+    log(`Herdr publish is over ${PUBLISH_LIMIT_BYTES} bytes after trimming, so the look cannot read it`);
+  return trimmed;
 }
-async function publishSession(files, appHome, source, session) {
+async function publishSession(files, appHome, source, session, log) {
   const path = publishedSessionPath(appHome, source.sessionId);
   const temporary = `${path}.${source.writtenAt}-${Math.random().toString(36).slice(2)}.tmp`;
   try {
-    await files.write(temporary, publishedText(source, session));
+    await files.write(temporary, publishedText(source, session, log));
     await files.move(temporary, path);
   } catch (err) {
     await files.remove(temporary).catch(() => void 0);
@@ -4180,7 +4190,7 @@ async function publishSession(files, appHome, source, session) {
 }
 function publishedSession(files, appHome, source, session, log) {
   if (!appHome) return Promise.resolve(false);
-  return publishSession(files, appHome, source, session).then(
+  return publishSession(files, appHome, source, session, log).then(
     () => true,
     (err) => {
       log(`Herdr publish failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -4212,7 +4222,8 @@ var publishFiles = {
     await writeFile2(path, text2);
   },
   move: (from, to) => rename2(from, to),
-  remove: (path) => rm(path, { force: true })
+  remove: (path) => rm(path, { force: true }),
+  removeFolder: (path) => rm(path, { recursive: true, force: true })
 };
 var HERDR_LOG_BYTES = 64 * 1024;
 function herdrLog(dir) {
@@ -4241,7 +4252,14 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
       const isPublished = target.kind === "terminal" && await publishedSession(
         publishFiles,
         target.appHome,
-        { host: "codex", agent: CODEX.agent, sessionId: id, terminal: target.terminal, writtenAt: seq },
+        {
+          host: "codex",
+          agent: CODEX.agent,
+          sessionId: id,
+          terminal: target.terminal,
+          writtenAt: seq,
+          projectFolder: s.root
+        },
         s,
         log
       );
