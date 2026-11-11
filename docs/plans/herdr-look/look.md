@@ -97,3 +97,34 @@ The look draws only with `theme()` colors, which every light and dark theme name
 The look draws no text in `dim`. In the Tokyo Night theme, `dim` on the pane's background is 3.3:1, under the 4.5:1 text needs.
 
 Each state is checked in Herdr's light and dark themes in the VM.
+
+## Help in the pane header
+
+The look draws Help at the right end of its tab row, because a mod pane cannot put a button into Herdr's pane header. A mod pane is a pane that shows a mod instead of a terminal. A layout is the set of mods that draws Herdr's window, and its `pane` mod draws the header above each pane. The shipped `pane` mod finds its pane in `panes()` by `props().pane`. When the pane runs no program, it draws `PaneInfo.title` as the name. For a mod pane that title is the mod's name, so the inbox's header reads "inbox". `herdr.d.ts` has no call that lets a mod set its pane's title or add to its header.
+
+A mod pane needs two things from the header: a title it sets, such as "Inbox", and a few actions the header draws at its right end, such as Help. `PaneInfo` would carry both to the header mod, which draws them as it draws a terminal pane's split, zoom and close. A press on an action would reach the mod pane that set it. Then Help costs the look no row, and the header names the panel the way it names a terminal.
+
+### The route without a change in Herdr
+
+Any mod can set a value with `setShared(key, value)`, and every mod can read it with `shared(key)`. Every mod re-renders when one is set. So a header mod that reads a key the look sets could draw Help, and send `inbox.help` back with `run`. That route has two limits:
+
+1. The shipped `pane` mod reads no shared value. The person would switch to a copy of the layout whose `pane` mod reads the key. A copied layout stops getting Herdr's fixes to the header.
+2. `nextCommand()` gives a copy of the mod the command with no pane id, so a copy cannot tell whether the press came from its own header. `herdr.d.ts` says `run('<mod>.<command>')` delivers to that mod's `nextCommand()`. That every shown copy receives it is inferred from that wording, not checked. If so, a Help button in one pane's header would toggle Help in every inbox pane on screen.
+
+### Draft request to Herdr's maintainers
+
+Not filed. Pete approves the exact text before it is filed.
+
+> **Let a mod pane set its header's title and actions**
+>
+> A mod opened with `pane.split {mod}` draws inside the pane frame the layout gives it. The frame's header is the layout's `pane` mod. For a mod pane, it shows the mod's name as the title, from `PaneInfo.title`, and nothing the mod sets. So a mod that wants a title or a button in its header draws a second header inside its own pane, which reads as a frame within a frame.
+>
+> The inbox is a mod pane that lists what waits on the person in an agent session. It has one control that belongs in the header: Help, which shows a legend of its marks. Today it costs a place in the panel's own tab row.
+>
+> Proposal: a mod pane can set a title and a short list of actions for its header, such as with a `setPaneHeader({ title, actions: [{ id, label }] })` call. `PaneInfo` carries them to the header mod, which draws the title in place of the mod's name and the actions at the header's right end. A press on an action reaches that pane's copy of the mod, such as through `nextCommand()` with the action's id.
+>
+> The alternative we found is a shared value that a cloned header mod reads. It needs a cloned layout. And since `"<mod>.<command>"` reaches every shown copy of a mod, a button in one header would act on every copy.
+>
+> Questions: should actions be text, icons from the app's set, or both? Should the shipped `pane` mod draw them, or only layouts that opt in?
+>
+> _Written by Claude_
