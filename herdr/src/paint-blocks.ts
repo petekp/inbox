@@ -68,14 +68,14 @@ const buttonsEl = (buttons: Button[], p: Paint, indent: number, isInert = false)
     .pl(indent)
     .children(buttons.map(b => buttonEl(b, p, isInert)))
 
-/** A mark centred in the mark column, as the Codex tab draws a row's mark. */
-const markEl = (m: Mark | null, t: Theme): Element =>
+/** A mark in the mark column, centred as the Codex tab draws a row's mark, or at the column's start as its Status page does. */
+const markEl = (m: Mark | null, t: Theme, isLeft = false): Element =>
   div()
     .w(MARK_W)
     .pr(8)
     .flex_none()
-    .text_center()
-    .text_color(colorOf(t, m?.tone ?? null))
+    .when(!isLeft, e => e.text_center())
+    .text_color(m === null || m.tone === null ? t.muted : colorOf(t, m.tone))
     .child(m?.text ?? '')
 
 const lineEl = (text: string, color: Theme[keyof Theme], indent = MARK_W) =>
@@ -182,7 +182,7 @@ function statusEl(s: StatusLine, p: Paint): Element {
     .child(
       h_flex()
         .items_start()
-        .child(markEl(s.mark, t))
+        .child(markEl(s.mark, t, true))
         .child(
           h_flex()
             .flex_1()
@@ -191,6 +191,7 @@ function statusEl(s: StatusLine, p: Paint): Element {
             .child(
               div()
                 .when(s.isBold, e => e.font_semibold())
+                .when(s.isMuted, e => e.text_color(t.muted))
                 .child(s.name),
             )
             .children(stall),
@@ -274,8 +275,8 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint): Element {
       .gap(8)
       .items_center()
       .child(div().text_color(t.muted).child(b.text))
-      .child(ruleLine(t, false))
-      .child(h_flex().gap(4).items_center().children(buttons))
+      .child(ruleLine(t, false).min_w(32))
+      .child(h_flex().ml_auto().gap(4).items_center().children(goalButtons(buttons, t)))
 
   return h_flex()
     .pl(MARK_X)
@@ -285,7 +286,7 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint): Element {
     .items_center()
     .child(markEl(b.mark, t))
     .child(div().font_semibold().child(b.text))
-    .when(b.count !== null, e => e.child(div().ml(6).text_color(t.muted).child(String(b.count))))
+    .when(b.count !== null, e => e.child(div().text_color(t.muted).child(`${DOT}${b.count}`)))
     .child(div().flex_1())
     .children(buttons)
 }
@@ -337,7 +338,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element
     .pl(indent)
     .pr(EDGE_X)
     .py(2)
-    .when(b.kind === 'fold' && b.depth === 0, e => e.mt(6))
+    .when('closedFold' in b.change, e => e.mt(8))
     .items_center()
     .text_color(t.muted)
     .cursor_pointer()
@@ -350,18 +351,48 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element
     .child(div().child(b.text))
 }
 
+/** A group's rule leaves the group above the space a section ends with. A Status rule sits between two lines. */
 function ruleEl(b: Extract<Block, { kind: 'rule' }>, t: Theme): Element {
-  if (b.text === null) return h_flex().pl(TEXT_X).py(10).child(ruleLine(t, false))
+  const indent = TEXT_X + b.depth * STATUS_STEP
+  if (b.text === null)
+    return h_flex()
+      .pl(indent)
+      .when(b.isBetweenGroups, e => e.pt(10))
+      .child(ruleLine(t, false))
   const label = div().flex_none().text_color(t.muted).child(b.text)
 
   return h_flex()
-    .pl(TEXT_X)
+    .pl(indent)
     .py(LOOK_GAP_PT)
     .gap(8)
     .items_center()
     .when(b.isDashed, e => e.child(ruleLine(t, true)))
     .child(label)
     .child(ruleLine(t, b.isDashed))
+}
+
+/** The goal's buttons, a quiet dot between each two, as the Codex tab's goal heading draws them. */
+const goalButtons = (buttons: Element[], t: Theme): Element[] =>
+  buttons.flatMap((b, n) => (n > 0 ? [div().text_color(t.muted).child('·'), b] : [b]))
+
+function noteEl(b: Extract<Block, { kind: 'note' }>, t: Theme): Element {
+  const text = div()
+    .min_w(0)
+    .when(b.isStrong, e => e.font_semibold())
+    .text_color(b.isStrong ? t.foreground : colorOf(t, b.tone))
+    .child(b.text)
+  const count = b.count === null ? [] : [div().whitespace_nowrap().text_color(t.muted).child(b.count)]
+
+  return h_flex()
+    .flex_wrap()
+    .items_baseline()
+    .pl(b.isHead ? MARK_X : TEXT_X + b.depth * STATUS_STEP)
+    .pr(EDGE_X)
+    .py(2)
+    .whitespace_normal()
+    .when(b.isStrong, e => e.text_size(HEAD_TEXT).line_height(HEAD_LINE))
+    .child(text)
+    .children(count)
 }
 
 export function blockEl(b: Block, p: Paint): Element {
@@ -379,15 +410,7 @@ export function blockEl(b: Block, p: Paint): Element {
       .pl(TEXT_X)
       .pr(EDGE_X)
       .child(fieldEl(b.field, p, 0))
-  if (b.kind === 'note')
-    return div()
-      .pl(TEXT_X + b.depth * STATUS_STEP)
-      .pr(EDGE_X)
-      .py(2)
-      .whitespace_normal()
-      .when(b.isStrong, e => e.font_semibold().text_size(HEAD_TEXT).line_height(HEAD_LINE))
-      .text_color(b.isStrong ? t.foreground : colorOf(t, b.tone))
-      .child(b.text)
+  if (b.kind === 'note') return noteEl(b, t)
 
   return div().h(8)
 }

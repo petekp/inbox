@@ -210,12 +210,14 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
   ]
 }
 
-const note = (id: string, text: string, tone: Tone, isStrong = false): Block => ({
+const note = (id: string, text: string, tone: Tone): Block => ({
   kind: 'note',
   id,
   text,
+  count: null,
   tone,
-  isStrong,
+  isHead: false,
+  isStrong: false,
   depth: 0,
 })
 

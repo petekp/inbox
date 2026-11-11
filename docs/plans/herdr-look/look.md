@@ -79,7 +79,7 @@ Herdr is a desktop app, so the look is click-first, and every move works with th
 
 ## Light and dark
 
-The look draws only with `theme()` colors, which every light and dark theme names alike. The inbox's tones map onto Herdr's agent colors, so a count means the same thing in the inbox and in Herdr's sidebar:
+The look draws only with `theme()` colors, which every light and dark theme names alike. Needs you, done and running take the colors Herdr's sidebar gives an agent that is blocked, done or working, so those counts mean the same thing in the inbox and in the sidebar. Findings, PRs and errors take the theme's magenta, cyan and red, as the terminal look takes its theme's:
 
 | Inbox tone | Herdr color |
 | --- | --- |

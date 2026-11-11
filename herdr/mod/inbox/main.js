@@ -3317,12 +3317,14 @@ function prBlocks(screen, d, presses, selected) {
     { kind: "gap", id: `gap ${pr.ref}` }
   ];
 }
-var note = (id, text, tone, isStrong = false) => ({
+var note = (id, text, tone) => ({
   kind: "note",
   id,
   text,
+  count: null,
   tone,
-  isStrong,
+  isHead: false,
+  isStrong: false,
   depth: 0
 });
 function refreshLine(screen) {
@@ -3397,7 +3399,7 @@ function keyButtons(id, keys) {
   return keys.map((k, n) => button(`${id} ${n}`, k.label, k.emphasis, doesOf(k)));
 }
 function rowBlocks(row, isUnfolded) {
-  const rule = row.isRuledAbove ? [{ kind: "rule", id: `rule ${row.id}`, text: null, isDashed: false }] : [];
+  const rule = row.isRuledAbove ? [{ kind: "rule", id: `rule ${row.id}`, text: null, isDashed: false, depth: row.depth, isBetweenGroups: false }] : [];
   if (row.kind === "subject") {
     const under = [
       row.text,
@@ -3413,6 +3415,7 @@ function rowBlocks(row, isUnfolded) {
         mark: markOf2(row.mark, row.tone, row.isRunning),
         name: row.name,
         isBold: false,
+        isMuted: false,
         stall: row.stall,
         under,
         buttons: keyButtons(row.id, statusKeyPlan(row))
@@ -3429,31 +3432,25 @@ function rowBlocks(row, isUnfolded) {
         mark: markOf2(row.mark, row.tone, row.isRunning),
         name: row.name,
         isBold: false,
+        isMuted: true,
         stall: row.stall,
         under: [],
         buttons: []
       }
     ];
   if (row.kind === "more")
-    return [{ kind: "note", id: row.id, text: row.text, tone: "muted", isStrong: false, depth: row.depth }];
+    return [{ ...note2(row.id, row.text, "muted"), depth: row.depth }];
   if (row.kind === "look")
-    return [{ kind: "rule", id: row.id, text: row.text, isDashed: true }];
+    return [{ kind: "rule", id: row.id, text: row.text, isDashed: true, depth: row.depth, isBetweenGroups: false }];
   if (row.kind === "part")
     return [
       { kind: "gap", id: `gap ${row.id}` },
-      { kind: "rule", id: row.id, text: row.text, isDashed: false }
+      { kind: "rule", id: row.id, text: row.text, isDashed: false, depth: 0, isBetweenGroups: false }
     ];
   if (row.kind === "counts")
     return [
       ...rule,
-      {
-        kind: "note",
-        id: row.id,
-        text: row.counts.map((c) => `${c.mark} ${c.text}`).join(STALL_GAP),
-        tone: "muted",
-        isStrong: false,
-        depth: row.depth
-      }
+      { ...note2(row.id, row.counts.map((c) => `${c.mark} ${c.text}`).join(STALL_GAP), "muted"), depth: row.depth }
     ];
   if (row.kind === "done-fold")
     return [
@@ -3476,6 +3473,7 @@ function rowBlocks(row, isUnfolded) {
       mark: markOf2(row.mark, row.tone, false),
       name: row.text,
       isBold: false,
+      isMuted: true,
       stall: null,
       under: [],
       buttons: []
@@ -3490,18 +3488,28 @@ function milestoneBlock(m) {
     mark: markOf2(m.mark, m.tone, false),
     name: m.name,
     isBold: m.isChanged,
+    isMuted: false,
     stall: m.stall,
     under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter((l) => l !== null),
     buttons: keyButtons(m.id, milestoneKeyPlan(m))
   };
 }
-var note2 = (id, text, tone, isStrong = false) => ({
+var note2 = (id, text, tone) => ({
   kind: "note",
   id,
   text,
+  count: null,
   tone,
-  isStrong,
+  isHead: false,
+  isStrong: false,
   depth: 0
+});
+var headNote = (id, text, tone) => ({ ...note2(id, text, tone), isHead: true });
+var headTitle = (id, text, count) => ({
+  ...note2(id, text, null),
+  count,
+  isHead: true,
+  isStrong: true
 });
 function goalBlocks(page, { isUnfolded, goalField }) {
   const g = page.goal;
@@ -3516,12 +3524,12 @@ function goalBlocks(page, { isUnfolded, goalField }) {
   };
   const field = goalField ? [{ kind: "field", id: "goal field", field: goalField }] : [];
   if (g === null)
-    return [heading, ...goalField ? field : [note2("goal text", NO_GOAL_TEXT, "muted")]];
+    return [heading, ...goalField ? field : [headNote("goal text", NO_GOAL_TEXT, "muted")]];
   const lines = goalField ? field : [
-    note2("goal text", g.count === null ? g.text : `${g.text}${STALL_GAP}${g.count}`, null, true),
-    ...g.was ? [note2("goal was", `${WAS_PREFIX}${g.was}`, "muted")] : [],
-    ...g.now ? [note2("goal now", g.now, "muted")] : [],
-    ...g.awaiting ? [note2("goal awaiting", g.awaiting, "muted")] : []
+    headTitle("goal text", g.text, g.count === null ? null : `${STALL_GAP}${g.count}`),
+    ...g.was ? [headNote("goal was", `${WAS_PREFIX}${g.was}`, "muted")] : [],
+    ...g.now ? [headNote("goal now", g.now, "muted")] : [],
+    ...g.awaiting ? [headNote("goal awaiting", g.awaiting, "muted")] : []
   ];
   const milestones = g.milestones.flatMap((m) => [
     { kind: "gap", id: `gap ${m.id}` },
@@ -3544,8 +3552,8 @@ function statusBlocks(page, ui) {
     ];
   const description = page.head?.description;
   const head = page.goal === null && page.head ? [
-    note2("head title", page.head.title, null, true),
-    ...description ? [note2("head text", description, "muted")] : []
+    headTitle("head title", page.head.title, null),
+    ...description ? [headNote("head text", description, "muted")] : []
   ] : [];
   const top = [...goalBlocks(page, ui), ...head.length > 0 ? [{ kind: "gap", id: "gap head" }, ...head] : []];
   const rows = unfoldedRows(page.rows, isUnfolded).flatMap((r) => rowBlocks(r, isUnfolded));
@@ -3673,7 +3681,9 @@ function groupBlocks(g, ui, selected, screen) {
       kind: "note",
       id: `empty ${g.kind}`,
       text: groupEmptyText(g.title),
+      count: null,
       tone: "muted",
+      isHead: false,
       isStrong: false,
       depth: 0
     });
@@ -3729,7 +3739,7 @@ function rowTabBlocks(screen, ui, tab) {
   }
   const selected = selectedOf(groups, ui.selected);
   return groups.flatMap((g, n) => [
-    ...n > 0 ? [{ kind: "rule", id: `rule ${g.kind}`, text: null, isDashed: false }] : [],
+    ...n > 0 ? [{ kind: "rule", id: `rule ${g.kind}`, text: null, isDashed: false, depth: 0, isBetweenGroups: true }] : [],
     ...groupBlocks(g, ui, selected, screen)
   ]);
 }
@@ -3843,6 +3853,7 @@ function helpBlocks(isNextBuild, tab, hasStatusButtons) {
       mark: null,
       name: k.keys,
       isBold: true,
+      isMuted: false,
       stall: null,
       under: [k.does],
       buttons: []
@@ -3855,6 +3866,7 @@ function helpBlocks(isNextBuild, tab, hasStatusButtons) {
       mark: { text: m.mark, tone: m.tone, isRunning: m.isRunning },
       name: m.words,
       isBold: false,
+      isMuted: false,
       stall: null,
       under: [],
       buttons: []
@@ -4033,10 +4045,10 @@ var TONE_COLORS = {
 var colorOf = (t, tone) => t[tone === null ? "foreground" : TONE_COLORS[tone]];
 var tint = (c, share) => `${c.slice(0, 7)}${Math.round(share * 255).toString(16).padStart(2, "0")}`;
 var TEXT = 13;
-var LINE = 20;
+var LINE = "20px";
 var SMALL_TEXT = 12;
 var HEAD_TEXT = 15;
-var HEAD_LINE = 22;
+var HEAD_LINE = "22px";
 var MARK_X = 18;
 var TEXT_X = 44;
 var EDGE_X = 14;
@@ -4059,7 +4071,7 @@ function buttonEl(b, p, isInert = false) {
   });
 }
 var buttonsEl = (buttons, p, indent, isInert = false) => h_flex().flex_wrap().items_center().gap(6).pt(8).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
-var markEl = (m, t) => div().w(MARK_W).pr(8).flex_none().text_center().text_color(colorOf(t, m?.tone ?? null)).child(m?.text ?? "");
+var markEl = (m, t, isLeft = false) => div().w(MARK_W).pr(8).flex_none().when(!isLeft, (e) => e.text_center()).text_color(m === null || m.tone === null ? t.muted : colorOf(t, m.tone)).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div().pl(indent).pt(4).whitespace_normal().text_color(color).child(text);
 var bodyLineEl = (l, t) => l.mark ? h_flex().pl(MARK_W).pt(4).gap(6).items_start().child(div().flex_none().text_color(colorOf(t, l.mark.tone)).child(l.mark.text)).child(div().flex_1().min_w(0).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text)) : lineEl(l.text, colorOf(t, l.tone));
 function fieldEl(f, p, indent, isInert = false) {
@@ -4092,7 +4104,7 @@ function rowEl(r, p) {
 function statusEl(s, p) {
   const { t } = p;
   const stall = s.stall ? [div().flex_none().text_color(colorOf(t, s.stall.tone)).child(`${STALL_GAP}${s.stall.text}`)] : [];
-  return v_flex().pl(MARK_X + s.depth * STATUS_STEP).pr(EDGE_X).py(STATUS_ROW_PAD_PT).child(h_flex().items_start().child(markEl(s.mark, t)).child(h_flex().flex_1().min_w(0).flex_wrap().child(div().when(s.isBold, (e) => e.font_semibold()).child(s.name)).children(stall))).children(s.under.map((l) => div().pl(MARK_W).whitespace_normal().text_color(t.muted).child(l))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W)));
+  return v_flex().pl(MARK_X + s.depth * STATUS_STEP).pr(EDGE_X).py(STATUS_ROW_PAD_PT).child(h_flex().items_start().child(markEl(s.mark, t, true)).child(h_flex().flex_1().min_w(0).flex_wrap().child(div().when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted)).child(s.name)).children(stall))).children(s.under.map((l) => div().pl(MARK_W).whitespace_normal().text_color(t.muted).child(l))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W)));
 }
 function prEl(b, p) {
   const { t } = p;
@@ -4108,8 +4120,8 @@ function headingEl(b, p) {
   const { t } = p;
   const buttons = b.buttons.map((x) => buttonEl(x, p));
   if (b.isLabel)
-    return h_flex().flex_wrap().pl(MARK_X).pr(EDGE_X).pt(10).pb(4).gap(8).items_center().child(div().text_color(t.muted).child(b.text)).child(ruleLine(t, false)).child(h_flex().gap(4).items_center().children(buttons));
-  return h_flex().pl(MARK_X).pr(EDGE_X).pt(10).pb(6).items_center().child(markEl(b.mark, t)).child(div().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div().ml(6).text_color(t.muted).child(String(b.count)))).child(div().flex_1()).children(buttons);
+    return h_flex().flex_wrap().pl(MARK_X).pr(EDGE_X).pt(10).pb(4).gap(8).items_center().child(div().text_color(t.muted).child(b.text)).child(ruleLine(t, false).min_w(32)).child(h_flex().ml_auto().gap(4).items_center().children(goalButtons(buttons, t)));
+  return h_flex().pl(MARK_X).pr(EDGE_X).pt(10).pb(6).items_center().child(markEl(b.mark, t)).child(div().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div().text_color(t.muted).child(`${DOT}${b.count}`))).child(div().flex_1()).children(buttons);
 }
 function emptyEl(b, p) {
   const { t } = p;
@@ -4126,13 +4138,20 @@ function foldEl(b, p) {
     does: { is: "view", change: b.change }
   };
   const indent = b.kind === "fold" ? MARK_X + b.depth * STATUS_STEP : MARK_X + b.depth * CLOSED_STEP + MARK_W;
-  return h_flex().id(`fold ${b.id}`).pl(indent).pr(EDGE_X).py(2).when(b.kind === "fold" && b.depth === 0, (e) => e.mt(6)).items_center().text_color(t.muted).cursor_pointer().hover((s) => s.text_color(t.foreground)).accessibility_label(b.text).on_click((_e, cx) => p.press(fold, cx)).when(b.kind === "fold", (e) => e.child(markEl({ text: b.kind === "fold" && b.isOpen ? "▾" : "▸", tone: "muted", isRunning: false }, t))).child(div().child(b.text));
+  return h_flex().id(`fold ${b.id}`).pl(indent).pr(EDGE_X).py(2).when("closedFold" in b.change, (e) => e.mt(8)).items_center().text_color(t.muted).cursor_pointer().hover((s) => s.text_color(t.foreground)).accessibility_label(b.text).on_click((_e, cx) => p.press(fold, cx)).when(b.kind === "fold", (e) => e.child(markEl({ text: b.kind === "fold" && b.isOpen ? "▾" : "▸", tone: "muted", isRunning: false }, t))).child(div().child(b.text));
 }
 function ruleEl(b, t) {
+  const indent = TEXT_X + b.depth * STATUS_STEP;
   if (b.text === null)
-    return h_flex().pl(TEXT_X).py(10).child(ruleLine(t, false));
+    return h_flex().pl(indent).when(b.isBetweenGroups, (e) => e.pt(10)).child(ruleLine(t, false));
   const label = div().flex_none().text_color(t.muted).child(b.text);
-  return h_flex().pl(TEXT_X).py(LOOK_GAP_PT).gap(8).items_center().when(b.isDashed, (e) => e.child(ruleLine(t, true))).child(label).child(ruleLine(t, b.isDashed));
+  return h_flex().pl(indent).py(LOOK_GAP_PT).gap(8).items_center().when(b.isDashed, (e) => e.child(ruleLine(t, true))).child(label).child(ruleLine(t, b.isDashed));
+}
+var goalButtons = (buttons, t) => buttons.flatMap((b, n) => n > 0 ? [div().text_color(t.muted).child("·"), b] : [b]);
+function noteEl(b, t) {
+  const text = div().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
+  const count = b.count === null ? [] : [div().whitespace_nowrap().text_color(t.muted).child(b.count)];
+  return h_flex().flex_wrap().items_baseline().pl(b.isHead ? MARK_X : TEXT_X + b.depth * STATUS_STEP).pr(EDGE_X).py(2).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).children(count);
 }
 function blockEl(b, p) {
   const { t } = p;
@@ -4155,7 +4174,7 @@ function blockEl(b, p) {
   if (b.kind === "field")
     return div().pl(TEXT_X).pr(EDGE_X).child(fieldEl(b.field, p, 0));
   if (b.kind === "note")
-    return div().pl(TEXT_X + b.depth * STATUS_STEP).pr(EDGE_X).py(2).whitespace_normal().when(b.isStrong, (e) => e.font_semibold().text_size(HEAD_TEXT).line_height(HEAD_LINE)).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
+    return noteEl(b, t);
   return div().h(8);
 }
 

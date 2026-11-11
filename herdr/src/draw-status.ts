@@ -36,7 +36,9 @@ function keyButtons(id: string, keys: StatusKey[]): Button[] {
 }
 
 function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[] {
-  const rule: Block[] = row.isRuledAbove ? [{ kind: 'rule', id: `rule ${row.id}`, text: null, isDashed: false }] : []
+  const rule: Block[] = row.isRuledAbove
+    ? [{ kind: 'rule', id: `rule ${row.id}`, text: null, isDashed: false, depth: row.depth, isBetweenGroups: false }]
+    : []
   if (row.kind === 'subject') {
     const under = [
       row.text,
@@ -53,6 +55,7 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
         mark: markOf(row.mark, row.tone, row.isRunning),
         name: row.name,
         isBold: false,
+        isMuted: false,
         stall: row.stall,
         under,
         buttons: keyButtons(row.id, statusKeyPlan(row)),
@@ -69,30 +72,24 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
         mark: markOf(row.mark, row.tone, row.isRunning),
         name: row.name,
         isBold: false,
+        isMuted: true,
         stall: row.stall,
         under: [],
         buttons: [],
       },
     ]
-  if (row.kind === 'more')
-    return [{ kind: 'note', id: row.id, text: row.text, tone: 'muted', isStrong: false, depth: row.depth }]
-  if (row.kind === 'look') return [{ kind: 'rule', id: row.id, text: row.text, isDashed: true }]
+  if (row.kind === 'more') return [{ ...note(row.id, row.text, 'muted'), depth: row.depth }]
+  if (row.kind === 'look')
+    return [{ kind: 'rule', id: row.id, text: row.text, isDashed: true, depth: row.depth, isBetweenGroups: false }]
   if (row.kind === 'part')
     return [
       { kind: 'gap', id: `gap ${row.id}` },
-      { kind: 'rule', id: row.id, text: row.text, isDashed: false },
+      { kind: 'rule', id: row.id, text: row.text, isDashed: false, depth: 0, isBetweenGroups: false },
     ]
   if (row.kind === 'counts')
     return [
       ...rule,
-      {
-        kind: 'note',
-        id: row.id,
-        text: row.counts.map(c => `${c.mark} ${c.text}`).join(STALL_GAP),
-        tone: 'muted',
-        isStrong: false,
-        depth: row.depth,
-      },
+      { ...note(row.id, row.counts.map(c => `${c.mark} ${c.text}`).join(STALL_GAP), 'muted'), depth: row.depth },
     ]
   if (row.kind === 'done-fold')
     return [
@@ -116,6 +113,7 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
       mark: markOf(row.mark, row.tone, false),
       name: row.text,
       isBold: false,
+      isMuted: true,
       stall: null,
       under: [],
       buttons: [],
@@ -131,19 +129,33 @@ function milestoneBlock(m: MilestoneRow): Block {
     mark: markOf(m.mark, m.tone, false),
     name: m.name,
     isBold: m.isChanged,
+    isMuted: false,
     stall: m.stall,
     under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter(l => l !== null),
     buttons: keyButtons(m.id, milestoneKeyPlan(m)),
   }
 }
 
-const note = (id: string, text: string, tone: Tone, isStrong = false): Block => ({
+const note = (id: string, text: string, tone: Tone): Extract<Block, { kind: 'note' }> => ({
   kind: 'note',
   id,
   text,
+  count: null,
   tone,
-  isStrong,
+  isHead: false,
+  isStrong: false,
   depth: 0,
+})
+
+/** A line of the page's head, which starts where the marks start. */
+const headNote = (id: string, text: string, tone: Tone): Block => ({ ...note(id, text, tone), isHead: true })
+
+/** The head's title: the goal, or what the session is for, with the goal's count after it. */
+const headTitle = (id: string, text: string, count: string | null): Block => ({
+  ...note(id, text, null),
+  count,
+  isHead: true,
+  isStrong: true,
 })
 
 /** What the Status page draws besides the shared page: the done folds the person opened, and the goal's open field. */
@@ -162,14 +174,14 @@ function goalBlocks(page: StatusPage, { isUnfolded, goalField }: StatusUi): Bloc
     isLabel: true,
   }
   const field: Block[] = goalField ? [{ kind: 'field', id: 'goal field', field: goalField }] : []
-  if (g === null) return [heading, ...(goalField ? field : [note('goal text', NO_GOAL_TEXT, 'muted')])]
+  if (g === null) return [heading, ...(goalField ? field : [headNote('goal text', NO_GOAL_TEXT, 'muted')])]
   const lines = goalField
     ? field
     : [
-        note('goal text', g.count === null ? g.text : `${g.text}${STALL_GAP}${g.count}`, null, true),
-        ...(g.was ? [note('goal was', `${WAS_PREFIX}${g.was}`, 'muted')] : []),
-        ...(g.now ? [note('goal now', g.now, 'muted')] : []),
-        ...(g.awaiting ? [note('goal awaiting', g.awaiting, 'muted')] : []),
+        headTitle('goal text', g.text, g.count === null ? null : `${STALL_GAP}${g.count}`),
+        ...(g.was ? [headNote('goal was', `${WAS_PREFIX}${g.was}`, 'muted')] : []),
+        ...(g.now ? [headNote('goal now', g.now, 'muted')] : []),
+        ...(g.awaiting ? [headNote('goal awaiting', g.awaiting, 'muted')] : []),
       ]
   const milestones = g.milestones.flatMap((m): Block[] => [
     { kind: 'gap', id: `gap ${m.id}` },
@@ -197,8 +209,8 @@ export function statusBlocks(page: StatusPage, ui: StatusUi): Block[] {
   const head =
     page.goal === null && page.head
       ? [
-          note('head title', page.head.title, null, true),
-          ...(description ? [note('head text', description, 'muted')] : []),
+          headTitle('head title', page.head.title, null),
+          ...(description ? [headNote('head text', description, 'muted')] : []),
         ]
       : []
   const top = [...goalBlocks(page, ui), ...(head.length > 0 ? [{ kind: 'gap', id: 'gap head' } as const, ...head] : [])]

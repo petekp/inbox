@@ -221,7 +221,9 @@ function groupBlocks(g: Group, ui: LookUi, selected: string | null, screen: Look
       kind: 'note',
       id: `empty ${g.kind}`,
       text: groupEmptyText(g.title),
+      count: null,
       tone: 'muted',
+      isHead: false,
       isStrong: false,
       depth: 0,
     })
@@ -281,7 +283,9 @@ function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'finding
   const selected = selectedOf(groups, ui.selected)
 
   return groups.flatMap((g, n): Block[] => [
-    ...(n > 0 ? [{ kind: 'rule', id: `rule ${g.kind}`, text: null, isDashed: false } as const] : []),
+    ...(n > 0
+      ? [{ kind: 'rule', id: `rule ${g.kind}`, text: null, isDashed: false, depth: 0, isBetweenGroups: true } as const]
+      : []),
     ...groupBlocks(g, ui, selected, screen),
   ])
 }

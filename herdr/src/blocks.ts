@@ -88,6 +88,8 @@ export type StatusLine = {
   mark: Mark | null
   name: string
   isBold: boolean
+  /** A child or a plain line, whose name draws quiet, under the subject it belongs to. */
+  isMuted: boolean
   stall: { text: string; tone: StatusStall['tone'] } | null
   /** Lines under the name, dim: where it stands, what it merged, the plan it replaced. */
   under: string[]
@@ -139,9 +141,22 @@ export type Block =
   | { kind: 'fold'; id: string; depth: number; text: string; isOpen: boolean; change: ViewChange }
   /** A line that shows more of an open Closed list, as "Show 4 earlier". */
   | { kind: 'more'; id: string; depth: number; text: string; change: ViewChange }
-  /** A line of text. `isStrong` is the Status page's head: the goal, or what the session is for. */
-  | { kind: 'note'; id: string; text: string; tone: Tone; isStrong: boolean; depth: number }
+  /**
+   * A line of text. `isHead` starts it where the marks start, as the Status page's head does, and `isStrong` draws it
+   * as the head's title: the goal, or what the session is for. `count` follows the text, quiet, as the goal's does.
+   */
+  | {
+      kind: 'note'
+      id: string
+      text: string
+      count: string | null
+      tone: Tone
+      isHead: boolean
+      isStrong: boolean
+      depth: number
+    }
   /** The goal's field while the person types a goal, in place of the goal's text. */
   | { kind: 'field'; id: string; field: Field }
-  | { kind: 'rule'; id: string; text: string | null; isDashed: boolean }
+  /** A rule `depth` Status steps in. `isBetweenGroups` closes the group above with its space, as a section does. */
+  | { kind: 'rule'; id: string; text: string | null; isDashed: boolean; depth: number; isBetweenGroups: boolean }
   | { kind: 'gap'; id: string }

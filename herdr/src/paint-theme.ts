@@ -51,12 +51,15 @@ export const tint = (c: Color, share: number): Color =>
     .toString(16)
     .padStart(2, '0')}` as Color
 
-/** The look's text sizes and line heights, in px, as the Codex tab's: text, the status line, and the Status page's head. */
+/**
+ * The look's text sizes and line heights, as the Codex tab's: text, the status line, and the Status page's head. gpui
+ * reads a bare number given to `line_height` as a multiplier, so the line heights are px strings.
+ */
 export const TEXT = 13
-export const LINE = 20
+export const LINE = '20px'
 export const SMALL_TEXT = 12
 export const HEAD_TEXT = 15
-export const HEAD_LINE = 22
+export const HEAD_LINE = '22px'
 
 /** Where a row's mark column starts and its text starts, and the space at the right edge, as in the Codex tab. */
 export const MARK_X = 18
