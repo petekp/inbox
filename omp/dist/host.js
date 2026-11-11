@@ -7687,11 +7687,10 @@ function boxed(inner, tone, width, s) {
   ];
 }
 var BODY_LINES = 8;
-var LEAD_TONES = { error: "error", warning: "needsYou", notice: null, ask: "key" };
+var LEAD_TONES = { error: "error", warning: "needsYou", notice: "key", ask: "key" };
 function bannerLines(b, width, s) {
   const text = b.body ? `${b.lead} ${b.body}` : b.lead;
-  const leadTone = LEAD_TONES[b.tone];
-  const lead = (w) => leadTone ? s.tone(leadTone, s.bold(w)) : s.bold(w);
+  const lead = (w) => s.tone(LEAD_TONES[b.tone], s.bold(w));
   let leadWords = b.lead.split(/\s+/).length;
   const lines = wrapText(text, width - 4).map((line) => line.split(" ").map((w) => leadWords-- > 0 ? lead(w) : w).join(" "));
   return boxed(lines, b.tone, width, s);
@@ -10313,17 +10312,19 @@ var LIGHT_TONES = {
   errorMark: "#a5293d",
   key: "#243bf5"
 };
+var DARK_BLUE_TINT = { line: "#5d5f73", fill: "#3a3b44" };
 var DARK_BANNER_TINTS = {
   error: { line: "#7a4a52", fill: "#3d2a2e" },
   warning: { line: "#6e5a2c", fill: "#3a3322" },
-  notice: { line: "#505050", fill: "#333333" },
-  ask: { line: "#5d5f73", fill: "#3a3b44" }
+  notice: DARK_BLUE_TINT,
+  ask: DARK_BLUE_TINT
 };
+var LIGHT_BLUE_TINT = { line: "#bcc3fb", fill: "#eef0fe" };
 var LIGHT_BANNER_TINTS = {
   error: { line: "#d9a3ab", fill: "#f8e9eb" },
   warning: { line: "#d6c19a", fill: "#f6efe1" },
-  notice: { line: "#c8c8c8", fill: "#efefef" },
-  ask: { line: "#bcc3fb", fill: "#eef0fe" }
+  notice: LIGHT_BLUE_TINT,
+  ask: LIGHT_BLUE_TINT
 };
 
 // src/theme.ts

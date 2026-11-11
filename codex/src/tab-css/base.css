@@ -126,13 +126,12 @@ button {
 .banner-warning {
   --tone: var(--needs-you);
 }
-/* --muted is see-through in the Codex app, so a notice mixes from the text color. */
-.banner-notice {
-  --tone: var(--text);
+.banner-notice,
+.banner-ask {
+  --tone: var(--key);
 }
 /* A question: its text, then its buttons on their own line. */
 .banner-ask {
-  --tone: var(--key);
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;

@@ -106,7 +106,7 @@ export function paneFrame(
   const leadColor: Record<BannerTone, string | undefined> = {
     error: pal.tone.error ?? pal.mark.error,
     warning: pal.tone.needsYou ?? pal.mark.needsYou,
-    notice: undefined,
+    notice: pal.key,
     ask: pal.key,
   }
   /**

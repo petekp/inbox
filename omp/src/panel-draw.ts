@@ -32,13 +32,12 @@ export function boxed(inner: string[], tone: BannerTone, width: number, s: Style
 /** The most lines a selected review thread's comment takes. */
 const BODY_LINES = 8
 
-const LEAD_TONES: Record<BannerTone, Tone | null> = { error: 'error', warning: 'needsYou', notice: null, ask: 'key' }
+const LEAD_TONES: Record<BannerTone, Tone> = { error: 'error', warning: 'needsYou', notice: 'key', ask: 'key' }
 
 /** A banner's lines: its lead in bold, in the tone's color, then its body, wrapped inside the box. */
 export function bannerLines(b: BannerView, width: number, s: Style): string[] {
   const text = b.body ? `${b.lead} ${b.body}` : b.lead
-  const leadTone = LEAD_TONES[b.tone]
-  const lead = (w: string) => (leadTone ? s.tone(leadTone, s.bold(w)) : s.bold(w))
+  const lead = (w: string) => s.tone(LEAD_TONES[b.tone], s.bold(w))
   let leadWords = b.lead.split(/\s+/).length
   const lines = wrapText(text, width - 4).map(line =>
     line
