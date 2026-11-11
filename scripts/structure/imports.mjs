@@ -103,6 +103,9 @@ function isHandlerReload(path, dependency) {
   )
 }
 
+/** The modules the Herdr app supplies to a mod. */
+const HERDR_APP_MODULES = ['gpui-kit', 'gpui-base', 'herdr']
+
 export function checkImports(root, errors) {
   const sharedFiles = SHARED.map(name => `hooks/${name}.ts`)
   const sharedTargets = new Set(sharedFiles.map(path => realpathSync(join(root, path))))
@@ -113,7 +116,17 @@ export function checkImports(root, errors) {
   const ompFiles = existsSync(join(root, 'omp'))
     ? [...sourceFiles(root, 'omp/src'), ...sourceFiles(root, 'omp/tests')]
     : []
-  const files = [...sharedFiles, ...sourceFiles(root, 'codex/src'), ...sourceFiles(root, 'codex/tests'), ...ompFiles]
+  const herdrFiles = existsSync(join(root, 'herdr'))
+    ? [...sourceFiles(root, 'herdr/src'), ...sourceFiles(root, 'herdr/tests')]
+    : []
+  const omp = `${join(realpathSync(root), 'omp')}${sep}`
+  const files = [
+    ...sharedFiles,
+    ...sourceFiles(root, 'codex/src'),
+    ...sourceFiles(root, 'codex/tests'),
+    ...ompFiles,
+    ...herdrFiles,
+  ]
   const api = new API({ cwd: root })
   try {
     const snapshot = api.updateSnapshot({ openFiles: files.map(path => join(root, path)) })
@@ -126,7 +139,14 @@ export function checkImports(root, errors) {
       if (source) sourceByPath.set(canonical, source)
       return source
     }
-    const modeOf = path => (sharedFiles.includes(path) ? 'shared' : ompFiles.includes(path) ? 'omp' : 'codex')
+    const modeOf = path =>
+      sharedFiles.includes(path)
+        ? 'shared'
+        : ompFiles.includes(path)
+          ? 'omp'
+          : herdrFiles.includes(path)
+            ? 'herdr'
+            : 'codex'
     const queue = files.map(path => ({ path, mode: modeOf(path) }))
     const visited = new Set()
     while (queue.length) {
@@ -162,13 +182,23 @@ export function checkImports(root, errors) {
             errors.push(`${relative} imports '${from}'. Only omp's tests import the shared session test.`)
           if (from.startsWith('@oh-my-pi/') && relative !== 'omp/src/host.ts')
             errors.push(`${relative} imports '${from}'. Only omp/src/host.ts imports omp's packages.`)
+        } else if (mode === 'herdr') {
+          if (target?.startsWith(hooks) && !sharedTargets.has(target))
+            errors.push(
+              `${relative} imports '${from}', which is not a shared module. The Herdr look can only use shared modules.`,
+            )
+          if (target?.startsWith(codex) || target?.startsWith(omp))
+            errors.push(`${relative} imports '${from}'. The Herdr look does not import from codex/ or omp/.`)
+          if (HERDR_APP_MODULES.includes(from) && relative !== 'herdr/src/main.ts')
+            errors.push(`${relative} imports '${from}'. Only herdr/src/main.ts imports the Herdr app's modules.`)
         } else if (target?.startsWith(hooks) && !sharedTargets.has(target)) {
           errors.push(
             `${relative} imports '${from}', which is not a shared module. Codex can only bundle shared modules.`,
           )
         }
 
-        if (!target?.startsWith(rootDir) || target.split(sep).includes('node_modules')) continue
+        const isHerdrAppModule = mode === 'herdr' && HERDR_APP_MODULES.includes(from)
+        if (!target?.startsWith(rootDir) || target.split(sep).includes('node_modules') || isHerdrAppModule) continue
         const targetSource = sourceFor(project, target)
         if (!targetSource) continue
         const targetPath = realpathSync(targetSource.fileName)
