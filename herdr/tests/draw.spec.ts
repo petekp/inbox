@@ -77,7 +77,12 @@ test('the Status page draws the goal’s and each row’s buttons in their plans
 
 test('each case of the followed terminal draws its own message, and a read session draws the inbox', () => {
   const read = readSession(demoEnvelopeText())
-  const o = { now: NOW, isNextBuild: true, holds: { ...NO_HOLDS, shownSince: NOW }, notes: {}, errors: {}, outs: [] }
+  const o = {
+    now: NOW,
+    isNextBuild: true,
+    holds: { ...NO_HOLDS, shownSince: NOW },
+    queue: { outs: [], notes: {}, lines: {} },
+  }
   const cases: [Followed, Parameters<typeof screenOf>[1]][] = [
     [{ is: 'no-terminal' }, null],
     [{ is: 'no-inbox', terminal: 't1', program: 'zsh' }, null],

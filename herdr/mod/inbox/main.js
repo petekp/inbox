@@ -3876,7 +3876,9 @@ function stepTab(tabs, by) {
   const at = tabs.findIndex((t) => t.isSelected);
   return tabs[(at + by + tabs.length) % tabs.length]?.id ?? null;
 }
-function keyMove(key, tabs, blocks) {
+function keyMove(key, tabs, blocks, typing) {
+  if (typing !== null)
+    return key === "escape" ? { is: "close" } : null;
   if (key === "escape")
     return { is: "leave" };
   if (key === "left" || key === "right") {
@@ -3891,6 +3893,18 @@ function keyMove(key, tabs, blocks) {
   const lines = blocks.flatMap((b) => b.kind === "line" ? b.buttons : []);
   const pressed = [...selected?.buttons ?? [], ...lines].find((b) => b.hotkey === key && !b.isOut);
   return pressed ? { is: "press", button: pressed } : null;
+}
+var withSelected = (ui, id) => ({
+  ...ui,
+  selected: id,
+  typing: ui.typing === id ? id : null
+});
+var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
+function afterSend(ui, drafts, rowId, isSent) {
+  if (!isSent)
+    return { ui, drafts };
+  const kept = Object.fromEntries(Object.entries(drafts).filter(([id]) => id !== rowId));
+  return { ui: { ...ui, typing: ui.typing === rowId ? null : ui.typing }, drafts: kept };
 }
 
 // ../hooks/row-motion.ts
@@ -3993,70 +4007,6 @@ function moveRows(blocks, tracks, now, isFirst) {
   return { blocks: shown, tracks: next, motion, nextAt: ends.length ? Math.min(...ends) : null };
 }
 
-// src/out.ts
-var SENDING = "Sending…";
-var REREAD_AFTER_MS = 5000;
-var GIVE_UP_MS = 15000;
-var outAction2 = (p) => ("id" in p) ? actionId(p) : p.action;
-function rowSignature(view, rowId) {
-  const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
-  const state = rows.find((r) => r.id === rowId)?.state.is ?? null;
-  const goal = rowId === GOAL_KEYS_ID ? view.statusPage.goal?.text ?? null : null;
-  return JSON.stringify([view.lastActions[rowId] ?? null, state, goal]);
-}
-function settleOuts(outs, view, lastPress, now, agent) {
-  const settled = { outs: [], notes: {}, errors: {} };
-  for (const out of outs) {
-    if (lastPress?.id === out.pressId) {
-      if (lastPress.outcome === "stale")
-        settled.notes[out.rowId] = { note: "stale", at: now };
-      continue;
-    }
-    if (rowSignature(view, out.rowId) !== out.before)
-      continue;
-    if (now - out.since < GIVE_UP_MS)
-      settled.outs.push(out);
-    else if (out.isTaken)
-      settled.notes[out.rowId] = { note: "stale", at: now };
-    else
-      settled.errors[out.rowId] = `Not applied: ${agent}'s inbox did not answer.`;
-  }
-  return settled;
-}
-function nextOutCheckAt(outs, now) {
-  const times = outs.flatMap((out) => [out.since + REREAD_AFTER_MS, out.since + GIVE_UP_MS]);
-  const later = times.filter((at) => at > now);
-  return later.length ? Math.min(...later) : null;
-}
-function withOutButtons(buttons, byRow) {
-  return buttons.map((b) => {
-    if (b.does.is !== "press")
-      return b;
-    const out = byRow.get(pressRowId(b.does.press));
-    return out?.action === outAction2(b.does.press) ? { ...b, isOut: true } : b;
-  });
-}
-function drawOuts(blocks, outs, errors, look) {
-  const byRow = new Map(outs.map((o) => [o.rowId, o]));
-  const lineOf = (id) => {
-    const out = byRow.get(id);
-    if (errors[id])
-      return { text: errors[id], tone: "error" };
-    if (!out)
-      return null;
-    return { text: out.pending ? feedbackText(out.pending, look) : SENDING, tone: "muted" };
-  };
-  return blocks.map((b) => {
-    if (b.kind === "row" || b.kind === "pr" || b.kind === "line") {
-      const line = lineOf(b.id);
-      return { ...b, buttons: withOutButtons(b.buttons, byRow), ...line ? { feedback: line } : {} };
-    }
-    if (b.kind === "status" || b.kind === "heading")
-      return { ...b, buttons: withOutButtons(b.buttons, byRow) };
-    return b;
-  });
-}
-
 // src/paint-blocks.ts
 import { div } from "gpui-kit";
 import { Input, h_flex, v_flex } from "gpui-base";
@@ -4075,24 +4025,26 @@ var TONE_COLORS = {
 var colorOf = (t, tone) => t[tone === null ? "foreground" : TONE_COLORS[tone]];
 
 // src/paint-blocks.ts
-function buttonEl(b, p) {
+function buttonEl(b, p, isInert = false) {
   const { t } = p;
   const base = h_flex().id(`button ${b.id}`).h(28).px(10).flex_none().items_center().rounded(7).text_size(12).accessibility_label(b.label).child(b.label);
   const styled = b.emphasis === "primary" ? base.bg(t.solid).text_color(t.solid_foreground) : b.emphasis === "normal" ? base.bg(t.raised).border_1().border_color(t.border).text_color(t.foreground) : base.text_color(t.muted).hover((s) => s.bg(t.hover));
   if (b.isOut)
     return styled.opacity(0.5);
+  if (isInert)
+    return styled;
   return styled.cursor_pointer().on_click((_e, cx) => {
     cx.stop_propagation();
     p.press(b, cx);
   });
 }
-var buttonsEl = (buttons, p, indent) => h_flex().flex_wrap().gap(6).pt(6).pl(indent).children(buttons.map((b) => buttonEl(b, p)));
+var buttonsEl = (buttons, p, indent, isInert = false) => h_flex().flex_wrap().gap(6).pt(6).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
 var markEl = (m, t) => div().w(14).flex_none().text_color(colorOf(t, m?.tone ?? null)).child(m?.text ?? "");
 var lineEl = (text, color, indent = 22) => div().pl(indent).pt(2).text_size(12).whitespace_normal().text_color(color).child(text);
-function fieldEl(f, p, indent) {
+function fieldEl(f, p, indent, isInert = false) {
   const state = p.input(f.rowId);
   const input = state ? [Input.new(state).w_full()] : [];
-  return v_flex().pt(6).pl(indent).gap(6).children(input).child(buttonsEl(f.buttons, p, 0));
+  return v_flex().pt(6).pl(indent).gap(6).children(input).child(buttonsEl(f.buttons, p, 0, isInert));
 }
 function opacityOf(r, p) {
   const m = p.motion.get(r.id);
@@ -4112,7 +4064,7 @@ function rowEl(r, p) {
   ];
   const opacity = opacityOf(r, p);
   const isLeaving = p.motion.get(r.id)?.state === "leaving";
-  return v_flex().id(`row ${r.id}`).px(8).py(6).ml(r.depth * 14).rounded(7).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => lineEl(l.text, colorOf(t, l.tone)))).when(r.buttons.length > 0 && !isLeaving, (e) => e.child(buttonsEl(r.buttons, p, 22))).when(r.field !== null && !isLeaving, (e) => e.child(r.field ? fieldEl(r.field, p, 22) : div()));
+  return v_flex().id(`row ${r.id}`).px(8).py(6).ml(r.depth * 14).rounded(7).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => lineEl(l.text, colorOf(t, l.tone)))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, 22, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, 22, isLeaving) : div()));
 }
 function statusEl(s, p) {
   const { t } = p;
@@ -4204,6 +4156,73 @@ function pressFileText(id, pressedAt, press, holds, result = null) {
   });
 }
 
+// src/out.ts
+var SENDING = "Sending…";
+var REREAD_AFTER_MS = 5000;
+var GIVE_UP_MS = 15000;
+var outAction2 = (p) => ("id" in p) ? actionId(p) : p.action;
+function rowSignature(view, rowId) {
+  const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
+  const state = rows.find((r) => r.id === rowId)?.state.is ?? null;
+  const goal = rowId === GOAL_KEYS_ID ? view.statusPage.goal?.text ?? null : null;
+  return JSON.stringify([view.lastActions[rowId] ?? null, state, goal]);
+}
+var resultLine = (result) => ({
+  text: feedbackText({ is: "local", result }, "herdr"),
+  tone: result.state === "failed" ? "error" : "muted"
+});
+var unconfirmedLine = (out) => out.result ? resultLine(out.result) : { text: deliveryLabel("unconfirmed", out.label, out.reply), tone: "muted" };
+var notAppliedLine = (out, agent) => out.result ? resultLine(out.result) : { text: `Not applied: ${agent}'s inbox did not answer.`, tone: "error" };
+function settleOuts(outs, view, lastPress, now) {
+  const settled = { outs: [], notes: {}, lines: {}, toClaim: [] };
+  for (const out of outs) {
+    if (lastPress?.id === out.pressId) {
+      if (lastPress.outcome === "stale")
+        settled.notes[out.rowId] = { note: "stale", at: now };
+      continue;
+    }
+    if (rowSignature(view, out.rowId) !== out.before)
+      continue;
+    const isPassed = lastPress !== null && lastPress.id > out.pressId;
+    if (out.isWritten && out.isTaken && isPassed)
+      settled.lines[out.rowId] = unconfirmedLine(out);
+    else if (!out.isWritten || out.waitingSince === null || now - out.waitingSince < GIVE_UP_MS)
+      settled.outs.push(out);
+    else if (out.isTaken)
+      settled.lines[out.rowId] = unconfirmedLine(out);
+    else
+      settled.toClaim.push(out);
+  }
+  return settled;
+}
+function nextOutCheckAt(outs, now) {
+  const times = outs.flatMap((out) => out.waitingSince === null ? [] : [out.waitingSince + REREAD_AFTER_MS, out.waitingSince + GIVE_UP_MS]);
+  const later = times.filter((at) => at > now);
+  return later.length ? Math.min(...later) : null;
+}
+var withOutButtons = (buttons, outRows) => buttons.map((b) => b.does.is === "press" && outRows.has(pressRowId(b.does.press)) ? { ...b, isOut: true } : b);
+function drawOuts(blocks, outs, lines) {
+  const byRow = new Map(outs.map((o) => [o.rowId, o]));
+  const outRows = new Set(byRow.keys());
+  const lineOf = (id) => {
+    const out = byRow.get(id);
+    if (!out)
+      return lines[id] ?? null;
+    if (out.result)
+      return resultLine(out.result);
+    return { text: out.pending ? feedbackText(out.pending, "herdr") : SENDING, tone: "muted" };
+  };
+  return blocks.map((b) => {
+    if (b.kind === "row" || b.kind === "pr" || b.kind === "line") {
+      const line = lineOf(b.id);
+      return { ...b, buttons: withOutButtons(b.buttons, outRows), ...line ? { feedback: line } : {} };
+    }
+    if (b.kind === "status" || b.kind === "heading")
+      return { ...b, buttons: withOutButtons(b.buttons, outRows) };
+    return b;
+  });
+}
+
 // src/run-here.ts
 var isOpenedHere = (target, projectFolder) => /^https?:\/\//.test(target) || target.startsWith("/") || target.startsWith("~/") || projectFolder !== null;
 function isRunHere(effects, projectFolder) {
@@ -4212,17 +4231,106 @@ function isRunHere(effects, projectFolder) {
 function pendingOf(effects, at) {
   return effects.length > 0 ? { is: "local", result: pendingResult([...effects], at) } : null;
 }
-async function runHere(effects, io) {
-  for (const e of effects) {
+async function runHere(effects, pending, io) {
+  const parts = pending.parts.map((p) => ({ ...p }));
+  for (const [i, e] of effects.entries()) {
     if (e.kind === "copy") {
       io.copy(e.text);
       continue;
     }
     const error = await openTarget(io.run, io.probe, e.target, io.projectFolder ?? "/", io.home);
-    if (error)
-      return error;
+    if (error === null)
+      continue;
+    parts[i] = { ...parts[i], error };
+    return { ...pending, state: "failed", parts: parts.slice(0, i + 1) };
   }
-  return null;
+  return { ...pending, state: "done", parts };
+}
+var firstError = (r) => r.parts.find((p) => p.error !== null)?.error ?? null;
+
+// src/press-queue.ts
+var claimedPath = (path) => `${path}.withdrawn`;
+
+class PressQueue {
+  io;
+  outs = [];
+  notes = {};
+  lines = {};
+  constructor(io) {
+    this.io = io;
+  }
+  send(target, press, effects, label, reply) {
+    const rowId = pressRowId(press);
+    const refuse = (reason) => {
+      this.lines[rowId] = { text: feedbackText({ is: "notSent", reason, retry: null }, "herdr"), tone: "error" };
+      return { is: "refused", reason };
+    };
+    if (target === null)
+      return refuse("this terminal has no inbox to send to.");
+    if (this.outs.some((o) => o.rowId === rowId))
+      return refuse("the last press on this row has not finished.");
+    const now = this.io.now();
+    const pressId = newPressId(now, this.io.random());
+    const pending = pendingOf(effects, now);
+    const out = {
+      pressId,
+      rowId,
+      path: pressPath(target.appHome, target.sessionId, pressId),
+      action: outAction2(press),
+      label,
+      ...reply !== undefined ? { reply } : {},
+      pending,
+      result: null,
+      before: rowSignature(target.view, rowId),
+      isWritten: false,
+      waitingSince: null,
+      isTaken: false
+    };
+    this.outs = [...this.outs, out];
+    delete this.lines[rowId];
+    delete this.notes[rowId];
+    return { is: "sent", finish: (runHere, ran) => this.finish(out, now, target, press, effects, runHere, ran) };
+  }
+  async finish(out, pressedAt, target, press, effects, runHere, ran) {
+    const pending = out.pending?.is === "local" ? out.pending.result : null;
+    if (pending && isRunHere(effects, target.projectFolder)) {
+      out.result = await runHere(effects, pending);
+      ran();
+    }
+    const local = out.result ? { error: firstError(out.result) } : null;
+    const text = pressFileText(out.pressId, pressedAt, press, target.holds, local);
+    const failed = await this.io.write(out.path, text);
+    if (failed !== null) {
+      this.outs = this.outs.filter((o) => o !== out);
+      this.lines[out.rowId] = { text: `Not applied: ${failed}`, tone: "error" };
+      return;
+    }
+    out.isWritten = true;
+    out.waitingSince = this.io.now();
+    await this.io.wake(target.terminal, out.pressId);
+  }
+  async settle(view, lastPress, agent) {
+    for (const out of this.outs)
+      if (out.isWritten)
+        out.isTaken = await this.io.isGone(out.path);
+    const now = this.io.now();
+    const settled = settleOuts(this.outs, view, lastPress, now);
+    this.outs = settled.outs;
+    this.notes = { ...this.notes, ...settled.notes };
+    this.lines = { ...this.lines, ...settled.lines };
+    for (const out of settled.toClaim) {
+      if (await this.io.claim(out.path)) {
+        this.lines[out.rowId] = notAppliedLine(out, agent);
+        continue;
+      }
+      out.isTaken = true;
+      out.waitingSince = this.io.now();
+      this.outs = [...this.outs, out];
+    }
+  }
+  nextCheckAt() {
+    return nextOutCheckAt(this.outs, this.io.now());
+  }
 }
 
 // src/screen.ts
@@ -4255,7 +4363,7 @@ function screenOf(followed, read, ui, o) {
   if (shown !== null || read?.is !== "read")
     return shown ?? message(READING_TEXT, null);
   const { holds } = o;
-  const view = sessionView(read.session, o.now, SETTLED_MS, holds, o.notes);
+  const view = sessionView(read.session, o.now, SETTLED_MS, holds, o.queue.notes);
   const screen = {
     view,
     agent: read.envelope.agent,
@@ -4279,7 +4387,7 @@ function screenOf(followed, read, ui, o) {
     tabs: tabCells(screen, ui.tab),
     ...chrome(screen, ui.tab),
     trimmedNote: read.isTrimmed ? TRIMMED_NOTE : null,
-    blocks: drawOuts(tabBlocks(screen, ui), o.outs, o.errors, "herdr"),
+    blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines),
     foldAt: nextFoldAt(settled, placing)
   };
 }
@@ -4306,6 +4414,22 @@ var probe = {
   },
   isExecutable: (path) => isTrue(["-x", path])
 };
+var queueIo = {
+  now: () => Date.now(),
+  random: () => Math.random(),
+  write: (path, text) => writeTextFile(path, text, null).then(() => null, (e) => String(e)),
+  isGone: async (path) => await readTextFile(path).catch(() => null) === null,
+  async claim(path) {
+    const moved = await herdrRun(["mv", path, claimedPath(path)], { cwd: "/", timeoutMs: 5000 });
+    if (moved.code !== 0)
+      return false;
+    await herdrRun(["rm", "-f", claimedPath(path)], { cwd: "/", timeoutMs: 5000 });
+    return true;
+  },
+  async wake(terminal, pressId) {
+    await hc(["label", terminal, `${PRESS_LABEL}=${pressId}`]).catch(() => null);
+  }
+};
 
 class Inbox extends View {
   tab = null;
@@ -4322,9 +4446,7 @@ class Inbox extends View {
   input = null;
   discarded = {};
   listInput = null;
-  outs = [];
-  notes = {};
-  errors = {};
+  queue = new PressQueue(queueIo);
   tracks = new Map;
   tracksOf = "";
   focus = null;
@@ -4376,17 +4498,12 @@ class Inbox extends View {
     });
   }
   async settle(cx) {
-    if (this.read?.is !== "read" || this.outs.length === 0)
+    if (this.read?.is !== "read" || this.queue.outs.length === 0)
       return;
     const now = Date.now();
-    for (const out of this.outs)
-      out.isTaken = await readTextFile(out.path).catch(() => null) === null;
-    const view = sessionView(this.read.session, now, SETTLED_MS, this.holds(now), this.notes);
-    const settled = settleOuts(this.outs, view, this.read.lastPress, now, this.read.envelope.agent);
-    this.outs = settled.outs;
-    this.notes = { ...this.notes, ...settled.notes };
-    this.errors = { ...this.errors, ...settled.errors };
-    this.checkOutsAt(nextOutCheckAt(this.outs, now), cx);
+    const view = sessionView(this.read.session, now, SETTLED_MS, this.holds(now), this.queue.notes);
+    await this.queue.settle(view, this.read.lastPress, this.read.envelope.agent);
+    this.checkOutsAt(this.queue.nextCheckAt(), cx);
   }
   checkOutsAt(at, cx) {
     this.outTimer?.cancel();
@@ -4413,9 +4530,7 @@ class Inbox extends View {
     this.input?.state.release();
     this.input = null;
     this.discarded = {};
-    this.outs = [];
-    this.notes = {};
-    this.errors = {};
+    this.queue = new PressQueue(queueIo);
     if (sessionId)
       this.load(sessionId, cx);
   }
@@ -4430,9 +4545,17 @@ class Inbox extends View {
     else if ("toggleFold" in c)
       ui.statusUnfolded = toggled(ui.statusUnfolded, c.toggleFold);
     else if ("showAsk" in c)
-      this.ui = { ...ui, tab: "needsYou", selected: c.showAsk };
+      this.ui = withSelected({ ...ui, tab: "needsYou" }, c.showAsk);
     else
       this.isHelpShown = !this.isHelpShown;
+    this.closeStaleField();
+  }
+  closeStaleField() {
+    if (this.input === null || this.ui.typing === this.input.rowId)
+      return;
+    this.input.state.release();
+    this.input = null;
+    this.focus?.focus();
   }
   type(does) {
     const draft = this.drafts[does.rowId] ??= { text: does.text, since: Date.now() };
@@ -4460,49 +4583,43 @@ class Inbox extends View {
     const text = this.input?.state.value().trim() ?? "";
     if (text === "")
       return;
-    this.send({ action: "type", id: rowId, text }, [], cx);
-    delete this.drafts[rowId];
-    this.leave(rowId, false, cx);
+    const isGoal = rowId === GOAL_KEYS_ID;
+    const label = isGoal ? GOAL_FIELD.submit : ROW_COPY.send;
+    const isSent = this.send({ action: "type", id: rowId, text }, [], label, cx, isGoal ? undefined : text);
+    const next = afterSend(this.ui, this.drafts, rowId, isSent);
+    this.ui = next.ui;
+    this.drafts = next.drafts;
+    this.closeStaleField();
   }
-  send(press, effects, cx) {
-    const sessionId = this.sessionId;
-    const terminal = this.followed.is === "session" ? this.followed.terminal : null;
-    const rowId = pressRowId(press);
-    if (!sessionId || !terminal || !this.view || this.outs.some((o) => o.rowId === rowId))
-      return;
-    const now = Date.now();
-    const pressId = newPressId(now, Math.random());
-    const path = pressPath(appHome(), sessionId, pressId);
-    const holds = this.holds(now);
-    const before = rowSignature(this.view, rowId);
-    const out = {
-      pressId,
-      rowId,
-      path,
-      action: outAction2(press),
-      pending: pendingOf(effects, now),
-      since: now,
-      before,
-      isTaken: false
-    };
-    this.outs = [...this.outs, out];
-    delete this.errors[rowId];
-    delete this.notes[rowId];
+  send(press, effects, label, cx, reply) {
+    const read = this.read?.is === "read" ? this.read : null;
+    const target = this.sessionId && read && this.view ? {
+      appHome: appHome(),
+      sessionId: this.sessionId,
+      terminal: read.envelope.terminal,
+      view: this.view,
+      holds: this.holds(Date.now()),
+      projectFolder: read.projectFolder
+    } : null;
+    const sent = this.queue.send(target, press, effects, label, reply);
     cx.notify();
-    const projectFolder = this.read?.is === "read" ? this.read.projectFolder : null;
-    const io = { run: herdrRun, probe, home: home(), projectFolder, copy: (t) => cx.write_to_clipboard(t) };
+    if (sent.is === "refused")
+      return false;
+    const queue = this.queue;
+    const projectFolder = target?.projectFolder ?? null;
     cx.spawn(async (cx) => {
-      const result = isRunHere(effects, projectFolder) ? { error: await runHere(effects, io) } : null;
-      const failed = await writeTextFile(path, pressFileText(pressId, now, press, holds, result), null).then(() => null, (e) => String(e));
-      if (failed !== null) {
-        this.outs = this.outs.filter((o) => o !== out);
-        this.errors = { ...this.errors, [rowId]: `Not applied: ${failed}` };
-        cx.notify();
-        return;
-      }
-      await hc(["label", terminal, `${PRESS_LABEL}=${pressId}`]).catch(() => null);
-      this.checkOutsAt(nextOutCheckAt(this.outs, Date.now()), cx);
+      await sent.finish((effects, pending) => runHere(effects, pending, {
+        run: herdrRun,
+        probe,
+        home: home(),
+        projectFolder,
+        copy: (t) => cx.write_to_clipboard(t)
+      }), () => cx.notify());
+      cx.notify();
+      if (queue === this.queue)
+        this.checkOutsAt(queue.nextCheckAt(), cx);
     });
+    return true;
   }
   press(b, cx) {
     const now = Date.now();
@@ -4511,7 +4628,7 @@ class Inbox extends View {
     if (d.is === "view")
       this.change(d.change);
     else if (d.is === "press")
-      this.send(d.press, d.effects, cx);
+      this.send(d.press, d.effects, b.label, cx);
     else if (d.is === "type")
       this.type(d);
     else if (d.is === "send")
@@ -4521,20 +4638,15 @@ class Inbox extends View {
     cx.notify();
   }
   onKey(key, tabs, blocks, cx) {
-    if (this.ui.typing !== null) {
-      if (key !== "escape")
-        return;
-      this.leave(this.ui.typing, false, cx);
-      cx.notify();
-      return;
-    }
-    const move = keyMove(key, tabs, blocks);
+    const move = keyMove(key, tabs, blocks, this.ui.typing);
     if (move === null)
       return;
-    if (move.is === "tab")
-      this.ui = { ...this.ui, tab: move.tab, selected: null };
+    if (move.is === "close")
+      this.leave(this.ui.typing ?? "", false, cx);
+    else if (move.is === "tab")
+      this.ui = withTab(this.ui, move.tab);
     else if (move.is === "select")
-      this.ui.selected = move.id;
+      this.ui = withSelected(this.ui, move.id);
     else if (move.is === "press")
       return this.press(move.button, cx);
     else if (this.followed.is !== "no-terminal")
@@ -4551,9 +4663,7 @@ class Inbox extends View {
       now,
       isNextBuild: this.isNextBuild,
       holds: this.holds(now),
-      notes: this.notes,
-      errors: this.errors,
-      outs: this.outs
+      queue: this.queue
     });
     this.view = screen.is === "inbox" ? screen.view : null;
     this.drawTimer?.cancel();
@@ -4562,12 +4672,14 @@ class Inbox extends View {
       t,
       press: (b, cx) => this.press(b, cx),
       select: (id, cx) => {
-        this.ui.selected = id;
+        this.ui = withSelected(this.ui, id);
+        this.closeStaleField();
         this.listInput = withListInput(this.listInput, Date.now());
         cx.notify();
       },
       pick: (tab, cx) => {
-        this.ui = { ...this.ui, tab, selected: null };
+        this.ui = withTab(this.ui, tab);
+        this.closeStaleField();
         cx.notify();
       },
       motion: new Map,

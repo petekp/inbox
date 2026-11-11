@@ -8,7 +8,8 @@ import type { Block, Button, Field, LineBlock, Mark, PrBlock, RowBlock, StatusLi
 import { colorOf } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 
-function buttonEl(b: Button, p: Paint): Element {
+/** A button of a row that is leaving draws but takes no clicks, so the row keeps its height as it fades. */
+function buttonEl(b: Button, p: Paint, isInert = false): Element {
   const { t } = p
   const base = h_flex()
     .id(`button ${b.id}`)
@@ -27,6 +28,7 @@ function buttonEl(b: Button, p: Paint): Element {
         ? base.bg(t.raised).border_1().border_color(t.border).text_color(t.foreground)
         : base.text_color(t.muted).hover(s => s.bg(t.hover))
   if (b.isOut) return styled.opacity(0.5)
+  if (isInert) return styled
 
   return styled.cursor_pointer().on_click((_e, cx) => {
     cx.stop_propagation()
@@ -34,13 +36,13 @@ function buttonEl(b: Button, p: Paint): Element {
   })
 }
 
-const buttonsEl = (buttons: Button[], p: Paint, indent: number): Element =>
+const buttonsEl = (buttons: Button[], p: Paint, indent: number, isInert = false): Element =>
   h_flex()
     .flex_wrap()
     .gap(6)
     .pt(6)
     .pl(indent)
-    .children(buttons.map(b => buttonEl(b, p)))
+    .children(buttons.map(b => buttonEl(b, p, isInert)))
 
 const markEl = (m: Mark | null, t: Theme): Element =>
   div()
@@ -52,7 +54,7 @@ const markEl = (m: Mark | null, t: Theme): Element =>
 const lineEl = (text: string, color: Theme[keyof Theme], indent = 22) =>
   div().pl(indent).pt(2).text_size(12).whitespace_normal().text_color(color).child(text)
 
-function fieldEl(f: Field, p: Paint, indent: number): Element {
+function fieldEl(f: Field, p: Paint, indent: number, isInert = false): Element {
   const state = p.input(f.rowId)
   const input = state ? [Input.new(state).w_full()] : []
 
@@ -61,7 +63,7 @@ function fieldEl(f: Field, p: Paint, indent: number): Element {
     .pl(indent)
     .gap(6)
     .children(input)
-    .child(buttonsEl(f.buttons, p, 0))
+    .child(buttonsEl(f.buttons, p, 0, isInert))
 }
 
 /** A row fades in as it enters and out as it leaves. The first draw of an entering row is its faded frame. */
@@ -123,8 +125,8 @@ function rowEl(r: RowBlock, p: Paint): Element {
     )
     .child(line)
     .children(lines.map(l => lineEl(l.text, colorOf(t, l.tone))))
-    .when(r.buttons.length > 0 && !isLeaving, e => e.child(buttonsEl(r.buttons, p, 22)))
-    .when(r.field !== null && !isLeaving, e => e.child(r.field ? fieldEl(r.field, p, 22) : div()))
+    .when(r.buttons.length > 0, e => e.child(buttonsEl(r.buttons, p, 22, isLeaving)))
+    .when(r.field !== null, e => e.child(r.field ? fieldEl(r.field, p, 22, isLeaving) : div()))
 }
 
 function statusEl(s: StatusLine, p: Paint): Element {

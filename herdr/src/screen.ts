@@ -4,14 +4,13 @@ import { sessionView } from '../../hooks/session-view'
 import type { SessionView } from '../../hooks/session-view'
 import { SETTLED_MS, nextFoldAt } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
-import type { RowNote } from '../../types'
 import type { Block } from './blocks'
 import { chrome, tabBlocks, tabCells } from './draw'
 import type { LookUi, TabCell } from './draw'
 import type { ReadSession } from './files'
 import type { Followed } from './follow'
 import { drawOuts } from './out'
-import type { Out } from './out'
+import type { PressQueue } from './press-queue'
 
 /** What the look shows in place of an inbox, as the case of the terminal it follows says. */
 export type Message = { title: string; hint: string | null; isError: boolean }
@@ -66,15 +65,10 @@ function messageOf(followed: Followed, read: ReadSession | null): Screen | null 
   return null
 }
 
-/**
- * What the look holds besides the session: rows held in place, the stale notes and errors of presses that did not
- * apply, and the presses still out.
- */
+/** What the look holds besides the session: rows held in place, and its presses with the notes and lines they left. */
 type LookPresses = {
   holds: Holds
-  notes: Record<string, RowNote>
-  errors: Record<string, string>
-  outs: readonly Out[]
+  queue: Pick<PressQueue, 'outs' | 'notes' | 'lines'>
 }
 
 /** What the look draws now for the terminal it follows, with the session it read for it. */
@@ -87,7 +81,7 @@ export function screenOf(
   const shown = messageOf(followed, read)
   if (shown !== null || read?.is !== 'read') return shown ?? message(READING_TEXT, null)
   const { holds } = o
-  const view = sessionView(read.session, o.now, SETTLED_MS, holds, o.notes)
+  const view = sessionView(read.session, o.now, SETTLED_MS, holds, o.queue.notes)
   const screen = {
     view,
     agent: read.envelope.agent,
@@ -112,7 +106,7 @@ export function screenOf(
     tabs: tabCells(screen, ui.tab),
     ...chrome(screen, ui.tab),
     trimmedNote: read.isTrimmed ? TRIMMED_NOTE : null,
-    blocks: drawOuts(tabBlocks(screen, ui), o.outs, o.errors, 'herdr'),
+    blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines),
     foldAt: nextFoldAt(settled, placing),
   }
 }

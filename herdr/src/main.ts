@@ -20,13 +20,14 @@ import { publishedSessionPath, publishedSessionsFolder } from '../../hooks/herdr
 import type { Run } from '../../hooks/gh'
 import { NEXT_BUILD_MARK } from '../../hooks/banners'
 import type { PathProbe } from '../../hooks/open-targets'
-import { pressRowId } from '../../hooks/pr-press'
+import { ROW_COPY } from '../../hooks/rows'
 import { sessionView } from '../../hooks/session-view'
 import type { SessionView } from '../../hooks/session-view'
+import { GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
 import { SETTLED_MS, heldReplies, keptDiscards, withListInput } from '../../hooks/timing'
 import type { Holds, ListInput } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
-import type { Draft, RowNote } from '../../types'
+import type { Draft } from '../../types'
 import type { Block, Button, Does, ViewChange } from './blocks'
 import { freshUi } from './draw'
 import type { LookUi, TabCell } from './draw'
@@ -35,17 +36,16 @@ import type { ReadSession } from './files'
 import { follow } from './follow'
 import type { Followed } from './follow'
 import { helpBlocks } from './draw-help'
-import { keyMove } from './keys'
+import { afterSend, keyMove, withSelected, withTab } from './keys'
 import { moveRows } from './motion'
 import type { Tracks } from './motion'
-import { nextOutCheckAt, outAction, rowSignature, settleOuts } from './out'
-import type { Out } from './out'
 import { blockEl } from './paint-blocks'
 import { bannerEl, headerEl, messageEl, sessionNoteEl, tabsEl } from './paint-chrome'
 import type { Paint, Theme } from './paint-theme'
-import { PRESS_LABEL, newPressId, pressFileText, pressPath } from './press-file'
-import { isRunHere, pendingOf, runHere } from './run-here'
-import type { HereIo } from './run-here'
+import { PRESS_LABEL } from './press-file'
+import { PressQueue, claimedPath } from './press-queue'
+import type { PressTarget, QueueIo } from './press-queue'
+import { runHere } from './run-here'
 import { screenOf } from './screen'
 
 /** How often the look reads its session again when no folder change came, and how long it waits to watch again. */
@@ -78,6 +78,26 @@ const probe: PathProbe = {
   isExecutable: path => isTrue(['-x', path]),
 }
 
+const queueIo: QueueIo = {
+  now: () => Date.now(),
+  random: () => Math.random(),
+  write: (path, text) =>
+    writeTextFile(path, text, null).then(
+      () => null,
+      (e: unknown) => String(e),
+    ),
+  isGone: async path => (await readTextFile(path).catch(() => null)) === null,
+  async claim(path) {
+    const moved = await herdrRun(['mv', path, claimedPath(path)], { cwd: '/', timeoutMs: 5_000 })
+    if (moved.code !== 0) return false
+    await herdrRun(['rm', '-f', claimedPath(path)], { cwd: '/', timeoutMs: 5_000 })
+    return true
+  },
+  async wake(terminal, pressId) {
+    await hc(['label', terminal, `${PRESS_LABEL}=${pressId}`]).catch(() => null)
+  },
+}
+
 type Timer = { cancel(): void }
 
 export default class Inbox extends View {
@@ -95,9 +115,7 @@ export default class Inbox extends View {
   input: { rowId: string; state: InputState } | null = null
   discarded: Record<string, number> = {}
   listInput: ListInput | null = null
-  outs: Out[] = []
-  notes: Record<string, RowNote> = {}
-  errors: Record<string, string> = {}
+  queue = new PressQueue(queueIo)
   tracks: Tracks = new Map()
   tracksOf = ''
   focus: FocusHandle | null = null
@@ -156,15 +174,11 @@ export default class Inbox extends View {
 
   /** Ends the presses this read answers: a row that changed, the host's last press, or one with no answer in time. */
   async settle(cx: Context): Promise<void> {
-    if (this.read?.is !== 'read' || this.outs.length === 0) return
+    if (this.read?.is !== 'read' || this.queue.outs.length === 0) return
     const now = Date.now()
-    for (const out of this.outs) out.isTaken = (await readTextFile(out.path).catch(() => null)) === null
-    const view = sessionView(this.read.session, now, SETTLED_MS, this.holds(now), this.notes)
-    const settled = settleOuts(this.outs, view, this.read.lastPress, now, this.read.envelope.agent)
-    this.outs = settled.outs
-    this.notes = { ...this.notes, ...settled.notes }
-    this.errors = { ...this.errors, ...settled.errors }
-    this.checkOutsAt(nextOutCheckAt(this.outs, now), cx)
+    const view = sessionView(this.read.session, now, SETTLED_MS, this.holds(now), this.queue.notes)
+    await this.queue.settle(view, this.read.lastPress, this.read.envelope.agent)
+    this.checkOutsAt(this.queue.nextCheckAt(), cx)
   }
 
   checkOutsAt(at: number | null, cx: Context): void {
@@ -194,9 +208,7 @@ export default class Inbox extends View {
     this.input?.state.release()
     this.input = null
     this.discarded = {}
-    this.outs = []
-    this.notes = {}
-    this.errors = {}
+    this.queue = new PressQueue(queueIo)
     if (sessionId) this.load(sessionId, cx)
   }
 
@@ -206,8 +218,17 @@ export default class Inbox extends View {
     else if ('closedFold' in c) ui.unfolded = toggled(ui.unfolded, c.closedFold)
     else if ('earlier' in c) ui.closedAll = [...ui.closedAll, c.earlier]
     else if ('toggleFold' in c) ui.statusUnfolded = toggled(ui.statusUnfolded, c.toggleFold)
-    else if ('showAsk' in c) this.ui = { ...ui, tab: 'needsYou', selected: c.showAsk }
+    else if ('showAsk' in c) this.ui = withSelected({ ...ui, tab: 'needsYou' }, c.showAsk)
     else this.isHelpShown = !this.isHelpShown
+    this.closeStaleField()
+  }
+
+  /** Lets go of the text field after a move closed it, and gives the keys back to the look. */
+  closeStaleField(): void {
+    if (this.input === null || this.ui.typing === this.input.rowId) return
+    this.input.state.release()
+    this.input = null
+    this.focus?.focus()
   }
 
   /** Opens a row's field, or the goal's, keeping its draft. */
@@ -234,60 +255,64 @@ export default class Inbox extends View {
     if (isDiscard && this.sessionId) this.load(this.sessionId, cx)
   }
 
+  /** Sends a field's text. A refused send keeps the field and its draft, and its row says why. */
   submit(rowId: string, cx: Context): void {
     const text = this.input?.state.value().trim() ?? ''
     if (text === '') return
-    this.send({ action: 'type', id: rowId, text }, [], cx)
-    delete this.drafts[rowId]
-    this.leave(rowId, false, cx)
+    const isGoal = rowId === GOAL_KEYS_ID
+    const label = isGoal ? GOAL_FIELD.submit : ROW_COPY.send
+    const isSent = this.send({ action: 'type', id: rowId, text }, [], label, cx, isGoal ? undefined : text)
+    const next = afterSend(this.ui, this.drafts, rowId, isSent)
+    this.ui = next.ui
+    this.drafts = next.drafts
+    this.closeStaleField()
   }
 
-  /** Writes a press for the host, after the opens and copies the look runs itself, and wakes the host. */
+  /**
+   * Sends a press through the queue: the look runs its opens and copies, with the task's clipboard, then writes the
+   * press file and wakes the host on the terminal the session file names. Returns whether the press went.
+   */
   send(
     press: Extract<Does, { is: 'press' }>['press'],
     effects: Extract<Does, { is: 'press' }>['effects'],
+    label: string,
     cx: Context,
-  ) {
-    const sessionId = this.sessionId
-    const terminal = this.followed.is === 'session' ? this.followed.terminal : null
-    const rowId = pressRowId(press)
-    if (!sessionId || !terminal || !this.view || this.outs.some(o => o.rowId === rowId)) return
-    const now = Date.now()
-    const pressId = newPressId(now, Math.random())
-    const path = pressPath(appHome(), sessionId, pressId)
-    const holds = this.holds(now)
-    const before = rowSignature(this.view, rowId)
-    const out: Out = {
-      pressId,
-      rowId,
-      path,
-      action: outAction(press),
-      pending: pendingOf(effects, now),
-      since: now,
-      before,
-      isTaken: false,
-    }
-    this.outs = [...this.outs, out]
-    delete this.errors[rowId]
-    delete this.notes[rowId]
+    reply?: string,
+  ): boolean {
+    const read = this.read?.is === 'read' ? this.read : null
+    const target: PressTarget | null =
+      this.sessionId && read && this.view
+        ? {
+            appHome: appHome(),
+            sessionId: this.sessionId,
+            terminal: read.envelope.terminal,
+            view: this.view,
+            holds: this.holds(Date.now()),
+            projectFolder: read.projectFolder,
+          }
+        : null
+    const sent = this.queue.send(target, press, effects, label, reply)
     cx.notify()
-    const projectFolder = this.read?.is === 'read' ? this.read.projectFolder : null
-    const io: HereIo = { run: herdrRun, probe, home: home(), projectFolder, copy: t => cx.write_to_clipboard(t) }
+    if (sent.is === 'refused') return false
+    const queue = this.queue
+    const projectFolder = target?.projectFolder ?? null
     cx.spawn(async cx => {
-      const result = isRunHere(effects, projectFolder) ? { error: await runHere(effects, io) } : null
-      const failed = await writeTextFile(path, pressFileText(pressId, now, press, holds, result), null).then(
-        () => null,
-        (e: unknown) => String(e),
+      await sent.finish(
+        (effects, pending) =>
+          runHere(effects, pending, {
+            run: herdrRun,
+            probe,
+            home: home(),
+            projectFolder,
+            copy: t => cx.write_to_clipboard(t),
+          }),
+        () => cx.notify(),
       )
-      if (failed !== null) {
-        this.outs = this.outs.filter(o => o !== out)
-        this.errors = { ...this.errors, [rowId]: `Not applied: ${failed}` }
-        cx.notify()
-        return
-      }
-      await hc(['label', terminal, `${PRESS_LABEL}=${pressId}`]).catch(() => null)
-      this.checkOutsAt(nextOutCheckAt(this.outs, Date.now()), cx)
+      cx.notify()
+      if (queue === this.queue) this.checkOutsAt(queue.nextCheckAt(), cx)
     })
+
+    return true
   }
 
   press(b: Button, cx: Context): void {
@@ -295,7 +320,7 @@ export default class Inbox extends View {
     this.listInput = withListInput(this.listInput, now)
     const d = b.does
     if (d.is === 'view') this.change(d.change)
-    else if (d.is === 'press') this.send(d.press, d.effects, cx)
+    else if (d.is === 'press') this.send(d.press, d.effects, b.label, cx)
     else if (d.is === 'type') this.type(d)
     else if (d.is === 'send') this.submit(d.rowId, cx)
     else if (d.is === 'leave') this.leave(d.rowId, d.isDiscard, cx)
@@ -303,16 +328,11 @@ export default class Inbox extends View {
   }
 
   onKey(key: string, tabs: TabCell[], blocks: Block[], cx: Context): void {
-    if (this.ui.typing !== null) {
-      if (key !== 'escape') return
-      this.leave(this.ui.typing, false, cx)
-      cx.notify()
-      return
-    }
-    const move = keyMove(key, tabs, blocks)
+    const move = keyMove(key, tabs, blocks, this.ui.typing)
     if (move === null) return
-    if (move.is === 'tab') this.ui = { ...this.ui, tab: move.tab, selected: null }
-    else if (move.is === 'select') this.ui.selected = move.id
+    if (move.is === 'close') this.leave(this.ui.typing ?? '', false, cx)
+    else if (move.is === 'tab') this.ui = withTab(this.ui, move.tab)
+    else if (move.is === 'select') this.ui = withSelected(this.ui, move.id)
     else if (move.is === 'press') return this.press(move.button, cx)
     else if (this.followed.is !== 'no-terminal') run('pane.focus', { terminal: this.followed.terminal })
     this.listInput = withListInput(this.listInput, Date.now())
@@ -328,9 +348,7 @@ export default class Inbox extends View {
       now,
       isNextBuild: this.isNextBuild,
       holds: this.holds(now),
-      notes: this.notes,
-      errors: this.errors,
-      outs: this.outs,
+      queue: this.queue,
     })
     this.view = screen.is === 'inbox' ? screen.view : null
     this.drawTimer?.cancel()
@@ -339,12 +357,14 @@ export default class Inbox extends View {
       t,
       press: (b, cx) => this.press(b, cx),
       select: (id, cx) => {
-        this.ui.selected = id
+        this.ui = withSelected(this.ui, id)
+        this.closeStaleField()
         this.listInput = withListInput(this.listInput, Date.now())
         cx.notify()
       },
       pick: (tab: ShownTab, cx) => {
-        this.ui = { ...this.ui, tab, selected: null }
+        this.ui = withTab(this.ui, tab)
+        this.closeStaleField()
         cx.notify()
       },
       motion: new Map(),

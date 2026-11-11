@@ -13,7 +13,8 @@
 # omp/ and the Herdr look in herdr/. Exits 1 on any failure, and when a check
 # cannot run.
 #
-# Needs npx, bun and the claude CLI.
+# Needs npx, bun, the claude CLI and the Herdr app, whose type files the
+# Herdr look's types check against.
 #
 # Usage: ./scripts/check.sh
 

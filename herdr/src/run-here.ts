@@ -4,8 +4,10 @@ import { openTarget } from '../../hooks/open-targets'
 import type { PathProbe } from '../../hooks/open-targets'
 import type { Effect } from '../../hooks/press-reducer'
 import { pendingResult } from '../../hooks/pressed'
+import type { LocalResult } from '../../types'
 
-type HereEffect = Extract<Effect, { kind: 'open' | 'copy' }>
+/** An open or a copy, the effects the look can run itself. */
+export type HereEffect = Extract<Effect, { kind: 'open' | 'copy' }>
 
 /**
  * Whether the look opens a target itself: a link, a path from the root or home, or a relative path when the session
@@ -39,16 +41,25 @@ export type HereIo = {
   copy: (text: string) => void
 }
 
-/** Runs a press's opens and copies in order. Returns why one could not run, or null when all did. */
-export async function runHere(effects: readonly HereEffect[], io: HereIo): Promise<string | null> {
-  for (const e of effects) {
+/**
+ * Runs a press's opens and copies in order, and gives the finished result the row draws, from the `pending` result the
+ * row read while they ran. Each part's `error` says why it could not run. The first failure stops the rest.
+ */
+export async function runHere(effects: readonly HereEffect[], pending: LocalResult, io: HereIo): Promise<LocalResult> {
+  const parts = pending.parts.map(p => ({ ...p }))
+  for (const [i, e] of effects.entries()) {
     if (e.kind === 'copy') {
       io.copy(e.text)
       continue
     }
     const error = await openTarget(io.run, io.probe, e.target, io.projectFolder ?? '/', io.home)
-    if (error) return error
+    if (error === null) continue
+    parts[i] = { ...parts[i]!, error }
+    return { ...pending, state: 'failed', parts: parts.slice(0, i + 1) }
   }
 
-  return null
+  return { ...pending, state: 'done', parts }
 }
+
+/** The first reason a finished result gives, which the press file carries for the host, or null when all ran. */
+export const firstError = (r: LocalResult): string | null => r.parts.find(p => p.error !== null)?.error ?? null

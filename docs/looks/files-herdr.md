@@ -15,9 +15,10 @@ The Herdr look is a Herdr app mod. It draws the inbox of the session that a host
 | `herdr/src/draw-status.ts` | Herdr adapter. The Status page as blocks, from the shared page and its key plans: the goal, milestones, rows, folds and rules, and the goal's text field. |
 | `herdr/src/draw-prs.ts` | Herdr adapter. The PRs tab as blocks, from `threadActions`, `checkActions` and `prBlockActions`: each PR with its threads and checks, the refresh and order lines, and the empty and `gh` notes. |
 | `herdr/src/draw-help.ts` | Herdr adapter. Help as blocks: the keys from `helpKeys` and the marks from `markLegend`. |
-| `herdr/src/keys.ts` | Herdr adapter. What a key does: change tab, move the selection, leave the pane, or press the selected row's button with that key. |
+| `herdr/src/keys.ts` | Herdr adapter. What a key does: change tab, move the selection, leave the pane, close the open text field, or press the selected row's button with that key. Which moves close the text field, and what sending its text does to the field and its draft. |
 | `herdr/src/motion.ts` | Herdr adapter. Steps each drawn row through the shared row states in `hooks/row-motion.ts`, and keeps a row the publish dropped drawn while it leaves. |
-| `herdr/src/out.ts` | Herdr adapter. The presses the look wrote that have no result yet: which buttons draw out, what their rows read, and when a read of the session ends each one. |
+| `herdr/src/out.ts` | Herdr adapter. The presses the look sent that have no result yet: which buttons draw out, what their rows read, and when a read of the session ends each one. |
+| `herdr/src/press-queue.ts` | Herdr adapter. One session's presses from send to end: refusing a press, running the look's own opens, writing the press file, waking the host, and taking back a file no host took in time. Its effects come through `QueueIo`, so the tests run it without the app. |
 | `herdr/src/press-file.ts` | Herdr adapter. Where the look writes a press for the host, the file's text in the format `hooks/herdr-press-file.ts:pressFile` reads, and the label that wakes the host. |
 | `herdr/src/run-here.ts` | Herdr adapter. Which opens and copies the look runs itself, at once, and running them. |
 | `herdr/src/paint-theme.ts` | Herdr adapter. Maps the blocks' tones onto Herdr's theme, and what the paint files share for one draw. |

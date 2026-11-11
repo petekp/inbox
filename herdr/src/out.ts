@@ -4,9 +4,10 @@ import { actionId } from '../../hooks/press-labels'
 import { pressRowId } from '../../hooks/pr-press'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
+import { deliveryLabel } from '../../hooks/rows'
 import type { SessionView } from '../../hooks/session-view'
 import { GOAL_KEYS_ID } from '../../hooks/status-keys'
-import type { RowNote } from '../../types'
+import type { LocalResult, RowNote } from '../../types'
 import type { Block, Button } from './blocks'
 import type { LastPress } from './files'
 
@@ -15,25 +16,34 @@ export const SENDING = 'Sending…'
 
 /** A press with no reread of the session file yet reads the file again then, in case a file watch was missed. */
 const REREAD_AFTER_MS = 5_000
-/** A press with no result by then ends: stale when a host took it, else not applied. */
+/** A written press with no result by then ends: not confirmed when a host took it, else the look takes it back. */
 export const GIVE_UP_MS = 15_000
 
 /**
- * A press the look wrote that has no result yet. `action` is its button's action id, which draws out. `pending` is
- * what its opens, copies or refreshes read while under way, or null for a press that sends, which reads `SENDING`.
- * `before` is the row as the look drew it when pressed. `isTaken` is whether the last read found the press file gone,
- * which means a host took it to apply.
+ * A press the look sent that has no result yet. `action` is its button's action id. `label` is its button's label,
+ * and `reply` the text a reply sends. `pending` is what its opens, copies or refreshes read while under way, or null
+ * for a press that sends, which reads `SENDING`. `result` is how the opens and copies the look ran itself went.
+ * `before` is the row as the look drew it when pressed. `isWritten` is whether its press file is written, and
+ * `waitingSince` when it was, or when the look last found a host had it. `isTaken` is whether the last read found the
+ * file gone, which means a host took it to apply.
  */
 export type Out = {
   pressId: string
   rowId: string
   path: string
   action: string
+  label: string
+  reply?: string
   pending: Feedback | null
-  since: number
+  result: LocalResult | null
   before: string
+  isWritten: boolean
+  waitingSince: number | null
   isTaken: boolean
 }
+
+/** A line the look draws on a row in place of the one the publish gave. */
+export type RowLine = { text: string; tone: 'error' | 'muted' }
 
 /** The id the look tells a button's press by: a row press's `actionId`, a PR press's action. */
 export const outAction = (p: RowPress | PrPress): string => ('id' in p ? actionId(p) : p.action)
@@ -47,35 +57,47 @@ export function rowSignature(view: SessionView, rowId: string): string {
   return JSON.stringify([view.lastActions[rowId] ?? null, state, goal])
 }
 
+/** How the opens and copies the look ran went: "✓ Opened x", or in red why one could not run. */
+const resultLine = (result: LocalResult): RowLine => ({
+  text: feedbackText({ is: 'local', result }, 'herdr'),
+  tone: result.state === 'failed' ? 'error' : 'muted',
+})
+
+/** A press a host took and never reported, in the words the hosts use for a message they could not confirm. */
+const unconfirmedLine = (out: Out): RowLine =>
+  out.result ? resultLine(out.result) : { text: deliveryLabel('unconfirmed', out.label, out.reply), tone: 'muted' }
+
+/** A press no host took by the give-up time, once the look has taken its file back. */
+export const notAppliedLine = (out: Out, agent: string): RowLine =>
+  out.result ? resultLine(out.result) : { text: `Not applied: ${agent}'s inbox did not answer.`, tone: 'error' }
+
 type Settled = {
   outs: Out[]
   notes: Record<string, RowNote>
-  errors: Record<string, string>
+  lines: Record<string, RowLine>
+  toClaim: Out[]
 }
 
 /**
  * The presses still out after a read of the session. The host's `lastPress` ends the press it names: applied, or
- * stale when its row had already changed, which gets the shared stale note. It names only the last press, so another
- * press ends when its row changed, as its last press or its state. By `GIVE_UP_MS`, a press a host took with no change
- * was stale, and one still waiting in its folder reads as not applied.
+ * stale when its row had already changed, which gets the shared stale note. Another press ends when its row changed.
+ * A host applies presses oldest first and press ids sort by time, so a taken press older than `lastPress` will not be
+ * reported, and reads as not confirmed. By `GIVE_UP_MS` after its write, a taken press reads the same, and one still
+ * in its folder goes to `toClaim` for the look to take back.
  */
-export function settleOuts(
-  outs: readonly Out[],
-  view: SessionView,
-  lastPress: LastPress | null,
-  now: number,
-  agent: string,
-): Settled {
-  const settled: Settled = { outs: [], notes: {}, errors: {} }
+export function settleOuts(outs: readonly Out[], view: SessionView, lastPress: LastPress | null, now: number): Settled {
+  const settled: Settled = { outs: [], notes: {}, lines: {}, toClaim: [] }
   for (const out of outs) {
     if (lastPress?.id === out.pressId) {
       if (lastPress.outcome === 'stale') settled.notes[out.rowId] = { note: 'stale', at: now }
       continue
     }
     if (rowSignature(view, out.rowId) !== out.before) continue
-    if (now - out.since < GIVE_UP_MS) settled.outs.push(out)
-    else if (out.isTaken) settled.notes[out.rowId] = { note: 'stale', at: now }
-    else settled.errors[out.rowId] = `Not applied: ${agent}'s inbox did not answer.`
+    const isPassed = lastPress !== null && lastPress.id > out.pressId
+    if (out.isWritten && out.isTaken && isPassed) settled.lines[out.rowId] = unconfirmedLine(out)
+    else if (!out.isWritten || out.waitingSince === null || now - out.waitingSince < GIVE_UP_MS) settled.outs.push(out)
+    else if (out.isTaken) settled.lines[out.rowId] = unconfirmedLine(out)
+    else settled.toClaim.push(out)
   }
 
   return settled
@@ -83,46 +105,38 @@ export function settleOuts(
 
 /** When the look next needs to read for its presses: a reread, or giving up. */
 export function nextOutCheckAt(outs: readonly Out[], now: number): number | null {
-  const times = outs.flatMap(out => [out.since + REREAD_AFTER_MS, out.since + GIVE_UP_MS])
+  const times = outs.flatMap(out =>
+    out.waitingSince === null ? [] : [out.waitingSince + REREAD_AFTER_MS, out.waitingSince + GIVE_UP_MS],
+  )
   const later = times.filter(at => at > now)
 
   return later.length ? Math.min(...later) : null
 }
 
-type RowLine = { text: string; tone: 'error' | 'muted' } | null
-
-function withOutButtons(buttons: Button[], byRow: ReadonlyMap<string, Out>): Button[] {
-  return buttons.map(b => {
-    if (b.does.is !== 'press') return b
-    const out = byRow.get(pressRowId(b.does.press))
-    return out?.action === outAction(b.does.press) ? { ...b, isOut: true } : b
-  })
-}
+const withOutButtons = (buttons: Button[], outRows: ReadonlySet<string>): Button[] =>
+  buttons.map(b => (b.does.is === 'press' && outRows.has(pressRowId(b.does.press)) ? { ...b, isOut: true } : b))
 
 /**
- * The blocks with the look's presses drawn: each pressed button out, and its row's line reading the press under way,
- * or why it was not applied, in place of the line the publish gave.
+ * The blocks with the look's presses drawn: every press button on a row with a press out draws out, and the row's
+ * line reads the press under way, how the look's own opens went, or why a press ended unreported, in place of the line
+ * the publish gave.
  */
-export function drawOuts(
-  blocks: Block[],
-  outs: readonly Out[],
-  errors: Record<string, string>,
-  look: 'herdr',
-): Block[] {
+export function drawOuts(blocks: Block[], outs: readonly Out[], lines: Record<string, RowLine>): Block[] {
   const byRow = new Map(outs.map(o => [o.rowId, o]))
-  const lineOf = (id: string): RowLine => {
+  const outRows = new Set(byRow.keys())
+  const lineOf = (id: string): RowLine | null => {
     const out = byRow.get(id)
-    if (errors[id]) return { text: errors[id], tone: 'error' }
-    if (!out) return null
-    return { text: out.pending ? feedbackText(out.pending, look) : SENDING, tone: 'muted' }
+    if (!out) return lines[id] ?? null
+    if (out.result) return resultLine(out.result)
+    return { text: out.pending ? feedbackText(out.pending, 'herdr') : SENDING, tone: 'muted' }
   }
 
   return blocks.map((b): Block => {
     if (b.kind === 'row' || b.kind === 'pr' || b.kind === 'line') {
       const line = lineOf(b.id)
-      return { ...b, buttons: withOutButtons(b.buttons, byRow), ...(line ? { feedback: line } : {}) }
+      return { ...b, buttons: withOutButtons(b.buttons, outRows), ...(line ? { feedback: line } : {}) }
     }
-    if (b.kind === 'status' || b.kind === 'heading') return { ...b, buttons: withOutButtons(b.buttons, byRow) }
+    if (b.kind === 'status' || b.kind === 'heading') return { ...b, buttons: withOutButtons(b.buttons, outRows) }
 
     return b
   })
