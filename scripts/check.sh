@@ -9,8 +9,9 @@
 # scripts/build-compare-page.mjs, that types/index.d.ts matches its parts, with
 # scripts/build-types.mjs, that the inbox tools' input types match their
 # schemas, with scripts/build-tool-inputs.mjs, its types with tsc, and its tests with
-# `claude plugin test`. Then the Codex plugin in codex/ and the omp extension in
-# omp/. Exits 1 on any failure, and when a check cannot run.
+# `claude plugin test`. Then the Codex plugin in codex/, the omp extension in
+# omp/ and the Herdr look in herdr/. Exits 1 on any failure, and when a check
+# cannot run.
 #
 # Needs npx, bun and the claude CLI.
 #
@@ -105,6 +106,20 @@ else
     check "omp bundle" npm --prefix "$DIR/omp" run --silent check
     check "omp types" npm --prefix "$DIR/omp" run --silent types
     check "omp tests" bun test --cwd "$DIR/omp" tests
+fi
+
+# The Herdr look in herdr/: its committed mod matches its sources, its types and its tests. Its types check against
+# the type files of the Herdr app installed here, which herdr/herdr-types.ts copies in.
+if ! command -v bun >/dev/null 2>&1; then
+    echo "  x herdr: not checked. Install Bun: https://bun.sh"
+    status=1
+elif [ ! -d "$DIR/herdr/node_modules" ]; then
+    echo "  x herdr: not checked. Install its tools once: bun install --cwd $DIR/herdr --frozen-lockfile --ignore-scripts"
+    status=1
+else
+    check "herdr mod" npm --prefix "$DIR/herdr" run --silent check
+    check "herdr types" npm --prefix "$DIR/herdr" run --silent types
+    check "herdr tests" bun test --cwd "$DIR/herdr" tests
 fi
 
 exit "$status"
