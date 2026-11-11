@@ -24,6 +24,8 @@ type Memory = {
   shownId: string | null
   /** The session the main agent runs. A `task:subagent:*` frame names no session, and only the main agent's own subagents send one here. */
   framesFor: string | null
+  /** The working folder of the session omp shows, read when asked, which its presses open paths against. */
+  shownCwd: (() => string) | null
 }
 
 export type HostContext = {

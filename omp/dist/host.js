@@ -814,6 +814,7 @@ var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} second
 
 // src/host.ts
 import { existsSync } from "fs";
+import { stat as stat4 } from "fs/promises";
 import { homedir } from "os";
 import { dirname as dirname2, join as join4 } from "path";
 import { fileURLToPath } from "url";
@@ -4805,7 +4806,8 @@ function herdrTarget(env) {
   const home = env.HOME?.startsWith("/") ? env.HOME : null;
   const named = env.HERDR_APP_HOME;
   const appHome = named ? named.startsWith("/") ? named : null : home && `${home}/.config/herdr-app`;
-  return { kind: "terminal", terminal, appHome, hc: home ? ["hc", `${home}/.local/bin/hc`] : ["hc"] };
+  const installed = (name) => home ? [name, `${home}/.local/bin/${name}`] : [name];
+  return { kind: "terminal", terminal, appHome, hc: installed("hc"), herdrApp: installed("herdr-app") };
 }
 function herdrLabels(tokens) {
   return Object.fromEntries(Object.entries(tokens).map(([name, value]) => [
@@ -4837,6 +4839,75 @@ function publishedSessionPath(appHome, sessionId) {
 function pressFolder(appHome, sessionId) {
   sessionFile(sessionId);
   return `${appHome}/inbox/presses/${sessionId}`;
+}
+
+// ../hooks/herdr-open.ts
+var HERDR_APP_TIMEOUT_MS = 5000;
+function paneOf(ls, terminal) {
+  const list = (value) => Array.isArray(value) ? value : [];
+  try {
+    const spaces = list(JSON.parse(ls)?.spaces);
+    const rows = spaces.filter((space) => space?.machine == null).flatMap((space) => list(space.tabs)).flatMap((tab) => list(tab?.terminals));
+    const pane = rows.find((row) => row?.terminal === terminal)?.pane;
+    return typeof pane === "string" && pane ? pane : null;
+  } catch {
+    return null;
+  }
+}
+function printed(r, field) {
+  try {
+    const value = JSON.parse(r.stdout)?.[field];
+    return typeof value === "string" && value ? value : null;
+  } catch {
+    return null;
+  }
+}
+var failure = (r) => printed(r, "error") ?? (r.stderr.trim() || `exit ${r.code}`);
+async function openHerdrPanel(calls, target, shownPane) {
+  const notOpened = (why) => ({ is: "not-opened", why });
+  if (!target.appHome || !await calls.isFile(`${target.appHome}/mods/inbox/main.js`).catch(() => false))
+    return notOpened(`the Herdr app has no inbox mod in ${target.appHome ?? "its settings folder"}/mods`);
+  let herdrApp = null;
+  let ls = null;
+  for (const command of target.herdrApp) {
+    ls = await calls.run([command, "ls"], { cwd: "/", timeoutMs: HERDR_APP_TIMEOUT_MS });
+    if (ls.code === UNSTARTABLE_CODE)
+      continue;
+    herdrApp = command;
+    break;
+  }
+  if (!herdrApp || !ls)
+    return notOpened(`no herdr-app started. Tried ${target.herdrApp.join(", then ")}`);
+  if (ls.code !== 0)
+    return notOpened(`herdr-app ls failed: ${failure(ls)}`);
+  const pane = paneOf(ls.stdout, target.terminal);
+  if (!pane)
+    return notOpened(`herdr-app ls lists no pane for terminal ${target.terminal}`);
+  const doCommand = (command, args) => calls.run([herdrApp, "do", command, JSON.stringify(args)], { cwd: "/", timeoutMs: HERDR_APP_TIMEOUT_MS });
+  if (shownPane && (await doCommand("pane.focus", { pane: shownPane })).code === 0)
+    return { is: "focused", pane: shownPane };
+  const split = await doCommand("pane.split", { direction: "right", pane, mod: "inbox" });
+  const panel = split.code === 0 ? printed(split, "pane") : null;
+  if (panel)
+    return { is: "opened", pane: panel };
+  return notOpened(`Herdr did not split the pane: ${split.code === 0 ? "it named no new pane" : failure(split)}`);
+}
+function herdrOpenText(open) {
+  if (open.is === "not-opened")
+    return `Opened the inbox here, since ${open.why}.`;
+  return open.is === "opened" ? "Opened the inbox in Herdr, to the right of this terminal." : "The inbox is already open in Herdr. Focused it.";
+}
+function herdrPanelOpener() {
+  let shownPane = null;
+  return async (calls, target) => {
+    const open = await openHerdrPanel(calls, target, shownPane).catch((err) => ({
+      is: "not-opened",
+      why: err instanceof Error ? err.message : String(err)
+    }));
+    if (open.is !== "not-opened")
+      shownPane = open.pane;
+    return { isShown: open.is !== "not-opened", text: herdrOpenText(open) };
+  };
 }
 
 // ../hooks/catch-up-text.ts
@@ -8466,6 +8537,7 @@ var CLIENTS = {
       },
       "herdr-sidebar": { kind: "full" },
       "herdr-look": { kind: "full" },
+      "herdr-open": { kind: "full" },
       "status-children": { kind: "full" },
       "child-names": { kind: "full" },
       "status-look-line": { kind: "full" },
@@ -8569,6 +8641,10 @@ var CLIENTS = {
         kind: "different",
         reason: "Codex runs no hook when a session ends, so its published file stays."
       },
+      "herdr-open": {
+        kind: "unsupported",
+        reason: "The Codex CLI has no action that opens the inbox. A Codex plugin adds skills, MCP servers and hooks but no slash command, and the Inbox tab shows only in the Codex app."
+      },
       "status-children": {
         kind: "different",
         reason: "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so workflows do not show. The end of a wait on a Herdr delegate is read at Stop."
@@ -8669,6 +8745,7 @@ var CLIENTS = {
       },
       "herdr-sidebar": { kind: "full" },
       "herdr-look": { kind: "full" },
+      "herdr-open": { kind: "full" },
       "status-children": {
         kind: "different",
         reason: "omp's extension events report subagents and bash calls. omp's reference names no event for a workflow run, so those do not show."
@@ -11280,7 +11357,7 @@ function sessionCalls(context) {
         sessionId: id,
         terminal: target.terminal,
         writtenAt: now,
-        projectFolder: s.place?.folder
+        projectFolder: memory.shownCwd?.()
       }, s, context.logHerdr);
       const view = sessionView(s, now, deps.settleWindowMs);
       return { target, tokens: herdrTokens(s.ledger, s.stop, view, []), session: isPublished ? id : null };
@@ -11462,6 +11539,7 @@ function turnHandlers(context, sessions) {
     const left = memory.shownId ?? undefined;
     memory.shownId = id;
     memory.framesFor = id;
+    memory.shownCwd = () => ctx.cwd;
     reportCounts(id, left === id ? undefined : left);
     context.presses.follow(ctx);
     const saved = await readState(dir, id).catch(() => null);
@@ -11493,6 +11571,7 @@ function turnHandlers(context, sessions) {
     if (id !== memory.shownId)
       return;
     memory.shownId = null;
+    memory.shownCwd = null;
     context.presses.stop();
     await reportEnded(id);
   };
@@ -11782,7 +11861,7 @@ function createInbox(pi, deps = defaultDeps) {
     logHerdr,
     presses: ompPresses(deps.herdrTarget, (ctx, file) => applyHerdrPress(ctx, file), logHerdr),
     run,
-    memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null },
+    memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null, shownCwd: null },
     sendToAgent,
     askFor,
     dropTools,
@@ -11921,10 +12000,19 @@ function createInbox(pi, deps = defaultDeps) {
       showBand(ctx);
     }
   }
+  const openHerdrPanel = herdrPanelOpener();
+  const isFile = (path) => stat4(path).then((s) => s.isFile());
   pi.registerCommand("inbox", {
     description: inboxCommandText(deps.isNextBuild),
     handler: async (args, ctx) => {
       const isDemo = args.trim() === "demo";
+      const target = deps.herdrTarget;
+      const isHerdrApp = ctx.mode === "tui" && !isDemo && target?.kind === "terminal";
+      const herdr = isHerdrApp ? await openHerdrPanel({ run, isFile }, target) : null;
+      if (herdr)
+        ctx.ui.notify(herdr.text, herdr.isShown ? "info" : "warning");
+      if (herdr?.isShown)
+        return;
       if (ctx.mode === "tui")
         return openPanelUi(ctx, isDemo);
       const screen = isDemo ? await demoSource({

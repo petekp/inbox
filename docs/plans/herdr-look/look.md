@@ -18,7 +18,7 @@ The look is a Herdr app mod: JavaScript that describes native GPUI elements, dra
 
 The look opens in **a pane to the right of the agent's terminal**, about 420 px wide. Every look today sits beside its session, and a pane is the only place that does that without a cloned layout.
 
-**Opening it.** The host's `/inbox` command, run in a Herdr app terminal, opens the pane with `herdr-app do pane.split '{"direction":"right","pane":"<id>","mod":"inbox"}'`. The spike opened its pane exactly this way. The host does not know its pane's id, only its terminal, so it needs a way to find the pane from the terminal. `herdr-app status` names only the focused pane. This is an open question.
+**Opening it.** The host's `/inbox` command, run in a Herdr app terminal, opens the pane with `herdr-app do pane.split '{"direction":"right","pane":"<id>","mod":"inbox"}'`. The spike opened its pane exactly this way. The host knows its terminal, not its pane, and finds the pane in the row `herdr-app ls` lists for its `HC_TERMINAL_ID`. `herdr-app ls` lists terminals and not mod panes, so a host cannot see a look that is already open. It keeps the pane id `pane.split` printed, and its next open runs `pane.focus` on it. When that fails, the panel is gone and the host splits again. When the panel cannot open, the host opens its own inbox and says why. "Opening the Herdr look" in [the hosts' differences](../../looks/differences-hosts.md) gives each host's behavior.
 
 A key cannot ask a closed look to open, because a copy of a mod receives `<mod>.<command>` only while it shows. A key in `keys.json` could open the look only if a binding can carry `pane.split`'s arguments, which was not checked.
 

@@ -41,6 +41,7 @@ export type FeatureId =
   | 'dim-pressed-button'
   | 'herdr-sidebar'
   | 'herdr-look'
+  | 'herdr-open'
   | 'status-children'
   | 'child-names'
   | 'status-look-line'
@@ -118,6 +119,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'herdr-sidebar': { kind: 'full' },
       'herdr-look': { kind: 'full' },
+      'herdr-open': { kind: 'full' },
       'status-children': { kind: 'full' },
       'child-names': { kind: 'full' },
       'status-look-line': { kind: 'full' },
@@ -232,6 +234,11 @@ export const CLIENTS: Record<ClientId, Client> = {
         kind: 'different',
         reason: 'Codex runs no hook when a session ends, so its published file stays.',
       },
+      'herdr-open': {
+        kind: 'unsupported',
+        reason:
+          'The Codex CLI has no action that opens the inbox. A Codex plugin adds skills, MCP servers and hooks but no slash command, and the Inbox tab shows only in the Codex app.',
+      },
       'status-children': {
         kind: 'different',
         reason:
@@ -343,6 +350,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'herdr-sidebar': { kind: 'full' },
       'herdr-look': { kind: 'full' },
+      'herdr-open': { kind: 'full' },
       'status-children': {
         kind: 'different',
         reason:

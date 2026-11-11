@@ -26,6 +26,7 @@ describe('herdrTarget', () => {
       terminal: 't1',
       appHome: '/home/person/.config/herdr-app',
       hc: ['hc', '/home/person/.local/bin/hc'],
+      herdrApp: ['herdr-app', '/home/person/.local/bin/herdr-app'],
     })
     expect(herdrTarget({ HC_TERMINAL_ID: 't1', HERDR_APP_HOME: '/app' })).toMatchObject({ appHome: '/app', hc: ['hc'] })
     expect(herdrTarget({ HERDR_PANE_ID: '', HC_TERMINAL_ID: '' })).toBeNull()
