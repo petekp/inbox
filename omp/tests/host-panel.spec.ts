@@ -211,7 +211,9 @@ test('in a Herdr app terminal, /inbox opens the Herdr panel beside the terminal 
   api.exec = async (command, args) => {
     w.execCalls.push({ command, args })
     if (command !== 'herdr-app') return { code: 0, stdout: '', stderr: '', killed: false }
-    return { stderr: '', killed: false, ...(args[0] === 'ls' ? { code: 0, stdout: JSON.stringify(ls) } : split) }
+    const gone = { code: 1, stdout: '{"error":"no such pane"}' }
+    const answer = args[0] === 'ls' ? { code: 0, stdout: JSON.stringify(ls) } : args[1] === 'pane.focus' ? gone : split
+    return { stderr: '', killed: false, ...answer }
   }
   createInbox(api as never, {
     ...deps(),
@@ -220,10 +222,10 @@ test('in a Herdr app terminal, /inbox opens the Herdr panel beside the terminal 
   const { ctx, components } = tuiCtx()
 
   await w.commands.get('inbox').handler('', ctx)
-  expect(w.execCalls.at(-1)).toEqual({
-    command: 'herdr-app',
-    args: ['do', 'pane.split', '{"direction":"right","pane":"p1","mod":"inbox"}'],
-  })
+  expect(w.execCalls.slice(-2)).toEqual([
+    { command: 'herdr-app', args: ['do', 'pane.split', '{"direction":"right","pane":"p1","mod":"inbox"}'] },
+    { command: 'hc', args: ['label', 't1', 'inbox.panel=p9'] },
+  ])
   expect(w.notices).toEqual(['Opened the inbox in Herdr, to the right of this terminal.'])
   expect(components).toHaveLength(0)
 

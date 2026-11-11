@@ -1254,10 +1254,10 @@ async function showInbox($: EngineInterface, opening: ReturnType<typeof openInHe
   return herdr?.text
 }
 
-async function openInbox($: EngineInterface) {
-  const opening = openInHerdr(herdrCalls($))
-  if (opening && (await opening).isShown) return
-  // Opened before any other await outside a Herdr app terminal. After one, the engine no longer counts the press as
+async function openInbox($: EngineInterface, isDemo: boolean) {
+  const opening = isDemo ? null : openInHerdr(herdrCalls($))
+  if (opening instanceof Promise && (await opening).isShown) return
+  // Opened before any other await unless the Herdr look is opening. After one, the engine no longer counts the press as
   // asking for the pane, and below 144 columns, once the person has closed it, leaves it unplaced.
   await openPane($)
   const { view } = await drawnState($)
@@ -2877,7 +2877,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!mod.isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [{ ledger, stop, view, showsDemoNotices, isUnread, now }, theme] = await Promise.all([
+    const [{ ledger, stop, view, isDemo, showsDemoNotices, isUnread, now }, theme] = await Promise.all([
       drawnState($),
       read($, THEME),
     ])
@@ -2908,7 +2908,7 @@ export const register: Register = on => {
           </Text>
         </Box>
         {showsDemoNotices ? <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo($, false)} /> : null}
-        <Button key="open-inbox" label="Open inbox" onPress={() => void openInbox($)} />
+        <Button key="open-inbox" label="Open inbox" onPress={() => void openInbox($, isDemo)} />
       </Box>
     )
     if (!stop)

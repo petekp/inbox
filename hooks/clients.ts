@@ -237,7 +237,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'herdr-open': {
         kind: 'unsupported',
         reason:
-          'The Codex CLI has no action that opens the inbox. A Codex plugin adds skills, MCP servers and hooks but no slash command, and the Inbox tab shows only in the Codex app.',
+          'The Codex CLI has no action that opens the inbox. A Codex plugin adds skills, MCP servers and hooks but no slash command, and the Inbox tab shows only in the Codex app. A `$inbox` skill that has the model call an MCP tool could open the Herdr look, but only after a model turn, so the press could not show what it did at once. It is left as an option.',
       },
       'status-children': {
         kind: 'different',

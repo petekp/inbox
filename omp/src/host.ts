@@ -458,7 +458,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     handler: async (args, ctx) => {
       const isDemo = args.trim() === 'demo'
       const target = deps.herdrTarget
-      const isHerdrApp = ctx.mode === 'tui' && !isDemo && target?.kind === 'terminal'
+      const isHerdrApp = ctx.mode === 'tui' && !args.trim() && target?.kind === 'terminal'
       const herdr = isHerdrApp ? await openHerdrPanel({ run, isFile }, target) : null
       if (herdr) ctx.ui.notify(herdr.text, herdr.isShown ? 'info' : 'warning')
       if (herdr?.isShown) return

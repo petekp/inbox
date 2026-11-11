@@ -20,7 +20,7 @@ import {
   unpublishSession,
 } from './herdr-app'
 import type { ApplyPress, PressFiles, PublishFiles } from './herdr-app'
-import { herdrPanelOpener } from './herdr-open'
+import { hasHerdrMod, herdrPanelOpener, noHerdrModText } from './herdr-open'
 import type { HerdrOpened } from './herdr-open'
 import { CLAUDE_CODE } from './model-text'
 import { sessionView } from './session-view'
@@ -73,30 +73,36 @@ function herdrFiles(calls: HerdrCalls): PublishFiles & PressFiles {
   }
 }
 
-/** The Herdr app terminal the mod runs in, once `targetOf` has read the environment, and null outside one. */
-let appTerminal: Extract<HerdrTarget, { kind: 'terminal' }> | null | undefined
+/**
+ * The Herdr app terminal the mod runs in, once `targetOf` has read the environment, with whether its app home holds the
+ * inbox mod. Null outside an app terminal. `targetOf` runs at turn-on and on every publish, so a press can tell at once
+ * whether the Herdr look can open.
+ */
+let appTerminal: { target: Extract<HerdrTarget, { kind: 'terminal' }>; hasMod: boolean } | null | undefined
 const openHerdrPanel = herdrPanelOpener()
 
 async function targetOf(calls: HerdrCalls) {
   const [HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME] = await calls.env()
   const target = herdrTarget({ HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME })
-  appTerminal = target?.kind === 'terminal' ? target : null
+  appTerminal = target?.kind === 'terminal' ? { target, hasMod: await hasHerdrMod(calls.isFile, target) } : null
 
   return target
 }
 
 /**
- * In a Herdr app terminal, opens the Herdr look as `herdrPanelOpener` says. Outside an app terminal, or before the mod
- * has read its environment, it returns null at once, so the mod's own open keeps its first await.
+ * In a Herdr app terminal, opens the Herdr look as `herdrPanelOpener` says, and logs why when it does not show. It
+ * returns null outside an app terminal, or before the mod has read its environment, and the result itself when the app
+ * home has no inbox mod, so in both cases the mod's own open keeps its first await.
  */
-export function openInHerdr(calls: HerdrCalls): Promise<HerdrOpened> | null {
+export function openInHerdr(calls: HerdrCalls): Promise<HerdrOpened> | HerdrOpened | null {
   if (!appTerminal) return null
-
-  return openHerdrPanel(calls, appTerminal).then(opened => {
+  const logged = (opened: HerdrOpened) => {
     if (!opened.isShown) calls.log(opened.text)
-
     return opened
-  })
+  }
+  if (!appTerminal.hasMod) return logged({ isShown: false, text: noHerdrModText(appTerminal.target) })
+
+  return openHerdrPanel(calls, appTerminal.target).then(logged)
 }
 
 /**

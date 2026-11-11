@@ -75,7 +75,7 @@ In the `inbox-ui` VM, with Herdr installed only there, as the spike did:
 
 - Does `codex queue --thread <id>` reach a Codex CLI session running in a terminal, with a sent record? Answer and Reply in Codex need it. The release pass checks it live, in a Codex session in a Herdr app terminal.
 - Can a `keys.json` binding carry a command's arguments, so a key could open the look?
-- Does `pane.focus` on a pane that shows the look, a mod that is not `focusable`, succeed? A host's next open relies on it to find the panel it opened. If it fails, that open splits a second panel.
+- Does `pane.focus` on a pane that shows the look, a mod that is not `focusable`, succeed? A host's next open works either way: any failure other than `no such pane` leaves the panel and says it is open. Only whether the panel takes focus depends on it.
 - Does a `height` transition on a row measured with `on_size_change` collapse it smoothly?
 - Does Herdr expose, or plan to expose, the system's reduced-motion setting to mods?
 - May the inbox write under Herdr's app home, or should Herdr name a folder for a mod's data?
