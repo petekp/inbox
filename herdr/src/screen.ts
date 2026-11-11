@@ -1,13 +1,17 @@
 import type { BannerView } from '../../hooks/banners'
 import { READING_TEXT } from '../../hooks/banners'
 import { sessionView } from '../../hooks/session-view'
+import type { SessionView } from '../../hooks/session-view'
 import { SETTLED_MS, nextFoldAt } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
+import type { RowNote } from '../../types'
 import type { Block } from './blocks'
 import { chrome, tabBlocks, tabCells } from './draw'
 import type { LookUi, TabCell } from './draw'
 import type { ReadSession } from './files'
 import type { Followed } from './follow'
+import { drawOuts } from './out'
+import type { Out } from './out'
 
 /** What the look shows in place of an inbox, as the case of the terminal it follows says. */
 export type Message = { title: string; hint: string | null; isError: boolean }
@@ -17,13 +21,18 @@ type Screen =
   | {
       is: 'inbox'
       agent: string
+      view: SessionView
       tabs: TabCell[]
       banners: BannerView[]
       status: string | null
+      /** Says the host left out older closed items, or null when the session is whole. */
+      trimmedNote: string | null
       blocks: Block[]
       /** When a settled row folds, so the look draws again then. Null when none comes due on the clock. */
       foldAt: number | null
     }
+
+const TRIMMED_NOTE = 'This session is too large to show in full, so its older closed items are left out.'
 
 const message = (title: string, hint: string | null, isError = false): Screen => ({
   is: 'message',
@@ -57,28 +66,53 @@ function messageOf(followed: Followed, read: ReadSession | null): Screen | null 
   return null
 }
 
+/**
+ * What the look holds besides the session: rows held in place, the stale notes and errors of presses that did not
+ * apply, and the presses still out.
+ */
+type LookPresses = {
+  holds: Holds
+  notes: Record<string, RowNote>
+  errors: Record<string, string>
+  outs: readonly Out[]
+}
+
 /** What the look draws now for the terminal it follows, with the session it read for it. */
 export function screenOf(
   followed: Followed,
   read: ReadSession | null,
   ui: LookUi,
-  o: { now: number; shownSince: number; isNextBuild: boolean },
+  o: { now: number; isNextBuild: boolean } & LookPresses,
 ): Screen {
   const shown = messageOf(followed, read)
   if (shown !== null || read?.is !== 'read') return shown ?? message(READING_TEXT, null)
-  const holds: Holds = { replies: {}, discarded: {}, shownSince: o.shownSince, listInput: null }
-  const view = sessionView(read.session, o.now, SETTLED_MS, holds)
-  const screen = { view, agent: read.envelope.agent, now: o.now, shownSince: o.shownSince, isNextBuild: o.isNextBuild }
+  const { holds } = o
+  const view = sessionView(read.session, o.now, SETTLED_MS, holds, o.notes)
+  const screen = {
+    view,
+    agent: read.envelope.agent,
+    now: o.now,
+    shownSince: holds.shownSince ?? o.now,
+    isNextBuild: o.isNextBuild,
+    isGhMissing: read.session.prViews.isGhMissing === true,
+  }
   const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows]
   const settled = rows.flatMap(r => (r.state.is === 'settled' ? [r.state] : []))
-  const placing = { lastTypedMessageAt: null, listInput: null, now: o.now, settleWindowMs: SETTLED_MS }
+  const placing = {
+    lastTypedMessageAt: read.session.presence.lastTypedMessageAt,
+    listInput: holds.listInput,
+    now: o.now,
+    settleWindowMs: SETTLED_MS,
+  }
 
   return {
     is: 'inbox',
     agent: screen.agent,
+    view,
     tabs: tabCells(screen, ui.tab),
     ...chrome(screen, ui.tab),
-    blocks: tabBlocks(screen, ui),
+    trimmedNote: read.isTrimmed ? TRIMMED_NOTE : null,
+    blocks: drawOuts(tabBlocks(screen, ui), o.outs, o.errors, 'herdr'),
     foldAt: nextFoldAt(settled, placing),
   }
 }

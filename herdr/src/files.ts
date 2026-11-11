@@ -24,9 +24,10 @@ export function isSessionChange(changed: readonly string[], appHome: string, ses
 /**
  * A published session file, read. `missing`: no file, as before the host's first write or after the session ended.
  * `torn`: not JSON, which a read mid-write can give, so the look reads again. `newer`: a format from a newer host.
+ * `isTrimmed`: the host left out older closed items to keep the file under the 1 MiB Herdr's `readTextFile` reads.
  */
 export type ReadSession =
-  | { is: 'read'; envelope: HerdrEnvelope; session: Session }
+  | { is: 'read'; envelope: HerdrEnvelope; session: Session; isTrimmed: boolean }
   | { is: 'missing' }
   | { is: 'torn' }
   | { is: 'newer'; format: number }
@@ -55,5 +56,10 @@ export function readSession(text: string | null): ReadSession {
   if (!isRecord(file.session)) return { is: 'refused', reason: 'no session' }
   const envelope = file as HerdrEnvelope
 
-  return { is: 'read', envelope, session: upgradeSession(file.session as SavedSession) }
+  return {
+    is: 'read',
+    envelope,
+    session: upgradeSession(file.session as SavedSession),
+    isTrimmed: file.trimmed === true,
+  }
 }

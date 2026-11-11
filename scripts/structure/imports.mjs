@@ -105,6 +105,9 @@ function isHandlerReload(path, dependency) {
 
 /** The modules the Herdr app supplies to a mod. */
 const HERDR_APP_MODULES = ['gpui-kit', 'gpui-base', 'herdr']
+/** The Herdr app's modules that only draw. Painting does not fit one file under the size limit. */
+const HERDR_DRAWING_MODULES = ['gpui-kit', 'gpui-base']
+const isHerdrPaintFile = path => path === 'herdr/src/main.ts' || /^herdr\/src\/paint-[^/]+\.ts$/.test(path)
 
 export function checkImports(root, errors) {
   const sharedFiles = SHARED.map(name => `hooks/${name}.ts`)
@@ -189,8 +192,14 @@ export function checkImports(root, errors) {
             )
           if (target?.startsWith(codex) || target?.startsWith(omp))
             errors.push(`${relative} imports '${from}'. The Herdr look does not import from codex/ or omp/.`)
-          if (HERDR_APP_MODULES.includes(from) && relative !== 'herdr/src/main.ts')
-            errors.push(`${relative} imports '${from}'. Only herdr/src/main.ts imports the Herdr app's modules.`)
+          if (from === 'herdr' && relative !== 'herdr/src/main.ts')
+            errors.push(
+              `${relative} imports 'herdr'. Only herdr/src/main.ts imports the Herdr app's state and effects.`,
+            )
+          if (HERDR_DRAWING_MODULES.includes(from) && !isHerdrPaintFile(relative))
+            errors.push(
+              `${relative} imports '${from}'. Only herdr/src/main.ts and herdr/src/paint-*.ts draw with the Herdr app's modules.`,
+            )
         } else if (target?.startsWith(hooks) && !sharedTargets.has(target)) {
           errors.push(
             `${relative} imports '${from}', which is not a shared module. Codex can only bundle shared modules.`,

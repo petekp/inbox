@@ -1,9 +1,23 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
 
 // src/main.ts
-import { View, div } from "gpui-kit";
-import { Scrollbar, h_flex, v_flex } from "gpui-base";
-import { appHome, focused, panes, props, readTextFile, terminals, theme, watchFolder } from "herdr";
+import { View, div as div3 } from "gpui-kit";
+import { InputState, Scrollbar, v_flex as v_flex3 } from "gpui-base";
+import {
+  appHome,
+  exec,
+  focused,
+  hc,
+  home,
+  panes,
+  props,
+  readTextFile,
+  run,
+  terminals,
+  theme,
+  watchFolder,
+  writeTextFile
+} from "herdr";
 
 // ../hooks/press-labels.ts
 function actionId(p) {
@@ -55,6 +69,410 @@ var MAYBE_STALE_TEXT = "May be out of date";
 function emptyText(tab, agent, isStale = false) {
   const text = tab === "needsYou" ? { title: "Nothing needed", hint: `${agent}'s questions and the tasks only you can do show up here.` } : { title: "No findings yet", hint: `${agent} flags issues and opportunities it spots beyond your task.` };
   return isStale ? { ...text, title: MAYBE_STALE_TEXT } : text;
+}
+
+// ../hooks/last-actions.ts
+function isAwaitingReply(last, turns) {
+  const pressed = last?.delivery?.state !== "failed" ? last?.turnsStarted : undefined;
+  return pressed !== undefined && pressed <= turns.turnsStarted && turns.turnsApplied <= pressed;
+}
+function isHandedOff(last, turns) {
+  return last?.kind === "handoff" && isAwaitingReply(last, turns);
+}
+function isFoldingPress(id, last) {
+  return !id.startsWith("pr:") && last?.kind === "handoff" && last.action !== "address";
+}
+function isFixSent(last) {
+  return last?.action === "address" && !last.isKept && last.delivery?.state !== "failed";
+}
+var HANDOFF_IDS = /^(address|type|step-\d+|thread-address|pr-conflicts|pr-address-all)$/;
+var PR_RENAMES = [
+  [/^address-all-/, "pr-address-all"],
+  [/^resolve-/, "pr-conflicts"]
+];
+var THREAD_RENAMES = [
+  [/^address-/, "thread-address"],
+  [/^draft-/, "thread-draft"],
+  [/^discuss-/, "thread-discuss"]
+];
+var ROW_RENAMES = [
+  [/^explain(-|$)/, "explain"],
+  [/^(help-.+-|step-)\d+$/, (old) => `step-${old.split("-").pop()}`],
+  [/^typed$/, "type"],
+  [/^address(-|$)/, "address"],
+  [/^discuss(-|$)/, "discuss"]
+];
+function upgradedLastAction(key, old) {
+  const renames = key.startsWith("pr:") ? PR_RENAMES : key.includes(" thread ") ? THREAD_RENAMES : ROW_RENAMES;
+  const found = renames.find(([pattern]) => pattern.test(old.action));
+  const action = found ? typeof found[1] === "function" ? found[1](old.action) : found[1] : null;
+  if (action === null)
+    return null;
+  const { isHandoff, ...kept } = old;
+  const isHandedOff = isHandoff ?? HANDOFF_IDS.test(action);
+  return {
+    ...kept,
+    kind: isHandedOff ? "handoff" : "talk",
+    action,
+    text: /^Sent to (Claude|Codex) to /.test(old.text) ? "Address" : old.text.replace(/ sent$/, "")
+  };
+}
+function upgradeLastActions(saved) {
+  return Object.fromEntries(Object.entries(saved).flatMap(([key, entry]) => {
+    const {
+      tab: _tab,
+      title: _title,
+      index: _index,
+      ...last
+    } = entry;
+    if ("kind" in last && last.kind)
+      return [[key, last]];
+    const upgraded = upgradedLastAction(key, last);
+    return upgraded ? [[key, upgraded]] : [];
+  }));
+}
+
+// ../hooks/presses.ts
+function isPrRowId(id) {
+  return id.startsWith("pr:") || id.includes(" ");
+}
+
+// ../hooks/open-targets.ts
+function baseName(path) {
+  return path.replace(/\/+$/, "").split("/").pop() ?? path;
+}
+function localPath(raw, root, home) {
+  if (raw.startsWith("~/"))
+    return home + raw.slice(1);
+  if (raw.startsWith("/"))
+    return raw;
+  return `${root.replace(/\/$/, "")}/${raw.replace(/^\.\//, "")}`;
+}
+var LAUNCHES = /\.(app|command|tool|terminal|workflow|scpt|scptd|applescript|pkg|mpkg|dmg|webloc|inetloc|fileloc|prefpane|kext)$/i;
+function openCommands(path, isFile, isExecutable) {
+  if (!isFile || isExecutable || LAUNCHES.test(path))
+    return { argv: ["open", "-R", path], fallback: null };
+  return { argv: ["open", path], fallback: ["open", "-t", path] };
+}
+var OPEN_TIMEOUT_MS = 1e4;
+async function openTarget(run, probe, target, root, home) {
+  const open = (argv) => run(argv, { cwd: "/", timeoutMs: OPEN_TIMEOUT_MS });
+  const failure = (r) => r.stderr.trim() || `open exited ${r.code}`;
+  if (/^https?:\/\//.test(target)) {
+    const r = await open(["open", target]);
+    return r.code === 0 ? null : failure(r);
+  }
+  const path = localPath(target, root || "/", home);
+  const info = await probe.stat(path);
+  if (!info)
+    return "it no longer exists";
+  const isFile = info.isFile();
+  const isExecutable = isFile && await probe.isExecutable(path);
+  const { argv, fallback } = openCommands(path, isFile, isExecutable);
+  const r = await open(argv);
+  const retry = r.code !== 0 && fallback ? await open(fallback) : r;
+  return retry.code === 0 ? null : failure(retry);
+}
+
+// ../hooks/press-messages.ts
+function findingBody(finding) {
+  return [
+    `${finding.kind === "issue" ? "Issue" : "Opportunity"}: ${finding.title}`,
+    finding.detail,
+    ...finding.path ? [`File: ${finding.path}`] : []
+  ];
+}
+var EXPLAIN_REPLY_FORM = "Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.";
+var COMPARE_IN_BACKGROUND = "Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.";
+var COMPARE_IN_TURN = "Compare the choices in this question you asked me by trying them against the code, not from memory. Do it now, and reply with the result before this turn ends, because a background subagent's report after your turn ends may not reach this chat.";
+var compareRequest = (texts) => [
+  texts.compareInBackground ? COMPARE_IN_BACKGROUND : COMPARE_IN_TURN,
+  "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
+  `Then make a page from the inbox's comparison template. Write the comparison as JSON in the shape the comment at the top of the template shows, with the few measures that tell the choices apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Build the page with: cat "${texts.comparePage}" <your JSON file> > <your page>.html`,
+  "When the comparison is done, reply without a table, since the page holds the measures. Give your pick and say whether it changed, your reason in one line, one line on anything you did not expect, and the page's absolute path.",
+  "Also call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps. That updates the open question and marks it compared. It stays open, so do not close it. Call each choice by its name as listed."
+].join(`
+
+`);
+function quotedAsk(item) {
+  return `"${item.ask}"${item.options.length > 0 ? `
+Options: ${item.options.join(" / ")}` : ""}`;
+}
+var messages = {
+  answer: (item, answer) => `Re "${item.ask}": ${answer}`,
+  explain: (item) => {
+    const what = item.kind === "task" ? "this task you left for me is about: why it came up, and what doing it involves" : "this question you asked me is about: why it came up, what each choice would do, and which you would pick";
+    return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.
+${quotedAsk(item)}`;
+  },
+  compare: (item, texts) => `${compareRequest(texts)}
+${quotedAsk(item)}`,
+  run: (item, command) => `For "${item.ask}", run this:
+\`\`\`
+${command}
+\`\`\``,
+  taskReply: (item, words) => `Re the task you left for me, "${item.ask}": ${words}`,
+  done: (asks) => asks.length === 1 ? `Done: ${asks[0]}` : `Done:
+${asks.map((a) => `- ${a}`).join(`
+`)}`,
+  finding: (finding, how, words = "") => {
+    const opening = how === "address" ? "Please address this finding you recorded:" : how === "issue" ? "Please file an issue for this finding you recorded, in the issue tracker you have tools for. First check whether one already exists, and if it does, use it instead of filing a duplicate. Then close the finding with the issue's key or number as the reason, and give me its link. If you have no tools for an issue tracker, say so and leave the finding open." : how === "explain" ? `Remind me what this finding you recorded is about: why it matters, what fixing it would involve, and whether you would fix it now. ${EXPLAIN_REPLY_FORM} Don't act on it yet.` : how === "discuss" ? "Let's talk through this finding you recorded before changing anything:" : "About this finding you recorded:";
+    return [opening, ...findingBody(finding), ...how === "typed" ? ["", words] : []].join(`
+`);
+  }
+};
+
+// ../hooks/pr-checks.ts
+function failingChecks(pr) {
+  return pr.checks.filter((c) => c.bucket === "fail");
+}
+function cancelledChecks(pr) {
+  return pr.checks.filter((c) => c.bucket === "cancelled");
+}
+var ACTIONS_RUN_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/actions\/runs\/(\d+)/;
+function runOf(c) {
+  const m = ACTIONS_RUN_URL.exec(c.url ?? "");
+  return m ? { repo: m[1], run: m[2] } : null;
+}
+function isSameRun(a, b) {
+  return b !== null && a.repo === b.repo && a.run === b.run;
+}
+function failedSibling(pr, c) {
+  const run = c.bucket === "cancelled" ? runOf(c) : null;
+  return run ? pr.checks.find((f) => f.bucket === "fail" && isSameRun(run, runOf(f))) ?? null : null;
+}
+function blockingChecks(pr) {
+  return [...failingChecks(pr), ...cancelledChecks(pr).filter((c) => !failedSibling(pr, c))];
+}
+
+// ../hooks/text.ts
+function clipLabel(text, max) {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+var PHRASE_END = /[,;](?=\s)|\s(?=and\s)/g;
+function cutAtPhrase(text, fits) {
+  if (fits(text))
+    return text;
+  const heads = [...text.matchAll(PHRASE_END)].map((m) => `${text.slice(0, m.index).replace(/[\s.,;:]+$/, "")}…`);
+  return heads.findLast(fits) ?? heads[0] ?? text;
+}
+var segmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
+var LEADING_JAMO = String.raw`[\u1100-\u115F\uA960-\uA97C]`;
+var VOWEL_JAMO = String.raw`[\u1160-\u11A7\uD7B0-\uD7C6]`;
+var TRAILING_JAMO = String.raw`[\u11A8-\u11FF\uD7CB-\uD7FB]`;
+var SYLLABLE = String.raw`[\uAC00-\uD7A3]`;
+var OPEN_SYLLABLE = `[${Array.from({ length: 19 * 21 }, (_, i) => String.fromCharCode(44032 + i * 28)).join("")}]`;
+var HANGUL = `(?:${LEADING_JAMO}*(?:${VOWEL_JAMO}+|${OPEN_SYLLABLE}${VOWEL_JAMO}*|${SYLLABLE})${TRAILING_JAMO}*|${LEADING_JAMO}+|${TRAILING_JAMO}+)`;
+var FLAG = String.raw`[\u{1F1E6}-\u{1F1FF}]{2}`;
+var EXTEND = String.raw`\p{M}\p{Emoji_Modifier}\u{E0020}-\u{E007F}‌ﾞﾟำຳ`;
+var GRAPHEME = new RegExp(String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^${EXTEND}\u200D])(?:[${EXTEND}]|\u200D[^${EXTEND}\u200D]?)*`, "gu");
+function graphemesOf(text) {
+  return segmenter ? Array.from(segmenter.segment(text), (s) => s.segment) : text.match(GRAPHEME) ?? [];
+}
+var ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cc}\p{Cf}]+$/u;
+var EMOJI = /\p{Emoji_Presentation}|\uFE0F/u;
+var WIDE = /^[\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u{20000}-\u{3FFFD}]/u;
+function cellWidth(text) {
+  let cells = 0;
+  for (const segment of graphemesOf(text))
+    cells += graphemeCells(segment);
+  return cells;
+}
+function graphemeCells(grapheme) {
+  if (ZERO_WIDTH.test(grapheme))
+    return 0;
+  return EMOJI.test(grapheme) || WIDE.test(grapheme) ? 2 : 1;
+}
+function duration(ms) {
+  const min = Math.max(1, Math.round(ms / 60000));
+  if (min < 60)
+    return `${min}m`;
+  const h = Math.round(min / 60);
+  if (h < 48)
+    return `${h}h`;
+  return `${Math.round(h / 24)}d`;
+}
+function ago(ms) {
+  return Math.round(ms / 60000) < 1 ? "just now" : `${duration(ms)} ago`;
+}
+function clockTime(ms) {
+  return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+// ../hooks/prs.ts
+function namedPrs(text, refs) {
+  const numbers = new Set([...text.matchAll(/#(\d+)\b/g)].map((m) => m[1]));
+  const known = [...new Set(refs)];
+  return [...numbers].flatMap((n) => {
+    const named = known.filter((ref) => parseRef(ref).number === n);
+    return named.length === 1 ? named : [];
+  });
+}
+function parseRef(ref) {
+  const [repo = "", number = ""] = ref.split("#");
+  const [owner = "", name = ""] = repo.split("/");
+  return { repo, owner, name, number };
+}
+function checkKey(c) {
+  return c.workflow ? `${c.workflow} / ${c.name}` : c.name;
+}
+function isKeptPr(pr) {
+  return pr.isYours !== false && pr.wasSeenOpen;
+}
+function waitingThreads(pr) {
+  return pr.threads.filter((t) => t.isWaiting);
+}
+function threadsOnYou(pr, isSent) {
+  return waitingThreads(pr).filter((t) => !t.isLinesChanged && !isSent(pr, t));
+}
+function prNeedsYou(pr, isSent) {
+  return pr.state === "OPEN" && (pr.mergeable === "CONFLICTING" || blockingChecks(pr).length > 0 || threadsOnYou(pr, isSent).length > 0);
+}
+function checkCounts(pr) {
+  const counts = { pass: 0, fail: 0, cancelled: 0, pending: 0, skip: 0 };
+  for (const c of pr.checks)
+    counts[c.bucket] += 1;
+  return counts;
+}
+function threadsWaiting(count) {
+  return `${count} ${count === 1 ? "thread" : "threads"} waiting on you`;
+}
+function plural(count, one, many) {
+  return `${count} ${count === 1 ? one : many}`;
+}
+function readiness(pr, isSent = () => false, agent = "Claude") {
+  const result = (status, head, reasonList = [], joint = ": ") => {
+    const reasons = reasonList.join(", ");
+    const unlisted = status === "ready" ? [] : reasonList.filter((r) => !listed.includes(r));
+    return { status, text: reasons ? `${head}${joint}${reasons}` : head, head, unlisted };
+  };
+  const listed = [];
+  if (pr.state === "MERGED")
+    return result("merged", "Merged");
+  if (pr.state !== "OPEN")
+    return result("closed", "Closed");
+  const { pass: passing, fail: failing, pending } = checkCounts(pr);
+  const cancelled = blockingChecks(pr).length - failing;
+  const waiting = waitingThreads(pr);
+  const open = threadsOnYou(pr, isSent).length;
+  const sent = waiting.filter((t) => isSent(pr, t)).length;
+  const changed = waiting.filter((t) => t.isLinesChanged && !isSent(pr, t)).length;
+  const isPresent = (b) => b !== null;
+  const row = (r) => r === null ? r : (listed.push(r), r);
+  const checksAndConflicts = [
+    pr.mergeable === "CONFLICTING" ? `conflicts with ${pr.base}` : null,
+    row(failing > 0 ? plural(failing, "failing check", "failing checks") : null),
+    row(cancelled > 0 ? plural(cancelled, "cancelled check", "cancelled checks") : null)
+  ];
+  const threadsOnPerson = row(open > 0 ? threadsWaiting(open) : null);
+  const isChangesRequested = pr.reviewDecision === "CHANGES_REQUESTED";
+  const isAnythingOnPerson = [...checksAndConflicts, threadsOnPerson].some(isPresent);
+  const changes = isChangesRequested ? "changes requested" : null;
+  const onYou = isAnythingOnPerson ? [...checksAndConflicts, changes, threadsOnPerson].filter(isPresent) : [];
+  const onOthers = [
+    row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to ${agent}` : null),
+    row(changed > 0 ? `${plural(changed, "thread", "threads")} on changed lines` : null),
+    pr.reviewDecision === "REVIEW_REQUIRED" ? "needs approval" : null,
+    pending > 0 ? `${pending} ${pending === 1 ? "check" : "checks"} running` : null,
+    pr.mergeable === "UNKNOWN" ? "GitHub is still checking for conflicts" : null
+  ].filter(isPresent);
+  if (pr.isDraft)
+    return result("draft", "Draft", [...isAnythingOnPerson ? onYou : [changes].filter(isPresent), ...onOthers]);
+  if (onYou.length > 0)
+    return result("blocked", "Blocked", onYou);
+  if (isChangesRequested)
+    return result("waiting", "Waiting on the reviewer", ["changes requested", ...onOthers]);
+  if (onOthers.length > 0)
+    return result("waiting", "Waiting", onOthers);
+  const isApproved = pr.reviewDecision === "APPROVED";
+  return result("ready", "Ready to merge", [...isApproved ? ["approved"] : [], passing > 0 ? "checks pass" : "no checks ran", "no threads waiting on you"], isApproved ? ": " : ", ");
+}
+var STATUS_ORDER = { blocked: 0, ready: 1, draft: 2, waiting: 3, merged: 4, closed: 5 };
+function rankOf(pr, ranked) {
+  const at = ranked.indexOf(pr.ref);
+  return at === -1 || pr.state !== "OPEN" ? null : at;
+}
+function inPrOrder(prs, ranked = []) {
+  const place = (pr) => rankOf(pr, ranked) ?? Infinity;
+  const status = new Map(prs.map((pr) => [pr, STATUS_ORDER[readiness(pr).status]]));
+  const byPlace = (a, b) => {
+    const [x, y] = [place(a), place(b)];
+    return x === y ? 0 : x < y ? -1 : 1;
+  };
+  return [...prs].sort((a, b) => byPlace(a, b) || status.get(a) - status.get(b) || b.number - a.number || a.ref.localeCompare(b.ref));
+}
+var HTML_TAG = /<\/?(?:a|b|br|code|details|div|em|h[1-6]|hr|i|img|kbd|li|ol|p|pre|span|strong|sub|summary|sup|table|tbody|td|th|thead|tr|ul)\b[^>]*>/g;
+function readableComment(body) {
+  return body.replace(/<!--[\s\S]*?-->/g, "").replace(HTML_TAG, "").replace(/^[^\S\n]*Useful\?[^\S\n]+React[^\S\n]+with[^\S\n]+👍[^\S\n]*\/[^\S\n]*👎\.?[^\S\n]*$/gmu, "").replace(/!\[([^\]]*)\]\([^)]*\)/g, (_, alt) => alt.replace(/\s*badge$/i, "")).trim();
+}
+function commentLine(body) {
+  return readableComment(body).replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/^\s*(?:#{1,6}|>)\s*/gm, "").replace(/\*\*|__|`/g, "").replace(/\s+/g, " ");
+}
+var THREAD_TITLE_CHARS = 120;
+function commentParts(body) {
+  const text = readableComment(body);
+  const [first = "", ...more] = text.split(`
+`);
+  const head = commentLine(first).trim();
+  return { head, rest: head.length > THREAD_TITLE_CHARS ? text : more.join(`
+`).trim() };
+}
+function threadWhere(t, path = t.path) {
+  return `${path}${t.line ? `:${t.line}` : ""}`;
+}
+function took(ms) {
+  const secs = Math.max(0, Math.round(ms / 1000));
+  return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+}
+
+// ../hooks/help-steps.ts
+function helpLabel(help) {
+  const label = help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? help.command}` : help.kind === "terminal" ? `Copy ${help.name ?? help.command}` : `Open ${help.name ?? new URL(help.url).host}`;
+  return clipLabel(label, 32);
+}
+function steps(helps) {
+  const copy = helps.find((h) => h.kind === "copy");
+  const open = helps.find((h) => h.kind === "open");
+  if (!copy || !open || copy.kind !== "copy" || open.kind !== "open")
+    return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
+  return helps.filter((h) => h !== copy).map((h) => h === open ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open.path)}`, 48), step: [copy, open] } : { label: helpLabel(h), step: [h] });
+}
+function prSteps(item, tracked) {
+  const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
+  const links = namedPrs(item.ask, [...urls.keys()]).map((ref) => {
+    const { repo, number } = parseRef(ref);
+    const url = urls.get(ref) ?? `https://github.com/${repo}/pull/${number}`;
+    return { kind: "link", url, name: `PR #${number}` };
+  }).filter((l) => !item.helps.some((h) => h.kind === "link" && h.url === l.url));
+  return links.length === 0 ? [] : [{ label: links.length === 1 ? helpLabel(links[0]) : `Open ${links.length} PRs`, step: links }];
+}
+function stepsOf(item, extraSteps) {
+  return [...steps(item.helps), ...extraSteps];
+}
+function stepIconKind(step) {
+  if (!step)
+    return;
+  if (step.step.some((h) => h.kind === "run"))
+    return "run";
+  const first = step.step[0]?.kind;
+  return first === "copy" || first === "terminal" ? "copy" : first === "open" || first === "link" ? "open" : undefined;
+}
+function helpEffect(item, help) {
+  switch (help.kind) {
+    case "run":
+      return { kind: "send", text: messages.run(item, help.command), by: { id: item.id, action: "run" } };
+    case "open":
+      return { kind: "open", target: help.path, name: baseName(help.path) };
+    case "link":
+      return { kind: "open", target: help.url, name: help.name ?? help.url };
+    case "copy":
+      return { kind: "copy", text: help.text, name: help.name ?? "snippet", isCommand: false };
+    case "terminal":
+      return { kind: "copy", text: help.command, name: help.name ?? clipLabel(help.command, 32), isCommand: true };
+  }
+}
+function stepEffects(item, step) {
+  return step.step.map((h) => helpEffect(item, h));
 }
 
 // ../hooks/status-limits.ts
@@ -130,70 +548,139 @@ function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
 
-// ../hooks/text.ts
-function clipLabel(text, max) {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+// ../hooks/ask-match.ts
+function words2(text) {
+  return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
-var PHRASE_END = /[,;](?=\s)|\s(?=and\s)/g;
-function cutAtPhrase(text, fits) {
-  if (fits(text))
-    return text;
-  const heads = [...text.matchAll(PHRASE_END)].map((m) => `${text.slice(0, m.index).replace(/[\s.,;:]+$/, "")}…`);
-  return heads.findLast(fits) ?? heads[0] ?? text;
+function recommendedOption(options, rec) {
+  if (!rec)
+    return null;
+  const named = new Set(words2(rec));
+  let best = null;
+  for (const option of options) {
+    const w = words2(option);
+    if (w.length > words2(best ?? "").length && w.every((x) => named.has(x)))
+      best = option;
+  }
+  const label = (text) => text.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
+  const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
+  return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
 }
-var segmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
-var LEADING_JAMO = String.raw`[\u1100-\u115F\uA960-\uA97C]`;
-var VOWEL_JAMO = String.raw`[\u1160-\u11A7\uD7B0-\uD7C6]`;
-var TRAILING_JAMO = String.raw`[\u11A8-\u11FF\uD7CB-\uD7FB]`;
-var SYLLABLE = String.raw`[\uAC00-\uD7A3]`;
-var OPEN_SYLLABLE = `[${Array.from({ length: 19 * 21 }, (_, i) => String.fromCharCode(44032 + i * 28)).join("")}]`;
-var HANGUL = `(?:${LEADING_JAMO}*(?:${VOWEL_JAMO}+|${OPEN_SYLLABLE}${VOWEL_JAMO}*|${SYLLABLE})${TRAILING_JAMO}*|${LEADING_JAMO}+|${TRAILING_JAMO}+)`;
-var FLAG = String.raw`[\u{1F1E6}-\u{1F1FF}]{2}`;
-var EXTEND = String.raw`\p{M}\p{Emoji_Modifier}\u{E0020}-\u{E007F}‌ﾞﾟำຳ`;
-var GRAPHEME = new RegExp(String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^${EXTEND}\u200D])(?:[${EXTEND}]|\u200D[^${EXTEND}\u200D]?)*`, "gu");
-function graphemesOf(text) {
-  return segmenter ? Array.from(segmenter.segment(text), (s) => s.segment) : text.match(GRAPHEME) ?? [];
-}
-var ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cc}\p{Cf}]+$/u;
-var EMOJI = /\p{Emoji_Presentation}|\uFE0F/u;
-var WIDE = /^[\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u{20000}-\u{3FFFD}]/u;
-function cellWidth(text) {
-  let cells = 0;
-  for (const segment of graphemesOf(text))
-    cells += graphemeCells(segment);
-  return cells;
-}
-function graphemeCells(grapheme) {
-  if (ZERO_WIDTH.test(grapheme))
-    return 0;
-  return EMOJI.test(grapheme) || WIDE.test(grapheme) ? 2 : 1;
-}
-function duration(ms) {
-  const min = Math.max(1, Math.round(ms / 60000));
-  if (min < 60)
-    return `${min}m`;
-  const h = Math.round(min / 60);
-  if (h < 48)
-    return `${h}h`;
-  return `${Math.round(h / 24)}d`;
-}
-function ago(ms) {
-  return Math.round(ms / 60000) < 1 ? "just now" : `${duration(ms)} ago`;
-}
-function clockTime(ms) {
-  return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-}
+var FILLER = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "use",
+  "into",
+  "from",
+  "that",
+  "this",
+  "your",
+  "you",
+  "should",
+  "make",
+  "add",
+  "all"
+]);
+var GENERIC = new Set([
+  "which",
+  "what",
+  "how",
+  "when",
+  "where",
+  "whether",
+  "why",
+  "who",
+  "pick",
+  "choose",
+  "select",
+  "prefer",
+  "want",
+  "decide",
+  "need",
+  "like",
+  "are",
+  "was",
+  "were",
+  "been",
+  "being",
+  "can",
+  "could",
+  "would",
+  "will",
+  "shall",
+  "might",
+  "must",
+  "does",
+  "did",
+  "has",
+  "have",
+  "had",
+  "new",
+  "current",
+  "existing",
+  "its",
+  "our",
+  "their",
+  "now",
+  "still",
+  "also",
+  "just",
+  "again",
+  "already",
+  "instead",
+  "yet"
+]);
+var STATES = new Set(["new", "current", "existing", "old", "previous"]);
+var QUESTIONS = new Set(["how", "when", "where", "why", "who", "whether"]);
+var PAST = new Set(["was", "were", "did", "had"]);
+var FUTURE = new Set(["will", "shall"]);
+var SYNONYMS = [
+  ["vanish", "disappear"],
+  ["remove", "delete"],
+  ["folder", "directory", "directories"],
+  ["config", "configuration"]
+];
+var MEANING = new Map(SYNONYMS.flatMap((group) => group.map((w) => [stem(w), stem(group[0])])));
 
-// ../hooks/status-children.ts
-function isChildRunning(c, now) {
-  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+// ../hooks/ledger-close.ts
+function idNumber(id) {
+  return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
 }
-function subjectSeenAt(o, id) {
-  return id in o.missedInLastLook ? o.missedInLastLook[id] ?? null : o.lastLookAt;
+function inIdOrder(open, entry) {
+  const at = open.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
+  return at < 0 ? [...open, entry] : [...open.slice(0, at), entry, ...open.slice(at)];
 }
-function isSubjectSeen(o, s) {
-  const seenAt = subjectSeenAt(o, s.id);
-  return seenAt !== null && s.changedAt <= seenAt;
+function reopenItem(ledger, id) {
+  const item = ledger.closed.findLast((c) => c.id === id)?.item;
+  if (!item || ledger.items.some((i) => i.id === id))
+    return ledger;
+  return { ...ledger, items: inIdOrder(ledger.items, item), closed: ledger.closed.filter((c) => c.id !== id) };
+}
+function reopenFinding(ledger, id) {
+  const record = ledger.closedFindings.findLast((f) => f.id === id);
+  if (!record || ledger.findings.some((f) => f.id === id))
+    return ledger;
+  const { how: _how, outcome: _outcome, closedAt: _closedAt, ...finding } = record;
+  return {
+    ...ledger,
+    findings: inIdOrder(ledger.findings, finding),
+    closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
+  };
+}
+var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
+var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
+function closedState(d) {
+  if (d.how === "dismissed")
+    return "dismissed";
+  if (d.how === "expired")
+    return "lapsed";
+  const isOvertaken = OVERTAKEN.test(d.outcome);
+  return (d.how === "claude" || d.how === "update") && isOvertaken ? "lapsed" : "handled";
+}
+function closedAt(c) {
+  return "closedAt" in c ? c.closedAt : c.at;
 }
 
 // ../hooks/tabs.ts
@@ -288,7 +775,189 @@ var MARK_LEGEND = [
   }
 ];
 var STATUS_ONLY_MARKS = new Set([IDLE_MARK.mark, SUBJECT_MARKS.queued.mark, SUBJECT_MARKS["waits-on-other"].mark]);
+function markLegend(isNextBuild) {
+  return isNextBuild ? MARK_LEGEND : MARK_LEGEND.filter((m) => !STATUS_ONLY_MARKS.has(m.mark));
+}
+var HELP_COPY = { open: "Help", close: "✕ Close help", keys: "Keys", marks: "Marks", tabs: "Tabs" };
 var UNDO_KEY = "u";
+var PR_TAB_HELP_KEYS = [{ keys: "g", does: "Rank the PRs again, once a ranked PR changed" }];
+function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
+  const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
+  const hasRows = isRowTab(tab);
+  const selectsStatusRows = tab === "overview" && hasStatusButtons;
+  const switchTabs = { keys: tabKeys, does: "Switch tabs" };
+  const prTabKeys = tab === "prs" ? PR_TAB_HELP_KEYS : [];
+  const undoKey = { keys: UNDO_KEY, does: "Undo the last close" };
+  switch (look) {
+    case "desktop":
+      return [];
+    case "terminal":
+      return [
+        switchTabs,
+        ...hasRows || selectsStatusRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
+        ...hasRows ? [undoKey] : [],
+        ...prTabKeys,
+        { keys: "ctrl+x tab", does: "Move focus to the line above the prompt, then the pane, then the prompt" }
+      ];
+    case "codex":
+      return [
+        switchTabs,
+        ...hasRows ? [{ keys: "j k ↑ ↓", does: "Select the next or previous row" }, undoKey] : [],
+        ...prTabKeys,
+        { keys: "?", does: "Open or close help" },
+        { keys: "esc", does: "Close help, or leave a reply field" }
+      ];
+    case "omp":
+      return [
+        { keys: `tab ${tabKeys}`, does: "Switch tabs" },
+        ...hasRows ? [
+          { keys: "↑ ↓ j k", does: "Move between rows" },
+          { keys: "← →", does: "Pick a button" },
+          { keys: "↵", does: "Press the picked button" },
+          { keys: "t", does: "Reply to the selected row" },
+          undoKey,
+          ...prTabKeys
+        ] : [
+          ...selectsStatusRows ? [
+            { keys: "j k", does: "Select the next or previous row with a button" },
+            { keys: "← →", does: "Pick a button" },
+            { keys: "↵", does: "Press the picked button" }
+          ] : [],
+          { keys: "↑ ↓", does: "Scroll the page" }
+        ],
+        { keys: "?", does: "Open or close help" },
+        { keys: "esc", does: "Close help, then the panel" }
+      ];
+    case "herdr":
+      return [
+        { keys: "← →", does: "Switch tabs" },
+        ...hasRows ? [{ keys: "j k", does: "Select the next or previous row" }] : [],
+        ...prTabKeys,
+        { keys: "esc", does: "Move focus back to the agent's terminal" }
+      ];
+  }
+}
+
+// ../hooks/status-keys.ts
+var GOAL_KEYS_ID = "goal";
+var VIEW_ASK_LABELS = { question: "View question", task: "View task" };
+function viewAsk(ask) {
+  return {
+    press: { action: "show-ask", askId: ask.id },
+    label: VIEW_ASK_LABELS[ask.kind],
+    hotkey: "v",
+    kind: "view",
+    emphasis: "normal"
+  };
+}
+function statusKeyPlan(row) {
+  if (row.kind === "done-fold")
+    return [
+      {
+        press: { action: "toggle-fold", foldId: row.id },
+        label: row.text,
+        hotkey: "f",
+        kind: "view",
+        emphasis: "quiet"
+      }
+    ];
+  return row.kind === "subject" && row.ask !== null ? [viewAsk(row.ask)] : [];
+}
+function milestoneKeyPlan(m) {
+  return m.ask === null ? [] : [viewAsk(m.ask)];
+}
+var REMOVE_GOAL = {
+  press: { action: "remove-goal" },
+  label: "Remove",
+  hotkey: "r",
+  kind: "mark",
+  emphasis: "quiet"
+};
+var RESTORE_GOAL = {
+  press: { action: "restore-goal" },
+  label: "Undo",
+  hotkey: UNDO_KEY,
+  kind: "mark",
+  emphasis: "normal"
+};
+var newGoal = (emphasis) => ({
+  press: { action: "type-goal", text: "" },
+  label: "New",
+  hotkey: "n",
+  kind: "view",
+  emphasis
+});
+function goalKeyPlan(page) {
+  const g = page.goal;
+  if (g === null)
+    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal("quiet")];
+  if (g.isMet)
+    return [newGoal("normal"), REMOVE_GOAL];
+  return [
+    { press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
+    REMOVE_GOAL
+  ];
+}
+var GOAL_FIELD = { placeholder: "An outcome to work toward", submit: "Save" };
+
+// ../hooks/pressed.ts
+function offersUndo(c) {
+  return c.how === "done" || c.how === "dismissed";
+}
+function isUndoable(c) {
+  return offersUndo(c) && !c.isSentToAgent;
+}
+function pendingResult(effects, at, pressId) {
+  return {
+    state: "pending",
+    parts: effects.flatMap((e) => e.kind === "send" ? [] : [{ kind: e.kind, name: e.name, isCommand: e.kind === "copy" && e.isCommand, error: null }]),
+    at,
+    ...pressId ? { pressId } : {}
+  };
+}
+function retryOf(id, last) {
+  if (!/^[if]\d+$/.test(id))
+    return null;
+  const step = /^step-(\d+)$/.exec(last.action);
+  if (step)
+    return { action: "step", id, step: Number(step[1]), label: last.text };
+  switch (last.action) {
+    case "answer":
+      return { action: "answer", id, option: last.text };
+    case "explain":
+    case "compare":
+    case "address":
+    case "issue":
+    case "discuss":
+      return { action: last.action, id };
+    default:
+      return null;
+  }
+}
+function isRepeatOf(last, action) {
+  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
+}
+function isHeldSend(last) {
+  return last?.delivery?.state === "held";
+}
+
+// ../hooks/press-reducer.ts
+var STALE_TEXT = "This changed before your press. Nothing was sent.";
+function noteText() {
+  return STALE_TEXT;
+}
+
+// ../hooks/status-children.ts
+function isChildRunning(c, now) {
+  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+}
+function subjectSeenAt(o, id) {
+  return id in o.missedInLastLook ? o.missedInLastLook[id] ?? null : o.lastLookAt;
+}
+function isSubjectSeen(o, s) {
+  const seenAt = subjectSeenAt(o, s.id);
+  return seenAt !== null && s.changedAt <= seenAt;
+}
 
 // ../hooks/status-goal-page.ts
 var AWAITING_TEXT = "Milestones after the next reply";
@@ -609,399 +1278,6 @@ function statusPage(s, now) {
   };
 }
 
-// ../hooks/ask-match.ts
-function words2(text) {
-  return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-}
-function recommendedOption(options, rec) {
-  if (!rec)
-    return null;
-  const named = new Set(words2(rec));
-  let best = null;
-  for (const option of options) {
-    const w = words2(option);
-    if (w.length > words2(best ?? "").length && w.every((x) => named.has(x)))
-      best = option;
-  }
-  const label = (text) => text.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
-  const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
-  return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
-}
-var FILLER = new Set([
-  "the",
-  "and",
-  "for",
-  "with",
-  "use",
-  "into",
-  "from",
-  "that",
-  "this",
-  "your",
-  "you",
-  "should",
-  "make",
-  "add",
-  "all"
-]);
-var GENERIC = new Set([
-  "which",
-  "what",
-  "how",
-  "when",
-  "where",
-  "whether",
-  "why",
-  "who",
-  "pick",
-  "choose",
-  "select",
-  "prefer",
-  "want",
-  "decide",
-  "need",
-  "like",
-  "are",
-  "was",
-  "were",
-  "been",
-  "being",
-  "can",
-  "could",
-  "would",
-  "will",
-  "shall",
-  "might",
-  "must",
-  "does",
-  "did",
-  "has",
-  "have",
-  "had",
-  "new",
-  "current",
-  "existing",
-  "its",
-  "our",
-  "their",
-  "now",
-  "still",
-  "also",
-  "just",
-  "again",
-  "already",
-  "instead",
-  "yet"
-]);
-var STATES = new Set(["new", "current", "existing", "old", "previous"]);
-var QUESTIONS = new Set(["how", "when", "where", "why", "who", "whether"]);
-var PAST = new Set(["was", "were", "did", "had"]);
-var FUTURE = new Set(["will", "shall"]);
-var SYNONYMS = [
-  ["vanish", "disappear"],
-  ["remove", "delete"],
-  ["folder", "directory", "directories"],
-  ["config", "configuration"]
-];
-var MEANING = new Map(SYNONYMS.flatMap((group) => group.map((w) => [stem(w), stem(group[0])])));
-
-// ../hooks/ledger-close.ts
-function idNumber(id) {
-  return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
-}
-function inIdOrder(open, entry) {
-  const at = open.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
-  return at < 0 ? [...open, entry] : [...open.slice(0, at), entry, ...open.slice(at)];
-}
-function reopenItem(ledger, id) {
-  const item = ledger.closed.findLast((c) => c.id === id)?.item;
-  if (!item || ledger.items.some((i) => i.id === id))
-    return ledger;
-  return { ...ledger, items: inIdOrder(ledger.items, item), closed: ledger.closed.filter((c) => c.id !== id) };
-}
-function reopenFinding(ledger, id) {
-  const record = ledger.closedFindings.findLast((f) => f.id === id);
-  if (!record || ledger.findings.some((f) => f.id === id))
-    return ledger;
-  const { how: _how, outcome: _outcome, closedAt: _closedAt, ...finding } = record;
-  return {
-    ...ledger,
-    findings: inIdOrder(ledger.findings, finding),
-    closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
-  };
-}
-var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
-var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
-function closedState(d) {
-  if (d.how === "dismissed")
-    return "dismissed";
-  if (d.how === "expired")
-    return "lapsed";
-  const isOvertaken = OVERTAKEN.test(d.outcome);
-  return (d.how === "claude" || d.how === "update") && isOvertaken ? "lapsed" : "handled";
-}
-function closedAt(c) {
-  return "closedAt" in c ? c.closedAt : c.at;
-}
-
-// ../hooks/open-targets.ts
-function baseName(path) {
-  return path.replace(/\/+$/, "").split("/").pop() ?? path;
-}
-
-// ../hooks/pr-checks.ts
-function failingChecks(pr) {
-  return pr.checks.filter((c) => c.bucket === "fail");
-}
-function cancelledChecks(pr) {
-  return pr.checks.filter((c) => c.bucket === "cancelled");
-}
-var ACTIONS_RUN_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/actions\/runs\/(\d+)/;
-function runOf(c) {
-  const m = ACTIONS_RUN_URL.exec(c.url ?? "");
-  return m ? { repo: m[1], run: m[2] } : null;
-}
-function isSameRun(a, b) {
-  return b !== null && a.repo === b.repo && a.run === b.run;
-}
-function failedSibling(pr, c) {
-  const run = c.bucket === "cancelled" ? runOf(c) : null;
-  return run ? pr.checks.find((f) => f.bucket === "fail" && isSameRun(run, runOf(f))) ?? null : null;
-}
-function blockingChecks(pr) {
-  return [...failingChecks(pr), ...cancelledChecks(pr).filter((c) => !failedSibling(pr, c))];
-}
-
-// ../hooks/prs.ts
-function namedPrs(text, refs) {
-  const numbers = new Set([...text.matchAll(/#(\d+)\b/g)].map((m) => m[1]));
-  const known = [...new Set(refs)];
-  return [...numbers].flatMap((n) => {
-    const named = known.filter((ref) => parseRef(ref).number === n);
-    return named.length === 1 ? named : [];
-  });
-}
-function parseRef(ref) {
-  const [repo = "", number = ""] = ref.split("#");
-  const [owner = "", name = ""] = repo.split("/");
-  return { repo, owner, name, number };
-}
-function checkKey(c) {
-  return c.workflow ? `${c.workflow} / ${c.name}` : c.name;
-}
-function isKeptPr(pr) {
-  return pr.isYours !== false && pr.wasSeenOpen;
-}
-function waitingThreads(pr) {
-  return pr.threads.filter((t) => t.isWaiting);
-}
-function threadsOnYou(pr, isSent) {
-  return waitingThreads(pr).filter((t) => !t.isLinesChanged && !isSent(pr, t));
-}
-function prNeedsYou(pr, isSent) {
-  return pr.state === "OPEN" && (pr.mergeable === "CONFLICTING" || blockingChecks(pr).length > 0 || threadsOnYou(pr, isSent).length > 0);
-}
-function checkCounts(pr) {
-  const counts = { pass: 0, fail: 0, cancelled: 0, pending: 0, skip: 0 };
-  for (const c of pr.checks)
-    counts[c.bucket] += 1;
-  return counts;
-}
-function threadsWaiting(count) {
-  return `${count} ${count === 1 ? "thread" : "threads"} waiting on you`;
-}
-function plural(count, one, many) {
-  return `${count} ${count === 1 ? one : many}`;
-}
-function readiness(pr, isSent = () => false, agent = "Claude") {
-  const result = (status, head, reasonList = [], joint = ": ") => {
-    const reasons = reasonList.join(", ");
-    const unlisted = status === "ready" ? [] : reasonList.filter((r) => !listed.includes(r));
-    return { status, text: reasons ? `${head}${joint}${reasons}` : head, head, unlisted };
-  };
-  const listed = [];
-  if (pr.state === "MERGED")
-    return result("merged", "Merged");
-  if (pr.state !== "OPEN")
-    return result("closed", "Closed");
-  const { pass: passing, fail: failing, pending } = checkCounts(pr);
-  const cancelled = blockingChecks(pr).length - failing;
-  const waiting = waitingThreads(pr);
-  const open = threadsOnYou(pr, isSent).length;
-  const sent = waiting.filter((t) => isSent(pr, t)).length;
-  const changed = waiting.filter((t) => t.isLinesChanged && !isSent(pr, t)).length;
-  const isPresent = (b) => b !== null;
-  const row = (r) => r === null ? r : (listed.push(r), r);
-  const checksAndConflicts = [
-    pr.mergeable === "CONFLICTING" ? `conflicts with ${pr.base}` : null,
-    row(failing > 0 ? plural(failing, "failing check", "failing checks") : null),
-    row(cancelled > 0 ? plural(cancelled, "cancelled check", "cancelled checks") : null)
-  ];
-  const threadsOnPerson = row(open > 0 ? threadsWaiting(open) : null);
-  const isChangesRequested = pr.reviewDecision === "CHANGES_REQUESTED";
-  const isAnythingOnPerson = [...checksAndConflicts, threadsOnPerson].some(isPresent);
-  const changes = isChangesRequested ? "changes requested" : null;
-  const onYou = isAnythingOnPerson ? [...checksAndConflicts, changes, threadsOnPerson].filter(isPresent) : [];
-  const onOthers = [
-    row(sent > 0 ? `${plural(sent, "thread", "threads")} sent to ${agent}` : null),
-    row(changed > 0 ? `${plural(changed, "thread", "threads")} on changed lines` : null),
-    pr.reviewDecision === "REVIEW_REQUIRED" ? "needs approval" : null,
-    pending > 0 ? `${pending} ${pending === 1 ? "check" : "checks"} running` : null,
-    pr.mergeable === "UNKNOWN" ? "GitHub is still checking for conflicts" : null
-  ].filter(isPresent);
-  if (pr.isDraft)
-    return result("draft", "Draft", [...isAnythingOnPerson ? onYou : [changes].filter(isPresent), ...onOthers]);
-  if (onYou.length > 0)
-    return result("blocked", "Blocked", onYou);
-  if (isChangesRequested)
-    return result("waiting", "Waiting on the reviewer", ["changes requested", ...onOthers]);
-  if (onOthers.length > 0)
-    return result("waiting", "Waiting", onOthers);
-  const isApproved = pr.reviewDecision === "APPROVED";
-  return result("ready", "Ready to merge", [...isApproved ? ["approved"] : [], passing > 0 ? "checks pass" : "no checks ran", "no threads waiting on you"], isApproved ? ": " : ", ");
-}
-var STATUS_ORDER = { blocked: 0, ready: 1, draft: 2, waiting: 3, merged: 4, closed: 5 };
-function rankOf(pr, ranked) {
-  const at = ranked.indexOf(pr.ref);
-  return at === -1 || pr.state !== "OPEN" ? null : at;
-}
-function inPrOrder(prs, ranked = []) {
-  const place = (pr) => rankOf(pr, ranked) ?? Infinity;
-  const status = new Map(prs.map((pr) => [pr, STATUS_ORDER[readiness(pr).status]]));
-  const byPlace = (a, b) => {
-    const [x, y] = [place(a), place(b)];
-    return x === y ? 0 : x < y ? -1 : 1;
-  };
-  return [...prs].sort((a, b) => byPlace(a, b) || status.get(a) - status.get(b) || b.number - a.number || a.ref.localeCompare(b.ref));
-}
-
-// ../hooks/help-steps.ts
-function helpLabel(help) {
-  const label = help.kind === "open" ? `Open ${baseName(help.path)}` : help.kind === "copy" ? `Copy ${help.name ?? "snippet"}` : help.kind === "run" ? `Run ${help.name ?? help.command}` : help.kind === "terminal" ? `Copy ${help.name ?? help.command}` : `Open ${help.name ?? new URL(help.url).host}`;
-  return clipLabel(label, 32);
-}
-function steps(helps) {
-  const copy = helps.find((h) => h.kind === "copy");
-  const open = helps.find((h) => h.kind === "open");
-  if (!copy || !open || copy.kind !== "copy" || open.kind !== "open")
-    return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
-  return helps.filter((h) => h !== copy).map((h) => h === open ? { label: clipLabel(`Copy ${copy.name ?? "snippet"} and open ${baseName(open.path)}`, 48), step: [copy, open] } : { label: helpLabel(h), step: [h] });
-}
-function prSteps(item, tracked) {
-  const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
-  const links = namedPrs(item.ask, [...urls.keys()]).map((ref) => {
-    const { repo, number } = parseRef(ref);
-    const url = urls.get(ref) ?? `https://github.com/${repo}/pull/${number}`;
-    return { kind: "link", url, name: `PR #${number}` };
-  }).filter((l) => !item.helps.some((h) => h.kind === "link" && h.url === l.url));
-  return links.length === 0 ? [] : [{ label: links.length === 1 ? helpLabel(links[0]) : `Open ${links.length} PRs`, step: links }];
-}
-function stepsOf(item, extraSteps) {
-  return [...steps(item.helps), ...extraSteps];
-}
-function stepIconKind(step) {
-  if (!step)
-    return;
-  if (step.step.some((h) => h.kind === "run"))
-    return "run";
-  const first = step.step[0]?.kind;
-  return first === "copy" || first === "terminal" ? "copy" : first === "open" || first === "link" ? "open" : undefined;
-}
-
-// ../hooks/status-keys.ts
-var GOAL_KEYS_ID = "goal";
-var VIEW_ASK_LABELS = { question: "View question", task: "View task" };
-function viewAsk(ask) {
-  return {
-    press: { action: "show-ask", askId: ask.id },
-    label: VIEW_ASK_LABELS[ask.kind],
-    hotkey: "v",
-    kind: "view",
-    emphasis: "normal"
-  };
-}
-function statusKeyPlan(row) {
-  if (row.kind === "done-fold")
-    return [
-      {
-        press: { action: "toggle-fold", foldId: row.id },
-        label: row.text,
-        hotkey: "f",
-        kind: "view",
-        emphasis: "quiet"
-      }
-    ];
-  return row.kind === "subject" && row.ask !== null ? [viewAsk(row.ask)] : [];
-}
-function milestoneKeyPlan(m) {
-  return m.ask === null ? [] : [viewAsk(m.ask)];
-}
-var REMOVE_GOAL = {
-  press: { action: "remove-goal" },
-  label: "Remove",
-  hotkey: "r",
-  kind: "mark",
-  emphasis: "quiet"
-};
-var RESTORE_GOAL = {
-  press: { action: "restore-goal" },
-  label: "Undo",
-  hotkey: UNDO_KEY,
-  kind: "mark",
-  emphasis: "normal"
-};
-var newGoal = (emphasis) => ({
-  press: { action: "type-goal", text: "" },
-  label: "New",
-  hotkey: "n",
-  kind: "view",
-  emphasis
-});
-function goalKeyPlan(page) {
-  const g = page.goal;
-  if (g === null)
-    return [...page.canRestoreGoal ? [RESTORE_GOAL] : [], newGoal("quiet")];
-  if (g.isMet)
-    return [newGoal("normal"), REMOVE_GOAL];
-  return [
-    { press: { action: "type-goal", text: g.text }, label: "Edit", hotkey: "e", kind: "view", emphasis: "quiet" },
-    REMOVE_GOAL
-  ];
-}
-
-// ../hooks/pressed.ts
-function offersUndo(c) {
-  return c.how === "done" || c.how === "dismissed";
-}
-function isUndoable(c) {
-  return offersUndo(c) && !c.isSentToAgent;
-}
-function retryOf(id, last) {
-  if (!/^[if]\d+$/.test(id))
-    return null;
-  const step = /^step-(\d+)$/.exec(last.action);
-  if (step)
-    return { action: "step", id, step: Number(step[1]), label: last.text };
-  switch (last.action) {
-    case "answer":
-      return { action: "answer", id, option: last.text };
-    case "explain":
-    case "compare":
-    case "address":
-    case "issue":
-    case "discuss":
-      return { action: last.action, id };
-    default:
-      return null;
-  }
-}
-function isRepeatOf(last, action) {
-  return last?.action === action && last.kind !== "local" && last.delivery?.state !== "failed";
-}
-function isHeldSend(last) {
-  return last?.delivery?.state === "held";
-}
-
 // ../hooks/timing.ts
 var SETTLED_MS = 5120;
 var QUEUED_AFTER_MS = 1000;
@@ -1019,6 +1295,10 @@ function pendingDeliveryAt(last, now) {
   return isQueuedAt(last, now) ? "queued" : "sending";
 }
 var FOLD_QUIET_MS = 1000;
+function withListInput(input, at) {
+  const isSameRun = input !== null && at - input.last < FOLD_QUIET_MS;
+  return isSameRun ? { since: input.since, last: Math.max(at, input.last) } : { since: at, last: at };
+}
 function isListInUseSince(input, at, now) {
   return input !== null && now - input.last < FOLD_QUIET_MS && input.since <= at;
 }
@@ -1065,6 +1345,12 @@ function nextFoldAt(settled, {
 }
 function isDrawnInPlace(row, shownSince) {
   return row.state.is !== "settled" || isShownSince(row.state.at, shownSince);
+}
+function keptDiscards(discarded, shownSince) {
+  return Object.fromEntries(Object.entries(discarded).filter(([, at]) => isShownSince(at, shownSince)));
+}
+function heldReplies(typing, drafts) {
+  return Object.fromEntries(Object.entries(drafts).flatMap(([id, d]) => id === typing || d.text.trim() !== "" ? [[id, d.since]] : []));
 }
 function isUndoLeft(at, now, settleWindowMs) {
   return now - at < settleWindowMs;
@@ -1135,6 +1421,18 @@ function rowHandle(row) {
 }
 function rowTitle(row, look) {
   return isTerminalLike(look) && row.number !== null ? `${rowHandle(row)} ${row.title}` : row.title;
+}
+function replyHint(row, agent) {
+  return row.replyKind === "answer" ? "Your answer" : `Your reply to ${agent}`;
+}
+function actionLabel(action, fits) {
+  if (!action.isPrimary)
+    return action.label;
+  const marked = `${action.label} (recommended)`;
+  return fits && !fits(marked) ? action.label : marked;
+}
+function fieldExit(row) {
+  return row.state.is === "held" ? "discard" : "cancel";
 }
 function isWaitingRow(row) {
   return row.state.is === "open";
@@ -1231,79 +1529,10 @@ function outcomeLabel(c) {
   return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
 }
 
-// ../hooks/last-actions.ts
-function isAwaitingReply(last, turns) {
-  const pressed = last?.delivery?.state !== "failed" ? last?.turnsStarted : undefined;
-  return pressed !== undefined && pressed <= turns.turnsStarted && turns.turnsApplied <= pressed;
-}
-function isHandedOff(last, turns) {
-  return last?.kind === "handoff" && isAwaitingReply(last, turns);
-}
-function isFoldingPress(id, last) {
-  return !id.startsWith("pr:") && last?.kind === "handoff" && last.action !== "address";
-}
-function isFixSent(last) {
-  return last?.action === "address" && !last.isKept && last.delivery?.state !== "failed";
-}
-var HANDOFF_IDS = /^(address|type|step-\d+|thread-address|pr-conflicts|pr-address-all)$/;
-var PR_RENAMES = [
-  [/^address-all-/, "pr-address-all"],
-  [/^resolve-/, "pr-conflicts"]
-];
-var THREAD_RENAMES = [
-  [/^address-/, "thread-address"],
-  [/^draft-/, "thread-draft"],
-  [/^discuss-/, "thread-discuss"]
-];
-var ROW_RENAMES = [
-  [/^explain(-|$)/, "explain"],
-  [/^(help-.+-|step-)\d+$/, (old) => `step-${old.split("-").pop()}`],
-  [/^typed$/, "type"],
-  [/^address(-|$)/, "address"],
-  [/^discuss(-|$)/, "discuss"]
-];
-function upgradedLastAction(key, old) {
-  const renames = key.startsWith("pr:") ? PR_RENAMES : key.includes(" thread ") ? THREAD_RENAMES : ROW_RENAMES;
-  const found = renames.find(([pattern]) => pattern.test(old.action));
-  const action = found ? typeof found[1] === "function" ? found[1](old.action) : found[1] : null;
-  if (action === null)
-    return null;
-  const { isHandoff, ...kept } = old;
-  const isHandedOff = isHandoff ?? HANDOFF_IDS.test(action);
-  return {
-    ...kept,
-    kind: isHandedOff ? "handoff" : "talk",
-    action,
-    text: /^Sent to (Claude|Codex) to /.test(old.text) ? "Address" : old.text.replace(/ sent$/, "")
-  };
-}
-function upgradeLastActions(saved) {
-  return Object.fromEntries(Object.entries(saved).flatMap(([key, entry]) => {
-    const {
-      tab: _tab,
-      title: _title,
-      index: _index,
-      ...last
-    } = entry;
-    if ("kind" in last && last.kind)
-      return [[key, last]];
-    const upgraded = upgradedLastAction(key, last);
-    return upgraded ? [[key, upgraded]] : [];
-  }));
-}
-
-// ../hooks/presses.ts
-function isPrRowId(id) {
-  return id.startsWith("pr:") || id.includes(" ");
-}
-
-// ../hooks/press-reducer.ts
-var STALE_TEXT = "This changed before your press. Nothing was sent.";
-function noteText() {
-  return STALE_TEXT;
-}
-
 // ../hooks/feedback.ts
+function markedFeedbackText(f, isMarkDone, look) {
+  return f.is === "done" && isMarkDone ? f.label : feedbackText(f, look);
+}
 function rowFeedbackText(row, look) {
   const f = row.feedback;
   if (!f)
@@ -1397,6 +1626,9 @@ var STILL_WAITING_AFTER = new Set(["check-fix"]);
 function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";
 }
+function hasAge(f) {
+  return f.is === "done" || f.is === "working" || f.is === "stillOpen" || f.is === "noComparison" || f.is === "sending" || f.is === "queued" || f.is === "unconfirmed" || f.is === "closed";
+}
 function isPressOut(f) {
   return f?.is === "working" || f?.is === "sending" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
 }
@@ -1456,6 +1688,463 @@ function feedbackText(f, look) {
       return f.label;
   }
 }
+
+// ../hooks/gh.ts
+var GH_TIMEOUT_MS = 20000;
+
+// ../hooks/pr-fetch.ts
+var MAX_PRS = 12;
+var CLOSED_PR_REFRESH_MS = 60 * 60000;
+var LIMIT_RETRY_MS = 5 * 60000;
+function tabPrs(links) {
+  const order = links.prOrder;
+  const ranked = (order?.refs ?? []).filter((ref) => !links.prs.includes(ref) && !order?.dismissed.includes(ref));
+  return [...links.prs, ...ranked];
+}
+function itemPrSteps(item, prState, linked) {
+  const refs = prState.branchRef ? [...linked, prState.branchRef] : linked;
+  return prSteps(item, refs.map((ref) => ({ ref, url: prState.views[ref]?.url ?? null })));
+}
+function isLeftOut(prState, ref) {
+  const view = prState.views[ref];
+  return view !== undefined && !isKeptPr(view);
+}
+function splitLinked(prState, links) {
+  const ranked = new Set(links.prOrder?.refs ?? []);
+  const shown = tabPrs(links).filter((ref) => !isLeftOut(prState, ref));
+  const unranked = shown.filter((ref) => !ranked.has(ref));
+  const older = unranked.slice(0, Math.max(0, unranked.length - MAX_PRS));
+  return { tracked: shown.filter((ref) => !older.includes(ref)), older };
+}
+function olderPrsText(prState, links) {
+  const { older } = splitLinked(prState, links);
+  if (older.length === 0)
+    return null;
+  const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
+  return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
+}
+var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} seconds`;
+
+// ../hooks/pr-refresh.ts
+var PR_REFRESH_LABEL = "Refresh PRs";
+function fetchFailureNotice(f) {
+  switch (f.kind) {
+    case "limit":
+      return f.resetsAt === null ? "GitHub's limit is used up. The PRs refresh once it resets." : `GitHub's limit is used up. The PRs refresh after it resets at ${clockTime(f.resetsAt)}.`;
+    case "unreachable":
+      return "Could not reach GitHub. The PRs show as last read.";
+    case "timed-out":
+      return `${GH_TIMED_OUT_TEXT}. The PRs show as last read.`;
+    case "error":
+      return `Could not read the PRs: ${f.text}. They show as last read.`;
+  }
+}
+function fetchFailureWords(f) {
+  switch (f.kind) {
+    case "limit":
+      return f.resetsAt === null ? "GitHub's limit is used up" : `GitHub's limit resets at ${clockTime(f.resetsAt)}`;
+    case "unreachable":
+      return "could not reach GitHub";
+    case "timed-out":
+      return GH_TIMED_OUT_TEXT;
+    case "error":
+      return f.text;
+  }
+}
+function tabWideProblem(prs) {
+  if (prs.isGhMissing)
+    return "gh was not found";
+  if (prs.isGhSignedOut)
+    return "gh is not signed in";
+  return prs.failure ? fetchFailureWords(prs.failure) : null;
+}
+function unreadPrs(prs, links) {
+  const { tracked } = splitLinked(prs, links);
+  const refs = prs.branchRef && !tracked.includes(prs.branchRef) ? [...tracked, prs.branchRef] : tracked;
+  return refs.flatMap((ref) => {
+    const view = prs.views[ref];
+    if (view?.error)
+      return [{ ref, why: view.error, hasBlock: true }];
+    const why = view ? null : prs.unread?.[ref];
+    return why ? [{ ref, why, hasBlock: false }] : [];
+  });
+}
+function refreshProblem(prs, links) {
+  const tabWide = tabWideProblem(prs);
+  if (tabWide)
+    return tabWide;
+  const unread = unreadPrs(prs, links);
+  const [only] = unread;
+  if (!only)
+    return null;
+  if (unread.length === 1)
+    return `#${parseRef(only.ref).number} could not be read${only.hasBlock ? "" : `: ${only.why}`}`;
+  const numbers = unread.map((u) => `#${parseRef(u.ref).number}`);
+  const last = numbers.pop();
+  return `${numbers.join(", ")} and ${last} could not be read`;
+}
+function prRefreshView(prs, links, presses, shownSince) {
+  const problem = refreshProblem(prs, links);
+  const row = lastPressOf(presses, PR_REFRESH_ID);
+  const feedback = pressFeedbackIn(PR_REFRESH_ID, { is: "open" }, row.last, presses.turns, presses.now);
+  const isMadeGood = problem === null && feedback?.is === "local" && feedback.result.state === "failed";
+  const isPressShown = feedback !== null && !isMadeGood && row.last !== undefined && (row.pressing !== null || isShownSince(row.last.at, shownSince));
+  if (problem === null && !isPressShown)
+    return null;
+  return {
+    text: problem !== null && tabWideProblem(prs) === null ? problem : null,
+    actions: problem === null ? [] : prRefreshActions(row),
+    showsPress: isPressShown
+  };
+}
+function prRefreshActions(row) {
+  return withOut(row, [
+    { press: { action: "pr-refresh" }, label: PR_REFRESH_LABEL, kind: "local", emphasis: "normal", icon: "retry" }
+  ]);
+}
+
+// ../hooks/pr-rows.ts
+function prThreadId(pr, t) {
+  return threadRowId(pr.ref, t.id);
+}
+function prCheckId(pr, check) {
+  return checkRowId(pr.ref, checkKey(check));
+}
+function threadRowId(ref, thread) {
+  return `${ref} thread ${thread}`;
+}
+function checkRowId(ref, check) {
+  return `${ref} check ${check}`;
+}
+function prMarkId(ref) {
+  return `pr:${ref}`;
+}
+function isBlockPressShown(pr, lastActions) {
+  const result = lastActions[prMarkId(pr.ref)]?.result;
+  if (result?.action !== "check-rerun")
+    return true;
+  const isSamePress = (r) => r !== undefined && (r.pressId !== undefined ? r.pressId === result.pressId : r.at === result.at);
+  return !blockingChecks(pr).some((c) => isSamePress(lastActions[prCheckId(pr, c)]?.result));
+}
+var GH_MISSING_TEXT = "The inbox could not find gh. It needs gh to read your PRs.";
+var GH_SIGNED_OUT_TEXT = "gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.";
+function ghNoticeOf(gh) {
+  if (gh.isGhMissing)
+    return { kind: "gh-missing", text: GH_MISSING_TEXT };
+  if (gh.isGhSignedOut)
+    return { kind: "gh-signed-out", text: GH_SIGNED_OUT_TEXT };
+  if (gh.failure)
+    return { kind: gh.failure.kind === "limit" ? "gh-limited" : "gh-failed", text: fetchFailureNotice(gh.failure) };
+  return null;
+}
+function prsEmptyHint(place) {
+  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
+}
+function prsEmptyText(prs, place) {
+  return {
+    title: prs.isFetching ? "Checking for PRs…" : "No PRs",
+    hint: ghNoticeOf(prs)?.text ?? prsEmptyHint(place)
+  };
+}
+function prRefreshFailedText(error) {
+  return `Last refresh failed: ${error}`;
+}
+var RANK_AGAIN_ID = "pr:order";
+var PR_REFRESH_ID = "pr:refresh";
+var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks", cancelled: "Cancelled checks" };
+function prBlockRows(pr, isSettled, rowOf) {
+  const threads = isSettled ? [] : waitingThreads(pr).map(rowOf.thread);
+  const checks = isSettled ? [] : failingChecks(pr).map(rowOf.check);
+  const cancelled = isSettled ? [] : cancelledChecks(pr).map(rowOf.check);
+  return { threads, checks, cancelled, rows: [...threads, ...checks, ...cancelled] };
+}
+function threadRowText(pr, t, lastActions) {
+  const isSent = threadSentIn(lastActions)(pr, t);
+  const isChanged = !isSent && t.isLinesChanged;
+  return {
+    mark: threadMark(isSent ? lastActions[prThreadId(pr, t)]?.delivery : null),
+    fold: isSent || isChanged ? t.isLinesChanged ? { note: `Lines changed since this comment${DOT}still open on GitHub` } : {} : null,
+    title: clipLabel(commentParts(t.body).head, THREAD_TITLE_CHARS),
+    meta: [
+      threadWhere(t, baseName(t.path)),
+      isChanged ? "Lines changed" : "",
+      t.reply ? `@${t.reply.author}: ${commentLine(t.reply.body)}` : `@${t.author}`
+    ].filter(Boolean).join(DOT)
+  };
+}
+function threadMark(delivery) {
+  if (delivery === null)
+    return { ...PR_MARKS.waiting, isDone: false, isRunning: false };
+  if (delivery?.state === "queued")
+    return { text: RUNNING_MARK, tone: null, isDone: false, isRunning: true };
+  if (delivery?.state === "unconfirmed")
+    return { text: "", tone: null, isDone: false, isRunning: false };
+  return { ...PR_MARKS.sent, isDone: true, isRunning: false };
+}
+function checkRowText(pr, c) {
+  const sibling = failedSibling(pr, c);
+  return {
+    mark: { ...c.bucket === "cancelled" ? PR_MARKS.cancelled : PR_MARKS.failing, isDone: false, isRunning: false },
+    lead: c.workflow || null,
+    title: c.name,
+    meta: checkRunText(c),
+    fold: sibling ? { note: `Stopped when ${checkKey(sibling)} failed. Fixing that one runs this again.` } : null
+  };
+}
+var PR_QUOTE_CHARS = 1200;
+function splitFollowUps(actions) {
+  return { keys: actions.filter((a) => !a.isFollowUp), more: actions.filter((a) => a.isFollowUp) };
+}
+function checkRunText(c) {
+  const ended = c.bucket === "cancelled" ? "Cancelled" : "Failed";
+  return c.startedAt !== undefined && c.finishedAt !== undefined ? `${ended} after ${took(c.finishedAt - c.startedAt)}` : ended;
+}
+function threadSentIn(lastActions) {
+  return (pr, t) => {
+    const last = lastActions[prThreadId(pr, t)];
+    return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
+  };
+}
+var PR_TONES = {
+  ready: "done",
+  blocked: "needsYou",
+  waiting: null,
+  draft: null,
+  merged: "findings",
+  closed: "error"
+};
+
+// ../hooks/pr-press.ts
+function isPrPress(p) {
+  return "ref" in p || p.action === "pr-rank-again" || p.action === "pr-refresh";
+}
+function commentEffect(pr, t) {
+  return { kind: "open", target: t.reply?.url || t.url || pr.url, name: "the comment" };
+}
+function prPageEffect(pr) {
+  return { kind: "open", target: pr.url, name: `PR #${pr.number}` };
+}
+function logEffect(pr, check) {
+  return { kind: "open", target: check.url ?? pr.url, name: check.url ? "the log" : `PR #${pr.number}` };
+}
+var RERUN_LABEL = "Re-run";
+function rerunEffect(pr, c) {
+  const run = c.bucket === "cancelled" ? runOf(c) : null;
+  if (!run)
+    return null;
+  return failedSibling(pr, c) ? null : { kind: "rerun", ...run, name: c.workflow || c.name };
+}
+function sameRunChecks(pr, c) {
+  const run = runOf(c);
+  return run ? pr.checks.filter((o) => checkKey(o) !== checkKey(c) && isSameRun(run, runOf(o)) && rerunEffect(pr, o)) : [];
+}
+var PR_FIX_LABELS = {
+  "pr-conflicts": "Resolve conflicts",
+  "check-fix": "Fix"
+};
+var PR_READ_FIRST_LABELS = {
+  ...PR_FIX_LABELS,
+  "check-rerun": RERUN_LABEL
+};
+function isPrReadFirstPress(p) {
+  return p.action === "pr-conflicts" || p.action === "check-fix" || p.action === "check-rerun";
+}
+function readFirstEffect(pr) {
+  return { kind: "refresh-prs", name: `PR #${pr.number}` };
+}
+function prPressEffect(pr, p) {
+  if (isPrReadFirstPress(p))
+    return readFirstEffect(pr);
+  switch (p.action) {
+    case "thread-open": {
+      const t = pr.threads.find((x) => x.id === p.thread);
+      return t ? commentEffect(pr, t) : null;
+    }
+    case "pr-open":
+      return prPageEffect(pr);
+    case "log": {
+      const check = pr.checks.find((c) => checkKey(c) === p.check);
+      return check ? logEffect(pr, check) : null;
+    }
+    default:
+      return null;
+  }
+}
+function prRowId(p) {
+  if (p.action === "pr-rank-again")
+    return RANK_AGAIN_ID;
+  if (p.action === "pr-refresh")
+    return PR_REFRESH_ID;
+  if ("check" in p)
+    return checkRowId(p.ref, p.check);
+  if ("thread" in p)
+    return threadRowId(p.ref, p.thread);
+  return prMarkId(p.ref);
+}
+function pressRowId(p) {
+  return isPrPress(p) ? prRowId(p) : p.id;
+}
+function prRetryOf(last, ref, thread, check = null) {
+  if (last?.delivery?.state !== "failed")
+    return null;
+  const a = last.action;
+  if (check !== null)
+    return a === "check-fix" ? { press: { action: a, ref, check }, kind: last.kind } : null;
+  if (thread !== null && (a === "thread-address" || a === "thread-draft" || a === "thread-discuss"))
+    return { press: { action: a, ref, thread }, kind: last.kind };
+  if (thread === null && (a === "pr-conflicts" || a === "pr-address-all" || a === "pr-merge"))
+    return { press: { action: a, ref }, kind: last.kind };
+  return null;
+}
+function lastPressOf(presses, rowId) {
+  const last = presses.lastActions[rowId];
+  const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
+  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
+}
+function again(row, action, label) {
+  return isAgain(row.last, action, row.pressing === action) ? `${label} again` : label;
+}
+function withOut(row, actions) {
+  return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
+}
+function retryAction(retry) {
+  return retry ? [{ press: retry.press, label: "Try again", kind: retry.kind, emphasis: "normal", icon: "retry", isRetry: true }] : [];
+}
+
+// ../hooks/arrivals.ts
+var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
+
+// ../hooks/pr-views.ts
+var PR_DISMISSED_LABEL = "Dismissed";
+var PR_MERGED_LABEL = "Merged";
+var PR_CLOSED_LABEL = "Closed";
+function isTracked(prState, links, ref) {
+  return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
+}
+function dismissal(lastActions, ref) {
+  const mark = lastActions[prMarkId(ref)];
+  return mark?.action === "pr-dismiss" ? mark : null;
+}
+function dismissedAt(lastActions, ref) {
+  return dismissal(lastActions, ref)?.at ?? null;
+}
+function isDismissed(lastActions, ref) {
+  return dismissedAt(lastActions, ref) !== null;
+}
+function openPrViews(drawn) {
+  return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
+}
+function settledPrState(mark, now, settleWindowMs) {
+  const closed = mark.text === PR_MERGED_LABEL ? { how: "update", outcome: PR_MERGED_LABEL } : mark.text === PR_CLOSED_LABEL ? { how: "expired", outcome: PR_CLOSED_LABEL } : { how: "dismissed", outcome: PR_DISMISSED_LABEL };
+  const state = closedRowState(closed, mark.at, now, settleWindowMs, null);
+  return { ...state, canUndo: isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true };
+}
+function drawnPrs(prState, links, lastActions, placing) {
+  const { now, settleWindowMs } = placing;
+  const ranked = links.prOrder?.refs ?? [];
+  const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr) => {
+    if (isTracked(prState, links, pr.ref))
+      return [{ pr, state: { is: "open" } }];
+    const mark = dismissal(lastActions, pr.ref);
+    if (mark === null)
+      return [];
+    const state = settledPrState(mark, now, settleWindowMs);
+    return isSettledInPlace(state, placing, prMarkId(pr.ref)) ? [{ pr, state }] : [];
+  });
+  let rank = 0;
+  return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
+}
+
+// ../hooks/pr-order.ts
+var RANK_AGAIN_LABEL = "Rank again";
+function prRankText(rank) {
+  return `${rank}. `;
+}
+function prOrderText(order, drawn, now) {
+  const isRanking = drawn.some((d) => d.rank !== null);
+  if (!order || !isRanking)
+    return null;
+  return `${order.label ?? "Order"}${DOT}set by ${order.by} ${ago(now - order.at)}`;
+}
+function rankedStatusOf(pr) {
+  return {
+    status: readiness(pr).status,
+    threads: waitingThreads(pr).map((t) => t.id),
+    failing: blockingChecks(pr).map(checkKey)
+  };
+}
+function hasChanged(was, is) {
+  return is.status !== was.status || is.threads.some((id) => !was.threads.includes(id)) || is.failing.some((name) => !was.failing.includes(name));
+}
+function changedRankedPrs(order, prs) {
+  const statuses = order.statuses ?? {};
+  return inPrOrder(prs, order.refs).filter((pr) => {
+    const was = statuses[pr.ref];
+    return rankOf(pr, order.refs) !== null && was !== undefined && hasChanged(was, rankedStatusOf(pr));
+  });
+}
+function prOrderView(order, drawn, presses, shownSince) {
+  const title = prOrderText(order, drawn, presses.now);
+  if (!order || title === null)
+    return null;
+  const count = changedRankedPrs(order, openPrViews(drawn)).length;
+  const row = lastPressOf(presses, RANK_AGAIN_ID);
+  const last = row.last;
+  const isPressShownHere = last !== undefined && (row.pressing !== null || isShownSince(last.at, shownSince));
+  const isForThisOrder = last !== undefined && last.at >= order.at;
+  const showsPress = row.pressing !== null || isForThisOrder || isPressShownHere && count === 0;
+  const isChangedShown = count > 0 || isPressShownHere;
+  return {
+    title,
+    why: order.why,
+    changed: isChangedShown ? {
+      text: count > 0 ? `${count} ${count === 1 ? "PR" : "PRs"} changed since` : null,
+      actions: count > 0 ? prOrderActions(row) : [],
+      showsPress
+    } : null
+  };
+}
+function prOrderActions(row) {
+  return withOut(row, [
+    {
+      press: { action: "pr-rank-again" },
+      label: RANK_AGAIN_LABEL,
+      kind: "talk",
+      emphasis: "normal",
+      hotkey: "g"
+    }
+  ]);
+}
+
+// ../hooks/inbox-text.ts
+function latestBatch(ledger) {
+  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
+}
+function numberOf(label) {
+  const m = label?.match(/(?:^|[^A-Za-z\d])(?:[QqDd#]\s?)?(\d{1,2})(?!\d)/);
+  return m ? Number(m[1]) : null;
+}
+function answerableBatch(ledger, promptTurn) {
+  return ledger.batchTurn === promptTurn - 1 ? latestBatch(ledger) : [];
+}
+function batchNumbers(batch) {
+  const hasLabels = batch.some((i) => numberOf(i.label) !== null);
+  const byNumber = new Map;
+  batch.forEach((item, at) => {
+    const n = hasLabels ? numberOf(item.label) : at + 1;
+    if (n !== null && !byNumber.has(n))
+      byNumber.set(n, item);
+  });
+  return byNumber;
+}
+function questionNumbers(ledger, promptTurn) {
+  const numbers = new Map;
+  for (const [n, item] of batchNumbers(answerableBatch(ledger, promptTurn)))
+    if (item.kind === "question")
+      numbers.set(item.id, n);
+  return numbers;
+}
+var TOLD_NOTHING = { inbox: null, closed: [] };
 
 // ../hooks/action-plan.ts
 var CHOICE_KEYS = [..."abcfghilm"];
@@ -1578,41 +2267,6 @@ function rowKeyPlan(r, isAllShown) {
   }
   return { keys, more };
 }
-
-// ../hooks/band.ts
-function isMaybeStale(view, isReadFailed = false) {
-  return isReadFailed || view.status.error !== null || view.status.isRetrying;
-}
-
-// ../hooks/inbox-text.ts
-function latestBatch(ledger) {
-  return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
-}
-function numberOf(label) {
-  const m = label?.match(/(?:^|[^A-Za-z\d])(?:[QqDd#]\s?)?(\d{1,2})(?!\d)/);
-  return m ? Number(m[1]) : null;
-}
-function answerableBatch(ledger, promptTurn) {
-  return ledger.batchTurn === promptTurn - 1 ? latestBatch(ledger) : [];
-}
-function batchNumbers(batch) {
-  const hasLabels = batch.some((i) => numberOf(i.label) !== null);
-  const byNumber = new Map;
-  batch.forEach((item, at) => {
-    const n = hasLabels ? numberOf(item.label) : at + 1;
-    if (n !== null && !byNumber.has(n))
-      byNumber.set(n, item);
-  });
-  return byNumber;
-}
-function questionNumbers(ledger, promptTurn) {
-  const numbers = new Map;
-  for (const [n, item] of batchNumbers(answerableBatch(ledger, promptTurn)))
-    if (item.kind === "question")
-      numbers.set(item.id, n);
-  return numbers;
-}
-var TOLD_NOTHING = { inbox: null, closed: [] };
 
 // ../hooks/view.ts
 var HOLDS_UP_TEXT = "Holds up";
@@ -1835,25 +2489,417 @@ function perTurnStatus(isUpdating, recovery) {
   return { isUpdating, isRetrying: recovery === "retrying", error };
 }
 
+// ../hooks/session-view.ts
+var PRESS_TIMEOUT_MS = 60000;
+function withoutStaleResult(last, now) {
+  if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS)
+    return last;
+  const { result: _result, ...rest } = last;
+  return rest;
+}
+function withoutStalePending(lastActions, now) {
+  return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]));
+}
+function updateRecovery(s) {
+  const { presence } = s;
+  if (presence.ledgerState !== "failed")
+    return "none";
+  if (presence.isUpdating)
+    return "retrying";
+  if (s.pending.length === 0 && presence.isConversationUnreadable)
+    return "unreadable";
+  return presence.failedAttempts > 1 ? "failed-again" : "waiting";
+}
+function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
+  const l = s.ledger;
+  const lastActions = withoutStalePending(s.lastActions, now);
+  const inbox = inboxView({
+    ledger: l,
+    lastActions,
+    notes,
+    turns: s.presence,
+    extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
+    settleWindowMs,
+    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s)),
+    now,
+    ...holds,
+    lastTypedMessageAt: s.presence.lastTypedMessageAt
+  });
+  return {
+    ...inbox,
+    lastActions,
+    turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
+    prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
+    statusPage: statusPage(s, now)
+  };
+}
+function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, settleWindowMs) {
+  const pressOutSince = earliestOf(Object.entries(lastActions).map(([id, last]) => isPrRowId(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, s.presence, now)) : null));
+  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
+    shownSince,
+    lastTypedMessageAt: s.presence.lastTypedMessageAt,
+    listInput,
+    now,
+    settleWindowMs,
+    undoShown,
+    pressOutSince
+  });
+  const isSent = threadSentIn(lastActions);
+  return {
+    drawn,
+    branchRef: s.prViews.branchRef,
+    count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
+    olderText: olderPrsText(s.prViews, s.ledger),
+    order: prOrderView(s.ledger.prOrder, drawn, { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now }, shownSince),
+    isGhSignedOut: s.prViews.isGhSignedOut === true,
+    failure: s.prViews.failure ?? null,
+    refresh: prRefreshView({ ...s.prViews, isGhMissing: s.prViews.isGhMissing === true }, s.ledger, { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now }, shownSince),
+    pressOutSince
+  };
+}
+
+// ../hooks/band.ts
+function isMaybeStale(view, isReadFailed = false) {
+  return isReadFailed || view.status.error !== null || view.status.isRetrying;
+}
+
 // src/blocks.ts
-var button = (id, label, emphasis, local = null) => ({
-  id,
-  label,
-  emphasis,
-  isOut: false,
-  local
+var button = (id, label, emphasis, does = { is: "nothing" }, hotkey = null) => ({ id, label, emphasis, isOut: false, hotkey, does });
+
+// ../hooks/pr-tab.ts
+function threadActions(pr, t, presses) {
+  const row = lastPressOf(presses, threadRowId(pr.ref, t.id));
+  const on = { ref: pr.ref, thread: t.id };
+  return withOut(row, [
+    ...retryAction(prRetryOf(row.last, pr.ref, t.id)),
+    {
+      press: { action: "thread-address", ...on },
+      label: again(row, "thread-address", "Address"),
+      kind: "handoff",
+      emphasis: "primary",
+      hotkey: "a"
+    },
+    {
+      press: { action: "thread-draft", ...on },
+      label: again(row, "thread-draft", "Draft reply"),
+      kind: "talk",
+      emphasis: "normal",
+      hotkey: "r"
+    },
+    {
+      press: { action: "thread-open", ...on },
+      label: "Open comment",
+      kind: "local",
+      emphasis: "normal",
+      icon: "open",
+      hotkey: "o"
+    },
+    {
+      press: { action: "thread-discuss", ...on },
+      label: again(row, "thread-discuss", "Discuss"),
+      kind: "talk",
+      emphasis: "quiet",
+      hotkey: "d",
+      isFollowUp: true
+    }
+  ]);
+}
+function checkActions(pr, c, presses) {
+  const row = lastPressOf(presses, prCheckId(pr, c));
+  const on = { ref: pr.ref, check: checkKey(c) };
+  const isCancelled = c.bucket === "cancelled";
+  const isRunRerunOut = sameRunChecks(pr, c).some((o) => lastPressOf(presses, prCheckId(pr, o)).out === "check-rerun");
+  const mainMove = isCancelled ? rerunEffect(pr, c) ? [
+    {
+      press: { action: "check-rerun", ...on },
+      label: RERUN_LABEL,
+      kind: "local",
+      emphasis: "primary",
+      hotkey: "a"
+    }
+  ] : [] : [
+    {
+      press: { action: "check-fix", ...on },
+      label: again(row, "check-fix", PR_FIX_LABELS["check-fix"]),
+      kind: "handoff",
+      emphasis: "primary",
+      hotkey: "a"
+    }
+  ];
+  const actions = withOut(row, [
+    ...retryAction(prRetryOf(row.last, pr.ref, null, on.check)),
+    ...mainMove,
+    {
+      press: { action: "log", ...on },
+      label: "Open log",
+      kind: "local",
+      emphasis: "normal",
+      icon: "open",
+      hotkey: "o"
+    }
+  ]);
+  return isRunRerunOut ? actions.map((a) => a.press.action === "check-rerun" ? { ...a, isOut: true } : a) : actions;
+}
+function prBlockActions(pr, isThreadSent, branchRef, presses) {
+  const row = lastPressOf(presses, prMarkId(pr.ref));
+  const { status } = readiness(pr, isThreadSent);
+  const waitingOn = threadsOnYou(pr, isThreadSent).length;
+  const moves = [
+    ...status === "ready" ? [
+      {
+        press: { action: "pr-merge", ref: pr.ref },
+        label: again(row, "pr-merge", "Merge"),
+        kind: "handoff"
+      }
+    ] : [],
+    ...pr.state === "OPEN" && pr.mergeable === "CONFLICTING" ? [
+      {
+        press: { action: "pr-conflicts", ref: pr.ref },
+        label: again(row, "pr-conflicts", PR_FIX_LABELS["pr-conflicts"]),
+        kind: "handoff"
+      }
+    ] : [],
+    ...waitingOn > 1 ? [
+      {
+        press: { action: "pr-address-all", ref: pr.ref },
+        label: again(row, "pr-address-all", `Address all ${waitingOn} threads`),
+        kind: "handoff"
+      }
+    ] : []
+  ];
+  return withOut(row, [
+    ...retryAction(prRetryOf(row.last, pr.ref, null)),
+    ...moves.map((m, n) => ({ ...m, emphasis: n === 0 ? "primary" : "normal" })),
+    { press: { action: "pr-open", ref: pr.ref }, label: "Open PR", kind: "local", emphasis: "normal", icon: "open" },
+    ...pr.ref === branchRef ? [] : [
+      {
+        press: { action: "pr-dismiss", ref: pr.ref },
+        label: "Dismiss",
+        kind: "mark",
+        emphasis: "quiet"
+      }
+    ]
+  ]);
+}
+
+// src/draw-prs.ts
+var LOOK = "herdr";
+var PLACE = "session";
+var PR_TONE = {
+  needsYou: "needsYou",
+  done: "done",
+  findings: "issue",
+  error: "error"
+};
+function prButton(pr, a, id) {
+  const effect = pr ? prPressEffect(pr, a.press) : null;
+  const b = button(id, a.label, a.emphasis, { is: "press", press: a.press, effects: effect ? [effect] : [] }, a.hotkey);
+  return { ...b, isOut: a.isOut };
+}
+function prFeedback(screen, id) {
+  const { view, now } = screen;
+  const f = feedbackOf(id, view.lastActions[id], undefined, view.turns, now);
+  if (!f)
+    return null;
+  const text = hasAge(f) ? `${markedFeedbackText(f, false, LOOK)}${DOT}${shortAgo(now - f.at)}` : feedbackText(f, LOOK);
+  return { text, tone: isFailure(f) ? "error" : "muted" };
+}
+var markOf = (m) => ({
+  text: m.text,
+  tone: m.isRunning ? "running" : m.tone,
+  isRunning: m.isRunning
 });
+function threadRow(screen, pr, t, presses) {
+  const id = prThreadId(pr, t);
+  const text = threadRowText(pr, t, screen.view.lastActions);
+  const { rest } = commentParts(t.body);
+  const { keys, more } = splitFollowUps(threadActions(pr, t, presses));
+  const reply = t.reply ? `@${t.reply.author}: ${clipLabel(readableComment(t.reply.body), PR_QUOTE_CHARS)}` : null;
+  return {
+    kind: "row",
+    id,
+    depth: 1,
+    mark: markOf(text.mark),
+    title: text.title,
+    age: t.at === null ? null : shortAgo(screen.now - t.at),
+    feedback: prFeedback(screen, id) ?? (text.fold?.note ? { text: text.fold.note, tone: "dim" } : null),
+    settled: null,
+    isDim: text.mark.isDone,
+    isSelectable: text.fold === null,
+    body: [
+      ...rest ? [{ text: clipLabel(rest, PR_QUOTE_CHARS), tone: null }] : [],
+      { text: `${threadWhere(t)}${DOT}@${t.author}`, tone: "muted" },
+      ...reply ? [{ text: reply, tone: null }] : []
+    ],
+    buttons: [...keys, ...more].map((a, n) => prButton(pr, a, `${id} ${n}`)),
+    field: null
+  };
+}
+function checkRow(screen, pr, c, presses) {
+  const id = prCheckId(pr, c);
+  const text = checkRowText(pr, c);
+  return {
+    kind: "row",
+    id,
+    depth: 1,
+    mark: markOf(text.mark),
+    title: text.lead ? `${text.lead} / ${text.title}` : text.title,
+    age: c.finishedAt === undefined ? null : shortAgo(screen.now - c.finishedAt),
+    feedback: prFeedback(screen, id) ?? (text.fold ? { text: text.fold.note, tone: "dim" } : null),
+    settled: null,
+    isDim: false,
+    isSelectable: text.fold === null,
+    body: [{ text: text.meta, tone: "muted" }],
+    buttons: checkActions(pr, c, presses).map((a, n) => prButton(pr, a, `${pr.ref} ${checkKey(c)} ${n}`)),
+    field: null
+  };
+}
+function settledPr(d) {
+  const { pr, state } = d;
+  const id = prMarkId(pr.ref);
+  const undo = state.canUndo ? [
+    button(`${id} undo`, ROW_COPY.undo, "quiet", {
+      is: "press",
+      press: { action: "pr-undo", ref: pr.ref },
+      effects: []
+    })
+  ] : [];
+  const mark = settledMark(state);
+  return {
+    kind: "row",
+    id,
+    depth: 0,
+    mark: { text: mark.text, tone: mark.tone ?? "muted", isRunning: mark.isRunning },
+    title: `#${pr.number} ${pr.title}`,
+    age: null,
+    feedback: null,
+    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: "muted" },
+    isDim: true,
+    isSelectable: false,
+    isSelected: false,
+    body: [],
+    buttons: undo,
+    field: null
+  };
+}
+function prBlocks(screen, d, presses, selected) {
+  if (d.state.is === "settled")
+    return [settledPr({ ...d, state: d.state })];
+  const { pr } = d;
+  const { lastActions } = screen.view;
+  const isSent = threadSentIn(lastActions);
+  const { status, head, unlisted } = readiness(pr, isSent, screen.agent);
+  const tone = PR_TONES[status];
+  const isLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions);
+  const groups = prBlockRows(pr, false, {
+    thread: (t) => threadRow(screen, pr, t, presses),
+    check: (c) => checkRow(screen, pr, c, presses)
+  });
+  const rowsOf = (title, rows, key) => rows.length === 0 ? [] : [
+    { kind: "heading", id: `${pr.ref} ${key}`, text: title, count: rows.length, mark: null, buttons: [] },
+    ...rows.map((r) => {
+      const isSelected = r.isSelectable && r.id === selected;
+      return { ...r, isSelected, body: isSelected ? r.body : [], buttons: isSelected ? r.buttons : [] };
+    })
+  ];
+  return [
+    {
+      kind: "pr",
+      id: prMarkId(pr.ref),
+      rank: d.rank === null ? null : prRankText(d.rank),
+      number: `#${pr.number}`,
+      title: pr.title,
+      status: { text: head, tone: tone ? PR_TONE[tone] : "muted" },
+      unlisted,
+      error: pr.error ? prRefreshFailedText(pr.error) : null,
+      buttons: prBlockActions(pr, isSent, screen.view.prs.branchRef, presses).map((a, n) => prButton(pr, a, `${pr.ref} ${n}`)),
+      feedback: isLastShown ? prFeedback(screen, prMarkId(pr.ref)) : null
+    },
+    ...rowsOf(PR_GROUP_TITLES.threads, groups.threads, "threads"),
+    ...rowsOf(PR_GROUP_TITLES.checks, groups.checks, "checks"),
+    ...rowsOf(PR_GROUP_TITLES.cancelled, groups.cancelled, "cancelled"),
+    { kind: "gap", id: `gap ${pr.ref}` }
+  ];
+}
+var note = (id, text, tone, isStrong = false) => ({
+  kind: "note",
+  id,
+  text,
+  tone,
+  isStrong,
+  depth: 0
+});
+function refreshLine(screen) {
+  const refresh = screen.view.prs.refresh;
+  if (!refresh)
+    return [];
+  const buttons = refresh.actions.map((a, n) => prButton(null, a, `refresh ${n}`));
+  const feedback = refresh.showsPress ? prFeedback(screen, PR_REFRESH_ID) : null;
+  return [{ kind: "line", id: PR_REFRESH_ID, text: refresh.text, under: null, buttons, feedback }];
+}
+function orderLines(screen) {
+  const order = screen.view.prs.order;
+  if (!order)
+    return [];
+  const changed = order.changed;
+  const lines = [
+    { kind: "line", id: "pr order", text: order.title, under: order.why, buttons: [], feedback: null }
+  ];
+  if (!changed)
+    return lines;
+  const buttons = changed.actions.map((a, n) => prButton(null, a, `order ${n}`));
+  const feedback = changed.showsPress ? prFeedback(screen, RANK_AGAIN_ID) : null;
+  return [...lines, { kind: "line", id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback }];
+}
+function firstSelectable(blocks) {
+  return blocks.find((b) => b.kind === "row" && b.isSelectable)?.id ?? null;
+}
+function prTabBlocks(screen, selected) {
+  const { view } = screen;
+  const prs = view.prs;
+  const gh = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut, failure: prs.failure };
+  if (prs.drawn.length === 0) {
+    const empty = prsEmptyText({ isFetching: false, ...gh }, PLACE);
+    return [
+      note("prs empty title", empty.title, null, true),
+      note("prs empty hint", empty.hint, "muted"),
+      ...refreshLine(screen)
+    ];
+  }
+  const presses = { lastActions: view.lastActions, turns: view.turns, now: screen.now };
+  const notice = ghNoticeOf(gh);
+  const draw = (open) => [
+    ...notice ? [note("gh notice", notice.text, "warning")] : [],
+    ...refreshLine(screen),
+    ...orderLines(screen),
+    ...prs.drawn.flatMap((d) => prBlocks(screen, d, presses, open)),
+    ...prs.olderText ? [note("older prs", prs.olderText, "muted")] : []
+  ];
+  const blocks = draw(selected);
+  const isShown = blocks.some((b) => b.kind === "row" && b.isSelected);
+  return isShown ? blocks : draw(firstSelectable(blocks));
+}
 
 // src/draw-status.ts
 var MERGED_CELLS = 150;
 var toneOf = (t) => t;
-var markOf = (mark, tone, isRunning) => ({
+var markOf2 = (mark, tone, isRunning) => ({
   text: mark,
   tone: toneOf(tone),
   isRunning
 });
+function doesOf(k) {
+  const p = k.press;
+  if (p.action === "show-ask")
+    return { is: "view", change: { showAsk: p.askId } };
+  if (p.action === "toggle-fold")
+    return { is: "view", change: { toggleFold: p.foldId } };
+  if (p.action === "type-goal")
+    return { is: "type", rowId: GOAL_KEYS_ID, text: p.text, hint: GOAL_FIELD.placeholder };
+  return { is: "press", press: { action: p.action, id: GOAL_KEYS_ID }, effects: [] };
+}
 function keyButtons(id, keys) {
-  return keys.map((k, n) => button(`${id} ${n}`, k.label, k.emphasis, k.press.action === "toggle-fold" ? { toggleFold: k.press.foldId } : null));
+  return keys.map((k, n) => button(`${id} ${n}`, k.label, k.emphasis, doesOf(k)));
 }
 function rowBlocks(row, isUnfolded) {
   const rule = row.isRuledAbove ? [{ kind: "rule", id: `rule ${row.id}`, text: null, isDashed: false }] : [];
@@ -1869,7 +2915,7 @@ function rowBlocks(row, isUnfolded) {
         kind: "status",
         id: row.id,
         depth: row.depth,
-        mark: markOf(row.mark, row.tone, row.isRunning),
+        mark: markOf2(row.mark, row.tone, row.isRunning),
         name: row.name,
         isBold: false,
         stall: row.stall,
@@ -1885,7 +2931,7 @@ function rowBlocks(row, isUnfolded) {
         kind: "status",
         id: row.id,
         depth: row.depth,
-        mark: markOf(row.mark, row.tone, row.isRunning),
+        mark: markOf2(row.mark, row.tone, row.isRunning),
         name: row.name,
         isBold: false,
         stall: row.stall,
@@ -1923,7 +2969,7 @@ function rowBlocks(row, isUnfolded) {
         depth: row.depth,
         text: row.text,
         isOpen: isUnfolded(row.id),
-        local: { toggleFold: row.id }
+        change: { toggleFold: row.id }
       }
     ];
   return [
@@ -1932,7 +2978,7 @@ function rowBlocks(row, isUnfolded) {
       kind: "status",
       id: row.id,
       depth: row.depth,
-      mark: markOf(row.mark, row.tone, false),
+      mark: markOf2(row.mark, row.tone, false),
       name: row.text,
       isBold: false,
       stall: null,
@@ -1946,7 +2992,7 @@ function milestoneBlock(m) {
     kind: "status",
     id: m.id,
     depth: 0,
-    mark: markOf(m.mark, m.tone, false),
+    mark: markOf2(m.mark, m.tone, false),
     name: m.name,
     isBold: m.isChanged,
     stall: m.stall,
@@ -1954,7 +3000,7 @@ function milestoneBlock(m) {
     buttons: keyButtons(m.id, milestoneKeyPlan(m))
   };
 }
-var note = (id, text, tone, isStrong = false) => ({
+var note2 = (id, text, tone, isStrong = false) => ({
   kind: "note",
   id,
   text,
@@ -1962,7 +3008,7 @@ var note = (id, text, tone, isStrong = false) => ({
   isStrong,
   depth: 0
 });
-function goalBlocks(page, isUnfolded) {
+function goalBlocks(page, { isUnfolded, goalField }) {
   const g = page.goal;
   const heading = {
     kind: "heading",
@@ -1972,13 +3018,14 @@ function goalBlocks(page, isUnfolded) {
     mark: null,
     buttons: keyButtons(GOAL_KEYS_ID, goalKeyPlan(page))
   };
+  const field = goalField ? [{ kind: "field", id: "goal field", field: goalField }] : [];
   if (g === null)
-    return [heading, note("goal text", NO_GOAL_TEXT, "dim")];
-  const lines = [
-    note("goal text", g.count === null ? g.text : `${g.text}${STALL_GAP}${g.count}`, null, true),
-    ...g.was ? [note("goal was", `${WAS_PREFIX}${g.was}`, "dim")] : [],
-    ...g.now ? [note("goal now", g.now, "dim")] : [],
-    ...g.awaiting ? [note("goal awaiting", g.awaiting, "dim")] : []
+    return [heading, ...goalField ? field : [note2("goal text", NO_GOAL_TEXT, "dim")]];
+  const lines = goalField ? field : [
+    note2("goal text", g.count === null ? g.text : `${g.text}${STALL_GAP}${g.count}`, null, true),
+    ...g.was ? [note2("goal was", `${WAS_PREFIX}${g.was}`, "dim")] : [],
+    ...g.now ? [note2("goal now", g.now, "dim")] : [],
+    ...g.awaiting ? [note2("goal awaiting", g.awaiting, "dim")] : []
   ];
   const milestones = g.milestones.flatMap((m) => [
     { kind: "gap", id: `gap ${m.id}` },
@@ -1987,11 +3034,12 @@ function goalBlocks(page, isUnfolded) {
   ]);
   return [heading, ...lines, ...milestones];
 }
-function statusBlocks(page, isUnfolded) {
-  if (page.isEmpty)
+function statusBlocks(page, ui) {
+  const { isUnfolded } = ui;
+  if (page.isEmpty && ui.goalField === null)
     return [
-      note("empty title", page.empty.title, null, true),
-      note("empty hint", page.empty.hint, "muted"),
+      note2("empty title", page.empty.title, null, true),
+      note2("empty hint", page.empty.hint, "muted"),
       {
         kind: "heading",
         id: "goal keys",
@@ -2003,40 +3051,58 @@ function statusBlocks(page, isUnfolded) {
     ];
   const description = page.head?.description;
   const head = page.goal === null && page.head ? [
-    note("head title", page.head.title, null, true),
-    ...description ? [note("head text", description, "muted")] : []
+    note2("head title", page.head.title, null, true),
+    ...description ? [note2("head text", description, "muted")] : []
   ] : [];
-  const top = [
-    ...goalBlocks(page, isUnfolded),
-    ...head.length > 0 ? [{ kind: "gap", id: "gap head" }, ...head] : []
-  ];
+  const top = [...goalBlocks(page, ui), ...head.length > 0 ? [{ kind: "gap", id: "gap head" }, ...head] : []];
   const rows = unfoldedRows(page.rows, isUnfolded).flatMap((r) => rowBlocks(r, isUnfolded));
   return rows.length > 0 ? [...top, { kind: "gap", id: "gap rows" }, ...rows] : top;
 }
 
 // src/draw.ts
-var LOOK = "herdr";
+var LOOK2 = "herdr";
 var freshUi = (tab) => ({
   tab,
   selected: null,
   unfolded: [],
   closedAll: [],
   optionsShown: [],
-  statusUnfolded: []
+  statusUnfolded: [],
+  typing: null
 });
 var toneOfFeedback = (f) => isFailure(f) ? "error" : f.is === "done" || f.is === "local" && f.result.state === "done" ? "done" : "muted";
-var markOf2 = (m) => m ? { text: m.text, tone: m.isRunning ? "running" : m.tone ?? "muted", isRunning: m.isRunning } : null;
-function rowButtons(row, isAllShown) {
+var markOf3 = (m) => m ? { text: m.text, tone: m.isRunning ? "running" : m.tone ?? "muted", isRunning: m.isRunning } : null;
+function rowDoes(row, press, kind, agent) {
+  if (press.action === "type")
+    return { is: "type", rowId: row.id, text: "", hint: replyHint(row, agent) };
+  if (press.action === "discard")
+    return { is: "leave", rowId: row.id, isDiscard: true };
+  const step = press.action === "step" ? row.steps[press.step] : undefined;
+  const effects = kind === "local" && row.item && step ? stepEffects(row.item, step) : [];
+  return { is: "press", press, effects };
+}
+function rowButtons(row, isAllShown, agent) {
   const { keys, more } = rowKeyPlan(row, isAllShown);
   return [...keys, ...more].map((k, n) => {
     const id = `${row.id} ${n}`;
     if (k.slot === "allOptions")
-      return button(id, k.label, k.emphasis, { showOptions: row.id });
+      return button(id, k.label, k.emphasis, { is: "view", change: { showOptions: row.id } });
     if (k.slot === "retry")
-      return button(id, k.label, k.emphasis);
+      return button(id, k.label, k.emphasis, rowDoes(row, k.press, k.kind, agent));
     const { action } = k;
-    return { ...button(id, action.label, action.emphasis), isOut: action.isOut };
+    const does = rowDoes(row, action.press, action.kind, agent);
+    return { ...button(id, actionLabel(action), action.emphasis, does, k.hotkey ?? null), isOut: action.isOut };
   });
+}
+function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
+  const leave = isDiscard ? ROW_COPY.discard : ROW_COPY.cancel;
+  return {
+    rowId,
+    buttons: [
+      button(`${rowId} send`, send, "primary", { is: "send", rowId }),
+      button(`${rowId} leave`, leave, "quiet", { is: "leave", rowId, isDiscard })
+    ]
+  };
 }
 function rowBody(row, isAllShown, isNextBuild) {
   const lines = [
@@ -2052,14 +3118,15 @@ function rowBlock(row, ui, selected, screen) {
   const { state, feedback: f } = row;
   const isSettled = state.is === "settled";
   const isAllShown = ui.optionsShown.includes(row.id);
-  const text = rowFeedbackText(row, LOOK);
+  const text = rowFeedbackText(row, LOOK2);
   const isSelected = !isSettled && row.id === selected;
+  const isTyping = ui.typing === row.id;
   return {
     kind: "row",
     id: row.id,
     depth: 0,
-    mark: markOf2(rowResultMark(row)),
-    title: rowTitle(row, LOOK),
+    mark: markOf3(rowResultMark(row)),
+    title: rowTitle(row, LOOK2),
     age: row.at === null ? null : shortAgo(screen.now - row.at),
     feedback: text && f ? { text, tone: toneOfFeedback(f) } : null,
     settled: isSettled ? { label: settledLabel(state.label, state.delivery, state.reply), tone: settledTone(state) } : null,
@@ -2067,16 +3134,18 @@ function rowBlock(row, ui, selected, screen) {
     isSelectable: !isSettled,
     isSelected,
     body: isSelected ? rowBody(row, isAllShown, screen.isNextBuild) : [],
-    buttons: isSelected ? rowButtons(row, isAllShown) : []
+    buttons: isSettled || isSelected && !isTyping ? rowButtons(row, isAllShown, screen.agent) : [],
+    field: isSelected && isTyping ? fieldOf(row.id, fieldExit(row) === "discard") : null
   };
 }
 function closedBlock(d, now) {
   const action = closedLineAction(d);
+  const closedDoes = action ? { is: "press", press: action.press, effects: [] } : { is: "nothing" };
   return {
     kind: "row",
     id: `closed ${d.id}`,
     depth: 1,
-    mark: markOf2(d.mark),
+    mark: markOf3(d.mark),
     title: d.title,
     age: shortAgo(now - d.at),
     feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: "muted" },
@@ -2085,7 +3154,8 @@ function closedBlock(d, now) {
     isSelectable: false,
     isSelected: false,
     body: [],
-    buttons: action ? [button(`closed ${d.id} 0`, action.label, "quiet")] : []
+    buttons: action ? [button(`closed ${d.id} 0`, action.label, "quiet", closedDoes)] : [],
+    field: null
   };
 }
 function groupBlocks(g, ui, selected, screen) {
@@ -2121,7 +3191,7 @@ function groupBlocks(g, ui, selected, screen) {
     depth: 0,
     text: foldLabel(total),
     isOpen,
-    local: { closedFold: g.kind }
+    change: { closedFold: g.kind }
   });
   if (!isOpen)
     return out;
@@ -2129,7 +3199,7 @@ function groupBlocks(g, ui, selected, screen) {
   out.push(...shown.map((d) => closedBlock(d, screen.now)));
   const earlier = earlierLabel(total, shown.length);
   if (earlier)
-    out.push({ kind: "more", id: `earlier ${g.kind}`, depth: 1, text: earlier, local: { earlier: g.kind } });
+    out.push({ kind: "more", id: `earlier ${g.kind}`, depth: 1, text: earlier, change: { earlier: g.kind } });
   return out;
 }
 function groupsOf(view, tab, shownSince) {
@@ -2168,7 +3238,6 @@ function rowTabBlocks(screen, ui, tab) {
   const selected = selectedOf(groups, ui.selected);
   return groups.flatMap((g) => groupBlocks(g, ui, selected, screen));
 }
-var PRS_NOT_DRAWN = "This panel doesn't show PRs yet. They show in the inbox in the agent's own window.";
 function tabCells(screen, tab) {
   const { view } = screen;
   const counts = { needsYou: view.needsYou.count, findings: view.findings.count, prs: view.prs.count };
@@ -2180,14 +3249,16 @@ function tabCells(screen, tab) {
   }));
 }
 function chrome(screen, tab) {
-  const status = footerStatus(tab, screen.view.status, { isFetching: false, hasPrs: false }, screen.view.statusPage.error);
+  const status = footerStatus(tab, screen.view.status, { isFetching: false, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.statusPage.error);
   return { banners: tabBarBanners([], status.error, null), status: status.text };
 }
 function tabBlocks(screen, ui) {
-  if (ui.tab === "overview")
-    return statusBlocks(screen.view.statusPage, (id) => ui.statusUnfolded.includes(id));
+  if (ui.tab === "overview") {
+    const goalField = ui.typing === GOAL_KEYS_ID ? fieldOf(GOAL_KEYS_ID, false, GOAL_FIELD.submit) : null;
+    return statusBlocks(screen.view.statusPage, { isUnfolded: (id) => ui.statusUnfolded.includes(id), goalField });
+  }
   if (ui.tab === "prs")
-    return [{ kind: "note", id: "prs", text: PRS_NOT_DRAWN, tone: "muted", isStrong: false, depth: 0 }];
+    return prTabBlocks(screen, ui.selected);
   return rowTabBlocks(screen, ui, ui.tab);
 }
 
@@ -2521,149 +3592,6 @@ function upgradeHostTasks(saved) {
   });
 }
 
-// ../hooks/gh.ts
-var GH_TIMEOUT_MS = 20000;
-
-// ../hooks/pr-fetch.ts
-var MAX_PRS = 12;
-var CLOSED_PR_REFRESH_MS = 60 * 60000;
-var LIMIT_RETRY_MS = 5 * 60000;
-function tabPrs(links) {
-  const order = links.prOrder;
-  const ranked = (order?.refs ?? []).filter((ref) => !links.prs.includes(ref) && !order?.dismissed.includes(ref));
-  return [...links.prs, ...ranked];
-}
-function itemPrSteps(item, prState, linked) {
-  const refs = prState.branchRef ? [...linked, prState.branchRef] : linked;
-  return prSteps(item, refs.map((ref) => ({ ref, url: prState.views[ref]?.url ?? null })));
-}
-function isLeftOut(prState, ref) {
-  const view = prState.views[ref];
-  return view !== undefined && !isKeptPr(view);
-}
-function splitLinked(prState, links) {
-  const ranked = new Set(links.prOrder?.refs ?? []);
-  const shown = tabPrs(links).filter((ref) => !isLeftOut(prState, ref));
-  const unranked = shown.filter((ref) => !ranked.has(ref));
-  const older = unranked.slice(0, Math.max(0, unranked.length - MAX_PRS));
-  return { tracked: shown.filter((ref) => !older.includes(ref)), older };
-}
-function olderPrsText(prState, links) {
-  const { older } = splitLinked(prState, links);
-  if (older.length === 0)
-    return null;
-  const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
-  return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
-}
-var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} seconds`;
-
-// ../hooks/pr-press.ts
-var RERUN_LABEL = "Re-run";
-var PR_FIX_LABELS = {
-  "pr-conflicts": "Resolve conflicts",
-  "check-fix": "Fix"
-};
-var PR_READ_FIRST_LABELS = {
-  ...PR_FIX_LABELS,
-  "check-rerun": RERUN_LABEL
-};
-function lastPressOf(presses, rowId) {
-  const last = presses.lastActions[rowId];
-  const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
-  return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
-}
-function withOut(row, actions) {
-  return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
-}
-
-// ../hooks/pr-refresh.ts
-var PR_REFRESH_LABEL = "Refresh PRs";
-function fetchFailureWords(f) {
-  switch (f.kind) {
-    case "limit":
-      return f.resetsAt === null ? "GitHub's limit is used up" : `GitHub's limit resets at ${clockTime(f.resetsAt)}`;
-    case "unreachable":
-      return "could not reach GitHub";
-    case "timed-out":
-      return GH_TIMED_OUT_TEXT;
-    case "error":
-      return f.text;
-  }
-}
-function tabWideProblem(prs) {
-  if (prs.isGhMissing)
-    return "gh was not found";
-  if (prs.isGhSignedOut)
-    return "gh is not signed in";
-  return prs.failure ? fetchFailureWords(prs.failure) : null;
-}
-function unreadPrs(prs, links) {
-  const { tracked } = splitLinked(prs, links);
-  const refs = prs.branchRef && !tracked.includes(prs.branchRef) ? [...tracked, prs.branchRef] : tracked;
-  return refs.flatMap((ref) => {
-    const view = prs.views[ref];
-    if (view?.error)
-      return [{ ref, why: view.error, hasBlock: true }];
-    const why = view ? null : prs.unread?.[ref];
-    return why ? [{ ref, why, hasBlock: false }] : [];
-  });
-}
-function refreshProblem(prs, links) {
-  const tabWide = tabWideProblem(prs);
-  if (tabWide)
-    return tabWide;
-  const unread = unreadPrs(prs, links);
-  const [only] = unread;
-  if (!only)
-    return null;
-  if (unread.length === 1)
-    return `#${parseRef(only.ref).number} could not be read${only.hasBlock ? "" : `: ${only.why}`}`;
-  const numbers = unread.map((u) => `#${parseRef(u.ref).number}`);
-  const last = numbers.pop();
-  return `${numbers.join(", ")} and ${last} could not be read`;
-}
-function prRefreshView(prs, links, presses, shownSince) {
-  const problem = refreshProblem(prs, links);
-  const row = lastPressOf(presses, PR_REFRESH_ID);
-  const feedback = pressFeedbackIn(PR_REFRESH_ID, { is: "open" }, row.last, presses.turns, presses.now);
-  const isMadeGood = problem === null && feedback?.is === "local" && feedback.result.state === "failed";
-  const isPressShown = feedback !== null && !isMadeGood && row.last !== undefined && (row.pressing !== null || isShownSince(row.last.at, shownSince));
-  if (problem === null && !isPressShown)
-    return null;
-  return {
-    text: problem !== null && tabWideProblem(prs) === null ? problem : null,
-    actions: problem === null ? [] : prRefreshActions(row),
-    showsPress: isPressShown
-  };
-}
-function prRefreshActions(row) {
-  return withOut(row, [
-    { press: { action: "pr-refresh" }, label: PR_REFRESH_LABEL, kind: "local", emphasis: "normal", icon: "retry" }
-  ]);
-}
-
-// ../hooks/pr-rows.ts
-function prThreadId(pr, t) {
-  return threadRowId(pr.ref, t.id);
-}
-function threadRowId(ref, thread) {
-  return `${ref} thread ${thread}`;
-}
-function checkRowId(ref, check) {
-  return `${ref} check ${check}`;
-}
-function prMarkId(ref) {
-  return `pr:${ref}`;
-}
-var RANK_AGAIN_ID = "pr:order";
-var PR_REFRESH_ID = "pr:refresh";
-function threadSentIn(lastActions) {
-  return (pr, t) => {
-    const last = lastActions[prThreadId(pr, t)];
-    return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
-  };
-}
-
 // ../hooks/saved-check-keys.ts
 function savedCheckKey(checks, name) {
   if (checks.some((c) => checkKey(c) === name))
@@ -2836,7 +3764,12 @@ function readSession(text) {
   if (!isRecord(file.session))
     return { is: "refused", reason: "no session" };
   const envelope = file;
-  return { is: "read", envelope, session: upgradeSession(file.session) };
+  return {
+    is: "read",
+    envelope,
+    session: upgradeSession(file.session),
+    isTrimmed: file.trimmed === true
+  };
 }
 
 // src/follow.ts
@@ -2856,172 +3789,418 @@ function follow(where, tab, last) {
   return address === null ? { is: "no-terminal" } : shownOf(where, address);
 }
 
-// ../hooks/arrivals.ts
-var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
-
-// ../hooks/pr-views.ts
-var PR_DISMISSED_LABEL = "Dismissed";
-var PR_MERGED_LABEL = "Merged";
-var PR_CLOSED_LABEL = "Closed";
-function isTracked(prState, links, ref) {
-  return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
-}
-function dismissal(lastActions, ref) {
-  const mark = lastActions[prMarkId(ref)];
-  return mark?.action === "pr-dismiss" ? mark : null;
-}
-function openPrViews(drawn) {
-  return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
-}
-function settledPrState(mark, now, settleWindowMs) {
-  const closed = mark.text === PR_MERGED_LABEL ? { how: "update", outcome: PR_MERGED_LABEL } : mark.text === PR_CLOSED_LABEL ? { how: "expired", outcome: PR_CLOSED_LABEL } : { how: "dismissed", outcome: PR_DISMISSED_LABEL };
-  const state = closedRowState(closed, mark.at, now, settleWindowMs, null);
-  return { ...state, canUndo: isUndoLeft(mark.at, now, settleWindowMs), offersUndo: true };
-}
-function drawnPrs(prState, links, lastActions, placing) {
-  const { now, settleWindowMs } = placing;
-  const ranked = links.prOrder?.refs ?? [];
-  const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr) => {
-    if (isTracked(prState, links, pr.ref))
-      return [{ pr, state: { is: "open" } }];
-    const mark = dismissal(lastActions, pr.ref);
-    if (mark === null)
-      return [];
-    const state = settledPrState(mark, now, settleWindowMs);
-    return isSettledInPlace(state, placing, prMarkId(pr.ref)) ? [{ pr, state }] : [];
+// src/draw-help.ts
+var TONES = {
+  needsYou: "needsYou",
+  issue: "issue",
+  findings: "warning",
+  prs: "running",
+  done: "done",
+  error: "error"
+};
+function helpBlocks(isNextBuild, tab, hasStatusButtons) {
+  const keys = helpKeys("herdr", isNextBuild, tab, hasStatusButtons);
+  const heading = (id, text) => ({
+    kind: "heading",
+    id,
+    text,
+    count: null,
+    mark: null,
+    buttons: []
   });
-  let rank = 0;
-  return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
+  return [
+    heading("help keys", HELP_COPY.keys),
+    ...keys.map((k) => ({
+      kind: "status",
+      id: `key ${k.keys}`,
+      depth: 0,
+      mark: null,
+      name: k.keys,
+      isBold: true,
+      stall: null,
+      under: [k.does],
+      buttons: []
+    })),
+    heading("help marks", HELP_COPY.marks),
+    ...markLegend(isNextBuild).map((m) => ({
+      kind: "status",
+      id: `mark ${m.mark}`,
+      depth: 0,
+      mark: { text: m.mark, tone: m.tone ? TONES[m.tone] : null, isRunning: m.isRunning },
+      name: m.words,
+      isBold: false,
+      stall: null,
+      under: [],
+      buttons: []
+    }))
+  ];
 }
 
-// ../hooks/pr-order.ts
-var RANK_AGAIN_LABEL = "Rank again";
-function prOrderText(order, drawn, now) {
-  const isRanking = drawn.some((d) => d.rank !== null);
-  if (!order || !isRanking)
+// src/keys.ts
+var isSelectable = (b) => b.kind === "row" && b.isSelectable;
+function stepRow(blocks, by) {
+  const rows = blocks.filter(isSelectable);
+  if (rows.length === 0)
     return null;
-  return `${order.label ?? "Order"}${DOT}set by ${order.by} ${ago(now - order.at)}`;
+  const at = rows.findIndex((r) => r.isSelected);
+  const next = at < 0 ? by === 1 ? 0 : rows.length - 1 : Math.min(rows.length - 1, Math.max(0, at + by));
+  return rows[next].id;
 }
-function rankedStatusOf(pr) {
-  return {
-    status: readiness(pr).status,
-    threads: waitingThreads(pr).map((t) => t.id),
-    failing: blockingChecks(pr).map(checkKey)
-  };
+function stepTab(tabs, by) {
+  const at = tabs.findIndex((t) => t.isSelected);
+  return tabs[(at + by + tabs.length) % tabs.length]?.id ?? null;
 }
-function hasChanged(was, is) {
-  return is.status !== was.status || is.threads.some((id) => !was.threads.includes(id)) || is.failing.some((name) => !was.failing.includes(name));
+function keyMove(key, tabs, blocks) {
+  if (key === "escape")
+    return { is: "leave" };
+  if (key === "left" || key === "right") {
+    const tab = stepTab(tabs, key === "right" ? 1 : -1);
+    return tab ? { is: "tab", tab } : null;
+  }
+  if (key === "j" || key === "k") {
+    const id = stepRow(blocks, key === "j" ? 1 : -1);
+    return id ? { is: "select", id } : null;
+  }
+  const selected = blocks.find((b) => b.kind === "row" && b.isSelected);
+  const lines = blocks.flatMap((b) => b.kind === "line" ? b.buttons : []);
+  const pressed = [...selected?.buttons ?? [], ...lines].find((b) => b.hotkey === key && !b.isOut);
+  return pressed ? { is: "press", button: pressed } : null;
 }
-function changedRankedPrs(order, prs) {
-  const statuses = order.statuses ?? {};
-  return inPrOrder(prs, order.refs).filter((pr) => {
-    const was = statuses[pr.ref];
-    return rankOf(pr, order.refs) !== null && was !== undefined && hasChanged(was, rankedStatusOf(pr));
-  });
+
+// ../hooks/row-motion.ts
+var ENTER_MS = 300;
+var MOVE_MS = 200;
+var EXIT_MS = 200;
+var ROW_STATE_MS = {
+  entering: ENTER_MS,
+  opening: MOVE_MS,
+  closing: MOVE_MS,
+  settling: MOVE_MS,
+  leaving: EXIT_MS,
+  closed: 0,
+  open: 0,
+  settled: 0,
+  undoing: 0
+};
+function isMoving(state) {
+  return ROW_STATE_MS[state] > 0;
 }
-function prOrderView(order, drawn, presses, shownSince) {
-  const title = prOrderText(order, drawn, presses.now);
-  if (!order || title === null)
+function stepRow2(track, target, now, isNew = false, isReduced = false) {
+  const form = target === "undoing" ? "settled" : target;
+  if (!track) {
+    if (isNew && !isReduced && (form === "closed" || form === "open"))
+      return { state: "entering", since: now, hasPanel: form === "open" };
+    return rest(undefined, form, target, now);
+  }
+  const next = formOf(track) === form ? track : moveToward(track, form, now);
+  if (isMoving(next.state) && !isReduced && now - next.since < ROW_STATE_MS[next.state])
+    return next;
+  return rest(next, form, target, now);
+}
+function formOf({ state, hasPanel }) {
+  switch (state) {
+    case "entering":
+      return hasPanel ? "open" : "closed";
+    case "opening":
+    case "open":
+      return "open";
+    case "closing":
+    case "closed":
+      return "closed";
+    case "settling":
+    case "settled":
+    case "undoing":
+      return "settled";
+    case "leaving":
+      return "gone";
+  }
+}
+function moveToward(track, form, now) {
+  switch (form) {
+    case "open":
+      return { state: "opening", since: now, hasPanel: true };
+    case "closed":
+      return track.state === "leaving" ? { state: "entering", since: now, hasPanel: false } : { state: "closing", since: now, hasPanel: track.hasPanel };
+    case "settled":
+      return { state: "settling", since: now, hasPanel: track.hasPanel };
+    case "gone":
+      return { state: "leaving", since: now, hasPanel: track.hasPanel };
+  }
+}
+function rest(track, form, target, now) {
+  if (form === "gone")
     return null;
-  const count = changedRankedPrs(order, openPrViews(drawn)).length;
-  const row = lastPressOf(presses, RANK_AGAIN_ID);
-  const last = row.last;
-  const isPressShownHere = last !== undefined && (row.pressing !== null || isShownSince(last.at, shownSince));
-  const isForThisOrder = last !== undefined && last.at >= order.at;
-  const showsPress = row.pressing !== null || isForThisOrder || isPressShownHere && count === 0;
-  const isChangedShown = count > 0 || isPressShownHere;
-  return {
-    title,
-    why: order.why,
-    changed: isChangedShown ? {
-      text: count > 0 ? `${count} ${count === 1 ? "PR" : "PRs"} changed since` : null,
-      actions: count > 0 ? prOrderActions(row) : [],
-      showsPress
-    } : null
-  };
+  const state = target === "undoing" ? "undoing" : form;
+  return track?.state === state ? track : { state, since: now, hasPanel: state === "open" };
 }
-function prOrderActions(row) {
-  return withOut(row, [
-    {
-      press: { action: "pr-rank-again" },
-      label: RANK_AGAIN_LABEL,
-      kind: "talk",
-      emphasis: "normal",
-      hotkey: "g"
+
+// src/motion.ts
+var targetOf = (r) => r.settled ? "settled" : r.isSelected ? "open" : "closed";
+function moveRows(blocks, tracks, now, isFirst) {
+  const next = new Map;
+  const motion = new Map;
+  const add = (row, track, after) => {
+    next.set(row.id, { track, row, after });
+    motion.set(row.id, { state: track.state, isStart: track.since === now && isMoving(track.state) });
+  };
+  let after = null;
+  for (const b of blocks) {
+    if (b.kind === "row") {
+      const track = stepRow2(tracks.get(b.id)?.track, targetOf(b), now, !isFirst && !tracks.has(b.id));
+      if (track)
+        add(b, track, after);
     }
-  ]);
+    after = b.id;
+  }
+  const shown = [...blocks];
+  for (const [id, was] of tracks) {
+    if (next.has(id))
+      continue;
+    const track = stepRow2(was.track, "gone", now);
+    if (!track)
+      continue;
+    add(was.row, track, was.after);
+    const at = was.after === null ? 0 : shown.findIndex((b) => b.id === was.after) + 1;
+    shown.splice(at > 0 || was.after === null ? at : shown.length, 0, was.row);
+  }
+  const ends = [...next.values()].flatMap((t) => isMoving(t.track.state) ? [t.track.since + ROW_STATE_MS[t.track.state]] : []);
+  return { blocks: shown, tracks: next, motion, nextAt: ends.length ? Math.min(...ends) : null };
 }
 
-// ../hooks/session-view.ts
-var PRESS_TIMEOUT_MS = 60000;
-function withoutStaleResult(last, now) {
-  if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS)
-    return last;
-  const { result: _result, ...rest } = last;
-  return rest;
+// src/out.ts
+var SENDING = "Sending…";
+var REREAD_AFTER_MS = 5000;
+var GIVE_UP_MS = 15000;
+var STALE_AFTER_TAKEN_MS = 1000;
+var outAction2 = (p) => ("id" in p) ? actionId(p) : p.action;
+function rowSignature(view, rowId) {
+  const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
+  const state = rows.find((r) => r.id === rowId)?.state.is ?? null;
+  const goal = rowId === GOAL_KEYS_ID ? view.statusPage.goal?.text ?? null : null;
+  return JSON.stringify([view.lastActions[rowId] ?? null, state, goal]);
 }
-function withoutStalePending(lastActions, now) {
-  return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]));
+function settleOuts(outs, view, now, agent) {
+  const settled = { outs: [], notes: {}, errors: {} };
+  for (const out of outs) {
+    if (rowSignature(view, out.rowId) !== out.before)
+      continue;
+    if (out.takenAt !== null && now - out.takenAt >= STALE_AFTER_TAKEN_MS)
+      settled.notes[out.rowId] = { note: "stale", at: now };
+    else if (now - out.since >= GIVE_UP_MS)
+      settled.errors[out.rowId] = `Not applied: ${agent}'s inbox did not answer.`;
+    else
+      settled.outs.push(out);
+  }
+  return settled;
 }
-function updateRecovery(s) {
-  const { presence } = s;
-  if (presence.ledgerState !== "failed")
-    return "none";
-  if (presence.isUpdating)
-    return "retrying";
-  if (s.pending.length === 0 && presence.isConversationUnreadable)
-    return "unreadable";
-  return presence.failedAttempts > 1 ? "failed-again" : "waiting";
+function nextOutCheckAt(outs, now) {
+  const times = outs.flatMap((out) => [
+    out.since + REREAD_AFTER_MS,
+    out.since + GIVE_UP_MS,
+    ...out.takenAt === null ? [] : [out.takenAt + STALE_AFTER_TAKEN_MS]
+  ]);
+  const later = times.filter((at) => at > now);
+  return later.length ? Math.min(...later) : null;
 }
-function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
-  const l = s.ledger;
-  const lastActions = withoutStalePending(s.lastActions, now);
-  const inbox = inboxView({
-    ledger: l,
-    lastActions,
-    notes,
-    turns: s.presence,
-    extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
-    settleWindowMs,
-    status: perTurnStatus(s.presence.isUpdating, updateRecovery(s)),
-    now,
-    ...holds,
-    lastTypedMessageAt: s.presence.lastTypedMessageAt
+function withOutButtons(buttons, byRow) {
+  return buttons.map((b) => {
+    if (b.does.is !== "press")
+      return b;
+    const out = byRow.get(pressRowId(b.does.press));
+    return out?.action === outAction2(b.does.press) ? { ...b, isOut: true } : b;
   });
-  return {
-    ...inbox,
-    lastActions,
-    turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
-    statusPage: statusPage(s, now)
-  };
 }
-function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, settleWindowMs) {
-  const pressOutSince = earliestOf(Object.entries(lastActions).map(([id, last]) => isPrRowId(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, s.presence, now)) : null));
-  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
-    shownSince,
-    lastTypedMessageAt: s.presence.lastTypedMessageAt,
-    listInput,
-    now,
-    settleWindowMs,
-    undoShown,
-    pressOutSince
-  });
-  const isSent = threadSentIn(lastActions);
-  return {
-    drawn,
-    branchRef: s.prViews.branchRef,
-    count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
-    olderText: olderPrsText(s.prViews, s.ledger),
-    order: prOrderView(s.ledger.prOrder, drawn, { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now }, shownSince),
-    isGhSignedOut: s.prViews.isGhSignedOut === true,
-    failure: s.prViews.failure ?? null,
-    refresh: prRefreshView({ ...s.prViews, isGhMissing: s.prViews.isGhMissing === true }, s.ledger, { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now }, shownSince),
-    pressOutSince
+function drawOuts(blocks, outs, errors, look) {
+  const byRow = new Map(outs.map((o) => [o.rowId, o]));
+  const lineOf = (id) => {
+    const out = byRow.get(id);
+    if (errors[id])
+      return { text: errors[id], tone: "error" };
+    if (!out)
+      return null;
+    return { text: out.pending ? feedbackText(out.pending, look) : SENDING, tone: "muted" };
   };
+  return blocks.map((b) => {
+    if (b.kind === "row" || b.kind === "pr" || b.kind === "line") {
+      const line = lineOf(b.id);
+      return { ...b, buttons: withOutButtons(b.buttons, byRow), ...line ? { feedback: line } : {} };
+    }
+    if (b.kind === "status" || b.kind === "heading")
+      return { ...b, buttons: withOutButtons(b.buttons, byRow) };
+    return b;
+  });
+}
+
+// src/paint-blocks.ts
+import { div } from "gpui-kit";
+import { Input, h_flex, v_flex } from "gpui-base";
+
+// src/paint-theme.ts
+var TONE_COLORS = {
+  needsYou: "blocked",
+  issue: "blocked",
+  warning: "blocked",
+  done: "done",
+  running: "working",
+  error: "ansi1",
+  muted: "muted",
+  dim: "dim"
+};
+var colorOf = (t, tone) => t[tone === null ? "foreground" : TONE_COLORS[tone]];
+
+// src/paint-blocks.ts
+function buttonEl(b, p) {
+  const { t } = p;
+  const base = h_flex().id(`button ${b.id}`).h(28).px(10).flex_none().items_center().rounded(7).text_size(12).accessibility_label(b.label).child(b.label);
+  const styled = b.emphasis === "primary" ? base.bg(t.solid).text_color(t.solid_foreground) : b.emphasis === "normal" ? base.bg(t.raised).border_1().border_color(t.border).text_color(t.foreground) : base.text_color(t.muted).hover((s) => s.bg(t.hover));
+  if (b.isOut)
+    return styled.opacity(0.5);
+  return styled.cursor_pointer().on_click((_e, cx) => {
+    cx.stop_propagation();
+    p.press(b, cx);
+  });
+}
+var buttonsEl = (buttons, p, indent) => h_flex().flex_wrap().gap(6).pt(6).pl(indent).children(buttons.map((b) => buttonEl(b, p)));
+var markEl = (m, t) => div().w(14).flex_none().text_color(colorOf(t, m?.tone ?? null)).child(m?.text ?? "");
+var lineEl = (text, color, indent = 22) => div().pl(indent).pt(2).text_size(12).whitespace_normal().text_color(color).child(text);
+function fieldEl(f, p, indent) {
+  const state = p.input(f.rowId);
+  const input = state ? [Input.new(state).w_full()] : [];
+  return v_flex().pt(6).pl(indent).gap(6).children(input).child(buttonsEl(f.buttons, p, 0));
+}
+function opacityOf(r, p) {
+  const m = p.motion.get(r.id);
+  if (m?.state === "leaving")
+    return 0;
+  if (m?.state === "entering")
+    return m.isStart ? 0 : 1;
+  return null;
+}
+function rowEl(r, p) {
+  const { t } = p;
+  const line = h_flex().gap(8).items_start().child(markEl(r.mark, t)).child(div().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!r.isSelected, (e) => e.truncate()).when(r.isSelected, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(r.age ?? "")));
+  const lines = [
+    ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
+    ...r.feedback ? [r.feedback] : [],
+    ...r.body
+  ];
+  const opacity = opacityOf(r, p);
+  const isLeaving = p.motion.get(r.id)?.state === "leaving";
+  return v_flex().id(`row ${r.id}`).px(8).py(6).ml(r.depth * 14).rounded(7).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => lineEl(l.text, colorOf(t, l.tone)))).when(r.buttons.length > 0 && !isLeaving, (e) => e.child(buttonsEl(r.buttons, p, 22))).when(r.field !== null && !isLeaving, (e) => e.child(r.field ? fieldEl(r.field, p, 22) : div()));
+}
+function statusEl(s, p) {
+  const { t } = p;
+  const stall = s.stall ? [div().flex_none().text_color(colorOf(t, s.stall.tone)).child(`${STALL_GAP}${s.stall.text}`)] : [];
+  return v_flex().px(8).py(4).ml(s.depth * 16).child(h_flex().gap(8).items_start().child(markEl(s.mark, t)).child(h_flex().flex_1().min_w(0).flex_wrap().child(div().when(s.isBold, (e) => e.font_semibold()).child(s.name)).children(stall))).children(s.under.map((l) => div().pl(22).text_size(12).text_color(t.muted).child(l))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, 22)));
+}
+function prEl(b, p) {
+  const { t } = p;
+  const title = h_flex().flex_wrap().gap(6).items_start().when(b.rank !== null, (e) => e.child(div().text_color(t.muted).child(b.rank ?? ""))).child(div().text_color(t.working).child(b.number)).child(div().font_semibold().whitespace_normal().child(b.title)).child(div().text_color(colorOf(t, b.status.tone)).child(b.status.text)).children(b.unlisted.map((u) => div().text_color(t.muted).child(`${DOT}${u}`)));
+  return v_flex().px(8).pt(10).pb(4).child(title).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
+}
+function textLineEl(b, p) {
+  const { t } = p;
+  return v_flex().px(8).py(4).child(h_flex().flex_wrap().gap(8).items_center().when(b.text !== null, (e) => e.child(div().whitespace_normal().child(b.text ?? ""))).children(b.buttons.map((x) => buttonEl(x, p)))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
+}
+function blockEl(b, p) {
+  const { t } = p;
+  if (b.kind === "row")
+    return rowEl(b, p);
+  if (b.kind === "status")
+    return statusEl(b, p);
+  if (b.kind === "pr")
+    return prEl(b, p);
+  if (b.kind === "line")
+    return textLineEl(b, p);
+  if (b.kind === "field")
+    return div().px(8).child(fieldEl(b.field, p, 0));
+  if (b.kind === "heading")
+    return h_flex().px(8).pt(12).pb(4).gap(6).items_center().when(b.mark !== null, (e) => e.child(div().text_color(colorOf(t, b.mark?.tone ?? null)).child(b.mark?.text ?? ""))).child(div().text_size(12).font_semibold().text_color(t.muted).child(b.text)).when(b.count !== null, (e) => e.child(div().text_size(11).text_color(t.blocked).child(String(b.count)))).child(div().flex_1()).children(b.buttons.map((x) => buttonEl(x, p)));
+  if (b.kind === "fold" || b.kind === "more") {
+    const fold = {
+      id: b.id,
+      label: b.text,
+      emphasis: "quiet",
+      isOut: false,
+      hotkey: null,
+      does: { is: "view", change: b.change }
+    };
+    return h_flex().id(`fold ${b.id}`).h(26).px(8).ml(b.depth * 14).gap(6).items_center().rounded(7).cursor_pointer().hover((s) => s.bg(t.hover)).accessibility_label(b.text).on_click((_e, cx) => p.press(fold, cx)).when(b.kind === "fold", (e) => e.child(div().w(14).text_color(t.dim).child(b.kind === "fold" && b.isOpen ? "▾" : "▸"))).child(div().text_size(12).text_color(t.muted).child(b.text));
+  }
+  if (b.kind === "note")
+    return div().px(8).py(2).ml(b.depth * 16).whitespace_normal().text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).when(b.isStrong, (e) => e.font_semibold()).child(b.text);
+  if (b.kind === "rule")
+    return h_flex().px(8).py(6).gap(8).items_center().when(b.text !== null, (e) => e.child(div().text_size(11).text_color(t.dim).child(b.text ?? ""))).child(div().flex_1().h(1).bg(t.border));
+  return div().h(8);
+}
+
+// src/paint-chrome.ts
+import { div as div2 } from "gpui-kit";
+import { h_flex as h_flex2, v_flex as v_flex2 } from "gpui-base";
+function headerEl(agent, status, isHelpShown, p) {
+  const { t } = p;
+  const help = {
+    id: "help",
+    label: isHelpShown ? HELP_COPY.close : HELP_COPY.open,
+    emphasis: "quiet",
+    isOut: false,
+    hotkey: null,
+    does: { is: "view", change: { toggleHelp: true } }
+  };
+  return h_flex2().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border).child(div2().font_semibold().child("Inbox")).when(agent !== null, (e) => e.child(div2().text_size(12).text_color(t.muted).child(agent ?? ""))).child(div2().flex_1()).when(status !== null, (e) => e.child(div2().text_size(11).text_color(t.dim).child(status ?? ""))).when(isHelpShown !== null, (e) => e.child(h_flex2().id("help").h(26).px(8).items_center().rounded(7).text_size(12).text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(help.label)));
+}
+function bannerEl(b, t) {
+  const color = b.tone === "error" ? t.ansi1 : b.tone === "warning" ? t.blocked : t.muted;
+  return v_flex2().px(14).py(8).border_b(1).border_color(t.border).bg(t.raised).text_size(12).child(div2().font_semibold().text_color(color).child(b.lead)).when(b.body !== null, (e) => e.child(div2().whitespace_normal().text_color(t.muted).child(b.body ?? "")));
+}
+var sessionNoteEl = (text, t) => div2().px(14).py(6).border_b(1).border_color(t.border).text_size(12).whitespace_normal().text_color(t.muted).child(text);
+function tabsEl(tabs, p) {
+  const { t } = p;
+  return h_flex2().h(40).flex_none().px(8).gap(4).items_center().border_b(1).border_color(t.border).children(tabs.map((tab) => h_flex2().id(`tab ${tab.id}`).h(28).px(10).gap(6).items_center().rounded(7).cursor_pointer().accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.selected).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.bg(t.hover))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div2().text_size(11).text_color(t.blocked).child(tab.badge ?? "")))));
+}
+function messageEl(m, t) {
+  return v_flex2().p(16).gap(4).child(div2().font_semibold().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div2().whitespace_normal().text_color(t.muted).child(m.hint ?? "")));
+}
+
+// src/press-file.ts
+var PRESS_LABEL = "inbox.press";
+var pressPath = (appHome, sessionId, pressId) => `${appHome}/inbox/presses/${sessionId}/${pressId}.json`;
+var newPressId = (now, random) => `${now.toString(36)}-${Math.floor(random * 36 ** 6).toString(36)}`;
+function pressFileText(id, pressedAt, press, holds, result = null) {
+  const { replies, discarded, shownSince, listInput } = holds;
+  return JSON.stringify({
+    format: HERDR_FORMAT,
+    id,
+    pressedAt,
+    press,
+    holds: { replies, discarded, shownSince, listInput },
+    ...result ? { result } : {}
+  });
+}
+
+// src/run-here.ts
+var isOpenedHere = (target) => /^https?:\/\//.test(target) || target.startsWith("/") || target.startsWith("~/");
+function isRunHere(effects) {
+  return effects.length > 0 && effects.every((e) => e.kind === "copy" || e.kind === "open" && isOpenedHere(e.target));
+}
+function pendingOf(effects, at) {
+  return effects.length > 0 ? { is: "local", result: pendingResult([...effects], at) } : null;
+}
+async function runHere(effects, io) {
+  for (const e of effects) {
+    if (e.kind === "copy") {
+      io.copy(e.text);
+      continue;
+    }
+    const error = await openTarget(io.run, io.probe, e.target, "/", io.home);
+    if (error)
+      return error;
+  }
+  return null;
 }
 
 // src/screen.ts
+var TRIMMED_NOTE = "This session is too large to show in full, so its older closed items are left out.";
 var message = (title, hint, isError = false) => ({
   is: "message",
   message: { title, hint, isError }
@@ -3049,18 +4228,32 @@ function screenOf(followed, read, ui, o) {
   const shown = messageOf(followed, read);
   if (shown !== null || read?.is !== "read")
     return shown ?? message(READING_TEXT, null);
-  const holds = { replies: {}, discarded: {}, shownSince: o.shownSince, listInput: null };
-  const view = sessionView(read.session, o.now, SETTLED_MS, holds);
-  const screen = { view, agent: read.envelope.agent, now: o.now, shownSince: o.shownSince, isNextBuild: o.isNextBuild };
+  const { holds } = o;
+  const view = sessionView(read.session, o.now, SETTLED_MS, holds, o.notes);
+  const screen = {
+    view,
+    agent: read.envelope.agent,
+    now: o.now,
+    shownSince: holds.shownSince ?? o.now,
+    isNextBuild: o.isNextBuild,
+    isGhMissing: read.session.prViews.isGhMissing === true
+  };
   const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
   const settled = rows.flatMap((r) => r.state.is === "settled" ? [r.state] : []);
-  const placing = { lastTypedMessageAt: null, listInput: null, now: o.now, settleWindowMs: SETTLED_MS };
+  const placing = {
+    lastTypedMessageAt: read.session.presence.lastTypedMessageAt,
+    listInput: holds.listInput,
+    now: o.now,
+    settleWindowMs: SETTLED_MS
+  };
   return {
     is: "inbox",
     agent: screen.agent,
+    view,
     tabs: tabCells(screen, ui.tab),
     ...chrome(screen, ui.tab),
-    blocks: tabBlocks(screen, ui),
+    trimmedNote: read.isTrimmed ? TRIMMED_NOTE : null,
+    blocks: drawOuts(tabBlocks(screen, ui), o.outs, o.errors, "herdr"),
     foldAt: nextFoldAt(settled, placing)
   };
 }
@@ -3070,68 +4263,23 @@ var REREAD_MS = 1e4;
 var AGE_TICK_MS = 60000;
 var TORN_RETRY_MS = 30;
 var TORN_RETRIES = 5;
-var TONE_COLORS = {
-  needsYou: "blocked",
-  issue: "blocked",
-  warning: "blocked",
-  done: "done",
-  running: "working",
-  error: "ansi1",
-  muted: "muted",
-  dim: "dim"
-};
-var colorOf = (t, tone) => t[tone === null ? "foreground" : TONE_COLORS[tone]];
-function buttonEl(b, t, press) {
-  const base = h_flex().id(`button ${b.id}`).h(28).px(10).flex_none().items_center().rounded(7).text_size(12).accessibility_label(b.label).child(b.label);
-  const styled = b.emphasis === "primary" ? base.bg(t.solid).text_color(t.solid_foreground) : b.emphasis === "normal" ? base.bg(t.raised).border_1().border_color(t.border).text_color(t.foreground) : base.text_color(t.muted).hover((s) => s.bg(t.hover));
-  if (b.isOut)
-    return styled.opacity(0.5);
-  return styled.cursor_pointer().on_click((_e, cx) => {
-    cx.stop_propagation();
-    press(b, cx);
-  });
-}
-var buttonsEl = (buttons, t, press, indent) => h_flex().flex_wrap().gap(6).pt(6).pl(indent).children(buttons.map((b) => buttonEl(b, t, press)));
-var markEl = (m, t) => div().w(14).flex_none().text_color(colorOf(t, m?.tone ?? null)).child(m?.text ?? "");
-function rowEl(r, t, press, select) {
-  const line = h_flex().gap(8).items_start().child(markEl(r.mark, t)).child(div().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!r.isSelected, (e) => e.truncate()).when(r.isSelected, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(r.age ?? "")));
-  const lines = [
-    ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
-    ...r.feedback ? [r.feedback] : [],
-    ...r.body
-  ];
-  return v_flex().id(`row ${r.id}`).px(8).py(6).ml(r.depth * 14).rounded(7).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected, (e) => e.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => select(r.id, cx))).child(line).children(lines.map((l) => div().pl(22).pt(2).text_size(12).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, t, press, 22)));
-}
-function statusEl(s, t, press) {
-  const stall = s.stall ? [div().flex_none().text_color(colorOf(t, s.stall.tone)).child(`${STALL_GAP}${s.stall.text}`)] : [];
-  return v_flex().px(8).py(4).ml(s.depth * 16).child(h_flex().gap(8).items_start().child(markEl(s.mark, t)).child(h_flex().flex_1().min_w(0).flex_wrap().child(div().when(s.isBold, (e) => e.font_semibold()).child(s.name)).children(stall))).children(s.under.map((l) => div().pl(22).text_size(12).text_color(t.muted).child(l))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, t, press, 22)));
-}
-function blockEl(b, t, press, select) {
-  if (b.kind === "row")
-    return rowEl(b, t, press, select);
-  if (b.kind === "status")
-    return statusEl(b, t, press);
-  if (b.kind === "heading")
-    return h_flex().px(8).pt(12).pb(4).gap(6).items_center().when(b.mark !== null, (e) => e.child(div().text_color(colorOf(t, b.mark?.tone ?? null)).child(b.mark?.text ?? ""))).child(div().text_size(12).font_semibold().text_color(t.muted).child(b.text)).when(b.count !== null, (e) => e.child(div().text_size(11).text_color(t.blocked).child(String(b.count)))).child(div().flex_1()).children(b.buttons.map((x) => buttonEl(x, t, press)));
-  if (b.kind === "fold" || b.kind === "more")
-    return h_flex().id(`fold ${b.id}`).h(26).px(8).ml(b.depth * 14).gap(6).items_center().rounded(7).cursor_pointer().hover((s) => s.bg(t.hover)).accessibility_label(b.text).on_click((_e, cx) => press({ id: b.id, label: b.text, emphasis: "quiet", isOut: false, local: b.local }, cx)).when(b.kind === "fold", (e) => e.child(div().w(14).text_color(t.dim).child(b.kind === "fold" && b.isOpen ? "▾" : "▸"))).child(div().text_size(12).text_color(t.muted).child(b.text));
-  if (b.kind === "note")
-    return div().px(8).py(2).ml(b.depth * 16).whitespace_normal().text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).when(b.isStrong, (e) => e.font_semibold()).child(b.text);
-  if (b.kind === "rule")
-    return h_flex().px(8).py(6).gap(8).items_center().when(b.text !== null, (e) => e.child(div().text_size(11).text_color(t.dim).child(b.text ?? ""))).child(div().flex_1().h(1).bg(t.border));
-  return div().h(8);
-}
-function bannerEl(b, t) {
-  const color = b.tone === "error" ? t.ansi1 : b.tone === "warning" ? t.blocked : t.muted;
-  return v_flex().px(14).py(8).border_b(1).border_color(t.border).bg(t.raised).text_size(12).child(div().font_semibold().text_color(color).child(b.lead)).when(b.body !== null, (e) => e.child(div().whitespace_normal().text_color(t.muted).child(b.body ?? "")));
-}
-function tabsEl(tabs, t, pick) {
-  return h_flex().h(40).flex_none().px(8).gap(4).items_center().border_b(1).border_color(t.border).children(tabs.map((tab) => h_flex().id(`tab ${tab.id}`).h(28).px(10).gap(6).items_center().rounded(7).cursor_pointer().accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.selected).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.bg(t.hover))).on_click((_e, cx) => pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div().text_size(11).text_color(t.blocked).child(tab.badge ?? "")))));
-}
-function messageEl(m, t) {
-  return v_flex().p(16).gap(4).child(div().font_semibold().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div().whitespace_normal().text_color(t.muted).child(m.hint ?? "")));
-}
+var NEXT_FRAME_MS = 16;
 var toggled = (list, x) => list.includes(x) ? list.filter((y) => y !== x) : [...list, x];
+var herdrRun = (args, opts) => exec(args[0] ?? "", args.slice(1), { cwd: opts.cwd, timeout: opts.timeoutMs }).catch((e) => ({
+  code: 127,
+  stdout: "",
+  stderr: String(e)
+}));
+var isTrue = (args) => herdrRun(["test", ...args], { cwd: "/", timeoutMs: 5000 }).then((r) => r.code === 0);
+var probe = {
+  async stat(path) {
+    if (!await isTrue(["-e", path]))
+      return null;
+    const isFile = await isTrue(["-f", path]);
+    return { isFile: () => isFile };
+  },
+  isExecutable: (path) => isTrue(["-x", path])
+};
 
 class Inbox extends View {
   tab = null;
@@ -3139,11 +4287,25 @@ class Inbox extends View {
   followed = { is: "no-terminal" };
   sessionId = null;
   read = null;
+  view = null;
   ui = freshUi("needsYou");
   shownSince = Date.now();
   isNextBuild = false;
-  foldTimer = null;
+  isHelpShown = false;
+  drafts = {};
+  input = null;
+  discarded = {};
+  listInput = null;
+  outs = [];
+  notes = {};
+  errors = {};
+  tracks = new Map;
+  tracksOf = "";
+  focus = null;
+  outTimer = null;
+  drawTimer = null;
   init(_props, cx) {
+    this.focus = cx.focus_handle();
     cx.spawn(async (cx) => {
       this.isNextBuild = await readTextFile(`${appHome()}/mods/inbox/${NEXT_BUILD_MARK}`).catch(() => null) !== null;
       cx.notify();
@@ -3160,6 +4322,15 @@ class Inbox extends View {
     cx.timer.every(REREAD_MS, (cx) => this.sessionId && this.load(this.sessionId, cx));
     cx.timer.every(AGE_TICK_MS, (cx) => cx.notify());
   }
+  holds(now) {
+    this.discarded = keptDiscards(this.discarded, this.shownSince);
+    return {
+      replies: heldReplies(this.ui.typing, this.drafts),
+      discarded: this.discarded,
+      shownSince: this.shownSince,
+      listInput: this.listInput && withListInput(this.listInput, now)
+    };
+  }
   load(sessionId, cx) {
     cx.spawn(async (cx) => {
       for (let n = 0;; n++) {
@@ -3169,12 +4340,33 @@ class Inbox extends View {
           await cx.sleep(TORN_RETRY_MS);
           continue;
         }
-        if (this.sessionId === sessionId)
-          this.read = read;
+        if (this.sessionId !== sessionId)
+          return;
+        this.read = read;
+        await this.settle(cx);
         cx.notify();
         return;
       }
     });
+  }
+  async settle(cx) {
+    if (this.read?.is !== "read" || this.outs.length === 0)
+      return;
+    const now = Date.now();
+    for (const out of this.outs)
+      if (out.takenAt === null && await readTextFile(out.path).catch(() => null) === null)
+        out.takenAt = now;
+    const view = sessionView(this.read.session, now, SETTLED_MS, this.holds(now), this.notes);
+    const settled = settleOuts(this.outs, view, now, this.read.envelope.agent);
+    this.outs = settled.outs;
+    this.notes = { ...this.notes, ...settled.notes };
+    this.errors = { ...this.errors, ...settled.errors };
+    this.checkOutsAt(nextOutCheckAt(this.outs, now), cx);
+  }
+  checkOutsAt(at, cx) {
+    this.outTimer?.cancel();
+    const sessionId = this.sessionId;
+    this.outTimer = at === null || sessionId === null ? null : cx.timer.after(Math.max(0, at - Date.now()), (cx) => this.load(sessionId, cx));
   }
   track(cx) {
     const own = panes().find((p) => p.pane === props()?.pane);
@@ -3189,24 +4381,140 @@ class Inbox extends View {
       return;
     this.sessionId = sessionId;
     this.read = null;
+    this.view = null;
     this.ui = freshUi(this.ui.tab);
     this.shownSince = Date.now();
+    this.drafts = {};
+    this.input?.state.release();
+    this.input = null;
+    this.discarded = {};
+    this.outs = [];
+    this.notes = {};
+    this.errors = {};
     if (sessionId)
       this.load(sessionId, cx);
   }
-  press(b, cx) {
-    const l = b.local;
-    if (l === null)
-      return;
+  change(c) {
     const ui = this.ui;
-    if ("showOptions" in l)
-      ui.optionsShown = toggled(ui.optionsShown, l.showOptions);
-    else if ("closedFold" in l)
-      ui.unfolded = toggled(ui.unfolded, l.closedFold);
-    else if ("earlier" in l)
-      ui.closedAll = [...ui.closedAll, l.earlier];
+    if ("showOptions" in c)
+      ui.optionsShown = toggled(ui.optionsShown, c.showOptions);
+    else if ("closedFold" in c)
+      ui.unfolded = toggled(ui.unfolded, c.closedFold);
+    else if ("earlier" in c)
+      ui.closedAll = [...ui.closedAll, c.earlier];
+    else if ("toggleFold" in c)
+      ui.statusUnfolded = toggled(ui.statusUnfolded, c.toggleFold);
+    else if ("showAsk" in c)
+      this.ui = { ...ui, tab: "needsYou", selected: c.showAsk };
     else
-      ui.statusUnfolded = toggled(ui.statusUnfolded, l.toggleFold);
+      this.isHelpShown = !this.isHelpShown;
+  }
+  type(does) {
+    const draft = this.drafts[does.rowId] ??= { text: does.text, since: Date.now() };
+    const state = InputState.new({ placeholder: does.hint, value: draft.text });
+    state.on("change", () => draft.text = state.value());
+    state.on("submit", (_e, cx) => this.submit(does.rowId, cx));
+    this.input?.state.release();
+    this.input = { rowId: does.rowId, state };
+    this.ui.typing = does.rowId;
+    state.focus();
+  }
+  leave(rowId, isDiscard, cx) {
+    if (isDiscard) {
+      this.discarded = { ...this.discarded, [rowId]: Date.now() };
+      delete this.drafts[rowId];
+    }
+    this.input?.state.release();
+    this.input = null;
+    this.ui.typing = null;
+    this.focus?.focus();
+    if (isDiscard && this.sessionId)
+      this.load(this.sessionId, cx);
+  }
+  submit(rowId, cx) {
+    const text = this.input?.state.value().trim() ?? "";
+    if (text === "")
+      return;
+    this.send({ action: "type", id: rowId, text }, [], cx);
+    delete this.drafts[rowId];
+    this.leave(rowId, false, cx);
+  }
+  send(press, effects, cx) {
+    const sessionId = this.sessionId;
+    const terminal = this.followed.is === "session" ? this.followed.terminal : null;
+    const rowId = pressRowId(press);
+    if (!sessionId || !terminal || !this.view || this.outs.some((o) => o.rowId === rowId))
+      return;
+    const now = Date.now();
+    const pressId = newPressId(now, Math.random());
+    const path = pressPath(appHome(), sessionId, pressId);
+    const holds = this.holds(now);
+    const before = rowSignature(this.view, rowId);
+    const out = {
+      pressId,
+      rowId,
+      path,
+      action: outAction2(press),
+      pending: pendingOf(effects, now),
+      since: now,
+      before,
+      takenAt: null
+    };
+    this.outs = [...this.outs, out];
+    delete this.errors[rowId];
+    delete this.notes[rowId];
+    cx.notify();
+    const io = { run: herdrRun, probe, home: home(), copy: (t) => cx.write_to_clipboard(t) };
+    cx.spawn(async (cx) => {
+      const result = isRunHere(effects) ? { error: await runHere(effects, io) } : null;
+      const failed = await writeTextFile(path, pressFileText(pressId, now, press, holds, result), null).then(() => null, (e) => String(e));
+      if (failed !== null) {
+        this.outs = this.outs.filter((o) => o !== out);
+        this.errors = { ...this.errors, [rowId]: `Not applied: ${failed}` };
+        cx.notify();
+        return;
+      }
+      await hc(["label", terminal, `${PRESS_LABEL}=${pressId}`]).catch(() => null);
+      this.checkOutsAt(nextOutCheckAt(this.outs, Date.now()), cx);
+    });
+  }
+  press(b, cx) {
+    const now = Date.now();
+    this.listInput = withListInput(this.listInput, now);
+    const d = b.does;
+    if (d.is === "view")
+      this.change(d.change);
+    else if (d.is === "press")
+      this.send(d.press, d.effects, cx);
+    else if (d.is === "type")
+      this.type(d);
+    else if (d.is === "send")
+      this.submit(d.rowId, cx);
+    else if (d.is === "leave")
+      this.leave(d.rowId, d.isDiscard, cx);
+    cx.notify();
+  }
+  onKey(key, tabs, blocks, cx) {
+    if (this.ui.typing !== null) {
+      if (key !== "escape")
+        return;
+      this.leave(this.ui.typing, false, cx);
+      cx.notify();
+      return;
+    }
+    const move = keyMove(key, tabs, blocks);
+    if (move === null)
+      return;
+    if (move.is === "tab")
+      this.ui = { ...this.ui, tab: move.tab, selected: null };
+    else if (move.is === "select")
+      this.ui.selected = move.id;
+    else if (move.is === "press")
+      return this.press(move.button, cx);
+    else if (this.followed.is !== "no-terminal")
+      run("pane.focus", { terminal: this.followed.terminal });
+    this.listInput = withListInput(this.listInput, Date.now());
+    cx.stop_propagation();
     cx.notify();
   }
   render(cx) {
@@ -3215,26 +4523,47 @@ class Inbox extends View {
     const now = Date.now();
     const screen = screenOf(this.followed, this.read, this.ui, {
       now,
-      shownSince: this.shownSince,
-      isNextBuild: this.isNextBuild
+      isNextBuild: this.isNextBuild,
+      holds: this.holds(now),
+      notes: this.notes,
+      errors: this.errors,
+      outs: this.outs
     });
-    const press = (b, cx) => this.press(b, cx);
-    const select = (id, cx) => {
-      this.ui.selected = id;
-      cx.notify();
+    this.view = screen.is === "inbox" ? screen.view : null;
+    this.drawTimer?.cancel();
+    this.drawTimer = null;
+    const paint = {
+      t,
+      press: (b, cx) => this.press(b, cx),
+      select: (id, cx) => {
+        this.ui.selected = id;
+        this.listInput = withListInput(this.listInput, Date.now());
+        cx.notify();
+      },
+      pick: (tab, cx) => {
+        this.ui = { ...this.ui, tab, selected: null };
+        cx.notify();
+      },
+      motion: new Map,
+      input: (rowId) => this.input?.rowId === rowId ? this.input.state : null
     };
-    const pick = (tab, cx) => {
-      this.ui = { ...this.ui, tab, selected: null };
-      cx.notify();
-    };
-    this.foldTimer?.cancel();
-    const foldAt = screen.is === "inbox" ? screen.foldAt : null;
-    this.foldTimer = foldAt === null ? null : cx.timer.after(Math.max(0, foldAt - now), (cx) => cx.notify());
-    const header = h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border).child(div().font_semibold().child("Inbox")).when(screen.is === "inbox", (e) => e.child(div().text_size(12).text_color(t.muted).child(screen.is === "inbox" ? screen.agent : ""))).child(div().flex_1()).when(screen.is === "inbox" && screen.status !== null, (e) => e.child(div().text_size(11).text_color(t.dim).child(screen.is === "inbox" ? screen.status ?? "" : "")));
-    const root = v_flex().id("inbox").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13).child(header);
+    const isInbox = screen.is === "inbox";
+    const root = v_flex3().id("inbox").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13).child(headerEl(isInbox ? screen.agent : null, isInbox ? screen.status : null, isInbox ? this.isHelpShown : null, paint));
     if (screen.is === "message")
       return root.child(messageEl(screen.message, t));
-    return root.child(tabsEl(screen.tabs, t, pick)).children(screen.banners.map((b) => bannerEl(b, t))).child(div().flex_1().min_h(0).relative().child(v_flex().id("inbox-list").absolute().inset_0().overflow_y_scroll().p(6).children(screen.blocks.map((b) => blockEl(b, t, press, select)))).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
+    const hasStatusButtons = screen.blocks.some((b) => b.kind === "status" && b.buttons.length > 0);
+    const shown = this.isHelpShown ? helpBlocks(this.isNextBuild, this.ui.tab, hasStatusButtons) : screen.blocks;
+    const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`;
+    const moved = moveRows(shown, this.tracks, now, tracksOf !== this.tracksOf);
+    this.tracks = moved.tracks;
+    this.tracksOf = tracksOf;
+    paint.motion = moved.motion;
+    const isStarting = [...moved.motion.values()].some((m) => m.isStart);
+    const wakeAt = [isStarting ? now + NEXT_FRAME_MS : null, moved.nextAt, screen.foldAt].filter((at) => at !== null);
+    if (wakeAt.length > 0)
+      this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), (cx) => cx.notify());
+    const focus = this.focus;
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(tabsEl(screen.tabs, paint)).children(screen.banners.map((b) => bannerEl(b, t))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))).child(div3().flex_1().min_h(0).relative().child(v_flex3().id("inbox-list").absolute().inset_0().overflow_y_scroll().p(6).on_click((_e, _cx) => this.focus?.focus()).children(moved.blocks.map((b) => blockEl(b, paint)))).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
   }
 }
 export {
