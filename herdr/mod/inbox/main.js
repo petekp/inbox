@@ -4032,8 +4032,8 @@ var BANNER_GAP_PT = 8;
 
 // src/paint-theme.ts
 var TONE_COLORS = {
-  needsYou: "blocked",
-  issue: "blocked",
+  needsYou: "ansi3",
+  issue: "ansi3",
   notice: "ansi4",
   warning: "ansi3",
   findings: "ansi5",

@@ -79,11 +79,11 @@ Herdr is a desktop app, so the look is click-first, and every move works with th
 
 ## Light and dark
 
-The look draws only with `theme()` colors, which every light and dark theme names alike. Needs you, done and running take the colors Herdr's sidebar gives an agent that is blocked, done or working, so those counts mean the same thing in the inbox and in the sidebar. Findings, PRs and errors take the theme's magenta, cyan and red, as the terminal look takes its theme's. A banner reads by its color: a notice in the theme's blue, a warning in its yellow, an error in its red:
+The look draws only with `theme()` colors, which every light and dark theme names alike. Needs you and warnings take the theme's yellow, as the other looks draw them in amber. Findings, PRs and errors take the theme's magenta, cyan and red, and a notice its blue, as the terminal look takes its theme's. So a banner reads by its color: a notice in blue, a warning in yellow, an error in red. Done and running take the colors Herdr's sidebar gives an agent that is done or working. The look draws nothing in `blocked`, which is red in many themes and would make a count read as an error:
 
 | Inbox tone | Herdr color |
 | --- | --- |
-| Needs you, issue | `blocked` |
+| Needs you, issue | `ansi3` |
 | Done | `done` |
 | Running | `working` |
 | Findings | `ansi5` |
