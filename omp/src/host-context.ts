@@ -1,4 +1,5 @@
 import type { herdrReporter } from '../../hooks/herdr'
+import type { HerdrAsk } from '../../hooks/herdr-ask'
 import type { PrShared } from '../../hooks/pr-fetch'
 import type { Run } from '../../hooks/gh'
 import type { SessionHost } from '../../hooks/session-host'
@@ -16,7 +17,7 @@ export type OmpContext = {
   setTimeout(callback: () => void, ms: number): unknown
 }
 
-type Memory = {
+export type Memory = {
   isGhMissing: boolean
   /** What every session of this omp shares about GitHub: views read lately, and the last limit error. */
   prShared: PrShared
@@ -28,6 +29,8 @@ type Memory = {
   shownCwd: (() => string) | null
   /** Why this omp could not install or update the inbox's Herdr mod at its start, or null. */
   herdrModFailure: string | null
+  /** The question before omp installs the inbox's Herdr mod, while it shows. */
+  herdrAsk: HerdrAsk | null
 }
 
 export type HostContext = {

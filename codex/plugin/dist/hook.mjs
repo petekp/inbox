@@ -3523,14 +3523,18 @@ function reportProblem(r, result) {
   const why = result.stderr.trim();
   return `Herdr report failed with exit ${result.code}${why ? `: ${why}` : "."}`;
 }
+function herdrAppHome(env) {
+  const home = env.HOME?.startsWith("/") ? env.HOME : null;
+  const named = env.HERDR_APP_HOME;
+  return named ? named.startsWith("/") ? named : null : home && `${home}/.config/herdr-app`;
+}
 function herdrTarget(env) {
   const pane = env.HERDR_PANE_ID;
   if (pane) return { kind: "pane", pane };
   const terminal = env.HC_TERMINAL_ID;
   if (!terminal) return null;
   const home = env.HOME?.startsWith("/") ? env.HOME : null;
-  const named = env.HERDR_APP_HOME;
-  const appHome = named ? named.startsWith("/") ? named : null : home && `${home}/.config/herdr-app`;
+  const appHome = herdrAppHome(env);
   const installed = (name) => home ? [name, `${home}/.local/bin/${name}`] : [name];
   return { kind: "terminal", terminal, appHome, hc: installed("hc"), herdrApp: installed("herdr-app") };
 }

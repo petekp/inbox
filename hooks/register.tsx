@@ -104,6 +104,7 @@ import {
   followDelegates as followHerdrDelegates,
   listenForHerdrPresses,
   startInHerdr,
+  askHerdrModAgain,
   openInHerdr,
   publishToHerdr,
   type HerdrCalls,
@@ -2759,6 +2760,7 @@ export const register: Register = on => {
     await ensureOn($)
     const isShown = (await read($, DEMO)) !== null
     const args = e.args.trim().split(/\s+/).join(' ')
+    if (args === 'herdr') return { text: await askHerdrModAgain(herdrCalls($), () => showInbox($, null)) }
     if (args === 'demo' || args === 'demo recording') await setDemo($, !isShown, args === 'demo recording')
     else if ((await read($, TAB)) === 'prs') await findPrs($)
     const [isDemo, isDemoRecording] = await Promise.all([read($, DEMO).then(d => d !== null), read($, DEMO_RECORDING)])

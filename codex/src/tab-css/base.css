@@ -130,6 +130,22 @@ button {
 .banner-notice {
   --tone: var(--text);
 }
+/* A question: its text, then its buttons on their own line. */
+.banner-ask {
+  --tone: var(--key);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.banner-ask .body {
+  display: block;
+  color: var(--muted);
+}
+.banner-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .banner .lead {
   font-weight: 600;
   color: var(--tone);
@@ -144,10 +160,12 @@ nav > .banner {
 .banner-place {
   padding: 12px 12px 0;
 }
+.banner .key:not(.primary) {
+  color: var(--text);
+}
 .banner .key {
   flex: none;
   white-space: nowrap;
-  color: var(--text);
   cursor: default;
   user-select: none;
 }

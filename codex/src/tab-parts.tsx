@@ -174,17 +174,39 @@ export function UndoPlace({
   )
 }
 
-export function Banner({ banner, label, press }: { banner: BannerView; label?: string; press?: () => void }) {
+type BannerAction = { label: string; isPrimary: boolean; press: () => void }
+
+/** A banner under the tab bar. A question, in the `ask` tone, draws its buttons on a line under its text. */
+export function Banner({
+  banner,
+  label,
+  press,
+  actions = [],
+}: {
+  banner: BannerView
+  label?: string
+  press?: () => void
+  actions?: BannerAction[]
+}) {
+  const isQuestion = banner.tone === 'ask'
+  const isAlert = banner.tone === 'error' || banner.tone === 'warning'
+  const buttons = [...(label && press ? [{ label, isPrimary: false, press }] : []), ...actions]
+
   return (
-    <div class={`banner banner-${banner.tone}`} role={banner.tone === 'notice' ? 'status' : 'alert'}>
+    <div class={`banner banner-${banner.tone}`} role={isAlert ? 'alert' : 'status'}>
       <span>
         <strong class="lead">{banner.lead}</strong>
-        {banner.body ? ` ${banner.body}` : null}
+        {banner.body && isQuestion ? <span class="body">{banner.body}</span> : null}
+        {banner.body && !isQuestion ? ` ${banner.body}` : null}
       </span>
-      {label && press ? (
-        <button type="button" class="key" onClick={press}>
-          {label}
-        </button>
+      {buttons.length > 0 ? (
+        <span class="banner-keys">
+          {buttons.map(b => (
+            <button key={b.label} type="button" class={b.isPrimary ? 'key primary' : 'key'} onClick={b.press}>
+              {b.label}
+            </button>
+          ))}
+        </span>
       ) : null}
     </div>
   )

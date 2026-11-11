@@ -32,6 +32,7 @@ import { makeHooksTrustNow } from './server-trust'
 import { pruneSessions, readState, updateState } from './state'
 import type { SessionState } from './state'
 import { CODEX, inboxToolText } from './texts'
+import type { CodexHerdrAsk } from './server-herdr'
 
 export type ServerDeps = {
   dir: string
@@ -66,6 +67,8 @@ export type ServerDeps = {
   onWrite?: OnWrite
   /** Starts applying the presses the Herdr look writes, with `apply`. */
   followHerdrPresses?: (apply: (sessionId: string, file: PressFile) => Promise<void>) => void
+  /** The question before the tab installs the inbox's Herdr mod. Without it, the tab never asks. */
+  herdrAsk?: CodexHerdrAsk
 }
 
 type Message = { jsonrpc: '2.0'; id?: number | string; method?: string; params?: Record<string, unknown> }
@@ -162,6 +165,11 @@ export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<st
       case 'inbox_tab_page':
         return { ...text('Tab page'), structuredContent: { html: stamped(await currentPage()) } }
       case 'inbox_press': {
+        const asked = args.press as { action?: unknown; isYes?: unknown }
+        if (asked.action === 'herdr-ask' && deps.herdrAsk) {
+          const r = await deps.herdrAsk.answer(asked.isYes === true)
+          return { ...text(r.failure ?? 'Done'), structuredContent: r }
+        }
         const p = args.press as RowPress | PrPress
         const holds = holdsOf(args)
         const r = await (args.demo === true

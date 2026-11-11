@@ -20,6 +20,7 @@ import { readState } from './state'
 import { sessionIdOf } from './host-context'
 import type { HostContext, OmpContext } from './host-context'
 import type { SessionCalls } from './host-sessions'
+import type { OmpHerdrAsk } from './host-herdr-ask'
 
 /** What a panel needs from the host. */
 export type Inbox = {
@@ -48,7 +49,7 @@ export type Inbox = {
   resume(ctx: OmpContext): Promise<string | null>
 }
 
-export function panelCalls(context: HostContext, sessions: SessionCalls) {
+export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAsk: OmpHerdrAsk) {
   const { deps, dir, openPanels, prFetches, listeners, memory, sendToAgent, modelNameOf } = context
   const { change, hostFor, fetchPrsWhenDue, checkDelegatesWhenDue, wakeLater } = sessions
   /** When each Status subject row was last on screen in each session's look under way, by session id. */
@@ -70,6 +71,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
         modelName: modelNameOf(ctx),
         isGhMissing: memory.isGhMissing,
         herdrModFailure: memory.herdrModFailure,
+        herdrAsk: memory.herdrAsk,
         isFetchingPrs: prFetches.isFetching(id),
         stop: s.stop,
         version,
@@ -136,6 +138,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
       return { error: outcome.error, note: outcome.note, isUnconfirmed: outcome.isUnconfirmed }
     },
     resume: async () => inbox.resume(ctx),
+    answerHerdr: herdrAsk.answer,
     fetchPrsWhenDue: isTabShown => inbox.fetchPrsWhenDue(ctx, isTabShown),
     checkDelegatesWhenDue: () => inbox.checkDelegatesWhenDue(ctx),
     shown: (tab, holds) => inbox.showTab(ctx, tab, holds),

@@ -138,10 +138,12 @@ export function makeSessionHost(
     const current = !isDemo && s.presence.isUpdating ? await reconcileUpdateStatus(dir, id) : s
     const view = viewOf(current, now(), holds)
     const trust = isDemo ? null : hooksTrustNow(current, id)
+    const herdrAsk = isDemo ? null : await deps.herdrAsk?.view().catch(() => null)
 
     return {
       ...view,
       ...(trust ? { hooksTrust: trust } : {}),
+      ...(herdrAsk ? { herdrAsk } : {}),
       thread: id,
       isFetchingPrs: !isDemo && prFetches.isFetching(id),
       isGhMissing: !isDemo && isGhMissing,

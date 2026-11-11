@@ -23,6 +23,8 @@ import type { ApplyPress, PressFiles, PublishFiles } from './herdr-app'
 import { hasHerdrMod, herdrPanelOpener, noHerdrModText } from './herdr-open'
 import type { HerdrOpened } from './herdr-open'
 import type { ModFiles } from './herdr-install'
+import { answerHerdrAsk, askHerdrAgain, herdrAskOf, isHerdrAskOpen } from './herdr-ask'
+import type { HerdrAsk } from './herdr-ask'
 import { startInHerdrApp } from './herdr-start'
 import type { SweepFiles } from './herdr-sweep'
 import { CLAUDE_CODE } from './model-text'
@@ -97,10 +99,12 @@ const openCalls = (calls: HerdrCalls) => ({
  * whether the Herdr look can open.
  */
 let appTerminal: { target: Extract<HerdrTarget, { kind: 'terminal' }>; hasMod: boolean } | null | undefined
+let home: string | undefined
 const openHerdrPanel = herdrPanelOpener()
 
 async function targetOf(calls: HerdrCalls) {
   const [HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME] = await calls.env()
+  home = HOME
   const target = herdrTarget({ HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME })
   appTerminal =
     target?.kind === 'terminal' ? { target, hasMod: await hasHerdrMod(openCalls(calls).isFile, target) } : null
@@ -130,17 +134,77 @@ export function openInHerdr(calls: HerdrCalls): Promise<HerdrOpened> | HerdrOpen
  * install or update shows as a banner until the next turn-on, and `redraw` runs when that banner changes.
  */
 export async function startInHerdr(calls: HerdrCalls, redraw: () => unknown): Promise<void> {
+  askHost = { calls, redraw }
   const target = await targetOf(calls)
   if (target?.kind !== 'terminal') return
-  const files = herdrFiles(calls)
-  const bundled = `${calls.pluginRoot}/herdr/mod/inbox`
-  const result = await startInHerdrApp(calls.run, files, target, bundled, await calls.now(), calls.log)
+  const result = await startInHerdrApp(
+    calls.run,
+    herdrFiles(calls),
+    target,
+    bundledMod(calls),
+    await calls.now(),
+    calls.log,
+  )
   const failure = result?.is === 'failed' ? result.text : null
   if (failure !== mod.herdrModFailure) {
     mod.herdrModFailure = failure
     redraw()
   }
+  if (result?.is === 'ask' && target.appHome) showAsk(herdrAskOf(target.appHome, home, null))
   if (appTerminal) appTerminal.hasMod = await hasHerdrMod(openCalls(calls).isFile, target)
+}
+
+const bundledMod = (calls: HerdrCalls) => `${calls.pluginRoot}/herdr/mod/inbox`
+
+/** The calls the install question runs its presses with, and the pane's redraw, from the turn-on. */
+let askHost: { calls: HerdrCalls; redraw: () => unknown } | null = null
+let askCheck: Timer | null = null
+
+/**
+ * Shows the install question in `ask` and redraws the pane. While it asks, it checks every `PRESS_POLL_MS` whether
+ * another session answered it, and an answer's result leaves after `SETTLED_MS`.
+ */
+function showAsk(ask: HerdrAsk | null) {
+  mod.herdrAsk = ask
+  askCheck?.cancel()
+  askCheck = null
+  if (!askHost) return
+  const { calls, redraw } = askHost
+  const isShown = () => mod.herdrAsk === ask
+  if (ask?.is === 'asking') {
+    const files = herdrFiles(calls)
+    askCheck = calls.every(PRESS_POLL_MS, () => {
+      void isHerdrAskOpen(files, ask).then(isOpen => !isOpen && isShown() && showAsk(null))
+    })
+  }
+  if (ask?.is === 'answered') calls.after(SETTLED_MS, () => isShown() && showAsk(null))
+  redraw()
+}
+
+/** Answers the install question with Install or Don't install, and shows the result on its banner. */
+export async function pressHerdrAsk(isYes: boolean): Promise<void> {
+  const ask = mod.herdrAsk
+  if (!askHost || ask?.is !== 'asking') return
+  const { calls } = askHost
+  if (isYes) showAsk({ ...ask, is: 'installing' })
+  const now = await calls.now()
+  const answered = await answerHerdrAsk(herdrFiles(calls), ask, bundledMod(calls), isYes, now, 'Run /inbox herdr')
+  mod.herdrModFailure = answered.failure
+  showAsk(answered.ask)
+  if (appTerminal) appTerminal.hasMod = await hasHerdrMod(openCalls(calls).isFile, appTerminal.target)
+}
+
+/** For `/inbox herdr`: shows the install question again with `show`, even after a no, or says why it cannot. */
+export async function askHerdrModAgain(calls: HerdrCalls, show: () => Promise<unknown>): Promise<string> {
+  const target = await targetOf(calls)
+  const appHome = target?.kind === 'terminal' ? (target.appHome ?? null) : null
+  const ask = await askHerdrAgain(herdrFiles(calls), appHome, home)
+  if (typeof ask === 'string') return ask
+  askHost ??= { calls, redraw: () => undefined }
+  showAsk(ask)
+  await show()
+
+  return 'Showing the question about the inbox mod for Herdr in the inbox.'
 }
 
 /**

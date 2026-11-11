@@ -11,7 +11,7 @@ import TAB_HTML from './tab.html'
 import { run } from './run'
 import { listHooksTrust } from './hook-trust'
 import { herdrLog, herdrOnWrite } from './host'
-import { followCodexPresses, startCodexInHerdrApp } from './server-herdr'
+import { codexHerdrAsk, followCodexPresses, startCodexInHerdrApp } from './server-herdr'
 import { COMPARE_PAGE_FILE } from '../../hooks/press-messages'
 import { NEXT_BUILD_MARK } from '../../hooks/banners'
 
@@ -76,6 +76,7 @@ export function createHandler(
     comparePage: join(dirname(fileURLToPath(import.meta.url)), COMPARE_PAGE_FILE),
     onWrite: herdrOnWrite(process.env, run, dir, Date.now, log),
     followHerdrPresses: followHerdrPresses(log),
+    herdrAsk: codexHerdrAsk(process.env, join(here, 'herdr-mod')),
     openCatchUp: startUpdate && {
       codexHome: process.env.CODEX_HOME || join(homedir(), '.codex'),
       startUpdate,

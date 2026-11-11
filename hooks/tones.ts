@@ -58,8 +58,11 @@ export function toneColors(tone: ToneName): { light: string; dark: string } {
   return { light: LIGHT_TONES[tone], dark: DARK_TONES[tone] }
 }
 
-/** What a banner says: the inbox cannot work until something changes, part of it is missing or out of date, or a fact. */
-export type BannerTone = 'error' | 'warning' | 'notice'
+/**
+ * What a banner says: the inbox cannot work until something changes, part of it is missing or out of date, a fact, or
+ * a question the person answers with the banner's buttons.
+ */
+export type BannerTone = 'error' | 'warning' | 'notice' | 'ask'
 
 /** A banner's border and fill in a terminal. The fill sits inside the border, so the border is a step stronger. */
 type BannerTint = { line: string; fill: string }
@@ -68,10 +71,14 @@ export const DARK_BANNER_TINTS: Record<BannerTone, BannerTint> = {
   error: { line: '#7a4a52', fill: '#3d2a2e' },
   warning: { line: '#6e5a2c', fill: '#3a3322' },
   notice: { line: '#505050', fill: '#333333' },
+  /** Mixed from `DARK_TONES.key`. */
+  ask: { line: '#5d5f73', fill: '#3a3b44' },
 }
 
 export const LIGHT_BANNER_TINTS: Record<BannerTone, BannerTint> = {
   error: { line: '#d9a3ab', fill: '#f8e9eb' },
   warning: { line: '#d6c19a', fill: '#f6efe1' },
   notice: { line: '#c8c8c8', fill: '#efefef' },
+  /** Mixed from `LIGHT_TONES.key`. */
+  ask: { line: '#bcc3fb', fill: '#eef0fe' },
 }

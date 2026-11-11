@@ -38,9 +38,51 @@ import { goalSection, setGoal } from './panel-goal'
 import { unfoldedRows } from '../../hooks/status-page-parts'
 import type { StatusPage } from '../../hooks/status-page'
 import type { ShownTab } from '../../hooks/tabs'
-import { AGENT, STOP_ID, blankLine, doneAt, groupEntries, isGroupEmpty, prButtons, pressFeedback } from './panel-lines'
+import { HERDR_ASK_BUTTONS, herdrAskBanner } from '../../hooks/herdr-ask'
+import {
+  AGENT,
+  HERDR_ASK_ID,
+  STOP_ID,
+  blankLine,
+  doneAt,
+  groupEntries,
+  isGroupEmpty,
+  prButtons,
+  pressFeedback,
+} from './panel-lines'
 import type { Button, Entry, Group, Lead } from './panel-lines'
 import type { PanelScreen, PanelUi } from './panel'
+
+/** The question before omp installs the inbox's Herdr mod, as a row its buttons can focus, while it shows. */
+function herdrAskEntries(screen: PanelScreen): Entry[] {
+  const banner = herdrAskBanner(screen.herdrAsk ?? null)
+  if (!banner) return []
+  const isAsking = screen.herdrAsk?.is === 'asking'
+  const buttons: Button[] = HERDR_ASK_BUTTONS.map(a => ({
+    label: a.label,
+    key: null,
+    press: { action: 'herdr-ask', isYes: a.isYes },
+    isRecommended: a.isYes,
+    isFollowUp: false,
+  }))
+
+  return [
+    {
+      kind: 'row',
+      line: {
+        ...blankLine(HERDR_ASK_ID),
+        lead: null,
+        title: banner.lead,
+        titleTone: 'key',
+        detail: banner.body,
+        isDetailShown: true,
+        buttons: isAsking ? buttons : [],
+        isStatic: !isAsking,
+        isWaiting: isAsking,
+      },
+    },
+  ]
+}
 
 function stopEntries(screen: PanelScreen, ui: PanelUi): Entry[] {
   const { stop } = screen
@@ -93,7 +135,7 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
           rows: view.findings.rows.filter(r => r.finding?.kind === kind && isDrawnInPlace(r, ui.shownSince)),
           closed: view.findings.closed.filter(f => f.kind === kind).map(f => ({ ...f, at: f.closedAt })),
         }))
-  const stops = tab === 'needsYou' ? stopEntries(screen, ui) : []
+  const stops = tab === 'needsYou' ? [...herdrAskEntries(screen), ...stopEntries(screen, ui)] : []
   if (groups.every(isGroupEmpty)) {
     const empty = emptyText(tab, AGENT, isMaybeStale(view, screen.isReadFailed))
 

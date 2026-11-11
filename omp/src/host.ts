@@ -38,6 +38,7 @@ import { activityHandlers } from './host-activity'
 import { isUnattended, sessionIdOf } from './host-context'
 import type { HostContext, OmpContext } from './host-context'
 import { herdrLog, ompPresses, startOmpInHerdrApp } from './host-presses'
+import { ompHerdrAsk } from './host-herdr-ask'
 import { panelCalls } from './host-panel'
 import type { Inbox } from './host-panel'
 import { sessionCalls } from './host-sessions'
@@ -295,6 +296,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       framesFor: null,
       shownCwd: null,
       herdrModFailure: null,
+      herdrAsk: null,
     },
     sendToAgent,
     askFor,
@@ -312,7 +314,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   const turns = turnHandlers(context, sessions)
   const { start } = turns
   const activity = activityHandlers(context, sessions)
-  const { inbox, liveSource } = panelCalls(context, sessions)
+  const herdrAsk = ompHerdrAsk(deps.herdrTarget, context.memory, () => {
+    for (const listeners of context.listeners.values()) for (const listener of listeners) listener()
+  })
+  const { inbox, liveSource } = panelCalls(context, sessions, herdrAsk)
 
   pi.events.on('task:subagent:lifecycle', activity.onSubagentLifecycle)
   pi.events.on('task:subagent:progress', activity.onSubagentProgress)
@@ -320,7 +325,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   pi.on('session_start', (_event, ctx) => {
     if (!isHerdrStarted)
       void startOmpInHerdrApp(deps.herdrTarget, run, logHerdr)
-        .then(result => void (context.memory.herdrModFailure = result?.is === 'failed' ? result.text : null))
+        .then(result => herdrAsk.started(result))
         .catch(() => undefined)
     isHerdrStarted = true
     return start(ctx)
@@ -471,6 +476,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   pi.registerCommand('inbox', {
     description: inboxCommandText(deps.isNextBuild),
     handler: async (args, ctx) => {
+      if (args.trim() === 'herdr') ctx.ui.notify(await herdrAsk.again(), 'info')
       const isDemo = args.trim() === 'demo'
       const target = deps.herdrTarget
       const isHerdrApp = ctx.mode === 'tui' && !args.trim() && target?.kind === 'terminal'

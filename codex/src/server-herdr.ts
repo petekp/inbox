@@ -4,7 +4,8 @@ import { lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'no
 import { dirname, join } from 'node:path'
 
 import type { Run } from '../../hooks/gh'
-import { herdrTarget } from '../../hooks/herdr'
+import { herdrAppHome, herdrTarget } from '../../hooks/herdr'
+import { answerHerdrAsk, herdrAskInApp } from '../../hooks/herdr-ask'
 import type { ModFiles } from '../../hooks/herdr-install'
 import { startInHerdrApp } from '../../hooks/herdr-start'
 import type { SweepFiles } from '../../hooks/herdr-sweep'
@@ -57,6 +58,27 @@ export async function startCodexInHerdrApp(
   const target = herdrTarget(env)
   if (target?.kind === 'terminal') await startInHerdrApp(run, startFiles, target, bundledFolder, Date.now(), log)
 }
+
+/**
+ * The question the Codex app's tab asks before it installs the inbox's Herdr mod, and its answer. It asks when the
+ * Herdr app's settings folder exists, the mod is missing and no host has saved an answer.
+ */
+export function codexHerdrAsk(env: NodeJS.ProcessEnv, bundledFolder: string) {
+  const appHome = herdrAppHome(env)
+  const asked = () => (appHome ? herdrAskInApp(startFiles, appHome, env.HOME) : Promise.resolve(null))
+
+  return {
+    view: asked,
+    answer: async (isYes: boolean) => {
+      const ask = await asked()
+      if (!ask) return { ask: null, failure: null }
+
+      return answerHerdrAsk(startFiles, ask, bundledFolder, isYes, Date.now(), 'Run /inbox herdr in Claude Code or omp')
+    },
+  }
+}
+
+export type CodexHerdrAsk = ReturnType<typeof codexHerdrAsk>
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 

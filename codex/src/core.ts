@@ -10,6 +10,7 @@ import type { Holds } from '../../hooks/timing'
 import { SETTLE_WINDOW_MS } from './settle'
 import type { Heard, SessionState } from './state'
 import { CODEX } from './texts'
+import type { OpenHerdrAsk } from '../../hooks/herdr-ask'
 
 const TAB_OPEN_MS = 15_000
 
@@ -134,6 +135,8 @@ export type View = SessionView & {
  */
 export type TabView = View & {
   hooksTrust?: HooksTrust
+  /** The question before the tab installs the inbox's Herdr mod, while no host has answered it. */
+  herdrAsk?: OpenHerdrAsk
   thread: string
   devPage: string
   serverBuild?: string

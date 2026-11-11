@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-11T08:57:07.800Z. 183153 characters follow.
+// Built at 2026-11-11T21:03:43.561Z. 183179 characters follow.
 
 // src/main.ts
 import { View, div as div3 } from "gpui-kit";
@@ -50,7 +50,8 @@ var BANNER_TONES = {
   "server-load-failed": "error",
   "server-builds-differ": "warning",
   "tab-update-failed": "warning",
-  "herdr-mod-failed": "warning"
+  "herdr-mod-failed": "warning",
+  "herdr-mod-ask": "ask"
 };
 function bannerOf(kind, text) {
   const end = text.indexOf(". ");

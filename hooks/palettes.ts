@@ -45,6 +45,7 @@ const THEME_KEY_BANNERS: Palette['banner'] = {
   error: { line: 'error' },
   warning: { line: NEEDS_YOU },
   notice: { line: 'inactive' },
+  ask: { line: 'remember' },
 }
 const DARK_PALETTE: Palette = {
   card: '#373737',
@@ -157,6 +158,8 @@ const DESKTOP_PALETTE: Palette = {
     error: { line: 'rgba(214, 69, 80, 0.32)', fill: 'rgba(214, 69, 80, 0.1)' },
     warning: { line: 'rgba(212, 160, 23, 0.36)', fill: 'rgba(212, 160, 23, 0.1)' },
     notice: { line: 'rgba(128, 120, 105, 0.28)', fill: 'rgba(128, 120, 105, 0.1)' },
+    // Halfway between the terminal's light and dark key tones, as one tint serves both of the app's themes.
+    ask: { line: 'rgba(106, 122, 247, 0.36)', fill: 'rgba(106, 122, 247, 0.1)' },
   },
 }
 /**

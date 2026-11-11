@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'claude-code/testing'
 import type { Run } from '../hooks/gh'
 import { herdrTarget } from '../hooks/herdr'
+import {
+  answerHerdrAsk,
+  askHerdrAgain,
+  herdrAskBanner,
+  herdrAskInApp,
+  herdrAskOf,
+  isHerdrAskOpen,
+} from '../hooks/herdr-ask'
 import { answerHerdrMod, builtAtLine, keepHerdrModCurrent } from '../hooks/herdr-install'
 import type { ModFiles } from '../hooks/herdr-install'
 import { startInHerdrApp } from '../hooks/herdr-start'
@@ -269,5 +277,59 @@ describe('labelledSessions', () => {
     ).toEqual({ is: 'ask' })
     expect(d.files.has('/app/inbox/sessions/gone.json')).toBe(true)
     expect(logged).toEqual(["Left old inbox session files in place: no hc listed Herdr's terminals. Tried hc."])
+  })
+})
+
+describe('the install question', () => {
+  const APP = '/home/p/.config/herdr-app'
+  const inApp = (files: Record<string, string> = {}) => disk({ ...BUNDLED, [`${APP}/settings.json`]: '{}', ...files })
+
+  test('asks while the app home exists and no answer is saved, installs after Install, and closes in every session', async () => {
+    const d = inApp()
+    const ask = await herdrAskInApp(d.calls, APP, '/home/p')
+    const other = herdrAskOf(APP, '/home/p', null)
+
+    expect(await herdrAskInApp(disk(BUNDLED).calls, APP, '/home/p')).toBe(null)
+    expect(herdrAskBanner(ask)).toEqual({
+      kind: 'herdr-mod-ask',
+      tone: 'ask',
+      lead: "Install the inbox's Herdr mod?",
+      body: 'It adds the inbox panel to the Herdr app, in ~/.config/herdr-app/mods/inbox, and keeps it up to date with the inbox.',
+    })
+    expect(herdrAskBanner({ ...other, is: 'installing' })?.lead).toBe('Installing the inbox mod in Herdr…')
+
+    const r = await answerHerdrAsk(d.calls, ask!, '/plugin/mod', true, 5, 'Run /inbox herdr')
+    expect(r).toEqual({ ask: { is: 'answered', text: '✓ Installed the inbox mod in Herdr.' }, failure: null })
+    expect(d.files.get(`${APP}/mods/inbox/main.js`)).toBe(build(NEW))
+    expect(await isHerdrAskOpen(d.calls, other)).toBe(false)
+    expect(await herdrAskInApp(d.calls, APP, '/home/p')).toBe(null)
+  })
+
+  test("saves Don't install, closes an open question elsewhere, and asks again only through /inbox herdr", async () => {
+    const d = inApp()
+    const other = herdrAskOf(APP, '/home/p', null)
+
+    const r = await answerHerdrAsk(d.calls, other, '/plugin/mod', false, 5, 'Run /inbox herdr in Claude Code or omp')
+    expect(r.ask).toEqual({ is: 'answered', text: 'Run /inbox herdr in Claude Code or omp to install it later.' })
+    expect(d.files.has(`${APP}/mods/inbox/main.js`)).toBe(false)
+    expect(await isHerdrAskOpen(d.calls, other)).toBe(false)
+    expect(await herdrAskInApp(d.calls, APP, '/home/p')).toBe(null)
+
+    const again = await askHerdrAgain(d.calls, APP, '/home/p')
+    expect(again).toEqual({ is: 'asking', appHome: APP, folder: '~/.config/herdr-app/mods/inbox', answeredAt: 5 })
+    expect(await isHerdrAskOpen(d.calls, again as Exclude<typeof again, string>)).toBe(true)
+  })
+
+  test('says why /inbox herdr cannot ask', async () => {
+    const installed = inApp({ [`${APP}/mods/inbox/main.js`]: build(NEW) })
+    const own = inApp({ [`${APP}/mods/inbox/main.js`]: 'export default 1' })
+
+    expect(await askHerdrAgain(inApp().calls, null, '/home/p')).toBe(
+      'Run /inbox herdr in a Herdr app terminal to install the inbox mod there.',
+    )
+    expect(await askHerdrAgain(installed.calls, APP, '/home/p')).toBe('The inbox mod is already installed in Herdr.')
+    expect(await askHerdrAgain(own.calls, APP, '/home/p')).toBe(
+      '~/.config/herdr-app/mods/inbox holds another mod, so the inbox leaves it alone.',
+    )
   })
 })

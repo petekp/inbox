@@ -81,6 +81,7 @@ function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button, 
 
     return { ui: { ...ui, focus: null, resuming: { stopAt: stop.at, is: 'sending' } }, press }
   }
+  if (press.action === 'herdr-ask') return { ui: { ...ui, focus: null }, press }
   if (!isPrPress(press) && press.action === 'type') {
     const draft = ui.drafts[line.id] ?? { text: '', since: now }
 

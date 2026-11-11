@@ -50,7 +50,7 @@ const pressFiles: PressFiles = {
   remove: path => rm(path, { force: true }),
 }
 
-const startFiles: ModFiles & SweepFiles = {
+export const startFiles: ModFiles & SweepFiles = {
   kind: path =>
     lstat(path).then(
       s => (s.isSymbolicLink() ? 'link' : s.isDirectory() ? 'folder' : s.isFile() ? 'file' : 'other'),
@@ -80,9 +80,11 @@ export async function startOmpInHerdrApp(
   log: (text: string) => void,
 ): Promise<HerdrModResult | null> {
   if (target?.kind !== 'terminal') return null
-  const bundled = join(dirname(fileURLToPath(import.meta.url)), 'herdr-mod')
-  return startInHerdrApp(run, startFiles, target, bundled, Date.now(), log)
+  return startInHerdrApp(run, startFiles, target, bundledHerdrMod(), Date.now(), log)
 }
+
+/** The copy of the inbox's Herdr mod beside the bundle. */
+export const bundledHerdrMod = () => join(dirname(fileURLToPath(import.meta.url)), 'herdr-mod')
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 

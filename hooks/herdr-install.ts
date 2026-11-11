@@ -77,15 +77,36 @@ type ModAnswer = 'yes' | 'no' | 'installed'
 const ANSWER_FORMAT = 1
 const answerPath = (appHome: string) => `${appHome}/inbox/herdr-mod.json`
 
-async function savedAnswer(files: ModFiles, appHome: string): Promise<ModAnswer | null> {
+/** The saved answer and when it was saved, or null when none can be read. */
+async function savedRecord(files: ModFiles, appHome: string): Promise<{ answer: ModAnswer; at: number | null } | null> {
   try {
-    const saved = JSON.parse(await files.read(answerPath(appHome))) as { format?: unknown; answer?: unknown } | null
+    const saved = JSON.parse(await files.read(answerPath(appHome))) as {
+      format?: unknown
+      answer?: unknown
+      at?: unknown
+    } | null
     const answer = saved?.format === ANSWER_FORMAT ? saved.answer : null
+    const at = typeof saved?.at === 'number' ? saved.at : null
 
-    return answer === 'yes' || answer === 'no' || answer === 'installed' ? answer : null
+    return answer === 'yes' || answer === 'no' || answer === 'installed' ? { answer, at } : null
   } catch {
     return null
   }
+}
+
+const savedAnswer = async (files: ModFiles, appHome: string) => (await savedRecord(files, appHome))?.answer ?? null
+
+/**
+ * What the app's mods folder holds at `mods/inbox`: nothing, a build of the inbox's mod, or the person's own. With
+ * when the person's answer was saved, so a host can tell an answer given since it asked.
+ */
+export async function herdrModNow(
+  files: ModFiles,
+  appHome: string,
+): Promise<{ installed: InstalledMod['is']; answeredAt: number | null }> {
+  const [installed, record] = await Promise.all([installedMod(files, appHome), savedRecord(files, appHome)])
+
+  return { installed: installed.is, answeredAt: record?.at ?? null }
 }
 
 /** A name beside `name` for a write that moves into place, with the time the host wrote it. */
