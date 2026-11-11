@@ -37,7 +37,7 @@ import { OMP, TOOL_LABELS } from './texts'
 import { activityHandlers } from './host-activity'
 import { isUnattended, sessionIdOf } from './host-context'
 import type { HostContext, OmpContext } from './host-context'
-import { herdrLog, ompPresses } from './host-presses'
+import { herdrLog, ompPresses, startOmpInHerdrApp } from './host-presses'
 import { panelCalls } from './host-panel'
 import type { Inbox } from './host-panel'
 import { sessionCalls } from './host-sessions'
@@ -309,7 +309,12 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
 
   pi.events.on('task:subagent:lifecycle', activity.onSubagentLifecycle)
   pi.events.on('task:subagent:progress', activity.onSubagentProgress)
-  pi.on('session_start', (_event, ctx) => start(ctx))
+  let isHerdrStarted = false
+  pi.on('session_start', (_event, ctx) => {
+    if (!isHerdrStarted) void startOmpInHerdrApp(deps.herdrTarget, run, logHerdr).catch(() => undefined)
+    isHerdrStarted = true
+    return start(ctx)
+  })
   pi.on('session_switch', (event, ctx) => start(ctx, event.reason === 'fork' ? event.previousSessionFile : undefined))
   // A `/btw` promotion, a fork from an entry and a command's branch give the session a new id, with the old file as
   // `previousSessionFile`. A `/branch` in the same file keeps the id, and the fork step then finds nothing to copy.

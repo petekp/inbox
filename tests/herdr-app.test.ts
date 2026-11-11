@@ -224,7 +224,7 @@ describe('listenForHerdrPresses', () => {
         reads.push(folder)
         return [{ name: 'p.json', kind: 'file' }]
       },
-      isFile: async () => false,
+      stat: async () => ({ kind: 'other', isLink: false }),
       spawn: argv => {
         spawned.push(argv[0]!)
         return streams[argv[0]!]!.iterator
@@ -233,6 +233,7 @@ describe('listenForHerdrPresses', () => {
       after: () => undefined,
       every: () => ({ cancel: () => undefined }) as unknown as Timer,
       log: () => undefined,
+      pluginRoot: '/plugin',
     }
 
     return { c, spawned, reads }

@@ -15,6 +15,8 @@ The inbox's three hosts each install the inbox from this repo, so each install a
 
 Pete chose 1. A mod that falls behind the hosts breaks when the envelope's `format` moves, and the person has no reason to copy it again by hand. When two hosts carry different versions, the newer one wins, and the mod reads older envelopes through `upgradeSession`.
 
+How it is built: a host compares build times, not versions. `herdr/build.ts` writes the time of each build whose code changed on the bundle's second line, and copies the mod into `codex/plugin/dist/herdr-mod/` and `omp/dist/herdr-mod/`, since Codex and omp install only those folders. The answer to the install question is saved in `<app home>/inbox/herdr-mod.json`, for every host to read. "Installing and updating the Herdr mod" in [the hosts' differences](../../looks/differences-hosts.md) gives the behavior. The question itself is not built yet.
+
 ### Minimum Herdr version
 
 Herdr 0.1.10, the version the spike ran. `herdr.d.ts` was byte-identical from 0.1.6 through 0.1.10, and the elements' typings did not change from 0.1.6 through 0.1.9, so earlier versions would likely work. Across the six tags before 0.1.10, the one change that broke mods came in 0.1.5, when `focused().pane` and `focused().terminal` became nullable. The mod reads `updates().app.version`, and below 0.1.10 it says which version it needs.

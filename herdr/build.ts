@@ -1,9 +1,13 @@
-// Bundles src/main.ts and the shared modules it imports into mod/inbox/main.js, the Herdr app mod an install copies
-// into the app's mods folder. The bundle is committed, since an install runs no build. The Herdr app supplies
-// gpui-kit, gpui-base and herdr to a mod, so they stay external.
+// Bundles src/main.ts and the shared modules it imports into mod/inbox/main.js, the Herdr app mod a host copies into
+// the app's mods folder. The bundle is committed, since an install runs no build. The Herdr app supplies gpui-kit,
+// gpui-base and herdr to a mod, so they stay external.
 //
-//   bun build.ts          writes mod/inbox/main.js and mod/inbox/mod.json
-//   bun build.ts --check  exits 1 when they do not match the sources
+// The Codex and omp installs hold only codex/plugin and omp, so the build writes the same files into
+// codex/plugin/dist/herdr-mod and omp/dist/herdr-mod as well. The bundle's second line says when it was built. A host
+// replaces an installed mod built earlier. A build whose code matches the committed bundle keeps that bundle's time.
+//
+//   bun build.ts          writes main.js and mod.json in mod/inbox and in both copies
+//   bun build.ts --check  exits 1 when any of them does not match the sources
 //
 // The mod runtime has no Node modules. For a browser build Bun swaps a Node module for an empty stand-in, which loads
 // and then fails where the code first calls it. So the build fails on any import that is not a file of the repo or one
@@ -12,14 +16,19 @@
 // Bun's bundler writes different output for the same sources in different Bun versions, so the build runs the Bun
 // that package.json pins as a platform package in devDependencies, whichever Bun started it.
 
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { builtAtLine, modBuiltAt } from '../hooks/herdr-install'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const out = join(here, 'mod', 'inbox')
 const isCheck = process.argv[2] === '--check'
 const APP_MODULES = ['gpui-kit', 'gpui-base', 'herdr']
 const MOD_JSON = `${JSON.stringify({ place: 'none' })}\n`
+const COPIES = [join(here, '..', 'codex', 'plugin', 'dist', 'herdr-mod'), join(here, '..', 'omp', 'dist', 'herdr-mod')]
+const BUILT_AT_LINE = builtAtLine('BUILT_AT')
+const stamped = (unstamped: string, builtAt: string) => unstamped.replace(BUILT_AT_LINE, builtAtLine(builtAt))
 
 const { devDependencies } = (await Bun.file(join(here, 'package.json')).json()) as {
   devDependencies: Record<string, string>
@@ -53,7 +62,7 @@ const result = await Bun.build({
   target: 'browser',
   format: 'esm',
   external: APP_MODULES,
-  banner: `// Built by herdr/build.ts with Bun ${Bun.version} from herdr/src and hooks/. Do not edit.`,
+  banner: `// Built by herdr/build.ts with Bun ${Bun.version} from herdr/src and hooks/. Do not edit.\n${BUILT_AT_LINE}`,
   plugins: [
     {
       name: 'app modules only',
@@ -75,24 +84,27 @@ if (!result.success) {
   for (const log of result.logs) console.error(String(log))
   process.exit(1)
 }
-const bundle = await result.outputs[0]!.text()
+const unstamped = await result.outputs[0]!.text()
+const read = (path: string) =>
+  Bun.file(path)
+    .text()
+    .catch(() => null)
+const current = await read(join(out, 'main.js'))
+const currentBuiltAt = current ? modBuiltAt(current) : null
+const isSameCode = currentBuiltAt !== null && current === stamped(unstamped, currentBuiltAt)
+const bundle = stamped(unstamped, isSameCode ? currentBuiltAt : new Date().toISOString())
+const files = { 'main.js': bundle, 'mod.json': MOD_JSON }
 
 if (isCheck) {
-  const read = (name: string) =>
-    Bun.file(join(out, name))
-      .text()
-      .catch(() => null)
-  const stale = [
-    ...((await read('main.js')) === bundle ? [] : ['main.js']),
-    ...((await read('mod.json')) === MOD_JSON ? [] : ['mod.json']),
-  ]
+  const stale: string[] = []
+  for (const folder of [out, ...COPIES])
+    for (const [name, text] of Object.entries(files))
+      if ((await read(join(folder, name))) !== text) stale.push(relative(join(here, '..'), join(folder, name)))
   if (stale.length > 0) {
-    console.error(
-      `Out of date: ${stale.map(n => `herdr/mod/inbox/${n}`).join(', ')}. Run: npm --prefix ${here} run build`,
-    )
+    console.error(`Out of date: ${stale.join(', ')}. Run: npm --prefix ${here} run build`)
     process.exit(1)
   }
 } else {
-  await Bun.write(join(out, 'main.js'), bundle)
-  await Bun.write(join(out, 'mod.json'), MOD_JSON)
+  for (const folder of [out, ...COPIES])
+    for (const [name, text] of Object.entries(files)) await Bun.write(join(folder, name), text)
 }

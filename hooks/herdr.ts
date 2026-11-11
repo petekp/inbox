@@ -203,7 +203,7 @@ function paneReport(pane: string, tokens: HerdrTokens, seq?: number): string[] {
 }
 
 /** The label that names the session a terminal runs, so the Herdr look can find its published file. */
-const SESSION_LABEL = 'inbox.session'
+export const SESSION_LABEL = 'inbox.session'
 
 /**
  * What a host reports: where, its tokens, and the session whose published file the labels name, which is null when no

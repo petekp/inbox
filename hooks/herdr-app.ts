@@ -151,7 +151,11 @@ export function publishedSession(
  * Removes the session's published file and its press folder, as when the session ends or the host moves to another.
  * No host applies a press for that session after this.
  */
-export async function unpublishSession(files: PublishFiles, appHome: string, sessionId: string): Promise<void> {
+export async function unpublishSession(
+  files: Pick<PublishFiles, 'remove' | 'removeFolder'>,
+  appHome: string,
+  sessionId: string,
+): Promise<void> {
   await Promise.all([
     files.remove(publishedSessionPath(appHome, sessionId)),
     files.removeFolder(pressFolder(appHome, sessionId)),

@@ -1,9 +1,13 @@
 import { watch } from 'node:fs'
 import type { FSWatcher } from 'node:fs'
-import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 
+import type { Run } from '../../hooks/gh'
 import { herdrTarget } from '../../hooks/herdr'
+import type { ModFiles } from '../../hooks/herdr-install'
+import { startInHerdrApp } from '../../hooks/herdr-start'
+import type { SweepFiles } from '../../hooks/herdr-sweep'
 import type { PressFile } from '../../hooks/herdr-press-file'
 import { followPresses, isPublishedHere, pressDrainer, pressFileProblem } from '../../hooks/herdr-app'
 import type { PressFiles } from '../../hooks/herdr-app'
@@ -19,6 +23,38 @@ const pressFiles: PressFiles = {
   },
   move: (from, to) => rename(from, to),
   remove: path => rm(path, { force: true }),
+}
+
+const startFiles: ModFiles & SweepFiles = {
+  kind: path =>
+    lstat(path).then(
+      s => (s.isSymbolicLink() ? 'link' : s.isDirectory() ? 'folder' : s.isFile() ? 'file' : 'other'),
+      () => null,
+    ),
+  read: path => readFile(path, 'utf8'),
+  write: async (path, text) => {
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, text)
+  },
+  makeFolder: async path => void (await mkdir(path, { recursive: true })),
+  move: (from, to) => rename(from, to),
+  remove: path => rm(path, { force: true }),
+  removeFolder: path => rm(path, { recursive: true, force: true }),
+  list: async folder => (await readdir(folder, { withFileTypes: true })).filter(e => e.isFile()).map(e => e.name),
+}
+
+/**
+ * In a Herdr app terminal, keeps the inbox's mod in the app current with the copy in `bundledFolder`, and removes the
+ * published sessions no live terminal can show, as `startInHerdrApp` says. Does nothing outside an app terminal.
+ */
+export async function startCodexInHerdrApp(
+  env: NodeJS.ProcessEnv,
+  run: Run,
+  bundledFolder: string,
+  log: (text: string) => void,
+): Promise<void> {
+  const target = herdrTarget(env)
+  if (target?.kind === 'terminal') await startInHerdrApp(run, startFiles, target, bundledFolder, Date.now(), log)
 }
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))

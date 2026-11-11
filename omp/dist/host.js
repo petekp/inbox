@@ -816,8 +816,8 @@ var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} second
 import { existsSync } from "fs";
 import { stat as stat4 } from "fs/promises";
 import { homedir } from "os";
-import { dirname as dirname2, join as join4 } from "path";
-import { fileURLToPath } from "url";
+import { dirname as dirname3, join as join4 } from "path";
+import { fileURLToPath as fileURLToPath2 } from "url";
 // package.json
 var version = "0.3.0";
 
@@ -8582,6 +8582,7 @@ var CLIENTS = {
       "herdr-sidebar": { kind: "full" },
       "herdr-look": { kind: "full" },
       "herdr-open": { kind: "full" },
+      "herdr-install": { kind: "full" },
       "status-children": { kind: "full" },
       "child-names": { kind: "full" },
       "status-look-line": { kind: "full" },
@@ -8689,6 +8690,10 @@ var CLIENTS = {
         kind: "unsupported",
         reason: "The Codex CLI has no action that opens the inbox. A Codex plugin adds skills, MCP servers and hooks but no slash command, and the Inbox tab shows only in the Codex app. A `$inbox` skill that has the model call an MCP tool could open the Herdr look, but only after a model turn, so the press could not show what it did at once. It is left as an option."
       },
+      "herdr-install": {
+        kind: "different",
+        reason: "The Codex CLI shows no inbox where the install question could show: a Codex plugin adds no slash command, and the Inbox tab shows only in the Codex app. Codex updates an installed inbox build, and installs after a yes another host saved."
+      },
       "status-children": {
         kind: "different",
         reason: "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so workflows do not show. The end of a wait on a Herdr delegate is read at Stop."
@@ -8790,6 +8795,7 @@ var CLIENTS = {
       "herdr-sidebar": { kind: "full" },
       "herdr-look": { kind: "full" },
       "herdr-open": { kind: "full" },
+      "herdr-install": { kind: "full" },
       "status-children": {
         kind: "different",
         reason: "omp's extension events report subagents and bash calls. omp's reference names no event for a workflow run, so those do not show."
@@ -10546,8 +10552,9 @@ function activityHandlers(context, sessions) {
 
 // src/host-presses.ts
 import { watch } from "fs";
-import { appendFile, mkdir as mkdir2, readdir as readdir2, readFile as readFile2, rename as rename2, rm, stat as stat2, writeFile as writeFile2 } from "fs/promises";
-import { join as join2 } from "path";
+import { appendFile, lstat, mkdir as mkdir2, readdir as readdir2, readFile as readFile2, rename as rename2, rm, stat as stat2, writeFile as writeFile2 } from "fs/promises";
+import { dirname, join as join2 } from "path";
+import { fileURLToPath } from "url";
 
 // ../hooks/herdr-press-file.ts
 var PRESS_TARGETS = {
@@ -11108,6 +11115,195 @@ async function applyLookPress(host, file) {
   return outcome;
 }
 
+// ../hooks/herdr-install.ts
+var BUILD_BANNER = "// Built by herdr/build.ts ";
+var BUILT_AT = /^\/\/ Built at (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z)$/;
+var isInboxMod = (mainJs) => mainJs.startsWith(BUILD_BANNER);
+function modBuiltAt(mainJs) {
+  const second = mainJs.split(`
+`, 2)[1] ?? "";
+  return BUILT_AT.exec(second)?.[1] ?? null;
+}
+async function bundledMod(read, folder) {
+  const [mainJs, modJson] = await Promise.all([read(`${folder}/main.js`), read(`${folder}/mod.json`)]).catch(() => []);
+  const builtAt = mainJs === undefined ? null : modBuiltAt(mainJs);
+  return mainJs !== undefined && modJson !== undefined && builtAt ? { mainJs, modJson, builtAt } : null;
+}
+var modFolder = (appHome) => `${appHome}/mods/inbox`;
+async function installedMod(files, appHome) {
+  const kind = await files.kind(modFolder(appHome));
+  if (kind === null)
+    return { is: "missing" };
+  if (kind !== "folder")
+    return { is: "own" };
+  const mainJs = await files.read(`${modFolder(appHome)}/main.js`).catch(() => null);
+  if (mainJs === null || !isInboxMod(mainJs))
+    return { is: "own" };
+  return { is: "inbox", builtAt: modBuiltAt(mainJs) };
+}
+var ANSWER_FORMAT = 1;
+var answerPath = (appHome) => `${appHome}/inbox/herdr-mod.json`;
+async function savedAnswer(files, appHome) {
+  try {
+    const saved = JSON.parse(await files.read(answerPath(appHome)));
+    const answer = saved?.format === ANSWER_FORMAT ? saved.answer : null;
+    return answer === "yes" || answer === "no" || answer === "installed" ? answer : null;
+  } catch {
+    return null;
+  }
+}
+var temporaryName = (name) => `${name}.${Math.random().toString(36).slice(2)}.tmp`;
+async function saveAnswer(files, appHome, answer, at) {
+  const path = answerPath(appHome);
+  const temporary = temporaryName(path);
+  await files.write(temporary, `${JSON.stringify({ format: ANSWER_FORMAT, answer, at })}
+`);
+  await files.move(temporary, path);
+}
+function modStep(installed, answer, bundled) {
+  if (installed.is === "missing")
+    return answer === "yes" ? "install" : answer === null ? "ask" : null;
+  if (installed.is === "own")
+    return null;
+  return bundled.builtAt > (installed.builtAt ?? "") ? "update" : null;
+}
+async function writeMod(files, appHome, bundled, step) {
+  const name = temporaryName("herdr-mod");
+  const temporary = `${appHome}/inbox/${name}`;
+  const target = modFolder(appHome);
+  try {
+    await files.write(`${temporary}/mod.json`, bundled.modJson);
+    await files.write(`${temporary}/main.js`, bundled.mainJs);
+    if (step === "install") {
+      await files.makeFolder(`${appHome}/mods`);
+      if (await files.kind(target) !== null)
+        return;
+      await files.move(temporary, target);
+      await files.removeFolder(`${target}/${name}`);
+      return;
+    }
+    if (modStep(await installedMod(files, appHome), null, bundled) !== "update")
+      return;
+    const installedJson = await files.read(`${target}/mod.json`).catch(() => null);
+    if (installedJson !== bundled.modJson)
+      await files.move(`${temporary}/mod.json`, `${target}/mod.json`);
+    await files.move(`${temporary}/main.js`, `${target}/main.js`);
+  } finally {
+    await files.removeFolder(temporary).catch(() => {
+      return;
+    });
+  }
+}
+var message2 = (err) => err instanceof Error ? err.message : String(err);
+async function keepHerdrModCurrent(files, appHome, bundledFolder, now) {
+  const bundled = await bundledMod(files.read, bundledFolder);
+  if (!bundled)
+    return { is: "failed", text: `Could not read the inbox mod for Herdr in ${bundledFolder}.` };
+  const step = await Promise.all([installedMod(files, appHome), savedAnswer(files, appHome)]).then(([installed, answer]) => modStep(installed, answer, bundled)).catch((err) => new Error(message2(err)));
+  if (step instanceof Error)
+    return { is: "failed", text: `Could not read the Herdr app's mods folder: ${step.message}` };
+  if (step === null)
+    return { is: "current" };
+  if (step === "ask")
+    return { is: "ask" };
+  try {
+    await writeMod(files, appHome, bundled, step);
+    if (step === "install")
+      await saveAnswer(files, appHome, "installed", now);
+    return { is: step === "install" ? "installed" : "updated" };
+  } catch (err) {
+    return { is: "failed", text: `Could not ${step} the inbox mod in Herdr: ${message2(err)}` };
+  }
+}
+
+// ../hooks/herdr-sweep.ts
+var SWEEP_AFTER_MS = 24 * 60 * 60 * 1000;
+var HC_TIMEOUT_MS = 5000;
+var LIST_REQUEST = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "terminal.list", params: {} });
+function labelledIn(stdout) {
+  for (const line of stdout.split(`
+`)) {
+    try {
+      const terminals = JSON.parse(line)?.result?.terminals;
+      if (!Array.isArray(terminals))
+        continue;
+      const named = terminals.map((t) => t?.labels?.[SESSION_LABEL]);
+      return new Set(named.filter((id) => typeof id === "string" && id !== ""));
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+async function labelledSessions(run, hcs) {
+  for (const hc of hcs) {
+    const r = await run(["/bin/sh", "-c", 'printf "%s\\n" "$1" | "$0" connect', hc, LIST_REQUEST], {
+      cwd: "/",
+      timeoutMs: HC_TIMEOUT_MS
+    }).catch(() => null);
+    const labelled = r?.code === 0 ? labelledIn(r.stdout) : null;
+    if (labelled)
+      return labelled;
+  }
+  return null;
+}
+function writtenAt(text, sessionId) {
+  try {
+    const e = JSON.parse(text ?? "");
+    const isEnvelope = Number.isInteger(e?.format) && e.format >= 1 && e.format <= HERDR_FORMAT && e.sessionId === sessionId;
+    return isEnvelope && typeof e.writtenAt === "number" && Number.isFinite(e.writtenAt) ? e.writtenAt : null;
+  } catch {
+    return null;
+  }
+}
+async function sweepPublished(files, appHome, labelled, now) {
+  const folder = publishedSessionsFolder(appHome);
+  const names = (await files.list(folder).catch(() => [])).filter(isSessionFile);
+  const removed = [];
+  for (const name of names) {
+    const id = name.slice(0, -".json".length);
+    if (labelled.has(id))
+      continue;
+    const at = writtenAt(await files.read(`${folder}/${name}`).catch(() => null), id);
+    if (at === null || now - at < SWEEP_AFTER_MS)
+      continue;
+    await unpublishSession(files, appHome, id);
+    removed.push(id);
+  }
+  return removed;
+}
+
+// ../hooks/herdr-start.ts
+var message3 = (err) => err instanceof Error ? err.message : String(err);
+function modLine(result) {
+  if (result.is === "failed")
+    return result.text;
+  if (result.is === "installed")
+    return "Installed the inbox mod in Herdr.";
+  return result.is === "updated" ? "Updated the inbox mod in Herdr to a newer build." : null;
+}
+async function sweep(run, files, appHome, hcs, now, log) {
+  const labelled = await labelledSessions(run, hcs);
+  if (!labelled)
+    return log(`Left old inbox session files in place: no hc listed Herdr's terminals. Tried ${hcs.join(", then ")}.`);
+  const removed = await sweepPublished(files, appHome, labelled, now);
+  if (removed.length > 0)
+    log(`Removed ${removed.length} inbox session file${removed.length === 1 ? "" : "s"} that no Herdr terminal shows.`);
+}
+async function startInHerdrApp(run, files, target, bundledFolder, now, log) {
+  const { appHome } = target;
+  if (!appHome)
+    return null;
+  const [mod] = await Promise.all([
+    keepHerdrModCurrent(files, appHome, bundledFolder, now),
+    sweep(run, files, appHome, target.hc, now, log).catch((err) => log(`Old inbox session files not removed: ${message3(err)}`))
+  ]);
+  const line = modLine(mod);
+  if (line)
+    log(line);
+  return mod;
+}
+
 // src/host-presses.ts
 var HERDR_LOG_BYTES = 64 * 1024;
 function herdrLog(dir) {
@@ -11133,7 +11329,26 @@ var pressFiles = {
   move: (from, to) => rename2(from, to),
   remove: (path) => rm(path, { force: true })
 };
-var message2 = (err) => err instanceof Error ? err.message : String(err);
+var startFiles = {
+  kind: (path) => lstat(path).then((s) => s.isSymbolicLink() ? "link" : s.isDirectory() ? "folder" : s.isFile() ? "file" : "other", () => null),
+  read: (path) => readFile2(path, "utf8"),
+  write: async (path, text) => {
+    await mkdir2(dirname(path), { recursive: true });
+    await writeFile2(path, text);
+  },
+  makeFolder: async (path) => void await mkdir2(path, { recursive: true }),
+  move: (from, to) => rename2(from, to),
+  remove: (path) => rm(path, { force: true }),
+  removeFolder: (path) => rm(path, { recursive: true, force: true }),
+  list: async (folder) => (await readdir2(folder, { withFileTypes: true })).filter((e) => e.isFile()).map((e) => e.name)
+};
+async function startOmpInHerdrApp(target, run, log) {
+  if (target?.kind !== "terminal")
+    return;
+  const bundled = join2(dirname(fileURLToPath(import.meta.url)), "herdr-mod");
+  await startInHerdrApp(run, startFiles, target, bundled, Date.now(), log);
+}
+var message4 = (err) => err instanceof Error ? err.message : String(err);
 function ompPresses(target, apply, log) {
   let stopFollowing = null;
   const stop = () => {
@@ -11151,7 +11366,7 @@ function ompPresses(target, apply, log) {
       try {
         folder = pressFolder(appHome, id);
       } catch (err) {
-        return log(`Herdr presses not read: ${message2(err)}`);
+        return log(`Herdr presses not read: ${message4(err)}`);
       }
       const drain = pressDrainer(pressFiles, (sessionId) => isPublishedHere((path) => readFile2(path, "utf8"), appHome, sessionId, "omp", terminal), async (_id, file) => {
         await apply(ctx, file);
@@ -11164,9 +11379,9 @@ function ompPresses(target, apply, log) {
           if (isStopped)
             return;
           watcher = watch(folder, () => wake());
-          watcher.on("error", (err) => log(`Herdr presses not watched: ${message2(err)}`));
+          watcher.on("error", (err) => log(`Herdr presses not watched: ${message4(err)}`));
           wake();
-        }).catch((err) => log(`Herdr presses not watched: ${message2(err)}`));
+        }).catch((err) => log(`Herdr presses not watched: ${message4(err)}`));
         return () => {
           isStopped = true;
           watcher?.close();
@@ -11280,7 +11495,7 @@ function panelCalls(context, sessions) {
 
 // src/host-sessions.ts
 import { mkdir as mkdir3, readdir as readdir3, rename as rename3, rm as rm2, rmdir, writeFile as writeFile3 } from "fs/promises";
-import { dirname, join as join3 } from "path";
+import { dirname as dirname2, join as join3 } from "path";
 
 // ../hooks/conversation.ts
 var NL7 = `
@@ -11332,7 +11547,7 @@ function sessionIdInFile(file) {
 }
 var publishFiles = {
   write: async (path, text) => {
-    await mkdir3(dirname(path), { recursive: true });
+    await mkdir3(dirname2(path), { recursive: true });
     await writeFile3(path, text);
   },
   move: (from, to) => rename3(from, to),
@@ -11341,7 +11556,7 @@ var publishFiles = {
 };
 var recordFiles = {
   write: async (path, text) => {
-    await mkdir3(dirname(path), { recursive: true });
+    await mkdir3(dirname2(path), { recursive: true });
     await writeFile3(path, text);
   },
   list: (folder) => readdir3(folder).catch(() => []),
@@ -11781,8 +11996,8 @@ var defaultDeps = {
   newId: randomUUID,
   settleWindowMs: SETTLED_MS,
   home: homedir(),
-  isNextBuild: existsSync(join4(dirname2(dirname2(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
-  comparePage: join4(dirname2(fileURLToPath(import.meta.url)), COMPARE_PAGE_FILE),
+  isNextBuild: existsSync(join4(dirname3(dirname3(fileURLToPath2(import.meta.url))), NEXT_BUILD_MARK)),
+  comparePage: join4(dirname3(fileURLToPath2(import.meta.url)), COMPARE_PAGE_FILE),
   complete: defaultComplete,
   copy: copyToClipboard,
   background: (work) => void work.catch(() => {
@@ -11923,7 +12138,15 @@ function createInbox(pi, deps = defaultDeps) {
   const { inbox, liveSource } = panelCalls(context, sessions);
   pi.events.on("task:subagent:lifecycle", activity.onSubagentLifecycle);
   pi.events.on("task:subagent:progress", activity.onSubagentProgress);
-  pi.on("session_start", (_event, ctx) => start(ctx));
+  let isHerdrStarted = false;
+  pi.on("session_start", (_event, ctx) => {
+    if (!isHerdrStarted)
+      startOmpInHerdrApp(deps.herdrTarget, run, logHerdr).catch(() => {
+        return;
+      });
+    isHerdrStarted = true;
+    return start(ctx);
+  });
   pi.on("session_switch", (event, ctx) => start(ctx, event.reason === "fork" ? event.previousSessionFile : undefined));
   pi.on("session_branch", (event, ctx) => start(ctx, event.previousSessionFile));
   pi.on("session_shutdown", turns.onSessionShutdown);

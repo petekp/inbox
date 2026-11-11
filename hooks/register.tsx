@@ -103,6 +103,7 @@ import { applyLookPress } from './herdr-app'
 import {
   followDelegates as followHerdrDelegates,
   listenForHerdrPresses,
+  startInHerdr,
   openInHerdr,
   publishToHerdr,
   type HerdrCalls,
@@ -373,12 +374,13 @@ function herdrCalls($: EngineInterface): HerdrCalls {
     write: (path, text) => $.fs.write(path, text),
     read: path => $.fs.read(path),
     list: folder => $.fs.list(folder),
-    isFile: path => $.fs.stat(path).then(s => s.kind === 'file'),
+    stat: path => $.fs.stat(path),
     spawn: argv => $.process.spawn({ argv }),
     now: () => $.clock.now(),
     after: (ms, fn) => void $.clock.after(ms, fn),
     every: (ms, fn) => $.clock.every(ms, fn),
     log: text => void $.ui.log(text, { to: 'debug' }),
+    pluginRoot: $.plugin.root,
   }
 }
 
@@ -2132,6 +2134,7 @@ async function initializeInbox($: EngineInterface) {
     }),
   ]
   await loadConversation($, await $.session.id())
+  void startInHerdr(herdrCalls($))
   mod.stopHerdrPresses?.()
   mod.stopHerdrPresses = await listenForHerdrPresses(
     herdrCalls($),

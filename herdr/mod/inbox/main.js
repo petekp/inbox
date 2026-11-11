@@ -1,4 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
+// Built at 2026-11-11T08:24:47.522Z
 
 // src/main.ts
 import { View, div as div3 } from "gpui-kit";

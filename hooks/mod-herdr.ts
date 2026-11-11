@@ -22,6 +22,9 @@ import {
 import type { ApplyPress, PressFiles, PublishFiles } from './herdr-app'
 import { hasHerdrMod, herdrPanelOpener, noHerdrModText } from './herdr-open'
 import type { HerdrOpened } from './herdr-open'
+import type { ModFiles } from './herdr-install'
+import { startInHerdrApp } from './herdr-start'
+import type { SweepFiles } from './herdr-sweep'
 import { CLAUDE_CODE } from './model-text'
 import { sessionView } from './session-view'
 import { SETTLED_MS } from './timing'
@@ -31,8 +34,9 @@ type DrawnForHerdr = { id: string; root: string; session: Session; dialogs: read
 
 /**
  * The engine calls the mod's Herdr code needs. `env` reads `HERDR_PANE_ID`, `HC_TERMINAL_ID`, `HERDR_APP_HOME` and
- * `HOME`, in that order, because the engine takes only a literal name. `spawn` streams a command's output, and the
- * stream's `return` ends the command.
+ * `HOME`, in that order, because the engine takes only a literal name. `stat` follows a link and says whether the
+ * path is one. `spawn` streams a command's output, and the stream's `return` ends the command. `pluginRoot` is the
+ * mod's install folder, which holds the Herdr mod at `herdr/mod/inbox`.
  */
 export type HerdrCalls = {
   run: Run
@@ -40,12 +44,13 @@ export type HerdrCalls = {
   write: (path: string, text: string) => Promise<void>
   read: (path: string) => Promise<string>
   list: (folder: string) => Promise<readonly { name: string; kind: string }[]>
-  isFile: (path: string) => Promise<boolean>
+  stat: (path: string) => Promise<{ kind: 'file' | 'dir' | 'other'; isLink: boolean }>
   spawn: (argv: string[]) => AsyncIterator<{ text: string }, unknown>
   now: () => Promise<number>
   after: (ms: number, fn: () => void) => void
   every: (ms: number, fn: () => void) => Timer
   log: (text: string) => void
+  pluginRoot: string
 }
 
 const FILE_TIMEOUT_MS = 5000
@@ -57,7 +62,7 @@ const isHerdrCheckDue = herdrCheckGate()
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
 /** The engine has no call that moves or removes a file, so those run `mv` and `rm`. A `mv` whose file is gone fails. */
-function herdrFiles(calls: HerdrCalls): PublishFiles & PressFiles {
+function herdrFiles(calls: HerdrCalls): PublishFiles & PressFiles & ModFiles & SweepFiles {
   const runOrThrow = async (argv: string[]) => {
     const r = await calls.run(argv, { cwd: '/', timeoutMs: FILE_TIMEOUT_MS })
     if (r.code !== 0) throw new Error(`${argv[0]} exited ${r.code}: ${r.stderr.trim()}`)
@@ -70,8 +75,19 @@ function herdrFiles(calls: HerdrCalls): PublishFiles & PressFiles {
     move: (from, to) => runOrThrow(['mv', '-f', '--', from, to]),
     remove: path => runOrThrow(['rm', '-f', '--', path]),
     removeFolder: path => runOrThrow(['rm', '-rf', '--', path]),
+    makeFolder: path => runOrThrow(['mkdir', '-p', '--', path]),
+    kind: path =>
+      calls.stat(path).then(
+        s => (s.isLink ? 'link' : s.kind === 'dir' ? 'folder' : s.kind),
+        () => null,
+      ),
   }
 }
+
+const openCalls = (calls: HerdrCalls) => ({
+  run: calls.run,
+  isFile: (path: string) => calls.stat(path).then(s => s.kind === 'file'),
+})
 
 /**
  * The Herdr app terminal the mod runs in, once `targetOf` has read the environment, with whether its app home holds the
@@ -84,7 +100,8 @@ const openHerdrPanel = herdrPanelOpener()
 async function targetOf(calls: HerdrCalls) {
   const [HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME] = await calls.env()
   const target = herdrTarget({ HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME })
-  appTerminal = target?.kind === 'terminal' ? { target, hasMod: await hasHerdrMod(calls.isFile, target) } : null
+  appTerminal =
+    target?.kind === 'terminal' ? { target, hasMod: await hasHerdrMod(openCalls(calls).isFile, target) } : null
 
   return target
 }
@@ -102,7 +119,19 @@ export function openInHerdr(calls: HerdrCalls): Promise<HerdrOpened> | HerdrOpen
   }
   if (!appTerminal.hasMod) return logged({ isShown: false, text: noHerdrModText(appTerminal.target) })
 
-  return openHerdrPanel(calls, appTerminal.target).then(logged)
+  return openHerdrPanel(openCalls(calls), appTerminal.target).then(logged)
+}
+
+/**
+ * In a Herdr app terminal, keeps the inbox's mod in the app current with the one this install holds, and removes the
+ * published sessions no live terminal can show, as `startInHerdrApp` says. The mod runs it as it turns on.
+ */
+export async function startInHerdr(calls: HerdrCalls): Promise<void> {
+  const target = await targetOf(calls)
+  if (target?.kind !== 'terminal') return
+  const files = herdrFiles(calls)
+  await startInHerdrApp(calls.run, files, target, `${calls.pluginRoot}/herdr/mod/inbox`, await calls.now(), calls.log)
+  if (appTerminal) appTerminal.hasMod = await hasHerdrMod(openCalls(calls).isFile, target)
 }
 
 /**
