@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 
 import { HERDR_FORMAT } from '../../hooks/herdr'
-import { isSessionChange, readSession, sessionPath } from '../src/files'
+import { isSessionChange, readSession } from '../src/files'
 import { AGENT, demoEnvelopeText } from './fixtures'
 
 test('a published session reads back with its source and its rows', () => {
@@ -32,10 +32,6 @@ test('the host’s last press reads back, and one in an unknown shape reads as n
   expect(read.is === 'read' && read.lastPress).toEqual(lastPress)
   const odd = readSession(demoEnvelopeText({ lastPress: { id: 'p1', outcome: 'lost' } }))
   expect(odd.is === 'read' && odd.lastPress).toBeNull()
-})
-
-test('the file of a session lives under the app home’s inbox folder, named by its id', () => {
-  expect(sessionPath('/home/app', 's1')).toBe('/home/app/inbox/sessions/s1.json')
 })
 
 test('no file reads as missing, and a file cut off mid-write reads as torn', () => {

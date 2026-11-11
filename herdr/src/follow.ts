@@ -1,3 +1,5 @@
+import { isSessionFile } from '../../hooks/session-files'
+
 /** The label a host sets on its Herdr app terminal, naming the session it publishes. */
 export const SESSION_LABEL = 'inbox.session'
 
@@ -25,7 +27,8 @@ export type Followed =
 function shownOf(where: Where, address: string): Followed {
   const t = where.terminals.find(x => x.address === address)
   const sessionId = t?.labels?.[SESSION_LABEL]
-  if (!sessionId) return { is: 'no-inbox', terminal: address, program: t?.program?.name ?? null }
+  const isSafeSessionId = sessionId !== undefined && isSessionFile(`${sessionId}.json`)
+  if (!isSafeSessionId) return { is: 'no-inbox', terminal: address, program: t?.program?.name ?? null }
 
   return t?.program?.shell ? { is: 'ended', terminal: address } : { is: 'session', terminal: address, sessionId }
 }

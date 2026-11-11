@@ -1,4 +1,4 @@
-import { HERDR_FORMAT } from '../../hooks/herdr'
+import { HERDR_FORMAT, pressFolder } from '../../hooks/herdr'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
 import type { Holds } from '../../hooks/timing'
@@ -6,9 +6,9 @@ import type { Holds } from '../../hooks/timing'
 /** The label the look sets on the session's terminal after it writes a press, so a host following `hc events` reads it. */
 export const PRESS_LABEL = 'inbox.press'
 
-/** Where the look writes a press for the host that publishes the session. */
+/** Where the look writes a press for the host that publishes the session. A host reads only names ending in `.json`. */
 export const pressPath = (appHome: string, sessionId: string, pressId: string) =>
-  `${appHome}/inbox/presses/${sessionId}/${pressId}.json`
+  `${pressFolder(appHome, sessionId)}/${pressId}.json`
 
 /** A press id that sorts by time and stays unique between looks pressing in the same millisecond. */
 export const newPressId = (now: number, random: number) =>
@@ -20,7 +20,7 @@ export const newPressId = (now: number, random: number) =>
  */
 type LocalOutcome = { error: string | null }
 
-/** The text of a press file, in the format `hooks/herdr.ts:pressFile` reads. */
+/** The text of a press file, in the format `hooks/herdr-press-file.ts:pressFile` reads. */
 export function pressFileText(
   id: string,
   pressedAt: number,

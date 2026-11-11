@@ -1,14 +1,8 @@
 import type { Session } from '../../types'
-import { HERDR_FORMAT } from '../../hooks/herdr'
+import { HERDR_FORMAT, publishedSessionPath, publishedSessionsFolder } from '../../hooks/herdr'
 import type { HerdrEnvelope } from '../../hooks/herdr'
 import { upgradeSession } from '../../hooks/session-files'
 import type { SavedSession } from '../../hooks/session-files'
-
-/** Where a host publishes its session for the look, under the Herdr app's home folder. */
-export const sessionPath = (appHome: string, sessionId: string) => `${appHome}/inbox/sessions/${sessionId}.json`
-
-/** The folder the look watches for a host's writes. */
-export const sessionsFolder = (appHome: string) => `${appHome}/inbox/sessions`
 
 /**
  * Whether a batch of changed paths from `watchFolder` can change the session's file: it names that file, or names the
@@ -16,9 +10,10 @@ export const sessionsFolder = (appHome: string) => `${appHome}/inbox/sessions`
  * place, so the temporary file's own changes are not the session's.
  */
 export function isSessionChange(changed: readonly string[], appHome: string, sessionId: string): boolean {
-  const folder = sessionsFolder(appHome)
+  const folder = publishedSessionsFolder(appHome)
+  const file = publishedSessionPath(appHome, sessionId)
 
-  return changed.some(p => p === sessionPath(appHome, sessionId) || p === folder || p === `${folder}/`)
+  return changed.some(p => p === file || p === folder || p === `${folder}/`)
 }
 
 /**

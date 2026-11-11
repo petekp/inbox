@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { pressFile } from '../../hooks/herdr'
+import { pressFile } from '../../hooks/herdr-press-file'
 import { prMarkId } from '../../hooks/pr-rows'
 import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
 import { splitFollowUps, threadSentIn } from '../../hooks/pr-rows'

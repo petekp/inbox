@@ -16,6 +16,7 @@ import {
   watchFolder,
   writeTextFile,
 } from 'herdr'
+import { publishedSessionPath, publishedSessionsFolder } from '../../hooks/herdr'
 import type { Run } from '../../hooks/gh'
 import { NEXT_BUILD_MARK } from '../../hooks/banners'
 import type { PathProbe } from '../../hooks/open-targets'
@@ -29,7 +30,7 @@ import type { Draft, RowNote } from '../../types'
 import type { Block, Button, Does, ViewChange } from './blocks'
 import { freshUi } from './draw'
 import type { LookUi, TabCell } from './draw'
-import { isSessionChange, readSession, sessionPath, sessionsFolder } from './files'
+import { isSessionChange, readSession } from './files'
 import type { ReadSession } from './files'
 import { follow } from './follow'
 import type { Followed } from './follow'
@@ -112,7 +113,7 @@ export default class Inbox extends View {
     })
     cx.spawn(async cx => {
       for (;;) {
-        const changed = await watchFolder(sessionsFolder(appHome())).catch(() => null)
+        const changed = await watchFolder(publishedSessionsFolder(appHome())).catch(() => null)
         if (changed === null) await cx.sleep(REREAD_MS)
         else if (this.sessionId && isSessionChange(changed, appHome(), this.sessionId)) this.load(this.sessionId, cx)
       }
@@ -135,7 +136,7 @@ export default class Inbox extends View {
   load(sessionId: string, cx: Context): void {
     cx.spawn(async cx => {
       for (let n = 0; ; n++) {
-        const text = await readTextFile(sessionPath(appHome(), sessionId)).catch((e: unknown) => e)
+        const text = await readTextFile(publishedSessionPath(appHome(), sessionId)).catch((e: unknown) => e)
         const read =
           typeof text === 'string' || text === null
             ? readSession(text)
