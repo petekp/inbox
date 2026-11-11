@@ -3601,6 +3601,7 @@ function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
 }
 function rowBody(row, isAllShown, isNextBuild) {
   const lines = [
+    { text: row.contextLine, tone: "muted" },
     { text: row.detail, tone: null },
     { text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : null, tone: "dim" },
     ...shownOptionDescriptions(row, isAllShown).map((o) => ({ text: `${o.label}: ${o.description}`, tone: null })),
