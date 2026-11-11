@@ -59,8 +59,8 @@ export function toneColors(tone: ToneName): { light: string; dark: string } {
 }
 
 /**
- * What a banner says: the inbox cannot work until something changes, part of it is missing or out of date, a fact, or
- * a question the person answers with the banner's buttons.
+ * What a banner says: an action failed or the inbox cannot work until something changes, part of it is missing or out
+ * of date, a fact, or a question the person answers with the banner's buttons.
  */
 export type BannerTone = 'error' | 'warning' | 'notice' | 'ask'
 
