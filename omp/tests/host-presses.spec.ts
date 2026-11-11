@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 import { NO_HOLDS } from '../../hooks/timing'
 import { createInbox } from '../src/host'
@@ -219,8 +221,8 @@ test('a press for a row that is gone reports it stale and sends nothing', async 
   expect(w.sent).toEqual([])
 })
 
-async function withSteps() {
-  const inbox = createInbox(pi(), deps())
+async function withSteps(given = deps()) {
+  const inbox = createInbox(pi(), given)
   await record({ kind: 'task', ask: 'Run it and read the page', steps: ['npm start', 'https://example.com/x'] })
   const screen = await inbox.screen(makeCtx())
   const row = screen.view.needsYou.tasks[0]!
@@ -255,6 +257,32 @@ test('an open that fails leaves the reason on the row', async () => {
   const screen = await inbox.screen(makeCtx())
   const last = screen.view.lastActions[screen.view.needsYou.tasks[0]!.id]
   expect(JSON.stringify(last?.result)).toContain('no browser')
+})
+
+test('in a Herdr app terminal, a press the look ran itself records its result and opens nothing', async () => {
+  const appHome = join(w.dir, 'herdr-app')
+  const target = { kind: 'terminal', terminal: 't1', appHome, hc: ['hc'] } as const
+  const { inbox, stepPress } = await withSteps({ ...deps(), herdrTarget: target })
+  await call('session_start', { type: 'session_start' })
+  const folder = join(appHome, 'inbox/presses/s1')
+  mkdirSync(folder, { recursive: true })
+  const press = {
+    format: 1,
+    id: 'p1',
+    pressedAt: 1,
+    press: stepPress(1),
+    holds: NO_HOLDS,
+    result: { error: 'no browser' },
+  }
+  writeFileSync(join(folder, 'p1.json'), JSON.stringify(press))
+
+  for (let waited = 0; existsSync(join(folder, 'p1.json')) && waited < 2000; waited += 10) await Bun.sleep(10)
+  await settle()
+
+  expect(existsSync(join(folder, 'p1.json'))).toBe(false)
+  expect(w.execCalls.filter(c => c.command === 'open')).toEqual([])
+  const screen = await inbox.screen(makeCtx())
+  expect(JSON.stringify(screen.view.lastActions[screen.view.needsYou.tasks[0]!.id]?.result)).toContain('no browser')
 })
 
 test('a goal the Status call writes is set at once, Remove goal clears it, a typed goal sets the saved goal, and none sends a message', async () => {

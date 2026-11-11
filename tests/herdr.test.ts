@@ -61,6 +61,30 @@ describe('publishSession', () => {
 })
 
 describe('herdrReporter', () => {
+  test('logs why a report failed once, until one is taken or it fails another way', async () => {
+    const target = herdrTarget({ HC_TERMINAL_ID: 't1', HOME: '/home/person' })!
+    let code = UNSTARTABLE_CODE
+    const run: Run = async () => ({ code, stdout: '', stderr: code === 1 ? 'no socket' : '' })
+    const logged: string[] = []
+    const report = herdrReporter(text => logged.push(text))
+    const send = (inbox: string) => report(run, async () => ({ target, tokens: { inbox }, session: 's1' }))
+
+    await send('a')
+    await send('b')
+    code = 1
+    await send('c')
+    code = 0
+    await send('d')
+    code = UNSTARTABLE_CODE
+    await send('e')
+
+    expect(logged).toEqual([
+      'Herdr labels not set: no hc started. Tried hc, then /home/person/.local/bin/hc.',
+      'Herdr report failed with exit 1: no socket',
+      'Herdr labels not set: no hc started. Tried hc, then /home/person/.local/bin/hc.',
+    ])
+  })
+
   test('labels an app terminal with hc from PATH, else from ~/.local/bin, and keeps the one that started', async () => {
     const ran: string[][] = []
     const run: Run = async args => {
@@ -111,6 +135,10 @@ describe('pressFile', () => {
     expect(pressFile(JSON.stringify(PRESS))).toEqual({ ok: true, file: PRESS })
     const rankAgain = { ...PRESS, press: { action: 'pr-rank-again' } }
     expect(pressFile(JSON.stringify(rankAgain))).toEqual({ ok: true, file: rankAgain })
+    for (const error of [null, 'no browser']) {
+      const opened = { ...PRESS, result: { error } }
+      expect(pressFile(JSON.stringify(opened))).toEqual({ ok: true, file: opened })
+    }
   })
 
   test('a file a host cannot apply is refused with its reason', () => {
@@ -125,6 +153,8 @@ describe('pressFile', () => {
       [{ ...PRESS, holds: { ...PRESS.holds, replies: { q2: 'now' } } }, 'holds without replies or discarded times'],
       [{ ...PRESS, holds: { ...PRESS.holds, shownSince: undefined } }, 'holds without shownSince'],
       [[PRESS], 'not an object'],
+      [{ ...PRESS, result: { error: 3 } }, 'result without error'],
+      [{ ...PRESS, result: null }, 'result without error'],
     ]
     for (const [file, reason] of refused) expect(pressFile(JSON.stringify(file))).toEqual({ ok: false, reason })
     expect(pressFile('{"format":1,')).toEqual({ ok: false, reason: 'not JSON' })

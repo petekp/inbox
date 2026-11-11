@@ -8,9 +8,12 @@ import { statusChanged } from '../../hooks/session-status'
 import { recorded, withHolds } from '../../hooks/session-presses'
 import { drawnTabOf } from '../../hooks/tabs'
 import type { RowNote } from '../../types'
+import type { PressFile } from '../../hooks/herdr'
 import { lookOnView, noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
 import type { HooksTrust } from './hook-trust'
+import { codexStore } from './host'
+import type { OnWrite } from './host'
 import { makeCatchUpOnOpen } from './server-catch-up'
 import { makeDemo } from './server-demo'
 import { makeSessionHost } from './server-host'
@@ -59,6 +62,10 @@ export type ServerDeps = {
     codexHome: string
     startUpdate: (sessionId: string) => void
   }
+  /** Reports each state the server writes to the Herdr app terminal Codex runs in. */
+  onWrite?: OnWrite
+  /** Starts applying the presses the Herdr look writes, with `apply`. */
+  followHerdrPresses?: (apply: (sessionId: string, file: PressFile) => Promise<void>) => void
 }
 
 type Message = { jsonrpc: '2.0'; id?: number | string; method?: string; params?: Record<string, unknown> }
@@ -73,7 +80,10 @@ export type PressReply = {
   delivery?: 'unconfirmed'
 }
 
-export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<string, unknown> | null> {
+export function makeServer(given: ServerDeps): (m: Message) => Promise<Record<string, unknown> | null> {
+  const { onWrite } = given
+  // Each report reads the newest state itself, so a tool call or press answers without waiting on `hc label`.
+  const deps = { ...given, onWrite: onWrite && (async (s: SessionState) => void onWrite(s).catch(() => undefined)) }
   const { dir, now } = deps
   const prunedFor = new Set<string>()
   /** Each chat's newest turn in its rollout, as its last view read it. */
@@ -89,6 +99,9 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     currentPage,
   )
   const { demoOf, onDemoPress } = makeDemo(deps, served)
+  deps.followHerdrPresses?.(async (id, file) => {
+    await onPress(id, file.press, id, file.holds, file)
+  })
 
   const isHerdrCheckDue = herdrCheckGate()
 
@@ -118,7 +131,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       case 'close':
       case 'order_prs': {
         let result = ''
-        await updateState(dir, id, s => {
+        await codexStore(dir, id, now, deps.onWrite).update(s => {
           const r = recorded(CODEX, s, name, args, now())
           result = r.result
           return heard(r.state)

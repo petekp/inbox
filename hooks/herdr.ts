@@ -249,18 +249,18 @@ type After = (ms: number, fn: () => Promise<unknown>) => void
  * A report counts as sent only when `run` exits 0. After a failed send, the next report is sent even when it matches
  * the last one. With `after`, a failed send also schedules a retry after the next wait in `HERDR_RETRY_MS`, with one
  * retry waiting at a time. Each call resolves true when Herdr took its report, or the last report Herdr took matches it.
+ * With `log`, a failed send logs why, once until a send succeeds or fails another way.
  */
-export function herdrReporter(): (
-  run: Run,
-  report: () => Promise<HerdrReport | null>,
-  after?: After,
-) => Promise<boolean> {
+export function herdrReporter(
+  log?: (text: string) => void,
+): (run: Run, report: () => Promise<HerdrReport | null>, after?: After) => Promise<boolean> {
   let sent: string | null = null
   let retries = 0
   let isRetryWaiting = false
   let sending: Promise<unknown> = Promise.resolve()
   let newest: { run: Run; report: () => Promise<HerdrReport | null>; after?: After } | null = null
   let hcFound: string | null = null
+  let logged: string | null = null
 
   /** Runs the report's command. For an app terminal, it tries each `hc` until one starts, and keeps that one. */
   const runReport = async (run: Run, r: HerdrReport) => {
@@ -297,6 +297,9 @@ export function herdrReporter(): (
     sent = null
     const result = await runReport(run, r).catch(() => null)
     const isTaken = result?.code === 0
+    const problem = isTaken ? null : reportProblem(r, result)
+    if (problem && problem !== logged) log?.(problem)
+    logged = problem
     if (isTaken) {
       sent = key
       retries = 0
@@ -314,6 +317,16 @@ export function herdrReporter(): (
   }
 
   return reportToHerdr
+}
+
+/** Why a report Herdr did not take failed, for a host's log. */
+function reportProblem(r: HerdrReport, result: Awaited<ReturnType<Run>> | null): string {
+  if (!result && r.target.kind === 'terminal')
+    return `Herdr labels not set: no hc started. Tried ${r.target.hc.join(', then ')}.`
+  if (!result) return 'Herdr report did not run.'
+  const why = result.stderr.trim()
+
+  return `Herdr report failed with exit ${result.code}${why ? `: ${why}` : '.'}`
 }
 
 /**
@@ -357,25 +370,43 @@ const HERDR_FORMAT = 1
 /** Who publishes a session for the Herdr look, and when. `agent` is the name the shared texts use, as in "Tell Claude". */
 export type EnvelopeSource = { host: ClientId; agent: string; sessionId: string; terminal: string; writtenAt: number }
 
-/** The file a host publishes for the Herdr look. */
-type HerdrEnvelope = EnvelopeSource & { format: typeof HERDR_FORMAT; session: Session }
+/**
+ * The file a host publishes for the Herdr look. `trimmed` is set when the host left out closed items the view does not
+ * draw in place, to keep the file under `PUBLISH_LIMIT_BYTES`.
+ */
+type HerdrEnvelope = EnvelopeSource & { format: typeof HERDR_FORMAT; trimmed?: true; session: Session }
 
 const SESSION_FIELDS = Object.keys(emptySession())
 
 /** The envelope for `session`, which keeps only the shared `Session` fields, without a host's own. */
-export function herdrEnvelope(source: EnvelopeSource, session: Session): HerdrEnvelope {
+export function herdrEnvelope(source: EnvelopeSource, session: Session, isTrimmed = false): HerdrEnvelope {
   const shared = Object.fromEntries(SESSION_FIELDS.map(field => [field, session[field as keyof Session]]))
 
-  return { format: HERDR_FORMAT, ...source, session: shared as Session }
+  return { format: HERDR_FORMAT, ...source, ...(isTrimmed && { trimmed: true }), session: shared as Session }
 }
 
 /** A press the Herdr look made, with the look's holds, which `press()` needs to tell a stale press. */
-type PressFile = {
+export type PressFile = {
   format: typeof HERDR_FORMAT
   id: string
   pressedAt: number
   press: RowPress | PrPress
   holds: Holds
+  /**
+   * The outcome of the opens and copies the look ran itself, in the terms of a host's `perform`: why they could not run,
+   * or null. Without it, the host runs them.
+   */
+  result?: { error: string | null }
+}
+
+/** `host` for applying `file`. When the look ran the press's opens and copies, `perform` answers with their result. */
+export function withLookResult<H extends { perform: (...args: never[]) => Promise<string | null> }>(
+  host: H,
+  file: PressFile,
+): H {
+  const { result } = file
+
+  return result ? { ...host, perform: async () => result.error } : host
 }
 
 /** The field that names what each press acts on: a row's `id`, a PR's `ref`, or none for the PRs tab's own buttons. */
@@ -433,6 +464,13 @@ function holdsProblem(holds: unknown): string | null {
   return holds.shownSince === null || typeof holds.shownSince === 'number' ? null : 'holds without shownSince'
 }
 
+/** Why `result` is not the outcome of a press the look ran, or null when it is one or is absent. */
+function resultProblem(result: unknown): string | null {
+  if (result === undefined) return null
+
+  return isRecord(result) && (result.error === null || typeof result.error === 'string') ? null : 'result without error'
+}
+
 /** A press file's text, read and checked. `reason` says why a file was refused. */
 export function pressFile(text: string): { ok: true; file: PressFile } | { ok: false; reason: string } {
   let file: unknown
@@ -446,7 +484,7 @@ export function pressFile(text: string): { ok: true; file: PressFile } | { ok: f
   if (typeof file.id !== 'string' || file.id === '') return { ok: false, reason: 'no id' }
   if (typeof file.pressedAt !== 'number' || !Number.isFinite(file.pressedAt))
     return { ok: false, reason: 'no pressedAt' }
-  const reason = pressProblem(file.press) ?? holdsProblem(file.holds)
+  const reason = pressProblem(file.press) ?? holdsProblem(file.holds) ?? resultProblem(file.result)
 
   return reason ? { ok: false, reason } : { ok: true, file: file as PressFile }
 }

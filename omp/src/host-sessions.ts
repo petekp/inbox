@@ -133,7 +133,7 @@ export function sessionCalls(context: HostContext) {
               appHome,
               { host: 'omp', agent: OMP.agent, sessionId: id, terminal: target.terminal, writtenAt: now },
               s,
-              () => undefined,
+              context.logHerdr,
             ))
           const view = sessionView(s, now, deps.settleWindowMs)
 

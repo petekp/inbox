@@ -17,6 +17,8 @@ import type { PrShared } from '../../hooks/pr-fetch'
 import { press, wakeAfterSettle as wakeSessionAfterSettle } from '../../hooks/host-press'
 import type { SessionHost } from '../../hooks/session-host'
 import { NO_HOLDS } from '../../hooks/timing'
+import { withLookResult } from '../../hooks/herdr'
+import type { PressFile } from '../../hooks/herdr'
 import type { Holds } from '../../hooks/timing'
 import { viewOf } from './core'
 import type { TabView } from './core'
@@ -68,7 +70,7 @@ export function makeSessionHost(
   const hostFor = (id: string): Omit<SessionHost<SessionState>, 'ask'> => {
     let preparedCli: string | undefined
     return {
-      ...codexStore(dir, id, now),
+      ...codexStore(dir, id, now, deps.onWrite),
       prepare: async s => {
         preparedCli = s.cliPath ?? (await deps.fallbackCli())
       },
@@ -164,11 +166,19 @@ export function makeSessionHost(
     if (dialogs.length > 0) await updateState(dir, id, x => noteDialogs(x, dialogs))
   }
 
-  async function onPress(id: string, p: RowPress | PrPress, thread: unknown, holds: Holds): Promise<PressReply> {
+  /** Applies a press from the tab, or with `look` one the Herdr look wrote, whose opens and copies it may have run. */
+  async function onPress(
+    id: string,
+    p: RowPress | PrPress,
+    thread: unknown,
+    holds: Holds,
+    look: PressFile | null = null,
+  ): Promise<PressReply> {
     await syncTurn(id).catch(() => undefined)
     if (!isPrPress(p) && (p.action === 'answer' || p.action === 'type'))
       await linkRunningDialogs(id, p.id).catch(() => undefined)
-    const outcome = await press(hostFor(id), p, thread !== id, holds)
+    const host = look ? withLookResult(hostFor(id), look) : hostFor(id)
+    const outcome = await press(host, p, thread !== id, holds)
     if (outcome.wakesAfterSettle)
       setTimeout(() => void wakeAfterSettle(id).catch(() => undefined), SETTLE_WINDOW_MS).unref()
     const { isUnconfirmed, wakesAfterSettle: _wakes, ...rest } = outcome

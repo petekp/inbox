@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Run } from '../hooks/gh'
 import { HERDR_RETRY_MS, herdrReporter } from '../hooks/herdr'
+import { PRESS_POLL_MS } from '../hooks/herdr-app'
 import { PRESS_GUARD_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
 import { reportedLabels } from './session-script'
@@ -192,6 +193,25 @@ test('in a Herdr app terminal, a publish that fails leaves the terminal unlabell
   await clock.settle()
   expect(labels()).toMatchObject({ 'inbox.session': '', 'inbox.needs-you': '1' })
   expect(Object.keys(w.written).filter(path => path.startsWith('/app/'))).toEqual([])
+})
+
+test('in a Herdr app terminal, a press file the look wrote is applied and removed', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: '/app', HOME: '/home/person' })
+  const published = () => JSON.parse(w.written['/app/inbox/sessions/session-1.json']!).session
+  const pressPath = '/app/inbox/presses/session-1/p1.json'
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__inbox__record', kind: 'task', ask: 'Ship it' })
+  await clock.settle()
+  const id = published().ledger.items[0].id
+  const holds = { replies: {}, discarded: {}, shownSince: null }
+  w.written[pressPath] = JSON.stringify({ format: 1, id: 'p1', pressedAt: 1, press: { action: 'done', id }, holds })
+  await clock.advance(PRESS_POLL_MS)
+  await clock.settle()
+  expect(published().ledger.items).toEqual([])
+  expect(published().ledger.closed.map((c: { id: string }) => c.id)).toEqual([id])
+  expect(w.written[pressPath]).toBeUndefined()
 })
 
 test('a sidebar report Herdr fails to take is sent again after each wait in HERDR_RETRY_MS, until Herdr takes it', async ($, on) => {

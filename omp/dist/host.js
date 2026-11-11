@@ -815,7 +815,7 @@ var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} second
 // src/host.ts
 import { existsSync } from "fs";
 import { homedir } from "os";
-import { dirname as dirname2, join as join3 } from "path";
+import { dirname as dirname2, join as join4 } from "path";
 import { fileURLToPath } from "url";
 // package.json
 var version = "0.3.0";
@@ -4725,13 +4725,14 @@ function herdrReportKey(r) {
 `);
 }
 var HERDR_RETRY_MS = [5000, 30000, 120000];
-function herdrReporter() {
+function herdrReporter(log) {
   let sent = null;
   let retries = 0;
   let isRetryWaiting = false;
   let sending = Promise.resolve();
   let newest = null;
   let hcFound = null;
+  let logged = null;
   const runReport = async (run, r) => {
     const options = { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS };
     if (r.target.kind === "pane")
@@ -4766,6 +4767,10 @@ function herdrReporter() {
     sent = null;
     const result = await runReport(run, r).catch(() => null);
     const isTaken = result?.code === 0;
+    const problem = isTaken ? null : reportProblem(r, result);
+    if (problem && problem !== logged)
+      log?.(problem);
+    logged = problem;
     if (isTaken) {
       sent = key;
       retries = 0;
@@ -4780,6 +4785,14 @@ function herdrReporter() {
     return result;
   };
   return reportToHerdr;
+}
+function reportProblem(r, result) {
+  if (!result && r.target.kind === "terminal")
+    return `Herdr labels not set: no hc started. Tried ${r.target.hc.join(", then ")}.`;
+  if (!result)
+    return "Herdr report did not run.";
+  const why = result.stderr.trim();
+  return `Herdr report failed with exit ${result.code}${why ? `: ${why}` : "."}`;
 }
 function herdrTarget(env) {
   const pane = env.HERDR_PANE_ID;
@@ -4801,9 +4814,84 @@ function herdrLabels(tokens) {
 }
 var HERDR_FORMAT = 1;
 var SESSION_FIELDS = Object.keys(emptySession());
-function herdrEnvelope(source, session) {
+function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
-  return { format: HERDR_FORMAT, ...source, session: shared };
+  return { format: HERDR_FORMAT, ...source, ...isTrimmed && { trimmed: true }, session: shared };
+}
+function withLookResult(host, file) {
+  const { result } = file;
+  return result ? { ...host, perform: async () => result.error } : host;
+}
+var PRESS_TARGETS = {
+  answer: "id",
+  type: "id",
+  explain: "id",
+  compare: "id",
+  done: "id",
+  dismiss: "id",
+  address: "id",
+  issue: "id",
+  discuss: "id",
+  undo: "id",
+  discard: "id",
+  step: "id",
+  "remove-goal": "id",
+  "restore-goal": "id",
+  "thread-address": "ref",
+  "thread-draft": "ref",
+  "thread-discuss": "ref",
+  "thread-open": "ref",
+  "pr-conflicts": "ref",
+  "pr-address-all": "ref",
+  "pr-merge": "ref",
+  "pr-open": "ref",
+  "pr-dismiss": "ref",
+  "pr-undo": "ref",
+  "check-fix": "ref",
+  "check-rerun": "ref",
+  log: "ref",
+  "pr-rank-again": null,
+  "pr-refresh": null
+};
+var isRecord = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
+var isTimes = (x) => isRecord(x) && Object.values(x).every((at) => typeof at === "number");
+function pressProblem(press) {
+  if (!isRecord(press) || typeof press.action !== "string")
+    return "press has no action";
+  if (!Object.hasOwn(PRESS_TARGETS, press.action))
+    return `unknown action ${press.action}`;
+  const target = PRESS_TARGETS[press.action];
+  return target === null || typeof press[target] === "string" ? null : `${press.action} has no ${target}`;
+}
+function holdsProblem(holds) {
+  if (!isRecord(holds))
+    return "no holds";
+  if (!isTimes(holds.replies) || !isTimes(holds.discarded))
+    return "holds without replies or discarded times";
+  return holds.shownSince === null || typeof holds.shownSince === "number" ? null : "holds without shownSince";
+}
+function resultProblem(result) {
+  if (result === undefined)
+    return null;
+  return isRecord(result) && (result.error === null || typeof result.error === "string") ? null : "result without error";
+}
+function pressFile(text) {
+  let file;
+  try {
+    file = JSON.parse(text);
+  } catch {
+    return { ok: false, reason: "not JSON" };
+  }
+  if (!isRecord(file))
+    return { ok: false, reason: "not an object" };
+  if (file.format !== HERDR_FORMAT)
+    return { ok: false, reason: `unknown format ${String(file.format)}` };
+  if (typeof file.id !== "string" || file.id === "")
+    return { ok: false, reason: "no id" };
+  if (typeof file.pressedAt !== "number" || !Number.isFinite(file.pressedAt))
+    return { ok: false, reason: "no pressedAt" };
+  const reason = pressProblem(file.press) ?? holdsProblem(file.holds) ?? resultProblem(file.result);
+  return reason ? { ok: false, reason } : { ok: true, file };
 }
 
 // ../hooks/catch-up-text.ts
@@ -6287,16 +6375,19 @@ function recorded(host, s, tool, args, now) {
 function withHolds(s, holds) {
   return { ...s, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince };
 }
-function pruned(s) {
-  const inPlace = [
+function rowsInPlace(s) {
+  const since = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
+  return new Set([...s.heldRows, ...since]);
+}
+function pruned(s) {
   const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)));
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return {
     ...s,
-    ledger: pruneClosed(s.ledger, new Set([...s.heldRows, ...inPlace])),
+    ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
   };
 }
@@ -8527,11 +8618,11 @@ var CLIENTS = {
       "dim-pressed-button": { kind: "full" },
       "herdr-sidebar": {
         kind: "different",
-        reason: "Only Codex's hooks and the update a hook starts know where Codex runs in Herdr, so a record or close during a turn reaches the sidebar at the next hook. Codex finds no stops, and runs no hook when a session ends, so its tokens or labels stay."
+        reason: "In a Herdr pane, only Codex's hooks and the update a hook starts report, so a record or close during a turn reaches the sidebar at the next hook. In a Herdr app terminal, the MCP server labels too. Codex finds no stops, and runs no hook when a session ends, so its tokens or labels stay."
       },
       "herdr-look": {
         kind: "different",
-        reason: "Only Codex's hooks and the update a hook starts publish the session, so a record or close during a turn reaches the Herdr look at the next hook. Codex runs no hook when a session ends, so its published file stays."
+        reason: "Codex runs no hook when a session ends, so its published file stays."
       },
       "status-children": {
         kind: "different",
@@ -10387,6 +10478,209 @@ function activityHandlers(context, sessions) {
   return { onSubagentLifecycle, onSubagentProgress, onToolExecutionStart, onToolExecutionEnd, onToolResult };
 }
 
+// src/host-presses.ts
+import { watch } from "fs";
+import { appendFile, mkdir as mkdir2, readdir as readdir2, readFile as readFile2, rm, stat as stat2, writeFile as writeFile2 } from "fs/promises";
+import { join as join2 } from "path";
+
+// ../hooks/herdr-app.ts
+var PUBLISH_LIMIT_BYTES = 1024 * 1024;
+function publishedSessionPath(appHome, sessionId) {
+  return `${appHome}/inbox/sessions/${sessionFile(sessionId)}`;
+}
+function pressFolder(appHome, sessionId) {
+  sessionFile(sessionId);
+  return `${appHome}/inbox/presses/${sessionId}`;
+}
+function utf8Bytes(text) {
+  let bytes = 0;
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0;
+    bytes += code < 128 ? 1 : code < 2048 ? 2 : code < 65536 ? 3 : 4;
+  }
+  return bytes;
+}
+var isOverLimit = (text) => text.length * 3 > PUBLISH_LIMIT_BYTES && utf8Bytes(text) > PUBLISH_LIMIT_BYTES;
+function withoutFoldedClosed(s) {
+  const inPlace = rowsInPlace(s);
+  const { closed, closedFindings } = s.ledger;
+  return {
+    ...s,
+    ledger: {
+      ...s.ledger,
+      closed: closed.filter((c) => inPlace.has(c.id)),
+      closedFindings: closedFindings.filter((f) => inPlace.has(f.id))
+    }
+  };
+}
+function publishedText(source, session) {
+  const text = JSON.stringify(herdrEnvelope(source, session));
+  return isOverLimit(text) ? JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session), true)) : text;
+}
+async function publishSession(files, appHome, source, session) {
+  const path = publishedSessionPath(appHome, source.sessionId);
+  const temporary = `${path}.${source.writtenAt}-${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    await files.write(temporary, publishedText(source, session));
+    await files.move(temporary, path);
+  } catch (err) {
+    await files.remove(temporary).catch(() => {
+      return;
+    });
+    throw err;
+  }
+}
+function publishedSession(files, appHome, source, session, log) {
+  if (!appHome)
+    return Promise.resolve(false);
+  return publishSession(files, appHome, source, session).then(() => true, (err) => {
+    log(`Herdr publish failed: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  });
+}
+async function unpublishSession(files, appHome, sessionId) {
+  return files.remove(publishedSessionPath(appHome, sessionId));
+}
+var REMEMBERED_PRESSES = 200;
+var message = (err) => err instanceof Error ? err.message : String(err);
+function pressDrainer(files, apply, log) {
+  const applied = [];
+  const draining = new Map;
+  const drainOnce = async (folder, sessionId) => {
+    const names = [...await files.list(folder).catch(() => [])].filter((name) => name.endsWith(".json")).sort();
+    const waiting = [];
+    for (const name of names) {
+      const path = `${folder}/${name}`;
+      const text = await files.read(path).catch(() => null);
+      if (text === null)
+        continue;
+      const read = pressFile(text);
+      if (read.ok)
+        waiting.push({ path, file: read.file });
+      else {
+        log(`Herdr press ${name} refused: ${read.reason}`);
+        await files.remove(path).catch(() => {
+          return;
+        });
+      }
+    }
+    for (const { path, file } of waiting.sort((a, b) => a.file.pressedAt - b.file.pressedAt)) {
+      if (!applied.includes(file.id)) {
+        const isTaken = await apply(sessionId, file).catch((err) => {
+          log(`Herdr press ${file.id} failed: ${message(err)}`);
+          return true;
+        });
+        if (!isTaken)
+          continue;
+        applied.push(file.id);
+        if (applied.length > REMEMBERED_PRESSES)
+          applied.shift();
+      }
+      await files.remove(path).catch((err) => log(`Herdr press ${file.id} not removed: ${message(err)}`));
+    }
+  };
+  return async (appHome, sessionId) => {
+    const folder = pressFolder(appHome, sessionId);
+    const running = draining.get(folder);
+    if (running) {
+      running.again = true;
+      return running.done;
+    }
+    const entry = { again: false, done: Promise.resolve() };
+    draining.set(folder, entry);
+    entry.done = (async () => {
+      try {
+        do {
+          entry.again = false;
+          await drainOnce(folder, sessionId);
+        } while (entry.again);
+      } finally {
+        draining.delete(folder);
+      }
+    })();
+    return entry.done;
+  };
+}
+var PRESS_POLL_MS = 1e4;
+function followPresses(drain, wakes, every, log) {
+  const wake = () => void drain().catch((err) => log(`Herdr presses not read: ${message(err)}`));
+  wake();
+  const stopPoll = every(PRESS_POLL_MS, wake);
+  const stopWakes = wakes(wake);
+  return () => {
+    stopPoll();
+    stopWakes();
+  };
+}
+
+// src/host-presses.ts
+var HERDR_LOG_BYTES = 64 * 1024;
+function herdrLog(dir) {
+  const path = join2(dir, "herdr.log");
+  return (text) => void (async () => {
+    const size = await stat2(path).then((s) => s.size, () => 0);
+    const line = `${new Date().toISOString()} ${text}
+`;
+    await mkdir2(dir, { recursive: true });
+    await (size > HERDR_LOG_BYTES ? writeFile2(path, line) : appendFile(path, line));
+  })().catch(() => {
+    return;
+  });
+}
+var pressFiles = {
+  list: (folder) => readdir2(folder),
+  read: (path) => readFile2(path, "utf8"),
+  remove: (path) => rm(path, { force: true })
+};
+var message2 = (err) => err instanceof Error ? err.message : String(err);
+function ompPresses(target, apply, log) {
+  let stopFollowing = null;
+  const stop = () => {
+    stopFollowing?.();
+    stopFollowing = null;
+  };
+  return {
+    follow: (ctx) => {
+      stop();
+      if (target?.kind !== "terminal" || !target.appHome)
+        return;
+      const { appHome } = target;
+      const id = sessionIdOf(ctx);
+      let folder;
+      try {
+        folder = pressFolder(appHome, id);
+      } catch (err) {
+        return log(`Herdr presses not read: ${message2(err)}`);
+      }
+      const drain = pressDrainer(pressFiles, async (_id, file) => {
+        await apply(ctx, file);
+        return true;
+      }, log);
+      const watchFolder = (wake) => {
+        let isStopped = false;
+        let watcher = null;
+        mkdir2(folder, { recursive: true }).then(() => {
+          if (isStopped)
+            return;
+          watcher = watch(folder, () => wake());
+          watcher.on("error", (err) => log(`Herdr presses not watched: ${message2(err)}`));
+          wake();
+        }).catch((err) => log(`Herdr presses not watched: ${message2(err)}`));
+        return () => {
+          isStopped = true;
+          watcher?.close();
+        };
+      };
+      stopFollowing = followPresses(() => drain(appHome, id), watchFolder, (ms, fn) => {
+        const timer = setInterval(fn, ms);
+        timer.unref();
+        return () => clearInterval(timer);
+      }, log);
+    },
+    stop
+  };
+}
+
 // ../hooks/held-sends.ts
 function dueRows(s, now) {
   return Object.entries(s.lastActions).filter(([, a]) => a.delivery?.state === "held" && a.delivery.until <= now).map(([id]) => id);
@@ -10787,8 +11081,8 @@ function panelCalls(context, sessions) {
       listeners.set(id, set);
       return () => void set.delete(listener);
     },
-    press: async (ctx, p, holds) => {
-      const outcome = await press(hostFor(ctx), p, false, holds);
+    press: async (ctx, p, holds, look) => {
+      const outcome = await press(look ? withLookResult(hostFor(ctx), look) : hostFor(ctx), p, false, holds);
       if (outcome.wakesAfterSettle)
         wakeLater(ctx);
       return outcome;
@@ -10812,8 +11106,8 @@ function panelCalls(context, sessions) {
 }
 
 // src/host-sessions.ts
-import { mkdir as mkdir2, readdir as readdir2, rename as rename2, rm, rmdir, writeFile as writeFile2 } from "fs/promises";
-import { dirname, join as join2 } from "path";
+import { mkdir as mkdir3, readdir as readdir3, rename as rename2, rm as rm2, rmdir, writeFile as writeFile3 } from "fs/promises";
+import { dirname, join as join3 } from "path";
 
 // ../hooks/conversation.ts
 var NL7 = `
@@ -10848,41 +11142,12 @@ function flattenConversation(turns) {
   return kept.reverse().join(NL7);
 }
 
-// ../hooks/herdr-app.ts
-function publishedSessionPath(appHome, sessionId) {
-  return `${appHome}/inbox/sessions/${sessionFile(sessionId)}`;
-}
-async function publishSession(files, appHome, source, session) {
-  const path = publishedSessionPath(appHome, source.sessionId);
-  const temporary = `${path}.${source.writtenAt}-${Math.random().toString(36).slice(2)}.tmp`;
-  try {
-    await files.write(temporary, JSON.stringify(herdrEnvelope(source, session)));
-    await files.move(temporary, path);
-  } catch (err) {
-    await files.remove(temporary).catch(() => {
-      return;
-    });
-    throw err;
-  }
-}
-function publishedSession(files, appHome, source, session, log) {
-  if (!appHome)
-    return Promise.resolve(false);
-  return publishSession(files, appHome, source, session).then(() => true, (err) => {
-    log(`Herdr publish failed: ${err instanceof Error ? err.message : String(err)}`);
-    return false;
-  });
-}
-async function unpublishSession(files, appHome, sessionId) {
-  return files.remove(publishedSessionPath(appHome, sessionId));
-}
-
 // src/commands.ts
 import { constants } from "fs";
-import { access, stat as stat2 } from "fs/promises";
+import { access, stat as stat3 } from "fs/promises";
 function openTarget2(run, target, root, home) {
   return openTarget(run, {
-    stat: (path) => stat2(path).catch(() => null),
+    stat: (path) => stat3(path).catch(() => null),
     isExecutable: (path) => access(path, constants.X_OK).then(() => true, () => false)
   }, target, root, home);
 }
@@ -10894,24 +11159,24 @@ function sessionIdInFile(file) {
 }
 var publishFiles = {
   write: async (path, text) => {
-    await mkdir2(dirname(path), { recursive: true });
-    await writeFile2(path, text);
+    await mkdir3(dirname(path), { recursive: true });
+    await writeFile3(path, text);
   },
   move: (from, to) => rename2(from, to),
-  remove: (path) => rm(path, { force: true })
+  remove: (path) => rm2(path, { force: true })
 };
 var recordFiles = {
   write: async (path, text) => {
-    await mkdir2(dirname(path), { recursive: true });
-    await writeFile2(path, text);
+    await mkdir3(dirname(path), { recursive: true });
+    await writeFile3(path, text);
   },
-  list: (folder) => readdir2(folder).catch(() => []),
-  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm(p, { force: true }))),
+  list: (folder) => readdir3(folder).catch(() => []),
+  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm2(p, { force: true }))),
   removeFolder: (path) => rmdir(path)
 };
 var statusRecords = (dir, sessionId) => ({
   host: "omp",
-  folder: join2(dir, "overview-calls"),
+  folder: join3(dir, "overview-calls"),
   session: sessionId,
   files: recordFiles
 });
@@ -10956,9 +11221,7 @@ function sessionCalls(context) {
         });
       const s = await readState(dir, id);
       const now = deps.now();
-      const isPublished = target.kind === "terminal" && await publishedSession(publishFiles, appHome, { host: "omp", agent: OMP.agent, sessionId: id, terminal: target.terminal, writtenAt: now }, s, () => {
-        return;
-      });
+      const isPublished = target.kind === "terminal" && await publishedSession(publishFiles, appHome, { host: "omp", agent: OMP.agent, sessionId: id, terminal: target.terminal, writtenAt: now }, s, context.logHerdr);
       const view = sessionView(s, now, deps.settleWindowMs);
       return { target, tokens: herdrTokens(s.ledger, s.stop, view, []), session: isPublished ? id : null };
     }, deps.after));
@@ -11140,6 +11403,7 @@ function turnHandlers(context, sessions) {
     memory.shownId = id;
     memory.framesFor = id;
     reportCounts(id, left === id ? undefined : left);
+    context.presses.follow(ctx);
     const saved = await readState(dir, id).catch(() => null);
     const isCutOff = saved?.presence.isTurnRunning || saved?.ledger.overview?.children.some((c) => c.endedAt === null);
     if (isCutOff)
@@ -11169,6 +11433,7 @@ function turnHandlers(context, sessions) {
     if (id !== memory.shownId)
       return;
     memory.shownId = null;
+    context.presses.stop();
     await reportEnded(id);
   };
   const onBeforeAgentStart = async (event, ctx) => {
@@ -11328,13 +11593,13 @@ async function copyToClipboard(text) {
   return `no clipboard command started (${candidates.map((c) => c[0]).join(", ")})`;
 }
 var defaultDeps = {
-  stateDir: (pi) => join3(pi.pi.getAgentDir(), "inbox"),
+  stateDir: (pi) => join4(pi.pi.getAgentDir(), "inbox"),
   now: Date.now,
   newId: randomUUID,
   settleWindowMs: SETTLED_MS,
   home: homedir(),
-  isNextBuild: existsSync(join3(dirname2(dirname2(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
-  comparePage: join3(dirname2(fileURLToPath(import.meta.url)), COMPARE_PAGE_FILE),
+  isNextBuild: existsSync(join4(dirname2(dirname2(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
+  comparePage: join4(dirname2(fileURLToPath(import.meta.url)), COMPARE_PAGE_FILE),
   complete: defaultComplete,
   copy: copyToClipboard,
   background: (work) => void work.catch(() => {
@@ -11442,6 +11707,10 @@ function createInbox(pi, deps = defaultDeps) {
     const model = inboxModel(ctx);
     return model ? model.name ?? model.id : null;
   };
+  const logHerdr = herdrLog(dir);
+  const applyHerdrPress = async (ctx, file) => {
+    await inbox.press(ctx, file.press, file.holds, file);
+  };
   const context = {
     deps,
     dir,
@@ -11449,7 +11718,9 @@ function createInbox(pi, deps = defaultDeps) {
     prepared: new Set,
     prFetches: prFetchTracker(deps.now),
     listeners: new Map,
-    reportToHerdr: herdrReporter(),
+    reportToHerdr: herdrReporter(logHerdr),
+    logHerdr,
+    presses: ompPresses(deps.herdrTarget, (ctx, file) => applyHerdrPress(ctx, file), logHerdr),
     run,
     memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null },
     sendToAgent,

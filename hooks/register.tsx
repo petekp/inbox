@@ -99,8 +99,13 @@ import {
 } from './claude'
 import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
-import { delegatesInHerdr, HERDR_CHECK_MS } from './herdr'
-import { publishToHerdr, type HerdrCalls } from './mod-herdr'
+import { delegatesInHerdr, withLookResult, type PressFile } from './herdr'
+import {
+  followDelegates as followHerdrDelegates,
+  listenForHerdrPresses,
+  publishToHerdr,
+  type HerdrCalls,
+} from './mod-herdr'
 import { ago, cellWidth, turnReply } from './text'
 import { COMPARE_PAGE_FILE } from './press-messages'
 import { demoAfterPress, demoReplied, demoSent, type DemoSent } from './press-effects'
@@ -224,7 +229,6 @@ import {
   endedCallRan,
   HOST_TASK_TOOLS,
   isActivityWorthSaving,
-  isHerdrCheckDue,
   MAX_PERSON_LINES,
   noteRanCall,
   permissionText,
@@ -355,8 +359,8 @@ async function syncTheme($: EngineInterface) {
   await update($, THEME, () => (typeof theme === 'string' ? theme : ''))
 }
 
-function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
-  const calls: HerdrCalls = {
+function herdrCalls($: EngineInterface): HerdrCalls {
+  return {
     run: processRun($),
     env: () =>
       Promise.all([
@@ -366,16 +370,31 @@ function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
         $.env.get('HOME'),
       ]),
     write: (path, text) => $.fs.write(path, text),
+    read: path => $.fs.read(path),
+    list: folder => $.fs.list(folder),
+    spawn: argv => $.process.spawn({ argv }),
     now: () => $.clock.now(),
     after: (ms, fn) => void $.clock.after(ms, fn),
+    every: (ms, fn) => $.clock.every(ms, fn),
     log: text => void $.ui.log(text, { to: 'debug' }),
   }
+}
 
-  return publishToHerdr(calls, isEnding ? conversation.id : null, async () => {
+function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
+  return publishToHerdr(herdrCalls($), isEnding ? conversation.id : null, async () => {
     const [session, dialogs, unreadable] = await Promise.all([read($, SESSION), read($, DIALOGS), read($, UNREADABLE)])
 
     return { id: conversation.id, session, dialogs, isUnread: unreadable === conversation.id }
   })
+}
+
+/** Applies a Herdr look's press. False when it is for another conversation. */
+async function herdrPress($: EngineInterface, id: string, f: PressFile): Promise<boolean> {
+  if (id !== conversation.id) return false
+  const started = await startPress(withLookResult(hostOf($, currentOwner(), 'terminal'), f), f.press, false, f.holds)
+  if ((await started.finish()).wakesAfterSettle) later($, SETTLED_MS, () => wakeAfterSettle($))
+
+  return true
 }
 
 async function setStop($: EngineInterface, stop: Stop | null) {
@@ -1163,35 +1182,18 @@ async function syncLook($: EngineInterface, isOpen?: boolean) {
   followDelegates($, isShown)
 }
 
-/**
- * Asks Herdr about the running delegates each `HERDR_CHECK_MS` while the Status shows, and once as it starts to
- * show, so a delegate's row follows Herdr while this session waits. The first tick after the Status stops showing
- * stops the timer.
- */
 function followDelegates($: EngineInterface, isShown: boolean) {
-  if (!isShown) {
-    paneState.herdrCheckTimer?.cancel()
-    paneState.herdrCheckTimer = null
-    return
-  }
-  void checkDelegates($).catch(() => undefined)
-  paneState.herdrCheckTimer ??= $.clock.every(HERDR_CHECK_MS, () => {
-    void (async () => {
-      const isStillShown = (await readPage($)) === 'overview' && (await isPaneShown($))
-      if (isStillShown && !(await read($, DEMO))) return checkDelegates($)
-      paneState.herdrCheckTimer?.cancel()
-      paneState.herdrCheckTimer = null
-    })().catch(() => undefined)
+  followHerdrDelegates(isShown, paneState, herdrCalls($).every, () => {
+    const owner = currentOwner()
+    return {
+      run: processRun($),
+      now: () => $.clock.now(),
+      ownerId: owner.id,
+      overview: async () => upgradeSession(await read($, SESSION)).ledger.overview,
+      isStatusShown: async () => (await readPage($)) === 'overview' && (await isPaneShown($)) && !(await read($, DEMO)),
+      settle: (agents, at) => commit($, owner, s => statusChanged(s, o => delegatesSettled(o, agents, at))),
+    }
   })
-}
-
-async function checkDelegates($: EngineInterface) {
-  const owner = currentOwner()
-  if (!isHerdrCheckDue(owner.id, await $.clock.now())) return
-  const states = await read($, SESSION).then(s => delegatesInHerdr(upgradeSession(s).ledger.overview, processRun($)))
-  if (!states) return
-  const at = await $.clock.now()
-  await commit($, owner, s => statusChanged(s, o => delegatesSettled(o, states, at)))
 }
 
 /**
@@ -2158,6 +2160,12 @@ async function initializeInbox($: EngineInterface) {
     }),
   ]
   await loadConversation($, await $.session.id())
+  mod.stopHerdrPresses?.()
+  mod.stopHerdrPresses = await listenForHerdrPresses(
+    herdrCalls($),
+    () => conversation.id,
+    (id, f) => herdrPress($, id, f),
+  )
   // After loadConversation, which brings saved state up to date. A band or pane drawn while the mod was off read no
   // state, so no state write draws it again.
   $.ui.invalidate('ui.render')

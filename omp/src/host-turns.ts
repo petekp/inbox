@@ -71,6 +71,7 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     memory.shownId = id
     memory.framesFor = id
     reportCounts(id, left === id ? undefined : left)
+    context.presses.follow(ctx)
     // Subagents run in this process, so the ones a saved session lists running ended with the process that ran them.
     const saved = await readState(dir, id).catch(() => null)
     const isCutOff = saved?.presence.isTurnRunning || saved?.ledger.overview?.children.some(c => c.endedAt === null)
@@ -101,6 +102,7 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     if (agentTexts?.id === id) agentTexts = null
     if (id !== memory.shownId) return
     memory.shownId = null
+    context.presses.stop()
     await reportEnded(id)
   }
 
