@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 import { NO_HOLDS } from '../../hooks/timing'
 import { createInbox } from '../src/host'
 import { stopOf } from '../src/omp-messages'
-import { reportedTokens } from '../../tests/session-script'
+import { reportedLabels, reportedTokens } from '../../tests/session-script'
 import {
   call,
   deps,
@@ -91,8 +93,35 @@ const herdrReports = () =>
     .filter(c => c.command === 'herdr')
     .map(c => ({ target: c.args.slice(0, 5).join(' '), tokens: reportedTokens(c.args) }))
 
+test('in a Herdr app terminal, the shown session is published and labelled, a switch moves both, and shutdown removes them', async () => {
+  const appHome = join(w.dir, 'herdr-app')
+  const target = { kind: 'terminal', terminal: 't1', appHome, hc: ['hc'] } as const
+  createInbox(pi(), { ...deps(), herdrTarget: target })
+  const labels = () => reportedLabels(['hc', ...w.execCalls.filter(c => c.command === 'hc').at(-1)!.args])
+  const published = (id: string) => join(appHome, 'inbox/sessions', `${id}.json`)
+
+  await call('session_start', { type: 'session_start' })
+  await settle()
+  expect(labels()).toMatchObject({ 'inbox.session': 's1', 'inbox.needs-you': '' })
+  expect(JSON.parse(readFileSync(published('s1'), 'utf8'))).toMatchObject({ format: 1, host: 'omp', terminal: 't1' })
+
+  await record({ kind: 'question', ask: 'Ship it?', options: ['yes', 'no'] })
+  await settle()
+  expect(labels()).toMatchObject({ 'inbox.session': 's1', 'inbox.needs-you': '1', 'inbox.status': 'Ship it?' })
+  expect(JSON.parse(readFileSync(published('s1'), 'utf8')).session.ledger.items).toHaveLength(1)
+
+  await call('session_switch', { type: 'session_switch', reason: 'resume' }, makeCtx('s2'))
+  await settle()
+  expect(labels()).toMatchObject({ 'inbox.session': 's2', 'inbox.needs-you': '' })
+  expect(readdirSync(join(appHome, 'inbox/sessions'))).toEqual(['s2.json'])
+
+  await call('session_shutdown', { type: 'session_shutdown' }, makeCtx('s2'))
+  expect(labels()).toMatchObject({ 'inbox.session': '', 'inbox.status': '' })
+  expect(readdirSync(join(appHome, 'inbox/sessions'))).toEqual([])
+})
+
 test('in a Herdr pane, each change reports the tab counts, a stop replaces them until it clears, and shutdown clears every token', async () => {
-  createInbox(pi(), { ...deps(), herdrPane: 'p1' })
+  createInbox(pi(), { ...deps(), herdrTarget: { kind: 'pane', pane: 'p1' } })
   const cleared = {
     inbox: null,
     'inbox-stop': null,
@@ -190,7 +219,11 @@ test('a subagent runs as a child from its started frame to its end, its progress
 
 test('a Herdr report that failed before the person switched sessions is retried with the session now shown', async () => {
   const retries: (() => Promise<unknown>)[] = []
-  createInbox(pi(), { ...deps(), herdrPane: 'p1', after: (_ms, retry) => void retries.push(retry) })
+  createInbox(pi(), {
+    ...deps(),
+    herdrTarget: { kind: 'pane', pane: 'p1' },
+    after: (_ms, retry) => void retries.push(retry),
+  })
   await call('session_start', { type: 'session_start' })
   await settle()
   w.execResults.set('herdr', { code: 1 })

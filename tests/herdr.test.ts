@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { CLEARED_TOKENS, herdrEnvelope, herdrLabels, herdrTarget, pressFile } from '../hooks/herdr'
+import { UNSTARTABLE_CODE } from '../hooks/gh'
+import type { Run } from '../hooks/gh'
+import { CLEARED_TOKENS, herdrEnvelope, herdrLabels, herdrReporter, herdrTarget, pressFile } from '../hooks/herdr'
 import type { EnvelopeSource } from '../hooks/herdr'
 import { emptySession } from '../hooks/session-files'
 
@@ -16,8 +18,34 @@ const PRESS = {
 describe('herdrTarget', () => {
   test('a multiplexer pane wins over an app terminal, and neither means no target', () => {
     expect(herdrTarget({ HERDR_PANE_ID: 'p1', HC_TERMINAL_ID: 't1' })).toEqual({ kind: 'pane', pane: 'p1' })
-    expect(herdrTarget({ HC_TERMINAL_ID: 't1' })).toEqual({ kind: 'terminal', terminal: 't1' })
+    expect(herdrTarget({ HC_TERMINAL_ID: 't1', HOME: '/home/person' })).toEqual({
+      kind: 'terminal',
+      terminal: 't1',
+      appHome: '/home/person/.config/herdr-app',
+      hc: ['hc', '/home/person/.local/bin/hc'],
+    })
+    expect(herdrTarget({ HC_TERMINAL_ID: 't1', HERDR_APP_HOME: '/app' })).toMatchObject({ appHome: '/app', hc: ['hc'] })
     expect(herdrTarget({ HERDR_PANE_ID: '', HC_TERMINAL_ID: '' })).toBeNull()
+  })
+})
+
+describe('herdrReporter', () => {
+  test('labels an app terminal with hc from PATH, else from ~/.local/bin, and keeps the one that started', async () => {
+    const ran: string[][] = []
+    const run: Run = async args => {
+      ran.push(args)
+      return { code: args[0] === 'hc' ? UNSTARTABLE_CODE : 0, stdout: '', stderr: '' }
+    }
+    const target = herdrTarget({ HC_TERMINAL_ID: 't1', HOME: '/home/person' })!
+    const report = herdrReporter()
+
+    expect(await report(run, async () => ({ target, tokens: { inbox: 'Ship\nit?' }, session: 's1' }))).toBe(true)
+    expect(await report(run, async () => ({ target, tokens: { inbox: null }, session: null }))).toBe(true)
+    expect(ran).toEqual([
+      ['hc', 'label', 't1', 'inbox.session=s1', 'inbox.status=Ship it?'],
+      ['/home/person/.local/bin/hc', 'label', 't1', 'inbox.session=s1', 'inbox.status=Ship it?'],
+      ['/home/person/.local/bin/hc', 'label', 't1', 'inbox.session=', 'inbox.status='],
+    ])
   })
 })
 

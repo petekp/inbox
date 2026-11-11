@@ -3,6 +3,7 @@ import type { Run } from '../hooks/gh'
 import { HERDR_RETRY_MS, herdrReporter } from '../hooks/herdr'
 import { PRESS_GUARD_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
+import { reportedLabels } from './session-script'
 import { BAND, PANE, selectRow, sidebarLines, sidebarTokens, NO_COUNTS } from './hooks-helpers'
 
 test('a question’s handle is the number a typed answer reaches, and the band counts what the tab counts', async ($, on) => {
@@ -151,6 +152,35 @@ test('the band keeps what the mods after the inbox draw there, with its counts a
   }
 })
 
+test('in a Herdr app terminal, each change publishes the session and labels the terminal, and the end removes both', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: '/app', HOME: '/home/person' })
+  const file = '/app/inbox/sessions/session-1.json'
+  const labels = () => reportedLabels(w.ran.filter(argv => argv[0] === 'hc').at(-1) ?? [])
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(labels()).toMatchObject({ 'inbox.session': 'session-1', 'inbox.needs-you': '' })
+  expect(JSON.parse(w.written[file]!)).toMatchObject({
+    format: 1,
+    host: 'claude-code',
+    agent: 'Claude',
+    terminal: 't1',
+  })
+
+  await $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask: 'Ship it?', options: ['yes', 'no'] })
+  await clock.settle()
+  expect(labels()).toMatchObject({ 'inbox.session': 'session-1', 'inbox.needs-you': '1', 'inbox.status': 'Ship it?' })
+  expect(JSON.parse(w.written[file]!).session.ledger.items).toHaveLength(1)
+  expect(Object.keys(w.written).filter(path => path.startsWith('/app/'))).toEqual([file])
+  expect(w.ran.some(argv => argv[0] === 'herdr')).toBe(false)
+
+  await $.session.end({ reason: 'other', sessionId: 'session-1' } as never)
+  await clock.settle()
+  expect(labels()).toMatchObject({ 'inbox.session': '', 'inbox.needs-you': '', 'inbox.status': '' })
+  expect(w.written[file]).toBeUndefined()
+})
+
 test('a sidebar report Herdr fails to take is sent again after each wait in HERDR_RETRY_MS, until Herdr takes it', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [], { HERDR_PANE_ID: 'p2' })
@@ -188,7 +218,7 @@ function reporterWorld(codeOf: (send: number) => number) {
   const report = () =>
     reportToHerdr(
       run,
-      async () => ({ pane: 'p1', tokens: { inbox: `read ${++reads}` } }),
+      async () => ({ target: { kind: 'pane', pane: 'p1' }, tokens: { inbox: `read ${++reads}` }, session: 's1' }),
       (ms, retry) => {
         waited.push(ms)
         waits.push({ ms, retry })

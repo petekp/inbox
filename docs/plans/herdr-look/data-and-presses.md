@@ -2,7 +2,7 @@
 
 Part of [the Herdr look plan](../herdr-look.md).
 
-Status: proposed.
+Status: building. The data path is built in every host. The press path is not.
 
 The Herdr look is drawn by a program that is not the host. Every other look runs inside its host, but the Herdr mod runs in Herdr's process. So the session state crosses a process boundary in one direction, and presses cross it in the other.
 
@@ -11,7 +11,7 @@ The Herdr look is drawn by a program that is not the host. Every other look runs
 Each host publishes its session to a file. The mod reads that file and builds the view itself.
 
 - **Where.** `<app home>/inbox/sessions/<session id>.json`. The app home is `$HERDR_APP_HOME`, or `~/.config/herdr-app` when that is unset. An app terminal inherits `HERDR_APP_HOME` when the app was started with it, as the spike's was. One folder holds both directions, because a mod may read anywhere in the home folder but may write only under the app home.
-- **When.** After every saved change to the session, at session start, and at session end. A host publishes only when `HC_TERMINAL_ID` is set, which means it runs in a Herdr app terminal. At session end the host deletes its file.
+- **When.** After every saved change to the session, at session start, and at session end. A host publishes only when `HC_TERMINAL_ID` is set, which means it runs in a Herdr app terminal. At session end the host deletes its file. Claude Code deletes it at `session.end`, and omp at shutdown. When omp switches to another session, it deletes the old session's file before it publishes the new one. Codex has no hook for a session's end, so its file stays. Codex publishes from its hooks and the update a hook starts. Its MCP server does not publish, so a record or close during a turn reaches the file at the next hook.
 - **What.** A versioned envelope around the shared `Session` from `types/index.d.ts`:
 
   ```json
@@ -19,8 +19,8 @@ Each host publishes its session to a file. The mod reads that file and builds th
   ```
 
   `session` holds only the shared fields. Each host drops its own fields, such as Codex's `herdrReport` or the mod's `revision`. `agent` is the name the shared texts use, as in "Tell Claude".
-- **How.** Write to a temporary file in the same folder, then rename it over the old one, so the mod never reads half a file. Codex and omp rename with Node's `fs.rename`. Claude Code's `$.fs` has no rename or delete, so the mod renames with `$.process.run(['mv', …])`. The spike wrote with `$.fs.write` straight to the file and did not check for torn reads. Its mod retried a parse that failed.
-- **Size.** Herdr's `readTextFile` reads at most 1 MiB. The demo session is 7.7 KB. The mod's saved sessions are already pruned by `pruned()`. A host that would publish more than 1 MiB publishes the session without closed items beyond those the view shows, and the look says when it does.
+- **How.** Write to a temporary file in the same folder, then rename it over the old one, so the mod never reads half a file. The temporary file is named `<session id>.json.<writtenAt>-<random>.tmp`, so it never ends in `.json`, and the mod skips it when it lists the folder. Codex and omp rename with Node's `fs.rename`. Claude Code's `$.fs` has no rename or delete, so the mod renames with `$.process.run(['mv', …])`. The spike wrote with `$.fs.write` straight to the file and did not check for torn reads. Its mod retried a parse that failed.
+- **Size.** Herdr's `readTextFile` reads at most 1 MiB. The demo session is 7.7 KB. The mod's saved sessions are already pruned by `pruned()`. A host that would publish more than 1 MiB should publish the session without closed items beyond those the view shows, and the look should say when it does. This is not built: the look needs an envelope field to say so, and the envelope is shared with the mod's build.
 
 ### Who computes the view
 
