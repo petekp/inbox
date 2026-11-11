@@ -167,6 +167,7 @@ test('in a Herdr app terminal, each change publishes the session and labels the 
     host: 'claude-code',
     agent: 'Claude',
     terminal: 't1',
+    projectFolder: '/tmp/project',
   })
 
   await $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask: 'Ship it?', options: ['yes', 'no'] })

@@ -224,6 +224,7 @@ describe('listenForHerdrPresses', () => {
         reads.push(folder)
         return [{ name: 'p.json', kind: 'file' }]
       },
+      isFile: async () => false,
       spawn: argv => {
         spawned.push(argv[0]!)
         return streams[argv[0]!]!.iterator

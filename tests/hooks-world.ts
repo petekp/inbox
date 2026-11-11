@@ -80,6 +80,7 @@ class World {
   panesOpened: string[] = []
   paneOpens: PaneOpenArgs[] = []
   paneState: { isShown: boolean; isFocused: boolean } | null = null
+  missingFiles: string[] = []
 }
 
 export const w = new World()
@@ -292,6 +293,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.panesOpened = []
   w.paneOpens = []
   w.paneState = null
+  w.missingFiles = []
   on('store.get', async (_$, e) => {
     if (e.key.startsWith('s:')) await w.storeHold?.()
     if (w.storeRefusal && e.key.startsWith('s:')) return { deny: w.storeRefusal }
@@ -389,7 +391,11 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
     if (!e.path.endsWith('/.claude-plugin/plugin.json')) throw new Error(`ENOENT: ${e.path}`)
     return { value: JSON.stringify({ name: 'inbox', version: '1.2.3' }) }
   })
-  on('fs.stat', () => ({ value: { kind: 'file' as const, size: 1, mtimeMs: 1, isLink: false } }))
+  on('fs.stat', (_$, e) =>
+    w.missingFiles.includes(e.path)
+      ? { deny: 'ENOENT' }
+      : { value: { kind: 'file' as const, size: 1, mtimeMs: 1, isLink: false } },
+  )
   on('fs.write', (_$, e) => {
     w.written[e.path] = e.text
     return { value: undefined }

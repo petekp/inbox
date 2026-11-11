@@ -95,7 +95,7 @@ const herdrReports = () =>
 
 test('in a Herdr app terminal, the shown session is published and labelled, a switch moves both, and shutdown removes them', async () => {
   const appHome = join(w.dir, 'herdr-app')
-  const target = { kind: 'terminal', terminal: 't1', appHome, hc: ['hc'] } as const
+  const target = { kind: 'terminal', terminal: 't1', appHome, hc: ['hc'], herdrApp: ['herdr-app'] } as const
   createInbox(pi(), { ...deps(), herdrTarget: target })
   const labels = () => reportedLabels(['hc', ...w.execCalls.filter(c => c.command === 'hc').at(-1)!.args])
   const published = (id: string) => join(appHome, 'inbox/sessions', `${id}.json`)
@@ -103,7 +103,12 @@ test('in a Herdr app terminal, the shown session is published and labelled, a sw
   await call('session_start', { type: 'session_start' })
   await settle()
   expect(labels()).toMatchObject({ 'inbox.session': 's1', 'inbox.needs-you': '' })
-  expect(JSON.parse(readFileSync(published('s1'), 'utf8'))).toMatchObject({ format: 1, host: 'omp', terminal: 't1' })
+  expect(JSON.parse(readFileSync(published('s1'), 'utf8'))).toMatchObject({
+    format: 1,
+    host: 'omp',
+    terminal: 't1',
+    projectFolder: '/work',
+  })
 
   await record({ kind: 'question', ask: 'Ship it?', options: ['yes', 'no'] })
   await settle()
