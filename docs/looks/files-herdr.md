@@ -21,6 +21,6 @@ The Herdr look is a Herdr app mod. It draws the inbox of the session that a host
 | `herdr/src/press-queue.ts` | Herdr adapter. One session's presses from send to end: refusing a press, running the look's own opens, writing the press file, waking the host, and taking back a file no host took in time. Its effects come through `QueueIo`, so the tests run it without the app. |
 | `herdr/src/press-file.ts` | Herdr adapter. Where the look writes a press for the host, the file's text in the format `hooks/herdr-press-file.ts:pressFile` reads, and the label that wakes the host. |
 | `herdr/src/run-here.ts` | Herdr adapter. Which opens and copies the look runs itself, at once, and running them. |
-| `herdr/src/paint-theme.ts` | Herdr adapter. Maps the blocks' tones onto Herdr's theme, and what the paint files share for one draw. |
+| `herdr/src/paint-theme.ts` | Herdr adapter. Maps the blocks' tones onto Herdr's theme, the text sizes and column positions the paint files share, and what they share for one draw. |
 | `herdr/src/paint-blocks.ts` | Herdr adapter. Paints each block with `gpui-kit` and `gpui-base`: buttons, rows with their motion, text fields, Status lines, PRs, folds and notes. |
-| `herdr/src/paint-chrome.ts` | Herdr adapter. Paints the header with its Help button, the banners, the session notes, the tabs, and the message for a terminal with no inbox. |
+| `herdr/src/paint-chrome.ts` | Herdr adapter. Paints the tab row with the status line and Help at its right end, the banners, the session notes, and the message for a terminal with no inbox. Herdr's pane header names the pane, so the look draws no title. |

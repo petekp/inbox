@@ -40,7 +40,8 @@ import { afterSend, keyMove, withSelected, withTab } from './keys'
 import { moveRows } from './motion'
 import type { Tracks } from './motion'
 import { blockEl } from './paint-blocks'
-import { bannerEl, headerEl, messageEl, sessionNoteEl, tabsEl } from './paint-chrome'
+import { bannerEl, messageEl, sessionNoteEl, tabsEl } from './paint-chrome'
+import { LINE, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { PRESS_LABEL } from './press-file'
 import { PressQueue, claimedPath } from './press-queue'
@@ -370,26 +371,14 @@ export default class Inbox extends View {
       motion: new Map(),
       input: rowId => (this.input?.rowId === rowId ? this.input.state : null),
     }
-    const isInbox = screen.is === 'inbox'
     const root = v_flex()
       .id('inbox')
       .size_full()
       .min_h(0)
-      .rounded(10)
-      .overflow_hidden()
       .bg(t.background)
-      .border_1()
-      .border_color(t.border)
       .text_color(t.foreground)
-      .text_size(13)
-      .child(
-        headerEl(
-          isInbox ? screen.agent : null,
-          isInbox ? screen.status : null,
-          isInbox ? this.isHelpShown : null,
-          paint,
-        ),
-      )
+      .text_size(TEXT)
+      .line_height(LINE)
     if (screen.is === 'message') return root.child(messageEl(screen.message, t))
     const hasStatusButtons = screen.blocks.some(b => b.kind === 'status' && b.buttons.length > 0)
     const shown = this.isHelpShown ? helpBlocks(this.isNextBuild, this.ui.tab, hasStatusButtons) : screen.blocks
@@ -406,7 +395,7 @@ export default class Inbox extends View {
     return root
       .when(focus !== null, e => (focus ? e.track_focus(focus) : e))
       .on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx))
-      .child(tabsEl(screen.tabs, paint))
+      .child(tabsEl(screen.tabs, screen.status, this.isHelpShown, paint))
       .children(screen.banners.map(b => bannerEl(b, t)))
       .when(screen.trimmedNote !== null, e => e.child(sessionNoteEl(screen.trimmedNote ?? '', t)))
       .child(
@@ -420,7 +409,8 @@ export default class Inbox extends View {
               .absolute()
               .inset_0()
               .overflow_y_scroll()
-              .p(6)
+              .pt(8)
+              .pb(4)
               .on_click((_e, _cx) => this.focus?.focus())
               .children(moved.blocks.map(b => blockEl(b, paint))),
           )

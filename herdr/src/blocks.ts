@@ -5,8 +5,11 @@ import type { RowPress } from '../../hooks/presses'
 import type { ActionEmphasis } from '../../hooks/rows'
 import type { StatusStall } from '../../hooks/status-page'
 
-/** A color the paint maps onto Herdr's theme, so a tone means the same thing in the look and in Herdr's sidebar. */
-export type Tone = 'needsYou' | 'issue' | 'done' | 'running' | 'error' | 'warning' | 'muted' | 'dim' | null
+/**
+ * A color the paint maps onto Herdr's theme. The first six are the shared tones of `hooks/tones.ts`, so a tone means
+ * the same thing in every look, and needs-you, done and running mean what they do in Herdr's sidebar.
+ */
+export type Tone = 'needsYou' | 'issue' | 'findings' | 'prs' | 'done' | 'error' | 'running' | 'warning' | 'muted' | null
 
 export type Mark = { text: string; tone: Tone; isRunning: boolean }
 
@@ -70,8 +73,8 @@ export type RowBlock = {
   /** Whether the person can select it to see its body and buttons. */
   isSelectable: boolean
   isSelected: boolean
-  /** What the selected row shows under its line, in order. */
-  body: { text: string; tone: Tone }[]
+  /** What the selected row shows under its line, in order, each line with the mark that leads it, if any. */
+  body: { text: string; tone: Tone; mark?: Mark }[]
   buttons: Button[]
   /** The open reply field, in place of the buttons, or null. */
   field: Field | null
@@ -116,7 +119,18 @@ export type LineBlock = {
 }
 
 export type Block =
-  | { kind: 'heading'; id: string; text: string; count: number | null; mark: Mark | null; buttons: Button[] }
+  /** A group's title with its count, or with `isLabel` a quiet label over a part, such as the goal's, ruled to its buttons. */
+  | {
+      kind: 'heading'
+      id: string
+      text: string
+      count: number | null
+      mark: Mark | null
+      buttons: Button[]
+      isLabel: boolean
+    }
+  /** What a tab shows when it has nothing in it, centred: its title, its hint and its buttons. */
+  | { kind: 'empty'; id: string; title: string; hint: string | null; buttons: Button[] }
   | RowBlock
   | StatusLine
   | PrBlock
@@ -125,6 +139,7 @@ export type Block =
   | { kind: 'fold'; id: string; depth: number; text: string; isOpen: boolean; change: ViewChange }
   /** A line that shows more of an open Closed list, as "Show 4 earlier". */
   | { kind: 'more'; id: string; depth: number; text: string; change: ViewChange }
+  /** A line of text. `isStrong` is the Status page's head: the goal, or what the session is for. */
   | { kind: 'note'; id: string; text: string; tone: Tone; isStrong: boolean; depth: number }
   /** The goal's field while the person types a goal, in place of the goal's text. */
   | { kind: 'field'; id: string; field: Field }

@@ -1,16 +1,6 @@
 import { HELP_COPY, helpKeys, markLegend } from '../../hooks/help'
 import type { ShownTab } from '../../hooks/tabs'
-import type { ToneName } from '../../hooks/tones'
-import type { Block, Tone } from './blocks'
-
-const TONES: Record<ToneName, Tone> = {
-  needsYou: 'needsYou',
-  issue: 'issue',
-  findings: 'warning',
-  prs: 'running',
-  done: 'done',
-  error: 'error',
-}
+import type { Block } from './blocks'
 
 /**
  * The Help page for the tab it opened over: the keys the look takes, then every mark with what it means. The look
@@ -25,6 +15,7 @@ export function helpBlocks(isNextBuild: boolean, tab: ShownTab, hasStatusButtons
     count: null,
     mark: null,
     buttons: [],
+    isLabel: false,
   })
 
   return [
@@ -45,7 +36,7 @@ export function helpBlocks(isNextBuild: boolean, tab: ShownTab, hasStatusButtons
       kind: 'status',
       id: `mark ${m.mark}`,
       depth: 0,
-      mark: { text: m.mark, tone: m.tone ? TONES[m.tone] : null, isRunning: m.isRunning },
+      mark: { text: m.mark, tone: m.tone, isRunning: m.isRunning },
       name: m.words,
       isBold: false,
       stall: null,

@@ -75,7 +75,7 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
       },
     ]
   if (row.kind === 'more')
-    return [{ kind: 'note', id: row.id, text: row.text, tone: 'dim', isStrong: false, depth: row.depth }]
+    return [{ kind: 'note', id: row.id, text: row.text, tone: 'muted', isStrong: false, depth: row.depth }]
   if (row.kind === 'look') return [{ kind: 'rule', id: row.id, text: row.text, isDashed: true }]
   if (row.kind === 'part')
     return [
@@ -159,16 +159,17 @@ function goalBlocks(page: StatusPage, { isUnfolded, goalField }: StatusUi): Bloc
     count: null,
     mark: null,
     buttons: keyButtons(GOAL_KEYS_ID, goalKeyPlan(page)),
+    isLabel: true,
   }
   const field: Block[] = goalField ? [{ kind: 'field', id: 'goal field', field: goalField }] : []
-  if (g === null) return [heading, ...(goalField ? field : [note('goal text', NO_GOAL_TEXT, 'dim')])]
+  if (g === null) return [heading, ...(goalField ? field : [note('goal text', NO_GOAL_TEXT, 'muted')])]
   const lines = goalField
     ? field
     : [
         note('goal text', g.count === null ? g.text : `${g.text}${STALL_GAP}${g.count}`, null, true),
-        ...(g.was ? [note('goal was', `${WAS_PREFIX}${g.was}`, 'dim')] : []),
-        ...(g.now ? [note('goal now', g.now, 'dim')] : []),
-        ...(g.awaiting ? [note('goal awaiting', g.awaiting, 'dim')] : []),
+        ...(g.was ? [note('goal was', `${WAS_PREFIX}${g.was}`, 'muted')] : []),
+        ...(g.now ? [note('goal now', g.now, 'muted')] : []),
+        ...(g.awaiting ? [note('goal awaiting', g.awaiting, 'muted')] : []),
       ]
   const milestones = g.milestones.flatMap((m): Block[] => [
     { kind: 'gap', id: `gap ${m.id}` },
@@ -184,14 +185,11 @@ export function statusBlocks(page: StatusPage, ui: StatusUi): Block[] {
   const { isUnfolded } = ui
   if (page.isEmpty && ui.goalField === null)
     return [
-      note('empty title', page.empty.title, null, true),
-      note('empty hint', page.empty.hint, 'muted'),
       {
-        kind: 'heading',
-        id: 'goal keys',
-        text: '',
-        count: null,
-        mark: null,
+        kind: 'empty',
+        id: 'empty overview',
+        title: page.empty.title,
+        hint: page.empty.hint,
         buttons: keyButtons(GOAL_KEYS_ID, goalKeyPlan(page)),
       },
     ]

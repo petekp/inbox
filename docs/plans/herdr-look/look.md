@@ -83,10 +83,15 @@ The look draws only with `theme()` colors, which every light and dark theme name
 
 | Inbox tone | Herdr color |
 | --- | --- |
-| Needs you | `blocked` |
+| Needs you, issue, warning | `blocked` |
 | Done | `done` |
 | Running | `working` |
-| Muted text | `muted`, and `dim` for the quietest |
-| Row fill | `background` on `surface` |
+| Findings | `ansi5` |
+| PRs | `ansi6` |
+| Error | `ansi1` |
+| Muted text, ages and hints | `muted` |
+| Selected row | `selected` |
+
+The look draws no text in `dim`. In the Tokyo Night theme, `dim` on the pane's background is 3.3:1, under the 4.5:1 text needs.
 
 Each state is checked in Herdr's light and dark themes in the VM.

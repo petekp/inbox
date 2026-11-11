@@ -42,7 +42,7 @@ const PLACE = 'session'
 const PR_TONE: Record<Exclude<(typeof PR_TONES)[keyof typeof PR_TONES], null>, Tone> = {
   needsYou: 'needsYou',
   done: 'done',
-  findings: 'issue',
+  findings: 'findings',
   error: 'error',
 }
 
@@ -89,7 +89,7 @@ function threadRow(screen: LookScreen, pr: PrView, t: PrThread, presses: PressSt
     mark: markOf(text.mark),
     title: text.title,
     age: t.at === null ? null : shortAgo(screen.now - t.at),
-    feedback: prFeedback(screen, id) ?? (text.fold?.note ? { text: text.fold.note, tone: 'dim' } : null),
+    feedback: prFeedback(screen, id) ?? (text.fold?.note ? { text: text.fold.note, tone: 'muted' } : null),
     settled: null,
     isDim: text.mark.isDone,
     isSelectable: text.fold === null,
@@ -114,7 +114,7 @@ function checkRow(screen: LookScreen, pr: PrView, c: PrCheck, presses: PressStat
     mark: markOf(text.mark),
     title: text.lead ? `${text.lead} / ${text.title}` : text.title,
     age: c.finishedAt === undefined ? null : shortAgo(screen.now - c.finishedAt),
-    feedback: prFeedback(screen, id) ?? (text.fold ? { text: text.fold.note, tone: 'dim' } : null),
+    feedback: prFeedback(screen, id) ?? (text.fold ? { text: text.fold.note, tone: 'muted' } : null),
     settled: null,
     isDim: false,
     isSelectable: text.fold === null,
@@ -173,7 +173,15 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
     rows.length === 0
       ? []
       : [
-          { kind: 'heading', id: `${pr.ref} ${key}`, text: title, count: rows.length, mark: null, buttons: [] },
+          {
+            kind: 'heading',
+            id: `${pr.ref} ${key}`,
+            text: title,
+            count: rows.length,
+            mark: null,
+            buttons: [],
+            isLabel: false,
+          },
           ...rows.map((r): RowBlock => {
             const isSelected = r.isSelectable && r.id === selected
             return { ...r, isSelected, body: isSelected ? r.body : [], buttons: isSelected ? r.buttons : [] }
@@ -249,8 +257,7 @@ export function prTabBlocks(screen: LookScreen, selected: string | null): Block[
   if (prs.drawn.length === 0) {
     const empty = prsEmptyText({ isFetching: false, ...gh }, PLACE)
     return [
-      note('prs empty title', empty.title, null, true),
-      note('prs empty hint', empty.hint, 'muted'),
+      { kind: 'empty', id: 'empty prs', title: empty.title, hint: empty.hint, buttons: [] },
       ...refreshLine(screen),
     ]
   }

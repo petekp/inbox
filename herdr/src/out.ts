@@ -136,7 +136,8 @@ export function drawOuts(blocks: Block[], outs: readonly Out[], lines: Record<st
       const line = lineOf(b.id)
       return { ...b, buttons: withOutButtons(b.buttons, outRows), ...(line ? { feedback: line } : {}) }
     }
-    if (b.kind === 'status' || b.kind === 'heading') return { ...b, buttons: withOutButtons(b.buttons, outRows) }
+    if (b.kind === 'status' || b.kind === 'heading' || b.kind === 'empty')
+      return { ...b, buttons: withOutButtons(b.buttons, outRows) }
 
     return b
   })
