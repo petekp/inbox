@@ -11,11 +11,19 @@ test('a published session reads back with its source and its rows', () => {
   expect(read.session.ledger.items.length).toBeGreaterThan(0)
   expect(read.isTrimmed).toBe(false)
   expect(read.lastPress).toBeNull()
+  expect(read.projectFolder).toBeNull()
 })
 
 test('a session the host trimmed to fit reads as trimmed', () => {
   const read = readSession(demoEnvelopeText({ trimmed: true }))
   expect(read.is === 'read' && read.isTrimmed).toBe(true)
+})
+
+test('the project folder reads back when absolute, and a relative one reads as none', () => {
+  const read = readSession(demoEnvelopeText({ projectFolder: '/work/app' }))
+  expect(read.is === 'read' && read.projectFolder).toBe('/work/app')
+  const relative = readSession(demoEnvelopeText({ projectFolder: 'work/app' }))
+  expect(relative.is === 'read' && relative.projectFolder).toBeNull()
 })
 
 test('the host’s last press reads back, and one in an unknown shape reads as none', () => {

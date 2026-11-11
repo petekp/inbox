@@ -10,9 +10,11 @@ import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks } from '../src/draw'
 import { keyMove } from '../src/keys'
 import { moveRows } from '../src/motion'
-import { GIVE_UP_MS, SENDING, STALE_AFTER_TAKEN_MS, drawOuts, outAction, rowSignature, settleOuts } from '../src/out'
+import { GIVE_UP_MS, SENDING, drawOuts, outAction, rowSignature, settleOuts } from '../src/out'
 import type { Out } from '../src/out'
 import { pressFileText } from '../src/press-file'
+import { isRunHere, runHere } from '../src/run-here'
+import type { HereIo } from '../src/run-here'
 import { AGENT, NOW, demoScreen, uiOn } from './fixtures'
 
 const rowsOf = (blocks: Block[]) => blocks.filter((b): b is RowBlock => b.kind === 'row')
@@ -41,19 +43,21 @@ function outOn(rowId: string, overrides: Partial<Out> = {}): Out {
     pending: null,
     since: NOW,
     before: rowSignature(view, rowId),
-    takenAt: null,
+    isTaken: false,
     ...overrides,
   }
 }
 
-test('a press ends when its row changes, reads stale once the host took it unchanged, and gives up unanswered', () => {
+test('a press ends when its row changes, and by the give-up time reads stale if a host took it, else not applied', () => {
   const { view } = demoScreen()
   const rowId = view.needsYou.questions[0]!.id
   expect(settleOuts([outOn(rowId, { before: 'other' })], view, null, NOW, AGENT).outs).toEqual([])
   const waiting = settleOuts([outOn(rowId)], view, null, NOW + 100, AGENT)
   expect(waiting.outs.length).toBe(1)
-  const taken = settleOuts([outOn(rowId, { takenAt: NOW })], view, null, NOW + STALE_AFTER_TAKEN_MS, AGENT)
+  expect(settleOuts([outOn(rowId, { isTaken: true })], view, null, NOW + 100, AGENT).outs.length).toBe(1)
+  const taken = settleOuts([outOn(rowId, { isTaken: true })], view, null, NOW + GIVE_UP_MS, AGENT)
   expect(taken.notes[rowId]?.note).toBe('stale')
+  expect(taken.errors).toEqual({})
   const lost = settleOuts([outOn(rowId)], view, null, NOW + GIVE_UP_MS, AGENT)
   expect(lost.errors[rowId]).toContain(AGENT)
 })
@@ -136,4 +140,24 @@ test('a row the publish dropped stays drawn while it leaves, then goes', () => {
   expect(leaving.blocks.some(b => b.id === gone.id)).toBe(true)
   expect(leaving.motion.get(gone.id)?.state).toBe('leaving')
   expect(moveRows(without, leaving.tracks, NOW + 1 + EXIT_MS, false).blocks.some(b => b.id === gone.id)).toBe(false)
+})
+
+test('a relative open runs in the look against the session’s project folder, and goes to the host without one', async () => {
+  const open = [{ kind: 'open', target: 'docs/plan.md', name: 'plan.md' }] as const
+  expect(isRunHere([...open], null)).toBe(false)
+  expect(isRunHere([...open], '/work/app')).toBe(true)
+  expect(isRunHere([{ kind: 'open', target: 'https://example.com', name: 'example.com' }], null)).toBe(true)
+  const ran: string[][] = []
+  const io: HereIo = {
+    run: async argv => {
+      ran.push(argv)
+      return { code: 0, stdout: '', stderr: '' }
+    },
+    probe: { stat: async () => ({ isFile: () => true }), isExecutable: async () => false },
+    home: '/home/me',
+    projectFolder: '/work/app',
+    copy: () => undefined,
+  }
+  expect(await runHere([...open], io)).toBeNull()
+  expect(ran.flat()).toContain('/work/app/docs/plan.md')
 })

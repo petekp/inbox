@@ -26,9 +26,17 @@ export function isSessionChange(changed: readonly string[], appHome: string, ses
  * `torn`: not JSON, which a read mid-write can give, so the look reads again. `newer`: a format from a newer host.
  * `isTrimmed`: the host left out older closed items to keep the file under the 1 MiB Herdr's `readTextFile` reads.
  * `lastPress`: the last press file the host handled, and whether it applied or found its row already changed.
+ * `projectFolder`: the absolute folder the host opens a relative path against, or null when the host gave none.
  */
 export type ReadSession =
-  | { is: 'read'; envelope: HerdrEnvelope; session: Session; isTrimmed: boolean; lastPress: LastPress | null }
+  | {
+      is: 'read'
+      envelope: HerdrEnvelope
+      session: Session
+      isTrimmed: boolean
+      lastPress: LastPress | null
+      projectFolder: string | null
+    }
   | { is: 'missing' }
   | { is: 'torn' }
   | { is: 'newer'; format: number }
@@ -70,5 +78,7 @@ export function readSession(text: string | null): ReadSession {
     session: upgradeSession(file.session as SavedSession),
     isTrimmed: file.trimmed === true,
     lastPress: lastPressOf(file.lastPress),
+    projectFolder:
+      typeof file.projectFolder === 'string' && file.projectFolder.startsWith('/') ? file.projectFolder : null,
   }
 }

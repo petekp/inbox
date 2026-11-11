@@ -3774,7 +3774,8 @@ function readSession(text) {
     envelope,
     session: upgradeSession(file.session),
     isTrimmed: file.trimmed === true,
-    lastPress: lastPressOf2(file.lastPress)
+    lastPress: lastPressOf2(file.lastPress),
+    projectFolder: typeof file.projectFolder === "string" && file.projectFolder.startsWith("/") ? file.projectFolder : null
   };
 }
 
@@ -3977,7 +3978,6 @@ function moveRows(blocks, tracks, now, isFirst) {
 var SENDING = "Sending…";
 var REREAD_AFTER_MS = 5000;
 var GIVE_UP_MS = 15000;
-var STALE_AFTER_TAKEN_MS = 1000;
 var outAction2 = (p) => ("id" in p) ? actionId(p) : p.action;
 function rowSignature(view, rowId) {
   const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
@@ -3995,21 +3995,17 @@ function settleOuts(outs, view, lastPress, now, agent) {
     }
     if (rowSignature(view, out.rowId) !== out.before)
       continue;
-    if (out.takenAt !== null && now - out.takenAt >= STALE_AFTER_TAKEN_MS)
-      settled.notes[out.rowId] = { note: "stale", at: now };
-    else if (now - out.since >= GIVE_UP_MS)
-      settled.errors[out.rowId] = `Not applied: ${agent}'s inbox did not answer.`;
-    else
+    if (now - out.since < GIVE_UP_MS)
       settled.outs.push(out);
+    else if (out.isTaken)
+      settled.notes[out.rowId] = { note: "stale", at: now };
+    else
+      settled.errors[out.rowId] = `Not applied: ${agent}'s inbox did not answer.`;
   }
   return settled;
 }
 function nextOutCheckAt(outs, now) {
-  const times = outs.flatMap((out) => [
-    out.since + REREAD_AFTER_MS,
-    out.since + GIVE_UP_MS,
-    ...out.takenAt === null ? [] : [out.takenAt + STALE_AFTER_TAKEN_MS]
-  ]);
+  const times = outs.flatMap((out) => [out.since + REREAD_AFTER_MS, out.since + GIVE_UP_MS]);
   const later = times.filter((at) => at > now);
   return later.length ? Math.min(...later) : null;
 }
@@ -4190,9 +4186,9 @@ function pressFileText(id, pressedAt, press, holds, result = null) {
 }
 
 // src/run-here.ts
-var isOpenedHere = (target) => /^https?:\/\//.test(target) || target.startsWith("/") || target.startsWith("~/");
-function isRunHere(effects) {
-  return effects.length > 0 && effects.every((e) => e.kind === "copy" || e.kind === "open" && isOpenedHere(e.target));
+var isOpenedHere = (target, projectFolder) => /^https?:\/\//.test(target) || target.startsWith("/") || target.startsWith("~/") || projectFolder !== null;
+function isRunHere(effects, projectFolder) {
+  return effects.length > 0 && effects.every((e) => e.kind === "copy" || e.kind === "open" && isOpenedHere(e.target, projectFolder));
 }
 function pendingOf(effects, at) {
   return effects.length > 0 ? { is: "local", result: pendingResult([...effects], at) } : null;
@@ -4203,7 +4199,7 @@ async function runHere(effects, io) {
       io.copy(e.text);
       continue;
     }
-    const error = await openTarget(io.run, io.probe, e.target, "/", io.home);
+    const error = await openTarget(io.run, io.probe, e.target, io.projectFolder ?? "/", io.home);
     if (error)
       return error;
   }
@@ -4365,8 +4361,7 @@ class Inbox extends View {
       return;
     const now = Date.now();
     for (const out of this.outs)
-      if (out.takenAt === null && await readTextFile(out.path).catch(() => null) === null)
-        out.takenAt = now;
+      out.isTaken = await readTextFile(out.path).catch(() => null) === null;
     const view = sessionView(this.read.session, now, SETTLED_MS, this.holds(now), this.notes);
     const settled = settleOuts(this.outs, view, this.read.lastPress, now, this.read.envelope.agent);
     this.outs = settled.outs;
@@ -4469,15 +4464,16 @@ class Inbox extends View {
       pending: pendingOf(effects, now),
       since: now,
       before,
-      takenAt: null
+      isTaken: false
     };
     this.outs = [...this.outs, out];
     delete this.errors[rowId];
     delete this.notes[rowId];
     cx.notify();
-    const io = { run: herdrRun, probe, home: home(), copy: (t) => cx.write_to_clipboard(t) };
+    const projectFolder = this.read?.is === "read" ? this.read.projectFolder : null;
+    const io = { run: herdrRun, probe, home: home(), projectFolder, copy: (t) => cx.write_to_clipboard(t) };
     cx.spawn(async (cx) => {
-      const result = isRunHere(effects) ? { error: await runHere(effects, io) } : null;
+      const result = isRunHere(effects, projectFolder) ? { error: await runHere(effects, io) } : null;
       const failed = await writeTextFile(path, pressFileText(pressId, now, press, holds, result), null).then(() => null, (e) => String(e));
       if (failed !== null) {
         this.outs = this.outs.filter((o) => o !== out);

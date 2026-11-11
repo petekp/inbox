@@ -15,16 +15,14 @@ export const SENDING = 'Sending…'
 
 /** A press with no reread of the session file yet reads the file again then, in case a file watch was missed. */
 const REREAD_AFTER_MS = 5_000
-/** A press with no result by then reads as not applied. */
+/** A press with no result by then ends: stale when a host took it, else not applied. */
 export const GIVE_UP_MS = 15_000
-/** A press file the host took without a change shows as stale once this has passed with no publish. */
-export const STALE_AFTER_TAKEN_MS = 1_000
 
 /**
  * A press the look wrote that has no result yet. `action` is its button's action id, which draws out. `pending` is
  * what its opens, copies or refreshes read while under way, or null for a press that sends, which reads `SENDING`.
- * `before` is the row as the look drew it when pressed. `takenAt` is when a read first found the press file gone,
- * which means the host took it.
+ * `before` is the row as the look drew it when pressed. `isTaken` is whether the last read found the press file gone,
+ * which means a host took it to apply.
  */
 export type Out = {
   pressId: string
@@ -34,7 +32,7 @@ export type Out = {
   pending: Feedback | null
   since: number
   before: string
-  takenAt: number | null
+  isTaken: boolean
 }
 
 /** The id the look tells a button's press by: a row press's `actionId`, a PR press's action. */
@@ -58,8 +56,8 @@ type Settled = {
 /**
  * The presses still out after a read of the session. The host's `lastPress` ends the press it names: applied, or
  * stale when its row had already changed, which gets the shared stale note. It names only the last press, so another
- * press ends when its row changed, as its last press or its state, and one the host took without a change was stale.
- * One with no answer by `GIVE_UP_MS` reads as not applied.
+ * press ends when its row changed, as its last press or its state. By `GIVE_UP_MS`, a press a host took with no change
+ * was stale, and one still waiting in its folder reads as not applied.
  */
 export function settleOuts(
   outs: readonly Out[],
@@ -75,22 +73,17 @@ export function settleOuts(
       continue
     }
     if (rowSignature(view, out.rowId) !== out.before) continue
-    if (out.takenAt !== null && now - out.takenAt >= STALE_AFTER_TAKEN_MS)
-      settled.notes[out.rowId] = { note: 'stale', at: now }
-    else if (now - out.since >= GIVE_UP_MS) settled.errors[out.rowId] = `Not applied: ${agent}'s inbox did not answer.`
-    else settled.outs.push(out)
+    if (now - out.since < GIVE_UP_MS) settled.outs.push(out)
+    else if (out.isTaken) settled.notes[out.rowId] = { note: 'stale', at: now }
+    else settled.errors[out.rowId] = `Not applied: ${agent}'s inbox did not answer.`
   }
 
   return settled
 }
 
-/** When the look next needs to read for its presses: a reread, a taken press's stale check, or giving up. */
+/** When the look next needs to read for its presses: a reread, or giving up. */
 export function nextOutCheckAt(outs: readonly Out[], now: number): number | null {
-  const times = outs.flatMap(out => [
-    out.since + REREAD_AFTER_MS,
-    out.since + GIVE_UP_MS,
-    ...(out.takenAt === null ? [] : [out.takenAt + STALE_AFTER_TAKEN_MS]),
-  ])
+  const times = outs.flatMap(out => [out.since + REREAD_AFTER_MS, out.since + GIVE_UP_MS])
   const later = times.filter(at => at > now)
 
   return later.length ? Math.min(...later) : null

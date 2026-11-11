@@ -153,12 +153,11 @@ export default class Inbox extends View {
     })
   }
 
-  /** Ends the presses this read answers: a row that changed, a press the host took and left, or one it never took. */
+  /** Ends the presses this read answers: a row that changed, the host's last press, or one with no answer in time. */
   async settle(cx: Context): Promise<void> {
     if (this.read?.is !== 'read' || this.outs.length === 0) return
     const now = Date.now()
-    for (const out of this.outs)
-      if (out.takenAt === null && (await readTextFile(out.path).catch(() => null)) === null) out.takenAt = now
+    for (const out of this.outs) out.isTaken = (await readTextFile(out.path).catch(() => null)) === null
     const view = sessionView(this.read.session, now, SETTLED_MS, this.holds(now), this.notes)
     const settled = settleOuts(this.outs, view, this.read.lastPress, now, this.read.envelope.agent)
     this.outs = settled.outs
@@ -265,15 +264,16 @@ export default class Inbox extends View {
       pending: pendingOf(effects, now),
       since: now,
       before,
-      takenAt: null,
+      isTaken: false,
     }
     this.outs = [...this.outs, out]
     delete this.errors[rowId]
     delete this.notes[rowId]
     cx.notify()
-    const io: HereIo = { run: herdrRun, probe, home: home(), copy: t => cx.write_to_clipboard(t) }
+    const projectFolder = this.read?.is === 'read' ? this.read.projectFolder : null
+    const io: HereIo = { run: herdrRun, probe, home: home(), projectFolder, copy: t => cx.write_to_clipboard(t) }
     cx.spawn(async cx => {
-      const result = isRunHere(effects) ? { error: await runHere(effects, io) } : null
+      const result = isRunHere(effects, projectFolder) ? { error: await runHere(effects, io) } : null
       const failed = await writeTextFile(path, pressFileText(pressId, now, press, holds, result), null).then(
         () => null,
         (e: unknown) => String(e),

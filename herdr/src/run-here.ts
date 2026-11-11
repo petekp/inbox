@@ -8,15 +8,18 @@ import { pendingResult } from '../../hooks/pressed'
 type HereEffect = Extract<Effect, { kind: 'open' | 'copy' }>
 
 /**
- * Whether the look opens a target itself: a link, or a path from the root or home. A path relative to the project
- * goes to the host, since the published session does not say where the project is.
+ * Whether the look opens a target itself: a link, a path from the root or home, or a relative path when the session
+ * names its project folder. Without one, a relative path goes to the host.
  */
-const isOpenedHere = (target: string) =>
-  /^https?:\/\//.test(target) || target.startsWith('/') || target.startsWith('~/')
+const isOpenedHere = (target: string, projectFolder: string | null) =>
+  /^https?:\/\//.test(target) || target.startsWith('/') || target.startsWith('~/') || projectFolder !== null
 
 /** Whether the look runs a press's effects itself: it has some, and each is a copy or an open it can do. */
-export function isRunHere(effects: readonly Effect[]): effects is HereEffect[] {
-  return effects.length > 0 && effects.every(e => e.kind === 'copy' || (e.kind === 'open' && isOpenedHere(e.target)))
+export function isRunHere(effects: readonly Effect[], projectFolder: string | null): effects is HereEffect[] {
+  return (
+    effects.length > 0 &&
+    effects.every(e => e.kind === 'copy' || (e.kind === 'open' && isOpenedHere(e.target, projectFolder)))
+  )
 }
 
 /** What a press's row reads while its opens, copies or refreshes run, or null for one that only sends. */
@@ -24,8 +27,17 @@ export function pendingOf(effects: readonly Effect[], at: number): Feedback | nu
   return effects.length > 0 ? { is: 'local', result: pendingResult([...effects], at) } : null
 }
 
-/** What the look runs effects with: Herdr's programs, its file checks, the home folder, and the clipboard. */
-export type HereIo = { run: Run; probe: PathProbe; home: string; copy: (text: string) => void }
+/**
+ * What the look runs effects with: Herdr's programs, its file checks, the home folder, the folder relative paths open
+ * against, and the clipboard.
+ */
+export type HereIo = {
+  run: Run
+  probe: PathProbe
+  home: string
+  projectFolder: string | null
+  copy: (text: string) => void
+}
 
 /** Runs a press's opens and copies in order. Returns why one could not run, or null when all did. */
 export async function runHere(effects: readonly HereEffect[], io: HereIo): Promise<string | null> {
@@ -34,7 +46,7 @@ export async function runHere(effects: readonly HereEffect[], io: HereIo): Promi
       io.copy(e.text)
       continue
     }
-    const error = await openTarget(io.run, io.probe, e.target, '/', io.home)
+    const error = await openTarget(io.run, io.probe, e.target, io.projectFolder ?? '/', io.home)
     if (error) return error
   }
 
