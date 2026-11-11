@@ -18,7 +18,7 @@ Each host publishes its session to a file. The mod reads that file and builds th
   { "format": 1, "host": "claude-code", "agent": "Claude", "sessionId": "…", "terminal": "t1", "writtenAt": 0, "session": {} }
   ```
 
-  `session` holds only the shared fields. Each host drops its own fields, such as Codex's `herdrReport` or the mod's `revision`. `agent` is the name the shared texts use, as in "Tell Claude".
+  `session` holds only the shared fields. Each host drops its own fields, such as Codex's `herdrReport` or the mod's `revision`. `agent` is the name the shared texts use, as in "Tell Claude". After the host applies a press from the look, the envelope also carries `"lastPress": { "id": "…", "outcome": "applied" }`, where `outcome` is `stale` when `press()` found the row already changed. It comes from the session's saved `lastHerdrPress`.
 - **How.** Write to a temporary file in the same folder, then rename it over the old one, so the mod never reads half a file. The temporary file is named `<session id>.json.<writtenAt>-<random>.tmp`, so it never ends in `.json`, and the mod skips it when it lists the folder. A write or rename that fails removes the temporary file. Codex and omp rename with Node's `fs.rename`. Claude Code's `$.fs` has no rename or delete, so the mod renames with `$.process.run(['mv', …])`. The spike wrote with `$.fs.write` straight to the file and did not check for torn reads. Its mod retried a parse that failed.
 - **Size.** Herdr's `readTextFile` reads at most 1 MiB. The demo session is 7.7 KB. The mod's saved sessions are already pruned by `pruned()`. A host that would publish more than 1 MiB publishes the session without the closed items the view does not show, and sets `trimmed: true` in the envelope so the look can say so. `hooks/herdr-app.ts:publishedText` does this for every host.
 
@@ -52,11 +52,11 @@ A press is the person acting on a row: Done, Dismiss, an answer, a reply and the
 { "format": 1, "id": "…", "pressedAt": 0, "press": { "action": "done", "id": "q3" }, "holds": { "replies": {}, "discarded": {}, "shownSince": 0 } }
 ```
 
-**Holds travel with the press.** `press()` decides whether a press is stale from the rows the look drew, which the look's holds describe. `shownSince` is when the look showed the tab. Without it, a closed row leaves the list at once instead of settling in place with Undo. The spike's first working click ran without holds, and the row vanished mid-fade.
+**Holds travel with the press.** `press()` decides whether a press is stale from the rows the look drew, which the look's holds describe. `shownSince` is when the look showed the tab. The look does not report the person's use of its list, so the host reads its holds with `listInput: null`. Without it, a closed row leaves the list at once instead of settling in place with Undo. The spike's first working click ran without holds, and the row vanished mid-fade.
 
 **The host applies it** with `hooks/session-host.ts:press()`, the function every other look's press goes through. Then it deletes the file, and its next publish carries the result. Each host does the follow-ups its own look's press does, outside the look: the mod's `runPress` schedules `wakeForDone` after a Done, for example. That part of `runPress` moves into a function both the terminal pane and the Herdr path call. A press file the host cannot read, or whose `format` it does not know, is deleted and logged.
 
-**The look waits for the result.** A pressed button draws as out at once. It stays out until a publish shows the press's result, either the row's new state or the press's last action. After 5 seconds with no result, the look reads the session file again. After 15 seconds the row reads "Not applied: Claude's inbox did not answer". The spike shows why. Of 59 driven presses, the host applied one whose result the mod never logged as drawn.
+**The look waits for the result.** A pressed button draws as out at once. It stays out until a publish shows the press's result: the row's new state, the press's last action, or `lastPress` naming the press. A stale press changes no row, so only `lastPress` shows it, and the look can say the row had already changed instead of "Not applied". After 5 seconds with no result, the look reads the session file again. After 15 seconds the row reads "Not applied: Claude's inbox did not answer". The spike shows why. Of 59 driven presses, the host applied one whose result the mod never logged as drawn.
 
 ### Claude Code
 
@@ -90,7 +90,7 @@ Some presses only open or copy something, with no message to the agent: Open a l
 - **Open a file:** in the person's editor, as the other looks do, or in a Herdr pane beside the agent. Herdr ships a `files` mod, but whether it opens one file from props is not checked.
 - **Copy:** GPUI's clipboard write.
 
-The host still records the press's last action, such as "✓ Opened plan.md", so it shows after a reload and in every look. The press file carries the mod's result as `result: { error }`, where `error` is null for a success. When `result` is present, the host's `perform` returns it instead of opening or copying a second time. When it is absent, the host opens or copies as for any other look. `hooks/herdr.ts:withLookResult` does this for every host. Codex's own copy does nothing, because its tab copies, so the look always sends `result` for a Copy.
+The host still records the press's last action, such as "✓ Opened plan.md", so it shows after a reload and in every look. The press file carries the mod's result as `result: { error }`, where `error` is null for a success. When `result` is present, the host's `perform` returns it instead of opening or copying a second time. When it is absent, the host opens or copies as for any other look. `hooks/herdr-app.ts:applyLookPress` does this for every host. Codex's own copy does nothing, because its tab copies, so the look always sends `result` for a Copy.
 
 ## Presses that send a message
 

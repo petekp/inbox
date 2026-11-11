@@ -195,10 +195,11 @@ test('in a Herdr app terminal, a publish that fails leaves the terminal unlabell
   expect(Object.keys(w.written).filter(path => path.startsWith('/app/'))).toEqual([])
 })
 
-test('in a Herdr app terminal, a press file the look wrote is applied and removed', async ($, on) => {
+test('in a Herdr app terminal, a press file the look wrote is applied and removed, and the published session says how each press went', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [], { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: '/app', HOME: '/home/person' })
-  const published = () => JSON.parse(w.written['/app/inbox/sessions/session-1.json']!).session
+  const envelope = () => JSON.parse(w.written['/app/inbox/sessions/session-1.json']!)
+  const published = () => envelope().session
   const pressPath = '/app/inbox/presses/session-1/p1.json'
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
@@ -212,6 +213,22 @@ test('in a Herdr app terminal, a press file the look wrote is applied and remove
   expect(published().ledger.items).toEqual([])
   expect(published().ledger.closed.map((c: { id: string }) => c.id)).toEqual([id])
   expect(w.written[pressPath]).toBeUndefined()
+  expect(envelope().lastPress).toEqual({ id: 'p1', outcome: 'applied' })
+
+  w.written['/app/inbox/presses/session-1/p2.json'] = JSON.stringify({
+    format: 1,
+    id: 'p2',
+    pressedAt: 2,
+    press: { action: 'done', id: 'gone' },
+    holds,
+  })
+  await clock.advance(PRESS_POLL_MS)
+  await clock.settle()
+  expect(envelope().lastPress).toEqual({ id: 'p2', outcome: 'stale' })
+
+  await $.tool.call({ tool: 'mcp__inbox__record', kind: 'task', ask: 'Write the notes' })
+  await clock.settle()
+  expect(envelope().lastPress).toEqual({ id: 'p2', outcome: 'stale' })
 })
 
 test('a sidebar report Herdr fails to take is sent again after each wait in HERDR_RETRY_MS, until Herdr takes it', async ($, on) => {

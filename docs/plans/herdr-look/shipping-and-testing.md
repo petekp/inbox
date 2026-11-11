@@ -73,7 +73,7 @@ In the `inbox-ui` VM, with Herdr installed only there, as the spike did:
 
 ## Open questions
 
-- Does `codex queue --thread <id>` reach a Codex CLI session running in a terminal, with a sent record?
+- Does `codex queue --thread <id>` reach a Codex CLI session running in a terminal, with a sent record? Answer and Reply in Codex need it. The release pass checks it live, in a Codex session in a Herdr app terminal.
 - Can a `keys.json` binding carry a command's arguments, so a key could open the look?
 - How does the host find its pane's id from its terminal, to open the look beside itself? `herdr-app ls` lists each terminal with its pane id, so a host can look up the row for its `HC_TERMINAL_ID`.
 - Does a `height` transition on a row measured with `on_size_change` collapse it smoothly?

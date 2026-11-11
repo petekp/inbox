@@ -650,8 +650,8 @@ var SENT_PRESS_KINDS = {
   done: "mark"
 };
 function applyExchangeUpdate(ledger, update, exchange, now, promptAt) {
-  const press = exchange.press;
-  const talkedAboutId = press && SENT_PRESS_KINDS[press.action] === "talk" ? press.id : null;
+  const press2 = exchange.press;
+  const talkedAboutId = press2 && SENT_PRESS_KINDS[press2.action] === "talk" ? press2.id : null;
   return applyUpdate(
     ledger,
     { ...update, closed: update.closed.filter((c) => c.id !== talkedAboutId) },
@@ -2627,6 +2627,7 @@ function sessionFields(saved, views) {
       phase: x.phase ?? "accepted"
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
     shownSince: saved.shownSince ?? null,
     prViews: {
@@ -2959,18 +2960,18 @@ function actionsOf(row, last, state, feedback) {
   const { id, item, steps: steps2 } = row;
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
-  const action = (press, label, kind, flags = {}) => {
-    const pressAction = actionId(press);
+  const action = (press2, label, kind, flags = {}) => {
+    const pressAction = actionId(press2);
     return {
-      press,
-      label: press.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
+      press: press2,
+      label: press2.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
-      ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps2[press.step]) ? { icon: stepIconKind(steps2[press.step]) } : {},
+      emphasis: flags.isPrimary || press2.action === "done" || press2.action === "address" ? "primary" : press2.action === "discuss" || press2.action === "explain" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
+      ...press2.action === "done" ? { icon: "done" } : press2.action === "step" && stepIconKind(steps2[press2.step]) ? { icon: stepIconKind(steps2[press2.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
-      isFollowUp: FOLLOW_UPS.has(press.action),
-      ...ACTION_KEYS[press.action] ? { hotkey: ACTION_KEYS[press.action] } : {},
+      isFollowUp: FOLLOW_UPS.has(press2.action),
+      ...ACTION_KEYS[press2.action] ? { hotkey: ACTION_KEYS[press2.action] } : {},
       isOut: out === pressAction
     };
   };
@@ -4123,8 +4124,18 @@ var HERDR_FORMAT = 1;
 var SESSION_FIELDS = Object.keys(emptySession());
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
-  return { format: HERDR_FORMAT, ...source, ...isTrimmed && { trimmed: true }, session: shared };
+  const { lastHerdrPress } = session;
+  return {
+    format: HERDR_FORMAT,
+    ...source,
+    ...isTrimmed && { trimmed: true },
+    ...lastHerdrPress && { lastPress: lastHerdrPress },
+    session: shared
+  };
 }
+
+// ../hooks/host-prs.ts
+var PRS_HIDDEN_REFRESH_MS = 10 * 6e4;
 
 // ../hooks/herdr-app.ts
 var PUBLISH_LIMIT_BYTES = 1024 * 1024;

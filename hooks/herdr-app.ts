@@ -1,6 +1,8 @@
 import type { Session } from '../types'
 import { herdrEnvelope, pressFile } from './herdr'
 import type { EnvelopeSource, PressFile } from './herdr'
+import { press } from './host-press'
+import type { PressHost, PressOutcome } from './host-press'
 import { sessionFile } from './session-files'
 import { rowsInPlace } from './session-presses'
 
@@ -212,4 +214,23 @@ export function followPresses(
     stopPoll()
     stopWakes()
   }
+}
+
+/**
+ * Applies a press the Herdr look wrote, then saves it as the session's `lastHerdrPress`, so the next publish tells the
+ * look the outcome even when the press changed nothing. When the look ran the press's opens and copies, `perform`
+ * answers with their result instead of running them again.
+ */
+export async function applyLookPress<S extends Session>(host: PressHost<S>, file: PressFile): Promise<PressOutcome> {
+  const { result } = file
+  const outcome = await press(
+    result ? { ...host, perform: async () => result.error } : host,
+    file.press,
+    false,
+    file.holds,
+  )
+  const lastHerdrPress = { id: file.id, outcome: outcome.note === 'stale' ? 'stale' : 'applied' } as const
+  await host.update(s => ({ ...s, lastHerdrPress }))
+
+  return outcome
 }

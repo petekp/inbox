@@ -99,7 +99,8 @@ import {
 } from './claude'
 import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
-import { delegatesInHerdr, withLookResult, type PressFile } from './herdr'
+import { delegatesInHerdr, type PressFile } from './herdr'
+import { applyLookPress } from './herdr-app'
 import {
   followDelegates as followHerdrDelegates,
   listenForHerdrPresses,
@@ -391,8 +392,8 @@ function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
 /** Applies a Herdr look's press. False when it is for another conversation. */
 async function herdrPress($: EngineInterface, id: string, f: PressFile): Promise<boolean> {
   if (id !== conversation.id) return false
-  const started = await startPress(withLookResult(hostOf($, currentOwner(), 'terminal'), f), f.press, false, f.holds)
-  if ((await started.finish()).wakesAfterSettle) later($, SETTLED_MS, () => wakeAfterSettle($))
+  if ((await applyLookPress(hostOf($, currentOwner(), 'terminal'), f)).wakesAfterSettle)
+    later($, SETTLED_MS, () => wakeAfterSettle($))
 
   return true
 }

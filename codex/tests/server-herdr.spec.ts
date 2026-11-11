@@ -4,7 +4,10 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import type { PressFile } from '../../hooks/herdr'
+import { makeServer } from '../src/server'
 import { followCodexPresses } from '../src/server-herdr'
+import { readState, updateState } from '../src/state'
+import { NO_HOLDS } from '../../hooks/timing'
 import { tempDir } from './helpers'
 
 const HOLDS = { replies: {}, discarded: {}, shownSince: null }
@@ -69,4 +72,64 @@ test('outside an app terminal the server follows no presses', () => {
     ),
     null,
   )
+})
+
+test("a press the look ran itself records the look's result, and each look press is saved as the last one with its outcome", async () => {
+  const dir = tempDir()
+  const root = tempDir()
+  writeFileSync(join(root, 'notes.md'), '# Notes')
+  await updateState(dir, 's1', s => ({
+    ...s,
+    root,
+    ledger: {
+      ...s.ledger,
+      items: [
+        {
+          id: 'i2',
+          kind: 'task',
+          label: null,
+          from: 'record',
+          ask: 'Read notes',
+          options: [],
+          rec: null,
+          turn: 1,
+          at: 1,
+          helps: [{ kind: 'open', path: 'notes.md' }],
+        },
+      ],
+    },
+  }))
+  const calls: string[][] = []
+  let apply: ((sessionId: string, file: PressFile) => Promise<void>) | null = null
+  makeServer({
+    comparePage: '/plugin/dist/compare-page.html',
+    dir,
+    now: () => 100,
+    exec: async args => {
+      calls.push(args)
+      return { code: 0, stdout: '', stderr: '' }
+    },
+    tabHtml: '<html></html>',
+    fallbackCli: async () => 'codex',
+    followHerdrPresses: given => {
+      apply = given
+    },
+  })
+  const look = (id: string, press: PressFile['press'], result?: PressFile['result']): PressFile => ({
+    format: 1,
+    id,
+    pressedAt: 1,
+    press,
+    holds: NO_HOLDS,
+    ...(result && { result }),
+  })
+
+  await apply!('s1', look('p1', { action: 'step', id: 'i2', step: 0, label: 'Open notes.md' }, { error: 'no editor' }))
+  const opened = await readState(dir, 's1')
+  assert.deepEqual(calls, [])
+  assert.match(JSON.stringify(opened.lastActions.i2), /no editor/)
+  assert.deepEqual(opened.lastHerdrPress, { id: 'p1', outcome: 'applied' })
+
+  await apply!('s1', look('p2', { action: 'done', id: 'gone' }))
+  assert.deepEqual((await readState(dir, 's1')).lastHerdrPress, { id: 'p2', outcome: 'stale' })
 })

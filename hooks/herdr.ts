@@ -1,4 +1,4 @@
-import type { Dialog, Ledger, Session, SessionStatus, StatusHead, Stop, Tab } from '../types'
+import type { Dialog, HerdrPressOutcome, Ledger, Session, SessionStatus, StatusHead, Stop, Tab } from '../types'
 import { bandCounts, isMaybeStale } from './band'
 import { MAYBE_STALE_TEXT } from './banners'
 import { hasRunningDelegate, onceEvery } from './children'
@@ -372,9 +372,14 @@ export type EnvelopeSource = { host: ClientId; agent: string; sessionId: string;
 
 /**
  * The file a host publishes for the Herdr look. `trimmed` is set when the host left out closed items the view does not
- * draw in place, to keep the file under `PUBLISH_LIMIT_BYTES`.
+ * draw in place, to keep the file under `PUBLISH_LIMIT_BYTES`. `lastPress` is the session's `lastHerdrPress`.
  */
-type HerdrEnvelope = EnvelopeSource & { format: typeof HERDR_FORMAT; trimmed?: true; session: Session }
+type HerdrEnvelope = EnvelopeSource & {
+  format: typeof HERDR_FORMAT
+  trimmed?: true
+  lastPress?: HerdrPressOutcome
+  session: Session
+}
 
 const SESSION_FIELDS = Object.keys(emptySession())
 
@@ -382,7 +387,15 @@ const SESSION_FIELDS = Object.keys(emptySession())
 export function herdrEnvelope(source: EnvelopeSource, session: Session, isTrimmed = false): HerdrEnvelope {
   const shared = Object.fromEntries(SESSION_FIELDS.map(field => [field, session[field as keyof Session]]))
 
-  return { format: HERDR_FORMAT, ...source, ...(isTrimmed && { trimmed: true }), session: shared as Session }
+  const { lastHerdrPress } = session
+
+  return {
+    format: HERDR_FORMAT,
+    ...source,
+    ...(isTrimmed && { trimmed: true }),
+    ...(lastHerdrPress && { lastPress: lastHerdrPress }),
+    session: shared as Session,
+  }
 }
 
 /** A press the Herdr look made, with the look's holds, which `press()` needs to tell a stale press. */
@@ -397,16 +410,6 @@ export type PressFile = {
    * or null. Without it, the host runs them.
    */
   result?: { error: string | null }
-}
-
-/** `host` for applying `file`. When the look ran the press's opens and copies, `perform` answers with their result. */
-export function withLookResult<H extends { perform: (...args: never[]) => Promise<string | null> }>(
-  host: H,
-  file: PressFile,
-): H {
-  const { result } = file
-
-  return result ? { ...host, perform: async () => result.error } : host
 }
 
 /** The field that names what each press acts on: a row's `id`, a PR's `ref`, or none for the PRs tab's own buttons. */
@@ -471,7 +474,7 @@ function resultProblem(result: unknown): string | null {
   return isRecord(result) && (result.error === null || typeof result.error === 'string') ? null : 'result without error'
 }
 
-/** A press file's text, read and checked. `reason` says why a file was refused. */
+/** A press file's text, read and checked. The look does not report list use, so none holds a row. `reason` says why a file was refused. */
 export function pressFile(text: string): { ok: true; file: PressFile } | { ok: false; reason: string } {
   let file: unknown
   try {
@@ -486,5 +489,8 @@ export function pressFile(text: string): { ok: true; file: PressFile } | { ok: f
     return { ok: false, reason: 'no pressedAt' }
   const reason = pressProblem(file.press) ?? holdsProblem(file.holds) ?? resultProblem(file.result)
 
-  return reason ? { ok: false, reason } : { ok: true, file: file as PressFile }
+  if (reason) return { ok: false, reason }
+  const read = file as PressFile
+
+  return { ok: true, file: { ...read, holds: { ...read.holds, listInput: null } } }
 }

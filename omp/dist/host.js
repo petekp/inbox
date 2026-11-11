@@ -4574,6 +4574,7 @@ function sessionFields(saved, views) {
       phase: x.phase ?? "accepted"
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
     shownSince: saved.shownSince ?? null,
     prViews: {
@@ -4816,11 +4817,14 @@ var HERDR_FORMAT = 1;
 var SESSION_FIELDS = Object.keys(emptySession());
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
-  return { format: HERDR_FORMAT, ...source, ...isTrimmed && { trimmed: true }, session: shared };
-}
-function withLookResult(host, file) {
-  const { result } = file;
-  return result ? { ...host, perform: async () => result.error } : host;
+  const { lastHerdrPress } = session;
+  return {
+    format: HERDR_FORMAT,
+    ...source,
+    ...isTrimmed && { trimmed: true },
+    ...lastHerdrPress && { lastPress: lastHerdrPress },
+    session: shared
+  };
 }
 var PRESS_TARGETS = {
   answer: "id",
@@ -4891,7 +4895,10 @@ function pressFile(text) {
   if (typeof file.pressedAt !== "number" || !Number.isFinite(file.pressedAt))
     return { ok: false, reason: "no pressedAt" };
   const reason = pressProblem(file.press) ?? holdsProblem(file.holds) ?? resultProblem(file.result);
-  return reason ? { ok: false, reason } : { ok: true, file };
+  if (reason)
+    return { ok: false, reason };
+  const read = file;
+  return { ok: true, file: { ...read, holds: { ...read.holds, listInput: null } } };
 }
 
 // ../hooks/catch-up-text.ts
@@ -10483,204 +10490,6 @@ import { watch } from "fs";
 import { appendFile, mkdir as mkdir2, readdir as readdir2, readFile as readFile2, rm, stat as stat2, writeFile as writeFile2 } from "fs/promises";
 import { join as join2 } from "path";
 
-// ../hooks/herdr-app.ts
-var PUBLISH_LIMIT_BYTES = 1024 * 1024;
-function publishedSessionPath(appHome, sessionId) {
-  return `${appHome}/inbox/sessions/${sessionFile(sessionId)}`;
-}
-function pressFolder(appHome, sessionId) {
-  sessionFile(sessionId);
-  return `${appHome}/inbox/presses/${sessionId}`;
-}
-function utf8Bytes(text) {
-  let bytes = 0;
-  for (const char of text) {
-    const code = char.codePointAt(0) ?? 0;
-    bytes += code < 128 ? 1 : code < 2048 ? 2 : code < 65536 ? 3 : 4;
-  }
-  return bytes;
-}
-var isOverLimit = (text) => text.length * 3 > PUBLISH_LIMIT_BYTES && utf8Bytes(text) > PUBLISH_LIMIT_BYTES;
-function withoutFoldedClosed(s) {
-  const inPlace = rowsInPlace(s);
-  const { closed, closedFindings } = s.ledger;
-  return {
-    ...s,
-    ledger: {
-      ...s.ledger,
-      closed: closed.filter((c) => inPlace.has(c.id)),
-      closedFindings: closedFindings.filter((f) => inPlace.has(f.id))
-    }
-  };
-}
-function publishedText(source, session) {
-  const text = JSON.stringify(herdrEnvelope(source, session));
-  return isOverLimit(text) ? JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session), true)) : text;
-}
-async function publishSession(files, appHome, source, session) {
-  const path = publishedSessionPath(appHome, source.sessionId);
-  const temporary = `${path}.${source.writtenAt}-${Math.random().toString(36).slice(2)}.tmp`;
-  try {
-    await files.write(temporary, publishedText(source, session));
-    await files.move(temporary, path);
-  } catch (err) {
-    await files.remove(temporary).catch(() => {
-      return;
-    });
-    throw err;
-  }
-}
-function publishedSession(files, appHome, source, session, log) {
-  if (!appHome)
-    return Promise.resolve(false);
-  return publishSession(files, appHome, source, session).then(() => true, (err) => {
-    log(`Herdr publish failed: ${err instanceof Error ? err.message : String(err)}`);
-    return false;
-  });
-}
-async function unpublishSession(files, appHome, sessionId) {
-  return files.remove(publishedSessionPath(appHome, sessionId));
-}
-var REMEMBERED_PRESSES = 200;
-var message = (err) => err instanceof Error ? err.message : String(err);
-function pressDrainer(files, apply, log) {
-  const applied = [];
-  const draining = new Map;
-  const drainOnce = async (folder, sessionId) => {
-    const names = [...await files.list(folder).catch(() => [])].filter((name) => name.endsWith(".json")).sort();
-    const waiting = [];
-    for (const name of names) {
-      const path = `${folder}/${name}`;
-      const text = await files.read(path).catch(() => null);
-      if (text === null)
-        continue;
-      const read = pressFile(text);
-      if (read.ok)
-        waiting.push({ path, file: read.file });
-      else {
-        log(`Herdr press ${name} refused: ${read.reason}`);
-        await files.remove(path).catch(() => {
-          return;
-        });
-      }
-    }
-    for (const { path, file } of waiting.sort((a, b) => a.file.pressedAt - b.file.pressedAt)) {
-      if (!applied.includes(file.id)) {
-        const isTaken = await apply(sessionId, file).catch((err) => {
-          log(`Herdr press ${file.id} failed: ${message(err)}`);
-          return true;
-        });
-        if (!isTaken)
-          continue;
-        applied.push(file.id);
-        if (applied.length > REMEMBERED_PRESSES)
-          applied.shift();
-      }
-      await files.remove(path).catch((err) => log(`Herdr press ${file.id} not removed: ${message(err)}`));
-    }
-  };
-  return async (appHome, sessionId) => {
-    const folder = pressFolder(appHome, sessionId);
-    const running = draining.get(folder);
-    if (running) {
-      running.again = true;
-      return running.done;
-    }
-    const entry = { again: false, done: Promise.resolve() };
-    draining.set(folder, entry);
-    entry.done = (async () => {
-      try {
-        do {
-          entry.again = false;
-          await drainOnce(folder, sessionId);
-        } while (entry.again);
-      } finally {
-        draining.delete(folder);
-      }
-    })();
-    return entry.done;
-  };
-}
-var PRESS_POLL_MS = 1e4;
-function followPresses(drain, wakes, every, log) {
-  const wake = () => void drain().catch((err) => log(`Herdr presses not read: ${message(err)}`));
-  wake();
-  const stopPoll = every(PRESS_POLL_MS, wake);
-  const stopWakes = wakes(wake);
-  return () => {
-    stopPoll();
-    stopWakes();
-  };
-}
-
-// src/host-presses.ts
-var HERDR_LOG_BYTES = 64 * 1024;
-function herdrLog(dir) {
-  const path = join2(dir, "herdr.log");
-  return (text) => void (async () => {
-    const size = await stat2(path).then((s) => s.size, () => 0);
-    const line = `${new Date().toISOString()} ${text}
-`;
-    await mkdir2(dir, { recursive: true });
-    await (size > HERDR_LOG_BYTES ? writeFile2(path, line) : appendFile(path, line));
-  })().catch(() => {
-    return;
-  });
-}
-var pressFiles = {
-  list: (folder) => readdir2(folder),
-  read: (path) => readFile2(path, "utf8"),
-  remove: (path) => rm(path, { force: true })
-};
-var message2 = (err) => err instanceof Error ? err.message : String(err);
-function ompPresses(target, apply, log) {
-  let stopFollowing = null;
-  const stop = () => {
-    stopFollowing?.();
-    stopFollowing = null;
-  };
-  return {
-    follow: (ctx) => {
-      stop();
-      if (target?.kind !== "terminal" || !target.appHome)
-        return;
-      const { appHome } = target;
-      const id = sessionIdOf(ctx);
-      let folder;
-      try {
-        folder = pressFolder(appHome, id);
-      } catch (err) {
-        return log(`Herdr presses not read: ${message2(err)}`);
-      }
-      const drain = pressDrainer(pressFiles, async (_id, file) => {
-        await apply(ctx, file);
-        return true;
-      }, log);
-      const watchFolder = (wake) => {
-        let isStopped = false;
-        let watcher = null;
-        mkdir2(folder, { recursive: true }).then(() => {
-          if (isStopped)
-            return;
-          watcher = watch(folder, () => wake());
-          watcher.on("error", (err) => log(`Herdr presses not watched: ${message2(err)}`));
-          wake();
-        }).catch((err) => log(`Herdr presses not watched: ${message2(err)}`));
-        return () => {
-          isStopped = true;
-          watcher?.close();
-        };
-      };
-      stopFollowing = followPresses(() => drain(appHome, id), watchFolder, (ms, fn) => {
-        const timer = setInterval(fn, ms);
-        timer.unref();
-        return () => clearInterval(timer);
-      }, log);
-    },
-    stop
-  };
-}
-
 // ../hooks/held-sends.ts
 function dueRows(s, now) {
   return Object.entries(s.lastActions).filter(([, a]) => a.delivery?.state === "held" && a.delivery.until <= now).map(([id]) => id);
@@ -11009,6 +10818,211 @@ async function press(host, p, isStale, holds) {
   return (await startPress(host, p, isStale, holds)).finish();
 }
 
+// ../hooks/herdr-app.ts
+var PUBLISH_LIMIT_BYTES = 1024 * 1024;
+function publishedSessionPath(appHome, sessionId) {
+  return `${appHome}/inbox/sessions/${sessionFile(sessionId)}`;
+}
+function pressFolder(appHome, sessionId) {
+  sessionFile(sessionId);
+  return `${appHome}/inbox/presses/${sessionId}`;
+}
+function utf8Bytes(text) {
+  let bytes = 0;
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0;
+    bytes += code < 128 ? 1 : code < 2048 ? 2 : code < 65536 ? 3 : 4;
+  }
+  return bytes;
+}
+var isOverLimit = (text) => text.length * 3 > PUBLISH_LIMIT_BYTES && utf8Bytes(text) > PUBLISH_LIMIT_BYTES;
+function withoutFoldedClosed(s) {
+  const inPlace = rowsInPlace(s);
+  const { closed, closedFindings } = s.ledger;
+  return {
+    ...s,
+    ledger: {
+      ...s.ledger,
+      closed: closed.filter((c) => inPlace.has(c.id)),
+      closedFindings: closedFindings.filter((f) => inPlace.has(f.id))
+    }
+  };
+}
+function publishedText(source, session) {
+  const text = JSON.stringify(herdrEnvelope(source, session));
+  return isOverLimit(text) ? JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session), true)) : text;
+}
+async function publishSession(files, appHome, source, session) {
+  const path = publishedSessionPath(appHome, source.sessionId);
+  const temporary = `${path}.${source.writtenAt}-${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    await files.write(temporary, publishedText(source, session));
+    await files.move(temporary, path);
+  } catch (err) {
+    await files.remove(temporary).catch(() => {
+      return;
+    });
+    throw err;
+  }
+}
+function publishedSession(files, appHome, source, session, log) {
+  if (!appHome)
+    return Promise.resolve(false);
+  return publishSession(files, appHome, source, session).then(() => true, (err) => {
+    log(`Herdr publish failed: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  });
+}
+async function unpublishSession(files, appHome, sessionId) {
+  return files.remove(publishedSessionPath(appHome, sessionId));
+}
+var REMEMBERED_PRESSES = 200;
+var message = (err) => err instanceof Error ? err.message : String(err);
+function pressDrainer(files, apply, log) {
+  const applied = [];
+  const draining = new Map;
+  const drainOnce = async (folder, sessionId) => {
+    const names = [...await files.list(folder).catch(() => [])].filter((name) => name.endsWith(".json")).sort();
+    const waiting = [];
+    for (const name of names) {
+      const path = `${folder}/${name}`;
+      const text = await files.read(path).catch(() => null);
+      if (text === null)
+        continue;
+      const read = pressFile(text);
+      if (read.ok)
+        waiting.push({ path, file: read.file });
+      else {
+        log(`Herdr press ${name} refused: ${read.reason}`);
+        await files.remove(path).catch(() => {
+          return;
+        });
+      }
+    }
+    for (const { path, file } of waiting.sort((a, b) => a.file.pressedAt - b.file.pressedAt)) {
+      if (!applied.includes(file.id)) {
+        const isTaken = await apply(sessionId, file).catch((err) => {
+          log(`Herdr press ${file.id} failed: ${message(err)}`);
+          return true;
+        });
+        if (!isTaken)
+          continue;
+        applied.push(file.id);
+        if (applied.length > REMEMBERED_PRESSES)
+          applied.shift();
+      }
+      await files.remove(path).catch((err) => log(`Herdr press ${file.id} not removed: ${message(err)}`));
+    }
+  };
+  return async (appHome, sessionId) => {
+    const folder = pressFolder(appHome, sessionId);
+    const running = draining.get(folder);
+    if (running) {
+      running.again = true;
+      return running.done;
+    }
+    const entry = { again: false, done: Promise.resolve() };
+    draining.set(folder, entry);
+    entry.done = (async () => {
+      try {
+        do {
+          entry.again = false;
+          await drainOnce(folder, sessionId);
+        } while (entry.again);
+      } finally {
+        draining.delete(folder);
+      }
+    })();
+    return entry.done;
+  };
+}
+var PRESS_POLL_MS = 1e4;
+function followPresses(drain, wakes, every, log) {
+  const wake = () => void drain().catch((err) => log(`Herdr presses not read: ${message(err)}`));
+  wake();
+  const stopPoll = every(PRESS_POLL_MS, wake);
+  const stopWakes = wakes(wake);
+  return () => {
+    stopPoll();
+    stopWakes();
+  };
+}
+async function applyLookPress(host, file) {
+  const { result } = file;
+  const outcome = await press(result ? { ...host, perform: async () => result.error } : host, file.press, false, file.holds);
+  const lastHerdrPress = { id: file.id, outcome: outcome.note === "stale" ? "stale" : "applied" };
+  await host.update((s) => ({ ...s, lastHerdrPress }));
+  return outcome;
+}
+
+// src/host-presses.ts
+var HERDR_LOG_BYTES = 64 * 1024;
+function herdrLog(dir) {
+  const path = join2(dir, "herdr.log");
+  return (text) => void (async () => {
+    const size = await stat2(path).then((s) => s.size, () => 0);
+    const line = `${new Date().toISOString()} ${text}
+`;
+    await mkdir2(dir, { recursive: true });
+    await (size > HERDR_LOG_BYTES ? writeFile2(path, line) : appendFile(path, line));
+  })().catch(() => {
+    return;
+  });
+}
+var pressFiles = {
+  list: (folder) => readdir2(folder),
+  read: (path) => readFile2(path, "utf8"),
+  remove: (path) => rm(path, { force: true })
+};
+var message2 = (err) => err instanceof Error ? err.message : String(err);
+function ompPresses(target, apply, log) {
+  let stopFollowing = null;
+  const stop = () => {
+    stopFollowing?.();
+    stopFollowing = null;
+  };
+  return {
+    follow: (ctx) => {
+      stop();
+      if (target?.kind !== "terminal" || !target.appHome)
+        return;
+      const { appHome } = target;
+      const id = sessionIdOf(ctx);
+      let folder;
+      try {
+        folder = pressFolder(appHome, id);
+      } catch (err) {
+        return log(`Herdr presses not read: ${message2(err)}`);
+      }
+      const drain = pressDrainer(pressFiles, async (_id, file) => {
+        await apply(ctx, file);
+        return true;
+      }, log);
+      const watchFolder = (wake) => {
+        let isStopped = false;
+        let watcher = null;
+        mkdir2(folder, { recursive: true }).then(() => {
+          if (isStopped)
+            return;
+          watcher = watch(folder, () => wake());
+          watcher.on("error", (err) => log(`Herdr presses not watched: ${message2(err)}`));
+          wake();
+        }).catch((err) => log(`Herdr presses not watched: ${message2(err)}`));
+        return () => {
+          isStopped = true;
+          watcher?.close();
+        };
+      };
+      stopFollowing = followPresses(() => drain(appHome, id), watchFolder, (ms, fn) => {
+        const timer = setInterval(fn, ms);
+        timer.unref();
+        return () => clearInterval(timer);
+      }, log);
+    },
+    stop
+  };
+}
+
 // src/host-panel.ts
 function panelCalls(context, sessions) {
   const { deps, dir, openPanels, prFetches, listeners, memory, sendToAgent, modelNameOf } = context;
@@ -11082,7 +11096,7 @@ function panelCalls(context, sessions) {
       return () => void set.delete(listener);
     },
     press: async (ctx, p, holds, look) => {
-      const outcome = await press(look ? withLookResult(hostFor(ctx), look) : hostFor(ctx), p, false, holds);
+      const outcome = await (look ? applyLookPress(hostFor(ctx), look) : press(hostFor(ctx), p, false, holds));
       if (outcome.wakesAfterSettle)
         wakeLater(ctx);
       return outcome;

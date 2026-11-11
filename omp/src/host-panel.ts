@@ -1,7 +1,7 @@
 import { version } from '../package.json'
 
 import type { PrPress } from '../../hooks/pr-press'
-import { withLookResult } from '../../hooks/herdr'
+import { applyLookPress } from '../../hooks/herdr-app'
 import type { PressFile } from '../../hooks/herdr'
 import type { RowPress } from '../../hooks/presses'
 import { lookEndedOn, withLook } from '../../hooks/session-status'
@@ -119,7 +119,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
       return () => void set.delete(listener)
     },
     press: async (ctx, p, holds, look) => {
-      const outcome = await press(look ? withLookResult(hostFor(ctx), look) : hostFor(ctx), p, false, holds)
+      const outcome = await (look ? applyLookPress(hostFor(ctx), look) : press(hostFor(ctx), p, false, holds))
       if (outcome.wakesAfterSettle) wakeLater(ctx)
 
       return outcome

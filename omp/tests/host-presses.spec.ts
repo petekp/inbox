@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { NO_HOLDS } from '../../hooks/timing'
@@ -283,6 +283,12 @@ test('in a Herdr app terminal, a press the look ran itself records its result an
   expect(w.execCalls.filter(c => c.command === 'open')).toEqual([])
   const screen = await inbox.screen(makeCtx())
   expect(JSON.stringify(screen.view.lastActions[screen.view.needsYou.tasks[0]!.id]?.result)).toContain('no browser')
+  const published = () => JSON.parse(readFileSync(join(appHome, 'inbox/sessions/s1.json'), 'utf8'))
+  expect(published().lastPress).toEqual({ id: 'p1', outcome: 'applied' })
+
+  await record({ kind: 'task', ask: 'Write the notes' })
+  await settle()
+  expect(published().lastPress).toEqual({ id: 'p1', outcome: 'applied' })
 })
 
 test('a goal the Status call writes is set at once, Remove goal clears it, a typed goal sets the saved goal, and none sends a message', async () => {
