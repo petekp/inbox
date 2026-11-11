@@ -3366,7 +3366,7 @@ function prTabBlocks(screen, selected) {
   const presses = { lastActions: view.lastActions, turns: view.turns, now: screen.now };
   const notice = ghNoticeOf(gh);
   const draw = (open) => [
-    ...notice ? [note("gh notice", notice.text, "warning")] : [],
+    ...notice ? [{ kind: "banner", id: "gh notice", banner: bannerOf(notice.kind, notice.text) }] : [],
     ...refreshLine(screen),
     ...orderLines(screen),
     ...prs.drawn.flatMap((d) => prBlocks(screen, d, presses, open)),
@@ -4020,8 +4020,8 @@ function moveRows(blocks, tracks, now, isFirst) {
 }
 
 // src/paint-blocks.ts
-import { div } from "gpui-kit";
-import { Input, h_flex, v_flex } from "gpui-base";
+import { div as div2 } from "gpui-kit";
+import { Input, h_flex as h_flex2, v_flex as v_flex2 } from "gpui-base";
 
 // ../hooks/layout.ts
 var ROW_PAD_PT = 8;
@@ -4034,7 +4034,8 @@ var BANNER_GAP_PT = 8;
 var TONE_COLORS = {
   needsYou: "blocked",
   issue: "blocked",
-  warning: "blocked",
+  notice: "ansi4",
+  warning: "ansi3",
   findings: "ansi5",
   prs: "ansi6",
   done: "done",
@@ -4053,13 +4054,38 @@ var MARK_X = 18;
 var TEXT_X = 44;
 var EDGE_X = 14;
 
+// src/paint-chrome.ts
+import { div } from "gpui-kit";
+import { h_flex, v_flex } from "gpui-base";
+var helpButton = (isHelpShown) => ({
+  id: "help",
+  label: isHelpShown ? HELP_COPY.close : HELP_COPY.open,
+  emphasis: "quiet",
+  isOut: false,
+  hotkey: null,
+  does: { is: "view", change: { toggleHelp: true } }
+});
+function tabsEl(tabs, status, isHelpShown, p) {
+  const { t } = p;
+  const help = helpButton(isHelpShown);
+  return h_flex().flex_none().flex_wrap().px(12).pt(12).gap(4).items_center().children(tabs.map((tab) => h_flex().id(`tab ${tab.id}`).px(12).py(6).items_center().rounded(6).cursor_pointer().accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div().ml(6).font_semibold().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div().flex_1()).when(status !== null, (e) => e.child(div().px(4).text_size(SMALL_TEXT).text_color(t.muted).child(status ?? ""))).child(h_flex().id("help").px(6).rounded(5).text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(help.label));
+}
+function bannerEl(b, t) {
+  const tone = colorOf(t, b.tone);
+  return v_flex().mx(12).mt(BANNER_GAP_PT).px(12).py(BANNER_PAD_Y_PT).rounded(10).border_1().border_color(tint(tone, 0.3)).bg(tint(tone, 0.09)).whitespace_normal().child(div().font_semibold().text_color(tone).child(b.lead)).when(b.body !== null, (e) => e.child(div().child(b.body ?? "")));
+}
+var sessionNoteEl = (text, t) => div().px(EDGE_X + 2).pt(10).whitespace_normal().text_color(t.muted).child(text);
+function messageEl(m, t) {
+  return v_flex().flex_1().justify_center().items_center().p(32).gap(4).child(div().font_semibold().text_center().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div().whitespace_normal().text_center().text_color(t.muted).child(m.hint ?? "")));
+}
+
 // src/paint-blocks.ts
 var MARK_W = TEXT_X - MARK_X;
 var CLOSED_STEP = 23;
 var STATUS_STEP = MARK_W;
 function buttonEl(b, p, isInert = false) {
   const { t } = p;
-  const base = h_flex().id(`button ${b.id}`).flex_none().items_center().justify_center().accessibility_label(b.label).child(b.label);
+  const base = h_flex2().id(`button ${b.id}`).flex_none().items_center().justify_center().accessibility_label(b.label).child(b.label);
   const styled = b.emphasis === "primary" ? base.px(11).py(3).rounded(13).border_1().border_color(t.solid).bg(t.solid).text_color(t.solid_foreground).hover((s) => s.opacity(0.85)) : b.emphasis === "normal" ? base.px(11).py(3).rounded(13).border_1().border_color(t.input).text_color(t.foreground).hover((s) => s.bg(t.hover)) : base.px(4).rounded(5).text_color(t.muted).hover((s) => s.text_color(t.foreground));
   if (b.isOut)
     return styled.opacity(0.4);
@@ -4070,15 +4096,15 @@ function buttonEl(b, p, isInert = false) {
     p.press(b, cx);
   });
 }
-var buttonsEl = (buttons, p, indent, isInert = false) => h_flex().flex_wrap().items_center().gap(6).pt(8).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
-var markEl = (m, t, isLeft = false) => div().w(MARK_W).pr(8).flex_none().when(!isLeft, (e) => e.text_center()).text_color(m === null || m.tone === null ? t.muted : colorOf(t, m.tone)).child(m?.text ?? "");
-var lineEl = (text, color, indent = MARK_W) => div().pl(indent).pt(4).whitespace_normal().text_color(color).child(text);
-var bodyLineEl = (l, t) => l.mark ? h_flex().pl(MARK_W).pt(4).gap(6).items_start().child(div().flex_none().text_color(colorOf(t, l.mark.tone)).child(l.mark.text)).child(div().flex_1().min_w(0).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text)) : lineEl(l.text, colorOf(t, l.tone));
+var buttonsEl = (buttons, p, indent, isInert = false) => h_flex2().flex_wrap().items_center().gap(6).pt(8).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
+var markEl = (m, t, isLeft = false) => div2().w(MARK_W).pr(8).flex_none().when(!isLeft, (e) => e.text_center()).text_color(m === null || m.tone === null ? t.muted : colorOf(t, m.tone)).child(m?.text ?? "");
+var lineEl = (text, color, indent = MARK_W) => div2().pl(indent).pt(4).whitespace_normal().text_color(color).child(text);
+var bodyLineEl = (l, t) => l.mark ? h_flex2().pl(MARK_W).pt(4).gap(6).items_start().child(div2().flex_none().text_color(colorOf(t, l.mark.tone)).child(l.mark.text)).child(div2().flex_1().min_w(0).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text)) : lineEl(l.text, colorOf(t, l.tone));
 function fieldEl(f, p, indent, isInert = false) {
   const { t } = p;
   const state = p.input(f.rowId);
-  const input = state ? [div().min_h(28).px(10).py(4).rounded(10).border_1().border_color(t.input).child(Input.new(state).w_full())] : [];
-  return v_flex().pt(8).pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert));
+  const input = state ? [div2().min_h(28).px(10).py(4).rounded(10).border_1().border_color(t.input).child(Input.new(state).w_full())] : [];
+  return v_flex2().pt(8).pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert));
 }
 function opacityOf(r, p) {
   const m = p.motion.get(r.id);
@@ -4090,7 +4116,7 @@ function opacityOf(r, p) {
 }
 function rowEl(r, p) {
   const { t } = p;
-  const line = h_flex().items_start().child(markEl(r.mark, t)).child(div().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!r.isSelected, (e) => e.truncate()).when(r.isSelected, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div().flex_none().ml(12).text_color(t.muted).child(r.age ?? "")));
+  const line = h_flex2().items_start().child(markEl(r.mark, t)).child(div2().flex_1().min_w(0).text_color(r.isDim ? t.muted : t.foreground).when(!r.isSelected, (e) => e.truncate()).when(r.isSelected, (e) => e.font_semibold()).child(r.title)).when(r.age !== null, (e) => e.child(div2().flex_none().ml(12).text_color(t.muted).child(r.age ?? "")));
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback ? [r.feedback] : [],
@@ -4099,33 +4125,33 @@ function rowEl(r, p) {
   const opacity = opacityOf(r, p);
   const isLeaving = p.motion.get(r.id)?.state === "leaving";
   const padY = r.depth === 0 ? ROW_PAD_PT : ROW_PAD_PT / 2;
-  return v_flex().id(`row ${r.id}`).pl(MARK_X + r.depth * CLOSED_STEP).pr(EDGE_X).py(padY).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving) : div()));
+  return v_flex2().id(`row ${r.id}`).pl(MARK_X + r.depth * CLOSED_STEP).pr(EDGE_X).py(padY).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving) : div2()));
 }
 function statusEl(s, p) {
   const { t } = p;
-  const stall = s.stall ? [div().flex_none().text_color(colorOf(t, s.stall.tone)).child(`${STALL_GAP}${s.stall.text}`)] : [];
-  return v_flex().pl(MARK_X + s.depth * STATUS_STEP).pr(EDGE_X).py(STATUS_ROW_PAD_PT).child(h_flex().items_start().child(markEl(s.mark, t, true)).child(h_flex().flex_1().min_w(0).flex_wrap().child(div().when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted)).child(s.name)).children(stall))).children(s.under.map((l) => div().pl(MARK_W).whitespace_normal().text_color(t.muted).child(l))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W)));
+  const stall = s.stall ? [div2().flex_none().text_color(colorOf(t, s.stall.tone)).child(`${STALL_GAP}${s.stall.text}`)] : [];
+  return v_flex2().pl(MARK_X + s.depth * STATUS_STEP).pr(EDGE_X).py(STATUS_ROW_PAD_PT).child(h_flex2().items_start().child(markEl(s.mark, t, true)).child(h_flex2().flex_1().min_w(0).flex_wrap().child(div2().when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted)).child(s.name)).children(stall))).children(s.under.map((l) => div2().pl(MARK_W).whitespace_normal().text_color(t.muted).child(l))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W)));
 }
 function prEl(b, p) {
   const { t } = p;
-  const title = h_flex().flex_wrap().gap(6).items_start().when(b.rank !== null, (e) => e.child(div().text_color(t.muted).child(b.rank ?? ""))).child(div().text_color(colorOf(t, "prs")).child(b.number)).child(div().font_semibold().whitespace_normal().child(b.title)).child(div().text_color(colorOf(t, b.status.tone)).child(b.status.text)).children(b.unlisted.map((u) => div().text_color(t.muted).child(`${DOT}${u}`)));
-  return v_flex().pl(TEXT_X).pr(EDGE_X).pt(10).pb(4).child(title).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
+  const title = h_flex2().flex_wrap().gap(6).items_start().when(b.rank !== null, (e) => e.child(div2().text_color(t.muted).child(b.rank ?? ""))).child(div2().text_color(colorOf(t, "prs")).child(b.number)).child(div2().font_semibold().whitespace_normal().child(b.title)).child(div2().text_color(colorOf(t, b.status.tone)).child(b.status.text)).children(b.unlisted.map((u) => div2().text_color(t.muted).child(`${DOT}${u}`)));
+  return v_flex2().pl(TEXT_X).pr(EDGE_X).pt(10).pb(4).child(title).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 function textLineEl(b, p) {
   const { t } = p;
-  return v_flex().pl(TEXT_X).pr(EDGE_X).py(4).child(h_flex().flex_wrap().gap(8).items_center().when(b.text !== null, (e) => e.child(div().whitespace_normal().child(b.text ?? ""))).children(b.buttons.map((x) => buttonEl(x, p)))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
+  return v_flex2().pl(TEXT_X).pr(EDGE_X).py(4).child(h_flex2().flex_wrap().gap(8).items_center().when(b.text !== null, (e) => e.child(div2().whitespace_normal().child(b.text ?? ""))).children(b.buttons.map((x) => buttonEl(x, p)))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
-var ruleLine = (t, isDashed) => div().flex_1().border_t(1).when(isDashed, (e) => e.border_dashed()).border_color(t.border);
+var ruleLine = (t, isDashed) => div2().flex_1().border_t(1).when(isDashed, (e) => e.border_dashed()).border_color(t.border);
 function headingEl(b, p) {
   const { t } = p;
   const buttons = b.buttons.map((x) => buttonEl(x, p));
   if (b.isLabel)
-    return h_flex().flex_wrap().pl(MARK_X).pr(EDGE_X).pt(10).pb(4).gap(8).items_center().child(div().text_color(t.muted).child(b.text)).child(ruleLine(t, false).min_w(32)).child(h_flex().ml_auto().gap(4).items_center().children(goalButtons(buttons, t)));
-  return h_flex().pl(MARK_X).pr(EDGE_X).pt(10).pb(6).items_center().child(markEl(b.mark, t)).child(div().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div().text_color(t.muted).child(`${DOT}${b.count}`))).child(div().flex_1()).children(buttons);
+    return h_flex2().flex_wrap().pl(MARK_X).pr(EDGE_X).pt(10).pb(4).gap(8).items_center().child(div2().text_color(t.muted).child(b.text)).child(ruleLine(t, false).min_w(32)).child(h_flex2().ml_auto().gap(4).items_center().children(goalButtons(buttons, t)));
+  return h_flex2().pl(MARK_X).pr(EDGE_X).pt(10).pb(6).items_center().child(markEl(b.mark, t)).child(div2().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div2().text_color(t.muted).child(`${DOT}${b.count}`))).child(div2().flex_1()).children(buttons);
 }
 function emptyEl(b, p) {
   const { t } = p;
-  return v_flex().items_center().px(32).py(32).gap(4).child(div().font_semibold().text_center().whitespace_normal().child(b.title)).when(b.hint !== null, (e) => e.child(div().text_center().whitespace_normal().text_color(t.muted).child(b.hint ?? ""))).when(b.buttons.length > 0, (e) => e.child(h_flex().flex_wrap().justify_center().gap(6).pt(8).children(b.buttons.map((x) => buttonEl(x, p)))));
+  return v_flex2().items_center().px(32).py(32).gap(4).child(div2().font_semibold().text_center().whitespace_normal().child(b.title)).when(b.hint !== null, (e) => e.child(div2().text_center().whitespace_normal().text_color(t.muted).child(b.hint ?? ""))).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(6).pt(8).children(b.buttons.map((x) => buttonEl(x, p)))));
 }
 function foldEl(b, p) {
   const { t } = p;
@@ -4138,20 +4164,20 @@ function foldEl(b, p) {
     does: { is: "view", change: b.change }
   };
   const indent = b.kind === "fold" ? MARK_X + b.depth * STATUS_STEP : MARK_X + b.depth * CLOSED_STEP + MARK_W;
-  return h_flex().id(`fold ${b.id}`).pl(indent).pr(EDGE_X).py(2).when("closedFold" in b.change, (e) => e.mt(8)).items_center().text_color(t.muted).cursor_pointer().hover((s) => s.text_color(t.foreground)).accessibility_label(b.text).on_click((_e, cx) => p.press(fold, cx)).when(b.kind === "fold", (e) => e.child(markEl({ text: b.kind === "fold" && b.isOpen ? "▾" : "▸", tone: "muted", isRunning: false }, t))).child(div().child(b.text));
+  return h_flex2().id(`fold ${b.id}`).pl(indent).pr(EDGE_X).py(2).when("closedFold" in b.change, (e) => e.mt(8)).items_center().text_color(t.muted).cursor_pointer().hover((s) => s.text_color(t.foreground)).accessibility_label(b.text).on_click((_e, cx) => p.press(fold, cx)).when(b.kind === "fold", (e) => e.child(markEl({ text: b.kind === "fold" && b.isOpen ? "▾" : "▸", tone: "muted", isRunning: false }, t))).child(div2().child(b.text));
 }
 function ruleEl(b, t) {
   const indent = TEXT_X + b.depth * STATUS_STEP;
   if (b.text === null)
-    return h_flex().pl(indent).when(b.isBetweenGroups, (e) => e.pt(10)).child(ruleLine(t, false));
-  const label = div().flex_none().text_color(t.muted).child(b.text);
-  return h_flex().pl(indent).py(LOOK_GAP_PT).gap(8).items_center().when(b.isDashed, (e) => e.child(ruleLine(t, true))).child(label).child(ruleLine(t, b.isDashed));
+    return h_flex2().pl(indent).when(b.isBetweenGroups, (e) => e.pt(10)).child(ruleLine(t, false));
+  const label = div2().flex_none().text_color(t.muted).child(b.text);
+  return h_flex2().pl(indent).py(LOOK_GAP_PT).gap(8).items_center().when(b.isDashed, (e) => e.child(ruleLine(t, true))).child(label).child(ruleLine(t, b.isDashed));
 }
-var goalButtons = (buttons, t) => buttons.flatMap((b, n) => n > 0 ? [div().text_color(t.muted).child("·"), b] : [b]);
+var goalButtons = (buttons, t) => buttons.flatMap((b, n) => n > 0 ? [div2().text_color(t.muted).child("·"), b] : [b]);
 function noteEl(b, t) {
-  const text = div().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
-  const count = b.count === null ? [] : [div().whitespace_nowrap().text_color(t.muted).child(b.count)];
-  return h_flex().flex_wrap().items_baseline().pl(b.isHead ? MARK_X : TEXT_X + b.depth * STATUS_STEP).pr(EDGE_X).py(2).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).children(count);
+  const text = div2().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
+  const count = b.count === null ? [] : [div2().whitespace_nowrap().text_color(t.muted).child(b.count)];
+  return h_flex2().flex_wrap().items_baseline().pl(b.isHead ? MARK_X : TEXT_X + b.depth * STATUS_STEP).pr(EDGE_X).py(2).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).children(count);
 }
 function blockEl(b, p) {
   const { t } = p;
@@ -4172,35 +4198,12 @@ function blockEl(b, p) {
   if (b.kind === "rule")
     return ruleEl(b, t);
   if (b.kind === "field")
-    return div().pl(TEXT_X).pr(EDGE_X).child(fieldEl(b.field, p, 0));
+    return div2().pl(TEXT_X).pr(EDGE_X).child(fieldEl(b.field, p, 0));
   if (b.kind === "note")
     return noteEl(b, t);
-  return div().h(8);
-}
-
-// src/paint-chrome.ts
-import { div as div2 } from "gpui-kit";
-import { h_flex as h_flex2, v_flex as v_flex2 } from "gpui-base";
-var helpButton = (isHelpShown) => ({
-  id: "help",
-  label: isHelpShown ? HELP_COPY.close : HELP_COPY.open,
-  emphasis: "quiet",
-  isOut: false,
-  hotkey: null,
-  does: { is: "view", change: { toggleHelp: true } }
-});
-function tabsEl(tabs, status, isHelpShown, p) {
-  const { t } = p;
-  const help = helpButton(isHelpShown);
-  return h_flex2().flex_none().flex_wrap().px(12).pt(12).gap(4).items_center().children(tabs.map((tab) => h_flex2().id(`tab ${tab.id}`).px(12).py(6).items_center().rounded(6).cursor_pointer().accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div2().ml(6).font_semibold().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div2().flex_1()).when(status !== null, (e) => e.child(div2().px(4).text_size(SMALL_TEXT).text_color(t.muted).child(status ?? ""))).child(h_flex2().id("help").px(6).rounded(5).text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(help.label));
-}
-function bannerEl(b, t) {
-  const tone = b.tone === "error" ? t.ansi1 : b.tone === "warning" ? t.blocked : t.foreground;
-  return v_flex2().mx(12).mt(BANNER_GAP_PT).px(12).py(BANNER_PAD_Y_PT).rounded(10).border_1().border_color(tint(tone, 0.3)).bg(tint(tone, 0.09)).whitespace_normal().child(div2().font_semibold().text_color(tone).child(b.lead)).when(b.body !== null, (e) => e.child(div2().child(b.body ?? "")));
-}
-var sessionNoteEl = (text, t) => div2().px(EDGE_X + 2).pt(10).whitespace_normal().text_color(t.muted).child(text);
-function messageEl(m, t) {
-  return v_flex2().flex_1().justify_center().items_center().p(32).gap(4).child(div2().font_semibold().text_center().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div2().whitespace_normal().text_center().text_color(t.muted).child(m.hint ?? "")));
+  if (b.kind === "banner")
+    return bannerEl(b.banner, t);
+  return div2().h(8);
 }
 
 // src/press-file.ts

@@ -22,6 +22,8 @@ export type Theme = Record<
   | 'done'
   | 'working'
   | 'ansi1'
+  | 'ansi3'
+  | 'ansi4'
   | 'ansi5'
   | 'ansi6',
   Color
@@ -29,12 +31,14 @@ export type Theme = Record<
 
 /**
  * Needs-you, done and running take the colors Herdr's sidebar gives an agent that is blocked, done or working.
- * Findings, PRs and errors take the theme's magenta, cyan and red, as the terminal look takes its theme's.
+ * Findings, PRs and errors take the theme's magenta, cyan and red, as the terminal look takes its theme's. A notice
+ * takes its blue and a warning its yellow, so a message reads as information, a warning or an error by its color.
  */
 const TONE_COLORS: Record<Exclude<Tone, null>, keyof Theme> = {
   needsYou: 'blocked',
   issue: 'blocked',
-  warning: 'blocked',
+  notice: 'ansi4',
+  warning: 'ansi3',
   findings: 'ansi5',
   prs: 'ansi6',
   done: 'done',

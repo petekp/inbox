@@ -1,4 +1,5 @@
 import type { FoldKind } from '../../types'
+import type { BannerView } from '../../hooks/banners'
 import type { Effect } from '../../hooks/press-reducer'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
@@ -9,7 +10,8 @@ import type { StatusStall } from '../../hooks/status-page'
  * A color the paint maps onto Herdr's theme. The first six are the shared tones of `hooks/tones.ts`, so a tone means
  * the same thing in every look, and needs-you, done and running mean what they do in Herdr's sidebar.
  */
-export type Tone = 'needsYou' | 'issue' | 'findings' | 'prs' | 'done' | 'error' | 'running' | 'warning' | 'muted' | null
+export type Tone =
+  'needsYou' | 'issue' | 'findings' | 'prs' | 'done' | 'error' | 'running' | 'notice' | 'warning' | 'muted' | null
 
 export type Mark = { text: string; tone: Tone; isRunning: boolean }
 
@@ -160,3 +162,5 @@ export type Block =
   /** A rule `depth` Status steps in. `isBetweenGroups` closes the group above with its space, as a section does. */
   | { kind: 'rule'; id: string; text: string | null; isDashed: boolean; depth: number; isBetweenGroups: boolean }
   | { kind: 'gap'; id: string }
+  /** A message in the list, as the PRs tab's GitHub notice. */
+  | { kind: 'banner'; id: string; banner: BannerView }

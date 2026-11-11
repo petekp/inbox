@@ -85,7 +85,7 @@ export function tabsEl(tabs: TabCell[], status: string | null, isHelpShown: bool
 
 /** A message about the inbox's own state, in a box tinted with the tone of what it says. */
 export function bannerEl(b: BannerView, t: Theme): Element {
-  const tone = b.tone === 'error' ? t.ansi1 : b.tone === 'warning' ? t.blocked : t.foreground
+  const tone = colorOf(t, b.tone)
 
   return v_flex()
     .mx(12)

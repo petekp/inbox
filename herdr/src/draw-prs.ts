@@ -28,6 +28,7 @@ import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
 import { isDismissed } from '../../hooks/pr-views'
 import type { DrawnPr } from '../../hooks/pr-views'
 import { checkKey, commentParts, readableComment, readiness, threadWhere } from '../../hooks/prs'
+import { bannerOf } from '../../hooks/banners'
 import { DOT, ROW_COPY, settledLabel, settledMark, shortAgo } from '../../hooks/rows'
 import { clipLabel } from '../../hooks/text'
 import { button } from './blocks'
@@ -266,7 +267,7 @@ export function prTabBlocks(screen: LookScreen, selected: string | null): Block[
   const presses: PressState = { lastActions: view.lastActions, turns: view.turns, now: screen.now }
   const notice = ghNoticeOf(gh)
   const draw = (open: string | null) => [
-    ...(notice ? [note('gh notice', notice.text, 'warning')] : []),
+    ...(notice ? [{ kind: 'banner', id: 'gh notice', banner: bannerOf(notice.kind, notice.text) } as const] : []),
     ...refreshLine(screen),
     ...orderLines(screen),
     ...prs.drawn.flatMap(d => prBlocks(screen, d, presses, open)),

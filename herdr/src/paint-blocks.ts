@@ -8,6 +8,7 @@ import { STALL_GAP } from '../../hooks/status-page'
 import type { Block, Button, Field, LineBlock, Mark, PrBlock, RowBlock, StatusLine } from './blocks'
 import { EDGE_X, HEAD_LINE, HEAD_TEXT, MARK_X, TEXT_X, colorOf } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
+import { bannerEl } from './paint-chrome'
 
 /** The mark column's width: from where a mark starts to where the text starts. */
 const MARK_W = TEXT_X - MARK_X
@@ -411,6 +412,7 @@ export function blockEl(b: Block, p: Paint): Element {
       .pr(EDGE_X)
       .child(fieldEl(b.field, p, 0))
   if (b.kind === 'note') return noteEl(b, t)
+  if (b.kind === 'banner') return bannerEl(b.banner, t)
 
   return div().h(8)
 }
