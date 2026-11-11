@@ -1,4 +1,4 @@
-import { DESKTOP_BUTTON_EXTRA_PT, desktopLines, desktopTextPt } from './desktop-metrics'
+import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
 import { isStatusUnderActions } from './feedback'
 import { paneState } from './mod-state'
 import type { PaneBase, PaneClient, PaneHandlers, Row } from './pane-context'
@@ -150,10 +150,7 @@ export function paneRows(
     /** The terminal draws `⏎` and the submit label beside the field. */
     const terminalFieldColumns = textWidth - cellWidth(`⏎ ${submitLabel}`) - 1
     /** The desktop field's Box shrinks it below its own width when the row cannot also hold its Send button. */
-    const desktopFieldPt = Math.min(
-      DESKTOP_FIELD_PT,
-      desktopRowTextPt - desktopTextPt(submitLabel) - DESKTOP_BUTTON_EXTRA_PT,
-    )
+    const desktopFieldPt = Math.min(DESKTOP_FIELD_PT, desktopRowTextPt - desktopButtonPt(submitLabel, true))
     /**
      * A terminal field that passes one row takes all `REPLY_ROWS`. Claude Code's hint beside a field of several rows
      * changes with the pane's width, so the rows its text wraps to cannot be counted here.
