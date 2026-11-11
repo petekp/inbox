@@ -7,8 +7,7 @@ import { screenText } from '../../hooks/inbox-text'
 import type { ScreenTab } from '../../hooks/inbox-text'
 import { ghFinder, ghIn } from '../../hooks/gh'
 import { CLEARED_TOKENS, delegatesInHerdr, herdrCheckGate, herdrTokens } from '../../hooks/herdr'
-import type { EnvelopeSource } from '../../hooks/herdr'
-import { publishSession, unpublishSession } from '../../hooks/herdr-app'
+import { publishedSession, unpublishSession } from '../../hooks/herdr-app'
 import type { PublishFiles } from '../../hooks/herdr-app'
 import { endTurn, turnEnded } from '../../hooks/session-turns'
 import { forkedFrom, hasLedger, isUnseen, statusChanged } from '../../hooks/session-status'
@@ -113,8 +112,8 @@ export function sessionCalls(context: HostContext) {
 
   /**
    * Reports the session omp shows to the Herdr pane or app terminal it runs in. In an app terminal, each report's turn
-   * first publishes the session for the Herdr look, so the files land in the order of the changes and the labels never
-   * name a file not yet written. `left` is a session omp no longer shows, whose file that turn removes first.
+   * first publishes the session for the Herdr look, so the files land in the order of the changes. The labels name the
+   * session only once its file is written. `left` is a session omp no longer shows, whose file that turn removes first.
    */
   function reportCounts(id: string, left?: string): void {
     const target = deps.herdrTarget
@@ -127,19 +126,18 @@ export function sessionCalls(context: HostContext) {
           if (appHome && left) await unpublishSession(publishFiles, appHome, left).catch(() => undefined)
           const s = await readState(dir, id)
           const now = deps.now()
-          if (target.kind === 'terminal' && appHome) {
-            const source: EnvelopeSource = {
-              host: 'omp',
-              agent: OMP.agent,
-              sessionId: id,
-              terminal: target.terminal,
-              writtenAt: now,
-            }
-            await publishSession(publishFiles, appHome, source, s).catch(() => undefined)
-          }
+          const isPublished =
+            target.kind === 'terminal' &&
+            (await publishedSession(
+              publishFiles,
+              appHome,
+              { host: 'omp', agent: OMP.agent, sessionId: id, terminal: target.terminal, writtenAt: now },
+              s,
+              () => undefined,
+            ))
           const view = sessionView(s, now, deps.settleWindowMs)
 
-          return { target, tokens: herdrTokens(s.ledger, s.stop, view, []), session: id }
+          return { target, tokens: herdrTokens(s.ledger, s.stop, view, []), session: isPublished ? id : null }
         },
         deps.after,
       ),

@@ -3,6 +3,8 @@ import { UNSTARTABLE_CODE } from '../hooks/gh'
 import type { Run } from '../hooks/gh'
 import { CLEARED_TOKENS, herdrEnvelope, herdrLabels, herdrReporter, herdrTarget, pressFile } from '../hooks/herdr'
 import type { EnvelopeSource } from '../hooks/herdr'
+import { publishSession } from '../hooks/herdr-app'
+import type { PublishFiles } from '../hooks/herdr-app'
 import { emptySession } from '../hooks/session-files'
 
 const SOURCE: EnvelopeSource = { host: 'codex', agent: 'Codex', sessionId: 's1', terminal: 't1', writtenAt: 5 }
@@ -26,6 +28,35 @@ describe('herdrTarget', () => {
     })
     expect(herdrTarget({ HC_TERMINAL_ID: 't1', HERDR_APP_HOME: '/app' })).toMatchObject({ appHome: '/app', hc: ['hc'] })
     expect(herdrTarget({ HERDR_PANE_ID: '', HC_TERMINAL_ID: '' })).toBeNull()
+  })
+
+  test('an app home that is not an absolute path is none', () => {
+    expect(herdrTarget({ HC_TERMINAL_ID: 't1', HERDR_APP_HOME: 'app', HOME: '/home/person' })).toMatchObject({
+      appHome: null,
+    })
+    expect(herdrTarget({ HC_TERMINAL_ID: 't1', HOME: 'person' })).toMatchObject({ appHome: null, hc: ['hc'] })
+  })
+})
+
+describe('publishSession', () => {
+  test('a write that fails partway leaves no temporary file and rejects', async () => {
+    const files: Record<string, string> = {}
+    const publishFiles: PublishFiles = {
+      write: async path => {
+        files[path] = '{"format":1,'
+        throw new Error('disk full')
+      },
+      move: async () => undefined,
+      remove: async path => {
+        delete files[path]
+      },
+    }
+
+    const failure = await publishSession(publishFiles, '/app', SOURCE, emptySession()).catch(
+      (err: Error) => err.message,
+    )
+    expect(failure).toBe('disk full')
+    expect(files).toEqual({})
   })
 })
 

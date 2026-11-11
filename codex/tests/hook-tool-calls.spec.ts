@@ -248,13 +248,14 @@ test('of two writes from separate processes, Herdr shows the later state, and th
   assert.equal(herdr.shown()['inbox-needs-you'], '2')
 })
 
-test('in a Herdr app terminal, each write publishes the session and a change of counts labels the terminal', async () => {
+test('in a Herdr app terminal, each write publishes the session, and a change of counts or a start labels the terminal', async () => {
   const dir = tempDir()
   const appHome = tempDir()
   const herdr = fakeRunner(() => ({ code: 0, stdout: '', stderr: '' }))
   let at = 100
   const env = { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: appHome, HOME: '/home/person' }
-  const deps = { ...hookDeps(dir), onWrite: herdrOnWrite(env, herdr.exec, dir, () => ++at) }
+  const hookProcess = () => ({ ...hookDeps(dir), onWrite: herdrOnWrite(env, herdr.exec, dir, () => ++at) })
+  const deps = hookProcess()
   const published = () => JSON.parse(readFileSync(join(appHome, 'inbox/sessions/s1.json'), 'utf8'))
   const toolUse = input('PreToolUse', { tool_name: 'Bash', tool_input: { command: 'ls' } })
 
@@ -277,6 +278,10 @@ test('in a Herdr app terminal, each write publishes the session and a change of 
   assert.equal(reportedLabels(herdr.calls[1]!)['inbox.needs-you'], '1')
   assert.equal(published().session.ledger.items[0].ask, 'Ship it?')
   assert.deepEqual(readdirSync(join(appHome, 'inbox/sessions')), ['s1.json'])
+
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'resume' }), hookProcess())
+  assert.equal(herdr.calls.length, 3)
+  assert.equal(reportedLabels(herdr.calls[2]!)['inbox.session'], 's1')
 })
 
 test('an update that changes nothing reports a change the MCP server made, and Herdr shows it', async () => {

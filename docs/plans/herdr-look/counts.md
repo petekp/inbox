@@ -45,7 +45,7 @@ type HerdrTarget =
 - `HC_TERMINAL_ID` set: `terminal`, reported with `hc label`, and the session file is published.
 - Neither: `null`, and nothing is reported.
 
-The three callers switch from reading `HERDR_PANE_ID` to this function: `hooks/register.tsx:publishStatus`, `codex/src/host.ts:herdrOnWrite` and `omp/src/host-sessions.ts:reportCounts`. The mod and omp keep a reporter queue, so one report runs at a time and the last one reads the newest state. Each report's turn publishes the file before it sets the labels, so `inbox.session` never names a file not yet written.
+The three callers switch from reading `HERDR_PANE_ID` to this function: `hooks/register.tsx:publishStatus`, `codex/src/host.ts:herdrOnWrite` and `omp/src/host-sessions.ts:reportCounts`. The mod and omp keep a reporter queue, so one report runs at a time and the last one reads the newest state. Each report's turn publishes the file before it sets the labels. `inbox.session` names the session only when that publish succeeded, so it never names a file that was not written. A Codex start drops the saved `herdrReport`, so each start labels the terminal even when the counts match the last report, since another session may have labelled the terminal in between.
 
 `hc` is found on `PATH`, then at `~/.local/bin/hc`, where Herdr's installer puts it. The reporter tries each in turn and keeps the first one that starts. A host where neither starts reports nothing. The mod logs each failed publish to its debug log. Codex and omp log nothing. The spike called `~/.local/bin/hc` by its full path.
 

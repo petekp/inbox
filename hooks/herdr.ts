@@ -209,9 +209,9 @@ function paneReport(pane: string, tokens: HerdrTokens, seq?: number): string[] {
 const SESSION_LABEL = 'inbox.session'
 
 /**
- * What a host reports: where, its tokens, and the session they are about, which is null once it ends. A pane report
- * carries `seq`. An app terminal gets every label in one `hc label` call, which takes no `seq`, with control
- * characters in a value turned to spaces.
+ * What a host reports: where, its tokens, and the session whose published file the labels name, which is null when no
+ * file holds it, as once it ends. A pane report carries `seq`. An app terminal gets every label in one `hc label` call,
+ * which takes no `seq`, with control characters in a value turned to spaces.
  */
 type HerdrReport = { target: HerdrTarget; tokens: HerdrTokens; session: string | null; seq?: number }
 
@@ -320,7 +320,8 @@ export function herdrReporter(): (
  * Where a host reports: a pane of Herdr's terminal multiplexer, which sets `HERDR_PANE_ID`, or a terminal of the Herdr
  * app, which sets `HC_TERMINAL_ID`. Null outside Herdr. An app terminal also names the app's settings folder, where
  * the host publishes its session, and the `hc` commands to try in order: the one on `PATH`, then the one in
- * `~/.local/bin`, where Herdr's installer puts it.
+ * `~/.local/bin`, where Herdr's installer puts it. The settings folder is null when `HERDR_APP_HOME` or `HOME` is not an
+ * absolute path, since a host's file calls and its `mv` can resolve a relative one against different folders.
  */
 export type HerdrTarget =
   { kind: 'pane'; pane: string } | { kind: 'terminal'; terminal: string; appHome: string | null; hc: readonly string[] }
@@ -330,8 +331,9 @@ export function herdrTarget(env: Readonly<Record<string, string | undefined>>): 
   if (pane) return { kind: 'pane', pane }
   const terminal = env.HC_TERMINAL_ID
   if (!terminal) return null
-  const home = env.HOME || null
-  const appHome = env.HERDR_APP_HOME || (home ? `${home}/.config/herdr-app` : null)
+  const home = env.HOME?.startsWith('/') ? env.HOME : null
+  const named = env.HERDR_APP_HOME
+  const appHome = named ? (named.startsWith('/') ? named : null) : home && `${home}/.config/herdr-app`
 
   return { kind: 'terminal', terminal, appHome, hc: home ? ['hc', `${home}/.local/bin/hc`] : ['hc'] }
 }

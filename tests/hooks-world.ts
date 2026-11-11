@@ -52,6 +52,7 @@ class World {
 
   files: string[] = []
   written: Record<string, string> = {}
+  isMoveFailing = false
 
   sessionFiles: { pid: number; sessionId: string }[] | undefined
   endedPids: number[] = []
@@ -193,6 +194,8 @@ async function gh(argv: readonly string[]) {
 function fileCommand(argv: readonly string[]) {
   const paths = argv.slice(argv.indexOf('--') + 1)
   const [from = '', to = ''] = paths
+  if (argv[0] === 'mv' && w.isMoveFailing)
+    return { exitCode: 1, stdout: '', stderr: 'mv: rename failed', isStdoutTruncated: false, isStderrTruncated: false }
   if (argv[0] === 'mv') w.written[to] = w.written[from] ?? ''
   for (const path of argv[0] === 'mv' ? [from] : paths) delete w.written[path]
 
@@ -266,6 +269,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.surfaces = []
   w.files = []
   w.written = {}
+  w.isMoveFailing = false
   w.sessionFiles = undefined
   w.endedPids = []
   w.isPsMissing = false

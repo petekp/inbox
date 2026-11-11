@@ -7,8 +7,7 @@ import { viewOf } from './core'
 import { CODEX } from './texts'
 import type { Run } from '../../hooks/gh'
 import { herdrReporter, herdrReportKey, herdrTarget, herdrTokens } from '../../hooks/herdr'
-import type { EnvelopeSource } from '../../hooks/herdr'
-import { publishSession } from '../../hooks/herdr-app'
+import { publishedSession } from '../../hooks/herdr-app'
 import type { PublishFiles } from '../../hooks/herdr-app'
 import type { SessionHost } from '../../hooks/session-host'
 
@@ -77,17 +76,17 @@ export function herdrOnWrite(env: NodeJS.ProcessEnv, run: Run, dir: string, now:
       const s = await readState(dir, id)
       const at = now()
       const seq = s.writtenAt ?? at
-      if (target.kind === 'terminal' && target.appHome) {
-        const source: EnvelopeSource = {
-          host: 'codex',
-          agent: CODEX.agent,
-          sessionId: id,
-          terminal: target.terminal,
-          writtenAt: seq,
-        }
-        await publishSession(publishFiles, target.appHome, source, s).catch(() => undefined)
-      }
-      const r = { target, tokens: herdrTokens(s.ledger, s.stop, viewOf(s, at), []), session: id, seq }
+      const isPublished =
+        target.kind === 'terminal' &&
+        (await publishedSession(
+          publishFiles,
+          target.appHome,
+          { host: 'codex', agent: CODEX.agent, sessionId: id, terminal: target.terminal, writtenAt: seq },
+          s,
+          () => undefined,
+        ))
+      const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, at), [])
+      const r = { target, tokens, session: isPublished ? id : null, seq }
       const key = herdrReportKey(r)
       if (key === s.herdrReport?.key) return
       if (!(await report(run, async () => r))) return

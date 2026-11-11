@@ -181,6 +181,19 @@ test('in a Herdr app terminal, each change publishes the session and labels the 
   expect(w.written[file]).toBeUndefined()
 })
 
+test('in a Herdr app terminal, a publish that fails leaves the terminal unlabelled with the session, and no temporary file', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: '/app', HOME: '/home/person' })
+  w.isMoveFailing = true
+  const labels = () => reportedLabels(w.ran.filter(argv => argv[0] === 'hc').at(-1) ?? [])
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask: 'Ship it?', options: ['yes', 'no'] })
+  await clock.settle()
+  expect(labels()).toMatchObject({ 'inbox.session': '', 'inbox.needs-you': '1' })
+  expect(Object.keys(w.written).filter(path => path.startsWith('/app/'))).toEqual([])
+})
+
 test('a sidebar report Herdr fails to take is sent again after each wait in HERDR_RETRY_MS, until Herdr takes it', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [], { HERDR_PANE_ID: 'p2' })

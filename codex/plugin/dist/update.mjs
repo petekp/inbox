@@ -4092,8 +4092,9 @@ function herdrTarget(env) {
   if (pane) return { kind: "pane", pane };
   const terminal = env.HC_TERMINAL_ID;
   if (!terminal) return null;
-  const home = env.HOME || null;
-  const appHome = env.HERDR_APP_HOME || (home ? `${home}/.config/herdr-app` : null);
+  const home = env.HOME?.startsWith("/") ? env.HOME : null;
+  const named = env.HERDR_APP_HOME;
+  const appHome = named ? named.startsWith("/") ? named : null : home && `${home}/.config/herdr-app`;
   return { kind: "terminal", terminal, appHome, hc: home ? ["hc", `${home}/.local/bin/hc`] : ["hc"] };
 }
 function herdrLabels(tokens) {
@@ -4118,13 +4119,23 @@ function publishedSessionPath(appHome, sessionId) {
 async function publishSession(files, appHome, source, session) {
   const path = publishedSessionPath(appHome, source.sessionId);
   const temporary = `${path}.${source.writtenAt}-${Math.random().toString(36).slice(2)}.tmp`;
-  await files.write(temporary, JSON.stringify(herdrEnvelope(source, session)));
   try {
+    await files.write(temporary, JSON.stringify(herdrEnvelope(source, session)));
     await files.move(temporary, path);
   } catch (err) {
     await files.remove(temporary).catch(() => void 0);
     throw err;
   }
+}
+function publishedSession(files, appHome, source, session, log) {
+  if (!appHome) return Promise.resolve(false);
+  return publishSession(files, appHome, source, session).then(
+    () => true,
+    (err) => {
+      log(`Herdr publish failed: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  );
 }
 
 // src/host.ts
@@ -4162,17 +4173,15 @@ function herdrOnWrite(env, run2, dir, now) {
       const s = await readState(dir, id);
       const at = now();
       const seq = s.writtenAt ?? at;
-      if (target.kind === "terminal" && target.appHome) {
-        const source = {
-          host: "codex",
-          agent: CODEX.agent,
-          sessionId: id,
-          terminal: target.terminal,
-          writtenAt: seq
-        };
-        await publishSession(publishFiles, target.appHome, source, s).catch(() => void 0);
-      }
-      const r = { target, tokens: herdrTokens(s.ledger, s.stop, viewOf(s, at), []), session: id, seq };
+      const isPublished = target.kind === "terminal" && await publishedSession(
+        publishFiles,
+        target.appHome,
+        { host: "codex", agent: CODEX.agent, sessionId: id, terminal: target.terminal, writtenAt: seq },
+        s,
+        () => void 0
+      );
+      const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, at), []);
+      const r = { target, tokens, session: isPublished ? id : null, seq };
       const key = herdrReportKey(r);
       if (key === s.herdrReport?.key) return;
       if (!await report(run2, async () => r)) return;

@@ -1,8 +1,7 @@
 import type { Dialog, Session } from '../types'
 import type { Run } from './gh'
 import { CLEARED_TOKENS, herdrTarget, herdrTokens } from './herdr'
-import type { EnvelopeSource } from './herdr'
-import { publishSession, unpublishSession } from './herdr-app'
+import { publishedSession, unpublishSession } from './herdr-app'
 import type { PublishFiles } from './herdr-app'
 import { reportToHerdr } from './mod-records'
 import { CLAUDE_CODE } from './model-text'
@@ -43,9 +42,9 @@ function publishFiles(calls: HerdrCalls): PublishFiles {
 
 /**
  * Reports the drawn conversation to the Herdr pane or app terminal the session runs in. In an app terminal, each
- * report's turn first publishes the session for the Herdr look, so the files land in the order of the changes and the
- * labels never name a file not yet written. With `endingId`, the report removes that conversation's file and clears
- * every token and label.
+ * report's turn first publishes the session for the Herdr look, so the files land in the order of the changes. The
+ * labels name the session only once its file is written. With `endingId`, the report removes that conversation's file
+ * and clears every token and label.
  */
 export function publishToHerdr(
   calls: HerdrCalls,
@@ -69,19 +68,19 @@ export function publishToHerdr(
         return { target, tokens: CLEARED_TOKENS, session: null }
       }
       const [{ id, session, dialogs, isUnread }, now] = await Promise.all([drawn(), calls.now()])
-      if (target.kind === 'terminal' && appHome) {
-        const source: EnvelopeSource = {
-          host: 'claude-code',
-          agent: CLAUDE_CODE.agent,
-          sessionId: id,
-          terminal: target.terminal,
-          writtenAt: now,
-        }
-        await publishSession(files, appHome, source, session).catch(logFailure)
-      }
+      const isPublished =
+        target.kind === 'terminal' &&
+        (await publishedSession(
+          files,
+          appHome,
+          { host: 'claude-code', agent: CLAUDE_CODE.agent, sessionId: id, terminal: target.terminal, writtenAt: now },
+          session,
+          calls.log,
+        ))
       const view = sessionView(session, now, SETTLED_MS)
+      const tokens = herdrTokens(session.ledger, session.stop, view, dialogs, isUnread)
 
-      return { target, tokens: herdrTokens(session.ledger, session.stop, view, dialogs, isUnread), session: id }
+      return { target, tokens, session: isPublished ? id : null }
     },
     calls.after,
   )

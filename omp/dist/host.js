@@ -4788,8 +4788,9 @@ function herdrTarget(env) {
   const terminal = env.HC_TERMINAL_ID;
   if (!terminal)
     return null;
-  const home = env.HOME || null;
-  const appHome = env.HERDR_APP_HOME || (home ? `${home}/.config/herdr-app` : null);
+  const home = env.HOME?.startsWith("/") ? env.HOME : null;
+  const named = env.HERDR_APP_HOME;
+  const appHome = named ? named.startsWith("/") ? named : null : home && `${home}/.config/herdr-app`;
   return { kind: "terminal", terminal, appHome, hc: home ? ["hc", `${home}/.local/bin/hc`] : ["hc"] };
 }
 function herdrLabels(tokens) {
@@ -10854,8 +10855,8 @@ function publishedSessionPath(appHome, sessionId) {
 async function publishSession(files, appHome, source, session) {
   const path = publishedSessionPath(appHome, source.sessionId);
   const temporary = `${path}.${source.writtenAt}-${Math.random().toString(36).slice(2)}.tmp`;
-  await files.write(temporary, JSON.stringify(herdrEnvelope(source, session)));
   try {
+    await files.write(temporary, JSON.stringify(herdrEnvelope(source, session)));
     await files.move(temporary, path);
   } catch (err) {
     await files.remove(temporary).catch(() => {
@@ -10864,7 +10865,15 @@ async function publishSession(files, appHome, source, session) {
     throw err;
   }
 }
-function unpublishSession(files, appHome, sessionId) {
+function publishedSession(files, appHome, source, session, log) {
+  if (!appHome)
+    return Promise.resolve(false);
+  return publishSession(files, appHome, source, session).then(() => true, (err) => {
+    log(`Herdr publish failed: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  });
+}
+async function unpublishSession(files, appHome, sessionId) {
   return files.remove(publishedSessionPath(appHome, sessionId));
 }
 
@@ -10947,20 +10956,11 @@ function sessionCalls(context) {
         });
       const s = await readState(dir, id);
       const now = deps.now();
-      if (target.kind === "terminal" && appHome) {
-        const source = {
-          host: "omp",
-          agent: OMP.agent,
-          sessionId: id,
-          terminal: target.terminal,
-          writtenAt: now
-        };
-        await publishSession(publishFiles, appHome, source, s).catch(() => {
-          return;
-        });
-      }
+      const isPublished = target.kind === "terminal" && await publishedSession(publishFiles, appHome, { host: "omp", agent: OMP.agent, sessionId: id, terminal: target.terminal, writtenAt: now }, s, () => {
+        return;
+      });
       const view = sessionView(s, now, deps.settleWindowMs);
-      return { target, tokens: herdrTokens(s.ledger, s.stop, view, []), session: id };
+      return { target, tokens: herdrTokens(s.ledger, s.stop, view, []), session: isPublished ? id : null };
     }, deps.after));
   }
   function reportEnded(id) {
