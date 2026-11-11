@@ -1,6 +1,7 @@
 // Writes types/index.d.ts from the parts in types/parts/. plugin.json names that file as the mod's state contract.
 // `claude plugin validate` refuses a contract that imports from another file or re-exports one. Each part imports the
-// types it names from the other parts, so tsc and an editor can read it on its own. The build drops those imports.
+// types it names from the other parts, so tsc and an editor can read it on its own. The build drops those imports, and
+// the `export {}` that makes a part with no imports a module.
 //
 // Usage: node scripts/build-types.mjs [--check]
 //
@@ -14,9 +15,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const TYPES = join(ROOT, 'types', 'index.d.ts')
 const PARTS = join(ROOT, 'types', 'parts')
 const IMPORTS = /^(?:import type \{[^}]*\} from '\.\/[\w-]+'\n)+\n/
+const EMPTY_EXPORT = /^export \{\}\n\n/m
 
 const body = name => {
-  const text = readFileSync(join(PARTS, name), 'utf8').replace(IMPORTS, '')
+  const text = readFileSync(join(PARTS, name), 'utf8').replace(IMPORTS, '').replace(EMPTY_EXPORT, '')
   if (/^import /m.test(text)) {
     console.error(`types/parts/${name} has an import the build cannot drop. Import only types, from './<part>'.`)
     process.exit(1)
@@ -26,7 +28,15 @@ const body = name => {
 
 const types = [
   '// Built by scripts/build-types.mjs from types/parts/. Edit a part, then run the script.\n',
-  ...['status.d.ts', 'items.d.ts', 'press.d.ts', 'ledger.d.ts', 'session.d.ts', 'claude-code.d.ts'].map(body),
+  ...[
+    'status.d.ts',
+    'items.d.ts',
+    'press.d.ts',
+    'ledger.d.ts',
+    'session.d.ts',
+    'claude-code.d.ts',
+    'tool-inputs.d.ts',
+  ].map(body),
 ].join('\n')
 
 if (process.argv.includes('--check')) {

@@ -136,9 +136,13 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         readHistoryAhead(read),
       ])
       const withPlace = (s: SessionState) => (folder === null ? s : placed(s, folder, branch))
+      // Another session may have labelled this terminal since, so each start labels it again.
+      const unreported = ({ herdrReport: _, ...s }: SessionState): SessionState => s
       const s = await write(async s =>
         noteHook(
-          withHost(await withHistory(endsTurn(withPlace({ ...(input.source === 'clear' ? cleared(s) : s), root })))),
+          withHost(
+            await withHistory(endsTurn(withPlace({ ...unreported(input.source === 'clear' ? cleared(s) : s), root }))),
+          ),
           'start',
           now(),
         ),

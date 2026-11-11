@@ -38,7 +38,7 @@ Pete made each of these. The linked part gives the reason. A decision that still
 1. **[Where the files live](herdr-look/data-and-presses.md#the-data-path).** Under Herdr's app home, its settings folder. This works today because a mod may write only there.
 2. **[How a press wakes Claude Code](herdr-look/data-and-presses.md#claude-code).** A wake label: the look changes a label on the session's terminal, and Claude Code reads the change through `hc events`. It costs nothing at idle, and a shell saw each change in 11–17 ms. Still to check: running `hc events` from the Claude Code mod.
 3. **[Where the look opens](herdr-look/look.md#where-it-opens).** In a pane to the right of the agent's terminal.
-4. **[How the person opens it](herdr-look/look.md#where-it-opens).** The host's `/inbox` command opens the pane when it runs in a Herdr app terminal. Still to check: how the host finds its pane's id from its terminal.
+4. **[How the person opens it](herdr-look/look.md#where-it-opens).** The host's `/inbox` command opens the pane when it runs in a Herdr app terminal. The host finds its pane's id in the row `herdr-app ls` lists for its `HC_TERMINAL_ID`.
 5. **[Counts in Herdr's sidebar and tabs](herdr-look/counts.md#what-herdrs-sidebar-and-tabs-show).** Herdr's own `agents` and `tabs` mods draw a count from a label. This needs a change in Herdr. [Counts](herdr-look/counts.md#draft-request-to-herdrs-maintainers) holds a draft request to Herdr's maintainers, which is not filed. Until Herdr draws the counts, they show only in the look.
 6. **[Install and update](herdr-look/shipping-and-testing.md#how-it-ships).** Each host copies its bundled mod into Herdr when its copy is newer, after asking the person once.
 

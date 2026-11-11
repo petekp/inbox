@@ -1,4 +1,4 @@
-import { DESKTOP_BUTTON_EXTRA_PT, desktopLines, desktopTextPt } from './desktop-metrics'
+import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
 import { RUNNING_SVG_CELLS } from './desktop-svg'
 import { DESKTOP_BUTTON_PT, DESKTOP_CELL_PT, DESKTOP_HAIR_LINES, DESKTOP_ROW_PT } from './pane-sizes'
 import { STALL_GAP, type StatusCount } from './status-page'
@@ -97,10 +97,10 @@ function desktopWrapLines(widthsPt: number[], gapPt: number, widthPt: number): n
 
 /**
  * The lines a desktop row of native buttons with `labels` takes in a column about `widthPt` wide, as its Box wraps them
- * a cell apart and a line of buttons apart. Each button is as wide as its label's estimate and a button's padding.
+ * a cell apart and a line of buttons apart. Each button is as wide as `desktopButtonPt` says, counting each as primary since a label does not say.
  */
 export function desktopButtonLines(labels: string[], widthPt: number): Lines {
-  const widths = labels.map(label => desktopTextPt(label) + DESKTOP_BUTTON_EXTRA_PT)
+  const widths = labels.map(label => desktopButtonPt(label, true))
   const rows = desktopWrapLines(widths, DESKTOP_CELL_PT, widthPt)
 
   return { least: 1, most: rows * DESKTOP_BUTTON_LINES + (rows - 1) * desktopSpaceLines(1) }

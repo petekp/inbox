@@ -91,7 +91,7 @@ export function checkLookMap(root, errors) {
   if (!fileParts.length) errors.push(`${LOOK_PARTS}/ has no files-*.md part to hold the Files rows.`)
   else {
     const rows = new Set(fileParts.flatMap(part => [...read(root, part).matchAll(/^\| `([^`]+)` \|/gm)].map(m => m[1])))
-    for (const dir of ['hooks', 'codex/src', 'omp/src'].filter(dir => exists(root, dir)))
+    for (const dir of ['hooks', 'codex/src', 'omp/src', 'herdr/src'].filter(dir => exists(root, dir)))
       for (const entry of readdirSync(join(root, dir))) {
         const path = `${dir}/${entry}`
         if (isMapped(path) && !rows.has(path)) errors.push(`${LOOK_PARTS}/files-*.md has no Files row for ${path}.`)

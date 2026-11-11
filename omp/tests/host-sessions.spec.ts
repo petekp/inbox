@@ -107,6 +107,37 @@ const earlierBranch = () => [
     ],
   }),
   message({ role: 'toolResult', toolCallId: 'c3', content: [{ type: 'text', text: 'Node' }], isError: false }),
+  message({
+    role: 'assistant',
+    content: [
+      {
+        type: 'toolCall',
+        id: 'c4',
+        name: 'ask',
+        arguments: {
+          html: '<form><label>Command name <input type="text" name="command" value="greet"></label></form>',
+        },
+      },
+    ],
+  }),
+  message({
+    role: 'toolResult',
+    toolCallId: 'c4',
+    content: [{ type: 'text', text: 'User answers:\n{"command": "hello"}' }],
+    details: { answers: [{ name: 'command', question: 'Command name', answer: 'hello' }] },
+    isError: false,
+  }),
+  message({
+    role: 'assistant',
+    content: [{ type: 'toolCall', id: 'c5', name: 'ask', arguments: { html: '<form><p>Ready?</p></form>' } }],
+  }),
+  message({
+    role: 'toolResult',
+    toolCallId: 'c5',
+    content: [{ type: 'text', text: 'Error: the form has no named controls.' }],
+    details: { answers: [] },
+    isError: false,
+  }),
   message({ role: 'assistant', content: [{ type: 'text', text: 'The plan is written.' }] }),
 ]
 
@@ -124,6 +155,7 @@ test('a resumed session with earlier turns is marked behind and catches up over 
       'Agent: I will check the repo.',
       'Agent ran: ls',
       'Agent asked the user in a dialog: "Which runtime?"; answer: Node',
+      'Agent asked the user in a dialog: "Command name"; answer: "Command name"="hello"',
       'Agent: The plan is written.',
     ].join('\n'),
   )

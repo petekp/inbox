@@ -6,11 +6,11 @@ Status: proposed.
 
 ## Where the code goes
 
-A new folder, `herdr/`, holds the look. It follows `omp/`: the drawing imports only shared modules, and one file imports Herdr's modules.
+A new folder, `herdr/`, holds the look. It follows `omp/`: the decisions import only shared modules, and one file imports `herdr`, the module for the app's state and effects. Painting does not fit one file under the size limit, so `main.ts` and the `herdr/src/paint-*.ts` files may import `gpui-kit` and `gpui-base` to draw. The files that decide what to draw import neither, so they stay testable without Herdr.
 
 | File | Role |
 | --- | --- |
-| `herdr/src/main.ts` | The mod's entry: the `View` class, its tasks and its `render`. The only file that imports `herdr`, `gpui-kit` and `gpui-base`. |
+| `herdr/src/main.ts` | The mod's entry: the `View` class, its tasks and its `render`. The only file that imports `herdr`. |
 | `herdr/src/follow.ts` | Picks the session to show from focus, panes and labels. Pure, so it is tested without Herdr. |
 | `herdr/src/files.ts` | Reads an envelope and builds a press file. Checks `format`, and runs `upgradeSession`. |
 | `herdr/src/draw.ts` | Maps the shared view and plans to element descriptions, in plan order. |
@@ -28,7 +28,7 @@ A new folder, `herdr/`, holds the look. It follows `omp/`: the drawing imports o
 - **The press follow-ups leave `runPress`.** `hooks/register.tsx:runPress` mixes the terminal pane's scroll and Undo bookkeeping with what any press needs afterwards, such as `wakeForDone`. The second part moves into a function that both the pane and the Herdr press path call. The spike called `press()` alone, so its Done never woke the agent.
 - **Each host's publish and press watch.** In `hooks/register.tsx` or a module beside it, `codex/src/host.ts` and `codex/src/server.ts`, and `omp/src/host.ts`, as [Data and presses](data-and-presses.md) describes.
 
-`scripts/check-structure.mjs` gains `herdr/`'s rule: its files import only shared modules, and only `herdr/src/main.ts` imports Herdr's modules.
+`scripts/check-structure.mjs` gains `herdr/`'s rule: its files import only shared modules, only `herdr/src/main.ts` imports `herdr`, and only it and the `herdr/src/paint-*.ts` files import `gpui-kit` and `gpui-base`.
 
 ## Feature entries
 

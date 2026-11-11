@@ -382,14 +382,15 @@ test('a look counts as seen only the Status subjects the tab reported on screen,
   assert.deepEqual(afterClose.lookRows, { s1: 90_000 })
 })
 
-test('the tab reports as on screen the rows whose first line is inside its window, each with when it last was, until its next request', () => {
+test('the tab reports as on screen the subjects of the rows whose first line is inside its window, each subject a named fold stands for among them, each with when it last was, until its next request', () => {
   const rows = [
-    { id: 's1', top: -40 },
-    { id: 's2', top: 0 },
-    { id: 's3', top: 599 },
-    { id: 's4', top: 600 },
+    { subjects: 's1', top: -40 },
+    { subjects: 's2', top: 0 },
+    { subjects: 's5 s6 s7', top: 300 },
+    { subjects: 's3', top: 599 },
+    { subjects: 's4', top: 600 },
   ]
-  assert.deepEqual(rowsInView(rows, 600), ['s2', 's3'])
+  assert.deepEqual(rowsInView(rows, 600), ['s2', 's5', 's6', 's7', 's3'])
 
   takeShownRows()
   noteShownRows(['s2', 's3'], 100)

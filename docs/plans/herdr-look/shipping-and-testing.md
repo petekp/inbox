@@ -32,7 +32,7 @@ Herdr makes no stability promise for the mod API, rewrites its `.d.ts` files at 
 
 ### Unit tests
 
-In `herdr/tests/`, with `bun test`, as omp does:
+In `herdr/tests/`, with `bun test`, as omp does. The files are named `*.spec.ts`, as omp's and Codex's are, because the repo's `claude plugin test` loads every `*.test.ts` and cannot import `bun:test`:
 
 - `follow`: each focus case in [the look](look.md#following-the-focused-pane), from fixed `focused()`, `panes()` and `terminals()` values.
 - `files`: an envelope from each host's state type reads back, an older `format` upgrades, a newer one is refused, and a press file round-trips with its holds.
@@ -73,9 +73,9 @@ In the `inbox-ui` VM, with Herdr installed only there, as the spike did:
 
 ## Open questions
 
-- Does `codex queue --thread <id>` reach a Codex CLI session running in a terminal, with a sent record?
+- Does `codex queue --thread <id>` reach a Codex CLI session running in a terminal, with a sent record? Answer and Reply in Codex need it. The release pass checks it live, in a Codex session in a Herdr app terminal.
 - Can a `keys.json` binding carry a command's arguments, so a key could open the look?
-- How does the host find its pane's id from its terminal, to open the look beside itself?
+- Does `pane.focus` on a pane that shows the look, a mod that is not `focusable`, succeed? A host's next open works either way: any failure other than `no such pane` leaves the panel and says it is open. Only whether the panel takes focus depends on it.
 - Does a `height` transition on a row measured with `on_size_change` collapse it smoothly?
 - Does Herdr expose, or plan to expose, the system's reduced-motion setting to mods?
 - May the inbox write under Herdr's app home, or should Herdr name a folder for a mod's data?

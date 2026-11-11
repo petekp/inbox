@@ -271,6 +271,7 @@ function fakeSaves(id: string) {
         return { cancel: () => void (timer.isLive = false) }
       },
       log: () => undefined,
+      runningSessions: async () => null,
     } satisfies SaveEngine,
   }
   return fake
@@ -332,7 +333,7 @@ test('session pruning uses saved time and retains records whose age cannot be re
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.stored.set('s:unknown', JSON.stringify({ savedAt: 'unknown', ledger: SAVED_SESSION.ledger }))
-  for (let n = 3; n <= 40; n++)
+  for (let n = 3; n <= 41; n++)
     w.stored.set(`s:prior-${n}`, JSON.stringify({ savedAt: n, ledger: SAVED_SESSION.ledger }))
   w.stored.set('s:prior-1', JSON.stringify({ savedAt: 1, ledger: SAVED_SESSION.ledger }))
   w.stored.set('s:prior-2', JSON.stringify({ savedAt: 2, ledger: SAVED_SESSION.ledger }))

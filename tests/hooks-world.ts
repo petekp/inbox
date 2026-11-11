@@ -51,6 +51,12 @@ class World {
   surfaces: RenderSurface[] = []
 
   files: string[] = []
+  written: Record<string, string> = {}
+  isMoveFailing = false
+
+  sessionFiles: { pid: number; sessionId: string }[] | undefined
+  endedPids: number[] = []
+  isPsMissing = false
 
   copied: string[] = []
   toasts: string[] = []
@@ -74,9 +80,25 @@ class World {
   panesOpened: string[] = []
   paneOpens: PaneOpenArgs[] = []
   paneState: { isShown: boolean; isFocused: boolean } | null = null
+  missingFiles: string[] = []
 }
 
 export const w = new World()
+
+const CONFIG_DIR = '/tmp/claude-config'
+
+const sessionFiles = () => w.sessionFiles ?? [{ pid: 100, sessionId: w.sessionId }]
+
+function psAnswer(argv: readonly string[]) {
+  const live = (argv[2] ?? '').split(',').filter(pid => !w.endedPids.includes(Number(pid)))
+  return {
+    exitCode: live.length > 0 ? 0 : 1,
+    stdout: live.map(pid => `  ${pid}\n`).join(''),
+    stderr: '',
+    isStdoutTruncated: false,
+    isStderrTruncated: false,
+  }
+}
 
 type GhAnswer = World['ghAnswers'][number]
 
@@ -164,10 +186,21 @@ async function gh(argv: readonly string[]) {
   const hit = w.ghAnswers.find(a => a.match(argv))
   if (isPrsQuery(argv) && (!hit || isThreadsAnswer(hit))) return prsQueryAnswer(argv)
   await hit?.hold?.()
-  if (!hit && (argv[0] === 'open' || argv[0] === 'herdr'))
+  if (!hit && (argv[0] === 'open' || argv[0] === 'herdr' || argv[0] === 'hc'))
     return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 
   return answerOf(hit)
+}
+
+function fileCommand(argv: readonly string[]) {
+  const paths = argv.slice(argv.indexOf('--') + 1)
+  const [from = '', to = ''] = paths
+  if (argv[0] === 'mv' && w.isMoveFailing)
+    return { exitCode: 1, stdout: '', stderr: 'mv: rename failed', isStdoutTruncated: false, isStderrTruncated: false }
+  if (argv[0] === 'mv') w.written[to] = w.written[from] ?? ''
+  for (const path of argv[0] === 'mv' ? [from] : paths) delete w.written[path]
+
+  return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 }
 
 async function runBeforeAct() {
@@ -236,6 +269,11 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.sessionId = 'session-1'
   w.surfaces = []
   w.files = []
+  w.written = {}
+  w.isMoveFailing = false
+  w.sessionFiles = undefined
+  w.endedPids = []
+  w.isPsMissing = false
   w.copied = []
   w.toasts = []
   w.theme = ''
@@ -255,6 +293,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.panesOpened = []
   w.paneOpens = []
   w.paneState = null
+  w.missingFiles = []
   on('store.get', async (_$, e) => {
     if (e.key.startsWith('s:')) await w.storeHold?.()
     if (w.storeRefusal && e.key.startsWith('s:')) return { deny: w.storeRefusal }
@@ -306,7 +345,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   on('session.id', () => ({ value: w.sessionId }))
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
   on('session.root', () => ({ value: '/tmp/project' }))
-  on('env.get', (_$, e) => ({ value: vars[e.name] }))
+  on('env.get', (_$, e) => ({ value: e.name in vars || e.name !== 'CLAUDE_CONFIG_DIR' ? vars[e.name] : CONFIG_DIR }))
   on('command.register', (_$, e) => (w.commandRefusal ? { deny: w.commandRefusal } : { value: { command: e.name } }))
   on('tool.register', (_$, e) =>
     w.toolRefusal ? { deny: w.toolRefusal } : { value: { tool: `mcp__inbox__${e.name}` } },
@@ -329,13 +368,42 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
     return { value: { isCopied: true as const } }
   })
   on('fs.exists', (_$, e) => ({ value: w.files.some(f => e.path.endsWith(f)) }))
+  on('fs.list', (_$, e) => {
+    const written = Object.keys(w.written).filter(path => path.startsWith(`${e.path}/`))
+    if (written.length > 0)
+      return {
+        value: written.map(path => ({
+          name: path.slice(e.path.length + 1),
+          kind: 'file' as const,
+          size: 1,
+          mtimeMs: 1,
+          isLink: false,
+        })),
+      }
+    if (e.path !== `${CONFIG_DIR}/sessions`) return { deny: `ENOENT: ${e.path}` }
+    const entry = (name: string) => ({ name, kind: 'file' as const, size: 1, mtimeMs: 1, isLink: false })
+    return { value: sessionFiles().flatMap(f => [entry(`${f.pid}.json`), entry(`${f.pid}.key`)]) }
+  })
   on('fs.read', (_$, e) => {
+    if (e.path in w.written) return { value: w.written[e.path]! }
+    const file = sessionFiles().find(f => e.path === `${CONFIG_DIR}/sessions/${f.pid}.json`)
+    if (file) return { value: JSON.stringify({ ...file, cwd: '/tmp/project', status: 'busy', updatedAt: 1 }) }
     if (!e.path.endsWith('/.claude-plugin/plugin.json')) throw new Error(`ENOENT: ${e.path}`)
     return { value: JSON.stringify({ name: 'inbox', version: '1.2.3' }) }
   })
-  on('fs.stat', () => ({ value: { kind: 'file' as const, size: 1, mtimeMs: 1, isLink: false } }))
+  on('fs.stat', (_$, e) =>
+    w.missingFiles.includes(e.path)
+      ? { deny: 'ENOENT' }
+      : { value: { kind: 'file' as const, size: 1, mtimeMs: 1, isLink: false } },
+  )
+  on('fs.write', (_$, e) => {
+    w.written[e.path] = e.text
+    return { value: undefined }
+  })
   on('process.run', async (_$, e) => {
+    if (e.argv[0] === 'ps') return w.isPsMissing ? { deny: 'spawn ps ENOENT' } : { value: psAnswer(e.argv) }
     w.ran.push([...e.argv])
+    if (e.argv[0] === 'mv' || e.argv[0] === 'rm') return { value: fileCommand(e.argv) }
     if (w.isGhMissing && e.argv[0] === 'gh') throw new Error('spawn gh ENOENT')
     if (w.slowGhClock && e.argv[0] === 'gh') {
       await w.slowGhClock.sleep(GH_TIMEOUT_MS)
