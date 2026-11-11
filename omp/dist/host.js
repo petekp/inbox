@@ -814,8 +814,9 @@ var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} second
 
 // src/host.ts
 import { existsSync } from "fs";
+import { stat as stat4 } from "fs/promises";
 import { homedir } from "os";
-import { dirname as dirname2, join as join3 } from "path";
+import { dirname as dirname2, join as join4 } from "path";
 import { fileURLToPath } from "url";
 // package.json
 var version = "0.3.0";
@@ -3599,6 +3600,7 @@ var STATUS_TEXT_LINES = 3;
 var NEW_CLOSED_ROWS = 2;
 var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
 var NAMED_FOLD_NAMES = 2;
+var IS_FOLD_MORE_SEEN = true;
 var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function mergedLine(merged, fits) {
@@ -3668,7 +3670,8 @@ function statusPage(s, now) {
   const lookId = (id) => look === null ? null : id;
   const foldCtx = { ...ctx, lookId: null, running: [] };
   const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
-    const names = named.filter((x) => x.status === status).map((x) => x.name);
+    const closed = named.filter((x) => x.status === status);
+    const names = closed.map((x) => x.name);
     const hidden = names.length - NAMED_FOLD_NAMES;
     const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []];
     return names.length === 0 ? [] : [
@@ -3677,7 +3680,8 @@ function statusPage(s, now) {
         id: `${prefix}also-${status}`,
         depth,
         ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`
+        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`,
+        subjectIds: (IS_FOLD_MORE_SEEN ? closed : closed.slice(0, NAMED_FOLD_NAMES)).map((x) => x.id)
       }
     ];
   });
@@ -3701,7 +3705,8 @@ function statusPage(s, now) {
         id: `${prefix}open`,
         depth,
         ...SUBJECT_MARKS.queued,
-        text: `${p.foldedOpen.length} more`
+        text: `${p.foldedOpen.length} more`,
+        subjectIds: []
       }
     ] : [],
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
@@ -3739,6 +3744,9 @@ function statusPage(s, now) {
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
     }
   };
+}
+function seenSubjectIds(row) {
+  return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
 }
 function statusListRows(page) {
   return [...(page.goal?.milestones ?? []).flatMap((m) => m.rows), ...page.rows];
@@ -4567,6 +4575,7 @@ function sessionFields(saved, views) {
       phase: x.phase ?? "accepted"
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
     shownSince: saved.shownSince ?? null,
     prViews: {
@@ -4689,7 +4698,7 @@ function herdrTokens(ledger, stop, view, dialogs, isReadFailed = false) {
     ...Object.fromEntries(counts)
   };
 }
-function herdrReport(pane, tokens, seq) {
+function paneReport(pane, tokens, seq) {
   return [
     "herdr",
     "pane",
@@ -4701,17 +4710,44 @@ function herdrReport(pane, tokens, seq) {
     ...seq === undefined ? [] : ["--seq", String(seq)]
   ];
 }
-function herdrReportKey(pane, tokens) {
-  return herdrReport(pane, tokens).join(`
+var SESSION_LABEL = "inbox.session";
+function reportCommand(r, hc = "hc") {
+  if (r.target.kind === "pane")
+    return paneReport(r.target.pane, r.tokens, r.seq);
+  const labels = { [SESSION_LABEL]: r.session ?? "", ...herdrLabels(r.tokens) };
+  return [
+    hc,
+    "label",
+    r.target.terminal,
+    ...Object.entries(labels).map(([name, value]) => `${name}=${value.replace(/\p{Cc}/gu, " ")}`)
+  ];
+}
+function herdrReportKey(r) {
+  return reportCommand({ ...r, seq: undefined }).join(`
 `);
 }
 var HERDR_RETRY_MS = [5000, 30000, 120000];
-function herdrReporter() {
+function herdrReporter(log) {
   let sent = null;
   let retries = 0;
   let isRetryWaiting = false;
   let sending = Promise.resolve();
   let newest = null;
+  let hcFound = null;
+  let logged = null;
+  const runReport = async (run, r) => {
+    const options = { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS };
+    if (r.target.kind === "pane")
+      return run(reportCommand(r), options);
+    for (const hc of hcFound ? [hcFound] : r.target.hc) {
+      const result = await run(reportCommand(r, hc), options);
+      if (result.code === UNSTARTABLE_CODE)
+        continue;
+      hcFound = hc;
+      return result;
+    }
+    return null;
+  };
   const retryLater = (after) => {
     const wait = HERDR_RETRY_MS[retries];
     if (!after || isRetryWaiting || wait === undefined)
@@ -4727,12 +4763,16 @@ function herdrReporter() {
     const r = await report();
     if (!r)
       return false;
-    const key = herdrReportKey(r.pane, r.tokens);
+    const key = herdrReportKey(r);
     if (key === sent)
       return true;
     sent = null;
-    const result = await run(herdrReport(r.pane, r.tokens, r.seq), { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS }).catch(() => null);
+    const result = await runReport(run, r).catch(() => null);
     const isTaken = result?.code === 0;
+    const problem = isTaken ? null : reportProblem(r, result);
+    if (problem && problem !== logged)
+      log?.(problem);
+    logged = problem;
     if (isTaken) {
       sent = key;
       retries = 0;
@@ -4748,7 +4788,171 @@ function herdrReporter() {
   };
   return reportToHerdr;
 }
+function reportProblem(r, result) {
+  if (!result && r.target.kind === "terminal")
+    return `Herdr labels not set: no hc started. Tried ${r.target.hc.join(", then ")}.`;
+  if (!result)
+    return "Herdr report did not run.";
+  const why = result.stderr.trim();
+  return `Herdr report failed with exit ${result.code}${why ? `: ${why}` : "."}`;
+}
+function herdrTarget(env) {
+  const pane = env.HERDR_PANE_ID;
+  if (pane)
+    return { kind: "pane", pane };
+  const terminal = env.HC_TERMINAL_ID;
+  if (!terminal)
+    return null;
+  const home = env.HOME?.startsWith("/") ? env.HOME : null;
+  const named = env.HERDR_APP_HOME;
+  const appHome = named ? named.startsWith("/") ? named : null : home && `${home}/.config/herdr-app`;
+  const installed = (name) => home ? [name, `${home}/.local/bin/${name}`] : [name];
+  return { kind: "terminal", terminal, appHome, hc: installed("hc"), herdrApp: installed("herdr-app") };
+}
+function herdrLabels(tokens) {
+  return Object.fromEntries(Object.entries(tokens).map(([name, value]) => [
+    name === STATUS_TOKEN ? "inbox.status" : name.replace(/^inbox-/, "inbox."),
+    value ?? ""
+  ]));
+}
+var HERDR_FORMAT = 1;
 var SESSION_FIELDS = Object.keys(emptySession());
+function herdrEnvelope(source, session, isTrimmed = false) {
+  const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
+  const { lastHerdrPress } = session;
+  const { projectFolder, ...rest } = source;
+  return {
+    format: HERDR_FORMAT,
+    ...rest,
+    ...projectFolder?.startsWith("/") && { projectFolder },
+    ...isTrimmed && { trimmed: true },
+    ...lastHerdrPress && { lastPress: lastHerdrPress },
+    session: shared
+  };
+}
+function publishedSessionsFolder(appHome) {
+  return `${appHome}/inbox/sessions`;
+}
+function publishedSessionPath(appHome, sessionId) {
+  return `${publishedSessionsFolder(appHome)}/${sessionFile(sessionId)}`;
+}
+function pressFolder(appHome, sessionId) {
+  sessionFile(sessionId);
+  return `${appHome}/inbox/presses/${sessionId}`;
+}
+
+// ../hooks/herdr-open.ts
+var HERDR_APP_TIMEOUT_MS = 5000;
+var PANEL_LABEL = "inbox.panel";
+var NO_SUCH_PANE = "no such pane";
+function paneOf(ls, terminal) {
+  const list = (value) => Array.isArray(value) ? value : [];
+  try {
+    const spaces = list(JSON.parse(ls)?.spaces);
+    const rows = spaces.filter((space) => space?.machine == null).flatMap((space) => list(space.tabs)).flatMap((tab) => list(tab?.terminals));
+    const pane = rows.find((row) => row?.terminal === terminal)?.pane;
+    return typeof pane === "string" && pane ? pane : null;
+  } catch {
+    return null;
+  }
+}
+function printed(r, field) {
+  try {
+    return JSON.parse(r.stdout)?.[field] ?? null;
+  } catch {
+    return null;
+  }
+}
+function printedText(r, field) {
+  const value = printed(r, field);
+  return typeof value === "string" && value ? value : null;
+}
+function failure(r) {
+  if (r.code === TIMED_OUT_CODE)
+    return `it did not answer within ${HERDR_APP_TIMEOUT_MS / 1000} s`;
+  const why = printedText(r, "error") ?? (r.stderr.trim() || `exit ${r.code}`);
+  return why.split(`
+`)[0].trim();
+}
+var runFor = (calls, argv) => calls.run(argv, { cwd: "/", timeoutMs: HERDR_APP_TIMEOUT_MS });
+async function firstStarted(calls, commands, args) {
+  for (const command of commands) {
+    const r = await runFor(calls, [command, ...args]);
+    if (r.code !== UNSTARTABLE_CODE)
+      return { command, r };
+  }
+  return null;
+}
+async function labelledPanel(calls, target) {
+  const got = await firstStarted(calls, target.hc, ["get", target.terminal, "--json"]);
+  const labels = got?.r.code === 0 ? printed(got.r, "labels") : null;
+  const pane = labels && typeof labels === "object" ? labels[PANEL_LABEL] : null;
+  return typeof pane === "string" && pane ? pane : null;
+}
+var labelPanel = (calls, target, pane) => firstStarted(calls, target.hc, ["label", target.terminal, `${PANEL_LABEL}=${pane}`]);
+function hasHerdrMod(isFile, target) {
+  return target.appHome ? isFile(`${target.appHome}/mods/inbox/main.js`).catch(() => false) : Promise.resolve(false);
+}
+var noModWhy = (target) => `the Herdr app has no inbox mod in ${target.appHome ?? "its settings folder"}/mods`;
+async function openHerdrPanel(calls, target, remembered) {
+  const notOpened = (why) => ({ is: "not-opened", why });
+  if (!await hasHerdrMod(calls.isFile, target))
+    return notOpened(noModWhy(target));
+  const ls = await firstStarted(calls, target.herdrApp, ["ls"]);
+  if (!ls)
+    return notOpened(`no herdr-app started. Tried ${target.herdrApp.join(", then ")}`);
+  if (ls.r.code !== 0)
+    return notOpened(`herdr-app ls failed: ${failure(ls.r)}`);
+  const pane = paneOf(ls.r.stdout, target.terminal);
+  if (!pane)
+    return notOpened(`herdr-app ls lists no pane for terminal ${target.terminal}`);
+  const doCommand = (command, args) => runFor(calls, [ls.command, "do", command, JSON.stringify(args)]);
+  const known = await labelledPanel(calls, target) ?? remembered;
+  if (known) {
+    const focus = await doCommand("pane.focus", { pane: known });
+    if (focus.code === 0)
+      return { is: "focused", pane: known };
+    if (printedText(focus, "error") !== NO_SUCH_PANE)
+      return { is: "shown", pane: known };
+    await labelPanel(calls, target, "");
+  }
+  const split = await doCommand("pane.split", { direction: "right", pane, mod: "inbox" });
+  const panel = split.code === 0 ? printedText(split, "pane") : null;
+  if (panel) {
+    await labelPanel(calls, target, panel);
+    return { is: "opened", pane: panel };
+  }
+  if (split.code === 0)
+    return { is: "unsure", why: "it named no new pane" };
+  if (split.code === TIMED_OUT_CODE)
+    return { is: "unsure", why: failure(split) };
+  return notOpened(`Herdr did not split the pane: ${failure(split)}`);
+}
+function herdrOpenText(open) {
+  if (open.is === "not-opened")
+    return `Opened the inbox here, since ${open.why}.`;
+  if (open.is === "unsure")
+    return `Opened the inbox here. Herdr's split may also have opened it to the right of this terminal, but ${open.why}.`;
+  if (open.is === "opened")
+    return "Opened the inbox in Herdr, to the right of this terminal.";
+  return open.is === "focused" ? "The inbox is already open in Herdr. Focused it." : "The inbox is already open in Herdr, to the right of this terminal.";
+}
+function herdrPanelOpener() {
+  let remembered = null;
+  let pending = null;
+  const open = async (calls, target) => {
+    const opened = await openHerdrPanel(calls, target, remembered).catch((err) => ({
+      is: "not-opened",
+      why: err instanceof Error ? err.message : String(err)
+    }));
+    if ("pane" in opened)
+      remembered = opened.pane;
+    return { isShown: "pane" in opened, text: herdrOpenText(opened) };
+  };
+  return (calls, target) => pending ??= open(calls, target).finally(() => {
+    pending = null;
+  });
+}
 
 // ../hooks/catch-up-text.ts
 var CATCH_UP = "The ledger below may have missed turns. Write a CLOSED line for every item in <open> that the conversation shows answered, done, dealt with, or no longer relevant, and a FIXED line for every finding in <findings> that it shows was fixed. Add as NEW only what still waits on the user and is not already in <open> or <findings>.";
@@ -6257,16 +6461,19 @@ function recorded(host, s, tool, args, now) {
 function withHolds(s, holds) {
   return { ...s, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince };
 }
-function pruned(s) {
-  const inPlace = [
+function rowsInPlace(s) {
+  const since = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
+  return new Set([...s.heldRows, ...since]);
+}
+function pruned(s) {
   const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)));
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return {
     ...s,
-    ledger: pruneClosed(s.ledger, new Set([...s.heldRows, ...inPlace])),
+    ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
   };
 }
@@ -6575,14 +6782,14 @@ var goalEntry = (part) => ({ kind: "goal", part });
 function goalSection(page, typing, isUnfolded) {
   const isTyping = typing === GOAL_KEYS_ID;
   const g = page.goal;
-  const milestones = g?.milestones ?? [];
+  const gap = goalEntry({ is: "gap" });
   return [
     goalEntry({ is: "heading", text: g?.label ?? GOAL_HEADING, page: isTyping ? null : page }),
     goalEntry({ is: "title", goal: g, isTyping }),
-    ...milestones.length > 0 ? [goalEntry({ is: "gap" })] : [],
-    ...milestones.flatMap((row) => [
+    ...(g?.milestones ?? []).flatMap((row) => [
+      gap,
       goalEntry({ is: "milestone", row }),
-      ...unfoldedRows(row.rows, isUnfolded).map((r) => ({ kind: "page", row: r }))
+      ...row.rows.length > 0 ? [gap, ...unfoldedRows(row.rows, isUnfolded).map((r) => ({ kind: "page", row: r }))] : []
     ])
   ];
 }
@@ -7599,8 +7806,8 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
       if (e.kind === "page" && e.row.isRuledAbove)
         body.push(pageRule(width, style));
       const start = body.length;
-      if (e.kind === "page" && e.row.kind === "subject")
-        subjectAt.push([e.row.id, start]);
+      if (e.kind === "page")
+        subjectAt.push(...seenSubjectIds(e.row).map((id) => [id, start]));
       const id = e.kind === "page" ? e.row.id : goalPartId(e.part);
       const isSelected = id !== null && id === pageSelected?.id;
       body.push(...e.kind === "page" ? drawPageRow(e.row, d, isSelected) : drawGoalPart(e.part, d, isSelected));
@@ -8400,6 +8607,8 @@ var CLIENTS = {
         reason: "The desktop app's Button has no disabled state. `dimColor` fades only its label, and a click still shows the native press highlight before the shared press path ignores it."
       },
       "herdr-sidebar": { kind: "full" },
+      "herdr-look": { kind: "full" },
+      "herdr-open": { kind: "full" },
       "status-children": { kind: "full" },
       "child-names": { kind: "full" },
       "status-look-line": { kind: "full" },
@@ -8501,7 +8710,15 @@ var CLIENTS = {
       "dim-pressed-button": { kind: "full" },
       "herdr-sidebar": {
         kind: "different",
-        reason: "Only Codex's hooks and the update a hook starts know the Herdr pane, so a record or close during a turn reaches the sidebar at the next hook. Codex finds no stops, and runs no hook when a session ends."
+        reason: "In a Herdr pane, only Codex's hooks and the update a hook starts report, so a record or close during a turn reaches the sidebar at the next hook. In a Herdr app terminal, the MCP server labels too. Codex finds no stops, and runs no hook when a session ends, so its tokens or labels stay."
+      },
+      "herdr-look": {
+        kind: "different",
+        reason: "Codex runs no hook when a session ends, so its published file stays."
+      },
+      "herdr-open": {
+        kind: "unsupported",
+        reason: "The Codex CLI has no action that opens the inbox. A Codex plugin adds skills, MCP servers and hooks but no slash command, and the Inbox tab shows only in the Codex app. A `$inbox` skill that has the model call an MCP tool could open the Herdr look, but only after a model turn, so the press could not show what it did at once. It is left as an option."
       },
       "status-children": {
         kind: "different",
@@ -8603,6 +8820,8 @@ var CLIENTS = {
         reason: "The panel already draws a follow-up such as Discuss dim, and has no dimmer style, so an out follow-up looks as it does at rest until it is focused. Its key still does nothing."
       },
       "herdr-sidebar": { kind: "full" },
+      "herdr-look": { kind: "full" },
+      "herdr-open": { kind: "full" },
       "status-children": {
         kind: "different",
         reason: "omp's extension events report subagents and bash calls. omp's reference names no event for a workflow run, so those do not show."
@@ -9937,6 +10156,200 @@ function styleOf(theme) {
   };
 }
 
+// src/ask-form.ts
+var TOKEN = /<!--[\s\S]*?-->|<(\/?)([a-zA-Z][\w-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>|([^<]+)/g;
+var ATTR = /([^\s=/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
+var ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+var SKIPPED = new Set(["script", "style", "svg", "pre"]);
+var CONTEXT_BLOCKS = new Set(["ul", "ol", "table"]);
+var BLOCKS = new Set(["p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "section", "form", "hr"]);
+var UNANSWERED_INPUTS = new Set(["hidden", "submit", "button", "reset", "image"]);
+var LABEL = /<label\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/label>/gi;
+function decoded(text) {
+  return text.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (whole, code) => {
+    if (code[0] !== "#")
+      return ENTITIES[code.toLowerCase()] ?? whole;
+    const n = code[1] === "x" || code[1] === "X" ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+    return Number.isFinite(n) ? String.fromCodePoint(n) : whole;
+  });
+}
+function oneLine(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+function attrsOf(raw) {
+  return new Map([...raw.matchAll(ATTR)].map((m) => [m[1].toLowerCase(), decoded(m[2] ?? m[3] ?? m[4] ?? "")]));
+}
+function labelsFor(html) {
+  return new Map([...html.matchAll(LABEL)].flatMap((m) => {
+    const id = attrsOf(m[1] ?? "").get("for");
+    return id === undefined ? [] : [[id, oneLine(decoded((m[2] ?? "").replace(/<[^>]*>/g, " ")))]];
+  }));
+}
+function questionOf(f) {
+  const own = f.wrapped || f.detached;
+  if (f.kind === "text")
+    return oneLine(own || f.name.replace(/[_-]+/g, " "));
+  const lone = f.options.length === 1 ? optionLabel(f.options[0]) : "";
+  return oneLine(own || f.caption || f.title || lone || f.name);
+}
+function optionLabel(o) {
+  return o.wrapped || o.fallback;
+}
+function formQuestions(html) {
+  const fields = [];
+  const groups = new Map;
+  const labelFor = labelsFor(html);
+  let loose = "";
+  let caption = "";
+  let title = "";
+  let fieldsetDepth = 0;
+  let context = null;
+  let legend = null;
+  let skipped = null;
+  let label = null;
+  let select = null;
+  let option = null;
+  const flush = () => {
+    if (oneLine(loose) !== "")
+      caption = oneLine(loose);
+    loose = "";
+  };
+  const endOption = () => {
+    if (option) {
+      const text = oneLine(option.text);
+      select?.options.push({ wrapped: text, fallback: option.value, checked: option.checked });
+    }
+    option = null;
+  };
+  const detachedOf = (attrs) => {
+    const id = attrs.get("id");
+    return (id !== undefined ? labelFor.get(id) : undefined) || attrs.get("aria-label") || attrs.get("title") || "";
+  };
+  const addField = (name, kind, attrs) => {
+    flush();
+    const field = { name, kind, wrapped: "", detached: detachedOf(attrs), caption, title, options: [] };
+    caption = "";
+    fields.push(field);
+    if (kind !== "group")
+      label?.targets.push((text) => field.wrapped = text);
+    return field;
+  };
+  for (const [, slash, rawTag, rawAttrs, text] of html.matchAll(TOKEN)) {
+    const tag = rawTag?.toLowerCase();
+    const isClose = slash === "/";
+    if (skipped) {
+      if (tag === skipped.tag)
+        skipped.depth += isClose ? -1 : 1;
+      if (skipped.depth === 0)
+        skipped = null;
+      continue;
+    }
+    if (text !== undefined) {
+      const plain = decoded(text);
+      if (option)
+        option.text += plain;
+      else if (legend !== null)
+        legend += plain;
+      else if (label)
+        label.text += plain;
+      else if (context)
+        context.text += plain;
+      else
+        loose += plain;
+      continue;
+    }
+    if (!tag)
+      continue;
+    const attrs = attrsOf(rawAttrs ?? "");
+    const name = attrs.get("name") ?? "";
+    if (tag === "option" || tag === "select")
+      endOption();
+    if (isClose) {
+      if (tag === "legend" && legend !== null) {
+        if (fieldsetDepth === 1)
+          title = oneLine(legend);
+        legend = null;
+      } else if (tag === "label" && label) {
+        const done = oneLine(label.text);
+        label.targets.forEach((set) => set(done));
+        label = null;
+      } else if (tag === "fieldset") {
+        fieldsetDepth = Math.max(0, fieldsetDepth - 1);
+        if (fieldsetDepth === 0)
+          [loose, caption, title] = ["", "", ""];
+      } else if (tag === "select") {
+        select = null;
+      } else if (CONTEXT_BLOCKS.has(tag) && context) {
+        context.depth -= 1;
+        if (context.depth === 0 && oneLine(context.text) !== "")
+          caption = "";
+        if (context.depth === 0)
+          context = null;
+      } else if (BLOCKS.has(tag)) {
+        flush();
+      }
+      continue;
+    }
+    if (tag === "fieldset") {
+      flush();
+      fieldsetDepth += 1;
+      if (fieldsetDepth === 1)
+        [caption, title] = ["", ""];
+    } else if (tag === "legend") {
+      legend = "";
+    } else if (tag === "label") {
+      flush();
+      label = { text: "", targets: [] };
+    } else if (tag === "select" && name !== "") {
+      select = addField(name, "select", attrs);
+    } else if (tag === "option") {
+      if (select)
+        option = { text: "", value: attrs.get("value") ?? "", checked: attrs.has("selected") };
+    } else if (tag === "textarea" || tag === "input") {
+      const type = tag === "textarea" ? "textarea" : (attrs.get("type") ?? "text").toLowerCase();
+      if (tag === "textarea")
+        skipped = { tag, depth: 1 };
+      if (name === "" || UNANSWERED_INPUTS.has(type))
+        continue;
+      if (type !== "radio" && type !== "checkbox") {
+        addField(name, "text", attrs);
+        continue;
+      }
+      const key = `${type}:${name}`;
+      const field = groups.get(key) ?? addField(name, "group", new Map);
+      groups.set(key, field);
+      const added = {
+        wrapped: "",
+        fallback: detachedOf(attrs) || attrs.get("value") || name,
+        checked: attrs.has("checked")
+      };
+      field.options.push(added);
+      label?.targets.push((text) => added.wrapped = text);
+    } else if (CONTEXT_BLOCKS.has(tag)) {
+      flush();
+      if (context)
+        context.depth += 1;
+      else
+        context = { depth: 1, text: "" };
+    } else if (SKIPPED.has(tag) || tag === "img") {
+      flush();
+      caption = "";
+      if (tag !== "img")
+        skipped = { tag, depth: 1 };
+    } else if (BLOCKS.has(tag)) {
+      flush();
+    }
+  }
+  return fields.map((f) => {
+    const recommended = f.options.findIndex((o) => o.checked);
+    return {
+      question: questionOf(f),
+      options: f.options.map((o) => ({ label: optionLabel(o) })),
+      ...recommended >= 0 ? { recommended } : {}
+    };
+  });
+}
+
 // src/tool-calls.ts
 function activityOf(tool, input) {
   switch (tool) {
@@ -9948,17 +10361,29 @@ function activityOf(tool, input) {
   }
   return null;
 }
+function askQuestions(input) {
+  if (Array.isArray(input.questions))
+    return dialogQuestions(input.questions);
+  return typeof input.html === "string" ? dialogQuestions(formQuestions(input.html)) : [];
+}
+function formAnswerText(answers) {
+  const answered = (Array.isArray(answers) ? answers : []).flatMap((a) => typeof a?.question === "string" && typeof a.answer === "string" && a.answer.trim() !== "" ? [`"${a.question}"="${a.answer.trim()}"`] : []);
+  return answered.length > 0 ? answered.join(", ") : null;
+}
 function askOutcome(event) {
   const details = event.details ?? {};
-  const answer = event.content.flatMap((b) => b.type === "text" && b.text ? [b.text] : []).join(`
+  const text = event.content.flatMap((b) => b.type === "text" && b.text ? [b.text] : []).join(`
 `);
-  if (event.isError || details.chatRedirect || answer === "")
+  if (event.isError || text === "")
     return { kind: "dismissed" };
-  return { kind: details.timedOut ? "timed-out" : "answered", answer };
+  if (Array.isArray(details.answers) && details.answers.length === 0)
+    return null;
+  const answer = formAnswerText(details.answers) ?? text;
+  return { kind: details.timedOut === true ? "timed-out" : "answered", answer };
 }
 function isDismissedAsk(message) {
   const m = message;
-  return m?.role === "toolResult" && m.toolName === "ask" && Array.isArray(m.content) && askOutcome({ content: m.content, isError: m.isError === true, details: m.details }).kind === "dismissed";
+  return m?.role === "toolResult" && m.toolName === "ask" && Array.isArray(m.content) && askOutcome({ content: m.content, isError: m.isError === true, details: m.details })?.kind === "dismissed";
 }
 
 // src/host-context.ts
@@ -10024,7 +10449,8 @@ function conversationOf(entries) {
         return [];
       const input = block.arguments ?? {};
       const result = typeof block.id === "string" ? results.get(block.id) : undefined;
-      const line = block.name === "ask" ? dialogActivity(dialogQuestions(input.questions), result ? askOutcome({ ...result, content: result.content, isError: result.isError === true }) : { kind: "open" }) : activityOf(block.name, input);
+      const outcome = block.name === "ask" && result ? askOutcome({ ...result, content: result.content, isError: result.isError === true }) : { kind: "open" };
+      const line = block.name !== "ask" ? activityOf(block.name, input) : outcome ? dialogActivity(askQuestions(input), outcome) : null;
       return line ? [line] : [];
     });
     return [{ role: "agent", text: textOfBlocks(m.content), activity }];
@@ -10135,8 +10561,10 @@ function activityHandlers(context, sessions) {
     }
     if (event.toolName !== "ask")
       return;
-    const questions = dialogQuestions(event.input.questions);
     const outcome = askOutcome(event);
+    if (!outcome)
+      return;
+    const questions = askQuestions(event.input);
     const line = dialogActivity(questions, outcome);
     const endedAt = deps.now();
     await change(sessionIdOf(ctx), (s) => {
@@ -10149,6 +10577,87 @@ function activityHandlers(context, sessions) {
     });
   };
   return { onSubagentLifecycle, onSubagentProgress, onToolExecutionStart, onToolExecutionEnd, onToolResult };
+}
+
+// src/host-presses.ts
+import { watch } from "fs";
+import { appendFile, mkdir as mkdir2, readdir as readdir2, readFile as readFile2, rename as rename2, rm, stat as stat2, writeFile as writeFile2 } from "fs/promises";
+import { join as join2 } from "path";
+
+// ../hooks/herdr-press-file.ts
+var PRESS_TARGETS = {
+  answer: "id",
+  type: "id",
+  explain: "id",
+  compare: "id",
+  done: "id",
+  dismiss: "id",
+  address: "id",
+  issue: "id",
+  discuss: "id",
+  undo: "id",
+  discard: "id",
+  step: "id",
+  "remove-goal": "id",
+  "restore-goal": "id",
+  "thread-address": "ref",
+  "thread-draft": "ref",
+  "thread-discuss": "ref",
+  "thread-open": "ref",
+  "pr-conflicts": "ref",
+  "pr-address-all": "ref",
+  "pr-merge": "ref",
+  "pr-open": "ref",
+  "pr-dismiss": "ref",
+  "pr-undo": "ref",
+  "check-fix": "ref",
+  "check-rerun": "ref",
+  log: "ref",
+  "pr-rank-again": null,
+  "pr-refresh": null
+};
+var isRecord = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
+var isTimes = (x) => isRecord(x) && Object.values(x).every((at) => typeof at === "number");
+function pressProblem(press) {
+  if (!isRecord(press) || typeof press.action !== "string")
+    return "press has no action";
+  if (!Object.hasOwn(PRESS_TARGETS, press.action))
+    return `unknown action ${press.action}`;
+  const target = PRESS_TARGETS[press.action];
+  return target === null || typeof press[target] === "string" ? null : `${press.action} has no ${target}`;
+}
+function holdsProblem(holds) {
+  if (!isRecord(holds))
+    return "no holds";
+  if (!isTimes(holds.replies) || !isTimes(holds.discarded))
+    return "holds without replies or discarded times";
+  return holds.shownSince === null || typeof holds.shownSince === "number" ? null : "holds without shownSince";
+}
+function resultProblem(result) {
+  if (result === undefined)
+    return null;
+  return isRecord(result) && (result.error === null || typeof result.error === "string") ? null : "result without error";
+}
+function pressFile(text) {
+  let file;
+  try {
+    file = JSON.parse(text);
+  } catch {
+    return { ok: false, reason: "not JSON" };
+  }
+  if (!isRecord(file))
+    return { ok: false, reason: "not an object" };
+  if (file.format !== HERDR_FORMAT)
+    return { ok: false, reason: `unknown format ${String(file.format)}` };
+  if (typeof file.id !== "string" || file.id === "")
+    return { ok: false, reason: "no id" };
+  if (typeof file.pressedAt !== "number" || !Number.isFinite(file.pressedAt))
+    return { ok: false, reason: "no pressedAt" };
+  const reason = pressProblem(file.press) ?? holdsProblem(file.holds) ?? resultProblem(file.result);
+  if (reason)
+    return { ok: false, reason };
+  const read = file;
+  return { ok: true, file: { ...read, holds: { ...read.holds, listInput: null } } };
 }
 
 // ../hooks/held-sends.ts
@@ -10479,6 +10988,235 @@ async function press(host, p, isStale, holds) {
   return (await startPress(host, p, isStale, holds)).finish();
 }
 
+// ../hooks/herdr-app.ts
+var PRESS_FILE_LIMIT_BYTES = 64 * 1024;
+function pressFileProblem(info) {
+  if (!info.isFile())
+    return "not a file";
+  return info.size > PRESS_FILE_LIMIT_BYTES ? `over ${PRESS_FILE_LIMIT_BYTES} bytes` : null;
+}
+async function isPublishedHere(read, appHome, sessionId, host, terminal) {
+  try {
+    const envelope = JSON.parse(await read(publishedSessionPath(appHome, sessionId)));
+    return envelope?.host === host && envelope.terminal === terminal;
+  } catch {
+    return false;
+  }
+}
+var PUBLISH_LIMIT_BYTES = 1024 * 1024;
+function utf8Bytes(text) {
+  let bytes = 0;
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0;
+    bytes += code < 128 ? 1 : code < 2048 ? 2 : code < 65536 ? 3 : 4;
+  }
+  return bytes;
+}
+var isOverLimit = (text) => text.length * 3 > PUBLISH_LIMIT_BYTES && utf8Bytes(text) > PUBLISH_LIMIT_BYTES;
+function withoutFoldedClosed(s) {
+  const inPlace = rowsInPlace(s);
+  const { closed, closedFindings } = s.ledger;
+  return {
+    ...s,
+    ledger: {
+      ...s.ledger,
+      closed: closed.filter((c) => inPlace.has(c.id)),
+      closedFindings: closedFindings.filter((f) => inPlace.has(f.id))
+    }
+  };
+}
+function publishedText(source, session, log) {
+  const text = JSON.stringify(herdrEnvelope(source, session));
+  if (!isOverLimit(text))
+    return text;
+  const trimmed = JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session), true));
+  if (isOverLimit(trimmed))
+    log(`Herdr publish is over ${PUBLISH_LIMIT_BYTES} bytes after trimming, so the look cannot read it`);
+  return trimmed;
+}
+async function publishSession(files, appHome, source, session, log) {
+  const path = publishedSessionPath(appHome, source.sessionId);
+  const temporary = `${path}.${source.writtenAt}-${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    await files.write(temporary, publishedText(source, session, log));
+    await files.move(temporary, path);
+  } catch (err) {
+    await files.remove(temporary).catch(() => {
+      return;
+    });
+    throw err;
+  }
+}
+function publishedSession(files, appHome, source, session, log) {
+  if (!appHome)
+    return Promise.resolve(false);
+  return publishSession(files, appHome, source, session, log).then(() => true, (err) => {
+    log(`Herdr publish failed: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  });
+}
+async function unpublishSession(files, appHome, sessionId) {
+  await Promise.all([
+    files.remove(publishedSessionPath(appHome, sessionId)),
+    files.removeFolder(pressFolder(appHome, sessionId))
+  ]);
+}
+var LOGGED_CHARS = 100;
+var message = (err) => err instanceof Error ? err.message : String(err);
+var logged = (text) => clipLabel(text, LOGGED_CHARS);
+function pressDrainer(files, owns, apply, log) {
+  const takenMark = `.${Math.random().toString(36).slice(2)}.taken`;
+  const draining = new Map;
+  const drainOnce = async (folder, sessionId) => {
+    const names = [...await files.list(folder).catch(() => [])].filter((name) => name.endsWith(".json")).sort();
+    if (names.length === 0 || !await owns(sessionId).catch(() => false))
+      return;
+    const waiting = [];
+    for (const name of names) {
+      const path = `${folder}/${name}`;
+      const taken = `${path}${takenMark}`;
+      if (!await files.move(path, taken).then(() => true, () => false))
+        continue;
+      const read = await files.read(taken).then(pressFile, (err) => ({
+        ok: false,
+        reason: `not read: ${message(err)}`
+      }));
+      if (read.ok)
+        waiting.push({ path, taken, file: read.file });
+      else {
+        log(`Herdr press ${logged(name)} refused: ${logged(read.reason)}`);
+        await files.remove(taken).catch(() => {
+          return;
+        });
+      }
+    }
+    for (const { path, taken, file } of waiting.sort((a, b) => a.file.pressedAt - b.file.pressedAt)) {
+      const isTaken = await apply(sessionId, file).catch((err) => {
+        log(`Herdr press ${logged(file.id)} failed: ${message(err)}`);
+        return true;
+      });
+      if (isTaken) {
+        await files.remove(taken).catch((err) => log(`Herdr press ${logged(file.id)} not removed: ${message(err)}`));
+      } else {
+        await files.move(taken, path).catch((err) => log(`Herdr press ${logged(file.id)} not put back: ${message(err)}`));
+      }
+    }
+  };
+  return async (appHome, sessionId) => {
+    const folder = pressFolder(appHome, sessionId);
+    const running = draining.get(folder);
+    if (running) {
+      running.again = true;
+      return running.done;
+    }
+    const entry = { again: false, done: Promise.resolve() };
+    draining.set(folder, entry);
+    entry.done = (async () => {
+      try {
+        do {
+          entry.again = false;
+          await drainOnce(folder, sessionId);
+        } while (entry.again);
+      } finally {
+        draining.delete(folder);
+      }
+    })();
+    return entry.done;
+  };
+}
+var PRESS_POLL_MS = 1e4;
+function followPresses(drain, wakes, every, log) {
+  const wake = () => void drain().catch((err) => log(`Herdr presses not read: ${message(err)}`));
+  wake();
+  const stopPoll = every(PRESS_POLL_MS, wake);
+  const stopWakes = wakes(wake);
+  return () => {
+    stopPoll();
+    stopWakes();
+  };
+}
+async function applyLookPress(host, file) {
+  const { result } = file;
+  const outcome = await press(result ? { ...host, perform: async () => result.error } : host, file.press, false, file.holds);
+  const lastHerdrPress = { id: file.id, outcome: outcome.note === "stale" ? "stale" : "applied" };
+  await host.update((s) => ({ ...s, lastHerdrPress }));
+  return outcome;
+}
+
+// src/host-presses.ts
+var HERDR_LOG_BYTES = 64 * 1024;
+function herdrLog(dir) {
+  const path = join2(dir, "herdr.log");
+  return (text) => void (async () => {
+    const size = await stat2(path).then((s) => s.size, () => 0);
+    const line = `${new Date().toISOString()} ${text}
+`;
+    await mkdir2(dir, { recursive: true });
+    await (size > HERDR_LOG_BYTES ? writeFile2(path, line) : appendFile(path, line));
+  })().catch(() => {
+    return;
+  });
+}
+var pressFiles = {
+  list: (folder) => readdir2(folder),
+  read: async (path) => {
+    const problem = pressFileProblem(await stat2(path));
+    if (problem)
+      throw new Error(problem);
+    return readFile2(path, "utf8");
+  },
+  move: (from, to) => rename2(from, to),
+  remove: (path) => rm(path, { force: true })
+};
+var message2 = (err) => err instanceof Error ? err.message : String(err);
+function ompPresses(target, apply, log) {
+  let stopFollowing = null;
+  const stop = () => {
+    stopFollowing?.();
+    stopFollowing = null;
+  };
+  return {
+    follow: (ctx) => {
+      stop();
+      if (target?.kind !== "terminal" || !target.appHome)
+        return;
+      const { appHome, terminal } = target;
+      const id = sessionIdOf(ctx);
+      let folder;
+      try {
+        folder = pressFolder(appHome, id);
+      } catch (err) {
+        return log(`Herdr presses not read: ${message2(err)}`);
+      }
+      const drain = pressDrainer(pressFiles, (sessionId) => isPublishedHere((path) => readFile2(path, "utf8"), appHome, sessionId, "omp", terminal), async (_id, file) => {
+        await apply(ctx, file);
+        return true;
+      }, log);
+      const watchFolder = (wake) => {
+        let isStopped = false;
+        let watcher = null;
+        mkdir2(folder, { recursive: true }).then(() => {
+          if (isStopped)
+            return;
+          watcher = watch(folder, () => wake());
+          watcher.on("error", (err) => log(`Herdr presses not watched: ${message2(err)}`));
+          wake();
+        }).catch((err) => log(`Herdr presses not watched: ${message2(err)}`));
+        return () => {
+          isStopped = true;
+          watcher?.close();
+        };
+      };
+      stopFollowing = followPresses(() => drain(appHome, id), watchFolder, (ms, fn) => {
+        const timer = setInterval(fn, ms);
+        timer.unref();
+        return () => clearInterval(timer);
+      }, log);
+    },
+    stop
+  };
+}
+
 // src/host-panel.ts
 function panelCalls(context, sessions) {
   const { deps, dir, openPanels, prFetches, listeners, memory, sendToAgent, modelNameOf } = context;
@@ -10551,8 +11289,8 @@ function panelCalls(context, sessions) {
       listeners.set(id, set);
       return () => void set.delete(listener);
     },
-    press: async (ctx, p, holds) => {
-      const outcome = await press(hostFor(ctx), p, false, holds);
+    press: async (ctx, p, holds, look) => {
+      const outcome = await (look ? applyLookPress(hostFor(ctx), look) : press(hostFor(ctx), p, false, holds));
       if (outcome.wakesAfterSettle)
         wakeLater(ctx);
       return outcome;
@@ -10576,8 +11314,8 @@ function panelCalls(context, sessions) {
 }
 
 // src/host-sessions.ts
-import { mkdir as mkdir2, readdir as readdir2, rm, rmdir, writeFile as writeFile2 } from "fs/promises";
-import { dirname, join as join2 } from "path";
+import { mkdir as mkdir3, readdir as readdir3, rename as rename3, rm as rm2, rmdir, writeFile as writeFile3 } from "fs/promises";
+import { dirname, join as join3 } from "path";
 
 // ../hooks/conversation.ts
 var NL7 = `
@@ -10614,10 +11352,10 @@ function flattenConversation(turns) {
 
 // src/commands.ts
 import { constants } from "fs";
-import { access, stat as stat2 } from "fs/promises";
+import { access, stat as stat3 } from "fs/promises";
 function openTarget2(run, target, root, home) {
   return openTarget(run, {
-    stat: (path) => stat2(path).catch(() => null),
+    stat: (path) => stat3(path).catch(() => null),
     isExecutable: (path) => access(path, constants.X_OK).then(() => true, () => false)
   }, target, root, home);
 }
@@ -10627,18 +11365,27 @@ var WAKE_MARGIN_MS = 250;
 function sessionIdInFile(file) {
   return /(?:^|[\\/])[^_\\/]+_([^\\/]+)\.jsonl$/.exec(file)?.[1] ?? null;
 }
+var publishFiles = {
+  write: async (path, text) => {
+    await mkdir3(dirname(path), { recursive: true });
+    await writeFile3(path, text);
+  },
+  move: (from, to) => rename3(from, to),
+  remove: (path) => rm2(path, { force: true }),
+  removeFolder: (path) => rm2(path, { recursive: true, force: true })
+};
 var recordFiles = {
   write: async (path, text) => {
-    await mkdir2(dirname(path), { recursive: true });
-    await writeFile2(path, text);
+    await mkdir3(dirname(path), { recursive: true });
+    await writeFile3(path, text);
   },
-  list: (folder) => readdir2(folder).catch(() => []),
-  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm(p, { force: true }))),
+  list: (folder) => readdir3(folder).catch(() => []),
+  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm2(p, { force: true }))),
   removeFolder: (path) => rmdir(path)
 };
 var statusRecords = (dir, sessionId) => ({
   host: "omp",
-  folder: join2(dir, "overview-calls"),
+  folder: join3(dir, "overview-calls"),
   session: sessionId,
   files: recordFiles
 });
@@ -10671,15 +11418,42 @@ function sessionCalls(context) {
     return saved;
   };
   const gh = ghFinder(run);
-  function reportCounts(id) {
-    const pane = deps.herdrPane;
-    if (!pane || id !== memory.shownId)
+  function reportCounts(id, left) {
+    const target = deps.herdrTarget;
+    if (!target || id !== memory.shownId)
       return;
+    const appHome = target.kind === "terminal" ? target.appHome : null;
     deps.background(reportToHerdr(run, async () => {
+      if (appHome && left)
+        await unpublishSession(publishFiles, appHome, left).catch(() => {
+          return;
+        });
       const s = await readState(dir, id);
-      const view = sessionView(s, deps.now(), deps.settleWindowMs);
-      return { pane, tokens: herdrTokens(s.ledger, s.stop, view, []) };
+      const now = deps.now();
+      const isPublished = target.kind === "terminal" && await publishedSession(publishFiles, appHome, {
+        host: "omp",
+        agent: OMP.agent,
+        sessionId: id,
+        terminal: target.terminal,
+        writtenAt: now,
+        projectFolder: memory.shownCwd?.()
+      }, s, context.logHerdr);
+      const view = sessionView(s, now, deps.settleWindowMs);
+      return { target, tokens: herdrTokens(s.ledger, s.stop, view, []), session: isPublished ? id : null };
     }, deps.after));
+  }
+  function reportEnded(id) {
+    const target = deps.herdrTarget;
+    if (!target)
+      return Promise.resolve(false);
+    const appHome = target.kind === "terminal" ? target.appHome : null;
+    return reportToHerdr(run, async () => {
+      if (appHome)
+        await unpublishSession(publishFiles, appHome, id).catch(() => {
+          return;
+        });
+      return { target, tokens: CLEARED_TOKENS, session: null };
+    }, deps.after);
   }
   const resultsOrder = orderedKeys();
   function hostFor(ctx) {
@@ -10691,7 +11465,7 @@ function sessionCalls(context) {
       exclusive: (fn) => exclusiveRun(dir, id, fn),
       ask: askFor(ctx, id),
       deliver: async (_s, text) => {
-        const why = sendToAgent(ctx, text);
+        const why = await sendToAgent(ctx, text);
         return why === null ? { state: "accepted", queuedId: null } : { state: "rejected", reason: why };
       },
       perform: async (_s, effect) => effect.kind === "copy" ? deps.copy(effect.text) : openTarget2(run, effect.target, ctx.cwd, deps.home),
@@ -10799,6 +11573,7 @@ function sessionCalls(context) {
     hostFor,
     updateHostFor,
     reportCounts,
+    reportEnded,
     prepare,
     continueFork,
     catchUpUnseen,
@@ -10811,8 +11586,8 @@ function sessionCalls(context) {
 // src/host-turns.ts
 var MESSAGE_TYPE = "inbox";
 function turnHandlers(context, sessions) {
-  const { deps, dir, openPanels, prepared, reportToHerdr, run, memory, dropTools, showBand, sendNotes } = context;
-  const { change, endedTurn, hostFor, updateHostFor, reportCounts, prepare, continueFork, catchUpUnseen } = sessions;
+  const { deps, dir, openPanels, prepared, run, memory, dropTools, showBand, sendNotes } = context;
+  const { change, endedTurn, hostFor, updateHostFor, reportCounts, reportEnded, prepare, continueFork, catchUpUnseen } = sessions;
   let noted = null;
   let agentTexts = null;
   async function arrive(ctx, id, text, finishedReply) {
@@ -10840,9 +11615,12 @@ function turnHandlers(context, sessions) {
     if (isUnattended(ctx))
       return dropTools();
     const id = sessionIdOf(ctx);
+    const left = memory.shownId ?? undefined;
     memory.shownId = id;
     memory.framesFor = id;
-    reportCounts(id);
+    memory.shownCwd = () => ctx.cwd;
+    reportCounts(id, left === id ? undefined : left);
+    context.presses.follow(ctx);
     const saved = await readState(dir, id).catch(() => null);
     const isCutOff = saved?.presence.isTurnRunning || saved?.ledger.overview?.children.some((c) => c.endedAt === null);
     if (isCutOff)
@@ -10869,11 +11647,12 @@ function turnHandlers(context, sessions) {
       noted = null;
     if (agentTexts?.id === id)
       agentTexts = null;
-    const pane = deps.herdrPane;
-    if (id !== memory.shownId || !pane)
+    if (id !== memory.shownId)
       return;
     memory.shownId = null;
-    await reportToHerdr(run, async () => ({ pane, tokens: CLEARED_TOKENS }), deps.after);
+    memory.shownCwd = null;
+    context.presses.stop();
+    await reportEnded(id);
   };
   const onBeforeAgentStart = async (event, ctx) => {
     if (isUnattended(ctx))
@@ -11032,13 +11811,13 @@ async function copyToClipboard(text) {
   return `no clipboard command started (${candidates.map((c) => c[0]).join(", ")})`;
 }
 var defaultDeps = {
-  stateDir: (pi) => join3(pi.pi.getAgentDir(), "inbox"),
+  stateDir: (pi) => join4(pi.pi.getAgentDir(), "inbox"),
   now: Date.now,
   newId: randomUUID,
   settleWindowMs: SETTLED_MS,
   home: homedir(),
-  isNextBuild: existsSync(join3(dirname2(dirname2(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
-  comparePage: join3(dirname2(fileURLToPath(import.meta.url)), COMPARE_PAGE_FILE),
+  isNextBuild: existsSync(join4(dirname2(dirname2(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
+  comparePage: join4(dirname2(fileURLToPath(import.meta.url)), COMPARE_PAGE_FILE),
   complete: defaultComplete,
   copy: copyToClipboard,
   background: (work) => void work.catch(() => {
@@ -11046,7 +11825,7 @@ var defaultDeps = {
   }),
   after: (ms, fn) => void setTimeout(fn, ms).unref(),
   isUsageLimit: isUsageLimitOutcome,
-  herdrPane: process.env.HERDR_PANE_ID || null
+  herdrTarget: herdrTarget(process.env)
 };
 var messageOf = (err) => err instanceof Error ? err.message : String(err);
 function byNewestRevision(a, b) {
@@ -11071,13 +11850,29 @@ function createInbox(pi, deps = defaultDeps) {
       return { code: UNSTARTABLE_CODE, stdout: "", stderr: messageOf(err) };
     }
   };
-  const sendToAgent = (ctx, text) => {
+  const runStartWaiters = new Map;
+  const sendToAgent = async (ctx, text) => {
+    const id = sessionIdOf(ctx);
+    const waiters = runStartWaiters.get(id) ?? new Set;
+    runStartWaiters.set(id, waiters);
+    let started = () => {};
+    const runStarted = new Promise((resolve) => {
+      started = () => resolve(null);
+    });
+    waiters.add(started);
     try {
-      pi.sendUserMessage(text, ctx.isIdle() ? undefined : { deliverAs: "followUp" });
-      return null;
+      const options = ctx.isIdle() ? undefined : { deliverAs: "followUp" };
+      const sent = Promise.resolve(pi.sendUserMessage(text, options)).then(() => null, (err) => messageOf(err));
+      return await Promise.race([sent, runStarted]);
     } catch (err) {
       return messageOf(err);
+    } finally {
+      waiters.delete(started);
     }
+  };
+  const onRunStart = (ctx) => {
+    for (const started of runStartWaiters.get(sessionIdOf(ctx)) ?? [])
+      started();
   };
   function askFor(ctx, id) {
     return async (prompt, system, _kind, report) => {
@@ -11130,6 +11925,10 @@ function createInbox(pi, deps = defaultDeps) {
     const model = inboxModel(ctx);
     return model ? model.name ?? model.id : null;
   };
+  const logHerdr = herdrLog(dir);
+  const applyHerdrPress = async (ctx, file) => {
+    await inbox.press(ctx, file.press, file.holds, file);
+  };
   const context = {
     deps,
     dir,
@@ -11137,9 +11936,11 @@ function createInbox(pi, deps = defaultDeps) {
     prepared: new Set,
     prFetches: prFetchTracker(deps.now),
     listeners: new Map,
-    reportToHerdr: herdrReporter(),
+    reportToHerdr: herdrReporter(logHerdr),
+    logHerdr,
+    presses: ompPresses(deps.herdrTarget, (ctx, file) => applyHerdrPress(ctx, file), logHerdr),
     run,
-    memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null },
+    memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null, shownCwd: null },
     sendToAgent,
     askFor,
     dropTools,
@@ -11163,7 +11964,10 @@ function createInbox(pi, deps = defaultDeps) {
   pi.on("session_shutdown", turns.onSessionShutdown);
   pi.on("before_agent_start", turns.onBeforeAgentStart);
   pi.on("input", turns.onInput);
-  pi.on("agent_start", turns.onAgentStart);
+  pi.on("agent_start", (event, ctx) => {
+    onRunStart(ctx);
+    return turns.onAgentStart(event, ctx);
+  });
   pi.on("turn_start", turns.onTurnStart);
   pi.on("tool_execution_start", activity.onToolExecutionStart);
   pi.on("tool_execution_end", activity.onToolExecutionEnd);
@@ -11275,10 +12079,19 @@ function createInbox(pi, deps = defaultDeps) {
       showBand(ctx);
     }
   }
+  const openHerdrPanel = herdrPanelOpener();
+  const isFile = (path) => stat4(path).then((s) => s.isFile());
   pi.registerCommand("inbox", {
     description: inboxCommandText(deps.isNextBuild),
     handler: async (args, ctx) => {
       const isDemo = args.trim() === "demo";
+      const target = deps.herdrTarget;
+      const isHerdrApp = ctx.mode === "tui" && !args.trim() && target?.kind === "terminal";
+      const herdr = isHerdrApp ? await openHerdrPanel({ run, isFile }, target) : null;
+      if (herdr)
+        ctx.ui.notify(herdr.text, herdr.isShown ? "info" : "warning");
+      if (herdr?.isShown)
+        return;
       if (ctx.mode === "tui")
         return openPanelUi(ctx, isDemo);
       const screen = isDemo ? await demoSource({

@@ -190,3 +190,56 @@ test('an answered ask dialog closes the question that copies it with the option 
   expect(state().ledger.items).toEqual([])
   expect(state().ledger.closed.at(-1)).toMatchObject({ ask: 'Which runtime?', how: 'answered', outcome: 'Python' })
 })
+
+const LICENSE_FORM = `<form>
+  <fieldset><legend>License</legend>
+    <label><input type="radio" name="license" value="mit"> MIT</label>
+    <label><input type="radio" name="license" value="apache" checked> Apache 2.0</label>
+  </fieldset>
+  <p>Which checks should CI run?</p>
+  <label><input type="checkbox" name="checks" value="lint"> Lint</label>
+  <label><input type="checkbox" name="checks" value="test"> Tests</label>
+  <label>Package name <input type="text" name="pkg"></label>
+  <input type="hidden" name="form_version" value="2">
+</form>`
+
+test('an HTML form ask becomes turn activity with each field as a question, the preselected option marked, and the answers from its details', async () => {
+  createInbox(pi(), deps())
+  await prompt('hello')
+  const answers = [
+    { name: 'license', question: 'License', answer: 'MIT' },
+    { name: 'checks', question: 'Which checks should CI run?', answer: 'Lint, Tests' },
+    { name: 'pkg', question: 'Package name', answer: '' },
+  ]
+  const ask = async (details: Record<string, unknown>) =>
+    call('tool_result', {
+      toolName: 'ask',
+      input: { html: LICENSE_FORM },
+      content: [{ type: 'text', text: 'User answers:\n{"license": "mit"}' }],
+      isError: false,
+      details,
+    })
+  await ask({ answers })
+  await ask({ answers, timedOut: true })
+  const asked =
+    'asked the user in a dialog: "License" (options: MIT / Apache 2.0 (recommended)); "Which checks should CI run?" (options: Lint / Tests); "Package name"'
+  const answered = '"License"="MIT", "Which checks should CI run?"="Lint, Tests"'
+  expect(state().turn.activity).toEqual([
+    `${asked}; answer: ${answered}`,
+    `${asked}; it timed out while the user was away, so the user did not answer; it went on with: ${answered}`,
+  ])
+})
+
+test('a form ask omp never showed, since it has no named control, adds no dialog line and notes no dialog question', async () => {
+  createInbox(pi(), deps())
+  await prompt('hello')
+  await call('tool_result', {
+    toolName: 'ask',
+    input: { html: '<form><p>Which runtime?</p><input type="radio" value="node"> Node</form>' },
+    content: [{ type: 'text', text: 'Error: the form has no named controls.' }],
+    isError: false,
+    details: { answers: [] },
+  })
+  expect(state().turn.activity).toEqual([])
+  expect(state().dialogQuestions).toEqual([])
+})

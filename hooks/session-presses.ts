@@ -149,16 +149,21 @@ export function withHolds<S extends Session>(s: S, holds: Holds): S {
   return { ...s, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince }
 }
 
-/**
- * `s` as every write saves it. Each closed list is cut to its newest records, and keeps the records of the rows a look
- * still draws: the rows `heldRows` names, and the rows closed or pressed since `shownSince`. A PR's view goes once
- * `isViewKept` no longer keeps it.
- */
-export function pruned<S extends Session>(s: S): S {
-  const inPlace = [
+/** The rows a look still draws in place: the rows `heldRows` names, and the rows closed or pressed since `shownSince`. */
+export function rowsInPlace(s: Session): Set<string> {
+  const since = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map(c => ({ id: c.id, at: closedAt(c) })),
   ].flatMap(x => (isShownSince(x.at, s.shownSince) ? [x.id] : []))
+
+  return new Set([...s.heldRows, ...since])
+}
+
+/**
+ * `s` as every write saves it. Each closed list is cut to its newest records, and keeps the records of `rowsInPlace`.
+ * A PR's view goes once `isViewKept` no longer keeps it.
+ */
+export function pruned<S extends Session>(s: S): S {
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(([ref]) =>
       isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince),
@@ -168,7 +173,7 @@ export function pruned<S extends Session>(s: S): S {
 
   return {
     ...s,
-    ledger: pruneClosed(s.ledger, new Set([...s.heldRows, ...inPlace])),
+    ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews,
   }
 }

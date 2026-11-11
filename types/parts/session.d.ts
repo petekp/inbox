@@ -187,6 +187,9 @@ export type CallFailure = {
  */
 export type CallRecord = { lastFailure: CallFailure | null; recoveredAt: number | null }
 
+/** A press from the Herdr look and its outcome: `stale` when `press()` found its row already changed. */
+export type HerdrPressOutcome = { id: string; outcome: 'applied' | 'stale' }
+
 /** One conversation's inbox: what every host saves and the shared session functions change. */
 export type Session = {
   ledger: Ledger
@@ -252,6 +255,11 @@ export type Session = {
     phase?: 'attempting' | 'accepted' | 'uncertain'
   }[]
   lastActions: Record<string, LastAction>
+  /**
+   * The last press from the Herdr look this host applied. The session published for the look carries it as
+   * `lastPress`, so the look can tell a press whose row had already changed from one no host applied.
+   */
+  lastHerdrPress?: HerdrPressOutcome
   /** The rows the person's replies in progress held at the latest view or press. Every write keeps their closed records. */
   heldRows: string[]
   /**
