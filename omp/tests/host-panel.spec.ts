@@ -232,6 +232,7 @@ test('in a Herdr app terminal, /inbox opens the Herdr panel beside the terminal 
   split = { code: 1, stdout: '{"error":"unknown mod inbox"}' }
   const opened = w.commands.get('inbox').handler('', ctx)
   await until(() => components.length > 0)
+  await until(() => components[0].render(80).join('\n').includes('Nothing needed'))
   expect(w.notices.at(-1)).toBe('Opened the inbox here, since Herdr did not split the pane: unknown mod inbox.')
   components[0].handleInput('\x1b')
   await opened

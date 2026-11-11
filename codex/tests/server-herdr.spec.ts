@@ -28,8 +28,12 @@ function publish(appHome: string, sessionId: string, host: string, terminal: str
   writeFileSync(join(appHome, 'inbox/sessions', `${sessionId}.json`), JSON.stringify({ format: 1, host, terminal }))
 }
 
-async function until(isDone: () => boolean) {
-  for (let waited = 0; !isDone() && waited < 2000; waited += 10) await new Promise(r => setTimeout(r, 10))
+async function until(isDone: () => boolean, timeoutMs = 20_000) {
+  const start = Date.now()
+  while (!isDone()) {
+    if (Date.now() - start > timeoutMs) throw new Error(`not done after ${timeoutMs} ms`)
+    await new Promise(r => setTimeout(r, 10))
+  }
 }
 
 test("the server applies presses for this terminal's Codex sessions, at start and as the look writes them, and leaves others", async () => {
@@ -48,11 +52,11 @@ test("the server applies presses for this terminal's Codex sessions, at start an
     () => undefined,
   )
   try {
-    await until(() => !existsSync(waiting))
+    await until(() => applied.length === 1 && !existsSync(waiting))
     assert.deepEqual(applied, [['s1', 'p1']])
 
     const later = writePress(appHome, 's1', 'p4')
-    await until(() => !existsSync(later))
+    await until(() => applied.length === 2 && !existsSync(later))
     assert.deepEqual(applied, [
       ['s1', 'p1'],
       ['s1', 'p4'],
@@ -81,7 +85,7 @@ test('a press folder named outside the session-id rule, or a press file too larg
     text => logged.push(text),
   )
   try {
-    await until(() => !existsSync(waiting) && !existsSync(large))
+    await until(() => applied.length === 1 && logged.length === 1 && !existsSync(waiting) && !existsSync(large))
     assert.deepEqual(applied, ['p1'])
     assert.deepEqual(logged, ['Herdr press large.json refused: not read: over 65536 bytes'])
   } finally {
