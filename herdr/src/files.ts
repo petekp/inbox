@@ -1,14 +1,8 @@
 import type { Session } from '../../types'
-import { HERDR_FORMAT } from '../../hooks/herdr'
+import { HERDR_FORMAT, publishedSessionPath, publishedSessionsFolder } from '../../hooks/herdr'
 import type { HerdrEnvelope } from '../../hooks/herdr'
 import { upgradeSession } from '../../hooks/session-files'
 import type { SavedSession } from '../../hooks/session-files'
-
-/** Where a host publishes its session for the look, under the Herdr app's home folder. */
-export const sessionPath = (appHome: string, sessionId: string) => `${appHome}/inbox/sessions/${sessionId}.json`
-
-/** The folder the look watches for a host's writes. */
-export const sessionsFolder = (appHome: string) => `${appHome}/inbox/sessions`
 
 /**
  * Whether a batch of changed paths from `watchFolder` can change the session's file: it names that file, or names the
@@ -16,17 +10,28 @@ export const sessionsFolder = (appHome: string) => `${appHome}/inbox/sessions`
  * place, so the temporary file's own changes are not the session's.
  */
 export function isSessionChange(changed: readonly string[], appHome: string, sessionId: string): boolean {
-  const folder = sessionsFolder(appHome)
+  const folder = publishedSessionsFolder(appHome)
+  const file = publishedSessionPath(appHome, sessionId)
 
-  return changed.some(p => p === sessionPath(appHome, sessionId) || p === folder || p === `${folder}/`)
+  return changed.some(p => p === file || p === folder || p === `${folder}/`)
 }
 
 /**
  * A published session file, read. `missing`: no file, as before the host's first write or after the session ended.
  * `torn`: not JSON, which a read mid-write can give, so the look reads again. `newer`: a format from a newer host.
+ * `isTrimmed`: the host left out older closed items to keep the file under the 1 MiB Herdr's `readTextFile` reads.
+ * `lastPress`: the last press file the host handled, and whether it applied or found its row already changed.
+ * `projectFolder`: the absolute folder the host opens a relative path against, or null when the host gave none.
  */
 export type ReadSession =
-  | { is: 'read'; envelope: HerdrEnvelope; session: Session }
+  | {
+      is: 'read'
+      envelope: HerdrEnvelope
+      session: Session
+      isTrimmed: boolean
+      lastPress: LastPress | null
+      projectFolder: string | null
+    }
   | { is: 'missing' }
   | { is: 'torn' }
   | { is: 'newer'; format: number }
@@ -35,6 +40,13 @@ export type ReadSession =
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
 
 const SOURCE_FIELDS = ['host', 'agent', 'sessionId', 'terminal'] as const
+
+export type LastPress = { id: string; outcome: 'applied' | 'stale' }
+
+function lastPressOf(x: unknown): LastPress | null {
+  if (!isRecord(x) || typeof x.id !== 'string') return null
+  return x.outcome === 'applied' || x.outcome === 'stale' ? { id: x.id, outcome: x.outcome } : null
+}
 
 /** A session file's text, read and checked, with its session in the current shape. */
 export function readSession(text: string | null): ReadSession {
@@ -55,5 +67,13 @@ export function readSession(text: string | null): ReadSession {
   if (!isRecord(file.session)) return { is: 'refused', reason: 'no session' }
   const envelope = file as HerdrEnvelope
 
-  return { is: 'read', envelope, session: upgradeSession(file.session as SavedSession) }
+  return {
+    is: 'read',
+    envelope,
+    session: upgradeSession(file.session as SavedSession),
+    isTrimmed: file.trimmed === true,
+    lastPress: lastPressOf(file.lastPress),
+    projectFolder:
+      typeof file.projectFolder === 'string' && file.projectFolder.startsWith('/') ? file.projectFolder : null,
+  }
 }

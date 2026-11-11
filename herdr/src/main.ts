@@ -1,20 +1,52 @@
 import { View, div } from 'gpui-kit'
-import type { Context, Element } from 'gpui-kit'
-import { Scrollbar, h_flex, v_flex } from 'gpui-base'
-import { appHome, focused, panes, props, readTextFile, terminals, theme, watchFolder } from 'herdr'
+import type { Context, Element, FocusHandle } from 'gpui-kit'
+import { InputState, Scrollbar, v_flex } from 'gpui-base'
+import {
+  appHome,
+  exec,
+  focused,
+  hc,
+  home,
+  panes,
+  props,
+  readTextFile,
+  run,
+  terminals,
+  theme,
+  watchFolder,
+  writeTextFile,
+} from 'herdr'
+import { publishedSessionPath, publishedSessionsFolder } from '../../hooks/herdr'
+import type { Run } from '../../hooks/gh'
 import { NEXT_BUILD_MARK } from '../../hooks/banners'
-import type { BannerView } from '../../hooks/banners'
-import { STALL_GAP } from '../../hooks/status-page'
+import type { PathProbe } from '../../hooks/open-targets'
+import { ROW_COPY } from '../../hooks/rows'
+import { sessionView } from '../../hooks/session-view'
+import type { SessionView } from '../../hooks/session-view'
+import { GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
+import { SETTLED_MS, heldReplies, keptDiscards, withListInput } from '../../hooks/timing'
+import type { Holds, ListInput } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
-import type { Block, Button, Mark, RowBlock, StatusLine, Tone } from './blocks'
+import type { Draft } from '../../types'
+import type { Block, Button, Does, ViewChange } from './blocks'
 import { freshUi } from './draw'
 import type { LookUi, TabCell } from './draw'
-import { isSessionChange, readSession, sessionPath, sessionsFolder } from './files'
+import { isSessionChange, readSession } from './files'
 import type { ReadSession } from './files'
 import { follow } from './follow'
 import type { Followed } from './follow'
+import { helpBlocks } from './draw-help'
+import { afterSend, keyMove, withSelected, withTab } from './keys'
+import { moveRows } from './motion'
+import type { Tracks } from './motion'
+import { blockEl } from './paint-blocks'
+import { bannerEl, headerEl, messageEl, sessionNoteEl, tabsEl } from './paint-chrome'
+import type { Paint, Theme } from './paint-theme'
+import { PRESS_LABEL } from './press-file'
+import { PressQueue, claimedPath } from './press-queue'
+import type { PressTarget, QueueIo } from './press-queue'
+import { runHere } from './run-here'
 import { screenOf } from './screen'
-import type { Message } from './screen'
 
 /** How often the look reads its session again when no folder change came, and how long it waits to watch again. */
 const REREAD_MS = 10_000
@@ -23,311 +55,50 @@ const AGE_TICK_MS = 60_000
 /** A read mid-write gives torn JSON: the look reads again this soon, this many times. */
 const TORN_RETRY_MS = 30
 const TORN_RETRIES = 5
-
-type Color = `#${string}`
-/** The theme colors the look draws with. Every Herdr theme names each of them, light or dark. */
-type Theme = Record<
-  | 'foreground'
-  | 'background'
-  | 'raised'
-  | 'border'
-  | 'hover'
-  | 'selected'
-  | 'solid'
-  | 'solid_foreground'
-  | 'muted'
-  | 'dim'
-  | 'blocked'
-  | 'done'
-  | 'working'
-  | 'ansi1',
-  Color
->
-
-const TONE_COLORS: Record<Exclude<Tone, null>, keyof Theme> = {
-  needsYou: 'blocked',
-  issue: 'blocked',
-  warning: 'blocked',
-  done: 'done',
-  running: 'working',
-  error: 'ansi1',
-  muted: 'muted',
-  dim: 'dim',
-}
-
-const colorOf = (t: Theme, tone: Tone): Color => t[tone === null ? 'foreground' : TONE_COLORS[tone]]
-
-type Press = (b: Button, cx: Context) => void
-
-function buttonEl(b: Button, t: Theme, press: Press): Element {
-  const base = h_flex()
-    .id(`button ${b.id}`)
-    .h(28)
-    .px(10)
-    .flex_none()
-    .items_center()
-    .rounded(7)
-    .text_size(12)
-    .accessibility_label(b.label)
-    .child(b.label)
-  const styled =
-    b.emphasis === 'primary'
-      ? base.bg(t.solid).text_color(t.solid_foreground)
-      : b.emphasis === 'normal'
-        ? base.bg(t.raised).border_1().border_color(t.border).text_color(t.foreground)
-        : base.text_color(t.muted).hover(s => s.bg(t.hover))
-  if (b.isOut) return styled.opacity(0.5)
-
-  return styled.cursor_pointer().on_click((_e, cx) => {
-    cx.stop_propagation()
-    press(b, cx)
-  })
-}
-
-const buttonsEl = (buttons: Button[], t: Theme, press: Press, indent: number): Element =>
-  h_flex()
-    .flex_wrap()
-    .gap(6)
-    .pt(6)
-    .pl(indent)
-    .children(buttons.map(b => buttonEl(b, t, press)))
-
-const markEl = (m: Mark | null, t: Theme): Element =>
-  div()
-    .w(14)
-    .flex_none()
-    .text_color(colorOf(t, m?.tone ?? null))
-    .child(m?.text ?? '')
-
-function rowEl(r: RowBlock, t: Theme, press: Press, select: (id: string, cx: Context) => void): Element {
-  const line = h_flex()
-    .gap(8)
-    .items_start()
-    .child(markEl(r.mark, t))
-    .child(
-      div()
-        .flex_1()
-        .min_w(0)
-        .text_color(r.isDim ? t.muted : t.foreground)
-        .when(!r.isSelected, e => e.truncate())
-        .when(r.isSelected, e => e.font_semibold())
-        .child(r.title),
-    )
-    .when(r.age !== null, e =>
-      e.child(
-        div()
-          .flex_none()
-          .text_size(11)
-          .text_color(t.dim)
-          .child(r.age ?? ''),
-      ),
-    )
-  const lines = [
-    ...(r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : []),
-    ...(r.feedback ? [r.feedback] : []),
-    ...r.body,
-  ]
-
-  return v_flex()
-    .id(`row ${r.id}`)
-    .px(8)
-    .py(6)
-    .ml(r.depth * 14)
-    .rounded(7)
-    .when(r.isSelected, e => e.bg(t.selected))
-    .when(r.isSelectable && !r.isSelected, e =>
-      e
-        .cursor_pointer()
-        .hover(s => s.bg(t.hover))
-        .on_click((_e, cx) => select(r.id, cx)),
-    )
-    .child(line)
-    .children(
-      lines.map(l => div().pl(22).pt(2).text_size(12).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text)),
-    )
-    .when(r.buttons.length > 0, e => e.child(buttonsEl(r.buttons, t, press, 22)))
-}
-
-function statusEl(s: StatusLine, t: Theme, press: Press): Element {
-  const stall = s.stall
-    ? [div().flex_none().text_color(colorOf(t, s.stall.tone)).child(`${STALL_GAP}${s.stall.text}`)]
-    : []
-
-  return v_flex()
-    .px(8)
-    .py(4)
-    .ml(s.depth * 16)
-    .child(
-      h_flex()
-        .gap(8)
-        .items_start()
-        .child(markEl(s.mark, t))
-        .child(
-          h_flex()
-            .flex_1()
-            .min_w(0)
-            .flex_wrap()
-            .child(
-              div()
-                .when(s.isBold, e => e.font_semibold())
-                .child(s.name),
-            )
-            .children(stall),
-        ),
-    )
-    .children(s.under.map(l => div().pl(22).text_size(12).text_color(t.muted).child(l)))
-    .when(s.buttons.length > 0, e => e.child(buttonsEl(s.buttons, t, press, 22)))
-}
-
-function blockEl(b: Block, t: Theme, press: Press, select: (id: string, cx: Context) => void): Element {
-  if (b.kind === 'row') return rowEl(b, t, press, select)
-  if (b.kind === 'status') return statusEl(b, t, press)
-  if (b.kind === 'heading')
-    return h_flex()
-      .px(8)
-      .pt(12)
-      .pb(4)
-      .gap(6)
-      .items_center()
-      .when(b.mark !== null, e =>
-        e.child(
-          div()
-            .text_color(colorOf(t, b.mark?.tone ?? null))
-            .child(b.mark?.text ?? ''),
-        ),
-      )
-      .child(div().text_size(12).font_semibold().text_color(t.muted).child(b.text))
-      .when(b.count !== null, e => e.child(div().text_size(11).text_color(t.blocked).child(String(b.count))))
-      .child(div().flex_1())
-      .children(b.buttons.map(x => buttonEl(x, t, press)))
-  if (b.kind === 'fold' || b.kind === 'more')
-    return h_flex()
-      .id(`fold ${b.id}`)
-      .h(26)
-      .px(8)
-      .ml(b.depth * 14)
-      .gap(6)
-      .items_center()
-      .rounded(7)
-      .cursor_pointer()
-      .hover(s => s.bg(t.hover))
-      .accessibility_label(b.text)
-      .on_click((_e, cx) => press({ id: b.id, label: b.text, emphasis: 'quiet', isOut: false, local: b.local }, cx))
-      .when(b.kind === 'fold', e =>
-        e.child(
-          div()
-            .w(14)
-            .text_color(t.dim)
-            .child(b.kind === 'fold' && b.isOpen ? '▾' : '▸'),
-        ),
-      )
-      .child(div().text_size(12).text_color(t.muted).child(b.text))
-  if (b.kind === 'note')
-    return div()
-      .px(8)
-      .py(2)
-      .ml(b.depth * 16)
-      .whitespace_normal()
-      .text_color(b.isStrong ? t.foreground : colorOf(t, b.tone))
-      .when(b.isStrong, e => e.font_semibold())
-      .child(b.text)
-  if (b.kind === 'rule')
-    return h_flex()
-      .px(8)
-      .py(6)
-      .gap(8)
-      .items_center()
-      .when(b.text !== null, e =>
-        e.child(
-          div()
-            .text_size(11)
-            .text_color(t.dim)
-            .child(b.text ?? ''),
-        ),
-      )
-      .child(div().flex_1().h(1).bg(t.border))
-
-  return div().h(8)
-}
-
-function bannerEl(b: BannerView, t: Theme): Element {
-  const color = b.tone === 'error' ? t.ansi1 : b.tone === 'warning' ? t.blocked : t.muted
-
-  return v_flex()
-    .px(14)
-    .py(8)
-    .border_b(1)
-    .border_color(t.border)
-    .bg(t.raised)
-    .text_size(12)
-    .child(div().font_semibold().text_color(color).child(b.lead))
-    .when(b.body !== null, e =>
-      e.child(
-        div()
-          .whitespace_normal()
-          .text_color(t.muted)
-          .child(b.body ?? ''),
-      ),
-    )
-}
-
-function tabsEl(tabs: TabCell[], t: Theme, pick: (tab: ShownTab, cx: Context) => void): Element {
-  return h_flex()
-    .h(40)
-    .flex_none()
-    .px(8)
-    .gap(4)
-    .items_center()
-    .border_b(1)
-    .border_color(t.border)
-    .children(
-      tabs.map(tab =>
-        h_flex()
-          .id(`tab ${tab.id}`)
-          .h(28)
-          .px(10)
-          .gap(6)
-          .items_center()
-          .rounded(7)
-          .cursor_pointer()
-          .accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label)
-          .when(tab.isSelected, e => e.bg(t.selected).font_semibold())
-          .when(!tab.isSelected, e => e.text_color(t.muted).hover(s => s.bg(t.hover)))
-          .on_click((_e, cx) => pick(tab.id, cx))
-          .child(tab.label)
-          .when(tab.badge !== null, e =>
-            e.child(
-              div()
-                .text_size(11)
-                .text_color(t.blocked)
-                .child(tab.badge ?? ''),
-            ),
-          ),
-      ),
-    )
-}
-
-function messageEl(m: Message, t: Theme): Element {
-  return v_flex()
-    .p(16)
-    .gap(4)
-    .child(
-      div()
-        .font_semibold()
-        .text_color(m.isError ? t.ansi1 : t.foreground)
-        .child(m.title),
-    )
-    .when(m.hint !== null, e =>
-      e.child(
-        div()
-          .whitespace_normal()
-          .text_color(t.muted)
-          .child(m.hint ?? ''),
-      ),
-    )
-}
+/** The draw after a move's first frame, which starts its transition. */
+const NEXT_FRAME_MS = 16
 
 const toggled = <T>(list: T[], x: T): T[] => (list.includes(x) ? list.filter(y => y !== x) : [...list, x])
+
+const herdrRun: Run = (args, opts) =>
+  exec(args[0] ?? '', args.slice(1), { cwd: opts.cwd, timeout: opts.timeoutMs }).catch((e: unknown) => ({
+    code: 127,
+    stdout: '',
+    stderr: String(e),
+  }))
+
+const isTrue = (args: string[]) => herdrRun(['test', ...args], { cwd: '/', timeoutMs: 5_000 }).then(r => r.code === 0)
+
+const probe: PathProbe = {
+  async stat(path) {
+    if (!(await isTrue(['-e', path]))) return null
+    const isFile = await isTrue(['-f', path])
+    return { isFile: () => isFile }
+  },
+  isExecutable: path => isTrue(['-x', path]),
+}
+
+const queueIo: QueueIo = {
+  now: () => Date.now(),
+  random: () => Math.random(),
+  write: (path, text) =>
+    writeTextFile(path, text, null).then(
+      () => null,
+      (e: unknown) => String(e),
+    ),
+  isGone: async path => (await readTextFile(path).catch(() => null)) === null,
+  async claim(path) {
+    const moved = await herdrRun(['mv', path, claimedPath(path)], { cwd: '/', timeoutMs: 5_000 })
+    if (moved.code !== 0) return false
+    await herdrRun(['rm', '-f', claimedPath(path)], { cwd: '/', timeoutMs: 5_000 })
+    return true
+  },
+  async wake(terminal, pressId) {
+    await hc(['label', terminal, `${PRESS_LABEL}=${pressId}`]).catch(() => null)
+  },
+}
+
+type Timer = { cancel(): void }
 
 export default class Inbox extends View {
   tab: string | null = null
@@ -335,19 +106,32 @@ export default class Inbox extends View {
   followed: Followed = { is: 'no-terminal' }
   sessionId: string | null = null
   read: ReadSession | null = null
+  view: SessionView | null = null
   ui: LookUi = freshUi('needsYou')
   shownSince = Date.now()
   isNextBuild = false
-  foldTimer: { cancel(): void } | null = null
+  isHelpShown = false
+  drafts: Record<string, Draft> = {}
+  input: { rowId: string; state: InputState } | null = null
+  discarded: Record<string, number> = {}
+  listInput: ListInput | null = null
+  queue = new PressQueue(queueIo)
+  tracks: Tracks = new Map()
+  tracksOf = ''
+  focus: FocusHandle | null = null
+  /** The next read for the presses still out, and the next draw for a fold or a move. */
+  outTimer: Timer | null = null
+  drawTimer: Timer | null = null
 
   init(_props: unknown, cx: Context): void {
+    this.focus = cx.focus_handle()
     cx.spawn(async cx => {
       this.isNextBuild = (await readTextFile(`${appHome()}/mods/inbox/${NEXT_BUILD_MARK}`).catch(() => null)) !== null
       cx.notify()
     })
     cx.spawn(async cx => {
       for (;;) {
-        const changed = await watchFolder(sessionsFolder(appHome())).catch(() => null)
+        const changed = await watchFolder(publishedSessionsFolder(appHome())).catch(() => null)
         if (changed === null) await cx.sleep(REREAD_MS)
         else if (this.sessionId && isSessionChange(changed, appHome(), this.sessionId)) this.load(this.sessionId, cx)
       }
@@ -356,10 +140,21 @@ export default class Inbox extends View {
     cx.timer.every(AGE_TICK_MS, cx => cx.notify())
   }
 
+  holds(now: number): Holds {
+    this.discarded = keptDiscards(this.discarded, this.shownSince)
+
+    return {
+      replies: heldReplies(this.ui.typing, this.drafts),
+      discarded: this.discarded,
+      shownSince: this.shownSince,
+      listInput: this.listInput && withListInput(this.listInput, now),
+    }
+  }
+
   load(sessionId: string, cx: Context): void {
     cx.spawn(async cx => {
       for (let n = 0; ; n++) {
-        const text = await readTextFile(sessionPath(appHome(), sessionId)).catch((e: unknown) => e)
+        const text = await readTextFile(publishedSessionPath(appHome(), sessionId)).catch((e: unknown) => e)
         const read =
           typeof text === 'string' || text === null
             ? readSession(text)
@@ -368,11 +163,31 @@ export default class Inbox extends View {
           await cx.sleep(TORN_RETRY_MS)
           continue
         }
-        if (this.sessionId === sessionId) this.read = read
+        if (this.sessionId !== sessionId) return
+        this.read = read
+        await this.settle(cx)
         cx.notify()
         return
       }
     })
+  }
+
+  /** Ends the presses this read answers: a row that changed, the host's last press, or one with no answer in time. */
+  async settle(cx: Context): Promise<void> {
+    if (this.read?.is !== 'read' || this.queue.outs.length === 0) return
+    const now = Date.now()
+    const view = sessionView(this.read.session, now, SETTLED_MS, this.holds(now), this.queue.notes)
+    await this.queue.settle(view, this.read.lastPress, this.read.envelope.agent)
+    this.checkOutsAt(this.queue.nextCheckAt(), cx)
+  }
+
+  checkOutsAt(at: number | null, cx: Context): void {
+    this.outTimer?.cancel()
+    const sessionId = this.sessionId
+    this.outTimer =
+      at === null || sessionId === null
+        ? null
+        : cx.timer.after(Math.max(0, at - Date.now()), cx => this.load(sessionId, cx))
   }
 
   /** Follows the terminal Herdr says to, and starts reading its session when that changes. */
@@ -386,19 +201,142 @@ export default class Inbox extends View {
     if (sessionId === this.sessionId) return
     this.sessionId = sessionId
     this.read = null
+    this.view = null
     this.ui = freshUi(this.ui.tab)
     this.shownSince = Date.now()
+    this.drafts = {}
+    this.input?.state.release()
+    this.input = null
+    this.discarded = {}
+    this.queue = new PressQueue(queueIo)
     if (sessionId) this.load(sessionId, cx)
   }
 
-  press(b: Button, cx: Context): void {
-    const l = b.local
-    if (l === null) return
+  change(c: ViewChange): void {
     const ui = this.ui
-    if ('showOptions' in l) ui.optionsShown = toggled(ui.optionsShown, l.showOptions)
-    else if ('closedFold' in l) ui.unfolded = toggled(ui.unfolded, l.closedFold)
-    else if ('earlier' in l) ui.closedAll = [...ui.closedAll, l.earlier]
-    else ui.statusUnfolded = toggled(ui.statusUnfolded, l.toggleFold)
+    if ('showOptions' in c) ui.optionsShown = toggled(ui.optionsShown, c.showOptions)
+    else if ('closedFold' in c) ui.unfolded = toggled(ui.unfolded, c.closedFold)
+    else if ('earlier' in c) ui.closedAll = [...ui.closedAll, c.earlier]
+    else if ('toggleFold' in c) ui.statusUnfolded = toggled(ui.statusUnfolded, c.toggleFold)
+    else if ('showAsk' in c) this.ui = withSelected({ ...ui, tab: 'needsYou' }, c.showAsk)
+    else this.isHelpShown = !this.isHelpShown
+    this.closeStaleField()
+  }
+
+  /** Lets go of the text field after a move closed it, and gives the keys back to the look. */
+  closeStaleField(): void {
+    if (this.input === null || this.ui.typing === this.input.rowId) return
+    this.input.state.release()
+    this.input = null
+    this.focus?.focus()
+  }
+
+  /** Opens a row's field, or the goal's, keeping its draft. */
+  type(does: Extract<Does, { is: 'type' }>): void {
+    const draft = (this.drafts[does.rowId] ??= { text: does.text, since: Date.now() })
+    const state = InputState.new({ placeholder: does.hint, value: draft.text })
+    state.on('change', () => (draft.text = state.value()))
+    state.on('submit', (_e, cx) => this.submit(does.rowId, cx))
+    this.input?.state.release()
+    this.input = { rowId: does.rowId, state }
+    this.ui.typing = does.rowId
+    state.focus()
+  }
+
+  leave(rowId: string, isDiscard: boolean, cx: Context): void {
+    if (isDiscard) {
+      this.discarded = { ...this.discarded, [rowId]: Date.now() }
+      delete this.drafts[rowId]
+    }
+    this.input?.state.release()
+    this.input = null
+    this.ui.typing = null
+    this.focus?.focus()
+    if (isDiscard && this.sessionId) this.load(this.sessionId, cx)
+  }
+
+  /** Sends a field's text. A refused send keeps the field and its draft, and its row says why. */
+  submit(rowId: string, cx: Context): void {
+    const text = this.input?.state.value().trim() ?? ''
+    if (text === '') return
+    const isGoal = rowId === GOAL_KEYS_ID
+    const label = isGoal ? GOAL_FIELD.submit : ROW_COPY.send
+    const isSent = this.send({ action: 'type', id: rowId, text }, [], label, cx, isGoal ? undefined : text)
+    const next = afterSend(this.ui, this.drafts, rowId, isSent)
+    this.ui = next.ui
+    this.drafts = next.drafts
+    this.closeStaleField()
+  }
+
+  /**
+   * Sends a press through the queue: the look runs its opens and copies, with the task's clipboard, then writes the
+   * press file and wakes the host on the terminal the session file names. Returns whether the press went.
+   */
+  send(
+    press: Extract<Does, { is: 'press' }>['press'],
+    effects: Extract<Does, { is: 'press' }>['effects'],
+    label: string,
+    cx: Context,
+    reply?: string,
+  ): boolean {
+    const read = this.read?.is === 'read' ? this.read : null
+    const target: PressTarget | null =
+      this.sessionId && read && this.view
+        ? {
+            appHome: appHome(),
+            sessionId: this.sessionId,
+            terminal: read.envelope.terminal,
+            view: this.view,
+            holds: this.holds(Date.now()),
+            projectFolder: read.projectFolder,
+          }
+        : null
+    const sent = this.queue.send(target, press, effects, label, reply)
+    cx.notify()
+    if (sent.is === 'refused') return false
+    const queue = this.queue
+    const projectFolder = target?.projectFolder ?? null
+    cx.spawn(async cx => {
+      await sent.finish(
+        (effects, pending) =>
+          runHere(effects, pending, {
+            run: herdrRun,
+            probe,
+            home: home(),
+            projectFolder,
+            copy: t => cx.write_to_clipboard(t),
+          }),
+        () => cx.notify(),
+      )
+      cx.notify()
+      if (queue === this.queue) this.checkOutsAt(queue.nextCheckAt(), cx)
+    })
+
+    return true
+  }
+
+  press(b: Button, cx: Context): void {
+    const now = Date.now()
+    this.listInput = withListInput(this.listInput, now)
+    const d = b.does
+    if (d.is === 'view') this.change(d.change)
+    else if (d.is === 'press') this.send(d.press, d.effects, b.label, cx)
+    else if (d.is === 'type') this.type(d)
+    else if (d.is === 'send') this.submit(d.rowId, cx)
+    else if (d.is === 'leave') this.leave(d.rowId, d.isDiscard, cx)
+    cx.notify()
+  }
+
+  onKey(key: string, tabs: TabCell[], blocks: Block[], cx: Context): void {
+    const move = keyMove(key, tabs, blocks, this.ui.typing)
+    if (move === null) return
+    if (move.is === 'close') this.leave(this.ui.typing ?? '', false, cx)
+    else if (move.is === 'tab') this.ui = withTab(this.ui, move.tab)
+    else if (move.is === 'select') this.ui = withSelected(this.ui, move.id)
+    else if (move.is === 'press') return this.press(move.button, cx)
+    else if (this.followed.is !== 'no-terminal') run('pane.focus', { terminal: this.followed.terminal })
+    this.listInput = withListInput(this.listInput, Date.now())
+    cx.stop_propagation()
     cx.notify()
   }
 
@@ -408,47 +346,31 @@ export default class Inbox extends View {
     const now = Date.now()
     const screen = screenOf(this.followed, this.read, this.ui, {
       now,
-      shownSince: this.shownSince,
       isNextBuild: this.isNextBuild,
+      holds: this.holds(now),
+      queue: this.queue,
     })
-    const press: Press = (b, cx) => this.press(b, cx)
-    const select = (id: string, cx: Context) => {
-      this.ui.selected = id
-      cx.notify()
+    this.view = screen.is === 'inbox' ? screen.view : null
+    this.drawTimer?.cancel()
+    this.drawTimer = null
+    const paint: Paint = {
+      t,
+      press: (b, cx) => this.press(b, cx),
+      select: (id, cx) => {
+        this.ui = withSelected(this.ui, id)
+        this.closeStaleField()
+        this.listInput = withListInput(this.listInput, Date.now())
+        cx.notify()
+      },
+      pick: (tab: ShownTab, cx) => {
+        this.ui = withTab(this.ui, tab)
+        this.closeStaleField()
+        cx.notify()
+      },
+      motion: new Map(),
+      input: rowId => (this.input?.rowId === rowId ? this.input.state : null),
     }
-    const pick = (tab: ShownTab, cx: Context) => {
-      this.ui = { ...this.ui, tab, selected: null }
-      cx.notify()
-    }
-    this.foldTimer?.cancel()
-    const foldAt = screen.is === 'inbox' ? screen.foldAt : null
-    this.foldTimer = foldAt === null ? null : cx.timer.after(Math.max(0, foldAt - now), cx => cx.notify())
-    const header = h_flex()
-      .h(42)
-      .flex_none()
-      .px(14)
-      .gap(8)
-      .items_center()
-      .border_b(1)
-      .border_color(t.border)
-      .child(div().font_semibold().child('Inbox'))
-      .when(screen.is === 'inbox', e =>
-        e.child(
-          div()
-            .text_size(12)
-            .text_color(t.muted)
-            .child(screen.is === 'inbox' ? screen.agent : ''),
-        ),
-      )
-      .child(div().flex_1())
-      .when(screen.is === 'inbox' && screen.status !== null, e =>
-        e.child(
-          div()
-            .text_size(11)
-            .text_color(t.dim)
-            .child(screen.is === 'inbox' ? (screen.status ?? '') : ''),
-        ),
-      )
+    const isInbox = screen.is === 'inbox'
     const root = v_flex()
       .id('inbox')
       .size_full()
@@ -460,12 +382,33 @@ export default class Inbox extends View {
       .border_color(t.border)
       .text_color(t.foreground)
       .text_size(13)
-      .child(header)
+      .child(
+        headerEl(
+          isInbox ? screen.agent : null,
+          isInbox ? screen.status : null,
+          isInbox ? this.isHelpShown : null,
+          paint,
+        ),
+      )
     if (screen.is === 'message') return root.child(messageEl(screen.message, t))
+    const hasStatusButtons = screen.blocks.some(b => b.kind === 'status' && b.buttons.length > 0)
+    const shown = this.isHelpShown ? helpBlocks(this.isNextBuild, this.ui.tab, hasStatusButtons) : screen.blocks
+    const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`
+    const moved = moveRows(shown, this.tracks, now, tracksOf !== this.tracksOf)
+    this.tracks = moved.tracks
+    this.tracksOf = tracksOf
+    paint.motion = moved.motion
+    const isStarting = [...moved.motion.values()].some(m => m.isStart)
+    const wakeAt = [isStarting ? now + NEXT_FRAME_MS : null, moved.nextAt, screen.foldAt].filter(at => at !== null)
+    if (wakeAt.length > 0) this.drawTimer = cx.timer.after(Math.max(0, Math.min(...wakeAt) - now), cx => cx.notify())
+    const focus = this.focus
 
     return root
-      .child(tabsEl(screen.tabs, t, pick))
+      .when(focus !== null, e => (focus ? e.track_focus(focus) : e))
+      .on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx))
+      .child(tabsEl(screen.tabs, paint))
       .children(screen.banners.map(b => bannerEl(b, t)))
+      .when(screen.trimmedNote !== null, e => e.child(sessionNoteEl(screen.trimmedNote ?? '', t)))
       .child(
         div()
           .flex_1()
@@ -478,7 +421,8 @@ export default class Inbox extends View {
               .inset_0()
               .overflow_y_scroll()
               .p(6)
-              .children(screen.blocks.map(b => blockEl(b, t, press, select))),
+              .on_click((_e, _cx) => this.focus?.focus())
+              .children(moved.blocks.map(b => blockEl(b, paint))),
           )
           .child(Scrollbar.vertical('inbox-list').absolute().inset_0()),
       )

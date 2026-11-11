@@ -59,3 +59,9 @@ test('a terminal the look followed that left its tab gives way to one still ther
 test('a tab with no terminals follows none', () => {
   expect(follow(where(null), 'tab3', null)).toEqual({ is: 'no-terminal' })
 })
+
+test('a session label that is not a safe file name reads as no inbox', () => {
+  const unsafe = where({ tab: 'tab1', terminal: 't2' })
+  const terminals = unsafe.terminals.map(t => (t.address === 't2' ? { ...t, labels: { [SESSION_LABEL]: '../s2' } } : t))
+  expect(follow({ ...unsafe, terminals }, 'tab1', 't1')).toMatchObject({ is: 'no-inbox', terminal: 't2' })
+})

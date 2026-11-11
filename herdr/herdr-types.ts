@@ -17,7 +17,9 @@ mkdirSync(out, { recursive: true })
 for (const name of TYPE_FILES) {
   const file = Bun.file(join(appHome, name))
   if (!(await file.exists())) {
-    console.error(`No ${name} in ${appHome}. Start the Herdr app once, or set HERDR_APP_HOME to its home folder.`)
+    console.error(
+      `No ${name} in ${appHome}. The Herdr look's types check against the Herdr app's own. Install the Herdr app and start it once, or set HERDR_APP_HOME to its home folder.`,
+    )
     process.exit(1)
   }
   await Bun.write(join(out, name), file)

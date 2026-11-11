@@ -1,4 +1,7 @@
 import type { FoldKind } from '../../types'
+import type { Effect } from '../../hooks/press-reducer'
+import type { PrPress } from '../../hooks/pr-press'
+import type { RowPress } from '../../hooks/presses'
 import type { ActionEmphasis } from '../../hooks/rows'
 import type { StatusStall } from '../../hooks/status-page'
 
@@ -7,30 +10,49 @@ export type Tone = 'needsYou' | 'issue' | 'done' | 'running' | 'error' | 'warnin
 
 export type Mark = { text: string; tone: Tone; isRunning: boolean }
 
-/** A press the look answers itself, with no host. Every other button waits for presses. */
-type LocalPress = { showOptions: string } | { closedFold: FoldKind } | { earlier: FoldKind } | { toggleFold: string }
+/** A change to what the look shows, which no host sees: an unfold, opening Asks at a row, or Help. */
+export type ViewChange =
+  | { showOptions: string }
+  | { closedFold: FoldKind }
+  | { earlier: FoldKind }
+  | { toggleFold: string }
+  | { showAsk: string }
+  | { toggleHelp: true }
 
-/** A button a shared plan lists, as the look draws it. */
+/**
+ * What a button does. `press` goes to the host in a press file. `effects` are what the press opens, copies or
+ * refreshes, which the look shows as under way, and runs itself when each one is an open or a copy. `type` opens the
+ * row's field with `text` in it and `hint` as its placeholder, `send` sends the field's words, and `leave` closes the field, dropping its draft
+ * when `isDiscard`.
+ */
+export type Does =
+  | { is: 'view'; change: ViewChange }
+  | { is: 'press'; press: RowPress | PrPress; effects: Effect[] }
+  | { is: 'type'; rowId: string; text: string; hint: string }
+  | { is: 'send'; rowId: string }
+  | { is: 'leave'; rowId: string; isDiscard: boolean }
+  | { is: 'nothing' }
+
+/** A button a shared plan lists, as the look draws it. `hotkey` presses it while its row is selected. */
 export type Button = {
   id: string
   label: string
   emphasis: ActionEmphasis
   isOut: boolean
-  local: LocalPress | null
+  hotkey: string | null
+  does: Does
 }
 
 export const button = (
   id: string,
   label: string,
   emphasis: ActionEmphasis,
-  local: LocalPress | null = null,
-): Button => ({
-  id,
-  label,
-  emphasis,
-  isOut: false,
-  local,
-})
+  does: Does = { is: 'nothing' },
+  hotkey: string | null = null,
+): Button => ({ id, label, emphasis, isOut: false, hotkey, does })
+
+/** The field a row or the goal draws while the person types in it, with its Send or Save, and Cancel or Discard. */
+export type Field = { rowId: string; buttons: Button[] }
 
 export type RowBlock = {
   kind: 'row'
@@ -51,6 +73,8 @@ export type RowBlock = {
   /** What the selected row shows under its line, in order. */
   body: { text: string; tone: Tone }[]
   buttons: Button[]
+  /** The open reply field, in place of the buttons, or null. */
+  field: Field | null
 }
 
 /** A line of the Status page: a subject, a milestone or a child, with its mark, name, stall word and lines under it. */
@@ -67,14 +91,42 @@ export type StatusLine = {
   buttons: Button[]
 }
 
+/** A PR's title line and the line under it: its rank, number and title, where it stands, and its buttons. */
+export type PrBlock = {
+  kind: 'pr'
+  id: string
+  rank: string | null
+  number: string
+  title: string
+  status: { text: string; tone: Tone }
+  unlisted: string[]
+  error: string | null
+  buttons: Button[]
+  feedback: { text: string; tone: Tone } | null
+}
+
+/** A line with a text and the buttons after it, as the PR order's changed line or the refresh line. */
+export type LineBlock = {
+  kind: 'line'
+  id: string
+  text: string | null
+  under: string | null
+  buttons: Button[]
+  feedback: { text: string; tone: Tone } | null
+}
+
 export type Block =
   | { kind: 'heading'; id: string; text: string; count: number | null; mark: Mark | null; buttons: Button[] }
   | RowBlock
   | StatusLine
+  | PrBlock
+  | LineBlock
   /** A Closed fold or a Status done fold, which the person opens and shuts. */
-  | { kind: 'fold'; id: string; depth: number; text: string; isOpen: boolean; local: LocalPress }
+  | { kind: 'fold'; id: string; depth: number; text: string; isOpen: boolean; change: ViewChange }
   /** A line that shows more of an open Closed list, as "Show 4 earlier". */
-  | { kind: 'more'; id: string; depth: number; text: string; local: LocalPress }
+  | { kind: 'more'; id: string; depth: number; text: string; change: ViewChange }
   | { kind: 'note'; id: string; text: string; tone: Tone; isStrong: boolean; depth: number }
+  /** The goal's field while the person types a goal, in place of the goal's text. */
+  | { kind: 'field'; id: string; field: Field }
   | { kind: 'rule'; id: string; text: string | null; isDashed: boolean }
   | { kind: 'gap'; id: string }

@@ -1,8 +1,12 @@
 import type { Closed, FoldKind } from '../../types'
+import type { RowPress } from '../../hooks/presses'
 import type { ClosedDelivery, ResultMark, RowView } from '../../hooks/rows'
 import {
   NEEDS_YOU_GROUPS,
   ROW_COPY,
+  actionLabel,
+  fieldExit,
+  replyHint,
   closedLineAction,
   closedShown,
   closedTotal,
@@ -18,6 +22,7 @@ import {
   waitingCount,
 } from '../../hooks/rows'
 import { firstWaiting, rowKeyPlan } from '../../hooks/action-plan'
+import { stepEffects } from '../../hooks/help-steps'
 import { emptyText, groupEmptyText, tabBarBanners } from '../../hooks/banners'
 import type { BannerView } from '../../hooks/banners'
 import { isMaybeStale } from '../../hooks/band'
@@ -29,14 +34,20 @@ import { shownTabs, tabBadge } from '../../hooks/tabs'
 import type { ShownTab } from '../../hooks/tabs'
 import { isDrawnInPlace } from '../../hooks/timing'
 import { footerStatus } from '../../hooks/view'
+import type { PressKind } from '../../types'
 import { button } from './blocks'
-import type { Block, Button, Mark, RowBlock, Tone } from './blocks'
+import type { Block, Button, Does, Field, Mark, RowBlock, Tone } from './blocks'
+import { prTabBlocks } from './draw-prs'
 import { statusBlocks } from './draw-status'
+import { GOAL_FIELD, GOAL_KEYS_ID } from '../../hooks/status-keys'
 
 /** The look's name for its texts, which follow the desktop look's words, not the terminal's. */
 const LOOK = 'herdr'
 
-/** What the look keeps between draws: the tab, the row the person opened, and what they unfolded. */
+/**
+ * What the look keeps between draws: the tab, the row the person opened, what they unfolded, and the row whose
+ * field is open, or `GOAL_KEYS_ID` for the goal's.
+ */
 export type LookUi = {
   tab: ShownTab
   selected: string | null
@@ -44,6 +55,7 @@ export type LookUi = {
   closedAll: FoldKind[]
   optionsShown: string[]
   statusUnfolded: string[]
+  typing: string | null
 }
 
 export const freshUi = (tab: ShownTab): LookUi => ({
@@ -53,10 +65,19 @@ export const freshUi = (tab: ShownTab): LookUi => ({
   closedAll: [],
   optionsShown: [],
   statusUnfolded: [],
+  typing: null,
 })
 
 /** What one draw of a session shows, from its published file. */
-export type LookScreen = { view: SessionView; agent: string; now: number; shownSince: number; isNextBuild: boolean }
+export type LookScreen = {
+  view: SessionView
+  agent: string
+  now: number
+  shownSince: number
+  isNextBuild: boolean
+  /** Whether the host could not find gh, which the session's PR state records and the shared view leaves out. */
+  isGhMissing: boolean
+}
 
 const toneOfFeedback = (f: Feedback): Tone =>
   isFailure(f) ? 'error' : f.is === 'done' || (f.is === 'local' && f.result.state === 'done') ? 'done' : 'muted'
@@ -64,18 +85,42 @@ const toneOfFeedback = (f: Feedback): Tone =>
 const markOf = (m: ResultMark | null): Mark | null =>
   m ? { text: m.text, tone: m.isRunning ? 'running' : (m.tone ?? 'muted'), isRunning: m.isRunning } : null
 
+/** What a row's press does. A Local step lists its opens and copies, which the look runs itself. */
+function rowDoes(row: RowView, press: RowPress, kind: PressKind, agent: string): Does {
+  if (press.action === 'type') return { is: 'type', rowId: row.id, text: '', hint: replyHint(row, agent) }
+  if (press.action === 'discard') return { is: 'leave', rowId: row.id, isDiscard: true }
+  const step = press.action === 'step' ? row.steps[press.step] : undefined
+  const effects = kind === 'local' && row.item && step ? stepEffects(row.item, step) : []
+
+  return { is: 'press', press, effects }
+}
+
 /** The row's buttons in the plan's order: its keys, then its follow-ups. */
-function rowButtons(row: RowView, isAllShown: boolean): Button[] {
+function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] {
   const { keys, more } = rowKeyPlan(row, isAllShown)
 
   return [...keys, ...more].map((k, n): Button => {
     const id = `${row.id} ${n}`
-    if (k.slot === 'allOptions') return button(id, k.label, k.emphasis, { showOptions: row.id })
-    if (k.slot === 'retry') return button(id, k.label, k.emphasis)
+    if (k.slot === 'allOptions') return button(id, k.label, k.emphasis, { is: 'view', change: { showOptions: row.id } })
+    if (k.slot === 'retry') return button(id, k.label, k.emphasis, rowDoes(row, k.press, k.kind, agent))
     const { action } = k
+    const does = rowDoes(row, action.press, action.kind, agent)
 
-    return { ...button(id, action.label, action.emphasis), isOut: action.isOut }
+    return { ...button(id, actionLabel(action), action.emphasis, does, k.hotkey ?? null), isOut: action.isOut }
   })
+}
+
+/** An open field's buttons: Send, or the goal's Save, then Discard for a held reply or Cancel. */
+function fieldOf(rowId: string, isDiscard: boolean, send: string = ROW_COPY.send): Field {
+  const leave = isDiscard ? ROW_COPY.discard : ROW_COPY.cancel
+
+  return {
+    rowId,
+    buttons: [
+      button(`${rowId} send`, send, 'primary', { is: 'send', rowId }),
+      button(`${rowId} leave`, leave, 'quiet', { is: 'leave', rowId, isDiscard }),
+    ],
+  }
 }
 
 function rowBody(row: RowView, isAllShown: boolean, isNextBuild: boolean): RowBlock['body'] {
@@ -96,6 +141,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
   const isAllShown = ui.optionsShown.includes(row.id)
   const text = rowFeedbackText(row, LOOK)
   const isSelected = !isSettled && row.id === selected
+  const isTyping = ui.typing === row.id
 
   return {
     kind: 'row',
@@ -112,7 +158,8 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     isSelectable: !isSettled,
     isSelected,
     body: isSelected ? rowBody(row, isAllShown, screen.isNextBuild) : [],
-    buttons: isSelected ? rowButtons(row, isAllShown) : [],
+    buttons: isSettled || (isSelected && !isTyping) ? rowButtons(row, isAllShown, screen.agent) : [],
+    field: isSelected && isTyping ? fieldOf(row.id, fieldExit(row) === 'discard') : null,
   }
 }
 
@@ -130,6 +177,7 @@ type Group = { kind: FoldKind; title: string; mark: Mark | null; rows: RowView[]
 
 function closedBlock(d: ClosedLine, now: number): RowBlock {
   const action = closedLineAction(d)
+  const closedDoes: Does = action ? { is: 'press', press: action.press, effects: [] } : { is: 'nothing' }
 
   return {
     kind: 'row',
@@ -144,7 +192,8 @@ function closedBlock(d: ClosedLine, now: number): RowBlock {
     isSelectable: false,
     isSelected: false,
     body: [],
-    buttons: action ? [button(`closed ${d.id} 0`, action.label, 'quiet')] : [],
+    buttons: action ? [button(`closed ${d.id} 0`, action.label, 'quiet', closedDoes)] : [],
+    field: null,
   }
 }
 
@@ -181,13 +230,13 @@ function groupBlocks(g: Group, ui: LookUi, selected: string | null, screen: Look
     depth: 0,
     text: foldLabel(total),
     isOpen,
-    local: { closedFold: g.kind },
+    change: { closedFold: g.kind },
   })
   if (!isOpen) return out
   const shown = closedShown(g.closed, settled, ui.closedAll.includes(g.kind))
   out.push(...shown.map(d => closedBlock(d, screen.now)))
   const earlier = earlierLabel(total, shown.length)
-  if (earlier) out.push({ kind: 'more', id: `earlier ${g.kind}`, depth: 1, text: earlier, local: { earlier: g.kind } })
+  if (earlier) out.push({ kind: 'more', id: `earlier ${g.kind}`, depth: 1, text: earlier, change: { earlier: g.kind } })
 
   return out
 }
@@ -234,9 +283,6 @@ function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'finding
   return groups.flatMap(g => groupBlocks(g, ui, selected, screen))
 }
 
-/** The PRs tab's page is not drawn yet. Its tab still shows, in the shared plan's place. */
-const PRS_NOT_DRAWN = "This panel doesn't show PRs yet. They show in the inbox in the agent's own window."
-
 export type TabCell = { id: ShownTab; label: string; badge: string | null; isSelected: boolean }
 
 export function tabCells(screen: Pick<LookScreen, 'view' | 'isNextBuild'>, tab: ShownTab): TabCell[] {
@@ -256,7 +302,7 @@ export function chrome(screen: LookScreen, tab: ShownTab): { banners: BannerView
   const status = footerStatus(
     tab,
     screen.view.status,
-    { isFetching: false, hasPrs: false },
+    { isFetching: false, hasPrs: screen.view.prs.drawn.length > 0 },
     screen.view.statusPage.error,
   )
 
@@ -264,9 +310,11 @@ export function chrome(screen: LookScreen, tab: ShownTab): { banners: BannerView
 }
 
 export function tabBlocks(screen: LookScreen, ui: LookUi): Block[] {
-  if (ui.tab === 'overview') return statusBlocks(screen.view.statusPage, id => ui.statusUnfolded.includes(id))
-  if (ui.tab === 'prs')
-    return [{ kind: 'note', id: 'prs', text: PRS_NOT_DRAWN, tone: 'muted', isStrong: false, depth: 0 }]
+  if (ui.tab === 'overview') {
+    const goalField = ui.typing === GOAL_KEYS_ID ? fieldOf(GOAL_KEYS_ID, false, GOAL_FIELD.submit) : null
+    return statusBlocks(screen.view.statusPage, { isUnfolded: id => ui.statusUnfolded.includes(id), goalField })
+  }
+  if (ui.tab === 'prs') return prTabBlocks(screen, ui.selected)
 
   return rowTabBlocks(screen, ui, ui.tab)
 }

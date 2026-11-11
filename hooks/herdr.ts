@@ -411,7 +411,7 @@ export function herdrEnvelope(source: EnvelopeSource, session: Session, isTrimme
 }
 
 /** The folder hosts publish their sessions to for the Herdr look, under the app's settings folder. */
-function publishedSessionsFolder(appHome: string): string {
+export function publishedSessionsFolder(appHome: string): string {
   return `${appHome}/inbox/sessions`
 }
 

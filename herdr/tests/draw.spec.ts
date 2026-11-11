@@ -1,9 +1,11 @@
 import { expect, test } from 'bun:test'
 
 import { rowKeyPlan } from '../../hooks/action-plan'
+import { actionLabel } from '../../hooks/rows'
 import type { RowView } from '../../hooks/rows'
 import { goalKeyPlan, statusKeyPlan } from '../../hooks/status-keys'
 import { shownTabs } from '../../hooks/tabs'
+import { NO_HOLDS } from '../../hooks/timing'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks, tabCells } from '../src/draw'
 import { readSession } from '../src/files'
@@ -13,7 +15,7 @@ import { NOW, demoEnvelopeText, demoScreen, uiOn } from './fixtures'
 
 const plannedLabels = (row: RowView, isAllShown: boolean) => {
   const { keys, more } = rowKeyPlan(row, isAllShown)
-  return [...keys, ...more].map(k => (k.slot === 'allOptions' || k.slot === 'retry' ? k.label : k.action.label))
+  return [...keys, ...more].map(k => (k.slot === 'allOptions' || k.slot === 'retry' ? k.label : actionLabel(k.action)))
 }
 
 const rowsOf = (blocks: Block[]) => blocks.filter((b): b is RowBlock => b.kind === 'row')
@@ -55,9 +57,9 @@ test('a group’s Closed fold shows its lines only while open', () => {
   const screen = demoScreen()
   const shut = tabBlocks(screen, uiOn('needsYou'))
   const fold = shut.find(b => b.kind === 'fold')
-  if (fold?.kind !== 'fold' || !('closedFold' in fold.local)) throw new Error('no Closed fold')
+  if (fold?.kind !== 'fold' || !('closedFold' in fold.change)) throw new Error('no Closed fold')
   expect(rowsOf(shut).some(r => r.depth === 1)).toBe(false)
-  const open = tabBlocks(screen, uiOn('needsYou', { unfolded: [fold.local.closedFold] }))
+  const open = tabBlocks(screen, uiOn('needsYou', { unfolded: [fold.change.closedFold] }))
   expect(rowsOf(open).filter(r => r.depth === 1).length).toBeGreaterThan(0)
 })
 
@@ -75,7 +77,12 @@ test('the Status page draws the goal’s and each row’s buttons in their plans
 
 test('each case of the followed terminal draws its own message, and a read session draws the inbox', () => {
   const read = readSession(demoEnvelopeText())
-  const o = { now: NOW, shownSince: NOW, isNextBuild: true }
+  const o = {
+    now: NOW,
+    isNextBuild: true,
+    holds: { ...NO_HOLDS, shownSince: NOW },
+    queue: { outs: [], notes: {}, lines: {} },
+  }
   const cases: [Followed, Parameters<typeof screenOf>[1]][] = [
     [{ is: 'no-terminal' }, null],
     [{ is: 'no-inbox', terminal: 't1', program: 'zsh' }, null],

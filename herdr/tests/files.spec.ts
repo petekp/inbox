@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 
 import { HERDR_FORMAT } from '../../hooks/herdr'
-import { isSessionChange, readSession, sessionPath } from '../src/files'
+import { isSessionChange, readSession } from '../src/files'
 import { AGENT, demoEnvelopeText } from './fixtures'
 
 test('a published session reads back with its source and its rows', () => {
@@ -9,10 +9,29 @@ test('a published session reads back with its source and its rows', () => {
   if (read.is !== 'read') throw new Error(`read as ${read.is}`)
   expect(read.envelope).toMatchObject({ host: 'claude-code', agent: AGENT, sessionId: 's1', terminal: 't1' })
   expect(read.session.ledger.items.length).toBeGreaterThan(0)
+  expect(read.isTrimmed).toBe(false)
+  expect(read.lastPress).toBeNull()
+  expect(read.projectFolder).toBeNull()
 })
 
-test('the file of a session lives under the app home’s inbox folder, named by its id', () => {
-  expect(sessionPath('/home/app', 's1')).toBe('/home/app/inbox/sessions/s1.json')
+test('a session the host trimmed to fit reads as trimmed', () => {
+  const read = readSession(demoEnvelopeText({ trimmed: true }))
+  expect(read.is === 'read' && read.isTrimmed).toBe(true)
+})
+
+test('the project folder reads back when absolute, and a relative one reads as none', () => {
+  const read = readSession(demoEnvelopeText({ projectFolder: '/work/app' }))
+  expect(read.is === 'read' && read.projectFolder).toBe('/work/app')
+  const relative = readSession(demoEnvelopeText({ projectFolder: 'work/app' }))
+  expect(relative.is === 'read' && relative.projectFolder).toBeNull()
+})
+
+test('the host’s last press reads back, and one in an unknown shape reads as none', () => {
+  const lastPress = { id: 'p1', outcome: 'stale' } as const
+  const read = readSession(demoEnvelopeText({ lastPress }))
+  expect(read.is === 'read' && read.lastPress).toEqual(lastPress)
+  const odd = readSession(demoEnvelopeText({ lastPress: { id: 'p1', outcome: 'lost' } }))
+  expect(odd.is === 'read' && odd.lastPress).toBeNull()
 })
 
 test('no file reads as missing, and a file cut off mid-write reads as torn', () => {
