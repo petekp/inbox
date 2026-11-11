@@ -32,9 +32,11 @@ async function sweep(
     log(
       `Removed ${temporaries} temporary ${temporaries === 1 ? 'copy' : 'copies'} an unfinished inbox mod install left.`,
     )
-  const labelled = await labelledSessions(run, hcs)
+  const labelled = await labelledSessions(run, hcs, terminal)
   if (!labelled)
-    return log(`Left old inbox session files in place: no hc listed Herdr's terminals. Tried ${hcs.join(', then ')}.`)
+    return log(
+      `Left old inbox session files in place: no hc listed Herdr's terminals with this one and their labels. Tried ${hcs.join(', then ')}.`,
+    )
   const removed = await sweepPublished(files, appHome, labelled, terminal, now)
   if (removed.length > 0)
     log(`Removed ${removed.length} inbox session file${removed.length === 1 ? '' : 's'} that no Herdr terminal shows.`)

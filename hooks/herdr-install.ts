@@ -50,9 +50,9 @@ async function bundledMod(read: ModFiles['read'], folder: string): Promise<Bundl
 }
 
 /**
- * The mod in the Herdr app's mods folder. `own` is a link, or a folder or file that is not a build of the inbox's
- * mod: the person's own, which no host writes over. An `inbox` build that names no time, or is cut off, has a null
- * `builtAt`.
+ * The mod in the Herdr app's mods folder. `own` is a link, a folder whose `main.js` or `mod.json` is not a plain file,
+ * or a folder or file that is not a build of the inbox's mod: the person's own, which no host writes over. An `inbox`
+ * build that names no time, or is cut off, has a null `builtAt`.
  */
 type InstalledMod = { is: 'missing' } | { is: 'own' } | { is: 'inbox'; builtAt: string | null }
 
@@ -62,6 +62,8 @@ async function installedMod(files: ModFiles, appHome: string): Promise<Installed
   const kind = await files.kind(modFolder(appHome))
   if (kind === null) return { is: 'missing' }
   if (kind !== 'folder') return { is: 'own' }
+  const fileKinds = await Promise.all(['main.js', 'mod.json'].map(name => files.kind(`${modFolder(appHome)}/${name}`)))
+  if (fileKinds.some(k => k !== 'file')) return { is: 'own' }
   const mainJs = await files.read(`${modFolder(appHome)}/main.js`).catch(() => null)
   if (mainJs === null || !isInboxMod(mainJs)) return { is: 'own' }
 
@@ -70,9 +72,10 @@ async function installedMod(files: ModFiles, appHome: string): Promise<Installed
 
 /**
  * The person's answer to whether hosts may install the mod, which every host reads. `installed` replaces a yes once
- * a host has installed it, so a mod the person removes afterwards stays removed.
+ * a host has installed it, so a mod the person removes afterwards stays removed. `newer` is an answer saved in a
+ * format this build does not know, which it neither acts on nor writes over.
  */
-type ModAnswer = 'yes' | 'no' | 'installed'
+type ModAnswer = 'yes' | 'no' | 'installed' | 'newer'
 
 const ANSWER_FORMAT = 1
 const answerPath = (appHome: string) => `${appHome}/inbox/herdr-mod.json`
@@ -85,8 +88,10 @@ async function savedRecord(files: ModFiles, appHome: string): Promise<{ answer: 
       answer?: unknown
       at?: unknown
     } | null
-    const answer = saved?.format === ANSWER_FORMAT ? saved.answer : null
     const at = typeof saved?.at === 'number' ? saved.at : null
+    const isNewerFormat = Number.isInteger(saved?.format) && (saved!.format as number) > ANSWER_FORMAT
+    if (isNewerFormat) return { answer: 'newer', at }
+    const answer = saved?.format === ANSWER_FORMAT ? saved.answer : null
 
     return answer === 'yes' || answer === 'no' || answer === 'installed' ? { answer, at } : null
   } catch {
@@ -94,7 +99,9 @@ async function savedRecord(files: ModFiles, appHome: string): Promise<{ answer: 
   }
 }
 
-const savedAnswer = async (files: ModFiles, appHome: string) => (await savedRecord(files, appHome))?.answer ?? null
+/** The saved answer, or null when none can be read. */
+export const savedAnswer = async (files: ModFiles, appHome: string) =>
+  (await savedRecord(files, appHome))?.answer ?? null
 
 /**
  * What the app's mods folder holds at `mods/inbox`: nothing, a build of the inbox's mod, or the person's own. With
@@ -103,10 +110,10 @@ const savedAnswer = async (files: ModFiles, appHome: string) => (await savedReco
 export async function herdrModNow(
   files: ModFiles,
   appHome: string,
-): Promise<{ installed: InstalledMod['is']; answeredAt: number | null }> {
+): Promise<{ installed: InstalledMod['is']; answer: ModAnswer | null; answeredAt: number | null }> {
   const [installed, record] = await Promise.all([installedMod(files, appHome), savedRecord(files, appHome)])
 
-  return { installed: installed.is, answeredAt: record?.at ?? null }
+  return { installed: installed.is, answer: record?.answer ?? null, answeredAt: record?.at ?? null }
 }
 
 /** A name beside `name` for a write that moves into place, with the time the host wrote it. */
@@ -132,12 +139,18 @@ async function saveAnswer(files: ModFiles, appHome: string, answer: ModAnswer, a
 
 type ModStep = 'ask' | 'install' | 'update' | null
 
-/** What a host does about the mod: ask the person, install it, replace an older build, or nothing. */
-function modStep(installed: InstalledMod, answer: ModAnswer | null, bundled: BundledMod): ModStep {
+/**
+ * What a host does about the mod: ask the person, install it, replace an older build, or nothing. An installed build
+ * stamped later than `now` counts as older, since its clock was wrong and it would otherwise block every update.
+ */
+function modStep(installed: InstalledMod, answer: ModAnswer | null, bundled: BundledMod, now: number): ModStep {
   if (installed.is === 'missing') return answer === 'yes' ? 'install' : answer === null ? 'ask' : null
   if (installed.is === 'own') return null
+  const installedAt = installed.builtAt ?? ''
+  const isFromTheFuture = installedAt > new Date(now).toISOString()
+  const isOlder = bundled.builtAt > installedAt || (isFromTheFuture && bundled.builtAt !== installedAt)
 
-  return bundled.builtAt > (installed.builtAt ?? '') ? 'update' : null
+  return isOlder ? 'update' : null
 }
 
 /**
@@ -173,7 +186,7 @@ async function writeMod(
 
       return
     }
-    if (modStep(await installedMod(files, appHome), null, bundled) !== 'update') return
+    if (modStep(await installedMod(files, appHome), null, bundled, now) !== 'update') return
     const installedJson = await files.read(`${target}/mod.json`).catch(() => null)
     if (installedJson !== bundled.modJson) await files.move(`${temporary}/mod.json`, `${target}/mod.json`)
     await files.move(`${temporary}/main.js`, `${target}/main.js`)
@@ -201,7 +214,7 @@ export async function keepHerdrModCurrent(
   const bundled = await bundledMod(files.read, bundledFolder)
   if (!bundled) return { is: 'failed', text: `Could not read the inbox mod for Herdr in ${bundledFolder}.` }
   const step = await Promise.all([installedMod(files, appHome), savedAnswer(files, appHome)])
-    .then(([installed, answer]) => modStep(installed, answer, bundled))
+    .then(([installed, answer]) => modStep(installed, answer, bundled, now))
     .catch((err: unknown) => new Error(message(err)))
   if (step instanceof Error)
     return { is: 'failed', text: `Could not read the Herdr app's mods folder. ${step.message}` }
@@ -217,6 +230,9 @@ export async function keepHerdrModCurrent(
   }
 }
 
+export const NEWER_ANSWER_TEXT =
+  'A newer build of the inbox saved the answer about its Herdr mod. Update the inbox here to answer again.'
+
 /**
  * Saves the person's answer to whether hosts may install the mod, and installs it after a yes. A no stays until the
  * person answers again.
@@ -228,6 +244,7 @@ export async function answerHerdrMod(
   isYes: boolean,
   now: number,
 ): Promise<HerdrModResult> {
+  if ((await savedAnswer(files, appHome)) === 'newer') return { is: 'failed', text: NEWER_ANSWER_TEXT }
   try {
     await saveAnswer(files, appHome, isYes ? 'yes' : 'no', now)
   } catch (err) {

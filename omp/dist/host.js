@@ -6862,6 +6862,9 @@ async function installedMod(files, appHome) {
     return { is: "missing" };
   if (kind !== "folder")
     return { is: "own" };
+  const fileKinds = await Promise.all(["main.js", "mod.json"].map((name) => files.kind(`${modFolder(appHome)}/${name}`)));
+  if (fileKinds.some((k) => k !== "file"))
+    return { is: "own" };
   const mainJs = await files.read(`${modFolder(appHome)}/main.js`).catch(() => null);
   if (mainJs === null || !isInboxMod(mainJs))
     return { is: "own" };
@@ -6872,8 +6875,11 @@ var answerPath = (appHome) => `${appHome}/inbox/herdr-mod.json`;
 async function savedRecord(files, appHome) {
   try {
     const saved = JSON.parse(await files.read(answerPath(appHome)));
-    const answer = saved?.format === ANSWER_FORMAT ? saved.answer : null;
     const at = typeof saved?.at === "number" ? saved.at : null;
+    const isNewerFormat = Number.isInteger(saved?.format) && saved.format > ANSWER_FORMAT;
+    if (isNewerFormat)
+      return { answer: "newer", at };
+    const answer = saved?.format === ANSWER_FORMAT ? saved.answer : null;
     return answer === "yes" || answer === "no" || answer === "installed" ? { answer, at } : null;
   } catch {
     return null;
@@ -6882,7 +6888,7 @@ async function savedRecord(files, appHome) {
 var savedAnswer = async (files, appHome) => (await savedRecord(files, appHome))?.answer ?? null;
 async function herdrModNow(files, appHome) {
   const [installed, record] = await Promise.all([installedMod(files, appHome), savedRecord(files, appHome)]);
-  return { installed: installed.is, answeredAt: record?.at ?? null };
+  return { installed: installed.is, answer: record?.answer ?? null, answeredAt: record?.at ?? null };
 }
 var temporaryName = (name, at) => `${name}.${Math.round(at)}-${Math.random().toString(36).slice(2)}.tmp`;
 var MOD_TEMPORARY = /^herdr-mod(?:\.json)?\.(\d{1,15})-[a-z0-9]{1,20}\.tmp$/;
@@ -6897,12 +6903,15 @@ async function saveAnswer(files, appHome, answer, at) {
 `);
   await files.move(temporary, path);
 }
-function modStep(installed, answer, bundled) {
+function modStep(installed, answer, bundled, now) {
   if (installed.is === "missing")
     return answer === "yes" ? "install" : answer === null ? "ask" : null;
   if (installed.is === "own")
     return null;
-  return bundled.builtAt > (installed.builtAt ?? "") ? "update" : null;
+  const installedAt = installed.builtAt ?? "";
+  const isFromTheFuture = installedAt > new Date(now).toISOString();
+  const isOlder = bundled.builtAt > installedAt || isFromTheFuture && bundled.builtAt !== installedAt;
+  return isOlder ? "update" : null;
 }
 async function writeMod(files, appHome, bundled, step, now) {
   const name = temporaryName("herdr-mod", now);
@@ -6924,7 +6933,7 @@ async function writeMod(files, appHome, bundled, step, now) {
         await files.removeFolder(`${target}/${name}`);
       return;
     }
-    if (modStep(await installedMod(files, appHome), null, bundled) !== "update")
+    if (modStep(await installedMod(files, appHome), null, bundled, now) !== "update")
       return;
     const installedJson = await files.read(`${target}/mod.json`).catch(() => null);
     if (installedJson !== bundled.modJson)
@@ -6941,7 +6950,7 @@ async function keepHerdrModCurrent(files, appHome, bundledFolder, now) {
   const bundled = await bundledMod(files.read, bundledFolder);
   if (!bundled)
     return { is: "failed", text: `Could not read the inbox mod for Herdr in ${bundledFolder}.` };
-  const step = await Promise.all([installedMod(files, appHome), savedAnswer(files, appHome)]).then(([installed, answer]) => modStep(installed, answer, bundled)).catch((err) => new Error(message(err)));
+  const step = await Promise.all([installedMod(files, appHome), savedAnswer(files, appHome)]).then(([installed, answer]) => modStep(installed, answer, bundled, now)).catch((err) => new Error(message(err)));
   if (step instanceof Error)
     return { is: "failed", text: `Could not read the Herdr app's mods folder. ${step.message}` };
   if (step === null)
@@ -6957,7 +6966,10 @@ async function keepHerdrModCurrent(files, appHome, bundledFolder, now) {
     return { is: "failed", text: `Could not ${step} the inbox mod in Herdr. ${message(err)}` };
   }
 }
+var NEWER_ANSWER_TEXT = "A newer build of the inbox saved the answer about its Herdr mod. Update the inbox here to answer again.";
 async function answerHerdrMod(files, appHome, bundledFolder, isYes, now) {
+  if (await savedAnswer(files, appHome) === "newer")
+    return { is: "failed", text: NEWER_ANSWER_TEXT };
   try {
     await saveAnswer(files, appHome, isYes ? "yes" : "no", now);
   } catch (err) {
@@ -6969,6 +6981,7 @@ async function answerHerdrMod(files, appHome, bundledFolder, isYes, now) {
 // ../hooks/herdr-ask.ts
 var LEAD = "Install the inbox's Herdr mod?";
 var INSTALLING_TEXT = "Installing the inbox mod in Herdr\u2026";
+var SAVING_TEXT = "Saving the answer\u2026";
 var INSTALLED_TEXT = "\u2713 Installed the inbox mod in Herdr.";
 var HERDR_ASK_BUTTONS = [
   { id: "herdr-install", label: "Install", isYes: true },
@@ -6983,10 +6996,11 @@ function herdrAskBanner(ask) {
   if (!ask)
     return null;
   const isAsking = ask.is === "asking";
-  const lead = ask.is === "answered" ? ask.text : isAsking ? LEAD : INSTALLING_TEXT;
+  const lead = ask.is === "answered" ? ask.text : ask.is === "asking" ? LEAD : ask.isYes ? INSTALLING_TEXT : SAVING_TEXT;
   const body = isAsking ? `It adds the inbox panel to the Herdr app, in ${ask.folder}, and keeps it up to date with the inbox.` : null;
   return { kind: "herdr-mod-ask", tone: "ask", lead, body };
 }
+var answeringOf = (ask, isYes) => ({ ...ask, is: "answering", isYes });
 async function answerHerdrAsk(files, ask, bundledFolder, isYes, now, later) {
   const result = await answerHerdrMod(files, ask.appHome, bundledFolder, isYes, now);
   if (result.is === "failed")
@@ -6995,7 +7009,7 @@ async function answerHerdrAsk(files, ask, bundledFolder, isYes, now, later) {
 }
 async function isHerdrAskOpen(files, ask) {
   const state = await herdrModNow(files, ask.appHome).catch(() => null);
-  return state === null || state.installed === "missing" && state.answeredAt === ask.answeredAt;
+  return state === null || state.installed === "missing" && state.answer !== "newer" && state.answeredAt === ask.answeredAt;
 }
 async function askHerdrAgain(files, appHome, home) {
   if (!appHome)
@@ -7008,6 +7022,8 @@ async function askHerdrAgain(files, appHome, home) {
     return "The inbox mod is already installed in Herdr.";
   if (state.installed === "own")
     return `${ask.folder} holds another mod, so the inbox leaves it alone.`;
+  if (state.answer === "newer")
+    return NEWER_ANSWER_TEXT;
   return ask;
 }
 
@@ -11340,14 +11356,19 @@ async function applyLookPress(host, file) {
 var SWEEP_AFTER_MS = 24 * 60 * 60 * 1000;
 var HC_TIMEOUT_MS = 5000;
 var LIST_REQUEST = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "terminal.list", params: {} });
-function labelledIn(stdout) {
+function labelledIn(stdout, ownTerminal) {
   for (const line of stdout.split(`
 `)) {
     try {
       const terminals = JSON.parse(line)?.result?.terminals;
       if (!Array.isArray(terminals))
         continue;
-      const named = terminals.map((t) => t?.labels?.[SESSION_LABEL]);
+      const listed = terminals;
+      const isEveryLabelled = listed.every((t) => typeof t?.labels === "object" && t.labels !== null);
+      const isOwnListed = listed.some((t) => t?.address === ownTerminal);
+      if (!isEveryLabelled || !isOwnListed)
+        return null;
+      const named = listed.map((t) => t.labels[SESSION_LABEL]);
       return new Set(named.filter((id) => typeof id === "string" && id !== ""));
     } catch {
       continue;
@@ -11355,13 +11376,13 @@ function labelledIn(stdout) {
   }
   return null;
 }
-async function labelledSessions(run, hcs) {
+async function labelledSessions(run, hcs, ownTerminal) {
   for (const hc of hcs) {
     const r = await run(["/bin/sh", "-c", 'printf "%s\\n" "$1" | "$0" connect', hc, LIST_REQUEST], {
       cwd: "/",
       timeoutMs: HC_TIMEOUT_MS
     }).catch(() => null);
-    const labelled = r?.code === 0 ? labelledIn(r.stdout) : null;
+    const labelled = r?.code === 0 ? labelledIn(r.stdout, ownTerminal) : null;
     if (labelled)
       return labelled;
   }
@@ -11418,9 +11439,9 @@ async function sweep(run, files, target, now, log) {
   const temporaries = await sweepModTemporaries(files, appHome, now);
   if (temporaries > 0)
     log(`Removed ${temporaries} temporary ${temporaries === 1 ? "copy" : "copies"} an unfinished inbox mod install left.`);
-  const labelled = await labelledSessions(run, hcs);
+  const labelled = await labelledSessions(run, hcs, terminal);
   if (!labelled)
-    return log(`Left old inbox session files in place: no hc listed Herdr's terminals. Tried ${hcs.join(", then ")}.`);
+    return log(`Left old inbox session files in place: no hc listed Herdr's terminals with this one and their labels. Tried ${hcs.join(", then ")}.`);
   const removed = await sweepPublished(files, appHome, labelled, terminal, now);
   if (removed.length > 0)
     log(`Removed ${removed.length} inbox session file${removed.length === 1 ? "" : "s"} that no Herdr terminal shows.`);
@@ -11564,8 +11585,7 @@ function ompHerdrAsk(target, memory, changed) {
       const ask = memory.herdrAsk;
       if (ask?.is !== "asking")
         return;
-      if (isYes)
-        show({ ...ask, is: "installing" });
+      show(answeringOf(ask, isYes));
       const answered = await answerHerdrAsk(startFiles, ask, bundledHerdrMod(), isYes, Date.now(), "Run /inbox herdr");
       memory.herdrModFailure = answered.failure;
       show(answered.ask);
@@ -11573,9 +11593,9 @@ function ompHerdrAsk(target, memory, changed) {
     again: async () => {
       const ask = await askHerdrAgain(startFiles, appHome, process.env.HOME);
       if (typeof ask === "string")
-        return ask;
+        return { text: ask, isShown: false };
       show(ask);
-      return "Showing the question about the inbox mod for Herdr in the inbox.";
+      return { text: "Showing the question about the inbox mod for Herdr in the inbox.", isShown: true };
     }
   };
 }
@@ -12471,8 +12491,13 @@ function createInbox(pi, deps = defaultDeps) {
   pi.registerCommand("inbox", {
     description: inboxCommandText(deps.isNextBuild),
     handler: async (args, ctx) => {
-      if (args.trim() === "herdr")
-        ctx.ui.notify(await herdrAsk.again(), "info");
+      if (args.trim() === "herdr") {
+        const again = await herdrAsk.again();
+        ctx.ui.notify(again.text, "info");
+        if (again.isShown && ctx.mode === "tui")
+          await openPanelUi(ctx, false);
+        return;
+      }
       const isDemo = args.trim() === "demo";
       const target = deps.herdrTarget;
       const isHerdrApp = ctx.mode === "tui" && !args.trim() && target?.kind === "terminal";

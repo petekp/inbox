@@ -476,7 +476,12 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   pi.registerCommand('inbox', {
     description: inboxCommandText(deps.isNextBuild),
     handler: async (args, ctx) => {
-      if (args.trim() === 'herdr') ctx.ui.notify(await herdrAsk.again(), 'info')
+      if (args.trim() === 'herdr') {
+        const again = await herdrAsk.again()
+        ctx.ui.notify(again.text, 'info')
+        if (again.isShown && ctx.mode === 'tui') await openPanelUi(ctx, false)
+        return
+      }
       const isDemo = args.trim() === 'demo'
       const target = deps.herdrTarget
       const isHerdrApp = ctx.mode === 'tui' && !args.trim() && target?.kind === 'terminal'

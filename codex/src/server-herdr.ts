@@ -26,7 +26,7 @@ const pressFiles: PressFiles = {
   remove: path => rm(path, { force: true }),
 }
 
-const startFiles: ModFiles & SweepFiles = {
+export const startFiles: ModFiles & SweepFiles = {
   kind: path =>
     lstat(path).then(
       s => (s.isSymbolicLink() ? 'link' : s.isDirectory() ? 'folder' : s.isFile() ? 'file' : 'other'),

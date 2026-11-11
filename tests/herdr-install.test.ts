@@ -3,13 +3,14 @@ import type { Run } from '../hooks/gh'
 import { herdrTarget } from '../hooks/herdr'
 import {
   answerHerdrAsk,
+  answeringOf,
   askHerdrAgain,
   herdrAskBanner,
   herdrAskInApp,
   herdrAskOf,
   isHerdrAskOpen,
 } from '../hooks/herdr-ask'
-import { answerHerdrMod, builtAtLine, keepHerdrModCurrent } from '../hooks/herdr-install'
+import { answerHerdrMod, builtAtLine, keepHerdrModCurrent, NEWER_ANSWER_TEXT } from '../hooks/herdr-install'
 import type { ModFiles } from '../hooks/herdr-install'
 import { startInHerdrApp } from '../hooks/herdr-start'
 import { labelledSessions, sweepModTemporaries, sweepPublished, SWEEP_AFTER_MS } from '../hooks/herdr-sweep'
@@ -29,6 +30,10 @@ function disk(initial: Record<string, string> = {}, links: string[] = []) {
   let failMove: { name: string; before?: () => void } | null = null
   const under = (folder: string) => [...files.keys()].filter(p => p.startsWith(`${folder}/`))
   const kind: ModFiles['kind'] = async path => {
+    if (path.endsWith('/.')) {
+      const folder = path.slice(0, -2)
+      return folders.has(folder) || under(folder).length > 0 ? 'folder' : null
+    }
     if (links.includes(path)) return 'link'
     if (files.has(path)) return 'file'
     return folders.has(path) || under(path).length > 0 ? 'folder' : null
@@ -104,13 +109,15 @@ describe('keepHerdrModCurrent', () => {
     expect(d.files.has('/app/mods/inbox/main.js')).toBe(false)
   })
 
-  test('leaves a linked mods/inbox, and a mod that is not the inbox build, as they are', async () => {
-    const linked = disk({ ...BUNDLED, '/app/mods/inbox/main.js': build(OLD) }, ['/app/mods/inbox'])
+  test('leaves a linked mods/inbox, a linked file inside it, and a mod that is not the inbox build, as they are', async () => {
+    const installed = { ...BUNDLED, '/app/mods/inbox/main.js': build(OLD), '/app/mods/inbox/mod.json': MOD_JSON }
+    const linked = disk(installed, ['/app/mods/inbox'])
+    const linkedFiles = ['/app/mods/inbox/main.js', '/app/mods/inbox/mod.json'].map(link => disk(installed, [link]))
     const other = disk({ ...BUNDLED, '/app/mods/inbox/main.js': 'export default 1' })
 
-    expect(await keepHerdrModCurrent(linked.calls, '/app', '/plugin/mod', 5)).toEqual({ is: 'current' })
-    expect(await keepHerdrModCurrent(other.calls, '/app', '/plugin/mod', 5)).toEqual({ is: 'current' })
-    expect(linked.files.get('/app/mods/inbox/main.js')).toBe(build(OLD))
+    for (const d of [linked, ...linkedFiles, other])
+      expect(await keepHerdrModCurrent(d.calls, '/app', '/plugin/mod', 5)).toEqual({ is: 'current' })
+    for (const d of [linked, ...linkedFiles]) expect(d.files.get('/app/mods/inbox/main.js')).toBe(build(OLD))
     expect(other.files.get('/app/mods/inbox/main.js')).toBe('export default 1')
   })
 
@@ -124,18 +131,34 @@ describe('keepHerdrModCurrent', () => {
     }
   })
 
-  test('keeps an installed build as new as its own', async () => {
+  test('keeps an installed build as new as its own, and replaces one stamped later than now', async () => {
     const newer = '2026-11-20T00:00:00.000Z'
+    const installedAt = (at: string) =>
+      disk({ ...BUNDLED, '/app/mods/inbox/main.js': build(at, 'kept()'), '/app/mods/inbox/mod.json': MOD_JSON })
     for (const at of [NEW, newer]) {
-      const d = disk({
-        ...BUNDLED,
-        '/app/mods/inbox/main.js': build(at, 'kept()'),
-        '/app/mods/inbox/mod.json': MOD_JSON,
-      })
+      const d = installedAt(at)
 
-      expect(await keepHerdrModCurrent(d.calls, '/app', '/plugin/mod', 5)).toEqual({ is: 'current' })
+      expect(await keepHerdrModCurrent(d.calls, '/app', '/plugin/mod', Date.parse(newer))).toEqual({ is: 'current' })
       expect(d.files.get('/app/mods/inbox/main.js')).toBe(build(at, 'kept()'))
     }
+    const ahead = installedAt(newer)
+
+    expect(await keepHerdrModCurrent(ahead.calls, '/app', '/plugin/mod', Date.parse(NEW))).toEqual({ is: 'updated' })
+    expect(ahead.files.get('/app/mods/inbox/main.js')).toBe(build(NEW))
+  })
+
+  test('leaves an answer saved in a newer format as it is: no host asks, installs or writes over it', async () => {
+    const newer = JSON.stringify({ format: 2, answer: 'later', at: 1 })
+    const d = disk({ ...BUNDLED, '/app/inbox/herdr-mod.json': newer })
+
+    expect(await keepHerdrModCurrent(d.calls, '/app', '/plugin/mod', 5)).toEqual({ is: 'current' })
+    expect(await answerHerdrMod(d.calls, '/app', '/plugin/mod', true, 5)).toEqual({
+      is: 'failed',
+      text: NEWER_ANSWER_TEXT,
+    })
+    expect(await askHerdrAgain(d.calls, '/app', '/home/p')).toBe(NEWER_ANSWER_TEXT)
+    expect(d.files.get('/app/inbox/herdr-mod.json')).toBe(newer)
+    expect(d.files.has('/app/mods/inbox/main.js')).toBe(false)
   })
 
   test('says why an update failed, and leaves the old mod whole', async () => {
@@ -258,8 +281,25 @@ describe('labelledSessions', () => {
         : { code: 0, stdout: `${listed}\n`, stderr: '' }
     }
 
-    expect(await labelledSessions(run, ['hc', '/home/person/.local/bin/hc'])).toEqual(new Set(['s1', 's9']))
+    expect(await labelledSessions(run, ['hc', '/home/person/.local/bin/hc'], 't1')).toEqual(new Set(['s1', 's9']))
     expect(ran).toEqual(['hc', '/home/person/.local/bin/hc'])
+  })
+
+  test('answers null for a list that leaves out the own terminal, or a terminal with no labels', async () => {
+    const answer =
+      (terminals: unknown[]): Run =>
+      async () => ({ code: 0, stdout: JSON.stringify({ jsonrpc: '2.0', id: 1, result: { terminals } }), stderr: '' })
+
+    expect(await labelledSessions(answer([{ address: 't2', labels: { 'inbox.session': 's2' } }]), ['hc'], 't1')).toBe(
+      null,
+    )
+    expect(
+      await labelledSessions(
+        answer([{ address: 't1', labels: { 'inbox.session': 's1' } }, { address: 't2' }]),
+        ['hc'],
+        't1',
+      ),
+    ).toBe(null)
   })
 
   test('answers null when no hc lists the terminals, and a start then leaves every session file in place', async () => {
@@ -271,12 +311,14 @@ describe('labelledSessions', () => {
       { kind: 'terminal' }
     >
 
-    expect(await labelledSessions(run, ['hc'])).toBe(null)
+    expect(await labelledSessions(run, ['hc'], 't1')).toBe(null)
     expect(
       await startInHerdrApp(run, d.calls, target, '/plugin/mod', 10 * SWEEP_AFTER_MS, t => logged.push(t)),
     ).toEqual({ is: 'ask' })
     expect(d.files.has('/app/inbox/sessions/gone.json')).toBe(true)
-    expect(logged).toEqual(["Left old inbox session files in place: no hc listed Herdr's terminals. Tried hc."])
+    expect(logged).toEqual([
+      "Left old inbox session files in place: no hc listed Herdr's terminals with this one and their labels. Tried hc.",
+    ])
   })
 })
 
@@ -290,13 +332,17 @@ describe('the install question', () => {
     const other = herdrAskOf(APP, '/home/p', null)
 
     expect(await herdrAskInApp(disk(BUNDLED).calls, APP, '/home/p')).toBe(null)
+    expect(
+      await herdrAskInApp(disk({ ...BUNDLED, [`${APP}/settings.json`]: '{}' }, [APP]).calls, APP, '/home/p'),
+    ).toEqual(other)
     expect(herdrAskBanner(ask)).toEqual({
       kind: 'herdr-mod-ask',
       tone: 'ask',
       lead: "Install the inbox's Herdr mod?",
       body: 'It adds the inbox panel to the Herdr app, in ~/.config/herdr-app/mods/inbox, and keeps it up to date with the inbox.',
     })
-    expect(herdrAskBanner({ ...other, is: 'installing' })?.lead).toBe('Installing the inbox mod in Herdr…')
+    expect(herdrAskBanner(answeringOf(other, true))?.lead).toBe('Installing the inbox mod in Herdr…')
+    expect(herdrAskBanner(answeringOf(other, false))?.lead).toBe('Saving the answer…')
 
     const r = await answerHerdrAsk(d.calls, ask!, '/plugin/mod', true, 5, 'Run /inbox herdr')
     expect(r).toEqual({ ask: { is: 'answered', text: '✓ Installed the inbox mod in Herdr.' }, failure: null })
@@ -321,7 +367,7 @@ describe('the install question', () => {
   })
 
   test('says why /inbox herdr cannot ask', async () => {
-    const installed = inApp({ [`${APP}/mods/inbox/main.js`]: build(NEW) })
+    const installed = inApp({ [`${APP}/mods/inbox/main.js`]: build(NEW), [`${APP}/mods/inbox/mod.json`]: MOD_JSON })
     const own = inApp({ [`${APP}/mods/inbox/main.js`]: 'export default 1' })
 
     expect(await askHerdrAgain(inApp().calls, null, '/home/p')).toBe(

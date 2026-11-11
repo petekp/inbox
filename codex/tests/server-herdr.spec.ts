@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
 import type { PressFile } from '../../hooks/herdr-press-file'
 import { makeServer } from '../src/server'
-import { followCodexPresses } from '../src/server-herdr'
+import { codexHerdrAsk, followCodexPresses } from '../src/server-herdr'
+import { builtAtLine } from '../../hooks/herdr-install'
 import { readState, updateState } from '../src/state'
 import { NO_HOLDS } from '../../hooks/timing'
 import { tempDir } from './helpers'
@@ -162,4 +163,43 @@ test("a press the look ran itself records the look's result, and each look press
 
   await apply!('s1', look('p2', { action: 'done', id: 'gone' }))
   assert.deepEqual((await readState(dir, 's1')).lastHerdrPress, { id: 'p2', outcome: 'stale' })
+})
+
+test('an Install press on the tab installs the Herdr mod, says so, and a later press finds the question closed', async () => {
+  const appHome = tempDir()
+  writeFileSync(join(appHome, 'settings.json'), '{}')
+  const bundled = tempDir()
+  const code = 'draw()'
+  const mainJs = `// Built by herdr/build.ts\n${builtAtLine('2026-11-10T00:00:00.000Z', code.length)}\n${code}`
+  writeFileSync(join(bundled, 'main.js'), mainJs)
+  writeFileSync(join(bundled, 'mod.json'), '{}\n')
+  const handle = makeServer({
+    comparePage: '/plugin/dist/compare-page.html',
+    dir: tempDir(),
+    now: () => 100,
+    exec: async () => ({ code: 0, stdout: '', stderr: '' }),
+    tabHtml: '<html></html>',
+    fallbackCli: async () => 'codex',
+    herdrAsk: codexHerdrAsk({ HOME: '/home/person', HERDR_APP_HOME: appHome }, bundled),
+  })
+  const press = async () =>
+    (
+      (await handle({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'inbox_press',
+          arguments: { press: { action: 'herdr-ask', isYes: true } },
+          _meta: { thread_id: 's1' },
+        },
+      })) as { result: { structuredContent: unknown } }
+    ).result.structuredContent
+
+  assert.deepEqual(await press(), {
+    ask: { is: 'answered', text: '✓ Installed the inbox mod in Herdr.' },
+    failure: null,
+  })
+  assert.equal(readFileSync(join(appHome, 'mods/inbox/main.js'), 'utf8'), mainJs)
+  assert.deepEqual(await press(), { ask: null, failure: null })
 })

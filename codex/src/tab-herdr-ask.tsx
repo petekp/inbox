@@ -1,4 +1,4 @@
-import { HERDR_ASK_BUTTONS, herdrAskBanner } from '../../hooks/herdr-ask'
+import { answeringOf, HERDR_ASK_BUTTONS, herdrAskBanner } from '../../hooks/herdr-ask'
 import { SETTLED_MS } from '../../hooks/timing'
 import type { HerdrAsk, OpenHerdrAsk } from '../../hooks/herdr-ask'
 import type { TabView as View } from './core'
@@ -8,7 +8,7 @@ import { tabState } from './tab-state'
 import { Banner } from './tab-parts'
 
 async function answerHerdrAsk(ask: OpenHerdrAsk, isYes: boolean) {
-  tabState.herdrAsk = isYes ? { ...ask, is: 'installing' } : ask
+  tabState.herdrAsk = answeringOf(ask, isYes)
   tabState.herdrFailure = null
   tabState.draw()
   const r = await callTool<{ ask: HerdrAsk | null; failure: string | null }>('inbox_press', {

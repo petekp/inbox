@@ -23,7 +23,7 @@ import type { ApplyPress, PressFiles, PublishFiles } from './herdr-app'
 import { hasHerdrMod, herdrPanelOpener, noHerdrModText } from './herdr-open'
 import type { HerdrOpened } from './herdr-open'
 import type { ModFiles } from './herdr-install'
-import { answerHerdrAsk, askHerdrAgain, herdrAskOf, isHerdrAskOpen } from './herdr-ask'
+import { answerHerdrAsk, answeringOf, askHerdrAgain, herdrAskOf, isHerdrAskOpen } from './herdr-ask'
 import type { HerdrAsk } from './herdr-ask'
 import { startInHerdrApp } from './herdr-start'
 import type { SweepFiles } from './herdr-sweep'
@@ -186,7 +186,7 @@ export async function pressHerdrAsk(isYes: boolean): Promise<void> {
   const ask = mod.herdrAsk
   if (!askHost || ask?.is !== 'asking') return
   const { calls } = askHost
-  if (isYes) showAsk({ ...ask, is: 'installing' })
+  showAsk(answeringOf(ask, isYes))
   const now = await calls.now()
   const answered = await answerHerdrAsk(herdrFiles(calls), ask, bundledMod(calls), isYes, now, 'Run /inbox herdr')
   mod.herdrModFailure = answered.failure

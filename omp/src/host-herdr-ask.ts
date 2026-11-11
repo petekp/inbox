@@ -1,6 +1,6 @@
 import type { HerdrTarget } from '../../hooks/herdr'
 import { PRESS_POLL_MS } from '../../hooks/herdr-app'
-import { answerHerdrAsk, askHerdrAgain, herdrAskOf, isHerdrAskOpen } from '../../hooks/herdr-ask'
+import { answerHerdrAsk, answeringOf, askHerdrAgain, herdrAskOf, isHerdrAskOpen } from '../../hooks/herdr-ask'
 import type { HerdrAsk } from '../../hooks/herdr-ask'
 import type { HerdrModResult } from '../../hooks/herdr-install'
 import { SETTLED_MS } from '../../hooks/timing'
@@ -12,8 +12,11 @@ export type OmpHerdrAsk = {
   /** Takes what omp's start did about the mod: a failure to show, or the question to ask. */
   started(result: HerdrModResult | null): void
   answer(isYes: boolean): Promise<void>
-  /** For `/inbox herdr`: shows the question again, even after a no, and says so, or says why it cannot. */
-  again(): Promise<string>
+  /**
+   * For `/inbox herdr`: shows the question again, even after a no, and says so, or says why it cannot. `isShown` says
+   * whether the question shows.
+   */
+  again(): Promise<{ text: string; isShown: boolean }>
 }
 
 /**
@@ -51,17 +54,17 @@ export function ompHerdrAsk(
     answer: async isYes => {
       const ask = memory.herdrAsk
       if (ask?.is !== 'asking') return
-      if (isYes) show({ ...ask, is: 'installing' })
+      show(answeringOf(ask, isYes))
       const answered = await answerHerdrAsk(startFiles, ask, bundledHerdrMod(), isYes, Date.now(), 'Run /inbox herdr')
       memory.herdrModFailure = answered.failure
       show(answered.ask)
     },
     again: async () => {
       const ask = await askHerdrAgain(startFiles, appHome, process.env.HOME)
-      if (typeof ask === 'string') return ask
+      if (typeof ask === 'string') return { text: ask, isShown: false }
       show(ask)
 
-      return 'Showing the question about the inbox mod for Herdr in the inbox.'
+      return { text: 'Showing the question about the inbox mod for Herdr in the inbox.', isShown: true }
     },
   }
 }

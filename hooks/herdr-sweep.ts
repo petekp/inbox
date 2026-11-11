@@ -13,13 +13,23 @@ const HC_TIMEOUT_MS = 5000
 /** One `terminal.list` call of herdr-core's API, which answers every live terminal with its labels. */
 const LIST_REQUEST = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'terminal.list', params: {} })
 
-/** The sessions that live terminals' `inbox.session` labels name, in what `hc connect` printed, or null. */
-function labelledIn(stdout: string): Set<string> | null {
+type Listed = { address?: unknown; labels?: unknown }
+
+/**
+ * The sessions that live terminals' `inbox.session` labels name, in what `hc connect` printed. Null unless the list
+ * holds `ownTerminal` and gives every terminal a `labels` object, since a list from another herdr-core, or one without
+ * labels, would make live sessions look unnamed.
+ */
+function labelledIn(stdout: string, ownTerminal: string): Set<string> | null {
   for (const line of stdout.split('\n')) {
     try {
       const terminals: unknown = (JSON.parse(line) as { result?: { terminals?: unknown } } | null)?.result?.terminals
       if (!Array.isArray(terminals)) continue
-      const named = terminals.map(t => (t as { labels?: Record<string, unknown> } | null)?.labels?.[SESSION_LABEL])
+      const listed = terminals as (Listed | null)[]
+      const isEveryLabelled = listed.every(t => typeof t?.labels === 'object' && t.labels !== null)
+      const isOwnListed = listed.some(t => t?.address === ownTerminal)
+      if (!isEveryLabelled || !isOwnListed) return null
+      const named = listed.map(t => (t!.labels as Record<string, unknown>)[SESSION_LABEL])
 
       return new Set(named.filter((id): id is string => typeof id === 'string' && id !== ''))
     } catch {
@@ -33,15 +43,19 @@ function labelledIn(stdout: string): Set<string> | null {
 /**
  * The sessions that live terminals' `inbox.session` labels name. `hc ls` prints no labels, so this sends one
  * `terminal.list` request to `hc connect`, through `sh` since a host's `run` passes no input. It tries each `hc` in
- * turn, and resolves null when none answers.
+ * turn, and resolves null when none answers with a list that holds `ownTerminal` and every terminal's labels.
  */
-export async function labelledSessions(run: Run, hcs: readonly string[]): Promise<Set<string> | null> {
+export async function labelledSessions(
+  run: Run,
+  hcs: readonly string[],
+  ownTerminal: string,
+): Promise<Set<string> | null> {
   for (const hc of hcs) {
     const r = await run(['/bin/sh', '-c', 'printf "%s\\n" "$1" | "$0" connect', hc, LIST_REQUEST], {
       cwd: '/',
       timeoutMs: HC_TIMEOUT_MS,
     }).catch(() => null)
-    const labelled = r?.code === 0 ? labelledIn(r.stdout) : null
+    const labelled = r?.code === 0 ? labelledIn(r.stdout, ownTerminal) : null
     if (labelled) return labelled
   }
 

@@ -15,7 +15,11 @@ The inbox's three hosts each install the inbox from this repo, so each install a
 
 Pete chose 1. A mod that falls behind the hosts breaks when the envelope's `format` moves, and the person has no reason to copy it again by hand. When two hosts carry different versions, the newer one wins, and the mod reads older envelopes through `upgradeSession`.
 
-How it is built: a host compares build times, not versions. `herdr/build.ts` writes the time of each build whose code changed on the bundle's second line, and copies the mod into `codex/plugin/dist/herdr-mod/` and `omp/dist/herdr-mod/`, since Codex and omp install only those folders. The answer to the install question is saved in `<app home>/inbox/herdr-mod.json`, for every host to read. "Installing and updating the Herdr mod" in [the hosts' differences](../../looks/differences-hosts.md) gives the behavior. The question itself is not built yet.
+How it is built: a host compares build times, not versions. `herdr/build.ts` writes the time of each build whose code changed on the bundle's second line, and copies the mod into `codex/plugin/dist/herdr-mod/` and `omp/dist/herdr-mod/`, since Codex and omp install only those folders. The answer to the install question is saved in `<app home>/inbox/herdr-mod.json`, for every host to read. "Installing and updating the Herdr mod" in [the Herdr rows of the hosts' differences](../../looks/differences-hosts-herdr.md) gives the behavior, including the install question each host asks.
+
+### Known limits
+
+- An install or update writes the mod to a temporary folder in `<app home>/inbox/` and renames it into `<app home>/mods/inbox/`. When those two folders sit on different volumes, as when one is a link to another disk, Codex and omp fail the rename with `EXDEV`. The person sees the warning banner "Could not install the inbox mod in Herdr." or "Could not update the inbox mod in Herdr.", followed by "EXDEV: cross-device link not permitted". In Codex, an update at a handler load writes that only to `herdr.log`. The mod's `mv` copies across volumes instead, so Claude Code installs there. Nothing handles this case yet.
 
 ### Minimum Herdr version
 

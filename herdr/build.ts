@@ -19,7 +19,7 @@
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { builtAtLine, modBuiltAt } from '../hooks/herdr-install'
+import { BUILT_AT_LINE, stampedBundle } from './stamp'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const out = join(here, 'mod', 'inbox')
@@ -27,12 +27,6 @@ const isCheck = process.argv[2] === '--check'
 const APP_MODULES = ['gpui-kit', 'gpui-base', 'herdr']
 const MOD_JSON = `${JSON.stringify({ place: 'none' })}\n`
 const COPIES = [join(here, '..', 'codex', 'plugin', 'dist', 'herdr-mod'), join(here, '..', 'omp', 'dist', 'herdr-mod')]
-const BUILT_AT_LINE = '// Built at BUILT_AT'
-function stamped(unstamped: string, builtAt: string) {
-  const after = unstamped.slice(unstamped.indexOf(BUILT_AT_LINE) + BUILT_AT_LINE.length + 1)
-
-  return unstamped.replace(BUILT_AT_LINE, builtAtLine(builtAt, after.length))
-}
 
 const { devDependencies } = (await Bun.file(join(here, 'package.json')).json()) as {
   devDependencies: Record<string, string>
@@ -93,10 +87,7 @@ const read = (path: string) =>
   Bun.file(path)
     .text()
     .catch(() => null)
-const current = await read(join(out, 'main.js'))
-const currentBuiltAt = current ? modBuiltAt(current) : null
-const isSameCode = currentBuiltAt !== null && current === stamped(unstamped, currentBuiltAt)
-const bundle = stamped(unstamped, isSameCode ? currentBuiltAt : new Date().toISOString())
+const bundle = stampedBundle(unstamped, await read(join(out, 'main.js')), new Date().toISOString())
 const files = { 'main.js': bundle, 'mod.json': MOD_JSON }
 
 if (isCheck) {
