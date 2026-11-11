@@ -6,7 +6,11 @@ Status: proposed.
 
 ## How it ships
 
-A Herdr mod is a folder in `<app home>/mods/<name>/`. Herdr loads a new folder at once and reloads a mod when a file in it is saved. A mod the person copies in never updates by itself. Herdr lists shared mods at herdr.dev/mods, from public GitHub repos with the topic `herdr-mod`, and the person's agent copies the files.
+A Herdr mod is a folder in `<app home>/mods/<name>/`. Herdr loads a new folder at once and reloads a mod when a file in it is saved. A mod the person copies in never updates by itself.
+
+Herdr does not reload a mod whose folder is a symbolic link. In Herdr 0.1.15, `<app home>/mods/inbox` was made a link to a worktree's `herdr/mod/inbox`. The open panels kept drawing the earlier build after each of three tries: the link change itself, a touch of `main.js`, and an identical file moved onto `main.js`. Which build a newly opened panel loads through the link was not checked. Copying the files into the folder should reload the mod, as a saved file does, but that was not tried with a build under test.
+
+Herdr lists shared mods at herdr.dev/mods, from public GitHub repos with the topic `herdr-mod`, and the person's agent copies the files.
 
 The inbox's three hosts each install the inbox from this repo, so each install already holds the built mod, `herdr/mod/inbox/`. Two ways to get it into Herdr were weighed:
 
