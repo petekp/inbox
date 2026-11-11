@@ -1,8 +1,14 @@
-import { statePath, readState, tryWithLock, updateState } from './state'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
+
+import { statePath, readState, tryWithLock, updateState, withLock } from './state'
 import type { SessionState } from './state'
 import { viewOf } from './core'
+import { CODEX } from './texts'
 import type { Run } from '../../hooks/gh'
-import { herdrReporter, herdrReportKey, herdrTokens } from '../../hooks/herdr'
+import { herdrReporter, herdrReportKey, herdrTarget, herdrTokens } from '../../hooks/herdr'
+import { publishedSession } from '../../hooks/herdr-app'
+import type { PublishFiles } from '../../hooks/herdr-app'
 import type { SessionHost } from '../../hooks/session-host'
 
 /** Reports each state written to the session's Herdr pane, from `herdrOnWrite`. */
@@ -38,28 +44,53 @@ export function codexStore(
   }
 }
 
+/** Node's file calls for publishing a session. The move is a rename, which replaces the file in one step. */
+const publishFiles: PublishFiles = {
+  write: async (path, text) => {
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, text)
+  },
+  move: (from, to) => rename(from, to),
+  remove: path => rm(path, { force: true }),
+}
+
 /**
- * Reports each written state to the Herdr pane in `env`, or is undefined when `env` names none. Codex runs a hook with
- * its own environment, so the hooks of a Codex CLI in a Herdr pane, and the update a hook starts, know the pane. Hooks
- * and updates run in separate processes, so each report carries the state's `writtenAt` as `seq`, and Herdr drops one
- * whose `seq` is not above the last it took. The session keeps the newest report Herdr took, and a write whose report
- * would match it sends none. A report that fails to send is not kept, so the next write sends it again. The MCP server
- * writes without reporting, so the next hook reports what it changed.
+ * Reports each written state to the Herdr pane or app terminal in `env`, or is undefined when `env` names neither.
+ * Codex runs a hook with its own environment, so the hooks of a Codex CLI in Herdr, and the update a hook starts, know
+ * where they run. The MCP server writes without reporting, so the next hook reports what it changed.
+ *
+ * Hooks and updates run in separate processes, so each report runs under the session's Herdr lock and reads the newest
+ * saved state, never the state its own write left. Reports then go out in the order they run, which `hc label` needs
+ * since it takes no `seq`. A pane report also carries the state's `writtenAt` as `seq`. In an app terminal, the report
+ * first publishes the session for the Herdr look. The session keeps the newest report Herdr took, and a report that
+ * would match it sends none. A report that fails to send is not kept, so the next write sends it again.
  */
 export function herdrOnWrite(env: NodeJS.ProcessEnv, run: Run, dir: string, now: () => number): OnWrite | undefined {
-  const pane = env.HERDR_PANE_ID
-  if (!pane) return undefined
+  const target = herdrTarget(env)
+  if (!target) return undefined
   const report = herdrReporter()
 
-  return async s => {
-    const at = now()
-    const seq = s.writtenAt ?? at
-    const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, at), [])
-    const key = herdrReportKey(pane, tokens)
-    if (key === s.herdrReport?.key) return
-    if (!(await report(run, async () => ({ pane, tokens, seq })))) return
-    await updateState(dir, s.sessionId, saved =>
-      saved.herdrReport && saved.herdrReport.seq >= seq ? saved : { ...saved, herdrReport: { key, seq } },
-    )
+  return async written => {
+    const id = written.sessionId
+    await withLock(`${statePath(dir, id)}.herdr`, async () => {
+      const s = await readState(dir, id)
+      const at = now()
+      const seq = s.writtenAt ?? at
+      const isPublished =
+        target.kind === 'terminal' &&
+        (await publishedSession(
+          publishFiles,
+          target.appHome,
+          { host: 'codex', agent: CODEX.agent, sessionId: id, terminal: target.terminal, writtenAt: seq },
+          s,
+          () => undefined,
+        ))
+      const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, at), [])
+      const r = { target, tokens, session: isPublished ? id : null, seq }
+      const key = herdrReportKey(r)
+      if (key === s.herdrReport?.key) return
+      if (!(await report(run, async () => r))) return
+      await updateState(dir, id, saved => ({ ...saved, herdrReport: { key, seq } }))
+    }).catch(() => undefined)
   }
 }

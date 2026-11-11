@@ -10,6 +10,7 @@ export const SHARED = [
   'gh',
   'help',
   'herdr',
+  'herdr-app',
   'inline',
   'layout',
   'marks',

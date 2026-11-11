@@ -19,9 +19,6 @@ const DESKTOP_WIDEST_CHAR_PT = 12.6
 /** An emoji or a wide East Asian character, which a terminal draws in two cells. */
 const DESKTOP_WIDE_CHAR_PT = 17
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
-// A native Button's padding around its label, and its bolder primary label, measured live: 163 to 167 pt for
-// "Plain (recommended)", whose label is 130 pt in the regular weight.
-export const DESKTOP_BUTTON_EXTRA_PT = 38
 /** Desktop cuts a label wider than its control, so a control is sized from each character's width. */
 export function desktopTextPt(text: string): number {
   let pt = 0
@@ -31,6 +28,19 @@ export function desktopTextPt(text: string): number {
       cells === 0 ? 0 : cells === 2 ? DESKTOP_WIDE_CHAR_PT : (DESKTOP_CHAR_PT.get(segment) ?? DESKTOP_WIDEST_CHAR_PT)
   }
   return pt
+}
+// A native Button's padding around its label, in points. Measured in the 0.3.0 release pass's capture, taken at 2 px
+// per pt and with the app version not recorded: a primary "Merge" is 66.0 pt wide with a 40.0 pt label, so 26 pt
+// of padding, and a default "Open PR" is 94.5 pt wide with a 55.0 pt label, an 8 pt icon and a 6 pt gap, so 25.5 pt.
+const DESKTOP_BUTTON_PADDING_PT = 26
+// How much wider a primary Button's label draws than `desktopTextPt` counts it. Measured on an earlier app: a primary
+// "Plain (recommended)" was 163 to 167 pt wide with a 130 pt label, so at most 11 pt of the 37 pt beyond the label is
+// the bolder weight, 8.5% of the label. The newer app's primary labels were not measured past "Merge".
+const DESKTOP_PRIMARY_LABEL_WIDENING = 0.085
+/** The most points a native Button with `label` is as wide as. A primary Button's bolder label counts wider. */
+export function desktopButtonPt(label: string, isPrimary: boolean): number {
+  const labelPt = desktopTextPt(label)
+  return labelPt * (isPrimary ? 1 + DESKTOP_PRIMARY_LABEL_WIDENING : 1) + DESKTOP_BUTTON_PADDING_PT
 }
 /**
  * The words of `text` in lines `widthPt` wide. A word wider than a line starts a line and breaks between characters, so

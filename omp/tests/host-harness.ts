@@ -170,7 +170,7 @@ export const deps = (): HostDeps => ({
   },
   after: () => undefined,
   isUsageLimit: async (_status, message) => /usage limit/i.test(message),
-  herdrPane: null,
+  herdrTarget: null,
 })
 
 export const settle = async () => {

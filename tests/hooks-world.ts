@@ -51,6 +51,8 @@ class World {
   surfaces: RenderSurface[] = []
 
   files: string[] = []
+  written: Record<string, string> = {}
+  isMoveFailing = false
 
   sessionFiles: { pid: number; sessionId: string }[] | undefined
   endedPids: number[] = []
@@ -183,10 +185,21 @@ async function gh(argv: readonly string[]) {
   const hit = w.ghAnswers.find(a => a.match(argv))
   if (isPrsQuery(argv) && (!hit || isThreadsAnswer(hit))) return prsQueryAnswer(argv)
   await hit?.hold?.()
-  if (!hit && (argv[0] === 'open' || argv[0] === 'herdr'))
+  if (!hit && (argv[0] === 'open' || argv[0] === 'herdr' || argv[0] === 'hc'))
     return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 
   return answerOf(hit)
+}
+
+function fileCommand(argv: readonly string[]) {
+  const paths = argv.slice(argv.indexOf('--') + 1)
+  const [from = '', to = ''] = paths
+  if (argv[0] === 'mv' && w.isMoveFailing)
+    return { exitCode: 1, stdout: '', stderr: 'mv: rename failed', isStdoutTruncated: false, isStderrTruncated: false }
+  if (argv[0] === 'mv') w.written[to] = w.written[from] ?? ''
+  for (const path of argv[0] === 'mv' ? [from] : paths) delete w.written[path]
+
+  return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 }
 
 async function runBeforeAct() {
@@ -255,6 +268,8 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.sessionId = 'session-1'
   w.surfaces = []
   w.files = []
+  w.written = {}
+  w.isMoveFailing = false
   w.sessionFiles = undefined
   w.endedPids = []
   w.isPsMissing = false
@@ -363,9 +378,14 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
     return { value: JSON.stringify({ name: 'inbox', version: '1.2.3' }) }
   })
   on('fs.stat', () => ({ value: { kind: 'file' as const, size: 1, mtimeMs: 1, isLink: false } }))
+  on('fs.write', (_$, e) => {
+    w.written[e.path] = e.text
+    return { value: undefined }
+  })
   on('process.run', async (_$, e) => {
     if (e.argv[0] === 'ps') return w.isPsMissing ? { deny: 'spawn ps ENOENT' } : { value: psAnswer(e.argv) }
     w.ran.push([...e.argv])
+    if (e.argv[0] === 'mv' || e.argv[0] === 'rm') return { value: fileCommand(e.argv) }
     if (w.isGhMissing && e.argv[0] === 'gh') throw new Error('spawn gh ENOENT')
     if (w.slowGhClock && e.argv[0] === 'gh') {
       await w.slowGhClock.sleep(GH_TIMEOUT_MS)
