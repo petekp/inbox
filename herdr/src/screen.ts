@@ -12,7 +12,7 @@ import type { Followed } from './follow'
 /** What the look shows in place of an inbox, as the case of the terminal it follows says. */
 export type Message = { title: string; hint: string | null; isError: boolean }
 
-export type Screen =
+type Screen =
   | { is: 'message'; message: Message }
   | {
       is: 'inbox'

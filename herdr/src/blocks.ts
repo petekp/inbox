@@ -8,8 +8,7 @@ export type Tone = 'needsYou' | 'issue' | 'done' | 'running' | 'error' | 'warnin
 export type Mark = { text: string; tone: Tone; isRunning: boolean }
 
 /** A press the look answers itself, with no host. Every other button waits for presses. */
-export type LocalPress =
-  { showOptions: string } | { closedFold: FoldKind } | { earlier: FoldKind } | { toggleFold: string }
+type LocalPress = { showOptions: string } | { closedFold: FoldKind } | { earlier: FoldKind } | { toggleFold: string }
 
 /** A button a shared plan lists, as the look draws it. */
 export type Button = {

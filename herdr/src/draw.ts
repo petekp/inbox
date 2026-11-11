@@ -65,7 +65,7 @@ const markOf = (m: ResultMark | null): Mark | null =>
   m ? { text: m.text, tone: m.isRunning ? 'running' : (m.tone ?? 'muted'), isRunning: m.isRunning } : null
 
 /** The row's buttons in the plan's order: its keys, then its follow-ups. */
-export function rowButtons(row: RowView, isAllShown: boolean): Button[] {
+function rowButtons(row: RowView, isAllShown: boolean): Button[] {
   const { keys, more } = rowKeyPlan(row, isAllShown)
 
   return [...keys, ...more].map((k, n): Button => {
@@ -235,7 +235,7 @@ function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'finding
 }
 
 /** The PRs tab's page is not drawn yet. Its tab still shows, in the shared plan's place. */
-export const PRS_NOT_DRAWN = "This panel doesn't show PRs yet. They show in the inbox in the agent's own window."
+const PRS_NOT_DRAWN = "This panel doesn't show PRs yet. They show in the inbox in the agent's own window."
 
 export type TabCell = { id: ShownTab; label: string; badge: string | null; isSelected: boolean }
 
