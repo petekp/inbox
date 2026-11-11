@@ -3194,7 +3194,7 @@ function prFeedback(screen, id) {
 }
 var markOf = (m) => ({
   text: m.text,
-  tone: m.isRunning ? "running" : m.tone,
+  tone: m.tone,
   isRunning: m.isRunning
 });
 function threadRow(screen, pr, t, presses) {
@@ -3573,7 +3573,7 @@ var freshUi = (tab) => ({
 });
 var HOLDS_UP_MARK = { text: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false };
 var toneOfFeedback = (f) => isFailure(f) ? "error" : f.is === "done" || f.is === "local" && f.result.state === "done" ? "done" : "muted";
-var markOf3 = (m) => m ? { text: m.text, tone: m.isRunning ? "running" : m.tone ?? "muted", isRunning: m.isRunning } : null;
+var markOf3 = (m) => m ? { text: m.text, tone: m.tone ?? "muted", isRunning: m.isRunning } : null;
 function rowDoes(row, press, kind, agent) {
   if (press.action === "type")
     return { is: "type", rowId: row.id, text: "", hint: replyHint(row, agent) };
@@ -4039,7 +4039,6 @@ var TONE_COLORS = {
   findings: "ansi5",
   prs: "ansi6",
   done: "done",
-  running: "working",
   error: "ansi1",
   muted: "muted"
 };
@@ -4097,7 +4096,7 @@ function buttonEl(b, p, isInert = false) {
   });
 }
 var buttonsEl = (buttons, p, indent, isInert = false) => h_flex2().flex_wrap().items_center().gap(6).pt(8).pl(indent).children(buttons.map((b) => buttonEl(b, p, isInert)));
-var markEl = (m, t, isLeft = false) => div2().w(MARK_W).pr(8).flex_none().when(!isLeft, (e) => e.text_center()).text_color(m === null || m.tone === null ? t.muted : colorOf(t, m.tone)).child(m?.text ?? "");
+var markEl = (m, t, isLeft = false) => div2().w(MARK_W).pr(8).flex_none().when(!isLeft, (e) => e.text_center()).text_color(m === null || m.tone === null ? t.muted : colorOf(t, m.tone)).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div2().pl(indent).pt(4).whitespace_normal().text_color(color).child(text);
 var bodyLineEl = (l, t) => l.mark ? h_flex2().pl(MARK_W).pt(4).gap(6).items_start().child(div2().flex_none().text_color(colorOf(t, l.mark.tone)).child(l.mark.text)).child(div2().flex_1().min_w(0).whitespace_normal().text_color(colorOf(t, l.tone)).child(l.text)) : lineEl(l.text, colorOf(t, l.tone));
 function fieldEl(f, p, indent, isInert = false) {

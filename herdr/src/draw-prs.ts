@@ -67,7 +67,7 @@ function prFeedback(screen: LookScreen, id: string): RowBlock['feedback'] {
 
 const markOf = (m: PrRowMark): Mark => ({
   text: m.text,
-  tone: m.isRunning ? 'running' : m.tone,
+  tone: m.tone,
   isRunning: m.isRunning,
 })
 

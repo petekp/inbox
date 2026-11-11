@@ -4,6 +4,7 @@ import { Input, h_flex, v_flex } from 'gpui-base'
 import { LOOK_GAP_PT, ROW_PAD_PT, STATUS_ROW_PAD_PT } from '../../hooks/layout'
 import { ENTER_MS, EXIT_MS } from '../../hooks/row-motion'
 import { DOT } from '../../hooks/rows'
+import { RUNNING_PULSE_MS } from '../../hooks/timing'
 import { STALL_GAP } from '../../hooks/status-page'
 import type { Block, Button, Field, LineBlock, Mark, PrBlock, RowBlock, StatusLine } from './blocks'
 import { EDGE_X, HEAD_LINE, HEAD_TEXT, MARK_X, TEXT_X, colorOf } from './paint-theme'
@@ -77,6 +78,7 @@ const markEl = (m: Mark | null, t: Theme, isLeft = false): Element =>
     .flex_none()
     .when(!isLeft, e => e.text_center())
     .text_color(m === null || m.tone === null ? t.muted : colorOf(t, m.tone))
+    .when(m?.isRunning === true, e => e.loop('opacity', { from: 1, to: 0.3, period: RUNNING_PULSE_MS }))
     .child(m?.text ?? '')
 
 const lineEl = (text: string, color: Theme[keyof Theme], indent = MARK_W) =>

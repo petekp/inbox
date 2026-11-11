@@ -59,8 +59,8 @@ GPUI animates natively, with no script running during the motion:
 
 - `transition(property, { duration, easing })` animates later changes to `opacity`, `width`, `height`, `left` and `top`. The spike drew a row's opacity going from 1 to 0.35 over 1.5 s. Window shots during the fade read the row's text falling from 238 out of 255 before the press to 132 at 601 ms. So the transition runs in the app.
 - `spring(property)` for a move that should settle with a little give.
-- `.frames(list, ms)` for running marks: `RUNNING_FRAMES` at `RUNNING_FRAME_MS`, drawn natively and only while shown.
-- `.loop(property, { from, to, period })` for a pulse.
+- `.frames(list, ms)` for a spinner, drawn natively and only while shown.
+- `.loop(property, { from, to, period })` for a pulse. A running mark keeps its row's color and fades from 1 to 0.3 and back every `RUNNING_PULSE_MS`, as in the Codex tab.
 
 A row's height animates between pixel values. The look learns a row's content height from `on_size_change` on the row's inner element, then animates the outer element's `h` from that height to 0 as the row leaves. Not checked in the spike.
 
@@ -79,13 +79,12 @@ Herdr is a desktop app, so the look is click-first, and every move works with th
 
 ## Light and dark
 
-The look draws only with `theme()` colors, which every light and dark theme names alike. Needs you and warnings take the theme's yellow, as the other looks draw them in amber. Findings, PRs and errors take the theme's magenta, cyan and red, and a notice its blue, as the terminal look takes its theme's. So a banner reads by its color: a notice in blue, a warning in yellow, an error in red. Done and running take the colors Herdr's sidebar gives an agent that is done or working. The look draws nothing in `blocked`, which is red in many themes and would make a count read as an error:
+The look draws only with `theme()` colors, which every light and dark theme names alike. Needs you and warnings take the theme's yellow, as the other looks draw them in amber. Findings, PRs and errors take the theme's magenta, cyan and red, and a notice its blue, as the terminal look takes its theme's. So a banner reads by its color: a notice in blue, a warning in yellow, an error in red. Done takes the color Herdr's sidebar gives an agent that is done. A running mark keeps its row's color and fades in and out, so needs you never reads as running. The look draws nothing in `blocked`, which is red in many themes and would make a count read as an error:
 
 | Inbox tone | Herdr color |
 | --- | --- |
 | Needs you, issue | `ansi3` |
 | Done | `done` |
-| Running | `working` |
 | Findings | `ansi5` |
 | PRs | `ansi6` |
 | A notice: information or an offer | `ansi4` |

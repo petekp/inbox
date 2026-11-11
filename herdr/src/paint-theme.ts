@@ -19,7 +19,6 @@ export type Theme = Record<
   | 'solid_foreground'
   | 'muted'
   | 'done'
-  | 'working'
   | 'ansi1'
   | 'ansi3'
   | 'ansi4'
@@ -30,8 +29,8 @@ export type Theme = Record<
 
 /**
  * Needs-you and warnings take the theme's yellow, as the other looks draw them in amber. Findings, PRs and errors take
- * its magenta, cyan and red, and a notice its blue, as the terminal look takes its theme's. Done and running take the
- * colors Herdr's sidebar gives an agent that is done or working.
+ * its magenta, cyan and red, and a notice its blue, as the terminal look takes its theme's. Done takes the color Herdr's
+ * sidebar gives an agent that is done.
  */
 const TONE_COLORS: Record<Exclude<Tone, null>, keyof Theme> = {
   needsYou: 'ansi3',
@@ -41,7 +40,6 @@ const TONE_COLORS: Record<Exclude<Tone, null>, keyof Theme> = {
   findings: 'ansi5',
   prs: 'ansi6',
   done: 'done',
-  running: 'working',
   error: 'ansi1',
   muted: 'muted',
 }

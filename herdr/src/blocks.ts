@@ -8,10 +8,9 @@ import type { StatusStall } from '../../hooks/status-page'
 
 /**
  * A color the paint maps onto Herdr's theme. The first six are the shared tones of `hooks/tones.ts`, so a tone means
- * the same thing in every look, and needs-you, done and running mean what they do in Herdr's sidebar.
+ * the same thing in every look, and done means what it does in Herdr's sidebar.
  */
-export type Tone =
-  'needsYou' | 'issue' | 'findings' | 'prs' | 'done' | 'error' | 'running' | 'notice' | 'warning' | 'muted' | null
+export type Tone = 'needsYou' | 'issue' | 'findings' | 'prs' | 'done' | 'error' | 'notice' | 'warning' | 'muted' | null
 
 export type Mark = { text: string; tone: Tone; isRunning: boolean }
 

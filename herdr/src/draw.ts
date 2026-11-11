@@ -85,7 +85,7 @@ const toneOfFeedback = (f: Feedback): Tone =>
   isFailure(f) ? 'error' : f.is === 'done' || (f.is === 'local' && f.result.state === 'done') ? 'done' : 'muted'
 
 const markOf = (m: ResultMark | null): Mark | null =>
-  m ? { text: m.text, tone: m.isRunning ? 'running' : (m.tone ?? 'muted'), isRunning: m.isRunning } : null
+  m ? { text: m.text, tone: m.tone ?? 'muted', isRunning: m.isRunning } : null
 
 /** What a row's press does. A Local step lists its opens and copies, which the look runs itself. */
 function rowDoes(row: RowView, press: RowPress, kind: PressKind, agent: string): Does {
