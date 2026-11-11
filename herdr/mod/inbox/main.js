@@ -2888,7 +2888,8 @@ function inboxView({
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
       holdsUpLine: held.length > 0 ? `${HOLDS_UP_TEXT} ${held.map((s) => s.name).join(", ")}` : null,
-      recLine: state.is === "open" ? recLineOf(row.item) : null
+      recLine: state.is === "open" ? recLineOf(row.item) : null,
+      contextLine: state.is === "open" ? row.item?.context ?? null : null
     };
   };
   const itemRow = (item) => {
