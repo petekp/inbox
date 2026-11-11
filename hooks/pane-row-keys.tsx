@@ -27,10 +27,21 @@ export function paneRowKeys(
     space,
     Input,
     typing,
+    takesKey,
   }: PaneClient &
     Pick<
       PaneBase,
-      'listColumns' | 'isOpenGuarded' | 'look' | 'Button' | 'Box' | 'pal' | 'Text' | 'space' | 'Input' | 'typing'
+      | 'listColumns'
+      | 'isOpenGuarded'
+      | 'look'
+      | 'Button'
+      | 'Box'
+      | 'pal'
+      | 'Text'
+      | 'space'
+      | 'Input'
+      | 'typing'
+      | 'takesKey'
     >,
   {
     unlessGuarded,
@@ -39,6 +50,8 @@ export function paneRowKeys(
     updateTyping,
   }: Pick<PaneHandlers, 'unlessGuarded' | 'sendDraft' | 'discardReply' | 'updateTyping'>,
 ) {
+  // A key the pane does not bind draws without its letter, and its Button still takes the click.
+  const boundKey = (hotkey: string | undefined) => (hotkey && takesKey(hotkey) ? hotkey : undefined)
   const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
     actionLabel({ label: a.label, isPrimary: a.variant === 'primary' })
   const desktopTextColumns = (markCells: number) => listColumns - markCells - DESKTOP_SIDE_CELLS - 1
@@ -56,7 +69,8 @@ export function paneRowKeys(
   }
   const keyedButton =
     (rowId: string, isFollowUp = false) =>
-    ({ hotkey, kind: _kind, emphasis, icon, isOut = false, ...action }: KeyAction) => {
+    ({ hotkey: given, kind: _kind, emphasis, icon, isOut = false, ...action }: KeyAction) => {
+      const hotkey = boundKey(given)
       const { label: _label, ...unlabeled } = action
       const isDim = isOpenGuarded || isOut
 
@@ -92,8 +106,10 @@ export function paneRowKeys(
    * names its hotkey while it has one. Desktop draws a plain native Button, since a Client's click would keep the keys
    * from the field it opens.
    */
-  const textKey = (rowId: string, { hotkey, key, label, onPress }: KeyAction) =>
-    look === 'desktop' ? (
+  const textKey = (rowId: string, { hotkey: given, key, label, onPress }: KeyAction) => {
+    const hotkey = boundKey(given)
+
+    return look === 'desktop' ? (
       <Button key={key} plain dimColor label={label} onPress={press => unlessGuarded(rowId, press, onPress)} />
     ) : (
       <Button
@@ -113,6 +129,7 @@ export function paneRowKeys(
         </Text>
       </Button>
     )
+  }
   // Emptied here, after the drawing's reads, so a click that lands while they run still finds the last presses.
   followUpPresses.clear()
   const followUpLinks = (rowId: string, more: KeyAction[]) => {
@@ -166,10 +183,16 @@ export function paneRowKeys(
     )
   }
   const keyBindings = (keys: KeyAction[], suffix = '') =>
-    keys.flatMap(({ key, hotkey, kind: _kind, emphasis: _emphasis, icon: _icon, isOut: _isOut, ...k }) =>
-      hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} label={shownLabel(k)} />] : [],
-    )
-  const terminalKeyCells = (k: KeyAction) => (k.hotkey ? k.hotkey.length + 2 : 0) + cellWidth(shownLabel(k))
+    keys.flatMap(({ key, hotkey: given, kind: _kind, emphasis: _emphasis, icon: _icon, isOut: _isOut, ...k }) => {
+      const hotkey = boundKey(given)
+
+      return hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} label={shownLabel(k)} />] : []
+    })
+  const terminalKeyCells = (k: KeyAction) => {
+    const hotkey = boundKey(k.hotkey)
+
+    return (hotkey ? hotkey.length + 2 : 0) + cellWidth(shownLabel(k))
+  }
   const terminalActionLines = (keys: KeyAction[], more: KeyAction[], width: number) =>
     actionLines(keys.map(terminalKeyCells), more.map(terminalKeyCells), {
       width,

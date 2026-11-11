@@ -56,6 +56,7 @@ export type FeatureId =
   | 'status-view-ask'
   | 'status-goal'
   | 'status-done-fold'
+  | 'pane-grid-cell'
 
 type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -125,6 +126,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-view-ask': { kind: 'full' },
       'status-goal': { kind: 'full' },
       'status-done-fold': { kind: 'full' },
+      'pane-grid-cell': { kind: 'full' },
     },
   },
   codex: {
@@ -252,6 +254,10 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           'A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking.',
       },
+      'pane-grid-cell': {
+        kind: 'unsupported',
+        reason: 'pane-grid is a Claude Code mod. Codex draws the inbox in its own tab, which has no grid of cells.',
+      },
     },
   },
   omp: {
@@ -331,6 +337,10 @@ export const CLIENTS: Record<ClientId, Client> = {
       'status-view-ask': { kind: 'full' },
       'status-goal': { kind: 'full' },
       'status-done-fold': { kind: 'full' },
+      'pane-grid-cell': {
+        kind: 'unsupported',
+        reason: 'pane-grid is a Claude Code mod. omp draws the inbox in its own panel, which has no grid of cells.',
+      },
     },
   },
 }

@@ -116,6 +116,8 @@ export type PaneBase = {
   hasRail: boolean
   railWidth: number
   listColumns: number
+  /** Whether the pane binds `hotkey`: a pane-grid cell binds only some, as `takesKey` in pane-grid-cell.tsx says. */
+  takesKey: (hotkey: string) => boolean
   indexOf: Map<string, number>
   at: number
   isOpenGuarded: boolean

@@ -21,3 +21,7 @@ evals/baselines.json
 # Ends in an open <plaintext> element that holds the JSON an agent appends.
 # Prettier would close it, and the appended data would land after </html>.
 hooks/compare-page.html
+
+# Copied from pane-grid (skills/add-pane-grid-cell/pane-grid.ts) and kept in that
+# repository's formatting, so a newer copy compares with it line by line.
+hooks/pane-grid.ts
