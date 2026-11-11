@@ -15,7 +15,7 @@ import {
   fieldRows,
   REPLY_ROWS,
 } from './pane-sizes'
-import { DESKTOP_BUTTON_EXTRA_PT, desktopLines, desktopTextPt } from './desktop-metrics'
+import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
 import { LOOK_GAP_PT } from './layout'
 import { lineCount } from './terminal-text'
 import { cellWidth } from './text'
@@ -229,10 +229,7 @@ export function paneStatusGoal(
   /** The cells the terminal draws `keys` in on one line, `STALL_GAP` between them, or the points desktop draws them in. */
   const keysWidth = (keys: KeyAction[]) =>
     look === 'desktop'
-      ? keys.reduce(
-          (n, k) => n + desktopTextPt(k.label) + DESKTOP_BUTTON_EXTRA_PT,
-          (keys.length - 1) * desktopTextPt(STALL_GAP),
-        )
+      ? keys.reduce((n, k) => n + desktopButtonPt(k.label, true), (keys.length - 1) * desktopTextPt(STALL_GAP))
       : keys.reduce((n, k) => n + terminalKeyCells(k), (keys.length - 1) * cellWidth(STALL_GAP))
   /** The goal's buttons with a dim `STALL_GAP` between them, as the old "Goal · Edit" line drew them. */
   const headingKeys = (keys: KeyAction[]) => (
