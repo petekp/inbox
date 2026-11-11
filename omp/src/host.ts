@@ -11,7 +11,8 @@ import type { AssistantMessage, Context, Model } from '@oh-my-pi/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 
 import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
-import { herdrReporter } from '../../hooks/herdr'
+import { herdrReporter, herdrTarget } from '../../hooks/herdr'
+import type { HerdrTarget } from '../../hooks/herdr'
 import type { Run } from '../../hooks/gh'
 import { COMPARE_PAGE_FILE } from '../../hooks/press-messages'
 import { recorded } from '../../hooks/session-presses'
@@ -71,8 +72,8 @@ export type HostDeps = {
   after: (ms: number, fn: () => Promise<unknown>) => void
   /** Whether a failed request hit the account's usage limit, by omp's own rule. */
   isUsageLimit: (status: number | undefined, message: string) => Promise<boolean>
-  /** The Herdr pane omp runs in, from `HERDR_PANE_ID`, or null outside Herdr. */
-  herdrPane: string | null
+  /** The Herdr pane or app terminal omp runs in, from `herdrTarget`, or null outside Herdr. */
+  herdrTarget: HerdrTarget | null
 }
 
 async function defaultComplete(
@@ -123,7 +124,7 @@ const defaultDeps: HostDeps = {
   background: work => void work.catch(() => undefined),
   after: (ms, fn) => void setTimeout(fn, ms).unref(),
   isUsageLimit: isUsageLimitOutcome,
-  herdrPane: process.env.HERDR_PANE_ID || null,
+  herdrTarget: herdrTarget(process.env),
 }
 
 const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err))

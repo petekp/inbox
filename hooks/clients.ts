@@ -40,6 +40,7 @@ export type FeatureId =
   | 'tab-symbols'
   | 'dim-pressed-button'
   | 'herdr-sidebar'
+  | 'herdr-look'
   | 'status-children'
   | 'child-names'
   | 'status-look-line'
@@ -116,6 +117,7 @@ export const CLIENTS: Record<ClientId, Client> = {
           "The desktop app's Button has no disabled state. `dimColor` fades only its label, and a click still shows the native press highlight before the shared press path ignores it.",
       },
       'herdr-sidebar': { kind: 'full' },
+      'herdr-look': { kind: 'full' },
       'status-children': { kind: 'full' },
       'child-names': { kind: 'full' },
       'status-look-line': { kind: 'full' },
@@ -224,7 +226,12 @@ export const CLIENTS: Record<ClientId, Client> = {
       'herdr-sidebar': {
         kind: 'different',
         reason:
-          "Only Codex's hooks and the update a hook starts know the Herdr pane, so a record or close during a turn reaches the sidebar at the next hook. Codex finds no stops, and runs no hook when a session ends.",
+          "Only Codex's hooks and the update a hook starts know where Codex runs in Herdr, so a record or close during a turn reaches the sidebar at the next hook. Codex finds no stops, and runs no hook when a session ends, so its tokens or labels stay.",
+      },
+      'herdr-look': {
+        kind: 'different',
+        reason:
+          "Only Codex's hooks and the update a hook starts publish the session, so a record or close during a turn reaches the Herdr look at the next hook. Codex runs no hook when a session ends, so its published file stays.",
       },
       'status-children': {
         kind: 'different',
@@ -336,6 +343,7 @@ export const CLIENTS: Record<ClientId, Client> = {
           'The panel already draws a follow-up such as Discuss dim, and has no dimmer style, so an out follow-up looks as it does at rest until it is focused. Its key still does nothing.',
       },
       'herdr-sidebar': { kind: 'full' },
+      'herdr-look': { kind: 'full' },
       'status-children': {
         kind: 'different',
         reason:

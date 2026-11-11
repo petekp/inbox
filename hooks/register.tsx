@@ -99,7 +99,8 @@ import {
 } from './claude'
 import { branchIn, GH_TIMEOUT_MS, ghIn, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
-import { CLEARED_TOKENS, delegatesInHerdr, HERDR_CHECK_MS, herdrTokens } from './herdr'
+import { delegatesInHerdr, HERDR_CHECK_MS } from './herdr'
+import { publishToHerdr, type HerdrCalls } from './mod-herdr'
 import { ago, cellWidth, turnReply } from './text'
 import { COMPARE_PAGE_FILE } from './press-messages'
 import { demoAfterPress, demoReplied, demoSent, type DemoSent } from './press-effects'
@@ -227,7 +228,6 @@ import {
   MAX_PERSON_LINES,
   noteRanCall,
   permissionText,
-  reportToHerdr,
   spawnedBy,
   startedWorkflowOf,
   toolRecord,
@@ -356,25 +356,26 @@ async function syncTheme($: EngineInterface) {
 }
 
 function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
-  return reportToHerdr(
-    processRun($),
-    async () => {
-      const pane = await $.env.get('HERDR_PANE_ID')
-      if (!pane) return null
-      if (isEnding) return { pane, tokens: CLEARED_TOKENS }
-      const [session, dialogs, unreadable, now] = await Promise.all([
-        read($, SESSION),
-        read($, DIALOGS),
-        read($, UNREADABLE),
-        $.clock.now(),
-      ])
-      const view = sessionView(session, now, SETTLED_MS)
-      const isUnread = unreadable === conversation.id
+  const calls: HerdrCalls = {
+    run: processRun($),
+    env: () =>
+      Promise.all([
+        $.env.get('HERDR_PANE_ID'),
+        $.env.get('HC_TERMINAL_ID'),
+        $.env.get('HERDR_APP_HOME'),
+        $.env.get('HOME'),
+      ]),
+    write: (path, text) => $.fs.write(path, text),
+    now: () => $.clock.now(),
+    after: (ms, fn) => void $.clock.after(ms, fn),
+    log: text => void $.ui.log(text, { to: 'debug' }),
+  }
 
-      return { pane, tokens: herdrTokens(session.ledger, session.stop, view, dialogs, isUnread) }
-    },
-    (ms, fn) => void $.clock.after(ms, fn),
-  )
+  return publishToHerdr(calls, isEnding ? conversation.id : null, async () => {
+    const [session, dialogs, unreadable] = await Promise.all([read($, SESSION), read($, DIALOGS), read($, UNREADABLE)])
+
+    return { id: conversation.id, session, dialogs, isUnread: unreadable === conversation.id }
+  })
 }
 
 async function setStop($: EngineInterface, stop: Stop | null) {
