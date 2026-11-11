@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { asksText, lookEnded, lookStarted, LOOK_MIN_MS, withChild } from '../hooks/status-children'
 import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
-import { mergedLine, nameBeforeStall, statusPage } from '../hooks/status-page'
+import { mergedLine, nameBeforeStall, seenSubjectIds, statusPage } from '../hooks/status-page'
 import { statusKeyPlan } from '../hooks/status-keys'
 import {
   IDLE_MARK,
@@ -255,6 +255,31 @@ test('when every row on the page closed since the last look, the named fold ends
     '✓ Also done: One',
     '-- Last seen',
   ])
+})
+
+test('a look that showed a named fold counts as seen the work it names and the work its +N more counts, so the page after draws no look line and folds that work into its done count', () => {
+  const opened = after(
+    null,
+    ['One', 'Two', 'Three', 'Four', 'Five', 'Six'].map((name, n) => `NEW: working | ${name} | step ${n}`).join('\n'),
+    10 * MIN,
+  )
+  const closed = ['DONE: s1 | a', 'DONE: s2 | b', 'DONE: s3 | c', 'DONE: s4 | d', 'DONE: s5 | e'].reduce(
+    (o, line, n) => after(o, line, (20 + 5 * n) * MIN),
+    opened,
+  )
+  const before = { ...closed, lastLookAt: 15 * MIN }
+  const rows = page(before, 60 * MIN).rows
+  expect(shape(rows)).toEqual([
+    '✓ Five: e',
+    '✓ Four: d',
+    '✓ Also done: Three, Two, +1 more',
+    '-- Last seen',
+    '◐ Six: step 5',
+  ])
+
+  const shown = Object.fromEntries(rows.flatMap(seenSubjectIds).map(id => [id, 61 * MIN]))
+  const looked = lookEnded(lookStarted(before, 60 * MIN), 60 * MIN + LOOK_MIN_MS, shown)!
+  expect(shape(page(looked, 70 * MIN).rows)).toEqual(['◐ Six: step 5', '▸ 5 done'])
 })
 
 test('a named line shows two names, the newest first, and counts the rest as +N more', () => {

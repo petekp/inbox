@@ -128,7 +128,7 @@ export function sessionCalls(context: HostContext) {
       exclusive: fn => exclusiveRun(dir, id, fn),
       ask: askFor(ctx, id),
       deliver: async (_s, text) => {
-        const why = sendToAgent(ctx, text)
+        const why = await sendToAgent(ctx, text)
 
         return why === null ? { state: 'accepted', queuedId: null } : { state: 'rejected', reason: why }
       },

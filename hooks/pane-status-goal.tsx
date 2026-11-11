@@ -206,7 +206,10 @@ export function paneStatusGoal(
       ])}
     </Box>
   )
-  /** A milestone, then the work that serves it, one step in. */
+  /** A blank line in the terminal, and on desktop the space Codex leaves there, `LOOK_GAP_PT`. */
+  const milestoneGap = look === 'terminal' ? 1 : LOOK_GAP_PT / DESKTOP_LINE_PT
+  const gap = (key: string): Drawn => ({ el: <Box key={key} height={milestoneGap} />, lines: exactly(milestoneGap) })
+  /** A milestone, then a blank line's space and the work that serves it, one step in. */
   const milestoneLines = (m: MilestoneRow): Drawn[] => [
     statusRowLine({
       key: `status-${m.id}`,
@@ -219,7 +222,7 @@ export function paneStatusGoal(
       ],
       isSelected: isSelected(m.id),
     }),
-    ...statusRows(m.rows),
+    ...(m.rows.length > 0 ? [gap(`goal-${m.id}-rows-gap`), ...statusRows(m.rows)] : []),
   ]
 
   /** The cells the terminal draws `keys` in on one line, or the points desktop draws them in. */
@@ -306,9 +309,9 @@ export function paneStatusGoal(
   }
   /**
    * The goal's section, first on every page that is not empty: its heading row with the goal's buttons at its right,
-   * then the goal's text with its was, Now and awaiting lines, or the line that says no goal is set, then a blank line
-   * and the milestones. While the person types a goal, the field and its Cancel take the text's place, and the buttons
-   * leave the heading.
+   * then the goal's text with its was, Now and awaiting lines, or the line that says no goal is set, then the
+   * milestones, each after a blank line. While the person types a goal, the field and its Cancel take the text's place,
+   * and the buttons leave the heading.
    */
   const goalSection = (page: StatusPage): Drawn[] => {
     const g = page.goal
@@ -332,15 +335,10 @@ export function paneStatusGoal(
       ...(g?.awaiting ? [muted('goal-awaiting', g.awaiting)] : []),
     ]
     const milestones = g?.milestones ?? []
-    /** A blank line in the terminal, and on desktop the space Codex leaves there, `LOOK_GAP_PT`. */
-    const milestoneGap = look === 'terminal' ? 1 : LOOK_GAP_PT / DESKTOP_LINE_PT
 
     return [
       block(`status-${GOAL_KEYS_ID}`, body, isSelected(GOAL_KEYS_ID)),
-      ...(milestones.length > 0
-        ? [{ el: <Box key="goal-gap" height={milestoneGap} />, lines: exactly(milestoneGap) }]
-        : []),
-      ...milestones.flatMap(milestoneLines),
+      ...milestones.flatMap(m => [gap(`goal-${m.id}-gap`), ...milestoneLines(m)]),
     ]
   }
   const goalKeys = (page: StatusPage) => keysLine({ id: GOAL_KEYS_ID, keys: goalKeyPlan(page) })

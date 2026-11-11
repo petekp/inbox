@@ -158,10 +158,10 @@ test('a stop is a usage limit, a sign-in or an API error, from the failed messag
   expect(await stopOf({ role: 'assistant', content: [], stopReason: 'aborted' }, isUsageLimit, 5)).toBeNull()
 })
 
-test('Resume sends Continue to the agent', () => {
+test('Resume sends Continue to the agent', async () => {
   const inbox = createInbox(pi(), deps())
   w.isIdle = true
-  expect(inbox.resume(makeCtx())).toBeNull()
+  expect(await inbox.resume(makeCtx())).toBeNull()
   expect(w.sent).toEqual([{ text: 'Continue', options: undefined }])
 })
 

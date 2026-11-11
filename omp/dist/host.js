@@ -3606,6 +3606,7 @@ var STATUS_TEXT_LINES = 3;
 var NEW_CLOSED_ROWS = 2;
 var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
 var NAMED_FOLD_NAMES = 2;
+var IS_FOLD_MORE_SEEN = true;
 var namedFoldMore = (n) => `+${n} more`;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function mergedLine(merged, fits) {
@@ -3675,7 +3676,8 @@ function statusPage(s, now) {
   const lookId = (id) => look === null ? null : id;
   const foldCtx = { ...ctx, lookId: null, running: [] };
   const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
-    const names = named.filter((x) => x.status === status).map((x) => x.name);
+    const closed = named.filter((x) => x.status === status);
+    const names = closed.map((x) => x.name);
     const hidden = names.length - NAMED_FOLD_NAMES;
     const shown = [...names.slice(0, NAMED_FOLD_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []];
     return names.length === 0 ? [] : [
@@ -3684,7 +3686,8 @@ function statusPage(s, now) {
         id: `${prefix}also-${status}`,
         depth,
         ...SUBJECT_MARKS[status],
-        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`
+        text: `${NAMED_FOLD_TEXT[status]}${shown.join(", ")}`,
+        subjectIds: (IS_FOLD_MORE_SEEN ? closed : closed.slice(0, NAMED_FOLD_NAMES)).map((x) => x.id)
       }
     ];
   });
@@ -3708,7 +3711,8 @@ function statusPage(s, now) {
         id: `${prefix}open`,
         depth,
         ...SUBJECT_MARKS.queued,
-        text: `${p.foldedOpen.length} more`
+        text: `${p.foldedOpen.length} more`,
+        subjectIds: []
       }
     ] : [],
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
@@ -3746,6 +3750,9 @@ function statusPage(s, now) {
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
     }
   };
+}
+function seenSubjectIds(row) {
+  return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
 }
 function statusListRows(page) {
   return [...(page.goal?.milestones ?? []).flatMap((m) => m.rows), ...page.rows];
@@ -6559,14 +6566,14 @@ var goalEntry = (part) => ({ kind: "goal", part });
 function goalSection(page, typing, isUnfolded) {
   const isTyping = typing === GOAL_KEYS_ID;
   const g = page.goal;
-  const milestones = g?.milestones ?? [];
+  const gap = goalEntry({ is: "gap" });
   return [
     goalEntry({ is: "heading", text: g?.label ?? GOAL_HEADING, page: isTyping ? null : page }),
     goalEntry({ is: "title", goal: g, isTyping }),
-    ...milestones.length > 0 ? [goalEntry({ is: "gap" })] : [],
-    ...milestones.flatMap((row) => [
+    ...(g?.milestones ?? []).flatMap((row) => [
+      gap,
       goalEntry({ is: "milestone", row }),
-      ...unfoldedRows(row.rows, isUnfolded).map((r) => ({ kind: "page", row: r }))
+      ...row.rows.length > 0 ? [gap, ...unfoldedRows(row.rows, isUnfolded).map((r) => ({ kind: "page", row: r }))] : []
     ])
   ];
 }
@@ -7583,8 +7590,8 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
       if (e.kind === "page" && e.row.isRuledAbove)
         body.push(pageRule(width, style));
       const start = body.length;
-      if (e.kind === "page" && e.row.kind === "subject")
-        subjectAt.push([e.row.id, start]);
+      if (e.kind === "page")
+        subjectAt.push(...seenSubjectIds(e.row).map((id) => [id, start]));
       const id = e.kind === "page" ? e.row.id : goalPartId(e.part);
       const isSelected = id !== null && id === pageSelected?.id;
       body.push(...e.kind === "page" ? drawPageRow(e.row, d, isSelected) : drawGoalPart(e.part, d, isSelected));
@@ -9921,6 +9928,200 @@ function styleOf(theme) {
   };
 }
 
+// src/ask-form.ts
+var TOKEN = /<!--[\s\S]*?-->|<(\/?)([a-zA-Z][\w-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>|([^<]+)/g;
+var ATTR = /([^\s=/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
+var ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+var SKIPPED = new Set(["script", "style", "svg", "pre"]);
+var CONTEXT_BLOCKS = new Set(["ul", "ol", "table"]);
+var BLOCKS = new Set(["p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "section", "form", "hr"]);
+var UNANSWERED_INPUTS = new Set(["hidden", "submit", "button", "reset", "image"]);
+var LABEL = /<label\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/label>/gi;
+function decoded(text) {
+  return text.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (whole, code) => {
+    if (code[0] !== "#")
+      return ENTITIES[code.toLowerCase()] ?? whole;
+    const n = code[1] === "x" || code[1] === "X" ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+    return Number.isFinite(n) ? String.fromCodePoint(n) : whole;
+  });
+}
+function oneLine(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+function attrsOf(raw) {
+  return new Map([...raw.matchAll(ATTR)].map((m) => [m[1].toLowerCase(), decoded(m[2] ?? m[3] ?? m[4] ?? "")]));
+}
+function labelsFor(html) {
+  return new Map([...html.matchAll(LABEL)].flatMap((m) => {
+    const id = attrsOf(m[1] ?? "").get("for");
+    return id === undefined ? [] : [[id, oneLine(decoded((m[2] ?? "").replace(/<[^>]*>/g, " ")))]];
+  }));
+}
+function questionOf(f) {
+  const own = f.wrapped || f.detached;
+  if (f.kind === "text")
+    return oneLine(own || f.name.replace(/[_-]+/g, " "));
+  const lone = f.options.length === 1 ? optionLabel(f.options[0]) : "";
+  return oneLine(own || f.caption || f.title || lone || f.name);
+}
+function optionLabel(o) {
+  return o.wrapped || o.fallback;
+}
+function formQuestions(html) {
+  const fields = [];
+  const groups = new Map;
+  const labelFor = labelsFor(html);
+  let loose = "";
+  let caption = "";
+  let title = "";
+  let fieldsetDepth = 0;
+  let context = null;
+  let legend = null;
+  let skipped = null;
+  let label = null;
+  let select = null;
+  let option = null;
+  const flush = () => {
+    if (oneLine(loose) !== "")
+      caption = oneLine(loose);
+    loose = "";
+  };
+  const endOption = () => {
+    if (option) {
+      const text = oneLine(option.text);
+      select?.options.push({ wrapped: text, fallback: option.value, checked: option.checked });
+    }
+    option = null;
+  };
+  const detachedOf = (attrs) => {
+    const id = attrs.get("id");
+    return (id !== undefined ? labelFor.get(id) : undefined) || attrs.get("aria-label") || attrs.get("title") || "";
+  };
+  const addField = (name, kind, attrs) => {
+    flush();
+    const field = { name, kind, wrapped: "", detached: detachedOf(attrs), caption, title, options: [] };
+    caption = "";
+    fields.push(field);
+    if (kind !== "group")
+      label?.targets.push((text) => field.wrapped = text);
+    return field;
+  };
+  for (const [, slash, rawTag, rawAttrs, text] of html.matchAll(TOKEN)) {
+    const tag = rawTag?.toLowerCase();
+    const isClose = slash === "/";
+    if (skipped) {
+      if (tag === skipped.tag)
+        skipped.depth += isClose ? -1 : 1;
+      if (skipped.depth === 0)
+        skipped = null;
+      continue;
+    }
+    if (text !== undefined) {
+      const plain = decoded(text);
+      if (option)
+        option.text += plain;
+      else if (legend !== null)
+        legend += plain;
+      else if (label)
+        label.text += plain;
+      else if (context)
+        context.text += plain;
+      else
+        loose += plain;
+      continue;
+    }
+    if (!tag)
+      continue;
+    const attrs = attrsOf(rawAttrs ?? "");
+    const name = attrs.get("name") ?? "";
+    if (tag === "option" || tag === "select")
+      endOption();
+    if (isClose) {
+      if (tag === "legend" && legend !== null) {
+        if (fieldsetDepth === 1)
+          title = oneLine(legend);
+        legend = null;
+      } else if (tag === "label" && label) {
+        const done = oneLine(label.text);
+        label.targets.forEach((set) => set(done));
+        label = null;
+      } else if (tag === "fieldset") {
+        fieldsetDepth = Math.max(0, fieldsetDepth - 1);
+        if (fieldsetDepth === 0)
+          [loose, caption, title] = ["", "", ""];
+      } else if (tag === "select") {
+        select = null;
+      } else if (CONTEXT_BLOCKS.has(tag) && context) {
+        context.depth -= 1;
+        if (context.depth === 0 && oneLine(context.text) !== "")
+          caption = "";
+        if (context.depth === 0)
+          context = null;
+      } else if (BLOCKS.has(tag)) {
+        flush();
+      }
+      continue;
+    }
+    if (tag === "fieldset") {
+      flush();
+      fieldsetDepth += 1;
+      if (fieldsetDepth === 1)
+        [caption, title] = ["", ""];
+    } else if (tag === "legend") {
+      legend = "";
+    } else if (tag === "label") {
+      flush();
+      label = { text: "", targets: [] };
+    } else if (tag === "select" && name !== "") {
+      select = addField(name, "select", attrs);
+    } else if (tag === "option") {
+      if (select)
+        option = { text: "", value: attrs.get("value") ?? "", checked: attrs.has("selected") };
+    } else if (tag === "textarea" || tag === "input") {
+      const type = tag === "textarea" ? "textarea" : (attrs.get("type") ?? "text").toLowerCase();
+      if (tag === "textarea")
+        skipped = { tag, depth: 1 };
+      if (name === "" || UNANSWERED_INPUTS.has(type))
+        continue;
+      if (type !== "radio" && type !== "checkbox") {
+        addField(name, "text", attrs);
+        continue;
+      }
+      const key = `${type}:${name}`;
+      const field = groups.get(key) ?? addField(name, "group", new Map);
+      groups.set(key, field);
+      const added = {
+        wrapped: "",
+        fallback: detachedOf(attrs) || attrs.get("value") || name,
+        checked: attrs.has("checked")
+      };
+      field.options.push(added);
+      label?.targets.push((text) => added.wrapped = text);
+    } else if (CONTEXT_BLOCKS.has(tag)) {
+      flush();
+      if (context)
+        context.depth += 1;
+      else
+        context = { depth: 1, text: "" };
+    } else if (SKIPPED.has(tag) || tag === "img") {
+      flush();
+      caption = "";
+      if (tag !== "img")
+        skipped = { tag, depth: 1 };
+    } else if (BLOCKS.has(tag)) {
+      flush();
+    }
+  }
+  return fields.map((f) => {
+    const recommended = f.options.findIndex((o) => o.checked);
+    return {
+      question: questionOf(f),
+      options: f.options.map((o) => ({ label: optionLabel(o) })),
+      ...recommended >= 0 ? { recommended } : {}
+    };
+  });
+}
+
 // src/tool-calls.ts
 function activityOf(tool, input) {
   switch (tool) {
@@ -9932,17 +10133,29 @@ function activityOf(tool, input) {
   }
   return null;
 }
+function askQuestions(input) {
+  if (Array.isArray(input.questions))
+    return dialogQuestions(input.questions);
+  return typeof input.html === "string" ? dialogQuestions(formQuestions(input.html)) : [];
+}
+function formAnswerText(answers) {
+  const answered = (Array.isArray(answers) ? answers : []).flatMap((a) => typeof a?.question === "string" && typeof a.answer === "string" && a.answer.trim() !== "" ? [`"${a.question}"="${a.answer.trim()}"`] : []);
+  return answered.length > 0 ? answered.join(", ") : null;
+}
 function askOutcome(event) {
   const details = event.details ?? {};
-  const answer = event.content.flatMap((b) => b.type === "text" && b.text ? [b.text] : []).join(`
+  const text = event.content.flatMap((b) => b.type === "text" && b.text ? [b.text] : []).join(`
 `);
-  if (event.isError || details.chatRedirect || answer === "")
+  if (event.isError || text === "")
     return { kind: "dismissed" };
-  return { kind: details.timedOut ? "timed-out" : "answered", answer };
+  if (Array.isArray(details.answers) && details.answers.length === 0)
+    return null;
+  const answer = formAnswerText(details.answers) ?? text;
+  return { kind: details.timedOut === true ? "timed-out" : "answered", answer };
 }
 function isDismissedAsk(message) {
   const m = message;
-  return m?.role === "toolResult" && m.toolName === "ask" && Array.isArray(m.content) && askOutcome({ content: m.content, isError: m.isError === true, details: m.details }).kind === "dismissed";
+  return m?.role === "toolResult" && m.toolName === "ask" && Array.isArray(m.content) && askOutcome({ content: m.content, isError: m.isError === true, details: m.details })?.kind === "dismissed";
 }
 
 // src/host-context.ts
@@ -10008,7 +10221,8 @@ function conversationOf(entries) {
         return [];
       const input = block.arguments ?? {};
       const result = typeof block.id === "string" ? results.get(block.id) : undefined;
-      const line = block.name === "ask" ? dialogActivity(dialogQuestions(input.questions), result ? askOutcome({ ...result, content: result.content, isError: result.isError === true }) : { kind: "open" }) : activityOf(block.name, input);
+      const outcome = block.name === "ask" && result ? askOutcome({ ...result, content: result.content, isError: result.isError === true }) : { kind: "open" };
+      const line = block.name !== "ask" ? activityOf(block.name, input) : outcome ? dialogActivity(askQuestions(input), outcome) : null;
       return line ? [line] : [];
     });
     return [{ role: "agent", text: textOfBlocks(m.content), activity }];
@@ -10119,8 +10333,10 @@ function activityHandlers(context, sessions) {
     }
     if (event.toolName !== "ask")
       return;
-    const questions = dialogQuestions(event.input.questions);
     const outcome = askOutcome(event);
+    if (!outcome)
+      return;
+    const questions = askQuestions(event.input);
     const line = dialogActivity(questions, outcome);
     await change(sessionIdOf(ctx), (s) => {
       const noted = noteActivity(s, line);
@@ -10672,7 +10888,7 @@ function sessionCalls(context) {
       exclusive: (fn) => exclusiveRun(dir, id, fn),
       ask: askFor(ctx, id),
       deliver: async (_s, text) => {
-        const why = sendToAgent(ctx, text);
+        const why = await sendToAgent(ctx, text);
         return why === null ? { state: "accepted", queuedId: null } : { state: "rejected", reason: why };
       },
       perform: async (_s, effect) => effect.kind === "copy" ? deps.copy(effect.text) : openTarget2(run, effect.target, ctx.cwd, deps.home),
@@ -11052,13 +11268,29 @@ function createInbox(pi, deps = defaultDeps) {
       return { code: UNSTARTABLE_CODE, stdout: "", stderr: messageOf(err) };
     }
   };
-  const sendToAgent = (ctx, text) => {
+  const runStartWaiters = new Map;
+  const sendToAgent = async (ctx, text) => {
+    const id = sessionIdOf(ctx);
+    const waiters = runStartWaiters.get(id) ?? new Set;
+    runStartWaiters.set(id, waiters);
+    let started = () => {};
+    const runStarted = new Promise((resolve) => {
+      started = () => resolve(null);
+    });
+    waiters.add(started);
     try {
-      pi.sendUserMessage(text, ctx.isIdle() ? undefined : { deliverAs: "followUp" });
-      return null;
+      const options = ctx.isIdle() ? undefined : { deliverAs: "followUp" };
+      const sent = Promise.resolve(pi.sendUserMessage(text, options)).then(() => null, (err) => messageOf(err));
+      return await Promise.race([sent, runStarted]);
     } catch (err) {
       return messageOf(err);
+    } finally {
+      waiters.delete(started);
     }
+  };
+  const onRunStart = (ctx) => {
+    for (const started of runStartWaiters.get(sessionIdOf(ctx)) ?? [])
+      started();
   };
   function askFor(ctx, id) {
     return async (prompt, system, _kind, report) => {
@@ -11144,7 +11376,10 @@ function createInbox(pi, deps = defaultDeps) {
   pi.on("session_shutdown", turns.onSessionShutdown);
   pi.on("before_agent_start", turns.onBeforeAgentStart);
   pi.on("input", turns.onInput);
-  pi.on("agent_start", turns.onAgentStart);
+  pi.on("agent_start", (event, ctx) => {
+    onRunStart(ctx);
+    return turns.onAgentStart(event, ctx);
+  });
   pi.on("turn_start", turns.onTurnStart);
   pi.on("tool_execution_start", activity.onToolExecutionStart);
   pi.on("tool_execution_end", activity.onToolExecutionEnd);
