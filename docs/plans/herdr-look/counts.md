@@ -2,7 +2,7 @@
 
 Part of [the Herdr look plan](../herdr-look.md).
 
-Status: proposed.
+Status: built in every host. Herdr's sidebar does not draw the labels yet.
 
 Each host labels its own Herdr terminal with what waits on the person. Herdr then knows, for every terminal, which inbox session runs there and how much waits in it.
 
@@ -25,7 +25,7 @@ The values come from `hooks/herdr.ts:herdrTokens`, the function that builds toda
 
 - After every saved change, in the same step that publishes the session file. A report that would change nothing is skipped, as `herdrReporter` does today.
 - At session end, every `inbox.` label is removed. Claude Code reports at `session.end`, and omp when it shuts down. Codex has no hook for a session's end, so its labels stay until the terminal runs something else. The look and the counts treat a terminal whose foreground program is a shell as having no inbox, whatever its labels say. `terminals()` gives the foreground program.
-- `hc label` takes no sequence number, unlike `herdr pane report-metadata --seq`. Codex writes from several processes: hooks, the detached update and the server. Codex already keeps the last report's write time in the session as `herdrReport.seq`. A report goes out only when its write is newer, and the check and the record happen under the session's lock. Two reports can still leave out of order between the check and the send, and the next write corrects that. Holding the lock through `hc label` would stall the server's presses, as `codex/src/hook.ts` notes for the Herdr call there.
+- `hc label` takes no sequence number, unlike `herdr pane report-metadata --seq`. Codex reports from its hooks and from the detached update a hook starts. Each report holds a per-session Herdr lock, `<state file>.herdr`, while it reads the newest saved state, publishes, labels and saves `herdrReport`. So reports from these processes go out in the order they run, and each one sends the newest state. The lock is separate from the session's own lock, so the server's presses never wait on `hc label`. The server does not report, because `.mcp.json` passes it no Herdr variables. A record or close during a turn reaches the labels at the next hook.
 
 ## Replacing the `HERDR_PANE_ID` reporting
 
@@ -34,16 +34,20 @@ Today `hooks/herdr.ts` reports to Herdr's terminal multiplexer with `herdr pane 
 `hooks/herdr.ts` gains one function that reads the environment and returns where to report:
 
 ```ts
-type HerdrTarget = { kind: 'pane'; pane: string } | { kind: 'terminal'; terminal: string } | null
+type HerdrTarget =
+  | { kind: 'pane'; pane: string }
+  | { kind: 'terminal'; terminal: string; appHome: string | null; hc: readonly string[] }
 ```
+
+`herdrTarget` returns `null` when neither variable is set.
 
 - `HERDR_PANE_ID` set: `pane`, reported with `herdr pane report-metadata` as today.
 - `HC_TERMINAL_ID` set: `terminal`, reported with `hc label`, and the session file is published.
 - Neither: `null`, and nothing is reported.
 
-The three callers switch from reading `HERDR_PANE_ID` to this function: `hooks/register.tsx:publishStatus`, `codex/src/host.ts:herdrOnWrite` and `omp/src/host-sessions.ts:reportCounts`. Each reporter keeps its own queue, so one report runs at a time and the last one reads the newest state.
+The three callers switch from reading `HERDR_PANE_ID` to this function: `hooks/register.tsx:publishStatus`, `codex/src/host.ts:herdrOnWrite` and `omp/src/host-sessions.ts:reportCounts`. The mod and omp keep a reporter queue, so one report runs at a time and the last one reads the newest state. Each report's turn publishes the file before it sets the labels. `inbox.session` names the session only when that publish succeeded, so it never names a file that was not written. A Codex start drops the saved `herdrReport`, so each start labels the terminal even when the counts match the last report, since another session may have labelled the terminal in between.
 
-`hc` is found on `PATH`, then at `~/.local/bin/hc`, where Herdr's installer puts it. A host where neither exists reports nothing and logs why once. The spike called `~/.local/bin/hc` by its full path.
+`hc` is found on `PATH`, then at `~/.local/bin/hc`, where Herdr's installer puts it. The reporter tries each in turn and keeps the first one that starts. A host where neither starts reports nothing. The mod logs each failed publish to its debug log. Codex and omp log nothing. The spike called `~/.local/bin/hc` by its full path.
 
 Delegate tracking, `hooks/herdr.ts:delegatesInHerdr`, asks `herdr agent list`, which only the multiplexer answers. Tracking agents a session starts with `hc run` is separate work and is not in this plan.
 
