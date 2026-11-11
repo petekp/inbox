@@ -1,7 +1,7 @@
 // Built by codex/build.mjs from codex/src and hooks/. Do not edit.
 
 // src/hook-main.ts
-import { dirname as dirname4, join as join4 } from "node:path";
+import { dirname as dirname4, join as join5 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/detached-update.ts
@@ -19,8 +19,8 @@ function detachedUpdate(dir, env, script) {
 }
 
 // src/host.ts
-import { mkdir as mkdir2, rename as rename2, rm, writeFile as writeFile2 } from "node:fs/promises";
-import { dirname as dirname2 } from "node:path";
+import { appendFile, mkdir as mkdir2, rename as rename2, rm, stat as stat2, writeFile as writeFile2 } from "node:fs/promises";
+import { dirname as dirname2, join as join2 } from "node:path";
 
 // src/state.ts
 import { execFileSync } from "node:child_process";
@@ -1993,6 +1993,7 @@ function sessionFields(saved, views) {
       phase: x.phase ?? "accepted"
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
     shownSince: saved.shownSince ?? null,
     prViews: {
@@ -2324,18 +2325,18 @@ function actionsOf(row, last, state, feedback) {
   const { id, item, steps: steps2 } = row;
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
-  const action = (press, label, kind, flags = {}) => {
-    const pressAction = actionId(press);
+  const action = (press2, label, kind, flags = {}) => {
+    const pressAction = actionId(press2);
     return {
-      press,
-      label: press.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
+      press: press2,
+      label: press2.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
-      ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps2[press.step]) ? { icon: stepIconKind(steps2[press.step]) } : {},
+      emphasis: flags.isPrimary || press2.action === "done" || press2.action === "address" ? "primary" : press2.action === "discuss" || press2.action === "explain" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
+      ...press2.action === "done" ? { icon: "done" } : press2.action === "step" && stepIconKind(steps2[press2.step]) ? { icon: stepIconKind(steps2[press2.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
-      isFollowUp: FOLLOW_UPS.has(press.action),
-      ...ACTION_KEYS[press.action] ? { hotkey: ACTION_KEYS[press.action] } : {},
+      isFollowUp: FOLLOW_UPS.has(press2.action),
+      ...ACTION_KEYS[press2.action] ? { hotkey: ACTION_KEYS[press2.action] } : {},
       isOut: out === pressAction
     };
   };
@@ -2691,11 +2692,14 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
 }
 
 // ../hooks/session-presses.ts
-function pruned(s) {
-  const inPlace = [
+function rowsInPlace(s) {
+  const since = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
+  return /* @__PURE__ */ new Set([...s.heldRows, ...since]);
+}
+function pruned(s) {
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(
       ([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)
@@ -2704,7 +2708,7 @@ function pruned(s) {
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return {
     ...s,
-    ledger: pruneClosed(s.ledger, /* @__PURE__ */ new Set([...s.heldRows, ...inPlace])),
+    ledger: pruneClosed(s.ledger, rowsInPlace(s)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
   };
 }
@@ -3458,13 +3462,14 @@ function herdrReportKey(r) {
   return reportCommand({ ...r, seq: void 0 }).join("\n");
 }
 var HERDR_RETRY_MS = [5e3, 3e4, 12e4];
-function herdrReporter() {
+function herdrReporter(log) {
   let sent = null;
   let retries = 0;
   let isRetryWaiting = false;
   let sending = Promise.resolve();
   let newest = null;
   let hcFound = null;
+  let logged = null;
   const runReport = async (run2, r) => {
     const options = { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS };
     if (r.target.kind === "pane") return run2(reportCommand(r), options);
@@ -3494,6 +3499,9 @@ function herdrReporter() {
     sent = null;
     const result = await runReport(run2, r).catch(() => null);
     const isTaken = result?.code === 0;
+    const problem = isTaken ? null : reportProblem(r, result);
+    if (problem && problem !== logged) log?.(problem);
+    logged = problem;
     if (isTaken) {
       sent = key;
       retries = 0;
@@ -3507,6 +3515,13 @@ function herdrReporter() {
     return result;
   };
   return reportToHerdr;
+}
+function reportProblem(r, result) {
+  if (!result && r.target.kind === "terminal")
+    return `Herdr labels not set: no hc started. Tried ${r.target.hc.join(", then ")}.`;
+  if (!result) return "Herdr report did not run.";
+  const why = result.stderr.trim();
+  return `Herdr report failed with exit ${result.code}${why ? `: ${why}` : "."}`;
 }
 function herdrTarget(env) {
   const pane = env.HERDR_PANE_ID;
@@ -3528,20 +3543,66 @@ function herdrLabels(tokens) {
 }
 var HERDR_FORMAT = 1;
 var SESSION_FIELDS = Object.keys(emptySession());
-function herdrEnvelope(source, session) {
+function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
-  return { format: HERDR_FORMAT, ...source, session: shared };
+  const { lastHerdrPress } = session;
+  const { projectFolder, ...rest } = source;
+  return {
+    format: HERDR_FORMAT,
+    ...rest,
+    ...projectFolder?.startsWith("/") && { projectFolder },
+    ...isTrimmed && { trimmed: true },
+    ...lastHerdrPress && { lastPress: lastHerdrPress },
+    session: shared
+  };
+}
+function publishedSessionsFolder(appHome) {
+  return `${appHome}/inbox/sessions`;
+}
+function publishedSessionPath(appHome, sessionId) {
+  return `${publishedSessionsFolder(appHome)}/${sessionFile(sessionId)}`;
 }
 
+// ../hooks/host-prs.ts
+var PRS_HIDDEN_REFRESH_MS = 10 * 6e4;
+
 // ../hooks/herdr-app.ts
-function publishedSessionPath(appHome, sessionId) {
-  return `${appHome}/inbox/sessions/${sessionFile(sessionId)}`;
+var PRESS_FILE_LIMIT_BYTES = 64 * 1024;
+var PUBLISH_LIMIT_BYTES = 1024 * 1024;
+function utf8Bytes(text2) {
+  let bytes = 0;
+  for (const char of text2) {
+    const code = char.codePointAt(0) ?? 0;
+    bytes += code < 128 ? 1 : code < 2048 ? 2 : code < 65536 ? 3 : 4;
+  }
+  return bytes;
 }
-async function publishSession(files, appHome, source, session) {
+var isOverLimit = (text2) => text2.length * 3 > PUBLISH_LIMIT_BYTES && utf8Bytes(text2) > PUBLISH_LIMIT_BYTES;
+function withoutFoldedClosed(s) {
+  const inPlace = rowsInPlace(s);
+  const { closed, closedFindings } = s.ledger;
+  return {
+    ...s,
+    ledger: {
+      ...s.ledger,
+      closed: closed.filter((c) => inPlace.has(c.id)),
+      closedFindings: closedFindings.filter((f) => inPlace.has(f.id))
+    }
+  };
+}
+function publishedText(source, session, log) {
+  const text2 = JSON.stringify(herdrEnvelope(source, session));
+  if (!isOverLimit(text2)) return text2;
+  const trimmed = JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session), true));
+  if (isOverLimit(trimmed))
+    log(`Herdr publish is over ${PUBLISH_LIMIT_BYTES} bytes after trimming, so the look cannot read it`);
+  return trimmed;
+}
+async function publishSession(files, appHome, source, session, log) {
   const path = publishedSessionPath(appHome, source.sessionId);
   const temporary = `${path}.${source.writtenAt}-${Math.random().toString(36).slice(2)}.tmp`;
   try {
-    await files.write(temporary, JSON.stringify(herdrEnvelope(source, session)));
+    await files.write(temporary, publishedText(source, session, log));
     await files.move(temporary, path);
   } catch (err) {
     await files.remove(temporary).catch(() => void 0);
@@ -3550,7 +3611,7 @@ async function publishSession(files, appHome, source, session) {
 }
 function publishedSession(files, appHome, source, session, log) {
   if (!appHome) return Promise.resolve(false);
-  return publishSession(files, appHome, source, session).then(
+  return publishSession(files, appHome, source, session, log).then(
     () => true,
     (err) => {
       log(`Herdr publish failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -3582,12 +3643,27 @@ var publishFiles = {
     await writeFile2(path, text2);
   },
   move: (from, to) => rename2(from, to),
-  remove: (path) => rm(path, { force: true })
+  remove: (path) => rm(path, { force: true }),
+  removeFolder: (path) => rm(path, { recursive: true, force: true })
 };
-function herdrOnWrite(env, run2, dir, now) {
+var HERDR_LOG_BYTES = 64 * 1024;
+function herdrLog(dir) {
+  const path = join2(dir, "herdr.log");
+  return (text2) => void (async () => {
+    const size = await stat2(path).then(
+      (s) => s.size,
+      () => 0
+    );
+    const line = `${(/* @__PURE__ */ new Date()).toISOString()} ${text2}
+`;
+    await mkdir2(dir, { recursive: true });
+    await (size > HERDR_LOG_BYTES ? writeFile2(path, line) : appendFile(path, line));
+  })().catch(() => void 0);
+}
+function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
   const target = herdrTarget(env);
   if (!target) return void 0;
-  const report = herdrReporter();
+  const report = herdrReporter(log);
   return async (written) => {
     const id = written.sessionId;
     await withLock(`${statePath(dir, id)}.herdr`, async () => {
@@ -3597,9 +3673,16 @@ function herdrOnWrite(env, run2, dir, now) {
       const isPublished = target.kind === "terminal" && await publishedSession(
         publishFiles,
         target.appHome,
-        { host: "codex", agent: CODEX.agent, sessionId: id, terminal: target.terminal, writtenAt: seq },
+        {
+          host: "codex",
+          agent: CODEX.agent,
+          sessionId: id,
+          terminal: target.terminal,
+          writtenAt: seq,
+          projectFolder: s.root
+        },
         s,
-        () => void 0
+        log
       );
       const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, at), []);
       const r = { target, tokens, session: isPublished ? id : null, seq };
@@ -3693,7 +3776,7 @@ function unranDelegatesTakenBack(s, refs) {
 
 // src/rollout-file.ts
 import { createReadStream } from "node:fs";
-import { open, stat as stat2 } from "node:fs/promises";
+import { open, stat as stat3 } from "node:fs/promises";
 import * as zlib from "node:zlib";
 var canReadZstd = typeof zlib.createZstdDecompress === "function";
 var isCompressed = (path) => path.endsWith(".zst");
@@ -3740,7 +3823,7 @@ var TAIL_KEPT_BYTES = 8 * 1024 * 1024;
 async function bytesBefore(path, bytes, end = Infinity) {
   if (!isCompressed(path)) return plainBytesBefore(path, bytes, end);
   if (end !== Infinity || bytes > TAIL_KEPT_BYTES) return compressedBytesBefore(path, bytes, end);
-  const info = await stat2(path);
+  const info = await stat3(path);
   const version = `${info.size}:${info.mtimeMs}`;
   let known = tails.get(path);
   if (known?.version !== version) {
@@ -4205,8 +4288,8 @@ function rolloutOfLines(lines, cwd, currentTurnId) {
 }
 
 // src/transcript.ts
-import { readdir as readdir2, stat as stat3 } from "node:fs/promises";
-import { basename as basename2, dirname as dirname3, join as join2 } from "node:path";
+import { readdir as readdir2, stat as stat4 } from "node:fs/promises";
+import { basename as basename2, dirname as dirname3, join as join3 } from "node:path";
 async function namesIn(dir, pattern) {
   const names = await readdir2(dir).catch(() => []);
   return names.filter((n) => pattern.test(n)).sort().reverse();
@@ -4219,17 +4302,17 @@ async function rolloutsIn(folder, isWanted) {
   return names.sort(byNewest);
 }
 async function newestRollout(codexHome, isWanted) {
-  const sessions = join2(codexHome, "sessions");
+  const sessions = join3(codexHome, "sessions");
   for (const year of await namesIn(sessions, /^\d{4}$/))
-    for (const month of await namesIn(join2(sessions, year), /^\d{2}$/))
-      for (const day of await namesIn(join2(sessions, year, month), /^\d{2}$/)) {
-        const folder = join2(sessions, year, month, day);
+    for (const month of await namesIn(join3(sessions, year), /^\d{2}$/))
+      for (const day of await namesIn(join3(sessions, year, month), /^\d{2}$/)) {
+        const folder = join3(sessions, year, month, day);
         const [name] = await rolloutsIn(folder, isWanted);
-        if (name !== void 0) return join2(folder, name);
+        if (name !== void 0) return join3(folder, name);
       }
-  const archive = join2(codexHome, "archived_sessions");
+  const archive = join3(codexHome, "archived_sessions");
   const [archived] = await rolloutsIn(archive, isWanted);
-  return archived === void 0 ? null : join2(archive, archived);
+  return archived === void 0 ? null : join3(archive, archived);
 }
 function codexHomeOf(path) {
   const folder = dirname3(path);
@@ -4493,13 +4576,13 @@ async function handleHook(input, deps) {
 
 // src/data-dir.ts
 import { homedir as homedir2 } from "node:os";
-import { join as join3 } from "node:path";
+import { join as join4 } from "node:path";
 function dataDir(env, pluginRoot) {
   const fromEnv = env.INBOX_DATA || env.PLUGIN_DATA;
   if (fromEnv) return fromEnv;
   const m = pluginRoot.match(/^(.*)\/plugins\/cache\/([^/]+)\/([^/]+)\/[^/]+$/);
   if (m) return `${m[1]}/plugins/data/${m[3]}-${m[2]}`;
-  return join3(homedir2(), ".codex", "inbox-dev");
+  return join4(homedir2(), ".codex", "inbox-dev");
 }
 
 // src/run.ts
@@ -4549,7 +4632,7 @@ async function main() {
   for await (const chunk of process.stdin) raw += chunk;
   const dist = dirname4(fileURLToPath(import.meta.url));
   const dir = dataDir(process.env, dirname4(dist));
-  const startUpdate = detachedUpdate(dir, process.env, join4(dist, "update.mjs"));
+  const startUpdate = detachedUpdate(dir, process.env, join5(dist, "update.mjs"));
   const out = await handleHook(JSON.parse(raw), {
     dir,
     env: process.env,
