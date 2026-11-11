@@ -32,7 +32,7 @@ Herdr makes no stability promise for the mod API, rewrites its `.d.ts` files at 
 
 ### Unit tests
 
-In `herdr/tests/`, with `bun test`, as omp does:
+In `herdr/tests/`, with `bun test`, as omp does. The files are named `*.spec.ts`, as omp's and Codex's are, because the repo's `claude plugin test` loads every `*.test.ts` and cannot import `bun:test`:
 
 - `follow`: each focus case in [the look](look.md#following-the-focused-pane), from fixed `focused()`, `panes()` and `terminals()` values.
 - `files`: an envelope from each host's state type reads back, an older `format` upgrades, a newer one is refused, and a press file round-trips with its holds.

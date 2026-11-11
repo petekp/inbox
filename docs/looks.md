@@ -2,18 +2,19 @@
 
 Status: current. Read this before you change the UI or a business rule.
 
-The inbox has four looks: `terminal`, `desktop`, `codex` and `omp`. A look is one way the inbox is drawn, and `GLOSSARY.md` defines it with host, shared module, adapter and difference on purpose. The rule is that shared modules decide and adapters draw. If a rule decides what a row says, which action leads, when a tab counts as empty or what text appears, it lives in a shared module. An adapter decides only how its look draws that. The plan for finishing this split is `docs/plans/three-looks.md`.
+The inbox has five looks: `terminal`, `desktop`, `codex`, `omp` and `herdr`. A look is one way the inbox is drawn, and `GLOSSARY.md` defines it with host, shared module, adapter and difference on purpose. The rule is that shared modules decide and adapters draw. If a rule decides what a row says, which action leads, when a tab counts as empty or what text appears, it lives in a shared module. An adapter decides only how its look draws that. The plan for finishing this split is `docs/plans/three-looks.md`.
 
 ## Files
 
 Shared modules are in `hooks/`. Every host consumes them, directly or through a build. They import only shared modules and shared types. `scripts/check-structure.mjs` checks those boundaries, including type imports. Codex and omp type checking need no generated Claude engine types.
 
-Every source file in `hooks/`, `codex/src` and `omp/src` needs a row in one of the four parts below. Put a file split out of another next to that file's row. The structure check reads the rows in every `docs/looks/files-*.md`.
+Every source file in `hooks/`, `codex/src`, `omp/src` and `herdr/src` needs a row in one of the five parts below. Put a file split out of another next to that file's row. The structure check reads the rows in every `docs/looks/files-*.md`.
 
 - [Shared modules](looks/files-shared.md)
 - [The mod](looks/files-mod.md)
 - [Codex](looks/files-codex.md)
 - [omp](looks/files-omp.md)
+- [The Herdr look](looks/files-herdr.md)
 
 ## Who owns each rule
 
@@ -46,6 +47,12 @@ omp draws the terminal's text and handles, with its own keys and a panel it owns
 
 - [The panel and its keys](looks/differences-omp-panel.md)
 - [How omp runs](looks/differences-omp-host.md)
+
+### Herdr
+
+The Herdr look is a Herdr app mod that draws the session a host publishes. This table compares it with the Codex tab. The structure check reads the parts whose file names start with `differences-herdr` as this table.
+
+- [The Herdr look](looks/differences-herdr.md)
 
 ## Adding a host
 

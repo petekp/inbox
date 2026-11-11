@@ -365,7 +365,7 @@ export function herdrLabels(tokens: HerdrTokens): Record<string, string> {
 }
 
 /** The format of the session file a host publishes and of the press file the Herdr look writes. */
-const HERDR_FORMAT = 1
+export const HERDR_FORMAT = 1
 
 /** Who publishes a session for the Herdr look, and when. `agent` is the name the shared texts use, as in "Tell Claude". */
 export type EnvelopeSource = { host: ClientId; agent: string; sessionId: string; terminal: string; writtenAt: number }
@@ -374,7 +374,7 @@ export type EnvelopeSource = { host: ClientId; agent: string; sessionId: string;
  * The file a host publishes for the Herdr look. `trimmed` is set when the host left out closed items the view does not
  * draw in place, to keep the file under `PUBLISH_LIMIT_BYTES`. `lastPress` is the session's `lastHerdrPress`.
  */
-type HerdrEnvelope = EnvelopeSource & {
+export type HerdrEnvelope = EnvelopeSource & {
   format: typeof HERDR_FORMAT
   trimmed?: true
   lastPress?: HerdrPressOutcome
