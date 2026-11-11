@@ -11,7 +11,7 @@ export type PublishFiles = {
 }
 
 /** Where a host publishes a session for the Herdr look, under the app's settings folder. Throws for an unsafe id. */
-export function publishedSessionPath(appHome: string, sessionId: string): string {
+function publishedSessionPath(appHome: string, sessionId: string): string {
   return `${appHome}/inbox/sessions/${sessionFile(sessionId)}`
 }
 

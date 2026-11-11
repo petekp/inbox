@@ -9,7 +9,7 @@ import { sessionView } from './session-view'
 import { SETTLED_MS } from './timing'
 
 /** The drawn conversation, as a report reads it when its turn comes. */
-export type DrawnForHerdr = { id: string; session: Session; dialogs: readonly Dialog[]; isUnread: boolean }
+type DrawnForHerdr = { id: string; session: Session; dialogs: readonly Dialog[]; isUnread: boolean }
 
 /**
  * The engine calls a Herdr report needs. `env` reads `HERDR_PANE_ID`, `HC_TERMINAL_ID`, `HERDR_APP_HOME` and `HOME`, in
