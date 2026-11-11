@@ -19,15 +19,15 @@ function modLine(result: HerdrModResult): string | null {
 async function sweep(
   run: Run,
   files: SweepFiles,
-  appHome: string,
-  hcs: readonly string[],
+  target: Extract<HerdrTarget, { kind: 'terminal' }> & { appHome: string },
   now: number,
   log: (text: string) => void,
 ) {
+  const { appHome, hc: hcs, terminal } = target
   const labelled = await labelledSessions(run, hcs)
   if (!labelled)
     return log(`Left old inbox session files in place: no hc listed Herdr's terminals. Tried ${hcs.join(', then ')}.`)
-  const removed = await sweepPublished(files, appHome, labelled, now)
+  const removed = await sweepPublished(files, appHome, labelled, terminal, now)
   if (removed.length > 0)
     log(`Removed ${removed.length} inbox session file${removed.length === 1 ? '' : 's'} that no Herdr terminal shows.`)
 }
@@ -50,7 +50,7 @@ export async function startInHerdrApp(
   if (!appHome) return null
   const [mod] = await Promise.all([
     keepHerdrModCurrent(files, appHome, bundledFolder, now),
-    sweep(run, files, appHome, target.hc, now, log).catch((err: unknown) =>
+    sweep(run, files, { ...target, appHome }, now, log).catch((err: unknown) =>
       log(`Old inbox session files not removed: ${message(err)}`),
     ),
   ])

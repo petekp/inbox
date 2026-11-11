@@ -11117,12 +11117,17 @@ async function applyLookPress(host, file) {
 
 // ../hooks/herdr-install.ts
 var BUILD_BANNER = "// Built by herdr/build.ts ";
-var BUILT_AT = /^\/\/ Built at (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z)$/;
+var BUILT_AT = /^\/\/ Built at (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z)\. (\d+) characters follow\.$/;
 var isInboxMod = (mainJs) => mainJs.startsWith(BUILD_BANNER);
 function modBuiltAt(mainJs) {
-  const second = mainJs.split(`
-`, 2)[1] ?? "";
-  return BUILT_AT.exec(second)?.[1] ?? null;
+  const firstEnd = mainJs.indexOf(`
+`);
+  const secondEnd = firstEnd === -1 ? -1 : mainJs.indexOf(`
+`, firstEnd + 1);
+  if (secondEnd === -1)
+    return null;
+  const stamp = BUILT_AT.exec(mainJs.slice(firstEnd + 1, secondEnd));
+  return stamp && mainJs.length - secondEnd - 1 === Number(stamp[2]) ? stamp[1] : null;
 }
 async function bundledMod(read, folder) {
   const [mainJs, modJson] = await Promise.all([read(`${folder}/main.js`), read(`${folder}/mod.json`)]).catch(() => []);
@@ -11178,8 +11183,13 @@ async function writeMod(files, appHome, bundled, step) {
       await files.makeFolder(`${appHome}/mods`);
       if (await files.kind(target) !== null)
         return;
-      await files.move(temporary, target);
-      await files.removeFolder(`${target}/${name}`);
+      const isOtherFirst = await files.move(temporary, target).then(() => false, async (err) => {
+        if ((await installedMod(files, appHome)).is === "missing")
+          throw err;
+        return true;
+      });
+      if (!isOtherFirst)
+        await files.removeFolder(`${target}/${name}`);
       return;
     }
     if (modStep(await installedMod(files, appHome), null, bundled) !== "update")
@@ -11247,16 +11257,16 @@ async function labelledSessions(run, hcs) {
   }
   return null;
 }
-function writtenAt(text, sessionId) {
+function published(text, sessionId) {
   try {
     const e = JSON.parse(text ?? "");
     const isEnvelope = Number.isInteger(e?.format) && e.format >= 1 && e.format <= HERDR_FORMAT && e.sessionId === sessionId;
-    return isEnvelope && typeof e.writtenAt === "number" && Number.isFinite(e.writtenAt) ? e.writtenAt : null;
+    return isEnvelope && typeof e.writtenAt === "number" && Number.isFinite(e.writtenAt) ? { terminal: e.terminal, writtenAt: e.writtenAt } : null;
   } catch {
     return null;
   }
 }
-async function sweepPublished(files, appHome, labelled, now) {
+async function sweepPublished(files, appHome, labelled, ownTerminal, now) {
   const folder = publishedSessionsFolder(appHome);
   const names = (await files.list(folder).catch(() => [])).filter(isSessionFile);
   const removed = [];
@@ -11264,8 +11274,8 @@ async function sweepPublished(files, appHome, labelled, now) {
     const id = name.slice(0, -".json".length);
     if (labelled.has(id))
       continue;
-    const at = writtenAt(await files.read(`${folder}/${name}`).catch(() => null), id);
-    if (at === null || now - at < SWEEP_AFTER_MS)
+    const session = published(await files.read(`${folder}/${name}`).catch(() => null), id);
+    if (!session || session.terminal === ownTerminal || now - session.writtenAt < SWEEP_AFTER_MS)
       continue;
     await unpublishSession(files, appHome, id);
     removed.push(id);
@@ -11282,11 +11292,12 @@ function modLine(result) {
     return "Installed the inbox mod in Herdr.";
   return result.is === "updated" ? "Updated the inbox mod in Herdr to a newer build." : null;
 }
-async function sweep(run, files, appHome, hcs, now, log) {
+async function sweep(run, files, target, now, log) {
+  const { appHome, hc: hcs, terminal } = target;
   const labelled = await labelledSessions(run, hcs);
   if (!labelled)
     return log(`Left old inbox session files in place: no hc listed Herdr's terminals. Tried ${hcs.join(", then ")}.`);
-  const removed = await sweepPublished(files, appHome, labelled, now);
+  const removed = await sweepPublished(files, appHome, labelled, terminal, now);
   if (removed.length > 0)
     log(`Removed ${removed.length} inbox session file${removed.length === 1 ? "" : "s"} that no Herdr terminal shows.`);
 }
@@ -11296,7 +11307,7 @@ async function startInHerdrApp(run, files, target, bundledFolder, now, log) {
     return null;
   const [mod] = await Promise.all([
     keepHerdrModCurrent(files, appHome, bundledFolder, now),
-    sweep(run, files, appHome, target.hc, now, log).catch((err) => log(`Old inbox session files not removed: ${message3(err)}`))
+    sweep(run, files, { ...target, appHome }, now, log).catch((err) => log(`Old inbox session files not removed: ${message3(err)}`))
   ]);
   const line = modLine(mod);
   if (line)

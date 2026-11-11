@@ -47,17 +47,24 @@ export async function labelledSessions(run: Run, hcs: readonly string[]): Promis
   return null
 }
 
-/** When the host wrote `text`, a session the inbox published for `sessionId`, or null when it is not one. */
-function writtenAt(text: string | null, sessionId: string): number | null {
+/** Where and when a host wrote `text`, a session the inbox published for `sessionId`, or null when it is not one. */
+function published(text: string | null, sessionId: string): { terminal: unknown; writtenAt: number } | null {
   try {
-    const e = JSON.parse(text ?? '') as { format?: unknown; sessionId?: unknown; writtenAt?: unknown } | null
+    const e = JSON.parse(text ?? '') as {
+      format?: unknown
+      sessionId?: unknown
+      terminal?: unknown
+      writtenAt?: unknown
+    } | null
     const isEnvelope =
       Number.isInteger(e?.format) &&
       (e!.format as number) >= 1 &&
       (e!.format as number) <= HERDR_FORMAT &&
       e!.sessionId === sessionId
 
-    return isEnvelope && typeof e!.writtenAt === 'number' && Number.isFinite(e!.writtenAt) ? e!.writtenAt : null
+    return isEnvelope && typeof e!.writtenAt === 'number' && Number.isFinite(e!.writtenAt)
+      ? { terminal: e!.terminal, writtenAt: e!.writtenAt }
+      : null
   } catch {
     return null
   }
@@ -72,13 +79,15 @@ export type SweepFiles = Pick<PublishFiles, 'remove' | 'removeFolder'> & {
 /**
  * Removes each published session that no name in `labelled` names and that was written over `SWEEP_AFTER_MS` before
  * `now`, with its press folder. The Herdr look finds a session only through a terminal's label, so it can no longer
- * show these. A file that is not a session the inbox published, in a format this build knows, stays. Resolves with
- * the ids it removed.
+ * show these. A session published from `ownTerminal` stays, since the host starting there may not have labelled it
+ * yet. A file that is not a session the inbox published, in a format this build knows, stays. Resolves with the ids
+ * it removed.
  */
 export async function sweepPublished(
   files: SweepFiles,
   appHome: string,
   labelled: ReadonlySet<string>,
+  ownTerminal: string,
   now: number,
 ): Promise<string[]> {
   const folder = publishedSessionsFolder(appHome)
@@ -87,8 +96,8 @@ export async function sweepPublished(
   for (const name of names) {
     const id = name.slice(0, -'.json'.length)
     if (labelled.has(id)) continue
-    const at = writtenAt(await files.read(`${folder}/${name}`).catch(() => null), id)
-    if (at === null || now - at < SWEEP_AFTER_MS) continue
+    const session = published(await files.read(`${folder}/${name}`).catch(() => null), id)
+    if (!session || session.terminal === ownTerminal || now - session.writtenAt < SWEEP_AFTER_MS) continue
     await unpublishSession(files, appHome, id)
     removed.push(id)
   }

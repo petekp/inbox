@@ -27,8 +27,12 @@ const isCheck = process.argv[2] === '--check'
 const APP_MODULES = ['gpui-kit', 'gpui-base', 'herdr']
 const MOD_JSON = `${JSON.stringify({ place: 'none' })}\n`
 const COPIES = [join(here, '..', 'codex', 'plugin', 'dist', 'herdr-mod'), join(here, '..', 'omp', 'dist', 'herdr-mod')]
-const BUILT_AT_LINE = builtAtLine('BUILT_AT')
-const stamped = (unstamped: string, builtAt: string) => unstamped.replace(BUILT_AT_LINE, builtAtLine(builtAt))
+const BUILT_AT_LINE = '// Built at BUILT_AT'
+function stamped(unstamped: string, builtAt: string) {
+  const after = unstamped.slice(unstamped.indexOf(BUILT_AT_LINE) + BUILT_AT_LINE.length + 1)
+
+  return unstamped.replace(BUILT_AT_LINE, builtAtLine(builtAt, after.length))
+}
 
 const { devDependencies } = (await Bun.file(join(here, 'package.json')).json()) as {
   devDependencies: Record<string, string>

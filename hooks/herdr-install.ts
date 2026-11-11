@@ -1,17 +1,27 @@
-/** The second line of the bundle `herdr/build.ts` writes, which says when it was built, as an ISO time. */
-export const builtAtLine = (builtAt: string): string => `// Built at ${builtAt}`
+/**
+ * The second line of the bundle `herdr/build.ts` writes: when it was built, as an ISO time, and how many characters
+ * follow the line, so a host can tell a whole copy from one cut off mid-write.
+ */
+export const builtAtLine = (builtAt: string, length: number): string =>
+  `// Built at ${builtAt}. ${length} characters follow.`
 
 const BUILD_BANNER = '// Built by herdr/build.ts '
-const BUILT_AT = /^\/\/ Built at (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z)$/
+const BUILT_AT = /^\/\/ Built at (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z)\. (\d+) characters follow\.$/
 
 /** Whether `mainJs` is a build of the inbox's Herdr mod. */
 const isInboxMod = (mainJs: string): boolean => mainJs.startsWith(BUILD_BANNER)
 
-/** When the inbox's Herdr mod in `mainJs` was built, or null when its second line names no time. */
+/**
+ * When the inbox's Herdr mod in `mainJs` was built, or null when its second line names no time or the text after it
+ * is not as long as that line says.
+ */
 export function modBuiltAt(mainJs: string): string | null {
-  const second = mainJs.split('\n', 2)[1] ?? ''
+  const firstEnd = mainJs.indexOf('\n')
+  const secondEnd = firstEnd === -1 ? -1 : mainJs.indexOf('\n', firstEnd + 1)
+  if (secondEnd === -1) return null
+  const stamp = BUILT_AT.exec(mainJs.slice(firstEnd + 1, secondEnd))
 
-  return BUILT_AT.exec(second)?.[1] ?? null
+  return stamp && mainJs.length - secondEnd - 1 === Number(stamp[2]) ? stamp[1]! : null
 }
 
 /**
@@ -31,7 +41,7 @@ export type ModFiles = {
 /** The mod a host carries: the files of `herdr/mod/inbox` and when they were built. */
 type BundledMod = { mainJs: string; modJson: string; builtAt: string }
 
-/** The mod a host carries in `folder`, or null when it cannot be read or names no build time. */
+/** The mod a host carries in `folder`, or null when it cannot be read, names no build time or is cut off. */
 async function bundledMod(read: ModFiles['read'], folder: string): Promise<BundledMod | null> {
   const [mainJs, modJson] = await Promise.all([read(`${folder}/main.js`), read(`${folder}/mod.json`)]).catch(() => [])
   const builtAt = mainJs === undefined ? null : modBuiltAt(mainJs)
@@ -41,7 +51,7 @@ async function bundledMod(read: ModFiles['read'], folder: string): Promise<Bundl
 
 /**
  * The mod in the Herdr app's mods folder. `own` is a link, or a folder or file that is not a build of the inbox's
- * mod: the person's own, which no host writes over. An `inbox` build from before builds named their time has a null
+ * mod: the person's own, which no host writes over. An `inbox` build that names no time, or is cut off, has a null
  * `builtAt`.
  */
 type InstalledMod = { is: 'missing' } | { is: 'own' } | { is: 'inbox'; builtAt: string | null }
@@ -100,7 +110,8 @@ function modStep(installed: InstalledMod, answer: ModAnswer | null, bundled: Bun
 /**
  * Writes the bundled mod to a folder beside the app's mods folder, then moves it into place. An install moves the
  * whole folder. An update moves each changed file over the installed one, `main.js` last, so the installed mod is
- * whole after every step and Herdr reloads it in place. Either does nothing when another host got there first.
+ * whole after every step and Herdr reloads it in place. Either does nothing when another host got there first,
+ * including when that makes the install's move fail.
  */
 async function writeMod(files: ModFiles, appHome: string, bundled: BundledMod, step: 'install' | 'update') {
   const name = temporaryName('herdr-mod')
@@ -112,8 +123,14 @@ async function writeMod(files: ModFiles, appHome: string, bundled: BundledMod, s
     if (step === 'install') {
       await files.makeFolder(`${appHome}/mods`)
       if ((await files.kind(target)) !== null) return
-      await files.move(temporary, target)
-      await files.removeFolder(`${target}/${name}`)
+      const isOtherFirst = await files.move(temporary, target).then(
+        () => false,
+        async (err: unknown) => {
+          if ((await installedMod(files, appHome)).is === 'missing') throw err
+          return true
+        },
+      )
+      if (!isOtherFirst) await files.removeFolder(`${target}/${name}`)
 
       return
     }

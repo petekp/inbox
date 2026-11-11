@@ -9,7 +9,7 @@ import type { SweepFiles } from '../hooks/herdr-sweep'
 
 const BANNER = '// Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.'
 const build = (builtAt: string | null, code = 'draw()') =>
-  [BANNER, ...(builtAt ? [builtAtLine(builtAt)] : []), code].join('\n')
+  [BANNER, ...(builtAt ? [builtAtLine(builtAt, code.length)] : []), code].join('\n')
 const OLD = '2026-11-01T00:00:00.000Z'
 const NEW = '2026-11-10T00:00:00.000Z'
 const MOD_JSON = '{"place":"none"}\n'
@@ -18,7 +18,7 @@ function disk(initial: Record<string, string> = {}, links: string[] = []) {
   const files = new Map(Object.entries(initial))
   const folders = new Set<string>()
   const moves: string[] = []
-  let failMove: string | null = null
+  let failMove: { name: string; before?: () => void } | null = null
   const under = (folder: string) => [...files.keys()].filter(p => p.startsWith(`${folder}/`))
   const kind: ModFiles['kind'] = async path => {
     if (links.includes(path)) return 'link'
@@ -35,7 +35,10 @@ function disk(initial: Record<string, string> = {}, links: string[] = []) {
     write: async (path, text) => void files.set(path, text),
     makeFolder: async path => void folders.add(path),
     move: async (from, to) => {
-      if (failMove && to.endsWith(failMove)) throw new Error('EACCES')
+      if (failMove && to.endsWith(failMove.name)) {
+        failMove.before?.()
+        throw new Error(failMove.before ? 'ENOTEMPTY' : 'EACCES')
+      }
       moves.push(to)
       if (files.has(from)) {
         files.set(to, files.get(from)!)
@@ -61,7 +64,7 @@ function disk(initial: Record<string, string> = {}, links: string[] = []) {
         .filter(name => !name.includes('/')),
   }
 
-  return { calls, files, moves, failMoveTo: (name: string) => void (failMove = name) }
+  return { calls, files, moves, failMoveTo: (name: string, before?: () => void) => void (failMove = { name, before }) }
 }
 
 const BUNDLED = { '/plugin/mod/main.js': build(NEW), '/plugin/mod/mod.json': MOD_JSON }
@@ -106,8 +109,8 @@ describe('keepHerdrModCurrent', () => {
     expect(other.files.get('/app/mods/inbox/main.js')).toBe('export default 1')
   })
 
-  test('replaces an older inbox build, or one that names no build time, without asking', async () => {
-    for (const installed of [build(OLD, 'old()'), build(null, 'old()')]) {
+  test('replaces an older inbox build, one that names no build time, or one cut off, without asking', async () => {
+    for (const installed of [build(OLD, 'old()'), build(null, 'old()'), build(NEW, 'old()').slice(0, -1)]) {
       const d = disk({ ...BUNDLED, '/app/mods/inbox/main.js': installed, '/app/mods/inbox/mod.json': MOD_JSON })
 
       expect(await keepHerdrModCurrent(d.calls, '/app', '/plugin/mod', 5)).toEqual({ is: 'updated' })
@@ -152,16 +155,24 @@ describe('keepHerdrModCurrent', () => {
       '/app/mods/inbox/mod.json',
     ])
   })
+
+  test('reports installed when another host installs between the check and the move, and the move then fails', async () => {
+    const d = disk({ ...BUNDLED, '/app/inbox/herdr-mod.json': answer('yes') })
+    d.failMoveTo('/app/mods/inbox', () => d.files.set('/app/mods/inbox/main.js', build(NEW)))
+
+    expect(await keepHerdrModCurrent(d.calls, '/app', '/plugin/mod', 5)).toEqual({ is: 'installed' })
+    expect([...d.files.keys()].filter(p => p.endsWith('.tmp') || p.includes('.tmp/'))).toEqual([])
+  })
 })
 
-const envelope = (sessionId: string, writtenAt: number, format = 1) =>
-  JSON.stringify({ format, host: 'codex', agent: 'Codex', sessionId, terminal: 't1', writtenAt, session: {} })
+const envelope = (sessionId: string, writtenAt: number, format = 1, terminal = 't9') =>
+  JSON.stringify({ format, host: 'codex', agent: 'Codex', sessionId, terminal, writtenAt, session: {} })
 
 describe('sweepPublished', () => {
   const now = 10 * SWEEP_AFTER_MS
   const old = now - SWEEP_AFTER_MS - 1
 
-  test('removes a session no terminal names and written over a day ago, with its presses, and keeps the rest', async () => {
+  test('removes a session no terminal names and written over a day ago, with its presses, and keeps the rest, with those its own terminal published', async () => {
     const d = disk({
       '/app/inbox/sessions/gone.json': envelope('gone', old),
       '/app/inbox/presses/gone/p1.json': '{}',
@@ -171,12 +182,14 @@ describe('sweepPublished', () => {
       '/app/inbox/sessions/renamed.json': envelope('other', old),
       '/app/inbox/sessions/broken.json': '{"format":1,',
       '/app/inbox/sessions/gone.json.5-ab.tmp': envelope('gone', old),
+      '/app/inbox/sessions/here.json': envelope('here', old, 1, 't1'),
     })
 
-    expect(await sweepPublished(d.calls, '/app', new Set(['shown']), now)).toEqual(['gone'])
+    expect(await sweepPublished(d.calls, '/app', new Set(['shown']), 't1', now)).toEqual(['gone'])
     expect([...d.files.keys()].sort()).toEqual([
       '/app/inbox/sessions/broken.json',
       '/app/inbox/sessions/gone.json.5-ab.tmp',
+      '/app/inbox/sessions/here.json',
       '/app/inbox/sessions/newer.json',
       '/app/inbox/sessions/renamed.json',
       '/app/inbox/sessions/shown.json',
