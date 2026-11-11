@@ -10,7 +10,7 @@ import {
   herdrTarget,
   herdrTokens,
 } from './herdr'
-import type { HerdrAgent } from './herdr'
+import type { HerdrAgent, HerdrTarget } from './herdr'
 import {
   followPresses,
   isPublishedHere,
@@ -20,12 +20,14 @@ import {
   unpublishSession,
 } from './herdr-app'
 import type { ApplyPress, PressFiles, PublishFiles } from './herdr-app'
+import { hasHerdrMod, herdrPanelOpener, noHerdrModText } from './herdr-open'
+import type { HerdrOpened } from './herdr-open'
 import { CLAUDE_CODE } from './model-text'
 import { sessionView } from './session-view'
 import { SETTLED_MS } from './timing'
 
-/** The drawn conversation, as a report reads it when its turn comes. */
-type DrawnForHerdr = { id: string; session: Session; dialogs: readonly Dialog[]; isUnread: boolean }
+/** The drawn conversation, as a report reads it when its turn comes. `root` is the folder its opens resolve against. */
+type DrawnForHerdr = { id: string; root: string; session: Session; dialogs: readonly Dialog[]; isUnread: boolean }
 
 /**
  * The engine calls the mod's Herdr code needs. `env` reads `HERDR_PANE_ID`, `HC_TERMINAL_ID`, `HERDR_APP_HOME` and
@@ -38,6 +40,7 @@ export type HerdrCalls = {
   write: (path: string, text: string) => Promise<void>
   read: (path: string) => Promise<string>
   list: (folder: string) => Promise<readonly { name: string; kind: string }[]>
+  isFile: (path: string) => Promise<boolean>
   spawn: (argv: string[]) => AsyncIterator<{ text: string }, unknown>
   now: () => Promise<number>
   after: (ms: number, fn: () => void) => void
@@ -70,10 +73,36 @@ function herdrFiles(calls: HerdrCalls): PublishFiles & PressFiles {
   }
 }
 
+/**
+ * The Herdr app terminal the mod runs in, once `targetOf` has read the environment, with whether its app home holds the
+ * inbox mod. Null outside an app terminal. `targetOf` runs at turn-on and on every publish, so a press can tell at once
+ * whether the Herdr look can open.
+ */
+let appTerminal: { target: Extract<HerdrTarget, { kind: 'terminal' }>; hasMod: boolean } | null | undefined
+const openHerdrPanel = herdrPanelOpener()
+
 async function targetOf(calls: HerdrCalls) {
   const [HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME] = await calls.env()
+  const target = herdrTarget({ HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME })
+  appTerminal = target?.kind === 'terminal' ? { target, hasMod: await hasHerdrMod(calls.isFile, target) } : null
 
-  return herdrTarget({ HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME })
+  return target
+}
+
+/**
+ * In a Herdr app terminal, opens the Herdr look as `herdrPanelOpener` says, and logs why when it does not show. It
+ * returns null outside an app terminal, or before the mod has read its environment, and the result itself when the app
+ * home has no inbox mod, so in both cases the mod's own open keeps its first await.
+ */
+export function openInHerdr(calls: HerdrCalls): Promise<HerdrOpened> | HerdrOpened | null {
+  if (!appTerminal) return null
+  const logged = (opened: HerdrOpened) => {
+    if (!opened.isShown) calls.log(opened.text)
+    return opened
+  }
+  if (!appTerminal.hasMod) return logged({ isShown: false, text: noHerdrModText(appTerminal.target) })
+
+  return openHerdrPanel(calls, appTerminal.target).then(logged)
 }
 
 /**
@@ -102,7 +131,7 @@ export function publishToHerdr(
 
         return { target, tokens: CLEARED_TOKENS, session: null }
       }
-      const [{ id, session, dialogs, isUnread }, now] = await Promise.all([drawn(), calls.now()])
+      const [{ id, root, session, dialogs, isUnread }, now] = await Promise.all([drawn(), calls.now()])
       const isPublished =
         target.kind === 'terminal' &&
         (await publishedSession(
@@ -114,7 +143,7 @@ export function publishToHerdr(
             sessionId: id,
             terminal: target.terminal,
             writtenAt: now,
-            projectFolder: session.place?.folder,
+            projectFolder: root,
           },
           session,
           calls.log,

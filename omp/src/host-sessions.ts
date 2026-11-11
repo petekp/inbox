@@ -138,7 +138,7 @@ export function sessionCalls(context: HostContext) {
                 sessionId: id,
                 terminal: target.terminal,
                 writtenAt: now,
-                projectFolder: s.place?.folder,
+                projectFolder: memory.shownCwd?.(),
               },
               s,
               context.logHerdr,

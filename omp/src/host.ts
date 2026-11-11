@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { NO_PR_SHARED } from '../../hooks/pr-fetch'
 import { existsSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,6 +14,7 @@ import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
 import { herdrReporter, herdrTarget } from '../../hooks/herdr'
 import type { HerdrTarget } from '../../hooks/herdr'
+import { herdrPanelOpener } from '../../hooks/herdr-open'
 import type { PressFile } from '../../hooks/herdr-press-file'
 import type { Run } from '../../hooks/gh'
 import { COMPARE_PAGE_FILE } from '../../hooks/press-messages'
@@ -286,7 +288,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     logHerdr,
     presses: ompPresses(deps.herdrTarget, (ctx, file) => applyHerdrPress(ctx, file), logHerdr),
     run,
-    memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null },
+    memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null, shownCwd: null },
     sendToAgent,
     askFor,
     dropTools,
@@ -448,10 +450,18 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     }
   }
 
+  const openHerdrPanel = herdrPanelOpener()
+  const isFile = (path: string) => stat(path).then(s => s.isFile())
+
   pi.registerCommand('inbox', {
     description: inboxCommandText(deps.isNextBuild),
     handler: async (args, ctx) => {
       const isDemo = args.trim() === 'demo'
+      const target = deps.herdrTarget
+      const isHerdrApp = ctx.mode === 'tui' && !args.trim() && target?.kind === 'terminal'
+      const herdr = isHerdrApp ? await openHerdrPanel({ run, isFile }, target) : null
+      if (herdr) ctx.ui.notify(herdr.text, herdr.isShown ? 'info' : 'warning')
+      if (herdr?.isShown) return
       if (ctx.mode === 'tui') return openPanelUi(ctx, isDemo)
       const screen = isDemo
         ? await demoSource({

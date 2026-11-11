@@ -15,8 +15,6 @@ import type {
   Draft,
   FoldKind,
   Ledger,
-  OldPresence,
-  PrViews,
   LastAction,
   SessionStatus,
   PageTab,
@@ -105,6 +103,7 @@ import { applyLookPress } from './herdr-app'
 import {
   followDelegates as followHerdrDelegates,
   listenForHerdrPresses,
+  openInHerdr,
   publishToHerdr,
   type HerdrCalls,
 } from './mod-herdr'
@@ -219,9 +218,9 @@ import {
   noteStored,
   settleRewrite,
   stored,
-  uncertainRecord,
   withLostSendsUncertain,
 } from './mod-delivery'
+import { NO_OLD_PRESENCE, NO_OLD_PR_VIEWS, sessionFromOldFields } from './mod-old-fields'
 import {
   askedCalls,
   callKey,
@@ -374,6 +373,7 @@ function herdrCalls($: EngineInterface): HerdrCalls {
     write: (path, text) => $.fs.write(path, text),
     read: path => $.fs.read(path),
     list: folder => $.fs.list(folder),
+    isFile: path => $.fs.stat(path).then(s => s.kind === 'file'),
     spawn: argv => $.process.spawn({ argv }),
     now: () => $.clock.now(),
     after: (ms, fn) => void $.clock.after(ms, fn),
@@ -386,7 +386,7 @@ function publishStatus($: EngineInterface, isEnding = false): Promise<boolean> {
   return publishToHerdr(herdrCalls($), isEnding ? conversation.id : null, async () => {
     const [session, dialogs, unreadable] = await Promise.all([read($, SESSION), read($, DIALOGS), read($, UNREADABLE)])
 
-    return { id: conversation.id, session, dialogs, isUnread: unreadable === conversation.id }
+    return { id: conversation.id, root: conversation.root, session, dialogs, isUnread: unreadable === conversation.id }
   })
 }
 
@@ -493,22 +493,8 @@ async function clearingDialog<T>($: EngineInterface, key: string, run: () => Pro
 // function that takes `$`, the session's storage and the SessionHost included, lives in this file.
 
 const OLD_LEDGER = atom({ plugin: 'inbox', key: 'ledger' } as const, EMPTY)
-const OLD_PRESENCE = atom(
-  { plugin: 'inbox', key: 'presence' } as const,
-  {
-    lastActiveAt: 0,
-    isAway: false,
-    isUpdating: false,
-    ledgerState: 'current',
-    turnsStarted: 0,
-    turnsApplied: 0,
-    minute: 0,
-  } as OldPresence,
-)
-const OLD_PR_VIEWS = atom(
-  { plugin: 'inbox', key: 'prViews' } as const,
-  { views: {}, branchRef: null, isFetching: false } as PrViews,
-)
+const OLD_PRESENCE = atom({ plugin: 'inbox', key: 'presence' } as const, NO_OLD_PRESENCE)
+const OLD_PR_VIEWS = atom({ plugin: 'inbox', key: 'prViews' } as const, NO_OLD_PR_VIEWS)
 const OLD_STOP = atom({ plugin: 'inbox', key: 'stop' } as const, null as Stop | null)
 const OLD_LAST_ACTIONS = atom({ plugin: 'inbox', key: 'lastActions' } as const, {} as Record<string, LastAction>)
 const OLD_SENT = atom({ plugin: 'inbox', key: 'sent' } as const, [] as SentPrompt[])
@@ -517,10 +503,7 @@ const OLD_UNTRACKED_SENT = atom(
   [] as { sessionId: string; text: string }[],
 )
 
-/**
- * The session as an older build left it in its separate fields, for a hot reload into this build. A sent message
- * whose record those fields lost is kept as an uncertain record, so its arrival cannot be credited to a newer press.
- */
+/** The session as an older build left it in its separate fields, for a hot reload into this build. */
 async function fromOldFields($: EngineInterface): Promise<Session> {
   const [id, ledger, presence, prViews, stop, lastActions, sent, untracked] = await Promise.all([
     $.session.id(),
@@ -538,26 +521,7 @@ async function fromOldFields($: EngineInterface): Promise<Session> {
     minute: presence.minute,
   }))
 
-  return upgradeSession({
-    ledger,
-    presence: {
-      isUpdating: presence.isUpdating,
-      ledgerState: presence.ledgerState,
-      // Presence from before the turn counts existed cannot say whether the last turn's update landed, so that
-      // load catches up once.
-      turnsStarted: presence.turnsStarted ?? 1,
-      turnsApplied: presence.turnsApplied ?? 0,
-    },
-    prViews,
-    stop,
-    lastActions,
-    sent: [
-      ...(sent ?? [])
-        .filter(p => p.sessionId === id)
-        .map(p => ({ text: p.text, press: null, at: p.pressedAt ?? 0, pressedAt: p.pressedAt, deliveryId: p.id })),
-      ...(untracked ?? []).filter(u => u.sessionId === id).map(u => uncertainRecord(u.text)),
-    ],
-  })
+  return sessionFromOldFields(id, { ledger, presence, prViews, stop, lastActions, sent, untracked })
 }
 
 /** Brings the drawn session to the current shape. */
@@ -1280,14 +1244,20 @@ async function openTopRow($: EngineInterface) {
   else await select($, tab, top, ids.indexOf(top))
 }
 
-async function showInbox($: EngineInterface) {
+async function showInbox($: EngineInterface, opening: ReturnType<typeof openInHerdr>) {
+  const herdr = await opening
+  if (herdr?.isShown) return herdr.text
   await openPane($)
   await followNewRows($, true)
   await openTopRow($)
+
+  return herdr?.text
 }
 
-async function openInbox($: EngineInterface) {
-  // Opened before any other await. After one, the engine no longer counts the press as
+async function openInbox($: EngineInterface, isDemo: boolean) {
+  const opening = isDemo ? null : openInHerdr(herdrCalls($))
+  if (opening instanceof Promise && (await opening).isShown) return
+  // Opened before any other await unless the Herdr look is opening. After one, the engine no longer counts the press as
   // asking for the pane, and below 144 columns, once the person has closed it, leaves it unplaced.
   await openPane($)
   const { view } = await drawnState($)
@@ -2789,11 +2759,11 @@ export const register: Register = on => {
     if (args === 'demo' || args === 'demo recording') await setDemo($, !isShown, args === 'demo recording')
     else if ((await read($, TAB)) === 'prs') await findPrs($)
     const [isDemo, isDemoRecording] = await Promise.all([read($, DEMO).then(d => d !== null), read($, DEMO_RECORDING)])
-    await showInbox($)
+    const note = await showInbox($, args || isDemo ? null : openInHerdr(herdrCalls($)))
 
     return {
       text: !isDemo
-        ? 'Opened the inbox.'
+        ? (note ?? 'Opened the inbox.')
         : isDemoRecording
           ? 'Showing sample entries without their notices, for a recording. Run /inbox demo to go back.'
           : 'Showing sample entries in the inbox. Run /inbox demo again to go back.',
@@ -2907,7 +2877,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!mod.isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [{ ledger, stop, view, showsDemoNotices, isUnread, now }, theme] = await Promise.all([
+    const [{ ledger, stop, view, isDemo, showsDemoNotices, isUnread, now }, theme] = await Promise.all([
       drawnState($),
       read($, THEME),
     ])
@@ -2938,7 +2908,7 @@ export const register: Register = on => {
           </Text>
         </Box>
         {showsDemoNotices ? <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo($, false)} /> : null}
-        <Button key="open-inbox" label="Open inbox" onPress={() => void openInbox($)} />
+        <Button key="open-inbox" label="Open inbox" onPress={() => void openInbox($, isDemo)} />
       </Box>
     )
     if (!stop)

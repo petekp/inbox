@@ -18,6 +18,7 @@ A label is a `key=value` pair that herdr-core keeps on a terminal. `hc label <te
 | `inbox.prs` | The PRs count | The PRs tab has rows. Removed at 0. |
 | `inbox.status` | One line: a stop, a dialog, the first ask, or the session's focus | Always. The same line the `inbox` token carries today. |
 | `inbox.stop` | The stop, as "! Signed out: /login" | A stop is set. A stop also removes the three counts, as the token report does today. |
+| `inbox.panel` | The pane id of the Herdr look a host opened beside this terminal | A host's open splits a panel. Removed when `pane.focus` answers `no such pane`. It outlives the session, since Herdr keeps a mod pane with its tab, so every host in the terminal finds the panel. |
 
 The values come from `hooks/herdr.ts:herdrTokens`, the function that builds today's pane tokens, so the TUI and the app say the same thing. The spike set `inbox.session`, `inbox.needs-you` and `inbox.findings` from the Claude Code mod with one `hc label` call per change. Herdr showed them on the terminal at once: `inbox.needs-you=8` and `inbox.findings=4` for the demo rows.
 

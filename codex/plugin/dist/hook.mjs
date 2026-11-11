@@ -3531,7 +3531,8 @@ function herdrTarget(env) {
   const home = env.HOME?.startsWith("/") ? env.HOME : null;
   const named = env.HERDR_APP_HOME;
   const appHome = named ? named.startsWith("/") ? named : null : home && `${home}/.config/herdr-app`;
-  return { kind: "terminal", terminal, appHome, hc: home ? ["hc", `${home}/.local/bin/hc`] : ["hc"] };
+  const installed = (name) => home ? [name, `${home}/.local/bin/${name}`] : [name];
+  return { kind: "terminal", terminal, appHome, hc: installed("hc"), herdrApp: installed("herdr-app") };
 }
 function herdrLabels(tokens) {
   return Object.fromEntries(

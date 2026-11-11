@@ -329,12 +329,13 @@ function reportProblem(r: HerdrReport, result: Awaited<ReturnType<Run>> | null):
 /**
  * Where a host reports: a pane of Herdr's terminal multiplexer, which sets `HERDR_PANE_ID`, or a terminal of the Herdr
  * app, which sets `HC_TERMINAL_ID`. Null outside Herdr. An app terminal also names the app's settings folder, where
- * the host publishes its session, and the `hc` commands to try in order: the one on `PATH`, then the one in
- * `~/.local/bin`, where Herdr's installer puts it. The settings folder is null when `HERDR_APP_HOME` or `HOME` is not an
+ * the host publishes its session, and the `hc` and `herdr-app` commands to try in order: the one on `PATH`, then the
+ * one in `~/.local/bin`, where Herdr's installer puts it. The settings folder is null when `HERDR_APP_HOME` or `HOME` is not an
  * absolute path, since a host's file calls and its `mv` can resolve a relative one against different folders.
  */
 export type HerdrTarget =
-  { kind: 'pane'; pane: string } | { kind: 'terminal'; terminal: string; appHome: string | null; hc: readonly string[] }
+  | { kind: 'pane'; pane: string }
+  | { kind: 'terminal'; terminal: string; appHome: string | null; hc: readonly string[]; herdrApp: readonly string[] }
 
 export function herdrTarget(env: Readonly<Record<string, string | undefined>>): HerdrTarget | null {
   const pane = env.HERDR_PANE_ID
@@ -345,7 +346,9 @@ export function herdrTarget(env: Readonly<Record<string, string | undefined>>): 
   const named = env.HERDR_APP_HOME
   const appHome = named ? (named.startsWith('/') ? named : null) : home && `${home}/.config/herdr-app`
 
-  return { kind: 'terminal', terminal, appHome, hc: home ? ['hc', `${home}/.local/bin/hc`] : ['hc'] }
+  const installed = (name: string) => (home ? [name, `${home}/.local/bin/${name}`] : [name])
+
+  return { kind: 'terminal', terminal, appHome, hc: installed('hc'), herdrApp: installed('herdr-app') }
 }
 
 /**

@@ -261,7 +261,7 @@ test('an open that fails leaves the reason on the row', async () => {
 
 test('in a Herdr app terminal, a press the look ran itself records its result and opens nothing', async () => {
   const appHome = join(w.dir, 'herdr-app')
-  const target = { kind: 'terminal', terminal: 't1', appHome, hc: ['hc'] } as const
+  const target = { kind: 'terminal', terminal: 't1', appHome, hc: ['hc'], herdrApp: ['herdr-app'] } as const
   const { inbox, stepPress } = await withSteps({ ...deps(), herdrTarget: target })
   await call('session_start', { type: 'session_start' })
   const sessionFile = join(appHome, 'inbox/sessions/s1.json')
