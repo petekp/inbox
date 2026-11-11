@@ -2,7 +2,9 @@ import { atom, read, update } from 'claude-code'
 import type {
   EngineInterface,
   Register,
+  RenderInput,
   RenderSurface,
+  StateWrite,
   UiPressArgument,
   UiScrollBlock,
   UiScrollResult,
@@ -104,9 +106,9 @@ import { openTarget, type PathProbe } from './open-targets'
 import type { RowPress } from './presses'
 import { statusKeyRows, statusSelected } from './status-keys'
 import { footerStatus } from './view'
-import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, type RowView } from './rows'
+import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows } from './rows'
 import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf, NEXT_BUILD_MARK } from './banners'
-import { drawnLists, rowKeyPlan, rowsIn, firstWaiting, keptOpen, rowAfterClose, type PlannedKey } from './action-plan'
+import { drawnLists, rowsIn, firstWaiting, keptOpen, rowAfterClose } from './action-plan'
 import {
   isRowTab,
   isShownTab,
@@ -167,7 +169,6 @@ import {
 } from './pane-selection'
 import {
   type Action,
-  ACTION_GLYPHS,
   COPY_FAILURES,
   fieldKey,
   focusHintFor,
@@ -236,8 +237,25 @@ import {
   withoutRowActions,
 } from './mod-sessions'
 import { cancelUndoScroll, mod, paneState, sessionState, suspendUndoReveal } from './mod-state'
+import {
+  atSite,
+  cellSite,
+  cellText,
+  inGrid,
+  isPlaced,
+  keepPlacement,
+  ownSite,
+  PANE,
+  PLUGIN,
+  siteId,
+  takesKey,
+  TITLE,
+  type Site,
+} from './pane-grid-cell'
+import { placementIn } from './pane-grid'
 import { paneAskRows, paneAskTabs } from './pane-asks'
 import { paneRowKeys } from './pane-row-keys'
+import { rowKeyActions } from './row-key-actions'
 import { paneRowLines } from './pane-row-lines'
 import { paneRowFrame } from './pane-row-frame'
 import { paneRows } from './pane-rows'
@@ -289,8 +307,6 @@ const ORDER_TOOL = 'mcp__inbox__order_prs'
  * process, so a call from before it draws nothing under its row.
  */
 const PERSON_LINES = atom({ plugin: 'inbox', key: 'personLines' } as const, {} as Record<string, string>)
-
-const PANE = 'inbox'
 
 function resetTurn() {
   sessionState.stepTexts = []
@@ -1162,10 +1178,12 @@ async function runTool(
  * and the pane's render closes the field.
  */
 function openPane($: EngineInterface, isFieldOpen = false) {
+  // The inbox draws in its pane-grid cell while it has one.
+  if (isPlaced()) return Promise.resolve()
   paneState.paneClosesOnEscape = !isFieldOpen
   const opened = $.ui.open({
     id: PANE,
-    title: 'Inbox',
+    title: TITLE,
     focus: true,
     ...(isFieldOpen ? {} : { closeOnEscape: true as const }),
   })
@@ -1186,7 +1204,7 @@ function openPane($: EngineInterface, isFieldOpen = false) {
  */
 async function syncLook($: EngineInterface, isOpen?: boolean) {
   if (await read($, DEMO)) return
-  const [page, isPaneOpen, now] = await Promise.all([readPage($), isOpen ?? isPaneShown($), $.clock.now()])
+  const [page, isPaneOpen, now] = await Promise.all([readPage($), isPaneShown($, isOpen), $.clock.now()])
   const isShown = isPaneOpen && page === 'overview'
   await commit($, currentOwner(), s => withLook(s, isShown, now)).catch(() => undefined)
   followDelegates($, isShown)
@@ -1232,7 +1250,7 @@ async function syncShown($: EngineInterface, { isOpen, since }: Showing = {}) {
   const [tab, isDemo, isPaneOpen, now] = await Promise.all([
     readShownTab($),
     read($, DEMO).then(d => d !== null),
-    isOpen ?? isPaneShown($),
+    isPaneShown($, isOpen),
     $.clock.now(),
   ])
   await update($, SHOWN, s => {
@@ -1272,7 +1290,7 @@ async function matchPaneEscape($: EngineInterface) {
   if (closesOnEscape === paneState.paneClosesOnEscape) return
   paneState.paneClosesOnEscape = closesOnEscape
   if (!(await $.ui.panes()).some(p => p.id === PANE)) return
-  await $.ui.open({ id: PANE, title: 'Inbox', ...(closesOnEscape ? { closeOnEscape: true as const } : {}) })
+  await $.ui.open({ id: PANE, title: TITLE, ...(closesOnEscape ? { closeOnEscape: true as const } : {}) })
 }
 
 async function openTopRow($: EngineInterface) {
@@ -1339,12 +1357,12 @@ async function discardReply($: EngineInterface, id: string) {
 async function focusField($: EngineInterface, id: string) {
   // A click leaves the keys with the prompt, and `ui.focus` is refused in a pane that lacks them.
   await openPane($, true)
-  const isMoved = await $.ui.focus({ requestId: PANE, key: fieldKey(id) }).then(
+  const isMoved = await $.ui.focus({ requestId: siteId(), key: fieldKey(id) }).then(
     r => r.deny === undefined,
     () => false,
   )
   // A deny also comes when the field's `autoFocus` took the keys first, so the pane says whether it has them.
-  const isWithoutKeys = !isMoved && (await $.ui.panes()).some(p => p.id === PANE && !p.isFocused)
+  const isWithoutKeys = !isMoved && (await $.ui.panes()).some(p => p.id === siteId() && !p.isFocused)
   if (isWithoutKeys === (paneState.fieldWithoutKeys === id)) return
   paneState.fieldWithoutKeys = isWithoutKeys ? id : null
   await redraw($)
@@ -1415,6 +1433,8 @@ async function scrollToKey(
   stillCurrent: () => boolean = () => true,
   retryMs = 30,
 ): Promise<boolean> {
+  // pane-grid moves a cell's drawing itself, and a scroll of the grid pane would move every cell.
+  if (isPlaced()) return false
   for (let tries = 0; tries < Math.ceil(300 / retryMs); tries++) {
     if (!stillCurrent()) return false
     const result = await $.ui.scroll({ in: PANE, to: { key }, block }).catch((): UiScrollResult => ({}))
@@ -1428,7 +1448,7 @@ async function scrollToKey(
 async function selectStatusRow($: EngineInterface, id: string, focusKey?: string) {
   await update($, STATUS_SELECTION, () => id)
   const isDrawn = await scrollToKey($, `status-${id}`, 'nearest')
-  if (isDrawn && focusKey) await $.ui.focus({ requestId: PANE, key: focusKey }).catch(() => {})
+  if (isDrawn && focusKey) await $.ui.focus({ requestId: siteId(), key: focusKey }).catch(() => {})
 }
 
 async function scrollToRow($: EngineInterface, id: string) {
@@ -1520,7 +1540,7 @@ async function scrollToOpenRow($: EngineInterface, tab: Tab, surface?: RenderSur
     }
   }
   if (revision !== paneState.undoScrollRevision) return
-  await $.ui.scroll({ in: PANE, to: 'start' }).catch(() => undefined)
+  if (!isPlaced()) await $.ui.scroll({ in: PANE, to: 'start' }).catch(() => undefined)
 }
 
 async function selectClicked($: EngineInterface, id: string) {
@@ -1653,8 +1673,36 @@ async function followNewRows($: EngineInterface, isOpening = false) {
   if (to) await jumpTo($, to)
 }
 
-async function isPaneShown($: EngineInterface) {
-  return (await $.ui.panes().catch(() => [])).some(p => p.id === PANE && p.isShown)
+/** Whether the person sees the inbox: its own pane, or the pane-grid tab that holds its cell. */
+async function isPaneShown($: EngineInterface, isPaneOpen?: boolean) {
+  const cell = await readCell($)
+  if (cell)
+    return (
+      ((await $.state.get({ plugin: 'pane-grid', key: 'shown' } as never)) as { value?: unknown }).value === cell.tab
+    )
+
+  return isPaneOpen ?? (await $.ui.panes().catch(() => [])).some(p => p.id === PANE && p.isShown)
+}
+
+/** The inbox's pane-grid cell (hooks/pane-grid-cell.tsx), read while drawing so that a layout write redraws. */
+async function readCell($: EngineInterface) {
+  return placementIn(
+    ((await $.state.get({ plugin: 'pane-grid', key: 'layout' } as never)) as { value?: unknown }).value,
+    PLUGIN,
+  )
+}
+
+/**
+ * Follows a pane-grid layout write: closes the own pane while the inbox has a cell, and opens it again only when the
+ * cell was emptied, so a pane the person closed stays closed.
+ */
+async function followLayout($: EngineInterface, { value, previous }: StateWrite) {
+  const cell = placementIn(value, PLUGIN)
+  keepPlacement(cell)
+  const isOpen = (await $.ui.panes()).some(pane => pane.id === PANE)
+  if (cell && isOpen) return void (await $.ui.close({ id: PANE }))
+  if (cell || isOpen || !placementIn(previous, PLUGIN)) return
+  await $.ui.open({ id: PANE, title: TITLE, ...(paneState.paneClosesOnEscape ? { closeOnEscape: true as const } : {}) })
 }
 
 async function isPrsTabShown($: EngineInterface) {
@@ -1950,85 +1998,6 @@ async function runDemoPress(
     later($, SETTLED_MS, () => update($, DEMO, d => d && { ...d, ...(reply ? demoReplied(d, reply) : {}) }))
 }
 
-function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { keys: KeyAction[]; more: KeyAction[] } {
-  const { id, item, finding } = r
-  const keyAction = (k: PlannedKey): KeyAction => {
-    switch (k.slot) {
-      case 'retry':
-        return {
-          key: `retry-${id}`,
-          label: k.label,
-          icon: ACTION_GLYPHS[k.icon],
-          emphasis: k.emphasis,
-          kind: k.kind,
-          onPress: press => runPress($, k.press, press.surface),
-        }
-      case 'allOptions':
-        return {
-          key: `all-options-${id}`,
-          label: k.label,
-          emphasis: k.emphasis,
-          kind: 'view',
-          onPress: () => void update($, OPTIONS_SHOWN, s => (s.includes(id) ? s : [...s, id])),
-        }
-      case 'choice': {
-        const { action: a, hotkey } = k
-        const p = a.press
-        const base = {
-          label: a.label,
-          kind: a.kind,
-          emphasis: a.emphasis,
-          isOut: a.isOut,
-          ...(hotkey ? { hotkey } : {}),
-          onPress: (press: UiPressArgument) => runPress($, p, press.surface),
-        }
-        if (p.action === 'answer')
-          return {
-            ...base,
-            key: `answer-${id}-${(item?.options ?? []).indexOf(p.option)}`,
-            ...(a.isPrimary ? { variant: 'primary' as const } : {}),
-          }
-        const icon = a.icon && ACTION_GLYPHS[a.icon]
-        return { ...base, ...(icon ? { icon } : {}), key: `help-${id}-${p.step}` }
-      }
-      case 'action': {
-        const { action: a, hotkey } = k
-        const p = a.press
-        const presentation = { emphasis: a.emphasis, isOut: a.isOut }
-        if (p.action === 'type')
-          return {
-            label: a.label,
-            kind: 'view',
-            key: `typekey-${id}`,
-            hotkey,
-            ...presentation,
-            onPress: () => void startTyping($, id),
-          }
-        if (p.action === 'discard')
-          return {
-            label: a.label,
-            kind: a.kind,
-            key: `discard-${id}`,
-            hotkey,
-            ...presentation,
-            onPress: () => void discardReply($, id),
-          }
-        return {
-          label: a.label,
-          kind: a.kind,
-          key: p.action === 'dismiss' && finding ? `drop-${id}` : `${p.action}-${id}`,
-          hotkey,
-          ...presentation,
-          onPress: press => runPress($, p, press.surface),
-        }
-      }
-    }
-  }
-  const { keys, more } = rowKeyPlan(r, isAllShown)
-
-  return { keys: keys.map(keyAction), more: more.map(keyAction) }
-}
-
 async function drawnState(
   $: EngineInterface,
 ): Promise<
@@ -2143,7 +2112,7 @@ async function readVersion($: EngineInterface) {
 async function initializeInbox($: EngineInterface) {
   // A hot reload keeps state an older build wrote. Draws start once isOn is set, and they read the current shape and
   // the tabs that the next-build mark decides.
-  await Promise.all([upgradeState($), readVersion($)])
+  await Promise.all([upgradeState($), readVersion($), readCell($).then(keepPlacement)])
   mod.isOn = true
   mod.toolsRefused = false
   paneState.compareRedrawAt = null
@@ -2789,7 +2758,7 @@ export const register: Register = on => {
 
     return {
       text: !isDemo
-        ? 'Opened the inbox.'
+        ? (cellText(await readCell($)) ?? 'Opened the inbox.')
         : isDemoRecording
           ? 'Showing sample entries without their notices, for a recording. Run /inbox demo to go back.'
           : 'Showing sample entries in the inbox. Run /inbox demo again to go back.',
@@ -2889,7 +2858,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (!mod.isOn || e.props.hasSurvey) return next(e)
+    if (!mod.isOn || e.props.hasSurvey || (await readCell($))) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const [{ ledger, stop, view, showsDemoNotices, now }, theme] = await Promise.all([drawnState($), read($, THEME)])
     if (!stop && isBlankLedger(ledger)) return next(e)
@@ -2973,660 +2942,708 @@ export const register: Register = on => {
     return r
   })
 
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const hadKeys = paneHasKeys.get(e.surface) ?? false
-    paneHasKeys.set(e.surface, e.props.isFocused)
-    const isKeyboardHandedBack = hadKeys && !e.props.isFocused
-    const elements = $.ui.resolve(e)
-    const { Box, Button, Link, Markdown, Text } = elements
-    // Desktop draws every Button as a native button, and only clicks reach the pane: no letters, key hints or hidden hotkeys.
-    const look = lookOf(e.surface)
-    paneState.paneLook = look
-    const hasClient = look === 'desktop' && 'Client' in elements
-    // The mobile app draws no text field, so there the typed reply is not offered.
-    const Input = 'Input' in elements ? elements.Input : null
-    const isNarrowDesktop = look === 'desktop' && e.props.bodyColumns < DESKTOP_WIDE_AT
-    const isAgeInSide = look === 'terminal'
-    const isAgeDropped = isNarrowDesktop || isAgeInSide
-    const glued = (after: string) => after.replace(/(?<=.)[ \u2002]/gs, c => (c === ' ' ? '\u00a0' : '\u2007'))
-    // The Codex tab wraps a suffix too long for one line between words, so this does too. A glued suffix wider than a
-    // line together with the title's last word, which DOT's leading figure space holds to it, is broken mid-word.
-    const unbroken = (after: string, title: string, fits: (text: string) => boolean) => {
-      const lastWord = title.slice(Math.max(0, title.trimEnd().lastIndexOf(' ') + 1))
-      if (fits(lastWord + after)) return glued(after)
-      const dot = after.startsWith(DOT) ? DOT : ''
-      const rest = after.slice(dot.length)
-      const firstBreak = rest.indexOf(' ')
+  on('ui.render', { component: 'Pane', requestId: PANE }, ($, e) => drawPane($, e, ownSite(e)))
 
-      return (
-        dot + (fits(rest) || firstBreak < 0 ? glued(rest) : glued(rest.slice(0, firstBreak)) + rest.slice(firstBreak))
-      )
-    }
-    const isInline = e.props.placement === 'inline'
-    paneState.isInlinePane = isInline
-    if (e.surface === 'terminal') {
-      paneState.isInlineTerminalPane = isInline
-      if (!isInline && paneState.pendingUndoScroll) cancelUndoScroll()
-    }
-    const blankLine = isInline ? 0 : 1
-    const space =
-      look === 'desktop'
-        ? { rowPad: 2 * DESKTOP_ROW_PAD, settledPad: 2 * DESKTOP_ROW_PAD, buttonGap: 1, isFoldGapped: false }
-        : { rowPad: blankLine, settledPad: 0, buttonGap: 2, isFoldGapped: true }
-    const [
-      { prViews: prState, lastActions, notes, turns, stop, view, showsDemoNotices, isUnread, now },
-      savedTab,
-      savedPage,
-      selection,
-      theme,
+  // pane-grid's grid pane: its empty cells offer the inbox, and the inbox's cell draws it (hooks/pane-grid-cell.tsx).
+  on('ui.render', { component: 'Pane', requestId: /^grid-/ }, async ($, e, next) => {
+    const cell = await readCell($)
+    const drawn = cell?.requestId === e.requestId ? await drawPane($, e, cellSite(e, cell)) : undefined
+
+    return inGrid(await next(e), cell, $.ui.resolve(e), drawn)
+  })
+
+  // The matchers are literals, since validate refuses a $.state reference from another file, and `as never`, since
+  // pane-grid's values are not in the contract. Either write can change whether the person sees the inbox.
+  on('state.set', { plugin: 'pane-grid' as never, key: 'layout' as never }, async ($, e, next) => {
+    const r = await next(e)
+    await followLayout($, e as StateWrite)
+    await syncShown($).then(() => syncLook($))
+
+    return r
+  })
+
+  on('state.set', { plugin: 'pane-grid' as never, key: 'shown' as never }, async ($, e, next) => {
+    const r = await next(e)
+    if (isPlaced()) await syncShown($).then(() => syncLook($))
+
+    return r
+  })
+}
+
+/** Draws the inbox at `site`: its own pane, or its pane-grid cell, whose grid pane `given` is. */
+async function drawPane($: EngineInterface, given: RenderInput<'Pane'>, site: Site) {
+  const pane = atSite(given, site)
+  const hadKeys = paneHasKeys.get(pane.surface) ?? false
+  paneHasKeys.set(pane.surface, pane.props.isFocused)
+  const isKeyboardHandedBack = hadKeys && !pane.props.isFocused
+  const elements = $.ui.resolve(pane)
+  const { Box, Button, Link, Markdown, Text } = elements
+  // Desktop draws every Button as a native button, and only clicks reach the pane: no letters, key hints or hidden hotkeys.
+  const look = lookOf(pane.surface)
+  paneState.paneLook = look
+  const hasClient = look === 'desktop' && 'Client' in elements
+  // The mobile app draws no text field, so there the typed reply is not offered.
+  const Input = 'Input' in elements ? elements.Input : null
+  const isNarrowDesktop = look === 'desktop' && pane.props.bodyColumns < DESKTOP_WIDE_AT
+  const isAgeInSide = look === 'terminal'
+  const isAgeDropped = isNarrowDesktop || isAgeInSide
+  const glued = (after: string) => after.replace(/(?<=.)[ \u2002]/gs, c => (c === ' ' ? '\u00a0' : '\u2007'))
+  // The Codex tab wraps a suffix too long for one line between words, so this does too. A glued suffix wider than a
+  // line together with the title's last word, which DOT's leading figure space holds to it, is broken mid-word.
+  const unbroken = (after: string, title: string, fits: (text: string) => boolean) => {
+    const lastWord = title.slice(Math.max(0, title.trimEnd().lastIndexOf(' ') + 1))
+    if (fits(lastWord + after)) return glued(after)
+    const dot = after.startsWith(DOT) ? DOT : ''
+    const rest = after.slice(dot.length)
+    const firstBreak = rest.indexOf(' ')
+
+    return (
+      dot + (fits(rest) || firstBreak < 0 ? glued(rest) : glued(rest.slice(0, firstBreak)) + rest.slice(firstBreak))
+    )
+  }
+  const isInline = pane.props.placement === 'inline'
+  paneState.isInlinePane = isInline
+  if (pane.surface === 'terminal') {
+    paneState.isInlineTerminalPane = isInline
+    if (!isInline && paneState.pendingUndoScroll) cancelUndoScroll()
+  }
+  const blankLine = isInline ? 0 : 1
+  const space =
+    look === 'desktop'
+      ? { rowPad: 2 * DESKTOP_ROW_PAD, settledPad: 2 * DESKTOP_ROW_PAD, buttonGap: 1, isFoldGapped: false }
+      : { rowPad: blankLine, settledPad: 0, buttonGap: 2, isFoldGapped: true }
+  const [
+    { prViews: prState, lastActions, notes, turns, stop, view, showsDemoNotices, isUnread, now },
+    savedTab,
+    savedPage,
+    selection,
+    theme,
+    typing,
+    drafts,
+    unfolded,
+    foldHover,
+    isHelpShown,
+    optionsShown,
+    termProgram,
+    statusSelection,
+    statusUnfolded,
+  ] = await Promise.all([
+    drawnState($),
+    read($, TAB),
+    readPage($),
+    read($, SELECTION),
+    read($, THEME),
+    read($, TYPING),
+    read($, DRAFTS),
+    read($, UNFOLDED),
+    read($, FOLD_HOVER),
+    read($, IS_HELP_SHOWN),
+    read($, OPTIONS_SHOWN),
+    $.env.get('TERM_PROGRAM'),
+    read($, STATUS_SELECTION),
+    read($, STATUS_UNFOLDED),
+    // A redraw loop on desktop blocks clicks, as `redrawWhileUndoLasts` says.
+    look === 'terminal' ? read($, RUNNING_FRAME) : null,
+  ])
+  const tab: Tab = isShownTab(savedTab) && isRowTab(savedTab) ? savedTab : 'needsYou'
+  const isStatusShown = savedPage === 'overview'
+  const shownTab: ShownTab = isStatusShown ? 'overview' : tab
+  const tabList = shownTabs(mod.isNextBuild)
+  if (look === 'terminal')
+    animateRunningMarks(
+      showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)),
+      now,
+      (ms, fn) => $.clock.every(ms, fn),
+      () => void update($, RUNNING_FRAME, n => n + 1).catch(() => undefined),
+    )
+  const undoEnd = lastUndoEnd(view)
+  if (undoEnd !== null) redrawWhileUndoLasts($, undoEnd)
+  // A hot reload keeps TYPING but empties openFields, so an open field takes its key and seed again here.
+  if (typing !== null && !openFields.has(typing)) openFields.set(typing, openedField(typing, drafts[typing]))
+  if (pane.props.isFocused || typing !== paneState.fieldWithoutKeys) paneState.fieldWithoutKeys = null
+  // Escape, or a click outside the pane, closes the field and keeps its draft, as Cancel does.
+  if (isKeyboardHandedBack && typing !== null) later($, 0, () => update($, TYPING, t => (t === typing ? null : t)))
+  if ((typing === null) !== paneState.paneClosesOnEscape) later($, 0, () => matchPaneEscape($))
+  const size = isInline ? `${pane.props.bodyColumns}x${pane.props.scroll.bodyRows}` : null
+  if (pane.surface === 'terminal') paneState.terminalInlineSize = size
+  if (size !== null && paneState.inlineSize !== null && size !== paneState.inlineSize) {
+    const revision = paneState.undoScrollRevision
+    later($, RESIZE_SCROLL_MS, () =>
+      revision === paneState.undoScrollRevision && !isStatusShown ? scrollToOpenRow($, tab, pane.surface) : undefined,
+    )
+  }
+  paneState.inlineSize = size
+  const shownPrs = view.prs.drawn
+  const settledLayout = settledLayoutId(tab, view, shownPrs, lastActions, notes, now, paneState.terminalInlineSize)
+  const prViews = shownPrs.map(x => x.pr)
+  const pal = paletteFor(theme, look)
+  const inlineText = (text: string) =>
+    parseInline(text).map((s, n) => (
+      <Text key={String(n)}>
+        <Text
+          bold={s.bold}
+          italic={s.italic}
+          strikethrough={s.strike}
+          underline={s.link ? true : undefined}
+          color={s.code ? 'permission' : undefined}
+        >
+          {s.text}
+        </Text>
+        {s.link ? <Text color={pal.muted}>{` ${s.link}`}</Text> : null}
+      </Text>
+    ))
+  const terminalText = (lines: TerminalSpan[][]) =>
+    lines.flatMap((line, n) => [
+      ...(n > 0 ? ['\n'] : []),
+      ...line.map((span, i) => (
+        <Text
+          key={`${n}-${i}`}
+          bold={span.bold}
+          italic={span.italic}
+          strikethrough={span.strike}
+          underline={span.link ? true : undefined}
+          color={
+            span.isNeedsYou
+              ? (pal.tone.needsYou ?? pal.mark.needsYou)
+              : span.isDone
+                ? (pal.tone.done ?? pal.mark.done)
+                : span.isLinkAddress || span.isMuted
+                  ? pal.muted
+                  : span.code
+                    ? 'permission'
+                    : undefined
+          }
+        >
+          {span.text}
+        </Text>
+      )),
+    ])
+  const raise = {
+    dimColor: false,
+    backgroundColor: pal.raised,
+    inverse: false,
+    ...(pal.raisedText ? { color: pal.raisedText } : {}),
+  }
+  const raiseEdge = { dimColor: false, color: pal.raised, inverse: false }
+
+  const client: PaneClient = hasClient ? { hasClient: true, elements } : { hasClient: false, elements }
+  const handlers: PaneHandlers = {
+    rowKeyActions: (r, isAllShown) =>
+      rowKeyActions(
+        r,
+        isAllShown,
+        handlers,
+        id => void update($, OPTIONS_SHOWN, s => (s.includes(id) ? s : [...s, id])),
+      ),
+    unlessGuarded: (rowId, press, onPress) => unlessGuarded($, rowId, press, onPress),
+    sendDraft: (id, surface) => sendDraft($, id, surface),
+    discardReply: id => discardReply($, id),
+    startTyping: (id, seed) => startTyping($, id, seed),
+    selectStatusRow: (id, focusKey) => selectStatusRow($, id, focusKey),
+    updateTyping: fn => update($, TYPING, fn),
+    updateDrafts: fn => update($, DRAFTS, fn),
+    sendTyped: (id, text, surface) => sendTyped($, id, text, surface),
+    select: (tab, id, index) => select($, tab, id, index),
+    showTab: tab => showTab($, tab),
+    updateHelpShown: fn => update($, IS_HELP_SHOWN, fn),
+    updateUnfolded: fn => update($, UNFOLDED, fn),
+    updateStatusUnfolded: fn => update($, STATUS_UNFOLDED, fn),
+    runPress: (p, surface) => runPress($, p, surface),
+    readAgain: () => readAgain($),
+    resume: () => resume($),
+    showAsk: askId => showAsk($, askId),
+  }
+  const { itemRow, findingRow } = paneAskRows(
+    { now, look, Text, pal, optionsShown, Box, blankLine, terminalText, inlineText },
+    handlers,
+  )
+  const isThreadSent = threadSentIn(lastActions)
+  const presses = { lastActions, turns, now }
+  const { prKeyAction, checkRow, threadRow } = panePrRows(
+    { Text, pal, presses, Link, Box, Markdown, terminalText, lastActions, look, now },
+    handlers,
+  )
+
+  // The Status and Help draw no rows, so none are built while either shows.
+  const isListShown = !isStatusShown && !isHelpShown
+  const lists = drawnLists(
+    view,
+    () => true,
+    r => (!isListShown ? null : r.item ? itemRow(r) : r.finding ? findingRow(r) : null),
+  )
+  const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({ ...g, entries: lists[g.list], rows: rowsIn(lists[g.list]) }))
+  const findingEntries = lists.findings
+  const prGroups = (isListShown ? shownPrs : [])
+    .map(d => ({
+      ...d,
+      checks: d.state.is === 'settled' ? [] : failingChecks(d.pr).map(c => checkRow(d.pr, c)),
+      threads: d.state.is === 'settled' ? [] : waitingThreads(d.pr).map(t => threadRow(d.pr, t)),
+    }))
+    .map(g => ({ ...g, rows: [...g.threads, ...g.checks] }))
+  const prTabKeys = view.prs.tabActions.map(a => prKeyAction(a, 'tab'))
+  const prOrderKeys = (view.prs.order?.changed?.actions ?? []).map(a => prKeyAction(a, 'order'))
+  const rows: Record<Tab, Row[]> = {
+    needsYou: lists.byTab.needsYou,
+    findings: lists.byTab.findings,
+    prs: prGroups.flatMap(g => g.rows),
+  }
+  const tabCounts: Record<Tab, number> = {
+    needsYou: view.needsYou.count,
+    findings: view.findings.count,
+    prs: shownPrs.filter(x => x.state.is === 'open' && prNeedsYou(x.pr, isThreadSent)).length,
+  }
+  const badgeOf = (id: ShownTab) => tabBadge(id, tabCounts)
+  const tabTone = (id: ShownTab) => (isRowTab(id) ? pal.tone[id] : undefined)
+  const tabText = (id: ShownTab, name: string) => `${name}${badgeOf(id) === null ? '' : ` ${badgeOf(id)}`}`
+  const hasRail = isInline && look === 'terminal' && pane.props.bodyColumns >= INLINE_RAIL_AT
+  const railWidth = Math.max(...tabList.map(t => cellWidth(tabText(t.id, t.label)))) + 2 * TAB_PAD.length
+  const listColumns = pane.props.bodyColumns - 2 - (hasRail ? railWidth + RAIL_GUTTER : 0)
+  const ids = rows[tab].map(r => r.id)
+  const indexOf = new Map(ids.map((id, n) => [id, n]))
+  const cursor = selection[tab]
+  const settledIds = new Set(isListShown ? settledRowIds(allRows(view)) : [])
+  const top = isListShown ? firstWaiting(tabWaits(tab, view, openPrViews(shownPrs), lastActions)) : null
+  const at = selectedIndex(ids, cursor, top, id => settledIds.has(id))
+  const isOpenGuarded = !isStatusShown && isGuarded(cursor.openedAt, now)
+  const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection) : null
+  const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage) : []
+
+  const {
+    desktopColumnPt,
+    desktopRowTextPt,
+    desktopLabel,
+    keyRow,
+    textKey,
+    keyBindings,
+    keyLines,
+    actionRows,
+    rowActions,
+    fieldActions,
+  } = paneRowKeys(
+    {
+      ...client,
+      listColumns,
+      isOpenGuarded,
+      look,
+      Button,
+      Box,
+      pal,
+      Text,
+      space,
+      Input,
+      typing,
+      takesKey: k => takesKey(site, k),
+    },
+    handlers,
+  )
+  const {
+    feedbackLabel,
+    lastActionText,
+    pressedAge,
+    branch,
+    desktopHairline,
+    columnsFor,
+    markWidth,
+    treeRow,
+    divided,
+    withDoneMark,
+    unselectedLine,
+    ToneSvg,
+    svgCell,
+    gutterMark,
+    toned,
+    sideAge,
+    rowClientProps,
+    withSideAge,
+    markGlyph,
+  } = paneRowLines({
+    ...client,
+    lastActions,
+    notes,
+    turns,
+    now,
+    look,
+    isAgeDropped,
+    pal,
+    Box,
+    Text,
+    e: pane,
+    isInline,
+    isAgeInSide,
+    listColumns,
+    Button,
+  })
+  const { desktopFrame } = paneRowFrame({ space, Box })
+  const { listRow } = paneRows(
+    {
+      ...client,
+      indexOf,
+      at,
+      Box,
+      space,
+      Text,
+      pal,
+      Input,
       typing,
       drafts,
-      unfolded,
-      foldHover,
-      isHelpShown,
-      optionsShown,
-      termProgram,
-      statusSelection,
-      statusUnfolded,
-    ] = await Promise.all([
-      drawnState($),
-      read($, TAB),
-      readPage($),
-      read($, SELECTION),
-      read($, THEME),
-      read($, TYPING),
-      read($, DRAFTS),
-      read($, UNFOLDED),
-      read($, FOLD_HOVER),
-      read($, IS_HELP_SHOWN),
-      read($, OPTIONS_SHOWN),
-      $.env.get('TERM_PROGRAM'),
-      read($, STATUS_SELECTION),
-      read($, STATUS_UNFOLDED),
-      // A redraw loop on desktop blocks clicks, as `redrawWhileUndoLasts` says.
-      look === 'terminal' ? read($, RUNNING_FRAME) : null,
-    ])
-    const tab: Tab = isShownTab(savedTab) && isRowTab(savedTab) ? savedTab : 'needsYou'
-    const isStatusShown = savedPage === 'overview'
-    const shownTab: ShownTab = isStatusShown ? 'overview' : tab
-    const tabList = shownTabs(mod.isNextBuild)
-    if (look === 'terminal')
-      animateRunningMarks(
-        showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)),
-        now,
-        (ms, fn) => $.clock.every(ms, fn),
-        () => void update($, RUNNING_FRAME, n => n + 1).catch(() => undefined),
-      )
-    const undoEnd = lastUndoEnd(view)
-    if (undoEnd !== null) redrawWhileUndoLasts($, undoEnd)
-    // A hot reload keeps TYPING but empties openFields, so an open field takes its key and seed again here.
-    if (typing !== null && !openFields.has(typing)) openFields.set(typing, openedField(typing, drafts[typing]))
-    if (e.props.isFocused || typing !== paneState.fieldWithoutKeys) paneState.fieldWithoutKeys = null
-    // Escape, or a click outside the pane, closes the field and keeps its draft, as Cancel does.
-    if (isKeyboardHandedBack && typing !== null) later($, 0, () => update($, TYPING, t => (t === typing ? null : t)))
-    if ((typing === null) !== paneState.paneClosesOnEscape) later($, 0, () => matchPaneEscape($))
-    const size = isInline ? `${e.props.bodyColumns}x${e.props.scroll.bodyRows}` : null
-    if (e.surface === 'terminal') paneState.terminalInlineSize = size
-    if (size !== null && paneState.inlineSize !== null && size !== paneState.inlineSize) {
-      const revision = paneState.undoScrollRevision
-      later($, RESIZE_SCROLL_MS, () =>
-        revision === paneState.undoScrollRevision && !isStatusShown ? scrollToOpenRow($, tab, e.surface) : undefined,
-      )
-    }
-    paneState.inlineSize = size
-    const shownPrs = view.prs.drawn
-    const settledLayout = settledLayoutId(tab, view, shownPrs, lastActions, notes, now, paneState.terminalInlineSize)
-    const prViews = shownPrs.map(x => x.pr)
-    const pal = paletteFor(theme, look)
-    const inlineText = (text: string) =>
-      parseInline(text).map((s, n) => (
-        <Text key={String(n)}>
-          <Text
-            bold={s.bold}
-            italic={s.italic}
-            strikethrough={s.strike}
-            underline={s.link ? true : undefined}
-            color={s.code ? 'permission' : undefined}
-          >
-            {s.text}
-          </Text>
-          {s.link ? <Text color={pal.muted}>{` ${s.link}`}</Text> : null}
-        </Text>
-      ))
-    const terminalText = (lines: TerminalSpan[][]) =>
-      lines.flatMap((line, n) => [
-        ...(n > 0 ? ['\n'] : []),
-        ...line.map((span, i) => (
-          <Text
-            key={`${n}-${i}`}
-            bold={span.bold}
-            italic={span.italic}
-            strikethrough={span.strike}
-            underline={span.link ? true : undefined}
-            color={
-              span.isNeedsYou
-                ? (pal.tone.needsYou ?? pal.mark.needsYou)
-                : span.isDone
-                  ? (pal.tone.done ?? pal.mark.done)
-                  : span.isLinkAddress || span.isMuted
-                    ? pal.muted
-                    : span.code
-                      ? 'permission'
-                      : undefined
-            }
-          >
-            {span.text}
-          </Text>
-        )),
-      ])
-    const raise = {
-      dimColor: false,
-      backgroundColor: pal.raised,
-      inverse: false,
-      ...(pal.raisedText ? { color: pal.raisedText } : {}),
-    }
-    const raiseEdge = { dimColor: false, color: pal.raised, inverse: false }
-
-    const client: PaneClient = hasClient ? { hasClient: true, elements } : { hasClient: false, elements }
-    const handlers: PaneHandlers = {
-      rowKeyActions: (r, isAllShown) => rowKeyActions($, r, isAllShown),
-      unlessGuarded: (rowId, press, onPress) => unlessGuarded($, rowId, press, onPress),
-      sendDraft: (id, surface) => sendDraft($, id, surface),
-      discardReply: id => discardReply($, id),
-      startTyping: (id, seed) => startTyping($, id, seed),
-      selectStatusRow: (id, focusKey) => selectStatusRow($, id, focusKey),
-      updateTyping: fn => update($, TYPING, fn),
-      updateDrafts: fn => update($, DRAFTS, fn),
-      sendTyped: (id, text, surface) => sendTyped($, id, text, surface),
-      select: (tab, id, index) => select($, tab, id, index),
-      showTab: tab => showTab($, tab),
-      updateHelpShown: fn => update($, IS_HELP_SHOWN, fn),
-      updateUnfolded: fn => update($, UNFOLDED, fn),
-      updateStatusUnfolded: fn => update($, STATUS_UNFOLDED, fn),
-      runPress: (p, surface) => runPress($, p, surface),
-      readAgain: () => readAgain($),
-      resume: () => resume($),
-      showAsk: askId => showAsk($, askId),
-    }
-    const { itemRow, findingRow } = paneAskRows(
-      { now, look, Text, pal, optionsShown, Box, blankLine, terminalText, inlineText },
-      handlers,
-    )
-    const isThreadSent = threadSentIn(lastActions)
-    const presses = { lastActions, turns, now }
-    const { prKeyAction, checkRow, threadRow } = panePrRows(
-      { Text, pal, presses, Link, Box, Markdown, terminalText, lastActions, look, now },
-      handlers,
-    )
-
-    // The Status and Help draw no rows, so none are built while either shows.
-    const isListShown = !isStatusShown && !isHelpShown
-    const lists = drawnLists(
-      view,
-      () => true,
-      r => (!isListShown ? null : r.item ? itemRow(r) : r.finding ? findingRow(r) : null),
-    )
-    const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({ ...g, entries: lists[g.list], rows: rowsIn(lists[g.list]) }))
-    const findingEntries = lists.findings
-    const prGroups = (isListShown ? shownPrs : [])
-      .map(d => ({
-        ...d,
-        checks: d.state.is === 'settled' ? [] : failingChecks(d.pr).map(c => checkRow(d.pr, c)),
-        threads: d.state.is === 'settled' ? [] : waitingThreads(d.pr).map(t => threadRow(d.pr, t)),
-      }))
-      .map(g => ({ ...g, rows: [...g.threads, ...g.checks] }))
-    const prTabKeys = view.prs.tabActions.map(a => prKeyAction(a, 'tab'))
-    const prOrderKeys = (view.prs.order?.changed?.actions ?? []).map(a => prKeyAction(a, 'order'))
-    const rows: Record<Tab, Row[]> = {
-      needsYou: lists.byTab.needsYou,
-      findings: lists.byTab.findings,
-      prs: prGroups.flatMap(g => g.rows),
-    }
-    const tabCounts: Record<Tab, number> = {
-      needsYou: view.needsYou.count,
-      findings: view.findings.count,
-      prs: shownPrs.filter(x => x.state.is === 'open' && prNeedsYou(x.pr, isThreadSent)).length,
-    }
-    const badgeOf = (id: ShownTab) => tabBadge(id, tabCounts)
-    const tabTone = (id: ShownTab) => (isRowTab(id) ? pal.tone[id] : undefined)
-    const tabText = (id: ShownTab, name: string) => `${name}${badgeOf(id) === null ? '' : ` ${badgeOf(id)}`}`
-    const hasRail = isInline && look === 'terminal' && e.props.bodyColumns >= INLINE_RAIL_AT
-    const railWidth = Math.max(...tabList.map(t => cellWidth(tabText(t.id, t.label)))) + 2 * TAB_PAD.length
-    const listColumns = e.props.bodyColumns - 2 - (hasRail ? railWidth + RAIL_GUTTER : 0)
-    const ids = rows[tab].map(r => r.id)
-    const indexOf = new Map(ids.map((id, n) => [id, n]))
-    const cursor = selection[tab]
-    const settledIds = new Set(isListShown ? settledRowIds(allRows(view)) : [])
-    const top = isListShown ? firstWaiting(tabWaits(tab, view, openPrViews(shownPrs), lastActions)) : null
-    const at = selectedIndex(ids, cursor, top, id => settledIds.has(id))
-    const isOpenGuarded = !isStatusShown && isGuarded(cursor.openedAt, now)
-    const statusKeyRow = isStatusShown ? statusSelected(view.statusPage, statusSelection) : null
-    const statusPressRows = isStatusShown ? statusKeyRows(view.statusPage) : []
-
-    const {
-      desktopColumnPt,
-      desktopRowTextPt,
-      desktopLabel,
-      keyRow,
-      textKey,
-      keyBindings,
-      keyLines,
-      actionRows,
-      rowActions,
-      fieldActions,
-    } = paneRowKeys(
-      { ...client, listColumns, isOpenGuarded, look, Button, Box, pal, Text, space, Input, typing },
-      handlers,
-    )
-    const {
-      feedbackLabel,
-      lastActionText,
-      pressedAge,
-      branch,
-      desktopHairline,
-      columnsFor,
-      markWidth,
-      treeRow,
-      divided,
-      withDoneMark,
-      unselectedLine,
-      ToneSvg,
-      svgCell,
-      gutterMark,
-      toned,
-      sideAge,
-      rowClientProps,
-      withSideAge,
-      markGlyph,
-    } = paneRowLines({
-      ...client,
-      lastActions,
-      notes,
-      turns,
-      now,
       look,
-      isAgeDropped,
-      pal,
-      Box,
-      Text,
-      e,
-      isInline,
+      now,
       isAgeInSide,
       listColumns,
+      unbroken,
+      isInline,
+      e: pane,
+      optionsShown,
+      blankLine,
       Button,
-    })
-    const { desktopFrame } = paneRowFrame({ space, Box })
-    const { listRow } = paneRows(
-      {
-        ...client,
-        indexOf,
-        at,
-        Box,
-        space,
-        Text,
-        pal,
-        Input,
-        typing,
-        drafts,
-        look,
-        now,
-        isAgeInSide,
-        listColumns,
-        unbroken,
-        isInline,
-        e,
-        optionsShown,
-        blankLine,
-        Button,
-        tab,
-        settledLayout,
-        columnsFor,
-        gutterMark,
-        toned,
-        rowClientProps,
-        feedbackLabel,
-        pressedAge,
-        withDoneMark,
-        sideAge,
-        withSideAge,
-        unselectedLine,
-        branch,
-        rowActions,
-        desktopRowTextPt,
-        keyLines,
-        keyRow,
-        fieldActions,
-        actionRows,
-        desktopFrame,
-      },
-      handlers,
-    )
+      tab,
+      settledLayout,
+      columnsFor,
+      gutterMark,
+      toned,
+      rowClientProps,
+      feedbackLabel,
+      pressedAge,
+      withDoneMark,
+      sideAge,
+      withSideAge,
+      unselectedLine,
+      branch,
+      rowActions,
+      desktopRowTextPt,
+      keyLines,
+      keyRow,
+      fieldActions,
+      actionRows,
+      desktopFrame,
+    },
+    handlers,
+  )
 
-    const shownStatus = footerStatus(
+  const shownStatus = footerStatus(
+    shownTab,
+    view.status,
+    { isFetching: prState.isFetching, hasPrs: prViews.length > 0 },
+    view.statusPage.error,
+  )
+  const status = shownStatus.text ?? ''
+
+  const openIds = openRowIds(view)
+  const drawnIds = new Set([...openIds.needsYou, ...openIds.findings, ...prRowIds(shownPrs)])
+  const lineNote = Object.entries(notes)
+    .filter(([id, n]) => !drawnIds.has(id) && now - n.at < SETTLED_MS)
+    .map(([, n]) => n)
+    .sort((a, b) => b.at - a.at)[0]
+
+  const keyList = helpKeys(look, mod.isNextBuild, shownTab, statusPressRows.length > 0)
+  const keyColumn = Math.max(0, ...keyList.map(k => cellWidth(k.keys))) + 2
+
+  const { banner, tabs, rail, statusBlock, footer } = paneFrame(
+    {
+      ...client,
+      e: pane,
+      tabList,
+      badgeOf,
       shownTab,
-      view.status,
-      { isFetching: prState.isFetching, hasPrs: prViews.length > 0 },
-      view.statusPage.error,
-    )
-    const status = shownStatus.text ?? ''
-
-    const openIds = openRowIds(view)
-    const drawnIds = new Set([...openIds.needsYou, ...openIds.findings, ...prRowIds(shownPrs)])
-    const lineNote = Object.entries(notes)
-      .filter(([id, n]) => !drawnIds.has(id) && now - n.at < SETTLED_MS)
-      .map(([, n]) => n)
-      .sort((a, b) => b.at - a.at)[0]
-
-    const keyList = helpKeys(look, mod.isNextBuild, shownTab, statusPressRows.length > 0)
-    const keyColumn = Math.max(0, ...keyList.map(k => cellWidth(k.keys))) + 2
-
-    const { banner, tabs, rail, statusBlock, footer } = paneFrame(
-      {
-        ...client,
-        e,
-        tabList,
-        badgeOf,
-        shownTab,
-        pal,
-        look,
-        isInline,
-        Text,
-        isNarrowDesktop,
-        Box,
-        shownStatus,
-        lineNote,
-        tabText,
-        termProgram,
-        Button,
-        tabTone,
-        raiseEdge,
-        raise,
-        status,
-        railWidth,
-        hasRail,
-        blankLine,
-        isHelpShown,
-      },
-      handlers,
-    )
-
-    const {
-      groupEmpty,
-      groupTitle,
-      section,
-      sections,
-      titleGap,
-      foldButton,
-      foldRow,
-      closedFold,
-      undoPlace,
-      settledContent,
-      settledRow,
-    } = paneRowParts(
-      {
-        ...client,
-        look,
-        Text,
-        pal,
-        Box,
-        blankLine,
-        isInline,
-        space,
-        now,
-        foldHover,
-        Button,
-        settledLayout,
-        desktopFrame,
-        treeRow,
-        ToneSvg,
-        desktopHairline,
-        markGlyph,
-        markWidth,
-      },
-      handlers,
-    )
-    const { emptyState, needsYouView, findingsView } = paneAskTabs(
-      {
-        listColumns,
-        look,
-        isInline,
-        Box,
-        Text,
-        blankLine,
-        pal,
-        needsYouGroups,
-        view,
-        isUnread,
-        unfolded,
-        Button,
-        stop,
-        glued,
-        now,
-        findingEntries,
-        lists,
-        divided,
-        listRow,
-        settledRow,
-        closedFold,
-        section,
-        groupTitle,
-        titleGap,
-        groupEmpty,
-        sections,
-        banner,
-      },
-      handlers,
-    )
-
-    const { prsView } = panePrBlocks({
-      look,
       pal,
+      look,
+      isInline,
       Text,
+      isNarrowDesktop,
+      Box,
+      shownStatus,
+      lineNote,
+      tabText,
+      termProgram,
+      Button,
+      tabTone,
+      raiseEdge,
+      raise,
+      status,
+      railWidth,
+      hasRail,
+      blankLine,
+      isHelpShown,
+    },
+    handlers,
+  )
+
+  const {
+    groupEmpty,
+    groupTitle,
+    section,
+    sections,
+    titleGap,
+    foldButton,
+    foldRow,
+    closedFold,
+    undoPlace,
+    settledContent,
+    settledRow,
+  } = paneRowParts(
+    {
+      ...client,
+      look,
+      Text,
+      pal,
       Box,
       blankLine,
-      isThreadSent,
-      lastActions,
-      prState,
-      presses,
+      isInline,
       space,
+      now,
+      foldHover,
       Button,
+      settledLayout,
+      desktopFrame,
+      treeRow,
+      ToneSvg,
+      desktopHairline,
+      markGlyph,
+      markWidth,
+    },
+    handlers,
+  )
+  const { emptyState, needsYouView, findingsView } = paneAskTabs(
+    {
+      listColumns,
+      look,
+      isInline,
+      Box,
+      Text,
+      blankLine,
+      pal,
+      needsYouGroups,
       view,
-      prOrderKeys,
-      prTabKeys,
-      prGroups,
+      isUnread,
+      unfolded,
+      Button,
+      stop,
+      glued,
+      now,
+      findingEntries,
+      lists,
+      divided,
+      listRow,
+      settledRow,
+      closedFold,
       section,
-      undoPlace,
-      settledContent,
       groupTitle,
       titleGap,
+      groupEmpty,
       sections,
-      desktopFrame,
-      markGlyph,
-      divided,
-      lastActionText,
-      listRow,
-      prKeyAction,
-      desktopLabel,
-      keyRow,
-      emptyState,
       banner,
-    })
+    },
+    handlers,
+  )
 
-    const statusLines = paneStatusLines({
-      Box,
-      Text,
-      pal,
-      look,
+  const { prsView } = panePrBlocks({
+    look,
+    pal,
+    Text,
+    Box,
+    blankLine,
+    isThreadSent,
+    lastActions,
+    prState,
+    presses,
+    space,
+    Button,
+    view,
+    prOrderKeys,
+    prTabKeys,
+    prGroups,
+    section,
+    undoPlace,
+    settledContent,
+    groupTitle,
+    titleGap,
+    sections,
+    desktopFrame,
+    markGlyph,
+    divided,
+    lastActionText,
+    listRow,
+    prKeyAction,
+    desktopLabel,
+    keyRow,
+    emptyState,
+    banner,
+  })
+
+  const statusLines = paneStatusLines({
+    Box,
+    Text,
+    pal,
+    look,
+    listColumns,
+    terminalText,
+    desktopFrame,
+    desktopColumnPt,
+    markWidth,
+    branch,
+    desktopHairline,
+  })
+  const { statusRowLine, statusKeys, statusView } = paneStatus(
+    {
+      e: pane,
       listColumns,
-      terminalText,
-      desktopFrame,
-      desktopColumnPt,
-      markWidth,
-      branch,
-      desktopHairline,
-    })
-    const { statusRowLine, statusKeys, statusView } = paneStatus(
-      {
-        e,
-        listColumns,
-        look,
-        Box,
-        Text,
-        pal,
-        statusKeyRow,
-        view,
-        isInline,
-        ...statusLines,
-        Input,
-        typing,
-        drafts,
-        now,
-        markWidth,
-        desktopHairline,
-        markGlyph,
-        desktopFrame,
-        keyRow,
-        textKey,
-        emptyState,
-        sections,
-        section,
-        foldRow,
-        foldButton,
-        statusUnfolded,
-      },
-      handlers,
-    )
-
-    const { helpView } = paneHelp({
-      isNextBuild: mod.isNextBuild,
-      pal,
-      keyList,
+      look,
       Box,
-      keyColumn,
       Text,
-      hasRail,
-      ToneSvg,
-      svgCell,
+      pal,
+      statusKeyRow,
+      view,
+      isInline,
+      ...statusLines,
+      Input,
+      typing,
+      drafts,
+      now,
+      markWidth,
+      desktopHairline,
       markGlyph,
-      section,
-      groupTitle,
+      desktopFrame,
+      keyRow,
+      textKey,
+      emptyState,
       sections,
-      statusRowLine,
-    })
+      section,
+      foldRow,
+      foldButton,
+      statusUnfolded,
+    },
+    handlers,
+  )
 
-    const move = (step: number) => {
-      const to = Math.min(Math.max(at + step, 0), ids.length - 1)
-      void select($, tab, ids[to] ?? '', to)
-    }
-    const canMove = !isStatusShown && !isHelpShown && (ids.length > 1 || (at < 0 && ids.length > 0))
-    const moveStatus = (step: number) => {
-      const from = statusPressRows.findIndex(r => r.id === statusKeyRow?.id)
-      const to = statusPressRows[Math.min(Math.max(from + step, 0), statusPressRows.length - 1)]
-      if (to) void selectStatusRow($, to.id)
-    }
-    const moveBy = (by: number) =>
-      isHelpShown ? undefined : isStatusShown ? moveStatus(by) : canMove ? move(by) : undefined
-    // Claude Code sends a key no Button binds to the prompt and gives it the keyboard, so the keys
-    // stay bound when there is nothing to move to or close.
-    const moveKeys: KeyAction[] = [
-      { key: 'next', label: 'Next', hotkey: 'j', kind: 'view', onPress: () => moveBy(1) },
-      { key: 'previous', label: 'Previous', hotkey: 'k', kind: 'view', onPress: () => moveBy(-1) },
-    ]
-    const tabKeys: KeyAction[] = tabList.map(({ id, label, hotkey }) => ({
-      key: `tab-key-${id}`,
-      label,
-      hotkey,
-      kind: 'view',
-      onPress: () => void showTab($, id),
-    }))
+  const { helpView } = paneHelp({
+    isNextBuild: mod.isNextBuild,
+    pal,
+    keyList,
+    Box,
+    keyColumn,
+    Text,
+    hasRail,
+    ToneSvg,
+    svgCell,
+    markGlyph,
+    section,
+    groupTitle,
+    sections,
+    statusRowLine,
+  })
 
-    const selectedRow = isStatusShown || isHelpShown ? undefined : rows[tab][at]
-    const selectedActions = selectedRow ? rowActions(selectedRow) : null
-    const statusRowKeys = statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []
-    const closeKeysWithoutRow: KeyAction[] = ['d', 'x'].flatMap(hotkey =>
-      statusRowKeys.some(k => k.hotkey === hotkey)
-        ? []
-        : [
-            {
-              key: `no-row-${hotkey}`,
-              label: 'Close',
-              hotkey,
-              kind: 'view',
-              onPress: () => undefined,
-            },
-          ],
-    )
-    const rowKeys = [
-      ...statusRowKeys,
-      ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow),
-      ...(tab === 'prs' && !isHelpShown ? [...prOrderKeys, ...prTabKeys] : []),
-    ]
+  const move = (step: number) => {
+    const to = Math.min(Math.max(at + step, 0), ids.length - 1)
+    void select($, tab, ids[to] ?? '', to)
+  }
+  const canMove = !isStatusShown && !isHelpShown && (ids.length > 1 || (at < 0 && ids.length > 0))
+  const moveStatus = (step: number) => {
+    const from = statusPressRows.findIndex(r => r.id === statusKeyRow?.id)
+    const to = statusPressRows[Math.min(Math.max(from + step, 0), statusPressRows.length - 1)]
+    if (to) void selectStatusRow($, to.id)
+  }
+  const moveBy = (by: number) =>
+    isHelpShown ? undefined : isStatusShown ? moveStatus(by) : canMove ? move(by) : undefined
+  // Claude Code sends a key no Button binds to the prompt and gives it the keyboard, so the keys
+  // stay bound when there is nothing to move to or close.
+  const moveKeys: KeyAction[] = [
+    { key: 'next', label: 'Next', hotkey: 'j', kind: 'view', onPress: () => moveBy(1) },
+    { key: 'previous', label: 'Previous', hotkey: 'k', kind: 'view', onPress: () => moveBy(-1) },
+  ]
+  const tabKeys: KeyAction[] = tabList.map(({ id, label, hotkey }) => ({
+    key: `tab-key-${id}`,
+    label,
+    hotkey,
+    kind: 'view',
+    onPress: () => void showTab($, id),
+  }))
 
-    // A pane takes a key
-    // only as a Button's hotkey, so the tab keys, j, k and the selected row's keys
-    // are Buttons in a hidden Box.
-    const tabView = isHelpShown
-      ? helpView()
-      : isStatusShown
-        ? statusView()
-        : tab === 'findings'
-          ? findingsView()
-          : tab === 'prs'
-            ? prsView()
-            : needsYouView()
-    const drawn = (
-      <Box flexDirection="column" minHeight={e.props.scroll.bodyRows} backgroundColor={pal.body}>
-        {showsDemoNotices ? (
-          <Box flexDirection="column" paddingX={isInline ? 2 : 1} marginBottom={blankLine}>
-            {banner(bannerOf('demo', DEMO_NOTICE), {
-              action: <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo($, false)} />,
-            })}
-          </Box>
-        ) : null}
-        {hasRail ? (
-          <Box flexDirection="row" flexGrow={1}>
-            {rail}
-            <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-              {statusBlock}
-              <Box flexDirection="column" paddingRight={1} flexGrow={1}>
-                {tabView}
-              </Box>
+  const selectedRow = isStatusShown || isHelpShown ? undefined : rows[tab][at]
+  const selectedActions = selectedRow ? rowActions(selectedRow) : null
+  const statusRowKeys = statusKeyRow && !isHelpShown ? statusKeys(statusKeyRow) : []
+  const closeKeysWithoutRow: KeyAction[] = ['d', 'x'].flatMap(hotkey =>
+    statusRowKeys.some(k => k.hotkey === hotkey)
+      ? []
+      : [
+          {
+            key: `no-row-${hotkey}`,
+            label: 'Close',
+            hotkey,
+            kind: 'view',
+            onPress: () => undefined,
+          },
+        ],
+  )
+  const rowKeys = [
+    ...statusRowKeys,
+    ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow),
+    ...(tab === 'prs' && !isHelpShown ? [...prOrderKeys, ...prTabKeys] : []),
+  ]
+
+  // A pane takes a key
+  // only as a Button's hotkey, so the tab keys, j, k and the selected row's keys
+  // are Buttons in a hidden Box.
+  const tabView = isHelpShown
+    ? helpView()
+    : isStatusShown
+      ? statusView()
+      : tab === 'findings'
+        ? findingsView()
+        : tab === 'prs'
+          ? prsView()
+          : needsYouView()
+  const drawn = (
+    <Box flexDirection="column" minHeight={pane.props.scroll.bodyRows} backgroundColor={pal.body}>
+      {showsDemoNotices ? (
+        <Box flexDirection="column" paddingX={isInline ? 2 : 1} marginBottom={blankLine}>
+          {banner(bannerOf('demo', DEMO_NOTICE), {
+            action: <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo($, false)} />,
+          })}
+        </Box>
+      ) : null}
+      {hasRail ? (
+        <Box flexDirection="row" flexGrow={1}>
+          {rail}
+          <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+            {statusBlock}
+            <Box flexDirection="column" paddingRight={1} flexGrow={1}>
+              {tabView}
             </Box>
           </Box>
-        ) : (
-          [
-            tabs,
-            statusBlock,
-            <Box flexDirection="column" paddingX={1} paddingTop={blankLine} flexGrow={1}>
-              {tabView}
-            </Box>,
-          ]
-        )}
-        {/* Desktop takes no keys: a Button's hotkey does nothing there, so it gets neither the list of keys nor the hidden Buttons. */}
-        {footer}
-        {look === 'desktop' ? null : (
-          <Box display="none">
-            {keyBindings([...tabKeys, ...moveKeys])}
-            {keyBindings(rowKeys, '-key')}
-          </Box>
-        )}
-      </Box>
-    )
-    if (look === 'desktop' && paneState.focusedKey !== null) {
-      const keys = focusKeys(drawn)
-      const hint = paneState.focusHint?.startsWith('type-')
-        ? fieldKey(paneState.focusHint.slice('type-'.length))
-        : paneState.focusHint
-      const opensField = hint?.startsWith('type-') && keys.has(hint)
-      if (!keys.has(paneState.focusedKey) || opensField) {
-        const focusKey = [hint, rowKeys[0]?.key, ...keys].find((k): k is string => !!k && keys.has(k)) ?? null
-        paneState.focusedKey = focusKey
-        paneState.focusHint = null
-        // After this hook returns, since a focus asked from inside a drawing's own hook cannot wait on it.
-        if (focusKey) later($, 0, () => $.ui.focus({ requestId: PANE, key: focusKey }))
-      }
+        </Box>
+      ) : (
+        [
+          tabs,
+          statusBlock,
+          <Box flexDirection="column" paddingX={1} paddingTop={blankLine} flexGrow={1}>
+            {tabView}
+          </Box>,
+        ]
+      )}
+      {/* Desktop takes no keys: a Button's hotkey does nothing there, so it gets neither the list of keys nor the hidden Buttons. */}
+      {footer}
+      {look === 'desktop' ? null : (
+        <Box display="none">
+          {keyBindings([...tabKeys, ...moveKeys])}
+          {keyBindings(rowKeys, '-key')}
+        </Box>
+      )}
+    </Box>
+  )
+  if (look === 'desktop' && paneState.focusedKey !== null) {
+    const keys = focusKeys(drawn)
+    const hint = paneState.focusHint?.startsWith('type-')
+      ? fieldKey(paneState.focusHint.slice('type-'.length))
+      : paneState.focusHint
+    const opensField = hint?.startsWith('type-') && keys.has(hint)
+    if (!keys.has(paneState.focusedKey) || opensField) {
+      const focusKey = [hint, rowKeys[0]?.key, ...keys].find((k): k is string => !!k && keys.has(k)) ?? null
+      paneState.focusedKey = focusKey
+      paneState.focusHint = null
+      // After this hook returns, since a focus asked from inside a drawing's own hook cannot wait on it.
+      if (focusKey) later($, 0, () => $.ui.focus({ requestId: site.id, key: focusKey }))
     }
+  }
 
-    return drawn
-  })
+  return drawn
 }

@@ -214,6 +214,13 @@ error, a second line says why, with a Resume button after an API error. The
 ChatGPT app has no such line. omp has a line with the same counts. It says
 `/inbox` opens the panel, and it has no stop line.
 
+With [pane-grid](https://github.com/hwanyong/pane-grid) in Claude Code,
+`/grid place inbox` draws the inbox in a cell of pane-grid's grid pane. While
+it has the cell, its own panel and the line above the prompt stay closed, and
+`/grid place -` brings them back. In the active cell, the letters pane-grid's
+toolbar uses (`v s o z x w b c k q`) stay pane-grid's: those buttons show no
+letter and take clicks, so `k` does not move up there.
+
 Inside a Herdr pane, Claude Code, omp and the Codex CLI also report to Herdr's
 sidebar, as pane tokens:
 
