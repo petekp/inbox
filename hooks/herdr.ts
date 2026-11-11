@@ -1,12 +1,9 @@
-import type { Dialog, Ledger, Session, SessionStatus, StatusHead, Stop, Tab } from '../types'
+import type { Dialog, HerdrPressOutcome, Ledger, Session, SessionStatus, StatusHead, Stop, Tab } from '../types'
 import { bandCounts, isMaybeStale } from './band'
 import { MAYBE_STALE_TEXT } from './banners'
 import { hasRunningDelegate, onceEvery } from './children'
 import type { ClientId } from './clients'
-import type { PrPress } from './pr-press'
-import type { RowPress } from './presses'
-import { emptySession } from './session-files'
-import type { Holds } from './timing'
+import { emptySession, sessionFile } from './session-files'
 import { UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
 import type { SessionView } from './session-view'
@@ -249,18 +246,18 @@ type After = (ms: number, fn: () => Promise<unknown>) => void
  * A report counts as sent only when `run` exits 0. After a failed send, the next report is sent even when it matches
  * the last one. With `after`, a failed send also schedules a retry after the next wait in `HERDR_RETRY_MS`, with one
  * retry waiting at a time. Each call resolves true when Herdr took its report, or the last report Herdr took matches it.
+ * With `log`, a failed send logs why, once until a send succeeds or fails another way.
  */
-export function herdrReporter(): (
-  run: Run,
-  report: () => Promise<HerdrReport | null>,
-  after?: After,
-) => Promise<boolean> {
+export function herdrReporter(
+  log?: (text: string) => void,
+): (run: Run, report: () => Promise<HerdrReport | null>, after?: After) => Promise<boolean> {
   let sent: string | null = null
   let retries = 0
   let isRetryWaiting = false
   let sending: Promise<unknown> = Promise.resolve()
   let newest: { run: Run; report: () => Promise<HerdrReport | null>; after?: After } | null = null
   let hcFound: string | null = null
+  let logged: string | null = null
 
   /** Runs the report's command. For an app terminal, it tries each `hc` until one starts, and keeps that one. */
   const runReport = async (run: Run, r: HerdrReport) => {
@@ -297,6 +294,9 @@ export function herdrReporter(): (
     sent = null
     const result = await runReport(run, r).catch(() => null)
     const isTaken = result?.code === 0
+    const problem = isTaken ? null : reportProblem(r, result)
+    if (problem && problem !== logged) log?.(problem)
+    logged = problem
     if (isTaken) {
       sent = key
       retries = 0
@@ -314,6 +314,16 @@ export function herdrReporter(): (
   }
 
   return reportToHerdr
+}
+
+/** Why a report Herdr did not take failed, for a host's log. */
+function reportProblem(r: HerdrReport, result: Awaited<ReturnType<Run>> | null): string {
+  if (!result && r.target.kind === 'terminal')
+    return `Herdr labels not set: no hc started. Tried ${r.target.hc.join(', then ')}.`
+  if (!result) return 'Herdr report did not run.'
+  const why = result.stderr.trim()
+
+  return `Herdr report failed with exit ${result.code}${why ? `: ${why}` : '.'}`
 }
 
 /**
@@ -354,99 +364,62 @@ export function herdrLabels(tokens: HerdrTokens): Record<string, string> {
 /** The format of the session file a host publishes and of the press file the Herdr look writes. */
 export const HERDR_FORMAT = 1
 
-/** Who publishes a session for the Herdr look, and when. `agent` is the name the shared texts use, as in "Tell Claude". */
-export type EnvelopeSource = { host: ClientId; agent: string; sessionId: string; terminal: string; writtenAt: number }
+/**
+ * Who publishes a session for the Herdr look, and when. `agent` is the name the shared texts use, as in "Tell Claude".
+ * `projectFolder` is the folder the host opens a relative path against, so the look can open one itself.
+ */
+export type EnvelopeSource = {
+  host: ClientId
+  agent: string
+  sessionId: string
+  terminal: string
+  writtenAt: number
+  projectFolder?: string
+}
 
-/** The file a host publishes for the Herdr look. */
-export type HerdrEnvelope = EnvelopeSource & { format: typeof HERDR_FORMAT; session: Session }
+/**
+ * The file a host publishes for the Herdr look. It has `projectFolder` only when that is an absolute path. `trimmed` is set when the host left out closed items the view does not
+ * draw in place, to keep the file under `PUBLISH_LIMIT_BYTES`. `lastPress` is the session's `lastHerdrPress`.
+ */
+export type HerdrEnvelope = EnvelopeSource & {
+  format: typeof HERDR_FORMAT
+  trimmed?: true
+  lastPress?: HerdrPressOutcome
+  session: Session
+}
 
 const SESSION_FIELDS = Object.keys(emptySession())
 
 /** The envelope for `session`, which keeps only the shared `Session` fields, without a host's own. */
-export function herdrEnvelope(source: EnvelopeSource, session: Session): HerdrEnvelope {
+export function herdrEnvelope(source: EnvelopeSource, session: Session, isTrimmed = false): HerdrEnvelope {
   const shared = Object.fromEntries(SESSION_FIELDS.map(field => [field, session[field as keyof Session]]))
 
-  return { format: HERDR_FORMAT, ...source, session: shared as Session }
-}
+  const { lastHerdrPress } = session
+  const { projectFolder, ...rest } = source
 
-/** A press the Herdr look made, with the look's holds, which `press()` needs to tell a stale press. */
-type PressFile = {
-  format: typeof HERDR_FORMAT
-  id: string
-  pressedAt: number
-  press: RowPress | PrPress
-  holds: Holds
-}
-
-/** The field that names what each press acts on: a row's `id`, a PR's `ref`, or none for the PRs tab's own buttons. */
-const PRESS_TARGETS: Record<RowPress['action'] | PrPress['action'], 'id' | 'ref' | null> = {
-  answer: 'id',
-  type: 'id',
-  explain: 'id',
-  compare: 'id',
-  done: 'id',
-  dismiss: 'id',
-  address: 'id',
-  issue: 'id',
-  discuss: 'id',
-  undo: 'id',
-  discard: 'id',
-  step: 'id',
-  'remove-goal': 'id',
-  'restore-goal': 'id',
-  'thread-address': 'ref',
-  'thread-draft': 'ref',
-  'thread-discuss': 'ref',
-  'thread-open': 'ref',
-  'pr-conflicts': 'ref',
-  'pr-address-all': 'ref',
-  'pr-merge': 'ref',
-  'pr-open': 'ref',
-  'pr-dismiss': 'ref',
-  'pr-undo': 'ref',
-  'check-fix': 'ref',
-  'check-rerun': 'ref',
-  log: 'ref',
-  'pr-rank-again': null,
-  'pr-refresh': null,
-}
-
-const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
-
-const isTimes = (x: unknown): x is Record<string, number> =>
-  isRecord(x) && Object.values(x).every(at => typeof at === 'number')
-
-/** Why `press` is not a press the hosts know, or null when it is one. */
-function pressProblem(press: unknown): string | null {
-  if (!isRecord(press) || typeof press.action !== 'string') return 'press has no action'
-  if (!Object.hasOwn(PRESS_TARGETS, press.action)) return `unknown action ${press.action}`
-  const target = PRESS_TARGETS[press.action as keyof typeof PRESS_TARGETS]
-
-  return target === null || typeof press[target] === 'string' ? null : `${press.action} has no ${target}`
-}
-
-/** Why `holds` are not a look's holds, or null when they are. */
-function holdsProblem(holds: unknown): string | null {
-  if (!isRecord(holds)) return 'no holds'
-  if (!isTimes(holds.replies) || !isTimes(holds.discarded)) return 'holds without replies or discarded times'
-
-  return holds.shownSince === null || typeof holds.shownSince === 'number' ? null : 'holds without shownSince'
-}
-
-/** A press file's text, read and checked. `reason` says why a file was refused. */
-export function pressFile(text: string): { ok: true; file: PressFile } | { ok: false; reason: string } {
-  let file: unknown
-  try {
-    file = JSON.parse(text)
-  } catch {
-    return { ok: false, reason: 'not JSON' }
+  return {
+    format: HERDR_FORMAT,
+    ...rest,
+    ...(projectFolder?.startsWith('/') && { projectFolder }),
+    ...(isTrimmed && { trimmed: true }),
+    ...(lastHerdrPress && { lastPress: lastHerdrPress }),
+    session: shared as Session,
   }
-  if (!isRecord(file)) return { ok: false, reason: 'not an object' }
-  if (file.format !== HERDR_FORMAT) return { ok: false, reason: `unknown format ${String(file.format)}` }
-  if (typeof file.id !== 'string' || file.id === '') return { ok: false, reason: 'no id' }
-  if (typeof file.pressedAt !== 'number' || !Number.isFinite(file.pressedAt))
-    return { ok: false, reason: 'no pressedAt' }
-  const reason = pressProblem(file.press) ?? holdsProblem(file.holds)
+}
 
-  return reason ? { ok: false, reason } : { ok: true, file: file as PressFile }
+/** The folder hosts publish their sessions to for the Herdr look, under the app's settings folder. */
+function publishedSessionsFolder(appHome: string): string {
+  return `${appHome}/inbox/sessions`
+}
+
+/** Where a host publishes a session for the Herdr look. Throws for an unsafe id. */
+export function publishedSessionPath(appHome: string, sessionId: string): string {
+  return `${publishedSessionsFolder(appHome)}/${sessionFile(sessionId)}`
+}
+
+/** The folder the Herdr look writes a session's presses to. Throws for an unsafe id. */
+export function pressFolder(appHome: string, sessionId: string): string {
+  sessionFile(sessionId)
+
+  return `${appHome}/inbox/presses/${sessionId}`
 }

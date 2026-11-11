@@ -125,10 +125,10 @@ export type SessionState = Session & {
    */
   herdrReport?: { key: string; seq: number }
   /**
-   * When a hook or an update in Herdr last changed this state, in ms, and always above the change before it. Each of
-   * their changes sets it, even one that changes nothing else. A report to a Herdr pane carries it as `seq`, so Herdr
-   * drops a report of an earlier state that arrives after a later one. A session published for the Herdr look carries
-   * it as its `writtenAt`.
+   * When a hook, an update or the MCP server in Herdr last changed this state, in ms, and always above the change
+   * before it. Each of their changes sets it, even one that changes nothing else. A report to a Herdr pane carries it as
+   * `seq`, so Herdr drops a report of an earlier state that arrives after a later one. A session published for the
+   * Herdr look carries it as its `writtenAt`.
    */
   writtenAt?: number
 }

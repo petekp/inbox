@@ -226,12 +226,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'herdr-sidebar': {
         kind: 'different',
         reason:
-          "Only Codex's hooks and the update a hook starts know where Codex runs in Herdr, so a record or close during a turn reaches the sidebar at the next hook. Codex finds no stops, and runs no hook when a session ends, so its tokens or labels stay.",
+          "In a Herdr pane, only Codex's hooks and the update a hook starts report, so a record or close during a turn reaches the sidebar at the next hook. In a Herdr app terminal, the MCP server labels too. Codex finds no stops, and runs no hook when a session ends, so its tokens or labels stay.",
       },
       'herdr-look': {
         kind: 'different',
-        reason:
-          "Only Codex's hooks and the update a hook starts publish the session, so a record or close during a turn reaches the Herdr look at the next hook. Codex runs no hook when a session ends, so its published file stays.",
+        reason: 'Codex runs no hook when a session ends, so its published file stays.',
       },
       'status-children': {
         kind: 'different',

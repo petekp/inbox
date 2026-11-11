@@ -1,5 +1,5 @@
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { appendFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 
 import { statePath, readState, tryWithLock, updateState, withLock } from './state'
 import type { SessionState } from './state'
@@ -52,12 +52,36 @@ const publishFiles: PublishFiles = {
   },
   move: (from, to) => rename(from, to),
   remove: path => rm(path, { force: true }),
+  removeFolder: path => rm(path, { recursive: true, force: true }),
+}
+
+/** The most `herdr.log` holds before the next line starts it over. */
+const HERDR_LOG_BYTES = 64 * 1024
+
+/**
+ * Appends a line to `herdr.log` in the data folder, which says why Herdr's labels or published file did not change, as
+ * when no `hc` started. Over `HERDR_LOG_BYTES`, the line starts the file over.
+ */
+export function herdrLog(dir: string): (text: string) => void {
+  const path = join(dir, 'herdr.log')
+
+  return text =>
+    void (async () => {
+      const size = await stat(path).then(
+        s => s.size,
+        () => 0,
+      )
+      const line = `${new Date().toISOString()} ${text}\n`
+      await mkdir(dir, { recursive: true })
+      await (size > HERDR_LOG_BYTES ? writeFile(path, line) : appendFile(path, line))
+    })().catch(() => undefined)
 }
 
 /**
  * Reports each written state to the Herdr pane or app terminal in `env`, or is undefined when `env` names neither.
  * Codex runs a hook with its own environment, so the hooks of a Codex CLI in Herdr, and the update a hook starts, know
- * where they run. The MCP server writes without reporting, so the next hook reports what it changed.
+ * where they run. The MCP server gets the app terminal's variables from `.mcp.json`, so it reports there too, but never
+ * to a pane. Problems go to `log`.
  *
  * Hooks and updates run in separate processes, so each report runs under the session's Herdr lock and reads the newest
  * saved state, never the state its own write left. Reports then go out in the order they run, which `hc label` needs
@@ -65,10 +89,16 @@ const publishFiles: PublishFiles = {
  * first publishes the session for the Herdr look. The session keeps the newest report Herdr took, and a report that
  * would match it sends none. A report that fails to send is not kept, so the next write sends it again.
  */
-export function herdrOnWrite(env: NodeJS.ProcessEnv, run: Run, dir: string, now: () => number): OnWrite | undefined {
+export function herdrOnWrite(
+  env: NodeJS.ProcessEnv,
+  run: Run,
+  dir: string,
+  now: () => number,
+  log = herdrLog(dir),
+): OnWrite | undefined {
   const target = herdrTarget(env)
   if (!target) return undefined
-  const report = herdrReporter()
+  const report = herdrReporter(log)
 
   return async written => {
     const id = written.sessionId
@@ -81,9 +111,16 @@ export function herdrOnWrite(env: NodeJS.ProcessEnv, run: Run, dir: string, now:
         (await publishedSession(
           publishFiles,
           target.appHome,
-          { host: 'codex', agent: CODEX.agent, sessionId: id, terminal: target.terminal, writtenAt: seq },
+          {
+            host: 'codex',
+            agent: CODEX.agent,
+            sessionId: id,
+            terminal: target.terminal,
+            writtenAt: seq,
+            projectFolder: s.root,
+          },
           s,
-          () => undefined,
+          log,
         ))
       const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, at), [])
       const r = { target, tokens, session: isPublished ? id : null, seq }

@@ -265,8 +265,8 @@ its session, and the Herdr app runs the mod in `herdr/`, which draws it.
 **Published session**:
 The file a host writes for the Herdr look at
 `<app home>/inbox/sessions/<session id>.json`, after each saved change. It
-holds the session with its source: the host, the agent, the session id and the
-terminal. The terminal's `inbox.session` label names it. `HerdrEnvelope` in
+holds the session with its source: the host, the agent, the session id, the
+terminal, and the project folder when the host knows it. The terminal's `inbox.session` label names it. `HerdrEnvelope` in
 `hooks/herdr.ts`.
 
 **Shared module**:

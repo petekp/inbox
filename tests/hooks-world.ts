@@ -367,11 +367,23 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   })
   on('fs.exists', (_$, e) => ({ value: w.files.some(f => e.path.endsWith(f)) }))
   on('fs.list', (_$, e) => {
+    const written = Object.keys(w.written).filter(path => path.startsWith(`${e.path}/`))
+    if (written.length > 0)
+      return {
+        value: written.map(path => ({
+          name: path.slice(e.path.length + 1),
+          kind: 'file' as const,
+          size: 1,
+          mtimeMs: 1,
+          isLink: false,
+        })),
+      }
     if (e.path !== `${CONFIG_DIR}/sessions`) return { deny: `ENOENT: ${e.path}` }
     const entry = (name: string) => ({ name, kind: 'file' as const, size: 1, mtimeMs: 1, isLink: false })
     return { value: sessionFiles().flatMap(f => [entry(`${f.pid}.json`), entry(`${f.pid}.key`)]) }
   })
   on('fs.read', (_$, e) => {
+    if (e.path in w.written) return { value: w.written[e.path]! }
     const file = sessionFiles().find(f => e.path === `${CONFIG_DIR}/sessions/${f.pid}.json`)
     if (file) return { value: JSON.stringify({ ...file, cwd: '/tmp/project', status: 'busy', updatedAt: 1 }) }
     if (!e.path.endsWith('/.claude-plugin/plugin.json')) throw new Error(`ENOENT: ${e.path}`)

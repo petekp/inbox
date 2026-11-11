@@ -1,6 +1,8 @@
 import { version } from '../package.json'
 
 import type { PrPress } from '../../hooks/pr-press'
+import { applyLookPress } from '../../hooks/herdr-app'
+import type { PressFile } from '../../hooks/herdr-press-file'
 import type { RowPress } from '../../hooks/presses'
 import { lookEndedOn, withLook } from '../../hooks/session-status'
 import type { ShownRows } from '../../hooks/status-children'
@@ -40,8 +42,8 @@ export type Inbox = {
   checkDelegatesWhenDue(ctx: OmpContext): void
   /** Calls `listener` after the session's saved state changes. Returns how to stop. */
   onChange(ctx: OmpContext, listener: () => void): () => void
-  /** Applies a press for the session. */
-  press(ctx: OmpContext, p: RowPress | PrPress, holds: Holds): Promise<PressOutcome>
+  /** Applies a press for the session, or with `look` one the Herdr look wrote, whose opens and copies it may have run. */
+  press(ctx: OmpContext, p: RowPress | PrPress, holds: Holds, look?: PressFile): Promise<PressOutcome>
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
   resume(ctx: OmpContext): Promise<string | null>
 }
@@ -116,8 +118,8 @@ export function panelCalls(context: HostContext, sessions: SessionCalls) {
 
       return () => void set.delete(listener)
     },
-    press: async (ctx, p, holds) => {
-      const outcome = await press(hostFor(ctx), p, false, holds)
+    press: async (ctx, p, holds, look) => {
+      const outcome = await (look ? applyLookPress(hostFor(ctx), look) : press(hostFor(ctx), p, false, holds))
       if (outcome.wakesAfterSettle) wakeLater(ctx)
 
       return outcome

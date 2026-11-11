@@ -11,6 +11,7 @@ export const SHARED = [
   'help',
   'herdr',
   'herdr-app',
+  'herdr-press-file',
   'inline',
   'layout',
   'marks',

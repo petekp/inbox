@@ -80,6 +80,8 @@ class ModState {
   /** The ask of the fetch that runs next, or null when none waits. A second ask joins it. */
   nextFetch: { findsBranchPr: boolean; isPress: boolean } | null = null
   prFetchEndedAt: number | undefined
+  /** Stops following the presses the Herdr look writes, in a Herdr app terminal. */
+  stopHerdrPresses: (() => void) | null = null
 }
 
 export const mod = new ModState()
