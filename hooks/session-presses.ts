@@ -194,7 +194,10 @@ export function withFetchedPrs<S extends Session>(
 ): S {
   const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true
   const views = { ...s.prViews.views, ...fetched }
-  const { ledger, lastActions } = withFinishedPrsSettled(s, fetched, { now, turnsStarted: s.presence.turnsStarted })
+  const { ledger, lastActions } = withFinishedPrsSettled(s, fetched, branchRef, {
+    now,
+    turnsStarted: s.presence.turnsStarted,
+  })
   const stillUnread = Object.fromEntries(Object.entries(unread).filter(([ref]) => !(ref in views)))
 
   return {

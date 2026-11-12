@@ -18,7 +18,7 @@ import { tabRows } from './tab-rows'
 import { Banner } from './tab-parts'
 import { stepLists } from './tab-list'
 import { NeedsYou, Findings } from './tab-groups'
-import { prOrderKeys, Prs } from './tab-prs'
+import { prClearKeys, prOrderKeys, Prs } from './tab-prs'
 import { StatusTab } from './tab-status'
 import { pressUndoKey } from './undo-key'
 import { HelpPage, Status, TabBar, toggleDemo } from './tab-chrome'
@@ -174,7 +174,10 @@ document.addEventListener(
     }
     const t = drawnTab()
     if (tabState.isHelpShown || !isRowTab(t)) return
-    const tabKey = t === 'prs' ? prOrderKeys(tabState.view).find(x => x.hotkey === e.key) : undefined
+    const tabKey =
+      t === 'prs'
+        ? [...prOrderKeys(tabState.view), ...prClearKeys(tabState.view)].find(x => x.hotkey === e.key)
+        : undefined
     if (tabKey) {
       e.preventDefault()
       if (!tabKey.isOut) tabKey.run()

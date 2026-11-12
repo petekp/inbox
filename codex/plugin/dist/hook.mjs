@@ -2225,6 +2225,9 @@ function dismissal(lastActions, ref) {
 function dismissedAt(lastActions, ref) {
   return dismissal(lastActions, ref)?.at ?? null;
 }
+function isDismissed(lastActions, ref) {
+  return dismissedAt(lastActions, ref) !== null;
+}
 function isViewKept(prState, links, lastActions, ref, shownSince) {
   const at = dismissedAt(lastActions, ref);
   return keepsView(prState, links, ref) || at !== null && isShownSince(at, shownSince);
@@ -2305,6 +2308,27 @@ function prOrderActions(row) {
       hotkey: "g"
     }
   ]);
+}
+
+// ../hooks/pr-tab.ts
+function finishedTabPrs(prState, links) {
+  return splitLinked(prState, links).tracked.filter((ref) => {
+    const view = prState.views[ref];
+    return view !== void 0 && view.state !== "OPEN" && ref !== prState.branchRef;
+  });
+}
+function prClearActions(prState, links) {
+  if (finishedTabPrs(prState, links).length === 0) return [];
+  return [
+    {
+      press: { action: "pr-clear-finished" },
+      label: "Clear merged and closed",
+      kind: "mark",
+      emphasis: "normal",
+      hotkey: "m",
+      isOut: false
+    }
+  ];
 }
 
 // ../hooks/tool-schemas.ts
@@ -2726,6 +2750,7 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
       { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
       shownSince
     ),
+    clear: prClearActions(s.prViews, s.ledger),
     pressOutSince
   };
 }
@@ -3166,7 +3191,7 @@ function noteCommandOutput(s, command, output) {
   return ledger === noted.ledger ? noted : { ...noted, ledger };
 }
 function endTurn(host, s, reply, isOpen2, { tab = null, queuesEmptyReply = false } = {}) {
-  const refs = prRefs(reply);
+  const refs = prRefs(reply).filter((ref) => !isDismissed(s.lastActions, ref));
   const base = {
     ...s,
     ledger: refs.length > 0 ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs) } : s.ledger,

@@ -1,7 +1,9 @@
 import { expect, mock, test } from 'claude-code/testing'
+import { SESSION_VERSION } from '../hooks/session-version'
+import type { TabsProps } from '../hooks/tabs-client'
 import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
-import { PANE, leaveAndReturn } from './hooks-helpers'
+import { PANE, SAVED_SESSION, leaveAndReturn } from './hooks-helpers'
 
 test('Resolve conflicts reads the PR from GitHub before it sends: it reads Refreshing while gh answers, sends while the conflicts remain, and sends nothing once a push resolved them', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -226,4 +228,76 @@ test('a PR’s Dismiss settles its block until its Undo ends, with Undo that bri
   expect(await pane.find({ text: /Last refresh failed/ })).toBeUndefined()
   expect(await pane.find({ key: 'refresh-prs' })).toBeUndefined()
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
+})
+
+test('in the desktop look, a saved session with a merged and a closed PR draws Clear merged and closed once above the PR blocks, and its press settles each', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  const states: Record<number, string> = { 12: 'MERGED', 14: 'CLOSED', 15: 'OPEN' }
+  const view = (number: number) => ({
+    ref: `acme/greet#${number}`,
+    number,
+    title: `Work ${number}`,
+    url: `https://github.com/acme/greet/pull/${number}`,
+    isDraft: false,
+    state: states[number],
+    base: 'main',
+    mergeable: 'MERGEABLE',
+    reviewDecision: '',
+    checks: [],
+    threads: [],
+    isYours: true,
+    wasSeenOpen: true,
+    error: null,
+    fetchedAt: 1_000_000,
+  })
+  w.ghAnswers.push(
+    ...[12, 14, 15].map(n => ({
+      match: (argv: readonly string[]) => argv.includes('view') && argv.includes(String(n)),
+      stdout: JSON.stringify({ ...view(n), baseRefName: 'main', statusCheckRollup: [] }),
+    })),
+    {
+      match: argv => argv.includes('graphql'),
+      stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+    },
+  )
+  const views = [12, 14, 15].map(view)
+  w.stored.set(
+    's:session-1',
+    JSON.stringify({
+      ...SAVED_SESSION,
+      version: SESSION_VERSION,
+      ledger: { ...SAVED_SESSION.ledger, prs: views.map(v => v.ref) },
+      prViews: { views: Object.fromEntries(views.map(v => [v.ref, v])), branchRef: null, isFetching: false },
+    }),
+  )
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  await $.command.run({ command: 'inbox', args: '' } as never)
+  await clock.settle()
+  w.paneState = { isShown: true, isFocused: true }
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 120 } })
+  const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+  const x = bar
+    .slice(
+      0,
+      bar.findIndex(t => t.id === 'prs'),
+    )
+    .reduce((sum, t) => sum + t.width + gap, 0)
+  await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+  await clock.settle()
+  const linked = () => (JSON.parse(w.stored.get('s:session-1') ?? '{}') as { ledger?: { prs: string[] } }).ledger?.prs
+  const buttonKeys = async () =>
+    (await pane.findAll({ type: 'Button' })).map(b => b.key ?? '').filter(k => !k.endsWith('-key'))
+  const keys = await buttonKeys()
+  expect(keys.filter(k => k === 'clear-finished-prs')).toHaveLength(1)
+  expect(keys.indexOf('clear-finished-prs')).toBeLessThan(keys.findIndex(k => /-acme\/greet#\d+$/.test(k)))
+
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'clear-finished-prs' })
+  await clock.settle()
+  expect(linked()).toEqual(['acme/greet#15'])
+  expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
+  expect(await pane.find({ key: 'settled-pr:acme/greet#14' })).toBeDefined()
+  expect(await buttonKeys()).not.toContain('clear-finished-prs')
 })

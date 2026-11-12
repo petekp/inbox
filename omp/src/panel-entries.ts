@@ -8,6 +8,7 @@ import {
   checkRowText,
   RANK_AGAIN_ID,
   PR_REFRESH_ID,
+  CLEAR_FINISHED_ID,
   prCheckId,
   isBlockPressShown,
   prBlockRows,
@@ -131,6 +132,18 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
   const ghNotice = ghNoticeOf(ghState)
   if (ghNotice) out.push({ kind: 'banner', banner: bannerOf(ghNotice.kind, ghNotice.text) })
   if (prs.refresh) out.push(...refreshEntries(screen, prs.refresh, now))
+  const clearButtons = prButtons(prs.clear)
+  if (clearButtons.length > 0)
+    out.push({
+      kind: 'row',
+      line: {
+        ...blankLine(CLEAR_FINISHED_ID),
+        lead: null,
+        buttons: clearButtons,
+        isWaiting: false,
+        isTabButtons: true,
+      },
+    })
   if (prs.order) out.push(...orderEntries(screen, prs.order, now))
   for (const d of prs.drawn) {
     const { pr, state } = d

@@ -3052,7 +3052,10 @@ function tabLegend(isNextBuild) {
   return shownTabs(isNextBuild).map((t) => ({ keys: t.symbol, does: t.label }));
 }
 var UNDO_KEY = "u";
-var PR_TAB_HELP_KEYS = [{ keys: "g", does: "Rank the PRs again, once a ranked PR changed" }];
+var PR_TAB_HELP_KEYS = [
+  { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
+  { keys: "m", does: "Clear the merged and closed PRs" }
+];
 function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
   const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
   const hasRows = isRowTab(tab);
@@ -4237,7 +4240,7 @@ function feedbackText(f, look) {
 // ../hooks/pr-press.ts
 var PR_REFRESH = { kind: "refresh-prs", name: "PRs" };
 function isPrPress(p) {
-  return "ref" in p || p.action === "pr-rank-again" || p.action === "pr-refresh";
+  return "ref" in p || p.action === "pr-rank-again" || p.action === "pr-refresh" || p.action === "pr-clear-finished";
 }
 function commentEffect(pr, t) {
   return { kind: "open", target: t.reply?.url || t.url || pr.url, name: "the comment" };
@@ -4281,6 +4284,8 @@ function prRowId(p) {
     return RANK_AGAIN_ID;
   if (p.action === "pr-refresh")
     return PR_REFRESH_ID;
+  if (p.action === "pr-clear-finished")
+    return CLEAR_FINISHED_ID;
   if ("check" in p)
     return checkRowId(p.ref, p.check);
   if ("thread" in p)
@@ -4443,6 +4448,7 @@ function prRefreshFailedText(error) {
 }
 var RANK_AGAIN_ID = "pr:order";
 var PR_REFRESH_ID = "pr:refresh";
+var CLEAR_FINISHED_ID = "pr:finished";
 var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks", cancelled: "Cancelled checks" };
 function prBlockRows(pr, isSettled, rowOf) {
   const threads = isSettled ? [] : waitingThreads(pr).map(rowOf.thread);
@@ -5440,8 +5446,33 @@ function withUndismissed(ledger, ref, wasLinked) {
     prOrder: order && isDismissedFromOrder ? { ...order, dismissed: order.dismissed.filter((r) => r !== ref) } : order
   };
 }
-function withFinishedPrsSettled(s, fetched, ctx) {
-  const finished = Object.values(fetched).filter((pr) => pr.state !== "OPEN" && s.prViews.views[pr.ref]?.state === "OPEN" && pr.ref !== s.prViews.branchRef && tabPrs(s.ledger).includes(pr.ref));
+function finishedTabPrs(prState, links) {
+  return splitLinked(prState, links).tracked.filter((ref) => {
+    const view = prState.views[ref];
+    return view !== undefined && view.state !== "OPEN" && ref !== prState.branchRef;
+  });
+}
+function prClearActions(prState, links) {
+  if (finishedTabPrs(prState, links).length === 0)
+    return [];
+  return [
+    {
+      press: { action: "pr-clear-finished" },
+      label: "Clear merged and closed",
+      kind: "mark",
+      emphasis: "normal",
+      hotkey: "m",
+      isOut: false
+    }
+  ];
+}
+function withFinishedPrsSettled(s, fetched, branchRef, ctx) {
+  const firstFoundFinished = Object.values(fetched).filter((pr) => pr.state !== "OPEN" && s.prViews.views[pr.ref]?.state === "OPEN" && pr.ref !== s.prViews.branchRef && tabPrs(s.ledger).includes(pr.ref));
+  const views = { ...s.prViews.views, ...fetched };
+  const oldBranchRef = s.prViews.branchRef !== branchRef ? s.prViews.branchRef : null;
+  const oldBranchPr = oldBranchRef === null ? undefined : views[oldBranchRef];
+  const isOldBranchPrFinished = oldBranchPr !== undefined && oldBranchPr.state !== "OPEN" && splitLinked({ views }, s.ledger).tracked.includes(oldBranchPr.ref);
+  const finished = isOldBranchPrFinished ? [...firstFoundFinished, oldBranchPr] : firstFoundFinished;
   if (finished.length === 0)
     return { ledger: s.ledger, lastActions: s.lastActions };
   const lasts = finished.map((pr) => {
@@ -5488,6 +5519,16 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
     const result = pendingResult(effects, ctx.now, ctx.localPressId);
     const last = localLast(lastActions[PR_REFRESH_ID], { action: p.action, text: PR_REFRESH_LABEL }, result);
     return applied({ lasts: { [PR_REFRESH_ID]: last }, effects });
+  }
+  if (p.action === "pr-clear-finished") {
+    const refs = finishedTabPrs(prState, ledger);
+    if (refs.length === 0)
+      return stale;
+    const lasts = refs.map((ref) => {
+      const id = prMarkId(ref);
+      return [id, dismissPress(ledger, ref, ctx, lastActions[id])];
+    });
+    return applied({ ledger: withDismissed(ledger, refs), lasts: Object.fromEntries(lasts) });
   }
   const pr = prState.views[p.ref];
   const markId = prMarkId(p.ref);
@@ -5795,7 +5836,7 @@ function toolAnswer(host, ledger, tool, input, now, presses) {
     case "close":
       return recordClose(host, ledger, input, now, presses);
     case "order_prs":
-      return orderPrs(host, ledger, input, now);
+      return orderPrs(host, ledger, input, now, presses.lastActions);
   }
 }
 function cut(value, max) {
@@ -5948,7 +5989,7 @@ function prNumber(value) {
   const n = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim().replace(/^#/, "")) : NaN;
   return Number.isInteger(n) && n > 0 ? n : null;
 }
-function orderPrs(host, ledger, input, now) {
+function orderPrs(host, ledger, input, now, lastActions) {
   if (!Array.isArray(input.numbers))
     return unchanged(ledger, "Not set: numbers must be a list of PR numbers.");
   if (input.numbers.length === 0) {
@@ -5975,13 +6016,14 @@ function orderPrs(host, ledger, input, now) {
   const why = cut(input.why, MAX_ORDER_WHY);
   if (!why)
     return unchanged(ledger, "Not set: give why, the reason for this order.");
+  const dismissed = refs.filter((ref) => isDismissed(lastActions, ref) || ledger.prOrder?.dismissed.includes(ref));
   const onTab = tabPrs(ledger);
   const added = refs.filter((ref) => !onTab.includes(ref));
   const addedText = added.length === 0 ? "" : added.length === 1 ? " 1 of them was not in the tab yet. It shows after the tab's next refresh, if the user wrote it and it is open." : ` ${added.length} of them were not in the tab yet. They show after the tab's next refresh, if the user wrote them and they are open.`;
   return {
     ledger: {
       ...ledger,
-      prOrder: { refs, label, why, statuses: {}, dismissed: [], by: host.agent, at: now }
+      prOrder: { refs, label, why, statuses: {}, dismissed, by: host.agent, at: now }
     },
     result: `Set. These ${refs.length} PRs show first in ${host.prsIn}, in this order.${addedText}`,
     personLine: `PR order: ${label}, ${refs.length} ${refs.length === 1 ? "PR" : "PRs"}`
@@ -6509,6 +6551,7 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
     isGhSignedOut: s.prViews.isGhSignedOut === true,
     failure: s.prViews.failure ?? null,
     refresh: prRefreshView({ ...s.prViews, isGhMissing: s.prViews.isGhMissing === true }, s.ledger, { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now }, shownSince),
+    clear: prClearActions(s.prViews, s.ledger),
     pressOutSince
   };
 }
@@ -6613,7 +6656,10 @@ function pruned(s) {
 function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now, failure = null, unread = {}) {
   const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true;
   const views = { ...s.prViews.views, ...fetched };
-  const { ledger, lastActions } = withFinishedPrsSettled(s, fetched, { now, turnsStarted: s.presence.turnsStarted });
+  const { ledger, lastActions } = withFinishedPrsSettled(s, fetched, branchRef, {
+    now,
+    turnsStarted: s.presence.turnsStarted
+  });
   const stillUnread = Object.fromEntries(Object.entries(unread).filter(([ref]) => !(ref in views)));
   return {
     ...s,
@@ -7236,6 +7282,18 @@ function prEntries(screen, ui, now) {
     out.push({ kind: "banner", banner: bannerOf(ghNotice.kind, ghNotice.text) });
   if (prs.refresh)
     out.push(...refreshEntries(screen, prs.refresh, now));
+  const clearButtons = prButtons(prs.clear);
+  if (clearButtons.length > 0)
+    out.push({
+      kind: "row",
+      line: {
+        ...blankLine(CLEAR_FINISHED_ID),
+        lead: null,
+        buttons: clearButtons,
+        isWaiting: false,
+        isTabButtons: true
+      }
+    });
   if (prs.order)
     out.push(...orderEntries(screen, prs.order, now));
   for (const d of prs.drawn) {
@@ -7432,7 +7490,7 @@ function resolveSelected(lines, selectedId) {
     return current;
   const waits = waitsOf(lines);
   const nextId = (current ? rowAfterClose(waits, current.id) : null) ?? firstWaiting(waits);
-  return lines.find((l) => l.id === nextId) ?? selectable[0] ?? null;
+  return lines.find((l) => l.id === nextId) ?? selectable.find((l) => l.id !== CLEAR_FINISHED_ID) ?? null;
 }
 function defaultFocus(line) {
   return Math.max(0, line.buttons.findIndex((b) => b.isRecommended));
@@ -8746,6 +8804,7 @@ var CLIENTS = {
       "status-call-records": { kind: "full" },
       "pr-order": { kind: "full" },
       "pr-rank-again": { kind: "full" },
+      "clear-merged-and-closed-prs": { kind: "full" },
       "pr-check-rerun": { kind: "full" },
       "pr-fetch-notice": { kind: "full" },
       "help-page": {
@@ -8869,6 +8928,7 @@ var CLIENTS = {
       "status-call-records": { kind: "full" },
       "pr-order": { kind: "full" },
       "pr-rank-again": { kind: "full" },
+      "clear-merged-and-closed-prs": { kind: "full" },
       "pr-check-rerun": { kind: "full" },
       "pr-fetch-notice": { kind: "full" },
       "help-page": { kind: "full" },
@@ -8965,6 +9025,7 @@ var CLIENTS = {
       "status-call-records": { kind: "full" },
       "pr-order": { kind: "full" },
       "pr-rank-again": { kind: "full" },
+      "clear-merged-and-closed-prs": { kind: "full" },
       "pr-check-rerun": { kind: "full" },
       "pr-fetch-notice": { kind: "full" },
       "help-page": {
@@ -9182,7 +9243,7 @@ function noteCommandOutput(s, command, output) {
   return ledger === noted.ledger ? noted : { ...noted, ledger };
 }
 function endTurn(host, s, reply, isOpen, { tab = null, queuesEmptyReply = false } = {}) {
-  const refs = prRefs(reply);
+  const refs = prRefs(reply).filter((ref) => !isDismissed(s.lastActions, ref));
   const base = {
     ...s,
     ledger: refs.length > 0 ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs) } : s.ledger,
@@ -10765,7 +10826,8 @@ var PRESS_TARGETS = {
   "check-rerun": "ref",
   log: "ref",
   "pr-rank-again": null,
-  "pr-refresh": null
+  "pr-refresh": null,
+  "pr-clear-finished": null
 };
 var isRecord = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
 var isTimes = (x) => isRecord(x) && Object.values(x).every((at) => typeof at === "number");

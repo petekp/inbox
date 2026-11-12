@@ -1192,7 +1192,10 @@ function markLegend(isNextBuild) {
 }
 var HELP_COPY = { open: "Help", close: "✕ Close help", keys: "Keys", marks: "Marks", tabs: "Tabs" };
 var UNDO_KEY = "u";
-var PR_TAB_HELP_KEYS = [{ keys: "g", does: "Rank the PRs again, once a ranked PR changed" }];
+var PR_TAB_HELP_KEYS = [
+  { keys: "g", does: "Rank the PRs again, once a ranked PR changed" },
+  { keys: "m", does: "Clear the merged and closed PRs" }
+];
 function helpKeys(look, isNextBuild, tab, hasStatusButtons) {
   const tabKeys = shownTabs(isNextBuild).map((t) => t.hotkey).join(" ");
   const hasRows = isRowTab(tab);
@@ -2110,7 +2113,7 @@ var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} second
 
 // ../hooks/pr-press.ts
 function isPrPress(p) {
-  return "ref" in p || p.action === "pr-rank-again" || p.action === "pr-refresh";
+  return "ref" in p || p.action === "pr-rank-again" || p.action === "pr-refresh" || p.action === "pr-clear-finished";
 }
 function commentEffect(pr, t) {
   return { kind: "open", target: t.reply?.url || t.url || pr.url, name: "the comment" };
@@ -2169,6 +2172,8 @@ function prRowId(p) {
     return RANK_AGAIN_ID;
   if (p.action === "pr-refresh")
     return PR_REFRESH_ID;
+  if (p.action === "pr-clear-finished")
+    return CLEAR_FINISHED_ID;
   if ("check" in p)
     return checkRowId(p.ref, p.check);
   if ("thread" in p)
@@ -2331,6 +2336,7 @@ function prRefreshFailedText(error) {
 }
 var RANK_AGAIN_ID = "pr:order";
 var PR_REFRESH_ID = "pr:refresh";
+var CLEAR_FINISHED_ID = "pr:finished";
 var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks", cancelled: "Cancelled checks" };
 function prBlockRows(pr, isSettled, rowOf) {
   const threads = isSettled ? [] : waitingThreads(pr).map(rowOf.thread);
@@ -2655,6 +2661,142 @@ function prOrderActions(row) {
       hotkey: "g"
     }
   ]);
+}
+
+// ../hooks/pr-tab.ts
+function threadActions(pr, t, presses) {
+  const row = lastPressOf(presses, threadRowId(pr.ref, t.id));
+  const on = { ref: pr.ref, thread: t.id };
+  return withOut(row, [
+    ...retryAction(prRetryOf(row.last, pr.ref, t.id)),
+    {
+      press: { action: "thread-address", ...on },
+      label: again(row, "thread-address", "Address"),
+      kind: "handoff",
+      emphasis: "primary",
+      hotkey: "a"
+    },
+    {
+      press: { action: "thread-draft", ...on },
+      label: again(row, "thread-draft", "Draft reply"),
+      kind: "talk",
+      emphasis: "normal",
+      hotkey: "r"
+    },
+    {
+      press: { action: "thread-open", ...on },
+      label: "Open comment",
+      kind: "local",
+      emphasis: "normal",
+      icon: "open",
+      hotkey: "o"
+    },
+    {
+      press: { action: "thread-discuss", ...on },
+      label: again(row, "thread-discuss", "Discuss"),
+      kind: "talk",
+      emphasis: "quiet",
+      hotkey: "d",
+      isFollowUp: true
+    }
+  ]);
+}
+function checkActions(pr, c, presses) {
+  const row = lastPressOf(presses, prCheckId(pr, c));
+  const on = { ref: pr.ref, check: checkKey(c) };
+  const isCancelled = c.bucket === "cancelled";
+  const isRunRerunOut = sameRunChecks(pr, c).some((o) => lastPressOf(presses, prCheckId(pr, o)).out === "check-rerun");
+  const mainMove = isCancelled ? rerunEffect(pr, c) ? [
+    {
+      press: { action: "check-rerun", ...on },
+      label: RERUN_LABEL,
+      kind: "local",
+      emphasis: "primary",
+      hotkey: "a"
+    }
+  ] : [] : [
+    {
+      press: { action: "check-fix", ...on },
+      label: again(row, "check-fix", PR_FIX_LABELS["check-fix"]),
+      kind: "handoff",
+      emphasis: "primary",
+      hotkey: "a"
+    }
+  ];
+  const actions = withOut(row, [
+    ...retryAction(prRetryOf(row.last, pr.ref, null, on.check)),
+    ...mainMove,
+    {
+      press: { action: "log", ...on },
+      label: "Open log",
+      kind: "local",
+      emphasis: "normal",
+      icon: "open",
+      hotkey: "o"
+    }
+  ]);
+  return isRunRerunOut ? actions.map((a) => a.press.action === "check-rerun" ? { ...a, isOut: true } : a) : actions;
+}
+function prBlockActions(pr, isThreadSent, branchRef, presses) {
+  const row = lastPressOf(presses, prMarkId(pr.ref));
+  const { status } = readiness(pr, isThreadSent);
+  const waitingOn = threadsOnYou(pr, isThreadSent).length;
+  const moves = [
+    ...status === "ready" ? [
+      {
+        press: { action: "pr-merge", ref: pr.ref },
+        label: again(row, "pr-merge", "Merge"),
+        kind: "handoff"
+      }
+    ] : [],
+    ...pr.state === "OPEN" && pr.mergeable === "CONFLICTING" ? [
+      {
+        press: { action: "pr-conflicts", ref: pr.ref },
+        label: again(row, "pr-conflicts", PR_FIX_LABELS["pr-conflicts"]),
+        kind: "handoff"
+      }
+    ] : [],
+    ...waitingOn > 1 ? [
+      {
+        press: { action: "pr-address-all", ref: pr.ref },
+        label: again(row, "pr-address-all", `Address all ${waitingOn} threads`),
+        kind: "handoff"
+      }
+    ] : []
+  ];
+  return withOut(row, [
+    ...retryAction(prRetryOf(row.last, pr.ref, null)),
+    ...moves.map((m, n) => ({ ...m, emphasis: n === 0 ? "primary" : "normal" })),
+    { press: { action: "pr-open", ref: pr.ref }, label: "Open PR", kind: "local", emphasis: "normal", icon: "open" },
+    ...pr.ref === branchRef ? [] : [
+      {
+        press: { action: "pr-dismiss", ref: pr.ref },
+        label: "Dismiss",
+        kind: "mark",
+        emphasis: "quiet"
+      }
+    ]
+  ]);
+}
+function finishedTabPrs(prState, links) {
+  return splitLinked(prState, links).tracked.filter((ref) => {
+    const view = prState.views[ref];
+    return view !== undefined && view.state !== "OPEN" && ref !== prState.branchRef;
+  });
+}
+function prClearActions(prState, links) {
+  if (finishedTabPrs(prState, links).length === 0)
+    return [];
+  return [
+    {
+      press: { action: "pr-clear-finished" },
+      label: "Clear merged and closed",
+      kind: "mark",
+      emphasis: "normal",
+      hotkey: "m",
+      isOut: false
+    }
+  ];
 }
 
 // ../hooks/action-plan.ts
@@ -3066,128 +3208,13 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown }, sett
     isGhSignedOut: s.prViews.isGhSignedOut === true,
     failure: s.prViews.failure ?? null,
     refresh: prRefreshView({ ...s.prViews, isGhMissing: s.prViews.isGhMissing === true }, s.ledger, { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now }, shownSince),
+    clear: prClearActions(s.prViews, s.ledger),
     pressOutSince
   };
 }
 
 // src/blocks.ts
 var button = (id, label, emphasis, does = { is: "nothing" }, hotkey = null) => ({ id, label, emphasis, isOut: false, hotkey, does });
-
-// ../hooks/pr-tab.ts
-function threadActions(pr, t, presses) {
-  const row = lastPressOf(presses, threadRowId(pr.ref, t.id));
-  const on = { ref: pr.ref, thread: t.id };
-  return withOut(row, [
-    ...retryAction(prRetryOf(row.last, pr.ref, t.id)),
-    {
-      press: { action: "thread-address", ...on },
-      label: again(row, "thread-address", "Address"),
-      kind: "handoff",
-      emphasis: "primary",
-      hotkey: "a"
-    },
-    {
-      press: { action: "thread-draft", ...on },
-      label: again(row, "thread-draft", "Draft reply"),
-      kind: "talk",
-      emphasis: "normal",
-      hotkey: "r"
-    },
-    {
-      press: { action: "thread-open", ...on },
-      label: "Open comment",
-      kind: "local",
-      emphasis: "normal",
-      icon: "open",
-      hotkey: "o"
-    },
-    {
-      press: { action: "thread-discuss", ...on },
-      label: again(row, "thread-discuss", "Discuss"),
-      kind: "talk",
-      emphasis: "quiet",
-      hotkey: "d",
-      isFollowUp: true
-    }
-  ]);
-}
-function checkActions(pr, c, presses) {
-  const row = lastPressOf(presses, prCheckId(pr, c));
-  const on = { ref: pr.ref, check: checkKey(c) };
-  const isCancelled = c.bucket === "cancelled";
-  const isRunRerunOut = sameRunChecks(pr, c).some((o) => lastPressOf(presses, prCheckId(pr, o)).out === "check-rerun");
-  const mainMove = isCancelled ? rerunEffect(pr, c) ? [
-    {
-      press: { action: "check-rerun", ...on },
-      label: RERUN_LABEL,
-      kind: "local",
-      emphasis: "primary",
-      hotkey: "a"
-    }
-  ] : [] : [
-    {
-      press: { action: "check-fix", ...on },
-      label: again(row, "check-fix", PR_FIX_LABELS["check-fix"]),
-      kind: "handoff",
-      emphasis: "primary",
-      hotkey: "a"
-    }
-  ];
-  const actions = withOut(row, [
-    ...retryAction(prRetryOf(row.last, pr.ref, null, on.check)),
-    ...mainMove,
-    {
-      press: { action: "log", ...on },
-      label: "Open log",
-      kind: "local",
-      emphasis: "normal",
-      icon: "open",
-      hotkey: "o"
-    }
-  ]);
-  return isRunRerunOut ? actions.map((a) => a.press.action === "check-rerun" ? { ...a, isOut: true } : a) : actions;
-}
-function prBlockActions(pr, isThreadSent, branchRef, presses) {
-  const row = lastPressOf(presses, prMarkId(pr.ref));
-  const { status } = readiness(pr, isThreadSent);
-  const waitingOn = threadsOnYou(pr, isThreadSent).length;
-  const moves = [
-    ...status === "ready" ? [
-      {
-        press: { action: "pr-merge", ref: pr.ref },
-        label: again(row, "pr-merge", "Merge"),
-        kind: "handoff"
-      }
-    ] : [],
-    ...pr.state === "OPEN" && pr.mergeable === "CONFLICTING" ? [
-      {
-        press: { action: "pr-conflicts", ref: pr.ref },
-        label: again(row, "pr-conflicts", PR_FIX_LABELS["pr-conflicts"]),
-        kind: "handoff"
-      }
-    ] : [],
-    ...waitingOn > 1 ? [
-      {
-        press: { action: "pr-address-all", ref: pr.ref },
-        label: again(row, "pr-address-all", `Address all ${waitingOn} threads`),
-        kind: "handoff"
-      }
-    ] : []
-  ];
-  return withOut(row, [
-    ...retryAction(prRetryOf(row.last, pr.ref, null)),
-    ...moves.map((m, n) => ({ ...m, emphasis: n === 0 ? "primary" : "normal" })),
-    { press: { action: "pr-open", ref: pr.ref }, label: "Open PR", kind: "local", emphasis: "normal", icon: "open" },
-    ...pr.ref === branchRef ? [] : [
-      {
-        press: { action: "pr-dismiss", ref: pr.ref },
-        label: "Dismiss",
-        kind: "mark",
-        emphasis: "quiet"
-      }
-    ]
-  ]);
-}
 
 // src/draw-prs.ts
 var LOOK = "herdr";
@@ -3381,6 +3408,10 @@ function orderLines(screen) {
   const feedback = changed.showsPress ? prFeedback(screen, RANK_AGAIN_ID) : null;
   return [...lines, { kind: "line", id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback }];
 }
+function clearLine(screen) {
+  const buttons = screen.view.prs.clear.map((a, n) => prButton(null, a, `clear ${n}`));
+  return buttons.length === 0 ? [] : [{ kind: "line", id: CLEAR_FINISHED_ID, text: null, under: null, buttons, feedback: null }];
+}
 var ruleBetween = (ref) => ({ kind: "rule", id: `rule ${ref}`, text: null });
 function firstSelectable(blocks) {
   return blocks.find((b) => b.kind === "row" && b.isSelectable)?.id ?? null;
@@ -3400,6 +3431,7 @@ function prTabBlocks(screen, selected) {
   const notice = ghNoticeOf(gh);
   const draw = (open) => [
     ...noticeBlocks(screen, notice),
+    ...clearLine(screen),
     ...orderLines(screen),
     ...prs.drawn.flatMap((d, n) => [...n > 0 ? [ruleBetween(d.pr.ref)] : [], ...prBlocks(screen, d, presses, open)]),
     ...prs.olderText ? [ruleBetween("older prs"), note("older prs", prs.olderText, "muted")] : []
@@ -4185,7 +4217,7 @@ function prEl(b, p) {
 }
 function textLineEl(b, p) {
   const { t } = p;
-  return v_flex2().pl(SPINE).pr(EDGE_X).py(LINE_PAD).child(h_flex2().gap(BUTTON_GAP).items_center().when(b.text !== null, (e) => e.child(div2().flex_1().min_w(0).whitespace_normal().child(b.text ?? ""))).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_none().gap(BUTTON_GAP).children(b.buttons.map((x) => buttonEl(x, p)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
+  return v_flex2().pl(SPINE).pr(EDGE_X).py(LINE_PAD).child(h_flex2().gap(BUTTON_GAP).items_center().child(div2().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_none().gap(BUTTON_GAP).children(b.buttons.map((x) => buttonEl(x, p)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
 var ruleLine = (t) => div2().flex_1().border_t(1).border_color(t.border);
 function headingEl(b, p) {

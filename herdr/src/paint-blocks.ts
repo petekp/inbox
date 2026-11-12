@@ -263,14 +263,12 @@ function textLineEl(b: LineBlock, p: Paint): Element {
       h_flex()
         .gap(BUTTON_GAP)
         .items_center()
-        .when(b.text !== null, e =>
-          e.child(
-            div()
-              .flex_1()
-              .min_w(0)
-              .whitespace_normal()
-              .child(b.text ?? ''),
-          ),
+        .child(
+          div()
+            .flex_1()
+            .min_w(0)
+            .whitespace_normal()
+            .child(b.text ?? ''),
         )
         .when(b.buttons.length > 0, e =>
           e.child(

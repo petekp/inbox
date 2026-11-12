@@ -10,6 +10,7 @@ import {
   PR_REFRESH_ID,
   PR_TONES,
   RANK_AGAIN_ID,
+  CLEAR_FINISHED_ID,
   checkRowText,
   ghNoticeOf,
   isBlockPressShown,
@@ -266,6 +267,15 @@ function orderLines(screen: LookScreen): Block[] {
   return [...lines, { kind: 'line', id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback }]
 }
 
+/** Clear merged and closed, on its own line under the notice and Refresh PRs, with its button at the line's end. */
+function clearLine(screen: LookScreen): Block[] {
+  const buttons = screen.view.prs.clear.map((a, n) => prButton(null, a, `clear ${n}`))
+
+  return buttons.length === 0
+    ? []
+    : [{ kind: 'line', id: CLEAR_FINISHED_ID, text: null, under: null, buttons, feedback: null }]
+}
+
 /** The rule that separates two PRs, from the spine, in the middle of a section's space. */
 const ruleBetween = (ref: string): Block => ({ kind: 'rule', id: `rule ${ref}`, text: null })
 
@@ -290,6 +300,7 @@ export function prTabBlocks(screen: LookScreen, selected: string | null): Block[
   const notice = ghNoticeOf(gh)
   const draw = (open: string | null) => [
     ...noticeBlocks(screen, notice),
+    ...clearLine(screen),
     ...orderLines(screen),
     ...prs.drawn.flatMap((d, n) => [...(n > 0 ? [ruleBetween(d.pr.ref)] : []), ...prBlocks(screen, d, presses, open)]),
     ...(prs.olderText ? [ruleBetween('older prs'), note('older prs', prs.olderText, 'muted')] : []),

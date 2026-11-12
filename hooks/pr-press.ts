@@ -4,7 +4,7 @@ import type { PrActionId, RowPress } from './presses'
 import { isAgain, outAction, pressFeedbackIn, pressOutAction } from './feedback'
 import type { ActionEmphasis } from './rows'
 import type { PressState } from './feedback'
-import { checkRowId, prMarkId, PR_REFRESH_ID, RANK_AGAIN_ID, threadRowId } from './pr-rows'
+import { CLEAR_FINISHED_ID, checkRowId, prMarkId, PR_REFRESH_ID, RANK_AGAIN_ID, threadRowId } from './pr-rows'
 import { failedSibling, isSameRun, runOf } from './pr-checks'
 import { checkKey } from './prs'
 
@@ -19,9 +19,10 @@ export type PrPress =
   /** The tab's own presses, on its lines above the PR blocks. */
   | { action: 'pr-rank-again' }
   | { action: 'pr-refresh' }
+  | { action: 'pr-clear-finished' }
 
 export function isPrPress(p: RowPress | PrPress): p is PrPress {
-  return 'ref' in p || p.action === 'pr-rank-again' || p.action === 'pr-refresh'
+  return 'ref' in p || p.action === 'pr-rank-again' || p.action === 'pr-refresh' || p.action === 'pr-clear-finished'
 }
 
 /**
@@ -128,6 +129,7 @@ export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
 function prRowId(p: PrPress): string {
   if (p.action === 'pr-rank-again') return RANK_AGAIN_ID
   if (p.action === 'pr-refresh') return PR_REFRESH_ID
+  if (p.action === 'pr-clear-finished') return CLEAR_FINISHED_ID
   if ('check' in p) return checkRowId(p.ref, p.check)
   if ('thread' in p) return threadRowId(p.ref, p.thread)
 

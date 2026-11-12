@@ -27,6 +27,7 @@ export type PrActionId =
   | 'pr-refresh'
   | 'pr-dismiss'
   | 'pr-rank-again'
+  | 'pr-clear-finished'
   | 'check-fix'
   | 'check-rerun'
   | 'log'
