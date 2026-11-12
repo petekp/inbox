@@ -3339,14 +3339,7 @@ function orderLines(screen) {
   const feedback = changed.showsPress ? prFeedback(screen, RANK_AGAIN_ID) : null;
   return [...lines, { kind: "line", id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback }];
 }
-var ruleBetween = (ref) => ({
-  kind: "rule",
-  id: `rule ${ref}`,
-  text: null,
-  isDashed: false,
-  depth: 0,
-  isBetweenGroups: true
-});
+var ruleBetween = (ref) => ({ kind: "rule", id: `rule ${ref}`, text: null });
 function firstSelectable(blocks) {
   return blocks.find((b) => b.kind === "row" && b.isSelectable)?.id ?? null;
 }
@@ -3437,12 +3430,10 @@ function rowBlocks(row, isUnfolded) {
   if (row.kind === "part")
     return [
       { kind: "gap", id: `gap ${row.id}` },
-      { kind: "rule", id: row.id, text: row.text, isDashed: false, depth: 0, isBetweenGroups: false }
+      { kind: "rule", id: row.id, text: row.text }
     ];
   if (row.kind === "counts")
-    return [
-      { ...note2(row.id, row.counts.map((c) => `${c.mark} ${c.text}`).join(STALL_GAP), "muted"), depth: row.depth }
-    ];
+    return [{ ...note2(row.id, row.counts.map((c) => `${c.mark} ${c.text}`).join(STALL_GAP), "muted"), depth: row.depth }];
   if (row.kind === "done-fold")
     return [
       {
@@ -3731,7 +3722,7 @@ function rowTabBlocks(screen, ui, tab) {
   }
   const selected = selectedOf(groups, ui.selected);
   return groups.flatMap((g, n) => [
-    ...n > 0 ? [{ kind: "rule", id: `rule ${g.kind}`, text: null, isDashed: false, depth: 0, isBetweenGroups: true }] : [],
+    ...n > 0 ? [{ kind: "rule", id: `rule ${g.kind}`, text: null }] : [],
     ...groupBlocks(g, ui, selected, screen)
   ]);
 }
@@ -4131,13 +4122,15 @@ function rowEl(r, p) {
   ];
   const opacity = opacityOf(r, p);
   const isLeaving = p.motion.get(r.id)?.state === "leaving";
-  const padY = r.depth === 0 ? ROW_PAD_PT : ROW_PAD_PT / 2;
-  return v_flex2().id(`row ${r.id}`).pl(MARK_X + r.depth * NEST).pr(EDGE_X).py(padY).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving) : div2()));
+  const hasControls = r.buttons.length > 0 || r.field !== null;
+  const padTop = r.depth === 0 ? ROW_PAD_PT : ROW_PAD_PT / 2;
+  const padBottom = r.depth === 0 || hasControls ? ROW_PAD_PT : ROW_PAD_PT / 2;
+  return v_flex2().id(`row ${r.id}`).pl(MARK_X + r.depth * NEST).pr(EDGE_X).pt(padTop).pb(padBottom).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving) : div2()));
 }
 function statusEl(s, p) {
   const { t } = p;
   const stall = s.stall ? [div2().flex_none().text_color(colorOf(t, s.stall.tone)).child(`${STALL_GAP}${s.stall.text}`)] : [];
-  return v_flex2().pl(MARK_X + s.depth * NEST).pr(EDGE_X).py(LINE_PAD).child(h_flex2().items_start().child(markEl(s.mark, t)).child(h_flex2().flex_1().min_w(0).flex_wrap().child(div2().when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted)).child(s.name)).children(stall))).children(s.under.map((l) => div2().pl(MARK_W).whitespace_normal().text_color(t.muted).child(l))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W)));
+  return v_flex2().pl(MARK_X + s.depth * NEST).pr(EDGE_X).py(ROW_PAD_PT).child(h_flex2().items_start().child(markEl(s.mark, t)).child(h_flex2().flex_1().min_w(0).flex_wrap().child(div2().when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted)).child(s.name)).children(stall))).children(s.under.map((l) => div2().pl(MARK_W).whitespace_normal().text_color(t.muted).child(l))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W)));
 }
 function prEl(b, p) {
   const { t } = p;
@@ -4150,13 +4143,13 @@ function textLineEl(b, p) {
   const { t } = p;
   return v_flex2().pl(SPINE).pr(EDGE_X).py(LINE_PAD).child(h_flex2().gap(BUTTON_GAP).items_center().when(b.text !== null, (e) => e.child(div2().flex_1().min_w(0).whitespace_normal().child(b.text ?? ""))).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_none().gap(BUTTON_GAP).children(b.buttons.map((x) => buttonEl(x, p)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(lineEl(b.feedback?.text ?? "", colorOf(t, b.feedback?.tone ?? null), 0)));
 }
-var ruleLine = (t, isDashed) => div2().flex_1().border_t(1).when(isDashed, (e) => e.border_dashed()).border_color(t.border);
+var ruleLine = (t) => div2().flex_1().border_t(1).border_color(t.border);
 function headingEl(b, p) {
   const { t } = p;
   const buttons = h_flex2().flex_none().gap(BUTTON_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p)));
   if (b.isLabel)
-    return h_flex2().flex_wrap().pl(SPINE).pr(EDGE_X).pt(8).pb(LINE_PAD).gap(8).items_center().child(div2().text_color(t.muted).child(b.text)).child(ruleLine(t, false).min_w(32)).child(buttons);
-  return h_flex2().pl(MARK_X + b.depth * NEST).pr(EDGE_X).pt(b.depth > 0 ? 12 : 8).pb(LINE_PAD).items_center().child(markEl(b.mark, t)).child(div2().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div2().text_color(t.muted).child(`${SEP}${b.count}`))).child(div2().flex_1()).child(buttons);
+    return h_flex2().flex_wrap().pl(SPINE).pr(EDGE_X).pt(8).pb(LINE_PAD).gap(8).items_center().child(div2().text_color(t.muted).child(b.text)).child(ruleLine(t).min_w(32)).child(buttons);
+  return h_flex2().pl(MARK_X + b.depth * NEST).pr(EDGE_X).pt(b.depth > 0 ? 16 : 8).pb(LINE_PAD).items_center().child(markEl(b.mark, t)).child(div2().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div2().text_color(t.muted).child(`${SEP}${b.count}`))).child(div2().flex_1()).child(buttons);
 }
 function emptyEl(b, p) {
   const { t } = p;
@@ -4173,14 +4166,12 @@ function foldEl(b, p) {
     does: { is: "view", change: b.change }
   };
   const indent = MARK_X + b.depth * NEST + (b.kind === "fold" ? 0 : MARK_W);
-  return h_flex2().id(`fold ${b.id}`).pl(indent).pr(EDGE_X).py(LINE_PAD).items_center().text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(b.text).on_click((_e, cx) => p.press(fold, cx)).when(b.kind === "fold", (e) => e.child(markEl({ text: b.kind === "fold" && b.isOpen ? "▾" : "▸", tone: "muted", isRunning: false }, t))).child(div2().child(b.text));
+  return h_flex2().id(`fold ${b.id}`).pl(indent).pr(EDGE_X).py(ROW_PAD_PT).items_center().text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(b.text).on_click((_e, cx) => p.press(fold, cx)).when(b.kind === "fold", (e) => e.child(markEl({ text: b.kind === "fold" && b.isOpen ? "▾" : "▸", tone: "muted", isRunning: false }, t))).child(div2().child(b.text));
 }
 function ruleEl(b, t) {
-  const indent = SPINE + b.depth * NEST;
   if (b.text === null)
-    return h_flex2().pl(indent).pr(EDGE_X).when(b.isBetweenGroups, (e) => e.pt(SECTION_GAP / 2).pb(8)).child(ruleLine(t, false));
-  const label = div2().flex_none().text_color(t.muted).child(b.text);
-  return h_flex2().pl(indent).pr(EDGE_X).py(12).gap(8).items_center().when(b.isDashed, (e) => e.child(ruleLine(t, true))).child(label).child(ruleLine(t, b.isDashed));
+    return h_flex2().pl(SPINE).pr(EDGE_X).pt(SECTION_GAP / 2).pb(8).child(ruleLine(t));
+  return h_flex2().pl(SPINE).pr(EDGE_X).py(12).gap(8).items_center().child(div2().flex_none().text_color(t.muted).child(b.text)).child(ruleLine(t));
 }
 function noteEl(b, t) {
   const text = div2().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);

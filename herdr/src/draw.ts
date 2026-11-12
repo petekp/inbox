@@ -284,9 +284,7 @@ function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'finding
   const selected = selectedOf(groups, ui.selected)
 
   return groups.flatMap((g, n): Block[] => [
-    ...(n > 0
-      ? [{ kind: 'rule', id: `rule ${g.kind}`, text: null, isDashed: false, depth: 0, isBetweenGroups: true } as const]
-      : []),
+    ...(n > 0 ? [{ kind: 'rule', id: `rule ${g.kind}`, text: null } as const] : []),
     ...groupBlocks(g, ui, selected, screen),
   ])
 }

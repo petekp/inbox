@@ -159,13 +159,16 @@ function rowEl(r: RowBlock, p: Paint): Element {
   ]
   const opacity = opacityOf(r, p)
   const isLeaving = p.motion.get(r.id)?.state === 'leaving'
-  const padY = r.depth === 0 ? ROW_PAD_PT : ROW_PAD_PT / 2
+  const hasControls = r.buttons.length > 0 || r.field !== null
+  const padTop = r.depth === 0 ? ROW_PAD_PT : ROW_PAD_PT / 2
+  const padBottom = r.depth === 0 || hasControls ? ROW_PAD_PT : ROW_PAD_PT / 2
 
   return v_flex()
     .id(`row ${r.id}`)
     .pl(MARK_X + r.depth * NEST)
     .pr(EDGE_X)
-    .py(padY)
+    .pt(padTop)
+    .pb(padBottom)
     .when(opacity !== null, e =>
       e.opacity(opacity ?? 1).transition('opacity', { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: 'ease-out' }),
     )
@@ -188,7 +191,7 @@ function statusEl(s: StatusLine, p: Paint): Element {
   return v_flex()
     .pl(MARK_X + s.depth * NEST)
     .pr(EDGE_X)
-    .py(LINE_PAD)
+    .py(ROW_PAD_PT)
     .child(
       h_flex()
         .items_start()
@@ -281,12 +284,7 @@ function textLineEl(b: LineBlock, p: Paint): Element {
     .when(b.feedback !== null, e => e.child(lineEl(b.feedback?.text ?? '', colorOf(t, b.feedback?.tone ?? null), 0)))
 }
 
-const ruleLine = (t: Theme, isDashed: boolean): Element =>
-  div()
-    .flex_1()
-    .border_t(1)
-    .when(isDashed, e => e.border_dashed())
-    .border_color(t.border)
+const ruleLine = (t: Theme): Element => div().flex_1().border_t(1).border_color(t.border)
 
 /** A group's heading, on the spine or one step in under a PR. A label heading rules the goal's text to its buttons. */
 function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint): Element {
@@ -306,13 +304,13 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint): Element {
       .gap(8)
       .items_center()
       .child(div().text_color(t.muted).child(b.text))
-      .child(ruleLine(t, false).min_w(32))
+      .child(ruleLine(t).min_w(32))
       .child(buttons)
 
   return h_flex()
     .pl(MARK_X + b.depth * NEST)
     .pr(EDGE_X)
-    .pt(b.depth > 0 ? 12 : 8)
+    .pt(b.depth > 0 ? 16 : 8)
     .pb(LINE_PAD)
     .items_center()
     .child(markEl(b.mark, t))
@@ -368,7 +366,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element
     .id(`fold ${b.id}`)
     .pl(indent)
     .pr(EDGE_X)
-    .py(LINE_PAD)
+    .py(ROW_PAD_PT)
     .items_center()
     .text_color(t.muted)
     .hover(s => s.text_color(t.foreground))
@@ -382,27 +380,25 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element
 
 /**
  * A rule from the spine to the right edge. Between groups and between PRs it sits in the middle of a section's space.
- * A Status rule sits between two lines, and a labelled one gives it room above and below.
+ * A labelled one gives its label room above and below.
  */
 function ruleEl(b: Extract<Block, { kind: 'rule' }>, t: Theme): Element {
-  const indent = SPINE + b.depth * NEST
   if (b.text === null)
     return h_flex()
-      .pl(indent)
+      .pl(SPINE)
       .pr(EDGE_X)
-      .when(b.isBetweenGroups, e => e.pt(SECTION_GAP / 2).pb(8))
-      .child(ruleLine(t, false))
-  const label = div().flex_none().text_color(t.muted).child(b.text)
+      .pt(SECTION_GAP / 2)
+      .pb(8)
+      .child(ruleLine(t))
 
   return h_flex()
-    .pl(indent)
+    .pl(SPINE)
     .pr(EDGE_X)
     .py(12)
     .gap(8)
     .items_center()
-    .when(b.isDashed, e => e.child(ruleLine(t, true)))
-    .child(label)
-    .child(ruleLine(t, b.isDashed))
+    .child(div().flex_none().text_color(t.muted).child(b.text))
+    .child(ruleLine(t))
 }
 
 function noteEl(b: Extract<Block, { kind: 'note' }>, t: Theme): Element {

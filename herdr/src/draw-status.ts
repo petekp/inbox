@@ -77,12 +77,10 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
   if (row.kind === 'part')
     return [
       { kind: 'gap', id: `gap ${row.id}` },
-      { kind: 'rule', id: row.id, text: row.text, isDashed: false, depth: 0, isBetweenGroups: false },
+      { kind: 'rule', id: row.id, text: row.text },
     ]
   if (row.kind === 'counts')
-    return [
-      { ...note(row.id, row.counts.map(c => `${c.mark} ${c.text}`).join(STALL_GAP), 'muted'), depth: row.depth },
-    ]
+    return [{ ...note(row.id, row.counts.map(c => `${c.mark} ${c.text}`).join(STALL_GAP), 'muted'), depth: row.depth }]
   if (row.kind === 'done-fold')
     return [
       {

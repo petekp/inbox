@@ -267,14 +267,7 @@ function orderLines(screen: LookScreen): Block[] {
 }
 
 /** The rule that separates two PRs, from the spine, in the middle of a section's space. */
-const ruleBetween = (ref: string): Block => ({
-  kind: 'rule',
-  id: `rule ${ref}`,
-  text: null,
-  isDashed: false,
-  depth: 0,
-  isBetweenGroups: true,
-})
+const ruleBetween = (ref: string): Block => ({ kind: 'rule', id: `rule ${ref}`, text: null })
 
 /** The first row the PRs tab can open, which it opens while the person has opened none of its rows. */
 function firstSelectable(blocks: Block[]): string | null {
