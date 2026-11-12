@@ -92,7 +92,27 @@ Some presses only open or copy something, with no message to the agent: Open a l
 - **Open a file:** in the person's editor, as the other looks do, or in a Herdr pane beside the agent. Herdr ships a `files` mod, but whether it opens one file from props is not checked.
 - **Copy:** GPUI's clipboard write.
 
-The host still records the press's last action, such as "✓ Opened plan.md", so it shows after a reload and in every look. The press file carries the mod's result as `result: { error }`, where `error` is null for a success. When `result` is present, the host's `perform` returns it instead of opening or copying a second time. When it is absent, the host opens or copies as for any other look. `hooks/herdr-app.ts:applyLookPress` does this for every host. Codex's own copy does nothing, because its tab copies, so the look always sends `result` for a Copy.
+The host still records the press's last action, such as "✓ Opened plan.md", so it shows after a reload and in every look. The press file carries the mod's result as `result: { error }`, where `error` is null for a success. When `result` is present, the host's `perform` returns it instead of opening or copying a second time. When it is absent, the host opens or copies as for any other look. `hooks/herdr-app.ts:applyHerdrFile` does this for every host. Codex's own copy does nothing, because its tab copies, so the look always sends `result` for a Copy.
+
+## Looks at the Status
+
+A host counts a subject as seen once a look at the Status showed its row after the subject last changed. A seen subject's finished rows fold, and its was line clears. The Herdr look draws the Status apart from the host, so it reports each look through the press folder, in a look file:
+
+```json
+{ "format": 1, "id": "<new press id>", "look": { "startedAt": 0, "endedAt": 0, "shown": { "<subject id>": 0 } } }
+```
+
+`shown` gives, for each subject, when its row was last on screen during the look. A look file has no `press` and no `pressedAt`, so a host that predates it refuses it as `no pressedAt`, logs one line and deletes it.
+
+Each host applies it with the shared `hooks/herdr-app.ts:applyHerdrFile`, which calls `hooks/status-children.ts:lookReported`:
+
+- A look shorter than `LOOK_MIN_MS` counts nothing, as for every look.
+- A look that ended after the last look counts as `lookEnded` counts it. A subject counts as seen when `shown` says its row was on screen after it last changed.
+- A look that ended by the last look leaves `lastLookAt` where it is. A subject that last look missed counts as seen at the reported look's end, when the reported look showed it after it last changed.
+- The host's own look in progress, as in the Codex tab, stays open.
+- The drain applies a folder's files in time order: a press by `pressedAt`, a look by `endedAt`. A look file sets no `lastHerdrPress`, so the next publish names no press.
+
+The Herdr look writes no look file yet. A subject counted as seen loses its was and merged lines for good, and a finished child row under it leaves the page. So the look must report only rows it can tell were on screen. Telling that needs a probe of the Herdr app's layout first. [Issue #388](https://github.com/petekp/inbox/issues/388) tracks it.
 
 ## Presses that send a message
 

@@ -5,6 +5,7 @@ import {
   childEnded,
   isSubjectSeen,
   lookEnded,
+  lookReported,
   lookStarted,
   LOOK_MIN_MS,
   runningText,
@@ -369,3 +370,32 @@ for (const [kind, focus, drawn] of MALFORMED_FOCUS)
 
     expect(page(named, MIN).rows.flatMap(r => (r.kind === 'child' ? [r.name] : []))).toEqual([drawn])
   })
+
+const TWO = () => after(null, 'NEW: working | Offline mode | queue built\nNEW: queued | Docs | not started', 10 * MIN)!
+const seenIds = (o: SessionStatus) => o.subjects.filter(x => isSubjectSeen(o, x)).map(x => x.id)
+
+test('a reported look counts as seen the subjects it showed after they changed, and keeps the look this host has open', () => {
+  const open = lookStarted(TWO(), 15 * MIN)!
+  const reported = lookReported(open, { startedAt: 20 * MIN, endedAt: 21 * MIN, shown: { s1: 20 * MIN, s2: 5 * MIN } })!
+
+  expect(seenIds(reported)).toEqual(['s1'])
+  expect(reported.lastLookAt).toBe(21 * MIN)
+  expect(reported.look).toEqual({ startedAt: 15 * MIN })
+})
+
+test('a reported look shorter than five seconds counts nothing', () => {
+  const short = { startedAt: 20 * MIN, endedAt: 20 * MIN + LOOK_MIN_MS - 1, shown: { s1: 20 * MIN } }
+
+  expect(seenIds(lookReported(TWO(), short)!)).toEqual([])
+  expect(lookReported(TWO(), { ...short, endedAt: 20 * MIN + LOOK_MIN_MS })!.lastLookAt).toBe(20 * MIN + LOOK_MIN_MS)
+})
+
+test('a reported look that ended before the last look counts the subjects it showed, and leaves the last look when it was', () => {
+  const missed = lookEnded(lookStarted(TWO(), 30 * MIN), 31 * MIN, {})!
+  const late = lookReported(missed, { startedAt: 20 * MIN, endedAt: 21 * MIN, shown: { s1: 20 * MIN } })!
+
+  expect(seenIds(missed)).toEqual([])
+  expect(seenIds(late)).toEqual(['s1'])
+  expect(late.lastLookAt).toBe(31 * MIN)
+  expect(lookReported(missed, { startedAt: 20 * MIN, endedAt: 21 * MIN, shown: { s1: 5 * MIN } })).toBe(missed)
+})

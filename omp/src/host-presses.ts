@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { pressFolder } from '../../hooks/herdr'
 import type { HerdrTarget } from '../../hooks/herdr'
-import type { PressFile } from '../../hooks/herdr-press-file'
+import type { HerdrFile } from '../../hooks/herdr-press-file'
 import { followPresses, isPublishedHere, pressDrainer, pressFileProblem } from '../../hooks/herdr-app'
 import type { PressFiles } from '../../hooks/herdr-app'
 import { sessionIdOf } from './host-context'
@@ -61,7 +61,7 @@ export type OmpPresses = {
  */
 export function ompPresses(
   target: HerdrTarget | null,
-  apply: (ctx: OmpContext, file: PressFile) => Promise<void>,
+  apply: (ctx: OmpContext, file: HerdrFile) => Promise<void>,
   log: (text: string) => void,
 ): OmpPresses {
   let stopFollowing: (() => void) | null = null

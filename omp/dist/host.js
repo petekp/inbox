@@ -1330,6 +1330,23 @@ function lookEnded(o, at, shown) {
   const missed = o.subjects.filter((s) => s.into === null && !isShown(s)).map((s) => [s.id, subjectSeenAt(o, s.id)]);
   return { ...o, lastLookAt: at, missedInLastLook: Object.fromEntries(missed), look: null };
 }
+function lookReported(o, look) {
+  if (o === null)
+    return o;
+  const { startedAt, endedAt, shown } = look;
+  const isLate = o.lastLookAt !== null && endedAt <= o.lastLookAt;
+  if (!isLate) {
+    const ended = lookEnded({ ...o, look: { startedAt } }, endedAt, shown);
+    return ended && { ...ended, look: o.look };
+  }
+  if (endedAt - startedAt < LOOK_MIN_MS)
+    return o;
+  const isShown = (s) => (shown[s.id] ?? -Infinity) >= s.changedAt;
+  const raised = o.subjects.filter((s) => (s.id in o.missedInLastLook) && (o.missedInLastLook[s.id] ?? -Infinity) < endedAt && isShown(s));
+  if (raised.length === 0)
+    return o;
+  return { ...o, missedInLastLook: { ...o.missedInLastLook, ...Object.fromEntries(raised.map((s) => [s.id, endedAt])) } };
+}
 
 // ../hooks/children.ts
 var ACTIVITY_SAVE_MS = 30000;
@@ -9552,6 +9569,9 @@ function lookStartedOn(s, now) {
 function lookEndedOn(s, at, shown) {
   return statusChanged(s, (o) => lookEnded(o, at, shown));
 }
+function lookReportedOn(s, look) {
+  return statusChanged(s, (o) => lookReported(o, look));
+}
 function statusChanged(s, change) {
   const overview = change(s.ledger.overview);
   return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } };
@@ -10797,6 +10817,8 @@ import { appendFile, mkdir as mkdir2, readdir as readdir2, readFile as readFile2
 import { join as join2 } from "path";
 
 // ../hooks/herdr-press-file.ts
+var isLookFile = (file) => ("look" in file);
+var fileTime = (file) => isLookFile(file) ? file.look.endedAt : file.pressedAt;
 var PRESS_TARGETS = {
   answer: "id",
   type: "id",
@@ -10851,6 +10873,14 @@ function resultProblem(result) {
     return null;
   return isRecord(result) && (result.error === null || typeof result.error === "string") ? null : "result without error";
 }
+var isTime = (x) => typeof x === "number" && Number.isFinite(x);
+function lookProblem(look) {
+  if (!isRecord(look) || !isTime(look.startedAt) || !isTime(look.endedAt))
+    return "look without its times";
+  if (look.endedAt < look.startedAt)
+    return "look ends before it starts";
+  return isTimes(look.shown) ? null : "look without shown rows";
+}
 function pressFile(text) {
   let file;
   try {
@@ -10864,6 +10894,10 @@ function pressFile(text) {
     return { ok: false, reason: `unknown format ${String(file.format)}` };
   if (typeof file.id !== "string" || file.id === "")
     return { ok: false, reason: "no id" };
+  if ("look" in file) {
+    const reason = lookProblem(file.look);
+    return reason ? { ok: false, reason } : { ok: true, file };
+  }
   if (typeof file.pressedAt !== "number" || !Number.isFinite(file.pressedAt))
     return { ok: false, reason: "no pressedAt" };
   const reason = pressProblem(file.press) ?? holdsProblem(file.holds) ?? resultProblem(file.result);
@@ -11303,7 +11337,7 @@ function pressDrainer(files, owns, apply, log) {
         });
       }
     }
-    for (const { path, taken, file } of waiting.sort((a, b) => a.file.pressedAt - b.file.pressedAt)) {
+    for (const { path, taken, file } of waiting.sort((a, b) => fileTime(a.file) - fileTime(b.file))) {
       const isTaken = await apply(sessionId, file).catch((err) => {
         log(`Herdr press ${logged(file.id)} failed: ${message(err)}`);
         return true;
@@ -11348,7 +11382,19 @@ function followPresses(drain, wakes, every, log) {
     stopWakes();
   };
 }
-async function applyLookPress(host, file) {
+var LOOK_OUTCOME = {
+  copy: null,
+  error: null,
+  note: null,
+  isUnconfirmed: false,
+  isRowFailed: false,
+  wakesAfterSettle: false
+};
+async function applyHerdrFile(host, file) {
+  if (isLookFile(file)) {
+    await host.update((s) => lookReportedOn(s, file.look));
+    return LOOK_OUTCOME;
+  }
   const { result } = file;
   const outcome = await press(result ? { ...host, perform: async () => result.error } : host, file.press, false, file.holds);
   const lastHerdrPress = { id: file.id, outcome: outcome.note === "stale" ? "stale" : "applied" };
@@ -11502,11 +11548,15 @@ function panelCalls(context, sessions) {
       listeners.set(id, set);
       return () => void set.delete(listener);
     },
-    press: async (ctx, p, holds, look) => {
-      const outcome = await (look ? applyLookPress(hostFor(ctx), look) : press(hostFor(ctx), p, false, holds));
+    press: async (ctx, p, holds) => {
+      const outcome = await press(hostFor(ctx), p, false, holds);
       if (outcome.wakesAfterSettle)
         wakeLater(ctx);
       return outcome;
+    },
+    herdrFile: async (ctx, file) => {
+      if ((await applyHerdrFile(hostFor(ctx), file)).wakesAfterSettle)
+        wakeLater(ctx);
     },
     resume: (ctx) => sendToAgent(ctx, RESUME_TEXT)
   };
@@ -12139,9 +12189,6 @@ function createInbox(pi, deps = defaultDeps) {
     return model ? model.name ?? model.id : null;
   };
   const logHerdr = herdrLog(dir);
-  const applyHerdrPress = async (ctx, file) => {
-    await inbox.press(ctx, file.press, file.holds, file);
-  };
   const context = {
     deps,
     dir,
@@ -12151,7 +12198,7 @@ function createInbox(pi, deps = defaultDeps) {
     listeners: new Map,
     reportToHerdr: herdrReporter(logHerdr),
     logHerdr,
-    presses: ompPresses(deps.herdrTarget, (ctx, file) => applyHerdrPress(ctx, file), logHerdr),
+    presses: ompPresses(deps.herdrTarget, (ctx, file) => inbox.herdrFile(ctx, file), logHerdr),
     run,
     memory: { isGhMissing: false, prShared: NO_PR_SHARED, shownId: null, framesFor: null, shownCwd: null },
     sendToAgent,

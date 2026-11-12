@@ -151,3 +151,29 @@ export function lookEnded(o: SessionStatus | null, at: number, shown: ShownRows)
 
   return { ...o, lastLookAt: at, missedInLastLook: Object.fromEntries(missed), look: null }
 }
+
+/** A look that another program drew and reported once it ended: when it ran, and when each row was last on screen. */
+export type ReportedLook = { startedAt: number; endedAt: number; shown: Record<string, number> }
+
+/**
+ * Counts a reported look as `lookEnded` counts a look, and keeps the look this host has in progress. A look that ended
+ * by `lastLookAt` leaves `lastLookAt` where it is: it moves each subject the last look missed up to its end, when it
+ * showed the subject after the subject last changed.
+ */
+export function lookReported(o: SessionStatus | null, look: ReportedLook): SessionStatus | null {
+  if (o === null) return o
+  const { startedAt, endedAt, shown } = look
+  const isLate = o.lastLookAt !== null && endedAt <= o.lastLookAt
+  if (!isLate) {
+    const ended = lookEnded({ ...o, look: { startedAt } }, endedAt, shown)
+    return ended && { ...ended, look: o.look }
+  }
+  if (endedAt - startedAt < LOOK_MIN_MS) return o
+  const isShown = (s: Subject) => (shown[s.id] ?? -Infinity) >= s.changedAt
+  const raised = o.subjects.filter(
+    s => s.id in o.missedInLastLook && (o.missedInLastLook[s.id] ?? -Infinity) < endedAt && isShown(s),
+  )
+  if (raised.length === 0) return o
+
+  return { ...o, missedInLastLook: { ...o.missedInLastLook, ...Object.fromEntries(raised.map(s => [s.id, endedAt])) } }
+}

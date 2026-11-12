@@ -3,7 +3,9 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import type { PressFile } from '../../hooks/herdr-press-file'
+import type { HerdrFile, PressFile } from '../../hooks/herdr-press-file'
+import { isSubjectSeen } from '../../hooks/status-children'
+import { EMPTY_SESSION_STATUS } from '../../hooks/status-limits'
 import { makeServer } from '../src/server'
 import { followCodexPresses } from '../src/server-herdr'
 import { readState, updateState } from '../src/state'
@@ -46,7 +48,7 @@ test("the server applies presses for this terminal's Codex sessions, at start an
   const applied: [string, string][] = []
   const stop = followCodexPresses(
     { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: appHome, HOME: '/home/person' },
-    async (sessionId: string, file: PressFile) => {
+    async (sessionId: string, file: HerdrFile) => {
       applied.push([sessionId, file.id])
     },
     () => undefined,
@@ -79,7 +81,7 @@ test('a press folder named outside the session-id rule, or a press file too larg
   const logged: string[] = []
   const stop = followCodexPresses(
     { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: appHome, HOME: '/home/person' },
-    async (_sessionId: string, file: PressFile) => {
+    async (_sessionId: string, file: HerdrFile) => {
       applied.push(file.id)
     },
     text => logged.push(text),
@@ -130,7 +132,7 @@ test("a press the look ran itself records the look's result, and each look press
     },
   }))
   const calls: string[][] = []
-  let apply: ((sessionId: string, file: PressFile) => Promise<void>) | null = null
+  let apply: ((sessionId: string, file: HerdrFile) => Promise<void>) | null = null
   makeServer({
     comparePage: '/plugin/dist/compare-page.html',
     dir,
@@ -162,4 +164,46 @@ test("a press the look ran itself records the look's result, and each look press
 
   await apply!('s1', look('p2', { action: 'done', id: 'gone' }))
   assert.deepEqual((await readState(dir, 's1')).lastHerdrPress, { id: 'p2', outcome: 'stale' })
+})
+
+test('a look file the Herdr look wrote counts the Status subjects it showed as seen, and saves no press', async () => {
+  const dir = tempDir()
+  const subject = (id: string) => ({
+    id,
+    name: `Piece ${id}`,
+    status: 'working' as const,
+    text: 'under way',
+    was: null,
+    merged: null,
+    createdAt: 10,
+    changedAt: 10,
+    closedAt: null,
+    into: null,
+  })
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: { ...s.ledger, overview: { ...EMPTY_SESSION_STATUS, subjects: [subject('s1'), subject('s2')] } },
+  }))
+  let apply: ((sessionId: string, file: HerdrFile) => Promise<void>) | null = null
+  makeServer({
+    comparePage: '/plugin/dist/compare-page.html',
+    dir,
+    now: () => 100,
+    exec: async () => ({ code: 0, stdout: '', stderr: '' }),
+    tabHtml: '<html></html>',
+    fallbackCli: async () => 'codex',
+    followHerdrPresses: given => {
+      apply = given
+    },
+  })
+
+  await apply!('s1', { format: 1, id: 'l1', look: { startedAt: 20, endedAt: 20_000, shown: { s1: 20 } } })
+  const looked = await readState(dir, 's1')
+  const overview = looked.ledger.overview!
+
+  assert.deepEqual(
+    overview.subjects.filter(s => isSubjectSeen(overview, s)).map(s => s.id),
+    ['s1'],
+  )
+  assert.equal(looked.lastHerdrPress, undefined)
 })

@@ -17,8 +17,9 @@ import type { PrShared } from '../../hooks/pr-fetch'
 import { press, wakeAfterSettle as wakeSessionAfterSettle } from '../../hooks/host-press'
 import type { SessionHost } from '../../hooks/session-host'
 import { NO_HOLDS } from '../../hooks/timing'
-import { applyLookPress } from '../../hooks/herdr-app'
-import type { PressFile } from '../../hooks/herdr-press-file'
+import { applyHerdrFile } from '../../hooks/herdr-app'
+import { isLookFile } from '../../hooks/herdr-press-file'
+import type { HerdrFile, PressFile } from '../../hooks/herdr-press-file'
 import type { Holds } from '../../hooks/timing'
 import { viewOf } from './core'
 import type { TabView } from './core'
@@ -177,7 +178,7 @@ export function makeSessionHost(
     await syncTurn(id).catch(() => undefined)
     if (!isPrPress(p) && (p.action === 'answer' || p.action === 'type'))
       await linkRunningDialogs(id, p.id).catch(() => undefined)
-    const outcome = await (look ? applyLookPress(hostFor(id), look) : press(hostFor(id), p, thread !== id, holds))
+    const outcome = await (look ? applyHerdrFile(hostFor(id), look) : press(hostFor(id), p, thread !== id, holds))
     if (outcome.wakesAfterSettle)
       setTimeout(() => void wakeAfterSettle(id).catch(() => undefined), SETTLE_WINDOW_MS).unref()
     const { isUnconfirmed, wakesAfterSettle: _wakes, ...rest } = outcome
@@ -187,6 +188,12 @@ export function makeSessionHost(
       ...rest,
       ...(isUnconfirmed ? { delivery: 'unconfirmed' as const } : {}),
     }
+  }
+
+  /** Applies a file the Herdr look wrote: a press, or a look at the Status. */
+  async function onHerdrFile(id: string, file: HerdrFile): Promise<void> {
+    if (isLookFile(file)) await applyHerdrFile(hostFor(id), file)
+    else await onPress(id, file.press, id, file.holds, file)
   }
 
   const files: PathProbe = {
@@ -199,5 +206,5 @@ export function makeSessionHost(
   }
   const open = (s: SessionState, target: string) => openTarget(deps.exec, files, target, s.root, s.home)
 
-  return { wakeAfterSettle, fetchPrsWhenDue, served, onPress }
+  return { wakeAfterSettle, fetchPrsWhenDue, served, onPress, onHerdrFile }
 }

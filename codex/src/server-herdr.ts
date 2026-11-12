@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { herdrTarget } from '../../hooks/herdr'
-import type { PressFile } from '../../hooks/herdr-press-file'
+import type { HerdrFile } from '../../hooks/herdr-press-file'
 import { followPresses, isPublishedHere, pressDrainer, pressFileProblem } from '../../hooks/herdr-app'
 import type { PressFiles } from '../../hooks/herdr-app'
 import { isSessionFile } from '../../hooks/session-files'
@@ -32,7 +32,7 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
  */
 export function followCodexPresses(
   env: NodeJS.ProcessEnv,
-  apply: (sessionId: string, file: PressFile) => Promise<void>,
+  apply: (sessionId: string, file: HerdrFile) => Promise<void>,
   log: (text: string) => void,
 ): (() => void) | null {
   const target = herdrTarget(env)

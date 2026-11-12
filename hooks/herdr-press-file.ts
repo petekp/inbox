@@ -1,6 +1,7 @@
 import { HERDR_FORMAT } from './herdr'
 import type { PrPress } from './pr-press'
 import type { RowPress } from './presses'
+import type { ReportedLook } from './status-children'
 import type { Holds } from './timing'
 
 /** A press the Herdr look made, with the look's holds, which `press()` needs to tell a stale press. */
@@ -16,6 +17,17 @@ export type PressFile = {
    */
   result?: { error: string | null }
 }
+
+/** A look at the Status the Herdr look drew, written once the look ended. It has no press. */
+type LookFile = { format: typeof HERDR_FORMAT; id: string; look: ReportedLook }
+
+/** A file the Herdr look writes to a session's press folder. */
+export type HerdrFile = PressFile | LookFile
+
+export const isLookFile = (file: HerdrFile): file is LookFile => 'look' in file
+
+/** When a file's press was made, or its look ended, so a host applies a folder's files in that order. */
+export const fileTime = (file: HerdrFile) => (isLookFile(file) ? file.look.endedAt : file.pressedAt)
 
 /** The field that names what each press acts on: a row's `id`, a PR's `ref`, or none for the PRs tab's own buttons. */
 const PRESS_TARGETS: Record<RowPress['action'] | PrPress['action'], 'id' | 'ref' | null> = {
@@ -80,8 +92,21 @@ function resultProblem(result: unknown): string | null {
   return isRecord(result) && (result.error === null || typeof result.error === 'string') ? null : 'result without error'
 }
 
-/** A press file's text, read and checked. The look does not report list use, so none holds a row. `reason` says why a file was refused. */
-export function pressFile(text: string): { ok: true; file: PressFile } | { ok: false; reason: string } {
+const isTime = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x)
+
+/** Why `look` is not a look the Herdr look reports, or null when it is one. */
+function lookProblem(look: unknown): string | null {
+  if (!isRecord(look) || !isTime(look.startedAt) || !isTime(look.endedAt)) return 'look without its times'
+  if (look.endedAt < look.startedAt) return 'look ends before it starts'
+
+  return isTimes(look.shown) ? null : 'look without shown rows'
+}
+
+/**
+ * A press file's text, read and checked: a press, or a look the Herdr look reports. The look does not report list use,
+ * so no press holds a row. `reason` says why a file was refused.
+ */
+export function pressFile(text: string): { ok: true; file: HerdrFile } | { ok: false; reason: string } {
   let file: unknown
   try {
     file = JSON.parse(text)
@@ -91,6 +116,10 @@ export function pressFile(text: string): { ok: true; file: PressFile } | { ok: f
   if (!isRecord(file)) return { ok: false, reason: 'not an object' }
   if (file.format !== HERDR_FORMAT) return { ok: false, reason: `unknown format ${String(file.format)}` }
   if (typeof file.id !== 'string' || file.id === '') return { ok: false, reason: 'no id' }
+  if ('look' in file) {
+    const reason = lookProblem(file.look)
+    return reason ? { ok: false, reason } : { ok: true, file: file as LookFile }
+  }
   if (typeof file.pressedAt !== 'number' || !Number.isFinite(file.pressedAt))
     return { ok: false, reason: 'no pressedAt' }
   const reason = pressProblem(file.press) ?? holdsProblem(file.holds) ?? resultProblem(file.result)
