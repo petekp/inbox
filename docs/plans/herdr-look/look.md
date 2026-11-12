@@ -47,7 +47,7 @@ The look draws the buttons each shared plan lists, in the plan's order. It style
 | `statusKeyPlan` | The View button on a Status subject |
 | `helpKeys(look)` | The Help page's key list |
 
-Emphasis maps to Herdr's own button styles. `primary` uses `solid` and `solid_foreground`, the colors Herdr's primary buttons use. `normal` is `raised` with a `border`. `quiet` is text only. A whole button takes clicks, with `on_click` on its outer element and `cursor_pointer`. Each button sets `accessibility_label` to its full label.
+Emphasis maps to Herdr's own button styles. `primary` uses `solid` and `solid_foreground`, the colors Herdr's primary buttons use. `normal` is `raised` with a `border`. `quiet` is text only. A whole button takes clicks, with `on_click` on its outer element. Every control keeps the default arrow cursor, as in the Codex tab, though Herdr's own mods show a hand. A text field keeps the cursor its `Input` draws. Each button sets `accessibility_label` to its full label.
 
 Text uses Herdr's UI font, so `rowTitle(r, 'herdr')` follows the desktop look's rules rather than the terminal's.
 

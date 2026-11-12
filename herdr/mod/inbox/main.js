@@ -4080,7 +4080,7 @@ var helpButton = (isHelpShown) => ({
 function tabsEl(tabs, status, isHelpShown, p) {
   const { t } = p;
   const help = helpButton(isHelpShown);
-  return h_flex().flex_none().flex_wrap().px(12).pt(12).gap(4).items_center().children(tabs.map((tab) => h_flex().id(`tab ${tab.id}`).px(12).py(6).items_center().rounded(6).cursor_pointer().accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div().ml(6).font_semibold().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div().flex_1()).when(status !== null, (e) => e.child(div().px(4).text_size(SMALL_TEXT).text_color(t.muted).child(status ?? ""))).child(h_flex().id("help").px(6).rounded(5).text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(help.label));
+  return h_flex().flex_none().flex_wrap().px(12).pt(12).gap(4).items_center().children(tabs.map((tab) => h_flex().id(`tab ${tab.id}`).px(12).py(6).items_center().rounded(6).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(tab.isSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!tab.isSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div().ml(6).font_semibold().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? ""))))).child(div().flex_1()).when(status !== null, (e) => e.child(div().px(4).text_size(SMALL_TEXT).text_color(t.muted).child(status ?? ""))).child(h_flex().id("help").px(6).rounded(5).text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground)).accessibility_label(help.label).on_click((_e, cx) => p.press(help, cx)).child(help.label));
 }
 function bannerEl(b, t, buttons = [], under = null) {
   const tone = colorOf(t, b.tone);
@@ -4104,7 +4104,7 @@ function buttonEl(b, p, isInert = false) {
     return styled.opacity(0.4);
   if (isInert)
     return styled;
-  return styled.cursor_pointer().on_click((_e, cx) => {
+  return styled.on_click((_e, cx) => {
     cx.stop_propagation();
     p.press(b, cx);
   });
@@ -4138,7 +4138,7 @@ function rowEl(r, p) {
   const opacity = opacityOf(r, p);
   const isLeaving = p.motion.get(r.id)?.state === "leaving";
   const padY = r.depth === 0 ? ROW_PAD_PT : ROW_PAD_PT / 2;
-  return v_flex2().id(`row ${r.id}`).pl(MARK_X + r.depth * CLOSED_STEP).pr(EDGE_X).py(padY).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving) : div2()));
+  return v_flex2().id(`row ${r.id}`).pl(MARK_X + r.depth * CLOSED_STEP).pr(EDGE_X).py(padY).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", { duration: isLeaving ? EXIT_MS : ENTER_MS, easing: "ease-out" })).when(r.isSelected, (e) => e.bg(t.selected)).when(r.isSelectable && !r.isSelected && !isLeaving, (e) => e.hover((s) => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx))).child(line).children(lines.map((l) => bodyLineEl(l, t))).when(r.buttons.length > 0, (e) => e.child(buttonsEl(r.buttons, p, MARK_W, isLeaving))).when(r.field !== null, (e) => e.child(r.field ? fieldEl(r.field, p, MARK_W, isLeaving) : div2()));
 }
 function statusEl(s, p) {
   const { t } = p;
@@ -4178,7 +4178,7 @@ function foldEl(b, p) {
     does: { is: "view", change: b.change }
   };
   const indent = b.kind === "fold" ? MARK_X + b.depth * STATUS_STEP : MARK_X + b.depth * CLOSED_STEP + MARK_W;
-  return h_flex2().id(`fold ${b.id}`).pl(indent).pr(EDGE_X).py(2).when("closedFold" in b.change, (e) => e.mt(8)).items_center().text_color(t.muted).cursor_pointer().hover((s) => s.text_color(t.foreground)).accessibility_label(b.text).on_click((_e, cx) => p.press(fold, cx)).when(b.kind === "fold", (e) => e.child(markEl({ text: b.kind === "fold" && b.isOpen ? "▾" : "▸", tone: "muted", isRunning: false }, t))).child(div2().child(b.text));
+  return h_flex2().id(`fold ${b.id}`).pl(indent).pr(EDGE_X).py(2).when("closedFold" in b.change, (e) => e.mt(8)).items_center().text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(b.text).on_click((_e, cx) => p.press(fold, cx)).when(b.kind === "fold", (e) => e.child(markEl({ text: b.kind === "fold" && b.isOpen ? "▾" : "▸", tone: "muted", isRunning: false }, t))).child(div2().child(b.text));
 }
 function ruleEl(b, t) {
   const indent = TEXT_X + b.depth * STATUS_STEP;

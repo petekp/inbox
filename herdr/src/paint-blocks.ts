@@ -55,7 +55,7 @@ function buttonEl(b: Button, p: Paint, isInert = false): Element {
   if (b.isOut) return styled.opacity(0.4)
   if (isInert) return styled
 
-  return styled.cursor_pointer().on_click((_e, cx) => {
+  return styled.on_click((_e, cx) => {
     cx.stop_propagation()
     p.press(b, cx)
   })
@@ -161,10 +161,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
     )
     .when(r.isSelected, e => e.bg(t.selected))
     .when(r.isSelectable && !r.isSelected && !isLeaving, e =>
-      e
-        .cursor_pointer()
-        .hover(s => s.bg(t.hover))
-        .on_click((_e, cx) => p.select(r.id, cx)),
+      e.hover(s => s.bg(t.hover)).on_click((_e, cx) => p.select(r.id, cx)),
     )
     .child(line)
     .children(lines.map(l => bodyLineEl(l, t)))
@@ -364,7 +361,6 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element
     .when('closedFold' in b.change, e => e.mt(8))
     .items_center()
     .text_color(t.muted)
-    .cursor_pointer()
     .hover(s => s.text_color(t.foreground))
     .accessibility_label(b.text)
     .on_click((_e, cx) => p.press(fold, cx))
