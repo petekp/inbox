@@ -116,17 +116,30 @@ function PrOrderLines({ v, order }: { v: View; order: PrOrderView }) {
   )
 }
 
-/** The line under the notices while a PR could not be read: which ones, Refresh PRs, and its press status. */
-function PrRefreshLine({ v, refresh }: { v: View; refresh: PrRefreshView }) {
-  const keys = refresh.actions.map(a => ({
+/** Refresh PRs, as `prRefreshView` lists it, with its press running the refresh. */
+function refreshKeys(refresh: PrRefreshView): Key[] {
+  return refresh.actions.map(a => ({
     ...tabKey(PR_REFRESH_ID, a),
     run: () => void act(PR_REFRESH_ID, a.press, undefined, pendingLocal(PR_REFRESH)),
   }))
+}
+
+function PrRefreshStatus({ v, refresh }: { v: View; refresh: PrRefreshView }) {
   const last = pressLine(v, PR_REFRESH_ID, refresh.showsPress)
+
+  return last ? <PrLine line={last} /> : null
+}
+
+/**
+ * The line under the notices while a PR could not be read: which ones, with Refresh PRs at its right end, and its
+ * press status. While a notice names the cause, the notice holds Refresh PRs instead (see `Prs`).
+ */
+function PrRefreshLine({ v, refresh }: { v: View; refresh: PrRefreshView }) {
+  const keys = refreshKeys(refresh)
 
   return (
     <section class="pr-order">
-      <div class="pr-order-changed">
+      <div class="pr-order-changed pr-refresh-line">
         {refresh.text ? <span>{refresh.text}</span> : null}
         {keys.length > 0 ? (
           <span class="pr-actions keys">
@@ -136,7 +149,7 @@ function PrRefreshLine({ v, refresh }: { v: View; refresh: PrRefreshView }) {
           </span>
         ) : null}
       </div>
-      {last ? <PrLine line={last} /> : null}
+      <PrRefreshStatus v={v} refresh={refresh} />
     </section>
   )
 }
@@ -285,14 +298,22 @@ export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
       </main>
     )
 
+  const isRefreshInBanner = ghNotice !== null && v.prs.refresh !== null && v.prs.refresh.text === null
+  const refresh = v.prs.refresh
+
   return (
     <main>
       {ghNotice ? (
         <div class="banner-place">
-          <Banner banner={bannerOf(ghNotice.kind, ghNotice.text)} />
+          <Banner
+            banner={bannerOf(ghNotice.kind, ghNotice.text)}
+            {...(isRefreshInBanner && refresh
+              ? { keys: refreshKeys(refresh), under: <PrRefreshStatus v={v} refresh={refresh} /> }
+              : {})}
+          />
         </div>
       ) : null}
-      {v.prs.refresh ? <PrRefreshLine v={v} refresh={v.prs.refresh} /> : null}
+      {refresh && !isRefreshInBanner ? <PrRefreshLine v={v} refresh={refresh} /> : null}
       {v.prs.order ? <PrOrderLines v={v} order={v.prs.order} /> : null}
       {prs.blocks.map(b => (
         <PrEntry key={prMarkId(b.pr.ref)} b={b} v={v} prs={prs} now={now} />

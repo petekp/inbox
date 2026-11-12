@@ -144,6 +144,18 @@ nav > .banner {
 .banner-place {
   padding: 12px 12px 0;
 }
+.banner-text {
+  flex: 1;
+  min-width: 0;
+}
+.banner-keys {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+.banner .pr-last {
+  padding: 0;
+}
 .banner .key {
   flex: none;
   white-space: nowrap;
