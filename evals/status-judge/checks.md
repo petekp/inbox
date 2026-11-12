@@ -204,7 +204,7 @@ When the session drops one plan for another, the row shows the plan it replaced 
 
 Compare each was line with the facts' `Plan changed; it was …` and `Merged into it: …` for that row's piece.
 
-A row needs a was line when the facts give its piece a plan change or a merge, and the row sits above the Seen line or the facts say the piece changed at this step.
+A row needs a was line when the facts give its piece a plan change or a merge, and the piece changed since the person last looked or the facts say the piece changed at this step.
 
 The check passes when every was line names the plan that the facts say was replaced, or the piece that the facts say merged in, by its short name, and every row that needs a was line has one. The check passes when the page has no was lines and no row needs one.
 
