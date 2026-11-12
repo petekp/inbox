@@ -9,7 +9,10 @@ import { feedbackText } from '../../hooks/feedback'
 import { firstWaiting, listWaits } from '../../hooks/action-plan'
 import { QUEUED_AFTER_MS } from '../../hooks/timing'
 import { rowHandle, settledLabel, settledMark } from '../../hooks/rows'
-import { notePrompt, viewOf } from '../src/core'
+import { endTurn, notePrompt, viewOf } from '../src/core'
+import { emptyState } from '../src/state'
+import { withFetchedPrs } from '../../hooks/session-presses'
+import type { PrView } from '../../types'
 import { SETTLE_WINDOW_MS } from '../src/settle'
 import type { SessionState } from '../src/state'
 import { CODEX } from '../src/texts'
@@ -21,7 +24,7 @@ test('a fetch that finds tab PRs merged settles each but the branch’s own as M
   const inState = (state: 'OPEN' | 'MERGED') =>
     Object.fromEntries(refs.map(ref => [ref, { ...d.prViews.views[ref]!, state }]))
   const before = { ...d, lastActions: {}, prViews: { ...d.prViews, views: inState('OPEN') } }
-  const r = withFinishedPrsSettled(before, inState('MERGED'), { now: 200, turnsStarted: 0 })
+  const r = withFinishedPrsSettled(before, inState('MERGED'), d.prViews.branchRef, { now: 200, turnsStarted: 0 })
   assert.deepEqual(r.ledger.prs, ['acme/visor#31'])
   assert.deepEqual(
     Object.entries(r.lastActions).map(([id, l]) => [id, l.kind, l.action, l.text]),
@@ -36,6 +39,72 @@ test('a fetch that finds tab PRs merged settles each but the branch’s own as M
   const undone = applyPrPress(r.ledger, prViews, r.lastActions, { action: 'pr-undo', ref: 'acme/visor#29' }, ctx)
   assert.ok(!('stale' in undone))
   assert.deepEqual(undone.ledger.prs, ['acme/visor#31', 'acme/visor#29'])
+})
+
+const SETTLE_NOW = 200
+
+function withDemoPrs(states: Record<string, PrView['state']>, branchRef: string | null): SessionState {
+  const d = demoView(100, 'Codex')
+  const s = emptyState('s1')
+  const views = Object.fromEntries(
+    Object.entries(d.prViews.views).map(([ref, view]) => [ref, { ...view, state: states[ref] ?? view.state }]),
+  )
+
+  return { ...s, ledger: { ...s.ledger, prs: d.ledger.prs }, prViews: { ...d.prViews, branchRef, views } }
+}
+
+function fetchedAs(s: SessionState, states: Record<string, PrView['state']>, branchRef: string | null): SessionState {
+  const fetched = Object.fromEntries(
+    Object.entries(states).map(([ref, state]) => [ref, { ...s.prViews.views[ref]!, state }]),
+  )
+
+  return withFetchedPrs(s, fetched, branchRef, false, SETTLE_NOW)
+}
+
+function undone(s: SessionState, ref: string): SessionState {
+  const r = applyPrPress(
+    s.ledger,
+    s.prViews,
+    s.lastActions,
+    { action: 'pr-undo', ref },
+    { now: SETTLE_NOW, turnsStarted: 0 },
+  )
+  assert.ok(!('stale' in r))
+  const lastActions = { ...s.lastActions }
+  for (const id of r.drop ?? []) delete lastActions[id]
+
+  return { ...s, ledger: r.ledger ?? s.ledger, lastActions }
+}
+
+const PR_29_URL = 'https://github.com/acme/visor/pull/29'
+const PR_31_URL = 'https://github.com/acme/visor/pull/31'
+
+test('a reply that names a PR a fetch settled as Merged leaves it off the PRs tab', () => {
+  const settled = fetchedAs(withDemoPrs({}, 'acme/visor#31'), { 'acme/visor#29': 'MERGED' }, 'acme/visor#31')
+  assert.equal(settled.lastActions['pr:acme/visor#29']?.text, 'Merged')
+
+  const replied = endTurn(settled, `${PR_29_URL} merged.`, SETTLE_NOW)
+  assert.deepEqual(replied.ledger.prs, ['acme/visor#31', 'acme/visor#33'])
+})
+
+test('once a fetch finds the branch has another PR or none, its old merged PR settles as Merged if the session linked it', () => {
+  const merged = withDemoPrs({ 'acme/visor#31': 'MERGED' }, 'acme/visor#31')
+  const r = fetchedAs(merged, {}, null)
+  assert.deepEqual(r.ledger.prs, ['acme/visor#29', 'acme/visor#33'])
+  assert.equal(r.lastActions['pr:acme/visor#31']?.text, 'Merged')
+
+  const unlinked = { ...merged, ledger: { ...merged.ledger, prs: ['acme/visor#29', 'acme/visor#33'] } }
+  assert.equal(fetchedAs(unlinked, {}, 'acme/visor#29').lastActions['pr:acme/visor#31'], undefined)
+})
+
+test('a PR the person keeps with Undo stays on the PRs tab through a reply that names it and a later fetch', () => {
+  const first = fetchedAs(withDemoPrs({}, 'acme/visor#31'), { 'acme/visor#29': 'MERGED' }, 'acme/visor#31')
+  const kept = endTurn(undone(first, 'acme/visor#29'), `${PR_29_URL} merged.`, SETTLE_NOW)
+  assert.deepEqual(fetchedAs(kept, {}, 'acme/visor#31').ledger.prs, ['acme/visor#31', 'acme/visor#33', 'acme/visor#29'])
+
+  const moved = fetchedAs(withDemoPrs({ 'acme/visor#31': 'MERGED' }, 'acme/visor#31'), {}, null)
+  const keptBranchPr = endTurn(undone(moved, 'acme/visor#31'), `${PR_31_URL} merged.`, SETTLE_NOW)
+  assert.deepEqual(fetchedAs(keptBranchPr, {}, null).ledger.prs, ['acme/visor#29', 'acme/visor#33', 'acme/visor#31'])
 })
 
 test('Clear merged and closed dismisses every merged and closed PR but the branch’s own, each with its own Undo, and is stale once none is left', () => {

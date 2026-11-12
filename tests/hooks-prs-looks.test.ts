@@ -89,7 +89,7 @@ for (const look of ['terminal', 'desktop'] as const) {
 }
 
 for (const look of ['terminal', 'desktop'] as const) {
-  test(`in the ${look} look, Clear merged and closed draws above the PR blocks while the agent links a merged and a closed PR again, and settles each with its own Undo`, async ($, on) => {
+  test(`in the ${look} look, a reply that names a settled PR leaves it settled${look === 'terminal' ? ', and Clear merged and closed draws above the PR blocks once Undo keeps a merged and a closed PR, and settles each with its own Undo' : ''}`, async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
     world($, on, [])
     const states: Record<number, string> = { 12: 'OPEN', 14: 'OPEN', 15: 'OPEN' }
@@ -156,6 +156,14 @@ for (const look of ['terminal', 'desktop'] as const) {
     await clock.settle()
     expect(linked()).toEqual(['acme/greet#15'])
     await answer(`${url(12)} merged and ${url(14)} closed.`, 't2')
+    expect(linked()).toEqual(['acme/greet#15'])
+    expect(await buttonKeys()).not.toContain('clear-finished-prs')
+    if (look === 'desktop') return
+    for (const ref of ['acme/greet#12', 'acme/greet#14']) {
+      await clock.advance(PRESS_GUARD_MS)
+      await pane.press({ key: `undo-pr:${ref}` })
+      await clock.settle()
+    }
     expect(linked()).toEqual(['acme/greet#15', 'acme/greet#12', 'acme/greet#14'])
     const keys = await buttonKeys()
     expect(keys.filter(k => k === 'clear-finished-prs')).toHaveLength(1)
@@ -168,7 +176,6 @@ for (const look of ['terminal', 'desktop'] as const) {
     expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
     expect(await pane.find({ key: 'settled-pr:acme/greet#14' })).toBeDefined()
     expect(await buttonKeys()).not.toContain('clear-finished-prs')
-    if (look === 'desktop') return
     await clock.advance(PRESS_GUARD_MS)
     await pane.press({ key: 'undo-pr:acme/greet#12' })
     await clock.settle()

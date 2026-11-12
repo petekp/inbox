@@ -5395,8 +5395,13 @@ function prClearActions(prState, links) {
     }
   ];
 }
-function withFinishedPrsSettled(s, fetched, ctx) {
-  const finished = Object.values(fetched).filter((pr) => pr.state !== "OPEN" && s.prViews.views[pr.ref]?.state === "OPEN" && pr.ref !== s.prViews.branchRef && tabPrs(s.ledger).includes(pr.ref));
+function withFinishedPrsSettled(s, fetched, branchRef, ctx) {
+  const firstFoundFinished = Object.values(fetched).filter((pr) => pr.state !== "OPEN" && s.prViews.views[pr.ref]?.state === "OPEN" && pr.ref !== s.prViews.branchRef && tabPrs(s.ledger).includes(pr.ref));
+  const views = { ...s.prViews.views, ...fetched };
+  const oldBranchRef = s.prViews.branchRef !== branchRef ? s.prViews.branchRef : null;
+  const oldBranchPr = oldBranchRef === null ? undefined : views[oldBranchRef];
+  const isOldBranchPrFinished = oldBranchPr !== undefined && oldBranchPr.state !== "OPEN" && splitLinked({ views }, s.ledger).tracked.includes(oldBranchPr.ref);
+  const finished = isOldBranchPrFinished ? [...firstFoundFinished, oldBranchPr] : firstFoundFinished;
   if (finished.length === 0)
     return { ledger: s.ledger, lastActions: s.lastActions };
   const lasts = finished.map((pr) => {
@@ -6491,7 +6496,10 @@ function pruned(s) {
 function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now, failure = null, unread = {}) {
   const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true;
   const views = { ...s.prViews.views, ...fetched };
-  const { ledger, lastActions } = withFinishedPrsSettled(s, fetched, { now, turnsStarted: s.presence.turnsStarted });
+  const { ledger, lastActions } = withFinishedPrsSettled(s, fetched, branchRef, {
+    now,
+    turnsStarted: s.presence.turnsStarted
+  });
   const stillUnread = Object.fromEntries(Object.entries(unread).filter(([ref]) => !(ref in views)));
   return {
     ...s,
@@ -9075,7 +9083,7 @@ function noteCommandOutput(s, command, output) {
   return ledger === noted.ledger ? noted : { ...noted, ledger };
 }
 function endTurn(host, s, reply, isOpen, { tab = null, queuesEmptyReply = false } = {}) {
-  const refs = prRefs(reply);
+  const refs = prRefs(reply).filter((ref) => !isDismissed(s.lastActions, ref));
   const base = {
     ...s,
     ledger: refs.length > 0 ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs) } : s.ledger,

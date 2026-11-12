@@ -248,20 +248,30 @@ export function prClearActions(prState: PrViews, links: PrLinks): PrAction[] {
 /**
  * The session after a fetch: each tab PR the fetch first finds merged or closed leaves the tab as Dismiss would take
  * it, so its block settles with "Merged" or "Closed" and offers Undo, which keeps it on the tab. Nothing waits on the
- * person for a finished PR. The branch's own PR stays, since the tab shows it while the branch has it.
+ * person for a finished PR. The branch's own PR stays while the branch has it. Once a fetch finds the branch has
+ * another PR or none, the old one settles the same way if it is finished and the tab still tracks it.
  */
 export function withFinishedPrsSettled(
   s: Pick<Session, 'ledger' | 'prViews' | 'lastActions'>,
   fetched: PrViews['views'],
+  branchRef: string | null,
   ctx: { now: number; turnsStarted: number },
 ): { ledger: Ledger; lastActions: Record<string, LastAction> } {
-  const finished = Object.values(fetched).filter(
+  const firstFoundFinished = Object.values(fetched).filter(
     pr =>
       pr.state !== 'OPEN' &&
       s.prViews.views[pr.ref]?.state === 'OPEN' &&
       pr.ref !== s.prViews.branchRef &&
       tabPrs(s.ledger).includes(pr.ref),
   )
+  const views = { ...s.prViews.views, ...fetched }
+  const oldBranchRef = s.prViews.branchRef !== branchRef ? s.prViews.branchRef : null
+  const oldBranchPr = oldBranchRef === null ? undefined : views[oldBranchRef]
+  const isOldBranchPrFinished =
+    oldBranchPr !== undefined &&
+    oldBranchPr.state !== 'OPEN' &&
+    splitLinked({ views }, s.ledger).tracked.includes(oldBranchPr.ref)
+  const finished = isOldBranchPrFinished ? [...firstFoundFinished, oldBranchPr] : firstFoundFinished
   if (finished.length === 0) return { ledger: s.ledger, lastActions: s.lastActions }
   const lasts = finished.map(pr => {
     const id = prMarkId(pr.ref)

@@ -2187,6 +2187,9 @@ function dismissal(lastActions, ref) {
 function dismissedAt(lastActions, ref) {
   return dismissal(lastActions, ref)?.at ?? null;
 }
+function isDismissed(lastActions, ref) {
+  return dismissedAt(lastActions, ref) !== null;
+}
 function isViewKept(prState, links, lastActions, ref, shownSince) {
   const at = dismissedAt(lastActions, ref);
   return keepsView(prState, links, ref) || at !== null && isShownSince(at, shownSince);
@@ -3149,7 +3152,7 @@ function noteCommandOutput(s, command, output) {
   return ledger === noted.ledger ? noted : { ...noted, ledger };
 }
 function endTurn(host, s, reply, isOpen2, { tab = null, queuesEmptyReply = false } = {}) {
-  const refs = prRefs(reply);
+  const refs = prRefs(reply).filter((ref) => !isDismissed(s.lastActions, ref));
   const base = {
     ...s,
     ledger: refs.length > 0 ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs) } : s.ledger,
