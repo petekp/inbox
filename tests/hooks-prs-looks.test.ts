@@ -89,7 +89,7 @@ for (const look of ['terminal', 'desktop'] as const) {
 }
 
 for (const look of ['terminal', 'desktop'] as const) {
-  test(`in the ${look} look, a reply that names a settled PR leaves it settled${look === 'terminal' ? ', and Clear merged and closed draws above the PR blocks once Undo keeps a merged and a closed PR, and settles each with its own Undo' : ''}`, async ($, on) => {
+  test(`in the ${look} look, a reply that names a settled PR leaves it settled and starts no fetch${look === 'terminal' ? ', and Clear merged and closed draws above the PR blocks once Undo keeps a merged and a closed PR, and settles each with its own Undo' : ''}`, async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
     world($, on, [])
     const states: Record<number, string> = { 12: 'OPEN', 14: 'OPEN', 15: 'OPEN' }
@@ -155,8 +155,12 @@ for (const look of ['terminal', 'desktop'] as const) {
     await show('prs')
     await clock.settle()
     expect(linked()).toEqual(['acme/greet#15'])
+    const ghCalls: string[] = []
+    w.ghAnswers.unshift({ match: argv => (argv[0] === 'gh' && ghCalls.push(argv.join(' ')), false), stdout: '' })
     await answer(`${url(12)} merged and ${url(14)} closed.`, 't2')
     expect(linked()).toEqual(['acme/greet#15'])
+    expect(ghCalls).toEqual([])
+    w.ghAnswers.shift()
     expect(await buttonKeys()).not.toContain('clear-finished-prs')
     if (look === 'desktop') return
     for (const ref of ['acme/greet#12', 'acme/greet#14']) {

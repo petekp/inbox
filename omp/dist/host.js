@@ -7343,7 +7343,7 @@ function resolveSelected(lines, selectedId) {
     return current;
   const waits = waitsOf(lines);
   const nextId = (current ? rowAfterClose(waits, current.id) : null) ?? firstWaiting(waits);
-  return lines.find((l) => l.id === nextId) ?? selectable[0] ?? null;
+  return lines.find((l) => l.id === nextId) ?? selectable.find((l) => l.id !== CLEAR_FINISHED_ID) ?? null;
 }
 function defaultFocus(line) {
   return Math.max(0, line.buttons.findIndex((b) => b.isRecommended));

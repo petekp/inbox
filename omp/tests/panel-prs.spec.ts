@@ -128,6 +128,27 @@ test('Clear merged and closed draws above the PR blocks, and m from any row or E
   expect(helpKeys('omp', false, 'prs', false).map(k => k.keys)).toContain('m')
 })
 
+test('the PRs tab opens with Clear merged and closed unselected when no PR waits, so Enter does not clear', () => {
+  const s = demoState(NOW)
+  const views = Object.fromEntries(
+    Object.entries(s.prViews.views).map(([ref, v]) => [
+      ref,
+      {
+        ...v,
+        state: ref === 'acme/visor#29' ? ('MERGED' as const) : v.state,
+        mergeable: 'MERGEABLE',
+        reviewDecision: '',
+        checks: [],
+        threads: [],
+      },
+    ]),
+  )
+  const screen = screenOf({ view: sessionView({ ...s, prViews: { ...s.prViews, views } }, NOW, SETTLED_MS, NO_HOLDS) })
+  const ui = { ...INITIAL_UI, tab: 'prs' as const }
+  expect(text(screen, ui)).toContain('Clear merged and closed')
+  expect(handleKey(screen, ui, 'enter', NOW).press).not.toEqual({ action: 'pr-clear-finished' })
+})
+
 test('Clear merged and closed does not show when the only finished PR is the branch’s own', () => {
   const screen = withFinished({ 'acme/visor#31': 'MERGED' })
   const ui = { ...INITIAL_UI, tab: 'prs' as const }

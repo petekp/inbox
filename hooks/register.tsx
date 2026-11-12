@@ -76,7 +76,7 @@ import { noteDialog } from './dialogs'
 import { isPrPress, pressRowId, type Applied, type PrPress } from './pr-press'
 import { openPrViews, prUndoBlockAfter } from './pr-views'
 import { prBlockRows, threadSentIn } from './pr-rows'
-import { prRefs, prNeedsYou } from './prs'
+import { prNeedsYou } from './prs'
 import { EMPTY, isBlankLedger } from './ledger'
 import { closeItem } from './ledger-close'
 import { tasksRunBy } from './reply-parse'
@@ -2707,7 +2707,7 @@ export const register: Register = on => {
     await commit($, currentOwner(), s => endTurn(CLAUDE_CODE, s, reply, isShown, { tab: screenTab, queuesEmptyReply }))
     updateLedger($)
     const after = await read($, SESSION)
-    const linksNewPr = prRefs(reply).some(ref => !before.ledger.prs.includes(ref))
+    const linksNewPr = after.ledger.prs.some(ref => !before.ledger.prs.includes(ref))
     const tracksPrs = tabPrs(after.ledger).length > 0 || after.prViews.branchRef !== null
     const isTabShown = await isPrsTabShown($)
     if (linksNewPr || (tracksPrs && isPrFetchDue(after, mod.prFetchEndedAt, now, isTabShown)))

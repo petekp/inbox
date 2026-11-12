@@ -12,6 +12,7 @@ import { rowHandle, settledLabel, settledMark } from '../../hooks/rows'
 import { endTurn, notePrompt, viewOf } from '../src/core'
 import { emptyState } from '../src/state'
 import { withFetchedPrs } from '../../hooks/session-presses'
+import { withLasts } from '../../hooks/pressed'
 import type { PrView } from '../../types'
 import { SETTLE_WINDOW_MS } from '../src/settle'
 import type { SessionState } from '../src/state'
@@ -70,10 +71,8 @@ function undone(s: SessionState, ref: string): SessionState {
     { now: SETTLE_NOW, turnsStarted: 0 },
   )
   assert.ok(!('stale' in r))
-  const lastActions = { ...s.lastActions }
-  for (const id of r.drop ?? []) delete lastActions[id]
 
-  return { ...s, ledger: r.ledger ?? s.ledger, lastActions }
+  return { ...s, ledger: r.ledger, lastActions: withLasts(s.lastActions, r.lasts, r.drop) }
 }
 
 const PR_29_URL = 'https://github.com/acme/visor/pull/29'

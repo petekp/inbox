@@ -110,13 +110,18 @@ export function drawnPrs(
 
 /**
  * The mark id of the settled PR block whose Undo a press leaves for the terminal's undo key: the block its Dismiss
- * settled, or the last block Clear merged and closed settled. Null for any other press, or when no such block draws.
+ * settled, or the last drawn block of those Clear merged and closed settled, which share the newest Undo. That is the
+ * Undo the undo key takes. Null for any other press, or when no such block draws.
  */
 export function prUndoBlockAfter(drawn: DrawnPr[], p: PrPress): string | null {
   if (p.action === 'pr-dismiss')
     return drawn.some(d => d.pr.ref === p.ref && d.state.is === 'settled') ? prMarkId(p.ref) : null
   if (p.action !== 'pr-clear-finished') return null
-  const last = drawn.filter(d => d.state.is === 'settled' && d.state.canUndo).at(-1)
+  const undos = drawn.flatMap(d =>
+    d.state.is === 'settled' && d.state.canUndo ? [{ ref: d.pr.ref, at: d.state.at }] : [],
+  )
+  const newestAt = Math.max(...undos.map(u => u.at))
+  const last = undos.filter(u => u.at === newestAt).at(-1)
 
-  return last ? prMarkId(last.pr.ref) : null
+  return last ? prMarkId(last.ref) : null
 }
