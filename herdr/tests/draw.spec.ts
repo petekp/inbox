@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 
 import { rowKeyPlan } from '../../hooks/action-plan'
+import { CLEAR_FINISHED_ID } from '../../hooks/pr-rows'
 import { actionLabel } from '../../hooks/rows'
 import type { RowView } from '../../hooks/rows'
 import { goalKeyPlan, statusKeyPlan } from '../../hooks/status-keys'
@@ -9,9 +10,10 @@ import { NO_HOLDS } from '../../hooks/timing'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks, tabCells } from '../src/draw'
 import { readSession } from '../src/files'
+import { keyMove } from '../src/keys'
 import { screenOf } from '../src/screen'
 import type { Followed } from '../src/follow'
-import { NOW, demoEnvelopeText, demoScreen, uiOn } from './fixtures'
+import { NOW, demoEnvelopeText, demoScreen, finishedScreen, uiOn } from './fixtures'
 
 const plannedLabels = (row: RowView, isAllShown: boolean) => {
   const { keys, more } = rowKeyPlan(row, isAllShown)
@@ -105,4 +107,19 @@ test('each case of the followed terminal draws its own message, and a read sessi
   expect(titles.every(t => t !== null)).toBe(true)
   expect(new Set(titles).size).toBe(cases.length)
   expect(screenOf({ is: 'session', terminal: 't1', sessionId: 's1' }, read, uiOn('needsYou'), o).is).toBe('inbox')
+})
+
+test('the PRs tab draws Clear merged and closed above the first PR, m presses it from any row, and it does not draw for the branch’s own PR alone', () => {
+  const tabs = [{ id: 'prs' as const, label: 'PRs', badge: null, isSelected: true }]
+  const blocks = tabBlocks(finishedScreen({ 'acme/visor#29': 'MERGED', 'acme/visor#33': 'CLOSED' }), uiOn('prs'))
+  const at = blocks.findIndex(b => b.id === CLEAR_FINISHED_ID)
+  const line = blocks[at]
+  if (line?.kind !== 'line') throw new Error('no Clear merged and closed line')
+  expect(at).toBeLessThan(blocks.findIndex(b => b.kind === 'pr'))
+  expect(line.buttons.map(b => [b.label, b.hotkey, b.does])).toEqual([
+    ['Clear merged and closed', 'm', { is: 'press', press: { action: 'pr-clear-finished' }, effects: [] }],
+  ])
+  expect(keyMove('m', tabs, blocks, null)).toEqual({ is: 'press', button: line.buttons[0]! })
+  const branchOnly = tabBlocks(finishedScreen({ 'acme/visor#31': 'MERGED' }), uiOn('prs'))
+  expect(branchOnly.some(b => b.id === CLEAR_FINISHED_ID)).toBe(false)
 })

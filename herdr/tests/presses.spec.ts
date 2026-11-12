@@ -1,15 +1,12 @@
 import { expect, test } from 'bun:test'
 
 import { pressFile } from '../../hooks/herdr-press-file'
-import { demoSession } from '../../hooks/demo'
-import { CLEAR_FINISHED_ID, prCheckId, prMarkId, prThreadId, splitFollowUps, threadSentIn } from '../../hooks/pr-rows'
+import { prCheckId, prMarkId, prThreadId, splitFollowUps, threadSentIn } from '../../hooks/pr-rows'
 import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
 import { pendingResult } from '../../hooks/pressed'
 import { EXIT_MS } from '../../hooks/row-motion'
-import { sessionView } from '../../hooks/session-view'
-import { NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
+import { NO_HOLDS } from '../../hooks/timing'
 import type { Block, RowBlock } from '../src/blocks'
-import type { LookScreen } from '../src/draw'
 import { tabBlocks } from '../src/draw'
 import { afterSend, keyMove, withSelected, withTab } from '../src/keys'
 import { moveRows } from '../src/motion'
@@ -18,7 +15,7 @@ import type { Out } from '../src/out'
 import { pressFileText } from '../src/press-file'
 import { isRunHere, runHere } from '../src/run-here'
 import type { HereIo } from '../src/run-here'
-import { AGENT, NOW, demoScreen, uiOn } from './fixtures'
+import { NOW, demoScreen, uiOn } from './fixtures'
 
 const rowsOf = (blocks: Block[]) => blocks.filter((b): b is RowBlock => b.kind === 'row')
 
@@ -129,34 +126,6 @@ test('the PRs tab draws each PR’s and each selected row’s buttons in the sha
     expect(planned.length).toBe(1)
     expect(selected.buttons.map(b => b.label)).toEqual(planned[0]!.map(a => a.label))
   }
-})
-
-function withFinished(states: Record<string, 'MERGED' | 'CLOSED'>): LookScreen {
-  const s = demoSession(NOW, AGENT)
-  const views = Object.fromEntries(
-    Object.entries(s.prViews.views).map(([ref, v]) => [ref, states[ref] ? { ...v, state: states[ref] } : v]),
-  )
-  const view = sessionView({ ...s, prViews: { ...s.prViews, views } }, NOW, SETTLED_MS, {
-    ...NO_HOLDS,
-    shownSince: NOW,
-  })
-
-  return { ...demoScreen(), view }
-}
-
-test('the PRs tab draws Clear merged and closed above the first PR, m presses it from any row, and it does not draw for the branch’s own PR alone', () => {
-  const tabs = [{ id: 'prs' as const, label: 'PRs', badge: null, isSelected: true }]
-  const blocks = tabBlocks(withFinished({ 'acme/visor#29': 'MERGED', 'acme/visor#33': 'CLOSED' }), uiOn('prs'))
-  const at = blocks.findIndex(b => b.id === CLEAR_FINISHED_ID)
-  const line = blocks[at]
-  if (line?.kind !== 'line') throw new Error('no Clear merged and closed line')
-  expect(at).toBeLessThan(blocks.findIndex(b => b.kind === 'pr'))
-  expect(line.buttons.map(b => [b.label, b.hotkey, b.does])).toEqual([
-    ['Clear merged and closed', 'm', { is: 'press', press: { action: 'pr-clear-finished' }, effects: [] }],
-  ])
-  expect(keyMove('m', tabs, blocks, null)).toEqual({ is: 'press', button: line.buttons[0]! })
-  const branchOnly = tabBlocks(withFinished({ 'acme/visor#31': 'MERGED' }), uiOn('prs'))
-  expect(branchOnly.some(b => b.id === CLEAR_FINISHED_ID)).toBe(false)
 })
 
 test('keys switch tabs, step rows, press a selected row’s hotkey, and leave the look', () => {
