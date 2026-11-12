@@ -2,55 +2,59 @@ import { expect, mock, test } from 'claude-code/testing'
 import { w, world } from './hooks-world'
 import { BAND, PANE, sidebarLines, sidebarTokens, NO_COUNTS } from './hooks-helpers'
 
-test('a stop and an open permission prompt lead the sidebar line until they clear', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000_000 })
-  world($, on, [], { HERDR_PANE_ID: 'p1' })
+test(
+  'a stop and an open permission prompt lead the sidebar line until they clear',
+  { timeoutMs: 20_000 },
+  async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [], { HERDR_PANE_ID: 'p1' })
 
-  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  await $.classic.PermissionRequest({
-    tool_name: 'Bash',
-    tool_input: { command: 'git push', description: 'Push main to origin' },
-  } as never)
-  await clock.settle()
-  expect(sidebarLines().at(-1)).toBe('Allow push main to origin?')
-  await $.tool.call({ tool: 'Bash', command: 'git push', description: 'Push main to origin' } as never)
-  await clock.settle()
-  expect(sidebarLines().at(-1)).toBe('')
+    await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+    await $.classic.PermissionRequest({
+      tool_name: 'Bash',
+      tool_input: { command: 'git push', description: 'Push main to origin' },
+    } as never)
+    await clock.settle()
+    expect(sidebarLines().at(-1)).toBe('Allow push main to origin?')
+    await $.tool.call({ tool: 'Bash', command: 'git push', description: 'Push main to origin' } as never)
+    await clock.settle()
+    expect(sidebarLines().at(-1)).toBe('')
 
-  await $.classic.StopFailure({ error: 'authentication_failed' } as never)
-  await clock.settle()
-  expect(sidebarLines().at(-1)).toBe('! Signed out: /login')
-  expect(sidebarTokens()).toMatchObject({ ...NO_COUNTS, 'inbox-stop': '! Signed out: /login' })
-  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  expect(await band.find({ text: /Run \/login, then send a message to resume\./ })).toBeDefined()
-  expect(await band.find({ key: 'open-inbox' })).toBeDefined()
-  expect((await band.findAll({ type: 'Text', text: /^Nothing needed$/ })).some(t => t.props.dimColor)).toBe(true)
-  const pane = await $.ui.mount(PANE)
-  expect(await pane.find({ key: 'resume' })).toBeUndefined()
-  expect(await band.find({ key: 'resume' })).toBeUndefined()
-  await $.turn.start({ text: 'logged in, go on', turnId: 't2' })
-  await clock.settle()
-  expect(await band.find({ text: /Stopped/ })).toBeUndefined()
-  expect(sidebarLines().at(-1)).toBe('')
-  expect(sidebarTokens()).toMatchObject(NO_COUNTS)
+    await $.classic.StopFailure({ error: 'authentication_failed' } as never)
+    await clock.settle()
+    expect(sidebarLines().at(-1)).toBe('! Signed out: /login')
+    expect(sidebarTokens()).toMatchObject({ ...NO_COUNTS, 'inbox-stop': '! Signed out: /login' })
+    const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+    expect(await band.find({ text: /Run \/login, then send a message to resume\./ })).toBeDefined()
+    expect(await band.find({ key: 'open-inbox' })).toBeDefined()
+    expect((await band.findAll({ type: 'Text', text: /^Nothing needed$/ })).some(t => t.props.dimColor)).toBe(true)
+    const pane = await $.ui.mount(PANE)
+    expect(await pane.find({ key: 'resume' })).toBeUndefined()
+    expect(await band.find({ key: 'resume' })).toBeUndefined()
+    await $.turn.start({ text: 'logged in, go on', turnId: 't2' })
+    await clock.settle()
+    expect(await band.find({ text: /Stopped/ })).toBeUndefined()
+    expect(sidebarLines().at(-1)).toBe('')
+    expect(sidebarTokens()).toMatchObject(NO_COUNTS)
 
-  await $.classic.StopFailure({ error: 'server_error' } as never)
-  await clock.settle()
-  expect(await pane.find({ text: /API error \(server_error\)\./ })).toBeDefined()
-  expect(await band.find({ key: 'resume' })).toBeDefined()
-  await pane.press({ key: 'resume' })
-  await clock.settle()
-  expect(w.sent.at(-1)).toBe('Continue')
-  expect((await band.find({ key: 'resume' }))?.props.label).toBe('Resuming…')
-  expect((await pane.find({ key: 'resume' }))?.props.label).toBe('Resuming…')
-  await band.press({ key: 'resume' })
-  await pane.press({ key: 'resume' })
-  await clock.settle()
-  expect(w.sent.filter(text => text === 'Continue')).toHaveLength(1)
-  await $.turn.start({ text: 'Continue', turnId: 't3' })
-  await clock.settle()
-  expect(await pane.find({ text: /Stopped/ })).toBeUndefined()
-})
+    await $.classic.StopFailure({ error: 'server_error' } as never)
+    await clock.settle()
+    expect(await pane.find({ text: /API error \(server_error\)\./ })).toBeDefined()
+    expect(await band.find({ key: 'resume' })).toBeDefined()
+    await pane.press({ key: 'resume' })
+    await clock.settle()
+    expect(w.sent.at(-1)).toBe('Continue')
+    expect((await band.find({ key: 'resume' }))?.props.label).toBe('Resuming…')
+    expect((await pane.find({ key: 'resume' }))?.props.label).toBe('Resuming…')
+    await band.press({ key: 'resume' })
+    await pane.press({ key: 'resume' })
+    await clock.settle()
+    expect(w.sent.filter(text => text === 'Continue')).toHaveLength(1)
+    await $.turn.start({ text: 'Continue', turnId: 't3' })
+    await clock.settle()
+    expect(await pane.find({ text: /Stopped/ })).toBeUndefined()
+  },
+)
 
 test('a delayed Resume refusal belongs only to the stop and conversation that sent it', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })

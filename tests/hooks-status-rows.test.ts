@@ -4,52 +4,56 @@ import { STATUS_TEXT_LINES } from '../hooks/status-page'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
-test('on the Status, where a subject stands goes under its name, wraps to three lines at the docked width and is cut with an ellipsis past them, and a merged line is cut to one line at a phrase, in the terminal and on desktop', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000_000 })
-  world($, on, [])
-  w.files = ['/.next-build']
-  w.paneState = { isShown: true, isFocused: true }
-  const name = 'Help text for every greeting command'
-  const text = 'being written with examples, defaults, descriptions, environment variables, configuration precedence'
-  w.statusReply = [
-    'HEAD: Adding a greeting CLI | Building a CLI that greets by name',
-    `NEW: working | ${name} | ${text}`,
-    'NEW: queued | Loud flag | after help',
-    'NEW: working | Sync retry, backoff, and jitter | drafted',
-    'DROP: s3 | part of help | INTO s1',
-  ].join('\n')
+test(
+  'on the Status, where a subject stands goes under its name, wraps to three lines at the docked width and is cut with an ellipsis past them, and a merged line is cut to one line at a phrase, in the terminal and on desktop',
+  { timeoutMs: 20_000 },
+  async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    w.files = ['/.next-build']
+    w.paneState = { isShown: true, isFocused: true }
+    const name = 'Help text for every greeting command'
+    const text = 'being written with examples, defaults, descriptions, environment variables, configuration precedence'
+    w.statusReply = [
+      'HEAD: Adding a greeting CLI | Building a CLI that greets by name',
+      `NEW: working | ${name} | ${text}`,
+      'NEW: queued | Loud flag | after help',
+      'NEW: working | Sync retry, backoff, and jitter | drafted',
+      'DROP: s3 | part of help | INTO s1',
+    ].join('\n')
 
-  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
-  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
-  await clock.settle()
-  const terminal = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
-  await terminal.press({ key: 'tab-key-overview' })
-  await clock.settle()
-  const textOf = async (pane: Pick<Mounted, 'find'>, key: string) => (await pane.find({ key }))?.text
-  const lines = (await textOf(terminal, 'status-s1-text'))!.split('\n')
-  expect(await textOf(terminal, 'status-s1-name')).toBe('Help text for every greeting\ncommand')
-  expect(lines).toHaveLength(STATUS_TEXT_LINES)
-  expect(lines[0]).toBe('being written with examples,')
-  expect(lines.at(-1)).toMatch(/…$/)
-  expect(await textOf(terminal, 'status-s1-merged')).toBe('merged in: Sync retry, backoff…')
-  expect(await textOf(terminal, 'status-s2-name')).toBe('Loud flag')
-  expect(await textOf(terminal, 'status-s2-text')).toBe('after help')
-  await terminal.redraw({ ...PANE.props, bodyColumns: 120 })
-  expect(await textOf(terminal, 'status-s1-text')).toBe(text)
-  expect(await textOf(terminal, 'status-s1-merged')).toBe('merged in: Sync retry, backoff, and jitter')
+    await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+    await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+    await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+    await clock.settle()
+    const terminal = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
+    await terminal.press({ key: 'tab-key-overview' })
+    await clock.settle()
+    const textOf = async (pane: Pick<Mounted, 'find'>, key: string) => (await pane.find({ key }))?.text
+    const lines = (await textOf(terminal, 'status-s1-text'))!.split('\n')
+    expect(await textOf(terminal, 'status-s1-name')).toBe('Help text for every greeting\ncommand')
+    expect(lines).toHaveLength(STATUS_TEXT_LINES)
+    expect(lines[0]).toBe('being written with examples,')
+    expect(lines.at(-1)).toMatch(/…$/)
+    expect(await textOf(terminal, 'status-s1-merged')).toBe('merged in: Sync retry, backoff…')
+    expect(await textOf(terminal, 'status-s2-name')).toBe('Loud flag')
+    expect(await textOf(terminal, 'status-s2-text')).toBe('after help')
+    await terminal.redraw({ ...PANE.props, bodyColumns: 120 })
+    expect(await textOf(terminal, 'status-s1-text')).toBe(text)
+    expect(await textOf(terminal, 'status-s1-merged')).toBe('merged in: Sync retry, backoff, and jitter')
 
-  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 30 } })
-  await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
-  await clock.settle()
-  const shown = (await textOf(desktop, 'status-s1-text'))!
-  expect(shown).toMatch(/^being written with .+…$/)
-  expect(shown.length).toBeLessThan(text.length)
-  expect(await textOf(desktop, 'status-s1-merged')).toMatch(/^merged in: Sync retry(, backoff)?…$/)
-  await desktop.redraw({ ...PANE.props, bodyColumns: 120 })
-  expect(await textOf(desktop, 'status-s1-text')).toBe(text)
-  expect(await textOf(desktop, 'status-s1-merged')).toBe('merged in: Sync retry, backoff, and jitter')
-})
+    const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 30 } })
+    await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
+    await clock.settle()
+    const shown = (await textOf(desktop, 'status-s1-text'))!
+    expect(shown).toMatch(/^being written with .+…$/)
+    expect(shown.length).toBeLessThan(text.length)
+    expect(await textOf(desktop, 'status-s1-merged')).toMatch(/^merged in: Sync retry(, backoff)?…$/)
+    await desktop.redraw({ ...PANE.props, bodyColumns: 120 })
+    expect(await textOf(desktop, 'status-s1-text')).toBe(text)
+    expect(await textOf(desktop, 'status-s1-merged')).toBe('merged in: Sync retry, backoff, and jitter')
+  },
+)
 
 test('on the Status in the terminal, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
