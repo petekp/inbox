@@ -15,8 +15,6 @@ export type MilestoneRow = {
   stall: { text: string; tone: 'needsYou' } | null
   /** The plan a change replaced, while the person has not seen it. */
   was: string | null
-  /** Whether it changed since the person last looked. */
-  isChanged: boolean
   /** The oldest open ask that holds it up, which its View button opens. */
   ask: { id: string; kind: Item['kind'] } | null
   /** The work that serves it, drawn under it one step in. `statusPage` fills it. */
@@ -85,7 +83,6 @@ function milestoneRow(m: Milestone, o: SessionStatus, items: readonly Item[]): M
     text: m.text || null,
     stall: isHeld ? { text: 'waiting', tone: 'needsYou' } : null,
     was: isChanged ? m.was : null,
-    isChanged,
     ask: !isHeld ? null : (direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null)),
     rows: [],
   }

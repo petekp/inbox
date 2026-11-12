@@ -3446,7 +3446,6 @@ function milestoneRow(m, o, items) {
     text: m.text || null,
     stall: isHeld ? { text: "waiting", tone: "needsYou" } : null,
     was: isChanged ? m.was : null,
-    isChanged,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
     rows: []
   };
@@ -3482,11 +3481,10 @@ var CHILD_ROWS = 3;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
 var COUNT_WORDS = {
   working: "working",
-  "waits-on-other": "waiting",
-  queued: "queued"
+  "waits-on-other": "waiting"
 };
 function countsByMark(folded) {
-  return ["working", "waits-on-other", "queued"].flatMap((status) => {
+  return ["working", "waits-on-other"].flatMap((status) => {
     const n = folded.filter((x) => x.status === status).length;
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
@@ -3525,14 +3523,12 @@ function childRow(c, branch, depth) {
     branch
   };
 }
-function partRows(shown, c, depth, afterNew = []) {
+function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
-  const lookRow = c.lookId === null ? null : { kind: "look", id: c.lookId, depth, text: c.lookText };
-  const firstSeen = shown.findIndex((x) => !c.isNew(x));
+  const firstClosed = shown.findIndex((x) => !isOpen(x));
   for (const [i, x] of shown.entries()) {
-    const hasNewAbove = i > 0;
-    if (i === firstSeen && hasNewAbove)
-      rows.push(...afterNew, ...lookRow ? [lookRow] : []);
+    if (i === firstClosed)
+      rows.push(...afterOpen);
     const under = c.running.filter((ch) => ch.subjectId === x.id);
     const shownUnder = under.slice(0, CHILD_ROWS);
     const isMore = under.length > CHILD_ROWS;
@@ -3565,24 +3561,13 @@ function partRows(shown, c, depth, afterNew = []) {
         branch: "last"
       });
   }
-  const isEveryShownNew = firstSeen === -1;
-  if (isEveryShownNew)
-    rows.push(...afterNew);
-  if (lookRow && c.isLookAtEnd && isEveryShownNew && shown.length > 0)
-    rows.push(lookRow);
+  if (firstClosed === -1)
+    rows.push(...afterOpen);
+  rows.push(...afterClosed);
   return rows;
 }
-function isItemAfterItem(row, prev) {
-  const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
-  const isLine = (r) => r.kind === "look" || r.kind === "part";
-  return prev !== undefined && !isLine(prev) && !isLine(row) && !isUnderSubject;
-}
-function ruledRows(rows, isRuled) {
-  return rows.map((r, n) => ({
-    ...r,
-    isRuledAbove: isRuled && isItemAfterItem(r, rows[n - 1]),
-    isLast: n === rows.length - 1
-  }));
+function endedList(rows) {
+  return rows.map((r, n) => ({ ...r, isLast: n === rows.length - 1 }));
 }
 function unfoldedRows(rows, isUnfolded) {
   return rows.flatMap((r) => r.kind === "done-fold" && isUnfolded(r.id) ? [{ ...r, isLast: false }, ...r.rows.map((x, n) => ({ ...x, isLast: r.isLast && n === r.rows.length - 1 }))] : [r]);
@@ -3590,9 +3575,7 @@ function unfoldedRows(rows, isUnfolded) {
 
 // ../hooks/status-page.ts
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It reads the conversation again after the next reply.";
-var LOOK_TEXT = "Last seen";
 var OTHER_WORK = "Other work";
-var LOOK_DASH = "\u254C";
 var WAS_PREFIX = "was: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " \xB7 ";
@@ -3620,15 +3603,16 @@ function statusPage(s, now) {
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
   const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
-  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
+  const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const goalParts = goalPage(o, s.ledger.items);
   const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
   const servedBy = (x) => o?.goal ? o.serves[x.id] : undefined;
-  const isOther = (x) => servedBy(x) === "none";
   const milestoneOf = (x) => {
     const to = servedBy(x);
     return to !== undefined && milestoneIds.has(to) ? to : null;
   };
+  const hasMilestones = milestoneIds.size > 0;
+  const isOther = (x) => servedBy(x) === "none" || hasMilestones && milestoneOf(x) === null;
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
   const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
@@ -3662,13 +3646,9 @@ function statusPage(s, now) {
     oldestAskOf,
     running,
     isTurnRunning: s.presence.isTurnRunning,
-    now,
-    lookId: look === null ? null : "look",
-    lookText: LOOK_TEXT,
-    isLookAtEnd: true
+    now
   };
-  const lookId = (id) => look === null ? null : id;
-  const foldCtx = { ...ctx, lookId: null, running: [] };
+  const foldCtx = { ...ctx, running: [] };
   const namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
     const closed = named.filter((x) => x.status === status);
     const names = closed.map((x) => x.name);
@@ -3685,9 +3665,15 @@ function statusPage(s, now) {
       }
     ];
   });
-  const rows = [
-    ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
-    ...partRows(top.shown, ctx, 0, namedFolds("", top.named, 0))
+  const openFold = (prefix, p, depth) => p.foldedOpen.length === 0 ? [] : [
+    {
+      kind: "fold",
+      id: `${prefix}open`,
+      depth,
+      ...SUBJECT_MARKS.queued,
+      text: `${p.foldedOpen.length} more`,
+      subjectIds: []
+    }
   ];
   const doneFold = (prefix, done, newClosed, depth) => done.length === 0 ? [] : [
     {
@@ -3695,37 +3681,27 @@ function statusPage(s, now) {
       id: `${prefix}done`,
       depth,
       text: `${done.length}${newClosed.some((x) => x.status === "done") ? " more" : ""} done`,
-      rows: ruledRows(partRows([...done].sort(pageOrder), foldCtx, depth + 1), false)
+      rows: endedList(partRows([...done].sort(pageOrder), foldCtx, depth + 1))
     }
   ];
-  const foldRows = (prefix, p, depth) => [
-    ...p.foldedOpen.length > 0 ? [
-      {
-        kind: "fold",
-        id: `${prefix}open`,
-        depth,
-        ...SUBJECT_MARKS.queued,
-        text: `${p.foldedOpen.length} more`,
-        subjectIds: []
-      }
-    ] : [],
+  const foldedPart = (prefix, p, depth) => [
+    ...partRows(p.shown, ctx, depth, openFold(prefix, p, depth), namedFolds(prefix, p.named, depth)),
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
   ];
-  rows.push(...foldRows("", top, 0));
-  if (otherShown.length > 0 || otherFolded.length > 0) {
-    if (rows.at(-1)?.kind === "look")
-      rows.pop();
-    rows.push({ kind: "part", id: "other", depth: 0, text: OTHER_WORK });
-    rows.push(...partRows(otherShown, { ...ctx, lookId: lookId("other-look") }, 0, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)));
-    const otherFoldedOpen = otherFolded.filter(isOpen);
-    if (otherFoldedOpen.length > 0)
-      rows.push({ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFoldedOpen) });
-    rows.push(...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0));
-  }
-  const milestoneRows = (id, p) => ruledRows([
-    ...partRows(p.shown, { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false }, 1, namedFolds(`${id}-`, p.named, 1)),
-    ...foldRows(`${id}-`, p, 1)
-  ], false);
+  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0));
+  const otherCounts = countsByMark(otherFolded.filter(isOpen));
+  const counts = otherCounts.length === 0 ? [] : [{ kind: "counts", id: "other-counts", depth: 0, counts: otherCounts }];
+  const otherRows = [
+    ...hasMilestones ? loose : [],
+    ...partRows(otherShown, ctx, 0, counts, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
+    ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0)
+  ];
+  const rows = [
+    ...hasMilestones ? [] : loose,
+    ...foldedPart("", top, 0),
+    ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
+  ];
+  const milestoneRows = (id, p) => endedList(foldedPart(`${id}-`, p, 1));
   const g = goalParts.goal;
   const goal = g && {
     ...g,
@@ -3737,7 +3713,7 @@ function statusPage(s, now) {
     head,
     ...goalParts,
     goal,
-    rows: ruledRows(rows, true),
+    rows: endedList(rows),
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: "Status",
@@ -6664,17 +6640,6 @@ function partHeading(text, width, s, at = PAGE_TEXT_AT) {
   const label = `${text} `;
   return `${" ".repeat(at)}${s.dim(label + "\u2500".repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label))))}`;
 }
-function pageRule(width, s) {
-  return `${" ".repeat(PAGE_TEXT_AT)}${s.dim("\u2500".repeat(pageRuleCells(width)))}`;
-}
-function lookLines(row, width, s) {
-  const text = ` ${row.text} `;
-  const at = markAt(row.depth) + PAGE_TEXT_AT - PAGE_MARK_AT;
-  const fill = Math.max(4, pageRuleCells(width, at) - cellWidth(text));
-  const before = Math.floor(fill / 2);
-  const rule = `${" ".repeat(at)}${s.dim(`${LOOK_DASH.repeat(before)}${text}${LOOK_DASH.repeat(fill - before)}`)}`;
-  return ["", rule, ...row.isLast ? [] : [""]];
-}
 function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between = "") {
   const faces = target.keys.map((k) => ({
     label: k.label,
@@ -6717,8 +6682,6 @@ function drawPageRow(row, d, isSelected = false) {
     const chevron = d.ui.statusUnfolded.includes(row.id) ? "\u25BE" : "\u25B8";
     return isSelected ? pageLine(d, at, s.tone("accent", chevron), row.text, s.bold) : pageLine(d, at, s.dim(chevron), row.text, s.dim);
   }
-  if (row.kind === "look")
-    return lookLines(row, width, s);
   if (row.kind === "part")
     return ["", partHeading(row.text, width, s)];
   if (row.kind === "counts")
@@ -6820,7 +6783,7 @@ function drawGoalPart(part, d, isSelected) {
   if (part.is === "milestone") {
     const m = part.row;
     const mark = paintMark({ ...m, isRunning: false }, now, s);
-    const out = pageLine(d, PAGE_MARK_AT, mark, m.name, m.isChanged ? s.bold : (t) => t, { stall: m.stall, text: m.text });
+    const out = pageLine(d, PAGE_MARK_AT, mark, m.name, (t) => t, { stall: m.stall, text: m.text });
     if (m.was)
       out.push(...indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim));
     return [...out, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)];
@@ -7253,7 +7216,8 @@ function pageEntries(page, typing, isUnfolded) {
   ] : [];
   const top = [...goalSection(page, typing, isUnfolded), ...head.length > 0 ? [blank, ...head] : []];
   const rows = unfoldedRows(page.rows, isUnfolded).map((row) => ({ kind: "page", row }));
-  return top.length > 0 && rows.length > 0 ? [...top, blank, ...rows] : [...top, ...rows];
+  const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== "part";
+  return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows];
 }
 function helpEntries(screen, tab) {
   const keys = helpKeys("omp", screen.isNextBuild === true, tab, statusKeyRows(screen.view.statusPage).length > 0);
@@ -7777,8 +7741,6 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
     if (e.kind === "heading")
       body.push(` ${e.mark ? `${leadPaint(e.mark, e.mark.text, style)} ` : ""}${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
     else if (e.kind === "page" || e.kind === "goal") {
-      if (e.kind === "page" && e.row.isRuledAbove)
-        body.push(pageRule(width, style));
       const start = body.length;
       if (e.kind === "page")
         subjectAt.push(...seenSubjectIds(e.row).map((id) => [id, start]));
@@ -8584,7 +8546,6 @@ var CLIENTS = {
       "herdr-open": { kind: "full" },
       "status-children": { kind: "full" },
       "child-names": { kind: "full" },
-      "status-look-line": { kind: "full" },
       "status-row-rules": { kind: "full" },
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
@@ -8694,7 +8655,6 @@ var CLIENTS = {
         reason: "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so workflows do not show. The end of a wait on a Herdr delegate is read at Stop."
       },
       "child-names": { kind: "full" },
-      "status-look-line": { kind: "full" },
       "status-row-rules": { kind: "full" },
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },
@@ -8795,7 +8755,6 @@ var CLIENTS = {
         reason: "omp's extension events report subagents and bash calls. omp's reference names no event for a workflow run, so those do not show."
       },
       "child-names": { kind: "full" },
-      "status-look-line": { kind: "full" },
       "status-row-rules": { kind: "full" },
       "status-failed-warning": { kind: "full" },
       "asks-holds-up-line": { kind: "full" },

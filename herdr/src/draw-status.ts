@@ -36,9 +36,6 @@ function keyButtons(id: string, keys: StatusKey[]): Button[] {
 }
 
 function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[] {
-  const rule: Block[] = row.isRuledAbove
-    ? [{ kind: 'rule', id: `rule ${row.id}`, text: null, isDashed: false, depth: row.depth, isBetweenGroups: false }]
-    : []
   if (row.kind === 'subject') {
     const under = [
       row.text,
@@ -47,7 +44,6 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
     ].filter(l => l !== null)
 
     return [
-      ...rule,
       {
         kind: 'status',
         id: row.id,
@@ -64,7 +60,6 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
   }
   if (row.kind === 'child')
     return [
-      ...rule,
       {
         kind: 'status',
         id: row.id,
@@ -79,8 +74,6 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
       },
     ]
   if (row.kind === 'more') return [{ ...note(row.id, row.text, 'muted'), depth: row.depth }]
-  if (row.kind === 'look')
-    return [{ kind: 'rule', id: row.id, text: row.text, isDashed: true, depth: row.depth, isBetweenGroups: false }]
   if (row.kind === 'part')
     return [
       { kind: 'gap', id: `gap ${row.id}` },
@@ -88,12 +81,10 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
     ]
   if (row.kind === 'counts')
     return [
-      ...rule,
       { ...note(row.id, row.counts.map(c => `${c.mark} ${c.text}`).join(STALL_GAP), 'muted'), depth: row.depth },
     ]
   if (row.kind === 'done-fold')
     return [
-      ...rule,
       {
         kind: 'fold',
         id: row.id,
@@ -105,7 +96,6 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean): Block[]
     ]
 
   return [
-    ...rule,
     {
       kind: 'status',
       id: row.id,
@@ -128,7 +118,7 @@ function milestoneBlock(m: MilestoneRow): Block {
     depth: 0,
     mark: markOf(m.mark, m.tone, false),
     name: m.name,
-    isBold: m.isChanged,
+    isBold: false,
     isMuted: false,
     stall: m.stall,
     under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter(l => l !== null),
@@ -217,5 +207,7 @@ export function statusBlocks(page: StatusPage, ui: StatusUi): Block[] {
   const top = [...goalBlocks(page, ui), ...(head.length > 0 ? [{ kind: 'gap', id: 'gap head' } as const, ...head] : [])]
   const rows = unfoldedRows(page.rows, isUnfolded).flatMap(r => rowBlocks(r, isUnfolded))
 
-  return rows.length > 0 ? [...top, { kind: 'gap', id: 'gap rows' }, ...rows] : top
+  const isGapNeeded = rows.length > 0 && page.rows[0]?.kind !== 'part'
+
+  return isGapNeeded ? [...top, { kind: 'gap', id: 'gap rows' }, ...rows] : [...top, ...rows]
 }

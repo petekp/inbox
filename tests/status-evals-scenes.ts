@@ -336,7 +336,7 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
       s.page = p => (p.rows = p.rows.filter(r => !(r.kind === 'subject' && r.id === 's1')))
     },
   },
-  'unlinked-in-main': {
+  'other-work-place': {
     good: s => {
       withGoal(s)
       s.after.serves.s1 = 'none'

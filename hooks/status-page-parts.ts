@@ -10,15 +10,14 @@ export const CHILD_ROWS = 3
 const CHILD_MARK: { mark: string; tone: StatusTone } = { mark: SUBJECT_MARKS.working.mark, tone: null }
 
 /** The words a `counts` row gives each mark. */
-const COUNT_WORDS: Record<'working' | 'waits-on-other' | 'queued', string> = {
+const COUNT_WORDS: Record<'working' | 'waits-on-other', string> = {
   working: 'working',
   'waits-on-other': 'waiting',
-  queued: 'queued',
 }
 
-/** Open subjects folded into one count for each status, in the page's order of marks. */
+/** Open subjects folded into one count for each status that is under way, in the page's order of marks. Queued work gets no count. */
 export function countsByMark(folded: Subject[]): StatusCount[] {
-  return (['working', 'waits-on-other', 'queued'] as const).flatMap(status => {
+  return (['working', 'waits-on-other'] as const).flatMap(status => {
     const n = folded.filter(x => x.status === status).length
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }]
   })
@@ -83,33 +82,23 @@ export type ListContext = {
   running: Child[]
   isTurnRunning: boolean
   now: number
-  /** The id of the part's look line, or null while the person has never looked. */
-  lookId: string | null
-  lookText: string
-  /**
-   * Whether the look line ends a part whose rows all changed. It does in a part folds can follow. Under a milestone it
-   * only splits changed rows from seen ones, so a page of busy milestones does not draw a look line under each.
-   */
-  isLookAtEnd: boolean
 }
 
 /**
- * A part of the list at `depth`: its subjects in order, with their children one step in under them and the look line
- * between them. `afterNew` follows the rows that changed since the last look, before the look line.
+ * A part of the list at `depth`: its subjects in order, with their children one step in under them. `afterOpen`
+ * follows the open subjects, and `afterClosed` the closed ones, which come last.
  */
 export function partRows(
   shown: Subject[],
   c: ListContext,
   depth: number,
-  afterNew: StatusRowParts[] = [],
+  afterOpen: StatusRowParts[] = [],
+  afterClosed: StatusRowParts[] = [],
 ): StatusRowParts[] {
   const rows: StatusRowParts[] = []
-  const lookRow: StatusRowParts | null =
-    c.lookId === null ? null : { kind: 'look', id: c.lookId, depth, text: c.lookText }
-  const firstSeen = shown.findIndex(x => !c.isNew(x))
+  const firstClosed = shown.findIndex(x => !isOpen(x))
   for (const [i, x] of shown.entries()) {
-    const hasNewAbove = i > 0
-    if (i === firstSeen && hasNewAbove) rows.push(...afterNew, ...(lookRow ? [lookRow] : []))
+    if (i === firstClosed) rows.push(...afterOpen)
     const under = c.running.filter(ch => ch.subjectId === x.id)
     const shownUnder = under.slice(0, CHILD_ROWS)
     const isMore = under.length > CHILD_ROWS
@@ -144,32 +133,15 @@ export function partRows(
         branch: 'last',
       })
   }
-  const isEveryShownNew = firstSeen === -1
-  if (isEveryShownNew) rows.push(...afterNew)
-  if (lookRow && c.isLookAtEnd && isEveryShownNew && shown.length > 0) rows.push(lookRow)
+  if (firstClosed === -1) rows.push(...afterOpen)
+  rows.push(...afterClosed)
 
   return rows
 }
 
-/** Whether `row` starts an item after another, with no look line between them. */
-function isItemAfterItem(row: StatusRowParts, prev: StatusRowParts | undefined): boolean {
-  const isUnderSubject = row.kind === 'more' || (row.kind === 'child' && row.branch !== null)
-
-  const isLine = (r: StatusRowParts) => r.kind === 'look' || r.kind === 'part'
-
-  return prev !== undefined && !isLine(prev) && !isLine(row) && !isUnderSubject
-}
-
-/**
- * The rows of one list with their rules and their end marked. The list under a milestone draws no rules, as the
- * milestones above it draw none: its step in sets it apart.
- */
-export function ruledRows(rows: StatusRowParts[], isRuled: boolean): StatusRow[] {
-  return rows.map((r, n) => ({
-    ...r,
-    isRuledAbove: isRuled && isItemAfterItem(r, rows[n - 1]),
-    isLast: n === rows.length - 1,
-  }))
+/** The rows of one list with its last row marked. */
+export function endedList(rows: StatusRowParts[]): StatusRow[] {
+  return rows.map((r, n) => ({ ...r, isLast: n === rows.length - 1 }))
 }
 
 /**

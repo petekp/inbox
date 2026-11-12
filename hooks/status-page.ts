@@ -6,7 +6,7 @@ import { SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { goalPage, oldestAsk } from './status-goal-page'
 import type { GoalParts } from './status-goal-page'
-import { childRow, countsByMark, isFinishedUnseen, partRows, ruledRows } from './status-page-parts'
+import { childRow, countsByMark, isFinishedUnseen, partRows, endedList } from './status-page-parts'
 import type { ListContext } from './status-page-parts'
 
 const STATUS_FAILED =
@@ -27,9 +27,7 @@ export type StatusStall = { text: string; tone: 'needsYou' | 'done' | 'muted' }
  * stands on the line under its name.
  */
 export type StatusRow = StatusRowParts & {
-  /** Whether a rule sets it apart from the row above. A subject and the rows under it are one item, and the look line is a rule already. */
-  isRuledAbove: boolean
-  /** Whether it ends the list, so the look line leaves no space below it. */
+  /** Whether it ends the list. */
   isLast: boolean
 }
 
@@ -44,7 +42,7 @@ export type StatusRowParts = {
       /** Whether its work runs now, so a look animates the mark: this session's turn runs, or a child of it does. */
       isRunning: boolean
       name: string
-      /** Where it stands. Null for a finished row below the look line, which the person has seen. */
+      /** Where it stands. Null for a finished row the person has seen, as in a done fold. */
       text: string | null
       /** "waiting" while an open ask holds it up, else how long it has been idle, past `IDLE_AFTER_MS`. */
       stall: StatusStall | null
@@ -67,13 +65,11 @@ export type StatusRowParts = {
       name: string
       /** What its work does, as `childStall` says. */
       stall: StatusStall | null
-      /** Its place under its subject. Null when it is linked to no subject the list shows, so it sits at the top of the list. */
+      /** Its place under its subject. Null when it is linked to no subject the list shows, so it sits first in the list after the goal, under Other work while the goal shows milestones. */
       branch: StatusBranch | null
     }
   /** The children of a subject past `CHILD_ROWS`, as "+ 2 more running", or "+ 2 more" when one finished. It is always the last row under its subject. */
   | { kind: 'more'; id: string; text: string; branch: 'last' }
-  /** Where the person last looked: rows above it changed since. */
-  | { kind: 'look'; id: string; text: string }
   /**
    * Rows folded into one line: open rows into a count, as "○ 2 more", or work that closed since the last look past the
    * rows drawn for it, named, as "✓ Also done: Sync merge, Search speed".
@@ -95,7 +91,7 @@ export type StatusRowParts = {
   | { kind: 'done-fold'; id: string; text: string; rows: StatusRow[] }
   /** Where the work the goal does not need starts, under its own rule. */
   | { kind: 'part'; id: string; text: string }
-  /** Seen open rows of that work folded into a count for each mark, as "● 5 working · ◌ 8 waiting · ○ 10 queued". */
+  /** Seen open rows of that work folded into a count for each mark that is under way, as "● 5 working · ◌ 8 waiting". Folded queued rows get no count. */
   | { kind: 'counts'; id: string; counts: StatusCount[] }
 )
 
@@ -107,17 +103,18 @@ export type StatusPage = GoalParts & {
   isEmpty: boolean
   /** What the session is focused on now. The description is null until the Status call writes one. Looks draw it only while no goal is set; the goal draws its Now line in its place. */
   head: { title: string; description: string | null } | null
-  /** The list after the goal: work not linked to a milestone, then Other work. Rows under a milestone are its `rows`. */
+  /**
+   * The list after the goal. Rows under a milestone are its `rows`. While the goal shows milestones, every other row
+   * sits under Other work, so only milestones and their rows draw between the goal and Other work. Otherwise work not
+   * linked to a milestone comes first, then Other work.
+   */
   rows: StatusRow[]
   /** The status line's error while the last Status call wrote nothing. */
   error: string | null
   empty: { title: string; hint: string }
 }
 
-export const LOOK_TEXT = 'Last seen'
 const OTHER_WORK = 'Other work'
-/** The dash the terminal and omp draw the look line's rule with. The rules between rows are solid, so the dashes mark this one out. */
-export const LOOK_DASH = '╌'
 /** What a subject's was line starts with, before the plan it replaces. */
 export const WAS_PREFIX = 'was: '
 const MERGED_PREFIX = 'merged in: '
@@ -126,7 +123,7 @@ export const STALL_GAP = ' · '
 
 /** The most lines each text on a Status row wraps to: a name, where it stands, a was line. A look cuts past them with an ellipsis. */
 export const STATUS_TEXT_LINES = 3
-/** Closed rows drawn above the look line for work that closed since the last look. The fold after them names the rest. */
+/** Closed rows drawn for work that closed since the last look. The fold after them names the rest. */
 const NEW_CLOSED_ROWS = 2
 /** What a named fold says before the names it holds. Each closed status gets its own fold, in this order. */
 export const NAMED_FOLD_TEXT = { done: 'Also done: ', dropped: 'Also dropped: ' } as const
@@ -141,7 +138,7 @@ const IS_FOLD_MORE_SEEN = true
 /** What ends a named fold that holds more names than it shows. */
 export const namedFoldMore = (n: number) => `+${n} more`
 
-/** The order of subjects on each side of the look line, from what needs the person to what is finished. */
+/** The order of subjects, from what needs the person to what is finished. */
 const STATUS_PLACES = ['held', 'working', 'waits-on-other', 'queued', 'closed'] as const
 
 type StatusPlace = (typeof STATUS_PLACES)[number]
@@ -197,18 +194,17 @@ export function statusPage(
   const placeOf = (x: Subject): StatusPlace =>
     isHeld(x) ? 'held' : x.status === 'done' || x.status === 'dropped' ? 'closed' : x.status
   const pageOrder = (x: Subject, y: Subject) =>
-    Number(isNew(y)) - Number(isNew(x)) ||
-    STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) ||
-    y.changedAt - x.changedAt
+    STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt
   const goalParts = goalPage(o, s.ledger.items)
   const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map(m => m.id))
   const servedBy = (x: Subject) => (o?.goal ? o.serves[x.id] : undefined)
-  const isOther = (x: Subject) => servedBy(x) === 'none'
   /** The milestone the page draws `x` under: one it serves that the goal shows. */
   const milestoneOf = (x: Subject): string | null => {
     const to = servedBy(x)
     return to !== undefined && milestoneIds.has(to) ? to : null
   }
+  const hasMilestones = milestoneIds.size > 0
+  const isOther = (x: Subject) => servedBy(x) === 'none' || (hasMilestones && milestoneOf(x) === null)
   const running = (o?.children ?? [])
     .filter(c => isChildRunning(c, now) || isFinishedUnseen(c, look))
     .sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt))
@@ -217,7 +213,7 @@ export function statusPage(
     part.filter(x => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0))
   const main = subjects.filter(x => !isOther(x))
   const other = subjects.filter(isOther)
-  // The open fold is chosen across the whole main list, under milestones and not, so a goal changes no row's fold.
+  // The open fold is chosen across the whole main list, so a row's fold does not hang on which milestone it sits under.
   const open = main.filter(isOpen).sort(pageOrder)
   const foldable = open.filter(x => !isHeld(x) && !isNew(x) && !hasChildRow(x))
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)))
@@ -248,13 +244,9 @@ export function statusPage(
     running,
     isTurnRunning: s.presence.isTurnRunning,
     now,
-    lookId: look === null ? null : 'look',
-    lookText: LOOK_TEXT,
-    isLookAtEnd: true,
   }
-  const lookId = (id: string) => (look === null ? null : id)
-  /** A done fold's rows draw no child, since a child of a subject that is not shown is drawn at the top of the list. */
-  const foldCtx: ListContext = { ...ctx, lookId: null, running: [] }
+  /** A done fold's rows draw no child, since a child of a subject that is not shown draws with no subject above it. */
+  const foldCtx: ListContext = { ...ctx, running: [] }
   /** A part's closed work past its rows that the person has not seen, named in one fold for each closed status. */
   const namedFolds = (prefix: string, named: Subject[], depth: number): StatusRowParts[] =>
     (['done', 'dropped'] as const).flatMap(status => {
@@ -275,11 +267,24 @@ export function statusPage(
             },
           ]
     })
-  const rows: StatusRowParts[] = [
-    ...running.filter(c => c.subjectId === null || !shownIds.has(c.subjectId)).map(c => childRow(c, null, 0)),
-    ...partRows(top.shown, ctx, 0, namedFolds('', top.named, 0)),
-  ]
-  /** A part's seen finished work as one done fold `depth` steps in, which holds their rows one step further in. */
+  /** A part's "○ N more" `depth` steps in, for its folded open work. */
+  const openFold = (prefix: string, p: PartSplit, depth: number): StatusRowParts[] =>
+    p.foldedOpen.length === 0
+      ? []
+      : [
+          {
+            kind: 'fold',
+            id: `${prefix}open`,
+            depth,
+            ...SUBJECT_MARKS.queued,
+            text: `${p.foldedOpen.length} more`,
+            subjectIds: [],
+          },
+        ]
+  /**
+   * A part's seen finished work as one done fold `depth` steps in, which holds their rows one step further in. It reads
+   * "N more done" while finished rows still show above it.
+   */
   const doneFold = (prefix: string, done: Subject[], newClosed: Subject[], depth: number): StatusRowParts[] =>
     done.length === 0
       ? []
@@ -289,67 +294,36 @@ export function statusPage(
             id: `${prefix}done`,
             depth,
             text: `${done.length}${newClosed.some(x => x.status === 'done') ? ' more' : ''} done`,
-            rows: ruledRows(partRows([...done].sort(pageOrder), foldCtx, depth + 1), false),
+            rows: endedList(partRows([...done].sort(pageOrder), foldCtx, depth + 1)),
           },
         ]
-  /**
-   * A part's folds `depth` steps in: "○ N more" for its folded open work, and "N done" for its seen finished work, or
-   * "N more done" while finished rows still show above it.
-   */
-  const foldRows = (prefix: string, p: PartSplit, depth: number): StatusRowParts[] => [
-    ...(p.foldedOpen.length > 0
-      ? [
-          {
-            kind: 'fold' as const,
-            id: `${prefix}open`,
-            depth,
-            ...SUBJECT_MARKS.queued,
-            text: `${p.foldedOpen.length} more`,
-            subjectIds: [],
-          },
-        ]
-      : []),
+  /** A part's rows `depth` steps in: its work in the page's order with its folds, as the list after the goal folds. */
+  const foldedPart = (prefix: string, p: PartSplit, depth: number): StatusRowParts[] => [
+    ...partRows(p.shown, ctx, depth, openFold(prefix, p, depth), namedFolds(prefix, p.named, depth)),
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth),
   ]
-  rows.push(...foldRows('', top, 0))
-  if (otherShown.length > 0 || otherFolded.length > 0) {
-    // The part's rule follows the list, so a look line that ends the list would draw a second rule under it.
-    if (rows.at(-1)?.kind === 'look') rows.pop()
-    rows.push({ kind: 'part', id: 'other', depth: 0, text: OTHER_WORK })
-    rows.push(
-      ...partRows(
-        otherShown,
-        { ...ctx, lookId: lookId('other-look') },
-        0,
-        namedFolds('other-', otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0),
-      ),
-    )
-    const otherFoldedOpen = otherFolded.filter(isOpen)
-    if (otherFoldedOpen.length > 0)
-      rows.push({ kind: 'counts', id: 'other-counts', depth: 0, counts: countsByMark(otherFoldedOpen) })
-    rows.push(
-      ...doneFold(
-        'other-',
-        otherFolded.filter(x => x.status === 'done'),
-        otherNewClosed,
-        0,
-      ),
-    )
-  }
-  /** A milestone's rows, one step in: its work in the page's order, then its folds, as the list after the goal folds. */
-  const milestoneRows = (id: string, p: PartSplit): StatusRow[] =>
-    ruledRows(
-      [
-        ...partRows(
-          p.shown,
-          { ...ctx, lookId: lookId(`${id}-look`), isLookAtEnd: false },
-          1,
-          namedFolds(`${id}-`, p.named, 1),
-        ),
-        ...foldRows(`${id}-`, p, 1),
-      ],
-      false,
-    )
+  /** Running work linked to no subject the page shows. While the goal shows milestones, it sits under Other work. */
+  const loose = running.filter(c => c.subjectId === null || !shownIds.has(c.subjectId)).map(c => childRow(c, null, 0))
+  const otherCounts = countsByMark(otherFolded.filter(isOpen))
+  const counts: StatusRowParts[] =
+    otherCounts.length === 0 ? [] : [{ kind: 'counts', id: 'other-counts', depth: 0, counts: otherCounts }]
+  const otherRows: StatusRowParts[] = [
+    ...(hasMilestones ? loose : []),
+    ...partRows(otherShown, ctx, 0, counts, namedFolds('other-', otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
+    ...doneFold(
+      'other-',
+      otherFolded.filter(x => x.status === 'done'),
+      otherNewClosed,
+      0,
+    ),
+  ]
+  const rows: StatusRowParts[] = [
+    ...(hasMilestones ? [] : loose),
+    ...foldedPart('', top, 0),
+    ...(otherRows.length > 0 ? [{ kind: 'part' as const, id: 'other', depth: 0, text: OTHER_WORK }, ...otherRows] : []),
+  ]
+  /** A milestone's rows, one step in. */
+  const milestoneRows = (id: string, p: PartSplit): StatusRow[] => endedList(foldedPart(`${id}-`, p, 1))
   const g = goalParts.goal
   const goal = g && {
     ...g,
@@ -362,7 +336,7 @@ export function statusPage(
     head,
     ...goalParts,
     goal,
-    rows: ruledRows(rows, true),
+    rows: endedList(rows),
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: 'Status',

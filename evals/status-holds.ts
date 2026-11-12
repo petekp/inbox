@@ -13,12 +13,25 @@ const hold = (r: Pick<Rule, 'id' | 'property' | 'text' | 'failures'>): Rule => (
   isHold: true,
 })
 
-/** The ids of the subject rows the page draws under Other work. */
-function otherWorkIds(page: StatusPage): string[] {
+/** The ids of the subject rows the page draws after the goal, above Other work and under it. */
+function listIds(page: StatusPage): { main: string[]; other: string[] } {
   const start = page.rows.findIndex(r => r.kind === 'part')
-  if (start < 0) return []
+  const ids = (rows: StatusPage['rows']) => rows.flatMap(r => (r.kind === 'subject' ? [r.id] : []))
 
-  return page.rows.slice(start).flatMap(r => (r.kind === 'subject' ? [r.id] : []))
+  return start < 0
+    ? { main: ids(page.rows), other: [] }
+    : { main: ids(page.rows.slice(0, start)), other: ids(page.rows.slice(start)) }
+}
+
+/**
+ * Whether a subject belongs under Other work: the goal does not need it, or the goal shows milestones and it serves
+ * none of them.
+ */
+function isOtherWork(serves: Record<string, string>, page: StatusPage, id: string): boolean {
+  const shown = new Set((page.goal?.milestones ?? []).map(m => m.id))
+  const to = serves[id]
+
+  return to === 'none' || (shown.size > 0 && (to === undefined || !shown.has(to)))
 }
 
 /** The holds the code keeps, checked at every step of every run. Any failure blocks. */
@@ -115,20 +128,27 @@ export const HOLD_RULES: Rule[] = [
       const isNews = (changedAt: number, id: string) =>
         o.lastLookAt === null || changedAt > o.lastLookAt || held.has(id)
       return o.subjects
-        .filter(x => x.into === null && o.serves[x.id] === 'none' && isOpen(x) && isNews(x.changedAt, x.id))
+        .filter(
+          x => x.into === null && isOtherWork(o.serves, result.page, x.id) && isOpen(x) && isNews(x.changedAt, x.id),
+        )
         .filter(x => !drawn.has(x.id))
         .map(x => `"${x.name}" folded under Other work with news`)
     },
   }),
   hold({
-    id: 'unlinked-in-main',
+    id: 'other-work-place',
     property: 16,
-    text: 'A subject not linked to a milestone yet sits in the main list, not under Other work.',
+    text: 'While the goal shows milestones, every subject not under one sits under Other work. While it shows none, a subject not linked yet sits above Other work.',
     failures: ({ result }) => {
       const o = result.session.ledger.overview
-      return otherWorkIds(result.page)
-        .filter(id => o?.serves[id] !== 'none')
-        .map(id => `"${o?.subjects.find(x => x.id === id)?.name ?? id}" is under Other work without a link there`)
+      if (!o?.goal) return []
+      const name = (id: string) => `"${o.subjects.find(x => x.id === id)?.name ?? id}"`
+      const isOther = (id: string) => isOtherWork(o.serves, result.page, id)
+      const { main, other } = listIds(result.page)
+      return [
+        ...other.filter(id => !isOther(id)).map(id => `${name(id)} is under Other work, and the goal needs it`),
+        ...main.filter(isOther).map(id => `${name(id)} sits above Other work, and belongs under it`),
+      ]
     },
   }),
 ]
