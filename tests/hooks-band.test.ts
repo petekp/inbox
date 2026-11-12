@@ -232,6 +232,31 @@ test('in a Herdr app terminal, a press file the look wrote is applied and remove
   expect(envelope().lastPress).toEqual({ id: 'p2', outcome: 'stale' })
 })
 
+test('in a Herdr app terminal, a look file the look wrote counts the Status subjects it showed as seen, and saves no press', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: '/app', HOME: '/home/person' })
+  const envelope = () => JSON.parse(w.written['/app/inbox/sessions/session-1.json']!)
+  const lookPath = '/app/inbox/presses/session-1/l1.json'
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  w.statusReply =
+    'HEAD: Offline sync | Adding offline sync\nNEW: working | Queue | built\nNEW: queued | Docs | not started'
+  await $.prompt.submit({ text: 'add offline sync', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Queue built.', durationMs: 5, isAborted: false, turnId: 't', reason: 'answer' })
+  await clock.settle()
+  const changedAt = envelope().session.ledger.overview.subjects[0].changedAt as number
+  const look = { startedAt: changedAt, endedAt: changedAt + 10_000, shown: { s1: changedAt } }
+  w.written[lookPath] = JSON.stringify({ format: 1, id: 'l1', look })
+  await clock.advance(PRESS_POLL_MS)
+  await clock.settle()
+
+  const overview = envelope().session.ledger.overview
+  expect(w.written[lookPath]).toBeUndefined()
+  expect(overview.lastLookAt).toBe(changedAt + 10_000)
+  expect(Object.keys(overview.missedInLastLook)).toEqual(['s2'])
+  expect(envelope().lastPress).toBeUndefined()
+})
+
 test('a sidebar report Herdr fails to take is sent again after each wait in HERDR_RETRY_MS, until Herdr takes it', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [], { HERDR_PANE_ID: 'p2' })

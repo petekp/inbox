@@ -117,6 +117,34 @@ describe('pressDrainer', () => {
     ])
   })
 
+  test('a look file is applied among the presses by when it ended, and one that ends before it starts is refused', async () => {
+    const lookText = (id: string, startedAt: number, endedAt: number) =>
+      JSON.stringify({ format: 1, id, look: { startedAt, endedAt, shown: { s1: startedAt } } })
+    const files = {
+      [`${dir}/a.json`]: pressText('late', 20),
+      [`${dir}/b.json`]: lookText('look', 5, 15),
+      [`${dir}/c.json`]: pressText('early', 10),
+      [`${dir}/d.json`]: lookText('backwards', 15, 5),
+    }
+    const applied: string[] = []
+    const logged: string[] = []
+    const drain = pressDrainer(
+      folder(files),
+      owned,
+      async (_id, file) => {
+        applied.push(file.id)
+        return true
+      },
+      text => logged.push(text),
+    )
+
+    await drain('/app', 's1')
+
+    expect(applied).toEqual(['early', 'look', 'late'])
+    expect(files).toEqual({})
+    expect(logged).toEqual(['Herdr press d.json refused: look ends before it starts'])
+  })
+
   test('a press the host does not take goes back under its name for a later drain', async () => {
     const files: Record<string, string> = { [`${dir}/a.json`]: pressText('p1', 10) }
     let isTaking = false
