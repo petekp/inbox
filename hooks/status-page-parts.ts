@@ -10,15 +10,14 @@ export const CHILD_ROWS = 3
 const CHILD_MARK: { mark: string; tone: StatusTone } = { mark: SUBJECT_MARKS.working.mark, tone: null }
 
 /** The words a `counts` row gives each mark. */
-const COUNT_WORDS: Record<'working' | 'waits-on-other' | 'queued', string> = {
+const COUNT_WORDS: Record<'working' | 'waits-on-other', string> = {
   working: 'working',
   'waits-on-other': 'waiting',
-  queued: 'queued',
 }
 
-/** Open subjects folded into one count for each status, in the page's order of marks. */
+/** Open subjects folded into one count for each status that is under way, in the page's order of marks. Queued work gets no count. */
 export function countsByMark(folded: Subject[]): StatusCount[] {
-  return (['working', 'waits-on-other', 'queued'] as const).flatMap(status => {
+  return (['working', 'waits-on-other'] as const).flatMap(status => {
     const n = folded.filter(x => x.status === status).length
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }]
   })

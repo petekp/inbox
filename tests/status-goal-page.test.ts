@@ -8,6 +8,7 @@ import { setTypedGoal } from '../hooks/status-goal-ops'
 import { statusKeyRows } from '../hooks/status-keys'
 import { unfoldedRows } from '../hooks/status-page-parts'
 import { NO_HOLDS } from '../hooks/timing'
+import type { StatusRow } from '../hooks/status-page'
 import type { SessionStatus } from '../types'
 import { after, askItem, page, shape } from './status-helpers'
 
@@ -50,7 +51,7 @@ test('a goal shows how far the work is after its text, its Edit comes before its
   ])
 })
 
-test('work that serves a milestone draws under it one step in, and work the goal does not need sits under Other work, whose own rule follows the milestones and where seen rows fold into a count for each mark', () => {
+test('work that serves a milestone draws under it one step in, and work the goal does not need sits under Other work, where seen rows fold into a count of working and waiting work and seen queued work gets none', () => {
   const seen = { ...linked(), lastLookAt: 35 }
   const changed = after(seen, 'SET: s4 | working | new logo drawn', 50, new Set(['i1']))
   const p = page(seen, 40, {}, [askItem('i1')])
@@ -60,8 +61,7 @@ test('work that serves a milestone draws under it one step in, and work the goal
     ['◆ Error copy: not started · waiting', '◐ CSV import: bad rows skipped'],
     [],
   ])
-  expect(p.isRuledAfterGoal).toBe(false)
-  expect(shape(p.rows)).toEqual(['== Other work', '● 1 working · ○ 1 queued'])
+  expect(shape(p.rows)).toEqual(['== Other work', '● 1 working'])
   expect(shape(page(changed, 60, {}, [askItem('i1')]).rows)).toEqual([
     '== Other work',
     '◐ Logo refresh: new logo drawn',
@@ -130,17 +130,48 @@ test('under a milestone and under Other work, closed work past two rows that the
   ])
 })
 
-test('a subject not linked yet stays in the list after the goal, which one rule sets apart, and without a goal nothing splits or takes a rule', () => {
-  const unlinked = { ...withGoal(), lastLookAt: 25 }
+test('while the goal shows milestones, a subject linked to none of them draws under Other work; while it shows none, the subject stays above Other work; and without a goal nothing splits', () => {
+  const unlinked = { ...after(withGoal(), 'SERVES: s1 | m2', 30), lastLookAt: 5 }
+  const typed = { ...setTypedGoal(after(null, START, 10), 'Ship 2.6', 15), serves: { s3: 'none' }, lastLookAt: 5 }
   const noGoal = { ...after(null, START, 10), serves: { s3: 'none' }, lastLookAt: 25 }
+  const subjectIds = (rows: StatusRow[]) => rows.flatMap(r => (r.kind === 'subject' ? [r.id] : []))
 
-  expect(page(unlinked, 30).rows.some(r => r.kind === 'part')).toBe(false)
-  expect(page(unlinked, 30).isRuledAfterGoal).toBe(true)
+  expect(subjectIds(page(unlinked, 40).goal!.milestones[1]!.rows)).toEqual(['s1'])
+  expect(page(unlinked, 40).rows[0]!.kind).toBe('part')
+  expect(subjectIds(page(unlinked, 40).rows).sort()).toEqual(['s2', 's3', 's4'])
+  expect(shape(page(typed, 20).rows).filter(l => !l.startsWith('▸'))).toEqual([
+    '◐ CSV import: bad rows skipped',
+    '○ Error copy: not started',
+    '○ Logo refresh: not started',
+    '== Other work',
+    '◐ Dark mode: toggle drawn',
+  ])
   expect(page(noGoal, 30).rows.some(r => r.kind === 'part')).toBe(false)
-  expect(page(noGoal, 30).isRuledAfterGoal).toBe(false)
 })
 
-test('a typed goal waits for its milestones with no rule under it, and a goal whose milestones are all done reads met', () => {
+test('under Other work, a queued subject an ask holds up stays a row, whether the goal does not need it or it serves no milestone, and seen queued work with nothing else to count leaves no counts row', () => {
+  const held = after(
+    after(
+      withGoal(),
+      'SERVES: s1 | m2\nSERVES: s3 | m2\nSERVES: s4 | -\nLINK: i1 | s4\nLINK: i2 | s2',
+      30,
+      new Set(['i1', 'i2']),
+    ),
+    'NEW: queued | Release notes | not started',
+    32,
+    new Set(['i1', 'i2']),
+  )
+  const asks = [askItem('i1'), askItem('i2')]
+
+  expect(shape(page({ ...held, lastLookAt: 40 }, 45, {}, asks).rows)).toEqual([
+    '== Other work',
+    '◆ Error copy: not started · waiting',
+    '◆ Logo refresh: not started · waiting',
+  ])
+  expect(page({ ...held, lastLookAt: 40 }, 45).rows).toEqual([])
+})
+
+test('a typed goal waits for its milestones, and a goal whose milestones are all done reads met', () => {
   const typed = setTypedGoal(linked(), 'Ship 2.6 with import', 45)
   const met = after(linked(), 'DONE: m2 | explained\nDONE: m3 | written', 50)
 
@@ -151,7 +182,6 @@ test('a typed goal waits for its milestones with no rule under it, and a goal wh
     awaiting: 'Milestones after the next reply',
     milestones: [],
   })
-  expect(page(typed, 46).isRuledAfterGoal).toBe(false)
   expect(page(met, 55).goal).toMatchObject({ label: 'Goal met', count: null, isMet: true, awaiting: null })
   expect(
     statusKeyRows(page(met, 55))

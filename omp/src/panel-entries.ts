@@ -302,10 +302,9 @@ function pageEntries(page: StatusPage, typing: string | null, isUnfolded: (id: s
       : []
   const top = [...goalSection(page, typing, isUnfolded), ...(head.length > 0 ? [blank, ...head] : [])]
   const rows = unfoldedRows(page.rows, isUnfolded).map((row): Entry => ({ kind: 'page', row }))
+  const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== 'part'
 
-  const goalEnd: Entry[] = page.isRuledAfterGoal ? [{ kind: 'goal', part: { is: 'rule' } }] : []
-
-  return top.length > 0 && rows.length > 0 ? [...top, blank, ...goalEnd, ...rows] : [...top, ...rows]
+  return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows]
 }
 
 /** Help in place of the tab's lines: the keys the panel takes, what each mark means, then each tab's symbol. */

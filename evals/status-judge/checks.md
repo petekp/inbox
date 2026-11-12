@@ -160,7 +160,7 @@ A child row shows running work. Its label says in a few plain words what the wor
 
 Match each child row to a line under `Running work` by what it does. Then judge its label and its place.
 
-The check passes when every child row's label says what its work does, in words a person would use, and every child sits under the row of the piece it serves. A child at the top of the list passes its place when the piece it serves has no row on the page. The check passes when the page has no child rows.
+The check passes when every child row's label says what its work does, in words a person would use, and every child sits under the row of the piece it serves. A child at the top of the list after the goal, or at the top of `── Other work`, passes its place when the piece it serves has no row on the page. The check passes when the page has no child rows.
 
 The check fails when any of these is on the page:
 
@@ -168,7 +168,7 @@ The check fails when any of these is on the page:
 - A label that says nothing about the work, such as `Subagent` or `Background task`.
 - A label that says the child does something other than what the facts say.
 - A child under the row of a piece other than the one it serves.
-- A child at the top of the list, with no `├` or `└`, while the piece it serves has a row on the page.
+- A child with no `├` or `└` while the piece it serves has a row on the page.
 
 Examples:
 
@@ -274,7 +274,7 @@ Examples:
 
 ### split
 
-While a goal is set, the subject rows above `── Other work`, under a milestone or not, are the work the goal needs, and the rows under it are work the goal does not need. Compare each row with its piece's line in the facts: `It serves the milestone …` or `The goal does not need it.`
+While a goal is set, the subject rows above `── Other work`, under a milestone or not, are the work the goal needs. The rows under it are work the goal does not need, and, while the goal shows milestones, work not linked to one yet. Compare each row with its piece's line in the facts: `It serves the milestone …` or `The goal does not need it.`
 
 The check passes when every row sits on the side its piece's facts give. A piece whose facts say neither may sit on either side.
 

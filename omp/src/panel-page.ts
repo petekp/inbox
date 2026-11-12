@@ -113,11 +113,6 @@ export function partHeading(text: string, width: number, s: Style, at = PAGE_TEX
   return `${' '.repeat(at)}${s.dim(label + '─'.repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label))))}`
 }
 
-/** The rule between the goal's milestones and the list after them. */
-export function pageRule(width: number, s: Style): string {
-  return `${' '.repeat(PAGE_TEXT_AT)}${s.dim('─'.repeat(pageRuleCells(width)))}`
-}
-
 /**
  * A Status target's buttons from its plan, with their text at `textAt`. The selected target's focused button takes
  * Enter, and its other buttons their keys, so only that target draws them focused or with keys.

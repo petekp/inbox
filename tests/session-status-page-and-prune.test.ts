@@ -124,7 +124,7 @@ test('a sample saved without a Status is replaced, and the sample session carrie
     ['subject', 'child', 'child', 'child'],
     ['subject'],
   ])
-  expect(page.rows.map(r => r.kind)).toEqual(['subject', 'child', 'subject', 'part', 'done-fold'])
+  expect(page.rows.map(r => r.kind)).toEqual(['part', 'subject', 'child', 'counts', 'done-fold'])
 })
 
 test('a conversation start carries the head and where each open subject stands, not on a resume the guidance, and nothing for an empty session', () => {

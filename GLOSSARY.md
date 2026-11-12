@@ -131,8 +131,9 @@ again, in the same words or in other words.
 
 **Milestone**:
 An outcome a goal needs, such as "Sync fixed". Subjects link to it with SERVES,
-only when finishing the subject is part of the milestone's outcome, and a
-subject the goal does not need sits under Other work. Code closes a milestone
+only when finishing the subject is part of the milestone's outcome. A subject
+the goal does not need sits under Other work, and so does one not linked to a
+milestone yet, while the goal shows milestones. Code closes a milestone
 once all its linked subjects are closed and one is done, and the model opens it
 again when work is left.
 _Avoid_: step, phase

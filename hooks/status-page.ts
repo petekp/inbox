@@ -65,7 +65,7 @@ export type StatusRowParts = {
       name: string
       /** What its work does, as `childStall` says. */
       stall: StatusStall | null
-      /** Its place under its subject. Null when it is linked to no subject the list shows, so it sits at the top of the list. */
+      /** Its place under its subject. Null when it is linked to no subject the list shows, so it sits first in the list after the goal, under Other work while the goal shows milestones. */
       branch: StatusBranch | null
     }
   /** The children of a subject past `CHILD_ROWS`, as "+ 2 more running", or "+ 2 more" when one finished. It is always the last row under its subject. */
@@ -91,7 +91,7 @@ export type StatusRowParts = {
   | { kind: 'done-fold'; id: string; text: string; rows: StatusRow[] }
   /** Where the work the goal does not need starts, under its own rule. */
   | { kind: 'part'; id: string; text: string }
-  /** Seen open rows of that work folded into a count for each mark, as "● 5 working · ◌ 8 waiting · ○ 10 queued". */
+  /** Seen open rows of that work folded into a count for each mark that is under way, as "● 5 working · ◌ 8 waiting". Folded queued rows get no count. */
   | { kind: 'counts'; id: string; counts: StatusCount[] }
 )
 
@@ -103,13 +103,12 @@ export type StatusPage = GoalParts & {
   isEmpty: boolean
   /** What the session is focused on now. The description is null until the Status call writes one. Looks draw it only while no goal is set; the goal draws its Now line in its place. */
   head: { title: string; description: string | null } | null
-  /** The list after the goal: work not linked to a milestone, then Other work. Rows under a milestone are its `rows`. */
-  rows: StatusRow[]
   /**
-   * Whether one rule sets the list after the goal apart from the goal's milestones: while the goal shows a milestone
-   * and work follows them. Other work's own rule serves when only Other work follows. Rows draw no rules of their own.
+   * The list after the goal. Rows under a milestone are its `rows`. While the goal shows milestones, every other row
+   * sits under Other work, so only milestones and their rows draw between the goal and Other work. Otherwise work not
+   * linked to a milestone comes first, then Other work.
    */
-  isRuledAfterGoal: boolean
+  rows: StatusRow[]
   /** The status line's error while the last Status call wrote nothing. */
   error: string | null
   empty: { title: string; hint: string }
@@ -199,12 +198,13 @@ export function statusPage(
   const goalParts = goalPage(o, s.ledger.items)
   const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map(m => m.id))
   const servedBy = (x: Subject) => (o?.goal ? o.serves[x.id] : undefined)
-  const isOther = (x: Subject) => servedBy(x) === 'none'
   /** The milestone the page draws `x` under: one it serves that the goal shows. */
   const milestoneOf = (x: Subject): string | null => {
     const to = servedBy(x)
     return to !== undefined && milestoneIds.has(to) ? to : null
   }
+  const hasMilestones = milestoneIds.size > 0
+  const isOther = (x: Subject) => servedBy(x) === 'none' || (hasMilestones && milestoneOf(x) === null)
   const running = (o?.children ?? [])
     .filter(c => isChildRunning(c, now) || isFinishedUnseen(c, look))
     .sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt))
@@ -213,7 +213,7 @@ export function statusPage(
     part.filter(x => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0))
   const main = subjects.filter(x => !isOther(x))
   const other = subjects.filter(isOther)
-  // The open fold is chosen across the whole main list, under milestones and not, so a goal changes no row's fold.
+  // The open fold is chosen across the whole main list, so a row's fold does not hang on which milestone it sits under.
   const open = main.filter(isOpen).sort(pageOrder)
   const foldable = open.filter(x => !isHeld(x) && !isNew(x) && !hasChildRow(x))
   const folded = foldable.slice(Math.max(0, OPEN_SUBJECTS - (open.length - foldable.length)))
@@ -245,7 +245,7 @@ export function statusPage(
     isTurnRunning: s.presence.isTurnRunning,
     now,
   }
-  /** A done fold's rows draw no child, since a child of a subject that is not shown is drawn at the top of the list. */
+  /** A done fold's rows draw no child, since a child of a subject that is not shown draws with no subject above it. */
   const foldCtx: ListContext = { ...ctx, running: [] }
   /** A part's closed work past its rows that the person has not seen, named in one fold for each closed status. */
   const namedFolds = (prefix: string, named: Subject[], depth: number): StatusRowParts[] =>
@@ -302,29 +302,26 @@ export function statusPage(
     ...partRows(p.shown, ctx, depth, openFold(prefix, p, depth), namedFolds(prefix, p.named, depth)),
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth),
   ]
-  const rows: StatusRowParts[] = [
-    ...running.filter(c => c.subjectId === null || !shownIds.has(c.subjectId)).map(c => childRow(c, null, 0)),
-    ...foldedPart('', top, 0),
+  /** Running work linked to no subject the page shows. While the goal shows milestones, it sits under Other work. */
+  const loose = running.filter(c => c.subjectId === null || !shownIds.has(c.subjectId)).map(c => childRow(c, null, 0))
+  const otherCounts = countsByMark(otherFolded.filter(isOpen))
+  const counts: StatusRowParts[] =
+    otherCounts.length === 0 ? [] : [{ kind: 'counts', id: 'other-counts', depth: 0, counts: otherCounts }]
+  const otherRows: StatusRowParts[] = [
+    ...(hasMilestones ? loose : []),
+    ...partRows(otherShown, ctx, 0, counts, namedFolds('other-', otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
+    ...doneFold(
+      'other-',
+      otherFolded.filter(x => x.status === 'done'),
+      otherNewClosed,
+      0,
+    ),
   ]
-  if (otherShown.length > 0 || otherFolded.length > 0) {
-    const otherFoldedOpen = otherFolded.filter(isOpen)
-    const counts: StatusRowParts[] =
-      otherFoldedOpen.length === 0
-        ? []
-        : [{ kind: 'counts', id: 'other-counts', depth: 0, counts: countsByMark(otherFoldedOpen) }]
-    rows.push({ kind: 'part', id: 'other', depth: 0, text: OTHER_WORK })
-    rows.push(
-      ...partRows(otherShown, ctx, 0, counts, namedFolds('other-', otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
-    )
-    rows.push(
-      ...doneFold(
-        'other-',
-        otherFolded.filter(x => x.status === 'done'),
-        otherNewClosed,
-        0,
-      ),
-    )
-  }
+  const rows: StatusRowParts[] = [
+    ...(hasMilestones ? [] : loose),
+    ...foldedPart('', top, 0),
+    ...(otherRows.length > 0 ? [{ kind: 'part' as const, id: 'other', depth: 0, text: OTHER_WORK }, ...otherRows] : []),
+  ]
   /** A milestone's rows, one step in. */
   const milestoneRows = (id: string, p: PartSplit): StatusRow[] => endedList(foldedPart(`${id}-`, p, 1))
   const g = goalParts.goal
@@ -340,7 +337,6 @@ export function statusPage(
     ...goalParts,
     goal,
     rows: endedList(rows),
-    isRuledAfterGoal: (goal?.milestones.length ?? 0) > 0 && rows.length > 0 && rows[0]!.kind !== 'part',
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: 'Status',

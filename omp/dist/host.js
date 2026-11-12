@@ -3481,11 +3481,10 @@ var CHILD_ROWS = 3;
 var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
 var COUNT_WORDS = {
   working: "working",
-  "waits-on-other": "waiting",
-  queued: "queued"
+  "waits-on-other": "waiting"
 };
 function countsByMark(folded) {
-  return ["working", "waits-on-other", "queued"].flatMap((status) => {
+  return ["working", "waits-on-other"].flatMap((status) => {
     const n = folded.filter((x) => x.status === status).length;
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
@@ -3608,11 +3607,12 @@ function statusPage(s, now) {
   const goalParts = goalPage(o, s.ledger.items);
   const milestoneIds = new Set((goalParts.goal?.milestones ?? []).map((m) => m.id));
   const servedBy = (x) => o?.goal ? o.serves[x.id] : undefined;
-  const isOther = (x) => servedBy(x) === "none";
   const milestoneOf = (x) => {
     const to = servedBy(x);
     return to !== undefined && milestoneIds.has(to) ? to : null;
   };
+  const hasMilestones = milestoneIds.size > 0;
+  const isOther = (x) => servedBy(x) === "none" || hasMilestones && milestoneOf(x) === null;
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const hasChildRow = (x) => running.some((c) => c.subjectId === x.id);
   const unseenClosedOf = (part) => part.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0));
@@ -3688,17 +3688,19 @@ function statusPage(s, now) {
     ...partRows(p.shown, ctx, depth, openFold(prefix, p, depth), namedFolds(prefix, p.named, depth)),
     ...doneFold(prefix, p.foldedDone, p.newClosed, depth)
   ];
-  const rows = [
-    ...running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0)),
-    ...foldedPart("", top, 0)
+  const loose = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, null, 0));
+  const otherCounts = countsByMark(otherFolded.filter(isOpen));
+  const counts = otherCounts.length === 0 ? [] : [{ kind: "counts", id: "other-counts", depth: 0, counts: otherCounts }];
+  const otherRows = [
+    ...hasMilestones ? loose : [],
+    ...partRows(otherShown, ctx, 0, counts, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)),
+    ...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0)
   ];
-  if (otherShown.length > 0 || otherFolded.length > 0) {
-    const otherFoldedOpen = otherFolded.filter(isOpen);
-    const counts = otherFoldedOpen.length === 0 ? [] : [{ kind: "counts", id: "other-counts", depth: 0, counts: countsByMark(otherFoldedOpen) }];
-    rows.push({ kind: "part", id: "other", depth: 0, text: OTHER_WORK });
-    rows.push(...partRows(otherShown, ctx, 0, counts, namedFolds("other-", otherUnseenClosed.slice(NEW_CLOSED_ROWS), 0)));
-    rows.push(...doneFold("other-", otherFolded.filter((x) => x.status === "done"), otherNewClosed, 0));
-  }
+  const rows = [
+    ...hasMilestones ? [] : loose,
+    ...foldedPart("", top, 0),
+    ...otherRows.length > 0 ? [{ kind: "part", id: "other", depth: 0, text: OTHER_WORK }, ...otherRows] : []
+  ];
   const milestoneRows = (id, p) => endedList(foldedPart(`${id}-`, p, 1));
   const g = goalParts.goal;
   const goal = g && {
@@ -3712,7 +3714,6 @@ function statusPage(s, now) {
     ...goalParts,
     goal,
     rows: endedList(rows),
-    isRuledAfterGoal: (goal?.milestones.length ?? 0) > 0 && rows.length > 0 && rows[0].kind !== "part",
     error: s.overviewFailure ? STATUS_FAILED : null,
     empty: {
       title: "Status",
@@ -6639,9 +6640,6 @@ function partHeading(text, width, s, at = PAGE_TEXT_AT) {
   const label = `${text} `;
   return `${" ".repeat(at)}${s.dim(label + "\u2500".repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label))))}`;
 }
-function pageRule(width, s) {
-  return `${" ".repeat(PAGE_TEXT_AT)}${s.dim("\u2500".repeat(pageRuleCells(width)))}`;
-}
 function pageButtonLines(target, d, isSelected, textAt = PAGE_TEXT_AT, between = "") {
   const faces = target.keys.map((k) => ({
     label: k.label,
@@ -6772,8 +6770,6 @@ function drawGoalPart(part, d, isSelected) {
     return headingLines(part, d, isSelected);
   if (part.is === "gap")
     return [""];
-  if (part.is === "rule")
-    return [pageRule(width, s)];
   if (part.is === "title") {
     const g = part.goal;
     const text = part.isTyping ? fieldLines(d) : g ? textWithCount(g, d) : at(NO_GOAL_TEXT, s.dim);
@@ -7220,8 +7216,8 @@ function pageEntries(page, typing, isUnfolded) {
   ] : [];
   const top = [...goalSection(page, typing, isUnfolded), ...head.length > 0 ? [blank, ...head] : []];
   const rows = unfoldedRows(page.rows, isUnfolded).map((row) => ({ kind: "page", row }));
-  const goalEnd = page.isRuledAfterGoal ? [{ kind: "goal", part: { is: "rule" } }] : [];
-  return top.length > 0 && rows.length > 0 ? [...top, blank, ...goalEnd, ...rows] : [...top, ...rows];
+  const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== "part";
+  return isGapNeeded ? [...top, blank, ...rows] : [...top, ...rows];
 }
 function helpEntries(screen, tab) {
   const keys = helpKeys("omp", screen.isNextBuild === true, tab, statusKeyRows(screen.view.statusPage).length > 0);

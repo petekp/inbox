@@ -130,16 +130,6 @@ export function paneStatus(
   const statusRuleAt = statusMarkAt + markWidth
   const statusRuleCells = Math.max(0, listColumns - statusRuleAt)
   const desktopStatusRuleLeft = FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS
-  /** The terminal's rule between the goal's milestones and the list after them. */
-  const terminalGoalEndRule: Drawn = {
-    el: (
-      <Box key="status-rule-goal-end" flexDirection="row">
-        <Box width={statusRuleAt} flexShrink={0} />
-        <Text color={pal.divider}>{'─'.repeat(statusRuleCells)}</Text>
-      </Box>
-    ),
-    lines: exactly(1),
-  }
   /** A part drawn on one terminal line, and in `desktopLines` on desktop. */
   const oneLine = (el: JSX.Element, desktopLines: number): Drawn => ({
     el,
@@ -154,8 +144,8 @@ export function paneStatus(
       SECTION_GAP_PT / DESKTOP_LINE_PT,
     )
   /** Other work's line: the space above it, its name, then a solid rule to the end of the list's columns. */
-  const statusPartLine = (id: string, text: string) => {
-    const above = [gap('part-above')]
+  const statusPartLine = (id: string, text: string, isFirst: boolean) => {
+    const above = isFirst ? [] : [gap('part-above')]
     const line = oneLine(
       look === 'desktop' ? (
         <Box flexDirection="row" alignItems="center" marginLeft={desktopStatusRuleLeft} paddingY={statusFrameEdge}>
@@ -333,7 +323,7 @@ export function paneStatus(
   // On desktop a row's first line starts under its frame's border and padding.
   const firstLine = look === 'desktop' ? desktopSpaceLines(STATUS_PAD_Y) + DESKTOP_HAIR_LINES : 0
   const seenTops = (r: StatusRow) => seenSubjectIds(r).map(id => [id, exactly(firstLine)] as [string, RowTop])
-  const statusRow = (r: StatusRow) => {
+  const statusRow = (r: StatusRow, n: number) => {
     if (r.kind === 'subject') {
       const mark = statusMark(r)
       const content = [
@@ -409,7 +399,7 @@ export function paneStatus(
             isFold: true,
           })
     }
-    if (r.kind === 'part') return statusPartLine(r.id, r.text)
+    if (r.kind === 'part') return statusPartLine(r.id, r.text, n === 0)
     if (r.kind === 'counts')
       return statusRowLine({
         key: `status-${r.id}`,
@@ -456,23 +446,14 @@ export function paneStatus(
       }
     const head = page.goal === null && page.head ? [statusHead(page.head)] : []
     const rows = page.rows.length > 0 ? statusRows(page.rows) : []
-    // In the terminal the rule after the goal takes the last of the blank lines between the two sections, so the
-    // goal and the list after it draw as one section. On desktop the hairline between sections is that rule.
-    const isTerminalRuled = look === 'terminal' && page.isRuledAfterGoal
-    const terminalRuled = (goal: Drawn[]) => [
-      ...goal,
-      ...Array.from({ length: terminalSectionGap - 1 }, (_, n) => gap(`goal-end-${n}`)),
-      terminalGoalEndRule,
-      ...rows,
-    ]
-    const parts = isTerminalRuled ? [terminalRuled(goalSection(page))] : [goalSection(page), head, rows]
-    const shown = parts
+    const shown = [goalSection(page), head, rows]
       .filter(lines => lines.length > 0)
       .map(lines => stackedIn(section(lines.map(p => p.el)), [...desktopSectionPad, ...lines]))
     // A hairline between two desktop sections sits a margin under the one above.
     const sectionGap = look === 'desktop' ? DESKTOP_HAIR_LINES + desktopSpaceLines(1) : terminalSectionGap
-    // The goal's section and the list after it draw no hairline between them unless the page rules the goal's end.
-    const isUnruledAfterGoal = page.goal !== null && rows.length > 0 && !page.isRuledAfterGoal
+    // The goal's section and the list after it draw no hairline between them: Other work's own rule sets that list
+    // apart while the goal shows milestones, and nothing does while it shows none.
+    const isUnruledAfterGoal = page.goal !== null && rows.length > 0
 
     return {
       el: sections(

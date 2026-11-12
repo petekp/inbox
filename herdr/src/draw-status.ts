@@ -199,9 +199,7 @@ export function statusBlocks(page: StatusPage, ui: StatusUi): Block[] {
   const top = [...goalBlocks(page, ui), ...(head.length > 0 ? [{ kind: 'gap', id: 'gap head' } as const, ...head] : [])]
   const rows = unfoldedRows(page.rows, isUnfolded).flatMap(r => rowBlocks(r, isUnfolded))
 
-  const goalEnd: Block[] = page.isRuledAfterGoal
-    ? [{ kind: 'rule', id: 'rule goal end', text: null, isDashed: false }]
-    : []
+  const isGapNeeded = rows.length > 0 && page.rows[0]?.kind !== 'part'
 
-  return rows.length > 0 ? [...top, { kind: 'gap', id: 'gap rows' }, ...goalEnd, ...rows] : top
+  return isGapNeeded ? [...top, { kind: 'gap', id: 'gap rows' }, ...rows] : [...top, ...rows]
 }
