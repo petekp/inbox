@@ -4156,6 +4156,7 @@ function emptyEl(b, p) {
   const { t } = p;
   return v_flex2().items_center().px(32).py(32).gap(4).child(div2().font_semibold().text_center().whitespace_normal().child(b.title)).when(b.hint !== null, (e) => e.child(div2().text_center().whitespace_normal().text_color(t.muted).child(b.hint ?? ""))).when(b.buttons.length > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(BUTTON_GAP).pt(8).children(b.buttons.map((x) => buttonEl(x, p)))));
 }
+var FOLD_ARROW_GAP = 8;
 function foldEl(b, p) {
   const { t } = p;
   const fold = {
@@ -4166,8 +4167,7 @@ function foldEl(b, p) {
     hotkey: null,
     does: { is: "view", change: b.change }
   };
-  const indent = MARK_X + b.depth * NEST + (b.kind === "fold" ? 0 : MARK_W);
-  return h_flex2().id(`fold ${b.id}`).pl(indent).pr(EDGE_X).py(ROW_PAD_PT).items_center().text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(b.text).on_click((_e, cx) => p.press(fold, cx)).when(b.kind === "fold", (e) => e.child(markEl({ text: b.kind === "fold" && b.isOpen ? "▾" : "▸", tone: "muted", isRunning: false }, t))).child(div2().child(b.text));
+  return h_flex2().id(`fold ${b.id}`).pl(SPINE + b.depth * NEST).pr(EDGE_X).py(ROW_PAD_PT).items_center().text_color(t.muted).hover((s) => s.text_color(t.foreground)).accessibility_label(b.text).on_click((_e, cx) => p.press(fold, cx)).when(b.kind === "fold", (e) => e.child(div2().mr(FOLD_ARROW_GAP).child(b.kind === "fold" && b.isOpen ? "▾" : "▸"))).child(div2().child(b.text));
 }
 function ruleEl(b, t) {
   if (b.text === null)

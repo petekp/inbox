@@ -351,6 +351,8 @@ function emptyEl(b: Extract<Block, { kind: 'empty' }>, p: Paint): Element {
     )
 }
 
+const FOLD_ARROW_GAP = 8
+
 function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element {
   const { t } = p
   const fold: Button = {
@@ -361,11 +363,9 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element
     hotkey: null,
     does: { is: 'view', change: b.change },
   }
-  const indent = MARK_X + b.depth * NEST + (b.kind === 'fold' ? 0 : MARK_W)
-
   return h_flex()
     .id(`fold ${b.id}`)
-    .pl(indent)
+    .pl(SPINE + b.depth * NEST)
     .pr(EDGE_X)
     .py(ROW_PAD_PT)
     .items_center()
@@ -374,7 +374,11 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint): Element
     .accessibility_label(b.text)
     .on_click((_e, cx) => p.press(fold, cx))
     .when(b.kind === 'fold', e =>
-      e.child(markEl({ text: b.kind === 'fold' && b.isOpen ? '▾' : '▸', tone: 'muted', isRunning: false }, t)),
+      e.child(
+        div()
+          .mr(FOLD_ARROW_GAP)
+          .child(b.kind === 'fold' && b.isOpen ? '▾' : '▸'),
+      ),
     )
     .child(div().child(b.text))
 }
